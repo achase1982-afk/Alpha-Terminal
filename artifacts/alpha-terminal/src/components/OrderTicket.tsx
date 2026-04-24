@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
+import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { startStrategistPolling } from "@/lib/strategistPoller";
 import { computeStrategyEconomics } from "@/lib/strategyCalculator";
@@ -859,6 +860,55 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               }))
             : undefined);
 
+    // When the order ticket carries a stock backbone with option legs added
+    // (e.g. married put, covered call, collar, buy-write), the share leg is
+    // a first-class part of the ticket. We surface it explicitly so the
+    // strategist evaluates the COMBINED order, not just the option legs.
+    const stockLeg = hasMixedLegs
+      ? {
+          instruction: side as "BUY" | "SELL",
+          quantity,
+          // Only carry an explicit limit price if the user actually entered
+          // one for a LIMIT-style order. For MARKET orders we send null —
+          // never inject `quote.last` as a pseudo-limit, which would mislead
+          // the strategist into validating against a price the order won't
+          // honor.
+          limitPrice: orderType === "LIMIT" ? (parseFloat(limitPrice) || null) : null,
+        }
+      : null;
+
+    // Look up any underlying-shares position the trader currently holds in
+    // the same ticker so the strategist can see the *full* position context
+    // (covered call, covered put, married/protective put, assignment-cover,
+    // etc). Without this the bull/bear personas only see the option leg(s)
+    // and miss the most important risk/coverage fact about the trade.
+    const portfolioAccount = usePortfolioStreamStore.getState().account;
+    const equityPos = (portfolioAccount?.positions ?? []).find((p: any) => {
+      const at = (p?.assetType ?? "").toString().toUpperCase();
+      const ul = (p?.underlyingSymbol ?? p?.symbol ?? "").toString().toUpperCase();
+      return at === "EQUITY" && ul === upperTicker;
+    });
+    let underlyingShares: { side: "long" | "short"; quantity: number; averagePrice: number | null; marketValue: number | null } | null = null;
+    if (equityPos) {
+      const longQ = Number(equityPos.longQuantity ?? 0);
+      const shortQ = Number(equityPos.shortQuantity ?? 0);
+      if (longQ > 0) {
+        underlyingShares = {
+          side: "long",
+          quantity: longQ,
+          averagePrice: Number.isFinite(equityPos.averagePrice) ? Number(equityPos.averagePrice) : null,
+          marketValue: Number.isFinite(equityPos.marketValue) ? Number(equityPos.marketValue) : null,
+        };
+      } else if (shortQ > 0) {
+        underlyingShares = {
+          side: "short",
+          quantity: shortQ,
+          averagePrice: Number.isFinite(equityPos.averagePrice) ? Number(equityPos.averagePrice) : null,
+          marketValue: Number.isFinite(equityPos.marketValue) ? Number(equityPos.marketValue) : null,
+        };
+      }
+    }
+
     const ticket = {
       ticker: upperTicker,
       isOption: isOption || hasMixedLegs,
@@ -881,6 +931,8 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       estMaxRisk,
       estMaxProfit,
       breakeven,
+      underlyingShares,
+      stockLeg,
       // Frontend-only echoes for faithful reopen.
       optionSymbol: !isMultiLeg && isOption ? optionSymbol : undefined,
       optionInstruction: !isMultiLeg && isOption ? optionInstruction : undefined,

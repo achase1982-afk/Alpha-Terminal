@@ -46,6 +46,26 @@ export interface ValidationTicket {
   estMaxRisk?: number | null;
   estMaxProfit?: number | null;
   breakeven?: number | null;
+  // Underlying-shares position the trader currently holds in the same
+  // ticker. Critical for covered-call, covered-put, married/protective-put,
+  // and assignment-cover validations — without this the bull/bear personas
+  // only see the option leg(s) and miss the most important coverage fact.
+  underlyingShares?: {
+    side: "long" | "short";
+    quantity: number;
+    averagePrice?: number | null;
+    marketValue?: number | null;
+  } | null;
+  // Stock leg attached to THIS order ticket (married put, covered call,
+  // collar, buy-write, etc). Distinct from `underlyingShares` (already in
+  // account). Both can be present simultaneously and BOTH must be evaluated
+  // as part of the combined position. If this is set, the strategist must
+  // treat the order as STOCK + OPTION combined, not options-only.
+  stockLeg?: {
+    instruction: "BUY" | "SELL";
+    quantity: number;
+    limitPrice?: number | null;
+  } | null;
 }
 
 export interface ValidationInput {
@@ -237,29 +257,101 @@ function buildDataPackage(input: ValidationInput): string {
   const lines: string[] = [];
   lines.push(`## TRADE TICKET UNDER VALIDATION`);
   lines.push(`Ticker: ${t.ticker}`);
-  lines.push(`Asset: ${t.isOption ? (t.isMultiLeg ? "OPTIONS (multi-leg)" : "OPTIONS (single)") : "EQUITY"}`);
+  const hasStockLeg = !!(t.stockLeg && t.stockLeg.quantity > 0);
+  const assetLabel = hasStockLeg
+    ? "STOCK + OPTIONS (combined order)"
+    : (t.isOption ? (t.isMultiLeg ? "OPTIONS (multi-leg)" : "OPTIONS (single)") : "EQUITY");
+  lines.push(`Asset: ${assetLabel}`);
   lines.push(`Intent: ${t.mode === "opening" ? "OPEN new position" : "CLOSE existing position"}`);
   if (t.side) lines.push(`Side: ${t.side}`);
   lines.push(`Order type: ${t.orderType}${t.duration ? ` · ${t.duration}` : ""}`);
-  lines.push(`Quantity: ${t.quantity} ${t.isOption ? "contract(s)" : "share(s)"}`);
+  if (!hasStockLeg) {
+    // When a stock leg is present, t.quantity duplicates the share count and
+    // would be misread as "contracts" — the per-leg breakdown below carries
+    // the authoritative quantities, so we suppress this line in mixed mode.
+    lines.push(`Quantity: ${t.quantity} ${t.isOption ? "contract(s)" : "share(s)"}`);
+  }
   if (t.limitPrice != null) lines.push(`Limit price: ${fmtNum(t.limitPrice)}`);
   if (t.netPrice != null) lines.push(`Net price (spread): ${fmtNum(t.netPrice)} (${t.isCredit ? "CREDIT" : "DEBIT"})`);
 
-  if (t.legs && t.legs.length > 0) {
+  const hasOptionLegs = !!(t.legs && t.legs.length > 0);
+  if (hasStockLeg || hasOptionLegs) {
     lines.push(``);
     lines.push(`## LEGS`);
-    t.legs.forEach((leg, i) => {
-      const parts = [
-        `Leg ${i + 1}:`,
-        leg.instruction,
-        leg.quantity != null ? `qty ${leg.quantity}` : "",
-        leg.strike != null ? `${leg.strike} ${leg.optionType ?? ""}` : "",
-        leg.expiration ? `exp ${leg.expiration}` : "",
-        leg.bid != null && leg.ask != null ? `bid ${fmtNum(leg.bid)}/ask ${fmtNum(leg.ask)}` : "",
-        leg.delta != null ? `Δ ${fmtNum(leg.delta, 3)}` : "",
-      ].filter(Boolean);
-      lines.push(parts.join(" "));
-    });
+    if (hasStockLeg) {
+      const sl = t.stockLeg!;
+      const px = sl.limitPrice != null ? ` @ ${fmtNum(sl.limitPrice)}` : "";
+      lines.push(
+        `Stock leg: ${sl.instruction} ${sl.quantity} share(s) of ${t.ticker}${px}`,
+      );
+    }
+    if (hasOptionLegs) {
+      t.legs!.forEach((leg, i) => {
+        const parts = [
+          `Option leg ${i + 1}:`,
+          leg.instruction,
+          leg.quantity != null ? `qty ${leg.quantity}` : "",
+          leg.strike != null ? `${leg.strike} ${leg.optionType ?? ""}` : "",
+          leg.expiration ? `exp ${leg.expiration}` : "",
+          leg.bid != null && leg.ask != null ? `bid ${fmtNum(leg.bid)}/ask ${fmtNum(leg.ask)}` : "",
+          leg.delta != null ? `Δ ${fmtNum(leg.delta, 3)}` : "",
+        ].filter(Boolean);
+        lines.push(parts.join(" "));
+      });
+    }
+
+    // ── Combined-position label so the LLM cannot ignore the share leg ──
+    // We always emit this section when both stock and option legs are present
+    // — even if no specific named structure is detected. This guarantees the
+    // model sees a hard "evaluate as combined position" directive instead of
+    // silently treating the option leg in isolation.
+    if (hasStockLeg && hasOptionLegs) {
+      const sl = t.stockLeg!;
+      const stockSide = sl.instruction === "BUY" ? "long" : "short";
+      const labels: string[] = [];
+
+      // Detect multi-leg structures FIRST so they aren't swallowed by the
+      // simpler per-leg branches below.
+      const longPuts = t.legs!.filter(l => l.optionType === "PUT" && (l.instruction || "").toUpperCase().startsWith("BUY"));
+      const shortCalls = t.legs!.filter(l => l.optionType === "CALL" && (l.instruction || "").toUpperCase().startsWith("SELL"));
+
+      const matched = new Set<ValidationLeg>();
+
+      if (stockSide === "long" && longPuts.length > 0 && shortCalls.length > 0) {
+        labels.push(`COLLAR — ${sl.quantity} long shares + ${longPuts.reduce((s, l) => s + (l.quantity ?? 1), 0)} long put(s) + ${shortCalls.reduce((s, l) => s + (l.quantity ?? 1), 0)} short call(s).`);
+        for (const l of longPuts) matched.add(l);
+        for (const l of shortCalls) matched.add(l);
+      }
+
+      // Per-leg structure detection for the remaining unmatched legs.
+      for (const leg of t.legs!) {
+        if (matched.has(leg) || !leg.optionType) continue;
+        const isShortOpt = (leg.instruction || "").toUpperCase().startsWith("SELL");
+        const isLongOpt = (leg.instruction || "").toUpperCase().startsWith("BUY");
+        const contracts = leg.quantity ?? 1;
+        if (stockSide === "long" && isLongOpt && leg.optionType === "PUT") {
+          labels.push(`MARRIED / PROTECTIVE PUT — ${sl.quantity} long shares + ${contracts} long put(s).`);
+        } else if (stockSide === "long" && isShortOpt && leg.optionType === "CALL") {
+          labels.push(`COVERED CALL / BUY-WRITE — ${sl.quantity} long shares + ${contracts} short call(s).`);
+        } else if (stockSide === "short" && isShortOpt && leg.optionType === "PUT") {
+          labels.push(`COVERED PUT — ${sl.quantity} short shares + ${contracts} short put(s).`);
+        } else if (stockSide === "short" && isLongOpt && leg.optionType === "CALL") {
+          labels.push(`PROTECTIVE CALL — ${sl.quantity} short shares + ${contracts} long call(s).`);
+        }
+      }
+
+      lines.push(``);
+      lines.push(`## COMBINED-ORDER STRUCTURE (this single ticket)`);
+      lines.push(
+        `This order combines a STOCK leg (${sl.instruction} ${sl.quantity} share(s) of ${t.ticker}) with ${t.legs!.length} OPTION leg(s) above.`,
+      );
+      if (labels.length > 0) {
+        for (const l of labels) lines.push(`- ${l}`);
+      } else {
+        lines.push(`- Structure: custom stock+options combination (no canonical name detected).`);
+      }
+      lines.push(`You MUST evaluate the order as the combined position above. Reasoning that addresses only the option leg(s) is incomplete and counts as a failed validation.`);
+    }
   }
 
   lines.push(``);
@@ -276,6 +368,50 @@ function buildDataPackage(input: ValidationInput): string {
     lines.push(`## UNDERLYING SNAPSHOT`);
     if (t.underlyingPrice != null) lines.push(`Last: ${fmtNum(t.underlyingPrice)}`);
     if (t.underlyingChangePct != null) lines.push(`Day change: ${fmtNum(t.underlyingChangePct, 2)}%`);
+  }
+
+  // ── EXISTING SHARES (covered / married / protective context) ──────────────
+  // The trader may already hold shares of the same underlying. This radically
+  // changes the risk profile of any option leg the ticket adds. If you ignore
+  // this block you will mis-evaluate covered calls, covered puts, married
+  // puts, protective puts, and assignment-cover trades.
+  if (t.underlyingShares && t.underlyingShares.quantity > 0) {
+    const us = t.underlyingShares;
+    lines.push(``);
+    lines.push(`## EXISTING UNDERLYING SHARES POSITION (already in account)`);
+    lines.push(
+      `${us.side.toUpperCase()} ${us.quantity} shares of ${t.ticker}` +
+      (us.averagePrice != null ? ` @ avg cost ${fmtNum(us.averagePrice)}` : "") +
+      (us.marketValue != null ? ` (market value ${fmtNum(us.marketValue)})` : ""),
+    );
+
+    // Heuristic coverage label so the LLM cannot miss the structure.
+    const coverageLabels: string[] = [];
+    if (t.legs && t.legs.length > 0) {
+      for (const leg of t.legs) {
+        if (!leg.optionType) continue;
+        const isShort = (leg.instruction || "").toUpperCase().startsWith("SELL");
+        const isLong = (leg.instruction || "").toUpperCase().startsWith("BUY");
+        const contracts = leg.quantity ?? t.quantity ?? 1;
+        const sharesCovered = contracts * 100;
+        if (us.side === "long" && isShort && leg.optionType === "CALL") {
+          coverageLabels.push(`COVERED CALL — ${us.quantity} long shares vs ${contracts} short calls (${sharesCovered} shares covered).`);
+        } else if (us.side === "long" && isLong && leg.optionType === "PUT") {
+          coverageLabels.push(`MARRIED / PROTECTIVE PUT — ${us.quantity} long shares hedged by ${contracts} long puts (${sharesCovered} shares hedged).`);
+        } else if (us.side === "short" && isShort && leg.optionType === "PUT") {
+          coverageLabels.push(`COVERED PUT — ${us.quantity} short shares paired with ${contracts} short puts (${sharesCovered} shares).`);
+        } else if (us.side === "short" && isLong && leg.optionType === "CALL") {
+          coverageLabels.push(`PROTECTIVE CALL — ${us.quantity} short shares hedged by ${contracts} long calls (${sharesCovered} shares hedged).`);
+        }
+      }
+    }
+    if (coverageLabels.length > 0) {
+      lines.push(`Detected coverage:`);
+      for (const cl of coverageLabels) lines.push(`  • ${cl}`);
+    }
+    lines.push(
+      `You MUST evaluate this trade as a combined position (shares + this ticket), not just the option leg(s) in isolation. If your reasoning does not address the share leg you have failed the validation.`,
+    );
   }
 
   if (t.mode === "closing") {

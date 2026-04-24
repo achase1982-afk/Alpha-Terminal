@@ -81,9 +81,43 @@ function formatLeg(l: NonNullable<StrategistValidationMeta["ticket"]["legs"]>[nu
   return `${action} ${qty}`;
 }
 
+function describeUnderlyingShares(
+  shares: NonNullable<StrategistValidationMeta["ticket"]["underlyingShares"]>,
+  ticker: string,
+): string {
+  const sideLabel = shares.side === "long" ? "Long" : "Short";
+  const avg = shares.averagePrice != null ? ` @ $${shares.averagePrice.toFixed(2)} avg` : "";
+  return `${sideLabel} ${shares.quantity.toLocaleString()} sh ${ticker}${avg}`;
+}
+
+function detectCoverageLabel(meta: StrategistValidationMeta | null | undefined): string | null {
+  const us = meta?.ticket?.underlyingShares;
+  const legs = meta?.ticket?.legs;
+  if (!us || us.quantity <= 0 || !legs || legs.length === 0) return null;
+  for (const leg of legs) {
+    if (!leg.optionType) continue;
+    const isShort = (leg.instruction || "").toUpperCase().startsWith("SELL");
+    const isLong = (leg.instruction || "").toUpperCase().startsWith("BUY");
+    if (us.side === "long" && isShort && leg.optionType === "CALL") return "Covered Call";
+    if (us.side === "long" && isLong && leg.optionType === "PUT") return "Married / Protective Put";
+    if (us.side === "short" && isShort && leg.optionType === "PUT") return "Covered Put";
+    if (us.side === "short" && isLong && leg.optionType === "CALL") return "Protective Call";
+  }
+  return null;
+}
+
 function describeTicket(meta: StrategistValidationMeta): string {
   const t = meta.ticket;
   const modeLabel = meta.mode === "closing" ? "Close" : "Open";
+  const sl = t.stockLeg;
+  const hasStockLeg = !!(sl && sl.quantity > 0);
+  const optLegCount = t.legs?.length ?? 0;
+  if (hasStockLeg && optLegCount > 0) {
+    const optDesc = optLegCount === 1
+      ? formatLeg(t.legs![0])
+      : `${optLegCount}-leg options`;
+    return `${modeLabel} · ${t.ticker}  ·  ${sl!.instruction} ${sl!.quantity} sh + ${optDesc}`;
+  }
   if (!t.isOption) {
     return `${modeLabel} · ${t.side ?? ""} ${t.quantity} ${t.ticker}`.replace(/\s+/g, " ").trim();
   }
@@ -132,16 +166,34 @@ export function validationCardToPlainText(
     const summary = describeTicket(meta);
     if (summary) lines.push("", "TICKET", summary);
 
-    if (meta.ticket?.legs && meta.ticket.legs.length > 0) {
+    if (
+      (meta.ticket?.stockLeg && meta.ticket.stockLeg.quantity > 0) ||
+      (meta.ticket?.legs && meta.ticket.legs.length > 0)
+    ) {
       lines.push("", "LEGS");
-      for (const l of meta.ticket.legs) {
-        lines.push("  " + formatLeg(l));
+      const sl = meta.ticket.stockLeg;
+      if (sl && sl.quantity > 0) {
+        const px = sl.limitPrice != null ? ` @ $${sl.limitPrice.toFixed(2)}` : "";
+        lines.push(`  Stock leg: ${sl.instruction} ${sl.quantity} sh ${meta.ticket.ticker}${px}`);
+      }
+      if (meta.ticket.legs) {
+        for (const l of meta.ticket.legs) {
+          lines.push("  " + formatLeg(l));
+        }
       }
       if (meta.ticket.netPrice != null) {
         lines.push(
           `  Net ${meta.ticket.isCredit ? "credit" : "debit"}: $${Math.abs(meta.ticket.netPrice).toFixed(2)}`,
         );
       }
+    }
+
+    // Existing underlying-share position (covered/married/protective context)
+    if (meta.ticket?.underlyingShares && meta.ticket.underlyingShares.quantity > 0) {
+      const coverage = detectCoverageLabel(meta);
+      lines.push("", "EXISTING UNDERLYING POSITION");
+      lines.push("  " + describeUnderlyingShares(meta.ticket.underlyingShares, meta.ticket.ticker));
+      if (coverage) lines.push(`  Detected structure: ${coverage}`);
     }
   }
 
@@ -175,18 +227,20 @@ export function validationCardToPlainText(
   return lines.join("\n");
 }
 
-function CopyValidationButton({
-  payload,
-  meta,
-  generatedAt,
+// Generic copy-to-clipboard button used across the validation card sections.
+// Accepts a function so we can defer text serialization until click time
+// (which keeps re-render cost low and allows lazy heavy serializers).
+function CopyTextButton({
+  getText,
+  ariaLabel,
 }: {
-  payload: ValidationVerdictPayload;
-  meta: StrategistValidationMeta | null | undefined;
-  generatedAt?: string | number | null;
+  getText: () => string;
+  ariaLabel: string;
 }) {
   const [copied, setCopied] = useState(false);
-  const onCopy = useCallback(async () => {
-    const text = validationCardToPlainText(payload, meta, generatedAt ?? undefined);
+  const onCopy = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const text = getText();
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
@@ -207,11 +261,11 @@ function CopyValidationButton({
         // give up silently
       }
     }
-  }, [payload, meta, generatedAt]);
+  }, [getText]);
   return (
     <button
       onClick={onCopy}
-      aria-label="Copy validation card to clipboard"
+      aria-label={ariaLabel}
       className="flex items-center gap-1 px-2 py-0.5 rounded font-mono text-[10px] uppercase tracking-wider transition-all active:scale-95"
       style={{
         background: copied ? "rgba(46, 204, 113, 0.15)" : "rgba(255,255,255,0.06)",
@@ -222,6 +276,23 @@ function CopyValidationButton({
       {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
       <span>{copied ? "Copied" : "Copy"}</span>
     </button>
+  );
+}
+
+function CopyValidationButton({
+  payload,
+  meta,
+  generatedAt,
+}: {
+  payload: ValidationVerdictPayload;
+  meta: StrategistValidationMeta | null | undefined;
+  generatedAt?: string | number | null;
+}) {
+  return (
+    <CopyTextButton
+      ariaLabel="Copy validation card to clipboard"
+      getText={() => validationCardToPlainText(payload, meta, generatedAt ?? undefined)}
+    />
   );
 }
 
@@ -743,6 +814,65 @@ export function StrategistValidationCard({
           </div>
         )}
       </div>
+
+      {/* ── Stock leg attached to THIS order ticket (married put / covered call / collar) ── */}
+      {meta?.ticket?.stockLeg && meta.ticket.stockLeg.quantity > 0 && (() => {
+        const sl = meta.ticket.stockLeg;
+        const accent = sl.instruction === "BUY" ? "#4ade80" : "#f87171";
+        const px = sl.limitPrice != null ? ` @ $${sl.limitPrice.toFixed(2)}` : "";
+        return (
+          <div className="px-4 pt-3">
+            <div
+              className="rounded-lg px-3 py-2.5"
+              style={{ background: "#0d0d0d", border: `1px solid ${accent}30`, borderLeft: `3px solid ${accent}` }}
+            >
+              <div style={{ color: "#404040", fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 3 }}>
+                Order ticket includes stock leg
+              </div>
+              <div style={{ color: "#e5e5e5", fontSize: 13, fontWeight: 600 }}>
+                {sl.instruction} {sl.quantity.toLocaleString()} sh {meta.ticket.ticker}{px}
+              </div>
+              <div style={{ color: "#737373", fontSize: 10, marginTop: 4 }}>
+                Strategist evaluated this combined order, not the option leg in isolation.
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Existing underlying-shares position (covered/married context) ── */}
+      {meta?.ticket?.underlyingShares && meta.ticket.underlyingShares.quantity > 0 && (() => {
+        const us = meta.ticket.underlyingShares;
+        const coverage = detectCoverageLabel(meta);
+        const accent = us.side === "long" ? "#4ade80" : "#f87171";
+        return (
+          <div className="px-4 pt-3">
+            <div
+              className="rounded-lg px-3 py-2.5"
+              style={{ background: "#0d0d0d", border: `1px solid ${accent}30`, borderLeft: `3px solid ${accent}` }}
+            >
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <div style={{ color: "#404040", fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 3 }}>
+                    Existing position in {meta.ticket.ticker}
+                  </div>
+                  <div style={{ color: "#e5e5e5", fontSize: 13, fontWeight: 600 }}>
+                    {describeUnderlyingShares(us, meta.ticket.ticker)}
+                  </div>
+                </div>
+                {coverage && (
+                  <span
+                    className="px-2 py-0.5 rounded font-semibold"
+                    style={{ background: `${accent}14`, color: accent, border: `1px solid ${accent}40`, fontSize: 10, letterSpacing: "0.04em" }}
+                  >
+                    {coverage}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Trader context ── */}
       {(meta?.thesis || meta?.rollingShort) && (

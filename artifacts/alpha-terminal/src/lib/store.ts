@@ -284,6 +284,24 @@ export interface StrategistValidationMeta {
     estMaxRisk?: number | null;
     estMaxProfit?: number | null;
     breakeven?: number | null;
+    // Underlying-shares position the trader currently holds in the same
+    // ticker. Critical context for validating covered calls, covered puts,
+    // married/protective puts, and assignment-mitigation trades.
+    underlyingShares?: {
+      side: 'long' | 'short';
+      quantity: number;
+      averagePrice?: number | null;
+      marketValue?: number | null;
+    } | null;
+    // Stock leg attached to THIS order ticket (e.g. when the trader builds a
+    // married-put / covered-call ticket from the stock screen with option
+    // legs added). Distinct from `underlyingShares` (which is a position
+    // already in the account). Both can be present simultaneously.
+    stockLeg?: {
+      instruction: 'BUY' | 'SELL';
+      quantity: number;
+      limitPrice?: number | null;
+    } | null;
     // Frontend-only echoes (not sent to LLM) used to faithfully reopen the
     // OrderTicket from a strategist verdict card.
     optionSymbol?: string;
