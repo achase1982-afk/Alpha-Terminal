@@ -7,6 +7,7 @@ import {
 } from "./aiLabAnalystClient.js";
 import { getSettings, getStrategistModel } from "./strategistSettings.js";
 import type { StrategistModelOption } from "./strategistSettings.js";
+import { scrubAll } from "./narrativeScrubbers.js";
 
 export type ValidationVerdict = "PROCEED" | "PROCEED_WITH_CAUTION" | "DO_NOT_PROCEED";
 export type ValidationMode = "opening" | "closing";
@@ -72,6 +73,16 @@ export interface ValidationInput {
   ticket: ValidationTicket;
   thesis?: string; // user-supplied thesis text
   rollingShort?: boolean;
+  // Server-fetched market context. Pulled from equity_daily.ivr (canonical
+  // source) by the route layer so the validators don't have to trust
+  // client-supplied numbers. If null/undefined the data package omits the
+  // VOL CONTEXT section entirely (no placeholder substitutions, no fake
+  // defaults — same discipline as StrategistV2).
+  marketContext?: {
+    ivr: number | null;
+    ivrAsOfDate?: string | null;
+    ivrSource?: "chain" | "flow" | "hv_proxy" | "canonical" | null;
+  } | null;
 }
 
 export interface ValidationVerdictPayload {
@@ -422,6 +433,31 @@ function buildDataPackage(input: ValidationInput): string {
     if (t.daysHeld != null) lines.push(`Days held: ${t.daysHeld}`);
   }
 
+  // ── VOL CONTEXT ────────────────────────────────────────────────────────
+  // Canonical IVR from equity_daily.ivr (same source the per-ticker
+  // strategist and scanner use). Server-fetched so the model sees an
+  // authoritative number rather than reaching for placeholder syntax.
+  const mc = input.marketContext;
+  if (mc && mc.ivr != null && Number.isFinite(mc.ivr)) {
+    const ivrInt = Math.round(mc.ivr);
+    let band: string;
+    if (ivrInt < 30) band = "LOW (favors debit structures — premium is cheap)";
+    else if (ivrInt < 50) band = "BELOW-AVERAGE (slight debit lean)";
+    else if (ivrInt < 70) band = "ELEVATED (slight credit lean)";
+    else band = "HIGH (favors credit structures — premium is rich, IV-crush risk on long premium)";
+    lines.push(``);
+    lines.push(`## VOL CONTEXT`);
+    lines.push(`IVR (IV Rank, 252-day, 0-100): ${ivrInt} — ${band}`);
+    if (mc.ivrAsOfDate) lines.push(`IVR as of: ${mc.ivrAsOfDate}`);
+    if (mc.ivrSource) {
+      const sourceNote = mc.ivrSource === "hv_proxy"
+        ? "hv_proxy (derived from realized vol × VRP — true IV often runs 5-15% higher; lean slightly toward credits in low-IVR proxy reads, demand stronger directional thesis before paying premium)"
+        : `${mc.ivrSource} (treat with full confidence)`;
+      lines.push(`IVR source: ${sourceNote}`);
+    }
+    lines.push(`Cite IVR in your reasoning when it's relevant to debit-vs-credit choice or IV-crush risk. Use the literal value above; do NOT invent a different number.`);
+  }
+
   if (input.thesis && input.thesis.trim().length > 0) {
     lines.push(``);
     lines.push(`## TRADER THESIS (verbatim, user-supplied)`);
@@ -473,8 +509,13 @@ async function runTurn(args: {
   role: ValidationTurn["role"];
   phase: ValidationTurn["phase"];
   callbacks?: ValidationCallbacks;
+  // Canonical scalars used to scrub hallucinated `{{IVR}}` / `{{PC_RATIO}}`
+  // tokens out of the model output before it lands in the transcript and
+  // before JSON parsing. Same scrubber the StrategistV2 narrative pipeline
+  // uses; null canonical = no-op (token survives, matching today's behavior).
+  scrubCanonical?: { ivr: number | null; pcRatio: number | null };
 }): Promise<{ text: string; trace: WebSearchTrace; turnId: string }> {
-  const { modelOpt, systemPrompt, prompt, round, role, phase, callbacks } = args;
+  const { modelOpt, systemPrompt, prompt, round, role, phase, callbacks, scrubCanonical } = args;
   const turnId = newTurnId();
   callbacks?.onTurnStart?.({
     id: turnId, round, role, phase,
@@ -484,8 +525,22 @@ async function runTurn(args: {
   const onDelta = (delta: string) => { acc += delta; callbacks?.onTurnDelta?.(turnId, delta); };
   try {
     const r = await streamModel(modelOpt, systemPrompt, prompt, onDelta, (s) => callbacks?.onStatus?.(s));
-    callbacks?.onTurnDone?.(turnId, r.text);
-    return { text: r.text, trace: r.trace, turnId };
+    let finalText = r.text;
+    if (scrubCanonical && (scrubCanonical.ivr != null || scrubCanonical.pcRatio != null)) {
+      const sr = scrubAll(finalText, scrubCanonical);
+      if (sr.replacements.length > 0) {
+        logger.warn(
+          { round, role, phase, replacements: sr.replacements, canonical: scrubCanonical },
+          "TradeValidation: scrubber replaced hallucinated values in turn output",
+        );
+        finalText = sr.text;
+      }
+    }
+    // onTurnDone REPLACES the streaming-accumulated text with finalText, so
+    // the user-visible transcript ends up with the scrubbed copy even if
+    // mid-stream tokens briefly showed `{{IVR}}`.
+    callbacks?.onTurnDone?.(turnId, finalText);
+    return { text: finalText, trace: r.trace, turnId };
   } catch (err) {
     callbacks?.onTurnDone?.(turnId, acc + `\n\n[error: ${err instanceof Error ? err.message : String(err)}]`);
     throw err;
@@ -652,18 +707,28 @@ export async function runTradeValidation(
 
   const dataPackage = buildDataPackage(input);
 
+  // Canonical scalars for the post-stream scrubber. Pulled from the same
+  // marketContext we expose in the data package, so any `{{IVR}}` token the
+  // model emits gets replaced with the same number the validators were
+  // shown. P/C ratio is not currently surfaced to the validators, so we
+  // leave it null (scrubber treats null as no-op).
+  const scrubCanonical = {
+    ivr: input.marketContext?.ivr ?? null,
+    pcRatio: null as number | null,
+  };
+
   // ── Round 1 (parallel) ──
   callbacks?.onStatus?.("Round 1 — Bull and Bear pitching cases on this trade…");
   const [r1a, r1b] = await Promise.all([
-    runTurn({ modelOpt: labeledA, systemPrompt: sysA, prompt: ROUND_1(today, "BULL", input.ticket.mode, dataPackage), round: 1, role: "A", phase: "propose", callbacks }),
-    runTurn({ modelOpt: labeledB, systemPrompt: sysB, prompt: ROUND_1(today, "BEAR", input.ticket.mode, dataPackage), round: 1, role: "B", phase: "propose", callbacks }),
+    runTurn({ modelOpt: labeledA, systemPrompt: sysA, prompt: ROUND_1(today, "BULL", input.ticket.mode, dataPackage), round: 1, role: "A", phase: "propose", callbacks, scrubCanonical }),
+    runTurn({ modelOpt: labeledB, systemPrompt: sysB, prompt: ROUND_1(today, "BEAR", input.ticket.mode, dataPackage), round: 1, role: "B", phase: "propose", callbacks, scrubCanonical }),
   ]);
 
   // ── Round 2 (parallel) ──
   callbacks?.onStatus?.("Round 2 — rebutting…");
   const [r2a, r2b] = await Promise.all([
-    runTurn({ modelOpt: labeledA, systemPrompt: sysA, prompt: ROUND_2("BULL", r1a.text, r1b.text), round: 2, role: "A", phase: "critique", callbacks }),
-    runTurn({ modelOpt: labeledB, systemPrompt: sysB, prompt: ROUND_2("BEAR", r1b.text, r1a.text), round: 2, role: "B", phase: "critique", callbacks }),
+    runTurn({ modelOpt: labeledA, systemPrompt: sysA, prompt: ROUND_2("BULL", r1a.text, r1b.text), round: 2, role: "A", phase: "critique", callbacks, scrubCanonical }),
+    runTurn({ modelOpt: labeledB, systemPrompt: sysB, prompt: ROUND_2("BEAR", r1b.text, r1a.text), round: 2, role: "B", phase: "critique", callbacks, scrubCanonical }),
   ]);
 
   // Confidence after R2 (used as fallback if R3 JSON is malformed).
@@ -677,8 +742,8 @@ export async function runTradeValidation(
   // ── Round 3 (parallel) — final verdicts ──
   callbacks?.onStatus?.("Round 3 — final verdicts…");
   const [r3a, r3b] = await Promise.all([
-    runTurn({ modelOpt: labeledA, systemPrompt: sysA, prompt: ROUND_3("BULL", input.ticket.mode, r1a.text, r2a.text, r1b.text, r2b.text), round: 3, role: "A", phase: "final", callbacks }),
-    runTurn({ modelOpt: labeledB, systemPrompt: sysB, prompt: ROUND_3("BEAR", input.ticket.mode, r1b.text, r2b.text, r1a.text, r2a.text), round: 3, role: "B", phase: "final", callbacks }),
+    runTurn({ modelOpt: labeledA, systemPrompt: sysA, prompt: ROUND_3("BULL", input.ticket.mode, r1a.text, r2a.text, r1b.text, r2b.text), round: 3, role: "A", phase: "final", callbacks, scrubCanonical }),
+    runTurn({ modelOpt: labeledB, systemPrompt: sysB, prompt: ROUND_3("BEAR", input.ticket.mode, r1b.text, r2b.text, r1a.text, r2a.text), round: 3, role: "B", phase: "final", callbacks, scrubCanonical }),
   ]);
 
   const r3aJson = safeParseJsonObject(r3a.text);

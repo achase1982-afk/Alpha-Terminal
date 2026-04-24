@@ -8,6 +8,7 @@ import {
   type ValidationTicket,
   type ValidationVerdictPayload,
 } from "../lib/strategistValidate.js";
+import { getStoredIVR } from "../lib/ivNormalize.js";
 import { db, strategistTelemetryTable, scannerTelemetryTable, strategistHistoryTable } from "@workspace/db";
 import { desc, eq, sql, lte, and } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
@@ -256,10 +257,33 @@ router.post("/validate-trade", (req, res): void => {
       ticket: meta.ticket,
       thesis: meta.thesis,
       rollingShort: meta.rollingShort,
+      // marketContext is filled in inside the async block so the fetch can
+      // await getStoredIVR() without blocking the HTTP response.
     };
 
     void (async () => {
       try {
+        // Canonical IVR from equity_daily.ivr — single source of truth across
+        // the app. If null (no row for this ticker), the data package omits
+        // VOL CONTEXT and the scrubber is a no-op (any `{{IVR}}` token the
+        // model emits will survive into the transcript, which is the correct
+        // signal that we have no canonical value to substitute).
+        try {
+          const storedIvr = await getStoredIVR(upperTicker);
+          if (storedIvr) {
+            input.marketContext = {
+              ivr: storedIvr.ivr,
+              ivrAsOfDate: storedIvr.asOfDate,
+              ivrSource: storedIvr.source,
+            };
+          }
+        } catch (ivrErr) {
+          logger.warn(
+            { ivrErr, jobId, ticker: upperTicker },
+            "TradeValidation: getStoredIVR failed (non-fatal — proceeding without VOL CONTEXT)",
+          );
+        }
+
         const result = await runTradeValidation(input, {
           onStatus: (s) => { entry.status = s; },
           onTurnStart: (turn) => {
