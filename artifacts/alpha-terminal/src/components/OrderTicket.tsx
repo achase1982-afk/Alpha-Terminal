@@ -5,6 +5,7 @@ import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { startStrategistPolling } from "@/lib/strategistPoller";
 import { computeStrategyEconomics } from "@/lib/strategyCalculator";
+import { useGetOptionChain } from "@workspace/api-client-react";
 import {
   X, Minus, Plus, Loader2, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp,
   ShieldX, Lock, Unlock,
@@ -18,6 +19,20 @@ type ConfirmStage = "form" | "review" | "submitting" | "success" | "error";
 type RiskLevel = "GREEN" | "YELLOW" | "RED";
 type PositionEffect = "OPENING" | "CLOSING" | "AUTO";
 type TicketMode = "options" | "stock";
+
+// An option leg added on top of an equity (stock) ticket.
+type MixedOptionLeg = {
+  id: string;
+  optionType: "CALL" | "PUT" | null;
+  expiration: string | null; // YYYY-MM-DD
+  strike: number | null;
+  side: "BUY" | "SELL";
+  quantity: number;
+  bid: number | null;
+  ask: number | null;
+  delta: number | null;
+  limitPrice: string;
+};
 
 const STOCK_ORDER_TYPES: { value: OrderType; label: string; short: string }[] = [
   { value: "MARKET", label: "Market", short: "MKT" },
@@ -336,6 +351,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const preTradeMinDTE = useTerminalStore((s) => s.preTradeMinDTE);
   const accountSize = useTerminalStore((s) => s.accountSize);
   const stratMinPoP = useTerminalStore((s) => s.stratMinPoP);
+  const accessToken = useTerminalStore((s) => s.accessToken);
 
   const [side, setSide] = useState<OrderSide>(initialSide ?? "BUY");
   const [orderType, setOrderType] = useState<OrderType>("LIMIT");
@@ -364,6 +380,11 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const [thesisText, setThesisText] = useState("");
   const [rollingShort, setRollingShort] = useState(false);
   const [strategistDispatchInFlight, setStrategistDispatchInFlight] = useState(false);
+  // Mixed equity + option legs (only on stock tickets)
+  const [extraOptionLegs, setExtraOptionLegs] = useState<MixedOptionLeg[]>([]);
+  const [chainFetchEnabled, setChainFetchEnabled] = useState(false);
+  // Quantity display string so the user can clear and retype freely
+  const [qtyDisplay, setQtyDisplay] = useState("1");
   const qtyInputRef = useRef<HTMLInputElement>(null);
 
   const isMultiLeg = !!strategyLegs && strategyLegs.length >= 1;
@@ -421,6 +442,9 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     setThesisText("");
     setRollingShort(false);
     setStrategistDispatchInFlight(false);
+    setExtraOptionLegs([]);
+    setChainFetchEnabled(false);
+    setQtyDisplay("1");
   }, [isOpen, initialSide, isMultiLeg, strategyNetPrice]);
 
   const [balances, setBalances] = useState<{ buyingPower: number | null; cashBalance: number | null; liquidationValue: number | null }>({ buyingPower: null, cashBalance: null, liquidationValue: null });
@@ -463,6 +487,50 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     }
   }, [isOpen, quote?.ask, quote?.bid, isMultiLeg, isCloseOrder, strategyNetPrice]);
 
+  // ── Options chain for mixed equity+option legs ───────────────────────────
+  const { data: extraChainData, isLoading: extraChainLoading } = useGetOptionChain(
+    { symbol, accessToken: accessToken || "", contractType: "ALL", strikeCount: 100 },
+    { query: { enabled: !isMultiLeg && !isOption && chainFetchEnabled && !!accessToken, staleTime: 60_000, gcTime: 5 * 60_000 } }
+  );
+
+  const chainExpirations = useMemo<string[]>(() => {
+    if (!extraChainData) return [];
+    type C = { expiration?: string };
+    const all = [...((extraChainData.calls ?? []) as C[]), ...((extraChainData.puts ?? []) as C[])];
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const c of all) {
+      if (c.expiration && !seen.has(c.expiration)) { seen.add(c.expiration); result.push(c.expiration); }
+    }
+    return result.sort();
+  }, [extraChainData]);
+
+  const getExtraChainDTE = (exp: string): number => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const d = new Date(exp + "T00:00:00"); d.setHours(0, 0, 0, 0);
+    return Math.max(0, Math.ceil((d.getTime() - today.getTime()) / 86400000));
+  };
+
+  const formatExpLabel = (exp: string): string => {
+    const d = new Date(exp + "T00:00:00");
+    const mon = d.toLocaleString("en-US", { month: "short" });
+    return `${mon} ${d.getDate()} · ${getExtraChainDTE(exp)} DTE`;
+  };
+
+  const getStrikesForMixedLeg = (leg: MixedOptionLeg): number[] => {
+    if (!extraChainData || !leg.optionType || !leg.expiration) return [];
+    type C = { expiration?: string; strike?: number };
+    const contracts = (leg.optionType === "CALL" ? (extraChainData.calls ?? []) : (extraChainData.puts ?? [])) as C[];
+    return contracts.filter(c => c.expiration === leg.expiration).map(c => c.strike!).filter(Boolean).sort((a, b) => a - b);
+  };
+
+  const getContractForMixedLeg = (leg: MixedOptionLeg) => {
+    if (!extraChainData || !leg.optionType || !leg.expiration || !leg.strike) return null;
+    type C = { expiration?: string; strike?: number; bid?: number; ask?: number; delta?: number };
+    const contracts = (leg.optionType === "CALL" ? (extraChainData.calls ?? []) : (extraChainData.puts ?? [])) as C[];
+    return contracts.find(c => c.expiration === leg.expiration && c.strike === leg.strike) ?? null;
+  };
+
   const needsLimit = orderType === "LIMIT" || orderType === "STOP_LIMIT" || orderType === "TRAILING_STOP_LIMIT" || orderType === "LIMIT_ON_CLOSE" || orderType === "WALK_LIMIT";
   const needsStop = orderType === "STOP" || orderType === "STOP_LIMIT" || orderType === "TRAILING_STOP_LIMIT";
   const needsTrail = orderType === "TRAILING_STOP" || orderType === "TRAILING_STOP_LIMIT";
@@ -485,6 +553,17 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     const multiplier = isOption ? 100 : 1;
     return price * quantity * multiplier;
   }, [orderType, side, quote?.ask, quote?.bid, quote?.last, limitPrice, stopPrice, quantity, needsLimit, needsStop, isOption, isMultiLeg, strategyNetPrice]);
+
+  // Net debit when extra option legs are added to a stock ticket
+  const mixedNetDebit = useMemo(() => {
+    const stockCost = estimatedCost ?? 0;
+    const optCost = extraOptionLegs.reduce((sum, leg) => {
+      if (leg.strike === null) return sum;
+      const mid = leg.bid != null && leg.ask != null ? (leg.bid + leg.ask) / 2 : parseFloat(leg.limitPrice) || 0;
+      return sum + ((leg.side === "BUY" ? 1 : -1) * mid * leg.quantity * 100);
+    }, 0);
+    return stockCost + optCost;
+  }, [estimatedCost, extraOptionLegs]);
 
   const optionMarkEstimate = isCloseOrder && isOption && !isMultiLeg && strategyNetPrice != null && strategyNetPrice > 0 ? strategyNetPrice : null;
   const effectiveBid = isMultiLeg && spreadPrices
@@ -746,6 +825,9 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       estMaxRisk = px * quantity;
     }
 
+    const configuredExtraLegs = extraOptionLegs.filter(l => l.strike !== null);
+    const hasMixedLegs = !isMultiLeg && !isOption && configuredExtraLegs.length > 0;
+
     const validationLegs = isMultiLeg && strategyLegs
       ? strategyLegs.map(l => ({
           instruction: l.instruction,
@@ -764,12 +846,23 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               bid: quote?.bid ?? null,
               ask: quote?.ask ?? null,
             }]
-          : undefined);
+          : hasMixedLegs
+            ? configuredExtraLegs.map(l => ({
+                instruction: l.side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN",
+                strike: l.strike!,
+                optionType: l.optionType!,
+                expiration: l.expiration!,
+                quantity: l.quantity,
+                bid: l.bid ?? null,
+                ask: l.ask ?? null,
+                delta: l.delta ?? null,
+              }))
+            : undefined);
 
     const ticket = {
       ticker: upperTicker,
-      isOption,
-      isMultiLeg,
+      isOption: isOption || hasMixedLegs,
+      isMultiLeg: isMultiLeg || hasMixedLegs,
       mode,
       side,
       orderType,
@@ -1298,15 +1391,16 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                       <span className="ml-1 text-[11px]" style={{ color: TEXT }}>Spreads · 100sh/ct</span>
                     </div>
                     <div className="inline-flex items-center" style={{ borderRadius: 14, border: `1px solid ${BORDER}`, overflow: "hidden" }}>
-                      <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="flex items-center justify-center transition-colors active:opacity-70" style={{ width: 24, height: 22, color: TEXT, background: "transparent", border: "none" }} aria-label="Decrease quantity">
+                      <button onClick={() => { const n = Math.max(1, quantity - 1); setQuantity(n); setQtyDisplay(String(n)); }} className="flex items-center justify-center transition-colors active:opacity-70" style={{ width: 24, height: 22, color: TEXT, background: "transparent", border: "none" }} aria-label="Decrease quantity">
                         <Minus className="w-3 h-3" />
                       </button>
-                      <input ref={qtyInputRef} type="number" inputMode="numeric" value={quantity}
-                        onChange={(e) => { const v = parseInt(e.target.value); if (!isNaN(v) && v >= 0) setQuantity(v); }}
-                        className="text-center text-[12px] bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                      <input ref={qtyInputRef} type="text" inputMode="numeric" value={qtyDisplay}
+                        onChange={(e) => { const raw = e.target.value.replace(/[^0-9]/g, ""); setQtyDisplay(raw); const v = parseInt(raw); if (!isNaN(v) && v >= 1) setQuantity(v); }}
+                        onBlur={() => { if (!qtyDisplay || parseInt(qtyDisplay) < 1) { setQtyDisplay(String(quantity)); } }}
+                        className="text-center text-[12px] bg-transparent outline-none"
                         style={{ color: WHITE, minWidth: 26, width: 26, border: "none", fontFamily: SYS_FONT }}
                       />
-                      <button onClick={() => setQuantity(quantity + 1)} className="flex items-center justify-center transition-colors active:opacity-70" style={{ width: 24, height: 22, color: TEXT, background: "transparent", border: "none" }} aria-label="Increase quantity">
+                      <button onClick={() => { const n = quantity + 1; setQuantity(n); setQtyDisplay(String(n)); }} className="flex items-center justify-center transition-colors active:opacity-70" style={{ width: 24, height: 22, color: TEXT, background: "transparent", border: "none" }} aria-label="Increase quantity">
                         <Plus className="w-3 h-3" />
                       </button>
                     </div>
@@ -1350,15 +1444,16 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                   <div className="flex items-center justify-between">
                     <div style={{ fontSize: S.body, color: TEXT }}>{isOption ? "Contracts" : "Shares"}</div>
                     <div className="inline-flex items-center" style={{ borderRadius: 999, border: `1px solid ${BORDER}`, overflow: "hidden" }}>
-                      <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="flex items-center justify-center" style={{ width: 28, height: 26, color: TEXT, background: "transparent", border: "none" }} aria-label="Decrease quantity">
+                      <button onClick={() => { const n = Math.max(1, quantity - 1); setQuantity(n); setQtyDisplay(String(n)); }} className="flex items-center justify-center" style={{ width: 28, height: 26, color: TEXT, background: "transparent", border: "none" }} aria-label="Decrease quantity">
                         <Minus className="w-3.5 h-3.5" />
                       </button>
-                      <input ref={qtyInputRef} type="number" inputMode="numeric" value={quantity}
-                        onChange={(e) => { const v = parseInt(e.target.value); if (!isNaN(v) && v >= 0) setQuantity(v); }}
-                        className="text-center bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                      <input ref={qtyInputRef} type="text" inputMode="numeric" value={qtyDisplay}
+                        onChange={(e) => { const raw = e.target.value.replace(/[^0-9]/g, ""); setQtyDisplay(raw); const v = parseInt(raw); if (!isNaN(v) && v >= 1) setQuantity(v); }}
+                        onBlur={() => { if (!qtyDisplay || parseInt(qtyDisplay) < 1) { setQtyDisplay(String(quantity)); } }}
+                        className="text-center bg-transparent outline-none"
                         style={{ fontSize: S.heading, color: WHITE, minWidth: 32, width: 32, border: "none", fontFamily: SYS_FONT }}
                       />
-                      <button onClick={() => setQuantity(quantity + 1)} className="flex items-center justify-center" style={{ width: 28, height: 26, color: TEXT, background: "transparent", border: "none" }} aria-label="Increase quantity">
+                      <button onClick={() => { const n = quantity + 1; setQuantity(n); setQtyDisplay(String(n)); }} className="flex items-center justify-center" style={{ width: 28, height: 26, color: TEXT, background: "transparent", border: "none" }} aria-label="Increase quantity">
                         <Plus className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -1481,6 +1576,150 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                   <span>Est. fees —</span>
                   <span>BP after trade {fmtCurrency(Math.max(0, (accountSize || 0) - Math.abs(estimatedCost ?? 0)))}</span>
                 </div>
+
+                {/* ── Mixed equity + option legs ──────────────────────────── */}
+                {!isOption && (
+                  <div className="mt-3" style={{ borderTop: `1px dashed ${DIVIDER}`, paddingTop: 8 }}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span style={{ fontSize: S.label, color: MUTED }}>Option legs</span>
+                      <button
+                        onClick={() => {
+                          setChainFetchEnabled(true);
+                          setExtraOptionLegs(prev => [...prev, { id: `leg_${Date.now()}`, optionType: null, expiration: null, strike: null, side: "BUY", quantity: 1, bid: null, ask: null, delta: null, limitPrice: "" }]);
+                        }}
+                        className="flex items-center gap-1 px-2 py-0.5"
+                        style={{ fontSize: S.tiny, color: GOLD, border: `1px solid ${GOLD}60`, background: GOLD_DIM, borderRadius: 999 }}
+                      >
+                        <Plus className="w-3 h-3" /> Add Option
+                      </button>
+                    </div>
+
+                    {extraOptionLegs.map((leg, idx) => (
+                      <div key={leg.id} className="mb-2 rounded-lg p-2" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${BORDER}` }}>
+                        {/* Leg header */}
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span style={{ fontSize: S.tiny, color: MUTED }}>Leg {idx + 1}</span>
+                          <button onClick={() => setExtraOptionLegs(prev => prev.filter(l => l.id !== leg.id))} style={{ color: MUTED, background: "none", border: "none", cursor: "pointer", display: "flex" }}>
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+
+                        {/* BUY / SELL toggle */}
+                        <div className="inline-flex mb-2" style={{ borderRadius: 999, overflow: "hidden", border: `1px solid ${BORDER}` }}>
+                          {(["BUY", "SELL"] as const).map(s => (
+                            <button key={s} onClick={() => setExtraOptionLegs(prev => prev.map(l => l.id === leg.id ? { ...l, side: s } : l))}
+                              className="px-3 py-0.5 transition-all"
+                              style={{ fontSize: S.tiny, background: leg.side === s ? (s === "BUY" ? UP : DOWN) : "transparent", color: leg.side === s ? WHITE : MUTED, border: "none" }}>
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Step 1: Call or Put */}
+                        {!leg.optionType ? (
+                          <div className="flex gap-2">
+                            {(["CALL", "PUT"] as const).map(t => (
+                              <button key={t}
+                                onClick={() => setExtraOptionLegs(prev => prev.map(l => l.id === leg.id ? { ...l, optionType: t } : l))}
+                                className="flex-1 py-1.5 rounded-lg transition-all"
+                                style={{ fontSize: S.tiny, border: `1px solid ${BORDER}`, background: FIELD, color: TEXT }}>
+                                {t}
+                              </button>
+                            ))}
+                          </div>
+                        ) : !leg.expiration ? (
+                          /* Step 2: Expiration */
+                          <div>
+                            <div className="flex items-center gap-1 mb-1">
+                              <button onClick={() => setExtraOptionLegs(prev => prev.map(l => l.id === leg.id ? { ...l, optionType: null } : l))} style={{ color: MUTED, background: "none", border: "none", cursor: "pointer", display: "flex" }}>
+                                <ArrowLeft className="w-3 h-3" />
+                              </button>
+                              <span style={{ fontSize: S.tiny, color: MUTED }}>{leg.optionType} · Pick expiration</span>
+                            </div>
+                            {extraChainLoading ? (
+                              <div className="flex items-center gap-1" style={{ color: MUTED, fontSize: S.tiny }}>
+                                <Loader2 className="w-3 h-3 animate-spin" /> Loading chain…
+                              </div>
+                            ) : (
+                              <div className="flex flex-col gap-1" style={{ maxHeight: 128, overflowY: "auto" }}>
+                                {chainExpirations.map(exp => (
+                                  <button key={exp}
+                                    onClick={() => setExtraOptionLegs(prev => prev.map(l => l.id === leg.id ? { ...l, expiration: exp } : l))}
+                                    className="text-left px-2 py-1 rounded"
+                                    style={{ fontSize: S.tiny, background: FIELD, border: `1px solid ${BORDER}`, color: TEXT }}>
+                                    {formatExpLabel(exp)}
+                                  </button>
+                                ))}
+                                {chainExpirations.length === 0 && <span style={{ fontSize: S.tiny, color: MUTED }}>No expirations available</span>}
+                              </div>
+                            )}
+                          </div>
+                        ) : !leg.strike ? (
+                          /* Step 3: Strike */
+                          <div>
+                            <div className="flex items-center gap-1 mb-1">
+                              <button onClick={() => setExtraOptionLegs(prev => prev.map(l => l.id === leg.id ? { ...l, expiration: null } : l))} style={{ color: MUTED, background: "none", border: "none", cursor: "pointer", display: "flex" }}>
+                                <ArrowLeft className="w-3 h-3" />
+                              </button>
+                              <span style={{ fontSize: S.tiny, color: MUTED }}>{leg.optionType} · {formatExpLabel(leg.expiration)} · Pick strike</span>
+                            </div>
+                            <div className="flex flex-col gap-1" style={{ maxHeight: 160, overflowY: "auto" }}>
+                              {getStrikesForMixedLeg(leg).map(strike => (
+                                <button key={strike}
+                                  onClick={() => {
+                                    const contract = getContractForMixedLeg({ ...leg, strike });
+                                    const mid = contract?.bid != null && contract?.ask != null ? (contract.bid + contract.ask) / 2 : null;
+                                    setExtraOptionLegs(prev => prev.map(l => l.id === leg.id ? { ...l, strike, bid: contract?.bid ?? null, ask: contract?.ask ?? null, delta: contract?.delta ?? null, limitPrice: mid != null ? mid.toFixed(2) : "" } : l));
+                                  }}
+                                  className="text-left px-2 py-1 rounded"
+                                  style={{ fontSize: S.tiny, background: FIELD, border: `1px solid ${BORDER}`, color: TEXT }}>
+                                  ${strike}
+                                </button>
+                              ))}
+                              {getStrikesForMixedLeg(leg).length === 0 && <span style={{ fontSize: S.tiny, color: MUTED }}>No strikes found</span>}
+                            </div>
+                          </div>
+                        ) : (
+                          /* Fully configured — summary row */
+                          <div>
+                            <div className="flex items-center gap-1 mb-1">
+                              <button onClick={() => setExtraOptionLegs(prev => prev.map(l => l.id === leg.id ? { ...l, strike: null, bid: null, ask: null, delta: null, limitPrice: "" } : l))} style={{ color: MUTED, background: "none", border: "none", cursor: "pointer", display: "flex" }}>
+                                <ArrowLeft className="w-3 h-3" />
+                              </button>
+                              <span style={{ fontSize: S.tiny, color: WHITE, fontWeight: 600 }}>{leg.optionType} ${leg.strike} · {formatExpLabel(leg.expiration)}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <div style={{ fontSize: S.tiny, color: MUTED }}>
+                                {leg.bid != null && leg.ask != null && <span>Bid {fmt(leg.bid)} · Ask {fmt(leg.ask)}</span>}
+                                {leg.delta != null && <span className="ml-2">Δ {leg.delta.toFixed(2)}</span>}
+                              </div>
+                              <div className="inline-flex items-center" style={{ borderRadius: 999, border: `1px solid ${BORDER}`, overflow: "hidden" }}>
+                                <button onClick={() => setExtraOptionLegs(prev => prev.map(l => l.id === leg.id ? { ...l, quantity: Math.max(1, l.quantity - 1) } : l))} style={{ width: 22, height: 20, color: TEXT, background: "transparent", border: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                  <Minus className="w-2.5 h-2.5" />
+                                </button>
+                                <input type="text" inputMode="numeric" value={leg.quantity}
+                                  onChange={(e) => { const v = parseInt(e.target.value.replace(/[^0-9]/g, "")); if (!isNaN(v) && v >= 1) setExtraOptionLegs(prev => prev.map(l => l.id === leg.id ? { ...l, quantity: v } : l)); }}
+                                  className="text-center bg-transparent outline-none"
+                                  style={{ fontSize: S.body, color: WHITE, minWidth: 24, width: 24, border: "none" }} />
+                                <button onClick={() => setExtraOptionLegs(prev => prev.map(l => l.id === leg.id ? { ...l, quantity: l.quantity + 1 } : l))} style={{ width: 22, height: 20, color: TEXT, background: "transparent", border: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                  <Plus className="w-2.5 h-2.5" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+
+                    {/* Net debit row */}
+                    {extraOptionLegs.some(l => l.strike !== null) && (
+                      <div className="mt-1 pt-1" style={{ borderTop: `1px dashed ${DIVIDER}`, fontSize: S.tiny, color: MUTED }}>
+                        Net debit <span style={{ color: WHITE }}>{fmtCurrency(Math.abs(mixedNetDebit))}</span>
+                        <span className="ml-2">({fmtCurrency(Math.abs(estimatedCost ?? 0))} shares + {fmtCurrency(Math.abs(mixedNetDebit - (estimatedCost ?? 0)))} options)</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
