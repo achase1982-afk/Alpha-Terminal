@@ -3101,7 +3101,10 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
 
             {/* Live AI reasoning sits directly beneath the ticker bar.
                 Auto-collapses when the run finishes; expand to view + copy. */}
-            {(isV2Running || v2ThinkingTokens.length > 0 || v2Transcript.length > 0) && (
+            {(isV2Running || v2ThinkingTokens.length > 0 || v2Transcript.length > 0) &&
+              /* Suppress the standalone transcript once a validation job completes —
+                 the new StrategistValidationCard renders its own collapsible transcript. */
+              (isV2Running || !(activeJobIdForSymbol && strategistJobs[activeJobIdForSymbol]?.kind === "validation")) && (
               <div className="space-y-2">
                 {isV2Running && (v2LiveStatus || strategistStatus) && (
                   <div className="flex items-center gap-2 px-4 py-2 rounded-lg"
@@ -3137,6 +3140,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
                         meta={activeJob.validationMeta ?? null}
                         onReopenOrder={onReopenValidatedOrder}
                         generatedAt={generatedAt}
+                        transcript={v2Transcript}
                       />
                     );
                   }
