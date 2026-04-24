@@ -63,8 +63,18 @@ export interface ScrubResult {
   replacements: ScrubReplacement[];
 }
 
+export type ScrubField =
+  | "IVR"
+  | "PC_RATIO"
+  | "IV30"
+  | "HV20"
+  | "IVHV"
+  | "BETA"
+  | "EARNINGS_DAYS"
+  | "PC_RATIO_FLOW";
+
 export interface ScrubReplacement {
-  field: "IVR" | "PC_RATIO";
+  field: ScrubField;
   /** What the AI wrote (for the FIRST mention; subsequent mentions are also replaced). */
   cited: string;
   /** What we substituted in. */
@@ -88,6 +98,39 @@ export function formatIvr(ivr: number | null): string | null {
 export function formatPcRatio(pc: number | null): string | null {
   if (pc == null || !Number.isFinite(pc)) return null;
   return (Math.round(pc * 100) / 100).toFixed(2);
+}
+
+/** Format IV30 (30-day implied vol). Inputs are decimals (e.g. 0.4125 → "41.3%").
+ *  Precision matches the data package render in strategistValidate.ts so the
+ *  scrubbed substitution is byte-identical to the canonical line above it. */
+export function formatIv30(iv: number | null): string | null {
+  if (iv == null || !Number.isFinite(iv)) return null;
+  return (iv * 100).toFixed(1) + "%";
+}
+
+/** Format HV20 (20-day historical vol). Decimal in → percent out, 1 decimal
+ *  (matches data package precision — see formatIv30 comment). */
+export function formatHv20(hv: number | null): string | null {
+  if (hv == null || !Number.isFinite(hv)) return null;
+  return (hv * 100).toFixed(1) + "%";
+}
+
+/** Format IV/HV ratio to two decimals. */
+export function formatIvHvRatio(r: number | null): string | null {
+  if (r == null || !Number.isFinite(r)) return null;
+  return (Math.round(r * 100) / 100).toFixed(2);
+}
+
+/** Format beta to two decimals. */
+export function formatBeta(b: number | null): string | null {
+  if (b == null || !Number.isFinite(b)) return null;
+  return (Math.round(b * 100) / 100).toFixed(2);
+}
+
+/** Format days-to-earnings as an integer. */
+export function formatEarningsDays(d: number | null): string | null {
+  if (d == null || !Number.isFinite(d)) return null;
+  return String(Math.round(d));
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -144,7 +187,7 @@ function scrubField(
   canonical: number | null,
   fmt: (n: number | null) => string | null,
   patterns: RegExp[],
-  field: "IVR" | "PC_RATIO",
+  field: ScrubField,
   placeholder: string,
 ): ScrubResult {
   const replacements: ScrubReplacement[] = [];
@@ -190,14 +233,102 @@ function scrubField(
 }
 
 /**
- * Convenience: scrub a single text field for IVR and P/C, returning the
- * combined replacement log.
+ * Placeholder-only substitution for the new validate-pipeline fields. We
+ * deliberately do NOT add inline-number sweeps for these — the risk of
+ * false positives (clobbering an unrelated number that happens to follow
+ * the keyword) outweighs the marginal benefit, since the validators read
+ * the canonical block and rarely hallucinate. The model is instructed to
+ * use `{{...}}` placeholders for each; if it complies, the placeholder is
+ * substituted; if it ignores the placeholder rule and writes the literal
+ * canonical number, that's already correct so no scrub is needed; if it
+ * writes a *wrong* number, that's a residual hallucination we accept and
+ * log via the existing telemetry path.
  */
-export function scrubAll(
+function scrubPlaceholderOnly(
   text: string,
-  canonical: { ivr: number | null; pcRatio: number | null },
+  canonical: number | null,
+  fmt: (n: number | null) => string | null,
+  field: ScrubField,
+  placeholder: string,
 ): ScrubResult {
-  const r1 = scrubIvrReferences(text, canonical.ivr);
-  const r2 = scrubPcRatioReferences(r1.text, canonical.pcRatio);
-  return { text: r2.text, replacements: [...r1.replacements, ...r2.replacements] };
+  const replacements: ScrubReplacement[] = [];
+  if (!text) return { text, replacements };
+  const canonicalStr = fmt(canonical);
+  if (canonicalStr == null) return { text, replacements };
+  if (!text.includes(placeholder)) return { text, replacements };
+  const out = text.split(placeholder).join(canonicalStr);
+  replacements.push({ field, cited: placeholder, canonical: canonicalStr, kind: "placeholder" });
+  return { text: out, replacements };
+}
+
+export interface ScrubCanonical {
+  ivr: number | null;
+  pcRatio: number | null;
+  iv30?: number | null;
+  hv20?: number | null;
+  ivHv?: number | null;
+  beta?: number | null;
+  earningsDays?: number | null;
+  pcRatioFlow?: number | null;
+}
+
+/**
+ * Returns true if any canonical scalar is non-null. Use this to gate the
+ * scrubAll() call: skipping the call when one specific field is null
+ * would leave OTHER placeholder tokens unsubstituted in the transcript.
+ */
+export function hasAnyCanonical(c: ScrubCanonical): boolean {
+  return (
+    c.ivr != null ||
+    c.pcRatio != null ||
+    c.iv30 != null ||
+    c.hv20 != null ||
+    c.ivHv != null ||
+    c.beta != null ||
+    c.earningsDays != null ||
+    c.pcRatioFlow != null
+  );
+}
+
+/**
+ * Convenience: scrub a single text field for every canonical scalar we
+ * surface to the validators, returning the combined replacement log.
+ *
+ * Substitution policy:
+ *   - IVR + PC_RATIO: full scrub (placeholder + inline number sweep) — these
+ *     have a documented hallucination history (see file header).
+ *   - All other fields: placeholder substitution only. Inline sweeps for
+ *     these would risk false positives (e.g. "beta of 1.2" inside a
+ *     sentence about strategy beta vs ticker beta). If telemetry shows
+ *     model non-compliance for any field, upgrade it to a full scrub.
+ */
+export function scrubAll(text: string, canonical: ScrubCanonical): ScrubResult {
+  const all: ScrubReplacement[] = [];
+  let cur = text;
+
+  const r1 = scrubIvrReferences(cur, canonical.ivr);
+  cur = r1.text; all.push(...r1.replacements);
+
+  const r2 = scrubPcRatioReferences(cur, canonical.pcRatio);
+  cur = r2.text; all.push(...r2.replacements);
+
+  const r3 = scrubPlaceholderOnly(cur, canonical.iv30 ?? null, formatIv30, "IV30", "{{IV30}}");
+  cur = r3.text; all.push(...r3.replacements);
+
+  const r4 = scrubPlaceholderOnly(cur, canonical.hv20 ?? null, formatHv20, "HV20", "{{HV20}}");
+  cur = r4.text; all.push(...r4.replacements);
+
+  const r5 = scrubPlaceholderOnly(cur, canonical.ivHv ?? null, formatIvHvRatio, "IVHV", "{{IVHV}}");
+  cur = r5.text; all.push(...r5.replacements);
+
+  const r6 = scrubPlaceholderOnly(cur, canonical.beta ?? null, formatBeta, "BETA", "{{BETA}}");
+  cur = r6.text; all.push(...r6.replacements);
+
+  const r7 = scrubPlaceholderOnly(cur, canonical.earningsDays ?? null, formatEarningsDays, "EARNINGS_DAYS", "{{EARNINGS_DAYS}}");
+  cur = r7.text; all.push(...r7.replacements);
+
+  const r8 = scrubPlaceholderOnly(cur, canonical.pcRatioFlow ?? null, formatPcRatio, "PC_RATIO_FLOW", "{{PC_RATIO_FLOW}}");
+  cur = r8.text; all.push(...r8.replacements);
+
+  return { text: cur, replacements: all };
 }

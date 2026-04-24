@@ -9,6 +9,12 @@ import {
   type ValidationVerdictPayload,
 } from "../lib/strategistValidate.js";
 import { getStoredIVR } from "../lib/ivNormalize.js";
+import { fetchOptionsChain, summarizeOptionsChain } from "../lib/strategistV2.js";
+import { getPolygonFlowHighlights } from "../lib/polygonFlowHighlights.js";
+import { evaluateCatalyst } from "../lib/catalystEvaluator.js";
+import { computeIOScore } from "../lib/ioScoreEngine.js";
+import { getNextEarningsDate } from "../lib/earningsService.js";
+import { getEquityDailyExtras } from "../lib/equityDailyExtras.js";
 import { db, strategistTelemetryTable, scannerTelemetryTable, strategistHistoryTable } from "@workspace/db";
 import { desc, eq, sql, lte, and } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
@@ -63,6 +69,39 @@ type ThinkingEntry = {
 };
 const strategistThinkingBuffer = new Map<string, ThinkingEntry>();
 const THINKING_TTL_MS = 10 * 60 * 1000;
+/**
+ * Pick the latest leg expiration for catalyst-window gating. For tickets
+ * with no option legs (equity-only orders), default to today + 45 calendar
+ * days — matches the equity strategist's standard look-ahead so the catalyst
+ * evaluator surfaces upcoming earnings/FOMC etc. inside a sensible horizon.
+ */
+function computeFarLegExpiration(ticket: ValidationTicket): string {
+  const exps = (ticket.legs ?? [])
+    .map(l => l.expiration)
+    .filter((e): e is string => typeof e === "string" && /^\d{4}-\d{2}-\d{2}$/.test(e))
+    .sort();
+  if (exps.length > 0) return exps[exps.length - 1];
+  const d = new Date();
+  d.setDate(d.getDate() + 45);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Anchor price for summarizeOptionsChain's ATM scan. Prefer the live
+ * underlyingPrice the ticket carries; fall back to median strike of the
+ * fetched chain (close enough to identify ATM strikes within the ±2%
+ * window summarizeOptionsChain uses). Returns 0 when neither is usable
+ * — the caller skips the chain block entirely in that case.
+ */
+function pickAnchorPrice(ticket: ValidationTicket, strikes: number[]): number {
+  if (typeof ticket.underlyingPrice === "number" && ticket.underlyingPrice > 0) {
+    return ticket.underlyingPrice;
+  }
+  if (strikes.length === 0) return 0;
+  const sorted = [...strikes].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
 function pruneThinkingBuffer() {
   const now = Date.now();
   for (const [k, v] of strategistThinkingBuffer.entries()) {
@@ -263,26 +302,120 @@ router.post("/validate-trade", (req, res): void => {
 
     void (async () => {
       try {
-        // Canonical IVR from equity_daily.ivr — single source of truth across
-        // the app. If null (no row for this ticker), the data package omits
-        // VOL CONTEXT and the scrubber is a no-op (any `{{IVR}}` token the
-        // model emits will survive into the transcript, which is the correct
-        // signal that we have no canonical value to substitute).
-        try {
-          const storedIvr = await getStoredIVR(upperTicker);
-          if (storedIvr) {
-            input.marketContext = {
-              ivr: storedIvr.ivr,
-              ivrAsOfDate: storedIvr.asOfDate,
-              ivrSource: storedIvr.source,
-            };
+        // ── Backend data gather (Tier 1+2+3, parallel) ───────────────────
+        // Pull every per-ticker scalar the strategist normally sees in one
+        // wave so the validators see the same canonical numbers. Each
+        // sub-fetch is independently allowed to fail — the data package
+        // omits the corresponding section rather than fabricating values.
+        //
+        // Far-leg expiration: the catalyst evaluator gates on whether a
+        // catalyst lands inside the trade window. For multi-leg orders we
+        // use the latest leg expiration; for equity-only / no-leg tickets
+        // we default to today + 45 calendar days (matches the equity
+        // strategist's standard look-ahead).
+        const farLegExpISO = computeFarLegExpiration(meta.ticket);
+
+        const settings = await getSettings().catch(() => null);
+
+        const [
+          ivrR, chainR, polygonR, catalystR, regimeR, earningsR, extrasR,
+        ] = await Promise.allSettled([
+          getStoredIVR(upperTicker),
+          // fetchOptionsChain needs settings; without it we just skip.
+          settings ? fetchOptionsChain(upperTicker, settings) : Promise.resolve(null),
+          getPolygonFlowHighlights(upperTicker),
+          evaluateCatalyst({ ticker: upperTicker, expirationISO: farLegExpISO }),
+          // getCachedRegime() is sync and never throws; wrap so the slot
+          // index alignment stays simple.
+          Promise.resolve(getCachedRegime() ?? buildFallbackRegime()),
+          getNextEarningsDate(upperTicker),
+          getEquityDailyExtras(upperTicker),
+        ]);
+
+        // Explicit per-slot rejection logging. Some sub-fetches self-log
+        // (e.g. polygonFlow), but others (getStoredIVR DB error,
+        // getEquityDailyExtras schema error) can throw silently here. Log
+        // every rejection BEFORE we degrade to null so an operator can
+        // diagnose missing sections from the data package.
+        const slotRejections: Array<[string, PromiseSettledResult<unknown>]> = [
+          ["ivr", ivrR], ["chain", chainR], ["polygonFlow", polygonR],
+          ["catalyst", catalystR], ["regime", regimeR],
+          ["nextEarnings", earningsR], ["equityExtras", extrasR],
+        ];
+        for (const [slot, r] of slotRejections) {
+          if (r.status === "rejected") {
+            logger.warn(
+              { jobId, ticker: upperTicker, slot, reason: r.reason instanceof Error ? r.reason.message : String(r.reason) },
+              "TradeValidation: marketContext sub-fetch rejected (degrading to null)",
+            );
           }
-        } catch (ivrErr) {
-          logger.warn(
-            { ivrErr, jobId, ticker: upperTicker },
-            "TradeValidation: getStoredIVR failed (non-fatal — proceeding without VOL CONTEXT)",
-          );
         }
+
+        // IO score: depends on having a catalyst flag input. Per the
+        // scanner pattern, we pass a neutral "validation_probe" flag here
+        // — the catalyst signal is already surfaced separately in the
+        // CATALYSTS section, so feeding it into IO would double-count.
+        const ioScoreP = settings
+          ? computeIOScore(upperTicker, { flagValue: 0, reason: "validation_probe" }, settings).catch(() => null)
+          : Promise.resolve(null);
+
+        // Build chain summary if the chain fetch succeeded and we have a
+        // price to anchor the ATM scan. Falls back to median-strike when
+        // the ticket lacks underlyingPrice.
+        let chainSummary = null;
+        let chainSource = null;
+        if (chainR.status === "fulfilled" && chainR.value && chainR.value.chain.length > 0) {
+          chainSource = chainR.value.source;
+          const price = pickAnchorPrice(meta.ticket, chainR.value.chain.map(c => c.strike));
+          if (price > 0) {
+            try {
+              chainSummary = summarizeOptionsChain(chainR.value.chain, price);
+            } catch (sErr) {
+              logger.warn({ sErr, jobId, ticker: upperTicker }, "TradeValidation: summarizeOptionsChain threw (non-fatal)");
+            }
+          }
+        }
+
+        const ivr = ivrR.status === "fulfilled" ? ivrR.value : null;
+        const polygonHighlights = polygonR.status === "fulfilled" ? polygonR.value : null;
+        const catalyst = catalystR.status === "fulfilled" ? catalystR.value : null;
+        const regime = regimeR.status === "fulfilled" ? regimeR.value : null;
+        const nextEarnings = earningsR.status === "fulfilled" ? earningsR.value : null;
+        const equityExtras = extrasR.status === "fulfilled" ? extrasR.value : null;
+        const ioScore = await ioScoreP;
+
+        input.marketContext = {
+          ivr: ivr?.ivr ?? null,
+          ivrAsOfDate: ivr?.asOfDate ?? null,
+          ivrSource: ivr?.source ?? null,
+          catalyst,
+          nextEarnings,
+          ioScore,
+          regime,
+          polygonHighlights,
+          chainSummary,
+          chainSource,
+          equityExtras,
+        };
+
+        logger.info(
+          {
+            jobId, ticker: upperTicker,
+            farLegExpISO,
+            present: {
+              ivr: ivr != null,
+              chainSummary: chainSummary != null,
+              chainSource,
+              polygonHighlights: polygonHighlights != null,
+              catalyst: catalyst != null,
+              nextEarnings: nextEarnings?.daysAway ?? null,
+              ioScoreAvailable: ioScore?.available ?? null,
+              regime: regime != null,
+              equityExtras: equityExtras != null,
+            },
+          },
+          "TradeValidation: marketContext assembled",
+        );
 
         const result = await runTradeValidation(input, {
           onStatus: (s) => { entry.status = s; },

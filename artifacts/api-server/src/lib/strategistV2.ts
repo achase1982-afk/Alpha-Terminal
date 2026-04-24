@@ -226,7 +226,7 @@ interface CuratedExpiration {
   strikes: CuratedStrike[];
 }
 
-interface ChainSummary {
+export interface ChainSummary {
   atmStrike: number;
   atmCallBid: number;
   atmCallAsk: number;
@@ -1105,7 +1105,7 @@ function buildCuratedExpirations(chain: ChainContract[], price: number): Curated
   }));
 }
 
-function summarizeOptionsChain(chain: ChainContract[], price: number): ChainSummary {
+export function summarizeOptionsChain(chain: ChainContract[], price: number): ChainSummary {
   const calls = chain.filter(c => c.type === "call" || c.optionType === "CALL");
   const puts = chain.filter(c => c.type === "put" || c.optionType === "PUT");
 
@@ -2097,9 +2097,9 @@ async function fetchSchwabFullChain(ticker: string): Promise<ChainContract[] | n
   }
 }
 
-type ChainSource = "schwab" | "polygon-fallback" | "schwab-unpriced" | "none";
+export type ChainSource = "schwab" | "polygon-fallback" | "schwab-unpriced" | "none";
 
-async function fetchOptionsChain(ticker: string, settings: StrategistConfig): Promise<{ chain: ChainContract[]; source: ChainSource }> {
+export async function fetchOptionsChain(ticker: string, settings: StrategistConfig): Promise<{ chain: ChainContract[]; source: ChainSource }> {
   // Step A: Schwab full chain primary (so quoted prices match what user fills at)
   const schwabChain = await fetchSchwabFullChain(ticker);
   if (schwabChain && schwabChain.length > 0) {

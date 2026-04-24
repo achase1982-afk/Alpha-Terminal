@@ -7,7 +7,14 @@ import {
 } from "./aiLabAnalystClient.js";
 import { getSettings, getStrategistModel } from "./strategistSettings.js";
 import type { StrategistModelOption } from "./strategistSettings.js";
-import { scrubAll } from "./narrativeScrubbers.js";
+import { scrubAll, hasAnyCanonical, type ScrubCanonical } from "./narrativeScrubbers.js";
+import type { CatalystEvaluation } from "./catalystEvaluator.js";
+import type { IOScoreResult } from "./ioScoreEngine.js";
+import type { StructuredRegime } from "./regimePostProcessor.js";
+import type { PolygonFlowHighlights } from "./polygonFlowHighlights.js";
+import type { ChainSummary, ChainSource } from "./strategistV2.js";
+import type { EquityDailyExtras } from "./equityDailyExtras.js";
+import type { NextEarnings } from "./earningsService.js";
 
 export type ValidationVerdict = "PROCEED" | "PROCEED_WITH_CAUTION" | "DO_NOT_PROCEED";
 export type ValidationMode = "opening" | "closing";
@@ -73,15 +80,52 @@ export interface ValidationInput {
   ticket: ValidationTicket;
   thesis?: string; // user-supplied thesis text
   rollingShort?: boolean;
-  // Server-fetched market context. Pulled from equity_daily.ivr (canonical
-  // source) by the route layer so the validators don't have to trust
-  // client-supplied numbers. If null/undefined the data package omits the
-  // VOL CONTEXT section entirely (no placeholder substitutions, no fake
-  // defaults — same discipline as StrategistV2).
+  // Server-fetched market context. The route layer assembles this in parallel
+  // (chain fetch, IVR, Polygon flow, catalyst, IO score, regime, equity
+  // extras) so the validators see the same canonical numbers the per-ticker
+  // strategist sees. Every field is optional and degrades gracefully — if a
+  // sub-fetch fails or the symbol has no data, the corresponding section is
+  // omitted from the data package rather than fabricating defaults.
+  //
+  // Same discipline as StrategistV2: no placeholder substitutions, no fake
+  // numbers, no silent fallbacks. If we don't have it, the validators don't
+  // see it and the prompt is shorter — they can still cite "data unavailable"
+  // honestly.
   marketContext?: {
+    // ── IVR (existing — unchanged) ────────────────────────────────────────
     ivr: number | null;
     ivrAsOfDate?: string | null;
     ivrSource?: "chain" | "flow" | "hv_proxy" | "canonical" | null;
+
+    // ── Catalysts (earnings + FOMC + macro + residual) ────────────────────
+    /** From evaluateCatalyst(ticker, expirationISO). Far-leg expiration is
+     *  used as the in-window cutoff; for equity-only orders the route uses
+     *  today + 45 DTE. */
+    catalyst?: CatalystEvaluation | null;
+    /** From getNextEarningsDate(ticker). Surfaces EPS/revenue estimates
+     *  and earnings time (BMO/AMC) in addition to the date the catalyst
+     *  block already conveys. */
+    nextEarnings?: NextEarnings | null;
+
+    // ── IO Score (beta, classification, residual Z) ───────────────────────
+    /** From computeIOScore(ticker, catalystInfo). When `available === false`
+     *  the data package emits "N/A — insufficient history" rather than the
+     *  fallback numbers, so the validators never reason on fake regression
+     *  output. */
+    ioScore?: IOScoreResult | null;
+
+    // ── Macro regime (global, 5-min cache) ────────────────────────────────
+    regime?: StructuredRegime | null;
+
+    // ── Polygon flow (EOD per-strike aggregates) ──────────────────────────
+    polygonHighlights?: PolygonFlowHighlights | null;
+
+    // ── Live options chain summary (Schwab primary, Polygon fallback) ─────
+    chainSummary?: ChainSummary | null;
+    chainSource?: ChainSource | null;
+
+    // ── Equity-daily extras (iv30d, hv20d, IV/HV, sma, atr, RS, 52w) ──────
+    equityExtras?: EquityDailyExtras | null;
   } | null;
 }
 
@@ -147,6 +191,7 @@ If the ticker is moving > 3% on the day, your verdict MUST reference what is dri
 - Every number you cite about the trade (strike, expiration, limit price, quantity) must match the ticket exactly. Do not round, paraphrase, or invent legs.
 - When you reference outside information (news, earnings, analyst actions, sector dynamics) briefly cite the source.
 - If something you want to evaluate is not in the ticket and not in search results, say so — do not guess.
+- For canonical market scalars (IV Rank, P/C ratio, 30-day IV, 20-day HV, IV/HV ratio, beta, days-to-earnings, Polygon flow P/C) you MAY use the literal placeholder syntax in your narrative — \`{{IVR}}\`, \`{{PC_RATIO}}\`, \`{{IV30}}\`, \`{{HV20}}\`, \`{{IVHV}}\`, \`{{BETA}}\`, \`{{EARNINGS_DAYS}}\`, \`{{PC_RATIO_FLOW}}\` — and the server will substitute the canonical value before the user sees the text. If you cite a numeric value for these fields directly, it MUST exactly match what the data package shows. Do NOT invent a different number.
 
 ## WHAT YOU EVALUATE
 
@@ -458,6 +503,186 @@ function buildDataPackage(input: ValidationInput): string {
     lines.push(`Cite IVR in your reasoning when it's relevant to debit-vs-credit choice or IV-crush risk. Use the literal value above; do NOT invent a different number.`);
   }
 
+  // ── VOL EXTRAS (iv30d / hv20d / IV-vs-HV richness) ──────────────────────
+  // Pulled from equity_daily.iv_30d / hv_20d / hv_30d. Decimals on disk
+  // (0.41 = 41%). Skipped silently when the row is missing — better to
+  // omit than fabricate. IV/HV ratio is computed in the helper.
+  const ex = mc?.equityExtras ?? null;
+  if (ex && (ex.iv30d != null || ex.hv20d != null || ex.hv30d != null || ex.ivHvRatio != null)) {
+    lines.push(``);
+    lines.push(`## VOL EXTRAS`);
+    if (ex.iv30d   != null) lines.push(`30-day IV: ${(ex.iv30d  * 100).toFixed(1)}%${ex.iv30dProxy != null && ex.iv30d === ex.iv30dProxy ? " (proxy — derived from HV × VRP, true IV may run 5-15% higher)" : ""}`);
+    if (ex.hv20d   != null) lines.push(`20-day HV: ${(ex.hv20d  * 100).toFixed(1)}%`);
+    if (ex.hv30d   != null) lines.push(`30-day HV: ${(ex.hv30d  * 100).toFixed(1)}%`);
+    if (ex.ivHvRatio != null) {
+      const richness = ex.ivHvRatio >= 1.3
+        ? "RICH (IV materially above realized — favors premium selling)"
+        : ex.ivHvRatio <= 0.85
+          ? "CHEAP (IV at or below realized — long premium under-priced for the actual move)"
+          : "FAIR";
+      lines.push(`IV/HV ratio: ${ex.ivHvRatio.toFixed(2)} — ${richness}`);
+    }
+    if (ex.asOfDate) lines.push(`As of: ${ex.asOfDate}`);
+  }
+
+  // ── TECHNICALS (sma20, atr20, RS, momentum, 52-week range) ──────────────
+  if (ex && (ex.sma20 != null || ex.atr20 != null || ex.rsRatio != null
+          || ex.priceChangePct5d != null || ex.priceChangePct10d != null
+          || ex.fiftyTwoWeekHigh != null || ex.fiftyTwoWeekLow != null)) {
+    lines.push(``);
+    lines.push(`## TECHNICALS`);
+    if (ex.close != null) lines.push(`Latest close: ${fmtNum(ex.close)}`);
+    if (ex.sma20 != null) {
+      const vsClose = ex.close != null
+        ? ` (close is ${ex.close >= ex.sma20 ? "above" : "below"} SMA20 by ${fmtNum(Math.abs(ex.close - ex.sma20))})`
+        : "";
+      lines.push(`20-day SMA: ${fmtNum(ex.sma20)}${vsClose}`);
+    }
+    if (ex.atr20 != null) {
+      const atrPct = ex.close != null && ex.close > 0 ? ` (${(ex.atr20 / ex.close * 100).toFixed(2)}% of price)` : "";
+      lines.push(`20-day ATR: ${fmtNum(ex.atr20)}${atrPct}`);
+    }
+    if (ex.rsRatio != null) {
+      const rsCall = ex.rsRatio > 1 ? "outperforming SPY" : ex.rsRatio < 1 ? "underperforming SPY" : "tracking SPY";
+      lines.push(`RS vs SPY: ${ex.rsRatio.toFixed(3)} (${rsCall})`);
+    }
+    if (ex.priceChangePct5d  != null) lines.push(`5-day price change: ${(ex.priceChangePct5d  * 100).toFixed(2)}%`);
+    if (ex.priceChangePct10d != null) lines.push(`10-day price change: ${(ex.priceChangePct10d * 100).toFixed(2)}%`);
+    if (ex.fiftyTwoWeekHigh != null && ex.fiftyTwoWeekLow != null) {
+      const pctOffHigh = ex.close != null && ex.fiftyTwoWeekHigh > 0
+        ? ` (${((ex.close - ex.fiftyTwoWeekHigh) / ex.fiftyTwoWeekHigh * 100).toFixed(1)}% from 52w high)` : "";
+      lines.push(`52-week range: ${fmtNum(ex.fiftyTwoWeekLow)} → ${fmtNum(ex.fiftyTwoWeekHigh)}${pctOffHigh}`);
+    }
+  }
+
+  // ── OPTIONS CHAIN SNAPSHOT (Schwab primary, Polygon fallback) ───────────
+  // ATM bid/ask/IV give a feel for the live spread + IV that the bull/bear
+  // are trading against. Top-volume strikes signal where flow is leaning.
+  // Term structure (front vs back IV) tells the model whether vol is in
+  // backwardation (event-driven) or contango (normal). P/C ratio here is
+  // the chain-derived ratio — distinct from the Polygon EOD ratio below.
+  const cs = mc?.chainSummary ?? null;
+  if (cs) {
+    lines.push(``);
+    lines.push(`## OPTIONS CHAIN SNAPSHOT${mc?.chainSource ? ` (source: ${mc.chainSource})` : ""}`);
+    lines.push(`ATM strike: ${fmtNum(cs.atmStrike)}`);
+    // ChainSummary IVs are ALREADY percent values (summarizeOptionsChain
+    // calls ivToPct → e.g. 41.25 means 41.25%). Do NOT multiply by 100
+    // here — that produced 4125% in earlier drafts.
+    const ivRender = (iv: number) => iv > 0 && Number.isFinite(iv) ? `${iv.toFixed(1)}%` : "—";
+    lines.push(`ATM call: bid ${fmtNum(cs.atmCallBid)} / ask ${fmtNum(cs.atmCallAsk)} / IV ${ivRender(cs.atmCallIV)} / OI ${cs.atmCallOI}`);
+    lines.push(`ATM put : bid ${fmtNum(cs.atmPutBid)} / ask ${fmtNum(cs.atmPutAsk)} / IV ${ivRender(cs.atmPutIV)} / OI ${cs.atmPutOI}`);
+    if (cs.frontMonthIV != null && cs.backMonthIV != null) {
+      const term = cs.frontMonthIV > cs.backMonthIV
+        ? "BACKWARDATION (front > back — typically event-driven)"
+        : cs.frontMonthIV < cs.backMonthIV
+          ? "CONTANGO (back > front — normal term structure)"
+          : "FLAT";
+      lines.push(`Term structure: front IV ${ivRender(cs.frontMonthIV)} vs back IV ${ivRender(cs.backMonthIV)} → ${term}`);
+    }
+    if (Number.isFinite(cs.putCallVolumeRatio) && cs.putCallVolumeRatio > 0) {
+      const pcCall = cs.putCallVolumeRatio < 0.7 ? "call-skewed" : cs.putCallVolumeRatio > 1.3 ? "put-skewed" : "balanced";
+      lines.push(`P/C volume (chain): ${cs.putCallVolumeRatio.toFixed(2)} (${pcCall})`);
+    }
+    if (cs.topVolumeCalls.length > 0) {
+      lines.push(`Top call volume: ${cs.topVolumeCalls.slice(0, 3).map(c => `${c.strike}c ${c.expiration} (vol ${c.volume}, OI ${c.oi})`).join(" | ")}`);
+    }
+    if (cs.topVolumePuts.length > 0) {
+      lines.push(`Top put volume : ${cs.topVolumePuts.slice(0, 3).map(p => `${p.strike}p ${p.expiration} (vol ${p.volume}, OI ${p.oi})`).join(" | ")}`);
+    }
+    if (cs.unusualActivity.length > 0) {
+      lines.push(`Unusual vol/OI: ${cs.unusualActivity.slice(0, 3).map(u => `${u.strike}${u.type[0]} ${u.expiration} (vol/OI ${u.volOiRatio.toFixed(1)}×)`).join(" | ")}`);
+    }
+  }
+
+  // ── POLYGON OPTIONS FLOW (EOD per-strike aggregates) ───────────────────
+  // Distinct from chain snapshot above — this is end-of-day flow data with
+  // a 5-calendar-day staleness ceiling enforced upstream. When unusual
+  // skew is "bullish" or "bearish", that's a real directional flow signal.
+  const ph = mc?.polygonHighlights ?? null;
+  if (ph) {
+    lines.push(``);
+    lines.push(`## OPTIONS FLOW (Polygon EOD, as of ${ph.asOfDate})`);
+    lines.push(`Total call volume: ${ph.totalCallVolume.toLocaleString()} | Total put volume: ${ph.totalPutVolume.toLocaleString()}`);
+    if (ph.putCallVolumeRatio > 0) {
+      lines.push(`P/C volume (flow): ${ph.putCallVolumeRatio.toFixed(2)}`);
+    }
+    if (ph.unusualStrikeCount > 0) {
+      lines.push(`Unusual strikes: ${ph.unusualStrikeCount} (calls ${ph.unusualCallVolume.toLocaleString()} / puts ${ph.unusualPutVolume.toLocaleString()}) — skew: ${ph.unusualSkew.toUpperCase()}`);
+    } else {
+      lines.push(`Unusual activity: none flagged`);
+    }
+    if (ph.topByVolume.length > 0) {
+      lines.push(`Top by volume: ${ph.topByVolume.slice(0, 3).map(s => `${s.strike}${s.optionType[0]} ${s.expiration} (vol ${s.volume.toLocaleString()}, OI ${s.openInterest.toLocaleString()})`).join(" | ")}`);
+    }
+    if (ph.topByVolOiRatio.length > 0) {
+      lines.push(`Top by vol/OI: ${ph.topByVolOiRatio.slice(0, 3).map(s => `${s.strike}${s.optionType[0]} ${s.expiration} (${s.volOiRatio.toFixed(1)}×)`).join(" | ")}`);
+    }
+  }
+
+  // ── CATALYSTS (earnings + macro + residual + scope) ─────────────────────
+  // The catalystEvaluator returns a unified picture: in-window earnings,
+  // FOMC dates, macro releases, residual catalysts (post-window risk that
+  // still affects vol now). nextEarnings layers in EPS/revenue estimates
+  // that the catalyst block alone does not surface.
+  const cat = mc?.catalyst ?? null;
+  const ne  = mc?.nextEarnings ?? null;
+  if (cat || ne) {
+    lines.push(``);
+    lines.push(`## CATALYSTS`);
+    if (cat) {
+      lines.push(`In-window catalyst: ${cat.catalystInWindow ? "YES" : "no"} | type: ${cat.catalystType} | scope: ${cat.catalystScope} | alignment: ${cat.catalystAlignment}`);
+      if (cat.catalystDate) lines.push(`Catalyst date: ${cat.catalystDate}`);
+      if (cat.catalystSummary) lines.push(`Summary: ${cat.catalystSummary}`);
+      if (cat.residualCatalyst) {
+        lines.push(`Residual (post-expiry) catalyst: ${cat.residualCatalyst.type ?? "unknown"}${cat.residualCatalyst.date ? ` on ${cat.residualCatalyst.date}` : ""}`);
+      }
+      if (cat.scheduledEvents && cat.scheduledEvents.length > 0) {
+        lines.push(`Scheduled events: ${cat.scheduledEvents.slice(0, 5).map(e => `${e.type}@${e.date}`).join(", ")}`);
+      }
+    }
+    if (ne && (ne.epsEstimate || ne.revenueEstimate || ne.daysAway != null)) {
+      const parts: string[] = [];
+      if (ne.daysAway != null) parts.push(`{{EARNINGS_DAYS}} days away`);
+      if (ne.time) parts.push(`time: ${ne.time}`);
+      if (ne.epsEstimate) parts.push(`EPS est ${ne.epsEstimate}${ne.epsPrior ? ` (prior ${ne.epsPrior})` : ""}`);
+      if (ne.revenueEstimate) parts.push(`Rev est ${ne.revenueEstimate}${ne.revenuePrior ? ` (prior ${ne.revenuePrior})` : ""}`);
+      if (parts.length > 0) lines.push(`Next earnings: ${parts.join(" | ")}${ne.confirmed === false ? " (unconfirmed)" : ""}`);
+      if (ne.lastEarningsDate && ne.lastEarningsDaysSince != null) {
+        lines.push(`Last earnings: ${ne.lastEarningsDate} (${ne.lastEarningsDaysSince}d ago)`);
+      }
+    }
+  }
+
+  // ── IO SCORE (idiosyncratic-vs-macro classification) ────────────────────
+  // computeIOScore returns `available: false` when there's not enough
+  // history — surface that honestly rather than the fallback regression
+  // numbers, which would mislead the validators into reasoning on noise.
+  const io = mc?.ioScore ?? null;
+  if (io) {
+    lines.push(``);
+    lines.push(`## IO SCORE`);
+    if (io.available === false) {
+      lines.push(`IO Score: N/A — insufficient history (equityDays=${io.dataAvailability.equityDays}, spyDays=${io.dataAvailability.spyDays}, pairs=${io.dataAvailability.pairs}). Treat this name as having no idiosyncratic-vs-macro signal; do NOT cite a beta or residual Z below.`);
+    } else {
+      lines.push(`IO Score: ${io.final.toFixed(1)} → classification: ${io.classification}`);
+      lines.push(`Beta vs SPY: {{BETA}} | Residual return Z (recent): ${io.residualReturnZScore.toFixed(2)} | R²: ${io.components.marketIndependence.rSquared.toFixed(3)}`);
+      if (io.components.flowDivergence) {
+        lines.push(`Flow divergence: vol/OI ${io.components.flowDivergence.volOiRatio.toFixed(2)}, skew div ${io.components.flowDivergence.skewDivergence.toFixed(3)}, final ${io.components.flowDivergence.final.toFixed(2)}`);
+      }
+    }
+  }
+
+  // ── MACRO REGIME (global, 5-min cache) ──────────────────────────────────
+  const reg = mc?.regime ?? null;
+  if (reg) {
+    lines.push(``);
+    lines.push(`## MACRO REGIME`);
+    lines.push(`Directional: ${reg.directionalConviction} | Systemic risk: ${reg.systemicRiskLevel} | Correlation: ${reg.correlationRegime}`);
+    lines.push(`Composite score: ${reg.compositeScore.toFixed(2)}${reg.idioOpportunityFlag ? " | IDIO OPPORTUNITY FLAG: ON (low correlation environment favors single-name plays)" : ""}`);
+    lines.push(`Updated: ${reg.updatedAt}`);
+  }
+
   if (input.thesis && input.thesis.trim().length > 0) {
     lines.push(``);
     lines.push(`## TRADER THESIS (verbatim, user-supplied)`);
@@ -510,10 +735,13 @@ async function runTurn(args: {
   phase: ValidationTurn["phase"];
   callbacks?: ValidationCallbacks;
   // Canonical scalars used to scrub hallucinated `{{IVR}}` / `{{PC_RATIO}}`
-  // tokens out of the model output before it lands in the transcript and
-  // before JSON parsing. Same scrubber the StrategistV2 narrative pipeline
-  // uses; null canonical = no-op (token survives, matching today's behavior).
-  scrubCanonical?: { ivr: number | null; pcRatio: number | null };
+  // / `{{IV30}}` / `{{HV20}}` / `{{IVHV}}` / `{{BETA}}` / `{{EARNINGS_DAYS}}`
+  // / `{{PC_RATIO_FLOW}}` tokens out of the model output before it lands in
+  // the transcript and before JSON parsing. Same scrubber the StrategistV2
+  // narrative pipeline uses; null fields = no-op for that field (token
+  // survives, which is the correct truthful signal that we have no
+  // canonical to substitute).
+  scrubCanonical?: ScrubCanonical;
 }): Promise<{ text: string; trace: WebSearchTrace; turnId: string }> {
   const { modelOpt, systemPrompt, prompt, round, role, phase, callbacks, scrubCanonical } = args;
   const turnId = newTurnId();
@@ -526,7 +754,12 @@ async function runTurn(args: {
   try {
     const r = await streamModel(modelOpt, systemPrompt, prompt, onDelta, (s) => callbacks?.onStatus?.(s));
     let finalText = r.text;
-    if (scrubCanonical && (scrubCanonical.ivr != null || scrubCanonical.pcRatio != null)) {
+    // Always run the scrubber when ANY canonical scalar is present — not
+    // just IVR/PC. Skipping when only one field is null would leave
+    // {{IV30}} / {{HV20}} / {{BETA}} etc. unsubstituted in the transcript
+    // even when their canonical values are available, defeating the
+    // entire placeholder protocol.
+    if (scrubCanonical && hasAnyCanonical(scrubCanonical)) {
       const sr = scrubAll(finalText, scrubCanonical);
       if (sr.replacements.length > 0) {
         logger.warn(
@@ -708,13 +941,34 @@ export async function runTradeValidation(
   const dataPackage = buildDataPackage(input);
 
   // Canonical scalars for the post-stream scrubber. Pulled from the same
-  // marketContext we expose in the data package, so any `{{IVR}}` token the
-  // model emits gets replaced with the same number the validators were
-  // shown. P/C ratio is not currently surfaced to the validators, so we
-  // leave it null (scrubber treats null as no-op).
-  const scrubCanonical = {
-    ivr: input.marketContext?.ivr ?? null,
-    pcRatio: null as number | null,
+  // marketContext we expose in the data package, so any `{{IVR}}`, `{{IV30}}`,
+  // etc. tokens the model emits get replaced with the same numbers the
+  // validators were shown.
+  //
+  // Source-of-truth precedence for P/C ratio (avoid double-counting): chain
+  // P/C is preferred when present (it's live-quote derived); Polygon-flow
+  // P/C is the fallback. The Polygon-flow value is also surfaced separately
+  // as `{{PC_RATIO_FLOW}}` so the model can cite both when they diverge.
+  const mctx = input.marketContext;
+  const chainPc =
+    mctx?.chainSummary && Number.isFinite(mctx.chainSummary.putCallVolumeRatio) && mctx.chainSummary.putCallVolumeRatio > 0
+      ? mctx.chainSummary.putCallVolumeRatio
+      : null;
+  const flowPc =
+    mctx?.polygonHighlights && Number.isFinite(mctx.polygonHighlights.putCallVolumeRatio) && mctx.polygonHighlights.putCallVolumeRatio > 0
+      ? mctx.polygonHighlights.putCallVolumeRatio
+      : null;
+  const scrubCanonical: ScrubCanonical = {
+    ivr: mctx?.ivr ?? null,
+    pcRatio: chainPc ?? flowPc,
+    iv30: mctx?.equityExtras?.iv30d ?? null,
+    hv20: mctx?.equityExtras?.hv20d ?? null,
+    ivHv: mctx?.equityExtras?.ivHvRatio ?? null,
+    // Only surface beta when the IO-score regression actually fit — fallback
+    // betas are misleading (see IOScoreResult.available comment).
+    beta: mctx?.ioScore?.available ? mctx.ioScore.beta : null,
+    earningsDays: mctx?.nextEarnings?.daysAway ?? null,
+    pcRatioFlow: flowPc,
   };
 
   // ── Round 1 (parallel) ──
