@@ -356,7 +356,13 @@ router.post("/validate-trade", (req, res): void => {
         // — the catalyst signal is already surfaced separately in the
         // CATALYSTS section, so feeding it into IO would double-count.
         const ioScoreP = settings
-          ? computeIOScore(upperTicker, { flagValue: 0, reason: "validation_probe" }, settings).catch(() => null)
+          ? computeIOScore(upperTicker, { flagValue: 0, reason: "validation_probe" }, settings).catch((err) => {
+              logger.warn(
+                { jobId, ticker: upperTicker, slot: "ioScore", reason: err instanceof Error ? err.message : String(err) },
+                "TradeValidation: marketContext sub-fetch rejected (degrading to null)",
+              );
+              return null;
+            })
           : Promise.resolve(null);
 
         // Build chain summary if the chain fetch succeeded and we have a
