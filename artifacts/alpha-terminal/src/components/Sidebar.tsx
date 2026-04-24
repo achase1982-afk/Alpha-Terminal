@@ -855,15 +855,31 @@ function AiParametersPage() {
 }
 
 function UICustomizationPage() {
-  const {
-    accentColor, fontSize, defaultChartStyle, gridDensity,
-    showTickerTape, showAiBiasStrip, showMiniCards, animatePriceChanges, hapticFeedback, reducedMotion,
-    headerMode, biasScrollSpeed,
-    setAccentColor, setFontSize, setDefaultChartStyle, setGridDensity,
-    setHeaderMode,
-    setShowTickerTape, setShowAiBiasStrip, setShowMiniCards, setAnimatePriceChanges, setHapticFeedback, setReducedMotion,
-    setBiasScrollSpeed, resetDefaults,
-  } = useUICustomizationStore();
+  const accentColor = useUICustomizationStore((s) => s.accentColor);
+  const fontSize = useUICustomizationStore((s) => s.fontSize);
+  const defaultChartStyle = useUICustomizationStore((s) => s.defaultChartStyle);
+  const gridDensity = useUICustomizationStore((s) => s.gridDensity);
+  const showTickerTape = useUICustomizationStore((s) => s.showTickerTape);
+  const showAiBiasStrip = useUICustomizationStore((s) => s.showAiBiasStrip);
+  const showMiniCards = useUICustomizationStore((s) => s.showMiniCards);
+  const animatePriceChanges = useUICustomizationStore((s) => s.animatePriceChanges);
+  const hapticFeedback = useUICustomizationStore((s) => s.hapticFeedback);
+  const reducedMotion = useUICustomizationStore((s) => s.reducedMotion);
+  const headerMode = useUICustomizationStore((s) => s.headerMode);
+  const biasScrollSpeed = useUICustomizationStore((s) => s.biasScrollSpeed);
+  const setAccentColor = useUICustomizationStore((s) => s.setAccentColor);
+  const setFontSize = useUICustomizationStore((s) => s.setFontSize);
+  const setDefaultChartStyle = useUICustomizationStore((s) => s.setDefaultChartStyle);
+  const setGridDensity = useUICustomizationStore((s) => s.setGridDensity);
+  const setHeaderMode = useUICustomizationStore((s) => s.setHeaderMode);
+  const setShowTickerTape = useUICustomizationStore((s) => s.setShowTickerTape);
+  const setShowAiBiasStrip = useUICustomizationStore((s) => s.setShowAiBiasStrip);
+  const setShowMiniCards = useUICustomizationStore((s) => s.setShowMiniCards);
+  const setAnimatePriceChanges = useUICustomizationStore((s) => s.setAnimatePriceChanges);
+  const setHapticFeedback = useUICustomizationStore((s) => s.setHapticFeedback);
+  const setReducedMotion = useUICustomizationStore((s) => s.setReducedMotion);
+  const setBiasScrollSpeed = useUICustomizationStore((s) => s.setBiasScrollSpeed);
+  const resetDefaults = useUICustomizationStore((s) => s.resetDefaults);
 
   const accents: { key: ThemeAccent; label: string }[] = [
     { key: "gold", label: "Gold" },
