@@ -1,7 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import {
   ShieldCheck, AlertTriangle, ShieldX, Send,
   ChevronDown, ChevronUp, FileText, MessageSquare,
+  Copy, Check,
 } from "lucide-react";
 import type { StrategistValidationMeta, StrategistTranscriptTurn } from "@/lib/store";
 
@@ -96,6 +97,132 @@ function describeTicket(meta: StrategistValidationMeta): string {
     return `${modeLabel} · ${t.ticker}  ·  ${formatLeg(t.legs[0])}`;
   }
   return `${modeLabel} · option on ${t.ticker}`;
+}
+
+function fmtTimestampForCopy(iso?: string | number | null): string {
+  const d = iso ? new Date(iso) : new Date();
+  if (isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+const VERDICT_PLAIN_LABEL: Record<ValidationVerdict, string> = {
+  PROCEED: "Proceed",
+  PROCEED_WITH_CAUTION: "Proceed With Caution",
+  DO_NOT_PROCEED: "Do Not Proceed",
+};
+
+export function validationCardToPlainText(
+  payload: ValidationVerdictPayload,
+  meta: StrategistValidationMeta | null | undefined,
+  generatedAt?: string | number | null,
+): string {
+  const lines: string[] = [];
+  const ts = fmtTimestampForCopy(generatedAt ?? Date.now());
+  const ticker = meta?.ticket?.ticker ?? "";
+  const verdictLabel = VERDICT_PLAIN_LABEL[payload.verdict];
+  const conf = Math.max(0, Math.min(100, Math.round(payload.confidence)));
+
+  lines.push(
+    `${ticker ? ticker + " — " : ""}Strategist Validation: ${verdictLabel} (${conf}% conf)`,
+  );
+  if (ts) lines.push(`Generated: ${ts}`);
+
+  if (meta) {
+    const summary = describeTicket(meta);
+    if (summary) lines.push("", "TICKET", summary);
+
+    if (meta.ticket?.legs && meta.ticket.legs.length > 0) {
+      lines.push("", "LEGS");
+      for (const l of meta.ticket.legs) {
+        lines.push("  " + formatLeg(l));
+      }
+      if (meta.ticket.netPrice != null) {
+        lines.push(
+          `  Net ${meta.ticket.isCredit ? "credit" : "debit"}: $${Math.abs(meta.ticket.netPrice).toFixed(2)}`,
+        );
+      }
+    }
+  }
+
+  if (meta?.thesis) {
+    lines.push("", "TRADER THESIS", meta.thesis);
+  }
+  if (meta?.rollingShort) {
+    lines.push("", "ROLLING SHORT: yes (short leg expires before long leg)");
+  }
+
+  if (payload.bullConfidence != null || payload.bearConfidence != null) {
+    const parts: string[] = [];
+    if (payload.bullConfidence != null) parts.push(`Bull ${payload.bullConfidence}%`);
+    if (payload.bearConfidence != null) parts.push(`Bear ${payload.bearConfidence}%`);
+    lines.push("", "DEBATE SPLIT", parts.join("  ·  "));
+  }
+
+  if (payload.reasoningBullets.length > 0) {
+    lines.push("", "REASONING");
+    for (const b of payload.reasoningBullets) lines.push(`  • ${b}`);
+  }
+  if (payload.risks.length > 0) {
+    lines.push("", "RISKS");
+    for (const r of payload.risks) lines.push(`  • ${r}`);
+  }
+  if (payload.verdict !== "PROCEED" && payload.improvements.length > 0) {
+    lines.push("", "IMPROVEMENTS");
+    for (const s of payload.improvements) lines.push(`  • ${s}`);
+  }
+
+  return lines.join("\n");
+}
+
+function CopyValidationButton({
+  payload,
+  meta,
+  generatedAt,
+}: {
+  payload: ValidationVerdictPayload;
+  meta: StrategistValidationMeta | null | undefined;
+  generatedAt?: string | number | null;
+}) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = useCallback(async () => {
+    const text = validationCardToPlainText(payload, meta, generatedAt ?? undefined);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch {
+        // give up silently
+      }
+    }
+  }, [payload, meta, generatedAt]);
+  return (
+    <button
+      onClick={onCopy}
+      aria-label="Copy validation card to clipboard"
+      className="flex items-center gap-1 px-2 py-0.5 rounded font-mono text-[10px] uppercase tracking-wider transition-all active:scale-95"
+      style={{
+        background: copied ? "rgba(46, 204, 113, 0.15)" : "rgba(255,255,255,0.06)",
+        color: copied ? "#2ecc71" : "#a1a1aa",
+        border: copied ? "1px solid rgba(46, 204, 113, 0.35)" : "1px solid rgba(255,255,255,0.10)",
+      }}
+    >
+      {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+      <span>{copied ? "Copied" : "Copy"}</span>
+    </button>
+  );
 }
 
 function isValidationPayload(v: unknown): v is ValidationVerdictPayload {
@@ -572,7 +699,8 @@ export function StrategistValidationCard({
               )}
             </div>
           </div>
-          <div className="flex flex-col items-end gap-1 shrink-0">
+          <div className="flex flex-col items-end gap-1.5 shrink-0">
+            <CopyValidationButton payload={payload} meta={meta} generatedAt={generatedAt} />
             <span style={{ color: pal.fg, fontSize: 16, fontWeight: 700, lineHeight: 1 }}>
               {confidence}%
             </span>
