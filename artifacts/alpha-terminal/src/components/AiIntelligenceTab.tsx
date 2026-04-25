@@ -1444,6 +1444,10 @@ function DebateTranscript({
         return { bg: "rgba(0,209,102,0.12)", fg: "#00D166", border: "rgba(0,209,102,0.4)", label: "Recommendation" };
       case "system":
         return { bg: "rgba(186,130,255,0.10)", fg: "#BA82FF", border: "rgba(186,130,255,0.45)", label: "Verdict" };
+      case "solo":
+        // Solo validator wears both hats — distinct neutral cyan-blue so the
+        // user knows this is a single-model pass, not a Bull/Bear debate.
+        return { bg: "rgba(120,180,255,0.10)", fg: "#78B4FF", border: "rgba(120,180,255,0.4)", label: "Solo Validator" };
       default:
         return { bg: "rgba(255,255,255,0.06)", fg: "#999", border: "rgba(255,255,255,0.15)", label: "" };
     }
@@ -1451,6 +1455,7 @@ function DebateTranscript({
 
   const phaseLabel = (phase: string, round: 1 | 2 | 3 | "synthesis", role: string): string => {
     if (role === "system" && phase === "info") return "Verdict";
+    if (role === "solo" || phase === "solo") return "Solo Validation · Single Pass";
     if (round === "synthesis") return "Phase 3 · Senior PM Arbitration";
     if (round === 3 && phase === "propose") return "Phase 2 · R3 · Structure Vote";
     if (phase === "propose") return `Phase 1 · R${round} · Pitch`;

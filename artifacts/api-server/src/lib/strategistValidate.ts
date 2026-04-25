@@ -7,7 +7,7 @@ import {
   type WebSearchTrace,
 } from "./aiLabAnalystClient.js";
 import { getSettings, getStrategistModel } from "./strategistSettings.js";
-import type { StrategistModelOption } from "./strategistSettings.js";
+import type { StrategistModelOption, StrategistConfig } from "./strategistSettings.js";
 import { scrubAll, hasAnyCanonical, type ScrubCanonical } from "./narrativeScrubbers.js";
 import type { CatalystEvaluation } from "./catalystEvaluator.js";
 import type { IOScoreResult } from "./ioScoreEngine.js";
@@ -142,11 +142,13 @@ export interface ValidationVerdictPayload {
 }
 
 // Transcript-shape used by the existing /thinking/:jobId poller.
+// "solo" role/phase added to render single-validator runs distinctly from
+// the Bull/Bear two-sided debate.
 export type ValidationTurn = {
   id: string;
   round: 1 | 2 | 3 | "synthesis";
-  role: "A" | "B" | "synthesis" | "system";
-  phase: "propose" | "critique" | "final" | "synthesis" | "info";
+  role: "A" | "B" | "synthesis" | "system" | "solo";
+  phase: "propose" | "critique" | "final" | "synthesis" | "info" | "solo";
   model: string;
   label: string;
   text: string;
@@ -233,6 +235,25 @@ The trader is closing a position. You argue **FOR** the close — the original t
 
 You may concede the trade should stay on if the thesis genuinely still has gas. If the close is clearly correct, you defend it; if the close is premature, say so and dial confidence below 30.`;
 
+// ── Solo personas (used when strategistMode === 1) ──────────────────────────
+// In Solo mode the validator is one model wearing both hats — it must
+// steelman both bull and bear cases honestly, then deliver a single verdict.
+// No back-and-forth, no second model. Mirrors the regular per-ticker
+// strategist's solo behavior (one call, one model, one decision).
+const SOLO_VALIDATOR_ENTRY = `## VALIDATOR ROLE: SOLO ENTRY VALIDATOR
+
+You are the sole validator on this trade. You wear both hats — you must steelman the strongest honest case **FOR** entering this exact trade and the strongest honest case **AGAINST** entering it, then deliver one final verdict.
+
+You are not arguing a side. You are calling the trade as you see it. If the bull case is overwhelmingly stronger, recommend PROCEED. If the bear case is overwhelmingly stronger, recommend DO_NOT_PROCEED. If both have real merit, recommend PROCEED_WITH_CAUTION and spell out the swing factors.
+
+Inflated confidence to feel decisive produces bad live trades. Be honest.`;
+
+const SOLO_VALIDATOR_EXIT = `## VALIDATOR ROLE: SOLO EXIT VALIDATOR
+
+You are the sole validator on this exit. You wear both hats — you must steelman the strongest honest case to **STAY IN** (thesis still intact, do not clip a winner early, do not panic-sell a paper loss) and the strongest honest case to **CLOSE** (thesis broken, price action confirms reversal, time decay winning, redeploy capital), then deliver one final verdict.
+
+You are not arguing a side. You are calling the exit as you see it. PROCEED = the close is correct. DO_NOT_PROCEED = stay in. PROCEED_WITH_CAUTION = the close is reasonable but worth flagging the swing factors. Be honest.`;
+
 // ────────────────────────────────────────────────────────────────────────────
 // PROMPTS
 // ────────────────────────────────────────────────────────────────────────────
@@ -300,6 +321,41 @@ ${otherR1}
 
 OTHER SIDE'S ROUND-2:
 ${otherR2}`;
+
+// Solo-mode prompt — single-shot, both sides + verdict in one JSON.
+// The frontend parses the same `finalVerdict` / `finalConfidence` /
+// `reasoningBullets` / `topRisks` / `improvements` fields as Round 3 of
+// the debate, so the verdict-card renderer needs no changes.
+const SOLO_PROMPT = (today: string, mode: ValidationMode, dataPackage: string) => {
+  const bullLabel = mode === "opening"
+    ? "FOR entering this exact trade"
+    : "AGAINST closing this position now";
+  const bearLabel = mode === "opening"
+    ? "AGAINST entering this exact trade"
+    : "FOR closing this position now";
+  const improvementsHint = mode === "opening"
+    ? "(different strike, different DTE, wait for pullback, reduce size, switch credit/debit, etc.)"
+    : "(stay in until catalyst X, scale out partial, set tighter stop, etc.)";
+  return `Today is ${today}. SOLO VALIDATION — single pass. Run web searches per the WEB SEARCH MANDATE first, then steelman both sides honestly and deliver one verdict.
+
+Output ONLY this JSON object — no markdown fences, no prose:
+{
+  "bullCase": "<3-5 sentences: strongest honest case ${bullLabel}>",
+  "bearCase": "<3-5 sentences: strongest honest case ${bearLabel}>",
+  "bullConfidence": <integer 0-100, how strong the bull case is on its own merits>,
+  "bearConfidence": <integer 0-100, how strong the bear case is on its own merits>,
+  "finalVerdict": "PROCEED" | "PROCEED_WITH_CAUTION" | "DO_NOT_PROCEED",
+  "finalConfidence": <integer 0-100, your honest confidence in finalVerdict>,
+  "reasoningBullets": ["<bullet>", "<bullet>", "<2-4 concise bullets justifying your verdict>"],
+  "topRisks": ["<bullet>", "<bullet>", "<1-3 concrete risks the trader must accept>"],
+  "improvements": ["<bullet>", "<bullet>", "<0-3 concrete suggestions ${improvementsHint} — empty array if you said PROCEED>"]
+}
+
+Calibration: bullConfidence and bearConfidence are independent assessments of each case's strength on its own merits — they do NOT have to sum to 100. finalConfidence is your confidence in the verdict you actually picked.
+
+DATA PACKAGE:
+${dataPackage}`;
+};
 
 // ────────────────────────────────────────────────────────────────────────────
 // DATA PACKAGE BUILDER
@@ -918,32 +974,13 @@ function synthesizeVerdict(
 // ────────────────────────────────────────────────────────────────────────────
 // ORCHESTRATOR
 // ────────────────────────────────────────────────────────────────────────────
-export async function runTradeValidation(
-  input: ValidationInput,
-  callbacks?: ValidationCallbacks,
-): Promise<ValidationVerdictPayload> {
-  const today = new Date().toISOString().slice(0, 10);
-  const settings = await getSettings();
-
-  // Pick personas based on opening vs closing.
-  const isExit = input.ticket.mode === "closing";
-  const personaA = isExit ? BULL_VALIDATOR_EXIT : BULL_VALIDATOR_ENTRY;
-  const personaB = isExit ? BEAR_VALIDATOR_EXIT : BEAR_VALIDATOR_ENTRY;
-  const sysA = `${VALIDATION_SYSTEM_PROMPT}\n\n${personaA}`;
-  const sysB = `${VALIDATION_SYSTEM_PROMPT}\n\n${personaB}`;
-
-  // Models — reuse user's debate config when available, fall back to solo.
-  const isDebateMode = settings.strategistMode === 2;
-  const modelA: StrategistModelOption = isDebateMode
-    ? getStrategistModel(settings.strategistDebateAModelIdx)
-    : getStrategistModel(settings.strategistSoloModelIdx);
-  const modelB: StrategistModelOption = isDebateMode
-    ? getStrategistModel(settings.strategistDebateBModelIdx)
-    : getStrategistModel(settings.strategistSoloModelIdx);
-
-  const labeledA: StrategistModelOption = { ...modelA, label: `Bull · ${modelA.label}` };
-  const labeledB: StrategistModelOption = { ...modelB, label: `Bear · ${modelB.label}` };
-
+// Shared prep: data package + scrubber canonical scalars. Used by BOTH the
+// solo and debate orchestrators so they see the same data and the same
+// post-stream substitution targets.
+function buildValidationContext(input: ValidationInput): {
+  dataPackage: string;
+  scrubCanonical: ScrubCanonical;
+} {
   const dataPackage = buildDataPackage(input);
 
   // Canonical scalars for the post-stream scrubber. Pulled from the same
@@ -976,6 +1013,156 @@ export async function runTradeValidation(
     earningsDays: mctx?.nextEarnings?.daysAway ?? null,
     pcRatioFlow: flowPc,
   };
+
+  return { dataPackage, scrubCanonical };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// SOLO ORCHESTRATOR
+// One model. One pass. Mirrors regular per-ticker strategist's solo flow.
+// ────────────────────────────────────────────────────────────────────────────
+async function runSoloValidation(
+  input: ValidationInput,
+  settings: StrategistConfig,
+  callbacks: ValidationCallbacks | undefined,
+): Promise<ValidationVerdictPayload> {
+  const today = new Date().toISOString().slice(0, 10);
+  const isExit = input.ticket.mode === "closing";
+  const persona = isExit ? SOLO_VALIDATOR_EXIT : SOLO_VALIDATOR_ENTRY;
+  const sys = `${VALIDATION_SYSTEM_PROMPT}\n\n${persona}`;
+
+  const model = getStrategistModel(settings.strategistSoloModelIdx);
+  const labeled: StrategistModelOption = { ...model, label: `Solo · ${model.label}` };
+
+  const { dataPackage, scrubCanonical } = buildValidationContext(input);
+
+  logger.info(
+    {
+      ticker: input.ticket.ticker,
+      mode: input.ticket.mode,
+      strategistMode: "SOLO",
+      model: model.model,
+      provider: model.provider,
+    },
+    "TradeValidation: solo run starting",
+  );
+
+  callbacks?.onStatus?.(`Solo validator (${model.label}) — analyzing trade…`);
+  const r = await runTurn({
+    modelOpt: labeled,
+    systemPrompt: sys,
+    prompt: SOLO_PROMPT(today, input.ticket.mode, dataPackage),
+    // Solo gets its own role + phase so the frontend transcript renders it
+    // distinctly (no Bull/Bear color coding, no debate-round labels).
+    round: 3,
+    role: "solo",
+    phase: "solo",
+    callbacks,
+    scrubCanonical,
+  });
+
+  const json = safeParseJsonObject(r.text);
+  const verdict = (json && asVerdict(json["finalVerdict"])) ?? "PROCEED_WITH_CAUTION";
+  const finalConf = asInt(json?.["finalConfidence"], 50);
+  // Bull/bear confidences are independent assessments of each side's
+  // strength on its own merits — they do NOT have to sum to 100. Default
+  // gracefully if the model omitted them.
+  const bullConf = asInt(json?.["bullConfidence"], verdict === "PROCEED" ? finalConf : 50);
+  const bearConf = asInt(json?.["bearConfidence"], verdict === "DO_NOT_PROCEED" ? finalConf : 50);
+  const bullets = asStringArray(json?.["reasoningBullets"], 4);
+  const risks = asStringArray(json?.["topRisks"], 3);
+  const improvements = verdict === "PROCEED" ? [] : asStringArray(json?.["improvements"], 3);
+
+  emitSystemTurn(
+    JSON.stringify({
+      phase: "VERDICT",
+      verdict,
+      confidence: finalConf,
+      bullConfidence: bullConf,
+      bearConfidence: bearConf,
+      reasoningBullets: bullets,
+      risks,
+      improvements,
+    }, null, 2),
+    "Verdict",
+    "synthesis",
+    "info",
+    callbacks,
+  );
+
+  logger.info(
+    {
+      ticker: input.ticket.ticker,
+      mode: input.ticket.mode,
+      strategistMode: "SOLO",
+      model: model.model,
+      provider: model.provider,
+      verdict,
+      confidence: finalConf,
+    },
+    "TradeValidation: solo completed",
+  );
+
+  return {
+    verdict,
+    confidence: finalConf,
+    reasoningBullets: bullets,
+    risks,
+    improvements,
+    bullConfidence: bullConf,
+    bearConfidence: bearConf,
+    trace: r.trace,
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// MAIN ORCHESTRATOR
+// Dispatches to solo or debate flow based on user's strategist mode setting.
+// ────────────────────────────────────────────────────────────────────────────
+export async function runTradeValidation(
+  input: ValidationInput,
+  callbacks?: ValidationCallbacks,
+): Promise<ValidationVerdictPayload> {
+  const today = new Date().toISOString().slice(0, 10);
+  const settings = await getSettings();
+
+  // Mirror the regular per-ticker strategist's mode dispatch. Solo mode →
+  // single-model verdict on the user's chosen solo model. Debate mode →
+  // two-model 3-round debate using the user's chosen Bull (A) / Bear (B)
+  // models. This is what the user expects: trade validation should obey
+  // the same Strategist Mode + model selections as the strategist itself.
+  const isDebateMode = settings.strategistMode === 2;
+  if (!isDebateMode) {
+    return runSoloValidation(input, settings, callbacks);
+  }
+
+  // ── Debate path (existing 3-round Bull-vs-Bear flow) ──
+  const isExit = input.ticket.mode === "closing";
+  const personaA = isExit ? BULL_VALIDATOR_EXIT : BULL_VALIDATOR_ENTRY;
+  const personaB = isExit ? BEAR_VALIDATOR_EXIT : BEAR_VALIDATOR_ENTRY;
+  const sysA = `${VALIDATION_SYSTEM_PROMPT}\n\n${personaA}`;
+  const sysB = `${VALIDATION_SYSTEM_PROMPT}\n\n${personaB}`;
+
+  const modelA: StrategistModelOption = getStrategistModel(settings.strategistDebateAModelIdx);
+  const modelB: StrategistModelOption = getStrategistModel(settings.strategistDebateBModelIdx);
+
+  const labeledA: StrategistModelOption = { ...modelA, label: `Bull · ${modelA.label}` };
+  const labeledB: StrategistModelOption = { ...modelB, label: `Bear · ${modelB.label}` };
+
+  const { dataPackage, scrubCanonical } = buildValidationContext(input);
+
+  logger.info(
+    {
+      ticker: input.ticket.ticker,
+      mode: input.ticket.mode,
+      strategistMode: "DEBATE",
+      bullModel: modelA.model,
+      bullProvider: modelA.provider,
+      bearModel: modelB.model,
+      bearProvider: modelB.provider,
+    },
+    "TradeValidation: debate run starting",
+  );
 
   // ── Round 1 (parallel) ──
   callbacks?.onStatus?.("Round 1 — Bull and Bear pitching cases on this trade…");

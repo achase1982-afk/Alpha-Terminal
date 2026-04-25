@@ -365,12 +365,14 @@ export interface StrategistValidationMeta {
 }
 
 // Mirrors the api-server TranscriptTurn shape; structured one-per-AI-turn entries
-// the UI uses to render the debate transcript live (Solo mode keeps this empty).
+// the UI uses to render the debate transcript live (the per-ticker Strategist's
+// Solo mode keeps this empty; the Send-to-Strategist trade validator's Solo
+// mode emits a single 'solo' role turn instead of a Bull/Bear pair).
 export interface StrategistTranscriptTurn {
   id: string;
   round: 1 | 2 | 3 | 'synthesis';
-  role: 'A' | 'B' | 'synthesis' | 'system';
-  phase: 'propose' | 'critique' | 'final' | 'synthesis' | 'info';
+  role: 'A' | 'B' | 'synthesis' | 'system' | 'solo';
+  phase: 'propose' | 'critique' | 'final' | 'synthesis' | 'info' | 'solo';
   model: string;
   label: string;
   text: string;
