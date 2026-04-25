@@ -1285,6 +1285,13 @@ function buildDataPackage(
       preferredDteMin: settings.preferredDteMin,
       preferredDteMax: settings.preferredDteMax,
       spreadWidth: settings.spreadWidth,
+      // Tells the model whether spreadWidth above is a hard cap or merely a
+      // suggestion. When unlimited, the user has explicitly opted out of any
+      // width constraint — the agent should size the spread to the thesis,
+      // and the user will adjust at execution time.
+      spreadWidthMode: settings.spreadWidthUnlimited === 1
+        ? "UNLIMITED — disregard the spreadWidth value above and pick whatever width best fits your thesis. The user will adjust at execution."
+        : `HARD CAP — do not propose a spread wider than $${settings.spreadWidth}.`,
       minOpenInterest: settings.minOpenInterest,
       maxBidAskSpreadPct: settings.maxBidAskSpreadPct,
     },

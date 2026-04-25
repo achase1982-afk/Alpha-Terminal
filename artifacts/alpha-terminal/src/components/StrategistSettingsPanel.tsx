@@ -162,8 +162,14 @@ export function StrategistSettingsPanel() {
             const val = data.current[m.key] ?? m.default;
             const isDropdown = Array.isArray(m.options) && m.options.length > 0;
             const isToggle = !isDropdown && m.min === 0 && m.max === 1 && m.step === 1;
+            // The Spread Width slider is overridden when "Spread Width — Unlimited"
+            // is on. When overridden, we disable the slider, dim the row, and
+            // show "Unlimited" in place of the numeric value so the user sees
+            // exactly what the agents will receive.
+            const overriddenByUnlimited =
+              m.key === "spreadWidth" && (data.current["spreadWidthUnlimited"] ?? 1) === 1;
             return (
-              <div key={m.key} className="space-y-1">
+              <div key={m.key} className={`space-y-1 ${overriddenByUnlimited ? "opacity-50" : ""}`}>
                 <div className="flex items-center justify-between">
                   <label className="font-mono text-[11px] text-white">{m.label}</label>
                   <div className="flex items-center gap-2">
@@ -186,6 +192,8 @@ export function StrategistSettingsPanel() {
                       >
                         <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${val === 1 ? "translate-x-4" : "translate-x-0.5"}`} />
                       </button>
+                    ) : overriddenByUnlimited ? (
+                      <span className="font-mono text-[11px] text-[#26a69a] tabular-nums text-right italic">Unlimited</span>
                     ) : (
                       <span className="font-mono text-[11px] text-[#f5a623] tabular-nums w-12 text-right">{val}</span>
                     )}
@@ -198,8 +206,9 @@ export function StrategistSettingsPanel() {
                     max={m.max}
                     step={m.step}
                     value={val}
+                    disabled={overriddenByUnlimited}
                     onChange={(e) => handleChange(m.key, Number(e.target.value))}
-                    className="w-full h-1 rounded-full appearance-none cursor-pointer"
+                    className={`w-full h-1 rounded-full appearance-none ${overriddenByUnlimited ? "cursor-not-allowed" : "cursor-pointer"}`}
                     style={{ accentColor: "#f5a623", background: "#2A2A2C" }}
                   />
                 )}
