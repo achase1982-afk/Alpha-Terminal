@@ -815,14 +815,15 @@ function isOpenAIThinkingModel(model: string): boolean {
 }
 
 function makeOpenAIClient(): OpenAI {
-  const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
-  const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
-  if (!apiKey || !baseURL) {
-    throw new Error("OpenAI AI integration env vars not configured (AI_INTEGRATIONS_OPENAI_*)");
+  // User-owned billing: calls go directly to api.openai.com using the user's
+  // personal OPENAI_API_KEY (NOT the Replit AI Integrations proxy).
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY not configured");
   }
   // Match the 20-minute timeout we use for Anthropic — debate turns with
   // reasoning + web search can run multiple minutes per call.
-  return new OpenAI({ apiKey, baseURL, timeout: 20 * 60 * 1000 });
+  return new OpenAI({ apiKey, timeout: 20 * 60 * 1000 });
 }
 
 function buildOpenAIResponseParams(
