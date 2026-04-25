@@ -495,32 +495,50 @@ function DisplayMarqueePage() {
   );
 }
 
-const ALL_MODELS = [
+const OPENAI_MODELS = [
+  "gpt-5.5",
+  "gpt-5.4",
+  "gpt-5.2",
+  "gpt-5",
+  "gpt-5-mini",
+  "gpt-5-nano",
+  "o4-mini",
+];
+
+const ANTHROPIC_MODELS = [
   "claude-opus-4-7",
   "claude-opus-4-6",
   "claude-sonnet-4-6",
   "claude-opus-4-20250514",
   "claude-sonnet-4-20250514",
   "claude-3-7-sonnet-20250219",
+];
+
+const GOOGLE_MODELS = [
   "gemini-3.1-pro-preview",
   "gemini-2.5-pro",
   "gemini-2.5-flash",
   "gemini-2.0-flash",
 ];
 
+const ALL_MODELS = [...ANTHROPIC_MODELS, ...GOOGLE_MODELS, ...OPENAI_MODELS];
+
 const ANALYST_MODELS: Record<string, string[]> = {
-  anthropic: ["claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-4-20250514", "claude-sonnet-4-20250514", "claude-3-7-sonnet-20250219"],
-  google: ["gemini-3.1-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
+  anthropic: ANTHROPIC_MODELS,
+  google: GOOGLE_MODELS,
+  openai: OPENAI_MODELS,
 };
 
 const SKEPTIC_MODELS: Record<string, string[]> = {
-  google: ["gemini-3.1-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
-  anthropic: ["claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-4-20250514", "claude-sonnet-4-20250514", "claude-3-7-sonnet-20250219"],
+  anthropic: ANTHROPIC_MODELS,
+  google: GOOGLE_MODELS,
+  openai: OPENAI_MODELS,
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
   anthropic: "ANTHROPIC (CLAUDE)",
   google: "GOOGLE (GEMINI)",
+  openai: "OPENAI (CHATGPT)",
 };
 
 type AiFeatureKey = keyof TerminalState['aiFeatureSettings'];

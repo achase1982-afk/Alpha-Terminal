@@ -1,7 +1,7 @@
 import { db, aiLabConfigTable, aiLabPromptsTable } from "@workspace/db";
 import { sql, eq, and, desc } from "drizzle-orm";
 
-export type AiLabModelProvider = "anthropic" | "google";
+export type AiLabModelProvider = "anthropic" | "google" | "openai";
 
 export interface AiLabFullConfig {
   analystModelProvider: AiLabModelProvider;
@@ -51,7 +51,7 @@ export interface AiLabFullConfig {
 
 export type AiLabStrategistConfig = AiLabFullConfig;
 
-const VALID_PROVIDERS = new Set<AiLabModelProvider>(["anthropic", "google"]);
+const VALID_PROVIDERS = new Set<AiLabModelProvider>(["anthropic", "google", "openai"]);
 
 const NUMERIC_KEYS = new Set([
   "analystTemperature", "skepticTemperature",

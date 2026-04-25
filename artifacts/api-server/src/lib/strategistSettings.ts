@@ -51,7 +51,7 @@ export interface StrategistConfig {
 // IMPORTANT: only append to this list — do not reorder, or saved settings
 // will silently point at the wrong model.
 export interface StrategistModelOption {
-  provider: "anthropic" | "google";
+  provider: "anthropic" | "google" | "openai";
   model: string;
   label: string;
 }
@@ -63,6 +63,16 @@ export const STRATEGIST_MODEL_OPTIONS: StrategistModelOption[] = [
   { provider: "google", model: "gemini-2.5-pro", label: "Gemini 2.5 Pro (Google)" },
   { provider: "anthropic", model: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 (Anthropic)" },
   { provider: "google", model: "gemini-2.5-flash", label: "Gemini 2.5 Flash (Google)" },
+  // OpenAI (ChatGPT). Append-only: never reorder. Indices above this are
+  // already persisted in user settings; appending keeps existing selections
+  // pointing at the right model.
+  { provider: "openai", model: "gpt-5.5", label: "GPT-5.5 + Thinking (OpenAI)" },
+  { provider: "openai", model: "gpt-5.4", label: "GPT-5.4 (OpenAI)" },
+  { provider: "openai", model: "gpt-5.2", label: "GPT-5.2 (OpenAI)" },
+  { provider: "openai", model: "gpt-5", label: "GPT-5 (OpenAI)" },
+  { provider: "openai", model: "gpt-5-mini", label: "GPT-5 Mini (OpenAI)" },
+  { provider: "openai", model: "gpt-5-nano", label: "GPT-5 Nano (OpenAI)" },
+  { provider: "openai", model: "o4-mini", label: "o4-mini Thinking (OpenAI)" },
 ];
 
 export function getStrategistModel(idx: number): StrategistModelOption {

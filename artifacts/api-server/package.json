@@ -30,6 +30,7 @@
     "drizzle-orm": "catalog:",
     "express": "^5",
     "linkedom": "^0.18.12",
+    "openai": "^6.34.0",
     "pino": "^9",
     "pino-http": "^10",
     "technicalindicators": "^3.1.0",

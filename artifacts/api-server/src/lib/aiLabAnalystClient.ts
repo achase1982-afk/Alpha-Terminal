@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 import { logger } from "./logger.js";
 import type {
   AiLabAnalystClient,
@@ -367,6 +368,45 @@ export async function callGeminiWithSystem(model: string, temperature: number, s
   const rawText = (response.text ?? "").trim();
   if (!rawText) throw new Error("No text content in Analyst LLM response (Gemini)");
   return rawText;
+}
+
+async function callOpenAI(model: string, temperature: number, prompt: string, systemPrompt: string): Promise<string> {
+  return callOpenAIWithSystem(model, temperature, systemPrompt, prompt);
+}
+
+export async function callOpenAIWithSystem(model: string, temperature: number, systemPrompt: string, prompt: string): Promise<string> {
+  const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+  if (!apiKey || !baseURL) {
+    throw new Error("OpenAI AI integration env vars not configured (AI_INTEGRATIONS_OPENAI_*)");
+  }
+  const client = new OpenAI({ apiKey, baseURL, timeout: 20 * 60 * 1000 });
+
+  // gpt-5.x and o-series require max_completion_tokens (not max_tokens),
+  // ignore custom temperature, and use reasoning_effort for "thinking".
+  const thinking = /^gpt-5/.test(model) || /^o[34]/.test(model);
+  const params: Record<string, unknown> = {
+    model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: prompt },
+    ],
+    response_format: { type: "json_object" },
+    max_completion_tokens: 8192,
+  };
+  if (thinking) {
+    params.reasoning_effort = /^gpt-5\.5/.test(model) ? "high" : "medium";
+  } else {
+    params.temperature = temperature;
+  }
+
+  const completion = await (client as unknown as {
+    chat: { completions: { create: (p: Record<string, unknown>) => Promise<{ choices?: Array<{ message?: { content?: string } }> }> } };
+  }).chat.completions.create(params);
+
+  const text = completion.choices?.[0]?.message?.content?.trim() ?? "";
+  if (!text) throw new Error("No text content in Analyst LLM response (OpenAI)");
+  return text;
 }
 
 export function extractJson(rawText: string): string {
@@ -759,6 +799,197 @@ export async function streamCallGeminiWithSystemAndWebSearch(
   };
 }
 
+// =====================================================================
+// OpenAI (ChatGPT) — uses Responses API with web_search_preview tool for
+// parity with Anthropic/Gemini web-search behavior. GPT-5 / o-series
+// "thinking" models use the `reasoning` parameter and cannot accept a
+// custom temperature (must be 1).
+// =====================================================================
+
+const OPENAI_MAX_OUTPUT_TOKENS = 16384;
+
+function isOpenAIThinkingModel(model: string): boolean {
+  // gpt-5.x family (5, 5.2, 5.4, 5.5, 5-mini, 5-nano) and o-series (o3, o4-mini)
+  // use the Responses API reasoning parameter and ignore custom temperature.
+  return /^gpt-5/.test(model) || /^o[34]/.test(model);
+}
+
+function makeOpenAIClient(): OpenAI {
+  const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+  if (!apiKey || !baseURL) {
+    throw new Error("OpenAI AI integration env vars not configured (AI_INTEGRATIONS_OPENAI_*)");
+  }
+  // Match the 20-minute timeout we use for Anthropic — debate turns with
+  // reasoning + web search can run multiple minutes per call.
+  return new OpenAI({ apiKey, baseURL, timeout: 20 * 60 * 1000 });
+}
+
+function buildOpenAIResponseParams(
+  model: string,
+  temperature: number,
+  systemPrompt: string,
+  prompt: string,
+): Record<string, unknown> {
+  const params: Record<string, unknown> = {
+    model,
+    instructions: systemPrompt,
+    input: prompt,
+    tools: [{ type: "web_search_preview" }],
+    max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
+  };
+  if (isOpenAIThinkingModel(model)) {
+    // gpt-5.5 with thinking → high reasoning effort; others → medium for
+    // balanced cost/quality. Summary "auto" surfaces reasoning summaries
+    // when the model emits them.
+    const effort = /^gpt-5\.5/.test(model) ? "high" : "medium";
+    params.reasoning = { effort, summary: "auto" };
+  } else {
+    params.temperature = temperature;
+  }
+  return params;
+}
+
+function extractOpenAIResponseTrace(
+  output: unknown,
+  queries: string[],
+  sources: WebSearchSource[],
+  seenUrls: Set<string>,
+  textChunks: string[],
+): void {
+  if (!Array.isArray(output)) return;
+  for (const item of output as Array<Record<string, unknown>>) {
+    const itemType = item.type as string | undefined;
+    if (itemType === "message") {
+      const content = item.content as Array<Record<string, unknown>> | undefined;
+      if (!Array.isArray(content)) continue;
+      for (const part of content) {
+        const partType = part.type as string | undefined;
+        if (partType === "output_text") {
+          const txt = part.text as string | undefined;
+          if (txt) textChunks.push(txt);
+          const annotations = part.annotations as Array<Record<string, unknown>> | undefined;
+          if (Array.isArray(annotations)) {
+            for (const ann of annotations) {
+              if (ann.type !== "url_citation") continue;
+              const url = ann.url as string | undefined;
+              if (!url || seenUrls.has(url)) continue;
+              seenUrls.add(url);
+              sources.push({ title: (ann.title as string | undefined) ?? url, url });
+            }
+          }
+        }
+      }
+    } else if (itemType === "web_search_call") {
+      const action = item.action as Record<string, unknown> | undefined;
+      const q = action?.query as string | undefined;
+      if (typeof q === "string" && q.trim() && !queries.includes(q.trim())) {
+        queries.push(q.trim());
+      }
+    }
+  }
+}
+
+export async function callOpenAIWithSystemAndWebSearch(
+  model: string,
+  temperature: number,
+  systemPrompt: string,
+  prompt: string,
+): Promise<WebSearchResult> {
+  const client = makeOpenAIClient();
+  const params = buildOpenAIResponseParams(model, temperature, systemPrompt, prompt);
+
+  // Cast: the OpenAI SDK types lag behind the Responses API surface for
+  // web_search_preview + reasoning. We've matched the documented shape.
+  const response = await (client as unknown as {
+    responses: { create: (p: Record<string, unknown>) => Promise<{ output?: unknown; output_text?: string }> };
+  }).responses.create(params);
+
+  const queries: string[] = [];
+  const sources: WebSearchSource[] = [];
+  const seenUrls = new Set<string>();
+  const textChunks: string[] = [];
+  extractOpenAIResponseTrace(response.output, queries, sources, seenUrls, textChunks);
+
+  // Fallback to convenience getter if no message blocks were parsed.
+  const text = (textChunks.join("\n").trim() || (response.output_text ?? "").trim());
+  if (!text) throw new Error("No text content in Strategist LLM response (OpenAI web search)");
+
+  return {
+    text,
+    trace: { webSearchUsed: queries.length > 0, queries, sources },
+  };
+}
+
+export async function streamCallOpenAIWithSystemAndWebSearch(
+  model: string,
+  temperature: number,
+  systemPrompt: string,
+  prompt: string,
+  onDelta: (text: string) => void,
+  onStatus?: (status: string) => void,
+): Promise<WebSearchResult> {
+  const client = makeOpenAIClient();
+  const params = { ...buildOpenAIResponseParams(model, temperature, systemPrompt, prompt), stream: true };
+
+  onStatus?.("Calling OpenAI with web search…");
+
+  const stream = await (client as unknown as {
+    responses: { create: (p: Record<string, unknown>) => Promise<AsyncIterable<Record<string, unknown>>> };
+  }).responses.create(params);
+
+  const queries: string[] = [];
+  const sources: WebSearchSource[] = [];
+  const seenUrls = new Set<string>();
+  let fullText = "";
+  let finalResponse: unknown = null;
+
+  for await (const event of stream) {
+    const evType = event.type as string | undefined;
+    if (evType === "response.output_text.delta") {
+      const delta = event.delta as string | undefined;
+      if (delta) {
+        fullText += delta;
+        onDelta(delta);
+      }
+    } else if (evType === "response.web_search_call.in_progress" || evType === "response.web_search_call.searching") {
+      onStatus?.("Searching the web…");
+    } else if (evType === "response.web_search_call.completed") {
+      onStatus?.("Web search complete");
+    } else if (evType === "response.reasoning_summary_text.delta") {
+      // Surface reasoning summaries as status, not as text content.
+      const delta = event.delta as string | undefined;
+      if (delta) onStatus?.(`Reasoning: ${delta.slice(0, 80)}`);
+    } else if (evType === "response.output_item.added") {
+      const item = event.item as Record<string, unknown> | undefined;
+      if (item?.type === "web_search_call") {
+        onStatus?.("Searching the web…");
+      } else if (item?.type === "message") {
+        onStatus?.("Drafting response…");
+      } else if (item?.type === "reasoning") {
+        onStatus?.("Reasoning…");
+      }
+    } else if (evType === "response.completed") {
+      finalResponse = (event as { response?: unknown }).response;
+    }
+  }
+
+  // Pull queries + sources from the final response payload (annotations are
+  // attached when the message item is finalized).
+  if (finalResponse && typeof finalResponse === "object") {
+    const output = (finalResponse as { output?: unknown }).output;
+    extractOpenAIResponseTrace(output, queries, sources, seenUrls, []);
+  }
+
+  const text = fullText.trim();
+  if (!text) throw new Error("No text content in Strategist LLM stream (OpenAI)");
+
+  return {
+    text,
+    trace: { webSearchUsed: queries.length > 0, queries, sources },
+  };
+}
+
 export const DEFAULT_UNIVERSE_SCREEN_SYSTEM_PROMPT = `You are the Senior Options Strategist for a quantitative trading desk. You are being given compact summaries for the active stock universe.
 
 YOUR TASK: Review ALL tickers and pick the 1-3 BEST trade opportunities. You are the first filter — be selective but not overly restrictive. Good setups exist most days.
@@ -885,6 +1116,9 @@ export class ConfigurableAnalystClient implements AiLabAnalystClient {
       case "google":
         rawText = await callGemini(this.modelName, this.temperature, prompt, systemPrompt);
         break;
+      case "openai":
+        rawText = await callOpenAI(this.modelName, this.temperature, prompt, systemPrompt);
+        break;
       default:
         throw new Error(`Unsupported analyst provider: ${this.provider}`);
     }
@@ -915,6 +1149,9 @@ export class ConfigurableAnalystClient implements AiLabAnalystClient {
       case "google":
         rawText = await callGeminiWithSystem(this.modelName, this.temperature, systemPrompt, prompt);
         break;
+      case "openai":
+        rawText = await callOpenAIWithSystem(this.modelName, this.temperature, systemPrompt, prompt);
+        break;
       default:
         throw new Error(`Unsupported analyst provider: ${this.provider}`);
     }
@@ -943,6 +1180,9 @@ export class ConfigurableAnalystClient implements AiLabAnalystClient {
         break;
       case "google":
         rawText = await callGeminiWithSystem(this.modelName, this.temperature, systemPrompt, prompt);
+        break;
+      case "openai":
+        rawText = await callOpenAIWithSystem(this.modelName, this.temperature, systemPrompt, prompt);
         break;
       default:
         throw new Error(`Unsupported analyst provider: ${this.provider}`);
