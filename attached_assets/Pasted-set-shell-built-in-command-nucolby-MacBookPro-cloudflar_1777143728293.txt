@@ -1,0 +1,33 @@
+set: shell built-in command
+nucolby@MacBookPro ~ % cloudflared tunnel --config ~/.cloudflared/config.yml run
+2026-04-25T19:00:43Z INF Starting tunnel tunnelID=d2a71743-237a-4f8d-88ba-5b0138fbc302
+2026-04-25T19:00:43Z INF Version 2026.3.0 (Checksum b91dbec79a3e3809d5508b96d8b0bdfbf3ad7d51f858200228fa3e57100580d9)
+2026-04-25T19:00:43Z INF GOOS: darwin, GOVersion: go1.26.0, GoArch: amd64
+2026-04-25T19:00:43Z INF Settings: map[config:/Users/nucolby/.cloudflared/config.yml cred-file:/Users/nucolby/.cloudflared/d2a71743-237a-4f8d-88ba-5b0138fbc302.json credentials-file:/Users/nucolby/.cloudflared/d2a71743-237a-4f8d-88ba-5b0138fbc302.json]
+2026-04-25T19:00:43Z INF cloudflared will not automatically update when run from the shell. To enable auto-updates, run cloudflared as a service: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/configure-tunnels/local-management/as-a-service/
+2026-04-25T19:00:43Z INF Generated Connector ID: 77e57e80-3515-4a91-8a60-d5ff7f4da4e9
+2026-04-25T19:00:43Z INF Initial protocol quic
+2026-04-25T19:00:43Z INF ICMP proxy will use 192.168.1.99 as source for IPv4
+2026-04-25T19:00:43Z INF ICMP proxy will use fe80::47a:6454:de5e:ef89 in zone en0 as source for IPv6
+2026-04-25T19:00:43Z INF Created ICMP proxy listening on 192.168.1.99:0
+2026-04-25T19:00:43Z INF ICMP proxy will use 192.168.1.99 as source for IPv4
+2026-04-25T19:00:43Z INF ICMP proxy will use fe80::47a:6454:de5e:ef89 in zone en0 as source for IPv6
+2026-04-25T19:00:43Z INF Starting metrics server on 127.0.0.1:20241/metrics
+2026-04-25T19:00:43Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=0 event=0 ip=198.41.200.13
+2026-04-25T19:00:44Z INF Registered tunnel connection connIndex=0 connection=27a8cea5-01aa-403a-b4de-d1bbd29d884f event=0 ip=198.41.200.13 location=iad11 protocol=quic
+2026-04-25T19:00:44Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=1 event=0 ip=198.41.192.107
+2026-04-25T19:00:44Z INF Updated to new configuration config="{\"ingress\":[{\"hostname\":\"ibkr.nucolbyterminal.com\", \"originRequest\":{}, \"service\":\"http://localhost:7497\"}, {\"originRequest\":{}, \"service\":\"http_status:404\"}], \"warp-routing\":{\"enabled\":false}}" version=4
+2026-04-25T19:00:44Z INF Registered tunnel connection connIndex=1 connection=814c16ed-01e5-4128-9997-360bf8de7371 event=0 ip=198.41.192.107 location=iad09 protocol=quic
+2026-04-25T19:00:45Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=2 event=0 ip=198.41.192.167
+2026-04-25T19:00:45Z INF Registered tunnel connection connIndex=2 connection=2ad1b976-76a4-4f06-84f6-a6ec1b630a4f event=0 ip=198.41.192.167 location=iad09 protocol=quic
+2026-04-25T19:00:46Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=3 event=0 ip=198.41.200.23
+2026-04-25T19:00:46Z INF Registered tunnel connection connIndex=3 connection=94f48a62-af11-438d-95a8-9ffa0dccf18c event=0 ip=198.41.200.23 location=ord07 protocol=quic
+2026-04-25T19:00:50Z ERR  error="Unable to reach the origin service. The service may be down or it may not be responding to traffic from cloudflared: dial tcp [::1]:7497: connect: connection refused" connIndex=1 event=1 ingressRule=0 originService=http://localhost:7497
+2026-04-25T19:00:50Z ERR Request failed error="Unable to reach the origin service. The service may be down or it may not be responding to traffic from cloudflared: dial tcp [::1]:7497: connect: connection refused" connIndex=1 dest=https://ibkr.nucolbyterminal.com/ event=0 ip=198.41.192.107 type=ws
+2026-04-25T19:00:55Z ERR  error="Unable to reach the origin service. The service may be down or it may not be responding to traffic from cloudflared: dial tcp [::1]:7497: connect: connection refused" connIndex=3 event=1 ingressRule=0 originService=http://localhost:7497
+2026-04-25T19:00:55Z ERR Request failed error="Unable to reach the origin service. The service may be down or it may not be responding to traffic from cloudflared: dial tcp [::1]:7497: connect: connection refused" connIndex=3 dest=https://ibkr.nucolbyterminal.com/ event=0 ip=198.41.200.23 type=ws
+2026-04-25T19:01:20Z ERR  error="Unable to reach the origin service. The service may be down or it may not be responding to traffic from cloudflared: dial tcp [::1]:7497: connect: connection refused" connIndex=1 event=1 ingressRule=0 originService=http://localhost:7497
+2026-04-25T19:01:20Z ERR Request failed error="Unable to reach the origin service. The service may be down or it may not be responding to traffic from cloudflared: dial tcp [::1]:7497: connect: connection refused" connIndex=1 dest=https://ibkr.nucolbyterminal.com/ event=0 ip=198.41.192.107 type=ws
+2026-04-25T19:01:25Z ERR  error="Unable to reach the origin service. The service may be down or it may not be responding to traffic from cloudflared: dial tcp [::1]:7497: connect: connection refused" connIndex=3 event=1 ingressRule=0 originService=http://localhost:7497
+2026-04-25T19:01:25Z ERR Request failed error="Unable to reach the origin service. The service may be down or it may not be responding to traffic from cloudflared: dial tcp [::1]:7497: connect: connection refused" connIndex=3 dest=https://ibkr.nucolbyterminal.com/ event=0 ip=198.41.200.23 type=ws
+
