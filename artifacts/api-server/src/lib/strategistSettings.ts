@@ -42,6 +42,9 @@ export interface StrategistConfig {
   // Strategist mode + model selection
   strategistMode: number; // 1 = Solo, 2 = Debate
   strategistConvergence: number; // 1 = highest_confidence, 2 = synthesis, 3 = hybrid
+  /** Confidence-point gap (Bull − Bear) below which the verdict is SIDEWAYS.
+   *  Smaller = more directional verdicts; larger = more SIDEWAYS / vol-neutral. */
+  strategistTieBand: number;
   strategistSoloModelIdx: number;
   strategistDebateAModelIdx: number;
   strategistDebateBModelIdx: number;
@@ -133,6 +136,7 @@ const DEFAULTS: Record<string, number> = {
   regimeUpdateFrequencyMin: 5,
   strategistMode: 1,
   strategistConvergence: 3,
+  strategistTieBand: 10,
   strategistSoloModelIdx: 0,
   strategistDebateAModelIdx: 0,
   strategistDebateBModelIdx: 1,
@@ -223,6 +227,7 @@ export function getSettingMeta(): SettingMetaEntry[] {
       { value: 2, label: "Synthesis pass (extra LLM merges both)" },
       { value: 3, label: "Hybrid — agree → synthesis, disagree → higher confidence" },
     ] },
+    { key: "strategistTieBand", label: "Debate Tie Band (confidence pts)", group: "Strategist", default: 10, min: 1, max: 30, step: 1, description: "How close the Bull and Bear confidences must be (in points) for the verdict to land on SIDEWAYS / vol-neutral. Lower = more directional verdicts; higher = more SIDEWAYS calls. Common settings: 5 = tight, 10 = medium (default), 20 = wide." },
 
     { key: "ioWeightR2", label: "Market Independence (R²)", group: "IOScore", default: 0.30, min: 0, max: 0.50, step: 0.05, description: "How much weight the 'is this stock independent from SPY' factor gets." },
     { key: "ioWeightResidual", label: "Abnormal Move (Residual Return)", group: "IOScore", default: 0.25, min: 0, max: 0.50, step: 0.05, description: "How much weight the 'is this stock making an unusual move' factor gets." },
@@ -244,8 +249,8 @@ export function getSettingMeta(): SettingMetaEntry[] {
     { key: "scannerIdioLiquidity", label: "Options Liquidity Weight", group: "Scanner Idiosyncratic", default: 15, min: 0, max: 40, step: 5, description: "Options liquidity weight in idiosyncratic mode." },
     { key: "catalystBonusPoints", label: "Catalyst Bonus Points", group: "Scanner", default: 10, min: 0, max: 25, step: 1, description: "Flat score boost for confirmed catalyst in idiosyncratic mode." },
     { key: "scannerMinScore", label: "Minimum Score Threshold", group: "Scanner", default: 55, min: 30, max: 80, step: 5, description: "Minimum composite score to appear in scan results." },
-    { key: "preferredDteMin", label: "Preferred DTE Min", group: "Strategy", default: 30, min: 7, max: 45, step: 1, description: "Minimum days to expiration for strategy selection." },
-    { key: "preferredDteMax", label: "Preferred DTE Max", group: "Strategy", default: 60, min: 30, max: 90, step: 5, description: "Maximum days to expiration for strategy selection." },
+    { key: "preferredDteMin", label: "Preferred DTE Min", group: "Strategy", default: 30, min: 0, max: 45, step: 1, description: "Minimum days to expiration for strategy selection. Set to 0 to allow 0DTE setups." },
+    { key: "preferredDteMax", label: "Preferred DTE Max", group: "Strategy", default: 60, min: 30, max: 365, step: 5, description: "Maximum days to expiration for strategy selection. Raise to 180+ for longer-dated structures, or up to 365 for LEAPS." },
     { key: "spreadWidthUnlimited", label: "Spread Width — Unlimited", group: "Strategy", default: 1, min: 0, max: 1, step: 1, description: "When ON, the strategist agents are free to pick any spread width that fits their thesis (the slider below is ignored). When OFF, the slider's value is treated as a hard cap and the agents must respect it." },
     { key: "spreadWidth", label: "Spread Width ($)", group: "Strategy", default: 5, min: 1, max: 100, step: 0.50, description: "Width of vertical spreads in dollars. Only enforced when 'Spread Width — Unlimited' above is OFF." },
     { key: "minOpenInterest", label: "Min Open Interest Per Leg", group: "Strategy", default: 50, min: 10, max: 500, step: 10, description: "Minimum OI required for each leg." },

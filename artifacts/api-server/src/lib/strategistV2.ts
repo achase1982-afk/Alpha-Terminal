@@ -1548,6 +1548,10 @@ async function callAiForTradeViaDebate(
   const convergence = ([1, 2, 3].includes(settings.strategistConvergence)
     ? settings.strategistConvergence
     : 3) as 1 | 2 | 3;
+  const tieBand =
+    typeof settings.strategistTieBand === "number" && Number.isFinite(settings.strategistTieBand)
+      ? settings.strategistTieBand
+      : 10;
 
   logger.info(
     {
@@ -1558,6 +1562,7 @@ async function callAiForTradeViaDebate(
       arbitratorModel: arbitratorModel.model,
       arbitratorProvider: arbitratorModel.provider,
       convergence,
+      tieBand,
     },
     "StrategistV2: starting Debate-mode analysis",
   );
@@ -1580,7 +1585,7 @@ async function callAiForTradeViaDebate(
   const outcome = await runDebate({
     systemPrompt: STRATEGIST_SYSTEM_PROMPT,
     dataPackage: debateDataPackage,
-    config: { modelA, modelB, arbitratorModel, convergence },
+    config: { modelA, modelB, arbitratorModel, convergence, tieBand },
     personaA: BULL_PERSONA,
     personaB: BEAR_PERSONA,
     personaNameA: "Bull",

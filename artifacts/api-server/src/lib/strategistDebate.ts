@@ -41,14 +41,20 @@ export interface DebateConfig {
    */
   arbitratorModel: StrategistModelOption | "winner";
   /**
-   * Convergence is reinterpreted as the tie-band width (in confidence points)
-   * for the verdict step. Tighter bands push more results to a directional
-   * winner; wider bands push more results to SIDEWAYS.
-   *  1 = tight band (5 pts) — almost always picks a directional winner
-   *  2 = wide band (20 pts) — favors SIDEWAYS / vol-neutral when sides are close
-   *  3 = medium band (10 pts) — balanced (default)
+   * How the single final report is produced after both sides finish debating.
+   *  1 = highest confidence wins (no extra LLM call)
+   *  2 = synthesis pass (one extra LLM merges both)
+   *  3 = hybrid — agree → synthesis, disagree → highest confidence (default)
    */
   convergence: 1 | 2 | 3;
+  /**
+   * Tie-band width in confidence points for the BULL/BEAR/SIDEWAYS verdict.
+   * If |bullConfidence − bearConfidence| ≤ tieBand, the verdict is SIDEWAYS.
+   * Smaller = more directional verdicts; larger = more SIDEWAYS / vol-neutral.
+   * Common settings: 5 (tight), 10 (medium, default), 20 (wide). Independent
+   * of `convergence` — set per-user via `strategistTieBand` in settings.
+   */
+  tieBand: number;
 }
 
 export type DebateVerdict = "BULLISH" | "BEARISH" | "SIDEWAYS";
@@ -386,10 +392,13 @@ function extractConfidence(raw: string, fields: string[]): number {
   return 0;
 }
 
-function tieBandFor(convergence: 1 | 2 | 3): number {
-  if (convergence === 1) return 5;
-  if (convergence === 2) return 20;
-  return 10;
+/** Clamp + sanitize the user-configured tie band. Falls back to 10 (medium)
+ *  if the value is missing, NaN, ≤0, or absurdly large. */
+function sanitizeTieBand(raw: number | undefined): number {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return 10;
+  if (raw < 1) return 1;
+  if (raw > 100) return 100;
+  return Math.round(raw);
 }
 
 function computeVerdict(bullConf: number, bearConf: number, band: number): DebateVerdict {
@@ -507,7 +516,7 @@ export async function runDebate(args: {
   const bearConfidence =
     extractConfidence(r2b.text, ["revisedConfidence", "confidence"]) ||
     extractConfidence(r1b.text, ["confidence"]);
-  const band = tieBandFor(config.convergence);
+  const band = sanitizeTieBand(config.tieBand);
   const verdict = computeVerdict(bullConfidence, bearConfidence, band);
 
   const verdictJson = JSON.stringify(
@@ -518,7 +527,7 @@ export async function runDebate(args: {
       delta: bullConfidence - bearConfidence,
       tieBand: band,
       tieBandSource:
-        config.convergence === 1 ? "tight (setting #1)" : config.convergence === 2 ? "wide (setting #2)" : "medium (setting #3)",
+        band <= 5 ? `${band} pts (tight)` : band >= 20 ? `${band} pts (wide)` : `${band} pts (medium)`,
       verdict,
       nextStep:
         verdict === "SIDEWAYS"
