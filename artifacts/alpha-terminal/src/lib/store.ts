@@ -1,5 +1,58 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { fetchWithAuth } from './fetchWithAuth';
+
+// ---------- Watchlist cloud-sync helpers ----------
+// Debounced pusher: any watchlist mutation schedules a push 1.5 s later.
+// Multiple rapid edits (e.g. adding several symbols) coalesce into one request.
+let _wlSyncTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleWatchlistSync() {
+  if (_wlSyncTimer) clearTimeout(_wlSyncTimer);
+  _wlSyncTimer = setTimeout(() => {
+    const { watchlists } = useTerminalStore.getState();
+    void pushWatchlistsToServer(watchlists);
+  }, 1500);
+}
+
+async function pushWatchlistsToServer(
+  watchlists: Record<string, { name: string; symbols: string[] }>,
+): Promise<void> {
+  try {
+    await fetchWithAuth('/api/watchlists/terminal', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ watchlists }),
+    });
+  } catch {
+    // Non-fatal: local state is source of truth when offline.
+  }
+}
+
+export async function loadWatchlistsFromServer(): Promise<void> {
+  try {
+    const res = await fetchWithAuth('/api/watchlists/terminal');
+    if (!res.ok) return;
+    const { watchlists } = (await res.json()) as {
+      watchlists: Record<string, { name: string; symbols: string[] }>;
+    };
+    if (!watchlists || Object.keys(watchlists).length === 0) {
+      // Server is empty on first login — upload the local state so it persists.
+      scheduleWatchlistSync();
+      return;
+    }
+    // Server wins: replace local watchlists with the server copy.
+    const current = useTerminalStore.getState();
+    const serverIds = Object.keys(watchlists);
+    const nextActiveId = serverIds.includes(current.activeWatchlistId)
+      ? current.activeWatchlistId
+      : serverIds.includes('default')
+        ? 'default'
+        : serverIds[0];
+    useTerminalStore.setState({ watchlists, activeWatchlistId: nextActiveId });
+  } catch {
+    // Offline or API error — keep local state.
+  }
+}
 
 export interface LiveQuote {
   symbol:       string;
@@ -531,6 +584,7 @@ export const useTerminalStore = create<TerminalState>()(
           if (!wl || wl.symbols.includes(upper)) return {};
           return { watchlists: { ...state.watchlists, [id]: { ...wl, symbols: [...wl.symbols, upper] } }, activeWatchlistId: id };
         });
+        scheduleWatchlistSync();
       },
       removeFromWatchlist: (symbol) => {
         const upper = symbol.toUpperCase();
@@ -540,6 +594,7 @@ export const useTerminalStore = create<TerminalState>()(
           if (!wl) return {};
           return { watchlists: { ...state.watchlists, [id]: { ...wl, symbols: wl.symbols.filter(s => s !== upper) } }, activeWatchlistId: id };
         });
+        scheduleWatchlistSync();
       },
       createWatchlist: (name) => {
         const id = `wl_${Date.now()}`;
@@ -547,6 +602,7 @@ export const useTerminalStore = create<TerminalState>()(
           watchlists: { ...state.watchlists, [id]: { name, symbols: [] } },
           activeWatchlistId: id,
         }));
+        scheduleWatchlistSync();
         return id;
       },
       deleteWatchlist: (id) => {
@@ -559,6 +615,7 @@ export const useTerminalStore = create<TerminalState>()(
             activeWatchlistId: state.activeWatchlistId === id ? "default" : state.activeWatchlistId,
           };
         });
+        scheduleWatchlistSync();
       },
       renameWatchlist: (id, name) => {
         set((state) => {
@@ -566,6 +623,7 @@ export const useTerminalStore = create<TerminalState>()(
           if (!wl) return {};
           return { watchlists: { ...state.watchlists, [id]: { ...wl, name } } };
         });
+        scheduleWatchlistSync();
       },
       setActiveWatchlist: (id) => set({ activeWatchlistId: id }),
 

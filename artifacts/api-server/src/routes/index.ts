@@ -17,6 +17,7 @@ import snapshotRouter from "./snapshot";
 import aiLabRouter from "./aiLab";
 import strategistV2Router from "./strategistV2";
 import flowTimeSalesRouter from "./flowTimeSales";
+import watchlistsRouter from "./watchlists";
 const router: IRouter = Router();
 
 router.use("/auth", authRouter);
@@ -37,5 +38,6 @@ router.use("/snapshot", snapshotRouter);
 router.use("/ai-lab", aiLabRouter);
 router.use("/strategist", strategistV2Router);
 router.use("/flow", flowTimeSalesRouter);
+router.use("/watchlists", watchlistsRouter);
 
 export default router;

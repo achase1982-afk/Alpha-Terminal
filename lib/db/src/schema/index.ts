@@ -567,3 +567,16 @@ export const equityIvCanonicalTable = pgTable("equity_iv_canonical", {
 ]);
 
 export type EquityIvCanonical = typeof equityIvCanonicalTable.$inferSelect;
+
+export const terminalWatchlistsTable = pgTable("terminal_watchlists", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  clientId: text("client_id").notNull(),
+  name: text("name").notNull(),
+  symbols: jsonb("symbols").$type<string[]>().notNull().default([]),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("terminal_watchlists_user_client").on(t.userId, t.clientId),
+]);
+
+export type TerminalWatchlist = typeof terminalWatchlistsTable.$inferSelect;

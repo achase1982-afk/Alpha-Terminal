@@ -8,7 +8,7 @@ import { MacroBar } from "@/components/MacroBar";
 import { TickerTape } from "@/components/TickerTape";
 import { SearchOverlay } from "@/components/SearchOverlay";
 import { MarketDataTabs, type MarketDataTab } from "@/components/MarketDataTabs";
-import { useTerminalStore } from "@/lib/store";
+import { useTerminalStore, loadWatchlistsFromServer } from "@/lib/store";
 import { useUICustomizationStore } from "@/lib/ui-customization-store";
 import { useUIThemeSync } from "@/hooks/useUIThemeSync";
 import { useGetPriceHistory } from "@workspace/api-client-react";
@@ -390,6 +390,9 @@ export default function TerminalPage() {
   useUIThemeSync();
   const isWide = useIsTablet();
   const isThreePanel = useIsDesktop();
+
+  // Load watchlists from server on mount so they're shared across devices.
+  useEffect(() => { void loadWatchlistsFromServer(); }, []);
 
   useEffect(() => {
     if (isWide && activeBottom === "watchlist") {
