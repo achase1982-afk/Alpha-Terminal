@@ -1,0 +1,25 @@
+Last login: Sat Apr 25 15:40:14 on ttys003
+nucolby@MacBookPro ib-bridge % cloudflared tunnel run d2a71743-237a-4f8d-88ba-5b0138fbc302
+2026-04-25T19:40:54Z INF Starting tunnel tunnelID=d2a71743-237a-4f8d-88ba-5b0138fbc302
+2026-04-25T19:40:54Z INF Version 2026.3.0 (Checksum b91dbec79a3e3809d5508b96d8b0bdfbf3ad7d51f858200228fa3e57100580d9)
+2026-04-25T19:40:54Z INF GOOS: darwin, GOVersion: go1.26.0, GoArch: amd64
+2026-04-25T19:40:54Z INF Settings: map[cred-file:/Users/nucolby/.cloudflared/d2a71743-237a-4f8d-88ba-5b0138fbc302.json credentials-file:/Users/nucolby/.cloudflared/d2a71743-237a-4f8d-88ba-5b0138fbc302.json]
+2026-04-25T19:40:54Z INF cloudflared will not automatically update when run from the shell. To enable auto-updates, run cloudflared as a service: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/configure-tunnels/local-management/as-a-service/
+2026-04-25T19:40:54Z INF Generated Connector ID: cb12a14a-7501-4528-85d1-7dd78398a759
+2026-04-25T19:40:54Z INF Initial protocol quic
+2026-04-25T19:40:54Z INF ICMP proxy will use 192.168.1.99 as source for IPv4
+2026-04-25T19:40:54Z INF ICMP proxy will use fe80::47a:6454:de5e:ef89 in zone en0 as source for IPv6
+2026-04-25T19:40:54Z INF Created ICMP proxy listening on 192.168.1.99:0
+2026-04-25T19:40:54Z INF ICMP proxy will use 192.168.1.99 as source for IPv4
+2026-04-25T19:40:54Z INF ICMP proxy will use fe80::47a:6454:de5e:ef89 in zone en0 as source for IPv6
+2026-04-25T19:40:54Z INF Starting metrics server on 127.0.0.1:20241/metrics
+2026-04-25T19:40:54Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=0 event=0 ip=198.41.200.113
+2026-04-25T19:40:54Z INF Registered tunnel connection connIndex=0 connection=54a7411d-7dc9-4b19-9dd0-1c7d6284aabd event=0 ip=198.41.200.113 location=ord11 protocol=quic
+2026-04-25T19:40:54Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=1 event=0 ip=198.41.192.77
+2026-04-25T19:40:54Z INF Updated to new configuration config="{\"ingress\":[{\"hostname\":\"ibkr.nucolbyterminal.com\", \"originRequest\":{}, \"service\":\"http://localhost:7497\"}, {\"originRequest\":{}, \"service\":\"http_status:404\"}], \"warp-routing\":{\"enabled\":false}}" version=4
+2026-04-25T19:40:55Z INF Registered tunnel connection connIndex=1 connection=e1da7240-da61-487b-8a8a-09d1e33b7cd1 event=0 ip=198.41.192.77 location=iad09 protocol=quic
+2026-04-25T19:40:55Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=2 event=0 ip=198.41.200.53
+2026-04-25T19:40:56Z INF Registered tunnel connection connIndex=2 connection=71604f72-667e-49cb-80c6-3c62f399cb72 event=0 ip=198.41.200.53 location=ord07 protocol=quic
+2026-04-25T19:40:56Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=3 event=0 ip=198.41.192.107
+2026-04-25T19:40:57Z INF Registered tunnel connection connIndex=3 connection=38276d66-973c-45a6-b1ed-f8478a3ab78d event=0 ip=198.41.192.107 location=iad16 protocol=quic
+
