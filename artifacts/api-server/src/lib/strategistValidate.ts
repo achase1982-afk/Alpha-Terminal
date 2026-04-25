@@ -2,6 +2,7 @@ import { logger } from "./logger.js";
 import {
   streamCallAnthropicWithSystemAndWebSearch,
   streamCallGeminiWithSystemAndWebSearch,
+  streamCallOpenAIWithSystemAndWebSearch,
   type WebSearchResult,
   type WebSearchTrace,
 } from "./aiLabAnalystClient.js";
@@ -712,6 +713,11 @@ async function streamModel(
 ): Promise<WebSearchResult> {
   if (modelOpt.provider === "anthropic") {
     return streamCallAnthropicWithSystemAndWebSearch(
+      modelOpt.model, TEMPERATURE, systemPrompt, prompt, onDelta, onStatus,
+    );
+  }
+  if (modelOpt.provider === "openai") {
+    return streamCallOpenAIWithSystemAndWebSearch(
       modelOpt.model, TEMPERATURE, systemPrompt, prompt, onDelta, onStatus,
     );
   }

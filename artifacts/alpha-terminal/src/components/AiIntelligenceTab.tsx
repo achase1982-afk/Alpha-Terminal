@@ -2404,14 +2404,37 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
 
   // Derive the active jobId for the current symbol from the store so it
   // survives component unmount/remount (e.g. when user switches bottom tabs).
+  //
+  // Two-tier fallback so the most recent strategist run stays visible even
+  // when the global `symbol` drifts (e.g. user clicks a scanner row, opens
+  // OrderTicket for a different ticker, or just types a new symbol in the
+  // command bar):
+  //   1. Prefer the most-recent job whose ticker matches the current symbol.
+  //   2. If none, fall back to the most-recent job overall, provided it is
+  //      either still running OR finished within the last RECENT_JOB_MS.
+  // This prevents the "ran a scan, navigated away, came back to a blank tab,
+  // then typed another ticker and the old result popped up" UX.
+  const RECENT_JOB_MS = 30 * 60 * 1000;
   const activeJobIdForSymbol = useMemo(() => {
     const upper = symbol.toUpperCase();
-    let best: { id: string; startedAt: number } | null = null;
+    let bestForSymbol: { id: string; startedAt: number } | null = null;
+    let bestRecent: { id: string; startedAt: number } | null = null;
+    const now = Date.now();
     for (const [id, job] of Object.entries(strategistJobs)) {
-      if (job.ticker !== upper) continue;
-      if (!best || job.startedAt > best.startedAt) best = { id, startedAt: job.startedAt };
+      if (job.ticker === upper) {
+        if (!bestForSymbol || job.startedAt > bestForSymbol.startedAt) {
+          bestForSymbol = { id, startedAt: job.startedAt };
+        }
+      }
+      const isRunning = job.status === 'running';
+      const finishedRecently = job.finishedAt != null && (now - job.finishedAt) < RECENT_JOB_MS;
+      if (isRunning || finishedRecently) {
+        if (!bestRecent || job.startedAt > bestRecent.startedAt) {
+          bestRecent = { id, startedAt: job.startedAt };
+        }
+      }
     }
-    return best?.id ?? null;
+    return (bestForSymbol?.id ?? bestRecent?.id) ?? null;
   }, [strategistJobs, symbol]);
 
   const v2Result: StrategistV2ResultType | null = (() => {
@@ -2419,7 +2442,10 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     const job = strategistJobs[activeJobIdForSymbol];
     if (job?.status === 'done' && job.result) return job.result as StrategistV2ResultType;
     if (job?.status === 'error') {
-      return { status: "no_viable_setup", ticker: symbol.toUpperCase(), blockReason: job.error || "Analysis failed", regime: { directionalConviction: "NEUTRAL", systemicRiskLevel: "NORMAL", correlationRegime: "MODERATE", compositeScore: 0, idioOpportunityFlag: false }, systemicRiskElevated: false };
+      // Use the job's own ticker (not the current global symbol) so the
+      // fallback error card stays truthful when cross-symbol fallback is
+      // active (i.e. user is viewing AAPL but the only recent job was MSFT).
+      return { status: "no_viable_setup", ticker: (job.ticker || symbol).toUpperCase(), blockReason: job.error || "Analysis failed", regime: { directionalConviction: "NEUTRAL", systemicRiskLevel: "NORMAL", correlationRegime: "MODERATE", compositeScore: 0, idioOpportunityFlag: false }, systemicRiskElevated: false };
     }
     return null;
   })();
