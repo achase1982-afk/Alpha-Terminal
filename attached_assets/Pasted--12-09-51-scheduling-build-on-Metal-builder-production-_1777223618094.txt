@@ -1,0 +1,97 @@
+
+12:09:51
+scheduling build on Metal builder "production-builderv3-us-west1-nw82"
+12:10:08
+unpacking archive
+12:10:08
+[internal] load build definition from Dockerfile
+12:10:08
+[internal] load build definition from Dockerfile
+12:10:08
+[internal] load build definition from Dockerfile
+12:10:08
+[internal] load build definition from Dockerfile
+12:10:08
+[internal] load build definition from Dockerfile
+12:10:08
+[internal] load metadata for docker.io/library/node:22-alpine
+12:10:08
+[internal] load metadata for docker.io/library/node:22-alpine
+12:10:08
+[internal] load .dockerignore
+...and 44 more logs
+Build succeeded! Image pushed. Check deployment status.
+
+Searched deploy logs
+
+Hide result
+12:11:55
+at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+12:11:55
+at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)
+12:11:55
+at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+12:11:55
+12:11:55
+Node.js v22.22.2
+12:11:57
+Node.js v22.22.2
+12:11:57
+^
+12:11:57
+12:11:57
+Error: DATABASE_URL must be set. Did you forget to provision a database?
+12:11:57
+/app/lib/db/src/index.ts:8
+...and 40 more logs
+Build succeeded but deployment crashed: DATABASE_URL must be set. The api-server needs the database connection string. You created a Postgres service earlier. Add the DATABASE_URL variable to api-server referencing the Postgres service.
+
+it say api server failed and alpa terminal crashed
+
+Checked environment status
+
+Hide result
+2 of 3 services with issues
+•
+17 recent failures
+alpha-terminal
+Crashed about 1 hour ago
+api-server
+39
+Offline
+Both failing. Check api-server's latest build:
+
+Searched build logs
+
+Hide result
+12:08:57
+[4/5] COPY . /app
+12:08:57
+[internal] load build context
+12:08:57
+[3/5] WORKDIR /app/artifacts/api-server
+12:08:57
+[2/5] RUN npm install -g pnpm@10.26.1
+12:08:57
+[1/5] FROM docker.io/library/node:22-alpine@sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f
+12:08:57
+[1/5] FROM docker.io/library/node:22-alpine@sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f
+12:08:57
+[internal] load build context
+12:08:57
+[1/5] FROM docker.io/library/node:22-alpine@sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f
+12:08:57
+[internal] load build context
+12:08:59
+[internal] load build context
+...and 40 more logs
+api-server: Build succeeded but container failed to start: The executable 'cd' could not be found. The Dockerfile's start command is broken. Check your Dockerfile — the CMD should be ["node", "dist/index.js"], not a shell command.
+
+alpha-terminal: Crashed because DATABASE_URL is missing.
+
+Fix the Dockerfile CMD for api-server. It should be:
+
+CMD ["node", "dist/index.js"]
+Not:
+
+CMD cd /app/artifacts/api-server && node dist/index.js
