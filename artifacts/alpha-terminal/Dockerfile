@@ -22,7 +22,7 @@ ENV NODE_ENV=production
 ARG CLERK_PUBLISHABLE_KEY=""
 ENV CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY}
 
-RUN pnpm install --frozen-lockfile \
+RUN CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY} pnpm install --frozen-lockfile \
     && pnpm --filter @workspace/alpha-terminal run build
 
 # Runtime stage — small nginx image. Native build binaries are not carried
