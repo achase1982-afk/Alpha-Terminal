@@ -1,3 +1,6 @@
+[build]
+packageManager = "none"
+
 [phases.install]
 commands = [
  "npm install -g pnpm",
