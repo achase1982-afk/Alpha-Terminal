@@ -6,7 +6,7 @@
     "types": ["node"],
     "resolveJsonModule": true,
     "noImplicitReturns": false,
-    "strictNullChecks": false
+    "strictNullChecks": true
   },
   "include": ["src"],
   "references": [
