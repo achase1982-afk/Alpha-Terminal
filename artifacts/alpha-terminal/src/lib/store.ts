@@ -245,6 +245,7 @@ export interface TerminalState {
   browserSource: string | null;
   browserSummary: string | null;
   openBrowser: (url: string, title?: string, source?: string, summary?: string) => void;
+  setBrowserFallback: (url: string, title?: string, source?: string, summary?: string) => void;
   closeBrowser: () => void;
 
   // ── Strategist V2 jobs + history (jobs ephemeral, history cached) ─────────
@@ -634,6 +635,7 @@ export const useTerminalStore = create<TerminalState>()(
       browserSource: null,
       browserSummary: null,
       openBrowser: (url, title, source, summary) => set({ browserUrl: url, browserTitle: title ?? null, browserSource: source ?? null, browserSummary: summary ?? null }),
+      setBrowserFallback: (url, title, source, summary) => set({ browserUrl: url, browserTitle: title ?? null, browserSource: source ?? null, browserSummary: summary ?? null }),
       closeBrowser: () => set({ browserUrl: null, browserTitle: null, browserSource: null, browserSummary: null }),
 
       liveNews: [] as LiveNewsItem[],
