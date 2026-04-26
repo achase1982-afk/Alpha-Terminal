@@ -47,8 +47,11 @@ RUN test -s /usr/share/nginx/html/index.html \
     && test -d /usr/share/nginx/html/assets \
     && echo "runtime image populated OK"
 
-# Defaults; Railway will override PORT at runtime and you must set API_BACKEND.
-ENV PORT=80
+# nginx listens on 80 (hardcoded in nginx.conf.template). Railway injects its
+# own PORT env var on every service, so we deliberately don't reference PORT in
+# the nginx config — otherwise nginx would bind to Railway's random port and
+# the public domain (which targets 80) couldn't reach it.
+# API_BACKEND must be set on the Railway service variables.
 ENV API_BACKEND="http://api-server.railway.internal:8080"
 
 EXPOSE 80
