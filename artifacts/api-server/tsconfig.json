@@ -4,7 +4,9 @@
     "outDir": "dist",
     "rootDir": "src",
     "types": ["node"],
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "noImplicitReturns": false,
+    "strictNullChecks": false
   },
   "include": ["src"],
   "references": [
