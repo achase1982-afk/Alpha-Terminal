@@ -1,0 +1,2 @@
+[build]
+buildArgs = ["CLERK_PUBLISHABLE_KEY"]
