@@ -1,0 +1,56 @@
+
+11:51:43
+artifacts/api-server typecheck: src/routes/market.ts(696,9): error TS2322: Type 'number | null | undefined' is not assignable to type 'number | undefined'.
+11:51:43
+artifacts/api-server typecheck: Type 'null' is not assignable to type 'number | undefined'.
+11:51:43
+artifacts/api-server typecheck: src/routes/market.ts(1018,44): error TS2345: Argument of type '{ calls: PolygonParsedContract[]; puts: PolygonParsedContract[]; underlyingPrice: number | null | undefined; fetchedAt: number; }' is not assignable to parameter of type '{ calls: OptionContract[]; puts: OptionContract[]; underlyingPrice?: number | undefined; fetchedAt: number; }'.
+11:51:43
+artifacts/api-server typecheck: Types of property 'underlyingPrice' are incompatible.
+11:51:43
+artifacts/api-server typecheck: Type 'number | null | undefined' is not assignable to type 'number | undefined'.
+11:51:43
+artifacts/api-server typecheck: Type 'null' is not assignable to type 'number | undefined'.
+11:51:43
+artifacts/api-server typecheck: src/routes/market.ts(1023,40): error TS2345: Argument of type '{ calls: PolygonParsedContract[]; puts: PolygonParsedContract[]; underlyingPrice: number | null | undefined; fetchedAt: number; }' is not assignable to parameter of type '{ calls: OptionContract[]; puts: OptionContract[]; underlyingPrice?: number | undefined; }'.
+11:51:43
+artifacts/api-server typecheck: Types of property 'underlyingPrice' are incompatible.
+11:51:43
+artifacts/api-server typecheck: Type 'number | null | undefined' is not assignable to type 'number | undefined'.
+11:51:43
+artifacts/api-server typecheck: Type 'null' is not assignable to type 'number | undefined'.
+...and 40 more logs
+
+Hide result
+11:51:17
+scheduling build on Metal builder "production-builderv3-us-west1-nw82"
+11:51:34
+unpacking archive
+11:51:34
+[internal] load build definition from Dockerfile
+11:51:34
+[internal] load build definition from Dockerfile
+11:51:34
+[internal] load build definition from Dockerfile
+11:51:34
+[internal] load build definition from Dockerfile
+11:51:34
+[internal] load build definition from Dockerfile
+11:51:34
+[internal] load metadata for docker.io/library/node:22-alpine
+11:51:45
+uploading snapshot
+11:52:10
+[internal] load .dockerignore
+...and 16 more logs
+alpha-terminal: Still missing rollup native module. The lockfile wasn't properly regenerated. You need to:
+
+Delete artifacts/alpha-terminal/pnpm-lock.yaml
+Delete artifacts/alpha-terminal/node_modules
+Run pnpm install from the root (not frozen-lockfile)
+Commit the new lockfile
+The issue is --frozen-lockfile in the Dockerfile prevents regenerating the lockfile. Either regenerate it locally and commit, or modify the Dockerfile to use pnpm install without --frozen-lockfile on first run.
+
+api-server: Built successfully (typecheck failed but continued). It's running now.
+
+Fix alpha-terminal's lockfile
