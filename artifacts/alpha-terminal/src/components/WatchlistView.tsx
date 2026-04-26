@@ -568,7 +568,7 @@ function WatchlistDropdown({ open, onClose }: { open: boolean; onClose: () => vo
                     >
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
-                    {id !== "default" && !id.startsWith("scanner_") && (
+                    {id !== "default" && (
                       <button
                         onClick={(e) => { e.stopPropagation(); deleteWatchlist(id); }}
                         className="p-1.5 text-[#52525b] hover:text-red-400 rounded transition-colors"
