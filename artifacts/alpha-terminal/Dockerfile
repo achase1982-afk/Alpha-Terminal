@@ -25,12 +25,27 @@ ENV CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY}
 RUN pnpm install --frozen-lockfile \
     && pnpm --filter @workspace/alpha-terminal run build
 
+# Sanity check — fail the build (and therefore the Railway deploy) if Vite
+# didn't actually produce a working dist. Without this, an empty dist would
+# silently produce an image that serves nginx 404s for every route.
+RUN echo "=== build output ===" \
+    && ls -la /app/artifacts/alpha-terminal/dist/public \
+    && test -s /app/artifacts/alpha-terminal/dist/public/index.html \
+    && test -d /app/artifacts/alpha-terminal/dist/public/assets \
+    && echo "=== build output OK ==="
+
 # Runtime stage — small nginx image. Native build binaries are not carried
 # over, so the runtime libc doesn't matter.
 FROM nginx:alpine AS runtime
 
 COPY --from=builder /app/artifacts/alpha-terminal/dist/public /usr/share/nginx/html
 COPY artifacts/alpha-terminal/nginx.conf.template /etc/nginx/templates/default.conf.template
+
+# Sanity check at image-build time so a broken COPY (e.g. wrong source path)
+# fails the build instead of producing an empty nginx image.
+RUN test -s /usr/share/nginx/html/index.html \
+    && test -d /usr/share/nginx/html/assets \
+    && echo "runtime image populated OK"
 
 # Defaults; Railway will override PORT at runtime and you must set API_BACKEND.
 ENV PORT=80

@@ -1,7 +1,0 @@
-[phases.install]
-commands = [
- "npm install -g pnpm",
- "cd ../.. && pnpm install --frozen-lockfile"
-]
-[phases.build]
-commands = ["pnpm build"]
