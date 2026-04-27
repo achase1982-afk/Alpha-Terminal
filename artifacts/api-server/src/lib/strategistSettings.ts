@@ -78,6 +78,7 @@ export const STRATEGIST_MODEL_OPTIONS: StrategistModelOption[] = [
   { provider: "openai", model: "gpt-5-mini", label: "GPT-5 Mini (OpenAI)" },
   { provider: "openai", model: "gpt-5-nano", label: "GPT-5 Nano (OpenAI)" },
   { provider: "openai", model: "o4-mini", label: "o4-mini Thinking (OpenAI)" },
+  { provider: "google", model: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview (Google)" },
 ];
 
 export function getStrategistModel(idx: number): StrategistModelOption {
