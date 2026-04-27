@@ -2,7 +2,6 @@ import { Router, type IRouter } from "express";
 import { logFailure } from "../lib/telemetry.js";
 import { emitTelemetry, createTelemetryBatch } from "../lib/telemetryStore.js";
 import Anthropic from "@anthropic-ai/sdk";
-import { GoogleGenAI } from "@google/genai";
 import { streamText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import {
@@ -43,6 +42,7 @@ import {
   type StrategistOutput,
 } from "../lib/deterministicStrategist.js";
 import { resolveStrikes, type AccountSnapshot, type ChainData, type ResolvedTrade, type StrikeResolutionError } from "../lib/strikeResolver.js";
+import { createGeminiClient, getGeminiApiKey } from "../lib/geminiClient.js";
 
 const router: IRouter = Router();
 
@@ -178,9 +178,7 @@ function isGeminiModel(model: string): boolean {
 }
 
 async function nativeStreamGemini(opts: NativeStreamOptions): Promise<string> {
-  const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
-  const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
-  if (!baseUrl || !apiKey) throw new Error("Gemini AI integration env vars not configured");
+  if (!getGeminiApiKey()) throw new Error("Gemini AI integration env vars not configured");
 
   const {
     prompt,
@@ -191,7 +189,7 @@ async function nativeStreamGemini(opts: NativeStreamOptions): Promise<string> {
     onText,
   } = opts;
 
-  const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
+  const ai = createGeminiClient();
 
   const contents = systemPrompt
     ? [{ role: "user" as const, parts: [{ text: systemPrompt + "\n\n" + prompt }] }]
@@ -267,11 +265,9 @@ async function callGeminiDirect(
   modelName: string = "gemini-3.1-pro-preview",
   temperature: number = 0.3
 ): Promise<string> {
-  const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
-  const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
-  if (!baseUrl || !apiKey) return "Error: Gemini AI integration not configured.";
+  if (!getGeminiApiKey()) return "Error: Gemini AI integration not configured.";
 
-  const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
+  const ai = createGeminiClient();
   const response = await ai.models.generateContent({
     model: modelName,
     contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -2651,14 +2647,12 @@ ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA ═══\n${marketContext
     }, 5000);
 
     if (isGeminiModel(chosenModel)) {
-      const gemBaseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
-      const gemApiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
-      if (!gemBaseUrl || !gemApiKey) {
+      if (!getGeminiApiKey()) {
         clearInterval(heartbeat);
         return res.status(500).json({ error: "Gemini AI integration not configured." });
       }
 
-      const ai = new GoogleGenAI({ apiKey: gemApiKey, httpOptions: { apiVersion: "", baseUrl: gemBaseUrl } });
+      const ai = createGeminiClient();
 
       const lastUserMsg = messages[messages.length - 1]?.content ?? "";
       const conversationHistory = messages.slice(0, -1).map(m =>

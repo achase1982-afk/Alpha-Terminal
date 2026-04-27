@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
 import { logger } from "./logger.js";
+import { createGeminiClient, hasGeminiApiKey } from "./geminiClient.js";
 import type {
   AiLabAnalystClient,
   AnalystRequest,
@@ -383,10 +383,8 @@ async function callGemini(model: string, temperature: number, prompt: string, sy
 }
 
 export async function callGeminiWithSystem(model: string, temperature: number, systemPrompt: string, prompt: string): Promise<string> {
-  const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
-  const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
-  if (!baseUrl || !apiKey) throw new Error("Gemini AI integration env vars not configured");
-  const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
+  if (!hasGeminiApiKey()) throw new Error("Gemini AI integration env vars not configured");
+  const ai = createGeminiClient();
 
   const supportsThinking = /^gemini-(2\.5|3)/.test(model);
   const config: Record<string, unknown> = {
@@ -705,9 +703,7 @@ export async function callGeminiWithSystemAndWebSearch(
   systemPrompt: string,
   prompt: string,
 ): Promise<WebSearchResult> {
-  const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
-  const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
-  if (!baseUrl || !apiKey) throw new Error("Gemini AI integration env vars not configured");
+  if (!hasGeminiApiKey()) throw new Error("Gemini AI integration env vars not configured");
 
   const supportsThinking = /^gemini-(2\.5|3)/.test(model);
   // Note: Gemini does not allow responseMimeType=application/json with tools.
@@ -723,7 +719,7 @@ export async function callGeminiWithSystemAndWebSearch(
     "generateContent",
     model,
     async () => {
-      const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
+      const ai = createGeminiClient();
       return ai.models.generateContent({
         model,
         contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\n" + prompt }] }],
@@ -778,9 +774,7 @@ export async function streamCallGeminiWithSystemAndWebSearch(
   onDelta: (text: string) => void,
   onStatus?: (status: string) => void,
 ): Promise<WebSearchResult> {
-  const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
-  const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
-  if (!baseUrl || !apiKey) throw new Error("Gemini AI integration env vars not configured");
+  if (!hasGeminiApiKey()) throw new Error("Gemini AI integration env vars not configured");
 
   const supportsThinking = /^gemini-(2\.5|3)/.test(model);
   const config: Record<string, unknown> = {
@@ -797,7 +791,7 @@ export async function streamCallGeminiWithSystemAndWebSearch(
     "generateContentStream",
     model,
     async () => {
-      const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
+      const ai = createGeminiClient();
       const stream = await ai.models.generateContentStream({
         model,
         contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\n" + prompt }] }],

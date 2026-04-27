@@ -1,6 +1,6 @@
-import { GoogleGenAI } from "@google/genai";
 import Anthropic from "@anthropic-ai/sdk";
 import { callOpenAIWithSystem } from "./aiLabAnalystClient.js";
+import { createGeminiClient, getGeminiApiKey } from "./geminiClient.js";
 import { logger } from "./logger.js";
 import type {
   AiLabSkepticClient,
@@ -192,10 +192,8 @@ async function callGeminiSkeptic(model: string, temperature: number, prompt: str
 }
 
 async function callGeminiWithSystem(model: string, temperature: number, systemPrompt: string, prompt: string): Promise<string> {
-  const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
-  const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
-  if (!baseUrl || !apiKey) throw new Error("Gemini AI integration env vars not configured");
-  const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
+  if (!getGeminiApiKey()) throw new Error("Gemini API key not configured");
+  const ai = createGeminiClient();
 
   const supportsThinking = /^gemini-(2\.5|3)/.test(model);
   const config: Record<string, unknown> = {
