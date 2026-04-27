@@ -92,18 +92,12 @@ function buildWsUrl(clerkToken: string | null): string {
 }
 
 async function fetchRestSnapshot(
-  marketToken: string,
-  traderToken: string | null,
-  symbols: string[]
+  _marketToken: string,
+  _traderToken: string | null,
+  _symbols: string[]
 ): Promise<{ quotes: LiveQuote[]; status?: string }> {
   const res = await fetchWithAuth(`${API_BASE}/stream/snapshot`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      accessToken: marketToken,
-      traderAccessToken: traderToken,
-      symbols,
-    }),
+    method: "GET",
   });
   if (!res.ok) {
     throw new Error(`REST snapshot failed (${res.status})`);
