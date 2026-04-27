@@ -12,6 +12,8 @@ const WS_RECONNECT_BASE = 1_000;
 const WS_RECONNECT_MAX = 30_000;
 const REJECTED_RETRY_DELAY = 3_000;
 const MAX_REJECTED_RETRIES = 3;
+const USE_WS = import.meta.env.DEV && import.meta.env.VITE_FORCE_WS !== "false";
+const REST_POLL_INTERVAL = 5000;
 
 
 async function refreshAndRetry(retryCount: number): Promise<boolean> {
@@ -89,6 +91,26 @@ function buildWsUrl(clerkToken: string | null): string {
   return base;
 }
 
+async function fetchRestSnapshot(
+  marketToken: string,
+  traderToken: string | null,
+  symbols: string[]
+): Promise<{ quotes: LiveQuote[]; status?: string }> {
+  const res = await fetchWithAuth(`${API_BASE}/stream/snapshot`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      accessToken: marketToken,
+      traderAccessToken: traderToken,
+      symbols,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`REST snapshot failed (${res.status})`);
+  }
+  return (await res.json()) as { quotes: LiveQuote[]; status?: string };
+}
+
 export function useMarketStream() {
   const {
     accessToken,
@@ -117,7 +139,7 @@ export function useMarketStream() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectDelayRef = useRef(WS_RECONNECT_BASE);
-  const tokenReadyRef = useRef(false);
+  const restPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const watchlist = useTerminalStore((s) => s.watchlists[s.activeWatchlistId]?.symbols ?? []);
 
@@ -166,6 +188,7 @@ export function useMarketStream() {
   }
 
   const connectWs = useCallback(async () => {
+    if (!USE_WS) return;
     if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
     if (!mountedRef.current) return;
 
@@ -283,6 +306,39 @@ export function useMarketStream() {
     };
   }, [setStreamQuote, setStreamStatus, mergeTick, addLiveNews]);
 
+  const startRestPolling = useCallback(async () => {
+    if (restPollRef.current) return;
+    if (!mountedRef.current) return;
+    setStreamStatus("connecting");
+    const poll = async () => {
+      if (!mountedRef.current) return;
+      const clerkToken = await getClerkToken();
+      if (!clerkToken && !useTerminalStore.getState().accessToken && !useTerminalStore.getState().traderAccessToken) return;
+      try {
+        const state = useTerminalStore.getState();
+        const snapshot = await fetchRestSnapshot(
+          state.accessToken || state.traderAccessToken || "",
+          state.traderAccessToken || state.accessToken || null,
+          allSymbols()
+        );
+        const quotes = snapshot.quotes ?? [];
+        if (quotes.length > 0) {
+          setStreamStatus("live");
+          if (quotes.length === 1) setStreamQuote(quotes[0]);
+          else setStreamQuotes(quotes);
+        } else if (snapshot.status === "disconnected") {
+          setStreamStatus("offline");
+        }
+      } catch {
+        setStreamStatus("offline");
+      }
+    };
+    void poll();
+    restPollRef.current = setInterval(() => {
+      void poll();
+    }, REST_POLL_INTERVAL);
+  }, [setStreamQuote, setStreamQuotes, setStreamStatus]);
+
   function scheduleReconnect() {
     if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
     const delay = reconnectDelayRef.current;
@@ -295,9 +351,9 @@ export function useMarketStream() {
 
   useEffect(() => {
     mountedRef.current = true;
-    tokenReadyRef.current = true;
 
-    void connectWs();
+    if (USE_WS) void connectWs();
+    else void startRestPolling();
 
     return () => {
       mountedRef.current = false;
@@ -309,8 +365,12 @@ export function useMarketStream() {
         clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;
       }
+      if (restPollRef.current) {
+        clearInterval(restPollRef.current);
+        restPollRef.current = null;
+      }
     };
-  }, [connectWs]);
+  }, [connectWs, startRestPolling]);
 
   const streamKey = `${accessToken || ""}|${traderAccessToken || ""}`;
   const effectiveToken = accessToken || traderAccessToken || "";
