@@ -40,18 +40,12 @@ FROM nginx:alpine AS runtime
 
 COPY --from=builder /app/artifacts/alpha-terminal/dist/public /usr/share/nginx/html
 COPY artifacts/alpha-terminal/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY artifacts/alpha-terminal/docker-entrypoint.d/10-resolve-api-backend.sh /docker-entrypoint.d/10-resolve-api-backend.sh
 
 # Sanity check at image-build time so a broken COPY (e.g. wrong source path)
 # fails the build instead of producing an empty nginx image.
 RUN test -s /usr/share/nginx/html/index.html \
     && test -d /usr/share/nginx/html/assets \
     && echo "runtime image populated OK"
-
-# nginx listens on 80 (hardcoded in nginx.conf.template). Railway injects its
-# own PORT env var on every service, so we deliberately don't reference PORT in
-# the nginx config — otherwise nginx would bind to Railway's random port and
-# the public domain (which targets 80) couldn't reach it.
-# API_BACKEND must be set on the Railway service variables.
-ENV API_BACKEND="http://api-server.railway.internal:8080"
 
 EXPOSE 80
