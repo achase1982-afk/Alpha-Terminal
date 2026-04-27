@@ -40,6 +40,8 @@ FROM nginx:alpine AS runtime
 
 COPY --from=builder /app/artifacts/alpha-terminal/dist/public /usr/share/nginx/html
 COPY artifacts/alpha-terminal/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY artifacts/alpha-terminal/docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
 # Sanity check at image-build time so a broken COPY (e.g. wrong source path)
 # fails the build instead of producing an empty nginx image.
@@ -51,7 +53,18 @@ RUN test -s /usr/share/nginx/html/index.html \
 # own PORT env var on every service, so we deliberately don't reference PORT in
 # the nginx config — otherwise nginx would bind to Railway's random port and
 # the public domain (which targets 80) couldn't reach it.
-# API_BACKEND must be set on the Railway service variables.
-ENV API_BACKEND="http://api-server.railway.internal:8080"
+#
+# API_BACKEND resolution (in priority order):
+#   1. Set API_BACKEND directly on the Railway service as a plain URL, e.g.
+#        API_BACKEND=http://api-server.railway.internal:8080
+#      Railway resolves ${{api-server.PORT}} before the container starts, so
+#      the entrypoint receives a fully-formed value.
+#   2. Set API_SERVER_HOST + API_SERVER_PORT separately and let the entrypoint
+#      construct the URL.
+#   3. Fall back to the defaults below (host: api-server.railway.internal, port: 8080).
+ENV API_SERVER_HOST="api-server.railway.internal"
+ENV API_SERVER_PORT="8080"
 
 EXPOSE 80
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
