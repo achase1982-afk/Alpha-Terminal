@@ -32,7 +32,6 @@ channel = "stable-25_05"
 
 [userenv.development]
 DEV_BYPASS_AUTH = "true"
-POLYGON_OPTIONS_WS_ENABLED = "1"
 
 [userenv.shared]
 IB_CLIENT_ID = "1"
