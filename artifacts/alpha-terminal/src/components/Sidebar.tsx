@@ -256,7 +256,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
               <div className="mx-5 border-b border-card-border/50" />
 
               <div className="flex flex-col pt-2 pb-1">
-                <MenuRow icon={<Link />} label="Linked Brokerage" onClick={() => { setActivePage("Linked Brokerage"); handleCloseAll(); }} />
+                <MenuRow icon={<Link />} label="Linked Brokerage" onClick={() => { setActivePage("Linked Brokerage"); onClose(); }} />
               </div>
 
               <SidebarSectionLabel label="ANALYSIS" />

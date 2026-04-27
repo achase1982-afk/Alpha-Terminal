@@ -11,12 +11,13 @@ export function AuthPanel() {
   const portfolioStatus = usePortfolioStreamStore((s) => s.portfolioStatus);
   const [isNavigating, setIsNavigating] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
-  const { data: authUrlData, refetch: refetchAuthUrl } = useGetAuthUrl({
-    query: { enabled: isConnected && serverTokenExpired },
-  });
 
   const isConnected = !!(accessToken || traderAccessToken);
   const serverTokenExpired = portfolioStatus.status === "no_token";
+
+  const { data: authUrlData, refetch: refetchAuthUrl } = useGetAuthUrl({
+    query: { enabled: isConnected && serverTokenExpired },
+  });
 
   const handleLogin = useCallback(async () => {
     setIsNavigating(true);
