@@ -42,6 +42,7 @@ COPY --from=builder /app/artifacts/alpha-terminal/dist/public /usr/share/nginx/h
 COPY artifacts/alpha-terminal/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY artifacts/alpha-terminal/docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
+COPY artifacts/alpha-terminal/docker-entrypoint.d/10-resolve-api-backend.sh /docker-entrypoint.d/10-resolve-api-backend.sh
 
 # Sanity check at image-build time so a broken COPY (e.g. wrong source path)
 # fails the build instead of producing an empty nginx image.
