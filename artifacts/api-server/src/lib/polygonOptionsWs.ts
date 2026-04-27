@@ -422,6 +422,10 @@ function scheduleReconnect(): void {
   if (reconnectTimer) return;
   if (!isEnabled()) return;
   logger.debug({ delayMs: reconnectDelay }, "Polygon options WS: scheduling reconnect");
+  if (reconnectDelay >= MAX_RECONNECT_DELAY) {
+    logger.error({ reconnectDelay, connectionState }, "Polygon options WS: reconnect saturated");
+    return;
+  }
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     void connectPolygon();
@@ -562,7 +566,7 @@ async function connectPolygon(): Promise<void> {
     nbboCache.clear();
     connectAttemptStartedAt = null;
     rejectWaiters(new Error(`Polygon options WS closed (code ${code})`));
-    scheduleReconnect();
+    if (code !== 1008) scheduleReconnect();
   });
 
   sock.on("error", (err) => {
