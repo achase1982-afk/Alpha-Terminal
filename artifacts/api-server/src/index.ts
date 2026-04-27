@@ -55,10 +55,16 @@ async function boot() {
 
   initWsServer(server);
 
-  await initTokenStore();
-  startExitMonitor();
-  startTelemetryCleanup();
-  initDeltaEngine();
+  // Run all heavy initialization in the background so the HTTP server can
+  // start accepting requests immediately. setImmediate() yields to the event
+  // loop before the async IIFE begins, ensuring app.listen()'s callback has
+  // already fired and the server is ready for connections.
+  setImmediate(() => {
+    void (async () => {
+      await initTokenStore();
+      startExitMonitor();
+      startTelemetryCleanup();
+      initDeltaEngine();
 
   // Recover any snapshot rows orphaned by a prior crash/SIGKILL. Without
   // this a stale 'running' row blocks future runs and silently re-opens
@@ -593,6 +599,8 @@ async function boot() {
       connectIB().catch((err) => logger.warn({ err }, "IB auto-connect failed (will retry)"));
     }
   }
+  })();
+  });
 }
 
 boot().catch((err) => {
