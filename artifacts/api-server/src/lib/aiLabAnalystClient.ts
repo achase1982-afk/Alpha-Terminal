@@ -14,6 +14,47 @@ import type {
 import { type AiLabModelProvider, getActivePrompt } from "./aiLabConfig.js";
 
 const DEFAULT_ANALYST_MODEL = "claude-opus-4-6";
+const GEMINI_WEB_SEARCH_MAX_ATTEMPTS = 3;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function geminiErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function isRetryableGeminiWebSearchError(err: unknown): boolean {
+  const msg = geminiErrorMessage(err);
+  return /fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|UND_ERR|socket|network/i.test(msg);
+}
+
+async function withGeminiRetry<T>(
+  operation: "generateContent" | "generateContentStream",
+  model: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  let lastErr: unknown = null;
+  for (let attempt = 1; attempt <= GEMINI_WEB_SEARCH_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await run();
+    } catch (err) {
+      lastErr = err;
+      if (!isRetryableGeminiWebSearchError(err) || attempt === GEMINI_WEB_SEARCH_MAX_ATTEMPTS) {
+        break;
+      }
+      const delayMs = 500 * attempt * attempt;
+      logger.warn(
+        { err, model, operation, attempt, nextAttemptInMs: delayMs },
+        "Gemini web-search call failed transiently; retrying",
+      );
+      await sleep(delayMs);
+    }
+  }
+
+  const msg = geminiErrorMessage(lastErr);
+  throw new Error(`Gemini ${operation} failed for ${model}: ${msg}`);
+}
 
 export const DEFAULT_ANALYST_SYSTEM_PROMPT = `You are the Senior Options Strategist Analyst for a quantitative trading desk.
 
@@ -667,7 +708,6 @@ export async function callGeminiWithSystemAndWebSearch(
   const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
   const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
   if (!baseUrl || !apiKey) throw new Error("Gemini AI integration env vars not configured");
-  const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
 
   const supportsThinking = /^gemini-(2\.5|3)/.test(model);
   // Note: Gemini does not allow responseMimeType=application/json with tools.
@@ -679,11 +719,18 @@ export async function callGeminiWithSystemAndWebSearch(
   if (supportsThinking) {
     config.thinkingConfig = { thinkingBudget: -1, includeThoughts: false };
   }
-  const response = await ai.models.generateContent({
+  const response = await withGeminiRetry(
+    "generateContent",
     model,
-    contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\n" + prompt }] }],
-    config: config as Parameters<typeof ai.models.generateContent>[0]["config"],
-  });
+    async () => {
+      const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
+      return ai.models.generateContent({
+        model,
+        contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\n" + prompt }] }],
+        config: config as Parameters<typeof ai.models.generateContent>[0]["config"],
+      });
+    },
+  );
 
   const rawText = (response.text ?? "").trim();
   if (!rawText) throw new Error("No text content in Strategist LLM response (Gemini web search)");
@@ -734,7 +781,6 @@ export async function streamCallGeminiWithSystemAndWebSearch(
   const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
   const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
   if (!baseUrl || !apiKey) throw new Error("Gemini AI integration env vars not configured");
-  const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
 
   const supportsThinking = /^gemini-(2\.5|3)/.test(model);
   const config: Record<string, unknown> = {
@@ -747,26 +793,37 @@ export async function streamCallGeminiWithSystemAndWebSearch(
   }
 
   onStatus?.("Calling Gemini with web search…");
-  const stream = await ai.models.generateContentStream({
+  const { fullText, lastChunk } = await withGeminiRetry(
+    "generateContentStream",
     model,
-    contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\n" + prompt }] }],
-    config: config as Parameters<typeof ai.models.generateContentStream>[0]["config"],
-  });
+    async () => {
+      const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "", baseUrl } });
+      const stream = await ai.models.generateContentStream({
+        model,
+        contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\n" + prompt }] }],
+        config: config as Parameters<typeof ai.models.generateContentStream>[0]["config"],
+      });
 
-  let fullText = "";
+      let attemptText = "";
+      let attemptLastChunk: unknown = null;
+      for await (const chunk of stream) {
+        attemptLastChunk = chunk;
+        const txt = (chunk as { text?: string }).text;
+        if (txt) {
+          attemptText += txt;
+        }
+      }
+      return { fullText: attemptText, lastChunk: attemptLastChunk };
+    },
+  );
+
+  if (fullText) {
+    onDelta(fullText);
+  }
+
   const queries: string[] = [];
   const sources: WebSearchSource[] = [];
   const seenUrls = new Set<string>();
-  let lastChunk: unknown = null;
-
-  for await (const chunk of stream) {
-    lastChunk = chunk;
-    const txt = (chunk as { text?: string }).text;
-    if (txt) {
-      fullText += txt;
-      onDelta(txt);
-    }
-  }
 
   type GroundingSupport = {
     webSearchQueries?: unknown;

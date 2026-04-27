@@ -10,7 +10,6 @@ import { useUICustomizationStore, ACCENT_COLORS, type ThemeAccent, type FontSize
 import { readSecurityPrefs, updateSecurityPref, type SecurityPrefs } from "@/lib/securityPrefs";
 import { useBiometricRegistration, useWebAuthnSupported } from "@/hooks/useBiometric";
 import { AuthPanel } from "./AuthPanel";
-import { StrategySettings } from "./AiIntelligenceTab";
 import { StrategistSettingsPanel } from "./StrategistSettingsPanel";
 import { StrategistTelemetryPanel } from "./StrategistTelemetryPanel";
 import { SystemSettingsPage } from "./SystemSettingsPage";
@@ -352,20 +351,13 @@ function LinkedBrokeragePage() {
   );
 }
 
-// Combined Strategist Tuning sub-page (Settings hub > Intelligence > Strategist
-// Tuning). Replaces the former "Options Strategist" composite panel. Renders
-// the IOScore/scanner threshold panel, the legacy AI parameters panel, and the
-// per-feature model/temperature controls so no tuning surface is lost.
+// Strategist Tuning sub-page (Settings hub > Intelligence > Strategist Tuning).
+// The obsolete local-only legacy strategy controls were intentionally removed;
+// this page now only renders settings that are wired into the backend strategist.
 function StrategistTuningPage() {
   return (
     <div className="space-y-8 max-w-xl mx-auto">
       <StrategistSettingsPanel />
-      <div className="border-t border-zinc-800 pt-6">
-        <h3 className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest font-medium mb-3">
-          Legacy AI Parameters
-        </h3>
-        <StrategySettings />
-      </div>
     </div>
   );
 }
@@ -1339,7 +1331,7 @@ function SettingsHubPage({
       </SettingsHubSection>
 
       <SettingsHubSection title="Intelligence">
-        <SettingsHubRow icon={<BrainCircuit />} label="Strategist Tuning" subtitle="IOScore weights, scanner thresholds, AI parameters" onClick={() => onSelect("Strategist Tuning")} />
+        <SettingsHubRow icon={<BrainCircuit />} label="Strategist Tuning" subtitle="Backend strategist models, IOScore weights, scanner thresholds" onClick={() => onSelect("Strategist Tuning")} />
         <SettingsHubRow icon={<Sparkles />} label="AI Parameters" subtitle="Per-feature model and temperature" onClick={() => onSelect("AI Parameters")} />
         <SettingsHubRow icon={<FlaskConical />} label="AI Lab" subtitle="Master toggle, deliberation, anomaly detection, schedule" onClick={() => onSelect("AI Lab")} />
         <SettingsHubRow icon={<LineChart />} label="Chart Overlays" subtitle="SMAs, Bollinger, RSI, volume" onClick={() => onSelect("Chart Overlays")} />
