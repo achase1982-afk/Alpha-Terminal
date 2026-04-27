@@ -144,6 +144,7 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectDelay = RECONNECT_INTERVAL_MS;
 let intentionalDisconnect = false;
 let reconnectAttempt = 0;
+let summaryTimer: ReturnType<typeof setInterval> | null = null;
 let broadcastFn: ((event: string, data: unknown) => void) | null = null;
 let quoteCacheInjector: ((sym: string, quote: LiveQuote) => void) | null = null;
 let connectedAt = 0;
@@ -447,6 +448,10 @@ function teardownIB() {
   if (depthThrottleTimer) {
     clearInterval(depthThrottleTimer);
     depthThrottleTimer = null;
+  }
+  if (summaryTimer) {
+    clearInterval(summaryTimer);
+    summaryTimer = null;
   }
 }
 
@@ -852,7 +857,11 @@ export async function connectIB(): Promise<void> {
     let lastBreadthTickAt = Date.now();
     const breadthSymSet = new Set(BREADTH_SYMBOLS.map(d => d.displaySymbol));
 
-    setInterval(() => {
+    if (summaryTimer) {
+      clearInterval(summaryTimer);
+      summaryTimer = null;
+    }
+    summaryTimer = setInterval(() => {
       if (connState !== "CONNECTED") return;
       const symsWithData: string[] = [];
       for (const [sym, state] of ibQuoteCache.entries()) {
@@ -863,7 +872,7 @@ export async function connectIB(): Promise<void> {
           lastBreadthTickAt = state.ts;
         }
       }
-      logger.info({ total: ibQuoteCache.size, withData: symsWithData.length, symbols: symsWithData }, "IB: quote cache summary");
+      logger.debug({ total: ibQuoteCache.size, withData: symsWithData.length }, "IB: quote cache summary");
 
       const now = new Date();
       const etHour = parseInt(now.toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }));
