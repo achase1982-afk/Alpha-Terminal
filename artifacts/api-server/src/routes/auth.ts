@@ -554,17 +554,6 @@ router.post("/disconnect", (_req, res) => {
 });
 
 router.get("/server-tokens", (_req, res) => {
-  if (process.env.DEV_MOCK_MARKET_DATA === "true" && process.env.NODE_ENV !== "production") {
-    const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
-    const tokens = {
-      accessToken: "dev-mock-market-data-token",
-      refreshToken: "dev-mock-market-data-refresh",
-      expiresAt,
-    };
-    res.json({ market: tokens, trader: tokens });
-    return;
-  }
-
   const mkt = hasValidTokens("market") ? getTokens("market") : undefined;
   const trd = hasValidTokens("trader") ? getTokens("trader") : undefined;
   res.json({
