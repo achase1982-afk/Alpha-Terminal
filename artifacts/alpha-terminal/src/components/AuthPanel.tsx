@@ -30,7 +30,8 @@ export function AuthPanel() {
       setIsNavigating(false);
       return;
     }
-    window.location.href = url;
+    const popup = window.open(url, "_blank", "noopener,noreferrer");
+    if (!popup) window.location.href = url;
   }, [authUrlData, refetchAuthUrl]);
 
   const handleDisconnect = useCallback(async () => {
