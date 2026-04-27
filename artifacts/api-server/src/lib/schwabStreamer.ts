@@ -436,7 +436,7 @@ function processAcctActivity(content: Record<string, unknown>[]) {
       "Schwab ACCT_ACTIVITY event");
 
     if (msgData) {
-      logger.info(msgData, "Schwab ACCT_ACTIVITY raw payload");
+      logger.info({ msgData }, "Schwab ACCT_ACTIVITY raw payload");
     }
 
     let parsed: Record<string, unknown> = {};
@@ -697,6 +697,7 @@ function processFuturesTick(content: Record<string, unknown>[]) {
     const quote: LiveQuote = {
       symbol: displaySymbol,
       last,
+      regularLast: last,
       extendedLast: last,
       bid: numOrNull(item["1"]) ?? existing?.bid ?? null,
       ask: numOrNull(item["2"]) ?? existing?.ask ?? null,
