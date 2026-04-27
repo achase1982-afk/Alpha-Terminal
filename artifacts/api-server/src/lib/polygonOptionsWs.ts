@@ -421,7 +421,7 @@ function clearLifecycleTimers(): void {
 function scheduleReconnect(): void {
   if (reconnectTimer) return;
   if (!isEnabled()) return;
-  logger.info({ delayMs: reconnectDelay }, "Polygon options WS: scheduling reconnect");
+  logger.debug({ delayMs: reconnectDelay }, "Polygon options WS: scheduling reconnect");
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     void connectPolygon();
