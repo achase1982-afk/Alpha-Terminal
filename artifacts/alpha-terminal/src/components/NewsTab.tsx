@@ -231,7 +231,7 @@ export function NewsTab() {
     ...toSecItems(secFilings, symbol),
   ].sort((a, b) => b.ts - a.ts));
 
-  if (fhLoading && liveNews.length === 0 && ibHistNews.length === 0) {
+  if (fhLoading && liveNews.length === 0 && ibHistNews.length === 0 && secFilings.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-5 h-5 animate-spin text-[#FFB800]" />

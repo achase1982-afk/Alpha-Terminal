@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@clerk/clerk-react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -127,20 +127,27 @@ function PendingSessionLoader() {
 
 const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
 
-function ClerkTokenBridge() {
-  if (devBypass) return null;
-  return <ClerkTokenBridgeInner />;
+function AuthReadyGate({ children }: { children: ReactNode }) {
+  if (devBypass) return <>{children}</>;
+  return <AuthReadyGateInner>{children}</AuthReadyGateInner>;
 }
 
-function ClerkTokenBridgeInner() {
+function AuthReadyGateInner({ children }: { children: ReactNode }) {
   const { getToken } = useAuth();
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     setClerkTokenGetter(() => getToken());
     setAuthTokenGetter(() => getToken());
+    setReady(true);
+    return () => {
+      setClerkTokenGetter(async () => null);
+      setAuthTokenGetter(null);
+      setReady(false);
+    };
   }, [getToken]);
 
-  return null;
+  return ready ? <>{children}</> : <HydratingScreen />;
 }
 
 function InactivityWarning() {
@@ -195,17 +202,18 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AutoLockProvider>
-          <ClerkTokenBridge />
-          <InactivityWarning />
-          <PendingSessionLoader />
-          <GlobalStrategistPollerResumer />
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <Router />
-          </WouterRouter>
-          <Toaster />
-          <PushNotificationBanner />
-          <OrderAlertWatcher />
-          <SchwabSessionExpiredDialog />
+          <AuthReadyGate>
+            <InactivityWarning />
+            <PendingSessionLoader />
+            <GlobalStrategistPollerResumer />
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+              <Router />
+            </WouterRouter>
+            <Toaster />
+            <PushNotificationBanner />
+            <OrderAlertWatcher />
+            <SchwabSessionExpiredDialog />
+          </AuthReadyGate>
         </AutoLockProvider>
       </TooltipProvider>
     </QueryClientProvider>

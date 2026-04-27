@@ -2027,16 +2027,18 @@ router.get("/news", async (req, res) => {
 
   const polygonKey = process.env["POLYGON_API_KEY"];
   const benzingaKey = process.env["BENZINGA_API_KEY"];
+  const finnhubKey = process.env["FINNHUB_API_KEY"];
 
-  const [polygonArticles, benzingaArticles] = await Promise.all([
+  const [polygonArticles, benzingaArticles, finnhubArticles] = await Promise.all([
     polygonKey ? fetchPolygonNews(symbol, polygonKey, req.log) : Promise.resolve([]),
     benzingaKey ? fetchBenzingaNews(symbol, benzingaKey, req.log) : Promise.resolve([]),
+    finnhubKey ? fetchFinnhubNews(symbol, finnhubKey, req.log) : Promise.resolve([]),
   ]);
 
   const seenHeadlines = new Set<string>();
   const merged: NormalizedArticle[] = [];
 
-  for (const source of [benzingaArticles, polygonArticles]) {
+  for (const source of [benzingaArticles, polygonArticles, finnhubArticles]) {
     for (const a of source) {
       const key = a.headline.toLowerCase().slice(0, 60);
       if (!seenHeadlines.has(key)) {
