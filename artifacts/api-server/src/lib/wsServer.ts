@@ -317,7 +317,7 @@ export function initWsServer(httpServer: HttpServer) {
     const status = getStreamerStatus();
 
     if (status) {
-      ws.send(JSON.stringify({ event: "streamerStatus", data: status }));
+      ws.send(JSON.stringify({ event: "streamerStatus", data: { status } }));
     }
     if (snapshot && Object.keys(snapshot).length > 0) {
       ws.send(JSON.stringify({ event: "snapshot", data: snapshot }));

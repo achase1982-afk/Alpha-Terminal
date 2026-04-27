@@ -266,7 +266,7 @@ export function useMarketStream() {
         }
       }
     } else if (event === "streamerStatus") {
-      const s = (data as { status?: string }).status;
+      const s = typeof data === "string" ? data : (data as { status?: string }).status;
       if (s === "connected") setStreamStatus("live");
       else if (s === "rejected") setStreamStatus("offline");
       else if (s === "connecting") setStreamStatus("connecting");
