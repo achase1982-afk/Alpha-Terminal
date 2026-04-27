@@ -47,7 +47,6 @@ POLYGON_S3_BUCKET = "flatfiles"
 ADMIN_API_KEY = "0b62a0310a53057dfafeb0c3bb511a68c8fc5a5438c1d88ce8bce8345ed11a05"
 
 [userenv.production]
-POLYGON_OPTIONS_WS_ENABLED = "1"
 
 [[ports]]
 localPort = 8080
