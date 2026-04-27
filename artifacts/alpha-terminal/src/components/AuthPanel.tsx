@@ -4,23 +4,33 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { queryClient } from "@/App";
 import { ExternalLink, CheckCircle2, Loader2, XCircle, AlertTriangle } from "lucide-react";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
+import { useGetAuthUrl } from "@workspace/api-client-react";
 
 export function AuthPanel() {
   const { accessToken, traderAccessToken, clearTokens, clearTraderTokens } = useTerminalStore();
   const portfolioStatus = usePortfolioStreamStore((s) => s.portfolioStatus);
   const [isNavigating, setIsNavigating] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const { data: authUrlData, refetch: refetchAuthUrl } = useGetAuthUrl({
+    query: { enabled: isConnected && serverTokenExpired },
+  });
 
   const isConnected = !!(accessToken || traderAccessToken);
   const serverTokenExpired = portfolioStatus.status === "no_token";
 
   const handleLogin = useCallback(async () => {
     setIsNavigating(true);
-    const res = await fetch("/api/auth/trader-url", { credentials: "include" });
-    const data = await res.json();
-    if (!data?.url) return;
-    window.location.href = data.url;
-  }, []);
+    let url = authUrlData?.url || "";
+    if (!url) {
+      const result = await refetchAuthUrl();
+      url = result.data?.url || "";
+    }
+    if (!url) {
+      setIsNavigating(false);
+      return;
+    }
+    window.location.href = url;
+  }, [authUrlData, refetchAuthUrl]);
 
   const handleDisconnect = useCallback(async () => {
     setIsDisconnecting(true);
