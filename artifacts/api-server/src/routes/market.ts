@@ -690,7 +690,7 @@ async function fetchFullChain(displaySymbol: string, token: string, log: any): P
       log,
     });
     if (poly && (poly.calls.length + poly.puts.length) > 0) {
-      const underlyingPrice = poly.underlyingPrice ?? livePrice;
+      const underlyingPrice = poly.underlyingPrice ?? livePrice ?? undefined;
       const cached: CachedChain = {
         symbol: displaySymbol,
         underlyingPrice,
@@ -1013,7 +1013,7 @@ router.get("/options", async (req, res) => {
         log: req.log,
       });
       if (poly && (poly.calls.length + poly.puts.length) > 0) {
-        const underlyingPrice = poly.underlyingPrice ?? livePrice;
+        const underlyingPrice = poly.underlyingPrice ?? livePrice ?? undefined;
         const entry = { calls: poly.calls, puts: poly.puts, underlyingPrice, fetchedAt: Date.now() };
         optionsNtmCache.set(displaySymbol, entry);
         if (optionsNtmCache.size > 100) {
@@ -1112,8 +1112,8 @@ router.get("/options", async (req, res) => {
     }
 
     const MAX_DTE = 400;
-    const filteredCalls = allCalls.filter(c => c.dte <= MAX_DTE);
-    const filteredPuts = allPuts.filter(c => c.dte <= MAX_DTE);
+    const filteredCalls = allCalls.filter(c => (c.dte ?? Number.POSITIVE_INFINITY) <= MAX_DTE);
+    const filteredPuts = allPuts.filter(c => (c.dte ?? Number.POSITIVE_INFINITY) <= MAX_DTE);
     req.log.info({ symbol: displaySymbol, calls: filteredCalls.length, puts: filteredPuts.length, underlyingPrice, useSplit }, "Options chain Schwab result");
 
     const entry = { calls: filteredCalls, puts: filteredPuts, underlyingPrice, fetchedAt: Date.now() };

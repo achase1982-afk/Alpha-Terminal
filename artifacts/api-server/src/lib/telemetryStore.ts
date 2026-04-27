@@ -10,6 +10,8 @@ export type TelemetrySystem =
   | "EXIT_STAGING"
   | "PUSH_NOTIFICATION"
   | "MARKET_PULSE"
+  | "FMP_SCREENER"
+  | "POLYGON_OPTIONS_WS"
   | "POLYGON_API"
   | "DATABASE"
   | "API";

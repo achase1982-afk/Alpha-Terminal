@@ -72,6 +72,7 @@ function updateSyntheticDxy() {
   const quote: LiveQuote = {
     symbol: "$DXY",
     last: result.price,
+    regularLast: result.price,
     extendedLast: result.price,
     bid: null,
     ask: null,
