@@ -1,0 +1,21 @@
+00:48:46
+2026/04/27 04:48:46 [error] 33#33: *122 upstream timed out (110: Operation timed out) while connecting to upstream, client: 100.64.0.3, server: _, request: "GET /api/telemetry/counts HTTP/1.1", upstream: "http://10.232.202.126:8080/api/telemetry/counts", host: "alpha-terminal-production-f297.up.railway.app", referrer: "https://alpha-terminal-production-f297.up.railway.app/"
+00:48:46
+100.64.0.3 - - [27/Apr/2026:04:48:46 +0000] "GET /api/telemetry/counts HTTP/1.1" 502 157 "https://alpha-terminal-production-f297.up.railway.app/" "Mozilla/5.0 (iPhone; CPU iPhone OS 26_5_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/148.0.7778.47 Mobile/15E148 Safari/604.1" "74.88.163.11, 157.52.68.81"
+00:48:46
+2026/04/27 04:48:46 [error] 32#32: *118 no live upstreams while connecting to upstream, client: 100.64.0.14, server: _, request: "GET /api/telemetry/counts HTTP/1.1", upstream: "http://api-server.railway.internal/api/telemetry/counts", host: "alpha-terminal-production-f297.up.railway.app", referrer: "https://alpha-terminal-production-f297.up.railway.app/"
+00:48:50
+2026/04/27 04:48:50 [error] 33#33: *124 upstream timed out (110: Operation timed out) while connecting to upstream, client: 100.64.0.13, server: _, request: "POST /api/stream/snapshot HTTP/1.1", upstream: "http://[fd12:30a3:d981:1:8000:13a:88e8:ca7e]:8080/api/stream/snapshot", host: "nucolbyterminal.com", referrer: "https://nucolbyterminal.com/"
+00:48:50
+100.64.0.13 - - [27/Apr/2026:04:48:50 +0000] "POST /api/stream/snapshot HTTP/1.1" 502 559 "https://nucolbyterminal.com/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36" "74.88.163.11, 157.52.68.51"
+00:48:51
+2026/04/27 04:48:51 [warn] 33#33: *126 upstream server temporarily disabled while connecting to upstream, client: 100.64.0.12, server: _, request: "GET /api/telemetry/counts HTTP/1.1", upstream: "http://10.232.202.126:8080/api/telemetry/counts", host: "alpha-terminal-production-f297.up.railway.app", referrer: "https://alpha-terminal-production-f297.up.railway.app/"
+00:48:51
+2026/04/27 04:48:51 [error] 33#33: *126 upstream timed out (110: Operation timed out) while connecting to upstream, client: 100.64.0.12, server: _, request: "GET /api/telemetry/counts HTTP/1.1", upstream: "http://10.232.202.126:8080/api/telemetry/counts", host: "alpha-terminal-production-f297.up.railway.app", referrer: "https://alpha-terminal-production-f297.up.railway.app/"
+00:48:51
+2026/04/27 04:48:51 [error] 33#33: *126 no live upstreams while connecting to upstream, client: 100.64.0.12, server: _, request: "GET /api/telemetry/counts HTTP/1.1", upstream: "http://api-server.railway.internal/api/telemetry/counts", host: "alpha-terminal-production-f297.up.railway.app", referrer: "https://alpha-terminal-production-f297.up.railway.app/"
+00:48:51
+100.64.0.12 - - [27/Apr/2026:04:48:51 +0000] "GET /api/telemetry/counts HTTP/1.1" 502 157 "https://alpha-terminal-production-f297.up.railway.app/" "Mozilla/5.0 (iPhone; CPU iPhone OS 26_5_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/148.0.7778.47 Mobile/15E148 Safari/604.1" "74.88.163.11, 157.52.68.81"
+00:48:55
+2026/04/27 04:48:55 [warn] 33#33: *128 upstream server temporarily disabled while connecting to upstream, client: 100.64.0.15, server: _, request: "POST /api/stream/snapshot HTTP/1.1", upstream: "http://[fd12:30a3:d981:1:8000:13a:88e8:ca7e]:8080/api/stream/snapshot", host: "nucolbyterminal.com", referrer: "https://nucolbyterminal.com/"
+...and 40 more logs

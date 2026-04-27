@@ -12,7 +12,7 @@ const WS_RECONNECT_BASE = 1_000;
 const WS_RECONNECT_MAX = 30_000;
 const REJECTED_RETRY_DELAY = 3_000;
 const MAX_REJECTED_RETRIES = 3;
-const USE_WS = false;
+const USE_WS = import.meta.env.DEV;
 const REST_POLL_INTERVAL = 5000;
 
 
