@@ -12,8 +12,8 @@ const WS_RECONNECT_BASE = 1_000;
 const WS_RECONNECT_MAX = 30_000;
 const REJECTED_RETRY_DELAY = 3_000;
 const MAX_REJECTED_RETRIES = 3;
-const USE_WS = import.meta.env.DEV;
 const REST_POLL_INTERVAL = 5000;
+const SSE_FALLBACK_DELAY = 2_500;
 
 
 async function refreshAndRetry(retryCount: number): Promise<boolean> {
@@ -131,7 +131,9 @@ export function useMarketStream() {
   const startDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
   const wsRef = useRef<WebSocket | null>(null);
+  const esRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sseFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectDelayRef = useRef(WS_RECONNECT_BASE);
   const restPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -181,8 +183,141 @@ export function useMarketStream() {
     } catch {}
   }
 
+  const stopSseStream = useCallback(() => {
+    if (sseFallbackTimerRef.current) {
+      clearTimeout(sseFallbackTimerRef.current);
+      sseFallbackTimerRef.current = null;
+    }
+    if (esRef.current) {
+      esRef.current.close();
+      esRef.current = null;
+    }
+  }, []);
+
+  const stopRestPolling = useCallback(() => {
+    if (restPollRef.current) {
+      clearInterval(restPollRef.current);
+      restPollRef.current = null;
+    }
+  }, []);
+
+  const handleStreamEvent = useCallback((event: string, data: unknown) => {
+    if (event === "snapshot") {
+      const raw = data;
+      const quotes: LiveQuote[] = Array.isArray(raw)
+        ? raw as unknown as LiveQuote[]
+        : (raw as { quotes?: LiveQuote[] }).quotes ?? [];
+      const status = Array.isArray(raw) ? undefined : (raw as { status?: string }).status;
+      if (status === "rejected") {
+        setStreamStatus("offline");
+        const attempt = rejectedRetries.current;
+        rejectedRetries.current++;
+        setTimeout(() => void refreshAndRetry(attempt), REJECTED_RETRY_DELAY);
+        return;
+      }
+      if (quotes.length > 0) {
+        setStreamStatus("live");
+        rejectedRetries.current = 0;
+        if (quotes.length === 1) setStreamQuote(quotes[0]);
+        else setStreamQuotes(quotes);
+      } else if (status === "connecting") {
+        setStreamStatus("connecting");
+      } else if (status === "disconnected") {
+        setStreamStatus("offline");
+      }
+    } else if (event === "quote") {
+      setStreamStatus("live");
+      rejectedRetries.current = 0;
+      setStreamQuote(data as LiveQuote);
+    } else if (event === "optionQuote") {
+      mergeTick(data as OptionTick);
+    } else if (event === "depth") {
+      setDepthBook(data as DepthBook);
+    } else if (event === "depthSnapshot") {
+      setDepthBooks(data as DepthBook[]);
+    } else if (event === "ibNews") {
+      addLiveNews(data as LiveNewsItem);
+    } else if (event === "portfolioAccount") {
+      setPortfolioAccount(data as any);
+    } else if (event === "portfolioOrders") {
+      setPortfolioOrders(data as any);
+    } else if (event === "portfolioStatus") {
+      setPortfolioStatus(data as any);
+    } else if (event === "orderAlert") {
+      const d = data as Record<string, unknown>;
+      const alertType = (d.type as string) ?? "UNKNOWN";
+      const prefs = useTerminalStore.getState().notificationPrefs;
+      if (prefs.masterEnabled) {
+        const inAppEnabled = (prefs.inApp as Record<string, boolean>)[alertType as string] ?? true;
+        if (inAppEnabled) {
+          const alert: OrderAlert = {
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            type: alertType,
+            symbol: (d.symbol as string) ?? null,
+            status: (d.status as string) ?? null,
+            side: (d.side as string) ?? null,
+            quantity: (d.quantity as string) ?? null,
+            price: (d.price as string) ?? null,
+            orderId: (d.orderId as string) ?? null,
+            timestamp: (d.timestamp as number) ?? Date.now(),
+            raw: (d.raw as string) ?? "",
+          };
+          useOrderAlertStore.getState().addAlert(alert);
+        }
+      }
+    } else if (event === "streamerStatus") {
+      const s = (data as { status?: string }).status;
+      if (s === "connected") setStreamStatus("live");
+      else if (s === "rejected") setStreamStatus("offline");
+      else if (s === "connecting") setStreamStatus("connecting");
+      else if (s === "disconnected") setStreamStatus("offline");
+    }
+  }, [
+    addLiveNews,
+    mergeTick,
+    setDepthBook,
+    setDepthBooks,
+    setPortfolioAccount,
+    setPortfolioOrders,
+    setPortfolioStatus,
+    setStreamQuote,
+    setStreamQuotes,
+    setStreamStatus,
+  ]);
+
+  const startSseStream = useCallback(() => {
+    if (!mountedRef.current || esRef.current) return;
+
+    const es = new EventSource(`${API_BASE}/stream/quotes`);
+    esRef.current = es;
+
+    const parseEvent = (event: string) => (e: Event) => {
+      try {
+        handleStreamEvent(event, JSON.parse((e as MessageEvent).data));
+      } catch {}
+    };
+
+    es.addEventListener("quote", parseEvent("quote"));
+    es.addEventListener("optionQuote", parseEvent("optionQuote"));
+    es.addEventListener("streamerStatus", parseEvent("streamerStatus"));
+    es.addEventListener("heartbeat", () => {});
+    es.onerror = () => {
+      es.close();
+      if (esRef.current === es) esRef.current = null;
+      if (mountedRef.current) setStreamStatus("connecting");
+    };
+  }, [handleStreamEvent, setStreamStatus]);
+
+  const scheduleSseFallback = useCallback(() => {
+    if (sseFallbackTimerRef.current || esRef.current) return;
+    sseFallbackTimerRef.current = setTimeout(() => {
+      sseFallbackTimerRef.current = null;
+      if (wsRef.current?.readyState === WebSocket.OPEN) return;
+      startSseStream();
+    }, SSE_FALLBACK_DELAY);
+  }, [startSseStream]);
+
   const connectWs = useCallback(async () => {
-    if (!USE_WS) return;
     if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
     if (!mountedRef.current) return;
 
@@ -204,6 +339,8 @@ export function useMarketStream() {
       reconnectDelayRef.current = WS_RECONNECT_BASE;
       (window as any).__alphaWs = socket;
       clearOptionTicks();
+      stopSseStream();
+      stopRestPolling();
       console.log("[ws] connected to /api/ws/prices");
     };
 
@@ -214,76 +351,7 @@ export function useMarketStream() {
           data: Record<string, unknown>;
         };
 
-        if (msg.event === "snapshot") {
-          const raw = msg.data;
-          const quotes: LiveQuote[] = Array.isArray(raw)
-            ? raw
-            : (raw as { quotes?: LiveQuote[] }).quotes ?? [];
-          const status = Array.isArray(raw) ? undefined : (raw as { status?: string }).status;
-          if (status === "rejected") {
-            setStreamStatus("offline");
-            const attempt = rejectedRetries.current;
-            rejectedRetries.current++;
-            setTimeout(() => void refreshAndRetry(attempt), REJECTED_RETRY_DELAY);
-            return;
-          }
-          if (quotes.length > 0) {
-            setStreamStatus("live");
-            rejectedRetries.current = 0;
-            if (quotes.length === 1) setStreamQuote(quotes[0]);
-            else setStreamQuotes(quotes);
-          } else if (status === "connecting") {
-            setStreamStatus("connecting");
-          } else if (status === "disconnected") {
-            setStreamStatus("offline");
-          }
-        } else if (msg.event === "quote") {
-          setStreamStatus("live");
-          rejectedRetries.current = 0;
-          setStreamQuote(msg.data as unknown as LiveQuote);
-        } else if (msg.event === "optionQuote") {
-          mergeTick(msg.data as unknown as OptionTick);
-        } else if (msg.event === "depth") {
-          setDepthBook(msg.data as unknown as DepthBook);
-        } else if (msg.event === "depthSnapshot") {
-          setDepthBooks(msg.data as unknown as DepthBook[]);
-        } else if (msg.event === "ibNews") {
-          addLiveNews(msg.data as unknown as LiveNewsItem);
-        } else if (msg.event === "portfolioAccount") {
-          setPortfolioAccount(msg.data as any);
-        } else if (msg.event === "portfolioOrders") {
-          setPortfolioOrders(msg.data as any);
-        } else if (msg.event === "portfolioStatus") {
-          setPortfolioStatus(msg.data as any);
-        } else if (msg.event === "orderAlert") {
-          const d = msg.data as Record<string, unknown>;
-          const alertType = (d.type as string) ?? "UNKNOWN";
-          const prefs = useTerminalStore.getState().notificationPrefs;
-          if (prefs.masterEnabled) {
-            const inAppEnabled = (prefs.inApp as Record<string, boolean>)[alertType as string] ?? true;
-            if (inAppEnabled) {
-              const alert: OrderAlert = {
-                id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                type: alertType,
-                symbol: (d.symbol as string) ?? null,
-                status: (d.status as string) ?? null,
-                side: (d.side as string) ?? null,
-                quantity: (d.quantity as string) ?? null,
-                price: (d.price as string) ?? null,
-                orderId: (d.orderId as string) ?? null,
-                timestamp: (d.timestamp as number) ?? Date.now(),
-                raw: (d.raw as string) ?? "",
-              };
-              useOrderAlertStore.getState().addAlert(alert);
-            }
-          }
-        } else if (msg.event === "streamerStatus") {
-          const s = (msg.data as { status?: string }).status;
-          if (s === "connected") setStreamStatus("live");
-          else if (s === "rejected") setStreamStatus("offline");
-          else if (s === "connecting") setStreamStatus("connecting");
-          else if (s === "disconnected") setStreamStatus("offline");
-        }
+        handleStreamEvent(msg.event, msg.data);
       } catch {}
     };
 
@@ -292,13 +360,15 @@ export function useMarketStream() {
       wsRef.current = null;
       if (!mountedRef.current) return;
       setStreamStatus("connecting");
+      scheduleSseFallback();
       scheduleReconnect();
     };
 
     socket.onerror = () => {
       clearTimeout(openTimeout);
     };
-  }, [setStreamQuote, setStreamStatus, mergeTick, addLiveNews]);
+    scheduleSseFallback();
+  }, [clearOptionTicks, handleStreamEvent, scheduleSseFallback, setStreamStatus, stopRestPolling, stopSseStream]);
 
   const startRestPolling = useCallback(async () => {
     if (restPollRef.current) return;
@@ -346,8 +416,7 @@ export function useMarketStream() {
   useEffect(() => {
     mountedRef.current = true;
 
-    if (USE_WS) void connectWs();
-    else void startRestPolling();
+    void connectWs();
 
     return () => {
       mountedRef.current = false;
@@ -359,12 +428,10 @@ export function useMarketStream() {
         clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;
       }
-      if (restPollRef.current) {
-        clearInterval(restPollRef.current);
-        restPollRef.current = null;
-      }
+      stopSseStream();
+      stopRestPolling();
     };
-  }, [connectWs, startRestPolling]);
+  }, [connectWs, stopRestPolling, stopSseStream]);
 
   const streamKey = `${accessToken || ""}|${traderAccessToken || ""}`;
   const effectiveToken = accessToken || traderAccessToken || "";
