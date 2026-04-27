@@ -1,6 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { injectExternalQuote, startStreamer as startSchwabStreamer, onTokenRefreshed as schwabTokenRefreshed, addFuturesSymbols, addSymbols as addSchwabSymbols } from "./lib/schwabStreamer";
+import { injectExternalQuote, startStreamer as startSchwabStreamer, onTokenRefreshed as schwabTokenRefreshed, addFuturesSymbols, addSymbols as addSchwabSymbols, isConnected as isSchwabConnected } from "./lib/schwabStreamer";
 import { initWsServer, broadcastToClients } from "./lib/wsServer";
 import { connectIB, registerQuoteCacheInjector, registerIBBroadcast, getWsBridgeUrl } from "./lib/ibStreamer";
 import { startIBWsProxy } from "./lib/ibWsProxy";
@@ -77,6 +77,28 @@ async function boot() {
 
   initWsServer(server);
 
+  // Defined early so the deferred setImmediate can reference them before the
+  // later boot code runs (setImmediate fires as soon as the first `await`
+  // yields, which can be before lines further down in boot() execute).
+  const SCHWAB_FUTURES_SYMS_EARLY = [
+    "/ES", "/NQ", "/YM", "/RTY",
+    "/GC", "/CL", "/BZ", "/HG", "/SI", "/NG", "/RB", "/PL",
+    "/ZB", "/ZN", "/ZF", "/ZT", "/ZQ",
+    "/6E", "/6J", "/6B", "/6A", "/6C",
+    "/BTC", "/ETH",
+    "/UB", "/ZC", "/ZS", "/ZW",
+    "/MES", "/MNQ", "/M2K",
+  ];
+  const SCHWAB_EQUITY_SYMS_EARLY = [
+    "SPY", "QQQ", "IWM",
+    "$VIX", "$VVIX", "$VIX1D", "$VIX9D", "$VIX3M",
+    "$SPX", "$NDX", "$RUT", "$DJI", "$SOX",
+    "$TNX", "$TYX", "$IRX",
+    "$VXN", "$RVX", "$OVX", "$GVZ",
+    "$TICK", "$TICKI",
+    "HYG", "LQD", "IEF", "TLT",
+  ];
+
   setImmediate(() => {
     void (async () => {
       await loadAiLabConfigFromDb();
@@ -91,6 +113,22 @@ async function boot() {
       sweepStaleSnapshots().catch((e) => {
         logger.warn({ err: e }, "sweepStaleSnapshots: startup sweep failed");
       });
+
+      // Start the Schwab streamer HERE — after initTokenStore() has loaded
+      // tokens from the DB. The check lower in boot() runs before this
+      // deferred block resolves, so hasValidTokens() is always false there.
+      if (process.env.DISABLE_SCHWAB_STREAMER === "1" || process.env.DISABLE_SCHWAB_STREAMER === "true") {
+        logger.warn("Schwab streamer DISABLED via DISABLE_SCHWAB_STREAMER env flag");
+      } else if (hasValidTokens("trader")) {
+        logger.info("Deferred init: Schwab tokens available — starting streamer");
+        startSchwabStreamer().then(() => {
+          addFuturesSymbols([...SCHWAB_FUTURES_SYMS_EARLY]);
+          if (SCHWAB_EQUITY_SYMS_EARLY.length > 0) addSchwabSymbols(SCHWAB_EQUITY_SYMS_EARLY);
+          initSyntheticDxy();
+        }).catch((err) => logger.warn({ err }, "Schwab streamer start failed (deferred init)"));
+      } else {
+        logger.info("Deferred init: Schwab tokens not available — streamer will start on token refresh or /stream/start");
+      }
     })().catch((err) => {
       logger.error({ err }, "Boot background initialization failed");
     });
@@ -535,30 +573,35 @@ async function boot() {
   }
   void triggerFlowBootstrap();
 
+  // When a token refresh happens (e.g. after OAuth flow or DB load), add
+  // symbols and ensure the streamer is running. The primary startup path is
+  // the deferred setImmediate block above, but this covers two edge cases:
+  //   1. initTokenStore fires the callback before the deferred block runs
+  //   2. A mid-session OAuth login brings new tokens while the server is up
   setTokenRefreshCallback((kind, _accessToken) => {
     if (kind === "trader" || kind === "market") {
-      addFuturesSymbols([...SCHWAB_FUTURES_SYMS, ...SCHWAB_FUTURES_INDEX_SYMS]);
-      if (SCHWAB_EQUITY_SYMS.length > 0) addSchwabSymbols(SCHWAB_EQUITY_SYMS);
-      schwabTokenRefreshed();
-      initSyntheticDxy();
+      if (
+        process.env.DISABLE_SCHWAB_STREAMER !== "1" &&
+        process.env.DISABLE_SCHWAB_STREAMER !== "true" &&
+        !isSchwabConnected()
+      ) {
+        logger.info({ kind }, "Token refresh: starting Schwab streamer (was not connected)");
+        startSchwabStreamer().then(() => {
+          addFuturesSymbols([...SCHWAB_FUTURES_SYMS, ...SCHWAB_FUTURES_INDEX_SYMS]);
+          if (SCHWAB_EQUITY_SYMS.length > 0) addSchwabSymbols(SCHWAB_EQUITY_SYMS);
+          initSyntheticDxy();
+        }).catch((err) => logger.warn({ err }, "Schwab streamer start failed (token refresh callback)"));
+      } else {
+        addFuturesSymbols([...SCHWAB_FUTURES_SYMS, ...SCHWAB_FUTURES_INDEX_SYMS]);
+        if (SCHWAB_EQUITY_SYMS.length > 0) addSchwabSymbols(SCHWAB_EQUITY_SYMS);
+        schwabTokenRefreshed();
+        initSyntheticDxy();
+      }
     }
   });
 
   registerQuoteCacheInjector(injectExternalQuote);
   registerIBBroadcast(broadcastToClients);
-
-  if (process.env.DISABLE_SCHWAB_STREAMER === "1" || process.env.DISABLE_SCHWAB_STREAMER === "true") {
-    logger.warn("Schwab streamer DISABLED via DISABLE_SCHWAB_STREAMER env flag — REST endpoints only, no live WebSocket");
-  } else if (hasValidTokens("trader")) {
-    logger.info("Schwab tokens available — starting Schwab streamer with futures + indices");
-    startSchwabStreamer().then(() => {
-      addFuturesSymbols([...SCHWAB_FUTURES_SYMS, ...SCHWAB_FUTURES_INDEX_SYMS]);
-      if (SCHWAB_EQUITY_SYMS.length > 0) addSchwabSymbols(SCHWAB_EQUITY_SYMS);
-      initSyntheticDxy();
-    }).catch((err) => logger.warn({ err }, "Schwab streamer start failed"));
-  } else {
-    logger.info("Schwab tokens not yet available — streamer will start on token refresh");
-  }
 
   startPolygonPCRatioPoller();
 
