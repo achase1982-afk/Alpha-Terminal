@@ -201,11 +201,11 @@ export function useMarketStream() {
     }
   }, []);
 
-  const handleStreamEvent = useCallback((event: string, data: Record<string, unknown> | LiveQuote | OptionTick | DepthBook | DepthBook[] | LiveNewsItem) => {
+  const handleStreamEvent = useCallback((event: string, data: unknown) => {
     if (event === "snapshot") {
       const raw = data;
       const quotes: LiveQuote[] = Array.isArray(raw)
-        ? raw as LiveQuote[]
+        ? raw as unknown as LiveQuote[]
         : (raw as { quotes?: LiveQuote[] }).quotes ?? [];
       const status = Array.isArray(raw) ? undefined : (raw as { status?: string }).status;
       if (status === "rejected") {
