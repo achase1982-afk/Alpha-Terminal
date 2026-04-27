@@ -256,7 +256,11 @@ async function boot() {
       }
       return n;
     }
-    const catchupDays = Math.max(0, Math.min(30, parseIntEnv("POLYGON_FLATFILES_MAX_CATCHUP_DAYS", 1)));
+    const bootCatchupEnabled =
+      process.env.POLYGON_FLATFILES_BOOT_CATCHUP_ENABLED === "1" ||
+      process.env.POLYGON_FLATFILES_BOOT_CATCHUP_ENABLED === "true";
+    const catchupDaysDefault = bootCatchupEnabled ? 1 : 0;
+    const catchupDays = Math.max(0, Math.min(30, parseIntEnv("POLYGON_FLATFILES_MAX_CATCHUP_DAYS", catchupDaysDefault)));
     const maxS3Requests = Math.max(1, parseIntEnv("POLYGON_FLATFILES_MAX_S3_REQUESTS", 200));
     logger.info({ catchupDays, maxS3Requests }, "Polygon flat-files sync: configured");
 
@@ -327,10 +331,16 @@ async function boot() {
     }
 
     // Boot-time catchup: scan last N trading days (capped by env), sync any not "synced".
+    // This is intentionally opt-in. A single OPRA day flat-file can be very
+    // large, and starting that work 60s after deploy can starve or OOM the API
+    // container, making /api intermittently return 502/timeouts.
     async function bootCatchup() {
       try {
         if (catchupDays === 0) {
-          logger.info("Polygon flat-files catchup: disabled (POLYGON_FLATFILES_MAX_CATCHUP_DAYS=0)");
+          logger.info({
+            bootCatchupEnabled,
+            envCatchupDays: process.env.POLYGON_FLATFILES_MAX_CATCHUP_DAYS ?? null,
+          }, "Polygon flat-files catchup: disabled");
           return;
         }
         const { db: dbRef, polygonSyncLogTable } = await import("@workspace/db");
