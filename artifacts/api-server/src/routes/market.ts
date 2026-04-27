@@ -13,6 +13,7 @@ import { emitTelemetry } from "../lib/telemetryStore.js";
 import { type OptionContract } from "../lib/optionsStrategist.js";
 import { getStoredIVR } from "../lib/ivNormalize.js";
 import { fetchPolygonChain } from "../lib/polygonChain.js";
+import { getDevMockHistory, isDevMockMarketDataEnabled } from "../lib/devMockMarketData.js";
 
 const router: IRouter = Router();
 
@@ -195,12 +196,39 @@ router.get("/quote", async (req, res) => {
   const symbol = req.query["symbol"] as string;
   const accessToken = (req.query["accessToken"] as string) || getAccessToken("market");
 
-  if (!symbol || !accessToken) {
-    return res.status(400).json({ symbol: "", error: "symbol is required and no access token available" });
+  if (!symbol) {
+    return res.status(400).json({ symbol: "", error: "symbol is required" });
   }
 
   const displaySymbol = symbol.toUpperCase().trim();
   const apiSymbol = formatSchwabSymbol(displaySymbol);
+
+  if (isDevMockMarketDataEnabled()) {
+    const mockQuote = getQuoteBySymbol(apiSymbol) ?? getQuoteBySymbol(displaySymbol);
+    if (mockQuote) {
+      const data = GetQuoteResponse.parse({
+        symbol: displaySymbol,
+        description: `${displaySymbol} synthetic dev quote`,
+        last: mockQuote.last ?? undefined,
+        bid: mockQuote.bid ?? undefined,
+        ask: mockQuote.ask ?? undefined,
+        change: mockQuote.change ?? undefined,
+        changePct: mockQuote.changePct ?? undefined,
+        volume: mockQuote.volume ?? undefined,
+        high: mockQuote.high ?? undefined,
+        low: mockQuote.low ?? undefined,
+      });
+      return res.json({
+        ...data,
+        bidSize: mockQuote.bidSize ?? undefined,
+        askSize: mockQuote.askSize ?? undefined,
+      });
+    }
+  }
+
+  if (!accessToken) {
+    return res.status(400).json({ symbol: "", error: "symbol is required and no access token available" });
+  }
 
   const schwabCached = getQuoteBySymbol(apiSymbol);
   if (schwabCached && schwabCached.last !== null) {
@@ -422,11 +450,26 @@ router.get("/history", async (req, res) => {
   let frequencyType = (req.query["frequencyType"] as string) ?? "daily";
   let frequency = parseInt((req.query["frequency"] as string) ?? "1", 10);
 
-  if (!symbol || !accessToken) {
-    return res.json({ symbol: "", candles: [], error: "symbol is required and no access token available" });
+  if (!symbol) {
+    return res.json({ symbol: "", candles: [], error: "symbol is required" });
   }
 
   const displaySymbol = symbol.toUpperCase().trim();
+
+  if (isDevMockMarketDataEnabled()) {
+    const candles = getDevMockHistory(displaySymbol, {
+      periodType,
+      period,
+      frequencyType,
+      frequency,
+    });
+    const data = GetPriceHistoryResponse.parse({ symbol: displaySymbol, candles });
+    return res.json(data);
+  }
+
+  if (!accessToken) {
+    return res.json({ symbol: "", candles: [], error: "symbol is required and no access token available" });
+  }
 
   if (!(VALID_PERIOD_TYPES as readonly string[]).includes(periodType)) periodType = "month";
   if (!VALID_PERIODS[periodType]?.includes(period)) period = VALID_PERIODS[periodType]?.[0] ?? 1;

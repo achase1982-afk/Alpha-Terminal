@@ -22,6 +22,7 @@ import { startOptionsWatcher } from "./lib/optionsWatcher";
 import { migrateAiLabSeedData } from "./lib/aiLabMigration";
 import { getBestAccessToken } from "./lib/tokenStore";
 import { loadAiLabConfigFromDb } from "./lib/aiLabConfig";
+import { startDevMockMarketData } from "./lib/devMockMarketData";
 
 const rawPort = process.env["PORT"];
 
@@ -607,6 +608,10 @@ async function boot() {
 
   registerQuoteCacheInjector(injectExternalQuote);
   registerIBBroadcast(broadcastToClients);
+
+  if (process.env.DEV_MOCK_MARKET_DATA === "true") {
+    startDevMockMarketData();
+  }
 
   startPolygonPCRatioPoller();
 
