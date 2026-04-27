@@ -225,9 +225,11 @@ async function boot() {
 
   // ── Polygon S3 flat-files daily sync ────────────────────────────────────
   // Pulls full per-strike options trades from Polygon S3 and writes to
-  // polygon_options_history. Runs once a day at 22:30 UTC (~6:30pm ET, after
-  // EOD files publish) for the prior trading day. Boot-time catchup also
-  // scans the last N trading days for any gaps (N = POLYGON_FLATFILES_MAX_CATCHUP_DAYS, default 1).
+  // polygon_options_history. Runs once a day overnight at 03:30 UTC
+  // (~11:30pm ET during daylight time, ~10:30pm ET during standard time) for
+  // the prior trading day. Optional boot-time catchup can scan recent trading
+  // days for gaps, but is disabled by default because it is heavy enough to
+  // starve the live API container during deploys.
   //
   // Env switches:
   //   POLYGON_FLATFILES_DISABLED=1            → schedule never installs (kill switch)
@@ -262,7 +264,7 @@ async function boot() {
     const catchupDaysDefault = bootCatchupEnabled ? 1 : 0;
     const catchupDays = Math.max(0, Math.min(30, parseIntEnv("POLYGON_FLATFILES_MAX_CATCHUP_DAYS", catchupDaysDefault)));
     const maxS3Requests = Math.max(1, parseIntEnv("POLYGON_FLATFILES_MAX_S3_REQUESTS", 200));
-    logger.info({ catchupDays, maxS3Requests }, "Polygon flat-files sync: configured");
+    logger.info({ catchupDays, maxS3Requests, scheduleUtc: "03:30" }, "Polygon flat-files sync: configured");
 
     // Per-tradeDate in-flight lock — prevents bootCatchup + scheduled cron
     // from racing the same date (H3 from architect review). Both paths
@@ -318,12 +320,12 @@ async function boot() {
     function scheduleNext() {
       const now = new Date();
       const target = new Date(now);
-      target.setUTCHours(22, 30, 0, 0);
+      target.setUTCHours(3, 30, 0, 0);
       if (target.getTime() <= now.getTime()) {
         target.setUTCDate(target.getUTCDate() + 1);
       }
       const ms = target.getTime() - now.getTime();
-      logger.info({ targetUTC: target.toISOString(), msUntil: ms }, "Polygon flat-files sync scheduled (22:30 UTC daily)");
+      logger.info({ targetUTC: target.toISOString(), msUntil: ms }, "Polygon flat-files sync scheduled (03:30 UTC daily)");
       setTimeout(() => {
         const tradeDay = priorTradingDay(new Date());
         void runFlatFilesSync(tradeDay).then(() => scheduleNext());
