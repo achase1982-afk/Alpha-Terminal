@@ -62,78 +62,6 @@ async function boot() {
     scheduleNext();
   }
 
-  const server = app.listen(port, (err) => {
-    if (err) {
-      logger.error({ err }, "Error listening on port");
-      process.exit(1);
-    }
-
-    logger.info({ port }, "Server listening");
-  });
-
-  server.timeout = 120_000;
-  server.keepAliveTimeout = 120_000;
-  server.headersTimeout = 125_000;
-
-  initWsServer(server);
-
-  // Defined early so the deferred setImmediate can reference them before the
-  // later boot code runs (setImmediate fires as soon as the first `await`
-  // yields, which can be before lines further down in boot() execute).
-  const SCHWAB_FUTURES_SYMS_EARLY = [
-    "/ES", "/NQ", "/YM", "/RTY",
-    "/GC", "/CL", "/BZ", "/HG", "/SI", "/NG", "/RB", "/PL",
-    "/ZB", "/ZN", "/ZF", "/ZT", "/ZQ",
-    "/6E", "/6J", "/6B", "/6A", "/6C",
-    "/BTC", "/ETH",
-    "/UB", "/ZC", "/ZS", "/ZW",
-    "/MES", "/MNQ", "/M2K",
-  ];
-  const SCHWAB_EQUITY_SYMS_EARLY = [
-    "SPY", "QQQ", "IWM",
-    "$VIX", "$VVIX", "$VIX1D", "$VIX9D", "$VIX3M",
-    "$SPX", "$NDX", "$RUT", "$DJI", "$SOX",
-    "$TNX", "$TYX", "$IRX",
-    "$VXN", "$RVX", "$OVX", "$GVZ",
-    "$TICK", "$TICKI",
-    "HYG", "LQD", "IEF", "TLT",
-  ];
-
-  setImmediate(() => {
-    void (async () => {
-      await loadAiLabConfigFromDb();
-      await initTokenStore();
-      startExitMonitor();
-      startTelemetryCleanup();
-      initDeltaEngine();
-
-      // Recover any snapshot rows orphaned by a prior crash/SIGKILL. Without
-      // this a stale 'running' row blocks future runs and silently re-opens
-      // IV history gaps. See dailySnapshot.sweepStaleSnapshots for details.
-      sweepStaleSnapshots().catch((e) => {
-        logger.warn({ err: e }, "sweepStaleSnapshots: startup sweep failed");
-      });
-
-      // Start the Schwab streamer HERE — after initTokenStore() has loaded
-      // tokens from the DB. The check lower in boot() runs before this
-      // deferred block resolves, so hasValidTokens() is always false there.
-      if (process.env.DISABLE_SCHWAB_STREAMER === "1" || process.env.DISABLE_SCHWAB_STREAMER === "true") {
-        logger.warn("Schwab streamer DISABLED via DISABLE_SCHWAB_STREAMER env flag");
-      } else if (hasValidTokens("trader")) {
-        logger.info("Deferred init: Schwab tokens available — starting streamer");
-        startSchwabStreamer().then(() => {
-          addFuturesSymbols([...SCHWAB_FUTURES_SYMS_EARLY]);
-          if (SCHWAB_EQUITY_SYMS_EARLY.length > 0) addSchwabSymbols(SCHWAB_EQUITY_SYMS_EARLY);
-          initSyntheticDxy();
-        }).catch((err) => logger.warn({ err }, "Schwab streamer start failed (deferred init)"));
-      } else {
-        logger.info("Deferred init: Schwab tokens not available — streamer will start on token refresh or /stream/start");
-      }
-    })().catch((err) => {
-      logger.error({ err }, "Boot background initialization failed");
-    });
-  });
-
   function scheduleDailyScreenRefresh() {
     const now = new Date();
     const etOffset = -5;
@@ -149,10 +77,8 @@ async function boot() {
       setInterval(() => void runDailyScreenRefresh(), 24 * 60 * 60 * 1000);
     }, msUntil);
   }
-  setImmediate(() => {
-    scheduleDailyScreenRefresh();
 
-    function scheduleDailySnapshot() {
+  function scheduleDailySnapshot() {
     const US_MARKET_HOLIDAYS_2026 = [
       "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03",
       "2026-05-25", "2026-06-19", "2026-07-03", "2026-09-07",
@@ -295,10 +221,7 @@ async function boot() {
 
     scheduleNext();
     void maybeCatchupSnapshot();
-    }
-    scheduleDailySnapshot();
-    scheduleCanonicalIvAccumulator();
-  });
+  }
 
   // ── Polygon S3 flat-files daily sync ────────────────────────────────────
   // Pulls full per-strike options trades from Polygon S3 and writes to
@@ -441,11 +364,86 @@ async function boot() {
     scheduleNext();
     setTimeout(() => { void bootCatchup(); }, 60_000);
   }
-  schedulePolygonFlatFilesSync();
 
-  await migrateAiLabSeedData();
-  initAiLabOrchestrator();
-  startUniverseRebuildSchedule();
+  const server = app.listen(port, (err) => {
+    if (err) {
+      logger.error({ err }, "Error listening on port");
+      process.exit(1);
+    }
+
+    logger.info({ port }, "Server listening");
+  });
+
+  server.timeout = 120_000;
+  server.keepAliveTimeout = 120_000;
+  server.headersTimeout = 125_000;
+
+  initWsServer(server);
+
+  const SCHWAB_FUTURES_SYMS_EARLY = [
+    "/ES", "/NQ", "/YM", "/RTY",
+    "/GC", "/CL", "/BZ", "/HG", "/SI", "/NG", "/RB", "/PL",
+    "/ZB", "/ZN", "/ZF", "/ZT", "/ZQ",
+    "/6E", "/6J", "/6B", "/6A", "/6C",
+    "/BTC", "/ETH",
+    "/UB", "/ZC", "/ZS", "/ZW",
+    "/MES", "/MNQ", "/M2K",
+  ];
+  const SCHWAB_EQUITY_SYMS_EARLY = [
+    "SPY", "QQQ", "IWM",
+    "$VIX", "$VVIX", "$VIX1D", "$VIX9D", "$VIX3M",
+    "$SPX", "$NDX", "$RUT", "$DJI", "$SOX",
+    "$TNX", "$TYX", "$IRX",
+    "$VXN", "$RVX", "$OVX", "$GVZ",
+    "$TICK", "$TICKI",
+    "HYG", "LQD", "IEF", "TLT",
+  ];
+
+  setImmediate(() => {
+    void (async () => {
+      await loadAiLabConfigFromDb();
+      await initTokenStore();
+      startExitMonitor();
+      startTelemetryCleanup();
+      initDeltaEngine();
+
+      // Recover any snapshot rows orphaned by a prior crash/SIGKILL. Without
+      // this a stale 'running' row blocks future runs and silently re-opens
+      // IV history gaps. See dailySnapshot.sweepStaleSnapshots for details.
+      sweepStaleSnapshots().catch((e) => {
+        logger.warn({ err: e }, "sweepStaleSnapshots: startup sweep failed");
+      });
+
+      scheduleDailyScreenRefresh();
+      scheduleDailySnapshot();
+      scheduleCanonicalIvAccumulator();
+      schedulePolygonFlatFilesSync();
+
+      await migrateAiLabSeedData();
+      initAiLabOrchestrator();
+      startUniverseRebuildSchedule();
+      triggerLiquidCoreBackfill();
+      void triggerFlowBootstrap();
+
+      // Start the Schwab streamer HERE — after initTokenStore() has loaded
+      // tokens from the DB. The check lower in boot() runs before this
+      // deferred block resolves, so hasValidTokens() is always false there.
+      if (process.env.DISABLE_SCHWAB_STREAMER === "1" || process.env.DISABLE_SCHWAB_STREAMER === "true") {
+        logger.warn("Schwab streamer DISABLED via DISABLE_SCHWAB_STREAMER env flag");
+      } else if (hasValidTokens("trader")) {
+        logger.info("Deferred init: Schwab tokens available — starting streamer");
+        startSchwabStreamer().then(() => {
+          addFuturesSymbols([...SCHWAB_FUTURES_SYMS_EARLY]);
+          if (SCHWAB_EQUITY_SYMS_EARLY.length > 0) addSchwabSymbols(SCHWAB_EQUITY_SYMS_EARLY);
+          initSyntheticDxy();
+        }).catch((err) => logger.warn({ err }, "Schwab streamer start failed (deferred init)"));
+      } else {
+        logger.info("Deferred init: Schwab tokens not available — streamer will start on token refresh or /stream/start");
+      }
+    })().catch((err) => {
+      logger.error({ err }, "Boot background initialization failed");
+    });
+  });
 
   const SCHWAB_FUTURES_SYMS = [
     "/ES", "/NQ", "/YM", "/RTY",
@@ -537,8 +535,6 @@ async function boot() {
     }
   }
 
-  triggerLiquidCoreBackfill();
-
   // ── Boot-time Polygon flow bootstrap ─────────────────────────────────
   // If `flow_daily_aggregates` is empty (fresh deploy / new DB), kick off
   // a 30-day Polygon REST backfill so the deterministic scanner has flow
@@ -571,7 +567,6 @@ async function boot() {
       logger.error({ err }, "Flow bootstrap: failed");
     }
   }
-  void triggerFlowBootstrap();
 
   // When a token refresh happens (e.g. after OAuth flow or DB load), add
   // symbols and ensure the streamer is running. The primary startup path is
