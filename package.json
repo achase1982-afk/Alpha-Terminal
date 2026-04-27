@@ -3,36 +3,20 @@
   "version": "0.0.0",
   "license": "MIT",
   "pnpm": {
-    "onlyBuiltDependencies": [
-      "@railway/cli"
-    ],
     "supportedArchitectures": {
-      "os": [
-        "current",
-        "linux"
-      ],
-      "cpu": [
-        "current",
-        "x64",
-        "arm64"
-      ],
-      "libc": [
-        "current",
-        "glibc",
-        "musl"
-      ]
+      "os": ["current", "linux"],
+      "cpu": ["current", "x64", "arm64"],
+      "libc": ["current", "glibc", "musl"]
     }
   },
   "scripts": {
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
     "build": "(pnpm run typecheck || echo '[typecheck failed — continuing build]') && pnpm -r --filter='!@workspace/mockup-sandbox' --if-present run build",
-    "railway:logs": "pnpm --filter @workspace/scripts railway:logs",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
   "private": true,
   "devDependencies": {
-    "@railway/cli": "^4.42.1",
     "@types/node": "catalog:",
     "prettier": "^3.8.1",
     "typescript": "~5.9.2"
