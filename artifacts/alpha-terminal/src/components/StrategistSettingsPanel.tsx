@@ -36,19 +36,30 @@ interface SettingsData {
 export function StrategistSettingsPanel() {
   const [data, setData] = useState<SettingsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [resetConfirm, setResetConfirm] = useState(false);
 
   const loadSettings = useCallback(async () => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 12000);
     try {
-      const res = await fetchWithAuth("/api/strategist/settings");
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
+      setLoading(true);
+      setLoadError(null);
+      const res = await fetchWithAuth("/api/strategist/settings", { signal: controller.signal });
+      if (!res.ok) {
+        throw new Error(`Settings request failed (${res.status})`);
       }
-    } catch {}
-    setLoading(false);
+      const json = await res.json();
+      setData(json);
+    } catch (err) {
+      setData(null);
+      setLoadError(err instanceof Error && err.name === "AbortError" ? "Settings request timed out" : "Failed to load settings");
+    } finally {
+      window.clearTimeout(timeout);
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { loadSettings(); }, [loadSettings]);
@@ -85,7 +96,7 @@ export function StrategistSettingsPanel() {
   }, []);
 
   if (loading) return <div className="text-center text-zinc-500 font-mono text-xs py-8">Loading settings...</div>;
-  if (!data) return <div className="text-center text-zinc-500 font-mono text-xs py-8">Failed to load settings</div>;
+  if (!data) return <div className="text-center text-zinc-500 font-mono text-xs py-8">{loadError ?? "Failed to load settings"}</div>;
 
   const groups = new Map<string, SettingMeta[]>();
   for (const m of data.meta) {
