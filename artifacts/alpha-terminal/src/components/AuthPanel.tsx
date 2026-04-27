@@ -4,7 +4,6 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { queryClient } from "@/App";
 import { ExternalLink, CheckCircle2, Loader2, XCircle, AlertTriangle } from "lucide-react";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
-import { useGetAuthUrl } from "@workspace/api-client-react";
 
 export function AuthPanel() {
   const { accessToken, traderAccessToken, clearTokens, clearTraderTokens } = useTerminalStore();
@@ -15,23 +14,21 @@ export function AuthPanel() {
   const isConnected = !!(accessToken || traderAccessToken);
   const serverTokenExpired = portfolioStatus.status === "no_token";
 
-  const { data: authUrlData, refetch: refetchAuthUrl } = useGetAuthUrl({
-    query: { enabled: isConnected && serverTokenExpired },
-  });
-
   const handleLogin = useCallback(async () => {
     setIsNavigating(true);
-    let url = authUrlData?.url || "";
-    if (!url) {
-      const result = await refetchAuthUrl();
-      url = result.data?.url || "";
-    }
-    if (!url) {
+    try {
+      const res = await fetch("/api/auth/trader-url", { credentials: "include" });
+      const data = await res.json();
+      if (!data?.url) {
+        setIsNavigating(false);
+        return;
+      }
+      window.location.href = data.url;
+    } catch (err) {
+      console.error("Failed to fetch Schwab auth URL", err);
       setIsNavigating(false);
-      return;
     }
-    window.location.href = url;
-  }, [authUrlData, refetchAuthUrl]);
+  }, []);
 
   const handleDisconnect = useCallback(async () => {
     setIsDisconnecting(true);
