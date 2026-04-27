@@ -38,6 +38,30 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 async function boot() {
+  function scheduleCanonicalIvAccumulator() {
+    function nextRunMs() {
+      const now = new Date();
+      const target = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 22, 0, 0));
+      if (target.getTime() <= now.getTime()) target.setUTCDate(target.getUTCDate() + 1);
+      return target.getTime() - now.getTime();
+    }
+    function scheduleNext() {
+      const ms = nextRunMs();
+      logger.info({ msUntil: ms }, "Canonical IV accumulator scheduled (22:00 UTC daily)");
+      setTimeout(async () => {
+        try {
+          const today = new Date().toISOString().slice(0, 10);
+          const report = await accumulateCanonicalIvForDate(today);
+          logger.info(report, "Canonical IV accumulator: scheduled run complete");
+        } catch (err) {
+          logger.error({ err }, "Canonical IV accumulator: scheduled run failed");
+        }
+        scheduleNext();
+      }, ms);
+    }
+    scheduleNext();
+  }
+
   const server = app.listen(port, (err) => {
     if (err) {
       logger.error({ err }, "Error listening on port");
@@ -235,38 +259,8 @@ async function boot() {
     void maybeCatchupSnapshot();
     }
     scheduleDailySnapshot();
-
-    // ── Path A: canonical IV daily accumulator ──────────────────────────────
-    // After the daily snapshot has populated options_chain_daily for "today",
-    // pick the ATM 30-DTE contract per symbol and write it to
-    // equity_iv_canonical. Runs at 22:00 UTC (~6:00pm ET) — 90 min after the
-    // snapshot job kicks off, leaving time for chain collection to finish.
-    function scheduleCanonicalIvAccumulator() {
-      function nextRunMs() {
-        const now = new Date();
-        const target = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 22, 0, 0));
-        if (target.getTime() <= now.getTime()) target.setUTCDate(target.getUTCDate() + 1);
-        return target.getTime() - now.getTime();
-      }
-      function scheduleNext() {
-        const ms = nextRunMs();
-        logger.info({ msUntil: ms }, "Canonical IV accumulator scheduled (22:00 UTC daily)");
-        setTimeout(async () => {
-          try {
-            const today = new Date().toISOString().slice(0, 10);
-            const report = await accumulateCanonicalIvForDate(today);
-            logger.info(report, "Canonical IV accumulator: scheduled run complete");
-          } catch (err) {
-            logger.error({ err }, "Canonical IV accumulator: scheduled run failed");
-          }
-          scheduleNext();
-        }, ms);
-      }
-      scheduleNext();
-    }
     scheduleCanonicalIvAccumulator();
   });
-  scheduleCanonicalIvAccumulator();
 
   // ── Polygon S3 flat-files daily sync ────────────────────────────────────
   // Pulls full per-strike options trades from Polygon S3 and writes to
