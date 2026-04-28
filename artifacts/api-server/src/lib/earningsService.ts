@@ -57,6 +57,22 @@ interface BenzingaResult {
   lastEarningsDate: string | null;
 }
 
+/** Yahoo finance quoteSummary JSON (partial — calendarEvents only). */
+interface YahooEarningsDateEntry {
+  raw?: number;
+  fmt?: string;
+}
+
+interface YahooQuoteSummaryResult {
+  calendarEvents?: {
+    earnings?: { earningsDate?: YahooEarningsDateEntry[] };
+  };
+}
+
+interface YahooQuoteSummaryEnvelope {
+  quoteSummary?: { result?: YahooQuoteSummaryResult[] };
+}
+
 function daysSinceTodayFrom(dateYmd: string): number | null {
   const d = new Date(dateYmd + "T16:00:00-04:00");
   if (Number.isNaN(d.getTime())) return null;
@@ -240,7 +256,8 @@ async function fetchYahoo(symbol: string): Promise<string | null> {
     }
 
     const json = (await res.json()) as Record<string, unknown>;
-    const result = (json as any)?.quoteSummary?.result?.[0];
+    const envelope = json as YahooQuoteSummaryEnvelope;
+    const result = envelope.quoteSummary?.result?.[0];
     const arr = result?.calendarEvents?.earnings?.earningsDate;
     if (Array.isArray(arr) && arr.length > 0) {
       // Same defensive ordering as the Benzinga path: when more than one
