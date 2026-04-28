@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Response as ExpressResponse } from "express";
 import { logFailure } from "../lib/telemetry.js";
 import { emitTelemetry, createTelemetryBatch } from "../lib/telemetryStore.js";
 import Anthropic from "@anthropic-ai/sdk";
@@ -45,6 +45,162 @@ import {
 import { resolveStrikes, type AccountSnapshot, type ChainData, type ResolvedTrade, type StrikeResolutionError } from "../lib/strikeResolver.js";
 import { createGeminiClient, getGeminiApiKey } from "../lib/geminiClient.js";
 
+/** Express `Response` omits optional Node `flush` / socket cork helpers present when compression or a custom stack attaches them. */
+type ResponseWithNodeStream = ExpressResponse & {
+  flush?: () => void;
+  socket?: (NodeJS.Socket & { uncork?: () => void; setNoDelay?: (noDelay: boolean) => void }) | null;
+};
+
+function asResponseWithNodeStream(res: ExpressResponse): ResponseWithNodeStream {
+  return res as ResponseWithNodeStream;
+}
+
+function flushSseResponse(res: ExpressResponse): void {
+  const r = asResponseWithNodeStream(res);
+  if (typeof r.flush === "function") r.flush();
+}
+
+/** Telemetry loop keys: some labels differ from `MarketIndicators` field names (e.g. Q suffix, DXY → dx). */
+type PulseTelemetryIndicatorName =
+  | "vix"
+  | "vix9d"
+  | "vix3m"
+  | "vix1d"
+  | "tick"
+  | "trin"
+  | "add"
+  | "advn"
+  | "decn"
+  | "dvol"
+  | "uvol"
+  | "tickiQ"
+  | "trinQ"
+  | "addQ"
+  | "advnQ"
+  | "decnQ"
+  | "dvolQ"
+  | "uvolQ"
+  | "spy"
+  | "qqq"
+  | "iwm"
+  | "dia"
+  | "tlt"
+  | "hyg"
+  | "lqd"
+  | "tnx"
+  | "tyx"
+  | "irx"
+  | "dxy"
+  | "gc"
+  | "cl"
+  | "hg"
+  | "es"
+  | "nq"
+  | "ym"
+  | "rty"
+  | "vvix"
+  | "rvx"
+  | "vxn"
+  | "ovx"
+  | "gvz"
+  | "pcEquity"
+  | "pcIndex";
+
+function pulseTelemetryIndicatorValue(indicators: MarketIndicators, name: PulseTelemetryIndicatorName): number | null | undefined {
+  switch (name) {
+    case "vix":
+      return indicators.vix;
+    case "vix9d":
+      return indicators.vix9d;
+    case "vix3m":
+      return indicators.vix3m;
+    case "vix1d":
+      return indicators.vix1d;
+    case "tick":
+      return indicators.tick;
+    case "trin":
+      return indicators.trin;
+    case "add":
+      return indicators.add;
+    case "advn":
+      return indicators.advn;
+    case "decn":
+      return indicators.decn;
+    case "dvol":
+      return indicators.dvol;
+    case "uvol":
+      return indicators.uvol;
+    case "tickiQ":
+      return indicators.ticki;
+    case "trinQ":
+      return indicators.trinq;
+    case "addQ":
+      return indicators.addq;
+    case "advnQ":
+      return indicators.advnq;
+    case "decnQ":
+      return indicators.decnq;
+    case "dvolQ":
+      return indicators.dvolq;
+    case "uvolQ":
+      return indicators.uvolq;
+    case "spy":
+      return indicators.spy;
+    case "qqq":
+      return indicators.qqq;
+    case "iwm":
+      return indicators.iwm;
+    case "dia":
+      return undefined;
+    case "tlt":
+      return indicators.tlt;
+    case "hyg":
+      return indicators.hyg;
+    case "lqd":
+      return indicators.lqd;
+    case "tnx":
+      return indicators.tnx;
+    case "tyx":
+      return indicators.tyx;
+    case "irx":
+      return indicators.irx;
+    case "dxy":
+      return indicators.dx;
+    case "gc":
+      return indicators.gc;
+    case "cl":
+      return indicators.cl;
+    case "hg":
+      return indicators.hg;
+    case "es":
+      return indicators.es;
+    case "nq":
+      return indicators.nq;
+    case "ym":
+      return indicators.ym;
+    case "rty":
+      return indicators.rty;
+    case "vvix":
+      return indicators.vvix;
+    case "rvx":
+      return indicators.rvx;
+    case "vxn":
+      return indicators.vxn;
+    case "ovx":
+      return indicators.ovx;
+    case "gvz":
+      return indicators.gvz;
+    case "pcEquity":
+      return indicators.cpce;
+    case "pcIndex":
+      return indicators.cpci;
+    default: {
+      const _exhaustive: never = name;
+      return _exhaustive;
+    }
+  }
+}
+
 const router: IRouter = Router();
 
 let lastPulseResult: { pulse: Record<string, unknown>; generatedAt: number; thinkingTokens: string[] } | null = null;
@@ -53,13 +209,14 @@ let pulseGenerationInFlight = false;
 let pulseThinkingBuffer: string[] = [];
 let pulseStatusText = "Generating AI analysis...";
 
-function safeSseWrite(res: import("express").Response, data: string) {
+function safeSseWrite(res: ExpressResponse, data: string) {
   try {
     if (!res.writableEnded && !res.destroyed) {
       res.write(data);
-      if (typeof (res as any).flush === "function") (res as any).flush();
-      if ((res as any).socket && typeof (res as any).socket.write === "function") {
-        (res as any).socket.uncork?.();
+      flushSseResponse(res);
+      const sock = asResponseWithNodeStream(res).socket;
+      if (sock && typeof sock.write === "function") {
+        sock.uncork?.();
       }
       return true;
     }
@@ -148,7 +305,8 @@ async function nativeStreamClaude(opts: NativeStreamOptions): Promise<string> {
   if (useThinking) {
     if (isNew) {
       // Claude 4.7+: extended thinking budgets removed; use adaptive instead
-      params.thinking = { type: "adaptive", display: "summarized" } as unknown as Anthropic.MessageStreamParams["thinking"];
+      // Anthropic SDK types lag behind the Messages API "adaptive" thinking shape.
+      params.thinking = { type: "adaptive", display: "summarized" } as Anthropic.MessageStreamParams["thinking"];
     } else {
       params.thinking = { type: "enabled", budget_tokens: effectiveBudget };
       params.temperature = 1;
@@ -679,11 +837,11 @@ Every price level MUST come from the provided data. For fundamental sections, us
       thinkingBudget: 2048,
       onThinking: (text) => {
         res.write(`data: ${JSON.stringify({ reasoning: text })}\n\n`);
-        if (typeof (res as any).flush === "function") (res as any).flush();
+        flushSseResponse(res);
       },
       onText: (text) => {
         res.write(`data: ${JSON.stringify({ text })}\n\n`);
-        if (typeof (res as any).flush === "function") (res as any).flush();
+        flushSseResponse(res);
       },
     });
     clearInterval(heartbeat);
@@ -1585,7 +1743,7 @@ router.post("/market-pulse/stream", async (req, res) => {
   req.setTimeout(0);
   res.setTimeout(0);
   if (req.socket) req.socket.setTimeout(0);
-  (res as any).socket?.setNoDelay?.(true);
+  asResponseWithNodeStream(res).socket?.setNoDelay?.(true);
 
   req.on("close", () => {
     clientConnected = false;
@@ -1656,9 +1814,9 @@ router.post("/market-pulse/stream", async (req, res) => {
     "spy", "qqq", "iwm", "dia", "tlt", "hyg", "lqd",
     "tnx", "tyx", "irx", "dxy", "gc", "cl", "hg",
     "es", "nq", "ym", "rty", "vvix", "rvx", "vxn", "ovx", "gvz",
-    "pcEquity", "pcIndex"] as const;
+    "pcEquity", "pcIndex"] as const satisfies readonly PulseTelemetryIndicatorName[];
   for (const name of indNames) {
-    const val = (indicators as any)[name];
+    const val = pulseTelemetryIndicatorValue(indicators, name);
     if (val !== undefined && val !== null) {
       emitTelemetry("MARKET_PULSE", "INFO", `Indicator ${name.toUpperCase()} = ${typeof val === "number" ? val.toFixed(4) : val}`, {
         indicator: name,
@@ -1946,7 +2104,9 @@ Write ONLY the narrative fields. Return this exact JSON structure:
 
     lastPulseResult = { pulse: finalPulse, generatedAt: Date.now(), thinkingTokens: [...pulseThinkingBuffer] };
     pulseGenerationInFlight = false;
-    req.log.info({ clientConnected, bias: (finalPulse as any).bias, thinkingTokenCount: pulseThinkingBuffer.length }, "Pulse generation complete — result cached");
+    const biasForLog =
+      typeof finalPulse["bias"] === "string" ? finalPulse["bias"] : engineResult.bias;
+    req.log.info({ clientConnected, bias: biasForLog, thinkingTokenCount: pulseThinkingBuffer.length }, "Pulse generation complete — result cached");
 
     safeSseWrite(res, `event: result\ndata: ${JSON.stringify({ type: "complete", pulse: finalPulse })}\n\n`);
     if (!res.writableEnded) res.end();
@@ -2573,11 +2733,11 @@ router.post("/options-strategist/stream", async (req, res) => {
         thinkingBudget: 2048,
         onThinking: (text) => {
           res.write(`data: ${JSON.stringify({ reasoning: text })}\n\n`);
-          if (typeof (res as any).flush === "function") (res as any).flush();
+          flushSseResponse(res);
         },
         onText: (text) => {
           res.write(`data: ${JSON.stringify({ text })}\n\n`);
-          if (typeof (res as any).flush === "function") (res as any).flush();
+          flushSseResponse(res);
         },
       });
     } catch (aiErr: unknown) {
@@ -3239,11 +3399,11 @@ router.post("/deterministic-strategist", async (req, res) => {
       thinkingBudget: 2048,
       onThinking: (text) => {
         res.write(`data: ${JSON.stringify({ reasoning: text })}\n\n`);
-        if (typeof (res as any).flush === "function") (res as any).flush();
+        flushSseResponse(res);
       },
       onText: (text) => {
         res.write(`data: ${JSON.stringify({ text })}\n\n`);
-        if (typeof (res as any).flush === "function") (res as any).flush();
+        flushSseResponse(res);
       },
     });
   } catch (aiErr: unknown) {
