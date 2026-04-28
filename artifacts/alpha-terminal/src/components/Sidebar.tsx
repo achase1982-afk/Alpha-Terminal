@@ -36,6 +36,10 @@ import { useClerk } from "@clerk/clerk-react";
 
 const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
 
+function clerkSignOutRedirectUrl() {
+  return window.location.origin + (import.meta.env.BASE_URL || "/");
+}
+
 function useClerkSafe() {
   if (devBypass) return { signOut: () => Promise.resolve() };
   return useClerk();
@@ -279,7 +283,13 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
 
               <div className="pt-6 pb-10 pl-5">
                 <button
-                  onClick={() => { queryClient.clear(); void signOut(); }}
+                  type="button"
+                  onClick={() => {
+                    setActivePage(null);
+                    onClose();
+                    queryClient.clear();
+                    void signOut({ redirectUrl: clerkSignOutRedirectUrl() });
+                  }}
                   className="flex items-center gap-3 transition-opacity hover:opacity-70 active:opacity-50"
                 >
                   <Power className="w-[22px] h-[22px] text-white/80" strokeWidth={2.5} />
