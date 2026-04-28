@@ -23,9 +23,9 @@ const router = Router();
 router.get("/status", async (_req, res) => {
   try {
     const status = await getSnapshotStatus();
-    res.json({ ok: true, snapshots: status });
+    return res.json({ ok: true, snapshots: status });
   } catch (e) {
-    res.status(500).json({ ok: false, error: (e as Error).message });
+    return res.status(500).json({ ok: false, error: (e as Error).message });
   }
 });
 
@@ -44,6 +44,7 @@ router.post("/collect", async (req, res) => {
   runFullSnapshot(scanSymbols, accessToken, date).catch(e => {
     logger.error({ error: (e as Error).message }, "Background snapshot collection failed");
   });
+  return;
 });
 
 router.post("/equity-only", async (req, res) => {
@@ -61,6 +62,7 @@ router.post("/equity-only", async (req, res) => {
   collectEquitySnapshots(scanSymbols, accessToken, date).catch(e => {
     logger.error({ error: (e as Error).message }, "Background equity snapshot failed");
   });
+  return;
 });
 
 router.post("/flow-only", async (req, res) => {
@@ -74,10 +76,10 @@ router.post("/flow-only", async (req, res) => {
       const aggRows = await computeFlowAggregates(scanSymbols, date);
       const ivRows = await computeIVFromFlow(scanSymbols, date);
       res.json({ ok: true, strikeRows, aggRows, ivRows });
+      return;
     } catch (e) {
-      res.status(500).json({ ok: false, error: (e as Error).message });
+      return res.status(500).json({ ok: false, error: (e as Error).message });
     }
-    return;
   }
 
   res.json({ ok: true, message: "Flow collection started", symbols: scanSymbols.length });
@@ -91,6 +93,7 @@ router.post("/flow-only", async (req, res) => {
     .catch(e => {
       logger.error({ error: (e as Error).message }, "Background flow collection failed");
     });
+  return;
 });
 
 router.post("/backfill", async (req, res) => {
@@ -107,6 +110,7 @@ router.post("/backfill", async (req, res) => {
   backfillEquityHistory(scanSymbols, accessToken).catch(e => {
     logger.error({ error: (e as Error).message }, "Background backfill failed");
   });
+  return;
 });
 
 router.post("/recompute-aggregates", async (req, res) => {
@@ -136,8 +140,9 @@ router.post("/recompute-aggregates", async (req, res) => {
       }
       logger.info({ processed, symbols: symbols.length }, "Recompute aggregates + IV complete");
     })().catch(e => logger.error({ error: (e as Error).message }, "Recompute aggregates failed"));
+    return;
   } catch (e) {
-    res.status(500).json({ ok: false, error: (e as Error).message });
+    return res.status(500).json({ ok: false, error: (e as Error).message });
   }
 });
 
@@ -149,15 +154,16 @@ router.post("/backfill-flow", async (req, res) => {
   if (sync) {
     try {
       const result = await backfillPolygonFlow(scanSymbols, days, !!force);
-      res.json({ ok: true, ...result });
+      return res.json({ ok: true, ...result });
     } catch (e) {
-      res.status(500).json({ ok: false, error: (e as Error).message });
+      return res.status(500).json({ ok: false, error: (e as Error).message });
     }
   } else {
     res.json({ ok: true, message: `Polygon flow backfill started — ${days} days`, symbols: scanSymbols.length, daysBack: days, force: !!force });
     backfillPolygonFlow(scanSymbols, days, !!force).catch(e => {
       logger.error({ error: (e as Error).message }, "Background Polygon flow backfill failed");
     });
+    return;
   }
 });
 
@@ -173,6 +179,7 @@ router.post("/compute-iv", async (req, res) => {
   }).catch(e => {
     logger.error({ error: (e as Error).message }, "IV computation failed");
   });
+  return;
 });
 
 router.post("/backfill-equity-polygon", async (req, res) => {
@@ -183,15 +190,16 @@ router.post("/backfill-equity-polygon", async (req, res) => {
   if (sync) {
     try {
       const result = await backfillEquityFromPolygon(scanSymbols, days);
-      res.json({ ok: true, ...result });
+      return res.json({ ok: true, ...result });
     } catch (e) {
-      res.status(500).json({ ok: false, error: (e as Error).message });
+      return res.status(500).json({ ok: false, error: (e as Error).message });
     }
   } else {
     res.json({ ok: true, message: `Polygon equity backfill started`, symbols: scanSymbols.length, daysBack: days });
     backfillEquityFromPolygon(scanSymbols, days).catch(e => {
       logger.error({ error: (e as Error).message }, "Polygon equity backfill failed");
     });
+    return;
   }
 });
 
@@ -213,6 +221,7 @@ router.post("/trigger", async (req, res) => {
   }).catch(e => {
     logger.error({ error: (e as Error).message, date: targetDate }, "Manual snapshot trigger: failed");
   });
+  return;
 });
 
 router.post("/admin/cleanup-iv-units", async (req, res) => {
@@ -242,9 +251,10 @@ router.post("/admin/cleanup-iv-units", async (req, res) => {
       before: (before as { rows?: unknown[] }).rows ?? before,
       after: (after as { rows?: unknown[] }).rows ?? after,
     });
+    return;
   } catch (e) {
     logger.error({ error: (e as Error).message }, "cleanup-iv-units failed");
-    res.status(500).json({ ok: false, error: (e as Error).message });
+    return res.status(500).json({ ok: false, error: (e as Error).message });
   }
 });
 
@@ -255,7 +265,7 @@ router.post("/admin/backfill-iv-history", async (req, res) => {
   const syms = (symbols && symbols.length > 0) ? symbols : [...LIQUID_CORE_SYMBOLS];
   const days = (typeof daysBack === "number" && daysBack > 0 && daysBack <= 730) ? daysBack : 252;
   const job = startBackfillJob(syms, days);
-  res.json({ ok: true, started: true, job });
+  return res.json({ ok: true, started: true, job });
 });
 
 router.get("/admin/backfill-iv-history/:id", (req, res) => {
@@ -263,13 +273,13 @@ router.get("/admin/backfill-iv-history/:id", (req, res) => {
   if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
   const job = getBackfillJob(req.params.id);
   if (!job) return res.status(404).json({ ok: false, error: "job not found" });
-  res.json({ ok: true, job });
+  return res.json({ ok: true, job });
 });
 
 router.get("/admin/backfill-iv-history", (req, res) => {
   const auth = requireAdmin(req as never);
   if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
-  res.json({ ok: true, jobs: listBackfillJobs() });
+  return res.json({ ok: true, jobs: listBackfillJobs() });
 });
 
 router.get("/admin/diagnose-list-contracts", async (req, res) => {
@@ -279,9 +289,9 @@ router.get("/admin/diagnose-list-contracts", async (req, res) => {
   const daysBack = Math.max(1, Math.min(900, Number(req.query["daysBack"] ?? 252)));
   try {
     const result = await diagnoseListContracts(symbol, daysBack);
-    res.json({ ok: true, result });
+    return res.json({ ok: true, result });
   } catch (e) {
-    res.status(500).json({ ok: false, error: (e as Error).message });
+    return res.status(500).json({ ok: false, error: (e as Error).message });
   }
 });
 
@@ -300,9 +310,10 @@ router.post("/admin/recompute-ivr", async (req, res) => {
       LIMIT 40
     `);
     res.json({ ok: true, result, sample: (sample as { rows?: unknown[] }).rows ?? sample });
+    return;
   } catch (e) {
     logger.error({ error: (e as Error).message }, "recompute-ivr failed");
-    res.status(500).json({ ok: false, error: (e as Error).message });
+    return res.status(500).json({ ok: false, error: (e as Error).message });
   }
 });
 
@@ -313,7 +324,7 @@ router.post("/admin/backfill-hv-proxy", async (req, res) => {
   const syms = (symbols && symbols.length > 0) ? symbols : [...LIQUID_CORE_SYMBOLS];
   const days = (typeof daysBack === "number" && daysBack > 0 && daysBack <= 730) ? daysBack : 252;
   const job = startHvProxyBackfillJob(syms, days, { skipAutoSectorEtfs: skipAutoSectorEtfs === true });
-  res.json({ ok: true, started: true, job });
+  return res.json({ ok: true, started: true, job });
 });
 
 router.get("/admin/backfill-hv-proxy/:id", (req, res) => {
@@ -321,13 +332,13 @@ router.get("/admin/backfill-hv-proxy/:id", (req, res) => {
   if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
   const job = getHvProxyJob(req.params.id);
   if (!job) return res.status(404).json({ ok: false, error: "job not found" });
-  res.json({ ok: true, job });
+  return res.json({ ok: true, job });
 });
 
 router.get("/admin/backfill-hv-proxy", (req, res) => {
   const auth = requireAdmin(req as never);
   if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
-  res.json({ ok: true, jobs: listHvProxyJobs() });
+  return res.json({ ok: true, jobs: listHvProxyJobs() });
 });
 
 router.post("/admin/canonical-iv-accumulate", async (req, res) => {
@@ -337,9 +348,9 @@ router.post("/admin/canonical-iv-accumulate", async (req, res) => {
   const targetDate = date ?? new Date().toISOString().slice(0, 10);
   try {
     const report = await accumulateCanonicalIvForDate(targetDate);
-    res.json({ ok: true, report });
+    return res.json({ ok: true, report });
   } catch (e) {
-    res.status(500).json({ ok: false, error: (e as Error).message });
+    return res.status(500).json({ ok: false, error: (e as Error).message });
   }
 });
 
