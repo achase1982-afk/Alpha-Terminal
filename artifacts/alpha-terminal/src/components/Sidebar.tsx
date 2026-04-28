@@ -281,13 +281,14 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
               <div className="pt-6 pb-10 pl-5">
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.currentTarget.disabled = true;
                     setActivePage(null);
                     onClose();
                     queryClient.clear();
-                    void signOutWithFullNavigation(signOut);
+                    signOutWithFullNavigation(signOut);
                   }}
-                  className="flex items-center gap-3 transition-opacity hover:opacity-70 active:opacity-50"
+                  className="flex items-center gap-3 transition-opacity hover:opacity-70 active:opacity-50 enabled:cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
                 >
                   <Power className="w-[22px] h-[22px] text-white/80" strokeWidth={2.5} />
                   <span className="font-extrabold text-[17px] tracking-[0.15em] uppercase text-white/90">Logout</span>

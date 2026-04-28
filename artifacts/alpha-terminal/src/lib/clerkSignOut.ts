@@ -13,13 +13,19 @@ function signOutTargetUrl(): string {
 
 type ClerkSignOut = (opts?: { redirectUrl?: string | null }) => Promise<unknown>;
 
-export async function signOutWithFullNavigation(signOut: ClerkSignOut): Promise<void> {
+/**
+ * Do not `await` Clerk's `signOut` — it waits on network IO and causes a
+ * noticeable ~0.5–1s delay before `location.replace`. Firing sign-out and
+ * navigating in the same turn keeps the handoff feeling instant; the new
+ * document load still lands on `SignedOut` with a clean session.
+ */
+export function signOutWithFullNavigation(signOut: ClerkSignOut): void {
   if (import.meta.env.VITE_DEV_BYPASS_AUTH === "true") return;
   const target = signOutTargetUrl();
   try {
-    await signOut({ redirectUrl: target });
+    void signOut({ redirectUrl: target });
   } catch {
-    // Clear session if possible, then still hard-navigate
+    // ignore
   }
   window.location.replace(target);
 }
