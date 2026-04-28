@@ -8,8 +8,20 @@ function isInternalUrl(url: string) {
   return url.startsWith(API_BASE + "/") || url.startsWith("/api/");
 }
 
+function isSecFilingUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === "www.sec.gov" && parsed.pathname.startsWith("/Archives/edgar/data/");
+  } catch {
+    return false;
+  }
+}
+
 function proxyUrl(url: string, title?: string | null, source?: string | null, summary?: string | null) {
   if (isInternalUrl(url)) return url;
+  if (isSecFilingUrl(url)) {
+    return `${API_BASE}/sec/filing-content?url=${encodeURIComponent(url)}`;
+  }
   let qs = `url=${encodeURIComponent(url)}`;
   if (title) qs += `&title=${encodeURIComponent(title)}`;
   if (source) qs += `&source=${encodeURIComponent(source)}`;
@@ -47,13 +59,13 @@ export function InAppBrowser() {
         setLoading(true);
         setError(false);
         if (iframeRef.current) {
-          iframeRef.current.src = proxyUrl(newUrl);
+          iframeRef.current.src = proxyUrl(newUrl, browserTitle, browserSource, browserSummary);
         }
       }
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [currentUrl]);
+  }, [currentUrl, browserTitle, browserSource, browserSummary]);
 
   const handleLoad = useCallback(() => {
     setLoading(false);
@@ -80,9 +92,9 @@ export function InAppBrowser() {
     setLoading(true);
     setError(false);
     if (iframeRef.current) {
-      iframeRef.current.src = proxyUrl(prev);
+      iframeRef.current.src = proxyUrl(prev, browserTitle, browserSource, browserSummary);
     }
-  }, [history]);
+  }, [history, browserTitle, browserSource, browserSummary]);
 
   if (!browserUrl || !currentUrl) return null;
 
