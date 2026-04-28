@@ -377,13 +377,19 @@ async function boot() {
     setTimeout(() => { void bootCatchup(); }, 60_000);
   }
 
-  const server = app.listen(port, (err) => {
+  // Bind to 0.0.0.0 explicitly so other services on the private network can
+  // reach us. Without an explicit host, some runtime setups bind only to
+  // 127.0.0.1, which causes sibling-container TCP connects to time out
+  // (the symptom we hit in production: the frontend nginx hitting the
+  // backend's internal hostname and getting "upstream timed out").
+  const host = process.env["HOST"] ?? "0.0.0.0";
+  const server = app.listen(port, host, (err) => {
     if (err) {
       logger.error({ err }, "Error listening on port");
       process.exit(1);
     }
 
-    logger.info({ port }, "Server listening");
+    logger.info({ host, port }, "Server listening");
   });
 
   server.timeout = 120_000;
