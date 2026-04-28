@@ -37,6 +37,16 @@ fi
 
 export API_BACKEND
 
+# Nginx resolves a static proxy_pass hostname once at startup. Railway private
+# service IPs can change across backend redeploys, so pass nginx the container
+# resolver and use a variable proxy_pass in nginx.conf.template.
+DNS_RESOLVER="$(awk '/^nameserver / { print $2; exit }' /etc/resolv.conf)"
+if [ -z "${DNS_RESOLVER}" ]; then
+    DNS_RESOLVER="127.0.0.11"
+fi
+export DNS_RESOLVER
+echo "[entrypoint] Using DNS resolver for API proxy: ${DNS_RESOLVER}"
+
 # Extract host and port from the resolved API_BACKEND so we can probe it.
 # API_BACKEND is expected to be of the form http://host[:port][/path].
 _probe_target="${API_BACKEND#*://}"
@@ -117,7 +127,7 @@ case "${probe_result}" in
 esac
 
 # Render the nginx config template with the resolved value.
-envsubst '${API_BACKEND}' \
+envsubst '${API_BACKEND} ${DNS_RESOLVER}' \
     < /etc/nginx/templates/default.conf.template \
     > /etc/nginx/conf.d/default.conf
 
