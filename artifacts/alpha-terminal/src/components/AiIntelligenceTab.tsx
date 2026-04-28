@@ -949,7 +949,9 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
           </div>
           {tickerIvr != null && (() => {
             const isProxy = tickerIvrSource === "hv_proxy";
-            const label = isProxy ? "IVR (est.)" : "IVR (EOD)";
+            const label = "IVR";
+            const sourceLabel = isProxy ? "HV Proxy" : "Real IV";
+            const sourceColor = isProxy ? "#66e0ff" : "#00d166";
             const baseTitle = tickerIvrAsOfDate
               ? `IV Rank, as of ${tickerIvrAsOfDate} (252-day window)`
               : "IV Rank (252-day window)";
@@ -957,10 +959,16 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
               ? `${baseTitle}. Source: realized-vol proxy (HV30 × VRP) — accumulating chain-based history; expect refinement as more days collect.`
               : `${baseTitle}. Source: ${tickerIvrSource ?? "EOD chain"} (Black-Scholes IV).`;
             return (
-              <div className="flex items-center gap-2" title={title}>
+              <div className="flex items-center gap-1.5" title={title}>
                 <span className="font-mono text-sm text-white/40 uppercase tracking-wider">{label}</span>
                 <span className="font-mono text-sm tabular-nums" style={{ color: tickerIvr > 50 ? "#FFB800" : tickerIvr < 30 ? "#00d166" : "#a1a1aa" }}>
                   {`${tickerIvr}%`}
+                </span>
+                <span
+                  className="font-mono text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+                  style={{ color: sourceColor, background: `${sourceColor}18`, border: `1px solid ${sourceColor}45` }}
+                >
+                  {sourceLabel}
                 </span>
               </div>
             );
