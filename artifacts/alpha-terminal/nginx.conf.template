@@ -27,7 +27,9 @@ server {
     # API_BACKEND should be set without a trailing slash, e.g.
     #   http://api-server.railway.internal:8080
     location /api/ {
-        proxy_pass ${API_BACKEND};
+        resolver ${DNS_RESOLVER} valid=10s ipv6=on;
+        set $api_backend "${API_BACKEND}";
+        proxy_pass $api_backend;
 
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
