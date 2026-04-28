@@ -807,45 +807,73 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
     }
     setFetchingTicker(true);
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    const ac = new AbortController();
     debounceRef.current = setTimeout(async () => {
       try {
-        const res = await fetchWithAuth(`/api/market/quote?symbol=${encodeURIComponent(typed)}`);
-        if (!res.ok) { setFetchingTicker(false); return; }
+        const res = await fetchWithAuth(
+          `/api/market/quote?symbol=${encodeURIComponent(typed)}`,
+          { signal: ac.signal },
+        );
+        if (!res.ok) {
+          setFetchingTicker(false);
+          return;
+        }
         const data = await res.json();
+        if (ac.signal.aborted) return;
         if (data?.last != null) {
           setPreviewQuote({ last: data.last, change: data.change ?? 0, changePct: data.changePct ?? 0, volume: data.volume });
         } else {
           setPreviewQuote(null);
         }
-      } catch {
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
         setPreviewQuote(null);
       }
       setFetchingTicker(false);
-    }, 250);
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+    }, 450);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      ac.abort();
+    };
   }, [inputVal]);
 
   useEffect(() => {
     const ticker = (inputVal.trim().toUpperCase()) || symbol;
-    if (!ticker) { setTickerPcRatio(null); setTickerIvr(null); setTickerIvrAsOfDate(null); setTickerIvrSource(null); setTickerMmm(null); return; }
-    setTickerPcRatio(null); setTickerIvr(null); setTickerIvrAsOfDate(null); setTickerIvrSource(null); setTickerMmm(null);
+    if (!ticker) {
+      setTickerPcRatio(null);
+      setTickerIvr(null);
+      setTickerIvrAsOfDate(null);
+      setTickerIvrSource(null);
+      setTickerMmm(null);
+      return;
+    }
+    setTickerPcRatio(null);
+    setTickerIvr(null);
+    setTickerIvrAsOfDate(null);
+    setTickerIvrSource(null);
+    setTickerMmm(null);
     if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current);
-    let cancelled = false;
+    const ac = new AbortController();
     pcDebounceRef.current = setTimeout(async () => {
       try {
         const params = new URLSearchParams({ symbol: ticker });
-        const res = await fetchWithAuth(`/api/market/ticker-stats?${params.toString()}`);
-        if (!res.ok || cancelled) return;
+        const res = await fetchWithAuth(`/api/market/ticker-stats?${params.toString()}`, { signal: ac.signal });
+        if (!res.ok || ac.signal.aborted) return;
         const data = await res.json();
-        if (cancelled) return;
+        if (ac.signal.aborted) return;
         if (data?.pcRatio != null) setTickerPcRatio(data.pcRatio);
         if (data?.ivr != null) setTickerIvr(data.ivr);
         if (data?.ivrAsOfDate != null) setTickerIvrAsOfDate(data.ivrAsOfDate);
         if (data?.ivrSource != null) setTickerIvrSource(data.ivrSource);
         if (data?.mmm != null) setTickerMmm(data.mmm);
-      } catch { /* ignore */ }
-    }, 300);
-    return () => { cancelled = true; if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current); };
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+      }
+    }, 700);
+    return () => {
+      if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current);
+      ac.abort();
+    };
   }, [inputVal, symbol]);
 
   const handleSubmit = (e: React.FormEvent) => {
