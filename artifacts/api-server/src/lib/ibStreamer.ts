@@ -507,10 +507,10 @@ export async function connectIB(): Promise<void> {
       allEventCount++;
       if (allEventCount <= 10) {
         const eventName = typeof args[0] === "string" ? args[0] : "unknown";
-        logger.info({ eventName, argCount: args.length, allEventCount }, "IB: raw event received");
+        logger.debug({ eventName, argCount: args.length, allEventCount }, "IB: raw event received");
       }
       if (allEventCount === 50) {
-        logger.info({ allEventCount }, "IB: suppressing further raw event logs");
+        logger.debug({ allEventCount }, "IB: suppressing further raw event logs");
       }
     });
 
@@ -540,12 +540,12 @@ export async function connectIB(): Promise<void> {
     });
 
     ib.on(EventName.marketDataType, (reqId: number, marketDataType: number) => {
-      logger.info({ reqId, marketDataType }, "IB: marketDataType event");
+      logger.debug({ reqId, marketDataType }, "IB: marketDataType event");
     });
 
     ib.on(EventName.tickReqParams, (reqId: number, minTick: number, bboExchange: string, snapshotPermissions: number) => {
       const def = reqIdToSymbol.get(reqId);
-      logger.info({ symbol: def?.displaySymbol, reqId, minTick, bboExchange, snapshotPermissions }, "IB: tickReqParams received");
+      logger.debug({ symbol: def?.displaySymbol, reqId, minTick, bboExchange, snapshotPermissions }, "IB: tickReqParams received");
     });
 
     ib.on(EventName.connected, () => {
@@ -669,7 +669,7 @@ export async function connectIB(): Promise<void> {
       const cnt = (tickLogCounts.get(displaySymbol) ?? 0) + 1;
       tickLogCounts.set(displaySymbol, cnt);
       if (cnt <= 3) {
-        logger.info({ symbol: displaySymbol, tickType, price }, "IB: tickPrice received");
+        logger.debug({ symbol: displaySymbol, tickType, price }, "IB: tickPrice received");
       }
 
       const state = getOrCreateState(displaySymbol);
@@ -759,7 +759,7 @@ export async function connectIB(): Promise<void> {
       const cnt = (tickLogCounts.get(def.displaySymbol + "_str") ?? 0) + 1;
       tickLogCounts.set(def.displaySymbol + "_str", cnt);
       if (cnt <= 2) {
-        logger.info({ symbol: def.displaySymbol, tickType, value }, "IB: tickString received");
+        logger.debug({ symbol: def.displaySymbol, tickType, value }, "IB: tickString received");
       }
     });
 
@@ -769,7 +769,7 @@ export async function connectIB(): Promise<void> {
       const cnt = (tickLogCounts.get(def.displaySymbol + "_gen") ?? 0) + 1;
       tickLogCounts.set(def.displaySymbol + "_gen", cnt);
       if (cnt <= 2) {
-        logger.info({ symbol: def.displaySymbol, tickType, value }, "IB: tickGeneric received");
+        logger.debug({ symbol: def.displaySymbol, tickType, value }, "IB: tickGeneric received");
       }
     });
 
