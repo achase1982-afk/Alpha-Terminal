@@ -361,6 +361,19 @@ export async function getFlowAcceleration(
     recentDays, trailingDays,
     durationMs: Date.now() - t0Accel,
   }, "baseline.flowAccel.batch");
+  // [LIVE_FL_DIAG] Trailing LIVE_FL input: from DB `polygon_options_history` only (no Polygon HTTP here).
+  const sample = [...out.entries()].slice(0, 3).map(([t, a]) => ({
+    ticker: t,
+    ratio: a.ratio,
+    recent3dAvg: a.recent3dAvg,
+    trailing20dAvg: a.trailing20dAvg,
+  }));
+  // eslint-disable-next-line no-console
+  console.log("[LIVE_FL_DIAG] getFlowAcceleration(source=polygon_options_history DB only)", {
+    requested: tickers.length,
+    mapSize: out.size,
+    sample,
+  });
   return out;
 }
 
@@ -475,12 +488,24 @@ export function computeLiveFlowBucket(inputs: LiveFlowInputs): LiveFlowResult {
     score = Math.max(0, score - 4);
     penaltyApplied = true;
   }
-  return {
+  const result: LiveFlowResult = {
     score: Math.min(LIVE_FLOW_MAX, score),
     available: liveEvents > 0 || synEvents > 0,
     effectiveEvents,
     penaltyApplied,
   };
+  // [LIVE_FL_DIAG] Parsed values entering LIVE_FL score (trailing DB + optional WS live events).
+  // eslint-disable-next-line no-console
+  console.log("[LIVE_FL_DIAG] computeLiveFlowBucket", {
+    liveEvents,
+    synEvents,
+    effectiveEvents: result.effectiveEvents,
+    trailingRatio: inputs.trailingAccel?.ratio ?? null,
+    directionallyBalanced: inputs.directionallyBalanced === true,
+    score: result.score,
+    available: result.available,
+  });
+  return result;
 }
 
 // ---------------------------------------------------------------------------

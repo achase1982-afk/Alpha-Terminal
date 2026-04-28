@@ -156,13 +156,19 @@ export async function fetchPolygonChain(
 
   while (nextUrl && pages < maxPages) {
     const fetchUrl = pages > 0 ? `${nextUrl}&apiKey=${apiKey}` : nextUrl;
+    // [LIVE_FL_DIAG] Watcher / chain path uses this URL (options snapshot) for live flow subs.
+    const logUrl = fetchUrl.replace(/apiKey=[^&]+/i, "apiKey=[REDACTED]");
     try {
       const resp = await fetch(fetchUrl, { signal: AbortSignal.timeout(15_000) });
+      const bodyText = await resp.text();
+      const bodyPreview = bodyText.length > 500 ? bodyText.slice(0, 500) + "…" : bodyText;
+      // eslint-disable-next-line no-console
+      console.log("[LIVE_FL_DIAG] fetchPolygonChain", { url: logUrl, httpStatus: resp.status, bodyPreview });
       if (!resp.ok) {
         log?.warn({ status: resp.status, symbol, page: pages }, "Polygon chain page failed");
         break;
       }
-      const json = (await resp.json()) as PolygonSnapshotPage;
+      const json = JSON.parse(bodyText) as PolygonSnapshotPage;
       if (json.status !== "OK" || !json.results?.length) break;
       allResults.push(...json.results);
       nextUrl = json.next_url;
@@ -179,6 +185,14 @@ export async function fetchPolygonChain(
   }
 
   const { calls, puts, underlyingPrice } = parseResults(allResults);
+  // eslint-disable-next-line no-console
+  console.log("[LIVE_FL_DIAG] fetchPolygonChain parsed", {
+    symbol,
+    calls: calls.length,
+    puts: puts.length,
+    pages,
+    underlyingPrice: underlyingPrice ?? null,
+  });
   log?.info(
     { symbol, calls: calls.length, puts: puts.length, pages, underlyingPrice },
     "Polygon chain fetched"

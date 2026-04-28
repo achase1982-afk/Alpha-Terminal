@@ -1129,6 +1129,22 @@ export async function runDiscoveryScan(
       const liveFlow = liveFlowResult.score;
       const liveFlowAvailable = liveFlowResult.available;
 
+      const diagIdx = passedSymbols.indexOf(sym);
+      if (diagIdx >= 0 && diagIdx < 3) {
+        // [LIVE_FL_DIAG] Per-symbol inputs (Polygon WS + trailing DB accel). fetchPolygonChain logs only if watcher resolves chains.
+        // eslint-disable-next-line no-console
+        console.log("[LIVE_FL_DIAG] discovery row", {
+          symbol: symUpper,
+          watcherEnabled: isWatcherEnabled(),
+          liveStats,
+          trailingAccel: accel
+            ? { ratio: accel.ratio, recent3dAvg: accel.recent3dAvg, trailing20dAvg: accel.trailing20dAvg }
+            : null,
+          liveFlow,
+          liveFlowAvailable,
+        });
+      }
+
       // ── Category 5 ──
       const { score: s5a, rsSign } = score5A(closes, spyCloses);
       const s5b = score5B(closes, sectorCloses);
