@@ -37,7 +37,7 @@ server {
     # DNS_RESOLVER is read from /etc/resolv.conf by docker-entrypoint.sh.
     # Variable proxy_pass + resolver makes nginx re-resolve Railway private DNS
     # after backend redeploys instead of pinning a stale internal IP.
-    resolver ${DNS_RESOLVER} valid=10s ipv6=off;
+    resolver ${DNS_RESOLVER} valid=10s;
 
     location /api/ {
         set $api_backend ${API_BACKEND};
