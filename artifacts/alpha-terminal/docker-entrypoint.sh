@@ -21,17 +21,8 @@ fi
 
 export API_BACKEND
 
-# Nginx only re-resolves variable proxy_pass targets when a resolver is
-# configured. Use the container resolver so Railway private DNS can follow
-# backend redeploys instead of pinning a stale internal IP.
-DNS_RESOLVER="$(awk '/^nameserver / { print $2; exit }' /etc/resolv.conf)"
-if [ -z "${DNS_RESOLVER}" ]; then
-    DNS_RESOLVER="127.0.0.11"
-fi
-export DNS_RESOLVER
-
 # Render the nginx config template with the resolved value.
-envsubst '${API_BACKEND} ${DNS_RESOLVER}' \
+envsubst '${API_BACKEND}' \
     < /etc/nginx/templates/default.conf.template \
     > /etc/nginx/conf.d/default.conf
 
