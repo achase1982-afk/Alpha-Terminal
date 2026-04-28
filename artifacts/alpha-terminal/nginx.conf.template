@@ -26,8 +26,18 @@ server {
     # Proxy API calls to the backend service over Railway's internal network.
     # API_BACKEND should be set without a trailing slash, e.g.
     #   http://api-server.railway.internal:8080
+    #
+    # DNS_RESOLVER is the container's nameserver (from /etc/resolv.conf),
+    # injected by docker-entrypoint.sh. Setting it here lets nginx re-resolve
+    # Railway's internal hostname after backend redeploys instead of pinning
+    # a stale IP from startup.
+    resolver ${DNS_RESOLVER} valid=10s ipv6=off;
+
     location /api/ {
-        proxy_pass ${API_BACKEND};
+        # Use an nginx variable so the resolver directive above is honoured
+        # and the hostname is re-resolved periodically (not just at startup).
+        set $api_backend ${API_BACKEND};
+        proxy_pass $api_backend;
 
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
