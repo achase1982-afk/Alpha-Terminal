@@ -269,11 +269,6 @@ export function NewsTab() {
               <span className="text-[#FFB800] text-[10px] uppercase tracking-wider font-mono font-semibold shrink-0">
                 {item.source}
               </span>
-              {!canOpen && (
-                <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-mono border border-zinc-800 rounded px-1 py-0.5">
-                  Summary only
-                </span>
-              )}
               <span className="text-zinc-500 text-xs font-mono">
                 {timeAgo(item.ts)}
               </span>
@@ -281,11 +276,6 @@ export function NewsTab() {
             <h3 className="text-sm font-semibold text-zinc-200 leading-snug group-hover:text-white transition-colors line-clamp-2">
               {item.headline}
             </h3>
-            {!canOpen && item.summary && (
-              <p className="mt-1 text-xs text-zinc-500 leading-snug line-clamp-2">
-                {item.summary}
-              </p>
-            )}
           </button>
           );
         })}
