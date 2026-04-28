@@ -11,6 +11,7 @@ import {
   AI_LAB_CONFIG,
   type TickerSnapshot,
   type RegimeState,
+  type OptionsChainSummary,
 } from "./aiLabService.js";
 import {
   validateAiLabIdea,
@@ -57,6 +58,45 @@ export let ORCHESTRATOR_CONFIG = getOrchestratorConfig();
 
 export function refreshOrchestratorConfig() {
   ORCHESTRATOR_CONFIG = getOrchestratorConfig();
+}
+
+/** `AnalystRequest` expects a loose JSON bag; build explicitly so we do not rely on object spread + casts. */
+function toAnalystTickerSnapshotRecord(
+  snapshot: TickerSnapshot,
+  extras: { availableExpirations: string[]; optionsChainSummary: OptionsChainSummary },
+): Record<string, unknown> {
+  return {
+    symbol: snapshot.symbol,
+    recentPriceSummary: snapshot.recentPriceSummary,
+    volumeSummary: snapshot.volumeSummary,
+    ivSummary: snapshot.ivSummary,
+    flowSummary: snapshot.flowSummary,
+    rsSummary: snapshot.rsSummary,
+    scannerAlignment: snapshot.scannerAlignment,
+    regimeAtCreation: snapshot.regimeAtCreation,
+    pulseSnapshot: snapshot.pulseSnapshot,
+    liquidityMetrics: snapshot.liquidityMetrics,
+    latestClose: snapshot.latestClose,
+    availableExpirations: extras.availableExpirations,
+    optionsChainSummary: extras.optionsChainSummary,
+  };
+}
+
+function toRegimeStateRecord(regime: RegimeState): Record<string, unknown> {
+  return {
+    date: regime.date,
+    trendState: regime.trendState,
+    volState: regime.volState,
+    breadthState: regime.breadthState,
+    macroFlags: regime.macroFlags,
+    pulseSummary: regime.pulseSummary,
+  };
+}
+
+/** Legacy `price` on snapshots is not on `TickerSnapshot`; read dynamically without widening the whole object. */
+function optionalSnapshotPrice(snapshot: TickerSnapshot): number | null {
+  const p = Reflect.get(snapshot, "price");
+  return typeof p === "number" && Number.isFinite(p) ? p : null;
 }
 
 type PassName =
@@ -182,12 +222,11 @@ async function runPipeline(
     totalCount: optionsChainSummary.totalContractCount,
   }, batch);
 
-  const tickerSnapshotData = {
-    ...(snapshot as unknown as Record<string, unknown>),
+  const tickerSnapshotData = toAnalystTickerSnapshotRecord(snapshot, {
     availableExpirations,
     optionsChainSummary,
-  };
-  const regimeData = regime as unknown as Record<string, unknown>;
+  });
+  const regimeData = toRegimeStateRecord(regime);
 
   const analystRequest: AnalystRequest = {
     symbol,
@@ -473,7 +512,7 @@ async function runPipeline(
   );
 
   const inputSnapshot = {
-    price: (snapshot as any).price ?? null,
+    price: optionalSnapshotPrice(snapshot),
     scannerAlignment: snapshot.scannerAlignment ?? null,
     volumeSummary: snapshot.volumeSummary,
     regime: `${regime.trendState}|${regime.volState}|${regime.breadthState}`,
@@ -699,7 +738,7 @@ async function runUniverseScreenPass(passName: PassName): Promise<void> {
       const screenRequest: UniverseScreenRequest = {
         runContext: { passName, timestamp: new Date().toISOString() },
         tickers: summaries as CompactTickerSummary[],
-        regimeState: regime as unknown as Record<string, unknown>,
+        regimeState: toRegimeStateRecord(regime),
         activeIdeasSummary: {
           activeCount: activeIdeas.length,
           symbols: activeIdeas.map(i => i.symbol),
