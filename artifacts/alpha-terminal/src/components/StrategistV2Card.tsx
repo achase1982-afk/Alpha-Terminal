@@ -71,7 +71,7 @@ export interface BlockReason {
 export function normalizeBlockReason(raw: BlockReason | string | undefined | null): BlockReason | null {
   if (!raw) return null;
   if (typeof raw === "string") return { category: "UNKNOWN", detail: raw };
-  if (typeof raw === "object" && typeof (raw as any).category === "string" && typeof (raw as any).detail === "string") {
+  if (typeof raw === "object" && raw !== null && typeof Reflect.get(raw, "category") === "string" && typeof Reflect.get(raw, "detail") === "string") {
     return raw as BlockReason;
   }
   return { category: "UNKNOWN", detail: String(raw) };
