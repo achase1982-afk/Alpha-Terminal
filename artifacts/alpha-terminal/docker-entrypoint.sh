@@ -40,12 +40,14 @@ else
     echo "[entrypoint] API_BACKEND ${_api_backend_source}: ${API_BACKEND}"
 fi
 
-if [ -n "${_host:-}" ] && [ -n "${_port:-}" ]; then
+if [ -n "${_host:-}" ] && [ -n "${_port:-}" ] && command -v nc >/dev/null 2>&1; then
     if nc -z -w 2 "${_host}" "${_port}"; then
         echo "[probe] TCP OK: ${_host}:${_port} is reachable from frontend container"
     else
         echo "[probe] TCP FAIL: ${_host}:${_port} is NOT reachable from frontend container"
     fi
+elif [ -n "${_host:-}" ] && [ -n "${_port:-}" ]; then
+    echo "[probe] TCP SKIP: nc is not available in this container"
 else
     echo "[probe] TCP SKIP: could not parse host and port from API_BACKEND=${API_BACKEND}"
 fi
