@@ -780,6 +780,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
   const [tickerMmm, setTickerMmm] = useState<number | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pcDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const statsRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const companyNameRef = useRef<HTMLDivElement>(null);
   const [companyNameSize, setCompanyNameSize] = useState("text-base");
   const streamPricesRef = useRef(streamPrices);
@@ -853,8 +854,9 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
     setTickerIvrSource(null);
     setTickerMmm(null);
     if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current);
+    if (statsRetryRef.current) clearTimeout(statsRetryRef.current);
     const ac = new AbortController();
-    pcDebounceRef.current = setTimeout(async () => {
+    const fetchStats = async (attempt = 0) => {
       try {
         const params = new URLSearchParams({ symbol: ticker });
         const draft = inputVal.trim().toUpperCase();
@@ -868,12 +870,17 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
         if (data?.ivrAsOfDate != null) setTickerIvrAsOfDate(data.ivrAsOfDate);
         if (data?.ivrSource != null) setTickerIvrSource(data.ivrSource);
         if (data?.mmm != null) setTickerMmm(data.mmm);
+        if (!ac.signal.aborted && (data?.chainStatus === "warming" || (data?.pcRatio == null && data?.mmm == null)) && attempt < 4) {
+          statsRetryRef.current = setTimeout(() => void fetchStats(attempt + 1), 900);
+        }
       } catch (e) {
         if (e instanceof DOMException && e.name === "AbortError") return;
       }
-    }, 300);
+    };
+    pcDebounceRef.current = setTimeout(() => void fetchStats(), 300);
     return () => {
       if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current);
+      if (statsRetryRef.current) clearTimeout(statsRetryRef.current);
       ac.abort();
     };
   }, [inputVal, symbol]);
