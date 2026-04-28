@@ -1,7 +1,81 @@
 import { db, aiLabIdeasTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "./logger";
-import seedData from "./aiLabSeedData.json";
+import seedDataRaw from "./aiLabSeedData.json";
+
+interface AiLabSeedEmbeddingRow {
+  id: number;
+  idea_id: number;
+  embedding: unknown;
+  tags?: unknown;
+  created_at: string;
+}
+
+/** Row shape from `aiLabSeedData.json` ideas array (snake_case keys). */
+interface AiLabSeedIdea {
+  id: number;
+  created_at: string;
+  origin_type: string;
+  analyst_model_name: string;
+  critic_model_name: string;
+  symbol: string;
+  direction: string;
+  instrument_type: string;
+  option_structure_type: string | null;
+  legs: unknown;
+  entry_zone: unknown;
+  soft_stop: number | null;
+  target_zone: unknown;
+  time_horizon: string;
+  thesis: string;
+  catalyst: string;
+  invalidation: string;
+  regime_fit: string;
+  main_signals: unknown;
+  scanner_alignment_at_creation: unknown;
+  signal_strength: number | null;
+  conviction_level: string;
+  uncertainty: unknown;
+  entry_spread_pct: number | null;
+  oi_at_entry: number | null;
+  volume_at_entry: number | null;
+  volume_to_oi_ratio: number | null;
+  regime_at_creation: string | null;
+  analyst_note: string | null;
+  critic_note: string | null;
+  primary_proposal: unknown;
+  skeptic_critique: unknown;
+  final_decision: unknown;
+  status: string;
+  invalidated_reason: string | null;
+  closed_at: string | null;
+  sector: string | null;
+}
+
+/** Row shape from `aiLabSeedData.json` deliberations array. */
+interface AiLabSeedDeliberation {
+  id: number;
+  created_at: string;
+  symbol: string;
+  source: string;
+  analyst_model_name: string | null;
+  critic_model_name: string | null;
+  input_snapshot: unknown;
+  primary_proposal: unknown;
+  skeptic_critique: unknown;
+  final_decision: unknown;
+  idea_id: number | null;
+  conversation_log: unknown;
+}
+
+/** Shape of `aiLabSeedData.json` consumed by this migration. */
+interface AiLabSeedDataFile {
+  ideas: AiLabSeedIdea[];
+  deliberations: AiLabSeedDeliberation[];
+  embeddings?: AiLabSeedEmbeddingRow[];
+}
+
+const seedData = seedDataRaw as AiLabSeedDataFile;
 
 export async function migrateAiLabSeedData(): Promise<void> {
   try {
@@ -15,7 +89,7 @@ export async function migrateAiLabSeedData(): Promise<void> {
     }
 
     logger.info(
-      { ideas: seedData.ideas.length, deliberations: seedData.deliberations.length, embeddings: (seedData as any).embeddings?.length ?? 0 },
+      { ideas: seedData.ideas.length, deliberations: seedData.deliberations.length, embeddings: seedData.embeddings?.length ?? 0 },
       "AI Lab tables empty — seeding from migration data"
     );
 
@@ -67,7 +141,7 @@ export async function migrateAiLabSeedData(): Promise<void> {
 
     await db.execute(sql`SELECT setval('ai_lab_deliberations_id_seq', (SELECT COALESCE(MAX(id), 0) FROM ai_lab_deliberations))`);
 
-    const embeddings = (seedData as any).embeddings;
+    const embeddings = seedData.embeddings;
     if (embeddings && Array.isArray(embeddings)) {
       for (const e of embeddings) {
         await db.execute(sql`

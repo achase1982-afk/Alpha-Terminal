@@ -13,8 +13,25 @@ import { emitTelemetry } from "../lib/telemetryStore.js";
 import { type OptionContract } from "../lib/optionsStrategist.js";
 import { getStoredIVR } from "../lib/ivNormalize.js";
 import { fetchPolygonChain } from "../lib/polygonChain.js";
+import type { Readability as ReadabilityCtor } from "@mozilla/readability";
 
 const router: IRouter = Router();
+
+/** Yahoo finance quoteSummary JSON (partial — only calendarEvents path used here). */
+interface YahooEarningsDateEntry {
+  raw?: number;
+  fmt?: string;
+}
+
+interface YahooQuoteSummaryResult {
+  calendarEvents?: {
+    earnings?: { earningsDate?: YahooEarningsDateEntry[] };
+  };
+}
+
+interface YahooQuoteSummaryEnvelope {
+  quoteSummary?: { result?: YahooQuoteSummaryResult[] };
+}
 
 const SCHWAB_API_BASE = "https://api.schwabapi.com/marketdata/v1";
 
@@ -1406,8 +1423,9 @@ async function fetchYahooEarningsDate(cleanSymbol: string, log: any): Promise<st
       return null;
     }
 
-    const json = await response.json() as Record<string, unknown>;
-    const result = (json as any)?.quoteSummary?.result?.[0];
+    const json = (await response.json()) as Record<string, unknown>;
+    const envelope = json as YahooQuoteSummaryEnvelope;
+    const result = envelope.quoteSummary?.result?.[0];
     const earnings = result?.calendarEvents?.earnings;
     const earningsDateArr = earnings?.earningsDate;
 
@@ -2292,7 +2310,7 @@ ${rawSource ? `<div class="s">${escH(rawSource)}</div>` : ""}
 
     function extractArticle(html: string) {
       const { document: doc } = parseHTML(html);
-      const reader = new Readability(doc as any, { charThreshold: 100 });
+      const reader = new Readability(doc as ConstructorParameters<typeof ReadabilityCtor>[0], { charThreshold: 100 });
       return reader.parse();
     }
 

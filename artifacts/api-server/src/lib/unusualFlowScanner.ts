@@ -1,4 +1,4 @@
-import { db, optionsFlowExecPerStrikeTable, optionsFlowPerStrikeTable } from "@workspace/db";
+import { db, optionsFlowExecPerStrikeTable, optionsFlowPerStrikeTable, type OptionsFlowExecPerStrike, type OptionsFlowPerStrike } from "@workspace/db";
 import { and, inArray, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
 
@@ -174,20 +174,6 @@ const EMPTY_EXEC: UnusualFlowExecSummary = {
   sweepNotional: 0, blockNotional: 0, regularNotional: 0,
 };
 
-interface ExecRow {
-  underlyingSymbol: string;
-  date: string;
-  optionType: string;
-  strike: number;
-  expiration: string;
-  sweepCount: number;
-  blockCount: number;
-  regularCount: number;
-  sweepNotional: number;
-  blockNotional: number;
-  regularNotional: number;
-}
-
 function execKey(sym: string, optType: string, strike: number, exp: string): string {
   return `${sym}|${optType}|${strike}|${exp}`;
 }
@@ -228,6 +214,52 @@ interface RawRow {
   mid: number | null;
   impliedVolatility: number | null;
   delta: number | null;
+}
+
+function toRawRow(r: OptionsFlowPerStrike): RawRow {
+  return {
+    underlyingSymbol: r.underlyingSymbol,
+    date: String(r.date),
+    optionType: r.optionType,
+    strike: r.strike,
+    expiration: String(r.expiration),
+    dte: r.dte,
+    dailyVolume: r.dailyVolume,
+    openInterest: r.openInterest,
+    mid: r.mid,
+    impliedVolatility: r.impliedVolatility,
+    delta: r.delta,
+  };
+}
+
+interface ExecRow {
+  underlyingSymbol: string;
+  date: string;
+  optionType: string;
+  strike: number;
+  expiration: string;
+  sweepCount: number;
+  blockCount: number;
+  regularCount: number;
+  sweepNotional: number;
+  blockNotional: number;
+  regularNotional: number;
+}
+
+function toExecRow(e: OptionsFlowExecPerStrike): ExecRow {
+  return {
+    underlyingSymbol: e.underlyingSymbol,
+    date: String(e.date),
+    optionType: e.optionType,
+    strike: e.strike,
+    expiration: String(e.expiration),
+    sweepCount: e.sweepCount,
+    blockCount: e.blockCount,
+    regularCount: e.regularCount,
+    sweepNotional: e.sweepNotional,
+    blockNotional: e.blockNotional,
+    regularNotional: e.regularNotional,
+  };
 }
 
 type RowWithExec = RawRow & { _exec: UnusualFlowExecSummary };
@@ -515,7 +547,7 @@ export async function scanUnusualFlow(
       ));
 
     const bySymbol = new Map<string, RawRow[]>();
-    for (const r of rows as unknown as RawRow[]) {
+    for (const r of rows.map(toRawRow)) {
       if (symDateMap.get(r.underlyingSymbol) !== r.date) continue;
       let bucket = bySymbol.get(r.underlyingSymbol);
       if (!bucket) { bucket = []; bySymbol.set(r.underlyingSymbol, bucket); }
@@ -535,7 +567,7 @@ export async function scanUnusualFlow(
           inArray(optionsFlowExecPerStrikeTable.underlyingSymbol, [...symDateMap.keys()]),
           inArray(optionsFlowExecPerStrikeTable.date, [...allDates]),
         ));
-      for (const e of execRows as unknown as ExecRow[]) {
+      for (const e of execRows.map(toExecRow)) {
         if (symDateMap.get(e.underlyingSymbol) !== e.date) continue;
         result.diagnostics.liveExecutionRows++;
         symbolsWithLiveExecution.add(e.underlyingSymbol);

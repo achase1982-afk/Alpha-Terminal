@@ -25,6 +25,20 @@ export function getIndexPCRatio(): PCRatioData | null {
   return indexPC;
 }
 
+interface PolygonSnapshotContractDay {
+  volume?: number;
+}
+
+interface PolygonSnapshotContract {
+  day?: PolygonSnapshotContractDay;
+}
+
+/** Polygon v3 snapshot options page (`next_url` pagination). */
+interface PolygonOptionsSnapshotPage {
+  results?: PolygonSnapshotContract[];
+  next_url?: string;
+}
+
 async function fetchTotalVolume(
   underlying: string,
   contractType: "put" | "call",
@@ -44,7 +58,7 @@ async function fetchTotalVolume(
       logger.warn({ status: resp.status, underlying, contractType }, "Polygon options snapshot request failed");
       break;
     }
-    const data = await resp.json() as any;
+    const data = (await resp.json()) as PolygonOptionsSnapshotPage;
     const results = data.results ?? [];
     for (const r of results) {
       totalVolume += r?.day?.volume ?? 0;

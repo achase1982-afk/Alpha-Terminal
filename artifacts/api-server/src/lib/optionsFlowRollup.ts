@@ -17,6 +17,16 @@ let lastRunMs = 0;
 let totalRuns = 0;
 let totalFailures = 0;
 
+function pgExecuteRows(result: unknown): Array<Record<string, unknown>> {
+  const r = result as { rows?: Array<Record<string, unknown>> };
+  return r.rows ?? [];
+}
+
+function pgExecuteRowCount(result: unknown): number {
+  const r = result as { rowCount?: number | null };
+  return r.rowCount ?? 0;
+}
+
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -37,7 +47,8 @@ export async function runRollupOnce(forDate?: string): Promise<{ rowsUpserted: n
   const rawCountResult = await db.execute(
     sql`SELECT COUNT(*)::int AS n FROM options_flow_raw_trades WHERE date = ${date}`,
   );
-  const rawScanned = Number((rawCountResult as any).rows?.[0]?.n ?? 0);
+  const countRows = pgExecuteRows(rawCountResult);
+  const rawScanned = Number((countRows[0]?.n as number | string | undefined) ?? 0);
 
   // Aggregate raw trades for the date, grouped by strike key.
   // sweep takes precedence over block in classification (Polygon's sweep
@@ -82,7 +93,7 @@ export async function runRollupOnce(forDate?: string): Promise<{ rowsUpserted: n
   `);
 
   const durationMs = Date.now() - t0;
-  const rowsUpserted = (rolled as any).rowCount ?? 0;
+  const rowsUpserted = pgExecuteRowCount(rolled);
   return { rowsUpserted, rawScanned, durationMs };
 }
 
