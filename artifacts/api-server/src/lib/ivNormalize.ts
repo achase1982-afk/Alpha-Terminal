@@ -40,7 +40,7 @@ export function clampIVR(value: number | null | undefined): number | null {
  * Prefer canonical real-IV history once available; otherwise use a fresh
  * stored proxy rank. If null is returned the caller MUST hide the field.
  */
-export type IvrSource = "chain" | "flow" | "hv_proxy" | "canonical" | null;
+export type IvrSource = "chain" | "flow" | "hv_proxy" | "canonical" | "real_iv" | null;
 
 function daysOld(date: string): number {
   const t = new Date(`${date}T00:00:00Z`).getTime();
@@ -90,7 +90,16 @@ export async function getStoredIVR(
     const ivr = realHistoryCount >= IVR_MIN_HISTORY
       ? await computeIVRForSymbol(symU, realIvRow.date, realIvRow.iv30d)
       : null;
-    if (ivr != null) return { ivr, asOfDate: realIvRow.date, source: "canonical" };
+    if (ivr != null) {
+      const sourceRows = await db
+        .select({ src: equityDailyTable.ivrSource })
+        .from(equityDailyTable)
+        .where(and(eq(equityDailyTable.symbol, symU), eq(equityDailyTable.date, realIvRow.date)))
+        .limit(1);
+      const rowSource = (sourceRows[0]?.src ?? null) as IvrSource;
+      const source: IvrSource = rowSource === "real_iv" ? "real_iv" : "canonical";
+      return { ivr, asOfDate: realIvRow.date, source };
+    }
   }
 
   const storedRows = await db

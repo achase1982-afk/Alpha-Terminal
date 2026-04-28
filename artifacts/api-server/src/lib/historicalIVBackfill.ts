@@ -5,6 +5,7 @@ import { logger } from "./logger";
 import { impliedVolatilityBSM } from "./bsmIV";
 import { probePolygonRate, type RateProbe } from "./polygonRateProbe";
 import { normalizeIV, computeIVRForSymbol } from "./ivNormalize";
+import { validateIv30PathB } from "./ivSanityFloor";
 
 const POLYGON_API = "https://api.polygon.io";
 const SECTOR_ETFS = ["XLE", "XLF", "XLK", "XLU", "XLV", "XLI", "XLP", "XLY", "XLB"];
@@ -12,6 +13,13 @@ const RISK_FREE = 0.045;
 
 function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
+}
+
+function medianSorted(nums: number[]): number {
+  if (nums.length === 0) return NaN;
+  const s = [...nums].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
 }
 
 async function fetchWithRetry(url: string, attempts = 3, timeoutMs = 20000): Promise<Response | null> {
@@ -448,7 +456,11 @@ export async function backfillHistoricalIV(
             - (Math.abs((b.dte) - 30) + Math.abs(b.strike - spot) / spot * 100)
           );
         if (filtered.length === 0) continue;
-        const iv30d = filtered[0].iv!;
+        // Median of quality-filtered ATM±10% / 1–60 DTE candidates (nearest-DTE tie-break order).
+        const k = Math.min(5, filtered.length);
+        const ivPool = filtered.slice(0, k).map(c => c.iv!);
+        const iv30dRaw = medianSorted(ivPool);
+        const iv30d = validateIv30PathB(sym, iv30dRaw, "historicalIVBackfill:median");
 
         // Only write if equity_daily has no iv yet OR matches our format range (idempotent)
         const existing = await db
@@ -457,9 +469,9 @@ export async function backfillHistoricalIV(
           .where(and(eq(equityDailyTable.symbol, sym), eq(equityDailyTable.date, d)))
           .limit(1);
         if (existing.length === 0) continue;
-        if (existing[0].iv == null) {
+        if (existing[0].iv == null && iv30d != null) {
           await db.update(equityDailyTable)
-            .set({ iv30d })
+            .set({ iv30d, ivrSource: "real_iv" })
             .where(and(eq(equityDailyTable.symbol, sym), eq(equityDailyTable.date, d)));
           report.equityRowsIVUpdated++;
         }

@@ -96,7 +96,7 @@ export interface ValidationInput {
     // ── IVR (existing — unchanged) ────────────────────────────────────────
     ivr: number | null;
     ivrAsOfDate?: string | null;
-    ivrSource?: "chain" | "flow" | "hv_proxy" | "canonical" | null;
+    ivrSource?: "chain" | "flow" | "hv_proxy" | "canonical" | "real_iv" | null;
 
     // ── Catalysts (earnings + FOMC + macro + residual) ────────────────────
     /** From evaluateCatalyst(ticker, expirationISO). Far-leg expiration is
