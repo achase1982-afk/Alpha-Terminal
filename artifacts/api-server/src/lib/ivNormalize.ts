@@ -48,6 +48,10 @@ function daysOld(date: string): number {
   return Math.floor((Date.now() - t) / 86_400_000);
 }
 
+export function shouldUseProxyIvSeries(realHistoryCount: number, proxyHistoryCount: number): boolean {
+  return realHistoryCount < IVR_MIN_HISTORY && proxyHistoryCount >= IVR_MIN_HISTORY;
+}
+
 async function countValidIvRows(
   symbol: string,
   date: string,
@@ -167,7 +171,7 @@ export async function computeIVRForSymbol(
   // HV proxy only while real chain/flow history is still insufficient.
   const realHistoryCount = await countValidIvRows(symU, date, equityDailyTable.iv30d);
   const proxyHistoryCount = await countValidIvRows(symU, date, equityDailyTable.iv30dProxy);
-  const useProxyColumn = realHistoryCount < IVR_MIN_HISTORY && proxyHistoryCount >= IVR_MIN_HISTORY;
+  const useProxyColumn = shouldUseProxyIvSeries(realHistoryCount, proxyHistoryCount);
 
   // When the 252-day rank uses `iv_30d_proxy` (HV×VRP), today's value MUST come
   // from the same column. `todayIvOverride` is always chain/flow IV from
