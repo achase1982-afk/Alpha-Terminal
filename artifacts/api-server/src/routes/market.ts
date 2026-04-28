@@ -1133,11 +1133,6 @@ router.get("/options", async (req, res) => {
 router.get("/ticker-stats", async (req, res) => {
   const symbol = (req.query["symbol"] as string || "").toUpperCase().trim();
   const accessToken = (req.query["accessToken"] as string) || getBestAccessToken();
-  /** Skip Schwab options chain (slow, large payload) — used while the user is typing a draft ticker in the UI. */
-  const lite =
-    req.query["lite"] === "1" ||
-    req.query["lite"] === "true" ||
-    req.query["lite"] === "yes";
 
   if (!symbol) {
     return res.json({ symbol: "", pcRatio: null, ivr: null, mmm: null });
@@ -1163,10 +1158,6 @@ router.get("/ticker-stats", async (req, res) => {
     }
   } catch (err) {
     req.log.warn({ symbol, err }, "ticker-stats: getStoredIVR failed");
-  }
-
-  if (lite) {
-    return res.json(result);
   }
 
   if (accessToken) {
