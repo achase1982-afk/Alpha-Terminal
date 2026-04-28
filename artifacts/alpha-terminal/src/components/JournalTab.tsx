@@ -38,7 +38,7 @@ interface JournalEntry {
   maxLoss: number | null;
   maxGain: number | null;
   thesis: string | null;
-  legs: any;
+  legs: unknown;
   quantity: number | null;
   exitPrice: number | null;
   realizedPL: number | null;
@@ -46,6 +46,31 @@ interface JournalEntry {
   followedPlan: boolean | null;
   resultLoggedAt: string | null;
   createdAt: string;
+}
+
+interface JournalOrderLeg {
+  instruction?: string;
+  quantity?: number;
+  symbol?: string;
+  strike?: number;
+  putCall?: string | null;
+}
+
+function journalOrderLegsFromEntry(raw: unknown): JournalOrderLeg[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: JournalOrderLeg[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    out.push({
+      instruction: typeof o.instruction === "string" ? o.instruction : undefined,
+      quantity: typeof o.quantity === "number" ? o.quantity : undefined,
+      symbol: typeof o.symbol === "string" ? o.symbol : undefined,
+      strike: typeof o.strike === "number" ? o.strike : undefined,
+      putCall: typeof o.putCall === "string" ? o.putCall : o.putCall === null ? null : undefined,
+    });
+  }
+  return out.length > 0 ? out : null;
 }
 
 interface JournalStats {
@@ -239,7 +264,7 @@ function EntryDetail({
     setSaving(false);
   };
 
-  const legs = entry.legs as any[] | null;
+  const legs = journalOrderLegsFromEntry(entry.legs);
 
   return (
     <div style={{ fontFamily: f }}>
@@ -265,7 +290,7 @@ function EntryDetail({
 
         {legs && legs.length > 0 && (
           <DetailSection title="LEGS">
-            {legs.map((leg: any, i: number) => (
+            {legs.map((leg, i) => (
               <div key={i} style={{ padding: "4px 10px", display: "flex", justifyContent: "space-between", fontSize: 12, color: C.textMuted, borderBottom: `1px solid ${C.border}` }}>
                 <span>{leg.instruction} {leg.quantity ?? 1}x</span>
                 <span style={{ color: C.textDim }}>{leg.symbol} {leg.strike ? `$${leg.strike}` : ""} {leg.putCall ?? ""}</span>
