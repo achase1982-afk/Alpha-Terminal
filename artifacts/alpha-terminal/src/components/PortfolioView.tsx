@@ -283,6 +283,29 @@ interface Account {
   positions: Position[];
 }
 
+/** WebSocket path delivers the same Schwab account JSON as REST; narrow before use. */
+function isPortfolioAccountPayload(ws: unknown): ws is Account {
+  if (!ws || typeof ws !== "object") return false;
+  const o = ws as Record<string, unknown>;
+  if (typeof o.accountNumber !== "string" || typeof o.type !== "string") return false;
+  if (typeof o.isDayTrader !== "boolean" || typeof o.roundTrips !== "number") return false;
+  if (!o.balances || typeof o.balances !== "object") return false;
+  const bal = o.balances as Record<string, unknown>;
+  if (typeof bal.liquidationValue !== "number" || typeof bal.equity !== "number") return false;
+  if (!o.initialBalances || typeof o.initialBalances !== "object") return false;
+  const ib = o.initialBalances as Record<string, unknown>;
+  if (typeof ib.accountValue !== "number" || typeof ib.equity !== "number" || typeof ib.liquidationValue !== "number") return false;
+  if (typeof o.dayPL !== "number" || typeof o.totalPL !== "number") return false;
+  if (!Array.isArray(o.positions)) return false;
+  return true;
+}
+
+declare global {
+  interface Window {
+    __alphaWs?: WebSocket;
+  }
+}
+
 interface Order {
   orderId: number;
   orderType: string;
@@ -1184,7 +1207,10 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
   const portfolioStatus = usePortfolioStreamStore((s) => s.portfolioStatus);
 
   const [subTab, setSubTab] = useState<SubTab>("positions");
-  const [account, setAccount] = useState<Account | null>(() => usePortfolioStreamStore.getState().account as Account | null);
+  const [account, setAccount] = useState<Account | null>(() => {
+    const a = usePortfolioStreamStore.getState().account;
+    return isPortfolioAccountPayload(a) ? a : null;
+  });
   const [orders, setOrders] = useState<Order[]>(() => usePortfolioStreamStore.getState().orders as Order[]);
   const [loading, setLoading] = useState(() => !usePortfolioStreamStore.getState().account);
   const [ordersLoading, setOrdersLoading] = useState(false);
@@ -1278,7 +1304,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
 
 
   useEffect(() => {
-    if (wsAccount) { setAccount(wsAccount as unknown as Account); setLastRefresh(wsLastUpdate); setLoading(false); setError(null); }
+    if (wsAccount && isPortfolioAccountPayload(wsAccount)) { setAccount(wsAccount); setLastRefresh(wsLastUpdate); setLoading(false); setError(null); }
   }, [wsAccount, wsLastUpdate]);
 
   useEffect(() => {
@@ -1288,7 +1314,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
   useEffect(() => {
     if (!accessToken) return;
     const sendSubscribe = () => {
-      const ws = (window as any).__alphaWs as WebSocket | undefined;
+      const ws = window.__alphaWs;
       if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ action: "subscribePortfolio" })); wsSubSentRef.current = true; return true; }
       return false;
     };
@@ -1318,7 +1344,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
     fetchWithAuth("/api/portfolio/account-hash").then(r => r.json()).then(d => { if (d.hashValue) setAccountHash(d.hashValue); }).catch(() => {});
     return () => {
       cleanup?.();
-      const ws = (window as any).__alphaWs as WebSocket | undefined;
+      const ws = window.__alphaWs;
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ action: "unsubscribePortfolio" }));
       wsSubSentRef.current = false;
     };
