@@ -858,7 +858,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
       try {
         const params = new URLSearchParams({ symbol: ticker });
         const draft = inputVal.trim().toUpperCase();
-        if (draft) params.set("lite", "1");
+        if (draft && draft !== symbol) params.set("lite", "1");
         const res = await fetchWithAuth(`/api/market/ticker-stats?${params.toString()}`, { signal: ac.signal });
         if (!res.ok || ac.signal.aborted) return;
         const data = await res.json();
