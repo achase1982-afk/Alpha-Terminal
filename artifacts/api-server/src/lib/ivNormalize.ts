@@ -169,7 +169,21 @@ export async function computeIVRForSymbol(
   const proxyHistoryCount = await countValidIvRows(symU, date, equityDailyTable.iv30dProxy);
   const useProxyColumn = realHistoryCount < IVR_MIN_HISTORY && proxyHistoryCount >= IVR_MIN_HISTORY;
 
-  let currentIv = !useProxyColumn ? (todayIvOverride ?? null) : null;
+  // When the 252-day rank uses `iv_30d_proxy` (HV×VRP), today's value MUST come
+  // from the same column. `todayIvOverride` is always chain/flow IV from
+  // `iv_30d` (see dailySnapshot.computeIVFromFlow / historical backfill). Mixing
+  // chain IV against a proxy history pegs almost every name at IVR≈100 after
+  // migration when proxy backfill crossed 60 days first — a silent data bug.
+  let effectiveOverride = todayIvOverride ?? null;
+  if (useProxyColumn && effectiveOverride != null) {
+    logger.warn(
+      { sym: symU, date },
+      "computeIVRForSymbol: ignoring todayIvOverride — IVR history uses iv_30d_proxy; override was chain/flow IV (incompatible series)",
+    );
+    effectiveOverride = null;
+  }
+
+  let currentIv = effectiveOverride ?? null;
   if (currentIv == null) {
     const rows = await db
       .select({ iv: equityDailyTable.iv30d, ivProxy: equityDailyTable.iv30dProxy })

@@ -389,6 +389,7 @@ interface UnusualFlowStrike {
   iv: number | null;
   delta: number | null;
   exec?: UnusualFlowExecSummary;
+  hasLiveExec?: boolean;
 }
 interface UnusualFlowCandidate {
   symbol: string;
@@ -412,6 +413,7 @@ interface UnusualFlowCandidate {
   topVoiRatio: number;
   avgDte: number;
   exec?: UnusualFlowExecSummary;
+  flowSource?: "live" | "baseline";
   aggressorAvailable?: boolean;
 }
 interface UnusualFlowScanResult {
@@ -421,6 +423,15 @@ interface UnusualFlowScanResult {
   symbolsWithFlow: number;
   excludedIndexes: number;
   candidates: UnusualFlowCandidate[];
+  diagnostics?: {
+    baselineRows: number;
+    liveExecutionRows: number;
+    symbolsWithLiveExecution: number;
+    sourceMode: "live" | "baseline" | "any";
+  };
+  filters?: {
+    source?: "live" | "baseline" | "any";
+  };
 }
 
 function fmtCompactInt(n: number): string {
@@ -1539,7 +1550,9 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
 
       {mode === "unusual" && !isScanning && unusualResult && unusualResult.candidates.length === 0 && !unusualError && (
         <div className="py-16 text-center text-xs text-muted-foreground/40 bg-card border border-card-border rounded-xl">
-          No symbols matched your unusual flow thresholds. Try lowering Min Strikes or Min VOI Ratio.
+          {unusualResult.filters?.source === "live" && (unusualResult.diagnostics?.liveExecutionRows ?? 0) === 0
+            ? "No live Polygon option prints have been rolled up for these symbols yet. Baseline rows exist, but the live tape has not produced matching execution-backed strikes."
+            : "No symbols matched your unusual flow thresholds. Try lowering Min Strikes or Min VOI Ratio."}
         </div>
       )}
 
