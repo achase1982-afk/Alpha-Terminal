@@ -119,6 +119,7 @@ let pongWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
 
 let consecutiveAbnormalCloses = 0;
 let consecutiveAuthFailures = 0;
+let lastStatusEvent: string | null = null;
 const AUTH_FAILURE_ALERT_THRESHOLD = 3;
 
 let connectReadyResolvers: Array<() => void> = [];
@@ -140,6 +141,7 @@ export function getStatus(): {
   nbboCacheSize: number;
   consecutiveAuthFailures: number;
   consecutiveAbnormalCloses: number;
+  lastStatusEvent: string | null;
 } {
   return {
     enabled: isEnabled(),
@@ -151,6 +153,7 @@ export function getStatus(): {
     nbboCacheSize: nbboCache.size,
     consecutiveAuthFailures,
     consecutiveAbnormalCloses,
+    lastStatusEvent,
   };
 }
 
@@ -566,7 +569,13 @@ async function connectPolygon(): Promise<void> {
     nbboCache.clear();
     connectAttemptStartedAt = null;
     rejectWaiters(new Error(`Polygon options WS closed (code ${code})`));
-    if (code !== 1008) scheduleReconnect();
+    // Polygon uses 1008 for both hard auth failures and transient policy
+    // limits such as max_connections during overlapping deploys/restarts.
+    // Auth failures should not reconnect-loop, but max_connections should
+    // back off and retry after the old socket has been released.
+    if (code !== 1008 || (lastStatusEvent === "max_connections" && consecutiveAuthFailures === 0)) {
+      scheduleReconnect();
+    }
   });
 
   sock.on("error", (err) => {
@@ -587,12 +596,14 @@ function handleMessage(raw: string): void {
     if (kind === "status") {
       const status = ev["status"] as string | undefined;
       const msg = ev["message"] as string | undefined;
+      if (status) lastStatusEvent = status;
       logger.info({ status, msg }, "Polygon options WS: status event");
       if (status === "auth_success") {
         if (authTimeoutTimer) { clearTimeout(authTimeoutTimer); authTimeoutTimer = null; }
         connectionState = "connected";
         consecutiveAuthFailures = 0;
         consecutiveAbnormalCloses = 0;
+        lastStatusEvent = null;
         reconnectDelay = 2000;
         // Resubscribe everything the ref-count says we want — both T and Q.
         const wantedT = [...subRefcounts.keys()];
@@ -617,6 +628,12 @@ function handleMessage(raw: string): void {
         }
         connectionState = "disconnected";
         rejectWaiters(new Error(`Polygon auth failed: ${msg}`));
+        try { ws?.close(); } catch {}
+      } else if (status === "max_connections") {
+        logger.warn({ msg }, "Polygon options WS: max connections reached — retrying with backoff");
+        connectionState = "disconnected";
+        rejectWaiters(new Error(`Polygon max_connections: ${msg ?? "connection limit reached"}`));
+        reconnectDelay = Math.max(reconnectDelay, 30_000);
         try { ws?.close(); } catch {}
       }
       continue;
