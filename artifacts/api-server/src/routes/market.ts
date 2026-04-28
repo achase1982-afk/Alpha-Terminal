@@ -393,10 +393,11 @@ router.get("/quote", async (req, res) => {
       bidSize: pickNum("bidSize") ?? undefined,
       askSize: pickNum("askSize") ?? undefined,
     });
+    return;
   } catch (err) {
     req.log.error({ err }, "Quote fetch error");
     const data = GetQuoteResponse.parse({ symbol: displaySymbol, error: "internal_error" });
-    res.json(data);
+    return res.json(data);
   }
 });
 
@@ -470,10 +471,10 @@ router.get("/history", async (req, res) => {
     }));
 
     const data = GetPriceHistoryResponse.parse({ symbol: displaySymbol, candles });
-    res.json(data);
+    return res.json(data);
   } catch (err) {
     req.log.error({ err }, "Price history fetch error");
-    res.json({ symbol: displaySymbol, candles: [], error: "internal_error" });
+    return res.json({ symbol: displaySymbol, candles: [], error: "internal_error" });
   }
 });
 
@@ -1126,7 +1127,7 @@ router.get("/options", async (req, res) => {
     return res.json(sliceAndReturn(entry, "schwab"));
   } catch (err) {
     req.log.error({ err }, "Options chain fetch error");
-    res.json({ symbol: displaySymbol, calls: [], puts: [], error: "internal_error" });
+    return res.json({ symbol: displaySymbol, calls: [], puts: [], error: "internal_error" });
   }
 });
 
@@ -1226,6 +1227,7 @@ router.get("/ticker-stats", async (req, res) => {
   }
 
   res.json(result);
+  return;
 });
 
 router.get("/pc-ratio", async (_req, res) => {
@@ -1237,7 +1239,7 @@ router.get("/pc-ratio", async (_req, res) => {
   const cpci = idxPC?.ratio ?? null;
   const cpc = cpce !== null && cpci !== null ? Math.round(((cpce + cpci) / 2) * 10000) / 10000 : cpce ?? cpci;
 
-  res.json({
+  return res.json({
     cpce,
     cpceSource: "Equity Put/Call Ratio (Polygon SPY options volume)",
     cpceDetail: eqPC ? { putVolume: eqPC.putVolume, callVolume: eqPC.callVolume } : null,
@@ -1304,9 +1306,10 @@ router.get("/fundamentals", async (req, res) => {
       sector: null,
       industry: null,
     });
+    return;
   } catch (err) {
     req.log.error({ err }, "Fundamentals fetch error");
-    res.json({ symbol: displaySymbol, error: "internal_error" });
+    return res.json({ symbol: displaySymbol, error: "internal_error" });
   }
 });
 
@@ -1433,7 +1436,7 @@ router.get("/earnings-date", async (req, res) => {
     return res.status(400).json({ symbol: "", earningsDate: null });
   }
   const result = await getNextEarningsDate(symbol);
-  res.json({
+  return res.json({
     symbol: result.symbol,
     earningsDate: result.earningsDate,
     confirmed: result.confirmed,
@@ -1548,7 +1551,7 @@ router.get("/earnings-calendar", async (req, res) => {
   }
 
   const earnings = await fetchBulkBenzingaEarnings(benzingaKey, req.log);
-  res.json({ earnings, source: "benzinga" });
+  return res.json({ earnings, source: "benzinga" });
 });
 
 let cachedEconEvents: Array<{
@@ -1634,7 +1637,7 @@ router.get("/economic-calendar", async (req, res) => {
   const benzingaKey = process.env["BENZINGA_API_KEY"];
   if (!benzingaKey) return res.json({ events: [], source: null });
   const events = await fetchBenzingaEconCalendar(benzingaKey, req.log);
-  res.json({ events, source: "benzinga" });
+  return res.json({ events, source: "benzinga" });
 });
 
 export function getCachedEconEvents() { return cachedEconEvents; }
@@ -1726,7 +1729,7 @@ router.get("/analyst-ratings", async (req, res) => {
   const ratings = symbol
     ? allRatings.filter(r => r.ticker === symbol)
     : allRatings;
-  res.json({ ratings, source: "benzinga" });
+  return res.json({ ratings, source: "benzinga" });
 });
 
 router.get("/analyst-insights", async (req, res) => {
@@ -1754,7 +1757,7 @@ router.get("/analyst-insights", async (req, res) => {
     };
     const items = data["analyst-insights"] || [];
     req.log.info({ symbol, count: items.length }, "Benzinga analyst insights fetched");
-    res.json({
+    return res.json({
       insights: items.map(i => ({
         id: i.id,
         date: i.date,
@@ -1770,7 +1773,7 @@ router.get("/analyst-insights", async (req, res) => {
     });
   } catch (err) {
     req.log.warn({ err, symbol }, "Benzinga insights error");
-    res.json({ insights: [], source: null });
+    return res.json({ insights: [], source: null });
   }
 });
 
@@ -1803,7 +1806,7 @@ router.get("/conference-calls", async (req, res) => {
     };
     const items = data.conference || [];
     req.log.info({ count: items.length }, "Benzinga conference calls fetched");
-    res.json({
+    return res.json({
       calls: items.map(c => ({
         ticker: c.ticker,
         name: c.name,
@@ -1819,7 +1822,7 @@ router.get("/conference-calls", async (req, res) => {
     });
   } catch (err) {
     req.log.warn({ err }, "Benzinga conference calls error");
-    res.json({ calls: [], source: null });
+    return res.json({ calls: [], source: null });
   }
 });
 
@@ -2102,7 +2105,7 @@ router.get("/news", async (req, res) => {
 
   merged.sort((a, b) => b.datetime - a.datetime);
 
-  res.json({ articles: merged.slice(0, 50) });
+  return res.json({ articles: merged.slice(0, 50) });
 });
 
 router.get("/news-finder", (req, res) => {
@@ -2423,7 +2426,7 @@ ${rawSource ? `<div class="s">${escH(rawSource)}</div>` : ""}
     }
 
     setSecurityHeaders(res);
-    res.send(readerHtml);
+    return res.send(readerHtml);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "fetch failed";
     req.log.error({ err: msg, url }, "proxy-article error");
@@ -2448,7 +2451,7 @@ ${rawSource ? `<div class="s">${escH(rawSource)}</div>` : ""}
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; form-action 'none'; frame-ancestors 'self'");
-    res.send(errorHtml);
+    return res.send(errorHtml);
   }
 });
 
