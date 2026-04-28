@@ -33,12 +33,9 @@ import {
 import { MarketCalendar } from "@/components/MarketCalendar";
 import { TelemetryPage, useTelemetryCount } from "@/components/TelemetryPage";
 import { useClerk } from "@clerk/clerk-react";
+import { signOutWithFullNavigation } from "@/lib/clerkSignOut";
 
 const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
-
-function clerkSignOutRedirectUrl() {
-  return window.location.origin + (import.meta.env.BASE_URL || "/");
-}
 
 function useClerkSafe() {
   if (devBypass) return { signOut: () => Promise.resolve() };
@@ -288,7 +285,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
                     setActivePage(null);
                     onClose();
                     queryClient.clear();
-                    void signOut({ redirectUrl: clerkSignOutRedirectUrl() });
+                    void signOutWithFullNavigation(signOut);
                   }}
                   className="flex items-center gap-3 transition-opacity hover:opacity-70 active:opacity-50"
                 >
