@@ -39,6 +39,7 @@ export interface UnusualFlowStrikeLite {
   notional: number;
   iv: number | null;
   delta: number | null;
+  hasLiveExec?: boolean;
   symbol?: string;
 }
 
@@ -73,6 +74,7 @@ export interface FlowDrillDownCandidate {
   topVoiRatio: number;
   avgDte: number;
   exec?: UnusualFlowExecLite;
+  source?: "live" | "baseline" | "mixed";
 }
 
 // ── Formatting helpers ───────────────────────────────────────────────
@@ -332,7 +334,7 @@ function OverviewTab({
       <Stat label="Aggressor Side" value={
         counters.total === 0 ? (
           <span className="text-zinc-500">
-            {streamStatus === "live" ? "Awaiting prints…" : streamStatus === "error" ? "Stream error" : streamStatus === "disabled" ? "REST only" : "Connecting…"}
+            {streamStatus === "live" ? "No prints on selected contract yet" : streamStatus === "error" ? "Stream error" : streamStatus === "disabled" ? "Live tape disabled" : "Connecting…"}
           </span>
         ) : (
           <span>
@@ -389,7 +391,7 @@ function StrikesTab({
   return (
     <div className="px-3 py-3 border-t border-card-border/50">
       <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium mb-2 px-1">
-        Top Strikes by Volume / Open Interest · tap a row to view live tape
+        Live execution-backed strikes · tap a row to view live tape
       </div>
       <div className="space-y-1.5">
         {strikes.length === 0 && (
@@ -420,6 +422,16 @@ function StrikesTab({
                 <span className="text-base font-bold text-white tabular-nums">${s.strike}</span>
                 <span className="text-sm text-zinc-300">{fmtDate(s.expiration)}</span>
                 <span className="text-sm text-zinc-500">· {s.dte} {s.dte === 1 ? "day" : "days"}</span>
+                <span
+                  className="text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ml-auto"
+                  style={{
+                    color: s.hasLiveExec ? UP : NEUT,
+                    background: s.hasLiveExec ? "rgba(38,166,154,0.12)" : "rgba(156,163,175,0.08)",
+                    border: `1px solid ${s.hasLiveExec ? "rgba(38,166,154,0.28)" : "rgba(156,163,175,0.18)"}`,
+                  }}
+                >
+                  {s.hasLiveExec ? "Live Print" : "Baseline"}
+                </span>
               </div>
               {/* Metrics line: full-word labels, white values */}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm tabular-nums">
@@ -535,7 +547,7 @@ function TimeSalesTab({
         {trades.length === 0 ? (
           <div className="px-3 py-8 text-center text-sm text-zinc-500">
             {status === "live"
-              ? "Awaiting prints… (illiquid contract or after-hours)"
+              ? "No new prints on this selected live contract yet."
               : status === "connecting"
               ? "Connecting to live tape…"
               : status === "error"

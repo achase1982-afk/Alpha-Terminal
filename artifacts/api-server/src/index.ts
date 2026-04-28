@@ -261,10 +261,18 @@ async function boot() {
     const bootCatchupEnabled =
       process.env.POLYGON_FLATFILES_BOOT_CATCHUP_ENABLED === "1" ||
       process.env.POLYGON_FLATFILES_BOOT_CATCHUP_ENABLED === "true";
-    const catchupDaysDefault = bootCatchupEnabled ? 1 : 0;
+    const catchupDaysDefault = bootCatchupEnabled ? 3 : 2;
     const catchupDays = Math.max(0, Math.min(30, parseIntEnv("POLYGON_FLATFILES_MAX_CATCHUP_DAYS", catchupDaysDefault)));
     const maxS3Requests = Math.max(1, parseIntEnv("POLYGON_FLATFILES_MAX_S3_REQUESTS", 200));
-    logger.info({ catchupDays, maxS3Requests, scheduleUtc: "03:30" }, "Polygon flat-files sync: configured");
+    const noDataRetryMinutes = Math.max(15, parseIntEnv("POLYGON_FLATFILES_NO_DATA_RETRY_MINUTES", 60));
+    const noDataMaxRetries = Math.max(0, Math.min(12, parseIntEnv("POLYGON_FLATFILES_NO_DATA_MAX_RETRIES", 6)));
+    logger.info({
+      catchupDays,
+      maxS3Requests,
+      noDataRetryMinutes,
+      noDataMaxRetries,
+      scheduleUtc: "03:30",
+    }, "Polygon flat-files sync: configured");
 
     // Per-tradeDate in-flight lock — prevents bootCatchup + scheduled cron
     // from racing the same date (H3 from architect review). Both paths
@@ -288,7 +296,7 @@ async function boot() {
       return d;
     }
 
-    async function runFlatFilesSync(target: Date) {
+    async function runFlatFilesSync(target: Date, attempt = 0) {
       const iso = target.toISOString().slice(0, 10);
       if (flatFilesInFlight.has(iso)) {
         logger.warn({ date: iso }, "Polygon flat-files sync: already in-flight for this date — skipping duplicate");
@@ -307,6 +315,14 @@ async function boot() {
         if (result.error?.includes("POLYGON_FLATFILES_MAX_S3_REQUESTS")) {
           logger.error({ ...result, s3CallsObserved, maxS3Requests },
             "Polygon flat-files sync: ABORTED — S3 request budget exceeded");
+        } else if (result.error === "No files found" && attempt < noDataMaxRetries) {
+          const delayMs = noDataRetryMinutes * 60_000;
+          logger.warn({ ...result, attempt, nextAttempt: attempt + 1, delayMs },
+            "Polygon flat-files sync: no file yet — retry scheduled");
+          const retry = setTimeout(() => {
+            void runFlatFilesSync(target, attempt + 1);
+          }, delayMs);
+          retry.unref?.();
         } else {
           logger.info({ ...result, s3CallsObserved }, "Polygon flat-files sync: complete");
         }
@@ -332,10 +348,10 @@ async function boot() {
       }, ms);
     }
 
-    // Boot-time catchup: scan last N trading days (capped by env), sync any not "synced".
-    // This is intentionally opt-in. A single OPRA day flat-file can be very
-    // large, and starting that work 60s after deploy can starve or OOM the API
-    // container, making /api intermittently return 502/timeouts.
+    // Boot-time catchup: scan last N trading days (capped by env), sync any not
+    // "synced". The default window is intentionally small, but non-zero, so a
+    // single early/failed nightly run does not leave yesterday's baseline empty.
+    // Keep POLYGON_FLATFILES_MAX_CATCHUP_DAYS=0 available as a kill switch.
     async function bootCatchup() {
       try {
         if (catchupDays === 0) {
@@ -364,7 +380,7 @@ async function boot() {
           logger.info({ checked: isos.length }, "Polygon flat-files catchup: all recent days synced");
           return;
         }
-        logger.warn({ missing: missing.map(d => d.toISOString().slice(0, 10)) }, "Polygon flat-files catchup: backfilling missing days");
+        logger.warn({ missing: missing.map(d => d.toISOString().slice(0, 10)) }, "Polygon flat-files catchup: backfilling unsynced recent days");
         for (const d of missing) {
           await runFlatFilesSync(d);
         }

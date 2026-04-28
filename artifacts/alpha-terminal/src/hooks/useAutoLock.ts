@@ -4,6 +4,7 @@ import { useClerk } from "@clerk/clerk-react";
 import React from "react";
 import { readSecurityPrefs, updateSecurityPref, TIMEOUT_OPTIONS } from "@/lib/securityPrefs";
 import { queryClient } from "@/App";
+import { signOutWithFullNavigation } from "@/lib/clerkSignOut";
 
 const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
 
@@ -70,7 +71,7 @@ export function AutoLockProvider({ children }: { children: ReactNode }) {
     queryClient.clear();
     try { localStorage.removeItem(LAST_ACTIVITY_KEY); } catch {}
     if (!devBypass) {
-      void signOut({ redirectUrl: window.location.origin + (import.meta.env.BASE_URL || "/") });
+      void signOutWithFullNavigation(signOut);
     }
   }, [signOut]);
 

@@ -808,53 +808,80 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
     }
     setFetchingTicker(true);
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    const ac = new AbortController();
     debounceRef.current = setTimeout(async () => {
       try {
-        const res = await fetchWithAuth(`/api/market/quote?symbol=${encodeURIComponent(typed)}`);
-        if (!res.ok) { setFetchingTicker(false); return; }
+        const res = await fetchWithAuth(
+          `/api/market/quote?symbol=${encodeURIComponent(typed)}`,
+          { signal: ac.signal },
+        );
+        if (!res.ok) {
+          setFetchingTicker(false);
+          return;
+        }
         const data = await res.json();
+        if (ac.signal.aborted) return;
         if (data?.last != null) {
           setPreviewQuote({ last: data.last, change: data.change ?? 0, changePct: data.changePct ?? 0, volume: data.volume });
         } else {
           setPreviewQuote(null);
         }
-      } catch {
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
         setPreviewQuote(null);
       }
       setFetchingTicker(false);
     }, 250);
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      ac.abort();
+    };
   }, [inputVal]);
 
   useEffect(() => {
     const ticker = (inputVal.trim().toUpperCase()) || symbol;
-    if (!ticker) { setTickerPcRatio(null); setTickerIvr(null); setTickerIvrAsOfDate(null); setTickerIvrSource(null); setTickerMmm(null); return; }
-    setTickerPcRatio(null); setTickerIvr(null); setTickerIvrAsOfDate(null); setTickerIvrSource(null); setTickerMmm(null);
+    if (!ticker) {
+      setTickerPcRatio(null);
+      setTickerIvr(null);
+      setTickerIvrAsOfDate(null);
+      setTickerIvrSource(null);
+      setTickerMmm(null);
+      return;
+    }
+    setTickerPcRatio(null);
+    setTickerIvr(null);
+    setTickerIvrAsOfDate(null);
+    setTickerIvrSource(null);
+    setTickerMmm(null);
     if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current);
     if (statsRetryRef.current) clearTimeout(statsRetryRef.current);
-    let cancelled = false;
+    const ac = new AbortController();
     const fetchStats = async (attempt = 0) => {
       try {
         const params = new URLSearchParams({ symbol: ticker });
-        const res = await fetchWithAuth(`/api/market/ticker-stats?${params.toString()}`);
-        if (!res.ok || cancelled) return;
+        const draft = inputVal.trim().toUpperCase();
+        if (draft && draft !== symbol) params.set("lite", "1");
+        const res = await fetchWithAuth(`/api/market/ticker-stats?${params.toString()}`, { signal: ac.signal });
+        if (!res.ok || ac.signal.aborted) return;
         const data = await res.json();
-        if (cancelled) return;
+        if (ac.signal.aborted) return;
         if (data?.pcRatio != null) setTickerPcRatio(data.pcRatio);
         if (data?.ivr != null) setTickerIvr(data.ivr);
         if (data?.ivrAsOfDate != null) setTickerIvrAsOfDate(data.ivrAsOfDate);
         if (data?.ivrSource != null) setTickerIvrSource(data.ivrSource);
         if (data?.mmm != null) setTickerMmm(data.mmm);
-        if ((data?.chainStatus === "warming" || (data?.pcRatio == null && data?.mmm == null)) && attempt < 4) {
+        if (!ac.signal.aborted && (data?.chainStatus === "warming" || (data?.pcRatio == null && data?.mmm == null)) && attempt < 4) {
           statsRetryRef.current = setTimeout(() => void fetchStats(attempt + 1), 900);
         }
-      } catch { /* ignore */ }
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+      }
     };
     pcDebounceRef.current = setTimeout(() => void fetchStats(), 300);
     return () => {
-      cancelled = true;
       if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current);
       if (statsRetryRef.current) clearTimeout(statsRetryRef.current);
+      ac.abort();
     };
   }, [inputVal, symbol]);
 
@@ -1359,6 +1386,7 @@ function AiNarrativePanel({ text, streamingText, isStreaming }: {
       return () => clearTimeout(timer);
     }
     if (isStreaming) prevStreamingRef.current = true;
+    return;
   }, [isStreaming, text, streamingText]);
 
   const displayText = isStreaming ? streamingText : text;

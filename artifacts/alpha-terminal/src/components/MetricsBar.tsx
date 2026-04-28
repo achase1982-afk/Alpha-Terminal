@@ -252,6 +252,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: Metric
         if (inner !== null) cancelAnimationFrame(inner);
       };
     }
+    return;
   }, [quote?.symbol]);
 
   const hasAnyStreamData = Object.keys(streamPrices).length > 0;

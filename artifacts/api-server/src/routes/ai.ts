@@ -2847,6 +2847,7 @@ router.post("/unusual-flow-scan", async (req, res) => {
         includeRegular?: boolean;
         minSweepCount?: number;
         minBlockCount?: number;
+        source?: "live" | "baseline" | "any";
       };
     };
     if (!Array.isArray(symbols) || symbols.length === 0) {
