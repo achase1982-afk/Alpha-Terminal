@@ -99,7 +99,7 @@ export function isDebateWinnerArbitrator(idx: number): boolean {
   return idx === ARBITRATOR_IDX_DEBATE_WINNER;
 }
 
-const DEFAULTS: Record<string, number> = {
+const DEFAULTS = {
   ioWeightR2: 0.30,
   ioWeightResidual: 0.25,
   ioWeightCatalyst: 0.25,
@@ -142,29 +142,35 @@ const DEFAULTS: Record<string, number> = {
   strategistDebateAModelIdx: 0,
   strategistDebateBModelIdx: 1,
   strategistArbitratorModelIdx: 0,
-};
+} satisfies StrategistConfig;
 
-let settingsCache: Record<string, number> | null = null;
+let settingsCache: StrategistConfig | null = null;
 let cacheTs = 0;
 const CACHE_TTL_MS = 60_000;
 
+function isStrategistConfigKey(key: string): key is keyof StrategistConfig {
+  return key in DEFAULTS;
+}
+
 export async function getSettings(): Promise<StrategistConfig> {
   if (settingsCache && Date.now() - cacheTs < CACHE_TTL_MS) {
-    return settingsCache as unknown as StrategistConfig;
+    return settingsCache;
   }
 
   try {
     const rows = await db.select().from(strategistSettingsTable);
-    const merged = { ...DEFAULTS };
+    const merged: StrategistConfig = { ...DEFAULTS };
     for (const row of rows) {
-      merged[row.key] = row.value;
+      if (isStrategistConfigKey(row.key)) {
+        merged[row.key] = row.value;
+      }
     }
     settingsCache = merged;
     cacheTs = Date.now();
-    return merged as unknown as StrategistConfig;
+    return merged;
   } catch (err) {
     logger.error({ err }, "Failed to load strategist settings, using defaults");
-    return DEFAULTS as unknown as StrategistConfig;
+    return { ...DEFAULTS };
   }
 }
 
@@ -195,7 +201,7 @@ export async function resetAllSettings(): Promise<void> {
   settingsCache = null;
 }
 
-export function getDefaults(): Record<string, number> {
+export function getDefaults(): StrategistConfig {
   return { ...DEFAULTS };
 }
 
