@@ -254,11 +254,14 @@ export function NewsTab() {
   return (
     <div className="flex-1 flex flex-col">
       <div className="flex-1">
-        {unified.map((item) => (
+        {unified.map((item) => {
+          const canOpen = !!item.url;
+          return (
           <button
             key={item.key}
-            onClick={() => item.url ? openBrowser(item.url, item.headline, item.source, item.summary) : undefined}
-            className="block w-full text-left border-b border-zinc-800/50 hover:bg-zinc-800/30 px-3 py-2.5 transition-colors group cursor-pointer"
+            onClick={() => canOpen ? openBrowser(item.url!, item.headline, item.source, item.summary) : undefined}
+            disabled={!canOpen}
+            className={`block w-full text-left border-b border-zinc-800/50 px-3 py-2.5 transition-colors group ${canOpen ? "hover:bg-zinc-800/30 cursor-pointer" : "cursor-default opacity-70"}`}
           >
             <div className="flex items-center gap-2 mb-0.5">
               {item.isFiling && <FileText className="w-3 h-3 text-[#FFB800] shrink-0" />}
@@ -273,8 +276,14 @@ export function NewsTab() {
             <h3 className="text-sm font-semibold text-zinc-200 leading-snug group-hover:text-white transition-colors line-clamp-2">
               {item.headline}
             </h3>
+            {!canOpen && item.summary && (
+              <p className="mt-1 text-xs text-zinc-500 leading-snug line-clamp-2">
+                {item.summary}
+              </p>
+            )}
           </button>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
