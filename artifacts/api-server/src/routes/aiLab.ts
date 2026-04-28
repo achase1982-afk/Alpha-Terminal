@@ -181,7 +181,7 @@ router.post("/ideas", async (req, res) => {
 
     const marketData: MarketDataSnapshot = {
       avgVolume20d: 1_000_000,
-      dataFreshnessMinutes: 5,
+      dataTimestamp: Date.now() - 5 * 60 * 1000,
     };
 
     const snapshot = await getTickerSnapshot(candidate.symbol);

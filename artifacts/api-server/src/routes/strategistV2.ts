@@ -31,9 +31,9 @@ router.get("/regime", (_req, res) => {
 // turn is one entry whose `text` grows as tokens stream in.
 export type TranscriptTurn = {
   id: string;
-  round: 1 | 2 | 3 | "synthesis";
-  role: "A" | "B" | "synthesis" | "system";
-  phase: "propose" | "critique" | "final" | "synthesis" | "info";
+  round: 1 | 2 | 3 | "synthesis" | "solo";
+  role: "A" | "B" | "synthesis" | "system" | "solo";
+  phase: "propose" | "critique" | "final" | "synthesis" | "info" | "solo";
   model: string;
   label: string;
   text: string;
