@@ -212,8 +212,7 @@ async function fetchAndPushPortfolio(ws: WebSocket) {
         if (optionSymbols.size > 0) addOptionSymbols([...optionSymbols]);
         if (futuresSymbols.size > 0) addFuturesSymbols([...futuresSymbols]);
         if (futuresOptionSymbols.size > 0) addFuturesOptionSymbols([...futuresOptionSymbols]);
-        const breakdown = (mapped.positions ?? []).map((p: any) => ({ sym: p.symbol, under: p.underlyingSymbol, type: p.assetType }));
-        logger.info({ count: breakdown.length, positions: breakdown }, "Portfolio positions assetType breakdown");
+        logger.debug({ count: (mapped.positions ?? []).length }, "Portfolio positions assetType breakdown");
       } catch (subErr) {
         logger.debug({ err: subErr }, "Portfolio streamer subscription failed");
       }

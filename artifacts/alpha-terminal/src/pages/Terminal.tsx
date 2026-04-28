@@ -444,7 +444,7 @@ export default function TerminalPage() {
   const { data: historyData, isLoading: historyLoading } = useGetPriceHistory(
     {
       symbol,
-      accessToken: accessToken || "",
+      accessToken: "",
       periodType: chartParams.periodType,
       period: chartParams.period,
       frequencyType: chartParams.frequencyType,

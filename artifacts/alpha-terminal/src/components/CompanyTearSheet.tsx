@@ -59,7 +59,7 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
 
     try {
       const res = await fetchWithAuth(
-        `${API_BASE}/market/fundamentals?symbol=${encodeURIComponent(symbol)}&accessToken=${encodeURIComponent(accessToken)}`
+        `${API_BASE}/market/fundamentals?symbol=${encodeURIComponent(symbol)}`
       );
       const data = await res.json() as FundamentalData;
       setFundamentals(data);

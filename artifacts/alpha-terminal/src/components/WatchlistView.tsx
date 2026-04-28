@@ -791,7 +791,7 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
     async function fetchSpark(sym: string) {
       try {
         const res = await fetchWithAuth(
-          `/api/market/history?symbol=${encodeURIComponent(sym)}&accessToken=${encodeURIComponent(accessToken!)}&periodType=day&period=5&frequencyType=minute&frequency=30`,
+          `/api/market/history?symbol=${encodeURIComponent(sym)}&periodType=day&period=5&frequencyType=minute&frequency=30`,
           { signal: controller.signal, cache: "no-store" as RequestCache }
         );
         if (!res.ok) return false;

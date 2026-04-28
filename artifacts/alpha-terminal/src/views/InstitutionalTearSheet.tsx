@@ -70,7 +70,7 @@ function useTearSheet(symbol: string) {
     setFundError(null);
     try {
       const res = await fetchWithAuth(
-        `${API_BASE}/market/fundamentals?symbol=${encodeURIComponent(symbol)}&accessToken=${encodeURIComponent(accessToken)}`
+        `${API_BASE}/market/fundamentals?symbol=${encodeURIComponent(symbol)}`
       );
       const data = await res.json() as FundamentalData;
       if (data.error) {
