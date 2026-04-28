@@ -9,6 +9,43 @@ import { tradeJournalTable } from "@workspace/db/schema";
 
 const router: IRouter = Router();
 
+/** Schwab order body fragment we read after placement (forwarded JSON). */
+interface SchwabOrderLegInstrument {
+  symbol?: string;
+}
+
+interface SchwabOrderLeg {
+  instruction?: string;
+  quantity?: number;
+  instrument?: SchwabOrderLegInstrument;
+}
+
+interface SchwabPlaceOrderBody extends Record<string, unknown> {
+  orderLegCollection?: SchwabOrderLeg[];
+}
+
+/** Client-supplied journal metadata when logging a trade alongside an order. */
+interface TradeJournalContextPayload {
+  symbol?: string;
+  strategyType?: string | null;
+  direction?: string;
+  pulseComposite?: number | null;
+  pulseConfidence?: number | null;
+  pulseBias?: string | null;
+  scannerScore?: number | null;
+  tradingMode?: number | null;
+  tradingModeLabel?: string | null;
+  eventConflicts?: unknown;
+  ivr?: number | null;
+  entryPrice?: number | null;
+  isCredit?: boolean | null;
+  maxLoss?: number | null;
+  maxGain?: number | null;
+  thesis?: string | null;
+  legs?: unknown;
+  quantity?: number | null;
+}
+
 const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
 
 let accountsCache: { data: any; fetchedAt: number } | null = null;
@@ -314,8 +351,8 @@ router.post("/place-order", async (req, res) => {
 
   const { accountHash, order, journalContext } = req.body as {
     accountHash: string;
-    order: Record<string, unknown>;
-    journalContext?: Record<string, unknown>;
+    order: SchwabPlaceOrderBody;
+    journalContext?: TradeJournalContextPayload;
   };
 
   if (!accountHash || !order) {
@@ -356,7 +393,7 @@ router.post("/place-order", async (req, res) => {
     const orderIdMatch = locationHeader.match(/orders\/(\d+)/);
     const orderId = orderIdMatch ? orderIdMatch[1] : null;
 
-    const legs = (order as any).orderLegCollection ?? [];
+    const legs = order.orderLegCollection ?? [];
     const firstLeg = legs[0] ?? {};
     const sym = firstLeg?.instrument?.symbol ?? "";
     const side = firstLeg?.instruction ?? "";
@@ -387,7 +424,7 @@ router.post("/place-order", async (req, res) => {
 
     if (journalContext && orderId) {
       try {
-        const jc = journalContext as any;
+        const jc = journalContext;
         await db.insert(tradeJournalTable).values({
           schwabOrderId: orderId,
           symbol: jc.symbol ?? sym,
