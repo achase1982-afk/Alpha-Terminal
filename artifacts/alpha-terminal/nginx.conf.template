@@ -1,3 +1,11 @@
+# Map block must be declared before the server block that references
+# $connection_upgrade so nginx resolves the variable correctly when the
+# location /api/ block is evaluated.
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
 server {
     listen 80;
     server_name _;
@@ -61,8 +69,3 @@ server {
     }
 }
 
-# Map block for the websocket Connection header used above.
-map $http_upgrade $connection_upgrade {
-    default upgrade;
-    ''      close;
-}
