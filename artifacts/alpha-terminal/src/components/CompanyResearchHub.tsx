@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo, type TouchEvent as ReactTouchEvent } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
-import { useQuote } from "@/hooks/useQuote";
+import { useQuote, type QuoteData } from "@/hooks/useQuote";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { consumeStream } from "@/lib/consumeStream";
 import { useTechnicalsCache } from "@/hooks/useTechnicalsCache";
@@ -284,6 +284,18 @@ interface QuoteInfo {
   fiftyTwoWeekLow?: number;
   peRatio?: number;
   netChange?: number;
+}
+
+function toQuoteInfo(q: QuoteData | null | undefined): QuoteInfo | null {
+  if (!q) return null;
+  return {
+    symbol: q.symbol,
+    last: q.last ?? undefined,
+    fiftyTwoWeekHigh: q.fiftyTwoWeekHigh ?? undefined,
+    fiftyTwoWeekLow: q.fiftyTwoWeekLow ?? undefined,
+    peRatio: q.peRatio ?? undefined,
+    netChange: q.change ?? undefined,
+  };
 }
 
 const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volHist, ai }: {
@@ -1793,7 +1805,7 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
                 </div>
               ) : null}
 
-              <SubOverview fund={fundamentals} quoteData={(quoteData as unknown as QuoteInfo) ?? null} priceHist={priceHist} volHist={volHist} ai={analysisResult ? parseAiAnalysis(analysisResult) : null} />
+              <SubOverview fund={fundamentals} quoteData={toQuoteInfo(quoteData)} priceHist={priceHist} volHist={volHist} ai={analysisResult ? parseAiAnalysis(analysisResult) : null} />
             </div>
 
             <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 16px" }}>
