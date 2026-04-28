@@ -29,6 +29,25 @@ function proxyUrl(url: string, title?: string | null, source?: string | null, su
   return `${API_BASE}/market/proxy-article?${qs}`;
 }
 
+/**
+ * Polygon (and others) often link to Yahoo Finance. Our server-side reader
+ * cannot scrape those pages reliably (403/consent), and Yahoo blocks iframe
+ * embedding — so the iframe showed blank or gray “extract failed” HTML.
+ * For these hosts we show headline + summary inline and link out to the live URL.
+ */
+export function prefersExternalArticleView(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host.endsWith("yahoo.com") || host.endsWith("yahoo.co.jp") || host.endsWith("yahoo.co.uk")) {
+      return true;
+    }
+    if (host.endsWith("aol.com")) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export function InAppBrowser() {
   const { browserUrl, browserTitle, browserSource, browserSummary, closeBrowser } = useTerminalStore();
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -40,10 +59,10 @@ export function InAppBrowser() {
 
   useEffect(() => {
     if (!browserUrl) { setLoading(true); setError(false); setCurrentUrl(null); setHistory([]); return; }
-    setLoading(true);
     setError(false);
     setCurrentUrl(browserUrl);
     setHistory([]);
+    setLoading(prefersExternalArticleView(browserUrl) ? false : true);
     const el = document.getElementById("terminal-header");
     if (el) setHeaderH(el.offsetHeight);
   }, [browserUrl]);
@@ -56,9 +75,9 @@ export function InAppBrowser() {
         if (!/^https?:\/\//i.test(newUrl)) return;
         setHistory((prev) => currentUrl ? [...prev, currentUrl] : prev);
         setCurrentUrl(newUrl);
-        setLoading(true);
+        setLoading(prefersExternalArticleView(newUrl) ? false : true);
         setError(false);
-        if (iframeRef.current) {
+        if (iframeRef.current && !prefersExternalArticleView(newUrl)) {
           iframeRef.current.src = proxyUrl(newUrl, browserTitle, browserSource, browserSummary);
         }
       }
@@ -77,9 +96,10 @@ export function InAppBrowser() {
   }, []);
 
   const handleReload = useCallback(() => {
+    if (!currentUrl || prefersExternalArticleView(currentUrl)) return;
     setLoading(true);
     setError(false);
-    if (iframeRef.current && currentUrl) {
+    if (iframeRef.current) {
       iframeRef.current.src = proxyUrl(currentUrl, browserTitle, browserSource, browserSummary);
     }
   }, [currentUrl, browserTitle, browserSource, browserSummary]);
@@ -89,14 +109,16 @@ export function InAppBrowser() {
     const prev = history[history.length - 1];
     setHistory((h) => h.slice(0, -1));
     setCurrentUrl(prev);
-    setLoading(true);
+    setLoading(prefersExternalArticleView(prev) ? false : true);
     setError(false);
-    if (iframeRef.current) {
+    if (iframeRef.current && !prefersExternalArticleView(prev)) {
       iframeRef.current.src = proxyUrl(prev, browserTitle, browserSource, browserSummary);
     }
   }, [history, browserTitle, browserSource, browserSummary]);
 
   if (!browserUrl || !currentUrl) return null;
+
+  const useExternalSummaryPane = prefersExternalArticleView(currentUrl);
 
   const displayUrl = (() => {
     try { return new URL(currentUrl).hostname.replace(/^www\./, ""); }
@@ -142,18 +164,19 @@ export function InAppBrowser() {
         </button>
 
         <div className="flex-1 flex items-center gap-1.5 bg-zinc-900 rounded-md px-3 py-1.5 min-w-0 border border-zinc-800">
-          <Shield className="w-3 h-3 text-emerald-500 shrink-0" />
+          <Shield className={`w-3 h-3 shrink-0 ${useExternalSummaryPane ? "text-zinc-500" : "text-emerald-500"}`} />
           <Globe className="w-3 h-3 text-zinc-500 shrink-0" />
           <span className="text-xs text-zinc-400 font-mono truncate">{displayUrl}</span>
         </div>
 
         <button
           onClick={handleReload}
-          className="p-1.5 rounded-md hover:bg-zinc-800 transition-colors cursor-pointer active:scale-95"
+          disabled={useExternalSummaryPane}
+          className="p-1.5 rounded-md hover:bg-zinc-800 transition-colors cursor-pointer active:scale-95 disabled:opacity-30 disabled:cursor-default disabled:hover:bg-transparent"
           aria-label="Reload"
           style={{ WebkitTapHighlightColor: "transparent", touchAction: "manipulation" }}
         >
-          <RefreshCw className={`w-4 h-4 text-zinc-400 ${loading ? "animate-spin" : ""}`} />
+          <RefreshCw className={`w-4 h-4 text-zinc-400 ${loading && !useExternalSummaryPane ? "animate-spin" : ""}`} />
         </button>
 
         <a
@@ -175,7 +198,7 @@ export function InAppBrowser() {
           overscrollBehavior: "none",
         }}
       >
-        {loading && (
+        {loading && !useExternalSummaryPane && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-20" style={{ background: "#1C1C1E" }}>
             <div className="w-6 h-6 border-2 border-zinc-700 border-t-[#FFB800] rounded-full animate-spin" />
             <div className="flex items-center gap-1.5">
@@ -213,6 +236,40 @@ export function InAppBrowser() {
             >
               Go Back
             </button>
+          </div>
+        ) : useExternalSummaryPane ? (
+          <div
+            className="absolute inset-0 overflow-y-auto z-10 px-5 py-6"
+            style={{ background: "#1C1C1E", WebkitOverflowScrolling: "touch" }}
+          >
+            {browserSource && (
+              <span className="text-[10px] uppercase tracking-wider font-mono font-semibold text-[#FFB800] block mb-2">
+                {browserSource}
+              </span>
+            )}
+            {browserTitle && (
+              <h2 className="text-lg font-semibold text-zinc-100 leading-snug mb-4">{browserTitle}</h2>
+            )}
+            <p className="text-xs text-zinc-500 leading-relaxed mb-5">
+              This publisher blocks embedded reading in the app. Open the story in your browser for the full article and layout.
+            </p>
+            {browserSummary ? (
+              <div className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap mb-8 border-t border-zinc-800 pt-5">
+                {browserSummary}
+              </div>
+            ) : (
+              <p className="text-sm text-zinc-500 mb-8 italic">No preview text was provided with this story.</p>
+            )}
+            <a
+              href={currentUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 w-full max-w-md mx-auto px-5 py-3 rounded-lg text-sm font-semibold transition-colors active:scale-[0.98]"
+              style={{ background: "#FFB800", color: "#0a0a0a", WebkitTapHighlightColor: "transparent" }}
+            >
+              <ExternalLink className="w-4 h-4 shrink-0" />
+              Open full article
+            </a>
           </div>
         ) : (
           <iframe
