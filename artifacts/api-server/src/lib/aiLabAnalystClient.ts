@@ -14,14 +14,27 @@ import type {
 import { type AiLabModelProvider, getActivePrompt } from "./aiLabConfig.js";
 
 const DEFAULT_ANALYST_MODEL = "claude-opus-4-6";
-const GEMINI_WEB_SEARCH_MAX_ATTEMPTS = 3;
+const GEMINI_WEB_SEARCH_MAX_ATTEMPTS = 4;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function errorCauseMessage(err: unknown): string | null {
+  if (!err || typeof err !== "object" || !("cause" in err)) return null;
+  const cause = (err as { cause?: unknown }).cause;
+  if (!cause) return null;
+  if (cause instanceof Error) {
+    const code = typeof (cause as { code?: unknown }).code === "string" ? ` ${(cause as { code: string }).code}` : "";
+    return `${cause.name}${code}: ${cause.message}`;
+  }
+  return String(cause);
+}
+
 function geminiErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  const message = err instanceof Error ? err.message : String(err);
+  const cause = errorCauseMessage(err);
+  return cause ? `${message} (cause: ${cause})` : message;
 }
 
 function isRetryableGeminiWebSearchError(err: unknown): boolean {
@@ -43,7 +56,7 @@ async function withGeminiRetry<T>(
       if (!isRetryableGeminiWebSearchError(err) || attempt === GEMINI_WEB_SEARCH_MAX_ATTEMPTS) {
         break;
       }
-      const delayMs = 500 * attempt * attempt;
+      const delayMs = Math.min(500 * attempt * attempt, 5000);
       logger.warn(
         { err, model, operation, attempt, nextAttemptInMs: delayMs },
         "Gemini web-search call failed transiently; retrying",
