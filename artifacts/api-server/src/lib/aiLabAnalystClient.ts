@@ -20,6 +20,68 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Anthropic message `content` may include text, server_tool_use, web_search_tool_result, etc.; runtime blocks are wider than the SDK union. */
+type AnthropicMessageContentBlock = Record<string, unknown>;
+
+/** Raw stream events from `client.messages.stream` include content_block_* shapes not fully reflected in SDK types. */
+type AnthropicStreamEvent = Record<string, unknown>;
+
+/** Gemini `generateContent` / stream chunks expose `candidates[].groundingMetadata` for Google Search grounding. */
+interface GeminiGroundingMetadata {
+  webSearchQueries?: unknown;
+  groundingChunks?: Array<{ web?: { uri?: string; title?: string } }>;
+}
+
+interface GeminiCandidateChunk {
+  candidates?: Array<{ groundingMetadata?: GeminiGroundingMetadata }>;
+}
+
+/**
+ * Anthropic `web_search_20250305` tool shape — SDK `Tool` union does not include this server tool yet.
+ * Included in `tools` arrays widened below and asserted only at `messages.create` / `messages.stream`.
+ */
+interface AnthropicWebSearchToolSpec {
+  type: "web_search_20250305";
+  name: string;
+  max_uses: number;
+}
+
+type AnthropicMessageCreateParamsWithWebSearch = Omit<Anthropic.MessageCreateParamsNonStreaming, "tools"> & {
+  tools?: ReadonlyArray<Anthropic.Tool | AnthropicWebSearchToolSpec>;
+};
+
+type AnthropicMessageStreamParamsWithWebSearch = Omit<Anthropic.MessageCreateParamsStreaming, "tools"> & {
+  tools?: ReadonlyArray<Anthropic.Tool | AnthropicWebSearchToolSpec>;
+};
+
+/** Hosted OpenAI integration proxy: `chat.completions.create` accepts a dynamic JSON body not matching strict SDK overloads. */
+interface OpenAIChatCompletionsCreateClient {
+  chat: {
+    completions: {
+      create: (p: Record<string, unknown>) => Promise<{ choices?: Array<{ message?: { content?: string } }> }>;
+    };
+  };
+}
+
+function asOpenAIChatCompletionsCreateClient(client: OpenAI): OpenAIChatCompletionsCreateClient {
+  // Hosted proxy accepts a dynamic JSON body; widen through `unknown` because SDK overloads reject `Record<string, unknown>`.
+  const proxy: unknown = client;
+  return proxy as OpenAIChatCompletionsCreateClient;
+}
+
+/** OpenAI SDK types lag the Responses API (`web_search_preview`, reasoning, streaming). */
+interface OpenAIResponsesClientNonStream {
+  responses: {
+    create: (p: Record<string, unknown>) => Promise<{ output?: unknown; output_text?: string }>;
+  };
+}
+
+interface OpenAIResponsesClientStream {
+  responses: {
+    create: (p: Record<string, unknown>) => Promise<AsyncIterable<Record<string, unknown>>>;
+  };
+}
+
 function errorCauseMessage(err: unknown): string | null {
   if (!err || typeof err !== "object" || !("cause" in err)) return null;
   const cause = (err as { cause?: unknown }).cause;
@@ -375,8 +437,8 @@ export async function callAnthropicWithSystem(model: string, temperature: number
     messages: [{ role: "user", content: prompt }],
   };
   if (isNew) {
-    // Claude 4.7+: adaptive thinking is the only mode; temperature must be omitted
-    params.thinking = { type: "adaptive", display: "summarized" } as unknown as Anthropic.MessageCreateParamsNonStreaming["thinking"];
+    // Claude 4.7+: adaptive thinking — SDK `thinking` union lags the Messages API shape.
+    params.thinking = { type: "adaptive", display: "summarized" } as Anthropic.MessageCreateParamsNonStreaming["thinking"];
   } else {
     // Older Claude: extended thinking with a budget; temperature must be 1
     params.thinking = { type: "enabled", budget_tokens: THINKING_BUDGET };
@@ -453,9 +515,7 @@ export async function callOpenAIWithSystem(model: string, temperature: number, s
     params.temperature = temperature;
   }
 
-  const completion = await (client as unknown as {
-    chat: { completions: { create: (p: Record<string, unknown>) => Promise<{ choices?: Array<{ message?: { content?: string } }> }> } };
-  }).chat.completions.create(params);
+  const completion = await asOpenAIChatCompletionsCreateClient(client).chat.completions.create(params);
 
   const text = completion.choices?.[0]?.message?.content?.trim() ?? "";
   if (!text) throw new Error("No text content in Analyst LLM response (OpenAI)");
@@ -491,6 +551,20 @@ export interface WebSearchResult {
 
 const ANTHROPIC_WEB_SEARCH_MAX_USES = 5;
 
+const ANTHROPIC_WEB_SEARCH_TOOL: AnthropicWebSearchToolSpec = {
+  type: "web_search_20250305",
+  name: "web_search",
+  max_uses: ANTHROPIC_WEB_SEARCH_MAX_USES,
+};
+
+function asAnthropicContentBlocks(content: unknown): AnthropicMessageContentBlock[] {
+  return content as AnthropicMessageContentBlock[];
+}
+
+function asAnthropicStreamEvent(event: unknown): AnthropicStreamEvent {
+  return event as AnthropicStreamEvent;
+}
+
 export async function callAnthropicWithSystemAndWebSearch(
   model: string,
   temperature: number,
@@ -503,35 +577,29 @@ export async function callAnthropicWithSystemAndWebSearch(
 
   const isNew = /^claude-(opus|sonnet)-4-([7-9]|\d{2,})/.test(model);
   const THINKING_BUDGET = 4096;
-  const params: Anthropic.MessageCreateParamsNonStreaming = {
+  const params: AnthropicMessageCreateParamsWithWebSearch = {
     model,
     max_tokens: isNew ? 16384 : THINKING_BUDGET + 12288,
     system: systemPrompt,
     messages: [{ role: "user", content: prompt }],
-    tools: [
-      {
-        type: "web_search_20250305",
-        name: "web_search",
-        max_uses: ANTHROPIC_WEB_SEARCH_MAX_USES,
-      } as unknown as Anthropic.Tool,
-    ],
+    tools: [ANTHROPIC_WEB_SEARCH_TOOL],
   };
   if (isNew) {
-    params.thinking = { type: "adaptive", display: "summarized" } as unknown as Anthropic.MessageCreateParamsNonStreaming["thinking"];
+    params.thinking = { type: "adaptive", display: "summarized" } as Anthropic.MessageCreateParamsNonStreaming["thinking"];
   } else {
     params.thinking = { type: "enabled", budget_tokens: THINKING_BUDGET };
     params.temperature = 1;
   }
   void temperature;
 
-  const message = await client.messages.create(params);
+  const message = await client.messages.create(params as Anthropic.MessageCreateParamsNonStreaming);
 
   const queries: string[] = [];
   const sources: WebSearchSource[] = [];
   const seenUrls = new Set<string>();
   const textChunks: string[] = [];
 
-  for (const block of message.content as unknown as Array<Record<string, unknown>>) {
+  for (const block of asAnthropicContentBlocks(message.content)) {
     const t = block.type as string | undefined;
     if (t === "text") {
       const txt = (block as { text?: string }).text;
@@ -588,22 +656,17 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
 
   const isNew = /^claude-(opus|sonnet)-4-([7-9]|\d{2,})/.test(model);
   const THINKING_BUDGET = 4096;
-  const params: Anthropic.MessageCreateParamsStreaming = {
+  const params: AnthropicMessageStreamParamsWithWebSearch = {
     model,
     max_tokens: isNew ? 16384 : THINKING_BUDGET + 12288,
     system: systemPrompt,
     messages: [{ role: "user", content: prompt }],
-    tools: [
-      {
-        type: "web_search_20250305",
-        name: "web_search",
-        max_uses: ANTHROPIC_WEB_SEARCH_MAX_USES,
-      } as unknown as Anthropic.Tool,
-    ],
+    tools: [ANTHROPIC_WEB_SEARCH_TOOL],
     stream: true,
   };
   if (isNew) {
-    (params as unknown as Record<string, unknown>).thinking = { type: "adaptive", display: "summarized" };
+    // Streaming + adaptive thinking: same API shape as non-streaming; SDK types omit `adaptive` here.
+    params.thinking = { type: "adaptive", display: "summarized" } as Anthropic.MessageCreateParamsStreaming["thinking"];
   } else {
     params.thinking = { type: "enabled", budget_tokens: THINKING_BUDGET };
     params.temperature = 1;
@@ -615,9 +678,9 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
   const seenUrls = new Set<string>();
   let fullText = "";
 
-  const stream = client.messages.stream(params);
+  const stream = client.messages.stream(params as Anthropic.MessageCreateParamsStreaming);
   for await (const event of stream) {
-    const ev = event as unknown as Record<string, unknown>;
+    const ev = asAnthropicStreamEvent(event);
     const evType = ev.type as string | undefined;
     if (evType === "content_block_start") {
       const block = ev.content_block as Record<string, unknown> | undefined;
@@ -670,7 +733,7 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
   // batched inside the final message).
   try {
     const finalMessage = await stream.finalMessage();
-    for (const block of finalMessage.content as unknown as Array<Record<string, unknown>>) {
+    for (const block of asAnthropicContentBlocks(finalMessage.content)) {
       const t = block.type as string | undefined;
       if (t === "server_tool_use") {
         const inp = (block as { input?: Record<string, unknown> }).input;
@@ -748,11 +811,8 @@ export async function callGeminiWithSystemAndWebSearch(
   const queries: string[] = [];
   const sources: WebSearchSource[] = [];
   const seenUrls = new Set<string>();
-  type GroundingSupport = {
-    webSearchQueries?: unknown;
-    groundingChunks?: Array<{ web?: { uri?: string; title?: string } }>;
-  };
-  const candidates = (response as unknown as { candidates?: Array<{ groundingMetadata?: GroundingSupport }> }).candidates;
+  const geminiResponse = response as GeminiCandidateChunk;
+  const candidates = geminiResponse.candidates;
   const meta = candidates?.[0]?.groundingMetadata;
   if (meta) {
     if (Array.isArray(meta.webSearchQueries)) {
@@ -833,11 +893,8 @@ export async function streamCallGeminiWithSystemAndWebSearch(
   const sources: WebSearchSource[] = [];
   const seenUrls = new Set<string>();
 
-  type GroundingSupport = {
-    webSearchQueries?: unknown;
-    groundingChunks?: Array<{ web?: { uri?: string; title?: string } }>;
-  };
-  const candidates = (lastChunk as unknown as { candidates?: Array<{ groundingMetadata?: GroundingSupport }> })?.candidates;
+  const lastGeminiChunk = lastChunk as GeminiCandidateChunk;
+  const candidates = lastGeminiChunk.candidates;
   const meta = candidates?.[0]?.groundingMetadata;
   if (meta) {
     if (Array.isArray(meta.webSearchQueries)) {
@@ -965,11 +1022,8 @@ export async function callOpenAIWithSystemAndWebSearch(
   const client = makeOpenAIClient();
   const params = buildOpenAIResponseParams(model, temperature, systemPrompt, prompt);
 
-  // Cast: the OpenAI SDK types lag behind the Responses API surface for
-  // web_search_preview + reasoning. We've matched the documented shape.
-  const response = await (client as unknown as {
-    responses: { create: (p: Record<string, unknown>) => Promise<{ output?: unknown; output_text?: string }> };
-  }).responses.create(params);
+  // OpenAI SDK types lag the Responses API surface for web_search_preview + reasoning.
+  const response = await (client as OpenAIResponsesClientNonStream).responses.create(params);
 
   const queries: string[] = [];
   const sources: WebSearchSource[] = [];
@@ -1000,9 +1054,7 @@ export async function streamCallOpenAIWithSystemAndWebSearch(
 
   onStatus?.("Calling OpenAI with web search…");
 
-  const stream = await (client as unknown as {
-    responses: { create: (p: Record<string, unknown>) => Promise<AsyncIterable<Record<string, unknown>>> };
-  }).responses.create(params);
+  const stream = await (client as OpenAIResponsesClientStream).responses.create(params);
 
   const queries: string[] = [];
   const sources: WebSearchSource[] = [];
