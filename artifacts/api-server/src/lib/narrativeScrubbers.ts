@@ -195,9 +195,16 @@ function scrubField(
 
   const canonicalStr = fmt(canonical);
   if (canonicalStr == null) {
-    // No canonical value → cannot substitute. Leave text alone but report
-    // any inline mentions we found, so callers can decide how to handle.
-    return { text, replacements };
+    // No canonical value → cannot substitute inline numbers honestly.
+    // Still replace literal `{{...}}` placeholders so debate/synthesis
+    // transcripts never ship raw tokens when only that scalar is missing.
+    let out = text;
+    if (out.includes(placeholder)) {
+      const absent = field === "IVR" ? "no IVR data" : "no data";
+      out = out.split(placeholder).join(absent);
+      replacements.push({ field, cited: placeholder, canonical: absent, kind: "placeholder" });
+    }
+    return { text: out, replacements };
   }
 
   let out = text;

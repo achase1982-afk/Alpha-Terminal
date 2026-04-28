@@ -132,11 +132,20 @@ describe("scrubIvrReferences", () => {
     expect(r.text).toBe("IVR 3 — sell vega here.");
   });
 
-  it("no-op when canonical is null (cannot substitute what we don't have)", () => {
+  it("no-op when canonical is null and there is no placeholder (cannot invent IVR)", () => {
     const text = "IVR 92 is rich.";
     const r = scrubIvrReferences(text, null);
     expect(r.text).toBe(text);
     expect(r.replacements.length).toBe(0);
+  });
+
+  it("replaces {{IVR}} with explicit absent text when canonical is null", () => {
+    const text = "Given {{IVR}}, vega trades need care.";
+    const r = scrubIvrReferences(text, null);
+    expect(r.text).toBe("Given no IVR data, vega trades need care.");
+    expect(r.replacements).toEqual([
+      { field: "IVR", cited: "{{IVR}}", canonical: "no IVR data", kind: "placeholder" },
+    ]);
   });
 });
 
@@ -211,14 +220,16 @@ describe("Step 5 contract: header IVR == scrubbed narrative IVR", () => {
     expect(matches.length).toBe(2);
   });
 
-  it("when header IVR is null (no DB row), scrubAll leaves narrative IVR untouched", () => {
-    // The frontend hides the IVR field when header is null; the scrubber
-    // intentionally cannot substitute a value it doesn't have. This is the
-    // explicit contract — no silent fallback to 50 anywhere in the pipeline.
-    const aiNarrative = "IVR 60 means premium is moderate.";
+  it("when header IVR is null (no DB row), inline IVR numbers stay untouched but {{IVR}} is removed", () => {
+    // The frontend hides the IVR field when header is null; we do not invent
+    // a rank for inline hallucination sweeps. Placeholders must not leak raw
+    // `{{IVR}}` into user-visible synthesis (Gemini path).
+    const aiNarrative = "IVR 60 means premium is moderate. With {{IVR}} use HV.";
     const r = scrubAll(aiNarrative, { ivr: null, pcRatio: null });
     expect(r.text).toContain("IVR 60");
-    expect(r.replacements.filter((x) => x.field === "IVR").length).toBe(0);
+    expect(r.text).toContain("no IVR data");
+    expect(r.text).not.toContain("{{IVR}}");
+    expect(r.replacements.filter((x) => x.field === "IVR").length).toBe(1);
   });
 
   it("the canonical-IVR contract round-trips: header → canonical → scrubbed narrative", () => {
