@@ -152,11 +152,11 @@ router.get("/accounts", async (_req, res) => {
     });
 
     accountsCache = { data: mapped, fetchedAt: Date.now() };
-    res.json(mapped);
+    return res.json(mapped);
   } catch (err) {
     logger.error({ err }, "Portfolio accounts fetch failed");
     if (accountsCache) return res.json(accountsCache.data);
-    res.status(502).json({ error: "schwab_api_error" });
+    return res.status(502).json({ error: "schwab_api_error" });
   }
 });
 
@@ -175,9 +175,9 @@ router.get("/accounts/raw-balances", async (_req, res) => {
         projectedBalances: sa.projectedBalances,
       };
     });
-    res.json(raw);
+    return res.json(raw);
   } catch (err: any) {
-    res.status(502).json({ error: err.message });
+    return res.status(502).json({ error: err.message });
   }
 });
 
@@ -243,9 +243,10 @@ router.get("/orders", async (req, res) => {
     );
 
     res.json(mapped);
+    return;
   } catch (err) {
     logger.error({ err }, "Portfolio orders fetch failed");
-    res.status(502).json({ error: "schwab_api_error" });
+    return res.status(502).json({ error: "schwab_api_error" });
   }
 });
 
@@ -288,9 +289,10 @@ router.get("/transactions", async (req, res) => {
     }));
 
     res.json(mapped);
+    return;
   } catch (err) {
     logger.error({ err }, "Portfolio transactions fetch failed");
-    res.status(502).json({ error: "schwab_api_error" });
+    return res.status(502).json({ error: "schwab_api_error" });
   }
 });
 
@@ -301,10 +303,10 @@ router.get("/account-hash", async (_req, res) => {
   try {
     const nums = await schwabGet("/accounts/accountNumbers", token);
     if (!nums.length) return res.status(404).json({ error: "no_accounts" });
-    res.json({ hashValue: nums[0].hashValue });
+    return res.json({ hashValue: nums[0].hashValue });
   } catch (err) {
     logger.error({ err }, "Account hash fetch failed");
-    res.status(502).json({ error: "schwab_api_error" });
+    return res.status(502).json({ error: "schwab_api_error" });
   }
 });
 
@@ -417,9 +419,10 @@ router.post("/place-order", async (req, res) => {
     }
 
     res.json({ success: true, orderId });
+    return;
   } catch (err) {
     logger.error({ err }, "Order placement error");
-    res.status(502).json({ error: "schwab_api_error" });
+    return res.status(502).json({ error: "schwab_api_error" });
   }
 });
 
@@ -474,9 +477,10 @@ router.delete("/cancel-order", async (req, res) => {
     });
 
     res.json({ success: true });
+    return;
   } catch (err) {
     logger.error({ err }, "Order cancel error");
-    res.status(502).json({ error: "schwab_api_error" });
+    return res.status(502).json({ error: "schwab_api_error" });
   }
 });
 
