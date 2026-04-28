@@ -111,7 +111,13 @@ export async function getStoredIVR(
 
   const storedIvr = clampIVR(storedRow.ivr);
   if (storedIvr == null) return null;
-  return { ivr: storedIvr, asOfDate: storedRow.date, source: (storedRow.source ?? null) as IvrSource };
+  const storedSource = (storedRow.source ?? null) as IvrSource;
+  if (!storedSource) return null;
+  if (storedSource === "hv_proxy") {
+    const proxyHistoryCount = await countValidIvRows(symU, storedRow.date, equityDailyTable.iv30dProxy);
+    if (proxyHistoryCount < IVR_MIN_HISTORY) return null;
+  }
+  return { ivr: storedIvr, asOfDate: storedRow.date, source: storedSource };
 }
 
 /**
