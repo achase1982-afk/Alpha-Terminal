@@ -25,7 +25,8 @@ function errorCauseMessage(err: unknown): string | null {
   const cause = (err as { cause?: unknown }).cause;
   if (!cause) return null;
   if (cause instanceof Error) {
-    const code = typeof (cause as { code?: unknown }).code === "string" ? ` ${(cause as { code: string }).code}` : "";
+    const codeValue = (cause as Error & { code?: unknown }).code;
+    const code = typeof codeValue === "string" ? ` ${codeValue}` : "";
     return `${cause.name}${code}: ${cause.message}`;
   }
   return String(cause);
