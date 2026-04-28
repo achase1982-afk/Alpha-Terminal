@@ -13,6 +13,11 @@ import { type AiLabModelProvider, getActivePrompt } from "./aiLabConfig.js";
 
 const DEFAULT_SKEPTIC_MODEL = "gemini-3.1-pro-preview";
 
+/** Shape of `tickerSnapshot.optionsChainSummary` when Polygon chain data exists. */
+interface OptionsChainSummaryAvailable {
+  available: boolean;
+}
+
 export const DEFAULT_SKEPTIC_SYSTEM_PROMPT = `You are the Devil's Advocate on a quantitative trading desk.
 Given a candidate trade idea produced by the Analyst, your job is to find weaknesses, risks, and reasons it could fail.
 
@@ -134,7 +139,7 @@ function buildSkepticPrompt(request: SkepticRequest): string {
   delete snapshotWithoutChain.optionsChainSummary;
 
   let optionsSection = "";
-  if (optionsChain && typeof optionsChain === "object" && (optionsChain as any).available) {
+  if (optionsChain && typeof optionsChain === "object" && (optionsChain as OptionsChainSummaryAvailable).available) {
     optionsSection = `\nLIVE OPTIONS CHAIN SUMMARY (from Polygon):\n${JSON.stringify(optionsChain, null, 2)}\n`;
   } else {
     optionsSection = `\nLIVE OPTIONS CHAIN: Not available (options market may be closed or no data).\n`;
@@ -235,7 +240,8 @@ async function callAnthropicWithSystem(model: string, temperature: number, syste
     messages: [{ role: "user", content: prompt }],
   };
   if (isNew) {
-    params.thinking = { type: "adaptive", display: "summarized" } as unknown as Anthropic.MessageCreateParamsNonStreaming["thinking"];
+    // Anthropic Messages API adaptive thinking shape; SDK `thinking` union lags the API.
+    params.thinking = { type: "adaptive", display: "summarized" } as Anthropic.MessageCreateParamsNonStreaming["thinking"];
   } else {
     params.thinking = { type: "enabled", budget_tokens: THINKING_BUDGET };
     params.temperature = 1;
