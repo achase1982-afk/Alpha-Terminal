@@ -666,7 +666,7 @@ function ColumnHeader({
   onSort,
 }: {
   indicator: IndicatorDef;
-  sortKey: SortKey;
+  sortKey: SortKey | null;
   sortDir: SortDir;
   onSort: (k: SortKey) => void;
 }) {
@@ -815,7 +815,7 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
     function nextBatch() {
       const batch = toFetch.slice(i, i + batchSize);
       if (batch.length === 0) {
-        const stillMissing = toFetch.filter((s) => !fetchedRef.current.has(s));
+        const stillMissing = toFetch.filter((s) => !_fetchedSymbols.has(s));
         if (stillMissing.length > 0 && retryCount < 2 && !controller.signal.aborted) {
           retryCount++;
           i = 0;
