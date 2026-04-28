@@ -8,6 +8,7 @@ const IVR_MIN_HISTORY = 60;
 const IVR_LOOKBACK = 252;
 const HV_WINDOW = 30;
 const ANNUALIZE = Math.sqrt(252);
+const IVR_MAX_STALENESS_DAYS = 10;
 
 const BROAD_INDEX = new Set(["SPY", "QQQ", "DIA", "IWM", "VTI", "VOO"]);
 const SECTOR_ETF_SET = new Set(["XLE", "XLF", "XLK", "XLU", "XLV", "XLI", "XLP", "XLY", "XLB", "XLC", "XLRE"]);
@@ -35,21 +36,64 @@ export function clampIVR(value: number | null | undefined): number | null {
 }
 
 /**
- * Read the most recent stored IVR for a symbol from equity_daily.ivr.
- * Returns { ivr, asOfDate } from the latest row that has a non-null ivr,
- * or null if no such row exists. This is the SINGLE SOURCE OF TRUTH for
- * IVR across the entire app — header, narrative, AI prompt, scanner.
- * No fallback to any chain-derived computation. If null is returned the
- * caller MUST hide the field, not substitute a placeholder like 50.
+ * Read the most recent fresh IVR for a symbol from equity_daily.
+ * Prefer canonical real-IV history once available; otherwise use a fresh
+ * stored proxy rank. If null is returned the caller MUST hide the field.
  */
 export type IvrSource = "chain" | "flow" | "hv_proxy" | "canonical" | null;
+
+function daysOld(date: string): number {
+  const t = new Date(`${date}T00:00:00Z`).getTime();
+  if (!Number.isFinite(t)) return Number.POSITIVE_INFINITY;
+  return Math.floor((Date.now() - t) / 86_400_000);
+}
+
+async function countValidIvRows(
+  symbol: string,
+  date: string,
+  column: typeof equityDailyTable.iv30d | typeof equityDailyTable.iv30dProxy,
+): Promise<number> {
+  const rows = await db
+    .select({ c: sql<number>`count(*)::int` })
+    .from(equityDailyTable)
+    .where(and(
+      eq(equityDailyTable.symbol, symbol),
+      sql`${equityDailyTable.date} <= ${date}`,
+      sql`${column} IS NOT NULL`,
+      sql`${column} >= ${IV_MIN_VALID}`,
+      sql`${column} <= ${IV_MAX_VALID}`,
+    ));
+  return rows[0]?.c ?? 0;
+}
 
 export async function getStoredIVR(
   symbol: string,
 ): Promise<{ ivr: number; asOfDate: string; source: IvrSource } | null> {
   const symU = symbol.toUpperCase().trim();
   if (!symU) return null;
-  const rows = await db
+  const latestRealIvRows = await db
+    .select({
+      date: equityDailyTable.date,
+      iv30d: equityDailyTable.iv30d,
+    })
+    .from(equityDailyTable)
+    .where(and(
+      eq(equityDailyTable.symbol, symU),
+      sql`${equityDailyTable.iv30d} IS NOT NULL`,
+    ))
+    .orderBy(desc(equityDailyTable.date))
+    .limit(1);
+
+  const realIvRow = latestRealIvRows[0];
+  if (realIvRow && daysOld(realIvRow.date) <= IVR_MAX_STALENESS_DAYS) {
+    const realHistoryCount = await countValidIvRows(symU, realIvRow.date, equityDailyTable.iv30d);
+    const ivr = realHistoryCount >= IVR_MIN_HISTORY
+      ? await computeIVRForSymbol(symU, realIvRow.date, realIvRow.iv30d)
+      : null;
+    if (ivr != null) return { ivr, asOfDate: realIvRow.date, source: "canonical" };
+  }
+
+  const storedRows = await db
     .select({
       ivr: equityDailyTable.ivr,
       date: equityDailyTable.date,
@@ -62,9 +106,12 @@ export async function getStoredIVR(
     ))
     .orderBy(desc(equityDailyTable.date))
     .limit(1);
-  const row = rows[0];
-  if (!row || row.ivr == null) return null;
-  return { ivr: row.ivr, asOfDate: row.date, source: (row.source ?? null) as IvrSource };
+  const storedRow = storedRows[0];
+  if (!storedRow || daysOld(storedRow.date) > IVR_MAX_STALENESS_DAYS) return null;
+
+  const storedIvr = clampIVR(storedRow.ivr);
+  if (storedIvr == null) return null;
+  return { ivr: storedIvr, asOfDate: storedRow.date, source: (storedRow.source ?? null) as IvrSource };
 }
 
 /**
@@ -110,21 +157,13 @@ export async function computeIVRForSymbol(
   // realized-vol × VRP. Mixing them produces meaningless IVR. So we pick
   // ONE column and use it for both today and history (apples-to-apples).
   //
-  // Rule: if the proxy column has ≥ IVR_MIN_HISTORY rows in the lookback
-  // window, use the proxy series. Otherwise fall back to iv_30d.
-  const proxyHistoryCount = await db
-    .select({ c: sql<number>`count(*)::int` })
-    .from(equityDailyTable)
-    .where(and(
-      eq(equityDailyTable.symbol, symU),
-      sql`${equityDailyTable.date} <= ${date}`,
-      sql`${equityDailyTable.iv30dProxy} IS NOT NULL`,
-      sql`${equityDailyTable.iv30dProxy} >= ${IV_MIN_VALID}`,
-      sql`${equityDailyTable.iv30dProxy} <= ${IV_MAX_VALID}`,
-    ));
-  const useProxyColumn = (proxyHistoryCount[0]?.c ?? 0) >= IVR_MIN_HISTORY;
+  // Rule: prefer the real IV column once it has enough history. Use the
+  // HV proxy only while real chain/flow history is still insufficient.
+  const realHistoryCount = await countValidIvRows(symU, date, equityDailyTable.iv30d);
+  const proxyHistoryCount = await countValidIvRows(symU, date, equityDailyTable.iv30dProxy);
+  const useProxyColumn = realHistoryCount < IVR_MIN_HISTORY && proxyHistoryCount >= IVR_MIN_HISTORY;
 
-  let currentIv = todayIvOverride ?? null;
+  let currentIv = !useProxyColumn ? (todayIvOverride ?? null) : null;
   if (currentIv == null) {
     const rows = await db
       .select({ iv: equityDailyTable.iv30d, ivProxy: equityDailyTable.iv30dProxy })
