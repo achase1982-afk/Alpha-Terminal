@@ -1844,6 +1844,41 @@ interface NormalizedArticle {
   related: string;
 }
 
+export function isFinnhubWrapperUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === "finnhub.io" && parsed.pathname === "/api/news" && parsed.searchParams.has("id");
+  } catch {
+    return false;
+  }
+}
+
+interface FinnhubRawArticle {
+  id: number;
+  category: string;
+  datetime: number;
+  headline: string;
+  image: string;
+  related: string;
+  source: string;
+  summary: string;
+  url: string;
+}
+
+export function normalizeFinnhubArticle(a: FinnhubRawArticle): NormalizedArticle {
+  const rawUrl = a.url || "";
+  return {
+    id: a.id,
+    source: (a.source || "Unknown").toUpperCase(),
+    headline: a.headline || "",
+    summary: a.summary || "",
+    url: isFinnhubWrapperUrl(rawUrl) ? "" : rawUrl,
+    image: a.image || "",
+    datetime: a.datetime || 0,
+    related: a.related || "",
+  };
+}
+
 function hashString(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) {
@@ -2002,16 +2037,12 @@ async function fetchFinnhubNews(cleanSymbol: string, apiKey: string, log: any): 
       url: string;
     }>;
 
-    return (Array.isArray(raw) ? raw : []).slice(0, 30).map(a => ({
-      id: a.id,
-      source: (a.source || "Unknown").toUpperCase(),
-      headline: a.headline || "",
-      summary: a.summary || "",
-      url: a.url || "",
-      image: a.image || "",
-      datetime: a.datetime || 0,
-      related: a.related || "",
-    }));
+    const articles = (Array.isArray(raw) ? raw : []).slice(0, 30).map(normalizeFinnhubArticle);
+    const wrapperCount = (Array.isArray(raw) ? raw : []).slice(0, 30).filter(a => isFinnhubWrapperUrl(a.url || "")).length;
+    if (wrapperCount > 0) {
+      log.info({ symbol: cleanSymbol, wrapperCount, count: articles.length }, "Finnhub wrapper URLs suppressed");
+    }
+    return articles;
   } catch (err) {
     log.warn({ err, symbol: cleanSymbol }, "Finnhub news fetch failed");
     return [];
