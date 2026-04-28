@@ -132,6 +132,26 @@ function AuthReadyGate({ children }: { children: ReactNode }) {
   return <AuthReadyGateInner>{children}</AuthReadyGateInner>;
 }
 
+function AuthHydratingScreen() {
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#1C1C1E",
+        color: "#FFB800",
+        fontSize: 12,
+        letterSpacing: "0.12em",
+        textTransform: "uppercase",
+      }}
+    >
+      Loading...
+    </div>
+  );
+}
+
 function AuthReadyGateInner({ children }: { children: ReactNode }) {
   const { getToken } = useAuth();
   const [ready, setReady] = useState(false);
@@ -147,7 +167,7 @@ function AuthReadyGateInner({ children }: { children: ReactNode }) {
     };
   }, [getToken]);
 
-  return ready ? <>{children}</> : <HydratingScreen />;
+  return ready ? <>{children}</> : <AuthHydratingScreen />;
 }
 
 function InactivityWarning() {
