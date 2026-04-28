@@ -100,15 +100,12 @@ function RecentRow({
   sym,
   isActive,
   onTap,
-  fetchMetadata,
 }: {
   sym: string;
   isActive: boolean;
   onTap: () => void;
-  /** When false, skip REST quote metadata until the row is near the viewport (reduces burst fetches). */
-  fetchMetadata: boolean;
 }) {
-  const { data: quoteData } = useQuote(sym, { enabled: fetchMetadata });
+  const { data: quoteData } = useQuote(sym);
   const { addToWatchlist, removeFromWatchlist } = useTerminalStore();
   const watchlistSymbols = useActiveWatchlist();
   const isInWatchlist = watchlistSymbols.includes(sym.toUpperCase());
@@ -161,37 +158,6 @@ function RecentRow({
   );
 }
 
-function LazyRecentRow(props: {
-  sym: string;
-  isActive: boolean;
-  onTap: () => void;
-}) {
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const [fetchMetadata, setFetchMetadata] = useState(false);
-
-  useEffect(() => {
-    const el = wrapRef.current;
-    if (!el || fetchMetadata) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((e) => e.isIntersecting)) {
-          setFetchMetadata(true);
-          obs.disconnect();
-        }
-      },
-      { root: null, rootMargin: "240px 0px", threshold: 0 },
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [fetchMetadata]);
-
-  return (
-    <div ref={wrapRef}>
-      <RecentRow {...props} fetchMetadata={fetchMetadata} />
-    </div>
-  );
-}
-
 interface SearchOverlayProps {
   isOpen: boolean;
   onClose: () => void;
@@ -218,9 +184,7 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
       setDebouncedVal("");
       return;
     }
-    // Wait until the user pauses and has at least 2 chars before hitting quote metadata (1-char symbols still work via GO).
-    const delay = trimmed.length < 2 ? 550 : 450;
-    const t = setTimeout(() => setDebouncedVal(trimmed), delay);
+    const t = setTimeout(() => setDebouncedVal(trimmed), 300);
     return () => clearTimeout(t);
   }, [inputVal]);
 
@@ -307,7 +271,7 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
           </form>
         </div>
 
-        {debouncedVal.length >= 2 && (
+        {debouncedVal && (
           <SymbolLivePreview
             sym={debouncedVal}
             onNavigate={() => {
@@ -331,7 +295,7 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
               {recentSymbols.map(sym => {
                 const clean = cleanSymbol(sym);
                 return (
-                  <LazyRecentRow
+                  <RecentRow
                     key={clean}
                     sym={clean}
                     isActive={symbol === clean}

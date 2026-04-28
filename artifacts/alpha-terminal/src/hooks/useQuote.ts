@@ -39,9 +39,8 @@ const INDEX_PREFIXES = new Set([
   "OEX","MNX","XSP","ADVN","DECN","TICK","ADD","TRIN","VVIX","VIX9D","VIX3M",
 ]);
 
-export function useQuote(symbol: string, options?: { enabled?: boolean }) {
+export function useQuote(symbol: string) {
   const symUpper = symbol.toUpperCase();
-  const restEnabled = options?.enabled !== false;
 
   const accessToken = useTerminalStore((s) => s.accessToken);
   const directQuote = useTerminalStore((s) => s.streamPrices[symUpper]) as LiveQuote | undefined;
@@ -61,7 +60,7 @@ export function useQuote(symbol: string, options?: { enabled?: boolean }) {
     { symbol, accessToken: "" },
     {
       query: {
-        enabled: !!accessToken && !!symbol && restEnabled,
+        enabled: !!accessToken && !!symbol,
         refetchInterval: 120_000,
         refetchIntervalInBackground: false,
         staleTime: 120_000,

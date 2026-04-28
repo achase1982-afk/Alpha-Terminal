@@ -830,7 +830,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
         setPreviewQuote(null);
       }
       setFetchingTicker(false);
-    }, 450);
+    }, 250);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       ac.abort();
@@ -857,6 +857,8 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
     pcDebounceRef.current = setTimeout(async () => {
       try {
         const params = new URLSearchParams({ symbol: ticker });
+        const draft = inputVal.trim().toUpperCase();
+        if (draft) params.set("lite", "1");
         const res = await fetchWithAuth(`/api/market/ticker-stats?${params.toString()}`, { signal: ac.signal });
         if (!res.ok || ac.signal.aborted) return;
         const data = await res.json();
@@ -869,7 +871,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
       } catch (e) {
         if (e instanceof DOMException && e.name === "AbortError") return;
       }
-    }, 700);
+    }, 300);
     return () => {
       if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current);
       ac.abort();
