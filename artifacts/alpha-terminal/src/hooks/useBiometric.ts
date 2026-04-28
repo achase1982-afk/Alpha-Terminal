@@ -4,6 +4,39 @@ import { readSecurityPrefs } from "@/lib/securityPrefs";
 
 const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
 
+/** Clerk `User` exposes passkey APIs that may not be on the public type yet. */
+interface ClerkUserWithPasskeys {
+  passkeys?: unknown[];
+  createPasskey?: () => Promise<void>;
+}
+
+function getUserPasskeys(user: unknown): unknown[] | undefined {
+  if (!user || typeof user !== "object") return undefined;
+  const p = Reflect.get(user, "passkeys");
+  return Array.isArray(p) ? p : undefined;
+}
+
+function userHasCreatePasskey(user: unknown): user is ClerkUserWithPasskeys {
+  if (!user || typeof user !== "object") return false;
+  return typeof Reflect.get(user, "createPasskey") === "function";
+}
+
+async function callUserCreatePasskey(user: ClerkUserWithPasskeys): Promise<void> {
+  const fn = Reflect.get(user as object, "createPasskey");
+  if (typeof fn !== "function") throw new Error("createPasskey unavailable");
+  return (fn as () => Promise<void>).call(user);
+}
+
+interface ClerkApiErrorShape {
+  errors?: Array<{ longMessage?: string; message?: string }>;
+}
+
+function getClerkErrors(err: unknown): ClerkApiErrorShape["errors"] | undefined {
+  if (!err || typeof err !== "object") return undefined;
+  const e = err as ClerkApiErrorShape;
+  return Array.isArray(e.errors) ? e.errors : undefined;
+}
+
 export function useWebAuthnSupported(): boolean {
   const [supported, setSupported] = useState(false);
   useEffect(() => {
@@ -32,7 +65,7 @@ export function useBiometricRegistration() {
 
   useEffect(() => {
     if (!user) return;
-    const passkeys = (user as any).passkeys;
+    const passkeys = getUserPasskeys(user);
     if (Array.isArray(passkeys) && passkeys.length > 0) {
       setHasPasskey(true);
     }
@@ -48,20 +81,20 @@ export function useBiometricRegistration() {
       setError("WebAuthn/Passkeys are not supported on this device or browser.");
       return;
     }
-    if (typeof (user as any).createPasskey !== "function") {
+    if (!userHasCreatePasskey(user)) {
       setError("Passkey registration is not available. Ensure Passkeys are enabled in the authentication dashboard.");
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      await (user as any).createPasskey();
+      await callUserCreatePasskey(user);
       setHasPasskey(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      const clerkErrors = (err as any)?.errors;
-      const clerkMsg = Array.isArray(clerkErrors) && clerkErrors.length > 0
-        ? clerkErrors.map((e: any) => e.longMessage || e.message).join("; ")
+      const clerkErrors = getClerkErrors(err);
+      const clerkMsg = clerkErrors && clerkErrors.length > 0
+        ? clerkErrors.map((e) => e.longMessage || e.message).filter(Boolean).join("; ")
         : null;
 
       if (msg.includes("cancelled") || msg.includes("canceled") || msg.includes("AbortError")) {
