@@ -9,6 +9,14 @@ import { logFailure } from "./telemetry.js";
 
 const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
 
+/** Leg objects stored in `trade_journal.legs` jsonb (Schwab-style order leg subset). */
+interface JournalOrderLeg {
+  instruction?: string;
+  quantity?: number;
+  symbol?: string;
+  assetType?: string;
+}
+
 function getTraderToken(): string | null {
   const trader = getTokens("trader");
   return trader?.accessToken ?? null;
@@ -68,13 +76,14 @@ export async function handleFillForExitStaging(params: {
       targetDebit,
     }, "Staging GTC exit order for profit target");
 
-    const legs = journalEntry.legs as any[] | null;
+    const rawLegs = journalEntry.legs;
+    const legs: JournalOrderLeg[] | null = Array.isArray(rawLegs) ? (rawLegs as JournalOrderLeg[]) : null;
     if (!legs || legs.length === 0) {
       logger.warn({ schwabOrderId }, "No leg data in journal — cannot build exit order");
       return;
     }
 
-    const exitLegs = legs.map((leg: any) => {
+    const exitLegs = legs.map((leg) => {
       const instruction = leg.instruction?.includes("SELL") ? leg.instruction.replace("SELL", "BUY") : leg.instruction?.replace("BUY", "SELL");
       return {
         instruction,
