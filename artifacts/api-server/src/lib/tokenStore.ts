@@ -25,6 +25,7 @@ let store: TokenFile = {};
 let marketTimer: ReturnType<typeof setTimeout> | null = null;
 let traderTimer: ReturnType<typeof setTimeout> | null = null;
 let onTokenRefreshed: ((kind: "market" | "trader", accessToken: string) => void) | null = null;
+let dbStoreReady = false;
 
 const refreshInFlight: Record<string, Promise<boolean> | null> = {
   market: null,
@@ -57,6 +58,93 @@ function saveToDisk() {
   } catch (err) {
     logger.error({ err }, "TokenStore: failed to write token file");
   }
+}
+
+async function ensureDbStore() {
+  if (dbStoreReady) return true;
+  try {
+    const [{ db }, { sql }] = await Promise.all([
+      import("@workspace/db"),
+      import("drizzle-orm"),
+    ]);
+    await db.execute(sql`
+      create table if not exists schwab_tokens (
+        kind text primary key,
+        access_token text not null,
+        refresh_token text not null,
+        expires_at bigint not null,
+        generation integer not null default 0,
+        updated_at timestamp not null default now()
+      )
+    `);
+    dbStoreReady = true;
+    return true;
+  } catch (err) {
+    logger.warn({ err }, "TokenStore: DB token store unavailable");
+    return false;
+  }
+}
+
+async function loadFromDb(): Promise<TokenFile> {
+  if (!(await ensureDbStore())) return {};
+  try {
+    const [{ db }, { sql }] = await Promise.all([
+      import("@workspace/db"),
+      import("drizzle-orm"),
+    ]);
+    const result = await db.execute(sql`
+      select kind, access_token, refresh_token, expires_at, generation
+      from schwab_tokens
+      where kind in ('market', 'trader')
+    `);
+    const rows = (result as { rows?: Array<Record<string, unknown>> }).rows ?? [];
+    const next: TokenFile = {};
+    for (const row of rows) {
+      const kind = row.kind === "market" || row.kind === "trader" ? row.kind : null;
+      const accessToken = typeof row.access_token === "string" ? row.access_token : "";
+      const refreshToken = typeof row.refresh_token === "string" ? row.refresh_token : "";
+      const expiresAt = Number(row.expires_at);
+      const generation = Number(row.generation ?? 0);
+      if (!kind || !accessToken || !refreshToken || !Number.isFinite(expiresAt)) continue;
+      next[kind] = { accessToken, refreshToken, expiresAt, generation };
+    }
+    return next;
+  } catch (err) {
+    logger.warn({ err }, "TokenStore: failed to load tokens from DB");
+    return {};
+  }
+}
+
+async function persistKindToDb(kind: "market" | "trader") {
+  if (!(await ensureDbStore())) return;
+  try {
+    const [{ db }, { sql }] = await Promise.all([
+      import("@workspace/db"),
+      import("drizzle-orm"),
+    ]);
+    const tokenSet = store[kind];
+    if (!tokenSet) {
+      await db.execute(sql`delete from schwab_tokens where kind = ${kind}`);
+      return;
+    }
+    await db.execute(sql`
+      insert into schwab_tokens (kind, access_token, refresh_token, expires_at, generation, updated_at)
+      values (${kind}, ${tokenSet.accessToken}, ${tokenSet.refreshToken}, ${tokenSet.expiresAt}, ${tokenSet.generation}, now())
+      on conflict (kind) do update set
+        access_token = excluded.access_token,
+        refresh_token = excluded.refresh_token,
+        expires_at = excluded.expires_at,
+        generation = excluded.generation,
+        updated_at = now()
+    `);
+  } catch (err) {
+    logger.error({ err, kind }, "TokenStore: failed to persist tokens to DB");
+  }
+}
+
+function persistKind(kind: "market" | "trader") {
+  saveToDisk();
+  void persistKindToDb(kind);
 }
 
 function basicAuth(key: string, secret: string): string {
@@ -124,7 +212,7 @@ async function doRefresh(
           logger.warn("TokenStore: %s refresh token expired/revoked — clearing", kind);
           void logFailure("SCHWAB_API", "CRITICAL", `OAuth ${kind} refresh token expired/revoked — clearing`, { kind, errorBody: text.slice(0, 300) });
           store[kind] = undefined;
-          saveToDisk();
+          persistKind(kind);
           return false;
         }
       }
@@ -147,7 +235,7 @@ async function doRefresh(
       expiresAt: Date.now() + expiresIn * 1000,
       generation: generationBefore + 1,
     };
-    saveToDisk();
+    persistKind(kind);
 
     logger.info("TokenStore: %s token refreshed, expires in %ds", kind, expiresIn);
 
@@ -232,7 +320,7 @@ export function storeTokens(
     expiresAt: Date.now() + expiresIn * 1000,
     generation: prevGen + 1,
   };
-  saveToDisk();
+  persistKind(kind);
   scheduleRefresh(kind);
   logger.info("TokenStore: stored %s tokens (expires in %ds)", kind, expiresIn);
 
@@ -267,7 +355,7 @@ export function getRefreshToken(kind: "market" | "trader"): string | null {
 export function clearTokens(kind: "market" | "trader") {
   clearTimer(kind);
   store[kind] = undefined;
-  saveToDisk();
+  persistKind(kind);
   logger.info("TokenStore: cleared %s tokens", kind);
 }
 
@@ -278,7 +366,18 @@ export function hasValidTokens(kind: "market" | "trader"): boolean {
 }
 
 export async function initTokenStore() {
-  store = loadFromDisk();
+  const dbStore = await loadFromDb();
+  const diskStore = loadFromDisk();
+  store = {
+    ...diskStore,
+    ...dbStore,
+  };
+  if (dbStore.market || dbStore.trader) {
+    logger.info({
+      market: !!dbStore.market,
+      trader: !!dbStore.trader,
+    }, "TokenStore: loaded persisted tokens from DB");
+  }
 
   if (store.market?.refreshToken) {
     logger.info("TokenStore: found persisted market tokens");
