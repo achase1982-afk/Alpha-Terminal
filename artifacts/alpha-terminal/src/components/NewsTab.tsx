@@ -269,6 +269,11 @@ export function NewsTab() {
               <span className="text-[#FFB800] text-[10px] uppercase tracking-wider font-mono font-semibold shrink-0">
                 {item.source}
               </span>
+              {!canOpen && (
+                <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-mono border border-zinc-800 rounded px-1 py-0.5">
+                  Summary only
+                </span>
+              )}
               <span className="text-zinc-500 text-xs font-mono">
                 {timeAgo(item.ts)}
               </span>
