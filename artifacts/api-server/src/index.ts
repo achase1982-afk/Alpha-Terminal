@@ -377,12 +377,16 @@ async function boot() {
     setTimeout(() => { void bootCatchup(); }, 60_000);
   }
 
-  // Bind to 0.0.0.0 explicitly so other services on the private network can
-  // reach us. Without an explicit host, some runtime setups bind only to
-  // 127.0.0.1, which causes sibling-container TCP connects to time out
-  // (the symptom we hit in production: the frontend nginx hitting the
-  // backend's internal hostname and getting "upstream timed out").
-  const host = process.env["HOST"] ?? "0.0.0.0";
+  // Bind to "::" (IPv6 wildcard) so other services on Railway's private
+  // network can reach us. Railway's internal DNS resolves <service>.railway.internal
+  // to an IPv6 address (`fd12:...`), and a process listening only on
+  // 0.0.0.0 (IPv4) will silently miss those incoming connections — the
+  // exact symptom we observed: nginx -> "upstream timed out" against the
+  // backend's IPv6 address even though the backend logged "Server listening
+  // host: 0.0.0.0". Listening on "::" with the OS dual-stack default also
+  // accepts IPv4 traffic transparently, so this works for both private and
+  // public ingress. See https://docs.railway.com/private-networking.
+  const host = process.env["HOST"] ?? "::";
   const server = app.listen(port, host, (err) => {
     if (err) {
       logger.error({ err }, "Error listening on port");
