@@ -71,33 +71,47 @@ export async function getStoredIVR(
 ): Promise<{ ivr: number; asOfDate: string; source: IvrSource } | null> {
   const symU = symbol.toUpperCase().trim();
   if (!symU) return null;
-  const rows = await db
+  const latestRealIvRows = await db
     .select({
-      ivr: equityDailyTable.ivr,
       date: equityDailyTable.date,
-      source: equityDailyTable.ivrSource,
       iv30d: equityDailyTable.iv30d,
-      iv30dProxy: equityDailyTable.iv30dProxy,
     })
     .from(equityDailyTable)
     .where(and(
       eq(equityDailyTable.symbol, symU),
-      sql`(${equityDailyTable.ivr} IS NOT NULL OR ${equityDailyTable.iv30d} IS NOT NULL OR ${equityDailyTable.iv30dProxy} IS NOT NULL)`,
+      sql`${equityDailyTable.iv30d} IS NOT NULL`,
     ))
     .orderBy(desc(equityDailyTable.date))
     .limit(1);
-  const row = rows[0];
-  if (!row || daysOld(row.date) > IVR_MAX_STALENESS_DAYS) return null;
 
-  const realHistoryCount = await countValidIvRows(symU, row.date, equityDailyTable.iv30d);
-  if (realHistoryCount >= IVR_MIN_HISTORY && row.iv30d != null) {
-    const ivr = await computeIVRForSymbol(symU, row.date, row.iv30d);
-    if (ivr != null) return { ivr, asOfDate: row.date, source: "canonical" };
+  const realIvRow = latestRealIvRows[0];
+  if (realIvRow && daysOld(realIvRow.date) <= IVR_MAX_STALENESS_DAYS) {
+    const realHistoryCount = await countValidIvRows(symU, realIvRow.date, equityDailyTable.iv30d);
+    const ivr = realHistoryCount >= IVR_MIN_HISTORY
+      ? await computeIVRForSymbol(symU, realIvRow.date, realIvRow.iv30d)
+      : null;
+    if (ivr != null) return { ivr, asOfDate: realIvRow.date, source: "canonical" };
   }
 
-  const storedIvr = clampIVR(row.ivr);
+  const storedRows = await db
+    .select({
+      ivr: equityDailyTable.ivr,
+      date: equityDailyTable.date,
+      source: equityDailyTable.ivrSource,
+    })
+    .from(equityDailyTable)
+    .where(and(
+      eq(equityDailyTable.symbol, symU),
+      sql`${equityDailyTable.ivr} IS NOT NULL`,
+    ))
+    .orderBy(desc(equityDailyTable.date))
+    .limit(1);
+  const storedRow = storedRows[0];
+  if (!storedRow || daysOld(storedRow.date) > IVR_MAX_STALENESS_DAYS) return null;
+
+  const storedIvr = clampIVR(storedRow.ivr);
   if (storedIvr == null) return null;
-  return { ivr: storedIvr, asOfDate: row.date, source: (row.source ?? null) as IvrSource };
+  return { ivr: storedIvr, asOfDate: storedRow.date, source: (storedRow.source ?? null) as IvrSource };
 }
 
 /**
