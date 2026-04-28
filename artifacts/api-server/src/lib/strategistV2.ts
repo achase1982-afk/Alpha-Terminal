@@ -5,7 +5,10 @@ import { getSettings, getStrategistModel, type StrategistConfig, type Strategist
 import { runDebate, type DebateCallbacks, type DebateRound, type DebateRole, type DebatePhase } from "./strategistDebate.js";
 import type { ScrubCanonical } from "./narrativeScrubbers.js";
 import { db, strategistTelemetryTable } from "@workspace/db";
+
+type StrategistTelemetryInsert = InferInsertModel<typeof strategistTelemetryTable>;
 import { desc, eq, sql, and } from "drizzle-orm";
+import type { InferInsertModel } from "drizzle-orm";
 import { getBestAccessToken } from "./tokenStore.js";
 import { fetchPolygonChain } from "./polygonChain.js";
 import { getPolygonFlowHighlights, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
@@ -174,6 +177,8 @@ interface AiTradeResponse {
     strike: number;
     action: "buy" | "sell";
     expiration: string;
+    /** Optional contract count from the model; omitted means 1. */
+    quantity?: number;
   }>;
   entryPrice: number;
   entryRangeMin: number;
@@ -214,6 +219,42 @@ interface AiTradeResponse {
   citedHeadlines?: Array<{ title: string; url?: string; date?: string }>;
 }
 
+/** Snapshot persisted on strategist telemetry rows (matches `checkToxicGate` return shape). */
+type ToxicGateSnapshot = {
+  triggered: boolean;
+  reasons: string[];
+  pathACheck: { extremeRisk: boolean; highCorrelation: boolean };
+  pathBCheck: { elevatedRisk: boolean; eventWithin24h: boolean; eventName: string | null };
+};
+
+/** Subset of AI trade response stored with recommendation telemetry. */
+type TelemetryStrategyDecision = {
+  strategy: string;
+  strategyType: string;
+  confidence: number;
+  aiRationale: string;
+  warnings: string | null;
+  legs: AiTradeResponse["legs"];
+  entryPrice: number;
+  maxRisk: number;
+  maxProfit: number | string;
+  breakeven: number[];
+  catalystAlignment: AiTradeResponse["catalystAlignment"] | null;
+  sameDayCatalyst: boolean;
+};
+
+type TelemetryEdgeAttribution = {
+  idiosyncratic_pct: number;
+  macro_pct: number;
+};
+
+type TelemetryToxicGatePayload = {
+  triggered: ToxicGateSnapshot["triggered"];
+  reasons: ToxicGateSnapshot["reasons"];
+  path_a_check: ToxicGateSnapshot["pathACheck"];
+  path_b_check: ToxicGateSnapshot["pathBCheck"];
+};
+
 interface CuratedStrike {
   strike: number;
   call?: { bid: number; ask: number; iv: number; delta: number; volume: number; oi: number };
@@ -227,6 +268,32 @@ interface CuratedExpiration {
   dte: number;
   bucket: "near_0_7d" | "mid_7_30d" | "far_30_60d";
   strikes: CuratedStrike[];
+}
+
+/** Schwab GET /marketdata/v1/quotes envelope: symbol → { quote, fundamental }. */
+interface SchwabQuotesResponse {
+  [symbol: string]: { quote?: SchwabQuoteRow; fundamental?: SchwabFundamentalRow } | undefined;
+}
+
+interface SchwabQuoteRow {
+  lastPrice?: number;
+  mark?: number;
+  netPercentChangeInDouble?: number;
+  totalVolume?: number;
+  securityStatus?: string;
+}
+
+interface SchwabFundamentalRow {
+  avg10DaysVolume?: number;
+  avgVol10Days?: number;
+  sector?: string;
+}
+
+/** Schwab GET /marketdata/v1/chains JSON body (partial). */
+interface SchwabChainApiResponse {
+  callExpDateMap?: Record<string, unknown>;
+  putExpDateMap?: Record<string, unknown>;
+  underlyingPrice?: number;
 }
 
 export interface ChainSummary {
@@ -864,7 +931,7 @@ export async function analyzeTickerV2(
       const insideExpiry =
         evDate.getTime() >= Date.now() && evDate.getTime() <= horizonDate.getTime();
       if (insideExpiry) {
-        const behaviorIdx = (settings as any).earningsInsideExpiryBehavior ?? 2;
+        const behaviorIdx = settings.earningsInsideExpiryBehavior ?? 2;
         const behavior: "BLOCK" | "WARN" | "IGNORE" =
           behaviorIdx === 1 ? "BLOCK" : behaviorIdx === 3 ? "IGNORE" : "WARN";
         earningsAlert = {
@@ -1246,8 +1313,8 @@ function buildDataPackage(
       termStructure: chainSummary.frontMonthIV != null && chainSummary.backMonthIV != null
         ? { frontMonthIV: chainSummary.frontMonthIV, backMonthIV: chainSummary.backMonthIV }
         : "insufficient data",
-      ivArtifactNote: (chainSummary as any).ivArtifactsClampedCount > 0
-        ? `${(chainSummary as any).ivArtifactsClampedCount} contract IV value(s) exceeded ${(chainSummary as any).ivCeilingPct}% and were clamped to the ceiling. These are 0DTE/front-week pricing-engine artifacts (penny-wide bid/ask on contracts pricing into intraday underlying moves) — IGNORE them for structural decisions and use back-month IV instead.`
+      ivArtifactNote: chainSummary.ivArtifactsClampedCount > 0
+        ? `${chainSummary.ivArtifactsClampedCount} contract IV value(s) exceeded ${chainSummary.ivCeilingPct}% and were clamped to the ceiling. These are 0DTE/front-week pricing-engine artifacts (penny-wide bid/ask on contracts pricing into intraday underlying moves) — IGNORE them for structural decisions and use back-month IV instead.`
         : null,
     },
     curatedExpirations: chainSummary.curatedExpirations,
@@ -1630,7 +1697,7 @@ function validateAiResponse(
   const balance = new Map<"call" | "put", number>();
   for (const leg of response.legs) {
     const sign = leg.action === "buy" ? 1 : -1;
-    const qty = (leg as any).quantity ?? 1;
+    const qty = leg.quantity ?? 1;
     const key = leg.type as "call" | "put";
     balance.set(key, (balance.get(key) ?? 0) + sign * qty);
   }
@@ -2003,7 +2070,7 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
       return { data: null, failureMode: "http_fail" };
     }
 
-    const data = await res.json() as any;
+    const data = (await res.json()) as SchwabQuotesResponse;
     const q = data[ticker]?.quote ?? data[ticker.toUpperCase()]?.quote;
     const f = data[ticker]?.fundamental ?? data[ticker.toUpperCase()]?.fundamental ?? {};
     if (!q) {
@@ -2086,7 +2153,7 @@ async function fetchSchwabChainSide(
     logger.warn({ ticker, contractType, status: res.status }, "StrategistV2: Schwab chain fetch failed");
     return null;
   }
-  const data = await res.json() as any;
+  const data = (await res.json()) as SchwabChainApiResponse;
   return {
     callMap: data.callExpDateMap ?? {},
     putMap: data.putExpDateMap ?? {},
@@ -2252,7 +2319,7 @@ async function noViable(
   ticker: string,
   regime: StructuredRegime,
   settings: StrategistConfig,
-  toxicCheck: any,
+  toxicCheck: ToxicGateSnapshot,
   tickerData: TickerData | null,
   reason: BlockReason | string,
   ioScore?: IOScoreResult | null,
@@ -2276,32 +2343,41 @@ async function noViable(
 async function logTelemetry(
   ticker: string, result: string, regime: StructuredRegime, settings: StrategistConfig,
   ioScore: IOScoreResult | null, tickerData: TickerData | null,
-  toxicCheck: any, aiDecision: any, thesis?: string | null,
+  toxicCheck: ToxicGateSnapshot,
+  aiDecision: TelemetryStrategyDecision | null,
+  thesis?: string | null,
   extras: TelemetryExtras = {},
 ): Promise<number | null> {
   try {
-    const [row] = await db.insert(strategistTelemetryTable).values({
+    const toxicGatePayload: TelemetryToxicGatePayload = {
+      triggered: toxicCheck.triggered,
+      reasons: toxicCheck.reasons,
+      path_a_check: toxicCheck.pathACheck,
+      path_b_check: toxicCheck.pathBCheck,
+    };
+    const edgeAttribution: TelemetryEdgeAttribution | null = ioScore
+      ? {
+          idiosyncratic_pct: Math.round(ioScore.final * 100),
+          macro_pct: 100 - Math.round(ioScore.final * 100),
+        }
+      : null;
+    const values: StrategistTelemetryInsert = {
       ticker,
       result,
-      regime: regime as any,
-      tickerData: tickerData as any,
-      idioScore: ioScore as any,
-      toxicGate: {
-        triggered: toxicCheck.triggered,
-        reasons: toxicCheck.reasons,
-        path_a_check: toxicCheck.pathACheck,
-        path_b_check: toxicCheck.pathBCheck,
-      } as any,
+      regime,
+      tickerData,
+      idioScore: ioScore,
+      toxicGate: toxicGatePayload,
       viability: null,
       earningsGate: null,
-      strategyDecision: aiDecision as any,
+      strategyDecision: aiDecision,
       candidatesGenerated: null,
       candidatesFiltered: null,
       filterReasons: null,
       winningCandidate: null,
-      edgeAttribution: ioScore ? { idiosyncratic_pct: Math.round(ioScore.final * 100), macro_pct: 100 - Math.round(ioScore.final * 100) } as any : null,
+      edgeAttribution,
       recommendationThesis: thesis ?? null,
-      dataPackage: (extras.dataPackage ?? null) as any,
+      dataPackage: extras.dataPackage ?? null,
       rawAiResponse: extras.rawAiResponse ?? null,
       confidenceBase: extras.confidenceBase ?? null,
       confidenceCatalystDelta: extras.confidenceCatalystDelta ?? null,
@@ -2309,7 +2385,8 @@ async function logTelemetry(
       catalystAlignment: extras.catalystAlignment ?? null,
       dataSource: extras.dataSource ?? null,
       fetchFailureMode: extras.fetchFailureMode ?? null,
-    }).returning({ id: strategistTelemetryTable.id });
+    };
+    const [row] = await db.insert(strategistTelemetryTable).values(values).returning({ id: strategistTelemetryTable.id });
     return row?.id ?? null;
   } catch (err) {
     logger.error({ err }, "StrategistV2: telemetry logging failed");
