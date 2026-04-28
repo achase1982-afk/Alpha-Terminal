@@ -16,6 +16,12 @@ import { normalizeIV, computeIVRForSymbol } from "./ivNormalize";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
 const POLYGON_API = "https://api.polygon.io";
+const IV30_MIN_DTE = 20;
+const IV30_MAX_DTE = 40;
+const IV30_ATM_MONEYNESS = 0.05;
+const IV30_MIN_OPEN_INTEREST = 10;
+const IV30_MIN_VOLUME = 1;
+const IV30_MAX_REL_SPREAD = 0.35;
 
 const SECTOR_ETF_SYMBOLS = ["SPY", "XLK", "XLF", "XLE", "XLV", "XLI", "XLC", "XLY", "XLP", "XLU", "XLRE", "XLB"];
 
@@ -198,6 +204,70 @@ function medianOf(arr: number[]): number {
   const sorted = [...arr].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+type Iv30Candidate = {
+  strike: number;
+  dte: number | null;
+  impliedVolatility: number | null;
+  bid?: number | null;
+  ask?: number | null;
+  volume?: number | null;
+  dailyVolume?: number | null;
+  openInterest?: number | null;
+};
+
+function selectIv30d(symbol: string, spot: number, rows: Iv30Candidate[]): number | null {
+  if (spot <= 0) return null;
+
+  const candidates = rows
+    .map((r) => {
+      const iv = normalizeIV(r.impliedVolatility);
+      const dte = r.dte ?? 0;
+      const bid = r.bid ?? null;
+      const ask = r.ask ?? null;
+      const mid = bid != null && ask != null && bid > 0 && ask > 0 ? (bid + ask) / 2 : null;
+      const relSpread = mid && ask != null && bid != null ? (ask - bid) / mid : null;
+      const volume = r.volume ?? r.dailyVolume ?? 0;
+      const openInterest = r.openInterest ?? 0;
+      return {
+        iv,
+        dte,
+        moneyness: Math.abs(r.strike - spot) / spot,
+        relSpread,
+        volume,
+        openInterest,
+      };
+    })
+    .filter((c): c is {
+      iv: number;
+      dte: number;
+      moneyness: number;
+      relSpread: number | null;
+      volume: number;
+      openInterest: number;
+    } =>
+      c.iv != null &&
+      c.dte >= IV30_MIN_DTE &&
+      c.dte <= IV30_MAX_DTE &&
+      c.moneyness <= IV30_ATM_MONEYNESS &&
+      (c.relSpread == null || c.relSpread <= IV30_MAX_REL_SPREAD) &&
+      (c.openInterest >= IV30_MIN_OPEN_INTEREST || c.volume >= IV30_MIN_VOLUME)
+    )
+    .sort((a, b) => {
+      const aScore = Math.abs(a.dte - 30) + a.moneyness * 100;
+      const bScore = Math.abs(b.dte - 30) + b.moneyness * 100;
+      return aScore - bScore;
+    });
+
+  if (candidates.length === 0) return null;
+  const selected = candidates.slice(0, 6).map(c => c.iv);
+  const iv30d = medianOf(selected);
+  logger.info(
+    { symbol: symbol.toUpperCase(), candidates: candidates.length, selected: selected.length, iv30d },
+    "Snapshot: selected IV30d from quality-filtered ATM median",
+  );
+  return iv30d;
 }
 
 export async function collectEquitySnapshots(
@@ -407,19 +477,14 @@ export async function collectOptionsChainSnapshots(
         }
         const putCallRatio = callVol > 0 ? putVol / callVol : null;
 
-        const iv30Candidates = allChainRows
-          .filter(c => {
-            const d = c.dte ?? 0;
-            return d >= 20 && d <= 40 && Math.abs(c.strike - spot) / spot <= 0.05 && (c.impliedVolatility ?? 0) > 0;
-          })
-          .sort((a, b) => Math.abs((a.dte ?? 30) - 30) - Math.abs((b.dte ?? 30) - 30));
-
-        const iv30dRaw = iv30Candidates.length > 0 ? iv30Candidates[0].impliedVolatility : null;
-        const iv30d = normalizeIV(iv30dRaw);
+        const iv30d = selectIv30d(sym, spot, allChainRows);
 
         const updates: Record<string, unknown> = {};
         if (putCallRatio != null) updates.putCallRatio = putCallRatio;
-        if (iv30d != null) updates.iv30d = iv30d;
+        if (iv30d != null) {
+          updates.iv30d = iv30d;
+          updates.ivrSource = "chain";
+        }
 
         if (Object.keys(updates).length > 0) {
           await db.update(equityDailyTable)
@@ -842,25 +907,7 @@ export async function computeIVFromFlow(
           eq(optionsFlowPerStrikeTable.date, date),
         ));
 
-      let iv30d: number | null = null;
-      if (ivStrikes.length > 0) {
-        const iv30Candidates = ivStrikes
-          .filter(s => {
-            const d = s.dte ?? 0;
-            const v = normalizeIV(s.impliedVolatility);
-            return v != null
-              && d >= 1 && d <= 60
-              && Math.abs(s.strike - spot) / spot <= 0.10;
-          })
-          .sort((a, b) => {
-            const aScore = Math.abs((a.dte ?? 30) - 30) + Math.abs(a.strike - spot) / spot * 100;
-            const bScore = Math.abs((b.dte ?? 30) - 30) + Math.abs(b.strike - spot) / spot * 100;
-            return aScore - bScore;
-          });
-        if (iv30Candidates.length > 0) {
-          iv30d = normalizeIV(iv30Candidates[0].impliedVolatility);
-        }
-      }
+      const iv30d = selectIv30d(sym, spot, ivStrikes);
 
       let putCallRatio: number | null = null;
       if (ivStrikes.length > 0) {
@@ -872,7 +919,10 @@ export async function computeIVFromFlow(
       // Compose update: only write iv30d if we computed one this run; otherwise leave any
       // previously-written value (e.g. from chain pass) alone. Same for putCallRatio.
       const updates: Record<string, unknown> = {};
-      if (iv30d != null) updates.iv30d = iv30d;
+      if (iv30d != null) {
+        updates.iv30d = iv30d;
+        updates.ivrSource = "flow";
+      }
       if (putCallRatio != null) updates.putCallRatio = putCallRatio;
       if (Object.keys(updates).length > 0) {
         await db.update(equityDailyTable)
