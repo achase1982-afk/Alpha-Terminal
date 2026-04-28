@@ -7,6 +7,74 @@ import { useOrderAlertStore, type OrderAlert } from "@/stores/orderAlertStore";
 import { fetchWithAuth, getClerkToken } from "@/lib/fetchWithAuth";
 import type { LiveQuote, LiveNewsItem } from "@/lib/store";
 
+declare global {
+  interface Window {
+    /** Dev/debug: last market WebSocket (read by PortfolioView for optional features). */
+    __alphaWs?: WebSocket;
+  }
+}
+
+/** SSE/WS `snapshot` payload: either a bare quote array or `{ quotes?, status? }`. */
+interface StreamSnapshotEnvelope {
+  quotes?: LiveQuote[];
+  status?: string;
+}
+
+function isLiveQuoteRecord(v: unknown): v is LiveQuote {
+  return (
+    v !== null &&
+    typeof v === "object" &&
+    typeof (v as LiveQuote).symbol === "string" &&
+    typeof (v as LiveQuote).ts === "number"
+  );
+}
+
+function snapshotQuotesFromData(data: unknown): { quotes: LiveQuote[]; status?: string } {
+  if (Array.isArray(data)) {
+    const quotes = data.filter(isLiveQuoteRecord);
+    return { quotes };
+  }
+  const env = data as StreamSnapshotEnvelope;
+  const raw = env.quotes;
+  const quotes = Array.isArray(raw) ? raw.filter(isLiveQuoteRecord) : [];
+  return { quotes, status: env.status };
+}
+
+/** Portfolio stream payloads (matches `portfolio-stream-store` shapes). */
+interface StreamPortfolioAccount {
+  accountNumber: string;
+  type: string;
+  isDayTrader: boolean;
+  roundTrips: number;
+  balances: Record<string, number>;
+  initialBalances: Record<string, number>;
+  dayPL: number;
+  totalPL: number;
+  positions: unknown[];
+}
+
+interface StreamPortfolioOrder {
+  orderId: number;
+  orderType: string;
+  session: string;
+  duration: string;
+  status: string;
+  filledQuantity: number;
+  remainingQuantity: number;
+  price: number | null;
+  complexStrategy: string;
+  enteredTime: string;
+  closeTime: string | null;
+  legs: unknown[];
+  fills: unknown[];
+  tag: string | null;
+}
+
+interface StreamPortfolioStatus {
+  status: "ok" | "no_token" | "error";
+  message?: string;
+}
+
 const API_BASE = "/api";
 const WS_RECONNECT_BASE = 1_000;
 const WS_RECONNECT_MAX = 30_000;
@@ -203,11 +271,7 @@ export function useMarketStream() {
 
   const handleStreamEvent = useCallback((event: string, data: unknown) => {
     if (event === "snapshot") {
-      const raw = data;
-      const quotes: LiveQuote[] = Array.isArray(raw)
-        ? raw as unknown as LiveQuote[]
-        : (raw as { quotes?: LiveQuote[] }).quotes ?? [];
-      const status = Array.isArray(raw) ? undefined : (raw as { status?: string }).status;
+      const { quotes, status } = snapshotQuotesFromData(data);
       if (status === "rejected") {
         setStreamStatus("offline");
         const attempt = rejectedRetries.current;
@@ -238,11 +302,11 @@ export function useMarketStream() {
     } else if (event === "ibNews") {
       addLiveNews(data as LiveNewsItem);
     } else if (event === "portfolioAccount") {
-      setPortfolioAccount(data as any);
+      setPortfolioAccount(data as StreamPortfolioAccount);
     } else if (event === "portfolioOrders") {
-      setPortfolioOrders(data as any);
+      setPortfolioOrders(data as StreamPortfolioOrder[]);
     } else if (event === "portfolioStatus") {
-      setPortfolioStatus(data as any);
+      setPortfolioStatus(data as StreamPortfolioStatus);
     } else if (event === "orderAlert") {
       const d = data as Record<string, unknown>;
       const alertType = (d.type as string) ?? "UNKNOWN";
@@ -337,7 +401,7 @@ export function useMarketStream() {
     socket.onopen = () => {
       clearTimeout(openTimeout);
       reconnectDelayRef.current = WS_RECONNECT_BASE;
-      (window as any).__alphaWs = socket;
+      window.__alphaWs = socket;
       clearOptionTicks();
       stopSseStream();
       stopRestPolling();
