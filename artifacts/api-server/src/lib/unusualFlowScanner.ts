@@ -24,6 +24,7 @@ export interface UnusualFlowFilters {
   minStrikeConcentrationPct?: number;     // 0–100
   minRelativeOptionsAdv?: number;         // x-multiple vs 20d ADV per strike
   minUnderlyingVolVsAdv?: number;         // x-multiple underlying vol / 20d ADV
+  source?: "live" | "baseline" | "any";
 
   // Legacy alias keys (kept so older callers still work).
   minStrikes?: number;
@@ -58,6 +59,7 @@ interface NormalizedFilters {
   minStrikeConcentrationPct: number;
   minRelativeOptionsAdv: number;
   minUnderlyingVolVsAdv: number;
+  source: "live" | "baseline" | "any";
 }
 
 function normalizeSkew(s: UnusualFlowFilters["skew"]): NormalizedFilters["skew"] {
@@ -95,6 +97,7 @@ function normalize(f: UnusualFlowFilters): NormalizedFilters {
     minStrikeConcentrationPct: f.minStrikeConcentrationPct ?? 0,
     minRelativeOptionsAdv: f.minRelativeOptionsAdv ?? 0,
     minUnderlyingVolVsAdv: f.minUnderlyingVolVsAdv ?? 0,
+    source: f.source ?? "live",
   };
 }
 
@@ -119,6 +122,7 @@ export interface UnusualFlowStrike {
   iv: number | null;
   delta: number | null;
   exec: UnusualFlowExecSummary;
+  hasLiveExec: boolean;
 }
 
 export interface UnusualFlowCandidate {
@@ -144,6 +148,7 @@ export interface UnusualFlowCandidate {
   avgDte: number;
   // Phase 1 execution-pattern aggregates across this ticker's unusual strikes.
   exec: UnusualFlowExecSummary;
+  flowSource: "live" | "baseline";
   // Aggressor side classification — Phase 2 (NBBO subscription required).
   aggressorAvailable: false;
 }
@@ -156,6 +161,12 @@ export interface UnusualFlowScanResult {
   excludedIndexes: number;
   candidates: UnusualFlowCandidate[];
   filters: NormalizedFilters;
+  diagnostics: {
+    baselineRows: number;
+    liveExecutionRows: number;
+    symbolsWithLiveExecution: number;
+    sourceMode: NormalizedFilters["source"];
+  };
 }
 
 const EMPTY_EXEC: UnusualFlowExecSummary = {
@@ -243,6 +254,7 @@ function rowToStrike(r: RowWithExec): UnusualFlowStrike {
     iv: r.impliedVolatility,
     delta: r.delta,
     exec: r._exec,
+    hasLiveExec: r._exec.sweepCount + r._exec.blockCount + r._exec.regularCount > 0,
   };
 }
 
@@ -282,10 +294,19 @@ function summarizeForSymbol(
 
     const exec = execMap.get(execKey(symbol, r.optionType, r.strike, r.expiration)) ?? EMPTY_EXEC;
 
-    // Per-strike execution-pattern filters. Apply only if ANY classified
-    // event exists; strikes with no recorded prints are admitted (they
-    // belong to the daily-aggregate signal, not the live watcher).
+    // The UOA scan is a live-flow scanner. Daily per-strike rows are useful as
+    // the baseline, but a candidate only belongs in the live scan when the
+    // Polygon trade tape has produced at least one classified execution row.
     const hasAnyEvent = exec.sweepCount + exec.blockCount + exec.regularCount > 0;
+    const requiresLiveExec =
+      f.source === "live" ||
+      f.aggressor !== "any" ||
+      f.excludeMid ||
+      f.patternSweep ||
+      f.patternBlock ||
+      !f.patternRegular;
+    if (requiresLiveExec && !hasAnyEvent) continue;
+    if (f.source === "baseline" && hasAnyEvent) continue;
     if (hasAnyEvent) {
       const matchesType =
         (f.patternSweep && exec.sweepCount > 0) ||
@@ -426,6 +447,7 @@ function summarizeForSymbol(
       blockNotional: Math.round(tickerExec.blockNotional),
       regularNotional: Math.round(tickerExec.regularNotional),
     },
+    flowSource: totalEvents > 0 ? "live" : "baseline",
     aggressorAvailable: false,
   };
 }
@@ -435,10 +457,9 @@ export async function scanUnusualFlow(
   filters: UnusualFlowFilters = {},
 ): Promise<UnusualFlowScanResult> {
   const f: NormalizedFilters = normalize(filters);
-  // Note: aggressor / excludeMid / minRelativeOptionsAdv / minUnderlyingVolVsAdv
-  // are accepted by the API but require data sources not yet available
-  // (NBBO, 20d options ADV per strike, underlying ADV). They are pass-through
-  // no-ops today and logged so we can tune once data lands.
+  // The default UOA scan is live-flow only: per-strike daily rows are the
+  // unusualness baseline, while options_flow_exec_per_strike proves the live
+  // Polygon tape has printed the contract during the current session.
   const upperAll = symbols.map(s => s.toUpperCase());
   const excluded = f.excludeEtfs
     ? upperAll.filter(s => INDEX_SYMBOLS.has(s)).length
@@ -455,6 +476,12 @@ export async function scanUnusualFlow(
     excludedIndexes: excluded,
     candidates: [],
     filters: f,
+    diagnostics: {
+      baselineRows: 0,
+      liveExecutionRows: 0,
+      symbolsWithLiveExecution: 0,
+      sourceMode: f.source,
+    },
   };
   if (upper.length === 0) return result;
 
@@ -494,10 +521,12 @@ export async function scanUnusualFlow(
       if (!bucket) { bucket = []; bySymbol.set(r.underlyingSymbol, bucket); }
       bucket.push(r);
     }
+    result.diagnostics.baselineRows = [...bySymbol.values()].reduce((sum, bucket) => sum + bucket.length, 0);
 
     // Phase 1: pull execution-pattern rollups for the same (symbol, date)
     // pairs. Left-join in memory because dates may differ per symbol.
     const execMap = new Map<string, UnusualFlowExecSummary>();
+    const symbolsWithLiveExecution = new Set<string>();
     try {
       const execRows = await db
         .select()
@@ -508,6 +537,8 @@ export async function scanUnusualFlow(
         ));
       for (const e of execRows as unknown as ExecRow[]) {
         if (symDateMap.get(e.underlyingSymbol) !== e.date) continue;
+        result.diagnostics.liveExecutionRows++;
+        symbolsWithLiveExecution.add(e.underlyingSymbol);
         execMap.set(execKey(e.underlyingSymbol, e.optionType, e.strike, e.expiration), {
           sweepCount: e.sweepCount,
           blockCount: e.blockCount,
@@ -518,9 +549,11 @@ export async function scanUnusualFlow(
         });
       }
     } catch (err) {
-      // Exec data is optional — scanner still works on daily aggregates alone.
+      // Exec data is optional only when callers explicitly request baseline/any.
+      // The default live scan will return no candidates if rollups are dark.
       logger.warn({ err }, "Unusual flow scan: exec rollup query failed (degrading)");
     }
+    result.diagnostics.symbolsWithLiveExecution = symbolsWithLiveExecution.size;
 
     let mostRecent: string | null = null;
     for (const [sym, bucket] of bySymbol) {
