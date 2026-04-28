@@ -66,8 +66,34 @@ async function listFilesForDate(s3: S3Client, date: Date): Promise<string[]> {
   } catch (err) {
     // Surface the real error instead of silently returning [] which makes
     // S3 auth/DNS failures look like "no data for this date" (L2 fix).
-    throw new Error(`S3 list failed for ${wanted}: ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(`S3 list failed for ${wanted}: ${await formatS3Error(err)}`);
   }
+}
+
+async function readErrorBody(err: unknown): Promise<string | null> {
+  const body = (err as { $response?: { body?: AsyncIterable<Uint8Array> } })?.$response?.body;
+  if (!body) return null;
+  const chunks: Buffer[] = [];
+  for await (const chunk of body) chunks.push(Buffer.from(chunk));
+  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  return raw || null;
+}
+
+async function formatS3Error(err: unknown): Promise<string> {
+  const e = err as { name?: string; message?: string; $metadata?: { httpStatusCode?: number } };
+  const raw = await readErrorBody(err).catch(() => null);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as { status?: string; message?: string; request_id?: string };
+      const status = parsed.status ?? `HTTP_${e.$metadata?.httpStatusCode ?? "UNKNOWN"}`;
+      const message = parsed.message ?? e.message ?? "unknown S3 error";
+      const requestId = parsed.request_id ? ` request_id=${parsed.request_id}` : "";
+      return `${status}: ${message}${requestId}`;
+    } catch {
+      return `${e.name ?? "S3Error"}: ${e.message ?? raw} raw=${raw.slice(0, 300)}`;
+    }
+  }
+  return `${e.name ?? "S3Error"}: ${e.message ?? String(err)}${e.$metadata?.httpStatusCode ? ` status=${e.$metadata.httpStatusCode}` : ""}`;
 }
 
 interface DbRow {
