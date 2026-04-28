@@ -180,7 +180,10 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
 
   useEffect(() => {
     const trimmed = inputVal.trim().toUpperCase();
-    if (!trimmed) { setDebouncedVal(""); return; }
+    if (!trimmed) {
+      setDebouncedVal("");
+      return;
+    }
     const t = setTimeout(() => setDebouncedVal(trimmed), 300);
     return () => clearTimeout(t);
   }, [inputVal]);
