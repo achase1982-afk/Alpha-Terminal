@@ -780,7 +780,6 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
   const [tickerMmm, setTickerMmm] = useState<number | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pcDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const statsRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const companyNameRef = useRef<HTMLDivElement>(null);
   const [companyNameSize, setCompanyNameSize] = useState("text-base");
   const streamPricesRef = useRef(streamPrices);
@@ -831,9 +830,8 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
     if (!ticker) { setTickerPcRatio(null); setTickerIvr(null); setTickerIvrAsOfDate(null); setTickerIvrSource(null); setTickerMmm(null); return; }
     setTickerPcRatio(null); setTickerIvr(null); setTickerIvrAsOfDate(null); setTickerIvrSource(null); setTickerMmm(null);
     if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current);
-    if (statsRetryRef.current) clearTimeout(statsRetryRef.current);
     let cancelled = false;
-    const fetchStats = async (attempt = 0) => {
+    pcDebounceRef.current = setTimeout(async () => {
       try {
         const params = new URLSearchParams({ symbol: ticker });
         const res = await fetchWithAuth(`/api/market/ticker-stats?${params.toString()}`);
@@ -845,17 +843,9 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
         if (data?.ivrAsOfDate != null) setTickerIvrAsOfDate(data.ivrAsOfDate);
         if (data?.ivrSource != null) setTickerIvrSource(data.ivrSource);
         if (data?.mmm != null) setTickerMmm(data.mmm);
-        if ((data?.chainStatus === "warming" || (data?.pcRatio == null && data?.mmm == null)) && attempt < 4) {
-          statsRetryRef.current = setTimeout(() => void fetchStats(attempt + 1), 900);
-        }
       } catch { /* ignore */ }
-    };
-    pcDebounceRef.current = setTimeout(() => void fetchStats(), 300);
-    return () => {
-      cancelled = true;
-      if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current);
-      if (statsRetryRef.current) clearTimeout(statsRetryRef.current);
-    };
+    }, 300);
+    return () => { cancelled = true; if (pcDebounceRef.current) clearTimeout(pcDebounceRef.current); };
   }, [inputVal, symbol]);
 
   const handleSubmit = (e: React.FormEvent) => {

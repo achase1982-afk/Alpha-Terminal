@@ -1138,22 +1138,13 @@ router.get("/ticker-stats", async (req, res) => {
     return res.json({ symbol: "", pcRatio: null, ivr: null, mmm: null });
   }
 
-  const result: {
-    symbol: string;
-    pcRatio: number | null;
-    ivr: number | null;
-    ivrAsOfDate: string | null;
-    ivrSource: string | null;
-    mmm: number | null;
-    chainStatus?: "ready" | "warming" | "unavailable";
-  } = {
+  const result: { symbol: string; pcRatio: number | null; ivr: number | null; ivrAsOfDate: string | null; ivrSource: string | null; mmm: number | null } = {
     symbol,
     pcRatio: null,
     ivr: null,
     ivrAsOfDate: null,
     ivrSource: null,
     mmm: null,
-    chainStatus: "unavailable",
   };
 
   // IVR comes from equity_daily.ivr (EOD, BSM, 252-day rank). No live-chain
@@ -1172,13 +1163,12 @@ router.get("/ticker-stats", async (req, res) => {
   if (accessToken) {
     let cached = chainCache.get(symbol);
     if (!cached || !cached.underlyingPrice || (Date.now() - cached.fetchedAt) >= CHAIN_CACHE_TTL) {
-      req.log.info({ symbol, hadCache: !!cached, tokenAvailable: !!accessToken }, "ticker-stats: warming chain cache");
-      void getOrFetchChain(symbol, accessToken, req.log)
-        .catch((err) => req.log.warn({ symbol, err }, "ticker-stats: chain warm failed"));
+      req.log.info({ symbol, hadCache: !!cached, tokenAvailable: !!accessToken }, "ticker-stats: fetching chain");
+      const fresh = await getOrFetchChain(symbol, accessToken, req.log);
+      if (fresh) cached = fresh;
     }
 
     if (cached && cached.underlyingPrice) {
-      result.chainStatus = "ready";
       const price = cached.underlyingPrice;
       const allContracts: OptionContract[] = [...cached.calls, ...cached.puts];
       const now = Date.now();
@@ -1209,8 +1199,6 @@ router.get("/ticker-stats", async (req, res) => {
       if (totalCallVol > 0) {
         result.pcRatio = Math.round((totalPutVol / totalCallVol) * 100) / 100;
       }
-    } else {
-      result.chainStatus = "warming";
     }
   } else {
     req.log.warn({ symbol }, "ticker-stats: no access token available — skipping chain");
