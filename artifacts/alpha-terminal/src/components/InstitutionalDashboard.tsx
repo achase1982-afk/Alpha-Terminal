@@ -221,19 +221,18 @@ function TrendBadge({ trend }: { trend: string }) {
 
 export function InstitutionalDashboard({ candles }: Props) {
   const symbol = useTerminalStore((s) => s.symbol);
-  const accessToken = useTerminalStore((s) => s.accessToken);
   const { data: quoteData } = useQuote(symbol);
   const spyQuote = useTerminalStore((s) => s.streamPrices["SPY"]);
   const qqqQuote = useTerminalStore((s) => s.streamPrices["QQQ"]);
 
   const { data: fundData } = useGetQuote(
-    { symbol, accessToken: accessToken || "" },
-    { query: { enabled: !!accessToken } }
+    { symbol, accessToken: "" },
+    { query: { enabled: !!symbol } }
   );
 
   const { data: historyData } = useGetPriceHistory(
-    { symbol, accessToken: accessToken || "", periodType: "month", period: 3, frequencyType: "daily", frequency: 1 },
-    { query: { enabled: !!accessToken } }
+    { symbol, accessToken: "", periodType: "month", period: 3, frequencyType: "daily", frequency: 1 },
+    { query: { enabled: !!symbol } }
   );
 
   const allCandles = ((historyData?.candles as Candle[]) || candles || []) as Candle[];

@@ -809,8 +809,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       try {
-        const tok = accessTokenRef.current || "";
-        const res = await fetch(`/api/market/quote?symbol=${encodeURIComponent(typed)}&accessToken=${encodeURIComponent(tok)}`);
+        const res = await fetchWithAuth(`/api/market/quote?symbol=${encodeURIComponent(typed)}`);
         if (!res.ok) { setFetchingTicker(false); return; }
         const data = await res.json();
         if (data?.last != null) {
@@ -834,10 +833,8 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
     let cancelled = false;
     pcDebounceRef.current = setTimeout(async () => {
       try {
-        const tok = accessTokenRef.current || "";
         const params = new URLSearchParams({ symbol: ticker });
-        if (tok) params.set("accessToken", tok);
-        const res = await fetch(`/api/market/ticker-stats?${params.toString()}`);
+        const res = await fetchWithAuth(`/api/market/ticker-stats?${params.toString()}`);
         if (!res.ok || cancelled) return;
         const data = await res.json();
         if (cancelled) return;
@@ -2561,15 +2558,15 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   }, [subTab]);
 
   const { data: quote } = useGetQuote(
-    { symbol, accessToken: accessToken || "" },
+    { symbol, accessToken: "" },
     { query: { enabled: !!symbol } }
   );
   const { data: history } = useGetPriceHistory(
-    { symbol, accessToken: accessToken || "", periodType: "month", period: 3, frequencyType: "daily", frequency: 1 },
+    { symbol, accessToken: "", periodType: "month", period: 3, frequencyType: "daily", frequency: 1 },
     { query: { enabled: !!symbol } }
   );
   const { data: chain, isLoading: chainLoading } = useGetOptionChain(
-    { symbol, accessToken: accessToken || "", contractType: "ALL", daysToExpiration: 45, strikeCount: 20 },
+    { symbol, accessToken: "", contractType: "ALL", daysToExpiration: 45, strikeCount: 20 },
     { query: { enabled: !!symbol && chainEnabled } }
   );
 

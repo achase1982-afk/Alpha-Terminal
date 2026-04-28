@@ -1448,11 +1448,11 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
   const cacheRestoredRef = useRef(false);
 
   const { data: quote } = useGetQuote(
-    { symbol, accessToken: accessToken || "" },
+    { symbol, accessToken: "" },
     { query: { enabled: !!accessToken } }
   );
   const { data: history } = useGetPriceHistory(
-    { symbol, accessToken: accessToken || "", periodType: "month", period: 3, frequencyType: "daily", frequency: 1 },
+    { symbol, accessToken: "", periodType: "month", period: 3, frequencyType: "daily", frequency: 1 },
     { query: { enabled: !!accessToken } }
   );
 
@@ -1545,7 +1545,7 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
     setFundLoading(true);
     try {
       const res = await fetchWithAuth(
-        `${API_BASE}/market/fundamentals?symbol=${encodeURIComponent(symbol)}&accessToken=${encodeURIComponent(accessToken)}`
+        `${API_BASE}/market/fundamentals?symbol=${encodeURIComponent(symbol)}`
       );
       const data = await res.json();
       setFundamentals(data);

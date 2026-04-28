@@ -1104,7 +1104,7 @@ setInterval(() => {
     else equityKeys.push(key);
     if (q.last !== null) withLast++;
   }
-  logger.info({
+  logger.debug({
     total: quoteCache.size,
     withLast,
     equityCount: equityKeys.length,

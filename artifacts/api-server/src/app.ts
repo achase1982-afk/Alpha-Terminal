@@ -57,6 +57,15 @@ const app: Express = express();
 app.use(
   pinoHttp({
     logger,
+    autoLogging: {
+      ignore(req) {
+        const url = req.url?.split("?")[0] ?? "";
+        return url === "/api/healthz" ||
+          url === "/api/telemetry/counts" ||
+          url === "/api/market/earnings-calendar" ||
+          url === "/api/ai/market-pulse/latest";
+      },
+    },
     serializers: {
       req(req) {
         return {
