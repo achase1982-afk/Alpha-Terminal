@@ -41,6 +41,21 @@ export type TranscriptTurn = {
   done: boolean;
 };
 
+/** Persisted in `strategist_history.card_json` for analyze jobs (optional debate transcript). */
+type StrategistHistoryAnalyzeCardJson = StrategistV2Result & {
+  debateTranscript?: TranscriptTurn[];
+};
+
+/** Persisted in `strategist_history.card_json` for background trade-validation jobs. */
+interface StrategistHistoryValidationCardJson {
+  kind: "validation";
+  validation: ValidationVerdictPayload;
+  ticket: ValidationTicket;
+  thesis: string | null;
+  rollingShort: boolean;
+  debateTranscript: TranscriptTurn[];
+}
+
 // In-memory live thinking buffer per jobId (for streaming-style polling).
 // Used for BOTH ticker analysis (kind: "analyze") and trade validation
 // (kind: "validation"). The frontend poller discriminates on `kind`.
@@ -125,10 +140,10 @@ async function persistHistory(
     // saved trade card and can be re-rendered from history without needing
     // a DB migration. cardJson is jsonb; downstream typings treat unknown
     // fields as optional.
-    const cardJson =
+    const cardJson: StrategistHistoryAnalyzeCardJson =
       debateTranscript && debateTranscript.length > 0
-        ? ({ ...result, debateTranscript } as unknown as object)
-        : (result as unknown as object);
+        ? { ...result, debateTranscript }
+        : result;
     await db
       .insert(strategistHistoryTable)
       .values({ jobId, ticker, cardJson, cleared: false })
@@ -449,14 +464,14 @@ router.post("/validate-trade", (req, res): void => {
         // Persist to history with a discriminator inside cardJson so the
         // existing history table works without a migration.
         try {
-          const cardJson = {
+          const cardJson: StrategistHistoryValidationCardJson = {
             kind: "validation",
             validation: result,
             ticket: meta.ticket,
             thesis: meta.thesis ?? null,
             rollingShort: meta.rollingShort ?? false,
             debateTranscript: entry.transcript,
-          } as unknown as object;
+          };
           await db
             .insert(strategistHistoryTable)
             .values({ jobId, ticker: upperTicker, cardJson, cleared: false })
