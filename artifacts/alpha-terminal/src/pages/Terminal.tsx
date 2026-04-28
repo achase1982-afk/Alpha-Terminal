@@ -12,6 +12,7 @@ import { useTerminalStore, loadWatchlistsFromServer } from "@/lib/store";
 import { useUICustomizationStore } from "@/lib/ui-customization-store";
 import { useUIThemeSync } from "@/hooks/useUIThemeSync";
 import { useGetPriceHistory } from "@workspace/api-client-react";
+import type { PriceHistoryResponse } from "@workspace/api-client-react";
 import { ChartControls, chartParamsFromStore, isIntradayInterval } from "@/components/ChartControls";
 import { useAutoRefreshToken } from "@/hooks/useAutoRefreshToken";
 import { useMarketStream } from "@/hooks/useMarketStream";
@@ -42,6 +43,13 @@ import { useIsTablet, useIsDesktop } from "@/hooks/useMediaQuery";
 
 type BottomTab = "scanner" | "markets" | "ai" | "search" | "portfolio" | "watchlist";
 type ContextTab = MarketDataTab;
+
+function optionTradeStreamKey(contract: OptionsContract): string {
+  const stream = contract.streamKey;
+  if (typeof stream === "string" && stream.length > 0) return stream;
+  const schwab = contract.schwabSymbol;
+  return typeof schwab === "string" ? schwab : "";
+}
 
 const DESKTOP_CONTEXT_TABS: { id: MarketDataTab; label: string }[] = [
   { id: "news", label: "News" },
@@ -273,8 +281,7 @@ export default function TerminalPage() {
   }, []);
 
   const handleOptionTradeSingle = useCallback((contract: OptionsContract, side: "BUY" | "SELL", type: "CALL" | "PUT") => {
-    const c = contract as unknown as Record<string, unknown>;
-    const schwabSym = (typeof c.streamKey === "string" ? c.streamKey : typeof c.schwabSymbol === "string" ? c.schwabSymbol : "") as string;
+    const schwabSym = optionTradeStreamKey(contract);
     const instruction = side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN";
     setOrderSide(side);
     setOrderOptionSymbol(schwabSym);
@@ -441,7 +448,7 @@ export default function TerminalPage() {
   const { subscribeOptionSymbols, subscribeEquitySymbols } = useMarketStream();
 
   const chartParams = chartParamsFromStore(chartPeriod, chartInterval);
-  const { data: historyData, isLoading: historyLoading } = useGetPriceHistory(
+  const { data: historyData, isLoading: historyLoading } = useGetPriceHistory<PriceHistoryResponse>(
     {
       symbol,
       accessToken: "",
@@ -576,7 +583,7 @@ export default function TerminalPage() {
                 <div>
                   {contextTab === "news" && <NewsTab />}
                   {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
-                  {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={stickyH} />}
+                  {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles} stickyOffset={stickyH} />}
                   
                   {contextTab === "chart" && (
                     <>
@@ -627,7 +634,7 @@ export default function TerminalPage() {
                   <div className="flex-1 overflow-y-auto">
                     {contextTab === "news" && <NewsTab />}
                     {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
-                    {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={0} />}
+                    {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles} stickyOffset={0} />}
                     
                   </div>
                 </div>
@@ -657,7 +664,7 @@ export default function TerminalPage() {
                 <div>
                   {contextTab === "news" && <NewsTab />}
                   {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
-                  {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles as any} stickyOffset={stickyH} />}
+                  {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles} stickyOffset={stickyH} />}
                   
                   {contextTab === "chart" && (
                     <>
