@@ -117,6 +117,14 @@ interface DetScanResult {
   };
 }
 
+/** Payload stored under `useScanCache` `results` (restored on mount + after scans). */
+interface ScannerPersistedResults {
+  scanCount: number;
+  universe?: string;
+  detResult?: DetScanResult;
+  unusualResult?: UnusualFlowScanResult;
+}
+
 const MOMENTUM_BARS: { key: keyof DetComponentScores; label: string; max: number; color: string }[] = [
   { key: "trendAlignment", label: "TREND", max: 25, color: "#26a69a" },
   { key: "relativeStrength", label: "RS", max: 20, color: "#42a5f5" },
@@ -562,16 +570,16 @@ function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCre
 
   useEffect(() => {
     if (!open) return;
-    function handleClick(e: MouseEvent | TouchEvent) {
+    function handleClick(e: Event) {
       const t = e.target as Node;
       if (btnRef.current?.contains(t) || panelRef.current?.contains(t)) return;
       setOpen(false);
     }
     document.addEventListener("mousedown", handleClick);
-    document.addEventListener("touchstart", handleClick as any);
+    document.addEventListener("touchstart", handleClick);
     return () => {
       document.removeEventListener("mousedown", handleClick);
-      document.removeEventListener("touchstart", handleClick as any);
+      document.removeEventListener("touchstart", handleClick);
     };
   }, [open]);
 
@@ -624,7 +632,7 @@ function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCre
         >
           <div
             className="overflow-y-auto overscroll-contain"
-            style={{ maxHeight: maxH, WebkitOverflowScrolling: "touch" as any }}
+            style={{ maxHeight: maxH, WebkitOverflowScrolling: "touch" } satisfies React.CSSProperties}
             onTouchMove={e => e.stopPropagation()}
           >
             <div className="px-3 pt-3 pb-1.5">
@@ -896,7 +904,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
   useEffect(() => {
     if (scanCacheRestoredRef.current || !scanCache) return;
     scanCacheRestoredRef.current = true;
-    const r = scanCache.results as any;
+    const r = scanCache.results as ScannerPersistedResults;
     if (r?.scanCount != null) setScanCount(r.scanCount);
     if (r?.detResult) setDetResult(r.detResult as DetScanResult);
     if (r?.unusualResult) setUnusualResult(r.unusualResult as UnusualFlowScanResult);
@@ -944,7 +952,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
           subscribeEquitySymbols(data.candidates.map(c => c.symbol));
         }
         setScanCache({
-          results: { scanCount: syms.length, unusualResult: data, universe } as any,
+          results: { scanCount: syms.length, unusualResult: data, universe },
           timestamp: Date.now(),
         });
       }
@@ -987,7 +995,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
           subscribeEquitySymbols(data.candidates.map(c => c.symbol));
         }
         setScanCache({
-          results: { scanCount: syms.length, detResult: data, universe } as any,
+          results: { scanCount: syms.length, detResult: data, universe },
           timestamp: Date.now(),
         });
       }
@@ -1653,7 +1661,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
             if (screen) setUniverse(`screen:${screen.id}`);
           }}
           onPreview={universeData.previewScreen}
-          editScreen={editScreenObj as any}
+          editScreen={editScreenObj}
           onUpdate={universeData.updateScreen}
         />
       )}
