@@ -103,7 +103,7 @@ export interface StrategistV2Result {
     daysUntilExpiry: number;
     insideExpiry: boolean;
     behavior: "BLOCK" | "WARN" | "IGNORE";
-    source: "benzinga" | "yahoo" | null;
+    source: "benzinga" | "yahoo" | "finnhub" | null;
     confirmed: boolean;
   };
 }
@@ -132,7 +132,7 @@ interface TickerData {
   earningsDaysAway: number | null;
   earningsDate: string | null;
   earningsConfirmed: boolean;
-  earningsSource: "benzinga" | "yahoo" | null;
+  earningsSource: "benzinga" | "yahoo" | "finnhub" | null;
   analystActions48h: string[];
   halted: boolean;
 }
@@ -247,6 +247,8 @@ export interface ChainSummary {
   backMonthIV: number | null;
   availableExpirations: string[];
   curatedExpirations: CuratedExpiration[];
+  ivArtifactsClampedCount: number;
+  ivCeilingPct: number;
 }
 
 // Persona suffixes appended to STRATEGIST_SYSTEM_PROMPT in Debate mode only.
@@ -1559,8 +1561,8 @@ async function callAiForTradeViaDebate(
       providerA: modelA.provider,
       modelB: modelB.model,
       providerB: modelB.provider,
-      arbitratorModel: arbitratorModel.model,
-      arbitratorProvider: arbitratorModel.provider,
+      arbitratorModel: arbitratorModel === "winner" ? "winner" : arbitratorModel.model,
+      arbitratorProvider: arbitratorModel === "winner" ? "winner" : arbitratorModel.provider,
       convergence,
       tieBand,
     },

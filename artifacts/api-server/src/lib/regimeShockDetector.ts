@@ -263,5 +263,4 @@ export function resetShockDetector() {
   lastTransitionAt = null;
   prevAdd = null;
   prevAddq = null;
-  prevSkew = null;
 }
