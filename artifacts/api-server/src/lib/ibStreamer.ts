@@ -205,6 +205,10 @@ function getFrontMonth(symbol: string): string {
   return (year + 1).toString() + "03";
 }
 
+function setFutureFrontMonth(contract: Contract, ibSymbol: string): void {
+  contract.lastTradeDateOrContractMonth = getFrontMonth(ibSymbol);
+}
+
 function buildContract(def: IBSymbolDef): Contract {
   const contract: Contract = {
     symbol: def.ibSymbol,
@@ -214,7 +218,7 @@ function buildContract(def: IBSymbolDef): Contract {
   };
   
   if (def.secType === "FUT") {
-    (contract as any).lastTradeDateOrContractMonth = getFrontMonth(def.ibSymbol);
+    setFutureFrontMonth(contract, def.ibSymbol);
   }
   
   return contract;
@@ -345,7 +349,7 @@ function buildDynamicContract(symbol: string): Contract {
     exchange: isFut ? (FUT_EXCHANGE[ibSym] ?? "CME") : "SMART",
     currency: isFut && FUT_EXCHANGE[ibSym] === "IPE" ? "USD" : "USD",
   };
-  if (isFut) (contract as any).lastTradeDateOrContractMonth = getFrontMonth(ibSym);
+  if (isFut) setFutureFrontMonth(contract, ibSym);
   return contract;
 }
 
@@ -361,7 +365,7 @@ function subscribeDepth() {
       currency: "USD",
     };
     if (d.secType === "FUT") {
-      (contract as any).lastTradeDateOrContractMonth = getFrontMonth(d.ibSymbol);
+      setFutureFrontMonth(contract, d.ibSymbol);
     }
     const isSmartDepth = d.exchange === "SMART";
     depthReqIdToSymbol.set(reqId, d.symbol);
@@ -1124,7 +1128,7 @@ export function subscribeDepthForSymbol(symbol: string): boolean {
     currency: "USD",
   };
   if (isFut) {
-    (contract as any).lastTradeDateOrContractMonth = getFrontMonth(ibSym);
+    setFutureFrontMonth(contract, ibSym);
   }
   const isSmartDepth = !isFut;
 
