@@ -2084,6 +2084,45 @@ router.get("/news", async (req, res) => {
   res.json({ articles: merged.slice(0, 50) });
 });
 
+router.get("/news-finder", (req, res) => {
+  const title = String(req.query.title || "News story").trim().slice(0, 240);
+  const source = String(req.query.source || "News").trim().slice(0, 80);
+  const symbol = String(req.query.symbol || "").trim().slice(0, 20).toUpperCase();
+  const escH = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const query = [title, source, symbol].filter(Boolean).join(" ");
+  const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+  const yahooUrl = `https://finance.yahoo.com/search?p=${encodeURIComponent(title)}`;
+  const showYahoo = /yahoo/i.test(source);
+
+  const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}html,body{background:#1C1C1E;color:#e4e4e7}
+body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;padding:20px 16px 80px;max-width:680px;margin:0 auto}
+.s{color:#FFB800;font-size:10px;text-transform:uppercase;letter-spacing:.15em;font-family:"SF Mono",monospace;font-weight:700;margin-bottom:10px}
+h1{color:#fff;font-size:22px;font-weight:700;line-height:1.3;margin-bottom:18px}
+p{color:#a1a1aa;line-height:1.65;margin-bottom:16px}
+.actions{display:flex;flex-direction:column;gap:10px;margin-top:24px}
+a{display:flex;align-items:center;justify-content:center;padding:13px 16px;border-radius:10px;text-decoration:none;font-weight:700}
+.primary{background:#FFB800;color:#0a0a0a}.secondary{border:1px solid #3f3f46;color:#FFB800}
+</style></head><body>
+<div class="s">${escH(source)}</div>
+<h1>${escH(title)}</h1>
+<p>This provider did not send Alpha Terminal a direct publisher URL for this headline. Use the search actions to open the full story from the source.</p>
+<div class="actions">
+${showYahoo ? `<a class="primary" href="${escH(yahooUrl)}" target="_blank" rel="noopener noreferrer">Search Yahoo Finance →</a>` : ""}
+<a class="${showYahoo ? "secondary" : "primary"}" href="${escH(googleUrl)}" target="_blank" rel="noopener noreferrer">Search this headline →</a>
+</div>
+</body></html>`;
+
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "private, max-age=300");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'self'; form-action 'none'; frame-ancestors 'self'");
+  return res.send(html);
+});
+
 async function resolveArticleUrl(url: string): Promise<string> {
   try {
     const resp = await fetch(url, {

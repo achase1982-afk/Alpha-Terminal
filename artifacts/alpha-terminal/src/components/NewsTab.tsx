@@ -117,6 +117,16 @@ function toFinnhubItems(articles: NewsArticle[]): UnifiedItem[] {
   }));
 }
 
+function fallbackNewsUrl(item: UnifiedItem, symbol: string): string {
+  const params = new URLSearchParams({
+    title: item.headline,
+    source: item.source,
+    symbol,
+  });
+  if (item.summary) params.set("summary", item.summary);
+  return `/api/market/news-finder?${params.toString()}`;
+}
+
 const FORM_LABELS: Record<string, string> = {
   "10-K": "Annual Report",
   "10-K/A": "Amended Annual Report",
@@ -255,13 +265,12 @@ export function NewsTab() {
     <div className="flex-1 flex flex-col">
       <div className="flex-1">
         {unified.map((item) => {
-          const canOpen = !!item.url;
+          const url = item.url || fallbackNewsUrl(item, symbol);
           return (
           <button
             key={item.key}
-            onClick={() => canOpen ? openBrowser(item.url!, item.headline, item.source, item.summary) : undefined}
-            disabled={!canOpen}
-            className={`block w-full text-left border-b border-zinc-800/50 px-3 py-2.5 transition-colors group ${canOpen ? "hover:bg-zinc-800/30 cursor-pointer" : "cursor-default opacity-70"}`}
+            onClick={() => openBrowser(url, item.headline, item.source, item.summary)}
+            className="block w-full text-left border-b border-zinc-800/50 hover:bg-zinc-800/30 px-3 py-2.5 transition-colors group cursor-pointer"
           >
             <div className="flex items-center gap-2 mb-0.5">
               {item.isFiling && <FileText className="w-3 h-3 text-[#FFB800] shrink-0" />}
