@@ -7,12 +7,14 @@ export interface ScanCacheData {
   timestamp: number;
 }
 
+type ScanCacheQueryData = ScanCacheData | undefined;
+
 export function useScanCache() {
   const queryClient = useQueryClient();
 
-  const { data: cachedData } = useQuery<ScanCacheData>({
+  const { data: cachedData } = useQuery<ScanCacheQueryData>({
     queryKey: queryKeys.scan.latest(),
-    queryFn: () => Promise.resolve(undefined as unknown as ScanCacheData),
+    queryFn: () => Promise.resolve(undefined),
     enabled: false,
     staleTime: 10 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
