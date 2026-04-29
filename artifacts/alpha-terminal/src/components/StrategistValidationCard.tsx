@@ -703,6 +703,7 @@ function DebateSideDetailBlock({
   );
 }
 
+/** Renders full R1–R3 bull/bear JSON from the transcript under the desk summary. */
 function PerSideDebateDetails({ transcript }: { transcript: StrategistTranscriptTurn[] }) {
   const parsed = useMemo(() => extractDebateDetailsFromTranscript(transcript), [transcript]);
   const soloSides = useMemo(() => extractSoloSidesFromTranscript(transcript), [transcript]);
