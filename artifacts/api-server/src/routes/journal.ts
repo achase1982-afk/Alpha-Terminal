@@ -13,9 +13,10 @@ router.get("/entries", async (_req, res) => {
       .from(tradeJournalTable)
       .orderBy(desc(tradeJournalTable.createdAt));
     res.json(entries);
+    return;
   } catch (err) {
     logger.error({ err }, "Failed to fetch journal entries");
-    res.status(500).json({ error: "db_error" });
+    return res.status(500).json({ error: "db_error" });
   }
 });
 
@@ -35,9 +36,10 @@ router.get("/entries/:id", async (req, res) => {
       .where(eq(stagedExitsTable.journalEntryId, id));
 
     res.json({ ...entry, stagedExits: exits });
+    return;
   } catch (err) {
     logger.error({ err }, "Failed to fetch journal entry");
-    res.status(500).json({ error: "db_error" });
+    return res.status(500).json({ error: "db_error" });
   }
 });
 
@@ -48,9 +50,10 @@ router.post("/entries", async (req, res) => {
       .values(req.body)
       .returning();
     res.json(entry);
+    return;
   } catch (err) {
     logger.error({ err }, "Failed to create journal entry");
-    res.status(500).json({ error: "db_error" });
+    return res.status(500).json({ error: "db_error" });
   }
 });
 
@@ -71,10 +74,10 @@ router.patch("/entries/:id/result", async (req, res) => {
       .where(eq(tradeJournalTable.id, id))
       .returning();
     if (!updated) return res.status(404).json({ error: "not_found" });
-    res.json(updated);
+    return res.json(updated);
   } catch (err) {
     logger.error({ err }, "Failed to log result");
-    res.status(500).json({ error: "db_error" });
+    return res.status(500).json({ error: "db_error" });
   }
 });
 

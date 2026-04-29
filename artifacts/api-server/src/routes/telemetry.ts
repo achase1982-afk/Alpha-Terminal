@@ -21,14 +21,14 @@ router.get("/", async (req, res) => {
 
     if (grouped) {
       const result = getGroupedEvents({ system, severity, showResolved, limit });
-      res.json(result);
+      return res.json(result);
     } else {
       const entries = getEvents({ system, severity, showResolved, limit });
-      res.json({ entries });
+      return res.json({ entries });
     }
   } catch (err: any) {
     req.log.error({ err }, "Telemetry fetch error");
-    res.status(500).json({ error: "Failed to fetch telemetry" });
+    return res.status(500).json({ error: "Failed to fetch telemetry" });
   }
 });
 
@@ -37,14 +37,15 @@ router.get("/counts", async (_req, res) => {
     const totals = getTotalCount();
     const perSystem = getSystemCounts();
     res.json({ unresolvedCount: totals.errors + totals.warns, total: totals.total, errors: totals.errors, warns: totals.warns, perSystem });
+    return;
   } catch {
-    res.json({ unresolvedCount: 0, total: 0, errors: 0, warns: 0, perSystem: {} });
+    return res.json({ unresolvedCount: 0, total: 0, errors: 0, warns: 0, perSystem: {} });
   }
 });
 
 router.post("/reset-count/:system", async (req, res) => {
   resetSystemCount(req.params.system);
-  res.json({ ok: true });
+  return res.json({ ok: true });
 });
 
 router.patch("/:id/resolve", async (req, res) => {
@@ -52,16 +53,16 @@ router.patch("/:id/resolve", async (req, res) => {
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
     const ok = resolveEvent(id);
-    res.json({ ok });
+    return res.json({ ok });
   } catch (err: any) {
     req.log.error({ err }, "Telemetry resolve error");
-    res.status(500).json({ error: "Failed to resolve" });
+    return res.status(500).json({ error: "Failed to resolve" });
   }
 });
 
 router.delete("/clear", async (_req, res) => {
   clearAllEvents();
-  res.json({ ok: true });
+  return res.json({ ok: true });
 });
 
 export default router;
