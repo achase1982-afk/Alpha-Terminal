@@ -98,10 +98,26 @@ export function StrategistSettingsPanel() {
   if (loading) return <div className="text-center text-zinc-500 font-mono text-xs py-8">Loading settings...</div>;
   if (!data) return <div className="text-center text-zinc-500 font-mono text-xs py-8">{loadError ?? "Failed to load settings"}</div>;
 
+  const currentMode = data.current["strategistMode"] ?? 1;
+  const isDeskMode = currentMode === 3;
+
+  const DESK_LABELS: Record<string, string> = {
+    strategistSoloModelIdx: "Desk — Vol Analyst Model",
+    strategistDebateAModelIdx: "Desk — Flow Analyst Model",
+    strategistDebateBModelIdx: "Desk — Catalyst Analyst Model",
+    strategistArbitratorModelIdx: "Desk — PM Model",
+  };
+
+  const HIDDEN_IN_DESK = new Set(["strategistConvergence", "strategistTieBand"]);
+
   const groups = new Map<string, SettingMeta[]>();
   for (const m of data.meta) {
+    if (isDeskMode && HIDDEN_IN_DESK.has(m.key)) continue;
     const arr = groups.get(m.group) ?? [];
-    arr.push(m);
+    const adjusted = isDeskMode && DESK_LABELS[m.key]
+      ? { ...m, label: DESK_LABELS[m.key] }
+      : m;
+    arr.push(adjusted);
     groups.set(m.group, arr);
   }
 
@@ -171,7 +187,11 @@ export function StrategistSettingsPanel() {
           <h3 className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest font-medium border-b border-zinc-800 pb-1">{group}</h3>
           {items.map((m) => {
             const val = data.current[m.key] ?? m.default;
-            const isDropdown = Array.isArray(m.options) && m.options.length > 0;
+            let effectiveOptions = m.options;
+            if (isDeskMode && m.key === "strategistArbitratorModelIdx" && Array.isArray(m.options)) {
+              effectiveOptions = m.options.filter(o => o.value >= 0);
+            }
+            const isDropdown = Array.isArray(effectiveOptions) && effectiveOptions.length > 0;
             const isToggle = !isDropdown && m.min === 0 && m.max === 1 && m.step === 1;
             // The Spread Width slider is overridden when "Spread Width — Unlimited"
             // is on. When overridden, we disable the slider, dim the row, and
@@ -192,7 +212,7 @@ export function StrategistSettingsPanel() {
                         onChange={(e) => handleChange(m.key, Number(e.target.value))}
                         className="font-mono text-[11px] text-white bg-zinc-900 border border-zinc-700 rounded px-2 py-1 hover:border-[#f5a623] focus:border-[#f5a623] focus:outline-none"
                       >
-                        {m.options!.map((opt) => (
+                        {effectiveOptions!.map((opt) => (
                           <option key={opt.value} value={opt.value}>{opt.label}</option>
                         ))}
                       </select>

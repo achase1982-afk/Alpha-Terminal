@@ -3,6 +3,7 @@ import { getCachedRegime, buildFallbackRegime, type StructuredRegime } from "./r
 import { computeIOScore, type IOScoreResult } from "./ioScoreEngine.js";
 import { getSettings, getStrategistModel, type StrategistConfig, type StrategistModelOption } from "./strategistSettings.js";
 import { runDebate, type DebateCallbacks, type DebateRound, type DebateRole, type DebatePhase } from "./strategistDebate.js";
+import { runDeskAnalysis, type DeskCallbacks } from "./strategistDesk.js";
 import type { ScrubCanonical } from "./narrativeScrubbers.js";
 import { db, strategistTelemetryTable } from "@workspace/db";
 
@@ -59,8 +60,9 @@ export interface BlockReason {
 }
 
 export interface StrategistV2Result {
-  status: "recommendation" | "no_viable_setup" | "toxic_block" | "ivr_populating" | "failed_insufficient_history";
+  status: "recommendation" | "no_viable_setup" | "toxic_block" | "ivr_populating" | "failed_insufficient_history" | "desk_recommendation";
   ticker: string;
+  deskResult?: import("./strategistDeskSchemas.js").DeskResult;
   ivrBackfill?: {
     jobId: string | null;
     status: "queued" | "running" | "completed" | "failed" | "failed_insufficient_history";
@@ -579,6 +581,38 @@ export async function analyzeTickerV2(
   }
 
   const dataPackage = buildDataPackage(ticker, tickerData, chainSummary, ioScore, regime, settings, polygonHighlights);
+
+  // ── Desk mode (mode 3): three parallel analysts + PM ──────────────────
+  if (settings.strategistMode === 3) {
+    status("Starting Desk analysis (3 analysts + PM)…");
+    try {
+      const deskResult = await runDeskAnalysis({
+        dataPackage,
+        settings,
+        ticker,
+        callbacks: {
+          onStatus: (s) => status(s),
+          onTurnStart: progress?.onTurnStart ? (turn) => progress.onTurnStart!(turn as any) : undefined,
+          onTurnDelta: progress?.onTurnDelta,
+          onTurnDone: progress?.onTurnDone,
+        },
+      });
+      const result: StrategistV2Result = {
+        status: "desk_recommendation",
+        ticker,
+        deskResult,
+        regime,
+        systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
+        ioScore,
+      };
+      return result;
+    } catch (err) {
+      logger.error({ err, ticker }, "StrategistV2: Desk analysis failed");
+      return noViable(ticker, regime, settings, toxicCheck, tickerData,
+        { category: "VALIDATION_FAIL", detail: `Desk analysis failed: ${err instanceof Error ? err.message : String(err)}`, suggestedAction: "Retry the analysis." },
+        ioScore, { dataSource, dataPackage });
+    }
+  }
 
   const isDebateMode = settings.strategistMode === 2;
   status(isDebateMode ? "Starting strategist debate…" : "Calling AI for trade recommendation…");

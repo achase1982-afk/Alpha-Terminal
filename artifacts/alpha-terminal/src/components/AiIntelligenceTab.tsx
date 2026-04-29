@@ -23,6 +23,7 @@ import { MarketScanner, type DetCandidate } from "@/components/MarketScanner";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { AiLabStrategistView } from "@/components/AiLabStrategistView";
 import { StrategistV2RecommendationCard, StrategistV2BlockCard, IvrPopulatingCard, type StrategistV2Result as StrategistV2ResultType, type StrategistSendToOrderPayload } from "@/components/StrategistV2Card";
+import { StrategistDeskCard, type DeskResult } from "@/components/StrategistDeskCard";
 import { StrategistHistoryList } from "@/components/StrategistHistoryList";
 
 const API_BASE = "/api";
@@ -3262,7 +3263,9 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
                   }
                   return (
                     <>
-                      {v2Result.status === "recommendation" && v2Result.recommendation ? (
+                      {v2Result.status === "desk_recommendation" && (v2Result as any).deskResult ? (
+                        <StrategistDeskCard deskResult={(v2Result as any).deskResult as DeskResult} generatedAt={generatedAt} />
+                      ) : v2Result.status === "recommendation" && v2Result.recommendation ? (
                         <StrategistV2RecommendationCard result={v2Result} onSendToOrder={onStrategistSendToOrder} generatedAt={generatedAt} />
                       ) : v2Result.status === "ivr_populating" ? (
                         <IvrPopulatingCard result={v2Result} progress={ivrBackfillJob} onRetry={handleRunV2} />
