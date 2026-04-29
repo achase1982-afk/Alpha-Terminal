@@ -5,6 +5,7 @@ import { logger } from "./logger";
 import { impliedVolatilityBSM } from "./bsmIV";
 import { probePolygonRate, type RateProbe } from "./polygonRateProbe";
 import { normalizeIV, computeIVRForSymbol } from "./ivNormalize";
+import { validateIv30PathB } from "./ivSanityFloor";
 
 const POLYGON_API = "https://api.polygon.io";
 const SECTOR_ETFS = ["XLE", "XLF", "XLK", "XLU", "XLV", "XLI", "XLP", "XLY", "XLB"];
@@ -454,7 +455,7 @@ export async function backfillHistoricalIV(
       report.flowRowsInserted += symRowsInserted;
       report.flowRowsUpdatedWithIV += symRowsWithIV;
 
-      // ---------- 5. For each date, ATM ±10% / 1-60 dte selection → equity_daily.iv_30d ----------
+      // ---------- 5. Per date: 20–40 DTE, ±5% ATM, median of top candidates → equity_daily.iv_30d ----------
       const datesInWindow = [...spotByDate.keys()].sort();
       for (const d of datesInWindow) {
         const spot = spotByDate.get(d)!;
@@ -471,7 +472,8 @@ export async function backfillHistoricalIV(
             sql`${optionsFlowPerStrikeTable.impliedVolatility} IS NOT NULL`,
           ));
         if (candidates.length === 0) continue;
-        const iv30d = selectBackfillIv30d(spot, candidates);
+        const iv30dRaw = selectBackfillIv30d(spot, candidates);
+        const iv30d = validateIv30PathB(sym, iv30dRaw, "historicalIVBackfill:median");
         if (iv30d == null) continue;
 
         // Only write if equity_daily has no iv yet OR matches our format range (idempotent)
@@ -481,9 +483,9 @@ export async function backfillHistoricalIV(
           .where(and(eq(equityDailyTable.symbol, sym), eq(equityDailyTable.date, d)))
           .limit(1);
         if (existing.length === 0) continue;
-        if (existing[0].iv == null) {
+        if (existing[0].iv == null && iv30d != null) {
           await db.update(equityDailyTable)
-            .set({ iv30d, ivrSource: "flow" })
+            .set({ iv30d, ivrSource: "real_iv" })
             .where(and(eq(equityDailyTable.symbol, sym), eq(equityDailyTable.date, d)));
           report.equityRowsIVUpdated++;
         }
