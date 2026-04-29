@@ -25,6 +25,7 @@ import {
   type IvrCoverageResult,
 } from "../lib/onDemandIvrBackfill.js";
 import { notifyStrategistCompletion } from "../lib/strategistNotifications.js";
+import { sendPushToAll } from "../lib/pushService.js";
 
 const router: IRouter = Router();
 
@@ -261,6 +262,46 @@ function pruneThinkingBuffer() {
   }
 }
 
+/** Shared shape for `/thinking` polling and `/job/:id/final` reconciliation after tab resume. */
+function thinkingShapeFromEntry(entry: ThinkingEntry, since: number): {
+  jobId: string;
+  kind: "analyze" | "validation";
+  ticker: string;
+  status: string;
+  tokens: string[];
+  nextSince: number;
+  transcript: TranscriptTurn[];
+  done: boolean;
+  result: StrategistV2Result | ValidationVerdictPayload | null;
+  validationMeta: ValidationMeta | null;
+  error: string | null;
+  startedAt: number;
+  finishedAt: number | null;
+} {
+  const s = Math.max(0, since);
+  const totalTokens = entry.tokens.length;
+  const tokens = s < totalTokens ? entry.tokens.slice(s) : [];
+  const result = entry.kind === "validation"
+    ? (entry.validationResult ?? null)
+    : (entry.result ?? null);
+  const safeError = entry.error != null ? "Analysis failed. Please retry." : null;
+  return {
+    jobId: entry.jobId,
+    kind: entry.kind ?? "analyze",
+    ticker: entry.ticker,
+    status: entry.status,
+    tokens,
+    nextSince: totalTokens,
+    transcript: entry.transcript,
+    done: entry.done,
+    result,
+    validationMeta: entry.validationMeta ?? null,
+    error: safeError,
+    startedAt: entry.startedAt,
+    finishedAt: entry.finishedAt ?? null,
+  };
+}
+
 async function persistHistory(
   jobId: string,
   ticker: string,
@@ -371,6 +412,16 @@ router.post("/analyze", async (req, res): Promise<void> => {
                 : `Strategist failed for ${upperTicker}`,
               resultStatus: result.status,
             });
+            void sendPushToAll({
+              title: result.status === "recommendation"
+                ? `Strategist ready — ${upperTicker}`
+                : `Strategist — ${upperTicker}`,
+              body: result.status === "recommendation"
+                ? "Analysis finished. Open the app to view the card."
+                : "Analysis finished with no trade. Open the app for details.",
+              tag: `strategist-${jobId}`,
+              data: { type: "strategist", jobId, ticker: upperTicker, kind: "analyze" as const },
+            });
           }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -384,6 +435,12 @@ router.post("/analyze", async (req, res): Promise<void> => {
             kind: "failed",
             message: `Strategist failed for ${upperTicker}`,
             resultStatus: "error",
+          });
+          void sendPushToAll({
+            title: `Strategist failed — ${upperTicker}`,
+            body: "Open the app to retry.",
+            tag: `strategist-${jobId}`,
+            data: { type: "strategist", jobId, ticker: upperTicker, kind: "analyze_failed" as const },
           });
           logger.error({ err, jobId, ticker: upperTicker }, "StrategistV2: background analyze failed");
         }
@@ -626,6 +683,19 @@ router.post("/validate-trade", (req, res): void => {
             .insert(strategistHistoryTable)
             .values({ jobId, ticker: upperTicker, cardJson, cleared: false })
             .onConflictDoNothing({ target: strategistHistoryTable.jobId });
+          notifyStrategistCompletion({
+            jobId,
+            ticker: upperTicker,
+            kind: "ready",
+            message: `Trade validation ready for ${upperTicker}`,
+            resultStatus: result.verdict,
+          });
+          void sendPushToAll({
+            title: `Validation ready — ${upperTicker}`,
+            body: `Verdict: ${result.verdict.replace(/_/g, " ")}. Open the app to review.`,
+            tag: `strategist-${jobId}`,
+            data: { type: "strategist", jobId, ticker: upperTicker, kind: "validation" as const },
+          });
         } catch (persistErr) {
           logger.warn({ persistErr, jobId }, "TradeValidation: failed to persist history (non-fatal)");
         }
@@ -635,6 +705,19 @@ router.post("/validate-trade", (req, res): void => {
         entry.status = "Validation failed";
         entry.done = true;
         entry.finishedAt = Date.now();
+        notifyStrategistCompletion({
+          jobId,
+          ticker: upperTicker,
+          kind: "failed",
+          message: `Trade validation failed for ${upperTicker}`,
+          resultStatus: "error",
+        });
+        void sendPushToAll({
+          title: `Validation failed — ${upperTicker}`,
+          body: "Open the app to retry.",
+          tag: `strategist-${jobId}`,
+          data: { type: "strategist", jobId, ticker: upperTicker, kind: "validation_failed" as const },
+        });
         logger.error({ err, jobId, ticker: upperTicker }, "TradeValidation: background validate failed");
       }
     })();
@@ -646,6 +729,68 @@ router.post("/validate-trade", (req, res): void => {
   }
 });
 
+router.get("/job/:jobId/final", async (req, res): Promise<void> => {
+  const jobId = req.params.jobId;
+  if (!jobId) {
+    res.status(400).json({ error: "jobId required" });
+    return;
+  }
+  pruneThinkingBuffer();
+  const inMem = strategistThinkingBuffer.get(jobId);
+  if (inMem) {
+    const sinceRaw = req.query.since;
+    const since = typeof sinceRaw === "string" ? Math.max(0, parseInt(sinceRaw, 10) || 0) : 0;
+    res.json(thinkingShapeFromEntry(inMem, since));
+    return;
+  }
+  try {
+    const rows = await db
+      .select()
+      .from(strategistHistoryTable)
+      .where(and(eq(strategistHistoryTable.jobId, jobId), eq(strategistHistoryTable.cleared, false)))
+      .limit(1);
+    const row = rows[0];
+    if (!row) {
+      res.status(404).json({ error: "job not found" });
+      return;
+    }
+    const card = row.cardJson as Record<string, unknown>;
+    const isValidation = card["kind"] === "validation";
+    const ticker = row.ticker;
+    const transcriptRaw = card["debateTranscript"];
+    const safeTranscript = Array.isArray(transcriptRaw) ? (transcriptRaw as TranscriptTurn[]) : [];
+    res.json({
+      jobId,
+      kind: isValidation ? "validation" : "analyze",
+      ticker,
+      status: isValidation ? `Verdict: ${String((card["validation"] as { verdict?: string })?.verdict ?? "done")}` : "Done",
+      tokens: [],
+      nextSince: 0,
+      transcript: safeTranscript,
+      done: true,
+      result: isValidation
+        ? (card["validation"] as ValidationVerdictPayload)
+        : (card as unknown as StrategistV2Result),
+      validationMeta: isValidation
+        ? {
+            ticker,
+            mode: (card["ticket"] as ValidationTicket).mode,
+            ticket: card["ticket"] as ValidationTicket,
+            thesis: typeof card["thesis"] === "string" ? card["thesis"] : undefined,
+            rollingShort: card["rollingShort"] === true,
+          }
+        : null,
+      error: null,
+      startedAt: row.createdAt?.getTime?.() ?? Date.now(),
+      finishedAt: row.createdAt?.getTime?.() ?? Date.now(),
+      source: "persisted" as const,
+    });
+  } catch (err) {
+    logger.error({ err, jobId }, "StrategistV2: job final fetch failed");
+    res.status(500).json({ error: "Failed to load job" });
+  }
+});
+
 router.get("/thinking/:jobId", (req, res): void => {
   pruneThinkingBuffer();
   const entry = strategistThinkingBuffer.get(req.params.jobId);
@@ -653,37 +798,9 @@ router.get("/thinking/:jobId", (req, res): void => {
     res.status(404).json({ error: "job not found" });
     return;
   }
-  // Incremental delivery: client passes ?since=<index> to receive only new tokens.
   const sinceRaw = req.query.since;
   const since = typeof sinceRaw === "string" ? Math.max(0, parseInt(sinceRaw, 10) || 0) : 0;
-  const totalTokens = entry.tokens.length;
-  const tokens = since < totalTokens ? entry.tokens.slice(since) : [];
-  // For validation jobs, the canonical "result" is the validation verdict
-  // payload (so the existing poller's `completeStrategistJob(jobId, result)`
-  // call stores the right thing). `kind` and `validationMeta` are extra
-  // discriminator fields the frontend uses to render the validation card.
-  const result = entry.kind === "validation"
-    ? (entry.validationResult ?? null)
-    : (entry.result ?? null);
-  // Sanitize the error field: never expose raw DB/SQL error strings to the
-  // client. The frontend only needs to know whether an error occurred; the
-  // full message is logged server-side by the catch block that set it.
-  const safeError = entry.error != null ? "Analysis failed. Please retry." : null;
-  res.json({
-    jobId: entry.jobId,
-    kind: entry.kind ?? "analyze",
-    ticker: entry.ticker,
-    status: entry.status,
-    tokens,
-    nextSince: totalTokens,
-    transcript: entry.transcript,
-    done: entry.done,
-    result,
-    validationMeta: entry.validationMeta ?? null,
-    error: safeError,
-    startedAt: entry.startedAt,
-    finishedAt: entry.finishedAt ?? null,
-  });
+  res.json(thinkingShapeFromEntry(entry, since));
 });
 
 router.get("/history", async (_req, res) => {
