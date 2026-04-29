@@ -24,9 +24,11 @@ import {
   callAnthropicWithSystemAndWebSearch,
   callGeminiWithSystemAndWebSearch,
   callOpenAIWithSystemAndWebSearch,
+  callXaiWithSystemAndWebSearch,
   streamCallAnthropicWithSystemAndWebSearch,
   streamCallGeminiWithSystemAndWebSearch,
   streamCallOpenAIWithSystemAndWebSearch,
+  streamCallXaiWithSystemAndWebSearch,
   extractJson,
   type WebSearchTrace,
 } from "./aiLabAnalystClient.js";
@@ -1380,10 +1382,10 @@ async function callAiForTrade(
   dataPackage: string,
   retryInstruction?: string,
   progress?: AnalyzeProgressCallbacks,
-  modelOverride?: { provider: "anthropic" | "google" | "openai"; model: string; temperature?: number },
+  modelOverride?: { provider: "anthropic" | "google" | "openai" | "xai"; model: string; temperature?: number },
 ): Promise<{ response: AiTradeResponse; trace: WebSearchTrace; rawText: string }> {
   const aiCfg = getAiLabStrategistConfig();
-  const provider = (modelOverride?.provider ?? aiCfg.analystModelProvider) as "anthropic" | "google" | "openai";
+  const provider = (modelOverride?.provider ?? aiCfg.analystModelProvider) as "anthropic" | "google" | "openai" | "xai";
   const model = modelOverride?.model ?? aiCfg.analystModelName;
   const temperature = modelOverride?.temperature ?? aiCfg.analystTemperature;
 
@@ -1422,6 +1424,14 @@ async function callAiForTrade(
       const r = progress
         ? await streamCallOpenAIWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt, onDelta, onStatus)
         : await callOpenAIWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt);
+      rawText = r.text;
+      trace = r.trace;
+      break;
+    }
+    case "xai": {
+      const r = progress
+        ? await streamCallXaiWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt, onDelta, onStatus)
+        : await callXaiWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt);
       rawText = r.text;
       trace = r.trace;
       break;
