@@ -22,6 +22,7 @@ import { startOptionsWatcher } from "./lib/optionsWatcher";
 import { migrateAiLabSeedData } from "./lib/aiLabMigration";
 import { getBestAccessToken } from "./lib/tokenStore";
 import { loadAiLabConfigFromDb } from "./lib/aiLabConfig";
+import { recoverOrphanedIvrJobs } from "./lib/onDemandIvrBackfill";
 
 const rawPort = process.env["PORT"];
 
@@ -465,6 +466,14 @@ async function boot() {
       // IV history gaps. See dailySnapshot.sweepStaleSnapshots for details.
       sweepStaleSnapshots().catch((e) => {
         logger.warn({ err: e }, "sweepStaleSnapshots: startup sweep failed");
+      });
+
+      // Recover any on-demand IVR backfill jobs left in 'running' state by a
+      // prior server kill or Railway redeploy. Without this, stuck jobs
+      // permanently return 'populating' for the affected ticker instead of
+      // allowing a fresh backfill to be triggered.
+      recoverOrphanedIvrJobs().catch((e) => {
+        logger.warn({ err: e }, "recoverOrphanedIvrJobs: startup sweep failed");
       });
 
       scheduleDailyScreenRefresh();

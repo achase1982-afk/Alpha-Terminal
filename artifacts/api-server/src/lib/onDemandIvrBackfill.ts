@@ -176,6 +176,42 @@ function drainQueue(): void {
   }
 }
 
+/**
+ * On-boot orphan recovery. Marks any ivr_backfill_jobs row still in
+ * status='running' as failed with error_msg='server_restart'. These rows
+ * are left behind whenever the Node process is killed mid-job (Railway
+ * redeploy, SIGKILL, OOM). Without this, the stuck rows permanently block
+ * re-triggering the backfill for those tickers because activeJobForSymbol()
+ * finds them and returns "populating" instead of creating a new job.
+ *
+ * Called once from index.ts immediately after the DB is available.
+ */
+export async function recoverOrphanedIvrJobs(): Promise<void> {
+  try {
+    const orphans = await db
+      .update(ivrBackfillJobsTable)
+      .set({
+        status: "failed",
+        completedAt: new Date(),
+        errorMsg: "server_restart",
+        updatedAt: new Date(),
+      })
+      .where(sql`${ivrBackfillJobsTable.status} = 'running'`)
+      .returning({ id: ivrBackfillJobsTable.id, symbol: ivrBackfillJobsTable.symbol });
+
+    if (orphans.length > 0) {
+      logger.warn(
+        { count: orphans.length, jobs: orphans.map(j => ({ id: j.id, symbol: j.symbol })) },
+        "IVR orphan recovery: marked stuck running jobs as failed",
+      );
+    } else {
+      logger.info("IVR orphan recovery: no stuck jobs found");
+    }
+  } catch (err) {
+    logger.error({ err }, "IVR orphan recovery: failed (non-fatal)");
+  }
+}
+
 export async function getIvrBackfillJob(jobId: string) {
   const [job] = await db
     .select()
