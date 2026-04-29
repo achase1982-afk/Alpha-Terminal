@@ -36,7 +36,7 @@ router.get("/timesales/_status", (_req, res) => {
 });
 
 router.get("/timesales/:contract/stream", async (req: Request, res: Response): Promise<void> => {
-  const contract = normalizeContract(req.params.contract);
+  const contract = normalizeContract(String(req.params.contract));
   if (!polygonWsEnabled()) {
     res.status(503).json({ error: "Polygon options WS disabled in this environment" });
     return;
@@ -77,7 +77,7 @@ router.get("/timesales/:contract/stream", async (req: Request, res: Response): P
 });
 
 router.get("/timesales/:contract/recent", async (req: Request, res: Response): Promise<void> => {
-  const contract = normalizeContract(req.params.contract);
+  const contract = normalizeContract(String(req.params.contract));
   const limit = Math.min(500, Math.max(1, parseInt(String(req.query.limit ?? "200"), 10) || 200));
   const apiKey = process.env["POLYGON_API_KEY"];
   if (!apiKey) {

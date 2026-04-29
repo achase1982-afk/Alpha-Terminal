@@ -16,7 +16,6 @@ import { registerServiceWorker } from "@/lib/pushNotifications";
 import OrderAlertWatcher from "@/components/OrderAlertWatcher";
 import SchwabSessionExpiredDialog from "@/components/SchwabSessionExpiredDialog";
 import { resumeAllRunningPollers } from "@/lib/strategistPoller";
-import { StrategistNotificationHost } from "@/components/StrategistNotificationHost";
 
 export const queryClient = new QueryClient({
   defaultOptions: {

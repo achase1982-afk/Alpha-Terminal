@@ -49,6 +49,7 @@ export function AiThinkingFeed({ texts, isStreaming, className = "" }: AiThinkin
       return () => clearTimeout(timer);
     }
     if (isStreaming) prevStreamingRef.current = true;
+    return undefined;
   }, [isStreaming, texts.length]);
 
   useEffect(() => {

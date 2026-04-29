@@ -22,6 +22,17 @@ export function readStrategistNotificationSettings(): StrategistNotificationSett
   }
 }
 
+export const getStrategistNotificationSettings = readStrategistNotificationSettings;
+
+export function setStrategistNotificationSetting(
+  key: keyof StrategistNotificationSettings,
+  value: boolean,
+): StrategistNotificationSettings {
+  const next = { ...readStrategistNotificationSettings(), [key]: value };
+  writeStrategistNotificationSettings(next);
+  return next;
+}
+
 export function writeStrategistNotificationSettings(settings: StrategistNotificationSettings): void {
   window.localStorage.setItem(KEY, JSON.stringify(settings));
 }

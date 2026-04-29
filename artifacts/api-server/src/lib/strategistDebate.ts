@@ -10,8 +10,8 @@ import type { StrategistModelOption } from "./strategistSettings.js";
 import { scrubAll, hasAnyCanonical, type ScrubCanonical } from "./narrativeScrubbers.js";
 
 export type DebateRound = 1 | 2 | 3 | "synthesis";
-export type DebateRole = "A" | "B" | "synthesis" | "system";
-export type DebatePhase = "propose" | "critique" | "final" | "synthesis" | "info";
+export type DebateRole = "A" | "B" | "synthesis" | "system" | "solo";
+export type DebatePhase = "propose" | "critique" | "final" | "synthesis" | "info" | "solo";
 
 export interface TurnStartEvent {
   id: string;

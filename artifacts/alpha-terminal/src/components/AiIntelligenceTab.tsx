@@ -1365,6 +1365,7 @@ function AiNarrativePanel({ text, streamingText, isStreaming }: {
       return () => clearTimeout(timer);
     }
     if (isStreaming) prevStreamingRef.current = true;
+    return undefined;
   }, [isStreaming, text, streamingText]);
 
   const displayText = isStreaming ? streamingText : text;

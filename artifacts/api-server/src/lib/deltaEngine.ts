@@ -634,8 +634,9 @@ function updateFlags(snap: Snapshot, delta_x_interval_pct: number) {
     riskIncreasingFlag = false;
   }
 
-  const esIntervalChange = snap.raw.ES !== null && effectiveBaseline?.raw.ES !== null
-    ? ((snap.raw.ES - effectiveBaseline.raw.ES) / effectiveBaseline.raw.ES) * 100
+  const baselineEs = effectiveBaseline?.raw.ES ?? null;
+  const esIntervalChange = snap.raw.ES !== null && baselineEs !== null
+    ? ((snap.raw.ES - baselineEs) / baselineEs) * 100
     : 0;
 
   if (isFadingOrReversing && vixIntervalUp && esIntervalChange < -0.5) {
