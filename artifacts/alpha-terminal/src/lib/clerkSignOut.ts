@@ -14,18 +14,22 @@ function signOutTargetUrl(): string {
 type ClerkSignOut = (opts?: { redirectUrl?: string | null }) => Promise<unknown>;
 
 /**
- * Do not `await` Clerk's `signOut` — it waits on network IO and causes a
- * noticeable ~0.5–1s delay before `location.replace`. Firing sign-out and
- * navigating in the same turn keeps the handoff feeling instant; the new
- * document load still lands on `SignedOut` with a clean session.
+ * **Await** `signOut` before `location.replace()`. Firing `void signOut()` and
+ * navigating in the same synchronous turn can cancel the in-flight sign-out
+ * (page unload) so the session cookie is never cleared — the UI stays on the
+ * signed-in shell until a full app restart.
+ *
+ * Callers should use **`useAuth().signOut`**: it waits for `clerkLoaded` before
+ * running sign out. `useClerk().signOut` can return immediately (queued only)
+ * if Clerk is not ready yet, which also looked like a no-op.
  */
-export function signOutWithFullNavigation(signOut: ClerkSignOut): void {
+export async function signOutWithFullNavigation(signOut: ClerkSignOut): Promise<void> {
   if (import.meta.env.VITE_DEV_BYPASS_AUTH === "true") return;
   const target = signOutTargetUrl();
   try {
-    void signOut({ redirectUrl: target });
+    await signOut({ redirectUrl: target });
   } catch {
-    // ignore
+    // Still try to show the sign-in surface.
   }
   window.location.replace(target);
 }
