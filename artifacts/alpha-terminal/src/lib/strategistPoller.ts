@@ -1,5 +1,6 @@
 import { useTerminalStore, type StrategistTranscriptTurn, type StrategistValidationMeta } from "./store";
 import { fetchWithAuth } from "./fetchWithAuth";
+import { toast } from "sonner";
 
 const API_BASE = "/api";
 
@@ -26,6 +27,104 @@ interface ThinkingResponse {
   error: string | null;
   kind?: 'analyze' | 'validation';
   validationMeta?: StrategistValidationMeta | null;
+  /** Present when the payload was rebuilt from persisted history (buffer miss). */
+  source?: 'persisted';
+}
+
+type PollOutcome = 'running' | 'completed' | 'failed';
+
+/**
+ * Apply one `/thinking` or `/job/:id/final` payload to the store. When `done` is
+ * true, completion is handled first so a persisted snapshot with `nextSince: 0`
+ * cannot rewind the client's token cursor.
+ */
+function applyThinkingPollResponse(jobId: string, t: ThinkingResponse): PollOutcome {
+  const job = useTerminalStore.getState().strategistJobs[jobId];
+  if (!job || job.status !== 'running') return 'completed';
+
+  if (t.done) {
+    if (t.status) {
+      useTerminalStore.getState().setStrategistLiveStatus(jobId, t.status);
+    }
+    if (t.kind === 'validation' || t.validationMeta) {
+      useTerminalStore.getState().setStrategistJobMeta(jobId, {
+        kind: t.kind,
+        validationMeta: t.validationMeta ?? undefined,
+      });
+    }
+    if (Array.isArray(t.transcript)) {
+      useTerminalStore.getState().setStrategistTranscript(jobId, t.transcript);
+    }
+    if (t.error) {
+      useTerminalStore.getState().errorStrategistJob(jobId, t.error);
+      return 'failed';
+    }
+    if (t.result) {
+      useTerminalStore.getState().completeStrategistJob(jobId, t.result);
+      return 'completed';
+    }
+    useTerminalStore
+      .getState()
+      .errorStrategistJob(jobId, 'Analysis completed without a result');
+    return 'failed';
+  }
+
+  if (Array.isArray(t.tokens) && t.tokens.length > 0) {
+    useTerminalStore
+      .getState()
+      .appendStrategistTokens(jobId, t.tokens, t.nextSince ?? job.nextSince);
+  } else if (typeof t.nextSince === 'number' && t.nextSince !== job.nextSince) {
+    useTerminalStore.getState().appendStrategistTokens(jobId, [], t.nextSince);
+  }
+
+  if (t.status) {
+    useTerminalStore.getState().setStrategistLiveStatus(jobId, t.status);
+  }
+
+  if (t.kind === 'validation' || t.validationMeta) {
+    useTerminalStore.getState().setStrategistJobMeta(jobId, {
+      kind: t.kind,
+      validationMeta: t.validationMeta ?? undefined,
+    });
+  }
+
+  if (Array.isArray(t.transcript)) {
+    useTerminalStore.getState().setStrategistTranscript(jobId, t.transcript);
+  }
+
+  return 'running';
+}
+
+const completionToastSent = new Set<string>();
+
+function maybeToastForegroundRecovery(jobId: string) {
+  if (completionToastSent.has(jobId)) return;
+  const j = useTerminalStore.getState().strategistJobs[jobId];
+  if (!j) return;
+  completionToastSent.add(jobId);
+  const ticker = j.ticker;
+  if (j.status === "done") {
+    if (j.kind === "validation") {
+      const verdict = (j.result as { verdict?: string } | null)?.verdict;
+      toast.success(`Validation ready — ${ticker}`, {
+        description: verdict ? verdict.replace(/_/g, " ") : undefined,
+      });
+    } else {
+      const status = (j.result as { status?: string } | null)?.status;
+      toast.success(`Strategist — ${ticker}`, {
+        description:
+          status === "recommendation"
+            ? "Analysis finished — open the Strategist tab for the card."
+            : status === "ivr_populating"
+              ? "IVR still loading — open the Strategist tab."
+              : "Analysis finished.",
+      });
+    }
+  } else if (j.status === "error") {
+    toast.error(`Strategist — ${ticker}`, {
+      description: j.error ?? "Something went wrong.",
+    });
+  }
 }
 
 async function refreshHistoryAfterCompletion() {
@@ -143,11 +242,28 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
             await new Promise((r) => setTimeout(r, 800));
             continue;
           }
-          // 404 outside grace = the in-memory thinking buffer was pruned (10-min
-          // TTL after completion) or the API server restarted mid-debate. If
-          // the persisted history already has a card for this jobId, complete
-          // from there instead of surfacing a polling error.
+          // 404: in-memory buffer may be pruned after tab sleep. Reconcile from
+          // persisted history (full run state is keyed by jobId in the DB).
           if (tres.status === 404) {
+            try {
+              const finalRes = await fetchWithAuth(
+                `${API_BASE}/strategist/job/${encodeURIComponent(jobId)}/final?since=${current.nextSince}`,
+              );
+              if (finalRes.ok) {
+                const t = (await finalRes.json()) as ThinkingResponse;
+                const outcome = applyThinkingPollResponse(jobId, t);
+                if (outcome !== "running") {
+                  resolved = true;
+                  await refreshHistoryAfterCompletion();
+                  break;
+                }
+                consecutiveFailures = 0;
+                await new Promise((r) => setTimeout(r, 1200));
+                continue;
+              }
+            } catch {
+              // fall through to history recovery
+            }
             const recovered = await tryRecoverFromHistory();
             if (recovered) {
               resolved = true;
@@ -169,44 +285,9 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
         }
         consecutiveFailures = 0;
         const t = (await tres.json()) as ThinkingResponse;
-
-        if (Array.isArray(t.tokens) && t.tokens.length > 0) {
-          useTerminalStore
-            .getState()
-            .appendStrategistTokens(jobId, t.tokens, t.nextSince ?? current.nextSince);
-        } else if (typeof t.nextSince === "number" && t.nextSince !== current.nextSince) {
-          useTerminalStore.getState().appendStrategistTokens(jobId, [], t.nextSince);
-        }
-
-        if (t.status) {
-          useTerminalStore.getState().setStrategistLiveStatus(jobId, t.status);
-        }
-
-        // Validation jobs include kind + validationMeta. Push them into the
-        // store on first sight so the validation card can render the user's
-        // thesis and the rolling-short flag while the debate is still running.
-        if (t.kind === 'validation' || t.validationMeta) {
-          useTerminalStore.getState().setStrategistJobMeta(jobId, {
-            kind: t.kind,
-            validationMeta: t.validationMeta ?? undefined,
-          });
-        }
-
-        if (Array.isArray(t.transcript)) {
-          useTerminalStore.getState().setStrategistTranscript(jobId, t.transcript);
-        }
-
-        if (t.done) {
+        const outcome = applyThinkingPollResponse(jobId, t);
+        if (outcome !== "running") {
           resolved = true;
-          if (t.error) {
-            useTerminalStore.getState().errorStrategistJob(jobId, t.error);
-          } else if (t.result) {
-            useTerminalStore.getState().completeStrategistJob(jobId, t.result);
-          } else {
-            useTerminalStore
-              .getState()
-              .errorStrategistJob(jobId, "Analysis completed without a result");
-          }
           await refreshHistoryAfterCompletion();
           break;
         }
@@ -228,6 +309,31 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
   })();
 }
 
+export async function syncRunningStrategistJobsFromServer(opts?: {
+  toastOnComplete?: boolean;
+}): Promise<void> {
+  const jobs = useTerminalStore.getState().strategistJobs;
+  for (const [jobId, job] of Object.entries(jobs)) {
+    if (job.status !== "running") continue;
+    try {
+      const res = await fetchWithAuth(
+        `${API_BASE}/strategist/job/${encodeURIComponent(jobId)}/final?since=${job.nextSince}`,
+      );
+      if (!res.ok) continue;
+      const t = (await res.json()) as ThinkingResponse;
+      const outcome = applyThinkingPollResponse(jobId, t);
+      if (outcome !== "running") {
+        await refreshHistoryAfterCompletion();
+        if (opts?.toastOnComplete) {
+          maybeToastForegroundRecovery(jobId);
+        }
+      }
+    } catch {
+      // best-effort
+    }
+  }
+}
+
 export function isPollerActive(jobId: string): boolean {
   const h = activePollers.get(jobId);
   return !!h && !h.aborted;
@@ -238,12 +344,18 @@ export function isPollerActive(jobId: string): boolean {
  * Call this on `visibilitychange → visible` and on component remount so a
  * mobile-throttled poller is replaced with a fresh one instead of waiting
  * for the throttled setTimeout chain to catch up.
+ *
+ * First reconciles each running job against persisted server state so a
+ * backgrounded tab that missed the final `/thinking` poll still completes.
  */
 export function resumeAllRunningPollers(): void {
-  const jobs = useTerminalStore.getState().strategistJobs;
-  for (const [jobId, job] of Object.entries(jobs)) {
-    if (job.status === "running") {
-      startStrategistPolling(jobId, { force: true });
+  void (async () => {
+    await syncRunningStrategistJobsFromServer({ toastOnComplete: true });
+    const jobs = useTerminalStore.getState().strategistJobs;
+    for (const [jobId, job] of Object.entries(jobs)) {
+      if (job.status === "running") {
+        startStrategistPolling(jobId, { force: true });
+      }
     }
-  }
+  })();
 }
