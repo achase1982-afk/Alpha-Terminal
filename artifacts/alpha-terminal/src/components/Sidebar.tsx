@@ -32,14 +32,16 @@ import {
 } from "lucide-react";
 import { MarketCalendar } from "@/components/MarketCalendar";
 import { TelemetryPage, useTelemetryCount } from "@/components/TelemetryPage";
-import { useClerk } from "@clerk/clerk-react";
+import { useAuth } from "@clerk/clerk-react";
 import { signOutWithFullNavigation } from "@/lib/clerkSignOut";
 
 const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
 
-function useClerkSafe() {
+/** Prefer `useAuth().signOut` so Clerk finishes its `clerkLoaded` wait before sign out. */
+function useAuthSignOutSafe() {
   if (devBypass) return { signOut: () => Promise.resolve() };
-  return useClerk();
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  return useAuth();
 }
 
 type SidebarPage =
@@ -144,7 +146,7 @@ function MenuRow({ icon, label, onClick, badge }: { icon: React.ReactNode; label
 }
 
 export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }, ref) {
-  const { signOut } = useClerkSafe();
+  const { signOut } = useAuthSignOutSafe();
   const [activePage, setActivePage] = useState<SidebarPage>(null);
   const telemetryCount = useTelemetryCount();
 
@@ -281,13 +283,14 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
               <div className="pt-6 pb-10 pl-5">
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.currentTarget.disabled = true;
                     setActivePage(null);
                     onClose();
                     queryClient.clear();
                     void signOutWithFullNavigation(signOut);
                   }}
-                  className="flex items-center gap-3 transition-opacity hover:opacity-70 active:opacity-50"
+                  className="flex items-center gap-3 transition-opacity hover:opacity-70 active:opacity-50 enabled:cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
                 >
                   <Power className="w-[22px] h-[22px] text-white/80" strokeWidth={2.5} />
                   <span className="font-extrabold text-[17px] tracking-[0.15em] uppercase text-white/90">Logout</span>

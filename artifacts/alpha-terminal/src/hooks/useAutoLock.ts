@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useCallback, useState } from "react";
 import type { ReactNode } from "react";
-import { useClerk } from "@clerk/clerk-react";
+import { useAuth } from "@clerk/clerk-react";
 import React from "react";
 import { readSecurityPrefs, updateSecurityPref, TIMEOUT_OPTIONS } from "@/lib/securityPrefs";
 import { queryClient } from "@/App";
@@ -8,10 +8,10 @@ import { signOutWithFullNavigation } from "@/lib/clerkSignOut";
 
 const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
 
-function useClerkSafe() {
+function useAuthSignOutSafe() {
   if (devBypass) return { signOut: () => Promise.resolve() };
   // eslint-disable-next-line react-hooks/rules-of-hooks
-  return useClerk();
+  return useAuth();
 }
 
 const LAST_ACTIVITY_KEY = "alphaTerminal_lastActivity";
@@ -53,7 +53,7 @@ interface AutoLockState {
 const AutoLockContext = createContext<AutoLockState | null>(null);
 
 export function AutoLockProvider({ children }: { children: ReactNode }) {
-  const { signOut } = useClerkSafe();
+  const { signOut } = useAuthSignOutSafe();
   const [minutes, setMinutesState] = useState<SessionTimeoutMinutes>(readStoredTimeout);
   const [warning, setWarning] = useState(false);
   const [countdown, setCountdown] = useState(WARNING_SECONDS);
