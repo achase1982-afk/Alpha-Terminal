@@ -272,6 +272,7 @@ export function startBackfillJob(symbols: string[], daysBack: number): BackfillJ
 export async function backfillHistoricalIV(
   symbols: string[],
   daysBack: number,
+  opts: { skipSectorEtfs?: boolean } = {},
 ): Promise<BackfillReport> {
   const report: BackfillReport = {
     rateProbe: { tier: "unknown", successCount: 0, failureCount: 0, rateLimited: false, elapsedMs: 0, message: "" },
@@ -298,7 +299,9 @@ export async function backfillHistoricalIV(
     return report;
   }
 
-  const allSymbols = [...new Set([...symbols, ...SECTOR_ETFS].map(s => s.toUpperCase()))];
+  const allSymbols = opts.skipSectorEtfs
+    ? [...new Set(symbols.map(s => s.toUpperCase()))]
+    : [...new Set([...symbols, ...SECTOR_ETFS].map(s => s.toUpperCase()))];
   const now = new Date();
   const fromDate = new Date(now.getTime() - daysBack * 86_400_000).toISOString().slice(0, 10);
   const toDate = now.toISOString().slice(0, 10);

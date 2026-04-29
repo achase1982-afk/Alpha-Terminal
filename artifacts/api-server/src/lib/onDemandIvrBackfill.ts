@@ -333,7 +333,7 @@ async function runBackfillJob(jobId: string, symbol: string): Promise<void> {
       return;
     }
 
-    const realReport = await backfillHistoricalIV([symbol], POLYGON_CALENDAR_LOOKBACK_DAYS);
+    const realReport = await backfillHistoricalIV([symbol], POLYGON_CALENDAR_LOOKBACK_DAYS, { skipSectorEtfs: true });
     let realIvDays = await countRealIvDays(symbol);
     await updateJob(jobId, {
       ivRowsWritten: realReport.equityRowsIVUpdated,
