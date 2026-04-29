@@ -40,7 +40,7 @@ export interface StrategistConfig {
   toxicPathBEnabled: number;
   regimeUpdateFrequencyMin: number;
   // Strategist mode + model selection
-  strategistMode: number; // 1 = Solo, 2 = Debate
+  strategistMode: number; // 1 = Solo, 2 = Debate, 3 = Desk
   strategistConvergence: number; // 1 = highest_confidence, 2 = synthesis, 3 = hybrid
   /** Confidence-point gap (Bull − Bear) below which the verdict is SIDEWAYS.
    *  Smaller = more directional verdicts; larger = more SIDEWAYS / vol-neutral. */
@@ -238,20 +238,21 @@ export interface SettingMetaEntry {
 export function getSettingMeta(): SettingMetaEntry[] {
   const modelOptions = STRATEGIST_MODEL_OPTIONS.map((m, i) => ({ value: i, label: m.label }));
   return [
-    { key: "strategistMode", label: "Strategist Mode", group: "Strategist", default: 1, min: 1, max: 2, step: 1, description: "Solo = one strategist runs the analysis. Debate = two strategists go back-and-forth across three rounds and converge on a single trade.", options: [
+    { key: "strategistMode", label: "Strategist Mode", group: "Strategist", default: 1, min: 1, max: 3, step: 1, description: "Solo = one strategist runs the analysis. Debate = two strategists go back-and-forth across three rounds and converge on a single trade. Desk = three specialist analysts (Vol, Flow, Catalyst) report to a PM who makes the final call.", options: [
       { value: 1, label: "Solo (1 strategist)" },
       { value: 2, label: "Debate (2 strategists)" },
+      { value: 3, label: "Desk (3 analysts + PM)" },
     ] },
-    { key: "strategistSoloModelIdx", label: "Solo Model", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used in Solo mode.", options: modelOptions },
-    { key: "strategistDebateAModelIdx", label: "Debate — Bull Model", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used to argue the Bull side in Debate mode. Can match the Bear model (twin debate) or differ (cross-provider debate).", options: modelOptions },
-    { key: "strategistDebateBModelIdx", label: "Debate — Bear Model", group: "Strategist", default: 1, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used to argue the Bear side in Debate mode.", options: modelOptions },
-    { key: "strategistArbitratorModelIdx", label: "Debate — Arbitrator Model", group: "Strategist", default: 0, min: -1, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used in Phase 3 to arbitrate between Bull's and Bear's structure proposals and ship the final trade. Can be the Bull model, Bear model, an independent third model, or 'Debate Winner' (whichever side wins the directional verdict is promoted to Senior PM).", options: [{ value: -1, label: "Debate Winner (winning side promoted to Senior PM)" }, ...modelOptions] },
-    { key: "strategistConvergence", label: "Debate Convergence", group: "Strategist", default: 3, min: 1, max: 3, step: 1, description: "How the single final report is produced after the two strategists finish debating.", options: [
+    { key: "strategistSoloModelIdx", label: "Solo Model", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used in Solo mode. In Desk mode this slot is used for the Vol Analyst.", options: modelOptions },
+    { key: "strategistDebateAModelIdx", label: "Debate — Bull Model", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used to argue the Bull side in Debate mode. In Desk mode this slot is used for the Flow Analyst.", options: modelOptions },
+    { key: "strategistDebateBModelIdx", label: "Debate — Bear Model", group: "Strategist", default: 1, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used to argue the Bear side in Debate mode. In Desk mode this slot is used for the Catalyst Analyst.", options: modelOptions },
+    { key: "strategistArbitratorModelIdx", label: "Debate — Arbitrator Model", group: "Strategist", default: 0, min: -1, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used in Phase 3 to arbitrate between Bull's and Bear's structure proposals and ship the final trade. In Desk mode this slot is used for the PM.", options: [{ value: -1, label: "Debate Winner (winning side promoted to Senior PM)" }, ...modelOptions] },
+    { key: "strategistConvergence", label: "Debate Convergence", group: "Strategist", default: 3, min: 1, max: 3, step: 1, description: "How the single final report is produced after the two strategists finish debating. Not used in Desk mode.", options: [
       { value: 1, label: "Higher confidence wins (fastest)" },
       { value: 2, label: "Synthesis pass (extra LLM merges both)" },
       { value: 3, label: "Hybrid — agree → synthesis, disagree → higher confidence" },
     ] },
-    { key: "strategistTieBand", label: "Debate Tie Band (confidence pts)", group: "Strategist", default: 10, min: 1, max: 30, step: 1, description: "How close the Bull and Bear confidences must be (in points) for the verdict to land on SIDEWAYS / vol-neutral. Lower = more directional verdicts; higher = more SIDEWAYS calls. Common settings: 5 = tight, 10 = medium (default), 20 = wide." },
+    { key: "strategistTieBand", label: "Debate Tie Band (confidence pts)", group: "Strategist", default: 10, min: 1, max: 30, step: 1, description: "How close the Bull and Bear confidences must be (in points) for the verdict to land on SIDEWAYS / vol-neutral. Not used in Desk mode." },
 
     { key: "ioWeightR2", label: "Market Independence (R²)", group: "IOScore", default: 0.30, min: 0, max: 0.50, step: 0.05, description: "How much weight the 'is this stock independent from SPY' factor gets." },
     { key: "ioWeightResidual", label: "Abnormal Move (Residual Return)", group: "IOScore", default: 0.25, min: 0, max: 0.50, step: 0.05, description: "How much weight the 'is this stock making an unusual move' factor gets." },

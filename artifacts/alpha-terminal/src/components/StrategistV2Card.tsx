@@ -139,8 +139,9 @@ export interface ContextSourcesPayload {
 }
 
 export interface StrategistV2Result {
-  status: "recommendation" | "no_viable_setup" | "toxic_block" | "ivr_populating" | "failed_insufficient_history";
+  status: "recommendation" | "no_viable_setup" | "toxic_block" | "ivr_populating" | "failed_insufficient_history" | "desk_recommendation";
   ticker: string;
+  deskResult?: unknown;
   ivrBackfill?: {
     jobId: string | null;
     status: "queued" | "running" | "completed" | "failed" | "failed_insufficient_history";

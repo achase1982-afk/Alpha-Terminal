@@ -9,6 +9,7 @@ import {
   type StrategistV2Result,
   type StrategistSendToOrderPayload,
 } from "@/components/StrategistV2Card";
+import { StrategistDeskCard, type DeskResult } from "@/components/StrategistDeskCard";
 import { HistoryDebateTranscript } from "@/components/HistoryDebateTranscript";
 import { StrategistValidationCard } from "@/components/StrategistValidationCard";
 
@@ -143,6 +144,8 @@ export function StrategistHistoryList({ onSendToOrder, onReopenValidatedOrder, e
               if (verdict === "DO_NOT_PROCEED") return "Do Not Proceed";
               return "Trade Validation";
             })()
+          : result?.status === "desk_recommendation" && (result as any)?.deskResult
+            ? `Desk: ${(result as any).deskResult.pm.decision === "trade" ? (result as any).deskResult.pm.structure?.type?.replace(/_/g, " ") ?? "Trade" : "Pass"}`
           : result?.status === "recommendation" && result?.recommendation
             ? `${result.recommendation.direction} ${result.recommendation.strategyType.replace(/_/g, " ")}`
             : (() => {
@@ -200,7 +203,9 @@ export function StrategistHistoryList({ onSendToOrder, onReopenValidatedOrder, e
                     {result?.debateTranscript && result.debateTranscript.length > 0 ? (
                       <HistoryDebateTranscript transcript={result.debateTranscript} />
                     ) : null}
-                    {result?.status === "recommendation" && result.recommendation ? (
+                    {result?.status === "desk_recommendation" && (result as any).deskResult ? (
+                      <StrategistDeskCard deskResult={(result as any).deskResult as DeskResult} generatedAt={row.createdAt} />
+                    ) : result?.status === "recommendation" && result.recommendation ? (
                       <StrategistV2RecommendationCard
                         result={result}
                         onSendToOrder={onSendToOrder}
