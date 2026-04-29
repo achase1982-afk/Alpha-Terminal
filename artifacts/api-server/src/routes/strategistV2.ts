@@ -375,7 +375,7 @@ router.post("/analyze", async (req, res): Promise<void> => {
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           entry.error = message;
-          entry.status = `Failed: ${message}`;
+          entry.status = "Analysis failed";
           entry.done = true;
           entry.finishedAt = Date.now();
           notifyStrategistCompletion({
@@ -632,7 +632,7 @@ router.post("/validate-trade", (req, res): void => {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         entry.error = message;
-        entry.status = `Failed: ${message}`;
+        entry.status = "Validation failed";
         entry.done = true;
         entry.finishedAt = Date.now();
         logger.error({ err, jobId, ticker: upperTicker }, "TradeValidation: background validate failed");
@@ -665,6 +665,10 @@ router.get("/thinking/:jobId", (req, res): void => {
   const result = entry.kind === "validation"
     ? (entry.validationResult ?? null)
     : (entry.result ?? null);
+  // Sanitize the error field: never expose raw DB/SQL error strings to the
+  // client. The frontend only needs to know whether an error occurred; the
+  // full message is logged server-side by the catch block that set it.
+  const safeError = entry.error != null ? "Analysis failed. Please retry." : null;
   res.json({
     jobId: entry.jobId,
     kind: entry.kind ?? "analyze",
@@ -676,7 +680,7 @@ router.get("/thinking/:jobId", (req, res): void => {
     done: entry.done,
     result,
     validationMeta: entry.validationMeta ?? null,
-    error: entry.error ?? null,
+    error: safeError,
     startedAt: entry.startedAt,
     finishedAt: entry.finishedAt ?? null,
   });
