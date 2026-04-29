@@ -1,3 +1,4 @@
+import "./loadEnv.js";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { injectExternalQuote, startStreamer as startSchwabStreamer, onTokenRefreshed as schwabTokenRefreshed, addFuturesSymbols, addSymbols as addSchwabSymbols, isConnected as isSchwabConnected } from "./lib/schwabStreamer";

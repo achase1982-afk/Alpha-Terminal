@@ -45,6 +45,7 @@ import {
 } from "../lib/deterministicStrategist.js";
 import { resolveStrikes, type AccountSnapshot, type ChainData, type ResolvedTrade, type StrikeResolutionError } from "../lib/strikeResolver.js";
 import { createGeminiClient, getGeminiApiKey } from "../lib/geminiClient.js";
+import { getXaiApiKey } from "../lib/xaiEnv.js";
 
 /** Express `Response` omits optional Node `flush` / socket cork helpers present when compression or a custom stack attaches them. */
 type ResponseWithNodeStream = ExpressResponse & {
@@ -345,8 +346,8 @@ function isGrokModel(model: string): boolean {
 }
 
 function getXaiProvider() {
-  const apiKey = process.env.XAI_API_KEY;
-  if (!apiKey) throw new Error("XAI_API_KEY not configured");
+  const apiKey = getXaiApiKey();
+  if (!apiKey) throw new Error("xAI API key not configured (set XAI_API_KEY or GROK_XAI)");
   return createXai({ apiKey });
 }
 
@@ -2903,7 +2904,7 @@ ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA ═══\n${marketContext
       return;
     }
     if (isGrokModel(chosenModel)) {
-      if (!process.env.XAI_API_KEY) {
+      if (!getXaiApiKey()) {
         clearInterval(heartbeat);
         return res.status(500).json({ error: "xAI API key not configured." });
       }
