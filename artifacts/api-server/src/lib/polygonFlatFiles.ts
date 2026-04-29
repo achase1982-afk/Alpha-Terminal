@@ -189,7 +189,7 @@ async function flushBatch(batch: DbRow[]): Promise<void> {
 export async function syncDate(
   date: Date,
   tickers: string[],
-  opts?: { maxS3Requests?: number; onS3Call?: () => void },
+  opts?: { maxS3Requests?: number; onS3Call?: () => void; force?: boolean },
 ): Promise<{ date: string; rows: number; files: number; skipped: boolean; error?: string; s3Calls?: number }> {
   const tradeDate = formatDate(date);
   const s3 = createS3Client();
@@ -198,7 +198,7 @@ export async function syncDate(
   const existing = await db.query.polygonSyncLogTable.findFirst({
     where: eq(polygonSyncLogTable.tradeDate, tradeDate),
   });
-  if (existing?.status === "synced") {
+  if (!opts?.force && existing?.status === "synced") {
     return { date: tradeDate, rows: existing.rowsInserted ?? 0, files: 0, skipped: true, s3Calls: 0 };
   }
 
@@ -282,14 +282,15 @@ export async function syncDate(
 export async function syncDateRange(
   startDate: Date,
   endDate: Date,
-  tickers: string[]
+  tickers: string[],
+  opts?: { maxS3Requests?: number; onS3Call?: () => void; force?: boolean },
 ): Promise<Array<{ date: string; rows: number; files: number; skipped: boolean; error?: string }>> {
   const results = [];
   const cursor = new Date(startDate);
   while (cursor <= endDate) {
     const dow = cursor.getUTCDay();
     if (dow !== 0 && dow !== 6) {
-      results.push(await syncDate(new Date(cursor), tickers));
+      results.push(await syncDate(new Date(cursor), tickers, opts));
     }
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
