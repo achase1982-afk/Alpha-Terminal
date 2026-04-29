@@ -2,8 +2,9 @@ import { Router, type IRouter, type Response as ExpressResponse } from "express"
 import { logFailure } from "../lib/telemetry.js";
 import { emitTelemetry, createTelemetryBatch } from "../lib/telemetryStore.js";
 import Anthropic from "@anthropic-ai/sdk";
-import { streamText } from "ai";
+import { generateText, streamText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createXai } from "@ai-sdk/xai";
 import {
   RunTechnicalAnalysisBody,
   RunTechnicalAnalysisResponse,
@@ -243,6 +244,8 @@ const AVAILABLE_MODELS = [
   "gemini-2.5-pro",
   "gemini-2.5-flash",
   "gemini-2.0-flash",
+  "grok-4",
+  "grok-3",
 ];
 
 export function isClaude47OrNewer(model: string): boolean {
@@ -337,6 +340,16 @@ function isGeminiModel(model: string): boolean {
   return model.startsWith("gemini-");
 }
 
+function isGrokModel(model: string): boolean {
+  return model.startsWith("grok-");
+}
+
+function getXaiProvider() {
+  const apiKey = process.env.XAI_API_KEY;
+  if (!apiKey) throw new Error("XAI_API_KEY not configured");
+  return createXai({ apiKey });
+}
+
 async function nativeStreamGemini(opts: NativeStreamOptions): Promise<string> {
   if (!getGeminiApiKey()) throw new Error("Gemini AI integration env vars not configured");
 
@@ -382,10 +395,38 @@ async function nativeStreamGemini(opts: NativeStreamOptions): Promise<string> {
   return fullText;
 }
 
+async function nativeStreamGrok(opts: NativeStreamOptions): Promise<string> {
+  const {
+    prompt,
+    systemPrompt,
+    modelName = "grok-4",
+    temperature = 0,
+    onText,
+  } = opts;
+
+  const xai = getXaiProvider();
+  const result = streamText({
+    model: xai(modelName),
+    system: systemPrompt,
+    temperature,
+    prompt,
+  });
+
+  let fullText = "";
+  for await (const chunk of result.textStream) {
+    fullText += chunk;
+    if (onText) onText(chunk);
+  }
+  return fullText;
+}
+
 async function nativeStream(opts: NativeStreamOptions): Promise<string> {
   const model = opts.modelName || DEFAULT_MODEL;
   if (isGeminiModel(model)) {
     return nativeStreamGemini(opts);
+  }
+  if (isGrokModel(model)) {
+    return nativeStreamGrok(opts);
   }
   return nativeStreamClaude(opts);
 }
@@ -444,6 +485,15 @@ async function callModel(
 ): Promise<string> {
   if (isGeminiModel(modelName)) {
     return callGeminiDirect(prompt, modelName, temperature);
+  }
+  if (isGrokModel(modelName)) {
+    const xai = getXaiProvider();
+    const { text } = await generateText({
+      model: xai(modelName),
+      temperature,
+      prompt,
+    });
+    return text.trim() || "No response";
   }
   return callClaude(prompt, modelName, temperature);
 }
@@ -2700,8 +2750,10 @@ router.post("/options-strategist/stream", async (req, res) => {
       if (!res.writableEnded) res.write(": ping\n\n");
     }, 5000);
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
+    const narrativeModel = model ?? DEFAULT_MODEL;
+    const needsAnthropicKey = !isGeminiModel(narrativeModel) && !isGrokModel(narrativeModel);
+    const apiKey = needsAnthropicKey ? process.env.ANTHROPIC_API_KEY : undefined;
+    if (needsAnthropicKey && !apiKey) {
       clearInterval(heartbeat);
       res.write(`data: ${JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" })}\n\n`);
       res.write("data: [DONE]\n\n");
@@ -2849,16 +2901,16 @@ ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA ═══\n${marketContext
       }
       res.end();
       return;
-    } else {
-      const apiKey = process.env.ANTHROPIC_API_KEY;
-      if (!apiKey) {
+    }
+    if (isGrokModel(chosenModel)) {
+      if (!process.env.XAI_API_KEY) {
         clearInterval(heartbeat);
-        return res.status(500).json({ error: "Claude API key not configured." });
+        return res.status(500).json({ error: "xAI API key not configured." });
       }
 
-      const anthropic = createAnthropic({ apiKey });
+      const xai = getXaiProvider();
       const result = streamText({
-        model: anthropic(chosenModel),
+        model: xai(chosenModel),
         system: systemPrompt,
         temperature: 0.1,
         messages: messages.map(m => ({
@@ -2878,6 +2930,33 @@ ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA ═══\n${marketContext
       res.end();
       return;
     }
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      clearInterval(heartbeat);
+      return res.status(500).json({ error: "Claude API key not configured." });
+    }
+
+    const anthropic = createAnthropic({ apiKey });
+    const result = streamText({
+      model: anthropic(chosenModel),
+      system: systemPrompt,
+      temperature: 0.1,
+      messages: messages.map(m => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      })),
+    });
+
+    try {
+      for await (const chunk of result.textStream) {
+        if (!firstChunkSent) { firstChunkSent = true; clearInterval(heartbeat); }
+        res.write(chunk);
+      }
+    } finally {
+      clearInterval(heartbeat);
+    }
+    res.end();
+    return;
   } catch (error) {
     req.log.error({ err: error }, "Chat stream error");
     if (!res.headersSent) {

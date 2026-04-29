@@ -427,6 +427,8 @@ export function SystemSettingsPage() {
             >
               <option value="google">Google (Gemini)</option>
               <option value="anthropic">Anthropic (Claude)</option>
+              <option value="openai">OpenAI (ChatGPT)</option>
+              <option value="xai">xAI (Grok)</option>
             </select>
           </div>
           <div className="space-y-1.5">
@@ -447,6 +449,8 @@ export function SystemSettingsPage() {
             >
               <option value="google">Google (Gemini)</option>
               <option value="anthropic">Anthropic (Claude)</option>
+              <option value="openai">OpenAI (ChatGPT)</option>
+              <option value="xai">xAI (Grok)</option>
             </select>
           </div>
           <div className="space-y-1.5">

@@ -171,10 +171,10 @@ export interface TerminalState {
   ) => void;
 
   aiLabStrategistConfig: {
-    analystModelProvider: 'anthropic' | 'google';
+    analystModelProvider: 'anthropic' | 'google' | 'openai' | 'xai';
     analystModelName: string;
     analystTemperature: number;
-    skepticModelProvider: 'anthropic' | 'google';
+    skepticModelProvider: 'anthropic' | 'google' | 'openai' | 'xai';
     skepticModelName: string;
     skepticTemperature: number;
     enabled: boolean;

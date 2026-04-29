@@ -1,5 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
+import { generateText } from "ai";
+import { createXai } from "@ai-sdk/xai";
 import { logger } from "./logger.js";
 import { createGeminiClient, hasGeminiApiKey } from "./geminiClient.js";
 import type {
@@ -520,6 +522,25 @@ export async function callOpenAIWithSystem(model: string, temperature: number, s
   const text = completion.choices?.[0]?.message?.content?.trim() ?? "";
   if (!text) throw new Error("No text content in Analyst LLM response (OpenAI)");
   return text;
+}
+
+function makeXaiProvider() {
+  const apiKey = process.env.XAI_API_KEY;
+  if (!apiKey) throw new Error("XAI_API_KEY not configured");
+  return createXai({ apiKey });
+}
+
+export async function callXaiWithSystem(model: string, temperature: number, systemPrompt: string, prompt: string): Promise<string> {
+  const xai = makeXaiProvider();
+  const { text } = await generateText({
+    model: xai(model),
+    system: systemPrompt,
+    temperature,
+    prompt,
+  });
+  const rawText = text.trim();
+  if (!rawText) throw new Error("No text content in Analyst LLM response (xAI)");
+  return rawText;
 }
 
 export function extractJson(rawText: string): string {
@@ -1237,6 +1258,9 @@ export class ConfigurableAnalystClient implements AiLabAnalystClient {
       case "openai":
         rawText = await callOpenAI(this.modelName, this.temperature, prompt, systemPrompt);
         break;
+      case "xai":
+        rawText = await callXaiWithSystem(this.modelName, this.temperature, systemPrompt, prompt);
+        break;
       default:
         throw new Error(`Unsupported analyst provider: ${this.provider}`);
     }
@@ -1270,6 +1294,9 @@ export class ConfigurableAnalystClient implements AiLabAnalystClient {
       case "openai":
         rawText = await callOpenAIWithSystem(this.modelName, this.temperature, systemPrompt, prompt);
         break;
+      case "xai":
+        rawText = await callXaiWithSystem(this.modelName, this.temperature, systemPrompt, prompt);
+        break;
       default:
         throw new Error(`Unsupported analyst provider: ${this.provider}`);
     }
@@ -1301,6 +1328,9 @@ export class ConfigurableAnalystClient implements AiLabAnalystClient {
         break;
       case "openai":
         rawText = await callOpenAIWithSystem(this.modelName, this.temperature, systemPrompt, prompt);
+        break;
+      case "xai":
+        rawText = await callXaiWithSystem(this.modelName, this.temperature, systemPrompt, prompt);
         break;
       default:
         throw new Error(`Unsupported analyst provider: ${this.provider}`);
