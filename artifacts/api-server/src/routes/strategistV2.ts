@@ -729,6 +729,8 @@ router.post("/validate-trade", (req, res): void => {
   }
 });
 
+// Re-fetch final strategist state from DB when the in-memory buffer is gone
+// (e.g. tab backgrounded + TTL). Kept in sync with client `strategistPoller` recovery.
 router.get("/job/:jobId/final", async (req, res): Promise<void> => {
   const jobId = req.params.jobId;
   if (!jobId) {

@@ -6,6 +6,7 @@ import {
   useGetQuote, useGetPriceHistory, useGetOptionChain,
 } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+// Strategist V2: polling lives in `strategistPoller` (survives tab background via sync + `/job/:id/final`).
 import { startStrategistPolling } from "@/lib/strategistPoller";
 import {
   BarChart2, DollarSign, Shield, TrendingUp, Scale,
