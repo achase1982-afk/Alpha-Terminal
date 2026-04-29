@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.66",
+    "@ai-sdk/xai": "^3.0.83",
     "@anthropic-ai/sdk": "^0.88.0",
     "@aws-sdk/client-s3": "^3.1027.0",
     "@aws-sdk/lib-storage": "^3.1027.0",

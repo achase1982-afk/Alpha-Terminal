@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { callOpenAIWithSystem } from "./aiLabAnalystClient.js";
+import { callOpenAIWithSystem, callXaiWithSystem } from "./aiLabAnalystClient.js";
 import { createGeminiClient, getGeminiApiKey } from "./geminiClient.js";
 import { logger } from "./logger.js";
 import type {
@@ -296,6 +296,9 @@ export class ConfigurableSkepticClient implements AiLabSkepticClient {
       case "openai":
         rawText = await callOpenAIWithSystem(this.modelName, this.temperature, systemPrompt, prompt);
         break;
+      case "xai":
+        rawText = await callXaiWithSystem(this.modelName, this.temperature, systemPrompt, prompt);
+        break;
       default:
         throw new Error(`Unsupported skeptic provider: ${this.provider}`);
     }
@@ -327,6 +330,9 @@ export class ConfigurableSkepticClient implements AiLabSkepticClient {
         break;
       case "openai":
         rawText = await callOpenAIWithSystem(this.modelName, this.temperature, systemPrompt, prompt);
+        break;
+      case "xai":
+        rawText = await callXaiWithSystem(this.modelName, this.temperature, systemPrompt, prompt);
         break;
       default:
         throw new Error(`Unsupported skeptic provider: ${this.provider}`);

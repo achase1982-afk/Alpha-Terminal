@@ -507,6 +507,11 @@ const OPENAI_MODELS = [
   "o4-mini",
 ];
 
+const XAI_MODELS = [
+  "grok-4",
+  "grok-3",
+];
+
 const ANTHROPIC_MODELS = [
   "claude-opus-4-7",
   "claude-opus-4-6",
@@ -524,24 +529,27 @@ const GOOGLE_MODELS = [
   "gemini-2.0-flash",
 ];
 
-const ALL_MODELS = [...ANTHROPIC_MODELS, ...GOOGLE_MODELS, ...OPENAI_MODELS];
+const ALL_MODELS = [...ANTHROPIC_MODELS, ...GOOGLE_MODELS, ...OPENAI_MODELS, ...XAI_MODELS];
 
 const ANALYST_MODELS: Record<string, string[]> = {
   anthropic: ANTHROPIC_MODELS,
   google: GOOGLE_MODELS,
   openai: OPENAI_MODELS,
+  xai: XAI_MODELS,
 };
 
 const SKEPTIC_MODELS: Record<string, string[]> = {
   anthropic: ANTHROPIC_MODELS,
   google: GOOGLE_MODELS,
   openai: OPENAI_MODELS,
+  xai: XAI_MODELS,
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
   anthropic: "ANTHROPIC (CLAUDE)",
   google: "GOOGLE (GEMINI)",
   openai: "OPENAI (CHATGPT)",
+  xai: "XAI (GROK)",
 };
 
 type AiFeatureKey = keyof TerminalState['aiFeatureSettings'];
