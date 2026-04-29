@@ -556,7 +556,7 @@ const OPTIONS_DATA_QUALITY_NOTE = `DATA QUALITY NOTE: This chain has been pre-sa
 
 router.get("/models", (_req, res) => {
   const data = GetAvailableModelsResponse.parse({ models: AVAILABLE_MODELS });
-  res.json(data);
+  return res.json(data);
 });
 
 router.post("/technical-snapshot", async (req, res) => {
@@ -600,12 +600,12 @@ If data is insufficient for any field, use null. Base RSI on 14-period calculati
     const content = response.content[0];
     const text = content.type === "text" ? content.text : "No response";
     const parsed = JSON.parse(text);
-    res.json(parsed);
+    return res.json(parsed);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Technical snapshot error");
     void logFailure("MARKET_PULSE", "ERROR", `Claude technical snapshot failed: ${msg}`, { endpoint: "/technical-snapshot", error: msg });
-    res.json({ error: msg });
+    return res.json({ error: msg });
   }
 });
 
@@ -641,12 +641,12 @@ Be specific, data-driven, and concise. Use markdown formatting.`;
 
   try {
     const response = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.3);
-    res.json(RunTechnicalAnalysisResponse.parse({ response }));
+    return res.json(RunTechnicalAnalysisResponse.parse({ response }));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Technical analysis error");
     void logFailure("MARKET_PULSE", "ERROR", `Claude technical analysis failed: ${msg}`, { endpoint: "/technical-analysis", error: msg });
-    res.json(RunTechnicalAnalysisResponse.parse({ response: `**Analysis failed:** ${msg}`, error: msg }));
+    return res.json(RunTechnicalAnalysisResponse.parse({ response: `**Analysis failed:** ${msg}`, error: msg }));
   }
 });
 
@@ -847,6 +847,7 @@ Every price level MUST come from the provided data. For fundamental sections, us
     clearInterval(heartbeat);
     res.write("data: [DONE]\n\n");
     res.end();
+    return;
   } catch (err: unknown) {
     clearInterval(heartbeat);
     const msg = err instanceof Error ? err.message : String(err);
@@ -854,6 +855,7 @@ Every price level MUST come from the provided data. For fundamental sections, us
     void logFailure("MARKET_PULSE", "ERROR", `Claude streaming analysis failed: ${msg}`, { endpoint: "/technical-analysis/stream", error: msg });
     res.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
     res.end();
+    return;
   }
 });
 
@@ -891,12 +893,12 @@ Be specific with strikes, expirations, and premium estimates. Use markdown forma
 
   try {
     const response = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.3);
-    res.json(RunOptionsAnalysisResponse.parse({ response }));
+    return res.json(RunOptionsAnalysisResponse.parse({ response }));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Options analysis error");
     void logFailure("MARKET_PULSE", "ERROR", `Claude options analysis failed: ${msg}`, { endpoint: "/options-analysis", error: msg });
-    res.json(RunOptionsAnalysisResponse.parse({ response: `**Analysis failed:** ${msg}`, error: msg }));
+    return res.json(RunOptionsAnalysisResponse.parse({ response: `**Analysis failed:** ${msg}`, error: msg }));
   }
 });
 
@@ -1515,11 +1517,11 @@ Keep the entire output under 500 words. Be technically precise, data-driven, and
 
   try {
     const response = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.2);
-    res.json({ response });
+    return res.json({ response });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Market pulse error");
-    res.json({ response: `**Live Market Pulse failed:** ${msg}`, error: msg });
+    return res.json({ response: `**Live Market Pulse failed:** ${msg}`, error: msg });
   }
 });
 
@@ -1661,11 +1663,11 @@ RULES:
       generatedAt: Date.now(),
     };
 
-    res.json(result);
+    return res.json(result);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Market pulse JSON error");
-    res.status(500).json({ error: `Market Pulse failed: ${msg}` });
+    return res.status(500).json({ error: `Market Pulse failed: ${msg}` });
   }
 });
 
@@ -2110,6 +2112,7 @@ Write ONLY the narrative fields. Return this exact JSON structure:
 
     safeSseWrite(res, `event: result\ndata: ${JSON.stringify({ type: "complete", pulse: finalPulse })}\n\n`);
     if (!res.writableEnded) res.end();
+    return;
   } catch (err: unknown) {
     clearInterval(heartbeat);
     pulseGenerationInFlight = false;
@@ -2127,6 +2130,7 @@ Write ONLY the narrative fields. Return this exact JSON structure:
     lastPulseError = `Generation failed — ${cleanMsg}. Please retry.`;
     safeSseWrite(res, `event: error\ndata: ${JSON.stringify({ type: "error", message: lastPulseError })}\n\n`);
     if (!res.writableEnded) res.end();
+    return;
   }
 });
 
@@ -2485,11 +2489,11 @@ router.post("/options-strategist", async (req, res) => {
     const narrativePrompt = `${STRATEGIST_SYSTEM_PROMPT}${eventGuardPromptBlock}${econBlock}${ratingsBlock}\n\nHere is the payload:\n\n${JSON.stringify(payload, null, 2)}`;
     const narrative = await callClaude(narrativePrompt, DEFAULT_MODEL, 0.2);
 
-    res.json({ strategies, narrative, edge, underlyingPrice, regime, pulse: resolvedPulse, overrideWarning, tickerProfile, chainAnalytics, eventGuard: eventGuardSummary });
+    return res.json({ strategies, narrative, edge, underlyingPrice, regime, pulse: resolvedPulse, overrideWarning, tickerProfile, chainAnalytics, eventGuard: eventGuardSummary });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Options strategist error");
-    res.json({ strategies: [], narrative: "", error: msg });
+    return res.json({ strategies: [], narrative: "", error: msg });
   }
 });
 
@@ -2752,15 +2756,16 @@ router.post("/options-strategist/stream", async (req, res) => {
     clearInterval(heartbeat);
     res.write("data: [DONE]\n\n");
     res.end();
+    return;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Options strategist stream error");
     if (!res.headersSent) {
-      res.status(500).json({ error: msg });
-    } else {
-      res.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
-      res.end();
+      return res.status(500).json({ error: msg });
     }
+    res.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
+    res.end();
+    return;
   }
 });
 
@@ -2843,6 +2848,7 @@ ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA ═══\n${marketContext
         clearInterval(heartbeat);
       }
       res.end();
+      return;
     } else {
       const apiKey = process.env.ANTHROPIC_API_KEY;
       if (!apiKey) {
@@ -2870,12 +2876,14 @@ ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA ═══\n${marketContext
         clearInterval(heartbeat);
       }
       res.end();
+      return;
     }
   } catch (error) {
     req.log.error({ err: error }, "Chat stream error");
     if (!res.headersSent) {
-      res.status(500).json({ error: "Internal Server Error" });
+      return res.status(500).json({ error: "Internal Server Error" });
     }
+    return;
   }
 });
 
@@ -3070,11 +3078,11 @@ router.post("/deterministic-scan", async (req, res) => {
     const result = scanMode === "DISCOVERY"
       ? await runDiscoveryScan(symbols, accessToken, traderToken, pulseCtx, req.log, { returnAll: !!returnAll })
       : await runDeterministicScan(symbols, accessToken, traderToken, pulseCtx, req.log);
-    res.json({ ...result, scanMode });
+    return res.json({ ...result, scanMode });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Deterministic scan error");
-    res.status(500).json({ error: msg });
+    return res.status(500).json({ error: msg });
   }
 });
 
@@ -3418,6 +3426,7 @@ router.post("/deterministic-strategist", async (req, res) => {
   clearInterval(heartbeat);
   res.write("data: [DONE]\n\n");
   res.end();
+  return;
 });
 
 router.post("/market-scanner", async (req, res) => {
@@ -3746,7 +3755,7 @@ INSTRUCTIONS:
 
   try {
     const response = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.1);
-    res.json({
+    return res.json({
       response,
       indicators: {
         rsi14: ta.rsi14,
@@ -3760,7 +3769,7 @@ INSTRUCTIONS:
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Strategy generation error");
-    res.json({ response: `**Strategy generation failed:** ${msg}`, error: msg });
+    return res.json({ response: `**Strategy generation failed:** ${msg}`, error: msg });
   }
 });
 
@@ -3790,10 +3799,10 @@ Be concise and institutional-grade. Focus on actual market correlations, sector 
 
   try {
     const response = await callModel(prompt, model, temperature);
-    res.json({ response });
+    return res.json({ response });
   } catch (err) {
     req.log.error({ err }, "Sympathy plays AI error");
-    res.json({ response: "Unable to generate sympathy plays at this time." });
+    return res.json({ response: "Unable to generate sympathy plays at this time." });
   }
 });
 
@@ -3836,11 +3845,11 @@ router.post("/pre-trade-check", async (req, res) => {
       : "Multiple risk flags. Consider passing on this setup.";
   }
 
-  res.json({ ...result, aiOneLiner });
+  return res.json({ ...result, aiOneLiner });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Pre-trade check error");
-    res.status(500).json({ error: msg });
+    return res.status(500).json({ error: msg });
   }
 });
 

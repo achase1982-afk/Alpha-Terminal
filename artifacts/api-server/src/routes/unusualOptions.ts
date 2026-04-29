@@ -50,9 +50,10 @@ router.get("/trailing", async (req, res) => {
       results,
       queryMs: Date.now() - t0,
     });
+    return;
   } catch (err: any) {
     logger.warn({ err: err.message }, "trailing unusual flow query failed");
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -73,6 +74,7 @@ router.get("/watcher", (_req, res) => {
     persistence: getFlowPersistenceStats(),
     rollup: getFlowRollupStats(),
   });
+  return;
 });
 
 /**
@@ -109,14 +111,15 @@ router.get("/deep/:ticker", (req, res) => {
     coverage: getCoverageInfo(),
     fetchedAt: Date.now(),
   });
+  return;
 });
 
 router.get("/status", async (req, res) => {
   try {
     const status = await getSyncStatus();
-    res.json(status);
+    return res.json(status);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -159,6 +162,7 @@ router.post("/sync", async (req, res) => {
       logger.error(err, "Polygon flat-file sync error");
     }
   });
+  return;
 });
 
 router.get("/activity", async (req, res) => {
@@ -253,10 +257,10 @@ router.get("/activity", async (req, res) => {
       })
       .slice(0, limitNum);
 
-    res.json({ unusual, latestDate, count: unusual.length });
+    return res.json({ unusual, latestDate, count: unusual.length });
   } catch (err: any) {
     logger.error(err, "unusual-options activity error");
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 

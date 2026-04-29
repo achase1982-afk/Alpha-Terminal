@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useQuote } from "@/hooks/useQuote";
 import { useTerminalStore } from "@/lib/store";
 import { useGetPriceHistory, useGetQuote } from "@workspace/api-client-react";
+import type { QuoteResponse } from "@workspace/api-client-react";
 import { TrendingUp, TrendingDown, Minus, Zap, Shield, Activity } from "lucide-react";
 
 interface Candle {
@@ -11,6 +12,14 @@ interface Candle {
   low: number;
   close: number;
   volume: number;
+}
+
+function betaFromQuoteResponse(q: QuoteResponse | null | undefined): number | null {
+  if (!q) return null;
+  const fundamental = Reflect.get(q, "fundamental");
+  if (!fundamental || typeof fundamental !== "object") return null;
+  const beta = Reflect.get(fundamental, "beta");
+  return typeof beta === "number" && !isNaN(beta) ? beta : null;
 }
 
 interface Props {
@@ -278,7 +287,7 @@ export function InstitutionalDashboard({ candles }: Props) {
     const avgVol5 = recentVol.length > 0 ? recentVol.reduce((a, c) => a + c.volume, 0) / recentVol.length : 0;
     const blockCount = vol != null && avgVol5 > 0 ? Math.max(0, Math.floor((vol / avgVol5 - 0.5) * 10)) : 0;
 
-    const beta = (fundData as any)?.fundamental?.beta ?? null;
+    const beta = betaFromQuoteResponse(fundData);
     const rsVsSpy = changePct != null && spyQuote?.changePct != null
       ? changePct - spyQuote.changePct : null;
 

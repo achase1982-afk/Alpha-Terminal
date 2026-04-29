@@ -19,6 +19,54 @@ interface EdgarFiling {
   accessionNo: string;
 }
 
+/**
+ * Partial typings for SEC `data.sec.gov` JSON — full schemas are larger than this file consumes.
+ * Submissions: `data.sec.gov/submissions/CIK##########.json`
+ */
+interface SecSubmissionsRecent {
+  accessionNumber?: string[];
+  filingDate?: string[];
+  form?: string[];
+  primaryDocument?: string[];
+  primaryDocDescription?: string[];
+}
+
+/** `data.sec.gov/submissions/CIK##########.json` — partial envelope for company + filings. */
+interface SecSubmissionsJson {
+  name?: string;
+  sic?: string | number | null;
+  sicDescription?: string | null;
+  stateOfIncorporation?: string | null;
+  fiscalYearEnd?: string | null;
+  category?: string | null;
+  ein?: string | null;
+  exchanges?: string[];
+  tickers?: string[];
+  filings?: {
+    recent?: SecSubmissionsRecent;
+  };
+}
+
+/** `data.sec.gov/api/xbrl/companyfacts/CIK##########.json` — partial XBRL companyfacts. */
+interface XbrlFactUnitEntry {
+  end?: string;
+  val?: number;
+  form?: string;
+  fy?: number;
+  fp?: string;
+  filed?: string;
+}
+
+interface XbrlTagData {
+  units?: Record<string, XbrlFactUnitEntry[]>;
+}
+
+interface SecCompanyFactsJson {
+  facts?: {
+    "us-gaap"?: Record<string, XbrlTagData>;
+  };
+}
+
 let tickerToCik: Map<string, string> | null = null;
 let tickerMapLoadedAt = 0;
 const TICKER_MAP_TTL = 24 * 60 * 60 * 1000;
@@ -91,7 +139,7 @@ async function fetchEdgarFilings(
     if (cached) return cached.filings;
     throw new Error(`SEC submissions returned ${submissionsRes.status}`);
   }
-  const submissions = (await submissionsRes.json()) as any;
+  const submissions = (await submissionsRes.json()) as SecSubmissionsJson;
 
   const recent = submissions.filings?.recent;
   if (!recent) return [];
@@ -161,7 +209,7 @@ router.get("/company", async (req, res) => {
     if (!submissionsRes.ok) {
       return res.json({ cik, name: null });
     }
-    const data = (await submissionsRes.json()) as any;
+    const data = (await submissionsRes.json()) as SecSubmissionsJson;
 
     return res.json({
       cik,
@@ -337,16 +385,17 @@ router.get("/insider-transactions", async (req, res) => {
       headers: HEADERS, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!subRes.ok) return res.json({ transactions: [], symbol });
-    const subs = (await subRes.json()) as any;
+    const subs = (await subRes.json()) as SecSubmissionsJson;
     const recent = subs.filings?.recent;
     if (!recent) return res.json({ transactions: [], symbol });
 
     const cikNum = parseInt(cik);
     const form4Entries: { xmlUrl: string; viewerUrl: string }[] = [];
-    for (let i = 0; i < (recent.form?.length || 0) && form4Entries.length < 15; i++) {
-      if (recent.form[i] === "4" || recent.form[i] === "4/A") {
-        const acc = recent.accessionNumber[i].replace(/-/g, "");
-        const primaryDoc = recent.primaryDocument[i] || "";
+    for (let i = 0; i < (recent.form?.length ?? 0) && form4Entries.length < 15; i++) {
+      const formVal = recent.form?.[i];
+      if (formVal === "4" || formVal === "4/A") {
+        const acc = recent.accessionNumber?.[i]?.replace(/-/g, "") ?? "";
+        const primaryDoc = recent.primaryDocument?.[i] || "";
         const rawDoc = primaryDoc.replace(/^xsl[^/]*\//, "");
         if (rawDoc) {
           const xmlUrl = `https://www.sec.gov/Archives/edgar/data/${cikNum}/${acc}/${rawDoc}`;
@@ -437,23 +486,23 @@ router.get("/institutional-holders", async (req, res) => {
       headers: HEADERS, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!subRes.ok) return res.json({ holders: [], symbol });
-    const subs = (await subRes.json()) as any;
+    const subs = (await subRes.json()) as SecSubmissionsJson;
     const recent = subs.filings?.recent;
     if (!recent) return res.json({ holders: [], symbol });
 
     const cikNum = parseInt(cik);
     const filingInfos: { url: string; date: string; form: string }[] = [];
-    for (let i = 0; i < (recent.form?.length || 0) && filingInfos.length < 20; i++) {
-      const form = recent.form[i] || "";
+    for (let i = 0; i < (recent.form?.length ?? 0) && filingInfos.length < 20; i++) {
+      const form = recent.form?.[i] || "";
       if (form.includes("SC 13G") || form.includes("SC 13D") ||
           form.includes("SCHEDULE 13G") || form.includes("SCHEDULE 13D") ||
           form.includes("13G") || form.includes("13D")) {
-        const acc = recent.accessionNumber[i].replace(/-/g, "");
-        const rawDoc = (recent.primaryDocument[i] || "").replace(/^xsl[^/]*\//, "");
+        const acc = recent.accessionNumber?.[i]?.replace(/-/g, "") ?? "";
+        const rawDoc = (recent.primaryDocument?.[i] || "").replace(/^xsl[^/]*\//, "");
         if (rawDoc) {
           filingInfos.push({
             url: `https://www.sec.gov/Archives/edgar/data/${cikNum}/${acc}/${rawDoc}`,
-            date: recent.filingDate[i] || "",
+            date: recent.filingDate?.[i] || "",
             form,
           });
         }
@@ -513,19 +562,19 @@ interface CompanyFinancials {
   grossProfit: FinancialPeriod[];
 }
 
-function extractFacts(facts: any, tag: string, unit: string = "USD"): FinancialPeriod[] {
+function extractFacts(facts: SecCompanyFactsJson["facts"], tag: string, unit: string = "USD"): FinancialPeriod[] {
   const tagData = facts?.["us-gaap"]?.[tag];
   if (!tagData) return [];
   const entries = tagData.units?.[unit] || tagData.units?.["USD/shares"] || tagData.units?.["shares"] || [];
   return entries
-    .filter((e: any) => (e.form === "10-K" || e.form === "10-Q") && e.end && e.val !== undefined)
-    .map((e: any) => ({
-      end: e.end,
-      val: e.val,
-      form: e.form,
-      fy: e.fy,
-      fp: e.fp,
-      filed: e.filed,
+    .filter((e: XbrlFactUnitEntry) => (e.form === "10-K" || e.form === "10-Q") && e.end && e.val !== undefined)
+    .map((e: XbrlFactUnitEntry) => ({
+      end: e.end!,
+      val: e.val!,
+      form: e.form!,
+      fy: e.fy!,
+      fp: e.fp!,
+      filed: e.filed!,
     }));
 }
 
@@ -566,7 +615,7 @@ router.get("/company-financials", async (req, res) => {
     if (!factsRes.ok) {
       return res.status(factsRes.status).json({ error: `SEC returned ${factsRes.status}`, financials: null });
     }
-    const factsData = (await factsRes.json()) as any;
+    const factsData = (await factsRes.json()) as SecCompanyFactsJson;
     const facts = factsData.facts;
 
     const revCandidates = [

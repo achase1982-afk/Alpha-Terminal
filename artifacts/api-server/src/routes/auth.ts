@@ -155,11 +155,11 @@ router.get("/url", (_req, res) => {
   });
 
   const url = `${SCHWAB_AUTH_BASE}?${params.toString()}`;
-  res.json(GetAuthUrlResponse.parse({ url, configured: true }));
+  return res.json(GetAuthUrlResponse.parse({ url, configured: true }));
 });
 
 router.get("/redirect-uri", (_req, res) => {
-  res.json({ redirectUri: getTraderRedirectUri() });
+  return res.json({ redirectUri: getTraderRedirectUri() });
 });
 
 router.get("/callback", async (req, res) => {
@@ -235,10 +235,10 @@ router.get("/callback", async (req, res) => {
     pendingTokens.set("trader_latest", { accessToken, refreshToken: rfTok, ts: Date.now() });
 
     req.log.info("GET /callback — token exchange succeeded (stored as market + trader)");
-    res.redirect("/");
+    return res.redirect("/");
   } catch (err) {
     req.log.error({ err }, "GET /callback network error");
-    res.status(500).send(errorPage("Connection Error", "Could not reach Schwab API. Please try again."));
+    return res.status(500).send(errorPage("Connection Error", "Could not reach Schwab API. Please try again."));
   }
 });
 
@@ -248,7 +248,7 @@ router.get("/pending-session", (_req, res) => {
     return res.json({ found: false });
   }
   pendingTokens.delete("latest");
-  res.json({
+  return res.json({
     found: true,
     accessToken: pending.accessToken,
     refreshToken: pending.refreshToken,
@@ -314,7 +314,7 @@ router.post("/callback", async (req, res) => {
     const rt = (tokenData["refresh_token"] as string) ?? "";
     const ei = (tokenData["expires_in"] as number) ?? 1800;
     storeTokens("market", at, rt, ei);
-    res.json(ExchangeCodeResponse.parse({
+    return res.json(ExchangeCodeResponse.parse({
       accessToken: at,
       refreshToken: rt,
       expiresIn: ei,
@@ -322,7 +322,7 @@ router.post("/callback", async (req, res) => {
     }));
   } catch (err) {
     req.log.error({ err }, "Token exchange network error");
-    res.status(500).json({ error: "network_error", message: "Failed to reach Schwab API" });
+    return res.status(500).json({ error: "network_error", message: "Failed to reach Schwab API" });
   }
 });
 
@@ -371,7 +371,7 @@ router.post("/refresh", async (req, res) => {
     const newRt = (tokenData["refresh_token"] as string) ?? refreshToken;
     const newEi = (tokenData["expires_in"] as number) ?? 1800;
     storeTokens("market", newAt, newRt, newEi);
-    res.json(RefreshTokenResponse.parse({
+    return res.json(RefreshTokenResponse.parse({
       accessToken: newAt,
       refreshToken: newRt,
       expiresIn: newEi,
@@ -379,7 +379,7 @@ router.post("/refresh", async (req, res) => {
     }));
   } catch (err) {
     req.log.error({ err }, "Token refresh error");
-    res.status(500).json({ error: "internal_error", message: "Failed to refresh token" });
+    return res.status(500).json({ error: "internal_error", message: "Failed to refresh token" });
   }
 });
 
@@ -402,7 +402,7 @@ router.get("/trader-url", (_req, res) => {
   });
 
   const url = `${SCHWAB_AUTH_BASE}?${params.toString()}`;
-  res.json({ url, configured: true });
+  return res.json({ url, configured: true });
 });
 
 router.get("/trader-callback", async (req, res) => {
@@ -476,10 +476,10 @@ router.get("/trader-callback", async (req, res) => {
     pendingTokens.set("latest", { accessToken, refreshToken: trRfTok, ts: Date.now() });
 
     req.log.info("GET /trader-callback — Trader token exchange succeeded (stored as market + trader)");
-    res.send(traderSuccessPage());
+    return res.send(traderSuccessPage());
   } catch (err) {
     req.log.error({ err }, "GET /trader-callback network error");
-    res.status(500).send(errorPage("Connection Error", "Could not reach Schwab API."));
+    return res.status(500).send(errorPage("Connection Error", "Could not reach Schwab API."));
   }
 });
 
@@ -489,7 +489,7 @@ router.get("/trader-pending-session", (_req, res) => {
     return res.json({ found: false });
   }
   pendingTokens.delete("trader_latest");
-  res.json({
+  return res.json({
     found: true,
     accessToken: pending.accessToken,
     refreshToken: pending.refreshToken,
@@ -535,14 +535,14 @@ router.post("/trader-refresh", async (req, res) => {
     const trRt = (tokenData["refresh_token"] as string) ?? refreshToken;
     const trEi = (tokenData["expires_in"] as number) ?? 1800;
     storeTokens("trader", trAt, trRt, trEi);
-    res.json({
+    return res.json({
       accessToken: trAt,
       refreshToken: trRt,
       expiresIn: trEi,
     });
   } catch (err) {
     req.log.error({ err }, "Trader token refresh error");
-    res.status(500).json({ error: "internal_error", message: "Failed to refresh trader token" });
+    return res.status(500).json({ error: "internal_error", message: "Failed to refresh trader token" });
   }
 });
 

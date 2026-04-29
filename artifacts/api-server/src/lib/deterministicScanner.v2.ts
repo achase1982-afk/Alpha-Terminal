@@ -4,6 +4,7 @@ import { emitTelemetry, createTelemetryBatch } from "./telemetryStore.js";
 import type { FilterResult, ScanResult, ScanCandidate } from "./deterministicScanner.js";
 import { db, equityDailyTable, flowDailyAggregatesTable, optionsFlowPerStrikeTable, scannerTelemetryTable } from "@workspace/db";
 import { desc, eq, inArray, and, gte, lte, sql } from "drizzle-orm";
+import type { InferInsertModel } from "drizzle-orm";
 import { getSettings, type StrategistConfig } from "./strategistSettings.js";
 import { getCachedRegime, buildFallbackRegime, type StructuredRegime } from "./regimePostProcessor.js";
 import { computeIOScore } from "./ioScoreEngine.js";
@@ -843,6 +844,15 @@ function passesGuardrails(sym: string, price: number, avgVol?: number): { passes
 // ─── Main Discovery scan runner ────────────────────────────────────────────
 type WeightProfile = { trend: number; rs: number; volume: number; ivr: number; liquidity: number };
 
+type ScannerTelemetryInsert = InferInsertModel<typeof scannerTelemetryTable>;
+
+/** Top rows stored in `scanner_telemetry.results` (subset of each scan candidate). */
+interface ScannerTelemetryResultRow {
+  symbol: string;
+  score: number;
+  lean?: "BULLISH" | "BEARISH" | "MIXED";
+}
+
 function resolveWeightProfile(cfg: StrategistConfig, regime: StructuredRegime | null): { weights: WeightProfile; mode: "DEFAULT" | "IDIOSYNCRATIC" } {
   const useIdio = regime && regime.idioOpportunityFlag === true;
   if (useIdio) {
@@ -1354,17 +1364,24 @@ export async function runDiscoveryScan(
   }, "SCANNER", scanBatch);
 
   try {
-    await db.insert(scannerTelemetryTable).values({
+    const telemetryRow: ScannerTelemetryInsert = {
       mode: weightMode,
-      regime: regime as any,
-      weightsUsed: scanWeights as any,
+      regime,
+      weightsUsed: scanWeights,
       universeSize: symbols.length,
       passedFilters: scoredResults.length,
       aboveThreshold: aboveThreshold.length,
       thresholdUsed: minScore,
       catalystBonusAppliedTo: catalystBonusApplied,
-      results: candidates.slice(0, 20).map(c => ({ symbol: c.symbol, score: c.totalScore, lean: c.directionalLean })) as any,
-    });
+      results: candidates.slice(0, 20).map(
+        (c): ScannerTelemetryResultRow => ({
+          symbol: c.symbol,
+          score: c.totalScore,
+          lean: c.directionalLean,
+        }),
+      ),
+    };
+    await db.insert(scannerTelemetryTable).values(telemetryRow);
   } catch (err) {
     log.warn({ error: err instanceof Error ? err.message : String(err) }, "Failed to log scanner telemetry");
   }

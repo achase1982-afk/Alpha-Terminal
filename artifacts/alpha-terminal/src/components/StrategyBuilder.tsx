@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useTerminalStore } from "@/lib/store";
-import { useQuote } from "@/hooks/useQuote";
+import { useQuote, type QuoteData } from "@/hooks/useQuote";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { startStrategistPolling } from "@/lib/strategistPoller";
@@ -122,6 +122,13 @@ function fmt(n: number | null | undefined, decimals = 2): string {
 
 function fmtCurrency(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+/** QuoteData uses `description`; some code paths still attach `companyName` on the merged object. */
+function companyNameFromQuote(quote: QuoteData | null | undefined): string {
+  if (quote == null) return "";
+  const v = Reflect.get(quote, "companyName");
+  return v == null ? "" : String(v);
 }
 
 let legIdCounter = 0;
@@ -830,9 +837,9 @@ export function StrategyBuilder({
       optionType: (l.optionType?.toUpperCase() === "CALL" ? "CALL" : "PUT") as "CALL" | "PUT",
       expiration: l.expiration,
       quantity: l.quantity,
-      bid: (l as any).bid ?? null,
-      ask: (l as any).ask ?? null,
-      delta: (l as any).delta ?? null,
+      bid: l.bid ?? null,
+      ask: l.ask ?? null,
+      delta: l.delta ?? null,
     }));
 
     const ticket = {
@@ -914,7 +921,7 @@ export function StrategyBuilder({
     fontSize: 13, fontFamily: SYS_FONT, borderRadius: 7,
   } as const;
 
-  const companyName = (quote as any)?.companyName ?? "";
+  const companyName = companyNameFromQuote(quote);
   const expLabel0 = legs.length > 0 ? (() => {
     const clean = legs[0].expiration.split(":")[0].trim();
     const d = new Date(clean);

@@ -13,7 +13,7 @@ router.post("/subscribe", (req, res) => {
   }
 
   addSubscription(sub);
-  res.json({ success: true, total: getSubscriptionCount() });
+  return res.json({ success: true, total: getSubscriptionCount() });
 });
 
 router.post("/unsubscribe", (req, res) => {
@@ -24,7 +24,7 @@ router.post("/unsubscribe", (req, res) => {
   }
 
   removeSubscription(endpoint);
-  res.json({ success: true });
+  return res.json({ success: true });
 });
 
 router.get("/vapid-key", (_req, res) => {
@@ -32,7 +32,7 @@ router.get("/vapid-key", (_req, res) => {
   if (!key) {
     return res.status(500).json({ error: "VAPID key not configured" });
   }
-  res.json({ publicKey: key });
+  return res.json({ publicKey: key });
 });
 
 router.post("/test", async (_req, res) => {
@@ -43,15 +43,15 @@ router.post("/test", async (_req, res) => {
       body: "Push notifications are working",
       tag: "test",
     });
-    res.json({ success: true, subscribers: getSubscriptionCount() });
+    return res.json({ success: true, subscribers: getSubscriptionCount() });
   } catch (err) {
     logger.error({ err }, "Test push failed");
-    res.status(500).json({ error: "Push test failed" });
+    return res.status(500).json({ error: "Push test failed" });
   }
 });
 
 router.get("/system-alerts", (_req, res) => {
-  res.json({ enabled: getSystemAlertsPushEnabled() });
+  return res.json({ enabled: getSystemAlertsPushEnabled() });
 });
 
 router.put("/system-alerts", (req, res) => {
@@ -60,7 +60,7 @@ router.put("/system-alerts", (req, res) => {
     return res.status(400).json({ error: "Missing boolean 'enabled' field" });
   }
   setSystemAlertsPushEnabled(enabled);
-  res.json({ enabled: getSystemAlertsPushEnabled() });
+  return res.json({ enabled: getSystemAlertsPushEnabled() });
 });
 
 export default router;

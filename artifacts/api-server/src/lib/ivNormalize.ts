@@ -9,6 +9,12 @@ const IVR_LOOKBACK = 252;
 const HV_WINDOW = 30;
 const ANNUALIZE = Math.sqrt(252);
 const IVR_MAX_STALENESS_DAYS = 10;
+const IV30_MIN_DTE = 20;
+const IV30_MAX_DTE = 40;
+const IV30_ATM_MONEYNESS = 0.05;
+const IV30_MIN_OPEN_INTEREST = 10;
+const IV30_MIN_VOLUME = 1;
+const IV30_MAX_REL_SPREAD = 0.35;
 
 const BROAD_INDEX = new Set(["SPY", "QQQ", "DIA", "IWM", "VTI", "VOO"]);
 const SECTOR_ETF_SET = new Set(["XLE", "XLF", "XLK", "XLU", "XLV", "XLI", "XLP", "XLY", "XLB", "XLC", "XLRE"]);
@@ -48,6 +54,10 @@ function daysOld(date: string): number {
   return Math.floor((Date.now() - t) / 86_400_000);
 }
 
+export function shouldUseProxyIvSeries(realHistoryCount: number, proxyHistoryCount: number): boolean {
+  return realHistoryCount < IVR_MIN_HISTORY && proxyHistoryCount >= IVR_MIN_HISTORY;
+}
+
 async function countValidIvRows(
   symbol: string,
   date: string,
@@ -64,6 +74,79 @@ async function countValidIvRows(
       sql`${column} <= ${IV_MAX_VALID}`,
     ));
   return rows[0]?.c ?? 0;
+}
+
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+async function selectStoredChainIv30d(symbol: string, date: string): Promise<number | null> {
+  const spotRows = await db
+    .select({ close: equityDailyTable.close })
+    .from(equityDailyTable)
+    .where(and(eq(equityDailyTable.symbol, symbol), eq(equityDailyTable.date, date)))
+    .limit(1);
+  const spot = spotRows[0]?.close ?? 0;
+  if (spot <= 0) return null;
+
+  const rows = await db
+    .select({
+      strike: optionsChainDailyTable.strike,
+      dte: optionsChainDailyTable.dte,
+      bid: optionsChainDailyTable.bid,
+      ask: optionsChainDailyTable.ask,
+      volume: optionsChainDailyTable.volume,
+      openInterest: optionsChainDailyTable.openInterest,
+      impliedVolatility: optionsChainDailyTable.impliedVolatility,
+    })
+    .from(optionsChainDailyTable)
+    .where(and(
+      eq(optionsChainDailyTable.underlyingSymbol, symbol),
+      eq(optionsChainDailyTable.date, date),
+    ));
+
+  const candidates = rows
+    .map((r) => {
+      const iv = normalizeIV(r.impliedVolatility);
+      const dte = r.dte ?? 0;
+      const bid = r.bid ?? null;
+      const ask = r.ask ?? null;
+      const mid = bid != null && ask != null && bid > 0 && ask > 0 ? (bid + ask) / 2 : null;
+      const relSpread = mid && ask != null && bid != null ? (ask - bid) / mid : null;
+      return {
+        iv,
+        dte,
+        moneyness: Math.abs(r.strike - spot) / spot,
+        relSpread,
+        volume: r.volume ?? 0,
+        openInterest: r.openInterest ?? 0,
+      };
+    })
+    .filter((c): c is {
+      iv: number;
+      dte: number;
+      moneyness: number;
+      relSpread: number | null;
+      volume: number;
+      openInterest: number;
+    } =>
+      c.iv != null &&
+      c.dte >= IV30_MIN_DTE &&
+      c.dte <= IV30_MAX_DTE &&
+      c.moneyness <= IV30_ATM_MONEYNESS &&
+      (c.relSpread == null || c.relSpread <= IV30_MAX_REL_SPREAD) &&
+      (c.openInterest >= IV30_MIN_OPEN_INTEREST || c.volume >= IV30_MIN_VOLUME)
+    )
+    .sort((a, b) => {
+      const aScore = Math.abs(a.dte - 30) + a.moneyness * 100;
+      const bScore = Math.abs(b.dte - 30) + b.moneyness * 100;
+      return aScore - bScore;
+    });
+
+  return median(candidates.slice(0, 6).map(c => c.iv));
 }
 
 export async function getStoredIVR(
@@ -88,7 +171,11 @@ export async function getStoredIVR(
   if (realIvRow && daysOld(realIvRow.date) <= IVR_MAX_STALENESS_DAYS) {
     const realHistoryCount = await countValidIvRows(symU, realIvRow.date, equityDailyTable.iv30d);
     const ivr = realHistoryCount >= IVR_MIN_HISTORY
-      ? await computeIVRForSymbol(symU, realIvRow.date, realIvRow.iv30d)
+      ? await computeIVRForSymbol(
+          symU,
+          realIvRow.date,
+          await selectStoredChainIv30d(symU, realIvRow.date) ?? realIvRow.iv30d,
+        )
       : null;
     if (ivr != null) {
       const sourceRows = await db
@@ -176,7 +263,7 @@ export async function computeIVRForSymbol(
   // HV proxy only while real chain/flow history is still insufficient.
   const realHistoryCount = await countValidIvRows(symU, date, equityDailyTable.iv30d);
   const proxyHistoryCount = await countValidIvRows(symU, date, equityDailyTable.iv30dProxy);
-  const useProxyColumn = realHistoryCount < IVR_MIN_HISTORY && proxyHistoryCount >= IVR_MIN_HISTORY;
+  const useProxyColumn = shouldUseProxyIvSeries(realHistoryCount, proxyHistoryCount);
 
   // When the 252-day rank uses `iv_30d_proxy` (HV×VRP), today's value MUST come
   // from the same column. `todayIvOverride` is always chain/flow IV from

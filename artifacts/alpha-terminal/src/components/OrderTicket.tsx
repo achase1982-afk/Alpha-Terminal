@@ -1122,7 +1122,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 </div>
                 <div className="flex items-center gap-2 text-[11px]" style={{ color: MUTED }}>
                   {strategyLegs?.[0] && (() => {
-                    const sym = (strategyLegs[0] as any).schwabSymbol ?? "";
+                    const sym = strategyLegs[0].schwabSymbol ?? "";
                     if (sym.length >= 12) {
                       const yr = sym.substring(6, 8);
                       const mo = sym.substring(8, 10);
@@ -1322,7 +1322,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                     const qtySign = isBuyLeg ? "+" : "-";
                     const mid = (leg.bid != null && leg.ask != null) ? (leg.bid + leg.ask) / 2 : null;
                     const expLabel = (() => {
-                      const sym = (leg as any).schwabSymbol ?? "";
+                      const sym = leg.schwabSymbol ?? "";
                       if (sym.length >= 12) {
                         const yr = sym.substring(6, 8);
                         const mo = sym.substring(8, 10);

@@ -4,10 +4,11 @@ import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import { useOptionsSettingsStore } from "@/lib/options-store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { useOptionsColumnsStore, COLUMN_REGISTRY, type ColumnDef } from "@/lib/options-columns-store";
-import { useOptionTick, useOptionsStreamStore } from "@/lib/options-stream-store";
+import { useOptionTick, useOptionsStreamStore, type OptionTick } from "@/lib/options-stream-store";
 import { useUICustomizationStore, ACCENT_COLORS } from "@/lib/ui-customization-store";
 
 import { useGetQuote, useGetOptionChain } from "@workspace/api-client-react";
+import type { OptionChainResponse } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -241,7 +242,9 @@ function buildExpirationGroups(
 
 function getContractVal(contract: Contract | null, key: string): number | undefined {
   if (!contract) return undefined;
-  return (contract as unknown as Record<string, unknown>)[key] as number | undefined;
+  if (!(key in contract)) return undefined;
+  const v = Reflect.get(contract, key);
+  return typeof v === "number" && !isNaN(v) ? v : undefined;
 }
 
 function useStreamingExpirationStats(rows: NormalizedRow[], underlyingPrice: number | null) {
@@ -324,11 +327,11 @@ const STREAM_KEY_MAP: Record<string, string> = {
   theta: "theta", vega: "vega",
 };
 
-function getStreamVal(tick: ReturnType<typeof useOptionTick>, key: string): number | undefined {
+function getStreamVal(tick: OptionTick | undefined, key: string): number | undefined {
   if (!tick) return undefined;
   const mapped = STREAM_KEY_MAP[key];
   if (!mapped) return undefined;
-  const v = (tick as unknown as Record<string, unknown>)[mapped];
+  const v = tick[mapped as keyof OptionTick];
   return typeof v === "number" && !isNaN(v) ? v : undefined;
 }
 
@@ -1255,7 +1258,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
   }, [strikeCount]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { data: rawData, isLoading, error, isFetching } = useGetOptionChain(
+  const { data: rawData, isLoading, error, isFetching } = useGetOptionChain<OptionChainResponse>(
     { symbol, accessToken: "", contractType: "ALL", strikeCount },
     { query: { enabled: !!accessToken && !!symbol, staleTime: 30_000, gcTime: 5 * 60_000, retry: 2 } }
   );
@@ -1297,7 +1300,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
     staleTime: 30 * 60 * 1000,
   });
 
-  const underlyingPrice = streamQuote?.last ?? quote?.last ?? (data as unknown as { underlyingPrice?: number })?.underlyingPrice ?? null;
+  const underlyingPrice = streamQuote?.last ?? quote?.last ?? data?.underlyingPrice ?? null;
 
   const groups = useMemo(() => {
     if (!data) return [];

@@ -3,6 +3,12 @@ import { useMarketPulseStore } from "./marketPulseStore";
 
 const API_BASE = "/api";
 
+type AbortWithStartedAt = AbortController & { __startedAt: number };
+
+function asAbortWithStartedAt(abort: AbortController): AbortWithStartedAt {
+  return abort as AbortWithStartedAt;
+}
+
 let activeAbort: AbortController | null = null;
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 let runEpoch = 0;
@@ -28,7 +34,7 @@ export function abortPulseStream() {
 
 export async function runPulseStream(payload: Record<string, unknown>) {
   if (activeAbort) {
-    const elapsed = Date.now() - (activeAbort as any).__startedAt;
+    const elapsed = Date.now() - asAbortWithStartedAt(activeAbort).__startedAt;
     if (elapsed < 90_000) {
       console.log("[pulse] Ignoring duplicate call — already active for", elapsed, "ms");
       return;
@@ -48,7 +54,7 @@ export async function runPulseStream(payload: Record<string, unknown>) {
   store.clearThinking();
 
   const abort = new AbortController();
-  (abort as any).__startedAt = Date.now();
+  asAbortWithStartedAt(abort).__startedAt = Date.now();
   activeAbort = abort;
 
   console.log("[pulse] Starting generation (epoch", currentEpoch, ")");

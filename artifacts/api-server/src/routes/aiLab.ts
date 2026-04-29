@@ -79,10 +79,10 @@ router.get("/anomalies", async (req, res) => {
 
     const anomalies = await getUniverseAnomalies({ minPrice, maxPrice, minAvgVolume20d }, limit);
     emitTelemetry("API", "INFO", `GET /ai-lab/anomalies — ${anomalies.length} results`, { limit }, "AI_LAB", batch);
-    res.json({ anomalies });
+    return res.json({ anomalies });
   } catch (err: any) {
     emitTelemetry("API", "ERROR", `GET /ai-lab/anomalies failed: ${err.message}`, { error: err.message }, "AI_LAB", batch);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -98,10 +98,10 @@ router.get("/ticker/:symbol", async (req, res) => {
       return res.status(404).json({ error: "No data for symbol" });
     }
     emitTelemetry("API", "INFO", `GET /ai-lab/ticker/${symbol} — snapshot built`, { symbol }, "AI_LAB", batch);
-    res.json({ snapshot });
+    return res.json({ snapshot });
   } catch (err: any) {
     emitTelemetry("API", "ERROR", `GET /ai-lab/ticker error: ${err.message}`, { error: err.message }, "AI_LAB", batch);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -110,10 +110,10 @@ router.get("/regime", async (_req, res) => {
   try {
     const regime = await getRegimeState();
     emitTelemetry("API", "INFO", `GET /ai-lab/regime — ${regime.trendState}|${regime.volState}`, { regime: regime.trendState }, "AI_LAB", batch);
-    res.json({ regime });
+    return res.json({ regime });
   } catch (err: any) {
     emitTelemetry("API", "ERROR", `GET /ai-lab/regime failed: ${err.message}`, { error: err.message }, "AI_LAB", batch);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -126,10 +126,10 @@ router.get("/pattern-performance", async (req, res) => {
     }
     const perf = await getPatternPerformance(tags);
     emitTelemetry("API", "INFO", `GET /ai-lab/pattern-performance — ${tags.join("+")}`, { tags }, "AI_LAB", batch);
-    res.json({ performance: perf });
+    return res.json({ performance: perf });
   } catch (err: any) {
     emitTelemetry("API", "ERROR", `GET /ai-lab/pattern-performance failed: ${err.message}`, { error: err.message }, "AI_LAB", batch);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -139,10 +139,10 @@ router.get("/scanner-alignment/:symbol", async (req, res) => {
     const symbol = req.params.symbol.toUpperCase();
     const alignment = await getScannerAlignment(symbol);
     emitTelemetry("API", "INFO", `GET /ai-lab/scanner-alignment/${symbol}`, { symbol }, "AI_LAB", batch);
-    res.json({ alignment });
+    return res.json({ alignment });
   } catch (err: any) {
     emitTelemetry("API", "ERROR", `GET /ai-lab/scanner-alignment error: ${err.message}`, { error: err.message }, "AI_LAB", batch);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -233,12 +233,13 @@ router.post("/ideas", async (req, res) => {
     }, "AI_LAB", batch);
 
     res.status(201).json({ idea: inserted });
+    return;
   } catch (err: any) {
     if (err.code === "23505") {
       return res.status(409).json({ rejected: true, reason: "DUPLICATE_IDEA_CONSTRAINT" });
     }
     emitTelemetry("STRATEGIST", "ERROR", `AI Lab: POST /ideas failed: ${err.message}`, { error: err.message }, "AI_LAB", batch);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -257,9 +258,9 @@ router.put("/config", async (req, res) => {
       emitTelemetry("STRATEGIST", "INFO", `AI Lab: enabled changed ${oldConfig.enabled} → ${updated.enabled}`, { enabled: updated.enabled }, "AI_LAB", batch);
     }
 
-    res.json({ config: updated });
+    return res.json({ config: updated });
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    return res.status(400).json({ error: err.message });
   }
 });
 
@@ -285,8 +286,9 @@ router.get("/settings/full", async (_req, res) => {
       activePrompts,
       defaultPrompts: DEFAULT_PROMPTS,
     });
+    return;
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -298,9 +300,9 @@ router.put("/settings/update", async (req, res) => {
     }
     const updated = updateAiLabStrategistConfig({ [key]: value });
     refreshOrchestratorConfig();
-    res.json({ config: updated });
+    return res.json({ config: updated });
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    return res.status(400).json({ error: err.message });
   }
 });
 
@@ -308,9 +310,9 @@ router.post("/settings/reset", async (_req, res) => {
   try {
     const config = resetAiLabStrategistConfig();
     refreshOrchestratorConfig();
-    res.json({ config });
+    return res.json({ config });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -322,9 +324,9 @@ router.get("/prompts/:role", async (req, res) => {
     }
     const history = await getPromptHistory(role);
     const defaultText = DEFAULT_PROMPTS[role] ?? "";
-    res.json({ role, history, defaultPrompt: defaultText });
+    return res.json({ role, history, defaultPrompt: defaultText });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -339,9 +341,9 @@ router.put("/prompts/:role", async (req, res) => {
       return res.status(400).json({ error: "promptText is required (string)" });
     }
     const result = await savePrompt(role, promptText);
-    res.json({ saved: true, id: result.id, role });
+    return res.json({ saved: true, id: result.id, role });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -352,9 +354,9 @@ router.post("/prompts/:role/reset", async (req, res) => {
       return res.status(400).json({ error: `Invalid role. Valid: ${PROMPT_ROLES.join(", ")}` });
     }
     await resetPromptToDefault(role);
-    res.json({ reset: true, role });
+    return res.json({ reset: true, role });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -364,9 +366,9 @@ router.post("/prompts/restore/:id", async (req, res) => {
     if (isNaN(id)) return res.status(400).json({ error: "Invalid prompt ID" });
     const restored = await restorePrompt(id);
     if (!restored) return res.status(404).json({ error: "Prompt not found" });
-    res.json({ restored: true, id });
+    return res.json({ restored: true, id });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -384,8 +386,9 @@ router.get("/universes", async (req, res) => {
       })),
     ];
     res.json({ universes, active: getAiLabFullConfig().universe });
+    return;
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -400,10 +403,10 @@ router.get("/ideas", async (req, res) => {
       : await db.select().from(aiLabIdeasTable).orderBy(desc(aiLabIdeasTable.createdAt)).limit(limit);
 
     emitTelemetry("API", "INFO", `GET /ai-lab/ideas — ${ideas.length} results`, { count: ideas.length }, "AI_LAB", batch);
-    res.json({ ideas });
+    return res.json({ ideas });
   } catch (err: any) {
     emitTelemetry("API", "ERROR", `GET /ai-lab/ideas failed: ${err.message}`, { error: err.message }, "AI_LAB", batch);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -427,10 +430,10 @@ router.get("/deliberations", async (req, res) => {
       : rows;
 
     emitTelemetry("API", "INFO", `GET /ai-lab/deliberations — ${filtered.length} results`, { count: filtered.length }, "AI_LAB", batch);
-    res.json({ deliberations: filtered });
+    return res.json({ deliberations: filtered });
   } catch (err: any) {
     emitTelemetry("API", "ERROR", `GET /ai-lab/deliberations failed: ${err.message}`, { error: err.message }, "AI_LAB", batch);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -445,10 +448,10 @@ router.get("/ideas/:id", async (req, res) => {
 
     const outcomes = await db.select().from(aiLabIdeaOutcomesTable).where(eq(aiLabIdeaOutcomesTable.ideaId, id));
 
-    res.json({ idea, outcomes });
+    return res.json({ idea, outcomes });
   } catch (err: any) {
     emitTelemetry("API", "ERROR", `GET /ai-lab/ideas/${req.params.id} failed: ${err.message}`, { error: err.message }, "AI_LAB", batch);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -476,10 +479,10 @@ router.patch("/ideas/:id/status", async (req, res) => {
     if (!updated) return res.status(404).json({ error: "Idea not found" });
 
     emitTelemetry("STRATEGIST", "INFO", `AI Lab: idea #${id} status → ${status}`, { ideaId: id, status }, "AI_LAB", batch);
-    res.json({ idea: updated });
+    return res.json({ idea: updated });
   } catch (err: any) {
     emitTelemetry("STRATEGIST", "ERROR", `PATCH /ideas/${req.params.id}/status failed: ${err.message}`, { error: err.message }, "AI_LAB", batch);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -507,8 +510,9 @@ router.post("/orchestrator/run-pass", async (req, res) => {
     });
 
     res.json({ status: "started", passName });
+    return;
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -528,9 +532,10 @@ router.post("/orchestrator/trigger/price-shock", async (req, res) => {
     );
 
     res.json({ result: result ?? { filtered: true } });
+    return;
   } catch (err: any) {
     emitTelemetry("STRATEGIST", "ERROR", `price-shock trigger error: ${err.message}`, { error: err.message }, "AI_LAB", batch);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -549,9 +554,10 @@ router.post("/orchestrator/trigger/block-flow", async (req, res) => {
     );
 
     res.json({ result: result ?? { filtered: true } });
+    return;
   } catch (err: any) {
     emitTelemetry("STRATEGIST", "ERROR", `block-flow trigger error: ${err.message}`, { error: err.message }, "AI_LAB", batch);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -570,9 +576,10 @@ router.post("/orchestrator/trigger/scanner-score", async (req, res) => {
     );
 
     res.json({ result: result ?? { filtered: true } });
+    return;
   } catch (err: any) {
     emitTelemetry("STRATEGIST", "ERROR", `scanner-score trigger error: ${err.message}`, { error: err.message }, "AI_LAB", batch);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -585,8 +592,9 @@ router.get("/orchestrator/watchlist", async (_req, res) => {
       .limit(100);
 
     res.json({ entries });
+    return;
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 

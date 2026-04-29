@@ -10,16 +10,44 @@ import { validateIv30PathB } from "./ivSanityFloor";
 const POLYGON_API = "https://api.polygon.io";
 const SECTOR_ETFS = ["XLE", "XLF", "XLK", "XLU", "XLV", "XLI", "XLP", "XLY", "XLB"];
 const RISK_FREE = 0.045;
+const IV30_MIN_DTE = 20;
+const IV30_MAX_DTE = 40;
+const IV30_ATM_MONEYNESS = 0.05;
+
+type Iv30BackfillCandidate = { iv: number | null; strike: number; dte: number | null };
+
+function medianOf(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+function selectBackfillIv30d(spot: number, rows: Iv30BackfillCandidate[]): number | null {
+  if (spot <= 0) return null;
+  const candidates = rows
+    .map((r) => ({
+      iv: normalizeIV(r.iv),
+      dte: r.dte ?? 0,
+      moneyness: Math.abs(r.strike - spot) / spot,
+    }))
+    .filter((c): c is { iv: number; dte: number; moneyness: number } =>
+      c.iv != null &&
+      c.dte >= IV30_MIN_DTE &&
+      c.dte <= IV30_MAX_DTE &&
+      c.moneyness <= IV30_ATM_MONEYNESS
+    )
+    .sort((a, b) => {
+      const aScore = Math.abs(a.dte - 30) + a.moneyness * 100;
+      const bScore = Math.abs(b.dte - 30) + b.moneyness * 100;
+      return aScore - bScore;
+    });
+  if (candidates.length === 0) return null;
+  return medianOf(candidates.slice(0, 6).map(c => c.iv));
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
-}
-
-function medianSorted(nums: number[]): number {
-  if (nums.length === 0) return NaN;
-  const s = [...nums].sort((a, b) => a - b);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
 }
 
 async function fetchWithRetry(url: string, attempts = 3, timeoutMs = 20000): Promise<Response | null> {
@@ -427,7 +455,7 @@ export async function backfillHistoricalIV(
       report.flowRowsInserted += symRowsInserted;
       report.flowRowsUpdatedWithIV += symRowsWithIV;
 
-      // ---------- 5. For each date, ATM ±10% / 1-60 dte selection → equity_daily.iv_30d ----------
+      // ---------- 5. Per date: 20–40 DTE, ±5% ATM, median of top candidates → equity_daily.iv_30d ----------
       const datesInWindow = [...spotByDate.keys()].sort();
       for (const d of datesInWindow) {
         const spot = spotByDate.get(d)!;
@@ -444,23 +472,9 @@ export async function backfillHistoricalIV(
             sql`${optionsFlowPerStrikeTable.impliedVolatility} IS NOT NULL`,
           ));
         if (candidates.length === 0) continue;
-        const filtered = candidates
-          .map(c => ({
-            iv: normalizeIV(c.iv),
-            strike: c.strike,
-            dte: c.dte ?? 0,
-          }))
-          .filter(c => c.iv != null && c.dte >= 1 && c.dte <= 60 && Math.abs(c.strike - spot) / spot <= 0.10)
-          .sort((a, b) =>
-            Math.abs((a.dte) - 30) + Math.abs(a.strike - spot) / spot * 100
-            - (Math.abs((b.dte) - 30) + Math.abs(b.strike - spot) / spot * 100)
-          );
-        if (filtered.length === 0) continue;
-        // Median of quality-filtered ATM±10% / 1–60 DTE candidates (nearest-DTE tie-break order).
-        const k = Math.min(5, filtered.length);
-        const ivPool = filtered.slice(0, k).map(c => c.iv!);
-        const iv30dRaw = medianSorted(ivPool);
+        const iv30dRaw = selectBackfillIv30d(spot, candidates);
         const iv30d = validateIv30PathB(sym, iv30dRaw, "historicalIVBackfill:median");
+        if (iv30d == null) continue;
 
         // Only write if equity_daily has no iv yet OR matches our format range (idempotent)
         const existing = await db

@@ -75,6 +75,39 @@ const BOOLEAN_KEYS = new Set([
   "schedulePostMarketReflection",
 ]);
 
+type AiLabBooleanKey =
+  | "enabled"
+  | "scheduleOvernightDigest"
+  | "schedulePremarketPlan"
+  | "schedulePostOpenCheck"
+  | "scheduleMidMorningScan"
+  | "scheduleMiddayRotation"
+  | "schedulePowerHourPrep"
+  | "schedulePostMarketReflection";
+
+type AiLabNumericConfigKey =
+  | "maxDeliberationRounds"
+  | "skepticCritiqueThreshold"
+  | "overnightTopN"
+  | "premarketTopN"
+  | "triggerMinAvgVolume"
+  | "priceShockMinMovePct"
+  | "blockFlowMinNotional"
+  | "scannerScoreMinDelta"
+  | "anomalyVolumeSpikeThreshold"
+  | "anomalyFlowStrengthThreshold"
+  | "anomalyIvrSpikeThreshold"
+  | "anomalyRsChangeThreshold"
+  | "vixLow"
+  | "vixNormal"
+  | "anomalyMinPrice"
+  | "anomalyMinAvgVolume20d"
+  | "dataFreshnessMinutes"
+  | "validatorMaxActiveIdeas"
+  | "validatorMinOiPerLeg"
+  | "validatorMaxSpreadPct"
+  | "validatorMinAvgVolumeStock";
+
 const STRING_KEYS = new Set([
   "analystModelProvider", "analystModelName",
   "skepticModelProvider", "skepticModelName",
@@ -170,7 +203,7 @@ function validateAndClamp(merged: Record<string, unknown>): AiLabFullConfig {
     result.universe = merged.universe;
   }
 
-  const numericClamps: Record<string, { min: number; max: number; key: keyof AiLabFullConfig }> = {
+  const numericClamps: Record<string, { min: number; max: number; key: AiLabNumericConfigKey }> = {
     maxDeliberationRounds: { min: 1, max: 50, key: "maxDeliberationRounds" },
     skepticCritiqueThreshold: { min: 0, max: 100, key: "skepticCritiqueThreshold" },
     overnightTopN: { min: 1, max: 200, key: "overnightTopN" },
@@ -197,13 +230,40 @@ function validateAndClamp(merged: Record<string, unknown>): AiLabFullConfig {
   for (const [field, { min, max, key }] of Object.entries(numericClamps)) {
     const v = Number(merged[field]);
     if (Number.isFinite(v)) {
-      (result as any)[key] = Math.max(min, Math.min(max, v));
+      result[key] = Math.max(min, Math.min(max, v));
     }
   }
 
   for (const boolKey of BOOLEAN_KEYS) {
-    if (typeof merged[boolKey] === "boolean") {
-      (result as any)[boolKey] = merged[boolKey];
+    const v = merged[boolKey as AiLabBooleanKey];
+    if (typeof v !== "boolean") continue;
+    switch (boolKey as AiLabBooleanKey) {
+      case "enabled":
+        result.enabled = v;
+        break;
+      case "scheduleOvernightDigest":
+        result.scheduleOvernightDigest = v;
+        break;
+      case "schedulePremarketPlan":
+        result.schedulePremarketPlan = v;
+        break;
+      case "schedulePostOpenCheck":
+        result.schedulePostOpenCheck = v;
+        break;
+      case "scheduleMidMorningScan":
+        result.scheduleMidMorningScan = v;
+        break;
+      case "scheduleMiddayRotation":
+        result.scheduleMiddayRotation = v;
+        break;
+      case "schedulePowerHourPrep":
+        result.schedulePowerHourPrep = v;
+        break;
+      case "schedulePostMarketReflection":
+        result.schedulePostMarketReflection = v;
+        break;
+      default:
+        break;
     }
   }
 

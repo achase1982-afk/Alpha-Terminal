@@ -138,7 +138,7 @@ router.get("/universes", (_req, res) => {
   for (const [key, val] of Object.entries(presets)) {
     result[key] = { label: val.label, description: val.description, count: val.symbols.length };
   }
-  res.json({ presets: result });
+  return res.json({ presets: result });
 });
 
 const PRESET_ALIASES: Record<string, string> = {
@@ -152,13 +152,13 @@ router.get("/universes/:key/symbols", (req, res) => {
   const resolvedKey = PRESET_ALIASES[req.params.key] ?? req.params.key;
   const preset = presets[resolvedKey];
   if (!preset) return res.status(404).json({ error: "Preset not found" });
-  res.json({ key: resolvedKey, label: preset.label, symbols: preset.symbols });
+  return res.json({ key: resolvedKey, label: preset.label, symbols: preset.symbols });
 });
 
 router.get("/universe/snapshot", (_req, res) => {
   const snap = getUniverseSnapshot();
   if (!snap) return res.json({ built: false, message: "Universe not yet built" });
-  res.json({
+  return res.json({
     built: true,
     totalSymbols: snap.symbols.length,
     sectorCounts: snap.sectorCounts,
@@ -176,14 +176,14 @@ router.post("/universe/rebuild", async (req, res) => {
   }
   try {
     const snap = await buildCoreOptionsUniverse();
-    res.json({
+    return res.json({
       ok: true,
       totalSymbols: snap.symbols.length,
       sectorCounts: snap.sectorCounts,
       buildTimestamp: snap.buildTimestamp,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -222,10 +222,10 @@ router.post("/watchlists/seed", async (req, res) => {
       created.push(wl.name);
     }
 
-    res.json({ seeded: created, skipped: seedWatchlists.filter(w => existingNames.has(w.name)).map(w => w.name) });
+    return res.json({ seeded: created, skipped: seedWatchlists.filter(w => existingNames.has(w.name)).map(w => w.name) });
   } catch (err: any) {
     logger.error({ err }, "Failed to seed watchlists");
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -242,10 +242,10 @@ router.get("/watchlists", async (req, res) => {
       }).returning();
       return res.json({ watchlists: [fav] });
     }
-    res.json({ watchlists: rows });
+    return res.json({ watchlists: rows });
   } catch (err) {
     logger.error({ err }, "Failed to fetch watchlists");
-    res.status(500).json({ error: "Failed to fetch watchlists" });
+    return res.status(500).json({ error: "Failed to fetch watchlists" });
   }
 });
 
@@ -260,10 +260,10 @@ router.post("/watchlists", async (req, res) => {
       symbols: Array.isArray(symbols) ? symbols : [],
       isProtected: false,
     }).returning();
-    res.json({ watchlist: wl });
+    return res.json({ watchlist: wl });
   } catch (err) {
     logger.error({ err }, "Failed to create watchlist");
-    res.status(500).json({ error: "Failed to create watchlist" });
+    return res.status(500).json({ error: "Failed to create watchlist" });
   }
 });
 
@@ -289,10 +289,10 @@ router.patch("/watchlists/:id", async (req, res) => {
       .set(updates)
       .where(and(eq(scannerWatchlistsTable.id, id), eq(scannerWatchlistsTable.userId, userId)))
       .returning();
-    res.json({ watchlist: updated });
+    return res.json({ watchlist: updated });
   } catch (err) {
     logger.error({ err }, "Failed to update watchlist");
-    res.status(500).json({ error: "Failed to update watchlist" });
+    return res.status(500).json({ error: "Failed to update watchlist" });
   }
 });
 
@@ -316,10 +316,10 @@ router.post("/watchlists/:id/symbols", async (req, res) => {
       .set({ symbols: [...syms, upper], updatedAt: new Date() })
       .where(and(eq(scannerWatchlistsTable.id, id), eq(scannerWatchlistsTable.userId, userId)))
       .returning();
-    res.json({ watchlist: updated });
+    return res.json({ watchlist: updated });
   } catch (err) {
     logger.error({ err }, "Failed to add symbol");
-    res.status(500).json({ error: "Failed to add symbol" });
+    return res.status(500).json({ error: "Failed to add symbol" });
   }
 });
 
@@ -338,10 +338,10 @@ router.delete("/watchlists/:id/symbols/:symbol", async (req, res) => {
       .set({ symbols: syms, updatedAt: new Date() })
       .where(and(eq(scannerWatchlistsTable.id, id), eq(scannerWatchlistsTable.userId, userId)))
       .returning();
-    res.json({ watchlist: updated });
+    return res.json({ watchlist: updated });
   } catch (err) {
     logger.error({ err }, "Failed to remove symbol");
-    res.status(500).json({ error: "Failed to remove symbol" });
+    return res.status(500).json({ error: "Failed to remove symbol" });
   }
 });
 
@@ -358,10 +358,10 @@ router.delete("/watchlists/:id", async (req, res) => {
 
     await db.delete(scannerWatchlistsTable)
       .where(and(eq(scannerWatchlistsTable.id, id), eq(scannerWatchlistsTable.userId, userId)));
-    res.json({ ok: true });
+    return res.json({ ok: true });
   } catch (err) {
     logger.error({ err }, "Failed to delete watchlist");
-    res.status(500).json({ error: "Failed to delete watchlist" });
+    return res.status(500).json({ error: "Failed to delete watchlist" });
   }
 });
 
@@ -459,9 +459,10 @@ router.get("/screens", async (req, res) => {
         cachedCount: Array.isArray(s.cachedSymbols) ? (s.cachedSymbols as string[]).length : null,
       })),
     });
+    return;
   } catch (err) {
     logger.error({ err }, "Failed to fetch screens");
-    res.status(500).json({ error: "Failed to fetch screens" });
+    return res.status(500).json({ error: "Failed to fetch screens" });
   }
 });
 
@@ -478,10 +479,10 @@ router.post("/screens", async (req, res) => {
       filters,
       isDefault: false,
     }).returning();
-    res.json({ screen });
+    return res.json({ screen });
   } catch (err) {
     logger.error({ err }, "Failed to create screen");
-    res.status(500).json({ error: "Failed to create screen" });
+    return res.status(500).json({ error: "Failed to create screen" });
   }
 });
 
@@ -503,10 +504,10 @@ router.patch("/screens/:id", async (req, res) => {
       .set(updates)
       .where(and(eq(scannerScreensTable.id, id), eq(scannerScreensTable.userId, userId)))
       .returning();
-    res.json({ screen: updated });
+    return res.json({ screen: updated });
   } catch (err) {
     logger.error({ err }, "Failed to update screen");
-    res.status(500).json({ error: "Failed to update screen" });
+    return res.status(500).json({ error: "Failed to update screen" });
   }
 });
 
@@ -518,10 +519,10 @@ router.delete("/screens/:id", async (req, res) => {
   try {
     await db.delete(scannerScreensTable)
       .where(and(eq(scannerScreensTable.id, id), eq(scannerScreensTable.userId, userId)));
-    res.json({ ok: true });
+    return res.json({ ok: true });
   } catch (err) {
     logger.error({ err }, "Failed to delete screen");
-    res.status(500).json({ error: "Failed to delete screen" });
+    return res.status(500).json({ error: "Failed to delete screen" });
   }
 });
 
@@ -546,9 +547,10 @@ router.post("/screens/:id/run", async (req, res) => {
       .where(eq(scannerScreensTable.id, id));
 
     res.json({ symbols: result.symbols, count: result.symbols.length, cachedAt: now.toISOString(), usedFallback: result.usedFallback ?? false });
+    return;
   } catch (err) {
     logger.error({ err }, "Failed to run screen");
-    res.status(500).json({ error: "Failed to run screen" });
+    return res.status(500).json({ error: "Failed to run screen" });
   }
 });
 
@@ -558,10 +560,10 @@ router.post("/screens/preview", async (req, res) => {
 
   try {
     const result = await runFmpScreen(filters);
-    res.json({ count: result.symbols.length, symbols: result.symbols.slice(0, 20), error: result.error });
+    return res.json({ count: result.symbols.length, symbols: result.symbols.slice(0, 20), error: result.error });
   } catch (err) {
     logger.error({ err }, "Failed to preview screen");
-    res.status(500).json({ error: "Failed to preview screen" });
+    return res.status(500).json({ error: "Failed to preview screen" });
   }
 });
 
@@ -598,9 +600,10 @@ router.get("/screens/:id/symbols", async (req, res) => {
       error: result.error,
       usedFallback: result.usedFallback ?? false,
     });
+    return;
   } catch (err) {
     logger.error({ err }, "Failed to get screen symbols");
-    res.status(500).json({ error: "Failed to get screen symbols" });
+    return res.status(500).json({ error: "Failed to get screen symbols" });
   }
 });
 
@@ -669,10 +672,10 @@ router.post("/refresh-auto-watchlists", async (req, res) => {
     }
 
     const rows = await db.select().from(scannerWatchlistsTable).where(eq(scannerWatchlistsTable.userId, userId));
-    res.json({ updated, watchlists: rows });
+    return res.json({ updated, watchlists: rows });
   } catch (err) {
     logger.error({ err }, "Failed to refresh auto-watchlists");
-    res.status(500).json({ error: "Failed to refresh auto-watchlists" });
+    return res.status(500).json({ error: "Failed to refresh auto-watchlists" });
   }
 });
 
@@ -706,6 +709,7 @@ router.get("/search", (req, res) => {
   }
 
   res.json({ results: [...exact, ...prefix, ...contains].slice(0, limit) });
+  return;
 });
 
 export default router;
