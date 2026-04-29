@@ -11,7 +11,7 @@ function signOutTargetUrl(): string {
   return u.href;
 }
 
-type ClerkSignOut = (opts?: { redirectUrl?: string | null }) => Promise<unknown>;
+export type ClerkSignOut = (opts?: { redirectUrl?: string }) => Promise<unknown>;
 
 export async function signOutWithFullNavigation(signOut: ClerkSignOut): Promise<void> {
   if (import.meta.env.VITE_DEV_BYPASS_AUTH === "true") return;

@@ -21,6 +21,7 @@ import { logger } from "../lib/logger.js";
 import {
   ensureIvrCoverage,
   getIvrBackfillJob,
+  getLatestIvrBackfillJobForSymbol,
   type IvrCoverageResult,
 } from "../lib/onDemandIvrBackfill.js";
 import { notifyStrategistCompletion } from "../lib/strategistNotifications.js";
