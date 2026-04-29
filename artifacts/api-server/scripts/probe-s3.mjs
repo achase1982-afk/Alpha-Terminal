@@ -28,7 +28,14 @@ async function list(prefix, delim) {
     }
     if (!res.CommonPrefixes?.length && !res.Contents?.length) console.log("  (empty)");
   } catch (e) {
-    console.log("  ERR:", e.name, e.message);
+    let raw = "";
+    const body = e.$response?.body;
+    if (body) {
+      const chunks = [];
+      for await (const c of body) chunks.push(Buffer.from(c));
+      raw = Buffer.concat(chunks).toString("utf8").slice(0, 500);
+    }
+    console.log("  ERR:", e.name, e.message, raw ? `raw=${raw}` : "");
   }
 }
 
