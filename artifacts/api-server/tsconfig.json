@@ -5,7 +5,7 @@
     "rootDir": "src",
     "types": ["node"],
     "resolveJsonModule": true,
-    "noImplicitReturns": false,
+    "noImplicitReturns": true,
     "strictNullChecks": true
   },
   "include": ["src"],
