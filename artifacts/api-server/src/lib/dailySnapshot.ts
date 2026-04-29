@@ -1396,6 +1396,36 @@ export async function backfillPolygonFlow(
   return { totalStrikeRows, symbolsDone, datesProcessed, skipped };
 }
 
+/**
+ * Fetch all daily OHLCV bars for a ticker between fromDate and toDate,
+ * following Polygon's next_url pagination to retrieve the complete date range.
+ * Capped at MAX_PAGES pages (250 bars/page × 20 pages = 5,000 bars max,
+ * sufficient for any lookback window used in this codebase).
+ */
+async function fetchAllAggBars(
+  ticker: string,
+  fromDate: string,
+  toDate: string,
+  apiKey: string,
+): Promise<Array<Record<string, unknown>>> {
+  const MAX_PAGES = 20;
+  const all: Array<Record<string, unknown>> = [];
+  let url: string | null =
+    `${POLYGON_API}/v2/aggs/ticker/${encodeURIComponent(ticker)}/range/1/day/${fromDate}/${toDate}` +
+    `?adjusted=true&sort=asc&limit=250&apiKey=${apiKey}`;
+  let pages = 0;
+  while (url && pages < MAX_PAGES) {
+    const resp = await fetchWithRetry(url, {});
+    if (!resp.ok) break;
+    const json = await resp.json() as { results?: Array<Record<string, unknown>>; next_url?: string };
+    all.push(...(json.results ?? []));
+    url = json.next_url ? `${json.next_url}&apiKey=${apiKey}` : null;
+    pages++;
+    if (url) await sleep(80); // brief pause between pagination requests
+  }
+  return all;
+}
+
 export async function backfillEquityFromPolygon(
   symbols: string[],
   daysBack = 120,
@@ -1406,15 +1436,12 @@ export async function backfillEquityFromPolygon(
   const fromDate = new Date(Date.now() - daysBack * 86_400_000).toISOString().slice(0, 10);
   const toDate = new Date().toISOString().slice(0, 10);
 
-  const spyUrl = `${POLYGON_API}/v2/aggs/ticker/SPY/range/1/day/${fromDate}/${toDate}?adjusted=true&sort=asc&limit=250&apiKey=${apiKey}`;
   let spyCloses: number[] = [];
   try {
-    const spyResp = await fetchWithRetry(spyUrl, {});
-    if (spyResp.ok) {
-      const spyJson = await spyResp.json() as { results?: Array<Record<string, unknown>> };
-      spyCloses = (spyJson.results ?? []).map(b => (b["c"] as number) ?? 0);
-    } else {
-      logger.warn({ status: spyResp.status }, "PolygonEquityBackfill: SPY fetch failed, RS ratio will be null");
+    const spyBars = await fetchAllAggBars("SPY", fromDate, toDate, apiKey);
+    spyCloses = spyBars.map(b => (b["c"] as number) ?? 0);
+    if (spyCloses.length === 0) {
+      logger.warn("PolygonEquityBackfill: SPY fetch returned no bars, RS ratio will be null");
     }
   } catch (e) {
     logger.warn({ error: (e as Error).message }, "PolygonEquityBackfill: SPY fetch error, RS ratio will be null");
@@ -1425,21 +1452,20 @@ export async function backfillEquityFromPolygon(
 
   for (const sym of symbols) {
     try {
-      const url = `${POLYGON_API}/v2/aggs/ticker/${encodeURIComponent(sym)}/range/1/day/${fromDate}/${toDate}?adjusted=true&sort=asc&limit=250&apiKey=${apiKey}`;
-      const resp = await fetchWithRetry(url, {});
-      if (!resp.ok) { logger.warn({ sym, status: resp.status }, "PolygonEquityBackfill: failed"); continue; }
-      const json = await resp.json() as { results?: Array<Record<string, unknown>> };
-      const bars = json.results ?? [];
-      if (bars.length < 5) continue;
+      const bars = await fetchAllAggBars(sym, fromDate, toDate, apiKey);
+      if (bars.length < 5) {
+        logger.warn({ sym, bars: bars.length }, "PolygonEquityBackfill: insufficient bars, skipping");
+        continue;
+      }
 
       const sectorEtf = SECTOR_MAP[sym.toUpperCase()] ?? "SPY";
       let sectorCloses = spyCloses;
       if (sectorEtf !== "SPY") {
-        const sUrl = `${POLYGON_API}/v2/aggs/ticker/${sectorEtf}/range/1/day/${fromDate}/${toDate}?adjusted=true&sort=asc&limit=250&apiKey=${apiKey}`;
-        const sResp = await fetchWithRetry(sUrl, {});
-        if (sResp.ok) {
-          const sJson = await sResp.json() as { results?: Array<Record<string, unknown>> };
-          sectorCloses = (sJson.results ?? []).map(b => (b["c"] as number) ?? 0);
+        try {
+          const sBars = await fetchAllAggBars(sectorEtf, fromDate, toDate, apiKey);
+          if (sBars.length > 0) sectorCloses = sBars.map(b => (b["c"] as number) ?? 0);
+        } catch (e) {
+          logger.warn({ sym, sectorEtf, error: (e as Error).message }, "PolygonEquityBackfill: sector ETF fetch failed, using SPY");
         }
       }
 
@@ -1476,13 +1502,13 @@ export async function backfillEquityFromPolygon(
         const vol20 = volumesUpTo.length >= 20 ? medianOf(volumesUpTo.slice(-20)) : null;
 
         let rsRatio: number | null = null;
-        if (spyCloses.length > 20 && closesUpTo.length > 20) {
+        if (sectorCloses.length > 20 && closesUpTo.length > 20) {
           const stockPct = (closesUpTo[closesUpTo.length - 1] - closesUpTo[closesUpTo.length - 21]) / closesUpTo[closesUpTo.length - 21];
-          const spyEndIdx = Math.min(i, spyCloses.length - 1);
-          const spyStartIdx = Math.max(0, spyEndIdx - 20);
-          if (spyCloses[spyStartIdx] > 0) {
-            const spyPct = (spyCloses[spyEndIdx] - spyCloses[spyStartIdx]) / spyCloses[spyStartIdx];
-            rsRatio = spyPct !== 0 ? stockPct / spyPct : null;
+          const sectorEndIdx = Math.min(i, sectorCloses.length - 1);
+          const sectorStartIdx = Math.max(0, sectorEndIdx - 20);
+          if (sectorCloses[sectorStartIdx] > 0) {
+            const sectorPct = (sectorCloses[sectorEndIdx] - sectorCloses[sectorStartIdx]) / sectorCloses[sectorStartIdx];
+            rsRatio = sectorPct !== 0 ? stockPct / sectorPct : null;
           }
         }
 
