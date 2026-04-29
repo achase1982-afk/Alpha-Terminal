@@ -2573,6 +2573,17 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isV2Running]);
 
+  // Mount the result column when a V2 job exists for the active job slot.
+  // `activeResult` was only set while `isV2Running` — after completion it stayed
+  // null so users saw StrategistEmptyState + transcript banner only (card lived
+  // under `activeResult === "strategist"` which never rendered).
+  useEffect(() => {
+    if (subTab !== "strategist") return;
+    if (activeJobIdForSymbol) {
+      setActiveResult("strategist");
+    }
+  }, [subTab, activeJobIdForSymbol]);
+
   useEffect(() => {
     if (prevSymbolRef.current !== symbol) {
       prevSymbolRef.current = symbol;
