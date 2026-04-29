@@ -456,6 +456,8 @@ export interface AnalyzeProgressCallbacks {
   onTurnStart?: (turn: DebateTurnStartPayload) => void;
   onTurnDelta?: (turnId: string, delta: string) => void;
   onTurnDone?: (turnId: string, finalText: string) => void;
+  /** Desk / validation: drop a failed attempt from the transcript before retry. */
+  onTurnDiscarded?: (turnId: string) => void;
   // Optional caller-supplied context to prepend to the analyst prompt.
   // Used by the Unusual Flow drill-down "Send to Strategist" button to
   // pass a snapshot of the live flow card so the analyst reasons about
@@ -595,6 +597,7 @@ export async function analyzeTickerV2(
           onTurnStart: progress?.onTurnStart ? (turn) => progress.onTurnStart!(turn as any) : undefined,
           onTurnDelta: progress?.onTurnDelta,
           onTurnDone: progress?.onTurnDone,
+          onTurnDiscarded: progress?.onTurnDiscarded,
         },
       });
       const result: StrategistV2Result = {
