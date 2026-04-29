@@ -197,13 +197,9 @@ export function StrategistHistoryList({ onSendToOrder, onReopenValidatedOrder, e
                   />
                 ) : (
                   <>
-                    {(() => {
-                      const transcript = (result as unknown as { debateTranscript?: unknown[] })?.debateTranscript;
-                      if (Array.isArray(transcript) && transcript.length > 0) {
-                        return <HistoryDebateTranscript transcript={transcript as Parameters<typeof HistoryDebateTranscript>[0]["transcript"]} />;
-                      }
-                      return null;
-                    })()}
+                    {result?.debateTranscript && result.debateTranscript.length > 0 ? (
+                      <HistoryDebateTranscript transcript={result.debateTranscript} />
+                    ) : null}
                     {result?.status === "recommendation" && result.recommendation ? (
                       <StrategistV2RecommendationCard
                         result={result}

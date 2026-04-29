@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from "react";
-import { useTerminalStore, type StrategistValidationMeta } from "@/lib/store";
+import { useTerminalStore, type StrategistValidationMeta, type StrategistTranscriptTurn } from "@/lib/store";
 import { StrategistValidationCard } from "@/components/StrategistValidationCard";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import {
@@ -1460,11 +1460,11 @@ function DebateTranscript({
   title?: string;
 }) {
   const groups = useMemo(() => {
-    const m = new Map<1 | 2 | 3 | "synthesis", typeof transcript>();
+    const m = new Map<1 | 2 | 3 | "synthesis", StrategistTranscriptTurn[]>();
     for (const t of transcript) {
       const key = t.round;
-      if (!m.has(key)) m.set(key, [] as unknown as typeof transcript);
-      (m.get(key) as typeof transcript).push(t);
+      if (!m.has(key)) m.set(key, []);
+      m.get(key)!.push(t);
     }
     return Array.from(m.entries());
   }, [transcript]);

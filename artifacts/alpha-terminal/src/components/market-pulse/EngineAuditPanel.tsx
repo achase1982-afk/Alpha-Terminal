@@ -115,8 +115,9 @@ export function EngineAuditPanel({ data }: { data: MarketPulseData }) {
 
   const raw = data.rawIndicators;
   const rows = raw ? buildIndicatorRows(raw) : [];
-  const grouped: Record<AuditCluster, IndicatorRow[]> = {} as any;
-  for (const c of ALL_CLUSTERS) grouped[c] = [];
+  const grouped: Record<AuditCluster, IndicatorRow[]> = Object.fromEntries(
+    ALL_CLUSTERS.map((c) => [c, [] as IndicatorRow[]]),
+  ) as Record<AuditCluster, IndicatorRow[]>;
   for (const r of rows) grouped[r.cluster].push(r);
 
   const liveCount = rows.filter(r => r.value !== null).length;

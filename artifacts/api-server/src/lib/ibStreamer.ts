@@ -1,4 +1,4 @@
-import { IBApi, EventName, Contract, SecType } from "@stoqey/ib";
+import { IBApi, EventName, Contract, SecType, type TickType } from "@stoqey/ib";
 import { logger } from "./logger.js";
 import { logFailure } from "./telemetry.js";
 import { emitTelemetry } from "./telemetryStore.js";
@@ -723,8 +723,9 @@ export async function connectIB(): Promise<void> {
       }
     });
 
-    ib.on(EventName.tickSize, (reqId: number, tickType: number, size: number) => {
-      if (size === -1) return;
+    ib.on(EventName.tickSize, (reqId: number, tickType?: TickType, size?: number) => {
+      if (size == null || size === -1) return;
+      if (tickType == null) return;
       const def = reqIdToSymbol.get(reqId);
       const dynSym = def ? null : dynamicQuoteReqIdToSymbol.get(reqId);
       if (!def && !dynSym) return;

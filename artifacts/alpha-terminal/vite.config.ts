@@ -2,6 +2,18 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
+import type { ServerResponse } from "http";
+import type { Socket } from "net";
+
+type NodeResponseWithFlush = ServerResponse & {
+  flushHeaders?: () => void;
+  flush?: () => void;
+  socket?: Socket & { uncork?: () => void };
+};
+
+function asNodeResponseWithFlush(res: ServerResponse): NodeResponseWithFlush {
+  return res as NodeResponseWithFlush;
+}
 
 
 const rawPort = process.env.PORT ?? "3000";
@@ -68,10 +80,11 @@ export default defineConfig({
         configure: (proxy) => {
           proxy.on("proxyRes", (proxyRes, _req, res) => {
             if (proxyRes.headers["content-type"]?.includes("text/event-stream")) {
-              (res as any).flushHeaders?.();
+              const nodeRes = asNodeResponseWithFlush(res);
+              nodeRes.flushHeaders?.();
               proxyRes.on("data", () => {
-                if (typeof (res as any).flush === "function") (res as any).flush();
-                (res as any).socket?.uncork?.();
+                if (typeof nodeRes.flush === "function") nodeRes.flush();
+                nodeRes.socket?.uncork?.();
               });
             }
           });
