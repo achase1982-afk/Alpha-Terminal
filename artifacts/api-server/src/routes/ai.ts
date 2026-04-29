@@ -32,6 +32,7 @@ import { chainCache, getOrFetchChain, CHAIN_CACHE_TTL, getCachedEconEvents, getC
 import { runDeterministicScan } from "../lib/deterministicScanner.js";
 import { runDiscoveryScan } from "../lib/deterministicScanner.v2.js";
 import { getEquityPCRatio, getIndexPCRatio } from "../lib/polygonPutCallRatio.js";
+import { getNextEarningsDate } from "../lib/earningsService.js";
 import {
   runDeterministicStrategist,
   fetchPortfolioContext,
@@ -1683,10 +1684,11 @@ router.post("/market-pulse/stream", async (req, res) => {
   for (const cn of clusterNames) {
     const cl = engineResult.clusters[cn];
     if (!cl) continue;
-    emitTelemetry("MARKET_PULSE", "INFO", `Cluster ${cn}: score ${(cl.score ?? 0).toFixed(2)}, weight ${(cl.weight ?? 0).toFixed(2)}, rules [${(cl.rulesApplied ?? []).join(", ")}]`, {
+    const weight = engineResult.weights[cn] ?? 0;
+    emitTelemetry("MARKET_PULSE", "INFO", `Cluster ${cn}: score ${(cl.score ?? 0).toFixed(2)}, weight ${weight.toFixed(2)}, rules [${(cl.rulesApplied ?? []).join(", ")}]`, {
       cluster: cn,
       score: cl.score ?? 0,
-      weight: cl.weight ?? 0,
+      weight,
       rulesApplied: cl.rulesApplied ?? [],
     }, "MARKET_PULSE", pulseBatch);
   }
@@ -2256,7 +2258,7 @@ router.post("/options-strategist", async (req, res) => {
     const blockedIndices = new Set<number>();
     for (let i = 0; i < strategies.length; i++) {
       const s = strategies[i];
-      const maxDTE = s.dte ?? regime.dteRange.max;
+      const maxDTE = s.days_to_expiration ?? regime.dteRange.max;
       const evCheck = checkEventConflicts(symbol, maxDTE, s.strategy_type, earningsDaysAway);
       eventCheckResults.push(evCheck);
       if (evCheck.hardBlocks.length > 0) {
@@ -2357,7 +2359,6 @@ router.post("/options-strategist/stream", async (req, res) => {
   const isShockActive = shockCheck.shockState === "ACTIVE";
   if (isShockActive) {
     regime.regime = "RISK-OFF" as any;
-    regime.direction = "BEARISH" as any;
     regime.dteRange = { min: 7, max: 21 };
     req.log.info({ shockState: shockCheck.shockState, triggers: shockCheck.activeTriggers.map(t => t.trigger) }, "Strategist: shock active — forcing hedging-only mode");
   }
@@ -2468,7 +2469,7 @@ router.post("/options-strategist/stream", async (req, res) => {
     const streamBlockedIdx = new Set<number>();
     for (let i = 0; i < strategies.length; i++) {
       const s = strategies[i];
-      const maxDTE = s.dte ?? regime.dteRange.max;
+      const maxDTE = s.days_to_expiration ?? regime.dteRange.max;
       const evCheck = checkEventConflicts(symbol, maxDTE, s.strategy_type, earningsDaysAway);
       streamCheckResults.push(evCheck);
       if (evCheck.hardBlocks.length > 0) {
@@ -2993,11 +2994,12 @@ router.post("/deterministic-strategist", async (req, res) => {
   const shockResult = evaluateRegimeShock(indicators);
   const vix = getVixFromCache();
 
+  const pulseAvoidShortPremium = engineResult.optionsLayer.avoidShortPremium;
   const pulse: PulseInput = {
     composite: engineResult.compositeScore,
     confidence: engineResult.confidenceScore,
     bias: engineResult.bias,
-    avoidShortPremium: engineResult.avoidShortPremium,
+    avoidShortPremium: pulseAvoidShortPremium,
     vix,
   };
 
@@ -3054,15 +3056,15 @@ router.post("/deterministic-strategist", async (req, res) => {
 
   emitTelemetry("STRATEGIST", result.criteria ? "INFO" : "WARN",
     result.criteria
-      ? `${symbol}: ${result.mode} → ${result.criteria.strategyType} (delta ${result.criteria.idealDelta}, DTE ${result.criteria.idealDTE})`
+      ? `${symbol}: ${result.mode} → ${result.criteria.strategyType} (delta ${result.criteria.deltaTargets.shortStrike}, DTE ${result.criteria.dteRange.min}-${result.criteria.dteRange.max})`
       : `${symbol}: rejected — ${result.rejection ?? "no qualifying mode"}`,
     {
       ticker: symbol,
       mode: result.mode,
       rejection: result.rejection,
       strategyType: result.criteria?.strategyType,
-      idealDelta: result.criteria?.idealDelta,
-      idealDTE: result.criteria?.idealDTE,
+      idealDelta: result.criteria?.deltaTargets.shortStrike,
+      idealDTE: result.criteria ? result.criteria.dteRange.max : undefined,
     },
     "STRATEGIST", strategistBatch,
   );

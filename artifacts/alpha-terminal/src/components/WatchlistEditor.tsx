@@ -29,7 +29,7 @@ export function WatchlistEditor({ watchlist, onClose, onCreate, onUpdate, onAddS
   const [error, setError] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (isNew && nameRef.current) nameRef.current.focus();

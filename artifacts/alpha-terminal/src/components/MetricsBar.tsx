@@ -239,7 +239,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: Metric
 
   useEffect(() => {
     const sym = quote?.symbol ?? null;
-    if (!sym) return;
+    if (!sym) return undefined;
     if (sym !== prevSymbolRef.current) {
       prevSymbolRef.current = sym;
       setFadeIn(false);
@@ -252,6 +252,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: Metric
         if (inner !== null) cancelAnimationFrame(inner);
       };
     }
+    return undefined;
   }, [quote?.symbol]);
 
   const hasAnyStreamData = Object.keys(streamPrices).length > 0;

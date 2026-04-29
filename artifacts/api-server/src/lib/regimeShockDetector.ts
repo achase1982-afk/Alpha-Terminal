@@ -63,6 +63,7 @@ let lastTransitionAt: number | null = null;
 
 let prevAdd: number | null = null;
 let prevAddq: number | null = null;
+let prevSkew: number | null = null;
 const creditSpreadBuffer: RollingBuffer = { values: [], maxSize: ROLLING_DAYS };
 
 let lastCreditPushDay: string | null = null;

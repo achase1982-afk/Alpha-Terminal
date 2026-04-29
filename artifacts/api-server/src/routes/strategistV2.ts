@@ -21,6 +21,7 @@ import { logger } from "../lib/logger.js";
 import {
   ensureIvrCoverage,
   getIvrBackfillJob,
+  getLatestIvrBackfillJobForSymbol,
   type IvrCoverageResult,
 } from "../lib/onDemandIvrBackfill.js";
 import { notifyStrategistCompletion } from "../lib/strategistNotifications.js";
@@ -152,8 +153,8 @@ router.get("/ivr-backfill/:jobId", async (req, res) => {
 export type TranscriptTurn = {
   id: string;
   round: 1 | 2 | 3 | "synthesis";
-  role: "A" | "B" | "synthesis" | "system";
-  phase: "propose" | "critique" | "final" | "synthesis" | "info";
+  role: "A" | "B" | "synthesis" | "system" | "solo";
+  phase: "propose" | "critique" | "final" | "synthesis" | "info" | "solo";
   model: string;
   label: string;
   text: string;

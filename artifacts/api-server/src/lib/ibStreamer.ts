@@ -241,6 +241,7 @@ function emitQuote(def: IBSymbolDef, state: IBQuoteState) {
   const quote: LiveQuote = {
     symbol: def.displaySymbol,
     last: effectiveLast,
+    regularLast: effectiveLast,
     extendedLast: effectiveLast,
     bid: state.bid,
     ask: state.ask,
@@ -264,6 +265,7 @@ function emitRawQuote(displaySymbol: string, state: IBQuoteState) {
   const quote: LiveQuote = {
     symbol: displaySymbol,
     last: effectiveLast,
+    regularLast: effectiveLast,
     extendedLast: effectiveLast,
     bid: state.bid,
     ask: state.ask,
@@ -1002,6 +1004,7 @@ export function getIBSnapshot(): LiveQuote[] {
       out.push({
         symbol: def.displaySymbol,
         last: effectiveLast,
+        regularLast: effectiveLast,
         extendedLast: effectiveLast,
         bid: state.bid,
         ask: state.ask,
@@ -1163,6 +1166,7 @@ export function getIBCachedQuote(symbol: string): LiveQuote | null {
   return {
     symbol: sym,
     last: effectiveLast,
+    regularLast: effectiveLast,
     extendedLast: effectiveLast,
     bid: state.bid,
     ask: state.ask,

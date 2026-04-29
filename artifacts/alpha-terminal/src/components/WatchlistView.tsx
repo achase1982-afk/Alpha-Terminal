@@ -666,7 +666,7 @@ function ColumnHeader({
   onSort,
 }: {
   indicator: IndicatorDef;
-  sortKey: SortKey;
+  sortKey: SortKey | undefined;
   sortDir: SortDir;
   onSort: (k: SortKey) => void;
 }) {
@@ -787,6 +787,7 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
     if (toFetch.length === 0) return;
     const controller = new AbortController();
     let retryCount = 0;
+    const fetchedRef = { current: _fetchedSymbols };
 
     async function fetchSpark(sym: string) {
       try {
@@ -979,7 +980,7 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
                 </div>
                 <div />
                 {visibleIndicators.map((ind) => (
-                  <ColumnHeader key={ind.key} indicator={ind} sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                  <ColumnHeader key={ind.key} indicator={ind} sortKey={sortKey ?? undefined} sortDir={sortDir} onSort={handleSort} />
                 ))}
               </div>
 
