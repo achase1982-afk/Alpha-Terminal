@@ -1,9 +1,10 @@
 import { db, equityDailyTable, ivrBackfillJobsTable, trackedTickersTable } from "@workspace/db";
 import { and, desc, eq, sql } from "drizzle-orm";
-import { logger } from "./logger";
-import { backfillEquityFromPolygon } from "./dailySnapshot";
-import { backfillHistoricalIV } from "./historicalIVBackfill";
-import { backfillHvProxy } from "./hvProxyBackfill";
+import { logger } from "./logger.js";
+import { notifyStrategistCompletion } from "./strategistNotifications.js";
+import { backfillEquityFromPolygon } from "./dailySnapshot.js";
+import { backfillHistoricalIV } from "./historicalIVBackfill.js";
+import { backfillHvProxy } from "./hvProxyBackfill.js";
 
 export const IVR_MIN_COVERAGE_DAYS = 60;
 export const IVR_TARGET_TRADING_DAYS = 252;
@@ -274,6 +275,13 @@ async function runBackfillJob(jobId: string, symbol: string): Promise<void> {
       await db.update(trackedTickersTable)
         .set({ errorMsg: message, lastIvrBackfillJobId: jobId })
         .where(eq(trackedTickersTable.symbol, symbol));
+      notifyStrategistCompletion({
+        kind: "ivr_failed",
+        ticker: symbol,
+        jobId,
+        message: `Strategist failed for ${symbol}`,
+        resultStatus: "failed_insufficient_history",
+      });
       logger.warn({ jobId, symbol, priceDays }, "On-demand IVR backfill: insufficient history");
       return;
     }
@@ -314,6 +322,13 @@ async function runBackfillJob(jobId: string, symbol: string): Promise<void> {
         await db.update(trackedTickersTable)
           .set({ errorMsg: message, lastIvrBackfillJobId: jobId })
           .where(eq(trackedTickersTable.symbol, symbol));
+        notifyStrategistCompletion({
+          kind: "ivr_failed",
+          ticker: symbol,
+          jobId,
+          message: `Strategist failed for ${symbol}`,
+          resultStatus: "failed_insufficient_history",
+        });
         return;
       }
     }
@@ -326,6 +341,13 @@ async function runBackfillJob(jobId: string, symbol: string): Promise<void> {
     await db.update(trackedTickersTable)
       .set({ active: true, errorMsg: null, lastIvrBackfillJobId: jobId })
       .where(eq(trackedTickersTable.symbol, symbol));
+    notifyStrategistCompletion({
+      kind: "ivr_ready",
+      ticker: symbol,
+      jobId,
+      message: `Strategist ready for ${symbol}`,
+      resultStatus: "ivr_backfill_completed",
+    });
     logger.info({ jobId, symbol, realIvDays }, "On-demand IVR backfill: completed");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -337,6 +359,13 @@ async function runBackfillJob(jobId: string, symbol: string): Promise<void> {
     await db.update(trackedTickersTable)
       .set({ errorMsg: message, lastIvrBackfillJobId: jobId })
       .where(eq(trackedTickersTable.symbol, symbol));
+    notifyStrategistCompletion({
+      kind: "ivr_failed",
+      ticker: symbol,
+      jobId,
+      message: `Strategist failed for ${symbol}`,
+      resultStatus: "ivr_backfill_failed",
+    });
     logger.error({ err, jobId, symbol }, "On-demand IVR backfill: failed");
   }
 }
