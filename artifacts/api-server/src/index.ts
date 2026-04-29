@@ -15,7 +15,7 @@ import { startUniverseRebuildSchedule } from "./lib/universeBuilder";
 import { updateEquityDailyFromGroupedBars, runFullSnapshot, backfillPolygonFlow, sweepStaleSnapshots } from "./lib/dailySnapshot";
 import { accumulateCanonicalIvForDate } from "./lib/canonicalIvAccumulator";
 import { LIQUID_CORE_SYMBOLS } from "./data/liquidCore130";
-import { db, equityDailyTable, snapshotCollectionLogTable, flowDailyAggregatesTable } from "@workspace/db";
+import { db, equityDailyTable, snapshotCollectionLogTable, flowDailyAggregatesTable, trackedTickersTable } from "@workspace/db";
 import { inArray, desc, sql, eq } from "drizzle-orm";
 import { startPolygonPCRatioPoller } from "./lib/polygonPutCallRatio";
 import { startOptionsWatcher } from "./lib/optionsWatcher";
@@ -116,25 +116,40 @@ async function boot() {
     // cheap & synchronous so the TOCTOU window between alreadyDone() and
     // runFullSnapshot() is closed.
     const snapshotInFlight = new Set<string>();
+    async function getDailySnapshotSymbols(): Promise<string[]> {
+      const trackedRows = await db
+        .select({ symbol: trackedTickersTable.symbol })
+        .from(trackedTickersTable)
+        .where(eq(trackedTickersTable.active, true));
+
+      // Future scaling note: runFullSnapshot latency grows with this expanded
+      // universe. If tracked_tickers gets large, split LC130 and tracked
+      // tickers into separate scheduled batches or per-symbol work items.
+      return [...new Set([
+        ...LIQUID_CORE_SYMBOLS,
+        ...trackedRows.map((r) => r.symbol.toUpperCase()),
+      ])];
+    }
+
     async function runDailySnapshotJob() {
       const token = getBestAccessToken();
       if (!token) {
         logger.warn("Daily snapshot: no Schwab token available — skipping");
         return;
       }
-      const symbols = [...LIQUID_CORE_SYMBOLS];
+      const symbols = await getDailySnapshotSymbols();
       const dateStr = new Date().toISOString().slice(0, 10);
       if (snapshotInFlight.has(dateStr)) {
         logger.warn({ date: dateStr }, "Daily snapshot: already in-flight for this date — skipping duplicate");
         return;
       }
       snapshotInFlight.add(dateStr);
-      logger.info({ symbols: symbols.length, date: dateStr }, "Daily snapshot: starting LC130 collection");
+      logger.info({ symbols: symbols.length, date: dateStr }, "Daily snapshot: starting LC130 + tracked ticker collection");
       try {
         const result = await runFullSnapshot(symbols, token, dateStr);
-        logger.info({ ...result, date: dateStr }, "Daily snapshot: LC130 collection complete");
+        logger.info({ ...result, date: dateStr }, "Daily snapshot: LC130 + tracked ticker collection complete");
       } catch (err) {
-        logger.error({ err, date: dateStr }, "Daily snapshot: LC130 collection failed");
+        logger.error({ err, date: dateStr }, "Daily snapshot: LC130 + tracked ticker collection failed");
       } finally {
         snapshotInFlight.delete(dateStr);
       }
