@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
-import { generateText } from "ai";
-import { createXai } from "@ai-sdk/xai";
+import { generateText, stepCountIs, streamText, type ToolSet } from "ai";
+import { createXai, type XaiLanguageModelResponsesOptions } from "@ai-sdk/xai";
 import { logger } from "./logger.js";
 import { createGeminiClient, hasGeminiApiKey } from "./geminiClient.js";
 import type {
@@ -541,6 +541,120 @@ export async function callXaiWithSystem(model: string, temperature: number, syst
   const rawText = text.trim();
   if (!rawText) throw new Error("No text content in Analyst LLM response (xAI)");
   return rawText;
+}
+
+function mergeXaiWebSearchTraceFromSteps(steps: unknown[]): { queries: string[]; sources: WebSearchSource[] } {
+  const queries: string[] = [];
+  const sources: WebSearchSource[] = [];
+  const seenUrls = new Set<string>();
+  for (const step of steps) {
+    if (!step || typeof step !== "object") continue;
+    const trs = (step as { toolResults?: unknown }).toolResults;
+    if (!Array.isArray(trs)) continue;
+    for (const tr of trs) {
+      const out = tr && typeof tr === "object" && "output" in tr
+        ? (tr as { output?: unknown }).output
+        : tr && typeof tr === "object" && "result" in tr
+          ? (tr as { result?: unknown }).result
+          : undefined;
+      if (!out || typeof out !== "object") continue;
+      const q = (out as Record<string, unknown>).query;
+      if (typeof q === "string" && q.trim()) queries.push(q.trim());
+      const srcs = (out as Record<string, unknown>).sources;
+      if (Array.isArray(srcs)) {
+        for (const s of srcs) {
+          if (s && typeof s === "object") {
+            const url = (s as { url?: string }).url;
+            const title = (s as { title?: string }).title;
+            if (typeof url === "string" && url && !seenUrls.has(url)) {
+              seenUrls.add(url);
+              sources.push({ title: typeof title === "string" && title ? title : url, url });
+            }
+          }
+        }
+      }
+    }
+  }
+  return { queries, sources };
+}
+
+function xaiReasoningProviderOptions(model: string): { xai: XaiLanguageModelResponsesOptions } | undefined {
+  if (model.includes("non-reasoning")) return { xai: { reasoningEffort: "low" } };
+  const isReasoningVariant =
+    (model.includes("reasoning") && !model.includes("non-reasoning"))
+    || /grok-4-1-fast-reasoning|grok-4-fast-reasoning|grok-4\.20-0309-reasoning|grok-4\.20-multi-agent/.test(model);
+  if (isReasoningVariant) return { xai: { reasoningEffort: "high" } };
+  return undefined;
+}
+
+export async function callXaiWithSystemAndWebSearch(
+  model: string,
+  temperature: number,
+  systemPrompt: string,
+  prompt: string,
+): Promise<WebSearchResult> {
+  const xai = makeXaiProvider();
+  const reasoningOpts = xaiReasoningProviderOptions(model);
+  const result = await generateText({
+    model: xai.responses(model),
+    system: systemPrompt,
+    temperature,
+    prompt,
+    tools: { web_search: xai.tools.webSearch() } as ToolSet,
+    stopWhen: stepCountIs(15),
+    ...(reasoningOpts ? { providerOptions: reasoningOpts } : {}),
+  });
+
+  const { queries, sources } = mergeXaiWebSearchTraceFromSteps(result.steps);
+  const text = result.text.trim();
+  if (!text) throw new Error("No text content in Strategist LLM response (xAI web search)");
+
+  return {
+    text,
+    trace: { webSearchUsed: queries.length > 0, queries, sources },
+  };
+}
+
+export async function streamCallXaiWithSystemAndWebSearch(
+  model: string,
+  temperature: number,
+  systemPrompt: string,
+  prompt: string,
+  onDelta: (text: string) => void,
+  onStatus?: (status: string) => void,
+): Promise<WebSearchResult> {
+  const xai = makeXaiProvider();
+  onStatus?.("Calling xAI with web search…");
+
+  const reasoningOpts = xaiReasoningProviderOptions(model);
+  const result = streamText({
+    model: xai.responses(model),
+    system: systemPrompt,
+    temperature,
+    prompt,
+    tools: { web_search: xai.tools.webSearch() } as ToolSet,
+    stopWhen: stepCountIs(15),
+    ...(reasoningOpts ? { providerOptions: reasoningOpts } : {}),
+  });
+
+  for await (const part of result.fullStream) {
+    if (part.type === "text-delta" && part.text) {
+      onDelta(part.text);
+    } else if (part.type === "tool-call") {
+      onStatus?.("Searching the web…");
+    }
+  }
+
+  const steps = await result.steps;
+  const text = (await result.text).trim();
+  if (!text) throw new Error("No text content in Strategist LLM stream (xAI)");
+
+  const { queries, sources } = mergeXaiWebSearchTraceFromSteps(steps);
+
+  return {
+    text,
+    trace: { webSearchUsed: queries.length > 0, queries, sources },
+  };
 }
 
 export function extractJson(rawText: string): string {

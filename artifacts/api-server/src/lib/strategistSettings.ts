@@ -56,7 +56,7 @@ export interface StrategistConfig {
 // IMPORTANT: only append to this list — do not reorder, or saved settings
 // will silently point at the wrong model.
 export interface StrategistModelOption {
-  provider: "anthropic" | "google" | "openai";
+  provider: "anthropic" | "google" | "openai" | "xai";
   model: string;
   label: string;
 }
@@ -79,6 +79,23 @@ export const STRATEGIST_MODEL_OPTIONS: StrategistModelOption[] = [
   { provider: "openai", model: "gpt-5-nano", label: "GPT-5 Nano (OpenAI)" },
   { provider: "openai", model: "o4-mini", label: "o4-mini Thinking (OpenAI)" },
   { provider: "google", model: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview (Google)" },
+  // xAI (Grok). Append-only. Model ids align with @ai-sdk/xai `XaiChatModelId` (incl. -latest)
+  // so new console models can be added without reordering prior indices.
+  { provider: "xai", model: "grok-4-fast-non-reasoning", label: "Grok 4 Fast (xAI)" },
+  { provider: "xai", model: "grok-4-fast-reasoning", label: "Grok 4 Fast — reasoning (xAI)" },
+  { provider: "xai", model: "grok-4-1-fast-reasoning", label: "Grok 4.1 Fast — reasoning (xAI)" },
+  { provider: "xai", model: "grok-4-1-fast-non-reasoning", label: "Grok 4.1 Fast (xAI)" },
+  { provider: "xai", model: "grok-4.20-0309-non-reasoning", label: "Grok 4.20 (xAI)" },
+  { provider: "xai", model: "grok-4.20-0309-reasoning", label: "Grok 4.20 — reasoning (xAI)" },
+  { provider: "xai", model: "grok-4.20-multi-agent-0309", label: "Grok 4.20 multi-agent (xAI)" },
+  { provider: "xai", model: "grok-code-fast-1", label: "Grok Code Fast 1 (xAI)" },
+  { provider: "xai", model: "grok-4", label: "Grok 4 (xAI)" },
+  { provider: "xai", model: "grok-4-0709", label: "Grok 4 0709 (xAI)" },
+  { provider: "xai", model: "grok-4-latest", label: "Grok 4 latest (xAI)" },
+  { provider: "xai", model: "grok-3", label: "Grok 3 (xAI)" },
+  { provider: "xai", model: "grok-3-latest", label: "Grok 3 latest (xAI)" },
+  { provider: "xai", model: "grok-3-mini", label: "Grok 3 mini (xAI)" },
+  { provider: "xai", model: "grok-3-mini-latest", label: "Grok 3 mini latest (xAI)" },
 ];
 
 export function getStrategistModel(idx: number): StrategistModelOption {

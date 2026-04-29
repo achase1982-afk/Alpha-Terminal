@@ -3,6 +3,7 @@ import {
   streamCallAnthropicWithSystemAndWebSearch,
   streamCallGeminiWithSystemAndWebSearch,
   streamCallOpenAIWithSystemAndWebSearch,
+  streamCallXaiWithSystemAndWebSearch,
   type WebSearchResult,
   type WebSearchTrace,
 } from "./aiLabAnalystClient.js";
@@ -774,6 +775,11 @@ async function streamModel(
   }
   if (modelOpt.provider === "openai") {
     return streamCallOpenAIWithSystemAndWebSearch(
+      modelOpt.model, TEMPERATURE, systemPrompt, prompt, onDelta, onStatus,
+    );
+  }
+  if (modelOpt.provider === "xai") {
+    return streamCallXaiWithSystemAndWebSearch(
       modelOpt.model, TEMPERATURE, systemPrompt, prompt, onDelta, onStatus,
     );
   }
