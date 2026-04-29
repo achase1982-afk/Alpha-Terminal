@@ -15,6 +15,10 @@ import { StrategistTelemetryPanel } from "./StrategistTelemetryPanel";
 import { SystemSettingsPage } from "./SystemSettingsPage";
 import { SidebarChat } from "./SidebarChat";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import {
+  getStrategistNotificationSettings,
+  setStrategistNotificationSetting,
+} from "@/lib/strategistNotificationSettings";
 import { queryClient } from "@/App";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
