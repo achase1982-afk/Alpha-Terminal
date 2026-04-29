@@ -755,7 +755,14 @@ export const useTerminalStore = create<TerminalState>()(
               // viewed stays false on transition from running -> done so the
               // indicator can show "new result"; the consumer decides when to
               // mark viewed (e.g. when strategist tab is currently active).
-              [jobId]: { ...job, status: 'done', result, finishedAt: Date.now(), viewed: false },
+              [jobId]: {
+                ...job,
+                status: 'done',
+                result,
+                finishedAt: Date.now(),
+                viewed: false,
+                liveStatus: '',
+              },
             },
           };
         }),
@@ -766,7 +773,13 @@ export const useTerminalStore = create<TerminalState>()(
           return {
             strategistJobs: {
               ...state.strategistJobs,
-              [jobId]: { ...job, status: 'error', error: reason, finishedAt: Date.now() },
+              [jobId]: {
+                ...job,
+                status: 'error',
+                error: reason,
+                finishedAt: Date.now(),
+                liveStatus: '',
+              },
             },
           };
         }),

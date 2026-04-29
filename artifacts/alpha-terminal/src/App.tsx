@@ -14,7 +14,7 @@ import PushNotificationBanner from "@/components/PushNotificationBanner";
 import { registerServiceWorker } from "@/lib/pushNotifications";
 import OrderAlertWatcher from "@/components/OrderAlertWatcher";
 import SchwabSessionExpiredDialog from "@/components/SchwabSessionExpiredDialog";
-import { resumeAllRunningPollers } from "@/lib/strategistPoller";
+import { resumeAllRunningPollers, startForegroundStrategistReconciliation } from "@/lib/strategistPoller";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -187,6 +187,7 @@ function InactivityWarning() {
 function GlobalStrategistPollerResumer() {
   useEffect(() => {
     resumeAllRunningPollers();
+    const stopReconcile = startForegroundStrategistReconciliation();
     const onVisible = () => {
       if (document.visibilityState === "visible") {
         resumeAllRunningPollers();
@@ -196,6 +197,7 @@ function GlobalStrategistPollerResumer() {
     window.addEventListener("focus", onVisible);
     window.addEventListener("pageshow", onVisible);
     return () => {
+      stopReconcile();
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
       window.removeEventListener("pageshow", onVisible);

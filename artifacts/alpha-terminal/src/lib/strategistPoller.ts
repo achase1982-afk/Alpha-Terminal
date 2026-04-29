@@ -360,3 +360,19 @@ export function resumeAllRunningPollers(): void {
     }
   })();
 }
+
+/** Poll `/job/:id/final` while tab is visible so we catch server-done before the next `/thinking` tick (fixes spinner stuck after push). */
+export function startForegroundStrategistReconciliation(): () => void {
+  let cancelled = false;
+  const tick = () => {
+    if (cancelled) return;
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    void syncRunningStrategistJobsFromServer({ toastOnComplete: false });
+  };
+  const interval = window.setInterval(tick, 10_000);
+  tick();
+  return () => {
+    cancelled = true;
+    window.clearInterval(interval);
+  };
+}
