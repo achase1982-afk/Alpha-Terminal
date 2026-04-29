@@ -462,6 +462,43 @@ export const snapshotCollectionLogTable = pgTable("snapshot_collection_log", {
   completedAt: timestamp("completed_at"),
 });
 
+export const trackedTickersTable = pgTable("tracked_tickers", {
+  symbol: text("symbol").primaryKey(),
+  source: text("source").notNull().default("strategist_on_demand"),
+  active: boolean("active").default(true).notNull(),
+  firstRequestedAt: timestamp("first_requested_at").defaultNow().notNull(),
+  lastRequestedAt: timestamp("last_requested_at").defaultNow().notNull(),
+  lastSnapshotAt: timestamp("last_snapshot_at"),
+  lastIvrBackfillJobId: text("last_ivr_backfill_job_id"),
+  notes: text("notes"),
+  errorMsg: text("error_msg"),
+});
+
+export type TrackedTicker = typeof trackedTickersTable.$inferSelect;
+export type TrackedTickerInsert = typeof trackedTickersTable.$inferInsert;
+
+export const ivrBackfillJobsTable = pgTable("ivr_backfill_jobs", {
+  id: text("id").primaryKey(),
+  symbol: text("symbol").notNull(),
+  status: text("status").notNull().default("queued"),
+  source: text("source").notNull().default("none"),
+  daysRequested: integer("days_requested").notNull().default(252),
+  daysLoaded: integer("days_loaded").notNull().default(0),
+  equityRowsWritten: integer("equity_rows_written").notNull().default(0),
+  ivRowsWritten: integer("iv_rows_written").notNull().default(0),
+  ivrRowsWritten: integer("ivr_rows_written").notNull().default(0),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  errorMsg: text("error_msg"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("ivr_backfill_jobs_symbol_status_idx").on(t.symbol, t.status),
+]);
+
+export type IvrBackfillJob = typeof ivrBackfillJobsTable.$inferSelect;
+export type IvrBackfillJobInsert = typeof ivrBackfillJobsTable.$inferInsert;
+
 export const aiLabConfigTable = pgTable("ai_lab_config", {
   id: serial("id").primaryKey(),
   key: text("key").notNull().unique(),
