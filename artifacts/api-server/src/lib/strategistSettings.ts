@@ -1,5 +1,4 @@
 import { db, strategistSettingsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
 import { logger } from "./logger.js";
 
 export interface StrategistConfig {
@@ -49,60 +48,60 @@ export interface StrategistConfig {
   strategistDebateAModelIdx: number;
   strategistDebateBModelIdx: number;
   strategistArbitratorModelIdx: number;
+  /**
+   * Bumped when the strategist model catalog changes shape; used to remap
+   * persisted integer indices once after upgrades.
+   */
+  strategistModelCatalogVersion: number;
 }
 
 // Model catalog used by the strategist. Stored as an integer index in the
 // settings table (which is number-only) to avoid a schema migration.
-// IMPORTANT: only append to this list — do not reorder, or saved settings
-// will silently point at the wrong model.
 export interface StrategistModelOption {
   provider: "anthropic" | "google" | "openai" | "xai";
   model: string;
   label: string;
 }
 
+/** Fixed four-model strategist catalog (indices 0–3). */
 export const STRATEGIST_MODEL_OPTIONS: StrategistModelOption[] = [
   { provider: "anthropic", model: "claude-opus-4-7", label: "Claude Opus 4.7 (Anthropic)" },
-  { provider: "google", model: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (Google)" },
-  { provider: "anthropic", model: "claude-opus-4-6", label: "Claude Opus 4.6 (Anthropic)" },
-  { provider: "google", model: "gemini-2.5-pro", label: "Gemini 2.5 Pro (Google)" },
-  { provider: "anthropic", model: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 (Anthropic)" },
-  { provider: "google", model: "gemini-2.5-flash", label: "Gemini 2.5 Flash (Google)" },
-  // OpenAI (ChatGPT). Append-only: never reorder. Indices above this are
-  // already persisted in user settings; appending keeps existing selections
-  // pointing at the right model.
   { provider: "openai", model: "gpt-5.5", label: "GPT-5.5 + Thinking (OpenAI)" },
-  { provider: "openai", model: "gpt-5.4", label: "GPT-5.4 (OpenAI)" },
-  { provider: "openai", model: "gpt-5.2", label: "GPT-5.2 (OpenAI)" },
-  { provider: "openai", model: "gpt-5", label: "GPT-5 (OpenAI)" },
-  { provider: "openai", model: "gpt-5-mini", label: "GPT-5 Mini (OpenAI)" },
-  { provider: "openai", model: "gpt-5-nano", label: "GPT-5 Nano (OpenAI)" },
-  { provider: "openai", model: "o4-mini", label: "o4-mini Thinking (OpenAI)" },
-  { provider: "google", model: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview (Google)" },
-  // xAI (Grok). Append-only. Model ids align with @ai-sdk/xai `XaiChatModelId` (incl. -latest)
-  // so new console models can be added without reordering prior indices.
-  { provider: "xai", model: "grok-4-fast-non-reasoning", label: "Grok 4 Fast (xAI)" },
-  { provider: "xai", model: "grok-4-fast-reasoning", label: "Grok 4 Fast — reasoning (xAI)" },
-  { provider: "xai", model: "grok-4-1-fast-reasoning", label: "Grok 4.1 Fast — reasoning (xAI)" },
-  { provider: "xai", model: "grok-4-1-fast-non-reasoning", label: "Grok 4.1 Fast (xAI)" },
-  { provider: "xai", model: "grok-4.20-0309-non-reasoning", label: "Grok 4.20 (xAI)" },
-  { provider: "xai", model: "grok-4.20-0309-reasoning", label: "Grok 4.20 — reasoning (xAI)" },
-  { provider: "xai", model: "grok-4.20-multi-agent-0309", label: "Grok 4.20 multi-agent (xAI)" },
-  { provider: "xai", model: "grok-code-fast-1", label: "Grok Code Fast 1 (xAI)" },
-  { provider: "xai", model: "grok-4", label: "Grok 4 (xAI)" },
-  { provider: "xai", model: "grok-4-0709", label: "Grok 4 0709 (xAI)" },
-  { provider: "xai", model: "grok-4-latest", label: "Grok 4 latest (xAI)" },
-  { provider: "xai", model: "grok-3", label: "Grok 3 (xAI)" },
-  { provider: "xai", model: "grok-3-latest", label: "Grok 3 latest (xAI)" },
-  { provider: "xai", model: "grok-3-mini", label: "Grok 3 mini (xAI)" },
-  { provider: "xai", model: "grok-3-mini-latest", label: "Grok 3 mini latest (xAI)" },
+  { provider: "google", model: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (Google)" },
+  { provider: "xai", model: "grok-4.20-0309-reasoning", label: "Grok 4.20 Reasoning (xAI)" },
 ];
 
-export function getStrategistModel(idx: number): StrategistModelOption {
-  if (!Number.isFinite(idx) || idx < 0 || idx >= STRATEGIST_MODEL_OPTIONS.length) {
-    return STRATEGIST_MODEL_OPTIONS[0];
+/** Current catalog version written to `strategistModelCatalogVersion`. */
+export const STRATEGIST_MODEL_CATALOG_VERSION = 2;
+
+/**
+ * Maps pre–four-model catalog indices (the former `STRATEGIST_MODEL_OPTIONS`
+ * order) to the new 0–3 index. Used for one-time DB migration.
+ * Anthropic slots (non–Opus 4.7) → 0; OpenAI (non–5.5) → 1; Gemini (non–3.1 Pro) → 2;
+ * xAI (non–Grok 4.20 reasoning) → 3.
+ */
+const LEGACY_STRATEGIST_MODEL_INDEX_TO_NEW: readonly number[] = [
+  0, 2, 0, 2, 0, 2, 1, 1, 1, 1, 1, 1, 1, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+];
+
+function remapLegacyStrategistModelIdx(idx: number): number {
+  if (!Number.isFinite(idx) || idx < 0) return 0;
+  const i = Math.floor(idx);
+  if (i < LEGACY_STRATEGIST_MODEL_INDEX_TO_NEW.length) {
+    return LEGACY_STRATEGIST_MODEL_INDEX_TO_NEW[i]!;
   }
-  return STRATEGIST_MODEL_OPTIONS[Math.floor(idx)];
+  return 0;
+}
+
+export function normalizeStrategistModelIndex(idx: number): number {
+  if (!Number.isFinite(idx) || idx < 0 || idx >= STRATEGIST_MODEL_OPTIONS.length) {
+    return 0;
+  }
+  return Math.floor(idx);
+}
+
+export function getStrategistModel(idx: number): StrategistModelOption {
+  return STRATEGIST_MODEL_OPTIONS[normalizeStrategistModelIndex(idx)];
 }
 
 /**
@@ -159,6 +158,7 @@ const DEFAULTS = {
   strategistDebateAModelIdx: 0,
   strategistDebateBModelIdx: 1,
   strategistArbitratorModelIdx: 0,
+  strategistModelCatalogVersion: STRATEGIST_MODEL_CATALOG_VERSION,
 } satisfies StrategistConfig;
 
 let settingsCache: StrategistConfig | null = null;
@@ -167,6 +167,31 @@ const CACHE_TTL_MS = 60_000;
 
 function isStrategistConfigKey(key: string): key is keyof StrategistConfig {
   return key in DEFAULTS;
+}
+
+async function migrateStrategistModelCatalogIfNeeded(
+  rows: { key: string; value: number }[],
+  merged: StrategistConfig,
+): Promise<void> {
+  const sawCatalogVersion = rows.some((r) => r.key === "strategistModelCatalogVersion");
+  if (rows.length === 0 || sawCatalogVersion) {
+    return;
+  }
+  const solo = remapLegacyStrategistModelIdx(merged.strategistSoloModelIdx);
+  const debateA = remapLegacyStrategistModelIdx(merged.strategistDebateAModelIdx);
+  const debateB = remapLegacyStrategistModelIdx(merged.strategistDebateBModelIdx);
+  const arbRaw = merged.strategistArbitratorModelIdx;
+  const arbitrator =
+    arbRaw === ARBITRATOR_IDX_DEBATE_WINNER ? ARBITRATOR_IDX_DEBATE_WINNER : remapLegacyStrategistModelIdx(arbRaw);
+  await updateSetting("strategistSoloModelIdx", solo);
+  await updateSetting("strategistDebateAModelIdx", debateA);
+  await updateSetting("strategistDebateBModelIdx", debateB);
+  await updateSetting("strategistArbitratorModelIdx", arbitrator);
+  await updateSetting("strategistModelCatalogVersion", STRATEGIST_MODEL_CATALOG_VERSION);
+  logger.info(
+    { solo, debateA, debateB, arbitrator },
+    "Strategist settings: migrated model indices to four-model catalog",
+  );
 }
 
 export async function getSettings(): Promise<StrategistConfig> {
@@ -182,24 +207,54 @@ export async function getSettings(): Promise<StrategistConfig> {
         merged[row.key] = row.value;
       }
     }
-    settingsCache = merged;
+    await migrateStrategistModelCatalogIfNeeded(rows, merged);
+    const rowsAfter =
+      rows.length > 0 && !rows.some((r) => r.key === "strategistModelCatalogVersion")
+        ? await db.select().from(strategistSettingsTable)
+        : rows;
+    const finalMerged: StrategistConfig = { ...DEFAULTS };
+    for (const row of rowsAfter) {
+      if (isStrategistConfigKey(row.key)) {
+        finalMerged[row.key] = row.value;
+      }
+    }
+    finalMerged.strategistSoloModelIdx = normalizeStrategistModelIndex(finalMerged.strategistSoloModelIdx);
+    finalMerged.strategistDebateAModelIdx = normalizeStrategistModelIndex(finalMerged.strategistDebateAModelIdx);
+    finalMerged.strategistDebateBModelIdx = normalizeStrategistModelIndex(finalMerged.strategistDebateBModelIdx);
+    if (!isDebateWinnerArbitrator(finalMerged.strategistArbitratorModelIdx)) {
+      finalMerged.strategistArbitratorModelIdx = normalizeStrategistModelIndex(finalMerged.strategistArbitratorModelIdx);
+    }
+    settingsCache = finalMerged;
     cacheTs = Date.now();
-    return merged;
+    return finalMerged;
   } catch (err) {
     logger.error({ err }, "Failed to load strategist settings, using defaults");
     return { ...DEFAULTS };
   }
 }
 
+const STRATEGIST_MODEL_IDX_KEYS = new Set<keyof StrategistConfig>([
+  "strategistSoloModelIdx",
+  "strategistDebateAModelIdx",
+  "strategistDebateBModelIdx",
+]);
+
 export async function updateSetting(key: string, value: number): Promise<void> {
   if (!(key in DEFAULTS)) throw new Error(`Unknown setting: ${key}`);
 
+  let coerced = value;
+  if (key === "strategistArbitratorModelIdx") {
+    coerced = isDebateWinnerArbitrator(value) ? ARBITRATOR_IDX_DEBATE_WINNER : normalizeStrategistModelIndex(value);
+  } else if (STRATEGIST_MODEL_IDX_KEYS.has(key as keyof StrategistConfig)) {
+    coerced = normalizeStrategistModelIndex(value);
+  }
+
   await db
     .insert(strategistSettingsTable)
-    .values({ key, value, updatedAt: new Date() })
+    .values({ key, value: coerced, updatedAt: new Date() })
     .onConflictDoUpdate({
       target: strategistSettingsTable.key,
-      set: { value, updatedAt: new Date() },
+      set: { value: coerced, updatedAt: new Date() },
     });
 
   settingsCache = null;
