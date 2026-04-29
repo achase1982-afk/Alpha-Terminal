@@ -261,10 +261,10 @@ export async function syncDate(
     }
 
     await db.insert(polygonSyncLogTable)
-      .values({ tradeDate, status: "synced", rowsInserted: totalRows, tickers })
+      .values({ tradeDate, status: "synced", rowsInserted: totalRows, errorMsg: null, tickers })
       .onConflictDoUpdate({
         target: polygonSyncLogTable.tradeDate,
-        set: { status: "synced", rowsInserted: totalRows, syncedAt: new Date() },
+        set: { status: "synced", rowsInserted: totalRows, errorMsg: null, syncedAt: new Date() },
       });
 
     return { date: tradeDate, rows: totalRows, files: files.length, skipped: false };
