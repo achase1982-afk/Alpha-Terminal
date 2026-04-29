@@ -18,12 +18,132 @@ import { getEquityDailyExtras } from "../lib/equityDailyExtras.js";
 import { db, strategistTelemetryTable, scannerTelemetryTable, strategistHistoryTable } from "@workspace/db";
 import { desc, eq, sql, lte, and } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
+import {
+  ensureIvrCoverage,
+  getIvrBackfillJob,
+  type IvrCoverageResult,
+} from "../lib/onDemandIvrBackfill.js";
+import { notifyStrategistCompletion } from "../lib/strategistNotifications.js";
 
 const router: IRouter = Router();
+
+function ivrCoverageToResult(coverage: Exclude<IvrCoverageResult, { status: "ready" }>): StrategistV2Result {
+  const base = {
+    ticker: coverage.symbol,
+    regime: getCachedRegime() ?? buildFallbackRegime(),
+    systemicRiskElevated: false,
+  };
+  if (coverage.status === "failed_insufficient_history") {
+    return {
+      ...base,
+      status: "failed_insufficient_history",
+      blockReason: {
+        category: "MISSING_DATA",
+        detail: coverage.message,
+        suggestedAction: "Try a ticker with at least 60 trading days of price history.",
+      },
+      ivrBackfill: {
+        jobId: coverage.jobId,
+        status: "failed_insufficient_history",
+        daysLoaded: coverage.ivDays,
+        daysRequested: 252,
+        message: coverage.message,
+      },
+    };
+  }
+  if (coverage.status === "failed") {
+    return {
+      ...base,
+      status: "no_viable_setup",
+      blockReason: {
+        category: "MISSING_DATA",
+        detail: coverage.message,
+        suggestedAction: "Retry the Strategist after the IVR service recovers.",
+      },
+      ivrBackfill: {
+        jobId: coverage.jobId,
+        status: "failed",
+        daysLoaded: coverage.ivDays,
+        daysRequested: 252,
+        message: coverage.message,
+      },
+    };
+  }
+  return {
+    ...base,
+    status: "ivr_populating",
+    blockReason: {
+      category: "MISSING_DATA",
+      detail: "IVR populating, check back in ~2-3 minutes.",
+      suggestedAction: "The Strategist will run automatically when IVR backfill completes.",
+    },
+    ivrBackfill: {
+      jobId: coverage.jobId,
+      status: coverage.jobStatus,
+      daysLoaded: coverage.daysLoaded,
+      daysRequested: coverage.daysRequested,
+      message: "IVR populating, check back in ~2-3 minutes.",
+    },
+  };
+}
 
 router.get("/regime", (_req, res) => {
   const regime = getCachedRegime() ?? buildFallbackRegime();
   res.json(regime);
+});
+
+router.get("/ivr-backfill/symbol/:symbol", async (req, res) => {
+  try {
+    const job = await getLatestIvrBackfillJobForSymbol(req.params.symbol);
+    if (!job) {
+      res.status(404).json({ error: "job not found" });
+      return;
+    }
+    res.json({
+      id: job.id,
+      symbol: job.symbol,
+      status: job.status,
+      source: job.source,
+      daysLoaded: job.daysLoaded,
+      daysRequested: job.daysRequested,
+      equityRowsWritten: job.equityRowsWritten,
+      ivRowsWritten: job.ivRowsWritten,
+      ivrRowsWritten: job.ivrRowsWritten,
+      errorMsg: job.errorMsg,
+      startedAt: job.startedAt,
+      completedAt: job.completedAt,
+    });
+  } catch (err) {
+    logger.error({ err }, "StrategistV2: latest IVR backfill job fetch failed");
+    res.status(500).json({ error: "Failed to fetch IVR backfill job" });
+  }
+});
+
+router.get("/ivr-backfill/:jobId", async (req, res) => {
+  try {
+    const job = await getIvrBackfillJob(req.params.jobId);
+    if (!job) {
+      res.status(404).json({ error: "job not found" });
+      return;
+    }
+    res.json({
+      id: job.id,
+      symbol: job.symbol,
+      status: job.status,
+      source: job.source,
+      daysLoaded: job.daysLoaded,
+      daysRequested: job.daysRequested,
+      equityRowsWritten: job.equityRowsWritten,
+      ivRowsWritten: job.ivRowsWritten,
+      ivrRowsWritten: job.ivrRowsWritten,
+      errorMsg: job.errorMsg,
+      startedAt: job.startedAt,
+      completedAt: job.completedAt,
+    });
+  } catch (err) {
+    logger.error({ err }, "StrategistV2: IVR backfill job fetch failed");
+    res.status(500).json({ error: "Failed to fetch IVR backfill job" });
+  }
 });
 
 // Structured debate transcript turn. In Solo mode the transcript stays empty
@@ -84,6 +204,17 @@ type ThinkingEntry = {
 };
 const strategistThinkingBuffer = new Map<string, ThinkingEntry>();
 const THINKING_TTL_MS = 10 * 60 * 1000;
+
+async function runAnalyzeWithIvrGate(
+  ticker: string,
+  opts: Parameters<typeof analyzeTickerV2>[1],
+): Promise<StrategistV2Result> {
+  const coverage = await ensureIvrCoverage(ticker);
+  if (coverage.status !== "ready") {
+    return ivrCoverageToResult(coverage);
+  }
+  return analyzeTickerV2(ticker, opts);
+}
 /**
  * Pick the latest leg expiration for catalyst-window gating. For tickets
  * with no option legs (equity-only orders), default to today + 45 calendar
@@ -187,7 +318,7 @@ router.post("/analyze", async (req, res): Promise<void> => {
       // Fire-and-forget background analysis
       void (async () => {
         try {
-          const result = await analyzeTickerV2(upperTicker, {
+          const result = await runAnalyzeWithIvrGate(upperTicker, {
             flowContext: typeof flowContext === "string" && flowContext.length > 0 ? flowContext.slice(0, 8000) : undefined,
             onStatus: (s) => {
               entry.status = s;
@@ -229,12 +360,30 @@ router.post("/analyze", async (req, res): Promise<void> => {
           entry.done = true;
           entry.finishedAt = Date.now();
           await persistHistory(jobId, upperTicker, result, entry.transcript);
+          if (result.status !== "ivr_populating") {
+            notifyStrategistCompletion({
+              jobId,
+              ticker: upperTicker,
+              kind: result.status === "recommendation" ? "ready" : "failed",
+              message: result.status === "recommendation"
+                ? `Strategist ready for ${upperTicker}`
+                : `Strategist failed for ${upperTicker}`,
+              resultStatus: result.status,
+            });
+          }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           entry.error = message;
           entry.status = `Failed: ${message}`;
           entry.done = true;
           entry.finishedAt = Date.now();
+          notifyStrategistCompletion({
+            jobId,
+            ticker: upperTicker,
+            kind: "failed",
+            message: `Strategist failed for ${upperTicker}`,
+            resultStatus: "error",
+          });
           logger.error({ err, jobId, ticker: upperTicker }, "StrategistV2: background analyze failed");
         }
       })();
@@ -244,7 +393,7 @@ router.post("/analyze", async (req, res): Promise<void> => {
     }
 
     // Legacy synchronous path (no jobId): block and return result
-    const result = await analyzeTickerV2(upperTicker, {
+    const result = await runAnalyzeWithIvrGate(upperTicker, {
       flowContext: typeof flowContext === "string" && flowContext.length > 0 ? flowContext.slice(0, 8000) : undefined,
     });
     res.json(result);

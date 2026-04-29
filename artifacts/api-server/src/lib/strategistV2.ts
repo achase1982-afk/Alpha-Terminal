@@ -57,8 +57,15 @@ export interface BlockReason {
 }
 
 export interface StrategistV2Result {
-  status: "recommendation" | "no_viable_setup" | "toxic_block";
+  status: "recommendation" | "no_viable_setup" | "toxic_block" | "ivr_populating" | "failed_insufficient_history";
   ticker: string;
+  ivrBackfill?: {
+    jobId: string | null;
+    status: "queued" | "running" | "completed" | "failed" | "failed_insufficient_history";
+    daysLoaded: number;
+    daysRequested: number;
+    message: string;
+  };
   recommendation?: {
     strategyLine: string;
     companyContext: string;
