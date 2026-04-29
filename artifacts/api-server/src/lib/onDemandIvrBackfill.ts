@@ -197,56 +197,67 @@ export async function ensureIvrCoverage(symbol: string): Promise<IvrCoverageResu
     return { status: "failed", symbol: sym, ivDays: 0, jobId: null, message: "Ticker is required." };
   }
 
-  const ivDays = await countRealIvDays(sym);
-  if (ivDays >= IVR_MIN_COVERAGE_DAYS) {
-    return { status: "ready", symbol: sym, ivDays };
-  }
+  try {
+    const ivDays = await countRealIvDays(sym);
+    if (ivDays >= IVR_MIN_COVERAGE_DAYS) {
+      return { status: "ready", symbol: sym, ivDays };
+    }
 
-  const existing = await activeJobForSymbol(sym);
-  if (existing) {
-    await upsertTrackedTicker(sym, existing.id);
+    const existing = await activeJobForSymbol(sym);
+    if (existing) {
+      await upsertTrackedTicker(sym, existing.id);
+      return {
+        status: "populating",
+        symbol: sym,
+        ivDays,
+        jobId: existing.id,
+        jobStatus: existing.status as IvrBackfillStatus,
+        daysLoaded: existing.daysLoaded ?? 0,
+        daysRequested: existing.daysRequested ?? IVR_TARGET_TRADING_DAYS,
+      };
+    }
+
+    const latest = await latestJobForSymbol(sym);
+    if (latest?.status === "failed_insufficient_history") {
+      return {
+        status: "failed_insufficient_history",
+        symbol: sym,
+        ivDays,
+        jobId: latest.id,
+        message: "This ticker is too new to compute IVR. At least 60 trading days of price history required.",
+      };
+    }
+
+    const jobId = `ivr-${Date.now()}-${sym}-${Math.random().toString(36).slice(2, 8)}`;
+    await db.insert(ivrBackfillJobsTable).values({
+      id: jobId,
+      symbol: sym,
+      status: "queued",
+      source: "none",
+      daysRequested: IVR_TARGET_TRADING_DAYS,
+    });
+    await upsertTrackedTicker(sym, jobId);
+    enqueue(jobId, sym);
+
     return {
       status: "populating",
       symbol: sym,
       ivDays,
-      jobId: existing.id,
-      jobStatus: existing.status as IvrBackfillStatus,
-      daysLoaded: existing.daysLoaded ?? 0,
-      daysRequested: existing.daysRequested ?? IVR_TARGET_TRADING_DAYS,
+      jobId,
+      jobStatus: "queued",
+      daysLoaded: 0,
+      daysRequested: IVR_TARGET_TRADING_DAYS,
     };
-  }
-
-  const latest = await latestJobForSymbol(sym);
-  if (latest?.status === "failed_insufficient_history") {
+  } catch (err) {
+    logger.error({ err, symbol: sym }, "ensureIvrCoverage: unexpected database error");
     return {
-      status: "failed_insufficient_history",
+      status: "failed",
       symbol: sym,
-      ivDays,
-      jobId: latest.id,
-      message: "This ticker is too new to compute IVR. At least 60 trading days of price history required.",
+      ivDays: 0,
+      jobId: null,
+      message: "IVR service temporarily unavailable. Please retry in a moment.",
     };
   }
-
-  const jobId = `ivr-${Date.now()}-${sym}-${Math.random().toString(36).slice(2, 8)}`;
-  await db.insert(ivrBackfillJobsTable).values({
-    id: jobId,
-    symbol: sym,
-    status: "queued",
-    source: "none",
-    daysRequested: IVR_TARGET_TRADING_DAYS,
-  });
-  await upsertTrackedTicker(sym, jobId);
-  enqueue(jobId, sym);
-
-  return {
-    status: "populating",
-    symbol: sym,
-    ivDays,
-    jobId,
-    jobStatus: "queued",
-    daysLoaded: 0,
-    daysRequested: IVR_TARGET_TRADING_DAYS,
-  };
 }
 
 async function runBackfillJob(jobId: string, symbol: string): Promise<void> {
