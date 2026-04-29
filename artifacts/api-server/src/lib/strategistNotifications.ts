@@ -1,4 +1,5 @@
 import { logger } from "./logger.js";
+import { sendPushToAll } from "./pushService.js";
 
 export type StrategistNotificationKind = "ready" | "failed" | "ivr_ready" | "ivr_failed";
 
@@ -8,6 +9,7 @@ export interface StrategistNotificationEvent {
   jobId?: string | null;
   message: string;
   resultStatus?: string;
+  createdAt?: string;
 }
 
 type Listener = (event: StrategistNotificationEvent) => void | Promise<void>;
@@ -26,12 +28,27 @@ export function getRecentStrategistNotifications(): StrategistNotificationEvent[
 }
 
 export function notifyStrategistCompletion(event: StrategistNotificationEvent): void {
-  recentEvents.unshift(event);
+  const stamped = { ...event, createdAt: event.createdAt ?? new Date().toISOString() };
+  recentEvents.unshift(stamped);
   if (recentEvents.length > MAX_RECENT_EVENTS) recentEvents.length = MAX_RECENT_EVENTS;
 
   for (const listener of listeners) {
-    Promise.resolve(listener(event)).catch((err) => {
-      logger.warn({ err, event }, "Strategist notification listener failed");
+    Promise.resolve(listener(stamped)).catch((err) => {
+      logger.warn({ err, event: stamped }, "Strategist notification listener failed");
     });
   }
+
+  void sendPushToAll({
+    title: "Alpha Terminal",
+    body: stamped.message,
+    tag: `strategist-${stamped.jobId ?? stamped.ticker}`,
+    data: {
+      type: "strategist",
+      ticker: stamped.ticker,
+      jobId: stamped.jobId ?? null,
+      kind: stamped.kind,
+      resultStatus: stamped.resultStatus ?? null,
+      url: `/?tab=ai&aiTab=strategist&symbol=${encodeURIComponent(stamped.ticker)}`,
+    },
+  });
 }

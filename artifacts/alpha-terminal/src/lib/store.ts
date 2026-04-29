@@ -80,7 +80,8 @@ interface ChatMessage {
 export type NotificationEventType =
   | 'OrderCreated' | 'OrderAccepted' | 'ExecutionCreated'
   | 'CancelAccepted' | 'OrderUROutCompleted' | 'OrderRejected'
-  | 'CancelRejected' | 'OrderExpired' | 'OrderModified';
+  | 'CancelRejected' | 'OrderExpired' | 'OrderModified'
+  | 'StrategistReady' | 'StrategistFailed';
 
 export interface TerminalState {
   accessToken: string | null;
@@ -142,6 +143,8 @@ export interface TerminalState {
       CancelRejected: boolean;
       OrderExpired: boolean;
       OrderModified: boolean;
+      StrategistReady: boolean;
+      StrategistFailed: boolean;
     };
     push: {
       OrderCreated: boolean;
@@ -153,6 +156,8 @@ export interface TerminalState {
       CancelRejected: boolean;
       OrderExpired: boolean;
       OrderModified: boolean;
+      StrategistReady: boolean;
+      StrategistFailed: boolean;
     };
     sound: boolean;
   };
@@ -477,6 +482,8 @@ export const useTerminalStore = create<TerminalState>()(
           CancelRejected: true,
           OrderExpired: true,
           OrderModified: true,
+          StrategistReady: true,
+          StrategistFailed: true,
         },
         push: {
           OrderCreated: false,
@@ -488,6 +495,8 @@ export const useTerminalStore = create<TerminalState>()(
           CancelRejected: true,
           OrderExpired: true,
           OrderModified: false,
+          StrategistReady: true,
+          StrategistFailed: true,
         },
         sound: false,
       },
@@ -809,7 +818,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 21,
+      version: 22,
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
         if (version < 2) {

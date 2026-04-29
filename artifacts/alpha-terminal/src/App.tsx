@@ -11,10 +11,12 @@ import { useAutoLock, AutoLockProvider } from "@/hooks/useAutoLock";
 import TerminalPage from "@/pages/Terminal";
 import NotFound from "@/pages/not-found";
 import PushNotificationBanner from "@/components/PushNotificationBanner";
+import { StrategistNotificationHost } from "@/components/StrategistNotificationHost";
 import { registerServiceWorker } from "@/lib/pushNotifications";
 import OrderAlertWatcher from "@/components/OrderAlertWatcher";
 import SchwabSessionExpiredDialog from "@/components/SchwabSessionExpiredDialog";
 import { resumeAllRunningPollers } from "@/lib/strategistPoller";
+import { StrategistNotificationHost } from "@/components/StrategistNotificationHost";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -203,7 +205,9 @@ function App() {
             <Router />
           </WouterRouter>
           <Toaster />
+          <StrategistNotificationHost />
           <PushNotificationBanner />
+          <StrategistNotificationHost />
           <OrderAlertWatcher />
           <SchwabSessionExpiredDialog />
         </AutoLockProvider>

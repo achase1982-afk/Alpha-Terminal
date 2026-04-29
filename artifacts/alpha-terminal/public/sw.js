@@ -34,15 +34,19 @@ self.addEventListener("push", (e) => {
 
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
+  const targetUrl = e.notification.data?.url || "/";
 
   e.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
       for (const client of clients) {
         if (client.url.includes(self.location.origin)) {
-          return client.focus();
+          return client.focus().then((focused) => {
+            if (targetUrl !== "/" && "navigate" in focused) return focused.navigate(targetUrl);
+            return focused;
+          });
         }
       }
-      return self.clients.openWindow("/");
+      return self.clients.openWindow(targetUrl);
     })
   );
 });
