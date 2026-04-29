@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from "react";
 import {
   TrendingUp, TrendingDown, Minus, Shield,
-  ChevronDown, ChevronUp, Send, Copy, Check,
+  ChevronDown, ChevronUp, Send, Copy, Check, Activity,
 } from "lucide-react";
 import { strategistCardToPlainText } from "@/lib/strategistPlaintext";
 
@@ -139,8 +139,15 @@ export interface ContextSourcesPayload {
 }
 
 export interface StrategistV2Result {
-  status: "recommendation" | "no_viable_setup" | "toxic_block";
+  status: "recommendation" | "no_viable_setup" | "toxic_block" | "ivr_populating" | "failed_insufficient_history";
   ticker: string;
+  ivrBackfill?: {
+    jobId: string | null;
+    status: "queued" | "running" | "completed" | "failed" | "failed_insufficient_history";
+    daysLoaded: number;
+    daysRequested: number;
+    message: string;
+  };
   recommendation?: {
     strategyLine: string;
     companyContext?: string;
@@ -1483,6 +1490,75 @@ export function StrategistV2BlockCard({ result, generatedAt }: { result: Strateg
           </div>
         )}
         {result.contextSources && <ContextSourcesBlock ctx={result.contextSources} />}
+      </div>
+    </div>
+  );
+}
+
+export function IvrPopulatingCard({
+  result,
+  progress,
+  onRetry,
+}: {
+  result: StrategistV2Result;
+  progress?: {
+    status: "queued" | "running" | "completed" | "failed" | "failed_insufficient_history";
+    daysLoaded: number;
+    daysRequested: number;
+    errorMsg?: string | null;
+  } | null;
+  onRetry?: (ticker: string) => void;
+}) {
+  const info = result.ivrBackfill;
+  const loaded = progress?.daysLoaded ?? info?.daysLoaded ?? 0;
+  const requested = progress?.daysRequested ?? info?.daysRequested ?? 252;
+  const pct = requested > 0 ? Math.min(100, Math.round((loaded / requested) * 100)) : 0;
+  const failed = result.status === "failed_insufficient_history" || progress?.status === "failed_insufficient_history" || info?.status === "failed_insufficient_history";
+
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
+      <div className="px-4 py-4">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4" style={{ color: failed ? DOWN : PAL.gold }} />
+            <span className="font-mono text-[13px] font-bold text-white">{result.ticker}</span>
+            <span className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 rounded" style={{
+              background: failed ? "rgba(248,113,113,0.12)" : "rgba(251,191,36,0.12)",
+              color: failed ? DOWN : PAL.gold,
+              border: `1px solid ${failed ? "rgba(248,113,113,0.35)" : "rgba(251,191,36,0.35)"}`,
+            }}>
+              {failed ? "Insufficient History" : "IVR Populating"}
+            </span>
+          </div>
+        </div>
+        <div className="font-mono text-[11px] text-zinc-300 leading-relaxed">
+          {failed
+            ? progress?.errorMsg ?? "This ticker is too new to compute IVR. At least 60 trading days of price history required."
+            : info?.message ?? "IVR populating, check back in ~2-3 minutes."}
+        </div>
+        {!failed && (
+          <>
+            <div className="mt-3 flex items-center justify-between font-mono text-[10px] text-zinc-500">
+              <span>Loaded {loaded} of {requested} days</span>
+              <span>{pct}%</span>
+            </div>
+            <div className="mt-1.5 h-1.5 rounded-full overflow-hidden" style={{ background: "#1f1f22" }}>
+              <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: PAL.gold }} />
+            </div>
+            <div className="mt-2 font-mono text-[10px] text-zinc-500">
+              Strategist will auto-run when IVR is ready.
+            </div>
+          </>
+        )}
+        {failed && onRetry && (
+          <button
+            onClick={() => onRetry(result.ticker)}
+            className="mt-3 px-3 py-2 rounded-lg font-mono text-[11px] font-bold uppercase tracking-wider"
+            style={{ color: "#0a0a0a", background: PAL.gold }}
+          >
+            Retry
+          </button>
+        )}
       </div>
     </div>
   );

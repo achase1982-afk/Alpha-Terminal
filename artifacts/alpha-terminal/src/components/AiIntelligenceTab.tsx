@@ -21,10 +21,23 @@ import { useStrategistCache, type StrategistCacheData } from "@/hooks/useStrateg
 import { MarketScanner, type DetCandidate } from "@/components/MarketScanner";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { AiLabStrategistView } from "@/components/AiLabStrategistView";
-import { StrategistV2RecommendationCard, StrategistV2BlockCard, type StrategistV2Result as StrategistV2ResultType, type StrategistSendToOrderPayload } from "@/components/StrategistV2Card";
+import { StrategistV2RecommendationCard, StrategistV2BlockCard, IvrPopulatingCard, type StrategistV2Result as StrategistV2ResultType, type StrategistSendToOrderPayload } from "@/components/StrategistV2Card";
 import { StrategistHistoryList } from "@/components/StrategistHistoryList";
 
 const API_BASE = "/api";
+
+interface IvrBackfillJobStatus {
+  id: string;
+  symbol: string;
+  status: "queued" | "running" | "completed" | "failed" | "failed_insufficient_history";
+  source: string;
+  daysLoaded: number;
+  daysRequested: number;
+  equityRowsWritten: number;
+  ivRowsWritten: number;
+  ivrRowsWritten: number;
+  errorMsg?: string | null;
+}
 
 const COMPANY_NAMES: Record<string, string> = {
   AAPL: "Apple Inc.", MSFT: "Microsoft Corp.", GOOGL: "Alphabet Inc.", GOOG: "Alphabet Inc.",
@@ -2405,6 +2418,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   const completeStrategistJob = useTerminalStore(s => s.completeStrategistJob);
   const errorStrategistJob = useTerminalStore(s => s.errorStrategistJob);
   const markStrategistJobsViewed = useTerminalStore(s => s.markStrategistJobsViewed);
+  const [ivrBackfillStatus, setIvrBackfillStatus] = useState<IvrBackfillJobStatus | null>(null);
   const setStrategistHistoryStore = useTerminalStore(s => s.setStrategistHistory);
 
   // Derive the active jobId for the current symbol from the store so it
@@ -2470,6 +2484,9 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   const v2Transcript = activeJobIdForSymbol
     ? strategistJobs[activeJobIdForSymbol]?.transcript ?? []
     : [];
+  const [ivrBackfillJob, setIvrBackfillJob] = useState<IvrBackfillJobStatus | null>(null);
+  const ivrPopulatingResult = v2Result?.status === "ivr_populating" ? v2Result : null;
+  const ivrBackfillJobId = ivrPopulatingResult?.ivrBackfill?.jobId ?? null;
 
   // Fetch history on mount AND every time the strategist sub-tab becomes
   // active. This ensures cards saved on the server always re-appear when the
@@ -3074,6 +3091,36 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     handleRunV2(ticker);
   }, [handleRunV2]);
 
+  useEffect(() => {
+    if (!ivrBackfillJobId || !ivrPopulatingResult) {
+      setIvrBackfillJob(null);
+      return;
+    }
+    let cancelled = false;
+    let relaunched = false;
+    const poll = async () => {
+      try {
+        const res = await fetchWithAuth(`${API_BASE}/strategist/ivr-backfill/${encodeURIComponent(ivrBackfillJobId)}`);
+        if (!res.ok) return;
+        const job = await res.json() as IvrBackfillJobStatus;
+        if (cancelled) return;
+        setIvrBackfillJob(job);
+        if (job.status === "completed" && !relaunched) {
+          relaunched = true;
+          handleRunV2(job.symbol);
+        }
+      } catch {
+        // best-effort polling; the card remains visible and will retry
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => { void poll(); }, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [ivrBackfillJobId, ivrPopulatingResult, handleRunV2]);
+
   const isPendingAny = isStreaming || isStrategizing || isDetRunning || isDetStreaming || isV2Running;
 
   const currentResult = activeResult === "strategist" ? strategistResult : null;
@@ -3184,6 +3231,8 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
                     <>
                       {v2Result.status === "recommendation" && v2Result.recommendation ? (
                         <StrategistV2RecommendationCard result={v2Result} onSendToOrder={onStrategistSendToOrder} generatedAt={generatedAt} />
+                      ) : v2Result.status === "ivr_populating" ? (
+                        <IvrPopulatingCard result={v2Result} progress={ivrBackfillJob} onRetry={handleRunV2} />
                       ) : (
                         <StrategistV2BlockCard result={v2Result} generatedAt={generatedAt} />
                       )}
