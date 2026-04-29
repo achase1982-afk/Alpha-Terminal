@@ -167,9 +167,18 @@ function turnPlainText(turn: StrategistTranscriptTurn): string {
   if (turn.phase === "propose") {
     const thesis = asStr(parsed?.thesis);
     if (thesis) out.push(thesis);
+    const pts = asStrArr(parsed?.keyEvidence ?? parsed?.key_evidence ?? parsed?.keyPoints);
+    if (pts.length > 0) {
+      out.push("Key evidence:");
+      for (const p of pts) out.push(`  • ${p}`);
+    }
+    const br = asStr(parsed?.biggestRisk ?? parsed?.biggest_risk ?? parsed?.biggestCounter);
+    if (br) out.push(`Biggest risk: ${br}`);
   } else if (turn.phase === "critique") {
     const rebuttal = asStr(parsed?.rebuttal);
     if (rebuttal) out.push(rebuttal);
+    const concession = asStr(parsed?.concession);
+    if (concession && concession.toLowerCase() !== "none") out.push(`Concession: ${concession}`);
   } else if (turn.phase === "final") {
     const verdict = asStr(parsed?.finalVerdict);
     const conf = asNum(parsed?.finalConfidence, 0);
@@ -445,6 +454,317 @@ function isValidationPayload(v: unknown): v is ValidationVerdictPayload {
   );
 }
 
+/**
+ * Per-side structured fields from the debate JSON (R1 / R2 / R3). The server
+ * prompt uses `keyPoints` + `biggestCounter` in R1 and `topRisks` in R3; we
+ * also accept `keyEvidence` / `biggestRisk` if the model emits them.
+ */
+type SideDebateDetail = {
+  r1: {
+    thesis: string;
+    keyEvidence: string[];
+    biggestRisk: string;
+    confidence: number | null;
+  } | null;
+  r2: {
+    rebuttal: string;
+    concession: string;
+    revisedConfidence: number | null;
+  } | null;
+  r3: {
+    reasoningBullets: string[];
+    topRisks: string[];
+    finalVerdict: string;
+    finalConfidence: number | null;
+  } | null;
+};
+
+function extractSideDebateDetail(
+  r1: StrategistTranscriptTurn | undefined,
+  r2: StrategistTranscriptTurn | undefined,
+  r3: StrategistTranscriptTurn | undefined,
+): SideDebateDetail {
+  const r1p = r1 ? safeParseTurnJson(r1.text) : null;
+  const r2p = r2 ? safeParseTurnJson(r2.text) : null;
+  const r3p = r3 ? safeParseTurnJson(r3.text) : null;
+
+  const r1Out =
+    r1p &&
+    (asStr(r1p.thesis) ||
+      asStrArr(r1p.keyEvidence ?? r1p.key_evidence ?? r1p.keyPoints).length > 0 ||
+      asStr(r1p.biggestRisk ?? r1p.biggest_risk ?? r1p.biggestCounter))
+      ? {
+          thesis: asStr(r1p.thesis),
+          keyEvidence: asStrArr(r1p.keyEvidence ?? r1p.key_evidence ?? r1p.keyPoints),
+          biggestRisk: asStr(r1p.biggestRisk ?? r1p.biggest_risk ?? r1p.biggestCounter),
+          confidence: typeof r1p.confidence === "number" && isFinite(r1p.confidence)
+            ? Math.round(r1p.confidence)
+            : null,
+        }
+      : null;
+
+  const r2Out =
+    r2p &&
+    (asStr(r2p.rebuttal) ||
+      asStr(r2p.concession) ||
+      (typeof r2p.revisedConfidence === "number" && isFinite(r2p.revisedConfidence)))
+      ? {
+          rebuttal: asStr(r2p.rebuttal),
+          concession: asStr(r2p.concession),
+          revisedConfidence:
+            typeof r2p.revisedConfidence === "number" && isFinite(r2p.revisedConfidence)
+              ? Math.round(r2p.revisedConfidence)
+              : null,
+        }
+      : null;
+
+  const r3Bullets = r3p ? asStrArr(r3p.reasoningBullets) : [];
+  const r3Risks = r3p ? asStrArr(r3p.topRisks ?? r3p.risks) : [];
+  const r3Out =
+    r3p && (r3Bullets.length > 0 || r3Risks.length > 0 || asStr(r3p.finalVerdict))
+      ? {
+          reasoningBullets: r3Bullets,
+          topRisks: r3Risks,
+          finalVerdict: asStr(r3p.finalVerdict),
+          finalConfidence:
+            typeof r3p.finalConfidence === "number" && isFinite(r3p.finalConfidence)
+              ? Math.round(r3p.finalConfidence)
+              : null,
+        }
+      : null;
+
+  return { r1: r1Out, r2: r2Out, r3: r3Out };
+}
+
+function extractDebateDetailsFromTranscript(
+  transcript: StrategistTranscriptTurn[],
+): { bull: SideDebateDetail; bear: SideDebateDetail } | null {
+  if (!transcript.length) return null;
+
+  const r1Bull = transcript.find((t) => t.round === 1 && t.role === "A" && t.phase === "propose");
+  const r1Bear = transcript.find((t) => t.round === 1 && t.role === "B" && t.phase === "propose");
+  const r2Bull = transcript.find((t) => t.round === 2 && t.role === "A" && t.phase === "critique");
+  const r2Bear = transcript.find((t) => t.round === 2 && t.role === "B" && t.phase === "critique");
+  const r3Bull = transcript.find((t) => t.round === 3 && t.role === "A" && t.phase === "final");
+  const r3Bear = transcript.find((t) => t.round === 3 && t.role === "B" && t.phase === "final");
+
+  const bull = extractSideDebateDetail(r1Bull, r2Bull, r3Bull);
+  const bear = extractSideDebateDetail(r1Bear, r2Bear, r3Bear);
+
+  const hasAny =
+    bull.r1 ||
+    bull.r2 ||
+    bull.r3 ||
+    bear.r1 ||
+    bear.r2 ||
+    bear.r3;
+  if (!hasAny) return null;
+
+  return { bull, bear };
+}
+
+/** Solo validation packs bull + bear prose into one JSON turn (role `solo`). */
+function extractSoloSidesFromTranscript(transcript: StrategistTranscriptTurn[]): {
+  bullText: string;
+  bearText: string;
+} | null {
+  const solo = transcript.find((t) => t.role === "solo" || t.phase === "solo");
+  if (!solo) return null;
+  const j = safeParseTurnJson(solo.text);
+  const bullText = asStr(j?.bullCase ?? j?.bull_case);
+  const bearText = asStr(j?.bearCase ?? j?.bear_case);
+  if (!bullText && !bearText) return null;
+  return { bullText, bearText };
+}
+
+function DebateSideDetailBlock({
+  label,
+  accent,
+  detail,
+}: {
+  label: string;
+  accent: string;
+  detail: SideDebateDetail;
+}) {
+  const hasR1 = !!detail.r1 && (
+    detail.r1.thesis ||
+    detail.r1.keyEvidence.length > 0 ||
+    detail.r1.biggestRisk ||
+    detail.r1.confidence != null
+  );
+  const hasR2 = !!detail.r2 && (
+    detail.r2.rebuttal ||
+    detail.r2.concession ||
+    detail.r2.revisedConfidence != null
+  );
+  const hasR3 = !!detail.r3 && (
+    detail.r3.reasoningBullets.length > 0 ||
+    detail.r3.topRisks.length > 0 ||
+    detail.r3.finalVerdict
+  );
+  if (!hasR1 && !hasR2 && !hasR3) return null;
+
+  return (
+    <div
+      className="rounded-lg px-3 py-3 space-y-3"
+      style={{
+        background: "#0d0d0d",
+        border: "1px solid #1a1a1a",
+        borderLeft: `3px solid ${accent}`,
+      }}
+    >
+      <div style={{ color: accent, fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" }}>
+        {label}
+      </div>
+
+      {hasR1 && detail.r1 && (
+        <div className="space-y-2">
+          <div style={{ color: "#525252", fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+            Round 1 — Opening
+            {detail.r1.confidence != null ? ` · ${detail.r1.confidence}% conf` : ""}
+          </div>
+          {detail.r1.thesis ? (
+            <p style={{ color: "#d4d4d4", fontSize: 12, lineHeight: 1.55, margin: 0 }}>{detail.r1.thesis}</p>
+          ) : null}
+          {detail.r1.keyEvidence.length > 0 && (
+            <div>
+              <div style={{ color: "#737373", fontSize: 9, marginBottom: 4 }}>Key evidence</div>
+              <div className="space-y-1">
+                {detail.r1.keyEvidence.map((e, i) => (
+                  <Bullet key={i} text={e} dotColor={accent} />
+                ))}
+              </div>
+            </div>
+          )}
+          {detail.r1.biggestRisk ? (
+            <div>
+              <div style={{ color: "#737373", fontSize: 9, marginBottom: 4 }}>Biggest risk</div>
+              <p style={{ color: "#e5e5e5", fontSize: 12, lineHeight: 1.5, margin: 0 }}>{detail.r1.biggestRisk}</p>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {hasR2 && detail.r2 && (
+        <div className="space-y-2 pt-1" style={{ borderTop: "1px solid #222" }}>
+          <div style={{ color: "#525252", fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+            Round 2 — Rebuttal
+            {detail.r2.revisedConfidence != null ? ` · ${detail.r2.revisedConfidence}% revised` : ""}
+          </div>
+          {detail.r2.rebuttal ? (
+            <div>
+              <div style={{ color: "#737373", fontSize: 9, marginBottom: 4 }}>Rebuttal</div>
+              <p style={{ color: "#d4d4d4", fontSize: 12, lineHeight: 1.55, margin: 0 }}>{detail.r2.rebuttal}</p>
+            </div>
+          ) : null}
+          {detail.r2.concession ? (
+            <div>
+              <div style={{ color: "#737373", fontSize: 9, marginBottom: 4 }}>Concession</div>
+              <p style={{ color: "#a3a3a3", fontSize: 12, lineHeight: 1.5, margin: 0, fontStyle: "italic" }}>
+                {detail.r2.concession}
+              </p>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {hasR3 && detail.r3 && (
+        <div className="space-y-2 pt-1" style={{ borderTop: "1px solid #222" }}>
+          <div style={{ color: "#525252", fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+            Round 3 — Side verdict
+            {detail.r3.finalVerdict
+              ? ` · ${detail.r3.finalVerdict.replace(/_/g, " ")}`
+              : ""}
+            {detail.r3.finalConfidence != null ? ` (${detail.r3.finalConfidence}%)` : ""}
+          </div>
+          {detail.r3.reasoningBullets.length > 0 && (
+            <div>
+              <div style={{ color: "#737373", fontSize: 9, marginBottom: 4 }}>Strategy rationale</div>
+              <div className="space-y-1">
+                {detail.r3.reasoningBullets.map((b, i) => (
+                  <Bullet key={i} text={b} dotColor={accent} />
+                ))}
+              </div>
+            </div>
+          )}
+          {detail.r3.topRisks.length > 0 && (
+            <div>
+              <div style={{ color: "#737373", fontSize: 9, marginBottom: 4 }}>Biggest risks (this side)</div>
+              <div className="space-y-1">
+                {detail.r3.topRisks.map((r, i) => (
+                  <Bullet key={i} text={r} dotColor="#f87171" />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Renders full R1–R3 bull/bear JSON from the transcript under the desk summary. */
+function PerSideDebateDetails({ transcript }: { transcript: StrategistTranscriptTurn[] }) {
+  const parsed = useMemo(() => extractDebateDetailsFromTranscript(transcript), [transcript]);
+  const soloSides = useMemo(() => extractSoloSidesFromTranscript(transcript), [transcript]);
+
+  if (parsed) {
+    return (
+      <div className="space-y-3">
+        <SectionLabel>Full debate — bull vs bear</SectionLabel>
+        <p style={{ color: "#525252", fontSize: 10, lineHeight: 1.45, margin: "-4px 0 0 0" }}>
+          Desk summary stays above; this is the complete per-side output from each round (same JSON the models returned).
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <DebateSideDetailBlock label="Bull (full)" accent={BULL_COLOR} detail={parsed.bull} />
+          <DebateSideDetailBlock label="Bear (full)" accent={BEAR_COLOR} detail={parsed.bear} />
+        </div>
+      </div>
+    );
+  }
+
+  if (soloSides && (soloSides.bullText || soloSides.bearText)) {
+    return (
+      <div className="space-y-3">
+        <SectionLabel>Solo validator — both sides</SectionLabel>
+        <p style={{ color: "#525252", fontSize: 10, lineHeight: 1.45, margin: "-4px 0 0 0" }}>
+          Full bull vs bear steelman from the single-pass validator (summary bullets remain above).
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {soloSides.bullText ? (
+            <div
+              className="rounded-lg px-3 py-3"
+              style={{ background: "#0d0d0d", border: "1px solid #1a1a1a", borderLeft: `3px solid ${BULL_COLOR}` }}
+            >
+              <div style={{ color: BULL_COLOR, fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>
+                Bull case
+              </div>
+              <p style={{ color: "#d4d4d4", fontSize: 12, lineHeight: 1.55, margin: 0, whiteSpace: "pre-wrap" }}>
+                {soloSides.bullText}
+              </p>
+            </div>
+          ) : null}
+          {soloSides.bearText ? (
+            <div
+              className="rounded-lg px-3 py-3"
+              style={{ background: "#0d0d0d", border: "1px solid #1a1a1a", borderLeft: `3px solid ${BEAR_COLOR}` }}
+            >
+              <div style={{ color: BEAR_COLOR, fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>
+                Bear case
+              </div>
+              <p style={{ color: "#d4d4d4", fontSize: 12, lineHeight: 1.55, margin: 0, whiteSpace: "pre-wrap" }}>
+                {soloSides.bearText}
+              </p>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function Bullet({ text, dotColor = "#a3a3a3" }: { text: string; dotColor?: string }) {
@@ -542,9 +862,38 @@ function ProseTranscript({ transcript }: { transcript: StrategistTranscriptTurn[
 
     if (turn.phase === "propose") {
       const thesis = asStr(parsed?.thesis);
-      if (thesis) {
+      const keyEvidence = asStrArr(parsed?.keyEvidence ?? parsed?.key_evidence ?? parsed?.keyPoints);
+      const biggestRisk = asStr(parsed?.biggestRisk ?? parsed?.biggest_risk ?? parsed?.biggestCounter);
+      const conf =
+        typeof parsed?.confidence === "number" && isFinite(parsed.confidence)
+          ? Math.round(parsed.confidence)
+          : null;
+      if (thesis || keyEvidence.length > 0 || biggestRisk) {
         return (
-          <p style={{ color: "#d4d4d4", fontSize: 12, lineHeight: 1.6, margin: 0 }}>{thesis}</p>
+          <div className="space-y-2">
+            {conf != null && (
+              <span style={{ color: "#737373", fontSize: 10 }}>Confidence · {conf}%</span>
+            )}
+            {thesis ? (
+              <p style={{ color: "#d4d4d4", fontSize: 12, lineHeight: 1.6, margin: 0 }}>{thesis}</p>
+            ) : null}
+            {keyEvidence.length > 0 && (
+              <div>
+                <div style={{ color: "#737373", fontSize: 9, marginBottom: 4 }}>Key evidence</div>
+                <div className="space-y-1">
+                  {keyEvidence.map((e, i) => (
+                    <Bullet key={i} text={e} dotColor="#a3a3a3" />
+                  ))}
+                </div>
+              </div>
+            )}
+            {biggestRisk ? (
+              <div>
+                <div style={{ color: "#737373", fontSize: 9, marginBottom: 4 }}>Biggest risk</div>
+                <p style={{ color: "#fca5a5", fontSize: 12, lineHeight: 1.5, margin: 0 }}>{biggestRisk}</p>
+              </div>
+            ) : null}
+          </div>
         );
       }
     }
@@ -1051,11 +1400,18 @@ export function StrategistValidationCard({
         </div>
       )}
 
-      {/* ── Key reasoning bullets (synthesis) ── */}
+      {/* ── Key reasoning bullets (synthesis summary — at-a-glance) ── */}
       {payload.reasoningBullets.length > 0 && (
         <div className="px-4 pt-3 space-y-1.5">
           <SectionLabel>Reasoning</SectionLabel>
           {payload.reasoningBullets.map((b, i) => <Bullet key={i} text={b} />)}
+        </div>
+      )}
+
+      {/* ── Full per-side debate detail (R1 / R2 / R3), when transcript has structured JSON ── */}
+      {transcript.length > 0 && (
+        <div className="px-4 pt-4 space-y-3">
+          <PerSideDebateDetails transcript={transcript} />
         </div>
       )}
 

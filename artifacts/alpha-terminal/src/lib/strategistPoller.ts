@@ -309,6 +309,7 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
   })();
 }
 
+/** Reconciles running jobs after tab resume via `GET /strategist/job/:id/final` (not SSE). */
 export async function syncRunningStrategistJobsFromServer(opts?: {
   toastOnComplete?: boolean;
 }): Promise<void> {
