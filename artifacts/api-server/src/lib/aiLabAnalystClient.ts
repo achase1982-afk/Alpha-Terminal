@@ -4,6 +4,7 @@ import { generateText, stepCountIs, streamText, type ToolSet } from "ai";
 import { createXai, type XaiLanguageModelResponsesOptions } from "@ai-sdk/xai";
 import { logger } from "./logger.js";
 import { createGeminiClient, hasGeminiApiKey } from "./geminiClient.js";
+import { getXaiApiKey } from "./xaiEnv.js";
 import type {
   AiLabAnalystClient,
   AnalystRequest,
@@ -525,8 +526,8 @@ export async function callOpenAIWithSystem(model: string, temperature: number, s
 }
 
 function makeXaiProvider() {
-  const apiKey = process.env.XAI_API_KEY;
-  if (!apiKey) throw new Error("XAI_API_KEY not configured");
+  const apiKey = getXaiApiKey();
+  if (!apiKey) throw new Error("xAI API key not configured (set XAI_API_KEY or GROK_XAI)");
   return createXai({ apiKey });
 }
 
