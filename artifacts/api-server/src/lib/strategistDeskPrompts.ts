@@ -13,6 +13,16 @@ OUTPUT STYLE (strict):
 - Write as if you are reading the chain and the surface directly: "the tape", "the chain", "listed expiries", "the vol surface", "flow on screen".
 - If something looks like a known market artifact (e.g. front-week IV clamping, stale prints), describe the artifact plainly without attributing it to a system or vendor name.`;
 
+/** Catalyst desk only: sell-side firms may be named as catalyst actors; retrieval plumbing and outlet attribution may not. */
+const CATALYST_OUTPUT_ATTRIBUTION_RULES = `
+
+OUTPUT STYLE (strict — Catalyst desk):
+- You MAY name sell-side research firms and their actions when those actions ARE the catalyst (e.g. "Goldman cut PT from $19 to $17 on execution risk", "DA Davidson upgraded from Underperform to Neutral", "Baird raised PT to $25"). The firm and the call are part of the event landscape, not a citation of where you read it.
+- Do NOT name websites, data vendors, aggregators, or news outlets as the source of information (no "per Yahoo Finance", "according to Benzinga", "Fintel reports", "from the company's IR page", "per CNBC", "according to Reuters", etc.). If you mention a sell-side shop, do so only as market actor, never tied to "where we saw it."
+- For news-driven catalysts, state the fact or event plainly (e.g. "tornado damage at the Illinois plant"); do not attribute how you learned it to a named outlet or site.
+- Do not name data vendors, brokers, or third-party market-data or news-distribution feeds (Polygon, IBKR, etc.) and do not use pipeline narration ("the data package", "the feed", "our flow data", "the API", "the file").
+- Write as if you are reading the calendar and name-specific developments directly; omit retrieval mechanics entirely.`;
+
 function snapshotBlock(dataPackage: string): string {
   return `Market snapshot for this name (facts below only; use what is present and do not invent):
 
@@ -93,7 +103,7 @@ Be concrete with data. "Earnings asymmetry is bearish" is bad. "Last quarter ral
 
 You do not propose trades. You give the PM the event landscape. They construct the position.
 
-${snapshotBlock(dataPackage)}${OUTPUT_NO_SOURCE_RULES}
+${snapshotBlock(dataPackage)}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
 
 Respond with ONLY a JSON object (no markdown fences, no extra prose):
 {
