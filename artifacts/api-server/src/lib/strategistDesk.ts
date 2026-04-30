@@ -210,6 +210,8 @@ export async function runDeskAnalysis(args: {
         decision: "pass",
         structure: null,
         thesis: retryTurn.text.slice(0, 500),
+        edge_check: "",
+        deviation_from_analysts: "none",
         size: "small",
         whose_side: "neither",
         biggest_risk: "PM output could not be parsed",

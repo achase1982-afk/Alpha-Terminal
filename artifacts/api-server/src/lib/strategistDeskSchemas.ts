@@ -56,6 +56,8 @@ export const PmOutputSchema = z.object({
   decision: z.enum(["trade", "pass"]),
   structure: DeskStructureSchema.nullable(),
   thesis: z.string(),
+  edge_check: z.string(),
+  deviation_from_analysts: z.string(),
   size: z.enum(["small", "medium", "large"]),
   whose_side: z.enum(["institutional_alignment", "retail_fade", "neither"]),
   biggest_risk: z.string(),
