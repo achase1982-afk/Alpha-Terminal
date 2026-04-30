@@ -302,8 +302,12 @@ export function useMarketStream() {
     } else if (event === "ibNews") {
       addLiveNews(data as LiveNewsItem);
     } else if (event === "portfolioAccount") {
+      console.log("[WS_RECV] portfolio_update", { kind: "account", ts: Date.now(), data });
       setPortfolioAccount(data as StreamPortfolioAccount);
+    } else if (event === "portfolio_error") {
+      console.log("[WS_RECV] portfolio_error", { ts: Date.now(), data });
     } else if (event === "portfolioOrders") {
+      console.log("[WS_RECV] portfolio_update", { kind: "orders", ts: Date.now(), data });
       setPortfolioOrders(data as StreamPortfolioOrder[]);
     } else if (event === "portfolioStatus") {
       setPortfolioStatus(data as StreamPortfolioStatus);

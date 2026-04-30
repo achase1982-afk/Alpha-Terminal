@@ -5,6 +5,7 @@ import { verifyToken } from "@clerk/express";
 import { logger } from "./logger.js";
 import { getSnapshot, getStreamerStatus, registerWsBroadcast, addSymbols, addOptionSymbols, addFuturesSymbols, addFuturesOptionSymbols } from "./schwabStreamer.js";
 import { getTokens } from "./tokenStore.js";
+import { registerPortfolioErrorBroadcast } from "./portfolioWsErrorHub.js";
 
 const WS_PATH = "/api/ws/prices";
 const HEARTBEAT_MS = 25_000;
@@ -18,15 +19,88 @@ const portfolioSubs = new Map<WebSocket, ReturnType<typeof setInterval>>();
 let cachedAccountHash: string | null = null;
 let accountHashExpiry = 0;
 
-async function schwabTraderGet(path: string, token: string): Promise<any> {
+async function schwabTraderFetch(
+  path: string,
+  token: string,
+): Promise<{ ok: boolean; status: number; bodyText: string; json: unknown }> {
   const res = await fetch(`${SCHWAB_TRADER_BASE}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`Schwab ${path} returned ${res.status}: ${body.slice(0, 200)}`);
+  const bodyText = await res.text().catch(() => "");
+  let json: unknown;
+  if (bodyText) {
+    try {
+      json = JSON.parse(bodyText);
+    } catch {
+      json = undefined;
+    }
   }
-  return res.json();
+  return { ok: res.ok, status: res.status, bodyText, json };
+}
+
+async function schwabTraderGet(path: string, token: string): Promise<any> {
+  const { ok, status, bodyText, json } = await schwabTraderFetch(path, token);
+  if (!ok) {
+    throw new Error(`Schwab ${path} returned ${status}: ${bodyText.slice(0, 200)}`);
+  }
+  return json;
+}
+
+function logPlCalcForRawPositions(rawPositions: unknown[]) {
+  if (!Array.isArray(rawPositions)) return;
+  for (const p of rawPositions) {
+    if (p === null || typeof p !== "object") continue;
+    const pos = p as Record<string, unknown>;
+    const inst = (pos.instrument as Record<string, unknown> | undefined) ?? {};
+    const assetType = inst.assetType;
+    const symbol = inst.symbol;
+    const isOptionLike =
+      assetType === "OPTION" ||
+      assetType === "INDEX_OPTION" ||
+      assetType === "FUTURE_OPTION";
+    const multiplier = isOptionLike ? 100 : 1;
+    const longQty = Number(pos.longQuantity ?? 0) || 0;
+    const shortQty = Number(pos.shortQuantity ?? 0) || 0;
+    const qty = isOptionLike ? (shortQty > 0 ? shortQty : longQty) : longQty || shortQty;
+    const marketValue = Number(pos.marketValue ?? 0) || 0;
+    const averagePrice = Number(pos.averagePrice ?? 0) || 0;
+    const longOpenProfitLoss = Number(pos.longOpenProfitLoss ?? 0) || 0;
+
+    const currentPriceField = "marketValue/(longQuantity|shortQuantity)";
+    const currentPriceValue =
+      qty > 0.0001 ? marketValue / (isOptionLike ? qty * multiplier : qty) : null;
+
+    const costBasisField = "averagePrice";
+    const costBasisTotal =
+      isOptionLike
+        ? Math.abs(averagePrice * (shortQty > 0 ? shortQty : longQty) * multiplier)
+        : averagePrice > 0 && qty > 0
+          ? averagePrice * qty
+          : 0;
+
+    const computedPlPct =
+      costBasisTotal > 0.01 ? (longOpenProfitLoss / costBasisTotal) * 100 : 0;
+
+    logger.info(
+      {
+        symbol,
+        instrumentType: assetType,
+        quantityLong: longQty,
+        quantityShort: shortQty,
+        multiplier,
+        currentPriceSchwabFields: { marketValue, longQuantity: longQty, shortQuantity: shortQty },
+        currentPriceField,
+        currentPriceValue,
+        costBasisSchwabField: costBasisField,
+        costBasisSchwabValue: averagePrice,
+        costBasisTotalForPlPct: costBasisTotal,
+        computedPlOpen: longOpenProfitLoss,
+        computedPlPct,
+        rawSchwabPosition: pos,
+      },
+      "[PL_CALC] position P/L audit row",
+    );
+  }
 }
 
 async function getAccountHash(token: string): Promise<string | null> {
@@ -180,8 +254,31 @@ async function fetchAndPushPortfolio(ws: WebSocket) {
   }
 
   try {
-    const accounts = await schwabTraderGet("/accounts?fields=positions", token);
-    if (accounts.length > 0) {
+    const acctRes = await schwabTraderFetch("/accounts?fields=positions", token);
+    logger.info(
+      { ts: Date.now(), path: "/accounts?fields=positions", status: acctRes.status },
+      `[PORTFOLIO_POLL] GET /accounts?fields=positions HTTP ${acctRes.status}`,
+    );
+    if (!acctRes.ok) {
+      logger.error(
+        { ts: Date.now(), status: acctRes.status, body: acctRes.bodyText.slice(0, 2000) },
+        `[PORTFOLIO_POLL] GET /accounts?fields=positions non-2xx body`,
+      );
+      ws.send(
+        JSON.stringify({
+          event: "portfolio_error",
+          data: { code: "SCHWAB_HTTP", httpStatus: acctRes.status, path: "/accounts?fields=positions" },
+        }),
+      );
+    } else {
+      const accounts = Array.isArray(acctRes.json) ? acctRes.json : [];
+      if (accounts.length > 0) {
+        const sa = (accounts[0] as { securitiesAccount?: { positions?: unknown[] } })?.securitiesAccount;
+        logPlCalcForRawPositions(sa?.positions ?? []);
+      }
+    }
+    if (acctRes.ok && Array.isArray(acctRes.json) && acctRes.json.length > 0) {
+      const accounts = acctRes.json;
       const mapped = mapAccount(accounts[0]);
       ws.send(JSON.stringify({ event: "portfolioAccount", data: mapped }));
 
@@ -277,6 +374,7 @@ export function initWsServer(httpServer: HttpServer) {
   const wss = new WebSocketServer({ noServer: true });
 
   registerWsBroadcast(broadcastToClients);
+  registerPortfolioErrorBroadcast((data) => broadcastToClients("portfolio_error", data));
 
   httpServer.on("upgrade", async (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
