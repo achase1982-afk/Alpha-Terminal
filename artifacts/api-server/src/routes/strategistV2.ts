@@ -883,10 +883,15 @@ router.delete("/history/all", async (_req, res) => {
 });
 
 router.get("/settings", async (_req, res) => {
+  const t0 = performance.now();
   try {
     const current = await getSettings();
     const meta = getSettingMeta();
     const defaults = getDefaults();
+    const ms = Math.round(performance.now() - t0);
+    if (ms > 150) {
+      logger.info({ ms, keysReturned: Object.keys(current).length }, "StrategistV2: GET /settings slow");
+    }
     res.json({ current, meta, defaults });
   } catch (err) {
     logger.error({ err }, "StrategistV2: settings fetch failed");

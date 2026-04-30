@@ -68,17 +68,17 @@ export const STRATEGIST_MODEL_OPTIONS: StrategistModelOption[] = [
   { provider: "anthropic", model: "claude-opus-4-7", label: "Claude Opus 4.7 (Anthropic)" },
   { provider: "openai", model: "gpt-5.5", label: "GPT-5.5 + Thinking (OpenAI)" },
   { provider: "google", model: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (Google)" },
-  { provider: "xai", model: "grok-4.20-0309-reasoning", label: "Grok 4.20 Reasoning (xAI)" },
+  { provider: "xai", model: "grok-4.20-multi-agent-0309", label: "Grok 4.20 multi-agent (xAI)" },
 ];
 
 /** Current catalog version written to `strategistModelCatalogVersion`. */
-export const STRATEGIST_MODEL_CATALOG_VERSION = 2;
+export const STRATEGIST_MODEL_CATALOG_VERSION = 3;
 
 /**
  * Maps pre–four-model catalog indices (the former `STRATEGIST_MODEL_OPTIONS`
  * order) to the new 0–3 index. Used for one-time DB migration.
  * Anthropic slots (non–Opus 4.7) → 0; OpenAI (non–5.5) → 1; Gemini (non–3.1 Pro) → 2;
- * xAI (non–Grok 4.20 reasoning) → 3.
+ * xAI (non–Grok 4.20 multi-agent snapshot) → 3.
  */
 const LEGACY_STRATEGIST_MODEL_INDEX_TO_NEW: readonly number[] = [
   0, 2, 0, 2, 0, 2, 1, 1, 1, 1, 1, 1, 1, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
@@ -165,6 +165,9 @@ let settingsCache: StrategistConfig | null = null;
 let cacheTs = 0;
 const CACHE_TTL_MS = 60_000;
 
+/** Serialize concurrent loads so migration + cache populate run once (avoids duplicate upserts under load). */
+let settingsLoadInFlight: Promise<StrategistConfig> | null = null;
+
 function isStrategistConfigKey(key: string): key is keyof StrategistConfig {
   return key in DEFAULTS;
 }
@@ -183,54 +186,146 @@ async function migrateStrategistModelCatalogIfNeeded(
   const arbRaw = merged.strategistArbitratorModelIdx;
   const arbitrator =
     arbRaw === ARBITRATOR_IDX_DEBATE_WINNER ? ARBITRATOR_IDX_DEBATE_WINNER : remapLegacyStrategistModelIdx(arbRaw);
-  await updateSetting("strategistSoloModelIdx", solo);
-  await updateSetting("strategistDebateAModelIdx", debateA);
-  await updateSetting("strategistDebateBModelIdx", debateB);
-  await updateSetting("strategistArbitratorModelIdx", arbitrator);
-  await updateSetting("strategistModelCatalogVersion", STRATEGIST_MODEL_CATALOG_VERSION);
+
+  const now = new Date();
+  const upserts: Array<{ key: string; value: number }> = [
+    { key: "strategistSoloModelIdx", value: solo },
+    { key: "strategistDebateAModelIdx", value: debateA },
+    { key: "strategistDebateBModelIdx", value: debateB },
+    { key: "strategistArbitratorModelIdx", value: arbitrator },
+    { key: "strategistModelCatalogVersion", value: STRATEGIST_MODEL_CATALOG_VERSION },
+  ];
+
+  await db.transaction(async (tx) => {
+    const inner = await tx.select().from(strategistSettingsTable);
+    if (inner.some((r) => r.key === "strategistModelCatalogVersion")) {
+      return;
+    }
+    for (const { key, value } of upserts) {
+      await tx
+        .insert(strategistSettingsTable)
+        .values({ key, value, updatedAt: now })
+        .onConflictDoUpdate({
+          target: strategistSettingsTable.key,
+          set: { value, updatedAt: now },
+        });
+    }
+  });
+
   logger.info(
     { solo, debateA, debateB, arbitrator },
-    "Strategist settings: migrated model indices to four-model catalog",
+    "Strategist settings: migrated model indices to four-model catalog (single transaction)",
   );
+}
+
+/** v2 used Grok 4.20 reasoning at index 3; v3 swaps to multi-agent at the same index — only bump the stored version. */
+async function bumpStrategistModelCatalogV2ToV3IfNeeded(merged: StrategistConfig): Promise<boolean> {
+  if (merged.strategistModelCatalogVersion !== 2) {
+    return false;
+  }
+  const now = new Date();
+  await db
+    .insert(strategistSettingsTable)
+    .values({ key: "strategistModelCatalogVersion", value: STRATEGIST_MODEL_CATALOG_VERSION, updatedAt: now })
+    .onConflictDoUpdate({
+      target: strategistSettingsTable.key,
+      set: { value: STRATEGIST_MODEL_CATALOG_VERSION, updatedAt: now },
+    });
+  logger.info(
+    { from: 2, to: STRATEGIST_MODEL_CATALOG_VERSION },
+    "Strategist settings: catalog version bump (Grok reasoning -> multi-agent, indices unchanged)",
+  );
+  return true;
 }
 
 export async function getSettings(): Promise<StrategistConfig> {
   if (settingsCache && Date.now() - cacheTs < CACHE_TTL_MS) {
     return settingsCache;
   }
-
-  try {
-    const rows = await db.select().from(strategistSettingsTable);
-    const merged: StrategistConfig = { ...DEFAULTS };
-    for (const row of rows) {
-      if (isStrategistConfigKey(row.key)) {
-        merged[row.key] = row.value;
-      }
-    }
-    await migrateStrategistModelCatalogIfNeeded(rows, merged);
-    const rowsAfter =
-      rows.length > 0 && !rows.some((r) => r.key === "strategistModelCatalogVersion")
-        ? await db.select().from(strategistSettingsTable)
-        : rows;
-    const finalMerged: StrategistConfig = { ...DEFAULTS };
-    for (const row of rowsAfter) {
-      if (isStrategistConfigKey(row.key)) {
-        finalMerged[row.key] = row.value;
-      }
-    }
-    finalMerged.strategistSoloModelIdx = normalizeStrategistModelIndex(finalMerged.strategistSoloModelIdx);
-    finalMerged.strategistDebateAModelIdx = normalizeStrategistModelIndex(finalMerged.strategistDebateAModelIdx);
-    finalMerged.strategistDebateBModelIdx = normalizeStrategistModelIndex(finalMerged.strategistDebateBModelIdx);
-    if (!isDebateWinnerArbitrator(finalMerged.strategistArbitratorModelIdx)) {
-      finalMerged.strategistArbitratorModelIdx = normalizeStrategistModelIndex(finalMerged.strategistArbitratorModelIdx);
-    }
-    settingsCache = finalMerged;
-    cacheTs = Date.now();
-    return finalMerged;
-  } catch (err) {
-    logger.error({ err }, "Failed to load strategist settings, using defaults");
-    return { ...DEFAULTS };
+  if (settingsLoadInFlight) {
+    return settingsLoadInFlight;
   }
+
+  settingsLoadInFlight = (async (): Promise<StrategistConfig> => {
+    const t0 = performance.now();
+    try {
+      const tSelect0 = performance.now();
+      const rows = await db.select().from(strategistSettingsTable);
+      const selectMs = Math.round(performance.now() - tSelect0);
+
+      const merged: StrategistConfig = { ...DEFAULTS };
+      for (const row of rows) {
+        if (isStrategistConfigKey(row.key)) {
+          merged[row.key] = row.value;
+        }
+      }
+
+      const tMig0 = performance.now();
+      await migrateStrategistModelCatalogIfNeeded(rows, merged);
+      const migMs = Math.round(performance.now() - tMig0);
+
+      const needsReselect =
+        rows.length > 0 && !rows.some((r) => r.key === "strategistModelCatalogVersion");
+      const tSelect2 = performance.now();
+      let rowsAfter = needsReselect ? await db.select().from(strategistSettingsTable) : rows;
+      const select2Ms = needsReselect ? Math.round(performance.now() - tSelect2) : 0;
+
+      const mergedAfter: StrategistConfig = { ...DEFAULTS };
+      for (const row of rowsAfter) {
+        if (isStrategistConfigKey(row.key)) {
+          mergedAfter[row.key] = row.value;
+        }
+      }
+      const tBump0 = performance.now();
+      const bumpedV3 = await bumpStrategistModelCatalogV2ToV3IfNeeded(mergedAfter);
+      const bumpMs = Math.round(performance.now() - tBump0);
+      if (bumpedV3) {
+        mergedAfter.strategistModelCatalogVersion = STRATEGIST_MODEL_CATALOG_VERSION;
+      }
+
+      const finalMerged: StrategistConfig = { ...DEFAULTS };
+      for (const row of rowsAfter) {
+        if (isStrategistConfigKey(row.key)) {
+          finalMerged[row.key] = row.value;
+        }
+      }
+      if (bumpedV3) {
+        finalMerged.strategistModelCatalogVersion = STRATEGIST_MODEL_CATALOG_VERSION;
+      }
+      finalMerged.strategistSoloModelIdx = normalizeStrategistModelIndex(finalMerged.strategistSoloModelIdx);
+      finalMerged.strategistDebateAModelIdx = normalizeStrategistModelIndex(finalMerged.strategistDebateAModelIdx);
+      finalMerged.strategistDebateBModelIdx = normalizeStrategistModelIndex(finalMerged.strategistDebateBModelIdx);
+      if (!isDebateWinnerArbitrator(finalMerged.strategistArbitratorModelIdx)) {
+        finalMerged.strategistArbitratorModelIdx = normalizeStrategistModelIndex(finalMerged.strategistArbitratorModelIdx);
+      }
+      settingsCache = finalMerged;
+      cacheTs = Date.now();
+
+      const totalMs = Math.round(performance.now() - t0);
+      if (totalMs > 200 || migMs > 0 || bumpMs > 0) {
+        logger.info(
+          {
+            rowCount: rows.length,
+            selectMs,
+            migrationMs: migMs,
+            bumpV3Ms: bumpMs,
+            secondSelectMs: select2Ms,
+            totalMs,
+            catalogVersion: finalMerged.strategistModelCatalogVersion,
+          },
+          "Strategist settings: getSettings timing",
+        );
+      }
+      return finalMerged;
+    } catch (err) {
+      logger.error({ err }, "Failed to load strategist settings, using defaults");
+      return { ...DEFAULTS };
+    } finally {
+      settingsLoadInFlight = null;
+    }
+  })();
+
+  return settingsLoadInFlight;
 }
 
 const STRATEGIST_MODEL_IDX_KEYS = new Set<keyof StrategistConfig>([
