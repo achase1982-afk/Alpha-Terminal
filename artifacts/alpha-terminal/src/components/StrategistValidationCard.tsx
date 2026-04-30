@@ -151,10 +151,16 @@ function turnRoleLabel(role: string): string {
   if (role === "B") return "BEAR";
   if (role === "system") return "VERDICT";
   if (role === "synthesis") return "DESK";
+  if (role === "vol") return "VOL";
+  if (role === "flow") return "FLOW";
+  if (role === "catalyst") return "CATALYST";
+  if (role === "pm") return "PM";
   return role.toUpperCase();
 }
 
-function turnRoundLabel(round: 1 | 2 | 3 | "synthesis"): string {
+function turnRoundLabel(round: 1 | 2 | 3 | "synthesis" | "solo" | "desk"): string {
+  if (round === "solo") return "Solo validation";
+  if (round === "desk") return "Desk — Vol, Flow, Catalyst & PM";
   if (round === 1) return "Round 1 — Initial Cases";
   if (round === 2) return "Round 2 — Rebuttals";
   if (round === 3) return "Round 3 — Final Verdicts";
@@ -262,7 +268,7 @@ export function combinedCopyText(
 
 export function transcriptToPlainText(transcript: StrategistTranscriptTurn[]): string {
   if (!transcript || transcript.length === 0) return "";
-  const groups = new Map<1 | 2 | 3 | "synthesis", StrategistTranscriptTurn[]>();
+  const groups = new Map<1 | 2 | 3 | "synthesis" | "solo" | "desk", StrategistTranscriptTurn[]>();
   for (const t of transcript) {
     if (!t.done) continue;
     const k = t.round;
@@ -834,7 +840,7 @@ function ProseTranscript({ transcript }: { transcript: StrategistTranscriptTurn[
   }
 
   const groups = useMemo(() => {
-    const m = new Map<1 | 2 | 3 | "synthesis", StrategistTranscriptTurn[]>();
+    const m = new Map<1 | 2 | 3 | "synthesis" | "solo" | "desk", StrategistTranscriptTurn[]>();
     for (const t of transcript) {
       const key = t.round;
       if (!m.has(key)) m.set(key, []);
@@ -843,7 +849,9 @@ function ProseTranscript({ transcript }: { transcript: StrategistTranscriptTurn[
     return Array.from(m.entries());
   }, [transcript]);
 
-  const roundLabel = (round: 1 | 2 | 3 | "synthesis"): string => {
+  const roundLabel = (round: 1 | 2 | 3 | "synthesis" | "solo" | "desk"): string => {
+    if (round === "solo") return "Solo validation";
+    if (round === "desk") return "Desk — Vol, Flow, Catalyst & PM";
     if (round === 1) return "Round 1 — Initial Cases";
     if (round === 2) return "Round 2 — Rebuttals";
     if (round === 3) return "Round 3 — Final Verdicts";

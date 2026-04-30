@@ -153,9 +153,9 @@ router.get("/ivr-backfill/:jobId", async (req, res) => {
 // turn is one entry whose `text` grows as tokens stream in.
 export type TranscriptTurn = {
   id: string;
-  round: 1 | 2 | 3 | "synthesis" | "solo";
-  role: "A" | "B" | "synthesis" | "system" | "solo";
-  phase: "propose" | "critique" | "final" | "synthesis" | "info" | "solo";
+  round: 1 | 2 | 3 | "synthesis" | "solo" | "desk";
+  role: "A" | "B" | "synthesis" | "system" | "solo" | "vol" | "flow" | "catalyst" | "pm";
+  phase: "propose" | "critique" | "final" | "synthesis" | "info" | "solo" | "analyst" | "pm";
   model: string;
   label: string;
   text: string;

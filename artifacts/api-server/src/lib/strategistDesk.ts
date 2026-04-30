@@ -26,7 +26,7 @@ import {
   buildCatalystAnalystPrompt,
   buildPmPrompt,
 } from "./strategistDeskPrompts.js";
-import type { DebateRound, DebateRole, DebatePhase } from "./strategistDebate.js";
+import type { DebateRound } from "./strategistDebate.js";
 
 const TEMPERATURE = 0;
 
@@ -34,8 +34,8 @@ export interface DeskCallbacks {
   onTurnStart?: (turn: {
     id: string;
     round: DebateRound | "desk";
-    role: DebateRole | "vol" | "flow" | "catalyst" | "pm";
-    phase: DebatePhase | "analyst" | "pm";
+    role: "vol" | "flow" | "catalyst" | "pm";
+    phase: "analyst" | "pm";
     model: string;
     label: string;
     startedAt: number;
@@ -88,9 +88,9 @@ async function runDeskTurn<T>(args: {
   const turnId = newTurnId();
   callbacks?.onTurnStart?.({
     id: turnId,
-    round: "desk" as any,
-    role: role as any,
-    phase: role === "pm" ? "pm" as any : "analyst" as any,
+    round: "desk",
+    role,
+    phase: role === "pm" ? "pm" : "analyst",
     model: modelOpt.model,
     label,
     startedAt: Date.now(),

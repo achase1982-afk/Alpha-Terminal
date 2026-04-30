@@ -467,9 +467,9 @@ IMPORTANT: Respond with ONLY the JSON object. No markdown, no explanation text, 
 
 export interface DebateTurnStartPayload {
   id: string;
-  round: DebateRound;
-  role: DebateRole;
-  phase: DebatePhase;
+  round: DebateRound | "desk";
+  role: DebateRole | "vol" | "flow" | "catalyst" | "pm";
+  phase: DebatePhase | "analyst" | "pm";
   model: string;
   label: string;
   startedAt: number;

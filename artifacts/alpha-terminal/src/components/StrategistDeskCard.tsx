@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useCallback, useState, type CSSProperties } from "react";
 import type { BlockReason, StrategistOutcome } from "@/components/StrategistV2Card";
-import { ChevronDown, ChevronUp, AlertTriangle } from "lucide-react";
+import { ChevronDown, ChevronUp, AlertTriangle, Copy } from "lucide-react";
+import { toast } from "sonner";
 
 const PAL = {
   bgCard: "#141414",
@@ -153,6 +154,103 @@ function StructureDisplay({ structure }: { structure: DeskStructure }) {
   );
 }
 
+/** Plain text for the full Desk card (all sections including analyst reads, regardless of collapse). */
+export function buildDeskCardPlainText(args: {
+  deskResult: DeskResult;
+  generatedAt?: string | number | null;
+  strategistOutcome?: StrategistOutcome;
+  blockReason?: BlockReason;
+}): string {
+  const { deskResult, generatedAt, strategistOutcome, blockReason } = args;
+  const { pm, vol, flow, catalyst, models, errors } = deskResult;
+  const isTrade = pm.decision === "trade";
+  const banner = deskBanner(strategistOutcome, blockReason, !isTrade);
+
+  const lines: string[] = [];
+  if (banner) {
+    lines.push(banner.title.toUpperCase(), banner.body, "");
+  }
+
+  const when =
+    generatedAt == null
+      ? null
+      : typeof generatedAt === "number"
+        ? new Date(generatedAt).toLocaleString()
+        : String(generatedAt);
+
+  lines.push(`${isTrade ? "TRADE" : "PASS"}  ${deskResult.ticker}  DESK MODE`);
+  if (when) lines.push(`Generated: ${when}`);
+  lines.push("");
+
+  if (isTrade && pm.structure) {
+    const s = pm.structure;
+    lines.push(
+      s.type.replace(/_/g, " ").toUpperCase(),
+      `Expiry: ${s.expiry}  ·  ${s.credit_or_debit < 0 ? "Credit" : "Debit"}: $${Math.abs(s.credit_or_debit).toFixed(2)}`,
+    );
+    for (const leg of s.legs) {
+      const q = leg.quantity && leg.quantity > 1 ? ` x${leg.quantity}` : "";
+      lines.push(`${leg.action.toUpperCase()} ${leg.type.toUpperCase()} ${leg.strike} (${leg.expiration})${q}`);
+    }
+    lines.push("");
+  }
+
+  if (!isTrade && pm.watch_for) {
+    lines.push("WATCH FOR", pm.watch_for, "");
+  }
+
+  lines.push("PM THESIS", pm.thesis, "");
+  lines.push("SIZE", pm.size.toUpperCase());
+  lines.push("ALIGNMENT", pm.whose_side.replace(/_/g, " "));
+
+  if (isTrade) {
+    lines.push("PROFIT TARGET", `$${pm.exit_plan.profit_target.toFixed(2)}`);
+    lines.push("STOP LOSS", `$${pm.exit_plan.stop_loss.toFixed(2)}`);
+    if (pm.exit_plan.time_stop) lines.push("TIME STOP", pm.exit_plan.time_stop);
+  }
+  lines.push("");
+
+  lines.push("BIGGEST RISK", pm.biggest_risk, "");
+
+  if (errors && errors.length > 0) {
+    lines.push("NOTES / WARNINGS");
+    for (const e of errors) lines.push(`- ${e}`);
+    lines.push("");
+  }
+
+  lines.push("ANALYST READS", "");
+
+  lines.push("— Vol Analyst —", `Model: ${models.vol}`);
+  lines.push("IV State", vol.iv_state);
+  lines.push("Term Structure", vol.term_structure);
+  lines.push("Skew", vol.skew);
+  lines.push("IV vs Realized", vol.implied_vs_realized);
+  lines.push("Read", vol.read, "");
+
+  lines.push("— Flow Analyst —", `Model: ${models.flow}`);
+  lines.push("Dominant Flow", flow.dominant_flow);
+  lines.push("Institutional", flow.institutional_signal);
+  lines.push("Retail", flow.retail_signal);
+  if (flow.key_strikes.length > 0) {
+    lines.push("Key Strikes");
+    for (const ks of flow.key_strikes) {
+      lines.push(`  ${ks.type.toUpperCase()} ${ks.strike} (${ks.expiry}): ${ks.observation}`);
+    }
+  }
+  lines.push("Read", flow.read, "");
+
+  lines.push("— Catalyst Analyst —", `Model: ${models.catalyst}`);
+  lines.push("Primary Catalyst", catalyst.primary_catalyst);
+  lines.push("Bar to Clear", catalyst.bar_to_clear);
+  lines.push("Asymmetry", catalyst.asymmetry);
+  lines.push("Historical", catalyst.historical_pattern);
+  lines.push("Read", catalyst.read, "");
+
+  lines.push(`PM: ${models.pm}`);
+
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 function deskBanner(
   outcome: StrategistOutcome | undefined,
   blockReason: BlockReason | undefined,
@@ -195,6 +293,91 @@ export function StrategistDeskCard({
   const { pm, vol, flow, catalyst, models, errors } = deskResult;
   const isTrade = pm.decision === "trade";
   const banner = deskBanner(strategistOutcome, blockReason, !isTrade);
+  const [copiedFull, setCopiedFull] = useState(false);
+  const [copiedJson, setCopiedJson] = useState(false);
+
+  const copyPlain = useCallback(async () => {
+    const text = buildDeskCardPlainText({ deskResult, generatedAt, strategistOutcome, blockReason });
+    const fallback = () => {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        toast.message("Copied desk card to clipboard");
+        setCopiedFull(true);
+        window.setTimeout(() => setCopiedFull(false), 1500);
+      } catch {
+        /* noop */
+      }
+    };
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        toast.message("Copied desk card to clipboard");
+        setCopiedFull(true);
+        window.setTimeout(() => setCopiedFull(false), 1500);
+      } else {
+        fallback();
+      }
+    } catch {
+      fallback();
+    }
+  }, [deskResult, generatedAt, strategistOutcome, blockReason]);
+
+  const copyJson = useCallback(async () => {
+    const text = JSON.stringify(deskResult, null, 2);
+    const fallback = () => {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        toast.message("Copied desk JSON to clipboard");
+        setCopiedJson(true);
+        window.setTimeout(() => setCopiedJson(false), 1500);
+      } catch {
+        /* noop */
+      }
+    };
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        toast.message("Copied desk JSON to clipboard");
+        setCopiedJson(true);
+        window.setTimeout(() => setCopiedJson(false), 1500);
+      } else {
+        fallback();
+      }
+    } catch {
+      fallback();
+    }
+  }, [deskResult]);
+
+  const btnStyle: CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "6px 10px",
+    borderRadius: 6,
+    border: `1px solid ${PAL.borderInner}`,
+    background: PAL.bgInner,
+    color: PAL.label,
+    fontSize: 10,
+    fontWeight: 600,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    cursor: "pointer",
+    fontFamily: SYS_FONT,
+  };
 
   return (
     <div style={{ background: PAL.bgCard, border: `1px solid ${PAL.border}`, borderRadius: 12, padding: 16, fontFamily: SYS_FONT }}>
@@ -216,8 +399,8 @@ export function StrategistDeskCard({
       )}
 
       {/* PM Decision Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{
             fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase",
             color: isTrade ? PAL.green : "#a3a3a3",
@@ -230,7 +413,19 @@ export function StrategistDeskCard({
           <span style={{ fontSize: 16, fontWeight: 700, color: PAL.white }}>{deskResult.ticker}</span>
           <span style={{ fontSize: 10, color: PAL.label, letterSpacing: 0.5 }}>DESK MODE</span>
         </div>
-        {generatedAt && <span style={{ fontSize: 9, color: PAL.label }}>{typeof generatedAt === "number" ? new Date(generatedAt).toLocaleString() : generatedAt}</span>}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginLeft: "auto" }}>
+          <button type="button" onClick={() => void copyPlain()} style={btnStyle} aria-label="Copy full desk card as plain text">
+            <Copy size={12} />
+            {copiedFull ? "Copied" : "Copy"}
+          </button>
+          <button type="button" onClick={() => void copyJson()} style={btnStyle} aria-label="Copy desk result as JSON">
+            <Copy size={12} />
+            {copiedJson ? "Copied" : "Copy JSON"}
+          </button>
+          {generatedAt && (
+            <span style={{ fontSize: 9, color: PAL.label }}>{typeof generatedAt === "number" ? new Date(generatedAt).toLocaleString() : generatedAt}</span>
+          )}
+        </div>
       </div>
 
       {/* Structure (if trade) */}
@@ -302,7 +497,7 @@ export function StrategistDeskCard({
       <div style={{ marginTop: 12 }}>
         <div style={{ fontSize: 10, fontWeight: 600, color: PAL.label, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>ANALYST READS</div>
 
-        <CollapsibleSection title="Vol Analyst" model={models.vol}>
+        <CollapsibleSection title="Vol Analyst" model={models.vol} defaultOpen>
           <FieldRow label="IV State" value={vol.iv_state} />
           <FieldRow label="Term Structure" value={vol.term_structure} />
           <FieldRow label="Skew" value={vol.skew} />
@@ -312,7 +507,7 @@ export function StrategistDeskCard({
           </div>
         </CollapsibleSection>
 
-        <CollapsibleSection title="Flow Analyst" model={models.flow}>
+        <CollapsibleSection title="Flow Analyst" model={models.flow} defaultOpen>
           <FieldRow label="Dominant Flow" value={flow.dominant_flow} />
           <FieldRow label="Institutional" value={flow.institutional_signal} />
           <FieldRow label="Retail" value={flow.retail_signal} />
@@ -331,7 +526,7 @@ export function StrategistDeskCard({
           </div>
         </CollapsibleSection>
 
-        <CollapsibleSection title="Catalyst Analyst" model={models.catalyst}>
+        <CollapsibleSection title="Catalyst Analyst" model={models.catalyst} defaultOpen>
           <FieldRow label="Primary Catalyst" value={catalyst.primary_catalyst} />
           <FieldRow label="Bar to Clear" value={catalyst.bar_to_clear} />
           <FieldRow label="Asymmetry" value={catalyst.asymmetry} />
