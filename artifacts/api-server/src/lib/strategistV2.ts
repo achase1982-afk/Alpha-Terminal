@@ -4,6 +4,7 @@ import { computeIOScore, type IOScoreResult } from "./ioScoreEngine.js";
 import { getSettings, getStrategistModel, type StrategistConfig, type StrategistModelOption } from "./strategistSettings.js";
 import { runDebate, type DebateCallbacks, type DebateRound, type DebateRole, type DebatePhase } from "./strategistDebate.js";
 import { runDeskAnalysis, type DeskCallbacks } from "./strategistDesk.js";
+import { throwIfStrategistAnalyzeCancelled } from "./strategistAnalyzeCancellation.js";
 import type { ScrubCanonical } from "./narrativeScrubbers.js";
 import { db, strategistTelemetryTable } from "@workspace/db";
 
@@ -505,6 +506,21 @@ export interface AnalyzeProgressCallbacks {
   // pass a snapshot of the live flow card so the analyst reasons about
   // exactly what the user just observed.
   flowContext?: string;
+  /** POST /analyze background job id for cooperative server-side cancel. */
+  jobId?: string;
+  /** Aborts in-flight LLM HTTP when aborted (client disconnect or explicit cancel). */
+  cancelSignal?: AbortSignal;
+}
+
+function throwAnalyzeCancelled(): never {
+  const e = new Error("Analysis cancelled");
+  e.name = "AbortError";
+  throw e;
+}
+
+function assertAnalyzeNotCancelled(progress?: AnalyzeProgressCallbacks): void {
+  if (progress?.cancelSignal?.aborted) throwAnalyzeCancelled();
+  throwIfStrategistAnalyzeCancelled(progress?.jobId);
 }
 
 export async function analyzeTickerV2(
@@ -513,7 +529,9 @@ export async function analyzeTickerV2(
 ): Promise<StrategistV2Result> {
   const status = (s: string) => progress?.onStatus?.(s);
   status("Loading regime + settings…");
+  assertAnalyzeNotCancelled(progress);
   const settings = await getSettings();
+  assertAnalyzeNotCancelled(progress);
   const regime = getCachedRegime() ?? buildFallbackRegime();
 
   const toxicCheck = checkToxicGate(regime, settings);
@@ -534,6 +552,7 @@ export async function analyzeTickerV2(
   }
 
   const tickerFetch = await fetchTickerData(ticker);
+  assertAnalyzeNotCancelled(progress);
   const tickerData = tickerFetch.data;
   if (!tickerData) {
     const detail = `Unable to fetch ticker data (${tickerFetch.failureMode ?? "unknown"}).`;
@@ -561,6 +580,7 @@ export async function analyzeTickerV2(
   }
 
   const chainResult = await fetchOptionsChain(ticker, settings);
+  assertAnalyzeNotCancelled(progress);
   const chain = chainResult.chain;
   const dataSource = chainResult.source;
   if (!chain || chain.length === 0) {
@@ -580,6 +600,7 @@ export async function analyzeTickerV2(
   // fallback — if no row exists, narrative + header both omit IVR rather than
   // showing a fabricated number.
   const storedIvr = await getStoredIVR(ticker);
+  assertAnalyzeNotCancelled(progress);
   tickerData.ivr = storedIvr?.ivr ?? null;
   tickerData.ivrAsOfDate = storedIvr?.asOfDate ?? null;
   tickerData.ivrSource = storedIvr?.source ?? null;
@@ -599,6 +620,7 @@ export async function analyzeTickerV2(
     getRealizedVolFromEquityDaily(ticker),
     countRealIvHistoryDays(ticker),
   ]);
+  assertAnalyzeNotCancelled(progress);
   let proxyIvDepth: number | null = null;
   if (tickerData.ivrSource === "hv_proxy" && tickerData.ivrAsOfDate) {
     proxyIvDepth = await countProxyIvHistoryDays(ticker, tickerData.ivrAsOfDate);
@@ -620,6 +642,7 @@ export async function analyzeTickerV2(
   }, "StrategistV2: expirations being sent to AI model");
 
   const polygonHighlights = await getPolygonFlowHighlights(ticker);
+  assertAnalyzeNotCancelled(progress);
   if (polygonHighlights) {
     logger.info({
       ticker,
@@ -635,6 +658,7 @@ export async function analyzeTickerV2(
   let deskCatalystExpirationISO = "";
   if (settings.strategistMode === 3) {
     deskCatalystExpirationISO = computeDeskCatalystExpirationISO(chainSummary, settings);
+    assertAnalyzeNotCancelled(progress);
     try {
       deskCatalystEval = await evaluateCatalyst({
         ticker,
@@ -665,6 +689,7 @@ export async function analyzeTickerV2(
       ivrContext: buildIvrContext(tickerData, realIvDepth, proxyIvDepth),
     },
   );
+  assertAnalyzeNotCancelled(progress);
 
   // ── Desk mode (mode 3): three parallel analysts + PM ──────────────────
   if (settings.strategistMode === 3) {
@@ -677,6 +702,8 @@ export async function analyzeTickerV2(
         deskExpirationISO: deskCatalystExpirationISO,
         catalystEvaluation: deskCatalystEval,
         callbacks: {
+          jobId: progress?.jobId,
+          cancelSignal: progress?.cancelSignal,
           onStatus: (s) => status(s),
           onTurnStart: progress?.onTurnStart ? (turn) => progress.onTurnStart!(turn as any) : undefined,
           onTurnDelta: progress?.onTurnDelta,
@@ -1795,35 +1822,68 @@ async function callAiForTrade(
   let trace: WebSearchTrace;
   const onDelta = (txt: string) => progress?.onToken?.(txt);
   const onStatus = (s: string) => progress?.onStatus?.(s);
+  const cancelSig = progress?.cancelSignal;
   switch (provider) {
     case "anthropic": {
       const r = progress
-        ? await streamCallAnthropicWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt, onDelta, onStatus)
-        : await callAnthropicWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt);
+        ? await streamCallAnthropicWithSystemAndWebSearch(
+            model,
+            temperature,
+            STRATEGIST_SYSTEM_PROMPT,
+            prompt,
+            onDelta,
+            onStatus,
+            cancelSig,
+          )
+        : await callAnthropicWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt, cancelSig);
       rawText = r.text;
       trace = r.trace;
       break;
     }
     case "google": {
       const r = progress
-        ? await streamCallGeminiWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt, onDelta, onStatus)
-        : await callGeminiWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt);
+        ? await streamCallGeminiWithSystemAndWebSearch(
+            model,
+            temperature,
+            STRATEGIST_SYSTEM_PROMPT,
+            prompt,
+            onDelta,
+            onStatus,
+            cancelSig,
+          )
+        : await callGeminiWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt, cancelSig);
       rawText = r.text;
       trace = r.trace;
       break;
     }
     case "openai": {
       const r = progress
-        ? await streamCallOpenAIWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt, onDelta, onStatus)
-        : await callOpenAIWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt);
+        ? await streamCallOpenAIWithSystemAndWebSearch(
+            model,
+            temperature,
+            STRATEGIST_SYSTEM_PROMPT,
+            prompt,
+            onDelta,
+            onStatus,
+            cancelSig,
+          )
+        : await callOpenAIWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt, cancelSig);
       rawText = r.text;
       trace = r.trace;
       break;
     }
     case "xai": {
       const r = progress
-        ? await streamCallXaiWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt, onDelta, onStatus)
-        : await callXaiWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt);
+        ? await streamCallXaiWithSystemAndWebSearch(
+            model,
+            temperature,
+            STRATEGIST_SYSTEM_PROMPT,
+            prompt,
+            onDelta,
+            onStatus,
+            cancelSig,
+          )
+        : await callXaiWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt, cancelSig);
       rawText = r.text;
       trace = r.trace;
       break;
@@ -2046,6 +2106,7 @@ async function callAiForTradeViaDebate(
   );
 
   const debateCallbacks: DebateCallbacks = {
+    cancelSignal: progress?.cancelSignal,
     onTurnStart: (t) => progress?.onTurnStart?.(t),
     onTurnDelta: (id, delta) => progress?.onTurnDelta?.(id, delta),
     onTurnDone: (id, finalText) => progress?.onTurnDone?.(id, finalText),

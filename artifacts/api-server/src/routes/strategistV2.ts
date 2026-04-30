@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { analyzeTickerV2, type StrategistV2Result } from "../lib/strategistV2.js";
+import { analyzeTickerV2, type StrategistV2Result, type AnalyzeProgressCallbacks } from "../lib/strategistV2.js";
 import { getSettings, updateSetting, resetAllSettings, getDefaults, getSettingMeta } from "../lib/strategistSettings.js";
 import { getCachedRegime, buildFallbackRegime } from "../lib/regimePostProcessor.js";
 import {
@@ -26,6 +26,10 @@ import {
 } from "../lib/onDemandIvrBackfill.js";
 import { notifyStrategistCompletion } from "../lib/strategistNotifications.js";
 import { sendPushToAll } from "../lib/pushService.js";
+import {
+  markStrategistAnalyzeCancelled,
+  clearStrategistAnalyzeCancelled,
+} from "../lib/strategistAnalyzeCancellation.js";
 
 const router: IRouter = Router();
 
@@ -201,6 +205,8 @@ type ThinkingEntry = {
   validationResult?: ValidationVerdictPayload;
   validationMeta?: ValidationMeta;
   error?: string;
+  /** User cancelled POST /analyze; do not persist history or treat as failure. */
+  cancelled?: boolean;
   startedAt: number;
   finishedAt?: number;
 };
@@ -212,7 +218,7 @@ const analyzeInFlightTickers = new Set<string>();
 
 async function runAnalyzeWithIvrGate(
   ticker: string,
-  opts: Parameters<typeof analyzeTickerV2>[1],
+  opts?: AnalyzeProgressCallbacks,
 ): Promise<StrategistV2Result> {
   const coverage = await ensureIvrCoverage(ticker);
   if (coverage.status !== "ready") {
@@ -278,6 +284,7 @@ function thinkingShapeFromEntry(entry: ThinkingEntry, since: number): {
   result: StrategistV2Result | ValidationVerdictPayload | null;
   validationMeta: ValidationMeta | null;
   error: string | null;
+  cancelled?: boolean;
   startedAt: number;
   finishedAt: number | null;
 } {
@@ -287,7 +294,7 @@ function thinkingShapeFromEntry(entry: ThinkingEntry, since: number): {
   const result = entry.kind === "validation"
     ? (entry.validationResult ?? null)
     : (entry.result ?? null);
-  const safeError = entry.error != null ? "Analysis failed. Please retry." : null;
+  const safeError = entry.cancelled ? null : entry.error != null ? "Analysis failed. Please retry." : null;
   return {
     jobId: entry.jobId,
     kind: entry.kind ?? "analyze",
@@ -300,6 +307,7 @@ function thinkingShapeFromEntry(entry: ThinkingEntry, since: number): {
     result,
     validationMeta: entry.validationMeta ?? null,
     error: safeError,
+    cancelled: entry.cancelled === true,
     startedAt: entry.startedAt,
     finishedAt: entry.finishedAt ?? null,
   };
@@ -328,6 +336,37 @@ async function persistHistory(
     logger.warn({ persistErr, jobId, ticker }, "StrategistV2: failed to persist history (non-fatal)");
   }
 }
+
+/** AbortController per background analyze job (LLM HTTP cancel). */
+const analyzeWorkerAbortByJobId = new Map<string, AbortController>();
+
+router.post("/analyze/cancel", async (req, res): Promise<void> => {
+  try {
+    const { jobId } = req.body as { jobId?: string };
+    if (!jobId || typeof jobId !== "string") {
+      res.status(400).json({ error: "jobId is required" });
+      return;
+    }
+    const entry = strategistThinkingBuffer.get(jobId);
+    if (!entry || entry.kind !== "analyze" || entry.done) {
+      res.status(404).json({ error: "job not found or not cancellable" });
+      return;
+    }
+    markStrategistAnalyzeCancelled(jobId);
+    analyzeWorkerAbortByJobId.get(jobId)?.abort();
+    const elapsedMs = Date.now() - entry.startedAt;
+    logger.info({ ticker: entry.ticker, elapsedMs }, "StrategistDesk: run cancelled by user");
+    entry.cancelled = true;
+    entry.status = "Cancelled";
+    entry.done = true;
+    entry.finishedAt = Date.now();
+    analyzeInFlightTickers.delete(entry.ticker);
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ err }, "StrategistV2: analyze cancel failed");
+    res.status(500).json({ error: "Cancel failed" });
+  }
+});
 
 router.post("/analyze", async (req, res): Promise<void> => {
   try {
@@ -369,10 +408,15 @@ router.post("/analyze", async (req, res): Promise<void> => {
       };
       strategistThinkingBuffer.set(jobId, entry);
 
+      const workerAbort = new AbortController();
+      analyzeWorkerAbortByJobId.set(jobId, workerAbort);
+
       // Fire-and-forget background analysis
       void (async () => {
         try {
           const result = await runAnalyzeWithIvrGate(upperTicker, {
+            jobId,
+            cancelSignal: workerAbort.signal,
             flowContext: typeof flowContext === "string" && flowContext.length > 0 ? flowContext.slice(0, 8000) : undefined,
             onStatus: (s) => {
               entry.status = s;
@@ -413,6 +457,9 @@ router.post("/analyze", async (req, res): Promise<void> => {
               if (i >= 0) entry.transcript.splice(i, 1);
             },
           });
+          if (entry.cancelled) {
+            return;
+          }
           entry.result = result;
           entry.status = "Done";
           entry.done = true;
@@ -440,26 +487,41 @@ router.post("/analyze", async (req, res): Promise<void> => {
             });
           }
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          entry.error = message;
-          entry.status = "Analysis failed";
+          const errMsg = err instanceof Error ? err.message : String(err);
+          const isAbort =
+            err instanceof Error &&
+            (err.name === "AbortError" || errMsg === "Analysis cancelled" || workerAbort.signal.aborted);
+          if (isAbort || entry.cancelled) {
+            if (!entry.cancelled) {
+              const elapsedMs = Date.now() - entry.startedAt;
+              logger.info({ ticker: upperTicker, elapsedMs }, "StrategistDesk: run cancelled by user");
+            }
+            entry.cancelled = true;
+            entry.status = "Cancelled";
+            entry.error = undefined;
+          } else {
+            entry.error = errMsg;
+            entry.status = "Analysis failed";
+            notifyStrategistCompletion({
+              jobId,
+              ticker: upperTicker,
+              kind: "failed",
+              message: `Strategist failed for ${upperTicker}`,
+              resultStatus: "error",
+            });
+            void sendPushToAll({
+              title: `Strategist failed — ${upperTicker}`,
+              body: "Open the app to retry.",
+              tag: `strategist-${jobId}`,
+              data: { type: "strategist", jobId, ticker: upperTicker, kind: "analyze_failed" as const },
+            });
+            logger.error({ err, jobId, ticker: upperTicker }, "StrategistV2: background analyze failed");
+          }
           entry.done = true;
           entry.finishedAt = Date.now();
-          notifyStrategistCompletion({
-            jobId,
-            ticker: upperTicker,
-            kind: "failed",
-            message: `Strategist failed for ${upperTicker}`,
-            resultStatus: "error",
-          });
-          void sendPushToAll({
-            title: `Strategist failed — ${upperTicker}`,
-            body: "Open the app to retry.",
-            tag: `strategist-${jobId}`,
-            data: { type: "strategist", jobId, ticker: upperTicker, kind: "analyze_failed" as const },
-          });
-          logger.error({ err, jobId, ticker: upperTicker }, "StrategistV2: background analyze failed");
         } finally {
+          clearStrategistAnalyzeCancelled(jobId);
+          analyzeWorkerAbortByJobId.delete(jobId);
           analyzeInFlightTickers.delete(upperTicker);
         }
       })();

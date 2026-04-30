@@ -25,6 +25,7 @@ export interface TurnStartEvent {
 }
 
 export interface DebateCallbacks {
+  cancelSignal?: AbortSignal;
   onTurnStart?: (turn: TurnStartEvent) => void;
   onTurnDelta?: (turnId: string, delta: string) => void;
   onTurnDone?: (turnId: string, finalText: string) => void;
@@ -90,6 +91,7 @@ async function streamModel(
   prompt: string,
   onDelta: (text: string) => void,
   onStatus?: (s: string) => void,
+  cancelSignal?: AbortSignal,
 ): Promise<WebSearchResult> {
   if (modelOpt.provider === "anthropic") {
     return streamCallAnthropicWithSystemAndWebSearch(
@@ -99,6 +101,7 @@ async function streamModel(
       prompt,
       onDelta,
       onStatus,
+      cancelSignal,
     );
   }
   if (modelOpt.provider === "openai") {
@@ -109,6 +112,7 @@ async function streamModel(
       prompt,
       onDelta,
       onStatus,
+      cancelSignal,
     );
   }
   if (modelOpt.provider === "xai") {
@@ -119,6 +123,7 @@ async function streamModel(
       prompt,
       onDelta,
       onStatus,
+      cancelSignal,
     );
   }
   return streamCallGeminiWithSystemAndWebSearch(
@@ -128,6 +133,7 @@ async function streamModel(
     prompt,
     onDelta,
     onStatus,
+    cancelSignal,
   );
 }
 
@@ -167,7 +173,7 @@ async function runTurn(args: {
   };
 
   try {
-    const r = await streamModel(modelOpt, systemPrompt, prompt, onDelta, (s) => callbacks?.onStatus?.(s));
+    const r = await streamModel(modelOpt, systemPrompt, prompt, onDelta, (s) => callbacks?.onStatus?.(s), callbacks?.cancelSignal);
     let finalText = r.text;
     if (scrubCanonical && hasAnyCanonical(scrubCanonical)) {
       const sr = scrubAll(finalText, scrubCanonical);
