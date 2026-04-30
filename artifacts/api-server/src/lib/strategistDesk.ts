@@ -42,6 +42,12 @@ export interface DeskCallbacks {
   }) => void;
   onTurnDelta?: (turnId: string, delta: string) => void;
   onTurnDone?: (turnId: string, finalText: string) => void;
+  /**
+   * Remove a turn from the live transcript after a failed attempt that will be
+   * retried (e.g. schema validation). Keeps exactly one persisted PM turn per
+   * Desk run when the retry succeeds.
+   */
+  onTurnDiscarded?: (turnId: string) => void;
   onStatus?: (status: string) => void;
 }
 
@@ -180,6 +186,7 @@ export async function runDeskAnalysis(args: {
   if (pmValidation.success) {
     pmParsed = pmValidation.data;
   } else {
+    callbacks?.onTurnDiscarded?.(pmTurn.turnId);
     callbacks?.onStatus?.("Desk — PM output failed validation, retrying…");
     logger.warn({ errors: pmValidation.error.issues, ticker }, "StrategistDesk: PM output failed validation, retrying");
     const retryTurn = await runDeskTurn({
@@ -248,6 +255,7 @@ async function runAnalystWithRetry<T>(
     return { parsed: validation.data, trace: turn.trace };
   }
 
+  callbacks?.onTurnDiscarded?.(turn.turnId);
   logger.warn({ role, errors: validation.error.issues }, `StrategistDesk: ${role} output failed validation, retrying`);
   callbacks?.onStatus?.(`Desk — ${labels[role]} output failed validation, retrying…`);
 

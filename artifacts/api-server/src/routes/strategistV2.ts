@@ -396,6 +396,10 @@ router.post("/analyze", async (req, res): Promise<void> => {
                 t.done = true;
               }
             },
+            onTurnDiscarded: (turnId) => {
+              const i = entry.transcript.findIndex(x => x.id === turnId);
+              if (i >= 0) entry.transcript.splice(i, 1);
+            },
           });
           entry.result = result;
           entry.status = "Done";
