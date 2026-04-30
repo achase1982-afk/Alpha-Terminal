@@ -24,16 +24,6 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-/**
- * When the Catalyst desk slot uses Gemini, the pre-search path runs 4–5 sequential
- * `callGeminiWithSystemAndWebSearch` calls (thinking + Google Search each). That blocks
- * the entire Desk run before Vol/Flow/Catalyst JSON and feels "stuck on Catalyst."
- * Opt in with DESK_CATALYST_GEMINI_PRESEARCH=1 if you accept multi-minute latency.
- */
-export const GEMINI_CATALYST_PRESEARCH_SKIPPED_BRIEFING = `## STRUCTURED RESEARCH (catalyst desk)
-Pre-run web research was **not** executed for this run (Gemini Catalyst slot: sequential search is disabled by default to avoid long stalls before the analyst JSON turn). Set server env DESK_CATALYST_GEMINI_PRESEARCH=1 to enable it.
-For themes you would normally fill from web (IR events, sell-side actions, earnings reaction history, sector peers, news), write **data not surfaced** unless the calendar snapshot supports them.`;
-
 function emptyTrace(): WebSearchTrace {
   return { webSearchUsed: false, queries: [], sources: [] };
 }
@@ -139,8 +129,8 @@ export interface CatalystDeskSearchBundle {
 }
 
 /**
- * Runs up to 5 sequential web searches using the Catalyst desk model (same registry slot).
- * Logs query + source count per search for telemetry.
+ * Runs up to 5 sequential web searches for **Gemini Catalyst only** (Desk JSON turn cannot use tools).
+ * Callers must gate on `model.provider === "google"`; otherwise this returns an empty bundle.
  */
 export async function runCatalystDeskStructuredSearches(opts: {
   ticker: string;
@@ -152,13 +142,12 @@ export async function runCatalystDeskStructuredSearches(opts: {
   const { ticker, catalystEval, deskExpirationISO, model, onStatus } = opts;
   const upper = ticker.toUpperCase();
 
-  if (model.provider === "google" && process.env["DESK_CATALYST_GEMINI_PRESEARCH"] !== "1") {
+  if (model.provider !== "google") {
     logger.info(
-      { ticker: upper, provider: "google", desk: "catalyst_structured_search" },
-      "StrategistDesk: skipping sequential catalyst web pre-search for Gemini Catalyst (set DESK_CATALYST_GEMINI_PRESEARCH=1 to enable — each step can take several minutes)",
+      { ticker: upper, provider: model.provider, desk: "catalyst_structured_search" },
+      "StrategistDesk: runCatalystDeskStructuredSearches invoked for non-Gemini provider — returning empty (caller should gate)",
     );
-    onStatus?.("Desk — Catalyst web pre-search skipped (Gemini; avoids long stall — set DESK_CATALYST_GEMINI_PRESEARCH=1 to enable)…");
-    return { briefing: GEMINI_CATALYST_PRESEARCH_SKIPPED_BRIEFING, trace: emptyTrace() };
+    return { briefing: "", trace: emptyTrace() };
   }
 
   const y = new Date().getUTCFullYear();
@@ -172,6 +161,7 @@ export async function runCatalystDeskStructuredSearches(opts: {
 
   const sections: string[] = [];
   let accTrace = emptyTrace();
+  const bundleStartMs = Date.now();
 
   const run = async (stepNum: number, label: string, query: string, extraInstructions: string) => {
     onStatus?.(`Desk — Catalyst research: ${label}…`);
@@ -233,6 +223,7 @@ export async function runCatalystDeskStructuredSearches(opts: {
           query,
           at: nowIso(),
           elapsedMs,
+          stepWallMs: doneMs - stepStartMs,
           textChars: r.text?.length ?? 0,
           trimmedBodyChars: body.length,
           resultCount: n,
@@ -258,6 +249,7 @@ export async function runCatalystDeskStructuredSearches(opts: {
             query,
             at: nowIso(),
             elapsedMs,
+            stepWallMs: doneMs - stepStartMs,
             errorMessage: msg,
             errorChars: msg.length,
             note: "Underlying HTTP request is not aborted; Gemini may still complete server-side.",
@@ -276,6 +268,7 @@ export async function runCatalystDeskStructuredSearches(opts: {
             query,
             at: nowIso(),
             elapsedMs,
+            stepWallMs: doneMs - stepStartMs,
             errorMessage: msg,
             errorChars: msg.length,
           },
@@ -339,6 +332,19 @@ export async function runCatalystDeskStructuredSearches(opts: {
     `Use this block with the calendar snapshot. For any theme with no usable facts, write the phrase "data not surfaced" in the matching JSON field (primary_catalyst, bar_to_clear, asymmetry, historical_pattern, or read) instead of inventing.\n` +
     `Do not paste URLs or name where you read it; synthesize like a desk analyst.\n\n` +
     sections.join("\n\n");
+
+  logger.info(
+    {
+      op: "catalyst_structured_search_bundle",
+      desk: "catalyst_structured_search",
+      ticker: upper,
+      phase: "bundle_complete",
+      at: nowIso(),
+      totalWallMs: Date.now() - bundleStartMs,
+      briefingChars: briefing.length,
+    },
+    "StrategistDesk: catalyst structured search — Gemini pre-search bundle complete",
+  );
 
   return { briefing, trace: accTrace };
 }

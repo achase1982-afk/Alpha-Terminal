@@ -164,8 +164,10 @@ export async function runDeskAnalysis(args: {
 
   let catalystResearchBriefing = "";
   let catalystSearchTrace: WebSearchTrace = { webSearchUsed: false, queries: [], sources: [] };
-  if (deskExpirationISO) {
-    callbacks?.onStatus?.("Desk — Catalyst structured web research…");
+  const catalystNativeWeb = catalystModel.provider !== "google";
+
+  if (deskExpirationISO && catalystModel.provider === "google") {
+    callbacks?.onStatus?.("Desk — Catalyst structured web research (Gemini JSON cannot use tools)…");
     try {
       const bundle = await runCatalystDeskStructuredSearches({
         ticker,
@@ -184,9 +186,19 @@ export async function runDeskAnalysis(args: {
       catalystResearchBriefing =
         "## STRUCTURED RESEARCH (catalyst desk)\nResearch pass failed; treat web-derived themes as **data not surfaced** unless the calendar snapshot alone supports them.";
     }
+  } else if (deskExpirationISO && catalystNativeWeb) {
+    logger.info(
+      { ticker, catalystProvider: catalystModel.provider },
+      "StrategistDesk: skipping catalyst structured pre-search — Catalyst slot uses native web search on JSON turn",
+    );
+    callbacks?.onStatus?.("Desk — Catalyst web pre-search skipped (native web search on analyst turn)…");
   }
 
-  const catalystPrompt = buildCatalystAnalystPrompt(dataPackage, catalystResearchBriefing || undefined);
+  const catalystPrompt = buildCatalystAnalystPrompt(
+    dataPackage,
+    catalystResearchBriefing || undefined,
+    { catalystSlotNativeWebSearch: catalystNativeWeb },
+  );
 
   callbacks?.onStatus?.("Desk — Vol, Flow, and Catalyst analysts running in parallel…");
 

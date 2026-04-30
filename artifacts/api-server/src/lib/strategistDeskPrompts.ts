@@ -95,7 +95,20 @@ Respond with ONLY a JSON object (no markdown fences, no extra prose):
 }`;
 }
 
-export function buildCatalystAnalystPrompt(dataPackage: string, structuredResearchBriefing?: string): string {
+export function buildCatalystAnalystPrompt(
+  dataPackage: string,
+  structuredResearchBriefing?: string,
+  options?: { catalystSlotNativeWebSearch?: boolean },
+): string {
+  const nativeWeb = options?.catalystSlotNativeWebSearch
+    ? `
+
+## WEB SEARCH (your turn — native tools)
+Your provider supports web search **on this JSON turn**. Use the built-in web search tool as needed before answering. Run focused searches aligned with: IR / company events, analyst actions (last ~60 days), earnings reaction history, sector ETF and peers, and (if the catalyst window warrants it) recent news. Prefer primary sources and major financial press; skip content farms.
+If a theme has no support after searching, write **data not surfaced** for that slice instead of inventing. Do not paste URLs or name outlets or vendors in the output.
+`
+    : "";
+
   const researchBlock = structuredResearchBriefing
     ? `
 
@@ -125,7 +138,7 @@ Be concrete with data. "Earnings asymmetry is bearish" is bad. "Last quarter ral
 
 You do not propose trades. You give the PM the event landscape. They construct the position.
 
-${snapshotBlock(dataPackage)}${researchBlock}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
+${snapshotBlock(dataPackage)}${nativeWeb}${researchBlock}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
 
 Respond with ONLY a JSON object (no markdown fences, no extra prose):
 {
