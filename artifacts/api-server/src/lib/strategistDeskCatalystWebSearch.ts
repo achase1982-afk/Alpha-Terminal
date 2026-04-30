@@ -17,8 +17,12 @@ import type { CatalystEvaluation } from "./catalystEvaluator.js";
 
 const SEARCH_SYSTEM = `You are a research assistant for an options catalyst desk. You MUST use the web search tool to gather current facts. Output only bullet points (max 18 lines), one fact per line, no URLs, no markdown fences, no JSON. If you find nothing substantive, output a single line: NO_USEFUL_RESULTS`;
 
-/** Per structured-search LLM call (non-Gemini). Gemini pre-search is skipped by default — see runCatalystDeskStructuredSearches. */
-const SEARCH_STEP_TIMEOUT_MS = 120_000;
+/** Hard cap per structured-search LLM call (all providers). No retry on timeout — empty slot in briefing. */
+const SEARCH_STEP_TIMEOUT_MS = 45_000;
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
 
 /**
  * When the Catalyst desk slot uses Gemini, the pre-search path runs 4–5 sequential
@@ -48,16 +52,48 @@ function mergeTraces(a: WebSearchTrace, b: WebSearchTrace): WebSearchTrace {
   };
 }
 
+type SearchLogCtx = { ticker: string; stepNum: number; query: string };
+
 async function runOneSearch(
   model: StrategistModelOption,
   userPrompt: string,
+  logCtx?: SearchLogCtx,
 ): Promise<WebSearchResult> {
   const temperature = 0;
   switch (model.provider) {
     case "anthropic":
       return callAnthropicWithSystemAndWebSearch(model.model, temperature, SEARCH_SYSTEM, userPrompt);
-    case "google":
-      return callGeminiWithSystemAndWebSearch(model.model, temperature, SEARCH_SYSTEM, userPrompt);
+    case "google": {
+      const gemStart = Date.now();
+      logger.info(
+        {
+          op: "catalyst_structured_search_step",
+          desk: "catalyst_structured_search",
+          ticker: logCtx?.ticker,
+          stepNum: logCtx?.stepNum,
+          query: logCtx?.query,
+          phase: "callGeminiWithSystemAndWebSearch_start",
+          at: nowIso(),
+        },
+        "StrategistDesk: catalyst structured search — callGeminiWithSystemAndWebSearch starting",
+      );
+      const r = await callGeminiWithSystemAndWebSearch(model.model, temperature, SEARCH_SYSTEM, userPrompt);
+      logger.info(
+        {
+          op: "catalyst_structured_search_step",
+          desk: "catalyst_structured_search",
+          ticker: logCtx?.ticker,
+          stepNum: logCtx?.stepNum,
+          query: logCtx?.query,
+          phase: "callGeminiWithSystemAndWebSearch_return",
+          at: nowIso(),
+          elapsedMs: Date.now() - gemStart,
+          textChars: r.text?.length ?? 0,
+        },
+        "StrategistDesk: catalyst structured search — callGeminiWithSystemAndWebSearch returned",
+      );
+      return r;
+    }
     case "openai":
       return callOpenAIWithSystemAndWebSearch(model.model, temperature, SEARCH_SYSTEM, userPrompt);
     case "xai":
@@ -67,9 +103,9 @@ async function runOneSearch(
   }
 }
 
-function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+function withTimeout<T>(p: Promise<T>, ms: number, stepNum: number): Promise<T> {
   return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`${label}: timeout after ${ms}ms`)), ms);
+    const t = setTimeout(() => reject(new Error(`step ${stepNum} timed out after 45s`)), ms);
     p.then(
       (v) => {
         clearTimeout(t);
@@ -137,49 +173,140 @@ export async function runCatalystDeskStructuredSearches(opts: {
   const sections: string[] = [];
   let accTrace = emptyTrace();
 
-  const run = async (label: string, query: string, extraInstructions: string) => {
+  const run = async (stepNum: number, label: string, query: string, extraInstructions: string) => {
     onStatus?.(`Desk — Catalyst research: ${label}…`);
+    const stepStartMs = Date.now();
+    logger.info(
+      {
+        op: "catalyst_structured_search_step",
+        desk: "catalyst_structured_search",
+        ticker: upper,
+        stepNum,
+        label,
+        phase: "step_start",
+        query,
+        at: nowIso(),
+      },
+      "StrategistDesk: catalyst structured search — step start",
+    );
+
     const userPrompt =
       `Execute a web search focused on this exact query: ${query}\n\n` +
       `Source priority when choosing what to cite internally: (1) company IR and SEC, (2) major financial press, (3) established research aggregators, (4) corroborated secondary sources. Skip low-quality content farms.\n\n` +
       `${extraInstructions}`;
+
+    const llmInvokeStartMs = Date.now();
+    logger.info(
+      {
+        op: "catalyst_structured_search_step",
+        desk: "catalyst_structured_search",
+        ticker: upper,
+        stepNum,
+        label,
+        phase: "provider_llm_call_start",
+        provider: model.provider,
+        query,
+        at: nowIso(),
+        msSinceStepStart: llmInvokeStartMs - stepStartMs,
+      },
+      "StrategistDesk: catalyst structured search — provider LLM call starting (wrapped in timeout)",
+    );
+
     try {
-      const r = model.provider === "google"
-        ? await runOneSearch(model, userPrompt)
-        : await withTimeout(runOneSearch(model, userPrompt), SEARCH_STEP_TIMEOUT_MS, label);
+      const r = await withTimeout(
+        runOneSearch(model, userPrompt, { ticker: upper, stepNum, query }),
+        SEARCH_STEP_TIMEOUT_MS,
+        stepNum,
+      );
+      const doneMs = Date.now();
+      const elapsedMs = doneMs - llmInvokeStartMs;
       const n = r.trace.sources.length;
+      const body = r.text.trim() || "NO_USEFUL_RESULTS";
       logger.info(
-        { ticker: upper, desk: "catalyst_structured_search", label, query, resultCount: n },
-        "StrategistDesk: catalyst structured search step",
+        {
+          op: "catalyst_structured_search_step",
+          desk: "catalyst_structured_search",
+          ticker: upper,
+          stepNum,
+          label,
+          phase: "provider_llm_call_done",
+          query,
+          at: nowIso(),
+          elapsedMs,
+          textChars: r.text?.length ?? 0,
+          trimmedBodyChars: body.length,
+          resultCount: n,
+        },
+        "StrategistDesk: catalyst structured search — step completed",
       );
       accTrace = mergeTraces(accTrace, r.trace);
-      const body = r.text.trim() || "NO_USEFUL_RESULTS";
       sections.push(`### ${label}\nExecuted query: ${query}\nResults returned (sources): ${n}\n\n${body}`);
     } catch (err) {
-      logger.warn(
-        { ticker: upper, desk: "catalyst_structured_search", label, query, err: err instanceof Error ? err.message : String(err) },
-        "StrategistDesk: catalyst structured search step failed",
-      );
-      sections.push(`### ${label}\nExecuted query: ${query}\nResults returned (sources): 0\n\nSEARCH_FAILED`);
+      const doneMs = Date.now();
+      const elapsedMs = doneMs - llmInvokeStartMs;
+      const msg = err instanceof Error ? err.message : String(err);
+      const timedOut = msg.includes("timed out after 45s");
+      if (timedOut) {
+        logger.warn(
+          {
+            op: "catalyst_structured_search_step",
+            desk: "catalyst_structured_search",
+            ticker: upper,
+            stepNum,
+            label,
+            phase: "provider_llm_call_timeout",
+            query,
+            at: nowIso(),
+            elapsedMs,
+            errorMessage: msg,
+            errorChars: msg.length,
+            note: "Underlying HTTP request is not aborted; Gemini may still complete server-side.",
+          },
+          "StrategistDesk: catalyst structured search — step timed out (empty briefing slot)",
+        );
+      } else {
+        logger.warn(
+          {
+            op: "catalyst_structured_search_step",
+            desk: "catalyst_structured_search",
+            ticker: upper,
+            stepNum,
+            label,
+            phase: "provider_llm_call_error",
+            query,
+            at: nowIso(),
+            elapsedMs,
+            errorMessage: msg,
+            errorChars: msg.length,
+          },
+          "StrategistDesk: catalyst structured search — step failed",
+        );
+      }
+      // Empty briefing for this slot (no retry); keep heading for traceability in composed doc
+      sections.push(`### ${label}\n`);
     }
   };
 
   await run(
+    1,
     "Search 1 — IR / company-hosted events",
     q1,
     "Goal: investor days, conference participation, product or AI days, capital markets days, company-hosted events in the position window.",
   );
   await run(
+    2,
     "Search 2 — Analyst targets and coverage",
     q2,
     "Goal: price target changes and upgrades/downgrades in roughly the last 60 days.",
   );
   await run(
+    3,
     "Search 3 — Earnings history and reactions",
     q3,
     "Goal: implied vs realized moves, gap direction, magnitude patterns around past prints.",
   );
   await run(
+    4,
     "Search 4 — Sector ETF and peers",
     q4,
     "Goal: sector ETF, key peers, relative industry context.",
@@ -187,14 +314,23 @@ export async function runCatalystDeskStructuredSearches(opts: {
 
   if (shouldRunNewsSearch(catalystEval)) {
     await run(
+      5,
       "Search 5 — News and event-driven (conditional)",
       q5,
       "Goal: recent news, regulatory actions, partnerships, or event-driven items relevant to the position window.",
     );
   } else {
     logger.info(
-      { ticker: upper, desk: "catalyst_structured_search", label: "Search 5 skipped", reason: "no_notable_window_trigger" },
-      "StrategistDesk: catalyst structured search step",
+      {
+        ticker: upper,
+        desk: "catalyst_structured_search",
+        stepNum: 5,
+        label: "Search 5 skipped",
+        phase: "step_skipped_gating",
+        reason: "no_notable_window_trigger",
+        at: nowIso(),
+      },
+      "StrategistDesk: catalyst structured search — Search 5 not run (gating)",
     );
   }
 
