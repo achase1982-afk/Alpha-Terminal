@@ -99,7 +99,7 @@ export function StrategistSettingsPanel() {
   if (!data) return <div className="text-center text-zinc-500 font-mono text-xs py-8">{loadError ?? "Failed to load settings"}</div>;
 
   const currentMode = data.current["strategistMode"] ?? 1;
-  const isDeskMode = currentMode === 3;
+  const isDeskMode = currentMode === 3 || currentMode === 4;
 
   const DESK_LABELS: Record<string, string> = {
     strategistSoloModelIdx: "Desk — Vol Analyst Model",

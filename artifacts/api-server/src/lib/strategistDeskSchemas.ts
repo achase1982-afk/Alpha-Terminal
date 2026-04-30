@@ -71,8 +71,19 @@ export type CatalystAnalystOutput = z.infer<typeof CatalystAnalystOutputSchema>;
 export type PmOutput = z.infer<typeof PmOutputSchema>;
 export type DeskKeyStrike = z.infer<typeof DeskKeyStrikeSchema>;
 
+/** Single-call Desk: one JSON with nested vol / flow / catalyst / pm (same shapes as multi-turn Desk). */
+export const SoloDeskFullOutputSchema = z.object({
+  vol: VolAnalystOutputSchema,
+  flow: FlowAnalystOutputSchema,
+  catalyst: CatalystAnalystOutputSchema,
+  pm: PmOutputSchema,
+});
+
+export type SoloDeskFullOutput = z.infer<typeof SoloDeskFullOutputSchema>;
+
 export interface DeskResult {
-  mode: "desk";
+  /** `desk` = four LLM turns; `solo_desk` = one consolidated turn, same nested shape for the client. */
+  mode: "desk" | "solo_desk";
   ticker: string;
   vol: VolAnalystOutput;
   flow: FlowAnalystOutput;

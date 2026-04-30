@@ -1031,13 +1031,14 @@ async function runSoloValidation(
   input: ValidationInput,
   settings: StrategistConfig,
   callbacks: ValidationCallbacks | undefined,
+  modelOverride?: ReturnType<typeof getStrategistModel>,
 ): Promise<ValidationVerdictPayload> {
   const today = new Date().toISOString().slice(0, 10);
   const isExit = input.ticket.mode === "closing";
   const persona = isExit ? SOLO_VALIDATOR_EXIT : SOLO_VALIDATOR_ENTRY;
   const sys = `${VALIDATION_SYSTEM_PROMPT}\n\n${persona}`;
 
-  const model = getStrategistModel(settings.strategistSoloModelIdx);
+  const model = modelOverride ?? getStrategistModel(settings.strategistSoloModelIdx);
   const labeled: StrategistModelOption = { ...model, label: `Solo · ${model.label}` };
 
   const { dataPackage, scrubCanonical } = buildValidationContext(input);
@@ -1139,7 +1140,13 @@ export async function runTradeValidation(
   // the same Strategist Mode + model selections as the strategist itself.
   const isDebateMode = settings.strategistMode === 2;
   if (!isDebateMode) {
-    return runSoloValidation(input, settings, callbacks);
+    const model =
+      settings.strategistMode === 4
+        ? getStrategistModel(
+            settings.strategistArbitratorModelIdx === -1 ? 0 : settings.strategistArbitratorModelIdx,
+          )
+        : getStrategistModel(settings.strategistSoloModelIdx);
+    return runSoloValidation(input, settings, callbacks, model);
   }
 
   // ── Debate path (existing 3-round Bull-vs-Bear flow) ──

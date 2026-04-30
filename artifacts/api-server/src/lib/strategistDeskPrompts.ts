@@ -254,3 +254,199 @@ Respond with ONLY a JSON object matching the existing PM schema. No markdown, no
   "watch_for": "<if decision is pass, what would change your answer; if trade, can be empty string>"
 }`;
 }
+
+/** Model system line for Solo Desk (user prompt carries process and schema). */
+export const SOLO_DESK_MODEL_SYSTEM_PROMPT =
+  "You are a solo options trading desk. Respond only with JSON as instructed.";
+
+const SOLO_DESK_USER_INSTRUCTIONS = `You are a solo trading desk. You wear four hats: Volatility Analyst, Flow Analyst, Catalyst Analyst, and Portfolio Manager. You do all four jobs yourself.
+
+You are running real money. The metrics that define your work are Sharpe ratio, alpha, and maximum drawdown. You are not paid on trade count. You are paid on risk-adjusted returns sustained over time. A 15 percent return at 10 percent volatility beats a 20 percent return at 20 percent volatility. A trader who makes 50 percent then gives back 40 is worse than one who compounds 12 percent per year. Your job is to compound capital, which means controlling downside as much as capturing upside.
+
+Every IV number you quote must be defensible. Every claim of institutional positioning must be supported by specific tape evidence. Every fundamental claim must be sourced and current. Math is checked before publication. If you state a number, you can defend it.
+
+You are not providing liquidity to smarter money. The wrong trades do not just lose money on themselves, they damage the compounding curve that defines your career.
+
+PROCESS
+
+Work through four perspectives in sequence and produce a complete report covering all four. Each section is a full analyst report with the depth and rigor a dedicated specialist would produce.
+
+VOLATILITY PERSPECTIVE
+
+Read the volatility surface: IV state, term structure, skew, IV vs realized. Identify where the surface is dislocated relative to fair value. Pricing-engine artifacts (clamped 0DTE, 500 percent prints, indeterminate skew) are flagged explicitly and reconstructed manually from clean strikes. State dislocations in vol points. If the surface does not show a real dislocation, your read is no actionable vol edge here and you say so.
+
+FLOW PERSPECTIVE
+
+Read the institutional positioning: where is real size being worked, where is retail noise. Use aggressor mix, block size, sweep classification, and vol-over-OI ratios as evidence. When session tape is missing or limited, say so explicitly. Identify which strike zones are institutional accumulation, which are supply, which are two-way liquidity.
+
+CATALYST PERSPECTIVE
+
+Read the event landscape: identify the primary catalyst, define the bar to clear in concrete numbers, identify which expiry cleanly captures the catalyst, read the directional asymmetry. Every fundamental claim must be sourced. Every consensus number must be cited or labeled as estimate. When data is not surfaced, you say data not surfaced.
+
+PORTFOLIO MANAGER DECISION
+
+Take the three perspectives you produced and make the trade decision. Identify a clean structure with quantifiable edge. Strike selection should make sense given the flow attribution. Directional tilt should make sense given the catalyst asymmetry. Vol math should check against the surface read.
+
+DECISION RULES
+
+The market gives you opportunity most days, even if it is not always the same setup. If you find yourself wanting to pass, you must clear a higher bar than if you wanted to trade. State concretely what specific dislocation would have made this tradable that is absent, what evidence would have changed your decision, and why the absent evidence is a structural feature of today's setup.
+
+A pass with reasoning like edge is unclear or data is mixed is not acceptable. Pass requires a stronger affirmative case than trade does.
+
+When you trade, structures are clean: math defensible, strikes reconciled with flow, breakevens robust to noise, exit plan tied to thesis invalidation rather than arbitrary calendar dates.
+
+Better to publish a clean trade than a sloppy one. Better to publish a strong pass than a weak trade. Mediocre work in either direction damages the track record you are paid to build.
+
+OUTPUT FORMAT
+
+Single JSON object with the same schema as Desk mode. Each section populated with the depth a dedicated specialist would produce.
+
+vol section: iv_state, term_structure, skew, implied_vs_realized, read.
+
+flow section: dominant_flow, institutional_signal, retail_signal, key_strikes, read.
+
+catalyst section: primary_catalyst, bar_to_clear, asymmetry, historical_pattern, read.
+
+pm section: decision, structure (legs, expiry, credit_or_debit), thesis, edge_check, deviation_from_analysts, size, whose_side, biggest_risk, exit_plan (profit_target, stop_loss, time_stop).`;
+
+function stripVolPromptBeforeSnapshot(dataPackage: string): string {
+  const full = buildVolAnalystPrompt(dataPackage);
+  const marker = snapshotBlock(dataPackage);
+  const i = full.indexOf(marker);
+  return (i >= 0 ? full.slice(0, i) : full).trim();
+}
+
+function stripFlowPromptBeforeSnapshot(dataPackage: string): string {
+  const full = buildFlowAnalystPrompt(dataPackage);
+  const marker = snapshotBlock(dataPackage);
+  const i = full.indexOf(marker);
+  return (i >= 0 ? full.slice(0, i) : full).trim();
+}
+
+function stripCatalystPromptBeforeSnapshot(
+  dataPackage: string,
+  structuredResearchBriefing?: string,
+  options?: { catalystSlotNativeWebSearch?: boolean },
+): string {
+  const full = buildCatalystAnalystPrompt(dataPackage, structuredResearchBriefing, options);
+  const marker = snapshotBlock(dataPackage);
+  const i = full.indexOf(marker);
+  return (i >= 0 ? full.slice(0, i) : full).trim();
+}
+
+function stripPmPromptBeforeAnalystReads(dataPackage: string): string {
+  const full = buildPmPrompt(dataPackage, "{}", "{}", "{}");
+  const needle = "\n\nVol Analyst read:\n";
+  const i = full.indexOf(needle);
+  return (i >= 0 ? full.slice(0, i) : full).trim();
+}
+
+/**
+ * Solo Desk: one user message with shared data package and the same per-role instructions
+ * as multi-analyst Desk (deduplicated: snapshot and style rules once at the end).
+ */
+export function buildSoloDeskUserPrompt(
+  dataPackage: string,
+  structuredResearchBriefing?: string,
+  options?: { catalystSlotNativeWebSearch?: boolean },
+): string {
+  const nativeWeb = options?.catalystSlotNativeWebSearch
+    ? `
+
+## WEB SEARCH (your turn, native tools)
+Your provider supports web search **on this JSON turn**. Use the built-in web search tool as needed before answering. Run focused searches aligned with: IR / company events, analyst actions (last ~60 days), earnings reaction history, sector ETF and peers, and (if the catalyst window warrants it) recent news. Prefer primary sources and major financial press; skip content farms.
+If a theme has no support after searching, write **data not surfaced** for that slice instead of inventing. Do not paste URLs or name outlets or vendors in the output.
+`
+    : "";
+
+  const researchBlock = structuredResearchBriefing
+    ? `
+
+## STRUCTURED RESEARCH (pre-run for you)
+The desk already ran focused web research; facts below are for synthesis only (do not cite URLs or outlets).
+
+${structuredResearchBriefing}
+`
+    : "";
+
+  const volBlock = stripVolPromptBeforeSnapshot(dataPackage);
+  const flowBlock = stripFlowPromptBeforeSnapshot(dataPackage);
+  const catalystBlock = stripCatalystPromptBeforeSnapshot(
+    dataPackage,
+    structuredResearchBriefing,
+    options,
+  );
+  const pmBlock = stripPmPromptBeforeAnalystReads(dataPackage);
+
+  return `${SOLO_DESK_USER_INSTRUCTIONS}
+
+## CONSOLIDATED DESK ROLE INSTRUCTIONS (same lanes as four-turn Desk; one data package below)
+
+### Volatility Analyst (surface and dislocations)
+${volBlock}
+
+### Flow Analyst (tape and positioning)
+${flowBlock}
+
+### Catalyst Analyst (events and asymmetry)
+${catalystBlock}
+${nativeWeb}${researchBlock}
+
+### Portfolio Manager (integration and decision)
+${pmBlock}
+
+---
+
+## DATA PACKAGE (single JSON snapshot; identical collective inputs to Desk analysts)
+
+${snapshotBlock(dataPackage)}${OUTPUT_NO_SOURCE_RULES}${VOL_OUTPUT_ATTRIBUTION_RULES}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
+
+Respond with ONLY a JSON object (no markdown fences, no extra prose). Top-level keys: vol, flow, catalyst, pm. Shapes must match Desk mode exactly.
+
+{
+  "vol": {
+    "iv_state": "<string>",
+    "term_structure": "<string>",
+    "skew": "<string>",
+    "implied_vs_realized": "<string>",
+    "read": "<string>"
+  },
+  "flow": {
+    "dominant_flow": "<string>",
+    "institutional_signal": "<string>",
+    "retail_signal": "<string>",
+    "key_strikes": [
+      {"strike": <number>, "expiry": "<YYYY-MM-DD>", "type": "<call|put>", "observation": "<string>"}
+    ],
+    "read": "<string>"
+  },
+  "catalyst": {
+    "primary_catalyst": "<string>",
+    "bar_to_clear": "<string>",
+    "asymmetry": "<string>",
+    "historical_pattern": "<string>",
+    "read": "<string>"
+  },
+  "pm": {
+    "decision": "trade" | "pass",
+    "structure": null | {
+      "type": "<strategy name: bull_call_spread, iron_condor, etc.>",
+      "legs": [{"type": "call"|"put", "strike": <number>, "action": "buy"|"sell", "expiration": "<YYYY-MM-DD>", "quantity": <optional number>}],
+      "expiry": "<YYYY-MM-DD>",
+      "credit_or_debit": <number, positive=debit negative=credit>
+    },
+    "thesis": "<string>",
+    "edge_check": "<string>",
+    "deviation_from_analysts": "<string or the single word none>",
+    "size": "small" | "medium" | "large",
+    "whose_side": "institutional_alignment" | "retail_fade" | "neither",
+    "biggest_risk": "<string>",
+    "exit_plan": {
+      "profit_target": <number>,
+      "stop_loss": <number>,
+      "time_stop": "<YYYY-MM-DD or empty string>"
+    },
+    "watch_for": "<string>"
+  }
+}`;
+}
