@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from "react";
 import { useTerminalStore, type StrategistValidationMeta, type StrategistTranscriptTurn } from "@/lib/store";
+import { isDeskStrategistTranscript } from "@/lib/strategistTranscriptDesk";
 import { StrategistValidationCard } from "@/components/StrategistValidationCard";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import {
@@ -1494,8 +1495,11 @@ function DebateTranscript({
   defaultCollapsed?: boolean;
   title?: string;
 }) {
+  const isDesk = useMemo(() => isDeskStrategistTranscript(transcript), [transcript]);
+  const headerTitle = isDesk ? "DESK MODE" : title;
+
   const groups = useMemo(() => {
-    const m = new Map<1 | 2 | 3 | "synthesis", StrategistTranscriptTurn[]>();
+    const m = new Map<1 | 2 | 3 | "synthesis" | "solo" | "desk", StrategistTranscriptTurn[]>();
     for (const t of transcript) {
       const key = t.round;
       if (!m.has(key)) m.set(key, []);
@@ -1518,12 +1522,31 @@ function DebateTranscript({
         // Solo validator wears both hats — distinct neutral cyan-blue so the
         // user knows this is a single-model pass, not a Bull/Bear debate.
         return { bg: "rgba(120,180,255,0.10)", fg: "#78B4FF", border: "rgba(120,180,255,0.4)", label: "Solo Validator" };
+      case "vol":
+        return { bg: "rgba(251,191,36,0.10)", fg: "#fbbf24", border: "rgba(251,191,36,0.35)", label: "Vol Analyst" };
+      case "flow":
+        return { bg: "rgba(56,189,248,0.10)", fg: "#38bdf8", border: "rgba(56,189,248,0.35)", label: "Flow Analyst" };
+      case "catalyst":
+        return { bg: "rgba(167,139,250,0.10)", fg: "#a78bfa", border: "rgba(167,139,250,0.35)", label: "Catalyst Analyst" };
+      case "pm":
+        return { bg: "rgba(74,222,128,0.10)", fg: "#4ade80", border: "rgba(74,222,128,0.35)", label: "PM" };
       default:
         return { bg: "rgba(255,255,255,0.06)", fg: "#999", border: "rgba(255,255,255,0.15)", label: "" };
     }
   };
 
-  const phaseLabel = (phase: string, round: 1 | 2 | 3 | "synthesis", role: string): string => {
+  const phaseLabel = (
+    phase: string,
+    round: 1 | 2 | 3 | "synthesis" | "solo" | "desk",
+    role: string,
+  ): string => {
+    if (round === "desk") {
+      if (role === "vol") return "Parallel pass · Vol";
+      if (role === "flow") return "Parallel pass · Flow";
+      if (role === "catalyst") return "Parallel pass · Catalyst";
+      if (role === "pm") return "PM synthesis";
+      return "Desk";
+    }
     if (role === "system" && phase === "info") return "Verdict";
     if (role === "solo" || phase === "solo") return "Solo Validation · Single Pass";
     if (round === "synthesis") return "Phase 3 · Senior PM Arbitration";
@@ -1534,7 +1557,9 @@ function DebateTranscript({
     return phase;
   };
 
-  const roundHeader = (round: 1 | 2 | 3 | "synthesis"): string => {
+  const roundHeader = (round: 1 | 2 | 3 | "synthesis" | "solo" | "desk"): string => {
+    if (round === "solo") return "Solo validation";
+    if (round === "desk") return "DESK — Vol, Flow, Catalyst & PM";
     if (round === "synthesis") return "Phase 3 — Senior PM Arbitration (Final Trade)";
     if (round === 1) return "Phase 1 — Round 1 (Directional Pitch)";
     if (round === 2) return "Phase 1 — Round 2 (Rebuttal & Verdict)";
@@ -1579,6 +1604,10 @@ function DebateTranscript({
   // Derive a short summary for the collapsed header (verdict + turn count).
   const summary = useMemo(() => {
     const turnCount = transcript.length;
+    if (isDesk) {
+      if (turnCount === 0) return "no turns yet";
+      return `${turnCount} turn${turnCount === 1 ? "" : "s"}`;
+    }
     const verdictTurn = [...transcript].reverse().find((t) => t.role === "system" && t.phase === "info");
     let verdict: string | null = null;
     if (verdictTurn) {
@@ -1592,7 +1621,7 @@ function DebateTranscript({
     if (turnCount === 0) return "no turns yet";
     if (verdict) return `${verdict} · ${turnCount} turns`;
     return `${turnCount} turns`;
-  }, [transcript]);
+  }, [transcript, isDesk]);
 
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
@@ -1645,13 +1674,21 @@ function DebateTranscript({
         <button
           onClick={() => setCollapsed((c) => !c)}
           className="flex items-center gap-2 flex-1 min-w-0 text-left"
-          aria-label={collapsed ? "Expand debate transcript" : "Collapse debate transcript"}
+          aria-label={
+            collapsed
+              ? isDesk
+                ? "Expand desk transcript"
+                : "Expand debate transcript"
+              : isDesk
+                ? "Collapse desk transcript"
+                : "Collapse debate transcript"
+          }
         >
           <span className="font-mono text-[11px] text-[#FFB800] leading-none">
             {collapsed ? "▸" : "▾"}
           </span>
           <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#FFB800]">
-            {title}
+            {headerTitle}
           </span>
           {isStreaming && (
             <span className="w-2 h-2 rounded-full bg-[#FFB800] animate-pulse" />
@@ -1684,26 +1721,36 @@ function DebateTranscript({
           >
             {roundHeader(round)}
           </div>
-          {turns.map((t) => {
-            const style = roleStyle(t.role);
-            const showCaret = isStreaming && !t.done;
-            return (
-              <div key={t.id} className="pl-3" style={{ borderLeft: `2px solid ${style.fg}` }}>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: style.fg }}>
-                    {style.label}
-                  </span>
-                  <span className="ml-auto font-mono text-[9px] text-[#666]">{phaseLabel(t.phase, t.round, t.role)}</span>
+          {(() => {
+            const ordered =
+              round === "desk"
+                ? [...turns].sort((a, b) => {
+                    const o = (r: string) =>
+                      r === "vol" ? 0 : r === "flow" ? 1 : r === "catalyst" ? 2 : r === "pm" ? 3 : 99;
+                    return o(a.role) - o(b.role);
+                  })
+                : turns;
+            return ordered.map((t) => {
+              const style = roleStyle(t.role);
+              const showCaret = isStreaming && !t.done;
+              return (
+                <div key={t.id} className="pl-3" style={{ borderLeft: `2px solid ${style.fg}` }}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: style.fg }}>
+                      {style.label}
+                    </span>
+                    <span className="ml-auto font-mono text-[9px] text-[#666]">{phaseLabel(t.phase, t.round, t.role)}</span>
+                  </div>
+                  <pre className="font-mono text-[11px] leading-[1.55] text-[#ddd] whitespace-pre-wrap break-words m-0">
+                    {formatTurnText(t.text) || (showCaret ? "" : <span className="text-[#666]">(no output)</span>)}
+                    {showCaret && (
+                      <span className="inline-block w-[7px] h-[12px] ml-0.5 align-middle" style={{ background: style.fg }} />
+                    )}
+                  </pre>
                 </div>
-                <pre className="font-mono text-[11px] leading-[1.55] text-[#ddd] whitespace-pre-wrap break-words m-0">
-                  {formatTurnText(t.text) || (showCaret ? "" : <span className="text-[#666]">(no output)</span>)}
-                  {showCaret && (
-                    <span className="inline-block w-[7px] h-[12px] ml-0.5 align-middle" style={{ background: style.fg }} />
-                  )}
-                </pre>
-              </div>
-            );
-          })}
+              );
+            });
+          })()}
         </div>
       ))}
       </div>

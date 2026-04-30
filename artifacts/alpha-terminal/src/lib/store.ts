@@ -373,9 +373,9 @@ export interface StrategistValidationMeta {
 // mode emits a single 'solo' role turn instead of a Bull/Bear pair).
 export interface StrategistTranscriptTurn {
   id: string;
-  round: 1 | 2 | 3 | 'synthesis';
-  role: 'A' | 'B' | 'synthesis' | 'system' | 'solo';
-  phase: 'propose' | 'critique' | 'final' | 'synthesis' | 'info' | 'solo';
+  round: 1 | 2 | 3 | "synthesis" | "solo" | "desk";
+  role: "A" | "B" | "synthesis" | "system" | "solo" | "vol" | "flow" | "catalyst" | "pm";
+  phase: "propose" | "critique" | "final" | "synthesis" | "info" | "solo" | "analyst" | "pm";
   model: string;
   label: string;
   text: string;

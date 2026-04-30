@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
+import { isDeskStrategistTranscript } from "@/lib/strategistTranscriptDesk";
 
 interface SavedTurn {
   id?: string;
-  round: 1 | 2 | 3 | "synthesis";
-  role: "A" | "B" | "synthesis" | "system";
+  round: 1 | 2 | 3 | "synthesis" | "desk";
+  role: "A" | "B" | "synthesis" | "system" | "vol" | "flow" | "catalyst" | "pm";
   phase: string;
   model: string;
   label: string;
@@ -15,6 +16,10 @@ const ROLE_STYLE: Record<string, { fg: string; label: string }> = {
   B: { fg: "#26C6DA", label: "Bear Case" },
   synthesis: { fg: "#00D166", label: "Recommendation" },
   system: { fg: "#BA82FF", label: "Verdict" },
+  vol: { fg: "#fbbf24", label: "Vol Analyst" },
+  flow: { fg: "#38bdf8", label: "Flow Analyst" },
+  catalyst: { fg: "#a78bfa", label: "Catalyst Analyst" },
+  pm: { fg: "#4ade80", label: "PM" },
 };
 
 function formatTurnText(raw: string): string {
@@ -31,7 +36,18 @@ function formatTurnText(raw: string): string {
   }
 }
 
-function phaseLabel(phase: string, round: 1 | 2 | 3 | "synthesis", role: string): string {
+function phaseLabel(
+  phase: string,
+  round: 1 | 2 | 3 | "synthesis" | "desk",
+  role: string,
+): string {
+  if (round === "desk") {
+    if (role === "vol") return "Parallel pass · Vol";
+    if (role === "flow") return "Parallel pass · Flow";
+    if (role === "catalyst") return "Parallel pass · Catalyst";
+    if (role === "pm") return "PM synthesis";
+    return "Desk";
+  }
   if (role === "system" && phase === "info") return "Verdict";
   if (round === "synthesis") return "Phase 3 · Senior PM Arbitration";
   if (round === 3 && phase === "propose") return "Phase 2 · R3 · Structure Vote";
@@ -41,7 +57,8 @@ function phaseLabel(phase: string, round: 1 | 2 | 3 | "synthesis", role: string)
   return phase;
 }
 
-function roundHeader(round: 1 | 2 | 3 | "synthesis"): string {
+function roundHeader(round: 1 | 2 | 3 | "synthesis" | "desk"): string {
+  if (round === "desk") return "DESK — Vol, Flow, Catalyst & PM";
   if (round === "synthesis") return "Phase 3 — Senior PM Arbitration (Final Trade)";
   if (round === 1) return "Phase 1 — Round 1 (Directional Pitch)";
   if (round === 2) return "Phase 1 — Round 2 (Rebuttal & Verdict)";
@@ -57,8 +74,10 @@ export function HistoryDebateTranscript({ transcript }: { transcript: SavedTurn[
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const isDesk = useMemo(() => isDeskStrategistTranscript(transcript as import("@/lib/store").StrategistTranscriptTurn[]), [transcript]);
+
   const groups = useMemo(() => {
-    const m = new Map<1 | 2 | 3 | "synthesis", SavedTurn[]>();
+    const m = new Map<1 | 2 | 3 | "synthesis" | "desk", SavedTurn[]>();
     for (const t of transcript) {
       if (!m.has(t.round)) m.set(t.round, []);
       (m.get(t.round) as SavedTurn[]).push(t);
@@ -68,6 +87,10 @@ export function HistoryDebateTranscript({ transcript }: { transcript: SavedTurn[
 
   const summary = useMemo(() => {
     const turnCount = transcript.length;
+    if (isDesk) {
+      if (turnCount === 0) return "no turns";
+      return `${turnCount} turn${turnCount === 1 ? "" : "s"}`;
+    }
     const verdictTurn = [...transcript].reverse().find((t) => t.role === "system" && t.phase === "info");
     let verdict: string | null = null;
     if (verdictTurn) {
@@ -81,7 +104,7 @@ export function HistoryDebateTranscript({ transcript }: { transcript: SavedTurn[
     if (turnCount === 0) return "no turns";
     if (verdict) return `${verdict} · ${turnCount} turns`;
     return `${turnCount} turns`;
-  }, [transcript]);
+  }, [transcript, isDesk]);
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -133,13 +156,21 @@ export function HistoryDebateTranscript({ transcript }: { transcript: SavedTurn[
         <button
           onClick={() => setExpanded((e) => !e)}
           className="flex items-center gap-2 flex-1 min-w-0 text-left"
-          aria-label={expanded ? "Collapse debate transcript" : "Expand debate transcript"}
+          aria-label={
+            expanded
+              ? isDesk
+                ? "Collapse desk transcript"
+                : "Collapse debate transcript"
+              : isDesk
+                ? "Expand desk transcript"
+                : "Expand debate transcript"
+          }
         >
           <span className="font-mono text-[11px] text-[#FFB800] leading-none">
             {expanded ? "▾" : "▸"}
           </span>
           <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#FFB800]">
-            Bull · Bear Debate
+            {isDesk ? "DESK MODE" : "Bull · Bear Debate"}
           </span>
           <span className="font-mono text-[10px] text-[#888] truncate">· {summary}</span>
         </button>
@@ -168,22 +199,32 @@ export function HistoryDebateTranscript({ transcript }: { transcript: SavedTurn[
               >
                 {roundHeader(round)}
               </div>
-              {turns.map((t, ti) => {
-                const style = ROLE_STYLE[t.role] ?? { fg: "#999", label: "·" };
-                return (
-                  <div key={t.id ?? `${round}-${ti}`} className="pl-3" style={{ borderLeft: `2px solid ${style.fg}` }}>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: style.fg }}>
-                        {style.label}
-                      </span>
-                      <span className="ml-auto font-mono text-[9px] text-[#666]">{phaseLabel(t.phase, t.round, t.role)}</span>
+              {(() => {
+                const ordered =
+                  round === "desk"
+                    ? [...turns].sort((a, b) => {
+                        const o = (r: string) =>
+                          r === "vol" ? 0 : r === "flow" ? 1 : r === "catalyst" ? 2 : r === "pm" ? 3 : 99;
+                        return o(a.role) - o(b.role);
+                      })
+                    : turns;
+                return ordered.map((t, ti) => {
+                  const style = ROLE_STYLE[t.role] ?? { fg: "#999", label: "·" };
+                  return (
+                    <div key={t.id ?? `${round}-${ti}`} className="pl-3" style={{ borderLeft: `2px solid ${style.fg}` }}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: style.fg }}>
+                          {style.label}
+                        </span>
+                        <span className="ml-auto font-mono text-[9px] text-[#666]">{phaseLabel(t.phase, t.round, t.role)}</span>
+                      </div>
+                      <pre className="font-mono text-[11px] leading-[1.55] text-[#ddd] whitespace-pre-wrap break-words m-0">
+                        {formatTurnText(t.text) || <span className="text-[#666]">(no output)</span>}
+                      </pre>
                     </div>
-                    <pre className="font-mono text-[11px] leading-[1.55] text-[#ddd] whitespace-pre-wrap break-words m-0">
-                      {formatTurnText(t.text) || <span className="text-[#666]">(no output)</span>}
-                    </pre>
-                  </div>
-                );
-              })}
+                  );
+                });
+              })()}
             </div>
           ))}
         </div>

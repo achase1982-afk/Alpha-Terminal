@@ -4,6 +4,7 @@ import {
   ChevronDown, ChevronUp, Send, Copy, Check, Activity,
 } from "lucide-react";
 import { strategistCardToPlainText } from "@/lib/strategistPlaintext";
+import { isDeskStrategistTranscript } from "@/lib/strategistTranscriptDesk";
 
 // Legacy (debate/IOScore semantic palette — used by sub-cards below the main body).
 const GOLD = "#f5a623";
@@ -275,8 +276,8 @@ export interface StrategistV2Result {
    */
   debateTranscript?: Array<{
     id?: string;
-    round: 1 | 2 | 3 | "synthesis";
-    role: "A" | "B" | "synthesis" | "system";
+    round: 1 | 2 | 3 | "synthesis" | "desk";
+    role: "A" | "B" | "synthesis" | "system" | "vol" | "flow" | "catalyst" | "pm";
     phase: string;
     model: string;
     label: string;
@@ -602,6 +603,10 @@ export function StrategistV2RecommendationCard({
 
   const ctx = result.recommendation?.contextSources ?? result.contextSources;
   const transcript = result.debateTranscript;
+  const isDeskTranscript =
+    !!transcript &&
+    transcript.length > 0 &&
+    isDeskStrategistTranscript(transcript as import("@/lib/store").StrategistTranscriptTurn[]);
 
   return (
     <div
@@ -935,9 +940,9 @@ export function StrategistV2RecommendationCard({
       {/* ---- 14. CONTEXT ---- */}
       {ctx && <ContextSourcesBlock ctx={ctx} />}
 
-      {/* ---- 15. DEBATE TRANSCRIPT ---- */}
+      {/* ---- 15. TRANSCRIPT (Debate or Desk) ---- */}
       {transcript && transcript.length > 0 && (
-        <Section title="Debate Transcript" noBorder>
+        <Section title={isDeskTranscript ? "Desk Transcript" : "Debate Transcript"} noBorder>
           <DebateTranscriptInline transcript={transcript} />
         </Section>
       )}
@@ -1206,10 +1211,70 @@ function DebateBlock({
   );
 }
 
+const DESK_ROLE_META: Record<string, { label: string; border: string }> = {
+  vol: { label: "Vol Analyst", border: "#fbbf24" },
+  flow: { label: "Flow Analyst", border: "#38bdf8" },
+  catalyst: { label: "Catalyst Analyst", border: "#a78bfa" },
+  pm: { label: "PM", border: "#4ade80" },
+};
+
+function DeskTranscriptInline({ transcript }: { transcript: TranscriptTurnInline[] }) {
+  const turns = useMemo(() => {
+    const desk = transcript.filter((t) => t.round === "desk");
+    const o = (r: string) =>
+      r === "vol" ? 0 : r === "flow" ? 1 : r === "catalyst" ? 2 : r === "pm" ? 3 : 99;
+    return [...desk].sort((a, b) => o(String(a.role)) - o(String(b.role)));
+  }, [transcript]);
+
+  return (
+    <div>
+      <DebateRoundHeader>Desk — Vol, Flow, Catalyst &amp; PM</DebateRoundHeader>
+      {turns.map((t) => {
+        const meta = DESK_ROLE_META[String(t.role)] ?? { label: String(t.role), border: PAL.label };
+        return (
+          <div key={t.id ?? t.label} style={{ marginBottom: 18, paddingLeft: 16, borderLeft: `3px solid ${meta.border}` }}>
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 800,
+                letterSpacing: "0.5px",
+                marginBottom: 10,
+                textTransform: "uppercase",
+                color: meta.border,
+              }}
+            >
+              {meta.label}
+            </div>
+            <pre
+              style={{
+                fontSize: 12,
+                lineHeight: 1.55,
+                color: PAL.body,
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                margin: 0,
+                fontFamily: "ui-monospace, monospace",
+              }}
+            >
+              {(() => {
+                const parsed = tryParseTurnJson(t.text);
+                return parsed ? JSON.stringify(parsed, null, 2) : t.text || "—";
+              })()}
+            </pre>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function DebateTranscriptInline({ transcript }: { transcript: TranscriptTurnInline[] }) {
+  if (isDeskStrategistTranscript(transcript as import("@/lib/store").StrategistTranscriptTurn[])) {
+    return <DeskTranscriptInline transcript={transcript} />;
+  }
   // Group by round so we can interleave round headers + verdict box correctly.
   const grouped = useMemo(() => {
-    const byRound = new Map<1 | 2 | 3 | "synthesis", TranscriptTurnInline[]>();
+    const byRound = new Map<1 | 2 | 3 | "synthesis" | "solo" | "desk", TranscriptTurnInline[]>();
     for (const t of transcript) {
       const arr = byRound.get(t.round) ?? [];
       arr.push(t);
