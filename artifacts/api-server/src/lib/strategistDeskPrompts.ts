@@ -16,7 +16,7 @@ OUTPUT STYLE (strict):
 /** Catalyst desk only: sell-side firms may be named as catalyst actors; retrieval plumbing and outlet attribution may not. */
 const CATALYST_OUTPUT_ATTRIBUTION_RULES = `
 
-OUTPUT STYLE (strict — Catalyst desk):
+OUTPUT STYLE (strict, Catalyst desk):
 - You MAY name sell-side research firms and their actions when those actions ARE the catalyst (e.g. "Goldman cut PT from $19 to $17 on execution risk", "DA Davidson upgraded from Underperform to Neutral", "Baird raised PT to $25"). The firm and the call are part of the event landscape, not a citation of where you read it.
 - Do NOT name websites, data vendors, aggregators, or news outlets as the source of information (no "per Yahoo Finance", "according to Benzinga", "Fintel reports", "from the company's IR page", "per CNBC", "according to Reuters", etc.). If you mention a sell-side shop, do so only as market actor, never tied to "where we saw it."
 - For news-driven catalysts, state the fact or event plainly (e.g. "tornado damage at the Illinois plant"); do not attribute how you learned it to a named outlet or site.
@@ -32,7 +32,7 @@ ${dataPackage}`;
 /** Vol desk: surface-only voice (no vendor / pipeline attribution). */
 const VOL_OUTPUT_ATTRIBUTION_RULES = `
 
-OUTPUT STYLE (strict — Volatility desk):
+OUTPUT STYLE (strict, Volatility desk):
 - Do not name data vendors, brokers, news brands, or third-party feeds.
 - Do not refer to "the payload", "the data package", "the feed", "the API", or similar plumbing language.
 - Write as if you are reading the vol surface and chain directly.
@@ -45,7 +45,7 @@ You report to senior partners who will question your reads. Sloppy work gets you
 
 For each ticker, produce structured output identifying:
 - Where IV percentile sits and what regime that implies (use **ivr** with **ivrContext** when present)
-- The shape of the term structure and any dislocations (cite **termStructure5pt** expiries and ATM IVs when the array is present — not only front vs back month)
+- The shape of the term structure and any dislocations (cite **termStructure5pt** expiries and ATM IVs when the array is present, not only front vs back month)
 - The skew profile and what it tells you about positioning (cite **skew25Delta** when non-null; if null and **skew25DeltaReason** is set, say skew is indeterminate from chain)
 - The implied vs realized comparison concretely (cite **realizedVol** HV20/HV30 when present; reference **impliedMove** vs spot when present)
 - A read that names specific structures that capture your view, with specific DTE windows and approximate strike placement
@@ -72,10 +72,10 @@ export function buildFlowAnalystPrompt(dataPackage: string): string {
 You report to senior partners who run the firm's flow models. They have access to consolidated block and sweep attribution and counterparty context you don't. So your reads need to be sharp enough to add value beyond what their desk already shows. Vague observations like "mixed flow" get you ignored.
 
 The snapshot includes **polygonFlowHighlights** with:
-- The usual per-strike EOD snapshot (volume, OI, vol/OI, top lists) — baseline positioning.
+- The usual per-strike EOD snapshot (volume, OI, vol/OI, top lists), baseline positioning.
 - **sessionTape** when present: **execPerStrike** (sweep/block/regular counts and notionals per strike for the session), **topPrints** (largest session prints with sweep/block flags and **side** ask/bid/mid when available), **aggressorByStrike** (askPct/bidPct/midPct/unknownPct per strike), and **aggressorSessionTotals** (session-wide ask/bid/mid/unknown counts).
 
-When **sessionTape** is non-null, anchor your **dominant_flow**, **institutional_signal**, **retail_signal**, **key_strikes**, and **read** in concrete tape facts: which strikes concentrate sweeps, where blocks land, whether prints lean ask (buyer) or bid (seller), and how the largest prints line up. If **sessionTape** is null, say session tape was not available and lean on the EOD per-strike snapshot and chain unusual activity only — do not invent sweep counts.
+When **sessionTape** is non-null, anchor your **dominant_flow**, **institutional_signal**, **retail_signal**, **key_strikes**, and **read** in concrete tape facts: which strikes concentrate sweeps, where blocks land, whether prints lean ask (buyer) or bid (seller), and how the largest prints line up. If **sessionTape** is null, say session tape was not available and lean on the EOD per-strike snapshot and chain unusual activity only. Do not invent sweep counts.
 
 Example quality bar (adapt numbers to the snapshot): "Smart money accumulating 460 calls via sweeps (12 sweep prints totaling $850k notional, 78% ask-side). Retail chasing 490 lottos (small prints, mid-price executions, few sweeps)."
 
@@ -95,7 +95,20 @@ Respond with ONLY a JSON object (no markdown fences, no extra prose):
 }`;
 }
 
-export function buildCatalystAnalystPrompt(dataPackage: string, structuredResearchBriefing?: string): string {
+export function buildCatalystAnalystPrompt(
+  dataPackage: string,
+  structuredResearchBriefing?: string,
+  options?: { catalystSlotNativeWebSearch?: boolean },
+): string {
+  const nativeWeb = options?.catalystSlotNativeWebSearch
+    ? `
+
+## WEB SEARCH (your turn, native tools)
+Your provider supports web search **on this JSON turn**. Use the built-in web search tool as needed before answering. Run focused searches aligned with: IR / company events, analyst actions (last ~60 days), earnings reaction history, sector ETF and peers, and (if the catalyst window warrants it) recent news. Prefer primary sources and major financial press; skip content farms.
+If a theme has no support after searching, write **data not surfaced** for that slice instead of inventing. Do not paste URLs or name outlets or vendors in the output.
+`
+    : "";
+
   const researchBlock = structuredResearchBriefing
     ? `
 
@@ -125,7 +138,7 @@ Be concrete with data. "Earnings asymmetry is bearish" is bad. "Last quarter ral
 
 You do not propose trades. You give the PM the event landscape. They construct the position.
 
-${snapshotBlock(dataPackage)}${researchBlock}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
+${snapshotBlock(dataPackage)}${nativeWeb}${researchBlock}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
 
 Respond with ONLY a JSON object (no markdown fences, no extra prose):
 {
@@ -153,7 +166,7 @@ Approach every ticker like this:
 
 INTERROGATE THE READS
 
-Each analyst gave you a take. Find the weakest claim in each one and stress-test it. The Vol Analyst says premium is rich at 76 IVR — is the IVR using stale realized vol? Is the regime actually high-vol or are we at the front of a vol expansion? The Flow Analyst sees institutional accumulation — is that twelve prints from one counterparty rolling a position, or twelve separate funds taking the same view? The Catalyst Analyst says the bar is high — is that already consensus, or is the market underpricing the actual asymmetry?
+Each analyst gave you a take. Find the weakest claim in each one and stress-test it. The Vol Analyst says premium is rich at 76 IVR: is the IVR using stale realized vol? Is the regime actually high-vol or are we at the front of a vol expansion? The Flow Analyst sees institutional accumulation: is that twelve prints from one counterparty rolling a position, or twelve separate funds taking the same view? The Catalyst Analyst says the bar is high: is that already consensus, or is the market underpricing the actual asymmetry?
 
 When the analyst reads agree, ask whether they're agreeing because they see the same true thing or because they're all reading the same surface. Cheap consensus is a trap. Real edge usually has at least one analyst look wrong before it works.
 
@@ -161,7 +174,7 @@ FIND WHERE THE MARKET IS WRONG
 
 Edge exists where price disagrees with reality and you have a specific reason to know which side is right. Without that, you're not trading edge, you're trading vibes.
 
-Be concrete about the mispricing. "Vol is rich" is not a thesis, it's an observation. "Front-week IV is 85 vol on a name that's realized 50 over the last 30 days into a print where positioning is one-sided long, so the disappointment scenario is mispriced because everyone hedging is buying the same expiry" — that's a thesis. The structure follows from the mispricing, not the other way around.
+Be concrete about the mispricing. "Vol is rich" is not a thesis, it's an observation. "Front-week IV is 85 vol on a name that's realized 50 over the last 30 days into a print where positioning is one-sided long, so the disappointment scenario is mispriced because everyone hedging is buying the same expiry" is a thesis. The structure follows from the mispricing, not the other way around.
 
 NAME WHAT KILLS YOU
 
@@ -227,8 +240,8 @@ Respond with ONLY a JSON object matching the existing PM schema. No markdown, no
     "expiry": "<YYYY-MM-DD>",
     "credit_or_debit": <number, positive=debit negative=credit>
   },
-  "thesis": "<paragraph: PM voice — the call and the why>",
-  "edge_check": "<paragraph: EV math and conviction level — break-even win rate vs realistic win rate, why the trade pencils or why you passed>",
+  "thesis": "<paragraph: PM voice, the call and the why>",
+  "edge_check": "<paragraph: EV math and conviction level, break-even win rate vs realistic win rate, why the trade pencils or why you passed>",
   "deviation_from_analysts": "<paragraph explaining deviation from Vol Analyst structural view, or the single word none if you did not deviate>",
   "size": "small" | "medium" | "large",
   "whose_side": "institutional_alignment" | "retail_fade" | "neither",
