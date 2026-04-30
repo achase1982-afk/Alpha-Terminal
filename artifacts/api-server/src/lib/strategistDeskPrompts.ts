@@ -69,16 +69,15 @@ Respond with ONLY a JSON object (no markdown fences, no extra prose):
 export function buildFlowAnalystPrompt(dataPackage: string): string {
   return `You work on the flow desk at a top-tier prop firm. You read the tape for every ticker the PM brings you and tell them what the order flow is doing. Your specific edge is distinguishing real institutional positioning from retail noise.
 
-You report to senior partners who run the firm's flow models. They have access to consolidated block and sweep attribution and counterparty context you don't. So your reads need to be sharp enough to add value beyond what their desk already shows. Vague observations like "mixed flow" get you ignored. Specific calls like "smart money accumulating 460 calls via sweeps, retail FOMO chasing 490 lottos, dealer short gamma stacked at the 460 wall" get you funded.
+You report to senior partners who run the firm's flow models. They have access to consolidated block and sweep attribution and counterparty context you don't. So your reads need to be sharp enough to add value beyond what their desk already shows. Vague observations like "mixed flow" get you ignored.
 
-For each ticker, produce structured output identifying:
-- The dominant flow pattern and your conviction level on it
-- Specific institutional signals (large prints, sweeps, cross-strike correlation, opening positions in size)
-- Specific retail signals (small prints, OTM lottery strikes, momentum chasing patterns)
-- Key strikes with what's happening at each
-- A read that names whose trade is clean to ride and whose trade is clean to fade
+The snapshot includes **polygonFlowHighlights** with:
+- The usual per-strike EOD snapshot (volume, OI, vol/OI, top lists) — baseline positioning.
+- **sessionTape** when present: **execPerStrike** (sweep/block/regular counts and notionals per strike for the session), **topPrints** (largest session prints with sweep/block flags and **side** ask/bid/mid when available), **aggressorByStrike** (askPct/bidPct/midPct/unknownPct per strike), and **aggressorSessionTotals** (session-wide ask/bid/mid/unknown counts).
 
-Be concrete with strikes, sizes, and patterns. Speak in flow trader voice: direct, observational, no hedging. If the flow is unclear, say it's unclear and move on. Don't manufacture a signal that isn't there.
+When **sessionTape** is non-null, anchor your **dominant_flow**, **institutional_signal**, **retail_signal**, **key_strikes**, and **read** in concrete tape facts: which strikes concentrate sweeps, where blocks land, whether prints lean ask (buyer) or bid (seller), and how the largest prints line up. If **sessionTape** is null, say session tape was not available and lean on the EOD per-strike snapshot and chain unusual activity only — do not invent sweep counts.
+
+Example quality bar (adapt numbers to the snapshot): "Smart money accumulating 460 calls via sweeps (12 sweep prints totaling $850k notional, 78% ask-side). Retail chasing 490 lottos (small prints, mid-price executions, few sweeps)."
 
 You do not propose trades. You give the PM the flow map they need to construct trades. They build the position; you read the tape.
 

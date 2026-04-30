@@ -19,7 +19,8 @@ interface PendingTrade {
   tradePrice: number;
   size: number;
   notional: number;
-  side: string | null;     // "BUY" | "SELL" | null  — Phase 2 (aggressor)
+  /** ask | bid | mid — NBBO aggressor; null when NBBO unavailable */
+  side: string | null;
   isBlock: boolean;
   isSweep: boolean;
 }
@@ -96,6 +97,7 @@ export function enqueueClassifiedTrade(args: {
   notional: number;
   isSweep: boolean;
   isBlock: boolean;
+  side?: string | null;
 }): void {
   const parsed = parseOcc(args.occ);
   if (!parsed) return;
@@ -111,7 +113,7 @@ export function enqueueClassifiedTrade(args: {
     tradePrice: args.price,
     size: args.size,
     notional: args.notional,
-    side: null, // Phase 2 — needs Q.O NBBO subscription
+    side: args.side ?? null,
     isBlock: args.isBlock,
     isSweep: args.isSweep,
   });

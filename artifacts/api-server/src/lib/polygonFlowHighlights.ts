@@ -1,4 +1,4 @@
-import { db, optionsFlowPerStrikeTable } from "@workspace/db";
+import { db, optionsFlowPerStrikeTable, optionsFlowExecPerStrikeTable, optionsFlowRawTradesTable } from "@workspace/db";
 import { and, eq, inArray, sql, desc } from "drizzle-orm";
 import { logger } from "./logger.js";
 
@@ -16,6 +16,65 @@ export interface FlowStrikeHighlight {
   mid: number | null;
 }
 
+/** Per-strike live rollup for the session (same date as EOD per-strike snapshot). */
+export interface FlowExecStrikeRow {
+  optionType: "call" | "put";
+  strike: number;
+  expiration: string;
+  sweepCount: number;
+  blockCount: number;
+  regularCount: number;
+  sweepNotional: number;
+  blockNotional: number;
+  regularNotional: number;
+  sweepVolume: number;
+  blockVolume: number;
+  regularVolume: number;
+  lastEventTs: string | null;
+}
+
+/** Largest classified prints (session tape subset). */
+export interface FlowTopPrintRow {
+  timestamp: string | null;
+  strike: number;
+  expiration: string;
+  optionType: "call" | "put";
+  tradePrice: number;
+  size: number;
+  notional: number;
+  isBlock: boolean;
+  isSweep: boolean;
+  side: "ask" | "bid" | "mid" | null;
+}
+
+/** Per-strike aggressor mix from session prints (ask=buyer-lean, bid=seller-lean). */
+export interface FlowStrikeAggressorMix {
+  strike: number;
+  expiration: string;
+  optionType: "call" | "put";
+  askPct: number;
+  bidPct: number;
+  midPct: number;
+  unknownPct: number;
+  printCount: number;
+}
+
+export interface FlowSessionAggressorTotals {
+  askCount: number;
+  bidCount: number;
+  midCount: number;
+  unknownCount: number;
+  totalPrints: number;
+}
+
+export interface PolygonFlowTape {
+  sessionDate: string;
+  execPerStrike: FlowExecStrikeRow[];
+  topPrints: FlowTopPrintRow[];
+  aggressorByStrike: FlowStrikeAggressorMix[];
+  aggressorSessionTotals: FlowSessionAggressorTotals;
+}
+
 export interface PolygonFlowHighlights {
   asOfDate: string;
   totalCallVolume: number;
@@ -28,6 +87,8 @@ export interface PolygonFlowHighlights {
   topByVolume: FlowStrikeHighlight[];
   topByVolOiRatio: FlowStrikeHighlight[];
   largestPrint: FlowStrikeHighlight | null;
+  /** Live tape rollups for the same calendar session as asOfDate when rows exist. */
+  sessionTape: PolygonFlowTape | null;
 }
 
 const MIN_VOLUME_FOR_VOI = 100;
@@ -84,7 +145,7 @@ function rowToHighlight(r: RawStrikeRow): FlowStrikeHighlight {
   };
 }
 
-function summarize(rows: RawStrikeRow[]): Omit<PolygonFlowHighlights, "asOfDate"> {
+function summarize(rows: RawStrikeRow[]): Omit<PolygonFlowHighlights, "asOfDate" | "sessionTape"> {
   let totalCallVolume = 0;
   let totalPutVolume = 0;
   let unusualCallVolume = 0;
@@ -139,6 +200,170 @@ function summarize(rows: RawStrikeRow[]): Omit<PolygonFlowHighlights, "asOfDate"
   };
 }
 
+const TOP_PRINTS_LIMIT = 30;
+
+function expToIso(d: unknown): string {
+  if (d instanceof Date) return d.toISOString().slice(0, 10);
+  if (typeof d === "string") return d.slice(0, 10);
+  return String(d).slice(0, 10);
+}
+
+function tsToIso(t: unknown): string | null {
+  if (t instanceof Date) return t.toISOString();
+  if (typeof t === "string") return t;
+  return null;
+}
+
+/**
+ * Live session tape: exec rollups, top prints, aggressor mix (same `date` as EOD per-strike row).
+ */
+async function fetchSessionTape(symbol: string, sessionDate: string): Promise<PolygonFlowTape | null> {
+  const sym = symbol.toUpperCase();
+  try {
+    const execRows = await db
+      .select()
+      .from(optionsFlowExecPerStrikeTable)
+      .where(and(
+        eq(optionsFlowExecPerStrikeTable.underlyingSymbol, sym),
+        eq(optionsFlowExecPerStrikeTable.date, sessionDate),
+      ));
+
+    const topPrints = await db
+      .select({
+        timestamp: optionsFlowRawTradesTable.timestamp,
+        strike: optionsFlowRawTradesTable.strike,
+        expiration: optionsFlowRawTradesTable.expiration,
+        optionType: optionsFlowRawTradesTable.optionType,
+        tradePrice: optionsFlowRawTradesTable.tradePrice,
+        size: optionsFlowRawTradesTable.size,
+        notional: optionsFlowRawTradesTable.notional,
+        isBlock: optionsFlowRawTradesTable.isBlock,
+        isSweep: optionsFlowRawTradesTable.isSweep,
+        side: optionsFlowRawTradesTable.side,
+      })
+      .from(optionsFlowRawTradesTable)
+      .where(and(
+        eq(optionsFlowRawTradesTable.underlyingSymbol, sym),
+        eq(optionsFlowRawTradesTable.date, sessionDate),
+      ))
+      .orderBy(desc(optionsFlowRawTradesTable.notional))
+      .limit(TOP_PRINTS_LIMIT);
+
+    const allPrints = await db
+      .select({
+        strike: optionsFlowRawTradesTable.strike,
+        expiration: optionsFlowRawTradesTable.expiration,
+        optionType: optionsFlowRawTradesTable.optionType,
+        side: optionsFlowRawTradesTable.side,
+      })
+      .from(optionsFlowRawTradesTable)
+      .where(and(
+        eq(optionsFlowRawTradesTable.underlyingSymbol, sym),
+        eq(optionsFlowRawTradesTable.date, sessionDate),
+      ));
+
+    if (execRows.length === 0 && topPrints.length === 0 && allPrints.length === 0) {
+      return null;
+    }
+
+    const strikeKey = (strike: number, exp: string, ot: string) => `${strike}|${exp}|${ot}`;
+
+    const aggMap = new Map<string, { ask: number; bid: number; mid: number; unknown: number; total: number }>();
+    for (const p of allPrints) {
+      const exp = expToIso(p.expiration);
+      const ot = (p.optionType === "call" ? "call" : "put") as "call" | "put";
+      const k = strikeKey(p.strike, exp, ot);
+      let g = aggMap.get(k);
+      if (!g) {
+        g = { ask: 0, bid: 0, mid: 0, unknown: 0, total: 0 };
+        aggMap.set(k, g);
+      }
+      g.total++;
+      const s = p.side;
+      if (s === "ask") g.ask++;
+      else if (s === "bid") g.bid++;
+      else if (s === "mid") g.mid++;
+      else g.unknown++;
+    }
+
+    const aggressorByStrike: FlowStrikeAggressorMix[] = [];
+    for (const [k, g] of aggMap) {
+      const [strikeStr, exp, ot] = k.split("|");
+      const strike = Number(strikeStr);
+      const t = g.total;
+      if (t === 0) continue;
+      aggressorByStrike.push({
+        strike,
+        expiration: exp,
+        optionType: ot === "call" ? "call" : "put",
+        askPct: Math.round((g.ask / t) * 1000) / 10,
+        bidPct: Math.round((g.bid / t) * 1000) / 10,
+        midPct: Math.round((g.mid / t) * 1000) / 10,
+        unknownPct: Math.round((g.unknown / t) * 1000) / 10,
+        printCount: t,
+      });
+    }
+    aggressorByStrike.sort((a, b) => b.printCount - a.printCount);
+
+    let askCount = 0;
+    let bidCount = 0;
+    let midCount = 0;
+    let unknownCount = 0;
+    for (const p of allPrints) {
+      if (p.side === "ask") askCount++;
+      else if (p.side === "bid") bidCount++;
+      else if (p.side === "mid") midCount++;
+      else unknownCount++;
+    }
+
+    const execPerStrike: FlowExecStrikeRow[] = execRows.map((r) => ({
+      optionType: r.optionType === "call" ? "call" : "put",
+      strike: r.strike,
+      expiration: expToIso(r.expiration),
+      sweepCount: r.sweepCount,
+      blockCount: r.blockCount,
+      regularCount: r.regularCount,
+      sweepNotional: r.sweepNotional,
+      blockNotional: r.blockNotional,
+      regularNotional: r.regularNotional,
+      sweepVolume: r.sweepVolume,
+      blockVolume: r.blockVolume,
+      regularVolume: r.regularVolume,
+      lastEventTs: r.lastEventTs ? (r.lastEventTs instanceof Date ? r.lastEventTs.toISOString() : String(r.lastEventTs)) : null,
+    }));
+
+    const topMapped: FlowTopPrintRow[] = topPrints.map((r) => ({
+      timestamp: tsToIso(r.timestamp),
+      strike: r.strike,
+      expiration: expToIso(r.expiration),
+      optionType: r.optionType === "call" ? "call" : "put",
+      tradePrice: r.tradePrice ?? 0,
+      size: r.size ?? 0,
+      notional: r.notional ?? 0,
+      isBlock: Boolean(r.isBlock),
+      isSweep: Boolean(r.isSweep),
+      side: r.side === "ask" || r.side === "bid" || r.side === "mid" ? r.side : null,
+    }));
+
+    return {
+      sessionDate,
+      execPerStrike,
+      topPrints: topMapped,
+      aggressorByStrike,
+      aggressorSessionTotals: {
+        askCount,
+        bidCount,
+        midCount,
+        unknownCount,
+        totalPrints: allPrints.length,
+      },
+    };
+  } catch (err) {
+    logger.warn({ err, symbol: sym, sessionDate }, "polygonFlowHighlights: session tape lookup failed");
+    return null;
+  }
+}
+
 /**
  * Fetch Polygon per-strike flow highlights for a single ticker on its most
  * recent stored date. Returns null if we have no Polygon data for the ticker.
@@ -170,7 +395,8 @@ export async function getPolygonFlowHighlights(
     if (rows.length === 0) return null;
 
     const summary = summarize(rows as unknown as RawStrikeRow[]);
-    return { asOfDate, ...summary };
+    const sessionTape = await fetchSessionTape(sym, asOfDate);
+    return { asOfDate, ...summary, sessionTape };
   } catch (err) {
     logger.warn({ err, symbol: sym }, "polygonFlowHighlights: lookup failed");
     return null;
@@ -233,7 +459,9 @@ export async function getPolygonFlowHighlightsBulk(
 
     for (const [sym, bucket] of bySymbol) {
       const asOfDate = symDateMap.get(sym)!;
-      out.set(sym, { asOfDate, ...summarize(bucket) });
+      const summary = summarize(bucket);
+      const sessionTape = await fetchSessionTape(sym, asOfDate);
+      out.set(sym, { asOfDate, ...summary, sessionTape });
     }
 
     logger.info({
