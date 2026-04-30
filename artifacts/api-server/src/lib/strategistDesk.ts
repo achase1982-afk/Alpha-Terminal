@@ -29,10 +29,15 @@ import {
 import type { DebateRound } from "./strategistDebate.js";
 import type { CatalystEvaluation } from "./catalystEvaluator.js";
 import { runCatalystDeskStructuredSearches } from "./strategistDeskCatalystWebSearch.js";
+import { throwIfStrategistAnalyzeCancelled } from "./strategistAnalyzeCancellation.js";
 
 const TEMPERATURE = 0;
 
 export interface DeskCallbacks {
+  /** Background analyze job id for cooperative cancel checks. */
+  jobId?: string;
+  /** Aborts in-flight LLM HTTP when aborted. */
+  cancelSignal?: AbortSignal;
   onTurnStart?: (turn: {
     id: string;
     round: DebateRound | "desk";
@@ -51,6 +56,15 @@ export interface DeskCallbacks {
    */
   onTurnDiscarded?: (turnId: string) => void;
   onStatus?: (status: string) => void;
+}
+
+function assertDeskNotCancelled(callbacks?: DeskCallbacks): void {
+  if (callbacks?.cancelSignal?.aborted) {
+    const e = new Error("Analysis cancelled");
+    e.name = "AbortError";
+    throw e;
+  }
+  throwIfStrategistAnalyzeCancelled(callbacks?.jobId);
 }
 
 let turnSeq = 0;
@@ -77,18 +91,19 @@ async function streamModel(
   prompt: string,
   onDelta: (text: string) => void,
   onStatus?: (s: string) => void,
+  cancelSignal?: AbortSignal,
 ): Promise<WebSearchResult> {
   if (modelOpt.provider === "anthropic") {
-    return streamCallAnthropicWithSystemAndWebSearch(modelOpt.model, TEMPERATURE, systemPrompt, prompt, onDelta, onStatus);
+    return streamCallAnthropicWithSystemAndWebSearch(modelOpt.model, TEMPERATURE, systemPrompt, prompt, onDelta, onStatus, cancelSignal);
   }
   if (modelOpt.provider === "openai") {
-    return streamCallOpenAIWithSystemAndWebSearch(modelOpt.model, TEMPERATURE, systemPrompt, prompt, onDelta, onStatus);
+    return streamCallOpenAIWithSystemAndWebSearch(modelOpt.model, TEMPERATURE, systemPrompt, prompt, onDelta, onStatus, cancelSignal);
   }
   if (modelOpt.provider === "xai") {
-    return streamCallXaiWithSystemAndWebSearch(modelOpt.model, TEMPERATURE, systemPrompt, prompt, onDelta, onStatus);
+    return streamCallXaiWithSystemAndWebSearch(modelOpt.model, TEMPERATURE, systemPrompt, prompt, onDelta, onStatus, cancelSignal);
   }
   // Desk JSON-only: Gemini cannot mix application/json with tools; skip web search for this path.
-  return streamCallGeminiDeskJson(modelOpt.model, TEMPERATURE, systemPrompt, prompt, onDelta, onStatus);
+  return streamCallGeminiDeskJson(modelOpt.model, TEMPERATURE, systemPrompt, prompt, onDelta, onStatus, cancelSignal);
 }
 
 async function runDeskTurn<T>(args: {
@@ -99,6 +114,7 @@ async function runDeskTurn<T>(args: {
   callbacks?: DeskCallbacks;
 }): Promise<{ text: string; trace: WebSearchTrace; turnId: string }> {
   const { modelOpt, prompt, role, label, callbacks } = args;
+  assertDeskNotCancelled(callbacks);
   const turnId = newTurnId();
   callbacks?.onTurnStart?.({
     id: turnId,
@@ -118,7 +134,7 @@ async function runDeskTurn<T>(args: {
 
   try {
     const systemPrompt = "You are a specialist analyst on an options trading desk. Respond only with JSON as instructed.";
-    const r = await streamModel(modelOpt, systemPrompt, prompt, onDelta, (s) => callbacks?.onStatus?.(s));
+    const r = await streamModel(modelOpt, systemPrompt, prompt, onDelta, (s) => callbacks?.onStatus?.(s), callbacks?.cancelSignal);
     callbacks?.onTurnDone?.(turnId, r.text);
     return { text: r.text, trace: r.trace, turnId };
   } catch (err) {
@@ -165,6 +181,7 @@ export async function runDeskAnalysis(args: {
   callbacks?: DeskCallbacks;
 }): Promise<DeskResult> {
   const { dataPackage, settings, ticker, deskExpirationISO, catalystEvaluation, callbacks } = args;
+  assertDeskNotCancelled(callbacks);
 
   const volModel = getStrategistModel(settings.strategistSoloModelIdx);
   const flowModel = getStrategistModel(settings.strategistDebateAModelIdx);
@@ -187,6 +204,7 @@ export async function runDeskAnalysis(args: {
         deskExpirationISO,
         model: catalystModel,
         onStatus: callbacks?.onStatus,
+        cancelSignal: callbacks?.cancelSignal,
       });
       catalystResearchBriefing = bundle.briefing;
       catalystSearchTrace = bundle.trace;
@@ -225,6 +243,7 @@ export async function runDeskAnalysis(args: {
     );
   }
 
+  assertDeskNotCancelled(callbacks);
   callbacks?.onStatus?.("Desk: Vol and Catalyst analysts running…");
 
   const [volResult, catalystResult] = await Promise.all([
@@ -232,6 +251,7 @@ export async function runDeskAnalysis(args: {
     runAnalystWithRetry(ticker, "catalyst", catalystModel, catalystPrompt, CatalystAnalystOutputSchema, callbacks, errors, catalystSearchTrace),
   ]);
 
+  assertDeskNotCancelled(callbacks);
   callbacks?.onStatus?.("Desk: Flow analyst running…");
   const flowResult = await runAnalystWithRetry(
     ticker,
@@ -252,6 +272,7 @@ export async function runDeskAnalysis(args: {
     JSON.stringify(catalystResult.parsed),
   );
 
+  assertDeskNotCancelled(callbacks);
   const pmTurn = await runDeskTurn({
     modelOpt: pmModel,
     prompt: pmPrompt,
