@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { logger } from "./logger.js";
 import { logFailure } from "./telemetry.js";
+import { emitPortfolioError } from "./portfolioWsErrorHub.js";
 
 const TOKEN_FILE = path.join(process.cwd(), ".data", "schwab-tokens.json");
 const SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token";
@@ -158,6 +159,11 @@ async function doRefresh(
   const tokenSet = store[kind];
   if (!tokenSet?.refreshToken) {
     logger.warn("TokenStore: no %s refresh token available", kind);
+    logger.info(
+      { ts: Date.now(), kind, attempt: retryCount + 1, outcome: "failure", reason: "no_refresh_token", refreshTokenPersisted: false },
+      "[SCHWAB_TOKEN] refresh outcome",
+    );
+    emitPortfolioError({ code: "AUTH_EXPIRED", kind, reason: "no_refresh_token" });
     return false;
   }
 
@@ -168,6 +174,11 @@ async function doRefresh(
 
   if (!appKey || !appSecret) {
     logger.error("TokenStore: missing credentials for %s refresh", kind);
+    logger.info(
+      { ts: Date.now(), kind, attempt: retryCount + 1, outcome: "failure", reason: "missing_app_credentials", refreshTokenPersisted: false },
+      "[SCHWAB_TOKEN] refresh outcome",
+    );
+    emitPortfolioError({ code: "AUTH_EXPIRED", kind, reason: "missing_app_credentials" });
     return false;
   }
 
@@ -175,6 +186,10 @@ async function doRefresh(
   body.set("grant_type", "refresh_token");
   body.set("refresh_token", tokenSet.refreshToken);
 
+  logger.info(
+    { ts: Date.now(), kind, attempt: retryCount + 1 },
+    "[SCHWAB_TOKEN] refresh attempt",
+  );
   logger.info("TokenStore: refreshing %s access token (attempt %d)", kind, retryCount + 1);
 
   try {
@@ -191,11 +206,27 @@ async function doRefresh(
 
     if (!res.ok) {
       logger.error({ status: res.status, body: text.slice(0, 300) }, "TokenStore: %s refresh failed", kind);
+      logger.info(
+        {
+          ts: Date.now(),
+          kind,
+          attempt: retryCount + 1,
+          outcome: "failure",
+          httpStatus: res.status,
+          refreshTokenPersisted: false,
+        },
+        "[SCHWAB_TOKEN] refresh outcome",
+      );
+      emitPortfolioError({ code: "AUTH_EXPIRED", kind, httpStatus: res.status });
       void logFailure("SCHWAB_API", "CRITICAL", `OAuth ${kind} token refresh failed (HTTP ${res.status})`, { kind, status: res.status, body: text.slice(0, 300) });
 
       const currentGen = store[kind]?.generation ?? 0;
       if (currentGen > generationBefore) {
         logger.info("TokenStore: %s store was updated by another refresh — skipping clear", kind);
+        logger.info(
+          { ts: Date.now(), kind, attempt: retryCount + 1, outcome: "superseded_by_concurrent_refresh", refreshTokenPersisted: false },
+          "[SCHWAB_TOKEN] refresh outcome",
+        );
         return false;
       }
 
@@ -229,6 +260,7 @@ async function doRefresh(
     const newRefresh = (data["refresh_token"] as string) ?? tokenSet.refreshToken;
     const expiresIn = (data["expires_in"] as number) ?? 1800;
 
+    const refreshTokenRotated = newRefresh !== tokenSet.refreshToken;
     store[kind] = {
       accessToken: newAccess,
       refreshToken: newRefresh,
@@ -237,6 +269,18 @@ async function doRefresh(
     };
     persistKind(kind);
 
+    logger.info(
+      {
+        ts: Date.now(),
+        kind,
+        attempt: retryCount + 1,
+        outcome: "success",
+        refreshTokenRotated,
+        refreshTokenPersistedToStorage: true,
+        expiresInSec: expiresIn,
+      },
+      "[SCHWAB_TOKEN] refresh outcome",
+    );
     logger.info("TokenStore: %s token refreshed, expires in %ds", kind, expiresIn);
 
     scheduleRefresh(kind);
@@ -248,6 +292,19 @@ async function doRefresh(
     return true;
   } catch (err) {
     logger.error({ err }, "TokenStore: %s refresh network error", kind);
+    logger.info(
+      {
+        ts: Date.now(),
+        kind,
+        attempt: retryCount + 1,
+        outcome: "failure",
+        reason: "network_error",
+        error: String(err),
+        refreshTokenPersisted: false,
+      },
+      "[SCHWAB_TOKEN] refresh outcome",
+    );
+    emitPortfolioError({ code: "AUTH_EXPIRED", kind, reason: "network_error" });
     void logFailure("SCHWAB_API", "ERROR", `OAuth ${kind} token refresh network error`, { kind, error: String(err) });
     if (retryCount < MAX_RETRIES) {
       logger.info("TokenStore: will retry %s refresh in %ds", kind, RETRY_DELAY_MS / 1000);
@@ -260,6 +317,10 @@ async function doRefresh(
 async function refreshTokenSet(kind: "market" | "trader"): Promise<boolean> {
   if (refreshInFlight[kind]) {
     logger.info("TokenStore: %s refresh already in progress — reusing", kind);
+    logger.info(
+      { ts: Date.now(), kind, outcome: "reused_in_flight_promise" },
+      "[SCHWAB_TOKEN] refresh attempt",
+    );
     return refreshInFlight[kind]!;
   }
   const p = doRefresh(kind);
