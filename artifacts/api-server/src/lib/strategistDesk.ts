@@ -215,6 +215,8 @@ export async function runDeskAnalysis(args: {
     }
   }
 
+  const pmOutputIncomplete = errors.some((e) => e.startsWith("PM output failed validation after retry"));
+
   return {
     mode: "desk",
     ticker,
@@ -222,6 +224,7 @@ export async function runDeskAnalysis(args: {
     flow: flowResult.parsed,
     catalyst: catalystResult.parsed,
     pm: pmParsed,
+    ...(pmOutputIncomplete ? { pmOutputIncomplete: true as const } : {}),
     models: {
       vol: volModel.label,
       flow: flowModel.label,

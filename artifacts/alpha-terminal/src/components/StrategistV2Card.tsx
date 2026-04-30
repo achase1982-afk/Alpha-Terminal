@@ -60,12 +60,30 @@ export type RejectionCategory =
   | "MISSING_DATA"
   | "STOCK_HALTED"
   | "PRICING_MARKET_CLOSED"
-  | "UNKNOWN";
+  | "EARNINGS_INSIDE_EXPIRY"
+  | "UNKNOWN"
+  | "ECONOMICS_MISMATCH"
+  | "UNKNOWN_STRUCTURE"
+  | "NO_TRADE"
+  | "ANALYSIS_INCOMPLETE";
+
+export type StrategistOutcome =
+  | "ECONOMICS_MISMATCH"
+  | "UNKNOWN_STRUCTURE"
+  | "NO_TRADE"
+  | "ANALYSIS_INCOMPLETE";
 
 export interface BlockReason {
   category: RejectionCategory;
   detail: string;
   suggestedAction?: string;
+  outcomeMeta?: {
+    aiMaxRisk?: number;
+    computedMaxLoss?: number;
+    attemptedStructure?: string;
+    recognizedStructureTypes?: string;
+    incompleteRole?: string;
+  };
 }
 
 export function normalizeBlockReason(raw: BlockReason | string | undefined | null): BlockReason | null {
@@ -82,11 +100,16 @@ const CATEGORY_LABELS: Record<RejectionCategory, string> = {
   LOW_CONFIDENCE: "Low Confidence",
   NO_EDGE: "No Edge",
   CATALYST_CONFLICT: "Catalyst Conflict",
-  VALIDATION_FAIL: "Validation Failed",
+  VALIDATION_FAIL: "Validation Issue",
   MISSING_DATA: "Missing Data",
   STOCK_HALTED: "Stock Halted",
   PRICING_MARKET_CLOSED: "Market Closed",
+  EARNINGS_INSIDE_EXPIRY: "Earnings Window",
   UNKNOWN: "Blocked",
+  ECONOMICS_MISMATCH: "Pricing Mismatch",
+  UNKNOWN_STRUCTURE: "Unrecognized Structure",
+  NO_TRADE: "No Trade",
+  ANALYSIS_INCOMPLETE: "Analysis Incomplete",
 };
 
 const CATEGORY_COLORS: Record<RejectionCategory, string> = {
@@ -94,11 +117,16 @@ const CATEGORY_COLORS: Record<RejectionCategory, string> = {
   LOW_CONFIDENCE: "#71717a",
   NO_EDGE: "#71717a",
   CATALYST_CONFLICT: "#f59e0b",
-  VALIDATION_FAIL: "#f59e0b",
+  VALIDATION_FAIL: "#a1a1aa",
   MISSING_DATA: "#71717a",
   STOCK_HALTED: "#ff4b5c",
   PRICING_MARKET_CLOSED: "#71717a",
+  EARNINGS_INSIDE_EXPIRY: "#f59e0b",
   UNKNOWN: "#71717a",
+  ECONOMICS_MISMATCH: "#f59e0b",
+  UNKNOWN_STRUCTURE: "#f59e0b",
+  NO_TRADE: "#a3a3a3",
+  ANALYSIS_INCOMPLETE: "#f59e0b",
 };
 
 export type CatalystType =
@@ -254,6 +282,7 @@ export interface StrategistV2Result {
     label: string;
     text: string;
   }>;
+  strategistOutcome?: StrategistOutcome;
 }
 
 const STRAT_LABELS: Record<string, string> = {
@@ -1438,26 +1467,68 @@ function SynthesisBox({ turn }: { turn: TranscriptTurnInline }) {
   );
 }
 
-export function StrategistV2BlockCard({ result, generatedAt }: { result: StrategistV2Result; generatedAt?: string | number | null }) {
+function outcomePresentation(result: StrategistV2Result): {
+  headline: string;
+  chip: string;
+  color: string;
+  showRetry: boolean;
+} {
+  const o = result.strategistOutcome;
+  const br = normalizeBlockReason(result.blockReason);
+  const cat = br?.category;
+
+  if (o === "ECONOMICS_MISMATCH" || cat === "ECONOMICS_MISMATCH") {
+    return { headline: "Trade Rejected: Pricing Mismatch", chip: "Pricing mismatch", color: "#f59e0b", showRetry: true };
+  }
+  if (o === "UNKNOWN_STRUCTURE" || cat === "UNKNOWN_STRUCTURE") {
+    return { headline: "Trade Rejected: Unrecognized Structure", chip: "Unrecognized structure", color: "#f59e0b", showRetry: true };
+  }
+  if (o === "NO_TRADE" || cat === "NO_TRADE" || cat === "LOW_CONFIDENCE") {
+    return { headline: "No Trade Recommended", chip: "No trade", color: "#a3a3a3", showRetry: true };
+  }
+  if (o === "ANALYSIS_INCOMPLETE" || cat === "ANALYSIS_INCOMPLETE") {
+    return { headline: "Analysis Incomplete", chip: "Incomplete", color: "#f59e0b", showRetry: true };
+  }
+  if (cat === "VALIDATION_FAIL") {
+    return { headline: "Could Not Validate Recommendation", chip: CATEGORY_LABELS.VALIDATION_FAIL, color: CATEGORY_COLORS.VALIDATION_FAIL, showRetry: true };
+  }
+  const chip = br ? CATEGORY_LABELS[br.category] : result.status === "toxic_block" ? "Toxic Block" : "No Viable Setup";
+  const color = br ? CATEGORY_COLORS[br.category] : "#71717a";
+  return { headline: chip, chip, color, showRetry: cat !== "TOXIC_BLOCK" && cat !== "MISSING_DATA" };
+}
+
+export function StrategistV2BlockCard({
+  result,
+  generatedAt,
+  onRetry,
+}: {
+  result: StrategistV2Result;
+  generatedAt?: string | number | null;
+  onRetry?: (ticker: string) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const pres = outcomePresentation(result);
   const reason = normalizeBlockReason(result.blockReason);
-  const categoryColor = reason ? CATEGORY_COLORS[reason.category] : "#71717a";
-  const categoryLabel = reason ? CATEGORY_LABELS[reason.category] : (result.status === "toxic_block" ? "Toxic Block" : "No Viable Setup");
+  const categoryColor = pres.color;
+  const meta = reason?.outcomeMeta;
 
   return (
     <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
       <div className="px-4 py-4">
         <div className="flex items-center justify-between gap-2 mb-2">
-          <div className="flex items-center gap-2">
-            <Shield className="w-4 h-4" style={{ color: categoryColor }} />
-            <span className="font-mono text-[13px] font-bold text-white">{result.ticker}</span>
-            <span className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 rounded" style={{
-              background: `${categoryColor}1f`,
-              color: categoryColor,
-              border: `1px solid ${categoryColor}40`,
-            }}>
-              {categoryLabel}
-            </span>
+          <div className="flex flex-col gap-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Shield className="w-4 h-4 shrink-0" style={{ color: categoryColor }} />
+              <span className="font-mono text-[13px] font-bold text-white">{result.ticker}</span>
+              <span className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 rounded" style={{
+                background: `${categoryColor}1f`,
+                color: categoryColor,
+                border: `1px solid ${categoryColor}40`,
+              }}>
+                {pres.chip}
+              </span>
+            </div>
+            <div className="font-mono text-[12px] font-bold text-white leading-snug">{pres.headline}</div>
           </div>
           <CopyCardButton result={result} generatedAt={generatedAt} />
         </div>
@@ -1472,6 +1543,37 @@ export function StrategistV2BlockCard({ result, generatedAt }: { result: Strateg
             <span className="text-zinc-500 uppercase tracking-wider mr-1">Suggested:</span>
             {reason.suggestedAction}
           </div>
+        )}
+
+        {meta?.aiMaxRisk != null && meta?.computedMaxLoss != null && (
+          <div className="mt-2 px-2 py-2 rounded font-mono text-[10px] text-zinc-400 leading-relaxed space-y-1" style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)" }}>
+            <div><span className="text-zinc-500">AI max risk (claimed):</span> ${meta.aiMaxRisk.toFixed(2)}</div>
+            <div><span className="text-zinc-500">Validator max loss (computed):</span> ${meta.computedMaxLoss.toFixed(2)}</div>
+          </div>
+        )}
+        {meta?.attemptedStructure && (
+          <div className="mt-2 px-2 py-2 rounded font-mono text-[10px] text-zinc-400 leading-relaxed" style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)" }}>
+            <div><span className="text-zinc-500">Attempted strategy label:</span> {meta.attemptedStructure}</div>
+            {meta.recognizedStructureTypes && (
+              <div className="mt-1"><span className="text-zinc-500">Recognized by engine:</span> {meta.recognizedStructureTypes}</div>
+            )}
+          </div>
+        )}
+        {meta?.incompleteRole && (
+          <div className="mt-2 font-mono text-[10px] text-zinc-500">
+            Output that did not validate: <span className="text-zinc-300 uppercase">{meta.incompleteRole}</span>
+          </div>
+        )}
+
+        {pres.showRetry && onRetry && (
+          <button
+            type="button"
+            onClick={() => onRetry(result.ticker)}
+            className="mt-3 px-3 py-2 rounded-lg font-mono text-[11px] font-bold uppercase tracking-wider w-full sm:w-auto"
+            style={{ color: "#0a0a0a", background: "#fbbf24" }}
+          >
+            Retry
+          </button>
         )}
 
         <button

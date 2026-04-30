@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { BlockReason, StrategistOutcome } from "@/components/StrategistV2Card";
 import { ChevronDown, ChevronUp, AlertTriangle } from "lucide-react";
 
 const PAL = {
@@ -94,6 +95,7 @@ export interface DeskResult {
     pm: string;
   };
   errors?: string[];
+  pmOutputIncomplete?: boolean;
 }
 
 function FieldRow({ label, value }: { label: string; value: string }) {
@@ -151,20 +153,76 @@ function StructureDisplay({ structure }: { structure: DeskStructure }) {
   );
 }
 
-export function StrategistDeskCard({ deskResult, generatedAt }: { deskResult: DeskResult; generatedAt?: string | number | null }) {
+function deskBanner(
+  outcome: StrategistOutcome | undefined,
+  blockReason: BlockReason | undefined,
+  pmPass: boolean,
+): { title: string; body: string; border: string; bg: string; accent: string } | null {
+  if (outcome === "ANALYSIS_INCOMPLETE" || blockReason?.category === "ANALYSIS_INCOMPLETE") {
+    return {
+      title: "Analysis Incomplete",
+      body: blockReason?.detail ?? "The PM output did not match the required format after retry. Try running the analysis again.",
+      border: "rgba(245,158,11,0.35)",
+      bg: "rgba(245,158,11,0.08)",
+      accent: PAL.gold,
+    };
+  }
+  if (outcome === "NO_TRADE" || pmPass) {
+    return {
+      title: "No Trade Recommended",
+      body: "The PM is not putting on a structure for this name right now. Review the analyst reads below — especially “Watch for” — to see what would need to change.",
+      border: "rgba(161,161,170,0.35)",
+      bg: "rgba(161,161,170,0.06)",
+      accent: "#a3a3a3",
+    };
+  }
+  return null;
+}
+
+export function StrategistDeskCard({
+  deskResult,
+  generatedAt,
+  strategistOutcome,
+  blockReason,
+  onRetry,
+}: {
+  deskResult: DeskResult;
+  generatedAt?: string | number | null;
+  strategistOutcome?: StrategistOutcome;
+  blockReason?: BlockReason;
+  onRetry?: (ticker: string) => void;
+}) {
   const { pm, vol, flow, catalyst, models, errors } = deskResult;
   const isTrade = pm.decision === "trade";
+  const banner = deskBanner(strategistOutcome, blockReason, !isTrade);
 
   return (
     <div style={{ background: PAL.bgCard, border: `1px solid ${PAL.border}`, borderRadius: 12, padding: 16, fontFamily: SYS_FONT }}>
+      {/* Outcome banner (non-error framing) */}
+      {banner && (
+        <div style={{ border: `1px solid ${banner.border}`, background: banner.bg, borderRadius: 8, padding: 12, marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: banner.accent, letterSpacing: 0.8, marginBottom: 6 }}>{banner.title}</div>
+          <div style={{ fontSize: 12, color: PAL.body, lineHeight: 1.6 }}>{banner.body}</div>
+          {(strategistOutcome === "ANALYSIS_INCOMPLETE" || blockReason?.category === "ANALYSIS_INCOMPLETE") && onRetry && (
+            <button
+              type="button"
+              onClick={() => onRetry(deskResult.ticker)}
+              style={{ marginTop: 10, padding: "8px 14px", borderRadius: 6, border: "none", background: "#fbbf24", color: "#0a0a0a", fontWeight: 700, fontSize: 11, cursor: "pointer" }}
+            >
+              Retry
+            </button>
+          )}
+        </div>
+      )}
+
       {/* PM Decision Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{
             fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase",
-            color: isTrade ? PAL.green : PAL.red,
-            background: isTrade ? "rgba(74,222,128,0.1)" : "rgba(248,113,113,0.1)",
-            border: `1px solid ${isTrade ? "rgba(74,222,128,0.3)" : "rgba(248,113,113,0.3)"}`,
+            color: isTrade ? PAL.green : "#a3a3a3",
+            background: isTrade ? "rgba(74,222,128,0.1)" : "rgba(161,161,170,0.12)",
+            border: `1px solid ${isTrade ? "rgba(74,222,128,0.3)" : "rgba(161,161,170,0.35)"}`,
             padding: "3px 8px", borderRadius: 4,
           }}>
             {isTrade ? "TRADE" : "PASS"}

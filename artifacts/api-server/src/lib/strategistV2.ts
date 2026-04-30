@@ -46,17 +46,41 @@ export type RejectionCategory =
   | "LOW_CONFIDENCE"
   | "NO_EDGE"
   | "CATALYST_CONFLICT"
+  /** @deprecated Prefer ECONOMICS_MISMATCH | UNKNOWN_STRUCTURE | ANALYSIS_INCOMPLETE */
   | "VALIDATION_FAIL"
   | "MISSING_DATA"
   | "STOCK_HALTED"
   | "PRICING_MARKET_CLOSED"
   | "EARNINGS_INSIDE_EXPIRY"
-  | "UNKNOWN";
+  | "UNKNOWN"
+  /** AI-reported risk/loss does not match leg-derived economics */
+  | "ECONOMICS_MISMATCH"
+  /** Multi-leg shape not recognized by the pricing engine */
+  | "UNKNOWN_STRUCTURE"
+  /** Explicit no-trade from model (e.g. low confidence / no_trade strategy / PM pass) */
+  | "NO_TRADE"
+  /** Schema or parse failure after retry (or PM output incomplete in Desk) */
+  | "ANALYSIS_INCOMPLETE";
+
+/** User-facing outcome for blocked / non-recommendation cards (mirrors RejectionCategory subset). */
+export type StrategistOutcome =
+  | "ECONOMICS_MISMATCH"
+  | "UNKNOWN_STRUCTURE"
+  | "NO_TRADE"
+  | "ANALYSIS_INCOMPLETE";
 
 export interface BlockReason {
   category: RejectionCategory;
   detail: string;
   suggestedAction?: string;
+  /** Structured hints for outcome-specific UI (pricing row, structure label, etc.) */
+  outcomeMeta?: {
+    aiMaxRisk?: number;
+    computedMaxLoss?: number;
+    attemptedStructure?: string;
+    recognizedStructureTypes?: string;
+    incompleteRole?: string;
+  };
 }
 
 export interface StrategistV2Result {
@@ -120,6 +144,8 @@ export interface StrategistV2Result {
     source: "benzinga" | "yahoo" | "finnhub" | null;
     confirmed: boolean;
   };
+  /** Set for `no_viable_setup` when the block maps to a v2 strategist outcome card */
+  strategistOutcome?: StrategistOutcome;
 }
 
 export interface CandidateLeg {
@@ -604,6 +630,23 @@ export async function analyzeTickerV2(
         status: "desk_recommendation",
         ticker,
         deskResult,
+        strategistOutcome: deskResult.pmOutputIncomplete
+          ? "ANALYSIS_INCOMPLETE"
+          : deskResult.pm.decision === "pass"
+            ? "NO_TRADE"
+            : undefined,
+        ...(deskResult.pmOutputIncomplete
+          ? {
+              blockReason: {
+                category: "ANALYSIS_INCOMPLETE" as const,
+                detail:
+                  deskResult.errors?.find((e) => e.startsWith("PM output failed")) ??
+                  "PM output did not match the required JSON schema after retry.",
+                suggestedAction: "Retry the analysis.",
+                outcomeMeta: { incompleteRole: "pm" },
+              },
+            }
+          : {}),
         regime,
         systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
         ioScore,
@@ -612,7 +655,7 @@ export async function analyzeTickerV2(
     } catch (err) {
       logger.error({ err, ticker }, "StrategistV2: Desk analysis failed");
       return noViable(ticker, regime, settings, toxicCheck, tickerData,
-        { category: "VALIDATION_FAIL", detail: `Desk analysis failed: ${err instanceof Error ? err.message : String(err)}`, suggestedAction: "Retry the analysis." },
+        { category: "ANALYSIS_INCOMPLETE", detail: `Desk analysis failed: ${err instanceof Error ? err.message : String(err)}`, suggestedAction: "Retry the analysis." },
         ioScore, { dataSource, dataPackage });
     }
   }
@@ -647,7 +690,7 @@ export async function analyzeTickerV2(
   } catch (err) {
     logger.error({ err, ticker }, "StrategistV2: AI trade call failed");
     return noViable(ticker, regime, settings, toxicCheck, tickerData,
-      { category: "VALIDATION_FAIL", detail: `AI analysis failed: ${err instanceof Error ? err.message : String(err)}`, suggestedAction: "Retry the analysis. If it persists, check AI provider credentials and rate limits." },
+      { category: "ANALYSIS_INCOMPLETE", detail: `AI analysis failed: ${err instanceof Error ? err.message : String(err)}`, suggestedAction: "Retry the analysis. If it persists, check AI provider credentials and rate limits." },
       ioScore, { dataSource, dataPackage });
   }
 
@@ -661,7 +704,7 @@ export async function analyzeTickerV2(
 
   if (aiResponse.confidence < 20) {
     const blocked = await noViable(ticker, regime, settings, toxicCheck, tickerData,
-      { category: "LOW_CONFIDENCE", detail: `AI found no compelling setup (confidence ${aiResponse.confidence}): ${aiResponse.thesis}`, suggestedAction: "Wait for a clearer setup or try a different ticker." },
+      { category: "NO_TRADE", detail: `No compelling setup (confidence ${aiResponse.confidence}): ${aiResponse.thesis}`, suggestedAction: "Wait for a clearer setup or try a different ticker." },
       ioScore, {
       dataSource, dataPackage, rawAiResponse: rawAiResponseText,
       confidenceBase: aiResponse.confidence, confidenceFinal: aiResponse.confidence,
@@ -695,14 +738,14 @@ export async function analyzeTickerV2(
       const retryValidation = validateAiResponse(aiResponse, chain, settings);
       if (!retryValidation.valid) {
         return noViable(ticker, regime, settings, toxicCheck, tickerData,
-          { category: "VALIDATION_FAIL", detail: `AI recommendation failed validation after retry: ${retryValidation.issues.join("; ")}`, suggestedAction: "Retry — the AI may pick a different structure on a fresh run." },
+          { category: "ANALYSIS_INCOMPLETE", detail: `Recommendation failed validation after retry: ${retryValidation.issues.join("; ")}`, suggestedAction: "Retry — the AI may pick a different structure on a fresh run." },
           ioScore,
           { dataSource, dataPackage, rawAiResponse: rawAiResponseText, confidenceBase: aiResponse.confidence, confidenceFinal: aiResponse.confidence, catalystAlignment: aiResponse.catalystAlignment ?? null });
       }
     } catch (err) {
       logger.error({ err, ticker }, "StrategistV2: AI retry failed");
       return noViable(ticker, regime, settings, toxicCheck, tickerData,
-        { category: "VALIDATION_FAIL", detail: `AI retry failed: ${err instanceof Error ? err.message : String(err)}`, suggestedAction: "Retry the analysis. If it persists, check AI provider credentials and rate limits." },
+        { category: "ANALYSIS_INCOMPLETE", detail: `AI retry failed: ${err instanceof Error ? err.message : String(err)}`, suggestedAction: "Retry the analysis. If it persists, check AI provider credentials and rate limits." },
         ioScore,
         { dataSource, dataPackage, rawAiResponse: rawAiResponseText });
     }
@@ -875,12 +918,20 @@ export async function analyzeTickerV2(
         : "Retry — the AI may pick a structure that prices cleanly on a fresh run.";
 
       const ctx = buildContextSources(aiResponse, webTrace, catalystEval);
+      const mismatchCategory: RejectionCategory = struct ? "ECONOMICS_MISMATCH" : "UNKNOWN_STRUCTURE";
       const blocked = await noViable(
         ticker, regime, settings, toxicCheck, tickerData,
         {
-          category: "VALIDATION_FAIL",
+          category: mismatchCategory,
           detail,
           suggestedAction,
+          outcomeMeta: struct
+            ? { aiMaxRisk: aiSelfReportedMaxRisk, computedMaxLoss: computedMaxLossCheck }
+            : {
+                attemptedStructure: aiResponse.strategy,
+                recognizedStructureTypes:
+                  "vertical spreads, iron condor / iron butterfly (4 legs same expiry), calendars/diagonals (multi-expiry), straddles/strangles, ratios with covered shorts",
+              },
         },
         ioScore,
         {
@@ -2384,14 +2435,25 @@ async function noViable(
   const blockReason: BlockReason =
     typeof reason === "string" ? { category: "UNKNOWN", detail: reason } : reason;
   await logTelemetry(ticker, "no_viable_setup", regime, settings, ioScore ?? null, tickerData, toxicCheck, null, blockReason.detail, extras);
+  const strategistOutcome = outcomeFromBlockReason(blockReason);
   return {
     status: "no_viable_setup",
     ticker,
     blockReason,
+    strategistOutcome,
     regime,
     ioScore: ioScore ?? undefined,
     systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
   };
+}
+
+function outcomeFromBlockReason(br: BlockReason): StrategistOutcome | undefined {
+  const c = br.category;
+  if (c === "ECONOMICS_MISMATCH") return "ECONOMICS_MISMATCH";
+  if (c === "UNKNOWN_STRUCTURE") return "UNKNOWN_STRUCTURE";
+  if (c === "NO_TRADE" || c === "LOW_CONFIDENCE") return "NO_TRADE";
+  if (c === "ANALYSIS_INCOMPLETE") return "ANALYSIS_INCOMPLETE";
+  return undefined;
 }
 
 async function logTelemetry(

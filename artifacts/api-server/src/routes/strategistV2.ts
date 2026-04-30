@@ -207,6 +207,9 @@ type ThinkingEntry = {
 const strategistThinkingBuffer = new Map<string, ThinkingEntry>();
 const THINKING_TTL_MS = 10 * 60 * 1000;
 
+/** One in-flight ticker analyze (POST /analyze with jobId) at a time per symbol. */
+const analyzeInFlightTickers = new Set<string>();
+
 async function runAnalyzeWithIvrGate(
   ticker: string,
   opts: Parameters<typeof analyzeTickerV2>[1],
@@ -345,6 +348,15 @@ router.post("/analyze", async (req, res): Promise<void> => {
         res.json({ jobId, accepted: true, alreadyRunning: !existing.done });
         return;
       }
+      if (analyzeInFlightTickers.has(upperTicker)) {
+        res.status(409).json({
+          code: "ANALYSIS_ALREADY_IN_PROGRESS",
+          ticker: upperTicker,
+          message: `Analysis already in progress for ${upperTicker}`,
+        });
+        return;
+      }
+      analyzeInFlightTickers.add(upperTicker);
       const entry: ThinkingEntry = {
         jobId,
         kind: "analyze",
@@ -447,6 +459,8 @@ router.post("/analyze", async (req, res): Promise<void> => {
             data: { type: "strategist", jobId, ticker: upperTicker, kind: "analyze_failed" as const },
           });
           logger.error({ err, jobId, ticker: upperTicker }, "StrategistV2: background analyze failed");
+        } finally {
+          analyzeInFlightTickers.delete(upperTicker);
         }
       })();
 
@@ -455,10 +469,23 @@ router.post("/analyze", async (req, res): Promise<void> => {
     }
 
     // Legacy synchronous path (no jobId): block and return result
-    const result = await runAnalyzeWithIvrGate(upperTicker, {
-      flowContext: typeof flowContext === "string" && flowContext.length > 0 ? flowContext.slice(0, 8000) : undefined,
-    });
-    res.json(result);
+    if (analyzeInFlightTickers.has(upperTicker)) {
+      res.status(409).json({
+        code: "ANALYSIS_ALREADY_IN_PROGRESS",
+        ticker: upperTicker,
+        message: `Analysis already in progress for ${upperTicker}`,
+      });
+      return;
+    }
+    analyzeInFlightTickers.add(upperTicker);
+    try {
+      const result = await runAnalyzeWithIvrGate(upperTicker, {
+        flowContext: typeof flowContext === "string" && flowContext.length > 0 ? flowContext.slice(0, 8000) : undefined,
+      });
+      res.json(result);
+    } finally {
+      analyzeInFlightTickers.delete(upperTicker);
+    }
   } catch (err) {
     logger.error({ err }, "StrategistV2: analyze failed");
     res.status(500).json({ error: "Analysis failed" });

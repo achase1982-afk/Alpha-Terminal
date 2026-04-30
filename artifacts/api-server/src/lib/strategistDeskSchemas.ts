@@ -76,6 +76,8 @@ export interface DeskResult {
   flow: FlowAnalystOutput;
   catalyst: CatalystAnalystOutput;
   pm: PmOutput;
+  /** True when PM JSON failed schema validation after retry — PM fields are a fallback; use strategistOutcome ANALYSIS_INCOMPLETE on the parent result. */
+  pmOutputIncomplete?: boolean;
   models: {
     vol: string;
     flow: string;
