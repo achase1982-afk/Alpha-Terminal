@@ -33,6 +33,21 @@ const refreshInFlight: Record<string, Promise<boolean> | null> = {
   trader: null,
 };
 
+/** True after this process has had a persisted token set for the kind (init load, store, or successful refresh). */
+const authEstablishedInProcess: Record<"market" | "trader", boolean> = {
+  market: false,
+  trader: false,
+};
+
+function markAuthEstablished(kind: "market" | "trader") {
+  authEstablishedInProcess[kind] = true;
+}
+
+function maybeEmitAuthExpired(kind: "market" | "trader", payload: Record<string, unknown>) {
+  if (!authEstablishedInProcess[kind]) return;
+  emitPortfolioError({ code: "AUTH_EXPIRED", kind, ...payload });
+}
+
 function ensureDir() {
   const dir = path.dirname(TOKEN_FILE);
   if (!fs.existsSync(dir)) {
@@ -163,7 +178,7 @@ async function doRefresh(
       { ts: Date.now(), kind, attempt: retryCount + 1, outcome: "failure", reason: "no_refresh_token", refreshTokenPersisted: false },
       "[SCHWAB_TOKEN] refresh outcome",
     );
-    emitPortfolioError({ code: "AUTH_EXPIRED", kind, reason: "no_refresh_token" });
+    maybeEmitAuthExpired(kind, { reason: "no_refresh_token" });
     return false;
   }
 
@@ -244,6 +259,7 @@ async function doRefresh(
           void logFailure("SCHWAB_API", "CRITICAL", `OAuth ${kind} refresh token expired/revoked — clearing`, { kind, errorBody: text.slice(0, 300) });
           store[kind] = undefined;
           persistKind(kind);
+          maybeEmitAuthExpired(kind, { reason: "refresh_token_revoked_or_expired" });
           return false;
         }
       }
@@ -268,6 +284,7 @@ async function doRefresh(
       generation: generationBefore + 1,
     };
     persistKind(kind);
+    markAuthEstablished(kind);
 
     logger.info(
       {
@@ -383,6 +400,7 @@ export function storeTokens(
   };
   persistKind(kind);
   scheduleRefresh(kind);
+  markAuthEstablished(kind);
   logger.info("TokenStore: stored %s tokens (expires in %ds)", kind, expiresIn);
 
   if (onTokenRefreshed) {
@@ -417,6 +435,7 @@ export function clearTokens(kind: "market" | "trader") {
   clearTimer(kind);
   store[kind] = undefined;
   persistKind(kind);
+  authEstablishedInProcess[kind] = false;
   logger.info("TokenStore: cleared %s tokens", kind);
 }
 
@@ -442,6 +461,7 @@ export async function initTokenStore() {
 
   if (store.market?.refreshToken) {
     logger.info("TokenStore: found persisted market tokens");
+    markAuthEstablished("market");
     const isExpired = store.market.expiresAt < Date.now();
     if (isExpired) {
       logger.info("TokenStore: market access token expired, refreshing now");
@@ -453,6 +473,7 @@ export async function initTokenStore() {
 
   if (store.trader?.refreshToken) {
     logger.info("TokenStore: found persisted trader tokens");
+    markAuthEstablished("trader");
     const isExpired = store.trader.expiresAt < Date.now();
     if (isExpired) {
       logger.info("TokenStore: trader access token expired, refreshing now");
