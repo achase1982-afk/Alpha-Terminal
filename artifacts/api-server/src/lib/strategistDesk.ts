@@ -457,7 +457,7 @@ function buildFallbackOutput(role: "vol" | "flow" | "catalyst", rawText: string)
 }
 
 /**
- * Solo Desk: one LLM turn with the PM slot model, same nested DeskResult shape as `runDeskAnalysis`.
+ * Solo Desk: one LLM turn with the Solo model slot (`strategistSoloModelIdx`), same nested DeskResult shape as `runDeskAnalysis`.
  * Data parity with multi-turn Desk (including Gemini catalyst pre-search when applicable).
  */
 export async function runSoloDesk(args: {
@@ -470,20 +470,19 @@ export async function runSoloDesk(args: {
 }): Promise<DeskResult> {
   const { dataPackage, settings, ticker, deskExpirationISO, catalystEvaluation, callbacks } = args;
 
-  const pmModelIdx = settings.strategistArbitratorModelIdx === -1 ? 0 : settings.strategistArbitratorModelIdx;
-  const pmModel = getStrategistModel(pmModelIdx);
+  const consolidatedModel = getStrategistModel(settings.strategistSoloModelIdx);
 
   let catalystResearchBriefing = "";
-  const catalystNativeWeb = pmModel.provider !== "google";
+  const catalystNativeWeb = consolidatedModel.provider !== "google";
 
-  if (deskExpirationISO && pmModel.provider === "google") {
+  if (deskExpirationISO && consolidatedModel.provider === "google") {
     callbacks?.onStatus?.("Solo Desk: Catalyst structured web research (Gemini JSON cannot use tools)…");
     try {
       const bundle = await runCatalystDeskStructuredSearches({
         ticker,
         catalystEval: catalystEvaluation ?? null,
         deskExpirationISO,
-        model: pmModel,
+        model: consolidatedModel,
         onStatus: callbacks?.onStatus,
         cancelSignal: callbacks?.cancelSignal,
       });
@@ -498,8 +497,8 @@ export async function runSoloDesk(args: {
     }
   } else if (deskExpirationISO && catalystNativeWeb) {
     logger.info(
-      { ticker, provider: pmModel.provider },
-      "StrategistDesk: Solo Desk skipping catalyst structured pre-search; PM model uses native web search on JSON turn",
+      { ticker, provider: consolidatedModel.provider },
+      "StrategistDesk: Solo Desk skipping catalyst structured pre-search; consolidated model uses native web search on JSON turn",
     );
     callbacks?.onStatus?.("Solo Desk: Catalyst web pre-search skipped (native web search on consolidated turn)…");
   }
@@ -518,7 +517,7 @@ export async function runSoloDesk(args: {
     round: "desk",
     role: "pm",
     phase: "pm",
-    model: pmModel.model,
+    model: consolidatedModel.model,
     label: "Solo Desk",
     startedAt: Date.now(),
   });
@@ -532,7 +531,7 @@ export async function runSoloDesk(args: {
   let text = "";
   try {
     const r = await streamModel(
-      pmModel,
+      consolidatedModel,
       SOLO_DESK_MODEL_SYSTEM_PROMPT,
       userPrompt,
       onDelta,
@@ -554,7 +553,7 @@ export async function runSoloDesk(args: {
   if (!validation.success) {
     callbacks?.onTurnDiscarded?.(turnId);
     logger.warn(
-      { ticker, issues: validation.error.issues, model: pmModel.model, provider: pmModel.provider },
+      { ticker, issues: validation.error.issues, model: consolidatedModel.model, provider: consolidatedModel.provider },
       "StrategistDesk: Solo Desk output failed validation, retrying",
     );
     callbacks?.onStatus?.("Solo Desk: consolidated output failed validation, retrying…");
@@ -565,7 +564,7 @@ export async function runSoloDesk(args: {
       round: "desk",
       role: "pm",
       phase: "pm",
-      model: pmModel.model,
+      model: consolidatedModel.model,
       label: "Solo Desk (retry)",
       startedAt: Date.now(),
     });
@@ -576,7 +575,7 @@ export async function runSoloDesk(args: {
       userPrompt +
       "\n\nYour previous response failed JSON validation. Return ONLY one valid JSON object with top-level keys vol, flow, catalyst, and pm, each matching the Desk shapes exactly. No markdown, no code fences, no commentary before or after the JSON.";
     const retryR = await streamModel(
-      pmModel,
+      consolidatedModel,
       SOLO_DESK_MODEL_SYSTEM_PROMPT,
       retryPrompt,
       onRetryDelta,
@@ -611,10 +610,10 @@ export async function runSoloDesk(args: {
       pm: stubPm,
       pmOutputIncomplete: true,
       models: {
-        vol: pmModel.label,
-        flow: pmModel.label,
-        catalyst: pmModel.label,
-        pm: pmModel.label,
+        vol: consolidatedModel.label,
+        flow: consolidatedModel.label,
+        catalyst: consolidatedModel.label,
+        pm: consolidatedModel.label,
       },
       errors,
     };
@@ -625,7 +624,7 @@ export async function runSoloDesk(args: {
   logger.info(
     {
       ticker,
-      soloDeskModel: { provider: pmModel.provider, model: pmModel.model, label: pmModel.label },
+      soloDeskModel: { provider: consolidatedModel.provider, model: consolidatedModel.model, label: consolidatedModel.label },
       soloDeskPromptChars: userPrompt.length,
     },
     "StrategistDesk: completed Solo Desk run",
@@ -639,10 +638,10 @@ export async function runSoloDesk(args: {
     catalyst,
     pm,
     models: {
-      vol: pmModel.label,
-      flow: pmModel.label,
-      catalyst: pmModel.label,
-      pm: pmModel.label,
+      vol: consolidatedModel.label,
+      flow: consolidatedModel.label,
+      catalyst: consolidatedModel.label,
+      pm: consolidatedModel.label,
     },
     errors: errors.length > 0 ? errors : undefined,
   };
