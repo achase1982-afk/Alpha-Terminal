@@ -68,17 +68,17 @@ export const STRATEGIST_MODEL_OPTIONS: StrategistModelOption[] = [
   { provider: "anthropic", model: "claude-opus-4-7", label: "Claude Opus 4.7 (Anthropic)" },
   { provider: "openai", model: "gpt-5.5", label: "GPT-5.5 + Thinking (OpenAI)" },
   { provider: "google", model: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (Google)" },
-  { provider: "xai", model: "grok-4.20-0309-reasoning", label: "Grok 4.20 Reasoning (xAI)" },
+  { provider: "xai", model: "grok-4.20-multi-agent-0309", label: "Grok 4.20 multi-agent (xAI)" },
 ];
 
 /** Current catalog version written to `strategistModelCatalogVersion`. */
-export const STRATEGIST_MODEL_CATALOG_VERSION = 2;
+export const STRATEGIST_MODEL_CATALOG_VERSION = 3;
 
 /**
  * Maps pre–four-model catalog indices (the former `STRATEGIST_MODEL_OPTIONS`
  * order) to the new 0–3 index. Used for one-time DB migration.
  * Anthropic slots (non–Opus 4.7) → 0; OpenAI (non–5.5) → 1; Gemini (non–3.1 Pro) → 2;
- * xAI (non–Grok 4.20 reasoning) → 3.
+ * xAI (non–Grok 4.20 multi-agent snapshot) → 3.
  */
 const LEGACY_STRATEGIST_MODEL_INDEX_TO_NEW: readonly number[] = [
   0, 2, 0, 2, 0, 2, 1, 1, 1, 1, 1, 1, 1, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
@@ -218,6 +218,26 @@ async function migrateStrategistModelCatalogIfNeeded(
   );
 }
 
+/** v2 used Grok 4.20 reasoning at index 3; v3 swaps to multi-agent at the same index — only bump the stored version. */
+async function bumpStrategistModelCatalogV2ToV3IfNeeded(merged: StrategistConfig): Promise<boolean> {
+  if (merged.strategistModelCatalogVersion !== 2) {
+    return false;
+  }
+  const now = new Date();
+  await db
+    .insert(strategistSettingsTable)
+    .values({ key: "strategistModelCatalogVersion", value: STRATEGIST_MODEL_CATALOG_VERSION, updatedAt: now })
+    .onConflictDoUpdate({
+      target: strategistSettingsTable.key,
+      set: { value: STRATEGIST_MODEL_CATALOG_VERSION, updatedAt: now },
+    });
+  logger.info(
+    { from: 2, to: STRATEGIST_MODEL_CATALOG_VERSION },
+    "Strategist settings: catalog version bump (Grok reasoning -> multi-agent, indices unchanged)",
+  );
+  return true;
+}
+
 export async function getSettings(): Promise<StrategistConfig> {
   if (settingsCache && Date.now() - cacheTs < CACHE_TTL_MS) {
     return settingsCache;
@@ -247,14 +267,30 @@ export async function getSettings(): Promise<StrategistConfig> {
       const needsReselect =
         rows.length > 0 && !rows.some((r) => r.key === "strategistModelCatalogVersion");
       const tSelect2 = performance.now();
-      const rowsAfter = needsReselect ? await db.select().from(strategistSettingsTable) : rows;
+      let rowsAfter = needsReselect ? await db.select().from(strategistSettingsTable) : rows;
       const select2Ms = needsReselect ? Math.round(performance.now() - tSelect2) : 0;
+
+      const mergedAfter: StrategistConfig = { ...DEFAULTS };
+      for (const row of rowsAfter) {
+        if (isStrategistConfigKey(row.key)) {
+          mergedAfter[row.key] = row.value;
+        }
+      }
+      const tBump0 = performance.now();
+      const bumpedV3 = await bumpStrategistModelCatalogV2ToV3IfNeeded(mergedAfter);
+      const bumpMs = Math.round(performance.now() - tBump0);
+      if (bumpedV3) {
+        mergedAfter.strategistModelCatalogVersion = STRATEGIST_MODEL_CATALOG_VERSION;
+      }
 
       const finalMerged: StrategistConfig = { ...DEFAULTS };
       for (const row of rowsAfter) {
         if (isStrategistConfigKey(row.key)) {
           finalMerged[row.key] = row.value;
         }
+      }
+      if (bumpedV3) {
+        finalMerged.strategistModelCatalogVersion = STRATEGIST_MODEL_CATALOG_VERSION;
       }
       finalMerged.strategistSoloModelIdx = normalizeStrategistModelIndex(finalMerged.strategistSoloModelIdx);
       finalMerged.strategistDebateAModelIdx = normalizeStrategistModelIndex(finalMerged.strategistDebateAModelIdx);
@@ -266,12 +302,13 @@ export async function getSettings(): Promise<StrategistConfig> {
       cacheTs = Date.now();
 
       const totalMs = Math.round(performance.now() - t0);
-      if (totalMs > 200 || migMs > 0) {
+      if (totalMs > 200 || migMs > 0 || bumpMs > 0) {
         logger.info(
           {
             rowCount: rows.length,
             selectMs,
             migrationMs: migMs,
+            bumpV3Ms: bumpMs,
             secondSelectMs: select2Ms,
             totalMs,
             catalogVersion: finalMerged.strategistModelCatalogVersion,
