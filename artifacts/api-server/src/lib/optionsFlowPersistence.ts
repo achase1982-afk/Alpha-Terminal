@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { db, optionsFlowRawTradesTable } from "@workspace/db";
 import { logger } from "./logger.js";
 
@@ -23,6 +24,8 @@ interface PendingTrade {
   side: string | null;
   isBlock: boolean;
   isSweep: boolean;
+  /** Stable id for dedup (live uses ws:uuid, REST backfill uses rest:… ) */
+  sourceTradeId: string;
 }
 
 const buffer: PendingTrade[] = [];
@@ -49,6 +52,11 @@ export function startFlowPersistence(): void {
 export function stopFlowPersistence(): void {
   if (flushTimer) { clearInterval(flushTimer); flushTimer = null; }
   void flush();
+}
+
+/** Wait for queued live trades to hit the database (call before rollup). */
+export async function flushFlowPersistenceNow(): Promise<void> {
+  await flush();
 }
 
 export function getFlowPersistenceStats() {
@@ -98,6 +106,8 @@ export function enqueueClassifiedTrade(args: {
   isSweep: boolean;
   isBlock: boolean;
   side?: string | null;
+  /** When omitted, generates a unique id so live rows never collide on partial unique */
+  sourceTradeId?: string;
 }): void {
   const parsed = parseOcc(args.occ);
   if (!parsed) return;
@@ -116,6 +126,7 @@ export function enqueueClassifiedTrade(args: {
     side: args.side ?? null,
     isBlock: args.isBlock,
     isSweep: args.isSweep,
+    sourceTradeId: args.sourceTradeId ?? `ws:${randomUUID()}`,
   });
   totalQueued++;
   if (buffer.length >= FLUSH_BATCH_MAX) void flush();
@@ -126,7 +137,13 @@ async function flush(): Promise<void> {
   const batch = buffer.splice(0, buffer.length);
   batchesAttempted++;
   try {
-    await db.insert(optionsFlowRawTradesTable).values(batch);
+    await db.insert(optionsFlowRawTradesTable).values(batch).onConflictDoNothing({
+      target: [
+        optionsFlowRawTradesTable.underlyingSymbol,
+        optionsFlowRawTradesTable.date,
+        optionsFlowRawTradesTable.sourceTradeId,
+      ],
+    });
     totalWritten += batch.length;
     lastFlushTs = Date.now();
   } catch (err) {
