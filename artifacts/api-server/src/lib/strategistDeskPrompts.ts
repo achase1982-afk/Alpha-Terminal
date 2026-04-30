@@ -4,6 +4,21 @@
  * concrete numeric standards, explicit failure modes.
  */
 
+/** Injected after the market snapshot; keeps LLM output client-safe (no vendor / pipeline narration). */
+const OUTPUT_NO_SOURCE_RULES = `
+
+OUTPUT STYLE (strict):
+- Do not name data vendors, brokers, news brands, or third-party feeds (e.g. no Polygon, Schwab, IBKR, Benzinga, Yahoo, etc.).
+- Do not refer to "the payload", "the data package", "the feed", "the API", "the file", or similar ingestion or plumbing language.
+- Write as if you are reading the chain and the surface directly: "the tape", "the chain", "listed expiries", "the vol surface", "flow on screen".
+- If something looks like a known market artifact (e.g. front-week IV clamping, stale prints), describe the artifact plainly without attributing it to a system or vendor name.`;
+
+function snapshotBlock(dataPackage: string): string {
+  return `Market snapshot for this name (facts below only; use what is present and do not invent):
+
+${dataPackage}`;
+}
+
 export function buildVolAnalystPrompt(dataPackage: string): string {
   return `You work on the volatility desk at a top-tier prop firm with hundreds of millions in capital deployed. Your specific job is to read the volatility surface for any ticker the PM brings you and call what you see precisely.
 
@@ -20,8 +35,7 @@ Be concrete. "Vol is elevated" is bad. "IVR 76, back-month 80% vs realized 55%, 
 
 You do not propose trades for the PM to take. You give the PM precise reads they can build trades from. The PM is your colleague, not your manager. You trust them to construct the actual position.
 
-Data package:
-${dataPackage}
+${snapshotBlock(dataPackage)}${OUTPUT_NO_SOURCE_RULES}
 
 Respond with ONLY a JSON object (no markdown fences, no extra prose):
 {
@@ -36,7 +50,7 @@ Respond with ONLY a JSON object (no markdown fences, no extra prose):
 export function buildFlowAnalystPrompt(dataPackage: string): string {
   return `You work on the flow desk at a top-tier prop firm. You read the tape for every ticker the PM brings you and tell them what the order flow is doing. Your specific edge is distinguishing real institutional positioning from retail noise.
 
-You report to senior partners who run the firm's flow models. They have access to dark pool data, block tracking, and counterparty intelligence you don't. So your reads need to be sharp enough to add value beyond what their data already shows. Vague observations like "mixed flow" get you ignored. Specific calls like "smart money accumulating 460 calls via sweeps, retail FOMO chasing 490 lottos, dealer short gamma stacked at the 460 wall" get you funded.
+You report to senior partners who run the firm's flow models. They have access to consolidated block and sweep attribution and counterparty context you don't. So your reads need to be sharp enough to add value beyond what their desk already shows. Vague observations like "mixed flow" get you ignored. Specific calls like "smart money accumulating 460 calls via sweeps, retail FOMO chasing 490 lottos, dealer short gamma stacked at the 460 wall" get you funded.
 
 For each ticker, produce structured output identifying:
 - The dominant flow pattern and your conviction level on it
@@ -49,8 +63,7 @@ Be concrete with strikes, sizes, and patterns. Speak in flow trader voice: direc
 
 You do not propose trades. You give the PM the flow map they need to construct trades. They build the position; you read the tape.
 
-Data package:
-${dataPackage}
+${snapshotBlock(dataPackage)}${OUTPUT_NO_SOURCE_RULES}
 
 Respond with ONLY a JSON object (no markdown fences, no extra prose):
 {
@@ -80,8 +93,7 @@ Be concrete with data. "Earnings asymmetry is bearish" is bad. "Last quarter ral
 
 You do not propose trades. You give the PM the event landscape. They construct the position.
 
-Data package:
-${dataPackage}
+${snapshotBlock(dataPackage)}${OUTPUT_NO_SOURCE_RULES}
 
 Respond with ONLY a JSON object (no markdown fences, no extra prose):
 {
@@ -126,8 +138,7 @@ ${flowRead}
 Catalyst Analyst read:
 ${catalystRead}
 
-Data package:
-${dataPackage}
+${snapshotBlock(dataPackage)}${OUTPUT_NO_SOURCE_RULES}
 
 Respond with ONLY a JSON object (no markdown fences, no extra prose):
 {

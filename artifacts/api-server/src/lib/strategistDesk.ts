@@ -160,9 +160,9 @@ export async function runDeskAnalysis(args: {
   callbacks?.onStatus?.("Desk — Vol, Flow, and Catalyst analysts running in parallel…");
 
   const [volResult, flowResult, catalystResult] = await Promise.all([
-    runAnalystWithRetry("vol", volModel, buildVolAnalystPrompt(dataPackage), VolAnalystOutputSchema, callbacks, errors),
-    runAnalystWithRetry("flow", flowModel, buildFlowAnalystPrompt(dataPackage), FlowAnalystOutputSchema, callbacks, errors),
-    runAnalystWithRetry("catalyst", catalystModel, buildCatalystAnalystPrompt(dataPackage), CatalystAnalystOutputSchema, callbacks, errors),
+    runAnalystWithRetry(ticker, "vol", volModel, buildVolAnalystPrompt(dataPackage), VolAnalystOutputSchema, callbacks, errors),
+    runAnalystWithRetry(ticker, "flow", flowModel, buildFlowAnalystPrompt(dataPackage), FlowAnalystOutputSchema, callbacks, errors),
+    runAnalystWithRetry(ticker, "catalyst", catalystModel, buildCatalystAnalystPrompt(dataPackage), CatalystAnalystOutputSchema, callbacks, errors),
   ]);
 
   callbacks?.onStatus?.("Desk — PM synthesizing analyst reads…");
@@ -178,7 +178,7 @@ export async function runDeskAnalysis(args: {
     modelOpt: pmModel,
     prompt: pmPrompt,
     role: "pm",
-    label: `PM · ${pmModel.label}`,
+    label: "PM",
     callbacks,
   });
 
@@ -190,14 +190,17 @@ export async function runDeskAnalysis(args: {
   } else {
     callbacks?.onTurnDiscarded?.(pmTurn.turnId);
     callbacks?.onStatus?.("Desk — PM output failed validation, retrying…");
-    logger.warn({ errors: pmValidation.error.issues, ticker }, "StrategistDesk: PM output failed validation, retrying");
+    logger.warn(
+      { errors: pmValidation.error.issues, ticker, model: pmModel.model, provider: pmModel.provider, label: pmModel.label },
+      "StrategistDesk: PM output failed validation, retrying",
+    );
     const retryTurn = await runDeskTurn({
       modelOpt: pmModel,
       prompt:
         pmPrompt +
         "\n\nYour previous response failed JSON validation. Return ONLY valid JSON matching the schema exactly. No markdown, no code fences, no commentary before or after the JSON.",
       role: "pm",
-      label: `PM (retry) · ${pmModel.label}`,
+      label: "PM (retry)",
       callbacks,
     });
     const retryJson = parseJsonFromText(retryTurn.text);
@@ -223,6 +226,19 @@ export async function runDeskAnalysis(args: {
 
   const pmOutputIncomplete = errors.some((e) => e.startsWith("PM output failed validation after retry"));
 
+  logger.info(
+    {
+      ticker,
+      deskModels: {
+        vol: { provider: volModel.provider, model: volModel.model, label: volModel.label },
+        flow: { provider: flowModel.provider, model: flowModel.model, label: flowModel.label },
+        catalyst: { provider: catalystModel.provider, model: catalystModel.model, label: catalystModel.label },
+        pm: { provider: pmModel.provider, model: pmModel.model, label: pmModel.label },
+      },
+    },
+    "StrategistDesk: completed desk run (model attribution for telemetry)",
+  );
+
   return {
     mode: "desk",
     ticker,
@@ -242,6 +258,7 @@ export async function runDeskAnalysis(args: {
 }
 
 async function runAnalystWithRetry<T>(
+  ticker: string,
   role: "vol" | "flow" | "catalyst",
   model: StrategistModelOption,
   prompt: string,
@@ -254,7 +271,7 @@ async function runAnalystWithRetry<T>(
     flow: "Flow Analyst",
     catalyst: "Catalyst Analyst",
   };
-  const label = `${labels[role]} · ${model.label}`;
+  const label = labels[role];
 
   const turn = await runDeskTurn({ modelOpt: model, prompt, role, label, callbacks });
   const json = parseJsonFromText(turn.text);
@@ -265,7 +282,10 @@ async function runAnalystWithRetry<T>(
   }
 
   callbacks?.onTurnDiscarded?.(turn.turnId);
-  logger.warn({ role, errors: validation.error.issues }, `StrategistDesk: ${role} output failed validation, retrying`);
+  logger.warn(
+    { role, ticker, model: model.model, provider: model.provider, label: model.label, errors: validation.error.issues },
+    `StrategistDesk: ${role} output failed validation, retrying`,
+  );
   callbacks?.onStatus?.(`Desk — ${labels[role]} output failed validation, retrying…`);
 
   const retryTurn = await runDeskTurn({
@@ -274,7 +294,7 @@ async function runAnalystWithRetry<T>(
       prompt +
       "\n\nYour previous response failed JSON validation. Return ONLY valid JSON matching the schema exactly. No markdown, no code fences, no commentary before or after the JSON.",
     role,
-    label: `${labels[role]} (retry) · ${model.label}`,
+    label: `${labels[role]} (retry)`,
     callbacks,
   });
 
@@ -287,7 +307,7 @@ async function runAnalystWithRetry<T>(
 
   const errorMsg = `${labels[role]} output failed validation after retry: ${retryValidation.error.issues.map(i => i.message).join("; ")}`;
   errors.push(errorMsg);
-  logger.error({ role, ticker: "unknown" }, `StrategistDesk: ${errorMsg}`);
+  logger.error({ role, ticker, model: model.model, provider: model.provider, label: model.label }, `StrategistDesk: ${errorMsg}`);
 
   const fallback = buildFallbackOutput(role, retryTurn.text);
   return { parsed: fallback as T, trace: mergeTraces(turn.trace, retryTurn.trace) };
