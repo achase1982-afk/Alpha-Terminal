@@ -1,7 +1,19 @@
-import { useCallback, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import type { BlockReason, StrategistOutcome } from "@/components/StrategistV2Card";
-import { ChevronDown, ChevronUp, AlertTriangle, Copy } from "lucide-react";
+import { ChevronDown, ChevronUp, AlertTriangle, Copy, Play, Pause, Square, SkipBack, SkipForward, Volume2 } from "lucide-react";
 import { toast } from "sonner";
+import type { DeskResult, DeskStructure } from "@/lib/strategistDeskResult";
+import { buildDeskSpeechSections, type DeskSpeechSectionId } from "@/lib/deskCardSpeech";
+import { STRATEGIST_ANALYSIS_START_EVENT } from "@/lib/strategistDeskSpeechEvents";
+
+export type { DeskResult } from "@/lib/strategistDeskResult";
 
 const PAL = {
   bgCard: "#141414",
@@ -19,86 +31,12 @@ const PAL = {
 
 const SYS_FONT = "-apple-system, 'SF Pro Display', 'Inter', system-ui, sans-serif";
 
-interface DeskKeyStrike {
-  strike: number;
-  expiry: string;
-  type: string;
-  observation: string;
-}
+const SPEECH_ACCENT_BORDER = "rgba(96,165,250,0.95)";
+const FOCUS_RING = "2px solid rgba(255,255,255,0.85)";
+const TOUCH_MIN = 44;
 
-interface DeskLeg {
-  type: string;
-  strike: number;
-  action: string;
-  expiration: string;
-  quantity?: number;
-}
-
-interface DeskStructure {
-  type: string;
-  legs: DeskLeg[];
-  expiry: string;
-  credit_or_debit: number;
-}
-
-interface DeskExitPlan {
-  profit_target: number;
-  stop_loss: number;
-  time_stop: string;
-}
-
-interface VolAnalystOutput {
-  iv_state: string;
-  term_structure: string;
-  skew: string;
-  implied_vs_realized: string;
-  read: string;
-}
-
-interface FlowAnalystOutput {
-  dominant_flow: string;
-  institutional_signal: string;
-  retail_signal: string;
-  key_strikes: DeskKeyStrike[];
-  read: string;
-}
-
-interface CatalystAnalystOutput {
-  primary_catalyst: string;
-  bar_to_clear: string;
-  asymmetry: string;
-  historical_pattern: string;
-  read: string;
-}
-
-interface PmOutput {
-  decision: "trade" | "pass";
-  structure: DeskStructure | null;
-  thesis: string;
-  edge_check?: string;
-  deviation_from_analysts?: string;
-  size: "small" | "medium" | "large";
-  whose_side: "institutional_alignment" | "retail_fade" | "neither";
-  biggest_risk: string;
-  exit_plan: DeskExitPlan;
-  watch_for: string;
-}
-
-export interface DeskResult {
-  mode: "desk";
-  ticker: string;
-  vol: VolAnalystOutput;
-  flow: FlowAnalystOutput;
-  catalyst: CatalystAnalystOutput;
-  pm: PmOutput;
-  models: {
-    vol: string;
-    flow: string;
-    catalyst: string;
-    pm: string;
-  };
-  errors?: string[];
-  pmOutputIncomplete?: boolean;
+function hasWebSpeech(): boolean {
+  return typeof window !== "undefined" && "speechSynthesis" in window && typeof SpeechSynthesisUtterance !== "undefined";
 }
 
 function FieldRow({ label, value }: { label: string; value: string }) {
@@ -110,22 +48,39 @@ function FieldRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function CollapsibleSection({ title, defaultOpen, children }: {
+function CollapsibleSection({
+  title,
+  defaultOpen,
+  headerAddon,
+  children,
+}: {
   title: string;
   defaultOpen?: boolean;
+  headerAddon?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen ?? false);
   return (
-    <div style={{ border: `1px solid ${PAL.borderInner}`, borderRadius: 8, marginBottom: 8, overflow: "hidden" }}>
+    <div
+      style={{
+        border: `1px solid ${PAL.borderInner}`,
+        borderRadius: 8,
+        marginBottom: 8,
+        overflow: "hidden",
+      }}
+    >
       <button
+        type="button"
         onClick={() => setOpen(!open)}
         style={{
           width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
           padding: "8px 12px", background: PAL.bgInner, border: "none", cursor: "pointer",
         }}
       >
-        <span style={{ fontFamily: SYS_FONT, fontSize: 12, fontWeight: 600, color: PAL.white, letterSpacing: 0.5 }}>{title}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", textAlign: "left" }}>
+          <span style={{ fontFamily: SYS_FONT, fontSize: 12, fontWeight: 600, color: PAL.white, letterSpacing: 0.5 }}>{title}</span>
+          {headerAddon}
+        </span>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {open ? <ChevronUp size={14} color={PAL.label} /> : <ChevronDown size={14} color={PAL.label} />}
         </div>
@@ -369,11 +324,216 @@ export function StrategistDeskCard({
     }
   }, [deskResult]);
 
+  const speechAvailable = useMemo(() => hasWebSpeech(), []);
+  const speechSections = useMemo(
+    () =>
+      buildDeskSpeechSections(deskResult, {
+        bannerTitle: banner?.title,
+        bannerBody: banner?.body,
+      }),
+    [deskResult, banner?.title, banner?.body],
+  );
+
+  const SESSION_RATE_KEY = "strategistDeskSpeechRate";
+  const [speechRate, setSpeechRate] = useState<number>(() => {
+    if (typeof window === "undefined") return 1;
+    const v = Number(sessionStorage.getItem(SESSION_RATE_KEY));
+    return [1, 1.25, 1.5, 2].includes(v) ? v : 1;
+  });
+  const speechRateRef = useRef(speechRate);
+  speechRateRef.current = speechRate;
+
+  const [audioBarOpen, setAudioBarOpen] = useState(false);
+  const [speakingSection, setSpeakingSection] = useState<DeskSpeechSectionId | null>(null);
+  const [paused, setPaused] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const liveAnnounceRef = useRef<HTMLDivElement>(null);
+
+  const speechGenRef = useRef(0);
+
+  const stopSpeech = useCallback(() => {
+    speechGenRef.current += 1;
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    setSpeakingSection(null);
+    setPaused(false);
+    setAudioBarOpen(false);
+  }, []);
+
+  const speakFromIndex = useCallback(
+    (startIdx: number) => {
+      if (!hasWebSpeech()) return;
+      speechGenRef.current += 1;
+      const gen = speechGenRef.current;
+      window.speechSynthesis.cancel();
+      let idx = Math.max(0, Math.min(startIdx, speechSections.length - 1));
+      setAudioBarOpen(true);
+      setPaused(false);
+
+      const step = () => {
+        if (gen !== speechGenRef.current) return;
+        if (idx >= speechSections.length) {
+          setSpeakingSection(null);
+          setAudioBarOpen(false);
+          return;
+        }
+        const sec = speechSections[idx];
+        if (!sec.text.trim()) {
+          idx += 1;
+          step();
+          return;
+        }
+        setSpeakingSection(sec.id);
+        if (liveAnnounceRef.current) {
+          liveAnnounceRef.current.textContent = `Now reading: ${sec.label}`;
+        }
+        const u = new SpeechSynthesisUtterance(sec.text);
+        u.rate = speechRateRef.current;
+        u.onend = () => {
+          if (gen !== speechGenRef.current) return;
+          idx += 1;
+          step();
+        };
+        u.onerror = () => {
+          if (gen !== speechGenRef.current) return;
+          idx += 1;
+          step();
+        };
+        window.speechSynthesis.speak(u);
+      };
+
+      step();
+    },
+    [speechSections],
+  );
+
+  useEffect(() => {
+    return () => {
+      speechGenRef.current += 1;
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    speechGenRef.current += 1;
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    setSpeakingSection(null);
+    setAudioBarOpen(false);
+    setPaused(false);
+  }, [deskResult]);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const mo = new MutationObserver(() => {
+      if (!root.isConnected) {
+        speechGenRef.current += 1;
+        window.speechSynthesis?.cancel();
+        setSpeakingSection(null);
+        setAudioBarOpen(false);
+        setPaused(false);
+      }
+    });
+    mo.observe(document.body, { childList: true, subtree: true });
+    return () => mo.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && audioBarOpen) {
+        e.preventDefault();
+        stopSpeech();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [audioBarOpen, stopSpeech]);
+
+  useEffect(() => {
+    const onAnalysisStart = () => stopSpeech();
+    window.addEventListener(STRATEGIST_ANALYSIS_START_EVENT, onAnalysisStart);
+    return () => window.removeEventListener(STRATEGIST_ANALYSIS_START_EVENT, onAnalysisStart);
+  }, [stopSpeech]);
+
+  const togglePause = useCallback(() => {
+    if (!hasWebSpeech()) return;
+    if (!audioBarOpen) return;
+    if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+      window.speechSynthesis.pause();
+      setPaused(true);
+    } else if (window.speechSynthesis.paused) {
+      window.speechSynthesis.resume();
+      setPaused(false);
+    }
+  }, [audioBarOpen]);
+
+  const setRate = useCallback(
+    (r: number) => {
+      setSpeechRate(r);
+      sessionStorage.setItem(SESSION_RATE_KEY, String(r));
+      speechRateRef.current = r;
+      if (typeof window !== "undefined" && window.speechSynthesis?.speaking && audioBarOpen) {
+        let cur = 0;
+        for (let i = 0; i < speechSections.length; i++) {
+          if (speechSections[i].id === speakingSection) {
+            cur = i;
+            break;
+          }
+        }
+        speakFromIndex(cur);
+      }
+    },
+    [audioBarOpen, speakFromIndex, speechSections, speakingSection],
+  );
+
+  const skipForward = useCallback(() => {
+    if (!audioBarOpen) return;
+    let cur = 0;
+    for (let i = 0; i < speechSections.length; i++) {
+      if (speechSections[i].id === speakingSection) {
+        cur = i;
+        break;
+      }
+    }
+    speakFromIndex(cur + 1);
+  }, [audioBarOpen, speakFromIndex, speechSections, speakingSection]);
+
+  const skipBackward = useCallback(() => {
+    if (!audioBarOpen) return;
+    let cur = 0;
+    for (let i = 0; i < speechSections.length; i++) {
+      if (speechSections[i].id === speakingSection) {
+        cur = i;
+        break;
+      }
+    }
+    speakFromIndex(Math.max(0, cur - 1));
+  }, [audioBarOpen, speakFromIndex, speechSections, speakingSection]);
+
+  const iconBtnBase: CSSProperties = {
+    minWidth: TOUCH_MIN,
+    minHeight: TOUCH_MIN,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    border: `1px solid ${PAL.borderInner}`,
+    background: PAL.bgInner,
+    color: PAL.body,
+    cursor: "pointer",
+  };
+
   const btnStyle: CSSProperties = {
     display: "inline-flex",
     alignItems: "center",
     gap: 6,
-    padding: "6px 10px",
+    minHeight: TOUCH_MIN,
+    padding: "8px 12px",
     borderRadius: 6,
     border: `1px solid ${PAL.borderInner}`,
     background: PAL.bgInner,
@@ -384,10 +544,55 @@ export function StrategistDeskCard({
     textTransform: "uppercase",
     cursor: "pointer",
     fontFamily: SYS_FONT,
+    outline: "none",
   };
 
+  const speedLabel = speechRate === 1 ? "1x" : speechRate === 1.25 ? "1.25x" : speechRate === 1.5 ? "1.5x" : "2x";
+  const sectionIdx = speakingSection
+    ? Math.max(0, speechSections.findIndex((s) => s.id === speakingSection)) + 1
+    : 0;
+  const currentSectionLabel = speakingSection
+    ? speechSections.find((s) => s.id === speakingSection)?.label ?? ""
+    : "";
+
+  const nowPlayingChip = (id: DeskSpeechSectionId) =>
+    speakingSection === id ? (
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 4,
+          fontSize: 10,
+          fontWeight: 600,
+          color: "#93c5fd",
+        }}
+      >
+        <Volume2 size={12} aria-hidden />
+        <span>Now playing</span>
+      </span>
+    ) : null;
+
   return (
-    <div style={{ background: PAL.bgCard, border: `1px solid ${PAL.border}`, borderRadius: 12, padding: 16, fontFamily: SYS_FONT }}>
+    <div
+      ref={rootRef}
+      style={{ position: "relative", background: PAL.bgCard, border: `1px solid ${PAL.border}`, borderRadius: 12, padding: 16, fontFamily: SYS_FONT }}
+    >
+      <div
+        ref={liveAnnounceRef}
+        aria-live="polite"
+        aria-atomic="true"
+        style={{
+          position: "absolute",
+          width: 1,
+          height: 1,
+          padding: 0,
+          margin: -1,
+          overflow: "hidden",
+          clip: "rect(0, 0, 0, 0)",
+          whiteSpace: "nowrap",
+          border: 0,
+        }}
+      />
       {/* Outcome banner (non-error framing) */}
       {banner && (
         <div style={{ border: `1px solid ${banner.border}`, background: banner.bg, borderRadius: 8, padding: 12, marginBottom: 12 }}>
@@ -421,19 +626,151 @@ export function StrategistDeskCard({
           <span style={{ fontSize: 10, color: PAL.label, letterSpacing: 0.5 }}>DESK MODE</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginLeft: "auto" }}>
-          <button type="button" onClick={() => void copyPlain()} style={btnStyle} aria-label="Copy full desk card as plain text">
+          <button
+            type="button"
+            onClick={() => void copyPlain()}
+            style={btnStyle}
+            aria-label="Copy desk report"
+            onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
+            onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
+          >
             <Copy size={12} />
             {copiedFull ? "Copied" : "Copy"}
           </button>
-          <button type="button" onClick={() => void copyJson()} style={btnStyle} aria-label="Copy desk result as JSON">
+          <button
+            type="button"
+            onClick={() => void copyJson()}
+            style={btnStyle}
+            aria-label="Copy desk result as JSON"
+            onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
+            onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
+          >
             <Copy size={12} />
             {copiedJson ? "Copied" : "Copy JSON"}
           </button>
+          {speechAvailable && !audioBarOpen && (
+            <button
+              type="button"
+              onClick={() => speakFromIndex(0)}
+              style={btnStyle}
+              aria-label="Play audio report"
+              onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
+              onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
+            >
+              <Play size={12} aria-hidden />
+              Play
+            </button>
+          )}
           {generatedAt && (
             <span style={{ fontSize: 9, color: PAL.label }}>{typeof generatedAt === "number" ? new Date(generatedAt).toLocaleString() : generatedAt}</span>
           )}
         </div>
       </div>
+
+      {audioBarOpen && (
+        <div
+          role="region"
+          aria-label="Audio playback controls"
+          style={{
+            marginBottom: 12,
+            padding: 12,
+            borderRadius: 8,
+            border: `1px solid ${PAL.borderInner}`,
+            background: PAL.bgInner,
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <button
+            type="button"
+            style={iconBtnBase}
+            aria-label={paused ? "Resume audio playback" : "Pause audio playback"}
+            onClick={togglePause}
+            onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
+            onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
+          >
+            {paused ? <Play size={20} aria-hidden /> : <Pause size={20} aria-hidden />}
+          </button>
+          <button
+            type="button"
+            style={iconBtnBase}
+            aria-label="Skip to previous section"
+            onClick={skipBackward}
+            onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
+            onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
+          >
+            <SkipBack size={20} aria-hidden />
+          </button>
+          <button
+            type="button"
+            style={iconBtnBase}
+            aria-label="Skip to next section"
+            onClick={skipForward}
+            onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
+            onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
+          >
+            <SkipForward size={20} aria-hidden />
+          </button>
+          <button
+            type="button"
+            style={iconBtnBase}
+            aria-label="Stop audio playback"
+            onClick={stopSpeech}
+            onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
+            onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
+          >
+            <Square size={20} aria-hidden />
+          </button>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, color: PAL.body, fontSize: 12 }}>
+            <span className="sr-only" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0,0,0,0)" }}>
+              Playback speed
+            </span>
+            <select
+              aria-label={`Playback speed, currently ${speedLabel}`}
+              value={speechRate}
+              onChange={(e) => setRate(Number(e.target.value))}
+              style={{
+                minHeight: TOUCH_MIN,
+                padding: "0 12px",
+                borderRadius: 8,
+                border: `1px solid ${PAL.borderInner}`,
+                background: PAL.bgCard,
+                color: PAL.body,
+                fontSize: 12,
+                outline: "none",
+              }}
+              onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
+              onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
+            >
+              <option value={1}>1x</option>
+              <option value={1.25}>1.25x</option>
+              <option value={1.5}>1.5x</option>
+              <option value={2}>2x</option>
+            </select>
+          </label>
+          <span style={{ fontSize: 12, color: PAL.label, marginLeft: "auto" }}>
+            Section {sectionIdx} of {speechSections.length}
+            {currentSectionLabel ? `: ${currentSectionLabel}` : ""}
+          </span>
+        </div>
+      )}
+
+      <div
+        style={{
+          marginBottom: 12,
+          borderLeft: speakingSection === "pm" ? `3px solid ${SPEECH_ACCENT_BORDER}` : undefined,
+          paddingLeft: speakingSection === "pm" ? 10 : 0,
+          borderRadius: speakingSection === "pm" ? 4 : undefined,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: PAL.label, letterSpacing: 1, textTransform: "uppercase" }}>
+            PM Decision
+          </span>
+          {nowPlayingChip("pm")}
+        </div>
 
       {/* Structure (if trade) */}
       {isTrade && pm.structure && <StructureDisplay structure={pm.structure} />}
@@ -514,11 +851,21 @@ export function StrategistDeskCard({
         </div>
       )}
 
+      </div>
+
       {/* Analyst Reads (collapsible) */}
       <div style={{ marginTop: 12 }}>
         <div style={{ fontSize: 10, fontWeight: 600, color: PAL.label, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>ANALYST READS</div>
 
-        <CollapsibleSection title="Vol Analyst" defaultOpen>
+        <div
+          style={{
+            marginBottom: 8,
+            borderLeft: speakingSection === "vol" ? `3px solid ${SPEECH_ACCENT_BORDER}` : undefined,
+            paddingLeft: speakingSection === "vol" ? 10 : 0,
+            borderRadius: speakingSection === "vol" ? 4 : undefined,
+          }}
+        >
+          <CollapsibleSection title="Vol Analyst" defaultOpen headerAddon={nowPlayingChip("vol")}>
           <FieldRow label="IV State" value={vol.iv_state} />
           <FieldRow label="Term Structure" value={vol.term_structure} />
           <FieldRow label="Skew" value={vol.skew} />
@@ -527,8 +874,17 @@ export function StrategistDeskCard({
             {vol.read}
           </div>
         </CollapsibleSection>
+        </div>
 
-        <CollapsibleSection title="Flow Analyst" defaultOpen>
+        <div
+          style={{
+            marginBottom: 8,
+            borderLeft: speakingSection === "flow" ? `3px solid ${SPEECH_ACCENT_BORDER}` : undefined,
+            paddingLeft: speakingSection === "flow" ? 10 : 0,
+            borderRadius: speakingSection === "flow" ? 4 : undefined,
+          }}
+        >
+          <CollapsibleSection title="Flow Analyst" defaultOpen headerAddon={nowPlayingChip("flow")}>
           <FieldRow label="Dominant Flow" value={flow.dominant_flow} />
           <FieldRow label="Institutional" value={flow.institutional_signal} />
           <FieldRow label="Retail" value={flow.retail_signal} />
@@ -546,8 +902,17 @@ export function StrategistDeskCard({
             {flow.read}
           </div>
         </CollapsibleSection>
+        </div>
 
-        <CollapsibleSection title="Catalyst Analyst" defaultOpen>
+        <div
+          style={{
+            marginBottom: 8,
+            borderLeft: speakingSection === "catalyst" ? `3px solid ${SPEECH_ACCENT_BORDER}` : undefined,
+            paddingLeft: speakingSection === "catalyst" ? 10 : 0,
+            borderRadius: speakingSection === "catalyst" ? 4 : undefined,
+          }}
+        >
+          <CollapsibleSection title="Catalyst Analyst" defaultOpen headerAddon={nowPlayingChip("catalyst")}>
           <FieldRow label="Primary Catalyst" value={catalyst.primary_catalyst} />
           <FieldRow label="Bar to Clear" value={catalyst.bar_to_clear} />
           <FieldRow label="Asymmetry" value={catalyst.asymmetry} />
@@ -556,6 +921,7 @@ export function StrategistDeskCard({
             {catalyst.read}
           </div>
         </CollapsibleSection>
+        </div>
       </div>
     </div>
   );

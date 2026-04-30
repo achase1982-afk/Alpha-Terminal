@@ -9,6 +9,7 @@ import {
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 // Strategist V2: polling lives in `strategistPoller` (survives tab background via sync + `/job/:id/final`).
 import { startStrategistPolling } from "@/lib/strategistPoller";
+import { dispatchStrategistAnalysisStart } from "@/lib/strategistDeskSpeechEvents";
 import { toast } from "sonner";
 import {
   BarChart2, DollarSign, Shield, TrendingUp, Scale,
@@ -3126,6 +3127,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   }, [accessToken, symbol, setSymbol, setStrategistResult]);
 
   const handleRunV2 = useCallback((ticker: string, flowContext?: string) => {
+    dispatchStrategistAnalysisStart();
     const upperTicker = ticker.toUpperCase();
     if (runningAnalyzeTicker === upperTicker) {
       toast.message(`Analysis already in progress for ${upperTicker}`);
