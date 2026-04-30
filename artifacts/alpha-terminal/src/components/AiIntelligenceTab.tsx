@@ -3415,15 +3415,27 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     const poll = async () => {
       try {
         const res = await fetchWithAuth(`${API_BASE}/strategist/ivr-backfill/${encodeURIComponent(ivrBackfillJobId)}`);
-        if (!res.ok) return;
+        if (!res.ok) {
+          console.log("[ivr-backfill poll] !res.ok", {
+            jobId: ivrBackfillJobId,
+            status: res.status,
+            statusText: res.statusText,
+          });
+          return;
+        }
         const job = await res.json() as IvrBackfillJobStatus;
+        console.log("[ivr-backfill poll] job", job);
         if (cancelled) return;
         setIvrBackfillJob(job);
         if (job.status === "completed" && !relaunched) {
           relaunched = true;
           handleRunV2(job.symbol);
         }
-      } catch {
+      } catch (err) {
+        console.log("[ivr-backfill poll] catch", {
+          jobId: ivrBackfillJobId,
+          err: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : err,
+        });
         // best-effort polling; the card remains visible and will retry
       }
     };

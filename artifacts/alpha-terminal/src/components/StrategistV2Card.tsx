@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from "react";
 import {
   TrendingUp, TrendingDown, Minus, Shield,
-  ChevronDown, ChevronUp, Send, Copy, Check, Activity,
+  ChevronDown, ChevronUp, Send, Copy, Check, Activity, AlertCircle, RefreshCw,
 } from "lucide-react";
 import { strategistCardToPlainText } from "@/lib/strategistPlaintext";
 import { isDeskStrategistTranscript } from "@/lib/strategistTranscriptDesk";
@@ -177,6 +177,8 @@ export interface StrategistV2Result {
     daysLoaded: number;
     daysRequested: number;
     message: string;
+    /** Present when status is failed (e.g. poll payload from ivr_backfill_jobs). */
+    errorMsg?: string | null;
   };
   recommendation?: {
     strategyLine: string;
@@ -1663,6 +1665,10 @@ export function StrategistV2BlockCard({
   );
 }
 
+function ivrBackfillErrorMsgPresent(msg: string | null | undefined): boolean {
+  return msg != null && String(msg).trim() !== "";
+}
+
 export function IvrPopulatingCard({
   result,
   progress,
@@ -1681,29 +1687,51 @@ export function IvrPopulatingCard({
   const loaded = progress?.daysLoaded ?? info?.daysLoaded ?? 0;
   const requested = progress?.daysRequested ?? info?.daysRequested ?? 252;
   const pct = requested > 0 ? Math.min(100, Math.round((loaded / requested) * 100)) : 0;
-  const failed = result.status === "failed_insufficient_history" || progress?.status === "failed_insufficient_history" || info?.status === "failed_insufficient_history";
+  const failedInsufficient =
+    result.status === "failed_insufficient_history" ||
+    progress?.status === "failed_insufficient_history" ||
+    info?.status === "failed_insufficient_history";
+  const failedBackfill =
+    !failedInsufficient &&
+    ((progress?.status === "failed" && ivrBackfillErrorMsgPresent(progress.errorMsg)) ||
+      (info?.status === "failed" && ivrBackfillErrorMsgPresent(info.errorMsg)));
+  const failed = failedInsufficient || failedBackfill;
+  const badgeLabel = failedInsufficient ? "Insufficient History" : failedBackfill ? "Backfill Failed" : "IVR Populating";
+  const bodyText = failedInsufficient
+    ? progress?.errorMsg ??
+      "This ticker is too new to compute IVR. At least 60 trading days of price history required."
+    : failedBackfill
+      ? (ivrBackfillErrorMsgPresent(progress?.errorMsg)
+          ? String(progress?.errorMsg)
+          : ivrBackfillErrorMsgPresent(info?.errorMsg)
+            ? String(info?.errorMsg)
+            : "IVR backfill failed")
+      : info?.message ?? "IVR populating, check back in ~2-3 minutes.";
 
   return (
     <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
       <div className="px-4 py-4">
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4" style={{ color: failed ? DOWN : PAL.gold }} />
+            {failedBackfill || failedInsufficient ? (
+              <AlertCircle className="w-4 h-4 shrink-0 text-red-400" aria-hidden />
+            ) : (
+              <Activity className="w-4 h-4 shrink-0" style={{ color: PAL.gold }} aria-hidden />
+            )}
             <span className="font-mono text-[13px] font-bold text-white">{result.ticker}</span>
-            <span className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 rounded" style={{
-              background: failed ? "rgba(248,113,113,0.12)" : "rgba(251,191,36,0.12)",
-              color: failed ? DOWN : PAL.gold,
-              border: `1px solid ${failed ? "rgba(248,113,113,0.35)" : "rgba(251,191,36,0.35)"}`,
-            }}>
-              {failed ? "Insufficient History" : "IVR Populating"}
+            <span
+              className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border"
+              style={{
+                background: failed ? "rgba(248,113,113,0.12)" : "rgba(251,191,36,0.12)",
+                color: failed ? DOWN : PAL.gold,
+                borderColor: failed ? "rgba(248,113,113,0.55)" : "rgba(251,191,36,0.35)",
+              }}
+            >
+              {badgeLabel}
             </span>
           </div>
         </div>
-        <div className="font-mono text-[11px] text-zinc-300 leading-relaxed">
-          {failed
-            ? progress?.errorMsg ?? "This ticker is too new to compute IVR. At least 60 trading days of price history required."
-            : info?.message ?? "IVR populating, check back in ~2-3 minutes."}
-        </div>
+        <div className="font-mono text-[11px] text-zinc-300 leading-relaxed">{bodyText}</div>
         {!failed && (
           <>
             <div className="mt-3 flex items-center justify-between font-mono text-[10px] text-zinc-500">
@@ -1720,10 +1748,12 @@ export function IvrPopulatingCard({
         )}
         {failed && onRetry && (
           <button
+            type="button"
             onClick={() => onRetry(result.ticker)}
-            className="mt-3 px-3 py-2 rounded-lg font-mono text-[11px] font-bold uppercase tracking-wider"
-            style={{ color: "#0a0a0a", background: PAL.gold }}
+            aria-label={`Retry IVR backfill for ${result.ticker}`}
+            className="mt-3 inline-flex items-center justify-center gap-2 w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-lg font-mono text-[11px] font-bold uppercase tracking-wider border-2 border-red-400/80 text-red-100 bg-red-950/40 hover:bg-red-950/70 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#111113]"
           >
+            <RefreshCw className="w-4 h-4 shrink-0" aria-hidden />
             Retry
           </button>
         )}

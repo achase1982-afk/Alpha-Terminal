@@ -73,6 +73,18 @@ function newTurnId(): string {
   return `desk_${Date.now().toString(36)}_${turnSeq}`;
 }
 
+/**
+ * Desk analyst/PM JSON turns (all roles): routes to provider-specific stream helpers.
+ *
+ * Web search in the **API request** (not prompt-only):
+ * - **Anthropic:** `streamCallAnthropicWithSystemAndWebSearch` sets `tools: [ANTHROPIC_WEB_SEARCH_TOOL]`
+ *   (`web_search_20250305`) on `client.messages.stream` (see `aiLabAnalystClient.ts`).
+ * - **OpenAI:** `streamCallOpenAIWithSystemAndWebSearch` uses `buildOpenAIResponseParams`, which sets
+ *   `tools: [{ type: "web_search_preview" }]` on `responses.create` (see `aiLabAnalystClient.ts`).
+ * - **xAI:** `streamCallXaiWithSystemAndWebSearch` sets `tools: { web_search: xai.tools.webSearch() }` on `streamText`.
+ * - **Gemini:** `streamCallGeminiDeskJson` cannot attach tools with `responseMimeType: application/json`;
+ *   Catalyst uses pre-search or prompt-only for Google (see orchestrator status strings).
+ */
 async function streamModel(
   modelOpt: StrategistModelOption,
   systemPrompt: string,
@@ -184,7 +196,7 @@ export async function runDeskAnalysis(args: {
   const catalystNativeWeb = catalystModel.provider !== "google";
 
   if (deskExpirationISO && catalystModel.provider === "google") {
-    callbacks?.onStatus?.("Desk — Catalyst structured web research (Gemini JSON cannot use tools)…");
+    callbacks?.onStatus?.("Desk: Catalyst structured web research (Gemini JSON cannot use tools)…");
     try {
       const bundle = await runCatalystDeskStructuredSearches({
         ticker,
@@ -199,7 +211,7 @@ export async function runDeskAnalysis(args: {
     } catch (err) {
       logger.warn(
         { err, ticker },
-        "StrategistDesk: structured catalyst web search bundle failed — continuing with calendar snapshot only",
+        "StrategistDesk: structured catalyst web search bundle failed; continuing with calendar snapshot only",
       );
       catalystResearchBriefing =
         "## STRUCTURED RESEARCH (catalyst desk)\nResearch pass failed; treat web-derived themes as **data not surfaced** unless the calendar snapshot alone supports them.";
@@ -207,9 +219,9 @@ export async function runDeskAnalysis(args: {
   } else if (deskExpirationISO && catalystNativeWeb) {
     logger.info(
       { ticker, catalystProvider: catalystModel.provider },
-      "StrategistDesk: skipping catalyst structured pre-search — Catalyst slot uses native web search on JSON turn",
+      "StrategistDesk: skipping catalyst structured pre-search; Catalyst slot uses native web search on JSON turn",
     );
-    callbacks?.onStatus?.("Desk — Catalyst web pre-search skipped (native web search on analyst turn)…");
+    callbacks?.onStatus?.("Desk: Catalyst web pre-search skipped (native web search on analyst turn)…");
   }
 
   const catalystPrompt = buildCatalystAnalystPrompt(
@@ -218,7 +230,7 @@ export async function runDeskAnalysis(args: {
     { catalystSlotNativeWebSearch: catalystNativeWeb },
   );
 
-  callbacks?.onStatus?.("Desk — Vol, Flow, and Catalyst analysts running in parallel…");
+  callbacks?.onStatus?.("Desk: Vol, Flow, and Catalyst analysts running in parallel…");
 
   assertDeskNotCancelled(callbacks);
   const [volResult, flowResult, catalystResult] = await Promise.all([
@@ -228,7 +240,7 @@ export async function runDeskAnalysis(args: {
   ]);
 
   assertDeskNotCancelled(callbacks);
-  callbacks?.onStatus?.("Desk — PM synthesizing analyst reads…");
+  callbacks?.onStatus?.("Desk: PM synthesizing analyst reads…");
 
   const pmPrompt = buildPmPrompt(
     dataPackage,
@@ -253,7 +265,7 @@ export async function runDeskAnalysis(args: {
     pmParsed = pmValidation.data;
   } else {
     callbacks?.onTurnDiscarded?.(pmTurn.turnId);
-    callbacks?.onStatus?.("Desk — PM output failed validation, retrying…");
+    callbacks?.onStatus?.("Desk: PM output failed validation, retrying…");
     logger.warn(
       { errors: pmValidation.error.issues, ticker, model: pmModel.model, provider: pmModel.provider, label: pmModel.label },
       "StrategistDesk: PM output failed validation, retrying",
@@ -283,7 +295,7 @@ export async function runDeskAnalysis(args: {
         whose_side: "neither",
         biggest_risk: "PM output could not be parsed",
         exit_plan: { profit_target: 0, stop_loss: 0, time_stop: "" },
-        watch_for: "PM validation failure — retry the analysis",
+        watch_for: "PM validation failure; retry the analysis",
       };
     }
   }
@@ -354,7 +366,7 @@ async function runAnalystWithRetry<T>(
     { role, ticker, model: model.model, provider: model.provider, label: model.label, errors: validation.error.issues },
     `StrategistDesk: ${role} output failed validation, retrying`,
   );
-  callbacks?.onStatus?.(`Desk — ${labels[role]} output failed validation, retrying…`);
+  callbacks?.onStatus?.(`Desk: ${labels[role]} output failed validation, retrying…`);
 
   const retryTurn = await runDeskTurn({
     modelOpt: model,
@@ -393,7 +405,7 @@ function buildFallbackOutput(role: "vol" | "flow" | "catalyst", rawText: string)
   const snippet = rawText.slice(0, 500);
   if (role === "vol") {
     return {
-      iv_state: "Unable to parse — see raw output",
+      iv_state: "Unable to parse; see raw output",
       term_structure: "Unable to parse",
       skew: "Unable to parse",
       implied_vs_realized: "Unable to parse",
@@ -402,7 +414,7 @@ function buildFallbackOutput(role: "vol" | "flow" | "catalyst", rawText: string)
   }
   if (role === "flow") {
     return {
-      dominant_flow: "Unable to parse — see raw output",
+      dominant_flow: "Unable to parse; see raw output",
       institutional_signal: "Unable to parse",
       retail_signal: "Unable to parse",
       key_strikes: [],
@@ -410,7 +422,7 @@ function buildFallbackOutput(role: "vol" | "flow" | "catalyst", rawText: string)
     };
   }
   return {
-    primary_catalyst: "Unable to parse — see raw output",
+    primary_catalyst: "Unable to parse; see raw output",
     bar_to_clear: "Unable to parse",
     asymmetry: "Unable to parse",
     historical_pattern: "Unable to parse",
