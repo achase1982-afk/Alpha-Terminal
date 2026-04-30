@@ -133,7 +133,7 @@ export function buildDeskCardPlainText(args: {
         ? new Date(generatedAt).toLocaleString()
         : String(generatedAt);
 
-  lines.push(`${isTrade ? "TRADE" : "PASS"}  ${deskResult.ticker}  DESK MODE`);
+  lines.push(`${isTrade ? "TRADE" : "PASS"}  ${deskResult.ticker}  ${deskResult.mode === "solo_desk" ? "SOLO DESK" : "DESK"} MODE`);
   if (when) lines.push(`Generated: ${when}`);
   lines.push("");
 

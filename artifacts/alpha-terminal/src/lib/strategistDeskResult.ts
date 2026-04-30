@@ -66,7 +66,7 @@ export interface PmOutput {
 }
 
 export interface DeskResult {
-  mode: "desk";
+  mode: "desk" | "solo_desk";
   ticker: string;
   vol: VolAnalystOutput;
   flow: FlowAnalystOutput;

@@ -14,6 +14,7 @@ import {
   FlowAnalystOutputSchema,
   CatalystAnalystOutputSchema,
   PmOutputSchema,
+  SoloDeskFullOutputSchema,
   type VolAnalystOutput,
   type FlowAnalystOutput,
   type CatalystAnalystOutput,
@@ -25,6 +26,8 @@ import {
   buildFlowAnalystPrompt,
   buildCatalystAnalystPrompt,
   buildPmPrompt,
+  buildSoloDeskUserPrompt,
+  SOLO_DESK_MODEL_SYSTEM_PROMPT,
 } from "./strategistDeskPrompts.js";
 import type { DebateRound } from "./strategistDebate.js";
 import type { CatalystEvaluation } from "./catalystEvaluator.js";
@@ -450,5 +453,197 @@ function buildFallbackOutput(role: "vol" | "flow" | "catalyst", rawText: string)
     asymmetry: "Unable to parse",
     historical_pattern: "Unable to parse",
     read: snippet,
+  };
+}
+
+/**
+ * Solo Desk: one LLM turn with the PM slot model, same nested DeskResult shape as `runDeskAnalysis`.
+ * Data parity with multi-turn Desk (including Gemini catalyst pre-search when applicable).
+ */
+export async function runSoloDesk(args: {
+  dataPackage: string;
+  settings: StrategistConfig;
+  ticker: string;
+  deskExpirationISO?: string;
+  catalystEvaluation?: CatalystEvaluation | null;
+  callbacks?: DeskCallbacks;
+}): Promise<DeskResult> {
+  const { dataPackage, settings, ticker, deskExpirationISO, catalystEvaluation, callbacks } = args;
+
+  const pmModelIdx = settings.strategistArbitratorModelIdx === -1 ? 0 : settings.strategistArbitratorModelIdx;
+  const pmModel = getStrategistModel(pmModelIdx);
+
+  let catalystResearchBriefing = "";
+  const catalystNativeWeb = pmModel.provider !== "google";
+
+  if (deskExpirationISO && pmModel.provider === "google") {
+    callbacks?.onStatus?.("Solo Desk: Catalyst structured web research (Gemini JSON cannot use tools)…");
+    try {
+      const bundle = await runCatalystDeskStructuredSearches({
+        ticker,
+        catalystEval: catalystEvaluation ?? null,
+        deskExpirationISO,
+        model: pmModel,
+        onStatus: callbacks?.onStatus,
+        cancelSignal: callbacks?.cancelSignal,
+      });
+      catalystResearchBriefing = bundle.briefing;
+    } catch (err) {
+      logger.warn(
+        { err, ticker },
+        "StrategistDesk: Solo Desk structured catalyst web search bundle failed; continuing with calendar snapshot only",
+      );
+      catalystResearchBriefing =
+        "## STRUCTURED RESEARCH (catalyst desk)\nResearch pass failed; treat web-derived themes as **data not surfaced** unless the calendar snapshot alone supports them.";
+    }
+  } else if (deskExpirationISO && catalystNativeWeb) {
+    logger.info(
+      { ticker, provider: pmModel.provider },
+      "StrategistDesk: Solo Desk skipping catalyst structured pre-search; PM model uses native web search on JSON turn",
+    );
+    callbacks?.onStatus?.("Solo Desk: Catalyst web pre-search skipped (native web search on consolidated turn)…");
+  }
+
+  const userPrompt = buildSoloDeskUserPrompt(dataPackage, catalystResearchBriefing || undefined, {
+    catalystSlotNativeWebSearch: catalystNativeWeb,
+  });
+
+  callbacks?.onStatus?.("Solo Desk: single consolidated pass (Vol, Flow, Catalyst, PM)…");
+
+  assertDeskNotCancelled(callbacks);
+
+  const turnId = newTurnId();
+  callbacks?.onTurnStart?.({
+    id: turnId,
+    round: "desk",
+    role: "pm",
+    phase: "pm",
+    model: pmModel.model,
+    label: "Solo Desk",
+    startedAt: Date.now(),
+  });
+
+  let acc = "";
+  const onDelta = (delta: string) => {
+    acc += delta;
+    callbacks?.onTurnDelta?.(turnId, delta);
+  };
+
+  let text = "";
+  try {
+    const r = await streamModel(
+      pmModel,
+      SOLO_DESK_MODEL_SYSTEM_PROMPT,
+      userPrompt,
+      onDelta,
+      (s) => callbacks?.onStatus?.(s),
+      callbacks?.cancelSignal,
+    );
+    text = r.text;
+    callbacks?.onTurnDone?.(turnId, text);
+  } catch (err) {
+    const errMsg = `\n\n[error: ${err instanceof Error ? err.message : String(err)}]`;
+    callbacks?.onTurnDone?.(turnId, acc + errMsg);
+    throw err;
+  }
+
+  const errors: string[] = [];
+  let json = parseJsonFromText(text);
+  let validation = SoloDeskFullOutputSchema.safeParse(json);
+
+  if (!validation.success) {
+    callbacks?.onTurnDiscarded?.(turnId);
+    logger.warn(
+      { ticker, issues: validation.error.issues, model: pmModel.model, provider: pmModel.provider },
+      "StrategistDesk: Solo Desk output failed validation, retrying",
+    );
+    callbacks?.onStatus?.("Solo Desk: consolidated output failed validation, retrying…");
+    assertDeskNotCancelled(callbacks);
+    const retryTurnId = newTurnId();
+    callbacks?.onTurnStart?.({
+      id: retryTurnId,
+      round: "desk",
+      role: "pm",
+      phase: "pm",
+      model: pmModel.model,
+      label: "Solo Desk (retry)",
+      startedAt: Date.now(),
+    });
+    const onRetryDelta = (delta: string) => {
+      callbacks?.onTurnDelta?.(retryTurnId, delta);
+    };
+    const retryPrompt =
+      userPrompt +
+      "\n\nYour previous response failed JSON validation. Return ONLY one valid JSON object with top-level keys vol, flow, catalyst, and pm, each matching the Desk shapes exactly. No markdown, no code fences, no commentary before or after the JSON.";
+    const retryR = await streamModel(
+      pmModel,
+      SOLO_DESK_MODEL_SYSTEM_PROMPT,
+      retryPrompt,
+      onRetryDelta,
+      (s) => callbacks?.onStatus?.(s),
+      callbacks?.cancelSignal,
+    );
+    callbacks?.onTurnDone?.(retryTurnId, retryR.text);
+    json = parseJsonFromText(retryR.text);
+    validation = SoloDeskFullOutputSchema.safeParse(json);
+  }
+
+  if (!validation.success) {
+    errors.push(`Solo Desk output failed validation after retry: ${validation.error.issues.map((i) => i.message).join("; ")}`);
+    const stubPm: PmOutput = {
+      decision: "pass",
+      structure: null,
+      thesis: (text || "").slice(0, 500),
+      edge_check: "",
+      deviation_from_analysts: "none",
+      size: "small",
+      whose_side: "neither",
+      biggest_risk: "Solo Desk output could not be parsed",
+      exit_plan: { profit_target: 0, stop_loss: 0, time_stop: "" },
+      watch_for: "Schema validation failure; retry the analysis",
+    };
+    return {
+      mode: "solo_desk",
+      ticker,
+      vol: buildFallbackOutput("vol", text) as VolAnalystOutput,
+      flow: buildFallbackOutput("flow", text) as FlowAnalystOutput,
+      catalyst: buildFallbackOutput("catalyst", text) as CatalystAnalystOutput,
+      pm: stubPm,
+      pmOutputIncomplete: true,
+      models: {
+        vol: pmModel.label,
+        flow: pmModel.label,
+        catalyst: pmModel.label,
+        pm: pmModel.label,
+      },
+      errors,
+    };
+  }
+
+  const { vol, flow, catalyst, pm } = validation.data;
+
+  logger.info(
+    {
+      ticker,
+      soloDeskModel: { provider: pmModel.provider, model: pmModel.model, label: pmModel.label },
+      soloDeskPromptChars: userPrompt.length,
+    },
+    "StrategistDesk: completed Solo Desk run",
+  );
+
+  return {
+    mode: "solo_desk",
+    ticker,
+    vol,
+    flow,
+    catalyst,
+    pm,
+    models: {
+      vol: pmModel.label,
+      flow: pmModel.label,
+      catalyst: pmModel.label,
+      pm: pmModel.label,
+    },
+    errors: errors.length > 0 ? errors : undefined,
   };
 }

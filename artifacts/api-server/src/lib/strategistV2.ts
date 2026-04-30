@@ -3,7 +3,7 @@ import { getCachedRegime, buildFallbackRegime, type StructuredRegime } from "./r
 import { computeIOScore, type IOScoreResult } from "./ioScoreEngine.js";
 import { getSettings, getStrategistModel, type StrategistConfig, type StrategistModelOption } from "./strategistSettings.js";
 import { runDebate, type DebateCallbacks, type DebateRound, type DebateRole, type DebatePhase } from "./strategistDebate.js";
-import { runDeskAnalysis, type DeskCallbacks } from "./strategistDesk.js";
+import { runDeskAnalysis, runSoloDesk, type DeskCallbacks } from "./strategistDesk.js";
 import { throwIfStrategistAnalyzeCancelled } from "./strategistAnalyzeCancellation.js";
 import type { ScrubCanonical } from "./narrativeScrubbers.js";
 import { db, strategistTelemetryTable } from "@workspace/db";
@@ -648,7 +648,7 @@ export async function analyzeTickerV2(
 
   let deskCatalystEval: CatalystEvaluation | null = null;
   let deskCatalystExpirationISO = "";
-  if (settings.strategistMode === 3) {
+  if (settings.strategistMode === 3 || settings.strategistMode === 4) {
     deskCatalystExpirationISO = computeDeskCatalystExpirationISO(chainSummary, settings);
     assertAnalyzeNotCancelled(progress);
     try {
@@ -667,7 +667,7 @@ export async function analyzeTickerV2(
   }
 
   let tapeBackfillStatus: TapeBackfillStatus | undefined;
-  if (settings.strategistMode === 3) {
+  if (settings.strategistMode === 3 || settings.strategistMode === 4) {
     status("Loading session options tape (REST backfill)…");
     try {
       tapeBackfillStatus = await runStrategistTapeBackfill({
@@ -727,12 +727,12 @@ export async function analyzeTickerV2(
     settings,
     polygonHighlights,
     deskCatalystEval,
-    settings.strategistMode === 3 ? deskCatalystExpirationISO : undefined,
+    settings.strategistMode === 3 || settings.strategistMode === 4 ? deskCatalystExpirationISO : undefined,
     {
       realizedVol,
       ivrContext: buildIvrContext(tickerData, realIvDepth, proxyIvDepth),
     },
-    settings.strategistMode === 3 ? tapeBackfillStatus : undefined,
+    settings.strategistMode === 3 || settings.strategistMode === 4 ? tapeBackfillStatus : undefined,
   );
   assertAnalyzeNotCancelled(progress);
 
@@ -786,6 +786,63 @@ export async function analyzeTickerV2(
       logger.error({ err, ticker }, "StrategistV2: Desk analysis failed");
       return noViable(ticker, regime, settings, toxicCheck, tickerData,
         { category: "ANALYSIS_INCOMPLETE", detail: `Desk analysis failed: ${err instanceof Error ? err.message : String(err)}`, suggestedAction: "Retry the analysis." },
+        ioScore, { dataSource, dataPackage });
+    }
+  }
+
+  // ── Solo Desk (mode 4): one consolidated LLM pass, same DeskResult shape ──
+  if (settings.strategistMode === 4) {
+    status("Starting Solo Desk analysis (single pass, Vol + Flow + Catalyst + PM)…");
+    try {
+      const deskResult = await runSoloDesk({
+        dataPackage,
+        settings,
+        ticker,
+        deskExpirationISO: deskCatalystExpirationISO,
+        catalystEvaluation: deskCatalystEval,
+        callbacks: {
+          jobId: progress?.jobId,
+          cancelSignal: progress?.cancelSignal,
+          onStatus: (s) => status(s),
+          onTurnStart: progress?.onTurnStart ? (turn) => progress.onTurnStart!(turn as any) : undefined,
+          onTurnDelta: progress?.onTurnDelta,
+          onTurnDone: progress?.onTurnDone,
+          onTurnDiscarded: progress?.onTurnDiscarded,
+        },
+      });
+      const incomplete =
+        deskResult.pmOutputIncomplete ||
+        (deskResult.errors?.some((e) => e.startsWith("Solo Desk output failed validation")) ?? false);
+      const result: StrategistV2Result = {
+        status: "desk_recommendation",
+        ticker,
+        deskResult,
+        strategistOutcome: incomplete
+          ? "ANALYSIS_INCOMPLETE"
+          : deskResult.pm.decision === "pass"
+            ? "NO_TRADE"
+            : undefined,
+        ...(incomplete
+          ? {
+              blockReason: {
+                category: "ANALYSIS_INCOMPLETE" as const,
+                detail:
+                  deskResult.errors?.find((e) => e.startsWith("Solo Desk output failed")) ??
+                  "Solo Desk output did not match the required JSON schema after retry.",
+                suggestedAction: "Retry the analysis.",
+                outcomeMeta: { incompleteRole: "pm" },
+              },
+            }
+          : {}),
+        regime,
+        systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
+        ioScore,
+      };
+      return result;
+    } catch (err) {
+      logger.error({ err, ticker }, "StrategistV2: Solo Desk analysis failed");
+      return noViable(ticker, regime, settings, toxicCheck, tickerData,
+        { category: "ANALYSIS_INCOMPLETE", detail: `Solo Desk analysis failed: ${err instanceof Error ? err.message : String(err)}`, suggestedAction: "Retry the analysis." },
         ioScore, { dataSource, dataPackage });
     }
   }
@@ -1707,7 +1764,7 @@ export function summarizeOptionsChain(
     }
   }
 
-  if (ctx?.settings?.strategistMode === 3) {
+  if (ctx?.settings?.strategistMode === 3 || ctx?.settings?.strategistMode === 4) {
     const prefsMax = Math.max(1, ctx.settings.preferredDteMax | 0);
     const fromAvail = deskWindowIsoFromAvailableExpiries(expirations, prefsMax);
     if (fromAvail) {
@@ -1871,7 +1928,7 @@ function buildDataPackage(
     userPreferences: {
       preferredDteMin: settings.preferredDteMin,
       preferredDteMax: settings.preferredDteMax,
-      ...(settings.strategistMode === 3 && deskCatalystWindowExpirationISO
+      ...((settings.strategistMode === 3 || settings.strategistMode === 4) && deskCatalystWindowExpirationISO
         ? { deskCatalystPositionWindowExpirationISO: deskCatalystWindowExpirationISO }
         : {}),
       spreadWidth: settings.spreadWidth,
@@ -1899,7 +1956,7 @@ function buildDataPackage(
     };
   }
 
-  if (settings.strategistMode === 3 && deskCatalystWindowExpirationISO) {
+  if ((settings.strategistMode === 3 || settings.strategistMode === 4) && deskCatalystWindowExpirationISO) {
     if (catalystEvaluation != null) {
       pkg.catalystEvaluation = catalystEvaluation;
     }
