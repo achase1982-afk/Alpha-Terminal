@@ -8,8 +8,8 @@ import {
 } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 // Strategist V2: polling lives in `strategistPoller` (survives tab background via sync + `/job/:id/final`).
-import { startStrategistPolling } from "@/lib/strategistPoller";
-import { dispatchStrategistAnalysisStart } from "@/lib/strategistDeskSpeechEvents";
+import { startStrategistPolling, abortStrategistPolling } from "@/lib/strategistPoller";
+import { dispatchStrategistAnalysisStart, dispatchStrategistAnalysisCancel } from "@/lib/strategistDeskSpeechEvents";
 import { toast } from "sonner";
 import {
   BarChart2, DollarSign, Shield, TrendingUp, Scale,
@@ -782,12 +782,115 @@ function RealStrategyCard({ s, idx, preTradeResult, symbol }: { s: StrategyPaylo
   );
 }
 
-function StrategistCommandBar({ onRun, disabled, blockedTicker, lastRunSymbol, lastRunTime }: {
+function StrategistCancelConfirmDialog(props: {
+  open: boolean;
+  onConfirmCancel: () => void;
+  onKeepRunning: () => void;
+}) {
+  const { open, onConfirmCancel, onKeepRunning } = props;
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const yesRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const t = window.setTimeout(() => {
+      onKeepRunning();
+    }, 8000);
+    return () => window.clearTimeout(t);
+  }, [open, onKeepRunning]);
+
+  useEffect(() => {
+    if (!open) return;
+    yesRef.current?.focus();
+    const node = dialogRef.current;
+    if (!node) return;
+    const getFocusable = () =>
+      Array.from(
+        node.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onKeepRunning();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const els = getFocusable();
+      if (els.length === 0) return;
+      const first = els[0]!;
+      const last = els[els.length - 1]!;
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open, onKeepRunning]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.65)" }}
+      role="presentation"
+      onClick={onKeepRunning}
+    >
+      <div
+        ref={dialogRef}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="strategist-cancel-title"
+        aria-describedby="strategist-cancel-desc"
+        className="max-w-md w-full rounded-xl p-6 shadow-xl outline-none"
+        style={{ background: "#18181b", border: "1px solid #3f3f46" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id="strategist-cancel-title" className="font-mono text-sm font-bold text-white tracking-wide mb-2">
+          Cancel analysis?
+        </h2>
+        <p id="strategist-cancel-desc" className="font-mono text-xs text-zinc-400 mb-6">
+          Are you sure you want to cancel this run?
+        </p>
+        <div className="flex flex-col sm:flex-row gap-3 justify-end">
+          <button
+            type="button"
+            ref={yesRef}
+            onClick={onConfirmCancel}
+            className="min-h-[44px] min-w-[44px] px-4 rounded-lg font-mono text-xs font-bold uppercase tracking-wider focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB800] focus-visible:ring-offset-2 focus-visible:ring-offset-[#18181b]"
+            style={{ background: "#f23645", color: "#fff" }}
+          >
+            Yes, cancel
+          </button>
+          <button
+            type="button"
+            onClick={onKeepRunning}
+            className="min-h-[44px] min-w-[44px] px-4 rounded-lg font-mono text-xs font-bold uppercase tracking-wider focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB800] focus-visible:ring-offset-2 focus-visible:ring-offset-[#18181b] border border-zinc-600 text-zinc-200"
+            style={{ background: "transparent" }}
+          >
+            Keep running
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StrategistCommandBar({ onRun, disabled, blockedTicker, lastRunSymbol, lastRunTime, onCancelClick }: {
   onRun: (ticker: string) => void;
   disabled: boolean;
   /** When set, analysis is running for this ticker — show inline hint */
   blockedTicker?: string | null;
   lastRunSymbol?: string | null; lastRunTime?: number | null;
+  onCancelClick?: () => void;
 }) {
   const { symbol, streamPrices, accessToken } = useTerminalStore();
   const [inputVal, setInputVal] = useState("");
@@ -810,6 +913,7 @@ function StrategistCommandBar({ onRun, disabled, blockedTicker, lastRunSymbol, l
 
   const displaySymbol = previewTicker || symbol;
   const blocksThisSymbol = !!(blockedTicker && blockedTicker === displaySymbol);
+  const showCancelInstead = blocksThisSymbol;
   const liveQuote = streamPrices[displaySymbol];
 
   const accessTokenRef = useRef(accessToken);
@@ -1013,30 +1117,51 @@ function StrategistCommandBar({ onRun, disabled, blockedTicker, lastRunSymbol, l
               onFocus={() => setIsFocused(true)}
               onBlur={() => setIsFocused(false)}
               placeholder={`Analyze ${displaySymbol} or enter new ticker...`}
+              disabled={showCancelInstead}
+              aria-disabled={showCancelInstead}
               className="w-full h-10 pl-9 pr-3 rounded-lg font-mono text-xs text-white
-                placeholder:text-[#3f3f46] focus:outline-none transition-colors uppercase"
+                placeholder:text-[#3f3f46] focus:outline-none transition-colors uppercase
+                disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ background: "#0a0a0b", border: "1px solid #1f1f22" }}
               autoComplete="off"
               autoCorrect="off"
               spellCheck={false}
             />
           </div>
-          <button
-            type="submit"
-            disabled={disabled || blocksThisSymbol}
-            title={blocksThisSymbol ? `Analysis already in progress for ${blockedTicker}` : undefined}
-            className="p-[10px] rounded-lg font-mono text-[13px] font-bold tracking-widest shrink-0 transition-all duration-200 uppercase
-              disabled:opacity-30 disabled:cursor-not-allowed"
-            style={{
-              background: "#18181b",
-              color: disabled ? "#52525b" : "#FFB800",
-              border: "none",
-            }}
-          >
-            Analyze
-          </button>
+          {showCancelInstead ? (
+            <button
+              type="button"
+              onClick={onCancelClick}
+              aria-label="Cancel analysis"
+              className="min-h-[44px] min-w-[44px] shrink-0 rounded-lg font-mono text-[13px] font-bold tracking-widest uppercase px-3
+                focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB800] focus-visible:ring-offset-2 focus-visible:ring-offset-[#111113]"
+              style={{
+                background: "#2a1818",
+                color: "#f87171",
+                border: "1px solid rgba(248,113,113,0.45)",
+              }}
+            >
+              Cancel
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={disabled || blocksThisSymbol}
+              title={blocksThisSymbol ? `Analysis already in progress for ${blockedTicker}` : undefined}
+              className="min-h-[44px] min-w-[44px] p-[10px] rounded-lg font-mono text-[13px] font-bold tracking-widest shrink-0 transition-all duration-200 uppercase
+                disabled:opacity-30 disabled:cursor-not-allowed
+                focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB800] focus-visible:ring-offset-2 focus-visible:ring-offset-[#111113]"
+              style={{
+                background: "#18181b",
+                color: disabled ? "#52525b" : "#FFB800",
+                border: "none",
+              }}
+            >
+              Analyze
+            </button>
+          )}
         </div>
-        {blocksThisSymbol && blockedTicker && (
+        {blocksThisSymbol && blockedTicker && !showCancelInstead && (
           <div className="px-4 pb-2 font-mono text-[10px] text-zinc-500">
             Analysis already in progress for <span className="text-zinc-300">{blockedTicker}</span>
           </div>
@@ -2507,6 +2632,10 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   const cacheRestoredRef = useRef(false);
   const prevSymbolRef = useRef(symbol);
   const strategistRunRef = useRef(0);
+  const analyzePostAbortRef = useRef<AbortController | null>(null);
+  const pendingAnalyzeJobIdRef = useRef<string | null>(null);
+  const cancelAnnounceRef = useRef<HTMLDivElement | null>(null);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
 
   const [detResult, setDetResult] = useState<DetStrategistResult | null>(null);
   const [detNarrative, setDetNarrative] = useState("");
@@ -2524,6 +2653,14 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     }
     return null;
   }, [strategistJobs]);
+  const runningAnalyzeJobId = useMemo(() => {
+    if (!runningAnalyzeTicker) return null;
+    const t = runningAnalyzeTicker.toUpperCase();
+    for (const [id, j] of Object.entries(strategistJobs)) {
+      if (j.ticker === t && j.status === "running" && j.kind !== "validation") return id;
+    }
+    return null;
+  }, [strategistJobs, runningAnalyzeTicker]);
   const strategistHistory = useTerminalStore(s => s.strategistHistory);
   const startStrategistJob = useTerminalStore(s => s.startStrategistJob);
   const cancelStrategistJob = useTerminalStore(s => s.cancelStrategistJob);
@@ -3133,7 +3270,12 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
       toast.message(`Analysis already in progress for ${upperTicker}`);
       return;
     }
+    analyzePostAbortRef.current?.abort();
+    const postAc = new AbortController();
+    analyzePostAbortRef.current = postAc;
+
     const jobId = `sj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    pendingAnalyzeJobIdRef.current = jobId;
     setDetResult(null);
     setActiveResult("strategist");
     setRealStrategies([]);
@@ -3151,14 +3293,17 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
     // Fire-and-forget — server runs the analysis to completion regardless of
     // client navigation. We hand off polling to a module-level driver so it
     // survives unmount/remount of this component (e.g. switching bottom tabs).
-    (async () => {
+    void (async () => {
       try {
         const res = await fetchWithAuth(`${API_BASE}/strategist/analyze`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ticker: upperTicker, jobId, ...(flowContext ? { flowContext } : {}) }),
           keepalive: true,
+          signal: postAc.signal,
         });
+        if (postAc.signal.aborted) return;
+        if (!useTerminalStore.getState().strategistJobs[jobId]) return;
         if (!res.ok) {
           if (res.status === 409) {
             try {
@@ -3176,10 +3321,63 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
         }
         startStrategistPolling(jobId);
       } catch (err) {
+        if (postAc.signal.aborted) return;
+        if (!useTerminalStore.getState().strategistJobs[jobId]) return;
         errorStrategistJob(jobId, err instanceof Error ? err.message : String(err));
       }
     })();
   }, [symbol, setSymbol, setStrategistResult, startStrategistJob, errorStrategistJob, cancelStrategistJob, runningAnalyzeTicker]);
+
+  const resetStrategistUiAfterCancel = useCallback(() => {
+    setStrategistStatus("");
+    setActiveResult(null);
+    setStrategistResult(null);
+    setThinkingTokens([]);
+    setDetResult(null);
+    setDetStreamingText("");
+    setDetThinking([]);
+    setIsDetRunning(false);
+    setIsDetStreaming(false);
+    setLastRunSymbol(null);
+    setLastRunTime(null);
+  }, []);
+
+  const handleCancelAnalyzeClick = useCallback(() => {
+    if (!runningAnalyzeJobId) return;
+    setCancelDialogOpen(true);
+  }, [runningAnalyzeJobId]);
+
+  const handleCancelDialogKeepRunning = useCallback(() => {
+    setCancelDialogOpen(false);
+    const el = cancelAnnounceRef.current;
+    if (el) {
+      el.textContent = "";
+      void el.offsetWidth;
+      el.textContent = "Cancel dismissed";
+    }
+  }, []);
+
+  const handleCancelDialogConfirm = useCallback(() => {
+    setCancelDialogOpen(false);
+    const jobId = runningAnalyzeJobId;
+    if (!jobId) return;
+    abortStrategistPolling(jobId);
+    analyzePostAbortRef.current?.abort();
+    void fetchWithAuth(`${API_BASE}/strategist/analyze/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId }),
+    }).catch(() => {});
+    cancelStrategistJob(jobId);
+    dispatchStrategistAnalysisCancel();
+    resetStrategistUiAfterCancel();
+    const el = cancelAnnounceRef.current;
+    if (el) {
+      el.textContent = "";
+      void el.offsetWidth;
+      el.textContent = "Analysis cancelled";
+    }
+  }, [runningAnalyzeJobId, cancelStrategistJob, resetStrategistUiAfterCancel]);
 
   // On mount (and whenever the set of *running* job IDs changes), make sure
   // every job that is still in the "running" state has a poller attached.
@@ -3306,10 +3504,17 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
 
             {strategistMode === "options" && (
             <>
+            <div ref={cancelAnnounceRef} className="sr-only" aria-live="polite" aria-atomic="true" />
+            <StrategistCancelConfirmDialog
+              open={cancelDialogOpen}
+              onConfirmCancel={handleCancelDialogConfirm}
+              onKeepRunning={handleCancelDialogKeepRunning}
+            />
             <StrategistShockBanner />
             <StrategistCommandBar onRun={handleRunStrategistWithTicker}
               disabled={false}
               blockedTicker={runningAnalyzeTicker}
+              onCancelClick={handleCancelAnalyzeClick}
               lastRunSymbol={lastRunSymbol} lastRunTime={lastRunTime} />
 
             {/* Live AI reasoning sits directly beneath the ticker bar.

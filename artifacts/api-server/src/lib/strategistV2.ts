@@ -4,6 +4,7 @@ import { computeIOScore, type IOScoreResult } from "./ioScoreEngine.js";
 import { getSettings, getStrategistModel, type StrategistConfig, type StrategistModelOption } from "./strategistSettings.js";
 import { runDebate, type DebateCallbacks, type DebateRound, type DebateRole, type DebatePhase } from "./strategistDebate.js";
 import { runDeskAnalysis, runSoloDesk, type DeskCallbacks } from "./strategistDesk.js";
+import { throwIfStrategistAnalyzeCancelled } from "./strategistAnalyzeCancellation.js";
 import type { ScrubCanonical } from "./narrativeScrubbers.js";
 import { db, strategistTelemetryTable } from "@workspace/db";
 
@@ -13,6 +14,7 @@ import type { InferInsertModel } from "drizzle-orm";
 import { getBestAccessToken } from "./tokenStore.js";
 import { fetchPolygonChain } from "./polygonChain.js";
 import { getPolygonFlowHighlights, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
+import { runStrategistTapeBackfill, type TapeBackfillStatus } from "./strategistTapeBackfill.js";
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
 import { getNextEarningsDate } from "./earningsService.js";
 import { evaluateCatalyst, deriveTradeDirection, type CatalystEvaluation } from "./catalystEvaluator.js";
@@ -505,6 +507,21 @@ export interface AnalyzeProgressCallbacks {
   // pass a snapshot of the live flow card so the analyst reasons about
   // exactly what the user just observed.
   flowContext?: string;
+  /** POST /analyze background job id for cooperative server-side cancel. */
+  jobId?: string;
+  /** Aborts in-flight LLM HTTP when aborted (client disconnect or explicit cancel). */
+  cancelSignal?: AbortSignal;
+}
+
+function throwAnalyzeCancelled(): never {
+  const e = new Error("Analysis cancelled");
+  e.name = "AbortError";
+  throw e;
+}
+
+function assertAnalyzeNotCancelled(progress?: AnalyzeProgressCallbacks): void {
+  if (progress?.cancelSignal?.aborted) throwAnalyzeCancelled();
+  throwIfStrategistAnalyzeCancelled(progress?.jobId);
 }
 
 export async function analyzeTickerV2(
@@ -513,7 +530,9 @@ export async function analyzeTickerV2(
 ): Promise<StrategistV2Result> {
   const status = (s: string) => progress?.onStatus?.(s);
   status("Loading regime + settings…");
+  assertAnalyzeNotCancelled(progress);
   const settings = await getSettings();
+  assertAnalyzeNotCancelled(progress);
   const regime = getCachedRegime() ?? buildFallbackRegime();
 
   const toxicCheck = checkToxicGate(regime, settings);
@@ -534,6 +553,7 @@ export async function analyzeTickerV2(
   }
 
   const tickerFetch = await fetchTickerData(ticker);
+  assertAnalyzeNotCancelled(progress);
   const tickerData = tickerFetch.data;
   if (!tickerData) {
     const detail = `Unable to fetch ticker data (${tickerFetch.failureMode ?? "unknown"}).`;
@@ -561,6 +581,7 @@ export async function analyzeTickerV2(
   }
 
   const chainResult = await fetchOptionsChain(ticker, settings);
+  assertAnalyzeNotCancelled(progress);
   const chain = chainResult.chain;
   const dataSource = chainResult.source;
   if (!chain || chain.length === 0) {
@@ -580,6 +601,7 @@ export async function analyzeTickerV2(
   // fallback — if no row exists, narrative + header both omit IVR rather than
   // showing a fabricated number.
   const storedIvr = await getStoredIVR(ticker);
+  assertAnalyzeNotCancelled(progress);
   tickerData.ivr = storedIvr?.ivr ?? null;
   tickerData.ivrAsOfDate = storedIvr?.asOfDate ?? null;
   tickerData.ivrSource = storedIvr?.source ?? null;
@@ -603,6 +625,7 @@ export async function analyzeTickerV2(
     getRealizedVolFromEquityDaily(ticker),
     countRealIvHistoryDays(ticker),
   ]);
+  assertAnalyzeNotCancelled(progress);
   let proxyIvDepth: number | null = null;
   if (tickerData.ivrSource === "hv_proxy" && tickerData.ivrAsOfDate) {
     proxyIvDepth = await countProxyIvHistoryDays(ticker, tickerData.ivrAsOfDate);
@@ -623,22 +646,11 @@ export async function analyzeTickerV2(
     })),
   }, "StrategistV2: expirations being sent to AI model");
 
-  const polygonHighlights = await getPolygonFlowHighlights(ticker);
-  if (polygonHighlights) {
-    logger.info({
-      ticker,
-      asOfDate: polygonHighlights.asOfDate,
-      unusualStrikes: polygonHighlights.unusualStrikeCount,
-      unusualSkew: polygonHighlights.unusualSkew,
-    }, "StrategistV2: Polygon flow highlights loaded");
-  } else {
-    logger.info({ ticker }, "StrategistV2: no Polygon flow highlights for ticker");
-  }
-
   let deskCatalystEval: CatalystEvaluation | null = null;
   let deskCatalystExpirationISO = "";
   if (settings.strategistMode === 3 || settings.strategistMode === 4) {
     deskCatalystExpirationISO = computeDeskCatalystExpirationISO(chainSummary, settings);
+    assertAnalyzeNotCancelled(progress);
     try {
       deskCatalystEval = await evaluateCatalyst({
         ticker,
@@ -652,6 +664,58 @@ export async function analyzeTickerV2(
       );
       deskCatalystEval = null;
     }
+  }
+
+  let tapeBackfillStatus: TapeBackfillStatus | undefined;
+  if (settings.strategistMode === 3 || settings.strategistMode === 4) {
+    status("Loading session options tape (REST backfill)…");
+    try {
+      tapeBackfillStatus = await runStrategistTapeBackfill({
+        ticker,
+        chain,
+        chainSummary: {
+          atmStrike: chainSummary.atmStrike,
+          availableExpirations: chainSummary.availableExpirations,
+          curatedExpirations: chainSummary.curatedExpirations.map((e) => ({
+            expiration: e.expiration,
+            dte: e.dte,
+          })),
+        },
+      });
+      logger.info(
+        {
+          ticker,
+          tapeBackfill: tapeBackfillStatus.status,
+          tradesInserted: tapeBackfillStatus.tradesInserted,
+          occCompleted: tapeBackfillStatus.occCompleted,
+        },
+        "StrategistV2: session tape backfill finished",
+      );
+    } catch (err) {
+      logger.warn({ err, ticker }, "StrategistV2: session tape backfill threw");
+      tapeBackfillStatus = {
+        status: "failed",
+        reason: "exception",
+        sessionDate: new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }),
+        coverageEndMs: Date.now(),
+        occRequested: 0,
+        occCompleted: 0,
+        tradesInserted: 0,
+      };
+    }
+  }
+
+  assertAnalyzeNotCancelled(progress);
+  const polygonHighlights = await getPolygonFlowHighlights(ticker);
+  if (polygonHighlights) {
+    logger.info({
+      ticker,
+      asOfDate: polygonHighlights.asOfDate,
+      unusualStrikes: polygonHighlights.unusualStrikeCount,
+      unusualSkew: polygonHighlights.unusualSkew,
+    }, "StrategistV2: Polygon flow highlights loaded");
+  } else {
+    logger.info({ ticker }, "StrategistV2: no Polygon flow highlights for ticker");
   }
 
   const dataPackage = buildDataPackage(
@@ -668,7 +732,9 @@ export async function analyzeTickerV2(
       realizedVol,
       ivrContext: buildIvrContext(tickerData, realIvDepth, proxyIvDepth),
     },
+    settings.strategistMode === 3 || settings.strategistMode === 4 ? tapeBackfillStatus : undefined,
   );
+  assertAnalyzeNotCancelled(progress);
 
   // ── Desk mode (mode 3): three parallel analysts + PM ──────────────────
   if (settings.strategistMode === 3) {
@@ -681,6 +747,8 @@ export async function analyzeTickerV2(
         deskExpirationISO: deskCatalystExpirationISO,
         catalystEvaluation: deskCatalystEval,
         callbacks: {
+          jobId: progress?.jobId,
+          cancelSignal: progress?.cancelSignal,
           onStatus: (s) => status(s),
           onTurnStart: progress?.onTurnStart ? (turn) => progress.onTurnStart!(turn as any) : undefined,
           onTurnDelta: progress?.onTurnDelta,
@@ -733,6 +801,8 @@ export async function analyzeTickerV2(
         deskExpirationISO: deskCatalystExpirationISO,
         catalystEvaluation: deskCatalystEval,
         callbacks: {
+          jobId: progress?.jobId,
+          cancelSignal: progress?.cancelSignal,
           onStatus: (s) => status(s),
           onTurnStart: progress?.onTurnStart ? (turn) => progress.onTurnStart!(turn as any) : undefined,
           onTurnDelta: progress?.onTurnDelta,
@@ -1783,6 +1853,7 @@ function buildDataPackage(
     realizedVol: Awaited<ReturnType<typeof getRealizedVolFromEquityDaily>>;
     ivrContext: ReturnType<typeof buildIvrContext>;
   },
+  tapeBackfill?: TapeBackfillStatus,
 ): string {
   const currentDate = new Date().toISOString().slice(0, 10);
   const pkg: Record<string, unknown> = {
@@ -1833,7 +1904,9 @@ function buildDataPackage(
       topByVolOiRatio: polygonHighlights.topByVolOiRatio,
       largestPrint: polygonHighlights.largestPrint,
       sessionTape: polygonHighlights.sessionTape,
-      sourceNote: "Per-strike end-of-day snapshot (volume, OI, greeks) — pair with sessionTape when present for classified prints, sweeps/blocks, and aggressor lean.",
+      sessionTapeDate: polygonHighlights.sessionTapeDate,
+      sourceNote:
+        "Per-strike end-of-day snapshot (volume, OI, greeks). sessionTape.tapeKind `live` adds classified prints and aggressor mix; `eod_fallback` is volume-ranked EOD synthesis when live tape rows are absent (sweep/block zero; do not infer aggressor).",
     } : { available: false, note: "No per-strike flow snapshot on file for this ticker — fall back to optionsChainSummary.unusualActivity." },
     ioScore: {
       final: ioScore.final,
@@ -1870,6 +1943,18 @@ function buildDataPackage(
       maxBidAskSpreadPct: settings.maxBidAskSpreadPct,
     },
   };
+
+  if (tapeBackfill) {
+    pkg.tapeBackfill = {
+      status: tapeBackfill.status,
+      reason: tapeBackfill.reason,
+      sessionDate: tapeBackfill.sessionDate,
+      coverageEndMs: tapeBackfill.coverageEndMs,
+      occRequested: tapeBackfill.occRequested,
+      occCompleted: tapeBackfill.occCompleted,
+      tradesInserted: tapeBackfill.tradesInserted,
+    };
+  }
 
   if ((settings.strategistMode === 3 || settings.strategistMode === 4) && deskCatalystWindowExpirationISO) {
     if (catalystEvaluation != null) {
@@ -1933,35 +2018,68 @@ async function callAiForTrade(
   let trace: WebSearchTrace;
   const onDelta = (txt: string) => progress?.onToken?.(txt);
   const onStatus = (s: string) => progress?.onStatus?.(s);
+  const cancelSig = progress?.cancelSignal;
   switch (provider) {
     case "anthropic": {
       const r = progress
-        ? await streamCallAnthropicWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt, onDelta, onStatus)
-        : await callAnthropicWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt);
+        ? await streamCallAnthropicWithSystemAndWebSearch(
+            model,
+            temperature,
+            STRATEGIST_SYSTEM_PROMPT,
+            prompt,
+            onDelta,
+            onStatus,
+            cancelSig,
+          )
+        : await callAnthropicWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt, cancelSig);
       rawText = r.text;
       trace = r.trace;
       break;
     }
     case "google": {
       const r = progress
-        ? await streamCallGeminiWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt, onDelta, onStatus)
-        : await callGeminiWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt);
+        ? await streamCallGeminiWithSystemAndWebSearch(
+            model,
+            temperature,
+            STRATEGIST_SYSTEM_PROMPT,
+            prompt,
+            onDelta,
+            onStatus,
+            cancelSig,
+          )
+        : await callGeminiWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt, cancelSig);
       rawText = r.text;
       trace = r.trace;
       break;
     }
     case "openai": {
       const r = progress
-        ? await streamCallOpenAIWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt, onDelta, onStatus)
-        : await callOpenAIWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt);
+        ? await streamCallOpenAIWithSystemAndWebSearch(
+            model,
+            temperature,
+            STRATEGIST_SYSTEM_PROMPT,
+            prompt,
+            onDelta,
+            onStatus,
+            cancelSig,
+          )
+        : await callOpenAIWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt, cancelSig);
       rawText = r.text;
       trace = r.trace;
       break;
     }
     case "xai": {
       const r = progress
-        ? await streamCallXaiWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt, onDelta, onStatus)
-        : await callXaiWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt);
+        ? await streamCallXaiWithSystemAndWebSearch(
+            model,
+            temperature,
+            STRATEGIST_SYSTEM_PROMPT,
+            prompt,
+            onDelta,
+            onStatus,
+            cancelSig,
+          )
+        : await callXaiWithSystemAndWebSearch(model, temperature, STRATEGIST_SYSTEM_PROMPT, prompt, cancelSig);
       rawText = r.text;
       trace = r.trace;
       break;
@@ -2184,6 +2302,7 @@ async function callAiForTradeViaDebate(
   );
 
   const debateCallbacks: DebateCallbacks = {
+    cancelSignal: progress?.cancelSignal,
     onTurnStart: (t) => progress?.onTurnStart?.(t),
     onTurnDelta: (id, delta) => progress?.onTurnDelta?.(id, delta),
     onTurnDone: (id, finalText) => progress?.onTurnDone?.(id, finalText),

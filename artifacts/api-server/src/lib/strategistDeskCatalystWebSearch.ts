@@ -48,11 +48,12 @@ async function runOneSearch(
   model: StrategistModelOption,
   userPrompt: string,
   logCtx?: SearchLogCtx,
+  cancelSignal?: AbortSignal,
 ): Promise<WebSearchResult> {
   const temperature = 0;
   switch (model.provider) {
     case "anthropic":
-      return callAnthropicWithSystemAndWebSearch(model.model, temperature, SEARCH_SYSTEM, userPrompt);
+      return callAnthropicWithSystemAndWebSearch(model.model, temperature, SEARCH_SYSTEM, userPrompt, cancelSignal);
     case "google": {
       const gemStart = Date.now();
       logger.info(
@@ -67,7 +68,7 @@ async function runOneSearch(
         },
         "StrategistDesk: catalyst structured search; callGeminiWithSystemAndWebSearch starting",
       );
-      const r = await callGeminiWithSystemAndWebSearch(model.model, temperature, SEARCH_SYSTEM, userPrompt);
+      const r = await callGeminiWithSystemAndWebSearch(model.model, temperature, SEARCH_SYSTEM, userPrompt, cancelSignal);
       logger.info(
         {
           op: "catalyst_structured_search_step",
@@ -85,9 +86,9 @@ async function runOneSearch(
       return r;
     }
     case "openai":
-      return callOpenAIWithSystemAndWebSearch(model.model, temperature, SEARCH_SYSTEM, userPrompt);
+      return callOpenAIWithSystemAndWebSearch(model.model, temperature, SEARCH_SYSTEM, userPrompt, cancelSignal);
     case "xai":
-      return callXaiWithSystemAndWebSearch(model.model, temperature, SEARCH_SYSTEM, userPrompt);
+      return callXaiWithSystemAndWebSearch(model.model, temperature, SEARCH_SYSTEM, userPrompt, cancelSignal);
     default:
       throw new Error(`Unsupported provider for catalyst web search: ${(model as StrategistModelOption).provider}`);
   }
@@ -138,8 +139,9 @@ export async function runCatalystDeskStructuredSearches(opts: {
   deskExpirationISO: string;
   model: StrategistModelOption;
   onStatus?: (s: string) => void;
+  cancelSignal?: AbortSignal;
 }): Promise<CatalystDeskSearchBundle> {
-  const { ticker, catalystEval, deskExpirationISO, model, onStatus } = opts;
+  const { ticker, catalystEval, deskExpirationISO, model, onStatus, cancelSignal } = opts;
   const upper = ticker.toUpperCase();
 
   if (model.provider !== "google") {
@@ -164,6 +166,10 @@ export async function runCatalystDeskStructuredSearches(opts: {
   const bundleStartMs = Date.now();
 
   const run = async (stepNum: number, label: string, query: string, extraInstructions: string) => {
+    if (cancelSignal?.aborted) {
+      sections.push(`### ${label}\n`);
+      return;
+    }
     onStatus?.(`Desk: Catalyst research: ${label}…`);
     const stepStartMs = Date.now();
     logger.info(
@@ -204,7 +210,7 @@ export async function runCatalystDeskStructuredSearches(opts: {
 
     try {
       const r = await withTimeout(
-        runOneSearch(model, userPrompt, { ticker: upper, stepNum, query }),
+        runOneSearch(model, userPrompt, { ticker: upper, stepNum, query }, cancelSignal),
         SEARCH_STEP_TIMEOUT_MS,
         stepNum,
       );

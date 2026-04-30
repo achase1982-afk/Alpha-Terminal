@@ -8,6 +8,20 @@
       "when": 1777459329035,
       "tag": "0000_high_gamora",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777600000000,
+      "tag": "0001_options_flow_raw_source_trade_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777600000001,
+      "tag": "0002_options_tape_backfill_occ_cache",
+      "breakpoints": true
     }
   ]
 }

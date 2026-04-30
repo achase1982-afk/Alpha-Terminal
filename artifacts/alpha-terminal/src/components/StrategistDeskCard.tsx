@@ -11,7 +11,7 @@ import { ChevronDown, ChevronUp, AlertTriangle, Copy, Play, Pause, Square, SkipB
 import { toast } from "sonner";
 import type { DeskResult, DeskStructure } from "@/lib/strategistDeskResult";
 import { buildDeskSpeechSections, type DeskSpeechSectionId } from "@/lib/deskCardSpeech";
-import { STRATEGIST_ANALYSIS_START_EVENT } from "@/lib/strategistDeskSpeechEvents";
+import { STRATEGIST_ANALYSIS_CANCEL_EVENT, STRATEGIST_ANALYSIS_START_EVENT } from "@/lib/strategistDeskSpeechEvents";
 
 export type { DeskResult } from "@/lib/strategistDeskResult";
 
@@ -457,7 +457,11 @@ export function StrategistDeskCard({
   useEffect(() => {
     const onAnalysisStart = () => stopSpeech();
     window.addEventListener(STRATEGIST_ANALYSIS_START_EVENT, onAnalysisStart);
-    return () => window.removeEventListener(STRATEGIST_ANALYSIS_START_EVENT, onAnalysisStart);
+    window.addEventListener(STRATEGIST_ANALYSIS_CANCEL_EVENT, onAnalysisStart);
+    return () => {
+      window.removeEventListener(STRATEGIST_ANALYSIS_START_EVENT, onAnalysisStart);
+      window.removeEventListener(STRATEGIST_ANALYSIS_CANCEL_EVENT, onAnalysisStart);
+    };
   }, [stopSpeech]);
 
   const togglePause = useCallback(() => {

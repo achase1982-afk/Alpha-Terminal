@@ -29,6 +29,8 @@ interface ThinkingResponse {
   validationMeta?: StrategistValidationMeta | null;
   /** Present when the payload was rebuilt from persisted history (buffer miss). */
   source?: 'persisted';
+  /** User cancelled; do not treat as error or completion with result. */
+  cancelled?: boolean;
 }
 
 type PollOutcome = 'running' | 'completed' | 'failed';
@@ -43,6 +45,10 @@ function applyThinkingPollResponse(jobId: string, t: ThinkingResponse): PollOutc
   if (!job || job.status !== 'running') return 'completed';
 
   if (t.done) {
+    if (t.cancelled) {
+      if (job) useTerminalStore.getState().cancelStrategistJob(jobId);
+      return 'completed';
+    }
     if (t.status) {
       useTerminalStore.getState().setStrategistLiveStatus(jobId, t.status);
     }
@@ -338,6 +344,13 @@ export async function syncRunningStrategistJobsFromServer(opts?: {
 export function isPollerActive(jobId: string): boolean {
   const h = activePollers.get(jobId);
   return !!h && !h.aborted;
+}
+
+/** Stop polling for a job (e.g. user cancelled). */
+export function abortStrategistPolling(jobId: string): void {
+  const h = activePollers.get(jobId);
+  if (h) h.aborted = true;
+  activePollers.delete(jobId);
 }
 
 /**

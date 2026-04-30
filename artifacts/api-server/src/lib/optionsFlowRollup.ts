@@ -97,6 +97,65 @@ export async function runRollupOnce(forDate?: string): Promise<{ rowsUpserted: n
   return { rowsUpserted, rawScanned, durationMs };
 }
 
+/** Same as runRollupOnce but only raw rows for one underlying (Strategist tape backfill). */
+export async function runRollupOnceForSymbol(
+  underlyingSymbol: string,
+  forDate?: string,
+): Promise<{ rowsUpserted: number; rawScanned: number; durationMs: number }> {
+  const t0 = Date.now();
+  const date = forDate ?? todayIso();
+  const sym = underlyingSymbol.toUpperCase();
+
+  const rawCountResult = await db.execute(
+    sql`SELECT COUNT(*)::int AS n FROM options_flow_raw_trades WHERE date = ${date} AND underlying_symbol = ${sym}`,
+  );
+  const countRows = pgExecuteRows(rawCountResult);
+  const rawScanned = Number((countRows[0]?.n as number | string | undefined) ?? 0);
+
+  const rolled = await db.execute(sql`
+    INSERT INTO options_flow_exec_per_strike (
+      underlying_symbol, date, option_type, strike, expiration,
+      sweep_count, block_count, regular_count,
+      sweep_notional, block_notional, regular_notional,
+      sweep_volume, block_volume, regular_volume,
+      last_event_ts, updated_at
+    )
+    SELECT
+      underlying_symbol, date, option_type, strike, expiration,
+      COUNT(*) FILTER (WHERE is_sweep)                                          AS sweep_count,
+      COUNT(*) FILTER (WHERE is_block AND NOT is_sweep)                         AS block_count,
+      COUNT(*) FILTER (WHERE NOT is_sweep AND NOT is_block)                     AS regular_count,
+      COALESCE(SUM(notional) FILTER (WHERE is_sweep), 0)                        AS sweep_notional,
+      COALESCE(SUM(notional) FILTER (WHERE is_block AND NOT is_sweep), 0)       AS block_notional,
+      COALESCE(SUM(notional) FILTER (WHERE NOT is_sweep AND NOT is_block), 0)   AS regular_notional,
+      COALESCE(SUM(size) FILTER (WHERE is_sweep), 0)                            AS sweep_volume,
+      COALESCE(SUM(size) FILTER (WHERE is_block AND NOT is_sweep), 0)           AS block_volume,
+      COALESCE(SUM(size) FILTER (WHERE NOT is_sweep AND NOT is_block), 0)       AS regular_volume,
+      MAX(timestamp)                                                            AS last_event_ts,
+      NOW()                                                                     AS updated_at
+    FROM options_flow_raw_trades
+    WHERE date = ${date} AND underlying_symbol = ${sym}
+    GROUP BY underlying_symbol, date, option_type, strike, expiration
+    ON CONFLICT (underlying_symbol, date, option_type, strike, expiration)
+    DO UPDATE SET
+      sweep_count = EXCLUDED.sweep_count,
+      block_count = EXCLUDED.block_count,
+      regular_count = EXCLUDED.regular_count,
+      sweep_notional = EXCLUDED.sweep_notional,
+      block_notional = EXCLUDED.block_notional,
+      regular_notional = EXCLUDED.regular_notional,
+      sweep_volume = EXCLUDED.sweep_volume,
+      block_volume = EXCLUDED.block_volume,
+      regular_volume = EXCLUDED.regular_volume,
+      last_event_ts = EXCLUDED.last_event_ts,
+      updated_at = NOW()
+  `);
+
+  const durationMs = Date.now() - t0;
+  const rowsUpserted = pgExecuteRowCount(rolled);
+  return { rowsUpserted, rawScanned, durationMs };
+}
+
 let lastRawScanned = 0;
 
 async function tick(): Promise<void> {

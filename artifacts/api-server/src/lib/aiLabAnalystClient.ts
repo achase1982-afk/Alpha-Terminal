@@ -424,10 +424,16 @@ function validateAnalystResponse(parsed: any): AnalystResponse {
 }
 
 async function callAnthropic(model: string, temperature: number, prompt: string, systemPrompt: string): Promise<string> {
-  return callAnthropicWithSystem(model, temperature, systemPrompt, prompt);
+  return callAnthropicWithSystem(model, temperature, systemPrompt, prompt, undefined);
 }
 
-export async function callAnthropicWithSystem(model: string, temperature: number, systemPrompt: string, prompt: string): Promise<string> {
+export async function callAnthropicWithSystem(
+  model: string,
+  temperature: number,
+  systemPrompt: string,
+  prompt: string,
+  cancelSignal?: AbortSignal,
+): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
   const client = new Anthropic({ apiKey, timeout: 20 * 60 * 1000 });
@@ -449,7 +455,7 @@ export async function callAnthropicWithSystem(model: string, temperature: number
     params.temperature = 1;
   }
   void temperature;
-  const message = await client.messages.create(params);
+  const message = await client.messages.create(params, { signal: cancelSignal });
 
   const textBlock = message.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") {
@@ -459,10 +465,16 @@ export async function callAnthropicWithSystem(model: string, temperature: number
 }
 
 async function callGemini(model: string, temperature: number, prompt: string, systemPrompt: string): Promise<string> {
-  return callGeminiWithSystem(model, temperature, systemPrompt, prompt);
+  return callGeminiWithSystem(model, temperature, systemPrompt, prompt, undefined);
 }
 
-export async function callGeminiWithSystem(model: string, temperature: number, systemPrompt: string, prompt: string): Promise<string> {
+export async function callGeminiWithSystem(
+  model: string,
+  temperature: number,
+  systemPrompt: string,
+  prompt: string,
+  cancelSignal?: AbortSignal,
+): Promise<string> {
   if (!hasGeminiApiKey()) throw new Error("Gemini AI integration env vars not configured");
   const ai = createGeminiClient();
 
@@ -481,6 +493,7 @@ export async function callGeminiWithSystem(model: string, temperature: number, s
       { role: "user", parts: [{ text: systemPrompt + "\n\n" + prompt }] },
     ],
     config: config as Parameters<typeof ai.models.generateContent>[0]["config"],
+    ...(cancelSignal ? { abortSignal: cancelSignal } : {}),
   });
 
   const rawText = (response.text ?? "").trim();
@@ -489,10 +502,16 @@ export async function callGeminiWithSystem(model: string, temperature: number, s
 }
 
 async function callOpenAI(model: string, temperature: number, prompt: string, systemPrompt: string): Promise<string> {
-  return callOpenAIWithSystem(model, temperature, systemPrompt, prompt);
+  return callOpenAIWithSystem(model, temperature, systemPrompt, prompt, undefined);
 }
 
-export async function callOpenAIWithSystem(model: string, temperature: number, systemPrompt: string, prompt: string): Promise<string> {
+export async function callOpenAIWithSystem(
+  model: string,
+  temperature: number,
+  systemPrompt: string,
+  prompt: string,
+  cancelSignal?: AbortSignal,
+): Promise<string> {
   const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
   const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
   if (!apiKey || !baseURL) {
@@ -518,7 +537,9 @@ export async function callOpenAIWithSystem(model: string, temperature: number, s
     params.temperature = temperature;
   }
 
-  const completion = await asOpenAIChatCompletionsCreateClient(client).chat.completions.create(params);
+  const completion = await asOpenAIChatCompletionsCreateClient(client).chat.completions.create(
+    cancelSignal ? { ...params, signal: cancelSignal } : params,
+  );
 
   const text = completion.choices?.[0]?.message?.content?.trim() ?? "";
   if (!text) throw new Error("No text content in Analyst LLM response (OpenAI)");
@@ -531,13 +552,20 @@ function makeXaiProvider() {
   return createXai({ apiKey });
 }
 
-export async function callXaiWithSystem(model: string, temperature: number, systemPrompt: string, prompt: string): Promise<string> {
+export async function callXaiWithSystem(
+  model: string,
+  temperature: number,
+  systemPrompt: string,
+  prompt: string,
+  cancelSignal?: AbortSignal,
+): Promise<string> {
   const xai = makeXaiProvider();
   const { text } = await generateText({
     model: xai(model),
     system: systemPrompt,
     temperature,
     prompt,
+    ...(cancelSignal ? { abortSignal: cancelSignal } : {}),
   });
   const rawText = text.trim();
   if (!rawText) throw new Error("No text content in Analyst LLM response (xAI)");
@@ -593,6 +621,7 @@ export async function callXaiWithSystemAndWebSearch(
   temperature: number,
   systemPrompt: string,
   prompt: string,
+  cancelSignal?: AbortSignal,
 ): Promise<WebSearchResult> {
   const xai = makeXaiProvider();
   const reasoningOpts = xaiReasoningProviderOptions(model);
@@ -604,6 +633,7 @@ export async function callXaiWithSystemAndWebSearch(
     tools: { web_search: xai.tools.webSearch() } as ToolSet,
     stopWhen: stepCountIs(15),
     ...(reasoningOpts ? { providerOptions: reasoningOpts } : {}),
+    ...(cancelSignal ? { abortSignal: cancelSignal } : {}),
   });
 
   const { queries, sources } = mergeXaiWebSearchTraceFromSteps(result.steps);
@@ -623,6 +653,7 @@ export async function streamCallXaiWithSystemAndWebSearch(
   prompt: string,
   onDelta: (text: string) => void,
   onStatus?: (status: string) => void,
+  cancelSignal?: AbortSignal,
 ): Promise<WebSearchResult> {
   const xai = makeXaiProvider();
   onStatus?.("Calling xAI with web search…");
@@ -636,6 +667,7 @@ export async function streamCallXaiWithSystemAndWebSearch(
     tools: { web_search: xai.tools.webSearch() } as ToolSet,
     stopWhen: stepCountIs(15),
     ...(reasoningOpts ? { providerOptions: reasoningOpts } : {}),
+    ...(cancelSignal ? { abortSignal: cancelSignal } : {}),
   });
 
   for await (const part of result.fullStream) {
@@ -784,6 +816,7 @@ export async function callAnthropicWithSystemAndWebSearch(
   temperature: number,
   systemPrompt: string,
   prompt: string,
+  cancelSignal?: AbortSignal,
 ): Promise<WebSearchResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
@@ -806,7 +839,7 @@ export async function callAnthropicWithSystemAndWebSearch(
   }
   void temperature;
 
-  const message = await client.messages.create(params as Anthropic.MessageCreateParamsNonStreaming);
+  const message = await client.messages.create(params as Anthropic.MessageCreateParamsNonStreaming, { signal: cancelSignal });
 
   const queries: string[] = [];
   const sources: WebSearchSource[] = [];
@@ -859,6 +892,7 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
   prompt: string,
   onDelta: (text: string) => void,
   onStatus?: (status: string) => void,
+  cancelSignal?: AbortSignal,
 ): Promise<WebSearchResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
@@ -892,7 +926,7 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
   const seenUrls = new Set<string>();
   let fullText = "";
 
-  const stream = client.messages.stream(params as Anthropic.MessageCreateParamsStreaming);
+  const stream = client.messages.stream(params as Anthropic.MessageCreateParamsStreaming, { signal: cancelSignal });
   for await (const event of stream) {
     const ev = asAnthropicStreamEvent(event);
     const evType = ev.type as string | undefined;
@@ -993,6 +1027,7 @@ export async function callGeminiWithSystemAndWebSearch(
   temperature: number,
   systemPrompt: string,
   prompt: string,
+  cancelSignal?: AbortSignal,
 ): Promise<WebSearchResult> {
   if (!hasGeminiApiKey()) throw new Error("Gemini AI integration env vars not configured");
 
@@ -1015,6 +1050,7 @@ export async function callGeminiWithSystemAndWebSearch(
         model,
         contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\n" + prompt }] }],
         config: config as Parameters<typeof ai.models.generateContent>[0]["config"],
+        ...(cancelSignal ? { abortSignal: cancelSignal } : {}),
       });
     },
   );
@@ -1061,6 +1097,7 @@ export async function streamCallGeminiWithSystemAndWebSearch(
   prompt: string,
   onDelta: (text: string) => void,
   onStatus?: (status: string) => void,
+  cancelSignal?: AbortSignal,
 ): Promise<WebSearchResult> {
   if (!hasGeminiApiKey()) throw new Error("Gemini AI integration env vars not configured");
 
@@ -1084,6 +1121,7 @@ export async function streamCallGeminiWithSystemAndWebSearch(
         model,
         contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\n" + prompt }] }],
         config: config as Parameters<typeof ai.models.generateContentStream>[0]["config"],
+        ...(cancelSignal ? { abortSignal: cancelSignal } : {}),
       });
 
       let attemptText = "";
@@ -1146,6 +1184,7 @@ export async function streamCallGeminiDeskJson(
   prompt: string,
   onDelta: (text: string) => void,
   onStatus?: (status: string) => void,
+  cancelSignal?: AbortSignal,
 ): Promise<WebSearchResult> {
   if (!hasGeminiApiKey()) throw new Error("Gemini AI integration env vars not configured");
 
@@ -1169,6 +1208,7 @@ export async function streamCallGeminiDeskJson(
         model,
         contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\n" + prompt }] }],
         config: config as Parameters<typeof ai.models.generateContentStream>[0]["config"],
+        ...(cancelSignal ? { abortSignal: cancelSignal } : {}),
       });
 
       let attemptText = "";
@@ -1292,12 +1332,15 @@ export async function callOpenAIWithSystemAndWebSearch(
   temperature: number,
   systemPrompt: string,
   prompt: string,
+  cancelSignal?: AbortSignal,
 ): Promise<WebSearchResult> {
   const client = makeOpenAIClient();
   const params = buildOpenAIResponseParams(model, temperature, systemPrompt, prompt);
 
   // OpenAI SDK types lag the Responses API surface for web_search_preview + reasoning.
-  const response = await (client as OpenAIResponsesClientNonStream).responses.create(params);
+  const response = await (client as OpenAIResponsesClientNonStream).responses.create(
+    cancelSignal ? { ...params, signal: cancelSignal } : params,
+  );
 
   const queries: string[] = [];
   const sources: WebSearchSource[] = [];
@@ -1322,13 +1365,16 @@ export async function streamCallOpenAIWithSystemAndWebSearch(
   prompt: string,
   onDelta: (text: string) => void,
   onStatus?: (status: string) => void,
+  cancelSignal?: AbortSignal,
 ): Promise<WebSearchResult> {
   const client = makeOpenAIClient();
   const params = { ...buildOpenAIResponseParams(model, temperature, systemPrompt, prompt), stream: true };
 
   onStatus?.("Calling OpenAI with web search…");
 
-  const stream = await (client as OpenAIResponsesClientStream).responses.create(params);
+  const stream = await (client as OpenAIResponsesClientStream).responses.create(
+    cancelSignal ? { ...params, signal: cancelSignal } : params,
+  );
 
   const queries: string[] = [];
   const sources: WebSearchSource[] = [];
