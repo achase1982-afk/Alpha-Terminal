@@ -4,6 +4,7 @@ import { generateText, stepCountIs, streamText, type ToolSet } from "ai";
 import { createXai, type XaiLanguageModelResponsesOptions } from "@ai-sdk/xai";
 import { logger } from "./logger.js";
 import { createGeminiClient, hasGeminiApiKey } from "./geminiClient.js";
+import { geminiThinkingConfigForModel } from "./geminiThinkingConfig.js";
 import { getXaiApiKey } from "./xaiEnv.js";
 import type {
   AiLabAnalystClient,
@@ -465,15 +466,14 @@ export async function callGeminiWithSystem(model: string, temperature: number, s
   if (!hasGeminiApiKey()) throw new Error("Gemini AI integration env vars not configured");
   const ai = createGeminiClient();
 
-  const supportsThinking = /^gemini-(2\.5|3)/.test(model);
+  const thinkingCfg = geminiThinkingConfigForModel(model);
   const config: Record<string, unknown> = {
     responseMimeType: "application/json",
     maxOutputTokens: 8192,
     temperature,
   };
-  if (supportsThinking) {
-    // Dynamic thinking budget: model decides how much to think
-    config.thinkingConfig = { thinkingBudget: -1, includeThoughts: false };
+  if (thinkingCfg) {
+    config.thinkingConfig = thinkingCfg;
   }
   const response = await ai.models.generateContent({
     model,
@@ -996,15 +996,15 @@ export async function callGeminiWithSystemAndWebSearch(
 ): Promise<WebSearchResult> {
   if (!hasGeminiApiKey()) throw new Error("Gemini AI integration env vars not configured");
 
-  const supportsThinking = /^gemini-(2\.5|3)/.test(model);
+  const thinkingCfg = geminiThinkingConfigForModel(model);
   // Note: Gemini does not allow responseMimeType=application/json with tools.
   const config: Record<string, unknown> = {
     maxOutputTokens: 12288,
     temperature,
     tools: [{ googleSearch: {} }],
   };
-  if (supportsThinking) {
-    config.thinkingConfig = { thinkingBudget: -1, includeThoughts: false };
+  if (thinkingCfg) {
+    config.thinkingConfig = thinkingCfg;
   }
   const response = await withGeminiRetry(
     "generateContent",
@@ -1064,14 +1064,14 @@ export async function streamCallGeminiWithSystemAndWebSearch(
 ): Promise<WebSearchResult> {
   if (!hasGeminiApiKey()) throw new Error("Gemini AI integration env vars not configured");
 
-  const supportsThinking = /^gemini-(2\.5|3)/.test(model);
+  const thinkingCfg = geminiThinkingConfigForModel(model);
   const config: Record<string, unknown> = {
     maxOutputTokens: 12288,
     temperature,
     tools: [{ googleSearch: {} }],
   };
-  if (supportsThinking) {
-    config.thinkingConfig = { thinkingBudget: -1, includeThoughts: false };
+  if (thinkingCfg) {
+    config.thinkingConfig = thinkingCfg;
   }
 
   onStatus?.("Calling Gemini with web search…");
@@ -1149,14 +1149,14 @@ export async function streamCallGeminiDeskJson(
 ): Promise<WebSearchResult> {
   if (!hasGeminiApiKey()) throw new Error("Gemini AI integration env vars not configured");
 
-  const supportsThinking = /^gemini-(2\.5|3)/.test(model);
+  const thinkingCfg = geminiThinkingConfigForModel(model);
   const config: Record<string, unknown> = {
     maxOutputTokens: 12288,
     temperature,
     responseMimeType: "application/json",
   };
-  if (supportsThinking) {
-    config.thinkingConfig = { thinkingBudget: -1, includeThoughts: false };
+  if (thinkingCfg) {
+    config.thinkingConfig = thinkingCfg;
   }
 
   onStatus?.("Calling Gemini (JSON)…");

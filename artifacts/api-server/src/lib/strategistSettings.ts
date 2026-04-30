@@ -63,25 +63,27 @@ export interface StrategistModelOption {
   label: string;
 }
 
-/** Fixed four-model strategist catalog (indices 0–3). */
+/** Six-model strategist catalog (indices 0–5). */
 export const STRATEGIST_MODEL_OPTIONS: StrategistModelOption[] = [
   { provider: "anthropic", model: "claude-opus-4-7", label: "Claude Opus 4.7 (Anthropic)" },
   { provider: "openai", model: "gpt-5.5", label: "GPT-5.5 + Thinking (OpenAI)" },
+  { provider: "openai", model: "gpt-5.4-mini", label: "GPT-5.4 Mini (OpenAI)" },
   { provider: "google", model: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (Google)" },
-  { provider: "xai", model: "grok-4.20-multi-agent-0309", label: "Grok 4.20 multi-agent (xAI)" },
+  { provider: "google", model: "gemini-3-flash-preview", label: "Gemini 3 Flash (Google)" },
+  { provider: "xai", model: "grok-4-1-fast-reasoning", label: "Grok 4.1 fast reasoning (xAI)" },
 ];
 
 /** Current catalog version written to `strategistModelCatalogVersion`. */
-export const STRATEGIST_MODEL_CATALOG_VERSION = 3;
+export const STRATEGIST_MODEL_CATALOG_VERSION = 4;
 
 /**
  * Maps pre–four-model catalog indices (the former `STRATEGIST_MODEL_OPTIONS`
- * order) to the new 0–3 index. Used for one-time DB migration.
- * Anthropic slots (non–Opus 4.7) → 0; OpenAI (non–5.5) → 1; Gemini (non–3.1 Pro) → 2;
- * xAI (non–Grok 4.20 multi-agent snapshot) → 3.
+ * order) to the new 0–5 index. Used for one-time DB migration.
+ * Anthropic slots (non–Opus 4.7) → 0; OpenAI (non–5.5) → 1; Gemini (non–3.1 Pro) → 3;
+ * xAI (non–Grok 4.20 multi-agent snapshot) → 5.
  */
 const LEGACY_STRATEGIST_MODEL_INDEX_TO_NEW: readonly number[] = [
-  0, 2, 0, 2, 0, 2, 1, 1, 1, 1, 1, 1, 1, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+  0, 2, 0, 2, 0, 2, 1, 1, 1, 1, 1, 1, 1, 3, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
 ];
 
 function remapLegacyStrategistModelIdx(idx: number): number {
@@ -226,14 +228,62 @@ async function bumpStrategistModelCatalogV2ToV3IfNeeded(merged: StrategistConfig
   const now = new Date();
   await db
     .insert(strategistSettingsTable)
-    .values({ key: "strategistModelCatalogVersion", value: STRATEGIST_MODEL_CATALOG_VERSION, updatedAt: now })
+    .values({ key: "strategistModelCatalogVersion", value: 3, updatedAt: now })
     .onConflictDoUpdate({
       target: strategistSettingsTable.key,
-      set: { value: STRATEGIST_MODEL_CATALOG_VERSION, updatedAt: now },
+      set: { value: 3, updatedAt: now },
     });
   logger.info(
-    { from: 2, to: STRATEGIST_MODEL_CATALOG_VERSION },
+    { from: 2, to: 3 },
     "Strategist settings: catalog version bump (Grok reasoning -> multi-agent, indices unchanged)",
+  );
+  return true;
+}
+
+/** v4 adds GPT-5.4 Mini and Gemini 3 Flash; replaces xAI slot with grok-4-1-fast-reasoning. */
+async function migrateStrategistModelCatalogV3ToV4IfNeeded(merged: StrategistConfig): Promise<boolean> {
+  if (merged.strategistModelCatalogVersion !== 3) {
+    return false;
+  }
+  const now = new Date();
+  const remapIdx = (idx: number): number => {
+    if (idx === 2) return 3; // was Gemini 3.1 Pro → still Gemini 3.1 Pro
+    if (idx === 3) return 5; // was xAI → still xAI slot (new model id)
+    return idx;
+  };
+  const solo = remapIdx(normalizeStrategistModelIndex(merged.strategistSoloModelIdx));
+  const debateA = remapIdx(normalizeStrategistModelIndex(merged.strategistDebateAModelIdx));
+  const debateB = remapIdx(normalizeStrategistModelIndex(merged.strategistDebateBModelIdx));
+  const arbRaw = merged.strategistArbitratorModelIdx;
+  const arbitrator =
+    arbRaw === ARBITRATOR_IDX_DEBATE_WINNER ? ARBITRATOR_IDX_DEBATE_WINNER : remapIdx(normalizeStrategistModelIndex(arbRaw));
+
+  await db.transaction(async (tx) => {
+    const inner = await tx.select().from(strategistSettingsTable);
+    if (inner.some((r) => r.key === "strategistModelCatalogVersion" && r.value >= STRATEGIST_MODEL_CATALOG_VERSION)) {
+      return;
+    }
+    const upserts: Array<{ key: string; value: number }> = [
+      { key: "strategistSoloModelIdx", value: solo },
+      { key: "strategistDebateAModelIdx", value: debateA },
+      { key: "strategistDebateBModelIdx", value: debateB },
+      { key: "strategistArbitratorModelIdx", value: arbitrator },
+      { key: "strategistModelCatalogVersion", value: STRATEGIST_MODEL_CATALOG_VERSION },
+    ];
+    for (const { key, value } of upserts) {
+      await tx
+        .insert(strategistSettingsTable)
+        .values({ key, value, updatedAt: now })
+        .onConflictDoUpdate({
+          target: strategistSettingsTable.key,
+          set: { value, updatedAt: now },
+        });
+    }
+  });
+
+  logger.info(
+    { solo, debateA, debateB, arbitrator, from: 3, to: STRATEGIST_MODEL_CATALOG_VERSION },
+    "Strategist settings: migrated model indices to six-model catalog (v4)",
   );
   return true;
 }
@@ -280,17 +330,26 @@ export async function getSettings(): Promise<StrategistConfig> {
       const bumpedV3 = await bumpStrategistModelCatalogV2ToV3IfNeeded(mergedAfter);
       const bumpMs = Math.round(performance.now() - tBump0);
       if (bumpedV3) {
+        mergedAfter.strategistModelCatalogVersion = 3;
+      }
+
+      const tBumpV4 = performance.now();
+      const bumpedV4 = await migrateStrategistModelCatalogV3ToV4IfNeeded(mergedAfter);
+      const bumpV4Ms = Math.round(performance.now() - tBumpV4);
+      if (bumpedV4) {
         mergedAfter.strategistModelCatalogVersion = STRATEGIST_MODEL_CATALOG_VERSION;
       }
 
+      const rowsFinal = bumpedV4 ? await db.select().from(strategistSettingsTable) : rowsAfter;
+
       const finalMerged: StrategistConfig = { ...DEFAULTS };
-      for (const row of rowsAfter) {
+      for (const row of rowsFinal) {
         if (isStrategistConfigKey(row.key)) {
           finalMerged[row.key] = row.value;
         }
       }
-      if (bumpedV3) {
-        finalMerged.strategistModelCatalogVersion = STRATEGIST_MODEL_CATALOG_VERSION;
+      if (bumpedV3 && !bumpedV4) {
+        finalMerged.strategistModelCatalogVersion = 3;
       }
       finalMerged.strategistSoloModelIdx = normalizeStrategistModelIndex(finalMerged.strategistSoloModelIdx);
       finalMerged.strategistDebateAModelIdx = normalizeStrategistModelIndex(finalMerged.strategistDebateAModelIdx);
@@ -302,13 +361,14 @@ export async function getSettings(): Promise<StrategistConfig> {
       cacheTs = Date.now();
 
       const totalMs = Math.round(performance.now() - t0);
-      if (totalMs > 200 || migMs > 0 || bumpMs > 0) {
+      if (totalMs > 200 || migMs > 0 || bumpMs > 0 || bumpV4Ms > 0) {
         logger.info(
           {
             rowCount: rows.length,
             selectMs,
             migrationMs: migMs,
             bumpV3Ms: bumpMs,
+            bumpV4Ms: bumpV4Ms,
             secondSelectMs: select2Ms,
             totalMs,
             catalogVersion: finalMerged.strategistModelCatalogVersion,

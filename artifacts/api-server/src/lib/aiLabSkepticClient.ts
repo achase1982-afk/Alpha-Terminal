@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { callOpenAIWithSystem, callXaiWithSystem } from "./aiLabAnalystClient.js";
 import { createGeminiClient, getGeminiApiKey } from "./geminiClient.js";
+import { geminiThinkingConfigForModel } from "./geminiThinkingConfig.js";
 import { logger } from "./logger.js";
 import type {
   AiLabSkepticClient,
@@ -200,14 +201,14 @@ async function callGeminiWithSystem(model: string, temperature: number, systemPr
   if (!getGeminiApiKey()) throw new Error("Gemini API key not configured");
   const ai = createGeminiClient();
 
-  const supportsThinking = /^gemini-(2\.5|3)/.test(model);
+  const thinkingCfg = geminiThinkingConfigForModel(model);
   const config: Record<string, unknown> = {
     responseMimeType: "application/json",
     maxOutputTokens: 8192,
     temperature,
   };
-  if (supportsThinking) {
-    config.thinkingConfig = { thinkingBudget: -1, includeThoughts: false };
+  if (thinkingCfg) {
+    config.thinkingConfig = thinkingCfg;
   }
   const response = await ai.models.generateContent({
     model,
