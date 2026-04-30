@@ -45,6 +45,7 @@ import {
 } from "../lib/deterministicStrategist.js";
 import { resolveStrikes, type AccountSnapshot, type ChainData, type ResolvedTrade, type StrikeResolutionError } from "../lib/strikeResolver.js";
 import { createGeminiClient, getGeminiApiKey } from "../lib/geminiClient.js";
+import { geminiThinkingConfigForModel } from "../lib/geminiThinkingConfig.js";
 import { getXaiApiKey } from "../lib/xaiEnv.js";
 
 /** Express `Response` omits optional Node `flush` / socket cork helpers present when compression or a custom stack attaches them. */
@@ -245,6 +246,14 @@ const AVAILABLE_MODELS = [
   "gemini-2.5-pro",
   "gemini-2.5-flash",
   "gemini-2.0-flash",
+  "gpt-5.5",
+  "gpt-5.4",
+  "gpt-5.4-mini",
+  "gpt-5.2",
+  "gpt-5",
+  "gpt-5-mini",
+  "gpt-5-nano",
+  "o4-mini",
   "grok-4",
   "grok-3",
 ];
@@ -369,13 +378,13 @@ async function nativeStreamGemini(opts: NativeStreamOptions): Promise<string> {
     ? [{ role: "user" as const, parts: [{ text: systemPrompt + "\n\n" + prompt }] }]
     : [{ role: "user" as const, parts: [{ text: prompt }] }];
 
-  const supportsThinking = /^gemini-(2\.5|3)/.test(modelName);
+  const thinkingCfg = geminiThinkingConfigForModel(modelName);
   const streamConfig: Record<string, unknown> = {
     maxOutputTokens: 8192,
     temperature,
   };
-  if (supportsThinking) {
-    streamConfig.thinkingConfig = { thinkingBudget: -1, includeThoughts: false };
+  if (thinkingCfg) {
+    streamConfig.thinkingConfig = thinkingCfg;
   }
   const response = await ai.models.generateContentStream({
     model: modelName,
@@ -441,7 +450,7 @@ function getClient(): Anthropic | null {
 async function callClaude(
   prompt: string,
   modelName: string = DEFAULT_MODEL,
-  temperature: number = 0.3
+  temperature: number = 0
 ): Promise<string> {
   const client = getClient();
   if (!client) {
@@ -465,15 +474,20 @@ async function callClaude(
 async function callGeminiDirect(
   prompt: string,
   modelName: string = "gemini-3.1-pro-preview",
-  temperature: number = 0.3
+  temperature: number = 0
 ): Promise<string> {
   if (!getGeminiApiKey()) return "Error: Gemini AI integration not configured.";
 
   const ai = createGeminiClient();
+  const thinkingCfg = geminiThinkingConfigForModel(modelName);
+  const config: Record<string, unknown> = { maxOutputTokens: 8192, temperature };
+  if (thinkingCfg) {
+    config.thinkingConfig = thinkingCfg;
+  }
   const response = await ai.models.generateContent({
     model: modelName,
     contents: [{ role: "user", parts: [{ text: prompt }] }],
-    config: { maxOutputTokens: 8192, temperature },
+    config: config as Parameters<typeof ai.models.generateContent>[0]["config"],
   });
 
   return (response.text ?? "").trim() || "No response";
@@ -482,7 +496,7 @@ async function callGeminiDirect(
 async function callModel(
   prompt: string,
   modelName: string = DEFAULT_MODEL,
-  temperature: number = 0.3
+  temperature: number = 0
 ): Promise<string> {
   if (isGeminiModel(modelName)) {
     return callGeminiDirect(prompt, modelName, temperature);
@@ -644,7 +658,7 @@ If data is insufficient for any field, use null. Base RSI on 14-period calculati
     const response = await client.messages.create({
       model: DEFAULT_MODEL,
       max_tokens: 4096,
-      temperature: 0.1,
+      temperature: 0,
       messages: [{ role: "user", content: prompt }],
     });
     
@@ -691,7 +705,7 @@ Analyze ONLY the above data and provide:
 Be specific, data-driven, and concise. Use markdown formatting.`;
 
   try {
-    const response = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.3);
+    const response = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0);
     return res.json(RunTechnicalAnalysisResponse.parse({ response }));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -884,7 +898,7 @@ Every price level MUST come from the provided data. For fundamental sections, us
     await nativeStream({
       prompt,
       modelName: chosenModel,
-      temperature: temperature ?? 0.3,
+      temperature: temperature ?? 0,
       thinkingBudget: 2048,
       onThinking: (text) => {
         res.write(`data: ${JSON.stringify({ reasoning: text })}\n\n`);
@@ -943,7 +957,7 @@ Analyze ONLY the above data and provide:
 Be specific with strikes, expirations, and premium estimates. Use markdown formatting.`;
 
   try {
-    const response = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.3);
+    const response = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0);
     return res.json(RunOptionsAnalysisResponse.parse({ response }));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -1567,7 +1581,7 @@ Specific and actionable. Include the instrument, direction, key level, and trigg
 Keep the entire output under 500 words. Be technically precise, data-driven, and immediately actionable. No filler. Use markdown.`;
 
   try {
-    const response = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.2);
+    const response = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0);
     return res.json({ response });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -1697,7 +1711,7 @@ RULES:
 - Be technically precise, data-driven, and immediately actionable.`;
 
   try {
-    const raw = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.2);
+    const raw = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0);
 
     let cleaned = raw.trim();
     if (cleaned.startsWith("```")) {
@@ -2538,7 +2552,7 @@ router.post("/options-strategist", async (req, res) => {
       : "";
 
     const narrativePrompt = `${STRATEGIST_SYSTEM_PROMPT}${eventGuardPromptBlock}${econBlock}${ratingsBlock}\n\nHere is the payload:\n\n${JSON.stringify(payload, null, 2)}`;
-    const narrative = await callClaude(narrativePrompt, DEFAULT_MODEL, 0.2);
+    const narrative = await callClaude(narrativePrompt, DEFAULT_MODEL, 0);
 
     return res.json({ strategies, narrative, edge, underlyingPrice, regime, pulse: resolvedPulse, overrideWarning, tickerProfile, chainAnalytics, eventGuard: eventGuardSummary });
   } catch (err: unknown) {
@@ -2786,7 +2800,7 @@ router.post("/options-strategist/stream", async (req, res) => {
       await nativeStream({
         prompt: narrativePrompt,
         modelName: model ?? DEFAULT_MODEL,
-        temperature: temperature ?? 0.2,
+        temperature: temperature ?? 0,
         thinkingBudget: 2048,
         onThinking: (text) => {
           res.write(`data: ${JSON.stringify({ reasoning: text })}\n\n`);
@@ -2884,10 +2898,15 @@ ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA ═══\n${marketContext
         : `${systemPrompt}\n\nUser: ${lastUserMsg}`;
 
       try {
+        const gemThinking = geminiThinkingConfigForModel(chosenModel);
         const stream = await ai.models.generateContentStream({
           model: chosenModel,
           contents: [{ role: "user", parts: [{ text: fullPrompt }] }],
-          config: { maxOutputTokens: 8192, temperature: 0.1 },
+          config: {
+            maxOutputTokens: 8192,
+            temperature: 0,
+            ...(gemThinking ? { thinkingConfig: gemThinking } : {}),
+          } as Parameters<typeof ai.models.generateContentStream>[0]["config"],
         });
 
         for await (const chunk of stream) {
@@ -2913,7 +2932,7 @@ ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA ═══\n${marketContext
       const result = streamText({
         model: xai(chosenModel),
         system: systemPrompt,
-        temperature: 0.1,
+        temperature: 0,
         messages: messages.map(m => ({
           role: m.role as "user" | "assistant",
           content: m.content,
@@ -2941,7 +2960,7 @@ ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA ═══\n${marketContext
     const result = streamText({
       model: anthropic(chosenModel),
       system: systemPrompt,
-      temperature: 0.1,
+      temperature: 0,
       messages: messages.map(m => ({
         role: m.role as "user" | "assistant",
         content: m.content,
@@ -3483,7 +3502,7 @@ router.post("/deterministic-strategist", async (req, res) => {
     await nativeStream({
       prompt: narrativePrompt,
       modelName: model ?? DEFAULT_MODEL,
-      temperature: temperature ?? 0.2,
+      temperature: temperature ?? 0,
       thinkingBudget: 2048,
       onThinking: (text) => {
         res.write(`data: ${JSON.stringify({ reasoning: text })}\n\n`);
@@ -3681,7 +3700,7 @@ Return this exact JSON structure:
 }`;
 
   try {
-    const raw = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.1);
+    const raw = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0);
 
     // Try to parse JSON — strip any markdown fences Claude may wrap around it
     const cleaned = raw.replace(/^```(?:json)?\s*/im, "").replace(/```\s*$/im, "").trim();
@@ -3834,7 +3853,7 @@ INSTRUCTIONS:
 - Use markdown formatting. Be precise and actionable.`;
 
   try {
-    const response = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0.1);
+    const response = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0);
     return res.json({
       response,
       indicators: {
@@ -3854,7 +3873,7 @@ INSTRUCTIONS:
 });
 
 router.post("/sympathy-plays", async (req, res) => {
-  const { symbol, model = DEFAULT_MODEL, temperature = 0.3 } = req.body as {
+  const { symbol, model = DEFAULT_MODEL, temperature = 0 } = req.body as {
     symbol?: string;
     model?: string;
     temperature?: number;
@@ -3918,7 +3937,7 @@ router.post("/pre-trade-check", async (req, res) => {
   try {
     const summary = result.checks.map(c => `${c.label}: ${c.status} (${c.value})`).join("; ");
     const prompt = `You are a risk manager giving a one-sentence summary of a pre-trade risk check. Be direct and concise. The overall result is ${result.overall} with ${result.passCount} passes, ${result.warnCount} warnings, ${result.failCount} fails. Details: ${summary}. Strategy: ${strategy.strategy_type}. Give exactly one short sentence (max 20 words) that a trader would find useful.`;
-    aiOneLiner = await callClaude(prompt, DEFAULT_MODEL, 0.3);
+    aiOneLiner = await callClaude(prompt, DEFAULT_MODEL, 0);
   } catch {
     aiOneLiner = result.overall === "PASS" ? "All checks passed. Clear to trade."
       : result.overall === "WARN" ? "Caution: some checks flagged. Review before entry."

@@ -500,6 +500,7 @@ function DisplayMarqueePage() {
 const OPENAI_MODELS = [
   "gpt-5.5",
   "gpt-5.4",
+  "gpt-5.4-mini",
   "gpt-5.2",
   "gpt-5",
   "gpt-5-mini",
@@ -508,6 +509,7 @@ const OPENAI_MODELS = [
 ];
 
 const XAI_MODELS = [
+  "grok-4-1-fast-reasoning",
   "grok-4",
   "grok-3",
 ];

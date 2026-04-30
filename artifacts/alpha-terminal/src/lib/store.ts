@@ -449,7 +449,7 @@ export const useTerminalStore = create<TerminalState>()(
 
       aiModel: 'claude-opus-4-6',
       setAiModel: (aiModel) => set({ aiModel }),
-      aiTemp: 0.7,
+      aiTemp: 0,
       setAiTemp: (aiTemp) => set({ aiTemp }),
 
       aiFeatureSettings: {
@@ -817,7 +817,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 21,
+      version: 22,
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -1006,6 +1006,19 @@ export const useTerminalStore = create<TerminalState>()(
           if (cfg && typeof cfg === 'object') {
             cfg['analystModelName'] = fix(cfg['analystModelName']);
             cfg['skepticModelName'] = fix(cfg['skepticModelName']);
+          }
+        }
+        if (version < 22) {
+          const t = s['aiTemp'];
+          if (typeof t === 'number' && t !== 0) s['aiTemp'] = 0;
+          const features = s['aiFeatureSettings'] as Record<string, { model?: string; temperature?: number }> | undefined;
+          if (features) {
+            for (const key of Object.keys(features)) {
+              const row = features[key];
+              if (row && typeof row.temperature === 'number' && row.temperature !== 0) {
+                row.temperature = 0;
+              }
+            }
           }
         }
         // v21: strategistJobs is now persisted. Sweep any "running" jobs that
