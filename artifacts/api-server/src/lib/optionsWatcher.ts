@@ -1,7 +1,6 @@
 import { logger } from "./logger.js";
-import { SWEEP_CONDITION_CODES, BLOCK_MIN_SIZE } from "./optionsConditionCodes.js";
 import { enqueueClassifiedTrade } from "./optionsFlowPersistence.js";
-import { classifyAggressorFromNbbo } from "./flowAggressorSide.js";
+import { classifyForFlowPersistence } from "./optionsTradeClassifier.js";
 import { fetchPolygonChain, type PolygonParsedContract } from "./polygonChain.js";
 import {
   ensureConnected,
@@ -317,26 +316,31 @@ function handleTrade(t: PolygonOptionTrade): void {
   if (!ticker) return;
   const st = state.get(ticker);
   if (!st) return;
-  const side = st.contractType.get(t.sym);
+  const legSide = st.contractType.get(t.sym);
   const notional = t.price * t.size * 100;
 
   st.totalPrints++;
   st.lastTradeTs = t.timestamp || Date.now();
   lastTradeTs = st.lastTradeTs;
 
-  if (side === "C") st.callNotional += notional;
-  else if (side === "P") st.putNotional += notional;
+  if (legSide === "C") st.callNotional += notional;
+  else if (legSide === "P") st.putNotional += notional;
 
-  const isSweep = t.conditions.some(c => SWEEP_CONDITION_CODES.has(c));
-  const isBlock = t.size >= BLOCK_MIN_SIZE;
-  const isLarge = notional >= 100_000; // $100k+ premium
+  const nbbo = getNbbo(t.sym);
+  const classified = classifyForFlowPersistence({
+    price: t.price,
+    size: t.size,
+    conditions: t.conditions,
+    nbbo: nbbo ? { bid: nbbo.bid, ask: nbbo.ask } : null,
+  });
+  const { isSweep, isBlockForDb, isLarge, shouldPersist, side: aggressorSide } = classified;
 
   if (t.size > st.largestPrintSize) {
     st.largestPrintSize = t.size;
     st.largestPrintNotional = notional;
   }
 
-  if (isSweep || isBlock || isLarge) {
+  if (shouldPersist) {
     st.liveEventCount++;
     st.events.push({
       ts: st.lastTradeTs,
@@ -344,21 +348,15 @@ function handleTrade(t: PolygonOptionTrade): void {
       size: t.size,
       price: t.price,
       notional,
-      kind: isSweep ? "sweep" : isBlock ? "block" : "large",
+      kind: isSweep ? "sweep" : isBlockForDb ? "block" : "large",
     });
-    const nbbo = getNbbo(t.sym);
-    let side: string | null = null;
-    if (nbbo) {
-      const { side: s, reason } = classifyAggressorFromNbbo(t.price, nbbo.bid, nbbo.ask);
-      side = s;
-      if (s == null && reason) {
-        logger.debug(
-          { occ: t.sym, ticker, reason, bid: nbbo.bid, ask: nbbo.ask, price: t.price },
-          "optionsWatcher: aggressor side unavailable",
-        );
-      }
-    } else {
+    if (!nbbo) {
       logger.debug({ occ: t.sym, ticker }, "optionsWatcher: NBBO cache miss — aggressor side null");
+    } else if (aggressorSide == null) {
+      logger.debug(
+        { occ: t.sym, ticker, bid: nbbo.bid, ask: nbbo.ask, price: t.price },
+        "optionsWatcher: aggressor side unavailable",
+      );
     }
     enqueueClassifiedTrade({
       occ: t.sym,
@@ -368,8 +366,8 @@ function handleTrade(t: PolygonOptionTrade): void {
       size: t.size,
       notional,
       isSweep,
-      isBlock: isBlock && !isSweep,
-      side,
+      isBlock: isBlockForDb,
+      side: aggressorSide,
     });
     // Cap event log per ticker to keep memory bounded. Mirror TTL-prune
     // behavior so liveEventCount stays consistent with retained events

@@ -91,6 +91,8 @@ export interface PolygonFlowHighlights {
   largestPrint: FlowStrikeHighlight | null;
   /** Live tape rollups for the same calendar session as asOfDate when rows exist. */
   sessionTape: PolygonFlowTape | null;
+  /** When set, session tape was read for this NY session date (may differ from asOfDate). */
+  sessionTapeDate?: string;
 }
 
 const MIN_VOLUME_FOR_VOI = 100;
@@ -111,6 +113,19 @@ function isFresh(asOfDate: string, todayUtc: Date = new Date()): boolean {
   const today = new Date(`${todayUtc.toISOString().slice(0, 10)}T00:00:00Z`).getTime();
   const ageDays = Math.floor((today - asOf) / 86_400_000);
   return ageDays <= MAX_AGE_CALENDAR_DAYS;
+}
+
+function nyCalendarYmd(d: Date): string {
+  return d.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+}
+
+/** Prefer intraday tape for NY "today" when EOD asOfDate lags the calendar session. */
+function sessionTapeDatesToFetch(asOfDate: string): string[] {
+  const ny = nyCalendarYmd(new Date());
+  const out: string[] = [];
+  if (asOfDate !== ny) out.push(asOfDate);
+  out.push(ny);
+  return [...new Set(out)];
 }
 
 interface RawStrikeRow {
@@ -481,14 +496,23 @@ export async function getPolygonFlowHighlights(
 
     const rawRows = rows as unknown as RawStrikeRow[];
     const summary = summarize(rawRows);
-    let sessionTape = await fetchSessionTape(sym, asOfDate);
+    let sessionTape: PolygonFlowTape | null = null;
+    let sessionTapeDate: string | undefined;
+    for (const d of sessionTapeDatesToFetch(asOfDate)) {
+      const st = await fetchSessionTape(sym, d);
+      if (st) {
+        sessionTape = st;
+        sessionTapeDate = d;
+        break;
+      }
+    }
     if (!sessionTape) {
       sessionTape = buildEodFallbackSessionTape(asOfDate, rawRows);
       if (sessionTape) {
         logger.info({ symbol: sym, asOfDate }, "polygonFlowHighlights: using EOD fallback session tape (no live flow rows)");
       }
     }
-    return { asOfDate, ...summary, sessionTape };
+    return { asOfDate, ...summary, sessionTape, sessionTapeDate };
   } catch (err) {
     logger.warn({ err, symbol: sym }, "polygonFlowHighlights: lookup failed");
     return null;
@@ -552,14 +576,23 @@ export async function getPolygonFlowHighlightsBulk(
     for (const [sym, bucket] of bySymbol) {
       const asOfDate = symDateMap.get(sym)!;
       const summary = summarize(bucket);
-      let sessionTape = await fetchSessionTape(sym, asOfDate);
+      let sessionTape: PolygonFlowTape | null = null;
+      let sessionTapeDate: string | undefined;
+      for (const d of sessionTapeDatesToFetch(asOfDate)) {
+        const st = await fetchSessionTape(sym, d);
+        if (st) {
+          sessionTape = st;
+          sessionTapeDate = d;
+          break;
+        }
+      }
       if (!sessionTape) {
         sessionTape = buildEodFallbackSessionTape(asOfDate, bucket);
         if (sessionTape) {
           logger.info({ symbol: sym, asOfDate }, "polygonFlowHighlights: using EOD fallback session tape (no live flow rows)");
         }
       }
-      out.set(sym, { asOfDate, ...summary, sessionTape });
+      out.set(sym, { asOfDate, ...summary, sessionTape, sessionTapeDate });
     }
 
     logger.info({

@@ -13,6 +13,7 @@ import type { InferInsertModel } from "drizzle-orm";
 import { getBestAccessToken } from "./tokenStore.js";
 import { fetchPolygonChain } from "./polygonChain.js";
 import { getPolygonFlowHighlights, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
+import { runStrategistTapeBackfill, type TapeBackfillStatus } from "./strategistTapeBackfill.js";
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
 import { getNextEarningsDate } from "./earningsService.js";
 import { evaluateCatalyst, deriveTradeDirection, type CatalystEvaluation } from "./catalystEvaluator.js";
@@ -623,18 +624,6 @@ export async function analyzeTickerV2(
     })),
   }, "StrategistV2: expirations being sent to AI model");
 
-  const polygonHighlights = await getPolygonFlowHighlights(ticker);
-  if (polygonHighlights) {
-    logger.info({
-      ticker,
-      asOfDate: polygonHighlights.asOfDate,
-      unusualStrikes: polygonHighlights.unusualStrikeCount,
-      unusualSkew: polygonHighlights.unusualSkew,
-    }, "StrategistV2: Polygon flow highlights loaded");
-  } else {
-    logger.info({ ticker }, "StrategistV2: no Polygon flow highlights for ticker");
-  }
-
   let deskCatalystEval: CatalystEvaluation | null = null;
   let deskCatalystExpirationISO = "";
   if (settings.strategistMode === 3) {
@@ -654,6 +643,57 @@ export async function analyzeTickerV2(
     }
   }
 
+  let tapeBackfillStatus: TapeBackfillStatus | undefined;
+  if (settings.strategistMode === 3) {
+    status("Loading session options tape (REST backfill)…");
+    try {
+      tapeBackfillStatus = await runStrategistTapeBackfill({
+        ticker,
+        chain,
+        chainSummary: {
+          atmStrike: chainSummary.atmStrike,
+          availableExpirations: chainSummary.availableExpirations,
+          curatedExpirations: chainSummary.curatedExpirations.map((e) => ({
+            expiration: e.expiration,
+            dte: e.dte,
+          })),
+        },
+      });
+      logger.info(
+        {
+          ticker,
+          tapeBackfill: tapeBackfillStatus.status,
+          tradesInserted: tapeBackfillStatus.tradesInserted,
+          occCompleted: tapeBackfillStatus.occCompleted,
+        },
+        "StrategistV2: session tape backfill finished",
+      );
+    } catch (err) {
+      logger.warn({ err, ticker }, "StrategistV2: session tape backfill threw");
+      tapeBackfillStatus = {
+        status: "failed",
+        reason: "exception",
+        sessionDate: new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }),
+        coverageEndMs: Date.now(),
+        occRequested: 0,
+        occCompleted: 0,
+        tradesInserted: 0,
+      };
+    }
+  }
+
+  const polygonHighlights = await getPolygonFlowHighlights(ticker);
+  if (polygonHighlights) {
+    logger.info({
+      ticker,
+      asOfDate: polygonHighlights.asOfDate,
+      unusualStrikes: polygonHighlights.unusualStrikeCount,
+      unusualSkew: polygonHighlights.unusualSkew,
+    }, "StrategistV2: Polygon flow highlights loaded");
+  } else {
+    logger.info({ ticker }, "StrategistV2: no Polygon flow highlights for ticker");
+  }
+
   const dataPackage = buildDataPackage(
     ticker,
     tickerData,
@@ -668,6 +708,7 @@ export async function analyzeTickerV2(
       realizedVol,
       ivrContext: buildIvrContext(tickerData, realIvDepth, proxyIvDepth),
     },
+    settings.strategistMode === 3 ? tapeBackfillStatus : undefined,
   );
 
   // ── Desk mode (mode 3): three parallel analysts + PM ──────────────────
@@ -1728,6 +1769,7 @@ function buildDataPackage(
     realizedVol: Awaited<ReturnType<typeof getRealizedVolFromEquityDaily>>;
     ivrContext: ReturnType<typeof buildIvrContext>;
   },
+  tapeBackfill?: TapeBackfillStatus,
 ): string {
   const currentDate = new Date().toISOString().slice(0, 10);
   const pkg: Record<string, unknown> = {
@@ -1778,6 +1820,7 @@ function buildDataPackage(
       topByVolOiRatio: polygonHighlights.topByVolOiRatio,
       largestPrint: polygonHighlights.largestPrint,
       sessionTape: polygonHighlights.sessionTape,
+      sessionTapeDate: polygonHighlights.sessionTapeDate,
       sourceNote:
         "Per-strike end-of-day snapshot (volume, OI, greeks). sessionTape.tapeKind `live` adds classified prints and aggressor mix; `eod_fallback` is volume-ranked EOD synthesis when live tape rows are absent (sweep/block zero; do not infer aggressor).",
     } : { available: false, note: "No per-strike flow snapshot on file for this ticker — fall back to optionsChainSummary.unusualActivity." },
@@ -1816,6 +1859,18 @@ function buildDataPackage(
       maxBidAskSpreadPct: settings.maxBidAskSpreadPct,
     },
   };
+
+  if (tapeBackfill) {
+    pkg.tapeBackfill = {
+      status: tapeBackfill.status,
+      reason: tapeBackfill.reason,
+      sessionDate: tapeBackfill.sessionDate,
+      coverageEndMs: tapeBackfill.coverageEndMs,
+      occRequested: tapeBackfill.occRequested,
+      occCompleted: tapeBackfill.occCompleted,
+      tradesInserted: tapeBackfill.tradesInserted,
+    };
+  }
 
   if (settings.strategistMode === 3 && deskCatalystWindowExpirationISO) {
     if (catalystEvaluation != null) {
