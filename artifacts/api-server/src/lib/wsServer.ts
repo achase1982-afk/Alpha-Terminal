@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { Server as HttpServer, IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
+import { fileURLToPath } from "node:url";
 import { verifyToken } from "@clerk/express";
 import { logger } from "./logger.js";
 import { getSnapshot, getStreamerStatus, registerWsBroadcast, addSymbols, addOptionSymbols, addFuturesSymbols, addFuturesOptionSymbols } from "./schwabStreamer.js";
@@ -15,6 +16,133 @@ const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
 
 const clients = new Set<WebSocket>();
 const portfolioSubs = new Map<WebSocket, ReturnType<typeof setInterval>>();
+
+/** Per WS: first full [PL_CALC] after subscribe; then log only when computed P/L % changes. */
+const plCalcLogState = new WeakMap<
+  WebSocket,
+  { firstFullDone: boolean; lastPlPctByKey: Map<string, number> }
+>();
+
+const WS_SERVER_FILE = fileURLToPath(import.meta.url);
+
+/** File:line of the `readPlCalcPriceInputsFromPosition` stack frame (Schwab price field reads). */
+function plCalcPriceInputReadSiteLine(): string {
+  const lines = (new Error().stack ?? "").split("\n");
+  const frame = lines.find(l => l.includes("readPlCalcPriceInputsFromPosition"));
+  const m = frame?.match(/\((.+):(\d+):\d+\)/);
+  if (m) return `${m[1]}:${m[2]}`;
+  const m2 = frame?.match(/at (.+):(\d+):\d+/);
+  return m2 ? `${m2[1]}:${m2[2]}` : `${WS_SERVER_FILE}:?`;
+}
+
+/** Schwab `pos` fields used as inputs to implied mark / P/L % (see `currentPriceSourceLine`). */
+function readPlCalcPriceInputsFromPosition(pos: Record<string, unknown>) {
+  const marketValue = Number(pos.marketValue ?? 0) || 0;
+  const longQty = Number(pos.longQuantity ?? 0) || 0;
+  const shortQty = Number(pos.shortQuantity ?? 0) || 0;
+  return {
+    marketValue,
+    longQty,
+    shortQty,
+    currentPriceSourceLine: plCalcPriceInputReadSiteLine(),
+  };
+}
+
+function plCalcPositionKey(pos: Record<string, unknown>): string {
+  const inst = (pos.instrument as Record<string, unknown> | undefined) ?? {};
+  const sym = typeof inst.symbol === "string" ? inst.symbol : "";
+  const cusip = (typeof inst.cusip === "string" ? inst.cusip : null) ?? (typeof pos.cusip === "string" ? pos.cusip : "");
+  return `${sym}|${cusip}`;
+}
+
+function buildPlCalcAuditRow(pos: Record<string, unknown>): Record<string, unknown> | null {
+  if (pos === null || typeof pos !== "object") return null;
+  const inst = (pos.instrument as Record<string, unknown> | undefined) ?? {};
+  const assetType = inst.assetType;
+  const symbol = inst.symbol;
+  const isOptionLike =
+    assetType === "OPTION" ||
+    assetType === "INDEX_OPTION" ||
+    assetType === "FUTURE_OPTION";
+  const multiplier = isOptionLike ? 100 : 1;
+  const { marketValue, longQty, shortQty, currentPriceSourceLine } = readPlCalcPriceInputsFromPosition(pos);
+  const qty = isOptionLike ? (shortQty > 0 ? shortQty : longQty) : longQty || shortQty;
+  const averagePrice = Number(pos.averagePrice ?? 0) || 0;
+  const longOpenProfitLoss = Number(pos.longOpenProfitLoss ?? 0) || 0;
+
+  const currentPriceField = "marketValue/(longQuantity|shortQuantity)";
+  const currentPriceValue =
+    qty > 0.0001 ? marketValue / (isOptionLike ? qty * multiplier : qty) : null;
+
+  const costBasisField = "averagePrice";
+  const costBasisTotal =
+    isOptionLike
+      ? Math.abs(averagePrice * (shortQty > 0 ? shortQty : longQty) * multiplier)
+      : averagePrice > 0 && qty > 0
+        ? averagePrice * qty
+        : 0;
+
+  const computedPlPct =
+    costBasisTotal > 0.01 ? (longOpenProfitLoss / costBasisTotal) * 100 : 0;
+
+  return {
+    symbol,
+    instrumentType: assetType,
+    quantityLong: longQty,
+    quantityShort: shortQty,
+    multiplier,
+    currentPriceSchwabFields: { marketValue, longQuantity: longQty, shortQuantity: shortQty },
+    currentPriceField,
+    currentPriceValue,
+    currentPriceSourceLine,
+    costBasisSchwabField: costBasisField,
+    costBasisSchwabValue: averagePrice,
+    costBasisTotalForPlPct: costBasisTotal,
+    computedPlOpen: longOpenProfitLoss,
+    plOpenSource: "schwab_field:longOpenProfitLoss",
+    computedPlPct,
+    rawSchwabPosition: pos,
+  };
+}
+
+function maybeLogPlCalcForRawPositions(ws: WebSocket, rawPositions: unknown[]) {
+  if (!Array.isArray(rawPositions) || rawPositions.length === 0) return;
+
+  let state = plCalcLogState.get(ws);
+  if (!state) {
+    state = { firstFullDone: false, lastPlPctByKey: new Map() };
+    plCalcLogState.set(ws, state);
+  }
+
+  const rows: { key: string; pct: number; payload: Record<string, unknown> }[] = [];
+  for (const p of rawPositions) {
+    if (p === null || typeof p !== "object") continue;
+    const pos = p as Record<string, unknown>;
+    const audit = buildPlCalcAuditRow(pos);
+    if (!audit) continue;
+    const key = plCalcPositionKey(pos);
+    const pct = typeof audit.computedPlPct === "number" ? audit.computedPlPct : 0;
+    rows.push({ key, pct, payload: audit });
+  }
+
+  if (!state.firstFullDone) {
+    if (rows.length === 0) return;
+    for (const r of rows) {
+      logger.info(r.payload, "[PL_CALC] position P/L audit row");
+    }
+    state.firstFullDone = true;
+    for (const r of rows) state.lastPlPctByKey.set(r.key, r.pct);
+    return;
+  }
+
+  for (const r of rows) {
+    const prev = state.lastPlPctByKey.get(r.key);
+    if (prev !== r.pct) {
+      logger.info(r.payload, "[PL_CALC] position P/L audit row");
+      state.lastPlPctByKey.set(r.key, r.pct);
+    }
+  }
+}
 
 let cachedAccountHash: string | null = null;
 let accountHashExpiry = 0;
@@ -44,63 +172,6 @@ async function schwabTraderGet(path: string, token: string): Promise<any> {
     throw new Error(`Schwab ${path} returned ${status}: ${bodyText.slice(0, 200)}`);
   }
   return json;
-}
-
-function logPlCalcForRawPositions(rawPositions: unknown[]) {
-  if (!Array.isArray(rawPositions)) return;
-  for (const p of rawPositions) {
-    if (p === null || typeof p !== "object") continue;
-    const pos = p as Record<string, unknown>;
-    const inst = (pos.instrument as Record<string, unknown> | undefined) ?? {};
-    const assetType = inst.assetType;
-    const symbol = inst.symbol;
-    const isOptionLike =
-      assetType === "OPTION" ||
-      assetType === "INDEX_OPTION" ||
-      assetType === "FUTURE_OPTION";
-    const multiplier = isOptionLike ? 100 : 1;
-    const longQty = Number(pos.longQuantity ?? 0) || 0;
-    const shortQty = Number(pos.shortQuantity ?? 0) || 0;
-    const qty = isOptionLike ? (shortQty > 0 ? shortQty : longQty) : longQty || shortQty;
-    const marketValue = Number(pos.marketValue ?? 0) || 0;
-    const averagePrice = Number(pos.averagePrice ?? 0) || 0;
-    const longOpenProfitLoss = Number(pos.longOpenProfitLoss ?? 0) || 0;
-
-    const currentPriceField = "marketValue/(longQuantity|shortQuantity)";
-    const currentPriceValue =
-      qty > 0.0001 ? marketValue / (isOptionLike ? qty * multiplier : qty) : null;
-
-    const costBasisField = "averagePrice";
-    const costBasisTotal =
-      isOptionLike
-        ? Math.abs(averagePrice * (shortQty > 0 ? shortQty : longQty) * multiplier)
-        : averagePrice > 0 && qty > 0
-          ? averagePrice * qty
-          : 0;
-
-    const computedPlPct =
-      costBasisTotal > 0.01 ? (longOpenProfitLoss / costBasisTotal) * 100 : 0;
-
-    logger.info(
-      {
-        symbol,
-        instrumentType: assetType,
-        quantityLong: longQty,
-        quantityShort: shortQty,
-        multiplier,
-        currentPriceSchwabFields: { marketValue, longQuantity: longQty, shortQuantity: shortQty },
-        currentPriceField,
-        currentPriceValue,
-        costBasisSchwabField: costBasisField,
-        costBasisSchwabValue: averagePrice,
-        costBasisTotalForPlPct: costBasisTotal,
-        computedPlOpen: longOpenProfitLoss,
-        computedPlPct,
-        rawSchwabPosition: pos,
-      },
-      "[PL_CALC] position P/L audit row",
-    );
-  }
 }
 
 async function getAccountHash(token: string): Promise<string | null> {
@@ -274,7 +345,7 @@ async function fetchAndPushPortfolio(ws: WebSocket) {
       const accounts = Array.isArray(acctRes.json) ? acctRes.json : [];
       if (accounts.length > 0) {
         const sa = (accounts[0] as { securitiesAccount?: { positions?: unknown[] } })?.securitiesAccount;
-        logPlCalcForRawPositions(sa?.positions ?? []);
+        maybeLogPlCalcForRawPositions(ws, sa?.positions ?? []);
       }
     }
     if (acctRes.ok && Array.isArray(acctRes.json) && acctRes.json.length > 0) {
@@ -339,6 +410,7 @@ async function fetchAndPushPortfolio(ws: WebSocket) {
 function startPortfolioPoll(ws: WebSocket) {
   if (portfolioSubs.has(ws)) return;
 
+  plCalcLogState.set(ws, { firstFullDone: false, lastPlPctByKey: new Map() });
   fetchAndPushPortfolio(ws);
 
   const interval = setInterval(() => fetchAndPushPortfolio(ws), PORTFOLIO_POLL_MS);
@@ -351,6 +423,7 @@ function stopPortfolioPoll(ws: WebSocket) {
   if (interval) {
     clearInterval(interval);
     portfolioSubs.delete(ws);
+    plCalcLogState.delete(ws);
     logger.info({ subs: portfolioSubs.size }, "Portfolio WS polling stopped");
   }
 }
