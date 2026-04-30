@@ -17,7 +17,7 @@ import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.j
 import { getNextEarningsDate } from "./earningsService.js";
 import { evaluateCatalyst, deriveTradeDirection, type CatalystEvaluation } from "./catalystEvaluator.js";
 import { type OptionContract } from "./optionsStrategist.js";
-import { getStoredIVR } from "./ivNormalize.js";
+import { getStoredIVR, getRealizedVolFromEquityDaily, countRealIvHistoryDays, countProxyIvHistoryDays } from "./ivNormalize.js";
 import { clampProfitTargetToMaxPayout } from "./exitTargetMath.js";
 import { scrubAll } from "./narrativeScrubbers.js";
 import { getAiLabStrategistConfig } from "./aiLabConfig.js";
@@ -164,6 +164,9 @@ interface TickerData {
   price: number;
   dailyChangePct: number;
   ivr: number | null;
+  /** From getStoredIVR / equity_daily — surfaced in volatilityContext for the Vol Analyst. */
+  ivrAsOfDate: string | null;
+  ivrSource: string | null;
   avgVolume20d: number;
   currentVolume: number;
   relativeVolume: number;
@@ -353,6 +356,19 @@ export interface ChainSummary {
   curatedExpirations: CuratedExpiration[];
   ivArtifactsClampedCount: number;
   ivCeilingPct: number;
+  /** ATM IV (call+put avg, pct) at ≥5 expiries from near-term through 60+ DTE when chain supports it. */
+  termStructure5pt: Array<{ expiry: string; daysToExpiry: number; atmIV: number }>;
+  /** 25Δ put IV minus 25Δ call IV (vol points); null if unavailable. */
+  skew25Delta: { putIV: number; callIV: number; skewPoints: number; asOfExpiry: string } | null;
+  /** Populated when skew25Delta is null. */
+  skew25DeltaReason: string | null;
+  /** ATM straddle mid (call+put) for front-month expiry. */
+  impliedMove: {
+    dollar: number;
+    percentOfSpot: number;
+    expiry: string;
+    daysToExpiry: number;
+  } | null;
 }
 
 // Persona suffixes appended to STRATEGIST_SYSTEM_PROMPT in Debate mode only.
@@ -565,10 +581,8 @@ export async function analyzeTickerV2(
   // showing a fabricated number.
   const storedIvr = await getStoredIVR(ticker);
   tickerData.ivr = storedIvr?.ivr ?? null;
-  (tickerData as TickerData & { ivrAsOfDate?: string | null; ivrSource?: string | null }).ivrAsOfDate =
-    storedIvr?.asOfDate ?? null;
-  (tickerData as TickerData & { ivrAsOfDate?: string | null; ivrSource?: string | null }).ivrSource =
-    storedIvr?.source ?? null;
+  tickerData.ivrAsOfDate = storedIvr?.asOfDate ?? null;
+  tickerData.ivrSource = storedIvr?.source ?? null;
   logger.info(
     { ticker, ivr: tickerData.ivr, ivrAsOfDate: storedIvr?.asOfDate ?? null, ivrSource: storedIvr?.source ?? null },
     storedIvr
@@ -580,6 +594,15 @@ export async function analyzeTickerV2(
   const ioScore = await computeIOScore(ticker, catalystInfo, settings);
 
   const chainSummary = summarizeOptionsChain(chain, tickerData.price);
+
+  const [realizedVol, realIvDepth] = await Promise.all([
+    getRealizedVolFromEquityDaily(ticker),
+    countRealIvHistoryDays(ticker),
+  ]);
+  let proxyIvDepth: number | null = null;
+  if (tickerData.ivrSource === "hv_proxy" && tickerData.ivrAsOfDate) {
+    proxyIvDepth = await countProxyIvHistoryDays(ticker, tickerData.ivrAsOfDate);
+  }
 
   reconcileFlowScoreFromChain(ioScore, chainSummary, ticker);
 
@@ -637,6 +660,10 @@ export async function analyzeTickerV2(
     polygonHighlights,
     deskCatalystEval,
     settings.strategistMode === 3 ? deskCatalystExpirationISO : undefined,
+    {
+      realizedVol,
+      ivrContext: buildIvrContext(tickerData, realIvDepth, proxyIvDepth),
+    },
   );
 
   // ── Desk mode (mode 3): three parallel analysts + PM ──────────────────
@@ -1202,6 +1229,133 @@ function computeDte(expiration: string): number {
   return Math.max(0, Math.round((expMs - Date.now()) / (24 * 60 * 60 * 1000)));
 }
 
+function atmIvPctForExpiry(
+  chain: ChainContract[],
+  expiration: string,
+  price: number,
+  ivToPct: (iv: number | null | undefined) => number,
+): number | null {
+  const calls = chain.filter(c => c.expiration === expiration && (c.type === "call" || c.optionType === "CALL"));
+  const puts = chain.filter(c => c.expiration === expiration && (c.type === "put" || c.optionType === "PUT"));
+  if (calls.length === 0 || puts.length === 0) return null;
+  const callStrike = [...calls].sort((a, b) => Math.abs(a.strike - price) - Math.abs(b.strike - price))[0]?.strike;
+  const putStrike = [...puts].sort((a, b) => Math.abs(a.strike - price) - Math.abs(b.strike - price))[0]?.strike;
+  const strike = callStrike != null && putStrike != null
+    ? (Math.abs(callStrike - price) <= Math.abs(putStrike - price) ? callStrike : putStrike)
+    : (callStrike ?? putStrike ?? null);
+  if (strike == null) return null;
+  const c = calls.find(x => x.strike === strike) ?? calls.sort((a, b) => Math.abs(a.strike - price) - Math.abs(b.strike - price))[0];
+  const p = puts.find(x => x.strike === strike) ?? puts.sort((a, b) => Math.abs(a.strike - price) - Math.abs(b.strike - price))[0];
+  if (!c || !p) return null;
+  return Math.round(((ivToPct(c.impliedVolatility) + ivToPct(p.impliedVolatility)) / 2) * 100) / 100;
+}
+
+function buildTermStructure5pt(
+  chain: ChainContract[],
+  price: number,
+  curatedExpirations: CuratedExpiration[],
+  availableExpirations: string[],
+  ivToPct: (iv: number | null | undefined) => number,
+): Array<{ expiry: string; daysToExpiry: number; atmIV: number }> {
+  const byExp = new Map<string, number>();
+  for (const ce of curatedExpirations) {
+    const iv = atmIvPctForExpiry(chain, ce.expiration, price, ivToPct);
+    if (iv != null) byExp.set(ce.expiration, iv);
+  }
+  const allSorted = [...availableExpirations]
+    .map(exp => ({ exp, dte: computeDte(exp) }))
+    .filter(x => x.dte > 0)
+    .sort((a, b) => a.dte - b.dte);
+  for (const { exp } of allSorted) {
+    if (byExp.has(exp)) continue;
+    if (byExp.size >= 12) break;
+    const iv = atmIvPctForExpiry(chain, exp, price, ivToPct);
+    if (iv != null) byExp.set(exp, iv);
+  }
+  let points = [...byExp.entries()]
+    .map(([expiry, atmIV]) => ({ expiry, daysToExpiry: computeDte(expiry), atmIV }))
+    .sort((a, b) => a.daysToExpiry - b.daysToExpiry);
+  if (points.length > 12) {
+    const n = points.length;
+    const idxs = [0, Math.floor(n * 0.2), Math.floor(n * 0.4), Math.floor(n * 0.6), Math.floor(n * 0.8), n - 1];
+    const picked = new Map<string, { expiry: string; daysToExpiry: number; atmIV: number }>();
+    for (const i of idxs) {
+      const p = points[Math.min(Math.max(0, i), n - 1)]!;
+      picked.set(p.expiry, p);
+    }
+    points = [...picked.values()].sort((a, b) => a.daysToExpiry - b.daysToExpiry);
+  }
+  while (points.length < 5) {
+    let added = false;
+    for (const { exp } of allSorted) {
+      if (points.some(p => p.expiry === exp)) continue;
+      const iv = atmIvPctForExpiry(chain, exp, price, ivToPct);
+      if (iv == null) continue;
+      points.push({ expiry: exp, daysToExpiry: computeDte(exp), atmIV: iv });
+      points.sort((a, b) => a.daysToExpiry - b.daysToExpiry);
+      added = true;
+      if (points.length >= 5) break;
+    }
+    if (!added) break;
+  }
+  return points;
+}
+
+function computeSkew25DeltaForChain(
+  chain: ChainContract[],
+  availableExpirations: string[],
+  ivToPct: (iv: number | null | undefined) => number,
+): { skew: ChainSummary["skew25Delta"]; reason: string | null } {
+  if (availableExpirations.length === 0) {
+    return { skew: null, reason: "no expirations" };
+  }
+  const withDte = availableExpirations.map(exp => ({ exp, dte: computeDte(exp) })).filter(x => x.dte > 0);
+  const target = withDte.find(x => x.dte > 7) ?? withDte[0];
+  if (!target) return { skew: null, reason: "no valid expiry" };
+  const exp = target.exp;
+  const calls = chain.filter(c => c.expiration === exp && (c.type === "call" || c.optionType === "CALL") && Number.isFinite(c.delta));
+  const puts = chain.filter(c => c.expiration === exp && (c.type === "put" || c.optionType === "PUT") && Number.isFinite(c.delta));
+  if (calls.length === 0 || puts.length === 0) {
+    return { skew: null, reason: "missing calls or puts on expiry" };
+  }
+  const putPick = [...puts].sort((a, b) => Math.abs(a.delta - -0.25) - Math.abs(b.delta - -0.25))[0];
+  const callPick = [...calls].sort((a, b) => Math.abs(a.delta - 0.25) - Math.abs(b.delta - 0.25))[0];
+  if (!putPick || !callPick) return { skew: null, reason: "no contracts with delta" };
+  const putIV = ivToPct(putPick.impliedVolatility);
+  const callIV = ivToPct(callPick.impliedVolatility);
+  const skewPoints = Math.round((putIV - callIV) * 100) / 100;
+  return {
+    skew: { putIV, callIV, skewPoints, asOfExpiry: exp },
+    reason: null,
+  };
+}
+
+function computeImpliedMoveStraddle(
+  chain: ChainContract[],
+  price: number,
+  availableExpirations: string[],
+): ChainSummary["impliedMove"] {
+  if (availableExpirations.length === 0) return null;
+  const exp = availableExpirations[0]!;
+  const dte = computeDte(exp);
+  if (dte <= 0) return null;
+  const calls = chain.filter(c => c.expiration === exp && (c.type === "call" || c.optionType === "CALL"));
+  const puts = chain.filter(c => c.expiration === exp && (c.type === "put" || c.optionType === "PUT"));
+  if (calls.length === 0 || puts.length === 0) return null;
+  const strike = [...new Set([...calls.map(c => c.strike), ...puts.map(c => c.strike)])]
+    .sort((a, b) => Math.abs(a - price) - Math.abs(b - price))[0];
+  if (strike == null) return null;
+  const c = calls.find(x => x.strike === strike);
+  const p = puts.find(x => x.strike === strike);
+  if (!c || !p) return null;
+  const callMid = (c.bid + c.ask) / 2;
+  const putMid = (p.bid + p.ask) / 2;
+  if (!Number.isFinite(callMid) || !Number.isFinite(putMid) || price <= 0) return null;
+  const dollar = Math.round((callMid + putMid) * 1000) / 1000;
+  const percentOfSpot = Math.round((dollar / price) * 10000) / 100;
+  return { dollar, percentOfSpot, expiry: exp, daysToExpiry: dte };
+}
+
 /**
  * Desk mode: far edge of the user's preferred DTE window for catalyst evaluation
  * (matches "position window" before any trade legs exist).
@@ -1420,6 +1574,10 @@ export function summarizeOptionsChain(chain: ChainContract[], price: number): Ch
 
   const curatedExpirations = buildCuratedExpirations(chain, price);
 
+  const termStructure5pt = buildTermStructure5pt(chain, price, curatedExpirations, expirations, ivToPct);
+  const { skew, reason: skew25DeltaReason } = computeSkew25DeltaForChain(chain, expirations, ivToPct);
+  const impliedMove = computeImpliedMoveStraddle(chain, price, expirations);
+
   return {
     atmStrike,
     atmCallBid: atmCall?.bid ?? 0,
@@ -1440,7 +1598,37 @@ export function summarizeOptionsChain(chain: ChainContract[], price: number): Ch
     curatedExpirations,
     ivArtifactsClampedCount: ivArtifactClampCount,
     ivCeilingPct: IV_CEILING_PCT,
+    termStructure5pt,
+    skew25Delta: skew,
+    skew25DeltaReason: skew == null ? skew25DeltaReason : null,
+    impliedMove,
   };
+}
+
+function buildIvrContext(
+  tickerData: TickerData,
+  realIvDepth: { count: number; asOfDate: string | null },
+  proxyIvDepth: number | null,
+): { source: "canonical" | "hv_proxy" | null; asOfDate: string | null; daysOfHistory: number | null } {
+  const raw = tickerData.ivrSource;
+  if (!raw || tickerData.ivr == null) {
+    return { source: null, asOfDate: tickerData.ivrAsOfDate, daysOfHistory: null };
+  }
+  if (raw === "hv_proxy") {
+    return {
+      source: "hv_proxy",
+      asOfDate: tickerData.ivrAsOfDate,
+      daysOfHistory: proxyIvDepth != null ? proxyIvDepth : null,
+    };
+  }
+  if (raw === "real_iv" || raw === "canonical" || raw === "chain" || raw === "flow") {
+    return {
+      source: "canonical",
+      asOfDate: tickerData.ivrAsOfDate,
+      daysOfHistory: realIvDepth.count > 0 ? realIvDepth.count : null,
+    };
+  }
+  return { source: null, asOfDate: tickerData.ivrAsOfDate, daysOfHistory: null };
 }
 
 function buildDataPackage(
@@ -1453,6 +1641,10 @@ function buildDataPackage(
   polygonHighlights: PolygonFlowHighlights | null,
   catalystEvaluation?: CatalystEvaluation | null,
   deskCatalystWindowExpirationISO?: string,
+  volPackageExtras?: {
+    realizedVol: Awaited<ReturnType<typeof getRealizedVolFromEquityDaily>>;
+    ivrContext: ReturnType<typeof buildIvrContext>;
+  },
 ): string {
   const currentDate = new Date().toISOString().slice(0, 10);
   const pkg: Record<string, unknown> = {
@@ -1478,12 +1670,18 @@ function buildDataPackage(
       termStructure: chainSummary.frontMonthIV != null && chainSummary.backMonthIV != null
         ? { frontMonthIV: chainSummary.frontMonthIV, backMonthIV: chainSummary.backMonthIV }
         : "insufficient data",
+      termStructure5pt: chainSummary.termStructure5pt,
+      skew25Delta: chainSummary.skew25Delta,
+      skew25DeltaReason: chainSummary.skew25DeltaReason,
+      impliedMove: chainSummary.impliedMove,
       ivArtifactNote: chainSummary.ivArtifactsClampedCount > 0
         ? `${chainSummary.ivArtifactsClampedCount} contract IV value(s) exceeded ${chainSummary.ivCeilingPct}% and were clamped to the ceiling. These are 0DTE/front-week pricing-engine artifacts (penny-wide bid/ask on contracts pricing into intraday underlying moves) — IGNORE them for structural decisions and use back-month IV instead.`
         : null,
     },
     curatedExpirations: chainSummary.curatedExpirations,
     availableExpirations: chainSummary.availableExpirations,
+    realizedVol: volPackageExtras?.realizedVol ?? null,
+    ivrContext: volPackageExtras?.ivrContext ?? { source: null, asOfDate: null, daysOfHistory: null },
     polygonFlowHighlights: polygonHighlights ? {
       asOfDate: polygonHighlights.asOfDate,
       totalCallVolume: polygonHighlights.totalCallVolume,
@@ -2315,6 +2513,8 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
         price,
         dailyChangePct: q.netPercentChangeInDouble ?? 0,
         ivr: null,
+        ivrAsOfDate: null,
+        ivrSource: null,
         avgVolume20d: avgVol,
         currentVolume: currentVol,
         relativeVolume: avgVol > 0 ? currentVol / avgVol : 1,

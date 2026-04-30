@@ -307,6 +307,100 @@ export async function cleanupIVUnits(): Promise<CleanupReport> {
   return report;
 }
 
+/** Count trading days with a valid close in equity_daily (for strategist vol context). */
+export async function countEquityDailyCloses(symbol: string): Promise<number> {
+  const symU = symbol.toUpperCase().trim();
+  if (!symU) return 0;
+  const rows = await db
+    .select({ c: sql<number>`count(*)::int` })
+    .from(equityDailyTable)
+    .where(and(
+      eq(equityDailyTable.symbol, symU),
+      sql`${equityDailyTable.close} IS NOT NULL`,
+      sql`${equityDailyTable.close} > 0`,
+    ));
+  return rows[0]?.c ?? 0;
+}
+
+/**
+ * HV20 / HV30 from close-to-close log returns (annualized sqrt(252)).
+ * Requires at least 31 closes (30 return observations) for HV30; returns null otherwise.
+ */
+export async function getRealizedVolFromEquityDaily(symbol: string): Promise<{
+  hv20: number;
+  hv30: number;
+  asOfDate: string;
+} | null> {
+  const symU = symbol.toUpperCase().trim();
+  if (!symU) return null;
+  const rows = await db
+    .select({ close: equityDailyTable.close, date: equityDailyTable.date })
+    .from(equityDailyTable)
+    .where(and(
+      eq(equityDailyTable.symbol, symU),
+      sql`${equityDailyTable.close} IS NOT NULL`,
+      sql`${equityDailyTable.close} > 0`,
+    ))
+    .orderBy(desc(equityDailyTable.date))
+    .limit(400);
+  if (rows.length < 31) return null;
+  const chronological = [...rows].reverse();
+  const closes = chronological.map(r => r.close as number);
+  const asOfDate = chronological[chronological.length - 1]!.date;
+  const logRet: number[] = [];
+  for (let i = 1; i < closes.length; i++) {
+    const prev = closes[i - 1]!;
+    const cur = closes[i]!;
+    if (prev <= 0 || cur <= 0) return null;
+    logRet.push(Math.log(cur / prev));
+  }
+  if (logRet.length < 30) return null;
+
+  const hvForLast = (nReturns: number): number | null => {
+    const slice = logRet.slice(-nReturns);
+    if (slice.length < nReturns) return null;
+    const mean = slice.reduce((a, b) => a + b, 0) / slice.length;
+    const variance = slice.reduce((a, b) => a + (b - mean) ** 2, 0) / (slice.length - 1);
+    if (!Number.isFinite(variance) || variance < 0) return null;
+    return Math.round(Math.sqrt(variance) * ANNUALIZE * 10000) / 100;
+  };
+
+  const hv30 = hvForLast(30);
+  const hv20 = hvForLast(20);
+  if (hv30 == null || hv20 == null) return null;
+  return { hv20, hv30, asOfDate };
+}
+
+/**
+ * Valid iv_30d rows on or before the latest row that has iv30d (Path B BSM series depth).
+ */
+export async function countRealIvHistoryDays(symbol: string): Promise<{ count: number; asOfDate: string | null }> {
+  const symU = symbol.toUpperCase().trim();
+  if (!symU) return { count: 0, asOfDate: null };
+  const latest = await db
+    .select({ date: equityDailyTable.date })
+    .from(equityDailyTable)
+    .where(and(
+      eq(equityDailyTable.symbol, symU),
+      sql`${equityDailyTable.iv30d} IS NOT NULL`,
+      sql`${equityDailyTable.iv30d} >= ${IV_MIN_VALID}`,
+      sql`${equityDailyTable.iv30d} <= ${IV_MAX_VALID}`,
+    ))
+    .orderBy(desc(equityDailyTable.date))
+    .limit(1);
+  const asOf = latest[0]?.date ?? null;
+  if (!asOf) return { count: 0, asOfDate: null };
+  const cnt = await countValidIvRows(symU, asOf, equityDailyTable.iv30d);
+  return { count: cnt, asOfDate: asOf };
+}
+
+/** Valid iv_30d_proxy rows for HV-proxy IVR depth. */
+export async function countProxyIvHistoryDays(symbol: string, asOfDate: string): Promise<number> {
+  const symU = symbol.toUpperCase().trim();
+  if (!symU) return 0;
+  return countValidIvRows(symU, asOfDate, equityDailyTable.iv30dProxy);
+}
+
 export async function recomputeAllIVR(symbols?: string[]): Promise<{ symbols: number; rowsUpdated: number; rowsNulled: number }> {
   let symList: string[];
   if (symbols && symbols.length > 0) {
