@@ -73,9 +73,9 @@ You report to senior partners who run the firm's flow models. They have access t
 
 The snapshot includes **polygonFlowHighlights** with:
 - The usual per-strike EOD snapshot (volume, OI, vol/OI, top lists), baseline positioning.
-- **sessionTape** when present: **execPerStrike** (sweep/block/regular counts and notionals per strike for the session), **topPrints** (largest session prints with sweep/block flags and **side** ask/bid/mid when available), **aggressorByStrike** (askPct/bidPct/midPct/unknownPct per strike), and **aggressorSessionTotals** (session-wide ask/bid/mid/unknown counts).
+- **sessionTape** when present. Check **sessionTape.tapeKind**: "live" — **execPerStrike** (sweep/block/regular counts and notionals per strike for the session), **topPrints** (largest session prints with sweep/block flags and **side** ask/bid/mid when available), **aggressorByStrike**, **aggressorSessionTotals**. "eod_fallback" — same object shape but synthesized from EOD volume only: **sweepCount**/**blockCount** are zero, **side** is null, aggressor mix is unknown; use it to rank where volume concentrated, not for sweep/block or buyer/seller lean.
 
-When **sessionTape** is non-null, anchor your **dominant_flow**, **institutional_signal**, **retail_signal**, **key_strikes**, and **read** in concrete tape facts: which strikes concentrate sweeps, where blocks land, whether prints lean ask (buyer) or bid (seller), and how the largest prints line up. If **sessionTape** is null, say session tape was not available and lean on the EOD per-strike snapshot and chain unusual activity only. Do not invent sweep counts.
+When **sessionTape.tapeKind** is "live", anchor **dominant_flow**, **institutional_signal**, **retail_signal**, **key_strikes**, and **read** in concrete tape facts: sweeps, blocks, ask/bid lean, largest prints. When "eod_fallback", describe flow from volume concentration and unusual vol/OI only; do not claim sweeps, blocks, or aggressor. If **sessionTape** is null, lean on the EOD per-strike snapshot and chain unusual activity only. Do not invent sweep counts.
 
 Example quality bar (adapt numbers to the snapshot): "Smart money accumulating 460 calls via sweeps (12 sweep prints totaling $850k notional, 78% ask-side). Retail chasing 490 lottos (small prints, mid-price executions, few sweeps)."
 

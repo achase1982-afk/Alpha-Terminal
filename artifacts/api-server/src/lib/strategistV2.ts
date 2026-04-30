@@ -1778,7 +1778,8 @@ function buildDataPackage(
       topByVolOiRatio: polygonHighlights.topByVolOiRatio,
       largestPrint: polygonHighlights.largestPrint,
       sessionTape: polygonHighlights.sessionTape,
-      sourceNote: "Per-strike end-of-day snapshot (volume, OI, greeks) — pair with sessionTape when present for classified prints, sweeps/blocks, and aggressor lean.",
+      sourceNote:
+        "Per-strike end-of-day snapshot (volume, OI, greeks). sessionTape.tapeKind `live` adds classified prints and aggressor mix; `eod_fallback` is volume-ranked EOD synthesis when live tape rows are absent (sweep/block zero; do not infer aggressor).",
     } : { available: false, note: "No per-strike flow snapshot on file for this ticker — fall back to optionsChainSummary.unusualActivity." },
     ioScore: {
       final: ioScore.final,

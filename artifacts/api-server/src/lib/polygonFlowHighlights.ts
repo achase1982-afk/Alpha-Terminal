@@ -69,6 +69,8 @@ export interface FlowSessionAggressorTotals {
 
 export interface PolygonFlowTape {
   sessionDate: string;
+  /** `live` = classified prints + rollup from the flow watcher; `eod_fallback` = synthesized from EOD per-strike snapshot when live tape rows are missing. */
+  tapeKind?: "live" | "eod_fallback";
   execPerStrike: FlowExecStrikeRow[];
   topPrints: FlowTopPrintRow[];
   aggressorByStrike: FlowStrikeAggressorMix[];
@@ -347,6 +349,7 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
 
     return {
       sessionDate,
+      tapeKind: "live",
       execPerStrike,
       topPrints: topMapped,
       aggressorByStrike,
@@ -362,6 +365,88 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
     logger.warn({ err, symbol: sym, sessionDate }, "polygonFlowHighlights: session tape lookup failed");
     return null;
   }
+}
+
+/**
+ * When the live classified-print pipeline has no rows for this symbol/date,
+ * synthesize a non-null tape from EOD per-strike volume so downstream desks
+ * still receive a consistent shape (zeros for sweep/block; no aggressor).
+ */
+function buildEodFallbackSessionTape(sessionDate: string, rows: RawStrikeRow[]): PolygonFlowTape | null {
+  const withVol = rows.filter((r) => (r.dailyVolume ?? 0) > 0);
+  if (withVol.length === 0) return null;
+
+  const execPerStrike: FlowExecStrikeRow[] = withVol.map((r) => {
+    const v = r.dailyVolume ?? 0;
+    const mid = r.mid;
+    const regularNotional =
+      mid != null && v > 0 ? Math.round(Math.abs(mid * v * 100) * 100) / 100 : 0;
+    return {
+      optionType: r.optionType === "call" ? "call" : "put",
+      strike: r.strike,
+      expiration: expToIso(r.expiration),
+      sweepCount: 0,
+      blockCount: 0,
+      regularCount: 0,
+      sweepNotional: 0,
+      blockNotional: 0,
+      regularNotional,
+      sweepVolume: 0,
+      blockVolume: 0,
+      regularVolume: v,
+      lastEventTs: null,
+    };
+  });
+
+  const topSource = [...withVol].sort((a, b) => (b.dailyVolume ?? 0) - (a.dailyVolume ?? 0)).slice(0, TOP_PRINTS_LIMIT);
+  const topPrints: FlowTopPrintRow[] = topSource.map((r) => {
+    const mid = r.mid;
+    const tradePrice = r.avgTradePrice ?? mid ?? 0;
+    const v = r.dailyVolume ?? 0;
+    const notional =
+      mid != null && v > 0 ? Math.round(Math.abs(mid * v * 100) * 100) / 100 : 0;
+    return {
+      timestamp: null,
+      strike: r.strike,
+      expiration: expToIso(r.expiration),
+      optionType: r.optionType === "call" ? "call" : "put",
+      tradePrice,
+      size: v,
+      notional,
+      isBlock: false,
+      isSweep: false,
+      side: null,
+    };
+  });
+
+  const byVolDesc = [...withVol].sort((a, b) => (b.dailyVolume ?? 0) - (a.dailyVolume ?? 0));
+  const aggressorByStrike: FlowStrikeAggressorMix[] = byVolDesc.map((r) => ({
+    strike: r.strike,
+    expiration: expToIso(r.expiration),
+    optionType: r.optionType === "call" ? "call" : "put",
+    askPct: 0,
+    bidPct: 0,
+    midPct: 0,
+    unknownPct: 100,
+    printCount: 1,
+  }));
+
+  const totalPrints = withVol.length;
+
+  return {
+    sessionDate,
+    tapeKind: "eod_fallback",
+    execPerStrike,
+    topPrints,
+    aggressorByStrike,
+    aggressorSessionTotals: {
+      askCount: 0,
+      bidCount: 0,
+      midCount: 0,
+      unknownCount: totalPrints,
+      totalPrints,
+    },
+  };
 }
 
 /**
@@ -394,8 +479,15 @@ export async function getPolygonFlowHighlights(
       ));
     if (rows.length === 0) return null;
 
-    const summary = summarize(rows as unknown as RawStrikeRow[]);
-    const sessionTape = await fetchSessionTape(sym, asOfDate);
+    const rawRows = rows as unknown as RawStrikeRow[];
+    const summary = summarize(rawRows);
+    let sessionTape = await fetchSessionTape(sym, asOfDate);
+    if (!sessionTape) {
+      sessionTape = buildEodFallbackSessionTape(asOfDate, rawRows);
+      if (sessionTape) {
+        logger.info({ symbol: sym, asOfDate }, "polygonFlowHighlights: using EOD fallback session tape (no live flow rows)");
+      }
+    }
     return { asOfDate, ...summary, sessionTape };
   } catch (err) {
     logger.warn({ err, symbol: sym }, "polygonFlowHighlights: lookup failed");
@@ -460,7 +552,13 @@ export async function getPolygonFlowHighlightsBulk(
     for (const [sym, bucket] of bySymbol) {
       const asOfDate = symDateMap.get(sym)!;
       const summary = summarize(bucket);
-      const sessionTape = await fetchSessionTape(sym, asOfDate);
+      let sessionTape = await fetchSessionTape(sym, asOfDate);
+      if (!sessionTape) {
+        sessionTape = buildEodFallbackSessionTape(asOfDate, bucket);
+        if (sessionTape) {
+          logger.info({ symbol: sym, asOfDate }, "polygonFlowHighlights: using EOD fallback session tape (no live flow rows)");
+        }
+      }
       out.set(sym, { asOfDate, ...summary, sessionTape });
     }
 
