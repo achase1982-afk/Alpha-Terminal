@@ -17,6 +17,19 @@ import type { CatalystEvaluation } from "./catalystEvaluator.js";
 
 const SEARCH_SYSTEM = `You are a research assistant for an options catalyst desk. You MUST use the web search tool to gather current facts. Output only bullet points (max 18 lines), one fact per line, no URLs, no markdown fences, no JSON. If you find nothing substantive, output a single line: NO_USEFUL_RESULTS`;
 
+/** Per structured-search LLM call (non-Gemini). Gemini pre-search is skipped by default — see runCatalystDeskStructuredSearches. */
+const SEARCH_STEP_TIMEOUT_MS = 120_000;
+
+/**
+ * When the Catalyst desk slot uses Gemini, the pre-search path runs 4–5 sequential
+ * `callGeminiWithSystemAndWebSearch` calls (thinking + Google Search each). That blocks
+ * the entire Desk run before Vol/Flow/Catalyst JSON and feels "stuck on Catalyst."
+ * Opt in with DESK_CATALYST_GEMINI_PRESEARCH=1 if you accept multi-minute latency.
+ */
+export const GEMINI_CATALYST_PRESEARCH_SKIPPED_BRIEFING = `## STRUCTURED RESEARCH (catalyst desk)
+Pre-run web research was **not** executed for this run (Gemini Catalyst slot: sequential search is disabled by default to avoid long stalls before the analyst JSON turn). Set server env DESK_CATALYST_GEMINI_PRESEARCH=1 to enable it.
+For themes you would normally fill from web (IR events, sell-side actions, earnings reaction history, sector peers, news), write **data not surfaced** unless the calendar snapshot supports them.`;
+
 function emptyTrace(): WebSearchTrace {
   return { webSearchUsed: false, queries: [], sources: [] };
 }
@@ -54,6 +67,22 @@ async function runOneSearch(
   }
 }
 
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label}: timeout after ${ms}ms`)), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
+
 function positionWindowLabel(expirationISO: string): string {
   const today = new Date().toISOString().slice(0, 10);
   return `${today}_to_${expirationISO}`;
@@ -86,6 +115,16 @@ export async function runCatalystDeskStructuredSearches(opts: {
 }): Promise<CatalystDeskSearchBundle> {
   const { ticker, catalystEval, deskExpirationISO, model, onStatus } = opts;
   const upper = ticker.toUpperCase();
+
+  if (model.provider === "google" && process.env["DESK_CATALYST_GEMINI_PRESEARCH"] !== "1") {
+    logger.info(
+      { ticker: upper, provider: "google", desk: "catalyst_structured_search" },
+      "StrategistDesk: skipping sequential catalyst web pre-search for Gemini Catalyst (set DESK_CATALYST_GEMINI_PRESEARCH=1 to enable — each step can take several minutes)",
+    );
+    onStatus?.("Desk — Catalyst web pre-search skipped (Gemini; avoids long stall — set DESK_CATALYST_GEMINI_PRESEARCH=1 to enable)…");
+    return { briefing: GEMINI_CATALYST_PRESEARCH_SKIPPED_BRIEFING, trace: emptyTrace() };
+  }
+
   const y = new Date().getUTCFullYear();
   const windowDates = positionWindowLabel(deskExpirationISO);
 
@@ -105,7 +144,9 @@ export async function runCatalystDeskStructuredSearches(opts: {
       `Source priority when choosing what to cite internally: (1) company IR and SEC, (2) major financial press, (3) established research aggregators, (4) corroborated secondary sources. Skip low-quality content farms.\n\n` +
       `${extraInstructions}`;
     try {
-      const r = await runOneSearch(model, userPrompt);
+      const r = model.provider === "google"
+        ? await runOneSearch(model, userPrompt)
+        : await withTimeout(runOneSearch(model, userPrompt), SEARCH_STEP_TIMEOUT_MS, label);
       const n = r.trace.sources.length;
       logger.info(
         { ticker: upper, desk: "catalyst_structured_search", label, query, resultCount: n },
