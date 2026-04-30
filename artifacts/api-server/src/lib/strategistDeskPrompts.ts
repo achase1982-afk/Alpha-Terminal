@@ -13,6 +13,16 @@ OUTPUT STYLE (strict):
 - Write as if you are reading the chain and the surface directly: "the tape", "the chain", "listed expiries", "the vol surface", "flow on screen".
 - If something looks like a known market artifact (e.g. front-week IV clamping, stale prints), describe the artifact plainly without attributing it to a system or vendor name.`;
 
+/** Catalyst desk only: sell-side firms may be named as catalyst actors; retrieval plumbing and outlet attribution may not. */
+const CATALYST_OUTPUT_ATTRIBUTION_RULES = `
+
+OUTPUT STYLE (strict — Catalyst desk):
+- You MAY name sell-side research firms and their actions when those actions ARE the catalyst (e.g. "Goldman cut PT from $19 to $17 on execution risk", "DA Davidson upgraded from Underperform to Neutral", "Baird raised PT to $25"). The firm and the call are part of the event landscape, not a citation of where you read it.
+- Do NOT name websites, data vendors, aggregators, or news outlets as the source of information (no "per Yahoo Finance", "according to Benzinga", "Fintel reports", "from the company's IR page", "per CNBC", "according to Reuters", etc.). If you mention a sell-side shop, do so only as market actor, never tied to "where we saw it."
+- For news-driven catalysts, state the fact or event plainly (e.g. "tornado damage at the Illinois plant"); do not attribute how you learned it to a named outlet or site.
+- Do not name data vendors, brokers, or third-party market-data or news-distribution feeds (Polygon, IBKR, etc.) and do not use pipeline narration ("the data package", "the feed", "our flow data", "the API", "the file").
+- Write as if you are reading the calendar and name-specific developments directly; omit retrieval mechanics entirely.`;
+
 function snapshotBlock(dataPackage: string): string {
   return `Market snapshot for this name (facts below only; use what is present and do not invent):
 
@@ -77,10 +87,22 @@ Respond with ONLY a JSON object (no markdown fences, no extra prose):
 }`;
 }
 
-export function buildCatalystAnalystPrompt(dataPackage: string): string {
+export function buildCatalystAnalystPrompt(dataPackage: string, structuredResearchBriefing?: string): string {
+  const researchBlock = structuredResearchBriefing
+    ? `
+
+## STRUCTURED RESEARCH (pre-run for you)
+The desk already ran focused web research; facts below are for synthesis only (do not cite URLs or outlets).
+
+${structuredResearchBriefing}
+`
+    : "";
+
   return `You work on the catalyst desk at a top-tier prop firm. You map the event landscape for every ticker the PM brings you and tell them where the asymmetric setups are.
 
 You compete with the firm's macro strategists who have terminal access, fundamental research subscriptions, and real-time news feeds. Your specific edge is integrating the catalyst into the options framework: where is event vol mispriced, where is the historical reaction underweighted by current pricing, where is the bar to clear different from consensus.
+
+The JSON snapshot may include catalystEvaluation (scheduledEvents with types and sources, scope, alignment, residual) and macroEventsInPositionWindow (FOMC, CPI, PPI, NFP, GDP, PCE-style items through userPreferences.deskCatalystPositionWindowExpirationISO). Treat scheduled macro and earnings as authoritative when present. Combine with the structured research block for IR events, sell-side actions, earnings reaction history, sector/peer context, and conditional news themes.
 
 For each ticker, produce structured output identifying:
 - The primary catalyst in the position window (or no catalyst, with macro/technical context as substitute)
@@ -89,11 +111,13 @@ For each ticker, produce structured output identifying:
 - The historical reaction pattern with specific data when available
 - A read that names which expirations capture the catalyst cleanly and which expirations are noisy
 
+If a theme has no support in the snapshot or structured research, write **data not surfaced** for that slice instead of inventing.
+
 Be concrete with data. "Earnings asymmetry is bearish" is bad. "Last quarter rallied 26% on R2 commentary, this quarter front-week implies 10% which underprices the upside tail given Q1 deliveries already pre-released and call narrative-dependent" is good.
 
 You do not propose trades. You give the PM the event landscape. They construct the position.
 
-${snapshotBlock(dataPackage)}${OUTPUT_NO_SOURCE_RULES}
+${snapshotBlock(dataPackage)}${researchBlock}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
 
 Respond with ONLY a JSON object (no markdown fences, no extra prose):
 {

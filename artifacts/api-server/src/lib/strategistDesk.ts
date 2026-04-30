@@ -27,6 +27,8 @@ import {
   buildPmPrompt,
 } from "./strategistDeskPrompts.js";
 import type { DebateRound } from "./strategistDebate.js";
+import type { CatalystEvaluation } from "./catalystEvaluator.js";
+import { runCatalystDeskStructuredSearches } from "./strategistDeskCatalystWebSearch.js";
 
 const TEMPERATURE = 0;
 
@@ -145,9 +147,12 @@ export async function runDeskAnalysis(args: {
   dataPackage: string;
   settings: StrategistConfig;
   ticker: string;
+  /** Same ISO date passed to evaluateCatalyst for Desk (position window right edge). */
+  deskExpirationISO?: string;
+  catalystEvaluation?: CatalystEvaluation | null;
   callbacks?: DeskCallbacks;
 }): Promise<DeskResult> {
-  const { dataPackage, settings, ticker, callbacks } = args;
+  const { dataPackage, settings, ticker, deskExpirationISO, catalystEvaluation, callbacks } = args;
 
   const volModel = getStrategistModel(settings.strategistSoloModelIdx);
   const flowModel = getStrategistModel(settings.strategistDebateAModelIdx);
@@ -157,12 +162,38 @@ export async function runDeskAnalysis(args: {
 
   const errors: string[] = [];
 
+  let catalystResearchBriefing = "";
+  let catalystSearchTrace: WebSearchTrace = { webSearchUsed: false, queries: [], sources: [] };
+  if (deskExpirationISO) {
+    callbacks?.onStatus?.("Desk — Catalyst structured web research…");
+    try {
+      const bundle = await runCatalystDeskStructuredSearches({
+        ticker,
+        catalystEval: catalystEvaluation ?? null,
+        deskExpirationISO,
+        model: catalystModel,
+        onStatus: callbacks?.onStatus,
+      });
+      catalystResearchBriefing = bundle.briefing;
+      catalystSearchTrace = bundle.trace;
+    } catch (err) {
+      logger.warn(
+        { err, ticker },
+        "StrategistDesk: structured catalyst web search bundle failed — continuing with calendar snapshot only",
+      );
+      catalystResearchBriefing =
+        "## STRUCTURED RESEARCH (catalyst desk)\nResearch pass failed; treat web-derived themes as **data not surfaced** unless the calendar snapshot alone supports them.";
+    }
+  }
+
+  const catalystPrompt = buildCatalystAnalystPrompt(dataPackage, catalystResearchBriefing || undefined);
+
   callbacks?.onStatus?.("Desk — Vol, Flow, and Catalyst analysts running in parallel…");
 
   const [volResult, flowResult, catalystResult] = await Promise.all([
     runAnalystWithRetry(ticker, "vol", volModel, buildVolAnalystPrompt(dataPackage), VolAnalystOutputSchema, callbacks, errors),
     runAnalystWithRetry(ticker, "flow", flowModel, buildFlowAnalystPrompt(dataPackage), FlowAnalystOutputSchema, callbacks, errors),
-    runAnalystWithRetry(ticker, "catalyst", catalystModel, buildCatalystAnalystPrompt(dataPackage), CatalystAnalystOutputSchema, callbacks, errors),
+    runAnalystWithRetry(ticker, "catalyst", catalystModel, catalystPrompt, CatalystAnalystOutputSchema, callbacks, errors, catalystSearchTrace),
   ]);
 
   callbacks?.onStatus?.("Desk — PM synthesizing analyst reads…");
@@ -265,6 +296,7 @@ async function runAnalystWithRetry<T>(
   schema: { safeParse: (d: unknown) => { success: true; data: T } | { success: false; error: { issues: Array<{ message: string }> } } },
   callbacks: DeskCallbacks | undefined,
   errors: string[],
+  initialTrace?: WebSearchTrace,
 ): Promise<{ parsed: T; trace: WebSearchTrace }> {
   const labels: Record<string, string> = {
     vol: "Vol Analyst",
@@ -278,7 +310,10 @@ async function runAnalystWithRetry<T>(
   const validation = schema.safeParse(json);
 
   if (validation.success) {
-    return { parsed: validation.data, trace: turn.trace };
+    return {
+      parsed: validation.data,
+      trace: initialTrace ? mergeTraces(initialTrace, turn.trace) : turn.trace,
+    };
   }
 
   callbacks?.onTurnDiscarded?.(turn.turnId);
@@ -302,7 +337,11 @@ async function runAnalystWithRetry<T>(
   const retryValidation = schema.safeParse(retryJson);
 
   if (retryValidation.success) {
-    return { parsed: retryValidation.data, trace: mergeTraces(turn.trace, retryTurn.trace) };
+    const merged = mergeTraces(turn.trace, retryTurn.trace);
+    return {
+      parsed: retryValidation.data,
+      trace: initialTrace ? mergeTraces(initialTrace, merged) : merged,
+    };
   }
 
   const errorMsg = `${labels[role]} output failed validation after retry: ${retryValidation.error.issues.map(i => i.message).join("; ")}`;
@@ -310,7 +349,11 @@ async function runAnalystWithRetry<T>(
   logger.error({ role, ticker, model: model.model, provider: model.provider, label: model.label }, `StrategistDesk: ${errorMsg}`);
 
   const fallback = buildFallbackOutput(role, retryTurn.text);
-  return { parsed: fallback as T, trace: mergeTraces(turn.trace, retryTurn.trace) };
+  const mergedFail = mergeTraces(turn.trace, retryTurn.trace);
+  return {
+    parsed: fallback as T,
+    trace: initialTrace ? mergeTraces(initialTrace, mergedFail) : mergedFail,
+  };
 }
 
 function buildFallbackOutput(role: "vol" | "flow" | "catalyst", rawText: string): unknown {
