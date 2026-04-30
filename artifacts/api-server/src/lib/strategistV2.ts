@@ -608,7 +608,36 @@ export async function analyzeTickerV2(
     logger.info({ ticker }, "StrategistV2: no Polygon flow highlights for ticker");
   }
 
-  const dataPackage = buildDataPackage(ticker, tickerData, chainSummary, ioScore, regime, settings, polygonHighlights);
+  let deskCatalystEval: CatalystEvaluation | null = null;
+  let deskCatalystExpirationISO = "";
+  if (settings.strategistMode === 3) {
+    deskCatalystExpirationISO = computeDeskCatalystExpirationISO(chainSummary, settings);
+    try {
+      deskCatalystEval = await evaluateCatalyst({
+        ticker,
+        expirationISO: deskCatalystExpirationISO,
+        ai: null,
+      });
+    } catch (err) {
+      logger.warn(
+        { err, ticker, expirationISO: deskCatalystExpirationISO },
+        "StrategistV2: evaluateCatalyst failed for Desk path — continuing without desk catalyst block",
+      );
+      deskCatalystEval = null;
+    }
+  }
+
+  const dataPackage = buildDataPackage(
+    ticker,
+    tickerData,
+    chainSummary,
+    ioScore,
+    regime,
+    settings,
+    polygonHighlights,
+    deskCatalystEval,
+    settings.strategistMode === 3 ? deskCatalystExpirationISO : undefined,
+  );
 
   // ── Desk mode (mode 3): three parallel analysts + PM ──────────────────
   if (settings.strategistMode === 3) {
@@ -618,6 +647,8 @@ export async function analyzeTickerV2(
         dataPackage,
         settings,
         ticker,
+        deskExpirationISO: deskCatalystExpirationISO,
+        catalystEvaluation: deskCatalystEval,
         callbacks: {
           onStatus: (s) => status(s),
           onTurnStart: progress?.onTurnStart ? (turn) => progress.onTurnStart!(turn as any) : undefined,
@@ -1171,6 +1202,40 @@ function computeDte(expiration: string): number {
   return Math.max(0, Math.round((expMs - Date.now()) / (24 * 60 * 60 * 1000)));
 }
 
+/**
+ * Desk mode: far edge of the user's preferred DTE window for catalyst evaluation
+ * (matches "position window" before any trade legs exist).
+ */
+function computeDeskCatalystExpirationISO(chainSummary: ChainSummary, settings: StrategistConfig): string {
+  const prefsMax = Math.max(1, settings.preferredDteMax | 0);
+  let best: string | null = null;
+  let bestDte = -1;
+  for (const exp of chainSummary.availableExpirations) {
+    const dte = computeDte(exp);
+    if (dte <= 0 || dte > prefsMax) continue;
+    if (dte > bestDte) {
+      bestDte = dte;
+      best = exp;
+    }
+  }
+  if (best) return best;
+  for (const ce of chainSummary.curatedExpirations) {
+    const dte = ce.dte;
+    if (dte <= 0 || dte > prefsMax) continue;
+    if (dte > bestDte) {
+      bestDte = dte;
+      best = ce.expiration;
+    }
+  }
+  if (best) return best;
+  const t = Date.now() + prefsMax * 86_400_000;
+  const u = new Date(t);
+  const y = u.getUTCFullYear();
+  const m = String(u.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(u.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 function buildCuratedStrikes(
   chain: ChainContract[],
   expiration: string,
@@ -1386,10 +1451,13 @@ function buildDataPackage(
   regime: StructuredRegime,
   settings: StrategistConfig,
   polygonHighlights: PolygonFlowHighlights | null,
+  catalystEvaluation?: CatalystEvaluation | null,
+  deskCatalystWindowExpirationISO?: string,
 ): string {
+  const currentDate = new Date().toISOString().slice(0, 10);
   const pkg: Record<string, unknown> = {
     ticker,
-    currentDate: new Date().toISOString().slice(0, 10),
+    currentDate,
     price: tickerData.price,
     dailyChangePct: tickerData.dailyChangePct,
     ivr: tickerData.ivr,
@@ -1450,6 +1518,9 @@ function buildDataPackage(
     userPreferences: {
       preferredDteMin: settings.preferredDteMin,
       preferredDteMax: settings.preferredDteMax,
+      ...(settings.strategistMode === 3 && deskCatalystWindowExpirationISO
+        ? { deskCatalystPositionWindowExpirationISO: deskCatalystWindowExpirationISO }
+        : {}),
       spreadWidth: settings.spreadWidth,
       // Tells the model whether spreadWidth above is a hard cap or merely a
       // suggestion. When unlimited, the user has explicitly opted out of any
@@ -1462,6 +1533,40 @@ function buildDataPackage(
       maxBidAskSpreadPct: settings.maxBidAskSpreadPct,
     },
   };
+
+  if (settings.strategistMode === 3 && deskCatalystWindowExpirationISO) {
+    if (catalystEvaluation != null) {
+      pkg.catalystEvaluation = catalystEvaluation;
+    }
+    const exp = deskCatalystWindowExpirationISO;
+    const dteCalendar = Math.max(
+      0,
+      Math.ceil(
+        (new Date(exp + "T00:00:00Z").getTime() - new Date(currentDate + "T00:00:00Z").getTime()) / 86_400_000,
+      ),
+    );
+    const macroWindow = Math.max(2, dteCalendar);
+    const macroEventsInPositionWindow: Array<{
+      date: string;
+      title: string;
+      type: string;
+      importance: string;
+      time?: string;
+    }> = [];
+    for (const ev of getUpcomingEvents(macroWindow)) {
+      if (ev.date < currentDate || ev.date > exp) continue;
+      if (ev.type === "fomc" || (ev.type === "economic" && ev.importance === "HIGH")) {
+        macroEventsInPositionWindow.push({
+          date: ev.date,
+          title: ev.title,
+          type: ev.type,
+          importance: ev.importance,
+          ...(ev.time ? { time: ev.time } : {}),
+        });
+      }
+    }
+    pkg.macroEventsInPositionWindow = macroEventsInPositionWindow;
+  }
 
   return JSON.stringify(pkg);
 }
