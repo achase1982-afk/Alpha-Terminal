@@ -75,6 +75,8 @@ interface PmOutput {
   decision: "trade" | "pass";
   structure: DeskStructure | null;
   thesis: string;
+  edge_check?: string;
+  deviation_from_analysts?: string;
   size: "small" | "medium" | "large";
   whose_side: "institutional_alignment" | "retail_fade" | "neither";
   biggest_risk: string;
@@ -108,9 +110,8 @@ function FieldRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function CollapsibleSection({ title, model, defaultOpen, children }: {
+function CollapsibleSection({ title, defaultOpen, children }: {
   title: string;
-  model: string;
   defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
@@ -126,7 +127,6 @@ function CollapsibleSection({ title, model, defaultOpen, children }: {
       >
         <span style={{ fontFamily: SYS_FONT, fontSize: 12, fontWeight: 600, color: PAL.white, letterSpacing: 0.5 }}>{title}</span>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontFamily: SYS_FONT, fontSize: 9, color: PAL.label }}>{model}</span>
           {open ? <ChevronUp size={14} color={PAL.label} /> : <ChevronDown size={14} color={PAL.label} />}
         </div>
       </button>
@@ -162,7 +162,7 @@ export function buildDeskCardPlainText(args: {
   blockReason?: BlockReason;
 }): string {
   const { deskResult, generatedAt, strategistOutcome, blockReason } = args;
-  const { pm, vol, flow, catalyst, models, errors } = deskResult;
+  const { pm, vol, flow, catalyst, errors } = deskResult;
   const isTrade = pm.decision === "trade";
   const banner = deskBanner(strategistOutcome, blockReason, !isTrade);
 
@@ -200,6 +200,13 @@ export function buildDeskCardPlainText(args: {
   }
 
   lines.push("PM THESIS", pm.thesis, "");
+  if (pm.edge_check) {
+    lines.push("EDGE CHECK", pm.edge_check, "");
+  }
+  const dev = pm.deviation_from_analysts?.trim();
+  if (dev && dev.toLowerCase() !== "none") {
+    lines.push("DEVIATION FROM ANALYSTS", dev, "");
+  }
   lines.push("SIZE", pm.size.toUpperCase());
   lines.push("ALIGNMENT", pm.whose_side.replace(/_/g, " "));
 
@@ -220,14 +227,14 @@ export function buildDeskCardPlainText(args: {
 
   lines.push("ANALYST READS", "");
 
-  lines.push("— Vol Analyst —", `Model: ${models.vol}`);
+  lines.push("— Vol Analyst —");
   lines.push("IV State", vol.iv_state);
   lines.push("Term Structure", vol.term_structure);
   lines.push("Skew", vol.skew);
   lines.push("IV vs Realized", vol.implied_vs_realized);
   lines.push("Read", vol.read, "");
 
-  lines.push("— Flow Analyst —", `Model: ${models.flow}`);
+  lines.push("— Flow Analyst —");
   lines.push("Dominant Flow", flow.dominant_flow);
   lines.push("Institutional", flow.institutional_signal);
   lines.push("Retail", flow.retail_signal);
@@ -239,14 +246,12 @@ export function buildDeskCardPlainText(args: {
   }
   lines.push("Read", flow.read, "");
 
-  lines.push("— Catalyst Analyst —", `Model: ${models.catalyst}`);
+  lines.push("— Catalyst Analyst —");
   lines.push("Primary Catalyst", catalyst.primary_catalyst);
   lines.push("Bar to Clear", catalyst.bar_to_clear);
   lines.push("Asymmetry", catalyst.asymmetry);
   lines.push("Historical", catalyst.historical_pattern);
   lines.push("Read", catalyst.read, "");
-
-  lines.push(`PM: ${models.pm}`);
 
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
@@ -290,7 +295,7 @@ export function StrategistDeskCard({
   blockReason?: BlockReason;
   onRetry?: (ticker: string) => void;
 }) {
-  const { pm, vol, flow, catalyst, models, errors } = deskResult;
+  const { pm, vol, flow, catalyst, errors } = deskResult;
   const isTrade = pm.decision === "trade";
   const banner = deskBanner(strategistOutcome, blockReason, !isTrade);
   const [copiedFull, setCopiedFull] = useState(false);
@@ -330,7 +335,9 @@ export function StrategistDeskCard({
   }, [deskResult, generatedAt, strategistOutcome, blockReason]);
 
   const copyJson = useCallback(async () => {
-    const text = JSON.stringify(deskResult, null, 2);
+    const { models: _omitFromClientCopy, ...rest } = deskResult;
+    void _omitFromClientCopy;
+    const text = JSON.stringify(rest, null, 2);
     const fallback = () => {
       try {
         const ta = document.createElement("textarea");
@@ -447,6 +454,20 @@ export function StrategistDeskCard({
         <div style={{ fontSize: 12, color: PAL.body, lineHeight: 1.6 }}>{pm.thesis}</div>
       </div>
 
+      {pm.edge_check && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: PAL.label, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>EDGE CHECK</div>
+          <div style={{ fontSize: 12, color: PAL.body, lineHeight: 1.6 }}>{pm.edge_check}</div>
+        </div>
+      )}
+
+      {pm.deviation_from_analysts && pm.deviation_from_analysts.trim().toLowerCase() !== "none" && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: PAL.label, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>DEVIATION FROM ANALYSTS</div>
+          <div style={{ fontSize: 12, color: PAL.body, lineHeight: 1.6 }}>{pm.deviation_from_analysts}</div>
+        </div>
+      )}
+
       {/* PM Details Row */}
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 12 }}>
         <div>
@@ -497,7 +518,7 @@ export function StrategistDeskCard({
       <div style={{ marginTop: 12 }}>
         <div style={{ fontSize: 10, fontWeight: 600, color: PAL.label, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>ANALYST READS</div>
 
-        <CollapsibleSection title="Vol Analyst" model={models.vol} defaultOpen>
+        <CollapsibleSection title="Vol Analyst" defaultOpen>
           <FieldRow label="IV State" value={vol.iv_state} />
           <FieldRow label="Term Structure" value={vol.term_structure} />
           <FieldRow label="Skew" value={vol.skew} />
@@ -507,7 +528,7 @@ export function StrategistDeskCard({
           </div>
         </CollapsibleSection>
 
-        <CollapsibleSection title="Flow Analyst" model={models.flow} defaultOpen>
+        <CollapsibleSection title="Flow Analyst" defaultOpen>
           <FieldRow label="Dominant Flow" value={flow.dominant_flow} />
           <FieldRow label="Institutional" value={flow.institutional_signal} />
           <FieldRow label="Retail" value={flow.retail_signal} />
@@ -526,7 +547,7 @@ export function StrategistDeskCard({
           </div>
         </CollapsibleSection>
 
-        <CollapsibleSection title="Catalyst Analyst" model={models.catalyst} defaultOpen>
+        <CollapsibleSection title="Catalyst Analyst" defaultOpen>
           <FieldRow label="Primary Catalyst" value={catalyst.primary_catalyst} />
           <FieldRow label="Bar to Clear" value={catalyst.bar_to_clear} />
           <FieldRow label="Asymmetry" value={catalyst.asymmetry} />
@@ -535,11 +556,6 @@ export function StrategistDeskCard({
             {catalyst.read}
           </div>
         </CollapsibleSection>
-      </div>
-
-      {/* PM Model Attribution */}
-      <div style={{ marginTop: 8, textAlign: "right" }}>
-        <span style={{ fontSize: 9, color: PAL.label }}>PM: {models.pm}</span>
       </div>
     </div>
   );
