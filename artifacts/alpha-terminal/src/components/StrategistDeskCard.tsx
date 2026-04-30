@@ -75,6 +75,8 @@ interface PmOutput {
   decision: "trade" | "pass";
   structure: DeskStructure | null;
   thesis: string;
+  edge_check?: string;
+  deviation_from_analysts?: string;
   size: "small" | "medium" | "large";
   whose_side: "institutional_alignment" | "retail_fade" | "neither";
   biggest_risk: string;
@@ -200,6 +202,13 @@ export function buildDeskCardPlainText(args: {
   }
 
   lines.push("PM THESIS", pm.thesis, "");
+  if (pm.edge_check) {
+    lines.push("EDGE CHECK", pm.edge_check, "");
+  }
+  const dev = pm.deviation_from_analysts?.trim();
+  if (dev && dev.toLowerCase() !== "none") {
+    lines.push("DEVIATION FROM ANALYSTS", dev, "");
+  }
   lines.push("SIZE", pm.size.toUpperCase());
   lines.push("ALIGNMENT", pm.whose_side.replace(/_/g, " "));
 
@@ -446,6 +455,20 @@ export function StrategistDeskCard({
         <div style={{ fontSize: 10, fontWeight: 600, color: PAL.label, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>PM THESIS</div>
         <div style={{ fontSize: 12, color: PAL.body, lineHeight: 1.6 }}>{pm.thesis}</div>
       </div>
+
+      {pm.edge_check && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: PAL.label, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>EDGE CHECK</div>
+          <div style={{ fontSize: 12, color: PAL.body, lineHeight: 1.6 }}>{pm.edge_check}</div>
+        </div>
+      )}
+
+      {pm.deviation_from_analysts && pm.deviation_from_analysts.trim().toLowerCase() !== "none" && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: PAL.label, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>DEVIATION FROM ANALYSTS</div>
+          <div style={{ fontSize: 12, color: PAL.body, lineHeight: 1.6 }}>{pm.deviation_from_analysts}</div>
+        </div>
+      )}
 
       {/* PM Details Row */}
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 12 }}>
