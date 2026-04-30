@@ -8,6 +8,7 @@ import {
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 // Strategist V2: polling lives in `strategistPoller` (survives tab background via sync + `/job/:id/final`).
 import { startStrategistPolling } from "@/lib/strategistPoller";
+import { toast } from "sonner";
 import {
   BarChart2, DollarSign, Shield, TrendingUp, Scale,
   Zap, ChevronDown, AlertTriangle, CheckCircle2, XCircle, AlertCircle, Search,
@@ -22,7 +23,7 @@ import { useStrategistCache, type StrategistCacheData } from "@/hooks/useStrateg
 import { MarketScanner, type DetCandidate } from "@/components/MarketScanner";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { AiLabStrategistView } from "@/components/AiLabStrategistView";
-import { StrategistV2RecommendationCard, StrategistV2BlockCard, IvrPopulatingCard, type StrategistV2Result as StrategistV2ResultType, type StrategistSendToOrderPayload } from "@/components/StrategistV2Card";
+import { StrategistV2RecommendationCard, StrategistV2BlockCard, IvrPopulatingCard, type StrategistV2Result as StrategistV2ResultType, type StrategistSendToOrderPayload, type BlockReason } from "@/components/StrategistV2Card";
 import { StrategistDeskCard, type DeskResult } from "@/components/StrategistDeskCard";
 import { StrategistHistoryList } from "@/components/StrategistHistoryList";
 
@@ -779,8 +780,12 @@ function RealStrategyCard({ s, idx, preTradeResult, symbol }: { s: StrategyPaylo
   );
 }
 
-function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
-  onRun: (ticker: string) => void; disabled: boolean; lastRunSymbol?: string | null; lastRunTime?: number | null;
+function StrategistCommandBar({ onRun, disabled, blockedTicker, lastRunSymbol, lastRunTime }: {
+  onRun: (ticker: string) => void;
+  disabled: boolean;
+  /** When set, analysis is running for this ticker — show inline hint */
+  blockedTicker?: string | null;
+  lastRunSymbol?: string | null; lastRunTime?: number | null;
 }) {
   const { symbol, streamPrices, accessToken } = useTerminalStore();
   const [inputVal, setInputVal] = useState("");
@@ -802,6 +807,7 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
   streamPricesRef.current = streamPrices;
 
   const displaySymbol = previewTicker || symbol;
+  const blocksThisSymbol = !!(blockedTicker && blockedTicker === displaySymbol);
   const liveQuote = streamPrices[displaySymbol];
 
   const accessTokenRef = useRef(accessToken);
@@ -1015,7 +1021,8 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
           </div>
           <button
             type="submit"
-            disabled={disabled}
+            disabled={disabled || blocksThisSymbol}
+            title={blocksThisSymbol ? `Analysis already in progress for ${blockedTicker}` : undefined}
             className="p-[10px] rounded-lg font-mono text-[13px] font-bold tracking-widest shrink-0 transition-all duration-200 uppercase
               disabled:opacity-30 disabled:cursor-not-allowed"
             style={{
@@ -1027,6 +1034,11 @@ function StrategistCommandBar({ onRun, disabled, lastRunSymbol, lastRunTime }: {
             Analyze
           </button>
         </div>
+        {blocksThisSymbol && blockedTicker && (
+          <div className="px-4 pb-2 font-mono text-[10px] text-zinc-500">
+            Analysis already in progress for <span className="text-zinc-300">{blockedTicker}</span>
+          </div>
+        )}
       </div>
     </form>
   );
@@ -2458,8 +2470,15 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   const scannerCandidateCache = useRef<Record<string, DetCandidate>>({});
 
   const strategistJobs = useTerminalStore(s => s.strategistJobs);
+  const runningAnalyzeTicker = useMemo(() => {
+    for (const j of Object.values(strategistJobs)) {
+      if (j.status === "running" && j.kind !== "validation") return j.ticker;
+    }
+    return null;
+  }, [strategistJobs]);
   const strategistHistory = useTerminalStore(s => s.strategistHistory);
   const startStrategistJob = useTerminalStore(s => s.startStrategistJob);
+  const cancelStrategistJob = useTerminalStore(s => s.cancelStrategistJob);
   const completeStrategistJob = useTerminalStore(s => s.completeStrategistJob);
   const errorStrategistJob = useTerminalStore(s => s.errorStrategistJob);
   const markStrategistJobsViewed = useTerminalStore(s => s.markStrategistJobsViewed);
@@ -3061,6 +3080,10 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
 
   const handleRunV2 = useCallback((ticker: string, flowContext?: string) => {
     const upperTicker = ticker.toUpperCase();
+    if (runningAnalyzeTicker === upperTicker) {
+      toast.message(`Analysis already in progress for ${upperTicker}`);
+      return;
+    }
     const jobId = `sj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     setDetResult(null);
     setActiveResult("strategist");
@@ -3088,6 +3111,16 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
           keepalive: true,
         });
         if (!res.ok) {
+          if (res.status === 409) {
+            try {
+              const body = await res.json() as { message?: string; ticker?: string };
+              toast.message(body.message ?? `Analysis already in progress for ${upperTicker}`);
+            } catch {
+              toast.message(`Analysis already in progress for ${upperTicker}`);
+            }
+            cancelStrategistJob(jobId);
+            return;
+          }
           const errText = await res.text().catch(() => "Unknown error");
           errorStrategistJob(jobId, errText);
           return;
@@ -3097,7 +3130,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
         errorStrategistJob(jobId, err instanceof Error ? err.message : String(err));
       }
     })();
-  }, [symbol, setSymbol, setStrategistResult, startStrategistJob, errorStrategistJob]);
+  }, [symbol, setSymbol, setStrategistResult, startStrategistJob, errorStrategistJob, cancelStrategistJob, runningAnalyzeTicker]);
 
   // On mount (and whenever the set of *running* job IDs changes), make sure
   // every job that is still in the "running" state has a poller attached.
@@ -3213,7 +3246,9 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
             {strategistMode === "options" && (
             <>
             <StrategistShockBanner />
-            <StrategistCommandBar onRun={handleRunStrategistWithTicker} disabled={false}
+            <StrategistCommandBar onRun={handleRunStrategistWithTicker}
+              disabled={false}
+              blockedTicker={runningAnalyzeTicker}
               lastRunSymbol={lastRunSymbol} lastRunTime={lastRunTime} />
 
             {/* Live AI reasoning sits directly beneath the ticker bar.
@@ -3264,13 +3299,23 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
                   return (
                     <>
                       {v2Result.status === "desk_recommendation" && (v2Result as any).deskResult ? (
-                        <StrategistDeskCard deskResult={(v2Result as any).deskResult as DeskResult} generatedAt={generatedAt} />
+                        <StrategistDeskCard
+                          deskResult={(v2Result as any).deskResult as DeskResult}
+                          generatedAt={generatedAt}
+                          strategistOutcome={(v2Result as StrategistV2ResultType).strategistOutcome}
+                          blockReason={
+                            typeof (v2Result as StrategistV2ResultType).blockReason === "object" && (v2Result as StrategistV2ResultType).blockReason != null
+                              ? ((v2Result as StrategistV2ResultType).blockReason as BlockReason)
+                              : undefined
+                          }
+                          onRetry={handleRunV2}
+                        />
                       ) : v2Result.status === "recommendation" && v2Result.recommendation ? (
                         <StrategistV2RecommendationCard result={v2Result} onSendToOrder={onStrategistSendToOrder} generatedAt={generatedAt} />
                       ) : v2Result.status === "ivr_populating" ? (
                         <IvrPopulatingCard result={v2Result} progress={ivrBackfillJob} onRetry={handleRunV2} />
                       ) : (
-                        <StrategistV2BlockCard result={v2Result} generatedAt={generatedAt} />
+                        <StrategistV2BlockCard result={v2Result} generatedAt={generatedAt} onRetry={handleRunV2} />
                       )}
                     </>
                   );

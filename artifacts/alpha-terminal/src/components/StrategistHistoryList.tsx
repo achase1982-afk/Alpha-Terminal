@@ -18,7 +18,11 @@ const HISTORY_CATEGORY_LABELS: Record<string, string> = {
   LOW_CONFIDENCE: "Low Confidence",
   NO_EDGE: "No Edge",
   CATALYST_CONFLICT: "Catalyst Conflict",
-  VALIDATION_FAIL: "Validation Failed",
+  VALIDATION_FAIL: "Validation issue",
+  ECONOMICS_MISMATCH: "Pricing mismatch",
+  UNKNOWN_STRUCTURE: "Unrecognized structure",
+  NO_TRADE: "No trade",
+  ANALYSIS_INCOMPLETE: "Incomplete",
   MISSING_DATA: "Missing Data",
   STOCK_HALTED: "Stock Halted",
   PRICING_MARKET_CLOSED: "Market Closed",
@@ -204,7 +208,16 @@ export function StrategistHistoryList({ onSendToOrder, onReopenValidatedOrder, e
                       <HistoryDebateTranscript transcript={result.debateTranscript} />
                     ) : null}
                     {result?.status === "desk_recommendation" && (result as any).deskResult ? (
-                      <StrategistDeskCard deskResult={(result as any).deskResult as DeskResult} generatedAt={row.createdAt} />
+                      <StrategistDeskCard
+                        deskResult={(result as any).deskResult as DeskResult}
+                        generatedAt={row.createdAt}
+                        strategistOutcome={(result as StrategistV2Result).strategistOutcome}
+                        blockReason={
+                          typeof (result as StrategistV2Result).blockReason === "object" && (result as StrategistV2Result).blockReason != null
+                            ? ((result as StrategistV2Result).blockReason as import("@/components/StrategistV2Card").BlockReason)
+                            : undefined
+                        }
+                      />
                     ) : result?.status === "recommendation" && result.recommendation ? (
                       <StrategistV2RecommendationCard
                         result={result}

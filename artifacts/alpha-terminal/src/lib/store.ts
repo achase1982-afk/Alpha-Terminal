@@ -276,6 +276,8 @@ export interface TerminalState {
     cardJson: unknown;
   }>;
   startStrategistJob: (jobId: string, ticker: string, opts?: { kind?: 'analyze' | 'validation'; validationMeta?: StrategistValidationMeta }) => void;
+  /** Remove a job without marking error (e.g. superseded duplicate request). */
+  cancelStrategistJob: (jobId: string) => void;
   completeStrategistJob: (jobId: string, result: unknown) => void;
   errorStrategistJob: (jobId: string, reason: string) => void;
   appendStrategistTokens: (jobId: string, tokens: string[], nextSince: number) => void;
@@ -670,6 +672,12 @@ export const useTerminalStore = create<TerminalState>()(
             },
           },
         })),
+      cancelStrategistJob: (jobId) =>
+        set((state) => {
+          if (!state.strategistJobs[jobId]) return {};
+          const { [jobId]: _removed, ...rest } = state.strategistJobs;
+          return { strategistJobs: rest };
+        }),
       setStrategistJobMeta: (jobId, patch) =>
         set((state) => {
           const job = state.strategistJobs[jobId];
