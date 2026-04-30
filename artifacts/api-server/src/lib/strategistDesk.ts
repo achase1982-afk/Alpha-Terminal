@@ -1,7 +1,7 @@
 import { logger } from "./logger.js";
 import {
   streamCallAnthropicWithSystemAndWebSearch,
-  streamCallGeminiWithSystemAndWebSearch,
+  streamCallGeminiDeskJson,
   streamCallOpenAIWithSystemAndWebSearch,
   streamCallXaiWithSystemAndWebSearch,
   extractJson,
@@ -73,7 +73,8 @@ async function streamModel(
   if (modelOpt.provider === "xai") {
     return streamCallXaiWithSystemAndWebSearch(modelOpt.model, TEMPERATURE, systemPrompt, prompt, onDelta, onStatus);
   }
-  return streamCallGeminiWithSystemAndWebSearch(modelOpt.model, TEMPERATURE, systemPrompt, prompt, onDelta, onStatus);
+  // Desk JSON-only: Gemini cannot mix application/json with tools; skip web search for this path.
+  return streamCallGeminiDeskJson(modelOpt.model, TEMPERATURE, systemPrompt, prompt, onDelta, onStatus);
 }
 
 async function runDeskTurn<T>(args: {
@@ -114,15 +115,16 @@ async function runDeskTurn<T>(args: {
 }
 
 function parseJsonFromText(raw: string): Record<string, unknown> | null {
+  const cleaned = extractJson(raw);
   try {
-    const stripped = raw.replace(/^```(json)?/i, "").replace(/```\s*$/i, "").trim();
-    const start = stripped.indexOf("{");
-    const end = stripped.lastIndexOf("}");
-    if (start < 0 || end <= start) return null;
-    return JSON.parse(stripped.slice(start, end + 1)) as Record<string, unknown>;
+    const v = JSON.parse(cleaned) as unknown;
+    if (v !== null && typeof v === "object" && !Array.isArray(v)) {
+      return v as Record<string, unknown>;
+    }
   } catch {
-    return null;
+    /* fall through */
   }
+  return null;
 }
 
 function mergeTraces(...traces: WebSearchTrace[]): WebSearchTrace {
@@ -191,7 +193,9 @@ export async function runDeskAnalysis(args: {
     logger.warn({ errors: pmValidation.error.issues, ticker }, "StrategistDesk: PM output failed validation, retrying");
     const retryTurn = await runDeskTurn({
       modelOpt: pmModel,
-      prompt: pmPrompt + "\n\nYour previous response failed JSON validation. Please respond with ONLY valid JSON matching the schema exactly.",
+      prompt:
+        pmPrompt +
+        "\n\nYour previous response failed JSON validation. Return ONLY valid JSON matching the schema exactly. No markdown, no code fences, no commentary before or after the JSON.",
       role: "pm",
       label: `PM (retry) · ${pmModel.label}`,
       callbacks,
@@ -264,7 +268,9 @@ async function runAnalystWithRetry<T>(
 
   const retryTurn = await runDeskTurn({
     modelOpt: model,
-    prompt: prompt + "\n\nYour previous response failed JSON validation. Please respond with ONLY valid JSON matching the schema exactly.",
+    prompt:
+      prompt +
+      "\n\nYour previous response failed JSON validation. Return ONLY valid JSON matching the schema exactly. No markdown, no code fences, no commentary before or after the JSON.",
     role,
     label: `${labels[role]} (retry) · ${model.label}`,
     callbacks,

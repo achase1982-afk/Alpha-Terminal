@@ -658,10 +658,88 @@ export async function streamCallXaiWithSystemAndWebSearch(
   };
 }
 
+/**
+ * Strip markdown fences and extract the largest valid JSON object substring.
+ * Used before JSON.parse for LLM outputs that mix prose, fences, or multiple objects.
+ */
+function extractLargestJsonObjectSlice(text: string): string | null {
+  let best: string | null = null;
+  let bestLen = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== "{") continue;
+    const slice = tryParseBalancedJsonObject(text, i);
+    if (slice && slice.length > bestLen) {
+      best = slice;
+      bestLen = slice.length;
+    }
+  }
+  return best;
+}
+
+function tryParseBalancedJsonObject(text: string, start: number): string | null {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (inString) {
+      if (c === "\\") escape = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') {
+      inString = true;
+      continue;
+    }
+    if (c === "{") depth++;
+    else if (c === "}") {
+      depth--;
+      if (depth === 0) {
+        const slice = text.slice(start, i + 1);
+        try {
+          JSON.parse(slice);
+          return slice;
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 export function extractJson(rawText: string): string {
-  let text = rawText;
+  let text = rawText.trim();
+  // Outer repeated ```json ... ``` wrappers
+  for (let guard = 0; guard < 5; guard++) {
+    const m = text.match(/^```(?:json)?\s*([\s\S]*?)```\s*$/i);
+    if (!m) break;
+    text = m[1].trim();
+  }
   const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenceMatch) text = fenceMatch[1].trim();
+  if (fenceMatch?.[1]?.trim()) {
+    text = fenceMatch[1].trim();
+  }
+
+  try {
+    JSON.parse(text);
+    return text;
+  } catch {
+    /* try balanced-object extraction */
+  }
+
+  const largest = extractLargestJsonObjectSlice(text);
+  if (largest) return largest;
+
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    return text.slice(start, end + 1);
+  }
   return text;
 }
 
@@ -1054,6 +1132,66 @@ export async function streamCallGeminiWithSystemAndWebSearch(
   return {
     text,
     trace: { webSearchUsed: queries.length > 0, queries, sources },
+  };
+}
+
+/**
+ * Gemini streaming for Desk mode: JSON output only, no tools (Gemini forbids
+ * responseMimeType=application/json together with tools — see callGeminiWithSystemAndWebSearch).
+ */
+export async function streamCallGeminiDeskJson(
+  model: string,
+  temperature: number,
+  systemPrompt: string,
+  prompt: string,
+  onDelta: (text: string) => void,
+  onStatus?: (status: string) => void,
+): Promise<WebSearchResult> {
+  if (!hasGeminiApiKey()) throw new Error("Gemini AI integration env vars not configured");
+
+  const supportsThinking = /^gemini-(2\.5|3)/.test(model);
+  const config: Record<string, unknown> = {
+    maxOutputTokens: 12288,
+    temperature,
+    responseMimeType: "application/json",
+  };
+  if (supportsThinking) {
+    config.thinkingConfig = { thinkingBudget: -1, includeThoughts: false };
+  }
+
+  onStatus?.("Calling Gemini (JSON)…");
+  const { fullText } = await withGeminiRetry(
+    "generateContentStream",
+    model,
+    async () => {
+      const ai = createGeminiClient();
+      const stream = await ai.models.generateContentStream({
+        model,
+        contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\n" + prompt }] }],
+        config: config as Parameters<typeof ai.models.generateContentStream>[0]["config"],
+      });
+
+      let attemptText = "";
+      for await (const chunk of stream) {
+        const txt = (chunk as { text?: string }).text;
+        if (txt) {
+          attemptText += txt;
+        }
+      }
+      return { fullText: attemptText, lastChunk: null };
+    },
+  );
+
+  if (fullText) {
+    onDelta(fullText);
+  }
+
+  const text = fullText.trim();
+  if (!text) throw new Error("No text content in Strategist LLM stream (Gemini JSON)");
+
+  return {
+    text,
+    trace: { webSearchUsed: false, queries: [], sources: [] },
   };
 }
 
