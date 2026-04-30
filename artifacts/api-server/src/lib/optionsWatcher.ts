@@ -1,13 +1,15 @@
 import { logger } from "./logger.js";
 import { SWEEP_CONDITION_CODES, BLOCK_MIN_SIZE } from "./optionsConditionCodes.js";
 import { enqueueClassifiedTrade } from "./optionsFlowPersistence.js";
+import { classifyAggressorFromNbbo } from "./flowAggressorSide.js";
 import { fetchPolygonChain, type PolygonParsedContract } from "./polygonChain.js";
 import {
   ensureConnected,
   isEnabled as polygonOptionsWsEnabled,
+  getNbbo,
   onTrade,
-  subscribeContracts,
-  unsubscribeContracts,
+  subscribeContractsWithQuotes,
+  unsubscribeContractsWithQuotes,
   type PolygonOptionTrade,
 } from "./polygonOptionsWs.js";
 
@@ -175,7 +177,7 @@ export function stopOptionsWatcher(): void {
   const allOcc: string[] = [];
   for (const ts of state.values()) allOcc.push(...ts.contracts);
   if (allOcc.length) {
-    try { unsubscribeContracts(allOcc); } catch (err) {
+    try { unsubscribeContractsWithQuotes(allOcc); } catch (err) {
       logger.warn({ err, op: "watcher.stop.unsubscribe.failed" }, "watcher.stop unsubscribe");
     }
   }
@@ -249,7 +251,7 @@ export async function setWatchlist(input: WatchlistInput): Promise<void> {
   }
 
   if (toUnsubscribe.length) {
-    try { unsubscribeContracts(toUnsubscribe); } catch (err) {
+    try { unsubscribeContractsWithQuotes(toUnsubscribe); } catch (err) {
       logger.warn({ err, op: "watcher.setWatchlist.unsubscribe.failed" }, "unsub on demote");
     }
   }
@@ -344,8 +346,20 @@ function handleTrade(t: PolygonOptionTrade): void {
       notional,
       kind: isSweep ? "sweep" : isBlock ? "block" : "large",
     });
-    // Persist classified events for the rollup job. Fire-and-forget; the
-    // persistence layer batches and flushes on its own cadence.
+    const nbbo = getNbbo(t.sym);
+    let side: string | null = null;
+    if (nbbo) {
+      const { side: s, reason } = classifyAggressorFromNbbo(t.price, nbbo.bid, nbbo.ask);
+      side = s;
+      if (s == null && reason) {
+        logger.debug(
+          { occ: t.sym, ticker, reason, bid: nbbo.bid, ask: nbbo.ask, price: t.price },
+          "optionsWatcher: aggressor side unavailable",
+        );
+      }
+    } else {
+      logger.debug({ occ: t.sym, ticker }, "optionsWatcher: NBBO cache miss — aggressor side null");
+    }
     enqueueClassifiedTrade({
       occ: t.sym,
       ticker,
@@ -354,7 +368,8 @@ function handleTrade(t: PolygonOptionTrade): void {
       size: t.size,
       notional,
       isSweep,
-      isBlock: isBlock && !isSweep, // sweep classification wins when both apply
+      isBlock: isBlock && !isSweep,
+      side,
     });
     // Cap event log per ticker to keep memory bounded. Mirror TTL-prune
     // behavior so liveEventCount stays consistent with retained events
@@ -485,7 +500,7 @@ async function resolveAndSubscribeOne(ticker: string, apiKey: string): Promise<v
   const trulyNew = symsToAdd.filter(occ => !oldSet.has(occ));
 
   if (toDrop.length) {
-    try { unsubscribeContracts(toDrop); } catch (err) {
+    try { unsubscribeContractsWithQuotes(toDrop); } catch (err) {
       logger.warn({ err, ticker, op: "watcher.resolve.unsubscribe.failed" }, "watcher.resolve unsubscribe drop");
     }
     for (const occ of toDrop) occToTicker.delete(occ);
@@ -499,11 +514,9 @@ async function resolveAndSubscribeOne(ticker: string, apiKey: string): Promise<v
 
   if (trulyNew.length) {
     try {
-      await subscribeContracts(trulyNew);
+      await subscribeContractsWithQuotes(trulyNew);
     } catch (err) {
-      logger.warn({ err, ticker, op: "watcher.resolve.subscribe.failed" }, "watcher.resolve subscribe");
-      // Roll back: drop only the new OCCs we just added (don't break tickers
-      // whose retained OCCs are still legitimately subscribed).
+      logger.warn({ err, ticker, op: "watcher.resolve.subscribeQuotes.failed" }, "watcher.resolve subscribe T+Q");
       for (const occ of trulyNew) occToTicker.delete(occ);
       st.contracts = st.contracts.filter(occ => !trulyNew.includes(occ));
       return;

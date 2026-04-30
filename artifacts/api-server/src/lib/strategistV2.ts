@@ -1694,8 +1694,9 @@ function buildDataPackage(
       topByVolume: polygonHighlights.topByVolume,
       topByVolOiRatio: polygonHighlights.topByVolOiRatio,
       largestPrint: polygonHighlights.largestPrint,
-      sourceNote: "Polygon end-of-day per-strike snapshot — use these prints to assess whether positioning is concentrated bullish/bearish, where smart money is paying up, and whether to anchor strikes/expirations to actual flow rather than chain mid-prices alone.",
-    } : { available: false, note: "No Polygon per-strike data on file for this ticker — fall back to optionsChainSummary.unusualActivity." },
+      sessionTape: polygonHighlights.sessionTape,
+      sourceNote: "Per-strike end-of-day snapshot (volume, OI, greeks) — pair with sessionTape when present for classified prints, sweeps/blocks, and aggressor lean.",
+    } : { available: false, note: "No per-strike flow snapshot on file for this ticker — fall back to optionsChainSummary.unusualActivity." },
     ioScore: {
       final: ioScore.final,
       classification: ioScore.classification,
