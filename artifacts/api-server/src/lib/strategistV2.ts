@@ -14,6 +14,7 @@ import type { InferInsertModel } from "drizzle-orm";
 import { getBestAccessToken } from "./tokenStore.js";
 import { fetchPolygonChain } from "./polygonChain.js";
 import { getPolygonFlowHighlights, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
+import { runStrategistTapeBackfill, type TapeBackfillStatus } from "./strategistTapeBackfill.js";
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
 import { getNextEarningsDate } from "./earningsService.js";
 import { evaluateCatalyst, deriveTradeDirection, type CatalystEvaluation } from "./catalystEvaluator.js";
@@ -307,7 +308,7 @@ interface CuratedStrike {
 interface CuratedExpiration {
   expiration: string;
   dte: number;
-  bucket: "near_0_7d" | "mid_7_30d" | "far_30_60d";
+  bucket: "near_0_7d" | "mid_7_30d" | "far_30_60d" | "earnings_capture";
   strikes: CuratedStrike[];
 }
 
@@ -436,7 +437,7 @@ This is how institutional traders work. They cite their sources because their Pn
 
 ## EXPIRATION SELECTION
 
-The data package includes a curatedExpirations array containing strike-level data (bid, ask, IV, delta, volume, OI) sampled across multiple DTE buckets from near-term through 60+ days. When selecting an expiration for your trade, evaluate the strikes available at each expiration in this array. Do not default to the nearest weekly just because the flow signal is loudest there. Consider whether the thesis is better expressed at a longer DTE with better theta economics, more time for the move to develop, or lower gamma risk. Choose the expiration that best fits the thesis, not the expiration with the most volume.
+The data package includes a curatedExpirations array containing strike-level data (bid, ask, IV, delta, volume, OI) sampled across multiple DTE buckets from near-term through 60 days, plus optional earnings_capture rows when the next earnings date is known and a listed expiry on or after that date is added for vol surface context past 60 DTE. When selecting an expiration for your trade, evaluate the strikes available at each expiration in this array. Do not default to the nearest weekly just because the flow signal is loudest there. Consider whether the thesis is better expressed at a longer DTE with better theta economics, more time for the move to develop, or lower gamma risk. Choose the expiration that best fits the thesis, not the expiration with the most volume.
 
 ## WHAT YOU ARE NOT
 
@@ -614,7 +615,11 @@ export async function analyzeTickerV2(
   const catalystInfo = deriveCatalyst(tickerData);
   const ioScore = await computeIOScore(ticker, catalystInfo, settings);
 
-  const chainSummary = summarizeOptionsChain(chain, tickerData.price);
+  const chainSummary = summarizeOptionsChain(chain, tickerData.price, {
+    ticker,
+    settings,
+    earningsDate: tickerData.earningsDate,
+  });
 
   const [realizedVol, realIvDepth] = await Promise.all([
     getRealizedVolFromEquityDaily(ticker),
@@ -641,19 +646,6 @@ export async function analyzeTickerV2(
     })),
   }, "StrategistV2: expirations being sent to AI model");
 
-  const polygonHighlights = await getPolygonFlowHighlights(ticker);
-  assertAnalyzeNotCancelled(progress);
-  if (polygonHighlights) {
-    logger.info({
-      ticker,
-      asOfDate: polygonHighlights.asOfDate,
-      unusualStrikes: polygonHighlights.unusualStrikeCount,
-      unusualSkew: polygonHighlights.unusualSkew,
-    }, "StrategistV2: Polygon flow highlights loaded");
-  } else {
-    logger.info({ ticker }, "StrategistV2: no Polygon flow highlights for ticker");
-  }
-
   let deskCatalystEval: CatalystEvaluation | null = null;
   let deskCatalystExpirationISO = "";
   if (settings.strategistMode === 3) {
@@ -674,6 +666,58 @@ export async function analyzeTickerV2(
     }
   }
 
+  let tapeBackfillStatus: TapeBackfillStatus | undefined;
+  if (settings.strategistMode === 3) {
+    status("Loading session options tape (REST backfill)…");
+    try {
+      tapeBackfillStatus = await runStrategistTapeBackfill({
+        ticker,
+        chain,
+        chainSummary: {
+          atmStrike: chainSummary.atmStrike,
+          availableExpirations: chainSummary.availableExpirations,
+          curatedExpirations: chainSummary.curatedExpirations.map((e) => ({
+            expiration: e.expiration,
+            dte: e.dte,
+          })),
+        },
+      });
+      logger.info(
+        {
+          ticker,
+          tapeBackfill: tapeBackfillStatus.status,
+          tradesInserted: tapeBackfillStatus.tradesInserted,
+          occCompleted: tapeBackfillStatus.occCompleted,
+        },
+        "StrategistV2: session tape backfill finished",
+      );
+    } catch (err) {
+      logger.warn({ err, ticker }, "StrategistV2: session tape backfill threw");
+      tapeBackfillStatus = {
+        status: "failed",
+        reason: "exception",
+        sessionDate: new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }),
+        coverageEndMs: Date.now(),
+        occRequested: 0,
+        occCompleted: 0,
+        tradesInserted: 0,
+      };
+    }
+  }
+
+  assertAnalyzeNotCancelled(progress);
+  const polygonHighlights = await getPolygonFlowHighlights(ticker);
+  if (polygonHighlights) {
+    logger.info({
+      ticker,
+      asOfDate: polygonHighlights.asOfDate,
+      unusualStrikes: polygonHighlights.unusualStrikeCount,
+      unusualSkew: polygonHighlights.unusualSkew,
+    }, "StrategistV2: Polygon flow highlights loaded");
+  } else {
+    logger.info({ ticker }, "StrategistV2: no Polygon flow highlights for ticker");
+  }
+
   const dataPackage = buildDataPackage(
     ticker,
     tickerData,
@@ -688,6 +732,7 @@ export async function analyzeTickerV2(
       realizedVol,
       ivrContext: buildIvrContext(tickerData, realIvDepth, proxyIvDepth),
     },
+    settings.strategistMode === 3 ? tapeBackfillStatus : undefined,
   );
   assertAnalyzeNotCancelled(progress);
 
@@ -1383,15 +1428,11 @@ function computeImpliedMoveStraddle(
   return { dollar, percentOfSpot, expiry: exp, daysToExpiry: dte };
 }
 
-/**
- * Desk mode: far edge of the user's preferred DTE window for catalyst evaluation
- * (matches "position window" before any trade legs exist).
- */
-function computeDeskCatalystExpirationISO(chainSummary: ChainSummary, settings: StrategistConfig): string {
-  const prefsMax = Math.max(1, settings.preferredDteMax | 0);
+/** Latest listed expiry within prefsMax DTE, or null if none. */
+function deskWindowIsoFromAvailableExpiries(availableExpirations: string[], prefsMax: number): string | null {
   let best: string | null = null;
   let bestDte = -1;
-  for (const exp of chainSummary.availableExpirations) {
+  for (const exp of availableExpirations) {
     const dte = computeDte(exp);
     if (dte <= 0 || dte > prefsMax) continue;
     if (dte > bestDte) {
@@ -1399,7 +1440,28 @@ function computeDeskCatalystExpirationISO(chainSummary: ChainSummary, settings: 
       best = exp;
     }
   }
-  if (best) return best;
+  return best;
+}
+
+function deskWindowSyntheticIso(prefsMax: number): string {
+  const t = Date.now() + prefsMax * 86_400_000;
+  const u = new Date(t);
+  const y = u.getUTCFullYear();
+  const m = String(u.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(u.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Desk mode: far edge of the user's preferred DTE window for catalyst evaluation
+ * (matches "position window" before any trade legs exist).
+ */
+function computeDeskCatalystExpirationISO(chainSummary: ChainSummary, settings: StrategistConfig): string {
+  const prefsMax = Math.max(1, settings.preferredDteMax | 0);
+  const fromAvail = deskWindowIsoFromAvailableExpiries(chainSummary.availableExpirations, prefsMax);
+  if (fromAvail) return fromAvail;
+  let best: string | null = null;
+  let bestDte = -1;
   for (const ce of chainSummary.curatedExpirations) {
     const dte = ce.dte;
     if (dte <= 0 || dte > prefsMax) continue;
@@ -1409,12 +1471,7 @@ function computeDeskCatalystExpirationISO(chainSummary: ChainSummary, settings: 
     }
   }
   if (best) return best;
-  const t = Date.now() + prefsMax * 86_400_000;
-  const u = new Date(t);
-  const y = u.getUTCFullYear();
-  const m = String(u.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(u.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return deskWindowSyntheticIso(prefsMax);
 }
 
 function buildCuratedStrikes(
@@ -1468,8 +1525,18 @@ function buildCuratedStrikes(
   return result;
 }
 
-function buildCuratedExpirations(chain: ChainContract[], price: number): CuratedExpiration[] {
+function firstListedExpiryOnOrAfter(availableExpirations: string[], anchorYmd: string): string | null {
+  const future = availableExpirations.filter((exp) => exp >= anchorYmd && computeDte(exp) > 0).sort();
+  return future[0] ?? null;
+}
+
+function buildCuratedExpirations(
+  chain: ChainContract[],
+  price: number,
+  mustIncludeExpiries: string[],
+): CuratedExpiration[] {
   const allExpirations = [...new Set(chain.map(c => c.expiration))].sort();
+  const expSet = new Set(allExpirations);
   const withDte = allExpirations.map(exp => ({ exp, dte: computeDte(exp) }));
 
   // Detect daily-expiry ticker: >2 expirations within the first 7 DTE
@@ -1516,6 +1583,15 @@ function buildCuratedExpirations(chain: ChainContract[], price: number): Curated
   }
   farSelected.slice(0, 3).forEach(e => selected.push({ ...e, bucket: "far_30_60d" }));
 
+  const selectedExps = new Set(selected.map((s) => s.exp));
+  for (const exp of mustIncludeExpiries) {
+    if (!expSet.has(exp) || selectedExps.has(exp)) continue;
+    const dte = computeDte(exp);
+    if (dte <= 0) continue;
+    selected.push({ exp, dte, bucket: "earnings_capture" });
+    selectedExps.add(exp);
+  }
+
   // Determine ATM strike once
   const atmStrike = [...new Set(chain.map(c => c.strike))]
     .sort((a, b) => Math.abs(a - price) - Math.abs(b - price))[0] ?? Math.round(price);
@@ -1528,7 +1604,18 @@ function buildCuratedExpirations(chain: ChainContract[], price: number): Curated
   }));
 }
 
-export function summarizeOptionsChain(chain: ChainContract[], price: number): ChainSummary {
+export interface SummarizeOptionsChainContext {
+  ticker?: string;
+  settings?: StrategistConfig;
+  /** Next earnings YYYY-MM-DD when known (confirmed or estimated). */
+  earningsDate?: string | null;
+}
+
+export function summarizeOptionsChain(
+  chain: ChainContract[],
+  price: number,
+  ctx?: SummarizeOptionsChainContext,
+): ChainSummary {
   const calls = chain.filter(c => c.type === "call" || c.optionType === "CALL");
   const puts = chain.filter(c => c.type === "put" || c.optionType === "PUT");
 
@@ -1599,7 +1686,44 @@ export function summarizeOptionsChain(chain: ChainContract[], price: number): Ch
     if (backContracts.length > 0) backMonthIV = Math.round(backContracts.reduce((s, c) => s + c.impliedVolatility, 0) / backContracts.length * 10000) / 100;
   }
 
-  const curatedExpirations = buildCuratedExpirations(chain, price);
+  const mustIncludeExpiries: string[] = [];
+  const earningsYmd = ctx?.earningsDate ?? null;
+  if (earningsYmd && /^\d{4}-\d{2}-\d{2}$/.test(earningsYmd)) {
+    const earnDte = computeDte(earningsYmd);
+    if (earnDte > 0 && earnDte <= 180) {
+      const capture = firstListedExpiryOnOrAfter(expirations, earningsYmd);
+      if (capture) {
+        mustIncludeExpiries.push(capture);
+        const tk = ctx?.ticker ?? "";
+        logger.info(
+          tk
+            ? { ticker: tk, expiry: capture, earningsDate: earningsYmd, bucket: "earnings_capture" }
+            : { expiry: capture, earningsDate: earningsYmd, bucket: "earnings_capture" },
+          tk
+            ? `Curated strip: auto-included ${capture} for earnings event ${earningsYmd} on ${tk}`
+            : `Curated strip: auto-included ${capture} for earnings event ${earningsYmd}`,
+        );
+      }
+    }
+  }
+
+  if (ctx?.settings?.strategistMode === 3) {
+    const prefsMax = Math.max(1, ctx.settings.preferredDteMax | 0);
+    const fromAvail = deskWindowIsoFromAvailableExpiries(expirations, prefsMax);
+    if (fromAvail) {
+      const stdStrip = buildCuratedExpirations(chain, price, []);
+      const inStd = stdStrip.some(
+        (e) =>
+          e.expiration === fromAvail
+          && (e.bucket === "near_0_7d" || e.bucket === "mid_7_30d" || e.bucket === "far_30_60d"),
+      );
+      if (!inStd && !mustIncludeExpiries.includes(fromAvail)) {
+        mustIncludeExpiries.push(fromAvail);
+      }
+    }
+  }
+
+  const curatedExpirations = buildCuratedExpirations(chain, price, mustIncludeExpiries);
 
   const termStructure5pt = buildTermStructure5pt(chain, price, curatedExpirations, expirations, ivToPct);
   const { skew, reason: skew25DeltaReason } = computeSkew25DeltaForChain(chain, expirations, ivToPct);
@@ -1672,6 +1796,7 @@ function buildDataPackage(
     realizedVol: Awaited<ReturnType<typeof getRealizedVolFromEquityDaily>>;
     ivrContext: ReturnType<typeof buildIvrContext>;
   },
+  tapeBackfill?: TapeBackfillStatus,
 ): string {
   const currentDate = new Date().toISOString().slice(0, 10);
   const pkg: Record<string, unknown> = {
@@ -1722,7 +1847,9 @@ function buildDataPackage(
       topByVolOiRatio: polygonHighlights.topByVolOiRatio,
       largestPrint: polygonHighlights.largestPrint,
       sessionTape: polygonHighlights.sessionTape,
-      sourceNote: "Per-strike end-of-day snapshot (volume, OI, greeks) — pair with sessionTape when present for classified prints, sweeps/blocks, and aggressor lean.",
+      sessionTapeDate: polygonHighlights.sessionTapeDate,
+      sourceNote:
+        "Per-strike end-of-day snapshot (volume, OI, greeks). sessionTape.tapeKind `live` adds classified prints and aggressor mix; `eod_fallback` is volume-ranked EOD synthesis when live tape rows are absent (sweep/block zero; do not infer aggressor).",
     } : { available: false, note: "No per-strike flow snapshot on file for this ticker — fall back to optionsChainSummary.unusualActivity." },
     ioScore: {
       final: ioScore.final,
@@ -1759,6 +1886,18 @@ function buildDataPackage(
       maxBidAskSpreadPct: settings.maxBidAskSpreadPct,
     },
   };
+
+  if (tapeBackfill) {
+    pkg.tapeBackfill = {
+      status: tapeBackfill.status,
+      reason: tapeBackfill.reason,
+      sessionDate: tapeBackfill.sessionDate,
+      coverageEndMs: tapeBackfill.coverageEndMs,
+      occRequested: tapeBackfill.occRequested,
+      occCompleted: tapeBackfill.occCompleted,
+      tradesInserted: tapeBackfill.tradesInserted,
+    };
+  }
 
   if (settings.strategistMode === 3 && deskCatalystWindowExpirationISO) {
     if (catalystEvaluation != null) {

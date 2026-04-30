@@ -687,14 +687,6 @@ router.post("/validate-trade", (req, res): void => {
         let chainSource = null;
         if (chainR.status === "fulfilled" && chainR.value && chainR.value.chain.length > 0) {
           chainSource = chainR.value.source;
-          const price = pickAnchorPrice(meta.ticket, chainR.value.chain.map(c => c.strike));
-          if (price > 0) {
-            try {
-              chainSummary = summarizeOptionsChain(chainR.value.chain, price);
-            } catch (sErr) {
-              logger.warn({ sErr, jobId, ticker: upperTicker }, "TradeValidation: summarizeOptionsChain threw (non-fatal)");
-            }
-          }
         }
 
         const ivr = ivrR.status === "fulfilled" ? ivrR.value : null;
@@ -704,6 +696,21 @@ router.post("/validate-trade", (req, res): void => {
         const nextEarnings = earningsR.status === "fulfilled" ? earningsR.value : null;
         const equityExtras = extrasR.status === "fulfilled" ? extrasR.value : null;
         const ioScore = await ioScoreP;
+
+        if (chainR.status === "fulfilled" && chainR.value && chainR.value.chain.length > 0) {
+          const price = pickAnchorPrice(meta.ticket, chainR.value.chain.map(c => c.strike));
+          if (price > 0) {
+            try {
+              chainSummary = summarizeOptionsChain(chainR.value.chain, price, {
+                ticker: upperTicker,
+                settings: settings ?? undefined,
+                earningsDate: nextEarnings?.earningsDate ?? null,
+              });
+            } catch (sErr) {
+              logger.warn({ sErr, jobId, ticker: upperTicker }, "TradeValidation: summarizeOptionsChain threw (non-fatal)");
+            }
+          }
+        }
 
         input.marketContext = {
           ivr: ivr?.ivr ?? null,

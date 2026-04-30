@@ -230,16 +230,39 @@ export async function runDeskAnalysis(args: {
     { catalystSlotNativeWebSearch: catalystNativeWeb },
   );
 
-  callbacks?.onStatus?.("Desk: Vol, Flow, and Catalyst analysts running in parallel…");
+  let tapeStatus: string | undefined;
+  try {
+    const pkg = JSON.parse(dataPackage) as { tapeBackfill?: { status?: string } };
+    tapeStatus = pkg.tapeBackfill?.status;
+  } catch {
+    tapeStatus = undefined;
+  }
+  if (tapeStatus === "partial" || tapeStatus === "failed") {
+    callbacks?.onStatus?.(
+      `Desk: Flow tape coverage is ${tapeStatus}. Flow analyst will note limits in its read.`,
+    );
+  }
 
   assertDeskNotCancelled(callbacks);
-  const [volResult, flowResult, catalystResult] = await Promise.all([
+  callbacks?.onStatus?.("Desk: Vol and Catalyst analysts running…");
+
+  const [volResult, catalystResult] = await Promise.all([
     runAnalystWithRetry(ticker, "vol", volModel, buildVolAnalystPrompt(dataPackage), VolAnalystOutputSchema, callbacks, errors),
-    runAnalystWithRetry(ticker, "flow", flowModel, buildFlowAnalystPrompt(dataPackage), FlowAnalystOutputSchema, callbacks, errors),
     runAnalystWithRetry(ticker, "catalyst", catalystModel, catalystPrompt, CatalystAnalystOutputSchema, callbacks, errors, catalystSearchTrace),
   ]);
 
   assertDeskNotCancelled(callbacks);
+  callbacks?.onStatus?.("Desk: Flow analyst running…");
+  const flowResult = await runAnalystWithRetry(
+    ticker,
+    "flow",
+    flowModel,
+    buildFlowAnalystPrompt(dataPackage),
+    FlowAnalystOutputSchema,
+    callbacks,
+    errors,
+  );
+
   callbacks?.onStatus?.("Desk: PM synthesizing analyst reads…");
 
   const pmPrompt = buildPmPrompt(

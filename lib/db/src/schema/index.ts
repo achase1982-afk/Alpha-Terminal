@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { pgTable, text, serial, real, integer, boolean, timestamp, jsonb, uniqueIndex, index, date, doublePrecision, bigint } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -249,10 +250,30 @@ export const optionsFlowRawTradesTable = pgTable("options_flow_raw_trades", {
   side: text("side"),
   isBlock: boolean("is_block").default(false),
   isSweep: boolean("is_sweep").default(false),
+  /** Dedup key for REST backfill vs live watcher (partial unique index when set). */
+  sourceTradeId: text("source_trade_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => [
+  uniqueIndex("options_flow_raw_trades_source_dedup_idx")
+    .on(t.underlyingSymbol, t.date, t.sourceTradeId)
+    .where(sql`${t.sourceTradeId} IS NOT NULL`),
+]);
 
 export type OptionsFlowRawTrade = typeof optionsFlowRawTradesTable.$inferSelect;
+
+export const optionsTapeBackfillOccCacheTable = pgTable("options_tape_backfill_occ_cache", {
+  id: serial("id").primaryKey(),
+  ticker: text("ticker").notNull(),
+  sessionDate: date("session_date").notNull(),
+  occ: text("occ").notNull(),
+  lastCoverageEndNs: bigint("last_coverage_end_ns", { mode: "bigint" }).notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("options_tape_backfill_occ_cache_unique").on(t.ticker, t.sessionDate, t.occ),
+  index("options_tape_backfill_occ_cache_ticker_date_idx").on(t.ticker, t.sessionDate),
+]);
+
+export type OptionsTapeBackfillOccCache = typeof optionsTapeBackfillOccCacheTable.$inferSelect;
 
 // Per-strike rollup of classified live execution events. Populated by
 // the rollup job from options_flow_raw_trades. Same composite key as
