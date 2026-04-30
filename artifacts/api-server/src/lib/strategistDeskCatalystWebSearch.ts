@@ -17,7 +17,7 @@ import type { CatalystEvaluation } from "./catalystEvaluator.js";
 
 const SEARCH_SYSTEM = `You are a research assistant for an options catalyst desk. You MUST use the web search tool to gather current facts. Output only bullet points (max 18 lines), one fact per line, no URLs, no markdown fences, no JSON. If you find nothing substantive, output a single line: NO_USEFUL_RESULTS`;
 
-/** Hard cap per structured-search LLM call (all providers). No retry on timeout — empty slot in briefing. */
+/** Hard cap per structured-search LLM call (all providers). No retry on timeout; empty slot in briefing. */
 const SEARCH_STEP_TIMEOUT_MS = 45_000;
 
 function nowIso(): string {
@@ -65,7 +65,7 @@ async function runOneSearch(
           phase: "callGeminiWithSystemAndWebSearch_start",
           at: nowIso(),
         },
-        "StrategistDesk: catalyst structured search — callGeminiWithSystemAndWebSearch starting",
+        "StrategistDesk: catalyst structured search; callGeminiWithSystemAndWebSearch starting",
       );
       const r = await callGeminiWithSystemAndWebSearch(model.model, temperature, SEARCH_SYSTEM, userPrompt);
       logger.info(
@@ -80,7 +80,7 @@ async function runOneSearch(
           elapsedMs: Date.now() - gemStart,
           textChars: r.text?.length ?? 0,
         },
-        "StrategistDesk: catalyst structured search — callGeminiWithSystemAndWebSearch returned",
+        "StrategistDesk: catalyst structured search; callGeminiWithSystemAndWebSearch returned",
       );
       return r;
     }
@@ -145,7 +145,7 @@ export async function runCatalystDeskStructuredSearches(opts: {
   if (model.provider !== "google") {
     logger.info(
       { ticker: upper, provider: model.provider, desk: "catalyst_structured_search" },
-      "StrategistDesk: runCatalystDeskStructuredSearches invoked for non-Gemini provider — returning empty (caller should gate)",
+      "StrategistDesk: runCatalystDeskStructuredSearches invoked for non-Gemini provider; returning empty (caller should gate)",
     );
     return { briefing: "", trace: emptyTrace() };
   }
@@ -164,7 +164,7 @@ export async function runCatalystDeskStructuredSearches(opts: {
   const bundleStartMs = Date.now();
 
   const run = async (stepNum: number, label: string, query: string, extraInstructions: string) => {
-    onStatus?.(`Desk — Catalyst research: ${label}…`);
+    onStatus?.(`Desk: Catalyst research: ${label}…`);
     const stepStartMs = Date.now();
     logger.info(
       {
@@ -177,7 +177,7 @@ export async function runCatalystDeskStructuredSearches(opts: {
         query,
         at: nowIso(),
       },
-      "StrategistDesk: catalyst structured search — step start",
+      "StrategistDesk: catalyst structured search; step start",
     );
 
     const userPrompt =
@@ -199,7 +199,7 @@ export async function runCatalystDeskStructuredSearches(opts: {
         at: nowIso(),
         msSinceStepStart: llmInvokeStartMs - stepStartMs,
       },
-      "StrategistDesk: catalyst structured search — provider LLM call starting (wrapped in timeout)",
+      "StrategistDesk: catalyst structured search; provider LLM call starting (wrapped in timeout)",
     );
 
     try {
@@ -228,7 +228,7 @@ export async function runCatalystDeskStructuredSearches(opts: {
           trimmedBodyChars: body.length,
           resultCount: n,
         },
-        "StrategistDesk: catalyst structured search — step completed",
+        "StrategistDesk: catalyst structured search; step completed",
       );
       accTrace = mergeTraces(accTrace, r.trace);
       sections.push(`### ${label}\nExecuted query: ${query}\nResults returned (sources): ${n}\n\n${body}`);
@@ -254,7 +254,7 @@ export async function runCatalystDeskStructuredSearches(opts: {
             errorChars: msg.length,
             note: "Underlying HTTP request is not aborted; Gemini may still complete server-side.",
           },
-          "StrategistDesk: catalyst structured search — step timed out (empty briefing slot)",
+          "StrategistDesk: catalyst structured search; step timed out (empty briefing slot)",
         );
       } else {
         logger.warn(
@@ -272,7 +272,7 @@ export async function runCatalystDeskStructuredSearches(opts: {
             errorMessage: msg,
             errorChars: msg.length,
           },
-          "StrategistDesk: catalyst structured search — step failed",
+          "StrategistDesk: catalyst structured search; step failed",
         );
       }
       // Empty briefing for this slot (no retry); keep heading for traceability in composed doc
@@ -282,25 +282,25 @@ export async function runCatalystDeskStructuredSearches(opts: {
 
   await run(
     1,
-    "Search 1 — IR / company-hosted events",
+    "Search 1: IR / company-hosted events",
     q1,
     "Goal: investor days, conference participation, product or AI days, capital markets days, company-hosted events in the position window.",
   );
   await run(
     2,
-    "Search 2 — Analyst targets and coverage",
+    "Search 2: Analyst targets and coverage",
     q2,
     "Goal: price target changes and upgrades/downgrades in roughly the last 60 days.",
   );
   await run(
     3,
-    "Search 3 — Earnings history and reactions",
+    "Search 3: Earnings history and reactions",
     q3,
     "Goal: implied vs realized moves, gap direction, magnitude patterns around past prints.",
   );
   await run(
     4,
-    "Search 4 — Sector ETF and peers",
+    "Search 4: Sector ETF and peers",
     q4,
     "Goal: sector ETF, key peers, relative industry context.",
   );
@@ -308,7 +308,7 @@ export async function runCatalystDeskStructuredSearches(opts: {
   if (shouldRunNewsSearch(catalystEval)) {
     await run(
       5,
-      "Search 5 — News and event-driven (conditional)",
+      "Search 5: News and event-driven (conditional)",
       q5,
       "Goal: recent news, regulatory actions, partnerships, or event-driven items relevant to the position window.",
     );
@@ -323,7 +323,7 @@ export async function runCatalystDeskStructuredSearches(opts: {
         reason: "no_notable_window_trigger",
         at: nowIso(),
       },
-      "StrategistDesk: catalyst structured search — Search 5 not run (gating)",
+      "StrategistDesk: catalyst structured search; Search 5 not run (gating)",
     );
   }
 
@@ -343,7 +343,7 @@ export async function runCatalystDeskStructuredSearches(opts: {
       totalWallMs: Date.now() - bundleStartMs,
       briefingChars: briefing.length,
     },
-    "StrategistDesk: catalyst structured search — Gemini pre-search bundle complete",
+    "StrategistDesk: catalyst structured search; Gemini pre-search bundle complete",
   );
 
   return { briefing, trace: accTrace };
