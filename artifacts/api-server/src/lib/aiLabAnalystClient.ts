@@ -537,9 +537,9 @@ export async function callOpenAIWithSystem(
     params.temperature = temperature;
   }
 
-  const completion = await asOpenAIChatCompletionsCreateClient(client).chat.completions.create(
-    cancelSignal ? { ...params, signal: cancelSignal } : params,
-  );
+  const completion = cancelSignal
+    ? await asOpenAIChatCompletionsCreateClient(client).chat.completions.create(params, { signal: cancelSignal })
+    : await asOpenAIChatCompletionsCreateClient(client).chat.completions.create(params);
 
   const text = completion.choices?.[0]?.message?.content?.trim() ?? "";
   if (!text) throw new Error("No text content in Analyst LLM response (OpenAI)");
@@ -1338,9 +1338,10 @@ export async function callOpenAIWithSystemAndWebSearch(
   const params = buildOpenAIResponseParams(model, temperature, systemPrompt, prompt);
 
   // OpenAI SDK types lag the Responses API surface for web_search_preview + reasoning.
-  const response = await (client as OpenAIResponsesClientNonStream).responses.create(
-    cancelSignal ? { ...params, signal: cancelSignal } : params,
-  );
+  // Pass AbortSignal in request options, not the JSON body (API returns 400 Unknown parameter: "signal").
+  const response = cancelSignal
+    ? await (client as OpenAIResponsesClientNonStream).responses.create(params, { signal: cancelSignal })
+    : await (client as OpenAIResponsesClientNonStream).responses.create(params);
 
   const queries: string[] = [];
   const sources: WebSearchSource[] = [];
@@ -1372,9 +1373,9 @@ export async function streamCallOpenAIWithSystemAndWebSearch(
 
   onStatus?.("Calling OpenAI with web search…");
 
-  const stream = await (client as OpenAIResponsesClientStream).responses.create(
-    cancelSignal ? { ...params, signal: cancelSignal } : params,
-  );
+  const stream = cancelSignal
+    ? await (client as OpenAIResponsesClientStream).responses.create(params, { signal: cancelSignal })
+    : await (client as OpenAIResponsesClientStream).responses.create(params);
 
   const queries: string[] = [];
   const sources: WebSearchSource[] = [];
