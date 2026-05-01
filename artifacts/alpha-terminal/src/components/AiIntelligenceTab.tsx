@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
 import { useTerminalStore, type StrategistValidationMeta, type StrategistTranscriptTurn } from "@/lib/store";
 import { isDeskStrategistTranscript } from "@/lib/strategistTranscriptDesk";
 import { StrategistValidationCard } from "@/components/StrategistValidationCard";
@@ -837,7 +838,11 @@ function StrategistCancelConfirmDialog(props: {
 
   if (!open) return null;
 
-  return (
+  /** Portal to body: parent swipe carousel uses `transform`, which breaks `position:fixed`
+   * (overlay becomes viewport-relative to that ancestor and scroll/clipping hides it). */
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.65)" }}
@@ -880,7 +885,8 @@ function StrategistCancelConfirmDialog(props: {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
