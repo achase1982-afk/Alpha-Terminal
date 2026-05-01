@@ -12,6 +12,25 @@ import {
   unsubscribeContractsWithQuotes,
   type PolygonOptionTrade,
 } from "./polygonOptionsWs.js";
+import { fetchSchwabMarketSnapshot } from "./schwabMarketSnapshot.js";
+import { buildMarketContextSnapshot } from "./flowMarketContext.js";
+import {
+  dteCalendarDays,
+  sessionPhaseFromTradeMs,
+  venueClassFromExchangeId,
+} from "./flowTradeEnrichment.js";
+
+function parseOccLocal(occ: string): { expiration: string } | null {
+  if (!occ.startsWith("O:")) return null;
+  const body = occ.slice(2);
+  const m = body.match(/^([A-Z0-9.]+?)(\d{6})([CP])(\d{8})$/);
+  if (!m) return null;
+  const [, , yymmdd] = m;
+  const yy = 2000 + Number(yymmdd.slice(0, 2));
+  const mm = yymmdd.slice(2, 4);
+  const dd = yymmdd.slice(4, 6);
+  return { expiration: `${yy}-${mm}-${dd}` };
+}
 
 // ── Persistent Polygon options watcher (Part 2) ──────────────────────
 //
@@ -55,7 +74,7 @@ const HEARTBEAT_STALE_MS = 5 * 60 * 1000;
 const CHAIN_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 // Watcher tick cadence for periodic prune + tier reconciliation.
 const WATCHER_TICK_INTERVAL_MS = 60 * 1000;
-
+const MARKET_SNAPSHOT_TTL_MS = 4 * 60 * 60 * 1000;
 export type Tier = "HOT" | "WARM" | "COLD";
 
 export interface WatchlistInput {
@@ -78,6 +97,11 @@ interface PerTickerState {
   lastTradeTs: number;
   lastChainRefreshTs: number;
   contractType: Map<string, "C" | "P">; // OCC → side, for directional balance
+  /** Latest chain row per subscribed OCC (OI, volume for classification). */
+  chainByOcc: Map<string, { openInterest: number; volume: number }>;
+  /** Schwab market snapshot for tiered notional thresholds. */
+  marketContext: import("./flowMarketContext.js").MarketContextSnapshot | null;
+  marketSnapshotFetchedAt: number;
 }
 
 interface SessionEvent {
@@ -86,7 +110,7 @@ interface SessionEvent {
   size: number;
   price: number;
   notional: number;
-  kind: "sweep" | "block" | "large";
+  kind: "sweep" | "block" | "large" | "volume_spike";
 }
 
 export interface SessionStats {
@@ -328,13 +352,23 @@ function handleTrade(t: PolygonOptionTrade): void {
   else if (legSide === "P") st.putNotional += notional;
 
   const nbbo = getNbbo(t.sym);
+  const chainRow = st.chainByOcc.get(t.sym);
+  const oi = chainRow?.openInterest ?? 0;
+  const mc = st.marketContext;
   const classified = classifyForFlowPersistence({
     price: t.price,
     size: t.size,
     conditions: t.conditions,
     nbbo: nbbo ? { bid: nbbo.bid, ask: nbbo.ask } : null,
+    largeNotionalThresholdUsd: mc?.largeNotionalThresholdUsd,
+    avgDailyContractVolume20d: null,
+    openInterest: oi > 0 ? oi : null,
   });
   const { isSweep, isBlockForDb, isLarge, shouldPersist, side: aggressorSide } = classified;
+  const meta = parseOccLocal(t.sym);
+  const dteDays = meta ? dteCalendarDays(meta.expiration, st.lastTradeTs) : null;
+  const sessionPhase = sessionPhaseFromTradeMs(st.lastTradeTs);
+  const venueClass = venueClassFromExchangeId(t.exchange);
 
   if (t.size > st.largestPrintSize) {
     st.largestPrintSize = t.size;
@@ -349,7 +383,13 @@ function handleTrade(t: PolygonOptionTrade): void {
       size: t.size,
       price: t.price,
       notional,
-      kind: isSweep ? "sweep" : isBlockForDb ? "block" : "large",
+      kind: isSweep
+        ? "sweep"
+        : isBlockForDb
+          ? "block"
+          : classified.volumeSignificant
+            ? "volume_spike"
+            : "large",
     });
     if (!nbbo) {
       logFlowPipelineWarn(
@@ -374,6 +414,17 @@ function handleTrade(t: PolygonOptionTrade): void {
       isSweep,
       isBlock: isBlockForDb,
       side: aggressorSide,
+      exchangeId: t.exchange,
+      venueClass,
+      dteDays,
+      sessionPhase,
+      volOiRatio: classified.volOiRatio,
+      openInterestSnapshot: oi > 0 ? oi : null,
+      volumeVsBaseline20d: classified.volumeVsBaseline20d,
+      marketCapUsd: mc?.marketCapUsd ?? null,
+      marketCapTier: mc?.tier ?? null,
+      notionalThresholdUsd: mc?.largeNotionalThresholdUsd ?? null,
+      aggressorConfidence: classified.aggressorConfidence,
     });
     // Cap event log per ticker to keep memory bounded. Mirror TTL-prune
     // behavior so liveEventCount stays consistent with retained events
@@ -512,7 +563,18 @@ async function resolveAndSubscribeOne(ticker: string, apiKey: string): Promise<v
 
   st.lastChainRefreshTs = Date.now();
   st.contractType.clear();
+  st.chainByOcc.clear();
   for (const c of candidates) st.contractType.set(c.symbol, c.type);
+  for (const c of candidates) {
+    const list = c.type === "C" ? chain.calls : chain.puts;
+    const row = list.find(
+      (x) => x.strike === c.strike && x.expiration === c.expiration,
+    );
+    st.chainByOcc.set(c.symbol, {
+      openInterest: row?.openInterest ?? 0,
+      volume: row?.volume ?? 0,
+    });
+  }
   st.contracts = symsToAdd;
   for (const occ of symsToAdd) occToTicker.set(occ, ticker);
 
@@ -535,13 +597,14 @@ async function resolveAndSubscribeOne(ticker: string, apiKey: string): Promise<v
     dropped: toDrop.length,
     durationMs: Date.now() - t0,
   }, "watcher.resolve.subscribed");
+  void ensureMarketSnapshotForTicker(ticker);
   } finally {
     pendingReservation = Math.max(0, pendingReservation - reservation);
     resolving.delete(ticker);
   }
 }
 
-interface Candidate { symbol: string; strike: number; expiration: string; type: "C" | "P" }
+interface Candidate { symbol: string; strike: number; expiration: string; type: "C" | "P"; openInterest: number; volume: number }
 
 function pickCandidates(
   ticker: string,
@@ -576,6 +639,8 @@ function pickCandidates(
         strike: c.strike,
         expiration: c.expiration,
         type: isCall ? "C" : "P",
+        openInterest: c.openInterest ?? 0,
+        volume: c.volume ?? 0,
         _score: score,
       });
     }
@@ -647,6 +712,9 @@ function makeEmptyTickerState(ticker: string, tier: Tier): PerTickerState {
     totalPrints: 0, events: [],
     lastTradeTs: 0, lastChainRefreshTs: 0,
     contractType: new Map(),
+    chainByOcc: new Map(),
+    marketContext: null,
+    marketSnapshotFetchedAt: 0,
   };
 }
 
@@ -679,6 +747,22 @@ function sumEvents(): number {
   let n = 0;
   for (const st of state.values()) n += st.liveEventCount;
   return n;
+}
+
+async function ensureMarketSnapshotForTicker(ticker: string): Promise<void> {
+  const st = state.get(ticker);
+  if (!st) return;
+  const now = Date.now();
+  if (st.marketContext && now - st.marketSnapshotFetchedAt < MARKET_SNAPSHOT_TTL_MS) return;
+  const snap = await fetchSchwabMarketSnapshot(ticker);
+  const st2 = state.get(ticker);
+  if (!st2) return;
+  st2.marketContext = buildMarketContextSnapshot({
+    ticker,
+    marketCapUsd: snap?.marketCapUsd ?? null,
+    assetType: snap?.assetType ?? null,
+  });
+  st2.marketSnapshotFetchedAt = Date.now();
 }
 
 // ── Coverage state machine (LIVE / AMBER / EOD) ─────────────────────

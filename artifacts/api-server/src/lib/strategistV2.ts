@@ -20,6 +20,7 @@ import { getNextEarningsDate } from "./earningsService.js";
 import { evaluateCatalyst, deriveTradeDirection, type CatalystEvaluation } from "./catalystEvaluator.js";
 import { type OptionContract } from "./optionsStrategist.js";
 import { getStoredIVR, getRealizedVolFromEquityDaily, countRealIvHistoryDays, countProxyIvHistoryDays } from "./ivNormalize.js";
+import { buildMarketContextSnapshot, type MarketContextSnapshot } from "./flowMarketContext.js";
 import { clampProfitTargetToMaxPayout } from "./exitTargetMath.js";
 import { scrubAll } from "./narrativeScrubbers.js";
 import { getAiLabStrategistConfig } from "./aiLabConfig.js";
@@ -173,6 +174,12 @@ interface TickerData {
   currentVolume: number;
   relativeVolume: number;
   sector: string;
+  /** Schwab fundamental.marketCap when present. */
+  marketCapUsd: number | null;
+  /** Schwab reference.assetType / assetMainType when present. */
+  schwabAssetType: string | null;
+  /** Tier, ETF flag, tiered large-print threshold, boundary proximity (Items 2, 4, 19, 26). */
+  marketContext: MarketContextSnapshot;
   earningsWithin48h: boolean;
   earningsDaysAway: number | null;
   earningsDate: string | null;
@@ -312,9 +319,11 @@ interface CuratedExpiration {
   strikes: CuratedStrike[];
 }
 
-/** Schwab GET /marketdata/v1/quotes envelope: symbol → { quote, fundamental }. */
+/** Schwab GET /marketdata/v1/quotes envelope: symbol → { quote, fundamental, reference }. */
 interface SchwabQuotesResponse {
-  [symbol: string]: { quote?: SchwabQuoteRow; fundamental?: SchwabFundamentalRow } | undefined;
+  [symbol: string]:
+    | { quote?: SchwabQuoteRow; fundamental?: SchwabFundamentalRow; reference?: SchwabReferenceRow }
+    | undefined;
 }
 
 interface SchwabQuoteRow {
@@ -325,10 +334,16 @@ interface SchwabQuoteRow {
   securityStatus?: string;
 }
 
+interface SchwabReferenceRow {
+  assetType?: string;
+  assetMainType?: string;
+}
+
 interface SchwabFundamentalRow {
   avg10DaysVolume?: number;
   avgVol10Days?: number;
   sector?: string;
+  marketCap?: number;
 }
 
 /** Schwab GET /marketdata/v1/chains JSON body (partial). */
@@ -1865,6 +1880,16 @@ function buildDataPackage(
     avgVolume20d: tickerData.avgVolume20d,
     relativeVolume: tickerData.relativeVolume,
     sector: tickerData.sector,
+    marketContext: {
+      marketCapUsd: tickerData.marketContext.marketCapUsd,
+      tier: tickerData.marketContext.tier,
+      isEtf: tickerData.marketContext.isEtf,
+      schwabAssetType: tickerData.schwabAssetType,
+      largeNotionalThresholdUsd: tickerData.marketContext.largeNotionalThresholdUsd,
+      tierBoundaryProximity: tickerData.marketContext.tierBoundaryProximity,
+      note:
+        "Large-print persistence and flow scoring use tier-adjusted notional thresholds (higher for mega/large caps, lower for small/micro; ETFs use index/sector/niche bands). tierBoundaryProximity means market cap is within ~10% of a tier boundary — treat flow significance with extra care.",
+    },
     earningsDaysAway: tickerData.earningsDaysAway,
     earningsWithin48h: tickerData.earningsWithin48h,
     analystActions48h: tickerData.analystActions48h,
@@ -2728,7 +2753,7 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
       return { data: null, failureMode: "token_null" };
     }
 
-    const res = await fetch(`${SCHWAB_API}/quotes?symbols=${ticker}&fields=quote,fundamental`, {
+    const res = await fetch(`${SCHWAB_API}/quotes?symbols=${ticker}&fields=quote,fundamental,reference`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
@@ -2737,8 +2762,11 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
     }
 
     const data = (await res.json()) as SchwabQuotesResponse;
-    const q = data[ticker]?.quote ?? data[ticker.toUpperCase()]?.quote;
-    const f = data[ticker]?.fundamental ?? data[ticker.toUpperCase()]?.fundamental ?? {};
+    const upper = ticker.toUpperCase();
+    const entry = data[ticker] ?? data[upper];
+    const q = entry?.quote;
+    const f = entry?.fundamental ?? {};
+    const ref = entry?.reference;
     if (!q) {
       logger.warn({ ticker, returnedKeys: Object.keys(data ?? {}) }, "StrategistV2: fetchTickerData failed — symbol missing from response");
       return { data: null, failureMode: "symbol_missing" };
@@ -2747,8 +2775,22 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
     const price = q.lastPrice ?? q.mark ?? 0;
     const avgVol = f.avg10DaysVolume ?? f.avgVol10Days ?? 1;
     const currentVol = q.totalVolume ?? 0;
+    const rawCap = f.marketCap;
+    const marketCapUsd =
+      typeof rawCap === "number" && Number.isFinite(rawCap) && rawCap > 0 ? rawCap : null;
+    const schwabAssetType =
+      typeof ref?.assetType === "string"
+        ? ref.assetType
+        : typeof ref?.assetMainType === "string"
+          ? ref.assetMainType
+          : null;
+    const marketContext = buildMarketContextSnapshot({
+      ticker: upper,
+      marketCapUsd,
+      assetType: schwabAssetType,
+    });
 
-    const eventResult = checkEventConflicts(ticker, 45, "iron_condor");
+    void checkEventConflicts(ticker, 45, "iron_condor");
     // Single source of truth: Benzinga primary + Yahoo fallback (cached 6h).
     // Replaces the legacy MEGA_EARNINGS hardcoded list which only covered ~mega caps.
     const earningsInfo = await getNextEarningsDate(ticker).catch(() => null);
@@ -2777,6 +2819,9 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
         currentVolume: currentVol,
         relativeVolume: avgVol > 0 ? currentVol / avgVol : 1,
         sector: f.sector ?? "Unknown",
+        marketCapUsd,
+        schwabAssetType,
+        marketContext,
         earningsWithin48h,
         earningsDaysAway,
         earningsDate: earningsInfo?.earningsDate ?? null,
