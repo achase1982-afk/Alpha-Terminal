@@ -7,6 +7,8 @@
  */
 export interface HealthStatus {
   status: string;
+  /** Git commit for the running API image when the host sets RAILWAY_GIT_COMMIT_SHA (or similar). */
+  deployRevision?: string;
 }
 
 export interface AuthUrlResponse {

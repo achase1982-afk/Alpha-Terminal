@@ -296,6 +296,12 @@ components:
       properties:
         status:
           type: string
+        deployRevision:
+          type: string
+          description: >
+            Git commit SHA (short or full) for the running API image, when the
+            host injects it (e.g. Railway). Lets clients confirm they are not
+            hitting a stale deploy.
       required:
         - status
 
