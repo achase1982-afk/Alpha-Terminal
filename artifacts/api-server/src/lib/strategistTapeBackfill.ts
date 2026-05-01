@@ -23,7 +23,14 @@ const QUOTE_WINDOW_MS = 120_000;
 const QUOTE_PREPAD_MS = 5_000;
 const TRADE_PAGE_LIMIT = 1000;
 const QUOTE_PAGE_LIMIT = 1000;
-const DEFAULT_BUDGET_MS = 25_000;
+/** Overall wall-clock budget for the whole symbol backfill (many OCC roots). */
+const DEFAULT_BUDGET_MS = 180_000;
+/** Hard cap on wall time spent inside a single OCC (fetch + classify + DB). */
+const PER_ROOT_MAX_MS = 18_000;
+/** Minimum slice reserved for each remaining OCC so progress stays fair vs one slow contract. */
+const PER_ROOT_MIN_MS = 2_500;
+/** Upper bound on a single Polygon HTTP round-trip during backfill. */
+const PER_FETCH_HTTP_MS = 14_000;
 
 export type TapeBackfillStatusValue = "complete" | "partial" | "failed" | "skipped";
 
@@ -304,7 +311,10 @@ async function fetchPaged(firstUrl: string, apiKey: string, deadlineMs: number):
     : `${firstUrl}${firstUrl.includes("?") ? "&" : "?"}apiKey=${encodeURIComponent(apiKey)}`;
   let truncated = false;
   while (url && Date.now() < deadlineMs) {
-    const r = await fetch(url, { signal: AbortSignal.timeout(25_000) });
+    const remaining = deadlineMs - Date.now();
+    if (remaining <= 0) break;
+    const httpMs = Math.min(PER_FETCH_HTTP_MS, Math.max(800, remaining));
+    const r = await fetch(url, { signal: AbortSignal.timeout(httpMs) });
     if (r.status === 429) {
       truncated = true;
       break;
@@ -487,12 +497,17 @@ export async function runStrategistTapeBackfill(args: {
   let anyTruncated = false;
   let anyError = false;
 
-  for (const occ of occList) {
-    if (Date.now() >= deadline) {
+  for (let occIdx = 0; occIdx < occList.length; occIdx++) {
+    const occ = occList[occIdx]!;
+    const budgetLeft = deadline - Date.now();
+    if (budgetLeft <= 0) {
       anyTruncated = true;
       break;
     }
-    const occDeadline = Math.min(deadline, Date.now() + Math.max(5_000, Math.floor(budgetMs / Math.max(1, occList.length))));
+    const remainingRoots = occList.length - occIdx;
+    const fairSlice = Math.floor(budgetLeft / Math.max(1, remainingRoots));
+    const rootBudget = Math.min(PER_ROOT_MAX_MS, Math.max(PER_ROOT_MIN_MS, fairSlice));
+    const occDeadline = Math.min(deadline, Date.now() + Math.min(rootBudget, budgetLeft));
 
     const meta = parseOccMeta(occ);
     if (!meta) {
@@ -591,53 +606,46 @@ export async function runStrategistTapeBackfill(args: {
       });
     }
 
-    if (rowsToInsert.length > 0) {
-      try {
-        const ins = await db
-          .insert(optionsFlowRawTradesTable)
-          .values(rowsToInsert)
-          .onConflictDoNothing({
-            target: [
-              optionsFlowRawTradesTable.underlyingSymbol,
-              optionsFlowRawTradesTable.date,
-              optionsFlowRawTradesTable.sourceTradeId,
-            ],
-          })
-          .returning({ id: optionsFlowRawTradesTable.id });
-        tradesInserted += ins.length;
-      } catch (err) {
-        logFlowPipelineWarn(
-          "tape_backfill_insert",
-          "strategistTapeBackfill: batch insert failed",
-          { err, occ, ticker, rowCount: rowsToInsert.length },
-        );
-        anyError = true;
-      }
-    }
-
     try {
-      await db
-        .insert(optionsTapeBackfillOccCacheTable)
-        .values({
-          ticker,
-          sessionDate,
-          occ,
-          lastCoverageEndNs: lteNs,
-        })
-        .onConflictDoUpdate({
-          target: [
-            optionsTapeBackfillOccCacheTable.ticker,
-            optionsTapeBackfillOccCacheTable.sessionDate,
-            optionsTapeBackfillOccCacheTable.occ,
-          ],
-          set: { lastCoverageEndNs: lteNs, updatedAt: new Date() },
-        });
+      await db.transaction(async (tx) => {
+        if (rowsToInsert.length > 0) {
+          const ins = await tx
+            .insert(optionsFlowRawTradesTable)
+            .values(rowsToInsert)
+            .onConflictDoNothing({
+              target: [
+                optionsFlowRawTradesTable.underlyingSymbol,
+                optionsFlowRawTradesTable.date,
+                optionsFlowRawTradesTable.sourceTradeId,
+              ],
+            })
+            .returning({ id: optionsFlowRawTradesTable.id });
+          tradesInserted += ins.length;
+        }
+        await tx
+          .insert(optionsTapeBackfillOccCacheTable)
+          .values({
+            ticker,
+            sessionDate,
+            occ,
+            lastCoverageEndNs: lteNs,
+          })
+          .onConflictDoUpdate({
+            target: [
+              optionsTapeBackfillOccCacheTable.ticker,
+              optionsTapeBackfillOccCacheTable.sessionDate,
+              optionsTapeBackfillOccCacheTable.occ,
+            ],
+            set: { lastCoverageEndNs: lteNs, updatedAt: new Date() },
+          });
+      });
     } catch (err) {
       logFlowPipelineWarn(
-        "tape_backfill_occ_cache",
-        "strategistTapeBackfill: occ cache upsert skipped",
-        { err, occ },
+        "tape_backfill_occ_commit",
+        "strategistTapeBackfill: per-OCC insert/cache transaction failed",
+        { err, occ, ticker, rowCount: rowsToInsert.length },
       );
+      anyError = true;
     }
 
     occCompleted++;
