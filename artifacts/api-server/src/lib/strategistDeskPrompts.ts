@@ -23,10 +23,19 @@ OUTPUT STYLE (strict, Catalyst desk):
 - Do not name data vendors, brokers, or third-party market-data or news-distribution feeds (Polygon, IBKR, etc.) and do not use pipeline narration ("the data package", "the feed", "our flow data", "the API", "the file").
 - Write as if you are reading the calendar and name-specific developments directly; omit retrieval mechanics entirely.`;
 
+/** Item 20: literal data-state vocabulary aligned with dataQualitySummary / schemaVersion. */
+const DATA_STATE_LANGUAGE_RULES = `
+
+DATA STATE (literal labels only):
+- Describe inputs using the **states** and **flags** in **dataQualitySummary** at the top of the JSON (e.g. present, absent, usable, degraded, missing_or_indeterminate, regression_fit, fallback_defaults). Do not substitute colloquial words like "the feed" or "full data" for those labels.
+- Do not claim the tape is "complete" unless **dataQualitySummary.flow.tapeBackfillStatus** is literally **complete** (or the field explicitly documents otherwise).
+- If **dataQualitySummary.flags** is non-empty, mention the relevant flag(s) when they affect your conclusion.
+- **schemaVersion** is for client compatibility only; do not discuss schema or versioning in prose.`;
+
 function snapshotBlock(dataPackage: string): string {
   return `Market snapshot for this name (facts below only; use what is present and do not invent):
 
-${dataPackage}`;
+${dataPackage}${DATA_STATE_LANGUAGE_RULES}`;
 }
 
 /** Vol desk: surface-only voice (no vendor / pipeline attribution). */
@@ -48,7 +57,7 @@ You are not providing liquidity to smarter money. If the surface does not show a
 For each ticker, produce structured output identifying:
 - Where IV percentile sits and what regime that implies (use **ivr** with **ivrContext** when present)
 - The shape of the term structure and any dislocations (cite **termStructure5pt** expiries and ATM IVs when the array is present, not only front vs back month)
-- The skew profile and what it tells you about positioning (cite **skew25Delta** when non-null; if null and **skew25DeltaReason** is set, say skew is indeterminate from chain)
+- The skew profile and what it tells you about positioning (cite **skew25Delta** when non-null; if **skew25DeltaReason** starts with `skew_25d_iv_ceiling`, the skew used a 20Δ or 15Δ proxy because true 25Δ legs hit the IV ceiling — say so explicitly; if null and **skew25DeltaReason** is set otherwise, say skew is indeterminate from chain)
 - The implied vs realized comparison concretely (cite **realizedVol** HV20/HV30 when present; reference **impliedMove** vs spot when present)
 - A read that names specific structures that capture your view, with specific DTE windows and approximate strike placement
 
@@ -242,6 +251,7 @@ ${catalystRead}
 
 Data package:
 ${dataPackage}
+${DATA_STATE_LANGUAGE_RULES}
 
 ${OUTPUT_NO_SOURCE_RULES}
 
