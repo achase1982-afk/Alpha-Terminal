@@ -23,6 +23,13 @@ OUTPUT STYLE (strict, Catalyst desk):
 - Do not name data vendors, brokers, or third-party market-data or news-distribution feeds (Polygon, IBKR, etc.) and do not use pipeline narration ("the data package", "the feed", "our flow data", "the API", "the file").
 - Write as if you are reading the calendar and name-specific developments directly; omit retrieval mechanics entirely.`;
 
+/**
+ * Machine prefix for Item 17 skew25DeltaReason when true 25Δ legs hit the IV ceiling
+ * (see strategistV2 computeSkew25DeltaForChain). Kept as a normal string constant so
+ * prompt text never nests backticks inside large template literals (esbuild-safe).
+ */
+const SKEW_25D_IV_CEILING_REASON_PREFIX = "skew_25d_iv_ceiling" as const;
+
 /** Item 20: literal data-state vocabulary aligned with dataQualitySummary / schemaVersion. */
 const DATA_STATE_LANGUAGE_RULES = `
 
@@ -57,7 +64,7 @@ You are not providing liquidity to smarter money. If the surface does not show a
 For each ticker, produce structured output identifying:
 - Where IV percentile sits and what regime that implies (use **ivr** with **ivrContext** when present)
 - The shape of the term structure and any dislocations (cite **termStructure5pt** expiries and ATM IVs when the array is present, not only front vs back month)
-- The skew profile and what it tells you about positioning (cite **skew25Delta** when non-null; if **skew25DeltaReason** starts with the literal prefix "skew_25d_iv_ceiling", the skew used a 20Δ or 15Δ proxy because true 25Δ legs hit the IV ceiling — say so explicitly; if null and **skew25DeltaReason** is set otherwise, say skew is indeterminate from chain)
+- The skew profile and what it tells you about positioning (cite **skew25Delta** when non-null; if **skew25DeltaReason** starts with the machine prefix ${SKEW_25D_IV_CEILING_REASON_PREFIX}, the skew used a 20Δ or 15Δ proxy because true 25Δ legs hit the IV ceiling — say so explicitly; if null and **skew25DeltaReason** is set otherwise, say skew is indeterminate from chain)
 - The implied vs realized comparison concretely (cite **realizedVol** HV20/HV30 when present; reference **impliedMove** vs spot when present)
 - A read that names specific structures that capture your view, with specific DTE windows and approximate strike placement
 
