@@ -1,7 +1,6 @@
 import { db, optionsFlowRawTradesTable, optionsTapeBackfillOccCacheTable } from "@workspace/db";
 import { logger } from "./logger.js";
 import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
-import { parseOcc } from "./optionsFlowPersistence.js";
 import { getContract20dBaseline } from "./optionsBaselines.js";
 import { fetchSchwabMarketSnapshot } from "./schwabMarketSnapshot.js";
 import { buildMarketContextSnapshot } from "./flowMarketContext.js";
@@ -14,6 +13,7 @@ import { probePolygonRate } from "./polygonRateProbe.js";
 import { classifyForFlowPersistence } from "./optionsTradeClassifier.js";
 import { flushFlowPersistenceNow } from "./optionsFlowPersistence.js";
 import { runRollupOnceForSymbol } from "./optionsFlowRollup.js";
+import { FlowLegWindow } from "./flowMultilegExtras.js";
 
 const POLYGON_API = "https://api.polygon.io";
 const MAX_OCC = 50;
@@ -460,8 +460,11 @@ export async function runStrategistTapeBackfill(args: {
     const { rows: tradeRows, truncated: trTr } = await fetchPaged(tradeUrl, apiKey, occDeadline);
     if (trTr) anyTruncated = true;
     const parsed = parseTrades(occ, tradeRows);
+    parsed.sort((a, b) => a.tsMs - b.tsMs);
     const { quotes, truncated: trQ } = await fetchQuotesWindowed(occ, apiKey, parsed, gteNs, lteNs, occDeadline);
     if (trQ) anyTruncated = true;
+
+    const occLegWindow = new FlowLegWindow();
 
     const rowsToInsert: Array<typeof optionsFlowRawTradesTable.$inferInsert> = [];
     for (const t of parsed) {
@@ -479,6 +482,17 @@ export async function runStrategistTapeBackfill(args: {
       const dteDays = dteCalendarDays(meta.expiration, t.tsMs);
       const sessionPhase = sessionPhaseFromTradeMs(t.tsMs);
       const venueClass = venueClassFromExchangeId(t.exchangeId);
+      const sample = {
+        tsMs: t.tsMs,
+        occ,
+        strike: meta.strike,
+        expiration: meta.expiration,
+        side: cl.side,
+        size: t.size,
+        notional: cl.notional,
+      };
+      const ml = occLegWindow.annotate(ticker, sample);
+      occLegWindow.record(ticker, sample);
       rowsToInsert.push({
         underlyingSymbol: ticker,
         date: sessionDate,
@@ -505,6 +519,9 @@ export async function runStrategistTapeBackfill(args: {
         marketCapTier: marketCtx.tier,
         notionalThresholdUsd: marketCtx.largeNotionalThresholdUsd,
         aggressorConfidence: cl.aggressorConfidence,
+        syntheticLegGroupId: ml.syntheticLegGroupId,
+        multiLegConfidence: ml.multiLegConfidence,
+        extras: ml.extras,
       });
     }
 

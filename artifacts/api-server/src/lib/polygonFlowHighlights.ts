@@ -46,6 +46,9 @@ export interface FlowTopPrintRow {
   isBlock: boolean;
   isSweep: boolean;
   side: "ask" | "bid" | "mid" | null;
+  syntheticLegGroupId?: string | null;
+  multiLegConfidence?: string | null;
+  extras?: Record<string, unknown> | null;
 }
 
 /** Per-strike aggressor mix from session prints (ask=buyer-lean, bid=seller-lean). */
@@ -258,6 +261,9 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
         isBlock: optionsFlowRawTradesTable.isBlock,
         isSweep: optionsFlowRawTradesTable.isSweep,
         side: optionsFlowRawTradesTable.side,
+        syntheticLegGroupId: optionsFlowRawTradesTable.syntheticLegGroupId,
+        multiLegConfidence: optionsFlowRawTradesTable.multiLegConfidence,
+        extras: optionsFlowRawTradesTable.extras,
       })
       .from(optionsFlowRawTradesTable)
       .where(and(
@@ -361,6 +367,9 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
       isBlock: Boolean(r.isBlock),
       isSweep: Boolean(r.isSweep),
       side: r.side === "ask" || r.side === "bid" || r.side === "mid" ? r.side : null,
+      syntheticLegGroupId: r.syntheticLegGroupId ?? null,
+      multiLegConfidence: r.multiLegConfidence ?? null,
+      extras: r.extras && typeof r.extras === "object" ? (r.extras as Record<string, unknown>) : null,
     }));
 
     return {

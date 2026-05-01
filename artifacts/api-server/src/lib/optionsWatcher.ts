@@ -1,5 +1,5 @@
 import { logger } from "./logger.js";
-import { enqueueClassifiedTrade } from "./optionsFlowPersistence.js";
+import { enqueueClassifiedTrade, parseOcc } from "./optionsFlowPersistence.js";
 import { classifyForFlowPersistence } from "./optionsTradeClassifier.js";
 import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 import { fetchPolygonChain, type PolygonParsedContract } from "./polygonChain.js";
@@ -20,18 +20,7 @@ import {
   venueClassFromExchangeId,
 } from "./flowTradeEnrichment.js";
 import { getContracts20dBaselineBatch } from "./optionsBaselines.js";
-
-function parseOccLocal(occ: string): { expiration: string } | null {
-  if (!occ.startsWith("O:")) return null;
-  const body = occ.slice(2);
-  const m = body.match(/^([A-Z0-9.]+?)(\d{6})([CP])(\d{8})$/);
-  if (!m) return null;
-  const [, , yymmdd] = m;
-  const yy = 2000 + Number(yymmdd.slice(0, 2));
-  const mm = yymmdd.slice(2, 4);
-  const dd = yymmdd.slice(4, 6);
-  return { expiration: `${yy}-${mm}-${dd}` };
-}
+import { FlowLegWindow } from "./flowMultilegExtras.js";
 
 // ── Persistent Polygon options watcher (Part 2) ──────────────────────
 //
@@ -76,6 +65,9 @@ const CHAIN_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 // Watcher tick cadence for periodic prune + tier reconciliation.
 const WATCHER_TICK_INTERVAL_MS = 60 * 1000;
 const MARKET_SNAPSHOT_TTL_MS = 4 * 60 * 60 * 1000;
+
+const flowLegWindow = new FlowLegWindow();
+
 export type Tier = "HOT" | "WARM" | "COLD";
 
 export interface WatchlistInput {
@@ -370,8 +362,8 @@ function handleTrade(t: PolygonOptionTrade): void {
     openInterest: oi > 0 ? oi : null,
   });
   const { isSweep, isBlockForDb, isLarge, shouldPersist, side: aggressorSide } = classified;
-  const meta = parseOccLocal(t.sym);
-  const dteDays = meta ? dteCalendarDays(meta.expiration, st.lastTradeTs) : null;
+  const occParsed = parseOcc(t.sym);
+  const dteDays = occParsed ? dteCalendarDays(occParsed.expiration, st.lastTradeTs) : null;
   const sessionPhase = sessionPhaseFromTradeMs(st.lastTradeTs);
   const venueClass = venueClassFromExchangeId(t.exchange);
 
@@ -409,6 +401,25 @@ function handleTrade(t: PolygonOptionTrade): void {
         { occ: t.sym, ticker, bid: nbbo.bid, ask: nbbo.ask, price: t.price },
       );
     }
+    let syntheticLegGroupId: string | null | undefined;
+    let multiLegConfidence: string | null | undefined;
+    let extras: Record<string, unknown> | null | undefined;
+    if (occParsed) {
+      const sample = {
+        tsMs: st.lastTradeTs,
+        occ: t.sym,
+        strike: occParsed.strike,
+        expiration: occParsed.expiration,
+        side: aggressorSide,
+        size: t.size,
+        notional,
+      };
+      const ml = flowLegWindow.annotate(ticker, sample);
+      flowLegWindow.record(ticker, sample);
+      syntheticLegGroupId = ml.syntheticLegGroupId ?? undefined;
+      multiLegConfidence = ml.multiLegConfidence ?? undefined;
+      extras = ml.extras ?? undefined;
+    }
     enqueueClassifiedTrade({
       occ: t.sym,
       ticker,
@@ -430,6 +441,9 @@ function handleTrade(t: PolygonOptionTrade): void {
       marketCapTier: mc?.tier ?? null,
       notionalThresholdUsd: mc?.largeNotionalThresholdUsd ?? null,
       aggressorConfidence: classified.aggressorConfidence,
+      syntheticLegGroupId,
+      multiLegConfidence,
+      extras,
     });
     // Cap event log per ticker to keep memory bounded. Mirror TTL-prune
     // behavior so liveEventCount stays consistent with retained events

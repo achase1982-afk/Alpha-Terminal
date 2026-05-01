@@ -38,6 +38,9 @@ interface PendingTrade {
   marketCapTier?: string | null;
   notionalThresholdUsd?: number | null;
   aggressorConfidence?: string | null;
+  syntheticLegGroupId?: string | null;
+  multiLegConfidence?: string | null;
+  extras?: Record<string, unknown> | null;
 }
 
 const buffer: PendingTrade[] = [];
@@ -131,6 +134,9 @@ export function enqueueClassifiedTrade(args: {
   marketCapTier?: string | null;
   notionalThresholdUsd?: number | null;
   aggressorConfidence?: string | null;
+  syntheticLegGroupId?: string | null;
+  multiLegConfidence?: string | null;
+  extras?: Record<string, unknown> | null;
 }): void {
   const parsed = parseOcc(args.occ);
   if (!parsed) return;
@@ -161,6 +167,9 @@ export function enqueueClassifiedTrade(args: {
     marketCapTier: args.marketCapTier ?? null,
     notionalThresholdUsd: args.notionalThresholdUsd ?? null,
     aggressorConfidence: args.aggressorConfidence ?? null,
+    syntheticLegGroupId: args.syntheticLegGroupId ?? null,
+    multiLegConfidence: args.multiLegConfidence ?? null,
+    extras: args.extras ?? null,
   });
   totalQueued++;
   if (buffer.length >= FLUSH_BATCH_MAX) void flush();
