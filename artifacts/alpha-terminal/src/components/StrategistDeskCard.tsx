@@ -119,7 +119,7 @@ export function buildDeskCardPlainText(args: {
   const { deskResult, generatedAt, strategistOutcome, blockReason } = args;
   const { pm, vol, flow, catalyst, errors } = deskResult;
   const isTrade = pm.decision === "trade";
-  const banner = deskBanner(strategistOutcome, blockReason, !isTrade);
+  const banner = deskBanner(strategistOutcome, blockReason, !isTrade, deskResult.soloDeskJsonDegraded);
 
   const lines: string[] = [];
   if (banner) {
@@ -215,7 +215,18 @@ function deskBanner(
   outcome: StrategistOutcome | undefined,
   blockReason: BlockReason | undefined,
   pmPass: boolean,
+  soloDeskJsonDegraded?: DeskResult["soloDeskJsonDegraded"],
 ): { title: string; body: string; border: string; bg: string; accent: string } | null {
+  if (soloDeskJsonDegraded === "schema_validation_failed_after_retry") {
+    return {
+      title: "Solo Desk — Output Parse Failed",
+      body:
+        "The consolidated JSON did not match the required schema after retry. The PASS below is a safety stub, not a deliberate no-trade from the model. Retry the run or switch model/provider.",
+      border: "rgba(239,68,68,0.45)",
+      bg: "rgba(239,68,68,0.1)",
+      accent: PAL.red,
+    };
+  }
   if (outcome === "ANALYSIS_INCOMPLETE" || blockReason?.category === "ANALYSIS_INCOMPLETE") {
     return {
       title: "Analysis Incomplete",
@@ -252,7 +263,7 @@ export function StrategistDeskCard({
 }) {
   const { pm, vol, flow, catalyst, errors } = deskResult;
   const isTrade = pm.decision === "trade";
-  const banner = deskBanner(strategistOutcome, blockReason, !isTrade);
+  const banner = deskBanner(strategistOutcome, blockReason, !isTrade, deskResult.soloDeskJsonDegraded);
   const [copiedFull, setCopiedFull] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
 

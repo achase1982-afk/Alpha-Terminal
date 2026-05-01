@@ -91,6 +91,11 @@ export interface DeskResult {
   pm: PmOutput;
   /** True when PM JSON failed schema validation after retry. PM fields are a fallback; use strategistOutcome ANALYSIS_INCOMPLETE on the parent result. */
   pmOutputIncomplete?: boolean;
+  /**
+   * Solo Desk only: set when consolidated JSON failed schema validation after retry.
+   * Lets the UI distinguish a stub `pass` from a genuine model pass.
+   */
+  soloDeskJsonDegraded?: "schema_validation_failed_after_retry";
   models: {
     vol: string;
     flow: string;
