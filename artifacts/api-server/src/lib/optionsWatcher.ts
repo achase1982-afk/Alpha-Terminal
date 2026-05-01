@@ -19,6 +19,7 @@ import {
   sessionPhaseFromTradeMs,
   venueClassFromExchangeId,
 } from "./flowTradeEnrichment.js";
+import { getContracts20dBaselineBatch } from "./optionsBaselines.js";
 
 function parseOccLocal(occ: string): { expiration: string } | null {
   if (!occ.startsWith("O:")) return null;
@@ -99,6 +100,8 @@ interface PerTickerState {
   contractType: Map<string, "C" | "P">; // OCC → side, for directional balance
   /** Latest chain row per subscribed OCC (OI, volume for classification). */
   chainByOcc: Map<string, { openInterest: number; volume: number }>;
+  /** 20d avg daily contract volume per OCC (polygon_options_history batch). */
+  contractBaselineAvgVol20d: Map<string, number>;
   /** Schwab market snapshot for tiered notional thresholds. */
   marketContext: import("./flowMarketContext.js").MarketContextSnapshot | null;
   marketSnapshotFetchedAt: number;
@@ -355,13 +358,15 @@ function handleTrade(t: PolygonOptionTrade): void {
   const chainRow = st.chainByOcc.get(t.sym);
   const oi = chainRow?.openInterest ?? 0;
   const mc = st.marketContext;
+  const baselineVol = st.contractBaselineAvgVol20d.get(t.sym);
   const classified = classifyForFlowPersistence({
     price: t.price,
     size: t.size,
     conditions: t.conditions,
     nbbo: nbbo ? { bid: nbbo.bid, ask: nbbo.ask } : null,
     largeNotionalThresholdUsd: mc?.largeNotionalThresholdUsd,
-    avgDailyContractVolume20d: null,
+    avgDailyContractVolume20d:
+      typeof baselineVol === "number" && baselineVol > 0 ? baselineVol : null,
     openInterest: oi > 0 ? oi : null,
   });
   const { isSweep, isBlockForDb, isLarge, shouldPersist, side: aggressorSide } = classified;
@@ -564,6 +569,7 @@ async function resolveAndSubscribeOne(ticker: string, apiKey: string): Promise<v
   st.lastChainRefreshTs = Date.now();
   st.contractType.clear();
   st.chainByOcc.clear();
+  st.contractBaselineAvgVol20d.clear();
   for (const c of candidates) st.contractType.set(c.symbol, c.type);
   for (const c of candidates) {
     const list = c.type === "C" ? chain.calls : chain.puts;
@@ -574,6 +580,19 @@ async function resolveAndSubscribeOne(ticker: string, apiKey: string): Promise<v
       openInterest: row?.openInterest ?? 0,
       volume: row?.volume ?? 0,
     });
+  }
+  try {
+    const baselineMap = await getContracts20dBaselineBatch(symsToAdd);
+    for (const occ of symsToAdd) {
+      const bl = baselineMap.get(occ);
+      if (bl && bl.avgVolume > 0) st.contractBaselineAvgVol20d.set(occ, bl.avgVolume);
+    }
+  } catch (err) {
+    logFlowPipelineWarn(
+      "watcher_baseline_batch",
+      "optionsWatcher: contract baseline batch failed",
+      { err, ticker, occCount: symsToAdd.length },
+    );
   }
   st.contracts = symsToAdd;
   for (const occ of symsToAdd) occToTicker.set(occ, ticker);
@@ -713,6 +732,7 @@ function makeEmptyTickerState(ticker: string, tier: Tier): PerTickerState {
     lastTradeTs: 0, lastChainRefreshTs: 0,
     contractType: new Map(),
     chainByOcc: new Map(),
+    contractBaselineAvgVol20d: new Map(),
     marketContext: null,
     marketSnapshotFetchedAt: 0,
   };
