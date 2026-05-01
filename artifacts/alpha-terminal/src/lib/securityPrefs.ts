@@ -8,7 +8,7 @@ export interface SecurityPrefs {
 }
 
 const DEFAULTS: SecurityPrefs = {
-  sessionTimeout: 30,
+  sessionTimeout: 60,
   biometricLogin: false,
   biometricSensitiveData: false,
   biometricTradeConfirmation: false,
@@ -16,9 +16,10 @@ const DEFAULTS: SecurityPrefs = {
 
 export const TIMEOUT_OPTIONS: { value: number; label: string }[] = [
   { value: 15, label: "15 min" },
-  { value: 30, label: "30 min" },
-  { value: 60, label: "60 min" },
-  { value: 90, label: "90 min" },
+  { value: 60, label: "1 h" },
+  { value: 240, label: "4 h" },
+  { value: 480, label: "8 h" },
+  { value: 1440, label: "24 h" },
   { value: 0, label: "Never" },
 ];
 
@@ -41,10 +42,25 @@ export function readSecurityPrefs(): SecurityPrefs {
       return { ...DEFAULTS };
     }
     const parsed = JSON.parse(raw);
+    let sessionTimeout = parsed.sessionTimeout;
+    if (!VALID_TIMEOUTS.has(sessionTimeout)) {
+      if (sessionTimeout === 30 || sessionTimeout === 90) {
+        sessionTimeout = 60;
+        const migrated = {
+          ...DEFAULTS,
+          ...parsed,
+          sessionTimeout,
+          biometricLogin: typeof parsed.biometricLogin === "boolean" ? parsed.biometricLogin : DEFAULTS.biometricLogin,
+          biometricSensitiveData: typeof parsed.biometricSensitiveData === "boolean" ? parsed.biometricSensitiveData : DEFAULTS.biometricSensitiveData,
+          biometricTradeConfirmation: typeof parsed.biometricTradeConfirmation === "boolean" ? parsed.biometricTradeConfirmation : DEFAULTS.biometricTradeConfirmation,
+        };
+        writeSecurityPrefs(migrated);
+        return migrated;
+      }
+      sessionTimeout = DEFAULTS.sessionTimeout;
+    }
     return {
-      sessionTimeout: VALID_TIMEOUTS.has(parsed.sessionTimeout)
-        ? parsed.sessionTimeout
-        : DEFAULTS.sessionTimeout,
+      sessionTimeout,
       biometricLogin: typeof parsed.biometricLogin === "boolean" ? parsed.biometricLogin : DEFAULTS.biometricLogin,
       biometricSensitiveData: typeof parsed.biometricSensitiveData === "boolean" ? parsed.biometricSensitiveData : DEFAULTS.biometricSensitiveData,
       biometricTradeConfirmation: typeof parsed.biometricTradeConfirmation === "boolean" ? parsed.biometricTradeConfirmation : DEFAULTS.biometricTradeConfirmation,

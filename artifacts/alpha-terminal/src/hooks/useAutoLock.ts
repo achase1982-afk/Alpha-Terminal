@@ -17,7 +17,7 @@ function useAuthSignOutSafe() {
 const LAST_ACTIVITY_KEY = "alphaTerminal_lastActivity";
 const WARNING_SECONDS = 60;
 
-export type SessionTimeoutMinutes = 0 | 15 | 30 | 60 | 90;
+export type SessionTimeoutMinutes = 0 | 15 | 60 | 240 | 480 | 1440;
 
 export { TIMEOUT_OPTIONS };
 
