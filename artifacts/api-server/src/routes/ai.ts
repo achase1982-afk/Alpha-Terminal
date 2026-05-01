@@ -29,7 +29,7 @@ import { getDeltaHealth, getSnapshotsForAI, triggerManualSnapshot, triggerEventS
 import { sendPushToAll } from "../lib/pushService.js";
 import { checkEventConflicts, getUpcomingEvents, type EventCheckResult } from "../lib/calendarEventChecker.js";
 import { getNextEarningsDate } from "../lib/earningsService.js";
-import { chainCache, getOrFetchChain, CHAIN_CACHE_TTL, getCachedEconEvents, getCachedRatings } from "./market.js";
+import { chainCache, getOrFetchChain, CHAIN_CACHE_TTL, getCachedEconEvents } from "./market.js";
 import { runDeterministicScan } from "../lib/deterministicScanner.js";
 import { runDiscoveryScan } from "../lib/deterministicScanner.v2.js";
 import { getEquityPCRatio, getIndexPCRatio } from "../lib/polygonPutCallRatio.js";
@@ -2546,12 +2546,7 @@ router.post("/options-strategist", async (req, res) => {
       ? `\n\nUPCOMING ECONOMIC CATALYSTS (next 14 days):\n${upcomingEcon.map(e => `- ${e.date} ${e.time || ""} ${e.eventName}${e.consensus ? ` (consensus: ${e.consensus})` : ""}${e.prior ? ` (prior: ${e.prior})` : ""}`).join("\n")}\nYou MUST factor these catalysts into your trade thesis. If CPI, FOMC, or NFP falls within the strategy's expiration window, mention the volatility risk and how it affects the trade. If a major event is tomorrow or today, explicitly warn about holding through it.`
       : "";
 
-    const recentRatings = getCachedRatings().filter(r => r.ticker === symbol).slice(0, 5);
-    const ratingsBlock = recentRatings.length > 0
-      ? `\n\nRECENT ANALYST ACTIVITY for ${symbol}:\n${recentRatings.map(r => `- ${r.date}: ${r.analyst} ${r.actionCompany} ${r.ratingCurrent}${r.ptCurrent ? ` PT $${parseFloat(r.ptCurrent).toFixed(0)}` : ""}${r.ptPrior ? ` (was $${parseFloat(r.ptPrior).toFixed(0)})` : ""}`).join("\n")}\nMention any relevant analyst sentiment shifts in your narrative.`
-      : "";
-
-    const narrativePrompt = `${STRATEGIST_SYSTEM_PROMPT}${eventGuardPromptBlock}${econBlock}${ratingsBlock}\n\nHere is the payload:\n\n${JSON.stringify(payload, null, 2)}`;
+    const narrativePrompt = `${STRATEGIST_SYSTEM_PROMPT}${eventGuardPromptBlock}${econBlock}\n\nHere is the payload:\n\n${JSON.stringify(payload, null, 2)}`;
     const narrative = await callClaude(narrativePrompt, DEFAULT_MODEL, 0);
 
     return res.json({ strategies, narrative, edge, underlyingPrice, regime, pulse: resolvedPulse, overrideWarning, tickerProfile, chainAnalytics, eventGuard: eventGuardSummary });
@@ -2788,14 +2783,8 @@ router.post("/options-strategist/stream", async (req, res) => {
       ? `\n\nUPCOMING ECONOMIC CATALYSTS (next 14 days):\n${streamUpcomingEcon.map(e => `- ${e.date} ${e.time || ""} ${e.eventName}${e.consensus ? ` (consensus: ${e.consensus})` : ""}${e.prior ? ` (prior: ${e.prior})` : ""}`).join("\n")}\nYou MUST factor these catalysts into your trade thesis. If CPI, FOMC, or NFP falls within the strategy's expiration window, mention the volatility risk and how it affects the trade.`
       : "";
 
-    const streamSymbol = (symbol || "").toUpperCase().trim();
-    const streamRecentRatings = getCachedRatings().filter(r => r.ticker === streamSymbol).slice(0, 5);
-    const streamRatingsBlock = streamRecentRatings.length > 0
-      ? `\n\nRECENT ANALYST ACTIVITY for ${streamSymbol}:\n${streamRecentRatings.map(r => `- ${r.date}: ${r.analyst} ${r.actionCompany} ${r.ratingCurrent}${r.ptCurrent ? ` PT $${parseFloat(r.ptCurrent).toFixed(0)}` : ""}${r.ptPrior ? ` (was $${parseFloat(r.ptPrior).toFixed(0)})` : ""}`).join("\n")}\nMention any relevant analyst sentiment shifts.`
-      : "";
-
     try {
-      const narrativePrompt = `${STRATEGIST_SYSTEM_PROMPT}${streamEventGuardPrompt}${streamEconBlock}${streamRatingsBlock}\n\nHere is the payload:\n\n${JSON.stringify(strategistPayload, null, 2)}`;
+      const narrativePrompt = `${STRATEGIST_SYSTEM_PROMPT}${streamEventGuardPrompt}${streamEconBlock}\n\nHere is the payload:\n\n${JSON.stringify(strategistPayload, null, 2)}`;
 
       await nativeStream({
         prompt: narrativePrompt,
