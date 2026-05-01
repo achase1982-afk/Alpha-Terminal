@@ -7,6 +7,7 @@
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
     "build": "vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
+    "pretypecheck": "pnpm --filter @workspace/api-client-react exec -- sh -c 'rm -f tsconfig.tsbuildinfo && tsc -p tsconfig.json'",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
@@ -45,6 +46,7 @@
     "@tailwindcss/vite": "catalog:",
     "@tanstack/react-query": "catalog:",
     "@types/node": "catalog:",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "catalog:",
@@ -77,6 +79,7 @@
   "dependencies": {
     "@clerk/clerk-react": "^5.61.3",
     "@clerk/themes": "^2.4.57",
+    "qrcode": "^1.5.4",
     "@tanstack/react-virtual": "^3.13.23",
     "lightweight-charts": "^5.1.0",
     "react-markdown": "^10.1.0",

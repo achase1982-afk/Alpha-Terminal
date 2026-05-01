@@ -5,10 +5,7 @@ import { useOptionsSettingsStore } from "@/lib/options-store";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import type { MarketPulseSettings, AllowedStrategy } from "@/types/marketPulse";
 import { STRATEGY_LABELS, ALL_STRATEGIES, ALL_PULSE_INDICATORS } from "@/types/marketPulse";
-import { useAutoLock, TIMEOUT_OPTIONS, type SessionTimeoutMinutes } from "@/hooks/useAutoLock";
 import { useUICustomizationStore, ACCENT_COLORS, type ThemeAccent, type FontSize, type ChartStyle, type GridDensity, type HeaderMode, type BiasScrollSpeed } from "@/lib/ui-customization-store";
-import { readSecurityPrefs, updateSecurityPref, type SecurityPrefs } from "@/lib/securityPrefs";
-import { useBiometricRegistration, useWebAuthnSupported } from "@/hooks/useBiometric";
 import { AuthPanel } from "./AuthPanel";
 import { StrategistSettingsPanel } from "./StrategistSettingsPanel";
 import { StrategistTelemetryPanel } from "./StrategistTelemetryPanel";
@@ -32,6 +29,7 @@ import {
 } from "lucide-react";
 import { MarketCalendar } from "@/components/MarketCalendar";
 import { TelemetryPage, useTelemetryCount } from "@/components/TelemetryPage";
+import { SecurityPrivacyPage } from "@/components/SecurityPrivacyPage";
 import { useAuth } from "@clerk/clerk-react";
 import { signOutWithFullNavigation } from "@/lib/clerkSignOut";
 
@@ -1089,36 +1087,6 @@ function UICustomizationPage() {
   );
 }
 
-function SecurityPrivacyPage() {
-  const { minutes: autoLock, setMinutes: setAutoLock } = useAutoLock();
-  const [secPrefs, setSecPrefs] = useState<SecurityPrefs>(readSecurityPrefs);
-  const handleToggle = (key: keyof SecurityPrefs, value: boolean) => {
-    const updated = updateSecurityPref(key, value);
-    setSecPrefs(updated);
-  };
-
-  return (
-    <div className="space-y-8 max-w-xl mx-auto">
-      <div className="space-y-3">
-        <h3 className="text-xs font-bold text-primary uppercase tracking-widest">Session Timeout</h3>
-        <div className="flex flex-wrap gap-2">
-          {TIMEOUT_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => setAutoLock(opt.value as SessionTimeoutMinutes)}
-              className={`px-3 py-2 rounded text-xs font-bold border transition-all ${autoLock === opt.value ? "bg-primary text-black border-primary" : "bg-card text-muted-foreground border-card-border hover:border-primary/30"}`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-        <p className="font-mono text-[9px] text-muted-foreground/50 leading-relaxed">Signs you out after inactivity.</p>
-      </div>
-
-    </div>
-  );
-}
-
 function SettingInput({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder: string }) {
   return (
     <div className="space-y-1">
@@ -1371,7 +1339,7 @@ function SettingsHubPage({
       </SettingsHubSection>
 
       <SettingsHubSection title="Account">
-        <SettingsHubRow icon={<Shield />} label="Security & Privacy" subtitle="Session timeout, biometric lock" onClick={() => onSelect("Security & Privacy")} />
+        <SettingsHubRow icon={<Shield />} label="Security & Privacy" subtitle="Password, MFA, passkeys, sessions" onClick={() => onSelect("Security & Privacy")} />
       </SettingsHubSection>
     </div>
   );
