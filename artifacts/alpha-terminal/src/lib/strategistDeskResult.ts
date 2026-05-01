@@ -80,4 +80,5 @@ export interface DeskResult {
   };
   errors?: string[];
   pmOutputIncomplete?: boolean;
+  soloDeskJsonDegraded?: "schema_validation_failed_after_retry";
 }

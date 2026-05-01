@@ -15,10 +15,9 @@ import { flushFlowPersistenceNow } from "./optionsFlowPersistence.js";
 import { runRollupOnceForSymbol } from "./optionsFlowRollup.js";
 import { FlowLegWindow } from "./flowMultilegExtras.js";
 import { upsertStrikeVolumeBaselineFromContractBaseline } from "./flowStrikeBaselineDaily.js";
+import type { MarketCapTier } from "./flowMarketContext.js";
 
 const POLYGON_API = "https://api.polygon.io";
-const MAX_OCC = 50;
-const STRIKES_EACH_SIDE = 5;
 const MAX_EXPIRIES = 3;
 const QUOTE_WINDOW_MS = 120_000;
 const QUOTE_PREPAD_MS = 5_000;
@@ -28,6 +27,17 @@ const DEFAULT_BUDGET_MS = 25_000;
 
 export type TapeBackfillStatusValue = "complete" | "partial" | "failed" | "skipped";
 
+export interface TapeBackfillCoverageGeometry {
+  /** Market-cap tier used to pick band width and OCC cap. */
+  marketCapTier: MarketCapTier | string;
+  maxOcc: number;
+  strikesEachSide: number;
+  /** Distinct (expiration, strike) nodes in the ATM band before OCC expansion. */
+  bandNodeCount: number;
+  /** OCC symbols in the band before volume ranking and cap (call+put legs). */
+  occCandidatesBeforeCap: number;
+}
+
 export interface TapeBackfillStatus {
   status: TapeBackfillStatusValue;
   reason: string | null;
@@ -36,6 +46,8 @@ export interface TapeBackfillStatus {
   occRequested: number;
   occCompleted: number;
   tradesInserted: number;
+  /** How session tape OCCs were chosen (tiered band + volume-ranked cap). */
+  coverageGeometry?: TapeBackfillCoverageGeometry;
 }
 
 interface ChainLike {
@@ -44,6 +56,7 @@ interface ChainLike {
   type: string;
   optionType?: string;
   openInterest?: number;
+  volume?: number;
 }
 
 interface CuratedExp {
@@ -116,27 +129,59 @@ function pickExpiries(summary: ChainSummaryLike): string[] {
   return ordered.slice(0, MAX_EXPIRIES);
 }
 
-function strikesAroundAtm(atm: number, chain: ChainLike[], expiration: string): number[] {
+/** Tiered tape sampling: mega/large (and index ETFs) get wider band + higher OCC cap. */
+export function tapeBackfillSamplingFromTier(tier: MarketCapTier | string): { maxOcc: number; strikesEachSide: number } {
+  const t = tier as MarketCapTier;
+  if (t === "mega" || t === "large" || t === "etf_index") return { maxOcc: 100, strikesEachSide: 15 };
+  if (t === "mid" || t === "etf_sector") return { maxOcc: 75, strikesEachSide: 10 };
+  return { maxOcc: 50, strikesEachSide: 5 };
+}
+
+function strikesAroundAtm(atm: number, chain: ChainLike[], expiration: string, strikesEachSide: number): number[] {
   const strikes = new Set<number>();
   for (const c of chain) {
     if (c.expiration !== expiration) continue;
     strikes.add(c.strike);
   }
-  return [...strikes].sort((a, b) => Math.abs(a - atm) - Math.abs(b - atm)).slice(0, STRIKES_EACH_SIDE * 2 + 1);
+  return [...strikes].sort((a, b) => Math.abs(a - atm) - Math.abs(b - atm)).slice(0, strikesEachSide * 2 + 1);
+}
+
+function legVolume(chain: ChainLike[], expiration: string, strike: number, isCall: boolean): number {
+  for (const c of chain) {
+    if (c.expiration !== expiration || c.strike !== strike) continue;
+    const ot = String(c.optionType ?? c.type).toUpperCase();
+    const legCall = ot === "CALL" || c.type === "call";
+    const legPut = ot === "PUT" || c.type === "put";
+    if (isCall && !legCall) continue;
+    if (!isCall && !legPut) continue;
+    const v = c.volume;
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0) return Math.floor(v);
+  }
+  return 0;
+}
+
+export interface TapeOccBuildResult {
+  occs: string[];
+  coverageGeometry: TapeBackfillCoverageGeometry;
 }
 
 export function buildTapeOccList(
   underlying: string,
   chain: ChainLike[],
   summary: ChainSummaryLike,
-): string[] {
+  tier: MarketCapTier | string,
+): TapeOccBuildResult {
+  const { maxOcc, strikesEachSide } = tapeBackfillSamplingFromTier(tier);
   const u = underlying.toUpperCase();
   const exps = pickExpiries(summary);
   const atm = summary.atmStrike;
-  const occs: string[] = [];
-  const seen = new Set<string>();
+  const bandNodes = new Set<string>();
+  const occRows: { occ: string; vol: number }[] = [];
+  const seenOcc = new Set<string>();
+
   for (const exp of exps) {
-    for (const strike of strikesAroundAtm(atm, chain, exp)) {
+    for (const strike of strikesAroundAtm(atm, chain, exp, strikesEachSide)) {
+      bandNodes.add(`${exp}|${strike}`);
       const hasCall = chain.some(
         (c) =>
           c.expiration === exp &&
@@ -151,22 +196,31 @@ export function buildTapeOccList(
       );
       if (hasCall) {
         const occ = chainToOcc(u, exp, strike, true);
-        if (occ && !seen.has(occ)) {
-          seen.add(occ);
-          occs.push(occ);
+        if (occ && !seenOcc.has(occ)) {
+          seenOcc.add(occ);
+          occRows.push({ occ, vol: legVolume(chain, exp, strike, true) });
         }
       }
       if (hasPut) {
         const occ = chainToOcc(u, exp, strike, false);
-        if (occ && !seen.has(occ)) {
-          seen.add(occ);
-          occs.push(occ);
+        if (occ && !seenOcc.has(occ)) {
+          seenOcc.add(occ);
+          occRows.push({ occ, vol: legVolume(chain, exp, strike, false) });
         }
       }
-      if (occs.length >= MAX_OCC) return occs;
     }
   }
-  return occs;
+
+  occRows.sort((a, b) => b.vol - a.vol || a.occ.localeCompare(b.occ));
+  const occs = occRows.slice(0, maxOcc).map((r) => r.occ);
+  const coverageGeometry: TapeBackfillCoverageGeometry = {
+    marketCapTier: tier,
+    maxOcc,
+    strikesEachSide,
+    bandNodeCount: bandNodes.size,
+    occCandidatesBeforeCap: occRows.length,
+  };
+  return { occs, coverageGeometry };
 }
 
 function openInterestForOcc(chain: ChainLike[], meta: { expiration: string; strike: number; optionType: "call" | "put" }): number {
@@ -352,6 +406,8 @@ export async function runStrategistTapeBackfill(args: {
   ticker: string;
   chain: ChainLike[];
   chainSummary: ChainSummaryLike;
+  /** When set (e.g. from Schwab quote context), used for tiered OCC sampling. */
+  marketCapTier?: MarketCapTier | string;
   budgetMs?: number;
 }): Promise<TapeBackfillStatus> {
   const ticker = args.ticker.toUpperCase();
@@ -403,7 +459,14 @@ export async function runStrategistTapeBackfill(args: {
     };
   }
 
-  const occList = buildTapeOccList(ticker, args.chain, args.chainSummary);
+  const schwabSnap = await fetchSchwabMarketSnapshot(ticker);
+  const marketCtx = buildMarketContextSnapshot({
+    ticker,
+    marketCapUsd: schwabSnap?.marketCapUsd ?? null,
+    assetType: schwabSnap?.assetType ?? null,
+  });
+  const tier = args.marketCapTier ?? marketCtx.tier;
+  const { occs: occList, coverageGeometry } = buildTapeOccList(ticker, args.chain, args.chainSummary, tier);
   if (occList.length === 0) {
     return {
       status: "skipped",
@@ -413,16 +476,9 @@ export async function runStrategistTapeBackfill(args: {
       occRequested: 0,
       occCompleted: 0,
       tradesInserted: 0,
+      coverageGeometry,
     };
   }
-
-  const schwabSnap = await fetchSchwabMarketSnapshot(ticker);
-  const marketCtx = buildMarketContextSnapshot({
-    ticker,
-    marketCapUsd: schwabSnap?.marketCapUsd ?? null,
-    assetType: schwabSnap?.assetType ?? null,
-  });
-
   const startMs = openMs;
   const gteNs = BigInt(startMs) * 1_000_000n;
   const lteNs = BigInt(endMs) * 1_000_000n;
@@ -604,7 +660,7 @@ export async function runStrategistTapeBackfill(args: {
   else if (anyError || anyTruncated || occCompleted < occList.length) status = "partial";
 
   logger.info(
-    { ticker, status, occCompleted, occRequested: occList.length, tradesInserted, anyTruncated },
+    { ticker, status, occCompleted, occRequested: occList.length, tradesInserted, anyTruncated, coverageGeometry },
     "strategistTapeBackfill: done",
   );
 
@@ -616,5 +672,6 @@ export async function runStrategistTapeBackfill(args: {
     occRequested: occList.length,
     occCompleted,
     tradesInserted,
+    coverageGeometry,
   };
 }

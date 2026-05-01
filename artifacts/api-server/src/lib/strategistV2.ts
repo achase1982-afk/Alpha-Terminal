@@ -323,10 +323,22 @@ type TelemetryToxicGatePayload = {
   path_b_check: ToxicGateSnapshot["pathBCheck"];
 };
 
+/** Per-leg curated chain row; IV matches summarizeOptionsChain (normalizeStrategistIv). */
+interface CuratedOptionLeg {
+  bid: number;
+  ask: number;
+  iv: number;
+  delta: number;
+  volume: number;
+  oi: number;
+  /** True when chain IV hit the strategist ceiling or was marked unreliable by normalization. */
+  iv_unreliable?: boolean;
+}
+
 interface CuratedStrike {
   strike: number;
-  call?: { bid: number; ask: number; iv: number; delta: number; volume: number; oi: number };
-  put?: { bid: number; ask: number; iv: number; delta: number; volume: number; oi: number };
+  call?: CuratedOptionLeg;
+  put?: CuratedOptionLeg;
   unusualCall?: true;
   unusualPut?: true;
 }
@@ -618,6 +630,9 @@ export async function analyzeTickerV2(
       null);
   }
 
+  const analystRatingsForActions = await fetchPolygonAnalystRatings(ticker, 50);
+  tickerData.analystActions48h = analystActionsFromPolygonRatings(analystRatingsForActions?.ratings);
+
   const chainResult = await fetchOptionsChain(ticker, settings);
   assertAnalyzeNotCancelled(progress);
   const chain = chainResult.chain;
@@ -719,6 +734,7 @@ export async function analyzeTickerV2(
             dte: e.dte,
           })),
         },
+        marketCapTier: tickerData.marketContext.tier,
       });
       logger.info(
         {
@@ -756,9 +772,8 @@ export async function analyzeTickerV2(
     logger.info({ ticker }, "StrategistV2: no Polygon flow highlights for ticker");
   }
 
-  const [analystConsensus, analystRatingsPack, companyFinancials] = await Promise.all([
+  const [analystConsensus, companyFinancials] = await Promise.all([
     fetchPolygonAnalystConsensus(ticker),
-    fetchPolygonAnalystRatings(ticker, 30),
     fetchCompanyFinancialsForSymbol(ticker),
   ]);
   assertAnalyzeNotCancelled(progress);
@@ -782,7 +797,7 @@ export async function analyzeTickerV2(
     {
       chainSource: dataSource,
       analystConsensus,
-      analystRatings: analystRatingsPack?.ratings ?? null,
+      analystRatings: analystRatingsForActions?.ratings ?? null,
       fundamentalsSummary,
     },
   );
@@ -864,6 +879,7 @@ export async function analyzeTickerV2(
       });
       const incomplete =
         deskResult.pmOutputIncomplete ||
+        deskResult.soloDeskJsonDegraded === "schema_validation_failed_after_retry" ||
         (deskResult.errors?.some((e) => e.startsWith("Solo Desk output failed validation")) ?? false);
       const result: StrategistV2Result = {
         status: "desk_recommendation",
@@ -1485,21 +1501,34 @@ function buildTermStructure5pt(
 function computeSkew25DeltaForChain(
   chain: ChainContract[],
   availableExpirations: string[],
+  price: number,
 ): { skew: ChainSummary["skew25Delta"]; reason: string | null } {
   if (availableExpirations.length === 0) {
     return { skew: null, reason: "no expirations" };
   }
   const withDte = availableExpirations.map(exp => ({ exp, dte: computeDte(exp) })).filter(x => x.dte > 0);
-  const target = withDte.find(x => x.dte > 7) ?? withDte[0];
-  if (!target) return { skew: null, reason: "no valid expiry" };
-  const exp = target.exp;
-  const calls = chain.filter(c => c.expiration === exp && (c.type === "call" || c.optionType === "CALL") && Number.isFinite(c.delta));
-  const puts = chain.filter(c => c.expiration === exp && (c.type === "put" || c.optionType === "PUT") && Number.isFinite(c.delta));
-  if (calls.length === 0 || puts.length === 0) {
-    return { skew: null, reason: "missing calls or puts on expiry" };
-  }
+  const anchor = withDte.find(x => x.dte > 7) ?? withDte[0];
+  if (!anchor) return { skew: null, reason: "no valid expiry" };
+  const expOrder = [
+    anchor.exp,
+    ...withDte
+      .filter(x => x.exp !== anchor.exp)
+      .sort((a, b) => a.dte - b.dte)
+      .map(x => x.exp),
+  ];
 
-  const skewFromTargets = (callDeltaT: number, putDeltaT: number): ChainSummary["skew25Delta"] | null => {
+  const skewFromTargetsForExpiry = (
+    exp: string,
+    callDeltaT: number,
+    putDeltaT: number,
+  ): ChainSummary["skew25Delta"] | null => {
+    const calls = chain.filter(
+      c => c.expiration === exp && (c.type === "call" || c.optionType === "CALL") && Number.isFinite(c.delta),
+    );
+    const puts = chain.filter(
+      c => c.expiration === exp && (c.type === "put" || c.optionType === "PUT") && Number.isFinite(c.delta),
+    );
+    if (calls.length === 0 || puts.length === 0) return null;
     const putPick = [...puts].sort((a, b) => Math.abs(a.delta - putDeltaT) - Math.abs(b.delta - putDeltaT))[0];
     const callPick = [...calls].sort((a, b) => Math.abs(a.delta - callDeltaT) - Math.abs(b.delta - callDeltaT))[0];
     if (!putPick || !callPick) return null;
@@ -1512,23 +1541,45 @@ function computeSkew25DeltaForChain(
     return { putIV, callIV, skewPoints, asOfExpiry: exp };
   };
 
-  let skew = skewFromTargets(0.25, -0.25);
-  if (skew) return { skew, reason: null };
-  skew = skewFromTargets(0.2, -0.2);
-  if (skew) {
+  const deltaTargets: Array<{ call: number; put: number; tag: "25d" | "20d" | "15d" }> = [
+    { call: 0.25, put: -0.25, tag: "25d" },
+    { call: 0.2, put: -0.2, tag: "20d" },
+    { call: 0.15, put: -0.15, tag: "15d" },
+  ];
+
+  for (let ei = 0; ei < expOrder.length; ei++) {
+    const exp = expOrder[ei]!;
+    for (let ti = 0; ti < deltaTargets.length; ti++) {
+      const t = deltaTargets[ti]!;
+      const skew = skewFromTargetsForExpiry(exp, t.call, t.put);
+      if (!skew) continue;
+      if (ei === 0 && ti === 0) return { skew, reason: null };
+      if (ei === 0 && ti === 1) {
+        return { skew, reason: "skew_fallback_20d_same_expiry_after_25d_ceiling" };
+      }
+      if (ei === 0 && ti === 2) {
+        return { skew, reason: "skew_fallback_15d_same_expiry_after_25d_ceiling" };
+      }
+      return {
+        skew,
+        reason: `skew_fallback_${t.tag}_expiry_${exp}_after_prior_clamped_or_missing`,
+      };
+    }
+  }
+
+  const front = [...withDte].sort((a, b) => a.dte - b.dte)[0]!.exp;
+  const imb = computeImpliedMoveStraddle(chain, price, [front]);
+  const pct = imb?.impliedVolStraddlePct ?? null;
+  if (pct != null && Number.isFinite(pct)) {
+    const n = normalizeStrategistIv(pct / 100, "reconstructed_from_straddle");
+    const iv = n.pct;
     return {
-      skew,
-      reason: "skew_25d_iv_ceiling_or_unreliable_used_20_delta_proxy",
+      skew: { putIV: iv, callIV: iv, skewPoints: 0, asOfExpiry: front },
+      reason: "skew_fallback_atm_straddle_reconstructed_iv_vol_neutral_skew",
     };
   }
-  skew = skewFromTargets(0.15, -0.15);
-  if (skew) {
-    return {
-      skew,
-      reason: "skew_25d_iv_ceiling_or_unreliable_used_15_delta_proxy",
-    };
-  }
-  return { skew: null, reason: "skew_indeterminate_iv_ceiling_on_nearest_delta_legs" };
+
+  return { skew: null, reason: "skew_indeterminate_iv_ceiling_exhausted_fallbacks" };
 }
 
 function computeImpliedMoveStraddle(
@@ -1619,6 +1670,20 @@ function computeDeskCatalystExpirationISO(chainSummary: ChainSummary, settings: 
   return deskWindowSyntheticIso(prefsMax);
 }
 
+function curatedLegFromContract(c: ChainContract): CuratedOptionLeg {
+  const n = normalizeStrategistIv(c.impliedVolatility, "chain");
+  const leg: CuratedOptionLeg = {
+    bid: c.bid,
+    ask: c.ask,
+    iv: n.pct,
+    delta: Math.round((c.delta ?? 0) * 1000) / 1000,
+    volume: c.volume,
+    oi: c.openInterest,
+  };
+  if (n.clamped || n.unreliable) leg.iv_unreliable = true;
+  return leg;
+}
+
 function buildCuratedStrikes(
   chain: ChainContract[],
   expiration: string,
@@ -1658,11 +1723,11 @@ function buildCuratedStrikes(
     const p = putByStrike.get(strike);
     const entry: CuratedStrike = { strike };
     if (c) {
-      entry.call = { bid: c.bid, ask: c.ask, iv: Math.round(c.impliedVolatility * 10000) / 100, delta: Math.round((c.delta ?? 0) * 1000) / 1000, volume: c.volume, oi: c.openInterest };
+      entry.call = curatedLegFromContract(c);
       if (c.openInterest > 0 && c.volume / c.openInterest >= 2) entry.unusualCall = true;
     }
     if (p) {
-      entry.put = { bid: p.bid, ask: p.ask, iv: Math.round(p.impliedVolatility * 10000) / 100, delta: Math.round((p.delta ?? 0) * 1000) / 1000, volume: p.volume, oi: p.openInterest };
+      entry.put = curatedLegFromContract(p);
       if (p.openInterest > 0 && p.volume / p.openInterest >= 2) entry.unusualPut = true;
     }
     if (entry.call || entry.put) result.push(entry);
@@ -1854,7 +1919,7 @@ export function summarizeOptionsChain(
   const curatedExpirations = buildCuratedExpirations(chain, price, mustIncludeExpiries);
 
   const termStructure5pt = buildTermStructure5pt(chain, price, curatedExpirations, expirations, ivToPct);
-  const { skew, reason: skew25DeltaReason } = computeSkew25DeltaForChain(chain, expirations);
+  const { skew, reason: skew25DeltaReason } = computeSkew25DeltaForChain(chain, expirations, price);
   const impliedMove = computeImpliedMoveStraddle(chain, price, expirations);
 
   return {
@@ -1981,6 +2046,7 @@ function buildDataQualitySummary(args: {
       highlightsAsOf: polygonHighlights?.asOfDate ?? null,
       sessionTapeKind: tapeKind,
       tapeBackfillStatus,
+      tapeBackfillCoverage: tapeBackfill?.coverageGeometry ?? null,
     },
     enrichment: {
       optionsChainSource: enrichment?.chainSource ?? null,
@@ -2144,6 +2210,7 @@ function buildDataPackage(
       occRequested: tapeBackfill.occRequested,
       occCompleted: tapeBackfill.occCompleted,
       tradesInserted: tapeBackfill.tradesInserted,
+      coverageGeometry: tapeBackfill.coverageGeometry ?? null,
     };
   }
 
@@ -2907,6 +2974,36 @@ function deriveCatalyst(tickerData: TickerData): { flagValue: number; reason: st
   if (tickerData.analystActions48h.length >= 2) return { flagValue: 0.5, reason: "analyst_cluster" };
   if (tickerData.analystActions48h.length === 1) return { flagValue: 0.3, reason: "analyst_action" };
   return { flagValue: 0, reason: "none" };
+}
+
+function parsePolygonRatingDateYmd(dateStr: string): string | null {
+  if (!dateStr || typeof dateStr !== "string") return null;
+  const m = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1]! : null;
+}
+
+function analystActionsFromPolygonRatings(
+  ratings: import("./polygonAnalystData.js").PolygonAnalystRatingRow[] | null | undefined,
+  nowMs: number = Date.now(),
+): string[] {
+  if (!ratings || ratings.length === 0) return [];
+  const windowMs = 48 * 60 * 60 * 1000;
+  const lines: string[] = [];
+  for (const r of ratings) {
+    const ymd = parsePolygonRatingDateYmd(r.date);
+    if (!ymd) continue;
+    const dayStart = new Date(`${ymd}T12:00:00.000Z`).getTime();
+    if (!Number.isFinite(dayStart)) continue;
+    if (nowMs - dayStart > windowMs) continue;
+    const firm = (r.firm ?? "").trim() || "Unknown firm";
+    const action = (r.action_type ?? "").trim() || "analyst_action";
+    let s = `${ymd} ${firm}: ${action}`;
+    if (r.rating_prior && r.rating_current) {
+      s += ` (${r.rating_prior} → ${r.rating_current})`;
+    }
+    lines.push(s);
+  }
+  return lines.slice(0, 20);
 }
 
 type FetchFailureMode = "token_null" | "http_fail" | "symbol_missing" | "network_exception";

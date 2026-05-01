@@ -609,6 +609,7 @@ export async function runSoloDesk(args: {
       catalyst: buildFallbackOutput("catalyst", text) as CatalystAnalystOutput,
       pm: stubPm,
       pmOutputIncomplete: true,
+      soloDeskJsonDegraded: "schema_validation_failed_after_retry",
       models: {
         vol: consolidatedModel.label,
         flow: consolidatedModel.label,
