@@ -1,5 +1,6 @@
 import { db, optionsFlowRawTradesTable, optionsTapeBackfillOccCacheTable } from "@workspace/db";
 import { logger } from "./logger.js";
+import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 import { probePolygonRate } from "./polygonRateProbe.js";
 import { classifyForFlowPersistence } from "./optionsTradeClassifier.js";
 import { flushFlowPersistenceNow } from "./optionsFlowPersistence.js";
@@ -458,7 +459,11 @@ export async function runStrategistTapeBackfill(args: {
           .returning({ id: optionsFlowRawTradesTable.id });
         tradesInserted += ins.length;
       } catch (err) {
-        logger.warn({ err, occ, ticker }, "strategistTapeBackfill: batch insert failed");
+        logFlowPipelineWarn(
+          "tape_backfill_insert",
+          "strategistTapeBackfill: batch insert failed",
+          { err, occ, ticker, rowCount: rowsToInsert.length },
+        );
         anyError = true;
       }
     }
@@ -481,7 +486,11 @@ export async function runStrategistTapeBackfill(args: {
           set: { lastCoverageEndNs: lteNs, updatedAt: new Date() },
         });
     } catch (err) {
-      logger.debug({ err, occ }, "strategistTapeBackfill: occ cache upsert skipped");
+      logFlowPipelineWarn(
+        "tape_backfill_occ_cache",
+        "strategistTapeBackfill: occ cache upsert skipped",
+        { err, occ },
+      );
     }
 
     occCompleted++;
@@ -491,7 +500,11 @@ export async function runStrategistTapeBackfill(args: {
   try {
     await runRollupOnceForSymbol(ticker, sessionDate);
   } catch (err) {
-    logger.warn({ err, ticker }, "strategistTapeBackfill: symbol rollup failed");
+    logFlowPipelineWarn(
+      "tape_backfill_symbol_rollup",
+      "strategistTapeBackfill: symbol rollup failed",
+      { err, ticker },
+    );
     anyError = true;
   }
 

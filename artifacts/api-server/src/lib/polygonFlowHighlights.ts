@@ -1,6 +1,7 @@
 import { db, optionsFlowPerStrikeTable, optionsFlowExecPerStrikeTable, optionsFlowRawTradesTable } from "@workspace/db";
 import { and, eq, inArray, sql, desc } from "drizzle-orm";
 import { logger } from "./logger.js";
+import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 
 export interface FlowStrikeHighlight {
   strike: number;
@@ -377,7 +378,11 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
       },
     };
   } catch (err) {
-    logger.warn({ err, symbol: sym, sessionDate }, "polygonFlowHighlights: session tape lookup failed");
+    logFlowPipelineWarn(
+      "session_tape_select",
+      "polygonFlowHighlights: session tape lookup failed",
+      { err, symbol: sym, sessionDate },
+    );
     return null;
   }
 }
@@ -514,7 +519,11 @@ export async function getPolygonFlowHighlights(
     }
     return { asOfDate, ...summary, sessionTape, sessionTapeDate };
   } catch (err) {
-    logger.warn({ err, symbol: sym }, "polygonFlowHighlights: lookup failed");
+    logFlowPipelineWarn(
+      "flow_highlights_lookup",
+      "polygonFlowHighlights: lookup failed",
+      { err, symbol: sym },
+    );
     return null;
   }
 }

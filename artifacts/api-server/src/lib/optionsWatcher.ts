@@ -1,6 +1,7 @@
 import { logger } from "./logger.js";
 import { enqueueClassifiedTrade } from "./optionsFlowPersistence.js";
 import { classifyForFlowPersistence } from "./optionsTradeClassifier.js";
+import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 import { fetchPolygonChain, type PolygonParsedContract } from "./polygonChain.js";
 import {
   ensureConnected,
@@ -351,11 +352,16 @@ function handleTrade(t: PolygonOptionTrade): void {
       kind: isSweep ? "sweep" : isBlockForDb ? "block" : "large",
     });
     if (!nbbo) {
-      logger.debug({ occ: t.sym, ticker }, "optionsWatcher: NBBO cache miss — aggressor side null");
+      logFlowPipelineWarn(
+        "watcher_nbbo_miss",
+        "optionsWatcher: NBBO cache miss — aggressor side null",
+        { occ: t.sym, ticker },
+      );
     } else if (aggressorSide == null) {
-      logger.debug(
+      logFlowPipelineWarn(
+        "watcher_aggressor",
+        "optionsWatcher: aggressor side unavailable (NBBO present)",
         { occ: t.sym, ticker, bid: nbbo.bid, ask: nbbo.ask, price: t.price },
-        "optionsWatcher: aggressor side unavailable",
       );
     }
     enqueueClassifiedTrade({
@@ -613,7 +619,11 @@ async function watcherTick(): Promise<void> {
     if (stale.length) {
       const slice = stale.slice(0, 10);
       await resolveAndSubscribeBatch(slice).catch(err =>
-        logger.warn({ err, op: "watcher.tick.refresh.failed" }, "watcher.tick refresh"),
+        logFlowPipelineWarn(
+          "watcher_tick_refresh",
+          "watcher.tick refresh batch failed",
+          { err, tickers: slice },
+        ),
       );
     }
   }

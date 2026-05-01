@@ -1,6 +1,7 @@
 import { db, optionsFlowExecPerStrikeTable, optionsFlowRawTradesTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "./logger.js";
+import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 
 // Periodic rollup of options_flow_raw_trades → options_flow_exec_per_strike.
 //
@@ -50,10 +51,12 @@ export async function runRollupOnce(forDate?: string): Promise<{ rowsUpserted: n
   const countRows = pgExecuteRows(rawCountResult);
   const rawScanned = Number((countRows[0]?.n as number | string | undefined) ?? 0);
 
-  // Aggregate raw trades for the date, grouped by strike key.
-  // sweep takes precedence over block in classification (Polygon's sweep
-  // condition often co-occurs with size>=100); regular = neither.
-  const rolled = await db.execute(sql`
+  let rowsUpserted = 0;
+  try {
+    // Aggregate raw trades for the date, grouped by strike key.
+    // sweep takes precedence over block in classification (Polygon's sweep
+    // condition often co-occurs with size>=100); regular = neither.
+    const rolled = await db.execute(sql`
     INSERT INTO options_flow_exec_per_strike (
       underlying_symbol, date, option_type, strike, expiration,
       sweep_count, block_count, regular_count,
@@ -91,9 +94,17 @@ export async function runRollupOnce(forDate?: string): Promise<{ rowsUpserted: n
       last_event_ts = EXCLUDED.last_event_ts,
       updated_at = NOW()
   `);
+    rowsUpserted = pgExecuteRowCount(rolled);
+  } catch (err) {
+    logFlowPipelineWarn(
+      "rollup_global",
+      "optionsFlowRollup: global rollup SQL failed",
+      { err, date, rawScanned },
+    );
+    throw err;
+  }
 
   const durationMs = Date.now() - t0;
-  const rowsUpserted = pgExecuteRowCount(rolled);
   return { rowsUpserted, rawScanned, durationMs };
 }
 
@@ -112,7 +123,9 @@ export async function runRollupOnceForSymbol(
   const countRows = pgExecuteRows(rawCountResult);
   const rawScanned = Number((countRows[0]?.n as number | string | undefined) ?? 0);
 
-  const rolled = await db.execute(sql`
+  let rowsUpserted = 0;
+  try {
+    const rolled = await db.execute(sql`
     INSERT INTO options_flow_exec_per_strike (
       underlying_symbol, date, option_type, strike, expiration,
       sweep_count, block_count, regular_count,
@@ -150,9 +163,17 @@ export async function runRollupOnceForSymbol(
       last_event_ts = EXCLUDED.last_event_ts,
       updated_at = NOW()
   `);
+    rowsUpserted = pgExecuteRowCount(rolled);
+  } catch (err) {
+    logFlowPipelineWarn(
+      "rollup_symbol",
+      "optionsFlowRollup: per-symbol rollup SQL failed",
+      { err, date, underlyingSymbol: sym, rawScanned },
+    );
+    throw err;
+  }
 
   const durationMs = Date.now() - t0;
-  const rowsUpserted = pgExecuteRowCount(rolled);
   return { rowsUpserted, rawScanned, durationMs };
 }
 
@@ -181,7 +202,11 @@ async function tick(): Promise<void> {
     }, `Flow rollup: ${rawScanned} raw → ${rowsUpserted} strikes (${durationMs}ms)`);
   } catch (err) {
     totalFailures++;
-    logger.warn({ err, op: "flowRollup.tick.failed" }, "Flow rollup tick failed");
+    logFlowPipelineWarn(
+      "rollup_tick",
+      "Flow rollup tick failed",
+      { err, totalFailures, totalRuns },
+    );
   }
 }
 

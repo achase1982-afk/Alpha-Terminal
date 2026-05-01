@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { db, optionsFlowRawTradesTable } from "@workspace/db";
 import { logger } from "./logger.js";
+import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 
 // Batched async writer for classified options trade events streaming
 // from the live watcher. Avoids per-trade DB round-trips by buffering
@@ -151,8 +152,11 @@ async function flush(): Promise<void> {
     batchesFailed++;
     lastFailureTs = Date.now();
     lastFailureMessage = err instanceof Error ? err.message : String(err);
-    logger.warn({ err, op: "flowPersist.flush.failed", count: batch.length },
-      "Failed to flush options flow batch");
+    logFlowPipelineWarn(
+      "persistence_flush",
+      "Failed to flush options flow batch",
+      { err, count: batch.length, batchesAttempted, batchesFailed },
+    );
 
     // Loud one-shot warning when failure rate climbs above 5% on a
     // non-trivial sample. Re-armed only after the rate recovers below

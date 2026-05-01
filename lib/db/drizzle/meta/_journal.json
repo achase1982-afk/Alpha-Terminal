@@ -22,6 +22,13 @@
       "when": 1777600000001,
       "tag": "0002_options_tape_backfill_occ_cache",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1777700000000,
+      "tag": "0003_options_flow_raw_trades_classifier_columns",
+      "breakpoints": true
     }
   ]
 }
