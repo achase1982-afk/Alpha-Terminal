@@ -318,7 +318,7 @@ async function persistHistory(
   ticker: string,
   result: StrategistV2Result,
   debateTranscript?: TranscriptTurn[],
-) {
+): Promise<boolean> {
   try {
     // Stash the debate transcript inside cardJson so it travels with the
     // saved trade card and can be re-rendered from history without needing
@@ -335,8 +335,35 @@ async function persistHistory(
         target: strategistHistoryTable.jobId,
         set: { cardJson, ticker, cleared: false, clearedAt: null },
       });
+    return true;
   } catch (persistErr) {
     logger.warn({ persistErr, jobId, ticker }, "StrategistV2: failed to persist history (non-fatal)");
+    return false;
+  }
+}
+
+/** Ensures push/deep-link clients can read the completed row via GET /job/:id/final before we notify. */
+async function verifyStrategistHistoryReadable(jobId: string): Promise<{
+  ok: boolean;
+  resultStatus?: string;
+}> {
+  try {
+    const rows = await db
+      .select({ cardJson: strategistHistoryTable.cardJson })
+      .from(strategistHistoryTable)
+      .where(and(eq(strategistHistoryTable.jobId, jobId), eq(strategistHistoryTable.cleared, false)))
+      .limit(1);
+    const card = rows[0]?.cardJson as Record<string, unknown> | undefined;
+    if (!card) return { ok: false };
+    if (card["kind"] === "validation") {
+      const verdict = String((card["validation"] as { verdict?: string })?.verdict ?? "");
+      return { ok: verdict.length > 0, resultStatus: verdict || undefined };
+    }
+    const st = typeof card["status"] === "string" ? card["status"] : "";
+    return { ok: st.length > 0, resultStatus: st || undefined };
+  } catch (err) {
+    logger.warn({ err, jobId }, "StrategistV2: verifyStrategistHistoryReadable failed");
+    return { ok: false };
   }
 }
 
@@ -467,27 +494,39 @@ router.post("/analyze", async (req, res): Promise<void> => {
           entry.status = "Done";
           entry.done = true;
           entry.finishedAt = Date.now();
-          await persistHistory(jobId, upperTicker, result, entry.transcript);
+          const persistedOk = await persistHistory(jobId, upperTicker, result, entry.transcript);
           if (result.status !== "ivr_populating") {
-            notifyStrategistCompletion({
-              jobId,
-              ticker: upperTicker,
-              kind: result.status === "recommendation" ? "ready" : "failed",
-              message: result.status === "recommendation"
-                ? `Strategist ready for ${upperTicker}`
-                : `Strategist failed for ${upperTicker}`,
-              resultStatus: result.status,
-            });
-            void sendPushToAll({
-              title: result.status === "recommendation"
-                ? `Strategist ready — ${upperTicker}`
-                : `Strategist — ${upperTicker}`,
-              body: result.status === "recommendation"
-                ? "Analysis finished. Open the app to view the card."
-                : "Analysis finished with no trade. Open the app for details.",
-              tag: `strategist-${jobId}`,
-              data: { type: "strategist", jobId, ticker: upperTicker, kind: "analyze" as const },
-            });
+            const verify = persistedOk ? await verifyStrategistHistoryReadable(jobId) : { ok: false as const };
+            if (!verify.ok) {
+              logger.warn(
+                { jobId, ticker: upperTicker, persistedOk, verifyResultStatus: verify.resultStatus },
+                "StrategistV2: skipping push until persisted analysis is readable (GET /job/:id/final)",
+              );
+            } else {
+              logger.info(
+                { jobId, ticker: upperTicker, getFinalResultStatus: verify.resultStatus },
+                "StrategistV2: persisted analysis verified readable; dispatching strategist push",
+              );
+              notifyStrategistCompletion({
+                jobId,
+                ticker: upperTicker,
+                kind: result.status === "recommendation" ? "ready" : "failed",
+                message: result.status === "recommendation"
+                  ? `Strategist ready for ${upperTicker}`
+                  : `Strategist failed for ${upperTicker}`,
+                resultStatus: result.status,
+              });
+              void sendPushToAll({
+                title: result.status === "recommendation"
+                  ? `Strategist ready — ${upperTicker}`
+                  : `Strategist — ${upperTicker}`,
+                body: result.status === "recommendation"
+                  ? "Analysis finished. Open the app to view the card."
+                  : "Analysis finished with no trade. Open the app for details.",
+                tag: `strategist-${jobId}`,
+                data: { type: "strategist", jobId, ticker: upperTicker, kind: "analyze" as const },
+              });
+            }
           }
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
@@ -789,19 +828,31 @@ router.post("/validate-trade", (req, res): void => {
               target: strategistHistoryTable.jobId,
               set: { cardJson, ticker: upperTicker, cleared: false, clearedAt: null },
             });
-          notifyStrategistCompletion({
-            jobId,
-            ticker: upperTicker,
-            kind: "ready",
-            message: `Trade validation ready for ${upperTicker}`,
-            resultStatus: result.verdict,
-          });
-          void sendPushToAll({
-            title: `Validation ready — ${upperTicker}`,
-            body: `Verdict: ${result.verdict.replace(/_/g, " ")}. Open the app to review.`,
-            tag: `strategist-${jobId}`,
-            data: { type: "strategist", jobId, ticker: upperTicker, kind: "validation" as const },
-          });
+          const verify = await verifyStrategistHistoryReadable(jobId);
+          if (!verify.ok) {
+            logger.warn(
+              { jobId, ticker: upperTicker },
+              "TradeValidation: skipping push until persisted validation is readable (GET /job/:id/final)",
+            );
+          } else {
+            logger.info(
+              { jobId, ticker: upperTicker, getFinalResultStatus: verify.resultStatus },
+              "TradeValidation: persisted verdict verified readable; dispatching strategist push",
+            );
+            notifyStrategistCompletion({
+              jobId,
+              ticker: upperTicker,
+              kind: "ready",
+              message: `Trade validation ready for ${upperTicker}`,
+              resultStatus: result.verdict,
+            });
+            void sendPushToAll({
+              title: `Validation ready — ${upperTicker}`,
+              body: `Verdict: ${result.verdict.replace(/_/g, " ")}. Open the app to review.`,
+              tag: `strategist-${jobId}`,
+              data: { type: "strategist", jobId, ticker: upperTicker, kind: "validation" as const },
+            });
+          }
         } catch (persistErr) {
           logger.warn({ persistErr, jobId }, "TradeValidation: failed to persist history (non-fatal)");
         }
@@ -867,6 +918,13 @@ router.get("/job/:jobId/final", async (req, res): Promise<void> => {
     const ticker = row.ticker;
     const transcriptRaw = card["debateTranscript"];
     const safeTranscript = Array.isArray(transcriptRaw) ? (transcriptRaw as TranscriptTurn[]) : [];
+    const logResultStatus = isValidation
+      ? String((card["validation"] as { verdict?: string })?.verdict ?? "")
+      : String(card["status"] ?? "");
+    logger.info(
+      { jobId, source: "persisted", done: true, resultStatus: logResultStatus },
+      "StrategistV2: GET /job/:id/final returning persisted completed payload",
+    );
     res.json({
       jobId,
       kind: isValidation ? "validation" : "analyze",

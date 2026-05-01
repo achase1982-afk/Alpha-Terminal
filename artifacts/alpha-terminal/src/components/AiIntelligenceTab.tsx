@@ -9,7 +9,8 @@ import {
 } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 // Strategist V2: polling lives in `strategistPoller` (survives tab background via sync + `/job/:id/final`).
-import { startStrategistPolling, abortStrategistPolling } from "@/lib/strategistPoller";
+import { startStrategistPolling, abortStrategistPolling, hydrateStrategistJobFromPersistedFinal } from "@/lib/strategistPoller";
+import { consumePendingStrategistPushJobId } from "@/lib/strategistPushNav";
 import { dispatchStrategistAnalysisStart, dispatchStrategistAnalysisCancel } from "@/lib/strategistDeskSpeechEvents";
 import { toast } from "sonner";
 import {
@@ -2559,13 +2560,27 @@ interface AiIntelligenceTabProps {
   // Reopen the OrderTicket pre-loaded with the validated ticket so the user
   // can route around (or honor) the strategist's verdict.
   onReopenValidatedOrder?: (meta: StrategistValidationMeta) => void;
+  /** Push / cold-open deep link: hydrate this job from persisted final before showing live polling. */
+  strategistDeepLinkJobId?: string | null;
+  onStrategistDeepLinkHandled?: () => void;
 }
 
 const AI_TABS: AiSubTab[] = ["pulse", "strategist", "scanner"];
 
 type StrategistMode = "options" | "ailab";
 
-export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscribeEquitySymbols, onNavigateToMarkets, onSendToOrder, onStrategistSendToOrder, onReopenValidatedOrder }: AiIntelligenceTabProps) {
+export function AiIntelligenceTab({
+  subTab,
+  onSubTabChange,
+  pulseDashRef,
+  subscribeEquitySymbols,
+  onNavigateToMarkets,
+  onSendToOrder,
+  onStrategistSendToOrder,
+  onReopenValidatedOrder,
+  strategistDeepLinkJobId = null,
+  onStrategistDeepLinkHandled,
+}: AiIntelligenceTabProps) {
   const [strategistMode, setStrategistMode] = useState<StrategistMode>("options");
   const swipeStartX = useRef(0);
   const swipeStartY = useRef(0);
@@ -2756,6 +2771,42 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
       // best-effort
     }
   }, [setStrategistHistoryStore]);
+
+  const pushHydrateHandledRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (subTab !== "strategist") return;
+    let jobId = (strategistDeepLinkJobId && strategistDeepLinkJobId.trim()) || "";
+    if (!jobId) {
+      jobId = consumePendingStrategistPushJobId() || "";
+    }
+    if (!jobId) return;
+    if (pushHydrateHandledRef.current === jobId) return;
+    pushHydrateHandledRef.current = jobId;
+
+    let cancelled = false;
+    void (async () => {
+      const ok = await hydrateStrategistJobFromPersistedFinal(jobId);
+      if (cancelled) return;
+      await refreshHistory();
+      if (cancelled) return;
+      if (ok) {
+        const j = useTerminalStore.getState().strategistJobs[jobId];
+        if (j?.ticker) setSymbol(j.ticker);
+        setActiveResult("strategist");
+        onStrategistDeepLinkHandled?.();
+        return;
+      }
+      const j = useTerminalStore.getState().strategistJobs[jobId];
+      if (j?.status === "running") {
+        startStrategistPolling(jobId, { force: true });
+      }
+      onStrategistDeepLinkHandled?.();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [subTab, strategistDeepLinkJobId, refreshHistory, setSymbol, onStrategistDeepLinkHandled]);
 
   useEffect(() => {
     void refreshHistory();
@@ -3405,9 +3456,15 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   );
   useEffect(() => {
     if (!runningJobIdsKey) return;
-    for (const jobId of runningJobIdsKey.split(",")) {
-      if (jobId) startStrategistPolling(jobId);
-    }
+    void (async () => {
+      for (const jobId of runningJobIdsKey.split(",")) {
+        if (!jobId) continue;
+        const hydrated = await hydrateStrategistJobFromPersistedFinal(jobId);
+        if (!hydrated) {
+          startStrategistPolling(jobId, { force: true });
+        }
+      }
+    })();
   }, [runningJobIdsKey]);
 
   const handleRunStrategistWithTicker = useCallback((ticker: string) => {
