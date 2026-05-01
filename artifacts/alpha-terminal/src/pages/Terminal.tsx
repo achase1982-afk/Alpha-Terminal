@@ -34,6 +34,7 @@ import { AiSubTabs, type AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import type { MarketPulseDashboardHandle } from "@/components/market-pulse/MarketPulseDashboard";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { WatchlistView } from "@/components/WatchlistView";
+import { setPendingStrategistPushJobId } from "@/lib/strategistPushNav";
 import {
   Menu,
   RefreshCw,
@@ -147,6 +148,7 @@ export default function TerminalPage() {
       return saved && valid.includes(saved) ? saved : "pulse";
     } catch { return "pulse"; }
   });
+  const [strategistDeepLinkJobId, setStrategistDeepLinkJobId] = useState<string | null>(null);
   const [orderOpen, setOrderOpen] = useState(false);
   const [orderSide, setOrderSide] = useState<"BUY" | "SELL">("BUY");
   const [orderOptionSymbol, setOrderOptionSymbol] = useState<string | undefined>();
@@ -416,6 +418,40 @@ export default function TerminalPage() {
   }, [aiSubTab]);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sb = params.get("sb");
+    const jid = params.get("strategistJob");
+    if (sb === "strategist" && jid && jid.trim().length > 0) {
+      const id = jid.trim();
+      setStrategistDeepLinkJobId(id);
+      setPendingStrategistPushJobId(id);
+      setActiveBottom("ai");
+      setAiSubTab("strategist");
+      const u = new URL(window.location.href);
+      u.searchParams.delete("sb");
+      u.searchParams.delete("strategistJob");
+      const next = u.pathname + (u.searchParams.toString() ? `?${u.searchParams.toString()}` : "") + u.hash;
+      window.history.replaceState({}, "", next);
+    }
+  }, []);
+
+  useEffect(() => {
+    const onMsg = (ev: MessageEvent) => {
+      const d = ev.data;
+      if (!d || d.type !== "STRATEGIST_PUSH_NAV") return;
+      const jobId = typeof d.jobId === "string" ? d.jobId.trim() : "";
+      if (!jobId) return;
+      setStrategistDeepLinkJobId(jobId);
+      setPendingStrategistPushJobId(jobId);
+      setActiveBottom("ai");
+      setAiSubTab("strategist");
+    };
+    const sw = navigator.serviceWorker;
+    sw?.addEventListener?.("message", onMsg);
+    return () => sw?.removeEventListener?.("message", onMsg);
+  }, []);
+
+  useEffect(() => {
     if (isThreePanel && contextTab === "chart") {
       setContextTab("news");
     }
@@ -598,7 +634,7 @@ export default function TerminalPage() {
             )}
 
             {activeBottom === "ai" && (
-              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} onReopenValidatedOrder={reopenValidatedOrder} />
+              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} onReopenValidatedOrder={reopenValidatedOrder} strategistDeepLinkJobId={strategistDeepLinkJobId} onStrategistDeepLinkHandled={() => setStrategistDeepLinkJobId(null)} />
             )}
 
             {activeBottom === "portfolio" && (
@@ -642,7 +678,7 @@ export default function TerminalPage() {
             ) : (
               <main ref={scrollRef} onScroll={handleScroll} className="flex-1 min-w-0 app-content pb-4 overflow-y-auto" style={activeBottom === "portfolio" ? { overscrollBehaviorY: "none" } : undefined}>
                 {activeBottom === "ai" && (
-                  <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} onReopenValidatedOrder={reopenValidatedOrder} />
+                  <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} onReopenValidatedOrder={reopenValidatedOrder} strategistDeepLinkJobId={strategistDeepLinkJobId} onStrategistDeepLinkHandled={() => setStrategistDeepLinkJobId(null)} />
                 )}
                 {activeBottom === "portfolio" && (
                   <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} onTrade={openOrderForSymbol} onRoll={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); setContextTab("options"); }} />
@@ -679,7 +715,7 @@ export default function TerminalPage() {
             )}
 
             {activeBottom === "ai" && (
-              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} onReopenValidatedOrder={reopenValidatedOrder} />
+              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} onReopenValidatedOrder={reopenValidatedOrder} strategistDeepLinkJobId={strategistDeepLinkJobId} onStrategistDeepLinkHandled={() => setStrategistDeepLinkJobId(null)} />
             )}
 
             {activeBottom === "portfolio" && (

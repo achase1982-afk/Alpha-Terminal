@@ -19,7 +19,8 @@ const STALE_POLLER_MS = 8_000;
 /** Running jobs older than this without completion get an error card (lost poll / server crash). */
 const STALE_RUNNING_JOB_MS = 28 * 60 * 1000;
 
-interface ThinkingResponse {
+/** One payload from `GET /strategist/thinking/:id` or `GET /strategist/job/:id/final`. */
+export interface StrategistThinkingPollPayload {
   status: string;
   tokens: string[];
   nextSince: number;
@@ -42,7 +43,7 @@ type PollOutcome = 'running' | 'completed' | 'failed';
  * true, completion is handled first so a persisted snapshot with `nextSince: 0`
  * cannot rewind the client's token cursor.
  */
-function applyThinkingPollResponse(jobId: string, t: ThinkingResponse): PollOutcome {
+export function applyThinkingPollResponse(jobId: string, t: StrategistThinkingPollPayload): PollOutcome {
   const job = useTerminalStore.getState().strategistJobs[jobId];
   if (!job || job.status !== 'running') return 'completed';
 
@@ -101,6 +102,45 @@ function applyThinkingPollResponse(jobId: string, t: ThinkingResponse): PollOutc
   }
 
   return 'running';
+}
+
+/**
+ * Fetches persisted final state for a job (push deep-link / cold resume) and
+ * applies it to the store. Creates a transient running slot when the job is
+ * missing locally so `applyThinkingPollResponse` can complete it in one step.
+ */
+export async function hydrateStrategistJobFromPersistedFinal(jobId: string): Promise<boolean> {
+  try {
+    const res = await fetchWithAuth(
+      `${API_BASE}/strategist/job/${encodeURIComponent(jobId)}/final?since=0`,
+    );
+    if (!res.ok) return false;
+    const t = (await res.json()) as StrategistThinkingPollPayload & { ticker?: string };
+    if (!t.done) return false;
+
+    const existing = useTerminalStore.getState().strategistJobs[jobId];
+    if (existing?.status === "done" && existing.result) {
+      return true;
+    }
+    if (existing && existing.status !== "running") {
+      useTerminalStore.getState().cancelStrategistJob(jobId);
+    }
+
+    const ticker = typeof t.ticker === "string" && t.ticker.length > 0 ? t.ticker.toUpperCase() : "";
+    if (!useTerminalStore.getState().strategistJobs[jobId]) {
+      if (!ticker) return false;
+      useTerminalStore.getState().startStrategistJob(jobId, ticker, {
+        kind: t.kind === "validation" ? "validation" : "analyze",
+        validationMeta: t.validationMeta ?? undefined,
+      });
+    }
+
+    const outcome = applyThinkingPollResponse(jobId, t);
+    const after = useTerminalStore.getState().strategistJobs[jobId];
+    return outcome !== "running" && after?.status === "done";
+  } catch {
+    return false;
+  }
 }
 
 const completionToastSent = new Set<string>();
@@ -268,7 +308,7 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
                 `${API_BASE}/strategist/job/${encodeURIComponent(jobId)}/final?since=${current.nextSince}`,
               );
               if (finalRes.ok) {
-                const t = (await finalRes.json()) as ThinkingResponse;
+                const t = (await finalRes.json()) as StrategistThinkingPollPayload;
                 const outcome = applyThinkingPollResponse(jobId, t);
                 if (outcome !== "running") {
                   resolved = true;
@@ -302,7 +342,7 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
           continue;
         }
         consecutiveFailures = 0;
-        const t = (await tres.json()) as ThinkingResponse;
+        const t = (await tres.json()) as StrategistThinkingPollPayload;
         const outcome = applyThinkingPollResponse(jobId, t);
         if (outcome !== "running") {
           resolved = true;
@@ -339,7 +379,7 @@ export async function syncRunningStrategistJobsFromServer(opts?: {
         `${API_BASE}/strategist/job/${encodeURIComponent(jobId)}/final?since=${job.nextSince}`,
       );
       if (!res.ok) continue;
-      const t = (await res.json()) as ThinkingResponse;
+      const t = (await res.json()) as StrategistThinkingPollPayload;
       const outcome = applyThinkingPollResponse(jobId, t);
       if (outcome !== "running") {
         await refreshHistoryAfterCompletion();

@@ -35,14 +35,29 @@ self.addEventListener("push", (e) => {
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
 
+  const data = e.notification.data || {};
+  const jobId = typeof data.jobId === "string" ? data.jobId : "";
+  const isStrategist = data.type === "strategist" && jobId.length > 0;
+  const openPath = isStrategist
+    ? `/?sb=strategist&strategistJob=${encodeURIComponent(jobId)}`
+    : "/";
+
   e.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
       for (const client of clients) {
         if (client.url.includes(self.location.origin)) {
+          if (isStrategist) {
+            client.postMessage({
+              type: "STRATEGIST_PUSH_NAV",
+              jobId,
+              ticker: typeof data.ticker === "string" ? data.ticker : undefined,
+            });
+          }
           return client.focus();
         }
       }
-      return self.clients.openWindow("/");
+      const url = `${self.location.origin}${openPath}`;
+      return self.clients.openWindow(url);
     })
   );
 });
