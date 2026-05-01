@@ -171,6 +171,7 @@ function withResultSchemaVersion<T extends StrategistV2Result>(r: T): T {
 }
 
 export interface CandidateLeg {
+  type: "call" | "put";
   side: "buy" | "sell";
   strike: number;
   expiration: string;

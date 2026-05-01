@@ -62,7 +62,10 @@ type AnthropicMessageStreamParamsWithWebSearch = Omit<Anthropic.MessageCreatePar
 interface OpenAIChatCompletionsCreateClient {
   chat: {
     completions: {
-      create: (p: Record<string, unknown>) => Promise<{ choices?: Array<{ message?: { content?: string } }> }>;
+      create: (
+        p: Record<string, unknown>,
+        opts?: { signal?: AbortSignal },
+      ) => Promise<{ choices?: Array<{ message?: { content?: string } }> }>;
     };
   };
 }
@@ -76,13 +79,19 @@ function asOpenAIChatCompletionsCreateClient(client: OpenAI): OpenAIChatCompleti
 /** OpenAI SDK types lag the Responses API (`web_search_preview`, reasoning, streaming). */
 interface OpenAIResponsesClientNonStream {
   responses: {
-    create: (p: Record<string, unknown>) => Promise<{ output?: unknown; output_text?: string }>;
+    create: (
+      p: Record<string, unknown>,
+      opts?: { signal?: AbortSignal },
+    ) => Promise<{ output?: unknown; output_text?: string }>;
   };
 }
 
 interface OpenAIResponsesClientStream {
   responses: {
-    create: (p: Record<string, unknown>) => Promise<AsyncIterable<Record<string, unknown>>>;
+    create: (
+      p: Record<string, unknown>,
+      opts?: { signal?: AbortSignal },
+    ) => Promise<AsyncIterable<Record<string, unknown>>>;
   };
 }
 
