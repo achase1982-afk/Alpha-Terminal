@@ -14,8 +14,10 @@ set -e
 SERVER_DIR="$PWD"
 
 echo "[start.sh] Running database migrations..."
+# A literal node_modules/.bin/tsx path is unreliable under pnpm; use `pnpm exec`
+# from this package (same resolution as `pnpm --filter @workspace/db run migrate`).
 cd /app/lib/db
-node_modules/.bin/tsx src/migrate.ts
+pnpm exec tsx src/migrate.ts
 
 echo "[start.sh] Migrations complete. Starting server..."
 cd "$SERVER_DIR"
