@@ -21,6 +21,13 @@ import { evaluateCatalyst, deriveTradeDirection, type CatalystEvaluation } from 
 import { type OptionContract } from "./optionsStrategist.js";
 import { getStoredIVR, getRealizedVolFromEquityDaily, countRealIvHistoryDays, countProxyIvHistoryDays } from "./ivNormalize.js";
 import { buildMarketContextSnapshot, type MarketContextSnapshot } from "./flowMarketContext.js";
+import {
+  normalizeStrategistIv,
+  impliedVolFromAtmStraddle,
+  STRATEGIST_IV_CEILING_PCT,
+} from "./strategistIvNormalize.js";
+import { fetchPolygonAnalystConsensus, fetchPolygonAnalystRatings } from "./polygonAnalystData.js";
+import { fetchCompanyFinancialsForSymbol, type CompanyFinancials } from "../routes/sec.js";
 import { clampProfitTargetToMaxPayout } from "./exitTargetMath.js";
 import { scrubAll } from "./narrativeScrubbers.js";
 import { getAiLabStrategistConfig } from "./aiLabConfig.js";
@@ -385,6 +392,9 @@ export interface ChainSummary {
     percentOfSpot: number;
     expiry: string;
     daysToExpiry: number;
+    /** BSM-implied annualized IV (%) from matching straddle mid to model price; null when unsolvable. */
+    impliedVolStraddlePct?: number | null;
+    impliedVolStraddleSource?: "bsm_match_mid" | null;
   } | null;
 }
 
@@ -733,6 +743,14 @@ export async function analyzeTickerV2(
     logger.info({ ticker }, "StrategistV2: no Polygon flow highlights for ticker");
   }
 
+  const [analystConsensus, analystRatingsPack, companyFinancials] = await Promise.all([
+    fetchPolygonAnalystConsensus(ticker),
+    fetchPolygonAnalystRatings(ticker, 30),
+    fetchCompanyFinancialsForSymbol(ticker),
+  ]);
+  assertAnalyzeNotCancelled(progress);
+  const fundamentalsSummary = companyFinancials ? fundamentalsQuickSummary(companyFinancials) : null;
+
   const dataPackage = buildDataPackage(
     ticker,
     tickerData,
@@ -748,6 +766,12 @@ export async function analyzeTickerV2(
       ivrContext: buildIvrContext(tickerData, realIvDepth, proxyIvDepth),
     },
     settings.strategistMode === 3 || settings.strategistMode === 4 ? tapeBackfillStatus : undefined,
+    {
+      chainSource: dataSource,
+      analystConsensus,
+      analystRatings: analystRatingsPack?.ratings ?? null,
+      fundamentalsSummary,
+    },
   );
   assertAnalyzeNotCancelled(progress);
 
@@ -1497,7 +1521,23 @@ function computeImpliedMoveStraddle(
   if (!Number.isFinite(callMid) || !Number.isFinite(putMid) || price <= 0) return null;
   const dollar = Math.round((callMid + putMid) * 1000) / 1000;
   const percentOfSpot = Math.round((dollar / price) * 10000) / 100;
-  return { dollar, percentOfSpot, expiry: exp, daysToExpiry: dte };
+  const sigmaDec = impliedVolFromAtmStraddle({
+    spot: price,
+    strike,
+    dteCalendarDays: dte,
+    straddleMidPerShare: dollar,
+    riskFreeAnnual: 0.045,
+    dividendYieldAnnual: 0,
+  });
+  const ivNorm = sigmaDec != null ? normalizeStrategistIv(sigmaDec, "reconstructed_from_straddle") : null;
+  return {
+    dollar,
+    percentOfSpot,
+    expiry: exp,
+    daysToExpiry: dte,
+    impliedVolStraddlePct: ivNorm?.pct ?? null,
+    impliedVolStraddleSource: ivNorm != null ? "bsm_match_mid" : null,
+  };
 }
 
 /** Latest listed expiry within prefsMax DTE, or null if none. */
@@ -1697,30 +1737,13 @@ export function summarizeOptionsChain(
   const atmPut = atmPuts[0];
   const atmStrike = atmCall?.strike ?? atmPut?.strike ?? Math.round(price);
 
-  // FIX 3: Normalize all IVs in the AI payload to percentage (e.g. 41.25)
-  // so the model never sees mixed units. Schwab/Polygon report IV as a decimal
-  // (0.4125); we multiply by 100 and round to 2 decimals to match buildCuratedStrikes
-  // and frontMonthIV/backMonthIV (which already emit percentages).
-  //
-  // FIX 4 (IV artifacts): 0DTE / front-week contracts often quote IV in the
-  // 3000-11000% range when bid/ask is 0.01-wide and the underlying is moving
-  // intraday — a pricing-engine artifact, not real volatility. Opus-tier
-  // models recognize and ignore these; cheaper models can reason on them and
-  // build broken trades around fake "high IV". We hard-cap at IV_CEILING_PCT
-  // and surface an `ivArtifactsClampedCount` field on the chain summary so
-  // the prompt can warn the model. Earnings-week front-month IVs are usually
-  // in the 80-300% range, so 500% is a safe ceiling for back-month structural
-  // decisions and the cap is rarely hit on legit data.
-  const IV_CEILING_PCT = 500;
+  // FIX 3–4: IV as decimal → percent; artifact spikes clamped via
+  // strategistIvNormalize (STRATEGIST_IV_CEILING_PCT) with per-field clamp count.
   let ivArtifactClampCount = 0;
   const ivToPct = (iv: number | null | undefined): number => {
-    const n = typeof iv === "number" && Number.isFinite(iv) ? iv : 0;
-    const pct = Math.round(n * 10000) / 100;
-    if (pct > IV_CEILING_PCT) {
-      ivArtifactClampCount += 1;
-      return IV_CEILING_PCT;
-    }
-    return pct;
+    const n = normalizeStrategistIv(iv, "chain");
+    if (n.clamped) ivArtifactClampCount += 1;
+    return n.pct;
   };
 
   const topVolumeCalls = [...calls].sort((a, b) => b.volume - a.volume).slice(0, 5).map(c => ({
@@ -1820,7 +1843,7 @@ export function summarizeOptionsChain(
     availableExpirations: expirations,
     curatedExpirations,
     ivArtifactsClampedCount: ivArtifactClampCount,
-    ivCeilingPct: IV_CEILING_PCT,
+    ivCeilingPct: STRATEGIST_IV_CEILING_PCT,
     termStructure5pt,
     skew25Delta: skew,
     skew25DeltaReason: skew == null ? skew25DeltaReason : null,
@@ -1854,6 +1877,22 @@ function buildIvrContext(
   return { source: null, asOfDate: tickerData.ivrAsOfDate, daysOfHistory: null };
 }
 
+function fundamentalsQuickSummary(f: CompanyFinancials): Record<string, unknown> {
+  const pick = (arr: { end: string; val: number }[]) => {
+    if (!arr.length) return null;
+    const p = [...arr].sort((a, b) => a.end.localeCompare(b.end))[arr.length - 1]!;
+    return { asOf: p.end, valUsd: p.val };
+  };
+  return {
+    revenue: pick(f.revenue),
+    operatingCashFlow: pick(f.operatingCashFlow),
+    capitalExpenditures: pick(f.capitalExpenditures),
+    longTermDebt: pick(f.longTermDebt),
+    sharesOutstanding: pick(f.sharesOutstanding),
+    note: "SEC XBRL companyfacts (US-GAAP); use for cash generation and balance sheet context.",
+  };
+}
+
 function buildDataPackage(
   ticker: string,
   tickerData: TickerData,
@@ -1869,6 +1908,12 @@ function buildDataPackage(
     ivrContext: ReturnType<typeof buildIvrContext>;
   },
   tapeBackfill?: TapeBackfillStatus,
+  enrichment?: {
+    chainSource?: ChainSource;
+    analystConsensus?: import("./polygonAnalystData.js").PolygonAnalystConsensus | null;
+    analystRatings?: import("./polygonAnalystData.js").PolygonAnalystRatingRow[] | null;
+    fundamentalsSummary?: Record<string, unknown> | null;
+  },
 ): string {
   const currentDate = new Date().toISOString().slice(0, 10);
   const pkg: Record<string, unknown> = {
@@ -1890,6 +1935,15 @@ function buildDataPackage(
       note:
         "Large-print persistence and flow scoring use tier-adjusted notional thresholds (higher for mega/large caps, lower for small/micro; ETFs use index/sector/niche bands). tierBoundaryProximity means market cap is within ~10% of a tier boundary — treat flow significance with extra care.",
     },
+    optionsChainSource: enrichment?.chainSource ?? null,
+    polygonAnalyst: enrichment?.analystConsensus
+      ? {
+          consensus: enrichment.analystConsensus,
+          recentRatings: enrichment.analystRatings?.slice(0, 15) ?? [],
+          sourceNote: "Polygon Benzinga partner API (consensus + ratings).",
+        }
+      : { available: false },
+    secFundamentals: enrichment?.fundamentalsSummary ?? { available: false },
     earningsDaysAway: tickerData.earningsDaysAway,
     earningsWithin48h: tickerData.earningsWithin48h,
     analystActions48h: tickerData.analystActions48h,
