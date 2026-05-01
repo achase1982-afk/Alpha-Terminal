@@ -331,7 +331,10 @@ async function persistHistory(
     await db
       .insert(strategistHistoryTable)
       .values({ jobId, ticker, cardJson, cleared: false })
-      .onConflictDoNothing({ target: strategistHistoryTable.jobId });
+      .onConflictDoUpdate({
+        target: strategistHistoryTable.jobId,
+        set: { cardJson, ticker, cleared: false, clearedAt: null },
+      });
   } catch (persistErr) {
     logger.warn({ persistErr, jobId, ticker }, "StrategistV2: failed to persist history (non-fatal)");
   }
@@ -782,7 +785,10 @@ router.post("/validate-trade", (req, res): void => {
           await db
             .insert(strategistHistoryTable)
             .values({ jobId, ticker: upperTicker, cardJson, cleared: false })
-            .onConflictDoNothing({ target: strategistHistoryTable.jobId });
+            .onConflictDoUpdate({
+              target: strategistHistoryTable.jobId,
+              set: { cardJson, ticker: upperTicker, cleared: false, clearedAt: null },
+            });
           notifyStrategistCompletion({
             jobId,
             ticker: upperTicker,

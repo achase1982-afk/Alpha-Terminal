@@ -94,6 +94,8 @@ export interface BlockReason {
 }
 
 export interface StrategistV2Result {
+  /** Item 23: bump when client-visible result shape changes (idempotent re-runs compare this). */
+  schemaVersion?: number;
   status: "recommendation" | "no_viable_setup" | "toxic_block" | "ivr_populating" | "failed_insufficient_history" | "desk_recommendation";
   ticker: string;
   deskResult?: import("./strategistDeskSchemas.js").DeskResult;
@@ -158,8 +160,15 @@ export interface StrategistV2Result {
   strategistOutcome?: StrategistOutcome;
 }
 
+/** Item 23: client / history idempotency — bump when StrategistV2Result shape changes. */
+export const STRATEGIST_RESULT_SCHEMA_VERSION = 1;
+
+function withResultSchemaVersion<T extends StrategistV2Result>(r: T): T {
+  r.schemaVersion = STRATEGIST_RESULT_SCHEMA_VERSION;
+  return r;
+}
+
 export interface CandidateLeg {
-  type: "call" | "put";
   side: "buy" | "sell";
   strike: number;
   expiration: string;
@@ -574,7 +583,7 @@ export async function analyzeTickerV2(
       systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
     };
     await logTelemetry(ticker, "toxic_block", regime, settings, null, null, toxicCheck, null, (result.blockReason as BlockReason).detail, {});
-    return result;
+    return withResultSchemaVersion(result);
   }
 
   const tickerFetch = await fetchTickerData(ticker);
@@ -596,7 +605,7 @@ export async function analyzeTickerV2(
     await logTelemetry(ticker, "no_data", regime, settings, null, null, toxicCheck, null, detail, {
       fetchFailureMode: tickerFetch.failureMode ?? "network_exception",
     });
-    return result;
+    return withResultSchemaVersion(result);
   }
 
   if (tickerData.halted) {
@@ -820,7 +829,7 @@ export async function analyzeTickerV2(
         systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
         ioScore,
       };
-      return result;
+      return withResultSchemaVersion(result);
     } catch (err) {
       logger.error({ err, ticker }, "StrategistV2: Desk analysis failed");
       return noViable(ticker, regime, settings, toxicCheck, tickerData,
@@ -877,7 +886,7 @@ export async function analyzeTickerV2(
         systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
         ioScore,
       };
-      return result;
+      return withResultSchemaVersion(result);
     } catch (err) {
       logger.error({ err, ticker }, "StrategistV2: Solo Desk analysis failed");
       return noViable(ticker, regime, settings, toxicCheck, tickerData,
@@ -1389,7 +1398,7 @@ export async function analyzeTickerV2(
   );
   result.telemetryId = telemetryId ?? undefined;
 
-  return result;
+  return withResultSchemaVersion(result);
 }
 
 function computeDte(expiration: string): number {
@@ -3197,7 +3206,7 @@ async function noViable(
     typeof reason === "string" ? { category: "UNKNOWN", detail: reason } : reason;
   await logTelemetry(ticker, "no_viable_setup", regime, settings, ioScore ?? null, tickerData, toxicCheck, null, blockReason.detail, extras);
   const strategistOutcome = outcomeFromBlockReason(blockReason);
-  return {
+  return withResultSchemaVersion({
     status: "no_viable_setup",
     ticker,
     blockReason,
@@ -3205,7 +3214,7 @@ async function noViable(
     regime,
     ioScore: ioScore ?? undefined,
     systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
-  };
+  });
 }
 
 function outcomeFromBlockReason(br: BlockReason): StrategistOutcome | undefined {
