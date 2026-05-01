@@ -27,6 +27,17 @@ interface PendingTrade {
   isSweep: boolean;
   /** Stable id for dedup (live uses ws:uuid, REST backfill uses rest:… ) */
   sourceTradeId: string;
+  exchangeId?: number | null;
+  venueClass?: string | null;
+  dteDays?: number | null;
+  sessionPhase?: string | null;
+  volOiRatio?: number | null;
+  openInterestSnapshot?: number | null;
+  volumeVsBaseline20d?: number | null;
+  marketCapUsd?: number | null;
+  marketCapTier?: string | null;
+  notionalThresholdUsd?: number | null;
+  aggressorConfidence?: string | null;
 }
 
 const buffer: PendingTrade[] = [];
@@ -109,6 +120,17 @@ export function enqueueClassifiedTrade(args: {
   side?: string | null;
   /** When omitted, generates a unique id so live rows never collide on partial unique */
   sourceTradeId?: string;
+  exchangeId?: number | null;
+  venueClass?: string | null;
+  dteDays?: number | null;
+  sessionPhase?: string | null;
+  volOiRatio?: number | null;
+  openInterestSnapshot?: number | null;
+  volumeVsBaseline20d?: number | null;
+  marketCapUsd?: number | null;
+  marketCapTier?: string | null;
+  notionalThresholdUsd?: number | null;
+  aggressorConfidence?: string | null;
 }): void {
   const parsed = parseOcc(args.occ);
   if (!parsed) return;
@@ -128,6 +150,17 @@ export function enqueueClassifiedTrade(args: {
     isBlock: args.isBlock,
     isSweep: args.isSweep,
     sourceTradeId: args.sourceTradeId ?? `ws:${randomUUID()}`,
+    exchangeId: args.exchangeId ?? null,
+    venueClass: args.venueClass ?? null,
+    dteDays: args.dteDays ?? null,
+    sessionPhase: args.sessionPhase ?? null,
+    volOiRatio: args.volOiRatio ?? null,
+    openInterestSnapshot: args.openInterestSnapshot ?? null,
+    volumeVsBaseline20d: args.volumeVsBaseline20d ?? null,
+    marketCapUsd: args.marketCapUsd ?? null,
+    marketCapTier: args.marketCapTier ?? null,
+    notionalThresholdUsd: args.notionalThresholdUsd ?? null,
+    aggressorConfidence: args.aggressorConfidence ?? null,
   });
   totalQueued++;
   if (buffer.length >= FLUSH_BATCH_MAX) void flush();

@@ -549,7 +549,7 @@ interface FinancialPeriod {
   filed: string;
 }
 
-interface CompanyFinancials {
+export interface CompanyFinancials {
   revenue: FinancialPeriod[];
   netIncome: FinancialPeriod[];
   operatingIncome: FinancialPeriod[];
@@ -604,35 +604,33 @@ function deduplicatePeriods(periods: FinancialPeriod[]): FinancialPeriod[] {
 const financialsCache = new Map<string, { data: CompanyFinancials; ts: number }>();
 const FINANCIALS_CACHE_TTL = 15 * 60 * 1000;
 
-router.get("/company-financials", async (req, res) => {
-  const symbol = (req.query.symbol as string || "").trim().toUpperCase().replace(/^\$/, "");
-  if (!symbol) return res.status(400).json({ error: "symbol required" });
+/** Server-side fetch for strategist / internal callers (same cache as HTTP route). */
+export async function fetchCompanyFinancialsForSymbol(symbol: string): Promise<CompanyFinancials | null> {
+  const sym = symbol.trim().toUpperCase().replace(/^\$/, "");
+  if (!sym) return null;
+  const cached = financialsCache.get(sym);
+  if (cached && Date.now() - cached.ts < FINANCIALS_CACHE_TTL) {
+    return cached.data;
+  }
+  const map = await loadTickerMap(undefined);
+  const cik = map.get(sym);
+  if (!cik) return null;
+  const factsRes = await fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, {
+    headers: HEADERS,
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!factsRes.ok) return null;
+  const factsData = (await factsRes.json()) as SecCompanyFactsJson;
+  const facts = factsData.facts;
+  if (!facts) return null;
 
-  try {
-    const cached = financialsCache.get(symbol);
-    if (cached && Date.now() - cached.ts < FINANCIALS_CACHE_TTL) {
-      return res.json({ financials: cached.data, symbol });
-    }
-
-    const map = await loadTickerMap(req.log);
-    const cik = map.get(symbol);
-    if (!cik) return res.json({ financials: null, symbol });
-
-    const factsRes = await fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, {
-      headers: HEADERS, signal: AbortSignal.timeout(15000),
-    });
-    if (!factsRes.ok) {
-      return res.status(factsRes.status).json({ error: `SEC returned ${factsRes.status}`, financials: null });
-    }
-    const factsData = (await factsRes.json()) as SecCompanyFactsJson;
-    const facts = factsData.facts;
-
-    const revCandidates = [
-      extractFacts(facts, "Revenues"),
-      extractFacts(facts, "RevenueFromContractWithCustomerExcludingAssessedTax"),
-      extractFacts(facts, "SalesRevenueNet"),
-    ].filter(arr => arr.length > 0);
-    const revenueRaw = revCandidates.length > 0
+  const revCandidates = [
+    extractFacts(facts, "Revenues"),
+    extractFacts(facts, "RevenueFromContractWithCustomerExcludingAssessedTax"),
+    extractFacts(facts, "SalesRevenueNet"),
+  ].filter((arr) => arr.length > 0);
+  const revenueRaw =
+    revCandidates.length > 0
       ? revCandidates.reduce((best, cur) => {
           const bestLatest = best[best.length - 1]?.end || "";
           const curLatest = cur[cur.length - 1]?.end || "";
@@ -640,11 +638,12 @@ router.get("/company-financials", async (req, res) => {
         })
       : [];
 
-    const ocfCandidates = [
-      extractFacts(facts, "NetCashProvidedByUsedInOperatingActivities"),
-      extractFacts(facts, "CashProvidedByUsedInOperatingActivities"),
-    ].filter(arr => arr.length > 0);
-    const operatingCashFlowRaw = ocfCandidates.length > 0
+  const ocfCandidates = [
+    extractFacts(facts, "NetCashProvidedByUsedInOperatingActivities"),
+    extractFacts(facts, "CashProvidedByUsedInOperatingActivities"),
+  ].filter((arr) => arr.length > 0);
+  const operatingCashFlowRaw =
+    ocfCandidates.length > 0
       ? ocfCandidates.reduce((best, cur) => {
           const bestLatest = best[best.length - 1]?.end || "";
           const curLatest = cur[cur.length - 1]?.end || "";
@@ -652,11 +651,12 @@ router.get("/company-financials", async (req, res) => {
         })
       : [];
 
-    const capexCandidates = [
-      extractFacts(facts, "PaymentsToAcquirePropertyPlantAndEquipment"),
-      extractFacts(facts, "PaymentsForCapitalImprovements"),
-    ].filter(arr => arr.length > 0);
-    const capexRaw = capexCandidates.length > 0
+  const capexCandidates = [
+    extractFacts(facts, "PaymentsToAcquirePropertyPlantAndEquipment"),
+    extractFacts(facts, "PaymentsForCapitalImprovements"),
+  ].filter((arr) => arr.length > 0);
+  const capexRaw =
+    capexCandidates.length > 0
       ? capexCandidates.reduce((best, cur) => {
           const bestLatest = best[best.length - 1]?.end || "";
           const curLatest = cur[cur.length - 1]?.end || "";
@@ -664,11 +664,12 @@ router.get("/company-financials", async (req, res) => {
         })
       : [];
 
-    const financingCandidates = [
-      extractFacts(facts, "NetCashProvidedByUsedInFinancingActivities"),
-      extractFacts(facts, "CashProvidedByUsedInFinancingActivities"),
-    ].filter(arr => arr.length > 0);
-    const financingRaw = financingCandidates.length > 0
+  const financingCandidates = [
+    extractFacts(facts, "NetCashProvidedByUsedInFinancingActivities"),
+    extractFacts(facts, "CashProvidedByUsedInFinancingActivities"),
+  ].filter((arr) => arr.length > 0);
+  const financingRaw =
+    financingCandidates.length > 0
       ? financingCandidates.reduce((best, cur) => {
           const bestLatest = best[best.length - 1]?.end || "";
           const curLatest = cur[cur.length - 1]?.end || "";
@@ -676,11 +677,12 @@ router.get("/company-financials", async (req, res) => {
         })
       : [];
 
-    const investingCandidates = [
-      extractFacts(facts, "NetCashProvidedByUsedInInvestingActivities"),
-      extractFacts(facts, "CashProvidedByUsedInInvestingActivities"),
-    ].filter(arr => arr.length > 0);
-    const investingRaw = investingCandidates.length > 0
+  const investingCandidates = [
+    extractFacts(facts, "NetCashProvidedByUsedInInvestingActivities"),
+    extractFacts(facts, "CashProvidedByUsedInInvestingActivities"),
+  ].filter((arr) => arr.length > 0);
+  const investingRaw =
+    investingCandidates.length > 0
       ? investingCandidates.reduce((best, cur) => {
           const bestLatest = best[best.length - 1]?.end || "";
           const curLatest = cur[cur.length - 1]?.end || "";
@@ -688,39 +690,51 @@ router.get("/company-financials", async (req, res) => {
         })
       : [];
 
-    const currentAssetsRaw = extractFacts(facts, "AssetsCurrent");
-    const currentLiabRaw = extractFacts(facts, "LiabilitiesCurrent");
-    const ltdRaw = extractFacts(facts, "LongTermDebtNoncurrent").length > 0
+  const currentAssetsRaw = extractFacts(facts, "AssetsCurrent");
+  const currentLiabRaw = extractFacts(facts, "LiabilitiesCurrent");
+  const ltdRaw =
+    extractFacts(facts, "LongTermDebtNoncurrent").length > 0
       ? extractFacts(facts, "LongTermDebtNoncurrent")
       : extractFacts(facts, "LongTermDebt");
-    const debtCurrentRaw = extractFacts(facts, "DebtCurrent");
+  const debtCurrentRaw = extractFacts(facts, "DebtCurrent");
 
-    const financials: CompanyFinancials = {
-      revenue: deduplicatePeriods(revenueRaw),
-      netIncome: deduplicatePeriods(extractFacts(facts, "NetIncomeLoss")),
-      operatingIncome: deduplicatePeriods(extractFacts(facts, "OperatingIncomeLoss")),
-      eps: deduplicatePeriods(extractFacts(facts, "EarningsPerShareDiluted", "USD/shares")),
-      totalAssets: deduplicatePeriods(extractFacts(facts, "Assets")),
-      totalLiabilities: deduplicatePeriods(extractFacts(facts, "Liabilities")),
-      stockholdersEquity: deduplicatePeriods(
-        extractFacts(facts, "StockholdersEquity").length > 0
-          ? extractFacts(facts, "StockholdersEquity")
-          : extractFacts(facts, "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest")
-      ),
-      cash: deduplicatePeriods(extractFacts(facts, "CashAndCashEquivalentsAtCarryingValue")),
-      sharesOutstanding: deduplicatePeriods(extractFacts(facts, "CommonStockSharesOutstanding", "shares")),
-      grossProfit: deduplicatePeriods(extractFacts(facts, "GrossProfit")),
-      operatingCashFlow: deduplicatePeriods(operatingCashFlowRaw),
-      capitalExpenditures: deduplicatePeriods(capexRaw),
-      financingCashFlow: deduplicatePeriods(financingRaw),
-      investingCashFlow: deduplicatePeriods(investingRaw),
-      assetsCurrent: deduplicatePeriods(currentAssetsRaw),
-      liabilitiesCurrent: deduplicatePeriods(currentLiabRaw),
-      longTermDebt: deduplicatePeriods(ltdRaw),
-      debtCurrent: deduplicatePeriods(debtCurrentRaw),
-    };
+  const financials: CompanyFinancials = {
+    revenue: deduplicatePeriods(revenueRaw),
+    netIncome: deduplicatePeriods(extractFacts(facts, "NetIncomeLoss")),
+    operatingIncome: deduplicatePeriods(extractFacts(facts, "OperatingIncomeLoss")),
+    eps: deduplicatePeriods(extractFacts(facts, "EarningsPerShareDiluted", "USD/shares")),
+    totalAssets: deduplicatePeriods(extractFacts(facts, "Assets")),
+    totalLiabilities: deduplicatePeriods(extractFacts(facts, "Liabilities")),
+    stockholdersEquity: deduplicatePeriods(
+      extractFacts(facts, "StockholdersEquity").length > 0
+        ? extractFacts(facts, "StockholdersEquity")
+        : extractFacts(facts, "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"),
+    ),
+    cash: deduplicatePeriods(extractFacts(facts, "CashAndCashEquivalentsAtCarryingValue")),
+    sharesOutstanding: deduplicatePeriods(extractFacts(facts, "CommonStockSharesOutstanding", "shares")),
+    grossProfit: deduplicatePeriods(extractFacts(facts, "GrossProfit")),
+    operatingCashFlow: deduplicatePeriods(operatingCashFlowRaw),
+    capitalExpenditures: deduplicatePeriods(capexRaw),
+    financingCashFlow: deduplicatePeriods(financingRaw),
+    investingCashFlow: deduplicatePeriods(investingRaw),
+    assetsCurrent: deduplicatePeriods(currentAssetsRaw),
+    liabilitiesCurrent: deduplicatePeriods(currentLiabRaw),
+    longTermDebt: deduplicatePeriods(ltdRaw),
+    debtCurrent: deduplicatePeriods(debtCurrentRaw),
+  };
+  financialsCache.set(sym, { data: financials, ts: Date.now() });
+  return financials;
+}
 
-    financialsCache.set(symbol, { data: financials, ts: Date.now() });
+router.get("/company-financials", async (req, res) => {
+  const symbol = (req.query.symbol as string || "").trim().toUpperCase().replace(/^\$/, "");
+  if (!symbol) return res.status(400).json({ error: "symbol required" });
+
+  try {
+    const financials = await fetchCompanyFinancialsForSymbol(symbol);
+    if (financials === null) {
+      return res.json({ financials: null, symbol });
+    }
     return res.json({ financials, symbol });
   } catch (err: any) {
     req.log?.error({ err }, "Company financials endpoint error");
