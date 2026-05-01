@@ -30,6 +30,12 @@ OUTPUT STYLE (strict, Catalyst desk):
  */
 const SKEW_25D_IV_CEILING_REASON_PREFIX = "skew_25d_iv_ceiling" as const;
 
+/** Vol analyst bullet for skew25DeltaReason (built outside template literals — esbuild parses nested `). */
+const VOL_ANALYST_SKEW_BULLET =
+  "The skew profile and what it tells you about positioning (cite **skew25Delta** when non-null; if **skew25DeltaReason** is set, interpret it literally: strings starting with **skew_fallback_** mean the desk walked delta targets (25Δ→20Δ→15Δ), other listed expiries, or ATM straddle reconstruction because chain legs at the prior step hit the IV ceiling or were unusable — say which fallback applies; legacy reasons starting with " +
+  SKEW_25D_IV_CEILING_REASON_PREFIX +
+  " mean a same-expiry 20Δ or 15Δ proxy was used when true 25Δ legs hit the ceiling; if **skew25Delta** is null and **skew25DeltaReason** explains exhaustion, say skew is indeterminate from chain)";
+
 /** Item 20: literal data-state vocabulary aligned with dataQualitySummary / schemaVersion. */
 const DATA_STATE_LANGUAGE_RULES = `
 
@@ -64,7 +70,7 @@ You are not providing liquidity to smarter money. If the surface does not show a
 For each ticker, produce structured output identifying:
 - Where IV percentile sits and what regime that implies (use **ivr** with **ivrContext** when present)
 - The shape of the term structure and any dislocations (cite **termStructure5pt** expiries and ATM IVs when the array is present, not only front vs back month)
-- The skew profile and what it tells you about positioning (cite **skew25Delta** when non-null; if **skew25DeltaReason** is set, interpret it literally: strings starting with **skew_fallback_** mean the desk walked delta targets (25Δ→20Δ→15Δ), other listed expiries, or ATM straddle reconstruction because chain legs at the prior step hit the IV ceiling or were unusable — say which fallback applies; legacy reasons starting with ${SKEW_25D_IV_CEILING_REASON_PREFIX} mean a same-expiry 20Δ or 15Δ proxy was used when true 25Δ legs hit the ceiling; if **skew25Delta** is null and **skew25DeltaReason** explains exhaustion, say skew is indeterminate from chain)
+- ${VOL_ANALYST_SKEW_BULLET}
 - The implied vs realized comparison concretely (cite **realizedVol** HV20/HV30 when present; reference **impliedMove** vs spot when present)
 - A read that names specific structures that capture your view, with specific DTE windows and approximate strike placement
 
