@@ -1140,12 +1140,7 @@ export async function runTradeValidation(
   // the same Strategist Mode + model selections as the strategist itself.
   const isDebateMode = settings.strategistMode === 2;
   if (!isDebateMode) {
-    const model =
-      settings.strategistMode === 4
-        ? getStrategistModel(
-            settings.strategistArbitratorModelIdx === -1 ? 0 : settings.strategistArbitratorModelIdx,
-          )
-        : getStrategistModel(settings.strategistSoloModelIdx);
+    const model = getStrategistModel(settings.strategistSoloModelIdx);
     return runSoloValidation(input, settings, callbacks, model);
   }
 

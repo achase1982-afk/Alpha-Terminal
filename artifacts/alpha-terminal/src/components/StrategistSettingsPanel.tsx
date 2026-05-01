@@ -100,6 +100,7 @@ export function StrategistSettingsPanel() {
 
   const currentMode = data.current["strategistMode"] ?? 1;
   const isDeskMode = currentMode === 3 || currentMode === 4;
+  const isSoloDeskMode = currentMode === 4;
 
   const DESK_LABELS: Record<string, string> = {
     strategistSoloModelIdx: "Desk — Vol Analyst Model",
@@ -108,15 +109,26 @@ export function StrategistSettingsPanel() {
     strategistArbitratorModelIdx: "Desk — PM Model",
   };
 
+  /** Row titles when Solo Desk is selected: first slot = same model as Solo; others unused. */
+  const SOLO_DESK_LABELS: Record<string, string> = {
+    strategistSoloModelIdx: "Solo Model & Solo Desk",
+    strategistDebateAModelIdx: "Bull / Flow — unused in Solo Desk",
+    strategistDebateBModelIdx: "Bear / Catalyst — unused in Solo Desk",
+    strategistArbitratorModelIdx: "Arbitrator / PM — unused in Solo Desk",
+  };
+
   const HIDDEN_IN_DESK = new Set(["strategistConvergence", "strategistTieBand"]);
 
   const groups = new Map<string, SettingMeta[]>();
   for (const m of data.meta) {
     if (isDeskMode && HIDDEN_IN_DESK.has(m.key)) continue;
     const arr = groups.get(m.group) ?? [];
-    const adjusted = isDeskMode && DESK_LABELS[m.key]
-      ? { ...m, label: DESK_LABELS[m.key] }
-      : m;
+    const adjusted =
+      isSoloDeskMode && SOLO_DESK_LABELS[m.key]
+        ? { ...m, label: SOLO_DESK_LABELS[m.key] }
+        : isDeskMode && DESK_LABELS[m.key]
+          ? { ...m, label: DESK_LABELS[m.key] }
+          : m;
     arr.push(adjusted);
     groups.set(m.group, arr);
   }
