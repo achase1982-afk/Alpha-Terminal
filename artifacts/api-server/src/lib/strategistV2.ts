@@ -1472,7 +1472,6 @@ function buildTermStructure5pt(
 function computeSkew25DeltaForChain(
   chain: ChainContract[],
   availableExpirations: string[],
-  ivToPct: (iv: number | null | undefined) => number,
 ): { skew: ChainSummary["skew25Delta"]; reason: string | null } {
   if (availableExpirations.length === 0) {
     return { skew: null, reason: "no expirations" };
@@ -1486,16 +1485,37 @@ function computeSkew25DeltaForChain(
   if (calls.length === 0 || puts.length === 0) {
     return { skew: null, reason: "missing calls or puts on expiry" };
   }
-  const putPick = [...puts].sort((a, b) => Math.abs(a.delta - -0.25) - Math.abs(b.delta - -0.25))[0];
-  const callPick = [...calls].sort((a, b) => Math.abs(a.delta - 0.25) - Math.abs(b.delta - 0.25))[0];
-  if (!putPick || !callPick) return { skew: null, reason: "no contracts with delta" };
-  const putIV = ivToPct(putPick.impliedVolatility);
-  const callIV = ivToPct(callPick.impliedVolatility);
-  const skewPoints = Math.round((putIV - callIV) * 100) / 100;
-  return {
-    skew: { putIV, callIV, skewPoints, asOfExpiry: exp },
-    reason: null,
+
+  const skewFromTargets = (callDeltaT: number, putDeltaT: number): ChainSummary["skew25Delta"] | null => {
+    const putPick = [...puts].sort((a, b) => Math.abs(a.delta - putDeltaT) - Math.abs(b.delta - putDeltaT))[0];
+    const callPick = [...calls].sort((a, b) => Math.abs(a.delta - callDeltaT) - Math.abs(b.delta - callDeltaT))[0];
+    if (!putPick || !callPick) return null;
+    const putN = normalizeStrategistIv(putPick.impliedVolatility, "chain");
+    const callN = normalizeStrategistIv(callPick.impliedVolatility, "chain");
+    if (putN.clamped || callN.clamped) return null;
+    const putIV = putN.pct;
+    const callIV = callN.pct;
+    const skewPoints = Math.round((putIV - callIV) * 100) / 100;
+    return { putIV, callIV, skewPoints, asOfExpiry: exp };
   };
+
+  let skew = skewFromTargets(0.25, -0.25);
+  if (skew) return { skew, reason: null };
+  skew = skewFromTargets(0.2, -0.2);
+  if (skew) {
+    return {
+      skew,
+      reason: "skew_25d_iv_ceiling_or_unreliable_used_20_delta_proxy",
+    };
+  }
+  skew = skewFromTargets(0.15, -0.15);
+  if (skew) {
+    return {
+      skew,
+      reason: "skew_25d_iv_ceiling_or_unreliable_used_15_delta_proxy",
+    };
+  }
+  return { skew: null, reason: "skew_indeterminate_iv_ceiling_on_nearest_delta_legs" };
 }
 
 function computeImpliedMoveStraddle(
@@ -1821,7 +1841,7 @@ export function summarizeOptionsChain(
   const curatedExpirations = buildCuratedExpirations(chain, price, mustIncludeExpiries);
 
   const termStructure5pt = buildTermStructure5pt(chain, price, curatedExpirations, expirations, ivToPct);
-  const { skew, reason: skew25DeltaReason } = computeSkew25DeltaForChain(chain, expirations, ivToPct);
+  const { skew, reason: skew25DeltaReason } = computeSkew25DeltaForChain(chain, expirations);
   const impliedMove = computeImpliedMoveStraddle(chain, price, expirations);
 
   return {
@@ -1893,6 +1913,74 @@ function fundamentalsQuickSummary(f: CompanyFinancials): Record<string, unknown>
   };
 }
 
+function buildDataQualitySummary(args: {
+  ticker: string;
+  tickerData: TickerData;
+  chainSummary: ChainSummary;
+  ioScore: IOScoreResult;
+  polygonHighlights: PolygonFlowHighlights | null;
+  tapeBackfill?: TapeBackfillStatus;
+  enrichment?: {
+    chainSource?: ChainSource;
+    analystConsensus?: import("./polygonAnalystData.js").PolygonAnalystConsensus | null;
+    fundamentalsSummary?: Record<string, unknown> | null;
+  };
+}): Record<string, unknown> {
+  const { tickerData, chainSummary, ioScore, polygonHighlights, tapeBackfill, enrichment } = args;
+  const chainOk = chainSummary.availableExpirations.length > 0 && chainSummary.atmStrike > 0;
+  const skewState = chainSummary.skew25Delta != null ? "available" : "missing_or_indeterminate";
+  const flowTape = polygonHighlights?.sessionTape;
+  const tapeKind = flowTape?.tapeKind ?? null;
+  const tapeBackfillStatus = tapeBackfill?.status ?? "not_run";
+  const fs = enrichment?.fundamentalsSummary;
+  const fundamentalsOk = Boolean(
+    fs && typeof fs === "object"
+      && Object.keys(fs).some((k) => k !== "note" && (fs as Record<string, unknown>)[k] != null),
+  );
+  const ac = enrichment?.analystConsensus;
+  const analystOk = Boolean(
+    ac && (
+      ac.consensus_price_target != null
+      || ac.num_analysts != null
+      || ac.consensus_rating != null
+      || ac.consensus_rating_value != null
+    ),
+  );
+
+  const flags: string[] = [];
+  if (!chainOk) flags.push("chain_incomplete");
+  if (skewState !== "available") flags.push("skew_uncertain");
+  if (!ioScore.available) flags.push("io_score_fallback");
+  if (!polygonHighlights) flags.push("polygon_flow_highlights_absent");
+  if (tapeKind === "eod_fallback") flags.push("session_tape_eod_synthesis");
+  if (tapeKind == null && polygonHighlights) flags.push("session_tape_absent");
+  if (tapeBackfill && tapeBackfill.status !== "complete" && tapeBackfill.status !== "skipped") flags.push("tape_backfill_incomplete");
+  if (!analystOk) flags.push("analyst_consensus_sparse");
+  if (!fundamentalsOk) flags.push("sec_fundamentals_sparse");
+
+  return {
+    asOfDate: new Date().toISOString().slice(0, 10),
+    chain: { state: chainOk ? "usable" : "degraded", expirationsListed: chainSummary.availableExpirations.length },
+    ivr: { state: tickerData.ivr != null ? "present" : "absent", source: tickerData.ivrSource },
+    skew25Delta: { state: skewState, reason: chainSummary.skew25DeltaReason },
+    ioScore: { state: ioScore.available ? "regression_fit" : "fallback_defaults", dataAvailability: ioScore.dataAvailability },
+    flow: {
+      highlightsAsOf: polygonHighlights?.asOfDate ?? null,
+      sessionTapeKind: tapeKind,
+      tapeBackfillStatus,
+    },
+    enrichment: {
+      optionsChainSource: enrichment?.chainSource ?? null,
+      analystConsensusPresent: analystOk,
+      secFundamentalsPresent: fundamentalsOk,
+    },
+    ivArtifactsClamped: chainSummary.ivArtifactsClampedCount,
+    flags,
+    readThisFirst:
+      "Each field reports whether the snapshot slice is present, degraded, or absent. Use null-safe reads; when state is degraded or a flag is set, lower conviction and avoid implying full tape or full skew precision.",
+  };
+}
+
 function buildDataPackage(
   ticker: string,
   tickerData: TickerData,
@@ -1916,7 +2004,18 @@ function buildDataPackage(
   },
 ): string {
   const currentDate = new Date().toISOString().slice(0, 10);
+  const dataQualitySummary = buildDataQualitySummary({
+    ticker,
+    tickerData,
+    chainSummary,
+    ioScore,
+    polygonHighlights,
+    tapeBackfill,
+    enrichment,
+  });
   const pkg: Record<string, unknown> = {
+    schemaVersion: 1,
+    dataQualitySummary,
     ticker,
     currentDate,
     price: tickerData.price,
