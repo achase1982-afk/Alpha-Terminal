@@ -2030,9 +2030,25 @@ function buildDataQualitySummary(args: {
   if (skewState !== "available") flags.push("skew_uncertain");
   if (!ioScore.available) flags.push("io_score_fallback");
   if (!polygonHighlights) flags.push("polygon_flow_highlights_absent");
-  if (tapeKind === "eod_fallback") flags.push("session_tape_eod_synthesis");
+  if (tapeKind === "eod_fallback") {
+    flags.push("classified_session_tape_missing_eod_substitute");
+    flags.push("session_tape_eod_synthesis");
+  }
   if (tapeKind == null && polygonHighlights) flags.push("session_tape_absent");
-  if (tapeBackfill && tapeBackfill.status !== "complete" && tapeBackfill.status !== "skipped") flags.push("tape_backfill_incomplete");
+  const backfillRan =
+    tapeBackfill
+    && tapeBackfill.status !== "skipped"
+    && tapeBackfill.occRequested > 0;
+  const backfillFailed =
+    Boolean(backfillRan && tapeBackfill!.status === "failed");
+  const backfillPartial =
+    Boolean(backfillRan && tapeBackfill!.status === "partial");
+  if (backfillFailed || backfillPartial) {
+    flags.push("occ_classified_prints_backfill_degraded");
+  }
+  if (tapeBackfill && tapeBackfill.status !== "complete" && tapeBackfill.status !== "skipped") {
+    flags.push("tape_backfill_incomplete");
+  }
   if (!analystOk) flags.push("analyst_consensus_sparse");
   if (!fundamentalsOk) flags.push("sec_fundamentals_sparse");
 
@@ -2046,7 +2062,11 @@ function buildDataQualitySummary(args: {
       highlightsAsOf: polygonHighlights?.asOfDate ?? null,
       sessionTapeKind: tapeKind,
       tapeBackfillStatus,
+      tapeBackfillReason: tapeBackfill?.reason ?? null,
       tapeBackfillCoverage: tapeBackfill?.coverageGeometry ?? null,
+      tapeBackfillOccCompleted: tapeBackfill?.occCompleted ?? null,
+      tapeBackfillOccRequested: tapeBackfill?.occRequested ?? null,
+      tapeBackfillTradesInserted: tapeBackfill?.tradesInserted ?? null,
     },
     enrichment: {
       optionsChainSource: enrichment?.chainSource ?? null,
