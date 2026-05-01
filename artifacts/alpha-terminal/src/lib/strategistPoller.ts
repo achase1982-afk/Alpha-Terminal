@@ -16,6 +16,8 @@ const activePollers = new Map<string, PollerHandle>();
 
 // If an existing poller hasn't ticked in this long, a new caller takes over.
 const STALE_POLLER_MS = 8_000;
+/** Running jobs older than this without completion get an error card (lost poll / server crash). */
+const STALE_RUNNING_JOB_MS = 28 * 60 * 1000;
 
 interface ThinkingResponse {
   status: string;
@@ -214,6 +216,16 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
 
         const current = useTerminalStore.getState().strategistJobs[jobId];
         if (!current || current.status !== "running") {
+          resolved = true;
+          break;
+        }
+        if (current.kind !== "validation" && Date.now() - current.startedAt > STALE_RUNNING_JOB_MS) {
+          useTerminalStore
+            .getState()
+            .errorStrategistJob(
+              jobId,
+              "Analysis did not complete within the expected window. Tap Analyze to retry.",
+            );
           resolved = true;
           break;
         }
