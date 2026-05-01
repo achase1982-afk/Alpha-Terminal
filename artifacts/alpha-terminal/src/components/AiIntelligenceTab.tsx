@@ -2636,6 +2636,8 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   const pendingAnalyzeJobIdRef = useRef<string | null>(null);
   const cancelAnnounceRef = useRef<HTMLDivElement | null>(null);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  /** Job id frozen when the user opens cancel — confirm must not depend on a possibly shifted `runningAnalyzeJobId`. */
+  const [cancelTargetJobId, setCancelTargetJobId] = useState<string | null>(null);
 
   const [detResult, setDetResult] = useState<DetStrategistResult | null>(null);
   const [detNarrative, setDetNarrative] = useState("");
@@ -2647,20 +2649,17 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   const scannerCandidateCache = useRef<Record<string, DetCandidate>>({});
 
   const strategistJobs = useTerminalStore(s => s.strategistJobs);
-  const runningAnalyzeTicker = useMemo(() => {
-    for (const j of Object.values(strategistJobs)) {
-      if (j.status === "running" && j.kind !== "validation") return j.ticker;
+  /** One pass so ticker + jobId always refer to the same running analyze job (avoids mismatched Object.values vs .entries picks). */
+  const runningAnalyzeJob = useMemo(() => {
+    for (const [jobId, j] of Object.entries(strategistJobs)) {
+      if (j.status === "running" && j.kind !== "validation") {
+        return { jobId, ticker: j.ticker };
+      }
     }
     return null;
   }, [strategistJobs]);
-  const runningAnalyzeJobId = useMemo(() => {
-    if (!runningAnalyzeTicker) return null;
-    const t = runningAnalyzeTicker.toUpperCase();
-    for (const [id, j] of Object.entries(strategistJobs)) {
-      if (j.ticker === t && j.status === "running" && j.kind !== "validation") return id;
-    }
-    return null;
-  }, [strategistJobs, runningAnalyzeTicker]);
+  const runningAnalyzeTicker = runningAnalyzeJob?.ticker ?? null;
+  const runningAnalyzeJobId = runningAnalyzeJob?.jobId ?? null;
   const strategistHistory = useTerminalStore(s => s.strategistHistory);
   const startStrategistJob = useTerminalStore(s => s.startStrategistJob);
   const cancelStrategistJob = useTerminalStore(s => s.cancelStrategistJob);
@@ -3343,12 +3342,15 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
   }, []);
 
   const handleCancelAnalyzeClick = useCallback(() => {
-    if (!runningAnalyzeJobId) return;
+    const jobId = runningAnalyzeJobId;
+    if (!jobId) return;
+    setCancelTargetJobId(jobId);
     setCancelDialogOpen(true);
   }, [runningAnalyzeJobId]);
 
   const handleCancelDialogKeepRunning = useCallback(() => {
     setCancelDialogOpen(false);
+    setCancelTargetJobId(null);
     const el = cancelAnnounceRef.current;
     if (el) {
       el.textContent = "";
@@ -3359,7 +3361,8 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
 
   const handleCancelDialogConfirm = useCallback(() => {
     setCancelDialogOpen(false);
-    const jobId = runningAnalyzeJobId;
+    const jobId = cancelTargetJobId ?? runningAnalyzeJobId;
+    setCancelTargetJobId(null);
     if (!jobId) return;
     abortStrategistPolling(jobId);
     analyzePostAbortRef.current?.abort();
@@ -3377,7 +3380,7 @@ export function AiIntelligenceTab({ subTab, onSubTabChange, pulseDashRef, subscr
       void el.offsetWidth;
       el.textContent = "Analysis cancelled";
     }
-  }, [runningAnalyzeJobId, cancelStrategistJob, resetStrategistUiAfterCancel]);
+  }, [cancelTargetJobId, runningAnalyzeJobId, cancelStrategistJob, resetStrategistUiAfterCancel]);
 
   // On mount (and whenever the set of *running* job IDs changes), make sure
   // every job that is still in the "running" state has a poller attached.
