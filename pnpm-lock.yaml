@@ -727,6 +727,9 @@ importers:
       pg:
         specifier: ^8.20.0
         version: 8.20.0
+      tsx:
+        specifier: 'catalog:'
+        version: 4.21.0
       zod:
         specifier: 'catalog:'
         version: 3.25.76
@@ -740,9 +743,6 @@ importers:
       drizzle-kit:
         specifier: ^0.31.9
         version: 0.31.9
-      tsx:
-        specifier: 'catalog:'
-        version: 4.21.0
 
   lib/integrations-gemini-ai:
     dependencies:
