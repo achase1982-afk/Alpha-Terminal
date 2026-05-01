@@ -14,10 +14,11 @@ set -e
 SERVER_DIR="$PWD"
 
 echo "[start.sh] Running database migrations..."
-# A literal node_modules/.bin/tsx path is unreliable under pnpm; use `pnpm exec`
-# from this package (same resolution as `pnpm --filter @workspace/db run migrate`).
-cd /app/lib/db
-pnpm exec tsx src/migrate.ts
+# Run from the monorepo root so pnpm resolves the workspace toolchain (tsx) and
+# @workspace/db the same way as local `pnpm --filter @workspace/db run migrate`.
+# The server image default working directory is the API bundle dir, not the repo root.
+cd /app
+pnpm --filter @workspace/db run migrate
 
 echo "[start.sh] Migrations complete. Starting server..."
 cd "$SERVER_DIR"
