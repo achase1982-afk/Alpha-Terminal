@@ -547,7 +547,7 @@ const SubOverview = memo(function SubOverview({ fund, quoteData, priceHist, volH
 
 interface FinancialPeriod {
   end: string;
-  val: number;
+  val: number | null;
   form: string;
   fy: number;
   fp: string;
@@ -573,6 +573,7 @@ interface CompanyFinancialsData {
   liabilitiesCurrent: FinancialPeriod[];
   longTermDebt: FinancialPeriod[];
   debtCurrent: FinancialPeriod[];
+  totalDebt?: FinancialPeriod[];
 }
 
 function useCompanyFinancials(ticker: string) {
@@ -607,11 +608,21 @@ function useCompanyFinancials(ticker: string) {
   return { data, loading, error, retry: () => { setRetryCount(c => c + 1); } };
 }
 
-function pickAnnualForFy(arr: FinancialPeriod[] | undefined, fy: number): FinancialPeriod | undefined {
-  if (!arr?.length) return undefined;
-  const hits = arr.filter(p => p.form === "10-K" && p.fy === fy);
-  if (hits.length === 0) return undefined;
+function fyLabel(fy: number): string {
+  return `FY${fy}`;
+}
+
+function pickByFy(arr: FinancialPeriod[] | undefined, fy: number): FinancialPeriod | null {
+  if (!arr?.length) return null;
+  const hits = arr.filter(p => p.fy === fy && p.form === "10-K");
+  if (hits.length === 0) return null;
   return hits.sort((a, b) => b.filed.localeCompare(a.filed))[0];
+}
+
+function latestPeriod(arr: FinancialPeriod[] | undefined): FinancialPeriod | null {
+  if (!arr?.length) return null;
+  const sorted = [...arr].sort((a, b) => a.fy - b.fy);
+  return sorted[sorted.length - 1] ?? null;
 }
 
 const SubFinancials = memo(function SubFinancials({ ticker }: { ticker: string }) {
@@ -622,48 +633,48 @@ const SubFinancials = memo(function SubFinancials({ ticker }: { ticker: string }
   const revChart = useMemo(() => {
     if (!fin) return [];
     return fin.revenue
-      .filter(r => r.form === "10-K")
       .slice(-5)
-      .map(r => ({ yr: `FY${String(r.fy).slice(-2)}`, val: +(r.val / 1e9).toFixed(1) }));
+      .map(r => ({
+        yr: fyLabel(r.fy),
+        fy: r.fy,
+        val: r.val != null ? +(r.val / 1e9).toFixed(2) : null as number | null,
+      }));
   }, [fin]);
 
   const epsChart = useMemo(() => {
     if (!fin) return [];
     return fin.eps
-      .filter(r => r.form === "10-K")
       .slice(-5)
-      .map(r => ({ yr: `FY${String(r.fy).slice(-2)}`, val: +r.val.toFixed(2) }));
+      .map(r => ({
+        yr: fyLabel(r.fy),
+        fy: r.fy,
+        val: r.val != null ? +r.val.toFixed(2) : null as number | null,
+      }));
   }, [fin]);
 
   const balanceRows = useMemo(() => {
     if (!fin) return [];
-    const latest = (arr: FinancialPeriod[]) => arr.filter(r => r.form === "10-K").slice(-1)[0];
-    const a = latest(fin.totalAssets);
-    const l = latest(fin.totalLiabilities);
-    const e = latest(fin.stockholdersEquity);
-    const cash = latest(fin.cash);
-    const ca = latest(fin.assetsCurrent ?? []);
-    const cl = latest(fin.liabilitiesCurrent ?? []);
-    const ltd = latest(fin.longTermDebt ?? []);
-    const dc = latest(fin.debtCurrent ?? []);
+    const a = latestPeriod(fin.totalAssets);
+    const l = latestPeriod(fin.totalLiabilities);
+    const e = latestPeriod(fin.stockholdersEquity);
+    const cash = latestPeriod(fin.cash);
+    const ca = latestPeriod(fin.assetsCurrent ?? []);
+    const cl = latestPeriod(fin.liabilitiesCurrent ?? []);
+    const td = latestPeriod(fin.totalDebt ?? []);
 
-    const assetsB = a ? a.val / 1e9 : null;
-    const liabB = l ? l.val / 1e9 : null;
-    const eqB = e ? e.val / 1e9 : null;
-    const cashB = cash ? cash.val / 1e9 : null;
-
-    let totalDebtB: number | null = null;
-    if (ltd && dc) totalDebtB = (ltd.val + dc.val) / 1e9;
-    else if (ltd) totalDebtB = ltd.val / 1e9;
-    else if (dc) totalDebtB = dc.val / 1e9;
+    const assetsB = a?.val != null ? a.val / 1e9 : null;
+    const liabB = l?.val != null ? l.val / 1e9 : null;
+    const eqB = e?.val != null ? e.val / 1e9 : null;
+    const cashB = cash?.val != null ? cash.val / 1e9 : null;
+    const totalDebtB = td?.val != null ? td.val / 1e9 : null;
 
     let curRatio: number | null = null;
-    if (ca && cl && cl.val !== 0) curRatio = ca.val / cl.val;
+    if (ca?.val != null && cl?.val != null && cl.val !== 0) curRatio = ca.val / cl.val;
 
-    const deRatio = eqB != null && eqB !== 0 && liabB != null ? liabB / eqB : null;
+    const deRatio = eqB != null && eqB !== 0 && totalDebtB != null ? totalDebtB / eqB : null;
 
     let wcB: number | null = null;
-    if (ca && cl) wcB = (ca.val - cl.val) / 1e9;
+    if (ca?.val != null && cl?.val != null) wcB = (ca.val - cl.val) / 1e9;
 
     const fmt = (n: number | null) => (n == null || Number.isNaN(n) ? "—" : `${n.toFixed(1)}`);
 
@@ -681,22 +692,23 @@ const SubFinancials = memo(function SubFinancials({ ticker }: { ticker: string }
 
   const cashFlowChart = useMemo(() => {
     if (!fin?.operatingCashFlow?.length) return [];
-    const ocfAnnual = fin.operatingCashFlow.filter(r => r.form === "10-K").slice(-5);
-    return ocfAnnual.map((ocf) => {
-      const fy = ocf.fy;
-      const capex = pickAnnualForFy(fin.capitalExpenditures, fy);
-      const fincf = pickAnnualForFy(fin.financingCashFlow, fy);
-      const invcf = pickAnnualForFy(fin.investingCashFlow, fy);
-      const ocfB = ocf.val / 1e9;
-      const capexB = capex ? capex.val / 1e9 : 0;
-      const fcfB = ocfB + capexB;
+    const fys = [...new Set(fin.operatingCashFlow.map(p => p.fy))].sort((a, b) => a - b).slice(-5);
+    return fys.map((fy) => {
+      const ocf = pickByFy(fin.operatingCashFlow, fy);
+      const capex = pickByFy(fin.capitalExpenditures, fy);
+      const fincf = pickByFy(fin.financingCashFlow, fy);
+      const invcf = pickByFy(fin.investingCashFlow, fy);
+      const ocfB = ocf?.val != null ? ocf.val / 1e9 : null;
+      const capexB = capex?.val != null ? capex.val / 1e9 : null;
+      const fcfB = ocfB != null && capexB != null ? ocfB + capexB : null;
       return {
-        yr: `FY${String(fy).slice(-2)}`,
-        ocf: +ocfB.toFixed(2),
-        capex: +capexB.toFixed(2),
-        fcf: +fcfB.toFixed(2),
-        fin: fincf ? +(fincf.val / 1e9).toFixed(2) : null as number | null,
-        inv: invcf ? +(invcf.val / 1e9).toFixed(2) : null as number | null,
+        yr: fyLabel(fy),
+        fy,
+        ocf: ocfB != null ? +ocfB.toFixed(2) : null as number | null,
+        capex: capexB != null ? +capexB.toFixed(2) : null as number | null,
+        fcf: fcfB != null ? +fcfB.toFixed(2) : null as number | null,
+        fin: fincf?.val != null ? +(fincf.val / 1e9).toFixed(2) : null as number | null,
+        inv: invcf?.val != null ? +(invcf.val / 1e9).toFixed(2) : null as number | null,
       };
     });
   }, [fin]);
@@ -768,20 +780,20 @@ const SubFinancials = memo(function SubFinancials({ ticker }: { ticker: string }
               key={id}
               type="button"
               role="tab"
+              className="company-fin-subtab"
               id={`${finTabsId}-sub-${id}`}
               aria-selected={view === id}
               tabIndex={view === id ? 0 : -1}
               onClick={() => setView(id)}
               style={{
-                padding: "3px 10px", fontSize: 10, fontFamily: f, fontWeight: 700,
-                color: view === id ? C.bg : C.textMuted,
-                background: view === id ? C.gold : "transparent",
-                border: view === id ? `2px solid ${C.gold}` : `1px solid ${C.borderHi}`,
-                borderRadius: 4, cursor: "pointer", letterSpacing: 0.6, textTransform: "uppercase",
-                outline: "none",
+                padding: "4px 8px", fontSize: 10, fontFamily: f, fontWeight: 700,
+                color: view === id ? C.text : C.textMuted,
+                background: "transparent",
+                border: "none",
+                borderBottom: view === id ? `2px solid ${C.gold}` : "2px solid transparent",
+                borderRadius: 0, cursor: "pointer", letterSpacing: 0.6, textTransform: "uppercase",
+                transition: "color 0.2s, border-color 0.2s",
               }}
-              onFocus={(e) => { if (view !== id) e.currentTarget.style.boxShadow = `0 0 0 1px ${C.borderHi}`; }}
-              onBlur={(e) => { e.currentTarget.style.boxShadow = "none"; }}
             >{label}</button>
           ))}
         </div>
@@ -976,7 +988,8 @@ const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
 
   const filings = data?.filings ?? [];
   const cik = data?.cik;
-  const cikNumeric = cik ? String(parseInt(cik)) : null;
+  const cikNumeric = cik ? String(parseInt(cik, 10)) : null;
+  const cikDisplay = cikNumeric ? String(parseInt(cikNumeric, 10)) : null;
 
   const filtered = filter === "ALL"
     ? filings
@@ -1008,7 +1021,7 @@ const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0 8px" }}>
         <div>
           <span style={{ fontSize: 12, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1.5 }}>SEC EDGAR</span>
-          {cik && <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, marginLeft: 10 }}>CIK {cik}</span>}
+          {cikDisplay != null && <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, marginLeft: 10 }}>CIK {cikDisplay}</span>}
         </div>
         <a href={cikNumeric
             ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${cikNumeric}&type=&dateb=&owner=include&count=40`
@@ -1092,6 +1105,9 @@ interface InsiderTxn {
   pricePerShare: number | null;
   acquiredOrDisposed: string;
   filingUrl: string;
+  transactionCode: string;
+  rule10b51Plan: boolean;
+  showInOpenMarketDefault: boolean;
 }
 
 interface InstHolder {
@@ -1109,6 +1125,8 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [showAllInsiderRows, setShowAllInsiderRows] = useState(false);
+  const insiderFilterId = useId();
   const fetchedRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -1128,7 +1146,21 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
         const insJson = await insRes.json();
         const holdJson = await holdRes.json();
         if (!cancelled) {
-          setInsiders(insJson.transactions || []);
+          const rawTx = (insJson.transactions || []) as InsiderTxn[];
+          setInsiders(
+            rawTx.map((t) => {
+              const code = String(t.transactionCode || "").trim().toUpperCase();
+              return {
+                ...t,
+                transactionCode: code,
+                rule10b51Plan: Boolean(t.rule10b51Plan),
+                showInOpenMarketDefault:
+                  typeof t.showInOpenMarketDefault === "boolean"
+                    ? t.showInOpenMarketDefault
+                    : code === "P" || code === "S",
+              };
+            }),
+          );
           setHolders(holdJson.holders || []);
         }
       } catch (err: any) {
@@ -1139,6 +1171,43 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
     })();
     return () => { cancelled = true; };
   }, [ticker, retryCount]);
+
+  useEffect(() => {
+    setShowAllInsiderRows(false);
+  }, [ticker]);
+
+  const insiderOpenMarketRows = useMemo(
+    () => insiders.filter((t) => t.showInOpenMarketDefault),
+    [insiders],
+  );
+  const insiderHiddenCount = Math.max(0, insiders.length - insiderOpenMarketRows.length);
+  const insiderRowsToShow = showAllInsiderRows ? insiders : insiderOpenMarketRows;
+
+  function insiderTypePresentation(t: InsiderTxn) {
+    const code = (t.transactionCode || "").toUpperCase();
+    if (code === "P") {
+      return {
+        text: "BUY",
+        color: C.green,
+        aria: "Open market purchase, Form 4 transaction code P",
+      };
+    }
+    if (code === "S") {
+      const plan = t.rule10b51Plan;
+      return {
+        text: plan ? "SELL (10b5-1)" : "SELL",
+        color: C.red,
+        aria: plan
+          ? "Open market sale under a Rule 10b5-1 trading plan, Form 4 transaction code S"
+          : "Open market sale, Form 4 transaction code S",
+      };
+    }
+    return {
+      text: code || "—",
+      color: C.textDim,
+      aria: `Form 4 transaction code ${code || "unknown"}`,
+    };
+  }
 
   if (loading) {
     return (
@@ -1229,9 +1298,33 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
       <div style={{ fontSize: 11, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 2, textTransform: "uppercase", padding: "18px 0 6px", borderBottom: `1px solid ${C.borderHi}` }}>
         INSIDER TRANSACTIONS
       </div>
-      {insiders.length > 0 ? (
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8, paddingBottom: 8 }}>
+        <p id={`${insiderFilterId}-hint`} style={{ fontSize: 10, fontFamily: f, color: C.textDim, margin: 0, maxWidth: "100%" }}>
+          Showing open market purchases and sales (Form 4 codes P and S). Awards, option exercises, and other codes are hidden unless you expand the list.
+        </p>
+        {insiderHiddenCount > 0 && (
+          <button
+            type="button"
+            id={insiderFilterId}
+            aria-expanded={showAllInsiderRows}
+            aria-controls={`${insiderFilterId}-table`}
+            aria-describedby={`${insiderFilterId}-hint`}
+            onClick={() => setShowAllInsiderRows((v) => !v)}
+            className="insider-filter-toggle"
+            aria-label={showAllInsiderRows ? "Hide insider rows that are not open market purchases or sales" : `Show all insider rows including ${insiderHiddenCount} hidden non-open-market transactions`}
+            style={{
+              fontSize: 10, fontFamily: f, fontWeight: 700, color: C.gold,
+              background: "transparent", border: `1px solid ${C.borderHi}`, borderRadius: 4,
+              padding: "4px 10px", cursor: "pointer", whiteSpace: "nowrap",
+            }}
+          >
+            {showAllInsiderRows ? "Hide non-open-market rows" : `Show all rows (+${insiderHiddenCount})`}
+          </button>
+        )}
+      </div>
+      {insiderRowsToShow.length > 0 ? (
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: f, tableLayout: "fixed" }}>
+          <table id={`${insiderFilterId}-table`} style={{ width: "100%", borderCollapse: "collapse", fontFamily: f, tableLayout: "fixed" }}>
             <colgroup>
               <col style={{ width: "30%" }} />
               <col style={{ width: "22%" }} />
@@ -1243,23 +1336,23 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
               <tr>
                 <th style={{ ...hdrStyle, textAlign: "left" }}>NAME</th>
                 <th style={{ ...hdrStyle, textAlign: "left" }}>TITLE</th>
-                <th style={{ ...hdrStyle, textAlign: "center" }}>TYPE</th>
+                <th style={{ ...hdrStyle, textAlign: "center" }} scope="col">TYPE</th>
                 <th style={{ ...hdrStyle, textAlign: "right" }}>SHARES</th>
                 <th style={{ ...hdrStyle, textAlign: "right" }}>DATE</th>
               </tr>
             </thead>
             <tbody>
-              {insiders.slice(0, 25).map((t, i) => {
-                const isBuy = t.acquiredOrDisposed === "A";
-                const action = isBuy ? "BUY" : "SELL";
+              {insiderRowsToShow.slice(0, 50).map((t, i) => {
+                const pres = insiderTypePresentation(t);
+                const code = (t.transactionCode || "").toUpperCase();
                 return (
-                  <tr key={i}>
+                  <tr key={`${t.filingUrl}-${t.transactionDate}-${code}-${i}`}>
                     <td style={{ ...cellStyle, color: t.filingUrl ? C.gold : C.text, cursor: t.filingUrl ? "pointer" : "default", whiteSpace: "normal", wordBreak: "break-word", paddingRight: 4 }}
                       onClick={(e) => {
                         e.stopPropagation();
                         if (t.filingUrl) {
                           const contentUrl = `${API_BASE}/sec/filing-content?url=${encodeURIComponent(t.filingUrl)}`;
-                          openBrowser(contentUrl, `Form 4 — ${t.ownerName}`, "SEC EDGAR");
+                          openBrowser(contentUrl, `Form 4: ${t.ownerName}`, "SEC EDGAR");
                         }
                       }}
                     >
@@ -1268,8 +1361,23 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
                     <td style={{ ...dimCell, fontSize: 11, whiteSpace: "normal", wordBreak: "break-word", paddingRight: 4 }}>
                       {t.officerTitle || "—"}
                     </td>
-                    <td style={{ ...cellStyle, textAlign: "center", color: isBuy ? C.green : C.red, fontWeight: 700, fontSize: 11 }}>
-                      {action}
+                    <td style={{ ...cellStyle, textAlign: "center", fontWeight: 700, fontSize: 11 }}>
+                      <span style={{ color: pres.color }} aria-label={pres.aria}>
+                        {code === "S" && t.rule10b51Plan ? (
+                          <>
+                            <span style={{ color: C.red }}>SELL</span>
+                            <span
+                              style={{ marginLeft: 4, fontSize: 9, fontWeight: 700, color: C.amber, border: `1px solid ${C.amber}`, borderRadius: 3, padding: "1px 4px", verticalAlign: "middle" }}
+                              title="Rule 10b5-1 trading plan"
+                              aria-hidden="true"
+                            >
+                              10b5-1
+                            </span>
+                          </>
+                        ) : (
+                          pres.text
+                        )}
+                      </span>
                     </td>
                     <td style={{ ...cellStyle, textAlign: "right" }}>
                       {t.shares?.toLocaleString() || "—"}
@@ -1283,6 +1391,10 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
             </tbody>
           </table>
         </div>
+      ) : insiders.length > 0 ? (
+        <div style={{ padding: "10px 0", fontSize: 11, fontFamily: f, color: C.textDim }}>
+          No open market insider purchases or sales in the recent Form 4 filings loaded for this symbol. Use &quot;Show all rows&quot; to review awards, exercises, and other transaction codes.
+        </div>
       ) : (
         <div style={{ padding: "10px 0", fontSize: 11, fontFamily: f, color: C.textDim }}>
           No Form 4 insider transactions found
@@ -1295,19 +1407,16 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
   );
 });
 
-interface PolygonConsensusPayload {
-  symbol: string;
-  consensus_price_target: number | null;
+interface PolygonConsensusComputed {
+  consensus_pt: number | null;
   high_pt: number | null;
   low_pt: number | null;
-  num_analysts: number | null;
-  strong_buy: number | null;
-  buy: number | null;
-  hold: number | null;
-  sell: number | null;
-  strong_sell: number | null;
-  consensus_rating?: string | null;
-  error?: string;
+  num_active_analysts: number;
+  strong_buy: number;
+  buy: number;
+  hold: number;
+  sell: number;
+  strong_sell: number;
 }
 
 interface PolygonRatingRow {
@@ -1320,31 +1429,19 @@ interface PolygonRatingRow {
   pt_prior: number | null;
   pt_current: number | null;
   date: string;
-}
-
-function usePolygonAnalystConsensus(symbol: string) {
-  return useQuery({
-    queryKey: ["polygon-analyst-consensus", symbol],
-    queryFn: async (): Promise<PolygonConsensusPayload> => {
-      const res = await fetchWithAuth(`${API_BASE}/polygon/analyst-consensus?symbol=${encodeURIComponent(symbol)}`);
-      const j = await res.json();
-      if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
-      return j as PolygonConsensusPayload;
-    },
-    enabled: !!symbol,
-    staleTime: 60 * 60 * 1000,
-    gcTime: 4 * 60 * 60 * 1000,
-  });
+  time?: string | null;
+  rating_action?: string | null;
+  price_target_action?: string | null;
 }
 
 function usePolygonAnalystRatings(symbol: string) {
   return useQuery({
     queryKey: ["polygon-analyst-ratings", symbol],
-    queryFn: async (): Promise<{ ratings: PolygonRatingRow[] }> => {
-      const res = await fetchWithAuth(`${API_BASE}/polygon/analyst-ratings?symbol=${encodeURIComponent(symbol)}&limit=50`);
+    queryFn: async (): Promise<{ ratings: PolygonRatingRow[]; consensus: PolygonConsensusComputed }> => {
+      const res = await fetchWithAuth(`${API_BASE}/polygon/analyst-ratings?symbol=${encodeURIComponent(symbol)}&limit=300`);
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
-      return j as { ratings: PolygonRatingRow[] };
+      return j as { ratings: PolygonRatingRow[]; consensus: PolygonConsensusComputed };
     },
     enabled: !!symbol,
     staleTime: 60 * 60 * 1000,
@@ -1357,22 +1454,37 @@ function formatPt(n: number | null | undefined): string {
   return `$${n.toFixed(0)}`;
 }
 
+function abbrevActionVerb(raw: string): string {
+  const s = raw.toLowerCase();
+  if (s.includes("maintain")) return "Maint.";
+  if (s.includes("upgrade")) return "Upgr.";
+  if (s.includes("downgrade")) return "Downgr.";
+  if (s.includes("initiate")) return "Init.";
+  if (s.includes("reiterat")) return "Reit.";
+  if (s === "pt_raised") return "PT raise";
+  if (s === "pt_lowered") return "PT cut";
+  if (s === "pt_updated") return "PT set";
+  return raw.replace(/_/g, " ").split(" ").map(w => w ? w[0].toUpperCase() + w.slice(1) : "").join(" ").trim() || raw;
+}
+
 function AnalystCoverageBlock({ ticker }: { ticker: string }) {
-  const qCons = usePolygonAnalystConsensus(ticker);
   const qRat = usePolygonAnalystRatings(ticker);
   const [dateDesc, setDateDesc] = useState(true);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const hdr: React.CSSProperties = {
     fontSize: 10, fontFamily: f, fontWeight: 700, color: C.textMuted,
-    letterSpacing: 1, textTransform: "uppercase", padding: "4px 0",
-    borderBottom: `1px solid ${C.borderHi}`, whiteSpace: "nowrap",
+    letterSpacing: 0.5, textTransform: "uppercase", padding: "4px 0",
+    borderBottom: `1px solid ${C.borderHi}`, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
   };
-  const cellL: React.CSSProperties = {
-    fontSize: 11, fontFamily: f, color: C.text, padding: "4px 4px 4px 0",
-    borderBottom: `1px solid ${C.border}`, lineHeight: 1.35, textAlign: "left", wordBreak: "break-word",
+  const cellEllipsis: React.CSSProperties = {
+    fontSize: 11, fontFamily: f, color: C.text, padding: "5px 2px",
+    borderBottom: `1px solid ${C.border}`, lineHeight: 1.35,
+    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+    verticalAlign: "middle",
   };
-  const cellR: React.CSSProperties = {
-    ...cellL, fontFamily: monoNum, textAlign: "right", color: C.gold, padding: "4px 0",
+  const cellMono: React.CSSProperties = {
+    ...cellEllipsis, fontFamily: monoNum, color: C.gold, textAlign: "right",
   };
 
   const rows = useMemo(() => {
@@ -1384,19 +1496,30 @@ function AnalystCoverageBlock({ ticker }: { ticker: string }) {
     return sorted;
   }, [qRat.data?.ratings, dateDesc]);
 
-  const cons = qCons.data;
+  const cons = qRat.data?.consensus;
   const buckets = cons
     ? [
-        { key: "sb", label: "Str. Buy", count: cons.strong_buy ?? 0, color: C.green },
-        { key: "b", label: "Buy", count: cons.buy ?? 0, color: "#2ea043" },
-        { key: "h", label: "Hold", count: cons.hold ?? 0, color: C.textMuted },
-        { key: "s", label: "Sell", count: cons.sell ?? 0, color: C.amber },
-        { key: "ss", label: "Str. Sell", count: cons.strong_sell ?? 0, color: C.red },
+        { key: "sb", label: "Str. Buy", count: cons.strong_buy, color: C.green },
+        { key: "b", label: "Buy", count: cons.buy, color: "#2ea043" },
+        { key: "h", label: "Hold", count: cons.hold, color: C.textMuted },
+        { key: "s", label: "Sell", count: cons.sell, color: C.amber },
+        { key: "ss", label: "Str. Sell", count: cons.strong_sell, color: C.red },
       ]
     : [];
-  const totalRatings = buckets.reduce((s, b) => s + (typeof b.count === "number" ? b.count : 0), 0);
-  const hasConsensus = cons && (cons.consensus_price_target != null || totalRatings > 0);
-  const noCoverage = !qCons.isLoading && !qCons.error && cons && !hasConsensus && (qRat.data?.ratings?.length ?? 0) === 0;
+  const totalRatings = buckets.reduce((s, b) => s + b.count, 0);
+  const hasConsensus = cons && (cons.consensus_pt != null || totalRatings > 0);
+  const noCoverage = !qRat.isLoading && !qRat.error && cons && cons.num_active_analysts === 0 && (qRat.data?.ratings?.length ?? 0) === 0;
+
+  const expandedRow = expandedId ? rows.find(r => (r.id || `${r.firm}-${r.date}`) === expandedId) : null;
+
+  useEffect(() => {
+    if (!expandedId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setExpandedId(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expandedId]);
 
   return (
     <section aria-labelledby={`analyst-cov-${ticker}`} style={{ marginTop: 18 }}>
@@ -1404,15 +1527,15 @@ function AnalystCoverageBlock({ ticker }: { ticker: string }) {
         Analyst coverage
       </h3>
 
-      {qCons.isLoading && (
+      {qRat.isLoading && (
         <div role="status" aria-live="polite" style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 0" }}>
           <Loader2 className="w-4 h-4 animate-spin shrink-0" style={{ color: C.gold }} aria-hidden />
-          <span style={{ fontSize: 10, fontFamily: f, color: C.textDim }}>Loading consensus…</span>
+          <span style={{ fontSize: 10, fontFamily: f, color: C.textDim }}>Loading analyst data…</span>
         </div>
       )}
-      {qCons.error && (
+      {qRat.error && (
         <div role="alert" style={{ fontSize: 10, fontFamily: f, color: C.red, padding: "8px 0" }}>
-          {(qCons.error as Error).message || "Consensus unavailable"}
+          {(qRat.error as Error).message || "Analyst data unavailable"}
         </div>
       )}
 
@@ -1421,8 +1544,8 @@ function AnalystCoverageBlock({ ticker }: { ticker: string }) {
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: 12 }}>
             <div>
               <div style={{ fontSize: 9, fontFamily: f, color: C.textDim, letterSpacing: 1, textTransform: "uppercase" }}>Consensus PT</div>
-              <div style={{ fontSize: 22, fontFamily: monoNum, fontWeight: 700, color: C.gold }} aria-label={`Consensus price target ${cons.consensus_price_target ?? "unknown"}`}>
-                {formatPt(cons.consensus_price_target)}
+              <div style={{ fontSize: 22, fontFamily: monoNum, fontWeight: 700, color: C.gold }} aria-label={`Consensus price target ${cons.consensus_pt ?? "none"}`}>
+                {formatPt(cons.consensus_pt)}
               </div>
             </div>
             <div style={{ fontSize: 10, fontFamily: monoNum, color: C.textSoft }}>
@@ -1431,7 +1554,7 @@ function AnalystCoverageBlock({ ticker }: { ticker: string }) {
               <span style={{ color: C.textDim }}>High </span>{formatPt(cons.high_pt)}
             </div>
             <div style={{ fontSize: 10, fontFamily: f, color: C.textMuted }}>
-              Analysts (ratings): <span style={{ fontFamily: monoNum, color: C.text }}>{cons.num_analysts ?? "—"}</span>
+              Active analysts (last 120d): <span style={{ fontFamily: monoNum, color: C.text }}>{cons.num_active_analysts}</span>
             </div>
           </div>
 
@@ -1466,37 +1589,31 @@ function AnalystCoverageBlock({ ticker }: { ticker: string }) {
         </div>
       )}
 
-      {qRat.isLoading && (
-        <div role="status" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0" }}>
-          <Loader2 className="w-4 h-4 animate-spin" style={{ color: C.gold }} aria-hidden />
-          <span style={{ fontSize: 10, fontFamily: f, color: C.textDim }}>Loading rating actions…</span>
-        </div>
-      )}
-      {qRat.error && (
-        <div role="alert" style={{ fontSize: 10, fontFamily: f, color: C.red, padding: "6px 0" }}>
-          {(qRat.error as Error).message || "Ratings unavailable"}
-        </div>
-      )}
-
       {noCoverage && (
-        <p style={{ fontSize: 10, fontFamily: f, color: C.textDim, padding: "8px 0" }}>No analyst coverage available</p>
+        <p style={{ fontSize: 10, fontFamily: f, color: C.textDim, padding: "8px 0" }}>No analyst coverage in the last 120 days</p>
       )}
 
       {(qRat.data?.ratings?.length ?? 0) > 0 && (
-        <div style={{ overflowX: "auto", marginTop: 6 }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <div style={{ marginTop: 6, width: "100%" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+            <colgroup>
+              <col style={{ width: "22%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "28%" }} />
+              <col style={{ width: "16%" }} />
+              <col style={{ width: "14%" }} />
+            </colgroup>
             <thead>
               <tr>
                 <th scope="col" style={{ ...hdr, textAlign: "left" }}>Firm</th>
                 <th scope="col" style={{ ...hdr, textAlign: "left" }}>Analyst</th>
-                <th scope="col" style={{ ...hdr, textAlign: "left" }}>Action</th>
-                <th scope="col" style={{ ...hdr, textAlign: "left" }}>Rating</th>
+                <th scope="col" style={{ ...hdr, textAlign: "left" }}>Action → Rating</th>
                 <th scope="col" style={{ ...hdr, textAlign: "right" }}>PT</th>
                 <th scope="col" style={{ ...hdr, textAlign: "right" }}>
                   <button
                     type="button"
                     onClick={() => setDateDesc(d => !d)}
-                    style={{ background: "none", border: "none", padding: 0, margin: 0, cursor: "pointer", color: C.gold, font: "inherit", textDecoration: "underline", textUnderlineOffset: 2 }}
+                    style={{ background: "none", border: "none", padding: 0, margin: 0, cursor: "pointer", color: C.gold, font: "inherit", textDecoration: "underline", textUnderlineOffset: 2, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                     aria-label={`Sort by date ${dateDesc ? "ascending" : "descending"}`}
                   >
                     Date{dateDesc ? " ↓" : " ↑"}
@@ -1505,23 +1622,67 @@ function AnalystCoverageBlock({ ticker }: { ticker: string }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr key={row.id || `${row.firm}-${row.date}-${row.action_type}`}>
-                  <td style={cellL}>{row.firm || "—"}</td>
-                  <td style={cellL}>{row.analyst || "—"}</td>
-                  <td style={cellL}>{row.action_type.replace(/_/g, " ")}</td>
-                  <td style={cellL}>
-                    <span style={{ color: C.textDim }}>{row.rating_prior ?? "—"}</span>
-                    <span style={{ color: C.textDim, margin: "0 4px" }}>→</span>
-                    <span>{row.rating_current ?? "—"}</span>
-                  </td>
-                  <td style={cellR}>
-                    {formatPt(row.pt_current)}
-                    {(row.pt_prior != null) && <span style={{ color: C.textDim, fontSize: 9 }}> (was {formatPt(row.pt_prior)})</span>}
-                  </td>
-                  <td style={{ ...cellR, color: C.textDim }}>{row.date || "—"}</td>
-                </tr>
-              ))}
+              {rows.map((row) => {
+                const rid = row.id || `${row.firm}-${row.date}`;
+                const actionLine = `${abbrevActionVerb(row.action_type)} ${row.rating_prior ?? "—"} → ${row.rating_current ?? "—"}`;
+                const ptLine = row.pt_prior != null
+                  ? `${formatPt(row.pt_current)} (was ${formatPt(row.pt_prior)})`
+                  : formatPt(row.pt_current);
+                const expanded = expandedId === rid;
+                return (
+                  <tr key={rid}>
+                    <td colSpan={5} style={{ padding: 0, border: "none" }}>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedId(expanded ? null : rid)}
+                        aria-expanded={expanded}
+                        aria-label={`${row.firm}, ${row.analyst}. Tap for full detail.`}
+                        style={{
+                          width: "100%", background: "transparent", border: "none", padding: 0, margin: 0,
+                          cursor: "pointer", textAlign: "left", color: "inherit", font: "inherit",
+                        }}
+                        className="analyst-row-trigger"
+                      >
+                        <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+                          <colgroup>
+                            <col style={{ width: "22%" }} />
+                            <col style={{ width: "20%" }} />
+                            <col style={{ width: "28%" }} />
+                            <col style={{ width: "16%" }} />
+                            <col style={{ width: "14%" }} />
+                          </colgroup>
+                          <tbody>
+                            <tr>
+                              <td style={cellEllipsis}>{row.firm || "—"}</td>
+                              <td style={cellEllipsis}>{row.analyst || "—"}</td>
+                              <td style={cellEllipsis}>{actionLine}</td>
+                              <td style={cellMono}>{ptLine}</td>
+                              <td style={{ ...cellMono, color: C.textDim }}>{row.date || "—"}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </button>
+                      {expanded && (
+                        <div
+                          role="region"
+                          aria-label="Full analyst rating detail"
+                          style={{
+                            padding: "8px 10px", marginBottom: 6, background: C.card, border: `1px solid ${C.borderHi}`,
+                            borderRadius: 4, fontSize: 10, fontFamily: f, color: C.textSoft, lineHeight: 1.5,
+                          }}
+                        >
+                          <div><span style={{ color: C.gold }}>Firm:</span> {row.firm}</div>
+                          <div><span style={{ color: C.gold }}>Analyst:</span> {row.analyst}</div>
+                          <div><span style={{ color: C.gold }}>Action:</span> {row.action_type.replace(/_/g, " ")}</div>
+                          <div><span style={{ color: C.gold }}>Rating:</span> {(row.rating_prior ?? "none")} → {(row.rating_current ?? "none")}</div>
+                          <div><span style={{ color: C.gold }}>PT:</span> {formatPt(row.pt_current)}{row.pt_prior != null ? ` (prior ${formatPt(row.pt_prior)})` : ""}</div>
+                          <div><span style={{ color: C.gold }}>Date:</span> {row.date}</div>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -1537,20 +1698,19 @@ const SubValuation = memo(function SubValuation({ ticker, fund }: { ticker: stri
     if (!fin || !fund) return null;
     const mktCap = fund.marketCap || 0;
 
-    const latestAnnual = (arr: FinancialPeriod[]) => arr.filter(r => r.form === "10-K").slice(-1)[0];
-    const latestRev = latestAnnual(fin.revenue);
-    const latestNI = latestAnnual(fin.netIncome);
-    const latestEquity = latestAnnual(fin.stockholdersEquity);
-    const latestAssets = latestAnnual(fin.totalAssets);
-    const latestGP = latestAnnual(fin.grossProfit);
-    const latestOI = latestAnnual(fin.operatingIncome);
+    const latestRev = latestPeriod(fin.revenue);
+    const latestNI = latestPeriod(fin.netIncome);
+    const latestEquity = latestPeriod(fin.stockholdersEquity);
+    const latestAssets = latestPeriod(fin.totalAssets);
+    const latestGP = latestPeriod(fin.grossProfit);
+    const latestOI = latestPeriod(fin.operatingIncome);
 
-    const revenue = latestRev?.val || 0;
-    const netIncome = latestNI?.val || 0;
-    const equity = latestEquity?.val || 0;
-    const assets = latestAssets?.val || 0;
-    const grossProfit = latestGP?.val || 0;
-    const opIncome = latestOI?.val || 0;
+    const revenue = latestRev?.val ?? 0;
+    const netIncome = latestNI?.val ?? 0;
+    const equity = latestEquity?.val ?? 0;
+    const assets = latestAssets?.val ?? 0;
+    const grossProfit = latestGP?.val ?? 0;
+    const opIncome = latestOI?.val ?? 0;
 
     const pe = fund.peRatio || (netIncome > 0 && mktCap > 0 ? mktCap / netIncome : null);
     const ps = revenue > 0 && mktCap > 0 ? mktCap / revenue : null;
@@ -1562,9 +1722,12 @@ const SubValuation = memo(function SubValuation({ ticker, fund }: { ticker: stri
     const roe = equity > 0 ? (netIncome / equity) * 100 : null;
     const roa = assets > 0 ? (netIncome / assets) * 100 : null;
 
-    const revHistory = fin.revenue.filter(r => r.form === "10-K").slice(-2);
-    const revGrowth = revHistory.length === 2 && revHistory[0].val > 0
-      ? ((revHistory[1].val - revHistory[0].val) / revHistory[0].val) * 100
+    const revSorted = [...(fin.revenue || [])].sort((a, b) => a.fy - b.fy);
+    const revHistory = revSorted.slice(-2);
+    const revGrowth = revHistory.length === 2
+      && revHistory[0].val != null && revHistory[0].val > 0
+      && revHistory[1].val != null
+      ? ((revHistory[1].val! - revHistory[0].val!) / revHistory[0].val!) * 100
       : null;
 
     return { pe, ps, pb, evRev, grossMargin, opMargin, netMargin, roe, roa, revGrowth, revenue, mktCap };
@@ -1953,6 +2116,14 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
 
   return (
     <div style={{ background: C.bg, color: C.text, fontFamily: f }}>
+      <style>{`
+        .analyst-row-trigger:focus { outline: none !important; box-shadow: none !important; }
+        .analyst-row-trigger:focus-visible { outline: 2px solid ${C.gold} !important; outline-offset: 2px !important; }
+        .insider-filter-toggle:focus { outline: none !important; box-shadow: none !important; }
+        .insider-filter-toggle:focus-visible { outline: 2px solid ${C.gold} !important; outline-offset: 2px !important; }
+        .company-fin-subtab:focus { outline: none !important; box-shadow: none !important; }
+        .company-fin-subtab:focus-visible { outline: 2px solid ${C.gold} !important; outline-offset: 2px !important; }
+      `}</style>
       <div
         role="tablist"
         aria-label="Company research sections"
@@ -1969,15 +2140,15 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
             aria-controls={`${companyTabsId}-panel-${i}`}
             tabIndex={page === i ? 0 : -1}
             onClick={() => { setPage(i); focusTab(i); }}
+            className="company-tab-main"
             style={{
-              padding: "6px 12px", fontSize: 12, fontFamily: f, fontWeight: 700,
+              padding: "6px 10px", fontSize: 12, fontFamily: f, fontWeight: 700,
               color: page === i ? C.text : C.textDim,
-              background: page === i ? C.borderHi : "transparent",
-              border: page === i ? `2px solid ${C.gold}` : "2px solid transparent",
-              borderRadius: 9999, cursor: "pointer", letterSpacing: 0.5, whiteSpace: "nowrap",
-              transition: "all 0.2s",
-              outline: "none",
-              boxShadow: page === i ? "0 0 0 2px rgba(255,184,0,0.35)" : "none",
+              background: "transparent",
+              border: "none",
+              borderBottom: page === i ? `2px solid ${C.gold}` : "2px solid transparent",
+              borderRadius: 0, cursor: "pointer", letterSpacing: 0.5, whiteSpace: "nowrap",
+              transition: "color 0.2s, border-color 0.2s",
             }}
           >{label}</button>
         ))}

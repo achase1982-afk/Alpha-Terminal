@@ -315,6 +315,10 @@ interface InsiderTransaction {
   acquiredOrDisposed: string;
   sharesAfter: number | null;
   filingUrl: string;
+  /** True when footnotes reference Rule 10b5-1 (planned trading). */
+  rule10b51Plan: boolean;
+  /** Open-market Form 4 codes P and S only; default Ownership table. */
+  showInOpenMarketDefault: boolean;
 }
 
 function xmlText(xml: string, tag: string): string {
@@ -323,8 +327,52 @@ function xmlText(xml: string, tag: string): string {
   return m ? m[1].trim() : "";
 }
 
+function stripXmlInner(s: string): string {
+  return s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function parseForm4Footnotes(xml: string): Map<string, string> {
+  const map = new Map<string, string>();
+  const re = /<footnote\s+id="([^"]+)"[^>]*>([\s\S]*?)<\/footnote>/gi;
+  let m;
+  while ((m = re.exec(xml)) !== null) {
+    map.set(m[1].trim(), stripXmlInner(m[2]));
+  }
+  return map;
+}
+
+function collectFootnoteIds(block: string): string[] {
+  const ids: string[] = [];
+  const re = /footnoteId[^>]*\bid="([^"]+)"/gi;
+  let m;
+  while ((m = re.exec(block)) !== null) ids.push(m[1].trim());
+  // SEC XML often uses self-closing tags: <footnoteId id="F1"/>
+  const re2 = /<footnoteId\s+id="([^"]+)"\s*\/?>/gi;
+  while ((m = re2.exec(block)) !== null) ids.push(m[1].trim());
+  return [...new Set(ids)];
+}
+
+function footnotesMention10b51(footnotes: Map<string, string>, ids: string[]): boolean {
+  for (const id of ids) {
+    const t = footnotes.get(id) || "";
+    if (/\b10\s*b\s*5\s*-?\s*1\b/i.test(t)) return true;
+    if (/rule\s*10b5/i.test(t) && /plan/i.test(t)) return true;
+    if (/10b5\s*-?\s*1/i.test(t)) return true;
+  }
+  return false;
+}
+
+function extractTransactionCode(block: string): string {
+  const coding = block.match(/<transactionCoding[^>]*>([\s\S]*?)<\/transactionCoding>/i);
+  const inner = coding ? coding[1] : block;
+  const m = inner.match(/<transactionCode>(?:\s*<value>)?\s*([^<\s]+)\s*(?:<\/value>)?\s*<\/transactionCode>/i)
+    || inner.match(/<transactionCode>\s*([^<]+)<\/transactionCode>/i);
+  return (m?.[1] || "").trim().toUpperCase();
+}
+
 function parseForm4Xml(xml: string, filingUrl: string): InsiderTransaction[] {
   const results: InsiderTransaction[] = [];
+  const footnotes = parseForm4Footnotes(xml);
 
   const ownerName = xmlText(xml, "rptOwnerName");
   const isDirector = xmlText(xml, "isDirector") === "1";
@@ -336,16 +384,20 @@ function parseForm4Xml(xml: string, filingUrl: string): InsiderTransaction[] {
   while ((m = txnRegex.exec(xml)) !== null) {
     const block = m[1];
     const dateMatch = block.match(/<transactionDate>\s*<value>([^<]*)<\/value>/i);
-    const codeMatch = block.match(/<transactionCode>([^<]*)<\/transactionCode>/i);
+    const code = extractTransactionCode(block);
     const sharesMatch = block.match(/<transactionShares>\s*<value>([^<]*)<\/value>/i);
     const priceMatch = block.match(/<transactionPricePerShare>\s*<value>([^<]*)<\/value>/i);
     const adMatch = block.match(/<transactionAcquiredDisposedCode>\s*<value>([^<]*)<\/value>/i);
     const afterMatch = block.match(/<sharesOwnedFollowingTransaction>\s*<value>([^<]*)<\/value>/i);
 
-    const code = codeMatch?.[1] || "";
     if (code === "L" || code === "Z") continue;
 
+    const fnIds = collectFootnoteIds(block);
+    const rule10b51Plan = footnotesMention10b51(footnotes, fnIds);
+    const showInOpenMarketDefault = code === "P" || code === "S";
+
     const price = priceMatch ? parseFloat(priceMatch[1]) : null;
+    const sharesRaw = sharesMatch ? parseInt(sharesMatch[1].replace(/,/g, ""), 10) : 0;
 
     results.push({
       ownerName,
@@ -354,18 +406,21 @@ function parseForm4Xml(xml: string, filingUrl: string): InsiderTransaction[] {
       officerTitle: officerTitle || (isDirector ? "Director" : ""),
       transactionDate: dateMatch?.[1] || "",
       transactionCode: code,
-      shares: sharesMatch ? parseInt(sharesMatch[1]) : 0,
+      shares: Math.abs(sharesRaw),
       pricePerShare: price && price > 0 ? price : null,
-      acquiredOrDisposed: adMatch?.[1] || "",
-      sharesAfter: afterMatch ? parseInt(afterMatch[1]) : null,
+      acquiredOrDisposed: (adMatch?.[1] || "").trim().toUpperCase(),
+      sharesAfter: afterMatch ? parseInt(afterMatch[1].replace(/,/g, ""), 10) : null,
       filingUrl,
+      rule10b51Plan,
+      showInOpenMarketDefault,
     });
   }
   return results;
 }
 
-const insiderCache = new Map<string, { transactions: InsiderTransaction[]; ts: number }>();
+const insiderCache = new Map<string, { transactions: InsiderTransaction[]; ts: number; version: number }>();
 const INSIDER_CACHE_TTL = 5 * 60 * 1000;
+const INSIDER_PARSE_VERSION = 3;
 
 router.get("/insider-transactions", async (req, res) => {
   const symbol = (req.query.symbol as string || "").trim().toUpperCase().replace(/^\$/, "");
@@ -373,7 +428,7 @@ router.get("/insider-transactions", async (req, res) => {
 
   try {
     const cached = insiderCache.get(symbol);
-    if (cached && Date.now() - cached.ts < INSIDER_CACHE_TTL) {
+    if (cached && cached.version === INSIDER_PARSE_VERSION && Date.now() - cached.ts < INSIDER_CACHE_TTL) {
       return res.json({ transactions: cached.transactions, symbol });
     }
 
@@ -422,7 +477,7 @@ router.get("/insider-transactions", async (req, res) => {
 
     allTransactions.sort((a, b) => b.transactionDate.localeCompare(a.transactionDate));
 
-    insiderCache.set(symbol, { transactions: allTransactions, ts: Date.now() });
+    insiderCache.set(symbol, { transactions: allTransactions, ts: Date.now(), version: INSIDER_PARSE_VERSION });
     return res.json({ transactions: allTransactions, symbol });
   } catch (err: any) {
     req.log?.error({ err }, "Insider transactions endpoint error");
@@ -542,7 +597,7 @@ router.get("/institutional-holders", async (req, res) => {
 
 interface FinancialPeriod {
   end: string;
-  val: number;
+  val: number | null;
   form: string;
   fy: number;
   fp: string;
@@ -569,36 +624,156 @@ export interface CompanyFinancials {
   liabilitiesCurrent: FinancialPeriod[];
   longTermDebt: FinancialPeriod[];
   debtCurrent: FinancialPeriod[];
+  /** Sum of long-term and current debt components per FY (10-K FY only). */
+  totalDebt?: FinancialPeriod[];
 }
 
-function extractFacts(facts: SecCompanyFactsJson["facts"], tag: string, unit: string = "USD"): FinancialPeriod[] {
+/** Annual 10-K fiscal-year facts only (no 10-Q backfill). */
+function extractFacts10KFY(facts: SecCompanyFactsJson["facts"], tag: string, unit: string = "USD"): FinancialPeriod[] {
   const tagData = facts?.["us-gaap"]?.[tag];
   if (!tagData) return [];
   const entries = tagData.units?.[unit] || tagData.units?.["USD/shares"] || tagData.units?.["shares"] || [];
   return entries
-    .filter((e: XbrlFactUnitEntry) => (e.form === "10-K" || e.form === "10-Q") && e.end && e.val !== undefined)
+    .filter((e: XbrlFactUnitEntry) =>
+      e.form === "10-K"
+      && (e.fp === "FY" || e.fp === undefined || e.fp === "")
+      && e.fy != null
+      && e.end
+      && e.val !== undefined
+      && e.filed
+    )
     .map((e: XbrlFactUnitEntry) => ({
       end: e.end!,
       val: e.val!,
-      form: e.form!,
+      form: "10-K",
       fy: e.fy!,
-      fp: e.fp!,
+      fp: e.fp || "FY",
       filed: e.filed!,
     }));
 }
 
-function deduplicatePeriods(periods: FinancialPeriod[]): FinancialPeriod[] {
-  const map = new Map<string, FinancialPeriod>();
+/** One row per fiscal year (latest filing wins). Sorted ascending by FY. */
+function dedupeByFyLatestFiled(periods: FinancialPeriod[]): FinancialPeriod[] {
+  const byFy = new Map<number, FinancialPeriod>();
   for (const p of periods) {
-    const key = `${p.end}-${p.form}`;
-    const existing = map.get(key);
-    if (!existing || p.filed > existing.filed) {
-      map.set(key, p);
+    const cur = byFy.get(p.fy);
+    if (!cur || p.filed > cur.filed) byFy.set(p.fy, p);
+  }
+  return Array.from(byFy.entries()).sort((a, b) => a[0] - b[0]).map(([, v]) => v);
+}
+
+function lastNFiscalYears(periods: FinancialPeriod[], n: number): FinancialPeriod[] {
+  const d = dedupeByFyLatestFiled(periods);
+  return d.slice(-n);
+}
+
+function mergeRevenueSeries(facts: SecCompanyFactsJson["facts"]): FinancialPeriod[] {
+  const candidates = [
+    extractFacts10KFY(facts, "Revenues"),
+    extractFacts10KFY(facts, "RevenueFromContractWithCustomerExcludingAssessedTax"),
+    extractFacts10KFY(facts, "SalesRevenueNet"),
+  ].filter(a => a.length > 0);
+  if (candidates.length === 0) return [];
+  const byFy = new Map<number, FinancialPeriod>();
+  for (const arr of candidates) {
+    for (const p of dedupeByFyLatestFiled(arr)) {
+      if (!byFy.has(p.fy)) byFy.set(p.fy, p);
     }
   }
-  const result = Array.from(map.values());
-  result.sort((a, b) => a.end.localeCompare(b.end));
-  return result;
+  const merged = Array.from(byFy.entries()).sort((a, b) => a[0] - b[0]).map(([, v]) => v);
+  return lastNFiscalYears(merged, 5);
+}
+
+function valForFy(facts: SecCompanyFactsJson["facts"], tag: string, fy: number, unit = "USD"): number | null {
+  const arr = dedupeByFyLatestFiled(extractFacts10KFY(facts, tag, unit));
+  const p = arr.find(x => x.fy === fy);
+  return p?.val ?? null;
+}
+
+function debtForFy(facts: SecCompanyFactsJson["facts"], fy: number): number | null {
+  const ltdN = valForFy(facts, "LongTermDebtNoncurrent", fy);
+  const ltdC = valForFy(facts, "LongTermDebtCurrent", fy);
+  const stB = valForFy(facts, "ShortTermBorrowings", fy);
+  const debtC = valForFy(facts, "DebtCurrent", fy);
+  const parts = [ltdN, ltdC, stB, debtC].filter((v): v is number => v != null && !Number.isNaN(v));
+  if (parts.length > 0) return parts.reduce((s, v) => s + v, 0);
+  const ltd = valForFy(facts, "LongTermDebt", fy);
+  return ltd != null ? ltd : null;
+}
+
+function liabilitiesSeries(facts: SecCompanyFactsJson["facts"]): FinancialPeriod[] {
+  const direct = dedupeByFyLatestFiled(extractFacts10KFY(facts, "Liabilities"));
+  if (direct.length > 0) return lastNFiscalYears(direct, 5);
+
+  const alt = dedupeByFyLatestFiled(extractFacts10KFY(facts, "TotalLiabilitiesNet"));
+  if (alt.length > 0) return lastNFiscalYears(alt, 5);
+
+  const assets = dedupeByFyLatestFiled(extractFacts10KFY(facts, "Assets"));
+  const equity = dedupeByFyLatestFiled(
+    extractFacts10KFY(facts, "StockholdersEquity").length > 0
+      ? extractFacts10KFY(facts, "StockholdersEquity")
+      : extractFacts10KFY(facts, "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"),
+  );
+  const am = new Map(assets.map(p => [p.fy, p]));
+  const em = new Map(equity.map(p => [p.fy, p]));
+  const fys = new Set<number>([...am.keys(), ...em.keys()]);
+  const out: FinancialPeriod[] = [];
+  for (const fy of Array.from(fys).sort((a, b) => a - b)) {
+    const a = am.get(fy);
+    const e = em.get(fy);
+    if (a && e) {
+      out.push({
+        end: a.end,
+        val: a.val - e.val,
+        form: "10-K",
+        fy,
+        fp: "FY",
+        filed: a.filed > e.filed ? a.filed : e.filed,
+      });
+    }
+  }
+  return lastNFiscalYears(out, 5);
+}
+
+function totalDebtSeries(facts: SecCompanyFactsJson["facts"]): FinancialPeriod[] {
+  const fys = new Set<number>();
+  for (const tag of ["LongTermDebtNoncurrent", "LongTermDebt", "LongTermDebtCurrent", "ShortTermBorrowings", "DebtCurrent"]) {
+    for (const p of dedupeByFyLatestFiled(extractFacts10KFY(facts, tag))) fys.add(p.fy);
+  }
+  const sorted = Array.from(fys).sort((a, b) => a - b);
+  const out: FinancialPeriod[] = [];
+  for (const fy of sorted) {
+    const v = debtForFy(facts, fy);
+    if (v == null) continue;
+    const meta = ["LongTermDebtNoncurrent", "LongTermDebtCurrent", "ShortTermBorrowings", "DebtCurrent", "LongTermDebt"]
+      .map(t => dedupeByFyLatestFiled(extractFacts10KFY(facts, t)).find(x => x.fy === fy))
+      .filter((x): x is FinancialPeriod => !!x)
+      .sort((a, b) => b.filed.localeCompare(a.filed))[0];
+    if (meta) out.push({ end: meta.end, val: v, form: "10-K", fy, fp: "FY", filed: meta.filed });
+  }
+  return lastNFiscalYears(out, 5);
+}
+
+function mergeCashFlowTagPair(
+  facts: SecCompanyFactsJson["facts"],
+  tagA: string,
+  tagB: string,
+): FinancialPeriod[] {
+  const byFy = new Map<number, FinancialPeriod>();
+  for (const arr of [extractFacts10KFY(facts, tagA), extractFacts10KFY(facts, tagB)]) {
+    for (const p of dedupeByFyLatestFiled(arr)) {
+      if (!byFy.has(p.fy)) byFy.set(p.fy, p);
+    }
+  }
+  return lastNFiscalYears(Array.from(byFy.entries()).sort((x, y) => x[0] - y[0]).map(([, v]) => v), 5);
+}
+
+function ocfSeries(facts: SecCompanyFactsJson["facts"]): FinancialPeriod[] {
+  return mergeCashFlowTagPair(facts, "NetCashProvidedByUsedInOperatingActivities", "CashProvidedByUsedInOperatingActivities");
+}
+
+function capexSeries(facts: SecCompanyFactsJson["facts"]): FinancialPeriod[] {
+  return mergeCashFlowTagPair(facts, "PaymentsToAcquirePropertyPlantAndEquipment", "PaymentsForCapitalImprovements");
 }
 
 const financialsCache = new Map<string, { data: CompanyFinancials; ts: number }>();
@@ -624,103 +799,39 @@ export async function fetchCompanyFinancialsForSymbol(symbol: string): Promise<C
   const facts = factsData.facts;
   if (!facts) return null;
 
-  const revCandidates = [
-    extractFacts(facts, "Revenues"),
-    extractFacts(facts, "RevenueFromContractWithCustomerExcludingAssessedTax"),
-    extractFacts(facts, "SalesRevenueNet"),
-  ].filter((arr) => arr.length > 0);
-  const revenueRaw =
-    revCandidates.length > 0
-      ? revCandidates.reduce((best, cur) => {
-          const bestLatest = best[best.length - 1]?.end || "";
-          const curLatest = cur[cur.length - 1]?.end || "";
-          return curLatest > bestLatest ? cur : best;
-        })
-      : [];
-
-  const ocfCandidates = [
-    extractFacts(facts, "NetCashProvidedByUsedInOperatingActivities"),
-    extractFacts(facts, "CashProvidedByUsedInOperatingActivities"),
-  ].filter((arr) => arr.length > 0);
-  const operatingCashFlowRaw =
-    ocfCandidates.length > 0
-      ? ocfCandidates.reduce((best, cur) => {
-          const bestLatest = best[best.length - 1]?.end || "";
-          const curLatest = cur[cur.length - 1]?.end || "";
-          return curLatest > bestLatest ? cur : best;
-        })
-      : [];
-
-  const capexCandidates = [
-    extractFacts(facts, "PaymentsToAcquirePropertyPlantAndEquipment"),
-    extractFacts(facts, "PaymentsForCapitalImprovements"),
-  ].filter((arr) => arr.length > 0);
-  const capexRaw =
-    capexCandidates.length > 0
-      ? capexCandidates.reduce((best, cur) => {
-          const bestLatest = best[best.length - 1]?.end || "";
-          const curLatest = cur[cur.length - 1]?.end || "";
-          return curLatest > bestLatest ? cur : best;
-        })
-      : [];
-
-  const financingCandidates = [
-    extractFacts(facts, "NetCashProvidedByUsedInFinancingActivities"),
-    extractFacts(facts, "CashProvidedByUsedInFinancingActivities"),
-  ].filter((arr) => arr.length > 0);
-  const financingRaw =
-    financingCandidates.length > 0
-      ? financingCandidates.reduce((best, cur) => {
-          const bestLatest = best[best.length - 1]?.end || "";
-          const curLatest = cur[cur.length - 1]?.end || "";
-          return curLatest > bestLatest ? cur : best;
-        })
-      : [];
-
-  const investingCandidates = [
-    extractFacts(facts, "NetCashProvidedByUsedInInvestingActivities"),
-    extractFacts(facts, "CashProvidedByUsedInInvestingActivities"),
-  ].filter((arr) => arr.length > 0);
-  const investingRaw =
-    investingCandidates.length > 0
-      ? investingCandidates.reduce((best, cur) => {
-          const bestLatest = best[best.length - 1]?.end || "";
-          const curLatest = cur[cur.length - 1]?.end || "";
-          return curLatest > bestLatest ? cur : best;
-        })
-      : [];
-
-  const currentAssetsRaw = extractFacts(facts, "AssetsCurrent");
-  const currentLiabRaw = extractFacts(facts, "LiabilitiesCurrent");
-  const ltdRaw =
-    extractFacts(facts, "LongTermDebtNoncurrent").length > 0
-      ? extractFacts(facts, "LongTermDebtNoncurrent")
-      : extractFacts(facts, "LongTermDebt");
-  const debtCurrentRaw = extractFacts(facts, "DebtCurrent");
+  const equitySeries = dedupeByFyLatestFiled(
+    extractFacts10KFY(facts, "StockholdersEquity").length > 0
+      ? extractFacts10KFY(facts, "StockholdersEquity")
+      : extractFacts10KFY(facts, "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"),
+  );
 
   const financials: CompanyFinancials = {
-    revenue: deduplicatePeriods(revenueRaw),
-    netIncome: deduplicatePeriods(extractFacts(facts, "NetIncomeLoss")),
-    operatingIncome: deduplicatePeriods(extractFacts(facts, "OperatingIncomeLoss")),
-    eps: deduplicatePeriods(extractFacts(facts, "EarningsPerShareDiluted", "USD/shares")),
-    totalAssets: deduplicatePeriods(extractFacts(facts, "Assets")),
-    totalLiabilities: deduplicatePeriods(extractFacts(facts, "Liabilities")),
-    stockholdersEquity: deduplicatePeriods(
-      extractFacts(facts, "StockholdersEquity").length > 0
-        ? extractFacts(facts, "StockholdersEquity")
-        : extractFacts(facts, "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"),
+    revenue: mergeRevenueSeries(facts),
+    netIncome: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "NetIncomeLoss")), 5),
+    operatingIncome: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "OperatingIncomeLoss")), 5),
+    eps: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "EarningsPerShareDiluted", "USD/shares")), 5),
+    totalAssets: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "Assets")), 5),
+    totalLiabilities: liabilitiesSeries(facts),
+    stockholdersEquity: lastNFiscalYears(equitySeries, 5),
+    cash: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "CashAndCashEquivalentsAtCarryingValue")), 5),
+    sharesOutstanding: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "CommonStockSharesOutstanding", "shares")), 5),
+    grossProfit: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "GrossProfit")), 5),
+    operatingCashFlow: ocfSeries(facts),
+    capitalExpenditures: capexSeries(facts),
+    financingCashFlow: mergeCashFlowTagPair(facts, "NetCashProvidedByUsedInFinancingActivities", "CashProvidedByUsedInFinancingActivities"),
+    investingCashFlow: mergeCashFlowTagPair(facts, "NetCashProvidedByUsedInInvestingActivities", "CashProvidedByUsedInInvestingActivities"),
+    assetsCurrent: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "AssetsCurrent")), 5),
+    liabilitiesCurrent: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "LiabilitiesCurrent")), 5),
+    longTermDebt: lastNFiscalYears(
+      dedupeByFyLatestFiled(
+        extractFacts10KFY(facts, "LongTermDebtNoncurrent").length > 0
+          ? extractFacts10KFY(facts, "LongTermDebtNoncurrent")
+          : extractFacts10KFY(facts, "LongTermDebt"),
+      ),
+      5,
     ),
-    cash: deduplicatePeriods(extractFacts(facts, "CashAndCashEquivalentsAtCarryingValue")),
-    sharesOutstanding: deduplicatePeriods(extractFacts(facts, "CommonStockSharesOutstanding", "shares")),
-    grossProfit: deduplicatePeriods(extractFacts(facts, "GrossProfit")),
-    operatingCashFlow: deduplicatePeriods(operatingCashFlowRaw),
-    capitalExpenditures: deduplicatePeriods(capexRaw),
-    financingCashFlow: deduplicatePeriods(financingRaw),
-    investingCashFlow: deduplicatePeriods(investingRaw),
-    assetsCurrent: deduplicatePeriods(currentAssetsRaw),
-    liabilitiesCurrent: deduplicatePeriods(currentLiabRaw),
-    longTermDebt: deduplicatePeriods(ltdRaw),
-    debtCurrent: deduplicatePeriods(debtCurrentRaw),
+    debtCurrent: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "DebtCurrent")), 5),
+    totalDebt: totalDebtSeries(facts),
   };
   financialsCache.set(sym, { data: financials, ts: Date.now() });
   return financials;
