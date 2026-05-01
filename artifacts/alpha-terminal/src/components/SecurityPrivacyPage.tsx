@@ -41,11 +41,25 @@ type EmailAddress = ClerkUser["emailAddresses"][number];
 type Passkey = NonNullable<ClerkUser["passkeys"]>[number];
 
 const CARD =
-  "rounded-lg border border-[#2a2a2c] bg-[#1a1a1c] p-4 space-y-3 focus-within:ring-1 focus-within:ring-primary/60";
+  "rounded-lg border border-zinc-800/50 bg-[#0c0c0c] p-4 space-y-3 focus-within:ring-1 focus-within:ring-zinc-600/50";
 const BTN_SEG =
-  "px-3 py-2 rounded text-xs font-bold border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a0a]";
-const BTN_SEG_ON = `${BTN_SEG} bg-primary text-black border-primary`;
-const BTN_SEG_OFF = `${BTN_SEG} bg-card text-muted-foreground border-card-border hover:border-primary/30`;
+  "px-3 py-2 rounded text-xs font-bold border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0c0c0c]";
+const BTN_SEG_ON =
+  `${BTN_SEG} border-[#FFB800] bg-transparent text-[#FFB800] hover:bg-[#FFB800]/10 hover:border-[#FFB800]`;
+const BTN_SEG_OFF =
+  `${BTN_SEG} border-card-border bg-transparent text-muted-foreground hover:border-zinc-600 hover:text-zinc-300`;
+
+/** Primary-style: transparent, gold border and label (no solid gold fill). */
+const BTN_GOLD =
+  "!bg-transparent !text-[#FFB800] border border-[#d4a017] shadow-none hover:bg-[#FFB800]/10 hover:border-[#FFB800] hover:!text-[#FFB800] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB800]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0c0c0c] disabled:opacity-50";
+
+/** Destructive: transparent, red border and label (no solid red fill). */
+const BTN_DANGER =
+  "!bg-transparent !text-red-400 border border-red-500/80 shadow-none hover:bg-red-500/10 hover:border-red-400 hover:!text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0c0c0c] disabled:opacity-50";
+
+/** Neutral outline for secondary actions (Cancel, Rename, Revoke, etc.). */
+const BTN_NEUTRAL =
+  "!bg-transparent !text-zinc-200 border border-zinc-700 shadow-none hover:border-zinc-500 hover:!text-[#FFB800] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0c0c0c] disabled:opacity-50";
 
 function formatWhen(d: Date | null | undefined): string {
   if (!d) return "Unknown";
@@ -101,7 +115,7 @@ function SecurityCard({
   return (
     <section className={CARD}>
       <div>
-        <h3 className="text-xs font-bold text-primary uppercase tracking-widest font-mono">{title}</h3>
+        <h3 className="font-mono text-[9px] font-bold tracking-[0.2em] text-zinc-500 uppercase">{title}</h3>
         {description ? (
           <p className="mt-1 font-mono text-[10px] text-zinc-500 leading-relaxed">{description}</p>
         ) : null}
@@ -175,7 +189,7 @@ function PasswordCard({ user }: { user: ClerkUser }) {
       </p>
       <form onSubmit={onSubmit} className="space-y-3">
         <div className="space-y-1">
-          <Label htmlFor="sec-cur-pw" className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest">
+          <Label htmlFor="sec-cur-pw" className="font-mono text-[9px] font-bold tracking-[0.2em] text-zinc-500 uppercase">
             Current password
           </Label>
           <Input
@@ -190,7 +204,7 @@ function PasswordCard({ user }: { user: ClerkUser }) {
           />
         </div>
         <div className="space-y-1">
-          <Label htmlFor="sec-new-pw" className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest">
+          <Label htmlFor="sec-new-pw" className="font-mono text-[9px] font-bold tracking-[0.2em] text-zinc-500 uppercase">
             New password
           </Label>
           <Input
@@ -203,7 +217,7 @@ function PasswordCard({ user }: { user: ClerkUser }) {
           />
         </div>
         <div className="space-y-1">
-          <Label htmlFor="sec-conf-pw" className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest">
+          <Label htmlFor="sec-conf-pw" className="font-mono text-[9px] font-bold tracking-[0.2em] text-zinc-500 uppercase">
             Confirm new password
           </Label>
           <Input
@@ -223,8 +237,9 @@ function PasswordCard({ user }: { user: ClerkUser }) {
         ) : null}
         <Button
           type="submit"
+          variant="ghost"
           disabled={busy || !current || !next}
-          className="font-mono text-xs h-9"
+          className={`font-mono text-xs h-9 ${BTN_GOLD}`}
           aria-busy={busy}
         >
           {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden /> : null}
@@ -351,11 +366,10 @@ function MfaCard({ user }: { user: ClerkUser }) {
       <LiveStatus message={announce} />
       <div className="flex flex-wrap items-center gap-2">
         <span
-          className={`inline-flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-bold font-mono uppercase border ${
-            mfaOn ? "border-emerald-600/60 text-emerald-400 bg-emerald-950/40" : "border-zinc-600 text-zinc-400 bg-zinc-900/50"
+          className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-bold font-mono uppercase border ${
+            mfaOn ? "border-emerald-500/80 text-emerald-400 bg-transparent" : "border-zinc-600 text-zinc-400 bg-transparent"
           }`}
         >
-          <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden />
           {mfaOn ? "MFA on" : "MFA off"}
         </span>
         {methods.length ? (
@@ -379,17 +393,17 @@ function MfaCard({ user }: { user: ClerkUser }) {
       ) : null}
 
       <div className="space-y-2 border-t border-[#2a2a2c] pt-3">
-        <p className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest">Authenticator app (TOTP)</p>
+        <p className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Authenticator app (TOTP)</p>
         {user.totpEnabled ? (
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" size="sm" className="font-mono text-xs" onClick={() => setDisableOpen(true)}>
+            <Button type="button" variant="ghost" size="sm" className={`font-mono text-xs ${BTN_NEUTRAL}`} onClick={() => setDisableOpen(true)}>
               Disable TOTP
             </Button>
           </div>
         ) : (
           <div className="space-y-2">
             {!totpSetup ? (
-              <Button type="button" size="sm" className="font-mono text-xs" onClick={startTotp} disabled={busy} aria-busy={busy}>
+              <Button type="button" variant="ghost" size="sm" className={`font-mono text-xs ${BTN_GOLD}`} onClick={startTotp} disabled={busy} aria-busy={busy}>
                 {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                 Set up authenticator
               </Button>
@@ -399,16 +413,16 @@ function MfaCard({ user }: { user: ClerkUser }) {
                   <div className="flex gap-3 items-start flex-wrap">
                     <img src={qrDataUrl} alt="QR code for authenticator setup" className="rounded border border-zinc-700 bg-white p-1" />
                     <div className="space-y-1 min-w-0 flex-1">
-                      <span className="font-mono text-[9px] text-zinc-500 uppercase">Secret</span>
+                      <span className="font-mono text-[9px] font-bold tracking-[0.2em] text-zinc-500 uppercase">Secret</span>
                       <div className="flex gap-2 flex-wrap">
                         <code className="font-mono text-[10px] break-all text-zinc-300 bg-black/40 px-2 py-1 rounded border border-zinc-800">
                           {totpSetup.secret}
                         </code>
                         <Button
                           type="button"
-                          variant="outline"
+                          variant="ghost"
                           size="sm"
-                          className="font-mono text-xs shrink-0"
+                          className={`font-mono text-xs shrink-0 ${BTN_NEUTRAL}`}
                           onClick={() => void copyText("TOTP secret", totpSetup.secret ?? "")}
                           disabled={!totpSetup.secret}
                         >
@@ -420,7 +434,7 @@ function MfaCard({ user }: { user: ClerkUser }) {
                   </div>
                 ) : null}
                 <div className="space-y-1 max-w-xs">
-                  <Label htmlFor="totp-verify" className="font-mono text-[9px] text-zinc-500 uppercase">
+                  <Label htmlFor="totp-verify" className="font-mono text-[9px] font-bold tracking-[0.2em] text-zinc-500 uppercase">
                     6-digit code
                   </Label>
                   <Input
@@ -433,11 +447,11 @@ function MfaCard({ user }: { user: ClerkUser }) {
                   />
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button type="button" size="sm" className="font-mono text-xs" onClick={verifyTotp} disabled={busy || totpCode.trim().length < 6}>
+                  <Button type="button" variant="ghost" size="sm" className={`font-mono text-xs ${BTN_GOLD}`} onClick={verifyTotp} disabled={busy || totpCode.trim().length < 6}>
                     {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                     Verify and enable
                   </Button>
-                  <Button type="button" variant="ghost" size="sm" className="font-mono text-xs" onClick={() => setTotpSetup(null)} disabled={busy}>
+                  <Button type="button" variant="ghost" size="sm" className={`font-mono text-xs ${BTN_NEUTRAL}`} onClick={() => setTotpSetup(null)} disabled={busy}>
                     Cancel
                   </Button>
                 </div>
@@ -448,16 +462,16 @@ function MfaCard({ user }: { user: ClerkUser }) {
       </div>
 
       <div className="space-y-2 border-t border-[#2a2a2c] pt-3">
-        <p className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest">Backup codes</p>
+        <p className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Backup codes</p>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" size="sm" className="font-mono text-xs" onClick={() => setBackupOpen(true)} disabled={busy}>
+          <Button type="button" variant="ghost" size="sm" className={`font-mono text-xs ${BTN_GOLD}`} onClick={() => setBackupOpen(true)} disabled={busy}>
             View or generate codes
           </Button>
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
-            className="font-mono text-xs"
+            className={`font-mono text-xs ${BTN_NEUTRAL}`}
             onClick={() => setBackupRegenOpen(true)}
             disabled={busy}
           >
@@ -475,9 +489,9 @@ function MfaCard({ user }: { user: ClerkUser }) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="font-mono text-xs">Cancel</AlertDialogCancel>
+            <AlertDialogCancel className={`font-mono text-xs ${BTN_NEUTRAL}`}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="font-mono text-xs bg-destructive text-destructive-foreground focus-visible:ring-destructive"
+              className={`font-mono text-xs ${BTN_DANGER}`}
               onClick={(e) => {
                 e.preventDefault();
                 void disableTotp();
@@ -498,9 +512,9 @@ function MfaCard({ user }: { user: ClerkUser }) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="font-mono text-xs">Cancel</AlertDialogCancel>
+            <AlertDialogCancel className={`font-mono text-xs ${BTN_NEUTRAL}`}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="font-mono text-xs bg-destructive text-destructive-foreground focus-visible:ring-destructive"
+              className={`font-mono text-xs ${BTN_DANGER}`}
               onClick={(e) => {
                 e.preventDefault();
                 setBackupRegenOpen(false);
@@ -532,9 +546,9 @@ function MfaCard({ user }: { user: ClerkUser }) {
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  className="font-mono text-xs"
+                  className={`font-mono text-xs ${BTN_NEUTRAL}`}
                   onClick={() => void copyText("Backup codes", backupCodes.join("\n"))}
                 >
                   <Copy className="w-3.5 h-3.5" aria-hidden />
@@ -542,9 +556,9 @@ function MfaCard({ user }: { user: ClerkUser }) {
                 </Button>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  className="font-mono text-xs"
+                  className={`font-mono text-xs ${BTN_NEUTRAL}`}
                   onClick={() => {
                     const blob = new Blob([backupCodes.join("\n")], { type: "text/plain" });
                     const a = document.createElement("a");
@@ -566,7 +580,8 @@ function MfaCard({ user }: { user: ClerkUser }) {
           <DialogFooter className="gap-2 sm:gap-0">
             <Button
               type="button"
-              className="font-mono text-xs"
+              variant="ghost"
+              className={`font-mono text-xs ${BTN_GOLD}`}
               onClick={() => void generateBackupCodes()}
               disabled={busy}
               aria-busy={busy}
@@ -639,7 +654,7 @@ function PasskeysCard({ user }: { user: ClerkUser }) {
       {!webAuthnSupported ? (
         <p className="font-mono text-[11px] text-amber-500">This browser does not expose WebAuthn passkeys.</p>
       ) : null}
-      <Button type="button" size="sm" className="font-mono text-xs" onClick={addPasskey} disabled={!webAuthnSupported || busyId === "add"}>
+      <Button type="button" variant="ghost" size="sm" className={`font-mono text-xs ${BTN_GOLD}`} onClick={addPasskey} disabled={!webAuthnSupported || busyId === "add"}>
         {busyId === "add" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
         Add passkey
       </Button>
@@ -662,9 +677,9 @@ function PasskeysCard({ user }: { user: ClerkUser }) {
               <div className="flex gap-2 shrink-0">
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  className="font-mono text-[10px] h-8"
+                  className={`font-mono text-[10px] h-8 ${BTN_NEUTRAL}`}
                   onClick={() => setRename({ passkey: pk, name: pk.name ?? "" })}
                   disabled={!!busyId}
                 >
@@ -672,9 +687,9 @@ function PasskeysCard({ user }: { user: ClerkUser }) {
                 </Button>
                 <Button
                   type="button"
-                  variant="destructive"
+                  variant="ghost"
                   size="sm"
-                  className="font-mono text-[10px] h-8"
+                  className={`font-mono text-[10px] h-8 ${BTN_DANGER}`}
                   onClick={() => setDeletePk(pk)}
                   disabled={!!busyId}
                 >
@@ -693,7 +708,7 @@ function PasskeysCard({ user }: { user: ClerkUser }) {
           </DialogHeader>
           {rename ? (
             <div className="space-y-2">
-              <Label htmlFor="pk-name" className="font-mono text-[9px] uppercase text-zinc-500">
+              <Label htmlFor="pk-name" className="font-mono text-[9px] font-bold tracking-[0.2em] text-zinc-500 uppercase">
                 Label
               </Label>
               <Input
@@ -705,10 +720,10 @@ function PasskeysCard({ user }: { user: ClerkUser }) {
             </div>
           ) : null}
           <DialogFooter>
-            <Button type="button" variant="outline" className="font-mono text-xs" onClick={() => setRename(null)}>
+            <Button type="button" variant="ghost" className={`font-mono text-xs ${BTN_NEUTRAL}`} onClick={() => setRename(null)}>
               Cancel
             </Button>
-            <Button type="button" className="font-mono text-xs" onClick={() => void saveRename()} disabled={busyId !== null}>
+            <Button type="button" variant="ghost" className={`font-mono text-xs ${BTN_GOLD}`} onClick={() => void saveRename()} disabled={busyId !== null}>
               {busyId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
               Save
             </Button>
@@ -725,9 +740,9 @@ function PasskeysCard({ user }: { user: ClerkUser }) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="font-mono text-xs">Cancel</AlertDialogCancel>
+            <AlertDialogCancel className={`font-mono text-xs ${BTN_NEUTRAL}`}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="font-mono text-xs bg-destructive text-destructive-foreground"
+              className={`font-mono text-xs ${BTN_DANGER}`}
               onClick={(e) => {
                 e.preventDefault();
                 void doDelete();
@@ -865,14 +880,14 @@ function SessionsCard({
             return (
               <li
                 key={s.id}
-                className={`rounded border p-2 ${isCurrent ? "border-primary/50 bg-primary/5" : "border-zinc-800/80 bg-black/20"}`}
+                className={`rounded border p-2 ${isCurrent ? "border-[#d4a017]/50 bg-transparent" : "border-zinc-800/80 bg-black/20"}`}
               >
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                   <div>
                     <div className="font-mono text-xs text-zinc-200 flex flex-wrap items-center gap-2">
                       {label}
                       {isCurrent ? (
-                        <span className="text-[10px] uppercase font-bold text-primary border border-primary/40 rounded px-1.5 py-0.5">
+                        <span className="text-[10px] uppercase font-bold text-[#FFB800] border border-[#d4a017]/80 rounded px-1.5 py-0.5 bg-transparent">
                           This session
                         </span>
                       ) : (
@@ -894,9 +909,9 @@ function SessionsCard({
                   {canRevoke ? (
                     <Button
                       type="button"
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
-                      className="font-mono text-[10px] h-8 shrink-0"
+                      className={`font-mono text-[10px] h-8 shrink-0 ${BTN_NEUTRAL}`}
                       onClick={() => setRevokeTarget(s)}
                       disabled={!!busyId || bulkBusy}
                     >
@@ -911,9 +926,9 @@ function SessionsCard({
       ) : null}
       <Button
         type="button"
-        variant="destructive"
+        variant="ghost"
         size="sm"
-        className="font-mono text-xs"
+        className={`font-mono text-xs ${BTN_DANGER}`}
         onClick={() => void revokeOthers()}
         disabled={bulkBusy || !currentSessionId || loading || !sessionsLoaded}
         aria-busy={bulkBusy}
@@ -932,9 +947,9 @@ function SessionsCard({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="font-mono text-xs">Cancel</AlertDialogCancel>
+            <AlertDialogCancel className={`font-mono text-xs ${BTN_NEUTRAL}`}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="font-mono text-xs bg-destructive text-destructive-foreground"
+              className={`font-mono text-xs ${BTN_DANGER}`}
               onClick={(e) => {
                 e.preventDefault();
                 if (revokeTarget) void revokeOne(revokeTarget);
@@ -1048,14 +1063,14 @@ function EmailRow({
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-xs text-zinc-200">{email.emailAddress}</span>
         {isPrimary ? (
-          <span className="text-[10px] font-bold uppercase text-primary border border-primary/40 rounded px-1.5">Primary</span>
+          <span className="text-[10px] font-bold uppercase text-[#FFB800] border border-[#d4a017]/80 rounded px-1.5 py-0.5 bg-transparent">Primary</span>
         ) : null}
         {verified ? (
-          <span className="text-[10px] font-bold uppercase text-emerald-400 border border-emerald-700/50 rounded px-1.5">
+          <span className="text-[10px] font-bold uppercase text-emerald-400 border border-emerald-500/80 rounded px-1.5 py-0.5 bg-transparent">
             Verified
           </span>
         ) : (
-          <span className="text-[10px] font-bold uppercase text-amber-400 border border-amber-700/50 rounded px-1.5">
+          <span className="text-[10px] font-bold uppercase text-amber-400 border border-amber-500/80 rounded px-1.5 py-0.5 bg-transparent">
             Unverified
           </span>
         )}
@@ -1066,7 +1081,7 @@ function EmailRow({
       {!verified ? (
         <div className="space-y-2">
           <div className="flex flex-wrap gap-2">
-            <Button type="button" size="sm" variant="outline" className="font-mono text-[10px] h-8" onClick={sendCode} disabled={busy}>
+            <Button type="button" variant="ghost" size="sm" className={`font-mono text-[10px] h-8 ${BTN_NEUTRAL}`} onClick={sendCode} disabled={busy}>
               {busy && phase === "idle" ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
               Send code
             </Button>
@@ -1074,7 +1089,7 @@ function EmailRow({
           {phase === "sent" ? (
             <div className="flex flex-wrap gap-2 items-end">
               <div className="space-y-1">
-                <Label className="font-mono text-[9px] text-zinc-500 uppercase">Code</Label>
+                <Label className="font-mono text-[9px] font-bold tracking-[0.2em] text-zinc-500 uppercase">Code</Label>
                 <Input
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
@@ -1083,7 +1098,7 @@ function EmailRow({
                   autoComplete="one-time-code"
                 />
               </div>
-              <Button type="button" size="sm" className="font-mono text-[10px] h-8" onClick={verifyCode} disabled={busy || code.trim().length < 6}>
+              <Button type="button" variant="ghost" size="sm" className={`font-mono text-[10px] h-8 ${BTN_GOLD}`} onClick={verifyCode} disabled={busy || code.trim().length < 6}>
                 Verify
               </Button>
             </div>
@@ -1092,12 +1107,12 @@ function EmailRow({
       ) : null}
       <div className="flex flex-wrap gap-2">
         {verified && !isPrimary ? (
-          <Button type="button" variant="outline" size="sm" className="font-mono text-[10px] h-8" onClick={makePrimary} disabled={busy}>
+          <Button type="button" variant="ghost" size="sm" className={`font-mono text-[10px] h-8 ${BTN_NEUTRAL}`} onClick={makePrimary} disabled={busy}>
             Set as primary
           </Button>
         ) : null}
         {!isPrimary ? (
-          <Button type="button" variant="destructive" size="sm" className="font-mono text-[10px] h-8" onClick={() => setRemoveOpen(true)} disabled={busy}>
+          <Button type="button" variant="ghost" size="sm" className={`font-mono text-[10px] h-8 ${BTN_DANGER}`} onClick={() => setRemoveOpen(true)} disabled={busy}>
             Remove
           </Button>
         ) : null}
@@ -1112,9 +1127,9 @@ function EmailRow({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="font-mono text-xs">Cancel</AlertDialogCancel>
+            <AlertDialogCancel className={`font-mono text-xs ${BTN_NEUTRAL}`}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="font-mono text-xs bg-destructive text-destructive-foreground"
+              className={`font-mono text-xs ${BTN_DANGER}`}
               onClick={(e) => {
                 e.preventDefault();
                 void remove();
@@ -1155,7 +1170,7 @@ function EmailsCard({ user }: { user: ClerkUser }) {
     <SecurityCard title="Email addresses" description="Manage addresses for this account. Primary is used for notices where applicable.">
       <div className="flex flex-wrap gap-2 items-end">
         <div className="space-y-1 flex-1 min-w-[200px]">
-          <Label htmlFor="new-email" className="font-mono text-[9px] text-zinc-500 uppercase">
+          <Label htmlFor="new-email" className="font-mono text-[9px] font-bold tracking-[0.2em] text-zinc-500 uppercase">
             Add email
           </Label>
           <Input
@@ -1167,7 +1182,7 @@ function EmailsCard({ user }: { user: ClerkUser }) {
             autoComplete="email"
           />
         </div>
-        <Button type="button" size="sm" className="font-mono text-xs h-9" onClick={add} disabled={busy || !newEmail.trim()} aria-busy={busy}>
+        <Button type="button" variant="ghost" size="sm" className={`font-mono text-xs h-9 ${BTN_GOLD}`} onClick={add} disabled={busy || !newEmail.trim()} aria-busy={busy}>
           {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
           Add
         </Button>
@@ -1214,7 +1229,7 @@ function DeleteAccountCard({ user }: { user: ClerkUser }) {
 
   return (
     <SecurityCard title="Delete account" description="Permanently removes your user. This cannot be undone.">
-      <Button type="button" variant="destructive" size="sm" className="font-mono text-xs" onClick={() => setOpen(true)}>
+      <Button type="button" variant="ghost" size="sm" className={`font-mono text-xs ${BTN_DANGER}`} onClick={() => setOpen(true)}>
         Delete my account…
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -1226,7 +1241,7 @@ function DeleteAccountCard({ user }: { user: ClerkUser }) {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1">
-            <Label htmlFor="del-confirm" className="font-mono text-[9px] uppercase text-zinc-500">
+            <Label htmlFor="del-confirm" className="font-mono text-[9px] font-bold tracking-[0.2em] text-zinc-500 uppercase">
               Confirmation
             </Label>
             <Input
@@ -1239,13 +1254,13 @@ function DeleteAccountCard({ user }: { user: ClerkUser }) {
             />
           </div>
           <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" className="font-mono text-xs" onClick={() => setOpen(false)}>
+            <Button type="button" variant="ghost" className={`font-mono text-xs ${BTN_NEUTRAL}`} onClick={() => setOpen(false)}>
               Cancel
             </Button>
             <Button
               type="button"
-              variant="destructive"
-              className="font-mono text-xs"
+              variant="ghost"
+              className={`font-mono text-xs ${BTN_DANGER}`}
               disabled={!canDelete || busy}
               onClick={() => void runDelete()}
               aria-busy={busy}
