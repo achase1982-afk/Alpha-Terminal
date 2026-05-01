@@ -14,6 +14,7 @@ import { classifyForFlowPersistence } from "./optionsTradeClassifier.js";
 import { flushFlowPersistenceNow } from "./optionsFlowPersistence.js";
 import { runRollupOnceForSymbol } from "./optionsFlowRollup.js";
 import { FlowLegWindow } from "./flowMultilegExtras.js";
+import { upsertStrikeVolumeBaselineFromContractBaseline } from "./flowStrikeBaselineDaily.js";
 
 const POLYGON_API = "https://api.polygon.io";
 const MAX_OCC = 50;
@@ -447,6 +448,15 @@ export async function runStrategistTapeBackfill(args: {
     try {
       const bl = await getContract20dBaseline(occ, { referenceDate: new Date(`${sessionDate}T12:00:00Z`) });
       baselineAvgVol = bl?.avgVolume ?? null;
+      if (bl && bl.avgVolume > 0) {
+        await upsertStrikeVolumeBaselineFromContractBaseline({
+          ticker,
+          baselineDate: sessionDate,
+          optionSymbol: occ,
+          avgVolume20d: bl.avgVolume,
+          daysObserved: bl.daysObserved,
+        });
+      }
     } catch (err) {
       logFlowPipelineWarn(
         "tape_backfill_baseline",
