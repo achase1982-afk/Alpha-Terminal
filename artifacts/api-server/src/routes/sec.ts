@@ -560,6 +560,15 @@ interface CompanyFinancials {
   cash: FinancialPeriod[];
   sharesOutstanding: FinancialPeriod[];
   grossProfit: FinancialPeriod[];
+  /** Net cash from operating activities (US-GAAP) */
+  operatingCashFlow: FinancialPeriod[];
+  capitalExpenditures: FinancialPeriod[];
+  financingCashFlow: FinancialPeriod[];
+  investingCashFlow: FinancialPeriod[];
+  assetsCurrent: FinancialPeriod[];
+  liabilitiesCurrent: FinancialPeriod[];
+  longTermDebt: FinancialPeriod[];
+  debtCurrent: FinancialPeriod[];
 }
 
 function extractFacts(facts: SecCompanyFactsJson["facts"], tag: string, unit: string = "USD"): FinancialPeriod[] {
@@ -631,6 +640,61 @@ router.get("/company-financials", async (req, res) => {
         })
       : [];
 
+    const ocfCandidates = [
+      extractFacts(facts, "NetCashProvidedByUsedInOperatingActivities"),
+      extractFacts(facts, "CashProvidedByUsedInOperatingActivities"),
+    ].filter(arr => arr.length > 0);
+    const operatingCashFlowRaw = ocfCandidates.length > 0
+      ? ocfCandidates.reduce((best, cur) => {
+          const bestLatest = best[best.length - 1]?.end || "";
+          const curLatest = cur[cur.length - 1]?.end || "";
+          return curLatest > bestLatest ? cur : best;
+        })
+      : [];
+
+    const capexCandidates = [
+      extractFacts(facts, "PaymentsToAcquirePropertyPlantAndEquipment"),
+      extractFacts(facts, "PaymentsForCapitalImprovements"),
+    ].filter(arr => arr.length > 0);
+    const capexRaw = capexCandidates.length > 0
+      ? capexCandidates.reduce((best, cur) => {
+          const bestLatest = best[best.length - 1]?.end || "";
+          const curLatest = cur[cur.length - 1]?.end || "";
+          return curLatest > bestLatest ? cur : best;
+        })
+      : [];
+
+    const financingCandidates = [
+      extractFacts(facts, "NetCashProvidedByUsedInFinancingActivities"),
+      extractFacts(facts, "CashProvidedByUsedInFinancingActivities"),
+    ].filter(arr => arr.length > 0);
+    const financingRaw = financingCandidates.length > 0
+      ? financingCandidates.reduce((best, cur) => {
+          const bestLatest = best[best.length - 1]?.end || "";
+          const curLatest = cur[cur.length - 1]?.end || "";
+          return curLatest > bestLatest ? cur : best;
+        })
+      : [];
+
+    const investingCandidates = [
+      extractFacts(facts, "NetCashProvidedByUsedInInvestingActivities"),
+      extractFacts(facts, "CashProvidedByUsedInInvestingActivities"),
+    ].filter(arr => arr.length > 0);
+    const investingRaw = investingCandidates.length > 0
+      ? investingCandidates.reduce((best, cur) => {
+          const bestLatest = best[best.length - 1]?.end || "";
+          const curLatest = cur[cur.length - 1]?.end || "";
+          return curLatest > bestLatest ? cur : best;
+        })
+      : [];
+
+    const currentAssetsRaw = extractFacts(facts, "AssetsCurrent");
+    const currentLiabRaw = extractFacts(facts, "LiabilitiesCurrent");
+    const ltdRaw = extractFacts(facts, "LongTermDebtNoncurrent").length > 0
+      ? extractFacts(facts, "LongTermDebtNoncurrent")
+      : extractFacts(facts, "LongTermDebt");
+    const debtCurrentRaw = extractFacts(facts, "DebtCurrent");
+
     const financials: CompanyFinancials = {
       revenue: deduplicatePeriods(revenueRaw),
       netIncome: deduplicatePeriods(extractFacts(facts, "NetIncomeLoss")),
@@ -646,6 +710,14 @@ router.get("/company-financials", async (req, res) => {
       cash: deduplicatePeriods(extractFacts(facts, "CashAndCashEquivalentsAtCarryingValue")),
       sharesOutstanding: deduplicatePeriods(extractFacts(facts, "CommonStockSharesOutstanding", "shares")),
       grossProfit: deduplicatePeriods(extractFacts(facts, "GrossProfit")),
+      operatingCashFlow: deduplicatePeriods(operatingCashFlowRaw),
+      capitalExpenditures: deduplicatePeriods(capexRaw),
+      financingCashFlow: deduplicatePeriods(financingRaw),
+      investingCashFlow: deduplicatePeriods(investingRaw),
+      assetsCurrent: deduplicatePeriods(currentAssetsRaw),
+      liabilitiesCurrent: deduplicatePeriods(currentLiabRaw),
+      longTermDebt: deduplicatePeriods(ltdRaw),
+      debtCurrent: deduplicatePeriods(debtCurrentRaw),
     };
 
     financialsCache.set(symbol, { data: financials, ts: Date.now() });

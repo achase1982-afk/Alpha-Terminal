@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, memo, type TouchEvent as ReactTouchEvent } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, memo, useId, type TouchEvent as ReactTouchEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import { useQuote, type QuoteData } from "@/hooks/useQuote";
@@ -10,6 +10,7 @@ import { Loader2, Activity, RefreshCw, Clock, X, ExternalLink } from "lucide-rea
 import {
   useGetQuote, useGetPriceHistory,
 } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
 import {
   LineChart, Line, BarChart, Bar, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -37,10 +38,10 @@ const C = {
 };
 
 const f = `'SFMono-Regular', 'SF Mono', ui-monospace, 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace`;
+const monoNum = "'JetBrains Mono', ui-monospace, monospace";
 const tt: React.CSSProperties = { background: C.card, border: `1px solid ${C.borderHi}`, borderRadius: 8, fontFamily: f, fontSize: 13, color: C.text, padding: "8px 12px" };
 const SUB_LABELS = ["Overview", "Financials", "SEC", "Ownership", "Valuation"] as const;
 const FINANCIALS_TABS = [["income", "Income"], ["balance", "Balance"], ["cashflow", "Cash Flow"]] as const;
-const CF_LEGEND = [["Operating", C.green], ["Investing", C.gold], ["Financing", C.textDim]] as const;
 const SEC_FILTER_TYPES = ["ALL", "10-K", "10-Q", "8-K", "DEF 14A", "4", "SC 13G"] as const;
 const SEC_TYPE_COLORS: Record<string, string> = { "10-K": C.gold, "10-Q": C.cyan, "8-K": C.amber, "DEF 14A": C.purple, "4": C.green, "SC 13G": C.textMuted, "SC 13G/A": C.textMuted, "S-3": C.textDim, "S-1": C.textDim };
 
@@ -155,20 +156,41 @@ function Badge({ children, color = C.gold }: { children: React.ReactNode; color?
 
 function CollapseSection({ label, children, defaultOpen = true }: { label: string; children: React.ReactNode; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
+  const btnId = useId();
+  const panelId = useId();
   return (
     <div style={{ marginBottom: 18 }}>
       <div
+        role="button"
+        tabIndex={0}
+        id={btnId}
+        aria-expanded={open}
+        aria-controls={panelId}
         onClick={() => setOpen(o => !o)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen(o => !o);
+          }
+        }}
         style={{
           display: "flex", justifyContent: "space-between", alignItems: "center",
           cursor: "pointer", paddingBottom: 8, marginBottom: 10,
           borderBottom: `1px solid ${C.border}`, userSelect: "none",
+          outline: "none",
         }}
+        className="company-collapse-trigger"
+        onFocus={(e) => { e.currentTarget.style.boxShadow = `0 0 0 2px ${C.gold}`; }}
+        onBlur={(e) => { e.currentTarget.style.boxShadow = "none"; }}
       >
         <span style={{ fontSize: 11, fontFamily: f, letterSpacing: "0.18em", color: C.gold, fontWeight: 700, textTransform: "uppercase" }}>{label}</span>
-        <span style={{ color: C.textMuted, fontSize: 11 }}>{open ? "▲" : "▼"}</span>
+        <span style={{ color: C.textMuted, fontSize: 11 }} aria-hidden>{open ? "▲" : "▼"}</span>
       </div>
-      {open && children}
+      {open && (
+        <div id={panelId} role="region" aria-labelledby={btnId}>
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -543,6 +565,14 @@ interface CompanyFinancialsData {
   cash: FinancialPeriod[];
   sharesOutstanding: FinancialPeriod[];
   grossProfit: FinancialPeriod[];
+  operatingCashFlow: FinancialPeriod[];
+  capitalExpenditures: FinancialPeriod[];
+  financingCashFlow: FinancialPeriod[];
+  investingCashFlow: FinancialPeriod[];
+  assetsCurrent: FinancialPeriod[];
+  liabilitiesCurrent: FinancialPeriod[];
+  longTermDebt: FinancialPeriod[];
+  debtCurrent: FinancialPeriod[];
 }
 
 function useCompanyFinancials(ticker: string) {
@@ -577,160 +607,16 @@ function useCompanyFinancials(ticker: string) {
   return { data, loading, error, retry: () => { setRetryCount(c => c + 1); } };
 }
 
-
-interface AnalystRating {
-  id: string;
-  date: string;
-  ticker: string;
-  name: string;
-  analyst: string;
-  analystName: string;
-  actionCompany: string;
-  ratingCurrent: string;
-  ratingPrior: string;
-  ptCurrent: string | null;
-  ptPrior: string | null;
-  ptPctChange: string | null;
-  importance: number;
-  url: string;
+function pickAnnualForFy(arr: FinancialPeriod[] | undefined, fy: number): FinancialPeriod | undefined {
+  if (!arr?.length) return undefined;
+  const hits = arr.filter(p => p.form === "10-K" && p.fy === fy);
+  if (hits.length === 0) return undefined;
+  return hits.sort((a, b) => b.filed.localeCompare(a.filed))[0];
 }
-
-const actionColors: Record<string, string> = {
-  Upgrades: C.green,
-  Downgrades: C.red,
-  Initiates: C.gold,
-  Maintains: C.textMuted,
-  Reiterates: C.textMuted,
-};
-
-interface AnalystInsight {
-  id: string;
-  date: string;
-  firm: string;
-  action: string;
-  rating: string;
-  priceTarget: string | null;
-  summary: string;
-  ticker: string;
-  name: string;
-}
-
-const SubAnalystRatings = memo(function SubAnalystRatings({ ticker }: { ticker: string }) {
-  const [ratings, setRatings] = useState<AnalystRating[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [insightsList, setInsightsList] = useState<AnalystInsight[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setRatings([]);
-    setInsightsList([]);
-    Promise.all([
-      fetch(`${API_BASE}/market/analyst-ratings?symbol=${ticker}`).then(r => r.json()).catch(() => ({ ratings: [] })),
-      fetch(`${API_BASE}/market/analyst-insights?symbol=${ticker}`).then(r => r.json()).catch(() => ({ insights: [] })),
-    ]).then(([ratingsData, insightsData]) => {
-      if (cancelled) return;
-      setRatings(ratingsData.ratings || []);
-      setInsightsList(insightsData.insights || []);
-      setLoading(false);
-    });
-    return () => { cancelled = true; };
-  }, [ticker]);
-
-  if (loading) {
-    return (
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20, textAlign: "center" }}>
-        <Loader2 className="w-5 h-5 animate-spin mx-auto" style={{ color: C.gold }} />
-        <p className="font-mono text-xs mt-2" style={{ color: C.textDim }}>Loading analyst data...</p>
-      </div>
-    );
-  }
-
-  if (ratings.length === 0 && insightsList.length === 0) return null;
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <h3 className="font-mono font-bold text-xs tracking-widest" style={{ color: C.gold }}>ANALYST RATINGS</h3>
-
-      {insightsList.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {insightsList.slice(0, 3).map(ins => (
-            <div key={ins.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 14px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                <span className="font-mono text-[11px] font-bold" style={{ color: C.gold }}>{ins.firm}</span>
-                <span className="font-mono text-[10px]" style={{ color: C.textDim }}>{ins.rating}</span>
-                {ins.priceTarget && <span className="font-mono text-[10px] font-bold" style={{ color: C.text }}>PT ${parseFloat(ins.priceTarget).toFixed(0)}</span>}
-                <span className="font-mono text-[10px]" style={{ color: C.textDim }}>{ins.date}</span>
-              </div>
-              <p className="font-mono text-[11px] leading-relaxed" style={{ color: C.textSoft }}>{ins.summary}</p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {ratings.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {ratings.slice(0, 10).map(r => {
-            const actionColor = actionColors[r.actionCompany] || C.textMuted;
-            const ptChange = r.ptPrior && r.ptCurrent
-              ? parseFloat(r.ptCurrent) - parseFloat(r.ptPrior)
-              : null;
-
-            return (
-              <div
-                key={r.id}
-                style={{
-                  background: C.card,
-                  border: `1px solid ${C.border}`,
-                  borderRadius: 8,
-                  padding: "8px 12px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                    <span className="font-mono text-[11px] font-bold" style={{ color: actionColor }}>
-                      {r.actionCompany.toUpperCase()}
-                    </span>
-                    <span className="font-mono text-[11px]" style={{ color: C.textMuted }}>
-                      {r.analystName || r.analyst}
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
-                    <span className="font-mono text-[11px]" style={{ color: C.text }}>{r.ratingCurrent}</span>
-                    {r.ratingPrior && r.ratingPrior !== r.ratingCurrent && (
-                      <span className="font-mono text-[10px]" style={{ color: C.textDim }}>
-                        (was {r.ratingPrior})
-                      </span>
-                    )}
-                    {r.ptCurrent && (
-                      <span className="font-mono text-[11px] font-bold" style={{ color: C.text }}>
-                        PT ${parseFloat(r.ptCurrent).toFixed(0)}
-                      </span>
-                    )}
-                    {ptChange !== null && ptChange !== 0 && (
-                      <span className="font-mono text-[10px]" style={{ color: ptChange > 0 ? C.green : C.red }}>
-                        {ptChange > 0 ? "▲" : "▼"} ${Math.abs(ptChange).toFixed(0)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <span className="font-mono text-[10px] shrink-0" style={{ color: C.textDim }}>
-                  {r.date}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-});
 
 const SubFinancials = memo(function SubFinancials({ ticker }: { ticker: string }) {
-  const [view, setView] = useState("income");
+  const [view, setView] = useState<(typeof FINANCIALS_TABS)[number][0]>("income");
+  const finTabsId = useId();
   const { data: fin, loading, error, retry } = useCompanyFinancials(ticker);
 
   const revChart = useMemo(() => {
@@ -749,56 +635,109 @@ const SubFinancials = memo(function SubFinancials({ ticker }: { ticker: string }
       .map(r => ({ yr: `FY${String(r.fy).slice(-2)}`, val: +r.val.toFixed(2) }));
   }, [fin]);
 
-  const bsData = useMemo(() => {
-    if (!fin) return null;
+  const balanceRows = useMemo(() => {
+    if (!fin) return [];
     const latest = (arr: FinancialPeriod[]) => arr.filter(r => r.form === "10-K").slice(-1)[0];
     const a = latest(fin.totalAssets);
     const l = latest(fin.totalLiabilities);
     const e = latest(fin.stockholdersEquity);
-    const c = latest(fin.cash);
-    const assets = a ? a.val / 1e9 : 0;
-    const liab = l ? l.val / 1e9 : 0;
-    const equity = e ? e.val / 1e9 : 0;
-    const cash = c ? c.val / 1e9 : 0;
-    const curRatio = liab > 0 ? assets / liab : 0;
-    const deRatio = equity > 0 ? liab / equity : 0;
-    return {
-      assets: assets.toFixed(1),
-      liab: liab.toFixed(1),
-      equity: equity.toFixed(1),
-      cash: cash.toFixed(1),
-      curRatio: curRatio.toFixed(2),
-      deRatio: deRatio.toFixed(2),
-    };
+    const cash = latest(fin.cash);
+    const ca = latest(fin.assetsCurrent ?? []);
+    const cl = latest(fin.liabilitiesCurrent ?? []);
+    const ltd = latest(fin.longTermDebt ?? []);
+    const dc = latest(fin.debtCurrent ?? []);
+
+    const assetsB = a ? a.val / 1e9 : null;
+    const liabB = l ? l.val / 1e9 : null;
+    const eqB = e ? e.val / 1e9 : null;
+    const cashB = cash ? cash.val / 1e9 : null;
+
+    let totalDebtB: number | null = null;
+    if (ltd && dc) totalDebtB = (ltd.val + dc.val) / 1e9;
+    else if (ltd) totalDebtB = ltd.val / 1e9;
+    else if (dc) totalDebtB = dc.val / 1e9;
+
+    let curRatio: number | null = null;
+    if (ca && cl && cl.val !== 0) curRatio = ca.val / cl.val;
+
+    const deRatio = eqB != null && eqB !== 0 && liabB != null ? liabB / eqB : null;
+
+    let wcB: number | null = null;
+    if (ca && cl) wcB = (ca.val - cl.val) / 1e9;
+
+    const fmt = (n: number | null) => (n == null || Number.isNaN(n) ? "—" : `${n.toFixed(1)}`);
+
+    return [
+      { label: "Total Assets", value: fmt(assetsB) },
+      { label: "Total Liabilities", value: fmt(liabB) },
+      { label: "Total Equity", value: fmt(eqB) },
+      { label: "Cash & Equivalents", value: fmt(cashB) },
+      { label: "Total Debt", value: fmt(totalDebtB) },
+      { label: "Current Ratio", value: curRatio != null && !Number.isNaN(curRatio) ? curRatio.toFixed(2) : "—" },
+      { label: "Debt / Equity", value: deRatio != null && !Number.isNaN(deRatio) ? deRatio.toFixed(2) : "—" },
+      { label: "Working Capital", value: fmt(wcB) },
+    ];
   }, [fin]);
 
-  const cfChart = useMemo(() => {
-    if (!fin) return [];
-    const annualNI = fin.netIncome.filter(r => r.form === "10-K").slice(-3);
-    const annualOI = fin.operatingIncome.filter(r => r.form === "10-K").slice(-3);
-    return annualNI.map((ni, i) => ({
-      yr: `FY${String(ni.fy).slice(-2)}`,
-      op: annualOI[i] ? +(annualOI[i].val / 1e9).toFixed(1) : 0,
-      inv: 0,
-      fin: +(ni.val / 1e9).toFixed(1),
-    }));
+  const cashFlowChart = useMemo(() => {
+    if (!fin?.operatingCashFlow?.length) return [];
+    const ocfAnnual = fin.operatingCashFlow.filter(r => r.form === "10-K").slice(-5);
+    return ocfAnnual.map((ocf) => {
+      const fy = ocf.fy;
+      const capex = pickAnnualForFy(fin.capitalExpenditures, fy);
+      const fincf = pickAnnualForFy(fin.financingCashFlow, fy);
+      const invcf = pickAnnualForFy(fin.investingCashFlow, fy);
+      const ocfB = ocf.val / 1e9;
+      const capexB = capex ? capex.val / 1e9 : 0;
+      const fcfB = ocfB + capexB;
+      return {
+        yr: `FY${String(fy).slice(-2)}`,
+        ocf: +ocfB.toFixed(2),
+        capex: +capexB.toFixed(2),
+        fcf: +fcfB.toFixed(2),
+        fin: fincf ? +(fincf.val / 1e9).toFixed(2) : null as number | null,
+        inv: invcf ? +(invcf.val / 1e9).toFixed(2) : null as number | null,
+      };
+    });
   }, [fin]);
+
+  const onFinTabKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const ids = FINANCIALS_TABS.map(([id]) => id);
+    const idx = ids.indexOf(view);
+    if (idx < 0) return;
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      e.preventDefault();
+      const next = Math.max(0, Math.min(ids.length - 1, idx + (e.key === "ArrowRight" ? 1 : -1)));
+      setView(ids[next] as typeof view);
+      document.getElementById(`${finTabsId}-sub-${ids[next]}`)?.focus();
+    }
+  };
+
+  const hdrFin: React.CSSProperties = {
+    fontSize: 10, fontFamily: f, fontWeight: 700, color: C.textMuted,
+    letterSpacing: 1, textTransform: "uppercase", padding: "4px 0",
+    borderBottom: `1px solid ${C.borderHi}`, whiteSpace: "nowrap",
+  };
+  const cellFin: React.CSSProperties = {
+    fontSize: 11, fontFamily: monoNum, color: C.text, padding: "4px 0",
+    borderBottom: `1px solid ${C.border}`, lineHeight: 1.35,
+  };
 
   if (loading) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
-        <Loader2 className="w-5 h-5 text-primary animate-spin" />
-        <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, marginLeft: 10 }}>Loading financials...</span>
+      <div role="status" aria-live="polite" style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 32 }}>
+        <Loader2 className="w-5 h-5 text-primary animate-spin" aria-hidden />
+        <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, marginLeft: 10 }}>Loading financials…</span>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div style={{ padding: "20px 0", textAlign: "center" }}>
+      <div role="alert" style={{ padding: "16px 0", textAlign: "center" }}>
         <span style={{ fontSize: 11, fontFamily: f, color: C.red }}>{error}</span>
-        <button onClick={retry}
-          style={{ display: "block", margin: "10px auto 0", fontSize: 11, fontFamily: f, color: C.gold, background: "transparent", border: `1px solid ${C.gold}44`, padding: "4px 12px", cursor: "pointer" }}>
+        <button type="button" onClick={retry} aria-label="Retry loading financials"
+          style={{ display: "block", margin: "10px auto 0", fontSize: 11, fontFamily: f, color: C.gold, background: "transparent", border: `2px solid ${C.gold}`, padding: "4px 12px", cursor: "pointer", borderRadius: 4 }}>
           RETRY
         </button>
       </div>
@@ -807,116 +746,178 @@ const SubFinancials = memo(function SubFinancials({ ticker }: { ticker: string }
 
   if (!fin) {
     return (
-      <div style={{ padding: "20px 0", textAlign: "center", fontSize: 11, fontFamily: f, color: C.textDim }}>
+      <div style={{ padding: "16px 0", textAlign: "center", fontSize: 11, fontFamily: f, color: C.textDim }}>
         No financial data available
       </div>
     );
   }
 
+  const tickSmall = { fill: C.textSoft, fontSize: 9, fontFamily: f };
+
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0 4px" }}>
-        <div style={{ display: "flex", gap: 6 }}>
+      <div
+        role="tablist"
+        aria-label="Financial statement sections"
+        onKeyDown={onFinTabKey}
+        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0 4px", gap: 8, flexWrap: "wrap" }}
+      >
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
           {FINANCIALS_TABS.map(([id, label]) => (
-            <button key={id} onClick={() => setView(id)} style={{
-              padding: "4px 12px", fontSize: 11, fontFamily: f, fontWeight: 600,
-              color: view === id ? C.bg : C.textMuted,
-              background: view === id ? C.gold : "transparent",
-              border: `1px solid ${view === id ? C.gold : C.borderHi}`,
-              borderRadius: 14, cursor: "pointer", letterSpacing: 0.5,
-            }}>{label}</button>
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              id={`${finTabsId}-sub-${id}`}
+              aria-selected={view === id}
+              tabIndex={view === id ? 0 : -1}
+              onClick={() => setView(id)}
+              style={{
+                padding: "3px 10px", fontSize: 10, fontFamily: f, fontWeight: 700,
+                color: view === id ? C.bg : C.textMuted,
+                background: view === id ? C.gold : "transparent",
+                border: view === id ? `2px solid ${C.gold}` : `1px solid ${C.borderHi}`,
+                borderRadius: 4, cursor: "pointer", letterSpacing: 0.6, textTransform: "uppercase",
+                outline: "none",
+              }}
+              onFocus={(e) => { if (view !== id) e.currentTarget.style.boxShadow = `0 0 0 1px ${C.borderHi}`; }}
+              onBlur={(e) => { e.currentTarget.style.boxShadow = "none"; }}
+            >{label}</button>
           ))}
         </div>
-        <span style={{ fontSize: 11, fontFamily: f, color: C.textDim }}>SEC XBRL</span>
+        <span style={{ fontSize: 10, fontFamily: f, color: C.textDim }}>SEC XBRL</span>
       </div>
 
       {view === "income" && (
-        <>
+        <div role="tabpanel" aria-label="Income statement">
           {revChart.length > 0 && (
             <>
-              <Sec>REVENUE ($B)</Sec>
-              <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={revChart}>
-                  <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-                  <XAxis dataKey="yr" tick={{ fill: C.textDim, fontSize: 11, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
-                  <YAxis tick={{ fill: C.textDim, fontSize: 11, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
-                  <Tooltip contentStyle={tt} />
-                  <Bar dataKey="val" fill={C.gold} radius={[2, 2, 0, 0]} name="Revenue" />
-                </BarChart>
-              </ResponsiveContainer>
+              <div style={{ fontSize: 10, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1.4, textTransform: "uppercase", padding: "10px 0 4px", borderBottom: `1px solid ${C.borderHi}` }}>Revenue ($B)</div>
+              <div style={{ height: 118, marginTop: 4 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={revChart} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                    <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+                    <XAxis dataKey="yr" tick={tickSmall} axisLine={{ stroke: C.border }} tickLine={false} height={22} />
+                    <YAxis width={32} tick={tickSmall} axisLine={{ stroke: C.border }} tickLine={false} />
+                    <Tooltip contentStyle={{ ...tt, fontSize: 11 }} wrapperStyle={{ outline: "none" }} />
+                    <Bar dataKey="val" fill={C.gold} radius={[1, 1, 0, 0]} name="Revenue ($B)" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ fontSize: 9, fontFamily: f, color: C.textDim, paddingTop: 4 }} aria-hidden>
+                <span style={{ color: C.gold }}>■</span> Revenue
+              </div>
             </>
           )}
           {epsChart.length > 0 && (
             <>
-              <Sec>EPS TREND</Sec>
-              <ResponsiveContainer width="100%" height={140}>
-                <LineChart data={epsChart}>
-                  <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-                  <XAxis dataKey="yr" tick={{ fill: C.textDim, fontSize: 11, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
-                  <YAxis tick={{ fill: C.textDim, fontSize: 11, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
-                  <Tooltip contentStyle={tt} />
-                  <Line type="monotone" dataKey="val" stroke={C.green} strokeWidth={2} dot={{ fill: C.green, r: 3, strokeWidth: 0 }} name="EPS" />
-                </LineChart>
-              </ResponsiveContainer>
+              <div style={{ fontSize: 10, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1.4, textTransform: "uppercase", padding: "12px 0 4px", borderBottom: `1px solid ${C.borderHi}` }}>EPS trend</div>
+              <div style={{ height: 108, marginTop: 4 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={epsChart} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                    <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+                    <XAxis dataKey="yr" tick={tickSmall} axisLine={{ stroke: C.border }} tickLine={false} height={22} />
+                    <YAxis width={36} tick={tickSmall} axisLine={{ stroke: C.border }} tickLine={false} />
+                    <Tooltip contentStyle={{ ...tt, fontSize: 11 }} wrapperStyle={{ outline: "none" }} />
+                    <Line type="monotone" dataKey="val" stroke={C.green} strokeWidth={1.5} dot={{ fill: C.green, r: 2, strokeWidth: 0 }} name="EPS" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ fontSize: 9, fontFamily: f, color: C.textDim, paddingTop: 4 }} aria-hidden>
+                <span style={{ color: C.green }}>■</span> Diluted EPS
+              </div>
             </>
           )}
           {revChart.length === 0 && epsChart.length === 0 && (
-            <div style={{ padding: "20px 0", textAlign: "center", fontSize: 11, fontFamily: f, color: C.textDim }}>
+            <div style={{ padding: "14px 0", textAlign: "center", fontSize: 10, fontFamily: f, color: C.textDim }}>
               No income statement data available
             </div>
           )}
-        </>
+        </div>
       )}
 
-      {view === "balance" && bsData && (
-        <>
-          <Sec>BALANCE SHEET ($B)</Sec>
-          <FundGrid items={[
-            { label: "Total Assets", value: `$${bsData.assets}B` },
-            { label: "Liabilities", value: `$${bsData.liab}B`, color: C.red },
-            { label: "Equity", value: `$${bsData.equity}B`, color: C.green },
-            { label: "Cash", value: `$${bsData.cash}B`, color: C.gold },
-            { label: "Cur Ratio", value: bsData.curRatio, color: +bsData.curRatio >= 1.5 ? C.green : C.gold },
-          ]} />
-          <div style={{ marginTop: 12 }}>
-            <MetricRow label="Debt/Equity" value={bsData.deRatio} color={+bsData.deRatio <= 1 ? C.green : C.red} />
-          </div>
-        </>
-      )}
-
-      {view === "balance" && !bsData && (
-        <div style={{ padding: "20px 0", textAlign: "center", fontSize: 11, fontFamily: f, color: C.textDim }}>
-          No balance sheet data available
+      {view === "balance" && (
+        <div role="tabpanel" aria-label="Balance sheet">
+          {balanceRows.length > 0 ? (
+            <div style={{ overflowX: "auto", marginTop: 4 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: f }}>
+                <thead>
+                  <tr>
+                    <th scope="col" style={{ ...hdrFin, textAlign: "left" }}>Line item</th>
+                    <th scope="col" style={{ ...hdrFin, textAlign: "right" }}>$B</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {balanceRows.map((row) => (
+                    <tr key={row.label}>
+                      <td style={{ ...cellFin, color: C.textSoft, fontFamily: f, fontSize: 10, textAlign: "left", paddingRight: 8 }}>{row.label}</td>
+                      <td style={{ ...cellFin, textAlign: "right", fontWeight: 600 }}>{row.value}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div style={{ padding: "14px 0", textAlign: "center", fontSize: 10, fontFamily: f, color: C.textDim }}>
+              No balance sheet data available
+            </div>
+          )}
         </div>
       )}
 
       {view === "cashflow" && (
-        <>
-          <Sec>INCOME BREAKDOWN ($B)</Sec>
-          {cfChart.length > 0 ? (
+        <div role="tabpanel" aria-label="Cash flow statement">
+          <div style={{ fontSize: 10, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1.2, textTransform: "uppercase", padding: "8px 0 4px", borderBottom: `1px solid ${C.borderHi}` }}>
+            Cash flow statement ($B)
+          </div>
+          {cashFlowChart.length > 0 ? (
             <>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={cfChart}>
-                  <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-                  <XAxis dataKey="yr" tick={{ fill: C.textDim, fontSize: 11, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
-                  <YAxis tick={{ fill: C.textDim, fontSize: 11, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
-                  <Tooltip contentStyle={tt} />
-                  <Bar dataKey="op" fill={C.green} name="Operating Income" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="fin" fill={C.gold} name="Net Income" radius={[2, 2, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-              <div style={{ display: "flex", gap: 14, padding: "6px 0" }}>
-                {[["Operating", C.green], ["Net Income", C.gold]].map(([l, c]) => (
-                  <span key={l} style={{ fontSize: 11, fontFamily: f, color: C.textDim }}><span style={{ color: c as string }}>■</span> {l}</span>
-                ))}
+              <div style={{ height: 132, marginTop: 6 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={cashFlowChart} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="12%" barGap={2}>
+                    <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+                    <XAxis dataKey="yr" tick={tickSmall} axisLine={{ stroke: C.border }} tickLine={false} height={22} />
+                    <YAxis width={36} tick={tickSmall} axisLine={{ stroke: C.border }} tickLine={false} />
+                    <Tooltip contentStyle={{ ...tt, fontSize: 11 }} wrapperStyle={{ outline: "none" }} />
+                    <Bar dataKey="ocf" fill={C.green} name="Operating cash flow" radius={[1, 1, 0, 0]} />
+                    <Bar dataKey="capex" fill={C.amber} name="Capital expenditures" radius={[1, 1, 0, 0]} />
+                    <Bar dataKey="fcf" fill={C.cyan} name="Free cash flow" radius={[1, 1, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <ul style={{ listStyle: "none", padding: "6px 0 0", margin: 0, display: "flex", flexWrap: "wrap", gap: 12, fontSize: 9, fontFamily: f, color: C.textDim }}>
+                <li><span style={{ color: C.green }} aria-hidden>■</span> Operating CF ($B)</li>
+                <li><span style={{ color: C.amber }} aria-hidden>■</span> CapEx ($B, signed)</li>
+                <li><span style={{ color: C.cyan }} aria-hidden>■</span> Free CF ($B)</li>
+              </ul>
+              <div style={{ marginTop: 10, overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <caption style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", whiteSpace: "nowrap", border: 0 }}>Financing and investing cash flows by fiscal year</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" style={{ ...hdrFin, textAlign: "left" }}>FY</th>
+                      <th scope="col" style={{ ...hdrFin, textAlign: "right" }}>Financing</th>
+                      <th scope="col" style={{ ...hdrFin, textAlign: "right" }}>Investing</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cashFlowChart.map((row) => (
+                      <tr key={row.yr}>
+                        <td style={{ ...cellFin, fontFamily: f, color: C.textSoft, textAlign: "left" }}>{row.yr}</td>
+                        <td style={{ ...cellFin, textAlign: "right" }}>{row.fin != null ? row.fin.toFixed(2) : "—"}</td>
+                        <td style={{ ...cellFin, textAlign: "right" }}>{row.inv != null ? row.inv.toFixed(2) : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </>
           ) : (
-            <div style={{ padding: "20px 0", textAlign: "center", fontSize: 11, fontFamily: f, color: C.textDim }}>
-              No cash flow data available
+            <div style={{ padding: "14px 0", textAlign: "center", fontSize: 10, fontFamily: f, color: C.textDim }}>
+              No cash flow statement data available
             </div>
           )}
-        </>
+        </div>
       )}
     </>
   );
@@ -1294,13 +1295,247 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
   );
 });
 
+interface PolygonConsensusPayload {
+  symbol: string;
+  consensus_price_target: number | null;
+  high_pt: number | null;
+  low_pt: number | null;
+  num_analysts: number | null;
+  strong_buy: number | null;
+  buy: number | null;
+  hold: number | null;
+  sell: number | null;
+  strong_sell: number | null;
+  consensus_rating?: string | null;
+  error?: string;
+}
+
+interface PolygonRatingRow {
+  id: string;
+  firm: string;
+  analyst: string;
+  action_type: string;
+  rating_prior: string | null;
+  rating_current: string | null;
+  pt_prior: number | null;
+  pt_current: number | null;
+  date: string;
+}
+
+function usePolygonAnalystConsensus(symbol: string) {
+  return useQuery({
+    queryKey: ["polygon-analyst-consensus", symbol],
+    queryFn: async (): Promise<PolygonConsensusPayload> => {
+      const res = await fetchWithAuth(`${API_BASE}/polygon/analyst-consensus?symbol=${encodeURIComponent(symbol)}`);
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
+      return j as PolygonConsensusPayload;
+    },
+    enabled: !!symbol,
+    staleTime: 60 * 60 * 1000,
+    gcTime: 4 * 60 * 60 * 1000,
+  });
+}
+
+function usePolygonAnalystRatings(symbol: string) {
+  return useQuery({
+    queryKey: ["polygon-analyst-ratings", symbol],
+    queryFn: async (): Promise<{ ratings: PolygonRatingRow[] }> => {
+      const res = await fetchWithAuth(`${API_BASE}/polygon/analyst-ratings?symbol=${encodeURIComponent(symbol)}&limit=50`);
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
+      return j as { ratings: PolygonRatingRow[] };
+    },
+    enabled: !!symbol,
+    staleTime: 60 * 60 * 1000,
+    gcTime: 4 * 60 * 60 * 1000,
+  });
+}
+
+function formatPt(n: number | null | undefined): string {
+  if (n == null || Number.isNaN(n)) return "—";
+  return `$${n.toFixed(0)}`;
+}
+
+function AnalystCoverageBlock({ ticker }: { ticker: string }) {
+  const qCons = usePolygonAnalystConsensus(ticker);
+  const qRat = usePolygonAnalystRatings(ticker);
+  const [dateDesc, setDateDesc] = useState(true);
+
+  const hdr: React.CSSProperties = {
+    fontSize: 10, fontFamily: f, fontWeight: 700, color: C.textMuted,
+    letterSpacing: 1, textTransform: "uppercase", padding: "4px 0",
+    borderBottom: `1px solid ${C.borderHi}`, whiteSpace: "nowrap",
+  };
+  const cellL: React.CSSProperties = {
+    fontSize: 11, fontFamily: f, color: C.text, padding: "4px 4px 4px 0",
+    borderBottom: `1px solid ${C.border}`, lineHeight: 1.35, textAlign: "left", wordBreak: "break-word",
+  };
+  const cellR: React.CSSProperties = {
+    ...cellL, fontFamily: monoNum, textAlign: "right", color: C.gold, padding: "4px 0",
+  };
+
+  const rows = useMemo(() => {
+    const r = qRat.data?.ratings ?? [];
+    const sorted = [...r].sort((a, b) => {
+      const cmp = (a.date || "").localeCompare(b.date || "");
+      return dateDesc ? -cmp : cmp;
+    });
+    return sorted;
+  }, [qRat.data?.ratings, dateDesc]);
+
+  const cons = qCons.data;
+  const buckets = cons
+    ? [
+        { key: "sb", label: "Str. Buy", count: cons.strong_buy ?? 0, color: C.green },
+        { key: "b", label: "Buy", count: cons.buy ?? 0, color: "#2ea043" },
+        { key: "h", label: "Hold", count: cons.hold ?? 0, color: C.textMuted },
+        { key: "s", label: "Sell", count: cons.sell ?? 0, color: C.amber },
+        { key: "ss", label: "Str. Sell", count: cons.strong_sell ?? 0, color: C.red },
+      ]
+    : [];
+  const totalRatings = buckets.reduce((s, b) => s + (typeof b.count === "number" ? b.count : 0), 0);
+  const hasConsensus = cons && (cons.consensus_price_target != null || totalRatings > 0);
+  const noCoverage = !qCons.isLoading && !qCons.error && cons && !hasConsensus && (qRat.data?.ratings?.length ?? 0) === 0;
+
+  return (
+    <section aria-labelledby={`analyst-cov-${ticker}`} style={{ marginTop: 18 }}>
+      <h3 id={`analyst-cov-${ticker}`} style={{ fontSize: 10, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 2, textTransform: "uppercase", padding: "10px 0 6px", borderBottom: `1px solid ${C.borderHi}` }}>
+        Analyst coverage
+      </h3>
+
+      {qCons.isLoading && (
+        <div role="status" aria-live="polite" style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 0" }}>
+          <Loader2 className="w-4 h-4 animate-spin shrink-0" style={{ color: C.gold }} aria-hidden />
+          <span style={{ fontSize: 10, fontFamily: f, color: C.textDim }}>Loading consensus…</span>
+        </div>
+      )}
+      {qCons.error && (
+        <div role="alert" style={{ fontSize: 10, fontFamily: f, color: C.red, padding: "8px 0" }}>
+          {(qCons.error as Error).message || "Consensus unavailable"}
+        </div>
+      )}
+
+      {hasConsensus && cons && (
+        <div style={{ padding: "10px 0", display: "grid", gap: 10 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 9, fontFamily: f, color: C.textDim, letterSpacing: 1, textTransform: "uppercase" }}>Consensus PT</div>
+              <div style={{ fontSize: 22, fontFamily: monoNum, fontWeight: 700, color: C.gold }} aria-label={`Consensus price target ${cons.consensus_price_target ?? "unknown"}`}>
+                {formatPt(cons.consensus_price_target)}
+              </div>
+            </div>
+            <div style={{ fontSize: 10, fontFamily: monoNum, color: C.textSoft }}>
+              <span style={{ color: C.textDim }}>Low </span>{formatPt(cons.low_pt)}
+              <span style={{ color: C.textDim, margin: "0 6px" }}>|</span>
+              <span style={{ color: C.textDim }}>High </span>{formatPt(cons.high_pt)}
+            </div>
+            <div style={{ fontSize: 10, fontFamily: f, color: C.textMuted }}>
+              Analysts (ratings): <span style={{ fontFamily: monoNum, color: C.text }}>{cons.num_analysts ?? "—"}</span>
+            </div>
+          </div>
+
+          {totalRatings > 0 && (
+            <div>
+              <div style={{ fontSize: 9, fontFamily: f, color: C.textDim, marginBottom: 4 }} id={`rating-dist-${ticker}`}>Rating distribution</div>
+              <div
+                role="img"
+                aria-labelledby={`rating-dist-${ticker}`}
+                aria-label={`Rating distribution: ${buckets.map(b => `${b.label} ${b.count}`).join(", ")}`}
+                style={{ display: "flex", height: 12, borderRadius: 2, overflow: "hidden", border: `1px solid ${C.borderHi}` }}
+              >
+                {buckets.map((b) => (
+                  <div
+                    key={b.key}
+                    style={{
+                      flex: Math.max(0, b.count),
+                      minWidth: b.count > 0 ? 2 : 0,
+                      background: b.color,
+                    }}
+                    title={`${b.label}: ${b.count}`}
+                  />
+                ))}
+              </div>
+              <ul style={{ listStyle: "none", margin: "6px 0 0", padding: 0, display: "flex", flexWrap: "wrap", gap: 10, fontSize: 9, fontFamily: f, color: C.textDim }}>
+                {buckets.map((b) => (
+                  <li key={b.key}><span style={{ color: b.color }} aria-hidden>■</span> {b.label} <span style={{ fontFamily: monoNum, color: C.text }}>{b.count}</span></li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {qRat.isLoading && (
+        <div role="status" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0" }}>
+          <Loader2 className="w-4 h-4 animate-spin" style={{ color: C.gold }} aria-hidden />
+          <span style={{ fontSize: 10, fontFamily: f, color: C.textDim }}>Loading rating actions…</span>
+        </div>
+      )}
+      {qRat.error && (
+        <div role="alert" style={{ fontSize: 10, fontFamily: f, color: C.red, padding: "6px 0" }}>
+          {(qRat.error as Error).message || "Ratings unavailable"}
+        </div>
+      )}
+
+      {noCoverage && (
+        <p style={{ fontSize: 10, fontFamily: f, color: C.textDim, padding: "8px 0" }}>No analyst coverage available</p>
+      )}
+
+      {(qRat.data?.ratings?.length ?? 0) > 0 && (
+        <div style={{ overflowX: "auto", marginTop: 6 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th scope="col" style={{ ...hdr, textAlign: "left" }}>Firm</th>
+                <th scope="col" style={{ ...hdr, textAlign: "left" }}>Analyst</th>
+                <th scope="col" style={{ ...hdr, textAlign: "left" }}>Action</th>
+                <th scope="col" style={{ ...hdr, textAlign: "left" }}>Rating</th>
+                <th scope="col" style={{ ...hdr, textAlign: "right" }}>PT</th>
+                <th scope="col" style={{ ...hdr, textAlign: "right" }}>
+                  <button
+                    type="button"
+                    onClick={() => setDateDesc(d => !d)}
+                    style={{ background: "none", border: "none", padding: 0, margin: 0, cursor: "pointer", color: C.gold, font: "inherit", textDecoration: "underline", textUnderlineOffset: 2 }}
+                    aria-label={`Sort by date ${dateDesc ? "ascending" : "descending"}`}
+                  >
+                    Date{dateDesc ? " ↓" : " ↑"}
+                  </button>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id || `${row.firm}-${row.date}-${row.action_type}`}>
+                  <td style={cellL}>{row.firm || "—"}</td>
+                  <td style={cellL}>{row.analyst || "—"}</td>
+                  <td style={cellL}>{row.action_type.replace(/_/g, " ")}</td>
+                  <td style={cellL}>
+                    <span style={{ color: C.textDim }}>{row.rating_prior ?? "—"}</span>
+                    <span style={{ color: C.textDim, margin: "0 4px" }}>→</span>
+                    <span>{row.rating_current ?? "—"}</span>
+                  </td>
+                  <td style={cellR}>
+                    {formatPt(row.pt_current)}
+                    {(row.pt_prior != null) && <span style={{ color: C.textDim, fontSize: 9 }}> (was {formatPt(row.pt_prior)})</span>}
+                  </td>
+                  <td style={{ ...cellR, color: C.textDim }}>{row.date || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
 const SubValuation = memo(function SubValuation({ ticker, fund }: { ticker: string; fund: FundamentalData | null }) {
-  const { data: fin, loading } = useCompanyFinancials(ticker);
+  const { data: fin, loading: finLoading } = useCompanyFinancials(ticker);
 
   const metrics = useMemo(() => {
     if (!fin || !fund) return null;
     const mktCap = fund.marketCap || 0;
-    const price = fund.eps && fund.peRatio ? fund.eps * fund.peRatio : 0;
 
     const latestAnnual = (arr: FinancialPeriod[]) => arr.filter(r => r.form === "10-K").slice(-1)[0];
     const latestRev = latestAnnual(fin.revenue);
@@ -1345,81 +1580,118 @@ const SubValuation = memo(function SubValuation({ ticker, fund }: { ticker: stri
     return items;
   }, [metrics]);
 
-  if (loading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
-        <Loader2 className="w-5 h-5 text-primary animate-spin" />
-        <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, marginLeft: 10 }}>Loading valuation data...</span>
-      </div>
-    );
-  }
+  const profRows = useMemo(() => {
+    if (!metrics) return [];
+    return [
+      { label: "Gross margin", value: metrics.grossMargin != null ? `${metrics.grossMargin.toFixed(1)}%` : "—", tone: C.green as string },
+      { label: "Operating margin", value: metrics.opMargin != null ? `${metrics.opMargin.toFixed(1)}%` : "—", tone: C.gold },
+      { label: "Net margin", value: metrics.netMargin != null ? `${metrics.netMargin.toFixed(1)}%` : "—", tone: C.text },
+      { label: "ROE", value: metrics.roe != null ? `${metrics.roe.toFixed(1)}%` : "—", tone: C.cyan },
+      { label: "ROA", value: metrics.roa != null ? `${metrics.roa.toFixed(1)}%` : "—", tone: C.amber },
+      { label: "Revenue growth YoY", value: metrics.revGrowth != null ? `${metrics.revGrowth >= 0 ? "+" : ""}${metrics.revGrowth.toFixed(1)}%` : "—", tone: metrics.revGrowth != null ? (metrics.revGrowth >= 0 ? C.green : C.red) : C.text },
+    ];
+  }, [metrics]);
 
-  if (!metrics) {
+  const phdr: React.CSSProperties = {
+    fontSize: 10, fontFamily: f, fontWeight: 700, color: C.textMuted,
+    letterSpacing: 1, textTransform: "uppercase", padding: "4px 0",
+    borderBottom: `1px solid ${C.borderHi}`, whiteSpace: "nowrap",
+  };
+  const pcellL: React.CSSProperties = {
+    fontSize: 11, fontFamily: f, color: C.textSoft, padding: "4px 0",
+    borderBottom: `1px solid ${C.border}`, textAlign: "left",
+  };
+  const pcellR: React.CSSProperties = {
+    ...pcellL, fontFamily: monoNum, color: C.text, textAlign: "right", fontWeight: 600,
+  };
+
+  if (finLoading && !fin) {
     return (
-      <div style={{ padding: "20px 0", textAlign: "center", fontSize: 11, fontFamily: f, color: C.textDim }}>
-        {!fund ? "Waiting for price data..." : "No financial data available for valuation"}
+      <div role="status" aria-live="polite" style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
+        <Loader2 className="w-5 h-5 text-primary animate-spin" aria-hidden />
+        <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, marginLeft: 10 }}>Loading valuation data…</span>
       </div>
     );
   }
 
   return (
     <>
-      <Sec>VALUATION MULTIPLES</Sec>
-      {multiples.length > 0 ? (
+      {metrics ? (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", padding: "5px 0", borderBottom: `1px solid ${C.borderHi}` }}>
-            {["METRIC", ticker, "S&P 500", "vs S&P"].map((h, i) => (
-              <span key={i} style={{ fontSize: 11, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.2, textAlign: i > 0 ? "right" : "left" }}>{h}</span>
-            ))}
-          </div>
-          {multiples.map((m, i) => {
-            const diffNum = m.sp > 0 ? (m.co - m.sp) / m.sp * 100 : null;
-            const diff = diffNum != null ? diffNum.toFixed(0) : "—";
-            const over = diffNum != null && diffNum > 0;
-            return (
-              <div key={i} style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
-                <span style={{ fontSize: 11, fontFamily: f, color: C.textMuted, fontWeight: 600 }}>{m.m}</span>
-                <span style={{ fontSize: 11, fontFamily: f, color: C.gold, textAlign: "right", fontWeight: 600 }}>{m.co}x</span>
-                <span style={{ fontSize: 11, fontFamily: f, color: C.textDim, textAlign: "right" }}>{m.sp}x</span>
-                <span style={{ fontSize: 11, fontFamily: f, color: over ? C.red : C.green, textAlign: "right", fontWeight: 600 }}>{over ? "+" : ""}{diff}%</span>
+          <Sec>VALUATION MULTIPLES</Sec>
+          {multiples.length > 0 ? (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", padding: "5px 0", borderBottom: `1px solid ${C.borderHi}` }}>
+                {["METRIC", ticker, "S&P 500", "vs S&P"].map((h, i) => (
+                  <span key={i} style={{ fontSize: 10, fontFamily: f, fontWeight: 700, color: C.textDim, letterSpacing: 1.2, textAlign: i > 0 ? "right" : "left" }}>{h}</span>
+                ))}
               </div>
-            );
-          })}
+              {multiples.map((m, i) => {
+                const diffNum = m.sp > 0 ? (m.co - m.sp) / m.sp * 100 : null;
+                const diff = diffNum != null ? diffNum.toFixed(0) : "—";
+                const over = diffNum != null && diffNum > 0;
+                return (
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", padding: "5px 0", borderBottom: `1px solid ${C.border}` }}>
+                    <span style={{ fontSize: 10, fontFamily: f, color: C.textMuted, fontWeight: 600 }}>{m.m}</span>
+                    <span style={{ fontSize: 10, fontFamily: monoNum, color: C.gold, textAlign: "right", fontWeight: 600 }}>{m.co}x</span>
+                    <span style={{ fontSize: 10, fontFamily: monoNum, color: C.textDim, textAlign: "right" }}>{m.sp}x</span>
+                    <span style={{ fontSize: 10, fontFamily: monoNum, color: over ? C.red : C.green, textAlign: "right", fontWeight: 600 }} aria-label={over ? "Above S and P median" : "Below S and P median"}>{over ? "+" : ""}{diff}%</span>
+                  </div>
+                );
+              })}
 
-          <Sec>COMPARATIVE</Sec>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={multiples}>
-              <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-              <XAxis dataKey="m" tick={{ fill: C.textDim, fontSize: 11, fontFamily: f }} interval={0} angle={-15} textAnchor="end" height={40} axisLine={{ stroke: C.border }} tickLine={false} />
-              <YAxis tick={{ fill: C.textDim, fontSize: 11, fontFamily: f }} axisLine={{ stroke: C.border }} tickLine={false} />
-              <Tooltip contentStyle={tt} />
-              <Bar dataKey="co" fill={C.gold} name={ticker} radius={[2, 2, 0, 0]} />
-              <Bar dataKey="sp" fill={C.borderHi} name="S&P 500" radius={[2, 2, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-          <div style={{ display: "flex", gap: 14, padding: "6px 0" }}>
-            {([[ticker, C.gold], ["S&P 500", C.borderHi]] as const).map(([l, c]) => (
-              <span key={l} style={{ fontSize: 11, fontFamily: f, color: C.textDim }}><span style={{ color: c as string }}>■</span> {l}</span>
-            ))}
+              <div style={{ fontSize: 10, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1.2, textTransform: "uppercase", padding: "12px 0 4px", borderBottom: `1px solid ${C.borderHi}` }}>Comparative</div>
+              <div style={{ height: 160, marginTop: 4 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={multiples} margin={{ top: 4, right: 4, left: 0, bottom: 4 }} barCategoryGap="18%">
+                    <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+                    <XAxis dataKey="m" tick={{ fill: C.textSoft, fontSize: 9, fontFamily: f }} interval={0} angle={-20} textAnchor="end" height={48} axisLine={{ stroke: C.border }} tickLine={false} />
+                    <YAxis tick={{ fill: C.textSoft, fontSize: 9, fontFamily: monoNum }} axisLine={{ stroke: C.border }} tickLine={false} width={36} />
+                    <Tooltip contentStyle={{ ...tt, fontSize: 11 }} wrapperStyle={{ outline: "none" }} />
+                    <Bar dataKey="co" fill={C.gold} name={ticker} radius={[1, 1, 0, 0]} />
+                    <Bar dataKey="sp" fill={C.borderHi} name="S&P 500" radius={[1, 1, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ fontSize: 9, fontFamily: f, color: C.textDim, paddingTop: 4 }} aria-hidden>
+                <span style={{ color: C.gold }}>■</span> {ticker} <span style={{ color: C.borderHi, marginLeft: 10 }}>■</span> S&P 500
+              </div>
+            </>
+          ) : (
+            <div style={{ padding: "10px 0", fontSize: 10, fontFamily: f, color: C.textDim }}>No multiples available</div>
+          )}
+
+          <div style={{ fontSize: 10, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 1.2, textTransform: "uppercase", padding: "14px 0 4px", borderBottom: `1px solid ${C.borderHi}` }}>Profitability</div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th scope="col" style={{ ...phdr, textAlign: "left" }}>Metric</th>
+                  <th scope="col" style={{ ...phdr, textAlign: "right" }}>Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {profRows.map((row) => (
+                  <tr key={row.label}>
+                    <td style={pcellL}>{row.label}</td>
+                    <td style={{ ...pcellR, color: row.tone }}>{row.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ fontSize: 10, fontFamily: f, color: C.textDim, padding: "8px 0 0", textAlign: "right" }}>
+            Source: SEC XBRL + Schwab
           </div>
         </>
       ) : (
-        <div style={{ padding: "12px 0", fontSize: 11, fontFamily: f, color: C.textDim }}>No multiples available</div>
+        <div style={{ padding: "10px 0", textAlign: "center", fontSize: 10, fontFamily: f, color: C.textDim }}>
+          {!fund ? "Waiting for price data…" : "No financial data available for valuation"}
+        </div>
       )}
 
-      <Sec>PROFITABILITY</Sec>
-      <FundGrid items={[
-        { label: "Gross Margin", value: metrics.grossMargin != null ? `${metrics.grossMargin.toFixed(1)}%` : "—", color: C.green },
-        { label: "Op Margin", value: metrics.opMargin != null ? `${metrics.opMargin.toFixed(1)}%` : "—", color: C.gold },
-        { label: "Net Margin", value: metrics.netMargin != null ? `${metrics.netMargin.toFixed(1)}%` : "—" },
-        { label: "ROE", value: metrics.roe != null ? `${metrics.roe.toFixed(1)}%` : "—", color: C.cyan },
-        { label: "ROA", value: metrics.roa != null ? `${metrics.roa.toFixed(1)}%` : "—", color: C.amber },
-        { label: "Rev Growth", value: metrics.revGrowth != null ? `${metrics.revGrowth > 0 ? "+" : ""}${metrics.revGrowth.toFixed(1)}%` : "—", color: metrics.revGrowth != null ? (metrics.revGrowth >= 0 ? C.green : C.red) : undefined },
-      ]} />
-
-      <div style={{ fontSize: 11, fontFamily: f, color: C.textDim, padding: "8px 0 0", textAlign: "right" }}>
-        Source: SEC XBRL + Schwab
-      </div>
+      <AnalystCoverageBlock ticker={ticker} />
     </>
   );
 });
@@ -1440,6 +1712,7 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
   const [fundamentals, setFundamentals] = useState<FundamentalData | null>(null);
   const [fundLoading, setFundLoading] = useState(false);
   const [page, setPage] = useState(0);
+  const companyTabsId = useId();
   const startX = useRef(0);
   const startY = useRef(0);
   const swiping = useRef(false);
@@ -1646,6 +1919,30 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
     setSliderOffset(0, true);
   }, [page, setSliderOffset]);
 
+  const focusTab = useCallback((index: number) => {
+    const el = document.getElementById(`${companyTabsId}-tab-${index}`);
+    el?.focus();
+  }, [companyTabsId]);
+
+  const onCompanyTabKeyDown = useCallback((e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      e.preventDefault();
+      const delta = e.key === "ArrowRight" ? 1 : -1;
+      const next = Math.max(0, Math.min(SUB_LABELS.length - 1, page + delta));
+      if (next !== page) setPage(next);
+      focusTab(next);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      setPage(0);
+      focusTab(0);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      const last = SUB_LABELS.length - 1;
+      setPage(last);
+      focusTab(last);
+    }
+  }, [page, focusTab]);
+
   if (!accessToken) {
     return (
       <div className="p-6 flex justify-center">
@@ -1656,16 +1953,33 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
 
   return (
     <div style={{ background: C.bg, color: C.text, fontFamily: f }}>
-      <div style={{ position: "sticky", top: stickyOffset, zIndex: 30, background: C.bg, display: "flex", gap: 4, padding: "8px 16px", overflowX: "auto", borderBottom: `1px solid ${C.border}` }}>
+      <div
+        role="tablist"
+        aria-label="Company research sections"
+        onKeyDown={onCompanyTabKeyDown}
+        style={{ position: "sticky", top: stickyOffset, zIndex: 30, background: C.bg, display: "flex", gap: 4, padding: "8px 16px", overflowX: "auto", borderBottom: `1px solid ${C.border}` }}
+      >
         {SUB_LABELS.map((label, i) => (
-          <button key={label} onClick={() => setPage(i)} style={{
-            padding: "6px 12px", fontSize: 12, fontFamily: f, fontWeight: 700,
-            color: page === i ? C.text : C.textDim,
-            background: page === i ? C.borderHi : "transparent",
-            border: "none",
-            borderRadius: 9999, cursor: "pointer", letterSpacing: 0.5, whiteSpace: "nowrap",
-            transition: "all 0.2s",
-          }}>{label}</button>
+          <button
+            key={label}
+            type="button"
+            role="tab"
+            id={`${companyTabsId}-tab-${i}`}
+            aria-selected={page === i}
+            aria-controls={`${companyTabsId}-panel-${i}`}
+            tabIndex={page === i ? 0 : -1}
+            onClick={() => { setPage(i); focusTab(i); }}
+            style={{
+              padding: "6px 12px", fontSize: 12, fontFamily: f, fontWeight: 700,
+              color: page === i ? C.text : C.textDim,
+              background: page === i ? C.borderHi : "transparent",
+              border: page === i ? `2px solid ${C.gold}` : "2px solid transparent",
+              borderRadius: 9999, cursor: "pointer", letterSpacing: 0.5, whiteSpace: "nowrap",
+              transition: "all 0.2s",
+              outline: "none",
+              boxShadow: page === i ? "0 0 0 2px rgba(255,184,0,0.35)" : "none",
+            }}
+          >{label}</button>
         ))}
       </div>
 
@@ -1690,7 +2004,13 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
               willChange: "transform",
             }}
           >
-            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 16px" }}>
+            <div
+              role="tabpanel"
+              id={`${companyTabsId}-panel-0`}
+              aria-labelledby={`${companyTabsId}-tab-0`}
+              tabIndex={0}
+              style={{ width: "100%", flexShrink: 0, padding: "0 16px 16px" }}
+            >
               {!taShowResult ? (
                 <div>
                   <div className="flex items-center justify-between py-2 border-b border-card-border/30">
@@ -1808,23 +2128,19 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
               <SubOverview fund={fundamentals} quoteData={toQuoteInfo(quoteData)} priceHist={priceHist} volHist={volHist} ai={analysisResult ? parseAiAnalysis(analysisResult) : null} />
             </div>
 
-            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 16px" }}>
-              <SubAnalystRatings ticker={symbol} />
-            </div>
-
-            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 16px" }}>
+            <div role="tabpanel" id={`${companyTabsId}-panel-1`} aria-labelledby={`${companyTabsId}-tab-1`} tabIndex={0} style={{ width: "100%", flexShrink: 0, padding: "0 16px 16px" }}>
               <SubFinancials ticker={symbol} />
             </div>
 
-            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 16px" }}>
+            <div role="tabpanel" id={`${companyTabsId}-panel-2`} aria-labelledby={`${companyTabsId}-tab-2`} tabIndex={0} style={{ width: "100%", flexShrink: 0, padding: "0 16px 16px" }}>
               <SubSEC ticker={symbol} />
             </div>
 
-            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 16px" }}>
+            <div role="tabpanel" id={`${companyTabsId}-panel-3`} aria-labelledby={`${companyTabsId}-tab-3`} tabIndex={0} style={{ width: "100%", flexShrink: 0, padding: "0 16px 16px" }}>
               <SubOwnership ticker={symbol} />
             </div>
 
-            <div style={{ width: "100%", flexShrink: 0, padding: "0 16px 16px" }}>
+            <div role="tabpanel" id={`${companyTabsId}-panel-4`} aria-labelledby={`${companyTabsId}-tab-4`} tabIndex={0} style={{ width: "100%", flexShrink: 0, padding: "0 16px 16px" }}>
               <SubValuation ticker={symbol} fund={fundamentals} />
             </div>
           </div>
