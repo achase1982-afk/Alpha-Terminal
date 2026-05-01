@@ -98,6 +98,8 @@ export interface StrategistV2Result {
   schemaVersion?: number;
   status: "recommendation" | "no_viable_setup" | "toxic_block" | "ivr_populating" | "failed_insufficient_history" | "desk_recommendation";
   ticker: string;
+  /** When no_viable_setup / MISSING_DATA stems from ticker fetch failure */
+  fetchFailureMode?: "token_null" | "http_fail" | "symbol_missing" | "network_exception" | string;
   deskResult?: import("./strategistDeskSchemas.js").DeskResult;
   ivrBackfill?: {
     jobId: string | null;
@@ -594,6 +596,7 @@ export async function analyzeTickerV2(
     const result: StrategistV2Result = {
       status: "no_viable_setup",
       ticker,
+      fetchFailureMode: tickerFetch.failureMode ?? undefined,
       blockReason: {
         category: "MISSING_DATA",
         detail,

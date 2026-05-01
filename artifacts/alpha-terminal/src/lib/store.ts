@@ -651,27 +651,35 @@ export const useTerminalStore = create<TerminalState>()(
       strategistJobs: {},
       strategistHistory: [],
       startStrategistJob: (jobId, ticker, opts) =>
-        set((state) => ({
-          strategistJobs: {
-            ...state.strategistJobs,
-            [jobId]: {
-              jobId,
-              ticker: ticker.toUpperCase(),
-              status: 'running',
-              result: null,
-              startedAt: Date.now(),
-              finishedAt: null,
-              viewed: false,
-              error: null,
-              tokens: [],
-              nextSince: 0,
-              liveStatus: opts?.kind === 'validation' ? 'Starting trade validation…' : 'Starting analysis…',
-              transcript: [],
-              kind: opts?.kind ?? 'analyze',
-              validationMeta: opts?.validationMeta ?? null,
-            },
-          },
-        })),
+        set((state) => {
+          const sym = ticker.toUpperCase();
+          const kind = opts?.kind ?? "analyze";
+          const next: typeof state.strategistJobs = { ...state.strategistJobs };
+          if (kind === "analyze") {
+            for (const [id, j] of Object.entries(next)) {
+              if (j.ticker === sym && j.status === "running" && j.kind === "analyze" && id !== jobId) {
+                delete next[id];
+              }
+            }
+          }
+          next[jobId] = {
+            jobId,
+            ticker: sym,
+            status: "running",
+            result: null,
+            startedAt: Date.now(),
+            finishedAt: null,
+            viewed: false,
+            error: null,
+            tokens: [],
+            nextSince: 0,
+            liveStatus: opts?.kind === "validation" ? "Starting trade validation…" : "Starting analysis…",
+            transcript: [],
+            kind,
+            validationMeta: opts?.validationMeta ?? null,
+          };
+          return { strategistJobs: next };
+        }),
       cancelStrategistJob: (jobId) =>
         set((state) => {
           if (!state.strategistJobs[jobId]) return {};

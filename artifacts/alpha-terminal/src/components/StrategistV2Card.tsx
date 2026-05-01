@@ -286,6 +286,8 @@ export interface StrategistV2Result {
     text: string;
   }>;
   strategistOutcome?: StrategistOutcome;
+  /** Present on some no_viable_setup rows when server returned structured telemetry extras */
+  fetchFailureMode?: "token_null" | "http_fail" | "symbol_missing" | "network_exception" | string;
 }
 
 const STRAT_LABELS: Record<string, string> = {
@@ -1561,7 +1563,8 @@ function outcomePresentation(result: StrategistV2Result): {
   }
   const chip = br ? CATEGORY_LABELS[br.category] : result.status === "toxic_block" ? "Toxic Block" : "No Viable Setup";
   const color = br ? CATEGORY_COLORS[br.category] : "#71717a";
-  return { headline: chip, chip, color, showRetry: cat !== "TOXIC_BLOCK" && cat !== "MISSING_DATA" };
+  const showRetry = cat !== "TOXIC_BLOCK";
+  return { headline: chip, chip, color, showRetry };
 }
 
 export function StrategistV2BlockCard({
@@ -1612,6 +1615,15 @@ export function StrategistV2BlockCard({
           </div>
         )}
 
+        {reason?.category === "MISSING_DATA" && (
+          <div className="mt-2 px-2 py-2 rounded font-mono text-[10px] text-zinc-400 leading-relaxed space-y-1" style={{ background: "rgba(113,113,122,0.08)", border: "1px solid rgba(113,113,122,0.25)" }}>
+            <div><span className="text-zinc-500">Category:</span> MISSING_DATA</div>
+            {result.fetchFailureMode && (
+              <div><span className="text-zinc-500">Fetch mode:</span> {String(result.fetchFailureMode)}</div>
+            )}
+            <div className="text-zinc-500">Retry after fixing tokens or symbol; use Analyze again.</div>
+          </div>
+        )}
         {meta?.aiMaxRisk != null && meta?.computedMaxLoss != null && (
           <div className="mt-2 px-2 py-2 rounded font-mono text-[10px] text-zinc-400 leading-relaxed space-y-1" style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)" }}>
             <div><span className="text-zinc-500">AI max risk (claimed):</span> ${meta.aiMaxRisk.toFixed(2)}</div>
