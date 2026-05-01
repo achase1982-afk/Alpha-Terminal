@@ -1,9 +1,20 @@
 import { db, optionsFlowRawTradesTable, optionsTapeBackfillOccCacheTable } from "@workspace/db";
 import { logger } from "./logger.js";
+import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
+import { getContract20dBaseline } from "./optionsBaselines.js";
+import { fetchSchwabMarketSnapshot } from "./schwabMarketSnapshot.js";
+import { buildMarketContextSnapshot } from "./flowMarketContext.js";
+import {
+  dteCalendarDays,
+  sessionPhaseFromTradeMs,
+  venueClassFromExchangeId,
+} from "./flowTradeEnrichment.js";
 import { probePolygonRate } from "./polygonRateProbe.js";
 import { classifyForFlowPersistence } from "./optionsTradeClassifier.js";
 import { flushFlowPersistenceNow } from "./optionsFlowPersistence.js";
 import { runRollupOnceForSymbol } from "./optionsFlowRollup.js";
+import { FlowLegWindow } from "./flowMultilegExtras.js";
+import { upsertStrikeVolumeBaselineFromContractBaseline } from "./flowStrikeBaselineDaily.js";
 
 const POLYGON_API = "https://api.polygon.io";
 const MAX_OCC = 50;
@@ -32,6 +43,7 @@ interface ChainLike {
   expiration: string;
   type: string;
   optionType?: string;
+  openInterest?: number;
 }
 
 interface CuratedExp {
@@ -157,6 +169,21 @@ export function buildTapeOccList(
   return occs;
 }
 
+function openInterestForOcc(chain: ChainLike[], meta: { expiration: string; strike: number; optionType: "call" | "put" }): number {
+  const isCall = meta.optionType === "call";
+  for (const c of chain) {
+    if (c.expiration !== meta.expiration || c.strike !== meta.strike) continue;
+    const ot = String(c.optionType ?? c.type).toUpperCase();
+    const legCall = ot === "CALL" || c.type === "call";
+    const legPut = ot === "PUT" || c.type === "put";
+    if (isCall && !legCall) continue;
+    if (!isCall && !legPut) continue;
+    const oi = c.openInterest;
+    if (typeof oi === "number" && Number.isFinite(oi) && oi >= 0) return Math.floor(oi);
+  }
+  return 0;
+}
+
 function tradeDedupId(occ: string, row: Record<string, unknown>): string {
   const sip = BigInt(String(row["sip_timestamp"] ?? row["participant_timestamp"] ?? 0));
   const part = BigInt(String(row["participant_timestamp"] ?? 0));
@@ -176,6 +203,7 @@ interface ParsedTrade {
   size: number;
   conditions: number[];
   dedupId: string;
+  exchangeId: number;
 }
 
 function parseTrades(occ: string, results: unknown[]): ParsedTrade[] {
@@ -188,7 +216,8 @@ function parseTrades(occ: string, results: unknown[]): ParsedTrade[] {
     const price = Number(row["price"] ?? 0);
     const size = Number(row["size"] ?? 0);
     const conditions = Array.isArray(row["conditions"]) ? (row["conditions"] as number[]) : [];
-    out.push({ tsMs, price, size, conditions, dedupId: tradeDedupId(occ, row) });
+    const ex = Number(row["exchange"] ?? 0);
+    out.push({ tsMs, price, size, conditions, dedupId: tradeDedupId(occ, row), exchangeId: ex });
   }
   return out;
 }
@@ -387,6 +416,13 @@ export async function runStrategistTapeBackfill(args: {
     };
   }
 
+  const schwabSnap = await fetchSchwabMarketSnapshot(ticker);
+  const marketCtx = buildMarketContextSnapshot({
+    ticker,
+    marketCapUsd: schwabSnap?.marketCapUsd ?? null,
+    assetType: schwabSnap?.assetType ?? null,
+  });
+
   const startMs = openMs;
   const gteNs = BigInt(startMs) * 1_000_000n;
   const lteNs = BigInt(endMs) * 1_000_000n;
@@ -408,12 +444,37 @@ export async function runStrategistTapeBackfill(args: {
       continue;
     }
 
+    let baselineAvgVol: number | null = null;
+    try {
+      const bl = await getContract20dBaseline(occ, { referenceDate: new Date(`${sessionDate}T12:00:00Z`) });
+      baselineAvgVol = bl?.avgVolume ?? null;
+      if (bl && bl.avgVolume > 0) {
+        await upsertStrikeVolumeBaselineFromContractBaseline({
+          ticker,
+          baselineDate: sessionDate,
+          optionSymbol: occ,
+          avgVolume20d: bl.avgVolume,
+          daysObserved: bl.daysObserved,
+        });
+      }
+    } catch (err) {
+      logFlowPipelineWarn(
+        "tape_backfill_baseline",
+        "strategistTapeBackfill: contract baseline fetch failed",
+        { err, occ, ticker },
+      );
+    }
+    const oiSnapshot = openInterestForOcc(args.chain, meta);
+
     const tradeUrl = `${POLYGON_API}/v3/trades/${encodeURIComponent(occ)}?timestamp.gte=${gteNs}&timestamp.lte=${lteNs}&order=asc&limit=${TRADE_PAGE_LIMIT}`;
     const { rows: tradeRows, truncated: trTr } = await fetchPaged(tradeUrl, apiKey, occDeadline);
     if (trTr) anyTruncated = true;
     const parsed = parseTrades(occ, tradeRows);
+    parsed.sort((a, b) => a.tsMs - b.tsMs);
     const { quotes, truncated: trQ } = await fetchQuotesWindowed(occ, apiKey, parsed, gteNs, lteNs, occDeadline);
     if (trQ) anyTruncated = true;
+
+    const occLegWindow = new FlowLegWindow();
 
     const rowsToInsert: Array<typeof optionsFlowRawTradesTable.$inferInsert> = [];
     for (const t of parsed) {
@@ -423,8 +484,25 @@ export async function runStrategistTapeBackfill(args: {
         size: t.size,
         conditions: t.conditions,
         nbbo: nb,
+        largeNotionalThresholdUsd: marketCtx.largeNotionalThresholdUsd,
+        avgDailyContractVolume20d: baselineAvgVol,
+        openInterest: oiSnapshot > 0 ? oiSnapshot : null,
       });
       if (!cl.shouldPersist) continue;
+      const dteDays = dteCalendarDays(meta.expiration, t.tsMs);
+      const sessionPhase = sessionPhaseFromTradeMs(t.tsMs);
+      const venueClass = venueClassFromExchangeId(t.exchangeId);
+      const sample = {
+        tsMs: t.tsMs,
+        occ,
+        strike: meta.strike,
+        expiration: meta.expiration,
+        side: cl.side,
+        size: t.size,
+        notional: cl.notional,
+      };
+      const ml = occLegWindow.annotate(ticker, sample);
+      occLegWindow.record(ticker, sample);
       rowsToInsert.push({
         underlyingSymbol: ticker,
         date: sessionDate,
@@ -440,6 +518,20 @@ export async function runStrategistTapeBackfill(args: {
         isBlock: cl.isBlockForDb,
         isSweep: cl.isSweep,
         sourceTradeId: t.dedupId,
+        exchangeId: t.exchangeId,
+        venueClass,
+        dteDays,
+        sessionPhase,
+        volOiRatio: cl.volOiRatio,
+        openInterestSnapshot: oiSnapshot > 0 ? oiSnapshot : null,
+        volumeVsBaseline20d: cl.volumeVsBaseline20d,
+        marketCapUsd: marketCtx.marketCapUsd,
+        marketCapTier: marketCtx.tier,
+        notionalThresholdUsd: marketCtx.largeNotionalThresholdUsd,
+        aggressorConfidence: cl.aggressorConfidence,
+        syntheticLegGroupId: ml.syntheticLegGroupId,
+        multiLegConfidence: ml.multiLegConfidence,
+        extras: ml.extras,
       });
     }
 
@@ -458,7 +550,11 @@ export async function runStrategistTapeBackfill(args: {
           .returning({ id: optionsFlowRawTradesTable.id });
         tradesInserted += ins.length;
       } catch (err) {
-        logger.warn({ err, occ, ticker }, "strategistTapeBackfill: batch insert failed");
+        logFlowPipelineWarn(
+          "tape_backfill_insert",
+          "strategistTapeBackfill: batch insert failed",
+          { err, occ, ticker, rowCount: rowsToInsert.length },
+        );
         anyError = true;
       }
     }
@@ -481,7 +577,11 @@ export async function runStrategistTapeBackfill(args: {
           set: { lastCoverageEndNs: lteNs, updatedAt: new Date() },
         });
     } catch (err) {
-      logger.debug({ err, occ }, "strategistTapeBackfill: occ cache upsert skipped");
+      logFlowPipelineWarn(
+        "tape_backfill_occ_cache",
+        "strategistTapeBackfill: occ cache upsert skipped",
+        { err, occ },
+      );
     }
 
     occCompleted++;
@@ -491,7 +591,11 @@ export async function runStrategistTapeBackfill(args: {
   try {
     await runRollupOnceForSymbol(ticker, sessionDate);
   } catch (err) {
-    logger.warn({ err, ticker }, "strategistTapeBackfill: symbol rollup failed");
+    logFlowPipelineWarn(
+      "tape_backfill_symbol_rollup",
+      "strategistTapeBackfill: symbol rollup failed",
+      { err, ticker },
+    );
     anyError = true;
   }
 

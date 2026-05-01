@@ -410,6 +410,31 @@ async function boot() {
     setTimeout(() => { void bootCatchup(); }, 60_000);
   }
 
+  /** Item 24: 90d retention + rebaseline volume_vs from strike baseline table (04:45 UTC). */
+  function scheduleNightlyFlowRawMaintenance() {
+    if (process.env.DISABLE_FLOW_RAW_MAINTENANCE === "1" || process.env.DISABLE_FLOW_RAW_MAINTENANCE === "true") {
+      logger.warn("Flow raw maintenance: DISABLE_FLOW_RAW_MAINTENANCE=1 — skipping schedule");
+      return;
+    }
+    function scheduleNext() {
+      const now = new Date();
+      const target = new Date(now);
+      target.setUTCHours(4, 45, 0, 0);
+      if (target.getTime() <= now.getTime()) {
+        target.setUTCDate(target.getUTCDate() + 1);
+      }
+      const ms = target.getTime() - now.getTime();
+      logger.info({ targetUTC: target.toISOString(), msUntil: ms }, "Flow raw maintenance scheduled (04:45 UTC daily)");
+      setTimeout(() => {
+        void import("./lib/flowRawTradesReclassify.js")
+          .then((m) => m.runNightlyFlowRawMaintenance())
+          .catch((err) => logger.error({ err }, "Nightly flow raw maintenance failed"))
+          .finally(() => scheduleNext());
+      }, ms);
+    }
+    scheduleNext();
+  }
+
   // Bind to "::" (IPv6 wildcard) so other services on Railway's private
   // network can reach us. Railway's internal DNS resolves <service>.railway.internal
   // to an IPv6 address (`fd12:...`), and a process listening only on
@@ -481,6 +506,7 @@ async function boot() {
       scheduleDailySnapshot();
       scheduleCanonicalIvAccumulator();
       schedulePolygonFlatFilesSync();
+      scheduleNightlyFlowRawMaintenance();
 
       await migrateAiLabSeedData();
       initAiLabOrchestrator();

@@ -20,6 +20,14 @@ import { getNextEarningsDate } from "./earningsService.js";
 import { evaluateCatalyst, deriveTradeDirection, type CatalystEvaluation } from "./catalystEvaluator.js";
 import { type OptionContract } from "./optionsStrategist.js";
 import { getStoredIVR, getRealizedVolFromEquityDaily, countRealIvHistoryDays, countProxyIvHistoryDays } from "./ivNormalize.js";
+import { buildMarketContextSnapshot, type MarketContextSnapshot } from "./flowMarketContext.js";
+import {
+  normalizeStrategistIv,
+  impliedVolFromAtmStraddle,
+  STRATEGIST_IV_CEILING_PCT,
+} from "./strategistIvNormalize.js";
+import { fetchPolygonAnalystConsensus, fetchPolygonAnalystRatings } from "./polygonAnalystData.js";
+import { fetchCompanyFinancialsForSymbol, type CompanyFinancials } from "../routes/sec.js";
 import { clampProfitTargetToMaxPayout } from "./exitTargetMath.js";
 import { scrubAll } from "./narrativeScrubbers.js";
 import { getAiLabStrategistConfig } from "./aiLabConfig.js";
@@ -173,6 +181,12 @@ interface TickerData {
   currentVolume: number;
   relativeVolume: number;
   sector: string;
+  /** Schwab fundamental.marketCap when present. */
+  marketCapUsd: number | null;
+  /** Schwab reference.assetType / assetMainType when present. */
+  schwabAssetType: string | null;
+  /** Tier, ETF flag, tiered large-print threshold, boundary proximity (Items 2, 4, 19, 26). */
+  marketContext: MarketContextSnapshot;
   earningsWithin48h: boolean;
   earningsDaysAway: number | null;
   earningsDate: string | null;
@@ -312,9 +326,11 @@ interface CuratedExpiration {
   strikes: CuratedStrike[];
 }
 
-/** Schwab GET /marketdata/v1/quotes envelope: symbol → { quote, fundamental }. */
+/** Schwab GET /marketdata/v1/quotes envelope: symbol → { quote, fundamental, reference }. */
 interface SchwabQuotesResponse {
-  [symbol: string]: { quote?: SchwabQuoteRow; fundamental?: SchwabFundamentalRow } | undefined;
+  [symbol: string]:
+    | { quote?: SchwabQuoteRow; fundamental?: SchwabFundamentalRow; reference?: SchwabReferenceRow }
+    | undefined;
 }
 
 interface SchwabQuoteRow {
@@ -325,10 +341,16 @@ interface SchwabQuoteRow {
   securityStatus?: string;
 }
 
+interface SchwabReferenceRow {
+  assetType?: string;
+  assetMainType?: string;
+}
+
 interface SchwabFundamentalRow {
   avg10DaysVolume?: number;
   avgVol10Days?: number;
   sector?: string;
+  marketCap?: number;
 }
 
 /** Schwab GET /marketdata/v1/chains JSON body (partial). */
@@ -370,6 +392,9 @@ export interface ChainSummary {
     percentOfSpot: number;
     expiry: string;
     daysToExpiry: number;
+    /** BSM-implied annualized IV (%) from matching straddle mid to model price; null when unsolvable. */
+    impliedVolStraddlePct?: number | null;
+    impliedVolStraddleSource?: "bsm_match_mid" | null;
   } | null;
 }
 
@@ -718,6 +743,14 @@ export async function analyzeTickerV2(
     logger.info({ ticker }, "StrategistV2: no Polygon flow highlights for ticker");
   }
 
+  const [analystConsensus, analystRatingsPack, companyFinancials] = await Promise.all([
+    fetchPolygonAnalystConsensus(ticker),
+    fetchPolygonAnalystRatings(ticker, 30),
+    fetchCompanyFinancialsForSymbol(ticker),
+  ]);
+  assertAnalyzeNotCancelled(progress);
+  const fundamentalsSummary = companyFinancials ? fundamentalsQuickSummary(companyFinancials) : null;
+
   const dataPackage = buildDataPackage(
     ticker,
     tickerData,
@@ -733,6 +766,12 @@ export async function analyzeTickerV2(
       ivrContext: buildIvrContext(tickerData, realIvDepth, proxyIvDepth),
     },
     settings.strategistMode === 3 || settings.strategistMode === 4 ? tapeBackfillStatus : undefined,
+    {
+      chainSource: dataSource,
+      analystConsensus,
+      analystRatings: analystRatingsPack?.ratings ?? null,
+      fundamentalsSummary,
+    },
   );
   assertAnalyzeNotCancelled(progress);
 
@@ -1433,7 +1472,6 @@ function buildTermStructure5pt(
 function computeSkew25DeltaForChain(
   chain: ChainContract[],
   availableExpirations: string[],
-  ivToPct: (iv: number | null | undefined) => number,
 ): { skew: ChainSummary["skew25Delta"]; reason: string | null } {
   if (availableExpirations.length === 0) {
     return { skew: null, reason: "no expirations" };
@@ -1447,16 +1485,37 @@ function computeSkew25DeltaForChain(
   if (calls.length === 0 || puts.length === 0) {
     return { skew: null, reason: "missing calls or puts on expiry" };
   }
-  const putPick = [...puts].sort((a, b) => Math.abs(a.delta - -0.25) - Math.abs(b.delta - -0.25))[0];
-  const callPick = [...calls].sort((a, b) => Math.abs(a.delta - 0.25) - Math.abs(b.delta - 0.25))[0];
-  if (!putPick || !callPick) return { skew: null, reason: "no contracts with delta" };
-  const putIV = ivToPct(putPick.impliedVolatility);
-  const callIV = ivToPct(callPick.impliedVolatility);
-  const skewPoints = Math.round((putIV - callIV) * 100) / 100;
-  return {
-    skew: { putIV, callIV, skewPoints, asOfExpiry: exp },
-    reason: null,
+
+  const skewFromTargets = (callDeltaT: number, putDeltaT: number): ChainSummary["skew25Delta"] | null => {
+    const putPick = [...puts].sort((a, b) => Math.abs(a.delta - putDeltaT) - Math.abs(b.delta - putDeltaT))[0];
+    const callPick = [...calls].sort((a, b) => Math.abs(a.delta - callDeltaT) - Math.abs(b.delta - callDeltaT))[0];
+    if (!putPick || !callPick) return null;
+    const putN = normalizeStrategistIv(putPick.impliedVolatility, "chain");
+    const callN = normalizeStrategistIv(callPick.impliedVolatility, "chain");
+    if (putN.clamped || callN.clamped) return null;
+    const putIV = putN.pct;
+    const callIV = callN.pct;
+    const skewPoints = Math.round((putIV - callIV) * 100) / 100;
+    return { putIV, callIV, skewPoints, asOfExpiry: exp };
   };
+
+  let skew = skewFromTargets(0.25, -0.25);
+  if (skew) return { skew, reason: null };
+  skew = skewFromTargets(0.2, -0.2);
+  if (skew) {
+    return {
+      skew,
+      reason: "skew_25d_iv_ceiling_or_unreliable_used_20_delta_proxy",
+    };
+  }
+  skew = skewFromTargets(0.15, -0.15);
+  if (skew) {
+    return {
+      skew,
+      reason: "skew_25d_iv_ceiling_or_unreliable_used_15_delta_proxy",
+    };
+  }
+  return { skew: null, reason: "skew_indeterminate_iv_ceiling_on_nearest_delta_legs" };
 }
 
 function computeImpliedMoveStraddle(
@@ -1482,7 +1541,23 @@ function computeImpliedMoveStraddle(
   if (!Number.isFinite(callMid) || !Number.isFinite(putMid) || price <= 0) return null;
   const dollar = Math.round((callMid + putMid) * 1000) / 1000;
   const percentOfSpot = Math.round((dollar / price) * 10000) / 100;
-  return { dollar, percentOfSpot, expiry: exp, daysToExpiry: dte };
+  const sigmaDec = impliedVolFromAtmStraddle({
+    spot: price,
+    strike,
+    dteCalendarDays: dte,
+    straddleMidPerShare: dollar,
+    riskFreeAnnual: 0.045,
+    dividendYieldAnnual: 0,
+  });
+  const ivNorm = sigmaDec != null ? normalizeStrategistIv(sigmaDec, "reconstructed_from_straddle") : null;
+  return {
+    dollar,
+    percentOfSpot,
+    expiry: exp,
+    daysToExpiry: dte,
+    impliedVolStraddlePct: ivNorm?.pct ?? null,
+    impliedVolStraddleSource: ivNorm != null ? "bsm_match_mid" : null,
+  };
 }
 
 /** Latest listed expiry within prefsMax DTE, or null if none. */
@@ -1682,30 +1757,13 @@ export function summarizeOptionsChain(
   const atmPut = atmPuts[0];
   const atmStrike = atmCall?.strike ?? atmPut?.strike ?? Math.round(price);
 
-  // FIX 3: Normalize all IVs in the AI payload to percentage (e.g. 41.25)
-  // so the model never sees mixed units. Schwab/Polygon report IV as a decimal
-  // (0.4125); we multiply by 100 and round to 2 decimals to match buildCuratedStrikes
-  // and frontMonthIV/backMonthIV (which already emit percentages).
-  //
-  // FIX 4 (IV artifacts): 0DTE / front-week contracts often quote IV in the
-  // 3000-11000% range when bid/ask is 0.01-wide and the underlying is moving
-  // intraday — a pricing-engine artifact, not real volatility. Opus-tier
-  // models recognize and ignore these; cheaper models can reason on them and
-  // build broken trades around fake "high IV". We hard-cap at IV_CEILING_PCT
-  // and surface an `ivArtifactsClampedCount` field on the chain summary so
-  // the prompt can warn the model. Earnings-week front-month IVs are usually
-  // in the 80-300% range, so 500% is a safe ceiling for back-month structural
-  // decisions and the cap is rarely hit on legit data.
-  const IV_CEILING_PCT = 500;
+  // FIX 3–4: IV as decimal → percent; artifact spikes clamped via
+  // strategistIvNormalize (STRATEGIST_IV_CEILING_PCT) with per-field clamp count.
   let ivArtifactClampCount = 0;
   const ivToPct = (iv: number | null | undefined): number => {
-    const n = typeof iv === "number" && Number.isFinite(iv) ? iv : 0;
-    const pct = Math.round(n * 10000) / 100;
-    if (pct > IV_CEILING_PCT) {
-      ivArtifactClampCount += 1;
-      return IV_CEILING_PCT;
-    }
-    return pct;
+    const n = normalizeStrategistIv(iv, "chain");
+    if (n.clamped) ivArtifactClampCount += 1;
+    return n.pct;
   };
 
   const topVolumeCalls = [...calls].sort((a, b) => b.volume - a.volume).slice(0, 5).map(c => ({
@@ -1783,7 +1841,7 @@ export function summarizeOptionsChain(
   const curatedExpirations = buildCuratedExpirations(chain, price, mustIncludeExpiries);
 
   const termStructure5pt = buildTermStructure5pt(chain, price, curatedExpirations, expirations, ivToPct);
-  const { skew, reason: skew25DeltaReason } = computeSkew25DeltaForChain(chain, expirations, ivToPct);
+  const { skew, reason: skew25DeltaReason } = computeSkew25DeltaForChain(chain, expirations);
   const impliedMove = computeImpliedMoveStraddle(chain, price, expirations);
 
   return {
@@ -1805,7 +1863,7 @@ export function summarizeOptionsChain(
     availableExpirations: expirations,
     curatedExpirations,
     ivArtifactsClampedCount: ivArtifactClampCount,
-    ivCeilingPct: IV_CEILING_PCT,
+    ivCeilingPct: STRATEGIST_IV_CEILING_PCT,
     termStructure5pt,
     skew25Delta: skew,
     skew25DeltaReason: skew == null ? skew25DeltaReason : null,
@@ -1839,6 +1897,90 @@ function buildIvrContext(
   return { source: null, asOfDate: tickerData.ivrAsOfDate, daysOfHistory: null };
 }
 
+function fundamentalsQuickSummary(f: CompanyFinancials): Record<string, unknown> {
+  const pick = (arr: { end: string; val: number }[]) => {
+    if (!arr.length) return null;
+    const p = [...arr].sort((a, b) => a.end.localeCompare(b.end))[arr.length - 1]!;
+    return { asOf: p.end, valUsd: p.val };
+  };
+  return {
+    revenue: pick(f.revenue),
+    operatingCashFlow: pick(f.operatingCashFlow),
+    capitalExpenditures: pick(f.capitalExpenditures),
+    longTermDebt: pick(f.longTermDebt),
+    sharesOutstanding: pick(f.sharesOutstanding),
+    note: "SEC XBRL companyfacts (US-GAAP); use for cash generation and balance sheet context.",
+  };
+}
+
+function buildDataQualitySummary(args: {
+  ticker: string;
+  tickerData: TickerData;
+  chainSummary: ChainSummary;
+  ioScore: IOScoreResult;
+  polygonHighlights: PolygonFlowHighlights | null;
+  tapeBackfill?: TapeBackfillStatus;
+  enrichment?: {
+    chainSource?: ChainSource;
+    analystConsensus?: import("./polygonAnalystData.js").PolygonAnalystConsensus | null;
+    fundamentalsSummary?: Record<string, unknown> | null;
+  };
+}): Record<string, unknown> {
+  const { tickerData, chainSummary, ioScore, polygonHighlights, tapeBackfill, enrichment } = args;
+  const chainOk = chainSummary.availableExpirations.length > 0 && chainSummary.atmStrike > 0;
+  const skewState = chainSummary.skew25Delta != null ? "available" : "missing_or_indeterminate";
+  const flowTape = polygonHighlights?.sessionTape;
+  const tapeKind = flowTape?.tapeKind ?? null;
+  const tapeBackfillStatus = tapeBackfill?.status ?? "not_run";
+  const fs = enrichment?.fundamentalsSummary;
+  const fundamentalsOk = Boolean(
+    fs && typeof fs === "object"
+      && Object.keys(fs).some((k) => k !== "note" && (fs as Record<string, unknown>)[k] != null),
+  );
+  const ac = enrichment?.analystConsensus;
+  const analystOk = Boolean(
+    ac && (
+      ac.consensus_price_target != null
+      || ac.num_analysts != null
+      || ac.consensus_rating != null
+      || ac.consensus_rating_value != null
+    ),
+  );
+
+  const flags: string[] = [];
+  if (!chainOk) flags.push("chain_incomplete");
+  if (skewState !== "available") flags.push("skew_uncertain");
+  if (!ioScore.available) flags.push("io_score_fallback");
+  if (!polygonHighlights) flags.push("polygon_flow_highlights_absent");
+  if (tapeKind === "eod_fallback") flags.push("session_tape_eod_synthesis");
+  if (tapeKind == null && polygonHighlights) flags.push("session_tape_absent");
+  if (tapeBackfill && tapeBackfill.status !== "complete" && tapeBackfill.status !== "skipped") flags.push("tape_backfill_incomplete");
+  if (!analystOk) flags.push("analyst_consensus_sparse");
+  if (!fundamentalsOk) flags.push("sec_fundamentals_sparse");
+
+  return {
+    asOfDate: new Date().toISOString().slice(0, 10),
+    chain: { state: chainOk ? "usable" : "degraded", expirationsListed: chainSummary.availableExpirations.length },
+    ivr: { state: tickerData.ivr != null ? "present" : "absent", source: tickerData.ivrSource },
+    skew25Delta: { state: skewState, reason: chainSummary.skew25DeltaReason },
+    ioScore: { state: ioScore.available ? "regression_fit" : "fallback_defaults", dataAvailability: ioScore.dataAvailability },
+    flow: {
+      highlightsAsOf: polygonHighlights?.asOfDate ?? null,
+      sessionTapeKind: tapeKind,
+      tapeBackfillStatus,
+    },
+    enrichment: {
+      optionsChainSource: enrichment?.chainSource ?? null,
+      analystConsensusPresent: analystOk,
+      secFundamentalsPresent: fundamentalsOk,
+    },
+    ivArtifactsClamped: chainSummary.ivArtifactsClampedCount,
+    flags,
+    readThisFirst:
+      "Each field reports whether the snapshot slice is present, degraded, or absent. Use null-safe reads; when state is degraded or a flag is set, lower conviction and avoid implying full tape or full skew precision.",
+  };
+}
+
 function buildDataPackage(
   ticker: string,
   tickerData: TickerData,
@@ -1854,9 +1996,26 @@ function buildDataPackage(
     ivrContext: ReturnType<typeof buildIvrContext>;
   },
   tapeBackfill?: TapeBackfillStatus,
+  enrichment?: {
+    chainSource?: ChainSource;
+    analystConsensus?: import("./polygonAnalystData.js").PolygonAnalystConsensus | null;
+    analystRatings?: import("./polygonAnalystData.js").PolygonAnalystRatingRow[] | null;
+    fundamentalsSummary?: Record<string, unknown> | null;
+  },
 ): string {
   const currentDate = new Date().toISOString().slice(0, 10);
+  const dataQualitySummary = buildDataQualitySummary({
+    ticker,
+    tickerData,
+    chainSummary,
+    ioScore,
+    polygonHighlights,
+    tapeBackfill,
+    enrichment,
+  });
   const pkg: Record<string, unknown> = {
+    schemaVersion: 1,
+    dataQualitySummary,
     ticker,
     currentDate,
     price: tickerData.price,
@@ -1865,6 +2024,25 @@ function buildDataPackage(
     avgVolume20d: tickerData.avgVolume20d,
     relativeVolume: tickerData.relativeVolume,
     sector: tickerData.sector,
+    marketContext: {
+      marketCapUsd: tickerData.marketContext.marketCapUsd,
+      tier: tickerData.marketContext.tier,
+      isEtf: tickerData.marketContext.isEtf,
+      schwabAssetType: tickerData.schwabAssetType,
+      largeNotionalThresholdUsd: tickerData.marketContext.largeNotionalThresholdUsd,
+      tierBoundaryProximity: tickerData.marketContext.tierBoundaryProximity,
+      note:
+        "Large-print persistence and flow scoring use tier-adjusted notional thresholds (higher for mega/large caps, lower for small/micro; ETFs use index/sector/niche bands). tierBoundaryProximity means market cap is within ~10% of a tier boundary — treat flow significance with extra care.",
+    },
+    optionsChainSource: enrichment?.chainSource ?? null,
+    polygonAnalyst: enrichment?.analystConsensus
+      ? {
+          consensus: enrichment.analystConsensus,
+          recentRatings: enrichment.analystRatings?.slice(0, 15) ?? [],
+          sourceNote: "Polygon Benzinga partner API (consensus + ratings).",
+        }
+      : { available: false },
+    secFundamentals: enrichment?.fundamentalsSummary ?? { available: false },
     earningsDaysAway: tickerData.earningsDaysAway,
     earningsWithin48h: tickerData.earningsWithin48h,
     analystActions48h: tickerData.analystActions48h,
@@ -1906,7 +2084,7 @@ function buildDataPackage(
       sessionTape: polygonHighlights.sessionTape,
       sessionTapeDate: polygonHighlights.sessionTapeDate,
       sourceNote:
-        "Per-strike end-of-day snapshot (volume, OI, greeks). sessionTape.tapeKind `live` adds classified prints and aggressor mix; `eod_fallback` is volume-ranked EOD synthesis when live tape rows are absent (sweep/block zero; do not infer aggressor).",
+        "Per-strike end-of-day snapshot (volume, OI, greeks). sessionTape.tapeKind `live` adds classified prints and aggressor mix; topPrints may include syntheticLegGroupId / multiLegConfidence / extras when the flow pipeline detected time-correlated legs or repeat same-side clusters. `eod_fallback` is volume-ranked EOD synthesis when live tape rows are absent (sweep/block zero; do not infer aggressor).",
     } : { available: false, note: "No per-strike flow snapshot on file for this ticker — fall back to optionsChainSummary.unusualActivity." },
     ioScore: {
       final: ioScore.final,
@@ -2728,7 +2906,7 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
       return { data: null, failureMode: "token_null" };
     }
 
-    const res = await fetch(`${SCHWAB_API}/quotes?symbols=${ticker}&fields=quote,fundamental`, {
+    const res = await fetch(`${SCHWAB_API}/quotes?symbols=${ticker}&fields=quote,fundamental,reference`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
@@ -2737,8 +2915,11 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
     }
 
     const data = (await res.json()) as SchwabQuotesResponse;
-    const q = data[ticker]?.quote ?? data[ticker.toUpperCase()]?.quote;
-    const f = data[ticker]?.fundamental ?? data[ticker.toUpperCase()]?.fundamental ?? {};
+    const upper = ticker.toUpperCase();
+    const entry = data[ticker] ?? data[upper];
+    const q = entry?.quote;
+    const f = entry?.fundamental ?? {};
+    const ref = entry?.reference;
     if (!q) {
       logger.warn({ ticker, returnedKeys: Object.keys(data ?? {}) }, "StrategistV2: fetchTickerData failed — symbol missing from response");
       return { data: null, failureMode: "symbol_missing" };
@@ -2747,8 +2928,22 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
     const price = q.lastPrice ?? q.mark ?? 0;
     const avgVol = f.avg10DaysVolume ?? f.avgVol10Days ?? 1;
     const currentVol = q.totalVolume ?? 0;
+    const rawCap = f.marketCap;
+    const marketCapUsd =
+      typeof rawCap === "number" && Number.isFinite(rawCap) && rawCap > 0 ? rawCap : null;
+    const schwabAssetType =
+      typeof ref?.assetType === "string"
+        ? ref.assetType
+        : typeof ref?.assetMainType === "string"
+          ? ref.assetMainType
+          : null;
+    const marketContext = buildMarketContextSnapshot({
+      ticker: upper,
+      marketCapUsd,
+      assetType: schwabAssetType,
+    });
 
-    const eventResult = checkEventConflicts(ticker, 45, "iron_condor");
+    void checkEventConflicts(ticker, 45, "iron_condor");
     // Single source of truth: Benzinga primary + Yahoo fallback (cached 6h).
     // Replaces the legacy MEGA_EARNINGS hardcoded list which only covered ~mega caps.
     const earningsInfo = await getNextEarningsDate(ticker).catch(() => null);
@@ -2777,6 +2972,9 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
         currentVolume: currentVol,
         relativeVolume: avgVol > 0 ? currentVol / avgVol : 1,
         sector: f.sector ?? "Unknown",
+        marketCapUsd,
+        schwabAssetType,
+        marketContext,
         earningsWithin48h,
         earningsDaysAway,
         earningsDate: earningsInfo?.earningsDate ?? null,

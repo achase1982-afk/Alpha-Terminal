@@ -1,6 +1,7 @@
 import { db, optionsFlowPerStrikeTable, optionsFlowExecPerStrikeTable, optionsFlowRawTradesTable } from "@workspace/db";
 import { and, eq, inArray, sql, desc } from "drizzle-orm";
 import { logger } from "./logger.js";
+import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 
 export interface FlowStrikeHighlight {
   strike: number;
@@ -45,6 +46,9 @@ export interface FlowTopPrintRow {
   isBlock: boolean;
   isSweep: boolean;
   side: "ask" | "bid" | "mid" | null;
+  syntheticLegGroupId?: string | null;
+  multiLegConfidence?: string | null;
+  extras?: Record<string, unknown> | null;
 }
 
 /** Per-strike aggressor mix from session prints (ask=buyer-lean, bid=seller-lean). */
@@ -257,6 +261,9 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
         isBlock: optionsFlowRawTradesTable.isBlock,
         isSweep: optionsFlowRawTradesTable.isSweep,
         side: optionsFlowRawTradesTable.side,
+        syntheticLegGroupId: optionsFlowRawTradesTable.syntheticLegGroupId,
+        multiLegConfidence: optionsFlowRawTradesTable.multiLegConfidence,
+        extras: optionsFlowRawTradesTable.extras,
       })
       .from(optionsFlowRawTradesTable)
       .where(and(
@@ -360,6 +367,9 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
       isBlock: Boolean(r.isBlock),
       isSweep: Boolean(r.isSweep),
       side: r.side === "ask" || r.side === "bid" || r.side === "mid" ? r.side : null,
+      syntheticLegGroupId: r.syntheticLegGroupId ?? null,
+      multiLegConfidence: r.multiLegConfidence ?? null,
+      extras: r.extras && typeof r.extras === "object" ? (r.extras as Record<string, unknown>) : null,
     }));
 
     return {
@@ -377,7 +387,11 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
       },
     };
   } catch (err) {
-    logger.warn({ err, symbol: sym, sessionDate }, "polygonFlowHighlights: session tape lookup failed");
+    logFlowPipelineWarn(
+      "session_tape_select",
+      "polygonFlowHighlights: session tape lookup failed",
+      { err, symbol: sym, sessionDate },
+    );
     return null;
   }
 }
@@ -514,7 +528,11 @@ export async function getPolygonFlowHighlights(
     }
     return { asOfDate, ...summary, sessionTape, sessionTapeDate };
   } catch (err) {
-    logger.warn({ err, symbol: sym }, "polygonFlowHighlights: lookup failed");
+    logFlowPipelineWarn(
+      "flow_highlights_lookup",
+      "polygonFlowHighlights: lookup failed",
+      { err, symbol: sym },
+    );
     return null;
   }
 }

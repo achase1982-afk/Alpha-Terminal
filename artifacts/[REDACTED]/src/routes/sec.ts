@@ -604,7 +604,7 @@ interface FinancialPeriod {
   filed: string;
 }
 
-interface CompanyFinancials {
+export interface CompanyFinancials {
   revenue: FinancialPeriod[];
   netIncome: FinancialPeriod[];
   operatingIncome: FinancialPeriod[];
@@ -779,65 +779,73 @@ function capexSeries(facts: SecCompanyFactsJson["facts"]): FinancialPeriod[] {
 const financialsCache = new Map<string, { data: CompanyFinancials; ts: number }>();
 const FINANCIALS_CACHE_TTL = 15 * 60 * 1000;
 
+/** Server-side fetch for strategist / internal callers (same cache as HTTP route). */
+export async function fetchCompanyFinancialsForSymbol(symbol: string): Promise<CompanyFinancials | null> {
+  const sym = symbol.trim().toUpperCase().replace(/^\$/, "");
+  if (!sym) return null;
+  const cached = financialsCache.get(sym);
+  if (cached && Date.now() - cached.ts < FINANCIALS_CACHE_TTL) {
+    return cached.data;
+  }
+  const map = await loadTickerMap(undefined);
+  const cik = map.get(sym);
+  if (!cik) return null;
+  const factsRes = await fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, {
+    headers: HEADERS,
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!factsRes.ok) return null;
+  const factsData = (await factsRes.json()) as SecCompanyFactsJson;
+  const facts = factsData.facts;
+  if (!facts) return null;
+
+  const equitySeries = dedupeByFyLatestFiled(
+    extractFacts10KFY(facts, "StockholdersEquity").length > 0
+      ? extractFacts10KFY(facts, "StockholdersEquity")
+      : extractFacts10KFY(facts, "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"),
+  );
+
+  const financials: CompanyFinancials = {
+    revenue: mergeRevenueSeries(facts),
+    netIncome: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "NetIncomeLoss")), 5),
+    operatingIncome: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "OperatingIncomeLoss")), 5),
+    eps: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "EarningsPerShareDiluted", "USD/shares")), 5),
+    totalAssets: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "Assets")), 5),
+    totalLiabilities: liabilitiesSeries(facts),
+    stockholdersEquity: lastNFiscalYears(equitySeries, 5),
+    cash: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "CashAndCashEquivalentsAtCarryingValue")), 5),
+    sharesOutstanding: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "CommonStockSharesOutstanding", "shares")), 5),
+    grossProfit: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "GrossProfit")), 5),
+    operatingCashFlow: ocfSeries(facts),
+    capitalExpenditures: capexSeries(facts),
+    financingCashFlow: mergeCashFlowTagPair(facts, "NetCashProvidedByUsedInFinancingActivities", "CashProvidedByUsedInFinancingActivities"),
+    investingCashFlow: mergeCashFlowTagPair(facts, "NetCashProvidedByUsedInInvestingActivities", "CashProvidedByUsedInInvestingActivities"),
+    assetsCurrent: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "AssetsCurrent")), 5),
+    liabilitiesCurrent: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "LiabilitiesCurrent")), 5),
+    longTermDebt: lastNFiscalYears(
+      dedupeByFyLatestFiled(
+        extractFacts10KFY(facts, "LongTermDebtNoncurrent").length > 0
+          ? extractFacts10KFY(facts, "LongTermDebtNoncurrent")
+          : extractFacts10KFY(facts, "LongTermDebt"),
+      ),
+      5,
+    ),
+    debtCurrent: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "DebtCurrent")), 5),
+    totalDebt: totalDebtSeries(facts),
+  };
+  financialsCache.set(sym, { data: financials, ts: Date.now() });
+  return financials;
+}
+
 router.get("/company-financials", async (req, res) => {
   const symbol = (req.query.symbol as string || "").trim().toUpperCase().replace(/^\$/, "");
   if (!symbol) return res.status(400).json({ error: "symbol required" });
 
   try {
-    const cached = financialsCache.get(symbol);
-    if (cached && Date.now() - cached.ts < FINANCIALS_CACHE_TTL) {
-      return res.json({ financials: cached.data, symbol });
+    const financials = await fetchCompanyFinancialsForSymbol(symbol);
+    if (financials === null) {
+      return res.json({ financials: null, symbol });
     }
-
-    const map = await loadTickerMap(req.log);
-    const cik = map.get(symbol);
-    if (!cik) return res.json({ financials: null, symbol });
-
-    const factsRes = await fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, {
-      headers: HEADERS, signal: AbortSignal.timeout(15000),
-    });
-    if (!factsRes.ok) {
-      return res.status(factsRes.status).json({ error: `SEC returned ${factsRes.status}`, financials: null });
-    }
-    const factsData = (await factsRes.json()) as SecCompanyFactsJson;
-    const facts = factsData.facts;
-
-    const equitySeries = dedupeByFyLatestFiled(
-      extractFacts10KFY(facts, "StockholdersEquity").length > 0
-        ? extractFacts10KFY(facts, "StockholdersEquity")
-        : extractFacts10KFY(facts, "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"),
-    );
-
-    const financials: CompanyFinancials = {
-      revenue: mergeRevenueSeries(facts),
-      netIncome: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "NetIncomeLoss")), 5),
-      operatingIncome: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "OperatingIncomeLoss")), 5),
-      eps: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "EarningsPerShareDiluted", "USD/shares")), 5),
-      totalAssets: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "Assets")), 5),
-      totalLiabilities: liabilitiesSeries(facts),
-      stockholdersEquity: lastNFiscalYears(equitySeries, 5),
-      cash: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "CashAndCashEquivalentsAtCarryingValue")), 5),
-      sharesOutstanding: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "CommonStockSharesOutstanding", "shares")), 5),
-      grossProfit: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "GrossProfit")), 5),
-      operatingCashFlow: ocfSeries(facts),
-      capitalExpenditures: capexSeries(facts),
-      financingCashFlow: mergeCashFlowTagPair(facts, "NetCashProvidedByUsedInFinancingActivities", "CashProvidedByUsedInFinancingActivities"),
-      investingCashFlow: mergeCashFlowTagPair(facts, "NetCashProvidedByUsedInInvestingActivities", "CashProvidedByUsedInInvestingActivities"),
-      assetsCurrent: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "AssetsCurrent")), 5),
-      liabilitiesCurrent: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "LiabilitiesCurrent")), 5),
-      longTermDebt: lastNFiscalYears(
-        dedupeByFyLatestFiled(
-          extractFacts10KFY(facts, "LongTermDebtNoncurrent").length > 0
-            ? extractFacts10KFY(facts, "LongTermDebtNoncurrent")
-            : extractFacts10KFY(facts, "LongTermDebt"),
-        ),
-        5,
-      ),
-      debtCurrent: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "DebtCurrent")), 5),
-      totalDebt: totalDebtSeries(facts),
-    };
-
-    financialsCache.set(symbol, { data: financials, ts: Date.now() });
     return res.json({ financials, symbol });
   } catch (err: any) {
     req.log?.error({ err }, "Company financials endpoint error");

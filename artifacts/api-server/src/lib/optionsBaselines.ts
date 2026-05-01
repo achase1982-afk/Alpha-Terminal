@@ -159,6 +159,91 @@ export async function getContract20dBaseline(
 }
 
 /**
+ * Batch variant of {@link getContract20dBaseline} for many OCC symbols in one
+ * round-trip (live watcher tape classification). Missing/degraded symbols are
+ * omitted from the returned map.
+ */
+export async function getContracts20dBaselineBatch(
+  optionSymbols: string[],
+  opts: { lookbackDays?: number; referenceDate?: Date } = {},
+): Promise<Map<string, ContractBaseline>> {
+  const out = new Map<string, ContractBaseline>();
+  const uniq = [...new Set(optionSymbols.map((s) => s.trim()).filter(Boolean))];
+  if (uniq.length === 0) return out;
+
+  const lookback = opts.lookbackDays ?? DEFAULT_LOOKBACK_DAYS;
+  const ref = opts.referenceDate ?? new Date();
+  const cutoff = lookbackCutoffISO(ref, lookback);
+  const t0 = Date.now();
+
+  try {
+    const rows = await db.execute<{
+      option_symbol: string;
+      ticker: string;
+      days_observed: number;
+      avg_volume: number | null;
+      avg_vol_oi: number | null;
+    }>(sql`
+      WITH ranked AS (
+        SELECT
+          option_symbol,
+          ticker,
+          volume,
+          open_interest,
+          trade_date,
+          ROW_NUMBER() OVER (PARTITION BY option_symbol ORDER BY trade_date DESC) AS rn
+        FROM polygon_options_history
+        WHERE option_symbol IN ${inList(uniq)}
+          AND trade_date >= ${cutoff}
+      ),
+      agg AS (
+        SELECT
+          option_symbol,
+          MAX(ticker) AS ticker,
+          COUNT(*) AS days_observed,
+          AVG(NULLIF(volume, 0)) AS avg_volume,
+          AVG(CASE WHEN open_interest > 0 THEN volume::float / open_interest END) AS avg_vol_oi
+        FROM ranked
+        WHERE rn <= ${lookback}
+        GROUP BY option_symbol
+      )
+      SELECT option_symbol, ticker, days_observed, avg_volume, avg_vol_oi
+      FROM agg
+      WHERE days_observed >= ${MIN_HISTORY_DAYS};
+    `);
+
+    for (const r of rows.rows ?? []) {
+      const sym = String(r.option_symbol ?? "");
+      if (!sym) continue;
+      out.set(sym, {
+        optionSymbol: sym,
+        ticker: String(r.ticker ?? ""),
+        avgVolume: Number(r.avg_volume ?? 0),
+        avgVolOiRatio: Number(r.avg_vol_oi ?? 0),
+        daysObserved: Number(r.days_observed ?? 0),
+      });
+    }
+
+    olog.info({
+      op: "baseline.contract.batch",
+      requested: uniq.length,
+      returned: out.size,
+      lookback,
+      durationMs: Date.now() - t0,
+    }, "baseline.contract.batch");
+    return out;
+  } catch (err) {
+    olog.warn({
+      op: "baseline.contract.batch.error",
+      requested: uniq.length,
+      durationMs: Date.now() - t0,
+      err: err instanceof Error ? err.message : String(err),
+    }, "baseline.contract.batch failed");
+    throw err;
+  }
+}
+
+/**
  * Per-ticker 20-day baseline: average daily notional and average daily
  * contract volume across all contracts for the ticker.
  *

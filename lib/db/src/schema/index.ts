@@ -252,11 +252,39 @@ export const optionsFlowRawTradesTable = pgTable("options_flow_raw_trades", {
   isSweep: boolean("is_sweep").default(false),
   /** Dedup key for REST backfill vs live watcher (partial unique index when set). */
   sourceTradeId: text("source_trade_id"),
+  /** Polygon OPRA exchange id on the trade (Item 12/13). */
+  exchangeId: integer("exchange_id"),
+  /** Derived: on_exchange | trf | unknown (static MIC map in app). */
+  venueClass: text("venue_class"),
+  /** Calendar days to expiration at trade time (Item 8). */
+  dteDays: integer("dte_days"),
+  /** Session bucket: open_auction | mid_session | close_auction | unknown (Item 11). */
+  sessionPhase: text("session_phase"),
+  /** Volume / open interest at classify time when available (Item 7). */
+  volOiRatio: real("vol_oi_ratio"),
+  openInterestSnapshot: integer("open_interest_snapshot"),
+  /** vs 20d rolling avg contracts for this strike key; null if no baseline (Items 3/5/25). */
+  volumeVsBaseline20d: real("volume_vs_baseline_20d"),
+  /** Market cap USD snapshot for tiered thresholds (Items 2/4/6). */
+  marketCapUsd: doublePrecision("market_cap_usd"),
+  /** Tier label at write: mega | large | mid | small | micro | etf_index | etf_sector | etf_niche | unknown */
+  marketCapTier: text("market_cap_tier"),
+  /** USD threshold used for large-notional gate at write (Item 4). */
+  notionalThresholdUsd: doublePrecision("notional_threshold_usd"),
+  /** ask | bid | mid | null + confidence (Item 15). */
+  aggressorConfidence: text("aggressor_confidence"),
+  /** Multi-leg Layer 1 synthetic group (Item 10); filled by post-batch job. */
+  syntheticLegGroupId: text("synthetic_leg_group_id"),
+  multiLegConfidence: text("multi_leg_confidence"),
+  /** Low-cardinality flags: repeat_ask_cluster, etc. (JSON object, Item 9). */
+  extras: jsonb("extras"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
   uniqueIndex("options_flow_raw_trades_source_dedup_idx")
     .on(t.underlyingSymbol, t.date, t.sourceTradeId)
     .where(sql`${t.sourceTradeId} IS NOT NULL`),
+  index("options_flow_raw_trades_sym_date_ts_idx").on(t.underlyingSymbol, t.date, t.timestamp),
+  index("options_flow_raw_trades_leg_group_idx").on(t.syntheticLegGroupId),
 ]);
 
 export type OptionsFlowRawTrade = typeof optionsFlowRawTradesTable.$inferSelect;
@@ -274,6 +302,25 @@ export const optionsTapeBackfillOccCacheTable = pgTable("options_tape_backfill_o
 ]);
 
 export type OptionsTapeBackfillOccCache = typeof optionsTapeBackfillOccCacheTable.$inferSelect;
+
+/**
+ * Item 3: materialized per-OCC 20d avg volume as-of a session calendar date.
+ * Populated by tape backfill / nightly job; used for re-classification (Item 24).
+ */
+export const optionsFlowStrikeBaselineDailyTable = pgTable("options_flow_strike_baseline_daily", {
+  id: serial("id").primaryKey(),
+  ticker: text("ticker").notNull(),
+  optionSymbol: text("option_symbol").notNull(),
+  baselineDate: date("baseline_date").notNull(),
+  avgVolume20d: doublePrecision("avg_volume_20d").notNull(),
+  daysObserved: integer("days_observed").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("options_flow_strike_baseline_daily_uniq").on(t.optionSymbol, t.baselineDate),
+  index("options_flow_strike_baseline_daily_ticker_date_idx").on(t.ticker, t.baselineDate),
+]);
+
+export type OptionsFlowStrikeBaselineDaily = typeof optionsFlowStrikeBaselineDailyTable.$inferSelect;
 
 // Per-strike rollup of classified live execution events. Populated by
 // the rollup job from options_flow_raw_trades. Same composite key as

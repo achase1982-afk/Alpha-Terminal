@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { db, optionsFlowRawTradesTable } from "@workspace/db";
 import { logger } from "./logger.js";
+import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 
 // Batched async writer for classified options trade events streaming
 // from the live watcher. Avoids per-trade DB round-trips by buffering
@@ -26,6 +27,20 @@ interface PendingTrade {
   isSweep: boolean;
   /** Stable id for dedup (live uses ws:uuid, REST backfill uses rest:… ) */
   sourceTradeId: string;
+  exchangeId?: number | null;
+  venueClass?: string | null;
+  dteDays?: number | null;
+  sessionPhase?: string | null;
+  volOiRatio?: number | null;
+  openInterestSnapshot?: number | null;
+  volumeVsBaseline20d?: number | null;
+  marketCapUsd?: number | null;
+  marketCapTier?: string | null;
+  notionalThresholdUsd?: number | null;
+  aggressorConfidence?: string | null;
+  syntheticLegGroupId?: string | null;
+  multiLegConfidence?: string | null;
+  extras?: Record<string, unknown> | null;
 }
 
 const buffer: PendingTrade[] = [];
@@ -108,6 +123,20 @@ export function enqueueClassifiedTrade(args: {
   side?: string | null;
   /** When omitted, generates a unique id so live rows never collide on partial unique */
   sourceTradeId?: string;
+  exchangeId?: number | null;
+  venueClass?: string | null;
+  dteDays?: number | null;
+  sessionPhase?: string | null;
+  volOiRatio?: number | null;
+  openInterestSnapshot?: number | null;
+  volumeVsBaseline20d?: number | null;
+  marketCapUsd?: number | null;
+  marketCapTier?: string | null;
+  notionalThresholdUsd?: number | null;
+  aggressorConfidence?: string | null;
+  syntheticLegGroupId?: string | null;
+  multiLegConfidence?: string | null;
+  extras?: Record<string, unknown> | null;
 }): void {
   const parsed = parseOcc(args.occ);
   if (!parsed) return;
@@ -127,6 +156,20 @@ export function enqueueClassifiedTrade(args: {
     isBlock: args.isBlock,
     isSweep: args.isSweep,
     sourceTradeId: args.sourceTradeId ?? `ws:${randomUUID()}`,
+    exchangeId: args.exchangeId ?? null,
+    venueClass: args.venueClass ?? null,
+    dteDays: args.dteDays ?? null,
+    sessionPhase: args.sessionPhase ?? null,
+    volOiRatio: args.volOiRatio ?? null,
+    openInterestSnapshot: args.openInterestSnapshot ?? null,
+    volumeVsBaseline20d: args.volumeVsBaseline20d ?? null,
+    marketCapUsd: args.marketCapUsd ?? null,
+    marketCapTier: args.marketCapTier ?? null,
+    notionalThresholdUsd: args.notionalThresholdUsd ?? null,
+    aggressorConfidence: args.aggressorConfidence ?? null,
+    syntheticLegGroupId: args.syntheticLegGroupId ?? null,
+    multiLegConfidence: args.multiLegConfidence ?? null,
+    extras: args.extras ?? null,
   });
   totalQueued++;
   if (buffer.length >= FLUSH_BATCH_MAX) void flush();
@@ -151,8 +194,11 @@ async function flush(): Promise<void> {
     batchesFailed++;
     lastFailureTs = Date.now();
     lastFailureMessage = err instanceof Error ? err.message : String(err);
-    logger.warn({ err, op: "flowPersist.flush.failed", count: batch.length },
-      "Failed to flush options flow batch");
+    logFlowPipelineWarn(
+      "persistence_flush",
+      "Failed to flush options flow batch",
+      { err, count: batch.length, batchesAttempted, batchesFailed },
+    );
 
     // Loud one-shot warning when failure rate climbs above 5% on a
     // non-trivial sample. Re-armed only after the rate recovers below

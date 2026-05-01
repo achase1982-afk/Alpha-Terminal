@@ -1,8 +1,8 @@
 import { Router, type IRouter } from "express";
 
-const POLYGON_BASE = "https://api.polygon.io";
-
 const router: IRouter = Router();
+
+const POLYGON_BASE = "https://api.polygon.io";
 
 function polygonKey(): string | null {
   const k = process.env["POLYGON_API_KEY"];
@@ -146,7 +146,7 @@ router.get("/analyst-ratings", async (req, res) => {
       return db - da;
     });
 
-    const pts = deduped.map(r => r.pt_current!).filter(p => p > 0 && Number.isFinite(p));
+    const pts = deduped.map((row) => row.pt_current!).filter((p) => p > 0 && Number.isFinite(p));
     const consensus_pt = pts.length > 0 ? pts.reduce((s, v) => s + v, 0) / pts.length : null;
     const high_pt = pts.length > 0 ? Math.max(...pts) : null;
     const low_pt = pts.length > 0 ? Math.min(...pts) : null;
