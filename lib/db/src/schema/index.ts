@@ -303,6 +303,25 @@ export const optionsTapeBackfillOccCacheTable = pgTable("options_tape_backfill_o
 
 export type OptionsTapeBackfillOccCache = typeof optionsTapeBackfillOccCacheTable.$inferSelect;
 
+/**
+ * Item 3: materialized per-OCC 20d avg volume as-of a session calendar date.
+ * Populated by tape backfill / nightly job; used for re-classification (Item 24).
+ */
+export const optionsFlowStrikeBaselineDailyTable = pgTable("options_flow_strike_baseline_daily", {
+  id: serial("id").primaryKey(),
+  ticker: text("ticker").notNull(),
+  optionSymbol: text("option_symbol").notNull(),
+  baselineDate: date("baseline_date").notNull(),
+  avgVolume20d: doublePrecision("avg_volume_20d").notNull(),
+  daysObserved: integer("days_observed").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("options_flow_strike_baseline_daily_uniq").on(t.optionSymbol, t.baselineDate),
+  index("options_flow_strike_baseline_daily_ticker_date_idx").on(t.ticker, t.baselineDate),
+]);
+
+export type OptionsFlowStrikeBaselineDaily = typeof optionsFlowStrikeBaselineDailyTable.$inferSelect;
+
 // Per-strike rollup of classified live execution events. Populated by
 // the rollup job from options_flow_raw_trades. Same composite key as
 // options_flow_per_strike so the scanner can left-join on read.

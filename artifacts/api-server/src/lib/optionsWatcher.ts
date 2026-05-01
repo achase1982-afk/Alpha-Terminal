@@ -21,6 +21,7 @@ import {
 } from "./flowTradeEnrichment.js";
 import { getContracts20dBaselineBatch } from "./optionsBaselines.js";
 import { FlowLegWindow } from "./flowMultilegExtras.js";
+import { upsertStrikeVolumeBaselineFromContractBaseline } from "./flowStrikeBaselineDaily.js";
 
 // ── Persistent Polygon options watcher (Part 2) ──────────────────────
 //
@@ -597,9 +598,21 @@ async function resolveAndSubscribeOne(ticker: string, apiKey: string): Promise<v
   }
   try {
     const baselineMap = await getContracts20dBaselineBatch(symsToAdd);
+    const sessionYmd = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
     for (const occ of symsToAdd) {
       const bl = baselineMap.get(occ);
-      if (bl && bl.avgVolume > 0) st.contractBaselineAvgVol20d.set(occ, bl.avgVolume);
+      if (bl && bl.avgVolume > 0) {
+        st.contractBaselineAvgVol20d.set(occ, bl.avgVolume);
+        void upsertStrikeVolumeBaselineFromContractBaseline({
+          ticker,
+          baselineDate: sessionYmd,
+          optionSymbol: occ,
+          avgVolume20d: bl.avgVolume,
+          daysObserved: bl.daysObserved,
+        }).catch((err) =>
+          logFlowPipelineWarn("watcher_baseline_table", "optionsWatcher: strike baseline upsert failed", { err, occ, ticker }),
+        );
+      }
     }
   } catch (err) {
     logFlowPipelineWarn(
