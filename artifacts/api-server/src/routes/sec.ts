@@ -315,6 +315,10 @@ interface InsiderTransaction {
   acquiredOrDisposed: string;
   sharesAfter: number | null;
   filingUrl: string;
+  /** True when footnotes reference Rule 10b5-1 (planned trading). */
+  rule10b51Plan: boolean;
+  /** Open-market Form 4 codes P and S only; default Ownership table. */
+  showInOpenMarketDefault: boolean;
 }
 
 function xmlText(xml: string, tag: string): string {
@@ -323,8 +327,52 @@ function xmlText(xml: string, tag: string): string {
   return m ? m[1].trim() : "";
 }
 
+function stripXmlInner(s: string): string {
+  return s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function parseForm4Footnotes(xml: string): Map<string, string> {
+  const map = new Map<string, string>();
+  const re = /<footnote\s+id="([^"]+)"[^>]*>([\s\S]*?)<\/footnote>/gi;
+  let m;
+  while ((m = re.exec(xml)) !== null) {
+    map.set(m[1].trim(), stripXmlInner(m[2]));
+  }
+  return map;
+}
+
+function collectFootnoteIds(block: string): string[] {
+  const ids: string[] = [];
+  const re = /footnoteId[^>]*\bid="([^"]+)"/gi;
+  let m;
+  while ((m = re.exec(block)) !== null) ids.push(m[1].trim());
+  // SEC XML often uses self-closing tags: <footnoteId id="F1"/>
+  const re2 = /<footnoteId\s+id="([^"]+)"\s*\/?>/gi;
+  while ((m = re2.exec(block)) !== null) ids.push(m[1].trim());
+  return [...new Set(ids)];
+}
+
+function footnotesMention10b51(footnotes: Map<string, string>, ids: string[]): boolean {
+  for (const id of ids) {
+    const t = footnotes.get(id) || "";
+    if (/\b10\s*b\s*5\s*-?\s*1\b/i.test(t)) return true;
+    if (/rule\s*10b5/i.test(t) && /plan/i.test(t)) return true;
+    if (/10b5\s*-?\s*1/i.test(t)) return true;
+  }
+  return false;
+}
+
+function extractTransactionCode(block: string): string {
+  const coding = block.match(/<transactionCoding[^>]*>([\s\S]*?)<\/transactionCoding>/i);
+  const inner = coding ? coding[1] : block;
+  const m = inner.match(/<transactionCode>(?:\s*<value>)?\s*([^<\s]+)\s*(?:<\/value>)?\s*<\/transactionCode>/i)
+    || inner.match(/<transactionCode>\s*([^<]+)<\/transactionCode>/i);
+  return (m?.[1] || "").trim().toUpperCase();
+}
+
 function parseForm4Xml(xml: string, filingUrl: string): InsiderTransaction[] {
   const results: InsiderTransaction[] = [];
+  const footnotes = parseForm4Footnotes(xml);
 
   const ownerName = xmlText(xml, "rptOwnerName");
   const isDirector = xmlText(xml, "isDirector") === "1";
@@ -336,16 +384,20 @@ function parseForm4Xml(xml: string, filingUrl: string): InsiderTransaction[] {
   while ((m = txnRegex.exec(xml)) !== null) {
     const block = m[1];
     const dateMatch = block.match(/<transactionDate>\s*<value>([^<]*)<\/value>/i);
-    const codeMatch = block.match(/<transactionCode>([^<]*)<\/transactionCode>/i);
+    const code = extractTransactionCode(block);
     const sharesMatch = block.match(/<transactionShares>\s*<value>([^<]*)<\/value>/i);
     const priceMatch = block.match(/<transactionPricePerShare>\s*<value>([^<]*)<\/value>/i);
     const adMatch = block.match(/<transactionAcquiredDisposedCode>\s*<value>([^<]*)<\/value>/i);
     const afterMatch = block.match(/<sharesOwnedFollowingTransaction>\s*<value>([^<]*)<\/value>/i);
 
-    const code = codeMatch?.[1] || "";
     if (code === "L" || code === "Z") continue;
 
+    const fnIds = collectFootnoteIds(block);
+    const rule10b51Plan = footnotesMention10b51(footnotes, fnIds);
+    const showInOpenMarketDefault = code === "P" || code === "S";
+
     const price = priceMatch ? parseFloat(priceMatch[1]) : null;
+    const sharesRaw = sharesMatch ? parseInt(sharesMatch[1].replace(/,/g, ""), 10) : 0;
 
     results.push({
       ownerName,
@@ -354,18 +406,21 @@ function parseForm4Xml(xml: string, filingUrl: string): InsiderTransaction[] {
       officerTitle: officerTitle || (isDirector ? "Director" : ""),
       transactionDate: dateMatch?.[1] || "",
       transactionCode: code,
-      shares: sharesMatch ? parseInt(sharesMatch[1]) : 0,
+      shares: Math.abs(sharesRaw),
       pricePerShare: price && price > 0 ? price : null,
-      acquiredOrDisposed: adMatch?.[1] || "",
-      sharesAfter: afterMatch ? parseInt(afterMatch[1]) : null,
+      acquiredOrDisposed: (adMatch?.[1] || "").trim().toUpperCase(),
+      sharesAfter: afterMatch ? parseInt(afterMatch[1].replace(/,/g, ""), 10) : null,
       filingUrl,
+      rule10b51Plan,
+      showInOpenMarketDefault,
     });
   }
   return results;
 }
 
-const insiderCache = new Map<string, { transactions: InsiderTransaction[]; ts: number }>();
+const insiderCache = new Map<string, { transactions: InsiderTransaction[]; ts: number; version: number }>();
 const INSIDER_CACHE_TTL = 5 * 60 * 1000;
+const INSIDER_PARSE_VERSION = 3;
 
 router.get("/insider-transactions", async (req, res) => {
   const symbol = (req.query.symbol as string || "").trim().toUpperCase().replace(/^\$/, "");
@@ -373,7 +428,7 @@ router.get("/insider-transactions", async (req, res) => {
 
   try {
     const cached = insiderCache.get(symbol);
-    if (cached && Date.now() - cached.ts < INSIDER_CACHE_TTL) {
+    if (cached && cached.version === INSIDER_PARSE_VERSION && Date.now() - cached.ts < INSIDER_CACHE_TTL) {
       return res.json({ transactions: cached.transactions, symbol });
     }
 
@@ -422,7 +477,7 @@ router.get("/insider-transactions", async (req, res) => {
 
     allTransactions.sort((a, b) => b.transactionDate.localeCompare(a.transactionDate));
 
-    insiderCache.set(symbol, { transactions: allTransactions, ts: Date.now() });
+    insiderCache.set(symbol, { transactions: allTransactions, ts: Date.now(), version: INSIDER_PARSE_VERSION });
     return res.json({ transactions: allTransactions, symbol });
   } catch (err: any) {
     req.log?.error({ err }, "Insider transactions endpoint error");

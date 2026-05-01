@@ -1105,6 +1105,9 @@ interface InsiderTxn {
   pricePerShare: number | null;
   acquiredOrDisposed: string;
   filingUrl: string;
+  transactionCode: string;
+  rule10b51Plan: boolean;
+  showInOpenMarketDefault: boolean;
 }
 
 interface InstHolder {
@@ -1122,6 +1125,8 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [showAllInsiderRows, setShowAllInsiderRows] = useState(false);
+  const insiderFilterId = useId();
   const fetchedRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -1141,7 +1146,21 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
         const insJson = await insRes.json();
         const holdJson = await holdRes.json();
         if (!cancelled) {
-          setInsiders(insJson.transactions || []);
+          const rawTx = (insJson.transactions || []) as InsiderTxn[];
+          setInsiders(
+            rawTx.map((t) => {
+              const code = String(t.transactionCode || "").trim().toUpperCase();
+              return {
+                ...t,
+                transactionCode: code,
+                rule10b51Plan: Boolean(t.rule10b51Plan),
+                showInOpenMarketDefault:
+                  typeof t.showInOpenMarketDefault === "boolean"
+                    ? t.showInOpenMarketDefault
+                    : code === "P" || code === "S",
+              };
+            }),
+          );
           setHolders(holdJson.holders || []);
         }
       } catch (err: any) {
@@ -1152,6 +1171,43 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
     })();
     return () => { cancelled = true; };
   }, [ticker, retryCount]);
+
+  useEffect(() => {
+    setShowAllInsiderRows(false);
+  }, [ticker]);
+
+  const insiderOpenMarketRows = useMemo(
+    () => insiders.filter((t) => t.showInOpenMarketDefault),
+    [insiders],
+  );
+  const insiderHiddenCount = Math.max(0, insiders.length - insiderOpenMarketRows.length);
+  const insiderRowsToShow = showAllInsiderRows ? insiders : insiderOpenMarketRows;
+
+  function insiderTypePresentation(t: InsiderTxn) {
+    const code = (t.transactionCode || "").toUpperCase();
+    if (code === "P") {
+      return {
+        text: "BUY",
+        color: C.green,
+        aria: "Open market purchase, Form 4 transaction code P",
+      };
+    }
+    if (code === "S") {
+      const plan = t.rule10b51Plan;
+      return {
+        text: plan ? "SELL (10b5-1)" : "SELL",
+        color: C.red,
+        aria: plan
+          ? "Open market sale under a Rule 10b5-1 trading plan, Form 4 transaction code S"
+          : "Open market sale, Form 4 transaction code S",
+      };
+    }
+    return {
+      text: code || "—",
+      color: C.textDim,
+      aria: `Form 4 transaction code ${code || "unknown"}`,
+    };
+  }
 
   if (loading) {
     return (
@@ -1242,9 +1298,33 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
       <div style={{ fontSize: 11, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 2, textTransform: "uppercase", padding: "18px 0 6px", borderBottom: `1px solid ${C.borderHi}` }}>
         INSIDER TRANSACTIONS
       </div>
-      {insiders.length > 0 ? (
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8, paddingBottom: 8 }}>
+        <p id={`${insiderFilterId}-hint`} style={{ fontSize: 10, fontFamily: f, color: C.textDim, margin: 0, maxWidth: "100%" }}>
+          Showing open market purchases and sales (Form 4 codes P and S). Awards, option exercises, and other codes are hidden unless you expand the list.
+        </p>
+        {insiderHiddenCount > 0 && (
+          <button
+            type="button"
+            id={insiderFilterId}
+            aria-expanded={showAllInsiderRows}
+            aria-controls={`${insiderFilterId}-table`}
+            aria-describedby={`${insiderFilterId}-hint`}
+            onClick={() => setShowAllInsiderRows((v) => !v)}
+            className="insider-filter-toggle"
+            aria-label={showAllInsiderRows ? "Hide insider rows that are not open market purchases or sales" : `Show all insider rows including ${insiderHiddenCount} hidden non-open-market transactions`}
+            style={{
+              fontSize: 10, fontFamily: f, fontWeight: 700, color: C.gold,
+              background: "transparent", border: `1px solid ${C.borderHi}`, borderRadius: 4,
+              padding: "4px 10px", cursor: "pointer", whiteSpace: "nowrap",
+            }}
+          >
+            {showAllInsiderRows ? "Hide non-open-market rows" : `Show all rows (+${insiderHiddenCount})`}
+          </button>
+        )}
+      </div>
+      {insiderRowsToShow.length > 0 ? (
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: f, tableLayout: "fixed" }}>
+          <table id={`${insiderFilterId}-table`} style={{ width: "100%", borderCollapse: "collapse", fontFamily: f, tableLayout: "fixed" }}>
             <colgroup>
               <col style={{ width: "30%" }} />
               <col style={{ width: "22%" }} />
@@ -1256,23 +1336,23 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
               <tr>
                 <th style={{ ...hdrStyle, textAlign: "left" }}>NAME</th>
                 <th style={{ ...hdrStyle, textAlign: "left" }}>TITLE</th>
-                <th style={{ ...hdrStyle, textAlign: "center" }}>TYPE</th>
+                <th style={{ ...hdrStyle, textAlign: "center" }} scope="col">TYPE</th>
                 <th style={{ ...hdrStyle, textAlign: "right" }}>SHARES</th>
                 <th style={{ ...hdrStyle, textAlign: "right" }}>DATE</th>
               </tr>
             </thead>
             <tbody>
-              {insiders.slice(0, 25).map((t, i) => {
-                const isBuy = t.acquiredOrDisposed === "A";
-                const action = isBuy ? "BUY" : "SELL";
+              {insiderRowsToShow.slice(0, 50).map((t, i) => {
+                const pres = insiderTypePresentation(t);
+                const code = (t.transactionCode || "").toUpperCase();
                 return (
-                  <tr key={i}>
+                  <tr key={`${t.filingUrl}-${t.transactionDate}-${code}-${i}`}>
                     <td style={{ ...cellStyle, color: t.filingUrl ? C.gold : C.text, cursor: t.filingUrl ? "pointer" : "default", whiteSpace: "normal", wordBreak: "break-word", paddingRight: 4 }}
                       onClick={(e) => {
                         e.stopPropagation();
                         if (t.filingUrl) {
                           const contentUrl = `${API_BASE}/sec/filing-content?url=${encodeURIComponent(t.filingUrl)}`;
-                          openBrowser(contentUrl, `Form 4 — ${t.ownerName}`, "SEC EDGAR");
+                          openBrowser(contentUrl, `Form 4: ${t.ownerName}`, "SEC EDGAR");
                         }
                       }}
                     >
@@ -1281,8 +1361,23 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
                     <td style={{ ...dimCell, fontSize: 11, whiteSpace: "normal", wordBreak: "break-word", paddingRight: 4 }}>
                       {t.officerTitle || "—"}
                     </td>
-                    <td style={{ ...cellStyle, textAlign: "center", color: isBuy ? C.green : C.red, fontWeight: 700, fontSize: 11 }}>
-                      {action}
+                    <td style={{ ...cellStyle, textAlign: "center", fontWeight: 700, fontSize: 11 }}>
+                      <span style={{ color: pres.color }} aria-label={pres.aria}>
+                        {code === "S" && t.rule10b51Plan ? (
+                          <>
+                            <span style={{ color: C.red }}>SELL</span>
+                            <span
+                              style={{ marginLeft: 4, fontSize: 9, fontWeight: 700, color: C.amber, border: `1px solid ${C.amber}`, borderRadius: 3, padding: "1px 4px", verticalAlign: "middle" }}
+                              title="Rule 10b5-1 trading plan"
+                              aria-hidden="true"
+                            >
+                              10b5-1
+                            </span>
+                          </>
+                        ) : (
+                          pres.text
+                        )}
+                      </span>
                     </td>
                     <td style={{ ...cellStyle, textAlign: "right" }}>
                       {t.shares?.toLocaleString() || "—"}
@@ -1295,6 +1390,10 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
               })}
             </tbody>
           </table>
+        </div>
+      ) : insiders.length > 0 ? (
+        <div style={{ padding: "10px 0", fontSize: 11, fontFamily: f, color: C.textDim }}>
+          No open market insider purchases or sales in the recent Form 4 filings loaded for this symbol. Use &quot;Show all rows&quot; to review awards, exercises, and other transaction codes.
         </div>
       ) : (
         <div style={{ padding: "10px 0", fontSize: 11, fontFamily: f, color: C.textDim }}>
@@ -2020,6 +2119,8 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
       <style>{`
         .analyst-row-trigger:focus { outline: none !important; box-shadow: none !important; }
         .analyst-row-trigger:focus-visible { outline: 2px solid ${C.gold} !important; outline-offset: 2px !important; }
+        .insider-filter-toggle:focus { outline: none !important; box-shadow: none !important; }
+        .insider-filter-toggle:focus-visible { outline: 2px solid ${C.gold} !important; outline-offset: 2px !important; }
         .company-fin-subtab:focus { outline: none !important; box-shadow: none !important; }
         .company-fin-subtab:focus-visible { outline: 2px solid ${C.gold} !important; outline-offset: 2px !important; }
       `}</style>
