@@ -5,8 +5,8 @@ import {
   useSession,
   useSessionList,
   useUser,
-  isClerkAPIResponseError,
 } from "@clerk/clerk-react";
+import { isClerkAPIResponseError } from "@clerk/clerk-react/errors";
 import { Loader2, Copy, Download, AlertCircle } from "lucide-react";
 import { useAutoLock, TIMEOUT_OPTIONS, type SessionTimeoutMinutes } from "@/hooks/useAutoLock";
 import { useWebAuthnSupported } from "@/hooks/useBiometric";
@@ -37,7 +37,6 @@ const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
 
 type ClerkUser = NonNullable<Extract<ReturnType<typeof useUser>, { isLoaded: true; isSignedIn: true }>["user"]>;
 type SessionWithActivities = Awaited<ReturnType<ClerkUser["getSessions"]>>[number];
-type ExternalAccount = ClerkUser["externalAccounts"][number];
 type EmailAddress = ClerkUser["emailAddresses"][number];
 type Passkey = NonNullable<ClerkUser["passkeys"]>[number];
 
@@ -62,28 +61,11 @@ function formatWhen(d: Date | null | undefined): string {
 
 function clerkErrorMessage(err: unknown): string {
   if (isClerkAPIResponseError(err)) {
-    const parts = err.errors?.map((e) => e.longMessage || e.message).filter(Boolean);
+    const parts = err.errors?.map((e: { longMessage?: string; message?: string }) => e.longMessage || e.message).filter(Boolean);
     if (parts?.length) return parts.join("; ");
   }
   if (err instanceof Error) return err.message;
   return "Something went wrong. Please try again.";
-}
-
-function getAuthenticatableOAuthStrategies(clerk: ReturnType<typeof useClerk>): string[] {
-  const c = clerk as unknown as {
-    environment?: { userSettings?: { authenticatableSocialStrategies?: string[] } };
-    __unstable_environment?: { userSettings?: { authenticatableSocialStrategies?: string[] } };
-  };
-  const list =
-    c.environment?.userSettings?.authenticatableSocialStrategies ??
-    c.__unstable_environment?.userSettings?.authenticatableSocialStrategies ??
-    [];
-  return list.filter((s): s is string => typeof s === "string" && s.startsWith("oauth_"));
-}
-
-function strategyLabel(strategy: string): string {
-  const slug = strategy.replace(/^oauth_/, "");
-  return slug.replace(/_/g, " ").replace(/\b\w/g, (x) => x.toUpperCase());
 }
 
 async function copyText(label: string, text: string) {
@@ -114,7 +96,7 @@ function SecurityCard({
 }: {
   title: string;
   description?: string;
-  children: React.ReactNode;
+  children?: React.ReactNode;
 }) {
   return (
     <section className={CARD}>
@@ -683,7 +665,7 @@ function PasskeysCard({ user }: { user: ClerkUser }) {
                   variant="outline"
                   size="sm"
                   className="font-mono text-[10px] h-8"
-                  onClick={() => setRename({ passkey: pk, name: pk.name })}
+                  onClick={() => setRename({ passkey: pk, name: pk.name ?? "" })}
                   disabled={!!busyId}
                 >
                   Rename
@@ -775,6 +757,7 @@ function SessionsCard({
   const [bulkBusy, setBulkBusy] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<SessionWithActivities | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [bulkSignOutAnnounce, setBulkSignOutAnnounce] = useState("");
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -811,23 +794,44 @@ function SessionsCard({
 
   const revokeOthers = async () => {
     if (!items.length || !currentSessionId) return;
+    const others = items.filter((s) => s.id !== currentSessionId && (s.status === "active" || s.status === "pending"));
+    const total = others.length;
+    if (total === 0) {
+      toast({ title: "No other sessions", description: "There are no other active sessions to sign out." });
+      return;
+    }
     setBulkBusy(true);
+    setBulkSignOutAnnounce("");
+    let ok = 0;
+    let failed = 0;
     try {
-      for (const s of items) {
-        if (s.id === currentSessionId) continue;
-        if (s.status === "active" || s.status === "pending") {
-          try {
-            await s.revoke();
-          } catch {
-            /* continue */
-          }
+      for (const s of others) {
+        try {
+          await s.revoke();
+          ok += 1;
+        } catch {
+          failed += 1;
         }
       }
       await refresh();
       await user.reload();
-      toast({ title: "Other sessions revoked" });
+      if (failed === 0) {
+        const msg = "Other sessions signed out.";
+        toast({ title: msg });
+        setBulkSignOutAnnounce(msg);
+      } else if (ok === 0) {
+        const msg = "Could not sign out other sessions.";
+        toast({ title: msg, variant: "destructive" });
+        setBulkSignOutAnnounce(msg);
+      } else {
+        const msg = `Signed out ${ok} of ${total} other sessions. Some could not be revoked.`;
+        toast({ title: msg });
+        setBulkSignOutAnnounce(msg);
+      }
     } catch (e) {
-      toast({ title: "Bulk revoke incomplete", description: clerkErrorMessage(e), variant: "destructive" });
+      const msg = clerkErrorMessage(e);
+      toast({ title: "Could not refresh sessions", description: msg, variant: "destructive" });
+      setBulkSignOutAnnounce(`Could not refresh sessions after sign out: ${msg}`);
     } finally {
       setBulkBusy(false);
     }
@@ -838,6 +842,7 @@ function SessionsCard({
       title="Active sessions"
       description="Rows from your account session list (device and IP when Clerk provides them). useSessionList marks sessions Clerk associates with this browser."
     >
+      <LiveStatus message={bulkSignOutAnnounce} />
       {loading || !sessionsLoaded ? (
         <div className="flex items-center gap-2 text-zinc-400 font-mono text-xs" role="status" aria-busy="true">
           <Loader2 className="w-4 h-4 animate-spin" aria-hidden />
@@ -912,8 +917,9 @@ function SessionsCard({
         onClick={() => void revokeOthers()}
         disabled={bulkBusy || !currentSessionId || loading || !sessionsLoaded}
         aria-busy={bulkBusy}
+        aria-label="Sign out all other sessions"
       >
-        {bulkBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+        {bulkBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden /> : null}
         Sign out all other sessions
       </Button>
 
@@ -945,17 +951,11 @@ function SessionsCard({
 
 function SessionTimeoutCard() {
   const { minutes: autoLock, setMinutes: setAutoLock } = useAutoLock();
+  const idleHelper =
+    "Locks the app after this much inactivity in the browser. Your Clerk session also expires after 7 days of inactivity or 7 days from sign-in, whichever comes first.";
   return (
-    <SecurityCard
-      title="Session timeout"
-      description="Controls client-side inactivity only. Clerk still applies its own maximum session lifetime from the dashboard, which can sign you out even when this is set to Never."
-    >
-      <p className="font-mono text-[10px] text-zinc-400 leading-relaxed">
-        Finding: this setting updates local idle tracking and calls Clerk sign-out after quiet time. It does not change Clerk
-        token TTL. If you still get signed out on Never, the cause is usually Clerk session lifetime or token refresh, not this
-        control.
-      </p>
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Session timeout options">
+    <SecurityCard title="Idle lock timeout" description={idleHelper}>
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Idle lock timeout options">
         {TIMEOUT_OPTIONS.map((opt) => (
           <button
             key={opt.value}
@@ -1181,159 +1181,6 @@ function EmailsCard({ user }: { user: ClerkUser }) {
   );
 }
 
-function providerKey(acc: ExternalAccount): string {
-  try {
-    return acc.providerSlug();
-  } catch {
-    return String(acc.provider);
-  }
-}
-
-function ConnectedAccountsCard({
-  user,
-  strategies,
-}: {
-  user: ClerkUser;
-  strategies: string[];
-}) {
-  const [busyStrategy, setBusyStrategy] = useState<string | null>(null);
-  const [disconnectTarget, setDisconnectTarget] = useState<ExternalAccount | null>(null);
-
-  const redirectUrl = useMemo(() => `${window.location.origin}${window.location.pathname || "/"}`, []);
-
-  const connect = async (strategy: string) => {
-    setBusyStrategy(strategy);
-    try {
-      const acc = await user.createExternalAccount({ strategy: strategy as never, redirectUrl });
-      const url = acc.verification?.externalVerificationRedirectURL?.href;
-      if (url) {
-        window.location.assign(url);
-      } else {
-        toast({
-          title: "No redirect URL",
-          description: "Clerk did not return an OAuth URL. Check that this provider is enabled.",
-          variant: "destructive",
-        });
-      }
-    } catch (e) {
-      toast({ title: "Connect failed", description: clerkErrorMessage(e), variant: "destructive" });
-    } finally {
-      setBusyStrategy(null);
-    }
-  };
-
-  const disconnect = async () => {
-    if (!disconnectTarget) return;
-    setBusyStrategy(disconnectTarget.id);
-    try {
-      await disconnectTarget.destroy();
-      setDisconnectTarget(null);
-      await user.reload();
-      toast({ title: "Disconnected", description: "OAuth account removed." });
-    } catch (e) {
-      toast({ title: "Disconnect failed", description: clerkErrorMessage(e), variant: "destructive" });
-    } finally {
-      setBusyStrategy(null);
-    }
-  };
-
-  const reauthorize = async (acc: ExternalAccount) => {
-    setBusyStrategy(`re-${acc.id}`);
-    try {
-      const updated = await acc.reauthorize({ redirectUrl });
-      const url = updated.verification?.externalVerificationRedirectURL?.href;
-      if (url) window.location.assign(url);
-      else toast({ title: "Reauthorize", description: "Open your provider to finish.", variant: "destructive" });
-    } catch (e) {
-      toast({ title: "Reauthorize failed", description: clerkErrorMessage(e), variant: "destructive" });
-    } finally {
-      setBusyStrategy(null);
-    }
-  };
-
-  const connected = user.externalAccounts ?? [];
-  const connectedKeys = new Set(connected.map(providerKey));
-
-  return (
-    <SecurityCard title="Connected accounts" description="Link OAuth providers enabled for this Clerk instance.">
-      <div className="space-y-2">
-        <p className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest">Connect</p>
-        <div className="flex flex-wrap gap-2">
-          {strategies
-            .filter((s) => !connectedKeys.has(s.replace(/^oauth_/, "")))
-            .map((s) => (
-              <Button
-                key={s}
-                type="button"
-                variant="outline"
-                size="sm"
-                className="font-mono text-[10px] h-8"
-                onClick={() => void connect(s)}
-                disabled={busyStrategy !== null}
-                aria-busy={busyStrategy === s}
-              >
-                {busyStrategy === s ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-                Connect {strategyLabel(s)}
-              </Button>
-            ))}
-        </div>
-      </div>
-      <ul className="space-y-2" role="list">
-        {connected.map((acc) => (
-          <li key={acc.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded border border-zinc-800/80 p-2 bg-black/20">
-            <div>
-              <div className="font-mono text-xs text-zinc-200">{acc.providerTitle()}</div>
-              <div className="font-mono text-[10px] text-zinc-500">{acc.accountIdentifier()}</div>
-              {acc.verification?.status !== "verified" && acc.verification?.externalVerificationRedirectURL ? (
-                <button
-                  type="button"
-                  className="mt-1 font-mono text-[10px] text-primary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
-                  onClick={() => void reauthorize(acc)}
-                >
-                  Complete verification
-                </button>
-              ) : null}
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="font-mono text-[10px] h-8 shrink-0"
-              onClick={() => setDisconnectTarget(acc)}
-              disabled={busyStrategy !== null}
-            >
-              Disconnect
-            </Button>
-          </li>
-        ))}
-      </ul>
-
-      <AlertDialog open={!!disconnectTarget} onOpenChange={(o) => !o && setDisconnectTarget(null)}>
-        <AlertDialogContent className="border-[#2a2a2c] bg-[#121214]">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="font-mono text-sm">Disconnect OAuth account?</AlertDialogTitle>
-            <AlertDialogDescription className="font-mono text-xs text-zinc-400">
-              You may lose access if this was your only sign-in method for that provider.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="font-mono text-xs">Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="font-mono text-xs bg-destructive text-destructive-foreground"
-              onClick={(e) => {
-                e.preventDefault();
-                void disconnect();
-              }}
-            >
-              Disconnect
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </SecurityCard>
-  );
-}
-
 function DeleteAccountCard({ user }: { user: ClerkUser }) {
   const clerk = useClerk();
   const [open, setOpen] = useState(false);
@@ -1416,9 +1263,6 @@ function DeleteAccountCard({ user }: { user: ClerkUser }) {
 export function SecurityPrivacyPage() {
   const { isLoaded, isSignedIn, user } = useUser();
   const { session } = useSession();
-  const clerk = useClerk();
-
-  const oauthStrategies = useMemo(() => getAuthenticatableOAuthStrategies(clerk), [clerk]);
 
   if (devBypass) {
     return (
@@ -1450,7 +1294,6 @@ export function SecurityPrivacyPage() {
       <SessionsCard user={user} currentSessionId={session?.id} />
       <SessionTimeoutCard />
       <EmailsCard user={user} />
-      {oauthStrategies.length > 0 ? <ConnectedAccountsCard user={user} strategies={oauthStrategies} /> : null}
       <DeleteAccountCard user={user} />
     </div>
   );

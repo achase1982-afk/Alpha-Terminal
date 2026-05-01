@@ -14,7 +14,6 @@ import PushNotificationBanner from "@/components/PushNotificationBanner";
 import { registerServiceWorker } from "@/lib/pushNotifications";
 import OrderAlertWatcher from "@/components/OrderAlertWatcher";
 import SchwabSessionExpiredDialog from "@/components/SchwabSessionExpiredDialog";
-import { OauthReturnHandler } from "@/components/OauthReturnHandler";
 import { resumeAllRunningPollers } from "@/lib/strategistPoller";
 
 export const queryClient = new QueryClient({
@@ -225,7 +224,6 @@ function App() {
         <AutoLockProvider>
           <AuthReadyGate>
             <InactivityWarning />
-            <OauthReturnHandler />
             <PendingSessionLoader />
             <GlobalStrategistPollerResumer />
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
