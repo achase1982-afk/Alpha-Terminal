@@ -26,8 +26,9 @@ const POLYGON_API = "https://api.polygon.io";
 const MAX_EXPIRIES = 3;
 const QUOTE_WINDOW_MS = 120_000;
 const QUOTE_PREPAD_MS = 5_000;
-const TRADE_PAGE_LIMIT = 1000;
-const QUOTE_PAGE_LIMIT = 1000;
+/** Polygon max page size for /v3/trades and /v3/quotes (fewer round trips on liquid names). */
+const TRADE_PAGE_LIMIT = 50_000;
+const QUOTE_PAGE_LIMIT = 50_000;
 /** Overall wall-clock budget for the whole symbol backfill (many OCC roots). */
 const DEFAULT_BUDGET_MS = 180_000;
 /** Hard cap on wall time spent inside a single OCC (fetch + classify + DB). */
@@ -48,7 +49,8 @@ export type TapeBackfillDiagnosticReason =
   | "skipped_other"
   | "empty_polygon_response"
   | "empty_after_filter"
-  | "polygon_error";
+  | "polygon_error"
+  | "timeout_no_inserts";
 
 export interface TapeBackfillCoverageGeometry {
   /** Market-cap tier used to pick band width and OCC cap. */
@@ -74,16 +76,18 @@ export interface TapeBackfillStatus {
   occCompleted: number;
   tradesInserted: number;
   /** Raw trade rows returned from Polygon before filtering (session window). */
-  totalTradesFromPolygon?: number;
+  totalTradesFromPolygon: number;
   /** Rows rejected by classifier before persistence. */
-  persistRejectedCount?: number;
-  anyTruncated?: boolean;
+  persistRejectedCount: number;
+  anyTruncated: boolean;
   anyError?: boolean;
-  todayYmd?: string;
-  isSessionForToday?: boolean;
-  sessionInProgress?: boolean;
-  queryOpenMs?: number;
-  queryCloseMs?: number;
+  /** True if any Polygon REST response in this run was non-OK HTTP (excluding handled 429 retries). */
+  anySawPolygonHttpError: boolean;
+  todayYmd: string;
+  isSessionForToday: boolean;
+  sessionInProgress: boolean;
+  queryOpenMs: number;
+  queryCloseMs: number;
   /** How session tape OCCs were chosen (tiered band + volume-ranked cap). */
   coverageGeometry?: TapeBackfillCoverageGeometry;
 }
@@ -612,6 +616,10 @@ export async function runStrategistTapeBackfill(args: {
       occListLength: 0,
       occCompleted: 0,
       tradesInserted: 0,
+      totalTradesFromPolygon: 0,
+      persistRejectedCount: 0,
+      anyTruncated: false,
+      anySawPolygonHttpError: false,
       todayYmd,
       isSessionForToday,
       sessionInProgress,
@@ -635,6 +643,10 @@ export async function runStrategistTapeBackfill(args: {
       occListLength: 0,
       occCompleted: 0,
       tradesInserted: 0,
+      totalTradesFromPolygon: 0,
+      persistRejectedCount: 0,
+      anyTruncated: false,
+      anySawPolygonHttpError: false,
       todayYmd,
       isSessionForToday,
       sessionInProgress,
@@ -663,6 +675,10 @@ export async function runStrategistTapeBackfill(args: {
       occCompleted: 0,
       tradesInserted: 0,
       coverageGeometry,
+      totalTradesFromPolygon: 0,
+      persistRejectedCount: 0,
+      anyTruncated: false,
+      anySawPolygonHttpError: false,
       todayYmd,
       isSessionForToday,
       sessionInProgress,
@@ -889,12 +905,29 @@ export async function runStrategistTapeBackfill(args: {
     occCompleted === occList.length
   ) {
     tapeBackfillReason = "empty_polygon_response";
+  } else if (tradesInserted === 0 && anyTruncated === true) {
+    tapeBackfillReason = "timeout_no_inserts";
   } else {
     tapeBackfillReason = "skipped_other";
   }
 
   logger.info(
-    { ticker, status, occCompleted, occRequested: occList.length, tradesInserted, anyTruncated, tapeBackfillReason, coverageGeometry },
+    {
+      ticker,
+      tapeBackfillReason,
+      status,
+      reason: anyTruncated ? "timeout_or_pagination" : anyError ? "insert_or_rollups" : null,
+      occRequested: occList.length,
+      occCompleted,
+      tradesInserted,
+      totalTradesFromPolygon,
+      persistRejectedCount,
+      anyTruncated,
+      anySawPolygonHttpError,
+      sessionDate,
+      queryOpenMs: openMs,
+      queryCloseMs: closeMs,
+    },
     "strategistTapeBackfill: done",
   );
 
@@ -913,6 +946,7 @@ export async function runStrategistTapeBackfill(args: {
     anyTruncated,
     anyError,
     coverageGeometry,
+    anySawPolygonHttpError,
     todayYmd,
     isSessionForToday,
     sessionInProgress,

@@ -28,6 +28,7 @@ import {
 } from "./strategistDiagnostics.js";
 import { runWithPolygonApiTraceAsync, takePolygonApiTrace } from "./polygonApiTrace.js";
 import { runInStrategistRunContext, getStrategistRunContext, mergeStrategistDiag } from "./strategistRunContext.js";
+import { lastCompletedTradingDayNy, nyCalendarYmd, rthBoundsMs } from "./polygonMarketCalendar.js";
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
 import { getNextEarningsDate, type NextEarnings } from "./earningsService.js";
 import { evaluateCatalyst, deriveTradeDirection, type CatalystEvaluation } from "./catalystEvaluator.js";
@@ -845,16 +846,38 @@ async function analyzeTickerV2Inner(
     );
   } catch (err) {
     logger.warn({ err, ticker }, "StrategistV2: session tape backfill threw");
+    const nowExc = new Date();
+    const todayYmdExc = nyCalendarYmd(nowExc);
+    let sessionDateExc = todayYmdExc;
+    let queryOpenMsExc = Date.now();
+    let queryCloseMsExc = Date.now();
+    try {
+      sessionDateExc = await lastCompletedTradingDayNy(nowExc);
+      const b = await rthBoundsMs(sessionDateExc);
+      queryOpenMsExc = b.openMs;
+      queryCloseMsExc = b.closeMs;
+    } catch {
+      /* leave sessionDateExc and bounds as best-effort */
+    }
     tapeBackfillStatus = {
       status: "failed",
       reason: "exception",
       tapeBackfillReason: "skipped_other",
-      sessionDate: new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }),
+      sessionDate: sessionDateExc,
       coverageEndMs: Date.now(),
       occRequested: 0,
       occListLength: 0,
       occCompleted: 0,
       tradesInserted: 0,
+      totalTradesFromPolygon: 0,
+      persistRejectedCount: 0,
+      anyTruncated: false,
+      anySawPolygonHttpError: false,
+      todayYmd: todayYmdExc,
+      isSessionForToday: sessionDateExc === todayYmdExc,
+      sessionInProgress: false,
+      queryOpenMs: queryOpenMsExc,
+      queryCloseMs: queryCloseMsExc,
     };
   }
 
@@ -2303,6 +2326,10 @@ function buildDataQualitySummary(args: {
       tapeBackfillOccCompleted: tapeBackfill?.occCompleted ?? null,
       tapeBackfillOccRequested: tapeBackfill?.occRequested ?? null,
       tapeBackfillTradesInserted: tapeBackfill?.tradesInserted ?? null,
+      tapeBackfillTotalTradesFromPolygon: tapeBackfill?.totalTradesFromPolygon ?? null,
+      tapeBackfillPersistRejected: tapeBackfill?.persistRejectedCount ?? null,
+      tapeBackfillTruncated: tapeBackfill?.anyTruncated ?? null,
+      tapeBackfillHttpError: tapeBackfill?.anySawPolygonHttpError ?? null,
     },
     enrichment: {
       optionsChainSource: enrichment?.chainSource ?? null,
@@ -2500,6 +2527,15 @@ function buildDataPackage(
       occCompleted: tapeBackfill.occCompleted,
       tradesInserted: tapeBackfill.tradesInserted,
       coverageGeometry: tapeBackfill.coverageGeometry ?? null,
+      totalTradesFromPolygon: tapeBackfill.totalTradesFromPolygon,
+      persistRejectedCount: tapeBackfill.persistRejectedCount,
+      anyTruncated: tapeBackfill.anyTruncated,
+      anySawPolygonHttpError: tapeBackfill.anySawPolygonHttpError,
+      todayYmd: tapeBackfill.todayYmd,
+      isSessionForToday: tapeBackfill.isSessionForToday,
+      sessionInProgress: tapeBackfill.sessionInProgress,
+      queryOpenMs: tapeBackfill.queryOpenMs,
+      queryCloseMs: tapeBackfill.queryCloseMs,
     };
   }
 
