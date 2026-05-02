@@ -27,6 +27,7 @@ import {
   isReliableIv,
   STRATEGIST_IV_CEILING_PCT,
 } from "./strategistIvNormalize.js";
+import { impliedVolatilityBSM } from "./bsmIV.js";
 import { fetchPolygonAnalystConsensus, fetchPolygonAnalystRatings } from "./polygonAnalystData.js";
 import { fetchCompanyFinancialsForSymbol, type CompanyFinancials } from "../routes/sec.js";
 import { clampProfitTargetToMaxPayout } from "./exitTargetMath.js";
@@ -215,7 +216,15 @@ interface TickerData {
   halted: boolean;
 }
 
-interface ChainContract {
+export type ReconstructedIVSource =
+  | "bsm_bisection"
+  | "skipped_penny_spread"
+  | "skipped_no_bid"
+  | "skipped_no_ask"
+  | "skipped_short_dte"
+  | "skipped_no_convergence";
+
+export interface ChainContract {
   strike: number;
   expiration: string;
   type: string;
@@ -228,6 +237,9 @@ interface ChainContract {
   volume: number;
   impliedVolatility: number;
   dte: number;
+  /** BSM bisection IV in percent when chain IV is unreliable; additive only. */
+  reconstructedIV?: number | null;
+  reconstructedIVSource?: ReconstructedIVSource | null;
 }
 
 export interface ContextSourcesPayload {
@@ -1433,11 +1445,63 @@ function computeDte(expiration: string): number {
   return Math.max(0, Math.round((expMs - Date.now()) / (24 * 60 * 60 * 1000)));
 }
 
+/** Aligns with bsmIV.ts default (4.5%). */
+const CHAIN_BSM_RISK_FREE = 0.045;
+
+function tryReconstructContractIv(
+  c: ChainContract,
+  spot: number,
+): { pct: number | null; source: ReconstructedIVSource } {
+  const bid = c.bid;
+  const ask = c.ask;
+  if (bid == null || !Number.isFinite(bid) || bid <= 0) return { pct: null, source: "skipped_no_bid" };
+  if (ask == null || !Number.isFinite(ask) || ask <= 0) return { pct: null, source: "skipped_no_ask" };
+  const mid = (bid + ask) / 2;
+  if (!Number.isFinite(mid) || mid <= 0) return { pct: null, source: "skipped_no_bid" };
+  const spread = ask - bid;
+  if (spread > 0.5 * mid) return { pct: null, source: "skipped_penny_spread" };
+  const dte = c.dte > 0 ? c.dte : computeDte(c.expiration);
+  if (dte < 1) return { pct: null, source: "skipped_short_dte" };
+  const isCall = c.type === "call" || c.optionType === "CALL";
+  const sigma = impliedVolatilityBSM({
+    spot,
+    strike: c.strike,
+    dte,
+    isCall,
+    optionPrice: mid,
+    riskFreeRate: CHAIN_BSM_RISK_FREE,
+  });
+  if (sigma == null) return { pct: null, source: "skipped_no_convergence" };
+  const pct = Math.round(sigma * 10000) / 100;
+  return { pct, source: "bsm_bisection" };
+}
+
+function enrichChainContractsWithReconstructedIv(chain: ChainContract[], spot: number): void {
+  for (const c of chain) {
+    c.reconstructedIV = null;
+    c.reconstructedIVSource = null;
+    const n = normalizeStrategistIv(c.impliedVolatility, "chain");
+    if (isReliableIv(n)) continue;
+    const r = tryReconstructContractIv(c, spot);
+    c.reconstructedIV = r.pct;
+    c.reconstructedIVSource = r.source;
+  }
+}
+
+function effectiveLegIv(c: ChainContract): number | null {
+  const n = normalizeStrategistIv(c.impliedVolatility, "chain");
+  if (isReliableIv(n)) return n.pct;
+  if (typeof c.reconstructedIV === "number" && c.reconstructedIV > 0 && c.reconstructedIV <= STRATEGIST_IV_CEILING_PCT) {
+    return c.reconstructedIV;
+  }
+  return null;
+}
+
 function atmIvPctForExpiry(
   chain: ChainContract[],
   expiration: string,
   price: number,
-  ivToPct: (iv: number | null | undefined) => number | null,
+  legIvPct: (c: ChainContract) => number | null,
 ): number | null {
   const calls = chain.filter(c => c.expiration === expiration && (c.type === "call" || c.optionType === "CALL"));
   const puts = chain.filter(c => c.expiration === expiration && (c.type === "put" || c.optionType === "PUT"));
@@ -1451,8 +1515,8 @@ function atmIvPctForExpiry(
   const c = calls.find(x => x.strike === strike) ?? calls.sort((a, b) => Math.abs(a.strike - price) - Math.abs(b.strike - price))[0];
   const p = puts.find(x => x.strike === strike) ?? puts.sort((a, b) => Math.abs(a.strike - price) - Math.abs(b.strike - price))[0];
   if (!c || !p) return null;
-  const callIv = ivToPct(c.impliedVolatility);
-  const putIv = ivToPct(p.impliedVolatility);
+  const callIv = legIvPct(c);
+  const putIv = legIvPct(p);
   if (callIv == null && putIv == null) return null;
   if (callIv == null) return putIv;
   if (putIv == null) return callIv;
@@ -1464,11 +1528,11 @@ function buildTermStructure5pt(
   price: number,
   curatedExpirations: CuratedExpiration[],
   availableExpirations: string[],
-  ivToPct: (iv: number | null | undefined) => number | null,
+  legIvPct: (c: ChainContract) => number | null,
 ): Array<{ expiry: string; daysToExpiry: number; atmIV: number }> {
   const byExp = new Map<string, number>();
   for (const ce of curatedExpirations) {
-    const iv = atmIvPctForExpiry(chain, ce.expiration, price, ivToPct);
+    const iv = atmIvPctForExpiry(chain, ce.expiration, price, legIvPct);
     if (iv != null) byExp.set(ce.expiration, iv);
   }
   const allSorted = [...availableExpirations]
@@ -1478,7 +1542,7 @@ function buildTermStructure5pt(
   for (const { exp } of allSorted) {
     if (byExp.has(exp)) continue;
     if (byExp.size >= 12) break;
-    const iv = atmIvPctForExpiry(chain, exp, price, ivToPct);
+    const iv = atmIvPctForExpiry(chain, exp, price, legIvPct);
     if (iv != null) byExp.set(exp, iv);
   }
   let points = [...byExp.entries()]
@@ -1498,7 +1562,7 @@ function buildTermStructure5pt(
     let added = false;
     for (const { exp } of allSorted) {
       if (points.some(p => p.expiry === exp)) continue;
-      const iv = atmIvPctForExpiry(chain, exp, price, ivToPct);
+      const iv = atmIvPctForExpiry(chain, exp, price, legIvPct);
       if (iv == null) continue;
       points.push({ expiry: exp, daysToExpiry: computeDte(exp), atmIV: iv });
       points.sort((a, b) => a.daysToExpiry - b.daysToExpiry);
@@ -1544,13 +1608,11 @@ function computeSkew25DeltaForChain(
     const putPick = [...puts].sort((a, b) => Math.abs(a.delta - putDeltaT) - Math.abs(b.delta - putDeltaT))[0];
     const callPick = [...calls].sort((a, b) => Math.abs(a.delta - callDeltaT) - Math.abs(b.delta - callDeltaT))[0];
     if (!putPick || !callPick) return null;
-    const putN = normalizeStrategistIv(putPick.impliedVolatility, "chain");
-    const callN = normalizeStrategistIv(callPick.impliedVolatility, "chain");
-    if (!isReliableIv(putN) || !isReliableIv(callN)) return null;
-    const putIV = putN.pct;
-    const callIV = callN.pct;
-    const skewPoints = Math.round((putIV - callIV) * 100) / 100;
-    return { putIV, callIV, skewPoints, asOfExpiry: exp };
+    const putIvEff = effectiveLegIv(putPick);
+    const callIvEff = effectiveLegIv(callPick);
+    if (putIvEff == null || callIvEff == null) return null;
+    const skewPoints = Math.round((putIvEff - callIvEff) * 100) / 100;
+    return { putIV: putIvEff, callIV: callIvEff, skewPoints, asOfExpiry: exp };
   };
 
   const deltaTargets: Array<{ call: number; put: number; tag: "25d" | "20d" | "15d" }> = [
@@ -1838,6 +1900,8 @@ export function summarizeOptionsChain(
   price: number,
   ctx?: SummarizeOptionsChainContext,
 ): ChainSummary {
+  enrichChainContractsWithReconstructedIv(chain, price);
+
   const calls = chain.filter(c => c.type === "call" || c.optionType === "CALL");
   const puts = chain.filter(c => c.type === "put" || c.optionType === "PUT");
 
@@ -1868,8 +1932,9 @@ export function summarizeOptionsChain(
     for (const c of contracts) {
       const n = normalizeStrategistIv(c.impliedVolatility, "chain");
       if (n.clamped) ivArtifactClampCount += 1;
-      if (isReliableIv(n)) {
-        sum += n.pct;
+      const leg = effectiveLegIv(c);
+      if (leg != null) {
+        sum += leg;
         reliableCount += 1;
       }
     }
@@ -1951,7 +2016,7 @@ export function summarizeOptionsChain(
 
   const curatedExpirations = buildCuratedExpirations(chain, price, mustIncludeExpiries);
 
-  const termStructure5pt = buildTermStructure5pt(chain, price, curatedExpirations, expirations, ivToPct);
+  const termStructure5pt = buildTermStructure5pt(chain, price, curatedExpirations, expirations, effectiveLegIv);
   const { skew, reason: skew25DeltaReason } = computeSkew25DeltaForChain(chain, expirations, price);
   const impliedMove = computeImpliedMoveStraddle(chain, price, expirations);
 
@@ -1959,11 +2024,11 @@ export function summarizeOptionsChain(
     atmStrike,
     atmCallBid: atmCall?.bid ?? 0,
     atmCallAsk: atmCall?.ask ?? 0,
-    atmCallIV: ivToPct(atmCall?.impliedVolatility),
+    atmCallIV: atmCall != null ? effectiveLegIv(atmCall) : null,
     atmCallOI: atmCall?.openInterest ?? 0,
     atmPutBid: atmPut?.bid ?? 0,
     atmPutAsk: atmPut?.ask ?? 0,
-    atmPutIV: ivToPct(atmPut?.impliedVolatility),
+    atmPutIV: atmPut != null ? effectiveLegIv(atmPut) : null,
     atmPutOI: atmPut?.openInterest ?? 0,
     topVolumeCalls,
     topVolumePuts,
