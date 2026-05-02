@@ -21,6 +21,7 @@ import {
   rthBoundsMs,
 } from "./polygonMarketCalendar.js";
 import { appendPolygonApiTraceRecord } from "./polygonApiTrace.js";
+import { OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS } from "./optionsFlowRawTradesBulkInsert.js";
 
 const POLYGON_API = "https://api.polygon.io";
 const MAX_EXPIRIES = 3;
@@ -37,8 +38,6 @@ const PER_ROOT_MAX_MS = 18_000;
 const PER_ROOT_MIN_MS = 2_500;
 /** Upper bound on a single Polygon HTTP round-trip during backfill. */
 const PER_FETCH_HTTP_MS = 14_000;
-/** Keeps per-statement bind params under PostgreSQL's 65,535 limit (~28 cols × 1000 rows). */
-const INSERT_BATCH_SIZE = 1_000;
 
 export type TapeBackfillStatusValue = "complete" | "partial" | "failed" | "skipped";
 
@@ -834,8 +833,8 @@ export async function runStrategistTapeBackfill(args: {
     try {
       await db.transaction(async (tx) => {
         if (rowsToInsert.length > 0) {
-          for (let i = 0; i < rowsToInsert.length; i += INSERT_BATCH_SIZE) {
-            const slice = rowsToInsert.slice(i, i + INSERT_BATCH_SIZE);
+          for (let i = 0; i < rowsToInsert.length; i += OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS) {
+            const slice = rowsToInsert.slice(i, i + OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS);
             const ins = await tx
               .insert(optionsFlowRawTradesTable)
               .values(slice)
