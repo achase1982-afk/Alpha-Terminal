@@ -424,6 +424,7 @@ function mapTapeBackfillToSessionContext(
       r === "empty_after_filter"
       || r === "empty_polygon_response"
       || r === "polygon_error"
+      || r === "timeout_no_inserts"
     ) {
       return r;
     }

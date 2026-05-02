@@ -319,8 +319,8 @@ OUTPUT FORMAT
 Single JSON object with the same schema as multi-section desk mode.
 
 Use the JSON snapshot fields below when present (same keys as multi-section desk analysts receive):
-- **dataQualitySummary**, including **data_source_gaps** when set, **flags**, **flow.tapeBackfillReason**, **flow.tapeBackfillReasonLegacy**, **flow.tapeBackfillStatus**, **sessionTapeKind**, and other degraded-state labels (never invent full tape when flags say otherwise).
-- **tapeBackfill** (REST tape coverage: status, **tapeBackfillReason**, occ counts, trades inserted).
+- **dataQualitySummary**, including **data_source_gaps** when set, **flags**, **flow.tapeBackfillReason**, **flow.tapeBackfillReasonLegacy**, **flow.tapeBackfillStatus**, **flow.tapeBackfillTotalTradesFromPolygon**, **flow.tapeBackfillPersistRejected**, **flow.tapeBackfillTruncated**, **flow.tapeBackfillHttpError**, **sessionTapeKind**, and other degraded-state labels (never invent full tape when flags say otherwise).
+- **tapeBackfill** (REST tape coverage: status, **tapeBackfillReason**, occ counts, trades inserted, truncation and Polygon HTTP flags when present).
 - **polygonFlowHighlights.sessionTape** (**tapeKind**, **tapeBackfillReason**, sweeps, blocks, aggressor totals, top prints).
 - **catalyst.earnings_history** and **catalyst.forward_estimates** when the snapshot includes them, plus **nextEarnings** (EPS and revenue estimates vs prior quarter, period labels), **earningsDate**, **lastEarningsDate**, **daysSinceEarnings**.
 - **macroEventsInPositionWindow** and **catalystEvaluation** when included in the snapshot.
