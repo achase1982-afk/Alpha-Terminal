@@ -1547,6 +1547,13 @@ interface PolygonConsensusComputed {
   strong_sell: number;
 }
 
+interface PolygonAnalystRatingsResponse {
+  ratings: PolygonRatingRow[];
+  consensus: PolygonConsensusComputed;
+  coverage_reason?: string | null;
+  error?: string;
+}
+
 interface PolygonRatingRow {
   id: string;
   firm: string;
@@ -1565,11 +1572,25 @@ interface PolygonRatingRow {
 function usePolygonAnalystRatings(symbol: string) {
   return useQuery({
     queryKey: ["polygon-analyst-ratings", symbol],
-    queryFn: async (): Promise<{ ratings: PolygonRatingRow[]; consensus: PolygonConsensusComputed }> => {
+    queryFn: async (): Promise<PolygonAnalystRatingsResponse> => {
       const res = await fetchWithAuth(`${API_BASE}/polygon/analyst-ratings?symbol=${encodeURIComponent(symbol)}&limit=300`);
-      const j = await res.json();
+      const j = (await res.json()) as PolygonAnalystRatingsResponse & { error?: string };
       if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
-      return j as { ratings: PolygonRatingRow[]; consensus: PolygonConsensusComputed };
+      return {
+        ratings: Array.isArray(j.ratings) ? j.ratings : [],
+        consensus: j.consensus ?? {
+          consensus_pt: null,
+          high_pt: null,
+          low_pt: null,
+          num_active_analysts: 0,
+          strong_buy: 0,
+          buy: 0,
+          hold: 0,
+          sell: 0,
+          strong_sell: 0,
+        },
+        coverage_reason: j.coverage_reason ?? null,
+      };
     },
     enabled: !!symbol,
     staleTime: 60 * 60 * 1000,
@@ -1625,6 +1646,7 @@ function AnalystCoverageBlock({ ticker }: { ticker: string }) {
   }, [qRat.data?.ratings, dateDesc]);
 
   const cons = qRat.data?.consensus;
+  const coverageReason = qRat.data?.coverage_reason ?? null;
   const buckets = cons
     ? [
         { key: "sb", label: "Str. Buy", count: cons.strong_buy, color: C.green },
@@ -1636,7 +1658,12 @@ function AnalystCoverageBlock({ ticker }: { ticker: string }) {
     : [];
   const totalRatings = buckets.reduce((s, b) => s + b.count, 0);
   const hasConsensus = cons && (cons.consensus_pt != null || totalRatings > 0);
-  const noCoverage = !qRat.isLoading && !qRat.error && cons && cons.num_active_analysts === 0 && (qRat.data?.ratings?.length ?? 0) === 0;
+  const noCoverage =
+    !qRat.isLoading
+    && !qRat.error
+    && cons
+    && cons.num_active_analysts === 0
+    && (qRat.data?.ratings?.length ?? 0) === 0;
 
   const expandedRow = expandedId ? rows.find(r => (r.id || `${r.firm}-${r.date}`) === expandedId) : null;
 
@@ -1718,7 +1745,11 @@ function AnalystCoverageBlock({ ticker }: { ticker: string }) {
       )}
 
       {noCoverage && (
-        <p style={{ fontSize: 10, fontFamily: f, color: C.textDim, padding: "8px 0" }}>No analyst coverage in the last 120 days</p>
+        <p style={{ fontSize: 10, fontFamily: f, color: C.textDim, padding: "8px 0" }}>
+          {coverageReason === "no_recent_coverage" || coverageReason == null || coverageReason === ""
+            ? "No recent analyst coverage"
+            : `Analyst data unavailable: ${coverageReason.length > 160 ? `${coverageReason.slice(0, 160)}…` : coverageReason}`}
+        </p>
       )}
 
       {(qRat.data?.ratings?.length ?? 0) > 0 && (

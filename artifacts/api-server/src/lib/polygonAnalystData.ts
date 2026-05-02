@@ -1,5 +1,5 @@
 /**
- * Polygon REST analyst price-target coverage (native reference endpoints).
+ * Polygon Benzinga partner analyst ratings (api.polygon.io/benzinga/v1/ratings).
  * Shared aggregation for GET /api/polygon/analyst-ratings and Strategist enrichment.
  */
 
@@ -46,24 +46,6 @@ export interface PolygonAnalystRatingRow {
   price_target_action: string | null;
 }
 
-/** Native Polygon URLs tried in order until one returns HTTP 200 with a JSON body. */
-export const POLYGON_NATIVE_ANALYST_ENDPOINTS = [
-  (sym: string) =>
-    `${POLYGON_BASE}/v3/reference/tickers/${encodeURIComponent(sym)}/price-targets?limit=1000&sort=last_updated.desc`,
-  (sym: string) =>
-    `${POLYGON_BASE}/v3/reference/tickers/${encodeURIComponent(sym)}/price_targets?limit=1000&sort=last_updated.desc`,
-  (sym: string) =>
-    `${POLYGON_BASE}/v3/reference/price-targets?ticker=${encodeURIComponent(sym)}&limit=1000&sort=last_updated.desc`,
-] as const;
-
-export interface NativeAnalystFetchResult {
-  ok: boolean;
-  rows: Array<Record<string, unknown>>;
-  endpointUrl: string | null;
-  httpStatus: number | null;
-  errorMessage: string | null;
-}
-
 function firstYmdString(v: unknown): string | null {
   if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
   return null;
@@ -78,7 +60,7 @@ function consensusFreshness(asOf: string | null): ConsensusPriceTargetFreshness 
   return ageDays <= 30 ? "fresh" : "stale";
 }
 
-function parseActionDate(dateStr: string, timeStr: string | null | undefined): Date | null {
+export function parseActionDate(dateStr: string, timeStr: string | null | undefined): Date | null {
   if (!dateStr) return null;
   const t = timeStr && /^\d{1,2}:\d{2}/.test(timeStr) ? timeStr : "12:00:00";
   const normalized = t.length === 5 ? `${t}:00` : t;
@@ -117,23 +99,6 @@ function mapRatingToBucket(rating: string | null | undefined): RatingBucket | nu
   return "hold";
 }
 
-/** Prefer split-adjusted target when present (Polygon-native analyst payloads). */
-function effectivePt(row: Record<string, unknown>): number | null {
-  const adj = row["adjusted_price_target"];
-  const raw = row["price_target"];
-  const v = typeof adj === "number" && Number.isFinite(adj) ? adj : typeof raw === "number" && Number.isFinite(raw) ? raw : null;
-  return v;
-}
-
-function rowId(row: Record<string, unknown>): string {
-  const id =
-    row["id"]
-    ?? row["sip_id"]
-    ?? row["uuid"]
-    ?? row["request_id"];
-  return id != null ? String(id) : "";
-}
-
 export interface ParsedAnalystActionRow {
   id: string;
   firm: string;
@@ -150,7 +115,12 @@ export interface ParsedAnalystActionRow {
   action_company: string | null;
 }
 
-export function parseNativeAnalystRow(row: Record<string, unknown>): ParsedAnalystActionRow | null {
+/** Map one Benzinga /v1/ratings API result row to our normalized shape. */
+export function parsePolygonBenzingaRatingRow(row: Record<string, unknown>): ParsedAnalystActionRow | null {
+  const ratingAction = typeof row["rating_action"] === "string" ? row["rating_action"] : "";
+  const ptAction = typeof row["price_target_action"] === "string" ? row["price_target_action"] : "";
+  const ac = typeof row["action_company"] === "string" ? row["action_company"] : null;
+  const pt = typeof row["price_target"] === "number" ? row["price_target"] : null;
   const firm = typeof row["firm"] === "string" ? row["firm"].trim() : "";
   const analyst = typeof row["analyst"] === "string" ? row["analyst"].trim() : "";
   const date =
@@ -158,28 +128,17 @@ export function parseNativeAnalystRow(row: Record<string, unknown>): ParsedAnaly
       ? row["date"]
       : firstYmdString(row["published_date"])
       ?? firstYmdString(row["updated_at"])
-      ?? firstYmdString(row["last_updated"])
       ?? "";
   const time = typeof row["time"] === "string" ? row["time"] : null;
-  const ratingAction = typeof row["rating_action"] === "string" ? row["rating_action"] : "";
-  const ptAction = typeof row["price_target_action"] === "string" ? row["price_target_action"] : "";
-  const ac = typeof row["action_company"] === "string" ? row["action_company"] : null;
-  const pt = effectivePt(row);
-  const ptPrior =
-    typeof row["previous_adjusted_price_target"] === "number"
-      ? row["previous_adjusted_price_target"]
-      : typeof row["previous_price_target"] === "number"
-        ? row["previous_price_target"]
-        : null;
-
+  const id = String(row["benzinga_id"] ?? row["id"] ?? "");
   return {
-    id: rowId(row) || `${firm}-${date}-${analyst}`,
+    id: id || `${firm}-${date}-${analyst}`,
     firm,
     analyst,
     action_type: normalizeAction(ratingAction, ptAction),
     rating_prior: typeof row["previous_rating"] === "string" ? row["previous_rating"] : null,
     rating_current: typeof row["rating"] === "string" ? row["rating"] : null,
-    pt_prior,
+    pt_prior: typeof row["previous_price_target"] === "number" ? row["previous_price_target"] : null,
     pt_current: pt,
     date,
     time,
@@ -208,8 +167,8 @@ const LOOKBACK_MS = 120 * 24 * 60 * 60 * 1000;
  * Filter to last 120 calendar days, dedupe by firm (latest action wins),
  * require finite PT > 0. Mean/min/max over deduped PTs; analyst count = unique firms.
  */
-export function aggregateAnalystPriceTargets(
-  symbol: string,
+export function aggregateBenzingaRatings(
+  _symbol: string,
   rawRows: Array<Record<string, unknown>>,
 ): {
   consensus: AnalystAggregationConsensus;
@@ -222,7 +181,7 @@ export function aggregateAnalystPriceTargets(
 
   const actions: ParsedAnalystActionRow[] = [];
   for (const row of rawRows) {
-    const a = parseNativeAnalystRow(row);
+    const a = parsePolygonBenzingaRatingRow(row);
     if (!a.date) continue;
     const ad = parseActionDate(a.date, a.time);
     if (!ad || ad.getTime() < cutoff) continue;
@@ -331,91 +290,130 @@ function consensusRatingLabel(dist: AnalystAggregationConsensus): string | null 
   return "strong_sell";
 }
 
-/**
- * Fetch paginated native analyst rows from Polygon (first URL that responds OK).
- */
-export async function fetchNativeAnalystRows(symbol: string): Promise<NativeAnalystFetchResult> {
+/** Fetch all Benzinga rating rows for a ticker (paginated via next_url). */
+export async function fetchPolygonBenzingaRatingsAllPages(symbol: string): Promise<{
+  ok: boolean;
+  rows: Array<Record<string, unknown>>;
+  errorMessage: string | null;
+}> {
   const key = polygonKey();
   const sym = symbol.trim().toUpperCase().replace(/^\$/, "");
   if (!key || !sym) {
-    return { ok: false, rows: [], endpointUrl: null, httpStatus: null, errorMessage: "POLYGON_API_KEY not set" };
+    return { ok: false, rows: [], errorMessage: "POLYGON_API_KEY not configured" };
   }
 
-  for (const buildUrl of POLYGON_NATIVE_ANALYST_ENDPOINTS) {
-    const basePath = buildUrl(sym);
-    let url: string | null = `${basePath}${basePath.includes("?") ? "&" : "?"}apiKey=${encodeURIComponent(key)}`;
+  const rows: Array<Record<string, unknown>> = [];
+  let url: string | null =
+    `${POLYGON_BASE}/benzinga/v1/ratings?ticker=${encodeURIComponent(sym)}&limit=1000&sort=date.desc&apiKey=${encodeURIComponent(key)}`;
 
-    const rows: Array<Record<string, unknown>> = [];
-    let lastStatus = 0;
-    let saw404 = false;
-
-    while (url) {
-      try {
-        const r = await fetch(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(25_000) });
-        lastStatus = r.status;
-        if (r.status === 404) {
-          saw404 = true;
-          break;
-        }
-        if (!r.ok) {
-          const text = await r.text().catch(() => "");
-          return {
-            ok: false,
-            rows: [],
-            endpointUrl: basePath,
-            httpStatus: r.status,
-            errorMessage: text.slice(0, 200) || `HTTP ${r.status}`,
-          };
-        }
-        const data = (await r.json()) as { results?: unknown[]; next_url?: string };
-        const chunk = data.results;
-        if (Array.isArray(chunk)) {
-          for (const item of chunk) {
-            if (item && typeof item === "object") rows.push(item as Record<string, unknown>);
-          }
-        }
-        const nu = data.next_url;
-        if (nu && typeof nu === "string") {
-          url = nu.includes("apiKey=") ? nu : `${nu}${nu.includes("?") ? "&" : "?"}apiKey=${encodeURIComponent(key)}`;
-        } else {
-          url = null;
-        }
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return { ok: false, rows: [], endpointUrl: basePath, httpStatus: lastStatus || null, errorMessage: msg };
+  while (url) {
+    try {
+      const r = await fetch(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(25_000) });
+      if (!r.ok) {
+        const text = await r.text().catch(() => "");
+        return {
+          ok: false,
+          rows: [],
+          errorMessage: text.slice(0, 240) || `Polygon ratings HTTP ${r.status}`,
+        };
       }
+      const data = (await r.json()) as { results?: unknown[]; next_url?: string };
+      const chunk = data.results;
+      if (Array.isArray(chunk)) {
+        for (const item of chunk) {
+          if (item && typeof item === "object") rows.push(item as Record<string, unknown>);
+        }
+      }
+      const nu = data.next_url;
+      if (nu && typeof nu === "string") {
+        url = nu.includes("apiKey=") ? nu : `${nu}${nu.includes("?") ? "&" : "?"}apiKey=${encodeURIComponent(key)}`;
+      } else {
+        url = null;
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { ok: false, rows: [], errorMessage: msg };
     }
-
-    if (saw404) continue;
-
-    return { ok: true, rows, endpointUrl: basePath, httpStatus: lastStatus || 200, errorMessage: null };
   }
 
-  return {
-    ok: false,
-    rows: [],
-    endpointUrl: POLYGON_NATIVE_ANALYST_ENDPOINTS[0]!(sym),
-    httpStatus: 404,
-    errorMessage:
-      "Polygon native analyst price-target endpoints returned 404 or no data for this key; partner analyst feeds are not used.",
-  };
+  return { ok: true, rows, errorMessage: null };
 }
 
-export async function fetchPolygonAnalystConsensus(symbol: string): Promise<PolygonAnalystConsensus | null> {
-  const key = polygonKey();
+export interface AnalystRatingsAndConsensusPayload {
+  symbol: string;
+  ratings: PolygonAnalystRatingRow[];
+  consensus: AnalystAggregationConsensus;
+  /** Strategist-facing envelope (null consensus_price_target when no coverage). */
+  analystConsensus: PolygonAnalystConsensus;
+  rawCount: number;
+  filteredCount: number;
+}
+
+function mapRowsToRatingOutput(rows: ParsedAnalystActionRow[], limit: number): PolygonAnalystRatingRow[] {
+  return rows.slice(0, limit).map((row) => ({
+    id: row.id,
+    firm: row.firm,
+    analyst: row.analyst,
+    action_type: row.action_type,
+    rating_prior: row.rating_prior,
+    rating_current: row.rating_current,
+    pt_prior: row.pt_prior,
+    pt_current: row.pt_current,
+    date: row.date,
+    time: row.time,
+    rating_action: row.rating_action,
+    price_target_action: row.price_target_action,
+  }));
+}
+
+/** Full ratings + consensus from Benzinga (same shape as GET /api/polygon/analyst-ratings). */
+export async function fetchPolygonAnalystRatingsAndConsensus(
+  symbol: string,
+  ratingsLimit = 500,
+): Promise<AnalystRatingsAndConsensusPayload | null> {
   const sym = symbol.trim().toUpperCase().replace(/^\$/, "");
+  const key = polygonKey();
   if (!key || !sym) return null;
 
-  const fetched = await fetchNativeAnalystRows(sym);
-  if (!fetched.ok || fetched.errorMessage) {
-    return emptyConsensus(sym, fetched.errorMessage ?? "polygon_analyst_unavailable");
+  const fetched = await fetchPolygonBenzingaRatingsAllPages(sym);
+  if (!fetched.ok) {
+    const ac = emptyConsensus(sym, fetched.errorMessage ?? "polygon_ratings_unavailable");
+    const zeroConsensus: AnalystAggregationConsensus = {
+      consensus_pt: null,
+      high_pt: null,
+      low_pt: null,
+      num_active_analysts: 0,
+      strong_buy: 0,
+      buy: 0,
+      hold: 0,
+      sell: 0,
+      strong_sell: 0,
+      consensus_as_of_date: null,
+    };
+    return {
+      symbol: sym,
+      ratings: [],
+      consensus: zeroConsensus,
+      analystConsensus: ac,
+      rawCount: 0,
+      filteredCount: 0,
+    };
   }
 
-  const { consensus, dedupedActions, rawCount } = aggregateAnalystPriceTargets(sym, fetched.rows);
+  const { consensus, dedupedActions, rawCount, filteredCount } = aggregateBenzingaRatings(sym, fetched.rows);
+  const lim = Number.isFinite(ratingsLimit) ? Math.min(500, Math.max(1, Math.floor(ratingsLimit))) : 500;
+  const ratings = mapRowsToRatingOutput(dedupedActions, lim);
 
   if (dedupedActions.length === 0) {
-    const reason = rawCount === 0 ? "no_native_analyst_rows" : "no_recent_coverage";
-    return emptyConsensus(sym, reason);
+    const ac = emptyConsensus(sym, "no_recent_coverage");
+    return {
+      symbol: sym,
+      ratings,
+      consensus,
+      analystConsensus: ac,
+      rawCount,
+      filteredCount,
+    };
   }
 
   const asOf = consensus.consensus_as_of_date;
@@ -429,7 +427,7 @@ export async function fetchPolygonAnalystConsensus(symbol: string): Promise<Poly
       ) / 100
       : null;
 
-  return {
+  const analystConsensus: PolygonAnalystConsensus = {
     symbol: sym,
     consensus_price_target: consensus.consensus_pt,
     high_pt: consensus.high_pt,
@@ -446,35 +444,30 @@ export async function fetchPolygonAnalystConsensus(symbol: string): Promise<Poly
     consensusPriceTargetFreshness: consensusFreshness(asOf),
     coverage_reason: null,
   };
+
+  return {
+    symbol: sym,
+    ratings,
+    consensus,
+    analystConsensus,
+    rawCount,
+    filteredCount,
+  };
+}
+
+export async function fetchPolygonAnalystConsensus(symbol: string): Promise<PolygonAnalystConsensus | null> {
+  const pack = await fetchPolygonAnalystRatingsAndConsensus(symbol, 1);
+  return pack?.analystConsensus ?? null;
 }
 
 export async function fetchPolygonAnalystRatings(
   symbol: string,
   limit = 50,
 ): Promise<{ symbol: string; ratings: PolygonAnalystRatingRow[] } | null> {
-  const key = polygonKey();
   const sym = symbol.trim().toUpperCase().replace(/^\$/, "");
-  if (!key || !sym) return null;
-  const lim = Number.isFinite(limit) ? Math.min(100, Math.max(1, Math.floor(limit))) : 50;
-
-  const fetched = await fetchNativeAnalystRows(sym);
-  if (!fetched.ok) return { symbol: sym, ratings: [] };
-
-  const { dedupedActions } = aggregateAnalystPriceTargets(sym, fetched.rows);
-  const ratings: PolygonAnalystRatingRow[] = dedupedActions.slice(0, lim).map((row) => ({
-    id: row.id,
-    firm: row.firm,
-    analyst: row.analyst,
-    action_type: row.action_type,
-    rating_prior: row.rating_prior,
-    rating_current: row.rating_current,
-    pt_prior: row.pt_prior,
-    pt_current: row.pt_current,
-    date: row.date,
-    time: row.time,
-    rating_action: row.rating_action,
-    price_target_action: row.price_target_action,
-  }));
-
-  return { symbol: sym, ratings };
+  if (!polygonKey() || !sym) return null;
+  const lim = Number.isFinite(limit) ? Math.min(500, Math.max(1, Math.floor(limit))) : 50;
+  const pack = await fetchPolygonAnalystRatingsAndConsensus(symbol, lim);
+  if (!pack) return null;
+  return { symbol: sym, ratings: pack.ratings };
 }

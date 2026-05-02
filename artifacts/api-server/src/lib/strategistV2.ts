@@ -28,7 +28,7 @@ import {
   STRATEGIST_IV_CEILING_PCT,
 } from "./strategistIvNormalize.js";
 import { impliedVolatilityBSM } from "./bsmIV.js";
-import { fetchPolygonAnalystConsensus, fetchPolygonAnalystRatings } from "./polygonAnalystData.js";
+import { fetchPolygonAnalystRatingsAndConsensus } from "./polygonAnalystData.js";
 import { fetchCompanyFinancialsForSymbol, type CompanyFinancials } from "../routes/sec.js";
 import { clampProfitTargetToMaxPayout } from "./exitTargetMath.js";
 import { scrubAll } from "./narrativeScrubbers.js";
@@ -649,8 +649,10 @@ export async function analyzeTickerV2(
       null);
   }
 
-  const analystRatingsForActions = await fetchPolygonAnalystRatings(ticker, 50);
-  tickerData.analystActions48h = analystActionsFromPolygonRatings(analystRatingsForActions?.ratings);
+  const analystRatingsPack = await fetchPolygonAnalystRatingsAndConsensus(ticker, 300);
+  tickerData.analystActions48h = analystActionsFromPolygonRatings(
+    analystRatingsPack?.ratings?.slice(0, 50) ?? [],
+  );
 
   const chainResult = await fetchOptionsChain(ticker, settings);
   assertAnalyzeNotCancelled(progress);
@@ -791,10 +793,10 @@ export async function analyzeTickerV2(
     logger.info({ ticker }, "StrategistV2: no Polygon flow highlights for ticker");
   }
 
-  const [analystConsensus, companyFinancials] = await Promise.all([
-    fetchPolygonAnalystConsensus(ticker),
+  const [companyFinancials] = await Promise.all([
     fetchCompanyFinancialsForSymbol(ticker),
   ]);
+  const analystConsensus = analystRatingsPack?.analystConsensus ?? null;
   assertAnalyzeNotCancelled(progress);
   const fundamentalsSummary = companyFinancials ? fundamentalsQuickSummary(companyFinancials) : null;
 
@@ -816,7 +818,7 @@ export async function analyzeTickerV2(
     {
       chainSource: dataSource,
       analystConsensus,
-      analystRatings: analystRatingsForActions?.ratings ?? null,
+      analystRatings: analystRatingsPack?.ratings ?? null,
       fundamentalsSummary,
     },
   );
