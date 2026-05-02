@@ -303,6 +303,18 @@ router.get("/filing-content", async (req, res) => {
 
 // ─── INSIDER TRANSACTIONS (Form 4 parsing) ───────────────────────────────────
 
+/** Decode common XML/HTML entities from SEC EDGAR text (no extra deps). */
+function decodeXmlEntities(s: string): string {
+  if (!s) return s;
+  return s
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#0*39;/g, "'")
+    .replace(/&apos;/gi, "'");
+}
+
 interface InsiderTransaction {
   ownerName: string;
   isDirector: boolean;
@@ -374,10 +386,10 @@ function parseForm4Xml(xml: string, filingUrl: string): InsiderTransaction[] {
   const results: InsiderTransaction[] = [];
   const footnotes = parseForm4Footnotes(xml);
 
-  const ownerName = xmlText(xml, "rptOwnerName");
+  const ownerName = decodeXmlEntities(xmlText(xml, "rptOwnerName"));
   const isDirector = xmlText(xml, "isDirector") === "1";
   const isOfficer = xmlText(xml, "isOfficer") === "1";
-  const officerTitle = xmlText(xml, "officerTitle");
+  const officerTitle = decodeXmlEntities(xmlText(xml, "officerTitle"));
 
   const txnRegex = /<nonDerivativeTransaction>([\s\S]*?)<\/nonDerivativeTransaction>/gi;
   let m;
@@ -420,7 +432,7 @@ function parseForm4Xml(xml: string, filingUrl: string): InsiderTransaction[] {
 
 const insiderCache = new Map<string, { transactions: InsiderTransaction[]; ts: number; version: number }>();
 const INSIDER_CACHE_TTL = 5 * 60 * 1000;
-const INSIDER_PARSE_VERSION = 3;
+const INSIDER_PARSE_VERSION = 4;
 
 router.get("/insider-transactions", async (req, res) => {
   const symbol = (req.query.symbol as string || "").trim().toUpperCase().replace(/^\$/, "");
@@ -512,7 +524,7 @@ function parse13GXml(xml: string, filingDate: string, formType: string): Institu
   if (!nameMatch[1].trim()) return null;
 
   return {
-    name: nameMatch[1].trim(),
+    name: decodeXmlEntities(nameMatch[1].trim()),
     shares,
     percentOfClass: pct,
     filingDate,

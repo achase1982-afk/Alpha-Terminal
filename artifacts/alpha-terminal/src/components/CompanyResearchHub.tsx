@@ -1324,13 +1324,13 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
       </div>
       {insiderRowsToShow.length > 0 ? (
         <div style={{ overflowX: "auto" }}>
-          <table id={`${insiderFilterId}-table`} style={{ width: "100%", borderCollapse: "collapse", fontFamily: f, tableLayout: "fixed" }}>
+          <table id={`${insiderFilterId}-table`} style={{ width: "100%", borderCollapse: "collapse", fontFamily: f, tableLayout: "auto" }}>
             <colgroup>
-              <col style={{ width: "30%" }} />
-              <col style={{ width: "22%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "20%" }} />
-              <col style={{ width: "18%" }} />
+              <col style={{ width: "28%", minWidth: 0 }} />
+              <col style={{ width: "22%", minWidth: 0 }} />
+              <col style={{ width: "1%", minWidth: "5.5rem" }} />
+              <col style={{ width: "18%", minWidth: 0 }} />
+              <col style={{ width: "14%", minWidth: 0 }} />
             </colgroup>
             <thead>
               <tr>
@@ -1361,13 +1361,42 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
                     <td style={{ ...dimCell, fontSize: 11, whiteSpace: "normal", wordBreak: "break-word", paddingRight: 4 }}>
                       {t.officerTitle || "—"}
                     </td>
-                    <td style={{ ...cellStyle, textAlign: "center", fontWeight: 700, fontSize: 11 }}>
-                      <span style={{ color: pres.color }} aria-label={pres.aria}>
+                    <td
+                      style={{
+                        ...cellStyle,
+                        textAlign: "center",
+                        fontWeight: 700,
+                        fontSize: 11,
+                        whiteSpace: "nowrap",
+                        verticalAlign: "middle",
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          flexDirection: "row",
+                          flexWrap: "nowrap",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 4,
+                          color: pres.color,
+                        }}
+                        aria-label={pres.aria}
+                      >
                         {code === "S" && t.rule10b51Plan ? (
                           <>
-                            <span style={{ color: C.red }}>SELL</span>
+                            <span style={{ color: C.red, whiteSpace: "nowrap" }}>SELL</span>
                             <span
-                              style={{ marginLeft: 4, fontSize: 9, fontWeight: 700, color: C.amber, border: `1px solid ${C.amber}`, borderRadius: 3, padding: "1px 4px", verticalAlign: "middle" }}
+                              style={{
+                                fontSize: 8,
+                                fontWeight: 700,
+                                lineHeight: 1,
+                                color: C.amber,
+                                border: `1px solid ${C.amber}`,
+                                borderRadius: 3,
+                                padding: "1px 3px",
+                                whiteSpace: "nowrap",
+                              }}
                               title="Rule 10b5-1 trading plan"
                               aria-hidden="true"
                             >
@@ -1375,7 +1404,7 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
                             </span>
                           </>
                         ) : (
-                          pres.text
+                          <span style={{ whiteSpace: "nowrap" }}>{pres.text}</span>
                         )}
                       </span>
                     </td>
