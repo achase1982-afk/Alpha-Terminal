@@ -34,6 +34,10 @@ export function runInStrategistRunContext<T>(
   return storage.run(ctx, fn);
 }
 
+export function getStrategistRunContext(): StrategistRunContext | undefined {
+  return storage.getStore();
+}
+
 export function mergeStrategistDiag(patch: Partial<StrategistDiagScratch>): void {
   const c = storage.getStore();
   if (!c) return;
