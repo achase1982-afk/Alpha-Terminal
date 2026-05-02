@@ -24,6 +24,7 @@ import { buildMarketContextSnapshot, type MarketContextSnapshot } from "./flowMa
 import {
   normalizeStrategistIv,
   impliedVolFromAtmStraddle,
+  isReliableIv,
   STRATEGIST_IV_CEILING_PCT,
 } from "./strategistIvNormalize.js";
 import { fetchPolygonAnalystConsensus, fetchPolygonAnalystRatings } from "./polygonAnalystData.js";
@@ -388,11 +389,11 @@ export interface ChainSummary {
   atmStrike: number;
   atmCallBid: number;
   atmCallAsk: number;
-  atmCallIV: number;
+  atmCallIV: number | null;
   atmCallOI: number;
   atmPutBid: number;
   atmPutAsk: number;
-  atmPutIV: number;
+  atmPutIV: number | null;
   atmPutOI: number;
   topVolumeCalls: Array<{ strike: number; expiration: string; volume: number; oi: number; bid: number; ask: number; iv: number; delta: number }>;
   topVolumePuts: Array<{ strike: number; expiration: string; volume: number; oi: number; bid: number; ask: number; iv: number; delta: number }>;
@@ -1430,7 +1431,7 @@ function atmIvPctForExpiry(
   chain: ChainContract[],
   expiration: string,
   price: number,
-  ivToPct: (iv: number | null | undefined) => number,
+  ivToPct: (iv: number | null | undefined) => number | null,
 ): number | null {
   const calls = chain.filter(c => c.expiration === expiration && (c.type === "call" || c.optionType === "CALL"));
   const puts = chain.filter(c => c.expiration === expiration && (c.type === "put" || c.optionType === "PUT"));
@@ -1444,7 +1445,12 @@ function atmIvPctForExpiry(
   const c = calls.find(x => x.strike === strike) ?? calls.sort((a, b) => Math.abs(a.strike - price) - Math.abs(b.strike - price))[0];
   const p = puts.find(x => x.strike === strike) ?? puts.sort((a, b) => Math.abs(a.strike - price) - Math.abs(b.strike - price))[0];
   if (!c || !p) return null;
-  return Math.round(((ivToPct(c.impliedVolatility) + ivToPct(p.impliedVolatility)) / 2) * 100) / 100;
+  const callIv = ivToPct(c.impliedVolatility);
+  const putIv = ivToPct(p.impliedVolatility);
+  if (callIv == null && putIv == null) return null;
+  if (callIv == null) return putIv;
+  if (putIv == null) return callIv;
+  return Math.round(((callIv + putIv) / 2) * 100) / 100;
 }
 
 function buildTermStructure5pt(
@@ -1452,7 +1458,7 @@ function buildTermStructure5pt(
   price: number,
   curatedExpirations: CuratedExpiration[],
   availableExpirations: string[],
-  ivToPct: (iv: number | null | undefined) => number,
+  ivToPct: (iv: number | null | undefined) => number | null,
 ): Array<{ expiry: string; daysToExpiry: number; atmIV: number }> {
   const byExp = new Map<string, number>();
   for (const ce of curatedExpirations) {
@@ -1534,7 +1540,7 @@ function computeSkew25DeltaForChain(
     if (!putPick || !callPick) return null;
     const putN = normalizeStrategistIv(putPick.impliedVolatility, "chain");
     const callN = normalizeStrategistIv(callPick.impliedVolatility, "chain");
-    if (putN.clamped || callN.clamped) return null;
+    if (!isReliableIv(putN) || !isReliableIv(callN)) return null;
     const putIV = putN.pct;
     const callIV = callN.pct;
     const skewPoints = Math.round((putIV - callIV) * 100) / 100;
@@ -1838,19 +1844,40 @@ export function summarizeOptionsChain(
   // FIX 3–4: IV as decimal → percent; artifact spikes clamped via
   // strategistIvNormalize (STRATEGIST_IV_CEILING_PCT) with per-field clamp count.
   let ivArtifactClampCount = 0;
-  const ivToPct = (iv: number | null | undefined): number => {
+  const ivToPct = (iv: number | null | undefined): number | null => {
+    const n = normalizeStrategistIv(iv, "chain");
+    if (n.clamped) ivArtifactClampCount += 1;
+    return isReliableIv(n) ? n.pct : null;
+  };
+
+  const ivToPctOrZero = (iv: number | null | undefined): number => {
     const n = normalizeStrategistIv(iv, "chain");
     if (n.clamped) ivArtifactClampCount += 1;
     return n.pct;
   };
 
+  const reliableAvgIvPctForContracts = (contracts: ChainContract[]): number | null => {
+    let sum = 0;
+    let reliableCount = 0;
+    for (const c of contracts) {
+      const n = normalizeStrategistIv(c.impliedVolatility, "chain");
+      if (n.clamped) ivArtifactClampCount += 1;
+      if (isReliableIv(n)) {
+        sum += n.pct;
+        reliableCount += 1;
+      }
+    }
+    if (reliableCount === 0) return null;
+    return Math.round((sum / reliableCount) * 100) / 100;
+  };
+
   const topVolumeCalls = [...calls].sort((a, b) => b.volume - a.volume).slice(0, 5).map(c => ({
     strike: c.strike, expiration: c.expiration, volume: c.volume, oi: c.openInterest,
-    bid: c.bid, ask: c.ask, iv: ivToPct(c.impliedVolatility), delta: c.delta,
+    bid: c.bid, ask: c.ask, iv: ivToPctOrZero(c.impliedVolatility), delta: c.delta,
   }));
   const topVolumePuts = [...puts].sort((a, b) => b.volume - a.volume).slice(0, 5).map(c => ({
     strike: c.strike, expiration: c.expiration, volume: c.volume, oi: c.openInterest,
-    bid: c.bid, ask: c.ask, iv: ivToPct(c.impliedVolatility), delta: c.delta,
+    bid: c.bid, ask: c.ask, iv: ivToPctOrZero(c.impliedVolatility), delta: c.delta,
   }));
 
   const unusualActivity: ChainSummary["unusualActivity"] = [];
@@ -1873,10 +1900,10 @@ export function summarizeOptionsChain(
   let frontMonthIV: number | null = null;
   let backMonthIV: number | null = null;
   if (expirations.length >= 2) {
-    const frontContracts = chain.filter(c => c.expiration === expirations[0] && c.impliedVolatility > 0);
-    const backContracts = chain.filter(c => c.expiration === expirations[expirations.length - 1] && c.impliedVolatility > 0);
-    if (frontContracts.length > 0) frontMonthIV = Math.round(frontContracts.reduce((s, c) => s + c.impliedVolatility, 0) / frontContracts.length * 10000) / 100;
-    if (backContracts.length > 0) backMonthIV = Math.round(backContracts.reduce((s, c) => s + c.impliedVolatility, 0) / backContracts.length * 10000) / 100;
+    const frontContracts = chain.filter(c => c.expiration === expirations[0]);
+    const backContracts = chain.filter(c => c.expiration === expirations[expirations.length - 1]);
+    frontMonthIV = reliableAvgIvPctForContracts(frontContracts);
+    backMonthIV = reliableAvgIvPctForContracts(backContracts);
   }
 
   const mustIncludeExpiries: string[] = [];

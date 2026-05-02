@@ -12,6 +12,10 @@ export interface NormalizedIv {
   source: StrategistIvSource;
 }
 
+export function isReliableIv(n: NormalizedIv): boolean {
+  return !n.clamped && !n.unreliable;
+}
+
 /**
  * Unified IV normalization for strategist payloads (Item 16).
  * Raw chain IV is treated as decimal (0.4125 → 41.25%).
@@ -20,8 +24,10 @@ export function normalizeStrategistIv(
   raw: number | null | undefined,
   source: StrategistIvSource = "chain",
 ): NormalizedIv {
-  const n = typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
-  const pct = Math.round(n * 10000) / 100;
+  if (raw == null || !Number.isFinite(raw) || raw <= 0) {
+    return { pct: 0, clamped: false, unreliable: true, source };
+  }
+  const pct = Math.round(raw * 10000) / 100;
   if (pct > STRATEGIST_IV_CEILING_PCT) {
     return {
       pct: STRATEGIST_IV_CEILING_PCT,

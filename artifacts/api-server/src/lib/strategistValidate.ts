@@ -627,7 +627,7 @@ function buildDataPackage(input: ValidationInput): string {
     // ChainSummary IVs are ALREADY percent values (summarizeOptionsChain
     // calls ivToPct → e.g. 41.25 means 41.25%). Do NOT multiply by 100
     // here — that produced 4125% in earlier drafts.
-    const ivRender = (iv: number) => iv > 0 && Number.isFinite(iv) ? `${iv.toFixed(1)}%` : "—";
+    const ivRender = (iv: number | null | undefined) => iv != null && iv > 0 && Number.isFinite(iv) ? `${iv.toFixed(1)}%` : "—";
     lines.push(`ATM call: bid ${fmtNum(cs.atmCallBid)} / ask ${fmtNum(cs.atmCallAsk)} / IV ${ivRender(cs.atmCallIV)} / OI ${cs.atmCallOI}`);
     lines.push(`ATM put : bid ${fmtNum(cs.atmPutBid)} / ask ${fmtNum(cs.atmPutAsk)} / IV ${ivRender(cs.atmPutIV)} / OI ${cs.atmPutOI}`);
     if (cs.frontMonthIV != null && cs.backMonthIV != null) {
