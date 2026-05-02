@@ -627,6 +627,7 @@ export const strategistTelemetryTable = pgTable("strategist_telemetry", {
   catalystAlignment: text("catalyst_alignment"),
   dataSource: text("data_source"),
   fetchFailureMode: text("fetch_failure_mode"),
+  fullDiagnostic: jsonb("full_diagnostic"),
 });
 
 export type StrategistTelemetry = typeof strategistTelemetryTable.$inferSelect;
