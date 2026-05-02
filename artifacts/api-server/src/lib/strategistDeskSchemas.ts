@@ -1,5 +1,24 @@
 import { z } from "zod";
 
+/** Strategist options-chain skew snapshot (summarizeOptionsChain / ChainSummary subset). */
+export const StrategistSkew25DeltaSchema = z.object({
+  putIV: z.number(),
+  callIV: z.number(),
+  skewPoints: z.number(),
+  asOfExpiry: z.string(),
+});
+
+/**
+ * Payload slice for 25Δ skew: numeric skew object (nullable) plus machine-readable reason (always set).
+ * Reason includes `clean_25d_first_expiry`, `skew_fallback_*`, `no_expirations`, `no_valid_expiry`, `skew_indeterminate_*`, etc.
+ */
+export const StrategistChainSkewPayloadSchema = z.object({
+  skew25Delta: StrategistSkew25DeltaSchema.nullable(),
+  skew25DeltaReason: z.string(),
+});
+
+export type StrategistChainSkewPayload = z.infer<typeof StrategistChainSkewPayloadSchema>;
+
 export const DeskKeyStrikeSchema = z.object({
   strike: z.number(),
   expiry: z.string(),

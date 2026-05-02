@@ -409,8 +409,8 @@ export interface ChainSummary {
   termStructure5pt: Array<{ expiry: string; daysToExpiry: number; atmIV: number }>;
   /** 25Δ put IV minus 25Δ call IV (vol points); null if unavailable. */
   skew25Delta: { putIV: number; callIV: number; skewPoints: number; asOfExpiry: string } | null;
-  /** Populated when skew25Delta is null. */
-  skew25DeltaReason: string | null;
+  /** Machine-readable skew resolution (always set; see computeSkew25DeltaForChain). */
+  skew25DeltaReason: string;
   /** ATM straddle mid (call+put) for front-month expiry. */
   impliedMove: {
     dollar: number;
@@ -1508,13 +1508,13 @@ function computeSkew25DeltaForChain(
   chain: ChainContract[],
   availableExpirations: string[],
   price: number,
-): { skew: ChainSummary["skew25Delta"]; reason: string | null } {
+): { skew: ChainSummary["skew25Delta"]; reason: string } {
   if (availableExpirations.length === 0) {
-    return { skew: null, reason: "no expirations" };
+    return { skew: null, reason: "no_expirations" };
   }
   const withDte = availableExpirations.map(exp => ({ exp, dte: computeDte(exp) })).filter(x => x.dte > 0);
   const anchor = withDte.find(x => x.dte > 7) ?? withDte[0];
-  if (!anchor) return { skew: null, reason: "no valid expiry" };
+  if (!anchor) return { skew: null, reason: "no_valid_expiry" };
   const expOrder = [
     anchor.exp,
     ...withDte
@@ -1559,7 +1559,7 @@ function computeSkew25DeltaForChain(
       const t = deltaTargets[ti]!;
       const skew = skewFromTargetsForExpiry(exp, t.call, t.put);
       if (!skew) continue;
-      if (ei === 0 && ti === 0) return { skew, reason: null };
+      if (ei === 0 && ti === 0) return { skew, reason: "clean_25d_first_expiry" };
       if (ei === 0 && ti === 1) {
         return { skew, reason: "skew_fallback_20d_same_expiry_after_25d_ceiling" };
       }
@@ -1971,7 +1971,7 @@ export function summarizeOptionsChain(
     ivCeilingPct: STRATEGIST_IV_CEILING_PCT,
     termStructure5pt,
     skew25Delta: skew,
-    skew25DeltaReason: skew == null ? skew25DeltaReason : null,
+    skew25DeltaReason,
     impliedMove,
   };
 }
