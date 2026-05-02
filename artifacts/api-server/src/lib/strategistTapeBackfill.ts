@@ -25,8 +25,9 @@ const POLYGON_API = "https://api.polygon.io";
 const MAX_EXPIRIES = 3;
 const QUOTE_WINDOW_MS = 120_000;
 const QUOTE_PREPAD_MS = 5_000;
-const TRADE_PAGE_LIMIT = 1000;
-const QUOTE_PAGE_LIMIT = 1000;
+/** Polygon max page size for /v3/trades and /v3/quotes (fewer round trips on liquid names). */
+const TRADE_PAGE_LIMIT = 50_000;
+const QUOTE_PAGE_LIMIT = 50_000;
 /** Overall wall-clock budget for the whole symbol backfill (many OCC roots). */
 const DEFAULT_BUDGET_MS = 180_000;
 /** Hard cap on wall time spent inside a single OCC (fetch + classify + DB). */
@@ -47,7 +48,8 @@ export type TapeBackfillDiagnosticReason =
   | "skipped_other"
   | "empty_polygon_response"
   | "empty_after_filter"
-  | "polygon_error";
+  | "polygon_error"
+  | "timeout_no_inserts";
 
 export interface TapeBackfillCoverageGeometry {
   /** Market-cap tier used to pick band width and OCC cap. */
@@ -72,6 +74,24 @@ export interface TapeBackfillStatus {
   tradesInserted: number;
   /** How session tape OCCs were chosen (tiered band + volume-ranked cap). */
   coverageGeometry?: TapeBackfillCoverageGeometry;
+  /** Aggregate parsed trade rows returned from Polygon REST across all OCCs (before DB insert). */
+  totalTradesFromPolygon: number;
+  /** Rows filtered by classifier persistence for backfill (should stay zero with current backfill rule). */
+  persistRejectedCount: number;
+  /** True if trade or quote pagination stopped early (deadline, HTTP error, or 429 exhaustion). */
+  anyTruncated: boolean;
+  /** True if any Polygon REST response in this run was non-OK HTTP (excluding handled 429 retries). */
+  anySawPolygonHttpError: boolean;
+  /** NY calendar date string at run start (America/New_York). */
+  todayYmd: string;
+  /** True when sessionDate equals todayYmd (queries current calendar session date). */
+  isSessionForToday: boolean;
+  /** True when today is the session date and wall clock is inside that session's RTH window. */
+  sessionInProgress: boolean;
+  /** Session RTH open time for tape query (UTC ms). */
+  queryOpenMs: number;
+  /** Session RTH close time for tape query (UTC ms). */
+  queryCloseMs: number;
 }
 
 interface ChainLike {
@@ -552,6 +572,15 @@ export async function runStrategistTapeBackfill(args: {
       occRequested: 0,
       occCompleted: 0,
       tradesInserted: 0,
+      totalTradesFromPolygon: 0,
+      persistRejectedCount: 0,
+      anyTruncated: false,
+      anySawPolygonHttpError: false,
+      todayYmd,
+      isSessionForToday,
+      sessionInProgress,
+      queryOpenMs: openMs,
+      queryCloseMs: closeMs,
     };
   }
 
@@ -569,6 +598,15 @@ export async function runStrategistTapeBackfill(args: {
       occRequested: 0,
       occCompleted: 0,
       tradesInserted: 0,
+      totalTradesFromPolygon: 0,
+      persistRejectedCount: 0,
+      anyTruncated: false,
+      anySawPolygonHttpError: false,
+      todayYmd,
+      isSessionForToday,
+      sessionInProgress,
+      queryOpenMs: openMs,
+      queryCloseMs: closeMs,
     };
   }
 
@@ -591,6 +629,15 @@ export async function runStrategistTapeBackfill(args: {
       occCompleted: 0,
       tradesInserted: 0,
       coverageGeometry,
+      totalTradesFromPolygon: 0,
+      persistRejectedCount: 0,
+      anyTruncated: false,
+      anySawPolygonHttpError: false,
+      todayYmd,
+      isSessionForToday,
+      sessionInProgress,
+      queryOpenMs: openMs,
+      queryCloseMs: closeMs,
     };
   }
   const startMs = openMs;
@@ -812,12 +859,29 @@ export async function runStrategistTapeBackfill(args: {
     occCompleted === occList.length
   ) {
     tapeBackfillReason = "empty_polygon_response";
+  } else if (tradesInserted === 0 && anyTruncated === true) {
+    tapeBackfillReason = "timeout_no_inserts";
   } else {
     tapeBackfillReason = "skipped_other";
   }
 
   logger.info(
-    { ticker, status, occCompleted, occRequested: occList.length, tradesInserted, anyTruncated, tapeBackfillReason, coverageGeometry },
+    {
+      ticker,
+      tapeBackfillReason,
+      status,
+      reason: anyTruncated ? "timeout_or_pagination" : anyError ? "insert_or_rollups" : null,
+      occRequested: occList.length,
+      occCompleted,
+      tradesInserted,
+      totalTradesFromPolygon,
+      persistRejectedCount,
+      anyTruncated,
+      anySawPolygonHttpError,
+      sessionDate,
+      queryOpenMs: openMs,
+      queryCloseMs: closeMs,
+    },
     "strategistTapeBackfill: done",
   );
 
@@ -831,5 +895,14 @@ export async function runStrategistTapeBackfill(args: {
     occCompleted,
     tradesInserted,
     coverageGeometry,
+    totalTradesFromPolygon,
+    persistRejectedCount,
+    anyTruncated,
+    anySawPolygonHttpError,
+    todayYmd,
+    isSessionForToday,
+    sessionInProgress,
+    queryOpenMs: openMs,
+    queryCloseMs: closeMs,
   };
 }
