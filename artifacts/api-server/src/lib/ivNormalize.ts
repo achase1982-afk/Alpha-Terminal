@@ -323,13 +323,39 @@ export async function countEquityDailyCloses(symbol: string): Promise<number> {
 }
 
 /**
+ * Session dates (YYYY-MM-DD) whose closes participate in the last `nReturns`
+ * close-to-close returns (calendar sessions touching those moves).
+ */
+function sessionDatesInLastNReturns(
+  chronological: Array<{ date: string; close: number }>,
+  nReturns: number,
+): Set<string> {
+  const dates = new Set<string>();
+  const n = chronological.length;
+  if (n < 2) return dates;
+  const logRetLen = n - 1;
+  if (logRetLen < nReturns) return dates;
+  const startR = logRetLen - nReturns;
+  for (let r = startR; r <= logRetLen - 1; r++) {
+    dates.add(chronological[r]!.date);
+    dates.add(chronological[r + 1]!.date);
+  }
+  return dates;
+}
+
+/**
  * HV20 / HV30 from close-to-close log returns (annualized sqrt(252)).
  * Requires at least 31 closes (30 return observations) for HV30; returns null otherwise.
  */
-export async function getRealizedVolFromEquityDaily(symbol: string): Promise<{
+export async function getRealizedVolFromEquityDaily(
+  symbol: string,
+  lastEarningsDate?: string | null,
+): Promise<{
   hv20: number;
   hv30: number;
   asOfDate: string;
+  hv20EarningsContaminated: boolean;
+  hv30EarningsContaminated: boolean;
 } | null> {
   const symU = symbol.toUpperCase().trim();
   if (!symU) return null;
@@ -368,7 +394,20 @@ export async function getRealizedVolFromEquityDaily(symbol: string): Promise<{
   const hv30 = hvForLast(30);
   const hv20 = hvForLast(20);
   if (hv30 == null || hv20 == null) return null;
-  return { hv20, hv30, asOfDate };
+
+  const earn = lastEarningsDate && /^\d{4}-\d{2}-\d{2}$/.test(lastEarningsDate) ? lastEarningsDate : null;
+  const d20 = sessionDatesInLastNReturns(chronological, 20);
+  const d30 = sessionDatesInLastNReturns(chronological, 30);
+  const hv20EarningsContaminated = earn != null && d20.has(earn);
+  const hv30EarningsContaminated = earn != null && d30.has(earn);
+
+  return {
+    hv20,
+    hv30,
+    asOfDate,
+    hv20EarningsContaminated,
+    hv30EarningsContaminated,
+  };
 }
 
 /**

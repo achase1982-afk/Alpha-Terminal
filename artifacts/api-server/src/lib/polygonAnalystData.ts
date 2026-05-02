@@ -10,6 +10,8 @@ function polygonKey(): string | null {
   return k && k.length > 0 ? k : null;
 }
 
+export type ConsensusPriceTargetFreshness = "fresh" | "stale" | "unknown";
+
 export interface PolygonAnalystConsensus {
   symbol: string;
   consensus_price_target: number | null;
@@ -23,6 +25,10 @@ export interface PolygonAnalystConsensus {
   strong_sell: number | null;
   consensus_rating: string | null;
   consensus_rating_value: number | null;
+  /** As-of date for consensus PT from upstream, if the API provides one. */
+  consensusPriceTargetAsOfDate: string | null;
+  /** Derived from `consensusPriceTargetAsOfDate` vs current calendar date. */
+  consensusPriceTargetFreshness: ConsensusPriceTargetFreshness;
 }
 
 export interface PolygonAnalystRatingRow {
@@ -40,8 +46,44 @@ export interface PolygonAnalystRatingRow {
   price_target_action: string | null;
 }
 
+function firstYmdString(v: unknown): string | null {
+  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
+  return null;
+}
+
+/** Extract a consensus as-of / update date from a Polygon Benzinga consensus row. */
+function consensusAsOfFromRow(row: Record<string, unknown>): string | null {
+  const keys = [
+    "as_of", "asOf", "as_of_date", "asOfDate", "last_updated", "lastUpdated",
+    "updated_at", "updatedAt", "consensus_date", "consensusDate",
+  ];
+  for (const k of keys) {
+    const y = firstYmdString(row[k]);
+    if (y) return y;
+  }
+  return null;
+}
+
+function consensusFreshness(asOf: string | null): ConsensusPriceTargetFreshness {
+  if (!asOf || !/^\d{4}-\d{2}-\d{2}$/.test(asOf)) return "unknown";
+  const asOfMs = new Date(`${asOf}T00:00:00Z`).getTime();
+  const todayMs = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`).getTime();
+  if (!Number.isFinite(asOfMs)) return "unknown";
+  const ageDays = Math.floor((todayMs - asOfMs) / 86_400_000);
+  return ageDays <= 30 ? "fresh" : "stale";
+}
+
+function consensusDefaults(_sym: string): Pick<
+  PolygonAnalystConsensus,
+  "consensusPriceTargetAsOfDate" | "consensusPriceTargetFreshness"
+> {
+  return {
+    consensusPriceTargetAsOfDate: null,
+    consensusPriceTargetFreshness: "unknown",
+  };
+}
+
 function normalizeAction(ratingAction: string, ptAction: string): string {
-  const ra = ratingAction.toLowerCase();
   if (ra.includes("initiate")) return "initiated";
   if (ra.includes("upgrade")) return "upgraded";
   if (ra.includes("downgrade")) return "downgraded";
@@ -77,8 +119,10 @@ export async function fetchPolygonAnalystConsensus(symbol: string): Promise<Poly
         strong_sell: null,
         consensus_rating: null,
         consensus_rating_value: null,
+        ...consensusDefaults(sym),
       };
     }
+    const asOf = consensusAsOfFromRow(row);
     return {
       symbol: sym,
       consensus_price_target: typeof row["consensus_price_target"] === "number" ? row["consensus_price_target"] : null,
@@ -92,6 +136,8 @@ export async function fetchPolygonAnalystConsensus(symbol: string): Promise<Poly
       strong_sell: typeof row["strong_sell_ratings"] === "number" ? row["strong_sell_ratings"] : null,
       consensus_rating: typeof row["consensus_rating"] === "string" ? row["consensus_rating"] : null,
       consensus_rating_value: typeof row["consensus_rating_value"] === "number" ? row["consensus_rating_value"] : null,
+      consensusPriceTargetAsOfDate: asOf,
+      consensusPriceTargetFreshness: consensusFreshness(asOf),
     };
   } catch {
     return null;

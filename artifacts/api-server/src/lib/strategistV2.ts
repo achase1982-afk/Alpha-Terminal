@@ -205,6 +205,12 @@ interface TickerData {
   earningsDate: string | null;
   earningsConfirmed: boolean;
   earningsSource: "benzinga" | "yahoo" | "finnhub" | null;
+  /** Most recent reported earnings (YYYY-MM-DD), when calendar sources provide it. */
+  lastEarningsDate: string | null;
+  /** Calendar days since lastEarningsDate. */
+  daysSinceEarnings: number | null;
+  /** Set when prior earnings date could not be resolved. */
+  tickerDataNote?: string | null;
   analystActions48h: string[];
   halted: boolean;
 }
@@ -676,7 +682,7 @@ export async function analyzeTickerV2(
   });
 
   const [realizedVol, realIvDepth] = await Promise.all([
-    getRealizedVolFromEquityDaily(ticker),
+    getRealizedVolFromEquityDaily(ticker, tickerData.lastEarningsDate),
     countRealIvHistoryDays(ticker),
   ]);
   assertAnalyzeNotCancelled(progress);
@@ -2118,7 +2124,7 @@ function buildDataPackage(
   catalystEvaluation?: CatalystEvaluation | null,
   deskCatalystWindowExpirationISO?: string,
   volPackageExtras?: {
-    realizedVol: Awaited<ReturnType<typeof getRealizedVolFromEquityDaily>>;
+    realizedVol: Awaited<ReturnType<typeof getRealizedVolFromEquityDaily>> | null;
     ivrContext: ReturnType<typeof buildIvrContext>;
   },
   tapeBackfill?: TapeBackfillStatus,
@@ -2130,6 +2136,21 @@ function buildDataPackage(
   },
 ): string {
   const currentDate = new Date().toISOString().slice(0, 10);
+  const rawRv = volPackageExtras?.realizedVol ?? null;
+  const realizedVolPayload =
+    rawRv == null
+      ? null
+      : {
+          hv20: rawRv.hv20,
+          hv30: rawRv.hv30,
+          asOfDate: rawRv.asOfDate,
+          hv20EarningsContaminated: rawRv.hv20EarningsContaminated,
+          hv30EarningsContaminated: rawRv.hv30EarningsContaminated,
+          earningsDateInWindow:
+            (rawRv.hv20EarningsContaminated || rawRv.hv30EarningsContaminated) && tickerData.lastEarningsDate
+              ? tickerData.lastEarningsDate
+              : null,
+        };
   const dataQualitySummary = buildDataQualitySummary({
     ticker,
     tickerData,
@@ -2164,6 +2185,8 @@ function buildDataPackage(
     polygonAnalyst: enrichment?.analystConsensus
       ? {
           consensus: enrichment.analystConsensus,
+          consensusPriceTargetAsOfDate: enrichment.analystConsensus.consensusPriceTargetAsOfDate,
+          consensusPriceTargetFreshness: enrichment.analystConsensus.consensusPriceTargetFreshness,
           recentRatings: enrichment.analystRatings?.slice(0, 15) ?? [],
           sourceNote: "Polygon Benzinga partner API (consensus + ratings).",
         }
@@ -2171,6 +2194,9 @@ function buildDataPackage(
     secFundamentals: enrichment?.fundamentalsSummary ?? { available: false },
     earningsDaysAway: tickerData.earningsDaysAway,
     earningsWithin48h: tickerData.earningsWithin48h,
+    lastEarningsDate: tickerData.lastEarningsDate,
+    daysSinceEarnings: tickerData.daysSinceEarnings,
+    tickerDataNote: tickerData.tickerDataNote ?? null,
     analystActions48h: tickerData.analystActions48h,
     optionsChainSummary: {
       atmStrike: chainSummary.atmStrike,
@@ -2193,7 +2219,7 @@ function buildDataPackage(
     },
     curatedExpirations: chainSummary.curatedExpirations,
     availableExpirations: chainSummary.availableExpirations,
-    realizedVol: volPackageExtras?.realizedVol ?? null,
+    realizedVol: realizedVolPayload,
     ivrContext: volPackageExtras?.ivrContext ?? { source: null, asOfDate: null, daysOfHistory: null },
     polygonFlowHighlights: polygonHighlights ? {
       asOfDate: polygonHighlights.asOfDate,
@@ -3137,6 +3163,11 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
         earningsDate: earningsInfo?.earningsDate ?? null,
         earningsConfirmed: earningsInfo?.confirmed ?? false,
         earningsSource: earningsInfo?.source ?? null,
+        lastEarningsDate: earningsInfo?.lastEarningsDate ?? null,
+        daysSinceEarnings: earningsInfo?.lastEarningsDaysSince ?? null,
+        tickerDataNote: earningsInfo?.lastEarningsDate
+          ? null
+          : "Prior earnings date unavailable from merged earnings calendar sources for this symbol.",
         analystActions48h: [],
         halted: q.securityStatus === "Halted" || q.securityStatus === "HALTED",
       },

@@ -69,6 +69,8 @@ export interface FlowSessionAggressorTotals {
   midCount: number;
   unknownCount: number;
   totalPrints: number;
+  /** (ask + bid + mid) / totalPrints as 0–100; 0 when totalPrints is 0. */
+  knownPct: number;
 }
 
 export interface PolygonFlowTape {
@@ -340,6 +342,12 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
       else unknownCount++;
     }
 
+    const totalPrints = allPrints.length;
+    const knownPct =
+      totalPrints > 0
+        ? Math.round(((askCount + bidCount + midCount) / totalPrints) * 1000) / 10
+        : 0;
+
     const execPerStrike: FlowExecStrikeRow[] = execRows.map((r) => ({
       optionType: r.optionType === "call" ? "call" : "put",
       strike: r.strike,
@@ -383,7 +391,8 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
         bidCount,
         midCount,
         unknownCount,
-        totalPrints: allPrints.length,
+        totalPrints,
+        knownPct,
       },
     };
   } catch (err) {
@@ -461,6 +470,7 @@ function buildEodFallbackSessionTape(sessionDate: string, rows: RawStrikeRow[]):
   }));
 
   const totalPrints = withVol.length;
+  const knownPct = 0;
 
   return {
     sessionDate,
