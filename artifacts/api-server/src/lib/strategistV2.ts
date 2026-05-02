@@ -771,6 +771,7 @@ export async function analyzeTickerV2(
       tapeBackfillStatus = {
         status: "failed",
         reason: "exception",
+        tapeBackfillReason: "skipped_other",
         sessionDate: new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }),
         coverageEndMs: Date.now(),
         occRequested: 0,
@@ -781,7 +782,7 @@ export async function analyzeTickerV2(
   }
 
   assertAnalyzeNotCancelled(progress);
-  const polygonHighlights = await getPolygonFlowHighlights(ticker);
+  const polygonHighlights = await getPolygonFlowHighlights(ticker, tapeBackfillStatus);
   if (polygonHighlights) {
     logger.info({
       ticker,
@@ -2162,7 +2163,9 @@ function buildDataQualitySummary(args: {
       highlightsAsOf: polygonHighlights?.asOfDate ?? null,
       sessionTapeKind: tapeKind,
       tapeBackfillStatus,
-      tapeBackfillReason: tapeBackfill?.reason ?? null,
+      tapeBackfillReason:
+        polygonHighlights?.sessionTape?.tapeBackfillReason ?? tapeBackfill?.tapeBackfillReason ?? null,
+      tapeBackfillReasonLegacy: tapeBackfill?.reason ?? null,
       tapeBackfillCoverage: tapeBackfill?.coverageGeometry ?? null,
       tapeBackfillOccCompleted: tapeBackfill?.occCompleted ?? null,
       tapeBackfillOccRequested: tapeBackfill?.occRequested ?? null,
@@ -2345,6 +2348,7 @@ function buildDataPackage(
     pkg.tapeBackfill = {
       status: tapeBackfill.status,
       reason: tapeBackfill.reason,
+      tapeBackfillReason: tapeBackfill.tapeBackfillReason,
       sessionDate: tapeBackfill.sessionDate,
       coverageEndMs: tapeBackfill.coverageEndMs,
       occRequested: tapeBackfill.occRequested,

@@ -33,8 +33,27 @@ function spreadPct(bid: number, ask: number): number {
 }
 
 /**
+ * Live WebSocket watcher: keep only sweeps, blocks, large notional, or
+ * volume-vs-baseline spikes so the unusual-flow pipeline is not flooded.
+ */
+export function shouldPersistLiveWatcherRow(cl: ClassifiedPersistenceRow): boolean {
+  return cl.shouldPersist;
+}
+
+/**
+ * REST tape backfill for Strategist: persist every parsed trade so session
+ * rollups and aggressor totals reflect the full tape. Noise filtering is not
+ * appropriate here (small prints still carry aggressor side when NBBO exists).
+ */
+export function shouldPersistBackfillRow(_cl: ClassifiedPersistenceRow): boolean {
+  return true;
+}
+
+/**
  * Single source for live watcher and REST tape backfill so sweep, block,
- * large, and aggressor rules stay aligned with enqueueClassifiedTrade.
+ * large, aggressor, and notionals stay aligned with enqueueClassifiedTrade.
+ * Call sites choose persistence with {@link shouldPersistLiveWatcherRow} or
+ * {@link shouldPersistBackfillRow}.
  */
 export function classifyForFlowPersistence(args: {
   price: number;

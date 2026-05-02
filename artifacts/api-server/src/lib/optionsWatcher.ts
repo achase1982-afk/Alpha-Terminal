@@ -1,6 +1,6 @@
 import { logger } from "./logger.js";
 import { enqueueClassifiedTrade, parseOcc } from "./optionsFlowPersistence.js";
-import { classifyForFlowPersistence } from "./optionsTradeClassifier.js";
+import { classifyForFlowPersistence, shouldPersistLiveWatcherRow } from "./optionsTradeClassifier.js";
 import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 import { fetchPolygonChain, type PolygonParsedContract } from "./polygonChain.js";
 import {
@@ -362,7 +362,7 @@ function handleTrade(t: PolygonOptionTrade): void {
       typeof baselineVol === "number" && baselineVol > 0 ? baselineVol : null,
     openInterest: oi > 0 ? oi : null,
   });
-  const { isSweep, isBlockForDb, isLarge, shouldPersist, side: aggressorSide } = classified;
+  const { isSweep, isBlockForDb, isLarge, side: aggressorSide } = classified;
   const occParsed = parseOcc(t.sym);
   const dteDays = occParsed ? dteCalendarDays(occParsed.expiration, st.lastTradeTs) : null;
   const sessionPhase = sessionPhaseFromTradeMs(st.lastTradeTs);
@@ -373,7 +373,7 @@ function handleTrade(t: PolygonOptionTrade): void {
     st.largestPrintNotional = notional;
   }
 
-  if (shouldPersist) {
+  if (shouldPersistLiveWatcherRow(classified)) {
     st.liveEventCount++;
     st.events.push({
       ts: st.lastTradeTs,

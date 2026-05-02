@@ -294,10 +294,6 @@ export async function backfillHistoricalIV(
 
   const probe = await probePolygonRate();
   report.rateProbe = probe;
-  if (probe.tier === "starter") {
-    report.errors.push(`Aborted: ${probe.message}`);
-    return report;
-  }
 
   const allSymbols = opts.skipSectorEtfs
     ? [...new Set(symbols.map(s => s.toUpperCase()))]

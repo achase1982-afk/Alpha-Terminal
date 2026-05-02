@@ -2,6 +2,7 @@ import { db, optionsFlowPerStrikeTable, optionsFlowExecPerStrikeTable, optionsFl
 import { and, eq, inArray, sql, desc } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
+import type { TapeBackfillStatus, TapeBackfillDiagnosticReason } from "./strategistTapeBackfill.js";
 
 export interface FlowStrikeHighlight {
   strike: number;
@@ -77,6 +78,11 @@ export interface PolygonFlowTape {
   sessionDate: string;
   /** `live` = classified prints + rollup from the flow watcher; `eod_fallback` = synthesized from EOD per-strike snapshot when live tape rows are missing. */
   tapeKind?: "live" | "eod_fallback";
+  /**
+   * Why live tape is present or EOD synthesis was used. Set when Strategist
+   * passes tape backfill status; see strategistTapeBackfill.TapeBackfillDiagnosticReason.
+   */
+  tapeBackfillReason?: TapeBackfillDiagnosticReason;
   execPerStrike: FlowExecStrikeRow[];
   topPrints: FlowTopPrintRow[];
   aggressorByStrike: FlowStrikeAggressorMix[];
@@ -405,12 +411,40 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
   }
 }
 
+function mapTapeBackfillToSessionContext(
+  tape: TapeBackfillStatus | undefined,
+  usedEodFallback: boolean,
+): TapeBackfillDiagnosticReason | undefined {
+  if (!tape) {
+    return usedEodFallback ? "skipped_other" : undefined;
+  }
+  if (usedEodFallback) {
+    const r = tape.tapeBackfillReason;
+    if (
+      r === "empty_after_filter"
+      || r === "empty_polygon_response"
+      || r === "polygon_error"
+    ) {
+      return r;
+    }
+    if (tape.status === "skipped" && tape.reason === "no_api_key") return "skipped_no_api_key";
+    if (tape.status === "skipped" && tape.reason === "outside_rth") return "skipped_outside_rth";
+    if (tape.status === "skipped") return "skipped_other";
+    return "skipped_other";
+  }
+  return tape.tapeBackfillReason;
+}
+
 /**
  * When the live classified-print pipeline has no rows for this symbol/date,
  * synthesize a non-null tape from EOD per-strike volume so downstream desks
  * still receive a consistent shape (zeros for sweep/block; no aggressor).
  */
-function buildEodFallbackSessionTape(sessionDate: string, rows: RawStrikeRow[]): PolygonFlowTape | null {
+function buildEodFallbackSessionTape(
+  sessionDate: string,
+  rows: RawStrikeRow[],
+  tapeBackfill?: TapeBackfillStatus,
+): PolygonFlowTape | null {
   const withVol = rows.filter((r) => (r.dailyVolume ?? 0) > 0);
   if (withVol.length === 0) return null;
 
@@ -475,6 +509,7 @@ function buildEodFallbackSessionTape(sessionDate: string, rows: RawStrikeRow[]):
   return {
     sessionDate,
     tapeKind: "eod_fallback",
+    tapeBackfillReason: mapTapeBackfillToSessionContext(tapeBackfill, true),
     execPerStrike,
     topPrints,
     aggressorByStrike,
@@ -494,6 +529,7 @@ function buildEodFallbackSessionTape(sessionDate: string, rows: RawStrikeRow[]):
  */
 export async function getPolygonFlowHighlights(
   symbol: string,
+  tapeBackfill?: TapeBackfillStatus,
 ): Promise<PolygonFlowHighlights | null> {
   const sym = symbol.toUpperCase();
   try {
@@ -525,13 +561,16 @@ export async function getPolygonFlowHighlights(
     for (const d of sessionTapeDatesToFetch(asOfDate)) {
       const st = await fetchSessionTape(sym, d);
       if (st) {
-        sessionTape = st;
+        sessionTape = {
+          ...st,
+          tapeBackfillReason: mapTapeBackfillToSessionContext(tapeBackfill, false),
+        };
         sessionTapeDate = d;
         break;
       }
     }
     if (!sessionTape) {
-      sessionTape = buildEodFallbackSessionTape(asOfDate, rawRows);
+      sessionTape = buildEodFallbackSessionTape(asOfDate, rawRows, tapeBackfill);
       if (sessionTape) {
         logger.info({ symbol: sym, asOfDate }, "polygonFlowHighlights: using EOD fallback session tape (no live flow rows)");
       }

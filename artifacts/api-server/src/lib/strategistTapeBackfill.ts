@@ -9,8 +9,7 @@ import {
   sessionPhaseFromTradeMs,
   venueClassFromExchangeId,
 } from "./flowTradeEnrichment.js";
-import { probePolygonRate } from "./polygonRateProbe.js";
-import { classifyForFlowPersistence } from "./optionsTradeClassifier.js";
+import { classifyForFlowPersistence, shouldPersistBackfillRow } from "./optionsTradeClassifier.js";
 import { flushFlowPersistenceNow } from "./optionsFlowPersistence.js";
 import { runRollupOnceForSymbol } from "./optionsFlowRollup.js";
 import { FlowLegWindow } from "./flowMultilegExtras.js";
@@ -34,6 +33,17 @@ const PER_FETCH_HTTP_MS = 14_000;
 
 export type TapeBackfillStatusValue = "complete" | "partial" | "failed" | "skipped";
 
+/** Why session tape is live, synthesized, or missing; surfaced on payloads for operators and LLMs. */
+export type TapeBackfillDiagnosticReason =
+  | "live_complete"
+  | "live_partial"
+  | "skipped_no_api_key"
+  | "skipped_outside_rth"
+  | "skipped_other"
+  | "empty_polygon_response"
+  | "empty_after_filter"
+  | "polygon_error";
+
 export interface TapeBackfillCoverageGeometry {
   /** Market-cap tier used to pick band width and OCC cap. */
   marketCapTier: MarketCapTier | string;
@@ -48,6 +58,8 @@ export interface TapeBackfillCoverageGeometry {
 export interface TapeBackfillStatus {
   status: TapeBackfillStatusValue;
   reason: string | null;
+  /** Structured cause for session tape quality (see TapeBackfillDiagnosticReason). */
+  tapeBackfillReason: TapeBackfillDiagnosticReason;
   sessionDate: string;
   coverageEndMs: number;
   occRequested: number;
@@ -304,8 +316,19 @@ function parseQuotes(results: unknown[]): QuotePoint[] {
   return out;
 }
 
-async function fetchPaged(firstUrl: string, apiKey: string, deadlineMs: number): Promise<{ rows: unknown[]; truncated: boolean }> {
+async function fetchPaged(
+  firstUrl: string,
+  apiKey: string,
+  deadlineMs: number,
+): Promise<{
+  rows: unknown[];
+  truncated: boolean;
+  sawPolygonHttpError: boolean;
+  lowestPolygonHttpStatus: number | null;
+}> {
   const rows: unknown[] = [];
+  let sawPolygonHttpError = false;
+  let lowestPolygonHttpStatus: number | null = null;
   let url: string | null = firstUrl.includes("apiKey=")
     ? firstUrl
     : `${firstUrl}${firstUrl.includes("?") ? "&" : "?"}apiKey=${encodeURIComponent(apiKey)}`;
@@ -375,6 +398,10 @@ async function fetchPaged(firstUrl: string, apiKey: string, deadlineMs: number):
       break;
     }
     if (!r.ok) {
+      sawPolygonHttpError = true;
+      if (lowestPolygonHttpStatus === null || r.status < lowestPolygonHttpStatus) {
+        lowestPolygonHttpStatus = r.status;
+      }
       truncated = true;
       break;
     }
@@ -387,7 +414,7 @@ async function fetchPaged(firstUrl: string, apiKey: string, deadlineMs: number):
     }
   }
   if (Date.now() >= deadlineMs && url) truncated = true;
-  return { rows, truncated };
+  return { rows, truncated, sawPolygonHttpError, lowestPolygonHttpStatus };
 }
 
 function nbboAtOrBefore(quotes: QuotePoint[], tsMs: number): { bid: number; ask: number } | null {
@@ -414,10 +441,19 @@ async function fetchQuotesWindowed(
   gteNs: bigint,
   lteNs: bigint,
   deadlineMs: number,
-): Promise<{ quotes: QuotePoint[]; truncated: boolean }> {
-  if (trades.length === 0) return { quotes: [], truncated: false };
+): Promise<{
+  quotes: QuotePoint[];
+  truncated: boolean;
+  sawPolygonHttpError: boolean;
+  lowestPolygonHttpStatus: number | null;
+}> {
+  if (trades.length === 0) {
+    return { quotes: [], truncated: false, sawPolygonHttpError: false, lowestPolygonHttpStatus: null };
+  }
   const all: QuotePoint[] = [];
   let truncated = false;
+  let sawPolygonHttpError = false;
+  let lowestPolygonHttpStatus: number | null = null;
   const sorted = [...trades].sort((a, b) => a.tsMs - b.tsMs);
   let winStart = sorted[0]!.tsMs - QUOTE_PREPAD_MS;
   let winEnd = winStart + QUOTE_WINDOW_MS;
@@ -426,8 +462,14 @@ async function fetchQuotesWindowed(
       const g = BigInt(Math.max(Number(gteNs), (winStart - QUOTE_PREPAD_MS) * 1_000_000));
       const l = BigInt(Math.min(Number(lteNs), winEnd * 1_000_000));
       const base = `${POLYGON_API}/v3/quotes/${encodeURIComponent(occ)}?timestamp.gte=${g}&timestamp.lte=${l}&order=asc&limit=${QUOTE_PAGE_LIMIT}`;
-      const { rows, truncated: tr } = await fetchPaged(base, apiKey, deadlineMs);
+      const { rows, truncated: tr, sawPolygonHttpError: se, lowestPolygonHttpStatus: ls } = await fetchPaged(
+        base,
+        apiKey,
+        deadlineMs,
+      );
       if (tr) truncated = true;
+      if (se) sawPolygonHttpError = true;
+      if (ls != null && (lowestPolygonHttpStatus === null || ls < lowestPolygonHttpStatus)) lowestPolygonHttpStatus = ls;
       all.push(...parseQuotes(rows));
       winStart = t.tsMs - QUOTE_PREPAD_MS;
       winEnd = winStart + QUOTE_WINDOW_MS;
@@ -440,8 +482,14 @@ async function fetchQuotesWindowed(
   {
     const g = BigInt(Math.max(Number(gteNs), (winStart - QUOTE_PREPAD_MS) * 1_000_000));
     const base = `${POLYGON_API}/v3/quotes/${encodeURIComponent(occ)}?timestamp.gte=${g}&timestamp.lte=${lteNs}&order=asc&limit=${QUOTE_PAGE_LIMIT}`;
-    const { rows, truncated: tr } = await fetchPaged(base, apiKey, deadlineMs);
+    const { rows, truncated: tr, sawPolygonHttpError: se, lowestPolygonHttpStatus: ls } = await fetchPaged(
+      base,
+      apiKey,
+      deadlineMs,
+    );
     if (tr) truncated = true;
+    if (se) sawPolygonHttpError = true;
+    if (ls != null && (lowestPolygonHttpStatus === null || ls < lowestPolygonHttpStatus)) lowestPolygonHttpStatus = ls;
     all.push(...parseQuotes(rows));
   }
   all.sort((a, b) => a.tsMs - b.tsMs);
@@ -451,7 +499,7 @@ async function fetchQuotesWindowed(
     if (prev && prev.tsMs === q.tsMs && prev.bid === q.bid && prev.ask === q.ask) continue;
     dedup.push(q);
   }
-  return { quotes: dedup, truncated };
+  return { quotes: dedup, truncated, sawPolygonHttpError, lowestPolygonHttpStatus };
 }
 
 function parseOccMeta(occ: string): { expiration: string; strike: number; optionType: "call" | "put" } | null {
@@ -489,20 +537,7 @@ export async function runStrategistTapeBackfill(args: {
     return {
       status: "skipped",
       reason: "no_api_key",
-      sessionDate,
-      coverageEndMs,
-      occRequested: 0,
-      occCompleted: 0,
-      tradesInserted: 0,
-    };
-  }
-
-  const probe = await probePolygonRate();
-  if (probe.tier === "starter") {
-    logger.warn({ ticker, msg: probe.message }, "strategistTapeBackfill: Polygon tier looks starter, skipping");
-    return {
-      status: "skipped",
-      reason: "starter_tier",
+      tapeBackfillReason: "skipped_no_api_key",
       sessionDate,
       coverageEndMs,
       occRequested: 0,
@@ -516,6 +551,7 @@ export async function runStrategistTapeBackfill(args: {
     return {
       status: "skipped",
       reason: "outside_rth",
+      tapeBackfillReason: "skipped_outside_rth",
       sessionDate,
       coverageEndMs,
       occRequested: 0,
@@ -536,6 +572,7 @@ export async function runStrategistTapeBackfill(args: {
     return {
       status: "skipped",
       reason: "no_contracts",
+      tapeBackfillReason: "skipped_other",
       sessionDate,
       coverageEndMs,
       occRequested: 0,
@@ -551,6 +588,9 @@ export async function runStrategistTapeBackfill(args: {
   let tradesInserted = 0;
   let anyTruncated = false;
   let anyError = false;
+  let totalTradesFromPolygon = 0;
+  let persistRejectedCount = 0;
+  let anySawPolygonHttpError = false;
 
   for (let occIdx = 0; occIdx < occList.length; occIdx++) {
     const occ = occList[occIdx]!;
@@ -593,11 +633,22 @@ export async function runStrategistTapeBackfill(args: {
     const oiSnapshot = openInterestForOcc(args.chain, meta);
 
     const tradeUrl = `${POLYGON_API}/v3/trades/${encodeURIComponent(occ)}?timestamp.gte=${gteNs}&timestamp.lte=${lteNs}&order=asc&limit=${TRADE_PAGE_LIMIT}`;
-    const { rows: tradeRows, truncated: trTr } = await fetchPaged(tradeUrl, apiKey, occDeadline);
+    const {
+      rows: tradeRows,
+      truncated: trTr,
+      sawPolygonHttpError: trErr,
+    } = await fetchPaged(tradeUrl, apiKey, occDeadline);
+    if (trErr) anySawPolygonHttpError = true;
     if (trTr) anyTruncated = true;
     const parsed = parseTrades(occ, tradeRows);
+    totalTradesFromPolygon += parsed.length;
     parsed.sort((a, b) => a.tsMs - b.tsMs);
-    const { quotes, truncated: trQ } = await fetchQuotesWindowed(occ, apiKey, parsed, gteNs, lteNs, occDeadline);
+    const {
+      quotes,
+      truncated: trQ,
+      sawPolygonHttpError: qErr,
+    } = await fetchQuotesWindowed(occ, apiKey, parsed, gteNs, lteNs, occDeadline);
+    if (qErr) anySawPolygonHttpError = true;
     if (trQ) anyTruncated = true;
 
     const occLegWindow = new FlowLegWindow();
@@ -614,7 +665,10 @@ export async function runStrategistTapeBackfill(args: {
         avgDailyContractVolume20d: baselineAvgVol,
         openInterest: oiSnapshot > 0 ? oiSnapshot : null,
       });
-      if (!cl.shouldPersist) continue;
+      if (!shouldPersistBackfillRow(cl)) {
+        persistRejectedCount++;
+        continue;
+      }
       const dteDays = dteCalendarDays(meta.expiration, t.tsMs);
       const sessionPhase = sessionPhaseFromTradeMs(t.tsMs);
       const venueClass = venueClassFromExchangeId(t.exchangeId);
@@ -722,14 +776,43 @@ export async function runStrategistTapeBackfill(args: {
   if (anyError && occCompleted === 0) status = "failed";
   else if (anyError || anyTruncated || occCompleted < occList.length) status = "partial";
 
+  let tapeBackfillReason: TapeBackfillDiagnosticReason;
+  if (anySawPolygonHttpError) {
+    tapeBackfillReason = "polygon_error";
+  } else if (
+    tradesInserted === 0 &&
+    totalTradesFromPolygon > 0 &&
+    persistRejectedCount >= totalTradesFromPolygon
+  ) {
+    tapeBackfillReason = "empty_after_filter";
+  } else if (
+    tradesInserted > 0 &&
+    (anyTruncated || status !== "complete" || occCompleted < occList.length)
+  ) {
+    tapeBackfillReason = "live_partial";
+  } else if (tradesInserted > 0) {
+    tapeBackfillReason = "live_complete";
+  } else if (
+    tradesInserted === 0 &&
+    totalTradesFromPolygon === 0 &&
+    !anyTruncated &&
+    !anyError &&
+    occCompleted === occList.length
+  ) {
+    tapeBackfillReason = "empty_polygon_response";
+  } else {
+    tapeBackfillReason = "skipped_other";
+  }
+
   logger.info(
-    { ticker, status, occCompleted, occRequested: occList.length, tradesInserted, anyTruncated, coverageGeometry },
+    { ticker, status, occCompleted, occRequested: occList.length, tradesInserted, anyTruncated, tapeBackfillReason, coverageGeometry },
     "strategistTapeBackfill: done",
   );
 
   return {
     status,
     reason: anyTruncated ? "timeout_or_pagination" : anyError ? "insert_or_rollups" : null,
+    tapeBackfillReason,
     sessionDate,
     coverageEndMs,
     occRequested: occList.length,
