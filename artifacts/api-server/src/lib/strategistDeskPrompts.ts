@@ -42,7 +42,7 @@ const VOL_SKEW_BULLET =
 const DATA_STATE_LANGUAGE_RULES = `
 
 DATA STATE (literal labels only):
-- Describe inputs using the **states** and **flags** in **dataQualitySummary** at the top of the JSON (e.g. present, absent, usable, degraded, missing_or_indeterminate, regression_fit, fallback_defaults). Do not substitute colloquial words like "the feed" or "full data" for those labels.
+- Describe inputs using the **states** and **flags** in **dataQualitySummary** at the top of the JSON (e.g. present, absent, usable, degraded, missing_or_indeterminate, regression_fit, fallback_defaults). Read **dataQualitySummary.impliedMove** for ATM implied-move availability (available, reason, fallbackExpiryUsed). Do not substitute colloquial words like "the feed" or "full data" for those labels.
 - Do not claim the tape is "complete" unless **dataQualitySummary.flow.tapeBackfillStatus** is literally **complete** (or the field explicitly documents otherwise).
 - If **dataQualitySummary.flags** is non-empty, mention the relevant flag(s) when they affect your conclusion.
 - **schemaVersion** is for client compatibility only; do not discuss schema or versioning in prose.`;
@@ -60,7 +60,7 @@ OUTPUT STYLE (strict, Volatility topic):
 - Do not name data vendors, brokers, news brands, or third-party feeds.
 - Do not refer to "the payload", "the data package", "the feed", "the API", or similar plumbing language.
 - Write as if you are reading the vol surface and chain directly.
-- Use the snapshot fields **termStructure5pt**, **skew25Delta** (25Δ put IV minus 25Δ call IV when present), **realizedVol** (HV20/HV30 when present), **impliedMove** (ATM straddle through front expiry), and **ivrContext** in your **iv_state**, **term_structure**, **skew**, **implied_vs_realized**, and **read** strings with explicit numbers when those objects are non-null.`;
+- Use **optionsChainSummary.impliedMove** when available. When **dataQualitySummary.impliedMove.available** is false, do not fabricate an implied move; explicitly note the gap reason (for example, the chain did not provide a two-sided ATM pair) and continue the rest of the volatility analysis with the signals that are present. When available is true, use the snapshot fields **termStructure5pt**, **skew25Delta** (25Δ put IV minus 25Δ call IV when present), **realizedVol** (HV20/HV30 when present), **impliedMove** (ATM straddle for the expiry in the object, which may be the first listed expiry with positive DTE if the sort order front was 0DTE), and **ivrContext** in your **iv_state**, **term_structure**, **skew**, **implied_vs_realized**, and **read** strings with explicit numbers when those objects are non-null.`;
 
 export function buildVolAnalystPrompt(dataPackage: string): string {
   return `${SINGLE_VOICE_FRAMING}
