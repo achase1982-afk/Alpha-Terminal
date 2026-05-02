@@ -29,6 +29,7 @@ import {
 } from "./strategistIvNormalize.js";
 import { impliedVolatilityBSM } from "./bsmIV.js";
 import { fetchPolygonAnalystRatingsAndConsensus } from "./polygonAnalystData.js";
+import { fetchEarningsHistoryAndForward, type FetchEarningsBundle } from "./polygonEarningsHistory.js";
 import { fetchCompanyFinancialsForSymbol, type CompanyFinancials } from "../routes/sec.js";
 import { clampProfitTargetToMaxPayout } from "./exitTargetMath.js";
 import { scrubAll } from "./narrativeScrubbers.js";
@@ -801,6 +802,17 @@ export async function analyzeTickerV2(
   assertAnalyzeNotCancelled(progress);
   const fundamentalsSummary = companyFinancials ? fundamentalsQuickSummary(companyFinancials) : null;
 
+  let earningsEnrichment: FetchEarningsBundle | null = null;
+  if (settings.strategistMode === 3 || settings.strategistMode === 4) {
+    try {
+      earningsEnrichment = await fetchEarningsHistoryAndForward(ticker);
+    } catch (err) {
+      logger.warn({ err, ticker }, "StrategistV2: fetchEarningsHistoryAndForward failed");
+      earningsEnrichment = null;
+    }
+  }
+  assertAnalyzeNotCancelled(progress);
+
   const dataPackage = buildDataPackage(
     ticker,
     tickerData,
@@ -821,6 +833,7 @@ export async function analyzeTickerV2(
       analystConsensus,
       analystRatings: analystRatingsPack?.ratings ?? null,
       fundamentalsSummary,
+      earnings: earningsEnrichment,
     },
   );
   assertAnalyzeNotCancelled(progress);
@@ -2104,8 +2117,9 @@ function buildDataQualitySummary(args: {
     analystConsensus?: import("./polygonAnalystData.js").PolygonAnalystConsensus | null;
     fundamentalsSummary?: Record<string, unknown> | null;
   };
+  earningsDataSourceGaps?: string[] | null;
 }): Record<string, unknown> {
-  const { tickerData, chainSummary, ioScore, polygonHighlights, tapeBackfill, enrichment } = args;
+  const { tickerData, chainSummary, ioScore, polygonHighlights, tapeBackfill, enrichment, earningsDataSourceGaps } = args;
   const chainOk = chainSummary.availableExpirations.length > 0 && chainSummary.atmStrike > 0;
   const skewState = chainSummary.skew25Delta != null ? "available" : "missing_or_indeterminate";
   const flowTape = polygonHighlights?.sessionTape;
@@ -2153,6 +2167,8 @@ function buildDataQualitySummary(args: {
   if (!analystOk) flags.push("analyst_consensus_sparse");
   if (!fundamentalsOk) flags.push("sec_fundamentals_sparse");
 
+  const earningsGapList = earningsDataSourceGaps ?? [];
+
   return {
     asOfDate: new Date().toISOString().slice(0, 10),
     chain: { state: chainOk ? "usable" : "degraded", expirationsListed: chainSummary.availableExpirations.length },
@@ -2178,6 +2194,7 @@ function buildDataQualitySummary(args: {
     },
     ivArtifactsClamped: chainSummary.ivArtifactsClampedCount,
     flags,
+    ...(earningsGapList.length > 0 ? { data_source_gaps: earningsGapList } : {}),
     readThisFirst:
       "Each field reports whether the snapshot slice is present, degraded, or absent. Use null-safe reads; when state is degraded or a flag is set, lower conviction and avoid implying full tape or full skew precision.",
   };
@@ -2203,6 +2220,8 @@ function buildDataPackage(
     analystConsensus?: import("./polygonAnalystData.js").PolygonAnalystConsensus | null;
     analystRatings?: import("./polygonAnalystData.js").PolygonAnalystRatingRow[] | null;
     fundamentalsSummary?: Record<string, unknown> | null;
+    /** Desk modes 3 and 4: Polygon Benzinga earnings + equity_daily reactions. */
+    earnings?: FetchEarningsBundle | null;
   },
 ): string {
   const currentDate = new Date().toISOString().slice(0, 10);
@@ -2229,6 +2248,7 @@ function buildDataPackage(
     polygonHighlights,
     tapeBackfill,
     enrichment,
+    earningsDataSourceGaps: enrichment?.earnings?.data_source_gaps ?? null,
   });
   const pkg: Record<string, unknown> = {
     schemaVersion: 1,
@@ -2343,6 +2363,13 @@ function buildDataPackage(
       maxBidAskSpreadPct: settings.maxBidAskSpreadPct,
     },
   };
+
+  if ((settings.strategistMode === 3 || settings.strategistMode === 4) && enrichment?.earnings) {
+    pkg.catalyst = {
+      earnings_history: enrichment.earnings.earnings_history,
+      forward_estimates: enrichment.earnings.forward_estimates,
+    };
+  }
 
   if (tapeBackfill) {
     pkg.tapeBackfill = {

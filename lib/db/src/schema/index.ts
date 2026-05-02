@@ -408,7 +408,7 @@ export const corporateEventsTable = pgTable("corporate_events", {
   splitRatio: text("split_ratio"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
-  uniqueIndex("corp_events_sym").on(t.symbol),
+  uniqueIndex("corp_events_sym_date").on(t.symbol, t.earningsDate),
 ]);
 
 export type CorporateEvent = typeof corporateEventsTable.$inferSelect;
