@@ -1,6 +1,6 @@
 import { db, optionsFlowRawTradesTable, optionsTapeBackfillOccCacheTable } from "@workspace/db";
 import { logger } from "./logger.js";
-import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
+import { extractPgErrorContext, logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 import { getContract20dBaseline } from "./optionsBaselines.js";
 import { fetchSchwabMarketSnapshot } from "./schwabMarketSnapshot.js";
 import { buildMarketContextSnapshot } from "./flowMarketContext.js";
@@ -867,10 +867,23 @@ export async function runStrategistTapeBackfill(args: {
           });
       });
     } catch (err) {
+      const pgCtx = extractPgErrorContext(err);
       logFlowPipelineWarn(
         "tape_backfill_occ_commit",
         "strategistTapeBackfill: per-OCC insert/cache transaction failed",
-        { err, occ, ticker, rowCount: rowsToInsert.length },
+        {
+          err,
+          occ,
+          ticker,
+          rowCount: rowsToInsert.length,
+          message: pgCtx.message,
+          code: pgCtx.code,
+          detail: pgCtx.detail,
+          constraint: pgCtx.constraint,
+          ...(pgCtx.pgMessage !== undefined && pgCtx.pgMessage !== pgCtx.message
+            ? { pgMessage: pgCtx.pgMessage }
+            : {}),
+        },
       );
       anyError = true;
     }
