@@ -16,10 +16,10 @@ const ROLE_STYLE: Record<string, { fg: string; label: string }> = {
   B: { fg: "#26C6DA", label: "Bear Case" },
   synthesis: { fg: "#00D166", label: "Recommendation" },
   system: { fg: "#BA82FF", label: "Verdict" },
-  vol: { fg: "#fbbf24", label: "Vol Analyst" },
-  flow: { fg: "#38bdf8", label: "Flow Analyst" },
-  catalyst: { fg: "#a78bfa", label: "Catalyst Analyst" },
-  pm: { fg: "#4ade80", label: "PM" },
+  vol: { fg: "#fbbf24", label: "Volatility" },
+  flow: { fg: "#38bdf8", label: "Flow" },
+  catalyst: { fg: "#a78bfa", label: "Catalyst" },
+  pm: { fg: "#4ade80", label: "Decision" },
 };
 
 function formatTurnText(raw: string): string {
@@ -45,11 +45,11 @@ function phaseLabel(
     if (role === "vol") return "Parallel pass · Vol";
     if (role === "flow") return "Parallel pass · Flow";
     if (role === "catalyst") return "Parallel pass · Catalyst";
-    if (role === "pm") return "PM synthesis";
+    if (role === "pm") return "Parallel pass · Decision";
     return "Desk";
   }
   if (role === "system" && phase === "info") return "Verdict";
-  if (round === "synthesis") return "Phase 3 · Senior PM Arbitration";
+  if (round === "synthesis") return "Phase 3 · Final arbitration";
   if (round === 3 && phase === "propose") return "Phase 2 · R3 · Structure Vote";
   if (phase === "propose") return `Phase 1 · R${round} · Pitch`;
   if (phase === "critique") return `Phase 1 · R${round} · Rebut`;
@@ -58,8 +58,8 @@ function phaseLabel(
 }
 
 function roundHeader(round: 1 | 2 | 3 | "synthesis" | "desk"): string {
-  if (round === "desk") return "DESK — Vol, Flow, Catalyst & PM";
-  if (round === "synthesis") return "Phase 3 — Senior PM Arbitration (Final Trade)";
+  if (round === "desk") return "DESK — Volatility, Flow, Catalyst, Decision";
+  if (round === "synthesis") return "Phase 3 — Final arbitration (trade)";
   if (round === 1) return "Phase 1 — Round 1 (Directional Pitch)";
   if (round === 2) return "Phase 1 — Round 2 (Rebuttal & Verdict)";
   return "Phase 2 — Round 3 (Trade Structure Vote)";

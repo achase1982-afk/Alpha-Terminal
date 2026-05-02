@@ -109,7 +109,7 @@ function StructureDisplay({ structure }: { structure: DeskStructure }) {
   );
 }
 
-/** Plain text for the full Desk card (all sections including analyst reads, regardless of collapse). */
+/** Plain text for the full Desk card (all sections including topic sections, regardless of collapse). */
 export function buildDeskCardPlainText(args: {
   deskResult: DeskResult;
   generatedAt?: string | number | null;
@@ -154,13 +154,13 @@ export function buildDeskCardPlainText(args: {
     lines.push("WATCH FOR", pm.watch_for, "");
   }
 
-  lines.push("PM THESIS", pm.thesis, "");
+  lines.push("THESIS", pm.thesis, "");
   if (pm.edge_check) {
     lines.push("EDGE CHECK", pm.edge_check, "");
   }
   const dev = pm.deviation_from_analysts?.trim();
   if (dev && dev.toLowerCase() !== "none") {
-    lines.push("DEVIATION FROM ANALYSTS", dev, "");
+    lines.push("DEVIATION FROM VOLATILITY SECTION", dev, "");
   }
   lines.push("SIZE", pm.size.toUpperCase());
   lines.push("ALIGNMENT", pm.whose_side.replace(/_/g, " "));
@@ -180,16 +180,16 @@ export function buildDeskCardPlainText(args: {
     lines.push("");
   }
 
-  lines.push("ANALYST READS", "");
+  lines.push("TOPIC SECTIONS", "");
 
-  lines.push("— Vol Analyst —");
+  lines.push("— Volatility —");
   lines.push("IV State", vol.iv_state);
   lines.push("Term Structure", vol.term_structure);
   lines.push("Skew", vol.skew);
   lines.push("IV vs Realized", vol.implied_vs_realized);
   lines.push("Read", vol.read, "");
 
-  lines.push("— Flow Analyst —");
+  lines.push("— Flow —");
   lines.push("Dominant Flow", flow.dominant_flow);
   lines.push("Institutional", flow.institutional_signal);
   lines.push("Retail", flow.retail_signal);
@@ -201,7 +201,7 @@ export function buildDeskCardPlainText(args: {
   }
   lines.push("Read", flow.read, "");
 
-  lines.push("— Catalyst Analyst —");
+  lines.push("— Catalyst —");
   lines.push("Primary Catalyst", catalyst.primary_catalyst);
   lines.push("Bar to Clear", catalyst.bar_to_clear);
   lines.push("Asymmetry", catalyst.asymmetry);
@@ -230,7 +230,7 @@ function deskBanner(
   if (outcome === "ANALYSIS_INCOMPLETE" || blockReason?.category === "ANALYSIS_INCOMPLETE") {
     return {
       title: "Analysis Incomplete",
-      body: blockReason?.detail ?? "The PM output did not match the required format after retry. Try running the analysis again.",
+      body: blockReason?.detail ?? "The Decision section did not match the required format after retry. Try running the analysis again.",
       border: "rgba(245,158,11,0.35)",
       bg: "rgba(245,158,11,0.08)",
       accent: PAL.gold,
@@ -239,7 +239,7 @@ function deskBanner(
   if (outcome === "NO_TRADE" || pmPass) {
     return {
       title: "No Trade Recommended",
-      body: "The PM is not putting on a structure for this name right now. Review the analyst reads below — especially “Watch for” — to see what would need to change.",
+      body: "No trade is recommended for this name right now. Review the topic sections below, especially Watch for, to see what would need to change.",
       border: "rgba(161,161,170,0.35)",
       bg: "rgba(161,161,170,0.06)",
       accent: "#a3a3a3",
@@ -625,7 +625,7 @@ export function StrategistDeskCard({
         </div>
       )}
 
-      {/* PM Decision Header */}
+      {/* Decision header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{
@@ -782,7 +782,7 @@ export function StrategistDeskCard({
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
           <span style={{ fontSize: 10, fontWeight: 700, color: PAL.label, letterSpacing: 1, textTransform: "uppercase" }}>
-            PM Decision
+            Decision
           </span>
           {nowPlayingChip("pm")}
         </div>
@@ -802,7 +802,7 @@ export function StrategistDeskCard({
 
       {/* PM Thesis */}
       <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 10, fontWeight: 600, color: PAL.label, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>PM THESIS</div>
+        <div style={{ fontSize: 10, fontWeight: 600, color: PAL.label, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>THESIS</div>
         <div style={{ fontSize: 12, color: PAL.body, lineHeight: 1.6 }}>{pm.thesis}</div>
       </div>
 
@@ -815,12 +815,12 @@ export function StrategistDeskCard({
 
       {pm.deviation_from_analysts && pm.deviation_from_analysts.trim().toLowerCase() !== "none" && (
         <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 10, fontWeight: 600, color: PAL.label, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>DEVIATION FROM ANALYSTS</div>
+          <div style={{ fontSize: 10, fontWeight: 600, color: PAL.label, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>DEVIATION FROM VOLATILITY SECTION</div>
           <div style={{ fontSize: 12, color: PAL.body, lineHeight: 1.6 }}>{pm.deviation_from_analysts}</div>
         </div>
       )}
 
-      {/* PM Details Row */}
+      {/* Decision details */}
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 12 }}>
         <div>
           <span style={{ fontSize: 9, color: PAL.label, letterSpacing: 0.5 }}>SIZE</span>
@@ -868,9 +868,9 @@ export function StrategistDeskCard({
 
       </div>
 
-      {/* Analyst Reads (collapsible) */}
+      {/* Topic sections (collapsible) */}
       <div style={{ marginTop: 12 }}>
-        <div style={{ fontSize: 10, fontWeight: 600, color: PAL.label, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>ANALYST READS</div>
+        <div style={{ fontSize: 10, fontWeight: 600, color: PAL.label, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>TOPIC SECTIONS</div>
 
         <div
           style={{
@@ -880,7 +880,7 @@ export function StrategistDeskCard({
             borderRadius: speakingSection === "vol" ? 4 : undefined,
           }}
         >
-          <CollapsibleSection title="Vol Analyst" defaultOpen headerAddon={nowPlayingChip("vol")}>
+          <CollapsibleSection title="Volatility" defaultOpen headerAddon={nowPlayingChip("vol")}>
           <FieldRow label="IV State" value={vol.iv_state} />
           <FieldRow label="Term Structure" value={vol.term_structure} />
           <FieldRow label="Skew" value={vol.skew} />
@@ -899,7 +899,7 @@ export function StrategistDeskCard({
             borderRadius: speakingSection === "flow" ? 4 : undefined,
           }}
         >
-          <CollapsibleSection title="Flow Analyst" defaultOpen headerAddon={nowPlayingChip("flow")}>
+          <CollapsibleSection title="Flow" defaultOpen headerAddon={nowPlayingChip("flow")}>
           <FieldRow label="Dominant Flow" value={flow.dominant_flow} />
           <FieldRow label="Institutional" value={flow.institutional_signal} />
           <FieldRow label="Retail" value={flow.retail_signal} />
@@ -927,7 +927,7 @@ export function StrategistDeskCard({
             borderRadius: speakingSection === "catalyst" ? 4 : undefined,
           }}
         >
-          <CollapsibleSection title="Catalyst Analyst" defaultOpen headerAddon={nowPlayingChip("catalyst")}>
+          <CollapsibleSection title="Catalyst" defaultOpen headerAddon={nowPlayingChip("catalyst")}>
           <FieldRow label="Primary Catalyst" value={catalyst.primary_catalyst} />
           <FieldRow label="Bar to Clear" value={catalyst.bar_to_clear} />
           <FieldRow label="Asymmetry" value={catalyst.asymmetry} />

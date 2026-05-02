@@ -1216,10 +1216,10 @@ function DebateBlock({
 }
 
 const DESK_ROLE_META: Record<string, { label: string; border: string }> = {
-  vol: { label: "Vol Analyst", border: "#fbbf24" },
-  flow: { label: "Flow Analyst", border: "#38bdf8" },
-  catalyst: { label: "Catalyst Analyst", border: "#a78bfa" },
-  pm: { label: "PM", border: "#4ade80" },
+  vol: { label: "Volatility", border: "#fbbf24" },
+  flow: { label: "Flow", border: "#38bdf8" },
+  catalyst: { label: "Catalyst", border: "#a78bfa" },
+  pm: { label: "Decision", border: "#4ade80" },
 };
 
 function DeskTranscriptInline({ transcript }: { transcript: TranscriptTurnInline[] }) {
@@ -1232,7 +1232,7 @@ function DeskTranscriptInline({ transcript }: { transcript: TranscriptTurnInline
 
   return (
     <div>
-      <DebateRoundHeader>Desk — Vol, Flow, Catalyst &amp; PM</DebateRoundHeader>
+      <DebateRoundHeader>Desk — Volatility, Flow, Catalyst, Decision</DebateRoundHeader>
       {turns.map((t) => {
         const meta = DESK_ROLE_META[String(t.role)] ?? { label: String(t.role), border: PAL.label };
         return (

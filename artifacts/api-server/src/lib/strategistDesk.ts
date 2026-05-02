@@ -280,7 +280,7 @@ export async function runDeskAnalysis(args: {
     modelOpt: pmModel,
     prompt: pmPrompt,
     role: "pm",
-    label: "PM",
+      label: "Decision",
     callbacks,
   });
 
@@ -302,7 +302,7 @@ export async function runDeskAnalysis(args: {
         pmPrompt +
         "\n\nYour previous response failed JSON validation. Return ONLY valid JSON matching the schema exactly. No markdown, no code fences, no commentary before or after the JSON.",
       role: "pm",
-      label: "PM (retry)",
+      label: "Decision (retry)",
       callbacks,
     });
     const retryJson = parseJsonFromText(retryTurn.text);
@@ -370,9 +370,9 @@ async function runAnalystWithRetry<T>(
   initialTrace?: WebSearchTrace,
 ): Promise<{ parsed: T; trace: WebSearchTrace }> {
   const labels: Record<string, string> = {
-    vol: "Vol Analyst",
-    flow: "Flow Analyst",
-    catalyst: "Catalyst Analyst",
+    vol: "Volatility",
+    flow: "Flow",
+    catalyst: "Catalyst",
   };
   const label = labels[role];
 
