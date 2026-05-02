@@ -21,7 +21,10 @@ import {
   rthBoundsMs,
 } from "./polygonMarketCalendar.js";
 import { appendPolygonApiTraceRecord } from "./polygonApiTrace.js";
-import { OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS } from "./optionsFlowRawTradesBulkInsert.js";
+import {
+  OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS,
+  OPTIONS_FLOW_RAW_TRADES_ON_CONFLICT_SOURCE_DEDUPE,
+} from "./optionsFlowRawTradesBulkInsert.js";
 
 const POLYGON_API = "https://api.polygon.io";
 const MAX_EXPIRIES = 3;
@@ -838,13 +841,7 @@ export async function runStrategistTapeBackfill(args: {
             const ins = await tx
               .insert(optionsFlowRawTradesTable)
               .values(slice)
-              .onConflictDoNothing({
-                target: [
-                  optionsFlowRawTradesTable.underlyingSymbol,
-                  optionsFlowRawTradesTable.date,
-                  optionsFlowRawTradesTable.sourceTradeId,
-                ],
-              })
+              .onConflictDoNothing(OPTIONS_FLOW_RAW_TRADES_ON_CONFLICT_SOURCE_DEDUPE)
               .returning({ id: optionsFlowRawTradesTable.id });
             tradesInserted += ins.length;
           }

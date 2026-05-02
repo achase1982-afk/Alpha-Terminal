@@ -40,7 +40,10 @@ import {
   type PolygonOptionTrade,
 } from "./polygonOptionsWs.js";
 import { getWatcherSubscribedContractCount } from "./optionsWatcher.js";
-import { OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS } from "./optionsFlowRawTradesBulkInsert.js";
+import {
+  OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS,
+  OPTIONS_FLOW_RAW_TRADES_ON_CONFLICT_SOURCE_DEDUPE,
+} from "./optionsFlowRawTradesBulkInsert.js";
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MIN_CAPTURE_MS = 10_000;
@@ -543,13 +546,7 @@ async function runWebsocketCaptureInternal(
         const ins = await db
           .insert(optionsFlowRawTradesTable)
           .values(slice)
-          .onConflictDoNothing({
-            target: [
-              optionsFlowRawTradesTable.underlyingSymbol,
-              optionsFlowRawTradesTable.date,
-              optionsFlowRawTradesTable.sourceTradeId,
-            ],
-          })
+          .onConflictDoNothing(OPTIONS_FLOW_RAW_TRADES_ON_CONFLICT_SOURCE_DEDUPE)
           .returning({ id: optionsFlowRawTradesTable.id });
         insertedThisFlush += ins.length;
       }

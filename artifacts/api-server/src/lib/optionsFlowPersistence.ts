@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import { db, optionsFlowRawTradesTable } from "@workspace/db";
 import { logger } from "./logger.js";
 import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
-import { OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS } from "./optionsFlowRawTradesBulkInsert.js";
+import {
+  OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS,
+  OPTIONS_FLOW_RAW_TRADES_ON_CONFLICT_SOURCE_DEDUPE,
+} from "./optionsFlowRawTradesBulkInsert.js";
 
 // Batched async writer for classified options trade events streaming
 // from the live watcher. Avoids per-trade DB round-trips by buffering
@@ -183,13 +186,10 @@ async function flush(): Promise<void> {
   try {
     for (let i = 0; i < batch.length; i += OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS) {
       const slice = batch.slice(i, i + OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS);
-      await db.insert(optionsFlowRawTradesTable).values(slice).onConflictDoNothing({
-        target: [
-          optionsFlowRawTradesTable.underlyingSymbol,
-          optionsFlowRawTradesTable.date,
-          optionsFlowRawTradesTable.sourceTradeId,
-        ],
-      });
+      await db
+        .insert(optionsFlowRawTradesTable)
+        .values(slice)
+        .onConflictDoNothing(OPTIONS_FLOW_RAW_TRADES_ON_CONFLICT_SOURCE_DEDUPE);
     }
     totalWritten += batch.length;
     lastFlushTs = Date.now();
