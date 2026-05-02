@@ -88,6 +88,10 @@ export interface TapeBackfillStatus {
   sessionInProgress: boolean;
   queryOpenMs: number;
   queryCloseMs: number;
+  /** flowCaptureService: how rows were loaded for this session. */
+  captureSource?: "websocket" | "rest" | "flat_file";
+  /** Wall time spent in flow capture (when captureSource is set). */
+  captureDurationMs?: number;
   /** How session tape OCCs were chosen (tiered band + volume-ranked cap). */
   coverageGeometry?: TapeBackfillCoverageGeometry;
 }
@@ -570,13 +574,18 @@ export async function runStrategistTapeBackfill(args: {
   /** When set (e.g. from Schwab quote context), used for tiered OCC sampling. */
   marketCapTier?: MarketCapTier | string;
   budgetMs?: number;
+  /** When set, use this NY session calendar date instead of lastCompletedTradingDayNy (flow capture REST segments). */
+  forcedSessionDate?: string;
 }): Promise<TapeBackfillStatus> {
   const ticker = args.ticker.toUpperCase();
   const budgetMs = args.budgetMs ?? DEFAULT_BUDGET_MS;
   const deadline = Date.now() + budgetMs;
   const nowWall = new Date();
   const todayYmd = nyCalendarYmd(nowWall);
-  const sessionDate = await lastCompletedTradingDayNy(nowWall);
+  const sessionDate =
+    typeof args.forcedSessionDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(args.forcedSessionDate)
+      ? args.forcedSessionDate
+      : await lastCompletedTradingDayNy(nowWall);
   const { openMs, closeMs } = await rthBoundsMs(sessionDate);
   const nowMs = nowWall.getTime();
   const isSessionForToday = sessionDate === todayYmd;

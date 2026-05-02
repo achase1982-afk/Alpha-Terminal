@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { sql, eq, max, and } from "drizzle-orm";
 import { db, optionsChainDailyTable, optionsFlowPerStrikeTable, schwabChainIngestMetricsTable } from "@workspace/db";
-import { logger } from "../lib/logger";
+import { getFlowCaptureDiagnostics } from "../lib/flowCaptureService.js";
 import { fetchPolygonReferenceContractCount } from "../lib/polygonReferenceContracts";
 
 function requireAdmin(req: { headers: Record<string, string | string[] | undefined> }): { ok: boolean; error?: string } {
@@ -244,6 +244,18 @@ router.get("/chain-coverage", async (req, res) => {
     });
   } catch (e) {
     logger.error({ err: e }, "diagnostics: chain-coverage failed");
+    return res.status(500).json({ ok: false, error: (e as Error).message });
+  }
+});
+
+router.get("/flow-capture", async (req, res) => {
+  const auth = requireAdmin(req as never);
+  if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
+  try {
+    const d = getFlowCaptureDiagnostics();
+    return res.json({ ok: true, ...d });
+  } catch (e) {
+    logger.error({ err: e }, "diagnostics: flow-capture failed");
     return res.status(500).json({ ok: false, error: (e as Error).message });
   }
 });

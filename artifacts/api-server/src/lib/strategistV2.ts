@@ -15,7 +15,8 @@ import type { InferInsertModel } from "drizzle-orm";
 import { getBestAccessToken } from "./tokenStore.js";
 import { fetchPolygonChain } from "./polygonChain.js";
 import { getPolygonFlowHighlights, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
-import { runStrategistTapeBackfill, type TapeBackfillStatus } from "./strategistTapeBackfill.js";
+import { type TapeBackfillStatus } from "./strategistTapeBackfill.js";
+import { requestFlowCapture } from "./flowCaptureService.js";
 import {
   buildStrategistFullDiagnosticJson,
   buildModelAttributionPlaceholder,
@@ -820,10 +821,9 @@ async function analyzeTickerV2Inner(
   }
 
   let tapeBackfillStatus: TapeBackfillStatus | undefined;
-  status("Loading session options tape (REST backfill)…");
+  status("Loading session options tape…");
   try {
-    tapeBackfillStatus = await runStrategistTapeBackfill({
-      ticker,
+    const fc = await requestFlowCapture(ticker, {
       chain,
       chainSummary: {
         atmStrike: chainSummary.atmStrike,
@@ -834,15 +834,53 @@ async function analyzeTickerV2Inner(
         })),
       },
       marketCapTier: tickerData.marketContext.tier,
+      timeout: 120_000,
     });
+    let boundsOpen = 0;
+    let boundsClose = 0;
+    try {
+      const b = await rthBoundsMs(fc.sessionDate);
+      boundsOpen = b.openMs;
+      boundsClose = b.closeMs;
+    } catch {
+      /* ignore */
+    }
+    tapeBackfillStatus = fc.tapeBackfill
+      ? {
+          ...fc.tapeBackfill,
+          captureSource: fc.source,
+          captureDurationMs: fc.durationMs,
+        }
+      : ({
+          status: fc.rowsInserted > 0 ? "complete" : "skipped",
+          reason: fc.errors.length ? fc.errors.join("; ") : null,
+          tapeBackfillReason: fc.rowsInserted > 0 ? "live_complete" : "skipped_other",
+          sessionDate: fc.sessionDate,
+          coverageEndMs: Date.now(),
+          occRequested: fc.occsSubscribed,
+          occCompleted: fc.occsSubscribed,
+          tradesInserted: fc.rowsInserted,
+          totalTradesFromPolygon: fc.rowsInserted,
+          persistRejectedCount: 0,
+          anyTruncated: false,
+          anySawPolygonHttpError: false,
+          todayYmd: nyCalendarYmd(new Date()),
+          isSessionForToday: fc.sessionDate === nyCalendarYmd(new Date()),
+          sessionInProgress: false,
+          queryOpenMs: boundsOpen,
+          queryCloseMs: boundsClose,
+          captureSource: fc.source,
+          captureDurationMs: fc.durationMs,
+        } satisfies TapeBackfillStatus);
     logger.info(
       {
         ticker,
         tapeBackfill: tapeBackfillStatus.status,
         tradesInserted: tapeBackfillStatus.tradesInserted,
         occCompleted: tapeBackfillStatus.occCompleted,
+        captureSource: fc.source,
       },
-      "StrategistV2: session tape backfill finished",
+      "StrategistV2: session flow capture finished",
     );
   } catch (err) {
     logger.warn({ err, ticker }, "StrategistV2: session tape backfill threw");
@@ -2536,6 +2574,8 @@ function buildDataPackage(
       sessionInProgress: tapeBackfill.sessionInProgress,
       queryOpenMs: tapeBackfill.queryOpenMs,
       queryCloseMs: tapeBackfill.queryCloseMs,
+      captureSource: tapeBackfill.captureSource ?? null,
+      captureDurationMs: tapeBackfill.captureDurationMs ?? null,
     };
   }
 

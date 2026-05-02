@@ -8,7 +8,7 @@ import type { InferInsertModel } from "drizzle-orm";
 import { getSettings, type StrategistConfig } from "./strategistSettings.js";
 import { getCachedRegime, buildFallbackRegime, type StructuredRegime } from "./regimePostProcessor.js";
 import { computeIOScore } from "./ioScoreEngine.js";
-import { getPolygonFlowHighlightsBulk, unusualFlowBonusPoints, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
+import { requestFlowCapture } from "./flowCaptureService.js";
 import { getFlowAcceleration, flowAccelerationPoints, computeLiveFlowBucket } from "./optionsBaselines.js";
 import { getLiveSessionStats, setWatchlist as setWatcherWatchlist, getCoverageInfo, isWatcherEnabled, type CoverageInfo } from "./optionsWatcher.js";
 import { logger } from "./logger.js";
@@ -38,6 +38,20 @@ const CFG = {
   obvFlatThreshold: 0.05,
   rsFlatThreshold: 0.001,
   maxScanConcurrency: 5,
+  /** Top symbols to run on-demand flow capture before Polygon highlights (WebSocket budget). */
+  flowCaptureTopN: Math.min(
+    50,
+    Math.max(
+      0,
+      (() => {
+        const raw = process.env["SCANNER_TOP_N_FLOW_CAPTURE"]?.trim();
+        if (raw === undefined || raw === "") return 20;
+        const n = Number(raw);
+        return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 20;
+      })(),
+    ),
+  ),
+  flowCaptureConcurrency: 5,
 };
 
 // ─── Sector ETF mapping ────────────────────────────────────────────────────
@@ -1203,6 +1217,23 @@ export async function runDiscoveryScan(
       emitTelemetry("SCANNER", "INFO", `Catalyst bonus (+${cfg.catalystBonusPoints}) applied to: ${catalystBonusApplied.join(", ")}`, {
         symbols: catalystBonusApplied, bonus: cfg.catalystBonusPoints,
       }, "SCANNER", scanBatch);
+    }
+  }
+
+  // ── On-demand flow capture for top-N scanner candidates (shared WebSocket budget) ──
+  if (CFG.flowCaptureTopN > 0) {
+    const sortedForCapture = [...scoredResults].sort((a, b) => b.totalScore - a.totalScore);
+    const captureSyms = sortedForCapture.slice(0, CFG.flowCaptureTopN).map((r) => r.symbol);
+    for (let i = 0; i < captureSyms.length; i += CFG.flowCaptureConcurrency) {
+      const batch = captureSyms.slice(i, i + CFG.flowCaptureConcurrency);
+      await Promise.all(
+        batch.map((sym) =>
+          requestFlowCapture(sym, { timeout: 90_000 }).catch((err) => {
+            logger.warn({ err, sym }, "deterministicScanner: requestFlowCapture failed");
+            return null;
+          }),
+        ),
+      );
     }
   }
 
