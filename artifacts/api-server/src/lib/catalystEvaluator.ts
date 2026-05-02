@@ -17,7 +17,7 @@
  *  - residualCatalyst: recently-fired event the price is still digesting
  *
  * Deterministic sources (server-computed):
- *  - EARNINGS         → earningsService (Benzinga primary, Yahoo fallback)
+ *  - EARNINGS         → earningsService (vendor calendar primary, Yahoo fallback)
  *  - FED_MEETING      → calendarEventChecker FOMC schedule
  *  - ECONOMIC_RELEASE → calendarEventChecker (NFP/CPI/PPI/PCE/GDP, HIGH only)
  *
@@ -278,7 +278,7 @@ export async function evaluateCatalyst(opts: {
       : null;
     // We deliberately ignore an AI-supplied EARNINGS residual: server is
     // canonical for that type, and accepting AI input would risk overriding
-    // a known-good Benzinga date with a hallucinated one.
+    // a known-good vendor calendar date with a hallucinated one.
     if (
       residualType &&
       residualType !== "NONE" &&

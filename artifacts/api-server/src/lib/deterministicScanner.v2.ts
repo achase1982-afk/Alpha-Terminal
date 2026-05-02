@@ -1058,7 +1058,7 @@ export async function runDiscoveryScan(
       const sectorCandles = etfHistories.get(sectorEtf) ?? etfHistories.get("SPY") ?? [];
       const sectorCloses = sectorCandles.map(c => c.close);
 
-      // Earnings flags — single source of truth: Benzinga primary, Yahoo fallback, 6h cache.
+      // Earnings flags — single source of truth: vendor calendar primary, Yahoo fallback, 6h cache.
       // Calendar-event MEGA_EARNINGS list is intentionally NOT consulted here so the suppress
       // window applies uniformly to every ticker, not just the hand-maintained mega caps.
       const suppressDays = cfg.earningsSuppressDays ?? CFG.earningsSuppressDays;

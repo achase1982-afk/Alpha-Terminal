@@ -2298,7 +2298,7 @@ async function fetchEarningsDaysAway(
   // earnings date by adding ~91-day quarter offsets to Schwab's
   // `lastEarningsDate`, which produced stale and conflicting values vs the
   // real calendar (e.g. RIVN's actual April 30 print would show as a synthetic
-  // ~May 7 estimate). Now we delegate to earningsService — the same Benzinga →
+  // ~May 7 estimate). Now we delegate to earningsService — the same vendor primary calendar →
   // Yahoo source of truth used by strategistV2, catalystEvaluator, and the
   // discovery scanner — so every consumer sees the same date.
   try {

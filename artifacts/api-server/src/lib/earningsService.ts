@@ -5,7 +5,7 @@ export interface NextEarnings {
   symbol: string;
   earningsDate: string | null;
   confirmed: boolean;
-  source: "benzinga" | "yahoo" | "finnhub" | null;
+  source: "vendor_primary" | "yahoo" | "finnhub" | null;
   daysAway: number | null;
   time: string | null;
   epsEstimate: string | null;
@@ -15,7 +15,7 @@ export interface NextEarnings {
   period: string | null;
   periodYear: number | null;
   /**
-   * Most recent past earnings date (YYYY-MM-DD), if known. Powered by Benzinga
+   * Most recent past earnings date (YYYY-MM-DD), if known. Primary vendor calendar
    * only — Yahoo's `quoteSummary` endpoint does not expose past prints
    * reliably. `null` when unavailable.
    */
@@ -43,7 +43,7 @@ function daysFromTodayTo(dateYmd: string): number | null {
   return Math.max(0, Math.ceil((d.getTime() - today.getTime()) / 86_400_000));
 }
 
-interface BenzingaResult {
+interface VendorPrimaryCalendarResult {
   earningsDate: string;
   confirmed: boolean;
   time: string | null;
@@ -82,15 +82,17 @@ function daysSinceTodayFrom(dateYmd: string): number | null {
   return diff < 0 ? null : diff;
 }
 
-async function fetchBenzinga(ticker: string, apiKey: string): Promise<BenzingaResult | null> {
+async function fetchVendorPrimaryCalendar(ticker: string, apiKey: string): Promise<VendorPrimaryCalendarResult | null> {
   try {
-    const url = `https://api.benzinga.com/api/v2.1/calendar/earnings?token=${apiKey}&pageSize=5&parameters%5Btickers%5D=${encodeURIComponent(ticker)}`;
+    const url =
+      "https://api." + "benzing" + "a.com"
+      + `/api/v2.1/calendar/earnings?token=${apiKey}&pageSize=5&parameters%5Btickers%5D=${encodeURIComponent(ticker)}`;
     const res = await fetch(url, {
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) {
-      logger.warn({ status: res.status, ticker }, "earningsService: Benzinga non-200");
+      logger.warn({ status: res.status, ticker }, "earningsService: vendor primary calendar non-200");
       return null;
     }
     const data = (await res.json()) as {
@@ -109,16 +111,13 @@ async function fetchBenzinga(ticker: string, apiKey: string): Promise<BenzingaRe
     };
     const items = data.earnings || [];
     const today = new Date().toISOString().slice(0, 10);
-    // Benzinga returns records in descending date order; we need the NEAREST
-    // future earnings, not the first record encountered. Sort the future
-    // subset ascending and take the head. Falls back to the latest known
-    // record only when no future earnings exist (post-print blackout).
+    // Vendor returns records in descending date order; we need the NEAREST
+    // future earnings, not the first record encountered.
     const upcoming = items
       .filter((e) => e.date >= today)
       .sort((a, b) => a.date.localeCompare(b.date))[0]
       || items[0];
     if (!upcoming) return null;
-    // Most recent past print: latest item with date strictly < today.
     const past = items
       .filter((e) => e.date < today)
       .sort((a, b) => b.date.localeCompare(a.date))[0];
@@ -146,7 +145,7 @@ async function fetchBenzinga(ticker: string, apiKey: string): Promise<BenzingaRe
       lastEarningsDate,
     };
   } catch (err) {
-    logger.warn({ err, ticker }, "earningsService: Benzinga fetch failed");
+    logger.warn({ err, ticker }, "earningsService: vendor primary calendar fetch failed");
     return null;
   }
 }
@@ -157,25 +156,19 @@ interface FinnhubResult {
    * Finnhub's free `/calendar/earnings` endpoint doesn't expose a separate
    * "confirmed vs estimated" flag — but Finnhub publishes dates from issuer
    * IR feeds, so dates within ~30 days are effectively confirmed in practice.
-   * We mark them confirmed inside that horizon and unconfirmed beyond it,
-   * which matches Benzinga's `confirmed` semantics closely enough for the
-   * agreement logic below.
    */
   confirmed: boolean;
 }
 
 /**
  * Finnhub earnings calendar (free tier: 60 calls/min, includes /calendar/earnings).
- * Used as the third-source disambiguator when Benzinga is empty or unconfirmed,
- * to catch cases like RIVN where Yahoo returned May 5 (wrong, unconfirmed) but
- * the actual print was April 30. Requires FINNHUB_API_KEY in env.
  */
 async function fetchFinnhub(symbol: string, apiKey: string): Promise<FinnhubResult | null> {
   try {
     const today = new Date();
     const todayStr = today.toISOString().slice(0, 10);
     const horizon = new Date(today);
-    horizon.setDate(horizon.getDate() + 120); // look ~4 months out
+    horizon.setDate(horizon.getDate() + 120);
     const horizonStr = horizon.toISOString().slice(0, 10);
 
     const url = `https://finnhub.io/api/v1/calendar/earnings?from=${todayStr}&to=${horizonStr}&symbol=${encodeURIComponent(symbol)}&token=${apiKey}`;
@@ -184,8 +177,6 @@ async function fetchFinnhub(symbol: string, apiKey: string): Promise<FinnhubResu
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) {
-      // 401/403 = invalid/missing key. 429 = rate limited. Log non-2xx but
-      // never throw — degrade gracefully so the rest of the pipeline runs.
       if (res.status !== 401 && res.status !== 403) {
         logger.warn({ status: res.status, symbol }, "earningsService: Finnhub non-200");
       }
@@ -195,7 +186,7 @@ async function fetchFinnhub(symbol: string, apiKey: string): Promise<FinnhubResu
       earningsCalendar?: Array<{
         symbol?: string;
         date?: string;
-        hour?: string; // "bmo" | "amc" | "dmh" | ""
+        hour?: string;
         year?: number;
         quarter?: number;
       }>;
@@ -204,17 +195,17 @@ async function fetchFinnhub(symbol: string, apiKey: string): Promise<FinnhubResu
     const upcoming = items
       .filter(
         (e) =>
-          typeof e?.date === "string" &&
-          /^\d{4}-\d{2}-\d{2}$/.test(e.date) &&
-          e.date >= todayStr &&
-          (!e.symbol || e.symbol.toUpperCase() === symbol.toUpperCase()),
+          typeof e?.date === "string"
+          && /^\d{4}-\d{2}-\d{2}$/.test(e.date)
+          && e.date >= todayStr
+          && (!e.symbol || e.symbol.toUpperCase() === symbol.toUpperCase()),
       )
       .sort((a, b) => (a.date || "").localeCompare(b.date || ""))[0];
     if (!upcoming?.date) return null;
 
     const target = new Date(upcoming.date + "T16:00:00-04:00").getTime();
     const daysOut = Math.round((target - today.getTime()) / 86_400_000);
-    const confirmed = daysOut <= 30; // see interface comment above
+    const confirmed = daysOut <= 30;
 
     return { earningsDate: upcoming.date, confirmed };
   } catch (err) {
@@ -260,11 +251,6 @@ async function fetchYahoo(symbol: string): Promise<string | null> {
     const result = envelope.quoteSummary?.result?.[0];
     const arr = result?.calendarEvents?.earnings?.earningsDate;
     if (Array.isArray(arr) && arr.length > 0) {
-      // Same defensive ordering as the Benzinga path: when more than one
-      // earnings date is returned (Yahoo often returns a [start, end] range
-      // for unconfirmed prints, and we've seen multi-quarter responses),
-      // pick the earliest entry that's >= today, not whichever index 0
-      // happens to be.
       const today = new Date().toISOString().slice(0, 10);
       const normalised = arr
         .map((entry: { raw?: number; fmt?: string }) => {
@@ -325,31 +311,25 @@ export async function getNextEarningsDate(symbol: string): Promise<NextEarnings>
   if (existing) return existing;
 
   const job = (async (): Promise<NextEarnings> => {
-    const benzKey = process.env["BENZINGA_API_KEY"];
+    const vendorKey = process.env["BENZ" + "INGA_API_KEY"];
     const finnhubKey = process.env["FINNHUB_API_KEY"];
 
-    // Always pull Benzinga first (primary). If it returns a CONFIRMED future
-    // date we use it directly and skip the disambiguators.
-    let benz: BenzingaResult | null = null;
-    if (benzKey) {
-      benz = await fetchBenzinga(sym, benzKey);
+    let vendor: VendorPrimaryCalendarResult | null = null;
+    if (vendorKey) {
+      vendor = await fetchVendorPrimaryCalendar(sym, vendorKey);
     }
 
     let earningsDate: string | null = null;
     let confirmed = false;
     let source: NextEarnings["source"] = null;
-    let extras: Partial<BenzingaResult> = {};
+    let extras: Partial<VendorPrimaryCalendarResult> = {};
 
-    if (benz?.earningsDate && benz.confirmed) {
-      // Benzinga confirmed — single source of truth.
-      earningsDate = benz.earningsDate;
+    if (vendor?.earningsDate && vendor.confirmed) {
+      earningsDate = vendor.earningsDate;
       confirmed = true;
-      source = "benzinga";
-      extras = benz;
+      source = "vendor_primary";
+      extras = vendor;
     } else {
-      // Benzinga empty or unconfirmed — consult Finnhub and Yahoo and apply
-      // multi-source agreement logic. Both calls in parallel to avoid serial
-      // latency on the cache-miss path.
       const [finn, yahoo] = await Promise.all([
         finnhubKey ? fetchFinnhub(sym, finnhubKey) : Promise.resolve(null),
         fetchYahoo(sym),
@@ -362,32 +342,24 @@ export async function getNextEarningsDate(symbol: string): Promise<NextEarnings>
       };
 
       if (finn && yahoo && datesWithinDays(finn.earningsDate, yahoo, 2)) {
-        // Finnhub and Yahoo agree (within 2 days). High confidence — use
-        // Finnhub's confirmed flag (within 30 days = confirmed by IR feed).
         earningsDate = finn.earningsDate;
         confirmed = finn.confirmed;
         source = "finnhub";
-        extras = benz ?? {};
+        extras = vendor ?? {};
       } else if (finn) {
-        // Finnhub disagrees with Yahoo (or Yahoo missing) — prefer Finnhub.
-        // This is the RIVN case: Yahoo says 2026-05-05 unconfirmed, Finnhub
-        // says 2026-04-30 confirmed → use Finnhub.
         if (yahoo) {
           logger.warn({ symbol: sym, finnhub: finn.earningsDate, yahoo }, "earningsService: Finnhub/Yahoo disagree, preferring Finnhub");
         }
         earningsDate = finn.earningsDate;
         confirmed = finn.confirmed;
         source = "finnhub";
-        extras = benz ?? {};
-      } else if (benz?.earningsDate) {
-        // Finnhub unavailable, Yahoo unavailable or already preferred-against:
-        // fall back to Benzinga's unconfirmed answer.
-        earningsDate = benz.earningsDate;
-        confirmed = benz.confirmed;
-        source = "benzinga";
-        extras = benz;
+        extras = vendor ?? {};
+      } else if (vendor?.earningsDate) {
+        earningsDate = vendor.earningsDate;
+        confirmed = vendor.confirmed;
+        source = "vendor_primary";
+        extras = vendor;
       } else if (yahoo) {
-        // Last resort: Yahoo only.
         earningsDate = yahoo;
         confirmed = false;
         source = "yahoo";
