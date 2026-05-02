@@ -40,13 +40,12 @@ import {
   type PolygonOptionTrade,
 } from "./polygonOptionsWs.js";
 import { getWatcherSubscribedContractCount } from "./optionsWatcher.js";
+import { OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS } from "./optionsFlowRawTradesBulkInsert.js";
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MIN_CAPTURE_MS = 10_000;
 const MAX_CAPTURE_MS = 30_000;
-/** Keeps per-statement bind params under PostgreSQL's 65,535 limit (~28 cols × 1000 rows). */
-const INSERT_BATCH_SIZE = 1_000;
-const FLUSH_BATCH_MAX = INSERT_BATCH_SIZE;
+const FLUSH_BATCH_MAX = OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS;
 const FLUSH_INTERVAL_MS = 5_000;
 const CAPACITY_QUEUE_MS = 30_000;
 const CHANNEL_POLL_MS = 200;
@@ -539,8 +538,8 @@ async function runWebsocketCaptureInternal(
     const batch = buffer.splice(0, buffer.length);
     try {
       let insertedThisFlush = 0;
-      for (let i = 0; i < batch.length; i += INSERT_BATCH_SIZE) {
-        const slice = batch.slice(i, i + INSERT_BATCH_SIZE);
+      for (let i = 0; i < batch.length; i += OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS) {
+        const slice = batch.slice(i, i + OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS);
         const ins = await db
           .insert(optionsFlowRawTradesTable)
           .values(slice)

@@ -2,15 +2,14 @@ import { randomUUID } from "node:crypto";
 import { db, optionsFlowRawTradesTable } from "@workspace/db";
 import { logger } from "./logger.js";
 import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
+import { OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS } from "./optionsFlowRawTradesBulkInsert.js";
 
 // Batched async writer for classified options trade events streaming
 // from the live watcher. Avoids per-trade DB round-trips by buffering
 // and flushing on a fixed cadence or when the buffer crosses a size cap.
 
 const FLUSH_INTERVAL_MS = 5_000;
-/** Keeps per-statement bind params under PostgreSQL's 65,535 limit (~28 cols × 1000 rows). */
-const INSERT_BATCH_SIZE = 1_000;
-const FLUSH_BATCH_MAX = INSERT_BATCH_SIZE;
+const FLUSH_BATCH_MAX = OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS;
 
 interface PendingTrade {
   underlyingSymbol: string;
@@ -182,8 +181,8 @@ async function flush(): Promise<void> {
   const batch = buffer.splice(0, buffer.length);
   batchesAttempted++;
   try {
-    for (let i = 0; i < batch.length; i += INSERT_BATCH_SIZE) {
-      const slice = batch.slice(i, i + INSERT_BATCH_SIZE);
+    for (let i = 0; i < batch.length; i += OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS) {
+      const slice = batch.slice(i, i + OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS);
       await db.insert(optionsFlowRawTradesTable).values(slice).onConflictDoNothing({
         target: [
           optionsFlowRawTradesTable.underlyingSymbol,
