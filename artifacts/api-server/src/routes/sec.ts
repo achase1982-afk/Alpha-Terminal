@@ -324,6 +324,8 @@ interface InsiderTransaction {
   transactionCode: string;
   shares: number;
   pricePerShare: number | null;
+  /** shares * pricePerShare when both are valid; otherwise null. */
+  transactionValueUsd: number | null;
   acquiredOrDisposed: string;
   sharesAfter: number | null;
   filingUrl: string;
@@ -410,6 +412,9 @@ function parseForm4Xml(xml: string, filingUrl: string): InsiderTransaction[] {
 
     const price = priceMatch ? parseFloat(priceMatch[1]) : null;
     const sharesRaw = sharesMatch ? parseInt(sharesMatch[1].replace(/,/g, ""), 10) : 0;
+    const absShares = Math.abs(sharesRaw);
+    const priceOk = price != null && Number.isFinite(price) && price > 0;
+    const transactionValueUsd = priceOk && absShares > 0 ? absShares * price : null;
 
     results.push({
       ownerName,
@@ -418,8 +423,9 @@ function parseForm4Xml(xml: string, filingUrl: string): InsiderTransaction[] {
       officerTitle: officerTitle || (isDirector ? "Director" : ""),
       transactionDate: dateMatch?.[1] || "",
       transactionCode: code,
-      shares: Math.abs(sharesRaw),
-      pricePerShare: price && price > 0 ? price : null,
+      shares: absShares,
+      pricePerShare: priceOk ? price : null,
+      transactionValueUsd,
       acquiredOrDisposed: (adMatch?.[1] || "").trim().toUpperCase(),
       sharesAfter: afterMatch ? parseInt(afterMatch[1].replace(/,/g, ""), 10) : null,
       filingUrl,
@@ -432,7 +438,7 @@ function parseForm4Xml(xml: string, filingUrl: string): InsiderTransaction[] {
 
 const insiderCache = new Map<string, { transactions: InsiderTransaction[]; ts: number; version: number }>();
 const INSIDER_CACHE_TTL = 5 * 60 * 1000;
-const INSIDER_PARSE_VERSION = 4;
+const INSIDER_PARSE_VERSION = 5;
 
 router.get("/insider-transactions", async (req, res) => {
   const symbol = (req.query.symbol as string || "").trim().toUpperCase().replace(/^\$/, "");
@@ -518,8 +524,10 @@ function parse13GXml(xml: string, filingDate: string, formType: string): Institu
     xml.match(/<amountBeneficiallyOwned>([^<]*)<\/amountBeneficiallyOwned>/i);
   const pctMatch = xml.match(/<classPercent>([^<]*)<\/classPercent>/i);
 
-  const shares = sharesMatch ? parseInt(sharesMatch[1].replace(/,/g, "")) : 0;
-  const pct = pctMatch ? parseFloat(pctMatch[1]) : 0;
+  const sharesParsed = sharesMatch ? parseInt(sharesMatch[1].replace(/,/g, ""), 10) : NaN;
+  const pctParsed = pctMatch ? parseFloat(pctMatch[1]) : NaN;
+  const shares = Number.isFinite(sharesParsed) && sharesParsed > 0 ? sharesParsed : 0;
+  const pct = Number.isFinite(pctParsed) && pctParsed > 0 ? pctParsed : 0;
 
   if (!nameMatch[1].trim()) return null;
 
@@ -535,6 +543,15 @@ function parse13GXml(xml: string, filingDate: string, formType: string): Institu
 const holdersCache = new Map<string, { holders: InstitutionalHolder[]; ts: number }>();
 const HOLDERS_CACHE_TTL = 10 * 60 * 1000;
 
+/** Keep rows that have at least one of percent or shares to display (suppress all-dash rows). */
+function filterInstitutionalHoldersForDisplay(holders: InstitutionalHolder[]): InstitutionalHolder[] {
+  return holders.filter((h) => {
+    const pctOk = h.percentOfClass != null && Number.isFinite(h.percentOfClass) && h.percentOfClass > 0;
+    const shOk = h.shares != null && Number.isFinite(h.shares) && h.shares > 0;
+    return pctOk || shOk;
+  });
+}
+
 router.get("/institutional-holders", async (req, res) => {
   const symbol = (req.query.symbol as string || "").trim().toUpperCase().replace(/^\$/, "");
   if (!symbol) return res.status(400).json({ error: "symbol required" });
@@ -542,7 +559,7 @@ router.get("/institutional-holders", async (req, res) => {
   try {
     const cached = holdersCache.get(symbol);
     if (cached && Date.now() - cached.ts < HOLDERS_CACHE_TTL) {
-      return res.json({ holders: cached.holders, symbol });
+      return res.json({ holders: filterInstitutionalHoldersForDisplay(cached.holders), symbol });
     }
 
     const map = await loadTickerMap(req.log);
@@ -596,8 +613,9 @@ router.get("/institutional-holders", async (req, res) => {
 
     holders.sort((a, b) => b.percentOfClass - a.percentOfClass);
 
+    const holdersOut = filterInstitutionalHoldersForDisplay(holders);
     holdersCache.set(symbol, { holders, ts: Date.now() });
-    return res.json({ holders, symbol });
+    return res.json({ holders: holdersOut, symbol });
   } catch (err: any) {
     req.log?.error({ err }, "Institutional holders endpoint error");
     return res.status(502).json({ error: "SEC upstream unavailable", holders: [] });

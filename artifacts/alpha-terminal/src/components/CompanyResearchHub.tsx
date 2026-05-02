@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, memo, useId, type TouchEvent as ReactTouchEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { Fragment, useState, useEffect, useCallback, useRef, useMemo, memo, useId, type CSSProperties, type TouchEvent as ReactTouchEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import { useQuote, type QuoteData } from "@/hooks/useQuote";
@@ -1103,11 +1103,35 @@ interface InsiderTxn {
   transactionDate: string;
   shares: number;
   pricePerShare: number | null;
+  transactionValueUsd?: number | null;
   acquiredOrDisposed: string;
   filingUrl: string;
   transactionCode: string;
   rule10b51Plan: boolean;
   showInOpenMarketDefault: boolean;
+}
+
+function insiderTxnRowId(t: InsiderTxn, index: number): string {
+  return `${t.filingUrl}|${t.transactionDate}|${(t.transactionCode || "").toUpperCase()}|${index}`;
+}
+
+/** Compact USD for insider VALUE column (no em dash in output). */
+function formatInsiderTxnUsd(v: number | null | undefined): string | null {
+  if (v == null || !Number.isFinite(v) || v <= 0) return null;
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 10_000) return `$${Math.round(v / 1000)}K`;
+  return `$${Math.round(v).toLocaleString()}`;
+}
+
+function formatInsiderTxnUsdAria(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v) || v <= 0) return "Value not reported";
+  return `Transaction value about ${Math.round(v).toLocaleString()} dollars`;
+}
+
+function institutionalHolderHasDisplayData(h: InstHolder): boolean {
+  const pctOk = h.percentOfClass != null && Number.isFinite(h.percentOfClass) && h.percentOfClass > 0;
+  const shOk = h.shares != null && Number.isFinite(h.shares) && h.shares > 0;
+  return pctOk || shOk;
 }
 
 interface InstHolder {
@@ -1126,6 +1150,7 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [showAllInsiderRows, setShowAllInsiderRows] = useState(false);
+  const [expandedInsiderId, setExpandedInsiderId] = useState<string | null>(null);
   const insiderFilterId = useId();
   const fetchedRef = useRef<string | null>(null);
 
@@ -1174,6 +1199,7 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
 
   useEffect(() => {
     setShowAllInsiderRows(false);
+    setExpandedInsiderId(null);
   }, [ticker]);
 
   const insiderOpenMarketRows = useMemo(
@@ -1182,6 +1208,11 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
   );
   const insiderHiddenCount = Math.max(0, insiders.length - insiderOpenMarketRows.length);
   const insiderRowsToShow = showAllInsiderRows ? insiders : insiderOpenMarketRows;
+
+  const holdersDisplay = useMemo(
+    () => holders.filter(institutionalHolderHasDisplayData),
+    [holders],
+  );
 
   function insiderTypePresentation(t: InsiderTxn) {
     const code = (t.transactionCode || "").toUpperCase();
@@ -1203,7 +1234,7 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
       };
     }
     return {
-      text: code || "—",
+      text: code || "\u2013",
       color: C.textDim,
       aria: `Form 4 transaction code ${code || "unknown"}`,
     };
@@ -1252,7 +1283,7 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
       <div style={{ fontSize: 11, fontFamily: f, fontWeight: 700, color: C.gold, letterSpacing: 2, textTransform: "uppercase", padding: "14px 0 6px", borderBottom: `1px solid ${C.borderHi}` }}>
         INSTITUTIONAL HOLDERS
       </div>
-      {holders.length > 0 ? (
+      {holdersDisplay.length > 0 ? (
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: f, tableLayout: "fixed" }}>
             <colgroup>
@@ -1270,19 +1301,19 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
               </tr>
             </thead>
             <tbody>
-              {holders.map((h, i) => (
+              {holdersDisplay.map((h, i) => (
                 <tr key={i}>
                   <td style={{ ...cellStyle, color: C.text, whiteSpace: "normal", wordBreak: "break-word", paddingRight: 6 }}>
                     {decodeHtml(h.name)}
                   </td>
                   <td style={{ ...cellStyle, textAlign: "right", fontWeight: 600 }}>
-                    {h.percentOfClass > 0 ? `${h.percentOfClass.toFixed(1)}%` : "—"}
+                    {h.percentOfClass > 0 ? `${h.percentOfClass.toFixed(1)}%` : "\u2013"}
                   </td>
                   <td style={{ ...dimCell, textAlign: "right", fontSize: 11 }}>
-                    {h.shares > 0 ? (h.shares >= 1e6 ? `${(h.shares / 1e6).toFixed(1)}M` : h.shares.toLocaleString()) : "—"}
+                    {h.shares > 0 ? (h.shares >= 1e6 ? `${(h.shares / 1e6).toFixed(1)}M` : h.shares.toLocaleString()) : "\u2013"}
                   </td>
                   <td style={{ ...dimCell, textAlign: "right", fontSize: 11 }}>
-                    {h.filingDate || "—"}
+                    {h.filingDate || "\u2013"}
                   </td>
                 </tr>
               ))}
@@ -1291,7 +1322,9 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
         </div>
       ) : (
         <div style={{ padding: "10px 0", fontSize: 11, fontFamily: f, color: C.textDim }}>
-          No SC 13G/D filings found
+          {holders.length > 0
+            ? "No institutional holdings reported"
+            : "No SC 13G/D filings found"}
         </div>
       )}
 
@@ -1324,13 +1357,14 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
       </div>
       {insiderRowsToShow.length > 0 ? (
         <div style={{ overflowX: "auto" }}>
-          <table id={`${insiderFilterId}-table`} style={{ width: "100%", borderCollapse: "collapse", fontFamily: f, tableLayout: "auto" }}>
+          <table id={`${insiderFilterId}-table`} style={{ width: "100%", borderCollapse: "collapse", fontFamily: f, tableLayout: "fixed" }}>
             <colgroup>
-              <col style={{ width: "28%", minWidth: 0 }} />
               <col style={{ width: "22%", minWidth: 0 }} />
-              <col style={{ width: "1%", minWidth: "5.5rem" }} />
-              <col style={{ width: "18%", minWidth: 0 }} />
-              <col style={{ width: "14%", minWidth: 0 }} />
+              <col style={{ width: "22%", minWidth: 0 }} />
+              <col style={{ width: "18%", minWidth: "5.5rem" }} />
+              <col style={{ width: "12%", minWidth: 0 }} />
+              <col style={{ width: "16%", minWidth: 0 }} />
+              <col style={{ width: "10%", minWidth: 0 }} />
             </colgroup>
             <thead>
               <tr>
@@ -1338,6 +1372,7 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
                 <th style={{ ...hdrStyle, textAlign: "left" }}>TITLE</th>
                 <th style={{ ...hdrStyle, textAlign: "center" }} scope="col">TYPE</th>
                 <th style={{ ...hdrStyle, textAlign: "right" }}>SHARES</th>
+                <th style={{ ...hdrStyle, textAlign: "right" }}>VALUE</th>
                 <th style={{ ...hdrStyle, textAlign: "right" }}>DATE</th>
               </tr>
             </thead>
@@ -1345,76 +1380,140 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
               {insiderRowsToShow.slice(0, 50).map((t, i) => {
                 const pres = insiderTypePresentation(t);
                 const code = (t.transactionCode || "").toUpperCase();
+                const rowId = insiderTxnRowId(t, i);
+                const expanded = expandedInsiderId === rowId;
+                const valStr = formatInsiderTxnUsd(t.transactionValueUsd);
+                const valAria = formatInsiderTxnUsdAria(t.transactionValueUsd);
+                const cellEllipsisIns: CSSProperties = {
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  maxWidth: 0,
+                };
                 return (
-                  <tr key={`${t.filingUrl}-${t.transactionDate}-${code}-${i}`}>
-                    <td style={{ ...cellStyle, color: t.filingUrl ? C.gold : C.text, cursor: t.filingUrl ? "pointer" : "default", whiteSpace: "normal", wordBreak: "break-word", paddingRight: 4 }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (t.filingUrl) {
-                          const contentUrl = `${API_BASE}/sec/filing-content?url=${encodeURIComponent(t.filingUrl)}`;
-                          openBrowser(contentUrl, `Form 4: ${t.ownerName}`, "SEC EDGAR");
+                  <Fragment key={rowId}>
+                    <tr
+                      className="insider-table-row"
+                      tabIndex={0}
+                      onClick={() => setExpandedInsiderId(expanded ? null : rowId)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setExpandedInsiderId(expanded ? null : rowId);
                         }
                       }}
+                      style={{ cursor: "pointer" }}
+                      aria-expanded={expanded}
+                      aria-label={`Insider row ${t.ownerName}, ${t.transactionDate}. Press Enter for details.`}
                     >
-                      {t.ownerName || "—"}
-                    </td>
-                    <td style={{ ...dimCell, fontSize: 11, whiteSpace: "normal", wordBreak: "break-word", paddingRight: 4 }}>
-                      {t.officerTitle || "—"}
-                    </td>
-                    <td
-                      style={{
-                        ...cellStyle,
-                        textAlign: "center",
-                        fontWeight: 700,
-                        fontSize: 11,
-                        whiteSpace: "nowrap",
-                        verticalAlign: "middle",
-                      }}
-                    >
-                      <span
+                      <td
                         style={{
-                          display: "inline-flex",
-                          flexDirection: "row",
-                          flexWrap: "nowrap",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: 4,
-                          color: pres.color,
+                          ...cellStyle,
+                          color: t.filingUrl ? C.gold : C.text,
+                          cursor: t.filingUrl ? "pointer" : "default",
+                          ...cellEllipsisIns,
+                          paddingRight: 4,
                         }}
-                        aria-label={pres.aria}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (t.filingUrl) {
+                            const contentUrl = `${API_BASE}/sec/filing-content?url=${encodeURIComponent(t.filingUrl)}`;
+                            openBrowser(contentUrl, `Form 4: ${t.ownerName}`, "SEC EDGAR");
+                          }
+                        }}
                       >
-                        {code === "S" && t.rule10b51Plan ? (
-                          <>
-                            <span style={{ color: C.red, whiteSpace: "nowrap" }}>SELL</span>
-                            <span
-                              style={{
-                                fontSize: 8,
-                                fontWeight: 700,
-                                lineHeight: 1,
-                                color: C.amber,
-                                border: `1px solid ${C.amber}`,
-                                borderRadius: 3,
-                                padding: "1px 3px",
-                                whiteSpace: "nowrap",
-                              }}
-                              title="Rule 10b5-1 trading plan"
-                              aria-hidden="true"
-                            >
-                              10b5-1
-                            </span>
-                          </>
-                        ) : (
-                          <span style={{ whiteSpace: "nowrap" }}>{pres.text}</span>
-                        )}
-                      </span>
-                    </td>
-                    <td style={{ ...cellStyle, textAlign: "right" }}>
-                      {t.shares?.toLocaleString() || "—"}
-                    </td>
-                    <td style={{ ...dimCell, textAlign: "right", fontSize: 11 }}>
-                      {t.transactionDate || "—"}
-                    </td>
-                  </tr>
+                        {t.ownerName || "\u2013"}
+                      </td>
+                      <td style={{ ...dimCell, fontSize: 11, ...cellEllipsisIns, paddingRight: 4 }}>
+                        {t.officerTitle || "\u2013"}
+                      </td>
+                      <td
+                        style={{
+                          ...cellStyle,
+                          textAlign: "center",
+                          fontWeight: 700,
+                          fontSize: 11,
+                          whiteSpace: "nowrap",
+                          verticalAlign: "middle",
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            flexDirection: "row",
+                            flexWrap: "nowrap",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: 4,
+                            color: pres.color,
+                          }}
+                          aria-label={pres.aria}
+                        >
+                          {code === "S" && t.rule10b51Plan ? (
+                            <>
+                              <span style={{ color: C.red, whiteSpace: "nowrap" }}>SELL</span>
+                              <span
+                                style={{
+                                  fontSize: 8,
+                                  fontWeight: 700,
+                                  lineHeight: 1,
+                                  color: C.amber,
+                                  border: `1px solid ${C.amber}`,
+                                  borderRadius: 3,
+                                  padding: "1px 3px",
+                                  whiteSpace: "nowrap",
+                                }}
+                                title="Rule 10b5-1 trading plan"
+                                aria-hidden="true"
+                              >
+                                10b5-1
+                              </span>
+                            </>
+                          ) : (
+                            <span style={{ whiteSpace: "nowrap" }}>{pres.text}</span>
+                          )}
+                        </span>
+                      </td>
+                      <td style={{ ...cellStyle, textAlign: "right", ...cellEllipsisIns, fontFamily: monoNum }}>
+                        {t.shares?.toLocaleString() || "\u2013"}
+                      </td>
+                      <td
+                        style={{
+                          ...cellStyle,
+                          textAlign: "right",
+                          fontFamily: monoNum,
+                          color: C.gold,
+                          fontWeight: 600,
+                          ...cellEllipsisIns,
+                        }}
+                        aria-label={valAria}
+                      >
+                        {valStr ?? "N/A"}
+                      </td>
+                      <td style={{ ...dimCell, textAlign: "right", fontSize: 11, ...cellEllipsisIns }}>
+                        {t.transactionDate || "\u2013"}
+                      </td>
+                    </tr>
+                    {expanded && (
+                      <tr key={`${rowId}-detail`} style={{ background: C.card }}>
+                        <td colSpan={6} style={{ padding: "8px 10px", borderBottom: `1px solid ${C.border}`, fontSize: 10, fontFamily: f, color: C.textSoft }}>
+                          <div style={{ fontWeight: 700, color: C.gold, marginBottom: 4 }}>Transaction detail</div>
+                          <div style={{ fontFamily: monoNum, color: C.gold, fontSize: 12 }} aria-live="polite">
+                            {t.transactionValueUsd != null && Number.isFinite(t.transactionValueUsd) && t.transactionValueUsd > 0
+                              ? `About $${Math.round(t.transactionValueUsd).toLocaleString()}`
+                              : "Value not reported (no price per share in filing)"}
+                          </div>
+                          <div style={{ marginTop: 4 }}>
+                            {t.shares?.toLocaleString() ?? "\u2013"} shares
+                            {t.pricePerShare != null && t.pricePerShare > 0
+                              ? ` at $${t.pricePerShare.toFixed(2)} per share`
+                              : ""}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -2150,6 +2249,8 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
         .analyst-row-trigger:focus-visible { outline: 2px solid ${C.gold} !important; outline-offset: 2px !important; }
         .insider-filter-toggle:focus { outline: none !important; box-shadow: none !important; }
         .insider-filter-toggle:focus-visible { outline: 2px solid ${C.gold} !important; outline-offset: 2px !important; }
+        .insider-table-row:focus { outline: none !important; box-shadow: none !important; }
+        .insider-table-row:focus-visible { outline: 2px solid ${C.gold} !important; outline-offset: -2px !important; }
         .company-fin-subtab:focus { outline: none !important; box-shadow: none !important; }
         .company-fin-subtab:focus-visible { outline: 2px solid ${C.gold} !important; outline-offset: 2px !important; }
       `}</style>
