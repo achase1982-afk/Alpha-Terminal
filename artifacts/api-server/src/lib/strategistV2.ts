@@ -189,7 +189,7 @@ interface TickerData {
   price: number;
   dailyChangePct: number;
   ivr: number | null;
-  /** From getStoredIVR / equity_daily — surfaced in volatilityContext for the Vol Analyst. */
+  /** From getStoredIVR / equity_daily — surfaced in volatilityContext for the Volatility section. */
   ivrAsOfDate: string | null;
   ivrSource: string | null;
   avgVolume20d: number;
@@ -840,7 +840,7 @@ export async function analyzeTickerV2(
 
   // ── Desk mode (mode 3): three parallel analysts + PM ──────────────────
   if (settings.strategistMode === 3) {
-    status("Starting Desk analysis (3 analysts + PM)…");
+    status("Starting Desk analysis (four topic sections)…");
     try {
       const deskResult = await runDeskAnalysis({
         dataPackage,

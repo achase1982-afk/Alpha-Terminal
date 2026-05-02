@@ -155,7 +155,7 @@ export type DeskSpeechSectionId = "pm" | "vol" | "flow" | "catalyst";
 
 export interface DeskSpeechSection {
   id: DeskSpeechSectionId;
-  /** Short label for UI, e.g. "Vol Analyst" */
+  /** Short label for UI, e.g. "Volatility" */
   label: string;
   /** Full text passed to SpeechSynthesisUtterance */
   text: string;
@@ -278,9 +278,9 @@ export function buildDeskSpeechSections(
 ): DeskSpeechSection[] {
   const pmText = buildPmSpeech(deskResult, opts);
   return [
-    { id: "pm", label: "PM Decision", text: pmText },
-    { id: "vol", label: "Vol Analyst", text: buildVolSpeech(deskResult) },
-    { id: "flow", label: "Flow Analyst", text: buildFlowSpeech(deskResult) },
-    { id: "catalyst", label: "Catalyst Analyst", text: buildCatalystSpeech(deskResult) },
+    { id: "pm", label: "Decision", text: pmText },
+    { id: "vol", label: "Volatility", text: buildVolSpeech(deskResult) },
+    { id: "flow", label: "Flow", text: buildFlowSpeech(deskResult) },
+    { id: "catalyst", label: "Catalyst", text: buildCatalystSpeech(deskResult) },
   ];
 }

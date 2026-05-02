@@ -1656,13 +1656,13 @@ function DebateTranscript({
         // user knows this is a single-model pass, not a Bull/Bear debate.
         return { bg: "rgba(120,180,255,0.10)", fg: "#78B4FF", border: "rgba(120,180,255,0.4)", label: "Solo Validator" };
       case "vol":
-        return { bg: "rgba(251,191,36,0.10)", fg: "#fbbf24", border: "rgba(251,191,36,0.35)", label: "Vol Analyst" };
+        return { bg: "rgba(251,191,36,0.10)", fg: "#fbbf24", border: "rgba(251,191,36,0.35)", label: "Volatility" };
       case "flow":
-        return { bg: "rgba(56,189,248,0.10)", fg: "#38bdf8", border: "rgba(56,189,248,0.35)", label: "Flow Analyst" };
+        return { bg: "rgba(56,189,248,0.10)", fg: "#38bdf8", border: "rgba(56,189,248,0.35)", label: "Flow" };
       case "catalyst":
-        return { bg: "rgba(167,139,250,0.10)", fg: "#a78bfa", border: "rgba(167,139,250,0.35)", label: "Catalyst Analyst" };
+        return { bg: "rgba(167,139,250,0.10)", fg: "#a78bfa", border: "rgba(167,139,250,0.35)", label: "Catalyst" };
       case "pm":
-        return { bg: "rgba(74,222,128,0.10)", fg: "#4ade80", border: "rgba(74,222,128,0.35)", label: "PM" };
+        return { bg: "rgba(74,222,128,0.10)", fg: "#4ade80", border: "rgba(74,222,128,0.35)", label: "Decision" };
       default:
         return { bg: "rgba(255,255,255,0.06)", fg: "#999", border: "rgba(255,255,255,0.15)", label: "" };
     }
@@ -1674,15 +1674,15 @@ function DebateTranscript({
     role: string,
   ): string => {
     if (round === "desk") {
-      if (role === "vol") return "Parallel pass · Vol";
+      if (role === "vol") return "Parallel pass · Volatility";
       if (role === "flow") return "Parallel pass · Flow";
       if (role === "catalyst") return "Parallel pass · Catalyst";
-      if (role === "pm") return "PM synthesis";
+      if (role === "pm") return "Parallel pass · Decision";
       return "Desk";
     }
     if (role === "system" && phase === "info") return "Verdict";
     if (role === "solo" || phase === "solo") return "Solo Validation · Single Pass";
-    if (round === "synthesis") return "Phase 3 · Senior PM Arbitration";
+    if (round === "synthesis") return "Phase 3 · Final arbitration";
     if (round === 3 && phase === "propose") return "Phase 2 · R3 · Structure Vote";
     if (phase === "propose") return `Phase 1 · R${round} · Pitch`;
     if (phase === "critique") return `Phase 1 · R${round} · Rebut`;
@@ -1692,8 +1692,8 @@ function DebateTranscript({
 
   const roundHeader = (round: 1 | 2 | 3 | "synthesis" | "solo" | "desk"): string => {
     if (round === "solo") return "Solo validation";
-    if (round === "desk") return "DESK — Vol, Flow, Catalyst & PM";
-    if (round === "synthesis") return "Phase 3 — Senior PM Arbitration (Final Trade)";
+    if (round === "desk") return "DESK — Volatility, Flow, Catalyst, Decision";
+    if (round === "synthesis") return "Phase 3 — Final arbitration (trade)";
     if (round === 1) return "Phase 1 — Round 1 (Directional Pitch)";
     if (round === 2) return "Phase 1 — Round 2 (Rebuttal & Verdict)";
     return "Phase 2 — Round 3 (Trade Structure Vote)";

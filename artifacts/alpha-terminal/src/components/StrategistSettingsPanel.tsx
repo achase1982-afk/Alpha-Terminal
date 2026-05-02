@@ -103,10 +103,10 @@ export function StrategistSettingsPanel() {
   const isSoloDeskMode = currentMode === 4;
 
   const DESK_LABELS: Record<string, string> = {
-    strategistSoloModelIdx: "Desk — Vol Analyst Model",
-    strategistDebateAModelIdx: "Desk — Flow Analyst Model",
-    strategistDebateBModelIdx: "Desk — Catalyst Analyst Model",
-    strategistArbitratorModelIdx: "Desk — PM Model",
+    strategistSoloModelIdx: "Desk — Volatility model",
+    strategistDebateAModelIdx: "Desk — Flow model",
+    strategistDebateBModelIdx: "Desk — Catalyst model",
+    strategistArbitratorModelIdx: "Desk — Decision model",
   };
 
   /** Row titles when Solo Desk is selected: first slot = same model as Solo; others unused. */
@@ -114,7 +114,7 @@ export function StrategistSettingsPanel() {
     strategistSoloModelIdx: "Solo Model & Solo Desk",
     strategistDebateAModelIdx: "Bull / Flow — unused in Solo Desk",
     strategistDebateBModelIdx: "Bear / Catalyst — unused in Solo Desk",
-    strategistArbitratorModelIdx: "Arbitrator / PM — unused in Solo Desk",
+    strategistArbitratorModelIdx: "Decision — unused in Solo Desk",
   };
 
   const HIDDEN_IN_DESK = new Set(["strategistConvergence", "strategistTieBand"]);
