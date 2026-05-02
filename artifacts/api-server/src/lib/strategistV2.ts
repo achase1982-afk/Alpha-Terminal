@@ -4,6 +4,7 @@ import { computeIOScore, type IOScoreResult } from "./ioScoreEngine.js";
 import { getSettings, getStrategistModel, type StrategistConfig, type StrategistModelOption } from "./strategistSettings.js";
 import { runDebate, type DebateCallbacks, type DebateRound, type DebateRole, type DebatePhase } from "./strategistDebate.js";
 import { runDeskAnalysis, runSoloDesk, type DeskCallbacks } from "./strategistDesk.js";
+import type { DeskResult } from "./strategistDeskSchemas.js";
 import { throwIfStrategistAnalyzeCancelled } from "./strategistAnalyzeCancellation.js";
 import type { ScrubCanonical } from "./narrativeScrubbers.js";
 import { db, strategistTelemetryTable } from "@workspace/db";
@@ -15,6 +16,18 @@ import { getBestAccessToken } from "./tokenStore.js";
 import { fetchPolygonChain } from "./polygonChain.js";
 import { getPolygonFlowHighlights, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
 import { runStrategistTapeBackfill, type TapeBackfillStatus } from "./strategistTapeBackfill.js";
+import {
+  buildStrategistFullDiagnosticJson,
+  buildModelAttributionPlaceholder,
+  deriveRunOutcomeFromStrategistResult,
+  newStrategistRequestId,
+  strategistModeLabel,
+  telemetryDbResultToOutcome,
+  type StrategistRunMetadata,
+  type StrategistRunOutcomeTelemetry,
+} from "./strategistDiagnostics.js";
+import { runWithPolygonApiTraceAsync, takePolygonApiTrace } from "./polygonApiTrace.js";
+import { runInStrategistRunContext, getStrategistRunContext, mergeStrategistDiag } from "./strategistRunContext.js";
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
 import { getNextEarningsDate, type NextEarnings } from "./earningsService.js";
 import { evaluateCatalyst, deriveTradeDirection, type CatalystEvaluation } from "./catalystEvaluator.js";
@@ -152,6 +165,8 @@ export interface StrategistV2Result {
   ioScore?: IOScoreResult;
   systemicRiskElevated: boolean;
   telemetryId?: number;
+  /** Server-only correlation id for full diagnostic JSON (telemetry and export). */
+  strategistDiagnosticRequestId?: string;
   earningsAlert?: {
     earningsDate: string;
     daysUntilEarnings: number | null;
@@ -344,6 +359,34 @@ type TelemetryToxicGatePayload = {
   path_a_check: ToxicGateSnapshot["pathACheck"];
   path_b_check: ToxicGateSnapshot["pathBCheck"];
 };
+
+function parseDataPackageForDiag(raw: string | undefined | null): Record<string, unknown> {
+  if (!raw) return {};
+  try {
+    const v = JSON.parse(raw) as unknown;
+    return v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function deskSectionsPayload(deskResult: DeskResult): Record<string, unknown> {
+  const { vol, flow, catalyst, pm } = deskResult;
+  return { vol, flow, catalyst, pm };
+}
+
+function strategistPayloadFromResult(args: {
+  settings: StrategistConfig;
+  deskResult?: DeskResult | null;
+  aiResponse?: AiTradeResponse | null;
+}): unknown {
+  const { settings, deskResult, aiResponse } = args;
+  if (deskResult) return deskSectionsPayload(deskResult);
+  if (settings.strategistMode === 2 || aiResponse) {
+    return aiResponse ?? null;
+  }
+  return null;
+}
 
 /** Per-leg curated chain row; IV matches summarizeOptionsChain (normalizeStrategistIv). */
 interface CuratedOptionLeg {
@@ -599,15 +642,24 @@ export async function analyzeTickerV2(
   ticker: string,
   progress?: AnalyzeProgressCallbacks,
 ): Promise<StrategistV2Result> {
+  return runWithPolygonApiTraceAsync(() => analyzeTickerV2Inner(ticker, progress));
+}
+
+async function analyzeTickerV2Inner(
+  ticker: string,
+  progress?: AnalyzeProgressCallbacks,
+): Promise<StrategistV2Result> {
   const status = (s: string) => progress?.onStatus?.(s);
   status("Loading regime + settings…");
   assertAnalyzeNotCancelled(progress);
   const settings = await getSettings();
+  mergeStrategistDiag({ soloModelLabel: getStrategistModel(settings.strategistSoloModelIdx).label });
   assertAnalyzeNotCancelled(progress);
   const regime = getCachedRegime() ?? buildFallbackRegime();
 
   const toxicCheck = checkToxicGate(regime, settings);
   if (toxicCheck.triggered) {
+    const strategistDiagnosticRequestId = getStrategistRunContext()?.requestId;
     const result: StrategistV2Result = {
       status: "toxic_block",
       ticker,
@@ -618,8 +670,20 @@ export async function analyzeTickerV2(
       },
       regime,
       systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
+      ...(strategistDiagnosticRequestId ? { strategistDiagnosticRequestId } : {}),
     };
-    await logTelemetry(ticker, "toxic_block", regime, settings, null, null, toxicCheck, null, (result.blockReason as BlockReason).detail, {});
+    await emitFullDiagnosticTelemetry({
+      ticker,
+      settings,
+      regime,
+      ioScore: null,
+      tickerData: null,
+      toxicCheck,
+      telemetryDbResult: "toxic_block",
+      aiDecision: null,
+      thesis: (result.blockReason as BlockReason).detail,
+      extras: {},
+    });
     return withResultSchemaVersion(result);
   }
 
@@ -628,6 +692,7 @@ export async function analyzeTickerV2(
   const tickerData = tickerFetch.data;
   if (!tickerData) {
     const detail = `Unable to fetch ticker data (${tickerFetch.failureMode ?? "unknown"}).`;
+    const strategistDiagnosticRequestId = getStrategistRunContext()?.requestId;
     const result: StrategistV2Result = {
       status: "no_viable_setup",
       ticker,
@@ -639,9 +704,21 @@ export async function analyzeTickerV2(
       },
       regime,
       systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
+      ...(strategistDiagnosticRequestId ? { strategistDiagnosticRequestId } : {}),
     };
-    await logTelemetry(ticker, "no_data", regime, settings, null, null, toxicCheck, null, detail, {
-      fetchFailureMode: tickerFetch.failureMode ?? "network_exception",
+    await emitFullDiagnosticTelemetry({
+      ticker,
+      settings,
+      regime,
+      ioScore: null,
+      tickerData: null,
+      toxicCheck,
+      telemetryDbResult: "no_data",
+      aiDecision: null,
+      thesis: detail,
+      extras: {
+        fetchFailureMode: tickerFetch.failureMode ?? "network_exception",
+      },
     });
     return withResultSchemaVersion(result);
   }
@@ -775,11 +852,13 @@ export async function analyzeTickerV2(
       sessionDate: new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }),
       coverageEndMs: Date.now(),
       occRequested: 0,
+      occListLength: 0,
       occCompleted: 0,
       tradesInserted: 0,
     };
   }
 
+  mergeStrategistDiag({ tapeBackfillStatus });
   assertAnalyzeNotCancelled(progress);
   const polygonHighlights = await getPolygonFlowHighlights(ticker, tapeBackfillStatus);
   if (polygonHighlights) {
@@ -833,6 +912,7 @@ export async function analyzeTickerV2(
     },
   );
   assertAnalyzeNotCancelled(progress);
+  mergeStrategistDiag({ dataPackageStr: dataPackage });
 
   // ── Desk mode (mode 3): three parallel analysts + PM ──────────────────
   if (settings.strategistMode === 3) {
@@ -879,6 +959,22 @@ export async function analyzeTickerV2(
         systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
         ioScore,
       };
+      const tradeRec = deskResult.pm.decision === "trade";
+      const outcomeOv = deriveRunOutcomeFromStrategistResult("desk_recommendation", tradeRec);
+      const telemetryId = await emitFullDiagnosticTelemetry({
+        ticker,
+        settings,
+        regime,
+        ioScore,
+        tickerData,
+        toxicCheck,
+        telemetryDbResult: "recommendation",
+        aiDecision: null,
+        thesis: null,
+        extras: { dataPackage, deskResult, runOutcomeOverride: outcomeOv },
+      });
+      result.telemetryId = telemetryId ?? undefined;
+      result.strategistDiagnosticRequestId = getStrategistRunContext()?.requestId;
       return withResultSchemaVersion(result);
     } catch (err) {
       logger.error({ err, ticker }, "StrategistV2: Desk analysis failed");
@@ -937,6 +1033,22 @@ export async function analyzeTickerV2(
         systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
         ioScore,
       };
+      const tradeRec = deskResult.pm.decision === "trade";
+      const outcomeOv = deriveRunOutcomeFromStrategistResult("desk_recommendation", tradeRec);
+      const telemetryId = await emitFullDiagnosticTelemetry({
+        ticker,
+        settings,
+        regime,
+        ioScore,
+        tickerData,
+        toxicCheck,
+        telemetryDbResult: "recommendation",
+        aiDecision: null,
+        thesis: null,
+        extras: { dataPackage, deskResult, runOutcomeOverride: outcomeOv },
+      });
+      result.telemetryId = telemetryId ?? undefined;
+      result.strategistDiagnosticRequestId = getStrategistRunContext()?.requestId;
       return withResultSchemaVersion(result);
     } catch (err) {
       logger.error({ err, ticker }, "StrategistV2: Solo Desk analysis failed");
@@ -1420,9 +1532,15 @@ export async function analyzeTickerV2(
     logger.info({ ticker, earningsBlockReason, earningsAlert }, "StrategistV2: earnings telemetry");
   }
 
-  const telemetryId = await logTelemetry(
-    ticker, "recommendation", regime, settings, ioScore, tickerData, toxicCheck,
-    {
+  const telemetryId = await emitFullDiagnosticTelemetry({
+    ticker,
+    settings,
+    regime,
+    ioScore,
+    tickerData,
+    toxicCheck,
+    telemetryDbResult: "recommendation",
+    aiDecision: {
       strategy: aiResponse.strategy,
       strategyType: aiResponse.strategy,
       confidence: Number.isFinite(aiResponse.confidence) ? aiResponse.confidence : 0,
@@ -1436,8 +1554,8 @@ export async function analyzeTickerV2(
       catalystAlignment: aiResponse.catalystAlignment ?? null,
       sameDayCatalyst: aiResponse.sameDayCatalyst ?? false,
     },
-    result.recommendation?.strategyLine,
-    {
+    thesis: result.recommendation?.strategyLine ?? null,
+    extras: {
       dataPackage,
       rawAiResponse: rawAiResponseText,
       confidenceBase: confidenceBaseValue,
@@ -1445,9 +1563,12 @@ export async function analyzeTickerV2(
       confidenceFinal: confidenceFinalValue,
       catalystAlignment: aiResponse.catalystAlignment ?? null,
       dataSource,
+      aiTradePayload: aiResponse,
+      runOutcomeOverride: "trade",
     },
-  );
+  });
   result.telemetryId = telemetryId ?? undefined;
+  result.strategistDiagnosticRequestId = getStrategistRunContext()?.requestId;
 
   return withResultSchemaVersion(result);
 }
@@ -3463,6 +3584,84 @@ interface TelemetryExtras {
   catalystAlignment?: string | null;
   dataSource?: ChainSource | null;
   fetchFailureMode?: FetchFailureMode | string | null;
+  deskResult?: DeskResult | null;
+  aiTradePayload?: AiTradeResponse | null;
+  runOutcomeOverride?: StrategistRunOutcomeTelemetry;
+  error?: { message: string; stack?: string } | null;
+  fullDiagnostic?: Record<string, unknown> | null;
+}
+
+async function emitFullDiagnosticTelemetry(args: {
+  ticker: string;
+  settings: StrategistConfig;
+  regime: StructuredRegime;
+  ioScore: IOScoreResult | null;
+  tickerData: TickerData | null;
+  toxicCheck: ToxicGateSnapshot;
+  telemetryDbResult: string;
+  aiDecision: TelemetryStrategyDecision | null;
+  thesis: string | null;
+  extras: TelemetryExtras;
+}): Promise<number | null> {
+  const ctx = getStrategistRunContext();
+  const dataPkgStr =
+    typeof args.extras.dataPackage === "string"
+      ? args.extras.dataPackage
+      : args.extras.dataPackage != null
+        ? JSON.stringify(args.extras.dataPackage)
+        : ctx?.diag.dataPackageStr;
+  const parsedPkg = parseDataPackageForDiag(dataPkgStr);
+  const tape = ctx?.diag.tapeBackfillStatus;
+  const polygonTrace = takePolygonApiTrace();
+  const soloLabel =
+    ctx?.diag.soloModelLabel ?? getStrategistModel(args.settings.strategistSoloModelIdx).label;
+  const modelAttr = buildModelAttributionPlaceholder({
+    settings: args.settings,
+    deskResult: args.extras.deskResult ?? undefined,
+    soloModelLabel: soloLabel,
+  });
+  const strategistPayload = strategistPayloadFromResult({
+    settings: args.settings,
+    deskResult: args.extras.deskResult ?? undefined,
+    aiResponse: args.extras.aiTradePayload ?? undefined,
+  });
+  const durationMs = ctx ? Date.now() - ctx.startedAt : 0;
+  const deskTrade = args.extras.deskResult?.pm.decision === "trade";
+  const outcome =
+    args.extras.runOutcomeOverride ??
+    telemetryDbResultToOutcome(args.telemetryDbResult, deskTrade);
+  const meta: StrategistRunMetadata = {
+    timestamp: new Date().toISOString(),
+    ticker: args.ticker.toUpperCase(),
+    strategistMode: strategistModeLabel(args.settings.strategistMode),
+    requestId: ctx?.requestId ?? newStrategistRequestId(),
+    userId: ctx?.userId ?? null,
+    sessionIdentifier: ctx?.sessionIdentifier ?? null,
+    totalRunDurationMs: durationMs,
+  };
+  const fullDiagnostic = buildStrategistFullDiagnosticJson({
+    runMetadata: meta,
+    strategistPayload,
+    tapeBackfillStatus: tape,
+    dataPackageParsed: parsedPkg,
+    modelAttribution: modelAttr,
+    polygonTrace,
+    runOutcome: outcome,
+    runDurationMs: durationMs,
+    error: args.extras.error ?? null,
+  });
+  return logTelemetry(
+    args.ticker,
+    args.telemetryDbResult,
+    args.regime,
+    args.settings,
+    args.ioScore,
+    args.tickerData,
+    args.toxicCheck,
+    args.aiDecision,
+    args.thesis,
+    { ...args.extras, fullDiagnostic },
+  );
 }
 
 async function noViable(
@@ -3479,8 +3678,20 @@ async function noViable(
   // shape is the single source of truth from here on.
   const blockReason: BlockReason =
     typeof reason === "string" ? { category: "UNKNOWN", detail: reason } : reason;
-  await logTelemetry(ticker, "no_viable_setup", regime, settings, ioScore ?? null, tickerData, toxicCheck, null, blockReason.detail, extras);
+  await emitFullDiagnosticTelemetry({
+    ticker,
+    regime,
+    settings,
+    ioScore: ioScore ?? null,
+    tickerData,
+    toxicCheck,
+    telemetryDbResult: "no_viable_setup",
+    aiDecision: null,
+    thesis: blockReason.detail,
+    extras,
+  });
   const strategistOutcome = outcomeFromBlockReason(blockReason);
+  const strategistDiagnosticRequestId = getStrategistRunContext()?.requestId;
   return withResultSchemaVersion({
     status: "no_viable_setup",
     ticker,
@@ -3489,6 +3700,7 @@ async function noViable(
     regime,
     ioScore: ioScore ?? undefined,
     systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
+    ...(strategistDiagnosticRequestId ? { strategistDiagnosticRequestId } : {}),
   });
 }
 
@@ -3546,6 +3758,7 @@ async function logTelemetry(
       catalystAlignment: extras.catalystAlignment ?? null,
       dataSource: extras.dataSource ?? null,
       fetchFailureMode: extras.fetchFailureMode ?? null,
+      fullDiagnostic: extras.fullDiagnostic ?? null,
     };
     const [row] = await db.insert(strategistTelemetryTable).values(values).returning({ id: strategistTelemetryTable.id });
     return row?.id ?? null;

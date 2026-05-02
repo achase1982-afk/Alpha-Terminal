@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { analyzeTickerV2, type StrategistV2Result, type AnalyzeProgressCallbacks } from "../lib/strategistV2.js";
+import { runInStrategistRunContext } from "../lib/strategistRunContext.js";
 import { getSettings, updateSetting, resetAllSettings, getDefaults, getSettingMeta } from "../lib/strategistSettings.js";
 import { getCachedRegime, buildFallbackRegime } from "../lib/regimePostProcessor.js";
 import {
@@ -220,11 +221,15 @@ async function runAnalyzeWithIvrGate(
   ticker: string,
   opts?: AnalyzeProgressCallbacks,
 ): Promise<StrategistV2Result> {
-  const coverage = await ensureIvrCoverage(ticker);
-  if (coverage.status !== "ready") {
-    return ivrCoverageToResult(coverage);
-  }
-  return analyzeTickerV2(ticker, opts);
+  return runInStrategistRunContext({}, () =>
+    (async () => {
+      const coverage = await ensureIvrCoverage(ticker);
+      if (coverage.status !== "ready") {
+        return ivrCoverageToResult(coverage);
+      }
+      return analyzeTickerV2(ticker, opts);
+    })(),
+  );
 }
 /**
  * Pick the latest leg expiration for catalyst-window gating. For tickets
@@ -1056,6 +1061,29 @@ router.post("/settings/reset", async (_req, res) => {
   } catch (err) {
     logger.error({ err }, "StrategistV2: settings reset failed");
     res.status(500).json({ error: "Reset failed" });
+  }
+});
+
+router.get("/telemetry/strategist/request/:requestId", async (req, res) => {
+  try {
+    const requestId = String(req.params.requestId ?? "").trim();
+    if (!requestId) {
+      res.status(400).json({ error: "requestId required" });
+      return;
+    }
+    const [row] = await db
+      .select()
+      .from(strategistTelemetryTable)
+      .where(sql`(${strategistTelemetryTable.fullDiagnostic}->'runMetadata'->>'requestId') = ${requestId}`)
+      .limit(1);
+    if (!row) {
+      res.status(404).json({ error: "Telemetry row not found for requestId" });
+      return;
+    }
+    res.json(row);
+  } catch (err) {
+    logger.error({ err }, "StrategistV2: telemetry request lookup failed");
+    res.status(500).json({ error: "Failed to fetch telemetry row" });
   }
 });
 
