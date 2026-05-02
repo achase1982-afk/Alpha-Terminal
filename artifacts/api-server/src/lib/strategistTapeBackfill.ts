@@ -310,12 +310,67 @@ async function fetchPaged(firstUrl: string, apiKey: string, deadlineMs: number):
     ? firstUrl
     : `${firstUrl}${firstUrl.includes("?") ? "&" : "?"}apiKey=${encodeURIComponent(apiKey)}`;
   let truncated = false;
-  while (url && Date.now() < deadlineMs) {
+  pageLoop: while (url && Date.now() < deadlineMs) {
     const remaining = deadlineMs - Date.now();
     if (remaining <= 0) break;
-    const httpMs = Math.min(PER_FETCH_HTTP_MS, Math.max(800, remaining));
-    const r = await fetch(url, { signal: AbortSignal.timeout(httpMs) });
-    if (r.status === 429) {
+
+    let r: Response | undefined;
+    for (let attempt = 0; attempt <= 3; attempt++) {
+      const rem = deadlineMs - Date.now();
+      if (rem <= 0) {
+        truncated = true;
+        break pageLoop;
+      }
+      const httpMs = Math.min(PER_FETCH_HTTP_MS, Math.max(800, rem));
+      try {
+        r = await fetch(url, { signal: AbortSignal.timeout(httpMs) });
+      } catch {
+        truncated = true;
+        break pageLoop;
+      }
+
+      if (r.status !== 429) {
+        break;
+      }
+
+      if (attempt >= 3) {
+        logger.warn(
+          { attempt: attempt + 1, url: url.split("?")[0] },
+          "strategistTapeBackfill: Polygon 429 after max retries on paginated fetch",
+        );
+        truncated = true;
+        break pageLoop;
+      }
+
+      const ra = r.headers.get("retry-after");
+      let delayMs: number;
+      if (ra != null && ra.trim() !== "") {
+        const sec = parseInt(ra.trim(), 10);
+        delayMs = Number.isFinite(sec) && sec >= 0 ? sec * 1000 : Math.min(10_000, 1000 * 2 ** attempt + Math.random() * 500);
+      } else {
+        delayMs = Math.min(10_000, 1000 * 2 ** attempt + Math.random() * 500);
+      }
+
+      const now = Date.now();
+      if (now + delayMs > deadlineMs) {
+        truncated = true;
+        break pageLoop;
+      }
+
+      logger.warn(
+        {
+          attempt: attempt + 1,
+          maxAttempts: 4,
+          delayMs: Math.round(delayMs),
+          retryAfterHeader: ra,
+          url: url.split("?")[0],
+        },
+        "strategistTapeBackfill: Polygon 429 on paginated fetch, backing off before retry",
+      );
+      await new Promise((res) => setTimeout(res, delayMs));
+    }
+
+    if (!r) {
       truncated = true;
       break;
     }
