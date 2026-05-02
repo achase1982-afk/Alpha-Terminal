@@ -487,7 +487,39 @@ export interface ChainSummary {
     impliedVolStraddlePct?: number | null;
     impliedVolStraddleSource?: "bsm_match_mid" | null;
   } | null;
+  /** Gap surfacing for impliedMove (mirrors dataQualitySummary.impliedMove). */
+  impliedMoveQuality: StrategistImpliedMoveQuality;
 }
+
+/** Reasons when implied move cannot be surfaced or BSM IV inversion fails. */
+export type StrategistImpliedMoveGapReason =
+  | "ok"
+  | "no_expirations"
+  | "no_valid_dte"
+  | "no_atm_pair"
+  | "non_finite_mids"
+  | "no_spot_price"
+  | "bsm_inversion_failed";
+
+/** Surfaced on every strategist run for LLM and clients (see buildDataQualitySummary). */
+export type StrategistImpliedMoveQuality = {
+  available: boolean;
+  reason: StrategistImpliedMoveGapReason;
+  /** First expiry with DTE greater than zero when the sorted front expiry was skipped (0DTE or expired). */
+  fallbackExpiryUsed: string | null;
+};
+
+/** Result of ATM straddle implied-move computation (discriminated for diagnostics). */
+export type ImpliedMoveResult =
+  | {
+      value: NonNullable<ChainSummary["impliedMove"]>;
+      reason: "ok" | "bsm_inversion_failed";
+      fallbackExpiryUsed: string | null;
+    }
+  | {
+      value: null;
+      reason: "no_expirations" | "no_valid_dte" | "no_atm_pair" | "non_finite_mids" | "no_spot_price";
+    };
 
 // Persona suffixes appended to STRATEGIST_SYSTEM_PROMPT in Debate mode only.
 // Solo mode keeps the neutral system prompt unchanged.
@@ -1836,7 +1868,8 @@ function computeSkew25DeltaForChain(
   }
 
   const front = [...withDte].sort((a, b) => a.dte - b.dte)[0]!.exp;
-  const imb = computeImpliedMoveStraddle(chain, price, [front]);
+  const imbResult = computeImpliedMoveStraddle(chain, price, [front]);
+  const imb = imbResult.value;
   const pct = imb?.impliedVolStraddlePct ?? null;
   if (pct != null && Number.isFinite(pct)) {
     const n = normalizeStrategistIv(pct / 100, "reconstructed_from_straddle");
@@ -1850,27 +1883,73 @@ function computeSkew25DeltaForChain(
   return { skew: null, reason: "skew_indeterminate_iv_ceiling_exhausted_fallbacks" };
 }
 
+/** Maps computeImpliedMoveStraddle output to payload-quality fields for dataQualitySummary. */
+function strategistImpliedMoveQualityFromResult(r: ImpliedMoveResult): StrategistImpliedMoveQuality {
+  if (r.value === null) {
+    return {
+      available: false,
+      reason: r.reason,
+      fallbackExpiryUsed: null,
+    };
+  }
+  return {
+    available: true,
+    reason: r.reason === "bsm_inversion_failed" ? "bsm_inversion_failed" : "ok",
+    fallbackExpiryUsed: r.fallbackExpiryUsed,
+  };
+}
+
 function computeImpliedMoveStraddle(
   chain: ChainContract[],
   price: number,
   availableExpirations: string[],
-): ChainSummary["impliedMove"] {
-  if (availableExpirations.length === 0) return null;
-  const exp = availableExpirations[0]!;
-  const dte = computeDte(exp);
-  if (dte <= 0) return null;
+): ImpliedMoveResult {
+  if (availableExpirations.length === 0) {
+    return { value: null, reason: "no_expirations" };
+  }
+  if (!Number.isFinite(price) || price <= 0) {
+    return { value: null, reason: "no_spot_price" };
+  }
+
+  const frontExp = availableExpirations[0]!;
+  let chosenExp: string | null = null;
+  let chosenDte = 0;
+  for (const candidate of availableExpirations) {
+    const candidateDte = computeDte(candidate);
+    if (candidateDte > 0) {
+      chosenExp = candidate;
+      chosenDte = candidateDte;
+      break;
+    }
+  }
+  if (chosenExp == null) {
+    return { value: null, reason: "no_valid_dte" };
+  }
+
+  const fallbackExpiryUsed = chosenExp !== frontExp ? chosenExp : null;
+  const exp = chosenExp;
+  const dte = chosenDte;
+
   const calls = chain.filter(c => c.expiration === exp && (c.type === "call" || c.optionType === "CALL"));
   const puts = chain.filter(c => c.expiration === exp && (c.type === "put" || c.optionType === "PUT"));
-  if (calls.length === 0 || puts.length === 0) return null;
+  if (calls.length === 0 || puts.length === 0) {
+    return { value: null, reason: "no_atm_pair" };
+  }
   const strike = [...new Set([...calls.map(c => c.strike), ...puts.map(c => c.strike)])]
     .sort((a, b) => Math.abs(a - price) - Math.abs(b - price))[0];
-  if (strike == null) return null;
+  if (strike == null) {
+    return { value: null, reason: "no_atm_pair" };
+  }
   const c = calls.find(x => x.strike === strike);
   const p = puts.find(x => x.strike === strike);
-  if (!c || !p) return null;
+  if (!c || !p) {
+    return { value: null, reason: "no_atm_pair" };
+  }
   const callMid = (c.bid + c.ask) / 2;
   const putMid = (p.bid + p.ask) / 2;
-  if (!Number.isFinite(callMid) || !Number.isFinite(putMid) || price <= 0) return null;
+  if (!Number.isFinite(callMid) || !Number.isFinite(putMid)) {
+    return { value: null, reason: "non_finite_mids" };
+  }
   const dollar = Math.round((callMid + putMid) * 1000) / 1000;
   const percentOfSpot = Math.round((dollar / price) * 10000) / 100;
   const sigmaDec = impliedVolFromAtmStraddle({
@@ -1882,7 +1961,7 @@ function computeImpliedMoveStraddle(
     dividendYieldAnnual: 0,
   });
   const ivNorm = sigmaDec != null ? normalizeStrategistIv(sigmaDec, "reconstructed_from_straddle") : null;
-  return {
+  const value: NonNullable<ChainSummary["impliedMove"]> = {
     dollar,
     percentOfSpot,
     expiry: exp,
@@ -1890,6 +1969,10 @@ function computeImpliedMoveStraddle(
     impliedVolStraddlePct: ivNorm?.pct ?? null,
     impliedVolStraddleSource: ivNorm != null ? "bsm_match_mid" : null,
   };
+  if (sigmaDec == null || ivNorm == null) {
+    return { value, reason: "bsm_inversion_failed", fallbackExpiryUsed };
+  }
+  return { value, reason: "ok", fallbackExpiryUsed };
 }
 
 /** Latest listed expiry within prefsMax DTE, or null if none. */
@@ -2212,7 +2295,9 @@ export function summarizeOptionsChain(
 
   const termStructure5pt = buildTermStructure5pt(chain, price, curatedExpirations, expirations, effectiveLegIv);
   const { skew, reason: skew25DeltaReason } = computeSkew25DeltaForChain(chain, expirations, price);
-  const impliedMove = computeImpliedMoveStraddle(chain, price, expirations);
+  const impliedMoveResult = computeImpliedMoveStraddle(chain, price, expirations);
+  const impliedMove = impliedMoveResult.value;
+  const impliedMoveQuality = strategistImpliedMoveQualityFromResult(impliedMoveResult);
 
   return {
     atmStrike,
@@ -2238,6 +2323,7 @@ export function summarizeOptionsChain(
     skew25Delta: skew,
     skew25DeltaReason,
     impliedMove,
+    impliedMoveQuality,
   };
 }
 
@@ -2344,6 +2430,10 @@ function buildDataQualitySummary(args: {
   }
   if (!analystOk) flags.push("analyst_consensus_sparse");
   if (!fundamentalsOk) flags.push("sec_fundamentals_sparse");
+  if (!chainSummary.impliedMoveQuality.available) flags.push("implied_move_gap");
+  if (chainSummary.impliedMoveQuality.reason === "bsm_inversion_failed") {
+    flags.push("implied_move_bsm_inversion_failed");
+  }
 
   const earningsGapList = earningsDataSourceGaps ?? [];
 
@@ -2352,6 +2442,7 @@ function buildDataQualitySummary(args: {
     chain: { state: chainOk ? "usable" : "degraded", expirationsListed: chainSummary.availableExpirations.length },
     ivr: { state: tickerData.ivr != null ? "present" : "absent", source: tickerData.ivrSource },
     skew25Delta: { state: skewState, reason: chainSummary.skew25DeltaReason },
+    impliedMove: chainSummary.impliedMoveQuality,
     ioScore: { state: ioScore.available ? "regression_fit" : "fallback_defaults", dataAvailability: ioScore.dataAvailability },
     flow: {
       highlightsAsOf: polygonHighlights?.asOfDate ?? null,
@@ -2486,6 +2577,7 @@ function buildDataPackage(
       skew25Delta: chainSummary.skew25Delta,
       skew25DeltaReason: chainSummary.skew25DeltaReason,
       impliedMove: chainSummary.impliedMove,
+      impliedMoveQuality: chainSummary.impliedMoveQuality,
       ivArtifactNote: chainSummary.ivArtifactsClampedCount > 0
         ? `${chainSummary.ivArtifactsClampedCount} contract IV value(s) exceeded ${chainSummary.ivCeilingPct}% and were clamped to the ceiling. These are 0DTE/front-week pricing-engine artifacts (penny-wide bid/ask on contracts pricing into intraday underlying moves) — IGNORE them for structural decisions and use back-month IV instead.`
         : null,
