@@ -1,7 +1,7 @@
 import { logger } from "./logger";
 
 export interface RateProbe {
-  tier: "starter" | "developer_or_advanced" | "unknown";
+  tier: "developer_or_advanced" | "unknown";
   successCount: number;
   failureCount: number;
   rateLimited: boolean;
