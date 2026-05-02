@@ -2,12 +2,7 @@ import { Router } from "express";
 import { sql, eq, max, and } from "drizzle-orm";
 import { db, optionsChainDailyTable, optionsFlowPerStrikeTable, schwabChainIngestMetricsTable } from "@workspace/db";
 import { logger } from "../lib/logger";
-
-const POLYGON_API = "https://api.polygon.io";
-const REFERENCE_CONTRACT_CACHE_MS = 4 * 60 * 60 * 1000;
-const REFERENCE_MAX_PAGES = 500;
-
-const referenceContractCountCache = new Map<string, { fetchedAt: number; count: number }>();
+import { fetchPolygonReferenceContractCount } from "../lib/polygonReferenceContracts";
 
 function requireAdmin(req: { headers: Record<string, string | string[] | undefined> }): { ok: boolean; error?: string } {
   const adminKey = process.env.ADMIN_API_KEY;
@@ -112,54 +107,6 @@ async function statsFlowPerStrike(symbol: string, asOf: string | null): Promise<
   };
 }
 
-/**
- * Paginate Polygon reference options contracts for an underlying (active only).
- */
-export async function fetchPolygonReferenceContractCount(symbol: string, apiKey: string): Promise<number | null> {
-  const upper = symbol.toUpperCase();
-  const cached = referenceContractCountCache.get(upper);
-  if (cached && Date.now() - cached.fetchedAt < REFERENCE_CONTRACT_CACHE_MS) {
-    return cached.count;
-  }
-
-  let total = 0;
-  let pages = 0;
-  let nextUrl: string | null =
-    `${POLYGON_API}/v3/reference/options/contracts?underlying_ticker=${encodeURIComponent(upper)}&limit=1000&expired=false&sort=expiration_date&order=asc&apiKey=${encodeURIComponent(apiKey)}`;
-
-  try {
-    while (nextUrl && pages < REFERENCE_MAX_PAGES) {
-      const fetchUrl = nextUrl.includes("apiKey=") ? nextUrl : `${nextUrl}&apiKey=${encodeURIComponent(apiKey)}`;
-      const resp = await fetch(fetchUrl, { signal: AbortSignal.timeout(45_000) });
-      if (!resp.ok) {
-        logger.warn({ symbol: upper, status: resp.status }, "diagnostics: Polygon reference contracts HTTP non-OK");
-        return null;
-      }
-      const json = (await resp.json()) as {
-        results?: Array<{ contract_type?: string }>;
-        next_url?: string | null;
-        status?: string;
-      };
-      if (json.status === "ERROR" || !json.results?.length) break;
-      for (const c of json.results) {
-        const t = c.contract_type;
-        if (t === "call" || t === "put") total++;
-      }
-      pages++;
-      nextUrl = json.next_url ?? null;
-    }
-    if (nextUrl && pages >= REFERENCE_MAX_PAGES) {
-      logger.warn({ symbol: upper, pages }, "diagnostics: Polygon reference contracts pagination cap reached");
-    }
-  } catch (err) {
-    logger.warn({ err, symbol: upper }, "diagnostics: Polygon reference contracts fetch failed");
-    return null;
-  }
-
-  referenceContractCountCache.set(upper, { fetchedAt: Date.now(), count: total });
-  return total;
-}
-
 export interface ChainCoverageRow {
   symbol: string;
   chain_daily_contract_count: number | null;
@@ -173,7 +120,7 @@ export interface ChainCoverageRow {
   polygon_reference_contract_count: number | null;
   coverage_ratio_chain_daily: number | null;
   coverage_ratio_flow: number | null;
-  range_all_status: "ok" | "fallback_used" | "total_failure" | "skipped_dense_ticker" | null;
+  range_all_status: "ok" | "fallback_used" | "total_failure" | "skipped_dense_ticker" | "thin_success_fallback" | null;
   last_attempt_timestamp: string | null;
   last_failure_reason: string | null;
   schwab_chain_range_all_failures_total: number | null;
@@ -222,7 +169,11 @@ export async function buildChainCoverageRows(symbols: string[]): Promise<ChainCo
 
     const status = ingest?.rangeAllStatus;
     const rangeAllStatus =
-      status === "ok" || status === "fallback_used" || status === "total_failure" || status === "skipped_dense_ticker"
+      status === "ok" ||
+      status === "fallback_used" ||
+      status === "total_failure" ||
+      status === "skipped_dense_ticker" ||
+      status === "thin_success_fallback"
         ? status
         : null;
 

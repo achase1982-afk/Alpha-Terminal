@@ -13,6 +13,7 @@ import {
 import { eq, sql, and, gte, lte, desc } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { logFailure } from "../lib/telemetry";
+import { fetchPolygonReferenceStats } from "./polygonReferenceContracts";
 import { normalizeIV, computeIVRForSymbol } from "./ivNormalize";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
@@ -591,6 +592,14 @@ function mergeOptionChainRowsByVolume(
   return [...m.values()];
 }
 
+function countDistinctSchwabChainExpirations(rows: Array<typeof optionsChainDailyTable.$inferInsert>): number {
+  const s = new Set<string>();
+  for (const r of rows) {
+    if (r.expiration) s.add(String(r.expiration).slice(0, 10));
+  }
+  return s.size;
+}
+
 async function fetchSchwabChainJsonOnce(
   url: string,
   token: string,
@@ -660,20 +669,36 @@ async function fetchSchwabChainBracketDateRangeRows(
   return mergeOptionChainRowsByVolume([...part1, ...part2]);
 }
 
+const SCHWAB_CHAIN_WIDE_BRACKETS: Array<{ start: number; end?: number }> = [
+  { start: 0, end: 90 },
+  { start: 91, end: 365 },
+  { start: 366, end: 730 },
+  { start: 731, end: 1460 },
+  { start: 1461 },
+];
+
+/** Dense underlyings: smaller date windows per request to avoid Schwab truncating each bracket response. */
+const SCHWAB_CHAIN_NARROW_BRACKETS: Array<{ start: number; end?: number }> = [
+  { start: 0, end: 7 },
+  { start: 8, end: 21 },
+  { start: 22, end: 45 },
+  { start: 46, end: 90 },
+  { start: 91, end: 180 },
+  { start: 181, end: 365 },
+  { start: 366, end: 730 },
+  { start: 731, end: 1460 },
+  { start: 1461 },
+];
+
 async function fetchSchwabChainBracketed(
   symbol: string,
   token: string,
   anchorYmd: string,
   sessionDate: string,
+  useNarrowBrackets = false,
 ): Promise<{ rows: Array<typeof optionsChainDailyTable.$inferInsert> | null; failureReason: string | null }> {
   const symU = symbol.toUpperCase();
-  const brackets: Array<{ start: number; end?: number }> = [
-    { start: 0, end: 90 },
-    { start: 91, end: 365 },
-    { start: 366, end: 730 },
-    { start: 731, end: 1460 },
-    { start: 1461 },
-  ];
+  const brackets = useNarrowBrackets ? SCHWAB_CHAIN_NARROW_BRACKETS : SCHWAB_CHAIN_WIDE_BRACKETS;
   const merged: Array<typeof optionsChainDailyTable.$inferInsert> = [];
   for (const br of brackets) {
     const fromY = schwabAnchorAddDays(anchorYmd, br.start);
@@ -698,7 +723,7 @@ async function upsertSchwabChainIngestMetrics(
   underlyingSymbol: string,
   sessionDate: string,
   payload: {
-    rangeAllStatus: "ok" | "fallback_used" | "total_failure" | "skipped_dense_ticker";
+    rangeAllStatus: "ok" | "fallback_used" | "total_failure" | "skipped_dense_ticker" | "thin_success_fallback";
     lastFailureReason: string | null;
     deltaRangeAllFailures: number;
     deltaBracketSuccess: number;
@@ -762,14 +787,15 @@ export async function collectOptionsChainSnapshots(
       const isDense = getSchwabDenseChainSymbols().has(symUpper);
 
       let rows: Array<typeof optionsChainDailyTable.$inferInsert> = [];
-      let ingestStatus: "ok" | "fallback_used" | "total_failure" | "skipped_dense_ticker" = "ok";
+      let ingestStatus: "ok" | "fallback_used" | "total_failure" | "skipped_dense_ticker" | "thin_success_fallback" =
+        "ok";
       let lastFailureReason: string | null = null;
       let dR = 0;
       let dB = 0;
       let dT = 0;
 
       if (isDense) {
-        const fb = await fetchSchwabChainBracketed(sym, token, date, date);
+        const fb = await fetchSchwabChainBracketed(sym, token, date, date, true);
         rows = fb.rows ?? [];
         if (!rows.length) {
           dT = 1;
@@ -797,6 +823,31 @@ export async function collectOptionsChainSnapshots(
         if (chainRes.ok) {
           const chain = await chainRes.json() as Record<string, unknown>;
           rows = schwabChainJsonToRows(sym, date, chain);
+          if (polygonKey) {
+            const refStats = await fetchPolygonReferenceStats(sym, polygonKey);
+            if (refStats != null && refStats.distinctExpirationCount > 0) {
+              const distinctOur = countDistinctSchwabChainExpirations(rows);
+              const ratio = distinctOur / refStats.distinctExpirationCount;
+              if (ratio < 0.5) {
+                const fb = await fetchSchwabChainBracketed(sym, token, date, date, false);
+                const bracketRows = fb.rows ?? [];
+                rows = mergeOptionChainRowsByVolume([...rows, ...bracketRows]);
+                ingestStatus = "thin_success_fallback";
+                lastFailureReason = `thin_success: range=ALL returned only ${distinctOur} of ${refStats.distinctExpirationCount} distinct expirations from Polygon reference`;
+                if (bracketRows.length > 0) dB = 1;
+                logger.info(
+                  {
+                    sym,
+                    distinctOur,
+                    polygonDistinct: refStats.distinctExpirationCount,
+                    ratio,
+                    bracketRows: bracketRows.length,
+                  },
+                  "Snapshot: Schwab range=ALL thin success, merged date-bracketed fallback",
+                );
+              }
+            }
+          }
         } else {
           dR = 1;
           lastFailureReason = `range=ALL HTTP ${chainRes.status}`;
