@@ -36,6 +36,13 @@
       "when": 1777800000000,
       "tag": "0005_schwab_chain_ingest_metrics",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1777900000000,
+      "tag": "0006_corporate_events_sym_date",
+      "breakpoints": true
     }
   ]
 }
