@@ -8,7 +8,9 @@ import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 // and flushing on a fixed cadence or when the buffer crosses a size cap.
 
 const FLUSH_INTERVAL_MS = 5_000;
-const FLUSH_BATCH_MAX = 1_000;
+/** Keeps per-statement bind params under PostgreSQL's 65,535 limit (~28 cols × 1000 rows). */
+const INSERT_BATCH_SIZE = 1_000;
+const FLUSH_BATCH_MAX = INSERT_BATCH_SIZE;
 
 interface PendingTrade {
   underlyingSymbol: string;
@@ -180,13 +182,16 @@ async function flush(): Promise<void> {
   const batch = buffer.splice(0, buffer.length);
   batchesAttempted++;
   try {
-    await db.insert(optionsFlowRawTradesTable).values(batch).onConflictDoNothing({
-      target: [
-        optionsFlowRawTradesTable.underlyingSymbol,
-        optionsFlowRawTradesTable.date,
-        optionsFlowRawTradesTable.sourceTradeId,
-      ],
-    });
+    for (let i = 0; i < batch.length; i += INSERT_BATCH_SIZE) {
+      const slice = batch.slice(i, i + INSERT_BATCH_SIZE);
+      await db.insert(optionsFlowRawTradesTable).values(slice).onConflictDoNothing({
+        target: [
+          optionsFlowRawTradesTable.underlyingSymbol,
+          optionsFlowRawTradesTable.date,
+          optionsFlowRawTradesTable.sourceTradeId,
+        ],
+      });
+    }
     totalWritten += batch.length;
     lastFlushTs = Date.now();
   } catch (err) {
