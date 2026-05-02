@@ -15,6 +15,11 @@ import { runRollupOnceForSymbol } from "./optionsFlowRollup.js";
 import { FlowLegWindow } from "./flowMultilegExtras.js";
 import { upsertStrikeVolumeBaselineFromContractBaseline } from "./flowStrikeBaselineDaily.js";
 import type { MarketCapTier } from "./flowMarketContext.js";
+import {
+  lastCompletedTradingDayNy,
+  nyCalendarYmd,
+  rthBoundsMs,
+} from "./polygonMarketCalendar.js";
 
 const POLYGON_API = "https://api.polygon.io";
 const MAX_EXPIRIES = 3;
@@ -87,26 +92,6 @@ export interface ChainSummaryLike {
   atmStrike: number;
   availableExpirations: string[];
   curatedExpirations: CuratedExp[];
-}
-
-function nyCalendarYmd(d: Date): string {
-  return d.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
-}
-
-function nyOffsetForYmd(ymd: string): "-04:00" | "-05:00" {
-  const probe = new Date(`${ymd}T12:00:00Z`);
-  const part = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    timeZoneName: "shortOffset",
-  }).formatToParts(probe).find((p) => p.type === "timeZoneName")?.value ?? "";
-  return part.includes("-4") || part.includes("EDT") ? "-04:00" : "-05:00";
-}
-
-function rthBoundsMs(sessionYmd: string): { openMs: number; closeMs: number } {
-  const off = nyOffsetForYmd(sessionYmd);
-  const openMs = new Date(`${sessionYmd}T09:30:00${off}`).getTime();
-  const closeMs = new Date(`${sessionYmd}T16:00:00${off}`).getTime();
-  return { openMs, closeMs };
 }
 
 function chainToOcc(underlying: string, expiration: string, strike: number, isCall: boolean): string {
@@ -526,11 +511,35 @@ export async function runStrategistTapeBackfill(args: {
   const ticker = args.ticker.toUpperCase();
   const budgetMs = args.budgetMs ?? DEFAULT_BUDGET_MS;
   const deadline = Date.now() + budgetMs;
-  const sessionDate = nyCalendarYmd(new Date());
-  const { openMs, closeMs } = rthBoundsMs(sessionDate);
-  const nowMs = Date.now();
-  const endMs = Math.min(nowMs, closeMs);
+  const nowWall = new Date();
+  const todayYmd = nyCalendarYmd(nowWall);
+  const sessionDate = await lastCompletedTradingDayNy(nowWall);
+  const { openMs, closeMs } = await rthBoundsMs(sessionDate);
+  const nowMs = nowWall.getTime();
+  const isSessionForToday = sessionDate === todayYmd;
+  const { openMs: todayOpenMs } = await rthBoundsMs(todayYmd);
+  let endMs: number;
+  if (!isSessionForToday) {
+    endMs = closeMs;
+  } else {
+    endMs = Math.min(nowMs, closeMs);
+  }
   const coverageEndMs = endMs;
+  const sessionInProgress = isSessionForToday && nowMs >= todayOpenMs && nowMs < closeMs;
+
+  logger.info(
+    {
+      ticker,
+      sessionDate,
+      todayYmd,
+      isSessionForToday,
+      sessionInProgress,
+      queryOpenMs: openMs,
+      queryCloseMs: closeMs,
+      coverageEndMs,
+    },
+    "strategistTapeBackfill: session window (last completed RTH session)",
+  );
 
   const apiKey = process.env["POLYGON_API_KEY"];
   if (!apiKey) {
@@ -546,8 +555,11 @@ export async function runStrategistTapeBackfill(args: {
     };
   }
 
-  if (nowMs < openMs || nowMs > closeMs + 60 * 60 * 1000) {
-    logger.info({ ticker, sessionDate }, "strategistTapeBackfill: outside regular session window, skipping");
+  if (isSessionForToday && nowMs < todayOpenMs) {
+    logger.info(
+      { ticker, sessionDate, todayYmd, nowMs, todayOpenMs },
+      "strategistTapeBackfill: before today's session open, skipping tape backfill",
+    );
     return {
       status: "skipped",
       reason: "outside_rth",
