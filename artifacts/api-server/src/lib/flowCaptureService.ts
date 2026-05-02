@@ -44,7 +44,9 @@ import { getWatcherSubscribedContractCount } from "./optionsWatcher.js";
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MIN_CAPTURE_MS = 10_000;
 const MAX_CAPTURE_MS = 30_000;
-const FLUSH_BATCH_MAX = 1_000;
+/** Keeps per-statement bind params under PostgreSQL's 65,535 limit (~28 cols × 1000 rows). */
+const INSERT_BATCH_SIZE = 1_000;
+const FLUSH_BATCH_MAX = INSERT_BATCH_SIZE;
 const FLUSH_INTERVAL_MS = 5_000;
 const CAPACITY_QUEUE_MS = 30_000;
 const CHANNEL_POLL_MS = 200;
@@ -536,18 +538,23 @@ async function runWebsocketCaptureInternal(
     if (buffer.length === 0) return;
     const batch = buffer.splice(0, buffer.length);
     try {
-      const ins = await db
-        .insert(optionsFlowRawTradesTable)
-        .values(batch)
-        .onConflictDoNothing({
-          target: [
-            optionsFlowRawTradesTable.underlyingSymbol,
-            optionsFlowRawTradesTable.date,
-            optionsFlowRawTradesTable.sourceTradeId,
-          ],
-        })
-        .returning({ id: optionsFlowRawTradesTable.id });
-      rowsInserted += ins.length;
+      let insertedThisFlush = 0;
+      for (let i = 0; i < batch.length; i += INSERT_BATCH_SIZE) {
+        const slice = batch.slice(i, i + INSERT_BATCH_SIZE);
+        const ins = await db
+          .insert(optionsFlowRawTradesTable)
+          .values(slice)
+          .onConflictDoNothing({
+            target: [
+              optionsFlowRawTradesTable.underlyingSymbol,
+              optionsFlowRawTradesTable.date,
+              optionsFlowRawTradesTable.sourceTradeId,
+            ],
+          })
+          .returning({ id: optionsFlowRawTradesTable.id });
+        insertedThisFlush += ins.length;
+      }
+      rowsInserted += insertedThisFlush;
     } catch (err) {
       logFlowPipelineWarn("flow_capture_flush", "flowCaptureService: bulk insert failed", { err, ticker, batchLen: batch.length });
       errors.push(`insert:${err instanceof Error ? err.message : String(err)}`);
