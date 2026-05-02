@@ -8,14 +8,31 @@ import {
   referenceDataTable,
   corporateEventsTable,
   snapshotCollectionLogTable,
+  schwabChainIngestMetricsTable,
 } from "@workspace/db";
 import { eq, sql, and, gte, lte, desc } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { logFailure } from "../lib/telemetry";
+import { fetchPolygonReferenceStats } from "./polygonReferenceContracts";
 import { normalizeIV, computeIVRForSymbol } from "./ivNormalize";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
 const POLYGON_API = "https://api.polygon.io";
+/** LEAPS horizon for Polygon flow snapshot expiration_date_lte (4 calendar years). */
+const POLYGON_FLOW_EXP_MAX_DAYS = 365 * 4;
+const POLYGON_FLOW_SNAPSHOT_MAX_PAGES = 50;
+const OPTIONS_CHAIN_DAILY_INSERT_BATCH = 1000;
+
+/** Default dense underlyings: use bracketed Schwab chain as primary (skip range=ALL). Override via SCHWAB_DENSE_CHAIN_SYMBOLS_OVERRIDE. */
+export const SCHWAB_DENSE_CHAIN_SYMBOLS = new Set<string>(["SPY", "QQQ", "IWM", "SPX", "NDX", "RUT", "VIX"]);
+
+export function getSchwabDenseChainSymbols(): Set<string> {
+  const raw = process.env["SCHWAB_DENSE_CHAIN_SYMBOLS_OVERRIDE"]?.trim();
+  if (raw) {
+    return new Set(raw.split(",").map(s => s.trim().toUpperCase()).filter(Boolean));
+  }
+  return new Set(SCHWAB_DENSE_CHAIN_SYMBOLS);
+}
 const IV30_MIN_DTE = 20;
 const IV30_MAX_DTE = 40;
 const IV30_ATM_MONEYNESS = 0.05;
@@ -91,6 +108,129 @@ async function fetchWithRetry(url: string, opts: RequestInit, retries = 3): Prom
     }
   }
   throw new Error("fetch exhausted retries");
+}
+
+type PolygonSnapshotPageJson = {
+  results?: Array<Record<string, unknown>>;
+  status?: string;
+  next_url?: string;
+};
+
+/**
+ * Paginate Polygon /v3/snapshot/options/{symbol} until next_url is absent or max pages.
+ * Returns HTTP call count for telemetry.
+ */
+async function fetchPolygonSnapshotOptionsAllPages(
+  symbol: string,
+  baseParams: URLSearchParams,
+  apiKey: string,
+): Promise<{
+  results: Array<Record<string, unknown>>;
+  httpCalls: number;
+  pageCapHit: boolean;
+  lastHttpStatus: number;
+}> {
+  const results: Array<Record<string, unknown>> = [];
+  let httpCalls = 0;
+  let pageCapHit = false;
+  let lastHttpStatus = 200;
+
+  const firstParams = new URLSearchParams(baseParams);
+  firstParams.set("limit", "250");
+  firstParams.set("apiKey", apiKey);
+  let pendingUrl: string | undefined =
+    `${POLYGON_API}/v3/snapshot/options/${encodeURIComponent(symbol)}?${firstParams.toString()}`;
+  let pages = 0;
+
+  while (pendingUrl && pages < POLYGON_FLOW_SNAPSHOT_MAX_PAGES) {
+    const fetchUrl =
+      pages === 0
+        ? pendingUrl
+        : pendingUrl.includes("apiKey=")
+          ? pendingUrl
+          : `${pendingUrl}&apiKey=${encodeURIComponent(apiKey)}`;
+
+    const resp = await fetchWithRetry(fetchUrl, {});
+    httpCalls++;
+    lastHttpStatus = resp.status;
+    if (!resp.ok) break;
+
+    const json = (await resp.json()) as PolygonSnapshotPageJson;
+    if (json.status !== "OK" || !json.results?.length) break;
+
+    results.push(...json.results);
+    pages++;
+    pendingUrl = json.next_url;
+    if (pendingUrl) await sleep(80);
+  }
+
+  pageCapHit = pages === POLYGON_FLOW_SNAPSHOT_MAX_PAGES && Boolean(pendingUrl);
+  if (pageCapHit) {
+    logger.warn(
+      { symbol, maxPages: POLYGON_FLOW_SNAPSHOT_MAX_PAGES },
+      "Snapshot: Polygon flow snapshot pagination hit max pages cap",
+    );
+  }
+
+  return { results, httpCalls, pageCapHit, lastHttpStatus };
+}
+
+function flowPerStrikeDedupeKey(
+  symUpper: string,
+  sessionDate: string,
+  optionType: string,
+  strike: number,
+  expiration: string,
+): string {
+  return `${symUpper}|${sessionDate}|${optionType}|${strike}|${expiration}`;
+}
+
+function parsePolygonSnapshotResultToFlowRow(
+  r: Record<string, unknown>,
+  symUpper: string,
+  date: string,
+): typeof optionsFlowPerStrikeTable.$inferInsert | null {
+  const details = r["details"] as Record<string, unknown> | undefined;
+  const day = r["day"] as Record<string, unknown> | undefined;
+  const lastQuote = r["last_quote"] as Record<string, unknown> | undefined;
+  const greeks = r["greeks"] as Record<string, unknown> | undefined;
+  if (!details) return null;
+
+  const rawCt = String(details["contract_type"] ?? "").toLowerCase();
+  const contractType = rawCt === "call" ? "call" : rawCt === "put" ? "put" : null;
+  if (!contractType) return null;
+  const strikePrice = details["strike_price"] as number;
+  const expDate = details["expiration_date"] as string;
+  if (expDate == null || strikePrice == null || !Number.isFinite(strikePrice)) return null;
+
+  const vol = (day?.["volume"] ?? 0) as number;
+  const oi = (r["open_interest"] ?? 0) as number;
+  const bid = (lastQuote?.["bid"] ?? 0) as number;
+  const ask = (lastQuote?.["ask"] ?? 0) as number;
+  const mid = (bid + ask) / 2;
+
+  const nowMs = Date.now();
+  const dte = Math.max(0, Math.round((new Date(`${expDate}T20:00:00Z`).getTime() - nowMs) / 86_400_000));
+
+  return {
+    underlyingSymbol: symUpper,
+    date,
+    optionType: contractType,
+    strike: strikePrice,
+    expiration: expDate,
+    dte,
+    dailyVolume: vol,
+    openInterest: oi,
+    bid,
+    ask,
+    mid,
+    impliedVolatility: normalizeIV((r["implied_volatility"] as number) ?? null),
+    delta: (greeks?.["delta"] as number) ?? null,
+    gamma: (greeks?.["gamma"] as number) ?? null,
+    theta: (greeks?.["theta"] as number) ?? null,
+    vega: (greeks?.["vega"] as number) ?? null,
+    avgTradePrice: (day?.["vwap"] as number) ?? mid,
+  };
 }
 
 async function fetchQuotesBatch(
@@ -377,6 +517,247 @@ export async function collectEquitySnapshots(
   return rowCount;
 }
 
+function schwabAnchorAddDays(anchorYmd: string, deltaDays: number): string {
+  const d = new Date(`${anchorYmd}T12:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + deltaDays);
+  return d.toISOString().slice(0, 10);
+}
+
+function schwabBracketChainUrl(symbol: string, fromYmd: string, toYmd?: string): string {
+  const q = new URLSearchParams({
+    symbol: symbol.toUpperCase(),
+    strategy: "SINGLE",
+    includeUnderlyingQuote: "false",
+    fromDate: fromYmd,
+  });
+  if (toYmd) q.set("toDate", toYmd);
+  return `${SCHWAB_API}/chains?${q.toString()}`;
+}
+
+function schwabChainJsonToRows(
+  sym: string,
+  sessionDate: string,
+  chain: Record<string, unknown>,
+): Array<typeof optionsChainDailyTable.$inferInsert> {
+  const rows: Array<typeof optionsChainDailyTable.$inferInsert> = [];
+  for (const side of ["callExpDateMap", "putExpDateMap"] as const) {
+    const optType = side === "callExpDateMap" ? "call" : "put";
+    const expMap = chain[side] as Record<string, Record<string, Array<Record<string, unknown>>>> | undefined;
+    if (!expMap) continue;
+
+    for (const [expKey, strikes] of Object.entries(expMap)) {
+      const expDate = expKey.split(":")[0];
+      for (const [strikeStr, contracts] of Object.entries(strikes)) {
+        for (const c of contracts) {
+          const strike = parseFloat(strikeStr);
+          const bid = (c["bid"] ?? 0) as number;
+          const ask = (c["ask"] ?? 0) as number;
+          rows.push({
+            underlyingSymbol: sym.toUpperCase(),
+            date: sessionDate,
+            optionSymbol: (c["symbol"] as string) ?? null,
+            optionType: optType,
+            strike,
+            expiration: expDate,
+            dte: (c["daysToExpiration"] as number) ?? null,
+            bid,
+            ask,
+            mid: (bid + ask) / 2,
+            last: (c["last"] ?? null) as number | null,
+            volume: (c["totalVolume"] ?? 0) as number,
+            openInterest: (c["openInterest"] ?? 0) as number,
+            impliedVolatility: normalizeIV((c["volatility"] ?? null) as number | null),
+            delta: (c["delta"] ?? null) as number | null,
+            gamma: (c["gamma"] ?? null) as number | null,
+            theta: (c["theta"] ?? null) as number | null,
+            vega: (c["vega"] ?? null) as number | null,
+          });
+        }
+      }
+    }
+  }
+  return rows;
+}
+
+function mergeOptionChainRowsByVolume(
+  rows: Array<typeof optionsChainDailyTable.$inferInsert>,
+): Array<typeof optionsChainDailyTable.$inferInsert> {
+  const m = new Map<string, typeof optionsChainDailyTable.$inferInsert>();
+  const key = (r: typeof optionsChainDailyTable.$inferInsert) => `${r.expiration}|${r.strike}|${r.optionType}`;
+  for (const r of rows) {
+    const k = key(r);
+    const ex = m.get(k);
+    if (!ex || (r.volume ?? 0) > (ex.volume ?? 0)) m.set(k, r);
+  }
+  return [...m.values()];
+}
+
+function countDistinctSchwabChainExpirations(rows: Array<typeof optionsChainDailyTable.$inferInsert>): number {
+  const s = new Set<string>();
+  for (const r of rows) {
+    if (r.expiration) s.add(String(r.expiration).slice(0, 10));
+  }
+  return s.size;
+}
+
+async function fetchSchwabChainJsonOnce(
+  url: string,
+  token: string,
+): Promise<{ ok: boolean; status: number; chain: Record<string, unknown> | null }> {
+  const res = await fetchWithRetry(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const status = res.status;
+  if (!res.ok) return { ok: false, status, chain: null };
+  const chain = await res.json() as Record<string, unknown>;
+  return { ok: true, status, chain };
+}
+
+async function fetchSchwabChainBracketDateRangeRows(
+  symbol: string,
+  token: string,
+  sessionDate: string,
+  fromYmd: string,
+  toYmd: string | undefined,
+  allow502Split: boolean,
+): Promise<Array<typeof optionsChainDailyTable.$inferInsert>> {
+  const url = schwabBracketChainUrl(symbol, fromYmd, toYmd);
+  const first = await fetchSchwabChainJsonOnce(url, token);
+  if (first.ok && first.chain) {
+    const rows = schwabChainJsonToRows(symbol, sessionDate, first.chain);
+    if (rows.length > 0) return rows;
+  }
+  if (first.status !== 502 || !allow502Split) {
+    if (!first.ok) {
+      logger.warn(
+        { symbol, fromYmd, toYmd: toYmd ?? null, status: first.status },
+        "Snapshot: Schwab bracketed chain request non-OK",
+      );
+    }
+    return [];
+  }
+  if (toYmd === undefined) {
+    const end1 = schwabAnchorAddDays(fromYmd, 730);
+    const start2 = schwabAnchorAddDays(fromYmd, 731);
+    const part1 = await fetchSchwabChainBracketDateRangeRows(symbol, token, sessionDate, fromYmd, end1, false);
+    const part2 = await fetchSchwabChainBracketDateRangeRows(symbol, token, sessionDate, start2, undefined, false);
+    if (part1.length === 0 && part2.length === 0) {
+      logger.warn(
+        { symbol, fromYmd, split: "open_end_502" },
+        "Snapshot: Schwab open-ended bracket 502 split returned empty for both halves",
+      );
+    }
+    return mergeOptionChainRowsByVolume([...part1, ...part2]);
+  }
+  const d0 = new Date(`${fromYmd}T12:00:00.000Z`).getTime();
+  const d1 = new Date(`${toYmd}T12:00:00.000Z`).getTime();
+  const spanDays = Math.max(0, Math.round((d1 - d0) / 86_400_000));
+  if (spanDays < 1) {
+    logger.warn({ symbol, fromYmd, toYmd }, "Snapshot: Schwab bracket 502 split skipped, span too small");
+    return [];
+  }
+  const mid = schwabAnchorAddDays(fromYmd, Math.floor(spanDays / 2));
+  const midPlus = schwabAnchorAddDays(fromYmd, Math.floor(spanDays / 2) + 1);
+  const part1 = await fetchSchwabChainBracketDateRangeRows(symbol, token, sessionDate, fromYmd, mid, false);
+  const part2 = await fetchSchwabChainBracketDateRangeRows(symbol, token, sessionDate, midPlus, toYmd, false);
+  if (part1.length === 0 && part2.length === 0) {
+    logger.warn(
+      { symbol, fromYmd, toYmd, mid, midPlus },
+      "Snapshot: Schwab bracket 502 split returned empty for both halves",
+    );
+  }
+  return mergeOptionChainRowsByVolume([...part1, ...part2]);
+}
+
+const SCHWAB_CHAIN_WIDE_BRACKETS: Array<{ start: number; end?: number }> = [
+  { start: 0, end: 90 },
+  { start: 91, end: 365 },
+  { start: 366, end: 730 },
+  { start: 731, end: 1460 },
+  { start: 1461 },
+];
+
+/** Dense underlyings: smaller date windows per request to avoid Schwab truncating each bracket response. */
+const SCHWAB_CHAIN_NARROW_BRACKETS: Array<{ start: number; end?: number }> = [
+  { start: 0, end: 7 },
+  { start: 8, end: 21 },
+  { start: 22, end: 45 },
+  { start: 46, end: 90 },
+  { start: 91, end: 180 },
+  { start: 181, end: 365 },
+  { start: 366, end: 730 },
+  { start: 731, end: 1460 },
+  { start: 1461 },
+];
+
+async function fetchSchwabChainBracketed(
+  symbol: string,
+  token: string,
+  anchorYmd: string,
+  sessionDate: string,
+  useNarrowBrackets = false,
+): Promise<{ rows: Array<typeof optionsChainDailyTable.$inferInsert> | null; failureReason: string | null }> {
+  const symU = symbol.toUpperCase();
+  const brackets = useNarrowBrackets ? SCHWAB_CHAIN_NARROW_BRACKETS : SCHWAB_CHAIN_WIDE_BRACKETS;
+  const merged: Array<typeof optionsChainDailyTable.$inferInsert> = [];
+  for (const br of brackets) {
+    const fromY = schwabAnchorAddDays(anchorYmd, br.start);
+    const toY = br.end === undefined ? undefined : schwabAnchorAddDays(anchorYmd, br.end);
+    const rows = await fetchSchwabChainBracketDateRangeRows(symU, token, sessionDate, fromY, toY, true);
+    if (rows.length > 0) {
+      logger.info(
+        { symbol: symU, fromY, toY: toY ?? null, contractRows: rows.length },
+        "Snapshot: Schwab bracketed chain bracket succeeded",
+      );
+    }
+    merged.push(...rows);
+  }
+  const deduped = mergeOptionChainRowsByVolume(merged);
+  if (deduped.length === 0) {
+    return { rows: null, failureReason: "all_bracket_requests_failed_or_empty" };
+  }
+  return { rows: deduped, failureReason: null };
+}
+
+async function upsertSchwabChainIngestMetrics(
+  underlyingSymbol: string,
+  sessionDate: string,
+  payload: {
+    rangeAllStatus: "ok" | "fallback_used" | "total_failure" | "skipped_dense_ticker" | "thin_success_fallback";
+    lastFailureReason: string | null;
+    deltaRangeAllFailures: number;
+    deltaBracketSuccess: number;
+    deltaTotalFailure: number;
+  },
+): Promise<void> {
+  const t = schwabChainIngestMetricsTable;
+  const now = new Date();
+  const { rangeAllStatus, lastFailureReason, deltaRangeAllFailures, deltaBracketSuccess, deltaTotalFailure } = payload;
+  await db
+    .insert(t)
+    .values({
+      underlyingSymbol,
+      sessionDate,
+      rangeAllStatus,
+      lastAttemptAt: now,
+      lastFailureReason,
+      rangeAllFailuresTotal: deltaRangeAllFailures,
+      bracketedFallbackSuccessTotal: deltaBracketSuccess,
+      totalFailureTotal: deltaTotalFailure,
+    })
+    .onConflictDoUpdate({
+      target: [t.underlyingSymbol, t.sessionDate],
+      set: {
+        rangeAllStatus,
+        lastAttemptAt: now,
+        lastFailureReason,
+        rangeAllFailuresTotal: sql`${t.rangeAllFailuresTotal} + ${deltaRangeAllFailures}`,
+        bracketedFallbackSuccessTotal: sql`${t.bracketedFallbackSuccessTotal} + ${deltaBracketSuccess}`,
+        totalFailureTotal: sql`${t.totalFailureTotal} + ${deltaTotalFailure}`,
+      },
+    });
+}
+
 export async function collectOptionsChainSnapshots(
   symbols: string[],
   token: string,
@@ -402,56 +783,100 @@ export async function collectOptionsChainSnapshots(
       }
       if (spot <= 0) continue;
 
-      const chainRes = await fetchWithRetry(
-        `${SCHWAB_API}/chains?symbol=${encodeURIComponent(sym)}&strikeCount=30&includeUnderlyingQuote=false&strategy=SINGLE`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      if (!chainRes.ok) continue;
-      const chain = await chainRes.json() as Record<string, unknown>;
+      const symUpper = sym.toUpperCase();
+      const isDense = getSchwabDenseChainSymbols().has(symUpper);
 
-      const rows: Array<typeof optionsChainDailyTable.$inferInsert> = [];
+      let rows: Array<typeof optionsChainDailyTable.$inferInsert> = [];
+      let ingestStatus: "ok" | "fallback_used" | "total_failure" | "skipped_dense_ticker" | "thin_success_fallback" =
+        "ok";
+      let lastFailureReason: string | null = null;
+      let dR = 0;
+      let dB = 0;
+      let dT = 0;
 
-      for (const side of ["callExpDateMap", "putExpDateMap"] as const) {
-        const optType = side === "callExpDateMap" ? "call" : "put";
-        const expMap = chain[side] as Record<string, Record<string, Array<Record<string, unknown>>>> | undefined;
-        if (!expMap) continue;
+      if (isDense) {
+        const fb = await fetchSchwabChainBracketed(sym, token, date, date, true);
+        rows = fb.rows ?? [];
+        if (!rows.length) {
+          dT = 1;
+          ingestStatus = "total_failure";
+          lastFailureReason = fb.failureReason ?? "all_bracket_requests_failed_or_empty";
+          logger.error({ sym, reason: lastFailureReason }, "Snapshot: Schwab dense-ticker bracketed primary produced no rows");
+          await upsertSchwabChainIngestMetrics(symUpper, date, {
+            rangeAllStatus: "total_failure",
+            lastFailureReason,
+            deltaRangeAllFailures: 0,
+            deltaBracketSuccess: 0,
+            deltaTotalFailure: dT,
+          });
+          continue;
+        }
+        ingestStatus = "skipped_dense_ticker";
+        dB = 1;
+        logger.info({ sym, rowCount: rows.length }, "Snapshot: Schwab dense-ticker bracketed primary completed");
+      } else {
+        const chainRes = await fetchWithRetry(
+          `${SCHWAB_API}/chains?symbol=${encodeURIComponent(sym)}&range=ALL&includeUnderlyingQuote=false&strategy=SINGLE`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
 
-        for (const [expKey, strikes] of Object.entries(expMap)) {
-          const expDate = expKey.split(":")[0];
-          for (const [strikeStr, contracts] of Object.entries(strikes)) {
-            for (const c of contracts) {
-              const strike = parseFloat(strikeStr);
-              const bid = (c["bid"] ?? 0) as number;
-              const ask = (c["ask"] ?? 0) as number;
-              rows.push({
-                underlyingSymbol: sym.toUpperCase(),
-                date,
-                optionSymbol: (c["symbol"] as string) ?? null,
-                optionType: optType,
-                strike,
-                expiration: expDate,
-                dte: (c["daysToExpiration"] as number) ?? null,
-                bid,
-                ask,
-                mid: (bid + ask) / 2,
-                last: (c["last"] ?? null) as number | null,
-                volume: (c["totalVolume"] ?? 0) as number,
-                openInterest: (c["openInterest"] ?? 0) as number,
-                impliedVolatility: normalizeIV((c["volatility"] ?? null) as number | null),
-                delta: (c["delta"] ?? null) as number | null,
-                gamma: (c["gamma"] ?? null) as number | null,
-                theta: (c["theta"] ?? null) as number | null,
-                vega: (c["vega"] ?? null) as number | null,
-              });
+        if (chainRes.ok) {
+          const chain = await chainRes.json() as Record<string, unknown>;
+          rows = schwabChainJsonToRows(sym, date, chain);
+          if (polygonKey) {
+            const refStats = await fetchPolygonReferenceStats(sym, polygonKey);
+            if (refStats != null && refStats.distinctExpirationCount > 0) {
+              const distinctOur = countDistinctSchwabChainExpirations(rows);
+              const ratio = distinctOur / refStats.distinctExpirationCount;
+              if (ratio < 0.5) {
+                const fb = await fetchSchwabChainBracketed(sym, token, date, date, false);
+                const bracketRows = fb.rows ?? [];
+                rows = mergeOptionChainRowsByVolume([...rows, ...bracketRows]);
+                ingestStatus = "thin_success_fallback";
+                lastFailureReason = `thin_success: range=ALL returned only ${distinctOur} of ${refStats.distinctExpirationCount} distinct expirations from Polygon reference`;
+                if (bracketRows.length > 0) dB = 1;
+                logger.info(
+                  {
+                    sym,
+                    distinctOur,
+                    polygonDistinct: refStats.distinctExpirationCount,
+                    ratio,
+                    bracketRows: bracketRows.length,
+                  },
+                  "Snapshot: Schwab range=ALL thin success, merged date-bracketed fallback",
+                );
+              }
             }
           }
+        } else {
+          dR = 1;
+          lastFailureReason = `range=ALL HTTP ${chainRes.status}`;
+          logger.warn({ sym, status: chainRes.status }, "Snapshot: Schwab range=ALL chain non-OK, using date-bracketed fallback");
+          const fb = await fetchSchwabChainBracketed(sym, token, date, date);
+          rows = fb.rows ?? [];
+          if (!rows.length) {
+            dT = 1;
+            ingestStatus = "total_failure";
+            lastFailureReason = fb.failureReason ?? lastFailureReason;
+            logger.error({ sym, reason: lastFailureReason }, "Snapshot: Schwab bracketed chain fallback produced no rows");
+            await upsertSchwabChainIngestMetrics(symUpper, date, {
+              rangeAllStatus: "total_failure",
+              lastFailureReason,
+              deltaRangeAllFailures: dR,
+              deltaBracketSuccess: 0,
+              deltaTotalFailure: dT,
+            });
+            continue;
+          }
+          ingestStatus = "fallback_used";
+          dB = 1;
+          logger.info({ sym, rowCount: rows.length }, "Snapshot: Schwab bracketed chain fallback completed with contracts");
         }
       }
 
       if (rows.length > 0) {
-        const batchSize = 200;
-        for (let b = 0; b < rows.length; b += batchSize) {
-          const batch = rows.slice(b, b + batchSize);
+        for (let b = 0; b < rows.length; b += OPTIONS_CHAIN_DAILY_INSERT_BATCH) {
+          const batch = rows.slice(b, b + OPTIONS_CHAIN_DAILY_INSERT_BATCH);
           await db
             .insert(optionsChainDailyTable)
             .values(batch)
@@ -460,11 +885,26 @@ export async function collectOptionsChainSnapshots(
         rowCount += rows.length;
       }
 
+      const metricsLastFailure: string | null =
+        ingestStatus === "ok"
+          ? null
+          : ingestStatus === "skipped_dense_ticker"
+            ? "primary_skipped: known dense chain, bracketed primary"
+            : lastFailureReason;
+
+      await upsertSchwabChainIngestMetrics(symUpper, date, {
+        rangeAllStatus: ingestStatus,
+        lastFailureReason: metricsLastFailure,
+        deltaRangeAllFailures: dR,
+        deltaBracketSuccess: dB,
+        deltaTotalFailure: dT,
+      });
+
       const allChainRows = await db
         .select()
         .from(optionsChainDailyTable)
         .where(and(
-          eq(optionsChainDailyTable.underlyingSymbol, sym.toUpperCase()),
+          eq(optionsChainDailyTable.underlyingSymbol, symUpper),
           eq(optionsChainDailyTable.date, date),
         ));
 
@@ -489,7 +929,7 @@ export async function collectOptionsChainSnapshots(
         if (Object.keys(updates).length > 0) {
           await db.update(equityDailyTable)
             .set(updates)
-            .where(and(eq(equityDailyTable.symbol, sym.toUpperCase()), eq(equityDailyTable.date, date)));
+            .where(and(eq(equityDailyTable.symbol, symUpper), eq(equityDailyTable.date, date)));
         }
       }
 
@@ -603,7 +1043,7 @@ export async function collectPolygonFlowFromAPI(
     try {
       const spot = spotCache.get(sym.toUpperCase()) ?? 0;
       const expMin = date;
-      const expMax = new Date(Date.now() + 60 * 86_400_000).toISOString().slice(0, 10);
+      const expMax = new Date(Date.now() + POLYGON_FLOW_EXP_MAX_DAYS * 86_400_000).toISOString().slice(0, 10);
 
       const passes: Array<{ gte: string; lte: string; strikeMin?: string; strikeMax?: string }> = [
         { gte: expMin, lte: expMax },
@@ -620,83 +1060,62 @@ export async function collectPolygonFlowFromAPI(
         );
       }
 
-      const flowRows: Array<typeof optionsFlowPerStrikeTable.$inferInsert> = [];
-      const seenKeys = new Set<string>();
+      const symUpper = sym.toUpperCase();
+      const mergedByKey = new Map<string, typeof optionsFlowPerStrikeTable.$inferInsert>();
+      let collapsedDuplicateCount = 0;
+      let anyPageCapHit = false;
 
       for (const pass of passes) {
-        const params = new URLSearchParams({
+        const baseParams = new URLSearchParams({
           expiration_date_gte: pass.gte,
           expiration_date_lte: pass.lte,
-          limit: "250",
-          apiKey,
         });
-        if (pass.strikeMin) params.set("strike_price_gte", pass.strikeMin);
-        if (pass.strikeMax) params.set("strike_price_lte", pass.strikeMax);
+        if (pass.strikeMin) baseParams.set("strike_price_gte", pass.strikeMin);
+        if (pass.strikeMax) baseParams.set("strike_price_lte", pass.strikeMax);
 
-        apiCalls++;
-        const resp = await fetchWithRetry(
-          `${POLYGON_API}/v3/snapshot/options/${encodeURIComponent(sym)}?${params}`,
-          {},
-        );
-        if (!resp.ok) {
+        const { results, httpCalls: passCalls, pageCapHit, lastHttpStatus } =
+          await fetchPolygonSnapshotOptionsAllPages(sym, baseParams, apiKey);
+        apiCalls += passCalls;
+        if (pageCapHit) anyPageCapHit = true;
+
+        if (lastHttpStatus < 200 || lastHttpStatus >= 300) {
           apiErrors++;
-          void logFailure("POLYGON_API", "WARN", `Options snapshot HTTP ${resp.status}`, { symbol: sym, status: resp.status, date });
-          continue;
+          void logFailure("POLYGON_API", "WARN", `Options snapshot HTTP ${lastHttpStatus}`, { symbol: sym, status: lastHttpStatus, date });
         }
-        const json = await resp.json() as { results?: Array<Record<string, unknown>>; status?: string };
-        if (json.status !== "OK" || !json.results?.length) continue;
 
-        for (const r of json.results) {
-          const details = r["details"] as Record<string, unknown> | undefined;
-          const day = r["day"] as Record<string, unknown> | undefined;
-          const lastQuote = r["last_quote"] as Record<string, unknown> | undefined;
-          const greeks = r["greeks"] as Record<string, unknown> | undefined;
-          if (!details) continue;
-
-          const contractType = (details["contract_type"] as string) === "call" ? "call" : "put";
-          const strikePrice = details["strike_price"] as number;
-          const expDate = details["expiration_date"] as string;
-
-          const key = `${sym}|${contractType}|${strikePrice}|${expDate}`;
-          if (seenKeys.has(key)) continue;
-          seenKeys.add(key);
-
-          const vol = (day?.["volume"] ?? 0) as number;
-          const oi = (r["open_interest"] ?? 0) as number;
-          const bid = (lastQuote?.["bid"] ?? 0) as number;
-          const ask = (lastQuote?.["ask"] ?? 0) as number;
-          const mid = (bid + ask) / 2;
-
-          const nowMs = Date.now();
-          const dte = Math.max(0, Math.round((new Date(`${expDate}T20:00:00Z`).getTime() - nowMs) / 86_400_000));
-
-          flowRows.push({
-            underlyingSymbol: sym.toUpperCase(),
-            date,
-            optionType: contractType,
-            strike: strikePrice,
-            expiration: expDate,
-            dte,
-            dailyVolume: vol,
-            openInterest: oi,
-            bid,
-            ask,
-            mid,
-            impliedVolatility: normalizeIV((r["implied_volatility"] as number) ?? null),
-            delta: (greeks?.["delta"] as number) ?? null,
-            gamma: (greeks?.["gamma"] as number) ?? null,
-            theta: (greeks?.["theta"] as number) ?? null,
-            vega: (greeks?.["vega"] as number) ?? null,
-            avgTradePrice: (day?.["vwap"] as number) ?? mid,
-          });
+        for (const r of results) {
+          const row = parsePolygonSnapshotResultToFlowRow(r, symUpper, date);
+          if (!row) continue;
+          const k = flowPerStrikeDedupeKey(symUpper, date, row.optionType, row.strike, row.expiration);
+          const prev = mergedByKey.get(k);
+          if (!prev) {
+            mergedByKey.set(k, row);
+            continue;
+          }
+          collapsedDuplicateCount++;
+          const vol = row.dailyVolume ?? 0;
+          const prevVol = prev.dailyVolume ?? 0;
+          if (vol > prevVol) mergedByKey.set(k, row);
         }
         await sleep(200);
       }
 
+      if (collapsedDuplicateCount > 0) {
+        logger.warn(
+          { symbol: sym, collapsedDuplicateCount, anyPageCapHit },
+          "Snapshot: Polygon flow merged duplicate composite keys before insert",
+        );
+      }
+
+      const flowRows = [...mergedByKey.values()];
+
       if (flowRows.length > 0) {
         const batchSize = 200;
         for (let b = 0; b < flowRows.length; b += batchSize) {
-          await db.insert(optionsFlowPerStrikeTable).values(flowRows.slice(b, b + batchSize)).onConflictDoNothing();
+          await db
+            .insert(optionsFlowPerStrikeTable)
+            .values(flowRows.slice(b, b + batchSize))
+            .onConflictDoNothing();
         }
         strikeRows += flowRows.length;
       }

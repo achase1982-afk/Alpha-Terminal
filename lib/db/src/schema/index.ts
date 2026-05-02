@@ -209,6 +209,22 @@ export const optionsChainDailyTable = pgTable("options_chain_daily", {
 
 export type OptionsChainDaily = typeof optionsChainDailyTable.$inferSelect;
 
+/** Per-symbol per-session-date Schwab options chain ingest outcomes (range=ALL vs bracketed fallback). */
+export const schwabChainIngestMetricsTable = pgTable("schwab_chain_ingest_metrics", {
+  underlyingSymbol: text("underlying_symbol").notNull(),
+  sessionDate: date("session_date").notNull(),
+  rangeAllStatus: text("range_all_status").notNull(),
+  lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }).notNull(),
+  lastFailureReason: text("last_failure_reason"),
+  rangeAllFailuresTotal: integer("range_all_failures_total").notNull().default(0),
+  bracketedFallbackSuccessTotal: integer("bracketed_fallback_success_total").notNull().default(0),
+  totalFailureTotal: integer("total_failure_total").notNull().default(0),
+}, (t) => [
+  uniqueIndex("schwab_chain_ingest_metrics_sym_date").on(t.underlyingSymbol, t.sessionDate),
+]);
+
+export type SchwabChainIngestMetric = typeof schwabChainIngestMetricsTable.$inferSelect;
+
 export const optionsFlowPerStrikeTable = pgTable("options_flow_per_strike", {
   id: serial("id").primaryKey(),
   underlyingSymbol: text("underlying_symbol").notNull(),

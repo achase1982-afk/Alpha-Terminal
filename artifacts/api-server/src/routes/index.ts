@@ -19,6 +19,7 @@ import strategistV2Router from "./strategistV2";
 import flowTimeSalesRouter from "./flowTimeSales";
 import watchlistsRouter from "./watchlists";
 import polygonAnalystRouter from "./polygonAnalyst";
+import diagnosticsRouter from "./diagnostics";
 const router: IRouter = Router();
 
 router.use("/auth", authRouter);
@@ -41,5 +42,6 @@ router.use("/strategist", strategistV2Router);
 router.use("/flow", flowTimeSalesRouter);
 router.use("/watchlists", watchlistsRouter);
 router.use("/polygon", polygonAnalystRouter);
+router.use("/diagnostics", diagnosticsRouter);
 
 export default router;
