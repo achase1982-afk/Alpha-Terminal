@@ -9,6 +9,7 @@ import {
 import type { BlockReason, StrategistOutcome } from "@/components/StrategistV2Card";
 import { ChevronDown, ChevronUp, AlertTriangle, Copy, Play, Pause, Square, SkipBack, SkipForward, Volume2 } from "lucide-react";
 import { toast } from "sonner";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import type { DeskResult, DeskStructure } from "@/lib/strategistDeskResult";
 import { buildDeskSpeechSections, type DeskSpeechSectionId } from "@/lib/deskCardSpeech";
 import { STRATEGIST_ANALYSIS_CANCEL_EVENT, STRATEGIST_ANALYSIS_START_EVENT } from "@/lib/strategistDeskSpeechEvents";
@@ -254,18 +255,21 @@ export function StrategistDeskCard({
   strategistOutcome,
   blockReason,
   onRetry,
+  strategistDiagnosticRequestId,
 }: {
   deskResult: DeskResult;
   generatedAt?: string | number | null;
   strategistOutcome?: StrategistOutcome;
   blockReason?: BlockReason;
   onRetry?: (ticker: string) => void;
+  strategistDiagnosticRequestId?: string;
 }) {
   const { pm, vol, flow, catalyst, errors } = deskResult;
   const isTrade = pm.decision === "trade";
   const banner = deskBanner(strategistOutcome, blockReason, !isTrade, deskResult.soloDeskJsonDegraded);
   const [copiedFull, setCopiedFull] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
+  const [fullDiagLoading, setFullDiagLoading] = useState(false);
 
   const copyPlain = useCallback(async () => {
     const text = buildDeskCardPlainText({ deskResult, generatedAt, strategistOutcome, blockReason });
@@ -301,10 +305,43 @@ export function StrategistDeskCard({
   }, [deskResult, generatedAt, strategistOutcome, blockReason]);
 
   const copyJson = useCallback(async () => {
-    const { models: _omitFromClientCopy, ...rest } = deskResult;
-    void _omitFromClientCopy;
-    const text = JSON.stringify(rest, null, 2);
-    const fallback = () => {
+    const fallbackDeskOnly = () => {
+      const { models: _omitFromClientCopy, ...rest } = deskResult;
+      void _omitFromClientCopy;
+      return JSON.stringify({ strategistPayload: rest, note: "Full server diagnostic was not available (missing request id); this is the desk sections only." }, null, 2);
+    };
+
+    let text: string;
+    if (strategistDiagnosticRequestId) {
+      setFullDiagLoading(true);
+      try {
+        const res = await fetchWithAuth(
+          `/api/strategist/telemetry/strategist/request/${encodeURIComponent(strategistDiagnosticRequestId)}`,
+        );
+        if (!res.ok) {
+          text = fallbackDeskOnly();
+          toast.message("Copied partial JSON (telemetry fetch unavailable)");
+        } else {
+          const row = (await res.json()) as { fullDiagnostic?: unknown };
+          text = JSON.stringify(row.fullDiagnostic ?? row, null, 2);
+        }
+      } catch {
+        text = fallbackDeskOnly();
+        toast.message("Copied partial JSON (telemetry fetch failed)");
+      } finally {
+        setFullDiagLoading(false);
+      }
+    } else {
+      text = fallbackDeskOnly();
+      toast.message("Copied partial JSON (run id missing)");
+    }
+
+    const finishCopy = () => {
+      setCopiedJson(true);
+      window.setTimeout(() => setCopiedJson(false), 2000);
+    };
+
+    const fallbackExec = () => {
       try {
         const ta = document.createElement("textarea");
         ta.value = text;
@@ -314,9 +351,8 @@ export function StrategistDeskCard({
         ta.select();
         document.execCommand("copy");
         document.body.removeChild(ta);
-        toast.message("Copied desk JSON to clipboard");
-        setCopiedJson(true);
-        window.setTimeout(() => setCopiedJson(false), 1500);
+        toast.message("Copied full diagnostic JSON");
+        finishCopy();
       } catch {
         /* noop */
       }
@@ -324,16 +360,15 @@ export function StrategistDeskCard({
     try {
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(text);
-        toast.message("Copied desk JSON to clipboard");
-        setCopiedJson(true);
-        window.setTimeout(() => setCopiedJson(false), 1500);
+        toast.message("Copied full diagnostic JSON");
+        finishCopy();
       } else {
-        fallback();
+        fallbackExec();
       }
     } catch {
-      fallback();
+      fallbackExec();
     }
-  }, [deskResult]);
+  }, [deskResult, strategistDiagnosticRequestId]);
 
   const speechAvailable = useMemo(() => hasWebSpeech(), []);
   const speechSections = useMemo(
@@ -656,12 +691,12 @@ export function StrategistDeskCard({
             type="button"
             onClick={() => void copyJson()}
             style={btnStyle}
-            aria-label="Copy desk result as JSON"
+            aria-label="Copy full strategist diagnostic JSON"
             onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
             onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
           >
             <Copy size={12} />
-            {copiedJson ? "Copied" : "Copy JSON"}
+            {fullDiagLoading ? "…" : copiedJson ? "Copied" : "Copy JSON"}
           </button>
           {speechAvailable && !audioBarOpen && (
             <button

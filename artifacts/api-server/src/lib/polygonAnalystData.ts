@@ -1,3 +1,5 @@
+import { appendPolygonApiTraceRecord } from "./polygonApiTrace.js";
+
 /**
  * Polygon Benzinga partner analyst ratings (api.polygon.io/benzinga/v1/ratings).
  * Shared aggregation for GET /api/polygon/analyst-ratings and Strategist enrichment.
@@ -307,8 +309,27 @@ export async function fetchPolygonBenzingaRatingsAllPages(symbol: string): Promi
     `${POLYGON_BASE}/benzinga/v1/ratings?ticker=${encodeURIComponent(sym)}&limit=1000&sort=date.desc&apiKey=${encodeURIComponent(key)}`;
 
   while (url) {
+    const pageUrl = url;
+    const pathForTrace = (() => {
+      try {
+        const u = new URL(pageUrl.replace(/\bapiKey=[^&]+/i, "apiKey=[REDACTED]"));
+        return u.pathname + u.search;
+      } catch {
+        return pageUrl.split("?")[0] ?? pageUrl;
+      }
+    })();
+    const t0 = Date.now();
+    let timedOut = false;
     try {
-      const r = await fetch(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(25_000) });
+      const r = await fetch(pageUrl, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(25_000) });
+      appendPolygonApiTraceRecord({
+        path: pathForTrace,
+        method: "GET",
+        statusCode: r.status,
+        responseTimeMs: Date.now() - t0,
+        saw429: r.status === 429,
+        timedOut,
+      });
       if (!r.ok) {
         const text = await r.text().catch(() => "");
         return {
@@ -332,6 +353,14 @@ export async function fetchPolygonBenzingaRatingsAllPages(symbol: string): Promi
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      if (/abort|timeout/i.test(msg)) timedOut = true;
+      appendPolygonApiTraceRecord({
+        path: pathForTrace,
+        method: "GET",
+        statusCode: null,
+        responseTimeMs: Date.now() - t0,
+        timedOut,
+      });
       return { ok: false, rows: [], errorMessage: msg };
     }
   }

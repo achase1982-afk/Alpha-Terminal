@@ -6,6 +6,7 @@
 import { eq, sql } from "drizzle-orm";
 import { db, corporateEventsTable, equityDailyTable } from "@workspace/db";
 import { polygonKey } from "./polygonAnalystData.js";
+import { appendPolygonApiTraceRecord } from "./polygonApiTrace.js";
 import { fetchRescForwardEstimates } from "./ibkrResc.js";
 
 const POLYGON_BASE = "https://api.polygon.io";
@@ -323,10 +324,29 @@ export async function fetchEarningsHistoryAndForward(ticker: string): Promise<Fe
 
   let httpStatus = 0;
   let apiRows: PolygonEarningsApiRow[] = [];
+  let earningsPathForTrace = "/benzinga/v1/earnings";
   try {
     const url =
       `${POLYGON_BASE}/benzinga/v1/earnings?ticker=${encodeURIComponent(sym)}&limit=20&apiKey=${encodeURIComponent(key)}`;
+    earningsPathForTrace = (() => {
+      try {
+        const u = new URL(url.replace(/\bapiKey=[^&]+/i, "apiKey=[REDACTED]"));
+        return u.pathname + u.search;
+      } catch {
+        return "/benzinga/v1/earnings";
+      }
+    })();
+    const t0 = Date.now();
+    let timedOut = false;
     const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+    appendPolygonApiTraceRecord({
+      path: earningsPathForTrace,
+      method: "GET",
+      statusCode: res.status,
+      responseTimeMs: Date.now() - t0,
+      saw429: res.status === 429,
+      timedOut,
+    });
     httpStatus = res.status;
     if (!res.ok) {
       gaps.push(`polygon_http_error_${httpStatus}`);
@@ -336,7 +356,17 @@ export async function fetchEarningsHistoryAndForward(ticker: string): Promise<Fe
     }
     const json = (await res.json()) as { results?: PolygonEarningsApiRow[] };
     apiRows = Array.isArray(json.results) ? json.results : [];
-  } catch {
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/abort|timeout/i.test(msg)) {
+      appendPolygonApiTraceRecord({
+        path: earningsPathForTrace,
+        method: "GET",
+        statusCode: null,
+        responseTimeMs: 0,
+        timedOut: true,
+      });
+    }
     gaps.push(`polygon_http_error_${httpStatus || 0}`);
     const bundle: FetchEarningsBundle = { earnings_history: [], forward_estimates: null, data_source_gaps: gaps };
     cache.set(cacheKey, { ts: Date.now(), value: bundle });

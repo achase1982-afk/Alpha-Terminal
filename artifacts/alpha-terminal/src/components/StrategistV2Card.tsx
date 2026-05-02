@@ -262,6 +262,7 @@ export interface StrategistV2Result {
   };
   systemicRiskElevated: boolean;
   telemetryId?: number;
+  strategistDiagnosticRequestId?: string;
   earningsAlert?: {
     earningsDate: string;
     daysUntilEarnings: number | null;

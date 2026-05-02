@@ -20,6 +20,7 @@ import {
   nyCalendarYmd,
   rthBoundsMs,
 } from "./polygonMarketCalendar.js";
+import { appendPolygonApiTraceRecord } from "./polygonApiTrace.js";
 
 const POLYGON_API = "https://api.polygon.io";
 const MAX_EXPIRIES = 3;
@@ -70,28 +71,25 @@ export interface TapeBackfillStatus {
   sessionDate: string;
   coverageEndMs: number;
   occRequested: number;
+  /** Same as occRequested: length of OCC list processed (alias for diagnostics). */
+  occListLength?: number;
   occCompleted: number;
   tradesInserted: number;
-  /** How session tape OCCs were chosen (tiered band + volume-ranked cap). */
-  coverageGeometry?: TapeBackfillCoverageGeometry;
-  /** Aggregate parsed trade rows returned from Polygon REST across all OCCs (before DB insert). */
+  /** Raw trade rows returned from Polygon before filtering (session window). */
   totalTradesFromPolygon: number;
-  /** Rows filtered by classifier persistence for backfill (should stay zero with current backfill rule). */
+  /** Rows rejected by classifier before persistence. */
   persistRejectedCount: number;
-  /** True if trade or quote pagination stopped early (deadline, HTTP error, or 429 exhaustion). */
   anyTruncated: boolean;
+  anyError?: boolean;
   /** True if any Polygon REST response in this run was non-OK HTTP (excluding handled 429 retries). */
   anySawPolygonHttpError: boolean;
-  /** NY calendar date string at run start (America/New_York). */
   todayYmd: string;
-  /** True when sessionDate equals todayYmd (queries current calendar session date). */
   isSessionForToday: boolean;
-  /** True when today is the session date and wall clock is inside that session's RTH window. */
   sessionInProgress: boolean;
-  /** Session RTH open time for tape query (UTC ms). */
   queryOpenMs: number;
-  /** Session RTH close time for tape query (UTC ms). */
   queryCloseMs: number;
+  /** How session tape OCCs were chosen (tiered band + volume-ranked cap). */
+  coverageGeometry?: TapeBackfillCoverageGeometry;
 }
 
 interface ChainLike {
@@ -338,7 +336,24 @@ async function fetchPaged(
     ? firstUrl
     : `${firstUrl}${firstUrl.includes("?") ? "&" : "?"}apiKey=${encodeURIComponent(apiKey)}`;
   let truncated = false;
+  let paginationPages = 0;
   pageLoop: while (url && Date.now() < deadlineMs) {
+    paginationPages += 1;
+    const pageUrl = url;
+    const pathForTrace = (() => {
+      try {
+        const u = new URL(pageUrl.replace(/\bapiKey=[^&]+/i, "apiKey=[REDACTED]"));
+        return u.pathname + u.search;
+      } catch {
+        return pageUrl.split("?")[0] ?? pageUrl;
+      }
+    })();
+    const tPageStart = Date.now();
+    let pageTimedOut = false;
+    let retry429Total = 0;
+    let saw429OnPage = false;
+    let finalStatus: number | null = null;
+
     const remaining = deadlineMs - Date.now();
     if (remaining <= 0) break;
 
@@ -351,23 +366,39 @@ async function fetchPaged(
       }
       const httpMs = Math.min(PER_FETCH_HTTP_MS, Math.max(800, rem));
       try {
-        r = await fetch(url, { signal: AbortSignal.timeout(httpMs) });
+        r = await fetch(pageUrl, { signal: AbortSignal.timeout(httpMs) });
       } catch {
         truncated = true;
+        pageTimedOut = true;
+        appendPolygonApiTraceRecord({
+          path: pathForTrace,
+          method: "GET",
+          statusCode: null,
+          responseTimeMs: Date.now() - tPageStart,
+          paginationPages,
+          retryCountAfter429: retry429Total,
+          saw429: saw429OnPage,
+          timedOut: true,
+        });
         break pageLoop;
       }
 
       if (r.status !== 429) {
+        finalStatus = r.status;
         break;
       }
 
+      saw429OnPage = true;
+      retry429Total += 1;
+
       if (attempt >= 3) {
         logger.warn(
-          { attempt: attempt + 1, url: url.split("?")[0] },
+          { attempt: attempt + 1, url: pageUrl.split("?")[0] },
           "strategistTapeBackfill: Polygon 429 after max retries on paginated fetch",
         );
         truncated = true;
-        break pageLoop;
+        finalStatus = r.status;
+        break;
       }
 
       const ra = r.headers.get("retry-after");
@@ -382,7 +413,8 @@ async function fetchPaged(
       const now = Date.now();
       if (now + delayMs > deadlineMs) {
         truncated = true;
-        break pageLoop;
+        finalStatus = r.status;
+        break;
       }
 
       logger.warn(
@@ -391,12 +423,23 @@ async function fetchPaged(
           maxAttempts: 4,
           delayMs: Math.round(delayMs),
           retryAfterHeader: ra,
-          url: url.split("?")[0],
+          url: pageUrl.split("?")[0],
         },
         "strategistTapeBackfill: Polygon 429 on paginated fetch, backing off before retry",
       );
       await new Promise((res) => setTimeout(res, delayMs));
     }
+
+    appendPolygonApiTraceRecord({
+      path: pathForTrace,
+      method: "GET",
+      statusCode: finalStatus,
+      responseTimeMs: Date.now() - tPageStart,
+      paginationPages,
+      retryCountAfter429: retry429Total,
+      saw429: saw429OnPage,
+      timedOut: pageTimedOut,
+    });
 
     if (!r) {
       truncated = true;
@@ -570,6 +613,7 @@ export async function runStrategistTapeBackfill(args: {
       sessionDate,
       coverageEndMs,
       occRequested: 0,
+      occListLength: 0,
       occCompleted: 0,
       tradesInserted: 0,
       totalTradesFromPolygon: 0,
@@ -596,6 +640,7 @@ export async function runStrategistTapeBackfill(args: {
       sessionDate,
       coverageEndMs,
       occRequested: 0,
+      occListLength: 0,
       occCompleted: 0,
       tradesInserted: 0,
       totalTradesFromPolygon: 0,
@@ -626,6 +671,7 @@ export async function runStrategistTapeBackfill(args: {
       sessionDate,
       coverageEndMs,
       occRequested: 0,
+      occListLength: 0,
       occCompleted: 0,
       tradesInserted: 0,
       coverageGeometry,
@@ -892,12 +938,14 @@ export async function runStrategistTapeBackfill(args: {
     sessionDate,
     coverageEndMs,
     occRequested: occList.length,
+    occListLength: occList.length,
     occCompleted,
     tradesInserted,
-    coverageGeometry,
     totalTradesFromPolygon,
     persistRejectedCount,
     anyTruncated,
+    anyError,
+    coverageGeometry,
     anySawPolygonHttpError,
     todayYmd,
     isSessionForToday,

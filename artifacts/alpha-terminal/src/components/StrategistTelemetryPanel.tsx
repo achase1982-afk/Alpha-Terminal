@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { ChevronDown, ChevronUp, Activity, Search as SearchIcon } from "lucide-react";
+import { ChevronDown, ChevronUp, Activity, Search as SearchIcon, Copy, Check } from "lucide-react";
+import { toast } from "sonner";
 
 interface TelemetryRow {
   id: number;
@@ -20,6 +21,8 @@ interface TelemetryRow {
   winningCandidate: any;
   edgeAttribution: any;
   recommendationThesis: string | null;
+  fullDiagnostic?: unknown;
+  dataPackage?: unknown;
 }
 
 interface ScannerRow {
@@ -153,6 +156,7 @@ export function StrategistTelemetryPanel() {
                   )}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
+                  <TelemetryEntryCopyButton row={row} />
                   <span className="font-mono text-[12px] text-zinc-400">{fmtDt(row.timestamp)}</span>
                   {expandedId === row.id ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />}
                 </div>
@@ -242,6 +246,58 @@ export function StrategistTelemetryPanel() {
         </div>
       )}
     </div>
+  );
+}
+
+function TelemetryEntryCopyButton({ row }: { row: TelemetryRow }) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      const payload = {
+        id: row.id,
+        timestamp: row.timestamp,
+        ticker: row.ticker,
+        result: row.result,
+        fullRow: row,
+      };
+      const text = JSON.stringify(payload, null, 2);
+      const done = () => {
+        setCopied(true);
+        toast.message("Copied");
+        window.setTimeout(() => setCopied(false), 2000);
+      };
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+          done();
+        } else {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.style.position = "fixed";
+          ta.style.left = "-9999px";
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          document.body.removeChild(ta);
+          done();
+        }
+      } catch {
+        /* noop */
+      }
+    },
+    [row],
+  );
+  return (
+    <button
+      type="button"
+      onClick={onCopy}
+      aria-label="Copy telemetry entry as JSON"
+      className="inline-flex items-center justify-center rounded-md border border-zinc-700 bg-zinc-900 text-zinc-300 hover:text-white hover:bg-zinc-800 shrink-0"
+      style={{ minWidth: 44, minHeight: 44 }}
+    >
+      {copied ? <Check className="w-4 h-4 text-emerald-400" aria-hidden /> : <Copy className="w-4 h-4" aria-hidden />}
+    </button>
   );
 }
 

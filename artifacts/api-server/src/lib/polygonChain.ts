@@ -1,3 +1,5 @@
+import { appendPolygonApiTraceRecord } from "./polygonApiTrace.js";
+
 interface PolygonOptionResult {
   day?: {
     volume?: number;
@@ -156,10 +158,29 @@ export async function fetchPolygonChain(
 
   while (nextUrl && pages < maxPages) {
     const fetchUrl = pages > 0 ? `${nextUrl}&apiKey=${apiKey}` : nextUrl;
+    const pathForTrace = (() => {
+      try {
+        const u = new URL(fetchUrl.replace(/\bapiKey=[^&]+/i, "apiKey=[REDACTED]"));
+        return u.pathname + u.search;
+      } catch {
+        return fetchUrl.split("?")[0] ?? fetchUrl;
+      }
+    })();
+    const t0 = Date.now();
+    let timedOut = false;
     // [LIVE_FL_DIAG] Watcher / chain path uses this URL (options snapshot) for live flow subs.
     const logUrl = fetchUrl.replace(/apiKey=[^&]+/i, "apiKey=[REDACTED]");
     try {
       const resp = await fetch(fetchUrl, { signal: AbortSignal.timeout(15_000) });
+      appendPolygonApiTraceRecord({
+        path: pathForTrace,
+        method: "GET",
+        statusCode: resp.status,
+        responseTimeMs: Date.now() - t0,
+        paginationPages: pages + 1,
+        saw429: resp.status === 429,
+        timedOut,
+      });
       const bodyText = await resp.text();
       const bodyPreview = bodyText.length > 500 ? bodyText.slice(0, 500) + "…" : bodyText;
       // eslint-disable-next-line no-console
@@ -174,6 +195,16 @@ export async function fetchPolygonChain(
       nextUrl = json.next_url;
       pages++;
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/abort|timeout/i.test(msg)) timedOut = true;
+      appendPolygonApiTraceRecord({
+        path: pathForTrace,
+        method: "GET",
+        statusCode: null,
+        responseTimeMs: Date.now() - t0,
+        paginationPages: pages + 1,
+        timedOut,
+      });
       log?.warn({ err, symbol, page: pages }, "Polygon chain fetch error");
       break;
     }
