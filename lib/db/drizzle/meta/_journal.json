@@ -29,6 +29,13 @@
       "when": 1777700000000,
       "tag": "0003_options_flow_raw_trades_classifier_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777800000000,
+      "tag": "0005_schwab_chain_ingest_metrics",
+      "breakpoints": true
     }
   ]
 }
