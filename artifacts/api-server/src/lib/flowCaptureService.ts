@@ -32,9 +32,11 @@ import {
   getRemainingChannelCapacity,
   getStatus,
   isEnabled as polygonWsEnabled,
+  onQuote,
   onTrade,
   subscribeContractsWithQuotes,
   unsubscribeContractsWithQuotes,
+  type PolygonOptionQuote,
   type PolygonOptionTrade,
 } from "./polygonOptionsWs.js";
 import { getWatcherSubscribedContractCount } from "./optionsWatcher.js";
@@ -49,6 +51,18 @@ const CHANNEL_POLL_MS = 200;
 
 export type FlowCaptureSource = "websocket" | "rest" | "flat_file";
 
+export type SubscribeOutcome = "success" | "error" | "disconnect";
+
+/** WebSocket path only; omitted for REST-only captures. */
+export interface WsSubscribeLatencyMs {
+  subscribe_attempt_start_ms: number | null;
+  subscribe_first_message_ms: number | null;
+  subscribe_ready_ms: number | null;
+  first_classified_trade_ms: number | null;
+  subscribe_total_duration_ms: number | null;
+  subscribe_outcome: SubscribeOutcome;
+}
+
 export interface FlowCaptureResult {
   sessionDate: string;
   source: FlowCaptureSource;
@@ -57,6 +71,7 @@ export interface FlowCaptureResult {
   durationMs: number;
   errors: string[];
   tapeBackfill?: TapeBackfillStatus;
+  wsSubscribeLatencyMs?: WsSubscribeLatencyMs;
 }
 
 interface ChainLike {
@@ -102,14 +117,76 @@ const metrics: MetricsSnapshot = {
   rowsCount: 0,
 };
 
-const recentRequests: Array<{
+export type RecentFlowCaptureRequest = {
   ticker: string;
   sessionDate: string;
   source: string;
   rowsInserted: number;
   durationMs: number;
   timestamp: string;
-}> = [];
+  subscribe_attempt_start_ms: number | null;
+  subscribe_first_message_ms: number | null;
+  subscribe_ready_ms: number | null;
+  first_classified_trade_ms: number | null;
+  subscribe_total_duration_ms: number | null;
+  subscribe_outcome: SubscribeOutcome | null;
+};
+
+const recentRequests: RecentFlowCaptureRequest[] = [];
+
+/** Rolling window (~1h) for WS subscribe latency and failure rate. */
+interface WsTelemetryHourRow {
+  recordedAt: number;
+  subscribeTotalDurationMs: number | null;
+  hadClassifiedWsTrade: boolean;
+}
+
+const wsTelemetryHour: WsTelemetryHourRow[] = [];
+const WS_TELEMETRY_WINDOW_MS = 3_600_000;
+
+function pruneWsTelemetry(): void {
+  const cutoff = Date.now() - WS_TELEMETRY_WINDOW_MS;
+  while (wsTelemetryHour.length > 0 && wsTelemetryHour[0]!.recordedAt < cutoff) {
+    wsTelemetryHour.shift();
+  }
+}
+
+function recordWsTelemetry(row: WsTelemetryHourRow): void {
+  pruneWsTelemetry();
+  wsTelemetryHour.push(row);
+}
+
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  const idx = Math.ceil((p / 100) * sorted.length) - 1;
+  return sorted[Math.max(0, Math.min(sorted.length - 1, idx))]!;
+}
+
+function subscribeLatencyAggregates(): {
+  avgSubscribeReadyMs: number;
+  p50SubscribeReadyMs: number;
+  p95SubscribeReadyMs: number;
+  subscribeFailureRate: number;
+} {
+  pruneWsTelemetry();
+  /** Time from subscribe attempt start to NBBO-ready (same as subscribe_total_duration_ms on the row). */
+  const durations = wsTelemetryHour
+    .map((r) => r.subscribeTotalDurationMs)
+    .filter((x): x is number => x != null && Number.isFinite(x));
+  const sorted = [...durations].sort((a, b) => a - b);
+  const avg =
+    durations.length > 0 ? Math.round(durations.reduce((s, x) => s + x, 0) / durations.length) : 0;
+  const attempts = wsTelemetryHour.length;
+  const failures = wsTelemetryHour.filter((r) => !r.hadClassifiedWsTrade).length;
+  const subscribeFailureRate =
+    attempts > 0 ? Math.round((failures / attempts) * 10_000) / 100 : 0;
+  return {
+    avgSubscribeReadyMs: avg,
+    p50SubscribeReadyMs: percentile(sorted, 50),
+    p95SubscribeReadyMs: percentile(sorted, 95),
+    subscribeFailureRate,
+  };
+}
 
 let metricsHourRotate = Date.now();
 
@@ -121,7 +198,7 @@ function rotateMetricsHour(): void {
   metrics.failedLastHour = 0;
 }
 
-function pushRecent(r: (typeof recentRequests)[number]): void {
+function pushRecent(r: RecentFlowCaptureRequest): void {
   recentRequests.unshift(r);
   if (recentRequests.length > 50) recentRequests.pop();
 }
@@ -304,6 +381,47 @@ function openInterestForOcc(chain: ChainLike[], meta: { expiration: string; stri
   return 0;
 }
 
+function allSubscribedOccsHaveValidNbbo(occList: string[]): boolean {
+  for (const o of occList) {
+    const nb = getNbbo(o);
+    if (!nb || !(nb.bid > 0 && nb.ask > 0 && nb.ask >= nb.bid)) return false;
+  }
+  return true;
+}
+
+function emptyWsLatency(): WsSubscribeLatencyMs {
+  return {
+    subscribe_attempt_start_ms: null,
+    subscribe_first_message_ms: null,
+    subscribe_ready_ms: null,
+    first_classified_trade_ms: null,
+    subscribe_total_duration_ms: null,
+    subscribe_outcome: "error",
+  };
+}
+
+function restRecentBase(
+  ticker: string,
+  sessionDate: string,
+  rowsInserted: number,
+  durationMs: number,
+): RecentFlowCaptureRequest {
+  return {
+    ticker,
+    sessionDate,
+    source: "rest",
+    rowsInserted,
+    durationMs,
+    timestamp: new Date().toISOString(),
+    subscribe_attempt_start_ms: null,
+    subscribe_first_message_ms: null,
+    subscribe_ready_ms: null,
+    first_classified_trade_ms: null,
+    subscribe_total_duration_ms: null,
+    subscribe_outcome: null,
+  };
+}
+
 async function runWebsocketCaptureInternal(
   ticker: string,
   sessionDate: string,
@@ -323,6 +441,26 @@ async function runWebsocketCaptureInternal(
   metrics.queueDepth--;
   if (!okCap) {
     errors.push("capacity_queue_timeout");
+    const wsLat = emptyWsLatency();
+    recordWsTelemetry({
+      recordedAt: Date.now(),
+      subscribeTotalDurationMs: null,
+      hadClassifiedWsTrade: false,
+    });
+    pushRecent({
+      ticker,
+      sessionDate,
+      source: "websocket",
+      rowsInserted: 0,
+      durationMs: Date.now() - t0,
+      timestamp: new Date().toISOString(),
+      subscribe_attempt_start_ms: null,
+      subscribe_first_message_ms: null,
+      subscribe_ready_ms: null,
+      first_classified_trade_ms: null,
+      subscribe_total_duration_ms: null,
+      subscribe_outcome: "error",
+    });
     return {
       sessionDate,
       source: "websocket",
@@ -330,6 +468,7 @@ async function runWebsocketCaptureInternal(
       occsSubscribed: 0,
       durationMs: Date.now() - t0,
       errors,
+      wsSubscribeLatencyMs: wsLat,
     };
   }
 
@@ -364,14 +503,7 @@ async function runWebsocketCaptureInternal(
     const dur = Date.now() - t0;
     rotateMetricsHour();
     metrics.failedLastHour++;
-    pushRecent({
-      ticker,
-      sessionDate,
-      source: "rest",
-      rowsInserted,
-      durationMs: dur,
-      timestamp: new Date().toISOString(),
-    });
+    pushRecent(restRecentBase(ticker, sessionDate, rowsInserted, dur));
     return {
       sessionDate,
       source: "rest",
@@ -390,7 +522,11 @@ async function runWebsocketCaptureInternal(
     };
   }
 
-  let unregister: (() => void) | null = null;
+  let unregisterTrade: (() => void) | null = null;
+  let unregisterQuote: (() => void) | null = null;
+  const wsLatency: WsSubscribeLatencyMs = emptyWsLatency();
+  let subscribePhaseError: Error | null = null;
+
   const buffer: Array<typeof optionsFlowRawTradesTable.$inferInsert> = [];
   let flushTimer: ReturnType<typeof setInterval> | null = null;
   const occSet = new Set(occList.map((o) => o.toUpperCase()));
@@ -421,6 +557,10 @@ async function runWebsocketCaptureInternal(
   const onTradeHandler = (trade: PolygonOptionTrade): void => {
     const sym = trade.sym.toUpperCase();
     if (!occSet.has(sym)) return;
+    const wireNow = Date.now();
+    if (wsLatency.subscribe_first_message_ms == null) {
+      wsLatency.subscribe_first_message_ms = wireNow;
+    }
     void (async () => {
       const nb = getNbbo(sym);
       const meta = parseOccMeta(sym);
@@ -443,6 +583,9 @@ async function runWebsocketCaptureInternal(
         openInterest: oiSnap > 0 ? oiSnap : null,
       });
       if (!shouldPersistBackfillRow(cl)) return;
+      if (wsLatency.first_classified_trade_ms == null) {
+        wsLatency.first_classified_trade_ms = Date.now();
+      }
       const tsMs = trade.timestamp;
       const dteDays = dteCalendarDays(meta.expiration, tsMs);
       const sessionPhase = sessionPhaseFromTradeMs(tsMs);
@@ -495,12 +638,56 @@ async function runWebsocketCaptureInternal(
 
   try {
     await ensureConnected();
-    unregister = onTrade(onTradeHandler);
-    await subscribeContractsWithQuotes(occList);
-    logger.info({ ticker, sessionDate, occs: occList.length }, "flowCapture: subscribed");
-    flushTimer = setInterval(() => { void flush(); }, FLUSH_INTERVAL_MS);
+    unregisterQuote = onQuote((q: PolygonOptionQuote) => {
+      const sym = q.sym.toUpperCase();
+      if (!occSet.has(sym)) return;
+      const now = Date.now();
+      if (wsLatency.subscribe_first_message_ms == null) {
+        wsLatency.subscribe_first_message_ms = now;
+      }
+      if (allSubscribedOccsHaveValidNbbo(occList) && wsLatency.subscribe_ready_ms == null) {
+        wsLatency.subscribe_ready_ms = now;
+      }
+    });
+    unregisterTrade = onTrade(onTradeHandler);
 
-    const subscribeTs = Date.now();
+    wsLatency.subscribe_attempt_start_ms = Date.now();
+    await subscribeContractsWithQuotes(occList);
+
+    const nbboWaitDeadline = Math.min(
+      (wsLatency.subscribe_attempt_start_ms ?? Date.now()) + 15_000,
+      deadline,
+    );
+    while (
+      Date.now() < nbboWaitDeadline &&
+      wsLatency.subscribe_ready_ms == null &&
+      getStatus().connectionState === "connected"
+    ) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+
+    if (getStatus().connectionState !== "connected") {
+      errors.push("websocket_disconnected_mid_capture");
+    } else if (wsLatency.subscribe_ready_ms == null) {
+      errors.push("nbbo_ready_timeout");
+    }
+
+    logger.info(
+      {
+        ticker,
+        sessionDate,
+        occs: occList.length,
+        subscribe_attempt_start_ms: wsLatency.subscribe_attempt_start_ms,
+        subscribe_first_message_ms: wsLatency.subscribe_first_message_ms,
+        subscribe_ready_ms: wsLatency.subscribe_ready_ms,
+      },
+      "flowCapture: subscribed",
+    );
+    flushTimer = setInterval(() => {
+      void flush();
+    }, FLUSH_INTERVAL_MS);
+
+    const subscribeTs = wsLatency.subscribe_attempt_start_ms ?? Date.now();
     const maxEnd = Math.min(subscribeTs + MAX_CAPTURE_MS, deadline);
     while (Date.now() < subscribeTs + minDur && Date.now() < maxEnd) {
       await new Promise((r) => setTimeout(r, 100));
@@ -514,14 +701,16 @@ async function runWebsocketCaptureInternal(
       await new Promise((r) => setTimeout(r, 50));
     }
   } catch (err) {
-    errors.push(err instanceof Error ? err.message : String(err));
+    subscribePhaseError = err instanceof Error ? err : new Error(String(err));
+    errors.push(subscribePhaseError.message);
   } finally {
     if (flushTimer) {
       clearInterval(flushTimer);
       flushTimer = null;
     }
     await flush();
-    if (unregister) unregister();
+    if (unregisterTrade) unregisterTrade();
+    if (unregisterQuote) unregisterQuote();
     try {
       unsubscribeContractsWithQuotes(occList);
     } catch (err) {
@@ -535,6 +724,37 @@ async function runWebsocketCaptureInternal(
       logFlowPipelineWarn("flow_capture_rollup", "flowCaptureService: rollup failed", { err, ticker });
     }
   }
+
+  if (
+    wsLatency.subscribe_attempt_start_ms != null &&
+    wsLatency.subscribe_ready_ms != null
+  ) {
+    wsLatency.subscribe_total_duration_ms =
+      wsLatency.subscribe_ready_ms - wsLatency.subscribe_attempt_start_ms;
+  }
+  if (errors.some((e) => e.includes("websocket_disconnected"))) {
+    wsLatency.subscribe_outcome = "disconnect";
+  } else if (wsLatency.first_classified_trade_ms != null) {
+    wsLatency.subscribe_outcome = "success";
+  } else {
+    wsLatency.subscribe_outcome = "error";
+  }
+
+  recordWsTelemetry({
+    recordedAt: Date.now(),
+    subscribeTotalDurationMs: wsLatency.subscribe_total_duration_ms,
+    hadClassifiedWsTrade: wsLatency.first_classified_trade_ms != null,
+  });
+
+  logger.info(
+    {
+      ticker,
+      sessionDate,
+      ...wsLatency,
+      subscribe_phase_error: subscribePhaseError?.message,
+    },
+    "flowCapture: ws_subscribe_telemetry",
+  );
 
   const dur = Date.now() - t0;
   rotateMetricsHour();
@@ -550,6 +770,12 @@ async function runWebsocketCaptureInternal(
     rowsInserted,
     durationMs: dur,
     timestamp: new Date().toISOString(),
+    subscribe_attempt_start_ms: wsLatency.subscribe_attempt_start_ms,
+    subscribe_first_message_ms: wsLatency.subscribe_first_message_ms,
+    subscribe_ready_ms: wsLatency.subscribe_ready_ms,
+    first_classified_trade_ms: wsLatency.first_classified_trade_ms,
+    subscribe_total_duration_ms: wsLatency.subscribe_total_duration_ms,
+    subscribe_outcome: wsLatency.subscribe_outcome,
   });
 
   const fc: FlowCaptureResult = {
@@ -567,6 +793,7 @@ async function runWebsocketCaptureInternal(
       durationMs: dur,
       errors,
     }),
+    wsSubscribeLatencyMs: wsLatency,
   };
 
   if (errors.some((e) => e.includes("websocket_disconnected"))) {
@@ -670,14 +897,7 @@ async function runCaptureOnce(ticker: string, sessionDate: string, opts: FlowCap
   metrics.durationCount++;
   metrics.rowsSum += tb.tradesInserted;
   metrics.rowsCount++;
-  pushRecent({
-    ticker,
-    sessionDate,
-    source: "rest",
-    rowsInserted: tb.tradesInserted,
-    durationMs: dur,
-    timestamp: new Date().toISOString(),
-  });
+  pushRecent(restRecentBase(ticker, sessionDate, tb.tradesInserted, dur));
 
   return {
     sessionDate,
@@ -744,6 +964,10 @@ export function getFlowCaptureDiagnostics(): {
     failedLastHour: number;
     avgDurationMs: number;
     avgRowsInserted: number;
+    avgSubscribeReadyMs: number;
+    p50SubscribeReadyMs: number;
+    p95SubscribeReadyMs: number;
+    subscribeFailureRate: number;
   };
   recentRequests: typeof recentRequests;
 } {
@@ -756,6 +980,8 @@ export function getFlowCaptureDiagnostics(): {
     metrics.durationCount > 0 ? Math.round(metrics.durationSumMs / metrics.durationCount) : 0;
   const avgRows =
     metrics.rowsCount > 0 ? Math.round(metrics.rowsSum / metrics.rowsCount) : 0;
+
+  const lat = subscribeLatencyAggregates();
 
   return {
     websocket: {
@@ -781,6 +1007,10 @@ export function getFlowCaptureDiagnostics(): {
       failedLastHour: metrics.failedLastHour,
       avgDurationMs: avgDur,
       avgRowsInserted: avgRows,
+      avgSubscribeReadyMs: lat.avgSubscribeReadyMs,
+      p50SubscribeReadyMs: lat.p50SubscribeReadyMs,
+      p95SubscribeReadyMs: lat.p95SubscribeReadyMs,
+      subscribeFailureRate: lat.subscribeFailureRate,
     },
     recentRequests: [...recentRequests],
   };
