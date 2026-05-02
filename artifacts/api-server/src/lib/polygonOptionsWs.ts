@@ -157,6 +157,28 @@ export function getStatus(): {
   };
 }
 
+/** Polygon caps combined T + Q control-channel usage at MAX_CONCURRENT_SUBS (see subscribeContractsWithQuotes). */
+export function getChannelCapacitySnapshot(): {
+  maxChannels: number;
+  usedChannels: number;
+  remainingChannels: number;
+} {
+  const used = subRefcounts.size + quoteSubRefcounts.size;
+  return {
+    maxChannels: MAX_CONCURRENT_SUBS,
+    usedChannels: used,
+    remainingChannels: Math.max(0, MAX_CONCURRENT_SUBS - used),
+  };
+}
+
+export function getCurrentSubscriptionChannelCount(): number {
+  return subRefcounts.size + quoteSubRefcounts.size;
+}
+
+export function getRemainingChannelCapacity(): number {
+  return Math.max(0, MAX_CONCURRENT_SUBS - (subRefcounts.size + quoteSubRefcounts.size));
+}
+
 /** Read the most recent NBBO snapshot for a contract, or undefined. */
 export function getNbbo(sym: string): NbboSnapshot | undefined {
   return nbboCache.get(normalizeOccSymbol(sym));

@@ -778,6 +778,10 @@ function uniqUpper(arr: string[]): string[] {
   return out;
 }
 
+export function getWatcherSubscribedContractCount(): number {
+  return countTotalSubscribed();
+}
+
 function countTotalSubscribed(): number {
   let n = 0;
   for (const st of state.values()) n += st.contracts.length;
