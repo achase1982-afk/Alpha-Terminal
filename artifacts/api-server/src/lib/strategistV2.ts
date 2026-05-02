@@ -157,7 +157,7 @@ export interface StrategistV2Result {
     daysUntilExpiry: number;
     insideExpiry: boolean;
     behavior: "BLOCK" | "WARN" | "IGNORE";
-    source: "benzinga" | "yahoo" | "finnhub" | null;
+    source: "vendor_primary" | "yahoo" | "finnhub" | null;
     confirmed: boolean;
   };
   /** Set for `no_viable_setup` when the block maps to a v2 strategist outcome card */
@@ -205,7 +205,7 @@ interface TickerData {
   earningsDaysAway: number | null;
   earningsDate: string | null;
   earningsConfirmed: boolean;
-  earningsSource: "benzinga" | "yahoo" | "finnhub" | null;
+  earningsSource: "vendor_primary" | "yahoo" | "finnhub" | null;
   /** Most recent reported earnings (YYYY-MM-DD), when calendar sources provide it. */
   lastEarningsDate: string | null;
   /** Calendar days since lastEarningsDate. */
@@ -2253,7 +2253,7 @@ function buildDataPackage(
           consensusPriceTargetAsOfDate: enrichment.analystConsensus.consensusPriceTargetAsOfDate,
           consensusPriceTargetFreshness: enrichment.analystConsensus.consensusPriceTargetFreshness,
           recentRatings: enrichment.analystRatings?.slice(0, 15) ?? [],
-          sourceNote: "Polygon Benzinga partner API (consensus + ratings).",
+          sourceNote: "Polygon REST reference analyst price targets (120-day firm dedupe + mean consensus).",
         }
       : { available: false },
     secFundamentals: enrichment?.fundamentalsSummary ?? { available: false },
@@ -3192,7 +3192,7 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
     });
 
     void checkEventConflicts(ticker, 45, "iron_condor");
-    // Single source of truth: Benzinga primary + Yahoo fallback (cached 6h).
+    // Single source of truth: vendor_primary calendar + Yahoo fallback (cached 6h).
     // Replaces the legacy MEGA_EARNINGS hardcoded list which only covered ~mega caps.
     const earningsInfo = await getNextEarningsDate(ticker).catch(() => null);
     const earningsDaysAway: number | null = earningsInfo?.daysAway ?? null;

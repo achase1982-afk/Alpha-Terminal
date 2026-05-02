@@ -268,7 +268,7 @@ export interface StrategistV2Result {
     daysUntilExpiry: number;
     insideExpiry: boolean;
     behavior: "BLOCK" | "WARN" | "IGNORE";
-    source: "benzinga" | "yahoo" | null;
+    source: "vendor_primary" | "yahoo" | null;
     confirmed: boolean;
   };
   /**

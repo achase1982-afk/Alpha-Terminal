@@ -549,7 +549,7 @@ export async function getTickerSnapshot(
 
 // ─── 2C: get_regime_state ───────────────────────────────────────────────────
 // Derives market regime from SPY price vs SMA20, VIX level, and breadth.
-// [STUB]: macroFlags. Plug in MarketCalendar/Benzinga for real macro events.
+// [STUB]: macroFlags. Plug in MarketCalendar/vendor econ feed for real macro events.
 
 export async function getRegimeState(): Promise<RegimeState> {
   const spyRows = await db
@@ -590,7 +590,7 @@ export async function getRegimeState(): Promise<RegimeState> {
   // Default to trend-aligned for now.
   const breadthState: RegimeState["breadthState"] = trendState === "TRENDING_UP" ? "BULLISH" : "BEARISH";
 
-  // [STUB]: macroFlags — plug in Benzinga economic calendar for EARNINGS_SEASON, FED_DAY, etc.
+  // [STUB]: macroFlags — plug in vendor economic calendar for EARNINGS_SEASON, FED_DAY, etc.
   const macroFlags: string[] = [];
 
   return {

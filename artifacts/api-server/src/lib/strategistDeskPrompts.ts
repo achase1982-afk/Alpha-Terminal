@@ -8,7 +8,7 @@
 const OUTPUT_NO_SOURCE_RULES = `
 
 OUTPUT STYLE (strict):
-- Do not name data vendors, brokers, news brands, or third-party feeds (e.g. no Polygon, Schwab, IBKR, Benzinga, Yahoo, etc.).
+- Do not name data vendors, brokers, news brands, or third-party feeds (e.g. no Polygon, Schwab, IBKR, Yahoo, etc.).
 - Do not refer to "the payload", "the data package", "the feed", "the API", "the file", or similar ingestion or plumbing language.
 - Write as if you are reading the chain and the surface directly: "the tape", "the chain", "listed expiries", "the vol surface", "flow on screen".
 - If something looks like a known market artifact (e.g. front-week IV clamping, stale prints), describe the artifact plainly without attributing it to a system or vendor name.`;
@@ -18,7 +18,7 @@ const CATALYST_OUTPUT_ATTRIBUTION_RULES = `
 
 OUTPUT STYLE (strict, Catalyst desk):
 - You MAY name sell-side research firms and their actions when those actions ARE the catalyst (e.g. "Goldman cut PT from $19 to $17 on execution risk", "DA Davidson upgraded from Underperform to Neutral", "Baird raised PT to $25"). The firm and the call are part of the event landscape, not a citation of where you read it.
-- Do NOT name websites, data vendors, aggregators, or news outlets as the source of information (no "per Yahoo Finance", "according to Benzinga", "Fintel reports", "from the company's IR page", "per CNBC", "according to Reuters", etc.). If you mention a sell-side shop, do so only as market actor, never tied to "where we saw it."
+- Do NOT name websites, data vendors, aggregators, or news outlets as the source of information (no "per Yahoo Finance", "according to vendor headlines", "Fintel reports", "from the company's IR page", "per CNBC", "according to Reuters", etc.). If you mention a sell-side shop, do so only as market actor, never tied to "where we saw it."
 - For news-driven catalysts, state the fact or event plainly (e.g. "tornado damage at the Illinois plant"); do not attribute how you learned it to a named outlet or site.
 - Do not name data vendors, brokers, or third-party market-data or news-distribution feeds (Polygon, IBKR, etc.) and do not use pipeline narration ("the data package", "the feed", "our flow data", "the API", "the file").
 - Write as if you are reading the calendar and name-specific developments directly; omit retrieval mechanics entirely.`;

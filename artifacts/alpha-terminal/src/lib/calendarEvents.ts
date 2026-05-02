@@ -346,7 +346,7 @@ function generateEconomic(y: number): CalendarEvent[] {
   return ev;
 }
 
-export interface BenzingaEarning {
+export interface ApiEarningRow {
   date: string;
   ticker: string;
   name: string;
@@ -360,7 +360,7 @@ export interface BenzingaEarning {
   revenuePrior: string | null;
 }
 
-export function benzingaEarningsToEvents(earnings: BenzingaEarning[]): CalendarEvent[] {
+export function apiEarningsToEvents(earnings: ApiEarningRow[]): CalendarEvent[] {
   return earnings.map(e => {
     const parts: string[] = [];
     parts.push(`${e.name} (${e.ticker})`);
@@ -390,7 +390,7 @@ export function benzingaEarningsToEvents(earnings: BenzingaEarning[]): CalendarE
   });
 }
 
-export interface BenzingaEconEvent {
+export interface ApiEconEvent {
   id: string;
   date: string;
   time: string | null;
@@ -417,7 +417,7 @@ const ECON_NAME_MAP: Record<string, { blsType?: string; fomcType?: "decision" | 
   "Philadelphia Fed Manufacturing Survey": {},
 };
 
-export function benzingaEconToEvents(events: BenzingaEconEvent[]): CalendarEvent[] {
+export function apiEconToEvents(events: ApiEconEvent[]): CalendarEvent[] {
   return events.map(e => {
     const mapped = ECON_NAME_MAP[e.eventName];
     const parts: string[] = [e.eventName];
