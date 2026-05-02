@@ -1,5 +1,5 @@
 /**
-/** Desk-only: sequential structured web searches for the Catalyst section. */
+ * Desk-only: sequential structured web searches for the Catalyst section.
  * Runs before the Catalyst JSON turn so Vol/Flow are unchanged.
  */
 
