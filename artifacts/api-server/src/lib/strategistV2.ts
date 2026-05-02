@@ -16,7 +16,7 @@ import { fetchPolygonChain } from "./polygonChain.js";
 import { getPolygonFlowHighlights, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
 import { runStrategistTapeBackfill, type TapeBackfillStatus } from "./strategistTapeBackfill.js";
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
-import { getNextEarningsDate } from "./earningsService.js";
+import { getNextEarningsDate, type NextEarnings } from "./earningsService.js";
 import { evaluateCatalyst, deriveTradeDirection, type CatalystEvaluation } from "./catalystEvaluator.js";
 import { type OptionContract } from "./optionsStrategist.js";
 import { getStoredIVR, getRealizedVolFromEquityDaily, countRealIvHistoryDays, countProxyIvHistoryDays } from "./ivNormalize.js";
@@ -213,6 +213,8 @@ interface TickerData {
   daysSinceEarnings: number | null;
   /** Set when prior earnings date could not be resolved. */
   tickerDataNote?: string | null;
+  /** Full vendor calendar row (EPS/revenue estimates, prior quarter, period). Same source as earnings dates. */
+  nextEarnings: NextEarnings | null;
   analystActions48h: string[];
   halted: boolean;
 }
@@ -723,63 +725,59 @@ export async function analyzeTickerV2(
 
   let deskCatalystEval: CatalystEvaluation | null = null;
   let deskCatalystExpirationISO = "";
-  if (settings.strategistMode === 3 || settings.strategistMode === 4) {
-    deskCatalystExpirationISO = computeDeskCatalystExpirationISO(chainSummary, settings);
-    assertAnalyzeNotCancelled(progress);
-    try {
-      deskCatalystEval = await evaluateCatalyst({
-        ticker,
-        expirationISO: deskCatalystExpirationISO,
-        ai: null,
-      });
-    } catch (err) {
-      logger.warn(
-        { err, ticker, expirationISO: deskCatalystExpirationISO },
-        "StrategistV2: evaluateCatalyst failed for Desk path — continuing without desk catalyst block",
-      );
-      deskCatalystEval = null;
-    }
+  deskCatalystExpirationISO = computeDeskCatalystExpirationISO(chainSummary, settings);
+  assertAnalyzeNotCancelled(progress);
+  try {
+    deskCatalystEval = await evaluateCatalyst({
+      ticker,
+      expirationISO: deskCatalystExpirationISO,
+      ai: null,
+    });
+  } catch (err) {
+    logger.warn(
+      { err, ticker, expirationISO: deskCatalystExpirationISO },
+      "StrategistV2: evaluateCatalyst failed for catalyst block — continuing without desk catalyst block",
+    );
+    deskCatalystEval = null;
   }
 
   let tapeBackfillStatus: TapeBackfillStatus | undefined;
-  if (settings.strategistMode === 3 || settings.strategistMode === 4) {
-    status("Loading session options tape (REST backfill)…");
-    try {
-      tapeBackfillStatus = await runStrategistTapeBackfill({
+  status("Loading session options tape (REST backfill)…");
+  try {
+    tapeBackfillStatus = await runStrategistTapeBackfill({
+      ticker,
+      chain,
+      chainSummary: {
+        atmStrike: chainSummary.atmStrike,
+        availableExpirations: chainSummary.availableExpirations,
+        curatedExpirations: chainSummary.curatedExpirations.map((e) => ({
+          expiration: e.expiration,
+          dte: e.dte,
+        })),
+      },
+      marketCapTier: tickerData.marketContext.tier,
+    });
+    logger.info(
+      {
         ticker,
-        chain,
-        chainSummary: {
-          atmStrike: chainSummary.atmStrike,
-          availableExpirations: chainSummary.availableExpirations,
-          curatedExpirations: chainSummary.curatedExpirations.map((e) => ({
-            expiration: e.expiration,
-            dte: e.dte,
-          })),
-        },
-        marketCapTier: tickerData.marketContext.tier,
-      });
-      logger.info(
-        {
-          ticker,
-          tapeBackfill: tapeBackfillStatus.status,
-          tradesInserted: tapeBackfillStatus.tradesInserted,
-          occCompleted: tapeBackfillStatus.occCompleted,
-        },
-        "StrategistV2: session tape backfill finished",
-      );
-    } catch (err) {
-      logger.warn({ err, ticker }, "StrategistV2: session tape backfill threw");
-      tapeBackfillStatus = {
-        status: "failed",
-        reason: "exception",
-        tapeBackfillReason: "skipped_other",
-        sessionDate: new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }),
-        coverageEndMs: Date.now(),
-        occRequested: 0,
-        occCompleted: 0,
-        tradesInserted: 0,
-      };
-    }
+        tapeBackfill: tapeBackfillStatus.status,
+        tradesInserted: tapeBackfillStatus.tradesInserted,
+        occCompleted: tapeBackfillStatus.occCompleted,
+      },
+      "StrategistV2: session tape backfill finished",
+    );
+  } catch (err) {
+    logger.warn({ err, ticker }, "StrategistV2: session tape backfill threw");
+    tapeBackfillStatus = {
+      status: "failed",
+      reason: "exception",
+      tapeBackfillReason: "skipped_other",
+      sessionDate: new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }),
+      coverageEndMs: Date.now(),
+      occRequested: 0,
+      occCompleted: 0,
+      tradesInserted: 0,
+    };
   }
 
   assertAnalyzeNotCancelled(progress);
@@ -803,13 +801,11 @@ export async function analyzeTickerV2(
   const fundamentalsSummary = companyFinancials ? fundamentalsQuickSummary(companyFinancials) : null;
 
   let earningsEnrichment: FetchEarningsBundle | null = null;
-  if (settings.strategistMode === 3 || settings.strategistMode === 4) {
-    try {
-      earningsEnrichment = await fetchEarningsHistoryAndForward(ticker);
-    } catch (err) {
-      logger.warn({ err, ticker }, "StrategistV2: fetchEarningsHistoryAndForward failed");
-      earningsEnrichment = null;
-    }
+  try {
+    earningsEnrichment = await fetchEarningsHistoryAndForward(ticker);
+  } catch (err) {
+    logger.warn({ err, ticker }, "StrategistV2: fetchEarningsHistoryAndForward failed");
+    earningsEnrichment = null;
   }
   assertAnalyzeNotCancelled(progress);
 
@@ -822,12 +818,12 @@ export async function analyzeTickerV2(
     settings,
     polygonHighlights,
     deskCatalystEval,
-    settings.strategistMode === 3 || settings.strategistMode === 4 ? deskCatalystExpirationISO : undefined,
+    deskCatalystExpirationISO,
     {
       realizedVol,
       ivrContext: buildIvrContext(tickerData, realIvDepth, proxyIvDepth),
     },
-    settings.strategistMode === 3 || settings.strategistMode === 4 ? tapeBackfillStatus : undefined,
+    tapeBackfillStatus,
     {
       chainSource: dataSource,
       analystConsensus,
@@ -2014,7 +2010,7 @@ export function summarizeOptionsChain(
     }
   }
 
-  if (ctx?.settings?.strategistMode === 3 || ctx?.settings?.strategistMode === 4) {
+  if (ctx?.settings) {
     const prefsMax = Math.max(1, ctx.settings.preferredDteMax | 0);
     const fromAvail = deskWindowIsoFromAvailableExpiries(expirations, prefsMax);
     if (fromAvail) {
@@ -2220,7 +2216,7 @@ function buildDataPackage(
     analystConsensus?: import("./polygonAnalystData.js").PolygonAnalystConsensus | null;
     analystRatings?: import("./polygonAnalystData.js").PolygonAnalystRatingRow[] | null;
     fundamentalsSummary?: Record<string, unknown> | null;
-    /** Desk modes 3 and 4: Polygon Benzinga earnings + equity_daily reactions. */
+    /** Polygon Benzinga earnings history plus forward estimates (when API returns data). */
     earnings?: FetchEarningsBundle | null;
   },
 ): string {
@@ -2286,6 +2282,7 @@ function buildDataPackage(
     earningsWithin48h: tickerData.earningsWithin48h,
     lastEarningsDate: tickerData.lastEarningsDate,
     daysSinceEarnings: tickerData.daysSinceEarnings,
+    nextEarnings: tickerData.nextEarnings,
     tickerDataNote: tickerData.tickerDataNote ?? null,
     analystActions48h: tickerData.analystActions48h,
     optionsChainSummary: {
@@ -2348,7 +2345,7 @@ function buildDataPackage(
     userPreferences: {
       preferredDteMin: settings.preferredDteMin,
       preferredDteMax: settings.preferredDteMax,
-      ...((settings.strategistMode === 3 || settings.strategistMode === 4) && deskCatalystWindowExpirationISO
+      ...(deskCatalystWindowExpirationISO
         ? { deskCatalystPositionWindowExpirationISO: deskCatalystWindowExpirationISO }
         : {}),
       spreadWidth: settings.spreadWidth,
@@ -2364,7 +2361,7 @@ function buildDataPackage(
     },
   };
 
-  if ((settings.strategistMode === 3 || settings.strategistMode === 4) && enrichment?.earnings) {
+  if (enrichment?.earnings) {
     pkg.catalyst = {
       earnings_history: enrichment.earnings.earnings_history,
       forward_estimates: enrichment.earnings.forward_estimates,
@@ -2385,7 +2382,7 @@ function buildDataPackage(
     };
   }
 
-  if ((settings.strategistMode === 3 || settings.strategistMode === 4) && deskCatalystWindowExpirationISO) {
+  if (deskCatalystWindowExpirationISO) {
     if (catalystEvaluation != null) {
       pkg.catalystEvaluation = catalystEvaluation;
     }
@@ -3263,6 +3260,7 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
         earningsSource: earningsInfo?.source ?? null,
         lastEarningsDate: earningsInfo?.lastEarningsDate ?? null,
         daysSinceEarnings: earningsInfo?.lastEarningsDaysSince ?? null,
+        nextEarnings: earningsInfo,
         tickerDataNote: earningsInfo?.lastEarningsDate
           ? null
           : "Prior earnings date unavailable from merged earnings calendar sources for this symbol.",
