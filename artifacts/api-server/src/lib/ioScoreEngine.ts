@@ -65,7 +65,10 @@ export function mergeIOCatalystFromDesk(
     return baseCatalystInfo;
   }
 
+  // Desk eval runs with ai: null — it only sees scheduled events, not Polygon
+  // analyst clusters. Do not wipe deriveCatalyst when the desk window is empty.
   if (!catalystEvaluation.catalystInWindow) {
+    if (baseCatalystInfo.flagValue > 0) return baseCatalystInfo;
     return { flagValue: 0, reason: "no_catalyst_in_window" };
   }
 

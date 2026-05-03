@@ -15,13 +15,19 @@ function deskEval(over: Partial<CatalystEvaluation>): CatalystEvaluation {
 }
 
 describe("mergeIOCatalystFromDesk", () => {
-  it("returns no_catalyst_in_window when desk says out of window", () => {
-    const base = { flagValue: 0.5, reason: "analyst_cluster" };
+  it("returns no_catalyst_in_window when desk says out of window and base is empty", () => {
+    const base = { flagValue: 0, reason: "none" };
     const ev = deskEval({ catalystInWindow: false });
     expect(mergeIOCatalystFromDesk(base, ev, 4)).toEqual({
       flagValue: 0,
       reason: "no_catalyst_in_window",
     });
+  });
+
+  it("preserves legacy analyst signals when desk has no scheduled catalyst", () => {
+    const base = { flagValue: 0.5, reason: "analyst_cluster" };
+    const ev = deskEval({ catalystInWindow: false });
+    expect(mergeIOCatalystFromDesk(base, ev, 4)).toEqual(base);
   });
 
   it("uses imminent band for earnings within 48h (<=2 calendar days)", () => {
