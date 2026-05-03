@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { normalizeIvClampedReasonsForPayload } from "./strategistIvClampCompat.js";
 import type { TapeBackfillStatus } from "./strategistTapeBackfill.js";
 import type { StrategistConfig } from "./strategistSettings.js";
 import type { PolygonApiCallRecord } from "./polygonApiTrace.js";
@@ -173,9 +173,17 @@ export interface BuildFullDiagnosticArgs {
 
 export function buildStrategistFullDiagnosticJson(args: BuildFullDiagnosticArgs): Record<string, unknown> {
   const dqBase = (args.dataPackageParsed.dataQualitySummary as Record<string, unknown> | undefined) ?? null;
+  let dqMerged = dqBase && typeof dqBase === "object" ? { ...dqBase } : {};
+  const rawReasons = dqMerged["ivClampedReasons"];
+  if (rawReasons && typeof rawReasons === "object" && rawReasons !== null) {
+    dqMerged = {
+      ...dqMerged,
+      ivClampedReasons: normalizeIvClampedReasonsForPayload(rawReasons as Record<string, number | undefined>),
+    };
+  }
   const sessionRollups = extractSessionTapeRollupsFromDataPackage(args.dataPackageParsed);
   const dataQualitySummary: Record<string, unknown> = {
-    ...(dqBase && typeof dqBase === "object" ? dqBase : {}),
+    ...dqMerged,
     sessionTapeTapeKind: sessionRollups.sessionTapeTapeKind,
     aggressorSessionTotals: sessionRollups.aggressorSessionTotals,
     sweepBlockLargePerSession: sessionRollups.sweepBlockLargePerSession,

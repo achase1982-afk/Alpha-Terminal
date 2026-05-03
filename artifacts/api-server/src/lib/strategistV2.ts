@@ -36,6 +36,8 @@ import { evaluateCatalyst, deriveTradeDirection, type CatalystEvaluation } from 
 import { type OptionContract } from "./optionsStrategist.js";
 import { getStoredIVR, getRealizedVolFromEquityDaily, countRealIvHistoryDays, countProxyIvHistoryDays } from "./ivNormalize.js";
 import { buildMarketContextSnapshot, type MarketContextSnapshot } from "./flowMarketContext.js";
+import { recomputeImpliedVolFromMid } from "./strategistIvRecompute.js";
+import type { IvClampedReasonKey } from "./strategistIvClampCompat.js";
 import {
   normalizeStrategistIv,
   impliedVolFromAtmStraddle,
@@ -263,6 +265,10 @@ export interface ChainContract {
   dte: number;
   /** Pre–IV-filter chain IV (decimal); set when strategist payload filtering runs. */
   rawIv?: number | null;
+  /** BSM IV from mid (decimal σ); logging-only, not used for gating. */
+  recomputedIv?: number | null;
+  recomputedIvAvailable?: boolean;
+  recomputedIvDisagreementPct?: number | null;
   /** BSM bisection IV in percent when chain IV is unreliable; additive only. */
   reconstructedIV?: number | null;
   reconstructedIVSource?: ReconstructedIVSource | null;
@@ -1684,8 +1690,15 @@ function computeDte(expiration: string): number {
 /** Aligns with bsmIV.ts default (4.5%). */
 const CHAIN_BSM_RISK_FREE = 0.045;
 
-/** Post-BSM deterministic IV hygiene for strategist payloads (Solo Desk / debate). */
-export type IvClampedReasonKey = "ceilingClamp" | "wideSpread" | "lowVolume" | "lowOi" | "deepOtm";
+export type { IvClampedReasonKey } from "./strategistIvClampCompat.js";
+export { normalizeIvClampedReasonsForPayload } from "./strategistIvClampCompat.js";
+
+export interface BsmRecomputeStats {
+  contractsRecomputed: number;
+  avgDisagreementPct: number | null;
+  maxDisagreementPct: number | null;
+  contractsAbove10pctDisagreement: number;
+}
 
 export interface IvChainFilterStats {
   ivClampedCount: number;
@@ -1695,66 +1708,170 @@ export interface IvChainFilterStats {
   termStructureExpiries: { withCleanAtmIv: number; total: number };
   /** Total option legs in the summarized chain (denominator for contamination share). */
   totalChainContracts: number;
+  bsmRecomputeStats: BsmRecomputeStats;
 }
 
 export type IvChainFilterCore = Pick<
   IvChainFilterStats,
-  "ivClampedCount" | "ivClampedReasons" | "ivCleanedRatio" | "totalChainContracts"
+  "ivClampedCount" | "ivClampedReasons" | "ivCleanedRatio" | "totalChainContracts" | "bsmRecomputeStats"
 >;
 
-const IV_CONTAM_DECIMAL_CEILING = 2.0;
-const IV_CONTAM_SPREAD_OVER_MID_MAX = 0.5;
-const IV_CONTAM_MIN_VOLUME = 5;
-const IV_CONTAM_MIN_OPEN_INTEREST = 10;
-const IV_CONTAM_MIN_MID = 0.05;
+const IV_HARD_CEILING_DECIMAL = 4.0;
+const BSM_RECOMPUTE_RF = 0.05;
 
-function primaryIvContaminationReason(c: ChainContract): IvClampedReasonKey | null {
+function medianNumeric(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const s = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 === 1 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
+}
+
+function primaryIvRemovalReasonSteps1to6(c: ChainContract): IvClampedReasonKey | null {
+  const iv = c.impliedVolatility;
+  if (typeof iv === "number" && Number.isFinite(iv) && iv === 5.0) return "sentinel";
+  if (typeof iv === "number" && Number.isFinite(iv) && iv >= IV_HARD_CEILING_DECIMAL) return "ceilingClamp";
+
   const bid = c.bid;
   const ask = c.ask;
-  const mid =
-    Number.isFinite(c.mid) && c.mid > 0
-      ? c.mid
-      : Number.isFinite(bid) && Number.isFinite(ask)
-        ? (bid + ask) / 2
-        : NaN;
-  const spread = Number.isFinite(ask) && Number.isFinite(bid) ? ask - bid : NaN;
-  if (Number.isFinite(mid) && mid > 0 && Number.isFinite(spread) && spread / mid > IV_CONTAM_SPREAD_OVER_MID_MAX) {
-    return "wideSpread";
-  }
-  const rawIv = c.impliedVolatility;
-  if (typeof rawIv === "number" && Number.isFinite(rawIv) && rawIv > IV_CONTAM_DECIMAL_CEILING) {
-    return "ceilingClamp";
-  }
-  if (!Number.isFinite(c.volume) || c.volume < IV_CONTAM_MIN_VOLUME) return "lowVolume";
-  if (!Number.isFinite(c.openInterest) || c.openInterest < IV_CONTAM_MIN_OPEN_INTEREST) return "lowOi";
-  if (!Number.isFinite(mid) || mid < IV_CONTAM_MIN_MID) return "deepOtm";
+  if (bid == null || !Number.isFinite(bid) || bid <= 0) return "oneSidedMarket";
+  if (ask == null || !Number.isFinite(ask) || ask <= 0) return "oneSidedMarket";
+  if (ask < bid) return "oneSidedMarket";
+
+  if (ask <= 0.05) return "pennyOption";
+
+  const mid = (bid + ask) / 2;
+  const spread = ask - bid;
+  if (!Number.isFinite(mid) || mid <= 0) return "invalidMid";
+  if (spread > mid) return "spreadExceedsMid";
+
+  const vol = Number.isFinite(c.volume) ? c.volume : 0;
+  const oi = Number.isFinite(c.openInterest) ? c.openInterest : 0;
+  if (vol === 0 && oi < 10) return "noLiquidity";
+
   return null;
+}
+
+function applySurfaceOutlierPass(
+  chain: ChainContract[],
+  ivClampedReasons: Record<IvClampedReasonKey, number>,
+): number {
+  const byBucket = new Map<string, ChainContract[]>();
+  for (const c of chain) {
+    if (c.impliedVolatility == null || !Number.isFinite(c.impliedVolatility) || c.impliedVolatility <= 0) continue;
+    const side = c.type === "call" || c.optionType === "CALL" ? "call" : "put";
+    const key = `${c.expiration}|${side}`;
+    const arr = byBucket.get(key) ?? [];
+    arr.push(c);
+    byBucket.set(key, arr);
+  }
+
+  let removed = 0;
+  for (const [, legs] of byBucket) {
+    const ivs = legs.map((x) => x.impliedVolatility!).filter((v) => v > 0);
+    const med = medianNumeric(ivs);
+    if (med == null || med <= 0) continue;
+    for (const c of legs) {
+      const v = c.impliedVolatility!;
+      if (v > 3.0 && v > 2 * med) {
+        c.impliedVolatility = null;
+        c.reconstructedIV = null;
+        c.reconstructedIVSource = null;
+        ivClampedReasons.surfaceOutlier += 1;
+        removed += 1;
+      }
+    }
+  }
+  return removed;
+}
+
+function attachBsmRecomputeStats(chain: ChainContract[], spot: number): BsmRecomputeStats {
+  let contractsRecomputed = 0;
+  let sumDisagreement = 0;
+  let maxDisagreement = 0;
+  let above10 = 0;
+  let disagreementCount = 0;
+
+  for (const c of chain) {
+    c.recomputedIv = undefined;
+    c.recomputedIvAvailable = false;
+    c.recomputedIvDisagreementPct = undefined;
+
+    if (c.impliedVolatility == null || !Number.isFinite(c.impliedVolatility)) continue;
+
+    const bid = c.bid;
+    const ask = c.ask;
+    if (bid == null || !Number.isFinite(bid) || ask == null || !Number.isFinite(ask)) continue;
+    const mid = (bid + ask) / 2;
+    if (!Number.isFinite(mid) || mid <= 0) continue;
+
+    const dte = c.dte > 0 ? c.dte : computeDte(c.expiration);
+    if (dte < 1) continue;
+
+    const ot = c.type === "call" || c.optionType === "CALL" ? "call" : "put";
+    const solved = recomputeImpliedVolFromMid({
+      optionType: ot,
+      spot,
+      strike: c.strike,
+      daysToExpiry: dte,
+      mid,
+      riskFreeRate: BSM_RECOMPUTE_RF,
+      dividendYield: 0,
+    });
+
+    if (solved == null) {
+      c.recomputedIvAvailable = false;
+      continue;
+    }
+
+    c.recomputedIv = solved;
+    c.recomputedIvAvailable = true;
+    contractsRecomputed += 1;
+
+    const vendorIv = c.impliedVolatility;
+    if (vendorIv > 0) {
+      const dpct = Math.abs(vendorIv - solved) / vendorIv;
+      c.recomputedIvDisagreementPct = Math.round(dpct * 10000) / 10000;
+      sumDisagreement += dpct;
+      disagreementCount += 1;
+      if (dpct > maxDisagreement) maxDisagreement = dpct;
+      if (dpct > 0.1) above10 += 1;
+    }
+  }
+
+  return {
+    contractsRecomputed,
+    avgDisagreementPct:
+      disagreementCount > 0 ? Math.round((sumDisagreement / disagreementCount) * 10000) / 10000 : null,
+    maxDisagreementPct: disagreementCount > 0 ? Math.round(maxDisagreement * 10000) / 10000 : null,
+    contractsAbove10pctDisagreement: above10,
+  };
 }
 
 /**
  * Nulls contaminated chain IVs (contract stays in chain; volume/OI unchanged).
  * Sets **rawIv** to the pre-filter decimal IV. Clears BSM reconstruction on stripped rows.
  */
-export function filterContaminatedIvs(chain: ChainContract[]): { stats: IvChainFilterCore } {
+export function filterContaminatedIvs(chain: ChainContract[], spot: number): { stats: IvChainFilterCore } {
   const ivClampedReasons: Record<IvClampedReasonKey, number> = {
+    sentinel: 0,
     ceilingClamp: 0,
-    wideSpread: 0,
-    lowVolume: 0,
-    lowOi: 0,
-    deepOtm: 0,
+    oneSidedMarket: 0,
+    pennyOption: 0,
+    invalidMid: 0,
+    spreadExceedsMid: 0,
+    noLiquidity: 0,
+    surfaceOutlier: 0,
   };
   let ivClampedCount = 0;
   let totalPositiveChainIv = 0;
-  let survivingPositiveChainIv = 0;
   const totalChainContracts = chain.length;
 
   for (const c of chain) {
     const raw = c.impliedVolatility;
     c.rawIv = raw == null || !Number.isFinite(raw) ? null : raw;
-    const reason = primaryIvContaminationReason(c);
+    const reason = primaryIvRemovalReasonSteps1to6(c);
     if (raw != null && Number.isFinite(raw) && raw > 0) {
       totalPositiveChainIv += 1;
-      if (reason == null) survivingPositiveChainIv += 1;
     }
     if (reason != null) {
       ivClampedCount += 1;
@@ -1765,10 +1882,21 @@ export function filterContaminatedIvs(chain: ChainContract[]): { stats: IvChainF
     }
   }
 
+  ivClampedCount += applySurfaceOutlierPass(chain, ivClampedReasons);
+
+  let survivingPositiveChainIv = 0;
+  for (const c of chain) {
+    if (c.rawIv != null && Number.isFinite(c.rawIv) && c.rawIv > 0 && c.impliedVolatility != null) {
+      survivingPositiveChainIv += 1;
+    }
+  }
+
   const ivCleanedRatio =
     totalPositiveChainIv > 0
       ? Math.round((survivingPositiveChainIv / totalPositiveChainIv) * 10000) / 10000
       : 1;
+
+  const bsmRecomputeStats = attachBsmRecomputeStats(chain, spot);
 
   return {
     stats: {
@@ -1776,6 +1904,7 @@ export function filterContaminatedIvs(chain: ChainContract[]): { stats: IvChainF
       ivClampedReasons,
       ivCleanedRatio,
       totalChainContracts,
+      bsmRecomputeStats,
     },
   };
 }
@@ -2291,7 +2420,7 @@ export function summarizeOptionsChain(
   ctx?: SummarizeOptionsChainContext,
 ): ChainSummary {
   enrichChainContractsWithReconstructedIv(chain, price);
-  const { stats: ivChainCore } = filterContaminatedIvs(chain);
+  const { stats: ivChainCore } = filterContaminatedIvs(chain, price);
 
   const calls = chain.filter(c => c.type === "call" || c.optionType === "CALL");
   const puts = chain.filter(c => c.type === "put" || c.optionType === "PUT");
@@ -2607,6 +2736,7 @@ function buildDataQualitySummary(args: {
     ivClampedCount: ivf.ivClampedCount,
     ivClampedReasons: ivf.ivClampedReasons,
     ivCleanedRatio: ivf.ivCleanedRatio,
+    bsmRecomputeStats: ivf.bsmRecomputeStats,
     termStructureExpiries: ivf.termStructureExpiries,
     flags,
     ...(earningsGapList.length > 0 ? { data_source_gaps: earningsGapList } : {}),
@@ -2725,7 +2855,7 @@ function buildDataPackage(
         chainSummary.ivChainFilter.ivClampedCount > 0 || chainSummary.ivArtifactsClampedCount > 0
           ? [
               chainSummary.ivChainFilter.ivClampedCount > 0
-                ? `${chainSummary.ivChainFilter.ivClampedCount} contract(s) had chain IV removed by deterministic liquidity/spread/ceiling filters (see dataQualitySummary.ivClampedReasons). Term-structure and skew inputs use surviving IVs only; **raw_iv** on curated legs preserves the pre-filter IV in percent when you need to audit a strike.`
+                ? `${chainSummary.ivChainFilter.ivClampedCount} contract(s) had chain IV removed by deterministic microstructure, liquidity, and surface consistency filters (see dataQualitySummary.ivClampedReasons). Term-structure and skew inputs use surviving IVs only; **raw_iv** on curated legs preserves the pre-filter IV in percent when you need to audit a strike.`
                 : null,
               chainSummary.ivArtifactsClampedCount > 0
                 ? `${chainSummary.ivArtifactsClampedCount} raw value(s) exceeded ${chainSummary.ivCeilingPct}% normalization ceiling (legacy counter; structural IV should already reflect ivChainFilter).`

@@ -1,6 +1,6 @@
 import { bsPrice } from "./bsmIV.js";
 
-export const STRATEGIST_IV_CEILING_PCT = 500;
+export const STRATEGIST_IV_CEILING_PCT = 400;
 
 export type StrategistIvSource = "chain" | "reconstructed_from_straddle";
 
