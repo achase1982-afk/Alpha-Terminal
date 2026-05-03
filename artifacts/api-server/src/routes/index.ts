@@ -20,6 +20,7 @@ import flowTimeSalesRouter from "./flowTimeSales";
 import watchlistsRouter from "./watchlists";
 import polygonAnalystRouter from "./polygonAnalyst";
 import diagnosticsRouter from "./diagnostics";
+import ttsRouter from "./tts";
 const router: IRouter = Router();
 
 router.use("/auth", authRouter);
@@ -43,5 +44,6 @@ router.use("/flow", flowTimeSalesRouter);
 router.use("/watchlists", watchlistsRouter);
 router.use("/polygon", polygonAnalystRouter);
 router.use("/diagnostics", diagnosticsRouter);
+router.use("/tts", ttsRouter);
 
 export default router;
