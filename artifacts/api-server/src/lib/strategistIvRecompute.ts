@@ -67,7 +67,7 @@ export function recomputeImpliedVolFromMid(args: {
   if (!Number.isFinite(spot) || spot <= 0) return null;
   if (!Number.isFinite(strike) || strike <= 0) return null;
   if (!Number.isFinite(mid) || mid <= 0) return null;
-  if (daysToExpiry < 1) return null;
+  if (!Number.isFinite(daysToExpiry) || daysToExpiry < 1) return null;
   const T = daysToExpiry / 365;
   const r = riskFreeRate;
   const q = Math.max(0, dividendYield);

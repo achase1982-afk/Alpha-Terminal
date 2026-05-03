@@ -1804,8 +1804,9 @@ function attachBsmRecomputeStats(chain: ChainContract[], spot: number): BsmRecom
     const mid = (bid + ask) / 2;
     if (!Number.isFinite(mid) || mid <= 0) continue;
 
-    const dte = c.dte > 0 ? c.dte : computeDte(c.expiration);
-    if (dte < 1) continue;
+    const dteRaw = c.dte > 0 ? c.dte : computeDte(c.expiration);
+    const dte = Number.isFinite(dteRaw) ? dteRaw : NaN;
+    if (!Number.isFinite(dte) || dte < 1) continue;
 
     const ot = c.type === "call" || c.optionType === "CALL" ? "call" : "put";
     const solved = recomputeImpliedVolFromMid({
