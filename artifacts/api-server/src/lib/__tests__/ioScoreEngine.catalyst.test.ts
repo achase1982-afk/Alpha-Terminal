@@ -82,8 +82,8 @@ describe("mergeIOCatalystFromDesk", () => {
     });
     vi.useRealTimers();
   });
-});
 
-afterEach(() => {
-  vi.useRealTimers();
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 });
