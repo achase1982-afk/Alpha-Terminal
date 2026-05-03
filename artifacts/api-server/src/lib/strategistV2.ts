@@ -45,6 +45,8 @@ import {
   STRATEGIST_IV_CEILING_PCT,
 } from "./strategistIvNormalize.js";
 import { impliedVolatilityBSM } from "./bsmIV.js";
+import type { EquityMarketSession } from "./schwabMarketHours.js";
+import { getEquityMarketSessionWithAsOf } from "./schwabMarketHours.js";
 import { fetchPolygonAnalystRatingsAndConsensus } from "./polygonAnalystData.js";
 import { fetchEarningsHistoryAndForward, type FetchEarningsBundle } from "./polygonEarningsHistory.js";
 import { fetchCompanyFinancialsForSymbol, type CompanyFinancials } from "../routes/sec.js";
@@ -505,6 +507,10 @@ export interface ChainSummary {
   } | null;
   /** Gap surfacing for impliedMove (mirrors dataQualitySummary.impliedMove). */
   impliedMoveQuality: StrategistImpliedMoveQuality;
+  /** Schwab equity session at chain summarization time (cached ~60s). */
+  marketSession: EquityMarketSession;
+  /** ISO time when **marketSession** was resolved (cache stamp). */
+  marketSessionAsOf: string;
 }
 
 /** Reasons when implied move cannot be surfaced or BSM IV inversion fails. */
@@ -819,7 +825,7 @@ async function analyzeTickerV2Inner(
   const catalystInfo = deriveCatalyst(tickerData);
   const ioScore = await computeIOScore(ticker, catalystInfo, settings);
 
-  const chainSummary = summarizeOptionsChain(chain, tickerData.price, {
+  const chainSummary = await summarizeOptionsChain(chain, tickerData.price, {
     ticker,
     settings,
     earningsDate: tickerData.earningsDate,
@@ -1708,12 +1714,22 @@ export interface IvChainFilterStats {
   termStructureExpiries: { withCleanAtmIv: number; total: number };
   /** Total option legs in the summarized chain (denominator for contamination share). */
   totalChainContracts: number;
+  /**
+   * Contracts counted toward **iv_contamination_elevated** (may exclude closed-session
+   * noLiquidity / spreadExceedsMid removals while **ivClampedCount** still includes them).
+   */
+  ivContaminationCountedClamps: number;
   bsmRecomputeStats: BsmRecomputeStats;
 }
 
 export type IvChainFilterCore = Pick<
   IvChainFilterStats,
-  "ivClampedCount" | "ivClampedReasons" | "ivCleanedRatio" | "totalChainContracts" | "bsmRecomputeStats"
+  | "ivClampedCount"
+  | "ivClampedReasons"
+  | "ivCleanedRatio"
+  | "totalChainContracts"
+  | "ivContaminationCountedClamps"
+  | "bsmRecomputeStats"
 >;
 
 const IV_HARD_CEILING_DECIMAL = 4.0;
@@ -1852,7 +1868,11 @@ function attachBsmRecomputeStats(chain: ChainContract[], spot: number): BsmRecom
  * Nulls contaminated chain IVs (contract stays in chain; volume/OI unchanged).
  * Sets **rawIv** to the pre-filter decimal IV. Clears BSM reconstruction on stripped rows.
  */
-export function filterContaminatedIvs(chain: ChainContract[], spot: number): { stats: IvChainFilterCore } {
+export function filterContaminatedIvs(
+  chain: ChainContract[],
+  spot: number,
+  equityMarketSession: EquityMarketSession = "open",
+): { stats: IvChainFilterCore } {
   const ivClampedReasons: Record<IvClampedReasonKey, number> = {
     sentinel: 0,
     ceilingClamp: 0,
@@ -1864,8 +1884,11 @@ export function filterContaminatedIvs(chain: ChainContract[], spot: number): { s
     surfaceOutlier: 0,
   };
   let ivClampedCount = 0;
+  let ivContaminationCountedClamps = 0;
   let totalPositiveChainIv = 0;
   const totalChainContracts = chain.length;
+  const excludeSpreadLiquidityFromContaminationFlag =
+    equityMarketSession === "closed";
 
   for (const c of chain) {
     const raw = c.impliedVolatility;
@@ -1877,13 +1900,19 @@ export function filterContaminatedIvs(chain: ChainContract[], spot: number): { s
     if (reason != null) {
       ivClampedCount += 1;
       ivClampedReasons[reason] += 1;
+      const countsTowardContaminationFlag =
+        !excludeSpreadLiquidityFromContaminationFlag
+        || (reason !== "noLiquidity" && reason !== "spreadExceedsMid");
+      if (countsTowardContaminationFlag) ivContaminationCountedClamps += 1;
       c.impliedVolatility = null;
       c.reconstructedIV = null;
       c.reconstructedIVSource = null;
     }
   }
 
-  ivClampedCount += applySurfaceOutlierPass(chain, ivClampedReasons);
+  const surfaceRemoved = applySurfaceOutlierPass(chain, ivClampedReasons);
+  ivClampedCount += surfaceRemoved;
+  ivContaminationCountedClamps += surfaceRemoved;
 
   let survivingPositiveChainIv = 0;
   for (const c of chain) {
@@ -1905,6 +1934,7 @@ export function filterContaminatedIvs(chain: ChainContract[], spot: number): { s
       ivClampedReasons,
       ivCleanedRatio,
       totalChainContracts,
+      ivContaminationCountedClamps,
       bsmRecomputeStats,
     },
   };
@@ -2415,13 +2445,14 @@ export interface SummarizeOptionsChainContext {
   earningsDate?: string | null;
 }
 
-export function summarizeOptionsChain(
+export async function summarizeOptionsChain(
   chain: ChainContract[],
   price: number,
   ctx?: SummarizeOptionsChainContext,
-): ChainSummary {
+): Promise<ChainSummary> {
   enrichChainContractsWithReconstructedIv(chain, price);
-  const { stats: ivChainCore } = filterContaminatedIvs(chain, price);
+  const { session: equityMarketSession, asOf: marketSessionAsOf } = await getEquityMarketSessionWithAsOf();
+  const { stats: ivChainCore } = filterContaminatedIvs(chain, price, equityMarketSession);
 
   const calls = chain.filter(c => c.type === "call" || c.optionType === "CALL");
   const puts = chain.filter(c => c.type === "put" || c.optionType === "PUT");
@@ -2587,6 +2618,8 @@ export function summarizeOptionsChain(
     impliedMove,
     impliedMoveQuality,
     ivChainFilter,
+    marketSession: equityMarketSession,
+    marketSessionAsOf,
   };
 }
 
@@ -2703,14 +2736,16 @@ function buildDataQualitySummary(args: {
   }
 
   const ivf = chainSummary.ivChainFilter;
-  const ivContamShare =
-    ivf.totalChainContracts > 0 ? ivf.ivClampedCount / ivf.totalChainContracts : 0;
+  const contamNumer = ivf.ivContaminationCountedClamps;
+  const ivContamShare = ivf.totalChainContracts > 0 ? contamNumer / ivf.totalChainContracts : 0;
   if (ivContamShare > 0.3) flags.push("iv_contamination_elevated");
 
   const earningsGapList = earningsDataSourceGaps ?? [];
 
   return {
     asOfDate: new Date().toISOString().slice(0, 10),
+    marketSession: chainSummary.marketSession,
+    marketSessionAsOf: chainSummary.marketSessionAsOf,
     chain: { state: chainOk ? "usable" : "degraded", expirationsListed: chainSummary.availableExpirations.length },
     ivr: { state: tickerData.ivr != null ? "present" : "absent", source: tickerData.ivrSource },
     skew25Delta: { state: skewState, reason: chainSummary.skew25DeltaReason },

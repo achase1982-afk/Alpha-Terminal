@@ -38,11 +38,17 @@ const VOL_SKEW_BULLET =
   SKEW_25D_IV_CEILING_REASON_PREFIX +
   " refer to older IV-ceiling proxy behavior when present; if **skew25Delta** is null, read **skew25DeltaReason** and say skew is indeterminate from chain for that reason)";
 
+const VOL_CLOSED_SESSION_CONTEXT = `
+
+CLOSED-MARKET VOL CONTEXT (read **dataQualitySummary.marketSession** and **dataQualitySummary.flags**):
+- When **marketSession** is **closed** and **iv_contamination_elevated** is **not** listed in **flags**: note that the market is closed; wing-vol confidence is reduced due to weekend illiquidity, not surface contamination.
+- When **marketSession** is **closed** and **iv_contamination_elevated** **is** listed in **flags**: note that the market is closed and surface contamination is present beyond expected weekend illiquidity; treat IV reads with caution.`;
+
 /** Item 20: literal data-state vocabulary aligned with dataQualitySummary / schemaVersion. */
 const DATA_STATE_LANGUAGE_RULES = `
 
 DATA STATE (literal labels only):
-- Describe inputs using the **states** and **flags** in **dataQualitySummary** at the top of the JSON (e.g. present, absent, usable, degraded, missing_or_indeterminate, regression_fit, fallback_defaults, iv_contamination_elevated). Read **dataQualitySummary.impliedMove** for ATM implied-move availability (available, reason, fallbackExpiryUsed). Read **ivClampedCount**, **ivClampedReasons**, **ivCleanedRatio**, and **termStructureExpiries** for deterministic IV hygiene on the chain snapshot. Do not substitute colloquial words like "the feed" or "full data" for those labels.
+- Describe inputs using the **states** and **flags** in **dataQualitySummary** at the top of the JSON (e.g. present, absent, usable, degraded, missing_or_indeterminate, regression_fit, fallback_defaults, iv_contamination_elevated). Read **dataQualitySummary.marketSession** and **dataQualitySummary.marketSessionAsOf** for equity session context. Read **dataQualitySummary.impliedMove** for ATM implied-move availability (available, reason, fallbackExpiryUsed). Read **ivClampedCount**, **ivClampedReasons**, **ivCleanedRatio**, and **termStructureExpiries** for deterministic IV hygiene on the chain snapshot. Do not substitute colloquial words like "the feed" or "full data" for those labels.
 - Do not claim the tape is "complete" unless **dataQualitySummary.flow.tapeBackfillStatus** is literally **complete** (or the field explicitly documents otherwise).
 - If **dataQualitySummary.flags** is non-empty, mention the relevant flag(s) when they affect your conclusion.
 - **schemaVersion** is for client compatibility only; do not discuss schema or versioning in prose.`;
@@ -67,7 +73,7 @@ export function buildVolAnalystPrompt(dataPackage: string): string {
 
 This turn produces the **Volatility** section only (JSON fields below). Focus on the volatility surface: IV state, term structure, skew, IV vs realized, and where the surface is dislocated relative to fair value.
 
-Your output is read at institutional review meetings. Every IV number you quote, every vol point you cite, every term structure observation must be defensible. **termStructure5pt** ATM IVs and **skew25Delta** are assembled from chain IVs that already passed deterministic microstructure, liquidity-floor, and surface-consistency hygiene (see **dataQualitySummary.ivClampedCount** and **ivClampedReasons**); null ATM or null skew on a specific expiry means no trustworthy surviving contracts there — skip that expiry in the vol read rather than inferring from neighbors. If **dataQualitySummary.flags** includes **iv_contamination_elevated**, call that out: more than 30% of strikes had IV removed. Math is checked before publication. If you state a number, you can defend it.
+Your output is read at institutional review meetings. Every IV number you quote, every vol point you cite, every term structure observation must be defensible. **termStructure5pt** ATM IVs and **skew25Delta** are assembled from chain IVs that already passed deterministic microstructure, liquidity-floor, and surface-consistency hygiene (see **dataQualitySummary.ivClampedCount** and **ivClampedReasons**); null ATM or null skew on a specific expiry means no trustworthy surviving contracts there — skip that expiry in the vol read rather than inferring from neighbors. If **dataQualitySummary.flags** includes **iv_contamination_elevated**, call that out: more than 30% of strikes had IV removed by reasons that count toward the contamination threshold (spread-wide and zero-liquidity microstructure removals may be excluded from that threshold when **dataQualitySummary.marketSession** is **closed** — see **ivClampedReasons** for the full breakdown). Math is checked before publication. If you state a number, you can defend it.${VOL_CLOSED_SESSION_CONTEXT}
 
 You are not providing liquidity to smarter money. If the surface does not show a real dislocation, your read is no actionable vol edge here and you say so. Do not invent edge to fill space.
 
