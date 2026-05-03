@@ -420,6 +420,7 @@ function mapTapeBackfillToSessionContext(
   }
   if (usedEodFallback) {
     const r = tape.tapeBackfillReason;
+    if (r === "already_persisted") return undefined;
     if (
       r === "empty_after_filter"
       || r === "empty_polygon_response"

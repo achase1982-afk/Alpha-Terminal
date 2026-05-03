@@ -297,9 +297,9 @@ async function upsertCorporateEventsRows(symbol: string, rows: PolygonEarningsAp
   }
 }
 
-const REST_GAP_EPS = "rest_subscription_required: forward_eps_high_low";
-const REST_GAP_REV = "rest_subscription_required: forward_revenue_high_low";
-const REST_GAP_ANALYST = "rest_subscription_required: forward_analyst_count";
+const REST_GAP_EPS = "estimate_range_unavailable_no_vendor: forward_eps_high_low";
+const REST_GAP_REV = "estimate_range_unavailable_no_vendor: forward_revenue_high_low";
+const REST_GAP_ANALYST = "estimate_range_unavailable_no_vendor: forward_analyst_count";
 
 export async function fetchEarningsHistoryAndForward(ticker: string): Promise<FetchEarningsBundle> {
   const sym = ticker.trim().toUpperCase().replace(/^\$/, "");
