@@ -24,17 +24,25 @@ function parseIsoMs(s: unknown): number | null {
   return Number.isFinite(t) ? t : null;
 }
 
+/**
+ * Schwab returns each session type as either `{ start, end }` or `[{ start, end }, ...]`.
+ * Arrays are objects in JS; without unwrapping, `o["start"]` is always undefined.
+ */
 function readSessionWindow(
   hours: Record<string, unknown> | undefined,
   key: string,
 ): { start: number; end: number } | null {
   const w = hours?.[key];
-  if (!w || typeof w !== "object") return null;
-  const o = w as Record<string, unknown>;
-  const start = parseIsoMs(o["start"]);
-  const end = parseIsoMs(o["end"]);
-  if (start == null || end == null || end <= start) return null;
-  return { start, end };
+  if (w == null || typeof w !== "object") return null;
+  const candidates: unknown[] = Array.isArray(w) ? w : [w];
+  for (const item of candidates) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    const start = parseIsoMs(o["start"]);
+    const end = parseIsoMs(o["end"]);
+    if (start != null && end != null && end > start) return { start, end };
+  }
+  return null;
 }
 
 /**
@@ -131,6 +139,15 @@ export async function getEquityMarketSessionWithAsOf(): Promise<{
   const session = await fetchEquitySessionFromSchwab(dateYmd);
   cache = { session, asOf, until: now + CACHE_TTL_MS };
   return { session, asOf };
+}
+
+/** @internal vitest — full markets JSON → parsed windows (array-wrapped periods). */
+export function __extractEquityDayForTests(json: Record<string, unknown>): {
+  pre: { start: number; end: number } | null;
+  reg: { start: number; end: number } | null;
+  post: { start: number; end: number } | null;
+} {
+  return extractEquityDay(json);
 }
 
 /** @internal vitest */

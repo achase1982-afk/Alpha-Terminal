@@ -1,5 +1,40 @@
 import { describe, it, expect } from "vitest";
-import { __classifyEquitySessionForTests } from "../schwabMarketHours.js";
+import { __classifyEquitySessionForTests, __extractEquityDayForTests } from "../schwabMarketHours.js";
+
+describe("extractEquityDay (Schwab markets shape)", () => {
+  it("parses sessionHours when periods are array-wrapped (Schwab/TD style)", () => {
+    const json = {
+      equity: {
+        EQ: {
+          sessionHours: {
+            preMarket: [{ start: "2026-01-02T08:00:00-05:00", end: "2026-01-02T09:30:00-05:00" }],
+            regularMarket: [{ start: "2026-01-02T09:30:00-05:00", end: "2026-01-02T16:00:00-05:00" }],
+            postMarket: [{ start: "2026-01-02T16:00:00-05:00", end: "2026-01-02T20:00:00-05:00" }],
+          },
+        },
+      },
+    };
+    const { pre, reg, post } = __extractEquityDayForTests(json);
+    expect(pre?.start).toBe(Date.parse("2026-01-02T08:00:00-05:00"));
+    expect(reg?.start).toBe(Date.parse("2026-01-02T09:30:00-05:00"));
+    expect(post?.end).toBe(Date.parse("2026-01-02T20:00:00-05:00"));
+  });
+
+  it("still parses plain { start, end } objects", () => {
+    const json = {
+      equity: {
+        EQ: {
+          sessionHours: {
+            regularMarket: { start: "2026-01-02T09:30:00-05:00", end: "2026-01-02T16:00:00-05:00" },
+          },
+        },
+      },
+    };
+    const { reg } = __extractEquityDayForTests(json);
+    expect(reg?.start).toBe(Date.parse("2026-01-02T09:30:00-05:00"));
+    expect(reg?.end).toBe(Date.parse("2026-01-02T16:00:00-05:00"));
+  });
+});
 
 describe("__classifyEquitySessionForTests", () => {
   it("returns open inside regular window", () => {
