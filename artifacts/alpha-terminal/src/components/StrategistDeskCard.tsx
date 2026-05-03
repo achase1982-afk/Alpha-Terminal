@@ -7,11 +7,11 @@ import {
   type CSSProperties,
 } from "react";
 import type { BlockReason, StrategistOutcome } from "@/components/StrategistV2Card";
-import { ChevronDown, ChevronUp, AlertTriangle, Copy, Play, Pause, Square, SkipBack, SkipForward, Volume2 } from "lucide-react";
+import { ChevronDown, ChevronUp, AlertTriangle, Copy, Play, Pause, Square } from "lucide-react";
 import { toast } from "sonner";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import type { DeskResult, DeskStructure } from "@/lib/strategistDeskResult";
-import { buildDeskSpeechSections, type DeskSpeechSectionId } from "@/lib/deskCardSpeech";
+import { buildDeskSpeechSections } from "@/lib/deskCardSpeech";
 import { STRATEGIST_ANALYSIS_CANCEL_EVENT, STRATEGIST_ANALYSIS_START_EVENT } from "@/lib/strategistDeskSpeechEvents";
 
 export type { DeskResult } from "@/lib/strategistDeskResult";
@@ -32,12 +32,28 @@ const PAL = {
 
 const SYS_FONT = "-apple-system, 'SF Pro Display', 'Inter', system-ui, sans-serif";
 
-const SPEECH_ACCENT_BORDER = "rgba(96,165,250,0.95)";
 const FOCUS_RING = "2px solid rgba(255,255,255,0.85)";
 const TOUCH_MIN = 44;
 
-function hasWebSpeech(): boolean {
-  return typeof window !== "undefined" && "speechSynthesis" in window && typeof SpeechSynthesisUtterance !== "undefined";
+/** Stable id for TTS cache partitioning (hash of serialized desk payload). */
+function deskResultAudioId(deskResult: DeskResult, bannerTitle?: string, bannerBody?: string): string {
+  const payload = JSON.stringify({
+    ticker: deskResult.ticker,
+    mode: deskResult.mode,
+    pm: deskResult.pm,
+    vol: deskResult.vol,
+    flow: deskResult.flow,
+    catalyst: deskResult.catalyst,
+    errors: deskResult.errors,
+    bannerTitle: bannerTitle ?? null,
+    bannerBody: bannerBody ?? null,
+  });
+  let h = 2166136261;
+  for (let i = 0; i < payload.length; i++) {
+    h ^= payload.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return `desk-${(h >>> 0).toString(16)}`;
 }
 
 function FieldRow({ label, value }: { label: string; value: string }) {
@@ -370,13 +386,17 @@ export function StrategistDeskCard({
     }
   }, [deskResult, strategistDiagnosticRequestId]);
 
-  const speechAvailable = useMemo(() => hasWebSpeech(), []);
   const speechSections = useMemo(
     () =>
       buildDeskSpeechSections(deskResult, {
         bannerTitle: banner?.title,
         bannerBody: banner?.body,
       }),
+    [deskResult, banner?.title, banner?.body],
+  );
+  const deskAudioText = useMemo(() => speechSections.map((s) => s.text).join("\n\n"), [speechSections]);
+  const deskResultId = useMemo(
+    () => deskResultAudioId(deskResult, banner?.title, banner?.body),
     [deskResult, banner?.title, banner?.body],
   );
 
@@ -390,135 +410,133 @@ export function StrategistDeskCard({
   speechRateRef.current = speechRate;
 
   const [audioBarOpen, setAudioBarOpen] = useState(false);
-  const [speakingSection, setSpeakingSection] = useState<DeskSpeechSectionId | null>(null);
   const [paused, setPaused] = useState(false);
+  const [audioLoading, setAudioLoading] = useState(false);
+  const [audioReady, setAudioReady] = useState(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const liveAnnounceRef = useRef<HTMLDivElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
 
-  const speechGenRef = useRef(0);
-
-  const stopSpeech = useCallback(() => {
-    speechGenRef.current += 1;
-    if (typeof window !== "undefined" && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
+  const revokeObjectUrl = useCallback(() => {
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
     }
-    setSpeakingSection(null);
-    setPaused(false);
-    setAudioBarOpen(false);
   }, []);
 
-  const speakFromIndex = useCallback(
-    (startIdx: number) => {
-      if (!hasWebSpeech()) return;
-      speechGenRef.current += 1;
-      const gen = speechGenRef.current;
-      window.speechSynthesis.cancel();
-      let idx = Math.max(0, Math.min(startIdx, speechSections.length - 1));
+  const stopAudio = useCallback(() => {
+    const el = audioRef.current;
+    if (el) {
+      el.pause();
+      el.currentTime = 0;
+      el.removeAttribute("src");
+      el.load();
+    }
+    revokeObjectUrl();
+    setPaused(false);
+    setAudioBarOpen(false);
+    setAudioLoading(false);
+    setAudioReady(false);
+    setAudioError(null);
+  }, [revokeObjectUrl]);
+
+  const startPlay = useCallback(async () => {
+    if (!deskAudioText.trim()) return;
+    setAudioError(null);
+    setAudioReady(false);
+    setAudioLoading(true);
+    try {
+      const res = await fetchWithAuth("/api/tts/desk-audio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: deskAudioText, deskResultId }),
+      });
+      if (!res.ok) {
+        setAudioError("Audio unavailable");
+        setAudioLoading(false);
+        setAudioBarOpen(true);
+        return;
+      }
+      const blob = await res.blob();
+      revokeObjectUrl();
+      const url = URL.createObjectURL(blob);
+      objectUrlRef.current = url;
       setAudioBarOpen(true);
       setPaused(false);
-
-      const step = () => {
-        if (gen !== speechGenRef.current) return;
-        if (idx >= speechSections.length) {
-          setSpeakingSection(null);
-          setAudioBarOpen(false);
-          return;
+      setAudioReady(true);
+      const el = audioRef.current;
+      if (el) {
+        el.src = url;
+        el.playbackRate = speechRateRef.current;
+        try {
+          await el.play();
+        } catch {
+          setAudioError("Audio unavailable");
+          setAudioReady(false);
         }
-        const sec = speechSections[idx];
-        if (!sec.text.trim()) {
-          idx += 1;
-          step();
-          return;
-        }
-        setSpeakingSection(sec.id);
-        if (liveAnnounceRef.current) {
-          liveAnnounceRef.current.textContent = `Now reading: ${sec.label}`;
-        }
-        const u = new SpeechSynthesisUtterance(sec.text);
-        u.rate = speechRateRef.current;
-        u.onend = () => {
-          if (gen !== speechGenRef.current) return;
-          idx += 1;
-          step();
-        };
-        u.onerror = () => {
-          if (gen !== speechGenRef.current) return;
-          idx += 1;
-          step();
-        };
-        window.speechSynthesis.speak(u);
-      };
-
-      step();
-    },
-    [speechSections],
-  );
+      }
+    } catch {
+      setAudioError("Audio unavailable");
+      setAudioBarOpen(true);
+    } finally {
+      setAudioLoading(false);
+    }
+  }, [deskAudioText, deskResultId, revokeObjectUrl]);
 
   useEffect(() => {
     return () => {
-      speechGenRef.current += 1;
-      if (typeof window !== "undefined" && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
+      stopAudio();
     };
-  }, []);
+  }, [stopAudio]);
 
   useEffect(() => {
-    speechGenRef.current += 1;
-    if (typeof window !== "undefined" && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-    }
-    setSpeakingSection(null);
-    setAudioBarOpen(false);
-    setPaused(false);
-  }, [deskResult]);
+    stopAudio();
+  }, [deskResult, stopAudio]);
 
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
     const mo = new MutationObserver(() => {
       if (!root.isConnected) {
-        speechGenRef.current += 1;
-        window.speechSynthesis?.cancel();
-        setSpeakingSection(null);
-        setAudioBarOpen(false);
-        setPaused(false);
+        stopAudio();
       }
     });
     mo.observe(document.body, { childList: true, subtree: true });
     return () => mo.disconnect();
-  }, []);
+  }, [stopAudio]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && audioBarOpen) {
         e.preventDefault();
-        stopSpeech();
+        stopAudio();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [audioBarOpen, stopSpeech]);
+  }, [audioBarOpen, stopAudio]);
 
   useEffect(() => {
-    const onAnalysisStart = () => stopSpeech();
+    const onAnalysisStart = () => stopAudio();
     window.addEventListener(STRATEGIST_ANALYSIS_START_EVENT, onAnalysisStart);
     window.addEventListener(STRATEGIST_ANALYSIS_CANCEL_EVENT, onAnalysisStart);
     return () => {
       window.removeEventListener(STRATEGIST_ANALYSIS_START_EVENT, onAnalysisStart);
       window.removeEventListener(STRATEGIST_ANALYSIS_CANCEL_EVENT, onAnalysisStart);
     };
-  }, [stopSpeech]);
+  }, [stopAudio]);
 
   const togglePause = useCallback(() => {
-    if (!hasWebSpeech()) return;
     if (!audioBarOpen) return;
-    if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
-      window.speechSynthesis.pause();
-      setPaused(true);
-    } else if (window.speechSynthesis.paused) {
-      window.speechSynthesis.resume();
+    const el = audioRef.current;
+    if (!el?.src) return;
+    if (el.paused) {
+      void el.play().catch(() => {});
       setPaused(false);
+    } else {
+      el.pause();
+      setPaused(true);
     }
   }, [audioBarOpen]);
 
@@ -527,43 +545,31 @@ export function StrategistDeskCard({
       setSpeechRate(r);
       sessionStorage.setItem(SESSION_RATE_KEY, String(r));
       speechRateRef.current = r;
-      if (typeof window !== "undefined" && window.speechSynthesis?.speaking && audioBarOpen) {
-        let cur = 0;
-        for (let i = 0; i < speechSections.length; i++) {
-          if (speechSections[i].id === speakingSection) {
-            cur = i;
-            break;
-          }
-        }
-        speakFromIndex(cur);
+      if (audioRef.current) {
+        audioRef.current.playbackRate = r;
       }
     },
-    [audioBarOpen, speakFromIndex, speechSections, speakingSection],
+    [],
   );
 
-  const skipForward = useCallback(() => {
-    if (!audioBarOpen) return;
-    let cur = 0;
-    for (let i = 0; i < speechSections.length; i++) {
-      if (speechSections[i].id === speakingSection) {
-        cur = i;
-        break;
-      }
-    }
-    speakFromIndex(cur + 1);
-  }, [audioBarOpen, speakFromIndex, speechSections, speakingSection]);
+  const onAudioEnded = useCallback(() => {
+    stopAudio();
+  }, [stopAudio]);
 
-  const skipBackward = useCallback(() => {
-    if (!audioBarOpen) return;
-    let cur = 0;
-    for (let i = 0; i < speechSections.length; i++) {
-      if (speechSections[i].id === speakingSection) {
-        cur = i;
-        break;
-      }
+  const onLoadedMetadata = useCallback(() => {
+    const el = audioRef.current;
+    if (el) {
+      el.playbackRate = speechRateRef.current;
     }
-    speakFromIndex(Math.max(0, cur - 1));
-  }, [audioBarOpen, speakFromIndex, speechSections, speakingSection]);
+  }, []);
+
+  const onPlay = useCallback(() => {
+    setPaused(false);
+  }, []);
+
+  const onPause = useCallback(() => {
+    setPaused(true);
+  }, []);
 
   const iconBtnBase: CSSProperties = {
     minWidth: TOUCH_MIN,
@@ -598,51 +604,12 @@ export function StrategistDeskCard({
   };
 
   const speedLabel = speechRate === 1 ? "1x" : speechRate === 1.25 ? "1.25x" : speechRate === 1.5 ? "1.5x" : "2x";
-  const sectionIdx = speakingSection
-    ? Math.max(0, speechSections.findIndex((s) => s.id === speakingSection)) + 1
-    : 0;
-  const currentSectionLabel = speakingSection
-    ? speechSections.find((s) => s.id === speakingSection)?.label ?? ""
-    : "";
-
-  const nowPlayingChip = (id: DeskSpeechSectionId) =>
-    speakingSection === id ? (
-      <span
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 4,
-          fontSize: 10,
-          fontWeight: 600,
-          color: "#93c5fd",
-        }}
-      >
-        <Volume2 size={12} aria-hidden />
-        <span>Now playing</span>
-      </span>
-    ) : null;
 
   return (
     <div
       ref={rootRef}
       style={{ position: "relative", background: PAL.bgCard, border: `1px solid ${PAL.border}`, borderRadius: 12, padding: 16, fontFamily: SYS_FONT }}
     >
-      <div
-        ref={liveAnnounceRef}
-        aria-live="polite"
-        aria-atomic="true"
-        style={{
-          position: "absolute",
-          width: 1,
-          height: 1,
-          padding: 0,
-          margin: -1,
-          overflow: "hidden",
-          clip: "rect(0, 0, 0, 0)",
-          whiteSpace: "nowrap",
-          border: 0,
-        }}
-      />
       {/* Outcome banner (non-error framing) */}
       {banner && (
         <div style={{ border: `1px solid ${banner.border}`, background: banner.bg, borderRadius: 8, padding: 12, marginBottom: 12 }}>
@@ -698,17 +665,22 @@ export function StrategistDeskCard({
             <Copy size={12} />
             {fullDiagLoading ? "…" : copiedJson ? "Copied" : "Copy JSON"}
           </button>
-          {speechAvailable && !audioBarOpen && (
+          {!audioBarOpen && (
             <button
               type="button"
-              onClick={() => speakFromIndex(0)}
-              style={btnStyle}
+              onClick={() => void startPlay()}
+              disabled={audioLoading || !deskAudioText.trim()}
+              style={{
+                ...btnStyle,
+                opacity: audioLoading || !deskAudioText.trim() ? 0.55 : 1,
+                cursor: audioLoading || !deskAudioText.trim() ? "not-allowed" : "pointer",
+              }}
               aria-label="Play audio report"
               onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
               onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
             >
               <Play size={12} aria-hidden />
-              Play
+              {audioLoading ? "Loading…" : "Play"}
             </button>
           )}
           {generatedAt && (
@@ -733,11 +705,25 @@ export function StrategistDeskCard({
             gap: 10,
           }}
         >
+          <audio
+            ref={audioRef}
+            preload="auto"
+            style={{ display: "none" }}
+            onEnded={onAudioEnded}
+            onLoadedMetadata={onLoadedMetadata}
+            onPlay={onPlay}
+            onPause={onPause}
+          />
+          {audioError ? (
+            <span style={{ fontSize: 12, color: PAL.red, flex: "1 1 100%" }}>{audioError}</span>
+          ) : (
+            <>
           <button
             type="button"
             style={iconBtnBase}
             aria-label={paused ? "Resume audio playback" : "Pause audio playback"}
             onClick={togglePause}
+            disabled={!audioReady}
             onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
             onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
           >
@@ -746,28 +732,8 @@ export function StrategistDeskCard({
           <button
             type="button"
             style={iconBtnBase}
-            aria-label="Skip to previous section"
-            onClick={skipBackward}
-            onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
-            onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
-          >
-            <SkipBack size={20} aria-hidden />
-          </button>
-          <button
-            type="button"
-            style={iconBtnBase}
-            aria-label="Skip to next section"
-            onClick={skipForward}
-            onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
-            onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
-          >
-            <SkipForward size={20} aria-hidden />
-          </button>
-          <button
-            type="button"
-            style={iconBtnBase}
             aria-label="Stop audio playback"
-            onClick={stopSpeech}
+            onClick={stopAudio}
             onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
             onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
           >
@@ -800,26 +766,16 @@ export function StrategistDeskCard({
               <option value={2}>2x</option>
             </select>
           </label>
-          <span style={{ fontSize: 12, color: PAL.label, marginLeft: "auto" }}>
-            Section {sectionIdx} of {speechSections.length}
-            {currentSectionLabel ? `: ${currentSectionLabel}` : ""}
-          </span>
+            </>
+          )}
         </div>
       )}
 
-      <div
-        style={{
-          marginBottom: 12,
-          borderLeft: speakingSection === "pm" ? `3px solid ${SPEECH_ACCENT_BORDER}` : undefined,
-          paddingLeft: speakingSection === "pm" ? 10 : 0,
-          borderRadius: speakingSection === "pm" ? 4 : undefined,
-        }}
-      >
+      <div style={{ marginBottom: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
           <span style={{ fontSize: 10, fontWeight: 700, color: PAL.label, letterSpacing: 1, textTransform: "uppercase" }}>
             Decision
           </span>
-          {nowPlayingChip("pm")}
         </div>
 
       {/* Structure (if trade) */}
@@ -907,15 +863,8 @@ export function StrategistDeskCard({
       <div style={{ marginTop: 12 }}>
         <div style={{ fontSize: 10, fontWeight: 600, color: PAL.label, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>TOPIC SECTIONS</div>
 
-        <div
-          style={{
-            marginBottom: 8,
-            borderLeft: speakingSection === "vol" ? `3px solid ${SPEECH_ACCENT_BORDER}` : undefined,
-            paddingLeft: speakingSection === "vol" ? 10 : 0,
-            borderRadius: speakingSection === "vol" ? 4 : undefined,
-          }}
-        >
-          <CollapsibleSection title="Volatility" defaultOpen headerAddon={nowPlayingChip("vol")}>
+        <div style={{ marginBottom: 8 }}>
+          <CollapsibleSection title="Volatility" defaultOpen>
           <FieldRow label="IV State" value={vol.iv_state} />
           <FieldRow label="Term Structure" value={vol.term_structure} />
           <FieldRow label="Skew" value={vol.skew} />
@@ -926,15 +875,8 @@ export function StrategistDeskCard({
         </CollapsibleSection>
         </div>
 
-        <div
-          style={{
-            marginBottom: 8,
-            borderLeft: speakingSection === "flow" ? `3px solid ${SPEECH_ACCENT_BORDER}` : undefined,
-            paddingLeft: speakingSection === "flow" ? 10 : 0,
-            borderRadius: speakingSection === "flow" ? 4 : undefined,
-          }}
-        >
-          <CollapsibleSection title="Flow" defaultOpen headerAddon={nowPlayingChip("flow")}>
+        <div style={{ marginBottom: 8 }}>
+          <CollapsibleSection title="Flow" defaultOpen>
           <FieldRow label="Dominant Flow" value={flow.dominant_flow} />
           <FieldRow label="Institutional" value={flow.institutional_signal} />
           <FieldRow label="Retail" value={flow.retail_signal} />
@@ -954,15 +896,8 @@ export function StrategistDeskCard({
         </CollapsibleSection>
         </div>
 
-        <div
-          style={{
-            marginBottom: 8,
-            borderLeft: speakingSection === "catalyst" ? `3px solid ${SPEECH_ACCENT_BORDER}` : undefined,
-            paddingLeft: speakingSection === "catalyst" ? 10 : 0,
-            borderRadius: speakingSection === "catalyst" ? 4 : undefined,
-          }}
-        >
-          <CollapsibleSection title="Catalyst" defaultOpen headerAddon={nowPlayingChip("catalyst")}>
+        <div style={{ marginBottom: 8 }}>
+          <CollapsibleSection title="Catalyst" defaultOpen>
           <FieldRow label="Primary Catalyst" value={catalyst.primary_catalyst} />
           <FieldRow label="Bar to Clear" value={catalyst.bar_to_clear} />
           <FieldRow label="Asymmetry" value={catalyst.asymmetry} />

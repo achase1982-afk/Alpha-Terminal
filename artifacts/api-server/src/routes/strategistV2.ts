@@ -748,7 +748,7 @@ router.post("/validate-trade", (req, res): void => {
           const price = pickAnchorPrice(meta.ticket, chainR.value.chain.map(c => c.strike));
           if (price > 0) {
             try {
-              chainSummary = summarizeOptionsChain(chainR.value.chain, price, {
+              chainSummary = await summarizeOptionsChain(chainR.value.chain, price, {
                 ticker: upperTicker,
                 settings: settings ?? undefined,
                 earningsDate: nextEarnings?.earningsDate ?? null,

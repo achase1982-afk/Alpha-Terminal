@@ -1,5 +1,27 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { filterContaminatedIvs, summarizeOptionsChain, type ChainContract } from "../strategistV2.js";
+import * as schwabMarketHours from "../schwabMarketHours.js";
+
+vi.mock("../schwabMarketHours.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../schwabMarketHours.js")>();
+  return {
+    ...actual,
+    getEquityMarketSessionWithAsOf: vi.fn().mockResolvedValue({
+      session: "open",
+      asOf: "2026-05-01T12:00:00.000Z",
+    }),
+  };
+});
+
+const mockedSession = vi.mocked(schwabMarketHours.getEquityMarketSessionWithAsOf);
+
+beforeEach(() => {
+  mockedSession.mockResolvedValue({ session: "open", asOf: "2026-05-01T12:00:00.000Z" });
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
 
 function baseContract(over: Partial<ChainContract>): ChainContract {
   return {
@@ -22,16 +44,41 @@ function baseContract(over: Partial<ChainContract>): ChainContract {
 describe("filterContaminatedIvs", () => {
   it("nulls IV and preserves rawIv when spread exceeds mid (microstructure)", () => {
     const c = baseContract({ bid: 0.01, ask: 0.11, mid: 0.06, impliedVolatility: 0.4 });
-    const { stats } = filterContaminatedIvs([c], 100);
+    const { stats } = filterContaminatedIvs([c], 100, "open");
     expect(c.rawIv).toBe(0.4);
     expect(c.impliedVolatility).toBeNull();
     expect(c.reconstructedIV).toBeNull();
     expect(stats.ivClampedReasons.spreadExceedsMid).toBe(1);
+    expect(stats.ivContaminationCountedClamps).toBe(1);
+  });
+
+  it("when session is closed, spreadExceedsMid still nulls IV but does not count toward contamination numerator", () => {
+    const c = baseContract({ bid: 0.01, ask: 0.11, mid: 0.06, impliedVolatility: 0.4 });
+    const { stats } = filterContaminatedIvs([c], 100, "closed");
+    expect(stats.ivClampedReasons.spreadExceedsMid).toBe(1);
+    expect(stats.ivClampedCount).toBe(1);
+    expect(stats.ivContaminationCountedClamps).toBe(0);
+    expect(c.impliedVolatility).toBeNull();
+  });
+
+  it("when session is closed, noLiquidity still nulls IV but does not count toward contamination numerator", () => {
+    const c = baseContract({ volume: 0, openInterest: 5, impliedVolatility: 0.3, bid: 0.2, ask: 0.25, mid: 0.225 });
+    const { stats } = filterContaminatedIvs([c], 100, "closed");
+    expect(stats.ivClampedReasons.noLiquidity).toBe(1);
+    expect(stats.ivContaminationCountedClamps).toBe(0);
+    expect(c.impliedVolatility).toBeNull();
+  });
+
+  it("when session is closed, ceilingClamp still counts toward contamination numerator", () => {
+    const c = baseContract({ impliedVolatility: 4.2, bid: 1, ask: 1.1 });
+    const { stats } = filterContaminatedIvs([c], 100, "closed");
+    expect(stats.ivClampedReasons.ceilingClamp).toBe(1);
+    expect(stats.ivContaminationCountedClamps).toBe(1);
   });
 
   it("nulls IV when raw IV >= 4.0 decimal (ceilingClamp)", () => {
     const c = baseContract({ impliedVolatility: 4.2, bid: 1, ask: 1.1 });
-    const { stats } = filterContaminatedIvs([c], 100);
+    const { stats } = filterContaminatedIvs([c], 100, "open");
     expect(stats.ivClampedReasons.ceilingClamp).toBe(1);
     expect(c.impliedVolatility).toBeNull();
     expect(c.rawIv).toBe(4.2);
@@ -39,21 +86,21 @@ describe("filterContaminatedIvs", () => {
 
   it("nulls IV for no liquidity (zero volume and OI < 10) with two-sided quotes", () => {
     const c = baseContract({ volume: 0, openInterest: 5, impliedVolatility: 0.3, bid: 0.2, ask: 0.25, mid: 0.225 });
-    const { stats } = filterContaminatedIvs([c], 100);
+    const { stats } = filterContaminatedIvs([c], 100, "open");
     expect(stats.ivClampedReasons.noLiquidity).toBe(1);
     expect(c.impliedVolatility).toBeNull();
   });
 
   it("keeps two-sided quote with zero volume but OI >= 10", () => {
     const c = baseContract({ volume: 0, openInterest: 50, impliedVolatility: 0.3, bid: 0.2, ask: 0.25, mid: 0.225 });
-    filterContaminatedIvs([c], 100);
+    filterContaminatedIvs([c], 100, "open");
     expect(c.impliedVolatility).toBe(0.3);
     expect(c.rawIv).toBe(0.3);
   });
 
   it("keeps liquid tight-quote contract and attaches bsm recompute stats", () => {
     const c = baseContract({});
-    const { stats } = filterContaminatedIvs([c], 100);
+    const { stats } = filterContaminatedIvs([c], 100, "open");
     expect(c.impliedVolatility).toBe(0.35);
     expect(c.rawIv).toBe(0.35);
     expect(stats.bsmRecomputeStats.contractsRecomputed).toBe(1);
@@ -69,7 +116,7 @@ function ymdUtcPlusDays(days: number): string {
 }
 
 describe("summarizeOptionsChain IV hygiene integration", () => {
-  it("produces ivChainFilter and nullable termStructure5pt when front ATM is stripped", () => {
+  it("produces ivChainFilter and nullable termStructure5pt when front ATM is stripped", async () => {
     const spot = 100;
     const expNear = ymdUtcPlusDays(5);
     const expFar = ymdUtcPlusDays(50);
@@ -131,7 +178,7 @@ describe("summarizeOptionsChain IV hygiene integration", () => {
         dte: 110,
       },
     ];
-    const s = summarizeOptionsChain(chain, spot, {});
+    const s = await summarizeOptionsChain(chain, spot, {});
     expect(s.ivChainFilter.ivClampedCount).toBeGreaterThanOrEqual(2);
     expect(s.frontMonthIV).not.toBe(280);
     const nearPt = s.termStructure5pt.find((p) => p.expiry === expNear);
