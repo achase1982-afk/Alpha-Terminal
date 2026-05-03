@@ -2617,9 +2617,13 @@ function buildIvrContext(
 }
 
 function fundamentalsQuickSummary(f: CompanyFinancials): Record<string, unknown> {
-  const pick = (arr: { end: string; val: number }[]) => {
+  const pick = (arr: { end: string; val: number | null }[]) => {
     if (!arr.length) return null;
-    const p = [...arr].sort((a, b) => a.end.localeCompare(b.end))[arr.length - 1]!;
+    const withVal = arr.filter((x): x is { end: string; val: number } =>
+      x.val != null && typeof x.val === "number" && Number.isFinite(x.val),
+    );
+    if (!withVal.length) return null;
+    const p = [...withVal].sort((a, b) => a.end.localeCompare(b.end))[withVal.length - 1]!;
     return { asOf: p.end, valUsd: p.val };
   };
   return {

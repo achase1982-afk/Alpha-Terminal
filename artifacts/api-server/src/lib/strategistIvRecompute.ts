@@ -63,7 +63,7 @@ export function recomputeImpliedVolFromMid(args: {
     riskFreeRate = 0.05,
     dividendYield = 0,
   } = args;
-  const isCall = optionType === "call" || optionType === "CALL";
+  const isCall = optionType === "call" || (optionType as string).toUpperCase() === "CALL";
   if (!Number.isFinite(spot) || spot <= 0) return null;
   if (!Number.isFinite(strike) || strike <= 0) return null;
   if (!Number.isFinite(mid) || mid <= 0) return null;

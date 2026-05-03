@@ -11,6 +11,7 @@ import { computeIOScore } from "./ioScoreEngine.js";
 import { requestFlowCapture } from "./flowCaptureService.js";
 import { getFlowAcceleration, flowAccelerationPoints, computeLiveFlowBucket } from "./optionsBaselines.js";
 import { getLiveSessionStats, setWatchlist as setWatcherWatchlist, getCoverageInfo, isWatcherEnabled, type CoverageInfo } from "./optionsWatcher.js";
+import { getPolygonFlowHighlightsBulk, unusualFlowBonusPoints, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
 import { logger } from "./logger.js";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";

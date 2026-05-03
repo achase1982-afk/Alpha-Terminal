@@ -2,7 +2,8 @@ import { Router } from "express";
 import { sql, eq, max, and } from "drizzle-orm";
 import { db, optionsChainDailyTable, optionsFlowPerStrikeTable, schwabChainIngestMetricsTable } from "@workspace/db";
 import { getFlowCaptureDiagnostics } from "../lib/flowCaptureService.js";
-import { fetchPolygonReferenceContractCount } from "../lib/polygonReferenceContracts";
+import { fetchPolygonReferenceContractCount } from "../lib/polygonReferenceContracts.js";
+import { logger } from "../lib/logger.js";
 
 function requireAdmin(req: { headers: Record<string, string | string[] | undefined> }): { ok: boolean; error?: string } {
   const adminKey = process.env.ADMIN_API_KEY;

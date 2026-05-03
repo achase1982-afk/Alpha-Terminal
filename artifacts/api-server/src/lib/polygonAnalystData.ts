@@ -184,7 +184,7 @@ export function aggregateBenzingaRatings(
   const actions: ParsedAnalystActionRow[] = [];
   for (const row of rawRows) {
     const a = parsePolygonBenzingaRatingRow(row);
-    if (!a.date) continue;
+    if (!a || !a.date) continue;
     const ad = parseActionDate(a.date, a.time);
     if (!ad || ad.getTime() < cutoff) continue;
 
