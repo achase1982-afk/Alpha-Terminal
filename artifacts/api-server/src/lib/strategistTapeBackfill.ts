@@ -1,4 +1,5 @@
 import { db, optionsFlowRawTradesTable, optionsTapeBackfillOccCacheTable } from "@workspace/db";
+import { and, eq, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { extractPgErrorContext, logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 import { getContract20dBaseline } from "./optionsBaselines.js";
@@ -54,7 +55,8 @@ export type TapeBackfillDiagnosticReason =
   | "empty_polygon_response"
   | "empty_after_filter"
   | "polygon_error"
-  | "timeout_no_inserts";
+  | "timeout_no_inserts"
+  | "already_persisted";
 
 export interface TapeBackfillCoverageGeometry {
   /** Market-cap tier used to pick band width and OCC cap. */
@@ -710,6 +712,17 @@ export async function runStrategistTapeBackfill(args: {
   let persistRejectedCount = 0;
   let anySawPolygonHttpError = false;
 
+  const existingRowCountResult = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(optionsFlowRawTradesTable)
+    .where(
+      and(
+        eq(optionsFlowRawTradesTable.underlyingSymbol, ticker),
+        eq(optionsFlowRawTradesTable.date, sessionDate),
+      ),
+    );
+  const existingRowCount = Number(existingRowCountResult[0]?.count ?? 0);
+
   for (let occIdx = 0; occIdx < occList.length; occIdx++) {
     const occ = occList[occIdx]!;
     const budgetLeft = deadline - Date.now();
@@ -928,10 +941,15 @@ export async function runStrategistTapeBackfill(args: {
     occCompleted === occList.length
   ) {
     tapeBackfillReason = "empty_polygon_response";
-  } else if (tradesInserted === 0 && anyTruncated === true) {
+  } else if (tradesInserted === 0 && existingRowCount === 0 && anyTruncated === true) {
     tapeBackfillReason = "timeout_no_inserts";
   } else {
     tapeBackfillReason = "skipped_other";
+  }
+
+  if (tradesInserted === 0 && existingRowCount > 0) {
+    tapeBackfillReason = "already_persisted";
+    status = "complete";
   }
 
   logger.info(

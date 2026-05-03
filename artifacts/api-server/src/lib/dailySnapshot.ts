@@ -260,7 +260,7 @@ async function fetchQuotesBatch(
           lowPrice: (q["lowPrice"] ?? 0) as number,
           closePrice: (q["closePrice"] ?? q["lastPrice"] ?? 0) as number,
           avgVol: (f?.["avg10DaysVolume"] ?? f?.["avg1YearVolume"]) as number | undefined,
-          marketCap: (f?.["marketCap"] ?? f?.["sharesOutstanding"]) as number | undefined,
+          marketCap: (f?.["marketCap"] as number) ?? undefined,
         });
       }
     } catch (e) {

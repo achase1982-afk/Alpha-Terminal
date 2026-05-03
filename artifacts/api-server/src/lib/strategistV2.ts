@@ -12,6 +12,7 @@ import { db, strategistTelemetryTable } from "@workspace/db";
 type StrategistTelemetryInsert = InferInsertModel<typeof strategistTelemetryTable>;
 import { desc, eq, sql, and } from "drizzle-orm";
 import type { InferInsertModel } from "drizzle-orm";
+import { fetchPolygonTickerMarketCapUsd, logMarketCapPolygonFallback } from "./polygonTickerMarketCap.js";
 import { getBestAccessToken } from "./tokenStore.js";
 import { fetchPolygonChain } from "./polygonChain.js";
 import { getPolygonFlowHighlights, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
@@ -457,6 +458,7 @@ interface SchwabFundamentalRow {
   avg10DaysVolume?: number;
   avgVol10Days?: number;
   sector?: string;
+  /** Present on many equities; null/absent when Schwab omits it. */
   marketCap?: number;
 }
 
@@ -2726,7 +2728,9 @@ function buildDataQualitySummary(args: {
     flags.push("occ_classified_prints_backfill_degraded");
   }
   if (tapeBackfill && tapeBackfill.status !== "complete" && tapeBackfill.status !== "skipped") {
-    flags.push("tape_backfill_incomplete");
+    if (tapeBackfill.tapeBackfillReason !== "already_persisted") {
+      flags.push("tape_backfill_incomplete");
+    }
   }
   if (!analystOk) flags.push("analyst_consensus_sparse");
   if (!fundamentalsOk) flags.push("sec_fundamentals_sparse");
@@ -3819,8 +3823,15 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
     const avgVol = f.avg10DaysVolume ?? f.avgVol10Days ?? 1;
     const currentVol = q.totalVolume ?? 0;
     const rawCap = f.marketCap;
-    const marketCapUsd =
+    let marketCapUsd =
       typeof rawCap === "number" && Number.isFinite(rawCap) && rawCap > 0 ? rawCap : null;
+    if (marketCapUsd == null) {
+      const fromPoly = await fetchPolygonTickerMarketCapUsd(upper);
+      if (fromPoly != null) {
+        logMarketCapPolygonFallback(upper);
+        marketCapUsd = fromPoly;
+      }
+    }
     const schwabAssetType =
       typeof ref?.assetType === "string"
         ? ref.assetType
