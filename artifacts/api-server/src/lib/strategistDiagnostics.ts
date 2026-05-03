@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { normalizeIvClampedReasonsForPayload } from "./strategistIvClampCompat.js";
 import type { TapeBackfillStatus } from "./strategistTapeBackfill.js";
 import type { StrategistConfig } from "./strategistSettings.js";

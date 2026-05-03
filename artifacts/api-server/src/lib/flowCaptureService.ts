@@ -308,6 +308,7 @@ async function resolveChainInputs(
   if (!apiKey) return null;
   const chain = await fetchPolygonChain(ticker, apiKey, { maxDte: 120, maxPages: 6, log: logger });
   if (!chain?.underlyingPrice) return null;
+  const spot = chain.underlyingPrice;
   const calls = chain.calls ?? [];
   const puts = chain.puts ?? [];
   const chainLike: ChainLike[] = [];
@@ -332,7 +333,7 @@ async function resolveChainInputs(
     });
   }
   const atmStrike =
-    [...calls].sort((a, b) => Math.abs(a.strike - chain.underlyingPrice) - Math.abs(b.strike - chain.underlyingPrice))[0]?.strike ??
+    [...calls].sort((a, b) => Math.abs(a.strike - spot) - Math.abs(b.strike - spot))[0]?.strike ??
     calls[0]?.strike ??
     0;
   const availableExpirations = [...new Set([...calls.map((c) => c.expiration), ...puts.map((p) => p.expiration)])].sort();

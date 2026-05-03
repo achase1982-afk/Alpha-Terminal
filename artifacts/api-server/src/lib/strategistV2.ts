@@ -1804,8 +1804,9 @@ function attachBsmRecomputeStats(chain: ChainContract[], spot: number): BsmRecom
     const mid = (bid + ask) / 2;
     if (!Number.isFinite(mid) || mid <= 0) continue;
 
-    const dte = c.dte > 0 ? c.dte : computeDte(c.expiration);
-    if (dte < 1) continue;
+    const dteRaw = c.dte > 0 ? c.dte : computeDte(c.expiration);
+    const dte = Number.isFinite(dteRaw) ? dteRaw : NaN;
+    if (!Number.isFinite(dte) || dte < 1) continue;
 
     const ot = c.type === "call" || c.optionType === "CALL" ? "call" : "put";
     const solved = recomputeImpliedVolFromMid({
@@ -2616,9 +2617,13 @@ function buildIvrContext(
 }
 
 function fundamentalsQuickSummary(f: CompanyFinancials): Record<string, unknown> {
-  const pick = (arr: { end: string; val: number }[]) => {
+  const pick = (arr: { end: string; val: number | null }[]) => {
     if (!arr.length) return null;
-    const p = [...arr].sort((a, b) => a.end.localeCompare(b.end))[arr.length - 1]!;
+    const withVal = arr.filter((x): x is { end: string; val: number } =>
+      x.val != null && typeof x.val === "number" && Number.isFinite(x.val),
+    );
+    if (!withVal.length) return null;
+    const p = [...withVal].sort((a, b) => a.end.localeCompare(b.end))[withVal.length - 1]!;
     return { asOf: p.end, valUsd: p.val };
   };
   return {

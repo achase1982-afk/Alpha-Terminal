@@ -520,6 +520,7 @@ function buildEodFallbackSessionTape(
       midCount: 0,
       unknownCount: totalPrints,
       totalPrints,
+      knownPct: 0,
     },
   };
 }

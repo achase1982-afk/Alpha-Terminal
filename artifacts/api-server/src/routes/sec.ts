@@ -751,7 +751,7 @@ function liabilitiesSeries(facts: SecCompanyFactsJson["facts"]): FinancialPeriod
   for (const fy of Array.from(fys).sort((a, b) => a - b)) {
     const a = am.get(fy);
     const e = em.get(fy);
-    if (a && e) {
+    if (a && e && a.val != null && e.val != null) {
       out.push({
         end: a.end,
         val: a.val - e.val,
