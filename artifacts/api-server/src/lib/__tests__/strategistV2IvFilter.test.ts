@@ -20,34 +20,45 @@ function baseContract(over: Partial<ChainContract>): ChainContract {
 }
 
 describe("filterContaminatedIvs", () => {
-  it("nulls IV and preserves rawIv for wide spread vs mid", () => {
+  it("nulls IV and preserves rawIv when spread exceeds mid (microstructure)", () => {
     const c = baseContract({ bid: 0.01, ask: 0.11, mid: 0.06, impliedVolatility: 0.4 });
-    filterContaminatedIvs([c]);
+    const { stats } = filterContaminatedIvs([c], 100);
     expect(c.rawIv).toBe(0.4);
     expect(c.impliedVolatility).toBeNull();
     expect(c.reconstructedIV).toBeNull();
+    expect(stats.ivClampedReasons.spreadExceedsMid).toBe(1);
   });
 
-  it("nulls IV when raw IV exceeds 200% decimal ceiling", () => {
-    const c = baseContract({ impliedVolatility: 2.5 });
-    const { stats } = filterContaminatedIvs([c]);
+  it("nulls IV when raw IV >= 4.0 decimal (ceilingClamp)", () => {
+    const c = baseContract({ impliedVolatility: 4.2, bid: 1, ask: 1.1 });
+    const { stats } = filterContaminatedIvs([c], 100);
     expect(stats.ivClampedReasons.ceilingClamp).toBe(1);
     expect(c.impliedVolatility).toBeNull();
-    expect(c.rawIv).toBe(2.5);
+    expect(c.rawIv).toBe(4.2);
   });
 
-  it("nulls IV for low volume and counts reason", () => {
-    const c = baseContract({ volume: 3 });
-    const { stats } = filterContaminatedIvs([c]);
-    expect(stats.ivClampedReasons.lowVolume).toBe(1);
+  it("nulls IV for no liquidity (zero volume and OI < 10) with two-sided quotes", () => {
+    const c = baseContract({ volume: 0, openInterest: 5, impliedVolatility: 0.3, bid: 0.2, ask: 0.25, mid: 0.225 });
+    const { stats } = filterContaminatedIvs([c], 100);
+    expect(stats.ivClampedReasons.noLiquidity).toBe(1);
     expect(c.impliedVolatility).toBeNull();
   });
 
-  it("keeps liquid tight-quote contract unchanged", () => {
+  it("keeps two-sided quote with zero volume but OI >= 10", () => {
+    const c = baseContract({ volume: 0, openInterest: 50, impliedVolatility: 0.3, bid: 0.2, ask: 0.25, mid: 0.225 });
+    filterContaminatedIvs([c], 100);
+    expect(c.impliedVolatility).toBe(0.3);
+    expect(c.rawIv).toBe(0.3);
+  });
+
+  it("keeps liquid tight-quote contract and attaches bsm recompute stats", () => {
     const c = baseContract({});
-    filterContaminatedIvs([c]);
+    const { stats } = filterContaminatedIvs([c], 100);
     expect(c.impliedVolatility).toBe(0.35);
     expect(c.rawIv).toBe(0.35);
+    expect(stats.bsmRecomputeStats.contractsRecomputed).toBe(1);
+    expect(c.recomputedIvAvailable).toBe(true);
+    expect(c.recomputedIv).not.toBeNull();
   });
 });
 
