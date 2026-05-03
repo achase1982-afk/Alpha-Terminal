@@ -417,6 +417,7 @@ export function StrategistDeskCard({
   const rootRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const objectUrlRef = useRef<string | null>(null);
+  const audioPlayGenRef = useRef(0);
 
   const revokeObjectUrl = useCallback(() => {
     if (objectUrlRef.current) {
@@ -426,6 +427,7 @@ export function StrategistDeskCard({
   }, []);
 
   const stopAudio = useCallback(() => {
+    audioPlayGenRef.current += 1;
     const el = audioRef.current;
     if (el) {
       el.pause();
@@ -443,6 +445,7 @@ export function StrategistDeskCard({
 
   const startPlay = useCallback(async () => {
     if (!deskAudioText.trim()) return;
+    const playGen = ++audioPlayGenRef.current;
     setAudioError(null);
     setAudioReady(false);
     setAudioLoading(true);
@@ -452,6 +455,7 @@ export function StrategistDeskCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: deskAudioText, deskResultId }),
       });
+      if (playGen !== audioPlayGenRef.current) return;
       if (!res.ok) {
         setAudioError("Audio unavailable");
         setAudioLoading(false);
@@ -459,6 +463,7 @@ export function StrategistDeskCard({
         return;
       }
       const blob = await res.blob();
+      if (playGen !== audioPlayGenRef.current) return;
       revokeObjectUrl();
       const url = URL.createObjectURL(blob);
       objectUrlRef.current = url;
@@ -471,16 +476,21 @@ export function StrategistDeskCard({
         el.playbackRate = speechRateRef.current;
         try {
           await el.play();
+          if (playGen !== audioPlayGenRef.current) return;
         } catch {
+          if (playGen !== audioPlayGenRef.current) return;
           setAudioError("Audio unavailable");
           setAudioReady(false);
         }
       }
     } catch {
+      if (playGen !== audioPlayGenRef.current) return;
       setAudioError("Audio unavailable");
       setAudioBarOpen(true);
     } finally {
-      setAudioLoading(false);
+      if (playGen === audioPlayGenRef.current) {
+        setAudioLoading(false);
+      }
     }
   }, [deskAudioText, deskResultId, revokeObjectUrl]);
 
@@ -689,6 +699,15 @@ export function StrategistDeskCard({
         </div>
       </div>
 
+      <audio
+        ref={audioRef}
+        preload="auto"
+        style={{ display: "none" }}
+        onEnded={onAudioEnded}
+        onLoadedMetadata={onLoadedMetadata}
+        onPlay={onPlay}
+        onPause={onPause}
+      />
       {audioBarOpen && (
         <div
           role="region"
@@ -705,15 +724,6 @@ export function StrategistDeskCard({
             gap: 10,
           }}
         >
-          <audio
-            ref={audioRef}
-            preload="auto"
-            style={{ display: "none" }}
-            onEnded={onAudioEnded}
-            onLoadedMetadata={onLoadedMetadata}
-            onPlay={onPlay}
-            onPause={onPause}
-          />
           {audioError ? (
             <span style={{ fontSize: 12, color: PAL.red, flex: "1 1 100%" }}>{audioError}</span>
           ) : (
