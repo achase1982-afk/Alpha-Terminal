@@ -157,6 +157,8 @@ overrides:
   rollup>@rollup/rollup-win32-x64-msvc: '-'
   vite>picomatch: ^4.0.4
 
+packageExtensionsChecksum: sha256-ASNwwbyZO0f0ixPTKO7nXs86IQpEHIKODb1ExnR1kc0=
+
 importers:
 
   .:
