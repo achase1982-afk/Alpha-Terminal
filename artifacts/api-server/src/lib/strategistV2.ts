@@ -824,14 +824,38 @@ async function analyzeTickerV2Inner(
       : "StrategistV2: no stored IVR for ticker — IVR will be omitted from narrative and header",
   );
 
-  const catalystInfo = deriveCatalyst(tickerData);
-  const ioScore = await computeIOScore(ticker, catalystInfo, settings);
-
   const chainSummary = await summarizeOptionsChain(chain, tickerData.price, {
     ticker,
     settings,
     earningsDate: tickerData.earningsDate,
   });
+
+  let deskCatalystEval: CatalystEvaluation | null = null;
+  let deskCatalystExpirationISO = "";
+  deskCatalystExpirationISO = computeDeskCatalystExpirationISO(chainSummary, settings);
+  assertAnalyzeNotCancelled(progress);
+  try {
+    deskCatalystEval = await evaluateCatalyst({
+      ticker,
+      expirationISO: deskCatalystExpirationISO,
+      ai: null,
+    });
+  } catch (err) {
+    logger.warn(
+      { err, ticker, expirationISO: deskCatalystExpirationISO },
+      "StrategistV2: evaluateCatalyst failed for catalyst block — continuing without desk catalyst block",
+    );
+    deskCatalystEval = null;
+  }
+
+  const catalystInfo = deriveCatalyst(tickerData);
+  const ioScore = await computeIOScore(
+    ticker,
+    catalystInfo,
+    settings,
+    deskCatalystEval,
+    tickerData.earningsDaysAway,
+  );
 
   const [realizedVol, realIvDepth] = await Promise.all([
     getRealizedVolFromEquityDaily(ticker, tickerData.lastEarningsDate),
@@ -857,24 +881,6 @@ async function analyzeTickerV2Inner(
       strikeCount: e.strikes.length,
     })),
   }, "StrategistV2: expirations being sent to AI model");
-
-  let deskCatalystEval: CatalystEvaluation | null = null;
-  let deskCatalystExpirationISO = "";
-  deskCatalystExpirationISO = computeDeskCatalystExpirationISO(chainSummary, settings);
-  assertAnalyzeNotCancelled(progress);
-  try {
-    deskCatalystEval = await evaluateCatalyst({
-      ticker,
-      expirationISO: deskCatalystExpirationISO,
-      ai: null,
-    });
-  } catch (err) {
-    logger.warn(
-      { err, ticker, expirationISO: deskCatalystExpirationISO },
-      "StrategistV2: evaluateCatalyst failed for catalyst block — continuing without desk catalyst block",
-    );
-    deskCatalystEval = null;
-  }
 
   let tapeBackfillStatus: TapeBackfillStatus | undefined;
   status("Loading session options tape…");
