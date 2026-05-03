@@ -3851,7 +3851,7 @@ function flattenSchwabMaps(callMap: Record<string, any>, putMap: Record<string, 
             delta: opt.delta ?? 0,
             openInterest: opt.openInterest ?? 0,
             volume: opt.totalVolume ?? 0,
-            impliedVolatility: opt.volatility ?? 0,
+            impliedVolatility: opt.volatility != null ? opt.volatility / 100 : 0,
             dte: opt.daysToExpiration ?? 0,
           });
         }
@@ -3886,7 +3886,7 @@ function _legacyFlattenSchwabChain_unused(data: any): ChainContract[] {
             delta: opt.delta ?? 0,
             openInterest: opt.openInterest ?? 0,
             volume: opt.totalVolume ?? 0,
-            impliedVolatility: opt.volatility ?? 0,
+            impliedVolatility: opt.volatility != null ? opt.volatility / 100 : 0,
             dte,
           });
         }
