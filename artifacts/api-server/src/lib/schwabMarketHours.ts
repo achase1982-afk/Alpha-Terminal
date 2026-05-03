@@ -4,7 +4,7 @@ import { nyCalendarYmd } from "./polygonMarketCalendar.js";
 const SCHWAB_MARKETDATA = "https://api.schwabapi.com/marketdata/v1";
 const CACHE_TTL_MS = 60_000;
 
-export type EquityMarketSession = "open" | "closed" | "premarket" | "afterhours";
+export type EquityMarketSession = "open" | "closed" | "premarket" | "afterhours" | "unknown";
 
 type Cached = {
   session: EquityMarketSession;
@@ -98,7 +98,8 @@ function extractEquityDay(json: Record<string, unknown>): {
 
 async function fetchEquitySessionFromSchwab(dateYmd: string): Promise<EquityMarketSession> {
   const token = getBestAccessToken();
-  if (!token) return "closed";
+  /** Do not default to **closed** on failure — that would suppress real contamination flags. */
+  if (!token) return "unknown";
 
   const url = `${SCHWAB_MARKETDATA}/markets?markets=equity&date=${encodeURIComponent(dateYmd)}`;
   try {
@@ -106,12 +107,13 @@ async function fetchEquitySessionFromSchwab(dateYmd: string): Promise<EquityMark
       headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(12_000),
     });
-    if (!res.ok) return "closed";
+    if (!res.ok) return "unknown";
     const json = (await res.json()) as Record<string, unknown>;
     const { pre, reg, post } = extractEquityDay(json);
+    if (pre == null && reg == null && post == null) return "unknown";
     return classifySession(Date.now(), pre, reg, post);
   } catch {
-    return "closed";
+    return "unknown";
   }
 }
 
