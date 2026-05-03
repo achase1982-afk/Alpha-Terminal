@@ -255,8 +255,14 @@ export interface ChainContract {
   delta: number;
   openInterest: number;
   volume: number;
-  impliedVolatility: number;
+  /**
+   * Vendor chain IV (decimal σ annualized, e.g. 0.35 = 35%). Null when removed by
+   * IV contamination filter; see **rawIv** for the pre-filter value.
+   */
+  impliedVolatility: number | null;
   dte: number;
+  /** Pre–IV-filter chain IV (decimal); set when strategist payload filtering runs. */
+  rawIv?: number | null;
   /** BSM bisection IV in percent when chain IV is unreliable; additive only. */
   reconstructedIV?: number | null;
   reconstructedIVSource?: ReconstructedIVSource | null;
@@ -390,11 +396,13 @@ function strategistPayloadFromResult(args: {
   return null;
 }
 
-/** Per-leg curated chain row; IV matches summarizeOptionsChain (normalizeStrategistIv). */
+/** Per-leg curated chain row; **iv** is post–IV-clamp-filter; **raw_iv** is pre-filter % when present. */
 interface CuratedOptionLeg {
   bid: number;
   ask: number;
-  iv: number;
+  iv: number | null;
+  /** Pre-filter IV in percent (same convention as **iv**); omitted when unknown. */
+  raw_iv?: number | null;
   delta: number;
   volume: number;
   oi: number;
@@ -461,8 +469,8 @@ export interface ChainSummary {
   atmPutAsk: number;
   atmPutIV: number | null;
   atmPutOI: number;
-  topVolumeCalls: Array<{ strike: number; expiration: string; volume: number; oi: number; bid: number; ask: number; iv: number; delta: number }>;
-  topVolumePuts: Array<{ strike: number; expiration: string; volume: number; oi: number; bid: number; ask: number; iv: number; delta: number }>;
+  topVolumeCalls: Array<{ strike: number; expiration: string; volume: number; oi: number; bid: number; ask: number; iv: number | null; delta: number }>;
+  topVolumePuts: Array<{ strike: number; expiration: string; volume: number; oi: number; bid: number; ask: number; iv: number | null; delta: number }>;
   unusualActivity: Array<{ strike: number; type: string; expiration: string; volume: number; oi: number; volOiRatio: number }>;
   putCallVolumeRatio: number;
   frontMonthIV: number | null;
@@ -472,7 +480,9 @@ export interface ChainSummary {
   ivArtifactsClampedCount: number;
   ivCeilingPct: number;
   /** ATM IV (call+put avg, pct) at ≥5 expiries from near-term through 60+ DTE when chain supports it. */
-  termStructure5pt: Array<{ expiry: string; daysToExpiry: number; atmIV: number }>;
+  termStructure5pt: Array<{ expiry: string; daysToExpiry: number; atmIV: number | null }>;
+  /** IV contamination filter applied after BSM reconstruction; surfaced in dataQualitySummary. */
+  ivChainFilter: IvChainFilterStats;
   /** 25Δ put IV minus 25Δ call IV (vol points); null if unavailable. */
   skew25Delta: { putIV: number; callIV: number; skewPoints: number; asOfExpiry: string } | null;
   /** Machine-readable skew resolution (always set; see computeSkew25DeltaForChain). */
@@ -1674,6 +1684,102 @@ function computeDte(expiration: string): number {
 /** Aligns with bsmIV.ts default (4.5%). */
 const CHAIN_BSM_RISK_FREE = 0.045;
 
+/** Post-BSM deterministic IV hygiene for strategist payloads (Solo Desk / debate). */
+export type IvClampedReasonKey = "ceilingClamp" | "wideSpread" | "lowVolume" | "lowOi" | "deepOtm";
+
+export interface IvChainFilterStats {
+  ivClampedCount: number;
+  ivClampedReasons: Record<IvClampedReasonKey, number>;
+  ivCleanedRatio: number;
+  /** Curated strip: expiries with a non-null ATM IV vs expiries in the curated term sample. */
+  termStructureExpiries: { withCleanAtmIv: number; total: number };
+  /** Total option legs in the summarized chain (denominator for contamination share). */
+  totalChainContracts: number;
+}
+
+export type IvChainFilterCore = Pick<
+  IvChainFilterStats,
+  "ivClampedCount" | "ivClampedReasons" | "ivCleanedRatio" | "totalChainContracts"
+>;
+
+const IV_CONTAM_DECIMAL_CEILING = 2.0;
+const IV_CONTAM_SPREAD_OVER_MID_MAX = 0.5;
+const IV_CONTAM_MIN_VOLUME = 5;
+const IV_CONTAM_MIN_OPEN_INTEREST = 10;
+const IV_CONTAM_MIN_MID = 0.05;
+
+function primaryIvContaminationReason(c: ChainContract): IvClampedReasonKey | null {
+  const bid = c.bid;
+  const ask = c.ask;
+  const mid =
+    Number.isFinite(c.mid) && c.mid > 0
+      ? c.mid
+      : Number.isFinite(bid) && Number.isFinite(ask)
+        ? (bid + ask) / 2
+        : NaN;
+  const spread = Number.isFinite(ask) && Number.isFinite(bid) ? ask - bid : NaN;
+  if (Number.isFinite(mid) && mid > 0 && Number.isFinite(spread) && spread / mid > IV_CONTAM_SPREAD_OVER_MID_MAX) {
+    return "wideSpread";
+  }
+  const rawIv = c.impliedVolatility;
+  if (typeof rawIv === "number" && Number.isFinite(rawIv) && rawIv > IV_CONTAM_DECIMAL_CEILING) {
+    return "ceilingClamp";
+  }
+  if (!Number.isFinite(c.volume) || c.volume < IV_CONTAM_MIN_VOLUME) return "lowVolume";
+  if (!Number.isFinite(c.openInterest) || c.openInterest < IV_CONTAM_MIN_OPEN_INTEREST) return "lowOi";
+  if (!Number.isFinite(mid) || mid < IV_CONTAM_MIN_MID) return "deepOtm";
+  return null;
+}
+
+/**
+ * Nulls contaminated chain IVs (contract stays in chain; volume/OI unchanged).
+ * Sets **rawIv** to the pre-filter decimal IV. Clears BSM reconstruction on stripped rows.
+ */
+export function filterContaminatedIvs(chain: ChainContract[]): { stats: IvChainFilterCore } {
+  const ivClampedReasons: Record<IvClampedReasonKey, number> = {
+    ceilingClamp: 0,
+    wideSpread: 0,
+    lowVolume: 0,
+    lowOi: 0,
+    deepOtm: 0,
+  };
+  let ivClampedCount = 0;
+  let totalPositiveChainIv = 0;
+  let survivingPositiveChainIv = 0;
+  const totalChainContracts = chain.length;
+
+  for (const c of chain) {
+    const raw = c.impliedVolatility;
+    c.rawIv = raw == null || !Number.isFinite(raw) ? null : raw;
+    const reason = primaryIvContaminationReason(c);
+    if (raw != null && Number.isFinite(raw) && raw > 0) {
+      totalPositiveChainIv += 1;
+      if (reason == null) survivingPositiveChainIv += 1;
+    }
+    if (reason != null) {
+      ivClampedCount += 1;
+      ivClampedReasons[reason] += 1;
+      c.impliedVolatility = null;
+      c.reconstructedIV = null;
+      c.reconstructedIVSource = null;
+    }
+  }
+
+  const ivCleanedRatio =
+    totalPositiveChainIv > 0
+      ? Math.round((survivingPositiveChainIv / totalPositiveChainIv) * 10000) / 10000
+      : 1;
+
+  return {
+    stats: {
+      ivClampedCount,
+      ivClampedReasons,
+      ivCleanedRatio,
+      totalChainContracts,
+    },
+  };
+}
+
 function tryReconstructContractIv(
   c: ChainContract,
   spot: number,
@@ -1743,9 +1849,7 @@ function atmIvPctForExpiry(
   if (!c || !p) return null;
   const callIv = legIvPct(c);
   const putIv = legIvPct(p);
-  if (callIv == null && putIv == null) return null;
-  if (callIv == null) return putIv;
-  if (putIv == null) return callIv;
+  if (callIv == null || putIv == null) return null;
   return Math.round(((callIv + putIv) / 2) * 100) / 100;
 }
 
@@ -1755,11 +1859,10 @@ function buildTermStructure5pt(
   curatedExpirations: CuratedExpiration[],
   availableExpirations: string[],
   legIvPct: (c: ChainContract) => number | null,
-): Array<{ expiry: string; daysToExpiry: number; atmIV: number }> {
-  const byExp = new Map<string, number>();
+): Array<{ expiry: string; daysToExpiry: number; atmIV: number | null }> {
+  const byExp = new Map<string, number | null>();
   for (const ce of curatedExpirations) {
-    const iv = atmIvPctForExpiry(chain, ce.expiration, price, legIvPct);
-    if (iv != null) byExp.set(ce.expiration, iv);
+    byExp.set(ce.expiration, atmIvPctForExpiry(chain, ce.expiration, price, legIvPct));
   }
   const allSorted = [...availableExpirations]
     .map(exp => ({ exp, dte: computeDte(exp) }))
@@ -1777,7 +1880,7 @@ function buildTermStructure5pt(
   if (points.length > 12) {
     const n = points.length;
     const idxs = [0, Math.floor(n * 0.2), Math.floor(n * 0.4), Math.floor(n * 0.6), Math.floor(n * 0.8), n - 1];
-    const picked = new Map<string, { expiry: string; daysToExpiry: number; atmIV: number }>();
+    const picked = new Map<string, { expiry: string; daysToExpiry: number; atmIV: number | null }>();
     for (const i of idxs) {
       const p = points[Math.min(Math.max(0, i), n - 1)]!;
       picked.set(p.expiry, p);
@@ -1789,7 +1892,6 @@ function buildTermStructure5pt(
     for (const { exp } of allSorted) {
       if (points.some(p => p.expiry === exp)) continue;
       const iv = atmIvPctForExpiry(chain, exp, price, legIvPct);
-      if (iv == null) continue;
       points.push({ expiry: exp, daysToExpiry: computeDte(exp), atmIV: iv });
       points.sort((a, b) => a.daysToExpiry - b.daysToExpiry);
       added = true;
@@ -1819,40 +1921,52 @@ function computeSkew25DeltaForChain(
       .map(x => x.exp),
   ];
 
-  const skewFromTargetsForExpiry = (
-    exp: string,
-    callDeltaT: number,
-    putDeltaT: number,
-  ): ChainSummary["skew25Delta"] | null => {
-    const calls = chain.filter(
-      c => c.expiration === exp && (c.type === "call" || c.optionType === "CALL") && Number.isFinite(c.delta),
-    );
-    const puts = chain.filter(
-      c => c.expiration === exp && (c.type === "put" || c.optionType === "PUT") && Number.isFinite(c.delta),
-    );
-    if (calls.length === 0 || puts.length === 0) return null;
-    const putPick = [...puts].sort((a, b) => Math.abs(a.delta - putDeltaT) - Math.abs(b.delta - putDeltaT))[0];
-    const callPick = [...calls].sort((a, b) => Math.abs(a.delta - callDeltaT) - Math.abs(b.delta - callDeltaT))[0];
-    if (!putPick || !callPick) return null;
-    const putIvEff = effectiveLegIv(putPick);
-    const callIvEff = effectiveLegIv(callPick);
-    if (putIvEff == null || callIvEff == null) return null;
-    const skewPoints = Math.round((putIvEff - callIvEff) * 100) / 100;
-    return { putIV: putIvEff, callIV: callIvEff, skewPoints, asOfExpiry: exp };
-  };
-
   const deltaTargets: Array<{ call: number; put: number; tag: "25d" | "20d" | "15d" }> = [
     { call: 0.25, put: -0.25, tag: "25d" },
     { call: 0.2, put: -0.2, tag: "20d" },
     { call: 0.15, put: -0.15, tag: "15d" },
   ];
 
+  let lastSkipReason = "skew_indeterminate_no_liquid_iv_at_target_deltas";
   for (let ei = 0; ei < expOrder.length; ei++) {
     const exp = expOrder[ei]!;
     for (let ti = 0; ti < deltaTargets.length; ti++) {
       const t = deltaTargets[ti]!;
-      const skew = skewFromTargetsForExpiry(exp, t.call, t.put);
-      if (!skew) continue;
+      const calls = chain.filter(
+        x => x.expiration === exp && (x.type === "call" || x.optionType === "CALL") && Number.isFinite(x.delta),
+      );
+      const puts = chain.filter(
+        x => x.expiration === exp && (x.type === "put" || x.optionType === "PUT") && Number.isFinite(x.delta),
+      );
+      if (calls.length === 0 || puts.length === 0) {
+        lastSkipReason = `skew_skip_no_delta_slice_${exp}`;
+        continue;
+      }
+      const putPick = [...puts].sort((a, b) => Math.abs(a.delta - t.put) - Math.abs(b.delta - t.put))[0];
+      const callPick = [...calls].sort((a, b) => Math.abs(a.delta - t.call) - Math.abs(b.delta - t.call))[0];
+      if (!putPick || !callPick) {
+        lastSkipReason = `skew_skip_missing_leg_${exp}_${t.tag}`;
+        continue;
+      }
+      const putIvEff = effectiveLegIv(putPick);
+      const callIvEff = effectiveLegIv(callPick);
+      if (putIvEff == null || callIvEff == null) {
+        if (putIvEff == null && callIvEff == null) {
+          lastSkipReason = `skew_iv_filtered_both_sides_${exp}_${t.tag}`;
+        } else if (putIvEff == null) {
+          lastSkipReason = `skew_iv_filtered_put_${exp}_${t.tag}`;
+        } else {
+          lastSkipReason = `skew_iv_filtered_call_${exp}_${t.tag}`;
+        }
+        continue;
+      }
+      const skewPoints = Math.round((putIvEff - callIvEff) * 100) / 100;
+      const skew: ChainSummary["skew25Delta"] = {
+        putIV: putIvEff,
+        callIV: callIvEff,
+        skewPoints,
+        asOfExpiry: exp,
+      };
       if (ei === 0 && ti === 0) return { skew, reason: "clean_25d_first_expiry" };
       if (ei === 0 && ti === 1) {
         return { skew, reason: "skew_fallback_20d_same_expiry_after_25d_ceiling" };
@@ -1867,20 +1981,7 @@ function computeSkew25DeltaForChain(
     }
   }
 
-  const front = [...withDte].sort((a, b) => a.dte - b.dte)[0]!.exp;
-  const imbResult = computeImpliedMoveStraddle(chain, price, [front]);
-  const imb = imbResult.value;
-  const pct = imb?.impliedVolStraddlePct ?? null;
-  if (pct != null && Number.isFinite(pct)) {
-    const n = normalizeStrategistIv(pct / 100, "reconstructed_from_straddle");
-    const iv = n.pct;
-    return {
-      skew: { putIV: iv, callIV: iv, skewPoints: 0, asOfExpiry: front },
-      reason: "skew_fallback_atm_straddle_reconstructed_iv_vol_neutral_skew",
-    };
-  }
-
-  return { skew: null, reason: "skew_indeterminate_iv_ceiling_exhausted_fallbacks" };
+  return { skew: null, reason: lastSkipReason };
 }
 
 /** Maps computeImpliedMoveStraddle output to payload-quality fields for dataQualitySummary. */
@@ -2022,16 +2123,28 @@ function computeDeskCatalystExpirationISO(chainSummary: ChainSummary, settings: 
 }
 
 function curatedLegFromContract(c: ChainContract): CuratedOptionLeg {
+  const rawDec = c.rawIv;
+  const rawNorm = rawDec != null && Number.isFinite(rawDec) && rawDec > 0
+    ? normalizeStrategistIv(rawDec, "chain")
+    : null;
   const n = normalizeStrategistIv(c.impliedVolatility, "chain");
+  const ivPct =
+    c.impliedVolatility == null || !Number.isFinite(c.impliedVolatility)
+      ? null
+      : isReliableIv(n)
+        ? n.pct
+        : null;
   const leg: CuratedOptionLeg = {
     bid: c.bid,
     ask: c.ask,
-    iv: n.pct,
+    iv: ivPct,
     delta: Math.round((c.delta ?? 0) * 1000) / 1000,
     volume: c.volume,
     oi: c.openInterest,
   };
+  if (rawNorm != null && Number.isFinite(rawNorm.pct)) leg.raw_iv = rawNorm.pct;
   if (n.clamped || n.unreliable) leg.iv_unreliable = true;
+  if (c.impliedVolatility == null && rawDec != null && rawDec > 0) leg.iv_unreliable = true;
   return leg;
 }
 
@@ -2178,6 +2291,7 @@ export function summarizeOptionsChain(
   ctx?: SummarizeOptionsChainContext,
 ): ChainSummary {
   enrichChainContractsWithReconstructedIv(chain, price);
+  const { stats: ivChainCore } = filterContaminatedIvs(chain);
 
   const calls = chain.filter(c => c.type === "call" || c.optionType === "CALL");
   const puts = chain.filter(c => c.type === "put" || c.optionType === "PUT");
@@ -2203,6 +2317,13 @@ export function summarizeOptionsChain(
     return n.pct;
   };
 
+  const ivToPctOrNullForTop = (iv: number | null | undefined): number | null => {
+    if (iv == null || !Number.isFinite(iv)) return null;
+    const n = normalizeStrategistIv(iv, "chain");
+    if (n.clamped) ivArtifactClampCount += 1;
+    return isReliableIv(n) ? n.pct : null;
+  };
+
   const reliableAvgIvPctForContracts = (contracts: ChainContract[]): number | null => {
     let sum = 0;
     let reliableCount = 0;
@@ -2221,11 +2342,11 @@ export function summarizeOptionsChain(
 
   const topVolumeCalls = [...calls].sort((a, b) => b.volume - a.volume).slice(0, 5).map(c => ({
     strike: c.strike, expiration: c.expiration, volume: c.volume, oi: c.openInterest,
-    bid: c.bid, ask: c.ask, iv: ivToPctOrZero(c.impliedVolatility), delta: c.delta,
+    bid: c.bid, ask: c.ask, iv: ivToPctOrNullForTop(c.impliedVolatility), delta: c.delta,
   }));
   const topVolumePuts = [...puts].sort((a, b) => b.volume - a.volume).slice(0, 5).map(c => ({
     strike: c.strike, expiration: c.expiration, volume: c.volume, oi: c.openInterest,
-    bid: c.bid, ask: c.ask, iv: ivToPctOrZero(c.impliedVolatility), delta: c.delta,
+    bid: c.bid, ask: c.ask, iv: ivToPctOrNullForTop(c.impliedVolatility), delta: c.delta,
   }));
 
   const unusualActivity: ChainSummary["unusualActivity"] = [];
@@ -2294,6 +2415,17 @@ export function summarizeOptionsChain(
   const curatedExpirations = buildCuratedExpirations(chain, price, mustIncludeExpiries);
 
   const termStructure5pt = buildTermStructure5pt(chain, price, curatedExpirations, expirations, effectiveLegIv);
+  let withCleanAtmIv = 0;
+  for (const ce of curatedExpirations) {
+    if (atmIvPctForExpiry(chain, ce.expiration, price, effectiveLegIv) != null) withCleanAtmIv += 1;
+  }
+  const ivChainFilter: IvChainFilterStats = {
+    ...ivChainCore,
+    termStructureExpiries: {
+      withCleanAtmIv,
+      total: curatedExpirations.length,
+    },
+  };
   const { skew, reason: skew25DeltaReason } = computeSkew25DeltaForChain(chain, expirations, price);
   const impliedMoveResult = computeImpliedMoveStraddle(chain, price, expirations);
   const impliedMove = impliedMoveResult.value;
@@ -2324,6 +2456,7 @@ export function summarizeOptionsChain(
     skew25DeltaReason,
     impliedMove,
     impliedMoveQuality,
+    ivChainFilter,
   };
 }
 
@@ -2435,6 +2568,11 @@ function buildDataQualitySummary(args: {
     flags.push("implied_move_bsm_inversion_failed");
   }
 
+  const ivf = chainSummary.ivChainFilter;
+  const ivContamShare =
+    ivf.totalChainContracts > 0 ? ivf.ivClampedCount / ivf.totalChainContracts : 0;
+  if (ivContamShare > 0.3) flags.push("iv_contamination_elevated");
+
   const earningsGapList = earningsDataSourceGaps ?? [];
 
   return {
@@ -2466,6 +2604,10 @@ function buildDataQualitySummary(args: {
       secFundamentalsPresent: fundamentalsOk,
     },
     ivArtifactsClamped: chainSummary.ivArtifactsClampedCount,
+    ivClampedCount: ivf.ivClampedCount,
+    ivClampedReasons: ivf.ivClampedReasons,
+    ivCleanedRatio: ivf.ivCleanedRatio,
+    termStructureExpiries: ivf.termStructureExpiries,
     flags,
     ...(earningsGapList.length > 0 ? { data_source_gaps: earningsGapList } : {}),
     readThisFirst:
@@ -2578,9 +2720,20 @@ function buildDataPackage(
       skew25DeltaReason: chainSummary.skew25DeltaReason,
       impliedMove: chainSummary.impliedMove,
       impliedMoveQuality: chainSummary.impliedMoveQuality,
-      ivArtifactNote: chainSummary.ivArtifactsClampedCount > 0
-        ? `${chainSummary.ivArtifactsClampedCount} contract IV value(s) exceeded ${chainSummary.ivCeilingPct}% and were clamped to the ceiling. These are 0DTE/front-week pricing-engine artifacts (penny-wide bid/ask on contracts pricing into intraday underlying moves) — IGNORE them for structural decisions and use back-month IV instead.`
-        : null,
+      ivChainFilter: chainSummary.ivChainFilter,
+      ivArtifactNote:
+        chainSummary.ivChainFilter.ivClampedCount > 0 || chainSummary.ivArtifactsClampedCount > 0
+          ? [
+              chainSummary.ivChainFilter.ivClampedCount > 0
+                ? `${chainSummary.ivChainFilter.ivClampedCount} contract(s) had chain IV removed by deterministic liquidity/spread/ceiling filters (see dataQualitySummary.ivClampedReasons). Term-structure and skew inputs use surviving IVs only; **raw_iv** on curated legs preserves the pre-filter IV in percent when you need to audit a strike.`
+                : null,
+              chainSummary.ivArtifactsClampedCount > 0
+                ? `${chainSummary.ivArtifactsClampedCount} raw value(s) exceeded ${chainSummary.ivCeilingPct}% normalization ceiling (legacy counter; structural IV should already reflect ivChainFilter).`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : null,
     },
     curatedExpirations: chainSummary.curatedExpirations,
     availableExpirations: chainSummary.availableExpirations,

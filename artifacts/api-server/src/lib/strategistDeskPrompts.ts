@@ -34,15 +34,15 @@ const SKEW_25D_IV_CEILING_REASON_PREFIX = "skew_25d_iv_ceiling" as const;
 
 /** Skew bullet for Volatility section (built outside template literals — esbuild parses nested `). */
 const VOL_SKEW_BULLET =
-  "The skew profile and what it tells you about positioning (cite **skew25Delta** when non-null; if **skew25DeltaReason** is set, interpret it literally: strings starting with **skew_fallback_** mean delta targets were stepped (25Δ→20Δ→15Δ), other listed expiries, or ATM straddle reconstruction because chain legs at the prior step hit the IV ceiling or were unusable — say which fallback applies; legacy reasons starting with " +
+  "The skew profile and what it tells you about positioning (cite **skew25Delta** when non-null; if **skew25DeltaReason** is set, interpret it literally: strings starting with **skew_fallback_** mean delta targets were stepped (25Δ→20Δ→15Δ) or a later listed expiry was used after the anchor expiry had no usable IV on one side; strings starting with **skew_iv_filtered_** mean the 25Δ (or stepped-delta) leg had IV removed by the pre-clean filter — do not impute skew from other expiries; legacy reasons starting with " +
   SKEW_25D_IV_CEILING_REASON_PREFIX +
-  " mean a same-expiry 20Δ or 15Δ proxy was used when true 25Δ legs hit the ceiling; if **skew25Delta** is null and **skew25DeltaReason** explains exhaustion, say skew is indeterminate from chain)";
+  " refer to older IV-ceiling proxy behavior when present; if **skew25Delta** is null, read **skew25DeltaReason** and say skew is indeterminate from chain for that reason)";
 
 /** Item 20: literal data-state vocabulary aligned with dataQualitySummary / schemaVersion. */
 const DATA_STATE_LANGUAGE_RULES = `
 
 DATA STATE (literal labels only):
-- Describe inputs using the **states** and **flags** in **dataQualitySummary** at the top of the JSON (e.g. present, absent, usable, degraded, missing_or_indeterminate, regression_fit, fallback_defaults). Read **dataQualitySummary.impliedMove** for ATM implied-move availability (available, reason, fallbackExpiryUsed). Do not substitute colloquial words like "the feed" or "full data" for those labels.
+- Describe inputs using the **states** and **flags** in **dataQualitySummary** at the top of the JSON (e.g. present, absent, usable, degraded, missing_or_indeterminate, regression_fit, fallback_defaults, iv_contamination_elevated). Read **dataQualitySummary.impliedMove** for ATM implied-move availability (available, reason, fallbackExpiryUsed). Read **ivClampedCount**, **ivClampedReasons**, **ivCleanedRatio**, and **termStructureExpiries** for deterministic IV hygiene on the chain snapshot. Do not substitute colloquial words like "the feed" or "full data" for those labels.
 - Do not claim the tape is "complete" unless **dataQualitySummary.flow.tapeBackfillStatus** is literally **complete** (or the field explicitly documents otherwise).
 - If **dataQualitySummary.flags** is non-empty, mention the relevant flag(s) when they affect your conclusion.
 - **schemaVersion** is for client compatibility only; do not discuss schema or versioning in prose.`;
@@ -67,7 +67,7 @@ export function buildVolAnalystPrompt(dataPackage: string): string {
 
 This turn produces the **Volatility** section only (JSON fields below). Focus on the volatility surface: IV state, term structure, skew, IV vs realized, and where the surface is dislocated relative to fair value.
 
-Your output is read at institutional review meetings. Every IV number you quote, every vol point you cite, every term structure observation must be defensible. Pricing-engine artifacts (clamped 0DTE, 500 percent prints, indeterminate skew) are flagged explicitly and reconstructed manually from clean strikes. Math is checked before publication. If you state a number, you can defend it.
+Your output is read at institutional review meetings. Every IV number you quote, every vol point you cite, every term structure observation must be defensible. **termStructure5pt** ATM IVs and **skew25Delta** are assembled from chain IVs that already passed deterministic liquidity and spread hygiene (see **dataQualitySummary.ivClampedCount** and **ivClampedReasons**); null ATM or null skew on a specific expiry means no liquid surviving contracts there — skip that expiry in the vol read rather than inferring from neighbors. If **dataQualitySummary.flags** includes **iv_contamination_elevated**, call that out: more than 30% of strikes had IV removed. Math is checked before publication. If you state a number, you can defend it.
 
 You are not providing liquidity to smarter money. If the surface does not show a real dislocation, your read is no actionable vol edge here and you say so. Do not invent edge to fill space.
 
@@ -292,7 +292,7 @@ Work through four topics in sequence inside one response. Each topic matches the
 
 VOLATILITY
 
-Read the volatility surface: IV state, term structure, skew, IV vs realized. Identify where the surface is dislocated relative to fair value. Pricing-engine artifacts (clamped 0DTE, 500 percent prints, indeterminate skew) are flagged explicitly and reconstructed manually from clean strikes.
+Read the volatility surface: IV state, term structure, skew, IV vs realized. Identify where the surface is dislocated relative to fair value. Term-structure ATM IVs and 25Δ skew are pre-cleaned of penny-wide quotes, >200% raw IV, and thin strikes; use **dataQualitySummary.ivClampedCount** / **ivCleanedRatio** and null entries in **termStructure5pt** or **skew25Delta** to see where the surface is incomplete.
 
 FLOW
 
@@ -319,7 +319,7 @@ OUTPUT FORMAT
 Single JSON object with the same schema as multi-section desk mode.
 
 Use the JSON snapshot fields below when present (same keys as multi-section desk analysts receive):
-- **dataQualitySummary**, including **data_source_gaps** when set, **flags**, **flow.tapeBackfillReason**, **flow.tapeBackfillReasonLegacy**, **flow.tapeBackfillStatus**, **flow.tapeBackfillTotalTradesFromPolygon**, **flow.tapeBackfillPersistRejected**, **flow.tapeBackfillTruncated**, **flow.tapeBackfillHttpError**, **sessionTapeKind**, and other degraded-state labels (never invent full tape when flags say otherwise).
+- **dataQualitySummary**, including **data_source_gaps** when set, **flags**, **ivClampedCount** (deterministic IV removals: wide spread vs mid, >200% raw IV, low volume/OI, deep OTM mid), **ivClampedReasons**, **ivCleanedRatio**, **termStructureExpiries** (how many curated expiries have a clean ATM IV vs total in the strip), **flow.tapeBackfillReason**, **flow.tapeBackfillReasonLegacy**, **flow.tapeBackfillStatus**, **flow.tapeBackfillTotalTradesFromPolygon**, **flow.tapeBackfillPersistRejected**, **flow.tapeBackfillTruncated**, **flow.tapeBackfillHttpError**, **sessionTapeKind**, and other degraded-state labels (never invent full tape when flags say otherwise). You should not need to manually strip clamped front-week IVs for term structure or skew — that is already done — but if **ivClampedCount** exceeds ~30% of listed contracts (**iv_contamination_elevated** in **flags**), say so and down-weight vol conclusions.
 - **tapeBackfill** (REST tape coverage: status, **tapeBackfillReason**, occ counts, trades inserted, truncation and Polygon HTTP flags when present).
 - **polygonFlowHighlights.sessionTape** (**tapeKind**, **tapeBackfillReason**, sweeps, blocks, aggressor totals, top prints).
 - **catalyst.earnings_history** and **catalyst.forward_estimates** when the snapshot includes them, plus **nextEarnings** (EPS and revenue estimates vs prior quarter, period labels), **earningsDate**, **lastEarningsDate**, **daysSinceEarnings**.
