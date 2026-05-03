@@ -5,7 +5,7 @@ FROM node:22-slim AS builder
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && npm install -g pnpm@10.26.1
+    && npm install -g pnpm@10.33.2
 
 WORKDIR /app
 COPY . .
