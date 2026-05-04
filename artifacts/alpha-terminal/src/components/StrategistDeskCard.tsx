@@ -16,6 +16,9 @@ import { STRATEGIST_ANALYSIS_CANCEL_EVENT, STRATEGIST_ANALYSIS_START_EVENT } fro
 
 export type { DeskResult } from "@/lib/strategistDeskResult";
 
+/** OpenAI TTS input limit per request; smaller chunks start audio sooner. */
+const TTS_CHUNK_TARGET_CHARS = 900;
+
 const PAL = {
   bgCard: "#141414",
   bgInner: "#0a0a0a",
@@ -400,6 +403,44 @@ export function StrategistDeskCard({
     [deskResult, banner?.title, banner?.body],
   );
 
+  /** Split desk script into TTS-sized chunks so the first request returns faster (progressive play). */
+  const deskAudioChunks = useMemo(() => {
+    const t = deskAudioText.trim();
+    if (!t) return [];
+    const out: string[] = [];
+    let rest = t;
+    while (rest.length > 0) {
+      if (rest.length <= 4096) {
+        out.push(rest);
+        break;
+      }
+      let cut = Math.min(TTS_CHUNK_TARGET_CHARS, rest.length - 1);
+      let splitAt = cut;
+      for (let i = cut; i > Math.max(0, cut - 500); i--) {
+        const ch = rest[i];
+        if (ch === "\n" || ch === "." || ch === "!" || ch === "?" || ch === ";") {
+          splitAt = i + 1;
+          break;
+        }
+      }
+      const piece = rest.slice(0, splitAt).trimEnd();
+      if (piece) out.push(piece);
+      rest = rest.slice(splitAt).trimStart();
+    }
+    return out.filter(Boolean);
+  }, [deskAudioText]);
+
+  const deskAudioFetchKey = useMemo(
+    () => `${deskResultId}\0${deskAudioText.trim()}`,
+    [deskResultId, deskAudioText],
+  );
+
+  const prefetchPrimaryKey = useMemo(() => {
+    if (deskAudioChunks.length <= 1) return deskAudioFetchKey;
+    const first = deskAudioChunks[0] ?? "";
+    return `${deskAudioFetchKey}\0chunk0\0${first}`;
+  }, [deskAudioChunks, deskAudioFetchKey]);
+
   const SESSION_RATE_KEY = "strategistDeskSpeechRate";
   const [speechRate, setSpeechRate] = useState<number>(() => {
     if (typeof window === "undefined") return 1;
@@ -419,10 +460,12 @@ export function StrategistDeskCard({
   const objectUrlRef = useRef<string | null>(null);
   const audioPlayGenRef = useRef(0);
   const ttsFetchAbortRef = useRef<AbortController | null>(null);
-  /** Background TTS: blob URL + key `${deskResultId}\0${text}` when prefetch finished. */
+  const progressiveFetchAbortRef = useRef<AbortController | null>(null);
+  type ProgressiveSession = { playGen: number; chunks: string[]; index: number };
+  const progressiveSessionRef = useRef<ProgressiveSession | null>(null);
+  const prefetchGenRef = useRef(0);
   const prefetchedAudioUrlRef = useRef<string | null>(null);
   const prefetchedAudioKeyRef = useRef<string | null>(null);
-  const prefetchGenRef = useRef(0);
 
   const revokeObjectUrl = useCallback(() => {
     if (objectUrlRef.current) {
@@ -435,6 +478,9 @@ export function StrategistDeskCard({
     audioPlayGenRef.current += 1;
     ttsFetchAbortRef.current?.abort();
     ttsFetchAbortRef.current = null;
+    progressiveFetchAbortRef.current?.abort();
+    progressiveFetchAbortRef.current = null;
+    progressiveSessionRef.current = null;
     const el = audioRef.current;
     if (el) {
       el.pause();
@@ -455,47 +501,58 @@ export function StrategistDeskCard({
     setAudioError(null);
   }, [revokeObjectUrl]);
 
-  const deskAudioFetchKey = useMemo(
-    () => `${deskResultId}\0${deskAudioText.trim()}`,
-    [deskResultId, deskAudioText],
-  );
-
   const startPlay = useCallback(async () => {
-    if (!deskAudioText.trim()) return;
+    if (!deskAudioText.trim() || deskAudioChunks.length === 0) return;
     const playGen = ++audioPlayGenRef.current;
-    const fetchKey = deskAudioFetchKey;
+    ttsFetchAbortRef.current?.abort();
+    ttsFetchAbortRef.current = null;
+    progressiveFetchAbortRef.current?.abort();
+    progressiveFetchAbortRef.current = null;
+    progressiveSessionRef.current = null;
 
-    if (prefetchedAudioUrlRef.current && prefetchedAudioKeyRef.current === fetchKey) {
-      ttsFetchAbortRef.current?.abort();
-      ttsFetchAbortRef.current = null;
-      setAudioError(null);
-      setAudioReady(false);
-      setAudioLoading(false);
+    const firstText = deskAudioChunks[0] ?? deskAudioText.trim();
+    const prefetchHit =
+      prefetchedAudioUrlRef.current &&
+      prefetchedAudioKeyRef.current === prefetchPrimaryKey &&
+      prefetchPrimaryKey.length > 0;
+
+    setAudioError(null);
+    setAudioReady(false);
+
+    const attachAndPlay = async (blobUrl: string): Promise<boolean> => {
+      const el = audioRef.current;
+      if (!el || playGen !== audioPlayGenRef.current) return false;
       revokeObjectUrl();
-      const url = prefetchedAudioUrlRef.current;
-      prefetchedAudioUrlRef.current = null;
-      prefetchedAudioKeyRef.current = null;
-      objectUrlRef.current = url;
+      objectUrlRef.current = blobUrl;
       setAudioBarOpen(true);
       setPaused(false);
       setAudioReady(true);
-      const el = audioRef.current;
-      if (el) {
-        el.src = url;
-        el.playbackRate = speechRateRef.current;
-        try {
-          await el.play();
-          if (playGen !== audioPlayGenRef.current) return;
-        } catch {
-          if (playGen !== audioPlayGenRef.current) return;
+      el.src = blobUrl;
+      el.playbackRate = speechRateRef.current;
+      try {
+        await el.play();
+        return playGen === audioPlayGenRef.current;
+      } catch {
+        if (playGen === audioPlayGenRef.current) {
           setAudioError("Audio unavailable — playback failed");
           setAudioReady(false);
         }
+        return false;
+      }
+    };
+
+    if (prefetchHit) {
+      setAudioLoading(false);
+      const url = prefetchedAudioUrlRef.current!;
+      prefetchedAudioUrlRef.current = null;
+      prefetchedAudioKeyRef.current = null;
+      const ok = await attachAndPlay(url);
+      if (ok && deskAudioChunks.length > 1) {
+        progressiveSessionRef.current = { playGen, chunks: deskAudioChunks, index: 0 };
       }
       return;
     }
 
-    ttsFetchAbortRef.current?.abort();
     const ac = new AbortController();
     ttsFetchAbortRef.current = ac;
     const TTS_FETCH_MS = 180_000;
@@ -505,14 +562,13 @@ export function StrategistDeskCard({
             ac.abort();
           }, TTS_FETCH_MS)
         : 0;
-    setAudioError(null);
-    setAudioReady(false);
+
     setAudioLoading(true);
     try {
       const res = await fetchWithAuth("/api/tts/desk-audio", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: deskAudioText, deskResultId }),
+        body: JSON.stringify({ text: firstText, deskResultId }),
         signal: ac.signal,
         clerkTokenTimeoutMs: 8000,
       });
@@ -528,30 +584,15 @@ export function StrategistDeskCard({
           /* ignore */
         }
         setAudioError(msg);
-        setAudioLoading(false);
         setAudioBarOpen(true);
         return;
       }
       const blob = await res.blob();
       if (playGen !== audioPlayGenRef.current) return;
-      revokeObjectUrl();
       const url = URL.createObjectURL(blob);
-      objectUrlRef.current = url;
-      setAudioBarOpen(true);
-      setPaused(false);
-      setAudioReady(true);
-      const el = audioRef.current;
-      if (el) {
-        el.src = url;
-        el.playbackRate = speechRateRef.current;
-        try {
-          await el.play();
-          if (playGen !== audioPlayGenRef.current) return;
-        } catch {
-          if (playGen !== audioPlayGenRef.current) return;
-          setAudioError("Audio unavailable — playback failed");
-          setAudioReady(false);
-        }
+      const ok = await attachAndPlay(url);
+      if (ok && deskAudioChunks.length > 1) {
+        progressiveSessionRef.current = { playGen, chunks: deskAudioChunks, index: 0 };
       }
     } catch (e) {
       if (playGen !== audioPlayGenRef.current) return;
@@ -571,12 +612,70 @@ export function StrategistDeskCard({
         setAudioLoading(false);
       }
     }
-  }, [deskAudioFetchKey, deskAudioText, deskResultId, revokeObjectUrl]);
+  }, [deskAudioChunks, deskAudioText, deskResultId, prefetchPrimaryKey, revokeObjectUrl]);
 
-  /** Prefetch MP3 as soon as the desk text is known so Play is often instant (no network on tap). */
+  const advanceProgressiveChunk = useCallback(async () => {
+    const sess = progressiveSessionRef.current;
+    if (!sess) return;
+    const { playGen, chunks, index } = sess;
+    if (playGen !== audioPlayGenRef.current) return;
+    const nextIdx = index + 1;
+    if (nextIdx >= chunks.length) {
+      progressiveSessionRef.current = null;
+      stopAudio();
+      return;
+    }
+    progressiveFetchAbortRef.current?.abort();
+    const ac = new AbortController();
+    progressiveFetchAbortRef.current = ac;
+    const text = chunks[nextIdx];
+    if (!text?.trim()) {
+      progressiveSessionRef.current = null;
+      stopAudio();
+      return;
+    }
+    try {
+      const res = await fetchWithAuth("/api/tts/desk-audio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, deskResultId }),
+        signal: ac.signal,
+        clerkTokenTimeoutMs: 8000,
+      });
+      if (playGen !== audioPlayGenRef.current) return;
+      if (!res.ok) {
+        progressiveSessionRef.current = null;
+        setAudioError("Audio unavailable — next segment failed");
+        return;
+      }
+      const blob = await res.blob();
+      if (playGen !== audioPlayGenRef.current) return;
+      revokeObjectUrl();
+      const url = URL.createObjectURL(blob);
+      objectUrlRef.current = url;
+      progressiveSessionRef.current = { playGen, chunks, index: nextIdx };
+      const el = audioRef.current;
+      if (el) {
+        el.src = url;
+        el.playbackRate = speechRateRef.current;
+        await el.play();
+      }
+    } catch {
+      if (playGen === audioPlayGenRef.current) {
+        progressiveSessionRef.current = null;
+        setAudioError("Audio unavailable — network error");
+      }
+    } finally {
+      if (progressiveFetchAbortRef.current === ac) {
+        progressiveFetchAbortRef.current = null;
+      }
+    }
+  }, [deskResultId, revokeObjectUrl, stopAudio]);
+
+  /** Prefetch first TTS segment (or full script if short) so Play often skips waiting. */
   useEffect(() => {
-    const text = deskAudioText.trim();
-    if (!text) {
+    const text = deskAudioChunks[0]?.trim() ?? "";
+    if (!text || !deskResultId.trim()) {
       prefetchGenRef.current += 1;
       if (prefetchedAudioUrlRef.current) {
         URL.revokeObjectURL(prefetchedAudioUrlRef.current);
@@ -587,7 +686,7 @@ export function StrategistDeskCard({
     }
     prefetchGenRef.current += 1;
     const gen = prefetchGenRef.current;
-    const fetchKey = deskAudioFetchKey;
+    const fetchKey = prefetchPrimaryKey;
     const ac = new AbortController();
     const timeoutId =
       typeof window !== "undefined"
@@ -624,7 +723,7 @@ export function StrategistDeskCard({
     return () => {
       ac.abort();
     };
-  }, [deskAudioFetchKey, deskAudioText, deskResultId]);
+  }, [deskAudioChunks, deskResultId, prefetchPrimaryKey]);
 
   useEffect(() => {
     return () => {
@@ -695,8 +794,13 @@ export function StrategistDeskCard({
   );
 
   const onAudioEnded = useCallback(() => {
-    stopAudio();
-  }, [stopAudio]);
+    const sess = progressiveSessionRef.current;
+    if (sess && sess.playGen === audioPlayGenRef.current) {
+      void advanceProgressiveChunk();
+    } else {
+      stopAudio();
+    }
+  }, [advanceProgressiveChunk, stopAudio]);
 
   const onLoadedMetadata = useCallback(() => {
     const el = audioRef.current;
