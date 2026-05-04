@@ -419,6 +419,10 @@ export function StrategistDeskCard({
   const objectUrlRef = useRef<string | null>(null);
   const audioPlayGenRef = useRef(0);
   const ttsFetchAbortRef = useRef<AbortController | null>(null);
+  /** Background TTS: blob URL + key `${deskResultId}\0${text}` when prefetch finished. */
+  const prefetchedAudioUrlRef = useRef<string | null>(null);
+  const prefetchedAudioKeyRef = useRef<string | null>(null);
+  const prefetchGenRef = useRef(0);
 
   const revokeObjectUrl = useCallback(() => {
     if (objectUrlRef.current) {
@@ -439,6 +443,11 @@ export function StrategistDeskCard({
       el.load();
     }
     revokeObjectUrl();
+    if (prefetchedAudioUrlRef.current) {
+      URL.revokeObjectURL(prefetchedAudioUrlRef.current);
+      prefetchedAudioUrlRef.current = null;
+      prefetchedAudioKeyRef.current = null;
+    }
     setPaused(false);
     setAudioBarOpen(false);
     setAudioLoading(false);
@@ -446,9 +455,46 @@ export function StrategistDeskCard({
     setAudioError(null);
   }, [revokeObjectUrl]);
 
+  const deskAudioFetchKey = useMemo(
+    () => `${deskResultId}\0${deskAudioText.trim()}`,
+    [deskResultId, deskAudioText],
+  );
+
   const startPlay = useCallback(async () => {
     if (!deskAudioText.trim()) return;
     const playGen = ++audioPlayGenRef.current;
+    const fetchKey = deskAudioFetchKey;
+
+    if (prefetchedAudioUrlRef.current && prefetchedAudioKeyRef.current === fetchKey) {
+      ttsFetchAbortRef.current?.abort();
+      ttsFetchAbortRef.current = null;
+      setAudioError(null);
+      setAudioReady(false);
+      setAudioLoading(false);
+      revokeObjectUrl();
+      const url = prefetchedAudioUrlRef.current;
+      prefetchedAudioUrlRef.current = null;
+      prefetchedAudioKeyRef.current = null;
+      objectUrlRef.current = url;
+      setAudioBarOpen(true);
+      setPaused(false);
+      setAudioReady(true);
+      const el = audioRef.current;
+      if (el) {
+        el.src = url;
+        el.playbackRate = speechRateRef.current;
+        try {
+          await el.play();
+          if (playGen !== audioPlayGenRef.current) return;
+        } catch {
+          if (playGen !== audioPlayGenRef.current) return;
+          setAudioError("Audio unavailable — playback failed");
+          setAudioReady(false);
+        }
+      }
+      return;
+    }
+
     ttsFetchAbortRef.current?.abort();
     const ac = new AbortController();
     ttsFetchAbortRef.current = ac;
@@ -525,7 +571,60 @@ export function StrategistDeskCard({
         setAudioLoading(false);
       }
     }
-  }, [deskAudioText, deskResultId, revokeObjectUrl]);
+  }, [deskAudioFetchKey, deskAudioText, deskResultId, revokeObjectUrl]);
+
+  /** Prefetch MP3 as soon as the desk text is known so Play is often instant (no network on tap). */
+  useEffect(() => {
+    const text = deskAudioText.trim();
+    if (!text) {
+      prefetchGenRef.current += 1;
+      if (prefetchedAudioUrlRef.current) {
+        URL.revokeObjectURL(prefetchedAudioUrlRef.current);
+        prefetchedAudioUrlRef.current = null;
+        prefetchedAudioKeyRef.current = null;
+      }
+      return;
+    }
+    prefetchGenRef.current += 1;
+    const gen = prefetchGenRef.current;
+    const fetchKey = deskAudioFetchKey;
+    const ac = new AbortController();
+    const timeoutId =
+      typeof window !== "undefined"
+        ? window.setTimeout(() => {
+            ac.abort();
+          }, 180_000)
+        : 0;
+
+    void (async () => {
+      try {
+        const res = await fetchWithAuth("/api/tts/desk-audio", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, deskResultId }),
+          signal: ac.signal,
+          clerkTokenTimeoutMs: 8000,
+        });
+        if (gen !== prefetchGenRef.current) return;
+        if (!res.ok) return;
+        const blob = await res.blob();
+        if (gen !== prefetchGenRef.current) return;
+        if (prefetchedAudioUrlRef.current) {
+          URL.revokeObjectURL(prefetchedAudioUrlRef.current);
+        }
+        prefetchedAudioUrlRef.current = URL.createObjectURL(blob);
+        prefetchedAudioKeyRef.current = fetchKey;
+      } catch {
+        /* ignore prefetch errors; Play will retry */
+      } finally {
+        if (timeoutId) window.clearTimeout(timeoutId);
+      }
+    })();
+
+    return () => {
+      ac.abort();
+    };
+  }, [deskAudioFetchKey, deskAudioText, deskResultId]);
 
   useEffect(() => {
     return () => {
