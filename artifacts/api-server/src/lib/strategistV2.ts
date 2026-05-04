@@ -62,6 +62,7 @@ import {
   STRATEGIST_IV_CEILING_PCT,
 } from "./strategistIvNormalize.js";
 import { impliedVolatilityBSM } from "./bsmIV.js";
+import { attachDeskPmPayoffScenarios } from "./strategistPmPayoffScenarios.js";
 import type { EquityMarketSession, EquitySessionResolutionSource } from "./schwabMarketHours.js";
 import { getEquityMarketSessionWithAsOf } from "./schwabMarketHours.js";
 import { fetchPolygonAnalystRatingsAndConsensus } from "./polygonAnalystData.js";
@@ -206,7 +207,7 @@ export interface StrategistV2Result {
 }
 
 /** Item 23: client / history idempotency — bump when StrategistV2Result shape changes. */
-export const STRATEGIST_RESULT_SCHEMA_VERSION = 2;
+export const STRATEGIST_RESULT_SCHEMA_VERSION = 3;
 
 function withResultSchemaVersion<T extends StrategistV2Result>(r: T): T {
   r.schemaVersion = STRATEGIST_RESULT_SCHEMA_VERSION;
@@ -1076,7 +1077,7 @@ async function analyzeTickerV2Inner(
   if (settings.strategistMode === 3) {
     status("Starting Desk analysis (four topic sections)…");
     try {
-      const deskResult = await runDeskAnalysis({
+      const deskResultRaw = await runDeskAnalysis({
         dataPackage,
         settings,
         ticker,
@@ -1092,6 +1093,7 @@ async function analyzeTickerV2Inner(
           onTurnDiscarded: progress?.onTurnDiscarded,
         },
       });
+      const deskResult = attachDeskPmPayoffScenarios(deskResultRaw, dataPackage);
       const result: StrategistV2Result = {
         status: "desk_recommendation",
         ticker,
@@ -1152,7 +1154,7 @@ async function analyzeTickerV2Inner(
   if (settings.strategistMode === 4) {
     status("Starting Solo Desk analysis (single pass, Vol + Flow + Catalyst + PM)…");
     try {
-      const deskResult = await runSoloDesk({
+      const deskResultRaw = await runSoloDesk({
         dataPackage,
         settings,
         ticker,
@@ -1168,6 +1170,7 @@ async function analyzeTickerV2Inner(
           onTurnDiscarded: progress?.onTurnDiscarded,
         },
       });
+      const deskResult = attachDeskPmPayoffScenarios(deskResultRaw, dataPackage);
       const incomplete =
         deskResult.pmOutputIncomplete ||
         deskResult.soloDeskJsonDegraded === "schema_validation_failed_after_retry" ||
