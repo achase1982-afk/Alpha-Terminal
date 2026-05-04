@@ -3,10 +3,10 @@
  * Run after Path B backfill + recompute-ivr. Usage: ./node_modules/.bin/tsx scripts/report-lc130-ivr-trust.ts
  */
 import { getStoredIVR } from "../src/lib/ivNormalize";
-import { LIQUID_CORE_SYMBOLS } from "../src/data/liquidCore130";
+import { LIQUID_CORE_SYMBOL_STRINGS } from "../src/data/liquidCore130";
 
 async function main() {
-  const universe = [...LIQUID_CORE_SYMBOLS];
+  const universe = [...LIQUID_CORE_SYMBOL_STRINGS];
   const trusted: string[] = [];
   const failed: Array<{ symbol: string; reason: string }> = [];
 
