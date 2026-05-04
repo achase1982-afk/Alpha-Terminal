@@ -2,7 +2,7 @@ import { createServer, type Server, type Socket } from "net";
 import WebSocket from "ws";
 import { logger } from "./logger.js";
 
-const LOCAL_PORT = 4002;
+const LOCAL_PORT = 4001;
 let proxyServer: Server | null = null;
 let activeWs: WebSocket | null = null;
 let activeTcpClient: Socket | null = null;
