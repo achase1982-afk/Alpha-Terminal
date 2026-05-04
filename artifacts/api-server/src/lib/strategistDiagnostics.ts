@@ -55,6 +55,7 @@ export function buildTapeBackfillDiagnostic(tape: TapeBackfillStatus | undefined
       queryCloseMs: null,
       coverageEndMs: null,
       wsOccSubscribed: null,
+      tapeBackfillDedupeDropsTotal: null,
     };
   }
   const occReq = tape.occRequested;
@@ -77,6 +78,7 @@ export function buildTapeBackfillDiagnostic(tape: TapeBackfillStatus | undefined
     queryCloseMs: tape.queryCloseMs ?? null,
     coverageEndMs: tape.coverageEndMs,
     wsOccSubscribed: tape.wsOccSubscribed ?? null,
+    tapeBackfillDedupeDropsTotal: tape.tapeBackfillDedupeDrops?.totalDropped ?? null,
   };
 }
 
