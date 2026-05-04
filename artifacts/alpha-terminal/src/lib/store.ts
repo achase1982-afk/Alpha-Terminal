@@ -1,6 +1,69 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import { fetchWithAuth } from './fetchWithAuth';
+
+const PERSIST_KEY = "alpha-terminal-storage";
+const MAX_PERSISTED_STRATEGIST_HISTORY = 30;
+
+function isQuotaExceeded(e: unknown): boolean {
+  return e instanceof DOMException && (e.name === "QuotaExceededError" || e.code === 22);
+}
+
+/**
+ * Zustand JSON storage that handles localStorage quota: cap history, drop
+ * completed strategist jobs from the blob, then retry (mobile Safari fills ~5MB fast).
+ */
+const quotaSafeLocalStorage: Storage = {
+  get length() {
+    return localStorage.length;
+  },
+  clear() {
+    localStorage.clear();
+  },
+  getItem(key) {
+    return localStorage.getItem(key);
+  },
+  key(index) {
+    return localStorage.key(index);
+  },
+  removeItem(key) {
+    localStorage.removeItem(key);
+  },
+  setItem(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return;
+    } catch (e) {
+      if (!isQuotaExceeded(e) || key !== PERSIST_KEY) throw e;
+    }
+    try {
+      const parsed = JSON.parse(value) as { state?: Record<string, unknown> };
+      const st = parsed.state;
+      if (st) {
+        if (Array.isArray(st["strategistHistory"])) {
+          const h = st["strategistHistory"] as unknown[];
+          st["strategistHistory"] = h.slice(-12);
+        }
+        const jobs = st["strategistJobs"] as Record<string, { status?: string }> | undefined;
+        if (jobs && typeof jobs === "object") {
+          const next: Record<string, unknown> = {};
+          for (const [jid, j] of Object.entries(jobs)) {
+            if (j?.status === "running" || j?.status === "interrupted") next[jid] = j;
+          }
+          st["strategistJobs"] = next;
+        }
+      }
+      const trimmed = JSON.stringify(parsed);
+      localStorage.setItem(key, trimmed);
+    } catch {
+      try {
+        localStorage.removeItem(key);
+      } catch {
+        /* ignore */
+      }
+    }
+  },
+};
 
 // ---------- Watchlist cloud-sync helpers ----------
 // Debounced pusher: any watchlist mutation schedules a push 1.5 s later.
@@ -825,7 +888,8 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 22,
+      version: 23,
+      storage: createJSONStorage(() => quotaSafeLocalStorage),
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -1016,6 +1080,12 @@ export const useTerminalStore = create<TerminalState>()(
             cfg['skepticModelName'] = fix(cfg['skepticModelName']);
           }
         }
+        if (version < 23) {
+          const hist = s['strategistHistory'];
+          if (Array.isArray(hist) && hist.length > MAX_PERSISTED_STRATEGIST_HISTORY) {
+            s['strategistHistory'] = hist.slice(-MAX_PERSISTED_STRATEGIST_HISTORY);
+          }
+        }
         if (version < 22) {
           const t = s['aiTemp'];
           if (typeof t === 'number' && t !== 0) s['aiTemp'] = 0;
@@ -1056,8 +1126,12 @@ export const useTerminalStore = create<TerminalState>()(
         // effect can resume polling on cold load. Jobs older than 10 minutes
         // are swept to "interrupted" during migration below to avoid polling
         // server-side jobs that have already been GC'd.
-        const { streamPrices, streamConnected, streamStatus, browserUrl, browserTitle, browserSource, browserSummary, liveNews, ...persisted } = state;
-        return persisted;
+        const { streamPrices, streamConnected, streamStatus, browserUrl, browserTitle, browserSource, browserSummary, liveNews, strategistHistory, ...rest } = state;
+        const cappedHistory =
+          strategistHistory.length > MAX_PERSISTED_STRATEGIST_HISTORY
+            ? strategistHistory.slice(-MAX_PERSISTED_STRATEGIST_HISTORY)
+            : strategistHistory;
+        return { ...rest, strategistHistory: cappedHistory };
       },
     }
   )

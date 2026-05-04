@@ -1062,7 +1062,11 @@ export function StrategistDeskCard({
   const setRate = useCallback(
     (r: number) => {
       setSpeechRate(r);
-      sessionStorage.setItem(SESSION_RATE_KEY, String(r));
+      try {
+        sessionStorage.setItem(SESSION_RATE_KEY, String(r));
+      } catch {
+        /* QuotaExceededError on full session storage */
+      }
       speechRateRef.current = r;
       if (audioRef.current) {
         audioRef.current.playbackRate = r;
