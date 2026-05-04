@@ -13,6 +13,12 @@ import { getFlowAcceleration, flowAccelerationPoints, computeLiveFlowBucket } fr
 import { getLiveSessionStats, setWatchlist as setWatcherWatchlist, getCoverageInfo, isWatcherEnabled, type CoverageInfo } from "./optionsWatcher.js";
 import { getPolygonFlowHighlightsBulk, unusualFlowBonusPoints, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
 import { logger } from "./logger.js";
+import {
+  classifyEdgeType,
+  calendarDaysToDate,
+  extractFrontBackAtmIvVolPoints,
+  unusualFlowAskBiasFromHighlights,
+} from "./scannerEdgeType.js";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
 const SCHWAB_TRADER = "https://api.schwabapi.com/trader/v1";
@@ -318,7 +324,14 @@ async function fetchEquityHistoryFromDB(symbols: string[]): Promise<Map<string, 
 
 interface DBFlowData {
   flow: FlowMetrics;
-  strikes: Array<{ strike: number; dte: number | null; bid: number; ask: number; openInterest: number }>;
+  strikes: Array<{
+    strike: number;
+    dte: number | null;
+    bid: number;
+    ask: number;
+    openInterest: number;
+    impliedVolatility: number | null;
+  }>;
   totalOI: number;
   iv30d: number | null;
 }
@@ -408,6 +421,7 @@ async function fetchFlowDataFromDB(symbols: string[]): Promise<Map<string, DBFlo
       bid: s.bid ?? 0,
       ask: s.ask ?? 0,
       openInterest: s.openInterest ?? 0,
+      impliedVolatility: s.impliedVolatility ?? null,
     }));
 
     map.set(sym, {
@@ -1204,6 +1218,7 @@ export async function runDiscoveryScan(
 
   // ── Catalyst bonus in idiosyncratic mode ──
   const catalystBonusApplied: string[] = [];
+  const catalystBonusSymbolSet = new Set<string>();
   if (weightMode === "IDIOSYNCRATIC" && cfg.catalystBonusPoints > 0) {
     for (const r of scoredResults) {
       try {
@@ -1211,6 +1226,7 @@ export async function runDiscoveryScan(
         if (ioResult.components.catalyst.flagValue > 0) {
           r.totalScore = Math.min(100, r.totalScore + cfg.catalystBonusPoints);
           catalystBonusApplied.push(r.symbol);
+          catalystBonusSymbolSet.add(r.symbol.toUpperCase());
         }
       } catch {}
     }
@@ -1299,7 +1315,7 @@ export async function runDiscoveryScan(
   // Pre-fetch ticker-specific earnings via the unified helper (cached). This replaces the
   // legacy MEGA_EARNINGS-driven `checkEventConflicts` lookup for ticker-specific events,
   // so non-mega-cap candidates also surface their real earnings dates.
-  const earningsBySymbol = new Map<string, { date: string; confirmed: boolean; source: string | null }>();
+  const earningsBySymbol = new Map<string, { date: string; confirmed: boolean; source: string | null; daysAway: number | null }>();
   await Promise.all(candidatePool.map(async (r) => {
     const info = await getNextEarningsDate(r.symbol).catch(() => null);
     if (info?.earningsDate) {
@@ -1307,6 +1323,7 @@ export async function runDiscoveryScan(
         date: info.earningsDate,
         confirmed: info.confirmed,
         source: info.source,
+        daysAway: info.daysAway ?? null,
       });
     }
   }));
@@ -1347,6 +1364,43 @@ export async function runDiscoveryScan(
         }
       : undefined;
 
+    const polyData = flowDataMap.get(r.symbol) ?? flowDataMap.get(r.symbol.toUpperCase()) ?? null;
+    const spot = r.quote.lastPrice;
+    const strikeIvRows = (polyData?.strikes ?? []).map((s) => ({
+      strike: s.strike,
+      dte: s.dte,
+      impliedVolatility: s.impliedVolatility ?? null,
+    }));
+    const { front: frontIvPts, back: backIvPts } = extractFrontBackAtmIvVolPoints(strikeIvRows, spot);
+
+    const hv20 = computeHV20(r.candles.map((c) => c.close));
+    const iv30OverHv20 =
+      r.iv30d != null && r.iv30d > 0 && hv20 > 0
+        ? r.iv30d / hv20
+        : null;
+
+    const todayYmd = new Date().toISOString().slice(0, 10);
+    const daysToCatalystResolved =
+      earn?.daysAway != null ? earn.daysAway : earn?.date ? calendarDaysToDate(todayYmd, earn.date) : null;
+
+    const { callAsk, putAsk } = unusualFlowAskBiasFromHighlights(h);
+    const f = r.flowDataAvailable ? r.flow : null;
+    const callN = f ? f.callVolume * spot * 100 : 0;
+    const putN = f ? f.putVolume * spot * 100 : 0;
+
+    const edgeType = classifyEdgeType({
+      iv30OverHv20,
+      daysToNextCatalyst: daysToCatalystResolved,
+      ivr: r.ivr,
+      frontAtmIvVolPoints: frontIvPts,
+      backAtmIvVolPoints: backIvPts,
+      unusualCallFlowAskBias: callAsk,
+      unusualPutFlowAskBias: putAsk,
+      blockNotionalCallUsd: callN,
+      blockNotionalPutUsd: putN,
+      directionalLean: r.directionalLean,
+    });
+
     return {
       symbol: r.symbol,
       totalScore: r.totalScore,
@@ -1385,6 +1439,9 @@ export async function runDiscoveryScan(
         liveFlowAvailable: r.liveFlowAvailable,
         emergingRS: r.emergingRS,
       },
+      unusualFlow,
+      edgeType,
+      catalystBonusApplied: catalystBonusSymbolSet.has(r.symbol.toUpperCase()),
     };
   });
 

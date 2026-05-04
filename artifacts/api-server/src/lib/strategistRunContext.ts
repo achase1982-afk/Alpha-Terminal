@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { newStrategistRequestId } from "./strategistDiagnostics.js";
 
 import type { TapeBackfillStatus } from "./strategistTapeBackfill.js";
+import type { ScannerStrategistContext } from "./scannerStrategistContext.js";
 
 export type StrategistDiagScratch = {
   tapeBackfillStatus?: TapeBackfillStatus;
@@ -32,12 +33,14 @@ export type StrategistRunContext = {
   userId: string | null;
   sessionIdentifier: string | null;
   diag: StrategistDiagScratch;
+  /** Optional handoff from Alpha Terminal scanner → strategist analyze. */
+  scannerContext?: ScannerStrategistContext | null;
 };
 
 const storage = new AsyncLocalStorage<StrategistRunContext>();
 
 export function runInStrategistRunContext<T>(
-  opts: { userId?: string | null; sessionIdentifier?: string | null },
+  opts: { userId?: string | null; sessionIdentifier?: string | null; scannerContext?: ScannerStrategistContext | null },
   fn: () => Promise<T>,
 ): Promise<T> {
   const ctx: StrategistRunContext = {
@@ -46,6 +49,7 @@ export function runInStrategistRunContext<T>(
     userId: opts.userId ?? null,
     sessionIdentifier: opts.sessionIdentifier ?? null,
     diag: {},
+    scannerContext: opts.scannerContext ?? null,
   };
   return storage.run(ctx, fn);
 }

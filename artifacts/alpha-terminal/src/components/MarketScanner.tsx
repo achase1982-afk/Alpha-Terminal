@@ -27,6 +27,8 @@ import {
   deserializeFilters,
 } from "@/lib/unusualFlowPresets";
 import { useToast } from "@/hooks/use-toast";
+import { setPendingScannerStrategistContext } from "@/lib/pendingScannerStrategistContext";
+import { buildScannerContextFromDetCandidate, buildScannerContextFromUnusualCandidate } from "@/lib/scannerStrategistHandoff";
 
 const API_BASE = "/api";
 
@@ -89,6 +91,8 @@ export interface DetCandidate {
     largestPrintDescription: string | null;
     putCallVolumeRatio: number;
   };
+  edgeType: import("@/lib/scannerStrategistHandoff").ScannerEdgeType;
+  catalystBonusApplied?: boolean;
 }
 
 // Part 5: legacy types for the on-demand "Unusual Flow Scan (LIVE)" button
@@ -105,6 +109,7 @@ interface DetScanResult {
   scanTimestamp: number;
   pulseBias: string;
   scanMode?: "DISCOVERY" | "MOMENTUM";
+  weightMode?: "DEFAULT" | "IDIOSYNCRATIC";
   // Part 2 — server-computed coverage state for the LIVE/AMBER/EOD badge.
   coverage?: {
     state: "LIVE" | "AMBER" | "EOD";
@@ -170,11 +175,12 @@ function checkEdgeAvailability(candidate: DetCandidate): { hasEdge: boolean; rea
 }
 
 const DeterministicCard = memo(function DeterministicCard({
-  candidate, rank, onSelect, onSendToStrategist,
+  candidate, rank, onSelect, onSendToStrategist, discoveryWeightMode,
 }: {
   candidate: DetCandidate; rank: number;
   onSelect: (sym: string) => void;
   onSendToStrategist?: (sym: string, candidate?: DetCandidate) => void;
+  discoveryWeightMode: "DEFAULT" | "IDIOSYNCRATIC" | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const lastScanTs = useRef(candidate.scanTimestamp);
@@ -362,7 +368,18 @@ const DeterministicCard = memo(function DeterministicCard({
               Bias: {candidate.pulseBias} · Composite: {typeof candidate.pulseComposite === 'number' ? candidate.pulseComposite.toFixed(1) : candidate.pulseComposite}
             </span>
             {onSendToStrategist && (
-              <button onClick={() => onSendToStrategist(candidate.symbol, candidate)}
+              <button
+                onClick={() => {
+                  const mode =
+                    candidate.scanMode === "DISCOVERY" ? discoveryWeightMode : null;
+                  setPendingScannerStrategistContext(
+                    buildScannerContextFromDetCandidate(candidate, {
+                      scannerMode: mode,
+                      catalystBonusApplied: candidate.catalystBonusApplied === true,
+                    }),
+                  );
+                  onSendToStrategist(candidate.symbol, candidate);
+                }}
                 className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded transition-all hover:bg-[#FFB800]/15 active:scale-95"
                 style={{ color: "#FFB800", border: "1px solid rgba(255,184,0,0.3)" }}>
                 <Send className="w-3 h-3" /> SEND TO STRATEGIST
@@ -423,6 +440,7 @@ interface UnusualFlowCandidate {
   exec?: UnusualFlowExecSummary;
   flowSource?: "live" | "baseline";
   aggressorAvailable?: boolean;
+  edgeType: import("@/lib/scannerStrategistHandoff").ScannerEdgeType;
 }
 interface UnusualFlowScanResult {
   scanTimestamp: number;
@@ -1630,6 +1648,13 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
                     rank={i + 1}
                     onSelect={onNavigateToSymbol ?? setSymbol}
                     onSendToStrategist={onSendToStrategist}
+                    discoveryWeightMode={
+                      detResult.scanMode === "DISCOVERY" || !detResult.scanMode
+                        ? (detResult.weightMode === "DEFAULT" || detResult.weightMode === "IDIOSYNCRATIC"
+                            ? detResult.weightMode
+                            : null)
+                        : null
+                    }
                   />
                 ))}
               </div>

@@ -1,6 +1,13 @@
 import { db, optionsFlowExecPerStrikeTable, optionsFlowPerStrikeTable, type OptionsFlowExecPerStrike, type OptionsFlowPerStrike } from "@workspace/db";
 import { and, inArray, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
+import { getNextEarningsDate } from "./earningsService.js";
+import {
+  type ScannerEdgeType,
+  classifyEdgeType,
+  calendarDaysToDate,
+  extractFrontBackAtmIvVolPoints,
+} from "./scannerEdgeType.js";
 
 export interface UnusualFlowFilters {
   // Renamed (canonical) keys. Old keys still accepted for back-compat below.
@@ -151,6 +158,7 @@ export interface UnusualFlowCandidate {
   flowSource: "live" | "baseline";
   // Aggressor side classification — Phase 2 (NBBO subscription required).
   aggressorAvailable: false;
+  edgeType: ScannerEdgeType;
 }
 
 export interface UnusualFlowScanResult {
@@ -290,13 +298,13 @@ function rowToStrike(r: RowWithExec): UnusualFlowStrike {
   };
 }
 
-function summarizeForSymbol(
+async function summarizeForSymbol(
   rows: RawRow[],
   asOfDate: string,
   symbol: string,
   f: NormalizedFilters,
   execMap: Map<string, UnusualFlowExecSummary>,
-): UnusualFlowCandidate | null {
+): Promise<UnusualFlowCandidate | null> {
   let totalCallVolume = 0;
   let totalPutVolume = 0;
   let unusualCallVolume = 0;
@@ -450,6 +458,45 @@ function summarizeForSymbol(
     ? `${top.optionType.toUpperCase()} ${top.strike} ${top.expiration} (${top.dte}d) — ${top.volume.toLocaleString()} vol · $${(top.notional / 1_000_000).toFixed(2)}M notional · ${top.volOiRatio.toFixed(1)}× VOI`
     : "";
 
+  const earn = await getNextEarningsDate(symbol).catch(() => null);
+  const todayYmd = new Date().toISOString().slice(0, 10);
+  const daysToCatalyst =
+    earn?.daysAway != null ? earn.daysAway : earn?.earningsDate ? calendarDaysToDate(todayYmd, earn.earningsDate) : null;
+
+  const strikeIvRows = unusual.map((u) => ({
+    strike: u.strike,
+    dte: u.dte,
+    impliedVolatility: u.impliedVolatility,
+  }));
+  const spotFromStrikes = unusual.length > 0
+    ? unusual.map((u) => u.strike).sort((a, b) => a - b)[Math.floor(unusual.length / 2)]
+    : 0;
+  const { front: frontIvPts, back: backIvPts } = extractFrontBackAtmIvVolPoints(strikeIvRows, spotFromStrikes || 100);
+
+  let blockCallUsd = 0;
+  let blockPutUsd = 0;
+  for (const u of unusual) {
+    const bn = u._exec.blockNotional;
+    if (u.optionType === "call") blockCallUsd += bn;
+    else blockPutUsd += bn;
+  }
+
+  const directionalLean: "BULLISH" | "BEARISH" | "MIXED" =
+    skew === "bullish" ? "BULLISH" : skew === "bearish" ? "BEARISH" : "MIXED";
+
+  const edgeType = classifyEdgeType({
+    iv30OverHv20: null,
+    daysToNextCatalyst: daysToCatalyst,
+    ivr: null,
+    frontAtmIvVolPoints: frontIvPts,
+    backAtmIvVolPoints: backIvPts,
+    unusualCallFlowAskBias: skew === "bullish",
+    unusualPutFlowAskBias: skew === "bearish",
+    blockNotionalCallUsd: blockCallUsd,
+    blockNotionalPutUsd: blockPutUsd,
+    directionalLean,
+  });
+
   return {
     symbol,
     asOfDate,
@@ -481,6 +528,7 @@ function summarizeForSymbol(
     },
     flowSource: totalEvents > 0 ? "live" : "baseline",
     aggressorAvailable: false,
+    edgeType,
   };
 }
 
@@ -591,7 +639,7 @@ export async function scanUnusualFlow(
     for (const [sym, bucket] of bySymbol) {
       const asOf = symDateMap.get(sym)!;
       if (!mostRecent || asOf > mostRecent) mostRecent = asOf;
-      const c = summarizeForSymbol(bucket, asOf, sym, f, execMap);
+      const c = await summarizeForSymbol(bucket, asOf, sym, f, execMap);
       if (c) result.candidates.push(c);
     }
 

@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { analyzeTickerV2, type StrategistV2Result, type AnalyzeProgressCallbacks } from "../lib/strategistV2.js";
 import { runInStrategistRunContext } from "../lib/strategistRunContext.js";
+import { parseScannerContext, type ScannerStrategistContext } from "../lib/scannerStrategistContext.js";
 import { getSettings, updateSetting, resetAllSettings, getDefaults, getSettingMeta } from "../lib/strategistSettings.js";
 import { getCachedRegime, buildFallbackRegime } from "../lib/regimePostProcessor.js";
 import {
@@ -17,6 +18,7 @@ import { computeIOScore } from "../lib/ioScoreEngine.js";
 import { getNextEarningsDate } from "../lib/earningsService.js";
 import { getEquityDailyExtras } from "../lib/equityDailyExtras.js";
 import { db, strategistTelemetryTable, scannerTelemetryTable, strategistHistoryTable } from "@workspace/db";
+import { getScannerStrategistCorrelation } from "../lib/scannerCorrelation.js";
 import { desc, eq, sql, lte, and } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 import {
@@ -220,8 +222,9 @@ const analyzeInFlightTickers = new Set<string>();
 async function runAnalyzeWithIvrGate(
   ticker: string,
   opts?: AnalyzeProgressCallbacks,
+  scannerContext?: ScannerStrategistContext | null,
 ): Promise<StrategistV2Result> {
-  return runInStrategistRunContext({}, () =>
+  return runInStrategistRunContext({ scannerContext: scannerContext ?? null }, () =>
     (async () => {
       const coverage = await ensureIvrCoverage(ticker);
       if (coverage.status !== "ready") {
@@ -405,7 +408,13 @@ router.post("/analyze/cancel", async (req, res): Promise<void> => {
 
 router.post("/analyze", async (req, res): Promise<void> => {
   try {
-    const { ticker, jobId, flowContext } = req.body as { ticker?: string; jobId?: string; flowContext?: string };
+    const { ticker, jobId, flowContext, scannerContext: rawScanner } = req.body as {
+      ticker?: string;
+      jobId?: string;
+      flowContext?: string;
+      scannerContext?: unknown;
+    };
+    const scannerContext = parseScannerContext(rawScanner);
     if (!ticker || typeof ticker !== "string") {
       res.status(400).json({ error: "ticker is required" });
       return;
@@ -449,7 +458,9 @@ router.post("/analyze", async (req, res): Promise<void> => {
       // Fire-and-forget background analysis
       void (async () => {
         try {
-          const result = await runAnalyzeWithIvrGate(upperTicker, {
+          const result = await runAnalyzeWithIvrGate(
+            upperTicker,
+            {
             jobId,
             cancelSignal: workerAbort.signal,
             flowContext: typeof flowContext === "string" && flowContext.length > 0 ? flowContext.slice(0, 8000) : undefined,
@@ -491,7 +502,9 @@ router.post("/analyze", async (req, res): Promise<void> => {
               const i = entry.transcript.findIndex(x => x.id === turnId);
               if (i >= 0) entry.transcript.splice(i, 1);
             },
-          });
+          },
+            scannerContext,
+          );
           if (entry.cancelled) {
             return;
           }
@@ -588,9 +601,13 @@ router.post("/analyze", async (req, res): Promise<void> => {
     }
     analyzeInFlightTickers.add(upperTicker);
     try {
-      const result = await runAnalyzeWithIvrGate(upperTicker, {
+      const result = await runAnalyzeWithIvrGate(
+        upperTicker,
+        {
         flowContext: typeof flowContext === "string" && flowContext.length > 0 ? flowContext.slice(0, 8000) : undefined,
-      });
+      },
+        scannerContext,
+      );
       res.json(result);
     } finally {
       analyzeInFlightTickers.delete(upperTicker);
@@ -1115,6 +1132,20 @@ router.get("/telemetry/scanner", async (req, res) => {
   } catch (err) {
     logger.error({ err }, "StrategistV2: scanner telemetry fetch failed");
     res.status(500).json({ error: "Failed to fetch scanner telemetry" });
+  }
+});
+
+router.get("/scanner-correlation", async (req, res) => {
+  try {
+    const lookbackDays = Math.min(Math.max(Number(req.query.lookbackDays) || 14, 1), 365);
+    const src = req.query.scannerSource as string | undefined;
+    const scannerSource =
+      src === "discovery" || src === "momentum" || src === "unusual_flow" ? src : undefined;
+    const summary = await getScannerStrategistCorrelation({ lookbackDays, scannerSource });
+    res.json({ lookbackDays, scannerSource: scannerSource ?? null, ...summary });
+  } catch (err) {
+    logger.error({ err }, "StrategistV2: scanner correlation failed");
+    res.status(500).json({ error: "Failed to compute scanner correlation" });
   }
 });
 

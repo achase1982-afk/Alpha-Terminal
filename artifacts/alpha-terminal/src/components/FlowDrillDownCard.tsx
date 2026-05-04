@@ -1,6 +1,8 @@
 import { useState, useMemo, memo } from "react";
 import { Send, Activity, Layers, BarChart2 } from "lucide-react";
 import { useFlowTimeSales, type FlowTrade } from "@/hooks/useFlowTimeSales";
+import { setPendingScannerStrategistContext } from "@/lib/pendingScannerStrategistContext";
+import { buildScannerContextFromUnusualCandidate } from "@/lib/scannerStrategistHandoff";
 
 // ── Drill-down card for a single Unusual Flow hit ────────────────────
 //
@@ -75,6 +77,7 @@ export interface FlowDrillDownCandidate {
   avgDte: number;
   exec?: UnusualFlowExecLite;
   source?: "live" | "baseline" | "mixed";
+  edgeType: import("@/lib/scannerStrategistHandoff").ScannerEdgeType;
 }
 
 // ── Formatting helpers ───────────────────────────────────────────────
@@ -179,6 +182,13 @@ export const FlowDrillDownCard = memo(function FlowDrillDownCard({
 
   const handleSendToStrategist = () => {
     if (!onSendToStrategist) return;
+    setPendingScannerStrategistContext(
+      buildScannerContextFromUnusualCandidate({
+        score: candidate.score,
+        edgeType: candidate.edgeType,
+        skew: candidate.skew,
+      }),
+    );
     const ctx = buildFlowContext(candidate, ts.counters, ts.trades.slice(0, 10));
     onSendToStrategist(candidate.symbol, ctx);
   };
