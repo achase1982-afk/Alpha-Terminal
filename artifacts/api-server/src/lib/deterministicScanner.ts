@@ -145,7 +145,7 @@ const SECTOR_MAP: Record<string, string> = {
   PYPL: "Financials", FI: "Financials", CB: "Financials", PGR: "Financials", MMC: "Financials",
 };
 
-function getSector(symbol: string): string {
+export function getSector(symbol: string): string {
   return SECTOR_MAP[symbol.toUpperCase()] ?? "Other";
 }
 

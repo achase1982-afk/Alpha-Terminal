@@ -1,4 +1,4 @@
-import { Router, type IRouter, type Response as ExpressResponse } from "express";
+import { Router, type IRouter, type Response as ExpressResponse, type Request } from "express";
 import { logFailure } from "../lib/telemetry.js";
 import { emitTelemetry, createTelemetryBatch } from "../lib/telemetryStore.js";
 import Anthropic from "@anthropic-ai/sdk";
@@ -32,6 +32,11 @@ import { getNextEarningsDate } from "../lib/earningsService.js";
 import { chainCache, getOrFetchChain, CHAIN_CACHE_TTL, getCachedEconEvents } from "./market.js";
 import { runDeterministicScan } from "../lib/deterministicScanner.js";
 import { runDiscoveryScan } from "../lib/deterministicScanner.v2.js";
+import {
+  startUnifiedScan,
+  getScanStatus,
+} from "../lib/unifiedScannerEngine.js";
+import { recordPulseSnapshotForScanner, getSnapshotForUnifiedScannerPulse } from "../lib/marketPulseCache.js";
 import { getEquityPCRatio, getIndexPCRatio } from "../lib/polygonPutCallRatio.js";
 import {
   runDeterministicStrategist,
@@ -46,7 +51,8 @@ import {
 import { resolveStrikes, type AccountSnapshot, type ChainData, type ResolvedTrade, type StrikeResolutionError } from "../lib/strikeResolver.js";
 import { createGeminiClient, getGeminiApiKey } from "../lib/geminiClient.js";
 import { geminiThinkingConfigForModel } from "../lib/geminiThinkingConfig.js";
-import { getXaiApiKey } from "../lib/xaiEnv.js";
+import { getAuth } from "@clerk/express";
+
 
 /** Express `Response` omits optional Node `flush` / socket cork helpers present when compression or a custom stack attaches them. */
 type ResponseWithNodeStream = ExpressResponse & {
@@ -205,6 +211,22 @@ function pulseTelemetryIndicatorValue(indicators: MarketIndicators, name: PulseT
 }
 
 const router: IRouter = Router();
+
+const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
+const DEV_USER_ID = "dev_user";
+
+function getAiUserId(req: Request): string | null {
+  if (DEV_BYPASS) return DEV_USER_ID;
+  try {
+    const auth = getAuth(req);
+    return auth?.userId ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** At most one unified scan enqueue per user per 10 seconds (matches deterministic-scan intent). */
+const unifiedScanLastByUser = new Map<string, number>();
 
 let lastPulseResult: { pulse: Record<string, unknown>; generatedAt: number; thinkingTokens: string[] } | null = null;
 let lastPulseError: string | null = null;
@@ -2170,6 +2192,7 @@ Write ONLY the narrative fields. Return this exact JSON structure:
     }
 
     lastPulseResult = { pulse: finalPulse, generatedAt: Date.now(), thinkingTokens: [...pulseThinkingBuffer] };
+    recordPulseSnapshotForScanner(finalPulse);
     pulseGenerationInFlight = false;
     const biasForLog =
       typeof finalPulse["bias"] === "string" ? finalPulse["bias"] : engineResult.bias;
@@ -3170,6 +3193,79 @@ router.post("/deterministic-scan", async (req, res) => {
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Deterministic scan error");
+    return res.status(500).json({ error: msg });
+  }
+});
+
+router.post("/scan", async (req, res) => {
+  const userId = getAiUserId(req);
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  const { universeId } = req.body as { universeId?: string };
+  if (typeof universeId !== "string" || !universeId.trim()) {
+    return res.status(400).json({ error: "universeId required" });
+  }
+
+  const now = Date.now();
+  const lastStart = unifiedScanLastByUser.get(userId) ?? 0;
+  if (now - lastStart < 10_000) {
+    return res.status(429).json({ error: "Rate limited — wait 10 seconds between unified scans" });
+  }
+
+  const traderTokenSet = getTokens("trader");
+  const traderToken = traderTokenSet?.accessToken;
+  if (!traderToken) {
+    return res.status(400).json({ error: "Schwab trader token required for unified scan" });
+  }
+
+  const { dataMap } = readFromWebSocketCache();
+  const shockResult = evaluateRegimeShock(extractMarketIndicators(dataMap));
+  if (shockResult.shockActive) {
+    return res.status(409).json({
+      error: "shock_active",
+      message: "Scanning paused — regime shock active",
+      shockState: shockResult.shockState,
+    });
+  }
+
+  const snap = getSnapshotForUnifiedScannerPulse();
+  const pulse = { composite: snap.composite, confidence: snap.confidence, bias: snap.bias };
+
+  try {
+    const out = await startUnifiedScan({
+      universeId: universeId.trim(),
+      traderToken,
+      userId,
+      pulse,
+    });
+    unifiedScanLastByUser.set(userId, now);
+    return res.status(202).json(out);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    req.log.error({ err }, "unified scan start failed");
+    return res.status(500).json({ error: msg });
+  }
+});
+
+router.get("/scan/:scanId", async (req, res) => {
+  const userId = getAiUserId(req);
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  const scanId = req.params["scanId"];
+  if (!scanId) {
+    return res.status(400).json({ error: "scanId required" });
+  }
+  try {
+    const result = await getScanStatus(scanId, userId);
+    if (!result) {
+      return res.status(404).json({ error: "Not found" });
+    }
+    return res.json(result);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    req.log.error({ err }, "unified scan status failed");
     return res.status(500).json({ error: msg });
   }
 });

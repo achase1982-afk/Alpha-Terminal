@@ -9,7 +9,7 @@ import type { InferInsertModel } from "drizzle-orm";
 import { db, equityDailyTable, scannerJobsTable } from "@workspace/db";
 import { getNextEarningsDate } from "./earningsService.js";
 import { getUpcomingEvents } from "./calendarEventChecker.js";
-import { runDeterministicScan, type ScanCandidate, type ScanResult } from "./deterministicScanner.js";
+import { runDeterministicScan, getSector, type ScanCandidate, type ScanResult } from "./deterministicScanner.js";
 import { runDiscoveryScan } from "./deterministicScanner.v2.js";
 import { scanUnusualFlow, type UnusualFlowCandidate, type UnusualFlowScanResult } from "./unusualFlowScanner.js";
 import { getCachedRegime } from "./regimePostProcessor.js";
@@ -34,10 +34,19 @@ const FLOW_MAX_SCORE = 40 + 22 + 10 + 20 + 8 + 12;
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
 const SCHWAB_TRADER = "https://api.schwabapi.com/trader/v1";
 
+/** Same shape as deterministic-scan / discovery momentum `pulseCtx`. */
+export interface UnifiedScannerPulseContext {
+  composite: number;
+  confidence: number;
+  bias: string;
+}
+
 export interface UnifiedScanRequest {
   universeId: string;
   traderToken: string;
   userId: string;
+  /** Snapshot at enqueue time — persisted on the job for reproducible runs. */
+  pulse: UnifiedScannerPulseContext;
 }
 
 export interface EngineRunStatus {
@@ -51,7 +60,7 @@ export interface UnifiedScanCandidate {
   ticker: string;
   spot: number;
   changePct: number;
-  sector: string | null;
+  sector: string;
   marketCapTier: "mega" | "large" | "mid" | "small" | "micro" | "etf";
   surfacedBy: Array<"discovery" | "momentum" | "unusual_flow">;
   compositeScore: number;
@@ -186,6 +195,7 @@ export async function startUnifiedScan(request: UnifiedScanRequest): Promise<{ s
       userId: request.userId,
       universeId: request.universeId,
       traderTokenEncrypted: encrypt(request.traderToken),
+      pulseSnapshot: request.pulse,
       status: "queued",
       startedAt: now,
       completedAt: null,
@@ -278,7 +288,14 @@ export async function runScanInBackground(scanId: string): Promise<void> {
       return;
     }
 
-    const pulseCtx = { composite: 0, confidence: 0, bias: "NO_EDGE" };
+    const snap = job.pulseSnapshot as UnifiedScannerPulseContext | null | undefined;
+    const pulseCtx: UnifiedScannerPulseContext = snap && typeof snap === "object"
+      ? {
+          composite: Number(snap.composite) || 0,
+          confidence: Number(snap.confidence) || 0,
+          bias: typeof snap.bias === "string" ? snap.bias : "NO_EDGE",
+        }
+      : { composite: 0, confidence: 0, bias: "NO_EDGE" };
     const engineLog = { info: log.info.bind(log), warn: log.warn.bind(log), error: log.error.bind(log) };
 
     const [discoveryRes, momentumRes, unusualFlowRes] = await Promise.allSettled([
@@ -763,7 +780,7 @@ async function enrichCandidate(
   const ivrSource: UnifiedScanCandidate["ivrSource"] = ivrMissing ? "missing" : mapIvrSource(ivrSourceRaw);
 
   const mc = eq?.marketCap ?? null;
-  const sector: string | null = null;
+  const sector = getSector(ticker);
 
   const mom = row.momentumComponents;
   const trend = mom?.trendAlignment ?? 0;
