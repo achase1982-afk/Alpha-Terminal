@@ -25,6 +25,11 @@ const plCalcLogState = new WeakMap<
 
 const WS_SERVER_FILE = fileURLToPath(import.meta.url);
 
+/** JSON.stringify replacer so WS payloads can include bigint (e.g. IBKR imbalance share counts). */
+function jsonStringifyForWire(value: unknown): string {
+  return JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? v.toString() : v));
+}
+
 /** File:line of the `readPlCalcPriceInputsFromPosition` stack frame (Schwab price field reads). */
 function plCalcPriceInputReadSiteLine(): string {
   const lines = (new Error().stack ?? "").split("\n");
@@ -435,7 +440,7 @@ export function broadcastToClients(event: string, data: unknown) {
   }
   if (clients.size === 0) return;
 
-  const msg = JSON.stringify({ event, data });
+  const msg = jsonStringifyForWire({ event, data });
   for (const ws of clients) {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(msg);
