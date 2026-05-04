@@ -255,25 +255,25 @@ export function useUnifiedScan(): UseUnifiedScanState {
             body: JSON.stringify({ universeId }),
           });
           if (res.status === 401) {
-            setPhase("idle");
+            setPhase("error");
             setErrorMessage("Session expired. Please sign in again.");
             return;
           }
           if (res.status === 429) {
             const j = await res.json().catch(() => ({}));
-            setPhase("idle");
+            setPhase("error");
             setErrorMessage((j as { error?: string }).error ?? "Too many scans. Wait 10 seconds.");
             return;
           }
           if (res.status === 409) {
             const j = (await res.json().catch(() => ({}))) as { message?: string };
-            setPhase("idle");
+            setPhase("error");
             setErrorMessage(j.message ?? "Scanning paused — regime shock active");
             return;
           }
           if (!res.ok) {
             if (res.status === 500) {
-              setPhase("idle");
+              setPhase("error");
               setErrorMessage("Server error. Please try again.");
               return;
             }
@@ -288,7 +288,7 @@ export function useUnifiedScan(): UseUnifiedScanState {
         } catch {
           postRetries++;
           if (postRetries >= 3) {
-            setPhase("idle");
+            setPhase("error");
             setErrorMessage("Couldn't start scan. Check connection and try again.");
             return;
           }
