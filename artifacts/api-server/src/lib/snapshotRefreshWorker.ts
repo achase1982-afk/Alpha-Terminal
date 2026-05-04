@@ -235,7 +235,7 @@ async function refreshTicker(ticker: string, regimeShockActive: boolean): Promis
   const upper = ticker.toUpperCase();
   const now = new Date();
   const attemptAt = now;
-
+  const apiKey = process.env["POLYGON_API_KEY"] ?? "";
 
   const [chain, earn, flowHl, eqRow] = await Promise.all([
     apiKey ? fetchPolygonChain(upper, apiKey, { maxDte: 45, maxPages: 8, log }) : Promise.resolve(null),
