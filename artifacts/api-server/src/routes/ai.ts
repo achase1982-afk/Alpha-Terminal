@@ -3233,13 +3233,13 @@ router.post("/scan", async (req, res) => {
   const pulse = { composite: snap.composite, confidence: snap.confidence, bias: snap.bias };
 
   try {
+    unifiedScanLastByUser.set(userId, now);
     const out = await startUnifiedScan({
       universeId: universeId.trim(),
       traderToken,
       userId,
       pulse,
     });
-    unifiedScanLastByUser.set(userId, now);
     return res.status(202).json(out);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
