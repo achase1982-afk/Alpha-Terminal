@@ -2938,7 +2938,7 @@ function buildDataPackage(
       sessionTape: polygonHighlights.sessionTape,
       sessionTapeDate: polygonHighlights.sessionTapeDate,
       sourceNote:
-        "Per-strike end-of-day snapshot (volume, OI, greeks). sessionTape.tapeKind `live` adds classified prints and aggressor mix; topPrints may include syntheticLegGroupId / multiLegConfidence / extras when the flow pipeline detected time-correlated legs or repeat same-side clusters. `eod_fallback` is volume-ranked EOD synthesis when live tape rows are absent (sweep/block zero; do not infer aggressor).",
+        "Per-strike end-of-day snapshot (volume, OI, greeks). sessionTape.tapeKind `live` adds classified prints, aggressor mix, topPrints.openClose and sessionTape.openCloseByStrike when classifiable from Polygon trade conditions; topPrints may include syntheticLegGroupId / multiLegConfidence / extras when the flow pipeline detected time-correlated legs or repeat same-side clusters. `eod_fallback` is volume-ranked EOD synthesis when live tape rows are absent (sweep/block zero; do not infer aggressor or open/close).",
     } : { available: false, note: "No per-strike flow snapshot on file for this ticker — fall back to optionsChainSummary.unusualActivity." },
     ioScore: {
       final: ioScore.final,

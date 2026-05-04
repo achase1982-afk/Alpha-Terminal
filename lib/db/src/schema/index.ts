@@ -289,6 +289,8 @@ export const optionsFlowRawTradesTable = pgTable("options_flow_raw_trades", {
   notionalThresholdUsd: doublePrecision("notional_threshold_usd"),
   /** ask | bid | mid | null + confidence (Item 15). */
   aggressorConfidence: text("aggressor_confidence"),
+  /** open | close | unknown — from Massive/Polygon unified sale_condition ids when mappable; see optionsOpenCloseClassifier. */
+  openClose: text("open_close"),
   /** Multi-leg Layer 1 synthetic group (Item 10); filled by post-batch job. */
   syntheticLegGroupId: text("synthetic_leg_group_id"),
   multiLegConfidence: text("multi_leg_confidence"),

@@ -10,6 +10,7 @@ import {
   venueClassFromExchangeId,
 } from "./flowTradeEnrichment.js";
 import { classifyForFlowPersistence, shouldPersistBackfillRow } from "./optionsTradeClassifier.js";
+import { classifyOpenCloseFromOpraConditions } from "./optionsOpenCloseClassifier.js";
 import { getContract20dBaseline } from "./optionsBaselines.js";
 import { runRollupOnceForSymbol } from "./optionsFlowRollup.js";
 import { FlowLegWindow } from "./flowMultilegExtras.js";
@@ -607,6 +608,7 @@ async function runWebsocketCaptureInternal(
       };
       const ml = legWindow.annotate(ticker, sample);
       legWindow.record(ticker, sample);
+      const openClose = classifyOpenCloseFromOpraConditions(trade.conditions);
       buffer.push({
         underlyingSymbol: ticker,
         date: sessionDate,
@@ -619,6 +621,7 @@ async function runWebsocketCaptureInternal(
         size: trade.size,
         notional: cl.notional,
         side: cl.side,
+        openClose,
         isBlock: cl.isBlockForDb,
         isSweep: cl.isSweep,
         sourceTradeId: dedupId,

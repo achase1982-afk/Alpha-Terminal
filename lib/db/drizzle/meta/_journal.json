@@ -50,6 +50,13 @@
       "when": 1778000000000,
       "tag": "0007_strategist_telemetry_full_diagnostic",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1778100000000,
+      "tag": "0008_options_flow_raw_trades_open_close",
+      "breakpoints": true
     }
   ]
 }

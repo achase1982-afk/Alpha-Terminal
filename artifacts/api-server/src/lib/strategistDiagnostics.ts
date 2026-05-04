@@ -100,6 +100,7 @@ export function extractSessionTapeRollupsFromDataPackage(pkg: Record<string, unk
   return {
     sessionTapeTapeKind: sessionTape?.tapeKind ?? null,
     aggressorSessionTotals: sessionTape?.aggressorSessionTotals ?? null,
+    openCloseByStrike: sessionTape?.openCloseByStrike ?? null,
     sweepBlockLargePerSession,
   };
 }
@@ -191,6 +192,7 @@ export function buildStrategistFullDiagnosticJson(args: BuildFullDiagnosticArgs)
     ...dqMerged,
     sessionTapeTapeKind: sessionRollups.sessionTapeTapeKind,
     aggressorSessionTotals: sessionRollups.aggressorSessionTotals,
+    openCloseByStrike: sessionRollups.openCloseByStrike,
     sweepBlockLargePerSession: sessionRollups.sweepBlockLargePerSession,
   };
   const tapeDiag = buildTapeBackfillDiagnostic(args.tapeBackfillStatus);

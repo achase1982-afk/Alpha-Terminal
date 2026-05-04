@@ -47,9 +47,21 @@ export interface FlowTopPrintRow {
   isBlock: boolean;
   isSweep: boolean;
   side: "ask" | "bid" | "mid" | null;
+  /** open | close | unknown — from Polygon sale_condition ids when mappable; often unknown. */
+  openClose: "open" | "close" | "unknown" | null;
   syntheticLegGroupId?: string | null;
   multiLegConfidence?: string | null;
   extras?: Record<string, unknown> | null;
+}
+
+/** Per-strike open/close mix from session prints (live tape only; null fields when absent). */
+export interface FlowStrikeOpenCloseMix {
+  strike: number;
+  expiration: string;
+  optionType: "call" | "put";
+  openCount: number;
+  closeCount: number;
+  unknownCount: number;
 }
 
 /** Per-strike aggressor mix from session prints (ask=buyer-lean, bid=seller-lean). */
@@ -86,6 +98,8 @@ export interface PolygonFlowTape {
   execPerStrike: FlowExecStrikeRow[];
   topPrints: FlowTopPrintRow[];
   aggressorByStrike: FlowStrikeAggressorMix[];
+  /** Per-strike open vs close vs unknown print counts (live tape). */
+  openCloseByStrike: FlowStrikeOpenCloseMix[];
   aggressorSessionTotals: FlowSessionAggressorTotals;
 }
 
@@ -243,6 +257,11 @@ function tsToIso(t: unknown): string | null {
   return null;
 }
 
+function normalizeOpenCloseTag(v: string | null): "open" | "close" | "unknown" | null {
+  if (v === "open" || v === "close" || v === "unknown") return v;
+  return null;
+}
+
 /**
  * Live session tape: exec rollups, top prints, aggressor mix (same `date` as EOD per-strike row).
  */
@@ -269,6 +288,7 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
         isBlock: optionsFlowRawTradesTable.isBlock,
         isSweep: optionsFlowRawTradesTable.isSweep,
         side: optionsFlowRawTradesTable.side,
+        openClose: optionsFlowRawTradesTable.openClose,
         syntheticLegGroupId: optionsFlowRawTradesTable.syntheticLegGroupId,
         multiLegConfidence: optionsFlowRawTradesTable.multiLegConfidence,
         extras: optionsFlowRawTradesTable.extras,
@@ -287,6 +307,7 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
         expiration: optionsFlowRawTradesTable.expiration,
         optionType: optionsFlowRawTradesTable.optionType,
         side: optionsFlowRawTradesTable.side,
+        openClose: optionsFlowRawTradesTable.openClose,
       })
       .from(optionsFlowRawTradesTable)
       .where(and(
@@ -301,6 +322,7 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
     const strikeKey = (strike: number, exp: string, ot: string) => `${strike}|${exp}|${ot}`;
 
     const aggMap = new Map<string, { ask: number; bid: number; mid: number; unknown: number; total: number }>();
+    const openCloseAggMap = new Map<string, { open: number; close: number; unknown: number }>();
     for (const p of allPrints) {
       const exp = expToIso(p.expiration);
       const ot = (p.optionType === "call" ? "call" : "put") as "call" | "put";
@@ -316,6 +338,16 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
       else if (s === "bid") g.bid++;
       else if (s === "mid") g.mid++;
       else g.unknown++;
+
+      let og = openCloseAggMap.get(k);
+      if (!og) {
+        og = { open: 0, close: 0, unknown: 0 };
+        openCloseAggMap.set(k, og);
+      }
+      const oc = normalizeOpenCloseTag(p.openClose);
+      if (oc === "open") og.open++;
+      else if (oc === "close") og.close++;
+      else og.unknown++;
     }
 
     const aggressorByStrike: FlowStrikeAggressorMix[] = [];
@@ -336,6 +368,23 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
       });
     }
     aggressorByStrike.sort((a, b) => b.printCount - a.printCount);
+
+    const openCloseByStrike: FlowStrikeOpenCloseMix[] = [];
+    for (const [k, og] of openCloseAggMap) {
+      const [strikeStr, exp, ot] = k.split("|");
+      const strike = Number(strikeStr);
+      const t = og.open + og.close + og.unknown;
+      if (t === 0) continue;
+      openCloseByStrike.push({
+        strike,
+        expiration: exp,
+        optionType: ot === "call" ? "call" : "put",
+        openCount: og.open,
+        closeCount: og.close,
+        unknownCount: og.unknown,
+      });
+    }
+    openCloseByStrike.sort((a, b) => b.openCount + b.closeCount + b.unknownCount - (a.openCount + a.closeCount + a.unknownCount));
 
     let askCount = 0;
     let bidCount = 0;
@@ -381,6 +430,7 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
       isBlock: Boolean(r.isBlock),
       isSweep: Boolean(r.isSweep),
       side: r.side === "ask" || r.side === "bid" || r.side === "mid" ? r.side : null,
+      openClose: normalizeOpenCloseTag(r.openClose),
       syntheticLegGroupId: r.syntheticLegGroupId ?? null,
       multiLegConfidence: r.multiLegConfidence ?? null,
       extras: r.extras && typeof r.extras === "object" ? (r.extras as Record<string, unknown>) : null,
@@ -392,6 +442,7 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
       execPerStrike,
       topPrints: topMapped,
       aggressorByStrike,
+      openCloseByStrike,
       aggressorSessionTotals: {
         askCount,
         bidCount,
@@ -490,6 +541,7 @@ function buildEodFallbackSessionTape(
       isBlock: false,
       isSweep: false,
       side: null,
+      openClose: null,
     };
   });
 
@@ -515,6 +567,7 @@ function buildEodFallbackSessionTape(
     execPerStrike,
     topPrints,
     aggressorByStrike,
+    openCloseByStrike: [],
     aggressorSessionTotals: {
       askCount: 0,
       bidCount: 0,

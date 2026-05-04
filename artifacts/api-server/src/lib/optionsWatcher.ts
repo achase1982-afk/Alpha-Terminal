@@ -1,6 +1,7 @@
 import { logger } from "./logger.js";
 import { enqueueClassifiedTrade, parseOcc } from "./optionsFlowPersistence.js";
 import { classifyForFlowPersistence, shouldPersistLiveWatcherRow } from "./optionsTradeClassifier.js";
+import { classifyOpenCloseFromOpraConditions } from "./optionsOpenCloseClassifier.js";
 import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 import { fetchPolygonChain, type PolygonParsedContract } from "./polygonChain.js";
 import {
@@ -442,6 +443,7 @@ function handleTrade(t: PolygonOptionTrade): void {
       marketCapTier: mc?.tier ?? null,
       notionalThresholdUsd: mc?.largeNotionalThresholdUsd ?? null,
       aggressorConfidence: classified.aggressorConfidence,
+      openClose: classifyOpenCloseFromOpraConditions(t.conditions),
       syntheticLegGroupId,
       multiLegConfidence,
       extras,

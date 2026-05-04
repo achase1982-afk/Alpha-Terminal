@@ -11,6 +11,7 @@ import {
   venueClassFromExchangeId,
 } from "./flowTradeEnrichment.js";
 import { classifyForFlowPersistence, shouldPersistBackfillRow } from "./optionsTradeClassifier.js";
+import { classifyOpenCloseFromOpraConditions } from "./optionsOpenCloseClassifier.js";
 import { flushFlowPersistenceNow } from "./optionsFlowPersistence.js";
 import { runRollupOnceForSymbol } from "./optionsFlowRollup.js";
 import { FlowLegWindow } from "./flowMultilegExtras.js";
@@ -831,6 +832,7 @@ export async function runStrategistTapeBackfill(args: {
       };
       const ml = occLegWindow.annotate(ticker, sample);
       occLegWindow.record(ticker, sample);
+      const openClose = classifyOpenCloseFromOpraConditions(t.conditions);
       rowsToInsert.push({
         underlyingSymbol: ticker,
         date: sessionDate,
@@ -843,6 +845,7 @@ export async function runStrategistTapeBackfill(args: {
         size: t.size,
         notional: cl.notional,
         side: cl.side,
+        openClose,
         isBlock: cl.isBlockForDb,
         isSweep: cl.isSweep,
         sourceTradeId: t.dedupId,

@@ -42,6 +42,8 @@ interface PendingTrade {
   marketCapTier?: string | null;
   notionalThresholdUsd?: number | null;
   aggressorConfidence?: string | null;
+  /** open | close | unknown — from Polygon trade conditions when mappable */
+  openClose?: string | null;
   syntheticLegGroupId?: string | null;
   multiLegConfidence?: string | null;
   extras?: Record<string, unknown> | null;
@@ -138,6 +140,7 @@ export function enqueueClassifiedTrade(args: {
   marketCapTier?: string | null;
   notionalThresholdUsd?: number | null;
   aggressorConfidence?: string | null;
+  openClose?: string | null;
   syntheticLegGroupId?: string | null;
   multiLegConfidence?: string | null;
   extras?: Record<string, unknown> | null;
@@ -171,6 +174,7 @@ export function enqueueClassifiedTrade(args: {
     marketCapTier: args.marketCapTier ?? null,
     notionalThresholdUsd: args.notionalThresholdUsd ?? null,
     aggressorConfidence: args.aggressorConfidence ?? null,
+    openClose: args.openClose ?? null,
     syntheticLegGroupId: args.syntheticLegGroupId ?? null,
     multiLegConfidence: args.multiLegConfidence ?? null,
     extras: args.extras ?? null,
