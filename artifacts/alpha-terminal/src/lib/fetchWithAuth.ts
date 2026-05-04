@@ -4,22 +4,42 @@ export function setClerkTokenGetter(fn: () => Promise<string | null>) {
   clerkGetToken = fn;
 }
 
+type FetchWithAuthInit = RequestInit & {
+  /** If set, do not wait longer than this for Clerk session token (avoids hung UI). */
+  clerkTokenTimeoutMs?: number;
+};
+
 export async function fetchWithAuth(
   input: RequestInfo | URL,
-  init?: RequestInit,
+  init?: FetchWithAuthInit,
 ): Promise<Response> {
-  const headers = new Headers(init?.headers);
+  const { clerkTokenTimeoutMs, ...rest } = init ?? {};
+  const headers = new Headers(rest.headers);
 
   if (clerkGetToken) {
     try {
-      const token = await clerkGetToken();
+      let token: string | null;
+      if (clerkTokenTimeoutMs != null && clerkTokenTimeoutMs > 0) {
+        token = await Promise.race([
+          clerkGetToken(),
+          new Promise<null>((resolve) => {
+            if (typeof window !== "undefined") {
+              window.setTimeout(() => resolve(null), clerkTokenTimeoutMs);
+            } else {
+              resolve(null);
+            }
+          }),
+        ]);
+      } else {
+        token = await clerkGetToken();
+      }
       if (token) {
         headers.set("Authorization", `Bearer ${token}`);
       }
     } catch {}
   }
 
-  return fetch(input, { ...init, headers, redirect: "error" }).catch((err) => {
+  return fetch(input, { ...rest, headers, redirect: "error" }).catch((err) => {
     if (err instanceof TypeError && /redirect|pattern|opaque/i.test(err.message)) {
       return new Response(JSON.stringify({ error: "Session expired" }), {
         status: 401,

@@ -418,6 +418,7 @@ export function StrategistDeskCard({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const objectUrlRef = useRef<string | null>(null);
   const audioPlayGenRef = useRef(0);
+  const ttsFetchAbortRef = useRef<AbortController | null>(null);
 
   const revokeObjectUrl = useCallback(() => {
     if (objectUrlRef.current) {
@@ -428,6 +429,8 @@ export function StrategistDeskCard({
 
   const stopAudio = useCallback(() => {
     audioPlayGenRef.current += 1;
+    ttsFetchAbortRef.current?.abort();
+    ttsFetchAbortRef.current = null;
     const el = audioRef.current;
     if (el) {
       el.pause();
@@ -446,6 +449,16 @@ export function StrategistDeskCard({
   const startPlay = useCallback(async () => {
     if (!deskAudioText.trim()) return;
     const playGen = ++audioPlayGenRef.current;
+    ttsFetchAbortRef.current?.abort();
+    const ac = new AbortController();
+    ttsFetchAbortRef.current = ac;
+    const TTS_FETCH_MS = 180_000;
+    const timeoutId =
+      typeof window !== "undefined"
+        ? window.setTimeout(() => {
+            ac.abort();
+          }, TTS_FETCH_MS)
+        : 0;
     setAudioError(null);
     setAudioReady(false);
     setAudioLoading(true);
@@ -454,6 +467,8 @@ export function StrategistDeskCard({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: deskAudioText, deskResultId }),
+        signal: ac.signal,
+        clerkTokenTimeoutMs: 8000,
       });
       if (playGen !== audioPlayGenRef.current) return;
       if (!res.ok) {
@@ -488,15 +503,24 @@ export function StrategistDeskCard({
           if (playGen !== audioPlayGenRef.current) return;
         } catch {
           if (playGen !== audioPlayGenRef.current) return;
-          setAudioError("Audio unavailable");
+          setAudioError("Audio unavailable — playback failed");
           setAudioReady(false);
         }
       }
-    } catch {
+    } catch (e) {
       if (playGen !== audioPlayGenRef.current) return;
-      setAudioError("Audio unavailable");
+      const aborted = e instanceof DOMException && e.name === "AbortError";
+      setAudioError(
+        aborted
+          ? "Audio unavailable — request timed out or was cancelled"
+          : "Audio unavailable — network error",
+      );
       setAudioBarOpen(true);
     } finally {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      if (ttsFetchAbortRef.current === ac) {
+        ttsFetchAbortRef.current = null;
+      }
       if (playGen === audioPlayGenRef.current) {
         setAudioLoading(false);
       }
