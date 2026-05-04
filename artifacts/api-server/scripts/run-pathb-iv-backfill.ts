@@ -4,12 +4,12 @@
  * Requires DATABASE_URL and the Polygon API key in the environment.
  */
 import { backfillHistoricalIV } from "../src/lib/historicalIVBackfill";
-import { LIQUID_CORE_SYMBOLS } from "../src/data/liquidCore130";
+import { LIQUID_CORE_SYMBOL_STRINGS } from "../src/data/liquidCore130";
 
 const DAYS = 252;
 
 async function main() {
-  const symbols = [...LIQUID_CORE_SYMBOLS];
+  const symbols = [...LIQUID_CORE_SYMBOL_STRINGS];
   console.log(JSON.stringify({
     event: "pathb_backfill_start",
     symbols: symbols.length,

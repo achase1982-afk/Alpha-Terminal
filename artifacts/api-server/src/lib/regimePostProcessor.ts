@@ -1,7 +1,7 @@
 import { db, equityDailyTable } from "@workspace/db";
 import { desc, eq, inArray, sql, gte } from "drizzle-orm";
 import { logger } from "./logger.js";
-import { LIQUID_CORE_SYMBOLS } from "../data/liquidCore130.js";
+import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
 import type { EngineOutput, ClusterName } from "./marketPulseEngine.js";
 import { getSettings } from "./strategistSettings.js";
 
@@ -78,7 +78,7 @@ export async function computeCorrelationRegime(settings?: { correlationLowCeilin
     cutoff.setDate(cutoff.getDate() - 30);
     const cutoffStr = cutoff.toISOString().split("T")[0];
 
-    const sample = LIQUID_CORE_SYMBOLS.slice(0, 30);
+    const sample = LIQUID_CORE_SYMBOL_STRINGS.slice(0, 30);
 
     const rows = await db
       .select({

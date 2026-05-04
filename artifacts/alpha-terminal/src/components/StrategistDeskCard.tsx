@@ -714,7 +714,7 @@ export function StrategistDeskCard({
         prefetchedAudioUrlRef.current = URL.createObjectURL(blob);
         prefetchedAudioKeyRef.current = fetchKey;
       } catch {
-        /* ignore */
+        /* ignore prefetch errors; Play will retry */
       } finally {
         if (timeoutId) window.clearTimeout(timeoutId);
       }

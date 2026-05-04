@@ -12,7 +12,7 @@
  *   PFLAT_JOB_ID=...        (optional stable id; default pflat-{start}_{end}-{ts})
  */
 import { appendFileSync } from "node:fs";
-import { LIQUID_CORE_SYMBOLS } from "../src/data/liquidCore130";
+import { LIQUID_CORE_SYMBOL_STRINGS } from "../src/data/liquidCore130";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
@@ -35,7 +35,7 @@ async function main() {
   const force = process.env.PFLAT_FORCE !== "0";
   const logPath = process.env.PFLAT_LOG ?? "/tmp/pflat-backfill-range.log";
 
-  const tickers = [...LIQUID_CORE_SYMBOLS];
+  const tickers = [...LIQUID_CORE_SYMBOL_STRINGS];
   const startDate = new Date(`${start}T12:00:00Z`);
   const endDate = new Date(`${end}T12:00:00Z`);
   if (startDate > endDate) throw new Error("PFLAT_START must be <= PFLAT_END");
