@@ -304,15 +304,15 @@ export function useUnifiedScan(): UseUnifiedScanState {
     if (!id) return;
     setErrorMessage(null);
     setPhase("scanning");
-    void runPollingLoop(id);
-  }, [scanId, runPollingLoop]);
+  }, [scanId]);
 
   useEffect(() => {
     return () => {
       pollAbortRef.current?.abort();
       cancelledRef.current = true;
+      clearEtaTicker();
     };
-  }, []);
+  }, [clearEtaTicker]);
 
   return {
     phase,

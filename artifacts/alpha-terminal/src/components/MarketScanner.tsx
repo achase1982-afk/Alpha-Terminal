@@ -315,6 +315,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
   const shockActive = pulseData?.shockState === "ACTIVE";
   const universeData = useScannerUniverses();
   const { toast } = useToast();
+  const unified = useUnifiedScan();
 
   const [universe, setUniverse] = useState("preset:liquidCore130");
   const [resolvedSymbols, setResolvedSymbols] = useState<string[]>([]);
