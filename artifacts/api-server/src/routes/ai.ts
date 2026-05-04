@@ -30,13 +30,7 @@ import { sendPushToAll } from "../lib/pushService.js";
 import { checkEventConflicts, getUpcomingEvents, type EventCheckResult } from "../lib/calendarEventChecker.js";
 import { getNextEarningsDate } from "../lib/earningsService.js";
 import { chainCache, getOrFetchChain, CHAIN_CACHE_TTL, getCachedEconEvents } from "./market.js";
-import { runDeterministicScan } from "../lib/deterministicScanner.js";
-import { runDiscoveryScan } from "../lib/deterministicScanner.v2.js";
-import {
-  startUnifiedScan,
-  getScanStatus,
-} from "../lib/unifiedScannerEngine.js";
-import { recordPulseSnapshotForScanner, getSnapshotForUnifiedScannerPulse } from "../lib/marketPulseCache.js";
+import { recordPulseSnapshotForScanner } from "../lib/marketPulseCache.js";
 import { getEquityPCRatio, getIndexPCRatio } from "../lib/polygonPutCallRatio.js";
 import {
   runDeterministicStrategist,
@@ -51,7 +45,6 @@ import {
 import { resolveStrikes, type AccountSnapshot, type ChainData, type ResolvedTrade, type StrikeResolutionError } from "../lib/strikeResolver.js";
 import { createGeminiClient, getGeminiApiKey } from "../lib/geminiClient.js";
 import { geminiThinkingConfigForModel } from "../lib/geminiThinkingConfig.js";
-import { getAuth } from "@clerk/express";
 
 
 /** Express `Response` omits optional Node `flush` / socket cork helpers present when compression or a custom stack attaches them. */
@@ -210,25 +203,7 @@ function pulseTelemetryIndicatorValue(indicators: MarketIndicators, name: PulseT
   }
 }
 
-const router: IRouter = Router();
-
-const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
-const DEV_USER_ID = "dev_user";
-
-function getAiUserId(req: Request): string | null {
-  if (DEV_BYPASS) return DEV_USER_ID;
-  try {
-    const auth = getAuth(req);
-    return auth?.userId ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/** At most one unified scan enqueue per user per 10 seconds (matches deterministic-scan intent). */
-const unifiedScanLastByUser = new Map<string, number>();
-
-let lastPulseResult: { pulse: Record<string, unknown>; generatedAt: number; thinkingTokens: string[] } | null = null;
+: { pulse: Record<string, unknown>; generatedAt: number; thinkingTokens: string[] } | null = null;
 let lastPulseError: string | null = null;
 let pulseGenerationInFlight = false;
 let pulseThinkingBuffer: string[] = [];
@@ -3103,172 +3078,7 @@ interface ScannerAiResult {
   marketSummary: string;
 }
 
-// ── Unusual Options Activity scanner ─────────────────────────────────
-// Pure flow-based scan: queries Polygon per-strike data already in our
-// DB, applies user-tunable thresholds (minStrikes, minVoiRatio,
-// minVolume, skewFilter), and returns ranked candidates with scorecard
-// data. No price/momentum/IVR signal — strictly options activity.
-router.post("/unusual-flow-scan", async (req, res) => {
-  try {
-    const { scanUnusualFlow } = await import("../lib/unusualFlowScanner.js");
-    const { symbols, filters } = req.body as {
-      symbols?: string[];
-      filters?: {
-        minStrikes?: number;
-        minVoiRatio?: number;
-        minVolume?: number;
-        skew?: "any" | "bullish" | "bearish" | "non_balanced";
-        excludeIndexes?: boolean;
-        minDte?: number;
-        minNotional?: number;
-        includeSweeps?: boolean;
-        includeBlocks?: boolean;
-        includeRegular?: boolean;
-        minSweepCount?: number;
-        minBlockCount?: number;
-        source?: "live" | "baseline" | "any";
-      };
-    };
-    if (!Array.isArray(symbols) || symbols.length === 0) {
-      return res.status(400).json({ error: "symbols required" });
-    }
-    if (symbols.length > 500) {
-      return res.status(400).json({ error: "too many symbols (max 500)" });
-    }
-    const result = await scanUnusualFlow(symbols, filters ?? {});
-    return res.json(result);
-  } catch (err: any) {
-    req.log.error({ err }, "unusual-flow-scan failed");
-    return res.status(500).json({ error: err?.message ?? "scan failed" });
-  }
-});
-
-router.post("/deterministic-scan", async (req, res) => {
-  const { symbols, accessToken: bodyToken3, scanMode: reqScanMode, returnAll } = req.body as {
-    symbols: string[];
-    accessToken: string;
-    scanMode?: "DISCOVERY" | "MOMENTUM";
-    returnAll?: boolean;
-  };
-  const accessToken = bodyToken3 || getBestAccessToken();
-  const scanMode: "DISCOVERY" | "MOMENTUM" = reqScanMode === "MOMENTUM" ? "MOMENTUM" : "DISCOVERY";
-
-  if (!symbols?.length || !accessToken) {
-    return res.status(400).json({ error: "symbols are required and no access token available" });
-  }
-
-  const { dataMap } = readFromWebSocketCache();
-  const shockResult = evaluateRegimeShock(extractMarketIndicators(dataMap));
-  if (shockResult.shockActive) {
-    return res.json({
-      error: "shock_active",
-      message: "Scanning paused — regime shock active",
-      shockState: shockResult.shockState,
-    });
-  }
-
-  let pulseComposite = 0;
-  let pulseConfidence = 0;
-  let pulseBias = "NO_EDGE";
-
-  if (lastPulseResult) {
-    const p = lastPulseResult.pulse as Record<string, unknown>;
-    pulseComposite = (p["compositeScore"] as number) ?? 0;
-    pulseConfidence = (p["confidenceScore"] as number) ?? 0;
-    pulseBias = (p["bias"] as string) ?? "NO_EDGE";
-  }
-
-  const traderTokenSet = getTokens("trader");
-  const traderToken = traderTokenSet?.accessToken ?? null;
-  if (!traderToken) {
-    req.log.warn("Deterministic scan: no trader token — portfolio position filter will be skipped");
-  }
-
-  try {
-    const pulseCtx = { composite: pulseComposite, confidence: pulseConfidence, bias: pulseBias };
-    const result = scanMode === "DISCOVERY"
-      ? await runDiscoveryScan(symbols, accessToken, traderToken, pulseCtx, req.log, { returnAll: !!returnAll })
-      : await runDeterministicScan(symbols, accessToken, traderToken, pulseCtx, req.log);
-    return res.json({ ...result, scanMode });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    req.log.error({ err }, "Deterministic scan error");
-    return res.status(500).json({ error: msg });
-  }
-});
-
-router.post("/scan", async (req, res) => {
-  const userId = getAiUserId(req);
-  if (!userId) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-  const { universeId } = req.body as { universeId?: string };
-  if (typeof universeId !== "string" || !universeId.trim()) {
-    return res.status(400).json({ error: "universeId required" });
-  }
-
-  const now = Date.now();
-  const lastStart = unifiedScanLastByUser.get(userId) ?? 0;
-  if (now - lastStart < 10_000) {
-    return res.status(429).json({ error: "Rate limited — wait 10 seconds between unified scans" });
-  }
-
-  const traderTokenSet = getTokens("trader");
-  const traderToken = traderTokenSet?.accessToken;
-  if (!traderToken) {
-    return res.status(400).json({ error: "Schwab trader token required for unified scan" });
-  }
-
-  const { dataMap } = readFromWebSocketCache();
-  const shockResult = evaluateRegimeShock(extractMarketIndicators(dataMap));
-  if (shockResult.shockActive) {
-    return res.status(409).json({
-      error: "shock_active",
-      message: "Scanning paused — regime shock active",
-      shockState: shockResult.shockState,
-    });
-  }
-
-  const snap = getSnapshotForUnifiedScannerPulse();
-  const pulse = { composite: snap.composite, confidence: snap.confidence, bias: snap.bias };
-
-  try {
-    const out = await startUnifiedScan({
-      universeId: universeId.trim(),
-      traderToken,
-      userId,
-      pulse,
-    });
-    unifiedScanLastByUser.set(userId, now);
-    return res.status(202).json(out);
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    req.log.error({ err }, "unified scan start failed");
-    return res.status(500).json({ error: msg });
-  }
-});
-
-router.get("/scan/:scanId", async (req, res) => {
-  const userId = getAiUserId(req);
-  if (!userId) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-  const scanId = req.params["scanId"];
-  if (!scanId) {
-    return res.status(400).json({ error: "scanId required" });
-  }
-  try {
-    const result = await getScanStatus(scanId, userId);
-    if (!result) {
-      return res.status(404).json({ error: "Not found" });
-    }
-    return res.json(result);
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    req.log.error({ err }, "unified scan status failed");
-    return res.status(500).json({ error: msg });
-  }
-});
+// ── Legacy scanner routes removed — use GET /api/v2/scan (snapshot worker) ──
 
 function buildResolvedNarrativePrompt(
   criteria: import("../lib/deterministicStrategist.js").StrategyCriteria,

@@ -71,6 +71,13 @@
       "when": 1778150000000,
       "tag": "0013_scanner_jobs_pulse_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1778200000000,
+      "tag": "0014_ticker_signal_snapshot",
+      "breakpoints": true
     }
   ]
 }

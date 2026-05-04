@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import ReactDOM from "react-dom";
 import { useTerminalStore } from "@/lib/store";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
@@ -19,11 +19,9 @@ import { useScannerUniverses } from "@/hooks/useScannerUniverses";
 import { ScreenBuilder } from "./ScreenBuilder";
 import { WatchlistEditor } from "./WatchlistEditor";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
-import { useToast } from "@/hooks/use-toast";
 import { useUnifiedScan } from "@/hooks/useUnifiedScan";
 import { UnifiedScannerCard } from "./UnifiedScannerCard";
 import { ScannerErrorBoundary } from "./ScannerErrorBoundary";
-import type { UnifiedScanJobResult } from "@/lib/unifiedScanTypes";
 
 function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCreateScreen, onEditScreen, onDeleteScreen, onRefreshScreen, refreshingScreenId, onCreateWatchlist, onEditWatchlist, onDeleteWatchlist }: {
   value: string;
@@ -286,31 +284,6 @@ function formatScanTime(iso: string | null | undefined): string {
   }
 }
 
-function enginePill(name: string, st: UnifiedScanJobResult["engineStatus"]["discovery"] | undefined) {
-  if (!st) {
-    return (
-      <span key={name} className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-zinc-600 text-zinc-500">
-        {name} ?
-      </span>
-    );
-  }
-  const ok = st.status === "ok";
-  return (
-    <span
-      key={name}
-      className="text-[10px] font-bold px-2 py-0.5 rounded-full border inline-flex items-center gap-1"
-      style={{
-        color: ok ? "#26a69a" : "#f87171",
-        borderColor: ok ? "rgba(38,166,154,0.4)" : "rgba(248,113,113,0.4)",
-        background: ok ? "rgba(38,166,154,0.08)" : "rgba(248,113,113,0.08)",
-      }}
-      title={st.error ?? (ok ? "OK" : st.status)}
-    >
-      {name} {ok ? "✓" : "✗"}
-    </span>
-  );
-}
-
 type SendToStrategistFn = (sym: string) => void;
 
 function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSendToStrategist }: {
@@ -322,8 +295,6 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   const { pulseData } = useMarketPulseStore();
   const shockActive = pulseData?.shockState === "ACTIVE";
   const universeData = useScannerUniverses();
-  const { toast } = useToast();
-  const unified = useUnifiedScan();
 
   const [universe, setUniverse] = useState("preset:liquidCore130");
   const [resolvedSymbols, setResolvedSymbols] = useState<string[]>([]);
@@ -371,37 +342,15 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
     await unified.startScan(universe);
   };
 
-  const result = unified.result;
-  const completeResult = unified.phase === "complete" && result?.status === "complete" ? result : null;
+  const scanComplete = unified.phase === "complete";
+  const candidates = unified.candidates;
 
   useEffect(() => {
-    const list = completeResult?.candidates?.map(c => c.ticker) ?? [];
+    const list = scanComplete ? candidates.map((c) => c.ticker) : [];
     if (list.length && subscribeEquitySymbols) subscribeEquitySymbols(list);
-  }, [completeResult, subscribeEquitySymbols]);
+  }, [scanComplete, candidates, subscribeEquitySymbols]);
 
   const editScreenObj = editingScreen != null ? universeData.screens.find(s => s.id === editingScreen) ?? null : null;
-
-  const failedEngines = useMemo(() => {
-    if (!completeResult?.engineStatus) return [] as string[];
-    const out: string[] = [];
-    const es = completeResult.engineStatus;
-    if (es.discovery?.status !== "ok") out.push("Discovery");
-    if (es.momentum?.status !== "ok") out.push("Momentum");
-    if (es.unusual_flow?.status !== "ok") out.push("Unusual Flow");
-    return out;
-  }, [completeResult]);
-
-  const allEnginesFailed =
-    completeResult?.engineStatus &&
-    completeResult.engineStatus.discovery?.status !== "ok" &&
-    completeResult.engineStatus.momentum?.status !== "ok" &&
-    completeResult.engineStatus.unusual_flow?.status !== "ok";
-
-  const partialEngineWarning =
-    completeResult &&
-    completeResult.candidates.length > 0 &&
-    failedEngines.length > 0 &&
-    failedEngines.length < 3;
 
   return (
     <div className="flex flex-col gap-4 max-w-4xl mx-auto pb-6">
@@ -476,7 +425,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
             {unified.phase === "scanning" ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="w-4 h-4 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin" />
-                STARTING SCAN...
+                LOADING...
               </span>
             ) : (
               <span className="flex items-center justify-center">{`SCAN ${currentSymCount} STOCKS`}</span>
@@ -498,32 +447,13 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
 
       {unified.phase === "scanning" && (
         <div className="flex flex-col gap-3 bg-card rounded-xl border border-card-border p-4">
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex items-center gap-3 flex-1 min-w-0">
-              <Loader2 className="w-8 h-8 text-[#FFB800] animate-spin shrink-0" />
-              <div className="min-w-0">
-                <p className="text-sm font-bold text-zinc-200">
-                  Scanning {currentSymCount} tickers...
-                </p>
-                <p className="text-[11px] text-zinc-500 mt-1">
-                  Engines: Discovery, Momentum, Unusual Flow
-                </p>
-                {unified.slowNotice && (
-                  <p className="text-[11px] text-amber-400/90 mt-2">This is taking longer than expected — still polling…</p>
-                )}
-              </div>
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-8 h-8 text-[#FFB800] animate-spin shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-zinc-200">Loading candidates...</p>
+              <p className="text-[11px] text-zinc-500 mt-1">Reading precomputed snapshot for this universe.</p>
             </div>
-            <button
-              type="button"
-              onClick={() => unified.cancelLocal()}
-              className="text-[10px] font-bold uppercase px-3 py-1.5 rounded border border-zinc-600 text-zinc-400 hover:text-zinc-200 shrink-0"
-            >
-              Cancel
-            </button>
           </div>
-          <p className="text-[11px] text-zinc-500 font-mono">
-            ~{unified.etaRemaining}s remaining (est. {unified.estimatedSeconds}s)
-          </p>
         </div>
       )}
 
@@ -531,70 +461,31 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
         <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4 space-y-3">
           <p className="text-xs text-destructive font-bold uppercase">Scanner</p>
           <p className="text-[11px] text-destructive/90">{unified.errorMessage}</p>
-          {unified.errorMessage.includes("Network") && unified.scanId && (
-            <button
-              type="button"
-              onClick={() => unified.retryPoll()}
-              className="text-[11px] font-bold px-3 py-1.5 rounded bg-zinc-800 text-zinc-200 border border-zinc-600"
-            >
-              Retry
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleScanClick}
+            className="text-[11px] font-bold px-3 py-1.5 rounded bg-zinc-800 text-zinc-200 border border-zinc-600"
+          >
+            Retry
+          </button>
         </div>
       )}
 
-      {completeResult && (
+      {scanComplete && (
         <div className="space-y-3">
-          {partialEngineWarning && (
-            <div className="px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 text-[11px] text-amber-200">
-              Note: {failedEngines.join(", ")} failed for this scan. Results may be incomplete.
-            </div>
-          )}
-
-          {allEnginesFailed && completeResult.candidates.length === 0 && (
-            <div className="px-4 py-4 rounded-xl border border-red-500/30 bg-red-500/5 text-center space-y-2">
-              <p className="text-sm font-bold text-red-300">All scanner engines failed.</p>
-              <div className="flex justify-center gap-2">
-                <button type="button" onClick={handleScanClick} className="text-[11px] font-bold px-3 py-1.5 rounded bg-[#FFB800] text-black">
-                  Retry
-                </button>
-                <button
-                  type="button"
-                  className="text-[11px] font-bold px-3 py-1.5 rounded border border-zinc-600 text-zinc-300"
-                  onClick={async () => {
-                    const text = `Unified scanner: all engines failed. Universe: ${universe}. Time: ${new Date().toISOString()}`;
-                    try {
-                      await navigator.clipboard.writeText(text);
-                      toast({ description: "Details copied — paste into your support channel." });
-                    } catch {
-                      toast({ description: text });
-                    }
-                  }}
-                >
-                  Report issue
-                </button>
-              </div>
-            </div>
-          )}
-
           <div className="flex flex-wrap items-center gap-2 px-1">
             <span className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider">
-              {completeResult.candidates.length} CANDIDATES · {universeLabel} · {formatScanTime(completeResult.completedAt ?? completeResult.startedAt)}
+              {candidates.length} CANDIDATES · {universeLabel} · {formatScanTime(unified.scanAt)}
             </span>
           </div>
-          <div className="flex flex-wrap gap-1.5 px-1">
-            {enginePill("Discovery", completeResult.engineStatus.discovery)}
-            {enginePill("Momentum", completeResult.engineStatus.momentum)}
-            {enginePill("Unusual Flow", completeResult.engineStatus.unusual_flow)}
-          </div>
 
-          {completeResult.candidates.length === 0 && !allEnginesFailed ? (
+          {candidates.length === 0 ? (
             <div className="py-10 text-center text-[12px] text-zinc-500 bg-card border border-card-border rounded-xl px-4">
               No candidates found. Try a different universe or wait for the next market session.
             </div>
           ) : (
             <div className="space-y-2">
-              {completeResult.candidates.map((c, i) => (
+              {candidates.map((c, i) => (
                 <UnifiedScannerCard
                   key={c.ticker}
                   candidate={c}
