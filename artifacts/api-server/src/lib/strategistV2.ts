@@ -4508,14 +4508,27 @@ async function logTelemetry(
             scannerMode: null,
             scannerEdgeType: null,
             scannerDirectionalLean: null,
+            scannerSurfacedBy: null,
+            scannerFlowScore: null,
+            scannerUniverse: null,
           };
         }
+        const isUnified = sc.sourceScanner === "unified";
+        const flowScore =
+          isUnified && sc.flowSignature?.score != null && Number.isFinite(sc.flowSignature.score)
+            ? Math.round(sc.flowSignature.score)
+            : null;
         return {
           scannerSource: sc.sourceScanner,
           scannerScore: sc.scannerScore,
           scannerMode: sc.scannerMode,
           scannerEdgeType: sc.edgeType,
           scannerDirectionalLean: sc.directionalLean,
+          scannerSurfacedBy: isUnified && sc.surfacedBy?.length
+            ? [...sc.surfacedBy].sort((a, b) => a.localeCompare(b)).join(",")
+            : null,
+          scannerFlowScore: isUnified ? flowScore : null,
+          scannerUniverse: isUnified ? (sc.scannerUniverse ?? null) : null,
         };
       })(),
     };
