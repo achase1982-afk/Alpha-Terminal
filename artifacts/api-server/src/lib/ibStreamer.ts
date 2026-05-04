@@ -4,6 +4,12 @@ import { logFailure } from "./telemetry.js";
 import { emitTelemetry } from "./telemetryStore.js";
 import type { LiveQuote } from "./schwabStreamer.js";
 import { getEnabledSymbols, type IBSymbolDef } from "./ibBreadthSymbols.js";
+import { TOTALVIEW_REQID_TO_SYMBOL, TOTALVIEW_SYMBOLS } from "./ibTotalviewSymbols.js";
+import { ES_DEPTH_SYMBOL_DEF, ES_DEPTH_REQ_ID } from "./ibEsDepthSymbols.js";
+import { CBOE_ONE_REQID_TO_SYMBOL, CBOE_ONE_SYMBOLS } from "./ibCboeOneSymbols.js";
+import { enqueueTotalviewPersist, type NasdaqTotalviewSummaryPayload } from "./ibTotalviewPersistence.js";
+import { enqueueEsDepthPersist, type EsDepthSummaryPayload } from "./ibEsDepthPersistence.js";
+import { injectExternalQuote, injectCboeOneConsolidatedQuote } from "./schwabStreamer.js";
 
 export type { IBSymbolDef } from "./ibBreadthSymbols.js";
 
@@ -31,6 +37,8 @@ const DEPTH_REQ_ID_BASE = 6000;
 const DEPTH_THROTTLE_MS = 250;
 
 const depthReqIdToSymbol = new Map<number, string>();
+/** Smart depth flag per reqId (required for cancelMktDepth). */
+const depthReqSmartDepth = new Map<number, boolean>();
 const depthBooks = new Map<string, { bids: DepthRow[]; asks: DepthRow[] }>();
 const depthDirty = new Set<string>();
 let depthThrottleTimer: ReturnType<typeof setInterval> | null = null;
@@ -43,6 +51,16 @@ const dynamicQuoteReqIdToSymbol = new Map<number, string>(); // reqId → symbol
 const dynamicQuoteInsertOrder: string[] = []; // LRU order (oldest first)
 let dynamicQuoteReqCounter = 7000;
 const MAX_DYNAMIC_QUOTE_SLOTS = 95;
+
+/** reqIds that returned IB error 101 (missing market data permissions) — skip on reconnect until process restart. */
+const skippedMarketDataReqIds = new Set<number>();
+
+const TOTALVIEW_DEPTH_ROWS = 5;
+const ES_DEPTH_ROWS = 5;
+const ES_DEPTH_BOOK_KEY = "__ES_DEPTH__";
+const TOTALVIEW_BOOK_PREFIX = "TV:";
+
+let cboeOneLastTickAt: number | null = null;
 
 const permanentSymbolSet = new Set<string>();
 
@@ -258,6 +276,7 @@ function emitQuote(def: IBSymbolDef, state: IBQuoteState) {
     low: state.low,
     close: state.close,
     ts: state.ts,
+    quoteSource: "IBKR_PRO",
   };
   if (quoteCacheInjector) {
     quoteCacheInjector(def.displaySymbol, quote);
@@ -282,6 +301,7 @@ function emitRawQuote(displaySymbol: string, state: IBQuoteState) {
     low: state.low,
     close: state.close,
     ts: state.ts,
+    quoteSource: "IBKR_PRO",
   };
   if (quoteCacheInjector) quoteCacheInjector(displaySymbol, quote);
 }
@@ -323,6 +343,8 @@ function subscribeAll() {
   }
   logger.info({ permanent: permCount, registered: permanentSymbolSet.size }, "IB: permanently subscribed indicator symbols at connect");
 
+  subscribeTotalviewEsCboeOne();
+
   for (const [symbol, reqId] of dynamicQuoteSymbols) {
     const contract = buildDynamicContract(symbol);
     try {
@@ -353,6 +375,143 @@ function buildDynamicContract(symbol: string): Contract {
   return contract;
 }
 
+function subscribeTotalviewEsCboeOne(): void {
+  if (!ib) return;
+
+  for (const def of TOTALVIEW_SYMBOLS) {
+    if (skippedMarketDataReqIds.has(def.reqId)) continue;
+    const reqId = def.reqId;
+    const bookKey = `${TOTALVIEW_BOOK_PREFIX}${def.displaySymbol}`;
+    const contract = buildContract(def);
+    depthReqIdToSymbol.set(reqId, bookKey);
+    depthReqSmartDepth.set(reqId, false);
+    depthBooks.set(bookKey, { bids: [], asks: [] });
+    try {
+      ib.reqMktDepth(reqId, contract, TOTALVIEW_DEPTH_ROWS, false);
+    } catch (err) {
+      logger.warn({ err, symbol: def.displaySymbol }, "IB: TotalView depth subscribe failed");
+    }
+  }
+  logger.info({ count: TOTALVIEW_SYMBOLS.length }, "IB: subscribed NASDAQ TotalView depth pool");
+
+  if (!skippedMarketDataReqIds.has(ES_DEPTH_REQ_ID)) {
+    const d = ES_DEPTH_SYMBOL_DEF;
+    const contract = buildContract(d);
+    depthReqIdToSymbol.set(ES_DEPTH_REQ_ID, ES_DEPTH_BOOK_KEY);
+    depthReqSmartDepth.set(ES_DEPTH_REQ_ID, false);
+    depthBooks.set(ES_DEPTH_BOOK_KEY, { bids: [], asks: [] });
+    try {
+      ib.reqMktDepth(ES_DEPTH_REQ_ID, contract, ES_DEPTH_ROWS, false);
+      logger.info({ reqId: ES_DEPTH_REQ_ID }, "IB: subscribed ES CME depth");
+    } catch (err) {
+      logger.warn({ err }, "IB: ES depth subscribe failed");
+    }
+  }
+
+  let cboeOk = 0;
+  for (const def of CBOE_ONE_SYMBOLS) {
+    if (skippedMarketDataReqIds.has(def.reqId)) continue;
+    const contract = buildContract(def);
+    try {
+      ib.reqMktData(def.reqId, contract, "", false, false);
+      cboeOk++;
+    } catch (err) {
+      logger.warn({ err, symbol: def.displaySymbol }, "IB: Cboe One subscribe failed");
+    }
+  }
+  logger.info({ count: cboeOk }, "IB: subscribed Cboe One quote pool");
+}
+
+function sumDepthInBand(
+  rows: DepthRow[],
+  side: "bid" | "ask",
+  mid: number,
+  pct: number,
+): number {
+  if (rows.length === 0 || mid <= 0) return 0;
+  const lo = mid * (1 - pct);
+  const hi = mid * (1 + pct);
+  let sum = 0;
+  for (const r of rows) {
+    if (r.size <= 0) continue;
+    if (side === "bid" && r.price >= lo && r.price <= mid) sum += r.size;
+    if (side === "ask" && r.price >= mid && r.price <= hi) sum += r.size;
+  }
+  return sum;
+}
+
+function computeTotalviewSummary(symbol: string, book: { bids: DepthRow[]; asks: DepthRow[] }): NasdaqTotalviewSummaryPayload | null {
+  const bids = [...book.bids].sort((a, b) => b.price - a.price);
+  const asks = [...book.asks].sort((a, b) => a.price - b.price);
+  const bestBid = bids[0]?.price ?? null;
+  const bestAsk = asks[0]?.price ?? null;
+  if (bestBid == null || bestAsk == null) return null;
+  const spotMid = (bestBid + bestAsk) / 2;
+  if (spotMid <= 0) return null;
+  const bidDepth5pct = sumDepthInBand(bids, "bid", spotMid, 0.05);
+  const askDepth5pct = sumDepthInBand(asks, "ask", spotMid, 0.05);
+  const bidDepth1pct = sumDepthInBand(bids, "bid", spotMid, 0.01);
+  const askDepth1pct = sumDepthInBand(asks, "ask", spotMid, 0.01);
+  const denom = bidDepth5pct + askDepth5pct;
+  const bookImbalanceRatio = denom > 0 ? bidDepth5pct / denom : 0.5;
+  const topBidSize = bids[0]?.size ?? 0;
+  const topAskSize = asks[0]?.size ?? 0;
+  const nowIso = new Date().toISOString();
+  return {
+    symbol,
+    spotMid,
+    bidDepth5pct,
+    askDepth5pct,
+    bidDepth1pct,
+    askDepth1pct,
+    bookImbalanceRatio,
+    topBidSize,
+    topAskSize,
+    updatedAt: nowIso,
+  };
+}
+
+function sumEsDepthTicks(rows: DepthRow[], side: "bid" | "ask", mid: number, ticks: number): number {
+  const tick = 0.25;
+  const band = ticks * tick;
+  let sum = 0;
+  for (const r of rows) {
+    if (r.size <= 0) continue;
+    if (side === "bid" && r.price >= mid - band && r.price <= mid) sum += r.size;
+    if (side === "ask" && r.price >= mid && r.price <= mid + band) sum += r.size;
+  }
+  return sum;
+}
+
+function computeEsDepthSummary(book: { bids: DepthRow[]; asks: DepthRow[] }): EsDepthSummaryPayload | null {
+  const bids = [...book.bids].sort((a, b) => b.price - a.price);
+  const asks = [...book.asks].sort((a, b) => a.price - b.price);
+  const bestBid = bids[0]?.price ?? null;
+  const bestAsk = asks[0]?.price ?? null;
+  if (bestBid == null || bestAsk == null) return null;
+  const midPrice = (bestBid + bestAsk) / 2;
+  const bidDepth5ticks = sumEsDepthTicks(bids, "bid", midPrice, 5);
+  const askDepth5ticks = sumEsDepthTicks(asks, "ask", midPrice, 5);
+  const bidDepth1tick = sumEsDepthTicks(bids, "bid", midPrice, 1);
+  const askDepth1tick = sumEsDepthTicks(asks, "ask", midPrice, 1);
+  const denom = bidDepth5ticks + askDepth5ticks;
+  const bookImbalanceRatio = denom > 0 ? bidDepth5ticks / denom : 0.5;
+  const contractMonth = getFrontMonth("ES");
+  return {
+    symbol: "ES",
+    contractMonth,
+    midPrice,
+    bidDepth5ticks,
+    askDepth5ticks,
+    bidDepth1tick,
+    askDepth1tick,
+    bookImbalanceRatio,
+    topBidSize: bids[0]?.size ?? 0,
+    topAskSize: asks[0]?.size ?? 0,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 function subscribeDepth() {
   if (!ib) return;
   for (let i = 0; i < DEPTH_SYMBOLS.length; i++) {
@@ -369,6 +528,7 @@ function subscribeDepth() {
     }
     const isSmartDepth = d.exchange === "SMART";
     depthReqIdToSymbol.set(reqId, d.symbol);
+    depthReqSmartDepth.set(reqId, isSmartDepth);
     depthBooks.set(d.symbol, { bids: [], asks: [] });
     try {
       ib.reqMktDepth(reqId, contract, DEPTH_NUM_ROWS, isSmartDepth);
@@ -406,13 +566,14 @@ function applyDepthUpdate(reqId: number, position: number, operation: number, si
     book = { bids: [], asks: [] };
     depthBooks.set(sym, book);
   }
+  const maxRows = sym === ES_DEPTH_BOOK_KEY || sym.startsWith(TOTALVIEW_BOOK_PREFIX) ? 5 : DEPTH_NUM_ROWS;
   const rows = side === 1 ? book.bids : book.asks;
   const row: DepthRow = { price, size, mm };
 
   switch (operation) {
     case 0:
       rows.splice(position, 0, row);
-      if (rows.length > DEPTH_NUM_ROWS) rows.length = DEPTH_NUM_ROWS;
+      if (rows.length > maxRows) rows.length = maxRows;
       break;
     case 1:
       if (position < rows.length) rows[position] = row;
@@ -421,7 +582,24 @@ function applyDepthUpdate(reqId: number, position: number, operation: number, si
       if (position < rows.length) rows.splice(position, 1);
       break;
   }
-  depthDirty.add(sym);
+  if (!sym.startsWith(TOTALVIEW_BOOK_PREFIX) && sym !== ES_DEPTH_BOOK_KEY) {
+    depthDirty.add(sym);
+  }
+
+  if (sym.startsWith(TOTALVIEW_BOOK_PREFIX)) {
+    const und = sym.slice(TOTALVIEW_BOOK_PREFIX.length);
+    const summary = computeTotalviewSummary(und, book);
+    if (summary) {
+      enqueueTotalviewPersist(summary);
+      if (broadcastFn) broadcastFn("totalviewUpdate", summary);
+    }
+  } else if (sym === ES_DEPTH_BOOK_KEY) {
+    const esSummary = computeEsDepthSummary(book);
+    if (esSummary) {
+      enqueueEsDepthPersist(esSummary);
+      if (broadcastFn) broadcastFn("esDepthUpdate", esSummary);
+    }
+  }
 }
 
 function teardownIB() {
@@ -429,9 +607,11 @@ function teardownIB() {
     for (const def of BREADTH_SYMBOLS) {
       try { ib.cancelMktData(def.reqId); } catch { /* ignore */ }
     }
+    for (const def of CBOE_ONE_SYMBOLS) {
+      try { ib.cancelMktData(def.reqId); } catch { /* ignore */ }
+    }
     for (const [reqId] of depthReqIdToSymbol) {
-      const sym = depthReqIdToSymbol.get(reqId);
-      const isSmartDepth = sym ? !sym.startsWith("/") : false;
+      const isSmartDepth = depthReqSmartDepth.get(reqId) ?? false;
       try { ib.cancelMktDepth(reqId, isSmartDepth); } catch { /* ignore */ }
     }
     for (const [, info] of dynamicDepthSymbols) {
@@ -445,6 +625,7 @@ function teardownIB() {
     ib = null;
   }
   depthReqIdToSymbol.clear();
+  depthReqSmartDepth.clear();
   depthBooks.clear();
   depthDirty.clear();
   dynamicDepthSymbols.clear();
@@ -603,16 +784,37 @@ export async function connectIB(): Promise<void> {
         return;
       }
 
-      if (code === 101 && reqId >= 7000) {
-        const sym = dynamicQuoteReqIdToSymbol.get(reqId);
-        if (sym) {
-          dynamicQuoteSymbols.delete(sym);
-          dynamicQuoteReqIdToSymbol.delete(reqId);
-          const idx = dynamicQuoteInsertOrder.indexOf(sym);
-          if (idx !== -1) dynamicQuoteInsertOrder.splice(idx, 1);
-          logger.warn({ reqId, symbol: sym }, "IB: max tickers — cleaned up failed dynamic sub");
+      if (code === 101 && reqId > 0) {
+        if (TOTALVIEW_REQID_TO_SYMBOL.has(reqId) || reqId === ES_DEPTH_REQ_ID) {
+          skippedMarketDataReqIds.add(reqId);
+          const sym =
+            reqId === ES_DEPTH_REQ_ID ? "ES" : TOTALVIEW_REQID_TO_SYMBOL.get(reqId) ?? String(reqId);
+          logger.error(
+            { code, reqId, symbol: sym },
+            "IB: error 101 — market data subscription missing for depth; skipping this reqId until process restart. Enable NASDAQ TotalView / CME depth in IBKR Client Portal.",
+          );
+          return;
         }
-        return;
+        if (CBOE_ONE_REQID_TO_SYMBOL.has(reqId)) {
+          skippedMarketDataReqIds.add(reqId);
+          const sym = CBOE_ONE_REQID_TO_SYMBOL.get(reqId);
+          logger.error(
+            { code, reqId, symbol: sym },
+            "IB: error 101 — market data subscription missing for Cboe One stream; skipping this reqId until process restart. Enable relevant US equity top-of-book subscription in IBKR Client Portal.",
+          );
+          return;
+        }
+        if (dynamicQuoteReqIdToSymbol.has(reqId)) {
+          const sym = dynamicQuoteReqIdToSymbol.get(reqId);
+          if (sym) {
+            dynamicQuoteSymbols.delete(sym);
+            dynamicQuoteReqIdToSymbol.delete(reqId);
+            const idx = dynamicQuoteInsertOrder.indexOf(sym);
+            if (idx !== -1) dynamicQuoteInsertOrder.splice(idx, 1);
+            logger.warn({ reqId, symbol: sym }, "IB: max tickers — cleaned up failed dynamic sub");
+          }
+          return;
+        }
       }
 
       if (code === 326) {
@@ -665,6 +867,66 @@ export async function connectIB(): Promise<void> {
     const tickLogCounts = new Map<string, number>();
     ib.on(EventName.tickPrice, (reqId: number, tickType: number, price: number, _attribs: unknown) => {
       if (price === -1) return;
+
+      const cboeSym = CBOE_ONE_REQID_TO_SYMBOL.get(reqId);
+      if (cboeSym) {
+        const state = getOrCreateState(`__CBOE1__${cboeSym}`);
+        state.ts = Date.now();
+        switch (tickType) {
+          case TT.BID:
+          case TT.DELAYED_BID:
+            state.bid = price;
+            break;
+          case TT.ASK:
+          case TT.DELAYED_ASK:
+            state.ask = price;
+            break;
+          case TT.LAST:
+          case TT.DELAYED_LAST:
+            state.last = price;
+            if (state.close !== null && state.close !== 0) {
+              state.change = price - state.close;
+              state.changePct = (state.change / state.close) * 100;
+            }
+            break;
+          case TT.CLOSE:
+          case TT.DELAYED_CLOSE:
+            state.close = price;
+            if (state.last !== null && price !== 0) {
+              state.change = state.last - price;
+              state.changePct = (state.change / price) * 100;
+            }
+            break;
+          default:
+            return;
+        }
+        const b = state.bid;
+        const a = state.ask;
+        if (b !== null && a !== null) {
+          const mid = (b + a) / 2;
+          const q: LiveQuote = {
+            symbol: cboeSym,
+            last: state.last ?? mid,
+            regularLast: state.last ?? mid,
+            extendedLast: state.last ?? mid,
+            bid: b,
+            ask: a,
+            bidSize: state.bidSize,
+            askSize: state.askSize,
+            change: state.change,
+            changePct: state.changePct,
+            volume: state.volume,
+            high: state.high,
+            low: state.low,
+            close: state.close,
+            ts: state.ts,
+          };
+          injectCboeOneConsolidatedQuote(cboeSym, q);
+          cboeOneLastTickAt = state.ts;
+        }
+        return;
+      }
+
       const def = reqIdToSymbol.get(reqId);
       const dynSym = def ? null : dynamicQuoteReqIdToSymbol.get(reqId);
       if (!def && !dynSym) return;
@@ -726,6 +988,54 @@ export async function connectIB(): Promise<void> {
     ib.on(EventName.tickSize, (reqId: number, tickType?: TickType, size?: number) => {
       if (size == null || size === -1) return;
       if (tickType == null) return;
+
+      const cboeSym = CBOE_ONE_REQID_TO_SYMBOL.get(reqId);
+      if (cboeSym) {
+        const state = getOrCreateState(`__CBOE1__${cboeSym}`);
+        state.ts = Date.now();
+        switch (tickType) {
+          case TT.BID_SIZE:
+          case TT.DELAYED_BID_SIZE:
+            state.bidSize = size;
+            break;
+          case TT.ASK_SIZE:
+          case TT.DELAYED_ASK_SIZE:
+            state.askSize = size;
+            break;
+          case TT.VOLUME:
+          case TT.DELAYED_VOLUME:
+            state.volume = size;
+            break;
+          default:
+            return;
+        }
+        const b = state.bid;
+        const a = state.ask;
+        if (b !== null && a !== null) {
+          const mid = (b + a) / 2;
+          const q: LiveQuote = {
+            symbol: cboeSym,
+            last: state.last ?? mid,
+            regularLast: state.last ?? mid,
+            extendedLast: state.last ?? mid,
+            bid: b,
+            ask: a,
+            bidSize: state.bidSize,
+            askSize: state.askSize,
+            change: state.change,
+            changePct: state.changePct,
+            volume: state.volume,
+            high: state.high,
+            low: state.low,
+            close: state.close,
+            ts: state.ts,
+          };
+          injectCboeOneConsolidatedQuote(cboeSym, q);
+          cboeOneLastTickAt = state.ts;
+        }
+        return;
+      }
+
       const def = reqIdToSymbol.get(reqId);
       const dynSym = def ? null : dynamicQuoteReqIdToSymbol.get(reqId);
       if (!def && !dynSym) return;
@@ -979,8 +1289,14 @@ export function disconnectIB(): void {
   teardownIB();
   connState = "DISCONNECTED";
   ibQuoteCache.clear();
+  cboeOneLastTickAt = null;
   logger.info("IB: disconnected intentionally");
   emitStatus("disconnected");
+}
+
+export function getCboeOneFeedDiagnostics(): { present: boolean; latencyMs: number | null } {
+  if (cboeOneLastTickAt == null) return { present: false, latencyMs: null };
+  return { present: true, latencyMs: Date.now() - cboeOneLastTickAt };
 }
 
 export function isIBConnected(): boolean {
@@ -1022,6 +1338,7 @@ export function getIBSnapshot(): LiveQuote[] {
         low: state.low,
         close: state.close,
         ts: state.ts,
+        quoteSource: "IBKR_PRO",
       });
     }
   }
@@ -1134,6 +1451,7 @@ export function subscribeDepthForSymbol(symbol: string): boolean {
   const isSmartDepth = !isFut;
 
   depthReqIdToSymbol.set(reqId, upper);
+  depthReqSmartDepth.set(reqId, isSmartDepth);
   depthBooks.set(upper, { bids: [], asks: [] });
   dynamicDepthSymbols.set(upper, { reqId, contract, isSmartDepth });
 
@@ -1156,6 +1474,7 @@ export function unsubscribeDepthForSymbol(symbol: string): void {
   if (!info || !ib) return;
   try { ib.cancelMktDepth(info.reqId, info.isSmartDepth); } catch { /* ignore */ }
   depthReqIdToSymbol.delete(info.reqId);
+  depthReqSmartDepth.delete(info.reqId);
   depthBooks.delete(upper);
   dynamicDepthSymbols.delete(upper);
   logger.info({ symbol: upper }, "IB: unsubscribed dynamic depth");

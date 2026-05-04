@@ -15,7 +15,7 @@ import { initAiLabOrchestrator } from "./lib/aiLabOrchestrator";
 import { startUniverseRebuildSchedule } from "./lib/universeBuilder";
 import { updateEquityDailyFromGroupedBars, runFullSnapshot, backfillPolygonFlow, sweepStaleSnapshots } from "./lib/dailySnapshot";
 import { accumulateCanonicalIvForDate } from "./lib/canonicalIvAccumulator";
-import { LIQUID_CORE_SYMBOLS } from "./data/liquidCore130";
+import { LIQUID_CORE_SYMBOL_STRINGS } from "./data/liquidCore130";
 import { db, equityDailyTable, snapshotCollectionLogTable, flowDailyAggregatesTable, trackedTickersTable } from "@workspace/db";
 import { inArray, desc, sql, eq } from "drizzle-orm";
 import { startPolygonPCRatioPoller } from "./lib/polygonPutCallRatio";
@@ -128,7 +128,7 @@ async function boot() {
       // universe. If tracked_tickers gets large, split LC130 and tracked
       // tickers into separate scheduled batches or per-symbol work items.
       return [...new Set([
-        ...LIQUID_CORE_SYMBOLS,
+        ...LIQUID_CORE_SYMBOL_STRINGS,
         ...trackedRows.map((r) => r.symbol.toUpperCase()),
       ])];
     }
@@ -322,7 +322,7 @@ async function boot() {
       flatFilesInFlight.add(iso);
       try {
         const { syncDate } = await import("./lib/polygonFlatFiles.js");
-        const tickers = [...LIQUID_CORE_SYMBOLS];
+        const tickers = [...LIQUID_CORE_SYMBOL_STRINGS];
         let s3CallsObserved = 0;
         logger.info({ date: iso, tickers: tickers.length, maxS3Requests }, "Polygon flat-files sync: starting");
         const result = await syncDate(target, tickers, {
@@ -560,7 +560,7 @@ async function boot() {
   async function triggerLiquidCoreBackfill() {
     if (backfillTriggered) return;
     backfillTriggered = true;
-    const symbols = [...LIQUID_CORE_SYMBOLS];
+    const symbols = [...LIQUID_CORE_SYMBOL_STRINGS];
 
     try {
       const sampleSymbols = symbols.slice(0, 10);
@@ -647,7 +647,7 @@ async function boot() {
         logger.info({ existing }, "Flow bootstrap: aggregates already populated — skipping");
         return;
       }
-      const symbols = [...LIQUID_CORE_SYMBOLS];
+      const symbols = [...LIQUID_CORE_SYMBOL_STRINGS];
       logger.warn({ symbols: symbols.length, daysBack: 30 }, "Flow bootstrap: aggregates empty — starting 30d Polygon REST backfill");
       const result = await backfillPolygonFlow(symbols, 30, false);
       logger.info(result, "Flow bootstrap: complete");

@@ -1,7 +1,7 @@
 import { db, equityDailyTable, flowDailyAggregatesTable, scannerWatchlistsTable } from "@workspace/db";
 import { inArray, desc, sql, eq, and, gte } from "drizzle-orm";
 import { emitTelemetry, createTelemetryBatch } from "./telemetryStore.js";
-import { LIQUID_CORE_SYMBOLS } from "../data/liquidCore130.js";
+import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
 import { getAiLabStrategistConfig, getAiLabFullConfig } from "./aiLabConfig.js";
 import { fetchPolygonChain, type PolygonParsedContract } from "./polygonChain.js";
 import { logger } from "./logger.js";
@@ -30,26 +30,26 @@ async function resolveUniverseSymbols(): Promise<string[]> {
   const universe = cfg.universe;
 
   if (!universe || universe === "LIQUID_CORE") {
-    return [...LIQUID_CORE_SYMBOLS] as string[];
+    return [...LIQUID_CORE_SYMBOL_STRINGS];
   }
 
   if (universe.startsWith("watchlist_")) {
     const watchlistId = parseInt(universe.replace("watchlist_", ""), 10);
     if (isNaN(watchlistId)) {
       emitTelemetry("SCANNER", "WARN", `AI Lab: invalid watchlist ID in universe config: ${universe}`, {}, "AI_LAB");
-      return [...LIQUID_CORE_SYMBOLS] as string[];
+      return [...LIQUID_CORE_SYMBOL_STRINGS];
     }
     const rows = await db.select().from(scannerWatchlistsTable).where(eq(scannerWatchlistsTable.id, watchlistId));
     if (rows.length === 0 || !rows[0].symbols || (rows[0].symbols as string[]).length === 0) {
       emitTelemetry("SCANNER", "WARN", `AI Lab: watchlist ${watchlistId} not found or empty, falling back to Liquid 130`, {}, "AI_LAB");
-      return [...LIQUID_CORE_SYMBOLS] as string[];
+      return [...LIQUID_CORE_SYMBOL_STRINGS];
     }
     const symbols = rows[0].symbols as string[];
     emitTelemetry("SCANNER", "INFO", `AI Lab: using watchlist "${rows[0].name}" with ${symbols.length} symbols`, { watchlistId, symbolCount: symbols.length }, "AI_LAB");
     return symbols;
   }
 
-  return [...LIQUID_CORE_SYMBOLS] as string[];
+  return [...LIQUID_CORE_SYMBOL_STRINGS];
 }
 
 export const AI_LAB_CONFIG = new Proxy({} as ReturnType<typeof getAiLabServiceConfig>, {

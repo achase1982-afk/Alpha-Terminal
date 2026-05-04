@@ -174,6 +174,14 @@ export interface BuildFullDiagnosticArgs {
   runOutcome: StrategistRunOutcomeTelemetry;
   runDurationMs: number;
   error: { message: string; stack?: string } | null;
+  nasdaqDepthPresent?: boolean | null;
+  nasdaqDepthLatencyMs?: number | null;
+  esContextPresent?: boolean | null;
+  esContextLatencyMs?: number | null;
+  cboeOnePresent?: boolean | null;
+  cboeOneLatencyMs?: number | null;
+  iseComplexBookPresent?: boolean | null;
+  iseComplexBookLatencyMs?: number | null;
 }
 
 export function buildStrategistFullDiagnosticJson(args: BuildFullDiagnosticArgs): Record<string, unknown> {
@@ -192,6 +200,14 @@ export function buildStrategistFullDiagnosticJson(args: BuildFullDiagnosticArgs)
     sessionTapeTapeKind: sessionRollups.sessionTapeTapeKind,
     aggressorSessionTotals: sessionRollups.aggressorSessionTotals,
     sweepBlockLargePerSession: sessionRollups.sweepBlockLargePerSession,
+    nasdaqDepthPresent: args.nasdaqDepthPresent ?? null,
+    nasdaqDepthLatencyMs: args.nasdaqDepthLatencyMs ?? null,
+    esContextPresent: args.esContextPresent ?? null,
+    esContextLatencyMs: args.esContextLatencyMs ?? null,
+    cboeOnePresent: args.cboeOnePresent ?? null,
+    cboeOneLatencyMs: args.cboeOneLatencyMs ?? null,
+    iseComplexBookPresent: args.iseComplexBookPresent ?? null,
+    iseComplexBookLatencyMs: args.iseComplexBookLatencyMs ?? null,
   };
   const tapeDiag = buildTapeBackfillDiagnostic(args.tapeBackfillStatus);
 

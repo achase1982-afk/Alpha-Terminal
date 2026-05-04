@@ -7,6 +7,14 @@ export type StrategistDiagScratch = {
   tapeBackfillStatus?: TapeBackfillStatus;
   dataPackageStr?: string;
   soloModelLabel?: string;
+  nasdaqDepthPresent?: boolean;
+  nasdaqDepthLatencyMs?: number | null;
+  esContextPresent?: boolean;
+  esContextLatencyMs?: number | null;
+  cboeOnePresent?: boolean;
+  cboeOneLatencyMs?: number | null;
+  iseComplexBookPresent?: boolean;
+  iseComplexBookLatencyMs?: number | null;
 };
 
 /** Async-local scratch for one strategist analyze run (diagnostics + trace correlation). */

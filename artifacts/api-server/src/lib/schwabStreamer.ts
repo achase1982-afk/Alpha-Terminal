@@ -23,6 +23,8 @@ export interface LiveQuote {
   low:          number | null;
   close:        number | null;   // field 12 — PREVIOUS day's close (used for change calc)
   ts:           number;
+  /** Quote origin for merge policy (Cboe One vs Schwab vs IBKR PRO breadth). */
+  quoteSource?: "SCHWAB" | "IBKR_CBOE_ONE" | "IBKR_PRO";
 }
 
 export interface OptionTick {
@@ -200,6 +202,40 @@ function broadcast(event: string, data: unknown) {
 export function injectExternalQuote(sym: string, quote: LiveQuote) {
   quoteCache.set(sym, quote);
   broadcast("quote", quote);
+}
+
+function quoteSourceRank(source: LiveQuote["quoteSource"]): number {
+  if (source === "IBKR_CBOE_ONE") return 3;
+  if (source === "IBKR_PRO") return 2;
+  if (source === "SCHWAB") return 1;
+  return 1;
+}
+
+/**
+ * Merges IBKR Cboe One BBO into the shared equity quote cache.
+ * Policy: newer `ts` wins; on equal `ts`, priority is IBKR_CBOE_ONE > IBKR_PRO > Schwab (undefined treated as Schwab).
+ */
+export function injectCboeOneConsolidatedQuote(sym: string, quote: LiveQuote): void {
+  const upper = sym.toUpperCase();
+  const incoming = { ...quote, symbol: upper, quoteSource: "IBKR_CBOE_ONE" as const };
+  const existing = quoteCache.get(upper);
+  if (!existing) {
+    quoteCache.set(upper, incoming);
+    broadcast("quote", incoming);
+    return;
+  }
+  const incTs = incoming.ts;
+  const exTs = existing.ts;
+  if (incTs > exTs) {
+    quoteCache.set(upper, incoming);
+    broadcast("quote", incoming);
+    return;
+  }
+  if (incTs < exTs) return;
+  if (quoteSourceRank(incoming.quoteSource) >= quoteSourceRank(existing.quoteSource)) {
+    quoteCache.set(upper, incoming);
+    broadcast("quote", incoming);
+  }
 }
 
 export function addSseClient(res: Response): () => void {
@@ -630,6 +666,7 @@ function processEquityTick(content: Record<string, unknown>[]) {
       low: numOrNull(item["11"]) ?? existing?.low ?? null,
       close,
       ts: now,
+      quoteSource: "SCHWAB",
     };
 
     quoteCache.set(symbol, quote);
@@ -710,6 +747,7 @@ function processFuturesTick(content: Record<string, unknown>[]) {
       low: numOrNull(item["13"]) ?? existing?.low ?? null,
       close,
       ts: now,
+      quoteSource: "SCHWAB",
     };
 
     quoteCache.set(displaySymbol, quote);

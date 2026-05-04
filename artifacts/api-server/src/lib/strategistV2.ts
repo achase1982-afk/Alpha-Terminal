@@ -30,6 +30,9 @@ import {
 } from "./strategistDiagnostics.js";
 import { runWithPolygonApiTraceAsync, takePolygonApiTrace } from "./polygonApiTrace.js";
 import { runInStrategistRunContext, getStrategistRunContext, mergeStrategistDiag } from "./strategistRunContext.js";
+import { fetchRecentNasdaqTotalviewForTicker } from "./ibTotalviewPersistence.js";
+import { fetchRecentEsDepthSummary } from "./ibEsDepthPersistence.js";
+import { getCboeOneFeedDiagnostics } from "./ibStreamer.js";
 import { lastCompletedTradingDayNy, nyCalendarYmd, rthBoundsMs } from "./polygonMarketCalendar.js";
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
 import { getNextEarningsDate, type NextEarnings } from "./earningsService.js";
@@ -1013,7 +1016,7 @@ async function analyzeTickerV2Inner(
   }
   assertAnalyzeNotCancelled(progress);
 
-  const dataPackage = buildDataPackage(
+  const dataPackage = await buildDataPackage(
     ticker,
     tickerData,
     chainSummary,
@@ -2799,7 +2802,7 @@ function buildDataQualitySummary(args: {
   };
 }
 
-function buildDataPackage(
+async function buildDataPackage(
   ticker: string,
   tickerData: TickerData,
   chainSummary: ChainSummary,
@@ -3044,6 +3047,54 @@ function buildDataPackage(
       }
     }
     pkg.macroEventsInPositionWindow = macroEventsInPositionWindow;
+  }
+
+  const tv = await fetchRecentNasdaqTotalviewForTicker(ticker);
+  const es = await fetchRecentEsDepthSummary();
+  const cboeDiag = getCboeOneFeedDiagnostics();
+
+  mergeStrategistDiag({
+    nasdaqDepthPresent: tv.row != null,
+    nasdaqDepthLatencyMs: tv.latencyMs,
+    esContextPresent: es.row != null,
+    esContextLatencyMs: es.latencyMs,
+    cboeOnePresent: cboeDiag.present,
+    cboeOneLatencyMs: cboeDiag.latencyMs,
+    iseComplexBookPresent: false,
+    iseComplexBookLatencyMs: null,
+  });
+
+  if (tv.row) {
+    const r = tv.row;
+    pkg.nasdaqDepth = {
+      symbol: r.underlyingSymbol,
+      spotMid: r.spotMid,
+      bidDepth5pct: r.bidDepth5pct,
+      askDepth5pct: r.askDepth5pct,
+      bidDepth1pct: r.bidDepth1pct,
+      askDepth1pct: r.askDepth1pct,
+      bookImbalanceRatio: r.bookImbalanceRatio,
+      topBidSize: r.topBidSize,
+      topAskSize: r.topAskSize,
+      updatedAt: r.summaryTimestamp.toISOString(),
+    };
+  }
+
+  if (es.row) {
+    const e = es.row;
+    pkg.esContext = {
+      symbol: "ES",
+      contractMonth: e.contractMonth,
+      midPrice: e.midPrice,
+      bidDepth5ticks: e.bidDepth5ticks,
+      askDepth5ticks: e.askDepth5ticks,
+      bidDepth1tick: e.bidDepth1tick,
+      askDepth1tick: e.askDepth1tick,
+      bookImbalanceRatio: e.bookImbalanceRatio,
+      topBidSize: e.topBidSize,
+      topAskSize: e.topAskSize,
+      updatedAt: e.summaryTimestamp.toISOString(),
+    };
   }
 
   return JSON.stringify(pkg);
@@ -4165,6 +4216,14 @@ async function emitFullDiagnosticTelemetry(args: {
     runOutcome: outcome,
     runDurationMs: durationMs,
     error: args.extras.error ?? null,
+    nasdaqDepthPresent: ctx?.diag.nasdaqDepthPresent ?? null,
+    nasdaqDepthLatencyMs: ctx?.diag.nasdaqDepthLatencyMs ?? null,
+    esContextPresent: ctx?.diag.esContextPresent ?? null,
+    esContextLatencyMs: ctx?.diag.esContextLatencyMs ?? null,
+    cboeOnePresent: ctx?.diag.cboeOnePresent ?? null,
+    cboeOneLatencyMs: ctx?.diag.cboeOneLatencyMs ?? null,
+    iseComplexBookPresent: ctx?.diag.iseComplexBookPresent ?? null,
+    iseComplexBookLatencyMs: ctx?.diag.iseComplexBookLatencyMs ?? null,
   });
   return logTelemetry(
     args.ticker,

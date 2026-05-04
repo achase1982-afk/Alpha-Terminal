@@ -632,6 +632,56 @@ export const strategistTelemetryTable = pgTable("strategist_telemetry", {
 
 export type StrategistTelemetry = typeof strategistTelemetryTable.$inferSelect;
 
+/** NASDAQ TotalView L2 depth summary (deterministic microstructure for strategist). */
+export const nasdaqTotalviewSummaryTable = pgTable(
+  "nasdaq_totalview_summary",
+  {
+    id: text("id").primaryKey(),
+    underlyingSymbol: text("underlying_symbol").notNull(),
+    summaryTimestamp: timestamp("summary_timestamp", { withTimezone: true }).notNull(),
+    spotMid: doublePrecision("spot_mid").notNull(),
+    bidDepth5pct: doublePrecision("bid_depth_5pct").notNull(),
+    askDepth5pct: doublePrecision("ask_depth_5pct").notNull(),
+    bidDepth1pct: doublePrecision("bid_depth_1pct").notNull(),
+    askDepth1pct: doublePrecision("ask_depth_1pct").notNull(),
+    bookImbalanceRatio: doublePrecision("book_imbalance_ratio").notNull(),
+    topBidSize: doublePrecision("top_bid_size").notNull(),
+    topAskSize: doublePrecision("top_ask_size").notNull(),
+    source: text("source").notNull().default("IBKR_NASDAQ"),
+  },
+  (t) => [
+    index("nasdaq_totalview_summary_sym_ts_idx").on(t.underlyingSymbol, t.summaryTimestamp),
+    index("nasdaq_totalview_summary_ts_idx").on(t.summaryTimestamp),
+  ],
+);
+
+export type NasdaqTotalviewSummary = typeof nasdaqTotalviewSummaryTable.$inferSelect;
+
+/** ES front-month CME depth summary (macro book context). */
+export const cmeEsDepthSummaryTable = pgTable(
+  "cme_es_depth_summary",
+  {
+    id: text("id").primaryKey(),
+    underlyingSymbol: text("underlying_symbol").notNull().default("ES"),
+    contractMonth: text("contract_month").notNull(),
+    summaryTimestamp: timestamp("summary_timestamp", { withTimezone: true }).notNull(),
+    midPrice: doublePrecision("mid_price").notNull(),
+    bidDepth5ticks: doublePrecision("bid_depth_5ticks").notNull(),
+    askDepth5ticks: doublePrecision("ask_depth_5ticks").notNull(),
+    bidDepth1tick: doublePrecision("bid_depth_1tick").notNull(),
+    askDepth1tick: doublePrecision("ask_depth_1tick").notNull(),
+    bookImbalanceRatio: doublePrecision("book_imbalance_ratio").notNull(),
+    topBidSize: doublePrecision("top_bid_size").notNull(),
+    topAskSize: doublePrecision("top_ask_size").notNull(),
+    source: text("source").notNull().default("IBKR_CME"),
+  },
+  (t) => [
+    index("cme_es_depth_summary_ts_idx").on(t.summaryTimestamp),
+  ],
+);
+
+export type CmeEsDepthSummary = typeof cmeEsDepthSummaryTable.$inferSelect;
+
 export const strategistHistoryTable = pgTable("strategist_history", {
   id: serial("id").primaryKey(),
   jobId: text("job_id").notNull().unique(),
