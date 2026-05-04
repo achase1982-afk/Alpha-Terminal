@@ -9,7 +9,8 @@ import { fetchPolygonChain, type PolygonParsedContract } from "./polygonChain.js
 import { getNextEarningsDate } from "./earningsService.js";
 import { getUpcomingEvents } from "./calendarEventChecker.js";
 import { getPolygonFlowHighlights } from "./polygonFlowHighlights.js";
-import { getCachedRegime } from "./regimePostProcessor.js";
+import { evaluateRegimeShock } from "./regimeShockDetector.js";
+import { getLiveMarketIndicatorsForPulse } from "./liveMarketIndicators.js";
 import { impliedVolToVolPoints, classifyEdgeType, type ScannerEdgeType } from "./scannerEdgeType.js";
 import { getScannerSector } from "./scannerSectorMap.js";
 import { logger } from "./logger.js";
@@ -230,15 +231,11 @@ function macroOverlapScore(): number {
   return Math.min(100, s);
 }
 
-async function refreshTicker(ticker: string): Promise<void> {
+async function refreshTicker(ticker: string, regimeShockActive: boolean): Promise<void> {
   const upper = ticker.toUpperCase();
   const now = new Date();
   const attemptAt = now;
 
-  const regime = getCachedRegime();
-  const regimeShockActive = regime?.systemicRiskLevel === "EXTREME";
-
-  const apiKey = process.env["POLYGON_API_KEY"] ?? "";
 
   const [chain, earn, flowHl, eqRow] = await Promise.all([
     apiKey ? fetchPolygonChain(upper, apiKey, { maxDte: 45, maxPages: 8, log }) : Promise.resolve(null),
@@ -377,21 +374,20 @@ async function refreshTicker(ticker: string): Promise<void> {
 
   const tape = flowHl?.sessionTape;
   const totals = tape?.aggressorSessionTotals;
-  const printTotal = totals?.totalPrints ?? 0;
+  const isLiveAggUsd =
+    tape?.tapeKind === "live" && tape.sessionAggregateSource === "live_raw_trades" && totals != null;
   let askNotional = 0;
   let bidNotional = 0;
   let midNotional = 0;
-  if (printTotal > 0 && totals) {
-    const scale = (flowHl?.totalCallVolume ?? 0) + (flowHl?.totalPutVolume ?? 0) || 1;
-    const unit = (spot && spot > 0 ? spot * 0.02 : 1000) * (scale / Math.max(printTotal, 1));
-    askNotional = totals.askCount * unit;
-    bidNotional = totals.bidCount * unit;
-    midNotional = totals.midCount * unit + totals.unknownCount * unit * 0.5;
+  if (isLiveAggUsd && totals) {
+    askNotional = totals.askNotionalUsd;
+    bidNotional = totals.bidNotionalUsd;
+    midNotional = totals.midNotionalUsd;
   }
 
   let tapeQuality: "complete" | "partial" | "degraded" | "not_run" = "not_run";
-  if (tape?.tapeKind === "live") tapeQuality = "complete";
-  else if (tape?.tapeKind === "eod_fallback") tapeQuality = "partial";
+  if (tape?.tapeKind === "live" && tape.sessionAggregateSource === "live_raw_trades") tapeQuality = "complete";
+  else if (tape?.tapeKind === "eod_fallback" && tape.sessionAggregateSource === "eod_volume_only") tapeQuality = "partial";
   if (!flowHl) tapeQuality = "not_run";
 
   const topStrikeRow = flowHl?.topByVolume?.[0];
@@ -546,12 +542,17 @@ async function runOneCycle(): Promise<void> {
   const cycleStarted = new Date();
   const failed: Array<{ ticker: string; error: string }> = [];
   let ok = 0;
+
+  const { indicators } = getLiveMarketIndicatorsForPulse();
+  const regimeShockActive = evaluateRegimeShock(indicators).shockActive;
+  log.debug({ regimeShockActive }, "snapshot worker regime shock (evaluateRegimeShock)");
+
   const limit = pLimit(CONCURRENCY);
   await Promise.all(
     LC130.map((ticker) =>
       limit(async () => {
         try {
-          await refreshTicker(ticker);
+          await refreshTicker(ticker, regimeShockActive);
           ok++;
         } catch (e) {
           failed.push({ ticker, error: e instanceof Error ? e.message : String(e) });
