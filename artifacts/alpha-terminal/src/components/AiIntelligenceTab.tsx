@@ -2660,7 +2660,7 @@ function AiIntelligenceTabInner({
   const strategistAi = useMemo(() => {
     const s = aiFeatureSettings?.strategist;
     if (s && typeof s.model === "string" && typeof s.temperature === "number") return s;
-    return { model: "claude-sonnet-4-6", temperature: 0 };
+    return { model: "claude-opus-4-6", temperature: 0 };
   }, [aiFeatureSettings]);
   const aiModel = strategistAi.model;
   const aiTemp = strategistAi.temperature;
@@ -3013,7 +3013,7 @@ function AiIntelligenceTabInner({
     const currentBias = snap.stratBias;
     const stratSettings = snap.aiFeatureSettings?.strategist;
     const currentAiModel =
-      stratSettings?.model && typeof stratSettings.model === "string" ? stratSettings.model : "claude-sonnet-4-6";
+      stratSettings?.model && typeof stratSettings.model === "string" ? stratSettings.model : "claude-opus-4-6";
     const currentAiTemp = typeof stratSettings?.temperature === "number" ? stratSettings.temperature : 0;
 
     const collected: StrategistCacheData = {
