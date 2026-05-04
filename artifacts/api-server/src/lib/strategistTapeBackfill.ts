@@ -870,14 +870,17 @@ export async function runStrategistTapeBackfill(args: {
       anySawPolygonHttpError: false,
     });
 
-    if (p1.kind !== "completed") {
+    if (p1.kind === "skipped_budget") {
+      return budgetSkip();
+    }
+    if (p1.kind === "skipped_bad_occ") {
       return {
         occ,
-        kind: "completed",
+        kind: "skipped_bad_occ",
         rowsSideUpdated: 0,
         remainingNullSide: 0,
         anyTruncated: false,
-        anyError: false,
+        anyError: true,
         anySawPolygonHttpError: false,
       };
     }
@@ -1080,7 +1083,7 @@ export async function runStrategistTapeBackfill(args: {
 
   let status: TapeBackfillStatusValue = "complete";
   if (phase1FailedGlobally) status = "failed";
-  else if (occCompleted < occList.length || phase2AnyTruncated) status = "partial";
+  else if (occCompleted < occList.length || anyTruncated) status = "partial";
   else if (anyError) status = "partial";
 
   let tapeBackfillReason: TapeBackfillDiagnosticReason;
