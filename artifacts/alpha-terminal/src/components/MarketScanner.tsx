@@ -385,17 +385,27 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
     if (!completeResult?.engineStatus) return [] as string[];
     const out: string[] = [];
     const es = completeResult.engineStatus;
-    if (es.discovery?.status !== "ok") out.push("Discovery");
-    if (es.momentum?.status !== "ok") out.push("Momentum");
-    if (es.unusual_flow?.status !== "ok") out.push("Unusual Flow");
+    if (es.discovery != null && es.discovery.status !== "ok") out.push("Discovery");
+    if (es.momentum != null && es.momentum.status !== "ok") out.push("Momentum");
+    if (es.unusual_flow != null && es.unusual_flow.status !== "ok") out.push("Unusual Flow");
     return out;
   }, [completeResult]);
 
-  const allEnginesFailed =
-    completeResult?.engineStatus &&
-    completeResult.engineStatus.discovery?.status !== "ok" &&
-    completeResult.engineStatus.momentum?.status !== "ok" &&
-    completeResult.engineStatus.unusual_flow?.status !== "ok";
+  const allEnginesFailed = (() => {
+    const es = completeResult?.engineStatus;
+    if (!es) return false;
+    const d = es.discovery;
+    const m = es.momentum;
+    const u = es.unusual_flow;
+    return (
+      d != null &&
+      m != null &&
+      u != null &&
+      d.status !== "ok" &&
+      m.status !== "ok" &&
+      u.status !== "ok"
+    );
+  })();
 
   const partialEngineWarning =
     completeResult &&

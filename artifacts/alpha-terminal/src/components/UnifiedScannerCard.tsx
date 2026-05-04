@@ -119,7 +119,32 @@ export const UnifiedScannerCard = memo(function UnifiedScannerCard({
       components: comp,
       positionContext: pos,
     };
-  }, [raw]);
+  }, [
+    raw,
+    raw.ticker,
+    raw.spot,
+    raw.changePct,
+    raw.sector,
+    raw.marketCapTier,
+    raw.surfacedBy,
+    raw.compositeScore,
+    raw.edgeType,
+    raw.directionalLean,
+    raw.ivr,
+    raw.ivrSource,
+    raw.ivrAsOfDate,
+    raw.hv20,
+    raw.hv30,
+    raw.high52w,
+    raw.low52w,
+    raw.avgVolume20d,
+    raw.components,
+    raw.flowSnapshot,
+    raw.catalystWindow,
+    raw.riskFlags,
+    raw.positionContext,
+    raw.surfacingReasons,
+  ]);
   const { data } = useQuote(candidate.ticker);
   const liveSpot = data?.last ?? candidate.spot;
   const liveChg = data?.changePct ?? candidate.changePct;
