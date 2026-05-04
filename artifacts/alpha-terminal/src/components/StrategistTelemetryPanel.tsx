@@ -108,6 +108,15 @@ function getDecisionBadge(row: TelemetryRow): DecisionBadge {
   return { label: formatLegacyResultLabel(r), color: resultColorLegacy(r) };
 }
 
+/** Same semantics as the list badge; use for filtering so the dropdown matches what users see. */
+function resultFilterKey(row: TelemetryRow): string {
+  const pmDecision = readStrategistPmDecision(row.dataPackage);
+  if (pmDecision === "trade") return "trade";
+  if (pmDecision === "pass") return "pass";
+  if (pmDecision === "no_viable_setup") return "no_viable_setup";
+  return row.result;
+}
+
 const DP_KEYS_STRATEGIST = ["strategistPayload"] as const;
 const DP_KEYS_VOL = ["optionsChainSummary", "realizedVol", "ivrContext"] as const;
 const DP_KEYS_OPTIONS = ["curatedExpirations", "availableExpirations"] as const;
@@ -173,7 +182,7 @@ function buildSectionedCopyPayload(row: TelemetryRow, selected: ReadonlySet<Copy
   const out: Record<string, unknown> = {};
 
   if (selected.has("summary")) {
-    const summary: Record<string, unknown> = {
+    const rowFields: Record<string, unknown> = {
       ticker: row.ticker,
       timestamp: row.timestamp,
       result: row.result,
@@ -186,8 +195,7 @@ function buildSectionedCopyPayload(row: TelemetryRow, selected: ReadonlySet<Copy
       scannerFlowScore: row.scannerFlowScore ?? null,
       scannerUniverse: row.scannerUniverse ?? null,
     };
-    if (dp) Object.assign(summary, pickSummaryDataPackageSlice(dp));
-    out.summary = summary;
+    out.summary = dp ? { ...pickSummaryDataPackageSlice(dp), ...rowFields } : rowFields;
   }
 
   if (selected.has("strategistOutput")) {
@@ -331,8 +339,10 @@ export function StrategistTelemetryPanel() {
             style={{ minWidth: 100 }}
           >
             <option value="">All</option>
+            <option value="trade">Trade</option>
+            <option value="pass">Pass</option>
             <option value="recommendation">Recommendation</option>
-            <option value="no_viable_setup">No Viable</option>
+            <option value="no_viable_setup">No Viable / No Setup</option>
             <option value="toxic_block">Toxic Block</option>
             <option value="no_data">No Data</option>
           </select>
@@ -342,7 +352,7 @@ export function StrategistTelemetryPanel() {
       {loading && <div className="text-center text-zinc-500 font-mono text-xs py-6">Loading telemetry...</div>}
 
       {!loading && activeTab === "strategist" && (() => {
-        const filtered = resultFilter ? stratRows.filter(r => r.result === resultFilter) : stratRows;
+        const filtered = resultFilter ? stratRows.filter((r) => resultFilterKey(r) === resultFilter) : stratRows;
         return (
         <div className="space-y-2">
           {filtered.length === 0 && <div className="text-center text-zinc-600 font-mono text-xs py-6">{stratRows.length === 0 ? "No analyses recorded yet" : "No matches"}</div>}
