@@ -1314,12 +1314,6 @@ export function StrategistValidationCard({
       <button
         type="button"
         onClick={toggleExpanded}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            toggleExpanded();
-          }
-        }}
         aria-expanded={expanded}
         aria-controls={panelDomId}
         aria-label={expanded ? "Collapse validation card" : "Expand validation card"}
