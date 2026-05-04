@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { ChevronDown, ChevronUp, Activity, Search as SearchIcon, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 interface TelemetryRow {
   id: number;
@@ -23,6 +24,18 @@ interface TelemetryRow {
   recommendationThesis: string | null;
   fullDiagnostic?: unknown;
   dataPackage?: unknown;
+  rawAiResponse?: string | null;
+  confidenceBase?: number | null;
+  confidenceCatalystDelta?: number | null;
+  confidenceFinal?: number | null;
+  scannerSource?: string | null;
+  scannerScore?: number | null;
+  scannerEdgeType?: string | null;
+  scannerDirectionalLean?: string | null;
+  scannerMode?: string | null;
+  scannerSurfacedBy?: string | null;
+  scannerFlowScore?: number | null;
+  scannerUniverse?: string | null;
 }
 
 interface ScannerRow {
@@ -37,6 +50,215 @@ interface ScannerRow {
   thresholdUsed: number;
   catalystBonusAppliedTo: string[];
   results: any[];
+}
+
+function parseDataPackageRecord(dataPackage: unknown): Record<string, unknown> | null {
+  if (dataPackage == null) return null;
+  if (typeof dataPackage === "string") {
+    try {
+      const v = JSON.parse(dataPackage) as unknown;
+      return v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof dataPackage === "object" && !Array.isArray(dataPackage)) {
+    return dataPackage as Record<string, unknown>;
+  }
+  return null;
+}
+
+/** Portfolio manager decision from persisted strategist payload (desk v2 / AI shape). */
+function readStrategistPmDecision(dataPackage: unknown): string | null {
+  const dp = parseDataPackageRecord(dataPackage);
+  if (!dp) return null;
+  const sp = dp.strategistPayload;
+  if (sp == null || typeof sp !== "object" || Array.isArray(sp)) return null;
+  const pm = (sp as Record<string, unknown>).pm;
+  if (pm == null || typeof pm !== "object" || Array.isArray(pm)) return null;
+  const d = (pm as Record<string, unknown>).decision;
+  if (typeof d !== "string") return null;
+  return d.trim().toLowerCase();
+}
+
+function resultColorLegacy(r: string) {
+  if (r === "recommendation") return "#2ecc71";
+  if (r === "toxic_block") return "#ff4b5c";
+  return "#f5a623";
+}
+
+function formatLegacyResultLabel(result: string) {
+  return result.toUpperCase().replace(/_/g, " ");
+}
+
+type DecisionBadge = { label: string; color: string };
+
+function getDecisionBadge(row: TelemetryRow): DecisionBadge {
+  const pmDecision = readStrategistPmDecision(row.dataPackage);
+  if (pmDecision === "trade") {
+    return { label: "TRADE", color: "#2ecc71" };
+  }
+  if (pmDecision === "pass") {
+    return { label: "PASS", color: "#f5a623" };
+  }
+  if (pmDecision === "no_viable_setup") {
+    return { label: "NO SETUP", color: "#a1a1aa" };
+  }
+  const r = row.result;
+  return { label: formatLegacyResultLabel(r), color: resultColorLegacy(r) };
+}
+
+const DP_KEYS_STRATEGIST = ["strategistPayload"] as const;
+const DP_KEYS_VOL = ["optionsChainSummary", "realizedVol", "ivrContext"] as const;
+const DP_KEYS_OPTIONS = ["curatedExpirations", "availableExpirations"] as const;
+const DP_KEYS_FLOW = ["polygonFlowHighlights", "tapeBackfill"] as const;
+const DP_KEYS_CATALYST = ["catalyst", "macroEventsInPositionWindow", "nextEarnings", "polygonAnalyst"] as const;
+const DP_KEYS_DATA_QUALITY = ["dataQualitySummary"] as const;
+
+const DP_KEYS_OTHER_SECTIONS: ReadonlySet<string> = new Set([
+  ...DP_KEYS_STRATEGIST,
+  ...DP_KEYS_VOL,
+  ...DP_KEYS_OPTIONS,
+  ...DP_KEYS_FLOW,
+  ...DP_KEYS_CATALYST,
+  ...DP_KEYS_DATA_QUALITY,
+  "catalystEvaluation",
+]);
+
+type CopySectionId =
+  | "summary"
+  | "strategistOutput"
+  | "decisionContext"
+  | "volSurface"
+  | "optionsChain"
+  | "flow"
+  | "catalyst"
+  | "dataQuality"
+  | "diagnostic"
+  | "rawAiResponse";
+
+const COPY_SECTIONS_STORAGE_KEY = "strategistTelemetryCopySections";
+
+const COPY_SECTIONS: { id: CopySectionId; label: string }[] = [
+  { id: "summary", label: "Summary" },
+  { id: "strategistOutput", label: "Strategist Output" },
+  { id: "decisionContext", label: "Decision Context" },
+  { id: "volSurface", label: "Vol Surface" },
+  { id: "optionsChain", label: "Options Chain" },
+  { id: "flow", label: "Flow" },
+  { id: "catalyst", label: "Catalyst" },
+  { id: "dataQuality", label: "Data Quality" },
+  { id: "diagnostic", label: "Diagnostic" },
+  { id: "rawAiResponse", label: "Raw AI Response" },
+];
+
+function pickDp(dp: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of keys) {
+    if (k in dp) out[k] = dp[k];
+  }
+  return out;
+}
+
+function pickSummaryDataPackageSlice(dp: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(dp)) {
+    if (!DP_KEYS_OTHER_SECTIONS.has(k)) out[k] = dp[k];
+  }
+  return out;
+}
+
+function buildSectionedCopyPayload(row: TelemetryRow, selected: ReadonlySet<CopySectionId>): Record<string, unknown> {
+  const dp = parseDataPackageRecord(row.dataPackage);
+  const out: Record<string, unknown> = {};
+
+  if (selected.has("summary")) {
+    const summary: Record<string, unknown> = {
+      ticker: row.ticker,
+      timestamp: row.timestamp,
+      result: row.result,
+      scannerSource: row.scannerSource ?? null,
+      scannerScore: row.scannerScore ?? null,
+      scannerEdgeType: row.scannerEdgeType ?? null,
+      scannerDirectionalLean: row.scannerDirectionalLean ?? null,
+      scannerMode: row.scannerMode ?? null,
+      scannerSurfacedBy: row.scannerSurfacedBy ?? null,
+      scannerFlowScore: row.scannerFlowScore ?? null,
+      scannerUniverse: row.scannerUniverse ?? null,
+    };
+    if (dp) Object.assign(summary, pickSummaryDataPackageSlice(dp));
+    out.summary = summary;
+  }
+
+  if (selected.has("strategistOutput")) {
+    out.strategistOutput = dp ? pickDp(dp, DP_KEYS_STRATEGIST as unknown as string[]) : {};
+  }
+
+  if (selected.has("decisionContext")) {
+    out.decisionContext = {
+      regime: row.regime ?? null,
+      tickerData: row.tickerData ?? null,
+      idioScore: row.idioScore ?? null,
+      toxicGate: row.toxicGate ?? null,
+      catalystEvaluation: dp?.catalystEvaluation ?? null,
+      edgeAttribution: row.edgeAttribution ?? null,
+    };
+  }
+
+  if (selected.has("volSurface")) {
+    out.volSurface = dp ? pickDp(dp, DP_KEYS_VOL as unknown as string[]) : {};
+  }
+
+  if (selected.has("optionsChain")) {
+    out.optionsChain = dp ? pickDp(dp, DP_KEYS_OPTIONS as unknown as string[]) : {};
+  }
+
+  if (selected.has("flow")) {
+    out.flow = dp ? pickDp(dp, DP_KEYS_FLOW as unknown as string[]) : {};
+  }
+
+  if (selected.has("catalyst")) {
+    out.catalyst = dp ? pickDp(dp, DP_KEYS_CATALYST as unknown as string[]) : {};
+  }
+
+  if (selected.has("dataQuality")) {
+    out.dataQuality = dp ? pickDp(dp, DP_KEYS_DATA_QUALITY as unknown as string[]) : {};
+  }
+
+  if (selected.has("diagnostic")) {
+    out.diagnostic = row.fullDiagnostic ?? null;
+  }
+
+  if (selected.has("rawAiResponse")) {
+    out.rawAiResponse = {
+      rawAiResponse: row.rawAiResponse ?? null,
+      confidenceBase: row.confidenceBase ?? null,
+      confidenceCatalystDelta: row.confidenceCatalystDelta ?? null,
+      confidenceFinal: row.confidenceFinal ?? null,
+    };
+  }
+
+  return out;
+}
+
+async function writeClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
 }
 
 export function StrategistTelemetryPanel() {
@@ -66,12 +288,6 @@ export function StrategistTelemetryPanel() {
   const fmtDt = (iso: string) => {
     const d = new Date(iso);
     return `${d.toLocaleDateString(undefined, { month: "numeric", day: "numeric" })} ${d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
-  };
-
-  const resultColor = (r: string) => {
-    if (r === "recommendation") return "#2ecc71";
-    if (r === "toxic_block") return "#ff4b5c";
-    return "#f5a623";
   };
 
   return (
@@ -130,7 +346,9 @@ export function StrategistTelemetryPanel() {
         return (
         <div className="space-y-2">
           {filtered.length === 0 && <div className="text-center text-zinc-600 font-mono text-xs py-6">{stratRows.length === 0 ? "No analyses recorded yet" : "No matches"}</div>}
-          {filtered.map((row) => (
+          {filtered.map((row) => {
+            const badge = getDecisionBadge(row);
+            return (
             <div key={row.id} className="rounded-lg overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
               <button
                 onClick={() => setExpandedId(expandedId === row.id ? null : row.id)}
@@ -140,9 +358,9 @@ export function StrategistTelemetryPanel() {
                   <span className="font-mono text-[12px] text-white font-bold w-12 flex-shrink-0">{row.ticker}</span>
                   <span
                     className="font-mono text-[12px] font-bold px-1.5 py-0.5 rounded"
-                    style={{ color: resultColor(row.result), background: `${resultColor(row.result)}15` }}
+                    style={{ color: badge.color, background: `${badge.color}15` }}
                   >
-                    {row.result.toUpperCase().replace(/_/g, " ")}
+                    {badge.label}
                   </span>
                   {row.idioScore && (
                     <span className="font-mono text-[12px] text-zinc-300">
@@ -199,7 +417,8 @@ export function StrategistTelemetryPanel() {
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
         );
       })()}
@@ -249,55 +468,162 @@ export function StrategistTelemetryPanel() {
   );
 }
 
+function emptyChecked(): Record<CopySectionId, boolean> {
+  return Object.fromEntries(COPY_SECTIONS.map((s) => [s.id, false])) as Record<CopySectionId, boolean>;
+}
+
+function readStoredCopySelection(): Record<CopySectionId, boolean> | null {
+  try {
+    const raw = sessionStorage.getItem(COPY_SECTIONS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    const next = emptyChecked();
+    for (const id of parsed) {
+      if (typeof id === "string" && id in next) next[id as CopySectionId] = true;
+    }
+    return next;
+  } catch {
+    return null;
+  }
+}
+
 function TelemetryEntryCopyButton({ row }: { row: TelemetryRow }) {
-  const [copied, setCopied] = useState(false);
-  const onCopy = useCallback(
-    async (e: React.MouseEvent) => {
-      e.stopPropagation();
-      const payload = {
-        id: row.id,
-        timestamp: row.timestamp,
-        ticker: row.ticker,
-        result: row.result,
-        fullRow: row,
-      };
-      const text = JSON.stringify(payload, null, 2);
-      const done = () => {
-        setCopied(true);
-        toast.message("Copied");
-        window.setTimeout(() => setCopied(false), 2000);
-      };
+  const [open, setOpen] = useState(false);
+  const [checked, setChecked] = useState<Record<CopySectionId, boolean>>(emptyChecked);
+  const [justCopiedIcon, setJustCopiedIcon] = useState(false);
+  const selectAllRef = useRef<HTMLInputElement>(null);
+
+  const onOpenChange = useCallback((next: boolean) => {
+    setOpen(next);
+    if (next) {
+      const stored = readStoredCopySelection();
+      setChecked(stored ?? emptyChecked());
+    }
+  }, []);
+
+  const allSelected = COPY_SECTIONS.every((s) => checked[s.id]);
+  const noneSelected = COPY_SECTIONS.every((s) => !checked[s.id]);
+
+  const toggleSelectAll = useCallback(() => {
+    const nextVal = !allSelected;
+    setChecked(Object.fromEntries(COPY_SECTIONS.map((s) => [s.id, nextVal])) as Record<CopySectionId, boolean>);
+  }, [allSelected]);
+
+  const toggleOne = useCallback((id: CopySectionId) => {
+    setChecked((prev) => ({ ...prev, [id]: !prev[id] }));
+  }, []);
+
+  useEffect(() => {
+    const el = selectAllRef.current;
+    if (el) el.indeterminate = !allSelected && !noneSelected;
+  }, [allSelected, noneSelected]);
+
+  const flashCopied = useCallback(() => {
+    setJustCopiedIcon(true);
+    window.setTimeout(() => setJustCopiedIcon(false), 2000);
+  }, []);
+
+  const onCopySelected = useCallback(async () => {
+    const ids = COPY_SECTIONS.filter((s) => checked[s.id]).map((s) => s.id);
+    if (ids.length === 0) {
+      toast.message("Select at least one section");
+      return;
+    }
+    const payload = buildSectionedCopyPayload(row, new Set(ids));
+    const text = JSON.stringify(payload, null, 2);
+    const ok = await writeClipboard(text);
+    if (ok) {
       try {
-        if (navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(text);
-          done();
-        } else {
-          const ta = document.createElement("textarea");
-          ta.value = text;
-          ta.style.position = "fixed";
-          ta.style.left = "-9999px";
-          document.body.appendChild(ta);
-          ta.select();
-          document.execCommand("copy");
-          document.body.removeChild(ta);
-          done();
-        }
+        sessionStorage.setItem(COPY_SECTIONS_STORAGE_KEY, JSON.stringify(ids));
       } catch {
-        /* noop */
+        /* ignore quota / private mode */
+      }
+      toast.message(`Copied ${ids.length} section${ids.length === 1 ? "" : "s"}`);
+      setOpen(false);
+      flashCopied();
+    }
+  }, [row, checked, flashCopied]);
+
+  const onExportFull = useCallback(
+    async (e: React.MouseEvent) => {
+      e.preventDefault();
+      const payload = { id: row.id, timestamp: row.timestamp, ticker: row.ticker, result: row.result, fullRow: row };
+      const text = JSON.stringify(payload);
+      const ok = await writeClipboard(text);
+      if (ok) {
+        toast.message("Copied full row");
+        setOpen(false);
+        flashCopied();
       }
     },
-    [row],
+    [row, flashCopied],
   );
+
   return (
-    <button
-      type="button"
-      onClick={onCopy}
-      aria-label="Copy telemetry entry as JSON"
-      className="inline-flex items-center justify-center rounded-md border border-zinc-700 bg-zinc-900 text-zinc-300 hover:text-white hover:bg-zinc-800 shrink-0"
-      style={{ minWidth: 44, minHeight: 44 }}
-    >
-      {copied ? <Check className="w-4 h-4 text-emerald-400" aria-hidden /> : <Copy className="w-4 h-4" aria-hidden />}
-    </button>
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          onClick={(e) => e.stopPropagation()}
+          aria-label="Copy telemetry sections"
+          aria-expanded={open}
+          className="inline-flex items-center justify-center rounded-md border border-zinc-700 bg-zinc-900 text-zinc-300 hover:text-white hover:bg-zinc-800 shrink-0"
+          style={{ minWidth: 44, minHeight: 44 }}
+        >
+          {justCopiedIcon ? <Check className="w-4 h-4 text-emerald-400" aria-hidden /> : <Copy className="w-4 h-4" aria-hidden />}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-[min(100vw-2rem,22rem)] max-h-[min(70vh,28rem)] overflow-y-auto border-zinc-700 bg-zinc-950 p-3 text-zinc-100 shadow-xl"
+        align="end"
+        side="bottom"
+        sideOffset={6}
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="font-mono text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2">Copy sections</div>
+        <label className="flex items-center gap-2 cursor-pointer py-1.5 border-b border-zinc-800 mb-1">
+          <input
+            ref={selectAllRef}
+            type="checkbox"
+            className="rounded border-zinc-600"
+            checked={allSelected}
+            onChange={toggleSelectAll}
+          />
+          <span className="font-mono text-xs">Select all</span>
+        </label>
+        <ul className="space-y-1 mb-3">
+          {COPY_SECTIONS.map((s) => (
+            <li key={s.id}>
+              <label className="flex items-start gap-2 cursor-pointer py-1 rounded hover:bg-zinc-900/80 px-1 -mx-1">
+                <input
+                  type="checkbox"
+                  className="rounded border-zinc-600 mt-0.5 shrink-0"
+                  checked={checked[s.id]}
+                  onChange={() => toggleOne(s.id)}
+                />
+                <span className="font-mono text-[12px] text-zinc-200 leading-snug">{s.label}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+        <button
+          type="button"
+          onClick={onCopySelected}
+          className="w-full font-mono text-xs font-bold py-2 rounded-md bg-zinc-100 text-zinc-900 hover:bg-white mb-2"
+        >
+          Copy selected
+        </button>
+        <button
+          type="button"
+          onClick={onExportFull}
+          className="w-full text-center font-mono text-[11px] text-zinc-500 hover:text-zinc-300 underline-offset-2 hover:underline py-1"
+        >
+          Export full row
+        </button>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -305,7 +631,7 @@ function DetailBlock({ title, data }: { title: string; data: any }) {
   const [open, setOpen] = useState(false);
   return (
     <div>
-      <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 font-mono text-[12px] text-zinc-400 uppercase tracking-wider hover:text-white">
+      <button type="button" onClick={() => setOpen(!open)} className="flex items-center gap-1.5 font-mono text-[12px] text-zinc-400 uppercase tracking-wider hover:text-white">
         {open ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
         {title}
       </button>
