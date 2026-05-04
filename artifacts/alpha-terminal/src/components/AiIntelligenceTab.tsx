@@ -25,6 +25,7 @@ import type { AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
 import { useStrategistCache, type StrategistCacheData } from "@/hooks/useStrategistCache";
 import { MarketScanner } from "@/components/MarketScanner";
+import { TabErrorBoundary } from "@/components/TabErrorBoundary";
 import { takePendingScannerStrategistContext } from "@/lib/pendingScannerStrategistContext";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { AiLabStrategistView } from "@/components/AiLabStrategistView";
@@ -2589,7 +2590,15 @@ const AI_TABS: AiSubTab[] = ["pulse", "strategist", "scanner"];
 
 type StrategistMode = "options" | "ailab";
 
-export function AiIntelligenceTab({
+export function AiIntelligenceTab(props: AiIntelligenceTabProps) {
+  return (
+    <TabErrorBoundary tabName="Strategist tab">
+      <AiIntelligenceTabInner {...props} />
+    </TabErrorBoundary>
+  );
+}
+
+function AiIntelligenceTabInner({
   subTab,
   onSubTabChange,
   pulseDashRef,
@@ -2648,8 +2657,13 @@ export function AiIntelligenceTab({
     preTradeEnabled, preTradeBlockOnRed, preTradeMinRR,
     preTradeMaxPositionPct, preTradeMinDTE, accountSize,
   } = useTerminalStore();
-  const aiModel = aiFeatureSettings.strategist.model;
-  const aiTemp = aiFeatureSettings.strategist.temperature;
+  const strategistAi = useMemo(() => {
+    const s = aiFeatureSettings?.strategist;
+    if (s && typeof s.model === "string" && typeof s.temperature === "number") return s;
+    return { model: "claude-sonnet-4-6", temperature: 0 };
+  }, [aiFeatureSettings]);
+  const aiModel = strategistAi.model;
+  const aiTemp = strategistAi.temperature;
 
   const { cachedData: strategistCache, setCachedData: setStrategistCache } = useStrategistCache(symbol);
 
@@ -2997,8 +3011,10 @@ export function AiIntelligenceTab({
 
     const snap = useTerminalStore.getState();
     const currentBias = snap.stratBias;
-    const currentAiModel = snap.aiFeatureSettings.strategist.model;
-    const currentAiTemp = snap.aiFeatureSettings.strategist.temperature;
+    const stratSettings = snap.aiFeatureSettings?.strategist;
+    const currentAiModel =
+      stratSettings?.model && typeof stratSettings.model === "string" ? stratSettings.model : "claude-sonnet-4-6";
+    const currentAiTemp = typeof stratSettings?.temperature === "number" ? stratSettings.temperature : 0;
 
     const collected: StrategistCacheData = {
       strategies: [],
