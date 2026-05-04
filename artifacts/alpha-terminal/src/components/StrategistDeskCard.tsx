@@ -7,7 +7,7 @@ import {
   type CSSProperties,
 } from "react";
 import type { BlockReason, StrategistOutcome } from "@/components/StrategistV2Card";
-import { ChevronDown, ChevronUp, AlertTriangle, Copy, Play, Pause, Square } from "lucide-react";
+import { ChevronDown, ChevronUp, AlertTriangle, Copy, Play, Pause, Square, Rewind, FastForward } from "lucide-react";
 import { toast } from "sonner";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import type { DeskResult, DeskStructure } from "@/lib/strategistDeskResult";
@@ -18,6 +18,9 @@ export type { DeskResult } from "@/lib/strategistDeskResult";
 
 /** OpenAI TTS input limit per request; smaller chunks start audio sooner. */
 const TTS_CHUNK_TARGET_CHARS = 900;
+
+/** Skip / rewind step in the desk audio bar (seconds within the current segment). */
+const AUDIO_SKIP_SECONDS = 15;
 
 const PAL = {
   bgCard: "#141414",
@@ -634,81 +637,90 @@ export function StrategistDeskCard({
     }
   }, [deskAudioChunks, deskAudioText, deskResultId, prefetchPrimaryKey, revokeObjectUrl]);
 
+  const loadProgressiveChunkAtIndex = useCallback(
+    async (targetIdx: number) => {
+      const sess = progressiveSessionRef.current;
+      if (!sess) return;
+      const { playGen, chunks } = sess;
+      if (playGen !== audioPlayGenRef.current) return;
+      if (targetIdx < 0) return;
+      if (targetIdx >= chunks.length) {
+        progressiveSessionRef.current = null;
+        stopAudio();
+        return;
+      }
+      const text = chunks[targetIdx];
+      if (!text?.trim()) {
+        progressiveSessionRef.current = null;
+        stopAudio();
+        return;
+      }
+      progressiveFetchAbortRef.current?.abort();
+      const ac = new AbortController();
+      progressiveFetchAbortRef.current = ac;
+      try {
+        const res = await fetchWithAuth("/api/tts/desk-audio", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, deskResultId }),
+          signal: ac.signal,
+          clerkTokenTimeoutMs: 8000,
+        });
+        if (playGen !== audioPlayGenRef.current) return;
+        if (!res.ok) {
+          progressiveSessionRef.current = null;
+          setAudioError("Audio unavailable — segment failed");
+          return;
+        }
+        const blob = await res.blob();
+        if (playGen !== audioPlayGenRef.current) return;
+        revokeObjectUrl();
+        const url = URL.createObjectURL(blob);
+        objectUrlRef.current = url;
+        progressiveSessionRef.current = { playGen, chunks, index: targetIdx };
+        const el = audioRef.current;
+        if (el) {
+          el.src = url;
+          el.playbackRate = speechRateRef.current;
+          expectAudioPlaybackRef.current = true;
+          try {
+            const p = el.play();
+            if (p !== undefined) {
+              void p.catch(() => {
+                expectAudioPlaybackRef.current = false;
+                if (playGen === audioPlayGenRef.current) {
+                  progressiveSessionRef.current = null;
+                  setAudioError("Audio unavailable — playback failed");
+                }
+              });
+            }
+          } catch {
+            expectAudioPlaybackRef.current = false;
+            if (playGen === audioPlayGenRef.current) {
+              progressiveSessionRef.current = null;
+              setAudioError("Audio unavailable — playback failed");
+            }
+          }
+        }
+      } catch {
+        if (playGen === audioPlayGenRef.current) {
+          progressiveSessionRef.current = null;
+          setAudioError("Audio unavailable — network error");
+        }
+      } finally {
+        if (progressiveFetchAbortRef.current === ac) {
+          progressiveFetchAbortRef.current = null;
+        }
+      }
+    },
+    [deskResultId, revokeObjectUrl, stopAudio],
+  );
+
   const advanceProgressiveChunk = useCallback(async () => {
     const sess = progressiveSessionRef.current;
     if (!sess) return;
-    const { playGen, chunks, index } = sess;
-    if (playGen !== audioPlayGenRef.current) return;
-    const nextIdx = index + 1;
-    if (nextIdx >= chunks.length) {
-      progressiveSessionRef.current = null;
-      stopAudio();
-      return;
-    }
-    progressiveFetchAbortRef.current?.abort();
-    const ac = new AbortController();
-    progressiveFetchAbortRef.current = ac;
-    const text = chunks[nextIdx];
-    if (!text?.trim()) {
-      progressiveSessionRef.current = null;
-      stopAudio();
-      return;
-    }
-    try {
-      const res = await fetchWithAuth("/api/tts/desk-audio", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, deskResultId }),
-        signal: ac.signal,
-        clerkTokenTimeoutMs: 8000,
-      });
-      if (playGen !== audioPlayGenRef.current) return;
-      if (!res.ok) {
-        progressiveSessionRef.current = null;
-        setAudioError("Audio unavailable — next segment failed");
-        return;
-      }
-      const blob = await res.blob();
-      if (playGen !== audioPlayGenRef.current) return;
-      revokeObjectUrl();
-      const url = URL.createObjectURL(blob);
-      objectUrlRef.current = url;
-      progressiveSessionRef.current = { playGen, chunks, index: nextIdx };
-      const el = audioRef.current;
-      if (el) {
-        el.src = url;
-        el.playbackRate = speechRateRef.current;
-        expectAudioPlaybackRef.current = true;
-        try {
-          const p = el.play();
-          if (p !== undefined) {
-            void p.catch(() => {
-              expectAudioPlaybackRef.current = false;
-              if (playGen === audioPlayGenRef.current) {
-                progressiveSessionRef.current = null;
-                setAudioError("Audio unavailable — playback failed");
-              }
-            });
-          }
-        } catch {
-          expectAudioPlaybackRef.current = false;
-          if (playGen === audioPlayGenRef.current) {
-            progressiveSessionRef.current = null;
-            setAudioError("Audio unavailable — playback failed");
-          }
-        }
-      }
-    } catch {
-      if (playGen === audioPlayGenRef.current) {
-        progressiveSessionRef.current = null;
-        setAudioError("Audio unavailable — network error");
-      }
-    } finally {
-      if (progressiveFetchAbortRef.current === ac) {
-        progressiveFetchAbortRef.current = null;
-      }
-    }
-  }, [deskResultId, revokeObjectUrl, stopAudio]);
+    await loadProgressiveChunkAtIndex(sess.index + 1);
+  }, [loadProgressiveChunkAtIndex]);
 
   /** Prefetch first TTS segment (or full script if short) so Play often skips waiting. */
   useEffect(() => {
@@ -829,6 +841,58 @@ export function StrategistDeskCard({
       }
     },
     [],
+  );
+
+  const seekRelativeSeconds = useCallback(
+    (deltaSec: number) => {
+      const el = audioRef.current;
+      if (!el?.src || !audioReady) return;
+
+      const resumeIfPaused = () => {
+        if (el.paused) {
+          void el.play().catch(() => {});
+          setPaused(false);
+        }
+      };
+
+      if (deltaSec < 0) {
+        const t = el.currentTime + deltaSec;
+        if (t > 0.25) {
+          el.currentTime = Math.max(0, t);
+          resumeIfPaused();
+          return;
+        }
+        const sess = progressiveSessionRef.current;
+        if (sess && sess.playGen === audioPlayGenRef.current && sess.index > 0) {
+          void loadProgressiveChunkAtIndex(sess.index - 1);
+          return;
+        }
+        el.currentTime = 0;
+        resumeIfPaused();
+        return;
+      }
+
+      const dur = Number.isFinite(el.duration) ? el.duration : NaN;
+      const t = el.currentTime + deltaSec;
+      if (!Number.isFinite(dur) || dur <= 0) {
+        el.currentTime = Math.max(0, t);
+        resumeIfPaused();
+        return;
+      }
+      const nearEnd = t >= dur - 0.35 || el.currentTime >= dur - 0.25;
+      const sess = progressiveSessionRef.current;
+      const hasNextChunk =
+        sess &&
+        sess.playGen === audioPlayGenRef.current &&
+        sess.index < sess.chunks.length - 1;
+      if (nearEnd && hasNextChunk) {
+        void loadProgressiveChunkAtIndex(sess.index + 1);
+        return;
+      }
+      el.currentTime = Math.min(dur, t);
+      resumeIfPaused();
+    },
+    [loadProgressiveChunkAtIndex, audioReady],
   );
 
   const onAudioEnded = useCallback(() => {
@@ -1016,6 +1080,17 @@ export function StrategistDeskCard({
           <button
             type="button"
             style={iconBtnBase}
+            aria-label={`Rewind ${AUDIO_SKIP_SECONDS} seconds`}
+            onClick={() => seekRelativeSeconds(-AUDIO_SKIP_SECONDS)}
+            disabled={!audioReady}
+            onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
+            onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
+          >
+            <Rewind size={20} aria-hidden />
+          </button>
+          <button
+            type="button"
+            style={iconBtnBase}
             aria-label={paused ? "Resume audio playback" : "Pause audio playback"}
             onClick={togglePause}
             disabled={!audioReady}
@@ -1023,6 +1098,17 @@ export function StrategistDeskCard({
             onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
           >
             {paused ? <Play size={20} aria-hidden /> : <Pause size={20} aria-hidden />}
+          </button>
+          <button
+            type="button"
+            style={iconBtnBase}
+            aria-label={`Fast-forward ${AUDIO_SKIP_SECONDS} seconds`}
+            onClick={() => seekRelativeSeconds(AUDIO_SKIP_SECONDS)}
+            disabled={!audioReady}
+            onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
+            onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
+          >
+            <FastForward size={20} aria-hidden />
           </button>
           <button
             type="button"
