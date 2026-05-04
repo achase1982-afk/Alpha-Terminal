@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo } from "react";
 import { ChevronDown, Send } from "lucide-react";
 import { useQuote } from "@/hooks/useQuote";
 import {
