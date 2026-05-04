@@ -650,9 +650,6 @@ export async function runStrategistTapeBackfill(args: {
       };
       const ml = occLegWindow.annotate(ticker, sample);
       occLegWindow.record(ticker, sample);
-      if (cl.side == null) {
-        insertedNullSideThisRun++;
-      }
       rowsToInsert.push({
         underlyingSymbol: ticker,
         date: sessionDate,
@@ -695,9 +692,12 @@ export async function runStrategistTapeBackfill(args: {
               .insert(optionsFlowRawTradesTable)
               .values(slice)
               .onConflictDoNothing(OPTIONS_FLOW_RAW_TRADES_ON_CONFLICT_SOURCE_DEDUPE)
-              .returning({ id: optionsFlowRawTradesTable.id });
+              .returning({ side: optionsFlowRawTradesTable.side });
             tradesInserted += ins.length;
             occInserted += ins.length;
+            for (const row of ins) {
+              if (row.side == null) insertedNullSideThisRun++;
+            }
           }
           const occDropped = rowsToInsert.length - occInserted;
           if (occDropped > 0) {
