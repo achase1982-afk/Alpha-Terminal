@@ -19,6 +19,19 @@ export function getGeminiApiKey(): string | undefined {
   return getGeminiCredentials()?.apiKey;
 }
 
+/**
+ * Base URL for Gemini `generateContent` REST calls (same key as @google/genai).
+ * When using Replit-style integrations, requests go through AI_INTEGRATIONS_GEMINI_BASE_URL.
+ */
+export function getGeminiGenerateContentBaseUrl(): string {
+  const credentials = getGeminiCredentials();
+  const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
+  if (baseUrl && credentials?.source === "AI_INTEGRATIONS_GEMINI_API_KEY") {
+    return baseUrl.replace(/\/$/, "");
+  }
+  return "https://generativelanguage.googleapis.com";
+}
+
 export function hasGeminiApiKey(): boolean {
   return !!getGeminiApiKey();
 }
