@@ -19,6 +19,9 @@ export type { DeskResult } from "@/lib/strategistDeskResult";
 /** OpenAI TTS input limit per request; smaller chunks start audio sooner. */
 const TTS_CHUNK_TARGET_CHARS = 900;
 
+/** Desk TTS fetch timeout (initial, progressive, and prefetch). */
+const TTS_FETCH_MS = 180_000;
+
 const PAL = {
   bgCard: "#141414",
   bgInner: "#0a0a0a",
@@ -547,6 +550,9 @@ export function StrategistDeskCard({
       prefetchedAudioUrlRef.current = null;
       prefetchedAudioKeyRef.current = null;
       const ok = await attachAndPlay(url);
+      if (!ok && objectUrlRef.current !== url) {
+        URL.revokeObjectURL(url);
+      }
       if (ok && deskAudioChunks.length > 1) {
         progressiveSessionRef.current = { playGen, chunks: deskAudioChunks, index: 0 };
       }
@@ -555,7 +561,6 @@ export function StrategistDeskCard({
 
     const ac = new AbortController();
     ttsFetchAbortRef.current = ac;
-    const TTS_FETCH_MS = 180_000;
     const timeoutId =
       typeof window !== "undefined"
         ? window.setTimeout(() => {
@@ -591,6 +596,9 @@ export function StrategistDeskCard({
       if (playGen !== audioPlayGenRef.current) return;
       const url = URL.createObjectURL(blob);
       const ok = await attachAndPlay(url);
+      if (!ok && objectUrlRef.current !== url) {
+        URL.revokeObjectURL(url);
+      }
       if (ok && deskAudioChunks.length > 1) {
         progressiveSessionRef.current = { playGen, chunks: deskAudioChunks, index: 0 };
       }
@@ -634,6 +642,12 @@ export function StrategistDeskCard({
       stopAudio();
       return;
     }
+    const timeoutId =
+      typeof window !== "undefined"
+        ? window.setTimeout(() => {
+            ac.abort();
+          }, TTS_FETCH_MS)
+        : 0;
     try {
       const res = await fetchWithAuth("/api/tts/desk-audio", {
         method: "POST",
@@ -660,12 +674,17 @@ export function StrategistDeskCard({
         el.playbackRate = speechRateRef.current;
         await el.play();
       }
-    } catch {
-      if (playGen === audioPlayGenRef.current) {
-        progressiveSessionRef.current = null;
-        setAudioError("Audio unavailable — network error");
-      }
+    } catch (e) {
+      if (playGen !== audioPlayGenRef.current) return;
+      progressiveSessionRef.current = null;
+      const aborted = e instanceof DOMException && e.name === "AbortError";
+      setAudioError(
+        aborted
+          ? "Audio unavailable — request timed out or was cancelled"
+          : "Audio unavailable — network error",
+      );
     } finally {
+      if (timeoutId) window.clearTimeout(timeoutId);
       if (progressiveFetchAbortRef.current === ac) {
         progressiveFetchAbortRef.current = null;
       }
@@ -692,7 +711,7 @@ export function StrategistDeskCard({
       typeof window !== "undefined"
         ? window.setTimeout(() => {
             ac.abort();
-          }, 180_000)
+          }, TTS_FETCH_MS)
         : 0;
 
     void (async () => {
