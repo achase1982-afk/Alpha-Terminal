@@ -1227,7 +1227,11 @@ export function StrategistValidationCard({
   const persistExpanded = useCallback(
     (next: boolean) => {
       if (collapseStorageKey && typeof sessionStorage !== "undefined") {
-        sessionStorage.setItem(`${VALIDATION_CARD_EXPANDED_STORAGE_PREFIX}${collapseStorageKey}`, next ? "1" : "0");
+        try {
+          sessionStorage.setItem(`${VALIDATION_CARD_EXPANDED_STORAGE_PREFIX}${collapseStorageKey}`, next ? "1" : "0");
+        } catch {
+          /* QuotaExceededError / private mode */
+        }
       }
     },
     [collapseStorageKey],
