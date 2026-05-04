@@ -785,8 +785,10 @@ export async function runStrategistTapeBackfill(args: {
     }
 
     const budgetLeft = deadline - Date.now();
-    const remainingRoots = occList.length - occIdx;
-    const fairSlice = Math.floor(budgetLeft / Math.max(1, remainingRoots));
+    const batchStartIdx = Math.floor(occIdx / CONCURRENCY) * CONCURRENCY;
+    const rootsRemainingFromBatch = occList.length - batchStartIdx;
+    const remainingWaves = Math.max(1, Math.ceil(rootsRemainingFromBatch / CONCURRENCY));
+    const fairSlice = Math.floor(budgetLeft / remainingWaves);
     const rootBudget = Math.min(PER_ROOT_MAX_MS, Math.max(PER_ROOT_MIN_MS, fairSlice));
     const occDeadline = Math.min(deadline, Date.now() + Math.min(rootBudget, budgetLeft));
 
@@ -983,6 +985,7 @@ export async function runStrategistTapeBackfill(args: {
 
   for (const r of occResults) {
     if (r.kind !== "completed") {
+      if (r.anyError) anyError = true;
       if (r.kind === "skipped_budget") {
         anyTruncated = true;
       }
