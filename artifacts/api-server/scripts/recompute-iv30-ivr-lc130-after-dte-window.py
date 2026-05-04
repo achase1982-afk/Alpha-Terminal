@@ -296,10 +296,6 @@ def main() -> None:
                 src = None
 
             if iv_new is None:
-                cur.execute(
-                    "UPDATE equity_daily SET iv_30d = NULL, ivr = NULL, ivr_source = NULL WHERE symbol = %s AND date = %s::date",
-                    (sym.upper(), SESSION_DATE),
-                )
                 continue
 
             cur.execute(
