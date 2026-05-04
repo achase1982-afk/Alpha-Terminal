@@ -1539,7 +1539,13 @@ export async function runDiscoveryScan(
   const totalElapsedMs = Date.now() - scanStart;
   let responsePayloadBytes: number | null = null;
   try {
-    responsePayloadBytes = Buffer.byteLength(JSON.stringify(result), "utf8");
+    const { allScoredResults, ...rest } = result;
+    let bytes = Buffer.byteLength(JSON.stringify(rest), "utf8");
+    if (allScoredResults && allScoredResults.length > 0) {
+      const perRow = Buffer.byteLength(JSON.stringify(allScoredResults[0]), "utf8");
+      bytes += perRow * allScoredResults.length;
+    }
+    responsePayloadBytes = bytes;
   } catch {
     responsePayloadBytes = null;
   }
