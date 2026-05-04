@@ -176,6 +176,20 @@ export interface BuildFullDiagnosticArgs {
   error: { message: string; stack?: string } | null;
   closingImbalancePresent?: boolean;
   closingImbalanceLatencyMs?: number | null;
+  nasdaqDepthPresent?: boolean | null;
+  nasdaqDepthLatencyMs?: number | null;
+  esContextPresent?: boolean | null;
+  esContextLatencyMs?: number | null;
+  cboeOnePresent?: boolean | null;
+  cboeOneLatencyMs?: number | null;
+  iseComplexBookPresent?: boolean | null;
+  iseComplexBookLatencyMs?: number | null;
+  totalviewPoolSize?: number | null;
+  totalviewPoolCapacity?: number | null;
+  totalviewWasColdStart?: boolean | null;
+  cboeOnePoolSize?: number | null;
+  cboeOnePoolCapacity?: number | null;
+  cboeOneWasColdStart?: boolean | null;
 }
 
 export function buildStrategistFullDiagnosticJson(args: BuildFullDiagnosticArgs): Record<string, unknown> {
@@ -202,6 +216,20 @@ export function buildStrategistFullDiagnosticJson(args: BuildFullDiagnosticArgs)
     sweepBlockLargePerSession: sessionRollups.sweepBlockLargePerSession,
     closingImbalancePresent,
     closingImbalanceLatencyMs,
+    nasdaqDepthPresent: args.nasdaqDepthPresent ?? null,
+    nasdaqDepthLatencyMs: args.nasdaqDepthLatencyMs ?? null,
+    esContextPresent: args.esContextPresent ?? null,
+    esContextLatencyMs: args.esContextLatencyMs ?? null,
+    cboeOnePresent: args.cboeOnePresent ?? null,
+    cboeOneLatencyMs: args.cboeOneLatencyMs ?? null,
+    iseComplexBookPresent: args.iseComplexBookPresent ?? null,
+    iseComplexBookLatencyMs: args.iseComplexBookLatencyMs ?? null,
+    totalviewPoolSize: args.totalviewPoolSize ?? null,
+    totalviewPoolCapacity: args.totalviewPoolCapacity ?? null,
+    totalviewWasColdStart: args.totalviewWasColdStart ?? null,
+    cboeOnePoolSize: args.cboeOnePoolSize ?? null,
+    cboeOnePoolCapacity: args.cboeOnePoolCapacity ?? null,
+    cboeOneWasColdStart: args.cboeOneWasColdStart ?? null,
   };
   const tapeDiag = buildTapeBackfillDiagnostic(args.tapeBackfillStatus);
 

@@ -47,7 +47,7 @@ import {
   DEFAULT_SKEPTIC_REEVAL_SYSTEM_PROMPT,
 } from "../lib/aiLabSkepticClient.js";
 import { refreshOrchestratorConfig } from "../lib/aiLabOrchestrator.js";
-import { LIQUID_CORE_SYMBOLS } from "../data/liquidCore130.js";
+import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
 import { getAuth } from "@clerk/express";
 
 const DEV_BYPASS = process.env.VITE_DEV_BYPASS_AUTH === "true";
@@ -377,7 +377,7 @@ router.get("/universes", async (req, res) => {
     const userId = getUserId(req);
     const watchlists = await db.select().from(scannerWatchlistsTable).where(eq(scannerWatchlistsTable.userId, userId));
     const universes = [
-      { id: "LIQUID_CORE", name: "Liquid 130", symbolCount: LIQUID_CORE_SYMBOLS.length, source: "preset" },
+      { id: "LIQUID_CORE", name: "Liquid 130", symbolCount: LIQUID_CORE_SYMBOL_STRINGS.length, source: "preset" },
       ...watchlists.map(w => ({
         id: `watchlist_${w.id}`,
         name: w.name,

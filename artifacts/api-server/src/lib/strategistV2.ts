@@ -31,6 +31,16 @@ import {
 import { runWithPolygonApiTraceAsync, takePolygonApiTrace } from "./polygonApiTrace.js";
 import { runInStrategistRunContext, getStrategistRunContext, mergeStrategistDiag } from "./strategistRunContext.js";
 import { fetchRecentNyseImbalanceForTicker, CLOSING_IMBALANCE_BALANCED_THRESHOLD_USD } from "./ibImbalancePersistence.js";
+import { fetchRecentNasdaqTotalviewForTicker } from "./ibTotalviewPersistence.js";
+import { fetchRecentEsDepthSummary } from "./ibEsDepthPersistence.js";
+import { acquireDynamicIbPool } from "./ibDynamicSubscriptionManager.js";
+import { isNasdaqPrimaryListing, resolveEquityListingForTotalview } from "./ibSymbolListingCache.js";
+import {
+  getCboeOneFeedDiagnostics,
+  getIbDynamicPoolDiagnosticsSnapshot,
+  getRecentTotalviewSummaryForTicker,
+} from "./ibStreamer.js";
+import { getQuoteBySymbol } from "./schwabStreamer.js";
 import { lastCompletedTradingDayNy, nyCalendarYmd, rthBoundsMs } from "./polygonMarketCalendar.js";
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
 import { getNextEarningsDate, type NextEarnings } from "./earningsService.js";
@@ -223,6 +233,8 @@ interface TickerData {
   marketCapUsd: number | null;
   /** Schwab reference.assetType / assetMainType when present. */
   schwabAssetType: string | null;
+  /** Schwab reference.exchange when present — used for venue routing hints (e.g. TotalView). */
+  schwabExchangeHint: string | null;
   /** Tier, ETF flag, tiered large-print threshold, boundary proximity (Items 2, 4, 19, 26). */
   marketContext: MarketContextSnapshot;
   earningsWithin48h: boolean;
@@ -453,6 +465,7 @@ interface SchwabQuoteRow {
 interface SchwabReferenceRow {
   assetType?: string;
   assetMainType?: string;
+  exchange?: string;
 }
 
 interface SchwabFundamentalRow {
@@ -3047,11 +3060,56 @@ async function buildDataPackage(
     pkg.macroEventsInPositionWindow = macroEventsInPositionWindow;
   }
 
+  const upperTicker = ticker.toUpperCase();
+
+  const listing = await resolveEquityListingForTotalview(upperTicker, {
+    schwabExchangeHint: tickerData.schwabExchangeHint,
+  });
+  let totalviewWasColdStart = false;
+  if (isNasdaqPrimaryListing(listing)) {
+    totalviewWasColdStart = acquireDynamicIbPool("totalview", upperTicker).wasColdStart;
+    const deadline = Date.now() + 2_000;
+    let mem = getRecentTotalviewSummaryForTicker(upperTicker);
+    while (!mem && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 200));
+      mem = getRecentTotalviewSummaryForTicker(upperTicker);
+    }
+  }
+
+  const cboeWasColdStart = acquireDynamicIbPool("cboeOne", upperTicker).wasColdStart;
+  const cboeDeadline = Date.now() + 1_000;
+  while (Date.now() < cboeDeadline) {
+    const q = getQuoteBySymbol(upperTicker);
+    if (q?.quoteSource === "IBKR_CBOE_ONE") break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+
+  const poolDiag = getIbDynamicPoolDiagnosticsSnapshot();
+
+  const tv = await fetchRecentNasdaqTotalviewForTicker(ticker);
+  const es = await fetchRecentEsDepthSummary();
+  const cboeDiag = getCboeOneFeedDiagnostics(upperTicker);
   const imb = await fetchRecentNyseImbalanceForTicker(ticker);
+
   mergeStrategistDiag({
     closingImbalancePresent: imb.row != null,
     closingImbalanceLatencyMs: imb.latencyMs,
+    nasdaqDepthPresent: tv.row != null,
+    nasdaqDepthLatencyMs: tv.latencyMs,
+    esContextPresent: es.row != null,
+    esContextLatencyMs: es.latencyMs,
+    cboeOnePresent: cboeDiag.present,
+    cboeOneLatencyMs: cboeDiag.latencyMs,
+    iseComplexBookPresent: false,
+    iseComplexBookLatencyMs: null,
+    totalviewPoolSize: poolDiag.totalviewPoolSize,
+    totalviewPoolCapacity: poolDiag.totalviewPoolCapacity,
+    totalviewWasColdStart,
+    cboeOnePoolSize: poolDiag.cboeOnePoolSize,
+    cboeOnePoolCapacity: poolDiag.cboeOnePoolCapacity,
+    cboeOneWasColdStart: cboeWasColdStart,
   });
+
   if (imb.row) {
     const row = imb.row;
     const shares = Number(row.imbalanceShares);
@@ -3073,6 +3131,39 @@ async function buildDataPackage(
       notionalUsd,
       indicativePrice: ip,
       indicativePriceVsLast,
+    };
+  }
+
+  if (tv.row) {
+    const r = tv.row;
+    pkg.nasdaqDepth = {
+      symbol: r.underlyingSymbol,
+      spotMid: r.spotMid,
+      bidDepth5pct: r.bidDepth5pct,
+      askDepth5pct: r.askDepth5pct,
+      bidDepth1pct: r.bidDepth1pct,
+      askDepth1pct: r.askDepth1pct,
+      bookImbalanceRatio: r.bookImbalanceRatio,
+      topBidSize: r.topBidSize,
+      topAskSize: r.topAskSize,
+      updatedAt: r.summaryTimestamp.toISOString(),
+    };
+  }
+
+  if (es.row) {
+    const e = es.row;
+    pkg.esContext = {
+      symbol: "ES",
+      contractMonth: e.contractMonth,
+      midPrice: e.midPrice,
+      bidDepth5ticks: e.bidDepth5ticks,
+      askDepth5ticks: e.askDepth5ticks,
+      bidDepth1tick: e.bidDepth1tick,
+      askDepth1tick: e.askDepth1tick,
+      bookImbalanceRatio: e.bookImbalanceRatio,
+      topBidSize: e.topBidSize,
+      topAskSize: e.topAskSize,
+      updatedAt: e.summaryTimestamp.toISOString(),
     };
   }
 
@@ -3882,6 +3973,8 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
         : typeof ref?.assetMainType === "string"
           ? ref.assetMainType
           : null;
+    const schwabExchangeHint =
+      typeof ref?.exchange === "string" && ref.exchange.length > 0 ? ref.exchange : null;
     const marketContext = buildMarketContextSnapshot({
       ticker: upper,
       marketCapUsd,
@@ -3919,6 +4012,7 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
         sector: f.sector ?? "Unknown",
         marketCapUsd,
         schwabAssetType,
+        schwabExchangeHint,
         marketContext,
         earningsWithin48h,
         earningsDaysAway,
@@ -4197,6 +4291,20 @@ async function emitFullDiagnosticTelemetry(args: {
     error: args.extras.error ?? null,
     closingImbalancePresent: ctx?.diag.closingImbalancePresent,
     closingImbalanceLatencyMs: ctx?.diag.closingImbalanceLatencyMs ?? null,
+    nasdaqDepthPresent: ctx?.diag.nasdaqDepthPresent ?? null,
+    nasdaqDepthLatencyMs: ctx?.diag.nasdaqDepthLatencyMs ?? null,
+    esContextPresent: ctx?.diag.esContextPresent ?? null,
+    esContextLatencyMs: ctx?.diag.esContextLatencyMs ?? null,
+    cboeOnePresent: ctx?.diag.cboeOnePresent ?? null,
+    cboeOneLatencyMs: ctx?.diag.cboeOneLatencyMs ?? null,
+    iseComplexBookPresent: ctx?.diag.iseComplexBookPresent ?? null,
+    iseComplexBookLatencyMs: ctx?.diag.iseComplexBookLatencyMs ?? null,
+    totalviewPoolSize: ctx?.diag.totalviewPoolSize ?? null,
+    totalviewPoolCapacity: ctx?.diag.totalviewPoolCapacity ?? null,
+    totalviewWasColdStart: ctx?.diag.totalviewWasColdStart ?? null,
+    cboeOnePoolSize: ctx?.diag.cboeOnePoolSize ?? null,
+    cboeOnePoolCapacity: ctx?.diag.cboeOnePoolCapacity ?? null,
+    cboeOneWasColdStart: ctx?.diag.cboeOneWasColdStart ?? null,
   });
   return logTelemetry(
     args.ticker,

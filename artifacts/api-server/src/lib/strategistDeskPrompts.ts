@@ -54,14 +54,32 @@ DATA STATE (literal labels only):
 - If **dataQualitySummary.flags** is non-empty, mention the relevant flag(s) when they affect your conclusion.
 - **schemaVersion** is for client compatibility only; do not discuss schema or versioning in prose.`;
 
-function snapshotBlock(dataPackage: string): string {
-  const imb = formatClosingImbalanceDeskLine(dataPackage);
-  return `Market snapshot for this name (facts below only; use what is present and do not invent):
-
-${dataPackage}${DATA_STATE_LANGUAGE_RULES}${imb}`;
+function formatMicrostructureDeskLines(dataPackage: string): string {
+  try {
+    const pkg = JSON.parse(dataPackage) as {
+      nasdaqDepth?: { bidDepth5pct: number; askDepth5pct: number; bookImbalanceRatio: number };
+      esContext?: { bidDepth5ticks: number; askDepth5ticks: number; bookImbalanceRatio: number; midPrice: number };
+    };
+    const parts: string[] = [];
+    if (pkg.nasdaqDepth) {
+      const d = pkg.nasdaqDepth;
+      parts.push(
+        `NASDAQ depth (last 1 min): bid ${d.bidDepth5pct} vs ask ${d.askDepth5pct} within 5%, imbalance ${d.bookImbalanceRatio}.`,
+      );
+    }
+    if (pkg.esContext) {
+      const e = pkg.esContext;
+      parts.push(
+        `ES depth (last 1 min): bid ${e.bidDepth5ticks} vs ask ${e.askDepth5ticks} within 5 ticks, imbalance ${e.bookImbalanceRatio}, mid ${e.midPrice}.`,
+      );
+    }
+    if (parts.length === 0) return "";
+    return "\n\n" + parts.join("\n");
+  } catch {
+    return "";
+  }
 }
 
-/** One-line imbalance hint for desk prompts when **closingImbalance** is present in the JSON. */
 function formatClosingImbalanceDeskLine(dataPackage: string): string {
   try {
     const pkg = JSON.parse(dataPackage) as {
@@ -81,6 +99,13 @@ Closing imbalance (last 5 min): ${c.side} $${notionalM.toFixed(2)}M at ${c.indic
   } catch {
     return "";
   }
+}
+
+function snapshotBlock(dataPackage: string): string {
+  const imb = formatClosingImbalanceDeskLine(dataPackage);
+  return `Market snapshot for this name (facts below only; use what is present and do not invent):
+
+${dataPackage}${DATA_STATE_LANGUAGE_RULES}${imb}${formatMicrostructureDeskLines(dataPackage)}`;
 }
 
 /** Volatility topic: surface-only voice (no vendor / pipeline attribution). */
@@ -275,7 +300,7 @@ Catalyst section:
 ${catalystRead}
 
 Data package:
-${dataPackage}${formatClosingImbalanceDeskLine(dataPackage)}
+${dataPackage}${formatClosingImbalanceDeskLine(dataPackage)}${formatMicrostructureDeskLines(dataPackage)}
 ${DATA_STATE_LANGUAGE_RULES}
 
 ${OUTPUT_NO_SOURCE_RULES}

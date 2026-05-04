@@ -9,6 +9,20 @@ export type StrategistDiagScratch = {
   soloModelLabel?: string;
   closingImbalancePresent?: boolean;
   closingImbalanceLatencyMs?: number | null;
+  nasdaqDepthPresent?: boolean;
+  nasdaqDepthLatencyMs?: number | null;
+  esContextPresent?: boolean;
+  esContextLatencyMs?: number | null;
+  cboeOnePresent?: boolean;
+  cboeOneLatencyMs?: number | null;
+  iseComplexBookPresent?: boolean;
+  iseComplexBookLatencyMs?: number | null;
+  totalviewPoolSize?: number | null;
+  totalviewPoolCapacity?: number | null;
+  totalviewWasColdStart?: boolean;
+  cboeOnePoolSize?: number | null;
+  cboeOnePoolCapacity?: number | null;
+  cboeOneWasColdStart?: boolean;
 };
 
 /** Async-local scratch for one strategist analyze run (diagnostics + trace correlation). */

@@ -9,7 +9,8 @@
  * If any row is NYSE → primaryListing "NYSE". Else if any NASDAQ → "NASDAQ".
  * Else if any NYSE ARCA → "ARCA". Else if any NYSE MKT → "AMEX".
  * Symbols absent from the file, or with only unrecognized exchanges → primaryListing null
- * (not guessed). Those names are excluded from NYSE closing-imbalance subscriptions.
+ * (not guessed). Those names are excluded from venue-specific IB subscriptions that require it
+ * (e.g. NYSE closing-imbalance, NASDAQ TotalView routing).
  */
 
 export type LiquidCorePrimaryListing = "NYSE" | "NASDAQ" | "ARCA" | "AMEX" | null;
