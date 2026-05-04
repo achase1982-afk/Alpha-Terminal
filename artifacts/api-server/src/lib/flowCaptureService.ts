@@ -279,8 +279,8 @@ function mergeTape(rest: TapeBackfillStatus | undefined, fc: FlowCaptureResult):
       fc.rowsInserted > 0
         ? Math.max(base.totalTradesFromPolygon ?? 0, fc.rowsInserted)
         : base.totalTradesFromPolygon,
-    occRequested: fc.occsSubscribed > 0 ? fc.occsSubscribed : base.occRequested,
-    occCompleted: fc.occsSubscribed > 0 ? fc.occsSubscribed : base.occCompleted,
+    wsOccSubscribed:
+      fc.occsSubscribed > 0 ? fc.occsSubscribed : base.wsOccSubscribed,
     captureSource: fc.source,
     captureDurationMs: fc.durationMs,
     sessionDate: fc.sessionDate,
