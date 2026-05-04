@@ -15,9 +15,9 @@ function polygonCodeToListing(code: string | undefined | null): LiquidCorePrimar
   if (!code || typeof code !== "string") return null;
   const c = code.toUpperCase();
   if (c.includes("NASDAQ") || c === "XNMS" || c === "XNGS" || c === "FINR") return "NASDAQ";
-  if (c.includes("NYSE")) return "NYSE";
   if (c === "ARCA" || c.includes("ARCA")) return "ARCA";
   if (c.includes("AMEX") || c === "NYSE MKT" || c === "XASE") return "AMEX";
+  if (c.includes("NYSE")) return "NYSE";
   return "OTHER_US";
 }
 

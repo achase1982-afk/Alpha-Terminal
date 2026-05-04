@@ -62,6 +62,8 @@ type Handlers = {
   unsubscribeTotalview: (reqId: number) => void;
   subscribeCboeOne: (reqId: number, symbol: string) => void;
   unsubscribeCboeOne: (reqId: number) => void;
+  /** Called when a pool slot is cleared so streamer state (e.g. 101 skip set) can stay in sync with slot reuse. */
+  onDynamicPoolSlotCleared?: (name: DynamicIbPoolName, reqId: number) => void;
 };
 
 let handlers: Handlers | null = null;
@@ -128,6 +130,7 @@ function clearSlot(name: DynamicIbPoolName, slotIndex: number): void {
   reqIdToSymbolDynamic[name].delete(reqId);
   row[slotIndex] = null;
   callUnsubscribe(name, reqId);
+  handlers?.onDynamicPoolSlotCleared?.(name, reqId);
 }
 
 export function registerIbDynamicPoolHandlers(h: Handlers): void {

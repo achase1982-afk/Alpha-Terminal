@@ -322,6 +322,9 @@ function ensureDynamicIbHandlersRegistered(): void {
   if (dynamicIbHandlersRegistered) return;
   dynamicIbHandlersRegistered = true;
   registerIbDynamicPoolHandlers({
+    onDynamicPoolSlotCleared(_name, reqId) {
+      skippedMarketDataReqIds.delete(reqId);
+    },
     subscribeTotalview(reqId, symbol) {
       if (!ib || connState !== "CONNECTED") return;
       if (skippedMarketDataReqIds.has(reqId)) return;
@@ -940,13 +943,13 @@ export async function connectIB(): Promise<void> {
         }
         if (isDynamicTotalviewReqId(reqId) || reqId === ES_DEPTH_REQ_ID) {
           skippedMarketDataReqIds.add(reqId);
-          if (isDynamicTotalviewReqId(reqId)) {
-            markDynamicIbPoolSlotEntitlementFailed("totalview", reqId);
-          }
           const sym =
             reqId === ES_DEPTH_REQ_ID
               ? "ES"
               : dynamicTotalviewSymbolForReqId(reqId) ?? String(reqId);
+          if (isDynamicTotalviewReqId(reqId)) {
+            markDynamicIbPoolSlotEntitlementFailed("totalview", reqId);
+          }
           logger.error(
             { code, reqId, symbol: sym },
             "IB: error 101 — market data subscription missing for depth; skipping this reqId until process restart. Enable NASDAQ TotalView / CME depth in IBKR Client Portal.",
@@ -955,8 +958,8 @@ export async function connectIB(): Promise<void> {
         }
         if (isDynamicCboeOneReqId(reqId)) {
           skippedMarketDataReqIds.add(reqId);
+          const sym = dynamicCboeOneSymbolForReqId(reqId) ?? String(reqId);
           markDynamicIbPoolSlotEntitlementFailed("cboeOne", reqId);
-          const sym = dynamicCboeOneSymbolForReqId(reqId);
           logger.error(
             { code, reqId, symbol: sym },
             "IB: error 101 — market data subscription missing for Cboe One stream; skipping this reqId until process restart. Enable relevant US equity top-of-book subscription in IBKR Client Portal.",
