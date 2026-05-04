@@ -27,7 +27,6 @@ export interface DepthBook {
 }
 
 const DEPTH_SYMBOLS = [
-  { symbol: "/ES",  ibSymbol: "ES",  secType: "FUT", exchange: "CME",   category: "FUTURES" },
   { symbol: "/NQ",  ibSymbol: "NQ",  secType: "FUT", exchange: "CME",   category: "FUTURES" },
   { symbol: "SPY",  ibSymbol: "SPY", secType: "STK", exchange: "SMART", category: "EQUITY" },
 ];
@@ -57,7 +56,6 @@ const skippedMarketDataReqIds = new Set<number>();
 
 const TOTALVIEW_DEPTH_ROWS = 5;
 const ES_DEPTH_ROWS = 5;
-const ES_DEPTH_BOOK_KEY = "__ES_DEPTH__";
 const TOTALVIEW_BOOK_PREFIX = "TV:";
 
 let cboeOneLastTickAt: number | null = null;
@@ -397,9 +395,9 @@ function subscribeTotalviewEsCboeOne(): void {
   if (!skippedMarketDataReqIds.has(ES_DEPTH_REQ_ID)) {
     const d = ES_DEPTH_SYMBOL_DEF;
     const contract = buildContract(d);
-    depthReqIdToSymbol.set(ES_DEPTH_REQ_ID, ES_DEPTH_BOOK_KEY);
+    depthReqIdToSymbol.set(ES_DEPTH_REQ_ID, "/ES");
     depthReqSmartDepth.set(ES_DEPTH_REQ_ID, false);
-    depthBooks.set(ES_DEPTH_BOOK_KEY, { bids: [], asks: [] });
+    depthBooks.set("/ES", { bids: [], asks: [] });
     try {
       ib.reqMktDepth(ES_DEPTH_REQ_ID, contract, ES_DEPTH_ROWS, false);
       logger.info({ reqId: ES_DEPTH_REQ_ID }, "IB: subscribed ES CME depth");
@@ -566,7 +564,7 @@ function applyDepthUpdate(reqId: number, position: number, operation: number, si
     book = { bids: [], asks: [] };
     depthBooks.set(sym, book);
   }
-  const maxRows = sym === ES_DEPTH_BOOK_KEY || sym.startsWith(TOTALVIEW_BOOK_PREFIX) ? 5 : DEPTH_NUM_ROWS;
+  const maxRows = sym.startsWith(TOTALVIEW_BOOK_PREFIX) ? 5 : sym === "/ES" ? ES_DEPTH_ROWS : DEPTH_NUM_ROWS;
   const rows = side === 1 ? book.bids : book.asks;
   const row: DepthRow = { price, size, mm };
 
@@ -582,7 +580,7 @@ function applyDepthUpdate(reqId: number, position: number, operation: number, si
       if (position < rows.length) rows.splice(position, 1);
       break;
   }
-  if (!sym.startsWith(TOTALVIEW_BOOK_PREFIX) && sym !== ES_DEPTH_BOOK_KEY) {
+  if (!sym.startsWith(TOTALVIEW_BOOK_PREFIX)) {
     depthDirty.add(sym);
   }
 
@@ -593,7 +591,7 @@ function applyDepthUpdate(reqId: number, position: number, operation: number, si
       enqueueTotalviewPersist(summary);
       if (broadcastFn) broadcastFn("totalviewUpdate", summary);
     }
-  } else if (sym === ES_DEPTH_BOOK_KEY) {
+  } else if (sym === "/ES") {
     const esSummary = computeEsDepthSummary(book);
     if (esSummary) {
       enqueueEsDepthPersist(esSummary);
