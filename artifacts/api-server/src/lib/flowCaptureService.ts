@@ -270,6 +270,7 @@ function mergeTape(rest: TapeBackfillStatus | undefined, fc: FlowCaptureResult):
       sessionInProgress: false,
       queryOpenMs: 0,
       queryCloseMs: 0,
+      tapeBackfillDedupeDrops: { totalDropped: 0, byOcc: {} },
     } satisfies TapeBackfillStatus);
 
   return {

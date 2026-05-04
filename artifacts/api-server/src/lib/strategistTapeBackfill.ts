@@ -69,6 +69,12 @@ export interface TapeBackfillCoverageGeometry {
   occCandidatesBeforeCap: number;
 }
 
+/** Rows attempted vs inserted under ON CONFLICT DO NOTHING (existing source_trade_id). */
+export interface TapeBackfillDedupeDrops {
+  totalDropped: number;
+  byOcc: Record<string, number>;
+}
+
 export interface TapeBackfillStatus {
   status: TapeBackfillStatusValue;
   reason: string | null;
@@ -105,6 +111,8 @@ export interface TapeBackfillStatus {
   wsOccSubscribed?: number;
   /** How session tape OCCs were chosen (tiered band + volume-ranked cap). */
   coverageGeometry?: TapeBackfillCoverageGeometry;
+  /** REST insert dedupe: rows skipped because they matched an existing print key for this session. */
+  tapeBackfillDedupeDrops?: TapeBackfillDedupeDrops;
 }
 
 interface ChainLike {
@@ -645,6 +653,7 @@ export async function runStrategistTapeBackfill(args: {
       sessionInProgress,
       queryOpenMs: openMs,
       queryCloseMs: closeMs,
+      tapeBackfillDedupeDrops: { totalDropped: 0, byOcc: {} },
     };
   }
 
@@ -672,6 +681,7 @@ export async function runStrategistTapeBackfill(args: {
       sessionInProgress,
       queryOpenMs: openMs,
       queryCloseMs: closeMs,
+      tapeBackfillDedupeDrops: { totalDropped: 0, byOcc: {} },
     };
   }
 
@@ -704,6 +714,7 @@ export async function runStrategistTapeBackfill(args: {
       sessionInProgress,
       queryOpenMs: openMs,
       queryCloseMs: closeMs,
+      tapeBackfillDedupeDrops: { totalDropped: 0, byOcc: {} },
     };
   }
   const startMs = openMs;
@@ -716,6 +727,7 @@ export async function runStrategistTapeBackfill(args: {
   let totalTradesFromPolygon = 0;
   let persistRejectedCount = 0;
   let anySawPolygonHttpError = false;
+  const dedupeByOcc = new Map<string, number>();
 
   const existingRowCountResult = await db
     .select({ count: sql<number>`count(*)` })
@@ -854,6 +866,7 @@ export async function runStrategistTapeBackfill(args: {
     try {
       await db.transaction(async (tx) => {
         if (rowsToInsert.length > 0) {
+          let occInserted = 0;
           for (let i = 0; i < rowsToInsert.length; i += OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS) {
             const slice = rowsToInsert.slice(i, i + OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS);
             const ins = await tx
@@ -862,6 +875,11 @@ export async function runStrategistTapeBackfill(args: {
               .onConflictDoNothing(OPTIONS_FLOW_RAW_TRADES_ON_CONFLICT_SOURCE_DEDUPE)
               .returning({ id: optionsFlowRawTradesTable.id });
             tradesInserted += ins.length;
+            occInserted += ins.length;
+          }
+          const occDropped = rowsToInsert.length - occInserted;
+          if (occDropped > 0) {
+            dedupeByOcc.set(occ, (dedupeByOcc.get(occ) ?? 0) + occDropped);
           }
         }
         await tx
@@ -957,6 +975,32 @@ export async function runStrategistTapeBackfill(args: {
     status = "complete";
   }
 
+  let totalDedupeDropped = 0;
+  const dedupeByOccRecord: Record<string, number> = {};
+  for (const [o, c] of dedupeByOcc) {
+    dedupeByOccRecord[o] = c;
+    totalDedupeDropped += c;
+  }
+  const tapeBackfillDedupeDrops: TapeBackfillDedupeDrops = {
+    totalDropped: totalDedupeDropped,
+    byOcc: dedupeByOccRecord,
+  };
+
+  if (totalDedupeDropped > 0) {
+    const tapeBackfillDedupeTopOccs = Object.entries(dedupeByOccRecord)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 5)
+      .map(([occ, dropped]) => ({ occ, dropped }));
+    logger.info(
+      {
+        ticker,
+        tapeBackfillDedupeDropsTotal: totalDedupeDropped,
+        tapeBackfillDedupeTopOccs,
+      },
+      "strategistTapeBackfill: dedupe drops summary",
+    );
+  }
+
   logger.info(
     {
       ticker,
@@ -998,5 +1042,6 @@ export async function runStrategistTapeBackfill(args: {
     sessionInProgress,
     queryOpenMs: openMs,
     queryCloseMs: closeMs,
+    tapeBackfillDedupeDrops,
   };
 }

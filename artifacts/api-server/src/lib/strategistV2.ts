@@ -931,9 +931,10 @@ async function analyzeTickerV2Inner(
           sessionInProgress: false,
           queryOpenMs: boundsOpen,
           queryCloseMs: boundsClose,
-          captureSource: fc.source,
-          captureDurationMs: fc.durationMs,
-        } satisfies TapeBackfillStatus);
+      captureSource: fc.source,
+      captureDurationMs: fc.durationMs,
+      tapeBackfillDedupeDrops: { totalDropped: 0, byOcc: {} },
+    } satisfies TapeBackfillStatus);
     logger.info(
       {
         ticker,
@@ -978,6 +979,7 @@ async function analyzeTickerV2Inner(
       sessionInProgress: false,
       queryOpenMs: queryOpenMsExc,
       queryCloseMs: queryCloseMsExc,
+      tapeBackfillDedupeDrops: { totalDropped: 0, byOcc: {} },
     };
   }
 
@@ -2775,6 +2777,7 @@ function buildDataQualitySummary(args: {
       tapeBackfillTradesInserted: tapeBackfill?.tradesInserted ?? null,
       tapeBackfillTotalTradesFromPolygon: tapeBackfill?.totalTradesFromPolygon ?? null,
       tapeBackfillPersistRejected: tapeBackfill?.persistRejectedCount ?? null,
+      tapeBackfillDedupeDropsTotal: tapeBackfill?.tapeBackfillDedupeDrops?.totalDropped ?? null,
       tapeBackfillTruncated: tapeBackfill?.anyTruncated ?? null,
       tapeBackfillHttpError: tapeBackfill?.anySawPolygonHttpError ?? null,
     },
@@ -2994,6 +2997,9 @@ function buildDataPackage(
       coverageGeometry: tapeBackfill.coverageGeometry ?? null,
       totalTradesFromPolygon: tapeBackfill.totalTradesFromPolygon,
       persistRejectedCount: tapeBackfill.persistRejectedCount,
+      ...(tapeBackfill.tapeBackfillDedupeDrops != null
+        ? { tapeBackfillDedupeDrops: tapeBackfill.tapeBackfillDedupeDrops }
+        : {}),
       anyTruncated: tapeBackfill.anyTruncated,
       anySawPolygonHttpError: tapeBackfill.anySawPolygonHttpError,
       todayYmd: tapeBackfill.todayYmd,
