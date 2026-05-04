@@ -8,8 +8,8 @@ const router: IRouter = Router();
 
 const CACHE_DIR = process.env.TTS_CACHE_DIR ?? "/tmp/tts-cache";
 
-/** Bump when audio bytes format changes so stale cache files are ignored. */
-const CACHE_FILE_VERSION = "v2";
+/** Bump when audio bytes format or provider changes so stale cache files are ignored. */
+const CACHE_FILE_VERSION = "v3-openai";
 
 function looksLikeMp3(buf: Buffer): boolean {
   if (buf.length < 4) return false;
@@ -19,7 +19,9 @@ function looksLikeMp3(buf: Buffer): boolean {
 
 function sanitizeClientTtsDetail(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
-  const noKey = raw.replace(/\bAIza[0-9A-Za-z_-]{25,}\b/g, "[redacted]");
+  const noKey = raw
+    .replace(/\bAIza[0-9A-Za-z_-]{25,}\b/g, "[redacted]")
+    .replace(/\bsk-[A-Za-z0-9]{20,}\b/g, "[redacted]");
   const oneLine = noKey.replace(/\s+/g, " ").trim();
   if (!oneLine) return "Unknown error";
   return oneLine.length > 420 ? `${oneLine.slice(0, 417)}...` : oneLine;
