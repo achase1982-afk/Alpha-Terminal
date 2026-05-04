@@ -784,3 +784,20 @@ export const terminalWatchlistsTable = pgTable("terminal_watchlists", {
 ]);
 
 export type TerminalWatchlist = typeof terminalWatchlistsTable.$inferSelect;
+
+export const scannerJobsTable = pgTable("scanner_jobs", {
+  scanId: text("scan_id").primaryKey(),
+  userId: text("user_id").notNull(),
+  universeId: text("universe_id").notNull(),
+  traderTokenEncrypted: text("trader_token_encrypted").notNull(),
+  status: text("status").notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  result: jsonb("result"),
+  error: text("error"),
+}, (t) => [
+  index("idx_scanner_jobs_user_id_started_at").on(t.userId, t.startedAt),
+  index("idx_scanner_jobs_status_started_at").on(t.status, t.startedAt),
+]);
+
+export type ScannerJob = typeof scannerJobsTable.$inferSelect;
