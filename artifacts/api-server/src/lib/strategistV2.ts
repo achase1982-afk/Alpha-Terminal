@@ -57,7 +57,7 @@ import {
   STRATEGIST_IV_CEILING_PCT,
 } from "./strategistIvNormalize.js";
 import { impliedVolatilityBSM } from "./bsmIV.js";
-import type { EquityMarketSession } from "./schwabMarketHours.js";
+import type { EquityMarketSession, EquitySessionResolutionSource } from "./schwabMarketHours.js";
 import { getEquityMarketSessionWithAsOf } from "./schwabMarketHours.js";
 import { fetchPolygonAnalystRatingsAndConsensus } from "./polygonAnalystData.js";
 import { fetchEarningsHistoryAndForward, type FetchEarningsBundle } from "./polygonEarningsHistory.js";
@@ -523,8 +523,10 @@ export interface ChainSummary {
   } | null;
   /** Gap surfacing for impliedMove (mirrors dataQualitySummary.impliedMove). */
   impliedMoveQuality: StrategistImpliedMoveQuality;
-  /** Schwab equity session at chain summarization time (cached ~60s). */
+  /** Schwab equity session at chain summarization time (cached ~60s), or NY calendar fallback. */
   marketSession: EquityMarketSession;
+  /** How **marketSession** was resolved: Schwab market hours API vs deterministic NY calendar. */
+  marketSessionSource: EquitySessionResolutionSource;
   /** ISO time when **marketSession** was resolved (cache stamp). */
   marketSessionAsOf: string;
 }
@@ -1733,7 +1735,10 @@ export interface BsmRecomputeStats {
 export interface IvChainFilterStats {
   ivClampedCount: number;
   ivClampedReasons: Record<IvClampedReasonKey, number>;
+  /** IV survival ratio within ±10% of spot (curated strip); primary desk hygiene metric. */
   ivCleanedRatio: number;
+  /** Legacy ratio: positive vendor IV surviving cleaning / all positive vendor IV on full chain. */
+  ivCleanedRatioFullChain: number;
   /** Curated strip: expiries with a non-null ATM IV vs expiries in the curated term sample. */
   termStructureExpiries: { withCleanAtmIv: number; total: number };
   /** Total option legs in the summarized chain (denominator for contamination share). */
@@ -1751,6 +1756,7 @@ export type IvChainFilterCore = Pick<
   | "ivClampedCount"
   | "ivClampedReasons"
   | "ivCleanedRatio"
+  | "ivCleanedRatioFullChain"
   | "totalChainContracts"
   | "ivContaminationCountedClamps"
   | "bsmRecomputeStats"
@@ -1759,6 +1765,21 @@ export type IvChainFilterCore = Pick<
 const IV_HARD_CEILING_DECIMAL = 4.0;
 const BSM_RECOMPUTE_RF = 0.05;
 
+/**
+ * Wide spreads and zero day volume are normal on wings. Strict thresholds correctly
+ * reject ATM noise but incorrectly reject usable wing IV. Tiered thresholds keep
+ * wing data when it is structurally valid even if microstructure looks worse than ATM.
+ */
+const IV_WING_NEAR_ATM_PCT = 0.05;
+const IV_WING_MID_PCT = 0.15;
+/** Denominator band for **ivCleanedRatio** (±10% of spot, positive vendor IV). */
+const IV_CURATED_RATIO_BAND_PCT = 0.1;
+
+function atmDistancePct(strike: number, spot: number): number {
+  if (!Number.isFinite(spot) || spot <= 0) return 0;
+  return Math.abs(strike - spot) / spot;
+}
+
 function medianNumeric(values: number[]): number | null {
   if (values.length === 0) return null;
   const s = [...values].sort((a, b) => a - b);
@@ -1766,7 +1787,7 @@ function medianNumeric(values: number[]): number | null {
   return s.length % 2 === 1 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
 }
 
-function primaryIvRemovalReasonSteps1to6(c: ChainContract): IvClampedReasonKey | null {
+function primaryIvRemovalReasonSteps1to6(c: ChainContract, spot: number): IvClampedReasonKey | null {
   const iv = c.impliedVolatility;
   if (typeof iv === "number" && Number.isFinite(iv) && iv === 5.0) return "sentinel";
   if (typeof iv === "number" && Number.isFinite(iv) && iv >= IV_HARD_CEILING_DECIMAL) return "ceilingClamp";
@@ -1782,11 +1803,20 @@ function primaryIvRemovalReasonSteps1to6(c: ChainContract): IvClampedReasonKey |
   const mid = (bid + ask) / 2;
   const spread = ask - bid;
   if (!Number.isFinite(mid) || mid <= 0) return "invalidMid";
-  if (spread > mid) return "spreadExceedsMid";
+
+  const wing = atmDistancePct(c.strike, spot);
+  const spreadMul = wing <= IV_WING_NEAR_ATM_PCT ? 1 : wing <= IV_WING_MID_PCT ? 1.5 : 2;
+  if (spread > spreadMul * mid) return "spreadExceedsMid";
 
   const vol = Number.isFinite(c.volume) ? c.volume : 0;
   const oi = Number.isFinite(c.openInterest) ? c.openInterest : 0;
-  if (vol === 0 && oi < 10) return "noLiquidity";
+  if (wing <= IV_WING_NEAR_ATM_PCT) {
+    if (vol === 0 && oi < 10) return "noLiquidity";
+  } else if (wing <= IV_WING_MID_PCT) {
+    if (vol === 0 && oi < 5) return "noLiquidity";
+  } else if (oi < 1) {
+    return "noLiquidity";
+  }
 
   return null;
 }
@@ -1917,7 +1947,7 @@ export function filterContaminatedIvs(
   for (const c of chain) {
     const raw = c.impliedVolatility;
     c.rawIv = raw == null || !Number.isFinite(raw) ? null : raw;
-    const reason = primaryIvRemovalReasonSteps1to6(c);
+    const reason = primaryIvRemovalReasonSteps1to6(c, spot);
     if (raw != null && Number.isFinite(raw) && raw > 0) {
       totalPositiveChainIv += 1;
     }
@@ -1945,10 +1975,24 @@ export function filterContaminatedIvs(
     }
   }
 
-  const ivCleanedRatio =
+  const ivCleanedRatioFullChain =
     totalPositiveChainIv > 0
       ? Math.round((survivingPositiveChainIv / totalPositiveChainIv) * 10000) / 10000
       : 1;
+
+  let curatedDenom = 0;
+  let curatedSurvive = 0;
+  for (const c of chain) {
+    const raw = c.rawIv;
+    if (raw == null || !Number.isFinite(raw) || raw <= 0) continue;
+    if (atmDistancePct(c.strike, spot) > IV_CURATED_RATIO_BAND_PCT) continue;
+    curatedDenom += 1;
+    if (c.impliedVolatility != null && Number.isFinite(c.impliedVolatility) && c.impliedVolatility > 0) {
+      curatedSurvive += 1;
+    }
+  }
+  const ivCleanedRatio =
+    curatedDenom > 0 ? Math.round((curatedSurvive / curatedDenom) * 10000) / 10000 : 1;
 
   const bsmRecomputeStats = attachBsmRecomputeStats(chain, spot);
 
@@ -1957,6 +2001,7 @@ export function filterContaminatedIvs(
       ivClampedCount,
       ivClampedReasons,
       ivCleanedRatio,
+      ivCleanedRatioFullChain,
       totalChainContracts,
       ivContaminationCountedClamps,
       bsmRecomputeStats,
@@ -2475,7 +2520,11 @@ export async function summarizeOptionsChain(
   ctx?: SummarizeOptionsChainContext,
 ): Promise<ChainSummary> {
   enrichChainContractsWithReconstructedIv(chain, price);
-  const { session: equityMarketSession, asOf: marketSessionAsOf } = await getEquityMarketSessionWithAsOf();
+  const {
+    session: equityMarketSession,
+    asOf: marketSessionAsOf,
+    sessionSource: marketSessionSource,
+  } = await getEquityMarketSessionWithAsOf();
   const { stats: ivChainCore } = filterContaminatedIvs(chain, price, equityMarketSession);
 
   const calls = chain.filter(c => c.type === "call" || c.optionType === "CALL");
@@ -2643,6 +2692,7 @@ export async function summarizeOptionsChain(
     impliedMoveQuality,
     ivChainFilter,
     marketSession: equityMarketSession,
+    marketSessionSource,
     marketSessionAsOf,
   };
 }
@@ -2771,6 +2821,7 @@ function buildDataQualitySummary(args: {
   return {
     asOfDate: new Date().toISOString().slice(0, 10),
     marketSession: chainSummary.marketSession,
+    marketSessionSource: chainSummary.marketSessionSource,
     marketSessionAsOf: chainSummary.marketSessionAsOf,
     chain: { state: chainOk ? "usable" : "degraded", expirationsListed: chainSummary.availableExpirations.length },
     ivr: { state: tickerData.ivr != null ? "present" : "absent", source: tickerData.ivrSource },
@@ -2804,6 +2855,7 @@ function buildDataQualitySummary(args: {
     ivClampedCount: ivf.ivClampedCount,
     ivClampedReasons: ivf.ivClampedReasons,
     ivCleanedRatio: ivf.ivCleanedRatio,
+    ivCleanedRatioFullChain: ivf.ivCleanedRatioFullChain,
     bsmRecomputeStats: ivf.bsmRecomputeStats,
     termStructureExpiries: ivf.termStructureExpiries,
     flags,
@@ -2994,6 +3046,7 @@ async function buildDataPackage(
     pkg.catalyst = {
       earnings_history: enrichment.earnings.earnings_history,
       forward_estimates: enrichment.earnings.forward_estimates,
+      earnings_reaction_summary: enrichment.earnings.earnings_reaction_summary,
     };
   }
 

@@ -5,7 +5,11 @@ vi.mock("../tokenStore.js", () => ({
 }));
 
 import { getBestAccessToken } from "../tokenStore.js";
-import { getEquityMarketSessionWithAsOf, __resetEquityMarketSessionCacheForTests } from "../schwabMarketHours.js";
+import {
+  getEquityMarketSessionWithAsOf,
+  __resetEquityMarketSessionCacheForTests,
+  equitySessionFromNyCalendarFallback,
+} from "../schwabMarketHours.js";
 
 const mockToken = vi.mocked(getBestAccessToken);
 
@@ -26,28 +30,31 @@ describe("getEquityMarketSessionWithAsOf (API / auth failures)", () => {
     vi.clearAllMocks();
   });
 
-  it("returns unknown when no access token (do not assume closed)", async () => {
+  it("uses NY calendar fallback when no access token (no unknown)", async () => {
     mockToken.mockReturnValue(null);
     const r = await getEquityMarketSessionWithAsOf();
-    expect(r.session).toBe("unknown");
+    expect(r.session).not.toBe("unknown");
+    expect(r.sessionSource).toBe("calendar_fallback");
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it("returns unknown on non-OK HTTP response", async () => {
+  it("uses calendar fallback on non-OK HTTP response", async () => {
     mockToken.mockReturnValue("test-token");
     const r = await getEquityMarketSessionWithAsOf();
-    expect(r.session).toBe("unknown");
+    expect(r.session).not.toBe("unknown");
+    expect(r.sessionSource).toBe("calendar_fallback");
     expect(globalThis.fetch).toHaveBeenCalled();
   });
 
-  it("returns unknown when response body has no parseable session windows", async () => {
+  it("uses calendar fallback when response body has no parseable session windows", async () => {
     mockToken.mockReturnValue("test-token");
     vi.mocked(globalThis.fetch).mockResolvedValue({
       ok: true,
       json: async () => ({ equity: {} }),
     } as Response);
     const r = await getEquityMarketSessionWithAsOf();
-    expect(r.session).toBe("unknown");
+    expect(r.session).not.toBe("unknown");
+    expect(r.sessionSource).toBe("calendar_fallback");
   });
 
   it("returns open when windows classify current instant inside regular session", async () => {
@@ -73,6 +80,14 @@ describe("getEquityMarketSessionWithAsOf (API / auth failures)", () => {
     } as Response);
     const r = await getEquityMarketSessionWithAsOf();
     expect(r.session).toBe("open");
+    expect(r.sessionSource).toBe("schwab");
     vi.restoreAllMocks();
+  });
+});
+
+describe("equitySessionFromNyCalendarFallback", () => {
+  it("classifies a known Wed RTH instant as open", () => {
+    const wedRthUtc = Date.UTC(2026, 4, 6, 15, 0, 0);
+    expect(equitySessionFromNyCalendarFallback(wedRthUtc)).toBe("open");
   });
 });

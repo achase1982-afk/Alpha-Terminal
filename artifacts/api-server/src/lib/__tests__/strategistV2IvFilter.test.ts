@@ -9,6 +9,7 @@ vi.mock("../schwabMarketHours.js", async (importOriginal) => {
     getEquityMarketSessionWithAsOf: vi.fn().mockResolvedValue({
       session: "open",
       asOf: "2026-05-01T12:00:00.000Z",
+      sessionSource: "schwab",
     }),
   };
 });
@@ -16,7 +17,7 @@ vi.mock("../schwabMarketHours.js", async (importOriginal) => {
 const mockedSession = vi.mocked(schwabMarketHours.getEquityMarketSessionWithAsOf);
 
 beforeEach(() => {
-  mockedSession.mockResolvedValue({ session: "open", asOf: "2026-05-01T12:00:00.000Z" });
+  mockedSession.mockResolvedValue({ session: "open", asOf: "2026-05-01T12:00:00.000Z", sessionSource: "schwab" });
 });
 
 afterEach(() => {
@@ -96,6 +97,19 @@ describe("filterContaminatedIvs", () => {
     filterContaminatedIvs([c], 100, "open");
     expect(c.impliedVolatility).toBe(0.3);
     expect(c.rawIv).toBe(0.3);
+  });
+
+  it("relaxes spreadExceedsMid in mid-wing band (5–15% from spot)", () => {
+    const c = baseContract({
+      strike: 110,
+      bid: 0.01,
+      ask: 0.16,
+      mid: 0.085,
+      impliedVolatility: 0.4,
+    });
+    const { stats } = filterContaminatedIvs([c], 100, "open");
+    expect(c.impliedVolatility).toBe(0.4);
+    expect(stats.ivClampedReasons.spreadExceedsMid).toBe(0);
   });
 
   it("keeps liquid tight-quote contract and attaches bsm recompute stats", () => {

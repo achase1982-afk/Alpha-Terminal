@@ -1,5 +1,5 @@
 import { db, optionsFlowRawTradesTable, optionsTapeBackfillOccCacheTable } from "@workspace/db";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { extractPgErrorContext, logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 import { getContract20dBaseline } from "./optionsBaselines.js";
@@ -39,6 +39,10 @@ const TRADE_PAGE_LIMIT = 50_000;
 const QUOTE_PAGE_LIMIT = 50_000;
 /** Overall wall-clock budget for the whole symbol backfill (many OCC roots). */
 const DEFAULT_BUDGET_MS = 180_000;
+/** Phase 1: Polygon trades fetch only (half of default symbol budget). */
+const PHASE_1_BUDGET_MS = 90_000;
+/** Phase 2: quotes + aggressor classification + UPDATE (half of default symbol budget). */
+const PHASE_2_BUDGET_MS = 90_000;
 /** Hard cap on wall time spent inside a single OCC (fetch + classify + DB). */
 const PER_ROOT_MAX_MS = 18_000;
 /** Minimum slice reserved for each remaining OCC so progress stays fair vs one slow contract. */
@@ -183,7 +187,7 @@ function pickExpiries(summary: ChainSummaryLike): string[] {
 /** Tiered tape sampling: mega/large (and index ETFs) get wider band + higher OCC cap. */
 export function tapeBackfillSamplingFromTier(tier: MarketCapTier | string): { maxOcc: number; strikesEachSide: number } {
   const t = tier as MarketCapTier;
-  if (t === "mega" || t === "large" || t === "etf_index") return { maxOcc: 100, strikesEachSide: 15 };
+  if (t === "mega" || t === "large" || t === "etf_index") return { maxOcc: 200, strikesEachSide: 15 };
   if (t === "mid" || t === "etf_sector") return { maxOcc: 75, strikesEachSide: 10 };
   return { maxOcc: 50, strikesEachSide: 5 };
 }
@@ -422,7 +426,8 @@ export async function runStrategistTapeBackfill(args: {
 }): Promise<TapeBackfillStatus> {
   const ticker = args.ticker.toUpperCase();
   const budgetMs = args.budgetMs ?? DEFAULT_BUDGET_MS;
-  const deadline = Date.now() + budgetMs;
+  const phase1Ms = Math.min(PHASE_1_BUDGET_MS, Math.max(1, Math.floor(budgetMs / 2)));
+  const phase2Ms = Math.min(PHASE_2_BUDGET_MS, Math.max(1, budgetMs - phase1Ms));
   const nowWall = new Date();
   const todayYmd = nyCalendarYmd(nowWall);
   const sessionDate =
@@ -556,9 +561,10 @@ export async function runStrategistTapeBackfill(args: {
     );
   const existingRowCount = Number(existingRowCountResult[0]?.count ?? 0);
 
-  interface OccTapeBackfillWorkerResult {
+  interface OccPhase1Result {
     occ: string;
     kind: "completed" | "skipped_budget" | "skipped_bad_occ";
+    parsed: ParsedTrade[];
     tradesInserted: number;
     insertedNullSideCount: number;
     totalTradesFromPolygon: number;
@@ -569,12 +575,24 @@ export async function runStrategistTapeBackfill(args: {
     dedupeDroppedForOcc: number;
   }
 
-  const limit = pLimit(CONCURRENCY);
+  interface OccPhase2Result {
+    occ: string;
+    kind: "completed" | "skipped_budget" | "skipped_bad_occ";
+    rowsSideUpdated: number;
+    remainingNullSide: number;
+    anyTruncated: boolean;
+    anyError: boolean;
+    anySawPolygonHttpError: boolean;
+  }
 
-  const processOcc = async (occIdx: number, occ: string): Promise<OccTapeBackfillWorkerResult> => {
-    const budgetSkip = (): OccTapeBackfillWorkerResult => ({
+  const limit = pLimit(CONCURRENCY);
+  const phase1Deadline = Date.now() + phase1Ms;
+
+  const processOccPhase1 = async (occIdx: number, occ: string): Promise<OccPhase1Result> => {
+    const budgetSkip = (): OccPhase1Result => ({
       occ,
       kind: "skipped_budget",
+      parsed: [],
       tradesInserted: 0,
       insertedNullSideCount: 0,
       totalTradesFromPolygon: 0,
@@ -585,7 +603,7 @@ export async function runStrategistTapeBackfill(args: {
       dedupeDroppedForOcc: 0,
     });
 
-    if (Date.now() >= deadline) {
+    if (Date.now() >= phase1Deadline) {
       return budgetSkip();
     }
 
@@ -594,6 +612,7 @@ export async function runStrategistTapeBackfill(args: {
       return {
         occ,
         kind: "skipped_bad_occ",
+        parsed: [],
         tradesInserted: 0,
         insertedNullSideCount: 0,
         totalTradesFromPolygon: 0,
@@ -605,11 +624,11 @@ export async function runStrategistTapeBackfill(args: {
       };
     }
 
-    const budgetLeft = deadline - Date.now();
+    const budgetLeft = phase1Deadline - Date.now();
     const remainingRoots = occList.length - occIdx;
     const fairSlice = Math.floor(budgetLeft / Math.max(1, remainingRoots));
     const rootBudget = Math.min(PER_ROOT_MAX_MS, Math.max(PER_ROOT_MIN_MS, fairSlice));
-    const occDeadline = Math.min(deadline, Date.now() + Math.min(rootBudget, budgetLeft));
+    const occDeadline = Math.min(phase1Deadline, Date.now() + Math.min(rootBudget, budgetLeft));
 
     let baselineAvgVol: number | null = null;
     try {
@@ -639,30 +658,20 @@ export async function runStrategistTapeBackfill(args: {
       truncated: trTr,
       sawPolygonHttpError: trErr,
     } = await fetchPaged(tradeUrl, apiKey, occDeadline);
-    let occTruncated = trTr;
-    let occSawHttp = trErr;
+    const occSawHttp = trErr;
     const parsed = parseTrades(occ, tradeRows);
     const occTotalPoly = parsed.length;
     parsed.sort((a, b) => a.tsMs - b.tsMs);
-    const {
-      quotes,
-      truncated: trQ,
-      sawPolygonHttpError: qErr,
-    } = await fetchQuotesWindowed(occ, apiKey, parsed, gteNs, lteNs, occDeadline);
-    if (qErr) occSawHttp = true;
-    if (trQ) occTruncated = true;
 
     const occLegWindow = new FlowLegWindow();
-
     const rowsToInsert: Array<typeof optionsFlowRawTradesTable.$inferInsert> = [];
     let occPersistRejected = 0;
     for (const t of parsed) {
-      const nb = nbboAtOrBefore(quotes, t.tsMs);
       const cl = classifyForFlowPersistence({
         price: t.price,
         size: t.size,
         conditions: t.conditions,
-        nbbo: nb,
+        nbbo: null,
         largeNotionalThresholdUsd: marketCtx.largeNotionalThresholdUsd,
         avgDailyContractVolume20d: baselineAvgVol,
         openInterest: oiSnapshot > 0 ? oiSnapshot : null,
@@ -679,7 +688,7 @@ export async function runStrategistTapeBackfill(args: {
         occ,
         strike: meta.strike,
         expiration: meta.expiration,
-        side: cl.side,
+        side: null,
         size: t.size,
         notional: cl.notional,
       };
@@ -696,7 +705,7 @@ export async function runStrategistTapeBackfill(args: {
         tradePrice: t.price,
         size: t.size,
         notional: cl.notional,
-        side: cl.side,
+        side: null,
         isBlock: cl.isBlockForDb,
         isSweep: cl.isSweep,
         sourceTradeId: t.dedupId,
@@ -710,7 +719,7 @@ export async function runStrategistTapeBackfill(args: {
         marketCapUsd: marketCtx.marketCapUsd,
         marketCapTier: marketCtx.tier,
         notionalThresholdUsd: marketCtx.largeNotionalThresholdUsd,
-        aggressorConfidence: cl.aggressorConfidence,
+        aggressorConfidence: "unknown",
         syntheticLegGroupId: ml.syntheticLegGroupId,
         multiLegConfidence: ml.multiLegConfidence,
         extras: ml.extras,
@@ -786,50 +795,276 @@ export async function runStrategistTapeBackfill(args: {
     return {
       occ,
       kind: "completed",
+      parsed,
       tradesInserted: occTradesInserted,
       insertedNullSideCount: occInsertedNullSide,
       totalTradesFromPolygon: occTotalPoly,
       persistRejectedCount: occPersistRejected,
-      anyTruncated: occTruncated,
+      anyTruncated: trTr,
       anyError: occDbError,
       anySawPolygonHttpError: occSawHttp,
       dedupeDroppedForOcc: occDedupeDropped,
     };
   };
 
-  const occResults = await Promise.all(
-    occList.map((occ, occIdx) => limit(() => processOcc(occIdx, occ))),
+  const phase1Results = await Promise.all(
+    occList.map((occ, occIdx) => limit(() => processOccPhase1(occIdx, occ))),
   );
 
-  let occCompleted = 0;
+  let phase1AnyTruncated = false;
+  let phase1AnyError = false;
+  let phase1AnySawPolygonHttpError = false;
   let tradesInserted = 0;
   let insertedNullSideThisRun = 0;
-  let anyTruncated = false;
-  let anyError = false;
   let totalTradesFromPolygon = 0;
   let persistRejectedCount = 0;
-  let anySawPolygonHttpError = false;
   const dedupeByOcc = new Map<string, number>();
+  let phase1CompletedCount = 0;
 
-  for (const r of occResults) {
-    if (r.kind !== "completed") {
-      if (r.kind === "skipped_budget") {
-        anyTruncated = true;
-      }
-      continue;
+  for (const r of phase1Results) {
+    if (r.kind === "skipped_budget") {
+      phase1AnyTruncated = true;
     }
-    occCompleted++;
+    if (r.kind === "skipped_bad_occ") {
+      phase1AnyError = true;
+    }
+    if (r.kind === "completed") {
+      phase1CompletedCount += 1;
+    }
     tradesInserted += r.tradesInserted;
     insertedNullSideThisRun += r.insertedNullSideCount;
     totalTradesFromPolygon += r.totalTradesFromPolygon;
     persistRejectedCount += r.persistRejectedCount;
-    if (r.anyTruncated) anyTruncated = true;
-    if (r.anyError) anyError = true;
-    if (r.anySawPolygonHttpError) anySawPolygonHttpError = true;
+    if (r.anyTruncated) phase1AnyTruncated = true;
+    if (r.anyError) phase1AnyError = true;
+    if (r.anySawPolygonHttpError) phase1AnySawPolygonHttpError = true;
     if (r.dedupeDroppedForOcc > 0) {
       dedupeByOcc.set(r.occ, (dedupeByOcc.get(r.occ) ?? 0) + r.dedupeDroppedForOcc);
     }
   }
+
+  const phase1FailedGlobally = occList.length > 0 && phase1CompletedCount === 0;
+
+  const phase2Deadline = Date.now() + phase2Ms;
+
+  const processOccPhase2 = async (occIdx: number, p1: OccPhase1Result): Promise<OccPhase2Result> => {
+    if (phase1FailedGlobally) {
+      return {
+        occ: p1.occ,
+        kind: "completed",
+        rowsSideUpdated: 0,
+        remainingNullSide: 0,
+        anyTruncated: false,
+        anyError: false,
+        anySawPolygonHttpError: false,
+      };
+    }
+    const occ = p1.occ;
+    const budgetSkip = (): OccPhase2Result => ({
+      occ,
+      kind: "skipped_budget",
+      rowsSideUpdated: 0,
+      remainingNullSide: 0,
+      anyTruncated: false,
+      anyError: false,
+      anySawPolygonHttpError: false,
+    });
+
+    if (p1.kind !== "completed") {
+      return {
+        occ,
+        kind: "completed",
+        rowsSideUpdated: 0,
+        remainingNullSide: 0,
+        anyTruncated: false,
+        anyError: false,
+        anySawPolygonHttpError: false,
+      };
+    }
+
+    if (p1.parsed.length === 0) {
+      return {
+        occ,
+        kind: "completed",
+        rowsSideUpdated: 0,
+        remainingNullSide: 0,
+        anyTruncated: false,
+        anyError: false,
+        anySawPolygonHttpError: false,
+      };
+    }
+
+    if (Date.now() >= phase2Deadline) {
+      return budgetSkip();
+    }
+
+    const meta = parseOccMeta(occ);
+    if (!meta) {
+      return {
+        occ,
+        kind: "skipped_bad_occ",
+        rowsSideUpdated: 0,
+        remainingNullSide: 0,
+        anyTruncated: false,
+        anyError: true,
+        anySawPolygonHttpError: false,
+      };
+    }
+
+    const budgetLeft = phase2Deadline - Date.now();
+    const remainingRoots = occList.length - occIdx;
+    const fairSlice = Math.floor(budgetLeft / Math.max(1, remainingRoots));
+    const rootBudget = Math.min(PER_ROOT_MAX_MS, Math.max(PER_ROOT_MIN_MS, fairSlice));
+    const occDeadline = Math.min(phase2Deadline, Date.now() + Math.min(rootBudget, budgetLeft));
+
+    let baselineAvgVol: number | null = null;
+    try {
+      const bl = await getContract20dBaseline(occ, { referenceDate: new Date(`${sessionDate}T12:00:00Z`) });
+      baselineAvgVol = bl?.avgVolume ?? null;
+    } catch {
+      /* ignore */
+    }
+    const oiSnapshot = openInterestForOcc(args.chain, meta);
+
+    const {
+      quotes,
+      truncated: trQ,
+      sawPolygonHttpError: qErr,
+    } = await fetchQuotesWindowed(occ, apiKey, p1.parsed, gteNs, lteNs, occDeadline);
+
+    const occLegWindow = new FlowLegWindow();
+    let rowsSideUpdated = 0;
+    let remainingNullSide = 0;
+    let occDbError = false;
+
+    try {
+      await db.transaction(async (tx) => {
+        for (const t of p1.parsed) {
+          const nb = nbboAtOrBefore(quotes, t.tsMs);
+          const cl = classifyForFlowPersistence({
+            price: t.price,
+            size: t.size,
+            conditions: t.conditions,
+            nbbo: nb,
+            largeNotionalThresholdUsd: marketCtx.largeNotionalThresholdUsd,
+            avgDailyContractVolume20d: baselineAvgVol,
+            openInterest: oiSnapshot > 0 ? oiSnapshot : null,
+          });
+          if (!shouldPersistBackfillRow(cl)) {
+            continue;
+          }
+          const dteDays = dteCalendarDays(meta.expiration, t.tsMs);
+          const sessionPhase = sessionPhaseFromTradeMs(t.tsMs);
+          const venueClass = venueClassFromExchangeId(t.exchangeId);
+          const sample = {
+            tsMs: t.tsMs,
+            occ,
+            strike: meta.strike,
+            expiration: meta.expiration,
+            side: cl.side,
+            size: t.size,
+            notional: cl.notional,
+          };
+          const ml = occLegWindow.annotate(ticker, sample);
+          occLegWindow.record(ticker, sample);
+
+          const upd = await tx
+            .update(optionsFlowRawTradesTable)
+            .set({
+              side: cl.side,
+              isBlock: cl.isBlockForDb,
+              isSweep: cl.isSweep,
+              notional: cl.notional,
+              volOiRatio: cl.volOiRatio,
+              volumeVsBaseline20d: cl.volumeVsBaseline20d,
+              aggressorConfidence: cl.aggressorConfidence,
+              syntheticLegGroupId: ml.syntheticLegGroupId,
+              multiLegConfidence: ml.multiLegConfidence,
+              extras: ml.extras,
+              dteDays,
+              sessionPhase,
+              venueClass,
+            })
+            .where(
+              and(
+                eq(optionsFlowRawTradesTable.underlyingSymbol, ticker),
+                eq(optionsFlowRawTradesTable.date, sessionDate),
+                eq(optionsFlowRawTradesTable.optionSymbol, occ),
+                eq(optionsFlowRawTradesTable.sourceTradeId, t.dedupId),
+                isNull(optionsFlowRawTradesTable.side),
+              ),
+            )
+            .returning({ id: optionsFlowRawTradesTable.id, side: optionsFlowRawTradesTable.side });
+
+          for (const row of upd) {
+            rowsSideUpdated += 1;
+            if (row.side == null) remainingNullSide += 1;
+          }
+        }
+      });
+    } catch (err) {
+      const pgCtx = extractPgErrorContext(err);
+      logFlowPipelineWarn(
+        "tape_backfill_phase2",
+        "strategistTapeBackfill: phase-2 per-OCC update transaction failed",
+        {
+          err,
+          occ,
+          ticker,
+          message: pgCtx.message,
+          code: pgCtx.code,
+        },
+      );
+      occDbError = true;
+    }
+
+    return {
+      occ,
+      kind: "completed",
+      rowsSideUpdated,
+      remainingNullSide,
+      anyTruncated: trQ,
+      anyError: occDbError,
+      anySawPolygonHttpError: qErr,
+    };
+  };
+
+  const phase2Results = await Promise.all(
+    phase1Results.map((p1, occIdx) => limit(() => processOccPhase2(occIdx, p1))),
+  );
+
+  let occCompleted = 0;
+  let phase2AnyTruncated = false;
+  let phase2AnyError = false;
+  let phase2AnySawPolygonHttpError = false;
+
+  for (const r of phase2Results) {
+    if (r.kind === "completed") {
+      occCompleted += 1;
+    }
+    if (r.kind === "skipped_budget") {
+      phase2AnyTruncated = true;
+    }
+    if (r.anyTruncated) phase2AnyTruncated = true;
+    if (r.anyError) phase2AnyError = true;
+    if (r.anySawPolygonHttpError) phase2AnySawPolygonHttpError = true;
+  }
+
+  let anyTruncated = phase1AnyTruncated || phase2AnyTruncated;
+  let anyError = phase1AnyError || phase2AnyError;
+  const anySawPolygonHttpError = phase1AnySawPolygonHttpError || phase2AnySawPolygonHttpError;
+
+  const nullSideAfterPhase2Result = await db
+    .select({ c: sql<number>`count(*)` })
+    .from(optionsFlowRawTradesTable)
+    .where(
+      and(
+        eq(optionsFlowRawTradesTable.underlyingSymbol, ticker),
+        eq(optionsFlowRawTradesTable.date, sessionDate),
+        isNull(optionsFlowRawTradesTable.side),
+      ),
+    );
+  const stillNullSideAfterPhase2 = Number(nullSideAfterPhase2Result[0]?.c ?? 0);
 
   await flushFlowPersistenceNow();
   try {
@@ -844,8 +1079,9 @@ export async function runStrategistTapeBackfill(args: {
   }
 
   let status: TapeBackfillStatusValue = "complete";
-  if (anyError && occCompleted === 0) status = "failed";
-  else if (anyError || anyTruncated || occCompleted < occList.length) status = "partial";
+  if (phase1FailedGlobally) status = "failed";
+  else if (occCompleted < occList.length || phase2AnyTruncated) status = "partial";
+  else if (anyError) status = "partial";
 
   let tapeBackfillReason: TapeBackfillDiagnosticReason;
   if (anySawPolygonHttpError) {
@@ -893,7 +1129,7 @@ export async function runStrategistTapeBackfill(args: {
     byOcc: dedupeByOccRecord,
   };
 
-  if (anyTruncated || insertedNullSideThisRun > 0) {
+  if (anyTruncated || stillNullSideAfterPhase2 > 0) {
     queueMicrotask(() => {
       void reclassifyUnclassifiedTrades(ticker).catch((err: unknown) => {
         logger.error({ err, ticker }, "optionsTradeReclassifier: failed");
