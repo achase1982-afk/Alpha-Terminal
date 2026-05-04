@@ -3,6 +3,7 @@ import { getNextEarningsDate } from "./earningsService.js";
 import { emitTelemetry, createTelemetryBatch } from "./telemetryStore.js";
 import type { FilterResult, ScanResult, ScanCandidate } from "./deterministicScanner.js";
 import { db, equityDailyTable, flowDailyAggregatesTable, optionsFlowPerStrikeTable, scannerTelemetryTable } from "@workspace/db";
+import { Buffer } from "node:buffer";
 import { desc, eq, inArray, and, gte, lte, sql } from "drizzle-orm";
 import type { InferInsertModel } from "drizzle-orm";
 import { getSettings, type StrategistConfig } from "./strategistSettings.js";
@@ -1534,6 +1535,25 @@ export async function runDiscoveryScan(
       sector: getSector(r.symbol),
     }));
   }
+
+  const totalElapsedMs = Date.now() - scanStart;
+  let responsePayloadBytes: number | null = null;
+  try {
+    responsePayloadBytes = Buffer.byteLength(JSON.stringify(result), "utf8");
+  } catch {
+    responsePayloadBytes = null;
+  }
+  log.info(
+    {
+      op: "scanner.runDiscoveryScan.complete",
+      totalElapsedMs,
+      responsePayloadBytes,
+      candidateCount: candidates.length,
+      scoredCount: scoredResults.length,
+      returnAll: !!options?.returnAll,
+    },
+    "Discovery scan finished — timing and approximate JSON response size",
+  );
 
   return result;
 }

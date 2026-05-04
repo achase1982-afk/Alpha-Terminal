@@ -454,9 +454,11 @@ async function boot() {
     logger.info({ host, port }, "Server listening");
   });
 
-  server.timeout = 120_000;
-  server.keepAliveTimeout = 120_000;
-  server.headersTimeout = 125_000;
+  // Discovery scan can exceed 120s (IOScore, earnings, flow highlights, large JSON).
+  // Keep above proxy / client expectations (see alpha-terminal nginx template).
+  server.timeout = 180_000;
+  server.keepAliveTimeout = 180_000;
+  server.headersTimeout = 185_000;
 
   initWsServer(server);
 
