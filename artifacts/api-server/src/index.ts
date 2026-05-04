@@ -24,6 +24,8 @@ import { migrateAiLabSeedData } from "./lib/aiLabMigration";
 import { getBestAccessToken } from "./lib/tokenStore";
 import { loadAiLabConfigFromDb } from "./lib/aiLabConfig";
 import { recoverOrphanedIvrJobs } from "./lib/onDemandIvrBackfill";
+import { assertScannerTokenEncryptionKeyConfigured } from "./lib/tokenEncryption.js";
+import { gcScannerJobsOlderThanOneHour } from "./lib/unifiedScannerEngine.js";
 
 const rawPort = process.env["PORT"];
 
@@ -40,6 +42,22 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 async function boot() {
+  assertScannerTokenEncryptionKeyConfigured();
+
+  function scheduleScannerJobsGc() {
+    const intervalMs = 60 * 60 * 1000;
+    setInterval(() => {
+      void gcScannerJobsOlderThanOneHour().catch((err) =>
+        logger.error({ err }, "scanner_jobs GC failed"),
+      );
+    }, intervalMs);
+    void gcScannerJobsOlderThanOneHour().catch((err) =>
+      logger.warn({ err }, "scanner_jobs GC initial run failed"),
+    );
+    logger.info({ intervalMs }, "scanner_jobs GC scheduled (hourly, delete rows older than 1h)");
+  }
+  scheduleScannerJobsGc();
+
   function scheduleCanonicalIvAccumulator() {
     function nextRunMs() {
       const now = new Date();

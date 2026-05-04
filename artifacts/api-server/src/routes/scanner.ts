@@ -147,6 +147,39 @@ const PRESET_ALIASES: Record<string, string> = {
   ndx100: "liquidCore130",
 };
 
+/** Resolve `preset:*`, `watchlist:*`, or `screen:*` to symbol lists (server-side unified scanner). */
+export async function resolveScannerUniverseSymbolsForUser(universeId: string, userId: string): Promise<string[]> {
+  const idStr = universeId.trim();
+  if (idStr.startsWith("preset:")) {
+    const rawKey = idStr.slice(7);
+    const resolvedKey = PRESET_ALIASES[rawKey] ?? rawKey;
+    const presets = loadPresets();
+    const syms = presets[resolvedKey]?.symbols;
+    return syms ? [...syms] : [];
+  }
+  if (idStr.startsWith("watchlist:")) {
+    const id = Number.parseInt(idStr.slice(10), 10);
+    if (!Number.isFinite(id)) return [];
+    const rows = await db
+      .select()
+      .from(scannerWatchlistsTable)
+      .where(and(eq(scannerWatchlistsTable.userId, userId), eq(scannerWatchlistsTable.id, id)))
+      .limit(1);
+    return (rows[0]?.symbols as string[]) ?? [];
+  }
+  if (idStr.startsWith("screen:")) {
+    const id = Number.parseInt(idStr.slice(7), 10);
+    if (!Number.isFinite(id)) return [];
+    const rows = await db
+      .select()
+      .from(scannerScreensTable)
+      .where(and(eq(scannerScreensTable.userId, userId), eq(scannerScreensTable.id, id)))
+      .limit(1);
+    return (rows[0]?.cachedSymbols as string[]) ?? [];
+  }
+  return [];
+}
+
 router.get("/universes/:key/symbols", (req, res) => {
   const presets = loadPresets();
   const resolvedKey = PRESET_ALIASES[req.params.key] ?? req.params.key;
