@@ -22,6 +22,7 @@ import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { useToast } from "@/hooks/use-toast";
 import { useUnifiedScan } from "@/hooks/useUnifiedScan";
 import { UnifiedScannerCard } from "./UnifiedScannerCard";
+import { ScannerErrorBoundary } from "./ScannerErrorBoundary";
 import type { UnifiedScanJobResult } from "@/lib/unifiedScanTypes";
 
 function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCreateScreen, onEditScreen, onDeleteScreen, onRefreshScreen, refreshingScreenId, onCreateWatchlist, onEditWatchlist, onDeleteWatchlist }: {
@@ -285,7 +286,14 @@ function formatScanTime(iso: string | null | undefined): string {
   }
 }
 
-function enginePill(name: string, st: UnifiedScanJobResult["engineStatus"]["discovery"]) {
+function enginePill(name: string, st: UnifiedScanJobResult["engineStatus"]["discovery"] | undefined) {
+  if (!st) {
+    return (
+      <span key={name} className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-zinc-600 text-zinc-500">
+        {name} ?
+      </span>
+    );
+  }
   const ok = st.status === "ok";
   return (
     <span
@@ -305,7 +313,7 @@ function enginePill(name: string, st: UnifiedScanJobResult["engineStatus"]["disc
 
 type SendToStrategistFn = (sym: string) => void;
 
-export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSendToStrategist }: {
+function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSendToStrategist }: {
   subscribeEquitySymbols?: (symbols: string[]) => void;
   onNavigateToSymbol?: (sym: string) => void;
   onSendToStrategist?: SendToStrategistFn;
@@ -315,6 +323,7 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
   const shockActive = pulseData?.shockState === "ACTIVE";
   const universeData = useScannerUniverses();
   const { toast } = useToast();
+  const unified = useUnifiedScan();
 
   const [universe, setUniverse] = useState("preset:liquidCore130");
   const [resolvedSymbols, setResolvedSymbols] = useState<string[]>([]);
@@ -373,19 +382,20 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
   const editScreenObj = editingScreen != null ? universeData.screens.find(s => s.id === editingScreen) ?? null : null;
 
   const failedEngines = useMemo(() => {
-    if (!completeResult) return [] as string[];
+    if (!completeResult?.engineStatus) return [] as string[];
     const out: string[] = [];
-    if (completeResult.engineStatus.discovery.status !== "ok") out.push("Discovery");
-    if (completeResult.engineStatus.momentum.status !== "ok") out.push("Momentum");
-    if (completeResult.engineStatus.unusual_flow.status !== "ok") out.push("Unusual Flow");
+    const es = completeResult.engineStatus;
+    if (es.discovery?.status !== "ok") out.push("Discovery");
+    if (es.momentum?.status !== "ok") out.push("Momentum");
+    if (es.unusual_flow?.status !== "ok") out.push("Unusual Flow");
     return out;
   }, [completeResult]);
 
   const allEnginesFailed =
-    completeResult &&
-    completeResult.engineStatus.discovery.status !== "ok" &&
-    completeResult.engineStatus.momentum.status !== "ok" &&
-    completeResult.engineStatus.unusual_flow.status !== "ok";
+    completeResult?.engineStatus &&
+    completeResult.engineStatus.discovery?.status !== "ok" &&
+    completeResult.engineStatus.momentum?.status !== "ok" &&
+    completeResult.engineStatus.unusual_flow?.status !== "ok";
 
   const partialEngineWarning =
     completeResult &&
@@ -637,5 +647,17 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
         />
       )}
     </div>
+  );
+}
+
+export function MarketScanner(props: {
+  subscribeEquitySymbols?: (symbols: string[]) => void;
+  onNavigateToSymbol?: (sym: string) => void;
+  onSendToStrategist?: SendToStrategistFn;
+}) {
+  return (
+    <ScannerErrorBoundary>
+      <MarketScannerInner {...props} />
+    </ScannerErrorBoundary>
   );
 }
