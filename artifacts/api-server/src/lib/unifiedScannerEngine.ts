@@ -214,7 +214,7 @@ export async function startUnifiedScan(request: UnifiedScanRequest): Promise<{ s
 }
 
 export async function getScanStatus(scanId: string, userId: string): Promise<UnifiedScanJobResult | null> {
-  const row = await db.query.scannerJobs.findFirst({
+  const row = await db.query.scannerJobsTable.findFirst({
     where: and(eq(scannerJobsTable.scanId, scanId), eq(scannerJobsTable.userId, userId)),
   });
   if (!row) return null;
@@ -258,7 +258,7 @@ export async function runScanInBackground(scanId: string): Promise<void> {
   try {
     await updateJobRow(scanId, { status: "running", error: null });
 
-    const job = await db.query.scannerJobs.findFirst({ where: eq(scannerJobsTable.scanId, scanId) });
+    const job = await db.query.scannerJobsTable.findFirst({ where: eq(scannerJobsTable.scanId, scanId) });
     if (!job) {
       log.error({ scanId }, "scanner.runScanInBackground.jobNotFound");
       return;
