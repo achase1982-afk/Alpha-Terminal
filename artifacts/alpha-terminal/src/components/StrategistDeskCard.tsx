@@ -466,6 +466,10 @@ export function StrategistDeskCard({
   const prefetchGenRef = useRef(0);
   const prefetchedAudioUrlRef = useRef<string | null>(null);
   const prefetchedAudioKeyRef = useRef<string | null>(null);
+  /** Which `startPlay` generation turned on `audioLoading` (fetch path); always clear in `finally` for that gen. */
+  const ttsLoadingPlayGenRef = useRef<number | null>(null);
+  /** True while we expect `<audio>` to decode/play our blob (ignore spurious errors from `stopAudio` clearing `src`). */
+  const expectAudioPlaybackRef = useRef(false);
 
   const revokeObjectUrl = useCallback(() => {
     if (objectUrlRef.current) {
@@ -475,6 +479,7 @@ export function StrategistDeskCard({
   }, []);
 
   const stopAudio = useCallback(() => {
+    expectAudioPlaybackRef.current = false;
     audioPlayGenRef.current += 1;
     ttsFetchAbortRef.current?.abort();
     ttsFetchAbortRef.current = null;
@@ -497,6 +502,7 @@ export function StrategistDeskCard({
     setPaused(false);
     setAudioBarOpen(false);
     setAudioLoading(false);
+    ttsLoadingPlayGenRef.current = null;
     setAudioReady(false);
     setAudioError(null);
   }, [revokeObjectUrl]);
@@ -519,7 +525,7 @@ export function StrategistDeskCard({
     setAudioError(null);
     setAudioReady(false);
 
-    const attachAndPlay = async (blobUrl: string): Promise<boolean> => {
+    const attachAndPlay = (blobUrl: string): boolean => {
       const el = audioRef.current;
       if (!el || playGen !== audioPlayGenRef.current) return false;
       revokeObjectUrl();
@@ -529,24 +535,36 @@ export function StrategistDeskCard({
       setAudioReady(true);
       el.src = blobUrl;
       el.playbackRate = speechRateRef.current;
+      expectAudioPlaybackRef.current = true;
       try {
-        await el.play();
-        return playGen === audioPlayGenRef.current;
+        const p = el.play();
+        if (p !== undefined) {
+          void p.catch(() => {
+            expectAudioPlaybackRef.current = false;
+            if (playGen === audioPlayGenRef.current) {
+              setAudioError("Audio unavailable — playback failed");
+              setAudioReady(false);
+            }
+          });
+        }
       } catch {
+        expectAudioPlaybackRef.current = false;
         if (playGen === audioPlayGenRef.current) {
           setAudioError("Audio unavailable — playback failed");
           setAudioReady(false);
         }
         return false;
       }
+      return playGen === audioPlayGenRef.current;
     };
 
     if (prefetchHit) {
       setAudioLoading(false);
+      ttsLoadingPlayGenRef.current = null;
       const url = prefetchedAudioUrlRef.current!;
       prefetchedAudioUrlRef.current = null;
       prefetchedAudioKeyRef.current = null;
-      const ok = await attachAndPlay(url);
+      const ok = attachAndPlay(url);
       if (ok && deskAudioChunks.length > 1) {
         progressiveSessionRef.current = { playGen, chunks: deskAudioChunks, index: 0 };
       }
@@ -564,6 +582,7 @@ export function StrategistDeskCard({
         : 0;
 
     setAudioLoading(true);
+    ttsLoadingPlayGenRef.current = playGen;
     try {
       const res = await fetchWithAuth("/api/tts/desk-audio", {
         method: "POST",
@@ -590,7 +609,7 @@ export function StrategistDeskCard({
       const blob = await res.blob();
       if (playGen !== audioPlayGenRef.current) return;
       const url = URL.createObjectURL(blob);
-      const ok = await attachAndPlay(url);
+      const ok = attachAndPlay(url);
       if (ok && deskAudioChunks.length > 1) {
         progressiveSessionRef.current = { playGen, chunks: deskAudioChunks, index: 0 };
       }
@@ -608,8 +627,9 @@ export function StrategistDeskCard({
       if (ttsFetchAbortRef.current === ac) {
         ttsFetchAbortRef.current = null;
       }
-      if (playGen === audioPlayGenRef.current) {
+      if (ttsLoadingPlayGenRef.current === playGen) {
         setAudioLoading(false);
+        ttsLoadingPlayGenRef.current = null;
       }
     }
   }, [deskAudioChunks, deskAudioText, deskResultId, prefetchPrimaryKey, revokeObjectUrl]);
@@ -658,7 +678,25 @@ export function StrategistDeskCard({
       if (el) {
         el.src = url;
         el.playbackRate = speechRateRef.current;
-        await el.play();
+        expectAudioPlaybackRef.current = true;
+        try {
+          const p = el.play();
+          if (p !== undefined) {
+            void p.catch(() => {
+              expectAudioPlaybackRef.current = false;
+              if (playGen === audioPlayGenRef.current) {
+                progressiveSessionRef.current = null;
+                setAudioError("Audio unavailable — playback failed");
+              }
+            });
+          }
+        } catch {
+          expectAudioPlaybackRef.current = false;
+          if (playGen === audioPlayGenRef.current) {
+            progressiveSessionRef.current = null;
+            setAudioError("Audio unavailable — playback failed");
+          }
+        }
       }
     } catch {
       if (playGen === audioPlayGenRef.current) {
@@ -810,11 +848,20 @@ export function StrategistDeskCard({
   }, []);
 
   const onPlay = useCallback(() => {
+    expectAudioPlaybackRef.current = false;
     setPaused(false);
   }, []);
 
   const onPause = useCallback(() => {
     setPaused(true);
+  }, []);
+
+  const onAudioElementError = useCallback(() => {
+    if (!expectAudioPlaybackRef.current) return;
+    expectAudioPlaybackRef.current = false;
+    progressiveSessionRef.current = null;
+    setAudioError("Audio unavailable — media could not be played");
+    setAudioReady(false);
   }, []);
 
   const iconBtnBase: CSSProperties = {
@@ -938,11 +985,13 @@ export function StrategistDeskCard({
       <audio
         ref={audioRef}
         preload="auto"
+        playsInline
         style={{ display: "none" }}
         onEnded={onAudioEnded}
         onLoadedMetadata={onLoadedMetadata}
         onPlay={onPlay}
         onPause={onPause}
+        onError={onAudioElementError}
       />
       {audioBarOpen && (
         <div
