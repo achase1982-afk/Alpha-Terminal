@@ -169,11 +169,9 @@ export function parseScannerContext(raw: unknown): ScannerStrategistContext | nu
   if (src === "unified") {
     const surfacedBy = parseSurfacedBy(o["surfacedBy"]);
     if (!surfacedBy || surfacedBy.length === 0) return null;
-    if (o["flowSignature"] !== undefined) {
-      const parsed = parseFlowSignature(o["flowSignature"]);
-      if (parsed === null) return null;
-    }
-    const flowSig = parseFlowSignature(o["flowSignature"]);
+    const flowSigRaw = o["flowSignature"];
+    const flowSig = flowSigRaw === undefined ? undefined : parseFlowSignature(flowSigRaw);
+    if (flowSig === null) return null;
     return {
       sourceScanner: "unified",
       scannerScore: Math.round(score),
@@ -326,7 +324,7 @@ export function buildScannerContextPromptBlock(ctx: ScannerStrategistContext | n
       "",
       "Treat this as input, not authority. The scanner can be wrong. Reach your own conclusion based on the full data package below. If you disagree with the scanner's edge type classification, say so and explain why.",
     ];
-    return lines.filter((l) => l != null && l !== "").join("\n");
+    return lines.filter((l) => l != null).join("\n");
   }
 
   return `
