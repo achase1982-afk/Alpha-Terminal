@@ -790,6 +790,8 @@ export const scannerJobsTable = pgTable("scanner_jobs", {
   userId: text("user_id").notNull(),
   universeId: text("universe_id").notNull(),
   traderTokenEncrypted: text("trader_token_encrypted").notNull(),
+  /** Snapshot of Market Pulse at job creation (composite, confidence, bias). */
+  pulseSnapshot: jsonb("pulse_snapshot"),
   status: text("status").notNull(),
   startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
