@@ -201,6 +201,7 @@ export function StrategistHistoryList({ onSendToOrder, onReopenValidatedOrder, e
                     onReopenOrder={onReopenValidatedOrder}
                     generatedAt={row.createdAt}
                     transcript={validationTranscript}
+                    collapseStorageKey={row.jobId}
                   />
                 ) : (
                   <>

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect, useId } from "react";
 import {
   ShieldCheck, AlertTriangle, ShieldX, Send,
   ChevronDown, ChevronUp, FileText, MessageSquare,
@@ -44,6 +44,17 @@ const VERDICT_PALETTE: Record<ValidationVerdict, {
 
 const BULL_COLOR = "#fbbf24";
 const BEAR_COLOR = "#60a5fa";
+
+/** Session-only persistence for validation card expand/collapse (per job or history row). */
+const VALIDATION_CARD_EXPANDED_STORAGE_PREFIX = "strategistValidationCardExpanded:";
+
+function readValidationCardExpandedFromSession(storageKey: string | null | undefined): boolean | null {
+  if (!storageKey || typeof sessionStorage === "undefined") return null;
+  const raw = sessionStorage.getItem(`${VALIDATION_CARD_EXPANDED_STORAGE_PREFIX}${storageKey}`);
+  if (raw === "1") return true;
+  if (raw === "0") return false;
+  return null;
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -1184,25 +1195,64 @@ export function StrategistValidationCard({
   onReopenOrder,
   generatedAt,
   transcript = [],
+  collapseStorageKey,
 }: {
   result: unknown;
   meta: StrategistValidationMeta | null | undefined;
   onReopenOrder?: (meta: StrategistValidationMeta) => void;
   generatedAt?: string | number | null;
   transcript?: StrategistTranscriptTurn[];
+  /** When set, expand/collapse is restored for this browser session (e.g. job id or history row id). */
+  collapseStorageKey?: string | null;
 }) {
   const [confirmSend, setConfirmSend] = useState(false);
+  const panelId = useId();
+  const panelDomId = `strategist-validation-card-panel-${panelId.replace(/:/g, "")}`;
 
   const payload: ValidationVerdictPayload | null = useMemo(
     () => (isValidationPayload(result) ? result : null),
     [result],
   );
 
+  const [expanded, setExpanded] = useState(() => {
+    const fromSession = readValidationCardExpandedFromSession(collapseStorageKey);
+    return fromSession ?? true;
+  });
+
+  useEffect(() => {
+    const fromSession = readValidationCardExpandedFromSession(collapseStorageKey);
+    setExpanded(fromSession ?? true);
+  }, [collapseStorageKey]);
+
+  const persistExpanded = useCallback(
+    (next: boolean) => {
+      if (collapseStorageKey && typeof sessionStorage !== "undefined") {
+        sessionStorage.setItem(`${VALIDATION_CARD_EXPANDED_STORAGE_PREFIX}${collapseStorageKey}`, next ? "1" : "0");
+      }
+    },
+    [collapseStorageKey],
+  );
+
+  const toggleExpanded = useCallback(() => {
+    setExpanded((prev) => {
+      const next = !prev;
+      persistExpanded(next);
+      return next;
+    });
+  }, [persistExpanded]);
+
   const generatedLabel = useMemo(() => {
     if (generatedAt == null) return "";
     const d = typeof generatedAt === "number" ? new Date(generatedAt) : new Date(generatedAt as string);
     if (isNaN(d.getTime())) return "";
     return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }, [generatedAt]);
+
+  const generatedSummary = useMemo(() => {
+    if (generatedAt == null) return "";
+    const d = typeof generatedAt === "number" ? new Date(generatedAt) : new Date(generatedAt as string);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleString();
   }, [generatedAt]);
 
   if (!payload) {
@@ -1226,6 +1276,9 @@ export function StrategistValidationCard({
   const Icon = pal.Icon;
   const confidence = Math.max(0, Math.min(100, Math.round(payload.confidence)));
   const ticketSummary = meta ? describeTicket(meta) : "";
+  const ticker = meta?.ticket?.ticker?.trim() ?? "";
+  const modeLabel = meta?.mode === "closing" ? "Close" : "Open";
+  const decisionSummary = `${pal.label} · ${confidence}% desk confidence`;
 
   const ctaStyle: React.CSSProperties =
     payload.verdict === "PROCEED"
@@ -1258,6 +1311,55 @@ export function StrategistValidationCard({
         fontFamily: SYS_FONT,
       }}
     >
+      <button
+        type="button"
+        onClick={toggleExpanded}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            toggleExpanded();
+          }
+        }}
+        aria-expanded={expanded}
+        aria-controls={panelDomId}
+        aria-label={expanded ? "Collapse validation card" : "Expand validation card"}
+        className="w-full flex items-center justify-between px-3 py-2 gap-2 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#141414]"
+        style={{ background: "#0d0d0f", borderBottom: expanded ? `1px solid ${pal.border}` : "none" }}
+      >
+        <div className="flex items-start gap-2 min-w-0 flex-1">
+          <Icon className="w-4 h-4 shrink-0 mt-0.5" style={{ color: pal.fg }} aria-hidden />
+          <div className="min-w-0 flex-1 space-y-0.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              {ticker ? (
+                <span className="font-mono text-[13px] font-bold text-white">{ticker}</span>
+              ) : (
+                <span className="font-mono text-[13px] font-bold text-zinc-500">—</span>
+              )}
+              <span
+                className="font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded shrink-0"
+                style={{ background: `${pal.fg}18`, color: pal.fg, border: `1px solid ${pal.fg}35` }}
+              >
+                Validation
+              </span>
+              <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider shrink-0">{modeLabel}</span>
+            </div>
+            <div className="font-mono text-[10px] text-zinc-400 leading-snug truncate" title={decisionSummary}>
+              {decisionSummary}
+            </div>
+            {generatedSummary ? (
+              <div className="font-mono text-[9px] text-zinc-600">{generatedSummary}</div>
+            ) : null}
+          </div>
+        </div>
+        {expanded ? (
+          <ChevronUp className="w-3 h-3 text-zinc-500 shrink-0" aria-hidden />
+        ) : (
+          <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" aria-hidden />
+        )}
+      </button>
+
+      {expanded ? (
+        <div id={panelDomId}>
       {/* ── Verdict banner ── */}
       <div
         className="px-4 py-3"
@@ -1501,6 +1603,8 @@ export function StrategistValidationCard({
           <AnalystReport payload={payload} meta={meta} />
         </CollapsibleBlock>
       </div>
+        </div>
+      ) : null}
     </div>
   );
 }
