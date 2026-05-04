@@ -212,6 +212,7 @@ export function StrategistHistoryList({ onSendToOrder, onReopenValidatedOrder, e
                         deskResult={(result as any).deskResult as DeskResult}
                         generatedAt={row.createdAt}
                         strategistOutcome={(result as StrategistV2Result).strategistOutcome}
+                        diagnosticView={(result as StrategistV2Result).diagnosticView ?? null}
                         blockReason={
                           typeof (result as StrategistV2Result).blockReason === "object" && (result as StrategistV2Result).blockReason != null
                             ? ((result as StrategistV2Result).blockReason as import("@/components/StrategistV2Card").BlockReason)

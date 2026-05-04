@@ -263,6 +263,8 @@ export interface StrategistV2Result {
   systemicRiskElevated: boolean;
   telemetryId?: number;
   strategistDiagnosticRequestId?: string;
+  /** Compact desk projection from the server (shareable); optional on older cards. */
+  diagnosticView?: Record<string, unknown>;
   earningsAlert?: {
     earningsDate: string;
     daysUntilEarnings: number | null;

@@ -3635,6 +3635,7 @@ export function AiIntelligenceTab({
                           deskResult={(v2Result as any).deskResult as DeskResult}
                           generatedAt={generatedAt}
                           strategistOutcome={(v2Result as StrategistV2ResultType).strategistOutcome}
+                          diagnosticView={(v2Result as StrategistV2ResultType).diagnosticView ?? null}
                           strategistDiagnosticRequestId={(v2Result as StrategistV2ResultType).strategistDiagnosticRequestId}
                           blockReason={
                             typeof (v2Result as StrategistV2ResultType).blockReason === "object" && (v2Result as StrategistV2ResultType).blockReason != null
