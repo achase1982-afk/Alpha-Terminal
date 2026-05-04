@@ -1,195 +1,71 @@
 /**
- * Single-provider TTS adapter (Gemini API native audio / TTS).
- * Uses the same API key as the rest of the app (GEMINI_API_KEY / Google AI).
+ * Single-provider TTS adapter (OpenAI Speech API → MP3 bytes).
  * Swap implementations here only; routes should call `generateSpeech`.
+ *
+ * Auth matches aiLabAnalystClient: prefer user OPENAI_API_KEY to api.openai.com;
+ * else Replit-style AI_INTEGRATIONS_OPENAI_* proxy when configured.
  */
 
 import { createHash } from "node:crypto";
-import { Readable, PassThrough } from "node:stream";
-import ffmpeg from "fluent-ffmpeg";
-import ffmpegPath from "ffmpeg-static";
-import { getGeminiApiKey, getGeminiGenerateContentBaseUrl } from "./geminiClient.js";
+import OpenAI from "openai";
 
-/** Gemini 3.1 Flash TTS Preview (Gemini API generateContent + AUDIO modality). */
-const GEMINI_TTS_MODEL = "gemini-3.1-flash-tts-preview";
+const OPENAI_SPEECH_MAX_CHARS = 4096;
+
+/** Default TTS model (OpenAI); override with OPENAI_TTS_MODEL. */
+const DEFAULT_TTS_MODEL = "gpt-4o-mini-tts";
 
 /**
- * Default voice: **Charon** — neutral, informative (professional desk read).
- * Alternatives: Kore (firm), Leda (youthful). Change only in this file.
+ * Default voice: **alloy** — neutral; change via OPENAI_TTS_VOICE or opts.voice.
+ * Other built-ins: ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar, …
  */
-const DEFAULT_VOICE_NAME = "Charon";
+const DEFAULT_VOICE = "alloy";
 
-const PCM_SAMPLE_RATE = 24000;
-
-if (ffmpegPath) {
-  ffmpeg.setFfmpegPath(ffmpegPath);
+function getOpenAIForSpeech(): OpenAI {
+  const directKey = process.env.OPENAI_API_KEY?.trim();
+  if (directKey) {
+    return new OpenAI({ apiKey: directKey, timeout: 5 * 60 * 1000 });
+  }
+  const intKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY?.trim();
+  const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL?.trim();
+  if (intKey && baseURL) {
+    return new OpenAI({ apiKey: intKey, baseURL, timeout: 5 * 60 * 1000 });
+  }
+  throw new Error(
+    "OpenAI not configured for speech (set OPENAI_API_KEY, or AI_INTEGRATIONS_OPENAI_API_KEY + AI_INTEGRATIONS_OPENAI_BASE_URL)",
+  );
 }
 
-function pcm16MonoToMp3(pcm: Buffer): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    const inputStream = Readable.from(pcm);
-    const out = new PassThrough();
-    out.on("data", (c: Buffer) => {
-      chunks.push(c);
-    });
-    out.on("end", () => {
-      resolve(Buffer.concat(chunks));
-    });
-    out.on("error", reject);
-    ffmpeg(inputStream)
-      .inputOptions(["-f", "s16le", `-ar`, String(PCM_SAMPLE_RATE), "-ac", "1"])
-      .audioCodec("libmp3lame")
-      .audioBitrate("64k")
-      .audioChannels(1)
-      .format("mp3")
-      .on("error", reject)
-      .pipe(out, { end: true });
-  });
-}
-
-function bufferToMp3(buf: Buffer, mime?: string): Promise<Buffer> {
-  const lower = (mime ?? "").toLowerCase();
-  if (lower.includes("mpeg") || lower.includes("mp3")) {
-    return Promise.resolve(buf);
-  }
-  const isWav =
-    buf.length >= 12 && buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WAVE";
-  if (isWav || lower.includes("wav")) {
-    return new Promise((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      const inputStream = Readable.from(buf);
-      const out = new PassThrough();
-      out.on("data", (c: Buffer) => chunks.push(c));
-      out.on("end", () => resolve(Buffer.concat(chunks)));
-      out.on("error", reject);
-      ffmpeg(inputStream)
-        .inputFormat("wav")
-        .audioCodec("libmp3lame")
-        .audioBitrate("64k")
-        .audioChannels(1)
-        .format("mp3")
-        .on("error", reject)
-        .pipe(out, { end: true });
-    });
-  }
-  return pcm16MonoToMp3(buf);
-}
-
-type GeminiTtsResponse = {
-  error?: { message?: string; code?: number; status?: string };
-  promptFeedback?: { blockReason?: string };
-  candidates?: Array<{
-    finishReason?: string;
-    content?: {
-      parts?: unknown[];
-    };
-  }>;
-};
-
-/** REST may return camelCase or snake_case for inline payload. */
-function inlineAudioFromPart(part: unknown): { data: string; mime?: string } | undefined {
-  if (!part || typeof part !== "object") return undefined;
-  const o = part as Record<string, unknown>;
-  const camel = o.inlineData as Record<string, unknown> | undefined;
-  const snake = o.inline_data as Record<string, unknown> | undefined;
-  const wrap = camel ?? snake;
-  if (!wrap) return undefined;
-  const data = wrap.data;
-  if (typeof data !== "string" || !data) return undefined;
-  const mime =
-    (typeof wrap.mimeType === "string" && wrap.mimeType) ||
-    (typeof wrap.mime_type === "string" && wrap.mime_type) ||
-    undefined;
-  return { data, mime };
-}
-
-function extractAudioBase64(json: GeminiTtsResponse): { data: string; mime?: string } {
-  const cands = json.candidates;
-  if (!cands?.length) {
-    const block = json.promptFeedback?.blockReason;
-    if (block) {
-      throw new Error(`TTS blocked: ${block}`);
-    }
-    throw new Error("TTS response missing candidates");
-  }
-  for (const cand of cands) {
-    const parts = cand.content?.parts;
-    if (!Array.isArray(parts)) continue;
-    for (const p of parts) {
-      const got = inlineAudioFromPart(p);
-      if (got) return got;
-    }
-  }
-  throw new Error("TTS response has no inline audio part (inlineData / inline_data)");
+function clipSpeechInput(text: string): string {
+  const t = text.trim();
+  if (t.length <= OPENAI_SPEECH_MAX_CHARS) return t;
+  return `${t.slice(0, OPENAI_SPEECH_MAX_CHARS - 20)}\n\n[truncated for TTS length limit]`;
 }
 
 /**
- * Returns MP3 bytes (mono, ~64 kbps) for the given plain text.
- * Calls Gemini `generateContent` with AUDIO modality (not Cloud Text-to-Speech).
+ * Returns MP3 bytes for the given plain text (mono, bitrate set by OpenAI for the chosen model).
  */
 export async function generateSpeech(text: string, opts?: { voice?: string }): Promise<Buffer> {
-  const apiKey = getGeminiApiKey();
-  if (!apiKey) {
-    throw new Error("Gemini API key not configured (set GEMINI_API_KEY, GOOGLE_API_KEY, or AI_INTEGRATIONS_GEMINI_API_KEY)");
-  }
+  const client = getOpenAIForSpeech();
+  const model = (process.env.OPENAI_TTS_MODEL ?? DEFAULT_TTS_MODEL).trim() || DEFAULT_TTS_MODEL;
+  const voice = (opts?.voice?.trim() || process.env.OPENAI_TTS_VOICE?.trim() || DEFAULT_VOICE).toLowerCase();
 
-  const trimmed = text.trim();
-  if (!trimmed) {
+  const input = clipSpeechInput(text);
+  if (!input) {
     throw new Error("TTS text is empty");
   }
 
-  const voiceName = opts?.voice?.trim() || DEFAULT_VOICE_NAME;
-  const base = getGeminiGenerateContentBaseUrl();
-  const url = `${base}/v1beta/models/${encodeURIComponent(GEMINI_TTS_MODEL)}:generateContent`;
-
-  const spokenPrompt =
-    "Read the following financial desk report aloud in a clear, neutral, professional tone. " +
-    "Speak only the transcript; do not add commentary or meta-talk.\n\n" +
-    trimmed;
-
-  const body = {
-    contents: [{ role: "user", parts: [{ text: spokenPrompt }] }],
-    generationConfig: {
-      responseModalities: ["AUDIO"],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: {
-            voiceName,
-          },
-        },
-      },
-    },
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-    },
-    body: JSON.stringify(body),
+  const response = await client.audio.speech.create({
+    model,
+    voice,
+    input,
+    response_format: "mp3",
   });
 
-  const rawText = await res.text();
-  let json: GeminiTtsResponse;
-  try {
-    json = JSON.parse(rawText) as GeminiTtsResponse;
-  } catch {
-    throw new Error(`TTS invalid JSON (HTTP ${res.status}): ${rawText.slice(0, 200)}`);
+  const buf = Buffer.from(await response.arrayBuffer());
+  if (!buf.length) {
+    throw new Error("OpenAI speech response was empty");
   }
-
-  if (!res.ok) {
-    const msg = json.error?.message ?? rawText.slice(0, 400);
-    throw new Error(`Gemini TTS HTTP ${res.status}: ${msg}`);
-  }
-  if (json.error?.message) {
-    throw new Error(json.error.message);
-  }
-
-  const { data: b64, mime } = extractAudioBase64(json);
-  const raw = Buffer.from(b64, "base64");
-  return bufferToMp3(raw, mime);
+  return buf;
 }
 
 export function sha256Hex(input: string): string {

@@ -100,8 +100,6 @@ async function buildAll() {
       "puppeteer",
       "puppeteer-core",
       "electron",
-      "fluent-ffmpeg",
-      "ffmpeg-static",
     ],
     sourcemap: "linked",
     plugins: [
