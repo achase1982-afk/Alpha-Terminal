@@ -11,6 +11,8 @@ import OpenAI from "openai";
 
 const OPENAI_SPEECH_MAX_CHARS = 4096;
 
+const TTS_TRUNCATION_SUFFIX = "\n\n[truncated for TTS length limit]";
+
 /** Default TTS model (OpenAI); override with OPENAI_TTS_MODEL. */
 const DEFAULT_TTS_MODEL = "gpt-4o-mini-tts";
 
@@ -38,7 +40,7 @@ function getOpenAIForSpeech(): OpenAI {
 function clipSpeechInput(text: string): string {
   const t = text.trim();
   if (t.length <= OPENAI_SPEECH_MAX_CHARS) return t;
-  return `${t.slice(0, OPENAI_SPEECH_MAX_CHARS - 20)}\n\n[truncated for TTS length limit]`;
+  return `${t.slice(0, OPENAI_SPEECH_MAX_CHARS - TTS_TRUNCATION_SUFFIX.length)}${TTS_TRUNCATION_SUFFIX}`;
 }
 
 /**

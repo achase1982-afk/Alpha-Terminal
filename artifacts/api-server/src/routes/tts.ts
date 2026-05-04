@@ -21,7 +21,7 @@ function sanitizeClientTtsDetail(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
   const noKey = raw
     .replace(/\bAIza[0-9A-Za-z_-]{25,}\b/g, "[redacted]")
-    .replace(/\bsk-[A-Za-z0-9]{20,}\b/g, "[redacted]");
+    .replace(/\bsk-[A-Za-z0-9_-]{20,}\b/g, "[redacted]");
   const oneLine = noKey.replace(/\s+/g, " ").trim();
   if (!oneLine) return "Unknown error";
   return oneLine.length > 420 ? `${oneLine.slice(0, 417)}...` : oneLine;
