@@ -1,6 +1,3 @@
-import type { IBSymbolDef } from "./ibBreadthSymbols.js";
-import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
-
 /**
  * Cboe Global Markets aggregate BBO (Cboe One / similar consolidated feed in IBKR).
  *
@@ -18,20 +15,5 @@ import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
  */
 export const CBOE_ONE_EXCHANGE = "CBOE" as const;
 
+/** Dynamic Cboe One pool uses reqId range 15000–15049. */
 export const CBOE_ONE_REQ_ID_BASE = 15_000;
-
-export const CBOE_ONE_SYMBOLS: IBSymbolDef[] = LIQUID_CORE_SYMBOL_STRINGS.map((sym, i) => ({
-  reqId: CBOE_ONE_REQ_ID_BASE + i,
-  symbol: sym,
-  ibSymbol: sym,
-  secType: "STK",
-  exchange: CBOE_ONE_EXCHANGE,
-  displaySymbol: sym,
-  category: "CBOE_ONE",
-  description: "Cboe One / CBOE consolidated BBO stream",
-  enabled: true,
-}));
-
-export const CBOE_ONE_REQID_TO_SYMBOL = new Map<number, string>(
-  CBOE_ONE_SYMBOLS.map((d) => [d.reqId, d.displaySymbol]),
-);

@@ -4,9 +4,22 @@ import { logFailure } from "./telemetry.js";
 import { emitTelemetry } from "./telemetryStore.js";
 import type { LiveQuote } from "./schwabStreamer.js";
 import { getEnabledSymbols, type IBSymbolDef } from "./ibBreadthSymbols.js";
-import { TOTALVIEW_REQID_TO_SYMBOL, TOTALVIEW_SYMBOLS } from "./ibTotalviewSymbols.js";
 import { ES_DEPTH_SYMBOL_DEF, ES_DEPTH_REQ_ID } from "./ibEsDepthSymbols.js";
-import { CBOE_ONE_REQID_TO_SYMBOL, CBOE_ONE_SYMBOLS } from "./ibCboeOneSymbols.js";
+import { CBOE_ONE_EXCHANGE } from "./ibCboeOneSymbols.js";
+import {
+  dynamicCboeOneSymbolForReqId,
+  dynamicTotalviewSymbolForReqId,
+  isDynamicCboeOneReqId,
+  isDynamicTotalviewReqId,
+  markDynamicIbPoolSlotEntitlementFailed,
+  registerIbDynamicPoolHandlers,
+  resubscribeAllDynamicIbPools,
+  startIbDynamicPoolSweeper,
+  startIbDynamicPoolUtilizationLogger,
+  stopIbDynamicPoolTimers,
+  teardownDynamicIbPools,
+  getDynamicIbPoolsStatus,
+} from "./ibDynamicSubscriptionManager.js";
 import { enqueueTotalviewPersist, type NasdaqTotalviewSummaryPayload } from "./ibTotalviewPersistence.js";
 import { enqueueEsDepthPersist, type EsDepthSummaryPayload } from "./ibEsDepthPersistence.js";
 import { injectExternalQuote, injectCboeOneConsolidatedQuote } from "./schwabStreamer.js";
@@ -58,7 +71,9 @@ const TOTALVIEW_DEPTH_ROWS = 5;
 const ES_DEPTH_ROWS = 5;
 const TOTALVIEW_BOOK_PREFIX = "TV:";
 
-let cboeOneLastTickAt: number | null = null;
+/** In-memory latest TotalView summary per symbol (for strategist cold-start before DB flush). */
+const totalviewSummaryMemCache = new Map<string, NasdaqTotalviewSummaryPayload>();
+const cboeOneLastTickAtBySymbol = new Map<string, number>();
 
 const permanentSymbolSet = new Set<string>();
 
@@ -240,6 +255,71 @@ function buildContract(def: IBSymbolDef): Contract {
   return contract;
 }
 
+let dynamicIbHandlersRegistered = false;
+
+function ensureDynamicIbHandlersRegistered(): void {
+  if (dynamicIbHandlersRegistered) return;
+  dynamicIbHandlersRegistered = true;
+  registerIbDynamicPoolHandlers({
+    subscribeTotalview(reqId, symbol) {
+      if (!ib || connState !== "CONNECTED") return;
+      if (skippedMarketDataReqIds.has(reqId)) return;
+      const bookKey = `${TOTALVIEW_BOOK_PREFIX}${symbol}`;
+      depthReqIdToSymbol.set(reqId, bookKey);
+      depthReqSmartDepth.set(reqId, false);
+      depthBooks.set(bookKey, { bids: [], asks: [] });
+      const contract: Contract = {
+        symbol,
+        secType: SecType.STK,
+        exchange: "NASDAQ",
+        currency: "USD",
+      };
+      try {
+        ib.reqMktDepth(reqId, contract, TOTALVIEW_DEPTH_ROWS, false);
+      } catch (err) {
+        logger.warn({ err, symbol }, "IB: TotalView depth subscribe failed (dynamic)");
+      }
+    },
+    unsubscribeTotalview(reqId) {
+      if (!ib) return;
+      const bookKey = depthReqIdToSymbol.get(reqId);
+      try {
+        ib.cancelMktDepth(reqId, false);
+      } catch {
+        /* ignore */
+      }
+      depthReqIdToSymbol.delete(reqId);
+      depthReqSmartDepth.delete(reqId);
+      if (bookKey) depthBooks.delete(bookKey);
+    },
+    subscribeCboeOne(reqId, symbol) {
+      if (!ib || connState !== "CONNECTED") return;
+      if (skippedMarketDataReqIds.has(reqId)) return;
+      const contract: Contract = {
+        symbol,
+        secType: SecType.STK,
+        exchange: CBOE_ONE_EXCHANGE,
+        currency: "USD",
+      };
+      try {
+        ib.reqMktData(reqId, contract, "", false, false);
+      } catch (err) {
+        logger.warn({ err, symbol }, "IB: Cboe One subscribe failed (dynamic)");
+      }
+    },
+    unsubscribeCboeOne(reqId) {
+      if (!ib) return;
+      try {
+        ib.cancelMktData(reqId);
+      } catch {
+        /* ignore */
+      }
+    },
+  });
+  startIbDynamicPoolSweeper();
+  startIbDynamicPoolUtilizationLogger();
+}
+
 function emitQuote(def: IBSymbolDef, state: IBQuoteState) {
   let effectiveLast: number | null;
   switch (def.sourceField) {
@@ -375,22 +455,8 @@ function buildDynamicContract(symbol: string): Contract {
 
 function subscribeTotalviewEsCboeOne(): void {
   if (!ib) return;
-
-  for (const def of TOTALVIEW_SYMBOLS) {
-    if (skippedMarketDataReqIds.has(def.reqId)) continue;
-    const reqId = def.reqId;
-    const bookKey = `${TOTALVIEW_BOOK_PREFIX}${def.displaySymbol}`;
-    const contract = buildContract(def);
-    depthReqIdToSymbol.set(reqId, bookKey);
-    depthReqSmartDepth.set(reqId, false);
-    depthBooks.set(bookKey, { bids: [], asks: [] });
-    try {
-      ib.reqMktDepth(reqId, contract, TOTALVIEW_DEPTH_ROWS, false);
-    } catch (err) {
-      logger.warn({ err, symbol: def.displaySymbol }, "IB: TotalView depth subscribe failed");
-    }
-  }
-  logger.info({ count: TOTALVIEW_SYMBOLS.length }, "IB: subscribed NASDAQ TotalView depth pool");
+  ensureDynamicIbHandlersRegistered();
+  resubscribeAllDynamicIbPools();
 
   if (!skippedMarketDataReqIds.has(ES_DEPTH_REQ_ID)) {
     const d = ES_DEPTH_SYMBOL_DEF;
@@ -406,18 +472,7 @@ function subscribeTotalviewEsCboeOne(): void {
     }
   }
 
-  let cboeOk = 0;
-  for (const def of CBOE_ONE_SYMBOLS) {
-    if (skippedMarketDataReqIds.has(def.reqId)) continue;
-    const contract = buildContract(def);
-    try {
-      ib.reqMktData(def.reqId, contract, "", false, false);
-      cboeOk++;
-    } catch (err) {
-      logger.warn({ err, symbol: def.displaySymbol }, "IB: Cboe One subscribe failed");
-    }
-  }
-  logger.info({ count: cboeOk }, "IB: subscribed Cboe One quote pool");
+  logger.info("IB: ES depth + dynamic TotalView/Cboe One pools (re)wired after connect");
 }
 
 function sumDepthInBand(
@@ -588,6 +643,7 @@ function applyDepthUpdate(reqId: number, position: number, operation: number, si
     const und = sym.slice(TOTALVIEW_BOOK_PREFIX.length);
     const summary = computeTotalviewSummary(und, book);
     if (summary) {
+      totalviewSummaryMemCache.set(und.toUpperCase(), summary);
       enqueueTotalviewPersist(summary);
       if (broadcastFn) broadcastFn("totalviewUpdate", summary);
     }
@@ -605,9 +661,7 @@ function teardownIB() {
     for (const def of BREADTH_SYMBOLS) {
       try { ib.cancelMktData(def.reqId); } catch { /* ignore */ }
     }
-    for (const def of CBOE_ONE_SYMBOLS) {
-      try { ib.cancelMktData(def.reqId); } catch { /* ignore */ }
-    }
+    teardownDynamicIbPools();
     for (const [reqId] of depthReqIdToSymbol) {
       const isSmartDepth = depthReqSmartDepth.get(reqId) ?? false;
       try { ib.cancelMktDepth(reqId, isSmartDepth); } catch { /* ignore */ }
@@ -630,6 +684,8 @@ function teardownIB() {
   dynamicQuoteSymbols.clear();
   dynamicQuoteReqIdToSymbol.clear();
   dynamicQuoteInsertOrder.length = 0;
+  cboeOneLastTickAtBySymbol.clear();
+  totalviewSummaryMemCache.clear();
   if (depthThrottleTimer) {
     clearInterval(depthThrottleTimer);
     depthThrottleTimer = null;
@@ -638,6 +694,7 @@ function teardownIB() {
     clearInterval(summaryTimer);
     summaryTimer = null;
   }
+  stopIbDynamicPoolTimers();
 }
 
 function scheduleReconnect(immediate = false) {
@@ -783,19 +840,25 @@ export async function connectIB(): Promise<void> {
       }
 
       if (code === 101 && reqId > 0) {
-        if (TOTALVIEW_REQID_TO_SYMBOL.has(reqId) || reqId === ES_DEPTH_REQ_ID) {
+        if (isDynamicTotalviewReqId(reqId) || reqId === ES_DEPTH_REQ_ID) {
           skippedMarketDataReqIds.add(reqId);
+          if (isDynamicTotalviewReqId(reqId)) {
+            markDynamicIbPoolSlotEntitlementFailed("totalview", reqId);
+          }
           const sym =
-            reqId === ES_DEPTH_REQ_ID ? "ES" : TOTALVIEW_REQID_TO_SYMBOL.get(reqId) ?? String(reqId);
+            reqId === ES_DEPTH_REQ_ID
+              ? "ES"
+              : dynamicTotalviewSymbolForReqId(reqId) ?? String(reqId);
           logger.error(
             { code, reqId, symbol: sym },
             "IB: error 101 — market data subscription missing for depth; skipping this reqId until process restart. Enable NASDAQ TotalView / CME depth in IBKR Client Portal.",
           );
           return;
         }
-        if (CBOE_ONE_REQID_TO_SYMBOL.has(reqId)) {
+        if (isDynamicCboeOneReqId(reqId)) {
           skippedMarketDataReqIds.add(reqId);
-          const sym = CBOE_ONE_REQID_TO_SYMBOL.get(reqId);
+          markDynamicIbPoolSlotEntitlementFailed("cboeOne", reqId);
+          const sym = dynamicCboeOneSymbolForReqId(reqId);
           logger.error(
             { code, reqId, symbol: sym },
             "IB: error 101 — market data subscription missing for Cboe One stream; skipping this reqId until process restart. Enable relevant US equity top-of-book subscription in IBKR Client Portal.",
@@ -866,7 +929,7 @@ export async function connectIB(): Promise<void> {
     ib.on(EventName.tickPrice, (reqId: number, tickType: number, price: number, _attribs: unknown) => {
       if (price === -1) return;
 
-      const cboeSym = CBOE_ONE_REQID_TO_SYMBOL.get(reqId);
+      const cboeSym = dynamicCboeOneSymbolForReqId(reqId);
       if (cboeSym) {
         const state = getOrCreateState(`__CBOE1__${cboeSym}`);
         state.ts = Date.now();
@@ -920,7 +983,7 @@ export async function connectIB(): Promise<void> {
             ts: state.ts,
           };
           injectCboeOneConsolidatedQuote(cboeSym, q);
-          cboeOneLastTickAt = state.ts;
+          cboeOneLastTickAtBySymbol.set(cboeSym.toUpperCase(), state.ts);
         }
         return;
       }
@@ -987,7 +1050,7 @@ export async function connectIB(): Promise<void> {
       if (size == null || size === -1) return;
       if (tickType == null) return;
 
-      const cboeSym = CBOE_ONE_REQID_TO_SYMBOL.get(reqId);
+      const cboeSym = dynamicCboeOneSymbolForReqId(reqId);
       if (cboeSym) {
         const state = getOrCreateState(`__CBOE1__${cboeSym}`);
         state.ts = Date.now();
@@ -1029,7 +1092,7 @@ export async function connectIB(): Promise<void> {
             ts: state.ts,
           };
           injectCboeOneConsolidatedQuote(cboeSym, q);
-          cboeOneLastTickAt = state.ts;
+          cboeOneLastTickAtBySymbol.set(cboeSym.toUpperCase(), state.ts);
         }
         return;
       }
@@ -1287,14 +1350,46 @@ export function disconnectIB(): void {
   teardownIB();
   connState = "DISCONNECTED";
   ibQuoteCache.clear();
-  cboeOneLastTickAt = null;
+  cboeOneLastTickAtBySymbol.clear();
+  totalviewSummaryMemCache.clear();
   logger.info("IB: disconnected intentionally");
   emitStatus("disconnected");
 }
 
-export function getCboeOneFeedDiagnostics(): { present: boolean; latencyMs: number | null } {
-  if (cboeOneLastTickAt == null) return { present: false, latencyMs: null };
-  return { present: true, latencyMs: Date.now() - cboeOneLastTickAt };
+export function getCboeOneFeedDiagnostics(ticker?: string): { present: boolean; latencyMs: number | null } {
+  const sym = ticker?.toUpperCase().trim();
+  if (sym) {
+    const ts = cboeOneLastTickAtBySymbol.get(sym);
+    if (ts == null) return { present: false, latencyMs: null };
+    return { present: true, latencyMs: Date.now() - ts };
+  }
+  let newest: number | null = null;
+  for (const ts of cboeOneLastTickAtBySymbol.values()) {
+    newest = newest == null ? ts : Math.max(newest, ts);
+  }
+  if (newest == null) return { present: false, latencyMs: null };
+  return { present: true, latencyMs: Date.now() - newest };
+}
+
+export function getRecentTotalviewSummaryForTicker(ticker: string): NasdaqTotalviewSummaryPayload | null {
+  return totalviewSummaryMemCache.get(ticker.toUpperCase()) ?? null;
+}
+
+export function getIbDynamicPoolDiagnosticsSnapshot(): {
+  totalviewPoolSize: number;
+  totalviewPoolCapacity: number;
+  cboeOnePoolSize: number;
+  cboeOnePoolCapacity: number;
+} {
+  const st = getDynamicIbPoolsStatus();
+  const tv = st.pools.find((p) => p.name === "totalview")!;
+  const cb = st.pools.find((p) => p.name === "cboeOne")!;
+  return {
+    totalviewPoolSize: tv.size,
+    totalviewPoolCapacity: tv.capacity,
+    cboeOnePoolSize: cb.size,
+    cboeOnePoolCapacity: cb.capacity,
+  };
 }
 
 export function isIBConnected(): boolean {
