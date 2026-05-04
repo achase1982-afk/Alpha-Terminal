@@ -2997,7 +2997,7 @@ function buildDataPackage(
       coverageGeometry: tapeBackfill.coverageGeometry ?? null,
       totalTradesFromPolygon: tapeBackfill.totalTradesFromPolygon,
       persistRejectedCount: tapeBackfill.persistRejectedCount,
-      ...(tapeBackfill.tapeBackfillDedupeDrops != null
+      ...(tapeBackfill.tapeBackfillDedupeDrops?.totalDropped > 0
         ? { tapeBackfillDedupeDrops: tapeBackfill.tapeBackfillDedupeDrops }
         : {}),
       anyTruncated: tapeBackfill.anyTruncated,
