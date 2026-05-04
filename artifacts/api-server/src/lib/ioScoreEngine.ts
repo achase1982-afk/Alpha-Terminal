@@ -1,5 +1,6 @@
 import { db, equityDailyTable, flowDailyAggregatesTable } from "@workspace/db";
-import { desc, eq, sql, and, gte } from "drizzle-orm";
+import { desc, sql, gte } from "drizzle-orm";
+import type { CatalystEvaluation } from "./catalystEvaluator.js";
 import { logger } from "./logger.js";
 import { getSettings } from "./strategistSettings.js";
 
@@ -41,12 +42,80 @@ interface CatalystInfo {
   reason: string;
 }
 
+function calendarDaysFromTodayTo(ymd: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+  const target = new Date(`${ymd}T00:00:00Z`).getTime();
+  if (!Number.isFinite(target)) return null;
+  const now = new Date();
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return Math.max(0, Math.ceil((target - todayUtc) / 86_400_000));
+}
+
+/**
+ * Combine legacy ticker-local catalyst hints (analyst cluster, 48h earnings)
+ * with the desk's `evaluateCatalyst` window so IO Score catalyst credit
+ * matches Solo Desk semantics (graduated by days to dominant event).
+ */
+export function mergeIOCatalystFromDesk(
+  baseCatalystInfo: CatalystInfo,
+  catalystEvaluation: CatalystEvaluation | null | undefined,
+  earningsDaysAway: number | null | undefined,
+): CatalystInfo {
+  if (!catalystEvaluation) {
+    return baseCatalystInfo;
+  }
+
+  // Desk eval runs with ai: null — it only sees scheduled events, not Polygon
+  // analyst clusters. Do not wipe deriveCatalyst when the desk window is empty.
+  if (!catalystEvaluation.catalystInWindow) {
+    if (baseCatalystInfo.flagValue > 0) return baseCatalystInfo;
+    return { flagValue: 0, reason: "no_catalyst_in_window" };
+  }
+
+  const primaryIsEarnings = catalystEvaluation.catalystType === "EARNINGS";
+  const daysForBand = primaryIsEarnings
+    ? (earningsDaysAway ?? null)
+    : (catalystEvaluation.catalystDate
+      ? calendarDaysFromTodayTo(catalystEvaluation.catalystDate)
+      : null);
+
+  let deskValue: number;
+  let deskReason: string;
+  if (daysForBand != null && Number.isFinite(daysForBand)) {
+    if (daysForBand <= 2) {
+      deskValue = 1.0;
+      deskReason = "catalyst_imminent_within_48h";
+    } else if (daysForBand <= 7) {
+      deskValue = 0.6;
+      deskReason = "catalyst_in_desk_window";
+    } else {
+      deskValue = 0.3;
+      deskReason = "catalyst_in_extended_window";
+    }
+  } else {
+    deskValue = 0.6;
+    deskReason = "catalyst_in_desk_window";
+  }
+
+  return deskValue >= baseCatalystInfo.flagValue
+    ? { flagValue: deskValue, reason: deskReason }
+    : baseCatalystInfo;
+}
+
 export async function computeIOScore(
   ticker: string,
   catalystInfo: CatalystInfo,
-  settings?: Awaited<ReturnType<typeof getSettings>>
+  settings?: Awaited<ReturnType<typeof getSettings>>,
+  catalystEvaluation?: CatalystEvaluation | null,
+  earningsDaysAway?: number | null,
 ): Promise<IOScoreResult> {
   const cfg = settings ?? (await getSettings());
+
+  const effectiveCatalyst = mergeIOCatalystFromDesk(
+    catalystInfo,
+    catalystEvaluation,
+    earningsDaysAway,
+  );
 
   const betaLookback = cfg.betaR2Lookback;
   const residualLookback = cfg.residualReturnLookback ?? 10;
@@ -75,7 +144,7 @@ export async function computeIOScore(
 
   const r2Contribution = (1 - rSquared) * (wR2 * normalize);
   const residualContribution = normalizedZScore * (wResidual * normalize);
-  const catalystContribution = catalystInfo.flagValue * (wCatalyst * normalize);
+  const catalystContribution = effectiveCatalyst.flagValue * (wCatalyst * normalize);
   const flowContribution = flowDiv.final * (effectiveFlowWeight * normalize);
 
   const idioStrength = Math.min(1.0, Math.max(0.0,
@@ -99,7 +168,7 @@ export async function computeIOScore(
     components: {
       marketIndependence: { rSquared, weight: wR2, contribution: Math.round(r2Contribution * 1000) / 1000 },
       abnormalMove: { zScoreRaw: residualZScore, zScoreNormalized: normalizedZScore, weight: wResidual, contribution: Math.round(residualContribution * 1000) / 1000 },
-      catalyst: { flagValue: catalystInfo.flagValue, reason: catalystInfo.reason, weight: wCatalyst, contribution: Math.round(catalystContribution * 1000) / 1000 },
+      catalyst: { flagValue: effectiveCatalyst.flagValue, reason: effectiveCatalyst.reason, weight: wCatalyst, contribution: Math.round(catalystContribution * 1000) / 1000 },
       flowDivergence: { volOiRatio: flowDiv.volOiRatio, skewDivergence: flowDiv.skewDivergence, final: flowDiv.final, weight: effectiveFlowWeight, contribution: Math.round(flowContribution * 1000) / 1000 },
     },
     classification,

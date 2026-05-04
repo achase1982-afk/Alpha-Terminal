@@ -1,3 +1,4 @@
+import { fetchPolygonTickerMarketCapUsd, logMarketCapPolygonFallback } from "./polygonTickerMarketCap.js";
 import { getBestAccessToken } from "./tokenStore.js";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
@@ -27,8 +28,15 @@ export async function fetchSchwabMarketSnapshot(ticker: string): Promise<SchwabM
     const ref = entry["reference"] as Record<string, unknown> | undefined;
     const fund = entry["fundamental"] as Record<string, unknown> | undefined;
     const rawCap = fund?.["marketCap"];
-    const marketCapUsd =
+    let marketCapUsd =
       typeof rawCap === "number" && Number.isFinite(rawCap) && rawCap > 0 ? rawCap : null;
+    if (marketCapUsd == null) {
+      const fromPoly = await fetchPolygonTickerMarketCapUsd(sym);
+      if (fromPoly != null) {
+        logMarketCapPolygonFallback(sym);
+        marketCapUsd = fromPoly;
+      }
+    }
     const assetType =
       typeof ref?.["assetType"] === "string"
         ? ref.assetType
