@@ -4,8 +4,69 @@ import { logFailure } from "./telemetry.js";
 import { emitTelemetry } from "./telemetryStore.js";
 import type { LiveQuote } from "./schwabStreamer.js";
 import { getEnabledSymbols, type IBSymbolDef } from "./ibBreadthSymbols.js";
+import { IMBALANCE_REQID_TO_SYMBOL, IMBALANCE_SYMBOLS, IMBALANCE_REQ_ID_BASE } from "./ibImbalanceSymbols.js";
+import { enqueueImbalancePersist } from "./ibImbalancePersistence.js";
 
 export type { IBSymbolDef } from "./ibBreadthSymbols.js";
+
+/** Generic tick list id 225 — auction volume / price / imbalance / regulatory (IBKR TWS API tick types). */
+const GENERIC_TICK_IMBALANCE = "225";
+
+const IMB_TT = {
+  AUCTION_VOLUME: 34,
+  AUCTION_PRICE: 35,
+  AUCTION_IMBALANCE: 36,
+  REGULATORY_IMBALANCE: 61,
+} as const;
+
+/** Latest NYSE closing-imbalance fields per symbol (from generic tick 225 stream). */
+export interface IbImbalanceState {
+  imbalanceShares: bigint | null;
+  indicativePrice: number | null;
+  pairedShares: bigint | null;
+  regulatoryImbalance: bigint | null;
+  timestamp: number;
+}
+
+const ibImbalanceCache = new Map<string, IbImbalanceState>();
+
+function emptyImbalanceState(): IbImbalanceState {
+  return {
+    imbalanceShares: null,
+    indicativePrice: null,
+    pairedShares: null,
+    regulatoryImbalance: null,
+    timestamp: Date.now(),
+  };
+}
+
+function getOrCreateImbalanceState(symbol: string): IbImbalanceState {
+  let s = ibImbalanceCache.get(symbol);
+  if (!s) {
+    s = emptyImbalanceState();
+    ibImbalanceCache.set(symbol, s);
+  }
+  return s;
+}
+
+function emitImbalanceUpdate(symbol: string, state: IbImbalanceState): void {
+  state.timestamp = Date.now();
+  ibImbalanceCache.set(symbol, { ...state });
+  const snap = { ...state, symbol };
+  if (broadcastFn) {
+    broadcastFn("nyseImbalance", snap);
+  }
+  enqueueImbalancePersist(symbol, state);
+}
+
+export function getIbImbalanceSnapshotForSymbol(symbol: string): IbImbalanceState | null {
+  const s = ibImbalanceCache.get(symbol.toUpperCase());
+  return s ? { ...s } : null;
+}
+
+export function getIbImbalanceSubscriptionCount(): number {
+  return IMBALANCE_SYMBOLS.length;
+}
 
 export interface DepthRow {
   price: number;
@@ -79,22 +140,22 @@ const TT = {
 
 function parseGatewayUrl(): { host: string; port: number; wsUrl: string | null } {
   const raw = process.env.IBKR_GATEWAY_URL || process.env.IB_HOST;
-  if (!raw) return { host: "127.0.0.1", port: 4002, wsUrl: null };
+  if (!raw) return { host: "127.0.0.1", port: 4001, wsUrl: null };
   try {
     const url = new URL(raw.includes("://") ? raw : `tcp://${raw}`);
     if (url.protocol === "https:" || url.protocol === "wss:") {
       const wsTarget = `wss://${url.hostname}${url.port ? ":" + url.port : ""}${url.pathname || "/"}`;
-      return { host: "127.0.0.1", port: 4002, wsUrl: wsTarget };
+      return { host: "127.0.0.1", port: 4001, wsUrl: wsTarget };
     }
     if (url.protocol === "http:" || url.protocol === "ws:") {
       const wsTarget = `ws://${url.hostname}${url.port ? ":" + url.port : ""}${url.pathname || "/"}`;
-      return { host: "127.0.0.1", port: 4002, wsUrl: wsTarget };
+      return { host: "127.0.0.1", port: 4001, wsUrl: wsTarget };
     }
     const host = url.hostname || "127.0.0.1";
-    const port = url.port ? Number(url.port) : 4002;
+    const port = url.port ? Number(url.port) : 4001;
     return { host, port, wsUrl: null };
   } catch {
-    return { host: raw, port: Number(process.env.IB_PORT ?? "4002"), wsUrl: null };
+    return { host: raw, port: Number(process.env.IB_PORT ?? "4001"), wsUrl: null };
   }
 }
 
@@ -299,7 +360,14 @@ function getOrCreateState(sym: string): IBQuoteState {
   return s;
 }
 
-const NEWS_TICK_SYMBOLS = new Set(["SPY", "QQQ"]);
+function buildImbalanceContract(def: IBSymbolDef): Contract {
+  return {
+    symbol: def.ibSymbol,
+    secType: "STK" as SecType,
+    exchange: "NYSE",
+    currency: "USD",
+  };
+}
 
 function subscribeAll() {
   if (!ib) return;
@@ -322,6 +390,18 @@ function subscribeAll() {
     }
   }
   logger.info({ permanent: permCount, registered: permanentSymbolSet.size }, "IB: permanently subscribed indicator symbols at connect");
+
+  let imbCount = 0;
+  for (const def of IMBALANCE_SYMBOLS) {
+    const contract = buildImbalanceContract(def);
+    try {
+      ib.reqMktData(def.reqId, contract, GENERIC_TICK_IMBALANCE, false, false);
+      imbCount++;
+    } catch (err) {
+      logger.warn({ err, symbol: def.displaySymbol }, "IB: failed to subscribe NYSE imbalance");
+    }
+  }
+  logger.info({ count: imbCount, reqIdBase: IMBALANCE_REQ_ID_BASE }, "IB: subscribed NYSE imbalance pool (generic tick 225)");
 
   for (const [symbol, reqId] of dynamicQuoteSymbols) {
     const contract = buildDynamicContract(symbol);
@@ -427,6 +507,9 @@ function applyDepthUpdate(reqId: number, position: number, operation: number, si
 function teardownIB() {
   if (ib) {
     for (const def of BREADTH_SYMBOLS) {
+      try { ib.cancelMktData(def.reqId); } catch { /* ignore */ }
+    }
+    for (const def of IMBALANCE_SYMBOLS) {
       try { ib.cancelMktData(def.reqId); } catch { /* ignore */ }
     }
     for (const [reqId] of depthReqIdToSymbol) {
@@ -599,11 +682,15 @@ export async function connectIB(): Promise<void> {
       }
       if (code === 200 && reqId > 0) {
         const def = reqIdToSymbol.get(reqId);
-        logger.warn({ code, reqId, symbol: def?.ibSymbol, msg: err.message }, "IB: no security definition");
+        const imb = IMBALANCE_REQID_TO_SYMBOL.get(reqId);
+        logger.warn(
+          { code, reqId, symbol: def?.ibSymbol ?? imb, msg: err.message },
+          "IB: no security definition",
+        );
         return;
       }
 
-      if (code === 101 && reqId >= 7000) {
+      if (code === 101 && dynamicQuoteReqIdToSymbol.has(reqId)) {
         const sym = dynamicQuoteReqIdToSymbol.get(reqId);
         if (sym) {
           dynamicQuoteSymbols.delete(sym);
@@ -665,6 +752,17 @@ export async function connectIB(): Promise<void> {
     const tickLogCounts = new Map<string, number>();
     ib.on(EventName.tickPrice, (reqId: number, tickType: number, price: number, _attribs: unknown) => {
       if (price === -1) return;
+
+      const imbSym = IMBALANCE_REQID_TO_SYMBOL.get(reqId);
+      if (imbSym) {
+        if (tickType === IMB_TT.AUCTION_PRICE) {
+          const st = getOrCreateImbalanceState(imbSym);
+          st.indicativePrice = price;
+          emitImbalanceUpdate(imbSym, st);
+        }
+        return;
+      }
+
       const def = reqIdToSymbol.get(reqId);
       const dynSym = def ? null : dynamicQuoteReqIdToSymbol.get(reqId);
       if (!def && !dynSym) return;
@@ -726,6 +824,24 @@ export async function connectIB(): Promise<void> {
     ib.on(EventName.tickSize, (reqId: number, tickType?: TickType, size?: number) => {
       if (size == null || size === -1) return;
       if (tickType == null) return;
+
+      const imbSym = IMBALANCE_REQID_TO_SYMBOL.get(reqId);
+      if (imbSym) {
+        const st = getOrCreateImbalanceState(imbSym);
+        const bi = BigInt(Math.trunc(size));
+        if (tickType === IMB_TT.AUCTION_VOLUME) {
+          st.pairedShares = bi;
+        } else if (tickType === IMB_TT.AUCTION_IMBALANCE) {
+          st.imbalanceShares = bi;
+        } else if (tickType === IMB_TT.REGULATORY_IMBALANCE) {
+          st.regulatoryImbalance = bi;
+        } else {
+          return;
+        }
+        emitImbalanceUpdate(imbSym, st);
+        return;
+      }
+
       const def = reqIdToSymbol.get(reqId);
       const dynSym = def ? null : dynamicQuoteReqIdToSymbol.get(reqId);
       if (!def && !dynSym) return;
@@ -979,6 +1095,7 @@ export function disconnectIB(): void {
   teardownIB();
   connState = "DISCONNECTED";
   ibQuoteCache.clear();
+  ibImbalanceCache.clear();
   logger.info("IB: disconnected intentionally");
   emitStatus("disconnected");
 }
@@ -1028,7 +1145,16 @@ export function getIBSnapshot(): LiveQuote[] {
   return out;
 }
 
-export function getIBStatus(): { connected: boolean; state: ConnectionState; host: string; port: number; symbols: number; cachedQuotes: number } {
+export function getIBStatus(): {
+  connected: boolean;
+  state: ConnectionState;
+  host: string;
+  port: number;
+  symbols: number;
+  cachedQuotes: number;
+  imbalanceSubscriptions: number;
+  imbalanceCacheEntries: number;
+} {
   return {
     connected: connState === "CONNECTED",
     state: connState,
@@ -1036,6 +1162,8 @@ export function getIBStatus(): { connected: boolean; state: ConnectionState; hos
     port: IB_PORT,
     symbols: BREADTH_SYMBOLS.length,
     cachedQuotes: ibQuoteCache.size,
+    imbalanceSubscriptions: IMBALANCE_SYMBOLS.length,
+    imbalanceCacheEntries: ibImbalanceCache.size,
   };
 }
 

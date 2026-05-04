@@ -30,6 +30,7 @@ import {
 } from "./strategistDiagnostics.js";
 import { runWithPolygonApiTraceAsync, takePolygonApiTrace } from "./polygonApiTrace.js";
 import { runInStrategistRunContext, getStrategistRunContext, mergeStrategistDiag } from "./strategistRunContext.js";
+import { fetchRecentNyseImbalanceForTicker, CLOSING_IMBALANCE_BALANCED_THRESHOLD_USD } from "./ibImbalancePersistence.js";
 import { lastCompletedTradingDayNy, nyCalendarYmd, rthBoundsMs } from "./polygonMarketCalendar.js";
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
 import { getNextEarningsDate, type NextEarnings } from "./earningsService.js";
@@ -1013,7 +1014,7 @@ async function analyzeTickerV2Inner(
   }
   assertAnalyzeNotCancelled(progress);
 
-  const dataPackage = buildDataPackage(
+  const dataPackage = await buildDataPackage(
     ticker,
     tickerData,
     chainSummary,
@@ -2799,7 +2800,7 @@ function buildDataQualitySummary(args: {
   };
 }
 
-function buildDataPackage(
+async function buildDataPackage(
   ticker: string,
   tickerData: TickerData,
   chainSummary: ChainSummary,
@@ -3044,6 +3045,35 @@ function buildDataPackage(
       }
     }
     pkg.macroEventsInPositionWindow = macroEventsInPositionWindow;
+  }
+
+  const imb = await fetchRecentNyseImbalanceForTicker(ticker);
+  mergeStrategistDiag({
+    closingImbalancePresent: imb.row != null,
+    closingImbalanceLatencyMs: imb.latencyMs,
+  });
+  if (imb.row) {
+    const row = imb.row;
+    const shares = Number(row.imbalanceShares);
+    const notionalUsd = row.imbalanceNotionalUsd;
+    const absNotional = Math.abs(notionalUsd);
+    const side: "buy" | "sell" | "balanced" =
+      absNotional < CLOSING_IMBALANCE_BALANCED_THRESHOLD_USD
+        ? "balanced"
+        : shares > 0
+          ? "buy"
+          : "sell";
+    const last = tickerData.price;
+    const ip = row.indicativePrice;
+    const indicativePriceVsLast = last > 0 ? ((ip - last) / last) * 100 : 0;
+    pkg.closingImbalance = {
+      timestamp: row.imbalanceTimestamp.toISOString(),
+      side,
+      shares,
+      notionalUsd,
+      indicativePrice: ip,
+      indicativePriceVsLast,
+    };
   }
 
   return JSON.stringify(pkg);
@@ -4165,6 +4195,8 @@ async function emitFullDiagnosticTelemetry(args: {
     runOutcome: outcome,
     runDurationMs: durationMs,
     error: args.extras.error ?? null,
+    closingImbalancePresent: ctx?.diag.closingImbalancePresent,
+    closingImbalanceLatencyMs: ctx?.diag.closingImbalanceLatencyMs ?? null,
   });
   return logTelemetry(
     args.ticker,

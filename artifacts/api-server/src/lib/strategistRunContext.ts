@@ -7,6 +7,8 @@ export type StrategistDiagScratch = {
   tapeBackfillStatus?: TapeBackfillStatus;
   dataPackageStr?: string;
   soloModelLabel?: string;
+  closingImbalancePresent?: boolean;
+  closingImbalanceLatencyMs?: number | null;
 };
 
 /** Async-local scratch for one strategist analyze run (diagnostics + trace correlation). */

@@ -8,7 +8,7 @@ import { runDynamicScreener } from "../lib/schwabDynamicScreener.js";
 import { getBestAccessToken } from "../lib/tokenStore.js";
 import { getAuth } from "@clerk/express";
 import { getUniverseSnapshot, buildCoreOptionsUniverse, type UniverseSnapshot } from "../lib/universeBuilder.js";
-import { LIQUID_CORE_SYMBOLS } from "../data/liquidCore130.js";
+import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
 
 const router: IRouter = Router();
 
@@ -29,7 +29,7 @@ const PRESET_UNIVERSES: Record<string, { label: string; description: string; sym
   liquidCore130: {
     label: "Liquid Core 130",
     description: "130 ultra-liquid, options-tradable names across 9 sectors — primary scan universe",
-    symbols: [...LIQUID_CORE_SYMBOLS],
+    symbols: [...LIQUID_CORE_SYMBOL_STRINGS],
   },
   midcap200: {
     label: "Mid-Cap 200",

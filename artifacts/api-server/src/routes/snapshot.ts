@@ -9,7 +9,7 @@ import { logger } from "../lib/logger";
 import { db } from "@workspace/db";
 import { optionsFlowPerStrikeTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
-import { LIQUID_CORE_SYMBOLS } from "../data/liquidCore130.js";
+import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
 
 function requireAdmin(req: { headers: Record<string, string | string[] | undefined> }): { ok: boolean; error?: string } {
   const adminKey = process.env.ADMIN_API_KEY;
@@ -262,7 +262,7 @@ router.post("/admin/backfill-iv-history", async (req, res) => {
   const auth = requireAdmin(req as never);
   if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
   const { symbols, daysBack } = (req.body ?? {}) as { symbols?: string[]; daysBack?: number };
-  const syms = (symbols && symbols.length > 0) ? symbols : [...LIQUID_CORE_SYMBOLS];
+  const syms = (symbols && symbols.length > 0) ? symbols : [...LIQUID_CORE_SYMBOL_STRINGS];
   const days = (typeof daysBack === "number" && daysBack > 0 && daysBack <= 730) ? daysBack : 252;
   const job = startBackfillJob(syms, days);
   return res.json({ ok: true, started: true, job });
@@ -321,7 +321,7 @@ router.post("/admin/backfill-hv-proxy", async (req, res) => {
   const auth = requireAdmin(req as never);
   if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
   const { symbols, daysBack, skipAutoSectorEtfs } = (req.body ?? {}) as { symbols?: string[]; daysBack?: number; skipAutoSectorEtfs?: boolean };
-  const syms = (symbols && symbols.length > 0) ? symbols : [...LIQUID_CORE_SYMBOLS];
+  const syms = (symbols && symbols.length > 0) ? symbols : [...LIQUID_CORE_SYMBOL_STRINGS];
   const days = (typeof daysBack === "number" && daysBack > 0 && daysBack <= 730) ? daysBack : 252;
   const job = startHvProxyBackfillJob(syms, days, { skipAutoSectorEtfs: skipAutoSectorEtfs === true });
   return res.json({ ok: true, started: true, job });
@@ -355,7 +355,7 @@ router.post("/admin/canonical-iv-accumulate", async (req, res) => {
 });
 
 function getDefaultUniverse(): string[] {
-  return [...LIQUID_CORE_SYMBOLS];
+  return [...LIQUID_CORE_SYMBOL_STRINGS];
 }
 
 export default router;
