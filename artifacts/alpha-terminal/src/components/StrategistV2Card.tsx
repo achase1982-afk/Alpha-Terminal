@@ -319,7 +319,7 @@ function DirectionIcon({ dir }: { dir: string }) {
   return <Minus className="w-4 h-4" style={{ color: GOLD }} />;
 }
 
-function buildOccSymbol(ticker: string, expiration: string, type: string, strike: number): string {
+export function buildOccSymbol(ticker: string, expiration: string, type: string, strike: number): string {
   const clean = expiration.split(":")[0].trim();
   const parts = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   let yy: string, mm: string, dd: string;
@@ -348,9 +348,10 @@ export interface StrategistSendToOrderPayload {
     optionType: string;
     strike: number;
     expiration: string;
-    bid: number;
-    ask: number;
-    delta: number;
+    /** Omitted when opening from desk mode without live quotes. */
+    bid?: number;
+    ask?: number;
+    delta?: number;
   }>;
   netPrice: number;
   isCredit: boolean;

@@ -22,10 +22,20 @@ export interface DeskStructure {
   credit_or_debit: number;
 }
 
-export interface DeskExitPlan {
-  profit_target: number;
-  stop_loss: number;
-  time_stop: string;
+export interface PayoffScenario {
+  underlyingPrice: number;
+  spreadValue: number;
+  pnl: number;
+  pnlColor: "green" | "red" | "neutral";
+}
+
+export interface PayoffScenariosSummary {
+  peakPnl: number;
+  peakPnlPrice: number;
+  profitZoneLow: number | null;
+  profitZoneHigh: number | null;
+  upsideBreakdown: number | null;
+  downsideBreakdown: number | null;
 }
 
 export interface VolAnalystOutput {
@@ -63,6 +73,9 @@ export interface PmOutput {
   biggest_risk: string;
   exit_plan: DeskExitPlan;
   watch_for: string;
+  /** Server-computed payoff grid; null when not available. */
+  scenarios?: PayoffScenario[] | null;
+  scenariosSummary?: PayoffScenariosSummary | null;
 }
 
 export interface DeskResult {

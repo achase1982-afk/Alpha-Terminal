@@ -58,6 +58,8 @@ export const DeskLegSchema = z.object({
   quantity: z.number().optional(),
 });
 
+export type DeskLeg = z.infer<typeof DeskLegSchema>;
+
 export const DeskStructureSchema = z.object({
   type: z.string(),
   legs: z.array(DeskLegSchema),
@@ -71,18 +73,55 @@ export const DeskExitPlanSchema = z.object({
   time_stop: z.string(),
 });
 
-export const PmOutputSchema = z.object({
-  decision: z.enum(["trade", "pass"]),
-  structure: DeskStructureSchema.nullable(),
-  thesis: z.string(),
-  edge_check: z.string(),
-  deviation_from_analysts: z.string(),
-  size: z.enum(["small", "medium", "large"]),
-  whose_side: z.enum(["institutional_alignment", "retail_fade", "neither"]),
-  biggest_risk: z.string(),
-  exit_plan: DeskExitPlanSchema,
-  watch_for: z.string(),
+export const PayoffScenarioSchema = z.object({
+  underlyingPrice: z.number(),
+  spreadValue: z.number(),
+  pnl: z.number(),
+  pnlColor: z.enum(["green", "red", "neutral"]),
 });
+
+export const PayoffScenariosSummarySchema = z.object({
+  peakPnl: z.number(),
+  peakPnlPrice: z.number(),
+  /** Lowest grid price with positive P/L (profit zone lower bound). */
+  profitZoneLow: z.number().nullable(),
+  /** Highest grid price with positive P/L (profit zone upper bound). */
+  profitZoneHigh: z.number().nullable(),
+  /** First interpolated underlying (above spot) where P/L crosses below -stop loss. */
+  upsideBreakdown: z.number().nullable(),
+  /** First interpolated underlying (below spot) where P/L crosses below -stop loss. */
+  downsideBreakdown: z.number().nullable(),
+});
+
+/** Remove server-only PM fields before validating LLM JSON (models must not drive payoff math). */
+function stripServerOnlyPmFields(input: unknown): unknown {
+  if (input !== null && typeof input === "object" && !Array.isArray(input)) {
+    const o = { ...(input as Record<string, unknown>) };
+    delete o.scenarios;
+    delete o.scenariosSummary;
+    return o;
+  }
+  return input;
+}
+
+export const PmOutputSchema = z.preprocess(
+  stripServerOnlyPmFields,
+  z.object({
+    decision: z.enum(["trade", "pass"]),
+    structure: DeskStructureSchema.nullable(),
+    thesis: z.string(),
+    edge_check: z.string(),
+    deviation_from_analysts: z.string(),
+    size: z.enum(["small", "medium", "large"]),
+    whose_side: z.enum(["institutional_alignment", "retail_fade", "neither"]),
+    biggest_risk: z.string(),
+    exit_plan: DeskExitPlanSchema,
+    watch_for: z.string(),
+    /** Server-filled payoff grid at front expiration; omitted when not computed. */
+    scenarios: z.array(PayoffScenarioSchema).nullable().optional(),
+    scenariosSummary: PayoffScenariosSummarySchema.nullable().optional(),
+  }),
+);
 
 export type VolAnalystOutput = z.infer<typeof VolAnalystOutputSchema>;
 export type FlowAnalystOutput = z.infer<typeof FlowAnalystOutputSchema>;

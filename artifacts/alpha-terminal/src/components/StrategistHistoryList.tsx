@@ -219,6 +219,7 @@ export function StrategistHistoryList({ onSendToOrder, onReopenValidatedOrder, e
                             ? ((result as StrategistV2Result).blockReason as import("@/components/StrategistV2Card").BlockReason)
                             : undefined
                         }
+                        onSendToOrder={onSendToOrder}
                       />
                     ) : result?.status === "recommendation" && result.recommendation ? (
                       <StrategistV2RecommendationCard

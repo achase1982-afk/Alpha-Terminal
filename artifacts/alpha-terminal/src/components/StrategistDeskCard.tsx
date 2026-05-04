@@ -6,16 +6,19 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import type { BlockReason, StrategistOutcome } from "@/components/StrategistV2Card";
-import { ChevronDown, ChevronUp, AlertTriangle, Copy, Play, Pause, Square, Rewind, FastForward } from "lucide-react";
+import type { BlockReason, StrategistOutcome, StrategistSendToOrderPayload } from "@/components/StrategistV2Card";
+import { buildOccSymbol } from "@/components/StrategistV2Card";
+import { ChevronDown, ChevronUp, AlertTriangle, Copy, Play, Pause, Square, Rewind, FastForward, Send } from "lucide-react";
 import { toast } from "sonner";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import type { DeskResult, DeskStructure } from "@/lib/strategistDeskResult";
+import type { DeskResult, DeskStructure, PayoffScenario, PayoffScenariosSummary } from "@/lib/strategistDeskResult";
 import { buildDeskSpeechSections } from "@/lib/deskCardSpeech";
 import { splitDeskAudioTextIntoChunks } from "@/lib/deskAudioChunking";
 import { STRATEGIST_ANALYSIS_CANCEL_EVENT, STRATEGIST_ANALYSIS_START_EVENT } from "@/lib/strategistDeskSpeechEvents";
 
 export type { DeskResult } from "@/lib/strategistDeskResult";
+
+const deskVoiceConfig: { voice?: string } = {};
 
 /** Skip / rewind step in the desk audio bar (seconds within the current segment). */
 const AUDIO_SKIP_SECONDS = 15;
@@ -166,6 +169,130 @@ function CollapsibleSection({
       {open && <div style={{ padding: 12, background: PAL.bgCard }}>{children}</div>}
     </div>
   );
+}
+
+function fmtCurrencyPlain(n: number): string {
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtSignedUsd(n: number): string {
+  const abs = Math.abs(n).toFixed(2);
+  if (n > 0) return `+$${abs}`;
+  if (n < 0) return `-$${abs}`;
+  return `$${abs}`;
+}
+
+function PayoffAtExpirationSection({
+  scenarios,
+  summary,
+}: {
+  scenarios: PayoffScenario[];
+  summary: PayoffScenariosSummary;
+}) {
+  const profitZone =
+    summary.profitZoneLow != null && summary.profitZoneHigh != null
+      ? `${fmtCurrencyPlain(summary.profitZoneLow)} — ${fmtCurrencyPlain(summary.profitZoneHigh)}`
+      : null;
+
+  let breakdownLine: string | null = null;
+  const down = summary.downsideBreakdown;
+  const up = summary.upsideBreakdown;
+  if (down != null && up != null) {
+    breakdownLine = `below ${fmtCurrencyPlain(down)} or above ${fmtCurrencyPlain(up)}`;
+  } else if (down != null) {
+    breakdownLine = `below ${fmtCurrencyPlain(down)}`;
+  } else if (up != null) {
+    breakdownLine = `above ${fmtCurrencyPlain(up)}`;
+  }
+
+  const pnlColor = (c: PayoffScenario["pnlColor"]) =>
+    c === "green" ? PAL.green : c === "red" ? PAL.red : PAL.label;
+
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: PAL.label, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>
+        Payoff at expiration
+      </div>
+      <div style={{ fontSize: 11, color: PAL.body, lineHeight: 1.6, marginBottom: 10 }}>
+        <div>
+          Peak: {fmtSignedUsd(summary.peakPnl)} at {fmtCurrencyPlain(summary.peakPnlPrice)}
+        </div>
+        {profitZone && (
+          <div style={{ marginTop: 4 }}>
+            Profit zone: {profitZone}
+          </div>
+        )}
+        {breakdownLine && (
+          <div style={{ marginTop: 4 }}>
+            Breakdown: {breakdownLine}
+          </div>
+        )}
+      </div>
+      <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", marginLeft: -2, marginRight: -2 }}>
+        <table style={{ borderCollapse: "collapse", fontSize: 11, minWidth: "100%", fontFamily: SYS_FONT }}>
+          <tbody>
+            <tr>
+              <td style={{ padding: "6px 10px 6px 4px", color: PAL.label, whiteSpace: "nowrap", verticalAlign: "bottom" }}>Stock Price</td>
+              {scenarios.map((s, i) => (
+                <td key={i} style={{ padding: "6px 8px", textAlign: "right", color: PAL.white, fontWeight: 600, whiteSpace: "nowrap" }}>
+                  {fmtCurrencyPlain(s.underlyingPrice)}
+                </td>
+              ))}
+            </tr>
+            <tr style={{ borderTop: `1px solid ${PAL.borderInner}` }}>
+              <td style={{ padding: "6px 10px 6px 4px", color: PAL.label, whiteSpace: "nowrap" }}>Spread Value</td>
+              {scenarios.map((s, i) => (
+                <td key={i} style={{ padding: "6px 8px", textAlign: "right", color: PAL.body, whiteSpace: "nowrap" }}>
+                  {fmtCurrencyPlain(s.spreadValue)}
+                </td>
+              ))}
+            </tr>
+            <tr style={{ borderTop: `1px solid ${PAL.borderInner}` }}>
+              <td style={{ padding: "6px 10px 6px 4px", color: PAL.label, whiteSpace: "nowrap" }}>P/L</td>
+              {scenarios.map((s, i) => (
+                <td
+                  key={i}
+                  style={{
+                    padding: "6px 8px",
+                    textAlign: "right",
+                    fontWeight: 700,
+                    color: pnlColor(s.pnlColor),
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {fmtSignedUsd(s.pnl)}
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function buildDeskSendToOrderPayload(deskResult: DeskResult): StrategistSendToOrderPayload {
+  const s = deskResult.pm.structure!;
+  const isCredit = s.credit_or_debit < 0;
+  const netPrice = Math.abs(s.credit_or_debit);
+  const legs = s.legs.map((leg) => {
+    const action = leg.action.toLowerCase();
+    const isBuy = action === "buy" || action.startsWith("buy");
+    const typ = leg.type.toUpperCase();
+    const optionType = typ.includes("CALL") ? "CALL" : "PUT";
+    return {
+      schwabSymbol: buildOccSymbol(deskResult.ticker, leg.expiration, leg.type, leg.strike),
+      instruction: isBuy ? "BUY_TO_OPEN" : "SELL_TO_OPEN",
+      quantity: leg.quantity != null && leg.quantity > 0 ? leg.quantity : 1,
+      optionType,
+      strike: leg.strike,
+      expiration: leg.expiration,
+      bid: 0,
+      ask: 0,
+      delta: 0,
+    };
+  });
+  return { ticker: deskResult.ticker, legs, netPrice, isCredit };
 }
 
 function StructureDisplay({ structure }: { structure: DeskStructure }) {
@@ -334,6 +461,7 @@ export function StrategistDeskCard({
   onRetry,
   strategistDiagnosticRequestId,
   diagnosticView,
+  onSendToOrder,
 }: {
   deskResult: DeskResult;
   generatedAt?: string | number | null;
@@ -343,9 +471,23 @@ export function StrategistDeskCard({
   strategistDiagnosticRequestId?: string;
   /** Server-built compact JSON; preferred over fetching full telemetry for sharing. */
   diagnosticView?: Record<string, unknown> | null;
+  /** Opens order ticket pre-filled from desk structure (trade recommendations only). */
+  onSendToOrder?: (payload: StrategistSendToOrderPayload) => void;
 }) {
   const { pm, vol, flow, catalyst, errors } = deskResult;
   const isTrade = pm.decision === "trade";
+  const payoffScenarios = pm.scenarios;
+  const payoffSummary = pm.scenariosSummary;
+  const showPayoffTable =
+    Array.isArray(payoffScenarios) &&
+    payoffScenarios.length > 0 &&
+    payoffSummary != null;
+
+  const sendToOrder = useCallback(() => {
+    if (!onSendToOrder || !pm.structure) return;
+    onSendToOrder(buildDeskSendToOrderPayload(deskResult));
+  }, [deskResult, onSendToOrder, pm.structure]);
+
   const banner = deskBanner(strategistOutcome, blockReason, !isTrade, deskResult.soloDeskJsonDegraded);
   const [copiedFull, setCopiedFull] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
@@ -1316,6 +1458,10 @@ export function StrategistDeskCard({
         </div>
       )}
 
+      {showPayoffTable && payoffSummary && (
+        <PayoffAtExpirationSection scenarios={payoffScenarios} summary={payoffSummary} />
+      )}
+
       {pm.deviation_from_analysts && pm.deviation_from_analysts.trim().toLowerCase() !== "none" && (
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 10, fontWeight: 600, color: PAL.label, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>DEVIATION FROM VOLATILITY SECTION</div>
@@ -1367,6 +1513,37 @@ export function StrategistDeskCard({
             {errors.map((e, i) => <div key={i} style={{ fontSize: 10, color: PAL.body, lineHeight: 1.5 }}>{e}</div>)}
           </div>
         </div>
+      )}
+
+      {onSendToOrder && isTrade && pm.structure && (
+        <button
+          type="button"
+          onClick={sendToOrder}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            marginTop: 4,
+            marginBottom: 0,
+            padding: "14px 16px",
+            borderRadius: 8,
+            border: "none",
+            background: PAL.goldHeader,
+            color: "#0a0a0a",
+            fontSize: 14,
+            fontWeight: 800,
+            letterSpacing: 0.5,
+            textTransform: "uppercase",
+            cursor: "pointer",
+            fontFamily: SYS_FONT,
+            minHeight: TOUCH_MIN,
+          }}
+        >
+          <Send size={16} aria-hidden />
+          Send to Order Ticket
+        </button>
       )}
 
       </div>

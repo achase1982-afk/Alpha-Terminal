@@ -3670,6 +3670,7 @@ export function AiIntelligenceTab({
                               : undefined
                           }
                           onRetry={handleRunV2}
+                          onSendToOrder={onStrategistSendToOrder}
                         />
                       ) : v2Result.status === "recommendation" && v2Result.recommendation ? (
                         <StrategistV2RecommendationCard result={v2Result} onSendToOrder={onStrategistSendToOrder} generatedAt={generatedAt} />
