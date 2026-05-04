@@ -58,7 +58,7 @@ const SEV = {
 const SYSTEMS = [
   "SCHWAB_API", "SCHWAB_STREAM", "IBKR", "YAHOO", "SEC_EDGAR",
   "SCANNER", "STRATEGIST", "RISK_GATE", "EXIT_STAGING",
-  "PUSH_NOTIFICATION", "MARKET_PULSE", "POLYGON_API", "DATABASE", "API",
+  "PUSH_NOTIFICATION", "MARKET_PULSE", "POLYGON_API", "DATABASE", "API", "CLIENT",
 ];
 
 function fmtSystem(sys: string): string {
@@ -118,6 +118,7 @@ function extractSubComponent(system: string, message: string): string {
   if (system === "SEC_EDGAR") return "FILINGS";
   if (system === "YAHOO") return "YAHOO";
   if (system === "DATABASE") return "DB";
+  if (system === "CLIENT") return "CLIENT";
   return "";
 }
 

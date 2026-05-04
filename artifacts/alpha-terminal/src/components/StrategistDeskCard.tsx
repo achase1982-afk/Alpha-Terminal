@@ -62,6 +62,37 @@ function deskResultAudioId(deskResult: DeskResult, bannerTitle?: string, bannerB
   return `desk-${(h >>> 0).toString(16)}`;
 }
 
+/** Fire-and-forget: logs desk audio failures to in-app telemetry (GET /api/telemetry, system CLIENT). */
+function logDeskAudioTelemetry(args: {
+  ticker: string;
+  deskResultId: string;
+  strategistJobId?: string | null;
+  strategistDiagnosticRequestId?: string | null;
+  userMessage: string;
+  stage: string;
+  details?: Record<string, unknown>;
+}): void {
+  const body = {
+    message: `Desk audio: ${args.userMessage}`,
+    severity: "ERROR" as const,
+    details: {
+      ticker: args.ticker,
+      deskResultId: args.deskResultId,
+      strategistJobId: args.strategistJobId ?? null,
+      strategistDiagnosticRequestId: args.strategistDiagnosticRequestId ?? null,
+      stage: args.stage,
+      userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null,
+      ...args.details,
+    },
+  };
+  void fetchWithAuth("/api/telemetry/client-event", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    clerkTokenTimeoutMs: 5000,
+  }).catch(() => {});
+}
+
 function FieldRow({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
@@ -279,6 +310,7 @@ export function StrategistDeskCard({
   onRetry,
   strategistDiagnosticRequestId,
   diagnosticView,
+  strategistJobId,
 }: {
   deskResult: DeskResult;
   generatedAt?: string | number | null;
@@ -288,6 +320,8 @@ export function StrategistDeskCard({
   strategistDiagnosticRequestId?: string;
   /** Server-built compact JSON; preferred over fetching full telemetry for sharing. */
   diagnosticView?: Record<string, unknown> | null;
+  /** Correlates client desk-audio telemetry with a strategist analyze job when known. */
+  strategistJobId?: string | null;
 }) {
   const { pm, vol, flow, catalyst, errors } = deskResult;
   const isTrade = pm.decision === "trade";
@@ -449,6 +483,21 @@ export function StrategistDeskCard({
     [deskResult, banner?.title, banner?.body],
   );
 
+  const logDeskAudioFailure = useCallback(
+    (userMessage: string, stage: string, details?: Record<string, unknown>) => {
+      logDeskAudioTelemetry({
+        ticker: deskResult.ticker,
+        deskResultId,
+        strategistJobId: strategistJobId ?? null,
+        strategistDiagnosticRequestId: strategistDiagnosticRequestId ?? null,
+        userMessage,
+        stage,
+        details,
+      });
+    },
+    [deskResult.ticker, deskResultId, strategistJobId, strategistDiagnosticRequestId],
+  );
+
   /** Split desk script into TTS-sized chunks so the first request returns faster (progressive play). */
   const deskAudioChunks = useMemo(() => {
     const t = deskAudioText.trim();
@@ -588,6 +637,10 @@ export function StrategistDeskCard({
           void p.catch(() => {
             expectAudioPlaybackRef.current = false;
             if (playGen === audioPlayGenRef.current) {
+              logDeskAudioFailure("Audio unavailable — playback failed", "html_audio_play", {
+                prefetchHit,
+                chunkIndex: progressiveSessionRef.current?.index ?? 0,
+              });
               setAudioError("Audio unavailable — playback failed");
               setAudioReady(false);
             }
@@ -596,6 +649,9 @@ export function StrategistDeskCard({
       } catch {
         expectAudioPlaybackRef.current = false;
         if (playGen === audioPlayGenRef.current) {
+          logDeskAudioFailure("Audio unavailable — playback failed", "html_audio_play_sync_throw", {
+            prefetchHit,
+          });
           setAudioError("Audio unavailable — playback failed");
           setAudioReady(false);
         }
@@ -649,6 +705,11 @@ export function StrategistDeskCard({
           /* ignore */
         }
         setAudioError(msg);
+        logDeskAudioFailure(msg, "tts_http_error", {
+          httpStatus: res.status,
+          chunkIndex: 0,
+          textChars: firstText.length,
+        });
         setAudioBarOpen(true);
         return;
       }
@@ -662,11 +723,15 @@ export function StrategistDeskCard({
     } catch (e) {
       if (playGen !== audioPlayGenRef.current) return;
       const aborted = e instanceof DOMException && e.name === "AbortError";
-      setAudioError(
-        aborted
-          ? "Audio unavailable — request timed out or was cancelled"
-          : "Audio unavailable — network error",
-      );
+      const errMsg = aborted
+        ? "Audio unavailable — request timed out or was cancelled"
+        : "Audio unavailable — network error";
+      setAudioError(errMsg);
+      logDeskAudioFailure(errMsg, aborted ? "tts_fetch_aborted" : "tts_fetch_exception", {
+        chunkIndex: 0,
+        textChars: firstText.length,
+        exceptionName: e instanceof Error ? e.name : typeof e,
+      });
       setAudioBarOpen(true);
     } finally {
       if (timeoutId) window.clearTimeout(timeoutId);
@@ -678,7 +743,7 @@ export function StrategistDeskCard({
         ttsLoadingPlayGenRef.current = null;
       }
     }
-  }, [deskAudioChunks, deskAudioText, deskResultId, prefetchPrimaryKey, revokeObjectUrl]);
+  }, [deskAudioChunks, deskAudioText, deskResultId, prefetchPrimaryKey, revokeObjectUrl, logDeskAudioFailure]);
 
   const loadProgressiveChunkAtIndex = useCallback(
     async (targetIdx: number) => {
@@ -713,6 +778,11 @@ export function StrategistDeskCard({
         if (!res.ok) {
           progressiveSessionRef.current = null;
           setAudioError("Audio unavailable — segment failed");
+          logDeskAudioFailure("Audio unavailable — segment failed", "tts_http_error_progressive", {
+            httpStatus: res.status,
+            chunkIndex: targetIdx,
+            textChars: text.length,
+          });
           return;
         }
         const blob = await res.blob();
@@ -733,6 +803,9 @@ export function StrategistDeskCard({
                 expectAudioPlaybackRef.current = false;
                 if (playGen === audioPlayGenRef.current) {
                   progressiveSessionRef.current = null;
+                  logDeskAudioFailure("Audio unavailable — playback failed", "html_audio_play_progressive", {
+                    chunkIndex: targetIdx,
+                  });
                   setAudioError("Audio unavailable — playback failed");
                 }
               });
@@ -741,6 +814,9 @@ export function StrategistDeskCard({
             expectAudioPlaybackRef.current = false;
             if (playGen === audioPlayGenRef.current) {
               progressiveSessionRef.current = null;
+              logDeskAudioFailure("Audio unavailable — playback failed", "html_audio_play_progressive_sync_throw", {
+                chunkIndex: targetIdx,
+              });
               setAudioError("Audio unavailable — playback failed");
             }
           }
@@ -748,6 +824,10 @@ export function StrategistDeskCard({
       } catch {
         if (playGen === audioPlayGenRef.current) {
           progressiveSessionRef.current = null;
+          logDeskAudioFailure("Audio unavailable — network error", "tts_fetch_exception_progressive", {
+            chunkIndex: targetIdx,
+            textChars: text.length,
+          });
           setAudioError("Audio unavailable — network error");
         }
       } finally {
@@ -756,7 +836,7 @@ export function StrategistDeskCard({
         }
       }
     },
-    [deskResultId, revokeObjectUrl, stopAudio],
+    [deskResultId, revokeObjectUrl, stopAudio, logDeskAudioFailure],
   );
 
   const advanceProgressiveChunk = useCallback(async () => {
@@ -967,9 +1047,16 @@ export function StrategistDeskCard({
     if (!expectAudioPlaybackRef.current) return;
     expectAudioPlaybackRef.current = false;
     progressiveSessionRef.current = null;
+    const el = audioRef.current;
+    const code = el?.error?.code;
+    const message = el?.error?.message;
+    logDeskAudioFailure("Audio unavailable — media could not be played", "html_audio_media_error", {
+      mediaErrorCode: code ?? null,
+      mediaErrorMessage: message ?? null,
+    });
     setAudioError("Audio unavailable — media could not be played");
     setAudioReady(false);
-  }, []);
+  }, [logDeskAudioFailure]);
 
   const iconBtnBase: CSSProperties = {
     minWidth: TOUCH_MIN,

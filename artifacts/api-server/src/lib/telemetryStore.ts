@@ -14,7 +14,9 @@ export type TelemetrySystem =
   | "POLYGON_OPTIONS_WS"
   | "POLYGON_API"
   | "DATABASE"
-  | "API";
+  | "API"
+  /** Browser / Alpha Terminal client events (e.g. desk audio playback). */
+  | "CLIENT";
 
 export type TelemetryFeature =
   | "MARKET_PULSE"
@@ -79,6 +81,7 @@ export function emitTelemetry(
 
 function inferFeature(system: TelemetrySystem, message: string): TelemetryFeature | null {
   const msgLower = message.toLowerCase();
+  if (system === "CLIENT" && (msgLower.includes("desk audio") || msgLower.includes("tts"))) return "STRATEGIST";
   if (system === "MARKET_PULSE" || msgLower.includes("pulse")) return "MARKET_PULSE";
   if (system === "SCANNER" || msgLower.includes("scanner") || msgLower.includes("scan ") || msgLower.includes("discovery scan")) return "SCANNER";
   if (system === "STRATEGIST" || msgLower.includes("strategist") || msgLower.includes("analysis initiated")) return "STRATEGIST";

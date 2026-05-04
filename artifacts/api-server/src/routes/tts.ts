@@ -3,6 +3,7 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { constants as fsConstants } from "node:fs";
 import { generateSpeech, sha256Hex } from "../lib/tts.js";
+import { logFailure } from "../lib/telemetry.js";
 
 const router: IRouter = Router();
 
@@ -69,9 +70,16 @@ router.post("/desk-audio", async (req, res): Promise<void> => {
     res.send(mp3);
   } catch (err) {
     req.log?.error({ err }, "desk-audio TTS failed");
+    const detail = sanitizeClientTtsDetail(err);
+    void logFailure("STRATEGIST", "ERROR", "Desk audio TTS: server synthesis failed", {
+      route: "POST /api/tts/desk-audio",
+      deskResultId: deskResultId.trim(),
+      textChars: text.length,
+      detail,
+    });
     res.status(502).json({
       error: "Audio unavailable",
-      detail: sanitizeClientTtsDetail(err),
+      detail,
     });
   }
 });

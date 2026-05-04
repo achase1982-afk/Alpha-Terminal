@@ -20,7 +20,9 @@ export type TelemetrySystem =
   | "FMP_SCREENER"
   | "POLYGON_OPTIONS_WS"
   | "POLYGON_API"
-  | "DATABASE";
+  | "DATABASE"
+  | "API"
+  | "CLIENT";
 
 export type TelemetrySeverity = "INFO" | "WARN" | "ERROR" | "CRITICAL";
 

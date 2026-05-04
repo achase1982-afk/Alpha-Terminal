@@ -7,9 +7,38 @@ import {
   resolveEvent,
   clearAllEvents,
   getTotalCount,
+  emitTelemetry,
 } from "../lib/telemetryStore.js";
 
 const router: IRouter = Router();
+
+/**
+ * Ingest a single client-side event into the in-memory telemetry ring buffer
+ * (same feed as GET /api/telemetry). Used for failures that only happen in the
+ * browser (e.g. HTMLAudioElement.play() rejected).
+ */
+router.post("/client-event", async (req, res) => {
+  try {
+    const message =
+      typeof req.body?.message === "string" ? req.body.message.trim().slice(0, 500) : "";
+    if (!message) {
+      res.status(400).json({ error: "message is required" });
+      return;
+    }
+    const rawSev = req.body?.severity;
+    const severity =
+      rawSev === "INFO" || rawSev === "WARN" || rawSev === "ERROR" ? rawSev : "ERROR";
+    let details: Record<string, unknown> | undefined;
+    if (req.body?.details != null && typeof req.body.details === "object" && !Array.isArray(req.body.details)) {
+      details = req.body.details as Record<string, unknown>;
+    }
+    emitTelemetry("CLIENT", severity, message, details, "STRATEGIST");
+    res.json({ ok: true });
+  } catch (err: unknown) {
+    req.log?.error({ err }, "Telemetry client-event error");
+    res.status(500).json({ error: "Failed to record client event" });
+  }
+});
 
 router.get("/", async (req, res) => {
   try {
