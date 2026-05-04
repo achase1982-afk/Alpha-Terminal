@@ -24,7 +24,7 @@ import { StrategistAuditPanel, type StrategistAuditData } from "@/components/mar
 import type { AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
 import { useStrategistCache, type StrategistCacheData } from "@/hooks/useStrategistCache";
-import { MarketScanner, type DetCandidate } from "@/components/MarketScanner";
+import { MarketScanner } from "@/components/MarketScanner";
 import { takePendingScannerStrategistContext } from "@/lib/pendingScannerStrategistContext";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { AiLabStrategistView } from "@/components/AiLabStrategistView";
@@ -33,6 +33,25 @@ import { StrategistDeskCard, type DeskResult } from "@/components/StrategistDesk
 import { StrategistHistoryList } from "@/components/StrategistHistoryList";
 
 const API_BASE = "/api";
+
+/** Payload for legacy /ai/deterministic-strategist (scanner row cache). */
+interface DeterministicStrategistScannerPayload {
+  symbol: string;
+  totalScore: number;
+  components: {
+    trendAlignment: number;
+    relativeStrength: number;
+    volumeConfirmation: number;
+    ivrScore: number;
+    optionsLiquidity: number;
+  };
+  microOverrideEligible: boolean;
+  ivr: number;
+  atmSpreadPct: number;
+  changePct: number;
+  sector: string;
+  scanTimestamp: number;
+}
 
 interface IvrBackfillJobStatus {
   id: string;
@@ -2668,7 +2687,7 @@ export function AiIntelligenceTab({
   const [isDetRunning, setIsDetRunning] = useState(false);
   const [detThinking, setDetThinking] = useState<string[]>([]);
   const detRunRef = useRef(0);
-  const scannerCandidateCache = useRef<Record<string, DetCandidate>>({});
+  const scannerCandidateCache = useRef<Record<string, DeterministicStrategistScannerPayload>>({});
 
   const strategistJobs = useTerminalStore(s => s.strategistJobs);
   /** One pass so ticker + jobId always refer to the same running analyze job (avoids mismatched Object.values vs .entries picks). */
@@ -3151,7 +3170,7 @@ export function AiIntelligenceTab({
     }
   }, [quote, accessToken, symbol, setSymbol, setStrategistResult, setStrategistCache]);
 
-  const handleRunDetStrategist = useCallback(async (sym: string, candidate?: DetCandidate) => {
+  const handleRunDetStrategist = useCallback(async (sym: string, candidate?: DeterministicStrategistScannerPayload) => {
     const runId = ++detRunRef.current;
     const upperSym = sym.toUpperCase();
 
@@ -3758,7 +3777,7 @@ export function AiIntelligenceTab({
           <MarketScanner
             subscribeEquitySymbols={subscribeEquitySymbols ?? (() => {})}
             onNavigateToSymbol={onNavigateToMarkets ?? (() => {})}
-            onSendToStrategist={(sym: string, _candidate?: DetCandidate, flowContext?: string) => {
+            onSendToStrategist={(sym: string, flowContext?: string) => {
               useTerminalStore.getState().setSymbol(sym);
               setStrategistMode("options");
               onSubTabChange("strategist");

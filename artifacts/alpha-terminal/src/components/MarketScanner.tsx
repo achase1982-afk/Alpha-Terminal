@@ -1,570 +1,28 @@
-import { useState, useEffect, memo, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import ReactDOM from "react-dom";
 import { useTerminalStore } from "@/lib/store";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
-import { useQuote } from "@/hooks/useQuote";
-import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { SlidersHorizontal, ChevronDown, AlertTriangle, Search, List, Crosshair, Send, Shield, BarChart3, Plus, Filter, RefreshCw, Pencil, Trash2, Loader2, Info, Zap, Settings2 } from "lucide-react";
-import { Drawer, DrawerContent, DrawerTrigger, DrawerTitle, DrawerHeader, DrawerClose } from "./ui/drawer";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { useScanCache } from "@/hooks/useScanCache";
-import { useMarketPulseStore } from "@/stores/marketPulseStore";
+import {
+  ChevronDown,
+  AlertTriangle,
+  Search,
+  List,
+  Plus,
+  Pencil,
+  Trash2,
+  Loader2,
+  Filter,
+  RefreshCw,
+} from "lucide-react";
 import { useScannerUniverses } from "@/hooks/useScannerUniverses";
 import { ScreenBuilder } from "./ScreenBuilder";
 import { WatchlistEditor } from "./WatchlistEditor";
-import { FlowDrillDownCard } from "./FlowDrillDownCard";
-import {
-  type UnusualFlowFilters,
-  type PresetId,
-  PRESETS,
-  PRESET_ORDER,
-  DEFAULT_FILTERS,
-  detectPreset,
-  closestPreset,
-  serializeFilters,
-  deserializeFilters,
-} from "@/lib/unusualFlowPresets";
+import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { useToast } from "@/hooks/use-toast";
-import { setPendingScannerStrategistContext } from "@/lib/pendingScannerStrategistContext";
-import { buildScannerContextFromDetCandidate, buildScannerContextFromUnusualCandidate } from "@/lib/scannerStrategistHandoff";
-
-const API_BASE = "/api";
-
-
-interface ScannerQuote {
-  symbol: string;
-  last: number;
-  change: number;
-  changePct: number;
-  volume: number;
-  high: number;
-  low: number;
-}
-
-interface DetComponentScores {
-  trendAlignment: number;
-  relativeStrength: number;
-  volumeConfirmation: number;
-  ivrScore: number;
-  optionsLiquidity: number;
-}
-
-export interface DetCandidate {
-  symbol: string;
-  totalScore: number;
-  components: DetComponentScores;
-  price: number;
-  changePct: number;
-  sector: string;
-  keyStatLabel: string;
-  keyStatValue: string;
-  ivr: number;
-  atmIV: number;
-  atmSpreadPct: number;
-  hasWeeklyOptions: boolean;
-  upcomingEvents: Array<{ date: string; title: string; importance: string }>;
-  microOverrideEligible: boolean;
-  pulseComposite: number;
-  pulseConfidence: number;
-  pulseBias: string;
-  scanTimestamp?: number;
-  directionalLean?: "BULLISH" | "BEARISH" | "MIXED";
-  scanMode?: "DISCOVERY" | "MOMENTUM";
-  flowDataAvailable?: boolean;
-  discoveryComponents?: {
-    setupQuality: number;
-    accumulation: number;
-    ivSetup: number;
-    flowDivergence: number;
-    liveFlow?: number;
-    liveFlowAvailable?: boolean;
-    emergingRS: number;
-  };
-  unusualFlow?: {
-    asOfDate: string;
-    unusualStrikeCount: number;
-    skew: "bullish" | "bearish" | "balanced" | "none";
-    bonusPoints: number;
-    largestPrintVolume: number;
-    largestPrintDescription: string | null;
-    putCallVolumeRatio: number;
-  };
-  edgeType: import("@/lib/scannerStrategistHandoff").ScannerEdgeType;
-  catalystBonusApplied?: boolean;
-}
-
-// Part 5: legacy types for the on-demand "Unusual Flow Scan (LIVE)" button
-// were removed. Live unusual-flow signal is now folded into the LIVE_FLOW
-// scoring bucket on every Discovery scan (see deterministicScanner.v2.ts).
-
-interface DetScanResult {
-  candidates: DetCandidate[];
-  filterSummary: {
-    totalScanned: number;
-    passedFilters: number;
-    scoredAboveThreshold: number;
-  };
-  scanTimestamp: number;
-  pulseBias: string;
-  scanMode?: "DISCOVERY" | "MOMENTUM";
-  weightMode?: "DEFAULT" | "IDIOSYNCRATIC";
-  // Part 2 — server-computed coverage state for the LIVE/AMBER/EOD badge.
-  coverage?: {
-    state: "LIVE" | "AMBER" | "EOD";
-    reason: string;
-    watcherEnabled: boolean;
-    running: boolean;
-    heartbeatAgeMs: number | null;
-    coverageRate: number;
-    totalSubscribed: number;
-  };
-}
-
-/** Payload stored under `useScanCache` `results` (restored on mount + after scans). */
-interface ScannerPersistedResults {
-  scanCount: number;
-  universe?: string;
-  detResult?: DetScanResult;
-  unusualResult?: UnusualFlowScanResult;
-}
-
-const MOMENTUM_BARS: { key: keyof DetComponentScores; label: string; max: number; color: string }[] = [
-  { key: "trendAlignment", label: "TREND", max: 25, color: "#26a69a" },
-  { key: "relativeStrength", label: "RS", max: 20, color: "#42a5f5" },
-  { key: "volumeConfirmation", label: "VOL", max: 20, color: "#ab47bc" },
-  { key: "ivrScore", label: "IVR", max: 20, color: "#ffb800" },
-  { key: "optionsLiquidity", label: "OPT LIQ", max: 15, color: "#ef5350" },
-];
-
-const DISCOVERY_BARS: { key: keyof NonNullable<DetCandidate["discoveryComponents"]>; label: string; max: number; color: string }[] = [
-  { key: "setupQuality", label: "SETUP", max: 20, color: "#26a69a" },
-  { key: "accumulation", label: "ACCUM", max: 15, color: "#ab47bc" },
-  { key: "ivSetup", label: "IV SET", max: 25, color: "#ffb800" },
-  { key: "flowDivergence", label: "FLOW", max: 25, color: "#42a5f5" },
-  { key: "liveFlow", label: "LIVE FL", max: 20, color: "#66e0ff" },
-  { key: "emergingRS", label: "RS", max: 15, color: "#ef5350" },
-];
-
-const LEAN_COLORS: Record<string, string> = {
-  BULLISH: "#2ecc71",
-  BEARISH: "#ff4b5c",
-  MIXED: "#FFB800",
-};
-
-function checkEdgeAvailability(candidate: DetCandidate): { hasEdge: boolean; reason: string } {
-  const absComp = Math.abs(candidate.pulseComposite);
-  const conf = candidate.pulseConfidence;
-
-  if (absComp >= 0.75 && conf >= 60) return { hasEdge: true, reason: "HIGH_CONVICTION" };
-  if (absComp >= 0.30 && absComp < 0.75 && conf >= 30 && conf < 60) return { hasEdge: true, reason: "LOW_CONVICTION" };
-  if (absComp >= 0.30 && conf >= 60) return { hasEdge: true, reason: "LOW_CONVICTION" };
-
-  if (candidate.microOverrideEligible) {
-    const pulseBullish = candidate.pulseComposite > 0.30;
-    const pulseBearish = candidate.pulseComposite < -0.30;
-    const scanBullish = candidate.changePct > 0;
-    if ((pulseBullish && !scanBullish) || (pulseBearish && scanBullish)) {
-      return { hasEdge: false, reason: "Inverse to macro bias" };
-    }
-    return { hasEdge: true, reason: "MICRO_OVERRIDE" };
-  }
-
-  return { hasEdge: false, reason: "Pulse too weak for directional" };
-}
-
-const DeterministicCard = memo(function DeterministicCard({
-  candidate, rank, onSelect, onSendToStrategist, discoveryWeightMode,
-}: {
-  candidate: DetCandidate; rank: number;
-  onSelect: (sym: string) => void;
-  onSendToStrategist?: (sym: string, candidate?: DetCandidate) => void;
-  discoveryWeightMode: "DEFAULT" | "IDIOSYNCRATIC" | null;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const lastScanTs = useRef(candidate.scanTimestamp);
-  if (candidate.scanTimestamp !== lastScanTs.current) {
-    lastScanTs.current = candidate.scanTimestamp;
-    if (expanded) setExpanded(false);
-  }
-  const { data } = useQuote(candidate.symbol);
-  const livePrice = data?.last ?? candidate.price;
-  const liveChangePct = data?.changePct ?? candidate.changePct;
-  const isUp = liveChangePct >= 0;
-  const isDiscovery = candidate.scanMode === "DISCOVERY";
-  const lean = candidate.directionalLean;
-  const edgeCheck = useMemo(() => checkEdgeAvailability(candidate), [candidate]);
-
-  const scoreColor = candidate.totalScore >= 80 ? "#26a69a" : candidate.totalScore >= 60 ? "#FFB800" : "#6B7280";
-
-  const scoreBars = isDiscovery && candidate.discoveryComponents
-    ? DISCOVERY_BARS.map(bar => {
-        // discoveryComponents now contains a non-numeric `liveFlowAvailable`
-        // boolean alongside the numeric bucket scores. DISCOVERY_BARS only
-        // references numeric keys, so coerce defensively to a number.
-        const raw = candidate.discoveryComponents![bar.key as keyof NonNullable<DetCandidate["discoveryComponents"]>];
-        const val = typeof raw === "number" ? raw : 0;
-        return { label: bar.label, max: bar.max, color: bar.color, val };
-      })
-    : MOMENTUM_BARS.map(bar => ({
-        label: bar.label,
-        max: bar.max,
-        color: bar.color,
-        val: candidate.components[bar.key as keyof DetComponentScores] ?? 0,
-      }));
-
-  return (
-    <div className="bg-card border border-card-border rounded-lg overflow-hidden hover:border-zinc-600 transition-colors">
-      <div
-        onClick={() => setExpanded(e => !e)}
-        className="w-full flex items-center gap-2 px-3 py-2.5 text-left cursor-pointer active:bg-white/[0.02] transition-colors"
-        style={{ background: "#0c0c0c" }}
-      >
-        <span className="text-[11px] font-bold tabular-nums w-5 text-zinc-600 shrink-0">#{rank}</span>
-        <button onClick={(e) => { e.stopPropagation(); onSelect(candidate.symbol); }}
-          className="font-bold text-[13px] tracking-wider hover:text-[#FFB800] transition-colors active:scale-95 shrink-0"
-          style={{ color: isUp ? "#26a69a" : "#f23645" }}>
-          {candidate.symbol}
-        </button>
-        <span className="text-[10px] text-zinc-500 shrink-0 max-w-[50px] truncate">{candidate.sector}</span>
-
-        {candidate.microOverrideEligible && (
-          <Shield className="w-3 h-3 shrink-0" style={{ color: "#FFB800" }} />
-        )}
-        {!edgeCheck.hasEdge && (
-          <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-wider"
-            style={{ color: "#6B7280", background: "#6B728018", border: "1px solid #6B728030" }}>
-            no edge
-          </span>
-        )}
-        {lean && (
-          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0"
-            style={{ color: LEAN_COLORS[lean], background: `${LEAN_COLORS[lean]}18` }}>
-            {lean}
-          </span>
-        )}
-        {/* Part 5: per-row LIVE flow chip — surfaces the LIVE_FLOW bucket
-            inline so the segmented Discovery list reads "X has unusual flow"
-            without expanding the row. */}
-        {isDiscovery && candidate.discoveryComponents?.liveFlowAvailable && (
-          <span
-            className="text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-wider"
-            style={{ color: "#66e0ff", background: "#66e0ff18", border: "1px solid #66e0ff40" }}
-            title={`LIVE_FLOW bucket: ${Math.round(candidate.discoveryComponents?.liveFlow ?? 0)}/20`}
-          >
-            ⚡ LIVE
-          </span>
-        )}
-
-        <div className="ml-auto flex items-center gap-2 shrink-0">
-          <span className="text-[11px] font-mono tabular-nums text-zinc-400">${livePrice.toFixed(2)}</span>
-          <span className="text-[11px] font-mono tabular-nums" style={{ color: isUp ? "#26a69a" : "#f23645" }}>
-            {isUp ? "+" : ""}{liveChangePct.toFixed(2)}%
-          </span>
-          <span className="text-[11px] font-mono tabular-nums text-zinc-500">IVR {candidate.ivr.toFixed(0)}</span>
-          <span className="text-lg font-bold font-mono tabular-nums" style={{ color: scoreColor }}>
-            {candidate.totalScore}
-          </span>
-          <ChevronDown className="w-3.5 h-3.5 text-zinc-500 transition-transform" style={{ transform: expanded ? "rotate(180deg)" : "none" }} />
-        </div>
-      </div>
-
-      {expanded && (
-        <>
-          <div className="px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-card-border/50">
-            <div>
-              <div className="text-[11px] text-zinc-500 uppercase mb-1.5">Score Breakdown</div>
-              <div className="space-y-1.5">
-                {scoreBars.map(bar => {
-                  const pct = Math.round((bar.val / bar.max) * 100);
-                  return (
-                    <div key={bar.label} className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold text-zinc-500 w-[52px] text-right shrink-0">{bar.label}</span>
-                      <div className="flex-1 h-[6px] rounded-full overflow-hidden" style={{ background: "#1a1a1a" }}>
-                        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: bar.color }} />
-                      </div>
-                      <span className="text-[10px] font-mono tabular-nums text-zinc-400 w-8 text-right">{Math.round(bar.val)}/{bar.max}</span>
-                    </div>
-                  );
-                })}
-              </div>
-              {isDiscovery && candidate.flowDataAvailable === false && (
-                <div className="mt-2 flex items-center gap-1 text-[10px]" style={{ color: "#6B7280" }}>
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-zinc-600" />
-                  Flow data unavailable — score renormalized
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-[11px] text-zinc-500">ATM Spread</span>
-                <span className="text-sm font-mono tabular-nums text-zinc-300">
-                  {candidate.atmSpreadPct >= 99 ? "N/A" : `${candidate.atmSpreadPct.toFixed(1)}%`}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[11px] text-zinc-500">{candidate.keyStatLabel}</span>
-                <span className="text-sm font-mono tabular-nums text-zinc-300">{candidate.keyStatValue}</span>
-              </div>
-              {candidate.hasWeeklyOptions && (
-                <span className="text-[10px] text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5 inline-block">WEEKLYS</span>
-              )}
-              {candidate.unusualFlow && (
-                <div className="space-y-1 mt-1">
-                  <span
-                    className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full w-fit"
-                    style={{
-                      color: candidate.unusualFlow.skew === "bullish" ? "#2ecc71"
-                        : candidate.unusualFlow.skew === "bearish" ? "#ff4b5c"
-                        : "#FFB800",
-                      background: candidate.unusualFlow.skew === "bullish" ? "rgba(46,204,113,0.12)"
-                        : candidate.unusualFlow.skew === "bearish" ? "rgba(255,75,92,0.12)"
-                        : "rgba(255,184,0,0.12)",
-                      border: `1px solid ${candidate.unusualFlow.skew === "bullish" ? "rgba(46,204,113,0.3)"
-                        : candidate.unusualFlow.skew === "bearish" ? "rgba(255,75,92,0.3)"
-                        : "rgba(255,184,0,0.3)"}`,
-                    }}
-                    title={candidate.unusualFlow.largestPrintDescription ?? undefined}
-                  >
-                    UNUSUAL FLOW · +{candidate.unusualFlow.bonusPoints} · {candidate.unusualFlow.unusualStrikeCount} strikes {candidate.unusualFlow.skew.toUpperCase()}
-                  </span>
-                  {candidate.unusualFlow.largestPrintDescription && (
-                    <div className="text-[10px] text-zinc-500 truncate" title={candidate.unusualFlow.largestPrintDescription}>
-                      Largest: {candidate.unusualFlow.largestPrintDescription}
-                    </div>
-                  )}
-                </div>
-              )}
-              {candidate.microOverrideEligible && (
-                <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full w-fit"
-                  style={{ color: "#FFB800", background: "rgba(255,184,0,0.12)", border: "1px solid rgba(255,184,0,0.3)" }}>
-                  <Shield className="w-3 h-3" /> MICRO-OVERRIDE
-                </span>
-              )}
-            </div>
-          </div>
-
-          {candidate.upcomingEvents.length > 0 && (
-            <div className="px-4 pb-2">
-              <div className="flex flex-wrap gap-1.5">
-                {candidate.upcomingEvents.map((ev, i) => (
-                  <span key={i} className="text-[10px] px-1.5 py-0.5 rounded border"
-                    style={{
-                      color: ev.importance?.toUpperCase() === "HIGH" ? "#f23645" : "#FFB800",
-                      borderColor: ev.importance?.toUpperCase() === "HIGH" ? "rgba(242,54,69,0.3)" : "rgba(255,184,0,0.2)",
-                      background: ev.importance?.toUpperCase() === "HIGH" ? "rgba(242,54,69,0.08)" : "rgba(255,184,0,0.05)",
-                    }}>
-                    {ev.title} {ev.date}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="px-4 py-2.5 border-t border-card-border/50 flex items-center justify-between" style={{ background: "#0a0a0a" }}>
-            <span className="text-[10px] text-zinc-600">
-              Bias: {candidate.pulseBias} · Composite: {typeof candidate.pulseComposite === 'number' ? candidate.pulseComposite.toFixed(1) : candidate.pulseComposite}
-            </span>
-            {onSendToStrategist && (
-              <button
-                onClick={() => {
-                  const mode =
-                    candidate.scanMode === "DISCOVERY" ? discoveryWeightMode : null;
-                  setPendingScannerStrategistContext(
-                    buildScannerContextFromDetCandidate(candidate, {
-                      scannerMode: mode,
-                      catalystBonusApplied: candidate.catalystBonusApplied === true,
-                    }),
-                  );
-                  onSendToStrategist(candidate.symbol, candidate);
-                }}
-                className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded transition-all hover:bg-[#FFB800]/15 active:scale-95"
-                style={{ color: "#FFB800", border: "1px solid rgba(255,184,0,0.3)" }}>
-                <Send className="w-3 h-3" /> SEND TO STRATEGIST
-              </button>
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  );
-});
-
-
-// ── Unusual Options Activity scanner result types ───────────────────
-interface UnusualFlowExecSummary {
-  sweepCount: number;
-  blockCount: number;
-  regularCount: number;
-  sweepNotional: number;
-  blockNotional: number;
-  regularNotional: number;
-}
-interface UnusualFlowStrike {
-  strike: number;
-  expiration: string;
-  dte: number;
-  optionType: "call" | "put";
-  volume: number;
-  openInterest: number;
-  volOiRatio: number;
-  notional: number;
-  iv: number | null;
-  delta: number | null;
-  exec?: UnusualFlowExecSummary;
-  hasLiveExec?: boolean;
-}
-interface UnusualFlowCandidate {
-  symbol: string;
-  asOfDate: string;
-  score: number;
-  scoreReason: string;
-  unusualStrikeCount: number;
-  unusualCallStrikes: number;
-  unusualPutStrikes: number;
-  unusualCallVolume: number;
-  unusualPutVolume: number;
-  unusualTotalVolume: number;
-  unusualTotalNotional: number;
-  totalCallVolume: number;
-  totalPutVolume: number;
-  putCallVolumeRatio: number;
-  skew: "bullish" | "bearish" | "balanced";
-  topByVoiRatio: UnusualFlowStrike[];
-  topByNotional: UnusualFlowStrike[];
-  largestPrintDescription: string;
-  topVoiRatio: number;
-  avgDte: number;
-  exec?: UnusualFlowExecSummary;
-  flowSource?: "live" | "baseline";
-  aggressorAvailable?: boolean;
-  edgeType: import("@/lib/scannerStrategistHandoff").ScannerEdgeType;
-}
-interface UnusualFlowScanResult {
-  scanTimestamp: number;
-  asOfDate: string | null;
-  scannedSymbols: number;
-  symbolsWithFlow: number;
-  excludedIndexes: number;
-  candidates: UnusualFlowCandidate[];
-  diagnostics?: {
-    baselineRows: number;
-    liveExecutionRows: number;
-    symbolsWithLiveExecution: number;
-    sourceMode: "live" | "baseline" | "any";
-  };
-  filters?: {
-    source?: "live" | "baseline" | "any";
-  };
-}
-
-function fmtCompactInt(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return n.toLocaleString();
-}
-function fmtMoney(n: number): string {
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}k`;
-  return `$${n.toLocaleString()}`;
-}
-
-const UnusualFlowCard = memo(function UnusualFlowCard({
-  candidate, rank, onSelect, onSendToStrategist,
-}: {
-  candidate: UnusualFlowCandidate;
-  rank: number;
-  onSelect: (sym: string) => void;
-  onSendToStrategist?: (sym: string, candidate?: DetCandidate, flowContext?: string) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const { data } = useQuote(candidate.symbol);
-  const livePrice = data?.last;
-
-  const skewColor =
-    candidate.skew === "bullish" ? "#26a69a"
-    : candidate.skew === "bearish" ? "#f23645"
-    : "#9ca3af";
-  const skewLabel = candidate.skew.toUpperCase();
-
-  const scoreColor = candidate.score >= 70 ? "#66e0ff" : candidate.score >= 50 ? "#FFB800" : "#9ca3af";
-
-  return (
-    <div className="bg-card border border-card-border rounded-lg overflow-hidden hover:border-zinc-600 transition-colors">
-      <div
-        onClick={() => setExpanded(e => !e)}
-        className="w-full flex items-center gap-2 px-3 py-2.5 text-left cursor-pointer active:bg-white/[0.02] transition-colors"
-        style={{ background: "#0c0c0c" }}
-      >
-        <span className="text-[11px] font-bold tabular-nums w-5 text-zinc-600 shrink-0">#{rank}</span>
-        <button onClick={(e) => { e.stopPropagation(); onSelect(candidate.symbol); }}
-          className="font-bold text-[13px] tracking-wider hover:text-[#FFB800] transition-colors active:scale-95 shrink-0"
-          style={{ color: scoreColor }}>
-          {candidate.symbol}
-        </button>
-
-        <span
-          className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0"
-          style={{ color: skewColor, background: `${skewColor}1a`, border: `1px solid ${skewColor}40` }}
-        >
-          {skewLabel}
-        </span>
-
-        <span className="text-[10px] text-zinc-500 font-mono tabular-nums shrink-0">
-          {candidate.unusualStrikeCount} strk
-        </span>
-        <span className="text-[10px] text-zinc-400 font-mono tabular-nums shrink-0">
-          {fmtCompactInt(candidate.unusualTotalVolume)} ct
-        </span>
-        <span className="text-[10px] font-mono tabular-nums shrink-0" style={{ color: "#FFB800" }}>
-          {fmtMoney(candidate.unusualTotalNotional)}
-        </span>
-        {candidate.exec && (candidate.exec.sweepCount + candidate.exec.blockCount) > 0 && (
-          <span
-            className="text-[10px] font-mono tabular-nums shrink-0 px-1.5 py-0.5 rounded"
-            title={`Live: ${candidate.exec.sweepCount} sweeps · ${candidate.exec.blockCount} blocks · ${candidate.exec.regularCount} regular`}
-            style={{
-              color: "#FFB800",
-              background: "rgba(255,184,0,0.08)",
-              border: "1px solid rgba(255,184,0,0.25)",
-            }}
-          >
-            {candidate.exec.sweepCount}s/{candidate.exec.blockCount}b
-          </span>
-        )}
-        <span className="text-[10px] text-zinc-600 font-mono tabular-nums shrink-0 hidden sm:inline">
-          {candidate.avgDte}d
-        </span>
-
-        <div className="ml-auto flex items-center gap-2 shrink-0">
-          {livePrice != null && (
-            <span className="text-[11px] font-mono tabular-nums text-zinc-400">${livePrice.toFixed(2)}</span>
-          )}
-          <span className="text-[11px] font-mono tabular-nums text-zinc-500">
-            {candidate.topVoiRatio.toFixed(1)}×
-          </span>
-          <span className="text-[12px] font-bold font-mono tabular-nums" style={{ color: scoreColor }}>
-            {candidate.score.toFixed(0)}
-          </span>
-          <ChevronDown className="w-3.5 h-3.5 text-zinc-500 transition-transform" style={{ transform: expanded ? "rotate(180deg)" : "none" }} />
-        </div>
-      </div>
-
-      {expanded && (
-        <FlowDrillDownCard
-          candidate={candidate}
-          onSendToStrategist={
-            onSendToStrategist
-              ? (sym, flowContext) => onSendToStrategist(sym, undefined, flowContext)
-              : undefined
-          }
-        />
-      )}
-    </div>
-  );
-});
+import { useUnifiedScan } from "@/hooks/useUnifiedScan";
+import { UnifiedScannerCard } from "./UnifiedScannerCard";
+import type { UnifiedScanJobResult } from "@/lib/unifiedScanTypes";
 
 function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCreateScreen, onEditScreen, onDeleteScreen, onRefreshScreen, refreshingScreenId, onCreateWatchlist, onEditWatchlist, onDeleteWatchlist }: {
   value: string;
@@ -638,7 +96,9 @@ function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCre
         onClick={() => setOpen(o => !o)}
         className="w-full min-h-[44px] rounded-md border border-card-border bg-card text-foreground text-sm px-3 py-2 flex items-center justify-between gap-2 focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors hover:border-zinc-600"
       >
-        <span className="font-medium leading-snug">{selectedLabel} <span className="text-zinc-500 font-normal">({selectedCount})</span></span>
+        <span className="font-medium leading-snug">
+          {selectedLabel} <span className="text-zinc-500 font-normal">({selectedCount})</span>
+        </span>
         <ChevronDown className={`w-4 h-4 text-zinc-500 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
@@ -793,122 +253,72 @@ function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCre
   );
 }
 
-type SendToStrategistFn = (sym: string, candidate?: DetCandidate) => void;
+function getUniverseDisplayLabel(
+  universeId: string,
+  presets: Record<string, { label: string; count: number }>,
+  watchlists: Array<{ id: number; name: string }>,
+  screens: Array<{ id: number; name: string }>,
+): string {
+  if (universeId.startsWith("preset:")) {
+    const p = presets[universeId.slice(7)];
+    return p?.label ?? universeId;
+  }
+  if (universeId.startsWith("watchlist:")) {
+    const id = parseInt(universeId.slice(10), 10);
+    const wl = watchlists.find(w => w.id === id);
+    return wl?.name ?? "Watchlist";
+  }
+  if (universeId.startsWith("screen:")) {
+    const id = parseInt(universeId.slice(7), 10);
+    const sc = screens.find(s => s.id === id);
+    return sc?.name ?? "Screen";
+  }
+  return universeId;
+}
+
+function formatScanTime(iso: string | null | undefined): string {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  } catch {
+    return iso;
+  }
+}
+
+function enginePill(name: string, st: UnifiedScanJobResult["engineStatus"]["discovery"]) {
+  const ok = st.status === "ok";
+  return (
+    <span
+      key={name}
+      className="text-[10px] font-bold px-2 py-0.5 rounded-full border inline-flex items-center gap-1"
+      style={{
+        color: ok ? "#26a69a" : "#f87171",
+        borderColor: ok ? "rgba(38,166,154,0.4)" : "rgba(248,113,113,0.4)",
+        background: ok ? "rgba(38,166,154,0.08)" : "rgba(248,113,113,0.08)",
+      }}
+      title={st.error ?? (ok ? "OK" : st.status)}
+    >
+      {name} {ok ? "✓" : "✗"}
+    </span>
+  );
+}
+
+type SendToStrategistFn = (sym: string) => void;
 
 export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSendToStrategist }: {
   subscribeEquitySymbols?: (symbols: string[]) => void;
   onNavigateToSymbol?: (sym: string) => void;
   onSendToStrategist?: SendToStrategistFn;
 }) {
-  const { accessToken, setSymbol } = useTerminalStore();
+  const { accessToken } = useTerminalStore();
   const { pulseData } = useMarketPulseStore();
   const shockActive = pulseData?.shockState === "ACTIVE";
-  const { cachedData: scanCache, setCachedData: setScanCache } = useScanCache();
   const universeData = useScannerUniverses();
-
-  const [mode, setMode] = useState<"unusual" | "deterministic">("deterministic");
-  const [scanMode, setScanMode] = useState<"DISCOVERY" | "MOMENTUM">("DISCOVERY");
-  // Part 5: filter chip state for discovery results.
-  const [flowFilter, setFlowFilter] = useState<"all" | "unusual" | "noflow">("all");
-  const [universe, setUniverse] = useState("preset:liquidCore130");
-  const [isScanning, setIsScanning] = useState(false);
-  const [rawError, setRawError] = useState<string | null>(null);
-  const [scanCount, setScanCount] = useState<number | null>(null);
-  const [resolvedSymbols, setResolvedSymbols] = useState<string[]>([]);
-
-  const [detResult, setDetResult] = useState<DetScanResult | null>(null);
-  const [detError, setDetError] = useState<string | null>(null);
-
-  // Unusual Options Activity scanner state (replaces legacy Manual scanner).
-  const [unusualResult, setUnusualResult] = useState<UnusualFlowScanResult | null>(null);
-  const [unusualError, setUnusualError] = useState<string | null>(null);
   const { toast } = useToast();
-  const [unusualFilters, setUnusualFilters] = useState<UnusualFlowFilters>(() => {
-    try {
-      const raw = localStorage.getItem("alpha.unusualFilters.v2");
-      if (raw) {
-        const parsed = deserializeFilters(raw) as Partial<UnusualFlowFilters>;
-        return { ...PRESETS.momentum.filters, ...parsed } as UnusualFlowFilters;
-      }
-    } catch { /* fall through */ }
-    return PRESETS.momentum.filters;
-  });
-  const [presetMode, setPresetMode] = useState<"preset" | "custom">(() => {
-    try {
-      const raw = localStorage.getItem("alpha.unusualFilters.v2");
-      if (raw) {
-        const parsed = deserializeFilters(raw) as Partial<UnusualFlowFilters>;
-        const merged = { ...PRESETS.momentum.filters, ...parsed } as UnusualFlowFilters;
-        return detectPreset(merged) ? "preset" : "custom";
-      }
-    } catch { /* fall through */ }
-    return "preset";
-  });
-  const [activePreset, setActivePreset] = useState<PresetId | null>(() => {
-    try {
-      const raw = localStorage.getItem("alpha.unusualFilters.v2");
-      if (raw) {
-        const parsed = deserializeFilters(raw) as Partial<UnusualFlowFilters>;
-        const merged = { ...PRESETS.momentum.filters, ...parsed } as UnusualFlowFilters;
-        return detectPreset(merged);
-      }
-    } catch { /* fall through */ }
-    return "momentum";
-  });
-  const [basePreset, setBasePreset] = useState<PresetId | null>(() => {
-    try {
-      const raw = localStorage.getItem("alpha.unusualFilters.v2");
-      if (raw) {
-        const parsed = deserializeFilters(raw) as Partial<UnusualFlowFilters>;
-        const merged = { ...PRESETS.momentum.filters, ...parsed } as UnusualFlowFilters;
-        return detectPreset(merged) ?? closestPreset(merged);
-      }
-    } catch { /* fall through */ }
-    return "momentum";
-  });
 
-  useEffect(() => {
-    try { localStorage.setItem("alpha.unusualFilters.v2", serializeFilters(unusualFilters)); } catch {}
-  }, [unusualFilters]);
-
-  const applyPreset = useCallback((id: PresetId) => {
-    const p = PRESETS[id];
-    setUnusualFilters(p.filters);
-    setPresetMode("preset");
-    setActivePreset(id);
-    setBasePreset(id);
-    toast({ description: p.toastLine });
-  }, [toast]);
-
-  const setFilter = useCallback(<K extends keyof UnusualFlowFilters>(key: K, value: UnusualFlowFilters[K]) => {
-    setUnusualFilters(prev => {
-      const next = { ...prev, [key]: value };
-      const matched = detectPreset(next);
-      if (matched) {
-        setPresetMode("preset");
-        setActivePreset(matched);
-        setBasePreset(matched);
-      } else {
-        setPresetMode(prevMode => {
-          if (prevMode === "preset") setBasePreset(activePreset ?? closestPreset(next));
-          return "custom";
-        });
-        setActivePreset(null);
-      }
-      return next;
-    });
-  }, [activePreset]);
-
-  const accentColor = useMemo(() => {
-    if (presetMode === "preset" && activePreset) return PRESETS[activePreset].accent;
-    if (basePreset) return PRESETS[basePreset].accent;
-    return "#66e0ff";
-  }, [presetMode, activePreset, basePreset]);
-  const [filtersOpen, setFiltersOpen] = useState(false);
-
-  // Part 5: removed legacy on-demand "Unusual Flow Scan (LIVE)" state +
-  // poll loop. Live unusual-flow signal is now folded into the LIVE_FLOW
-  // bucket on every Discovery scan.
+  const [universe, setUniverse] = useState("preset:liquidCore130");
+  const [resolvedSymbols, setResolvedSymbols] = useState<string[]>([]);
+  const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
 
   const [showScreenBuilder, setShowScreenBuilder] = useState(false);
   const [editingScreen, setEditingScreen] = useState<number | null>(null);
@@ -918,20 +328,6 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
 
   const REMOVED_PRESETS = new Set(["preset:sp500", "preset:sp100", "preset:ndx100"]);
 
-  const scanCacheRestoredRef = useRef(false);
-  useEffect(() => {
-    if (scanCacheRestoredRef.current || !scanCache) return;
-    scanCacheRestoredRef.current = true;
-    const r = scanCache.results as ScannerPersistedResults;
-    if (r?.scanCount != null) setScanCount(r.scanCount);
-    if (r?.detResult) setDetResult(r.detResult as DetScanResult);
-    if (r?.unusualResult) setUnusualResult(r.unusualResult as UnusualFlowScanResult);
-    if (r?.universe && !REMOVED_PRESETS.has(r.universe)) setUniverse(r.universe);
-  }, [scanCache]);
-
-  // Legacy Manual scanner filter state removed when Manual tab was replaced
-  // by Unusual Options Activity scanner. Filters now live in u* state above.
-
   useEffect(() => {
     let cancelled = false;
     universeData.getSymbols(universe).then(syms => {
@@ -940,94 +336,12 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
     return () => { cancelled = true; };
   }, [universe, universeData.getSymbols, universeData.watchlists]);
 
-  const handleUnusualFlowScan = async () => {
-    const syms = resolvedSymbols.length > 0 ? resolvedSymbols : await universeData.getSymbols(universe);
-    if (!syms.length) { setUnusualError("No symbols to scan. Select a market universe or a watchlist with symbols."); return; }
+  const currentSymCount = resolvedSymbols.length;
 
-    setIsScanning(true);
-    setUnusualError(null);
-    setRawError(null);
-    setScanCount(syms.length);
-
-    try {
-      const res = await fetchWithAuth(`${API_BASE}/ai/unusual-flow-scan`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          symbols: syms,
-          filters: unusualFilters,
-          mode: presetMode,
-          activePreset,
-          basePreset: presetMode === "custom" ? basePreset : null,
-        }),
-      });
-      const data = await res.json() as UnusualFlowScanResult & { error?: string };
-      if (data.error) {
-        setUnusualError(data.error);
-      } else {
-        setUnusualResult(data);
-        if (data.candidates?.length && subscribeEquitySymbols) {
-          subscribeEquitySymbols(data.candidates.map(c => c.symbol));
-        }
-        setScanCache({
-          results: { scanCount: syms.length, unusualResult: data, universe },
-          timestamp: Date.now(),
-        });
-      }
-    } catch (err) {
-      setUnusualError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setIsScanning(false);
-    }
-  };
-
-  const handleDeterministicScan = async () => {
-    const syms = resolvedSymbols.length > 0 ? resolvedSymbols : await universeData.getSymbols(universe);
-    if (!syms.length) { setDetError("No symbols to scan. Select a market universe or a watchlist with symbols."); return; }
-
-    setIsScanning(true);
-    setDetError(null);
-    setScanCount(syms.length);
-
-    try {
-      const res = await fetchWithAuth(`${API_BASE}/ai/deterministic-scan`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbols: syms, accessToken: accessToken || "", scanMode }),
-      });
-
-      const data = await res.json() as DetScanResult & { error?: string; message?: string };
-
-      if (data.error === "shock_active") {
-        setDetError(data.message ?? "Scanning paused — regime shock active");
-      } else if (data.error) {
-        setDetError(data.error);
-      } else {
-        if (data.scanTimestamp && data.candidates) {
-          for (const c of data.candidates) {
-            c.scanTimestamp = data.scanTimestamp;
-          }
-        }
-        setDetResult(data);
-        if (data.candidates?.length && subscribeEquitySymbols) {
-          subscribeEquitySymbols(data.candidates.map(c => c.symbol));
-        }
-        setScanCache({
-          results: { scanCount: syms.length, detResult: data, universe },
-          timestamp: Date.now(),
-        });
-      }
-    } catch (err) {
-      setDetError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setIsScanning(false);
-    }
-  };
-
-  // Part 5: handleUnusualFlowScan() removed. The on-demand "Unusual Flow
-  // Scan (LIVE)" button is gone — live unusual-flow signal is now folded
-  // into the LIVE_FLOW scoring bucket on every Discovery scan via
-  // computeLiveFlowBucket() in optionsBaselines.ts.
+  const universeLabel = useMemo(
+    () => getUniverseDisplayLabel(universe, universeData.presets, universeData.watchlists, universeData.screens),
+    [universe, universeData.presets, universeData.watchlists, universeData.screens],
+  );
 
   const handleRefreshScreen = async (id: number) => {
     setRefreshingScreenId(id);
@@ -1039,204 +353,45 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
     setRefreshingScreenId(null);
   };
 
-  const hasResults = mode === "unusual" ? (unusualResult?.candidates?.length ?? 0) > 0 : (detResult?.candidates?.length ?? 0) > 0;
-  const currentSymCount = resolvedSymbols.length;
+  const handleScanClick = async () => {
+    if (REMOVED_PRESETS.has(universe)) {
+      setUniverse("preset:liquidCore130");
+      return;
+    }
+    setExpandedTicker(null);
+    await unified.startScan(universe);
+  };
+
+  const result = unified.result;
+  const completeResult = unified.phase === "complete" && result?.status === "complete" ? result : null;
+
+  useEffect(() => {
+    const list = completeResult?.candidates?.map(c => c.ticker) ?? [];
+    if (list.length && subscribeEquitySymbols) subscribeEquitySymbols(list);
+  }, [completeResult, subscribeEquitySymbols]);
 
   const editScreenObj = editingScreen != null ? universeData.screens.find(s => s.id === editingScreen) ?? null : null;
 
-  const renderUnusualFilters = () => {
-    const f = unusualFilters;
-    const ac = accentColor;
-    const sectionHeader = (title: string, caption: string) => (
-      <div className="space-y-0.5">
-        <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "#e5e7eb" }}>{title}</div>
-        <div className="text-[10px]" style={{ color: "#6B7280" }}>{caption}</div>
-      </div>
-    );
-    const sliderRow = (label: string, value: number | string, child: React.ReactNode) => (
-      <div className="space-y-2">
-        <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
-          <span>{label}</span>
-          <span style={{ color: ac }}>{value}</span>
-        </div>
-        {child}
-      </div>
-    );
-    const segBtn = <T,>(curr: T, val: T, label: string, onClick: () => void, accent = ac) => (
-      <button
-        key={String(val)}
-        onClick={onClick}
-        className="text-[10px] py-1.5 rounded font-bold uppercase tracking-wider transition-all"
-        style={{
-          background: curr === val ? "#18181b" : "transparent",
-          color: curr === val ? accent : "#6B7280",
-          border: `1px solid ${curr === val ? `${accent}66` : "#2a2a2a"}`,
-        }}
-      >
-        {label}
-      </button>
-    );
-    const showStrikeConc = activePreset === "whale" || presetMode === "custom";
+  const failedEngines = useMemo(() => {
+    if (!completeResult) return [] as string[];
+    const out: string[] = [];
+    if (completeResult.engineStatus.discovery.status !== "ok") out.push("Discovery");
+    if (completeResult.engineStatus.momentum.status !== "ok") out.push("Momentum");
+    if (completeResult.engineStatus.unusual_flow.status !== "ok") out.push("Unusual Flow");
+    return out;
+  }, [completeResult]);
 
-    return (
-      <div className="p-4 space-y-5">
-        {/* Preset selector */}
-        <div className="space-y-2">
-          <div className="grid grid-cols-4 gap-1.5">
-            {PRESET_ORDER.map(id => {
-              const p = PRESETS[id];
-              const active = presetMode === "preset" && activePreset === id;
-              return (
-                <button
-                  key={id}
-                  onClick={() => applyPreset(id)}
-                  className="py-2 px-2 rounded font-bold uppercase tracking-wider transition-all text-[11px]"
-                  style={{
-                    background: active ? p.accent : "transparent",
-                    color: active ? "#0b0b0c" : p.accent,
-                    border: `1px solid ${active ? p.accent : `${p.accent}55`}`,
-                  }}
-                >{p.label}</button>
-              );
-            })}
-            <button
-              onClick={() => { setPresetMode("custom"); setActivePreset(null); if (!basePreset) setBasePreset(closestPreset(unusualFilters)); }}
-              className="py-2 px-2 rounded font-bold uppercase tracking-wider transition-all text-[11px]"
-              style={{
-                background: presetMode === "custom" ? "#e5e7eb" : "transparent",
-                color: presetMode === "custom" ? "#0b0b0c" : "#9ca3af",
-                border: `1px solid ${presetMode === "custom" ? "#e5e7eb" : "#2a2a2a"}`,
-              }}
-            >Custom</button>
-          </div>
-          <div className="grid grid-cols-4 gap-1.5">
-            {PRESET_ORDER.map(id => (
-              <div key={id} className="text-[9px] leading-tight" style={{ color: "#6B7280" }}>{PRESETS[id].subtitle}</div>
-            ))}
-            <div />
-          </div>
-          {presetMode === "custom" && basePreset && (
-            <div className="text-[10px] inline-flex items-center gap-1 px-2 py-1 rounded" style={{ background: "#1a1a1a", color: "#9ca3af", border: "1px solid #2a2a2a" }}>
-              Custom (based on {PRESETS[basePreset].label} preset)
-            </div>
-          )}
-        </div>
+  const allEnginesFailed =
+    completeResult &&
+    completeResult.engineStatus.discovery.status !== "ok" &&
+    completeResult.engineStatus.momentum.status !== "ok" &&
+    completeResult.engineStatus.unusual_flow.status !== "ok";
 
-        {/* SECTION: Size & Liquidity */}
-        <div className="space-y-3 pt-2 border-t border-card-border">
-          {sectionHeader("Size & Liquidity", "Filter out retail-sized contracts.")}
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase tracking-wider" style={{ color: "#9ca3af" }}>Exclude Indexes/ETFs</span>
-            <button
-              onClick={() => setFilter("excludeEtfs", !f.excludeEtfs)}
-              className="text-[10px] py-1 px-2 rounded font-bold uppercase tracking-wider transition-all"
-              style={{
-                background: f.excludeEtfs ? "#18181b" : "transparent",
-                color: f.excludeEtfs ? ac : "#6B7280",
-                border: `1px solid ${f.excludeEtfs ? `${ac}66` : "#2a2a2a"}`,
-              }}
-            >{f.excludeEtfs ? "On" : "Off"}</button>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {sliderRow("Min Strike Volume", `${f.minStrikeVolume.toLocaleString()}+`,
-              <Slider value={[f.minStrikeVolume]} onValueChange={v => setFilter("minStrikeVolume", v[0])} min={100} max={2000} step={100} />)}
-            {sliderRow("Min Notional / Strike", `${fmtMoney(f.minNotionalPerStrike)}+`,
-              <Slider value={[f.minNotionalPerStrike]} onValueChange={v => setFilter("minNotionalPerStrike", v[0])} min={50_000} max={5_000_000} step={50_000} />)}
-            {sliderRow("Min Relative Options ADV", f.minRelativeOptionsAdv === 0 ? "Off" : `${f.minRelativeOptionsAdv}×+`,
-              <>
-                <Slider value={[f.minRelativeOptionsAdv]} onValueChange={v => setFilter("minRelativeOptionsAdv", v[0])} min={0} max={10} step={0.5} />
-                <div className="text-[9px]" style={{ color: "#6B7280" }}>Filters for prints large vs this contract's normal volume.</div>
-              </>)}
-            {sliderRow("Min Underlying Vol vs ADV", f.minUnderlyingVolVsAdv === 0 ? "Off" : `${f.minUnderlyingVolVsAdv}×+`,
-              <>
-                <Slider value={[f.minUnderlyingVolVsAdv]} onValueChange={v => setFilter("minUnderlyingVolVsAdv", v[0])} min={0} max={5} step={0.1} />
-                <div className="text-[9px]" style={{ color: "#6B7280" }}>Requires today's stock volume to be elevated vs its 20-day average.</div>
-              </>)}
-          </div>
-        </div>
-
-        {/* SECTION: Unusualness & Horizon */}
-        <div className="space-y-3 pt-2 border-t border-card-border">
-          {sectionHeader("Unusualness & Horizon", "Focus on true outlier bets in time and size.")}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {sliderRow("Min VOI Ratio", `${f.minVoiRatio}×+`,
-              <Slider value={[f.minVoiRatio]} onValueChange={v => setFilter("minVoiRatio", v[0])} min={1} max={10} step={0.5} />)}
-            {sliderRow("Min Unusual Strikes", `${f.minUnusualStrikes}+`,
-              <Slider value={[f.minUnusualStrikes]} onValueChange={v => setFilter("minUnusualStrikes", v[0])} min={1} max={10} step={1} />)}
-            {sliderRow("Min DTE (excl. 0DTE)", f.minDteExcl0 === 0 ? "All" : `${f.minDteExcl0}+ days`,
-              <Slider value={[f.minDteExcl0]} onValueChange={v => setFilter("minDteExcl0", v[0])} min={0} max={45} step={1} />)}
-            {sliderRow("Max DTE", f.maxDte >= 365 ? "No cap" : `≤ ${f.maxDte} days`,
-              <Slider value={[Math.min(f.maxDte, 365)]} onValueChange={v => setFilter("maxDte", v[0] >= 365 ? 365 : v[0])} min={1} max={365} step={1} />)}
-            {sliderRow("Min Expiry Concentration", f.minExpiryConcentrationPct === 0 ? "Off" : `${f.minExpiryConcentrationPct}%`,
-              <Slider value={[f.minExpiryConcentrationPct]} onValueChange={v => setFilter("minExpiryConcentrationPct", v[0])} min={0} max={100} step={5} />)}
-            {showStrikeConc && sliderRow("Min Strike Concentration", f.minStrikeConcentrationPct === 0 ? "Off" : `${f.minStrikeConcentrationPct}%`,
-              <Slider value={[f.minStrikeConcentrationPct]} onValueChange={v => setFilter("minStrikeConcentrationPct", v[0])} min={0} max={100} step={5} />)}
-          </div>
-        </div>
-
-        {/* SECTION: Direction & Pattern */}
-        <div className="space-y-3 pt-2 border-t border-card-border">
-          {sectionHeader("Direction & Pattern", "Dial in buyer vs seller and sweep/block behavior.")}
-
-          <div className="space-y-1.5">
-            <div className="text-[11px] uppercase tracking-wider" style={{ color: "#9ca3af" }}>Skew</div>
-            <div className="grid grid-cols-4 gap-1">
-              {(["any", "bull", "bear", "balanced"] as const).map(s => segBtn(f.skew, s, s === "any" ? "Any" : s === "bull" ? "Bull" : s === "bear" ? "Bear" : "≠ Bal", () => setFilter("skew", s)))}
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <div className="text-[11px] uppercase tracking-wider" style={{ color: "#9ca3af" }}>Aggressor Side</div>
-            <div className="grid grid-cols-3 gap-1">
-              {(["any", "buyer", "seller"] as const).map(a => segBtn(f.aggressor, a, a === "any" ? "Any" : a === "buyer" ? "Buyer" : "Seller", () => setFilter("aggressor", a)))}
-            </div>
-            <label className="flex items-center gap-2 text-[10px] pt-1" style={{ color: "#9ca3af" }}>
-              <input type="checkbox" checked={f.excludeMid} onChange={e => setFilter("excludeMid", e.target.checked)} style={{ accentColor: ac }} />
-              Exclude mid-market prints
-            </label>
-          </div>
-
-          <div className="space-y-1.5">
-            <div className="text-[11px] uppercase tracking-wider" style={{ color: "#9ca3af" }}>Execution Pattern</div>
-            <div className="grid grid-cols-3 gap-1">
-              {([
-                ["sweep", "patternSweep", f.patternSweep, "#FFB800"],
-                ["block", "patternBlock", f.patternBlock, "#66e0ff"],
-                ["regular", "patternRegular", f.patternRegular, "#6B7280"],
-              ] as const).map(([label, key, val, color]) => (
-                <button
-                  key={label}
-                  onClick={() => setFilter(key, !val)}
-                  className="text-[10px] py-1.5 rounded font-bold uppercase tracking-wider transition-all"
-                  style={{
-                    background: val ? "#18181b" : "transparent",
-                    color: val ? color : "#3f3f46",
-                    border: `1px solid ${val ? `${color}66` : "#2a2a2a"}`,
-                  }}
-                >{label}</button>
-              ))}
-            </div>
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <div>
-                <div className="flex justify-between text-[10px] text-muted-foreground uppercase mb-1">
-                  <span>Min Sweeps</span>
-                  <span style={{ color: "#FFB800" }}>{f.minSweeps}+</span>
-                </div>
-                <Slider value={[f.minSweeps]} onValueChange={v => setFilter("minSweeps", v[0])} min={0} max={20} step={1} />
-              </div>
-              <div>
-                <div className="flex justify-between text-[10px] text-muted-foreground uppercase mb-1">
-                  <span>Min Blocks</span>
-                  <span style={{ color: "#66e0ff" }}>{f.minBlocks}+</span>
-                </div>
-                <Slider value={[f.minBlocks]} onValueChange={v => setFilter("minBlocks", v[0])} min={0} max={20} step={1} />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
+  const partialEngineWarning =
+    completeResult &&
+    completeResult.candidates.length > 0 &&
+    failedEngines.length > 0 &&
+    failedEngines.length < 3;
 
   return (
     <div className="flex flex-col gap-4 max-w-4xl mx-auto pb-6">
@@ -1251,45 +406,8 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
           </div>
         </div>
       )}
-      <div className="bg-card border border-card-border rounded-xl overflow-hidden">
-        {/* Part 5: Single 3-way segmented control replaces the previous
-            Deterministic/Manual + Discovery/Momentum two-level toggle. */}
-        <div className="flex border-b border-card-border">
-          {([
-            { view: "DISCOVERY" as const, label: "DISCOVERY", icon: Crosshair, accent: "#FFB800", beta: false },
-            { view: "MOMENTUM" as const, label: "MOMENTUM", icon: BarChart3, accent: "#42a5f5", beta: false },
-            { view: "UNUSUAL" as const, label: "UNUSUAL FLOW", icon: Zap, accent: "#66e0ff", beta: false },
-          ]).map(({ view: v, label, icon: Icon, accent, beta }) => {
-            const active =
-              (v === "UNUSUAL" && mode === "unusual") ||
-              (v === "DISCOVERY" && mode === "deterministic" && scanMode === "DISCOVERY") ||
-              (v === "MOMENTUM" && mode === "deterministic" && scanMode === "MOMENTUM");
-            return (
-              <button
-                key={v}
-                onClick={() => {
-                  if (v === "UNUSUAL") setMode("unusual");
-                  else { setMode("deterministic"); setScanMode(v); }
-                }}
-                className={`flex-1 py-3 text-sm font-bold uppercase tracking-widest transition-all border-b-2 ${
-                  active
-                    ? "bg-[#18181B] text-white"
-                    : "bg-transparent text-muted-foreground border-b-transparent hover:text-foreground hover:bg-secondary/20"
-                }`}
-                style={active ? { borderBottomColor: accent, color: accent } : undefined}
-              >
-                <span className="flex items-center justify-center gap-2">
-                  <Icon className="w-3.5 h-3.5" />
-                  {label}
-                  {beta && (
-                    <span className="text-[8px] px-1 py-0.5 rounded font-bold" style={{ background: "rgba(255,184,0,0.15)", color: "#FFB800", border: "1px solid rgba(255,184,0,0.3)" }}>BETA</span>
-                  )}
-                </span>
-              </button>
-            );
-          })}
-        </div>
 
+      <div className="bg-card border border-card-border rounded-xl overflow-hidden">
         <div className="p-4 bg-[#0c0c0c] space-y-4">
           <div className="flex items-end gap-2">
             <div className="space-y-1.5 flex-1 min-w-0">
@@ -1318,152 +436,26 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
                 }}
               />
             </div>
-            {mode === "unusual" && (
-              <Drawer open={filtersOpen} onOpenChange={setFiltersOpen}>
-                <DrawerTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label="Open filters"
-                    className="shrink-0 inline-flex items-center justify-center rounded-md transition-all active:scale-95"
-                    style={{
-                      width: 38,
-                      height: 38,
-                      background: "#18181b",
-                      border: "1px solid #2a2a2a",
-                      color: "#FFB800",
-                    }}
-                  >
-                    <Settings2 className="w-4 h-4" />
-                  </button>
-                </DrawerTrigger>
-                <DrawerContent className="bg-[#0c0c0c] border-card-border">
-                  <DrawerHeader className="px-4 pt-4 pb-2 flex-row items-center justify-between">
-                    <DrawerTitle className="text-sm font-bold uppercase tracking-wider text-zinc-200 flex items-center gap-2">
-                      <Settings2 className="w-4 h-4" style={{ color: "#FFB800" }} />
-                      Unusual Flow Filters
-                    </DrawerTitle>
-                    <DrawerClose asChild>
-                      <button
-                        type="button"
-                        className="text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded"
-                        style={{ background: "#18181b", color: "#66e0ff", border: "1px solid rgba(102,224,255,0.4)" }}
-                      >
-                        Done
-                      </button>
-                    </DrawerClose>
-                  </DrawerHeader>
-                  <div className="px-1 pb-6 max-h-[75vh] overflow-y-auto">
-                    {renderUnusualFilters()}
-                  </div>
-                </DrawerContent>
-              </Drawer>
-            )}
           </div>
 
-          {/* Part 5: Coverage badge + scan summary + scoring info tooltip.
-              The verbose "Setup Quality + Accumulation + ..." description
-              now lives behind an info icon to reduce visual noise. */}
           <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
             {universeData.loading ? (
               <span className="text-zinc-500">Loading universes...</span>
             ) : (
-              <>
-                <span>
-                  Scanning <span className="text-primary font-bold">{currentSymCount} tickers</span>
-                </span>
-                {/* Coverage badge — LC130 has nightly flat-files backfill so
-                    flow data is "always-on"; everything else is on-demand. */}
-                {universe === "preset:liquidCore130" ? (
-                  <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
-                    style={{ color: "#26a69a", background: "rgba(38,166,154,0.1)", border: "1px solid rgba(38,166,154,0.3)" }}
-                    title="Liquid Core 130 has nightly options flat-files backfill — flow & live-flow coverage is always on.">
-                    LC130 · ALWAYS-ON
-                  </span>
-                ) : (
-                  <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
-                    style={{ color: "#9ca3af", background: "rgba(156,163,175,0.08)", border: "1px solid rgba(156,163,175,0.2)" }}
-                    title="Off-list universe — flow data fetched on-demand at scan time.">
-                    ON-DEMAND
-                  </span>
-                )}
-                {/* Part 2 — server-driven LIVE/AMBER/EOD badge for the
-                    persistent options watcher. Hidden when the watcher is
-                    disabled (server omits the field) so we don't add noise
-                    to environments that don't run the WS. */}
-                {detResult?.coverage && (() => {
-                  const cov = detResult.coverage;
-                  const styles: Record<string, { color: string; bg: string; border: string }> = {
-                    LIVE:  { color: "#2ecc71", bg: "rgba(46,204,113,0.12)",  border: "rgba(46,204,113,0.4)" },
-                    AMBER: { color: "#FFB800", bg: "rgba(255,184,0,0.12)",   border: "rgba(255,184,0,0.4)" },
-                    EOD:   { color: "#9ca3af", bg: "rgba(156,163,175,0.08)", border: "rgba(156,163,175,0.25)" },
-                  };
-                  const s = styles[cov.state] ?? styles.EOD!;
-                  const ageSec = cov.heartbeatAgeMs != null ? Math.round(cov.heartbeatAgeMs / 1000) : null;
-                  const tip =
-                    cov.state === "LIVE"
-                      ? `Watcher live · ${cov.totalSubscribed} contracts subscribed · coverage ${(cov.coverageRate * 100).toFixed(0)}%${ageSec != null ? ` · last tick ${ageSec}s ago` : ""}`
-                      : cov.state === "AMBER"
-                      ? `Watcher running, partial coverage (${(cov.coverageRate * 100).toFixed(0)}%)${ageSec != null ? `, last tick ${ageSec}s ago` : ""} — ${cov.reason}`
-                      : `Live watcher unavailable (${cov.reason}) — bars sourced from trailing flat-files only.`;
-                  return (
-                    <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
-                      style={{ color: s.color, background: s.bg, border: `1px solid ${s.border}` }}
-                      title={tip}>
-                      WS · {cov.state}
-                    </span>
-                  );
-                })()}
-                {mode === "deterministic" && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button className="inline-flex items-center text-zinc-500 hover:text-zinc-300 transition-colors" aria-label="Scoring details">
-                        <Info className="w-3.5 h-3.5" />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" className="max-w-xs text-[11px] leading-relaxed">
-                      {scanMode === "DISCOVERY"
-                        ? "Discovery scoring: Setup Quality + Accumulation + IV Setup + Flow + Live Flow + Emerging RS. Min total 55."
-                        : "Momentum scoring: Trend + RS + Volume + IVR + Options Liquidity. Top 5, min 60."}
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-              </>
+              <span>
+                Scanning <span className="text-primary font-bold">{currentSymCount} tickers</span>
+                <span className="text-zinc-600 mx-1.5">·</span>
+                <span className="text-zinc-400">{universeLabel}</span>
+              </span>
             )}
           </div>
-
-          {/* Part 5: Filter chips for discovery results — All / Unusual flow only / No flow detected. */}
-          {mode === "deterministic" && scanMode === "DISCOVERY" && (
-            <div className="flex items-center gap-1.5 mt-1">
-              {([
-                { id: "all" as const, label: "All" },
-                { id: "unusual" as const, label: "Unusual flow only" },
-                { id: "noflow" as const, label: "No flow detected" },
-              ]).map(c => {
-                const active = flowFilter === c.id;
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() => setFlowFilter(c.id)}
-                    className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full transition-all ${
-                      active ? "text-white" : "text-zinc-500 hover:text-zinc-300"
-                    }`}
-                    style={active
-                      ? { background: "rgba(102,224,255,0.15)", border: "1px solid rgba(102,224,255,0.5)", color: "#66e0ff" }
-                      : { background: "transparent", border: "1px solid #2a2a2a" }}
-                  >
-                    {c.label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
         </div>
-
 
         <div className="px-4 pb-4 pt-3 bg-[#0c0c0c] border-t border-card-border">
           <button
-            onClick={mode === "deterministic" ? handleDeterministicScan : handleUnusualFlowScan}
-            disabled={!accessToken || isScanning || currentSymCount === 0 || shockActive}
+            type="button"
+            onClick={handleScanClick}
+            disabled={!accessToken || unified.phase === "scanning" || currentSymCount === 0 || shockActive}
             className="font-bold font-mono tracking-wider mx-auto block rounded-lg disabled:opacity-30 disabled:cursor-not-allowed active:scale-95 active:brightness-110 transition-all"
             style={{
               fontSize: 13, padding: "10px",
@@ -1471,15 +463,13 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
               cursor: "pointer",
             }}
           >
-            {isScanning ? (
+            {unified.phase === "scanning" ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="w-4 h-4 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin" />
-                {mode === "deterministic" ? "SCORING CANDIDATES..." : "SCANNING FLOW..."}
+                STARTING SCAN...
               </span>
             ) : (
-              <span className="flex items-center justify-center">
-                {`SCAN ${currentSymCount} STOCKS`}
-              </span>
+              <span className="flex items-center justify-center">{`SCAN ${currentSymCount} STOCKS`}</span>
             )}
           </button>
           {!accessToken && (
@@ -1487,194 +477,134 @@ export function MarketScanner({ subscribeEquitySymbols, onNavigateToSymbol, onSe
               <ConnectBrokerPrompt label="Connect Brokerage For Market Scanner" compact />
             </div>
           )}
-
-          {/* Part 5: "Unusual Flow Scan (LIVE)" button removed.
-              Live unusual-flow signals are now folded into the LIVE_FLOW
-              scoring bucket on every Discovery scan, surfaced as bars on
-              each result row and as the per-row LIVE chip below. */}
         </div>
       </div>
 
-      {/* Part 5: Removed legacy "LIVE UNUSUAL FLOW" results panel —
-          live unusual flow is now baked into the LIVE_FLOW scoring bucket
-          and surfaced inline on each Discovery result row. */}
+      {unified.phase === "idle" && !unified.errorMessage && (
+        <div className="py-16 text-center text-sm text-muted-foreground/70 bg-card border border-card-border rounded-xl">
+          Tap Scan to find trade candidates
+        </div>
+      )}
 
-      {isScanning && !(mode === "deterministic" && detResult) && (
-        <div className="flex flex-col items-center justify-center py-16 gap-4 bg-card rounded-xl border border-card-border">
-          <div className="relative w-16 h-16">
-            <div className="absolute inset-0 border-4 border-primary/20 rounded-full" />
-            <div className="absolute inset-0 border-4 border-t-primary border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin" />
+      {unified.phase === "scanning" && (
+        <div className="flex flex-col gap-3 bg-card rounded-xl border border-card-border p-4">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <Loader2 className="w-8 h-8 text-[#FFB800] animate-spin shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-zinc-200">
+                  Scanning {currentSymCount} tickers...
+                </p>
+                <p className="text-[11px] text-zinc-500 mt-1">
+                  Engines: Discovery, Momentum, Unusual Flow
+                </p>
+                {unified.slowNotice && (
+                  <p className="text-[11px] text-amber-400/90 mt-2">This is taking longer than expected — still polling…</p>
+                )}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => unified.cancelLocal()}
+              className="text-[10px] font-bold uppercase px-3 py-1.5 rounded border border-zinc-600 text-zinc-400 hover:text-zinc-200 shrink-0"
+            >
+              Cancel
+            </button>
           </div>
-          <div className="text-center space-y-1">
-            <p className="text-sm text-primary animate-pulse font-bold">
-              SCANNING {scanCount ?? currentSymCount} TICKERS...
-            </p>
-            <p className="text-[11px] text-muted-foreground">
-              {mode === "deterministic"
-                ? scanMode === "DISCOVERY"
-                  ? "Filtering → OBV + HV + IV + Polygon flow → Discovery scoring → Ranking"
-                  : "Filtering universe → Scoring → Ranking → Enriching"
-                : "Querying per-strike flow → Applying thresholds → Scoring → Ranking"}
-            </p>
-          </div>
+          <p className="text-[11px] text-zinc-500 font-mono">
+            ~{unified.etaRemaining}s remaining (est. {unified.estimatedSeconds}s)
+          </p>
         </div>
       )}
 
-      {isScanning && mode === "deterministic" && detResult && (
-        <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-primary/20 bg-primary/5">
-          <span className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin shrink-0" />
-          <span className="text-[11px] font-mono text-primary/80 animate-pulse">
-            RESCANNING {scanCount ?? currentSymCount} TICKERS — results will update when complete
-          </span>
+      {unified.phase === "error" && unified.errorMessage && (
+        <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4 space-y-3">
+          <p className="text-xs text-destructive font-bold uppercase">Scanner</p>
+          <p className="text-[11px] text-destructive/90">{unified.errorMessage}</p>
+          {unified.errorMessage.includes("Network") && unified.scanId && (
+            <button
+              type="button"
+              onClick={() => unified.retryPoll()}
+              className="text-[11px] font-bold px-3 py-1.5 rounded bg-zinc-800 text-zinc-200 border border-zinc-600"
+            >
+              Retry
+            </button>
+          )}
         </div>
       )}
 
-      {rawError && !isScanning && (
-        <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4">
-          <p className="text-xs text-destructive font-bold mb-2">SCAN ERROR</p>
-          <p className="text-[11px] text-destructive/80">{rawError}</p>
-        </div>
-      )}
-
-      {mode === "unusual" && unusualError && !isScanning && (
-        <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4">
-          <p className="text-xs text-destructive font-bold mb-2">SCAN ERROR</p>
-          <p className="text-[11px] text-destructive/80">{unusualError}</p>
-        </div>
-      )}
-
-      {mode === "unusual" && !isScanning && unusualResult && unusualResult.candidates.length > 0 && (
+      {completeResult && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between px-1">
-            <div className="flex items-center gap-3">
-              <Zap className="w-4 h-4" style={{ color: "#66e0ff" }} />
-              <span className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider">
-                {unusualResult.scannedSymbols} scanned
-                <span className="text-zinc-600 mx-1">|</span>
-                {unusualResult.symbolsWithFlow} with flow data
-                <span className="text-zinc-600 mx-1">|</span>
-                <span style={{ color: "#66e0ff" }}>{unusualResult.candidates.length} matched filters</span>
-              </span>
+          {partialEngineWarning && (
+            <div className="px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 text-[11px] text-amber-200">
+              Note: {failedEngines.join(", ")} failed for this scan. Results may be incomplete.
             </div>
-            {unusualResult.asOfDate && (
-              <span className="text-[10px] text-zinc-600 tabular-nums">as of {unusualResult.asOfDate}</span>
-            )}
-          </div>
-          <div className="space-y-2">
-            {unusualResult.candidates.map((c, i) => (
-              <UnusualFlowCard
-                key={c.symbol}
-                candidate={c}
-                rank={i + 1}
-                onSelect={onNavigateToSymbol ?? setSymbol}
-                onSendToStrategist={onSendToStrategist}
-              />
-            ))}
-          </div>
-        </div>
-      )}
+          )}
 
-      {mode === "unusual" && !isScanning && unusualResult && unusualResult.candidates.length === 0 && !unusualError && (
-        <div className="py-16 text-center text-xs text-muted-foreground/40 bg-card border border-card-border rounded-xl">
-          {unusualResult.filters?.source === "live" && (unusualResult.diagnostics?.liveExecutionRows ?? 0) === 0
-            ? "No live Polygon option prints have been rolled up for these symbols yet. Baseline rows exist, but the live tape has not produced matching execution-backed strikes."
-            : "No symbols matched your unusual flow thresholds. Try lowering Min Strikes or Min VOI Ratio."}
-        </div>
-      )}
-
-      {mode === "unusual" && !isScanning && !unusualResult && !unusualError && (
-        <div className="py-6 text-center text-[11px] text-muted-foreground/60">
-          Tune the thresholds and run a scan to find names with unusual options activity.
-        </div>
-      )}
-
-      {mode === "deterministic" && detError && !isScanning && (
-        <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4">
-          <p className="text-xs text-destructive font-bold mb-2">SCAN ERROR</p>
-          <p className="text-[11px] text-destructive/80">{detError}</p>
-        </div>
-      )}
-
-      {mode === "deterministic" && !isScanning && detResult && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between px-1">
-            <div className="flex items-center gap-3">
-              <BarChart3 className="w-4 h-4 text-zinc-500" />
-              <span className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider">
-                {detResult.filterSummary.totalScanned} scanned
-                <span className="text-zinc-600 mx-1">|</span>
-                {detResult.filterSummary.passedFilters} passed filters
-                <span className="text-zinc-600 mx-1">|</span>
-                <span style={{ color: "#FFB800" }}>{detResult.filterSummary.scoredAboveThreshold} above threshold</span>
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              {detResult.scanMode === "DISCOVERY" || !detResult.scanMode ? (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ color: "#FFB800", background: "rgba(255,184,0,0.1)", border: "1px solid rgba(255,184,0,0.3)" }}>
-                  DISCOVERY
-                </span>
-              ) : (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ color: "#6B7280", background: "#18181b", border: "1px solid #2a2a2a" }}>
-                  MOMENTUM
-                </span>
-              )}
-              <span className="text-[10px] text-zinc-600 tabular-nums">
-                {new Date(detResult.scanTimestamp).toLocaleTimeString()}
-              </span>
-            </div>
-          </div>
-
-          {(() => {
-            // Part 5: apply flow-filter chips. Discovery mode only; Momentum
-            // shows everything since the live-flow signal is Discovery-only.
-            // Gate by the actual result payload mode — NOT current UI
-            // scanMode — so a stale Momentum result doesn't get filtered if
-            // the user toggles the segmented control before rescanning.
-            const resultIsDiscovery = detResult.candidates[0]?.scanMode === "DISCOVERY";
-            const filtered = resultIsDiscovery
-              ? detResult.candidates.filter(c => {
-                  const live = c.discoveryComponents?.liveFlowAvailable === true;
-                  if (flowFilter === "unusual") return live;
-                  if (flowFilter === "noflow") return !live;
-                  return true;
-                })
-              : detResult.candidates;
-            return filtered.length > 0 ? (
-              <div className="space-y-2">
-                {filtered.map((c, i) => (
-                  <DeterministicCard
-                    key={c.symbol}
-                    candidate={c}
-                    rank={i + 1}
-                    onSelect={onNavigateToSymbol ?? setSymbol}
-                    onSendToStrategist={onSendToStrategist}
-                    discoveryWeightMode={
-                      detResult.scanMode === "DISCOVERY" || !detResult.scanMode
-                        ? (detResult.weightMode === "DEFAULT" || detResult.weightMode === "IDIOSYNCRATIC"
-                            ? detResult.weightMode
-                            : null)
-                        : null
+          {allEnginesFailed && completeResult.candidates.length === 0 && (
+            <div className="px-4 py-4 rounded-xl border border-red-500/30 bg-red-500/5 text-center space-y-2">
+              <p className="text-sm font-bold text-red-300">All scanner engines failed.</p>
+              <div className="flex justify-center gap-2">
+                <button type="button" onClick={handleScanClick} className="text-[11px] font-bold px-3 py-1.5 rounded bg-[#FFB800] text-black">
+                  Retry
+                </button>
+                <button
+                  type="button"
+                  className="text-[11px] font-bold px-3 py-1.5 rounded border border-zinc-600 text-zinc-300"
+                  onClick={async () => {
+                    const text = `Unified scanner: all engines failed. Universe: ${universe}. Time: ${new Date().toISOString()}`;
+                    try {
+                      await navigator.clipboard.writeText(text);
+                      toast({ description: "Details copied — paste into your support channel." });
+                    } catch {
+                      toast({ description: text });
                     }
-                  />
-                ))}
+                  }}
+                >
+                  Report issue
+                </button>
               </div>
-            ) : (
-              // Part 5: subtle text-line empty state (replaces the
-              // "Cash Is a Position" panel). Disambiguates "no scan results"
-              // vs "filter hid everything".
-              <div className="py-6 text-center text-[11px] text-muted-foreground/60">
-                {detResult.candidates.length === 0
-                  ? "No candidates scored above threshold."
-                  : `No candidates match the "${flowFilter === "unusual" ? "Unusual flow only" : "No flow detected"}" filter.`}
-              </div>
-            );
-          })()}
-        </div>
-      )}
+            </div>
+          )}
 
-      {mode === "deterministic" && !isScanning && !detResult && !detError && (
-        <div className="py-6 text-center text-[11px] text-muted-foreground/60">
-          Select a universe and run a scan to find trade candidates.
+          <div className="flex flex-wrap items-center gap-2 px-1">
+            <span className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider">
+              {completeResult.candidates.length} CANDIDATES · {universeLabel} · {formatScanTime(completeResult.completedAt ?? completeResult.startedAt)}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1.5 px-1">
+            {enginePill("Discovery", completeResult.engineStatus.discovery)}
+            {enginePill("Momentum", completeResult.engineStatus.momentum)}
+            {enginePill("Unusual Flow", completeResult.engineStatus.unusual_flow)}
+          </div>
+
+          {completeResult.candidates.length === 0 && !allEnginesFailed ? (
+            <div className="py-10 text-center text-[12px] text-zinc-500 bg-card border border-card-border rounded-xl px-4">
+              No candidates found. Try a different universe or wait for the next market session.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {completeResult.candidates.map((c, i) => (
+                <UnifiedScannerCard
+                  key={c.ticker}
+                  candidate={c}
+                  rank={i + 1}
+                  universeId={universe}
+                  universeLabel={universeLabel}
+                  expanded={expandedTicker === c.ticker}
+                  onToggle={() => setExpandedTicker(expandedTicker === c.ticker ? null : c.ticker)}
+                  onSendToStrategist={
+                    onSendToStrategist
+                      ? (sym) => {
+                          onNavigateToSymbol?.(sym);
+                          onSendToStrategist(sym);
+                        }
+                      : undefined
+                  }
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
