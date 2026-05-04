@@ -330,6 +330,19 @@ function computeHV20(closes: number[]): number | null {
   return Math.sqrt(variance) * Math.sqrt(252) * 100;
 }
 
+/** 30-day close-to-close HV (annualized %), same methodology as HV20 but 31 closes → 30 returns. */
+export function computeHV30(closes: number[]): number | null {
+  if (closes.length < 31) return null;
+  const recent = closes.slice(-31);
+  const returns: number[] = [];
+  for (let i = 1; i < recent.length; i++) {
+    returns.push(Math.log(recent[i] / recent[i - 1]));
+  }
+  const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+  const variance = returns.reduce((a, r) => a + (r - mean) ** 2, 0) / (returns.length - 1);
+  return Math.sqrt(variance) * Math.sqrt(252) * 100;
+}
+
 function computeOBV(candles: Candle[]): number {
   let obv = 0;
   for (let i = 1; i < candles.length; i++) {
@@ -444,6 +457,7 @@ export async function collectEquitySnapshots(
         const atr5 = computeATR(candles, 5);
         const atr20 = computeATR(candles, 20);
         const hv20d = computeHV20(closes);
+        const hv30d = computeHV30(closes);
         const obv = computeOBV(candles);
 
         const vol5 = volumes.length >= 5 ? medianOf(volumes.slice(-5)) : null;
@@ -468,6 +482,7 @@ export async function collectEquitySnapshots(
             ivr: null,
             iv30d: null,
             hv20d: hv20d ?? null,
+            hv30d: hv30d ?? null,
             putCallRatio: null,
             sma20,
             atr5,
@@ -489,6 +504,7 @@ export async function collectEquitySnapshots(
               volume: sql`excluded.volume`,
               marketCap: sql`excluded.market_cap`,
               hv20d: sql`excluded.hv_20d`,
+              hv30d: sql`excluded.hv_30d`,
               sma20: sql`excluded.sma_20`,
               atr5: sql`excluded.atr_5`,
               atr20: sql`excluded.atr_20`,
@@ -931,6 +947,22 @@ export async function collectOptionsChainSnapshots(
             .set(updates)
             .where(and(eq(equityDailyTable.symbol, symUpper), eq(equityDailyTable.date, date)));
         }
+
+        // IVR from chain path: rank today's IV30 vs history. When selectIv30d returns null
+        // (quality filters) but equity_daily already has iv_30d (e.g. flow from prior run),
+        // still compute so IVR is not left null until flow pass.
+        const priorIvRow = await db
+          .select({ iv: equityDailyTable.iv30d })
+          .from(equityDailyTable)
+          .where(and(eq(equityDailyTable.symbol, symUpper), eq(equityDailyTable.date, date)))
+          .limit(1);
+        const ivForIvr = iv30d ?? normalizeIV(priorIvRow[0]?.iv ?? null) ?? null;
+        const ivrChain = await computeIVRForSymbol(sym, date, ivForIvr ?? undefined);
+        if (ivrChain != null) {
+          await db.update(equityDailyTable)
+            .set({ ivr: ivrChain })
+            .where(and(eq(equityDailyTable.symbol, symUpper), eq(equityDailyTable.date, date)));
+        }
       }
 
       if (polygonKey && spot > 0) {
@@ -1349,9 +1381,9 @@ export async function computeIVFromFlow(
           .where(and(eq(equityDailyTable.symbol, sym.toUpperCase()), eq(equityDailyTable.date, date)));
       }
 
-      // IVR — read whatever iv30d ended up in equity_daily (chain or flow), then percentile
-      // against history with clamping to [0,100].
-      const ivr = await computeIVRForSymbol(sym, date, iv30d);
+      // IVR — use flow IV when present; else keep chain/equity IV for percentile vs history.
+      const ivForIvr = iv30d ?? normalizeIV(equityRow[0].iv30d ?? null) ?? null;
+      const ivr = await computeIVRForSymbol(sym, date, ivForIvr ?? undefined);
       if (ivr != null) {
         await db.update(equityDailyTable)
           .set({ ivr })
@@ -1559,6 +1591,7 @@ export async function backfillEquityHistory(
         const atr5 = computeATR(candlesUpTo, 5);
         const atr20 = computeATR(candlesUpTo, 20);
         const hv20d = computeHV20(closesUpTo);
+        const hv30d = computeHV30(closesUpTo);
         const obv = computeOBV(candlesUpTo);
 
         const vol5 = volumesUpTo.length >= 5 ? medianOf(volumesUpTo.slice(-5)) : null;
@@ -1592,6 +1625,7 @@ export async function backfillEquityHistory(
           ivr: null,
           iv30d: null,
           hv20d: hv20d ?? null,
+          hv30d: hv30d ?? null,
           putCallRatio: null,
           sma20,
           atr5,
@@ -1620,6 +1654,7 @@ export async function backfillEquityHistory(
                 close: sql`excluded.close`,
                 volume: sql`excluded.volume`,
                 hv20d: sql`excluded.hv_20d`,
+                hv30d: sql`excluded.hv_30d`,
                 sma20: sql`excluded.sma_20`,
                 atr5: sql`excluded.atr_5`,
                 atr20: sql`excluded.atr_20`,
@@ -1916,6 +1951,7 @@ export async function backfillEquityFromPolygon(
         const atr5 = computeATR(candlesUpTo, 5);
         const atr20 = computeATR(candlesUpTo, 20);
         const hv20d = computeHV20(closesUpTo);
+        const hv30d = computeHV30(closesUpTo);
         const obv = computeOBV(candlesUpTo);
         const vol5 = volumesUpTo.length >= 5 ? medianOf(volumesUpTo.slice(-5)) : null;
         const vol20 = volumesUpTo.length >= 20 ? medianOf(volumesUpTo.slice(-20)) : null;
@@ -1942,7 +1978,7 @@ export async function backfillEquityFromPolygon(
           volume: Math.round(volume),
           marketCap: null,
           haltStatus: false,
-          ivr: null, iv30d: null, hv20d: hv20d ?? null, putCallRatio: null,
+          ivr: null, iv30d: null, hv20d: hv20d ?? null, hv30d: hv30d ?? null, putCallRatio: null,
           sma20, atr5, atr20,
           medianVolume5d: vol5 ? Math.round(vol5) : null,
           medianVolume20d: vol20 ? Math.round(vol20) : null,
@@ -1962,7 +1998,7 @@ export async function backfillEquityFromPolygon(
               set: {
                 open: sql`excluded.open`, high: sql`excluded.high`, low: sql`excluded.low`,
                 close: sql`excluded.close`, volume: sql`excluded.volume`,
-                hv20d: sql`excluded.hv_20d`, sma20: sql`excluded.sma_20`,
+                hv20d: sql`excluded.hv_20d`, hv30d: sql`excluded.hv_30d`, sma20: sql`excluded.sma_20`,
                 atr5: sql`excluded.atr_5`, atr20: sql`excluded.atr_20`,
                 medianVolume5d: sql`excluded.median_volume_5d`,
                 medianVolume20d: sql`excluded.median_volume_20d`,
