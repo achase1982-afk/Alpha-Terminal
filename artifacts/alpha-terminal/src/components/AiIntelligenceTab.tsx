@@ -3625,6 +3625,7 @@ export function AiIntelligenceTab({
                         onReopenOrder={onReopenValidatedOrder}
                         generatedAt={generatedAt}
                         transcript={v2Transcript}
+                        collapseStorageKey={activeJobIdForSymbol ?? null}
                       />
                     );
                   }
