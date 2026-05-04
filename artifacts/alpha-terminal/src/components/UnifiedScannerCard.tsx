@@ -76,7 +76,7 @@ const BAR_KEYS = [
 ];
 
 export const UnifiedScannerCard = memo(function UnifiedScannerCard({
-  candidate,
+  candidate: raw,
   rank,
   universeId,
   universeLabel,
@@ -92,6 +92,34 @@ export const UnifiedScannerCard = memo(function UnifiedScannerCard({
   onToggle: () => void;
   onSendToStrategist?: (sym: string) => void;
 }) {
+  const candidate = useMemo((): UnifiedScanCandidate => {
+    const flow = raw.flowSnapshot ?? {
+      topStrike: null,
+      volumeMix: { askPct: 0, bidPct: 0, midPct: 0 },
+      tapeQuality: "not_run" as const,
+      notional24h: null,
+    };
+    const cat = raw.catalystWindow ?? { nextEarnings: null, macroEventsInPositionWindow: [] };
+    const comp = raw.components ?? { trend: 0, relativeStrength: 0, volRegime: 0, flowScore: 0, liquidity: 0 };
+    const pos = raw.positionContext ?? { hasPosition: false };
+    return {
+      ...raw,
+      sector: raw.sector ?? "Other",
+      surfacedBy: Array.isArray(raw.surfacedBy) ? raw.surfacedBy : [],
+      surfacingReasons: Array.isArray(raw.surfacingReasons) ? raw.surfacingReasons : [],
+      riskFlags: Array.isArray(raw.riskFlags) ? raw.riskFlags : [],
+      flowSnapshot: {
+        ...flow,
+        volumeMix: flow.volumeMix ?? { askPct: 0, bidPct: 0, midPct: 0 },
+      },
+      catalystWindow: {
+        nextEarnings: cat.nextEarnings ?? null,
+        macroEventsInPositionWindow: Array.isArray(cat.macroEventsInPositionWindow) ? cat.macroEventsInPositionWindow : [],
+      },
+      components: comp,
+      positionContext: pos,
+    };
+  }, [raw]);
   const { data } = useQuote(candidate.ticker);
   const liveSpot = data?.last ?? candidate.spot;
   const liveChg = data?.changePct ?? candidate.changePct;
