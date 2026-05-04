@@ -1,18 +1,39 @@
 import { getBestAccessToken } from "./tokenStore.js";
 import { nyCalendarYmd } from "./polygonMarketCalendar.js";
+import { logger } from "./logger.js";
 
 const SCHWAB_MARKETDATA = "https://api.schwabapi.com/marketdata/v1";
 const CACHE_TTL_MS = 60_000;
 
 export type EquityMarketSession = "open" | "closed" | "premarket" | "afterhours" | "unknown";
 
+export type EquitySessionResolutionSource = "schwab" | "calendar_fallback";
+
 type Cached = {
   session: EquityMarketSession;
   asOf: string;
   until: number;
+  source: EquitySessionResolutionSource;
 };
 
 let cache: Cached | null = null;
+
+/**
+ * NYSE full-day closures for calendar year 2026 (NYSE official holiday schedule).
+ * Source: https://www.nyse.com/markets/hours-calendars
+ */
+const NYSE_FULL_CLOSURES_2026 = new Set<string>([
+  "2026-01-01",
+  "2026-01-19",
+  "2026-02-16",
+  "2026-04-03",
+  "2026-05-25",
+  "2026-06-19",
+  "2026-07-03",
+  "2026-09-07",
+  "2026-11-26",
+  "2026-12-25",
+]);
 
 function equitySessionDateYmd(): string {
   return nyCalendarYmd(new Date());
@@ -117,6 +138,39 @@ async function fetchEquitySessionFromSchwab(dateYmd: string): Promise<EquityMark
   }
 }
 
+/** NYSE-style session bucket from wall clock in America/New_York (fallback when Schwab is unavailable). */
+export function equitySessionFromNyCalendarFallback(nowMs: number): EquityMarketSession {
+  const dtf = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const parts = dtf.formatToParts(new Date(nowMs));
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value;
+  const weekday = get("weekday") ?? "";
+  const year = get("year") ?? "";
+  const month = get("month") ?? "";
+  const day = get("day") ?? "";
+  const hour = parseInt(get("hour") ?? "0", 10);
+  const minute = parseInt(get("minute") ?? "0", 10);
+  const ymd = `${year}-${month}-${day}`;
+  const minutes = hour * 60 + minute;
+
+  if (weekday === "Sat" || weekday === "Sun") return "closed";
+  if (NYSE_FULL_CLOSURES_2026.has(ymd)) return "closed";
+
+  if (minutes >= 20 * 60 || minutes < 4 * 60) return "closed";
+  if (minutes >= 4 * 60 && minutes < 9 * 60 + 30) return "premarket";
+  if (minutes >= 9 * 60 + 30 && minutes < 16 * 60) return "open";
+  if (minutes >= 16 * 60 && minutes < 20 * 60) return "afterhours";
+  return "closed";
+}
+
 /**
  * Schwab equity session for the current instant (UTC compared to NY session windows
  * returned for today's calendar date in the request). Cached 60s in-process.
@@ -130,17 +184,31 @@ export async function getEquityMarketSession(): Promise<EquityMarketSession> {
 export async function getEquityMarketSessionWithAsOf(): Promise<{
   session: EquityMarketSession;
   asOf: string;
+  sessionSource: EquitySessionResolutionSource;
 }> {
   const now = Date.now();
   if (cache && now < cache.until) {
-    return { session: cache.session, asOf: cache.asOf };
+    return { session: cache.session, asOf: cache.asOf, sessionSource: cache.source };
   }
 
   const asOf = new Date(now).toISOString();
   const dateYmd = equitySessionDateYmd();
-  const session = await fetchEquitySessionFromSchwab(dateYmd);
-  cache = { session, asOf, until: now + CACHE_TTL_MS };
-  return { session, asOf };
+  const schwabSession = await fetchEquitySessionFromSchwab(dateYmd);
+  let session: EquityMarketSession;
+  let source: EquitySessionResolutionSource;
+  if (schwabSession !== "unknown") {
+    session = schwabSession;
+    source = "schwab";
+  } else {
+    session = equitySessionFromNyCalendarFallback(now);
+    source = "calendar_fallback";
+    logger.info(
+      { session, asOf, dateYmd },
+      "schwabMarketHours: using NY calendar fallback for equity session (Schwab unavailable or unparsable)",
+    );
+  }
+  cache = { session, asOf, until: now + CACHE_TTL_MS, source };
+  return { session, asOf, sessionSource: source };
 }
 
 /** @internal vitest — full markets JSON → parsed windows (array-wrapped periods). */

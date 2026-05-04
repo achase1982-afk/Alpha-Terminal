@@ -61,6 +61,12 @@ export type FetchEarningsBundle = {
   earnings_history: EarningsHistoryRow[];
   forward_estimates: ForwardEstimatesRow | null;
   data_source_gaps: string[];
+  /** Counts over the up-to-16 historical Benzinga rows joined to equity_daily. */
+  earnings_reaction_summary: {
+    quarters_total: number;
+    quarters_complete_reaction: number;
+    quarters_usable_price_reaction: number;
+  };
 };
 
 type PolygonEarningsApiRow = Record<string, unknown>;
@@ -149,7 +155,8 @@ function rowByDate(map: Map<string, EquityDailySlice>, ymd: string): EquityDaily
   return map.get(ymd) ?? null;
 }
 
-function isFullReaction(row: EarningsHistoryRow): boolean {
+/** All price + IV reaction fields present (strict). */
+export function isCompleteReaction(row: EarningsHistoryRow): boolean {
   const p = row.price_reaction;
   const v = row.iv_reaction;
   return (
@@ -161,6 +168,17 @@ function isFullReaction(row: EarningsHistoryRow): boolean {
     && v.iv_at_close_pre_earnings != null
     && v.iv_at_close_post_earnings != null
     && v.iv_crush_pct != null
+  );
+}
+
+/** Price path complete; IV crush fields may be null (older equity_daily). */
+export function isUsableReaction(row: EarningsHistoryRow): boolean {
+  const p = row.price_reaction;
+  return (
+    p.gap_open_pct != null
+    && p.close_to_close_pct != null
+    && p.five_day_return_pct != null
+    && p.post_earnings_drift_20d_pct != null
   );
 }
 
@@ -317,6 +335,11 @@ export async function fetchEarningsHistoryAndForward(ticker: string): Promise<Fe
       earnings_history: [],
       forward_estimates: null,
       data_source_gaps: gaps,
+      earnings_reaction_summary: {
+        quarters_total: 0,
+        quarters_complete_reaction: 0,
+        quarters_usable_price_reaction: 0,
+      },
     };
     cache.set(cacheKey, { ts: Date.now(), value: empty });
     return empty;
@@ -350,7 +373,16 @@ export async function fetchEarningsHistoryAndForward(ticker: string): Promise<Fe
     httpStatus = res.status;
     if (!res.ok) {
       gaps.push(`polygon_http_error_${httpStatus}`);
-      const bundle: FetchEarningsBundle = { earnings_history: [], forward_estimates: null, data_source_gaps: gaps };
+      const bundle: FetchEarningsBundle = {
+        earnings_history: [],
+        forward_estimates: null,
+        data_source_gaps: gaps,
+        earnings_reaction_summary: {
+          quarters_total: 0,
+          quarters_complete_reaction: 0,
+          quarters_usable_price_reaction: 0,
+        },
+      };
       cache.set(cacheKey, { ts: Date.now(), value: bundle });
       return bundle;
     }
@@ -368,14 +400,32 @@ export async function fetchEarningsHistoryAndForward(ticker: string): Promise<Fe
       });
     }
     gaps.push(`polygon_http_error_${httpStatus || 0}`);
-    const bundle: FetchEarningsBundle = { earnings_history: [], forward_estimates: null, data_source_gaps: gaps };
+    const bundle: FetchEarningsBundle = {
+      earnings_history: [],
+      forward_estimates: null,
+      data_source_gaps: gaps,
+      earnings_reaction_summary: {
+        quarters_total: 0,
+        quarters_complete_reaction: 0,
+        quarters_usable_price_reaction: 0,
+      },
+    };
     cache.set(cacheKey, { ts: Date.now(), value: bundle });
     return bundle;
   }
 
   if (apiRows.length === 0) {
     gaps.push("polygon_benzinga_no_data");
-    const bundle: FetchEarningsBundle = { earnings_history: [], forward_estimates: null, data_source_gaps: gaps };
+    const bundle: FetchEarningsBundle = {
+      earnings_history: [],
+      forward_estimates: null,
+      data_source_gaps: gaps,
+      earnings_reaction_summary: {
+        quarters_total: 0,
+        quarters_complete_reaction: 0,
+        quarters_usable_price_reaction: 0,
+      },
+    };
     cache.set(cacheKey, { ts: Date.now(), value: bundle });
     return bundle;
   }
@@ -402,10 +452,22 @@ export async function fetchEarningsHistoryAndForward(ticker: string): Promise<Fe
   const series = await loadEquityDailySeries(sym);
   const earnings_history = historicalTake.map((r) => buildHistoryRow(r, series));
 
-  const fullCount = earnings_history.filter(isFullReaction).length;
-  if (earnings_history.length > 0) {
-    gaps.push(`equity_daily_history_insufficient: ${fullCount} of 16 quarters have full reaction data`);
+  const quartersTotal = earnings_history.length;
+  const fullCount = earnings_history.filter(isCompleteReaction).length;
+  const usableCount = earnings_history.filter(isUsableReaction).length;
+
+  if (quartersTotal > 0 && usableCount < 8) {
+    gaps.push(`equity_daily_history_insufficient: ${usableCount} of 16 quarters have usable price reaction data`);
   }
+  if (quartersTotal > 0 && fullCount < usableCount) {
+    gaps.push(`iv_crush_history_insufficient: ${fullCount} of ${usableCount} usable quarters have full IV crush data`);
+  }
+
+  const earnings_reaction_summary = {
+    quarters_total: quartersTotal,
+    quarters_complete_reaction: fullCount,
+    quarters_usable_price_reaction: usableCount,
+  };
 
   let forward_estimates: ForwardEstimatesRow | null = null;
   if (forwardRaw.length > 0) {
@@ -444,6 +506,7 @@ export async function fetchEarningsHistoryAndForward(ticker: string): Promise<Fe
     earnings_history,
     forward_estimates,
     data_source_gaps: gaps,
+    earnings_reaction_summary,
   };
   cache.set(cacheKey, { ts: Date.now(), value: bundle });
   return bundle;
