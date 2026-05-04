@@ -72,12 +72,22 @@ export interface FlowSessionAggressorTotals {
   totalPrints: number;
   /** (ask + bid + mid) / totalPrints as 0–100; 0 when totalPrints is 0. */
   knownPct: number;
+  /** Sum of `options_flow_raw_trades.notional` for classified prints (USD premium). */
+  askNotionalUsd: number;
+  bidNotionalUsd: number;
+  midNotionalUsd: number;
+  unknownNotionalUsd: number;
 }
 
 export interface PolygonFlowTape {
   sessionDate: string;
   /** `live` = classified prints + rollup from the flow watcher; `eod_fallback` = synthesized from EOD per-strike snapshot when live tape rows are missing. */
   tapeKind?: "live" | "eod_fallback";
+  /**
+   * Where session-level aggressor counts / USD notionals were aggregated.
+   * `live_raw_trades` = from `options_flow_raw_trades`; `eod_volume_only` = no classified prints, EOD-derived shape only.
+   */
+  sessionAggregateSource?: "live_raw_trades" | "eod_volume_only";
   /**
    * Why live tape is present or EOD synthesis was used. Set when Strategist
    * passes tape backfill status; see strategistTapeBackfill.TapeBackfillDiagnosticReason.
@@ -287,6 +297,7 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
         expiration: optionsFlowRawTradesTable.expiration,
         optionType: optionsFlowRawTradesTable.optionType,
         side: optionsFlowRawTradesTable.side,
+        notional: optionsFlowRawTradesTable.notional,
       })
       .from(optionsFlowRawTradesTable)
       .where(and(
@@ -341,11 +352,25 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
     let bidCount = 0;
     let midCount = 0;
     let unknownCount = 0;
+    let askNotionalUsd = 0;
+    let bidNotionalUsd = 0;
+    let midNotionalUsd = 0;
+    let unknownNotionalUsd = 0;
     for (const p of allPrints) {
-      if (p.side === "ask") askCount++;
-      else if (p.side === "bid") bidCount++;
-      else if (p.side === "mid") midCount++;
-      else unknownCount++;
+      const n = typeof p.notional === "number" && Number.isFinite(p.notional) ? p.notional : 0;
+      if (p.side === "ask") {
+        askCount++;
+        askNotionalUsd += n;
+      } else if (p.side === "bid") {
+        bidCount++;
+        bidNotionalUsd += n;
+      } else if (p.side === "mid") {
+        midCount++;
+        midNotionalUsd += n;
+      } else {
+        unknownCount++;
+        unknownNotionalUsd += n;
+      }
     }
 
     const totalPrints = allPrints.length;
@@ -389,6 +414,7 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
     return {
       sessionDate,
       tapeKind: "live",
+      sessionAggregateSource: "live_raw_trades",
       execPerStrike,
       topPrints: topMapped,
       aggressorByStrike,
@@ -399,6 +425,10 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
         unknownCount,
         totalPrints,
         knownPct,
+        askNotionalUsd,
+        bidNotionalUsd,
+        midNotionalUsd,
+        unknownNotionalUsd,
       },
     };
   } catch (err) {
@@ -511,6 +541,7 @@ function buildEodFallbackSessionTape(
   return {
     sessionDate,
     tapeKind: "eod_fallback",
+    sessionAggregateSource: "eod_volume_only",
     tapeBackfillReason: mapTapeBackfillToSessionContext(tapeBackfill, true),
     execPerStrike,
     topPrints,
@@ -522,6 +553,10 @@ function buildEodFallbackSessionTape(
       unknownCount: totalPrints,
       totalPrints,
       knownPct: 0,
+      askNotionalUsd: 0,
+      bidNotionalUsd: 0,
+      midNotionalUsd: 0,
+      unknownNotionalUsd: 0,
     },
   };
 }

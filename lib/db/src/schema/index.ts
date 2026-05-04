@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, serial, real, integer, boolean, timestamp, jsonb, uniqueIndex, index, date, doublePrecision, bigint } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, real, integer, boolean, timestamp, jsonb, uniqueIndex, index, date, doublePrecision, bigint, numeric } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -785,21 +785,55 @@ export const terminalWatchlistsTable = pgTable("terminal_watchlists", {
 
 export type TerminalWatchlist = typeof terminalWatchlistsTable.$inferSelect;
 
-export const scannerJobsTable = pgTable("scanner_jobs", {
-  scanId: text("scan_id").primaryKey(),
-  userId: text("user_id").notNull(),
-  universeId: text("universe_id").notNull(),
-  traderTokenEncrypted: text("trader_token_encrypted").notNull(),
-  /** Snapshot of Market Pulse at job creation (composite, confidence, bias). */
-  pulseSnapshot: jsonb("pulse_snapshot"),
-  status: text("status").notNull(),
-  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
-  completedAt: timestamp("completed_at", { withTimezone: true }),
-  result: jsonb("result"),
-  error: text("error"),
+/** Precomputed scanner signals (LC130 refresh worker + sync GET /api/v2/scan). */
+export const tickerSignalSnapshotTable = pgTable("ticker_signal_snapshot", {
+  ticker: text("ticker").primaryKey(),
+  sector: text("sector"),
+  marketCapTier: text("market_cap_tier"),
+  spot: numeric("spot"),
+  dailyChangePct: numeric("daily_change_pct"),
+  halted: boolean("halted").default(false),
+  ivr: numeric("ivr"),
+  ivrSource: text("ivr_source"),
+  hv20: numeric("hv20"),
+  hv30: numeric("hv30"),
+  atmIvByExpiry: jsonb("atm_iv_by_expiry"),
+  skew25dByExpiry: jsonb("skew_25d_by_expiry"),
+  impliedMoveFrontPct: numeric("implied_move_front_pct"),
+  impliedMoveFrontAbs: numeric("implied_move_front_abs"),
+  atmOiFront: integer("atm_oi_front"),
+  bidAskWidthAtmFront: numeric("bid_ask_width_atm_front"),
+  flowSummary: jsonb("flow_summary"),
+  earningsDate: date("earnings_date"),
+  earningsDaysAway: integer("earnings_days_away"),
+  earningsConfirmed: boolean("earnings_confirmed"),
+  macroOverlapScore: numeric("macro_overlap_score"),
+  regimeShockActive: boolean("regime_shock_active").default(false),
+  compositeScore: numeric("composite_score"),
+  componentScores: jsonb("component_scores"),
+  disqualFlags: text("disqual_flags").array(),
+  surfacingReasons: text("surfacing_reasons").array(),
+  snapshotAt: timestamp("snapshot_at", { withTimezone: true }),
+  lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+  lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+  chainUpdatedAt: timestamp("chain_updated_at", { withTimezone: true }),
+  flowUpdatedAt: timestamp("flow_updated_at", { withTimezone: true }),
+  ivrUpdatedAt: timestamp("ivr_updated_at", { withTimezone: true }),
+  earningsUpdatedAt: timestamp("earnings_updated_at", { withTimezone: true }),
+});
+
+export type TickerSignalSnapshot = typeof tickerSignalSnapshotTable.$inferSelect;
+
+export const scannerHealthTable = pgTable("scanner_health", {
+  id: serial("id").primaryKey(),
+  cycleStartedAt: timestamp("cycle_started_at", { withTimezone: true }),
+  cycleCompletedAt: timestamp("cycle_completed_at", { withTimezone: true }),
+  tickersAttempted: integer("tickers_attempted"),
+  tickersSucceeded: integer("tickers_succeeded"),
+  tickersFailed: integer("tickers_failed"),
+  failedTickers: jsonb("failed_tickers"),
 }, (t) => [
-  index("idx_scanner_jobs_user_id_started_at").on(t.userId, t.startedAt),
-  index("idx_scanner_jobs_status_started_at").on(t.status, t.startedAt),
+  index("idx_sh_completed").on(t.cycleCompletedAt),
 ]);
 
-export type ScannerJob = typeof scannerJobsTable.$inferSelect;
+export type ScannerHealth = typeof scannerHealthTable.$inferSelect;

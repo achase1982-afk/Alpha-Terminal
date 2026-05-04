@@ -145,7 +145,12 @@ export const UnifiedScannerCard = memo(function UnifiedScannerCard({
           }
         : undefined;
     return {
-      score: candidate.surfacedBy.includes("unusual_flow") ? Math.round(candidate.components.flowScore) : null,
+      score:
+        candidate.surfacedBy.includes("unusual_flow") ||
+        candidate.flowSnapshot.tapeQuality !== "not_run" ||
+        (candidate.flowSnapshot.notional24h != null && candidate.flowSnapshot.notional24h > 0)
+          ? Math.round(candidate.components.flowScore)
+          : null,
       topStrike: topStrike ?? null,
       putCallRatio: null,
       tapeStatus: candidate.flowSnapshot.tapeQuality,
@@ -154,7 +159,10 @@ export const UnifiedScannerCard = memo(function UnifiedScannerCard({
 
   const handleStrategist = () => {
     const surfacedBy = mapSurfacedForHandoff(candidate.surfacedBy);
-    const unusualFlow = candidate.surfacedBy.includes("unusual_flow") || candidate.components.flowScore > 0;
+    const unusualFlow =
+      candidate.surfacedBy.includes("unusual_flow") ||
+      candidate.flowSnapshot.tapeQuality !== "not_run" ||
+      (candidate.flowSnapshot.notional24h != null && candidate.flowSnapshot.notional24h > 0);
     setPendingScannerStrategistContext(
       buildScannerContextFromUnified({
         scannerScore: candidate.compositeScore,

@@ -1,15 +1,8 @@
 /**
- * Unified scan job and candidate shapes returned by GET /api/ai/scan/:scanId.
+ * Scanner candidate shape from GET /api/v2/scan (snapshot table + card mapping).
  */
 
 export type UnifiedEngineKey = "discovery" | "momentum" | "unusual_flow";
-
-export interface UnifiedEngineRunStatus {
-  status: "ok" | "failed" | "timeout";
-  durationMs: number;
-  resultCount: number;
-  error?: string;
-}
 
 export interface UnifiedScanCandidate {
   ticker: string;
@@ -49,20 +42,18 @@ export interface UnifiedScanCandidate {
   riskFlags: string[];
   positionContext: { hasPosition: boolean };
   surfacingReasons: Array<{ engine: UnifiedEngineKey; reasons: string[] }>;
+  /** Extra fields from v2 snapshot (optional for card / debugging). */
+  atmIvByExpiry?: unknown;
+  skew25dByExpiry?: unknown;
+  impliedMoveFrontPct?: number | null;
+  impliedMoveFrontAbs?: number | null;
+  snapshotAt?: string | null;
+  chainUpdatedAt?: string | null;
+  flowUpdatedAt?: string | null;
 }
 
-export interface UnifiedScanJobResult {
-  scanId: string;
-  status: "queued" | "running" | "complete" | "failed";
-  startedAt: string;
-  completedAt: string | null;
-  universeId: string;
-  symbolsScanned: number;
-  engineStatus: {
-    discovery: UnifiedEngineRunStatus;
-    momentum: UnifiedEngineRunStatus;
-    unusual_flow: UnifiedEngineRunStatus;
-  };
+export interface V2ScanWireResponse {
   candidates: UnifiedScanCandidate[];
-  error?: string;
+  snapshot_age_seconds: number | null;
+  scan_at: string;
 }
