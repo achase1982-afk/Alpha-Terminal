@@ -71,6 +71,9 @@ async function fetchDeskTtsChunkBlob(sessionId: string, chunkIndex: number, sign
       return await res.blob();
     } catch (err) {
       lastError = err as Error;
+      if (signal.aborted || (err instanceof DOMException && err.name === "AbortError")) {
+        throw lastError;
+      }
       const httpStatus =
         err && typeof err === "object" && "httpStatus" in err && typeof (err as { httpStatus?: number }).httpStatus === "number"
           ? (err as { httpStatus: number }).httpStatus

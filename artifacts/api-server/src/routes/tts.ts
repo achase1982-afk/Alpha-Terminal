@@ -43,9 +43,9 @@ function parseVoiceConfig(body: unknown): DeskVoiceConfigBody {
 }
 
 async function sendBufferedChunk(req: Request, res: Response, sessionId: string, chunkIndex: number): Promise<void> {
-  res.setHeader("Cache-Control", "private, max-age=600");
   try {
     const mp3 = await getDeskAudioChunkBuffer(sessionId, chunkIndex);
+    res.setHeader("Cache-Control", "private, max-age=600");
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Content-Length", String(mp3.length));
     res.send(mp3);
