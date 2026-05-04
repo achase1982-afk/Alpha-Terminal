@@ -887,7 +887,7 @@ export const useTerminalStore = create<TerminalState>()(
       setStreamStatus: (s) => set({ streamStatus: s, streamConnected: s === "live" }),
     }),
     {
-      name: 'alpha-terminal-storage',
+      name: PERSIST_KEY,
       version: 23,
       storage: createJSONStorage(() => quotaSafeLocalStorage),
       migrate: (persistedState: unknown, version: number) => {
@@ -1080,12 +1080,6 @@ export const useTerminalStore = create<TerminalState>()(
             cfg['skepticModelName'] = fix(cfg['skepticModelName']);
           }
         }
-        if (version < 23) {
-          const hist = s['strategistHistory'];
-          if (Array.isArray(hist) && hist.length > MAX_PERSISTED_STRATEGIST_HISTORY) {
-            s['strategistHistory'] = hist.slice(-MAX_PERSISTED_STRATEGIST_HISTORY);
-          }
-        }
         if (version < 22) {
           const t = s['aiTemp'];
           if (typeof t === 'number' && t !== 0) s['aiTemp'] = 0;
@@ -1097,6 +1091,12 @@ export const useTerminalStore = create<TerminalState>()(
                 row.temperature = 0;
               }
             }
+          }
+        }
+        if (version < 23) {
+          const hist = s['strategistHistory'];
+          if (Array.isArray(hist) && hist.length > MAX_PERSISTED_STRATEGIST_HISTORY) {
+            s['strategistHistory'] = hist.slice(-MAX_PERSISTED_STRATEGIST_HISTORY);
           }
         }
         // v21: strategistJobs is now persisted. Sweep any "running" jobs that
