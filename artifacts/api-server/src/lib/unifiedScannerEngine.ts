@@ -281,7 +281,7 @@ export async function runScanInBackground(scanId: string): Promise<void> {
     const pulseCtx = { composite: 0, confidence: 0, bias: "NO_EDGE" };
     const engineLog = { info: log.info.bind(log), warn: log.warn.bind(log), error: log.error.bind(log) };
 
-    const [discoveryRes, momentumRes, unusualFlowRes] = await Promise.allSettled([
+    const [discoveryRes, momentumRes, unusualFlowRes] = await Promise.all([
       timedEngine("discovery", () =>
         runDiscoveryScan(upperSymbols, traderToken, traderToken, pulseCtx, engineLog, { returnAll: true }),
       ),
@@ -609,10 +609,9 @@ function mergeDirectional(leans: Array<"BULLISH" | "BEARISH" | "MIXED">): "bulli
 }
 
 function passesPreStrategistGates(c: UnifiedScanCandidate): boolean {
-  if (c.flowSnapshot.tapeQuality === "not_run") return false;
   if (c.ivr === null || c.ivrSource === "missing") return false;
   if (c.riskFlags.includes("halted")) return false;
-  if (c.components.liquidity < 30) return false;
+  if (c.surfacedBy.includes("momentum") && c.components.liquidity < 30) return false;
   if (c.riskFlags.includes("regime_shock")) return false;
   return true;
 }

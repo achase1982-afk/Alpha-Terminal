@@ -22,9 +22,14 @@ function getKeyMaterial(): Buffer {
   return Buffer.from(trimmed, "hex");
 }
 
+let cachedDerivedKey: Buffer | null = null;
+
 /** Derive AES-256 key from env hex using fixed salt (per-deployment secret is in env). */
 function derivedKey(): Buffer {
-  return scryptSync(getKeyMaterial(), SALT, KEY_LEN);
+  if (!cachedDerivedKey) {
+    cachedDerivedKey = scryptSync(getKeyMaterial(), SALT, KEY_LEN);
+  }
+  return cachedDerivedKey;
 }
 
 /**
