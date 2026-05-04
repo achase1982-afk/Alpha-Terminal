@@ -31,6 +31,10 @@ import {
 import { runWithPolygonApiTraceAsync, takePolygonApiTrace } from "./polygonApiTrace.js";
 import { runInStrategistRunContext, getStrategistRunContext, mergeStrategistDiag } from "./strategistRunContext.js";
 import { buildScannerContextPromptBlock } from "./scannerStrategistContext.js";
+import {
+  buildStrategistDiagnosticView,
+  type StrategistDiagnosticView,
+} from "./strategistDiagnosticView.js";
 import { fetchRecentNyseImbalanceForTicker, CLOSING_IMBALANCE_BALANCED_THRESHOLD_USD } from "./ibImbalancePersistence.js";
 import { fetchRecentNasdaqTotalviewForTicker } from "./ibTotalviewPersistence.js";
 import { fetchRecentEsDepthSummary } from "./ibEsDepthPersistence.js";
@@ -186,6 +190,8 @@ export interface StrategistV2Result {
   telemetryId?: number;
   /** Server-only correlation id for full diagnostic JSON (telemetry and export). */
   strategistDiagnosticRequestId?: string;
+  /** Compact desk-only projection for sharing; does not replace the full data package. */
+  diagnosticView?: StrategistDiagnosticView;
   earningsAlert?: {
     earningsDate: string;
     daysUntilEarnings: number | null;
@@ -200,7 +206,7 @@ export interface StrategistV2Result {
 }
 
 /** Item 23: client / history idempotency — bump when StrategistV2Result shape changes. */
-export const STRATEGIST_RESULT_SCHEMA_VERSION = 1;
+export const STRATEGIST_RESULT_SCHEMA_VERSION = 2;
 
 function withResultSchemaVersion<T extends StrategistV2Result>(r: T): T {
   r.schemaVersion = STRATEGIST_RESULT_SCHEMA_VERSION;
@@ -1127,6 +1133,12 @@ async function analyzeTickerV2Inner(
       });
       result.telemetryId = telemetryId ?? undefined;
       result.strategistDiagnosticRequestId = getStrategistRunContext()?.requestId;
+      result.diagnosticView = buildStrategistDiagnosticView({
+        dataPackageStr: dataPackage,
+        deskResult,
+        catalystEvaluation: deskCatalystEval,
+        diag: getStrategistRunContext()?.diag,
+      });
       return withResultSchemaVersion(result);
     } catch (err) {
       logger.error({ err, ticker }, "StrategistV2: Desk analysis failed");
@@ -1201,6 +1213,12 @@ async function analyzeTickerV2Inner(
       });
       result.telemetryId = telemetryId ?? undefined;
       result.strategistDiagnosticRequestId = getStrategistRunContext()?.requestId;
+      result.diagnosticView = buildStrategistDiagnosticView({
+        dataPackageStr: dataPackage,
+        deskResult,
+        catalystEvaluation: deskCatalystEval,
+        diag: getStrategistRunContext()?.diag,
+      });
       return withResultSchemaVersion(result);
     } catch (err) {
       logger.error({ err, ticker }, "StrategistV2: Solo Desk analysis failed");
