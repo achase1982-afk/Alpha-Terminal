@@ -275,6 +275,7 @@ export function StrategistDeskCard({
   blockReason,
   onRetry,
   strategistDiagnosticRequestId,
+  diagnosticView,
 }: {
   deskResult: DeskResult;
   generatedAt?: string | number | null;
@@ -282,12 +283,15 @@ export function StrategistDeskCard({
   blockReason?: BlockReason;
   onRetry?: (ticker: string) => void;
   strategistDiagnosticRequestId?: string;
+  /** Server-built compact JSON; preferred over fetching full telemetry for sharing. */
+  diagnosticView?: Record<string, unknown> | null;
 }) {
   const { pm, vol, flow, catalyst, errors } = deskResult;
   const isTrade = pm.decision === "trade";
   const banner = deskBanner(strategistOutcome, blockReason, !isTrade, deskResult.soloDeskJsonDegraded);
   const [copiedFull, setCopiedFull] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
+  const [copiedDiag, setCopiedDiag] = useState(false);
   const [fullDiagLoading, setFullDiagLoading] = useState(false);
 
   const copyPlain = useCallback(async () => {
@@ -388,6 +392,45 @@ export function StrategistDeskCard({
       fallbackExec();
     }
   }, [deskResult, strategistDiagnosticRequestId]);
+
+  const copyDiagnosticJson = useCallback(async () => {
+    if (!diagnosticView || typeof diagnosticView !== "object") {
+      toast.message("Diagnostic view not available for this run");
+      return;
+    }
+    const text = JSON.stringify(diagnosticView, null, 2);
+    const finish = () => {
+      setCopiedDiag(true);
+      window.setTimeout(() => setCopiedDiag(false), 1500);
+    };
+    const fallback = () => {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        toast.message("Copied diagnostic JSON");
+        finish();
+      } catch {
+        /* noop */
+      }
+    };
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        toast.message("Copied diagnostic JSON");
+        finish();
+      } else {
+        fallback();
+      }
+    } catch {
+      fallback();
+    }
+  }, [diagnosticView]);
 
   const speechSections = useMemo(
     () =>
@@ -957,6 +1000,23 @@ export function StrategistDeskCard({
           >
             <Copy size={12} />
             {fullDiagLoading ? "…" : copiedJson ? "Copied" : "Copy JSON"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void copyDiagnosticJson()}
+            disabled={!diagnosticView}
+            title={!diagnosticView ? "Diagnostic view is not available for this run (e.g. saved before this feature)." : undefined}
+            style={{
+              ...btnStyle,
+              opacity: diagnosticView ? 1 : 0.45,
+              cursor: diagnosticView ? "pointer" : "not-allowed",
+            }}
+            aria-label="Copy strategist diagnostic view JSON"
+            onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
+            onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
+          >
+            <Copy size={12} />
+            {copiedDiag ? "Copied" : "Copy diagnostic"}
           </button>
           {!audioBarOpen && (
             <button
