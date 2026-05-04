@@ -7,7 +7,9 @@ import {
   resolveEvent,
   clearAllEvents,
   getTotalCount,
+  emitTelemetry,
 } from "../lib/telemetryStore.js";
+import { logFailure } from "../lib/telemetry.js";
 
 const router: IRouter = Router();
 
@@ -63,6 +65,27 @@ router.patch("/:id/resolve", async (req, res) => {
 router.delete("/clear", async (_req, res) => {
   clearAllEvents();
   return res.json({ ok: true });
+});
+
+router.post("/client-event", async (req, res): Promise<void> => {
+  try {
+    const body = req.body && typeof req.body === "object" && req.body !== null ? (req.body as Record<string, unknown>) : {};
+    const stage = typeof body.stage === "string" ? body.stage : "";
+    if (!stage.trim()) {
+      res.status(400).json({ error: "stage is required" });
+      return;
+    }
+
+    const details: Record<string, unknown> = { ...body, source: "client" };
+    emitTelemetry("STRATEGIST", "WARN", `Client telemetry: ${stage}`, details, "STRATEGIST");
+
+    void logFailure("STRATEGIST", "INFO", `Desk audio client event: ${stage}`, details);
+
+    res.json({ ok: true });
+  } catch (err) {
+    req.log?.error({ err }, "client-event telemetry failed");
+    res.status(500).json({ error: "Failed to record event" });
+  }
 });
 
 export default router;

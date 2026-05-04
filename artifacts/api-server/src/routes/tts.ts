@@ -1,8 +1,12 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { constants as fsConstants } from "node:fs";
 import { generateSpeech, sha256Hex } from "../lib/tts.js";
+import {
+  getDeskAudioChunkBuffer,
+  startDeskAudioSession,
+} from "../lib/deskAudioBuffer.js";
 
 const router: IRouter = Router();
 
@@ -27,7 +31,116 @@ function sanitizeClientTtsDetail(err: unknown): string {
   return oneLine.length > 420 ? `${oneLine.slice(0, 417)}...` : oneLine;
 }
 
+type DeskVoiceConfigBody = { voice?: string };
+
+function parseVoiceConfig(body: unknown): DeskVoiceConfigBody {
+  const vc = body && typeof body === "object" && body !== null && "voiceConfig" in body ? (body as { voiceConfig?: unknown }).voiceConfig : undefined;
+  if (!vc || typeof vc !== "object" || vc === null) {
+    return {};
+  }
+  const voice = "voice" in vc && typeof (vc as { voice?: unknown }).voice === "string" ? (vc as { voice: string }).voice : undefined;
+  return { voice };
+}
+
+async function sendBufferedChunk(req: Request, res: Response, sessionId: string, chunkIndex: number): Promise<void> {
+  res.setHeader("Cache-Control", "private, max-age=600");
+  try {
+    const mp3 = await getDeskAudioChunkBuffer(sessionId, chunkIndex);
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Content-Length", String(mp3.length));
+    res.send(mp3);
+  } catch (err: unknown) {
+    const code = err && typeof err === "object" && "code" in err ? (err as { code?: string }).code : undefined;
+    const httpStatus =
+      err && typeof err === "object" && "httpStatus" in err && typeof (err as { httpStatus?: number }).httpStatus === "number"
+        ? (err as { httpStatus: number }).httpStatus
+        : undefined;
+    if (code === "NOT_FOUND") {
+      res.status(404).json({ error: "Desk audio session or chunk not found" });
+      return;
+    }
+    if (code === "TIMEOUT") {
+      res.status(504).json({
+        error: "Desk audio chunk not ready in time",
+        stage: "tts_chunk_buffer_wait_timeout",
+        sessionId,
+        chunkIndex,
+      });
+      return;
+    }
+    req.log?.error({ err, sessionId, chunkIndex }, "desk-audio buffered chunk failed");
+    res.status(500).json({
+      error: "Audio unavailable",
+      stage: "tts_chunk_buffer_failed",
+      sessionId,
+      chunkIndex,
+      httpStatus: httpStatus ?? null,
+      detail: sanitizeClientTtsDetail(err),
+    });
+  }
+}
+
+router.get("/desk-audio", async (req, res): Promise<void> => {
+  const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : "";
+  const chunkRaw = req.query.chunkIndex;
+  const chunkIndex =
+    typeof chunkRaw === "string" && chunkRaw.trim() !== ""
+      ? parseInt(chunkRaw, 10)
+      : Array.isArray(chunkRaw) && typeof chunkRaw[0] === "string"
+        ? parseInt(chunkRaw[0], 10)
+        : NaN;
+
+  if (!sessionId.trim()) {
+    res.status(400).json({ error: "sessionId is required for GET /desk-audio" });
+    return;
+  }
+  if (!Number.isFinite(chunkIndex)) {
+    res.status(400).json({ error: "chunkIndex is required" });
+    return;
+  }
+
+  await sendBufferedChunk(req, res, sessionId.trim(), chunkIndex);
+});
+
+router.post("/desk-audio/start", async (req, res): Promise<void> => {
+  const text = typeof req.body?.text === "string" ? req.body.text : "";
+  if (!text.trim()) {
+    res.status(400).json({ error: "text is required" });
+    return;
+  }
+  const voiceConfig = parseVoiceConfig(req.body);
+  try {
+    const out = startDeskAudioSession(text, voiceConfig);
+    res.json(out);
+  } catch (err) {
+    req.log?.error({ err }, "desk-audio start failed");
+    res.status(500).json({ error: "Failed to start desk audio session" });
+  }
+});
+
 router.post("/desk-audio", async (req, res): Promise<void> => {
+  const sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
+  const chunkIndexRaw = req.body?.chunkIndex;
+  const hasSession = sessionId.trim().length > 0;
+  const hasChunk =
+    typeof chunkIndexRaw === "number"
+      ? true
+      : typeof chunkIndexRaw === "string" && chunkIndexRaw.trim() !== "";
+
+  if (hasSession || hasChunk) {
+    if (!sessionId.trim() || !hasChunk) {
+      res.status(400).json({ error: "sessionId and chunkIndex are both required for buffered chunk fetch" });
+      return;
+    }
+    const chunkIndex = typeof chunkIndexRaw === "number" ? chunkIndexRaw : parseInt(String(chunkIndexRaw), 10);
+    if (!Number.isFinite(chunkIndex)) {
+      res.status(400).json({ error: "chunkIndex must be a number" });
+      return;
+    }
+    await sendBufferedChunk(req, res, sessionId.trim(), chunkIndex);
+    return;
+  }
+
   const text = typeof req.body?.text === "string" ? req.body.text : "";
   const deskResultId = typeof req.body?.deskResultId === "string" ? req.body.deskResultId : "";
   if (!text.trim()) {

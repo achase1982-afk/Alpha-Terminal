@@ -12,12 +12,10 @@ import { toast } from "sonner";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import type { DeskResult, DeskStructure } from "@/lib/strategistDeskResult";
 import { buildDeskSpeechSections } from "@/lib/deskCardSpeech";
+import { splitDeskAudioTextIntoChunks } from "@/lib/deskAudioChunking";
 import { STRATEGIST_ANALYSIS_CANCEL_EVENT, STRATEGIST_ANALYSIS_START_EVENT } from "@/lib/strategistDeskSpeechEvents";
 
 export type { DeskResult } from "@/lib/strategistDeskResult";
-
-/** OpenAI TTS input limit per request; smaller chunks start audio sooner. */
-const TTS_CHUNK_TARGET_CHARS = 900;
 
 /** Skip / rewind step in the desk audio bar (seconds within the current segment). */
 const AUDIO_SKIP_SECONDS = 15;
@@ -35,6 +33,63 @@ const PAL = {
   gold: "#fbbf24",
   goldHeader: "#f59e0b",
 };
+
+async function emitDeskTtsClientEvent(payload: Record<string, unknown>): Promise<void> {
+  try {
+    await fetchWithAuth("/api/telemetry/client-event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      clerkTokenTimeoutMs: 8000,
+    });
+  } catch {
+    /* best-effort */
+  }
+}
+
+function deskTtsChunkUrl(sessionId: string, chunkIndex: number): string {
+  return `/api/tts/desk-audio?sessionId=${encodeURIComponent(sessionId)}&chunkIndex=${chunkIndex}`;
+}
+
+async function fetchDeskTtsChunkBlob(sessionId: string, chunkIndex: number, signal: AbortSignal): Promise<Blob> {
+  let lastError: Error | null = null;
+  for (let i = 0; i < 3; i++) {
+    try {
+      const res = await fetchWithAuth(deskTtsChunkUrl(sessionId, chunkIndex), { signal, clerkTokenTimeoutMs: 8000 });
+      if (!res.ok) {
+        let httpStatus = res.status;
+        try {
+          const j = (await res.clone().json()) as { httpStatus?: number; stage?: string };
+          if (typeof j.httpStatus === "number") httpStatus = j.httpStatus;
+        } catch {
+          /* ignore */
+        }
+        const err = new Error(`HTTP ${res.status}`) as Error & { httpStatus?: number };
+        err.httpStatus = httpStatus;
+        throw err;
+      }
+      return await res.blob();
+    } catch (err) {
+      lastError = err as Error;
+      const httpStatus =
+        err && typeof err === "object" && "httpStatus" in err && typeof (err as { httpStatus?: number }).httpStatus === "number"
+          ? (err as { httpStatus: number }).httpStatus
+          : undefined;
+      const isLast = i === 2;
+      const stage = isLast ? "tts_chunk_user_retry_prompt" : "tts_chunk_silent_retry";
+      void emitDeskTtsClientEvent({
+        stage,
+        chunkIndex,
+        attemptNumber: i + 1,
+        httpStatus: httpStatus ?? null,
+        detail: lastError.message,
+      });
+      if (isLast) break;
+      await new Promise((r) => setTimeout(r, i === 0 ? 200 : 600));
+    }
+  }
+  throw lastError;
+}
 
 const SYS_FONT = "-apple-system, 'SF Pro Display', 'Inter', system-ui, sans-serif";
 
@@ -449,43 +504,13 @@ export function StrategistDeskCard({
     [deskResult, banner?.title, banner?.body],
   );
 
-  /** Split desk script into TTS-sized chunks so the first request returns faster (progressive play). */
-  const deskAudioChunks = useMemo(() => {
-    const t = deskAudioText.trim();
-    if (!t) return [];
-    const out: string[] = [];
-    let rest = t;
-    while (rest.length > 0) {
-      if (rest.length <= 4096) {
-        out.push(rest);
-        break;
-      }
-      let cut = Math.min(TTS_CHUNK_TARGET_CHARS, rest.length - 1);
-      let splitAt = cut;
-      for (let i = cut; i > Math.max(0, cut - 500); i--) {
-        const ch = rest[i];
-        if (ch === "\n" || ch === "." || ch === "!" || ch === "?" || ch === ";") {
-          splitAt = i + 1;
-          break;
-        }
-      }
-      const piece = rest.slice(0, splitAt).trimEnd();
-      if (piece) out.push(piece);
-      rest = rest.slice(splitAt).trimStart();
-    }
-    return out.filter(Boolean);
-  }, [deskAudioText]);
+  /** Split desk script into TTS-sized chunks (aligned with server `deskAudioBuffer`). */
+  const deskAudioChunks = useMemo(() => splitDeskAudioTextIntoChunks(deskAudioText), [deskAudioText]);
 
-  const deskAudioFetchKey = useMemo(
-    () => `${deskResultId}\0${deskAudioText.trim()}`,
-    [deskResultId, deskAudioText],
+  const deskTtsWarmKey = useMemo(
+    () => `${deskResultId}\0${deskAudioText.trim()}\0${JSON.stringify(deskVoiceConfig)}`,
+    [deskResultId, deskAudioText, deskVoiceConfig],
   );
-
-  const prefetchPrimaryKey = useMemo(() => {
-    if (deskAudioChunks.length <= 1) return deskAudioFetchKey;
-    const first = deskAudioChunks[0] ?? "";
-    return `${deskAudioFetchKey}\0chunk0\0${first}`;
-  }, [deskAudioChunks, deskAudioFetchKey]);
 
   const SESSION_RATE_KEY = "strategistDeskSpeechRate";
   const [speechRate, setSpeechRate] = useState<number>(() => {
@@ -507,11 +532,13 @@ export function StrategistDeskCard({
   const audioPlayGenRef = useRef(0);
   const ttsFetchAbortRef = useRef<AbortController | null>(null);
   const progressiveFetchAbortRef = useRef<AbortController | null>(null);
-  type ProgressiveSession = { playGen: number; chunks: string[]; index: number };
+  type ProgressiveSession = { playGen: number; chunks: string[]; index: number; sessionId: string };
   const progressiveSessionRef = useRef<ProgressiveSession | null>(null);
-  const prefetchGenRef = useRef(0);
-  const prefetchedAudioUrlRef = useRef<string | null>(null);
-  const prefetchedAudioKeyRef = useRef<string | null>(null);
+  const deskTtsSessionIdRef = useRef<string | null>(null);
+  const [deskTtsSessionId, setDeskTtsSessionId] = useState<string | null>(null);
+  const [segmentStall, setSegmentStall] = useState<{ chunkIndex: number } | null>(null);
+  const warmedDeskTtsRef = useRef<{ warmKey: string; sessionId: string } | null>(null);
+  const warmGenRef = useRef(0);
   /** Which `startPlay` generation turned on `audioLoading` (fetch path); always clear in `finally` for that gen. */
   const ttsLoadingPlayGenRef = useRef<number | null>(null);
   /** True while we expect `<audio>` to decode/play our blob (ignore spurious errors from `stopAudio` clearing `src`). */
@@ -523,6 +550,10 @@ export function StrategistDeskCard({
       objectUrlRef.current = null;
     }
   }, []);
+
+  useEffect(() => {
+    deskTtsSessionIdRef.current = deskTtsSessionId;
+  }, [deskTtsSessionId]);
 
   const stopAudio = useCallback(() => {
     expectAudioPlaybackRef.current = false;
@@ -540,17 +571,16 @@ export function StrategistDeskCard({
       el.load();
     }
     revokeObjectUrl();
-    if (prefetchedAudioUrlRef.current) {
-      URL.revokeObjectURL(prefetchedAudioUrlRef.current);
-      prefetchedAudioUrlRef.current = null;
-      prefetchedAudioKeyRef.current = null;
-    }
     setPaused(false);
     setAudioBarOpen(false);
     setAudioLoading(false);
     ttsLoadingPlayGenRef.current = null;
     setAudioReady(false);
     setAudioError(null);
+    setSegmentStall(null);
+    setDeskTtsSessionId(null);
+    deskTtsSessionIdRef.current = null;
+    warmedDeskTtsRef.current = null;
   }, [revokeObjectUrl]);
 
   const startPlay = useCallback(async () => {
@@ -562,13 +592,8 @@ export function StrategistDeskCard({
     progressiveFetchAbortRef.current = null;
     progressiveSessionRef.current = null;
 
-    const firstText = deskAudioChunks[0] ?? deskAudioText.trim();
-    const prefetchHit =
-      prefetchedAudioUrlRef.current &&
-      prefetchedAudioKeyRef.current === prefetchPrimaryKey &&
-      prefetchPrimaryKey.length > 0;
-
     setAudioError(null);
+    setSegmentStall(null);
     setAudioReady(false);
 
     const attachAndPlay = (blobUrl: string): boolean => {
@@ -604,19 +629,6 @@ export function StrategistDeskCard({
       return playGen === audioPlayGenRef.current;
     };
 
-    if (prefetchHit) {
-      setAudioLoading(false);
-      ttsLoadingPlayGenRef.current = null;
-      const url = prefetchedAudioUrlRef.current!;
-      prefetchedAudioUrlRef.current = null;
-      prefetchedAudioKeyRef.current = null;
-      const ok = attachAndPlay(url);
-      if (ok && deskAudioChunks.length > 1) {
-        progressiveSessionRef.current = { playGen, chunks: deskAudioChunks, index: 0 };
-      }
-      return;
-    }
-
     const ac = new AbortController();
     ttsFetchAbortRef.current = ac;
     const TTS_FETCH_MS = 180_000;
@@ -629,35 +641,65 @@ export function StrategistDeskCard({
 
     setAudioLoading(true);
     ttsLoadingPlayGenRef.current = playGen;
-    try {
-      const res = await fetchWithAuth("/api/tts/desk-audio", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: firstText, deskResultId }),
-        signal: ac.signal,
-        clerkTokenTimeoutMs: 8000,
-      });
-      if (playGen !== audioPlayGenRef.current) return;
-      if (!res.ok) {
-        let msg = "Audio unavailable";
-        try {
-          const j = (await res.clone().json()) as { detail?: string; error?: string };
-          if (typeof j.detail === "string" && j.detail.trim()) {
-            msg = `Audio unavailable — ${j.detail.trim()}`;
-          }
-        } catch {
-          /* ignore */
+
+    const ensureSession = async (): Promise<string | null> => {
+      const warmed = warmedDeskTtsRef.current;
+      if (warmed && warmed.warmKey === deskTtsWarmKey) {
+        deskTtsSessionIdRef.current = warmed.sessionId;
+        setDeskTtsSessionId(warmed.sessionId);
+        return warmed.sessionId;
+      }
+      const existing = deskTtsSessionIdRef.current;
+      if (existing) return existing;
+      try {
+        const res = await fetchWithAuth("/api/tts/desk-audio/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: deskAudioText.trim(), voiceConfig: deskVoiceConfig }),
+          signal: ac.signal,
+          clerkTokenTimeoutMs: 8000,
+        });
+        if (!res.ok) {
+          void emitDeskTtsClientEvent({
+            stage: "tts_session_start_failed",
+            httpStatus: res.status,
+            deskResultId,
+          });
+          return null;
         }
-        setAudioError(msg);
+        const j = (await res.json()) as { sessionId?: string };
+        if (typeof j.sessionId === "string" && j.sessionId) {
+          setDeskTtsSessionId(j.sessionId);
+          deskTtsSessionIdRef.current = j.sessionId;
+          return j.sessionId;
+        }
+        return null;
+      } catch (e) {
+        void emitDeskTtsClientEvent({
+          stage: "tts_session_start_failed",
+          httpStatus: null,
+          detail: e instanceof Error ? e.message : String(e),
+          deskResultId,
+        });
+        return null;
+      }
+    };
+
+    try {
+      const sid = await ensureSession();
+      if (playGen !== audioPlayGenRef.current) return;
+      if (!sid) {
+        setAudioError("Audio unavailable — could not start playback session");
         setAudioBarOpen(true);
         return;
       }
-      const blob = await res.blob();
+
+      const blob = await fetchDeskTtsChunkBlob(sid, 0, ac.signal);
       if (playGen !== audioPlayGenRef.current) return;
       const url = URL.createObjectURL(blob);
       const ok = attachAndPlay(url);
       if (ok && deskAudioChunks.length > 1) {
-        progressiveSessionRef.current = { playGen, chunks: deskAudioChunks, index: 0 };
+        progressiveSessionRef.current = { playGen, chunks: deskAudioChunks, index: 0, sessionId: sid };
       }
     } catch (e) {
       if (playGen !== audioPlayGenRef.current) return;
@@ -678,22 +720,16 @@ export function StrategistDeskCard({
         ttsLoadingPlayGenRef.current = null;
       }
     }
-  }, [deskAudioChunks, deskAudioText, deskResultId, prefetchPrimaryKey, revokeObjectUrl]);
+  }, [deskAudioChunks, deskAudioText, deskResultId, deskTtsWarmKey, deskVoiceConfig, revokeObjectUrl]);
 
   const loadProgressiveChunkAtIndex = useCallback(
     async (targetIdx: number) => {
       const sess = progressiveSessionRef.current;
       if (!sess) return;
-      const { playGen, chunks } = sess;
+      const { playGen, chunks, sessionId } = sess;
       if (playGen !== audioPlayGenRef.current) return;
       if (targetIdx < 0) return;
       if (targetIdx >= chunks.length) {
-        progressiveSessionRef.current = null;
-        stopAudio();
-        return;
-      }
-      const text = chunks[targetIdx];
-      if (!text?.trim()) {
         progressiveSessionRef.current = null;
         stopAudio();
         return;
@@ -702,25 +738,13 @@ export function StrategistDeskCard({
       const ac = new AbortController();
       progressiveFetchAbortRef.current = ac;
       try {
-        const res = await fetchWithAuth("/api/tts/desk-audio", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text, deskResultId }),
-          signal: ac.signal,
-          clerkTokenTimeoutMs: 8000,
-        });
-        if (playGen !== audioPlayGenRef.current) return;
-        if (!res.ok) {
-          progressiveSessionRef.current = null;
-          setAudioError("Audio unavailable — segment failed");
-          return;
-        }
-        const blob = await res.blob();
+        const blob = await fetchDeskTtsChunkBlob(sessionId, targetIdx, ac.signal);
         if (playGen !== audioPlayGenRef.current) return;
         revokeObjectUrl();
         const url = URL.createObjectURL(blob);
         objectUrlRef.current = url;
-        progressiveSessionRef.current = { playGen, chunks, index: targetIdx };
+        progressiveSessionRef.current = { playGen, chunks, index: targetIdx, sessionId };
+        setSegmentStall(null);
         const el = audioRef.current;
         if (el) {
           el.src = url;
@@ -745,19 +769,35 @@ export function StrategistDeskCard({
             }
           }
         }
-      } catch {
-        if (playGen === audioPlayGenRef.current) {
+      } catch (e) {
+        if (playGen !== audioPlayGenRef.current) return;
+        const msg = e instanceof Error ? e.message : String(e);
+        const is404 = /\b404\b/.test(msg);
+        if (is404) {
           progressiveSessionRef.current = null;
-          setAudioError("Audio unavailable — network error");
+          setAudioError("Audio unavailable — session expired. Tap Play to start again.");
+          return;
         }
+        const el = audioRef.current;
+        if (el && !el.paused) {
+          el.pause();
+          setPaused(true);
+        }
+        setSegmentStall({ chunkIndex: targetIdx });
       } finally {
         if (progressiveFetchAbortRef.current === ac) {
           progressiveFetchAbortRef.current = null;
         }
       }
     },
-    [deskResultId, revokeObjectUrl, stopAudio],
+    [revokeObjectUrl, stopAudio],
   );
+
+  const resumeSegmentAfterStall = useCallback(() => {
+    const stall = segmentStall;
+    if (!stall) return;
+    void loadProgressiveChunkAtIndex(stall.chunkIndex);
+  }, [loadProgressiveChunkAtIndex, segmentStall]);
 
   const advanceProgressiveChunk = useCallback(async () => {
     const sess = progressiveSessionRef.current;
@@ -765,58 +805,61 @@ export function StrategistDeskCard({
     await loadProgressiveChunkAtIndex(sess.index + 1);
   }, [loadProgressiveChunkAtIndex]);
 
-  /** Prefetch first TTS segment (or full script if short) so Play often skips waiting. */
+  /** Warm buffered TTS session on mount so first chunk is often ready before Play. */
   useEffect(() => {
-    const text = deskAudioChunks[0]?.trim() ?? "";
-    if (!text || !deskResultId.trim()) {
-      prefetchGenRef.current += 1;
-      if (prefetchedAudioUrlRef.current) {
-        URL.revokeObjectURL(prefetchedAudioUrlRef.current);
-        prefetchedAudioUrlRef.current = null;
-        prefetchedAudioKeyRef.current = null;
-      }
+    const text = deskAudioText.trim();
+    if (!text) {
+      warmGenRef.current += 1;
+      warmedDeskTtsRef.current = null;
+      setDeskTtsSessionId(null);
+      deskTtsSessionIdRef.current = null;
       return;
     }
-    prefetchGenRef.current += 1;
-    const gen = prefetchGenRef.current;
-    const fetchKey = prefetchPrimaryKey;
+    warmGenRef.current += 1;
+    const gen = warmGenRef.current;
+    const warmKey = deskTtsWarmKey;
     const ac = new AbortController();
-    const timeoutId =
-      typeof window !== "undefined"
-        ? window.setTimeout(() => {
-            ac.abort();
-          }, 180_000)
-        : 0;
 
     void (async () => {
       try {
-        const res = await fetchWithAuth("/api/tts/desk-audio", {
+        const res = await fetchWithAuth("/api/tts/desk-audio/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text, deskResultId }),
+          body: JSON.stringify({ text, voiceConfig: deskVoiceConfig }),
           signal: ac.signal,
           clerkTokenTimeoutMs: 8000,
         });
-        if (gen !== prefetchGenRef.current) return;
-        if (!res.ok) return;
-        const blob = await res.blob();
-        if (gen !== prefetchGenRef.current) return;
-        if (prefetchedAudioUrlRef.current) {
-          URL.revokeObjectURL(prefetchedAudioUrlRef.current);
+        if (gen !== warmGenRef.current) return;
+        if (!res.ok) {
+          void emitDeskTtsClientEvent({ stage: "tts_warm_failed", httpStatus: res.status, deskResultId });
+          return;
         }
-        prefetchedAudioUrlRef.current = URL.createObjectURL(blob);
-        prefetchedAudioKeyRef.current = fetchKey;
-      } catch {
-        /* ignore prefetch errors; Play will retry */
-      } finally {
-        if (timeoutId) window.clearTimeout(timeoutId);
+        const j = (await res.json()) as { sessionId?: string };
+        if (gen !== warmGenRef.current) return;
+        if (typeof j.sessionId === "string" && j.sessionId) {
+          warmedDeskTtsRef.current = { warmKey, sessionId: j.sessionId };
+          setDeskTtsSessionId((prev) => {
+            if (prev) return prev;
+            deskTtsSessionIdRef.current = j.sessionId!;
+            return j.sessionId!;
+          });
+        }
+      } catch (e) {
+        if (gen === warmGenRef.current) {
+          void emitDeskTtsClientEvent({
+            stage: "tts_warm_failed",
+            httpStatus: null,
+            detail: e instanceof Error ? e.message : String(e),
+            deskResultId,
+          });
+        }
       }
     })();
 
     return () => {
       ac.abort();
     };
-  }, [deskAudioChunks, deskResultId, prefetchPrimaryKey]);
+  }, [deskAudioText, deskTtsWarmKey, deskResultId, deskVoiceConfig]);
 
   useEffect(() => {
     return () => {
@@ -1137,12 +1180,39 @@ export function StrategistDeskCard({
             <span style={{ fontSize: 12, color: PAL.red, flex: "1 1 100%" }}>{audioError}</span>
           ) : (
             <>
+              {segmentStall && (
+                <div
+                  style={{
+                    flex: "1 1 100%",
+                    fontSize: 12,
+                    color: PAL.body,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span>Couldn&apos;t load next segment</span>
+                  <button
+                    type="button"
+                    onClick={() => void resumeSegmentAfterStall()}
+                    style={{
+                      ...btnStyle,
+                      textTransform: "none",
+                      letterSpacing: 0,
+                      fontWeight: 600,
+                    }}
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
           <button
             type="button"
             style={iconBtnBase}
             aria-label={`Rewind ${AUDIO_SKIP_SECONDS} seconds`}
             onClick={() => seekRelativeSeconds(-AUDIO_SKIP_SECONDS)}
-            disabled={!audioReady}
+            disabled={!audioReady || !!segmentStall}
             onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
             onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
           >
@@ -1153,7 +1223,7 @@ export function StrategistDeskCard({
             style={iconBtnBase}
             aria-label={paused ? "Resume audio playback" : "Pause audio playback"}
             onClick={togglePause}
-            disabled={!audioReady}
+            disabled={!audioReady || !!segmentStall}
             onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
             onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
           >
@@ -1164,7 +1234,7 @@ export function StrategistDeskCard({
             style={iconBtnBase}
             aria-label={`Fast-forward ${AUDIO_SKIP_SECONDS} seconds`}
             onClick={() => seekRelativeSeconds(AUDIO_SKIP_SECONDS)}
-            disabled={!audioReady}
+            disabled={!audioReady || !!segmentStall}
             onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
             onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
           >
@@ -1188,6 +1258,7 @@ export function StrategistDeskCard({
               aria-label={`Playback speed, currently ${speedLabel}`}
               value={speechRate}
               onChange={(e) => setRate(Number(e.target.value))}
+              disabled={!!segmentStall}
               style={{
                 minHeight: TOUCH_MIN,
                 padding: "0 12px",
