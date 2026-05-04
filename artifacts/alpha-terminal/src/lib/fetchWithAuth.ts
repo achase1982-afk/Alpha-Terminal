@@ -39,7 +39,31 @@ export async function fetchWithAuth(
     } catch {}
   }
 
-  return fetch(input, { ...rest, headers, redirect: "error" }).catch((err) => {
+  const startedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
+  const urlStr = typeof input === "string" ? input : input instanceof URL ? input.href : "request";
+
+  try {
+    const res = await fetch(input, { ...rest, headers, redirect: "error" });
+    return res;
+  } catch (err) {
+    const elapsedMs =
+      typeof performance !== "undefined"
+        ? Math.round(performance.now() - startedAt)
+        : Math.round(Date.now() - startedAt);
+
+    if (typeof window !== "undefined" && err instanceof TypeError) {
+      const msg = err.message ?? String(err);
+      const isFetchDiag =
+        /redirect|pattern|opaque|failed to fetch|networkerror|load failed|aborted/i.test(msg);
+      if (isFetchDiag) {
+        console.groupCollapsed(`[fetchWithAuth] request failed (${elapsedMs}ms) — ${urlStr}`);
+        console.info("error:", msg);
+        console.info("elapsedMs:", elapsedMs);
+        console.info("note: Response unavailable after fetch throws; if the failure is mid-read, check Network tab for status and timing.");
+        console.groupEnd();
+      }
+    }
+
     if (err instanceof TypeError && /redirect|pattern|opaque/i.test(err.message)) {
       return new Response(JSON.stringify({ error: "Session expired" }), {
         status: 401,
@@ -47,7 +71,7 @@ export async function fetchWithAuth(
       });
     }
     throw err;
-  });
+  }
 }
 
 export async function getClerkToken(): Promise<string | null> {

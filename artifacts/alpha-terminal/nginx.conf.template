@@ -54,8 +54,11 @@ server {
         proxy_set_header Connection $connection_upgrade;
         proxy_buffering off;
         proxy_request_buffering off;
-        proxy_read_timeout 3600s;
-        proxy_send_timeout 3600s;
+        # Discovery scanner (POST /api/ai/deterministic-scan) can run 60–120s+;
+        # keep headroom above Node server timeouts and any intermediate proxies.
+        # Prior value: 3600s; doubled for extra margin on long AI/stream routes.
+        proxy_read_timeout 7200s;
+        proxy_send_timeout 7200s;
     }
 
     # SPA fallback — every non-asset, non-api route returns index.html so
