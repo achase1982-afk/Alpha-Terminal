@@ -457,7 +457,16 @@ export function StrategistDeskCard({
       });
       if (playGen !== audioPlayGenRef.current) return;
       if (!res.ok) {
-        setAudioError("Audio unavailable");
+        let msg = "Audio unavailable";
+        try {
+          const j = (await res.clone().json()) as { detail?: string; error?: string };
+          if (typeof j.detail === "string" && j.detail.trim()) {
+            msg = `Audio unavailable — ${j.detail.trim()}`;
+          }
+        } catch {
+          /* ignore */
+        }
+        setAudioError(msg);
         setAudioLoading(false);
         setAudioBarOpen(true);
         return;

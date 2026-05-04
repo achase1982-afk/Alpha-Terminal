@@ -48,34 +48,80 @@ function pcm16MonoToMp3(pcm: Buffer): Promise<Buffer> {
   });
 }
 
+function bufferToMp3(buf: Buffer, mime?: string): Promise<Buffer> {
+  const lower = (mime ?? "").toLowerCase();
+  if (lower.includes("mpeg") || lower.includes("mp3")) {
+    return Promise.resolve(buf);
+  }
+  const isWav =
+    buf.length >= 12 && buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WAVE";
+  if (isWav || lower.includes("wav")) {
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      const inputStream = Readable.from(buf);
+      const out = new PassThrough();
+      out.on("data", (c: Buffer) => chunks.push(c));
+      out.on("end", () => resolve(Buffer.concat(chunks)));
+      out.on("error", reject);
+      ffmpeg(inputStream)
+        .inputFormat("wav")
+        .audioCodec("libmp3lame")
+        .audioBitrate("64k")
+        .audioChannels(1)
+        .format("mp3")
+        .on("error", reject)
+        .pipe(out, { end: true });
+    });
+  }
+  return pcm16MonoToMp3(buf);
+}
+
 type GeminiTtsResponse = {
   error?: { message?: string; code?: number; status?: string };
   promptFeedback?: { blockReason?: string };
   candidates?: Array<{
     finishReason?: string;
     content?: {
-      parts?: Array<{
-        inlineData?: { mimeType?: string; data?: string };
-        text?: string;
-      }>;
+      parts?: unknown[];
     };
   }>;
 };
 
-function extractAudioBase64(json: GeminiTtsResponse): string {
-  const parts = json.candidates?.[0]?.content?.parts;
-  if (!parts?.length) {
+/** REST may return camelCase or snake_case for inline payload. */
+function inlineAudioFromPart(part: unknown): { data: string; mime?: string } | undefined {
+  if (!part || typeof part !== "object") return undefined;
+  const o = part as Record<string, unknown>;
+  const camel = o.inlineData as Record<string, unknown> | undefined;
+  const snake = o.inline_data as Record<string, unknown> | undefined;
+  const wrap = camel ?? snake;
+  if (!wrap) return undefined;
+  const data = wrap.data;
+  if (typeof data !== "string" || !data) return undefined;
+  const mime =
+    (typeof wrap.mimeType === "string" && wrap.mimeType) ||
+    (typeof wrap.mime_type === "string" && wrap.mime_type) ||
+    undefined;
+  return { data, mime };
+}
+
+function extractAudioBase64(json: GeminiTtsResponse): { data: string; mime?: string } {
+  const cands = json.candidates;
+  if (!cands?.length) {
     const block = json.promptFeedback?.blockReason;
     if (block) {
       throw new Error(`TTS blocked: ${block}`);
     }
-    throw new Error("TTS response missing candidates[0].content.parts");
+    throw new Error("TTS response missing candidates");
   }
-  for (const p of parts) {
-    const d = p.inlineData?.data;
-    if (d && typeof d === "string") return d;
+  for (const cand of cands) {
+    const parts = cand.content?.parts;
+    if (!Array.isArray(parts)) continue;
+    for (const p of parts) {
+      const got = inlineAudioFromPart(p);
+      if (got) return got;
+    }
   }
-  throw new Error("TTS response has no inlineData audio part");
+  throw new Error("TTS response has no inline audio part (inlineData / inline_data)");
 }
 
 /**
@@ -141,28 +187,9 @@ export async function generateSpeech(text: string, opts?: { voice?: string }): P
     throw new Error(json.error.message);
   }
 
-  const b64 = extractAudioBase64(json);
-  const pcm = Buffer.from(b64, "base64");
-  const isWav = pcm.length >= 12 && pcm.toString("ascii", 0, 4) === "RIFF" && pcm.toString("ascii", 8, 12) === "WAVE";
-  if (isWav) {
-    return new Promise((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      const inputStream = Readable.from(pcm);
-      const out = new PassThrough();
-      out.on("data", (c: Buffer) => chunks.push(c));
-      out.on("end", () => resolve(Buffer.concat(chunks)));
-      out.on("error", reject);
-      ffmpeg(inputStream)
-        .inputFormat("wav")
-        .audioCodec("libmp3lame")
-        .audioBitrate("64k")
-        .audioChannels(1)
-        .format("mp3")
-        .on("error", reject)
-        .pipe(out, { end: true });
-    });
-  }
-  return pcm16MonoToMp3(pcm);
+  const { data: b64, mime } = extractAudioBase64(json);
+  const raw = Buffer.from(b64, "base64");
+  return bufferToMp3(raw, mime);
 }
 
 export function sha256Hex(input: string): string {
