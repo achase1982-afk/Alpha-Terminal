@@ -33,8 +33,8 @@ export function getSchwabDenseChainSymbols(): Set<string> {
   }
   return new Set(SCHWAB_DENSE_CHAIN_SYMBOLS);
 }
-const IV30_MIN_DTE = 20;
-const IV30_MAX_DTE = 40;
+const IV30_MIN_DTE = 15;
+const IV30_MAX_DTE = 45;
 const IV30_ATM_MONEYNESS = 0.05;
 const IV30_MIN_OPEN_INTEREST = 10;
 const IV30_MIN_VOLUME = 1;
