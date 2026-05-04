@@ -11,6 +11,7 @@ import {
   venueClassFromExchangeId,
 } from "./flowTradeEnrichment.js";
 import { classifyForFlowPersistence, shouldPersistBackfillRow } from "./optionsTradeClassifier.js";
+import { reclassifyUnclassifiedTrades } from "./optionsTradeReclassifier.js";
 import { flushFlowPersistenceNow } from "./optionsFlowPersistence.js";
 import { runRollupOnceForSymbol } from "./optionsFlowRollup.js";
 import { FlowLegWindow } from "./flowMultilegExtras.js";
@@ -21,7 +22,8 @@ import {
   nyCalendarYmd,
   rthBoundsMs,
 } from "./polygonMarketCalendar.js";
-import { appendPolygonApiTraceRecord } from "./polygonApiTrace.js";
+import { fetchPolygonPaged } from "./polygonPagedFetch.js";
+import { type QuotePoint, nbboAtOrBefore, parseQuotes } from "./optionsQuoteNbbo.js";
 import {
   OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS,
   OPTIONS_FLOW_RAW_TRADES_ON_CONFLICT_SOURCE_DEDUPE,
@@ -40,8 +42,6 @@ const DEFAULT_BUDGET_MS = 180_000;
 const PER_ROOT_MAX_MS = 18_000;
 /** Minimum slice reserved for each remaining OCC so progress stays fair vs one slow contract. */
 const PER_ROOT_MIN_MS = 2_500;
-/** Upper bound on a single Polygon HTTP round-trip during backfill. */
-const PER_FETCH_HTTP_MS = 14_000;
 
 export type TapeBackfillStatusValue = "complete" | "partial" | "failed" | "skipped";
 
@@ -321,189 +321,7 @@ function parseTrades(occ: string, results: unknown[]): ParsedTrade[] {
   return out;
 }
 
-interface QuotePoint {
-  tsMs: number;
-  bid: number;
-  ask: number;
-}
-
-function parseQuotes(results: unknown[]): QuotePoint[] {
-  const out: QuotePoint[] = [];
-  for (const raw of results) {
-    const row = raw as Record<string, unknown>;
-    const sip = BigInt(String(row["sip_timestamp"] ?? 0));
-    if (sip <= 0n) continue;
-    const bid = Number(row["bid_price"] ?? row["bp"] ?? 0);
-    const ask = Number(row["ask_price"] ?? row["ap"] ?? 0);
-    if (bid <= 0 || ask <= 0 || ask < bid) continue;
-    out.push({ tsMs: nsToMs(sip), bid, ask });
-  }
-  out.sort((a, b) => a.tsMs - b.tsMs);
-  return out;
-}
-
-async function fetchPaged(
-  firstUrl: string,
-  apiKey: string,
-  deadlineMs: number,
-): Promise<{
-  rows: unknown[];
-  truncated: boolean;
-  sawPolygonHttpError: boolean;
-  lowestPolygonHttpStatus: number | null;
-}> {
-  const rows: unknown[] = [];
-  let sawPolygonHttpError = false;
-  let lowestPolygonHttpStatus: number | null = null;
-  let url: string | null = firstUrl.includes("apiKey=")
-    ? firstUrl
-    : `${firstUrl}${firstUrl.includes("?") ? "&" : "?"}apiKey=${encodeURIComponent(apiKey)}`;
-  let truncated = false;
-  let paginationPages = 0;
-  pageLoop: while (url && Date.now() < deadlineMs) {
-    paginationPages += 1;
-    const pageUrl = url;
-    const pathForTrace = (() => {
-      try {
-        const u = new URL(pageUrl.replace(/\bapiKey=[^&]+/i, "apiKey=[REDACTED]"));
-        return u.pathname + u.search;
-      } catch {
-        return pageUrl.split("?")[0] ?? pageUrl;
-      }
-    })();
-    const tPageStart = Date.now();
-    let pageTimedOut = false;
-    let retry429Total = 0;
-    let saw429OnPage = false;
-    let finalStatus: number | null = null;
-
-    const remaining = deadlineMs - Date.now();
-    if (remaining <= 0) break;
-
-    let r: Response | undefined;
-    for (let attempt = 0; attempt <= 3; attempt++) {
-      const rem = deadlineMs - Date.now();
-      if (rem <= 0) {
-        truncated = true;
-        break pageLoop;
-      }
-      const httpMs = Math.min(PER_FETCH_HTTP_MS, Math.max(800, rem));
-      try {
-        r = await fetch(pageUrl, { signal: AbortSignal.timeout(httpMs) });
-      } catch {
-        truncated = true;
-        pageTimedOut = true;
-        appendPolygonApiTraceRecord({
-          path: pathForTrace,
-          method: "GET",
-          statusCode: null,
-          responseTimeMs: Date.now() - tPageStart,
-          paginationPages,
-          retryCountAfter429: retry429Total,
-          saw429: saw429OnPage,
-          timedOut: true,
-        });
-        break pageLoop;
-      }
-
-      if (r.status !== 429) {
-        finalStatus = r.status;
-        break;
-      }
-
-      saw429OnPage = true;
-      retry429Total += 1;
-
-      if (attempt >= 3) {
-        logger.warn(
-          { attempt: attempt + 1, url: pageUrl.split("?")[0] },
-          "strategistTapeBackfill: Polygon 429 after max retries on paginated fetch",
-        );
-        truncated = true;
-        finalStatus = r.status;
-        break;
-      }
-
-      const ra = r.headers.get("retry-after");
-      let delayMs: number;
-      if (ra != null && ra.trim() !== "") {
-        const sec = parseInt(ra.trim(), 10);
-        delayMs = Number.isFinite(sec) && sec >= 0 ? sec * 1000 : Math.min(10_000, 1000 * 2 ** attempt + Math.random() * 500);
-      } else {
-        delayMs = Math.min(10_000, 1000 * 2 ** attempt + Math.random() * 500);
-      }
-
-      const now = Date.now();
-      if (now + delayMs > deadlineMs) {
-        truncated = true;
-        finalStatus = r.status;
-        break;
-      }
-
-      logger.warn(
-        {
-          attempt: attempt + 1,
-          maxAttempts: 4,
-          delayMs: Math.round(delayMs),
-          retryAfterHeader: ra,
-          url: pageUrl.split("?")[0],
-        },
-        "strategistTapeBackfill: Polygon 429 on paginated fetch, backing off before retry",
-      );
-      await new Promise((res) => setTimeout(res, delayMs));
-    }
-
-    appendPolygonApiTraceRecord({
-      path: pathForTrace,
-      method: "GET",
-      statusCode: finalStatus,
-      responseTimeMs: Date.now() - tPageStart,
-      paginationPages,
-      retryCountAfter429: retry429Total,
-      saw429: saw429OnPage,
-      timedOut: pageTimedOut,
-    });
-
-    if (!r) {
-      truncated = true;
-      break;
-    }
-    if (!r.ok) {
-      sawPolygonHttpError = true;
-      if (lowestPolygonHttpStatus === null || r.status < lowestPolygonHttpStatus) {
-        lowestPolygonHttpStatus = r.status;
-      }
-      truncated = true;
-      break;
-    }
-    const j = (await r.json()) as { results?: unknown[]; next_url?: string };
-    if (Array.isArray(j.results)) rows.push(...j.results);
-    if (j.next_url) {
-      url = j.next_url.includes("apiKey=") ? j.next_url : `${j.next_url}&apiKey=${encodeURIComponent(apiKey)}`;
-    } else {
-      url = null;
-    }
-  }
-  if (Date.now() >= deadlineMs && url) truncated = true;
-  return { rows, truncated, sawPolygonHttpError, lowestPolygonHttpStatus };
-}
-
-function nbboAtOrBefore(quotes: QuotePoint[], tsMs: number): { bid: number; ask: number } | null {
-  let lo = 0;
-  let hi = quotes.length - 1;
-  let best: QuotePoint | null = null;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    const q = quotes[mid]!;
-    if (q.tsMs <= tsMs) {
-      best = q;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  return best ? { bid: best.bid, ask: best.ask } : null;
-}
+const fetchPaged = fetchPolygonPaged;
 
 async function fetchQuotesWindowed(
   occ: string,
@@ -728,6 +546,7 @@ export async function runStrategistTapeBackfill(args: {
   let persistRejectedCount = 0;
   let anySawPolygonHttpError = false;
   const dedupeByOcc = new Map<string, number>();
+  let insertedNullSideThisRun = 0;
 
   const existingRowCountResult = await db
     .select({ count: sql<number>`count(*)` })
@@ -831,6 +650,9 @@ export async function runStrategistTapeBackfill(args: {
       };
       const ml = occLegWindow.annotate(ticker, sample);
       occLegWindow.record(ticker, sample);
+      if (cl.side == null) {
+        insertedNullSideThisRun++;
+      }
       rowsToInsert.push({
         underlyingSymbol: ticker,
         date: sessionDate,
@@ -985,6 +807,14 @@ export async function runStrategistTapeBackfill(args: {
     totalDropped: totalDedupeDropped,
     byOcc: dedupeByOccRecord,
   };
+
+  if (anyTruncated || insertedNullSideThisRun > 0) {
+    queueMicrotask(() => {
+      void reclassifyUnclassifiedTrades(ticker).catch((err: unknown) => {
+        logger.error({ err, ticker }, "optionsTradeReclassifier: failed");
+      });
+    });
+  }
 
   if (totalDedupeDropped > 0) {
     const tapeBackfillDedupeTopOccs = Object.entries(dedupeByOccRecord)
