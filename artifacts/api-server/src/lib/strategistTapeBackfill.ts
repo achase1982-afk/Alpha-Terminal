@@ -26,6 +26,7 @@ import {
   OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS,
   OPTIONS_FLOW_RAW_TRADES_ON_CONFLICT_SOURCE_DEDUPE,
 } from "./optionsFlowRawTradesBulkInsert.js";
+import pLimit from "p-limit";
 
 const POLYGON_API = "https://api.polygon.io";
 const MAX_EXPIRIES = 3;
@@ -42,6 +43,11 @@ const PER_ROOT_MAX_MS = 18_000;
 const PER_ROOT_MIN_MS = 2_500;
 /** Upper bound on a single Polygon HTTP round-trip during backfill. */
 const PER_FETCH_HTTP_MS = 14_000;
+/**
+ * Concurrent OCC workers for REST tape backfill. Five balances Polygon rate limits (429 retries
+ * in fetchPaged) against wall-clock latency. Increase only after observing 429 retry behavior under load.
+ */
+const CONCURRENCY = 5;
 
 export type TapeBackfillStatusValue = "complete" | "partial" | "failed" | "skipped";
 
@@ -720,14 +726,6 @@ export async function runStrategistTapeBackfill(args: {
   const startMs = openMs;
   const gteNs = BigInt(startMs) * 1_000_000n;
   const lteNs = BigInt(endMs) * 1_000_000n;
-  let occCompleted = 0;
-  let tradesInserted = 0;
-  let anyTruncated = false;
-  let anyError = false;
-  let totalTradesFromPolygon = 0;
-  let persistRejectedCount = 0;
-  let anySawPolygonHttpError = false;
-  const dedupeByOcc = new Map<string, number>();
 
   const existingRowCountResult = await db
     .select({ count: sql<number>`count(*)` })
@@ -740,23 +738,57 @@ export async function runStrategistTapeBackfill(args: {
     );
   const existingRowCount = Number(existingRowCountResult[0]?.count ?? 0);
 
-  for (let occIdx = 0; occIdx < occList.length; occIdx++) {
-    const occ = occList[occIdx]!;
-    const budgetLeft = deadline - Date.now();
-    if (budgetLeft <= 0) {
-      anyTruncated = true;
-      break;
+  interface OccTapeBackfillWorkerResult {
+    occ: string;
+    kind: "completed" | "skipped_budget" | "skipped_bad_occ";
+    tradesInserted: number;
+    totalTradesFromPolygon: number;
+    persistRejectedCount: number;
+    anyTruncated: boolean;
+    anyError: boolean;
+    anySawPolygonHttpError: boolean;
+    dedupeDroppedForOcc: number;
+  }
+
+  const limit = pLimit(CONCURRENCY);
+
+  const processOcc = async (occIdx: number, occ: string): Promise<OccTapeBackfillWorkerResult> => {
+    const budgetSkip = (): OccTapeBackfillWorkerResult => ({
+      occ,
+      kind: "skipped_budget",
+      tradesInserted: 0,
+      totalTradesFromPolygon: 0,
+      persistRejectedCount: 0,
+      anyTruncated: false,
+      anyError: false,
+      anySawPolygonHttpError: false,
+      dedupeDroppedForOcc: 0,
+    });
+
+    if (Date.now() >= deadline) {
+      return budgetSkip();
     }
+
+    const meta = parseOccMeta(occ);
+    if (!meta) {
+      return {
+        occ,
+        kind: "skipped_bad_occ",
+        tradesInserted: 0,
+        totalTradesFromPolygon: 0,
+        persistRejectedCount: 0,
+        anyTruncated: false,
+        anyError: true,
+        anySawPolygonHttpError: false,
+        dedupeDroppedForOcc: 0,
+      };
+    }
+
+    const budgetLeft = deadline - Date.now();
     const remainingRoots = occList.length - occIdx;
     const fairSlice = Math.floor(budgetLeft / Math.max(1, remainingRoots));
     const rootBudget = Math.min(PER_ROOT_MAX_MS, Math.max(PER_ROOT_MIN_MS, fairSlice));
     const occDeadline = Math.min(deadline, Date.now() + Math.min(rootBudget, budgetLeft));
-
-    const meta = parseOccMeta(occ);
-    if (!meta) {
-      anyError = true;
-      continue;
-    }
 
     let baselineAvgVol: number | null = null;
     try {
@@ -786,22 +818,23 @@ export async function runStrategistTapeBackfill(args: {
       truncated: trTr,
       sawPolygonHttpError: trErr,
     } = await fetchPaged(tradeUrl, apiKey, occDeadline);
-    if (trErr) anySawPolygonHttpError = true;
-    if (trTr) anyTruncated = true;
+    let occTruncated = trTr;
+    let occSawHttp = trErr;
     const parsed = parseTrades(occ, tradeRows);
-    totalTradesFromPolygon += parsed.length;
+    const occTotalPoly = parsed.length;
     parsed.sort((a, b) => a.tsMs - b.tsMs);
     const {
       quotes,
       truncated: trQ,
       sawPolygonHttpError: qErr,
     } = await fetchQuotesWindowed(occ, apiKey, parsed, gteNs, lteNs, occDeadline);
-    if (qErr) anySawPolygonHttpError = true;
-    if (trQ) anyTruncated = true;
+    if (qErr) occSawHttp = true;
+    if (trQ) occTruncated = true;
 
     const occLegWindow = new FlowLegWindow();
 
     const rowsToInsert: Array<typeof optionsFlowRawTradesTable.$inferInsert> = [];
+    let occPersistRejected = 0;
     for (const t of parsed) {
       const nb = nbboAtOrBefore(quotes, t.tsMs);
       const cl = classifyForFlowPersistence({
@@ -814,7 +847,7 @@ export async function runStrategistTapeBackfill(args: {
         openInterest: oiSnapshot > 0 ? oiSnapshot : null,
       });
       if (!shouldPersistBackfillRow(cl)) {
-        persistRejectedCount++;
+        occPersistRejected++;
         continue;
       }
       const dteDays = dteCalendarDays(meta.expiration, t.tsMs);
@@ -863,6 +896,10 @@ export async function runStrategistTapeBackfill(args: {
       });
     }
 
+    let occTradesInserted = 0;
+    let occDedupeDropped = 0;
+    let occDbError = false;
+
     try {
       await db.transaction(async (tx) => {
         if (rowsToInsert.length > 0) {
@@ -874,13 +911,10 @@ export async function runStrategistTapeBackfill(args: {
               .values(slice)
               .onConflictDoNothing(OPTIONS_FLOW_RAW_TRADES_ON_CONFLICT_SOURCE_DEDUPE)
               .returning({ id: optionsFlowRawTradesTable.id });
-            tradesInserted += ins.length;
+            occTradesInserted += ins.length;
             occInserted += ins.length;
           }
-          const occDropped = rowsToInsert.length - occInserted;
-          if (occDropped > 0) {
-            dedupeByOcc.set(occ, (dedupeByOcc.get(occ) ?? 0) + occDropped);
-          }
+          occDedupeDropped = rowsToInsert.length - occInserted;
         }
         await tx
           .insert(optionsTapeBackfillOccCacheTable)
@@ -918,10 +952,52 @@ export async function runStrategistTapeBackfill(args: {
             : {}),
         },
       );
-      anyError = true;
+      occDbError = true;
     }
 
+    return {
+      occ,
+      kind: "completed",
+      tradesInserted: occTradesInserted,
+      totalTradesFromPolygon: occTotalPoly,
+      persistRejectedCount: occPersistRejected,
+      anyTruncated: occTruncated,
+      anyError: occDbError,
+      anySawPolygonHttpError: occSawHttp,
+      dedupeDroppedForOcc: occDedupeDropped,
+    };
+  };
+
+  const occResults = await Promise.all(
+    occList.map((occ, occIdx) => limit(() => processOcc(occIdx, occ))),
+  );
+
+  let occCompleted = 0;
+  let tradesInserted = 0;
+  let anyTruncated = false;
+  let anyError = false;
+  let totalTradesFromPolygon = 0;
+  let persistRejectedCount = 0;
+  let anySawPolygonHttpError = false;
+  const dedupeByOcc = new Map<string, number>();
+
+  for (const r of occResults) {
+    if (r.kind !== "completed") {
+      if (r.kind === "skipped_budget") {
+        anyTruncated = true;
+      }
+      continue;
+    }
     occCompleted++;
+    tradesInserted += r.tradesInserted;
+    totalTradesFromPolygon += r.totalTradesFromPolygon;
+    persistRejectedCount += r.persistRejectedCount;
+    if (r.anyTruncated) anyTruncated = true;
+    if (r.anyError) anyError = true;
+    if (r.anySawPolygonHttpError) anySawPolygonHttpError = true;
+    if (r.dedupeDroppedForOcc > 0) {
+      dedupeByOcc.set(r.occ, (dedupeByOcc.get(r.occ) ?? 0) + r.dedupeDroppedForOcc);
+    }
   }
 
   await flushFlowPersistenceNow();
