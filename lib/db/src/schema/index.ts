@@ -628,6 +628,11 @@ export const strategistTelemetryTable = pgTable("strategist_telemetry", {
   dataSource: text("data_source"),
   fetchFailureMode: text("fetch_failure_mode"),
   fullDiagnostic: jsonb("full_diagnostic"),
+  scannerSource: text("scanner_source"),
+  scannerScore: integer("scanner_score"),
+  scannerMode: text("scanner_mode"),
+  scannerEdgeType: text("scanner_edge_type"),
+  scannerDirectionalLean: text("scanner_directional_lean"),
 });
 
 export type StrategistTelemetry = typeof strategistTelemetryTable.$inferSelect;

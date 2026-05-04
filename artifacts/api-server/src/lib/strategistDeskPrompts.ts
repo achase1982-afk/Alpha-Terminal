@@ -3,6 +3,8 @@
  * Single-voice framing: one analyst, topic sections for navigation, no separate desk personas.
  */
 
+import { buildScannerContextPromptBlock, type ScannerStrategistContext } from "./scannerStrategistContext.js";
+
 /** Single-voice rule injected into each section prompt. */
 const SINGLE_VOICE_FRAMING = `You are writing one analysis broken into clearly labeled sections. There is one voice and one analyst. Section headers exist to help the reader navigate the analysis, not to attribute authorship to different roles. Do not write as a separate team, desk, or role. Use plain topic labels in prose only when helpful: Volatility, Flow, Catalyst, Decision.`;
 
@@ -54,6 +56,15 @@ DATA STATE (literal labels only):
 - If **dataQualitySummary.flags** is non-empty, mention the relevant flag(s) when they affect your conclusion.
 - **schemaVersion** is for client compatibility only; do not discuss schema or versioning in prose.`;
 
+function formatScannerContextDeskSection(dataPackage: string): string {
+  try {
+    const pkg = JSON.parse(dataPackage) as { scannerContext?: ScannerStrategistContext };
+    return buildScannerContextPromptBlock(pkg.scannerContext);
+  } catch {
+    return "";
+  }
+}
+
 function formatMicrostructureDeskLines(dataPackage: string): string {
   try {
     const pkg = JSON.parse(dataPackage) as {
@@ -103,8 +114,9 @@ Closing imbalance (last 5 min): ${c.side} $${notionalM.toFixed(2)}M at ${c.indic
 
 function snapshotBlock(dataPackage: string): string {
   const imb = formatClosingImbalanceDeskLine(dataPackage);
+  const scanner = formatScannerContextDeskSection(dataPackage);
   return `Market snapshot for this name (facts below only; use what is present and do not invent):
-
+${scanner}
 ${dataPackage}${DATA_STATE_LANGUAGE_RULES}${imb}${formatMicrostructureDeskLines(dataPackage)}`;
 }
 

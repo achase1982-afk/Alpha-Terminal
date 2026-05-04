@@ -1,6 +1,13 @@
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
+import { getNextEarningsDate } from "./earningsService.js";
 import { logFailure } from "./telemetry.js";
 import { emitTelemetry, createTelemetryBatch } from "./telemetryStore.js";
+import {
+  type ScannerEdgeType,
+  classifyEdgeType,
+  calendarDaysToDate,
+  impliedVolToVolPoints,
+} from "./scannerEdgeType.js";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
 const SCHWAB_TRADER = "https://api.schwabapi.com/trader/v1";
@@ -31,6 +38,10 @@ interface OptionsChainSummary {
   totalPutVolume: number;
   avgDailyOptionsVolume: number;
   hasWeeklyOptions: boolean;
+  /** ATM call IV in vol points (e.g. 32), nearest non-0DTE front window — for edge / term structure. */
+  frontAtmIvVolPoints: number | null;
+  /** ATM call IV in vol points for 30+ DTE slice. */
+  backAtmIvVolPoints: number | null;
 }
 
 export interface FilterResult {
@@ -65,6 +76,7 @@ export interface ScanCandidate {
   pulseComposite: number;
   pulseConfidence: number;
   pulseBias: string;
+  edgeType: ScannerEdgeType;
   directionalLean?: "BULLISH" | "BEARISH" | "MIXED";
   scanMode?: "DISCOVERY" | "MOMENTUM";
   flowDataAvailable?: boolean;
@@ -84,6 +96,8 @@ export interface ScanCandidate {
     largestPrintDescription: string | null;
     putCallVolumeRatio: number;
   };
+  /** Discovery: IO catalyst bonus applied to this symbol in idiosyncratic mode. */
+  catalystBonusApplied?: boolean;
 }
 
 export interface ScanResult {
@@ -198,8 +212,8 @@ async function fetchOptionsChainSummary(symbol: string, accessToken: string): Pr
   try {
     const params = new URLSearchParams({
       symbol,
-      contractType: "ALL",
-      strikeCount: "10",
+      contractType: "CALL",
+      strikeCount: "60",
       includeUnderlyingQuote: "true",
     });
     const res = await fetch(`${SCHWAB_API}/chains?${params.toString()}`, {
@@ -213,40 +227,70 @@ async function fetchOptionsChainSummary(symbol: string, accessToken: string): Pr
     let atmBid = 0, atmAsk = 0, atmIV = 0;
     let totalCallVol = 0, totalPutVol = 0;
     let minStrikeDiff = Infinity;
-    let allIVs: number[] = [];
+    const allIVs: number[] = [];
     let expirationCount = 0;
-    let totalContracts = 0;
+    const callRows: Array<{ strike: number; dte: number; iv: number }> = [];
 
-    const processMap = (map: unknown, putCall: "CALL" | "PUT") => {
+    const callMap = json["callExpDateMap"] as Record<string, Record<string, Array<Record<string, unknown>>>> | undefined;
+    const putMap = json["putExpDateMap"] as Record<string, Record<string, Array<Record<string, unknown>>>> | undefined;
+
+    const ingestSide = (map: typeof callMap, putCall: "CALL" | "PUT") => {
       if (!map || typeof map !== "object") return;
-      for (const [, strikes] of Object.entries(map as Record<string, unknown>)) {
+      for (const [, strikes] of Object.entries(map)) {
         expirationCount++;
-        for (const [, opts] of Object.entries(strikes as Record<string, unknown>)) {
-          for (const o of (opts as Array<Record<string, unknown>>)) {
+        for (const [, opts] of Object.entries(strikes)) {
+          for (const o of opts ?? []) {
             const strike = (o["strikePrice"] as number) ?? 0;
             const bid = (o["bid"] as number) ?? 0;
             const ask = (o["ask"] as number) ?? 0;
             const vol = (o["totalVolume"] as number) ?? 0;
             const iv = (o["volatility"] as number) ?? 0;
+            const dte = (o["daysToExpiration"] as number) ?? 0;
 
-            totalContracts++;
-            if (putCall === "CALL") totalCallVol += vol; else totalPutVol += vol;
+            if (putCall === "CALL") totalCallVol += vol;
+            else totalPutVol += vol;
+
             if (iv > 0 && iv < 900) allIVs.push(iv);
 
-            const diff = Math.abs(strike - underlyingPrice);
-            if (diff < minStrikeDiff && putCall === "CALL") {
-              minStrikeDiff = diff;
-              atmBid = bid;
-              atmAsk = ask;
-              atmIV = iv > 0 && iv < 900 ? iv : 0;
+            if (putCall === "CALL" && dte > 0 && iv > 0 && iv < 900) {
+              callRows.push({ strike, dte, iv });
+            }
+
+            if (putCall === "CALL") {
+              const diff = Math.abs(strike - underlyingPrice);
+              if (diff < minStrikeDiff) {
+                minStrikeDiff = diff;
+                atmBid = bid;
+                atmAsk = ask;
+                atmIV = iv > 0 && iv < 900 ? iv : 0;
+              }
             }
           }
         }
       }
     };
 
-    processMap(json["callExpDateMap"], "CALL");
-    processMap(json["putExpDateMap"], "PUT");
+    ingestSide(callMap, "CALL");
+    ingestSide(putMap, "PUT");
+
+    const band = 0.08;
+    const nearIv: number[] = [];
+    const farIv: number[] = [];
+    for (const r of callRows) {
+      if (Math.abs(r.strike - underlyingPrice) / underlyingPrice > band) continue;
+      const ivp = impliedVolToVolPoints(r.iv);
+      if (ivp == null) continue;
+      if (r.dte >= 5 && r.dte <= 45) nearIv.push(ivp);
+      if (r.dte >= 30) farIv.push(ivp);
+    }
+    const median = (xs: number[]) => {
+      if (xs.length === 0) return null;
+      const s = [...xs].sort((a, b) => a - b);
+      const m = Math.floor(s.length / 2);
+      return s.length % 2 === 0 ? (s[m - 1] + s[m]) / 2 : s[m];
+    };
+    const frontAtmIvVolPoints = median(nearIv);
+    const backAtmIvVolPoints = median(farIv);
 
     const atmMid = (atmBid + atmAsk) / 2;
     const atmSpreadPct = atmMid > 0 ? ((atmAsk - atmBid) / atmMid) * 100 : 100;
@@ -266,6 +310,8 @@ async function fetchOptionsChainSummary(symbol: string, accessToken: string): Pr
       totalPutVolume: totalPutVol,
       avgDailyOptionsVolume: totalCallVol + totalPutVol,
       hasWeeklyOptions,
+      frontAtmIvVolPoints,
+      backAtmIvVolPoints,
     };
   } catch {
     return null;
@@ -313,6 +359,28 @@ function computePercentChange(closes: number[], days: number): number | null {
   const prior = closes[closes.length - 1 - days];
   if (prior <= 0) return null;
   return ((current - prior) / prior) * 100;
+}
+
+function computeHV20FromCloses(closes: number[]): number {
+  if (closes.length < 21) return 0;
+  const slice = closes.slice(-21);
+  const returns: number[] = [];
+  for (let i = 1; i < slice.length; i++) {
+    if (slice[i - 1] > 0) returns.push(Math.log(slice[i] / slice[i - 1]));
+  }
+  if (returns.length < 2) return 0;
+  const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+  const variance = returns.reduce((a, r) => a + Math.pow(r - mean, 2), 0) / (returns.length - 1);
+  return Math.sqrt(variance) * Math.sqrt(252);
+}
+
+function momentumDirectionalLean(quote: QuoteData, pulse: PulseContext): "BULLISH" | "BEARISH" | "MIXED" {
+  const ch = quote.netPercentChange;
+  if (isBullishBias(pulse.bias) && ch > 0.3) return "BULLISH";
+  if (isBearishBias(pulse.bias) && ch < -0.3) return "BEARISH";
+  if (ch > 1) return "BULLISH";
+  if (ch < -1) return "BEARISH";
+  return "MIXED";
 }
 
 interface PulseContext {
@@ -620,7 +688,12 @@ export async function runDeterministicScan(
 
   log.info({ aboveThreshold: aboveThreshold.length, top5: top5.length }, "Scanner Stage 3: Ranking complete");
 
-  const candidates: ScanCandidate[] = top5.map(r => {
+  const todayYmd = new Date().toISOString().slice(0, 10);
+  const earningsMeta = await Promise.all(
+    top5.map((r) => getNextEarningsDate(r.symbol).catch(() => null)),
+  );
+
+  const candidates: ScanCandidate[] = top5.map((r, idx) => {
     const upcoming = getUpcomingEvents(30).filter(e =>
       e.title.toLowerCase().includes(r.symbol.toLowerCase()) || e.importance === "HIGH"
     ).slice(0, 5).map(e => ({ date: e.date, title: e.title, importance: e.importance }));
@@ -666,6 +739,43 @@ export async function runDeterministicScan(
       r.rsConfirmed &&
       !inverseToMacro;
 
+    const closes = r.candles.map((c) => c.close);
+    const hv20d = computeHV20FromCloses(closes);
+    const ivPt = impliedVolToVolPoints(r.chain?.atmIV ?? null);
+    const hvPt = hv20d > 0 && hv20d < 1 ? hv20d * 100 : hv20d > 0 ? hv20d : null;
+    const iv30OverHv20 =
+      ivPt != null && hvPt != null && hvPt > 0 ? ivPt / hvPt : null;
+
+    const earn = earningsMeta[idx];
+    const daysToNextCatalyst =
+      earn?.earningsDate && earn.daysAway != null
+        ? earn.daysAway
+        : earn?.earningsDate
+          ? calendarDaysToDate(todayYmd, earn.earningsDate)
+          : null;
+
+    const tc = r.chain?.totalCallVolume ?? 0;
+    const tp = r.chain?.totalPutVolume ?? 0;
+    const callHeavy = tp > 0 ? tc / tp > 1.25 : tc > 10_000;
+    const putHeavy = tc > 0 ? tp / tc > 1.25 : tp > 10_000;
+    const blockCall = tc * (r.chain?.atmMid ?? 0) * 100;
+    const blockPut = tp * (r.chain?.atmMid ?? 0) * 100;
+
+    const directionalLean = momentumDirectionalLean(r.quote, pulse);
+
+    const edgeType = classifyEdgeType({
+      iv30OverHv20,
+      daysToNextCatalyst,
+      ivr: r.chain?.ivr ?? null,
+      frontAtmIvVolPoints: r.chain?.frontAtmIvVolPoints ?? null,
+      backAtmIvVolPoints: r.chain?.backAtmIvVolPoints ?? null,
+      unusualCallFlowAskBias: callHeavy,
+      unusualPutFlowAskBias: putHeavy,
+      blockNotionalCallUsd: blockCall,
+      blockNotionalPutUsd: blockPut,
+      directionalLean,
+    });
+
     return {
       symbol: r.symbol,
       totalScore: r.totalScore,
@@ -684,6 +794,9 @@ export async function runDeterministicScan(
       pulseComposite: pulse.composite,
       pulseConfidence: pulse.confidence,
       pulseBias: pulse.bias,
+      edgeType,
+      directionalLean,
+      scanMode: "MOMENTUM",
     };
   });
 

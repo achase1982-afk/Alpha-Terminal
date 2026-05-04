@@ -30,6 +30,7 @@ import {
 } from "./strategistDiagnostics.js";
 import { runWithPolygonApiTraceAsync, takePolygonApiTrace } from "./polygonApiTrace.js";
 import { runInStrategistRunContext, getStrategistRunContext, mergeStrategistDiag } from "./strategistRunContext.js";
+import { buildScannerContextPromptBlock } from "./scannerStrategistContext.js";
 import {
   buildStrategistDiagnosticView,
   type StrategistDiagnosticView,
@@ -1035,7 +1036,7 @@ async function analyzeTickerV2Inner(
   }
   assertAnalyzeNotCancelled(progress);
 
-  const dataPackage = await buildDataPackage(
+  let dataPackage = await buildDataPackage(
     ticker,
     tickerData,
     chainSummary,
@@ -1058,6 +1059,16 @@ async function analyzeTickerV2Inner(
       earnings: earningsEnrichment,
     },
   );
+  const scanCtxHandoff = getStrategistRunContext()?.scannerContext;
+  if (scanCtxHandoff) {
+    try {
+      const pkgObj = JSON.parse(dataPackage) as Record<string, unknown>;
+      pkgObj.scannerContext = scanCtxHandoff;
+      dataPackage = JSON.stringify(pkgObj);
+    } catch {
+      /* keep original string */
+    }
+  }
   assertAnalyzeNotCancelled(progress);
   mergeStrategistDiag({ dataPackageStr: dataPackage });
 
@@ -3255,12 +3266,13 @@ async function callAiForTrade(
   logger.info({ provider, model, temperature, webSearch: true }, "StrategistV2: calling AI for trade");
 
   const today = new Date().toISOString().slice(0, 10);
+  const scanBlock = buildScannerContextPromptBlock(getStrategistRunContext()?.scannerContext ?? null);
   const flowContextBlock = progress?.flowContext
     ? `\n\n## RECENT UNUSUAL FLOW SNAPSHOT (just observed by user — incorporate into analysis)\n${progress.flowContext}\n`
     : "";
   const prompt = retryInstruction
-    ? `${retryInstruction}\n\nOriginal data package:\n${dataPackage}${flowContextBlock}`
-    : `Today is ${today}. Run web searches as required by the WEB SEARCH MANDATE in your system prompt, then analyze this ticker and recommend the best trade. Respond ONLY with a valid JSON object, no text before or after, no markdown fences.${flowContextBlock}\n\n${dataPackage}`;
+    ? `${retryInstruction}\n\nOriginal data package:\n${dataPackage}${scanBlock}${flowContextBlock}`
+    : `Today is ${today}. Run web searches as required by the WEB SEARCH MANDATE in your system prompt, then analyze this ticker and recommend the best trade. Respond ONLY with a valid JSON object, no text before or after, no markdown fences.${scanBlock}${flowContextBlock}\n\n${dataPackage}`;
 
   let rawText: string;
   let trace: WebSearchTrace;
@@ -3563,7 +3575,8 @@ async function callAiForTradeViaDebate(
   const flowContextBlock = progress?.flowContext
     ? `\n\n## RECENT UNUSUAL FLOW SNAPSHOT (just observed by user — incorporate into analysis)\n${progress.flowContext}\n`
     : "";
-  const debateDataPackage = dataPackage + flowContextBlock;
+  const scanBlock = buildScannerContextPromptBlock(getStrategistRunContext()?.scannerContext ?? null);
+  const debateDataPackage = scanBlock + dataPackage + flowContextBlock;
 
   const outcome = await runDebate({
     systemPrompt: STRATEGIST_SYSTEM_PROMPT,
@@ -4486,6 +4499,25 @@ async function logTelemetry(
       dataSource: extras.dataSource ?? null,
       fetchFailureMode: extras.fetchFailureMode ?? null,
       fullDiagnostic: extras.fullDiagnostic ?? null,
+      ...(() => {
+        const sc = getStrategistRunContext()?.scannerContext;
+        if (!sc) {
+          return {
+            scannerSource: null,
+            scannerScore: null,
+            scannerMode: null,
+            scannerEdgeType: null,
+            scannerDirectionalLean: null,
+          };
+        }
+        return {
+          scannerSource: sc.sourceScanner,
+          scannerScore: sc.scannerScore,
+          scannerMode: sc.scannerMode,
+          scannerEdgeType: sc.edgeType,
+          scannerDirectionalLean: sc.directionalLean,
+        };
+      })(),
     };
     const [row] = await db.insert(strategistTelemetryTable).values(values).returning({ id: strategistTelemetryTable.id });
     return row?.id ?? null;

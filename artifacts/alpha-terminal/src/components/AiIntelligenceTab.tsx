@@ -25,6 +25,7 @@ import type { AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
 import { useStrategistCache, type StrategistCacheData } from "@/hooks/useStrategistCache";
 import { MarketScanner, type DetCandidate } from "@/components/MarketScanner";
+import { takePendingScannerStrategistContext } from "@/lib/pendingScannerStrategistContext";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { AiLabStrategistView } from "@/components/AiLabStrategistView";
 import { StrategistV2RecommendationCard, StrategistV2BlockCard, IvrPopulatingCard, type StrategistV2Result as StrategistV2ResultType, type StrategistSendToOrderPayload, type BlockReason } from "@/components/StrategistV2Card";
@@ -3351,10 +3352,16 @@ export function AiIntelligenceTab({
     // survives unmount/remount of this component (e.g. switching bottom tabs).
     void (async () => {
       try {
+        const scannerContext = takePendingScannerStrategistContext();
         const res = await fetchWithAuth(`${API_BASE}/strategist/analyze`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ticker: upperTicker, jobId, ...(flowContext ? { flowContext } : {}) }),
+          body: JSON.stringify({
+            ticker: upperTicker,
+            jobId,
+            ...(flowContext ? { flowContext } : {}),
+            ...(scannerContext ? { scannerContext } : {}),
+          }),
           keepalive: true,
           signal: postAc.signal,
         });
