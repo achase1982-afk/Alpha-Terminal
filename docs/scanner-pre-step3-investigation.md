@@ -107,3 +107,108 @@ If Issue 3 was meant to be a separate scanner defect, paste the full symptom and
 | Admin/manual flow run | `artifacts/…/src/routes/snapshot.ts` (`POST /flow-only`) |
 
 The ellipsis stands for the backend host app directory name inside **`artifacts/`** (see repo tree).
+
+---
+
+## Follow-up (PR #217) — Why Discovery might fail when Momentum / Unusual Flow do not
+
+### Executive summary
+
+The **browser** `TypeError` (“expected pattern”) still means **`fetch()` + `redirect: 'error'`** on the **single** scanner HTTP call the UI makes for Discovery/Momentum. **Discovery does not use a different URL, method, or path than Momentum** on the wire. Any “Discovery-only” behavior is almost certainly **duration / payload size / server outcome** of the **same** route (`POST …/deterministic-scan` with `scanMode: "DISCOVERY"` vs `"MOMENTUM"`), or an **intermittent** edge/proxy issue that shows up more often when the handler runs longer — not a separate Discovery route in Express.
+
+`scannerUnusualFlow.ts` is **not** in the Alpha Terminal scan button path for Unusual Flow in `MarketScanner.tsx` (that UI calls **`POST …/ai/unusual-flow-scan`** in `routes/ai.ts`). The `/api/scanner/unusual-flow` router is a **different** product surface (job-based Polygon WS scan).
+
+---
+
+### 1. Frontend request construction (`MarketScanner.tsx`)
+
+| Tab | Endpoint | Method | Body |
+|-----|----------|--------|------|
+| **Discovery** | `` `${API_BASE}/ai/deterministic-scan` `` (`API_BASE` = `/api`) | `POST` | `JSON.stringify({ symbols: syms, accessToken: accessToken \|\| "", scanMode })` with **`scanMode === "DISCOVERY"`** (default when tab is Discovery) |
+| **Momentum** | **Same URL** | `POST` | **Same shape**; only **`scanMode === "MOMENTUM"`** |
+| **Unusual Flow** | `` `${API_BASE}/ai/unusual-flow-scan` `` | `POST` | `JSON.stringify({ symbols: syms, filters: unusualFilters, mode: presetMode, activePreset, basePreset: … })` — **different path**, **larger** body (filter object), no `accessToken` in body |
+
+**Differences:** Unusual Flow hits a **different** handler (`/ai/unusual-flow-scan`). Discovery vs Momentum differ **only** by one JSON field (`scanMode`) and the same `symbols` array; **no** trailing slash or query string variance for deterministic scan.
+
+---
+
+### 2. Backend route branching (`routes/ai.ts`)
+
+Both modes use **one** route:
+
+- Reads `scanMode` from body; defaults to **`DISCOVERY`** if not `MOMENTUM`.
+- Same shock gate, same pulse context, same `traderToken` resolution.
+- **`scanMode === "DISCOVERY"`** → `runDiscoveryScan(…)`; else → `runDeterministicScan(…)` from **`deterministicScanner.ts`** (v1).
+
+**No** separate middleware for Discovery. **No** auth header difference between modes (Schwab bearer comes from body `accessToken` inside the scanners; Clerk JWT is on the incoming request via `fetchWithAuth` like all other calls).
+
+---
+
+### 3. Where Discovery diverges from Momentum (server work)
+
+**Shared (both v1 and v2):** `fetchQuotesBatch` → Schwab **`/quotes`**; `fetchPortfolioSymbols` → Schwab **`/accounts?fields=positions`** (if `traderToken`); `fetchPriceHistory` → Schwab **`/pricehistory`**.
+
+**Momentum-only (`deterministicScanner.ts`):** per symbol (batched concurrency 5): **`fetchOptionsChainSummary`** → Schwab **`/chains`** — many chain requests.
+
+**Discovery-only (`deterministicScanner.v2.ts` → `runDiscoveryScan`):**
+
+- **DB:** `equity_daily`, `flow_daily_aggregates`, `options_flow_per_strike`, `equity_daily` IVR, `getFlowAcceleration`, telemetry inserts — **no HTTP** for Polygon in the main flow path (liquidity/flow use **`fetchFlowDataFromDB`**, not live Polygon snapshot in the hot path; `fetchPolygonOptionsData` exists but is **not** referenced from `runDiscoveryScan` in the traced file).
+- **After** the main scoring loop (Discovery-only blocks):
+  1. **IDIOSYNCRATIC mode:** `computeIOScore` per scored row — **DB only** in `ioScoreEngine.ts` (no `fetch` there).
+  2. **`requestFlowCapture(sym)`** for top-N symbols (`CFG.flowCaptureTopN`, default capped 20–50) — **internal** flow capture (Polygon WS / Schwab / chain helpers per `flowCaptureService.ts`); failures are caught and logged, not thrown to the route.
+  3. **`getPolygonFlowHighlightsBulk(symbols)`** — **DB only** (`polygonFlowHighlights.ts`: `options_flow_per_strike` + session tape tables).
+  4. **`getNextEarningsDate`** for each **candidate** in the pool — **`earningsService.ts` uses `fetch`** to vendor/Yahoo endpoints (can be many calls).
+  5. Larger **JSON response** (per-candidate metadata, Polygon highlights, catalyst chips, etc.).
+
+**Unusual Flow (`unusualFlowScanner.ts`):** **DB-only** read path for `POST /ai/unusual-flow-scan` — no Schwab token in body; no `runDiscoveryScan`.
+
+---
+
+### 4. Outbound HTTP from `runDiscoveryScan` (candidates for 3xx — only if misread as server-side)
+
+Node **`fetch` follows redirects by default**; a Polygon or Schwab **302** inside the **Node process** would **not** surface the **browser** “expected pattern” error. That error remains **client-side** on the **browser → API** request.
+
+If the symptom were **instead** a **500** with a message from an internal `fetch`, the suspects would be:
+
+1. **Schwab** (`Schwab market data host`) — quotes, price history, accounts (shared with Momentum where used).
+2. **`getNextEarningsDate`** — external HTTP per candidate (Discovery-only at scale).
+3. **Flow capture** — internal stack may call **Polygon REST** (`polygonChain.ts` etc.); redirects would be consumed inside Node.
+
+---
+
+### 5. Most likely explanation when “only Discovery” fails (same edge, same wrapper)
+
+Because **URL and wrapper are identical** for Discovery vs Momentum:
+
+1. **Proxy / gateway timeout or reset** on the **long-running** `POST /api/ai/deterministic-scan` when `scanMode` is **DISCOVERY** (more CPU, more DB, bulk highlights, top-N flow capture, many `getNextEarningsDate` calls, **larger JSON**). Some clients/proxies surface that as a **`TypeError`** rather than a clean HTTP status (similar class of failure as redirect-with-`redirect: 'error'`).
+2. **Intermittent 302** on the **same** path (auth/session middleware) that happens to correlate with longer requests — **Network tab** (`Location` header, status chain) is decisive.
+
+**Not supported by code review:** a Discovery-specific **different URL** or Express branch that returns 302 only for Discovery.
+
+---
+
+### 6. Recent git history (signal, not proof of regression)
+
+```text
+git log --oneline -30 -- artifacts/.../deterministicScanner.v2.ts artifacts/.../routes/ai.ts
+```
+
+Recent themes include: scanner → Strategist wiring, Polygon flow / live flow / flow capture, unusual-flow bonus and **`getPolygonFlowHighlightsBulk`**, LIVE_FL diagnostics. Those **increase Discovery work and response size** relative to older builds — consistent with **timeout** correlation, not a new redirect-only path.
+
+---
+
+### 7. Recommended fixes (once confirmed)
+
+| If evidence shows… | Fix direction |
+|-------------------|---------------|
+| **502/504 / connection reset** on deterministic-scan for Discovery only | Raise **nginx `proxy_read_timeout`** (and upstream `server.timeout` already 120s in `index.ts`); or **shorten Discovery** server-side (e.g. lower `flowCaptureTopN`, batch/limit `getNextEarningsDate`, defer highlights to async). |
+| **302/307** to login or CDN with **`Location`** | Fix **auth/session** or **canonical host** (www vs apex); optionally **`redirect: 'follow'`** for same-site API in `fetchWithAuth` **only** if policy allows (trade-off: may hide auth bugs). |
+| **Rare false correlation** | Add **structured client logging** (status, `res.redirected`, `res.url`) before `res.json()` on scan responses. |
+
+**Disambiguation in one request:** From the browser, run **Momentum** and **Discovery** back-to-back with DevTools open; compare **time to first byte**, **status**, **`redirected`**, and **response size**. If Discovery always exceeds a fixed threshold (e.g. 60s), treat as **timeout** first.
+
+---
+
+### 8. `scannerUnusualFlow.ts` note
+
+Mounted at **`/api/scanner`** (`routes/index.ts`). **Not** used by `MarketScanner`’s Unusual Flow tab, which calls **`/api/ai/unusual-flow-scan`**. No change to Issue 1 diagnosis from this file unless a different client calls `/api/scanner/unusual-flow`.
