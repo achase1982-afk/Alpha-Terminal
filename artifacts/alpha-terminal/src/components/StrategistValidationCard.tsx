@@ -1311,64 +1311,68 @@ export function StrategistValidationCard({
         fontFamily: SYS_FONT,
       }}
     >
-      <button
-        type="button"
-        onClick={toggleExpanded}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            toggleExpanded();
-          }
-        }}
-        aria-expanded={expanded}
-        aria-controls={panelDomId}
-        aria-label={expanded ? "Collapse validation card" : "Expand validation card"}
-        className="w-full flex items-center justify-between px-3 py-2 gap-2 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#141414]"
-        style={{ background: "#0d0d0f", borderBottom: expanded ? `1px solid ${pal.border}` : "none" }}
-      >
-        <div className="flex items-start gap-2 min-w-0 flex-1">
-          <Icon className="w-4 h-4 shrink-0 mt-0.5" style={{ color: pal.fg }} aria-hidden />
-          <div className="min-w-0 flex-1 space-y-0.5">
-            <div className="flex items-center gap-2 flex-wrap">
-              {ticker ? (
-                <span className="font-mono text-[13px] font-bold text-white">{ticker}</span>
-              ) : (
-                <span className="font-mono text-[13px] font-bold text-zinc-500">—</span>
-              )}
-              <span
-                className="font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded shrink-0"
-                style={{ background: `${pal.fg}18`, color: pal.fg, border: `1px solid ${pal.fg}35` }}
-              >
-                Validation
-              </span>
-              <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider shrink-0">{modeLabel}</span>
+      {!expanded ? (
+        <button
+          type="button"
+          onClick={toggleExpanded}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              toggleExpanded();
+            }
+          }}
+          aria-expanded={false}
+          aria-controls={panelDomId}
+          aria-label="Expand validation card"
+          className="w-full flex items-center justify-between gap-3 px-3 py-3 min-h-[44px] text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#141414]"
+          style={{ background: "#0d0d0f", borderBottom: `1px solid ${pal.border}` }}
+        >
+          <div className="flex items-start gap-2 min-w-0 flex-1">
+            <Icon className="w-4 h-4 shrink-0 mt-0.5" style={{ color: pal.fg }} aria-hidden />
+            <div className="min-w-0 flex-1 space-y-0.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                {ticker ? (
+                  <span className="font-mono text-[13px] font-bold text-white">{ticker}</span>
+                ) : (
+                  <span className="font-mono text-[13px] font-bold text-zinc-500">—</span>
+                )}
+                <span
+                  className="font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded shrink-0"
+                  style={{ background: `${pal.fg}18`, color: pal.fg, border: `1px solid ${pal.fg}35` }}
+                >
+                  Validation
+                </span>
+                <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-wider shrink-0">{modeLabel}</span>
+              </div>
+              <div className="font-mono text-[10px] text-zinc-400 leading-snug truncate" title={decisionSummary}>
+                {decisionSummary}
+              </div>
+              {generatedSummary ? (
+                <div className="font-mono text-[9px] text-zinc-600">{generatedSummary}</div>
+              ) : null}
             </div>
-            <div className="font-mono text-[10px] text-zinc-400 leading-snug truncate" title={decisionSummary}>
-              {decisionSummary}
-            </div>
-            {generatedSummary ? (
-              <div className="font-mono text-[9px] text-zinc-600">{generatedSummary}</div>
-            ) : null}
           </div>
-        </div>
-        {expanded ? (
-          <ChevronUp className="w-3 h-3 text-zinc-500 shrink-0" aria-hidden />
-        ) : (
-          <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" aria-hidden />
-        )}
-      </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="font-mono text-[9px] uppercase tracking-wider text-zinc-500 hidden sm:inline">
+              Details
+            </span>
+            <ChevronDown className="w-4 h-4 text-zinc-400 shrink-0" aria-hidden />
+          </div>
+        </button>
+      ) : null}
 
+      <div id={panelDomId} hidden={!expanded}>
       {expanded ? (
-        <div id={panelDomId}>
+      <>
       {/* ── Verdict banner ── */}
       <div
         className="px-4 py-3"
         style={{ background: pal.bg, borderBottom: `1px solid ${pal.border}` }}
       >
         <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <Icon className="w-5 h-5 shrink-0" style={{ color: pal.fg }} />
-            <div>
+            <div className="min-w-0">
               <div
                 className="font-bold tracking-wider"
                 style={{ color: pal.fg, fontSize: 13, letterSpacing: "0.06em" }}
@@ -1380,14 +1384,37 @@ export function StrategistValidationCard({
               )}
             </div>
           </div>
-          <div className="flex flex-col items-end gap-1.5 shrink-0">
-            <CopyValidationButton payload={payload} meta={meta} generatedAt={generatedAt} transcript={transcript} />
-            <span style={{ color: pal.fg, fontSize: 16, fontWeight: 700, lineHeight: 1 }}>
-              {confidence}%
-            </span>
-            <span style={{ color: "#525252", fontSize: 9, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-              confidence
-            </span>
+          <div className="flex items-start gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={toggleExpanded}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  toggleExpanded();
+                }
+              }}
+              aria-expanded={true}
+              aria-controls={panelDomId}
+              aria-label="Collapse validation card"
+              title="Collapse card"
+              className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded-lg shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
+              style={{
+                background: "rgba(0,0,0,0.2)",
+                border: `1px solid ${pal.border}`,
+              }}
+            >
+              <ChevronUp className="w-4 h-4 text-zinc-200 shrink-0" aria-hidden />
+            </button>
+            <div className="flex flex-col items-end gap-1.5">
+              <CopyValidationButton payload={payload} meta={meta} generatedAt={generatedAt} transcript={transcript} />
+              <span style={{ color: pal.fg, fontSize: 16, fontWeight: 700, lineHeight: 1 }}>
+                {confidence}%
+              </span>
+              <span style={{ color: "#525252", fontSize: 9, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                confidence
+              </span>
+            </div>
           </div>
         </div>
 
@@ -1603,8 +1630,9 @@ export function StrategistValidationCard({
           <AnalystReport payload={payload} meta={meta} />
         </CollapsibleBlock>
       </div>
-        </div>
+      </>
       ) : null}
+      </div>
     </div>
   );
 }
