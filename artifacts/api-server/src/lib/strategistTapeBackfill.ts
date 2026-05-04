@@ -98,6 +98,11 @@ export interface TapeBackfillStatus {
   captureSource?: "websocket" | "rest" | "flat_file";
   /** Wall time spent in flow capture (when captureSource is set). */
   captureDurationMs?: number;
+  /**
+   * WebSocket subscription list length when flow capture subscribed to OCCs for live tape.
+   * REST coverage remains on {@link occRequested} / {@link occCompleted}; do not conflate.
+   */
+  wsOccSubscribed?: number;
   /** How session tape OCCs were chosen (tiered band + volume-ranked cap). */
   coverageGeometry?: TapeBackfillCoverageGeometry;
 }
