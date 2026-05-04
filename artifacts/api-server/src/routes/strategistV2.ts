@@ -1140,7 +1140,9 @@ router.get("/scanner-correlation", async (req, res) => {
     const lookbackDays = Math.min(Math.max(Number(req.query.lookbackDays) || 14, 1), 365);
     const src = req.query.scannerSource as string | undefined;
     const scannerSource =
-      src === "discovery" || src === "momentum" || src === "unusual_flow" ? src : undefined;
+      src === "discovery" || src === "momentum" || src === "unusual_flow" || src === "unified"
+        ? src
+        : undefined;
     const summary = await getScannerStrategistCorrelation({ lookbackDays, scannerSource });
     res.json({ lookbackDays, scannerSource: scannerSource ?? null, ...summary });
   } catch (err) {

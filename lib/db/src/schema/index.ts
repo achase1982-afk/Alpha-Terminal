@@ -633,6 +633,9 @@ export const strategistTelemetryTable = pgTable("strategist_telemetry", {
   scannerMode: text("scanner_mode"),
   scannerEdgeType: text("scanner_edge_type"),
   scannerDirectionalLean: text("scanner_directional_lean"),
+  scannerSurfacedBy: text("scanner_surfaced_by"),
+  scannerFlowScore: integer("scanner_flow_score"),
+  scannerUniverse: text("scanner_universe"),
 });
 
 export type StrategistTelemetry = typeof strategistTelemetryTable.$inferSelect;
