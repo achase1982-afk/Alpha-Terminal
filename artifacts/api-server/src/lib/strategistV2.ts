@@ -30,6 +30,7 @@ import {
 } from "./strategistDiagnostics.js";
 import { runWithPolygonApiTraceAsync, takePolygonApiTrace } from "./polygonApiTrace.js";
 import { runInStrategistRunContext, getStrategistRunContext, mergeStrategistDiag } from "./strategistRunContext.js";
+import { fetchRecentNyseImbalanceForTicker, CLOSING_IMBALANCE_BALANCED_THRESHOLD_USD } from "./ibImbalancePersistence.js";
 import { fetchRecentNasdaqTotalviewForTicker } from "./ibTotalviewPersistence.js";
 import { fetchRecentEsDepthSummary } from "./ibEsDepthPersistence.js";
 import { acquireDynamicIbPool } from "./ibDynamicSubscriptionManager.js";
@@ -3088,8 +3089,11 @@ async function buildDataPackage(
   const tv = await fetchRecentNasdaqTotalviewForTicker(ticker);
   const es = await fetchRecentEsDepthSummary();
   const cboeDiag = getCboeOneFeedDiagnostics(upperTicker);
+  const imb = await fetchRecentNyseImbalanceForTicker(ticker);
 
   mergeStrategistDiag({
+    closingImbalancePresent: imb.row != null,
+    closingImbalanceLatencyMs: imb.latencyMs,
     nasdaqDepthPresent: tv.row != null,
     nasdaqDepthLatencyMs: tv.latencyMs,
     esContextPresent: es.row != null,
@@ -3105,6 +3109,30 @@ async function buildDataPackage(
     cboeOnePoolCapacity: poolDiag.cboeOnePoolCapacity,
     cboeOneWasColdStart: cboeWasColdStart,
   });
+
+  if (imb.row) {
+    const row = imb.row;
+    const shares = Number(row.imbalanceShares);
+    const notionalUsd = row.imbalanceNotionalUsd;
+    const absNotional = Math.abs(notionalUsd);
+    const side: "buy" | "sell" | "balanced" =
+      absNotional < CLOSING_IMBALANCE_BALANCED_THRESHOLD_USD
+        ? "balanced"
+        : shares > 0
+          ? "buy"
+          : "sell";
+    const last = tickerData.price;
+    const ip = row.indicativePrice;
+    const indicativePriceVsLast = last > 0 ? ((ip - last) / last) * 100 : 0;
+    pkg.closingImbalance = {
+      timestamp: row.imbalanceTimestamp.toISOString(),
+      side,
+      shares,
+      notionalUsd,
+      indicativePrice: ip,
+      indicativePriceVsLast,
+    };
+  }
 
   if (tv.row) {
     const r = tv.row;
@@ -4261,6 +4289,8 @@ async function emitFullDiagnosticTelemetry(args: {
     runOutcome: outcome,
     runDurationMs: durationMs,
     error: args.extras.error ?? null,
+    closingImbalancePresent: ctx?.diag.closingImbalancePresent,
+    closingImbalanceLatencyMs: ctx?.diag.closingImbalanceLatencyMs ?? null,
     nasdaqDepthPresent: ctx?.diag.nasdaqDepthPresent ?? null,
     nasdaqDepthLatencyMs: ctx?.diag.nasdaqDepthLatencyMs ?? null,
     esContextPresent: ctx?.diag.esContextPresent ?? null,

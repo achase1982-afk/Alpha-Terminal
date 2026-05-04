@@ -632,6 +632,30 @@ export const strategistTelemetryTable = pgTable("strategist_telemetry", {
 
 export type StrategistTelemetry = typeof strategistTelemetryTable.$inferSelect;
 
+/** NYSE closing auction imbalance snapshots from IBKR generic tick 225 (API stream). */
+export const nyseOrderImbalancesTable = pgTable(
+  "nyse_order_imbalances",
+  {
+    id: text("id").primaryKey(),
+    underlyingSymbol: text("underlying_symbol").notNull(),
+    imbalanceTimestamp: timestamp("imbalance_timestamp", { withTimezone: true }).notNull(),
+    imbalanceShares: bigint("imbalance_shares", { mode: "bigint" }).notNull(),
+    imbalanceNotionalUsd: doublePrecision("imbalance_notional_usd").notNull(),
+    indicativePrice: doublePrecision("indicative_price").notNull(),
+    pairedShares: bigint("paired_shares", { mode: "bigint" }),
+    regulatoryImbalance: bigint("regulatory_imbalance", { mode: "bigint" }),
+    auctionType: text("auction_type").notNull().default("closing"),
+    source: text("source").notNull().default("IBKR_NYSE"),
+  },
+  (t) => [
+    index("nyse_order_imbalances_sym_ts_idx").on(t.underlyingSymbol, t.imbalanceTimestamp),
+    index("nyse_order_imbalances_ts_idx").on(t.imbalanceTimestamp),
+  ],
+);
+
+export type NyseOrderImbalance = typeof nyseOrderImbalancesTable.$inferSelect;
+export type NyseOrderImbalanceInsert = typeof nyseOrderImbalancesTable.$inferInsert;
+
 /** NASDAQ TotalView L2 depth summary (deterministic microstructure for strategist). */
 export const nasdaqTotalviewSummaryTable = pgTable(
   "nasdaq_totalview_summary",

@@ -7,6 +7,8 @@ export type StrategistDiagScratch = {
   tapeBackfillStatus?: TapeBackfillStatus;
   dataPackageStr?: string;
   soloModelLabel?: string;
+  closingImbalancePresent?: boolean;
+  closingImbalanceLatencyMs?: number | null;
   nasdaqDepthPresent?: boolean;
   nasdaqDepthLatencyMs?: number | null;
   esContextPresent?: boolean;

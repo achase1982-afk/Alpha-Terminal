@@ -174,6 +174,8 @@ export interface BuildFullDiagnosticArgs {
   runOutcome: StrategistRunOutcomeTelemetry;
   runDurationMs: number;
   error: { message: string; stack?: string } | null;
+  closingImbalancePresent?: boolean;
+  closingImbalanceLatencyMs?: number | null;
   nasdaqDepthPresent?: boolean | null;
   nasdaqDepthLatencyMs?: number | null;
   esContextPresent?: boolean | null;
@@ -201,11 +203,19 @@ export function buildStrategistFullDiagnosticJson(args: BuildFullDiagnosticArgs)
     };
   }
   const sessionRollups = extractSessionTapeRollupsFromDataPackage(args.dataPackageParsed);
+  const closingImbalancePresent =
+    args.closingImbalancePresent ??
+    args.dataPackageParsed.closingImbalance != null;
+  const closingImbalanceLatencyMs =
+    args.closingImbalanceLatencyMs ?? null;
+
   const dataQualitySummary: Record<string, unknown> = {
     ...dqMerged,
     sessionTapeTapeKind: sessionRollups.sessionTapeTapeKind,
     aggressorSessionTotals: sessionRollups.aggressorSessionTotals,
     sweepBlockLargePerSession: sessionRollups.sweepBlockLargePerSession,
+    closingImbalancePresent,
+    closingImbalanceLatencyMs,
     nasdaqDepthPresent: args.nasdaqDepthPresent ?? null,
     nasdaqDepthLatencyMs: args.nasdaqDepthLatencyMs ?? null,
     esContextPresent: args.esContextPresent ?? null,

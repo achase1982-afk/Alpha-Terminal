@@ -80,10 +80,32 @@ function formatMicrostructureDeskLines(dataPackage: string): string {
   }
 }
 
+function formatClosingImbalanceDeskLine(dataPackage: string): string {
+  try {
+    const pkg = JSON.parse(dataPackage) as {
+      closingImbalance?: {
+        side: string;
+        notionalUsd: number;
+        indicativePrice: number;
+        indicativePriceVsLast: number;
+      };
+    };
+    const c = pkg.closingImbalance;
+    if (!c) return "";
+    const notionalM = Math.abs(c.notionalUsd) / 1_000_000;
+    return `
+
+Closing imbalance (last 5 min): ${c.side} $${notionalM.toFixed(2)}M at ${c.indicativePrice}, ${c.indicativePriceVsLast.toFixed(2)}% vs last.`;
+  } catch {
+    return "";
+  }
+}
+
 function snapshotBlock(dataPackage: string): string {
+  const imb = formatClosingImbalanceDeskLine(dataPackage);
   return `Market snapshot for this name (facts below only; use what is present and do not invent):
 
-${dataPackage}${DATA_STATE_LANGUAGE_RULES}${formatMicrostructureDeskLines(dataPackage)}`;
+${dataPackage}${DATA_STATE_LANGUAGE_RULES}${imb}${formatMicrostructureDeskLines(dataPackage)}`;
 }
 
 /** Volatility topic: surface-only voice (no vendor / pipeline attribution). */
@@ -278,7 +300,7 @@ Catalyst section:
 ${catalystRead}
 
 Data package:
-${dataPackage}${formatMicrostructureDeskLines(dataPackage)}
+${dataPackage}${formatClosingImbalanceDeskLine(dataPackage)}${formatMicrostructureDeskLines(dataPackage)}
 ${DATA_STATE_LANGUAGE_RULES}
 
 ${OUTPUT_NO_SOURCE_RULES}
