@@ -272,7 +272,8 @@ export function buildStrategistDiagnosticView(fullPayload: StrategistFullPayload
   const occCompleted = num(flowSummaryObj?.tapeBackfillOccCompleted) ?? num(tbObj?.occCompleted) ?? 0;
   const dedupe = tbObj?.tapeBackfillDedupeDrops;
   const dedupeObj = dedupe && typeof dedupe === "object" && !Array.isArray(dedupe) ? (dedupe as Record<string, unknown>) : null;
-  const tapeBackfillDedupeDropsTotal = num(dedupeObj?.totalDropped) ?? 0;
+  const tapeBackfillDedupeDropsTotal =
+    num(flowSummaryObj?.tapeBackfillDedupeDropsTotal) ?? num(dedupeObj?.totalDropped) ?? 0;
   const wsOccFromFlow = num(flowSummaryObj?.tapeBackfillWsOccSubscribed);
   const wsOccFromTb = num(tbObj?.wsOccSubscribed);
   const wsOccSubscribed = wsOccFromFlow ?? wsOccFromTb ?? null;
