@@ -542,6 +542,7 @@ export function StrategistDeskCard({
           void p.catch(() => {
             expectAudioPlaybackRef.current = false;
             if (playGen === audioPlayGenRef.current) {
+              progressiveSessionRef.current = null;
               setAudioError("Audio unavailable — playback failed");
               setAudioReady(false);
             }
