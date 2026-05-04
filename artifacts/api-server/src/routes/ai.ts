@@ -208,7 +208,7 @@ function pulseTelemetryIndicatorValue(indicators: MarketIndicators, name: PulseT
   }
 }
 
-: { pulse: Record<string, unknown>; generatedAt: number; thinkingTokens: string[] } | null = null;
+let lastPulseSnapshot: { pulse: Record<string, unknown>; generatedAt: number; thinkingTokens: string[] } | null = null;
 let lastPulseError: string | null = null;
 let pulseGenerationInFlight = false;
 let pulseThinkingBuffer: string[] = [];
