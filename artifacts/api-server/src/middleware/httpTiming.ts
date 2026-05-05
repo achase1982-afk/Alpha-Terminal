@@ -4,7 +4,7 @@ import { emitTelemetry } from "../lib/telemetryStore.js";
 
 /**
  * Skip paths where `res.on("finish")` reflects connection lifetime, not handler latency:
- * - Server-Sent Events (quotes stream, AI token stream, flow timesales stream).
+ * - Server-Sent Events (quotes stream, AI SSE routes, flow timesales stream).
  * Long-lived streams would inflate duration_ms incorrectly.
  */
 const SKIP_PATHS = new Set<string>([
@@ -13,6 +13,8 @@ const SKIP_PATHS = new Set<string>([
   "/api/ping",
   "/api/stream/quotes",
   "/api/ai/technical-analysis/stream",
+  "/api/ai/market-pulse/stream",
+  "/api/ai/options-strategist/stream",
 ]);
 
 function shouldSkipTiming(path: string): boolean {
