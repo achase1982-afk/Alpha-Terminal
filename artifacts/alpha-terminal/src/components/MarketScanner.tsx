@@ -528,6 +528,46 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
 
       {scanComplete && (
         <div className="space-y-3">
+          {unified.layer1Universe && (
+            <>
+              <div aria-live="polite" aria-atomic="true" className="sr-only">
+                {`Scanner universe loaded: ${unified.layer1Universe.count} tickers.`}
+              </div>
+              <div className="rounded-xl border border-card-border bg-[#0c0c0c] overflow-hidden">
+                <div className="px-4 py-3 border-b border-card-border">
+                  <h3 id="scanner-v3-layer1-heading" className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
+                    Scanner v3 — universe (Layer 1)
+                  </h3>
+                  <p className="mt-1 text-xs text-zinc-300 tabular-nums">
+                    <span className="text-zinc-500">Count </span>
+                    <span className="font-bold text-white">{unified.layer1Universe.count}</span>
+                    <span className="text-zinc-600 mx-2">·</span>
+                    <span className="text-zinc-500">scan_at </span>
+                    <time className="font-mono text-zinc-200" dateTime={unified.layer1Universe.scan_at}>
+                      {unified.layer1Universe.scan_at}
+                    </time>
+                  </p>
+                </div>
+                <ul
+                  role="list"
+                  aria-labelledby="scanner-v3-layer1-heading"
+                  aria-label={`Scanner universe, ${unified.layer1Universe.count} tickers`}
+                  className="max-h-[min(420px,50vh)] overflow-y-auto divide-y divide-zinc-800/80"
+                >
+                  {unified.layer1Universe.tickers.map(sym => (
+                    <li
+                      key={sym}
+                      role="listitem"
+                      tabIndex={0}
+                      className="px-4 py-2.5 font-mono text-sm font-semibold text-white outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#FFB800] focus-visible:bg-zinc-900/80"
+                    >
+                      {sym}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </>
+          )}
           <div className="flex flex-wrap items-end justify-between gap-2 px-1">
             <SnapshotFreshnessBanner
               snapshotCompletedAt={unified.snapshotCompletedAt}

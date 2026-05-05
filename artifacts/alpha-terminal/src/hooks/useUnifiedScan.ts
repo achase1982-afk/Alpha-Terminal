@@ -14,6 +14,12 @@ export interface V2ScanResponse {
   scan_at: string;
 }
 
+export interface ScannerV3UniverseResponse {
+  tickers: string[];
+  scan_at: string;
+  count: number;
+}
+
 export interface UseUnifiedScanState {
   phase: UnifiedScanPhase;
   candidates: UnifiedScanCandidate[];
@@ -22,6 +28,8 @@ export interface UseUnifiedScanState {
   stale: boolean | null;
   scanAt: string | null;
   errorMessage: string | null;
+  /** Layer 1 — static LC130 universe from GET /api/scanner/v3/universe */
+  layer1Universe: ScannerV3UniverseResponse | null;
   startScan: (universeId: string) => Promise<void>;
   cancelLocal: () => void;
 }
@@ -41,6 +49,7 @@ export function useUnifiedScan(): UseUnifiedScanState {
   const [stale, setStale] = useState<boolean | null>(null);
   const [scanAt, setScanAt] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [layer1Universe, setLayer1Universe] = useState<ScannerV3UniverseResponse | null>(null);
 
   const cancelLocal = useCallback(() => {
     setPhase("idle");
@@ -50,15 +59,39 @@ export function useUnifiedScan(): UseUnifiedScanState {
     setStale(null);
     setScanAt(null);
     setErrorMessage(null);
+    setLayer1Universe(null);
   }, []);
 
-  const startScan = useCallback(async (universeId: string) => {
+  const startScan = useCallback(async (_universeId: string) => {
     setPhase("scanning");
     setErrorMessage(null);
     setCandidates([]);
+    setLayer1Universe(null);
     try {
+      const v3Res = await fetchWithAuth(`${API_BASE}/scanner/v3/universe`, { method: "GET" });
+      if (v3Res.status === 401) {
+        setPhase("error");
+        setErrorMessage("Unauthorized — sign in again.");
+        return;
+      }
+      if (!v3Res.ok) {
+        const t = await v3Res.text().catch(() => "");
+        setPhase("error");
+        setErrorMessage(t.trim() || `Scanner v3 error (${v3Res.status}). Please try again.`);
+        return;
+      }
+      const layer1 = (await v3Res.json()) as ScannerV3UniverseResponse;
+      const tickers = Array.isArray(layer1.tickers) ? layer1.tickers : [];
+      const scan_at =
+        typeof layer1.scan_at === "string" ? layer1.scan_at : new Date().toISOString();
+      const count =
+        typeof layer1.count === "number" && Number.isFinite(layer1.count)
+          ? layer1.count
+          : tickers.length;
+      setLayer1Universe({ tickers, scan_at, count });
+
       const params = new URLSearchParams({
-        universe: universeId,
+        universe: _universeId,
         limit: "25",
         minScore: "0",
       });
@@ -118,6 +151,7 @@ export function useUnifiedScan(): UseUnifiedScanState {
     stale,
     scanAt,
     errorMessage,
+    layer1Universe,
     startScan,
     cancelLocal,
   };
