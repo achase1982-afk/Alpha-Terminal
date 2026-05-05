@@ -330,6 +330,8 @@ export const scannerTapeMetricsTable = pgTable("scanner_tape_metrics", {
   dedupeDropped: integer("dedupe_dropped").notNull().default(0),
   anyTruncated: boolean("any_truncated").notNull().default(false),
   status: text("status").notNull(),
+  /** Wall-clock ms for the last strategistTapeBackfill run (this ticker/session). */
+  durationMs: integer("duration_ms"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   primaryKey({ columns: [t.ticker, t.sessionDate] }),
@@ -337,6 +339,30 @@ export const scannerTapeMetricsTable = pgTable("scanner_tape_metrics", {
 ]);
 
 export type ScannerTapeMetric = typeof scannerTapeMetricsTable.$inferSelect;
+
+/** Historical tape backfill runs (append-only) for coverage trending vs scanner_health cycles. */
+export const scannerTapeMetricsCycleLogTable = pgTable("scanner_tape_metrics_cycle_log", {
+  id: serial("id").primaryKey(),
+  ticker: text("ticker").notNull(),
+  sessionDate: date("session_date").notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+  chainContractCount: integer("chain_contract_count"),
+  occRequested: integer("occ_requested").notNull().default(0),
+  occCompleted: integer("occ_completed").notNull().default(0),
+  tradesAttemptedInsert: integer("trades_attempted_insert").notNull().default(0),
+  tradesInsertedCommitted: integer("trades_inserted_committed").notNull().default(0),
+  dedupeDropped: integer("dedupe_dropped").notNull().default(0),
+  anyTruncated: boolean("any_truncated").notNull().default(false),
+  status: text("status").notNull(),
+  durationMs: integer("duration_ms"),
+  polygonHttpTimeoutMs: integer("polygon_http_timeout_ms"),
+  symbolBudgetMs: integer("symbol_budget_ms"),
+}, (t) => [
+  index("scanner_tape_cycle_log_ticker_recorded_idx").on(t.ticker, t.recordedAt),
+  index("scanner_tape_cycle_log_recorded_idx").on(t.recordedAt),
+]);
+
+export type ScannerTapeMetricsCycleLog = typeof scannerTapeMetricsCycleLogTable.$inferSelect;
 
 /**
  * Item 3: materialized per-OCC 20d avg volume as-of a session calendar date.

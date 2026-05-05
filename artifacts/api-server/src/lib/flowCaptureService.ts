@@ -16,6 +16,8 @@ import { FlowLegWindow } from "./flowMultilegExtras.js";
 import {
   buildTapeOccList,
   runStrategistTapeBackfill,
+  tapeSymbolBudgetMsFromChainContractCount,
+  TAPE_SYMBOL_BUDGET_CAP_MS,
   type ChainSummaryLike,
   type TapeBackfillStatus,
 } from "./strategistTapeBackfill.js";
@@ -497,7 +499,10 @@ async function runWebsocketCaptureInternal(
         chainSummary: chainResolved.summary,
         marketCapTier: chainResolved.tier,
         forcedSessionDate: todayYmd,
-        budgetMs: Math.min(120_000, timeoutMs),
+        budgetMs: Math.min(
+          TAPE_SYMBOL_BUDGET_CAP_MS,
+          Math.max(tapeSymbolBudgetMsFromChainContractCount(chain.length), Math.min(120_000, timeoutMs)),
+        ),
       });
       rowsInserted += restSegment.tradesInserted;
     } catch (err) {
@@ -811,7 +816,7 @@ async function runWebsocketCaptureInternal(
           chainSummary: resolved.summary,
           marketCapTier: resolved.tier,
           forcedSessionDate: sessionDate,
-          budgetMs: 120_000,
+          budgetMs: tapeSymbolBudgetMsFromChainContractCount(resolved.chain.length),
         });
         fc.rowsInserted += fb.tradesInserted;
         fc.source = "rest";
@@ -894,6 +899,7 @@ async function runCaptureOnce(ticker: string, sessionDate: string, opts: FlowCap
     chainSummary: resolved.summary,
     marketCapTier: resolved.tier,
     forcedSessionDate: sessionDate,
+    budgetMs: tapeSymbolBudgetMsFromChainContractCount(resolved.chain.length),
   });
   const dur = Date.now() - t0;
   rotateMetricsHour();

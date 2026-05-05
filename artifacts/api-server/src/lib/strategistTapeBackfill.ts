@@ -1,4 +1,4 @@
-import { db, optionsFlowRawTradesTable, optionsTapeBackfillOccCacheTable, scannerTapeMetricsTable } from "@workspace/db";
+import { db, optionsFlowRawTradesTable, optionsTapeBackfillOccCacheTable, scannerTapeMetricsCycleLogTable, scannerTapeMetricsTable } from "@workspace/db";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { extractPgErrorContext, logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
@@ -37,30 +37,50 @@ const QUOTE_PREPAD_MS = 5_000;
 /** Polygon max page size for /v3/trades and /v3/quotes (fewer round trips on liquid names). */
 const TRADE_PAGE_LIMIT = 50_000;
 const QUOTE_PAGE_LIMIT = 50_000;
-/** Overall wall-clock budget for the whole symbol backfill (many OCC roots). */
+/** Overall wall-clock budget for the whole symbol backfill (many OCC roots); raised for large chains. */
 const DEFAULT_BUDGET_MS = 180_000;
-/** Phase 1: Polygon trades fetch only (half of default symbol budget). */
-const PHASE_1_BUDGET_MS = 90_000;
-/** Phase 2: quotes + aggressor classification + UPDATE (half of default symbol budget). */
-const PHASE_2_BUDGET_MS = 90_000;
-/** Hard cap on wall time spent inside a single OCC (fetch + classify + DB); raised for mega names. */
-const PER_ROOT_MAX_MS_DEFAULT = 18_000;
-const PER_ROOT_MAX_MS_MEGA = 45_000;
+/** Minimum phase slice floor when splitting symbol budget (half trades fetch / half quotes+updates). */
+const PHASE_BUDGET_MIN_MS = 1;
+/** Hard cap on wall time spent inside a single OCC (fetch + classify + DB); scales with HTTP timeout. */
+const PER_ROOT_MAX_MS_MIN = 18_000;
+const PER_ROOT_MAX_MS_CAP = 120_000;
 /** Minimum slice reserved for each remaining OCC so progress stays fair vs one slow contract. */
 const PER_ROOT_MIN_MS = 2_500;
 /**
- * Concurrent OCC workers for REST tape backfill. Ten balances throughput vs Polygon rate limits.
+ * Concurrent OCC workers for REST tape backfill. Ten balances throughput vs Polygon rate limits
+ * (Options Advanced: watch concurrent REST usage; 10 parallel OCCs × pagination is typical).
  */
 const CONCURRENCY = 10;
 
-/** Tickers that use longer per-HTTP timeout for Polygon pagination (mega liquid names). */
-const MEGA_POLYGON_TIMEOUT_TICKERS = new Set([
-  "SPY", "QQQ", "IWM", "GLD",
-  "NVDA", "AAPL", "MSFT", "AMZN", "GOOGL", "META", "TSLA",
-]);
+/** Per-HTTP-request timeout for Polygon pagination ({@link fetchPolygonPaged} uses AbortSignal.timeout per page). */
+const HTTP_TIMEOUT_FLOOR_MS = 14_000;
+const HTTP_TIMEOUT_CAP_MS = 90_000;
+/** Max total wall time for one symbol's tape backfill (phase1+phase2). Exported for flow capture callers. */
+export const TAPE_SYMBOL_BUDGET_CAP_MS = 900_000;
 
-function polygonPagedTimeoutMsForTicker(ticker: string): number {
-  return MEGA_POLYGON_TIMEOUT_TICKERS.has(ticker.toUpperCase()) ? 60_000 : 14_000;
+/**
+ * `ceil(chainContracts / 50)` seconds, capped at 90s — used as Polygon HTTP timeout for tape pagination.
+ * Not the phase wall clock; see {@link tapeSymbolBudgetMsFromChainContractCount}.
+ */
+export function tapeHttpTimeoutMsForChainContractCount(chainContractCount: number): number {
+  const n = Number(chainContractCount);
+  if (!Number.isFinite(n) || n <= 0) return HTTP_TIMEOUT_FLOOR_MS;
+  return Math.min(HTTP_TIMEOUT_CAP_MS, Math.max(HTTP_TIMEOUT_FLOOR_MS, Math.ceil(n / 50) * 1000));
+}
+
+/**
+ * Minimum symbol-level budget so large chains are not cut off at the legacy 180s default.
+ * Uses same `ceil(n/50)*90s` wall-clock suggestion as the user spec, capped at 15 minutes total.
+ */
+export function tapeSymbolBudgetMsFromChainContractCount(chainContractCount: number, floorMs: number = DEFAULT_BUDGET_MS): number {
+  const n = Number(chainContractCount);
+  if (!Number.isFinite(n) || n <= 0) return floorMs;
+  const suggested = Math.ceil(n / 50) * 90_000;
+  return Math.min(TAPE_SYMBOL_BUDGET_CAP_MS, Math.max(floorMs, suggested));
+}
+
+function perRootMaxMsForHttpTimeout(httpMs: number): number {
+  return Math.min(PER_ROOT_MAX_MS_CAP, Math.max(PER_ROOT_MAX_MS_MIN, httpMs * 3));
 }
 
 export type TapeBackfillStatusValue = "complete" | "partial" | "failed" | "skipped";
@@ -438,9 +458,7 @@ export async function runStrategistTapeBackfill(args: {
   forcedSessionDate?: string;
 }): Promise<TapeBackfillStatus> {
   const ticker = args.ticker.toUpperCase();
-  const budgetMs = args.budgetMs ?? DEFAULT_BUDGET_MS;
-  const phase1Ms = Math.min(PHASE_1_BUDGET_MS, Math.max(1, Math.floor(budgetMs / 2)));
-  const phase2Ms = Math.min(PHASE_2_BUDGET_MS, Math.max(1, budgetMs - phase1Ms));
+  const tapeBackfillRunStarted = Date.now();
   const nowWall = new Date();
   const todayYmd = nyCalendarYmd(nowWall);
   const sessionDate =
@@ -535,8 +553,31 @@ export async function runStrategistTapeBackfill(args: {
   });
   const tier = args.marketCapTier ?? marketCtx.tier;
   const { occs: occList, coverageGeometry } = buildTapeOccList(ticker, args.chain, args.chainSummary, tier);
-  const perRootMaxMs = MEGA_POLYGON_TIMEOUT_TICKERS.has(ticker) ? PER_ROOT_MAX_MS_MEGA : PER_ROOT_MAX_MS_DEFAULT;
-  const polygonHttpTimeoutMs = polygonPagedTimeoutMsForTicker(ticker);
+  const chainContractCount = args.chain.length;
+  const polygonHttpTimeoutMs = tapeHttpTimeoutMsForChainContractCount(chainContractCount);
+  const perRootMaxMs = perRootMaxMsForHttpTimeout(polygonHttpTimeoutMs);
+  const symbolBudgetMs = tapeSymbolBudgetMsFromChainContractCount(chainContractCount);
+  const budgetMs = Math.min(
+    TAPE_SYMBOL_BUDGET_CAP_MS,
+    Math.max(symbolBudgetMs, args.budgetMs ?? DEFAULT_BUDGET_MS),
+  );
+  const phase1Ms = Math.max(PHASE_BUDGET_MIN_MS, Math.floor(budgetMs / 2));
+  const phase2Ms = Math.max(PHASE_BUDGET_MIN_MS, budgetMs - phase1Ms);
+
+  logger.info(
+    {
+      ticker,
+      chainContractCount,
+      occRootsRequested: occList.length,
+      polygonHttpTimeoutMs,
+      perRootMaxMs,
+      budgetMs,
+      phase1Ms,
+      phase2Ms,
+    },
+    "strategistTapeBackfill: chain-scaled timeouts and symbol budget",
+  );
+
   if (occList.length === 0) {
     return {
       status: "skipped",
@@ -671,11 +712,29 @@ export async function runStrategistTapeBackfill(args: {
     const oiSnapshot = openInterestForOcc(args.chain, meta);
 
     const tradeUrl = `${POLYGON_API}/v3/trades/${encodeURIComponent(occ)}?timestamp.gte=${gteNs}&timestamp.lte=${lteNs}&order=asc&limit=${TRADE_PAGE_LIMIT}`;
-    const {
-      rows: tradeRows,
-      truncated: trTr,
-      sawPolygonHttpError: trErr,
-    } = await fetchPaged(tradeUrl, apiKey, occDeadline, { httpTimeoutMs: polygonHttpTimeoutMs });
+
+    let trTr = false;
+    let trErr = false;
+    let tradeRows: unknown[] = [];
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const httpMs =
+        attempt === 0 ? polygonHttpTimeoutMs : Math.min(HTTP_TIMEOUT_CAP_MS, polygonHttpTimeoutMs * 2);
+      const r = await fetchPaged(tradeUrl, apiKey, occDeadline, { httpTimeoutMs: httpMs });
+      tradeRows = r.rows;
+      trTr = r.truncated;
+      trErr = r.sawPolygonHttpError;
+      if (!trTr && !trErr) break;
+      if (attempt === 0 && (trTr || trErr) && Date.now() < occDeadline - 50) {
+        const nextHttpMs = Math.min(HTTP_TIMEOUT_CAP_MS, polygonHttpTimeoutMs * 2);
+        logger.warn(
+          { ticker, occ, truncated: trTr, sawHttpErr: trErr, nextHttpMs },
+          "strategistTapeBackfill: OCC trades fetch incomplete, retry once with extended HTTP timeout",
+        );
+      } else {
+        break;
+      }
+    }
+
     const occSawHttp = trErr;
     const parsed = parseTrades(occ, tradeRows);
     const occTotalPoly = parsed.length;
@@ -1194,6 +1253,8 @@ export async function runStrategistTapeBackfill(args: {
     "strategistTapeBackfill: done",
   );
 
+  const durationMs = Date.now() - tapeBackfillRunStarted;
+
   try {
     await db
       .insert(scannerTapeMetricsTable)
@@ -1207,6 +1268,7 @@ export async function runStrategistTapeBackfill(args: {
         dedupeDropped: totalDedupeDropped,
         anyTruncated,
         status,
+        durationMs,
         updatedAt: new Date(),
       })
       .onConflictDoUpdate({
@@ -1219,6 +1281,7 @@ export async function runStrategistTapeBackfill(args: {
           dedupeDropped: totalDedupeDropped,
           anyTruncated,
           status,
+          durationMs,
           updatedAt: new Date(),
         },
       });
@@ -1226,6 +1289,30 @@ export async function runStrategistTapeBackfill(args: {
     logFlowPipelineWarn(
       "tape_metrics_persist",
       "strategistTapeBackfill: scanner_tape_metrics upsert failed",
+      { err, ticker },
+    );
+  }
+
+  try {
+    await db.insert(scannerTapeMetricsCycleLogTable).values({
+      ticker,
+      sessionDate,
+      chainContractCount: chainContractCount,
+      occRequested: occList.length,
+      occCompleted,
+      tradesAttemptedInsert: rowsAttemptedInsertTotal,
+      tradesInsertedCommitted: tradesInserted,
+      dedupeDropped: totalDedupeDropped,
+      anyTruncated,
+      status,
+      durationMs,
+      polygonHttpTimeoutMs: polygonHttpTimeoutMs,
+      symbolBudgetMs: budgetMs,
+    });
+  } catch (err) {
+    logFlowPipelineWarn(
+      "tape_cycle_log",
+      "strategistTapeBackfill: cycle log insert failed",
       { err, ticker },
     );
   }

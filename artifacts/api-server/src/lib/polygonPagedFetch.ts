@@ -1,5 +1,10 @@
 /**
  * Shared paginated GET helper for Polygon REST (used by tape backfill and quote replay).
+ *
+ * Each HTTP GET uses {@link fetch} with `AbortSignal.timeout(httpMs)` where `httpMs` is
+ * `min(httpTimeoutMs option, remaining deadline)` — i.e. **per GET page**, not per OCC symbol
+ * and not a single AbortSignal for the whole tape run. Timeouts therefore stack through
+ * pagination; callers raise `httpTimeoutMs` for heavy chains (see strategistTapeBackfill).
  */
 import { logger } from "./logger.js";
 import { appendPolygonApiTraceRecord } from "./polygonApiTrace.js";
