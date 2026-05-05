@@ -148,6 +148,13 @@
       "when": 1778800000000,
       "tag": "0024_ibkr_diagnostics_runs",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1778850000000,
+      "tag": "0025_telemetry_events",
+      "breakpoints": true
     }
   ]
 }
