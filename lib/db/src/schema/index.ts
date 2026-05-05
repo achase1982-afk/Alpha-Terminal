@@ -327,6 +327,8 @@ export const scannerTapeMetricsTable = pgTable("scanner_tape_metrics", {
   occCompleted: integer("occ_completed").notNull().default(0),
   tradesAttemptedInsert: integer("trades_attempted_insert").notNull().default(0),
   tradesInsertedCommitted: integer("trades_inserted_committed").notNull().default(0),
+  /** Raw trades returned from Polygon in session window (tape backfill phase 1 sum over OCC). */
+  tradesObservedPolygon: integer("trades_observed_polygon"),
   dedupeDropped: integer("dedupe_dropped").notNull().default(0),
   anyTruncated: boolean("any_truncated").notNull().default(false),
   status: text("status").notNull(),
@@ -964,3 +966,28 @@ export const scannerHealthTable = pgTable("scanner_health", {
 ]);
 
 export type ScannerHealth = typeof scannerHealthTable.$inferSelect;
+
+/** Per-ticker OCC/tape coverage snapshot for one scanner_health cycle (LC130 worker). */
+export const scannerTickerCycleCoverageTable = pgTable("scanner_ticker_cycle_coverage", {
+  id: serial("id").primaryKey(),
+  cycleId: integer("cycle_id")
+    .references(() => scannerHealthTable.id, { onDelete: "cascade" })
+    .notNull(),
+  ticker: text("ticker").notNull(),
+  chainContractCount: integer("chain_contract_count"),
+  occAttempted: integer("occ_attempted").notNull().default(0),
+  occCompleted: integer("occ_completed").notNull().default(0),
+  occCoveragePct: numeric("occ_coverage_pct"),
+  tradesInserted: integer("trades_inserted").notNull().default(0),
+  tradesObserved: integer("trades_observed"),
+  insertCoveragePct: numeric("insert_coverage_pct"),
+  truncated: boolean("truncated").notNull().default(false),
+  elapsedMs: integer("elapsed_ms").notNull().default(0),
+  tier: text("tier").notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index("scanner_ticker_cycle_cov_cycle_idx").on(t.cycleId),
+  index("scanner_ticker_cycle_cov_ticker_recorded_idx").on(t.ticker, t.recordedAt),
+]);
+
+export type ScannerTickerCycleCoverage = typeof scannerTickerCycleCoverageTable.$inferSelect;

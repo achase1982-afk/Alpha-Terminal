@@ -120,6 +120,13 @@
       "when": 1778600000000,
       "tag": "0020_scanner_tape_metrics",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1778650000000,
+      "tag": "0021_scanner_ticker_cycle_coverage",
+      "breakpoints": true
     }
   ]
 }
