@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { desc, sql } from "drizzle-orm";
 import { pgTable, text, serial, real, integer, boolean, timestamp, jsonb, uniqueIndex, index, date, doublePrecision, bigint, numeric, primaryKey, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -1017,6 +1017,28 @@ export const scannerTickerCycleCoverageTable = pgTable("scanner_ticker_cycle_cov
 ]);
 
 export type ScannerTickerCycleCoverage = typeof scannerTickerCycleCoverageTable.$inferSelect;
+
+/** Durable append-only log for emitTelemetry (ring buffer remains live UI source). */
+export const telemetryEventsTable = pgTable(
+  "telemetry_events",
+  {
+    id: bigint("id", { mode: "bigint" }).primaryKey().generatedAlwaysAsIdentity(),
+    emittedAt: timestamp("emitted_at", { withTimezone: true }).defaultNow().notNull(),
+    system: text("system").notNull(),
+    level: text("level").notNull(),
+    message: text("message").notNull(),
+    subsystem: text("subsystem"),
+    details: jsonb("details").notNull().default(sql`'{}'::jsonb`),
+    requestId: text("request_id"),
+  },
+  (t) => [
+    index("telemetry_events_emitted_at_idx").on(desc(t.emittedAt)),
+    index("telemetry_events_message_emitted_at_idx").on(t.message, desc(t.emittedAt)),
+    index("telemetry_events_system_emitted_at_idx").on(t.system, desc(t.emittedAt)),
+  ],
+);
+
+export type TelemetryEventRow = typeof telemetryEventsTable.$inferSelect;
 
 /** IBKR tick-by-tick entitlement pilot (Settings UI); one row per 60s run. */
 export const ibkrDiagnosticsRunsTable = pgTable("ibkr_diagnostics_runs", {

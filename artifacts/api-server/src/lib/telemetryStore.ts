@@ -1,3 +1,6 @@
+import { db, telemetryEventsTable } from "@workspace/db";
+import { logger } from "./logger.js";
+
 export type TelemetrySystem =
   | "SCHWAB_API"
   | "SCHWAB_STREAM"
@@ -75,6 +78,23 @@ export function emitTelemetry(
   if (events.length > MAX_ENTRIES) {
     events.splice(0, events.length - MAX_ENTRIES);
   }
+
+  void db
+    .insert(telemetryEventsTable)
+    .values({
+      system,
+      level: severity,
+      message,
+      subsystem: feature ?? null,
+      details: details ?? {},
+      requestId: null,
+    })
+    .catch((err: unknown) => {
+      logger.error(
+        { err, system, severity, message, feature, batchId },
+        "emitTelemetry: telemetry_events insert failed",
+      );
+    });
 }
 
 function inferFeature(system: TelemetrySystem, message: string): TelemetryFeature | null {
