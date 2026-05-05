@@ -937,7 +937,31 @@ export async function requestFlowCapture(ticker: string, opts?: FlowCaptureOptio
 
   let p = inflightByKey.get(key);
   if (!p) {
-    p = runCaptureOnce(sym, sessionDate, opts ?? {})
+    const mergedOpts = opts ?? {};
+    const timeoutMs = mergedOpts.timeout ?? DEFAULT_TIMEOUT_MS;
+    let overallTimer: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<FlowCaptureResult>((resolve) => {
+      overallTimer = setTimeout(() => {
+        rotateMetricsHour();
+        metrics.failedLastHour++;
+        logger.warn({ ticker: sym, sessionDate, timeoutMs }, "flowCapture: overall timeout fired");
+        resolve({
+          sessionDate,
+          source: "rest",
+          rowsInserted: 0,
+          occsSubscribed: 0,
+          durationMs: timeoutMs,
+          errors: ["flow_capture_overall_timeout"],
+        });
+      }, timeoutMs);
+    });
+    const capturePromise = runCaptureOnce(sym, sessionDate, mergedOpts).finally(() => {
+      if (overallTimer !== undefined) {
+        clearTimeout(overallTimer);
+        overallTimer = undefined;
+      }
+    });
+    p = Promise.race([capturePromise, timeoutPromise])
       .catch((err): FlowCaptureResult => {
         rotateMetricsHour();
         metrics.failedLastHour++;
