@@ -14,7 +14,6 @@ import { getLiveMarketIndicatorsForPulse } from "./liveMarketIndicators.js";
 import { impliedVolToVolPoints, classifyEdgeType, type ScannerEdgeType } from "./scannerEdgeType.js";
 import { getScannerSector } from "./scannerSectorMap.js";
 import { logger } from "./logger.js";
-import { isSnapshotWorkerScheduledWindowEt } from "./snapshotWorkerSchedule.js";
 
 const log = logger.child({ module: "snapshotRefreshWorker" });
 
@@ -34,6 +33,23 @@ function tierFromMarketCapUsd(mc: number | null | undefined): MarketCapTier {
 
 function nyYmd(d: Date): string {
   return d.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+}
+
+/** 9:00–16:30 ET: regular hours plus 30m extended pre/post. */
+function isSnapshotWorkerWindowEt(now = new Date()): boolean {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+    weekday: "short",
+  }).formatToParts(now);
+  const wd = parts.find((p) => p.type === "weekday")?.value ?? "Mon";
+  if (wd === "Sat" || wd === "Sun") return false;
+  const h = parseInt(parts.find((p) => p.type === "hour")?.value ?? "0", 10);
+  const m = parseInt(parts.find((p) => p.type === "minute")?.value ?? "0", 10);
+  const mins = h * 60 + m;
+  return mins >= 9 * 60 && mins < 16 * 60 + 30;
 }
 
 function mid(b?: number, a?: number): number | null {
@@ -559,7 +575,7 @@ export function startSnapshotRefreshWorker(): void {
   log.info("snapshot worker started");
   void runOneCycle().catch((err) => log.error({ err }, "snapshot worker initial cycle failed"));
   workerTimer = setInterval(() => {
-    if (!isSnapshotWorkerScheduledWindowEt()) return;
+    if (!isSnapshotWorkerWindowEt()) return;
     void runOneCycle().catch((err) => log.error({ err }, "snapshot worker cycle failed"));
   }, REFRESH_INTERVAL_MS);
 }

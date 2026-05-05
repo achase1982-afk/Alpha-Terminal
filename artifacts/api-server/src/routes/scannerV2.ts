@@ -1,11 +1,11 @@
 import { Router, type IRouter } from "express";
 import { getAuth } from "@clerk/express";
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, inArray, isNull, or, sql } from "drizzle-orm";
 import { db, scannerHealthTable, tickerSignalSnapshotTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
-import { isSnapshotWorkerScheduledWindowEt } from "../lib/snapshotWorkerSchedule.js";
 import { resolveScannerUniverseSymbolsForUser } from "./scanner.js";
 
+const STALE_AFTER_SECONDS = 5 * 60;
 const router: IRouter = Router();
 const log = logger.child({ route: "scannerV2" });
 
@@ -135,28 +135,38 @@ router.get("/scan", async (req, res) => {
   }
   const upper = [...new Set(tickers.map((t) => t.toUpperCase()))];
   if (upper.length === 0) {
-    return res.json({ candidates: [], snapshot_age_seconds: null, scan_at: new Date().toISOString() });
+    return res.json({
+      candidates: [],
+      snapshot_completed_at: null,
+      snapshot_age_seconds: null,
+      stale: null,
+      scan_at: new Date().toISOString(),
+    });
   }
 
   const health = await db
-    .select()
+    .select({ cycleCompletedAt: scannerHealthTable.cycleCompletedAt })
     .from(scannerHealthTable)
     .orderBy(desc(scannerHealthTable.cycleCompletedAt))
     .limit(1);
-  const last = health[0]?.cycleCompletedAt;
-  const now = Date.now();
-  const lastMs = last ? new Date(last).getTime() : 0;
-  const ageSec = lastMs ? Math.floor((now - lastMs) / 1000) : null;
 
-  const workerShouldBeRunning = isSnapshotWorkerScheduledWindowEt(new Date(now));
-  if (workerShouldBeRunning && (!last || now - lastMs > 5 * 60 * 1000)) {
+  const last = health[0]?.cycleCompletedAt ?? null;
+  if (!last) {
     return res.status(503).json({
-      error: "Scanner refresh stalled, latest cycle: " + (last ? new Date(last).toISOString() : "never"),
+      error:
+        "Scanner snapshot worker has not completed a cycle yet. Data will appear after the worker initializes.",
     });
   }
-  if (last && now - lastMs > 90_000) {
-    res.setHeader("X-Scanner-Stale", "true");
-  }
+
+  const snapshotIso = new Date(last).toISOString();
+  const now = Date.now();
+  const lastMs = new Date(last).getTime();
+  const ageSec = Math.max(0, Math.floor((now - lastMs) / 1000));
+  const stale = ageSec > STALE_AFTER_SECONDS;
+
+  res.setHeader("X-Scanner-Snapshot-At", snapshotIso);
+  res.setHeader("X-Scanner-Snapshot-Age-Seconds", String(ageSec));
+  res.setHeader("X-Scanner-Stale", stale ? "true" : "false");
 
   const rows = await db
     .select()
@@ -177,7 +187,9 @@ router.get("/scan", async (req, res) => {
   const candidates = rows.map(rowToCandidate);
   return res.json({
     candidates,
+    snapshot_completed_at: snapshotIso,
     snapshot_age_seconds: ageSec,
+    stale,
     scan_at: new Date().toISOString(),
   });
 });

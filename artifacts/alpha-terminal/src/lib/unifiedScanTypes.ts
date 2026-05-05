@@ -54,6 +54,10 @@ export interface UnifiedScanCandidate {
 
 export interface V2ScanWireResponse {
   candidates: UnifiedScanCandidate[];
+  /** ISO timestamp of latest scanner_health cycle_completed_at (pipeline snapshot boundary). */
+  snapshot_completed_at: string | null;
   snapshot_age_seconds: number | null;
+  /** True when snapshot_age_seconds > 5 minutes (same threshold as server staleness). */
+  stale: boolean | null;
   scan_at: string;
 }

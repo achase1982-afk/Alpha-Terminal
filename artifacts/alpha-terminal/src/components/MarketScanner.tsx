@@ -22,6 +22,7 @@ import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { useUnifiedScan } from "@/hooks/useUnifiedScan";
 import { UnifiedScannerCard } from "./UnifiedScannerCard";
 import { ScannerErrorBoundary } from "./ScannerErrorBoundary";
+import { isUsEquitiesMarketHoursEt } from "@/lib/usMarketHours";
 
 function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCreateScreen, onEditScreen, onDeleteScreen, onRefreshScreen, refreshingScreenId, onCreateWatchlist, onEditWatchlist, onDeleteWatchlist }: {
   value: string;
@@ -284,6 +285,59 @@ function formatScanTime(iso: string | null | undefined): string {
   }
 }
 
+function formatAgeShort(seconds: number | null): string {
+  if (seconds == null || !Number.isFinite(seconds)) return "";
+  if (seconds < 60) return `${seconds} second${seconds === 1 ? "" : "s"}`;
+  const m = Math.floor(seconds / 60);
+  if (m < 60) return `${m} minute${m === 1 ? "" : "s"}`;
+  const h = Math.floor(m / 60);
+  return `${h} hour${h === 1 ? "" : "s"}`;
+}
+
+function SnapshotFreshnessBanner(props: {
+  snapshotCompletedAt: string | null;
+  snapshotAgeSeconds: number | null;
+  stale: boolean | null;
+}) {
+  const { snapshotCompletedAt, snapshotAgeSeconds, stale } = props;
+  const inMarketHours = isUsEquitiesMarketHoursEt();
+
+  if (!snapshotCompletedAt && snapshotAgeSeconds == null) return null;
+
+  const tsLabel = formatScanTime(snapshotCompletedAt);
+  const ageLabel = formatAgeShort(snapshotAgeSeconds);
+
+  if (stale === true && inMarketHours) {
+    return (
+      <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200/95">
+        Live refresh stalled. Last update {tsLabel}
+      </div>
+    );
+  }
+
+  if (stale === true && !inMarketHours) {
+    return (
+      <p className="text-[11px] text-muted-foreground/80 px-1">
+        Last session close {tsLabel}. Live refresh resumes at next market open.
+      </p>
+    );
+  }
+
+  if (stale === false && ageLabel) {
+    return (
+      <p className="text-[11px] text-muted-foreground/70 px-1">
+        Updated {ageLabel} ago
+      </p>
+    );
+  }
+
+  return (
+    <p className="text-[11px] text-muted-foreground/70 px-1">
+      Snapshot {tsLabel}
+    </p>
+  );
+}
+
 type SendToStrategistFn = (sym: string) => void;
 
 function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSendToStrategist }: {
@@ -474,9 +528,24 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
 
       {scanComplete && (
         <div className="space-y-3">
+          <div className="flex flex-wrap items-end justify-between gap-2 px-1">
+            <SnapshotFreshnessBanner
+              snapshotCompletedAt={unified.snapshotCompletedAt}
+              snapshotAgeSeconds={unified.snapshotAgeSeconds}
+              stale={unified.stale}
+            />
+            <button
+              type="button"
+              onClick={handleScanClick}
+              disabled={!accessToken || unified.phase === "scanning" || currentSymCount === 0 || shockActive}
+              className="text-[11px] font-bold px-2 py-1 rounded border border-zinc-600 bg-zinc-800 text-zinc-200 shrink-0 disabled:opacity-40"
+            >
+              Retry
+            </button>
+          </div>
           <div className="flex flex-wrap items-center gap-2 px-1">
             <span className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider">
-              {candidates.length} CANDIDATES · {universeLabel} · {formatScanTime(unified.scanAt)}
+              {candidates.length} CANDIDATES · {universeLabel}
             </span>
           </div>
 
