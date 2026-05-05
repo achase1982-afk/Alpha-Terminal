@@ -48,9 +48,21 @@ function reorder<T>(arr: T[], from: number, to: number): T[] {
 interface BottomNavProps {
   activeTab: BottomTab;
   onTabChange: (tab: BottomTab) => void;
+  /**
+   * When the user leaves the AI hub, show a persistent cue on the AI tab that
+   * Strategist work is still running or a new result is waiting (server-side
+   * jobs continue; polling survives tab changes — see `strategistPoller`).
+   */
+  strategistRunningCount?: number;
+  strategistUnviewedCount?: number;
 }
 
-export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
+export function BottomNav({
+  activeTab,
+  onTabChange,
+  strategistRunningCount = 0,
+  strategistUnviewedCount = 0,
+}: BottomNavProps) {
   const [order, setOrder] = useState<BottomTab[]>(loadOrder);
   const [jiggling, setJiggling] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -292,6 +304,15 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
         }
 
         if (isAi) {
+          const showStrategistBadge =
+            activeTab !== "ai" &&
+            (strategistRunningCount > 0 || strategistUnviewedCount > 0);
+          const badgeIsRunning = strategistRunningCount > 0;
+          const badgeNumber = badgeIsRunning
+            ? strategistRunningCount
+            : strategistUnviewedCount;
+          const showBadgeNumber = badgeNumber > 1;
+
           return (
             <button
               key={tabId}
@@ -299,14 +320,47 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
               onClick={() => { if (jiggling) { if (Date.now() - jiggleStartedAt.current > 500) stopJiggle(); return; } if (!touchMoved.current) onTabChange(tabId); }}
               onTouchStart={(e) => handleTouchStart(i, e)}
               className={[
-                "flex flex-col items-center justify-center w-12 h-12 rounded-full transition-transform active:scale-95 select-none",
+                "relative flex flex-col items-center justify-center w-12 h-12 rounded-full transition-transform active:scale-95 select-none",
                 isActive ? "bg-[#18181b] text-[#FFB800]" : "bg-[#18181b] text-[#FFB800]/80",
                 jiggling && !isBeingDragged ? "bnav-jiggle" : "",
                 isBeingDragged ? "bnav-dragging" : "",
               ].join(" ")}
               style={style}
+              aria-label={
+                showStrategistBadge
+                  ? badgeIsRunning
+                    ? `AI — ${strategistRunningCount} Strategist ${strategistRunningCount === 1 ? "analysis" : "analyses"} in progress`
+                    : `AI — ${strategistUnviewedCount} new Strategist ${strategistUnviewedCount === 1 ? "result" : "results"}`
+                  : undefined
+              }
             >
               {def.icon("w-6 h-6")}
+              {showStrategistBadge && (
+                <span
+                  className={badgeIsRunning ? "animate-pulse" : ""}
+                  style={{
+                    position: "absolute",
+                    top: 2,
+                    right: 2,
+                    minWidth: showBadgeNumber ? 14 : 7,
+                    height: showBadgeNumber ? 14 : 7,
+                    padding: showBadgeNumber ? "0 3px" : 0,
+                    borderRadius: 9999,
+                    background: badgeIsRunning ? "#FFB800" : "#00d166",
+                    boxShadow: badgeIsRunning ? "0 0 6px #FFB800" : "0 0 4px #00d166",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 9,
+                    fontWeight: 800,
+                    fontFamily: "ui-monospace, monospace",
+                    color: badgeIsRunning ? "#0c0c0c" : "#0c0c0c",
+                    lineHeight: 1,
+                  }}
+                >
+                  {showBadgeNumber ? badgeNumber : ""}
+                </span>
+              )}
             </button>
           );
         }
