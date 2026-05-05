@@ -248,13 +248,17 @@ export async function backfillEarningsSurprises(): Promise<{ rowsUpserted: numbe
   for (const sym of set) {
     const surprises = await getFmpEarningsSurprises(sym, 8);
     for (const s of surprises) {
+      const surprisePct =
+        s.surprisePercentage != null && Number.isFinite(s.surprisePercentage)
+          ? String(s.surprisePercentage)
+          : null;
       await db.insert(earningsSurprisesHistoryTable)
         .values({
           ticker: sym,
           reportDate: s.date,
           epsEstimate: s.epsEstimated != null ? String(s.epsEstimated) : null,
           epsActual: s.epsActual != null ? String(s.epsActual) : null,
-          surprisePct: s.surprisePercentage != null ? String(s.surprisePercentage) : null,
+          surprisePct,
           createdAt: sql`now()`,
         })
         .onConflictDoUpdate({
