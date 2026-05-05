@@ -61,6 +61,8 @@ function tapePillClass(q: UnifiedScanCandidate["flowSnapshot"]["tapeQuality"]): 
   switch (q) {
     case "complete":
       return { label: "complete", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/40" };
+    case "high":
+      return { label: "high", cls: "bg-teal-500/15 text-teal-400 border-teal-500/40" };
     case "partial":
       return { label: "partial", cls: "bg-amber-500/15 text-amber-400 border-amber-500/40" };
     case "degraded":
@@ -350,6 +352,14 @@ export const UnifiedScannerCard = memo(function UnifiedScannerCard({
                   <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border ${tapePillClass(candidate.flowSnapshot.tapeQuality).cls}`}>
                     Tape: {tapePillClass(candidate.flowSnapshot.tapeQuality).label}
                   </span>
+                  {candidate.flowSnapshot.tapeOccCoveragePct != null ||
+                  candidate.flowSnapshot.tapeInsertCoveragePct != null ? (
+                    <span className="text-[9px] text-zinc-500 font-mono">
+                      OCC {candidate.flowSnapshot.tapeOccCoveragePct != null ? `${candidate.flowSnapshot.tapeOccCoveragePct.toFixed(0)}%` : "—"} · insert{" "}
+                      {candidate.flowSnapshot.tapeInsertCoveragePct != null ? `${candidate.flowSnapshot.tapeInsertCoveragePct.toFixed(0)}%` : "—"}
+                      {candidate.flowSnapshot.tapeAnyTruncated ? " · truncated" : ""}
+                    </span>
+                  ) : null}
                   <span className="text-zinc-400">Notional 24h: {formatNotional(candidate.flowSnapshot.notional24h)}</span>
                 </div>
               </div>

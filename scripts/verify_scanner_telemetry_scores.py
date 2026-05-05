@@ -258,14 +258,57 @@ def build_earnings_edge_polygon(sym: str) -> float:
     return score
 
 
+TAPE_TIER_MULT = {"complete": 1.0, "high": 1.0, "degraded": 0.7, "partial": 0.4, "not_run": 0.0}
+
+
+def classify_tape_coverage(inp: dict[str, Any]) -> str:
+    """Same tier logic as classifyTapeCoverageTier in scannerTapeCoverage.ts."""
+    st = str(inp.get("status") or "")
+    if st in ("skipped", "failed"):
+        return "not_run"
+
+    occ_req = max(0, int(inp.get("occRequested") or 0))
+    occ_done = max(0, int(inp.get("occCompleted") or 0))
+    tried = max(0, int(inp.get("tradesAttemptedInsert") or inp.get("rowsAttemptedInsert") or 0))
+    ins = max(0, int(inp.get("tradesInsertedCommitted") or inp.get("tradesInserted") or 0))
+    trunc = bool(inp.get("anyTruncated"))
+
+    if occ_req == 0 and tried == 0:
+        if st in ("complete", "partial"):
+            return "high"
+        return "not_run"
+
+    occ_ratio = occ_done / occ_req if occ_req > 0 else 1.0
+    insert_ratio = ins / tried if tried > 0 else occ_ratio
+
+    worst = min(occ_ratio, insert_ratio)
+
+    meets_complete = (
+        occ_ratio >= 0.95
+        and insert_ratio >= 0.95
+        and not trunc
+        and st in ("complete", "partial")
+    )
+    if meets_complete and worst >= 0.95:
+        return "complete"
+    if worst >= 0.95 and trunc:
+        return "high"
+    if worst >= 0.8:
+        return "high"
+    if worst >= 0.5:
+        return "degraded"
+    return "partial"
+
+
 def score_flow_quality(
     tape_q: str,
     ask_n: float,
     threshold: float,
     totals: dict[str, Any] | None,
     top_prints: list[dict[str, Any]] | None,
+    tape_tier: str,
 ) -> float:
-    if tape_q in ("not_run", "degraded") or ask_n < threshold:
+    if tape_tier == "not_run" or tape_q in ("not_run", "degraded") or ask_n < threshold:
         return 0.0
     t = totals or {}
     total_p = int(t.get("totalPrints") or 0)
@@ -299,6 +342,7 @@ def score_flow_quality(
     mid_share = (int(t.get("midCount") or 0) / total_p) if total_p > 0 else 0.0
     if mid_share > 0.4:
         sc *= clamp(1 - (mid_share - 0.4) * 2.2, 0.35, 1)
+    sc *= TAPE_TIER_MULT.get(tape_tier, 0.0)
     return sc
 
 
@@ -387,6 +431,7 @@ def run_one(cur: Any, tid: int) -> None:
     flow_obj = pkg.get("polygonFlowHighlights") or {}
     tape = flow_obj.get("sessionTape")
     tb = pkg.get("tapeBackfill") or {}
+    tape_tier = classify_tape_coverage(tb if isinstance(tb, dict) else {})
 
     ne = pkg.get("nextEarnings") or {}
     earnings_date = ne.get("earningsDate")
@@ -474,7 +519,24 @@ def run_one(cur: Any, tid: int) -> None:
 
     th = 100_000 if sym.upper() in ("NVDA", "AAPL", "MSFT") else 50_000
     top_prints = tape.get("topPrints") if isinstance(tape, dict) else None
-    fl = score_flow_quality(tq, ask_n, th, totals if isinstance(totals, dict) else None, top_prints if isinstance(top_prints, list) else None)
+    fl = score_flow_quality(
+        tq,
+        ask_n,
+        th,
+        totals if isinstance(totals, dict) else None,
+        top_prints if isinstance(top_prints, list) else None,
+        tape_tier,
+    )
+
+    occ_pct = None
+    ins_pct = None
+    if isinstance(tb, dict) and int(tb.get("occRequested") or 0) > 0:
+        occ_pct = round(int(tb.get("occCompleted") or 0) / int(tb["occRequested"]) * 100, 2)
+    tr_att = tb.get("tradesAttemptedInsert")
+    if tr_att is None:
+        tr_att = tb.get("rowsAttemptedInsert")
+    if isinstance(tb, dict) and tr_att and int(tr_att) > 0:
+        ins_pct = round(int(tb.get("tradesInserted") or 0) / int(tr_att) * 100, 2)
 
     comps = {
         "catalyst_term_shape": ts_score,
@@ -490,8 +552,6 @@ def run_one(cur: Any, tid: int) -> None:
     iv_clean = float(dqs.get("ivCleanedRatio") or 1)
     flags = dqs.get("flags") or []
     iv_contam = "iv_contamination_elevated" in flags
-    tape_partial = tb.get("status") == "partial" or "tape_backfill_incomplete" in flags
-
     curated = pkg.get("curatedExpirations") or []
     cap_exp = None
     if isinstance(curated, list):
@@ -511,8 +571,6 @@ def run_one(cur: Any, tid: int) -> None:
     disqual: list[str] = []
     if iv_clean < 0.5 or iv_contam:
         disqual.append("iv_contamination")
-    if tape_partial:
-        disqual.append("tape_partial")
     if no_clean:
         disqual.append("no_clean_earnings_expiry")
 
@@ -521,6 +579,10 @@ def run_one(cur: Any, tid: int) -> None:
     out = {
         "telemetry_id": tid,
         "ticker": sym,
+        "tape_coverage_tier": tape_tier,
+        "tape_occ_coverage_pct": occ_pct,
+        "tape_insert_coverage_pct": ins_pct,
+        "tape_any_truncated": tb.get("anyTruncated") if isinstance(tb, dict) else None,
         "scanner_composite_v1": round(comp, 2),
         "candidate_threshold": THRESHOLD,
         "below_threshold": comp < THRESHOLD,

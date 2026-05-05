@@ -4,13 +4,14 @@
 import { logger } from "./logger.js";
 import { appendPolygonApiTraceRecord } from "./polygonApiTrace.js";
 
-/** Upper bound on a single Polygon HTTP round-trip during backfill / replay. */
+/** Upper bound on a single Polygon HTTP round-trip during backfill / replay (override per call for mega names). */
 export const POLYGON_PAGED_FETCH_HTTP_MS = 14_000;
 
 export async function fetchPolygonPaged(
   firstUrl: string,
   apiKey: string,
   deadlineMs: number,
+  opts?: { httpTimeoutMs?: number },
 ): Promise<{
   rows: unknown[];
   truncated: boolean;
@@ -52,7 +53,8 @@ export async function fetchPolygonPaged(
         truncated = true;
         break pageLoop;
       }
-      const httpMs = Math.min(POLYGON_PAGED_FETCH_HTTP_MS, Math.max(800, rem));
+      const httpCap = opts?.httpTimeoutMs ?? POLYGON_PAGED_FETCH_HTTP_MS;
+      const httpMs = Math.min(httpCap, Math.max(800, rem));
       try {
         r = await fetch(pageUrl, { signal: AbortSignal.timeout(httpMs) });
       } catch {
