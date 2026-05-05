@@ -125,14 +125,21 @@
       "idx": 17,
       "version": "7",
       "when": 1778650000000,
-      "tag": "0021_scanner_tape_metrics_duration",
+      "tag": "0021_scanner_ticker_cycle_coverage",
       "breakpoints": true
     },
     {
       "idx": 18,
       "version": "7",
       "when": 1778700000000,
-      "tag": "0022_scanner_tape_metrics_cycle_log",
+      "tag": "0022_scanner_tape_metrics_duration",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1778750000000,
+      "tag": "0023_scanner_tape_metrics_cycle_log",
       "breakpoints": true
     }
   ]
