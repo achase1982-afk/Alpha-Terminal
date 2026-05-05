@@ -189,7 +189,7 @@ export function scoreIvVsRealizedMulti(args: {
   return { score, reason };
 }
 
-function scoreSkewAnomaly(skewPts: number | null): { score: number; reason: string | null } {
+export function scoreSkewAnomaly(skewPts: number | null): { score: number; reason: string | null } {
   if (skewPts == null || !Number.isFinite(skewPts)) return { score: 0, reason: null };
   const absSkew = Math.abs(skewPts);
   let score = 0;
