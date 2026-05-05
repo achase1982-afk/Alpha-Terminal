@@ -15,6 +15,8 @@ import { initAiLabOrchestrator } from "./lib/aiLabOrchestrator";
 import { startUniverseRebuildSchedule } from "./lib/universeBuilder";
 import { updateEquityDailyFromGroupedBars, runFullSnapshot, backfillPolygonFlow, sweepStaleSnapshots } from "./lib/dailySnapshot";
 import { accumulateCanonicalIvForDate } from "./lib/canonicalIvAccumulator";
+import { runFmpEarningsBackfill } from "./lib/fmpEarningsBackfill.js";
+import { getFmpApiKeyOrThrow } from "./lib/fmpClient.js";
 import { LIQUID_CORE_SYMBOL_STRINGS } from "./data/liquidCore130";
 import { db, equityDailyTable, snapshotCollectionLogTable, flowDailyAggregatesTable, trackedTickersTable } from "@workspace/db";
 import { inArray, desc, sql, eq } from "drizzle-orm";
@@ -40,6 +42,8 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
+getFmpApiKeyOrThrow();
+
 async function boot() {
   startSnapshotRefreshWorker();
   function scheduleCanonicalIvAccumulator() {
@@ -51,7 +55,7 @@ async function boot() {
     }
     function scheduleNext() {
       const ms = nextRunMs();
-      logger.info({ msUntil: ms }, "Canonical IV accumulator scheduled (22:00 UTC daily)");
+      logger.info({ msUntil: ms }, "Canonical IV + FMP earnings backfill scheduled (22:00 UTC daily)");
       setTimeout(async () => {
         try {
           const today = new Date().toISOString().slice(0, 10);
@@ -59,6 +63,12 @@ async function boot() {
           logger.info(report, "Canonical IV accumulator: scheduled run complete");
         } catch (err) {
           logger.error({ err }, "Canonical IV accumulator: scheduled run failed");
+        }
+        try {
+          const fmpReport = await runFmpEarningsBackfill();
+          logger.info(fmpReport, "FMP earnings backfill: scheduled run complete");
+        } catch (err) {
+          logger.error({ err }, "FMP earnings backfill: scheduled run failed");
         }
         scheduleNext();
       }, ms);

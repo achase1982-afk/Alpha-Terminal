@@ -17,7 +17,7 @@
  *  - residualCatalyst: recently-fired event the price is still digesting
  *
  * Deterministic sources (server-computed):
- *  - EARNINGS         → earningsService (vendor calendar primary, Yahoo fallback)
+ *  - EARNINGS         → earningsService (vendor calendar primary, FMP DB + Finnhub fallback)
  *  - FED_MEETING      → calendarEventChecker FOMC schedule
  *  - ECONOMIC_RELEASE → calendarEventChecker (NFP/CPI/PPI/PCE/GDP, HIGH only)
  *

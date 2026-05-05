@@ -404,6 +404,9 @@ export const corporateEventsTable = pgTable("corporate_events", {
   symbol: text("symbol").notNull(),
   earningsDate: date("earnings_date"),
   earningsTiming: text("earnings_timing"),
+  /** Forward estimates from FMP earnings calendar backfill (when present). */
+  earningsEpsEstimate: doublePrecision("earnings_eps_estimate"),
+  earningsRevenueEstimate: doublePrecision("earnings_revenue_estimate"),
   splitDate: date("split_date"),
   splitRatio: text("split_ratio"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
