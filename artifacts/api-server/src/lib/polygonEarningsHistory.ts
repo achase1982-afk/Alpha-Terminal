@@ -309,8 +309,6 @@ async function upsertCorporateEventsRows(symbol: string, rows: PolygonEarningsAp
         target: [corporateEventsTable.symbol, corporateEventsTable.earningsDate],
         set: {
           earningsTiming: sql`excluded.earnings_timing`,
-          earningsEpsEstimate: sql`excluded.earnings_eps_estimate`,
-          earningsRevenueEstimate: sql`excluded.earnings_revenue_estimate`,
           updatedAt: sql`excluded.updated_at`,
         },
       });
