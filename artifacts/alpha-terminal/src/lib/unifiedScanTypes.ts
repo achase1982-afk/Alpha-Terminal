@@ -2,6 +2,83 @@
  * Scanner candidate shape from GET /api/v2/scan (snapshot table + card mapping).
  */
 
+export type TermStructureShape = "contango" | "flat" | "backwardation";
+
+/** Full scanner card model for Layer 1–6 (frontend / future API mapping). */
+export type ScannerCardData = {
+  // Layer 1+2 minimum
+  symbol: string;
+  name: string | null;
+  sector: string | null;
+  price: number | null;
+  changePct: number | null;
+  changeAbs: number | null;
+  volume: number | null;
+  avgVolume20d: number | null;
+  dayRange: { low: number; high: number } | null;
+
+  // Layer 3
+  iv30: number | null;
+  ivr: number | null;
+  ivPercentile: number | null;
+  hv30: number | null;
+  termStructure: {
+    frontIv: number;
+    backIv: number;
+    ratio: number;
+    shape: TermStructureShape;
+  } | null;
+
+  // Layer 4
+  nextEarnings: {
+    date: string;
+    daysTo: number;
+    timing: "AMC" | "BMO" | null;
+  } | null;
+  nextExDiv: { date: string; daysTo: number; amount: number | null } | null;
+  earningsHistory: { quarter: string; absMovePct: number }[] | null;
+
+  // Layer 5
+  flow: {
+    blocks4h: number;
+    sweeps4h: number;
+    netDeltaNotional: number;
+    topStrike: {
+      strike: number;
+      volume: number;
+      oi: number;
+      expiration: string;
+    } | null;
+  } | null;
+
+  // Technical (derived from existing equity_daily, no new integration)
+  technical: {
+    week52High: number;
+    week52Low: number;
+    pctOffHigh: number;
+    aboveMa20: boolean;
+    aboveMa50: boolean;
+    aboveMa200: boolean;
+    return5d: number;
+    return30d: number;
+  } | null;
+
+  // Layer 6
+  score: number | null;
+  scoreComponents: {
+    liquidity: number;
+    volContext: number;
+    catalyst: number;
+    flow: number;
+    technical: number;
+  } | null;
+  preset: string | null;
+
+  // Meta
+  lastUpdate: string;
+  dataQualityFlags: string[];
+};
+
 export type UnifiedEngineKey = "discovery" | "momentum" | "unusual_flow";
 
 export interface UnifiedScanCandidate {
