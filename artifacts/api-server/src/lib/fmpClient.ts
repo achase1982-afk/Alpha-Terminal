@@ -327,24 +327,41 @@ export interface FmpEarningsSurpriseRow {
   date: string;
   epsActual: number | null;
   epsEstimated: number | null;
+  /** (epsActual - epsEstimated) / |epsEstimated| * 100 when both present and estimate ≠ 0 */
   surprisePercentage: number | null;
 }
 
-function normaliseSurpriseRow(raw: Record<string, unknown>): FmpEarningsSurpriseRow | null {
+function computeEpsSurprisePct(actual: number | null, estimated: number | null): number | null {
+  if (actual == null || estimated == null) return null;
+  const absEst = Math.abs(estimated);
+  if (absEst < 1e-12) return null;
+  return ((actual - estimated) / absEst) * 100;
+}
+
+function normaliseEarningsReportRow(raw: Record<string, unknown>): FmpEarningsSurpriseRow | null {
   const symbol = pickString(raw["symbol"])?.toUpperCase();
   const dateRaw = pickString(raw["date"]);
   if (!symbol || !dateRaw) return null;
   const date = dateRaw.slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+
+  const epsActual = pickNumber(raw["epsActual"]) ?? pickNumber(raw["eps"]);
+  const epsEstimated = pickNumber(raw["epsEstimated"]) ?? pickNumber(raw["epsEstimate"]);
+  const surprisePercentage = computeEpsSurprisePct(epsActual, epsEstimated);
+
   return {
     symbol,
     date,
-    epsActual: pickNumber(raw["epsActual"]),
-    epsEstimated: pickNumber(raw["epsEstimated"]),
-    surprisePercentage: pickNumber(raw["surprisePercentage"]),
+    epsActual,
+    epsEstimated,
+    surprisePercentage,
   };
 }
 
+/**
+ * Historical earnings with estimate vs actual EPS (FMP "Earnings Report" stable API).
+ * @see https://financialmodelingprep.com/stable/earnings?symbol=
+ */
 export async function getFmpEarningsSurprises(symbol: string, limit: number): Promise<FmpEarningsSurpriseRow[]> {
   const sym = (symbol || "").toUpperCase().trim().replace(/^\$/, "");
   if (!sym) return [];
@@ -355,7 +372,7 @@ export async function getFmpEarningsSurprises(symbol: string, limit: number): Pr
     limit: String(Math.max(1, Math.min(100, limit))),
     apikey: apiKey,
   });
-  const url = `${FMP_STABLE_BASE}/earnings-surprises?${params.toString()}`;
+  const url = `${FMP_STABLE_BASE}/earnings?${params.toString()}`;
 
   const res = await httpLimit(() =>
     fetchWithRetry(url, { headers: { Accept: "application/json" } }),
@@ -363,7 +380,7 @@ export async function getFmpEarningsSurprises(symbol: string, limit: number): Pr
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    logger.warn({ status: res.status, body: text.slice(0, 300) }, "FMP earnings-surprises non-200");
+    logger.warn({ status: res.status, body: text.slice(0, 300) }, "FMP earnings report non-200");
     return [];
   }
 
@@ -373,7 +390,7 @@ export async function getFmpEarningsSurprises(symbol: string, limit: number): Pr
   const out: FmpEarningsSurpriseRow[] = [];
   for (const item of data) {
     if (item && typeof item === "object") {
-      const row = normaliseSurpriseRow(item as Record<string, unknown>);
+      const row = normaliseEarningsReportRow(item as Record<string, unknown>);
       if (row) out.push(row);
     }
   }
