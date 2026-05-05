@@ -65,8 +65,13 @@ import { impliedVolatilityBSM } from "./bsmIV.js";
 import { attachDeskPmPayoffScenarios } from "./strategistPmPayoffScenarios.js";
 import type { EquityMarketSession, EquitySessionResolutionSource } from "./schwabMarketHours.js";
 import { getEquityMarketSessionWithAsOf } from "./schwabMarketHours.js";
-import { fetchPolygonAnalystRatingsAndConsensus } from "./polygonAnalystData.js";
+import {
+  emptyConsensus,
+  fetchPolygonAnalystRatingsAndConsensus,
+  mergeFmpPriceTargetIntoConsensus,
+} from "./polygonAnalystData.js";
 import { fetchEarningsHistoryAndForward, type FetchEarningsBundle } from "./polygonEarningsHistory.js";
+import { getAnalystPriceTargets, getRecentAnalystGrades, getEarningsSurpriseHistory } from "./fmpDataService.js";
 import { fetchCompanyFinancialsForSymbol, type CompanyFinancials } from "../routes/sec.js";
 import { clampProfitTargetToMaxPayout } from "./exitTargetMath.js";
 import { scrubAll } from "./narrativeScrubbers.js";
@@ -812,6 +817,19 @@ async function analyzeTickerV2Inner(
   }
 
   const analystRatingsPack = await fetchPolygonAnalystRatingsAndConsensus(ticker, 300);
+  const symU = ticker.toUpperCase().replace(/^\$/, "");
+  const [fmpPt, fmpGrades, fmpSurprises] = await Promise.all([
+    getAnalystPriceTargets(symU),
+    getRecentAnalystGrades(symU, 30),
+    getEarningsSurpriseHistory(symU, 8),
+  ]);
+  const baseConsensus =
+    analystRatingsPack?.analystConsensus
+    ?? emptyConsensus(symU, analystRatingsPack ? null : "polygon_ratings_unavailable");
+  const analystConsensusMerged = fmpPt
+    ? mergeFmpPriceTargetIntoConsensus(baseConsensus, fmpPt)
+    : baseConsensus;
+
   tickerData.analystActions48h = analystActionsFromPolygonRatings(
     analystRatingsPack?.ratings?.slice(0, 50) ?? [],
   );
@@ -1024,7 +1042,7 @@ async function analyzeTickerV2Inner(
   const [companyFinancials] = await Promise.all([
     fetchCompanyFinancialsForSymbol(ticker),
   ]);
-  const analystConsensus = analystRatingsPack?.analystConsensus ?? null;
+  const analystConsensus = analystConsensusMerged;
   assertAnalyzeNotCancelled(progress);
   const fundamentalsSummary = companyFinancials ? fundamentalsQuickSummary(companyFinancials) : null;
 
@@ -1058,6 +1076,8 @@ async function analyzeTickerV2Inner(
       analystRatings: analystRatingsPack?.ratings ?? null,
       fundamentalsSummary,
       earnings: earningsEnrichment,
+      fmpAnalystGrades: fmpGrades,
+      fmpEarningsSurprises: fmpSurprises,
     },
   );
   const scanCtxHandoff = getStrategistRunContext()?.scannerContext;
@@ -2919,6 +2939,8 @@ async function buildDataPackage(
     fundamentalsSummary?: Record<string, unknown> | null;
     /** Polygon Benzinga earnings history plus forward estimates (when API returns data). */
     earnings?: FetchEarningsBundle | null;
+    fmpAnalystGrades?: import("./fmpDataService.js").AnalystGradeDbRow[] | null;
+    fmpEarningsSurprises?: import("./fmpDataService.js").EarningsSurpriseDbRow[] | null;
   },
 ): string {
   const currentDate = new Date().toISOString().slice(0, 10);
@@ -2975,7 +2997,21 @@ async function buildDataPackage(
           consensusPriceTargetAsOfDate: enrichment.analystConsensus.consensusPriceTargetAsOfDate,
           consensusPriceTargetFreshness: enrichment.analystConsensus.consensusPriceTargetFreshness,
           recentRatings: enrichment.analystRatings?.slice(0, 15) ?? [],
-          sourceNote: "Polygon REST reference analyst price targets (120-day firm dedupe + mean consensus).",
+          sourceNote:
+            "Polygon REST reference analyst ratings (120-day firm dedupe + mean consensus), merged with FMP `analyst_price_targets` when Polygon consensus is sparse.",
+        }
+      : { available: false },
+    fmpAnalystGrades: enrichment?.fmpAnalystGrades?.length
+      ? {
+          windowDays: 30,
+          rows: enrichment.fmpAnalystGrades.slice(0, 25),
+          sourceNote: "FMP `/stable/grades` backfill into `analyst_grades` (weekly refresh).",
+        }
+      : { available: false },
+    fmpEarningsSurprises: enrichment?.fmpEarningsSurprises?.length
+      ? {
+          quarters: enrichment.fmpEarningsSurprises,
+          sourceNote: "FMP `/stable/earnings-surprises` backfill into `earnings_surprises_history` (weekly refresh).",
         }
       : { available: false },
     secFundamentals: enrichment?.fundamentalsSummary ?? { available: false },
@@ -3132,7 +3168,7 @@ async function buildDataPackage(
     }> = [];
     for (const ev of getUpcomingEvents(macroWindow)) {
       if (ev.date < currentDate || ev.date > exp) continue;
-      if (ev.type === "fomc" || (ev.type === "economic" && ev.importance === "HIGH")) {
+      if (ev.type === "fomc" || (ev.type === "economic" && (ev.importance === "HIGH" || ev.importance === "MEDIUM"))) {
         macroEventsInPositionWindow.push({
           date: ev.date,
           title: ev.title,

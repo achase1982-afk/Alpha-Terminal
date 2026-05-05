@@ -1,5 +1,5 @@
 import { logger } from "./logger.js";
-import { getNextForwardEarningsFromDb } from "./fmpEarningsBackfill.js";
+import { getForwardCorporateEarningsWithFreshness } from "./fmpDataService.js";
 
 export interface NextEarnings {
   symbol: string;
@@ -236,7 +236,7 @@ export async function getNextEarningsDate(symbol: string): Promise<NextEarnings>
     const vendorKey = process.env["BENZ" + "INGA_API_KEY"];
     const finnhubKey = process.env["FINNHUB_API_KEY"];
 
-    const dbRow = await getNextForwardEarningsFromDb(sym);
+    const corp = await getForwardCorporateEarningsWithFreshness(sym);
 
     let vendor: VendorPrimaryCalendarResult | null = null;
     if (vendorKey) {
@@ -248,24 +248,24 @@ export async function getNextEarningsDate(symbol: string): Promise<NextEarnings>
     let source: NextEarnings["source"] = null;
     let extras: Partial<VendorPrimaryCalendarResult> = {};
 
-    if (vendor?.earningsDate && vendor.confirmed) {
+    if (corp && !corp.stale) {
+      const today = new Date();
+      const target = new Date(corp.earningsDate + "T16:00:00-04:00").getTime();
+      const daysOut = Math.round((target - today.getTime()) / 86_400_000);
+      confirmed = daysOut <= 30;
+      earningsDate = corp.earningsDate;
+      source = "fmp_db";
+      extras = {
+        lastEarningsDate: vendor?.lastEarningsDate ?? null,
+        time: corp.earningsTiming,
+        epsEstimate: formatEstimateNum(corp.earningsEpsEstimate),
+        revenueEstimate: formatEstimateNum(corp.earningsRevenueEstimate),
+      };
+    } else if (vendor?.earningsDate && vendor.confirmed) {
       earningsDate = vendor.earningsDate;
       confirmed = true;
       source = "vendor_primary";
       extras = vendor;
-    } else if (dbRow) {
-      const today = new Date();
-      const target = new Date(dbRow.earningsDate + "T16:00:00-04:00").getTime();
-      const daysOut = Math.round((target - today.getTime()) / 86_400_000);
-      confirmed = daysOut <= 30;
-      earningsDate = dbRow.earningsDate;
-      source = "fmp_db";
-      extras = {
-        lastEarningsDate: vendor?.lastEarningsDate ?? null,
-        time: dbRow.earningsTiming,
-        epsEstimate: formatEstimateNum(dbRow.earningsEpsEstimate),
-        revenueEstimate: formatEstimateNum(dbRow.earningsRevenueEstimate),
-      };
     } else {
       const finn = finnhubKey ? await fetchFinnhub(sym, finnhubKey) : null;
 
