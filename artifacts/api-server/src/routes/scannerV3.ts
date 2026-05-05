@@ -17,7 +17,7 @@ function requireUserId(req: Parameters<typeof getAuth>[0]): string | null {
 }
 
 /** Layer 1: static LC130 universe — no DB, no external APIs. */
-router.get("/v3/universe", (_req, res) => {
+router.get("/v3/universe", (req, res) => {
   const userId = requireUserId(req);
   if (!userId) {
     return res.status(401).json({ error: "Unauthorized" });
