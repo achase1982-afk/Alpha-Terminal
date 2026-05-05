@@ -23,6 +23,7 @@ import watchlistsRouter from "./watchlists";
 import polygonAnalystRouter from "./polygonAnalyst";
 import diagnosticsRouter from "./diagnostics";
 import ttsRouter from "./tts";
+import adminRouter from "./admin";
 const router: IRouter = Router();
 
 router.use("/auth", authRouter);
@@ -49,5 +50,6 @@ router.use("/watchlists", watchlistsRouter);
 router.use("/polygon", polygonAnalystRouter);
 router.use("/diagnostics", diagnosticsRouter);
 router.use("/tts", ttsRouter);
+router.use("/admin", adminRouter);
 
 export default router;

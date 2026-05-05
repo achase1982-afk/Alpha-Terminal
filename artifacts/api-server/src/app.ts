@@ -22,6 +22,7 @@ const PUBLIC_API_PATHS = new Set<string>([
   "/auth/pending-session",
   "/auth/trader-pending-session",
   // Admin maintenance endpoints — protected by x-admin-key header instead of Clerk session
+  "/admin/fmp/backfill",
   "/snapshot/admin/cleanup-iv-units",
   "/snapshot/admin/recompute-ivr",
   "/snapshot/admin/backfill-iv-history",
