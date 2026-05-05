@@ -50,6 +50,34 @@ function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
 }
 
+/** Composite key for flow_strike_unique; last row wins on collision (see dedupePendingFlowPerStrikeRows). */
+function flowPerStrikeInsertDedupeKey(row: typeof optionsFlowPerStrikeTable.$inferInsert): string {
+  return `${row.underlyingSymbol}|${row.date}|${row.optionType}|${row.strike}|${row.expiration}`;
+}
+
+/**
+ * Collapse duplicate (underlying, date, option_type, strike, expiration) rows before INSERT ...
+ * ON CONFLICT DO UPDATE so Postgres never sees two identical conflict targets in one statement.
+ */
+function dedupePendingFlowPerStrikeRows(
+  rows: Array<typeof optionsFlowPerStrikeTable.$inferInsert>,
+  sym: string,
+): Array<typeof optionsFlowPerStrikeTable.$inferInsert> {
+  const map = new Map<string, typeof optionsFlowPerStrikeTable.$inferInsert>();
+  for (const row of rows) {
+    map.set(flowPerStrikeInsertDedupeKey(row), row);
+  }
+  const m = rows.length;
+  const dropped = m - map.size;
+  if (dropped > 0) {
+    logger.debug(
+      { sym, dropped, batch: m },
+      `dedup dropped ${dropped} rows from batch of ${m} for symbol ${sym}`,
+    );
+  }
+  return [...map.values()];
+}
+
 async function fetchWithRetry(url: string, attempts = 3, timeoutMs = 20000): Promise<Response | null> {
   for (let i = 0; i < attempts; i++) {
     const ac = new AbortController();
@@ -391,7 +419,7 @@ export async function backfillHistoricalIV(
           if (pendingRows.length > 0) {
             const BATCH = 500;
             for (let b = 0; b < pendingRows.length; b += BATCH) {
-              const slice = pendingRows.slice(b, b + BATCH);
+              const slice = dedupePendingFlowPerStrikeRows(pendingRows.slice(b, b + BATCH), sym);
               await db.insert(optionsFlowPerStrikeTable)
                 .values(slice)
                 .onConflictDoUpdate({
@@ -428,7 +456,7 @@ export async function backfillHistoricalIV(
       if (pendingRows.length > 0) {
         const BATCH = 500;
         for (let b = 0; b < pendingRows.length; b += BATCH) {
-          const slice = pendingRows.slice(b, b + BATCH);
+          const slice = dedupePendingFlowPerStrikeRows(pendingRows.slice(b, b + BATCH), sym);
           await db.insert(optionsFlowPerStrikeTable)
             .values(slice)
             .onConflictDoUpdate({
