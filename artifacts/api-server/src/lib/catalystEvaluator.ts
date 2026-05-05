@@ -232,7 +232,7 @@ export async function evaluateCatalyst(opts: {
     if (ev.date < today || ev.date > expiration) continue;
     if (ev.type === "fomc") {
       scheduled.push({ type: "FED_MEETING", date: ev.date, title: ev.title, source: "calendar" });
-    } else if (ev.type === "economic" && ev.importance === "HIGH") {
+    } else if (ev.type === "economic" && (ev.importance === "HIGH" || ev.importance === "MEDIUM")) {
       scheduled.push({ type: "ECONOMIC_RELEASE", date: ev.date, title: ev.title, source: "calendar" });
     }
   }

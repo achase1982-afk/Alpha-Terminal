@@ -76,6 +76,8 @@ function fomcDates(y: number): string[] {
   ];
 }
 
+import { getFmpMacroCalendarSyntheticEvents } from "./fmpMacroCalendarCache.js";
+
 interface CalendarEvent {
   date: string;
   type: "holiday" | "fomc" | "economic" | "earnings" | "opex" | "witching";
@@ -186,15 +188,42 @@ let cachedEvents: CalendarEvent[] | null = null;
 let cachedYear: number | null = null;
 let cachedHolidayDates: Set<string> | null = null;
 
+/** Call after `macro_calendar` backfill so FMP-fed events merge on next read. */
+export function invalidateCalendarEventsCache(): void {
+  cachedEvents = null;
+  cachedYear = null;
+  cachedHolidayDates = null;
+}
+
+function mergeFmpMacroEvents(base: CalendarEvent[]): CalendarEvent[] {
+  const keys = new Set(base.map((e) => `${e.date}|${e.title.toLowerCase()}`));
+  const fmp = getFmpMacroCalendarSyntheticEvents();
+  const extra: CalendarEvent[] = [];
+  for (const r of fmp) {
+    const k = `${r.date}|${r.title.toLowerCase()}`;
+    if (keys.has(k)) continue;
+    keys.add(k);
+    extra.push({
+      date: r.date,
+      type: "economic",
+      title: r.title,
+      time: r.time,
+      importance: r.importance,
+    });
+  }
+  return [...base, ...extra].sort((a, b) => a.date.localeCompare(b.date));
+}
+
 function getEvents(): CalendarEvent[] {
   const now = new Date();
   const y = now.getFullYear();
   if (cachedYear === y && cachedEvents) return cachedEvents;
-  const events = [
+  const base = [
     ...generateAllEvents(y - 1),
     ...generateAllEvents(y),
     ...generateAllEvents(y + 1),
   ].sort((a, b) => a.date.localeCompare(b.date));
+  const events = mergeFmpMacroEvents(base);
   cachedEvents = events;
   cachedHolidayDates = new Set(events.filter(e => e.type === "holiday").map(e => e.date));
   cachedYear = y;
@@ -350,7 +379,11 @@ export function checkEventConflicts(
       }
     }
 
-    if (ev.type === "economic" && isHighImpact(ev.title)) {
+    if (ev.type === "economic") {
+      const highImpact = isHighImpact(ev.title) || ev.importance === "HIGH";
+      if (!highImpact) {
+        // skip
+      } else {
       conflicts.push({
         eventType: "economic",
         eventTitle: ev.title,
@@ -372,6 +405,7 @@ export function checkEventConflicts(
         warnings.push(
           `${ev.title} ${dateLabel}${timeLabel} falls within DTE. Monitor for volatility impact.`
         );
+      }
       }
     }
 

@@ -404,6 +404,8 @@ export const corporateEventsTable = pgTable("corporate_events", {
   symbol: text("symbol").notNull(),
   earningsDate: date("earnings_date"),
   earningsTiming: text("earnings_timing"),
+  /** Raw FMP `time` field before BMO/AMC normalization in app code. */
+  earningsTimeRaw: text("earnings_time_raw"),
   /** Forward estimates from FMP earnings calendar backfill (when present). */
   earningsEpsEstimate: doublePrecision("earnings_eps_estimate"),
   earningsRevenueEstimate: doublePrecision("earnings_revenue_estimate"),
@@ -415,6 +417,73 @@ export const corporateEventsTable = pgTable("corporate_events", {
 ]);
 
 export type CorporateEvent = typeof corporateEventsTable.$inferSelect;
+
+export const analystPriceTargetsTable = pgTable("analyst_price_targets", {
+  ticker: text("ticker").primaryKey().notNull(),
+  targetHigh: numeric("target_high"),
+  targetLow: numeric("target_low"),
+  targetMedian: numeric("target_median"),
+  targetConsensus: numeric("target_consensus"),
+  numAnalysts: integer("num_analysts"),
+  asOfDate: date("as_of_date"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type AnalystPriceTargetRow = typeof analystPriceTargetsTable.$inferSelect;
+
+export const analystGradesTable = pgTable("analyst_grades", {
+  id: serial("id").primaryKey(),
+  ticker: text("ticker").notNull(),
+  actionDate: date("action_date").notNull(),
+  action: text("action").notNull(),
+  gradingCompany: text("grading_company"),
+  previousGrade: text("previous_grade"),
+  newGrade: text("new_grade"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("analyst_grades_ticker_action_unique").on(
+    t.ticker,
+    t.actionDate,
+    t.gradingCompany,
+    t.action,
+  ),
+  index("idx_ag_ticker_date").on(t.ticker, t.actionDate),
+]);
+
+export type AnalystGradeRow = typeof analystGradesTable.$inferSelect;
+
+export const earningsSurprisesHistoryTable = pgTable("earnings_surprises_history", {
+  id: serial("id").primaryKey(),
+  ticker: text("ticker").notNull(),
+  reportDate: date("report_date").notNull(),
+  epsEstimate: numeric("eps_estimate"),
+  epsActual: numeric("eps_actual"),
+  surprisePct: numeric("surprise_pct"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("earnings_surprises_history_ticker_report_unique").on(t.ticker, t.reportDate),
+  index("idx_esh_ticker_date").on(t.ticker, t.reportDate),
+]);
+
+export type EarningsSurpriseHistoryRow = typeof earningsSurprisesHistoryTable.$inferSelect;
+
+export const macroCalendarTable = pgTable("macro_calendar", {
+  id: serial("id").primaryKey(),
+  eventDate: date("event_date").notNull(),
+  eventTime: text("event_time"),
+  country: text("country").notNull(),
+  event: text("event").notNull(),
+  impact: text("impact"),
+  actual: numeric("actual"),
+  previous: numeric("previous"),
+  estimate: numeric("estimate"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("macro_calendar_date_country_event_unique").on(t.eventDate, t.country, t.event),
+  index("idx_macro_calendar_event_date").on(t.eventDate),
+]);
+
+export type MacroCalendarRow = typeof macroCalendarTable.$inferSelect;
 
 export const aiLabIdeasTable = pgTable("ai_lab_ideas", {
   id: serial("id").primaryKey(),

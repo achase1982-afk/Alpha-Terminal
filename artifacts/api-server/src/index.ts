@@ -15,8 +15,15 @@ import { initAiLabOrchestrator } from "./lib/aiLabOrchestrator";
 import { startUniverseRebuildSchedule } from "./lib/universeBuilder";
 import { updateEquityDailyFromGroupedBars, runFullSnapshot, backfillPolygonFlow, sweepStaleSnapshots } from "./lib/dailySnapshot";
 import { accumulateCanonicalIvForDate } from "./lib/canonicalIvAccumulator";
+import {
+  backfillAnalystGrades,
+  backfillAnalystPriceTargets,
+  backfillEarningsSurprises,
+  backfillEconomicCalendar,
+} from "./lib/fmpBackfill.js";
 import { runFmpEarningsBackfill } from "./lib/fmpEarningsBackfill.js";
 import { getFmpApiKeyOrThrow } from "./lib/fmpClient.js";
+import { refreshMacroCalendarCacheFromDb } from "./lib/fmpMacroCalendarCache.js";
 import { LIQUID_CORE_SYMBOL_STRINGS } from "./data/liquidCore130";
 import { db, equityDailyTable, snapshotCollectionLogTable, flowDailyAggregatesTable, trackedTickersTable } from "@workspace/db";
 import { inArray, desc, sql, eq } from "drizzle-orm";
@@ -46,6 +53,9 @@ getFmpApiKeyOrThrow();
 
 async function boot() {
   startSnapshotRefreshWorker();
+  void refreshMacroCalendarCacheFromDb().catch((e) => {
+    logger.warn({ err: e }, "FMP macro calendar cache warm failed");
+  });
   function scheduleCanonicalIvAccumulator() {
     function nextRunMs() {
       const now = new Date();
@@ -55,7 +65,7 @@ async function boot() {
     }
     function scheduleNext() {
       const ms = nextRunMs();
-      logger.info({ msUntil: ms }, "Canonical IV + FMP earnings backfill scheduled (22:00 UTC daily)");
+      logger.info({ msUntil: ms }, "Canonical IV + FMP daily backfills scheduled (22:00 UTC daily)");
       setTimeout(async () => {
         try {
           const today = new Date().toISOString().slice(0, 10);
@@ -70,10 +80,56 @@ async function boot() {
         } catch (err) {
           logger.error({ err }, "FMP earnings backfill: scheduled run failed");
         }
+        try {
+          const macroReport = await backfillEconomicCalendar();
+          logger.info(macroReport, "FMP macro calendar backfill: scheduled run complete");
+        } catch (err) {
+          logger.error({ err }, "FMP macro calendar backfill: scheduled run failed");
+        }
         scheduleNext();
       }, ms);
     }
     scheduleNext();
+  }
+
+  function scheduleFmpWeeklyBackfills() {
+    function msUntilNextSunday2300Utc(): number {
+      const now = new Date();
+      const dow = now.getUTCDay();
+      let addDays = (7 - dow) % 7;
+      if (addDays === 0) {
+        const today2300 = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 0, 0));
+        if (now.getTime() >= today2300.getTime()) addDays = 7;
+      }
+      const target = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + addDays, 23, 0, 0));
+      return Math.max(1000, target.getTime() - now.getTime());
+    }
+    function scheduleNextWeekly() {
+      const ms = msUntilNextSunday2300Utc();
+      logger.info({ msUntil: ms }, "FMP weekly analyst/surprises backfill scheduled (Sunday 23:00 UTC)");
+      setTimeout(async () => {
+        try {
+          const pt = await backfillAnalystPriceTargets();
+          logger.info(pt, "FMP analyst price targets backfill: scheduled run complete");
+        } catch (err) {
+          logger.error({ err }, "FMP analyst price targets backfill: scheduled run failed");
+        }
+        try {
+          const gr = await backfillAnalystGrades();
+          logger.info(gr, "FMP analyst grades backfill: scheduled run complete");
+        } catch (err) {
+          logger.error({ err }, "FMP analyst grades backfill: scheduled run failed");
+        }
+        try {
+          const es = await backfillEarningsSurprises();
+          logger.info(es, "FMP earnings surprises backfill: scheduled run complete");
+        } catch (err) {
+          logger.error({ err }, "FMP earnings surprises backfill: scheduled run failed");
+        }
+        scheduleNextWeekly();
+      }, ms);
+    }
+    scheduleNextWeekly();
   }
 
   function scheduleDailyScreenRefresh() {
@@ -519,6 +575,7 @@ async function boot() {
       scheduleDailyScreenRefresh();
       scheduleDailySnapshot();
       scheduleCanonicalIvAccumulator();
+      scheduleFmpWeeklyBackfills();
       schedulePolygonFlatFilesSync();
       scheduleNightlyFlowRawMaintenance();
 

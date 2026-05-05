@@ -258,7 +258,7 @@ export function aggregateBenzingaRatings(
   };
 }
 
-function emptyConsensus(sym: string, coverage_reason: string | null): PolygonAnalystConsensus {
+export function emptyConsensus(sym: string, coverage_reason: string | null): PolygonAnalystConsensus {
   return {
     symbol: sym,
     consensus_price_target: null,
@@ -276,6 +276,37 @@ function emptyConsensus(sym: string, coverage_reason: string | null): PolygonAna
     consensusPriceTargetFreshness: "unknown",
     coverage_reason,
   };
+}
+
+/**
+ * Fill sparse Polygon-derived consensus with FMP `analyst_price_targets` when present.
+ */
+export function mergeFmpPriceTargetIntoConsensus(
+  base: PolygonAnalystConsensus,
+  fmp: {
+    targetHigh: number | null;
+    targetLow: number | null;
+    targetMedian: number | null;
+    targetConsensus: number | null;
+    numAnalysts: number | null;
+    asOfDate: string | null;
+  },
+): PolygonAnalystConsensus {
+  const merged: PolygonAnalystConsensus = { ...base };
+  if (fmp.targetConsensus != null) {
+    merged.consensus_price_target = merged.consensus_price_target ?? fmp.targetConsensus;
+  }
+  merged.high_pt = merged.high_pt ?? fmp.targetHigh;
+  merged.low_pt = merged.low_pt ?? fmp.targetLow;
+  merged.num_analysts = merged.num_analysts ?? fmp.numAnalysts;
+  if (fmp.asOfDate) {
+    merged.consensusPriceTargetAsOfDate = merged.consensusPriceTargetAsOfDate ?? fmp.asOfDate;
+    merged.consensusPriceTargetFreshness = consensusFreshness(merged.consensusPriceTargetAsOfDate);
+  }
+  if (merged.consensus_price_target != null && merged.coverage_reason === "no_recent_coverage") {
+    merged.coverage_reason = null;
+  }
+  return merged;
 }
 
 function consensusRatingLabel(dist: AnalystAggregationConsensus): string | null {
