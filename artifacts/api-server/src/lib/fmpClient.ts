@@ -329,6 +329,34 @@ export interface FmpEarningsSurpriseRow {
   epsEstimated: number | null;
   /** (epsActual - epsEstimated) / |epsEstimated| * 100 when both present and estimate ≠ 0 */
   surprisePercentage: number | null;
+  revenueActual: number | null;
+  revenueEstimated: number | null;
+  /** (revenueActual - revenueEstimated) / |revenueEstimated| * 100 when both present and estimate ≠ 0 */
+  revenueSurprisePct: number | null;
+}
+
+export interface FmpHistoricalPriceEodRow {
+  symbol: string;
+  date: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  volume: number | null;
+  adjClose: number | null;
+}
+
+export interface FmpAnalystEstimateRow {
+  symbol: string;
+  fiscalPeriodEnd: string;
+  epsAvg: number | null;
+  epsHigh: number | null;
+  epsLow: number | null;
+  revenueAvg: number | null;
+  revenueHigh: number | null;
+  revenueLow: number | null;
+  analystCountEps: number | null;
+  analystCountRevenue: number | null;
 }
 
 function computeEpsSurprisePct(actual: number | null, estimated: number | null): number | null {
@@ -336,6 +364,10 @@ function computeEpsSurprisePct(actual: number | null, estimated: number | null):
   const absEst = Math.abs(estimated);
   if (absEst < 1e-12) return null;
   return ((actual - estimated) / absEst) * 100;
+}
+
+function computeRevenueSurprisePct(actual: number | null, estimated: number | null): number | null {
+  return computeEpsSurprisePct(actual, estimated);
 }
 
 function normaliseEarningsReportRow(raw: Record<string, unknown>): FmpEarningsSurpriseRow | null {
@@ -349,12 +381,19 @@ function normaliseEarningsReportRow(raw: Record<string, unknown>): FmpEarningsSu
   const epsEstimated = pickNumber(raw["epsEstimated"]) ?? pickNumber(raw["epsEstimate"]);
   const surprisePercentage = computeEpsSurprisePct(epsActual, epsEstimated);
 
+  const revenueActual = pickNumber(raw["revenueActual"]);
+  const revenueEstimated = pickNumber(raw["revenueEstimated"]);
+  const revenueSurprisePct = computeRevenueSurprisePct(revenueActual, revenueEstimated);
+
   return {
     symbol,
     date,
     epsActual,
     epsEstimated,
     surprisePercentage,
+    revenueActual,
+    revenueEstimated,
+    revenueSurprisePct,
   };
 }
 
@@ -395,4 +434,166 @@ export async function getFmpEarningsSurprises(symbol: string, limit: number): Pr
     }
   }
   return out;
+}
+
+function normaliseHistoricalPriceRow(raw: Record<string, unknown>): FmpHistoricalPriceEodRow | null {
+  const symbol = pickString(raw["symbol"])?.toUpperCase();
+  const dateRaw = pickString(raw["date"]);
+  if (!symbol || !dateRaw) return null;
+  const date = dateRaw.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+
+  const close = pickNumber(raw["close"]);
+  return {
+    symbol,
+    date,
+    open: pickNumber(raw["open"]),
+    high: pickNumber(raw["high"]),
+    low: pickNumber(raw["low"]),
+    close,
+    volume: pickNumber(raw["volume"]),
+    /** Documented as split-adjusted series; no separate adjClose on /full — duplicate close when absent. */
+    adjClose: pickNumber(raw["adjClose"]) ?? pickNumber(raw["adjustedClose"]) ?? close,
+  };
+}
+
+/**
+ * Full OHLC history for backfills (FMP stable). Prices are split-adjusted per FMP; there is no adjClose column.
+ * @see https://financialmodelingprep.com/stable/historical-price-eod/full
+ */
+export async function getFmpHistoricalPriceEodFull(
+  symbol: string,
+  fromYmd: string,
+  toYmd: string,
+): Promise<FmpHistoricalPriceEodRow[]> {
+  const sym = (symbol || "").toUpperCase().trim().replace(/^\$/, "");
+  if (!sym) return [];
+
+  const apiKey = getFmpApiKeyOrThrow();
+  const params = new URLSearchParams({
+    symbol: sym,
+    from: fromYmd.slice(0, 10),
+    to: toYmd.slice(0, 10),
+    apikey: apiKey,
+  });
+  const url = `${FMP_STABLE_BASE}/historical-price-eod/full?${params.toString()}`;
+
+  const res = await httpLimit(() =>
+    fetchWithRetry(url, { headers: { Accept: "application/json" } }),
+  );
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    logger.warn({ status: res.status, body: text.slice(0, 300) }, "FMP historical-price-eod/full non-200");
+    return [];
+  }
+
+  const data = (await res.json()) as unknown;
+  if (!Array.isArray(data)) return [];
+
+  const out: FmpHistoricalPriceEodRow[] = [];
+  for (const item of data) {
+    if (item && typeof item === "object") {
+      const row = normaliseHistoricalPriceRow(item as Record<string, unknown>);
+      if (row) out.push(row);
+    }
+  }
+  return out;
+}
+
+function normaliseAnalystEstimateRow(raw: Record<string, unknown>): FmpAnalystEstimateRow | null {
+  const symbol = pickString(raw["symbol"])?.toUpperCase();
+  const dateRaw = pickString(raw["date"]);
+  if (!symbol || !dateRaw) return null;
+  const fiscalPeriodEnd = dateRaw.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fiscalPeriodEnd)) return null;
+
+  return {
+    symbol,
+    fiscalPeriodEnd,
+    epsAvg: pickNumber(raw["estimateEpsAvg"]) ?? pickNumber(raw["epsAvg"]),
+    epsHigh: pickNumber(raw["estimateEpsHigh"]) ?? pickNumber(raw["epsHigh"]),
+    epsLow: pickNumber(raw["estimateEpsLow"]) ?? pickNumber(raw["epsLow"]),
+    revenueAvg: pickNumber(raw["estimateRevenueAvg"]) ?? pickNumber(raw["revenueAvg"]),
+    revenueHigh: pickNumber(raw["estimateRevenueHigh"]) ?? pickNumber(raw["revenueHigh"]),
+    revenueLow: pickNumber(raw["estimateRevenueLow"]) ?? pickNumber(raw["revenueLow"]),
+    analystCountEps:
+      pickNumber(raw["numberAnalystsEstimatedEps"])
+      ?? pickNumber(raw["numberAnalystEstimatedEps"])
+      ?? pickNumber(raw["numAnalystsEps"]),
+    analystCountRevenue:
+      pickNumber(raw["numberAnalystEstimatedRevenue"])
+      ?? pickNumber(raw["numberAnalystsEstimatedRevenue"])
+      ?? pickNumber(raw["numAnalystsRevenue"]),
+  };
+}
+
+async function fetchAnalystEstimatesOnce(
+  sym: string,
+  period: "quarter" | "annual",
+  limit: number,
+): Promise<{ rows: FmpAnalystEstimateRow[]; status: number }> {
+  const apiKey = getFmpApiKeyOrThrow();
+  const params = new URLSearchParams({
+    symbol: sym,
+    period,
+    page: "0",
+    limit: String(limit),
+    apikey: apiKey,
+  });
+  const url = `${FMP_STABLE_BASE}/analyst-estimates?${params.toString()}`;
+
+  const res = await httpLimit(() =>
+    fetchWithRetry(url, { headers: { Accept: "application/json" } }),
+  );
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    if (res.status === 402 && period === "quarter") {
+      return { rows: [], status: res.status };
+    }
+    logger.warn(
+      { status: res.status, body: text.slice(0, 300), symbol: sym, period },
+      "FMP analyst-estimates non-200",
+    );
+    return { rows: [], status: res.status };
+  }
+
+  const data = (await res.json()) as unknown;
+  if (!Array.isArray(data)) return { rows: [], status: res.status };
+
+  const out: FmpAnalystEstimateRow[] = [];
+  for (const item of data) {
+    if (item && typeof item === "object") {
+      const row = normaliseAnalystEstimateRow(item as Record<string, unknown>);
+      if (row) out.push(row);
+    }
+  }
+  return { rows: out, status: res.status };
+}
+
+/**
+ * Quarterly analyst consensus ranges when the FMP plan allows `period=quarter`;
+ * otherwise falls back to **annual** rows (`period=annual`, limit capped per plan).
+ * @see https://financialmodelingprep.com/stable/analyst-estimates
+ */
+export async function getFmpAnalystEstimatesQuarterly(
+  symbol: string,
+  opts?: { page?: number; limit?: number },
+): Promise<FmpAnalystEstimateRow[]> {
+  const sym = (symbol || "").toUpperCase().trim().replace(/^\$/, "");
+  if (!sym) return [];
+
+  const lim = Math.min(100, Math.max(1, opts?.limit ?? 12));
+  const q = await fetchAnalystEstimatesOnce(sym, "quarter", lim);
+  if (q.rows.length > 0) return q.rows;
+
+  /** Premium-only quarter parameter — fall back to annual (subscription-dependent limit, often ≤10). */
+  if (q.status === 402 || q.status === 403) {
+    const annualLim = Math.min(lim, 10);
+    const a = await fetchAnalystEstimatesOnce(sym, "annual", annualLim);
+    return a.rows;
+  }
+
+  return [];
 }

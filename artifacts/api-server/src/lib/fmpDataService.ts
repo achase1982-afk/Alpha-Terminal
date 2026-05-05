@@ -179,6 +179,9 @@ export type EarningsSurpriseDbRow = {
   epsEstimate: number | null;
   epsActual: number | null;
   surprisePct: number | null;
+  revenueEstimate: number | null;
+  revenueActual: number | null;
+  revenueSurprisePct: number | null;
 };
 
 export async function getEarningsSurpriseHistory(ticker: string, limit = 8): Promise<EarningsSurpriseDbRow[]> {
@@ -192,6 +195,9 @@ export async function getEarningsSurpriseHistory(ticker: string, limit = 8): Pro
       epsEstimate: earningsSurprisesHistoryTable.epsEstimate,
       epsActual: earningsSurprisesHistoryTable.epsActual,
       surprisePct: earningsSurprisesHistoryTable.surprisePct,
+      revenueEstimate: earningsSurprisesHistoryTable.revenueEstimate,
+      revenueActual: earningsSurprisesHistoryTable.revenueActual,
+      revenueSurprisePct: earningsSurprisesHistoryTable.revenueSurprisePct,
     })
     .from(earningsSurprisesHistoryTable)
     .where(eq(earningsSurprisesHistoryTable.ticker, sym))
@@ -207,6 +213,9 @@ export async function getEarningsSurpriseHistory(ticker: string, limit = 8): Pro
         epsEstimate: numFromNumeric(r.epsEstimate),
         epsActual: numFromNumeric(r.epsActual),
         surprisePct: numFromNumeric(r.surprisePct),
+        revenueEstimate: numFromNumeric(r.revenueEstimate),
+        revenueActual: numFromNumeric(r.revenueActual),
+        revenueSurprisePct: numFromNumeric(r.revenueSurprisePct),
       };
     })
     .filter((x): x is EarningsSurpriseDbRow => x != null);

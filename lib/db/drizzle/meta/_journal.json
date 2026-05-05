@@ -92,6 +92,20 @@
       "when": 1778300000000,
       "tag": "0016_fmp_data_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1778400000000,
+      "tag": "0017_equity_backfill_analyst_estimates",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1778500000000,
+      "tag": "0018_equity_daily_adjusted_close_option_a",
+      "breakpoints": true
     }
   ]
 }

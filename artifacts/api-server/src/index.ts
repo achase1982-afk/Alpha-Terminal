@@ -16,6 +16,7 @@ import { startUniverseRebuildSchedule } from "./lib/universeBuilder";
 import { updateEquityDailyFromGroupedBars, runFullSnapshot, backfillPolygonFlow, sweepStaleSnapshots } from "./lib/dailySnapshot";
 import { accumulateCanonicalIvForDate } from "./lib/canonicalIvAccumulator";
 import {
+  backfillAnalystEstimates,
   backfillAnalystGrades,
   backfillAnalystPriceTargets,
   backfillEarningsSurprises,
@@ -125,6 +126,12 @@ async function boot() {
           logger.info(es, "FMP earnings surprises backfill: scheduled run complete");
         } catch (err) {
           logger.error({ err }, "FMP earnings surprises backfill: scheduled run failed");
+        }
+        try {
+          const ae = await backfillAnalystEstimates();
+          logger.info(ae, "FMP analyst estimates backfill: scheduled run complete");
+        } catch (err) {
+          logger.error({ err }, "FMP analyst estimates backfill: scheduled run failed");
         }
         scheduleNextWeekly();
       }, ms);

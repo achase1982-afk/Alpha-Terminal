@@ -459,6 +459,9 @@ export const earningsSurprisesHistoryTable = pgTable("earnings_surprises_history
   epsEstimate: numeric("eps_estimate"),
   epsActual: numeric("eps_actual"),
   surprisePct: numeric("surprise_pct"),
+  revenueEstimate: numeric("revenue_estimate"),
+  revenueActual: numeric("revenue_actual"),
+  revenueSurprisePct: numeric("revenue_surprise_pct"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   uniqueIndex("earnings_surprises_history_ticker_report_unique").on(t.ticker, t.reportDate),
@@ -466,6 +469,27 @@ export const earningsSurprisesHistoryTable = pgTable("earnings_surprises_history
 ]);
 
 export type EarningsSurpriseHistoryRow = typeof earningsSurprisesHistoryTable.$inferSelect;
+
+/** FMP analyst consensus ranges by fiscal period end (quarterly rows). */
+export const analystEstimatesTable = pgTable("analyst_estimates", {
+  id: serial("id").primaryKey(),
+  ticker: text("ticker").notNull(),
+  fiscalPeriodEnd: date("fiscal_period_end").notNull(),
+  epsAvg: numeric("eps_avg"),
+  epsHigh: numeric("eps_high"),
+  epsLow: numeric("eps_low"),
+  revenueAvg: numeric("revenue_avg"),
+  revenueHigh: numeric("revenue_high"),
+  revenueLow: numeric("revenue_low"),
+  analystCountEps: integer("analyst_count_eps"),
+  analystCountRevenue: integer("analyst_count_revenue"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("analyst_estimates_ticker_period_unique").on(t.ticker, t.fiscalPeriodEnd),
+  index("idx_analyst_estimates_ticker_period").on(t.ticker, t.fiscalPeriodEnd),
+]);
+
+export type AnalystEstimateRow = typeof analystEstimatesTable.$inferSelect;
 
 export const macroCalendarTable = pgTable("macro_calendar", {
   id: serial("id").primaryKey(),

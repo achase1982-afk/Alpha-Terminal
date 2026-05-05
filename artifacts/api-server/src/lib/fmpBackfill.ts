@@ -1,19 +1,23 @@
 import { sql } from "drizzle-orm";
 import {
   db,
+  analystEstimatesTable,
   analystGradesTable,
   analystPriceTargetsTable,
   corporateEventsTable,
   earningsSurprisesHistoryTable,
+  equityDailyTable,
   macroCalendarTable,
 } from "@workspace/db";
 import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
 import {
-  getFmpAnalystGrades,
-  getFmpAnalystPriceTargets,
+  getFmpAnalystEstimatesQuarterly,
   getFmpEarningsCalendar,
   getFmpEarningsSurprises,
   getFmpEconomicCalendar,
+  getFmpHistoricalPriceEodFull,
+  getFmpAnalystGrades,
+  getFmpAnalystPriceTargets,
 } from "./fmpClient.js";
 import { invalidateCalendarEventsCache } from "./calendarEventChecker.js";
 import { refreshMacroCalendarCacheFromDb } from "./fmpMacroCalendarCache.js";
@@ -22,6 +26,12 @@ import { logFailure } from "./telemetry.js";
 
 function todayUtcYmd(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
 }
 
 function addDaysUtcYmd(ymd: string, days: number): string {
@@ -246,11 +256,15 @@ export async function backfillEarningsSurprises(): Promise<{ rowsUpserted: numbe
   let rowsUpserted = 0;
 
   for (const sym of set) {
-    const surprises = await getFmpEarningsSurprises(sym, 8);
+    const surprises = await getFmpEarningsSurprises(sym, 100);
     for (const s of surprises) {
       const surprisePct =
         s.surprisePercentage != null && Number.isFinite(s.surprisePercentage)
           ? String(s.surprisePercentage)
+          : null;
+      const revenueSurprisePct =
+        s.revenueSurprisePct != null && Number.isFinite(s.revenueSurprisePct)
+          ? String(s.revenueSurprisePct)
           : null;
       await db.insert(earningsSurprisesHistoryTable)
         .values({
@@ -259,6 +273,9 @@ export async function backfillEarningsSurprises(): Promise<{ rowsUpserted: numbe
           epsEstimate: s.epsEstimated != null ? String(s.epsEstimated) : null,
           epsActual: s.epsActual != null ? String(s.epsActual) : null,
           surprisePct,
+          revenueEstimate: s.revenueEstimated != null ? String(s.revenueEstimated) : null,
+          revenueActual: s.revenueActual != null ? String(s.revenueActual) : null,
+          revenueSurprisePct,
           createdAt: sql`now()`,
         })
         .onConflictDoUpdate({
@@ -267,6 +284,9 @@ export async function backfillEarningsSurprises(): Promise<{ rowsUpserted: numbe
             epsEstimate: sql`excluded.eps_estimate`,
             epsActual: sql`excluded.eps_actual`,
             surprisePct: sql`excluded.surprise_pct`,
+            revenueEstimate: sql`excluded.revenue_estimate`,
+            revenueActual: sql`excluded.revenue_actual`,
+            revenueSurprisePct: sql`excluded.revenue_surprise_pct`,
             createdAt: sql`excluded.created_at`,
           },
         });
@@ -278,4 +298,117 @@ export async function backfillEarningsSurprises(): Promise<{ rowsUpserted: numbe
   void logFailure("DATABASE", "INFO", "fmp backfill completed", summary);
   logger.info(summary, "fmp backfill completed");
   return { rowsUpserted };
+}
+
+const EQUITY_HISTORY_FROM = "2021-01-01";
+
+export async function backfillEquityDailyHistory(): Promise<{
+  rowsInserted: number;
+  symbolsAttempted: number;
+  failures: Array<{ symbol: string; error: string }>;
+}> {
+  const set = lcSet();
+  const to = todayUtcYmd();
+  let rowsInserted = 0;
+  const failures: Array<{ symbol: string; error: string }> = [];
+
+  for (const sym of set) {
+    try {
+      const bars = await getFmpHistoricalPriceEodFull(sym, EQUITY_HISTORY_FROM, to);
+      const values: Array<typeof equityDailyTable.$inferInsert> = [];
+      for (const b of bars) {
+        const close = b.close;
+        if (close == null || !Number.isFinite(close)) continue;
+        const vol = b.volume != null && Number.isFinite(b.volume) ? Math.round(b.volume) : null;
+        /** FMP full EOD: OHLC are split-adjusted; no adjClose field — mirror close for adjusted_close (Option A). */
+        values.push({
+          symbol: sym,
+          date: b.date,
+          open: b.open ?? null,
+          high: b.high ?? null,
+          low: b.low ?? null,
+          close,
+          adjustedClose: close,
+          volume: vol,
+        });
+      }
+      for (const batch of chunkArray(values, 400)) {
+        if (batch.length === 0) continue;
+        const result = await db.insert(equityDailyTable).values(batch).onConflictDoNothing({
+          target: [equityDailyTable.symbol, equityDailyTable.date],
+        });
+        const rc = (result as { rowCount?: number }).rowCount;
+        if (typeof rc === "number" && rc > 0) rowsInserted += rc;
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      failures.push({ symbol: sym, error: msg });
+      logger.warn({ sym, err: msg }, "backfillEquityDailyHistory: symbol failed");
+    }
+  }
+
+  const summary = {
+    job: "backfillEquityDailyHistory",
+    rowsInserted,
+    symbolsAttempted: set.size,
+    failureCount: failures.length,
+    from: EQUITY_HISTORY_FROM,
+    to,
+  };
+  void logFailure("DATABASE", "INFO", "fmp backfill completed", summary);
+  logger.info(summary, "fmp backfill completed");
+  return { rowsInserted, symbolsAttempted: set.size, failures };
+}
+
+export async function backfillAnalystEstimates(): Promise<{
+  rowsUpserted: number;
+  symbolsWithNoData: number;
+}> {
+  const set = lcSet();
+  let rowsUpserted = 0;
+  let symbolsWithNoData = 0;
+
+  for (const sym of set) {
+    const rows = await getFmpAnalystEstimatesQuarterly(sym, { page: 0, limit: 12 });
+    if (rows.length === 0) {
+      symbolsWithNoData++;
+      continue;
+    }
+    for (const r of rows) {
+      await db.insert(analystEstimatesTable)
+        .values({
+          ticker: sym,
+          fiscalPeriodEnd: r.fiscalPeriodEnd,
+          epsAvg: r.epsAvg != null ? String(r.epsAvg) : null,
+          epsHigh: r.epsHigh != null ? String(r.epsHigh) : null,
+          epsLow: r.epsLow != null ? String(r.epsLow) : null,
+          revenueAvg: r.revenueAvg != null ? String(r.revenueAvg) : null,
+          revenueHigh: r.revenueHigh != null ? String(r.revenueHigh) : null,
+          revenueLow: r.revenueLow != null ? String(r.revenueLow) : null,
+          analystCountEps: r.analystCountEps != null ? Math.round(r.analystCountEps) : null,
+          analystCountRevenue: r.analystCountRevenue != null ? Math.round(r.analystCountRevenue) : null,
+          createdAt: sql`now()`,
+        })
+        .onConflictDoUpdate({
+          target: [analystEstimatesTable.ticker, analystEstimatesTable.fiscalPeriodEnd],
+          set: {
+            epsAvg: sql`excluded.eps_avg`,
+            epsHigh: sql`excluded.eps_high`,
+            epsLow: sql`excluded.eps_low`,
+            revenueAvg: sql`excluded.revenue_avg`,
+            revenueHigh: sql`excluded.revenue_high`,
+            revenueLow: sql`excluded.revenue_low`,
+            analystCountEps: sql`excluded.analyst_count_eps`,
+            analystCountRevenue: sql`excluded.analyst_count_revenue`,
+            createdAt: sql`excluded.created_at`,
+          },
+        });
+      rowsUpserted++;
+    }
+  }
+
+  const summary = { job: "backfillAnalystEstimates", rowsUpserted, symbolsWithNoData };
+  void logFailure("DATABASE", "INFO", "fmp backfill completed", summary);
+  logger.info(summary, "fmp backfill completed");
+  return { rowsUpserted, symbolsWithNoData };
 }

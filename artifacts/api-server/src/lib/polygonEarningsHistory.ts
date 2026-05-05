@@ -4,7 +4,7 @@
  */
 
 import { eq, sql } from "drizzle-orm";
-import { db, corporateEventsTable, equityDailyTable } from "@workspace/db";
+import { db, analystEstimatesTable, corporateEventsTable, equityDailyTable } from "@workspace/db";
 import { polygonKey } from "./polygonAnalystData.js";
 import { appendPolygonApiTraceRecord } from "./polygonApiTrace.js";
 import { fetchRescForwardEstimates } from "./ibkrResc.js";
@@ -321,6 +321,64 @@ const REST_GAP_EPS = "estimate_range_unavailable_no_vendor: forward_eps_high_low
 const REST_GAP_REV = "estimate_range_unavailable_no_vendor: forward_revenue_high_low";
 const REST_GAP_ANALYST = "estimate_range_unavailable_no_vendor: forward_analyst_count";
 
+async function mergeForwardEstimatesFromAnalystTable(
+  sym: string,
+  forward: ForwardEstimatesRow,
+  gaps: string[],
+): Promise<void> {
+  const rows = await db
+    .select()
+    .from(analystEstimatesTable)
+    .where(eq(analystEstimatesTable.ticker, sym));
+
+  const ned = forward.next_earnings_date;
+  let pick: (typeof rows)[0] | undefined;
+  let bestYmd: string | null = null;
+  for (const r of rows) {
+    const ymd =
+      typeof r.fiscalPeriodEnd === "string"
+        ? r.fiscalPeriodEnd.slice(0, 10)
+        : String(r.fiscalPeriodEnd).slice(0, 10);
+    if (ymd < ned) continue;
+    if (!bestYmd || ymd.localeCompare(bestYmd) < 0) {
+      bestYmd = ymd;
+      pick = r;
+    }
+  }
+  if (!pick || !bestYmd) return;
+
+  const epsH = num(pick.epsHigh);
+  const epsL = num(pick.epsLow);
+  const epsA = num(pick.epsAvg);
+  const revH = num(pick.revenueHigh);
+  const revL = num(pick.revenueLow);
+  const revA = num(pick.revenueAvg);
+  const nEps = pick.analystCountEps;
+  const nRev = pick.analystCountRevenue;
+  const analystCount =
+    nEps != null && Number.isFinite(nEps)
+      ? Math.round(nEps)
+      : nRev != null && Number.isFinite(nRev)
+        ? Math.round(nRev)
+        : null;
+
+  if (epsH != null) forward.eps_high = epsH;
+  if (epsL != null) forward.eps_low = epsL;
+  if (forward.eps_consensus == null && epsA != null) forward.eps_consensus = epsA;
+  if (revH != null) forward.revenue_high = revH;
+  if (revL != null) forward.revenue_low = revL;
+  if (forward.revenue_consensus == null && revA != null) forward.revenue_consensus = revA;
+  if (forward.analyst_count == null && analystCount != null) forward.analyst_count = analystCount;
+
+  const strip = (label: string) => {
+    const i = gaps.indexOf(label);
+    if (i >= 0) gaps.splice(i, 1);
+  };
+  if (forward.eps_high != null && forward.eps_low != null) strip(REST_GAP_EPS);
+  if (forward.revenue_high != null && forward.revenue_low != null) strip(REST_GAP_REV);
+  if (forward.analyst_count != null) strip(REST_GAP_ANALYST);
+}
+
 export async function fetchEarningsHistoryAndForward(ticker: string): Promise<FetchEarningsBundle> {
   const sym = ticker.trim().toUpperCase().replace(/^\$/, "");
   const cacheKey = sym;
@@ -502,6 +560,8 @@ export async function fetchEarningsHistoryAndForward(ticker: string): Promise<Fe
       if (resc.revenue_low != null) forward_estimates.revenue_low = resc.revenue_low;
       if (resc.analyst_count != null) forward_estimates.analyst_count = resc.analyst_count;
     }
+
+    await mergeForwardEstimatesFromAnalystTable(sym, forward_estimates, gaps);
   }
 
   const bundle: FetchEarningsBundle = {
