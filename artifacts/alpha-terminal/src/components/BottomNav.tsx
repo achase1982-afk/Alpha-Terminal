@@ -354,7 +354,7 @@ export function BottomNav({
                     fontSize: 9,
                     fontWeight: 800,
                     fontFamily: "ui-monospace, monospace",
-                    color: badgeIsRunning ? "#0c0c0c" : "#0c0c0c",
+                    color: "#0c0c0c",
                     lineHeight: 1,
                   }}
                 >
