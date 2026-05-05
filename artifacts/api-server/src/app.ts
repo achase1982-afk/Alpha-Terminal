@@ -6,6 +6,7 @@ import type { Request, Response, NextFunction } from "express";
 import router from "./routes";
 import healthRouter from "./routes/health";
 import { logger } from "./lib/logger";
+import { httpTimingMiddleware } from "./middleware/httpTiming";
 
 const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
 
@@ -57,6 +58,8 @@ function apiRequireAuth(req: Request, res: Response, next: NextFunction) {
 }
 
 const app: Express = express();
+
+app.use(httpTimingMiddleware);
 
 app.use(
   pinoHttp({

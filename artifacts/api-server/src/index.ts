@@ -9,6 +9,7 @@ import { initTokenStore, setTokenRefreshCallback, hasValidTokens } from "./lib/t
 import { initSyntheticDxy } from "./lib/syntheticDxy";
 import { startExitMonitor } from "./lib/exitStaging";
 import { startTelemetryCleanup } from "./lib/telemetry";
+import { startTelemetryRetentionJob } from "./lib/telemetryRetention.js";
 import { initDeltaEngine } from "./lib/deltaEngine";
 import { runDailyScreenRefresh } from "./routes/scanner";
 import { initAiLabOrchestrator } from "./lib/aiLabOrchestrator";
@@ -562,6 +563,7 @@ async function boot() {
       await initTokenStore();
       startExitMonitor();
       startTelemetryCleanup();
+      startTelemetryRetentionJob();
       initDeltaEngine();
 
       // Recover any snapshot rows orphaned by a prior crash/SIGKILL. Without

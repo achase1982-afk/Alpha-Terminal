@@ -17,7 +17,8 @@ export type TelemetrySystem =
   | "POLYGON_OPTIONS_WS"
   | "POLYGON_API"
   | "DATABASE"
-  | "API";
+  | "API"
+  | "HTTP";
 
 export type TelemetryFeature =
   | "MARKET_PULSE"
@@ -27,7 +28,8 @@ export type TelemetryFeature =
   | "SNAPSHOT"
   | "ORDER"
   | "SYSTEM"
-  | "AI_LAB";
+  | "AI_LAB"
+  | "HTTP";
 
 export type TelemetrySeverity = "INFO" | "WARN" | "ERROR";
 
@@ -103,6 +105,7 @@ function inferFeature(system: TelemetrySystem, message: string): TelemetryFeatur
   if (system === "SCANNER" || msgLower.includes("scanner") || msgLower.includes("scan ") || msgLower.includes("discovery scan")) return "SCANNER";
   if (system === "STRATEGIST" || msgLower.includes("strategist") || msgLower.includes("analysis initiated")) return "STRATEGIST";
   if (system === "SCHWAB_STREAM" || system === "IBKR") return "STREAMER";
+  if (system === "HTTP" || msgLower.includes("http_request")) return "HTTP";
   if (msgLower.includes("snapshot") || msgLower.includes("backfill")) return "SNAPSHOT";
   return "SYSTEM";
 }
