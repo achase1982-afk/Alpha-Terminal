@@ -726,7 +726,11 @@ export default function TerminalPage() {
       </div>
 
       {!isWide && (
-        <BottomNav activeTab={activeBottom} onTabChange={(tab) => {
+        <BottomNav
+          activeTab={activeBottom}
+          strategistRunningCount={strategistRunningCount}
+          strategistUnviewedCount={strategistUnviewedCount}
+          onTabChange={(tab) => {
           sidebarRef.current?.clearActivePage();
           setSidebarOpen(false);
           if (tab === "search") {
