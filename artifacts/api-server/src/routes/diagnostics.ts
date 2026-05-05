@@ -3,6 +3,11 @@ import { sql, eq, max, and } from "drizzle-orm";
 import { db, optionsChainDailyTable, optionsFlowPerStrikeTable, schwabChainIngestMetricsTable } from "@workspace/db";
 import { getFlowCaptureDiagnostics } from "../lib/flowCaptureService.js";
 import { fetchPolygonReferenceContractCount } from "../lib/polygonReferenceContracts.js";
+import {
+  getIbkrTickPilotRunById,
+  getLatestIbkrTickPilotSummary,
+  listIbkrTickPilotRuns,
+} from "../lib/ibkrTickEntitlementPilot.js";
 import { logger } from "../lib/logger.js";
 
 function requireAdmin(req: { headers: Record<string, string | string[] | undefined> }): { ok: boolean; error?: string } {
@@ -257,6 +262,54 @@ router.get("/flow-capture", async (req, res) => {
     return res.json({ ok: true, ...d });
   } catch (e) {
     logger.error({ err: e }, "diagnostics: flow-capture failed");
+    return res.status(500).json({ ok: false, error: (e as Error).message });
+  }
+});
+
+router.get("/ibkr-tick-pilot/recent", async (_req, res) => {
+  try {
+    const runs = await listIbkrTickPilotRuns(10);
+    return res.json({ ok: true, runs });
+  } catch (e) {
+    logger.error({ err: e }, "diagnostics: ibkr-tick-pilot recent failed");
+    return res.status(500).json({ ok: false, error: (e as Error).message });
+  }
+});
+
+router.get("/ibkr-tick-pilot/latest-summary", async (_req, res) => {
+  try {
+    const latest = await getLatestIbkrTickPilotSummary();
+    return res.json({ ok: true, latest });
+  } catch (e) {
+    logger.error({ err: e }, "diagnostics: ibkr-tick-pilot latest-summary failed");
+    return res.status(500).json({ ok: false, error: (e as Error).message });
+  }
+});
+
+router.get("/ibkr-tick-pilot/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!id || typeof id !== "string") {
+      return res.status(400).json({ ok: false, error: "Missing id" });
+    }
+    const row = await getIbkrTickPilotRunById(id);
+    if (!row) return res.status(404).json({ ok: false, error: "Not found" });
+    return res.json({
+      ok: true,
+      run: {
+        id: row.id,
+        runStartedAt: row.runStartedAt,
+        runCompletedAt: row.runCompletedAt,
+        durationSec: row.durationSec,
+        clientId: row.clientId,
+        perSymbolResults: row.perSymbolResults,
+        globalErrors: row.globalErrors,
+        summary: row.summary,
+        triggeredByUserId: row.triggeredByUserId,
+      },
+    });
+  } catch (e) {
+    logger.error({ err: e }, "diagnostics: ibkr-tick-pilot get failed");
     return res.status(500).json({ ok: false, error: (e as Error).message });
   }
 });

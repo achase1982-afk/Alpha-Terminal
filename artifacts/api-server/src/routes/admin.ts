@@ -1,5 +1,7 @@
 import { Router } from "express";
+import { getAuth } from "@clerk/express";
 import { logger } from "../lib/logger.js";
+import { runIbkrTickEntitlementPilotSerialized } from "../lib/ibkrTickEntitlementPilot.js";
 import {
   backfillAnalystEstimates,
   backfillAnalystGrades,
@@ -69,6 +71,54 @@ router.post("/fmp/backfill", async (req, res) => {
     const msg = e instanceof Error ? e.message : String(e);
     logger.error({ err: msg, job: normalized }, "admin: FMP backfill failed");
     return res.status(500).json({ ok: false, job: normalized, error: msg });
+  }
+});
+
+/**
+ * POST /api/admin/diagnostics/ibkr-tick-pilot
+ * Header: x-admin-key: <ADMIN_API_KEY>
+ * Body optional: { "triggeredByUserId": "user_xxx" } — otherwise uses Clerk `userId` when session is present, else `"admin-key"`.
+ *
+ * Runs a 60s IBKR tick-by-tick Last entitlement capture (dedicated API clientId).
+ */
+router.post("/diagnostics/ibkr-tick-pilot", async (req, res) => {
+  const auth = requireAdmin(req as never);
+  if (!auth.ok) {
+    return res.status(403).json({ ok: false, error: auth.error });
+  }
+
+  let triggeredBy = "admin-key";
+  try {
+    const clerk = getAuth(req as never);
+    if (typeof req.body?.triggeredByUserId === "string" && req.body.triggeredByUserId.trim()) {
+      triggeredBy = req.body.triggeredByUserId.trim();
+    } else if (clerk.userId) {
+      triggeredBy = clerk.userId;
+    }
+  } catch {
+    if (typeof req.body?.triggeredByUserId === "string" && req.body.triggeredByUserId.trim()) {
+      triggeredBy = req.body.triggeredByUserId.trim();
+    }
+  }
+
+  try {
+    const result = await runIbkrTickEntitlementPilotSerialized(triggeredBy);
+    const slim = {
+      ...result,
+      perSymbolResults: result.perSymbolResults.map(({ ticks, ...rest }) => ({
+        ...rest,
+        tickSample: ticks[0] ?? null,
+        ticksCaptured: ticks.length,
+      })),
+    };
+    return res.json({ ok: true, ...slim });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("already running")) {
+      return res.status(409).json({ ok: false, error: msg });
+    }
+    logger.error({ err: msg }, "admin: ibkr tick pilot failed");
+    return res.status(500).json({ ok: false, error: msg });
   }
 });
 

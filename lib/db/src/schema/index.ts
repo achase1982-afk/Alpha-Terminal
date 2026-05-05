@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, serial, real, integer, boolean, timestamp, jsonb, uniqueIndex, index, date, doublePrecision, bigint, numeric, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, real, integer, boolean, timestamp, jsonb, uniqueIndex, index, date, doublePrecision, bigint, numeric, primaryKey, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -1017,3 +1017,20 @@ export const scannerTickerCycleCoverageTable = pgTable("scanner_ticker_cycle_cov
 ]);
 
 export type ScannerTickerCycleCoverage = typeof scannerTickerCycleCoverageTable.$inferSelect;
+
+/** IBKR tick-by-tick entitlement pilot (Settings UI); one row per 60s run. */
+export const ibkrDiagnosticsRunsTable = pgTable("ibkr_diagnostics_runs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  runStartedAt: timestamp("run_started_at", { withTimezone: true }).notNull(),
+  runCompletedAt: timestamp("run_completed_at", { withTimezone: true }).notNull(),
+  durationSec: integer("duration_sec").notNull(),
+  clientId: integer("client_id").notNull(),
+  perSymbolResults: jsonb("per_symbol_results").notNull(),
+  globalErrors: jsonb("global_errors").notNull(),
+  summary: jsonb("summary").notNull(),
+  triggeredByUserId: text("triggered_by_user_id").notNull(),
+}, (t) => [
+  index("ibkr_diagnostics_runs_started_idx").on(t.runStartedAt),
+]);
+
+export type IbkrDiagnosticsRun = typeof ibkrDiagnosticsRunsTable.$inferSelect;
