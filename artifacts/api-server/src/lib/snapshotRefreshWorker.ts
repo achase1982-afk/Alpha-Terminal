@@ -40,6 +40,7 @@ import {
 } from "./scannerScoringV2.js";
 import type { ChainContract } from "./strategistV2.js";
 import { summarizeOptionsChain, type ChainSummary } from "./strategistV2.js";
+import { getSettings } from "./strategistSettings.js";
 import {
   classifyTapeCoverageTier,
   type TapeCoverageTier,
