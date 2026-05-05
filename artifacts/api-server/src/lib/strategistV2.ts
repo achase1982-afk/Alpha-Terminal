@@ -199,7 +199,7 @@ export interface StrategistV2Result {
     daysUntilExpiry: number;
     insideExpiry: boolean;
     behavior: "BLOCK" | "WARN" | "IGNORE";
-    source: "vendor_primary" | "yahoo" | "finnhub" | null;
+    source: "vendor_primary" | "fmp_db" | "finnhub" | null;
     confirmed: boolean;
   };
   /** Set for `no_viable_setup` when the block maps to a v2 strategist outcome card */
@@ -249,7 +249,7 @@ interface TickerData {
   earningsDaysAway: number | null;
   earningsDate: string | null;
   earningsConfirmed: boolean;
-  earningsSource: "vendor_primary" | "yahoo" | "finnhub" | null;
+  earningsSource: "vendor_primary" | "fmp_db" | "finnhub" | null;
   /** Most recent reported earnings (YYYY-MM-DD), when calendar sources provide it. */
   lastEarningsDate: string | null;
   /** Calendar days since lastEarningsDate. */
@@ -4069,7 +4069,7 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
     });
 
     void checkEventConflicts(ticker, 45, "iron_condor");
-    // Single source of truth: vendor_primary calendar + Yahoo fallback (cached 6h).
+    // Single source of truth: vendor_primary calendar + FMP DB + Finnhub fallback (cached 6h).
     // Replaces the legacy MEGA_EARNINGS hardcoded list which only covered ~mega caps.
     const earningsInfo = await getNextEarningsDate(ticker).catch(() => null);
     const earningsDaysAway: number | null = earningsInfo?.daysAway ?? null;

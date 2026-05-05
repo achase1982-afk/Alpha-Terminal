@@ -491,7 +491,7 @@ export function getSettingMeta(): SettingMetaEntry[] {
     { key: "spreadWidth", label: "Spread Width ($)", group: "Strategy", default: 5, min: 1, max: 100, step: 0.50, description: "Width of vertical spreads in dollars. Only enforced when 'Spread Width — Unlimited' above is OFF." },
     { key: "minOpenInterest", label: "Min Open Interest Per Leg", group: "Strategy", default: 50, min: 10, max: 500, step: 10, description: "Minimum OI required for each leg." },
     { key: "maxBidAskSpreadPct", label: "Max Bid-Ask Spread (%)", group: "Strategy", default: 25, min: 5, max: 50, step: 5, description: "Maximum bid-ask spread as percent of mid price." },
-    { key: "earningsSuppressDays", label: "Scanner Earnings Suppress Window (days)", group: "Earnings", default: 14, min: 0, max: 45, step: 1, description: "Scanner suppresses tickers with earnings within this many days. Set to 0 to disable. Source: vendor calendar (confirmed) → Yahoo fallback." },
+    { key: "earningsSuppressDays", label: "Scanner Earnings Suppress Window (days)", group: "Earnings", default: 14, min: 0, max: 45, step: 1, description: "Scanner suppresses tickers with earnings within this many days. Set to 0 to disable. Source: vendor calendar (confirmed) → FMP DB → Finnhub fallback." },
     { key: "earningsInsideExpiryBehavior", label: "Earnings Inside Expiry Behavior", group: "Earnings", default: 2, min: 1, max: 3, step: 1, description: "What to do when the AI proposes a structure whose expiration is after the next earnings release. BLOCK = no trade. WARN = ship trade with banner. IGNORE = silent.", options: [
       { value: 1, label: "BLOCK — no trade" },
       { value: 2, label: "WARN — show banner, allow trade" },

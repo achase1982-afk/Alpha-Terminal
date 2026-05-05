@@ -271,7 +271,7 @@ export interface StrategistV2Result {
     daysUntilExpiry: number;
     insideExpiry: boolean;
     behavior: "BLOCK" | "WARN" | "IGNORE";
-    source: "vendor_primary" | "yahoo" | null;
+    source: "vendor_primary" | "fmp_db" | "finnhub" | null;
     confirmed: boolean;
   };
   /**

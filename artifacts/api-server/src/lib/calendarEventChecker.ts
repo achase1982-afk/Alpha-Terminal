@@ -87,7 +87,7 @@ interface CalendarEvent {
 
 // Legacy MEGA_EARNINGS hardcoded list intentionally removed. Per-ticker
 // earnings dates now flow through `earningsDaysAway` (sourced from
-// earningsService → vendor calendar/Yahoo) which is passed in to checkEventConflicts
+// earningsService (vendor calendar / FMP DB / Finnhub) which is passed in to checkEventConflicts
 // directly. Injecting synthetic earnings events from a stale wk-of-month table
 // caused ticker-specific event conflicts to disagree with the rest of the
 // pipeline (e.g. an AAPL trade could show "Apple Earnings" on the synthetic

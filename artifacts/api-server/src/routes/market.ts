@@ -7,7 +7,6 @@ import {
 import { getAccessToken, getBestAccessToken } from "../lib/tokenStore.js";
 import { getQuoteBySymbol, addOptionSymbols, getAllOptionTicks, type OptionTick } from "../lib/schwabStreamer.js";
 import { getIBCachedQuote, subscribeQuoteForSymbol, isIBConnected } from "../lib/ibStreamer.js";
-import { logFailure } from "../lib/telemetry.js";
 import { getNextEarningsDate } from "../lib/earningsService.js";
 import { emitTelemetry } from "../lib/telemetryStore.js";
 import { type OptionContract } from "../lib/optionsStrategist.js";
@@ -16,22 +15,6 @@ import { fetchPolygonChain } from "../lib/polygonChain.js";
 import type { Readability as ReadabilityCtor } from "@mozilla/readability";
 
 const router: IRouter = Router();
-
-/** Yahoo finance quoteSummary JSON (partial — only calendarEvents path used here). */
-interface YahooEarningsDateEntry {
-  raw?: number;
-  fmt?: string;
-}
-
-interface YahooQuoteSummaryResult {
-  calendarEvents?: {
-    earnings?: { earningsDate?: YahooEarningsDateEntry[] };
-  };
-}
-
-interface YahooQuoteSummaryEnvelope {
-  quoteSummary?: { result?: YahooQuoteSummaryResult[] };
-}
 
 const SCHWAB_API_BASE = "https://api.schwabapi.com/marketdata/v1";
 
@@ -1330,58 +1313,6 @@ router.get("/fundamentals", async (req, res) => {
   }
 });
 
-async function fetchYahooEarningsDate(cleanSymbol: string, log: any): Promise<string | null> {
-  try {
-    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(cleanSymbol)}?modules=calendarEvents`;
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      },
-      signal: AbortSignal.timeout(8000),
-    });
-
-    if (!response.ok) {
-      log.warn({ status: response.status, symbol: cleanSymbol }, "Yahoo earnings fetch failed, trying scrape");
-      void logFailure("YAHOO", "WARN", `Yahoo earnings calendar fetch failed: HTTP ${response.status}`, { symbol: cleanSymbol, status: response.status });
-
-      const pageUrl = `https://finance.yahoo.com/quote/${encodeURIComponent(cleanSymbol)}/`;
-      const pageRes = await fetch(pageUrl, {
-        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
-        signal: AbortSignal.timeout(8000),
-      });
-      if (pageRes.ok) {
-        const html = await pageRes.text();
-        const dateMatch = html.match(/Earnings Date.*?(\w{3} \d{1,2}, \d{4})/s);
-        if (dateMatch) {
-          const parsed = new Date(dateMatch[1]);
-          if (!isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
-        }
-      }
-      return null;
-    }
-
-    const json = (await response.json()) as Record<string, unknown>;
-    const envelope = json as YahooQuoteSummaryEnvelope;
-    const result = envelope.quoteSummary?.result?.[0];
-    const earnings = result?.calendarEvents?.earnings;
-    const earningsDateArr = earnings?.earningsDate;
-
-    if (Array.isArray(earningsDateArr) && earningsDateArr.length > 0) {
-      const rawTs = earningsDateArr[0]?.raw;
-      if (typeof rawTs === "number") {
-        return new Date(rawTs * 1000).toISOString().slice(0, 10);
-      }
-      const fmt = earningsDateArr[0]?.fmt;
-      if (typeof fmt === "string") return fmt;
-    }
-    return null;
-  } catch (err) {
-    log.error({ err, symbol: cleanSymbol }, "Yahoo earnings date fetch error");
-    void logFailure("YAHOO", "ERROR", `Yahoo earnings date fetch error for ${cleanSymbol}`, { symbol: cleanSymbol, error: String(err) });
-    return null;
-  }
-}
-
 router.get("/earnings-date", async (req, res) => {
   const symbol = (req.query["symbol"] as string || "").toUpperCase().trim();
   if (!symbol) {
@@ -1932,8 +1863,6 @@ router.get("/news-finder", (req, res) => {
   const escH = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const query = [title, source, symbol].filter(Boolean).join(" ");
   const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
-  const yahooUrl = `https://finance.yahoo.com/search?p=${encodeURIComponent(title)}`;
-  const showYahoo = /yahoo/i.test(source);
 
   const html = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -1951,8 +1880,7 @@ a{display:flex;align-items:center;justify-content:center;padding:13px 16px;borde
 <h1>${escH(title)}</h1>
 <p>This provider did not send Alpha Terminal a direct publisher URL for this headline. Use the search actions to open the full story from the source.</p>
 <div class="actions">
-${showYahoo ? `<a class="primary" href="${escH(yahooUrl)}" target="_blank" rel="noopener noreferrer">Search Yahoo Finance →</a>` : ""}
-<a class="${showYahoo ? "secondary" : "primary"}" href="${escH(googleUrl)}" target="_blank" rel="noopener noreferrer">Search this headline →</a>
+<a class="primary" href="${escH(googleUrl)}" target="_blank" rel="noopener noreferrer">Search this headline →</a>
 </div>
 </body></html>`;
 

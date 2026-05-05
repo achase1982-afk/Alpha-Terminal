@@ -1,11 +1,11 @@
 import { logger } from "./logger.js";
-import { logFailure } from "./telemetry.js";
+import { getNextForwardEarningsFromDb } from "./fmpEarningsBackfill.js";
 
 export interface NextEarnings {
   symbol: string;
   earningsDate: string | null;
   confirmed: boolean;
-  source: "vendor_primary" | "yahoo" | "finnhub" | null;
+  source: "vendor_primary" | "fmp_db" | "finnhub" | null;
   daysAway: number | null;
   time: string | null;
   epsEstimate: string | null;
@@ -16,8 +16,7 @@ export interface NextEarnings {
   periodYear: number | null;
   /**
    * Most recent past earnings date (YYYY-MM-DD), if known. Primary vendor calendar
-   * only — Yahoo's `quoteSummary` endpoint does not expose past prints
-   * reliably. `null` when unavailable.
+   * only. `null` when unavailable.
    */
   lastEarningsDate: string | null;
   /** Calendar days since `lastEarningsDate`, or null when unavailable. */
@@ -55,22 +54,6 @@ interface VendorPrimaryCalendarResult {
   periodYear: number | null;
   /** Most recent past earnings date in YYYY-MM-DD, or null. */
   lastEarningsDate: string | null;
-}
-
-/** Yahoo finance quoteSummary JSON (partial — calendarEvents only). */
-interface YahooEarningsDateEntry {
-  raw?: number;
-  fmt?: string;
-}
-
-interface YahooQuoteSummaryResult {
-  calendarEvents?: {
-    earnings?: { earningsDate?: YahooEarningsDateEntry[] };
-  };
-}
-
-interface YahooQuoteSummaryEnvelope {
-  quoteSummary?: { result?: YahooQuoteSummaryResult[] };
 }
 
 function daysSinceTodayFrom(dateYmd: string): number | null {
@@ -111,8 +94,6 @@ async function fetchVendorPrimaryCalendar(ticker: string, apiKey: string): Promi
     };
     const items = data.earnings || [];
     const today = new Date().toISOString().slice(0, 10);
-    // Vendor returns records in descending date order; we need the NEAREST
-    // future earnings, not the first record encountered.
     const upcoming = items
       .filter((e) => e.date >= today)
       .sort((a, b) => a.date.localeCompare(b.date))[0]
@@ -214,70 +195,6 @@ async function fetchFinnhub(symbol: string, apiKey: string): Promise<FinnhubResu
   }
 }
 
-async function fetchYahoo(symbol: string): Promise<string | null> {
-  try {
-    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=calendarEvents`;
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      },
-      signal: AbortSignal.timeout(8000),
-    });
-
-    if (!res.ok) {
-      logger.warn({ status: res.status, symbol }, "earningsService: Yahoo non-200, trying scrape");
-      void logFailure("YAHOO", "WARN", `Yahoo earnings calendar fetch failed: HTTP ${res.status}`, {
-        symbol,
-        status: res.status,
-      });
-      const pageRes = await fetch(`https://finance.yahoo.com/quote/${encodeURIComponent(symbol)}/`, {
-        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
-        signal: AbortSignal.timeout(8000),
-      });
-      if (pageRes.ok) {
-        const html = await pageRes.text();
-        const m = html.match(/Earnings Date.*?(\w{3} \d{1,2}, \d{4})/s);
-        if (m) {
-          const parsed = new Date(m[1]);
-          if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
-        }
-      }
-      return null;
-    }
-
-    const json = (await res.json()) as Record<string, unknown>;
-    const envelope = json as YahooQuoteSummaryEnvelope;
-    const result = envelope.quoteSummary?.result?.[0];
-    const arr = result?.calendarEvents?.earnings?.earningsDate;
-    if (Array.isArray(arr) && arr.length > 0) {
-      const today = new Date().toISOString().slice(0, 10);
-      const normalised = arr
-        .map((entry: { raw?: number; fmt?: string }) => {
-          if (typeof entry?.raw === "number") {
-            return new Date(entry.raw * 1000).toISOString().slice(0, 10);
-          }
-          if (typeof entry?.fmt === "string") return entry.fmt;
-          return null;
-        })
-        .filter((d): d is string => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d));
-      const upcoming = normalised
-        .filter((d) => d >= today)
-        .sort((a, b) => a.localeCompare(b))[0];
-      if (upcoming) return upcoming;
-      if (normalised.length > 0) return normalised.sort()[normalised.length - 1];
-    }
-    return null;
-  } catch (err) {
-    logger.error({ err, symbol }, "earningsService: Yahoo fetch error");
-    void logFailure("YAHOO", "ERROR", `Yahoo earnings date fetch error for ${symbol}`, {
-      symbol,
-      error: String(err),
-    });
-    return null;
-  }
-}
-
 function emptyResult(sym: string): NextEarnings {
   return {
     symbol: sym,
@@ -297,6 +214,11 @@ function emptyResult(sym: string): NextEarnings {
   };
 }
 
+function formatEstimateNum(n: number | null): string | null {
+  if (n === null || n === undefined || Number.isNaN(n)) return null;
+  return String(n);
+}
+
 export async function getNextEarningsDate(symbol: string): Promise<NextEarnings> {
   const sym = (symbol || "").toUpperCase().trim().replace(/^\$/, "");
   if (!sym) return emptyResult("");
@@ -314,6 +236,8 @@ export async function getNextEarningsDate(symbol: string): Promise<NextEarnings>
     const vendorKey = process.env["BENZ" + "INGA_API_KEY"];
     const finnhubKey = process.env["FINNHUB_API_KEY"];
 
+    const dbRow = await getNextForwardEarningsFromDb(sym);
+
     let vendor: VendorPrimaryCalendarResult | null = null;
     if (vendorKey) {
       vendor = await fetchVendorPrimaryCalendar(sym, vendorKey);
@@ -329,27 +253,23 @@ export async function getNextEarningsDate(symbol: string): Promise<NextEarnings>
       confirmed = true;
       source = "vendor_primary";
       extras = vendor;
-    } else {
-      const [finn, yahoo] = await Promise.all([
-        finnhubKey ? fetchFinnhub(sym, finnhubKey) : Promise.resolve(null),
-        fetchYahoo(sym),
-      ]);
-
-      const datesWithinDays = (a: string, b: string, n: number): boolean => {
-        const da = new Date(a + "T16:00:00-04:00").getTime();
-        const db = new Date(b + "T16:00:00-04:00").getTime();
-        return Math.abs(da - db) <= n * 86_400_000;
+    } else if (dbRow) {
+      const today = new Date();
+      const target = new Date(dbRow.earningsDate + "T16:00:00-04:00").getTime();
+      const daysOut = Math.round((target - today.getTime()) / 86_400_000);
+      confirmed = daysOut <= 30;
+      earningsDate = dbRow.earningsDate;
+      source = "fmp_db";
+      extras = {
+        lastEarningsDate: vendor?.lastEarningsDate ?? null,
+        time: dbRow.earningsTiming,
+        epsEstimate: formatEstimateNum(dbRow.earningsEpsEstimate),
+        revenueEstimate: formatEstimateNum(dbRow.earningsRevenueEstimate),
       };
+    } else {
+      const finn = finnhubKey ? await fetchFinnhub(sym, finnhubKey) : null;
 
-      if (finn && yahoo && datesWithinDays(finn.earningsDate, yahoo, 2)) {
-        earningsDate = finn.earningsDate;
-        confirmed = finn.confirmed;
-        source = "finnhub";
-        extras = vendor ?? {};
-      } else if (finn) {
-        if (yahoo) {
-          logger.warn({ symbol: sym, finnhub: finn.earningsDate, yahoo }, "earningsService: Finnhub/Yahoo disagree, preferring Finnhub");
-        }
+      if (finn) {
         earningsDate = finn.earningsDate;
         confirmed = finn.confirmed;
         source = "finnhub";
@@ -359,10 +279,6 @@ export async function getNextEarningsDate(symbol: string): Promise<NextEarnings>
         confirmed = vendor.confirmed;
         source = "vendor_primary";
         extras = vendor;
-      } else if (yahoo) {
-        earningsDate = yahoo;
-        confirmed = false;
-        source = "yahoo";
       }
     }
 
