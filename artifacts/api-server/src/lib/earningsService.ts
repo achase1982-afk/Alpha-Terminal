@@ -279,6 +279,19 @@ export async function getNextEarningsDate(symbol: string): Promise<NextEarnings>
         confirmed = vendor.confirmed;
         source = "vendor_primary";
         extras = vendor;
+      } else if (corp) {
+        const today = new Date();
+        const target = new Date(corp.earningsDate + "T16:00:00-04:00").getTime();
+        const daysOut = Math.round((target - today.getTime()) / 86_400_000);
+        confirmed = daysOut <= 30;
+        earningsDate = corp.earningsDate;
+        source = "fmp_db";
+        extras = {
+          lastEarningsDate: vendor?.lastEarningsDate ?? null,
+          time: corp.earningsTiming,
+          epsEstimate: formatEstimateNum(corp.earningsEpsEstimate),
+          revenueEstimate: formatEstimateNum(corp.earningsRevenueEstimate),
+        };
       }
     }
 

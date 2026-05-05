@@ -12,6 +12,16 @@ type CachedMacro = {
 let cachedMacro: CachedMacro[] = [];
 let cachedAtMs = 0;
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+let refreshInFlight: Promise<void> | null = null;
+
+function ensureMacroCacheRefreshIfStale(): void {
+  if (fmpMacroCacheAgeMs() < CACHE_TTL_MS) return;
+  if (refreshInFlight) return;
+  refreshInFlight = refreshMacroCalendarCacheFromDb().finally(() => {
+    refreshInFlight = null;
+  });
+  void refreshInFlight.catch(() => {});
+}
 
 function horizonYmd(days: number): string {
   const d = new Date();
@@ -37,7 +47,7 @@ export function getFmpMacroCalendarSyntheticEvents(): Array<{
   time?: string;
   importance: "HIGH" | "MEDIUM" | "LOW";
 }> {
-  void CACHE_TTL_MS;
+  ensureMacroCacheRefreshIfStale();
   return cachedMacro.map((r) => ({
     date: r.eventDate,
     type: "economic" as const,
