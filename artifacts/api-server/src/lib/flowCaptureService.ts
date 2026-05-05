@@ -97,6 +97,8 @@ export interface FlowCaptureOptions {
   chain?: ChainLike[];
   chainSummary?: ChainSummaryLike;
   marketCapTier?: MarketCapTier | string;
+  /** When set by `requestFlowCapture`, inner paths skip metrics if the outer timeout already fired (avoids double-counting). */
+  _suppressInnerFlowCaptureMetrics?: () => boolean;
 }
 
 const inflightByKey = new Map<string, Promise<FlowCaptureResult>>();
@@ -512,9 +514,11 @@ async function runWebsocketCaptureInternal(
 
   if (!polygonWsEnabled()) {
     const dur = Date.now() - t0;
-    rotateMetricsHour();
-    metrics.failedLastHour++;
-    pushRecent(restRecentBase(ticker, sessionDate, rowsInserted, dur));
+    if (!(opts._suppressInnerFlowCaptureMetrics?.() ?? false)) {
+      rotateMetricsHour();
+      metrics.failedLastHour++;
+      pushRecent(restRecentBase(ticker, sessionDate, rowsInserted, dur));
+    }
     return {
       sessionDate,
       source: "rest",
@@ -750,11 +754,13 @@ async function runWebsocketCaptureInternal(
     wsLatency.subscribe_outcome = "error";
   }
 
-  recordWsTelemetry({
-    recordedAt: Date.now(),
-    subscribeTotalDurationMs: wsLatency.subscribe_total_duration_ms,
-    hadClassifiedWsTrade: wsLatency.first_classified_trade_ms != null,
-  });
+  if (!(opts._suppressInnerFlowCaptureMetrics?.() ?? false)) {
+    recordWsTelemetry({
+      recordedAt: Date.now(),
+      subscribeTotalDurationMs: wsLatency.subscribe_total_duration_ms,
+      hadClassifiedWsTrade: wsLatency.first_classified_trade_ms != null,
+    });
+  }
 
   logger.info(
     {
@@ -767,26 +773,28 @@ async function runWebsocketCaptureInternal(
   );
 
   const dur = Date.now() - t0;
-  rotateMetricsHour();
-  metrics.completedLastHour++;
-  metrics.durationSumMs += dur;
-  metrics.durationCount++;
-  metrics.rowsSum += rowsInserted;
-  metrics.rowsCount++;
-  pushRecent({
-    ticker,
-    sessionDate,
-    source: "websocket",
-    rowsInserted,
-    durationMs: dur,
-    timestamp: new Date().toISOString(),
-    subscribe_attempt_start_ms: wsLatency.subscribe_attempt_start_ms,
-    subscribe_first_message_ms: wsLatency.subscribe_first_message_ms,
-    subscribe_ready_ms: wsLatency.subscribe_ready_ms,
-    first_classified_trade_ms: wsLatency.first_classified_trade_ms,
-    subscribe_total_duration_ms: wsLatency.subscribe_total_duration_ms,
-    subscribe_outcome: wsLatency.subscribe_outcome,
-  });
+  if (!(opts._suppressInnerFlowCaptureMetrics?.() ?? false)) {
+    rotateMetricsHour();
+    metrics.completedLastHour++;
+    metrics.durationSumMs += dur;
+    metrics.durationCount++;
+    metrics.rowsSum += rowsInserted;
+    metrics.rowsCount++;
+    pushRecent({
+      ticker,
+      sessionDate,
+      source: "websocket",
+      rowsInserted,
+      durationMs: dur,
+      timestamp: new Date().toISOString(),
+      subscribe_attempt_start_ms: wsLatency.subscribe_attempt_start_ms,
+      subscribe_first_message_ms: wsLatency.subscribe_first_message_ms,
+      subscribe_ready_ms: wsLatency.subscribe_ready_ms,
+      first_classified_trade_ms: wsLatency.first_classified_trade_ms,
+      subscribe_total_duration_ms: wsLatency.subscribe_total_duration_ms,
+      subscribe_outcome: wsLatency.subscribe_outcome,
+    });
+  }
 
   const fc: FlowCaptureResult = {
     sessionDate,
@@ -902,13 +910,15 @@ async function runCaptureOnce(ticker: string, sessionDate: string, opts: FlowCap
     budgetMs: tapeSymbolBudgetMsFromChainContractCount(resolved.chain.length),
   });
   const dur = Date.now() - t0;
-  rotateMetricsHour();
-  metrics.completedLastHour++;
-  metrics.durationSumMs += dur;
-  metrics.durationCount++;
-  metrics.rowsSum += tb.tradesInserted;
-  metrics.rowsCount++;
-  pushRecent(restRecentBase(ticker, sessionDate, tb.tradesInserted, dur));
+  if (!(opts._suppressInnerFlowCaptureMetrics?.() ?? false)) {
+    rotateMetricsHour();
+    metrics.completedLastHour++;
+    metrics.durationSumMs += dur;
+    metrics.durationCount++;
+    metrics.rowsSum += tb.tradesInserted;
+    metrics.rowsCount++;
+    pushRecent(restRecentBase(ticker, sessionDate, tb.tradesInserted, dur));
+  }
 
   return {
     sessionDate,
@@ -937,11 +947,16 @@ export async function requestFlowCapture(ticker: string, opts?: FlowCaptureOptio
 
   let p = inflightByKey.get(key);
   if (!p) {
-    const mergedOpts = opts ?? {};
+    const suppressInnerMetricsRef = { current: false };
+    const mergedOpts: FlowCaptureOptions = {
+      ...(opts ?? {}),
+      _suppressInnerFlowCaptureMetrics: () => suppressInnerMetricsRef.current,
+    };
     const timeoutMs = mergedOpts.timeout ?? DEFAULT_TIMEOUT_MS;
     let overallTimer: ReturnType<typeof setTimeout> | undefined;
     const timeoutPromise = new Promise<FlowCaptureResult>((resolve) => {
       overallTimer = setTimeout(() => {
+        suppressInnerMetricsRef.current = true;
         rotateMetricsHour();
         metrics.failedLastHour++;
         logger.warn({ ticker: sym, sessionDate, timeoutMs }, "flowCapture: overall timeout fired");
@@ -960,6 +975,7 @@ export async function requestFlowCapture(ticker: string, opts?: FlowCaptureOptio
         clearTimeout(overallTimer);
         overallTimer = undefined;
       }
+      suppressInnerMetricsRef.current = false;
     });
     p = Promise.race([capturePromise, timeoutPromise])
       .catch((err): FlowCaptureResult => {
