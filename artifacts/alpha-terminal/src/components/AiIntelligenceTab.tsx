@@ -860,8 +860,7 @@ function StrategistCancelConfirmDialog(props: {
 
   if (!open) return null;
 
-  /** Portal to body: parent swipe carousel uses `transform`, which breaks `position:fixed`
-   * (overlay becomes viewport-relative to that ancestor and scroll/clipping hides it). */
+  /** Portal to body: ancestor transforms can break `position:fixed` for overlays. */
   if (typeof document === "undefined") return null;
 
   return createPortal(
@@ -2586,8 +2585,6 @@ interface AiIntelligenceTabProps {
   onStrategistDeepLinkHandled?: () => void;
 }
 
-const AI_TABS: AiSubTab[] = ["pulse", "strategist", "scanner"];
-
 type StrategistMode = "options" | "ailab";
 
 export function AiIntelligenceTab(props: AiIntelligenceTabProps) {
@@ -2611,43 +2608,6 @@ function AiIntelligenceTabInner({
   onStrategistDeepLinkHandled,
 }: AiIntelligenceTabProps) {
   const [strategistMode, setStrategistMode] = useState<StrategistMode>("options");
-  const swipeStartX = useRef(0);
-  const swipeStartY = useRef(0);
-  const swipeLocked = useRef<"h" | "v" | null>(null);
-  const swipeDelta = useRef(0);
-
-  const handleSwipeStart = useCallback((e: React.TouchEvent) => {
-    swipeStartX.current = e.touches[0].clientX;
-    swipeStartY.current = e.touches[0].clientY;
-    swipeLocked.current = null;
-    swipeDelta.current = 0;
-  }, []);
-
-  const handleSwipeMove = useCallback((e: React.TouchEvent) => {
-    const dx = e.touches[0].clientX - swipeStartX.current;
-    const dy = e.touches[0].clientY - swipeStartY.current;
-    if (!swipeLocked.current) {
-      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
-        swipeLocked.current = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
-      }
-    }
-    if (swipeLocked.current === "h") {
-      swipeDelta.current = dx;
-    }
-  }, []);
-
-  const handleSwipeEnd = useCallback(() => {
-    if (swipeLocked.current === "h" && Math.abs(swipeDelta.current) > 60) {
-      const idx = AI_TABS.indexOf(subTab);
-      if (swipeDelta.current < 0 && idx < AI_TABS.length - 1) {
-        onSubTabChange(AI_TABS[idx + 1]);
-      } else if (swipeDelta.current > 0 && idx > 0) {
-        onSubTabChange(AI_TABS[idx - 1]);
-      }
-    }
-    swipeLocked.current = null;
-    swipeDelta.current = 0;
-  }, [subTab, onSubTabChange]);
   const {
     symbol, setSymbol, accessToken,
     aiFeatureSettings,
@@ -3561,31 +3521,19 @@ function AiIntelligenceTabInner({
 
   const hasRealStrategies = realStrategies.length > 0;
 
-  const pageIdx = AI_TABS.indexOf(subTab);
-
   return (
     <div
       className="flex flex-col gap-0 w-full max-w-5xl mx-auto pb-6 flex-1"
-      style={{ minHeight: "calc(var(--vvh, 100vh) - 200px)", overflow: "hidden", touchAction: "pan-y" }}
-      onTouchStart={handleSwipeStart}
-      onTouchMove={handleSwipeMove}
-      onTouchEnd={handleSwipeEnd}
-      onTouchCancel={handleSwipeEnd}
+      style={{ minHeight: "calc(var(--vvh, 100vh) - 200px)", overflow: "hidden" }}
     >
-      <div
-        style={{
-          display: "flex",
-          transform: `translateX(${-pageIdx * 100}%)`,
-          transition: "transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
-          willChange: "transform",
-          height: "100%",
-        }}
-      >
-        <div style={{ width: "100%", flexShrink: 0, height: "100%", overflowY: "auto" }}>
+      {subTab === "pulse" && (
+        <div style={{ height: "100%", overflowY: "auto" }}>
           <MarketPulseDashboard ref={pulseDashRef} />
         </div>
+      )}
 
-        <div style={{ width: "100%", flexShrink: 0, height: "100%", overflowY: "auto" }}>
+      {subTab === "strategist" && (
+        <div style={{ height: "100%", overflowY: "auto" }}>
           <div className="px-3 sm:px-4 lg:px-5 space-y-4 pt-3">
             <div className="bg-card border border-card-border rounded-xl overflow-hidden">
             <div className="flex border-b border-card-border">
@@ -3789,8 +3737,10 @@ function AiIntelligenceTabInner({
             )}
           </div>
         </div>
+      )}
 
-        <div style={{ width: "100%", flexShrink: 0, height: "100%", overflowY: "auto" }}>
+      {subTab === "scanner" && (
+        <div style={{ height: "100%", overflowY: "auto" }}>
           <MarketScanner
             subscribeEquitySymbols={subscribeEquitySymbols ?? (() => {})}
             onNavigateToSymbol={onNavigateToMarkets ?? (() => {})}
@@ -3804,8 +3754,7 @@ function AiIntelligenceTabInner({
             }}
           />
         </div>
-
-      </div>
+      )}
     </div>
   );
 }
