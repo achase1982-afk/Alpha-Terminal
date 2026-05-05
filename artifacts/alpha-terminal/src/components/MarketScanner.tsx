@@ -295,6 +295,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   const { pulseData } = useMarketPulseStore();
   const shockActive = pulseData?.shockState === "ACTIVE";
   const universeData = useScannerUniverses();
+  const unified = useUnifiedScan();
 
   const [universe, setUniverse] = useState("preset:liquidCore130");
   const [resolvedSymbols, setResolvedSymbols] = useState<string[]>([]);
