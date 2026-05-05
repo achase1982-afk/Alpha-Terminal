@@ -10,7 +10,8 @@ export interface UnifiedScanCandidate {
   changePct: number;
   sector: string;
   marketCapTier: string;
-  surfacedBy: UnifiedEngineKey[];
+  /** Scanner engines and/or v1 sub-score keys that cleared the high threshold. */
+  surfacedBy: string[];
   compositeScore: number;
   edgeType: import("./scannerStrategistHandoff").ScannerEdgeType;
   directionalLean: "bullish" | "bearish" | "neutral";

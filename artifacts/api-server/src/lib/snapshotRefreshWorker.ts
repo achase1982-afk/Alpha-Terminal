@@ -2,17 +2,42 @@
  * Background refresh of ticker_signal_snapshot for LC130 (30s cadence in session window).
  */
 import pLimit from "p-limit";
-import { desc, eq } from "drizzle-orm";
-import { db, equityDailyTable, scannerHealthTable, tickerSignalSnapshotTable } from "@workspace/db";
+import { and, desc, eq, gte } from "drizzle-orm";
+import {
+  corporateEventsTable,
+  db,
+  equityDailyTable,
+  scannerHealthTable,
+  tickerSignalSnapshotTable,
+} from "@workspace/db";
 import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
 import { fetchPolygonChain, type PolygonParsedContract } from "./polygonChain.js";
 import { getNextEarningsDate } from "./earningsService.js";
-import { getUpcomingEvents } from "./calendarEventChecker.js";
 import { getPolygonFlowHighlights } from "./polygonFlowHighlights.js";
 import { evaluateRegimeShock } from "./regimeShockDetector.js";
 import { getLiveMarketIndicatorsForPulse } from "./liveMarketIndicators.js";
 import { impliedVolToVolPoints, classifyEdgeType, type ScannerEdgeType } from "./scannerEdgeType.js";
 import { getScannerSector } from "./scannerSectorMap.js";
+import { polygonKey } from "./polygonAnalystData.js";
+import { fetchEarningsHistoryAndForward } from "./polygonEarningsHistory.js";
+import {
+  buildEarningsEdgeSignature,
+  getIvRvAtmPoints,
+  liquidityAnchorFromFrontExpiry,
+  macroDensityInWindow,
+  scannerCompositeV1,
+  scoreCatalystTermShape,
+  scoreFlowQualityV1,
+  scoreImpliedMoveRichness,
+  scoreIvVsRealizedMulti,
+  scoreSkewAnomaly,
+  surfacedSubScoresHigh,
+  type ScannerComponentScoresV1,
+  type TermSlicePoint,
+} from "./scannerScoringV2.js";
+import type { ChainContract } from "./strategistV2.js";
+import { summarizeOptionsChain, type ChainSummary } from "./strategistV2.js";
+import { getSettings } from "./strategistSettings.js";
 import { logger } from "./logger.js";
 
 const log = logger.child({ module: "snapshotRefreshWorker" });
@@ -140,6 +165,78 @@ function contractsForExpiry(
   };
 }
 
+/** Polygon snapshot rows → strategist ChainContract (IV decimal σ). */
+function polygonToChainContracts(chain: NonNullable<Awaited<ReturnType<typeof fetchPolygonChain>>>): ChainContract[] {
+  const out: ChainContract[] = [];
+  const push = (c: PolygonParsedContract, side: "call" | "put") => {
+    const bid = c.bid ?? 0;
+    const ask = c.ask ?? 0;
+    const ivDec =
+      c.iv != null && Number.isFinite(c.iv) && c.iv > 0 ? (c.iv > 1 ? c.iv / 100 : c.iv) : null;
+    out.push({
+      strike: c.strike,
+      expiration: c.expiration,
+      type: side,
+      optionType: side === "call" ? "CALL" : "PUT",
+      bid,
+      ask,
+      mid: (bid + ask) / 2,
+      delta: c.delta ?? 0,
+      openInterest: c.openInterest ?? 0,
+      volume: c.volume ?? 0,
+      impliedVolatility: ivDec,
+      dte: c.dte ?? 0,
+    });
+  };
+  for (const c of chain.calls) push(c, "call");
+  for (const p of chain.puts) push(p, "put");
+  return out;
+}
+
+function deskWindowIsoFromAvailableExpiries(availableExpirations: string[], prefsMax: number): string | null {
+  let best: string | null = null;
+  let bestDte = -1;
+  for (const exp of availableExpirations) {
+    const expMs = new Date(`${exp}T16:00:00-05:00`).getTime();
+    const dte = Math.max(0, Math.round((expMs - Date.now()) / (24 * 60 * 60 * 1000)));
+    if (dte <= 0 || dte > prefsMax) continue;
+    if (dte > bestDte) {
+      bestDte = dte;
+      best = exp;
+    }
+  }
+  return best;
+}
+
+function deskWindowSyntheticIso(prefsMax: number): string {
+  const t = Date.now() + prefsMax * 86_400_000;
+  const u = new Date(t);
+  const y = u.getUTCFullYear();
+  const m = String(u.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(u.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function computeDeskCatalystExpirationISO(
+  availableExpirations: string[],
+  curatedExpirations: ChainSummary["curatedExpirations"],
+  prefsMax: number,
+): string {
+  const fromAvail = deskWindowIsoFromAvailableExpiries(availableExpirations, prefsMax);
+  if (fromAvail) return fromAvail;
+  let best: string | null = null;
+  let bestDte = -1;
+  for (const ce of curatedExpirations) {
+    if (ce.dte <= 0 || ce.dte > prefsMax) continue;
+    if (ce.dte > bestDte) {
+      bestDte = ce.dte;
+      best = ce.expiration;
+    }
+  }
+  if (best) return best;
+  return deskWindowSyntheticIso(prefsMax);
+}
+
 function flowNotionalThreshold(tier: MarketCapTier): number {
   switch (tier) {
     case "mega":
@@ -163,81 +260,24 @@ function hvToVolPoints(hv: number | null): number | null {
   return hv;
 }
 
-function scoreTermStructure(frontIv: number | null, nextIv: number | null): { score: number; reason: string | null } {
-  if (frontIv == null || nextIv == null) return { score: 0, reason: null };
-  const spread = frontIv - nextIv;
-  if (spread <= 0) return { score: 0, reason: null };
-  let score = 0;
-  if (spread <= 5) score = spread * 4;
-  else if (spread <= 15) score = 20 + (spread - 5) * 4;
-  else score = Math.min(100, 60 + (spread - 15) * 2.5);
-  const reason =
-    score > 50
-      ? `front IV ${frontIv.toFixed(1)} vs next IV ${nextIv.toFixed(1)}, ${spread.toFixed(1)} vol pt spread`
-      : null;
-  return { score: Math.min(100, score), reason };
-}
-
-function scoreIvVsRealized(frontIv: number | null, hv20: number | null): { score: number; reason: string | null } {
-  const hvPts = hvToVolPoints(hv20);
-  if (frontIv == null || hvPts == null) return { score: 0, reason: null };
-  const gap = frontIv - hvPts;
-  if (gap <= 0) return { score: 0, reason: null };
-  const score = Math.min(100, gap * 5);
-  const reason =
-    score > 60
-      ? `front IV ${frontIv.toFixed(1)} vs HV20 ${hvPts.toFixed(1)}, ${gap.toFixed(1)} vol pts rich`
-      : null;
-  return { score, reason };
-}
-
-function scoreSkew(skewPts: number | null): { score: number; reason: string | null } {
-  if (skewPts == null || !Number.isFinite(skewPts)) return { score: 0, reason: null };
-  const absSkew = Math.abs(skewPts);
-  let score = 0;
-  if (absSkew < 2) score = 0;
-  else if (absSkew < 5) score = (absSkew - 2) * 15;
-  else if (absSkew < 10) score = 45 + (absSkew - 5) * 8;
-  else score = Math.min(100, 85 + (absSkew - 10) * 2);
-  const reason =
-    score > 50 ? `25Δ skew ${skewPts.toFixed(2)} vol pts, outside normal range` : null;
-  return { score: Math.min(100, score), reason };
-}
-
-function scoreCatalyst(
-  earningsDays: number | null,
-  confirmed: boolean,
-  macroScore: number,
-): { score: number; reason: string | null } {
-  let catalystPart = 0;
-  if (earningsDays != null && Number.isFinite(earningsDays)) {
-    if (earningsDays <= 3 && confirmed) catalystPart = 100;
-    else if (earningsDays <= 7 && confirmed) catalystPart = 75;
-    else if (earningsDays <= 14) catalystPart = 40;
-  }
-  const score = Math.max(catalystPart, macroScore);
-  const reason = score > 60 ? `catalyst/macro score ${score.toFixed(0)}` : null;
-  return { score: Math.min(100, score), reason };
-}
-
-function macroOverlapScore(): number {
-  const ev = getUpcomingEvents(5);
-  let s = 0;
-  for (const e of ev) {
-    if (e.importance === "HIGH") s += 40;
-    else if (e.importance === "MEDIUM") s += 20;
-    else s += 8;
-  }
-  return Math.min(100, s);
+function termStripFromSummary(chainSummary: ChainSummary | null, fallback: TermSlicePoint[]): TermSlicePoint[] {
+  if (!chainSummary?.termStructure5pt?.length) return fallback;
+  return chainSummary.termStructure5pt.map((p) => ({
+    expiry: p.expiry,
+    days_to_exp: p.daysToExpiry,
+    atm_iv: p.atmIV,
+  }));
 }
 
 async function refreshTicker(ticker: string, regimeShockActive: boolean): Promise<void> {
   const upper = ticker.toUpperCase();
   const now = new Date();
   const attemptAt = now;
+  const nyToday = nyYmd(now);
+  const apiKey = polygonKey();
+  const deskSettings = await getSettings();
 
-
-  const [chain, earn, flowHl, eqRow] = await Promise.all([
+  const [chain, earn, flowHl, eqRow, earnHist, corpDateRows] = await Promise.all([
     apiKey ? fetchPolygonChain(upper, apiKey, { maxDte: 45, maxPages: 8, log }) : Promise.resolve(null),
     getNextEarningsDate(upper),
     getPolygonFlowHighlights(upper),
@@ -248,6 +288,11 @@ async function refreshTicker(ticker: string, regimeShockActive: boolean): Promis
       .orderBy(desc(equityDailyTable.date))
       .limit(1)
       .then((r) => r[0] ?? null),
+    fetchEarningsHistoryAndForward(upper),
+    db
+      .selectDistinct({ d: corporateEventsTable.earningsDate })
+      .from(corporateEventsTable)
+      .where(and(eq(corporateEventsTable.symbol, upper), gte(corporateEventsTable.earningsDate, nyToday))),
   ]);
 
   const spot =
@@ -268,7 +313,21 @@ async function refreshTicker(ticker: string, regimeShockActive: boolean): Promis
   const sector = getScannerSector(upper);
   const halted = !!(eqRow?.haltStatus ?? false);
 
-  let atmIvByExpiry: Array<{ expiry: string; days_to_exp: number; atm_iv: number }> = [];
+  let chainSummary: ChainSummary | null = null;
+  if (chain && spot && spot > 0) {
+    const contracts = polygonToChainContracts(chain);
+    try {
+      chainSummary = await summarizeOptionsChain(contracts, spot, {
+        ticker: upper,
+        earningsDate: earn.earningsDate,
+        settings: deskSettings,
+      });
+    } catch (e) {
+      log.warn({ err: e, ticker: upper }, "summarizeOptionsChain failed; falling back to raw polygon strip");
+    }
+  }
+
+  let atmIvByExpiry: TermSlicePoint[] = [];
   let skew25dByExpiry: Array<{ expiry: string; put_iv_25d: number; call_iv_25d: number; skew_pts: number }> = [];
   let impliedMoveFrontPct: number | null = null;
   let impliedMoveFrontAbs: number | null = null;
@@ -276,7 +335,7 @@ async function refreshTicker(ticker: string, regimeShockActive: boolean): Promis
   let bidAskWidthAtmFront: number | null = null;
   let frontWeekAtmIv: number | null = null;
   let nextWeekAtmIv: number | null = null;
-  let skewPtsFront: number | null = null;
+  let skewPtsAligned: number | null = null;
   let chainUpdatedAt: Date | null = null;
   let frontExp: string | null = null;
   let nextExp: string | null = null;
@@ -287,30 +346,52 @@ async function refreshTicker(ticker: string, regimeShockActive: boolean): Promis
     frontExp = pn.front;
     nextExp = pn.next;
 
-    for (const exp of [frontExp, nextExp].filter(Boolean) as string[]) {
-      const { calls: cE, puts: pE } = contractsForExpiry(chain.calls, chain.puts, exp);
-      const callIv = interpolateIvAtSpot(cE, spot);
-      const expDate = new Date(`${exp}T20:00:00Z`);
-      const dte = Math.max(0, Math.round((expDate.getTime() - now.getTime()) / 86_400_000));
-      if (callIv != null) atmIvByExpiry.push({ expiry: exp, days_to_exp: dte, atm_iv: callIv });
-      const p25 = closestDeltaIv(pE, -0.25);
-      const c25 = closestDeltaIv(cE, 0.25);
-      if (p25 && c25) {
-        skew25dByExpiry.push({
-          expiry: exp,
-          put_iv_25d: p25.iv,
-          call_iv_25d: c25.iv,
-          skew_pts: p25.iv - c25.iv,
-        });
+    if (chainSummary?.termStructure5pt?.length) {
+      atmIvByExpiry = termStripFromSummary(chainSummary, []);
+    } else {
+      for (const exp of [frontExp, nextExp].filter(Boolean) as string[]) {
+        const { calls: cE, puts: pE } = contractsForExpiry(chain.calls, chain.puts, exp);
+        const callIv = interpolateIvAtSpot(cE, spot);
+        const expDate = new Date(`${exp}T20:00:00Z`);
+        const dte = Math.max(0, Math.round((expDate.getTime() - now.getTime()) / 86_400_000));
+        if (callIv != null) atmIvByExpiry.push({ expiry: exp, days_to_exp: dte, atm_iv: callIv });
+        const p25 = closestDeltaIv(pE, -0.25);
+        const c25 = closestDeltaIv(cE, 0.25);
+        if (p25 && c25) {
+          skew25dByExpiry.push({
+            expiry: exp,
+            put_iv_25d: p25.iv,
+            call_iv_25d: c25.iv,
+            skew_pts: p25.iv - c25.iv,
+          });
+        }
       }
+    }
+
+    if (chainSummary?.skew25Delta != null && chainSummary.skew25DeltaReason === "clean_25d_first_expiry") {
+      skewPtsAligned = chainSummary.skew25Delta.skewPoints;
+    } else if (frontExp) {
+      const { calls: cF, puts: pF } = contractsForExpiry(chain.calls, chain.puts, frontExp);
+      const p25f = closestDeltaIv(pF, -0.25);
+      const c25f = closestDeltaIv(cF, 0.25);
+      if (p25f && c25f) skewPtsAligned = p25f.iv - c25f.iv;
     }
 
     if (frontExp) {
       const { calls: cF, puts: pF } = contractsForExpiry(chain.calls, chain.puts, frontExp);
       frontWeekAtmIv = interpolateIvAtSpot(cF, spot);
-      const p25f = closestDeltaIv(pF, -0.25);
-      const c25f = closestDeltaIv(cF, 0.25);
-      if (p25f && c25f) skewPtsFront = p25f.iv - c25f.iv;
+      if (!skew25dByExpiry.length) {
+        const p25 = closestDeltaIv(pF, -0.25);
+        const c25 = closestDeltaIv(cF, 0.25);
+        if (p25 && c25) {
+          skew25dByExpiry.push({
+            expiry: frontExp,
+            put_iv_25d: p25.iv,
+            call_iv_25d: c25.iv,
+            skew_pts: p25.iv - c25.iv,
+          });
+        }
+      }
 
       let belowC: PolygonParsedContract | null = null;
       let aboveC: PolygonParsedContract | null = null;
@@ -367,10 +448,68 @@ async function refreshTicker(ticker: string, regimeShockActive: boolean): Promis
     }
   }
 
-  const macroScore = macroOverlapScore();
+  const listedExp =
+    chain && chain.calls.length
+      ? [...new Set([...chain.calls, ...chain.puts].map((c) => c.expiration))].sort()
+      : [];
+  const strip = termStripFromSummary(chainSummary, atmIvByExpiry);
   const earningsDateStr = earn.earningsDate;
   const earningsDaysAway = earn.daysAway;
   const earningsConfirmed = earn.confirmed;
+
+  const distinctFutureEarnDates = new Set(
+    corpDateRows.map((r) => (r.d != null ? String(r.d).slice(0, 10) : "")).filter(Boolean),
+  );
+  const earningsDateConflict =
+    earningsDateStr != null
+    && distinctFutureEarnDates.size > 1
+    && distinctFutureEarnDates.has(earningsDateStr);
+
+  const ivPack = chainSummary
+    ? getIvRvAtmPoints({
+        strip,
+        earningsYmd: earningsDateStr,
+        listedExpirationsSorted: listedExp,
+      })
+    : { front: frontWeekAtmIv, preEvent: null, event: null };
+
+  const termShape = scoreCatalystTermShape({
+    strip,
+    earningsYmd: earningsDateStr,
+    listedExpirationsSorted: listedExp,
+  });
+  const ivRv = scoreIvVsRealizedMulti({
+    atmIvFront: ivPack.front,
+    atmIvPreEvent: ivPack.preEvent,
+    atmIvEvent: ivPack.event,
+    hv20,
+    hv30,
+  });
+  const skewS = scoreSkewAnomaly(skewPtsAligned);
+
+  const prefsMax = Math.max(1, deskSettings.preferredDteMax | 0);
+  const deskEndIso = chainSummary
+    ? computeDeskCatalystExpirationISO(chainSummary.availableExpirations, chainSummary.curatedExpirations, prefsMax)
+    : null;
+  const macroWin = macroDensityInWindow({ now, windowEndYmd: deskEndIso });
+
+  const earningsEdge = buildEarningsEdgeSignature(earnHist);
+  const histQuarters = [...earnHist.earnings_history].filter((r) => r.price_reaction.gap_open_pct != null).slice(0, 12);
+  const moveRich = scoreImpliedMoveRichness({
+    currentImpliedMovePct: impliedMoveFrontPct,
+    historicalRows: histQuarters,
+  });
+
+  let liqScore = 0;
+  let liqMaxOi = 0;
+  let liqDeepStrike: number | null = null;
+  if (chain && frontExp && spot && spot > 0) {
+    const { calls: cFf, puts: pFf } = contractsForExpiry(chain.calls, chain.puts, frontExp);
+    const liq = liquidityAnchorFromFrontExpiry({ calls: cFf, puts: pFf, spot });
+    liqScore = liq.score;
+    liqMaxOi = liq.maxOi;
+    liqDeepStrike = liq.deepestStrike;
+  }
 
   const tape = flowHl?.sessionTape;
   const totals = tape?.aggressorSessionTotals;
@@ -387,12 +526,39 @@ async function refreshTicker(ticker: string, regimeShockActive: boolean): Promis
 
   let tapeQuality: "complete" | "partial" | "degraded" | "not_run" = "not_run";
   if (tape?.tapeKind === "live" && tape.sessionAggregateSource === "live_raw_trades") tapeQuality = "complete";
-  else if (tape?.tapeKind === "eod_fallback" && tape.sessionAggregateSource === "eod_volume_only") tapeQuality = "partial";
+  else if (tape?.tapeKind === "eod_fallback" && tape.sessionAggregateSource === "eod_volume_only") {
+    tapeQuality = "partial";
+  }
   if (!flowHl) tapeQuality = "not_run";
 
   const topStrikeRow = flowHl?.topByVolume?.[0];
   const totalN = askNotional + bidNotional + midNotional;
   const askPct = totalN > 0 ? (askNotional / totalN) * 100 : 0;
+
+  const flowSc = scoreFlowQualityV1({
+    tapeQuality,
+    askNotionalUsd: askNotional,
+    tierThresholdUsd: flowNotionalThreshold(tier),
+    totals,
+    topPrints: tape?.topPrints ?? null,
+  });
+
+  const ivCleanedRatio = chainSummary?.ivChainFilter.ivCleanedRatio ?? 1;
+  const ivContamShare =
+    chainSummary && chainSummary.ivChainFilter.totalChainContracts > 0
+      ? chainSummary.ivChainFilter.ivContaminationCountedClamps / chainSummary.ivChainFilter.totalChainContracts
+      : 0;
+  const ivContaminationElevated = ivContamShare > 0.3;
+
+  const captureRow = chainSummary?.curatedExpirations?.find((e) => e.bucket === "earnings_capture");
+  const captureExpiryIso = captureRow?.expiration ?? null;
+  const captureAtm =
+    captureExpiryIso != null
+      ? chainSummary?.termStructure5pt.find((p) => p.expiry === captureExpiryIso)?.atmIV ?? null
+      : null;
+  const noCleanEarningsExpiry =
+    earningsDateStr != null && captureExpiryIso != null && captureAtm == null;
+
   const flowSummary = {
     ask_notional: askNotional,
     bid_notional: bidNotional,
@@ -402,46 +568,32 @@ async function refreshTicker(ticker: string, regimeShockActive: boolean): Promis
       ? { strike: topStrikeRow.strike, expiry: topStrikeRow.expiration, type: topStrikeRow.optionType }
       : null,
     tape_quality: tapeQuality,
+    skew25_delta_reason: chainSummary?.skew25DeltaReason ?? null,
+    earnings_date_conflict_sources: earningsDateConflict,
+    iv_cleaned_ratio: ivCleanedRatio,
+    iv_contamination_elevated: ivContaminationElevated,
+    macro_density_count: macroWin.count,
   };
 
   const flowUpdatedAt = flowHl ? new Date() : null;
 
-  const term = scoreTermStructure(frontWeekAtmIv, nextWeekAtmIv);
-  const ivRv = scoreIvVsRealized(frontWeekAtmIv, hv20);
-  const skewS = scoreSkew(skewPtsFront);
-  const catS = scoreCatalyst(earningsDaysAway, earningsConfirmed ?? false, macroScore);
-
-  const th = flowNotionalThreshold(tier);
-  let flowScore = 0;
-  let flowReason: string | null = null;
-  if (tapeQuality === "not_run" || tapeQuality === "degraded") {
-    flowScore = 0;
-  } else if (askNotional < th) {
-    flowScore = 0;
-  } else {
-    const denom = askNotional + bidNotional + midNotional;
-    const askShare = denom > 0 ? askNotional / denom : 0;
-    const mult = clamp(askNotional / th, 1, 3);
-    flowScore = Math.min(100, askShare * 100 * (mult / 3));
-    if (flowScore > 60 && topStrikeRow) {
-      flowReason = `${askPct.toFixed(0)}% ask-side flow on ${topStrikeRow.optionType} ${topStrikeRow.strike}, $${Math.round(askNotional)} notional`;
-    }
-  }
-
-  const componentScores = {
-    term_structure: term.score,
+  const comps: ScannerComponentScoresV1 = {
+    catalyst_term_shape: termShape.score,
     iv_vs_realized: ivRv.score,
-    flow_alignment: flowScore,
+    flow_quality: flowSc.score,
+    earnings_edge_signature: earningsEdge.score,
     skew_anomaly: skewS.score,
-    catalyst_proximity: catS.score,
+    macro_density_in_window: macroWin.score,
+    implied_move_richness: moveRich.score,
+    liquidity_anchor_score: liqScore,
   };
 
   const surfacingReasons: string[] = [];
-  if (term.reason) surfacingReasons.push(term.reason);
+  if (termShape.reason) surfacingReasons.push(termShape.reason);
   if (ivRv.reason) surfacingReasons.push(ivRv.reason);
-  if (flowReason) surfacingReasons.push(flowReason);
+  if (flowSc.reason) surfacingReasons.push(flowSc.reason);
   if (skewS.reason) surfacingReasons.push(skewS.reason);
-  if (catS.reason) surfacingReasons.push(catS.reason);
+  if (macroWin.reason) surfacingReasons.push(macroWin.reason);
 
   const disqual: string[] = [];
   if (halted) disqual.push("halted");
@@ -450,15 +602,11 @@ async function refreshTicker(ticker: string, regimeShockActive: boolean): Promis
   if (tapeQuality === "not_run") disqual.push("tape_not_run");
   if (regimeShockActive) disqual.push("regime_shock");
   if (bidAskWidthAtmFront != null && bidAskWidthAtmFront > 0.3) disqual.push("wide_spread");
+  if (ivCleanedRatio < 0.5 || ivContaminationElevated) disqual.push("iv_contamination");
+  if (tapeQuality === "partial") disqual.push("tape_partial");
+  if (noCleanEarningsExpiry) disqual.push("no_clean_earnings_expiry");
 
-  let composite =
-    disqual.length > 0
-      ? 0
-      : term.score * 0.3 +
-        flowScore * 0.25 +
-        ivRv.score * 0.2 +
-        catS.score * 0.15 +
-        skewS.score * 0.1;
+  let composite = disqual.length > 0 ? 0 : scannerCompositeV1(comps);
 
   const chainAgeSec = chainUpdatedAt ? (Date.now() - chainUpdatedAt.getTime()) / 1000 : 9999;
   const flowAgeSec = flowUpdatedAt ? (Date.now() - flowUpdatedAt.getTime()) / 1000 : 9999;
@@ -492,7 +640,9 @@ async function refreshTicker(ticker: string, regimeShockActive: boolean): Promis
     directionalLean,
   });
 
-  const rowPayload = {
+  const surfacedNames = surfacedSubScoresHigh({ ...comps, edge_type: edgeType });
+
+  const rowPayload: Record<string, unknown> = {
     sector,
     marketCapTier: tier,
     spot: spot != null ? String(spot) : null,
@@ -512,10 +662,20 @@ async function refreshTicker(ticker: string, regimeShockActive: boolean): Promis
     earningsDate: earningsDateStr ?? null,
     earningsDaysAway,
     earningsConfirmed: earningsConfirmed ?? false,
-    macroOverlapScore: String(macroScore),
+    macroOverlapScore: String(Math.round(macroWin.score * 100) / 100),
     regimeShockActive,
     compositeScore: String(Math.round(composite * 100) / 100),
-    componentScores: { ...componentScores, edge_type: edgeType } as unknown as Record<string, unknown>,
+    componentScores: {
+      ...comps,
+      edge_type: edgeType,
+      /** Legacy alias for older clients */
+      catalyst_proximity: macroWin.score,
+    } as unknown as Record<string, unknown>,
+    earningsEdgeSignature: earningsEdge as unknown as Record<string, unknown>,
+    impliedMoveRichness: moveRich as unknown as Record<string, unknown>,
+    liquidityAnchorScore: String(Math.round(liqScore * 100) / 100),
+    liquidityMaxOiBand: liqMaxOi,
+    liquidityDeepestOiStrike: liqDeepStrike != null ? String(liqDeepStrike) : null,
     disqualFlags: disqual.length ? disqual : null,
     surfacingReasons: surfacingReasons.length ? surfacingReasons : null,
     snapshotAt: now,
@@ -525,6 +685,7 @@ async function refreshTicker(ticker: string, regimeShockActive: boolean): Promis
     flowUpdatedAt,
     ivrUpdatedAt: eqRow?.date ? new Date(`${String(eqRow.date)}T00:00:00Z`) : null,
     earningsUpdatedAt: now,
+    surfacingSubScores: surfacedNames.length ? surfacedNames : null,
   };
 
   await db
