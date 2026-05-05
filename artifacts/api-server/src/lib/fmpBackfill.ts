@@ -320,7 +320,7 @@ export async function backfillEquityDailyHistory(): Promise<{
         const close = b.close;
         if (close == null || !Number.isFinite(close)) continue;
         const vol = b.volume != null && Number.isFinite(b.volume) ? Math.round(b.volume) : null;
-        const adj = b.adjClose != null && Number.isFinite(b.adjClose) ? b.adjClose : null;
+        /** FMP full EOD: OHLC are split-adjusted; no adjClose field — mirror close for adjusted_close (Option A). */
         values.push({
           symbol: sym,
           date: b.date,
@@ -328,7 +328,7 @@ export async function backfillEquityDailyHistory(): Promise<{
           high: b.high ?? null,
           low: b.low ?? null,
           close,
-          adjustedClose: adj,
+          adjustedClose: close,
           volume: vol,
         });
       }

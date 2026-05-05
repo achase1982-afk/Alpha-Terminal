@@ -443,20 +443,22 @@ function normaliseHistoricalPriceRow(raw: Record<string, unknown>): FmpHistorica
   const date = dateRaw.slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
 
+  const close = pickNumber(raw["close"]);
   return {
     symbol,
     date,
     open: pickNumber(raw["open"]),
     high: pickNumber(raw["high"]),
     low: pickNumber(raw["low"]),
-    close: pickNumber(raw["close"]),
+    close,
     volume: pickNumber(raw["volume"]),
-    adjClose: pickNumber(raw["adjClose"]) ?? pickNumber(raw["adjustedClose"]),
+    /** Documented as split-adjusted series; no separate adjClose on /full — duplicate close when absent. */
+    adjClose: pickNumber(raw["adjClose"]) ?? pickNumber(raw["adjustedClose"]) ?? close,
   };
 }
 
 /**
- * Full OHLC history for backfills (FMP stable).
+ * Full OHLC history for backfills (FMP stable). Prices are split-adjusted per FMP; there is no adjClose column.
  * @see https://financialmodelingprep.com/stable/historical-price-eod/full
  */
 export async function getFmpHistoricalPriceEodFull(
