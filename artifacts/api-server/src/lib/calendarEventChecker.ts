@@ -477,6 +477,19 @@ export interface UpcomingEvent {
   importance: "HIGH" | "MEDIUM" | "LOW";
 }
 
+/** Count calendar events with HIGH/MEDIUM importance whose dates fall in [startYmd, endYmd] inclusive (YYYY-MM-DD). Holidays excluded. */
+export function countMacroHighMediumBetween(startYmd: string, endYmd: string): number {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startYmd) || !/^\d{4}-\d{2}-\d{2}$/.test(endYmd)) return 0;
+  let n = 0;
+  for (const ev of getEvents()) {
+    if (ev.type === "holiday") continue;
+    if (ev.importance !== "HIGH" && ev.importance !== "MEDIUM") continue;
+    if (ev.date < startYmd || ev.date > endYmd) continue;
+    n += 1;
+  }
+  return n;
+}
+
 export function getUpcomingEvents(withinTradingDays: number = 2): UpcomingEvent[] {
   const events = getEvents();
   const now = new Date();

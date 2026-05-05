@@ -29,8 +29,15 @@ function engineLabel(e: UnifiedEngineKey): string {
   return e.charAt(0).toUpperCase() + e.slice(1);
 }
 
-function mapSurfacedForHandoff(by: UnifiedEngineKey[]): ScannerSurfacedByEngine[] {
-  return by.map((x) => (x === "unusual_flow" ? "flow" : x)) as ScannerSurfacedByEngine[];
+function mapSurfacedForHandoff(by: string[]): ScannerSurfacedByEngine[] {
+  const mapped = by
+    .map((x) => {
+      if (x === "unusual_flow") return "flow" as const;
+      if (x === "discovery" || x === "momentum") return x;
+      return null;
+    })
+    .filter((x): x is ScannerSurfacedByEngine => x != null);
+  return [...new Set(mapped)].sort((a, b) => a.localeCompare(b));
 }
 
 function formatNotional(n: number | null): string {
@@ -105,7 +112,8 @@ export const UnifiedScannerCard = memo(function UnifiedScannerCard({
     return {
       ...raw,
       sector: raw.sector ?? "Other",
-      surfacedBy: Array.isArray(raw.surfacedBy) ? raw.surfacedBy : [],
+      surfacedBy:
+        Array.isArray(raw.surfacedBy) && raw.surfacedBy.length > 0 ? raw.surfacedBy : ["momentum"],
       surfacingReasons: Array.isArray(raw.surfacingReasons) ? raw.surfacingReasons : [],
       riskFlags: Array.isArray(raw.riskFlags) ? raw.riskFlags : [],
       flowSnapshot: {

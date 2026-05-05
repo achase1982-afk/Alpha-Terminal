@@ -4,6 +4,7 @@ import { and, desc, inArray, isNull, or, sql } from "drizzle-orm";
 import { db, scannerHealthTable, tickerSignalSnapshotTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { resolveScannerUniverseSymbolsForUser } from "./scanner.js";
+import { SCANNER_SUB_SCORE_HIGH } from "../lib/scannerScoringV2.js";
 
 const STALE_AFTER_SECONDS = 5 * 60;
 const router: IRouter = Router();
@@ -30,11 +31,13 @@ function rowToCandidate(r: typeof tickerSignalSnapshotTable.$inferSelect) {
   const ivrSource: "canonical" | "intraday" | "missing" =
     ivrSrc === "canonical" || ivrSrc === "intraday" ? (ivrSrc as "canonical" | "intraday") : "missing";
   const comps = (r.componentScores as Record<string, number> | null) ?? {};
-  const term = Number(comps["term_structure"] ?? 0);
+  const termShape = Number(comps["catalyst_term_shape"] ?? comps["term_structure"] ?? 0);
   const ivRv = Number(comps["iv_vs_realized"] ?? 0);
-  const flowA = Number(comps["flow_alignment"] ?? 0);
+  const flowA = Number(comps["flow_quality"] ?? comps["flow_alignment"] ?? 0);
   const skew = Number(comps["skew_anomaly"] ?? 0);
-  const cat = Number(comps["catalyst_proximity"] ?? 0);
+  const macroD = Number(comps["macro_density_in_window"] ?? comps["catalyst_proximity"] ?? 0);
+  const liqAnch =
+    r.liquidityAnchorScore != null ? Number(r.liquidityAnchorScore) : Math.min(100, (r.atmOiFront ?? 0) / 500);
   const edgeType = (comps["edge_type"] as string) ?? "no_clear_edge";
   const flow = (r.flowSummary as Record<string, unknown> | null) ?? {};
   const askPct = typeof flow["ask_pct"] === "number" ? flow["ask_pct"] : 0;
@@ -55,13 +58,24 @@ function rowToCandidate(r: typeof tickerSignalSnapshotTable.$inferSelect) {
   const earnDate = r.earningsDate ? String(r.earningsDate) : null;
   const earnDays = r.earningsDaysAway;
 
+  const storedSurf = Array.isArray(r.surfacingSubScores) ? r.surfacingSubScores.filter(Boolean) : [];
+  const derivedSurf: string[] = [];
+  for (const [k, v] of Object.entries(comps)) {
+    if (k === "edge_type") continue;
+    const n = Number(v);
+    if (Number.isFinite(n) && n >= SCANNER_SUB_SCORE_HIGH) derivedSurf.push(k);
+  }
+  const surfacedBy = storedSurf.length ? storedSurf : derivedSurf.length ? derivedSurf : ["momentum"];
+
+  const riskFromDb = Array.isArray(r.disqualFlags) ? r.disqualFlags.filter(Boolean) : [];
+
   return {
     ticker: r.ticker,
     spot,
     changePct,
     sector: r.sector ?? "Other",
     marketCapTier: r.marketCapTier ?? "mid",
-    surfacedBy: ["momentum"] as ("discovery" | "momentum" | "unusual_flow")[],
+    surfacedBy,
     compositeScore: Math.round(composite),
     edgeType,
     directionalLean,
@@ -74,11 +88,11 @@ function rowToCandidate(r: typeof tickerSignalSnapshotTable.$inferSelect) {
     low52w: null,
     avgVolume20d: null,
     components: {
-      trend: term,
-      relativeStrength: term * 0.8,
+      trend: termShape,
+      relativeStrength: macroD,
       volRegime: ivRv,
       flowScore: flowA,
-      liquidity: Math.min(100, (r.atmOiFront ?? 0) / 500),
+      liquidity: liqAnch,
     },
     flowSnapshot: {
       topStrike:
@@ -96,7 +110,7 @@ function rowToCandidate(r: typeof tickerSignalSnapshotTable.$inferSelect) {
           : null,
       macroEventsInPositionWindow: macroEvents,
     },
-    riskFlags: [] as string[],
+    riskFlags: riskFromDb,
     positionContext: { hasPosition: false },
     surfacingReasons: [
       {

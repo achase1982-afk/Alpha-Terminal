@@ -907,6 +907,18 @@ export const tickerSignalSnapshotTable = pgTable("ticker_signal_snapshot", {
   regimeShockActive: boolean("regime_shock_active").default(false),
   compositeScore: numeric("composite_score"),
   componentScores: jsonb("component_scores"),
+  /** Distribution stats from earnings history (gap, c2c, 5d, IV crush) + scoring helpers. */
+  earningsEdgeSignature: jsonb("earnings_edge_signature"),
+  /**
+   * Current implied move vs IV30-proxy historical earnings-move distribution.
+   * Historical moves use impliedMoveOneWeekFromIv(iv_pre) in polygonEarningsHistory (IV-derived).
+   */
+  impliedMoveRichness: jsonb("implied_move_richness"),
+  liquidityAnchorScore: numeric("liquidity_anchor_score"),
+  liquidityMaxOiBand: integer("liquidity_max_oi_band"),
+  liquidityDeepestOiStrike: numeric("liquidity_deepest_oi_strike"),
+  /** Sub-score keys that cleared the high threshold (scanner v1). */
+  surfacingSubScores: text("surfacing_sub_scores").array(),
   disqualFlags: text("disqual_flags").array(),
   surfacingReasons: text("surfacing_reasons").array(),
   snapshotAt: timestamp("snapshot_at", { withTimezone: true }),

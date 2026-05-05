@@ -106,6 +106,13 @@
       "when": 1778500000000,
       "tag": "0018_equity_daily_adjusted_close_option_a",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1778550000000,
+      "tag": "0019_ticker_signal_snapshot_scanner_v2",
+      "breakpoints": true
     }
   ]
 }
