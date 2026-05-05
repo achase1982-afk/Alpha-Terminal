@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import ReactDOM from "react-dom";
 import { useTerminalStore } from "@/lib/store";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
@@ -22,6 +22,15 @@ import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { useUnifiedScan } from "@/hooks/useUnifiedScan";
 import { UnifiedScannerCard } from "./UnifiedScannerCard";
 import { ScannerErrorBoundary } from "./ScannerErrorBoundary";
+import {
+  ScannerCard,
+  emptyScannerCardData,
+  muteSymbolForNextSession,
+  persistMutedSymbols,
+  pruneAndFilterMutedSymbols,
+  readMutedSymbols,
+} from "@/components/scanner";
+import type { ScannerCardAction } from "@/components/scanner/scannerCard.types";
 import { isUsEquitiesMarketHoursEt } from "@/lib/usMarketHours";
 
 function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCreateScreen, onEditScreen, onDeleteScreen, onRefreshScreen, refreshingScreenId, onCreateWatchlist, onEditWatchlist, onDeleteWatchlist }: {
@@ -353,7 +362,8 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
 
   const [universe, setUniverse] = useState("preset:liquidCore130");
   const [resolvedSymbols, setResolvedSymbols] = useState<string[]>([]);
-  const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
+  const [expandedSymbols, setExpandedSymbols] = useState<Set<string>>(() => new Set());
+  const [, setMuteTick] = useState(0);
 
   const [showScreenBuilder, setShowScreenBuilder] = useState(false);
   const [editingScreen, setEditingScreen] = useState<number | null>(null);
@@ -393,19 +403,67 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
       setUniverse("preset:liquidCore130");
       return;
     }
-    setExpandedTicker(null);
+    setExpandedSymbols(new Set());
     await unified.startScan(universe);
   };
 
   const scanComplete = unified.phase === "complete";
   const candidates = unified.candidates;
 
-  useEffect(() => {
-    const list = scanComplete ? candidates.map((c) => c.ticker) : [];
-    if (list.length && subscribeEquitySymbols) subscribeEquitySymbols(list);
-  }, [scanComplete, candidates, subscribeEquitySymbols]);
+  const layer1FilteredSymbols = useMemo(() => {
+    if (!unified.layer1Universe?.tickers?.length) return [];
+    const raw = readMutedSymbols();
+    const now = Date.now();
+    const { pruned, activeMuted } = pruneAndFilterMutedSymbols(raw, now);
+    if (pruned.length !== raw.length) persistMutedSymbols(pruned);
+    return unified.layer1Universe.tickers
+      .map((s) => s.trim().toUpperCase())
+      .filter((s) => s.length > 0 && !activeMuted.has(s))
+      .sort((a, b) => a.localeCompare(b));
+  }, [unified.layer1Universe, muteTick]);
 
-  const editScreenObj = editingScreen != null ? universeData.screens.find(s => s.id === editingScreen) ?? null : null;
+  useEffect(() => {
+    if (!scanComplete || !subscribeEquitySymbols) return;
+    const fromLayer1 = layer1FilteredSymbols;
+    const fromCandidates = candidates.map((c) => c.ticker);
+    const merged = [...new Set([...fromLayer1, ...fromCandidates])];
+    if (merged.length) subscribeEquitySymbols(merged);
+  }, [scanComplete, layer1FilteredSymbols, candidates, subscribeEquitySymbols]);
+
+  const bumpMuteRender = useCallback(() => {
+    setMuteTick((n) => n + 1);
+  }, []);
+
+  const handleScannerCardAction = useCallback(
+    (sym: string, action: ScannerCardAction) => {
+      if (action === "analyze") {
+        if (onSendToStrategist) {
+          onNavigateToSymbol?.(sym);
+          onSendToStrategist(sym);
+        }
+        return;
+      }
+      if (action === "watchlist") {
+        const wl = universeData.watchlists[0];
+        if (wl) {
+          void universeData.addSymbolToWatchlist(wl.id, sym);
+        } else {
+          // TODO: wire "+ Watchlist" from scanner v3 cards when no watchlists exist (create flow or picker).
+        }
+        return;
+      }
+      if (action === "mute") {
+        muteSymbolForNextSession(sym);
+        setExpandedSymbols((prev) => {
+          const next = new Set(prev);
+          next.delete(sym);
+          return next;
+        });
+        bumpMuteRender();
+      }
+    },
+    [onSendToStrategist, onNavigateToSymbol, universeData.watchlists, universeData.addSymbolToWatchlist, bumpMuteRender],
+  );
 
   return (
     <div className="flex flex-col gap-4 max-w-4xl mx-auto pb-6">
@@ -542,29 +600,43 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
                     <span className="text-zinc-500">Count </span>
                     <span className="font-bold text-white">{unified.layer1Universe.count}</span>
                     <span className="text-zinc-600 mx-2">·</span>
+                    <span className="text-zinc-500">visible </span>
+                    <span className="font-bold text-white">{layer1FilteredSymbols.length}</span>
+                    <span className="text-zinc-600 mx-2">·</span>
                     <span className="text-zinc-500">scan_at </span>
                     <time className="font-mono text-zinc-200" dateTime={unified.layer1Universe.scan_at}>
                       {unified.layer1Universe.scan_at}
                     </time>
                   </p>
                 </div>
-                <ul
+                <div
                   role="list"
                   aria-labelledby="scanner-v3-layer1-heading"
-                  aria-label={`Scanner universe, ${unified.layer1Universe.count} tickers`}
-                  className="max-h-[min(420px,50vh)] overflow-y-auto divide-y divide-zinc-800/80"
+                  aria-label={`Scanner universe, ${layer1FilteredSymbols.length} visible tickers`}
+                  className="max-h-[min(560px,55vh)] overflow-y-auto p-2 space-y-2"
                 >
-                  {unified.layer1Universe.tickers.map(sym => (
-                    <li
+                  {layer1FilteredSymbols.map((sym) => (
+                    <ScannerCard
                       key={sym}
-                      role="listitem"
-                      tabIndex={0}
-                      className="px-4 py-2.5 font-mono text-sm font-semibold text-white outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#FFB800] focus-visible:bg-zinc-900/80"
-                    >
-                      {sym}
-                    </li>
+                      data={emptyScannerCardData(sym)}
+                      expanded={expandedSymbols.has(sym)}
+                      onToggle={() => {
+                        setExpandedSymbols((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(sym)) {
+                            // TODO: emit scanner_v3_card_* telemetry once frontend telemetry plumbing is established.
+                            next.delete(sym);
+                          } else {
+                            // TODO: emit scanner_v3_card_* telemetry once frontend telemetry plumbing is established.
+                            next.add(sym);
+                          }
+                          return next;
+                        });
+                      }}
+                      onAction={(action) => handleScannerCardAction(sym, action)}
+                    />
                   ))}
-                </ul>
+                </div>
               </div>
             </>
           )}
@@ -602,8 +674,20 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
                   rank={i + 1}
                   universeId={universe}
                   universeLabel={universeLabel}
-                  expanded={expandedTicker === c.ticker}
-                  onToggle={() => setExpandedTicker(expandedTicker === c.ticker ? null : c.ticker)}
+                  expanded={expandedSymbols.has(c.ticker)}
+                  onToggle={() => {
+                    setExpandedSymbols((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(c.ticker)) {
+                        // TODO: emit scanner_v3_card_* telemetry once frontend telemetry plumbing is established.
+                        next.delete(c.ticker);
+                      } else {
+                        // TODO: emit scanner_v3_card_* telemetry once frontend telemetry plumbing is established.
+                        next.add(c.ticker);
+                      }
+                      return next;
+                    });
+                  }}
                   onSendToStrategist={
                     onSendToStrategist
                       ? (sym) => {
