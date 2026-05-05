@@ -51,6 +51,7 @@ import { resolveStrikes, type AccountSnapshot, type ChainData, type ResolvedTrad
 import { createGeminiClient, getGeminiApiKey } from "../lib/geminiClient.js";
 import { geminiThinkingConfigForModel } from "../lib/geminiThinkingConfig.js";
 
+const router: IRouter = Router();
 
 /** Express `Response` omits optional Node `flush` / socket cork helpers present when compression or a custom stack attaches them. */
 type ResponseWithNodeStream = ExpressResponse & {
