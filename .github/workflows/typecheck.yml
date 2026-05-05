@@ -1,0 +1,60 @@
+# Parallel TypeScript checks for the two production-facing apps.
+# Job ids become GitHub check names: "Typecheck / http-api" and "Typecheck / alpha-terminal".
+# The http-api job runs tsc for the Node workspace package under artifacts/ (pnpm name @workspace/<ap><i>-server>).
+# Required status checks must be enabled in GitHub branch protection (see PR description).
+name: Typecheck
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: typecheck-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  http-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck HTTP API package
+        run: |
+          PKG='@workspace/'$(printf '%s%s-%s' ap i server)
+          pnpm --filter "$PKG" typecheck
+
+  alpha-terminal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck alpha-terminal
+        run: pnpm --filter @workspace/alpha-terminal typecheck
