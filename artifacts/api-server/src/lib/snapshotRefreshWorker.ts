@@ -9,6 +9,7 @@ import {
   equityDailyTable,
   scannerHealthTable,
   scannerTapeMetricsTable,
+  scannerTickerCycleCoverageTable,
   tickerSignalSnapshotTable,
 } from "@workspace/db";
 import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
@@ -21,6 +22,7 @@ import { impliedVolToVolPoints, classifyEdgeType, type ScannerEdgeType } from ".
 import { getScannerSector } from "./scannerSectorMap.js";
 import { polygonKey } from "./polygonAnalystData.js";
 import { fetchEarningsHistoryAndForward } from "./polygonEarningsHistory.js";
+import { logger } from "./logger.js";
 import {
   buildEarningsEdgeSignature,
   getIvRvAtmPoints,
@@ -272,7 +274,16 @@ function termStripFromSummary(chainSummary: ChainSummary | null, fallback: TermS
   }));
 }
 
-async function refreshTicker(ticker: string, regimeShockActive: boolean): Promise<void> {
+async function refreshTicker(
+  ticker: string,
+  regimeShockActive: boolean,
+): Promise<{
+  elapsedMs: number;
+  chainContractCount: number;
+  tapeMetricRow: typeof scannerTapeMetricsTable.$inferSelect | null;
+  tapeCoverageTier: TapeCoverageTier;
+}> {
+  const tStart = Date.now();
   const upper = ticker.toUpperCase();
   const now = new Date();
   const attemptAt = now;
@@ -317,8 +328,10 @@ async function refreshTicker(ticker: string, regimeShockActive: boolean): Promis
   const halted = !!(eqRow?.haltStatus ?? false);
 
   let chainSummary: ChainSummary | null = null;
+  let chainContractCount = 0;
   if (chain && spot && spot > 0) {
     const contracts = polygonToChainContracts(chain);
+    chainContractCount = contracts.length;
     try {
       chainSummary = await summarizeOptionsChain(contracts, spot, {
         ticker: upper,
@@ -758,6 +771,14 @@ async function refreshTicker(ticker: string, regimeShockActive: boolean): Promis
       target: tickerSignalSnapshotTable.ticker,
       set: rowPayload,
     });
+
+  const elapsedMs = Date.now() - tStart;
+  return {
+    elapsedMs,
+    chainContractCount,
+    tapeMetricRow,
+    tapeCoverageTier,
+  };
 }
 
 let workerTimer: ReturnType<typeof setInterval> | null = null;
@@ -771,27 +792,93 @@ async function runOneCycle(): Promise<void> {
   const regimeShockActive = evaluateRegimeShock(indicators).shockActive;
   log.debug({ regimeShockActive }, "snapshot worker regime shock (evaluateRegimeShock)");
 
+  const rowsForCoverage: Array<{
+    ticker: string;
+    chainContractCount: number;
+    tapeMetricRow: typeof scannerTapeMetricsTable.$inferSelect | null;
+    tapeCoverageTier: TapeCoverageTier;
+    elapsedMs: number;
+  }> = [];
+  const succeededTickers = new Set<string>();
+
   const limit = pLimit(CONCURRENCY);
   await Promise.all(
     LC130.map((ticker) =>
       limit(async () => {
         try {
-          await refreshTicker(ticker, regimeShockActive);
+          const out = await refreshTicker(ticker, regimeShockActive);
           ok++;
+          succeededTickers.add(ticker.toUpperCase());
+          rowsForCoverage.push({
+            ticker: ticker.toUpperCase(),
+            chainContractCount: out.chainContractCount,
+            tapeMetricRow: out.tapeMetricRow,
+            tapeCoverageTier: out.tapeCoverageTier,
+            elapsedMs: out.elapsedMs,
+          });
         } catch (e) {
           failed.push({ ticker, error: e instanceof Error ? e.message : String(e) });
         }
       }),
     ),
   );
-  await db.insert(scannerHealthTable).values({
+
+  for (const sym of LC130) {
+    const u = sym.toUpperCase();
+    if (!succeededTickers.has(u)) {
+      rowsForCoverage.push({
+        ticker: u,
+        chainContractCount: 0,
+        tapeMetricRow: null,
+        tapeCoverageTier: "not_run",
+        elapsedMs: 0,
+      });
+    }
+  }
+
+  const inserted = await db.insert(scannerHealthTable).values({
     cycleStartedAt: cycleStarted,
     cycleCompletedAt: new Date(),
     tickersAttempted: LC130.length,
     tickersSucceeded: ok,
     tickersFailed: failed.length,
     failedTickers: failed.length ? failed : null,
-  });
+  }).returning({ id: scannerHealthTable.id });
+
+  const cycleId = inserted[0]?.id;
+  if (cycleId != null && rowsForCoverage.length > 0) {
+    try {
+      await db.insert(scannerTickerCycleCoverageTable).values(
+        rowsForCoverage.map((r) => {
+          const tm = r.tapeMetricRow;
+          const occA = tm?.occRequested ?? 0;
+          const occC = tm?.occCompleted ?? 0;
+          const occPct =
+            occA > 0 ? String(Math.round((occC / occA) * 10000) / 10000) : null;
+          const tried = tm?.tradesAttemptedInsert ?? 0;
+          const ins = tm?.tradesInsertedCommitted ?? 0;
+          const insertPct =
+            tried > 0 ? String(Math.round((ins / tried) * 10000) / 10000) : null;
+          return {
+            cycleId,
+            ticker: r.ticker,
+            chainContractCount: r.chainContractCount,
+            occAttempted: occA,
+            occCompleted: occC,
+            occCoveragePct: occPct,
+            tradesInserted: ins,
+            tradesObserved: tm?.tradesObservedPolygon ?? null,
+            insertCoveragePct: insertPct,
+            truncated: tm?.anyTruncated ?? false,
+            elapsedMs: r.elapsedMs,
+            tier: r.tapeCoverageTier,
+          };
+        }),
+      );
+    } catch (err) {
+      log.error({ err }, "scanner_ticker_cycle_coverage batch insert failed");
+    }
+  }
 }
 
 export function startSnapshotRefreshWorker(): void {
