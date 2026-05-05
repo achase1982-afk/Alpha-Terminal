@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, serial, real, integer, boolean, timestamp, jsonb, uniqueIndex, index, date, doublePrecision, bigint, numeric } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, real, integer, boolean, timestamp, jsonb, uniqueIndex, index, date, doublePrecision, bigint, numeric, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -318,6 +318,25 @@ export const optionsTapeBackfillOccCacheTable = pgTable("options_tape_backfill_o
 ]);
 
 export type OptionsTapeBackfillOccCache = typeof optionsTapeBackfillOccCacheTable.$inferSelect;
+
+/** Latest OCC/trade coverage snapshot when strategist tape backfill runs (scanner graduated tiers). */
+export const scannerTapeMetricsTable = pgTable("scanner_tape_metrics", {
+  ticker: text("ticker").notNull(),
+  sessionDate: date("session_date").notNull(),
+  occRequested: integer("occ_requested").notNull().default(0),
+  occCompleted: integer("occ_completed").notNull().default(0),
+  tradesAttemptedInsert: integer("trades_attempted_insert").notNull().default(0),
+  tradesInsertedCommitted: integer("trades_inserted_committed").notNull().default(0),
+  dedupeDropped: integer("dedupe_dropped").notNull().default(0),
+  anyTruncated: boolean("any_truncated").notNull().default(false),
+  status: text("status").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.ticker, t.sessionDate] }),
+  index("scanner_tape_metrics_ticker_updated_idx").on(t.ticker, t.updatedAt),
+]);
+
+export type ScannerTapeMetric = typeof scannerTapeMetricsTable.$inferSelect;
 
 /**
  * Item 3: materialized per-OCC 20d avg volume as-of a session calendar date.

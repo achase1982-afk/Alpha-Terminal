@@ -1,4 +1,4 @@
-import { db, optionsFlowRawTradesTable, optionsTapeBackfillOccCacheTable } from "@workspace/db";
+import { db, optionsFlowRawTradesTable, optionsTapeBackfillOccCacheTable, scannerTapeMetricsTable } from "@workspace/db";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { extractPgErrorContext, logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
@@ -43,15 +43,25 @@ const DEFAULT_BUDGET_MS = 180_000;
 const PHASE_1_BUDGET_MS = 90_000;
 /** Phase 2: quotes + aggressor classification + UPDATE (half of default symbol budget). */
 const PHASE_2_BUDGET_MS = 90_000;
-/** Hard cap on wall time spent inside a single OCC (fetch + classify + DB). */
-const PER_ROOT_MAX_MS = 18_000;
+/** Hard cap on wall time spent inside a single OCC (fetch + classify + DB); raised for mega names. */
+const PER_ROOT_MAX_MS_DEFAULT = 18_000;
+const PER_ROOT_MAX_MS_MEGA = 45_000;
 /** Minimum slice reserved for each remaining OCC so progress stays fair vs one slow contract. */
 const PER_ROOT_MIN_MS = 2_500;
 /**
- * Concurrent OCC workers for REST tape backfill. Five balances Polygon rate limits (429 retries
- * in fetchPaged) against wall-clock latency. Increase only after observing 429 retry behavior under load.
+ * Concurrent OCC workers for REST tape backfill. Ten balances throughput vs Polygon rate limits.
  */
-const CONCURRENCY = 5;
+const CONCURRENCY = 10;
+
+/** Tickers that use longer per-HTTP timeout for Polygon pagination (mega liquid names). */
+const MEGA_POLYGON_TIMEOUT_TICKERS = new Set([
+  "SPY", "QQQ", "IWM", "GLD",
+  "NVDA", "AAPL", "MSFT", "AMZN", "GOOGL", "META", "TSLA",
+]);
+
+function polygonPagedTimeoutMsForTicker(ticker: string): number {
+  return MEGA_POLYGON_TIMEOUT_TICKERS.has(ticker.toUpperCase()) ? 60_000 : 14_000;
+}
 
 export type TapeBackfillStatusValue = "complete" | "partial" | "failed" | "skipped";
 
@@ -340,6 +350,7 @@ async function fetchQuotesWindowed(
   gteNs: bigint,
   lteNs: bigint,
   deadlineMs: number,
+  httpTimeoutMs: number,
 ): Promise<{
   quotes: QuotePoint[];
   truncated: boolean;
@@ -365,6 +376,7 @@ async function fetchQuotesWindowed(
         base,
         apiKey,
         deadlineMs,
+        { httpTimeoutMs },
       );
       if (tr) truncated = true;
       if (se) sawPolygonHttpError = true;
@@ -385,6 +397,7 @@ async function fetchQuotesWindowed(
       base,
       apiKey,
       deadlineMs,
+      { httpTimeoutMs },
     );
     if (tr) truncated = true;
     if (se) sawPolygonHttpError = true;
@@ -522,6 +535,8 @@ export async function runStrategistTapeBackfill(args: {
   });
   const tier = args.marketCapTier ?? marketCtx.tier;
   const { occs: occList, coverageGeometry } = buildTapeOccList(ticker, args.chain, args.chainSummary, tier);
+  const perRootMaxMs = MEGA_POLYGON_TIMEOUT_TICKERS.has(ticker) ? PER_ROOT_MAX_MS_MEGA : PER_ROOT_MAX_MS_DEFAULT;
+  const polygonHttpTimeoutMs = polygonPagedTimeoutMsForTicker(ticker);
   if (occList.length === 0) {
     return {
       status: "skipped",
@@ -566,6 +581,7 @@ export async function runStrategistTapeBackfill(args: {
     kind: "completed" | "skipped_budget" | "skipped_bad_occ";
     parsed: ParsedTrade[];
     tradesInserted: number;
+    rowsAttemptedInsert: number;
     insertedNullSideCount: number;
     totalTradesFromPolygon: number;
     persistRejectedCount: number;
@@ -594,6 +610,7 @@ export async function runStrategistTapeBackfill(args: {
       kind: "skipped_budget",
       parsed: [],
       tradesInserted: 0,
+      rowsAttemptedInsert: 0,
       insertedNullSideCount: 0,
       totalTradesFromPolygon: 0,
       persistRejectedCount: 0,
@@ -614,6 +631,7 @@ export async function runStrategistTapeBackfill(args: {
         kind: "skipped_bad_occ",
         parsed: [],
         tradesInserted: 0,
+        rowsAttemptedInsert: 0,
         insertedNullSideCount: 0,
         totalTradesFromPolygon: 0,
         persistRejectedCount: 0,
@@ -627,7 +645,7 @@ export async function runStrategistTapeBackfill(args: {
     const budgetLeft = phase1Deadline - Date.now();
     const remainingRoots = occList.length - occIdx;
     const fairSlice = Math.floor(budgetLeft / Math.max(1, remainingRoots));
-    const rootBudget = Math.min(PER_ROOT_MAX_MS, Math.max(PER_ROOT_MIN_MS, fairSlice));
+    const rootBudget = Math.min(perRootMaxMs, Math.max(PER_ROOT_MIN_MS, fairSlice));
     const occDeadline = Math.min(phase1Deadline, Date.now() + Math.min(rootBudget, budgetLeft));
 
     let baselineAvgVol: number | null = null;
@@ -657,7 +675,7 @@ export async function runStrategistTapeBackfill(args: {
       rows: tradeRows,
       truncated: trTr,
       sawPolygonHttpError: trErr,
-    } = await fetchPaged(tradeUrl, apiKey, occDeadline);
+    } = await fetchPaged(tradeUrl, apiKey, occDeadline, { httpTimeoutMs: polygonHttpTimeoutMs });
     const occSawHttp = trErr;
     const parsed = parseTrades(occ, tradeRows);
     const occTotalPoly = parsed.length;
@@ -797,6 +815,7 @@ export async function runStrategistTapeBackfill(args: {
       kind: "completed",
       parsed,
       tradesInserted: occTradesInserted,
+      rowsAttemptedInsert: rowsToInsert.length,
       insertedNullSideCount: occInsertedNullSide,
       totalTradesFromPolygon: occTotalPoly,
       persistRejectedCount: occPersistRejected,
@@ -820,6 +839,7 @@ export async function runStrategistTapeBackfill(args: {
   let persistRejectedCount = 0;
   const dedupeByOcc = new Map<string, number>();
   let phase1CompletedCount = 0;
+  let rowsAttemptedInsertTotal = 0;
 
   for (const r of phase1Results) {
     if (r.kind === "skipped_budget") {
@@ -831,6 +851,7 @@ export async function runStrategistTapeBackfill(args: {
     if (r.kind === "completed") {
       phase1CompletedCount += 1;
     }
+    rowsAttemptedInsertTotal += r.rowsAttemptedInsert ?? 0;
     tradesInserted += r.tradesInserted;
     insertedNullSideThisRun += r.insertedNullSideCount;
     totalTradesFromPolygon += r.totalTradesFromPolygon;
@@ -914,7 +935,7 @@ export async function runStrategistTapeBackfill(args: {
     const budgetLeft = phase2Deadline - Date.now();
     const remainingRoots = occList.length - occIdx;
     const fairSlice = Math.floor(budgetLeft / Math.max(1, remainingRoots));
-    const rootBudget = Math.min(PER_ROOT_MAX_MS, Math.max(PER_ROOT_MIN_MS, fairSlice));
+    const rootBudget = Math.min(perRootMaxMs, Math.max(PER_ROOT_MIN_MS, fairSlice));
     const occDeadline = Math.min(phase2Deadline, Date.now() + Math.min(rootBudget, budgetLeft));
 
     let baselineAvgVol: number | null = null;
@@ -930,7 +951,7 @@ export async function runStrategistTapeBackfill(args: {
       quotes,
       truncated: trQ,
       sawPolygonHttpError: qErr,
-    } = await fetchQuotesWindowed(occ, apiKey, p1.parsed, gteNs, lteNs, occDeadline);
+    } = await fetchQuotesWindowed(occ, apiKey, p1.parsed, gteNs, lteNs, occDeadline, polygonHttpTimeoutMs);
 
     const occLegWindow = new FlowLegWindow();
     let rowsSideUpdated = 0;
@@ -1161,6 +1182,7 @@ export async function runStrategistTapeBackfill(args: {
       occRequested: occList.length,
       occCompleted,
       tradesInserted,
+      tradesAttemptedInsert: rowsAttemptedInsertTotal,
       totalTradesFromPolygon,
       persistRejectedCount,
       anyTruncated,
@@ -1171,6 +1193,42 @@ export async function runStrategistTapeBackfill(args: {
     },
     "strategistTapeBackfill: done",
   );
+
+  try {
+    await db
+      .insert(scannerTapeMetricsTable)
+      .values({
+        ticker,
+        sessionDate,
+        occRequested: occList.length,
+        occCompleted,
+        tradesAttemptedInsert: rowsAttemptedInsertTotal,
+        tradesInsertedCommitted: tradesInserted,
+        dedupeDropped: totalDedupeDropped,
+        anyTruncated,
+        status,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [scannerTapeMetricsTable.ticker, scannerTapeMetricsTable.sessionDate],
+        set: {
+          occRequested: occList.length,
+          occCompleted,
+          tradesAttemptedInsert: rowsAttemptedInsertTotal,
+          tradesInsertedCommitted: tradesInserted,
+          dedupeDropped: totalDedupeDropped,
+          anyTruncated,
+          status,
+          updatedAt: new Date(),
+        },
+      });
+  } catch (err) {
+    logFlowPipelineWarn(
+      "tape_metrics_persist",
+      "strategistTapeBackfill: scanner_tape_metrics upsert failed",
+      { err, ticker },
+    );
+  }
 
   return {
     status,

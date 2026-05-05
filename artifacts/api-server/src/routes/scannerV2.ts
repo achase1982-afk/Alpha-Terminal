@@ -47,9 +47,28 @@ function rowToCandidate(r: typeof tickerSignalSnapshotTable.$inferSelect) {
       : 0;
   const midPct = Math.max(0, 100 - askPct - bidPct);
   const top = flow["top_strike"] as { strike?: number; expiry?: string; type?: string } | null;
-  const tapeQ = (flow["tape_quality"] as string) ?? "not_run";
-  const tapeQuality =
-    tapeQ === "complete" || tapeQ === "partial" || tapeQ === "degraded" ? tapeQ : "not_run";
+  const tierCandidates = ["complete", "high", "degraded", "partial", "not_run"] as const;
+  type TapeTier = (typeof tierCandidates)[number];
+  const rawTier =
+    typeof flow["tape_coverage_tier"] === "string"
+      ? flow["tape_coverage_tier"]
+      : typeof flow["tape_quality"] === "string"
+        ? flow["tape_quality"]
+        : null;
+  const tapeQuality: TapeTier =
+    rawTier && (tierCandidates as readonly string[]).includes(rawTier)
+      ? (rawTier as TapeTier)
+      : "not_run";
+  const tapeOccCoveragePct =
+    typeof flow["tape_occ_coverage_pct"] === "number" && Number.isFinite(flow["tape_occ_coverage_pct"])
+      ? flow["tape_occ_coverage_pct"]
+      : null;
+  const tapeInsertCoveragePct =
+    typeof flow["tape_insert_coverage_pct"] === "number" && Number.isFinite(flow["tape_insert_coverage_pct"])
+      ? flow["tape_insert_coverage_pct"]
+      : null;
+  const tapeAnyTruncated =
+    typeof flow["tape_any_truncated"] === "boolean" ? flow["tape_any_truncated"] : null;
   const composite = r.compositeScore != null ? Number(r.compositeScore) : 0;
   const directionalLean: "bullish" | "bearish" | "neutral" =
     edgeType === "directional_bearish" || edgeType === "premium_sale" ? "bearish" : edgeType === "directional_bullish" || edgeType === "premium_buy" ? "bullish" : "neutral";
@@ -101,6 +120,9 @@ function rowToCandidate(r: typeof tickerSignalSnapshotTable.$inferSelect) {
           : null,
       volumeMix: { askPct, bidPct, midPct },
       tapeQuality,
+      tapeOccCoveragePct,
+      tapeInsertCoveragePct,
+      tapeAnyTruncated,
       notional24h: typeof flow["ask_notional"] === "number" ? flow["ask_notional"] : null,
     },
     catalystWindow: {

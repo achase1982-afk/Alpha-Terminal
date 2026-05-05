@@ -7,6 +7,7 @@
 import type { FetchEarningsBundle, EarningsHistoryRow } from "./polygonEarningsHistory.js";
 import { isUsableReaction } from "./polygonEarningsHistory.js";
 import { countMacroHighMediumBetween } from "./calendarEventChecker.js";
+import { flowQualityTapeMultiplier, type TapeCoverageTier } from "./scannerTapeCoverage.js";
 
 /** IV30-proxy one-week implied move (% of spot): IV_decimal × sqrt(7/365) × 100 — matches polygonEarningsHistory.impliedMoveOneWeekFromIv. */
 export const IMPLIED_MOVE_PROXY_IV30_DOC =
@@ -226,7 +227,8 @@ export function macroDensityInWindow(args: {
 }
 
 export function scoreFlowQualityV1(args: {
-  tapeQuality: "complete" | "partial" | "degraded" | "not_run";
+  tapeKind: "live" | "eod_fallback" | "none";
+  sessionAggregateSource: "live_raw_trades" | "eod_volume_only" | "none";
   askNotionalUsd: number;
   tierThresholdUsd: number;
   totals: {
@@ -235,10 +237,19 @@ export function scoreFlowQualityV1(args: {
     midCount: number;
     unknownCount: number;
     totalPrints: number;
+    askNotionalUsd: number;
+    bidNotionalUsd: number;
+    midNotionalUsd: number;
+    unknownNotionalUsd: number;
   } | null;
   topPrints: Array<{ strike: number; isBlock?: boolean; side?: string | null }> | null;
+  tapeCoverageTier?: TapeCoverageTier;
 }): { score: number; reason: string | null } {
-  if (args.tapeQuality === "not_run" || args.tapeQuality === "degraded") {
+  const tier = args.tapeCoverageTier ?? "not_run";
+  if (tier === "not_run") {
+    return { score: 0, reason: null };
+  }
+  if (args.tapeKind !== "live" || args.sessionAggregateSource !== "live_raw_trades") {
     return { score: 0, reason: null };
   }
   if (args.askNotionalUsd < args.tierThresholdUsd) return { score: 0, reason: null };
@@ -256,8 +267,8 @@ export function scoreFlowQualityV1(args: {
 
   let base = 0;
   if (notionalTotal > 0) {
-    const mult = clamp(args.askNotionalUsd / args.tierThresholdUsd, 1, 3);
-    base = Math.min(100, askShare * 100 * (mult / 3));
+    const thrMult = clamp(args.askNotionalUsd / args.tierThresholdUsd, 1, 3);
+    base = Math.min(100, askShare * 100 * (thrMult / 3));
   }
 
   const coverageFactor = clamp(0.55 + knownSideCoverage * 0.45, 0, 1);
@@ -285,9 +296,15 @@ export function scoreFlowQualityV1(args: {
     score *= clamp(1 - (midShare - 0.4) * 2.2, 0.35, 1);
   }
 
+  const tapeTierMult = flowQualityTapeMultiplier(tier);
+  score *= tapeTierMult;
+
   let flowReason: string | null = null;
   if (score > 60) {
     flowReason = `flow quality ${score.toFixed(0)} (coverage ${(knownSideCoverage * 100).toFixed(0)}%)`;
+  }
+  if (tier === "partial") {
+    flowReason = flowReason ? `${flowReason}; flow_quality_low (tape coverage)` : "flow_quality_low (tape coverage)";
   }
 
   return { score, reason: flowReason };

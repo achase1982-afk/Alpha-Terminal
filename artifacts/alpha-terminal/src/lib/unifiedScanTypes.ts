@@ -33,7 +33,11 @@ export interface UnifiedScanCandidate {
   flowSnapshot: {
     topStrike: { strike: number; expiry: string; type: "call" | "put" } | null;
     volumeMix: { askPct: number; bidPct: number; midPct: number };
-    tapeQuality: "complete" | "partial" | "degraded" | "not_run";
+    /** Graduated tape backfill coverage (scanner v1). Legacy name kept for wire compatibility. */
+    tapeQuality: "complete" | "high" | "degraded" | "partial" | "not_run";
+    tapeOccCoveragePct?: number | null;
+    tapeInsertCoveragePct?: number | null;
+    tapeAnyTruncated?: boolean | null;
     notional24h: number | null;
   };
   catalystWindow: {

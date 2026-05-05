@@ -8,6 +8,7 @@ import {
   db,
   equityDailyTable,
   scannerHealthTable,
+  scannerTapeMetricsTable,
   tickerSignalSnapshotTable,
 } from "@workspace/db";
 import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
@@ -37,8 +38,10 @@ import {
 } from "./scannerScoringV2.js";
 import type { ChainContract } from "./strategistV2.js";
 import { summarizeOptionsChain, type ChainSummary } from "./strategistV2.js";
-import { getSettings } from "./strategistSettings.js";
-import { logger } from "./logger.js";
+import {
+  classifyTapeCoverageTier,
+  type TapeCoverageTier,
+} from "./scannerTapeCoverage.js";
 
 const log = logger.child({ module: "snapshotRefreshWorker" });
 
@@ -524,23 +527,74 @@ async function refreshTicker(ticker: string, regimeShockActive: boolean): Promis
     midNotional = totals.midNotionalUsd;
   }
 
-  let tapeQuality: "complete" | "partial" | "degraded" | "not_run" = "not_run";
-  if (tape?.tapeKind === "live" && tape.sessionAggregateSource === "live_raw_trades") tapeQuality = "complete";
-  else if (tape?.tapeKind === "eod_fallback" && tape.sessionAggregateSource === "eod_volume_only") {
-    tapeQuality = "partial";
+  const tapeSessionYmd =
+    tape?.sessionDate && /^\d{4}-\d{2}-\d{2}$/.test(String(tape.sessionDate))
+      ? String(tape.sessionDate).slice(0, 10)
+      : null;
+
+  let tapeMetricRow: typeof scannerTapeMetricsTable.$inferSelect | null = null;
+  const tmRows = await db
+    .select()
+    .from(scannerTapeMetricsTable)
+    .where(eq(scannerTapeMetricsTable.ticker, upper))
+    .orderBy(desc(scannerTapeMetricsTable.updatedAt))
+    .limit(5);
+  if (tapeSessionYmd) {
+    tapeMetricRow = tmRows.find((r) => String(r.sessionDate).slice(0, 10) === tapeSessionYmd) ?? null;
   }
-  if (!flowHl) tapeQuality = "not_run";
+  if (!tapeMetricRow && tmRows.length > 0) {
+    tapeMetricRow = tmRows[0] ?? null;
+  }
+
+  let tapeCoverageTier: TapeCoverageTier = "not_run";
+  if (tapeMetricRow) {
+    tapeCoverageTier = classifyTapeCoverageTier({
+      occRequested: tapeMetricRow.occRequested,
+      occCompleted: tapeMetricRow.occCompleted,
+      tradesAttemptedInsert: tapeMetricRow.tradesAttemptedInsert,
+      tradesInsertedCommitted: tapeMetricRow.tradesInsertedCommitted,
+      dedupeDropped: tapeMetricRow.dedupeDropped,
+      anyTruncated: tapeMetricRow.anyTruncated,
+      pipelineStatus: tapeMetricRow.status,
+    });
+  } else if (tape?.tapeKind === "live" && tape.sessionAggregateSource === "live_raw_trades") {
+    tapeCoverageTier = "high";
+  }
+
+  const tapeKindForScore: "live" | "eod_fallback" | "none" =
+    tape?.tapeKind === "live" ? "live" : tape?.tapeKind === "eod_fallback" ? "eod_fallback" : "none";
+  const sessSrcForScore: "live_raw_trades" | "eod_volume_only" | "none" =
+    tape?.sessionAggregateSource === "live_raw_trades"
+      ? "live_raw_trades"
+      : tape?.sessionAggregateSource === "eod_volume_only"
+        ? "eod_volume_only"
+        : "none";
 
   const topStrikeRow = flowHl?.topByVolume?.[0];
   const totalN = askNotional + bidNotional + midNotional;
   const askPct = totalN > 0 ? (askNotional / totalN) * 100 : 0;
 
   const flowSc = scoreFlowQualityV1({
-    tapeQuality,
+    tapeKind: tapeKindForScore,
+    sessionAggregateSource: sessSrcForScore,
     askNotionalUsd: askNotional,
     tierThresholdUsd: flowNotionalThreshold(tier),
-    totals,
+    totals:
+      totals != null
+        ? {
+            askCount: totals.askCount,
+            bidCount: totals.bidCount,
+            midCount: totals.midCount,
+            unknownCount: totals.unknownCount,
+            totalPrints: totals.totalPrints,
+            askNotionalUsd: totals.askNotionalUsd,
+            bidNotionalUsd: totals.bidNotionalUsd,
+            midNotionalUsd: totals.midNotionalUsd,
+            unknownNotionalUsd: totals.unknownNotionalUsd,
+          }
+        : null,
     topPrints: tape?.topPrints ?? null,
+    tapeCoverageTier,
   });
 
   const ivCleanedRatio = chainSummary?.ivChainFilter.ivCleanedRatio ?? 1;
@@ -567,7 +621,16 @@ async function refreshTicker(ticker: string, regimeShockActive: boolean): Promis
     top_strike: topStrikeRow
       ? { strike: topStrikeRow.strike, expiry: topStrikeRow.expiration, type: topStrikeRow.optionType }
       : null,
-    tape_quality: tapeQuality,
+    tape_coverage_tier: tapeCoverageTier,
+    tape_occ_coverage_pct:
+      tapeMetricRow && tapeMetricRow.occRequested > 0
+        ? Math.round((tapeMetricRow.occCompleted / tapeMetricRow.occRequested) * 10000) / 100
+        : null,
+    tape_insert_coverage_pct:
+      tapeMetricRow && tapeMetricRow.tradesAttemptedInsert > 0
+        ? Math.round((tapeMetricRow.tradesInsertedCommitted / tapeMetricRow.tradesAttemptedInsert) * 10000) / 100
+        : null,
+    tape_any_truncated: tapeMetricRow?.anyTruncated ?? null,
     skew25_delta_reason: chainSummary?.skew25DeltaReason ?? null,
     earnings_date_conflict_sources: earningsDateConflict,
     iv_cleaned_ratio: ivCleanedRatio,
@@ -599,11 +662,11 @@ async function refreshTicker(ticker: string, regimeShockActive: boolean): Promis
   if (halted) disqual.push("halted");
   if (ivr == null) disqual.push("ivr_missing");
   if (atmOiFront != null && atmOiFront < 100) disqual.push("low_oi");
-  if (tapeQuality === "not_run") disqual.push("tape_not_run");
+  const hasLiveFlowTape = tape?.tapeKind === "live" && tape.sessionAggregateSource === "live_raw_trades";
+  if (!flowHl || (tapeCoverageTier === "not_run" && !hasLiveFlowTape)) disqual.push("tape_not_run");
   if (regimeShockActive) disqual.push("regime_shock");
   if (bidAskWidthAtmFront != null && bidAskWidthAtmFront > 0.3) disqual.push("wide_spread");
   if (ivCleanedRatio < 0.5 || ivContaminationElevated) disqual.push("iv_contamination");
-  if (tapeQuality === "partial") disqual.push("tape_partial");
   if (noCleanEarningsExpiry) disqual.push("no_clean_earnings_expiry");
 
   let composite = disqual.length > 0 ? 0 : scannerCompositeV1(comps);
