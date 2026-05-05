@@ -363,7 +363,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   const [universe, setUniverse] = useState("preset:liquidCore130");
   const [resolvedSymbols, setResolvedSymbols] = useState<string[]>([]);
   const [expandedSymbols, setExpandedSymbols] = useState<Set<string>>(() => new Set());
-  const [, setMuteTick] = useState(0);
+  const [muteTick, setMuteTick] = useState(0);
 
   const [showScreenBuilder, setShowScreenBuilder] = useState(false);
   const [editingScreen, setEditingScreen] = useState<number | null>(null);
