@@ -3,6 +3,7 @@ import { getAuth } from "@clerk/express";
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db, scannerHealthTable, tickerSignalSnapshotTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { isSnapshotWorkerScheduledWindowEt } from "../lib/snapshotWorkerSchedule.js";
 import { resolveScannerUniverseSymbolsForUser } from "./scanner.js";
 
 const router: IRouter = Router();
@@ -143,15 +144,17 @@ router.get("/scan", async (req, res) => {
     .orderBy(desc(scannerHealthTable.cycleCompletedAt))
     .limit(1);
   const last = health[0]?.cycleCompletedAt;
+  const now = Date.now();
   const lastMs = last ? new Date(last).getTime() : 0;
-  const ageSec = lastMs ? Math.floor((Date.now() - lastMs) / 1000) : null;
+  const ageSec = lastMs ? Math.floor((now - lastMs) / 1000) : null;
 
-  if (!last || Date.now() - lastMs > 5 * 60 * 1000) {
+  const workerShouldBeRunning = isSnapshotWorkerScheduledWindowEt(new Date(now));
+  if (workerShouldBeRunning && (!last || now - lastMs > 5 * 60 * 1000)) {
     return res.status(503).json({
       error: "Scanner refresh stalled, latest cycle: " + (last ? new Date(last).toISOString() : "never"),
     });
   }
-  if (Date.now() - lastMs > 90_000) {
+  if (last && now - lastMs > 90_000) {
     res.setHeader("X-Scanner-Stale", "true");
   }
 
