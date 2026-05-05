@@ -28,8 +28,6 @@ const PUBLIC_API_PATHS = new Set<string>([
   "/snapshot/admin/backfill-iv-history",
   // Polygon S3 flat-files backfill (admin-key gated inside the route)
   "/unusual-options/sync",
-  // IBKR tick entitlement pilot (admin key — long-running, no Clerk session required)
-  "/admin/diagnostics/ibkr-tick-pilot",
 ]);
 
 const PUBLIC_API_PREFIXES = [

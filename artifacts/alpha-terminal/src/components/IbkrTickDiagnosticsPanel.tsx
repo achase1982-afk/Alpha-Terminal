@@ -1,6 +1,6 @@
 /**
  * Settings → Diagnostics: IBKR tick-by-tick entitlement test (60s capture).
- * Requires VITE_ADMIN_API_KEY matching server ADMIN_API_KEY for POST /api/admin/diagnostics/ibkr-tick-pilot.
+ * POST /api/admin/diagnostics/ibkr-tick-pilot uses the signed-in Clerk session (Bearer token).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
@@ -8,7 +8,6 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Loader2, ChevronDown, ChevronUp, Activity } from "lucide-react";
 
 const API = import.meta.env.VITE_API_URL || "/api";
-const ADMIN_KEY = (import.meta.env.VITE_ADMIN_API_KEY as string | undefined)?.trim() ?? "";
 
 type PilotSummary = {
   nasdaq: string;
@@ -122,10 +121,6 @@ export function IbkrTickDiagnosticsPanel() {
   }, [loadRecent]);
 
   const runTest = async () => {
-    if (!ADMIN_KEY) {
-      setError("VITE_ADMIN_API_KEY is not set in the frontend build. Add it to run this diagnostic.");
-      return;
-    }
     if (!rthNow) {
       setError("Run only during US equity RTH (9:30–16:00 ET, Mon–Fri).");
       return;
@@ -141,7 +136,6 @@ export function IbkrTickDiagnosticsPanel() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-admin-key": ADMIN_KEY,
         },
         body: JSON.stringify({ triggeredByUserId: userId ?? "unknown-user" }),
         clerkTokenTimeoutMs: 15_000,
@@ -172,14 +166,12 @@ export function IbkrTickDiagnosticsPanel() {
     }
   };
 
-  const btnDisabled = running || !rthNow || !ADMIN_KEY;
-  const btnTitle = !ADMIN_KEY
-    ? "Set VITE_ADMIN_API_KEY in the web app environment (must match server ADMIN_API_KEY)."
-    : !rthNow
-      ? "Available during US equity regular hours only (9:30 AM–4:00 PM ET, weekdays)."
-      : running
-        ? "Test in progress."
-        : "Run 60-second IBKR tick-by-tick Last entitlement capture";
+  const btnDisabled = running || !rthNow;
+  const btnTitle = !rthNow
+    ? "Available during US equity regular hours only (9:30 AM–4:00 PM ET, weekdays)."
+    : running
+      ? "Test in progress."
+      : "Run 60-second IBKR tick-by-tick Last entitlement capture";
 
   return (
     <div className="space-y-4 max-w-3xl">
@@ -213,11 +205,6 @@ export function IbkrTickDiagnosticsPanel() {
           </p>
         )}
         {error && <p className="font-mono text-[11px] text-red-400">{error}</p>}
-        {!ADMIN_KEY && (
-          <p className="font-mono text-[10px] text-amber-500/90">
-            Configure <code className="text-zinc-400">VITE_ADMIN_API_KEY</code> in the terminal web build (same value as server <code className="text-zinc-400">ADMIN_API_KEY</code>).
-          </p>
-        )}
       </div>
 
       {loadingList && <p className="font-mono text-[10px] text-zinc-500">Loading last run…</p>}

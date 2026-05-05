@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { getAuth } from "@clerk/express";
 import { logger } from "../lib/logger.js";
 import { runIbkrTickEntitlementPilotSerialized } from "../lib/ibkrTickEntitlementPilot.js";
@@ -19,6 +19,20 @@ function requireAdmin(req: { headers: Record<string, string | string[] | undefin
   if (!adminKey) return { ok: false, error: "ADMIN_API_KEY is not set on the server" };
   if (req.headers["x-admin-key"] !== adminKey) return { ok: false, error: "Unauthorized" };
   return { ok: true };
+}
+
+const DEV_BYPASS_AUTH = process.env.DEV_BYPASS_AUTH === "true";
+
+/** Clerk session (UI) or x-admin-key (scripts); dev bypass matches app.ts. */
+function requireIbkrTickPilotTrigger(req: Request): { ok: boolean; error?: string } {
+  if (DEV_BYPASS_AUTH) return { ok: true };
+  try {
+    const { userId } = getAuth(req);
+    if (userId) return { ok: true };
+  } catch {
+    /* getAuth unavailable */
+  }
+  return requireAdmin(req);
 }
 
 const FMP_BACKFILL_JOBS = {
@@ -76,13 +90,13 @@ router.post("/fmp/backfill", async (req, res) => {
 
 /**
  * POST /api/admin/diagnostics/ibkr-tick-pilot
- * Header: x-admin-key: <ADMIN_API_KEY>
+ * Auth: signed-in Clerk session (from UI) or header x-admin-key: <ADMIN_API_KEY> (curl/scripts).
  * Body optional: { "triggeredByUserId": "user_xxx" } — otherwise uses Clerk `userId` when session is present, else `"admin-key"`.
  *
  * Runs a 60s IBKR tick-by-tick Last entitlement capture (dedicated API clientId).
  */
 router.post("/diagnostics/ibkr-tick-pilot", async (req, res) => {
-  const auth = requireAdmin(req as never);
+  const auth = requireIbkrTickPilotTrigger(req);
   if (!auth.ok) {
     return res.status(403).json({ ok: false, error: auth.error });
   }
