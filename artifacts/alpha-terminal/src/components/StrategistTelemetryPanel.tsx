@@ -269,17 +269,44 @@ export function StrategistTelemetryPanel() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [tickerFilter, setTickerFilter] = useState("");
   const [resultFilter, setResultFilter] = useState<string>("");
+  const [ibkrTickLine, setIbkrTickLine] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [sRes, scRes] = await Promise.all([
+      const [sRes, scRes, ibRes] = await Promise.all([
         fetchWithAuth(`/api/strategist/telemetry/strategist?limit=50${tickerFilter ? `&ticker=${tickerFilter}` : ""}`),
         fetchWithAuth("/api/strategist/telemetry/scanner?limit=20"),
+        fetchWithAuth("/api/diagnostics/ibkr-tick-pilot/latest-summary"),
       ]);
       if (sRes.ok) setStratRows(await sRes.json());
       if (scRes.ok) setScanRows(await scRes.json());
-    } catch {}
+      if (ibRes.ok) {
+        const j = await ibRes.json();
+        const latest = j.latest as { runStartedAt?: string; summary?: { nasdaq: string; nyse: string } } | null;
+        if (latest?.summary && latest.runStartedAt) {
+          const d = new Date(latest.runStartedAt);
+          const ts = d.toLocaleString("en-US", {
+            timeZone: "America/New_York",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          });
+          const n = latest.summary.nasdaq === "PASS" ? "✓" : latest.summary.nasdaq === "FAIL" ? "✗" : "⚠";
+          const y = latest.summary.nyse === "PASS" ? "✓" : latest.summary.nyse === "FAIL" ? "✗" : "⚠";
+          setIbkrTickLine(`IBKR tick entitlement: NASDAQ ${n} NYSE ${y} — last tested ${ts} ET`);
+        } else {
+          setIbkrTickLine("IBKR tick entitlement: Not tested — run from Settings.");
+        }
+      } else {
+        setIbkrTickLine("IBKR tick entitlement: Not tested — run from Settings.");
+      }
+    } catch {
+      setIbkrTickLine("IBKR tick entitlement: Not tested — run from Settings.");
+    }
     setLoading(false);
   }, [tickerFilter]);
 
@@ -292,6 +319,11 @@ export function StrategistTelemetryPanel() {
 
   return (
     <div className="space-y-4">
+      {ibkrTickLine && (
+        <p className="font-mono text-[10px] text-zinc-500 border border-[#2A2A2C] rounded-md px-2 py-1.5 bg-[#0c0c0c]" role="status">
+          {ibkrTickLine}
+        </p>
+      )}
       <div className="flex items-center justify-between">
         <h2 className="font-mono text-sm font-bold text-white tracking-wider uppercase flex items-center gap-2">
           <Activity className="w-4 h-4 text-[#f5a623]" /> Telemetry

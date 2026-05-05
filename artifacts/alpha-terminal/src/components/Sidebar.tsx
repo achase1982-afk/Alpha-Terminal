@@ -10,6 +10,7 @@ import { AuthPanel } from "./AuthPanel";
 import { StrategistSettingsPanel } from "./StrategistSettingsPanel";
 import { StrategistTelemetryPanel } from "./StrategistTelemetryPanel";
 import { SystemSettingsPage } from "./SystemSettingsPage";
+import { IbkrTickDiagnosticsPanel } from "./IbkrTickDiagnosticsPanel";
 import { SidebarChat } from "./SidebarChat";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { queryClient } from "@/App";
@@ -1623,31 +1624,35 @@ function DiagnosticsPage() {
   const streamColor = streamStatus === "live" ? "#2ecc71" : streamStatus === "connecting" ? "#f59e0b" : "#71717a";
 
   return (
-    <div className="space-y-4 max-w-xl mx-auto">
-      <p className="font-mono text-[10px] text-muted-foreground/70 leading-relaxed">
-        Live connection state across data and execution surfaces.
-      </p>
+    <div className="space-y-6 max-w-3xl mx-auto">
+      <IbkrTickDiagnosticsPanel />
 
-      <div className="rounded-lg border border-card-border bg-[#0c0c0c] p-3 space-y-2.5">
-        <div className="flex items-center justify-between">
-          <span className="font-mono text-[11px] text-zinc-400">Schwab Stream</span>
-          <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: streamColor }}>
-            {dot(streamColor)}{streamStatus}
-          </span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="font-mono text-[11px] text-zinc-400">WebSocket</span>
-          <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: streamConnected ? "#2ecc71" : "#71717a" }}>
-            {dot(streamConnected ? "#2ecc71" : "#71717a")}{streamConnected ? "connected" : "offline"}
-          </span>
-        </div>
-      </div>
-
-      <div className="rounded-lg border border-card-border bg-[#0c0c0c] p-3 space-y-1.5">
-        <div className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Deeper checks</div>
-        <p className="font-mono text-[10px] text-zinc-500 leading-relaxed">
-          Telemetry shows individual API/stream events. Linked Brokerage shows broker auth state.
+      <div className="space-y-4">
+        <p className="font-mono text-[10px] text-muted-foreground/70 leading-relaxed">
+          Live connection state across data and execution surfaces.
         </p>
+
+        <div className="rounded-lg border border-card-border bg-[#0c0c0c] p-3 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[11px] text-zinc-400">Schwab Stream</span>
+            <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: streamColor }}>
+              {dot(streamColor)}{streamStatus}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[11px] text-zinc-400">WebSocket</span>
+            <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: streamConnected ? "#2ecc71" : "#71717a" }}>
+              {dot(streamConnected ? "#2ecc71" : "#71717a")}{streamConnected ? "connected" : "offline"}
+            </span>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-card-border bg-[#0c0c0c] p-3 space-y-1.5">
+          <div className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Deeper checks</div>
+          <p className="font-mono text-[10px] text-zinc-500 leading-relaxed">
+            Telemetry shows individual API/stream events. Linked Brokerage shows broker auth state.
+          </p>
+        </div>
       </div>
     </div>
   );
