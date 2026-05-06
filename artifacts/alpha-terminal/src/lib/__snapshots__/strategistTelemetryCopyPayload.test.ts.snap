@@ -1,0 +1,103 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`buildSectionedCopyPayload > matches snapshot for subset 1`] = `
+"{
+  "summary": {
+    "ticker": "IONQ",
+    "timestamp": "2025-05-05T20:01:00.000Z",
+    "result": "recommendation",
+    "scannerSource": "X",
+    "scannerScore": 1,
+    "scannerEdgeType": "Y",
+    "scannerDirectionalLean": "Z",
+    "scannerMode": "M",
+    "scannerSurfacedBy": "S",
+    "scannerFlowScore": 2,
+    "scannerUniverse": "U",
+    "extraSummaryField": "keep"
+  },
+  "strategistOutput": {
+    "strategistPayload": {
+      "sp": true
+    }
+  }
+}"
+`;
+
+exports[`buildSectionedCopyPayload > matches snapshot when all sections selected 1`] = `
+"{
+  "summary": {
+    "ticker": "IONQ",
+    "timestamp": "2025-05-05T20:01:00.000Z",
+    "result": "recommendation",
+    "scannerSource": "X",
+    "scannerScore": 1,
+    "scannerEdgeType": "Y",
+    "scannerDirectionalLean": "Z",
+    "scannerMode": "M",
+    "scannerSurfacedBy": "S",
+    "scannerFlowScore": 2,
+    "scannerUniverse": "U",
+    "extraSummaryField": "keep"
+  },
+  "strategistOutput": {
+    "strategistPayload": {
+      "sp": true
+    }
+  },
+  "decisionContext": {
+    "regime": {
+      "r": 1
+    },
+    "tickerData": {
+      "t": 2
+    },
+    "idioScore": {
+      "final": 0.5
+    },
+    "toxicGate": {
+      "ok": true
+    },
+    "catalystEvaluation": {
+      "ce": 1
+    },
+    "edgeAttribution": {
+      "e": 3
+    }
+  },
+  "volSurface": {
+    "optionsChainSummary": {
+      "o": 1
+    }
+  },
+  "optionsChain": {
+    "curatedExpirations": [
+      "a"
+    ]
+  },
+  "flow": {
+    "polygonFlowHighlights": {
+      "f": 1
+    }
+  },
+  "catalyst": {
+    "catalyst": {
+      "c": 1
+    }
+  },
+  "dataQuality": {
+    "dataQualitySummary": {
+      "q": 1
+    }
+  },
+  "diagnostic": {
+    "d": 4
+  },
+  "rawAiResponse": {
+    "rawAiResponse": "hello",
+    "confidenceBase": 0.1,
+    "confidenceCatalystDelta": 0.2,
+    "confidenceFinal": 0.3
+  }
+}"
+`;

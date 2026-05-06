@@ -3,6 +3,15 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { ChevronDown, ChevronUp, Activity, Search as SearchIcon, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { BottomSheet } from "@/components/ui/BottomSheet";
+import { useIsTablet } from "@/hooks/useMediaQuery";
+import {
+  buildSectionedCopyPayload,
+  COPY_SECTIONS,
+  COPY_SECTIONS_STORAGE_KEY,
+  parseDataPackageRecord,
+  type CopySectionId,
+} from "@/lib/strategistTelemetryCopyPayload";
 
 interface TelemetryRow {
   id: number;
@@ -52,22 +61,6 @@ interface ScannerRow {
   results: any[];
 }
 
-function parseDataPackageRecord(dataPackage: unknown): Record<string, unknown> | null {
-  if (dataPackage == null) return null;
-  if (typeof dataPackage === "string") {
-    try {
-      const v = JSON.parse(dataPackage) as unknown;
-      return v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
-    } catch {
-      return null;
-    }
-  }
-  if (typeof dataPackage === "object" && !Array.isArray(dataPackage)) {
-    return dataPackage as Record<string, unknown>;
-  }
-  return null;
-}
-
 /** Portfolio manager decision from persisted strategist payload (desk v2 / AI shape). */
 function readStrategistPmDecision(dataPackage: unknown): string | null {
   const dp = parseDataPackageRecord(dataPackage);
@@ -106,139 +99,6 @@ function getDecisionBadge(row: TelemetryRow): DecisionBadge {
   }
   const r = row.result;
   return { label: formatLegacyResultLabel(r), color: resultColorLegacy(r) };
-}
-
-const DP_KEYS_STRATEGIST = ["strategistPayload"] as const;
-const DP_KEYS_VOL = ["optionsChainSummary", "realizedVol", "ivrContext"] as const;
-const DP_KEYS_OPTIONS = ["curatedExpirations", "availableExpirations"] as const;
-const DP_KEYS_FLOW = ["polygonFlowHighlights", "tapeBackfill"] as const;
-const DP_KEYS_CATALYST = ["catalyst", "macroEventsInPositionWindow", "nextEarnings", "polygonAnalyst"] as const;
-const DP_KEYS_DATA_QUALITY = ["dataQualitySummary"] as const;
-
-const DP_KEYS_OTHER_SECTIONS: ReadonlySet<string> = new Set([
-  ...DP_KEYS_STRATEGIST,
-  ...DP_KEYS_VOL,
-  ...DP_KEYS_OPTIONS,
-  ...DP_KEYS_FLOW,
-  ...DP_KEYS_CATALYST,
-  ...DP_KEYS_DATA_QUALITY,
-  "catalystEvaluation",
-]);
-
-type CopySectionId =
-  | "summary"
-  | "strategistOutput"
-  | "decisionContext"
-  | "volSurface"
-  | "optionsChain"
-  | "flow"
-  | "catalyst"
-  | "dataQuality"
-  | "diagnostic"
-  | "rawAiResponse";
-
-const COPY_SECTIONS_STORAGE_KEY = "strategistTelemetryCopySections";
-
-const COPY_SECTIONS: { id: CopySectionId; label: string }[] = [
-  { id: "summary", label: "Summary" },
-  { id: "strategistOutput", label: "Strategist Output" },
-  { id: "decisionContext", label: "Decision Context" },
-  { id: "volSurface", label: "Vol Surface" },
-  { id: "optionsChain", label: "Options Chain" },
-  { id: "flow", label: "Flow" },
-  { id: "catalyst", label: "Catalyst" },
-  { id: "dataQuality", label: "Data Quality" },
-  { id: "diagnostic", label: "Diagnostic" },
-  { id: "rawAiResponse", label: "Raw AI Response" },
-];
-
-function pickDp(dp: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const k of keys) {
-    if (k in dp) out[k] = dp[k];
-  }
-  return out;
-}
-
-function pickSummaryDataPackageSlice(dp: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const k of Object.keys(dp)) {
-    if (!DP_KEYS_OTHER_SECTIONS.has(k)) out[k] = dp[k];
-  }
-  return out;
-}
-
-function buildSectionedCopyPayload(row: TelemetryRow, selected: ReadonlySet<CopySectionId>): Record<string, unknown> {
-  const dp = parseDataPackageRecord(row.dataPackage);
-  const out: Record<string, unknown> = {};
-
-  if (selected.has("summary")) {
-    const summary: Record<string, unknown> = {
-      ticker: row.ticker,
-      timestamp: row.timestamp,
-      result: row.result,
-      scannerSource: row.scannerSource ?? null,
-      scannerScore: row.scannerScore ?? null,
-      scannerEdgeType: row.scannerEdgeType ?? null,
-      scannerDirectionalLean: row.scannerDirectionalLean ?? null,
-      scannerMode: row.scannerMode ?? null,
-      scannerSurfacedBy: row.scannerSurfacedBy ?? null,
-      scannerFlowScore: row.scannerFlowScore ?? null,
-      scannerUniverse: row.scannerUniverse ?? null,
-    };
-    if (dp) Object.assign(summary, pickSummaryDataPackageSlice(dp));
-    out.summary = summary;
-  }
-
-  if (selected.has("strategistOutput")) {
-    out.strategistOutput = dp ? pickDp(dp, DP_KEYS_STRATEGIST as unknown as string[]) : {};
-  }
-
-  if (selected.has("decisionContext")) {
-    out.decisionContext = {
-      regime: row.regime ?? null,
-      tickerData: row.tickerData ?? null,
-      idioScore: row.idioScore ?? null,
-      toxicGate: row.toxicGate ?? null,
-      catalystEvaluation: dp?.catalystEvaluation ?? null,
-      edgeAttribution: row.edgeAttribution ?? null,
-    };
-  }
-
-  if (selected.has("volSurface")) {
-    out.volSurface = dp ? pickDp(dp, DP_KEYS_VOL as unknown as string[]) : {};
-  }
-
-  if (selected.has("optionsChain")) {
-    out.optionsChain = dp ? pickDp(dp, DP_KEYS_OPTIONS as unknown as string[]) : {};
-  }
-
-  if (selected.has("flow")) {
-    out.flow = dp ? pickDp(dp, DP_KEYS_FLOW as unknown as string[]) : {};
-  }
-
-  if (selected.has("catalyst")) {
-    out.catalyst = dp ? pickDp(dp, DP_KEYS_CATALYST as unknown as string[]) : {};
-  }
-
-  if (selected.has("dataQuality")) {
-    out.dataQuality = dp ? pickDp(dp, DP_KEYS_DATA_QUALITY as unknown as string[]) : {};
-  }
-
-  if (selected.has("diagnostic")) {
-    out.diagnostic = row.fullDiagnostic ?? null;
-  }
-
-  if (selected.has("rawAiResponse")) {
-    out.rawAiResponse = {
-      rawAiResponse: row.rawAiResponse ?? null,
-      confidenceBase: row.confidenceBase ?? null,
-      confidenceCatalystDelta: row.confidenceCatalystDelta ?? null,
-      confidenceFinal: row.confidenceFinal ?? null,
-    };
-  }
-
-  return out;
 }
 
 async function writeClipboard(text: string): Promise<boolean> {
@@ -382,9 +242,22 @@ export function StrategistTelemetryPanel() {
             const badge = getDecisionBadge(row);
             return (
             <div key={row.id} className="rounded-lg overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
-              <button
-                onClick={() => setExpandedId(expandedId === row.id ? null : row.id)}
+              <div
+                role="button"
+                tabIndex={0}
                 className="w-full px-3 py-2.5 flex items-center justify-between cursor-pointer text-left"
+                onClick={(e) => {
+                  if ((e.target as HTMLElement).closest("[data-telemetry-row-copy]")) return;
+                  setExpandedId(expandedId === row.id ? null : row.id);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" && e.key !== " ") return;
+                  const ae = document.activeElement as HTMLElement | null;
+                  if (ae && !e.currentTarget.contains(ae)) return;
+                  if (ae?.closest("[data-telemetry-row-copy]")) return;
+                  e.preventDefault();
+                  setExpandedId(expandedId === row.id ? null : row.id);
+                }}
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="font-mono text-[12px] text-white font-bold w-12 flex-shrink-0">{row.ticker}</span>
@@ -410,7 +283,7 @@ export function StrategistTelemetryPanel() {
                   <span className="font-mono text-[12px] text-zinc-400">{fmtDt(row.timestamp)}</span>
                   {expandedId === row.id ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />}
                 </div>
-              </button>
+              </div>
               {expandedId === row.id && (
                 <div className="px-4 pb-4 border-t border-zinc-800/50 space-y-3 pt-3">
                   {row.recommendationThesis && (
@@ -521,18 +394,28 @@ function readStoredCopySelection(): Record<CopySectionId, boolean> | null {
 }
 
 function TelemetryEntryCopyButton({ row }: { row: TelemetryRow }) {
+  const isWide = useIsTablet();
   const [open, setOpen] = useState(false);
   const [checked, setChecked] = useState<Record<CopySectionId, boolean>>(emptyChecked);
   const [justCopiedIcon, setJustCopiedIcon] = useState(false);
   const selectAllRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const onOpenChange = useCallback((next: boolean) => {
     setOpen(next);
     if (next) {
       const stored = readStoredCopySelection();
       setChecked(stored ?? emptyChecked());
+    } else {
+      window.requestAnimationFrame(() => triggerRef.current?.focus());
     }
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const id = window.requestAnimationFrame(() => selectAllRef.current?.focus());
+    return () => window.cancelAnimationFrame(id);
+  }, [open]);
 
   const allSelected = COPY_SECTIONS.every((s) => checked[s.id]);
   const noneSelected = COPY_SECTIONS.every((s) => !checked[s.id]);
@@ -572,10 +455,10 @@ function TelemetryEntryCopyButton({ row }: { row: TelemetryRow }) {
         /* ignore quota / private mode */
       }
       toast.message(`Copied ${ids.length} section${ids.length === 1 ? "" : "s"}`);
-      setOpen(false);
+      onOpenChange(false);
       flashCopied();
     }
-  }, [row, checked, flashCopied]);
+  }, [row, checked, flashCopied, onOpenChange]);
 
   const onExportFull = useCallback(
     async (e: React.MouseEvent) => {
@@ -585,37 +468,21 @@ function TelemetryEntryCopyButton({ row }: { row: TelemetryRow }) {
       const ok = await writeClipboard(text);
       if (ok) {
         toast.message("Copied full row");
-        setOpen(false);
+        onOpenChange(false);
         flashCopied();
       }
     },
-    [row, flashCopied],
+    [row, flashCopied, onOpenChange],
   );
 
-  return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          onClick={(e) => e.stopPropagation()}
-          aria-label="Copy telemetry sections"
-          aria-expanded={open}
-          className="inline-flex items-center justify-center rounded-md border border-zinc-700 bg-zinc-900 text-zinc-300 hover:text-white hover:bg-zinc-800 shrink-0"
-          style={{ minWidth: 44, minHeight: 44 }}
-        >
-          {justCopiedIcon ? <Check className="w-4 h-4 text-emerald-400" aria-hidden /> : <Copy className="w-4 h-4" aria-hidden />}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        className="w-[min(100vw-2rem,22rem)] max-h-[min(70vh,28rem)] overflow-y-auto border-zinc-700 bg-zinc-950 p-3 text-zinc-100 shadow-xl"
-        align="end"
-        side="bottom"
-        sideOffset={6}
-        onOpenAutoFocus={(e) => e.preventDefault()}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="font-mono text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2">Copy sections</div>
-        <label className="flex items-center gap-2 cursor-pointer py-1.5 border-b border-zinc-800 mb-1">
+  const menuBody = (
+    <div
+      className={isWide ? "p-0" : "flex min-h-0 flex-1 flex-col overflow-hidden"}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="font-mono text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2">Copy sections</div>
+      <div className={isWide ? "" : "flex min-h-0 flex-1 flex-col overflow-hidden"}>
+        <label className="flex items-center gap-2 cursor-pointer py-1.5 border-b border-zinc-800 mb-1 shrink-0">
           <input
             ref={selectAllRef}
             type="checkbox"
@@ -625,21 +492,31 @@ function TelemetryEntryCopyButton({ row }: { row: TelemetryRow }) {
           />
           <span className="font-mono text-xs">Select all</span>
         </label>
-        <ul className="space-y-1 mb-3">
-          {COPY_SECTIONS.map((s) => (
-            <li key={s.id}>
-              <label className="flex items-start gap-2 cursor-pointer py-1 rounded hover:bg-zinc-900/80 px-1 -mx-1">
-                <input
-                  type="checkbox"
-                  className="rounded border-zinc-600 mt-0.5 shrink-0"
-                  checked={checked[s.id]}
-                  onChange={() => toggleOne(s.id)}
-                />
-                <span className="font-mono text-[12px] text-zinc-200 leading-snug">{s.label}</span>
-              </label>
-            </li>
-          ))}
-        </ul>
+        <div
+          className={
+            isWide
+              ? "max-h-[min(48vh,18rem)] overflow-y-auto overscroll-contain"
+              : "max-h-[min(52vh,22rem)] flex-1 overflow-y-auto overscroll-contain pr-1"
+          }
+        >
+          <ul className="space-y-1 py-1">
+            {COPY_SECTIONS.map((s) => (
+              <li key={s.id}>
+                <label className="flex items-start gap-2 cursor-pointer py-1 rounded hover:bg-zinc-900/80 px-1 -mx-1">
+                  <input
+                    type="checkbox"
+                    className="rounded border-zinc-600 mt-0.5 shrink-0"
+                    checked={checked[s.id]}
+                    onChange={() => toggleOne(s.id)}
+                  />
+                  <span className="font-mono text-[12px] text-zinc-200 leading-snug">{s.label}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+      <div className="shrink-0 border-t border-zinc-800 pt-3 mt-2">
         <button
           type="button"
           onClick={onCopySelected}
@@ -654,8 +531,61 @@ function TelemetryEntryCopyButton({ row }: { row: TelemetryRow }) {
         >
           Export full row
         </button>
-      </PopoverContent>
-    </Popover>
+      </div>
+    </div>
+  );
+
+  const triggerButton = (
+    <button
+      ref={triggerRef}
+      type="button"
+      data-telemetry-row-copy
+      onClick={(e) => {
+        e.stopPropagation();
+        if (!isWide) onOpenChange(true);
+      }}
+      aria-label="Copy telemetry sections"
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      className="inline-flex items-center justify-center rounded-md border border-zinc-700 bg-zinc-900 text-zinc-300 hover:text-white hover:bg-zinc-800 shrink-0"
+      style={{ minWidth: 44, minHeight: 44 }}
+    >
+      {justCopiedIcon ? <Check className="w-4 h-4 text-emerald-400" aria-hidden /> : <Copy className="w-4 h-4" aria-hidden />}
+    </button>
+  );
+
+  if (isWide) {
+    return (
+      <span data-telemetry-row-copy className="inline-flex shrink-0">
+        <Popover open={open} onOpenChange={onOpenChange}>
+          <PopoverTrigger asChild>{triggerButton}</PopoverTrigger>
+          <PopoverContent
+            className="w-[min(100vw-2rem,22rem)] border-zinc-700 bg-zinc-950 p-3 text-zinc-100 shadow-xl"
+            align="end"
+            side="bottom"
+            sideOffset={8}
+            collisionPadding={8}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {menuBody}
+          </PopoverContent>
+        </Popover>
+      </span>
+    );
+  }
+
+  return (
+    <span data-telemetry-row-copy className="inline-flex shrink-0">
+      {triggerButton}
+      <BottomSheet
+        open={open}
+        onOpenChange={onOpenChange}
+        title="Copy sections"
+        description="Choose strategist telemetry sections to copy to the clipboard"
+      >
+        {menuBody}
+      </BottomSheet>
+    </span>
   );
 }
 
