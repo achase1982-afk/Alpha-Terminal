@@ -74,11 +74,11 @@ export function ScannerCardScore({ data }: { data: ScannerCardData }) {
         <span
           className={cn(
             "max-w-[70%] min-w-0 truncate text-right font-mono text-sm tabular-nums",
-            !data.preset?.trim() ? "text-zinc-600" : "text-zinc-100",
+            !data.matchedPreset?.trim() ? "text-zinc-600" : "text-amber-400/90",
           )}
-          title={data.preset?.trim() || undefined}
+          title={data.matchedPreset?.trim() || undefined}
         >
-          {data.preset?.trim() || dashCell()}
+          {data.matchedPreset?.trim() || dashCell()}
         </span>
       </div>
     </div>

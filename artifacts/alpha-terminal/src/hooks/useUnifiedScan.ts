@@ -68,6 +68,17 @@ export interface ScannerV3WireCard {
   flow?: ScannerV3WireCardFlow | null;
   /** Layer 6 — technicals from Schwab 52w + daily closes (equity_daily / Polygon). */
   technical?: ScannerV3WireCardTechnical | null;
+  /** Layer 7 composite + components; optional on older payloads. */
+  score?: number | null;
+  score_components?: {
+    liquidity: number | null;
+    vol_context: number | null;
+    catalyst: number | null;
+    flow: number | null;
+    technical: number | null;
+  } | null;
+  /** Layer 8 curated trading preset label; null when no rule matches. */
+  matched_preset?: string | null;
 }
 
 export type ScannerV3WireCardTechnical = {

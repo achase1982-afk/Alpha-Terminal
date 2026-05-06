@@ -161,7 +161,7 @@ export function emptyScannerCardData(symbol: string): ScannerCardData {
     technical: null,
     score: null,
     scoreComponents: null,
-    preset: null,
+    matchedPreset: null,
     lastUpdate: "",
     dataQualityFlags: [],
   };
