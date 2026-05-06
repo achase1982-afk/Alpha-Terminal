@@ -12,6 +12,7 @@ import {
   Loader2,
   Filter,
   RefreshCw,
+  Radar,
 } from "lucide-react";
 import { useScannerUniverses } from "@/hooks/useScannerUniverses";
 import { ScreenBuilder } from "./ScreenBuilder";
@@ -111,11 +112,11 @@ function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCre
         ref={btnRef}
         type="button"
         onClick={() => setOpen(o => !o)}
-        className={`w-full min-h-[44px] rounded-md border border-card-border bg-card text-foreground text-sm px-3 py-2 flex items-center justify-between gap-2 focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors hover:border-zinc-600 ${
-          compactTrigger ? "max-sm:px-2 max-sm:text-[13px] leading-snug" : ""
+        className={`w-full min-h-[36px] rounded-md border border-card-border bg-card text-foreground flex items-center justify-between gap-1.5 focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors hover:border-zinc-600 px-3 py-2 text-sm${
+          compactTrigger ? " max-sm:px-2 max-sm:py-1.5 max-sm:text-xs" : ""
         }`}
       >
-        <span className={`font-medium leading-snug min-w-0 ${compactTrigger ? "truncate" : ""}`}>
+        <span className={`font-medium leading-tight min-w-0 ${compactTrigger ? "truncate text-xs" : "leading-snug"}`}>
           {selectedLabel}
           {showCountBadge ? (
             <span className="text-muted-foreground font-normal whitespace-nowrap">
@@ -124,7 +125,7 @@ function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCre
             </span>
           ) : null}
         </span>
-        <ChevronDown className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+        <ChevronDown className={`shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""} ${compactTrigger ? "h-3.5 w-3.5" : "h-4 w-4"}`} />
       </button>
 
       {open && ReactDOM.createPortal(
@@ -510,9 +511,9 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
       )}
 
       <div className="bg-card border border-card-border rounded-xl overflow-hidden">
-        <div className="px-2 pt-2 pb-2 sm:px-3 sm:pt-2.5 sm:pb-2.5 bg-[#0c0c0c]">
-          <div className="flex flex-row items-stretch gap-2">
-            <div className="min-w-0 shrink-0 basis-[56%] max-w-[min(14rem,60vw)] sm:max-w-[min(18rem,50%)]">
+        <div className="px-2 pt-2 pb-2 sm:px-3 sm:pt-2 sm:pb-2 bg-[#0c0c0c]">
+          <div className="flex flex-row items-center gap-1.5">
+            <div className="min-w-0 shrink-0 basis-[50%] max-w-[min(13rem,58vw)] sm:max-w-[min(16rem,48%)]">
               <UniverseDropdown
                 value={universe}
                 onChange={setUniverse}
@@ -540,15 +541,15 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
               type="button"
               onClick={handleScanClick}
               disabled={!accessToken || unified.phase === "scanning" || currentSymCount === 0 || shockActive}
-              className="flex-1 min-w-0 min-h-[44px] rounded-lg font-bold font-mono text-sm tracking-wide disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98] active:brightness-110 transition-all bg-secondary text-primary border border-zinc-700/80 hover:border-zinc-600 px-2"
+              className="flex min-h-[36px] flex-1 min-w-0 items-center justify-center rounded-md border border-primary/70 bg-transparent px-2.5 font-mono text-xs font-semibold tracking-wide text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-30 active:scale-[0.99]"
             >
               {unified.phase === "scanning" ? (
-                <span className="flex h-full items-center justify-center gap-2">
-                  <span className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin shrink-0" />
+                <span className="flex items-center justify-center gap-1.5">
+                  <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                   <span className="truncate">Loading</span>
                 </span>
               ) : (
-                <span className="flex h-full items-center justify-center">Scan</span>
+                "Scan"
               )}
             </button>
           </div>
@@ -561,8 +562,25 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
       </div>
 
       {unified.phase === "idle" && !unified.errorMessage && (
-        <div className="py-16 text-center text-sm text-muted-foreground/70 bg-card border border-card-border rounded-xl">
-          Tap Scan to find trade candidates
+        <div className="overflow-hidden rounded-xl border border-card-border bg-[#0c0c0c]">
+          <div className="border-b border-zinc-800/30 px-4 py-2">
+            <h2 className="font-mono text-sm font-bold tracking-wider text-zinc-200">SCANNER</h2>
+            <p className="font-mono text-[11px] tracking-widest text-zinc-500">Market candidates</p>
+          </div>
+          <div className="px-6 py-10 text-center">
+            <div className="relative mx-auto mb-3 flex h-10 w-10 items-center justify-center">
+              <Radar className="h-8 w-8 text-primary opacity-50" aria-hidden />
+            </div>
+            <p className="mb-5 font-mono text-xs text-zinc-500">No scan run yet</p>
+            <button
+              type="button"
+              onClick={handleScanClick}
+              disabled={!accessToken || currentSymCount === 0 || shockActive}
+              className="inline-flex items-center justify-center rounded-lg border border-primary/80 bg-[#0c0c0c] px-6 py-2.5 font-mono text-[13px] font-bold tracking-wider text-primary transition-colors hover:bg-primary/10 active:scale-[0.98] active:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Run Scan
+            </button>
+          </div>
         </div>
       )}
 

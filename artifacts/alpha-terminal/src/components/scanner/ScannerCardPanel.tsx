@@ -1,6 +1,10 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
+/** Matches `ClusterCard`: bg `#0c0c0c`, border `1px solid rgba(63,63,70,0.5)`, `rounded-lg`. */
+const CLUSTER_SURFACE =
+  "overflow-hidden rounded-lg bg-[#0c0c0c] border border-[rgba(63,63,70,0.5)]";
+
 export function ScannerCardPanel({
   title,
   children,
@@ -8,25 +12,27 @@ export function ScannerCardPanel({
 }: {
   title: string;
   children: ReactNode;
-  /** Tighter padding and type for 2×2 expanded grid on mobile */
+  /** Tighter padding for expanded 2×2 grid (spacing only; typography matches cluster body scale). */
   dense?: boolean;
 }) {
   return (
-    <div
-      className={cn(
-        "rounded-md border border-zinc-800/90 bg-zinc-950/40 min-h-0 flex flex-col",
-        dense ? "p-1.5 gap-1" : "p-2.5 gap-1.5",
-      )}
-    >
-      <h4
+    <div className={cn(CLUSTER_SURFACE, "min-h-0 flex flex-col")}>
+      <div
         className={cn(
-          "text-sm font-semibold uppercase tracking-wide text-white border-b border-zinc-800/80",
-          dense ? "pb-0.5" : "pb-1",
+          "flex items-center border-b border-zinc-800/50",
+          dense ? "px-2 py-1" : "px-3 py-2",
         )}
       >
-        {title}
-      </h4>
-      <div className={cn("grid grid-cols-1 leading-snug text-sm", dense ? "gap-0.5" : "gap-1")}>{children}</div>
+        <h4 className="font-mono text-xs font-bold text-zinc-200 tracking-wider">{title}</h4>
+      </div>
+      <div
+        className={cn(
+          "font-mono text-[11px] leading-tight text-zinc-300",
+          dense ? "space-y-0.5 px-2 py-1.5" : "space-y-2 px-3 py-2.5",
+        )}
+      >
+        {children}
+      </div>
     </div>
   );
 }
@@ -46,17 +52,17 @@ export function ScannerCardPanelRow({
   return (
     <div
       className={cn(
-        "grid items-baseline min-w-0",
+        "grid items-baseline min-w-0 leading-tight",
         dense ? "grid-cols-[minmax(0,1.1fr)_auto] gap-x-1" : "grid-cols-[minmax(0,1fr)_auto] gap-x-2",
       )}
     >
-      <span className="text-sm text-white truncate font-sans" title={label}>
+      <span className="truncate text-zinc-500" title={label}>
         {label}
       </span>
       <span
         className={cn(
-          "text-sm font-mono tabular-nums text-right min-w-0 max-w-[min(9rem,48vw)] truncate sm:max-w-none",
-          isPlaceholderDash ? "text-gray-400" : "text-white",
+          "tabular-nums text-right min-w-0 max-w-[min(9rem,48vw)] truncate sm:max-w-none text-zinc-200",
+          isPlaceholderDash && "text-zinc-600",
           valueClassName,
         )}
       >
