@@ -20,6 +20,12 @@ export function formatPrice(n: number | null | undefined): string {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/** 52-week range cell: `$LOW – $HIGH` */
+export function formatDollarRange(low: number | null | undefined, high: number | null | undefined): string {
+  if (low == null || high == null || !Number.isFinite(low) || !Number.isFinite(high)) return dashCell();
+  return `$${formatPrice(low)} – $${formatPrice(high)}`;
+}
+
 export function formatSignedMoney(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return dashCell();
   const sign = n >= 0 ? "+" : "−";

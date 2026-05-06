@@ -17,6 +17,9 @@ export interface SchwabScannerBatchQuote {
   volume: number | null;
   avgVolume20d: number | null;
   dayRange: { low: number; high: number } | null;
+  /** From Schwab `quote` when present — matches keys in {@link ../routes/market.ts} `W52_KEYS_*`. */
+  fiftyTwoWeekHigh: number | null;
+  fiftyTwoWeekLow: number | null;
   name: string | null;
   sector: string | null;
   /** Schwab `quote.volatility` / similar — normalized to IV decimal (e.g. 0.35) when parseable. */
@@ -78,6 +81,8 @@ function parseSchwabQuoteEntry(entry: Record<string, unknown> | undefined): Schw
 
   const high = pickFiniteNum(q, ["highPrice", "dayHigh", "regularMarketHigh"]);
   const low = pickFiniteNum(q, ["lowPrice", "dayLow", "regularMarketLow"]);
+  const fiftyTwoWeekHigh = pickFiniteNum(q, ["52WeekHigh", "highPrice52Week", "52WkHigh", "fiftyTwoWeekHigh"]);
+  const fiftyTwoWeekLow = pickFiniteNum(q, ["52WeekLow", "lowPrice52Week", "52WkLow", "fiftyTwoWeekLow"]);
   let dayRange: { low: number; high: number } | null = null;
   if (high != null && low != null && high > low) {
     dayRange = { low, high };
@@ -105,6 +110,8 @@ function parseSchwabQuoteEntry(entry: Record<string, unknown> | undefined): Schw
     volume,
     avgVolume20d,
     dayRange,
+    fiftyTwoWeekHigh,
+    fiftyTwoWeekLow,
     name: nameRaw,
     sector: sectorRaw,
     impliedVolatility: normalizeIV(volRaw),

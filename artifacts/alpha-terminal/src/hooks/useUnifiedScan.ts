@@ -66,7 +66,20 @@ export interface ScannerV3WireCard {
   reactions_last_4q?: number[] | null;
   /** Layer 5 — options flow (4h); omit or null when no prints in window. */
   flow?: ScannerV3WireCardFlow | null;
+  /** Layer 6 — technicals from Schwab 52w + daily closes (equity_daily / Polygon). */
+  technical?: ScannerV3WireCardTechnical | null;
 }
+
+export type ScannerV3WireCardTechnical = {
+  fifty_two_week_low: number | null;
+  fifty_two_week_high: number | null;
+  off_fifty_two_week_high_pct: number | null;
+  vs_twenty_ma_pct: number | null;
+  vs_fifty_ma_pct: number | null;
+  vs_two_hundred_ma_pct: number | null;
+  five_day_return_pct: number | null;
+  thirty_day_return_pct: number | null;
+};
 
 /** Layer 5 wire payload from GET /api/scanner/v3/universe. */
 export type ScannerV3WireCardFlow = {
@@ -103,6 +116,7 @@ export interface ScannerV3UniverseResponse {
   layer4_ex_div_hits?: number;
   layer4_reactions_hits?: number;
   layer5_flow_hits?: number;
+  layer6_technical_hits?: number;
 }
 
 export interface UseUnifiedScanState {

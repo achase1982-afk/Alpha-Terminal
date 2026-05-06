@@ -1,8 +1,22 @@
 import type { ScannerCardData } from "@/lib/unifiedScanTypes";
-import type { ScannerV3WireCard, ScannerV3WireCardFlow } from "@/hooks/useUnifiedScan";
+import type { ScannerV3WireCard, ScannerV3WireCardFlow, ScannerV3WireCardTechnical } from "@/hooks/useUnifiedScan";
 import { emptyScannerCardData } from "./scannerCard.utils";
 
 export type { ScannerV3WireCard };
+
+function mapTechnicalWire(t: ScannerV3WireCardTechnical | null | undefined): ScannerCardData["technical"] {
+  if (t == null) return null;
+  return {
+    fiftyTwoWeekLow: t.fifty_two_week_low ?? null,
+    fiftyTwoWeekHigh: t.fifty_two_week_high ?? null,
+    offFiftyTwoWeekHighPct: t.off_fifty_two_week_high_pct ?? null,
+    vsTwentyMaPct: t.vs_twenty_ma_pct ?? null,
+    vsFiftyMaPct: t.vs_fifty_ma_pct ?? null,
+    vsTwoHundredMaPct: t.vs_two_hundred_ma_pct ?? null,
+    fiveDayReturnPct: t.five_day_return_pct ?? null,
+    thirtyDayReturnPct: t.thirty_day_return_pct ?? null,
+  };
+}
 
 function mapFlowWire(flow: ScannerV3WireCardFlow | null | undefined): ScannerCardData["flow"] {
   if (flow == null) return null;
@@ -80,6 +94,7 @@ export function scannerWireCardToScannerCardData(wire: ScannerV3WireCard, scanAt
     nextExDiv,
     earningsHistory,
     flow: mapFlowWire(wire.flow),
+    technical: mapTechnicalWire(wire.technical),
     lastUpdate: scanAt,
   };
 }

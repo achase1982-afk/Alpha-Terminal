@@ -14,6 +14,11 @@ import { fetchSchwabBatchQuotesForSymbolsBestToken } from "../lib/schwabBatchQuo
 import { fetchScannerVolContextForSymbols } from "../lib/scannerVolContext.js";
 import { fetchScannerCatalystsForSymbols } from "../lib/scannerCatalysts.js";
 import { fetchScannerFlowContextForSymbols } from "../lib/scannerFlowContext.js";
+import {
+  EMPTY_SCANNER_TECHNICAL_LAYER6_WIRE,
+  fetchScannerTechnicalContextForSymbols,
+  technicalLayer6HasAnyData,
+} from "../lib/scannerTechnicalContext.js";
 import { getBestAccessToken } from "../lib/tokenStore.js";
 
 const router: IRouter = Router();
@@ -127,6 +132,8 @@ router.get("/v3/universe", async (req, res) => {
     }
     const flowMap = await fetchScannerFlowContextForSymbols(tickers, priceBySymbol);
 
+    const technicalMap = await fetchScannerTechnicalContextForSymbols(tickers, quoteMap);
+
     let layer3_iv30_hits = 0;
     let layer3_hv30_hits = 0;
     let layer3_ivr_hits = 0;
@@ -135,6 +142,7 @@ router.get("/v3/universe", async (req, res) => {
     let layer4_ex_div_hits = 0;
     let layer4_reactions_hits = 0;
     let layer5_flow_hits = 0;
+    let layer6_technical_hits = 0;
 
     const cards = tickers.map((raw) => {
       const symbol = raw.trim().toUpperCase();
@@ -142,7 +150,9 @@ router.get("/v3/universe", async (req, res) => {
       const v = volMap.get(symbol);
       const cat = catalystMap.get(symbol);
       const flow = flowMap.get(symbol);
+      const technical = technicalMap.get(symbol) ?? EMPTY_SCANNER_TECHNICAL_LAYER6_WIRE;
       if (flow != null) layer5_flow_hits++;
+      if (technicalLayer6HasAnyData(technical)) layer6_technical_hits++;
       if (v?.iv30 != null) layer3_iv30_hits++;
       if (v?.hv30 != null) layer3_hv30_hits++;
       if (v?.ivr != null) layer3_ivr_hits++;
@@ -173,6 +183,7 @@ router.get("/v3/universe", async (req, res) => {
         days_to_ex_dividend: cat?.days_to_ex_dividend ?? null,
         reactions_last_4q: cat?.reactions_last_4q ?? null,
         flow: flow ?? null,
+        technical,
       };
     });
 
@@ -192,6 +203,7 @@ router.get("/v3/universe", async (req, res) => {
       layer4_ex_div_hits,
       layer4_reactions_hits,
       layer5_flow_hits,
+      layer6_technical_hits,
     };
 
     const duration_ms = Date.now() - started;
