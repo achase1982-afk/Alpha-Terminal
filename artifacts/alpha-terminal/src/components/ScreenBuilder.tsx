@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { X, Eye, Save, Loader2 } from "lucide-react";
 import type { ScreenEntry } from "@/hooks/useScannerUniverses";
 
@@ -97,19 +98,32 @@ export function ScreenBuilder({ onClose, onSave, onPreview, editScreen, onUpdate
     setList(list.includes(sector) ? list.filter(s => s !== sector) : [...list, sector]);
   };
 
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="bg-[#141414] border border-zinc-700/80 rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-700/50">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-200">
+  /** Portal to `document.body` so the overlay is not trapped by `.app-shell` transform (see index.css). z-[205] clears header z-105 / BottomNav z-50 but stays below OrderTicket z-[210]. */
+  const overlay = (
+    <div
+      className="fixed inset-0 z-[205] flex items-center justify-center bg-black/70 backdrop-blur-sm max-sm:box-border max-sm:px-3 max-sm:pt-[calc(env(safe-area-inset-top,0px)+10rem)] max-sm:pb-[calc(env(safe-area-inset-bottom,0px)+5.5rem)]"
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="bg-[#141414] border border-zinc-700/80 rounded-xl shadow-2xl w-full max-w-lg max-h-full min-h-0 overflow-hidden flex flex-col"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="screen-builder-title"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-700/50 shrink-0">
+          <h2 id="screen-builder-title" className="text-sm font-bold uppercase tracking-wider text-zinc-200">
             {isEditing ? "Edit Screen" : "Create Dynamic Screen"}
           </h2>
-          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 transition-colors">
+          <button type="button" onClick={onClose} className="text-zinc-500 hover:text-zinc-300 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-5 max-sm:pb-4 space-y-4">
           <div>
             <label className="text-[11px] text-zinc-500 uppercase font-bold block mb-1.5">Screen Name</label>
             <input
@@ -230,18 +244,18 @@ export function ScreenBuilder({ onClose, onSave, onPreview, editScreen, onUpdate
           )}
         </div>
 
-        <div className="flex items-center gap-3 px-5 py-4 border-t border-zinc-700/50">
-          <button onClick={handlePreview} disabled={previewing}
+        <div className="flex items-center gap-3 px-5 py-4 border-t border-zinc-700/50 shrink-0 max-sm:pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
+          <button type="button" onClick={handlePreview} disabled={previewing}
             className="flex items-center gap-1.5 text-[11px] font-bold px-4 py-2 rounded border border-zinc-600 text-zinc-300 hover:border-zinc-400 transition-colors disabled:opacity-50">
             {previewing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Eye className="w-3 h-3" />}
             PREVIEW
           </button>
           <div className="flex-1" />
-          <button onClick={onClose}
+          <button type="button" onClick={onClose}
             className="text-[11px] font-bold px-4 py-2 rounded text-zinc-500 hover:text-zinc-300 transition-colors">
             CANCEL
           </button>
-          <button onClick={handleSave} disabled={saving || !name.trim()}
+          <button type="button" onClick={handleSave} disabled={saving || !name.trim()}
             className="flex items-center gap-1.5 text-[11px] font-bold px-4 py-2 rounded transition-colors disabled:opacity-30"
             style={{ background: "#FFB800", color: "#000" }}>
             {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
@@ -251,6 +265,8 @@ export function ScreenBuilder({ onClose, onSave, onPreview, editScreen, onUpdate
       </div>
     </div>
   );
+
+  return createPortal(overlay, document.body);
 }
 
 function FilterRow({ label, enabled, onToggle, children }: {
