@@ -41,8 +41,8 @@ export function ScannerCardRow({ data, expanded }: { data: ScannerCardData; expa
       className="flex min-w-0 flex-nowrap items-center gap-x-1.5 overflow-x-auto px-2.5 py-2 text-sm sm:gap-x-2 sm:px-3"
       style={scannerNumericFontStyle}
     >
-      <span className="w-3 shrink-0 text-center text-zinc-600/60" aria-hidden>
-        <ChevronRight className={cn("mx-auto h-3 w-3 transition-transform", expanded && "rotate-90")} />
+      <span className="w-2 shrink-0 text-center text-zinc-600/45" aria-hidden>
+        <ChevronRight className={cn("mx-auto h-2.5 w-2.5 transition-transform", expanded && "rotate-90")} />
       </span>
 
       <span className="shrink-0 font-bold tracking-tight text-foreground">{data.symbol}</span>

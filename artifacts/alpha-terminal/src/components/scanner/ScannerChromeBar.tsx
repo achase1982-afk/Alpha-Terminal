@@ -16,9 +16,13 @@ type ScannerChromeBarProps = {
 export function ScannerChromeBar({ universeSlot, scanSlot, footerSlot }: ScannerChromeBarProps) {
   return (
     <div className="sticky top-0 z-20 w-full border-b border-zinc-800/50 bg-[#0c0c0c] py-2">
-      <div className="flex max-h-11 min-h-[40px] max-w-4xl items-center justify-between gap-3">
-        <div className="min-w-0 shrink">{universeSlot}</div>
-        {scanSlot ? <div className="shrink-0">{scanSlot}</div> : <div className="shrink-0" aria-hidden />}
+      <div className="flex w-full max-w-4xl min-h-[40px] max-h-11 items-center gap-2">
+        <div className="min-w-0 flex-1 overflow-hidden">{universeSlot}</div>
+        {scanSlot ? (
+          <div className="flex shrink-0 flex-none items-center self-center">{scanSlot}</div>
+        ) : (
+          <div className="shrink-0 flex-none" aria-hidden />
+        )}
       </div>
       {footerSlot}
     </div>
