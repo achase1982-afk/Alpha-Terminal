@@ -564,10 +564,41 @@ export const CONVICTION_DESK_FINAL_SHAPE_GUARD = `
 
 Respond for **this Conviction memo schema only**, not Solo Desk (vol/flow/catalyst/pm), not a regime dossier, not an alternate decision block.`;
 
+/** Matches strategist model catalog providers — drives provider-specific memo discipline (Gemini JSON vs tool-augmented APIs). */
+export type ConvictionDeskPromptProvider = "anthropic" | "google" | "openai" | "xai";
+
+function convictionDeskProviderAppend(provider?: ConvictionDeskPromptProvider): string {
+  if (!provider) return "";
+  switch (provider) {
+    case "google":
+      return `
+
+## YOUR PROVIDER (Google Gemini — JSON MIME turn)
+Web search is **not** attached to this JSON call (Gemini constraint). Use the DATA PACKAGE and any STRUCTURED RESEARCH block; put facts in memo strings without URLs. regime.vol, regime.sector, regime.macro, regime.stock must each be **one JSON string** from the skeleton enums, not nested classification objects or snapshot echoes.`;
+    case "openai":
+      return `
+
+## YOUR PROVIDER (OpenAI — Responses API + web search)
+After tool calls complete, your **final** output must be **only** the Conviction memo JSON object (top-level regime, view, decision, failure_scenario, scenarios, exit_plan, self_grade, size). Do **not** emit Solo Desk shapes (vol / flow / catalyst / pm at the root).`;
+    case "anthropic":
+      return `
+
+## YOUR PROVIDER (Anthropic — Messages + web search)
+The **final** assistant message must be **only** the Conviction memo JSON—no regime dossier tree, no prose before the opening brace. regime stays flat string enums per the skeleton.`;
+    case "xai":
+      return `
+
+## YOUR PROVIDER (xAI — Grok + web search)
+Return **only** one JSON object: the Conviction memo matching the skeleton; no alternate schema.`;
+    default:
+      return "";
+  }
+}
+
 export function buildConvictionDeskUserPrompt(
   dataPackage: string,
   structuredResearchBriefing?: string,
-  options?: { catalystSlotNativeWebSearch?: boolean },
+  options?: { catalystSlotNativeWebSearch?: boolean; provider?: ConvictionDeskPromptProvider },
 ): string {
   const nativeWeb = options?.catalystSlotNativeWebSearch
     ? `
@@ -613,7 +644,7 @@ ${CONVICTION_DESK_JSON_SKELETON}
 ## DATA PACKAGE (JSON snapshot)
 
 ${snapshotBlock(dataPackage)}${OUTPUT_NO_SOURCE_RULES}${VOL_OUTPUT_ATTRIBUTION_RULES}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
-${CONVICTION_DESK_FINAL_SHAPE_GUARD}
+${CONVICTION_DESK_FINAL_SHAPE_GUARD}${convictionDeskProviderAppend(options?.provider)}
 
 Respond with ONLY one JSON object exactly matching the structure above. No markdown fences, no commentary.`;
 }

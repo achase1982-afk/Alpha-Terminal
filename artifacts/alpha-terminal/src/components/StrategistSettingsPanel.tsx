@@ -206,6 +206,18 @@ export function StrategistSettingsPanel() {
         </div>
       )}
 
+      {isConvictionDeskMode && (
+        <div className="px-3 py-2 rounded-lg bg-zinc-900/50 border border-zinc-700/60">
+          <span className="font-mono text-[11px] text-zinc-300 leading-relaxed block">
+            <span className="text-zinc-500 uppercase tracking-wide">Conviction Desk — LLM swap</span>
+            {" "}Use <strong className="text-zinc-100">Conviction Desk model</strong> below. Primary presets: index{" "}
+            <strong className="text-zinc-100">0</strong> Claude Opus 4.7,{" "}
+            <strong className="text-zinc-100">1</strong> GPT-5.5 + Thinking,{" "}
+            <strong className="text-zinc-100">3</strong> Gemini 3 Pro. Same data package; providers differ in tone and structure discipline.
+          </span>
+        </div>
+      )}
+
       {sortedGroups(groups).map(([group, items]) => (
         <div key={group} className="space-y-3">
           <h3 className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest font-medium border-b border-zinc-800 pb-1">{group}</h3>

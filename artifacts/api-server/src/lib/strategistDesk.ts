@@ -821,6 +821,7 @@ export async function runConvictionDesk(args: {
 
   const userPrompt = buildConvictionDeskUserPrompt(dataPackage, catalystResearchBriefing || undefined, {
     catalystSlotNativeWebSearch: catalystNativeWeb,
+    provider: consolidatedModel.provider,
   });
 
   callbacks?.onStatus?.("Conviction Desk: single consolidated memo pass…");
