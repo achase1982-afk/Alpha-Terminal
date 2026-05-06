@@ -702,7 +702,11 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
             if (screen) setUniverse(`screen:${screen.id}`);
           }}
           onPreview={universeData.previewScreen}
-          editScreen={editScreenObj}
+          editScreen={
+            editingScreen != null
+              ? universeData.screens.find((s) => s.id === editingScreen) ?? null
+              : null
+          }
           onUpdate={universeData.updateScreen}
         />
       )}
