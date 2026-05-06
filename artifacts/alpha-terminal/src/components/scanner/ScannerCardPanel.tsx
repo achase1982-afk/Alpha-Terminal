@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { scannerNumericFontStyle } from "./scannerCard.utils";
 
 export function ScannerCardPanel({
   title,
@@ -21,21 +20,13 @@ export function ScannerCardPanel({
     >
       <h4
         className={cn(
-          "font-bold uppercase tracking-wider text-muted-foreground border-b border-zinc-800/80",
-          dense ? "text-[10px] pb-0.5" : "text-xs pb-1",
+          "text-sm font-semibold uppercase tracking-wide text-white border-b border-zinc-800/80",
+          dense ? "pb-0.5" : "pb-1",
         )}
       >
         {title}
       </h4>
-      <div
-        className={cn(
-          "grid grid-cols-1 leading-snug",
-          dense ? "gap-0.5 text-[10px] sm:text-[11px]" : "gap-1 text-sm",
-        )}
-        style={scannerNumericFontStyle}
-      >
-        {children}
-      </div>
+      <div className={cn("grid grid-cols-1 leading-snug text-sm", dense ? "gap-0.5" : "gap-1")}>{children}</div>
     </div>
   );
 }
@@ -59,13 +50,13 @@ export function ScannerCardPanelRow({
         dense ? "grid-cols-[minmax(0,1.1fr)_auto] gap-x-1" : "grid-cols-[minmax(0,1fr)_auto] gap-x-2",
       )}
     >
-      <span className="text-muted-foreground truncate" title={label}>
+      <span className="text-sm text-white truncate font-sans" title={label}>
         {label}
       </span>
       <span
         className={cn(
-          "tabular-nums text-right min-w-0 max-w-[min(9rem,48vw)] truncate sm:max-w-none",
-          isPlaceholderDash ? "text-muted-foreground" : "text-foreground",
+          "text-sm font-mono tabular-nums text-right min-w-0 max-w-[min(9rem,48vw)] truncate sm:max-w-none",
+          isPlaceholderDash ? "text-gray-400" : "text-white",
           valueClassName,
         )}
       >

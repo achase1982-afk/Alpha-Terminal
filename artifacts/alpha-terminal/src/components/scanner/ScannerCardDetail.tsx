@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 
 function IvBar({ ivr, dense }: { ivr: number | null; dense?: boolean }) {
   if (ivr == null || !Number.isFinite(ivr)) {
-    return <span className="text-muted-foreground tabular-nums">{dashCell()}</span>;
+    return <span className="text-sm font-mono tabular-nums text-gray-400">{dashCell()}</span>;
   }
   const pct = Math.min(100, Math.max(0, ivr));
   return (
@@ -25,7 +25,7 @@ function IvBar({ ivr, dense }: { ivr: number | null; dense?: boolean }) {
       <div className={cn("h-1 rounded-full bg-zinc-800 overflow-hidden shrink-0", dense ? "w-10" : "w-14")}>
         <div className="h-full bg-amber-500/90 rounded-full" style={{ width: `${pct}%` }} />
       </div>
-      <span className="tabular-nums text-foreground w-7 text-right text-[10px] sm:text-[11px]">{Math.round(ivr)}</span>
+      <span className="text-sm font-mono tabular-nums text-white w-7 text-right">{Math.round(ivr)}</span>
     </div>
   );
 }
@@ -37,8 +37,12 @@ function termLabel(shape: NonNullable<ScannerCardData["termStructure"]>["shape"]
 }
 
 function MaVs({ above }: { above: boolean | null }) {
-  if (above == null) return <span className="text-muted-foreground tabular-nums">{dashCell()}</span>;
-  return above ? <span className="text-terminal-success">Above</span> : <span className="text-terminal-danger">Below</span>;
+  if (above == null) return <span className="text-sm font-mono tabular-nums text-gray-400">{dashCell()}</span>;
+  return above ? (
+    <span className="text-sm font-mono text-terminal-success">Above</span>
+  ) : (
+    <span className="text-sm font-mono text-terminal-danger">Below</span>
+  );
 }
 
 /**
@@ -58,7 +62,7 @@ export function ScannerCardDetail({
   const tech = data.technical;
 
   return (
-    <div className="max-h-[min(420px,72vh)] overflow-y-auto overscroll-contain px-2.5 pb-2 pt-1.5 space-y-2 border-t border-zinc-800/80 bg-[#080808]/95 text-xs">
+    <div className="max-h-[min(420px,72vh)] overflow-y-auto overscroll-contain px-2.5 pb-2 pt-1.5 space-y-2 border-t border-zinc-800/80 bg-[#080808]/95 text-sm">
       <ScannerCardIdentity data={data} />
       <ScannerCardScore data={data} />
 
@@ -122,16 +126,22 @@ export function ScannerCardDetail({
                 : dashCell()
             }
           />
-          <div className="text-muted-foreground text-[9px] uppercase tracking-wide pt-0.5">Reactions Last 4Q</div>
+          <div className="text-xs uppercase tracking-wider text-white pt-0.5">Reactions Last 4Q</div>
           {data.earningsHistory && data.earningsHistory.length > 0 ? (
             <ul className="space-y-0">
               {data.earningsHistory.slice(0, 4).map((h, i) => (
-                <li key={`${h.quarter}-${i}`} className="flex justify-between gap-1 tabular-nums text-[10px]">
-                  <span className="text-muted-foreground truncate">{h.quarter}</span>
+                <li key={`${h.quarter}-${i}`} className="flex justify-between gap-1 text-sm font-mono tabular-nums">
+                  <span className="text-white truncate">{h.quarter}</span>
                   <span
                     className={cn(
                       "shrink-0",
-                      h.absMovePct > 0 ? "text-terminal-success" : h.absMovePct < 0 ? "text-terminal-danger" : "text-muted-foreground",
+                      !Number.isFinite(h.absMovePct)
+                        ? "text-gray-400"
+                        : h.absMovePct > 0
+                          ? "text-terminal-success"
+                          : h.absMovePct < 0
+                            ? "text-terminal-danger"
+                            : "text-white",
                     )}
                   >
                     {Number.isFinite(h.absMovePct) ? `${h.absMovePct >= 0 ? "+" : ""}${h.absMovePct.toFixed(1)}%` : dashCell()}
@@ -140,7 +150,7 @@ export function ScannerCardDetail({
               ))}
             </ul>
           ) : (
-            <div className="text-right text-muted-foreground tabular-nums">{dashCell()}</div>
+            <div className="text-right text-sm font-mono tabular-nums text-gray-400">{dashCell()}</div>
           )}
         </ScannerCardPanel>
 
