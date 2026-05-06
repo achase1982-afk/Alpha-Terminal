@@ -2,11 +2,9 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import ReactDOM from "react-dom";
 import { useTerminalStore } from "@/lib/store";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
-import { Label } from "@/components/ui/label";
 import {
   ChevronDown,
   AlertTriangle,
-  Search,
   List,
   Plus,
   Pencil,
@@ -33,7 +31,7 @@ import {
 import type { ScannerCardAction } from "@/components/scanner/scannerCard.types";
 import { isUsEquitiesMarketHoursEt } from "@/lib/usMarketHours";
 
-function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCreateScreen, onEditScreen, onDeleteScreen, onRefreshScreen, refreshingScreenId, onCreateWatchlist, onEditWatchlist, onDeleteWatchlist }: {
+function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCreateScreen, onEditScreen, onDeleteScreen, onRefreshScreen, refreshingScreenId, onCreateWatchlist, onEditWatchlist, onDeleteWatchlist, compactTrigger }: {
   value: string;
   onChange: (v: string) => void;
   presets: Record<string, { label: string; description: string; count: number }>;
@@ -47,6 +45,8 @@ function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCre
   onCreateWatchlist?: () => void;
   onEditWatchlist?: (id: number) => void;
   onDeleteWatchlist?: (id: number) => void;
+  /** Narrow trigger + slightly shorter control for scanner header row on small screens */
+  compactTrigger?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -97,18 +97,31 @@ function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCre
 
   const maxH = typeof window !== "undefined" ? Math.min(560, window.innerHeight - pos.top - 16) : 400;
 
+  const showCountBadge =
+    typeof selectedCount === "number" && Number.isFinite(selectedCount)
+      ? !new RegExp(`\\b${selectedCount}\\b`).test(selectedLabel)
+      : true;
+
   return (
     <div className="relative">
       <button
         ref={btnRef}
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="w-full min-h-[44px] rounded-md border border-card-border bg-card text-foreground text-sm px-3 py-2 flex items-center justify-between gap-2 focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors hover:border-zinc-600"
+        className={`w-full min-h-[44px] rounded-md border border-card-border bg-card text-foreground text-sm px-3 py-2 flex items-center justify-between gap-2 focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors hover:border-zinc-600 ${
+          compactTrigger ? "max-sm:px-2 max-sm:text-[13px] leading-snug" : ""
+        }`}
       >
-        <span className="font-medium leading-snug">
-          {selectedLabel} <span className="text-zinc-500 font-normal">({selectedCount})</span>
+        <span className={`font-medium leading-snug min-w-0 ${compactTrigger ? "truncate" : ""}`}>
+          {selectedLabel}
+          {showCountBadge ? (
+            <span className="text-muted-foreground font-normal whitespace-nowrap">
+              {" "}
+              ({selectedCount})
+            </span>
+          ) : null}
         </span>
-        <ChevronDown className={`w-4 h-4 text-zinc-500 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+        <ChevronDown className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && ReactDOM.createPortal(
@@ -480,12 +493,9 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
       )}
 
       <div className="bg-card border border-card-border rounded-xl overflow-hidden">
-        <div className="p-4 bg-[#0c0c0c] space-y-4">
-          <div className="flex items-end gap-2">
-            <div className="space-y-1.5 flex-1 min-w-0">
-              <Label className="text-xs text-muted-foreground uppercase tracking-wider font-bold flex items-center gap-1.5">
-                <Search className="w-3.5 h-3.5" /> Scan Universe
-              </Label>
+        <div className="px-2 pt-2 pb-2 sm:px-3 sm:pt-2.5 sm:pb-2.5 bg-[#0c0c0c]">
+          <div className="flex flex-row items-stretch gap-2">
+            <div className="min-w-0 shrink-0 basis-[56%] max-w-[min(14rem,60vw)] sm:max-w-[min(18rem,50%)]">
               <UniverseDropdown
                 value={universe}
                 onChange={setUniverse}
@@ -506,44 +516,25 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
                   await universeData.deleteWatchlist(id);
                   if (universe === `watchlist:${id}`) setUniverse("preset:liquidCore130");
                 }}
+                compactTrigger
               />
             </div>
+            <button
+              type="button"
+              onClick={handleScanClick}
+              disabled={!accessToken || unified.phase === "scanning" || currentSymCount === 0 || shockActive}
+              className="flex-1 min-w-0 min-h-[44px] rounded-lg font-bold font-mono text-sm tracking-wide disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98] active:brightness-110 transition-all bg-secondary text-primary border border-zinc-700/80 hover:border-zinc-600 px-2"
+            >
+              {unified.phase === "scanning" ? (
+                <span className="flex h-full items-center justify-center gap-2">
+                  <span className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin shrink-0" />
+                  <span className="truncate">Loading</span>
+                </span>
+              ) : (
+                <span className="flex h-full items-center justify-center">Scan</span>
+              )}
+            </button>
           </div>
-
-          <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-            {universeData.loading ? (
-              <span className="text-zinc-500">Loading universes...</span>
-            ) : (
-              <span>
-                Scanning <span className="text-primary font-bold">{currentSymCount} tickers</span>
-                <span className="text-zinc-600 mx-1.5">·</span>
-                <span className="text-zinc-400">{universeLabel}</span>
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="px-4 pb-4 pt-3 bg-[#0c0c0c] border-t border-card-border">
-          <button
-            type="button"
-            onClick={handleScanClick}
-            disabled={!accessToken || unified.phase === "scanning" || currentSymCount === 0 || shockActive}
-            className="font-bold font-mono tracking-wider mx-auto block rounded-lg disabled:opacity-30 disabled:cursor-not-allowed active:scale-95 active:brightness-110 transition-all"
-            style={{
-              fontSize: 13, padding: "10px",
-              background: "#18181b", color: "#FFB800", border: "none",
-              cursor: "pointer",
-            }}
-          >
-            {unified.phase === "scanning" ? (
-              <span className="flex items-center justify-center gap-2">
-                <span className="w-4 h-4 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin" />
-                LOADING...
-              </span>
-            ) : (
-              <span className="flex items-center justify-center">{`SCAN ${currentSymCount} STOCKS`}</span>
-            )}
-          </button>
           {!accessToken && (
             <div className="mt-2 flex justify-center">
               <ConnectBrokerPrompt label="Connect Brokerage For Market Scanner" compact />
