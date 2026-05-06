@@ -34,6 +34,7 @@ import {
 import type { ScannerV3WireCard } from "@/hooks/useUnifiedScan";
 import type { ScannerCardAction } from "@/components/scanner/scannerCard.types";
 import { isUsEquitiesMarketHoursEt } from "@/lib/usMarketHours";
+import { cn } from "@/lib/utils";
 
 function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCreateScreen, onEditScreen, onDeleteScreen, onRefreshScreen, refreshingScreenId, onCreateWatchlist, onEditWatchlist, onDeleteWatchlist, compactTrigger }: {
   value: string;
@@ -112,20 +113,29 @@ function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCre
         ref={btnRef}
         type="button"
         onClick={() => setOpen(o => !o)}
-        className={`w-full min-h-[36px] rounded-md border border-card-border bg-card text-foreground flex items-center justify-between gap-1.5 focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors hover:border-zinc-600 px-3 py-2 text-sm${
-          compactTrigger ? " max-sm:px-2 max-sm:py-1.5 max-sm:text-xs" : ""
-        }`}
+        className={cn(
+          "flex w-full items-center justify-between gap-1.5 rounded-full border border-zinc-700/60 bg-zinc-900/70 text-foreground transition-colors hover:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-primary/40",
+          compactTrigger
+            ? "min-h-[32px] px-2.5 py-1 text-[11px]"
+            : "min-h-[40px] px-3 py-2 text-sm",
+        )}
       >
-        <span className={`font-medium leading-tight min-w-0 ${compactTrigger ? "truncate text-xs" : "leading-snug"}`}>
+        <span className={cn("min-w-0 font-medium leading-tight", compactTrigger ? "truncate" : "")}>
           {selectedLabel}
           {showCountBadge ? (
-            <span className="text-muted-foreground font-normal whitespace-nowrap">
+            <span className="whitespace-nowrap font-normal text-muted-foreground">
               {" "}
               ({selectedCount})
             </span>
           ) : null}
         </span>
-        <ChevronDown className={`shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""} ${compactTrigger ? "h-3.5 w-3.5" : "h-4 w-4"}`} />
+        <ChevronDown
+          className={cn(
+            "shrink-0 text-muted-foreground transition-transform",
+            open && "rotate-180",
+            compactTrigger ? "h-3 w-3" : "h-4 w-4",
+          )}
+        />
       </button>
 
       {open && ReactDOM.createPortal(
@@ -511,9 +521,14 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
       )}
 
       <div className="bg-card border border-card-border rounded-xl overflow-hidden">
-        <div className="px-2 pt-2 pb-2 sm:px-3 sm:pt-2 sm:pb-2 bg-[#0c0c0c]">
+        <div className="bg-[#0c0c0c] px-2 pb-2 pt-2 sm:px-3 sm:pb-2 sm:pt-2">
           <div className="flex flex-row items-center gap-1.5">
-            <div className="min-w-0 shrink-0 basis-[50%] max-w-[min(13rem,58vw)] sm:max-w-[min(16rem,48%)]">
+            <div
+              className={cn(
+                "min-w-0 shrink-0",
+                unified.phase === "idle" ? "flex-1" : "basis-[48%] max-w-[min(12rem,56vw)] sm:max-w-[min(15rem,46%)]",
+              )}
+            >
               <UniverseDropdown
                 value={universe}
                 onChange={setUniverse}
@@ -537,21 +552,23 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
                 compactTrigger
               />
             </div>
-            <button
-              type="button"
-              onClick={handleScanClick}
-              disabled={!accessToken || unified.phase === "scanning" || currentSymCount === 0 || shockActive}
-              className="flex min-h-[36px] flex-1 min-w-0 items-center justify-center rounded-md border border-primary/70 bg-transparent px-2.5 font-mono text-xs font-semibold tracking-wide text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-30 active:scale-[0.99]"
-            >
-              {unified.phase === "scanning" ? (
-                <span className="flex items-center justify-center gap-1.5">
-                  <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                  <span className="truncate">Loading</span>
-                </span>
-              ) : (
-                "Scan"
-              )}
-            </button>
+            {unified.phase !== "idle" ? (
+              <button
+                type="button"
+                onClick={handleScanClick}
+                disabled={!accessToken || unified.phase === "scanning" || currentSymCount === 0 || shockActive}
+                className="flex min-h-[32px] min-w-0 flex-1 items-center justify-center rounded-full border border-primary/65 bg-transparent px-3 font-mono text-[11px] font-semibold tracking-wide text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-30 active:scale-[0.99]"
+              >
+                {unified.phase === "scanning" ? (
+                  <span className="flex items-center justify-center gap-1.5">
+                    <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                    <span className="truncate">Loading</span>
+                  </span>
+                ) : (
+                  "Scan"
+                )}
+              </button>
+            ) : null}
           </div>
           {!accessToken && (
             <div className="mt-2 flex justify-center">
@@ -562,25 +579,23 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
       </div>
 
       {unified.phase === "idle" && !unified.errorMessage && (
-        <div className="overflow-hidden rounded-xl border border-card-border bg-[#0c0c0c]">
-          <div className="border-b border-zinc-800/30 px-4 py-2">
+        <div className="py-8 text-center">
+          <div className="mx-auto mb-5 max-w-xs border-b border-zinc-800/40 pb-4">
             <h2 className="font-mono text-sm font-bold tracking-wider text-zinc-200">SCANNER</h2>
-            <p className="font-mono text-[11px] tracking-widest text-zinc-500">Market candidates</p>
+            <p className="mt-1 font-mono text-[11px] tracking-widest text-zinc-500">Market candidates</p>
           </div>
-          <div className="px-6 py-10 text-center">
-            <div className="relative mx-auto mb-3 flex h-10 w-10 items-center justify-center">
-              <Radar className="h-8 w-8 text-primary opacity-50" aria-hidden />
-            </div>
-            <p className="mb-5 font-mono text-xs text-zinc-500">No scan run yet</p>
-            <button
-              type="button"
-              onClick={handleScanClick}
-              disabled={!accessToken || currentSymCount === 0 || shockActive}
-              className="inline-flex items-center justify-center rounded-lg border border-primary/80 bg-[#0c0c0c] px-6 py-2.5 font-mono text-[13px] font-bold tracking-wider text-primary transition-colors hover:bg-primary/10 active:scale-[0.98] active:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Run Scan
-            </button>
+          <div className="relative mx-auto mb-4 flex h-10 w-10 items-center justify-center">
+            <Radar className="h-8 w-8 text-primary opacity-50" aria-hidden />
           </div>
+          <p className="mb-6 font-mono text-xs text-zinc-500">No scan run yet</p>
+          <button
+            type="button"
+            onClick={handleScanClick}
+            disabled={!accessToken || currentSymCount === 0 || shockActive}
+            className="inline-flex items-center justify-center rounded-lg border border-primary/80 bg-transparent px-6 py-2.5 font-mono text-[13px] font-bold tracking-wider text-primary transition-colors hover:bg-primary/10 active:scale-[0.98] active:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Run Scan
+          </button>
         </div>
       )}
 
@@ -615,31 +630,17 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
           {unified.layer1Universe && (
             <>
               <div aria-live="polite" aria-atomic="true" className="sr-only">
-                {`Scanner universe loaded: ${unified.layer1Universe.count} tickers.`}
+                {`Scanner universe loaded: ${unified.layer1Universe.count} tickers, ${layer1FilteredSymbols.length} visible after mutes.`}
               </div>
-              <div className="rounded-xl border border-card-border bg-[#0c0c0c] overflow-hidden">
-                <div className="px-4 py-3 border-b border-card-border">
-                  <h3 id="scanner-v3-layer1-heading" className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
-                    Scanner v3 — universe (Layer 1)
-                  </h3>
-                  <p className="mt-1 text-xs text-zinc-300 tabular-nums">
-                    <span className="text-zinc-500">Count </span>
-                    <span className="font-bold text-white">{unified.layer1Universe.count}</span>
-                    <span className="text-zinc-600 mx-2">·</span>
-                    <span className="text-zinc-500">visible </span>
-                    <span className="font-bold text-white">{layer1FilteredSymbols.length}</span>
-                    <span className="text-zinc-600 mx-2">·</span>
-                    <span className="text-zinc-500">scan_at </span>
-                    <time className="font-mono text-zinc-200" dateTime={unified.layer1Universe.scan_at}>
-                      {unified.layer1Universe.scan_at}
-                    </time>
-                  </p>
-                </div>
+              <div id="scanner-v3-layer1-heading" className="sr-only">
+                Scanner universe list
+              </div>
+              <div className="overflow-hidden rounded-xl border border-card-border bg-[#0c0c0c]">
                 <div
                   role="list"
                   aria-labelledby="scanner-v3-layer1-heading"
                   aria-label={`Scanner universe, ${layer1FilteredSymbols.length} visible tickers`}
-                  className="max-h-[min(560px,55vh)] overflow-y-auto p-2 space-y-2"
+                  className="max-h-[min(560px,55vh)] space-y-2 overflow-y-auto p-2"
                 >
                   {layer1FilteredSymbols.map((sym) => (
                     <ScannerCard
