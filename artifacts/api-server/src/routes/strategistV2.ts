@@ -33,6 +33,7 @@ import {
   markStrategistAnalyzeCancelled,
   clearStrategistAnalyzeCancelled,
 } from "../lib/strategistAnalyzeCancellation.js";
+import { stripConvictionDeskDiagnosticsForClient, stripHistoryCardJsonForClient } from "../lib/strategistClientSanitize.js";
 
 const router: IRouter = Router();
 
@@ -279,6 +280,12 @@ function pruneThinkingBuffer() {
   }
 }
 
+/** Drop DB-only Conviction Desk diagnostic from `deskResult` before JSON to clients (kept on `entry.result` for persistence). */
+function strategistV2ResultForWire(result: StrategistV2Result | null): StrategistV2Result | null {
+  if (result == null) return null;
+  return stripConvictionDeskDiagnosticsForClient(result);
+}
+
 /** Shared shape for `/thinking` polling and `/job/:id/final` reconciliation after tab resume. */
 function thinkingShapeFromEntry(entry: ThinkingEntry, since: number): {
   jobId: string;
@@ -299,9 +306,9 @@ function thinkingShapeFromEntry(entry: ThinkingEntry, since: number): {
   const s = Math.max(0, since);
   const totalTokens = entry.tokens.length;
   const tokens = s < totalTokens ? entry.tokens.slice(s) : [];
-  const result = entry.kind === "validation"
+  const rawResult = entry.kind === "validation"
     ? (entry.validationResult ?? null)
-    : (entry.result ?? null);
+    : strategistV2ResultForWire(entry.result ?? null);
   const safeError = entry.cancelled ? null : entry.error != null ? "Analysis failed. Please retry." : null;
   return {
     jobId: entry.jobId,
@@ -312,7 +319,7 @@ function thinkingShapeFromEntry(entry: ThinkingEntry, since: number): {
     nextSince: totalTokens,
     transcript: entry.transcript,
     done: entry.done,
-    result,
+    result: rawResult,
     validationMeta: entry.validationMeta ?? null,
     error: safeError,
     cancelled: entry.cancelled === true,
@@ -608,7 +615,7 @@ router.post("/analyze", async (req, res): Promise<void> => {
       },
         scannerContext,
       );
-      res.json(result);
+      res.json(strategistV2ResultForWire(result));
     } finally {
       analyzeInFlightTickers.delete(upperTicker);
     }
@@ -958,7 +965,7 @@ router.get("/job/:jobId/final", async (req, res): Promise<void> => {
       done: true,
       result: isValidation
         ? (card["validation"] as ValidationVerdictPayload)
-        : (card as unknown as StrategistV2Result),
+        : strategistV2ResultForWire(card as unknown as StrategistV2Result),
       validationMeta: isValidation
         ? {
             ticker,
@@ -999,7 +1006,12 @@ router.get("/history", async (_req, res) => {
       .where(eq(strategistHistoryTable.cleared, false))
       .orderBy(desc(strategistHistoryTable.createdAt))
       .limit(100);
-    res.json(rows);
+    res.json(
+      rows.map((row) => ({
+        ...row,
+        cardJson: stripHistoryCardJsonForClient(row.cardJson),
+      })),
+    );
   } catch (err) {
     logger.error({ err }, "StrategistV2: history fetch failed");
     res.status(500).json({ error: "Failed to fetch history" });
