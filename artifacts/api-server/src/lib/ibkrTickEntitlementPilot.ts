@@ -3,7 +3,7 @@
  * Uses a dedicated API clientId — never the production ibStreamer clientId.
  */
 import { randomUUID } from "node:crypto";
-import { IBApi, EventName, SecType, type Contract } from "@stoqey/ib";
+import { IBApi, EventName, SecType, TickByTickDataType, type Contract } from "@stoqey/ib";
 import { desc, eq } from "drizzle-orm";
 import { db, ibkrDiagnosticsRunsTable } from "@workspace/db";
 import { logger } from "./logger.js";
@@ -291,7 +291,7 @@ async function runIbkrTickEntitlementPilot(triggeredByUserId: string): Promise<I
       tickBuffers.set(reqId, []);
       ticksTruncated.set(reqId, false);
       try {
-        ib.reqTickByTickData(reqId, stkSmart(row.symbol), "Last", 0, false);
+        ib.reqTickByTickData(reqId, stkSmart(row.symbol), TickByTickDataType.Last, 0, false);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         errorsByReqId.set(reqId, { code: -1, message: msg });

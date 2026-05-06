@@ -717,7 +717,7 @@ async function refreshTicker(
     directionalLean,
   });
 
-  const surfacedNames = surfacedSubScoresHigh({ ...comps, edge_type: edgeType });
+  const surfacedNames = surfacedSubScoresHigh(comps);
 
   const rowPayload: Record<string, unknown> = {
     sector,

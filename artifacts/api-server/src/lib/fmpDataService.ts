@@ -110,15 +110,15 @@ export async function getAnalystPriceTargets(ticker: string): Promise<AnalystPri
   const r = rows[0];
   if (!r) return null;
 
-  const asOf = r.asOfDate;
+  const asOfUnknown = r.asOfDate as string | Date | null | undefined;
   const asOfStr =
-    asOf == null
+    asOfUnknown == null
       ? null
-      : typeof asOf === "string"
-        ? asOf.slice(0, 10)
-        : asOf instanceof Date
-          ? asOf.toISOString().slice(0, 10)
-          : String(asOf).slice(0, 10);
+      : typeof asOfUnknown === "string"
+        ? asOfUnknown.slice(0, 10)
+        : asOfUnknown instanceof Date
+          ? asOfUnknown.toISOString().slice(0, 10)
+          : String(asOfUnknown).slice(0, 10);
 
   return {
     ticker: r.ticker,
