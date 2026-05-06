@@ -31,13 +31,17 @@ export const DEV_SCANNER_CARD_FIXTURE: ScannerCardData = {
   flow: {
     blocks4h: 12,
     sweeps4h: 34,
-    netDeltaNotional: 4_200_000,
+    netDeltaDollar: 4_200_000,
+    topStrikeLabel: "$145C",
     topStrike: {
       strike: 145,
-      volume: 12000,
-      oi: 8000,
+      optionType: "call",
       expiration: "2026-06-20",
+      volumeAtStrike: 12000,
+      openInterest: 8000,
     },
+    volume4h: 185_000,
+    volumeOverOi: 0.42,
   },
   technical: {
     week52High: 160,

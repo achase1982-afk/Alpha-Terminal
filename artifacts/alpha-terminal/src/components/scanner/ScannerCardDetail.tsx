@@ -159,29 +159,33 @@ export function ScannerCardDetail({
             dense
             label="Net Delta $"
             value={
-              flow?.netDeltaNotional != null && Number.isFinite(flow.netDeltaNotional)
-                ? formatSignedMoney(flow.netDeltaNotional)
+              flow?.netDeltaDollar != null && Number.isFinite(flow.netDeltaDollar)
+                ? formatSignedMoney(flow.netDeltaDollar)
                 : dashCell()
             }
           />
           <ScannerCardPanelRow
             dense
             label="Top Strike"
-            value={flow?.topStrike ? `${flow.topStrike.strike} @ ${flow.topStrike.expiration}` : dashCell()}
+            value={
+              flow?.topStrikeLabel
+                ? flow.topStrikeLabel
+                : flow?.topStrike
+                  ? `$${flow.topStrike.strike}${flow.topStrike.optionType === "put" ? "P" : "C"}`
+                  : dashCell()
+            }
           />
           <ScannerCardPanelRow
             dense
             label="Volume"
-            value={flow?.topStrike?.volume != null ? formatCompactInt(flow.topStrike.volume) : dashCell()}
+            value={flow?.volume4h != null && Number.isFinite(flow.volume4h) ? formatCompactInt(flow.volume4h) : dashCell()}
           />
           <ScannerCardPanelRow
             dense
             label="Volume / OI"
             value={
-              flow?.topStrike &&
-              flow.topStrike.oi > 0 &&
-              Number.isFinite(flow.topStrike.volume)
-                ? formatRatio(flow.topStrike.volume / flow.topStrike.oi)
+              flow?.volumeOverOi != null && Number.isFinite(flow.volumeOverOi)
+                ? formatRatio(flow.volumeOverOi)
                 : dashCell()
             }
           />

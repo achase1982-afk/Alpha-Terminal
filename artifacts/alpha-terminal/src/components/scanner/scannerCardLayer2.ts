@@ -1,8 +1,30 @@
 import type { ScannerCardData } from "@/lib/unifiedScanTypes";
-import type { ScannerV3WireCard } from "@/hooks/useUnifiedScan";
+import type { ScannerV3WireCard, ScannerV3WireCardFlow } from "@/hooks/useUnifiedScan";
 import { emptyScannerCardData } from "./scannerCard.utils";
 
 export type { ScannerV3WireCard };
+
+function mapFlowWire(flow: ScannerV3WireCardFlow | null | undefined): ScannerCardData["flow"] {
+  if (flow == null) return null;
+  const ts = flow.top_strike;
+  return {
+    blocks4h: flow.blocks_4h,
+    sweeps4h: flow.sweeps_4h,
+    netDeltaDollar: flow.net_delta_dollar,
+    topStrikeLabel: flow.top_strike_label,
+    topStrike: ts
+      ? {
+          strike: ts.strike,
+          optionType: ts.option_type,
+          expiration: ts.expiration,
+          volumeAtStrike: ts.volume_at_strike,
+          openInterest: ts.open_interest,
+        }
+      : null,
+    volume4h: flow.volume_4h,
+    volumeOverOi: flow.volume_over_oi,
+  };
+}
 
 export function scannerWireCardToScannerCardData(wire: ScannerV3WireCard, scanAt: string): ScannerCardData {
   const sym = wire.symbol.trim().toUpperCase();
@@ -57,6 +79,7 @@ export function scannerWireCardToScannerCardData(wire: ScannerV3WireCard, scanAt
     nextEarnings,
     nextExDiv,
     earningsHistory,
+    flow: mapFlowWire(wire.flow),
     lastUpdate: scanAt,
   };
 }

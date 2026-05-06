@@ -64,7 +64,26 @@ export interface ScannerV3WireCard {
   ex_dividend_amount?: number | null;
   days_to_ex_dividend?: number | null;
   reactions_last_4q?: number[] | null;
+  /** Layer 5 — options flow (4h); omit or null when no prints in window. */
+  flow?: ScannerV3WireCardFlow | null;
 }
+
+/** Layer 5 wire payload from GET /api/scanner/v3/universe. */
+export type ScannerV3WireCardFlow = {
+  blocks_4h: number | null;
+  sweeps_4h: number | null;
+  net_delta_dollar: number | null;
+  top_strike_label: string | null;
+  top_strike: {
+    strike: number;
+    option_type: "call" | "put";
+    expiration: string;
+    volume_at_strike: number;
+    open_interest: number | null;
+  } | null;
+  volume_4h: number | null;
+  volume_over_oi: number | null;
+};
 
 export interface ScannerV3UniverseResponse {
   tickers: string[];
@@ -83,6 +102,7 @@ export interface ScannerV3UniverseResponse {
   layer4_earnings_hits?: number;
   layer4_ex_div_hits?: number;
   layer4_reactions_hits?: number;
+  layer5_flow_hits?: number;
 }
 
 export interface UseUnifiedScanState {
