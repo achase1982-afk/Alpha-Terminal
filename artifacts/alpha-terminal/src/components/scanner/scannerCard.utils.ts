@@ -125,6 +125,7 @@ export function emptyScannerCardData(symbol: string): ScannerCardData {
     ivr: null,
     ivPercentile: null,
     hv30: null,
+    ivVsHv: null,
     termStructure: null,
     nextEarnings: null,
     nextExDiv: null,

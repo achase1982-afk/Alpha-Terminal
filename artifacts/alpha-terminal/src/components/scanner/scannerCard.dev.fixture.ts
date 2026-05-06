@@ -18,6 +18,7 @@ export const DEV_SCANNER_CARD_FIXTURE: ScannerCardData = {
   ivr: 62,
   ivPercentile: 58,
   hv30: 0.28,
+  ivVsHv: 0.32 / 0.28,
   termStructure: { frontIv: 0.3, backIv: 0.27, ratio: 1.11, shape: "contango" },
   nextEarnings: { date: "2026-05-20", daysTo: 10, timing: "AMC" },
   nextExDiv: { date: "2026-06-01", daysTo: 22, amount: 0.52 },

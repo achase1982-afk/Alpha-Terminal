@@ -22,6 +22,8 @@ export type ScannerCardData = {
   ivr: number | null;
   ivPercentile: number | null;
   hv30: number | null;
+  /** IV30 / HV30 when both known (wire / API may omit; UI can derive). */
+  ivVsHv: number | null;
   termStructure: {
     frontIv: number;
     backIv: number;

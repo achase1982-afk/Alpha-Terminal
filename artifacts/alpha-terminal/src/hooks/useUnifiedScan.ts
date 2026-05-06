@@ -51,6 +51,11 @@ export interface ScannerV3WireCard {
   volume: number | null;
   avg_volume_20d: number | null;
   day_range: { low: number; high: number } | null;
+  /** Layer 3 — nulls render as dashes in Vol Context. Optional for older API payloads. */
+  iv30?: number | null;
+  ivr?: number | null;
+  hv30?: number | null;
+  iv_vs_hv?: number | null;
 }
 
 export interface ScannerV3UniverseResponse {
@@ -64,6 +69,9 @@ export interface ScannerV3UniverseResponse {
   /** True when a Schwab access token is available for batch quotes. */
   schwab_access_token_present?: boolean;
   layer2_quote_hits?: number;
+  layer3_iv30_hits?: number;
+  layer3_hv30_hits?: number;
+  layer3_ivr_hits?: number;
 }
 
 export interface UseUnifiedScanState {
@@ -158,6 +166,18 @@ export function useUnifiedScan(): UseUnifiedScanState {
         cards,
         schwab_access_token_present,
         layer2_quote_hits,
+        layer3_iv30_hits:
+          typeof layer1.layer3_iv30_hits === "number" && Number.isFinite(layer1.layer3_iv30_hits)
+            ? layer1.layer3_iv30_hits
+            : undefined,
+        layer3_hv30_hits:
+          typeof layer1.layer3_hv30_hits === "number" && Number.isFinite(layer1.layer3_hv30_hits)
+            ? layer1.layer3_hv30_hits
+            : undefined,
+        layer3_ivr_hits:
+          typeof layer1.layer3_ivr_hits === "number" && Number.isFinite(layer1.layer3_ivr_hits)
+            ? layer1.layer3_ivr_hits
+            : undefined,
       });
 
       const params = new URLSearchParams({
