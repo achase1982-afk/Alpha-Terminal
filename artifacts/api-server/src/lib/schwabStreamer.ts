@@ -805,7 +805,6 @@ function handleMessage(raw: string) {
           loginRetried = false;
           consecutiveLoginFailures = 0;
           consecutiveAbnormalCloses = 0;
-          consecutivePostLoginFlap1006 = 0;
           lastConnectedAt = Date.now();
           disconnectedAt = null;
           fiveMinCriticalSent = false;
