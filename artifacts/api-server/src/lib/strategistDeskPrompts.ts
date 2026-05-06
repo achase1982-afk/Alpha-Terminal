@@ -4,6 +4,10 @@
  */
 
 import { buildScannerContextPromptBlock, type ScannerStrategistContext } from "./scannerStrategistContext.js";
+import {
+  CONVICTION_DESK_JSON_SKELETON,
+  CONVICTION_DESK_MEMO_INSTRUCTIONS,
+} from "./convictionDeskMemoInstructions.js";
 
 /** Single-voice rule injected into each section prompt. */
 const SINGLE_VOICE_FRAMING = `You are writing one analysis broken into clearly labeled sections. There is one voice and one analyst. Section headers exist to help the reader navigate the analysis, not to attribute authorship to different roles. Do not write as a separate team, desk, or role. Use plain topic labels in prose only when helpful: Volatility, Flow, Catalyst, Decision.`;
@@ -543,15 +547,58 @@ Respond with ONLY a JSON object (no markdown fences, no extra prose). Top-level 
 }`;
 }
 
-export { CONVICTION_DESK_MODEL_SYSTEM_PROMPT } from "./convictionDeskSystemPrompt.js";
-
 /**
- * Conviction Desk: same JSON snapshot and data-state rules as Solo Desk; output is one Conviction memo JSON object.
+ * Conviction Desk: same JSON snapshot and data-state rules as Solo Desk; user message carries instructions + JSON skeleton.
+ * Placed after the DATA PACKAGE so it is the last instruction before the answer.
  */
+export const CONVICTION_DESK_FINAL_SHAPE_GUARD = `
+
+## FINAL SHAPE (must match the skeleton above — violations fail validation)
+- Top-level keys only: regime, view, decision, failure_scenario, scenarios, exit_plan, self_grade, size.
+- regime.vol, regime.sector, regime.macro, regime.stock: **each one enum string** from the skeleton (e.g. vol is exactly "breakout" | "chop" | … as text). Never nest objects under these keys. Never paste or wrap the raw DATA PACKAGE as regime.
+- regime.holding_period_window is "5d" | "20d" | "50d". regime.indicators uses only the flat keys from the skeleton (numbers or null).
+- view has **only** "paragraph" (string) and "decision_intent" ("trade" | "pass"). Do not use thesis, company_events, analyst_actions, or other keys.
+- decision.candidates_considered[*]: debit_credit is one **number** (signed dollars per spread). greeks_entry uses delta, gamma, theta, vega as numbers. outcome_distribution keys must be lowercase **p5, p25, p50, p75, p95** only (not P5).
+- decision.rejected_alternatives[*]: only "structure" and "reason".
+- failure_scenario, scenarios, exit_plan, self_grade: same nesting and field names as the skeleton only.
+
+Respond for **this Conviction memo schema only**, not Solo Desk (vol/flow/catalyst/pm), not a regime dossier, not an alternate decision block.`;
+
+/** Matches strategist model catalog providers — drives provider-specific memo discipline (Gemini JSON vs tool-augmented APIs). */
+export type ConvictionDeskPromptProvider = "anthropic" | "google" | "openai" | "xai";
+
+function convictionDeskProviderAppend(provider?: ConvictionDeskPromptProvider): string {
+  if (!provider) return "";
+  switch (provider) {
+    case "google":
+      return `
+
+## YOUR PROVIDER (Google Gemini — JSON MIME turn)
+Web search is **not** attached to this JSON call (Gemini constraint). Use the DATA PACKAGE and any STRUCTURED RESEARCH block; put facts in memo strings without URLs. regime.vol, regime.sector, regime.macro, regime.stock must each be **one JSON string** from the skeleton enums, not nested classification objects or snapshot echoes.`;
+    case "openai":
+      return `
+
+## YOUR PROVIDER (OpenAI — Responses API + web search)
+After tool calls complete, your **final** output must be **only** the Conviction memo JSON object (top-level regime, view, decision, failure_scenario, scenarios, exit_plan, self_grade, size). Do **not** emit Solo Desk shapes (vol / flow / catalyst / pm at the root).`;
+    case "anthropic":
+      return `
+
+## YOUR PROVIDER (Anthropic — Messages + web search)
+The **final** assistant message must be **only** the Conviction memo JSON—no regime dossier tree, no prose before the opening brace. regime stays flat string enums per the skeleton.`;
+    case "xai":
+      return `
+
+## YOUR PROVIDER (xAI — Grok + web search)
+Return **only** one JSON object: the Conviction memo matching the skeleton; no alternate schema.`;
+    default:
+      return "";
+  }
+}
+
 export function buildConvictionDeskUserPrompt(
   dataPackage: string,
   structuredResearchBriefing?: string,
-  options?: { catalystSlotNativeWebSearch?: boolean },
+  options?: { catalystSlotNativeWebSearch?: boolean; provider?: ConvictionDeskPromptProvider },
 ): string {
   const nativeWeb = options?.catalystSlotNativeWebSearch
     ? `
@@ -572,25 +619,32 @@ ${structuredResearchBriefing}
 `
     : "";
 
-  return `You are producing a single trade memo as one JSON object (Conviction Desk). The data package is identical to Solo Desk: one consolidated JSON snapshot. Use the same literal data-state vocabulary as Solo Desk (**dataQualitySummary**, tape backfill flags, IV hygiene fields).
+  return `${CONVICTION_DESK_MEMO_INSTRUCTIONS}
 
 ${nativeWeb}${researchBlock}
 
-## MACHINE OUTPUT
-Return ONLY one JSON object. Top-level keys: regime, view, decision, failure_scenario, scenarios, exit_plan, self_grade, size.
-- decision.candidates_considered: exactly 3 items spanning at least two structure families (directional, vol-surface, premium).
-- decision.rejected_alternatives: exactly 2 items.
-- decision.chosen: null if NO TRADE. Otherwise include structure, legs, expiry, credit_or_debit, greeks_entry, greeks_evolution (exactly 9 objects for stock paths +1σ, 0, -1σ and days 1, 3, expiry-eve), outcome_distribution, ev_dollars, max_loss, optional stop_loss (per-share; must not equal max_loss when both are numbers).
-- chosen.ev_dollars must be within 5% of the average of P5, P25, P50, P75, and P95 in chosen.outcome_distribution.
-- If self_grade.conviction is C, D, or F, or conviction_threshold_met is false, or failure_scenario.sufficient is false, or view.decision_intent is pass, emit NO TRADE: chosen null, scenarios null, exit_plan null, size no-trade.
+## MACHINE OUTPUT (discipline)
+- Top-level keys exactly: regime, view, decision, failure_scenario, scenarios, exit_plan, self_grade, size.
+- decision.candidates_considered: at least 2 entries (3 preferred). Must span at least two structure families (directional, vol_surface, premium).
+- decision.rejected_alternatives: at least 1 entry.
+- decision.chosen: null when NO TRADE. Otherwise include structure, legs, expiry, credit_or_debit, greeks_entry, greeks_evolution (at least 3 cells; up to 9 for full grid of stock_path +1σ, 0, -1σ with days_held 1, 3, expiry-eve), outcome_distribution, ev_dollars, max_loss, optional stop_loss (per-share; must not equal max_loss when both are numbers).
+- chosen.ev_dollars must be within 5% of the mean of P5, P25, P50, P75, P95 in chosen.outcome_distribution when those define a trade.
+- NO TRADE when: view.decision_intent is "pass", OR self_grade.conviction is C, D, or F, OR conviction_threshold_met is false, OR failure_scenario.sufficient is false. Then chosen must be null, scenarios null, exit_plan null, size must be "no-trade". You still populate regime, view, candidates_considered, rejected_alternatives, failure_scenario, self_grade.
 
 Speak in first person. Do not use em dashes in any string field.
+
+---
+
+## JSON SHAPE (copy field names and enum literals exactly)
+
+${CONVICTION_DESK_JSON_SKELETON}
 
 ---
 
 ## DATA PACKAGE (JSON snapshot)
 
 ${snapshotBlock(dataPackage)}${OUTPUT_NO_SOURCE_RULES}${VOL_OUTPUT_ATTRIBUTION_RULES}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
+${CONVICTION_DESK_FINAL_SHAPE_GUARD}${convictionDeskProviderAppend(options?.provider)}
 
-Respond with ONLY a JSON object. No markdown fences, no extra prose.`;
+Respond with ONLY one JSON object exactly matching the structure above. No markdown fences, no commentary.`;
 }

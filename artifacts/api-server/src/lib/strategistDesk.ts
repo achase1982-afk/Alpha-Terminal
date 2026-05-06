@@ -50,6 +50,8 @@ import { runCatalystDeskStructuredSearches } from "./strategistDeskCatalystWebSe
 import { throwIfStrategistAnalyzeCancelled } from "./strategistAnalyzeCancellation.js";
 
 const TEMPERATURE = 0;
+/** Conviction memo + greeks grid can exceed default model caps; truncates cause parse/extract failures. */
+const CONVICTION_DESK_MAX_OUTPUT_TOKENS = 32768;
 
 export interface DeskCallbacks {
   /** Background analyze job id for cooperative cancel checks. */
@@ -110,18 +112,56 @@ async function streamModel(
   onDelta: (text: string) => void,
   onStatus?: (s: string) => void,
   cancelSignal?: AbortSignal,
+  opts?: { convictionDeskLargeMemo?: boolean },
 ): Promise<WebSearchResult> {
+  const cap = opts?.convictionDeskLargeMemo === true ? CONVICTION_DESK_MAX_OUTPUT_TOKENS : undefined;
   if (modelOpt.provider === "anthropic") {
-    return streamCallAnthropicWithSystemAndWebSearch(modelOpt.model, TEMPERATURE, systemPrompt, prompt, onDelta, onStatus, cancelSignal);
+    return streamCallAnthropicWithSystemAndWebSearch(
+      modelOpt.model,
+      TEMPERATURE,
+      systemPrompt,
+      prompt,
+      onDelta,
+      onStatus,
+      cancelSignal,
+      cap != null ? { maxTokens: cap } : undefined,
+    );
   }
   if (modelOpt.provider === "openai") {
-    return streamCallOpenAIWithSystemAndWebSearch(modelOpt.model, TEMPERATURE, systemPrompt, prompt, onDelta, onStatus, cancelSignal);
+    return streamCallOpenAIWithSystemAndWebSearch(
+      modelOpt.model,
+      TEMPERATURE,
+      systemPrompt,
+      prompt,
+      onDelta,
+      onStatus,
+      cancelSignal,
+      cap != null ? { maxOutputTokens: cap } : undefined,
+    );
   }
   if (modelOpt.provider === "xai") {
-    return streamCallXaiWithSystemAndWebSearch(modelOpt.model, TEMPERATURE, systemPrompt, prompt, onDelta, onStatus, cancelSignal);
+    return streamCallXaiWithSystemAndWebSearch(
+      modelOpt.model,
+      TEMPERATURE,
+      systemPrompt,
+      prompt,
+      onDelta,
+      onStatus,
+      cancelSignal,
+      cap != null ? { maxTokens: cap } : undefined,
+    );
   }
   // Desk JSON-only: Gemini cannot mix application/json with tools; skip web search for this path.
-  return streamCallGeminiDeskJson(modelOpt.model, TEMPERATURE, systemPrompt, prompt, onDelta, onStatus, cancelSignal);
+  return streamCallGeminiDeskJson(
+    modelOpt.model,
+    TEMPERATURE,
+    systemPrompt,
+    prompt,
+    onDelta,
+    onStatus,
+    cancelSignal,
+    cap != null ? { maxOutputTokens: cap } : undefined,
+  );
 }
 
 async function runDeskTurn<T>(args: {
@@ -781,6 +821,7 @@ export async function runConvictionDesk(args: {
 
   const userPrompt = buildConvictionDeskUserPrompt(dataPackage, catalystResearchBriefing || undefined, {
     catalystSlotNativeWebSearch: catalystNativeWeb,
+    provider: consolidatedModel.provider,
   });
 
   callbacks?.onStatus?.("Conviction Desk: single consolidated memo pass…");
@@ -814,6 +855,7 @@ export async function runConvictionDesk(args: {
       onDelta,
       (s) => callbacks?.onStatus?.(s),
       callbacks?.cancelSignal,
+      { convictionDeskLargeMemo: true },
     );
     text = r.text;
     callbacks?.onTurnDone?.(turnId, text);
@@ -900,7 +942,7 @@ export async function runConvictionDesk(args: {
     };
     const retryPrompt =
       userPrompt +
-      `\n\nYour previous response failed validation: ${validation.detail}. Return ONLY one valid JSON object matching ConvictionDeskOutputSchema exactly. No markdown, no code fences, no commentary before or after the JSON.`;
+      `\n\nYour previous response failed validation: ${validation.detail}.\n\nReturn ONLY one valid JSON object exactly matching the structure shown in the skeleton above. Use the exact field names and enum values from the skeleton. No markdown, no code fences, no commentary before or after the JSON.`;
     let retryR: WebSearchResult | undefined;
     try {
       retryR = await streamModel(
@@ -910,6 +952,7 @@ export async function runConvictionDesk(args: {
         onRetryDelta,
         (s) => callbacks?.onStatus?.(s),
         callbacks?.cancelSignal,
+        { convictionDeskLargeMemo: true },
       );
       callbacks?.onTurnDone?.(retryTurnId, retryR.text);
     } catch (err) {

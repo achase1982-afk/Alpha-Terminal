@@ -706,6 +706,7 @@ export async function streamCallXaiWithSystemAndWebSearch(
   onDelta: (text: string) => void,
   onStatus?: (status: string) => void,
   cancelSignal?: AbortSignal,
+  options?: { maxTokens?: number },
 ): Promise<WebSearchResult> {
   const xai = makeXaiProvider();
   onStatus?.("Calling xAI with web search…");
@@ -718,6 +719,7 @@ export async function streamCallXaiWithSystemAndWebSearch(
     prompt,
     tools: { web_search: xai.tools.webSearch() } as ToolSet,
     stopWhen: stepCountIs(15),
+    ...(options?.maxTokens != null ? { maxTokens: options.maxTokens } : {}),
     ...(reasoningOpts ? { providerOptions: reasoningOpts } : {}),
     ...(cancelSignal ? { abortSignal: cancelSignal } : {}),
   });
@@ -1060,6 +1062,7 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
   onDelta: (text: string) => void,
   onStatus?: (status: string) => void,
   cancelSignal?: AbortSignal,
+  options?: { maxTokens?: number },
 ): Promise<WebSearchResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
@@ -1071,9 +1074,12 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
 
   const isNew = /^claude-(opus|sonnet)-4-([7-9]|\d{2,})/.test(model);
   const THINKING_BUDGET = 4096;
+  const computedMax = isNew ? 16384 : THINKING_BUDGET + 12288;
+  const max_tokens =
+    options?.maxTokens != null ? Math.max(computedMax, options.maxTokens) : computedMax;
   const params: AnthropicMessageStreamParamsWithWebSearch = {
     model,
-    max_tokens: isNew ? 16384 : THINKING_BUDGET + 12288,
+    max_tokens,
     system: systemPrompt,
     messages: [{ role: "user", content: prompt }],
     tools: [ANTHROPIC_WEB_SEARCH_TOOL],
@@ -1364,12 +1370,13 @@ export async function streamCallGeminiDeskJson(
   onDelta: (text: string) => void,
   onStatus?: (status: string) => void,
   cancelSignal?: AbortSignal,
+  options?: { maxOutputTokens?: number },
 ): Promise<WebSearchResult> {
   if (!hasGeminiApiKey()) throw new Error("Gemini AI integration env vars not configured");
 
   const thinkingCfg = geminiThinkingConfigForModel(model);
   const config: Record<string, unknown> = {
-    maxOutputTokens: 12288,
+    maxOutputTokens: options?.maxOutputTokens ?? 12288,
     temperature,
     responseMimeType: "application/json",
   };
@@ -1449,13 +1456,14 @@ function buildOpenAIResponseParams(
   temperature: number,
   systemPrompt: string,
   prompt: string,
+  maxOutputTokensOverride?: number,
 ): Record<string, unknown> {
   const params: Record<string, unknown> = {
     model,
     instructions: systemPrompt,
     input: prompt,
     tools: [{ type: "web_search_preview" }],
-    max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
+    max_output_tokens: maxOutputTokensOverride ?? OPENAI_MAX_OUTPUT_TOKENS,
   };
   if (isOpenAIThinkingModel(model)) {
     // gpt-5.5 with thinking → high reasoning effort; others → medium for
@@ -1558,9 +1566,13 @@ export async function streamCallOpenAIWithSystemAndWebSearch(
   onDelta: (text: string) => void,
   onStatus?: (status: string) => void,
   cancelSignal?: AbortSignal,
+  options?: { maxOutputTokens?: number },
 ): Promise<WebSearchResult> {
   const client = makeOpenAIClient();
-  const params = { ...buildOpenAIResponseParams(model, temperature, systemPrompt, prompt), stream: true };
+  const params = {
+    ...buildOpenAIResponseParams(model, temperature, systemPrompt, prompt, options?.maxOutputTokens),
+    stream: true,
+  };
 
   onStatus?.("Calling OpenAI with web search…");
 
