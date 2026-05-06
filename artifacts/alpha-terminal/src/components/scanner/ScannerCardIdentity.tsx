@@ -16,7 +16,11 @@ function DayRangeBar({
   compact?: boolean;
 }) {
   if (!range || !Number.isFinite(range.low) || !Number.isFinite(range.high) || range.high <= range.low) {
-    return <span className="text-muted-foreground tabular-nums" style={scannerNumericFontStyle}>{dashCell()}</span>;
+    return (
+      <span className="text-sm font-mono tabular-nums text-gray-400" style={scannerNumericFontStyle}>
+        {dashCell()}
+      </span>
+    );
   }
   const span = range.high - range.low;
   let markerPct = 50;
@@ -24,7 +28,10 @@ function DayRangeBar({
     markerPct = Math.min(100, Math.max(0, ((price - range.low) / span) * 100));
   }
   const loHi = (
-    <span className="text-muted-foreground tabular-nums text-[10px] shrink-0 hidden sm:inline" style={scannerNumericFontStyle}>
+    <span
+      className="text-sm font-mono tabular-nums text-white shrink-0 hidden sm:inline"
+      style={scannerNumericFontStyle}
+    >
       {range.low.toFixed(1)}–{range.high.toFixed(1)}
     </span>
   );
@@ -45,8 +52,8 @@ function DayRangeBar({
     );
   }
   return (
-    <div className="flex items-center gap-2 min-w-0">
-      <span className="text-muted-foreground tabular-nums text-xs shrink-0" style={scannerNumericFontStyle}>
+    <div className="flex items-center gap-2 min-w-0" style={scannerNumericFontStyle}>
+      <span className="text-sm font-mono tabular-nums text-white shrink-0">
         {range.low.toFixed(2)} – {range.high.toFixed(2)}
       </span>
       {bar}
@@ -65,29 +72,29 @@ export function ScannerCardIdentity({ data }: { data: ScannerCardData }) {
 
   return (
     <div
-      className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs min-w-0 leading-tight"
+      className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-sm min-w-0 leading-tight font-mono"
       style={scannerNumericFontStyle}
     >
-      <span className={cn("font-medium shrink-0", name !== dashCell() ? "text-foreground" : "text-muted-foreground")}>{name}</span>
+      <span className={cn("font-medium shrink-0", name !== dashCell() ? "text-white" : "text-gray-400")}>{name}</span>
       {hasSector ? (
         <>
-          <span className="text-muted-foreground/80 shrink-0" aria-hidden>
+          <span className="text-zinc-500 shrink-0" aria-hidden>
             ·
           </span>
-          <span className="text-muted-foreground truncate max-w-[42%] shrink" title={sector}>
+          <span className="text-white truncate max-w-[42%] shrink" title={sector}>
             {sector}
           </span>
         </>
       ) : null}
-      <span className="text-muted-foreground/80 shrink-0" aria-hidden>
+      <span className="text-zinc-500 shrink-0" aria-hidden>
         ·
       </span>
       <DayRangeBar range={data.dayRange} price={data.price} compact />
-      <span className="text-muted-foreground/80 shrink-0" aria-hidden>
+      <span className="text-zinc-500 shrink-0" aria-hidden>
         ·
       </span>
-      <span className="text-muted-foreground shrink-0">vs 20d</span>
-      <span className={cn("tabular-nums shrink-0", volMult === dashCell() ? "text-muted-foreground" : "text-foreground")}>{volMult}</span>
+      <span className="text-white shrink-0">vs 20d</span>
+      <span className={cn("tabular-nums shrink-0", volMult === dashCell() ? "text-gray-400" : "text-white")}>{volMult}</span>
     </div>
   );
 }
