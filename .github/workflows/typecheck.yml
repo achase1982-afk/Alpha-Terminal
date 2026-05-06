@@ -32,6 +32,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build TypeScript project references for HTTP API
+        run: pnpm exec tsc --build --force lib/db lib/api-zod lib/integrations-gemini-ai
+
       - name: Typecheck HTTP API package
         run: |
           PKG='@workspace/'$(printf '%s%s-%s' ap i server)

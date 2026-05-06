@@ -90,7 +90,7 @@ function parseFlowSignature(raw: unknown): ScannerFlowSignature | null | undefin
   if (raw == null) return undefined;
   if (typeof raw !== "object") return null;
   const f = raw as Record<string, unknown>;
-  if (Object.keys(f).length === 0) return {};
+  if (Object.keys(f).length === 0) return null;
   const score =
     f["score"] == null
       ? null

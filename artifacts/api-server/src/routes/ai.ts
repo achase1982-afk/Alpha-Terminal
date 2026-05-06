@@ -1,5 +1,6 @@
 import { Router, type IRouter, type Response as ExpressResponse, type Request } from "express";
 import { logFailure } from "../lib/telemetry.js";
+import { getXaiApiKey } from "../lib/xaiEnv.js";
 import { emitTelemetry, createTelemetryBatch } from "../lib/telemetryStore.js";
 import Anthropic from "@anthropic-ai/sdk";
 import { generateText, streamText } from "ai";

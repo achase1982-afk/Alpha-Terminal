@@ -9,6 +9,7 @@ import { getQuoteBySymbol, addOptionSymbols, getAllOptionTicks, type OptionTick 
 import { getIBCachedQuote, subscribeQuoteForSymbol, isIBConnected } from "../lib/ibStreamer.js";
 import { getNextEarningsDate } from "../lib/earningsService.js";
 import { emitTelemetry } from "../lib/telemetryStore.js";
+import { logFailure } from "../lib/telemetry.js";
 import { type OptionContract } from "../lib/optionsStrategist.js";
 import { getStoredIVR } from "../lib/ivNormalize.js";
 import { fetchPolygonChain } from "../lib/polygonChain.js";
