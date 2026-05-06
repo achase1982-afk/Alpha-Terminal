@@ -39,6 +39,7 @@ const PUBLIC_API_PREFIXES = [
   "/snapshot/admin/backfill-hv-proxy",
   "/snapshot/admin/canonical-iv-accumulate",
   "/diagnostics/flow-capture",
+  "/strategist/conviction-diagnostic",
 ];
 
 function apiRequireAuth(req: Request, res: Response, next: NextFunction) {

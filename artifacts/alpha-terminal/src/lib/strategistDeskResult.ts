@@ -226,7 +226,7 @@ export interface ConvictionDeskResult {
   payoffSummary?: PayoffScenariosSummary | null;
   models: DeskResultClassic["models"];
   errors?: string[];
-  convictionDeskJsonDegraded?: "schema_validation_failed_after_retry";
+  convictionDeskJsonDegraded?: "schema_validation_failed_after_retry" | "stream_error" | "extraction_error";
 }
 
 /** Desk recommendation payload: classic four-topic desk or Conviction memo JSON. */

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ConvictionDeskRunDiagnostic } from "./convictionDeskRunDiagnostic.js";
 
 /** Strategist options-chain skew snapshot (summarizeOptionsChain / ChainSummary subset). */
 export const StrategistSkew25DeltaSchema = z.object({
@@ -337,7 +338,9 @@ export interface ConvictionDeskResult {
   errors?: string[];
   payoffScenarios?: PayoffScenario[] | null;
   payoffSummary?: PayoffScenariosSummary | null;
-  convictionDeskJsonDegraded?: "schema_validation_failed_after_retry";
+  convictionDeskJsonDegraded?: "schema_validation_failed_after_retry" | "stream_error" | "extraction_error";
+  /** Persisted on every run for DB-only diagnosis (large; not for logs). */
+  convictionDeskRunDiagnostic?: ConvictionDeskRunDiagnostic;
 }
 
 export type AnyDeskResult = DeskResult | ConvictionDeskResult;
