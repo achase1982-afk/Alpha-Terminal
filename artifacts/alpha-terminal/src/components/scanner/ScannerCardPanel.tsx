@@ -18,7 +18,7 @@ export function ScannerCardPanel({
     <div className={cn(PANEL_SURFACE, "flex min-h-0 flex-col")}>
       <div
         className={cn(
-          "flex items-center border-b border-primary/20 border-zinc-800/50",
+          "flex items-center border-b border-primary/20",
           dense ? "px-3 py-2" : "px-3 py-2.5",
         )}
       >
