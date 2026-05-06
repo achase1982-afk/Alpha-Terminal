@@ -77,6 +77,18 @@ export async function fetchScannerFlowContextForSymbols(
   const cutoffIso = cutoff.toISOString();
   const inList = sql.join(uniq.map((s) => sql`${s}`), sql`, `);
 
+  // Narrow by `date` so scans use `options_flow_raw_trades_sym_date_ts_idx`
+  // (underlying_symbol, date, timestamp). Session `date` can trail NY wall
+  // calendar across weekends/holidays; widen the lower bound by 7 days.
+  const rawFlowNyDateLo = sql`(LEAST(
+    DATE(timezone('America/New_York', ${cutoffIso}::timestamptz)),
+    DATE(timezone('America/New_York', CURRENT_TIMESTAMP))
+  ) - 7)`;
+  const rawFlowNyDateHi = sql`GREATEST(
+    DATE(timezone('America/New_York', ${cutoffIso}::timestamptz)),
+    DATE(timezone('America/New_York', CURRENT_TIMESTAMP))
+  )`;
+
   const aggRows = await db.execute(sql`
     SELECT
       underlying_symbol AS sym,
@@ -85,6 +97,7 @@ export async function fetchScannerFlowContextForSymbols(
       COALESCE(SUM(size), 0)::double precision AS vol_4h
     FROM options_flow_raw_trades
     WHERE underlying_symbol IN (${inList})
+      AND date BETWEEN ${rawFlowNyDateLo} AND ${rawFlowNyDateHi}
       AND timestamp IS NOT NULL
       AND timestamp >= ${cutoffIso}::timestamptz
     GROUP BY underlying_symbol
@@ -112,6 +125,7 @@ export async function fetchScannerFlowContextForSymbols(
         SUM(size)::double precision AS strike_vol
       FROM options_flow_raw_trades
       WHERE underlying_symbol IN (${inList})
+        AND date BETWEEN ${rawFlowNyDateLo} AND ${rawFlowNyDateHi}
         AND timestamp IS NOT NULL
         AND timestamp >= ${cutoffIso}::timestamptz
       GROUP BY underlying_symbol, strike, option_type, expiration
@@ -210,6 +224,7 @@ export async function fetchScannerFlowContextForSymbols(
         AND p.strike = t.strike
         AND p.expiration = t.expiration
       WHERE t.underlying_symbol IN (${pricedIn})
+        AND t.date BETWEEN ${rawFlowNyDateLo} AND ${rawFlowNyDateHi}
         AND t.timestamp IS NOT NULL
         AND t.timestamp >= ${cutoffIso}::timestamptz
       GROUP BY t.underlying_symbol
