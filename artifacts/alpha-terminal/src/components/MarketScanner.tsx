@@ -20,6 +20,7 @@ import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { useUnifiedScan } from "@/hooks/useUnifiedScan";
 import { UnifiedScannerCard } from "./UnifiedScannerCard";
 import { ScannerErrorBoundary } from "./ScannerErrorBoundary";
+import type { ScannerCardData } from "@/lib/unifiedScanTypes";
 import {
   ScannerCard,
   emptyScannerCardData,
@@ -27,7 +28,9 @@ import {
   persistMutedSymbols,
   pruneAndFilterMutedSymbols,
   readMutedSymbols,
+  scannerWireCardToScannerCardData,
 } from "@/components/scanner";
+import type { ScannerV3WireCard } from "@/hooks/useUnifiedScan";
 import type { ScannerCardAction } from "@/components/scanner/scannerCard.types";
 import { isUsEquitiesMarketHoursEt } from "@/lib/usMarketHours";
 
@@ -423,6 +426,20 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   const scanComplete = unified.phase === "complete";
   const candidates = unified.candidates;
 
+  const layer1CardDataBySymbol = useMemo(() => {
+    const cards = unified.layer1Universe?.cards;
+    const scanAt = unified.layer1Universe?.scan_at;
+    if (!Array.isArray(cards) || !scanAt) return new Map<string, ScannerCardData>();
+    const m = new Map<string, ScannerCardData>();
+    for (const c of cards) {
+      if (!c || typeof c !== "object" || typeof c.symbol !== "string") continue;
+      const sym = c.symbol.trim().toUpperCase();
+      if (!sym) continue;
+      m.set(sym, scannerWireCardToScannerCardData(c as ScannerV3WireCard, scanAt));
+    }
+    return m;
+  }, [unified.layer1Universe?.cards, unified.layer1Universe?.scan_at]);
+
   const layer1FilteredSymbols = useMemo(() => {
     if (!unified.layer1Universe?.tickers?.length) return [];
     const raw = readMutedSymbols();
@@ -609,7 +626,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
                   {layer1FilteredSymbols.map((sym) => (
                     <ScannerCard
                       key={sym}
-                      data={emptyScannerCardData(sym)}
+                      data={layer1CardDataBySymbol.get(sym) ?? emptyScannerCardData(sym)}
                       expanded={expandedSymbols.has(sym)}
                       onToggle={() => {
                         setExpandedSymbols((prev) => {
