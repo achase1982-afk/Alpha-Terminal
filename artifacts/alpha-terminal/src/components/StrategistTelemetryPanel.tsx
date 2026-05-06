@@ -75,7 +75,7 @@ function readStrategistPmDecision(dataPackage: unknown): string | null {
 }
 
 function resultColorLegacy(r: string) {
-  if (r === "recommendation") return "#2ecc71";
+  if (r === "recommendation" || r === "desk_recommendation") return "#2ecc71";
   if (r === "toxic_block") return "#ff4b5c";
   return "#f5a623";
 }
@@ -224,6 +224,7 @@ export function StrategistTelemetryPanel() {
           >
             <option value="">All</option>
             <option value="recommendation">Recommendation</option>
+            <option value="desk_recommendation">Desk recommendation</option>
             <option value="no_viable_setup">No Viable</option>
             <option value="toxic_block">Toxic Block</option>
             <option value="no_data">No Data</option>
