@@ -56,6 +56,14 @@ export interface ScannerV3WireCard {
   ivr?: number | null;
   hv30?: number | null;
   iv_vs_hv?: number | null;
+  /** Layer 4 catalysts — optional; nulls render as dashes. */
+  next_earnings_date?: string | null;
+  earnings_timing_hint?: "BMO" | "AMC" | null;
+  days_to_earnings?: number | null;
+  next_ex_dividend_date?: string | null;
+  ex_dividend_amount?: number | null;
+  days_to_ex_dividend?: number | null;
+  reactions_last_4q?: number[] | null;
 }
 
 export interface ScannerV3UniverseResponse {
@@ -72,6 +80,9 @@ export interface ScannerV3UniverseResponse {
   layer3_iv30_hits?: number;
   layer3_hv30_hits?: number;
   layer3_ivr_hits?: number;
+  layer4_earnings_hits?: number;
+  layer4_ex_div_hits?: number;
+  layer4_reactions_hits?: number;
 }
 
 export interface UseUnifiedScanState {

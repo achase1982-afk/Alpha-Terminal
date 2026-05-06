@@ -1,4 +1,5 @@
 import type { ScannerCardData } from "@/lib/unifiedScanTypes";
+import { cn } from "@/lib/utils";
 import { ScannerCardIdentity } from "./ScannerCardIdentity";
 import { ScannerCardScore } from "./ScannerCardScore";
 import { ScannerCardPanel, ScannerCardPanelRow } from "./ScannerCardPanel";
@@ -11,9 +12,24 @@ import {
   formatRatio,
   formatSignedMoney,
   formatSignedPct,
+  formatShortMonthDay,
   scannerNumericFontStyle,
 } from "./scannerCard.utils";
-import { cn } from "@/lib/utils";
+
+function catalystEarningsCell(earn: NonNullable<ScannerCardData["nextEarnings"]>): string {
+  const datePart = formatShortMonthDay(earn.date);
+  const head = earn.timing ? `${datePart} ${earn.timing}` : datePart;
+  if (earn.daysTo <= 30) {
+    return `${head} · ${earn.daysTo}d`;
+  }
+  return head;
+}
+
+function catalystExDivCell(ex: NonNullable<ScannerCardData["nextExDiv"]>): string {
+  const amt =
+    ex.amount != null && Number.isFinite(ex.amount) ? `$${ex.amount.toFixed(2)}` : dashCell();
+  return `${formatShortMonthDay(ex.date)} · ${amt}`;
+}
 
 function IvBar({ ivr, dense }: { ivr: number | null; dense?: boolean }) {
   if (ivr == null || !Number.isFinite(ivr)) {
@@ -22,10 +38,10 @@ function IvBar({ ivr, dense }: { ivr: number | null; dense?: boolean }) {
   const pct = Math.min(100, Math.max(0, ivr));
   return (
     <div className="flex items-center gap-1 min-w-0 justify-end">
-      <div className={cn("h-1 rounded-full bg-zinc-800 overflow-hidden shrink-0", dense ? "w-10" : "w-14")}>
+      <div className={cn("h-1 shrink-0 overflow-hidden rounded-full bg-zinc-800", dense ? "w-10" : "w-14")}>
         <div className="h-full bg-amber-500/90 rounded-full" style={{ width: `${pct}%` }} />
       </div>
-      <span className="font-mono tabular-nums text-zinc-200 w-7 text-right">{Math.round(ivr)}</span>
+      <span className="w-7 text-right font-mono tabular-nums text-zinc-200">{Math.round(ivr)}</span>
     </div>
   );
 }
@@ -62,19 +78,15 @@ export function ScannerCardDetail({
   const tech = data.technical;
 
   return (
-    <div className="border-t border-zinc-800/80 bg-[#080808]/95 px-2 pb-1.5 pt-1 space-y-1">
+    <div className="space-y-1 border-t border-zinc-800/80 bg-[#080808]/95 px-2 pb-1.5 pt-1">
       <ScannerCardIdentity data={data} />
       <ScannerCardScore data={data} />
 
       {/* V3: fixed 2×2 — Vol Context | Catalysts / Flow 4h | Technical */}
-      <div className="grid grid-cols-2 grid-rows-2 gap-1 min-h-0 auto-rows-fr">
+      <div className="grid min-h-0 auto-rows-fr grid-cols-2 grid-rows-2 gap-1">
         <ScannerCardPanel title="Vol Context" dense>
           <ScannerCardPanelRow dense label="IV30" value={formatIvPct(data.iv30)} />
-          <ScannerCardPanelRow
-            dense
-            label="IVR"
-            value={<IvBar ivr={data.ivr} dense />}
-          />
+          <ScannerCardPanelRow dense label="IVR" value={<IvBar ivr={data.ivr} dense />} />
           <ScannerCardPanelRow
             dense
             label="IV Percentile"
@@ -95,37 +107,13 @@ export function ScannerCardDetail({
           <ScannerCardPanelRow
             dense
             label="Term Structure"
-            value={
-              ts
-                ? `${termLabel(ts.shape)} (${formatRatio(ts.ratio)})`
-                : dashCell()
-            }
+            value={ts ? `${termLabel(ts.shape)} (${formatRatio(ts.ratio)})` : dashCell()}
           />
         </ScannerCardPanel>
 
         <ScannerCardPanel title="Catalysts" dense>
-          <ScannerCardPanelRow
-            dense
-            label="Earnings"
-            value={
-              earn
-                ? `${earn.date} · ${earn.daysTo}d${earn.timing ? ` · ${earn.timing}` : ""}`
-                : dashCell()
-            }
-          />
-          <ScannerCardPanelRow
-            dense
-            label="Ex-Dividend"
-            value={
-              ex
-                ? `${ex.date} · ${ex.daysTo}d${
-                    ex.amount != null && Number.isFinite(ex.amount)
-                      ? ` · $${ex.amount.toFixed(2)}`
-                      : ""
-                  }`
-                : dashCell()
-            }
-          />
+          <ScannerCardPanelRow dense label="Earnings" value={earn ? catalystEarningsCell(earn) : dashCell()} />
+          <ScannerCardPanelRow dense label="Ex-Dividend" value={ex ? catalystExDivCell(ex) : dashCell()} />
           <div className="pt-0.5 font-mono text-[10px] font-bold uppercase tracking-widest text-zinc-500">
             Reactions Last 4Q
           </div>
@@ -146,7 +134,7 @@ export function ScannerCardDetail({
                             : "text-zinc-200",
                     )}
                   >
-                    {Number.isFinite(h.absMovePct) ? `${h.absMovePct >= 0 ? "+" : ""}${h.absMovePct.toFixed(1)}%` : dashCell()}
+                    {Number.isFinite(h.absMovePct) ? formatSignedPct(h.absMovePct) : dashCell()}
                   </span>
                 </li>
               ))}
@@ -179,11 +167,7 @@ export function ScannerCardDetail({
           <ScannerCardPanelRow
             dense
             label="Top Strike"
-            value={
-              flow?.topStrike
-                ? `${flow.topStrike.strike} @ ${flow.topStrike.expiration}`
-                : dashCell()
-            }
+            value={flow?.topStrike ? `${flow.topStrike.strike} @ ${flow.topStrike.expiration}` : dashCell()}
           />
           <ScannerCardPanelRow
             dense
