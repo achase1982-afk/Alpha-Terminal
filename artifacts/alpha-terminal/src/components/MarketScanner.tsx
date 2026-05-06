@@ -112,8 +112,8 @@ function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCre
         ref={btnRef}
         type="button"
         onClick={() => setOpen(o => !o)}
-        className={`w-full min-h-[36px] rounded-md border border-card-border bg-card text-foreground flex items-center justify-between gap-1.5 focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors hover:border-zinc-600 ${
-          compactTrigger ? "max-sm:px-2 max-sm:py-1.5 max-sm:text-xs" : "px-3 py-2 text-sm"
+        className={`w-full min-h-[36px] rounded-md border border-card-border bg-card text-foreground flex items-center justify-between gap-1.5 focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors hover:border-zinc-600 px-3 py-2 text-sm${
+          compactTrigger ? " max-sm:px-2 max-sm:py-1.5 max-sm:text-xs" : ""
         }`}
       >
         <span className={`font-medium leading-tight min-w-0 ${compactTrigger ? "truncate text-xs" : "leading-snug"}`}>
