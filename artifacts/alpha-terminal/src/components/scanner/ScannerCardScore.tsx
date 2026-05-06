@@ -1,18 +1,7 @@
 import type { ScannerCardData } from "@/lib/unifiedScanTypes";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { dashCell } from "./scannerCard.utils";
-
-function TierDot({ score }: { score: number | null }) {
-  if (score == null || !Number.isFinite(score)) {
-    return <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-zinc-600" aria-hidden title="Score pending" />;
-  }
-  let cls = "bg-zinc-500";
-  if (score >= 70) cls = "bg-emerald-400 shadow-[0_0_6px_hsl(var(--terminal-success)/0.5)]";
-  else if (score >= 40) cls = "bg-amber-400";
-  else cls = "bg-red-400";
-  return <span className={cn("inline-block h-2 w-2 shrink-0 rounded-full", cls)} aria-hidden />;
-}
+import { dashCell, scannerScoreTierDotClassName } from "./scannerCard.utils";
 
 export function ScannerCardScore({ data }: { data: ScannerCardData }) {
   const sc = data.scoreComponents;
@@ -31,11 +20,17 @@ export function ScannerCardScore({ data }: { data: ScannerCardData }) {
   return (
     <div className="space-y-1 text-sm min-w-0">
       <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
-        <span className="shrink-0 text-sm font-medium text-zinc-200">Composite</span>
-        <TierDot score={composite} />
+        <span className="inline-flex shrink-0 items-center gap-0.5">
+          <span className="text-sm font-medium text-zinc-200">Composite</span>
+          <span className={scannerScoreTierDotClassName(composite, "md")} aria-hidden />
+        </span>
         {composite != null && Number.isFinite(composite) ? (
-          <span className="shrink-0 font-mono text-base font-bold tabular-nums text-zinc-100">{Math.round(composite)}/100</span>
-        ) : null}
+          <span className="shrink-0 font-mono text-base font-bold tabular-nums text-zinc-100">
+            {Math.round(composite)}/100
+          </span>
+        ) : (
+          <span className="shrink-0 font-mono text-base font-bold tabular-nums text-zinc-600">{dashCell()}</span>
+        )}
         <div className="min-w-[72px] flex-1 basis-[35%]">
           <Progress value={barPct} className="h-1.5 bg-zinc-800 [&>div]:bg-primary" />
         </div>
@@ -48,13 +43,16 @@ export function ScannerCardScore({ data }: { data: ScannerCardData }) {
           return (
             <div
               key={r.label}
-              className="flex min-w-0 flex-col items-center justify-center gap-0 bg-zinc-950/50 px-0.5 py-1 text-center"
+              className="flex min-w-0 flex-col items-center justify-center gap-0.5 bg-zinc-950/50 px-0.5 py-1 text-center"
             >
               <span
-                className="w-full truncate font-mono text-xs font-bold uppercase tracking-wider text-zinc-200 leading-none"
+                className="inline-flex w-full min-w-0 items-center justify-center gap-0.5"
                 title={r.label}
               >
-                {r.label}
+                <span className={scannerScoreTierDotClassName(r.value, "md")} aria-hidden />
+                <span className="min-w-0 truncate font-mono text-[10px] font-bold uppercase tracking-wider text-zinc-200 leading-none sm:text-xs">
+                  {r.label}
+                </span>
               </span>
               <span
                 className={cn(

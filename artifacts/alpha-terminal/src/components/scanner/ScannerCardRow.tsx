@@ -9,19 +9,9 @@ import {
   formatSignedMoney,
   formatSignedPct,
   scannerNumericFontStyle,
+  scannerScoreTierDotClassName,
   volumeVsAvgMultiplier,
 } from "./scannerCard.utils";
-
-function TierDotSmall({ score }: { score: number | null }) {
-  if (score == null || !Number.isFinite(score)) {
-    return <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-600" aria-hidden />;
-  }
-  let cls = "bg-zinc-500";
-  if (score >= 70) cls = "bg-emerald-400 shadow-[0_0_4px_hsl(var(--terminal-success)/0.35)]";
-  else if (score >= 40) cls = "bg-amber-400";
-  else cls = "bg-red-400";
-  return <span className={cn("inline-block h-1.5 w-1.5 shrink-0 rounded-full", cls)} aria-hidden />;
-}
 
 export function ScannerCardRow({ data, expanded }: { data: ScannerCardData; expanded: boolean }) {
   const pill = catalystPillLabel(data);
@@ -104,10 +94,12 @@ export function ScannerCardRow({ data, expanded }: { data: ScannerCardData; expa
       </div>
 
       <div className="flex min-w-[2.25rem] shrink-0 items-center justify-end gap-0.5 tabular-nums">
-        <TierDotSmall score={data.score} />
+        <span className={scannerScoreTierDotClassName(data.score, "sm")} aria-hidden />
         {data.score != null && Number.isFinite(data.score) ? (
           <span className="font-semibold text-foreground">{Math.round(data.score)}</span>
-        ) : null}
+        ) : (
+          <span className="font-semibold text-muted-foreground">{dashCell()}</span>
+        )}
       </div>
 
       <div className="ml-auto shrink-0 whitespace-nowrap text-right tabular-nums sm:ml-0">

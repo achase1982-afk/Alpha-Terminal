@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import type { ScannerCardData } from "@/lib/unifiedScanTypes";
+import { cn } from "@/lib/utils";
 import { getNextUsRegularSessionOpenEtIso } from "@/lib/usMarketHours";
 
 export const SCANNER_V3_MUTED_SYMBOLS_KEY = "scanner_v3_muted_symbols";
@@ -13,6 +14,27 @@ export const scannerNumericFontStyle: CSSProperties = { fontFamily: MONO };
 
 export function dashCell(): string {
   return "-";
+}
+
+/** Layer 7 tier dot: green ≥70, amber 40–69, red below 40, zinc = null. */
+export function scannerScoreTierDotClassName(
+  score: number | null | undefined,
+  size: "sm" | "md" = "md",
+): string {
+  const dim = size === "sm" ? "h-1.5 w-1.5" : "h-2 w-2";
+  const base = cn("inline-block shrink-0 rounded-full", dim);
+  if (score == null || !Number.isFinite(score)) {
+    return cn(base, "bg-zinc-600");
+  }
+  if (score >= 70) {
+    return cn(
+      base,
+      "bg-emerald-400",
+      size === "sm" ? "shadow-[0_0_4px_hsl(var(--terminal-success)/0.35)]" : "shadow-[0_0_6px_hsl(var(--terminal-success)/0.5)]",
+    );
+  }
+  if (score >= 40) return cn(base, "bg-amber-400");
+  return cn(base, "bg-red-400");
 }
 
 export function formatPrice(n: number | null | undefined): string {
