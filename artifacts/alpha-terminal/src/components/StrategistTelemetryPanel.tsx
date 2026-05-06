@@ -252,7 +252,9 @@ export function StrategistTelemetryPanel() {
                 }}
                 onKeyDown={(e) => {
                   if (e.key !== "Enter" && e.key !== " ") return;
-                  if ((e.target as HTMLElement).closest("[data-telemetry-row-copy]")) return;
+                  const ae = document.activeElement as HTMLElement | null;
+                  if (ae && !e.currentTarget.contains(ae)) return;
+                  if (ae?.closest("[data-telemetry-row-copy]")) return;
                   e.preventDefault();
                   setExpandedId(expandedId === row.id ? null : row.id);
                 }}
@@ -540,7 +542,7 @@ function TelemetryEntryCopyButton({ row }: { row: TelemetryRow }) {
       data-telemetry-row-copy
       onClick={(e) => {
         e.stopPropagation();
-        if (!isDesktop) setOpen(true);
+        if (!isDesktop) onOpenChange(true);
       }}
       aria-label="Copy telemetry sections"
       aria-haspopup="dialog"
