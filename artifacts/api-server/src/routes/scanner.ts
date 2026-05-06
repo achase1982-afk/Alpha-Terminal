@@ -7,8 +7,8 @@ import { runFmpScreen, type ScreenFilters } from "../lib/fmpScreener.js";
 import { runDynamicScreener } from "../lib/schwabDynamicScreener.js";
 import { getBestAccessToken } from "../lib/tokenStore.js";
 import { getAuth } from "@clerk/express";
-import { getUniverseSnapshot, buildCoreOptionsUniverse, type UniverseSnapshot } from "../lib/universeBuilder.js";
-import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
+import { getUniverseSnapshot, buildCoreOptionsUniverse } from "../lib/universeBuilder.js";
+import { loadPresets, PRESET_ALIASES, STATIC_PRESET_UNIVERSES } from "../lib/scannerPresetLoad.js";
 
 const router: IRouter = Router();
 
@@ -25,113 +25,6 @@ function getUserId(req: any): string {
   }
 }
 
-const PRESET_UNIVERSES: Record<string, { label: string; description: string; symbols: string[] }> = {
-  liquidCore130: {
-    label: "Liquid Core 130",
-    description: "130 ultra-liquid, options-tradable names across 9 sectors — primary scan universe",
-    symbols: [...LIQUID_CORE_SYMBOL_STRINGS],
-  },
-  midcap200: {
-    label: "Mid-Cap 200",
-    description: "~200 options-liquid mid-cap stocks ($2B–$10B market cap)",
-    symbols: [
-      // Tech / SaaS / Growth
-      "AFRM","ALTR","AMBA","ASAN","BILL","BRZE","CFLT","DOCN","DOMO","DUOL",
-      "ESTC","FROG","GTLB","HIMS","INST","JAMF","MNDY","NCNO","PCOR","QLYS",
-      "Q2","RELY","ROKU","RAMP","SNAP","SOFI","STEP","TOST","WK","WIX",
-      "ZI","ALKT","LMND","OPEN","SEMR","SITM","SMTC","YEXT","PEGA","EVBG",
-      // Healthcare / Biotech
-      "ACAD","ALNY","ARWR","AXSM","BHVN","BMRN","CLDX","DNLI","EXAS","EXEL",
-      "GKOS","HALO","IMVT","INSP","INSM","IRTC","KRTX","LGND","MGNX","NBIX",
-      "NTRA","NVCR","PCVX","PRCT","RARE","RCUS","RXRX","SMMT","SRPT","TMDX",
-      "VKTX","VRDN","VERV","NKTR","CGEM","ROIV","SNDX","KRYS","LIVN","OMCL",
-      // Consumer / Retail / Leisure
-      "BROS","CAVA","CHEF","DKNG","ELF","ETSY","FNKO","GO","JACK","LEVI",
-      "SFM","XPOF","ARKO","CAKE","DENN","FIVE","HRB","PTON","DKS","RCII",
-      "MODV","SHLS","NCLH","WINGSTOP","PRKS","BJRI","EXPR","COUR","PLBY","ACMR",
-      // Finance / Insurance / Fintech
-      "CBSH","FNB","SNV","WBS","ESNT","RDN","MTG","PFSI","CADE","CFR",
-      "PNFP","WSFS","NBHC","BANR","ONB","HWC","BOKF","BXMT","HCI","KNSL",
-      // Industrials / Defense / Aerospace
-      "KTOS","BWXT","DRS","MOOG","TGI","VSE","IRDM","ITRI","GNTX","ITT",
-      "NOVT","TREX","EXPO","STRL","IESC","ICFI","AAON","GFF","BEPC","SKYW",
-      // Energy / Materials
-      "ARCH","CHRD","CIVI","MNRL","NOG","RRC","SM","WTTR","WFRD","VTLE",
-      "WHD","REPX","PTEN","DINO","GPOR","CRK","MGY","CC","CMC","OLN",
-      // Real Estate
-      "COLD","NNN","SKT","APLE","CTRE","INN","PDM","PEB","SAFE","SVC",
-      // Additional options-liquid mid-caps
-      "NVST","GMED","IDCC","MSA","MEDP","MHO","LGIH","CWH","MGNI","RSKD",
-      "IPGP","IOVA","TRS","KWR","TROX","BCO","TMHC","MTH","CARG","KVYO",
-    ],
-  },
-};
-
-const SECTOR_SHORTHAND_REVERSE: Record<string, string> = {
-  "Information Technology": "TOP_TECH",
-  "Health Care": "TOP_HEALTHCARE",
-  "Financials": "TOP_FINANCIALS",
-  "Industrials": "TOP_INDUSTRIALS",
-  "Energy": "TOP_ENERGY",
-  "Consumer Discretionary": "TOP_CONS_DISC",
-  "Consumer Staples": "TOP_CONS_STAPLES",
-  "Communication Services": "TOP_COMM_SVCS",
-  "Materials": "TOP_MATERIALS",
-  "Utilities": "TOP_UTILITIES",
-  "Real Estate": "TOP_REAL_ESTATE",
-};
-
-const SECTOR_LABELS: Record<string, string> = {
-  "Information Technology": "Top Tech",
-  "Health Care": "Top Healthcare",
-  "Financials": "Top Financials",
-  "Industrials": "Top Industrials",
-  "Energy": "Top Energy",
-  "Consumer Discretionary": "Top Consumer Disc.",
-  "Consumer Staples": "Top Consumer Staples",
-  "Communication Services": "Top Comm. Services",
-  "Materials": "Top Materials",
-  "Utilities": "Top Utilities",
-  "Real Estate": "Top Real Estate",
-};
-
-function loadPresets(): Record<string, { label: string; description: string; symbols: string[] }> {
-  const combined: Record<string, { label: string; description: string; symbols: string[] }> = { ...PRESET_UNIVERSES };
-
-  const snap = getUniverseSnapshot();
-  if (snap && snap.symbols.length > 0) {
-    combined.core383 = {
-      label: "Core Balanced 383",
-      description: `${snap.symbols.length} sector-balanced, options-liquid stocks (built ${new Date(snap.buildTimestamp).toLocaleDateString()})`,
-      symbols: snap.symbols,
-    };
-
-    for (const [sector, syms] of Object.entries(snap.bySector)) {
-      const key = SECTOR_SHORTHAND_REVERSE[sector];
-      if (key && syms.length > 0) {
-        combined[key.toLowerCase()] = {
-          label: SECTOR_LABELS[sector] ?? sector,
-          description: `${syms.length} top options-liquid ${sector} stocks`,
-          symbols: syms,
-        };
-      }
-    }
-
-    for (const [key, syms] of Object.entries(snap.subSectorBuckets)) {
-      if (syms.length > 0) {
-        const label = key.replace("TOP_", "Top ").replace(/_/g, " ");
-        combined[key.toLowerCase()] = {
-          label,
-          description: `${syms.length} top ${label.toLowerCase()} stocks by market cap`,
-          symbols: syms,
-        };
-      }
-    }
-  }
-
-  return combined;
-}
-
 router.get("/universes", (_req, res) => {
   const presets = loadPresets();
   const result: Record<string, { label: string; description: string; count: number }> = {};
@@ -140,12 +33,6 @@ router.get("/universes", (_req, res) => {
   }
   return res.json({ presets: result });
 });
-
-const PRESET_ALIASES: Record<string, string> = {
-  sp500: "liquidCore130",
-  sp100: "liquidCore130",
-  ndx100: "liquidCore130",
-};
 
 /** Resolve `preset:*`, `watchlist:*`, or `screen:*` to symbol lists (server-side unified scanner). */
 export async function resolveScannerUniverseSymbolsForUser(universeId: string, userId: string): Promise<string[]> {
@@ -437,9 +324,9 @@ function getPresetSymbolsForFilters(filters: ScreenFilters): string[] {
   const marketCapMax = filters.marketCapMax ?? Infinity;
   const marketCapMin = filters.marketCapMin ?? 0;
   if (marketCapMax <= 12_000_000_000 && marketCapMin <= 10_000_000_000) {
-    return PRESET_UNIVERSES.midcap200?.symbols ?? [];
+    return STATIC_PRESET_UNIVERSES.midcap200?.symbols ?? [];
   }
-  return PRESET_UNIVERSES.liquidCore130?.symbols ?? [];
+  return STATIC_PRESET_UNIVERSES.liquidCore130?.symbols ?? [];
 }
 
 async function runScreenWithFallback(
@@ -655,7 +542,7 @@ router.post("/refresh-auto-watchlists", async (req, res) => {
     return res.status(503).json({ error: "No Schwab access token available" });
   }
 
-  const preset = PRESET_UNIVERSES[AUTO_UNIVERSE_KEY];
+  const preset = STATIC_PRESET_UNIVERSES[AUTO_UNIVERSE_KEY];
   if (!preset) {
     return res.status(500).json({ error: "Universe not found" });
   }
@@ -714,7 +601,7 @@ router.post("/refresh-auto-watchlists", async (req, res) => {
 
 function getAllSymbolsSorted(): string[] {
   const set = new Set<string>();
-  for (const preset of Object.values(PRESET_UNIVERSES)) {
+  for (const preset of Object.values(STATIC_PRESET_UNIVERSES)) {
     for (const sym of preset.symbols) set.add(sym);
   }
   const snap = getUniverseSnapshot();

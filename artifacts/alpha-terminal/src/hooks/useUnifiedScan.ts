@@ -4,6 +4,32 @@ import type { UnifiedScanCandidate } from "@/lib/unifiedScanTypes";
 
 const API_BASE = "/api";
 
+/** Maps dropdown preset keys to the `universe` query value for GET /api/scanner/v3/universe. */
+const PRESET_KEY_TO_V3_UNIVERSE_QUERY: Record<string, string> = {
+  liquidCore130: "liquid-core-130",
+  midcap200: "mid-cap-200",
+  core383: "core-balanced-383",
+  top_tech: "top-tech",
+  top_healthcare: "top-healthcare",
+  top_financials: "top-financials",
+  top_industrials: "top-industrials",
+  top_cons_disc: "top-consumer-disc",
+  top_comm_svcs: "top-comm-services",
+  top_energy: "top-energy",
+  top_cons_staples: "top-consumer-staples",
+  top_materials: "top-materials",
+  top_utilities: "top-utilities",
+  top_real_estate: "top-real-estate",
+};
+
+export function scannerV3UniverseQueryFromSelection(universeId: string): string {
+  if (universeId.startsWith("preset:")) {
+    const key = universeId.slice(7);
+    return PRESET_KEY_TO_V3_UNIVERSE_QUERY[key] ?? universeId;
+  }
+  return universeId;
+}
+
 export type UnifiedScanPhase = "idle" | "scanning" | "complete" | "error";
 
 export interface V2ScanResponse {
@@ -18,6 +44,8 @@ export interface ScannerV3UniverseResponse {
   tickers: string[];
   scan_at: string;
   count: number;
+  /** Echo of the `universe` query param (kebab id or composite `preset:…` / `watchlist:…` / `screen:…`). */
+  universe?: string;
 }
 
 export interface UseUnifiedScanState {
@@ -28,7 +56,7 @@ export interface UseUnifiedScanState {
   stale: boolean | null;
   scanAt: string | null;
   errorMessage: string | null;
-  /** Layer 1 — static LC130 universe from GET /api/scanner/v3/universe */
+  /** Layer 1 — ticker list from GET /api/scanner/v3/universe for the selected universe */
   layer1Universe: ScannerV3UniverseResponse | null;
   startScan: (universeId: string) => Promise<void>;
   cancelLocal: () => void;
@@ -68,7 +96,10 @@ export function useUnifiedScan(): UseUnifiedScanState {
     setCandidates([]);
     setLayer1Universe(null);
     try {
-      const v3Res = await fetchWithAuth(`${API_BASE}/scanner/v3/universe`, { method: "GET" });
+      const v3UniverseParam = encodeURIComponent(scannerV3UniverseQueryFromSelection(_universeId));
+      const v3Res = await fetchWithAuth(`${API_BASE}/scanner/v3/universe?universe=${v3UniverseParam}`, {
+        method: "GET",
+      });
       if (v3Res.status === 401) {
         setPhase("error");
         setErrorMessage("Unauthorized — sign in again.");
@@ -88,7 +119,11 @@ export function useUnifiedScan(): UseUnifiedScanState {
         typeof layer1.count === "number" && Number.isFinite(layer1.count)
           ? layer1.count
           : tickers.length;
-      setLayer1Universe({ tickers, scan_at, count });
+      const universeEcho =
+        typeof layer1.universe === "string" && layer1.universe.length > 0
+          ? layer1.universe
+          : scannerV3UniverseQueryFromSelection(_universeId);
+      setLayer1Universe({ tickers, scan_at, count, universe: universeEcho });
 
       const params = new URLSearchParams({
         universe: _universeId,
