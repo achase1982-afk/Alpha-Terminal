@@ -11,6 +11,7 @@ import {
 import { loadPresets, PRESET_ALIASES } from "../lib/scannerPresetLoad.js";
 import { resolveScannerUniverseSymbolsForUser } from "./scanner.js";
 import { fetchSchwabBatchQuotesForSymbolsBestToken } from "../lib/schwabBatchQuotes.js";
+import { fetchScannerVolContextForSymbols } from "../lib/scannerVolContext.js";
 import { getBestAccessToken } from "../lib/tokenStore.js";
 
 const router: IRouter = Router();
@@ -109,9 +110,24 @@ router.get("/v3/universe", async (req, res) => {
       ? await fetchSchwabBatchQuotesForSymbolsBestToken(tickers)
       : new Map();
 
+    const schwabIvBySymbol = new Map<string, number | null>();
+    for (const [sym, q] of quoteMap) {
+      schwabIvBySymbol.set(sym, q.impliedVolatility ?? null);
+    }
+
+    const volMap = await fetchScannerVolContextForSymbols(tickers, schwabIvBySymbol);
+
+    let layer3_iv30_hits = 0;
+    let layer3_hv30_hits = 0;
+    let layer3_ivr_hits = 0;
+
     const cards = tickers.map((raw) => {
       const symbol = raw.trim().toUpperCase();
       const q = quoteMap.get(symbol);
+      const v = volMap.get(symbol);
+      if (v?.iv30 != null) layer3_iv30_hits++;
+      if (v?.hv30 != null) layer3_hv30_hits++;
+      if (v?.ivr != null) layer3_ivr_hits++;
       return {
         symbol,
         name: q?.name ?? null,
@@ -122,6 +138,10 @@ router.get("/v3/universe", async (req, res) => {
         volume: q?.volume ?? null,
         avg_volume_20d: q?.avgVolume20d ?? null,
         day_range: q?.dayRange ?? null,
+        iv30: v?.iv30 ?? null,
+        ivr: v?.ivr ?? null,
+        hv30: v?.hv30 ?? null,
+        iv_vs_hv: v?.ivVsHv ?? null,
       };
     });
 
@@ -134,6 +154,9 @@ router.get("/v3/universe", async (req, res) => {
       cards,
       schwab_access_token_present,
       layer2_quote_hits: quoteMap.size,
+      layer3_iv30_hits,
+      layer3_hv30_hits,
+      layer3_ivr_hits,
     };
 
     const duration_ms = Date.now() - started;

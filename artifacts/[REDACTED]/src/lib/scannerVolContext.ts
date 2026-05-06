@@ -1,0 +1,122 @@
+import { db } from "@workspace/db";
+import { sql } from "drizzle-orm";
+import pLimit from "p-limit";
+import { getStoredIVR, normalizeIV } from "./ivNormalize.js";
+
+/** Layer 3 vol metrics for scanner cards (decimals for IV/HV; IVR 0–100). */
+export type ScannerVolContext = {
+  iv30: number | null;
+  ivr: number | null;
+  hv30: number | null;
+  ivVsHv: number | null;
+};
+
+const IVR_FETCH_CONCURRENCY = 14;
+
+/**
+ * `equity_daily.hv_*` is populated both as annualized decimals (~0.35) and as
+ * percentage-style magnitudes (~35) depending on writer; normalize to IV-style decimal for `ScannerCardData`.
+ */
+export function hv30DbToDecimal(raw: number | null | undefined): number | null {
+  if (raw == null || !Number.isFinite(raw)) return null;
+  if (raw <= 0) return null;
+  if (raw > 1.25) return raw / 100;
+  return raw;
+}
+
+function ivVsHv(iv30: number | null, hv30: number | null): number | null {
+  if (iv30 == null || hv30 == null || !Number.isFinite(iv30) || !Number.isFinite(hv30) || hv30 === 0) {
+    return null;
+  }
+  return Math.round((iv30 / hv30) * 100) / 100;
+}
+
+type LatestEqRow = {
+  symbol: string;
+  date: string;
+  iv30d: number | null;
+  iv30dProxy: number | null;
+  hv30d: number | null;
+};
+
+async function fetchLatestEquityDailyRows(symbols: string[]): Promise<Map<string, LatestEqRow>> {
+  const uniq = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
+  const out = new Map<string, LatestEqRow>();
+  if (uniq.length === 0) return out;
+
+  const rows = await db.execute(sql`
+    SELECT DISTINCT ON (symbol)
+      symbol,
+      date::text AS date,
+      iv_30d,
+      iv_30d_proxy,
+      hv_30d
+    FROM equity_daily
+    WHERE symbol IN (${sql.join(uniq.map((s) => sql`${s}`), sql`, `)})
+    ORDER BY symbol ASC, date DESC
+  `);
+
+  const list = (rows.rows ?? []) as Record<string, unknown>[];
+  for (const r of list) {
+    const sym = r.symbol != null ? String(r.symbol).toUpperCase().trim() : "";
+    if (!sym) continue;
+    out.set(sym, {
+      symbol: sym,
+      date: String(r.date ?? ""),
+      iv30d: r.iv_30d != null ? Number(r.iv_30d) : null,
+      iv30dProxy: r.iv_30d_proxy != null ? Number(r.iv_30d_proxy) : null,
+      hv30d: r.hv_30d != null ? Number(r.hv_30d) : null,
+    });
+  }
+  return out;
+}
+
+/**
+ * Vol context for scanner Layer 3.
+ *
+ * - **IV30**: `equity_daily.iv_30d` (daily snapshot / chain ATM IV30), else `iv_30d_proxy`, else Schwab quote implied vol when provided.
+ * - **HV30**: latest `equity_daily.hv_30d` (daily snapshot close-return HV30), normalized to decimal.
+ * - **IVR**: {@link getStoredIVR} when equity history supports rank (requires persisted IV series); otherwise null.
+ * - **IV vs HV**: IV30 / HV30 when both present.
+ */
+export async function fetchScannerVolContextForSymbols(
+  symbols: string[],
+  schwabIvDecimalBySymbol?: ReadonlyMap<string, number | null>,
+): Promise<Map<string, ScannerVolContext>> {
+  const uniq = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
+  const latestBySym = await fetchLatestEquityDailyRows(uniq);
+
+  const limit = pLimit(IVR_FETCH_CONCURRENCY);
+  const ivrBySym = new Map<string, number | null>();
+  await Promise.all(
+    uniq.map((sym) =>
+      limit(async () => {
+        const stored = await getStoredIVR(sym);
+        ivrBySym.set(sym, stored?.ivr ?? null);
+      }),
+    ),
+  );
+
+  const out = new Map<string, ScannerVolContext>();
+  for (const sym of uniq) {
+    const row = latestBySym.get(sym);
+    const ivFromEq =
+      normalizeIV(row?.iv30d ?? null) ??
+      normalizeIV(row?.iv30dProxy ?? null);
+    const ivFromSchwab = normalizeIV(schwabIvDecimalBySymbol?.get(sym) ?? null);
+    const iv30 = ivFromEq ?? ivFromSchwab ?? null;
+
+    const hv30 = hv30DbToDecimal(row?.hv30d ?? null);
+
+    const ivVs = ivVsHv(iv30, hv30);
+
+    out.set(sym, {
+      iv30,
+      ivr: ivrBySym.get(sym) ?? null,
+      hv30,
+      ivVsHv: ivVs,
+    });
+  }
+
+  return out;
+}

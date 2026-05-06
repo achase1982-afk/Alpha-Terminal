@@ -1,4 +1,5 @@
 import { getBestAccessToken } from "./tokenStore.js";
+import { normalizeIV } from "./ivNormalize.js";
 
 const SCHWAB_MARKETDATA = "https://api.schwabapi.com/marketdata/v1";
 
@@ -18,6 +19,8 @@ export interface SchwabScannerBatchQuote {
   dayRange: { low: number; high: number } | null;
   name: string | null;
   sector: string | null;
+  /** Schwab `quote.volatility` / similar — normalized to IV decimal (e.g. 0.35) when parseable. */
+  impliedVolatility: number | null;
 }
 
 function pickFiniteNum(obj: Record<string, unknown> | undefined, keys: string[]): number | null {
@@ -90,6 +93,8 @@ function parseSchwabQuoteEntry(entry: Record<string, unknown> | undefined): Schw
   const sectorRaw =
     typeof f?.["sector"] === "string" && f["sector"].trim() ? f["sector"].trim() : null;
 
+  const volRaw = pickFiniteNum(q, ["volatility", "impliedVolatility"]);
+
   const price =
     last != null && Number.isFinite(last) && last > 0 ? last : null;
 
@@ -102,6 +107,7 @@ function parseSchwabQuoteEntry(entry: Record<string, unknown> | undefined): Schw
     dayRange,
     name: nameRaw,
     sector: sectorRaw,
+    impliedVolatility: normalizeIV(volRaw),
   };
 }
 

@@ -71,9 +71,11 @@ export function ScannerCardDetail({
           <ScannerCardPanelRow
             label="IV vs HV"
             value={
-              data.iv30 != null && data.hv30 != null && Number.isFinite(data.iv30) && Number.isFinite(data.hv30) && data.hv30 !== 0
-                ? formatRatio(data.iv30 / data.hv30)
-                : dashCell()
+              data.ivVsHv != null && Number.isFinite(data.ivVsHv)
+                ? formatRatio(data.ivVsHv)
+                : data.iv30 != null && data.hv30 != null && Number.isFinite(data.iv30) && Number.isFinite(data.hv30) && data.hv30 !== 0
+                  ? formatRatio(data.iv30 / data.hv30)
+                  : dashCell()
             }
           />
           <ScannerCardPanelRow

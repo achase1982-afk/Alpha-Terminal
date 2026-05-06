@@ -17,6 +17,10 @@ export function scannerWireCardToScannerCardData(wire: ScannerV3WireCard, scanAt
     volume: wire.volume,
     avgVolume20d: wire.avg_volume_20d,
     dayRange: wire.day_range,
+    iv30: wire.iv30 ?? null,
+    ivr: wire.ivr ?? null,
+    hv30: wire.hv30 ?? null,
+    ivVsHv: wire.iv_vs_hv ?? null,
     lastUpdate: scanAt,
   };
 }
