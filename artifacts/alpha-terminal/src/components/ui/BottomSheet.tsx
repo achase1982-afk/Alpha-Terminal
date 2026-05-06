@@ -1,18 +1,20 @@
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { Drawer as DrawerPrimitive } from "vaul";
 
 import { cn } from "@/lib/utils";
+import { TELEMETRY_COPY_LAYER_Z } from "@/lib/telemetryCopyLayer";
 
 const DrawerPortal = DrawerPrimitive.Portal;
 
 const BottomSheetOverlay = React.forwardRef<
   React.ElementRef<typeof DrawerPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Overlay>
->(({ className, ...props }, ref) => (
-  /* Overlay above Sidebar Telemetry shell (z-[100]); below OrderTicket (z-[210]). */
+>(({ className, style, ...props }, ref) => (
   <DrawerPrimitive.Overlay
     ref={ref}
-    className={cn("fixed inset-0 z-[200] bg-black/80", className)}
+    className={cn("fixed inset-0 bg-black/80", className)}
+    style={{ zIndex: TELEMETRY_COPY_LAYER_Z, ...style }}
     {...props}
   />
 ));
@@ -28,7 +30,8 @@ export interface BottomSheetProps {
 }
 
 /**
- * Mobile-friendly bottom sheet (Vaul): slide-up, backdrop dismiss, safe-area padding.
+ * Mobile-friendly bottom sheet (Vaul). Entire root is portaled to `document.body`
+ * so `position: fixed` is never trapped by `.app-shell` transform or the Telemetry settings portal.
  */
 export function BottomSheet({
   open,
@@ -38,15 +41,16 @@ export function BottomSheet({
   children,
   className,
 }: BottomSheetProps) {
-  return (
+  const sheet = (
     <DrawerPrimitive.Root open={open} onOpenChange={onOpenChange} shouldScaleBackground={false} modal>
       <DrawerPortal>
         <BottomSheetOverlay />
         <DrawerPrimitive.Content
           className={cn(
-            "fixed inset-x-0 bottom-0 z-[200] flex max-h-[90vh] flex-col rounded-t-[10px] border border-zinc-700 bg-zinc-950 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2 text-zinc-100 shadow-xl outline-none",
+            "fixed inset-x-0 bottom-0 flex max-h-[90vh] flex-col rounded-t-[10px] border border-zinc-700 bg-zinc-950 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2 text-zinc-100 shadow-xl outline-none",
             className,
           )}
+          style={{ zIndex: TELEMETRY_COPY_LAYER_Z }}
         >
           <DrawerPrimitive.Title className="sr-only">{title}</DrawerPrimitive.Title>
           <DrawerPrimitive.Description className="sr-only">{description || title}</DrawerPrimitive.Description>
@@ -59,4 +63,8 @@ export function BottomSheet({
       </DrawerPortal>
     </DrawerPrimitive.Root>
   );
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(sheet, document.body);
 }

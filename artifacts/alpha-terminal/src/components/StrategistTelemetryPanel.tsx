@@ -12,6 +12,7 @@ import {
   parseDataPackageRecord,
   type CopySectionId,
 } from "@/lib/strategistTelemetryCopyPayload";
+import { TELEMETRY_COPY_LAYER_Z } from "@/lib/telemetryCopyLayer";
 
 interface TelemetryRow {
   id: number;
@@ -558,10 +559,11 @@ function TelemetryEntryCopyButton({ row }: { row: TelemetryRow }) {
   if (isWide) {
     return (
       <span data-telemetry-row-copy className="inline-flex shrink-0">
-        <Popover open={open} onOpenChange={onOpenChange}>
+        <Popover modal open={open} onOpenChange={onOpenChange}>
           <PopoverTrigger asChild>{triggerButton}</PopoverTrigger>
           <PopoverContent
-            className="z-[200] w-[min(100vw-2rem,22rem)] border-zinc-700 bg-zinc-950 p-3 text-zinc-100 shadow-xl"
+            style={{ zIndex: TELEMETRY_COPY_LAYER_Z }}
+            className="w-[min(100vw-2rem,22rem)] border-zinc-700 bg-zinc-950 p-3 text-zinc-100 shadow-xl"
             align="end"
             side="bottom"
             sideOffset={8}
