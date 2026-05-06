@@ -30,30 +30,32 @@ export function ScannerCardScore({ data }: { data: ScannerCardData }) {
     composite != null && Number.isFinite(composite) ? Math.min(100, Math.max(0, composite)) : 0;
 
   return (
-    <div className="space-y-2 text-[11px]" style={scannerNumericFontStyle}>
+    <div className="space-y-2 text-sm" style={scannerNumericFontStyle}>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-zinc-500 font-medium">Composite</span>
+        <span className="text-muted-foreground font-medium">Composite</span>
         <TierDot score={composite} />
         {composite != null && Number.isFinite(composite) ? (
-          <span className="text-zinc-200 font-bold tabular-nums">{Math.round(composite)}/100</span>
+          <span className="text-foreground font-bold tabular-nums">{Math.round(composite)}/100</span>
         ) : null}
         <div className="flex-1 min-w-[120px] max-w-[220px]">
           <Progress value={barPct} className="h-1.5 bg-zinc-800 [&>div]:bg-primary" />
         </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
-        {rows.map((r) => (
-          <div key={r.label} className="flex justify-between gap-2 tabular-nums">
-            <span className="text-zinc-500">{r.label}</span>
-            <span className="text-zinc-200 text-right min-w-[2ch]">
-              {r.value != null && Number.isFinite(r.value) ? Math.round(r.value) : dashCell()}
-            </span>
-          </div>
-        ))}
+        {rows.map((r) => {
+          const cell = r.value != null && Number.isFinite(r.value) ? String(Math.round(r.value)) : dashCell();
+          const isDash = cell === dashCell();
+          return (
+            <div key={r.label} className="flex justify-between gap-2 tabular-nums">
+              <span className="text-muted-foreground">{r.label}</span>
+              <span className={cn("text-right min-w-[2ch]", isDash ? "text-muted-foreground" : "text-foreground")}>{cell}</span>
+            </div>
+          );
+        })}
       </div>
-      <div className="flex justify-between gap-2 text-[10px] uppercase tracking-wide text-zinc-500 pt-0.5 border-t border-zinc-800/60">
+      <div className="flex justify-between gap-2 text-xs uppercase tracking-wide text-muted-foreground pt-0.5 border-t border-zinc-800/60">
         <span>Preset</span>
-        <span className="text-zinc-300 font-mono normal-case tracking-normal">
+        <span className={cn("font-mono normal-case tracking-normal tabular-nums", !data.preset?.trim() ? "text-muted-foreground" : "text-foreground")}>
           {data.preset?.trim() || dashCell()}
         </span>
       </div>

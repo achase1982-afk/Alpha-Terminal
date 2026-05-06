@@ -19,7 +19,7 @@ export function ScannerCardActions({
           // TODO: emit scanner_v3_card_* telemetry once frontend telemetry plumbing is established.
           onAction("analyze");
         }}
-        className="rounded-md px-3 py-1.5 text-[11px] font-bold bg-primary text-primary-foreground hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[#0c0c0c]"
+        className="rounded-md px-3 py-1.5 text-sm font-bold bg-primary text-primary-foreground hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[#0c0c0c]"
       >
         Analyze in Strategist
       </button>
@@ -29,7 +29,7 @@ export function ScannerCardActions({
           // TODO: emit scanner_v3_card_* telemetry once frontend telemetry plumbing is established.
           onAction("watchlist");
         }}
-        className="rounded-md px-3 py-1.5 text-[11px] font-bold border border-zinc-600 bg-zinc-900 text-zinc-200 hover:bg-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0c0c0c]"
+        className="rounded-md px-3 py-1.5 text-sm font-bold border border-zinc-600 bg-zinc-900 text-zinc-200 hover:bg-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0c0c0c]"
       >
         + Watchlist
       </button>
@@ -39,7 +39,7 @@ export function ScannerCardActions({
           // TODO: emit scanner_v3_card_* telemetry once frontend telemetry plumbing is established.
           onAction("mute");
         }}
-        className="rounded-md px-3 py-1.5 text-[11px] font-medium text-zinc-500 hover:text-zinc-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0c0c0c]"
+        className="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-[#0c0c0c]"
       >
         Mute today
       </button>

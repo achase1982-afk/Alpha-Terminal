@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 
 function IvBar({ ivr }: { ivr: number | null }) {
   if (ivr == null || !Number.isFinite(ivr)) {
-    return <span className="text-zinc-600 tabular-nums">{dashCell()}</span>;
+    return <span className="text-muted-foreground tabular-nums">{dashCell()}</span>;
   }
   const pct = Math.min(100, Math.max(0, ivr));
   return (
@@ -25,7 +25,7 @@ function IvBar({ ivr }: { ivr: number | null }) {
       <div className="w-14 h-1 rounded-full bg-zinc-800 overflow-hidden shrink-0">
         <div className="h-full bg-amber-500/90 rounded-full" style={{ width: `${pct}%` }} />
       </div>
-      <span className="tabular-nums text-zinc-200 w-8 text-right">{Math.round(ivr)}</span>
+      <span className="tabular-nums text-foreground w-8 text-right">{Math.round(ivr)}</span>
     </div>
   );
 }
@@ -37,7 +37,7 @@ function termLabel(shape: NonNullable<ScannerCardData["termStructure"]>["shape"]
 }
 
 function MaVs({ above }: { above: boolean | null }) {
-  if (above == null) return dashCell();
+  if (above == null) return <span className="text-muted-foreground tabular-nums">{dashCell()}</span>;
   return above ? <span className="text-terminal-success">Above</span> : <span className="text-terminal-danger">Below</span>;
 }
 
@@ -55,7 +55,7 @@ export function ScannerCardDetail({
   const tech = data.technical;
 
   return (
-    <div className="px-3 pb-3 pt-2 space-y-3 border-t border-zinc-800/80 bg-[#080808]/95">
+    <div className="px-3 pb-3 pt-2 space-y-3 border-t border-zinc-800/80 bg-[#080808]/95 text-sm">
       <ScannerCardIdentity data={data} />
       <ScannerCardScore data={data} />
 
@@ -107,16 +107,16 @@ export function ScannerCardDetail({
                 : dashCell()
             }
           />
-          <div className="text-zinc-500 text-[10px] uppercase tracking-wide pt-0.5">Reactions last 4q</div>
+          <div className="text-muted-foreground text-xs uppercase tracking-wide pt-0.5">Reactions last 4q</div>
           {data.earningsHistory && data.earningsHistory.length > 0 ? (
             <ul className="space-y-0.5">
               {data.earningsHistory.slice(0, 4).map((h, i) => (
                 <li key={`${h.quarter}-${i}`} className="flex justify-between gap-2 tabular-nums">
-                  <span className="text-zinc-500 truncate">{h.quarter}</span>
+                  <span className="text-muted-foreground truncate">{h.quarter}</span>
                   <span
                     className={cn(
                       "shrink-0",
-                      h.absMovePct > 0 ? "text-terminal-success" : h.absMovePct < 0 ? "text-terminal-danger" : "text-zinc-400",
+                      h.absMovePct > 0 ? "text-terminal-success" : h.absMovePct < 0 ? "text-terminal-danger" : "text-muted-foreground",
                     )}
                   >
                     {Number.isFinite(h.absMovePct) ? `${h.absMovePct >= 0 ? "+" : ""}${h.absMovePct.toFixed(1)}%` : dashCell()}
@@ -125,7 +125,7 @@ export function ScannerCardDetail({
               ))}
             </ul>
           ) : (
-            <div className="text-right text-zinc-600 tabular-nums">{dashCell()}</div>
+            <div className="text-right text-muted-foreground tabular-nums">{dashCell()}</div>
           )}
         </ScannerCardPanel>
 
