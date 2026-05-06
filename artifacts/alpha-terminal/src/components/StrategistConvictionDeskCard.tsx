@@ -1,8 +1,13 @@
-import { useCallback, useMemo, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { BlockReason, StrategistOutcome, StrategistSendToOrderPayload } from "@/components/StrategistV2Card";
 import { buildOccSymbol } from "@/components/StrategistV2Card";
-import { Copy, Play } from "lucide-react";
+import { Copy, Play, Square } from "lucide-react";
 import { toast } from "sonner";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { buildConvictionDeskMemoPlainText } from "@/lib/convictionDeskMemoPlain";
+import { splitDeskAudioTextIntoChunks } from "@/lib/deskAudioChunking";
+import { emitDeskTtsClientEvent, fetchDeskTtsChunkBlob } from "@/lib/deskBufferedTtsClient";
+import { STRATEGIST_ANALYSIS_CANCEL_EVENT, STRATEGIST_ANALYSIS_START_EVENT } from "@/lib/strategistDeskSpeechEvents";
 import type {
   ConvictionDeskResult,
   DeskLeg,
@@ -10,7 +15,6 @@ import type {
   PayoffScenario,
   PayoffScenariosSummary,
 } from "@/lib/strategistDeskResult";
-import { buildConvictionDeskMemoPlainText } from "@/lib/convictionDeskMemoPlain";
 
 const SYS_FONT = "-apple-system, 'SF Pro Display', 'Inter', system-ui, sans-serif";
 const TOUCH_MIN = 44;
@@ -28,6 +32,22 @@ const PAL = {
   gold: "#fbbf24",
   goldHeader: "#f59e0b",
 };
+
+const convictionDeskVoiceConfig: { voice?: string } = {};
+
+function convictionMemoAudioCacheId(deskResult: ConvictionDeskResult): string {
+  const payload = JSON.stringify({
+    ticker: deskResult.ticker,
+    conviction: deskResult.conviction,
+    errors: deskResult.errors ?? null,
+  });
+  let h = 2166136261;
+  for (let i = 0; i < payload.length; i++) {
+    h ^= payload.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return `conviction-memo-${(h >>> 0).toString(16)}`;
+}
 
 function fmtCurrencyPlain(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -303,6 +323,7 @@ export function StrategistConvictionDeskCard({
   onSendToOrder,
 }: StrategistConvictionDeskCardProps) {
   const conviction = deskResult.conviction;
+  const selfGrade = conviction?.self_grade ?? null;
   const incomplete = deskResult.convictionDeskJsonDegraded === "schema_validation_failed_after_retry" || conviction == null;
 
   const chosen = conviction?.decision.chosen ?? null;
@@ -324,23 +345,398 @@ export function StrategistConvictionDeskCard({
     [deskResult, generatedAt],
   );
 
+  const memoAudioChunks = useMemo(() => splitDeskAudioTextIntoChunks(memoPlain), [memoPlain]);
+  const memoAudioCacheId = useMemo(() => convictionMemoAudioCacheId(deskResult), [deskResult]);
+  const memoTtsWarmKey = useMemo(
+    () => `${memoAudioCacheId}\0${memoPlain.trim()}\0${JSON.stringify(convictionDeskVoiceConfig)}`,
+    [memoAudioCacheId, memoPlain],
+  );
+
+  const speechRateRef = useRef(1);
+  const [audioLoading, setAudioLoading] = useState(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const [segmentStall, setSegmentStall] = useState<{ chunkIndex: number } | null>(null);
+  const [memoPlaybackActive, setMemoPlaybackActive] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
+  const audioPlayGenRef = useRef(0);
+  const ttsFetchAbortRef = useRef<AbortController | null>(null);
+  const progressiveFetchAbortRef = useRef<AbortController | null>(null);
+  type ProgressiveSession = { playGen: number; chunks: string[]; index: number; sessionId: string };
+  const progressiveSessionRef = useRef<ProgressiveSession | null>(null);
+  const deskTtsSessionIdRef = useRef<string | null>(null);
+  const [deskTtsSessionId, setDeskTtsSessionId] = useState<string | null>(null);
+  const warmedDeskTtsRef = useRef<{ warmKey: string; sessionId: string } | null>(null);
+  const warmGenRef = useRef(0);
+  const ttsLoadingPlayGenRef = useRef<number | null>(null);
+  const expectAudioPlaybackRef = useRef(false);
+
+  const revokeObjectUrl = useCallback(() => {
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    deskTtsSessionIdRef.current = deskTtsSessionId;
+  }, [deskTtsSessionId]);
+
+  const stopMemoAudio = useCallback(() => {
+    expectAudioPlaybackRef.current = false;
+    audioPlayGenRef.current += 1;
+    ttsFetchAbortRef.current?.abort();
+    ttsFetchAbortRef.current = null;
+    progressiveFetchAbortRef.current?.abort();
+    progressiveFetchAbortRef.current = null;
+    progressiveSessionRef.current = null;
+    const el = audioRef.current;
+    if (el) {
+      el.pause();
+      el.currentTime = 0;
+      el.removeAttribute("src");
+      el.load();
+    }
+    revokeObjectUrl();
+    setAudioLoading(false);
+    ttsLoadingPlayGenRef.current = null;
+    setAudioError(null);
+    setSegmentStall(null);
+    setMemoPlaybackActive(false);
+    setDeskTtsSessionId(null);
+    deskTtsSessionIdRef.current = null;
+    warmedDeskTtsRef.current = null;
+  }, [revokeObjectUrl]);
+
+  const loadProgressiveChunkAtIndex = useCallback(
+    async (targetIdx: number) => {
+      const sess = progressiveSessionRef.current;
+      if (!sess) return;
+      const { playGen, chunks, sessionId } = sess;
+      if (playGen !== audioPlayGenRef.current) return;
+      if (targetIdx < 0) return;
+      if (targetIdx >= chunks.length) {
+        progressiveSessionRef.current = null;
+        stopMemoAudio();
+        return;
+      }
+      progressiveFetchAbortRef.current?.abort();
+      const ac = new AbortController();
+      progressiveFetchAbortRef.current = ac;
+      try {
+        const blob = await fetchDeskTtsChunkBlob(sessionId, targetIdx, ac.signal);
+        if (playGen !== audioPlayGenRef.current) return;
+        revokeObjectUrl();
+        const url = URL.createObjectURL(blob);
+        objectUrlRef.current = url;
+        progressiveSessionRef.current = { playGen, chunks, index: targetIdx, sessionId };
+        setSegmentStall(null);
+        const el = audioRef.current;
+        if (el) {
+          el.src = url;
+          el.playbackRate = speechRateRef.current;
+          expectAudioPlaybackRef.current = true;
+          setMemoPlaybackActive(true);
+          try {
+            const p = el.play();
+            if (p !== undefined) {
+              void p.catch(() => {
+                expectAudioPlaybackRef.current = false;
+                if (playGen === audioPlayGenRef.current) {
+                  progressiveSessionRef.current = null;
+                  setAudioError("Audio unavailable — playback failed");
+                  setMemoPlaybackActive(false);
+                }
+              });
+            }
+          } catch {
+            expectAudioPlaybackRef.current = false;
+            if (playGen === audioPlayGenRef.current) {
+              progressiveSessionRef.current = null;
+              setAudioError("Audio unavailable — playback failed");
+              setMemoPlaybackActive(false);
+            }
+          }
+        }
+      } catch (e) {
+        if (playGen !== audioPlayGenRef.current) return;
+        const msg = e instanceof Error ? e.message : String(e);
+        const is404 = /\b404\b/.test(msg);
+        if (is404) {
+          progressiveSessionRef.current = null;
+          setAudioError("Audio unavailable — session expired. Tap Play to start again.");
+          setMemoPlaybackActive(false);
+          return;
+        }
+        const el = audioRef.current;
+        if (el && !el.paused) {
+          el.pause();
+        }
+        setSegmentStall({ chunkIndex: targetIdx });
+      } finally {
+        if (progressiveFetchAbortRef.current === ac) {
+          progressiveFetchAbortRef.current = null;
+        }
+      }
+    },
+    [revokeObjectUrl, stopMemoAudio],
+  );
+
+  const resumeSegmentAfterStall = useCallback(() => {
+    const stall = segmentStall;
+    if (!stall) return;
+    void loadProgressiveChunkAtIndex(stall.chunkIndex);
+  }, [loadProgressiveChunkAtIndex, segmentStall]);
+
+  const advanceProgressiveChunk = useCallback(async () => {
+    const sess = progressiveSessionRef.current;
+    if (!sess) return;
+    await loadProgressiveChunkAtIndex(sess.index + 1);
+  }, [loadProgressiveChunkAtIndex]);
+
+  const startMemoPlay = useCallback(async () => {
+    if (!memoPlain.trim() || memoAudioChunks.length === 0) return;
+    const playGen = ++audioPlayGenRef.current;
+    ttsFetchAbortRef.current?.abort();
+    ttsFetchAbortRef.current = null;
+    progressiveFetchAbortRef.current?.abort();
+    progressiveFetchAbortRef.current = null;
+    progressiveSessionRef.current = null;
+
+    setAudioError(null);
+    setSegmentStall(null);
+
+    const attachAndPlay = (blobUrl: string): boolean => {
+      const el = audioRef.current;
+      if (!el || playGen !== audioPlayGenRef.current) return false;
+      revokeObjectUrl();
+      objectUrlRef.current = blobUrl;
+      el.src = blobUrl;
+      el.playbackRate = speechRateRef.current;
+      expectAudioPlaybackRef.current = true;
+      setMemoPlaybackActive(true);
+      try {
+        const p = el.play();
+        if (p !== undefined) {
+          void p.catch(() => {
+            expectAudioPlaybackRef.current = false;
+            if (playGen === audioPlayGenRef.current) {
+              setAudioError("Audio unavailable — playback failed");
+              setMemoPlaybackActive(false);
+            }
+          });
+        }
+      } catch {
+        expectAudioPlaybackRef.current = false;
+        if (playGen === audioPlayGenRef.current) {
+          setAudioError("Audio unavailable — playback failed");
+          setMemoPlaybackActive(false);
+        }
+        return false;
+      }
+      return playGen === audioPlayGenRef.current;
+    };
+
+    const ac = new AbortController();
+    ttsFetchAbortRef.current = ac;
+    const TTS_FETCH_MS = 180_000;
+    const timeoutId =
+      typeof window !== "undefined"
+        ? window.setTimeout(() => {
+            ac.abort();
+          }, TTS_FETCH_MS)
+        : 0;
+
+    setAudioLoading(true);
+    ttsLoadingPlayGenRef.current = playGen;
+
+    const ensureSession = async (): Promise<string | null> => {
+      const warmed = warmedDeskTtsRef.current;
+      if (warmed && warmed.warmKey === memoTtsWarmKey) {
+        deskTtsSessionIdRef.current = warmed.sessionId;
+        setDeskTtsSessionId(warmed.sessionId);
+        return warmed.sessionId;
+      }
+      const existing = deskTtsSessionIdRef.current;
+      if (existing) return existing;
+      try {
+        const res = await fetchWithAuth("/api/tts/desk-audio/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: memoPlain.trim(), voiceConfig: convictionDeskVoiceConfig }),
+          signal: ac.signal,
+          clerkTokenTimeoutMs: 8000,
+        });
+        if (!res.ok) {
+          void emitDeskTtsClientEvent({
+            stage: "tts_session_start_failed",
+            httpStatus: res.status,
+            deskResultId: memoAudioCacheId,
+          });
+          return null;
+        }
+        const j = (await res.json()) as { sessionId?: string };
+        if (typeof j.sessionId === "string" && j.sessionId) {
+          setDeskTtsSessionId(j.sessionId);
+          deskTtsSessionIdRef.current = j.sessionId;
+          return j.sessionId;
+        }
+        return null;
+      } catch (e) {
+        void emitDeskTtsClientEvent({
+          stage: "tts_session_start_failed",
+          httpStatus: null,
+          detail: e instanceof Error ? e.message : String(e),
+          deskResultId: memoAudioCacheId,
+        });
+        return null;
+      }
+    };
+
+    try {
+      const sid = await ensureSession();
+      if (playGen !== audioPlayGenRef.current) return;
+      if (!sid) {
+        setAudioError("Audio unavailable — could not start playback session");
+        return;
+      }
+
+      const blob = await fetchDeskTtsChunkBlob(sid, 0, ac.signal);
+      if (playGen !== audioPlayGenRef.current) return;
+      const url = URL.createObjectURL(blob);
+      const ok = attachAndPlay(url);
+      if (ok && memoAudioChunks.length > 1) {
+        progressiveSessionRef.current = { playGen, chunks: memoAudioChunks, index: 0, sessionId: sid };
+      }
+    } catch (e) {
+      if (playGen !== audioPlayGenRef.current) return;
+      const aborted = e instanceof DOMException && e.name === "AbortError";
+      setAudioError(
+        aborted
+          ? "Audio unavailable — request timed out or was cancelled"
+          : "Audio unavailable — network error",
+      );
+    } finally {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      if (ttsFetchAbortRef.current === ac) {
+        ttsFetchAbortRef.current = null;
+      }
+      if (ttsLoadingPlayGenRef.current === playGen) {
+        setAudioLoading(false);
+        ttsLoadingPlayGenRef.current = null;
+      }
+    }
+  }, [memoAudioChunks, memoPlain, memoAudioCacheId, memoTtsWarmKey, revokeObjectUrl]);
+
+  useEffect(() => {
+    const text = memoPlain.trim();
+    if (!text) {
+      warmGenRef.current += 1;
+      warmedDeskTtsRef.current = null;
+      setDeskTtsSessionId(null);
+      deskTtsSessionIdRef.current = null;
+      return;
+    }
+    warmGenRef.current += 1;
+    const gen = warmGenRef.current;
+    const warmKey = memoTtsWarmKey;
+    const ac = new AbortController();
+
+    void (async () => {
+      try {
+        const res = await fetchWithAuth("/api/tts/desk-audio/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, voiceConfig: convictionDeskVoiceConfig }),
+          signal: ac.signal,
+          clerkTokenTimeoutMs: 8000,
+        });
+        if (gen !== warmGenRef.current) return;
+        if (!res.ok) {
+          void emitDeskTtsClientEvent({ stage: "tts_warm_failed", httpStatus: res.status, deskResultId: memoAudioCacheId });
+          return;
+        }
+        const j = (await res.json()) as { sessionId?: string };
+        if (gen !== warmGenRef.current) return;
+        if (typeof j.sessionId === "string" && j.sessionId) {
+          warmedDeskTtsRef.current = { warmKey, sessionId: j.sessionId };
+          setDeskTtsSessionId((prev) => {
+            if (prev) return prev;
+            deskTtsSessionIdRef.current = j.sessionId!;
+            return j.sessionId!;
+          });
+        }
+      } catch (e) {
+        if (gen === warmGenRef.current) {
+          void emitDeskTtsClientEvent({
+            stage: "tts_warm_failed",
+            httpStatus: null,
+            detail: e instanceof Error ? e.message : String(e),
+            deskResultId: memoAudioCacheId,
+          });
+        }
+      }
+    })();
+
+    return () => {
+      ac.abort();
+    };
+  }, [memoPlain, memoTtsWarmKey, memoAudioCacheId]);
+
+  useEffect(() => {
+    return () => {
+      stopMemoAudio();
+    };
+  }, [stopMemoAudio]);
+
+  useEffect(() => {
+    stopMemoAudio();
+  }, [deskResult, generatedAt, stopMemoAudio]);
+
+  useEffect(() => {
+    const onAnalysisStart = () => stopMemoAudio();
+    window.addEventListener(STRATEGIST_ANALYSIS_START_EVENT, onAnalysisStart);
+    window.addEventListener(STRATEGIST_ANALYSIS_CANCEL_EVENT, onAnalysisStart);
+    return () => {
+      window.removeEventListener(STRATEGIST_ANALYSIS_START_EVENT, onAnalysisStart);
+      window.removeEventListener(STRATEGIST_ANALYSIS_CANCEL_EVENT, onAnalysisStart);
+    };
+  }, [stopMemoAudio]);
+
+  const onMemoAudioEnded = useCallback(() => {
+    const sess = progressiveSessionRef.current;
+    if (sess && sess.playGen === audioPlayGenRef.current) {
+      void advanceProgressiveChunk();
+    } else {
+      stopMemoAudio();
+    }
+  }, [advanceProgressiveChunk, stopMemoAudio]);
+
+  const onMemoLoadedMetadata = useCallback(() => {
+    const el = audioRef.current;
+    if (el) {
+      el.playbackRate = speechRateRef.current;
+    }
+  }, []);
+
+  const onMemoPlayHandler = useCallback(() => {
+    expectAudioPlaybackRef.current = false;
+  }, []);
+
+  const onMemoAudioElementError = useCallback(() => {
+    if (!expectAudioPlaybackRef.current) return;
+    expectAudioPlaybackRef.current = false;
+    progressiveSessionRef.current = null;
+    setAudioError("Audio unavailable — media could not be played");
+    setMemoPlaybackActive(false);
+  }, []);
+
   const copyPlain = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(memoPlain);
       toast.success("Copied memo text");
     } catch {
       toast.error("Copy failed");
-    }
-  }, [memoPlain]);
-
-  const playMemo = useCallback(() => {
-    try {
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(memoPlain);
-      u.rate = 1;
-      window.speechSynthesis.speak(u);
-    } catch {
-      toast.error("Playback unavailable");
     }
   }, [memoPlain]);
 
@@ -407,8 +803,6 @@ export function StrategistConvictionDeskCard({
     );
   }
 
-  const g = conviction.self_grade;
-
   return (
     <div style={{ position: "relative", background: PAL.bgCard, border: `1px solid ${PAL.border}`, borderRadius: 12, padding: 16, fontFamily: SYS_FONT }}>
       {banner && (
@@ -422,6 +816,17 @@ export function StrategistConvictionDeskCard({
           )}
         </div>
       )}
+
+      <audio
+        ref={audioRef}
+        preload="auto"
+        playsInline
+        style={{ display: "none" }}
+        onEnded={onMemoAudioEnded}
+        onLoadedMetadata={onMemoLoadedMetadata}
+        onPlay={onMemoPlayHandler}
+        onError={onMemoAudioElementError}
+      />
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -443,13 +848,55 @@ export function StrategistConvictionDeskCard({
           <span style={{ fontSize: 16, fontWeight: 700, color: PAL.white }}>{deskResult.ticker}</span>
           <span style={{ fontSize: 10, color: PAL.label, letterSpacing: 0.5 }}>CONVICTION DESK</span>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginLeft: "auto" }}>
-          <button type="button" onClick={() => void copyPlain()} style={btnStyle} aria-label="Copy memo">
-            <Copy size={14} /> Copy
-          </button>
-          <button type="button" onClick={() => playMemo()} style={btnStyle} aria-label="Play memo audio">
-            <Play size={14} /> Play
-          </button>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8, marginLeft: "auto", maxWidth: "100%" }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <button type="button" onClick={() => void copyPlain()} style={btnStyle} aria-label="Copy memo">
+              <Copy size={14} /> Copy
+            </button>
+            <button
+              type="button"
+              onClick={() => void startMemoPlay()}
+              disabled={audioLoading || !memoPlain.trim()}
+              style={{
+                ...btnStyle,
+                opacity: audioLoading || !memoPlain.trim() ? 0.55 : 1,
+                cursor: audioLoading || !memoPlain.trim() ? "not-allowed" : "pointer",
+              }}
+              aria-label="Play memo audio"
+            >
+              <Play size={14} /> {audioLoading ? "Loading…" : "Play"}
+            </button>
+            {memoPlaybackActive && (
+              <button type="button" onClick={() => stopMemoAudio()} style={btnStyle} aria-label="Stop memo audio">
+                <Square size={14} /> Stop
+              </button>
+            )}
+          </div>
+          {audioError && (
+            <div style={{ fontSize: 11, color: PAL.red, textAlign: "right", lineHeight: 1.45 }}>{audioError}</div>
+          )}
+          {segmentStall && (
+            <div
+              style={{
+                fontSize: 11,
+                color: PAL.body,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
+                justifyContent: "flex-end",
+              }}
+            >
+              <span>Couldn&apos;t load next segment</span>
+              <button
+                type="button"
+                onClick={() => void resumeSegmentAfterStall()}
+                style={{ ...btnStyle, textTransform: "none", letterSpacing: 0 }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -555,7 +1002,14 @@ export function StrategistConvictionDeskCard({
       )}
 
       <div style={{ borderTop: `1px solid ${PAL.borderInner}`, paddingTop: 10, fontSize: 10, color: PAL.label, lineHeight: 1.6 }}>
-        Self-grade: Vol {g.vol}, Flow {g.flow}, Catalyst {g.catalyst}, Regime {g.regime}, Structure fit {g.structure_fit}, Failure {g.failure_scenario_strength}, Conviction {g.conviction}
+        {selfGrade ? (
+          <>
+            Self-grade: Vol {selfGrade.vol}, Flow {selfGrade.flow}, Catalyst {selfGrade.catalyst}, Regime {selfGrade.regime}, Structure fit{" "}
+            {selfGrade.structure_fit}, Failure {selfGrade.failure_scenario_strength}, Conviction {selfGrade.conviction}
+          </>
+        ) : (
+          "Self-grade: —"
+        )}
         {conviction.size && (
           <span style={{ marginLeft: 8, color: PAL.white }}>Size {conviction.size}</span>
         )}

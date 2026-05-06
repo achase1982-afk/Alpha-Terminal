@@ -21,6 +21,7 @@ import type {
 import { buildDeskSpeechSections } from "@/lib/deskCardSpeech";
 import { StrategistConvictionDeskCard } from "@/components/StrategistConvictionDeskCard";
 import { splitDeskAudioTextIntoChunks } from "@/lib/deskAudioChunking";
+import { emitDeskTtsClientEvent, fetchDeskTtsChunkBlob } from "@/lib/deskBufferedTtsClient";
 import { STRATEGIST_ANALYSIS_CANCEL_EVENT, STRATEGIST_ANALYSIS_START_EVENT } from "@/lib/strategistDeskSpeechEvents";
 
 export type { DeskResult } from "@/lib/strategistDeskResult";
@@ -43,63 +44,6 @@ const PAL = {
   gold: "#fbbf24",
   goldHeader: "#f59e0b",
 };
-
-async function emitDeskTtsClientEvent(payload: Record<string, unknown>): Promise<void> {
-  try {
-    await fetchWithAuth("/api/telemetry/client-event", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      clerkTokenTimeoutMs: 8000,
-    });
-  } catch {
-    /* best-effort */
-  }
-}
-
-function deskTtsChunkUrl(sessionId: string, chunkIndex: number): string {
-  return `/api/tts/desk-audio?sessionId=${encodeURIComponent(sessionId)}&chunkIndex=${chunkIndex}`;
-}
-
-async function fetchDeskTtsChunkBlob(sessionId: string, chunkIndex: number, signal: AbortSignal): Promise<Blob> {
-  let lastError: Error | null = null;
-  for (let i = 0; i < 3; i++) {
-    try {
-      const res = await fetchWithAuth(deskTtsChunkUrl(sessionId, chunkIndex), { signal, clerkTokenTimeoutMs: 8000 });
-      if (!res.ok) {
-        let httpStatus = res.status;
-        try {
-          const j = (await res.clone().json()) as { httpStatus?: number; stage?: string };
-          if (typeof j.httpStatus === "number") httpStatus = j.httpStatus;
-        } catch {
-          /* ignore */
-        }
-        const err = new Error(`HTTP ${res.status}`) as Error & { httpStatus?: number };
-        err.httpStatus = httpStatus;
-        throw err;
-      }
-      return await res.blob();
-    } catch (err) {
-      lastError = err as Error;
-      const httpStatus =
-        err && typeof err === "object" && "httpStatus" in err && typeof (err as { httpStatus?: number }).httpStatus === "number"
-          ? (err as { httpStatus: number }).httpStatus
-          : undefined;
-      const isLast = i === 2;
-      const stage = isLast ? "tts_chunk_user_retry_prompt" : "tts_chunk_silent_retry";
-      void emitDeskTtsClientEvent({
-        stage,
-        chunkIndex,
-        attemptNumber: i + 1,
-        httpStatus: httpStatus ?? null,
-        detail: lastError.message,
-      });
-      if (isLast) break;
-      await new Promise((r) => setTimeout(r, i === 0 ? 200 : 600));
-    }
-  }
-  throw lastError;
-}
 
 const SYS_FONT = "-apple-system, 'SF Pro Display', 'Inter', system-ui, sans-serif";
 
