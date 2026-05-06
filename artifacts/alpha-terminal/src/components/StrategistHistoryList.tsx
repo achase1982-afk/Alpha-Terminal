@@ -149,7 +149,18 @@ export function StrategistHistoryList({ onSendToOrder, onReopenValidatedOrder, e
               return "Trade Validation";
             })()
           : result?.status === "desk_recommendation" && (result as any)?.deskResult
-            ? `Desk: ${(result as any).deskResult.pm.decision === "trade" ? (result as any).deskResult.pm.structure?.type?.replace(/_/g, " ") ?? "Trade" : "Pass"}`
+            ? (() => {
+                const dr = (result as any).deskResult;
+                if (dr?.mode === "conviction_desk") {
+                  const c = dr.conviction;
+                  if (!c) return "Conviction: incomplete";
+                  const hasTrade = c.decision.chosen != null && c.size !== "no-trade";
+                  return hasTrade
+                    ? `Conviction: ${String(c.decision.chosen?.structure ?? "Trade").replace(/_/g, " ")}`
+                    : "Conviction: no trade";
+                }
+                return `Desk: ${dr.pm.decision === "trade" ? dr.pm.structure?.type?.replace(/_/g, " ") ?? "Trade" : "Pass"}`;
+              })()
           : result?.status === "recommendation" && result?.recommendation
             ? `${result.recommendation.direction} ${result.recommendation.strategyType.replace(/_/g, " ")}`
             : (() => {

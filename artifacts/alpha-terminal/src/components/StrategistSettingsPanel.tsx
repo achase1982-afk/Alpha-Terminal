@@ -99,14 +99,24 @@ export function StrategistSettingsPanel() {
   if (!data) return <div className="text-center text-zinc-500 font-mono text-xs py-8">{loadError ?? "Failed to load settings"}</div>;
 
   const currentMode = data.current["strategistMode"] ?? 1;
-  const isDeskMode = currentMode === 3 || currentMode === 4;
+  const isDeskMode = currentMode === 3 || currentMode === 4 || currentMode === 5;
   const isSoloDeskMode = currentMode === 4;
+  const isConvictionDeskMode = currentMode === 5;
 
   const DESK_LABELS: Record<string, string> = {
     strategistSoloModelIdx: "Desk — Volatility model",
     strategistDebateAModelIdx: "Desk — Flow model",
     strategistDebateBModelIdx: "Desk — Catalyst model",
     strategistArbitratorModelIdx: "Desk — Decision model",
+  };
+
+  /** Row titles when Conviction Desk is selected */
+  const CONVICTION_DESK_LABELS: Record<string, string> = {
+    strategistSoloModelIdx: "Solo Model (Solo mode)",
+    strategistConvictionModelIdx: "Conviction Desk model",
+    strategistDebateAModelIdx: "Bull / Flow — unused in Conviction Desk",
+    strategistDebateBModelIdx: "Bear / Catalyst — unused in Conviction Desk",
+    strategistArbitratorModelIdx: "Decision — unused in Conviction Desk",
   };
 
   /** Row titles when Solo Desk is selected: first slot = same model as Solo; others unused. */
@@ -124,11 +134,13 @@ export function StrategistSettingsPanel() {
     if (isDeskMode && HIDDEN_IN_DESK.has(m.key)) continue;
     const arr = groups.get(m.group) ?? [];
     const adjusted =
-      isSoloDeskMode && SOLO_DESK_LABELS[m.key]
-        ? { ...m, label: SOLO_DESK_LABELS[m.key] }
-        : isDeskMode && DESK_LABELS[m.key]
-          ? { ...m, label: DESK_LABELS[m.key] }
-          : m;
+      isConvictionDeskMode && CONVICTION_DESK_LABELS[m.key]
+        ? { ...m, label: CONVICTION_DESK_LABELS[m.key] }
+        : isSoloDeskMode && SOLO_DESK_LABELS[m.key]
+          ? { ...m, label: SOLO_DESK_LABELS[m.key] }
+          : isDeskMode && DESK_LABELS[m.key]
+            ? { ...m, label: DESK_LABELS[m.key] }
+            : m;
     arr.push(adjusted);
     groups.set(m.group, arr);
   }

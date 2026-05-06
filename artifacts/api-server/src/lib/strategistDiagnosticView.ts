@@ -1,4 +1,4 @@
-import type { DeskResult } from "./strategistDeskSchemas.js";
+import type { ConvictionDeskResult, DeskResult } from "./strategistDeskSchemas.js";
 import type { CatalystEvaluation } from "./catalystEvaluator.js";
 import type { StrategistDiagScratch } from "./strategistRunContext.js";
 
@@ -9,7 +9,7 @@ import type { StrategistDiagScratch } from "./strategistRunContext.js";
  */
 export type StrategistFullPayload = {
   dataPackageStr: string;
-  deskResult: DeskResult;
+  deskResult: ConvictionDeskResult | DeskResult;
   catalystEvaluation?: CatalystEvaluation | null;
   diag?: StrategistDiagScratch;
 };
@@ -20,7 +20,7 @@ export type StrategistDiagnosticView = {
   ticker: string;
   generatedAt: string;
   spot: number;
-  mode: "desk" | "solo_desk";
+  mode: "desk" | "solo_desk" | "conviction_desk";
   decision: StrategistDiagnosticDecision;
   structure: string | null;
   ivr: number | null;
@@ -69,7 +69,7 @@ export type StrategistDiagnosticView = {
   edgeCheck: string;
   biggestRisk: string;
   watchFor: string;
-  size: "small" | "medium" | "large";
+  size: "small" | "medium" | "large" | "no-trade";
   alignment: string;
   whoseSide: string;
 };
@@ -91,17 +91,36 @@ function daysBetweenIsoDates(fromYmd: string, toIsoDate: string | null): number 
   return Math.max(0, Math.round((b - a) / 86_400_000));
 }
 
-function deskDecision(desk: DeskResult, pmIncomplete: boolean): StrategistDiagnosticDecision {
-  if (pmIncomplete || desk.soloDeskJsonDegraded === "schema_validation_failed_after_retry") {
+function deskDecision(
+  desk: ConvictionDeskResult | DeskResult,
+  pmIncomplete: boolean,
+): StrategistDiagnosticDecision {
+  if (desk.mode === "conviction_desk") {
+    const cd = desk as ConvictionDeskResult;
+    if (cd.convictionDeskJsonDegraded === "schema_validation_failed_after_retry" || cd.conviction == null) {
+      return "fail";
+    }
+    const c = cd.conviction;
+    if (c.decision.chosen != null && c.size !== "no-trade") return "recommend";
+    return "pass";
+  }
+  const d = desk as DeskResult;
+  if (pmIncomplete || d.soloDeskJsonDegraded === "schema_validation_failed_after_retry") {
     return "fail";
   }
-  if (desk.pm.decision === "trade") return "recommend";
+  if (d.pm.decision === "trade") return "recommend";
   return "pass";
 }
 
-function structureLabel(structure: DeskResult["pm"]["structure"]): string | null {
-  if (!structure) return null;
-  return `${structure.type} @ ${structure.expiry}`;
+function structureLabelFromDesk(desk: ConvictionDeskResult | DeskResult): string | null {
+  if (desk.mode === "conviction_desk") {
+    const ch = desk.conviction?.decision.chosen;
+    if (!ch) return null;
+    return `${ch.structure} @ ${ch.expiry}`;
+  }
+  const pm = (desk as DeskResult).pm.structure;
+  if (!pm) return null;
+  return `${pm.type} @ ${pm.expiry}`;
 }
 
 function parseDataPackage(dataPackageStr: string): Record<string, unknown> | null {
@@ -150,7 +169,7 @@ export function buildStrategistDiagnosticView(fullPayload: StrategistFullPayload
   const { dataPackageStr, deskResult, catalystEvaluation, diag } = fullPayload;
   const pkg = parseDataPackage(dataPackageStr);
 
-  const pmIncomplete = deskResult.pmOutputIncomplete === true;
+  const pmIncomplete = deskResult.mode !== "conviction_desk" && deskResult.pmOutputIncomplete === true;
   const decision = deskDecision(deskResult, pmIncomplete);
 
   const currentDate = str(pkg?.currentDate) ?? new Date().toISOString().slice(0, 10);
@@ -242,7 +261,10 @@ export function buildStrategistDiagnosticView(fullPayload: StrategistFullPayload
     unknown: unknownCount / denom,
   };
 
-  const ks = deskResult.flow.key_strikes?.slice(0, 6) ?? [];
+  const ks =
+    deskResult.mode === "conviction_desk"
+      ? []
+      : deskResult.flow.key_strikes?.slice(0, 6) ?? [];
   const keyStrikes = ks.map((k) => ({
     strike: k.strike,
     expiry: k.expiry,
@@ -322,12 +344,36 @@ export function buildStrategistDiagnosticView(fullPayload: StrategistFullPayload
   const closingImbalanceLatencyMs =
     diag?.closingImbalanceLatencyMs === undefined ? null : num(diag.closingImbalanceLatencyMs as unknown);
 
-  const pm = deskResult.pm;
-  const edgeRaw = pm.edge_check ?? "";
-  const thesis = typeof pm.thesis === "string" ? pm.thesis : "";
-  const edgeCheck = typeof edgeRaw === "string" ? edgeRaw : "";
-  const biggestRisk = typeof pm.biggest_risk === "string" ? pm.biggest_risk : "";
-  const watchFor = typeof pm.watch_for === "string" ? pm.watch_for : "";
+  let thesis = "";
+  let edgeCheck = "";
+  let biggestRisk = "";
+  let watchFor = "";
+  let sizeDiag: StrategistDiagnosticView["size"] = "small";
+  let whoseSide = "neither";
+
+  if (deskResult.mode === "conviction_desk") {
+    const conv = (deskResult as ConvictionDeskResult).conviction;
+    thesis = conv?.view.paragraph ?? "";
+    edgeCheck = "";
+    biggestRisk = conv?.failure_scenario.steelman ?? "";
+    watchFor = "";
+    sizeDiag =
+      conv?.size === "medium" || conv?.size === "large" || conv?.size === "no-trade"
+        ? conv.size
+        : conv?.size === "small"
+          ? "small"
+          : "small";
+    whoseSide = "neither";
+  } else {
+    const pm = deskResult.pm;
+    const edgeRaw = pm.edge_check ?? "";
+    thesis = typeof pm.thesis === "string" ? pm.thesis : "";
+    edgeCheck = typeof edgeRaw === "string" ? edgeRaw : "";
+    biggestRisk = typeof pm.biggest_risk === "string" ? pm.biggest_risk : "";
+    watchFor = typeof pm.watch_for === "string" ? pm.watch_for : "";
+    sizeDiag = pm.size;
+    whoseSide = pm.whose_side;
+  }
 
   return {
     ticker: deskResult.ticker,
@@ -335,7 +381,7 @@ export function buildStrategistDiagnosticView(fullPayload: StrategistFullPayload
     spot: price,
     mode: deskResult.mode,
     decision,
-    structure: decision === "recommend" ? structureLabel(pm.structure) : null,
+    structure: decision === "recommend" ? structureLabelFromDesk(deskResult) : null,
     ivr,
     ivrHistoryDays,
     ivCleanedRatio,
@@ -371,8 +417,8 @@ export function buildStrategistDiagnosticView(fullPayload: StrategistFullPayload
     edgeCheck,
     biggestRisk,
     watchFor,
-    size: pm.size,
+    size: sizeDiag,
     alignment,
-    whoseSide: pm.whose_side,
+    whoseSide,
   };
 }

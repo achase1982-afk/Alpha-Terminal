@@ -11,8 +11,15 @@ import { buildOccSymbol } from "@/components/StrategistV2Card";
 import { ChevronDown, ChevronUp, AlertTriangle, Copy, Play, Pause, Square, Rewind, FastForward, Send } from "lucide-react";
 import { toast } from "sonner";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import type { DeskResult, DeskStructure, PayoffScenario, PayoffScenariosSummary } from "@/lib/strategistDeskResult";
+import type {
+  DeskResult,
+  DeskResultClassic,
+  DeskStructure,
+  PayoffScenario,
+  PayoffScenariosSummary,
+} from "@/lib/strategistDeskResult";
 import { buildDeskSpeechSections } from "@/lib/deskCardSpeech";
+import { StrategistConvictionDeskCard } from "@/components/StrategistConvictionDeskCard";
 import { splitDeskAudioTextIntoChunks } from "@/lib/deskAudioChunking";
 import { STRATEGIST_ANALYSIS_CANCEL_EVENT, STRATEGIST_ANALYSIS_START_EVENT } from "@/lib/strategistDeskSpeechEvents";
 
@@ -104,11 +111,18 @@ function deskResultAudioId(deskResult: DeskResult, bannerTitle?: string, bannerB
   const payload = JSON.stringify({
     ticker: deskResult.ticker,
     mode: deskResult.mode,
-    pm: deskResult.pm,
-    vol: deskResult.vol,
-    flow: deskResult.flow,
-    catalyst: deskResult.catalyst,
-    errors: deskResult.errors,
+    ...(deskResult.mode === "conviction_desk"
+      ? {
+          conviction: deskResult.conviction,
+          errors: deskResult.errors,
+        }
+      : {
+          pm: deskResult.pm,
+          vol: deskResult.vol,
+          flow: deskResult.flow,
+          catalyst: deskResult.catalyst,
+          errors: deskResult.errors,
+        }),
     bannerTitle: bannerTitle ?? null,
     bannerBody: bannerBody ?? null,
   });
@@ -208,6 +222,10 @@ function PayoffAtExpirationSection({
   const pnlColor = (c: PayoffScenario["pnlColor"]) =>
     c === "green" ? PAL.green : c === "red" ? PAL.red : PAL.label;
 
+  const midIdx = Math.floor(scenarios.length / 2);
+  const spotRef = scenarios[midIdx]?.underlyingPrice ?? scenarios[0]?.underlyingPrice ?? 0;
+  const pctVsSpot = (price: number) => (spotRef > 0 ? (price / spotRef - 1) * 100 : 0);
+
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{ fontSize: 10, fontWeight: 700, color: PAL.label, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>
@@ -232,12 +250,16 @@ function PayoffAtExpirationSection({
         <table style={{ borderCollapse: "collapse", fontSize: 11, minWidth: "100%", fontFamily: SYS_FONT }}>
           <tbody>
             <tr>
-              <td style={{ padding: "6px 10px 6px 4px", color: PAL.label, whiteSpace: "nowrap", verticalAlign: "bottom" }}>Stock Price</td>
-              {scenarios.map((s, i) => (
-                <td key={i} style={{ padding: "6px 8px", textAlign: "right", color: PAL.white, fontWeight: 600, whiteSpace: "nowrap" }}>
-                  {fmtCurrencyPlain(s.underlyingPrice)}
-                </td>
-              ))}
+              <td style={{ padding: "6px 10px 6px 4px", color: PAL.label, whiteSpace: "nowrap", verticalAlign: "bottom" }}>Stock move</td>
+              {scenarios.map((s, i) => {
+                const p = pctVsSpot(s.underlyingPrice);
+                return (
+                  <td key={i} style={{ padding: "6px 8px", textAlign: "right", whiteSpace: "nowrap", verticalAlign: "bottom" }}>
+                    <div style={{ fontSize: 10, color: PAL.label }}>{p >= 0 ? "+" : ""}{p.toFixed(1)}%</div>
+                    <div style={{ color: PAL.white, fontWeight: 600 }}>{fmtCurrencyPlain(s.underlyingPrice)}</div>
+                  </td>
+                );
+              })}
             </tr>
             <tr style={{ borderTop: `1px solid ${PAL.borderInner}` }}>
               <td style={{ padding: "6px 10px 6px 4px", color: PAL.label, whiteSpace: "nowrap" }}>Spread Value</td>
@@ -271,7 +293,7 @@ function PayoffAtExpirationSection({
   );
 }
 
-function buildDeskSendToOrderPayload(deskResult: DeskResult): StrategistSendToOrderPayload {
+function buildDeskSendToOrderPayload(deskResult: DeskResultClassic): StrategistSendToOrderPayload {
   const s = deskResult.pm.structure!;
   const isCredit = s.credit_or_debit < 0;
   const netPrice = Math.abs(s.credit_or_debit);
@@ -316,7 +338,7 @@ function StructureDisplay({ structure }: { structure: DeskStructure }) {
 
 /** Plain text for the full Desk card (all sections including topic sections, regardless of collapse). */
 export function buildDeskCardPlainText(args: {
-  deskResult: DeskResult;
+  deskResult: DeskResultClassic;
   generatedAt?: string | number | null;
   strategistOutcome?: StrategistOutcome;
   blockReason?: BlockReason;
@@ -420,7 +442,7 @@ function deskBanner(
   outcome: StrategistOutcome | undefined,
   blockReason: BlockReason | undefined,
   pmPass: boolean,
-  soloDeskJsonDegraded?: DeskResult["soloDeskJsonDegraded"],
+  soloDeskJsonDegraded?: DeskResultClassic["soloDeskJsonDegraded"],
 ): { title: string; body: string; border: string; bg: string; accent: string } | null {
   if (soloDeskJsonDegraded === "schema_validation_failed_after_retry") {
     return {
@@ -453,16 +475,7 @@ function deskBanner(
   return null;
 }
 
-export function StrategistDeskCard({
-  deskResult,
-  generatedAt,
-  strategistOutcome,
-  blockReason,
-  onRetry,
-  strategistDiagnosticRequestId,
-  diagnosticView,
-  onSendToOrder,
-}: {
+export type StrategistDeskCardProps = {
   deskResult: DeskResult;
   generatedAt?: string | number | null;
   strategistOutcome?: StrategistOutcome;
@@ -473,7 +486,26 @@ export function StrategistDeskCard({
   diagnosticView?: Record<string, unknown> | null;
   /** Opens order ticket pre-filled from desk structure (trade recommendations only). */
   onSendToOrder?: (payload: StrategistSendToOrderPayload) => void;
-}) {
+};
+
+export function StrategistDeskCard(props: StrategistDeskCardProps) {
+  if (props.deskResult.mode === "conviction_desk") {
+    return <StrategistConvictionDeskCard {...props} deskResult={props.deskResult} />;
+  }
+  return <StrategistDeskCardInner {...props} />;
+}
+
+function StrategistDeskCardInner({
+  deskResult: deskRaw,
+  generatedAt,
+  strategistOutcome,
+  blockReason,
+  onRetry,
+  strategistDiagnosticRequestId,
+  diagnosticView,
+  onSendToOrder,
+}: StrategistDeskCardProps) {
+  const deskResult = deskRaw as DeskResultClassic;
   const { pm, vol, flow, catalyst, errors } = deskResult;
   const isTrade = pm.decision === "trade";
   const payoffScenarios = pm.scenarios;
@@ -637,8 +669,9 @@ export function StrategistDeskCard({
       buildDeskSpeechSections(deskResult, {
         bannerTitle: banner?.title,
         bannerBody: banner?.body,
+        generatedAt,
       }),
-    [deskResult, banner?.title, banner?.body],
+    [deskResult, banner?.title, banner?.body, generatedAt],
   );
   const deskAudioText = useMemo(() => speechSections.map((s) => s.text).join("\n\n"), [speechSections]);
   const deskResultId = useMemo(
