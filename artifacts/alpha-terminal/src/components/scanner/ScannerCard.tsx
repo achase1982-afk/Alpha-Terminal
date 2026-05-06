@@ -6,7 +6,7 @@ export function ScannerCard({ data, expanded, onToggle, onAction }: ScannerCardP
   const sym = data.symbol;
 
   return (
-    <article className="rounded-lg border border-zinc-800/90 bg-[#0c0c0c] overflow-hidden shadow-sm shadow-black/20">
+    <article className="overflow-hidden bg-transparent">
       <div
         role="button"
         tabIndex={0}

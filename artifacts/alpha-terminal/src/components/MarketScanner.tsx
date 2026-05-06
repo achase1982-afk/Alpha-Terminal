@@ -109,22 +109,26 @@ function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCre
       ? !new RegExp(`\\b${selectedCount}\\b`).test(selectedLabel)
       : true;
 
+  const showCount = showCountBadge && !chromeTrigger;
+
   return (
-    <div className={cn("relative", chromeTrigger && "inline-block max-w-full min-w-0")}>
+    <div className={cn("relative", chromeTrigger ? "block w-full min-w-0 max-w-full" : "")}>
       <button
         ref={btnRef}
         type="button"
+        aria-expanded={open}
+        aria-haspopup="menu"
         onClick={() => setOpen(o => !o)}
         className={cn(
-          "flex items-center justify-between gap-2 border text-foreground transition-colors focus:outline-none focus:ring-1 focus:ring-primary/40",
+          "border text-foreground transition-colors focus:outline-none focus:ring-1 focus:ring-primary/40",
           chromeTrigger
-            ? "inline-flex h-9 max-h-9 w-auto max-w-[min(22rem,calc(100vw-7rem))] min-w-0 rounded-lg border-zinc-700/60 bg-zinc-900/80 px-3 py-1.5 text-sm hover:border-zinc-500"
-            : "w-full min-h-[40px] rounded-md border-card-border bg-card px-3 py-2 text-sm hover:border-zinc-600",
+            ? "relative flex h-9 max-h-9 w-full min-w-0 items-center rounded-lg border-zinc-700/60 bg-zinc-900/80 py-1.5 pl-3 pr-8 text-left text-sm hover:border-zinc-500"
+            : "flex w-full min-h-[40px] items-center justify-between gap-2 rounded-md border-card-border bg-card px-3 py-2 text-sm hover:border-zinc-600",
         )}
       >
-        <span className={cn("min-w-0 font-medium leading-snug", chromeTrigger ? "truncate" : "")}>
+        <span className={cn("min-w-0 font-medium leading-snug", chromeTrigger ? "block truncate" : "")}>
           {selectedLabel}
-          {showCountBadge ? (
+          {showCount ? (
             <span className="whitespace-nowrap font-normal text-muted-foreground">
               {" "}
               ({selectedCount})
@@ -133,10 +137,13 @@ function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCre
         </span>
         <ChevronDown
           className={cn(
-            "shrink-0 text-muted-foreground/70 transition-transform",
+            "text-muted-foreground/70 transition-transform",
             open && "rotate-180",
-            chromeTrigger ? "h-3.5 w-3.5" : "h-4 w-4",
+            chromeTrigger
+              ? "pointer-events-none absolute right-2.5 top-1/2 h-3 w-3 -translate-y-1/2 shrink-0"
+              : "h-4 w-4 shrink-0",
           )}
+          aria-hidden
         />
       </button>
 
@@ -553,7 +560,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
               type="button"
               onClick={handleScanClick}
               disabled={!accessToken || unified.phase === "scanning" || currentSymCount === 0 || shockActive}
-              className="inline-flex h-9 max-h-9 items-center justify-center whitespace-nowrap rounded-lg border border-primary/75 bg-transparent px-4 py-1.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-30 active:scale-[0.99]"
+              className="inline-flex h-9 max-h-9 shrink-0 flex-none items-center justify-center whitespace-nowrap rounded-lg border border-primary/75 bg-transparent px-3 py-1.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-30 active:scale-[0.99]"
             >
               {unified.phase === "scanning" ? (
                 <span className="flex items-center justify-center gap-2">
@@ -622,7 +629,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
                 role="list"
                 aria-labelledby="scanner-v3-layer1-heading"
                 aria-label={`Scanner universe, ${layer1FilteredSymbols.length} visible tickers`}
-                className="space-y-2"
+                className="divide-y divide-zinc-800/45 border-t border-b border-zinc-800/45"
               >
                   {layer1FilteredSymbols.map((sym) => (
                     <ScannerCard
@@ -663,16 +670,6 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
               Retry
             </button>
           </div>
-          <div className="flex flex-wrap items-center gap-2 px-1">
-            <span className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider">
-              {layer1FilteredSymbols.length > 0
-                ? `${layer1FilteredSymbols.length} in universe · ranked ${candidates.length} · ${universeLabel}`
-                : candidates.length > 0
-                  ? `${candidates.length} ranked · ${universeLabel}`
-                  : `0 matches · ${universeLabel}`}
-            </span>
-          </div>
-
           {candidates.length === 0 && layer1FilteredSymbols.length === 0 ? (
             <ScannerZeroCandidatesInline />
           ) : candidates.length > 0 ? (
