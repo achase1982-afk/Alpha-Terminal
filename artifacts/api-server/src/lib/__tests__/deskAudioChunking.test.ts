@@ -18,6 +18,8 @@ describe("splitDeskAudioTextIntoChunks", () => {
       expect(c.length).toBeLessThanOrEqual(DESK_AUDIO_CHUNK_MAX_CHARS);
     }
   });
+
+  it("prefers earlier sentence boundaries when splitting long spans", () => {
     const s1 = "First sentence here. ";
     const s2 = "Second sentence is longer and should flow. ";
     const pad = "word ".repeat(80);

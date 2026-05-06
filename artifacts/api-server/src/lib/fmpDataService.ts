@@ -110,7 +110,7 @@ export async function getAnalystPriceTargets(ticker: string): Promise<AnalystPri
   const r = rows[0];
   if (!r) return null;
 
-  const asOf = r.asOfDate;
+  const asOf = r.asOfDate as string | Date | number | null | undefined;
   const asOfStr =
     asOf == null
       ? null

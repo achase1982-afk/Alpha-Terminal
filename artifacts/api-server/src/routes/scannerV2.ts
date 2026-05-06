@@ -38,7 +38,7 @@ function rowToCandidate(r: typeof tickerSignalSnapshotTable.$inferSelect) {
   const macroD = Number(comps["macro_density_in_window"] ?? comps["catalyst_proximity"] ?? 0);
   const liqAnch =
     r.liquidityAnchorScore != null ? Number(r.liquidityAnchorScore) : Math.min(100, (r.atmOiFront ?? 0) / 500);
-  const edgeType = (comps["edge_type"] as string) ?? "no_clear_edge";
+  const edgeType = String(comps["edge_type"] ?? "no_clear_edge");
   const flow = (r.flowSummary as Record<string, unknown> | null) ?? {};
   const askPct = typeof flow["ask_pct"] === "number" ? flow["ask_pct"] : 0;
   const bidPct =
