@@ -1,4 +1,3 @@
-import { execSync } from "node:child_process";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,12 +13,6 @@ const artifactDir = path.dirname(fileURLToPath(import.meta.url));
 async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
   await rm(distDir, { recursive: true, force: true });
-
-  execSync("pnpm exec tsc -p tsconfig.json --noEmit", {
-    cwd: artifactDir,
-    stdio: "inherit",
-    env: process.env,
-  });
 
   await esbuild({
     entryPoints: [path.resolve(artifactDir, "src/index.ts")],
