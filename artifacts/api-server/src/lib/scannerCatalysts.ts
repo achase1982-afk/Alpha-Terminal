@@ -8,7 +8,7 @@
  */
 
 import pLimit from "p-limit";
-import { getNextEarningsDate } from "./earningsService.js";
+import { daysFromTodayTo, getNextEarningsDate } from "./earningsService.js";
 import { fetchEarningsHistoryAndForward } from "./polygonEarningsHistory.js";
 import { getFmpDividendsCalendar } from "./fmpClient.js";
 
@@ -36,20 +36,11 @@ const EMPTY_WIRE: ScannerCatalystsWire = {
   reactions_last_4q: null,
 };
 
-/** Align with `earningsService` calendar-day distance to next earnings. */
-function daysFromTodayTo(dateYmd: string): number | null {
-  const d = new Date(`${dateYmd}T16:00:00-04:00`);
-  if (Number.isNaN(d.getTime())) return null;
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return Math.max(0, Math.ceil((d.getTime() - today.getTime()) / 86_400_000));
-}
-
 /**
  * Map corporate / vendor time strings to BMO / AMC for scanner UI.
  * (Vendor returns `BMO`/`AMC` or `HH:MM`.)
  */
-export function earningsTimingHintFromTimeString(time: string | null): "BMO" | "AMC" | null {
+function earningsTimingHintFromTimeString(time: string | null): "BMO" | "AMC" | null {
   if (time == null || String(time).trim() === "") return null;
   const u = String(time).trim().toUpperCase();
   if (u === "BMO") return "BMO";
