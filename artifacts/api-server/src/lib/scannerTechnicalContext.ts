@@ -159,13 +159,16 @@ function emptyTechnical(): ScannerTechnicalLayer6Wire {
 }
 
 function computeTechnical(bars: OhlcBar[], quote: SchwabScannerBatchQuote | undefined): ScannerTechnicalLayer6Wire {
-  if (bars.length === 0) return emptyTechnical();
-
   const closes = bars.map((b) => b.close);
-  const lastClose = closes[closes.length - 1]!;
+  const lastClose =
+    closes.length > 0 ? closes[closes.length - 1]! : null;
   const qp = quote?.price;
   const currentPrice =
-    qp != null && Number.isFinite(qp) && qp > 0 ? qp : lastClose;
+    qp != null && Number.isFinite(qp) && qp > 0
+      ? qp
+      : lastClose != null && Number.isFinite(lastClose) && lastClose > 0
+        ? lastClose
+        : null;
 
   const schwabH = quote?.fiftyTwoWeekHigh;
   const schwabL = quote?.fiftyTwoWeekLow;
@@ -197,7 +200,12 @@ function computeTechnical(bars: OhlcBar[], quote: SchwabScannerBatchQuote | unde
   }
 
   let offHigh: number | null = null;
-  if (fiftyTwoHigh != null && fiftyTwoHigh > 0 && currentPrice > 0) {
+  if (
+    fiftyTwoHigh != null &&
+    fiftyTwoHigh > 0 &&
+    currentPrice != null &&
+    currentPrice > 0
+  ) {
     offHigh = roundPct((currentPrice / fiftyTwoHigh - 1) * 100);
   }
 
@@ -205,18 +213,27 @@ function computeTechnical(bars: OhlcBar[], quote: SchwabScannerBatchQuote | unde
   const sma50 = smaLast(closes, 50);
   const sma200 = smaLast(closes, 200);
 
-  const vs20 = sma20 != null && sma20 > 0 ? roundPct((currentPrice / sma20 - 1) * 100) : null;
-  const vs50 = sma50 != null && sma50 > 0 ? roundPct((currentPrice / sma50 - 1) * 100) : null;
-  const vs200 = sma200 != null && sma200 > 0 ? roundPct((currentPrice / sma200 - 1) * 100) : null;
+  const vs20 =
+    currentPrice != null && sma20 != null && sma20 > 0
+      ? roundPct((currentPrice / sma20 - 1) * 100)
+      : null;
+  const vs50 =
+    currentPrice != null && sma50 != null && sma50 > 0
+      ? roundPct((currentPrice / sma50 - 1) * 100)
+      : null;
+  const vs200 =
+    currentPrice != null && sma200 != null && sma200 > 0
+      ? roundPct((currentPrice / sma200 - 1) * 100)
+      : null;
 
   let fiveD: number | null = null;
-  if (closes.length >= 6) {
+  if (currentPrice != null && closes.length >= 6) {
     const prior = closes[closes.length - 6]!;
     if (prior > 0) fiveD = roundPct((currentPrice / prior - 1) * 100);
   }
 
   let thirtyD: number | null = null;
-  if (closes.length >= 31) {
+  if (currentPrice != null && closes.length >= 31) {
     const prior = closes[closes.length - 31]!;
     if (prior > 0) thirtyD = roundPct((currentPrice / prior - 1) * 100);
   }
