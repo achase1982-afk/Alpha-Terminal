@@ -4441,6 +4441,7 @@ interface TelemetryExtras {
   dataSource?: ChainSource | null;
   fetchFailureMode?: FetchFailureMode | string | null;
   deskResult?: ConvictionDeskResult | DeskResult | null;
+  aiTradePayload?: AiTradeResponse | null;
   runOutcomeOverride?: StrategistRunOutcomeTelemetry;
   error?: { message: string; stack?: string } | null;
   fullDiagnostic?: Record<string, unknown> | null;
