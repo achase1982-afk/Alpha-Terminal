@@ -35,6 +35,15 @@ describe("scannerLayer7Scores", () => {
     expect(richer!).toBeGreaterThanOrEqual(base!);
   });
 
+  it("scoreVolatility IV30 tilt uses normalized decimal IV (high IV still gets full tilt cap)", () => {
+    const lowIvTilt = scoreVolatility({ ivr: 50, iv30: 0.45, ivVsHv: null });
+    const highIv = scoreVolatility({ ivr: 50, iv30: 1.5, ivVsHv: null });
+    expect(lowIvTilt).not.toBeNull();
+    expect(highIv).not.toBeNull();
+    expect(highIv!).toBeGreaterThan(lowIvTilt!);
+    expect(highIv).toBe(50);
+  });
+
   it("scoreFlow is null without volume_4h", () => {
     const empty: ScannerFlowLayer5Wire = {
       blocks_4h: 1,

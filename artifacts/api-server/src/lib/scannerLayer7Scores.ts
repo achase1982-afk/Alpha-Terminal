@@ -24,9 +24,6 @@ export const SCANNER_LAYER7_COMPOSITE_WEIGHTS = {
   technical: 0.2,
 } as const;
 
-/** Tier dots (UI): green ≥ 70, amber 40–69, red below 40, gray = null / non-finite. */
-export const SCANNER_LAYER7_TIER_THRESHOLDS = { greenMin: 70, amberMin: 40 } as const;
-
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, n));
 }
@@ -71,7 +68,7 @@ export function scoreVolatility(args: {
 
   const iv30 = args.iv30;
   if (iv30 != null && Number.isFinite(iv30) && iv30 > 0) {
-    const ivPct = iv30 <= 1.25 ? iv30 * 100 : iv30;
+    const ivPct = iv30 * 100;
     vol += clamp((ivPct - 18) * 0.32, 0, 14);
   }
 
