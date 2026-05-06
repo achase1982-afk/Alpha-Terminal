@@ -561,7 +561,7 @@ function TelemetryEntryCopyButton({ row }: { row: TelemetryRow }) {
         <Popover open={open} onOpenChange={onOpenChange}>
           <PopoverTrigger asChild>{triggerButton}</PopoverTrigger>
           <PopoverContent
-            className="w-[min(100vw-2rem,22rem)] border-zinc-700 bg-zinc-950 p-3 text-zinc-100 shadow-xl"
+            className="z-[200] w-[min(100vw-2rem,22rem)] border-zinc-700 bg-zinc-950 p-3 text-zinc-100 shadow-xl"
             align="end"
             side="bottom"
             sideOffset={8}

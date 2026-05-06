@@ -9,9 +9,10 @@ const BottomSheetOverlay = React.forwardRef<
   React.ElementRef<typeof DrawerPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Overlay>
 >(({ className, ...props }, ref) => (
+  /* Overlay above Sidebar Telemetry shell (z-[100]); below OrderTicket (z-[210]). */
   <DrawerPrimitive.Overlay
     ref={ref}
-    className={cn("fixed inset-0 z-50 bg-black/80", className)}
+    className={cn("fixed inset-0 z-[200] bg-black/80", className)}
     {...props}
   />
 ));
@@ -43,7 +44,7 @@ export function BottomSheet({
         <BottomSheetOverlay />
         <DrawerPrimitive.Content
           className={cn(
-            "fixed inset-x-0 bottom-0 z-50 flex max-h-[90vh] flex-col rounded-t-[10px] border border-zinc-700 bg-zinc-950 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2 text-zinc-100 shadow-xl outline-none",
+            "fixed inset-x-0 bottom-0 z-[200] flex max-h-[90vh] flex-col rounded-t-[10px] border border-zinc-700 bg-zinc-950 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2 text-zinc-100 shadow-xl outline-none",
             className,
           )}
         >
