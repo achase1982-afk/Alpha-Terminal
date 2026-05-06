@@ -150,17 +150,23 @@ let acctActivitySubTimeout: ReturnType<typeof setTimeout> | null = null;
 // keepalive, no connect/login timeouts, and only reset backoff on LOGIN
 // success — so a 1006 during CONNECT produced unbounded backoff growth
 // (capped at 60s) and never triggered a token refresh. These state vars
-// + timers close those gaps.
+// + timers close those gaps. A separate counter covers LOGIN-then-immediate
+// 1006 (duplicate session / credential issues) which pre-login 1006 logic
+// never saw because WASCONNECTED was true.
 const CONNECT_TIMEOUT_MS = 15_000;      // time to complete WS handshake
 const LOGIN_RESPONSE_TIMEOUT_MS = 10_000; // time for LOGIN reply after open
 const PING_INTERVAL_MS = 20_000;        // client-initiated ping cadence
 const PONG_TIMEOUT_MS = 45_000;         // no pong → force-close
 const ABNORMAL_CLOSE_REFRESH_THRESHOLD = 3; // 1006-before-login count → force token refresh
+/** Post-LOGIN 1006 with session shorter than this is treated as a "flap" (server RST, duplicate session, etc.). */
+const SHORT_LIVED_SESSION_ABNORMAL_MS = 5_000;
 let connectTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
 let loginTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
 let pingIntervalTimer: ReturnType<typeof setInterval> | null = null;
 let pongWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
 let consecutiveAbnormalCloses = 0;
+/** Counts rapid 1006 after successful LOGIN; same threshold triggers token refresh as pre-login 1006 streak. */
+let consecutivePostLoginFlap1006 = 0;
 let consecutiveLoginFailures = 0;     // tracks LOGIN-after-TCP-open failures
 let forceTokenRefreshOnNextConnect = false;
 let connectAttemptStartedAt: number | null = null; // when current handshake began (age-gates CONNECTING termination)
@@ -799,6 +805,7 @@ function handleMessage(raw: string) {
           loginRetried = false;
           consecutiveLoginFailures = 0;
           consecutiveAbnormalCloses = 0;
+          consecutivePostLoginFlap1006 = 0;
           lastConnectedAt = Date.now();
           disconnectedAt = null;
           fiveMinCriticalSent = false;
@@ -1092,10 +1099,43 @@ async function connectSchwabStreamer() {
       consecutiveAbnormalCloses = 0;
     }
 
-    logger.warn({ code, reason: reason?.toString(), sessionDurationMs: sessionDuration, wasConnected, consecutiveAbnormalCloses, consecutiveLoginFailures },
-      "Schwab streamer: WebSocket closed");
+    const shortPostLoginFlap =
+      code === 1006 &&
+      wasConnected &&
+      sessionDuration !== null &&
+      sessionDuration < SHORT_LIVED_SESSION_ABNORMAL_MS;
+    if (shortPostLoginFlap) {
+      consecutivePostLoginFlap1006++;
+      if (consecutivePostLoginFlap1006 >= ABNORMAL_CLOSE_REFRESH_THRESHOLD) {
+        forceTokenRefreshOnNextConnect = true;
+        logger.warn(
+          { consecutivePostLoginFlap1006, threshold: ABNORMAL_CLOSE_REFRESH_THRESHOLD, sessionDurationMs: sessionDuration },
+          "Schwab streamer: repeated short-lived session after LOGIN (1006) — will force token refresh on next connect",
+        );
+      }
+    } else {
+      consecutivePostLoginFlap1006 = 0;
+    }
+
+    logger.warn({
+      code,
+      reason: reason?.toString(),
+      sessionDurationMs: sessionDuration,
+      wasConnected,
+      consecutiveAbnormalCloses,
+      consecutivePostLoginFlap1006,
+      consecutiveLoginFailures,
+    }, "Schwab streamer: WebSocket closed");
     void logFailure("SCHWAB_STREAM", "WARN", `Schwab WebSocket disconnected (code ${code})`,
-      { code, reason: reason?.toString(), sessionDurationMs: sessionDuration, wasConnected, consecutiveAbnormalCloses, consecutiveLoginFailures });
+      {
+        code,
+        reason: reason?.toString(),
+        sessionDurationMs: sessionDuration,
+        wasConnected,
+        consecutiveAbnormalCloses,
+        consecutivePostLoginFlap1006,
+        consecutiveLoginFailures,
+      });
 
     clearLifecycleTimers();
     schwabWs = null;
@@ -1168,6 +1208,7 @@ export function stopStreamer() {
   subscribedOptionSymbols.clear();
   subscribedFuturesOptionSymbols.clear();
   acctActivitySubscribed = false;
+  consecutivePostLoginFlap1006 = 0;
 }
 
 export function addSymbols(symbols: string[]) {
