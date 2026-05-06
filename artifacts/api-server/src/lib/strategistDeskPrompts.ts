@@ -9,7 +9,7 @@ import { buildScannerContextPromptBlock, type ScannerStrategistContext } from ".
 const SINGLE_VOICE_FRAMING = `You are writing one analysis broken into clearly labeled sections. There is one voice and one analyst. Section headers exist to help the reader navigate the analysis, not to attribute authorship to different roles. Do not write as a separate team, desk, or role. Use plain topic labels in prose only when helpful: Volatility, Flow, Catalyst, Decision.`;
 
 /** Injected after the market snapshot; keeps LLM output client-safe (no vendor / pipeline narration). */
-const OUTPUT_NO_SOURCE_RULES = `
+export const OUTPUT_NO_SOURCE_RULES = `
 
 OUTPUT STYLE (strict):
 - Do not name data vendors, brokers, news brands, or third-party feeds (e.g. no Polygon, Schwab, IBKR, Yahoo, etc.).
@@ -18,7 +18,7 @@ OUTPUT STYLE (strict):
 - If something looks like a known market artifact (e.g. front-week IV clamping, stale prints), describe the artifact plainly without attributing it to a system or vendor name.`;
 
 /** Catalyst / event narrative: sell-side firms may be named as catalyst actors; retrieval plumbing and outlet attribution may not. */
-const CATALYST_OUTPUT_ATTRIBUTION_RULES = `
+export const CATALYST_OUTPUT_ATTRIBUTION_RULES = `
 
 OUTPUT STYLE (strict, catalyst and event narrative):
 - You MAY name sell-side research firms and their actions when those actions ARE the catalyst (e.g. "Goldman cut PT from $19 to $17 on execution risk", "DA Davidson upgraded from Underperform to Neutral", "Baird raised PT to $25"). The firm and the call are part of the event landscape, not a citation of where you read it.
@@ -112,7 +112,7 @@ Closing imbalance (last 5 min): ${c.side} $${notionalM.toFixed(2)}M at ${c.indic
   }
 }
 
-function snapshotBlock(dataPackage: string): string {
+export function snapshotBlock(dataPackage: string): string {
   const imb = formatClosingImbalanceDeskLine(dataPackage);
   const scanner = formatScannerContextDeskSection(dataPackage);
   return `Market snapshot for this name (facts below only; use what is present and do not invent):
@@ -121,7 +121,7 @@ ${dataPackage}${DATA_STATE_LANGUAGE_RULES}${imb}${formatMicrostructureDeskLines(
 }
 
 /** Volatility topic: surface-only voice (no vendor / pipeline attribution). */
-const VOL_OUTPUT_ATTRIBUTION_RULES = `
+export const VOL_OUTPUT_ATTRIBUTION_RULES = `
 
 OUTPUT STYLE (strict, Volatility topic):
 - Do not name data vendors, brokers, news brands, or third-party feeds.
@@ -541,4 +541,56 @@ Respond with ONLY a JSON object (no markdown fences, no extra prose). Top-level 
     "watch_for": "<string>"
   }
 }`;
+}
+
+export { CONVICTION_DESK_MODEL_SYSTEM_PROMPT } from "./convictionDeskSystemPrompt.js";
+
+/**
+ * Conviction Desk: same JSON snapshot and data-state rules as Solo Desk; output is one Conviction memo JSON object.
+ */
+export function buildConvictionDeskUserPrompt(
+  dataPackage: string,
+  structuredResearchBriefing?: string,
+  options?: { catalystSlotNativeWebSearch?: boolean },
+): string {
+  const nativeWeb = options?.catalystSlotNativeWebSearch
+    ? `
+
+## WEB SEARCH (your turn, native tools)
+Your provider supports web search **on this JSON turn**. Use the built-in web search tool as needed before answering. Run focused searches aligned with: IR / company events, analyst actions (last ~60 days), earnings reaction history, sector ETF and peers, and (if the catalyst window warrants it) recent news. Prefer primary sources and major financial press; skip content farms.
+If a theme has no support after searching, write **data not surfaced** for that slice instead of inventing. Do not paste URLs or name outlets or vendors in the output.
+`
+    : "";
+
+  const researchBlock = structuredResearchBriefing
+    ? `
+
+## STRUCTURED RESEARCH (pre-run for you)
+Focused web research was already run; facts below are for synthesis only (do not cite URLs or outlets).
+
+${structuredResearchBriefing}
+`
+    : "";
+
+  return `You are producing a single trade memo as one JSON object (Conviction Desk). The data package is identical to Solo Desk: one consolidated JSON snapshot. Use the same literal data-state vocabulary as Solo Desk (**dataQualitySummary**, tape backfill flags, IV hygiene fields).
+
+${nativeWeb}${researchBlock}
+
+## MACHINE OUTPUT
+Return ONLY one JSON object. Top-level keys: regime, view, decision, failure_scenario, scenarios, exit_plan, self_grade, size.
+- decision.candidates_considered: exactly 3 items spanning at least two structure families (directional, vol-surface, premium).
+- decision.rejected_alternatives: exactly 2 items.
+- decision.chosen: null if NO TRADE. Otherwise include structure, legs, expiry, credit_or_debit, greeks_entry, greeks_evolution (exactly 9 objects for stock paths +1σ, 0, -1σ and days 1, 3, expiry-eve), outcome_distribution, ev_dollars, max_loss, optional stop_loss (per-share; must not equal max_loss when both are numbers).
+- chosen.ev_dollars must be within 5% of the average of P5, P25, P50, P75, and P95 in chosen.outcome_distribution.
+- If self_grade.conviction is C, D, or F, or conviction_threshold_met is false, or failure_scenario.sufficient is false, or view.decision_intent is pass, emit NO TRADE: chosen null, scenarios null, exit_plan null, size no-trade.
+
+Speak in first person. Do not use em dashes in any string field.
+
+---
+
+## DATA PACKAGE (JSON snapshot)
+
+${snapshotBlock(dataPackage)}${OUTPUT_NO_SOURCE_RULES}${VOL_OUTPUT_ATTRIBUTION_RULES}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
+
+Respond with ONLY a JSON object. No markdown fences, no extra prose.`;
 }

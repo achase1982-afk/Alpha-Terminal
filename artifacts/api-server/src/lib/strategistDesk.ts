@@ -15,11 +15,14 @@ import {
   CatalystAnalystOutputSchema,
   PmOutputSchema,
   SoloDeskFullOutputSchema,
+  ConvictionDeskOutputSchema,
   type VolAnalystOutput,
   type FlowAnalystOutput,
   type CatalystAnalystOutput,
   type PmOutput,
   type DeskResult,
+  type ConvictionDeskResult,
+  type ConvictionDeskOutput,
 } from "./strategistDeskSchemas.js";
 import {
   buildVolAnalystPrompt,
@@ -28,7 +31,10 @@ import {
   buildPmPrompt,
   buildSoloDeskUserPrompt,
   SOLO_DESK_MODEL_SYSTEM_PROMPT,
+  buildConvictionDeskUserPrompt,
 } from "./strategistDeskPrompts.js";
+import { CONVICTION_DESK_MODEL_SYSTEM_PROMPT } from "./convictionDeskSystemPrompt.js";
+import { normalizeConvictionDeskOutput, validateConvictionDeskBusinessRules } from "./strategistDeskConvictionRules.js";
 import type { DebateRound } from "./strategistDebate.js";
 import type { CatalystEvaluation } from "./catalystEvaluator.js";
 import { runCatalystDeskStructuredSearches } from "./strategistDeskCatalystWebSearch.js";
@@ -638,6 +644,199 @@ export async function runSoloDesk(args: {
     flow,
     catalyst,
     pm,
+    models: {
+      vol: consolidatedModel.label,
+      flow: consolidatedModel.label,
+      catalyst: consolidatedModel.label,
+      pm: consolidatedModel.label,
+    },
+    errors: errors.length > 0 ? errors : undefined,
+  };
+}
+
+function validateConvictionPipeline(
+  json: Record<string, unknown> | null,
+): { ok: true; data: ConvictionDeskOutput } | { ok: false; detail: string } {
+  if (!json) {
+    return { ok: false, detail: "Could not parse a single JSON object from the model response" };
+  }
+  const zod = ConvictionDeskOutputSchema.safeParse(json);
+  if (!zod.success) {
+    return { ok: false, detail: zod.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ") };
+  }
+  const normalized = normalizeConvictionDeskOutput(zod.data);
+  const biz = validateConvictionDeskBusinessRules(normalized);
+  if (biz.length > 0) {
+    return { ok: false, detail: biz.join("; ") };
+  }
+  return { ok: true, data: normalized };
+}
+
+/**
+ * Conviction Desk: one LLM turn with the Conviction model slot (`strategistConvictionModelIdx`),
+ * same catalyst web-search preamble as Solo Desk when using Gemini JSON-only flow.
+ */
+export async function runConvictionDesk(args: {
+  dataPackage: string;
+  settings: StrategistConfig;
+  ticker: string;
+  deskExpirationISO?: string;
+  catalystEvaluation?: CatalystEvaluation | null;
+  callbacks?: DeskCallbacks;
+}): Promise<ConvictionDeskResult> {
+  const { dataPackage, settings, ticker, deskExpirationISO, catalystEvaluation, callbacks } = args;
+
+  const consolidatedModel = getStrategistModel(settings.strategistConvictionModelIdx);
+
+  let catalystResearchBriefing = "";
+  const catalystNativeWeb = consolidatedModel.provider !== "google";
+
+  if (deskExpirationISO && consolidatedModel.provider === "google") {
+    callbacks?.onStatus?.("Conviction Desk: Catalyst structured web research (Gemini JSON cannot use tools)…");
+    try {
+      const bundle = await runCatalystDeskStructuredSearches({
+        ticker,
+        catalystEval: catalystEvaluation ?? null,
+        deskExpirationISO,
+        model: consolidatedModel,
+        onStatus: callbacks?.onStatus,
+        cancelSignal: callbacks?.cancelSignal,
+      });
+      catalystResearchBriefing = bundle.briefing;
+    } catch (err) {
+      logger.warn(
+        { err, ticker },
+        "StrategistDesk: Conviction Desk structured catalyst web search bundle failed; continuing with calendar snapshot only",
+      );
+      catalystResearchBriefing =
+        "## STRUCTURED RESEARCH (catalyst desk)\nResearch pass failed; treat web-derived themes as **data not surfaced** unless the calendar snapshot alone supports them.";
+    }
+  } else if (deskExpirationISO && catalystNativeWeb) {
+    logger.info(
+      { ticker, provider: consolidatedModel.provider },
+      "StrategistDesk: Conviction Desk skipping catalyst structured pre-search; consolidated model uses native web search on JSON turn",
+    );
+    callbacks?.onStatus?.("Conviction Desk: Catalyst web pre-search skipped (native web search on consolidated turn)…");
+  }
+
+  const userPrompt = buildConvictionDeskUserPrompt(dataPackage, catalystResearchBriefing || undefined, {
+    catalystSlotNativeWebSearch: catalystNativeWeb,
+  });
+
+  callbacks?.onStatus?.("Conviction Desk: single consolidated memo pass…");
+
+  assertDeskNotCancelled(callbacks);
+
+  const turnId = newTurnId();
+  callbacks?.onTurnStart?.({
+    id: turnId,
+    round: "desk",
+    role: "pm",
+    phase: "pm",
+    model: consolidatedModel.model,
+    label: "Conviction Desk",
+    startedAt: Date.now(),
+  });
+
+  let acc = "";
+  const onDelta = (delta: string) => {
+    acc += delta;
+    callbacks?.onTurnDelta?.(turnId, delta);
+  };
+
+  let text = "";
+  try {
+    const r = await streamModel(
+      consolidatedModel,
+      CONVICTION_DESK_MODEL_SYSTEM_PROMPT,
+      userPrompt,
+      onDelta,
+      (s) => callbacks?.onStatus?.(s),
+      callbacks?.cancelSignal,
+    );
+    text = r.text;
+    callbacks?.onTurnDone?.(turnId, text);
+  } catch (err) {
+    const errMsg = `\n\n[error: ${err instanceof Error ? err.message : String(err)}]`;
+    callbacks?.onTurnDone?.(turnId, acc + errMsg);
+    throw err;
+  }
+
+  const errors: string[] = [];
+  let json = parseJsonFromText(text);
+  let validation = validateConvictionPipeline(json);
+
+  if (!validation.ok) {
+    callbacks?.onTurnDiscarded?.(turnId);
+    logger.warn(
+      { ticker, detail: validation.detail, model: consolidatedModel.model, provider: consolidatedModel.provider },
+      "StrategistDesk: Conviction Desk output failed validation, retrying",
+    );
+    callbacks?.onStatus?.("Conviction Desk: memo output failed validation, retrying…");
+    assertDeskNotCancelled(callbacks);
+    const retryTurnId = newTurnId();
+    callbacks?.onTurnStart?.({
+      id: retryTurnId,
+      round: "desk",
+      role: "pm",
+      phase: "pm",
+      model: consolidatedModel.model,
+      label: "Conviction Desk (retry)",
+      startedAt: Date.now(),
+    });
+    const onRetryDelta = (delta: string) => {
+      callbacks?.onTurnDelta?.(retryTurnId, delta);
+    };
+    const retryPrompt =
+      userPrompt +
+      `\n\nYour previous response failed validation: ${validation.detail}. Return ONLY one valid JSON object matching ConvictionDeskOutputSchema exactly. No markdown, no code fences, no commentary before or after the JSON.`;
+    const retryR = await streamModel(
+      consolidatedModel,
+      CONVICTION_DESK_MODEL_SYSTEM_PROMPT,
+      retryPrompt,
+      onRetryDelta,
+      (s) => callbacks?.onStatus?.(s),
+      callbacks?.cancelSignal,
+    );
+    callbacks?.onTurnDone?.(retryTurnId, retryR.text);
+    json = parseJsonFromText(retryR.text);
+    validation = validateConvictionPipeline(json);
+  }
+
+  if (!validation.ok) {
+    errors.push(`Conviction Desk output failed validation after retry: ${validation.detail}`);
+    logger.error(
+      { ticker, model: consolidatedModel.model, provider: consolidatedModel.provider },
+      "StrategistDesk: Conviction Desk validation failed after retry (no fallback memo)",
+    );
+    return {
+      mode: "conviction_desk",
+      ticker,
+      conviction: null,
+      convictionDeskJsonDegraded: "schema_validation_failed_after_retry",
+      models: {
+        vol: consolidatedModel.label,
+        flow: consolidatedModel.label,
+        catalyst: consolidatedModel.label,
+        pm: consolidatedModel.label,
+      },
+      errors,
+    };
+  }
+
+  logger.info(
+    {
+      ticker,
+      convictionDeskModel: { provider: consolidatedModel.provider, model: consolidatedModel.model, label: consolidatedModel.label },
+      convictionDeskPromptChars: userPrompt.length,
+    },
+    "StrategistDesk: completed Conviction Desk run",
+  );
+
+  return {
+    mode: "conviction_desk",
+    ticker,
+    conviction: validation.data,
     models: {
       vol: consolidatedModel.label,
       flow: consolidatedModel.label,

@@ -1,5 +1,5 @@
 import { bsPrice } from "./bsmIV.js";
-import type { DeskLeg, DeskResult } from "./strategistDeskSchemas.js";
+import type { ConvictionDeskResult, DeskLeg, DeskResult } from "./strategistDeskSchemas.js";
 
 const RISK_FREE = 0.045;
 
@@ -359,5 +359,86 @@ export function attachDeskPmPayoffScenarios(deskResult: DeskResult, dataPackage:
       scenarios: computed.scenarios,
       scenariosSummary: computed.scenariosSummary,
     },
+  };
+}
+
+function parseConvictionLegsToDeskLegs(raw: unknown): DeskLeg[] | null {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const out: DeskLeg[] = [];
+  for (const item of raw) {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) return null;
+    const o = item as Record<string, unknown>;
+    const type = o.type;
+    const strike = o.strike;
+    const action = o.action;
+    const expiration = o.expiration ?? o.expiry;
+    if (typeof type !== "string" || typeof action !== "string") return null;
+    if (typeof expiration !== "string") return null;
+    if (typeof strike !== "number" || !Number.isFinite(strike)) return null;
+    const leg: DeskLeg = { type, strike, action, expiration };
+    const qty = o.quantity;
+    if (typeof qty === "number" && qty > 0) leg.quantity = qty;
+    out.push(leg);
+  }
+  return out;
+}
+
+/** Merge server payoff scenarios into Conviction Desk result when chosen structure parses as standard legs. */
+export function attachConvictionDeskPayoffScenarios(
+  deskResult: ConvictionDeskResult,
+  dataPackage: string,
+): ConvictionDeskResult {
+  const conv = deskResult.conviction;
+  if (!conv || conv.decision.chosen == null || conv.size === "no-trade") {
+    return { ...deskResult, payoffScenarios: null, payoffSummary: null };
+  }
+  const chosen = conv.decision.chosen;
+  const legs = parseConvictionLegsToDeskLegs(chosen.legs);
+  if (!legs) {
+    return { ...deskResult, payoffScenarios: null, payoffSummary: null };
+  }
+  const stopLoss =
+    typeof chosen.stop_loss === "number" && Number.isFinite(chosen.stop_loss) && chosen.stop_loss > 0
+      ? chosen.stop_loss
+      : 0;
+
+  const synthetic: DeskResult = {
+    mode: "solo_desk",
+    ticker: deskResult.ticker,
+    vol: { iv_state: "", term_structure: "", skew: "", implied_vs_realized: "", read: "" },
+    flow: { dominant_flow: "", institutional_signal: "", retail_signal: "", key_strikes: [], read: "" },
+    catalyst: { primary_catalyst: "", bar_to_clear: "", asymmetry: "", historical_pattern: "", read: "" },
+    pm: {
+      decision: "trade",
+      structure: {
+        type: chosen.structure,
+        legs,
+        expiry: chosen.expiry,
+        credit_or_debit: chosen.credit_or_debit,
+      },
+      thesis: "",
+      edge_check: "",
+      deviation_from_analysts: "none",
+      size: "medium",
+      whose_side: "neither",
+      biggest_risk: "",
+      exit_plan: {
+        profit_target: 0,
+        stop_loss: stopLoss,
+        time_stop: "",
+      },
+      watch_for: "",
+    },
+    models: deskResult.models,
+  };
+
+  const computed = computeDeskPmPayoffScenarios({ deskResult: synthetic, dataPackage });
+  if (!computed) {
+    return { ...deskResult, payoffScenarios: null, payoffSummary: null };
+  }
+  return {
+    ...deskResult,
+    payoffScenarios: computed.scenarios,
+    payoffSummary: computed.scenariosSummary,
   };
 }

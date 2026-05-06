@@ -3,8 +3,8 @@ import { getCachedRegime, buildFallbackRegime, type StructuredRegime } from "./r
 import { computeIOScore, type IOScoreResult } from "./ioScoreEngine.js";
 import { getSettings, getStrategistModel, type StrategistConfig, type StrategistModelOption } from "./strategistSettings.js";
 import { runDebate, type DebateCallbacks, type DebateRound, type DebateRole, type DebatePhase } from "./strategistDebate.js";
-import { runDeskAnalysis, runSoloDesk, type DeskCallbacks } from "./strategistDesk.js";
-import type { DeskResult } from "./strategistDeskSchemas.js";
+import { runDeskAnalysis, runSoloDesk, runConvictionDesk, type DeskCallbacks } from "./strategistDesk.js";
+import type { ConvictionDeskResult, DeskResult } from "./strategistDeskSchemas.js";
 import { throwIfStrategistAnalyzeCancelled } from "./strategistAnalyzeCancellation.js";
 import type { ScrubCanonical } from "./narrativeScrubbers.js";
 import { db, strategistTelemetryTable } from "@workspace/db";
@@ -62,7 +62,7 @@ import {
   STRATEGIST_IV_CEILING_PCT,
 } from "./strategistIvNormalize.js";
 import { impliedVolatilityBSM } from "./bsmIV.js";
-import { attachDeskPmPayoffScenarios } from "./strategistPmPayoffScenarios.js";
+import { attachDeskPmPayoffScenarios, attachConvictionDeskPayoffScenarios } from "./strategistPmPayoffScenarios.js";
 import type { EquityMarketSession, EquitySessionResolutionSource } from "./schwabMarketHours.js";
 import { getEquityMarketSessionWithAsOf } from "./schwabMarketHours.js";
 import {
@@ -145,7 +145,7 @@ export interface StrategistV2Result {
   ticker: string;
   /** When no_viable_setup / MISSING_DATA stems from ticker fetch failure */
   fetchFailureMode?: "token_null" | "http_fail" | "symbol_missing" | "network_exception" | string;
-  deskResult?: import("./strategistDeskSchemas.js").DeskResult;
+  deskResult?: ConvictionDeskResult | DeskResult | null;
   ivrBackfill?: {
     jobId: string | null;
     status: "queued" | "running" | "completed" | "failed" | "failed_insufficient_history";
@@ -413,14 +413,22 @@ function parseDataPackageForDiag(raw: string | undefined | null): Record<string,
   }
 }
 
-function deskSectionsPayload(deskResult: DeskResult): Record<string, unknown> {
+function deskSectionsPayload(deskResult: DeskResult | ConvictionDeskResult): Record<string, unknown> {
+  if (deskResult.mode === "conviction_desk") {
+    const c = deskResult as ConvictionDeskResult;
+    return {
+      conviction: c.conviction,
+      payoffScenarios: c.payoffScenarios ?? null,
+      payoffSummary: c.payoffSummary ?? null,
+    };
+  }
   const { vol, flow, catalyst, pm } = deskResult;
   return { vol, flow, catalyst, pm };
 }
 
 function strategistPayloadFromResult(args: {
   settings: StrategistConfig;
-  deskResult?: DeskResult | null;
+  deskResult?: ConvictionDeskResult | DeskResult | null;
   aiResponse?: AiTradeResponse | null;
 }): unknown {
   const { settings, deskResult, aiResponse } = args;
@@ -1247,6 +1255,91 @@ async function analyzeTickerV2Inner(
       logger.error({ err, ticker }, "StrategistV2: Solo Desk analysis failed");
       return noViable(ticker, regime, settings, toxicCheck, tickerData,
         { category: "ANALYSIS_INCOMPLETE", detail: `Solo Desk analysis failed: ${err instanceof Error ? err.message : String(err)}`, suggestedAction: "Retry the analysis." },
+        ioScore, { dataSource, dataPackage });
+    }
+  }
+
+  // ── Conviction Desk (mode 5): trade memo JSON, same data package as Solo Desk ──
+  if (settings.strategistMode === 5) {
+    status("Starting Conviction Desk analysis (trade memo, single pass)…");
+    try {
+      const deskResultRaw = await runConvictionDesk({
+        dataPackage,
+        settings,
+        ticker,
+        deskExpirationISO: deskCatalystExpirationISO,
+        catalystEvaluation: deskCatalystEval,
+        callbacks: {
+          jobId: progress?.jobId,
+          cancelSignal: progress?.cancelSignal,
+          onStatus: (s) => status(s),
+          onTurnStart: progress?.onTurnStart ? (turn) => progress.onTurnStart!(turn as any) : undefined,
+          onTurnDelta: progress?.onTurnDelta,
+          onTurnDone: progress?.onTurnDone,
+          onTurnDiscarded: progress?.onTurnDiscarded,
+        },
+      });
+      const deskResult = attachConvictionDeskPayoffScenarios(deskResultRaw, dataPackage);
+      const incomplete =
+        deskResult.convictionDeskJsonDegraded === "schema_validation_failed_after_retry" ||
+        deskResult.conviction == null ||
+        (deskResult.errors?.some((e) => e.startsWith("Conviction Desk output failed validation")) ?? false);
+      const hasTrade =
+        deskResult.conviction != null &&
+        deskResult.conviction.decision.chosen != null &&
+        deskResult.conviction.size !== "no-trade";
+      const result: StrategistV2Result = {
+        status: "desk_recommendation",
+        ticker,
+        deskResult,
+        strategistOutcome: incomplete
+          ? "ANALYSIS_INCOMPLETE"
+          : !hasTrade
+            ? "NO_TRADE"
+            : undefined,
+        ...(incomplete
+          ? {
+              blockReason: {
+                category: "ANALYSIS_INCOMPLETE" as const,
+                detail:
+                  deskResult.errors?.find((e) => e.startsWith("Conviction Desk output failed")) ??
+                  "Conviction Desk output did not match the required JSON schema after retry.",
+                suggestedAction: "Retry the analysis.",
+                outcomeMeta: { incompleteRole: "pm" },
+              },
+            }
+          : {}),
+        regime,
+        systemicRiskElevated: regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME",
+        ioScore,
+      };
+      const tradeRec = hasTrade;
+      const outcomeOv = deriveRunOutcomeFromStrategistResult("desk_recommendation", tradeRec);
+      const telemetryId = await emitFullDiagnosticTelemetry({
+        ticker,
+        settings,
+        regime,
+        ioScore,
+        tickerData,
+        toxicCheck,
+        telemetryDbResult: "recommendation",
+        aiDecision: null,
+        thesis: null,
+        extras: { dataPackage, deskResult, runOutcomeOverride: outcomeOv },
+      });
+      result.telemetryId = telemetryId ?? undefined;
+      result.strategistDiagnosticRequestId = getStrategistRunContext()?.requestId;
+      result.diagnosticView = buildStrategistDiagnosticView({
+        dataPackageStr: dataPackage,
+        deskResult,
+        catalystEvaluation: deskCatalystEval,
+        diag: getStrategistRunContext()?.diag,
+      });
+      return withResultSchemaVersion(result);
+    } catch (err) {
+      logger.error({ err, ticker }, "StrategistV2: Conviction Desk analysis failed");
+      return noViable(ticker, regime, settings, toxicCheck, tickerData,
+        { category: "ANALYSIS_INCOMPLETE", detail: `Conviction Desk analysis failed: ${err instanceof Error ? err.message : String(err)}`, suggestedAction: "Retry the analysis." },
         ioScore, { dataSource, dataPackage });
     }
   }
@@ -4347,8 +4440,7 @@ interface TelemetryExtras {
   catalystAlignment?: string | null;
   dataSource?: ChainSource | null;
   fetchFailureMode?: FetchFailureMode | string | null;
-  deskResult?: DeskResult | null;
-  aiTradePayload?: AiTradeResponse | null;
+  deskResult?: ConvictionDeskResult | DeskResult | null;
   runOutcomeOverride?: StrategistRunOutcomeTelemetry;
   error?: { message: string; stack?: string } | null;
   fullDiagnostic?: Record<string, unknown> | null;
@@ -4389,7 +4481,17 @@ async function emitFullDiagnosticTelemetry(args: {
     aiResponse: args.extras.aiTradePayload ?? undefined,
   });
   const durationMs = ctx ? Date.now() - ctx.startedAt : 0;
-  const deskTrade = args.extras.deskResult?.pm.decision === "trade";
+  const deskTrade =
+    args.extras.deskResult?.mode === "conviction_desk"
+      ? (() => {
+          const d = args.extras.deskResult as ConvictionDeskResult;
+          return (
+            d.conviction != null &&
+            d.conviction.decision.chosen != null &&
+            d.conviction.size !== "no-trade"
+          );
+        })()
+      : args.extras.deskResult?.pm.decision === "trade";
   const outcome =
     args.extras.runOutcomeOverride ??
     telemetryDbResultToOutcome(args.telemetryDbResult, deskTrade);

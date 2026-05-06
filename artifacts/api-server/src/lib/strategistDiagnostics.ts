@@ -3,7 +3,7 @@ import { normalizeIvClampedReasonsForPayload } from "./strategistIvClampCompat.j
 import type { TapeBackfillStatus } from "./strategistTapeBackfill.js";
 import type { StrategistConfig } from "./strategistSettings.js";
 import type { PolygonApiCallRecord } from "./polygonApiTrace.js";
-import type { DeskResult } from "./strategistDeskSchemas.js";
+import type { ConvictionDeskResult, DeskResult } from "./strategistDeskSchemas.js";
 
 /** Maps numeric strategist mode to stable string labels for diagnostics. */
 export function strategistModeLabel(mode: number): string {
@@ -16,6 +16,8 @@ export function strategistModeLabel(mode: number): string {
       return "four_analyst";
     case 4:
       return "solo_desk";
+    case 5:
+      return "conviction_desk";
     default:
       return `mode_${mode}`;
   }
@@ -118,7 +120,7 @@ export interface ModelCallAttributionRow {
 /** Placeholder until LLM SDK usage hooks populate real token/latency numbers. */
 export function buildModelAttributionPlaceholder(args: {
   settings: StrategistConfig;
-  deskResult?: DeskResult | null;
+  deskResult?: DeskResult | ConvictionDeskResult | null;
   soloModelLabel?: string;
 }): Record<string, unknown> {
   const { settings, deskResult, soloModelLabel } = args;
@@ -134,6 +136,15 @@ export function buildModelAttributionPlaceholder(args: {
     estimatedCostUsd: null,
   });
 
+  if (settings.strategistMode === 5 && deskResult?.mode === "conviction_desk" && deskResult.models) {
+    const m = deskResult.models.pm;
+    return {
+      mode: "conviction_desk",
+      calls: [stubCall("conviction_desk_consolidated", m)],
+      note:
+        "Conviction Desk uses one consolidated LLM call; detailed usage metrics pending SDK instrumentation.",
+    };
+  }
   if (settings.strategistMode === 3 && deskResult?.models) {
     return {
       mode: "four_analyst",

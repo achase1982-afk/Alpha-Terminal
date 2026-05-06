@@ -4,6 +4,7 @@
  */
 
 import type { DeskResult } from "@/lib/strategistDeskResult";
+import { buildConvictionDeskMemoPlainText } from "@/lib/convictionDeskMemoPlain";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -274,8 +275,12 @@ function buildCatalystSpeech(desk: DeskResult): string {
 
 export function buildDeskSpeechSections(
   deskResult: DeskResult,
-  opts: { bannerTitle?: string; bannerBody?: string },
+  opts: { bannerTitle?: string; bannerBody?: string; generatedAt?: string | number | null },
 ): DeskSpeechSection[] {
+  if (deskResult.mode === "conviction_desk") {
+    const text = buildConvictionDeskMemoPlainText({ deskResult, generatedAt: opts.generatedAt });
+    return [{ id: "memo", label: "Conviction memo", text }];
+  }
   const pmText = buildPmSpeech(deskResult, opts);
   return [
     { id: "pm", label: "Decision", text: pmText },

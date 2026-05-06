@@ -39,12 +39,14 @@ export interface StrategistConfig {
   toxicPathBEnabled: number;
   regimeUpdateFrequencyMin: number;
   // Strategist mode + model selection
-  strategistMode: number; // 1 = Solo, 2 = Debate, 3 = Desk, 4 = Solo Desk
+  strategistMode: number; // 1 = Solo, 2 = Debate, 3 = Desk, 4 = Solo Desk, 5 = Conviction Desk
   strategistConvergence: number; // 1 = highest_confidence, 2 = synthesis, 3 = hybrid
   /** Confidence-point gap (Bull − Bear) below which the verdict is SIDEWAYS.
    *  Smaller = more directional verdicts; larger = more SIDEWAYS / vol-neutral. */
   strategistTieBand: number;
   strategistSoloModelIdx: number;
+  /** Model for Conviction Desk (single memo JSON). Defaults to the same index as Solo. */
+  strategistConvictionModelIdx: number;
   strategistDebateAModelIdx: number;
   strategistDebateBModelIdx: number;
   strategistArbitratorModelIdx: number;
@@ -157,6 +159,7 @@ const DEFAULTS = {
   strategistConvergence: 3,
   strategistTieBand: 10,
   strategistSoloModelIdx: 0,
+  strategistConvictionModelIdx: 0,
   strategistDebateAModelIdx: 0,
   strategistDebateBModelIdx: 1,
   strategistArbitratorModelIdx: 0,
@@ -352,6 +355,7 @@ export async function getSettings(): Promise<StrategistConfig> {
         finalMerged.strategistModelCatalogVersion = 3;
       }
       finalMerged.strategistSoloModelIdx = normalizeStrategistModelIndex(finalMerged.strategistSoloModelIdx);
+      finalMerged.strategistConvictionModelIdx = normalizeStrategistModelIndex(finalMerged.strategistConvictionModelIdx);
       finalMerged.strategistDebateAModelIdx = normalizeStrategistModelIndex(finalMerged.strategistDebateAModelIdx);
       finalMerged.strategistDebateBModelIdx = normalizeStrategistModelIndex(finalMerged.strategistDebateBModelIdx);
       if (!isDebateWinnerArbitrator(finalMerged.strategistArbitratorModelIdx)) {
@@ -390,6 +394,7 @@ export async function getSettings(): Promise<StrategistConfig> {
 
 const STRATEGIST_MODEL_IDX_KEYS = new Set<keyof StrategistConfig>([
   "strategistSoloModelIdx",
+  "strategistConvictionModelIdx",
   "strategistDebateAModelIdx",
   "strategistDebateBModelIdx",
 ]);
@@ -448,13 +453,15 @@ export interface SettingMetaEntry {
 export function getSettingMeta(): SettingMetaEntry[] {
   const modelOptions = STRATEGIST_MODEL_OPTIONS.map((m, i) => ({ value: i, label: m.label }));
   return [
-    { key: "strategistMode", label: "Strategist Mode", group: "Strategist", default: 1, min: 1, max: 4, step: 1, description: "Solo = one strategist runs the analysis. Debate = two strategists go back-and-forth across three rounds and converge on a single trade. Desk = four topic sections (Volatility, Flow, Catalyst, Decision) in one report; model slots map to each topic plus the concluding Decision section. Solo Desk = one model produces the full four-section report in a single pass (same data and schema as Desk; uses the same Solo model slot as Solo mode).", options: [
+    { key: "strategistMode", label: "Strategist Mode", group: "Strategist", default: 1, min: 1, max: 5, step: 1, description: "Solo = one strategist runs the analysis. Debate = two strategists go back-and-forth across three rounds and converge on a single trade. Desk = four topic sections (Volatility, Flow, Catalyst, Decision) in one report; model slots map to each topic plus the concluding Decision section. Solo Desk = one model produces the full four-section report in a single pass (same data and schema as Desk; uses the Solo model slot). Conviction Desk = one model produces a trade memo JSON (same data package as Solo Desk; separate Conviction model slot).", options: [
       { value: 1, label: "Solo (1 strategist)" },
       { value: 2, label: "Debate (2 strategists)" },
       { value: 3, label: "Desk (four topic sections)" },
       { value: 4, label: "Solo Desk (1 pass, Desk schema)" },
+      { value: 5, label: "Conviction Desk (memo JSON)" },
     ] },
     { key: "strategistSoloModelIdx", label: "Solo Model", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used in Solo mode and Solo Desk mode (one consolidated Desk-shaped pass). In Desk mode this slot is used for the Volatility section.", options: modelOptions },
+    { key: "strategistConvictionModelIdx", label: "Conviction Desk", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used for Conviction Desk (single-pass trade memo JSON). Defaults to the same catalog index as Solo Model unless you change it.", options: modelOptions },
     { key: "strategistDebateAModelIdx", label: "Debate — Bull Model", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used to argue the Bull side in Debate mode. In Desk mode this slot is used for the Flow section. Unused in Solo Desk mode (Solo model slot runs the full report).", options: modelOptions },
     { key: "strategistDebateBModelIdx", label: "Debate — Bear Model", group: "Strategist", default: 1, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used to argue the Bear side in Debate mode. In Desk mode this slot is used for the Catalyst section. Unused in Solo Desk mode (Solo model slot runs the full report).", options: modelOptions },
     { key: "strategistArbitratorModelIdx", label: "Debate — Arbitrator Model", group: "Strategist", default: 0, min: -1, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used in Phase 3 to arbitrate between Bull's and Bear's structure proposals and ship the final trade. In Desk mode this slot is used for the Decision section. Unused in Solo Desk mode (Solo model slot runs the full report).", options: [{ value: -1, label: "Debate Winner (winning side promoted to arbitrator pass)" }, ...modelOptions] },
