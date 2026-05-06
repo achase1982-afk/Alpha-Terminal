@@ -15,17 +15,17 @@ import {
 } from "./scannerCard.utils";
 import { cn } from "@/lib/utils";
 
-function IvBar({ ivr }: { ivr: number | null }) {
+function IvBar({ ivr, dense }: { ivr: number | null; dense?: boolean }) {
   if (ivr == null || !Number.isFinite(ivr)) {
     return <span className="text-muted-foreground tabular-nums">{dashCell()}</span>;
   }
   const pct = Math.min(100, Math.max(0, ivr));
   return (
-    <div className="flex items-center gap-1.5 min-w-0 justify-end">
-      <div className="w-14 h-1 rounded-full bg-zinc-800 overflow-hidden shrink-0">
+    <div className="flex items-center gap-1 min-w-0 justify-end">
+      <div className={cn("h-1 rounded-full bg-zinc-800 overflow-hidden shrink-0", dense ? "w-10" : "w-14")}>
         <div className="h-full bg-amber-500/90 rounded-full" style={{ width: `${pct}%` }} />
       </div>
-      <span className="tabular-nums text-foreground w-8 text-right">{Math.round(ivr)}</span>
+      <span className="tabular-nums text-foreground w-7 text-right text-[10px] sm:text-[11px]">{Math.round(ivr)}</span>
     </div>
   );
 }
@@ -41,6 +41,9 @@ function MaVs({ above }: { above: boolean | null }) {
   return above ? <span className="text-terminal-success">Above</span> : <span className="text-terminal-danger">Below</span>;
 }
 
+/**
+ * V3 expanded layout: identity line → score block (composite + 5-column row + preset) → 2×2 panel grid → actions.
+ */
 export function ScannerCardDetail({
   data,
   onAction,
@@ -55,20 +58,27 @@ export function ScannerCardDetail({
   const tech = data.technical;
 
   return (
-    <div className="px-3 pb-3 pt-2 space-y-3 border-t border-zinc-800/80 bg-[#080808]/95 text-sm">
+    <div className="max-h-[min(420px,72vh)] overflow-y-auto overscroll-contain px-2.5 pb-2 pt-1.5 space-y-2 border-t border-zinc-800/80 bg-[#080808]/95 text-xs">
       <ScannerCardIdentity data={data} />
       <ScannerCardScore data={data} />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <ScannerCardPanel title="Vol Context">
-          <ScannerCardPanelRow label="IV30" value={formatIvPct(data.iv30)} />
+      {/* V3: fixed 2×2 — Vol Context | Catalysts / Flow 4h | Technical */}
+      <div className="grid grid-cols-2 grid-rows-2 gap-1.5 min-h-0 auto-rows-fr">
+        <ScannerCardPanel title="Vol Context" dense>
+          <ScannerCardPanelRow dense label="IV30" value={formatIvPct(data.iv30)} />
           <ScannerCardPanelRow
+            dense
             label="IVR"
-            value={<IvBar ivr={data.ivr} />}
+            value={<IvBar ivr={data.ivr} dense />}
           />
-          <ScannerCardPanelRow label="IV Percentile" value={data.ivPercentile != null && Number.isFinite(data.ivPercentile) ? `${Math.round(data.ivPercentile)}` : dashCell()} />
-          <ScannerCardPanelRow label="HV30" value={formatIvPct(data.hv30)} />
           <ScannerCardPanelRow
+            dense
+            label="IV Percentile"
+            value={data.ivPercentile != null && Number.isFinite(data.ivPercentile) ? `${Math.round(data.ivPercentile)}` : dashCell()}
+          />
+          <ScannerCardPanelRow dense label="HV30" value={formatIvPct(data.hv30)} />
+          <ScannerCardPanelRow
+            dense
             label="IV vs HV"
             value={
               data.ivVsHv != null && Number.isFinite(data.ivVsHv)
@@ -79,6 +89,7 @@ export function ScannerCardDetail({
             }
           />
           <ScannerCardPanelRow
+            dense
             label="Term Structure"
             value={
               ts
@@ -88,8 +99,9 @@ export function ScannerCardDetail({
           />
         </ScannerCardPanel>
 
-        <ScannerCardPanel title="Catalysts">
+        <ScannerCardPanel title="Catalysts" dense>
           <ScannerCardPanelRow
+            dense
             label="Earnings"
             value={
               earn
@@ -98,6 +110,7 @@ export function ScannerCardDetail({
             }
           />
           <ScannerCardPanelRow
+            dense
             label="Ex-Dividend"
             value={
               ex
@@ -109,11 +122,11 @@ export function ScannerCardDetail({
                 : dashCell()
             }
           />
-          <div className="text-muted-foreground text-xs uppercase tracking-wide pt-0.5">Reactions last 4q</div>
+          <div className="text-muted-foreground text-[9px] uppercase tracking-wide pt-0.5">Reactions Last 4Q</div>
           {data.earningsHistory && data.earningsHistory.length > 0 ? (
-            <ul className="space-y-0.5">
+            <ul className="space-y-0">
               {data.earningsHistory.slice(0, 4).map((h, i) => (
-                <li key={`${h.quarter}-${i}`} className="flex justify-between gap-2 tabular-nums">
+                <li key={`${h.quarter}-${i}`} className="flex justify-between gap-1 tabular-nums text-[10px]">
                   <span className="text-muted-foreground truncate">{h.quarter}</span>
                   <span
                     className={cn(
@@ -131,16 +144,19 @@ export function ScannerCardDetail({
           )}
         </ScannerCardPanel>
 
-        <ScannerCardPanel title="Flow 4h">
+        <ScannerCardPanel title="Flow 4h" dense>
           <ScannerCardPanelRow
+            dense
             label="Blocks"
             value={flow?.blocks4h != null && Number.isFinite(flow.blocks4h) ? String(flow.blocks4h) : dashCell()}
           />
           <ScannerCardPanelRow
+            dense
             label="Sweeps"
             value={flow?.sweeps4h != null && Number.isFinite(flow.sweeps4h) ? String(flow.sweeps4h) : dashCell()}
           />
           <ScannerCardPanelRow
+            dense
             label="Net Delta $"
             value={
               flow?.netDeltaNotional != null && Number.isFinite(flow.netDeltaNotional)
@@ -149,6 +165,7 @@ export function ScannerCardDetail({
             }
           />
           <ScannerCardPanelRow
+            dense
             label="Top Strike"
             value={
               flow?.topStrike
@@ -157,10 +174,12 @@ export function ScannerCardDetail({
             }
           />
           <ScannerCardPanelRow
+            dense
             label="Volume"
             value={flow?.topStrike?.volume != null ? formatCompactInt(flow.topStrike.volume) : dashCell()}
           />
           <ScannerCardPanelRow
+            dense
             label="Volume / OI"
             value={
               flow?.topStrike &&
@@ -172,27 +191,31 @@ export function ScannerCardDetail({
           />
         </ScannerCardPanel>
 
-        <ScannerCardPanel title="Technical">
+        <ScannerCardPanel title="Technical" dense>
           <ScannerCardPanelRow
+            dense
             label="52w Range"
             value={
               tech && Number.isFinite(tech.week52Low) && Number.isFinite(tech.week52High)
-                ? `${tech.week52Low.toFixed(2)} – ${tech.week52High.toFixed(2)}`
+                ? `${tech.week52Low.toFixed(1)}–${tech.week52High.toFixed(1)}`
                 : dashCell()
             }
           />
           <ScannerCardPanelRow
+            dense
             label="Off 52w High"
             value={tech != null && Number.isFinite(tech.pctOffHigh) ? formatSignedPct(tech.pctOffHigh) : dashCell()}
           />
-          <ScannerCardPanelRow label="vs 20MA" value={<MaVs above={tech?.aboveMa20 ?? null} />} />
-          <ScannerCardPanelRow label="vs 50MA" value={<MaVs above={tech?.aboveMa50 ?? null} />} />
-          <ScannerCardPanelRow label="vs 200MA" value={<MaVs above={tech?.aboveMa200 ?? null} />} />
+          <ScannerCardPanelRow dense label="vs 20MA" value={<MaVs above={tech?.aboveMa20 ?? null} />} />
+          <ScannerCardPanelRow dense label="vs 50MA" value={<MaVs above={tech?.aboveMa50 ?? null} />} />
+          <ScannerCardPanelRow dense label="vs 200MA" value={<MaVs above={tech?.aboveMa200 ?? null} />} />
           <ScannerCardPanelRow
+            dense
             label="5d Return"
             value={tech != null && Number.isFinite(tech.return5d) ? formatSignedPct(tech.return5d) : dashCell()}
           />
           <ScannerCardPanelRow
+            dense
             label="30d Return"
             value={tech != null && Number.isFinite(tech.return30d) ? formatSignedPct(tech.return30d) : dashCell()}
           />

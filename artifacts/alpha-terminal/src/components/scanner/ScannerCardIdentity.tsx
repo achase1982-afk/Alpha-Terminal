@@ -2,7 +2,6 @@ import type { ScannerCardData } from "@/lib/unifiedScanTypes";
 import { cn } from "@/lib/utils";
 import {
   dashCell,
-  formatCompactInt,
   scannerNumericFontStyle,
   volumeVsAvgMultiplier,
 } from "./scannerCard.utils";
@@ -10,9 +9,11 @@ import {
 function DayRangeBar({
   range,
   price,
+  compact,
 }: {
   range: { low: number; high: number } | null;
   price: number | null;
+  compact?: boolean;
 }) {
   if (!range || !Number.isFinite(range.low) || !Number.isFinite(range.high) || range.high <= range.low) {
     return <span className="text-muted-foreground tabular-nums" style={scannerNumericFontStyle}>{dashCell()}</span>;
@@ -22,57 +23,71 @@ function DayRangeBar({
   if (price != null && Number.isFinite(price)) {
     markerPct = Math.min(100, Math.max(0, ((price - range.low) / span) * 100));
   }
+  const loHi = (
+    <span className="text-muted-foreground tabular-nums text-[10px] shrink-0 hidden sm:inline" style={scannerNumericFontStyle}>
+      {range.low.toFixed(1)}–{range.high.toFixed(1)}
+    </span>
+  );
+  const bar = (
+    <div className={`${compact ? "min-w-[48px]" : "min-w-[48px]"} flex-1 h-1.5 rounded-full bg-zinc-800 relative overflow-hidden`}>
+      <div
+        className="absolute top-0 bottom-0 w-0.5 bg-primary rounded-full shadow-[0_0_4px_hsl(var(--primary))]"
+        style={{ left: `${markerPct}%`, transform: "translateX(-50%)" }}
+      />
+    </div>
+  );
+  if (compact) {
+    return (
+      <div className="flex items-center gap-1 min-w-0 flex-1 max-w-[160px]" style={scannerNumericFontStyle}>
+        {loHi}
+        {bar}
+      </div>
+    );
+  }
   return (
     <div className="flex items-center gap-2 min-w-0">
       <span className="text-muted-foreground tabular-nums text-xs shrink-0" style={scannerNumericFontStyle}>
         {range.low.toFixed(2)} – {range.high.toFixed(2)}
       </span>
-      <div className="flex-1 min-w-[48px] h-1.5 rounded-full bg-zinc-800 relative overflow-hidden">
-        <div
-          className="absolute top-0 bottom-0 w-0.5 bg-primary rounded-full shadow-[0_0_4px_hsl(var(--primary))]"
-          style={{ left: `${markerPct}%`, transform: "translateX(-50%)" }}
-        />
-      </div>
+      {bar}
     </div>
   );
 }
 
+/**
+ * V3 mockup: single identity line — name · sector · day range + mini bar · vol vs 20d avg.
+ */
 export function ScannerCardIdentity({ data }: { data: ScannerCardData }) {
-  const sectorText = data.sector?.trim() ? data.sector : dashCell();
-  /** `ScannerCardData` does not yet include industry; reserved for future layers. */
-  const industryText = dashCell();
+  const name = data.name?.trim() || dashCell();
+  const sector = data.sector?.trim() || "";
   const volMult = volumeVsAvgMultiplier(data.volume, data.avgVolume20d);
+  const hasSector = sector.length > 0;
 
   return (
-    <div className="space-y-1.5 text-sm" style={scannerNumericFontStyle}>
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span
-          className={cn(
-            "font-medium",
-            data.name?.trim() ? "text-foreground" : "text-muted-foreground",
-          )}
-        >
-          {data.name?.trim() || dashCell()}
-        </span>
-        <span className="text-muted-foreground">
-          {sectorText}
-          <span className="text-muted-foreground/80"> · {industryText}</span>
-        </span>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <div>
-          <div className="text-xs uppercase tracking-wide text-muted-foreground mb-0.5">Day range</div>
-          <DayRangeBar range={data.dayRange} price={data.price} />
-        </div>
-        <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 items-baseline">
-          <span className="text-muted-foreground">Vol vs 20d avg</span>
-          <span className={cn("text-right tabular-nums", volMult === dashCell() ? "text-muted-foreground" : "text-foreground")}>{volMult}</span>
-          <span className="text-muted-foreground">Volume</span>
-          <span className={cn("text-right tabular-nums", formatCompactInt(data.volume) === dashCell() ? "text-muted-foreground" : "text-foreground")}>{formatCompactInt(data.volume)}</span>
-          <span className="text-muted-foreground">20d avg</span>
-          <span className={cn("text-right tabular-nums", formatCompactInt(data.avgVolume20d) === dashCell() ? "text-muted-foreground" : "text-foreground")}>{formatCompactInt(data.avgVolume20d)}</span>
-        </div>
-      </div>
+    <div
+      className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs min-w-0 leading-tight"
+      style={scannerNumericFontStyle}
+    >
+      <span className={cn("font-medium shrink-0", name !== dashCell() ? "text-foreground" : "text-muted-foreground")}>{name}</span>
+      {hasSector ? (
+        <>
+          <span className="text-muted-foreground/80 shrink-0" aria-hidden>
+            ·
+          </span>
+          <span className="text-muted-foreground truncate max-w-[42%] shrink" title={sector}>
+            {sector}
+          </span>
+        </>
+      ) : null}
+      <span className="text-muted-foreground/80 shrink-0" aria-hidden>
+        ·
+      </span>
+      <DayRangeBar range={data.dayRange} price={data.price} compact />
+      <span className="text-muted-foreground/80 shrink-0" aria-hidden>
+        ·
+      </span>
+      <span className="text-muted-foreground shrink-0">vs 20d</span>
+      <span className={cn("tabular-nums shrink-0", volMult === dashCell() ? "text-muted-foreground" : "text-foreground")}>{volMult}</span>
     </div>
   );
 }
