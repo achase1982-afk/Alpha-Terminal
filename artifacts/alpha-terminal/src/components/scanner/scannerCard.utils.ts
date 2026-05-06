@@ -70,6 +70,15 @@ export function volumeVsAvgMultiplier(volume: number | null, avg: number | null)
   return `${(volume / avg).toFixed(1)}×`;
 }
 
+/** Non-null multiplier string only when ratio is meaningful (> 0); hides "0.0×" and missing data. */
+export function meaningfulVolVsAvgMultiplier(volume: number | null, avg: number | null): string | null {
+  const s = volumeVsAvgMultiplier(volume, avg);
+  if (s === dashCell()) return null;
+  const n = parseFloat(s.replace(/×/g, "").replace(/x/gi, ""));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return s;
+}
+
 export function readMutedSymbols(): ScannerV3MutedEntry[] {
   if (typeof window === "undefined") return [];
   try {
@@ -159,8 +168,6 @@ export function catalystPillEligible(data: ScannerCardData): boolean {
 
 export function catalystPillLabel(data: ScannerCardData): string | null {
   if (!catalystPillEligible(data)) return null;
-  const ne = data.nextEarnings!;
-  const d = ne.daysTo;
-  const hint = ne.timing === "BMO" || ne.timing === "AMC" ? ` ${ne.timing}` : "";
-  return `ER ${d}d${hint}`;
+  const d = data.nextEarnings!.daysTo;
+  return `Earnings ${d}d`;
 }

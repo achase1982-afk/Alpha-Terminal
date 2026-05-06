@@ -5,14 +5,13 @@ import { dashCell } from "./scannerCard.utils";
 
 function TierDot({ score }: { score: number | null }) {
   if (score == null || !Number.isFinite(score)) {
-    return <span className="inline-block h-2 w-2 rounded-full bg-zinc-600 shrink-0" aria-hidden title="Score pending" />;
+    return <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-zinc-600" aria-hidden title="Score pending" />;
   }
   let cls = "bg-zinc-500";
-  if (score >= 75) cls = "bg-emerald-400 shadow-[0_0_6px_hsl(var(--terminal-success)/0.5)]";
-  else if (score >= 50) cls = "bg-amber-400";
-  else if (score >= 25) cls = "bg-zinc-400";
+  if (score >= 70) cls = "bg-emerald-400 shadow-[0_0_6px_hsl(var(--terminal-success)/0.5)]";
+  else if (score >= 40) cls = "bg-amber-400";
   else cls = "bg-red-400";
-  return <span className={cn("inline-block h-2 w-2 rounded-full shrink-0", cls)} aria-hidden />;
+  return <span className={cn("inline-block h-2 w-2 shrink-0 rounded-full", cls)} aria-hidden />;
 }
 
 export function ScannerCardScore({ data }: { data: ScannerCardData }) {
