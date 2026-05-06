@@ -9,7 +9,7 @@ export function ScannerCardActions({
 }) {
   return (
     <div
-      className="flex flex-wrap items-center gap-2 pt-2 border-t border-zinc-800/80"
+      className="flex flex-wrap items-center gap-1.5 border-t border-zinc-800/80 pt-1.5"
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => e.stopPropagation()}
     >

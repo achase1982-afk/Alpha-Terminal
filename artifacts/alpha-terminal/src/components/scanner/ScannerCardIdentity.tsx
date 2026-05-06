@@ -17,7 +17,7 @@ function DayRangeBar({
 }) {
   if (!range || !Number.isFinite(range.low) || !Number.isFinite(range.high) || range.high <= range.low) {
     return (
-      <span className="text-sm font-mono tabular-nums text-gray-400" style={scannerNumericFontStyle}>
+      <span className="font-mono tabular-nums text-zinc-600" style={scannerNumericFontStyle}>
         {dashCell()}
       </span>
     );
@@ -29,7 +29,7 @@ function DayRangeBar({
   }
   const loHi = (
     <span
-      className="text-sm font-mono tabular-nums text-white shrink-0 hidden sm:inline"
+      className="shrink-0 font-mono tabular-nums text-zinc-300 hidden sm:inline text-[11px]"
       style={scannerNumericFontStyle}
     >
       {range.low.toFixed(1)}–{range.high.toFixed(1)}
@@ -53,7 +53,7 @@ function DayRangeBar({
   }
   return (
     <div className="flex items-center gap-2 min-w-0" style={scannerNumericFontStyle}>
-      <span className="text-sm font-mono tabular-nums text-white shrink-0">
+      <span className="shrink-0 font-mono tabular-nums text-[11px] text-zinc-300">
         {range.low.toFixed(2)} – {range.high.toFixed(2)}
       </span>
       {bar}
@@ -72,29 +72,29 @@ export function ScannerCardIdentity({ data }: { data: ScannerCardData }) {
 
   return (
     <div
-      className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-sm min-w-0 leading-tight font-mono"
+      className="flex flex-wrap items-center gap-x-1 gap-y-0 font-mono text-[12px] leading-snug text-zinc-300 min-w-0"
       style={scannerNumericFontStyle}
     >
-      <span className={cn("font-medium shrink-0", name !== dashCell() ? "text-white" : "text-gray-400")}>{name}</span>
+      <span className={cn("shrink-0 font-medium text-zinc-100", name === dashCell() && "text-zinc-600")}>{name}</span>
       {hasSector ? (
         <>
-          <span className="text-zinc-500 shrink-0" aria-hidden>
+          <span className="shrink-0 text-zinc-600" aria-hidden>
             ·
           </span>
-          <span className="text-white truncate max-w-[42%] shrink" title={sector}>
+          <span className="max-w-[42%] shrink truncate text-zinc-400" title={sector}>
             {sector}
           </span>
         </>
       ) : null}
-      <span className="text-zinc-500 shrink-0" aria-hidden>
+      <span className="shrink-0 text-zinc-600" aria-hidden>
         ·
       </span>
       <DayRangeBar range={data.dayRange} price={data.price} compact />
-      <span className="text-zinc-500 shrink-0" aria-hidden>
+      <span className="shrink-0 text-zinc-600" aria-hidden>
         ·
       </span>
-      <span className="text-white shrink-0">vs 20d</span>
-      <span className={cn("tabular-nums shrink-0", volMult === dashCell() ? "text-gray-400" : "text-white")}>{volMult}</span>
+      <span className="shrink-0 text-zinc-400">vs 20d</span>
+      <span className={cn("shrink-0 tabular-nums", volMult === dashCell() ? "text-zinc-600" : "text-zinc-200")}>{volMult}</span>
     </div>
   );
 }
