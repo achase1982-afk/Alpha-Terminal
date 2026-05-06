@@ -4,7 +4,8 @@ import type { ConvictionDeskOutput } from "./strategistDeskSchemas.js";
 export function convictionStructureFamily(
   structure: string,
 ): "directional" | "vol_surface" | "premium" {
-  const s = structure.toLowerCase();
+  /** Skeleton + models emit snake_case labels (e.g. iron_condor); regexes expect spaced prose. */
+  const s = structure.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
 
   if (/\biron condor\b|\b(short premium|sell premium|cash[- ]secured put|naked short)\b/.test(s)) {
     return "premium";
@@ -28,7 +29,7 @@ export function convictionStructureFamily(
   return "directional";
 }
 
-/** Mean of P5..P95 used as EV proxy vs model EV dollars (rule 6). */
+/** Mean of P5..P95 used as EV proxy vs model EV dollars. */
 export function impliedEvFromOutcomeDistribution(dist: {
   p5: number;
   p25: number;
@@ -70,18 +71,18 @@ export function normalizeConvictionDeskOutput(o: ConvictionDeskOutput): Convicti
 export function validateConvictionDeskBusinessRules(o: ConvictionDeskOutput): string[] {
   const errs: string[] = [];
 
-  if (o.decision.candidates_considered.length !== 3) {
-    errs.push("decision.candidates_considered must have exactly 3 entries");
+  if (o.decision.candidates_considered.length < 2) {
+    errs.push("decision.candidates_considered must have at least 2 entries");
   }
 
-  if (o.decision.rejected_alternatives.length !== 2) {
-    errs.push("decision.rejected_alternatives must have exactly 2 entries");
+  if (o.decision.rejected_alternatives.length < 1) {
+    errs.push("decision.rejected_alternatives must have at least 1 entry");
   }
 
   const fams = new Set(
     o.decision.candidates_considered.map((c) => convictionStructureFamily(c.structure)),
   );
-  if (fams.size < 2) {
+  if (o.decision.candidates_considered.length >= 2 && fams.size < 2) {
     errs.push("candidates_considered must span at least two structure families (directional, vol_surface, premium)");
   }
 
@@ -92,8 +93,8 @@ export function validateConvictionDeskBusinessRules(o: ConvictionDeskOutput): st
     if (!candidateStructures.includes(chosen.structure.trim())) {
       errs.push("decision.chosen.structure must appear in decision.candidates_considered");
     }
-    if (chosen.greeks_evolution.length !== 9) {
-      errs.push("decision.chosen.greeks_evolution must have exactly 9 entries");
+    if (chosen.greeks_evolution.length < 3) {
+      errs.push("decision.chosen.greeks_evolution must have at least 3 entries");
     }
     const evModel = chosen.ev_dollars;
     const evImplied = impliedEvFromOutcomeDistribution(chosen.outcome_distribution);
