@@ -29,7 +29,7 @@ function DayRangeBar({
     </span>
   );
   const bar = (
-    <div className={`${compact ? "min-w-[48px]" : "min-w-[48px]"} flex-1 h-1.5 rounded-full bg-zinc-800 relative overflow-hidden`}>
+    <div className={`${compact ? "min-w-[40px]" : "min-w-[48px]"} flex-1 h-1.5 rounded-full bg-zinc-800 relative overflow-hidden`}>
       <div
         className="absolute top-0 bottom-0 w-0.5 bg-primary rounded-full shadow-[0_0_4px_hsl(var(--primary))]"
         style={{ left: `${markerPct}%`, transform: "translateX(-50%)" }}
