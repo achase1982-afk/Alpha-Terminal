@@ -3,7 +3,7 @@
  * Presentation-only: natural phrasing, no raw JSON field names in spoken text.
  */
 
-import type { DeskResult } from "@/lib/strategistDeskResult";
+import type { DeskResult, DeskResultClassic } from "@/lib/strategistDeskResult";
 import { buildConvictionDeskMemoPlainText } from "@/lib/convictionDeskMemoPlain";
 
 const MONTHS = [
@@ -152,7 +152,7 @@ export function preprocessForSpeech(raw: string, ticker: string): string {
   return t.replace(/\s+/g, " ").trim();
 }
 
-export type DeskSpeechSectionId = "pm" | "vol" | "flow" | "catalyst";
+export type DeskSpeechSectionId = "pm" | "vol" | "flow" | "catalyst" | "memo";
 
 export interface DeskSpeechSection {
   id: DeskSpeechSectionId;
@@ -169,7 +169,7 @@ function sentence(label: string, value: string, ticker: string): string {
 }
 
 function buildPmSpeech(
-  desk: DeskResult,
+  desk: DeskResultClassic,
   opts: { bannerTitle?: string; bannerBody?: string },
 ): string {
   const { pm, ticker } = desk;
@@ -227,7 +227,7 @@ function buildPmSpeech(
   return parts.filter(Boolean).join(" ");
 }
 
-function buildVolSpeech(desk: DeskResult): string {
+function buildVolSpeech(desk: DeskResultClassic): string {
   const { vol, ticker } = desk;
   const t = ticker.toUpperCase();
   return [
@@ -239,7 +239,7 @@ function buildVolSpeech(desk: DeskResult): string {
   ].filter(Boolean).join(" ");
 }
 
-function buildFlowSpeech(desk: DeskResult): string {
+function buildFlowSpeech(desk: DeskResultClassic): string {
   const { flow, ticker } = desk;
   const t = ticker.toUpperCase();
   const lines = [
@@ -261,7 +261,7 @@ function buildFlowSpeech(desk: DeskResult): string {
   return lines.filter(Boolean).join(" ");
 }
 
-function buildCatalystSpeech(desk: DeskResult): string {
+function buildCatalystSpeech(desk: DeskResultClassic): string {
   const { catalyst, ticker } = desk;
   const t = ticker.toUpperCase();
   return [
@@ -281,11 +281,12 @@ export function buildDeskSpeechSections(
     const text = buildConvictionDeskMemoPlainText({ deskResult, generatedAt: opts.generatedAt });
     return [{ id: "memo", label: "Conviction memo", text }];
   }
-  const pmText = buildPmSpeech(deskResult, opts);
+  const classic = deskResult as DeskResultClassic;
+  const pmText = buildPmSpeech(classic, opts);
   return [
     { id: "pm", label: "Decision", text: pmText },
-    { id: "vol", label: "Volatility", text: buildVolSpeech(deskResult) },
-    { id: "flow", label: "Flow", text: buildFlowSpeech(deskResult) },
-    { id: "catalyst", label: "Catalyst", text: buildCatalystSpeech(deskResult) },
+    { id: "vol", label: "Volatility", text: buildVolSpeech(classic) },
+    { id: "flow", label: "Flow", text: buildFlowSpeech(classic) },
+    { id: "catalyst", label: "Catalyst", text: buildCatalystSpeech(classic) },
   ];
 }

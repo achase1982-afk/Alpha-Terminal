@@ -93,6 +93,9 @@ export const PayoffScenariosSummarySchema = z.object({
   downsideBreakdown: z.number().nullable(),
 });
 
+export type PayoffScenario = z.infer<typeof PayoffScenarioSchema>;
+export type PayoffScenariosSummary = z.infer<typeof PayoffScenariosSummarySchema>;
+
 /** Remove server-only PM fields before validating LLM JSON (models must not drive payoff math). */
 function stripServerOnlyPmFields(input: unknown): unknown {
   if (input !== null && typeof input === "object" && !Array.isArray(input)) {

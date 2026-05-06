@@ -261,7 +261,10 @@ export function buildStrategistDiagnosticView(fullPayload: StrategistFullPayload
     unknown: unknownCount / denom,
   };
 
-  const ks = deskResult.flow.key_strikes?.slice(0, 6) ?? [];
+  const ks =
+    deskResult.mode === "conviction_desk"
+      ? []
+      : deskResult.flow.key_strikes?.slice(0, 6) ?? [];
   const keyStrikes = ks.map((k) => ({
     strike: k.strike,
     expiry: k.expiry,
