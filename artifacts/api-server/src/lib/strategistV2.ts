@@ -4482,20 +4482,18 @@ async function emitFullDiagnosticTelemetry(args: {
     aiResponse: args.extras.aiTradePayload ?? undefined,
   });
   const durationMs = ctx ? Date.now() - ctx.startedAt : 0;
-  const dr = args.extras.deskResult;
-  const deskTrade =
-    dr?.mode === "conviction_desk"
-      ? (() => {
-          const d = dr as ConvictionDeskResult;
-          return (
-            d.conviction != null &&
-            d.conviction.decision.chosen != null &&
-            d.conviction.size !== "no-trade"
-          );
-        })()
-      : dr != null && dr.mode !== "conviction_desk"
-        ? dr.pm.decision === "trade"
-        : false;
+  const deskTrade = ((): boolean => {
+    const dr = args.extras.deskResult;
+    if (!dr) return false;
+    if (dr.mode === "conviction_desk") {
+      return (
+        dr.conviction != null &&
+        dr.conviction.decision.chosen != null &&
+        dr.conviction.size !== "no-trade"
+      );
+    }
+    return dr.pm.decision === "trade";
+  })();
   const outcome =
     args.extras.runOutcomeOverride ??
     telemetryDbResultToOutcome(args.telemetryDbResult, deskTrade);

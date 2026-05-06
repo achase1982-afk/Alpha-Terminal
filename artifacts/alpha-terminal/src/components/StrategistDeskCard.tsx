@@ -11,7 +11,13 @@ import { buildOccSymbol } from "@/components/StrategistV2Card";
 import { ChevronDown, ChevronUp, AlertTriangle, Copy, Play, Pause, Square, Rewind, FastForward, Send } from "lucide-react";
 import { toast } from "sonner";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import type { DeskResult, DeskResultClassic, PayoffScenario, PayoffScenariosSummary } from "@/lib/strategistDeskResult";
+import type {
+  DeskResult,
+  DeskResultClassic,
+  DeskStructure,
+  PayoffScenario,
+  PayoffScenariosSummary,
+} from "@/lib/strategistDeskResult";
 import { buildDeskSpeechSections } from "@/lib/deskCardSpeech";
 import { StrategistConvictionDeskCard } from "@/components/StrategistConvictionDeskCard";
 import { splitDeskAudioTextIntoChunks } from "@/lib/deskAudioChunking";
