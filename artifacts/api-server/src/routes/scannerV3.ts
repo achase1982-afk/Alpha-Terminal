@@ -19,6 +19,8 @@ import {
   fetchScannerTechnicalContextForSymbols,
   technicalLayer6HasAnyData,
 } from "../lib/scannerTechnicalContext.js";
+import { computeScannerLayer7Scores } from "../lib/scannerLayer7Scores.js";
+import { matchScannerTradingPreset } from "../lib/scannerTradingPresets.js";
 import { getBestAccessToken } from "../lib/tokenStore.js";
 
 const router: IRouter = Router();
@@ -149,8 +151,22 @@ router.get("/v3/universe", async (req, res) => {
       const q = quoteMap.get(symbol);
       const v = volMap.get(symbol);
       const cat = catalystMap.get(symbol);
-      const flow = flowMap.get(symbol);
+      const flow = flowMap.get(symbol) ?? null;
       const technical = technicalMap.get(symbol) ?? EMPTY_SCANNER_TECHNICAL_LAYER6_WIRE;
+      const layer7 = computeScannerLayer7Scores({
+        volume: q?.volume ?? null,
+        avg_volume_20d: q?.avgVolume20d ?? null,
+        ivr: v?.ivr ?? null,
+        days_to_earnings: cat?.days_to_earnings ?? null,
+        reactions_last_4q: cat?.reactions_last_4q ?? null,
+        flow,
+        technical,
+      });
+      const matched_preset = matchScannerTradingPreset({
+        ...layer7,
+        daysToEarnings: cat?.days_to_earnings ?? null,
+        technical,
+      });
       if (flow != null) layer5_flow_hits++;
       if (technicalLayer6HasAnyData(technical)) layer6_technical_hits++;
       if (v?.iv30 != null) layer3_iv30_hits++;
@@ -184,6 +200,15 @@ router.get("/v3/universe", async (req, res) => {
         reactions_last_4q: cat?.reactions_last_4q ?? null,
         flow: flow ?? null,
         technical,
+        score: layer7.compositeScore,
+        score_components: {
+          liquidity: layer7.liquidityScore,
+          vol_context: layer7.volatilityScore,
+          catalyst: layer7.catalystScore,
+          flow: layer7.flowScore,
+          technical: layer7.technicalScore,
+        },
+        matched_preset,
       };
     });
 

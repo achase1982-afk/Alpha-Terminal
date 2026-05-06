@@ -61,7 +61,7 @@ export const DEV_SCANNER_CARD_FIXTURE: ScannerCardData = {
     flow: 68,
     technical: 75,
   },
-  preset: "Momentum + Flow",
+  matchedPreset: "Earnings Setup",
   lastUpdate: new Date().toISOString(),
   dataQualityFlags: [],
 };

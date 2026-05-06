@@ -4,7 +4,7 @@
 
 export type TermStructureShape = "contango" | "flat" | "backwardation";
 
-/** Full scanner card model for Layer 1–6 (frontend / future API mapping). */
+/** Full scanner card model for Layers 1–8 (GET /api/scanner/v3/universe wire → UI). */
 export type ScannerCardData = {
   // Layer 1+2 minimum
   symbol: string;
@@ -69,16 +69,17 @@ export type ScannerCardData = {
     thirtyDayReturnPct: number | null;
   } | null;
 
-  // Composite score (reserved for future scanner scoring pass)
+  // Layer 7 composite + components (scanner V3 wire)
   score: number | null;
   scoreComponents: {
-    liquidity: number;
-    volContext: number;
-    catalyst: number;
-    flow: number;
-    technical: number;
+    liquidity: number | null;
+    volContext: number | null;
+    catalyst: number | null;
+    flow: number | null;
+    technical: number | null;
   } | null;
-  preset: string | null;
+  /** Layer 8 curated preset label from GET /api/scanner/v3/universe `matched_preset`. */
+  matchedPreset: string | null;
 
   // Meta
   lastUpdate: string;

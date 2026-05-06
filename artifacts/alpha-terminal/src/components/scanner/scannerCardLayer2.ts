@@ -95,6 +95,17 @@ export function scannerWireCardToScannerCardData(wire: ScannerV3WireCard, scanAt
     earningsHistory,
     flow: mapFlowWire(wire.flow),
     technical: mapTechnicalWire(wire.technical),
+    score: wire.score ?? null,
+    scoreComponents: wire.score_components
+      ? {
+          liquidity: wire.score_components.liquidity ?? null,
+          volContext: wire.score_components.vol_context ?? null,
+          catalyst: wire.score_components.catalyst ?? null,
+          flow: wire.score_components.flow ?? null,
+          technical: wire.score_components.technical ?? null,
+        }
+      : null,
+    matchedPreset: wire.matched_preset?.trim() ? wire.matched_preset.trim() : null,
     lastUpdate: scanAt,
   };
 }
