@@ -77,18 +77,61 @@ export async function fetchScannerFlowContextForSymbols(
   const cutoffIso = cutoff.toISOString();
   const inList = sql.join(uniq.map((s) => sql`${s}`), sql`, `);
 
-  const aggRows = await db.execute(sql`
-    SELECT
-      underlying_symbol AS sym,
-      COUNT(*) FILTER (WHERE is_block IS TRUE)::int AS blocks,
-      COUNT(*) FILTER (WHERE is_sweep IS TRUE)::int AS sweeps,
-      COALESCE(SUM(size), 0)::double precision AS vol_4h
-    FROM options_flow_raw_trades
-    WHERE underlying_symbol IN (${inList})
-      AND timestamp IS NOT NULL
-      AND timestamp >= ${cutoffIso}::timestamptz
-    GROUP BY underlying_symbol
-  `);
+  const [aggRows, topRows, oiRows] = await Promise.all([
+    db.execute(sql`
+      SELECT
+        underlying_symbol AS sym,
+        COUNT(*) FILTER (WHERE is_block IS TRUE)::int AS blocks,
+        COUNT(*) FILTER (WHERE is_sweep IS TRUE)::int AS sweeps,
+        COALESCE(SUM(size), 0)::double precision AS vol_4h
+      FROM options_flow_raw_trades
+      WHERE underlying_symbol IN (${inList})
+        AND timestamp IS NOT NULL
+        AND timestamp >= ${cutoffIso}::timestamptz
+      GROUP BY underlying_symbol
+    `),
+    db.execute(sql`
+      WITH strike_vol AS (
+        SELECT
+          underlying_symbol AS sym,
+          strike,
+          option_type,
+          expiration::text AS expiration,
+          SUM(size)::double precision AS strike_vol
+        FROM options_flow_raw_trades
+        WHERE underlying_symbol IN (${inList})
+          AND timestamp IS NOT NULL
+          AND timestamp >= ${cutoffIso}::timestamptz
+        GROUP BY underlying_symbol, strike, option_type, expiration
+      ),
+      ranked AS (
+        SELECT
+          sym,
+          strike,
+          option_type,
+          expiration,
+          strike_vol,
+          ROW_NUMBER() OVER (PARTITION BY sym ORDER BY strike_vol DESC, strike ASC, expiration ASC) AS rn
+        FROM strike_vol
+      )
+      SELECT sym, strike, option_type, expiration, strike_vol
+      FROM ranked
+      WHERE rn = 1
+    `),
+    db.execute(sql`
+      WITH latest AS (
+        SELECT underlying_symbol AS sym, MAX(date) AS d
+        FROM options_flow_per_strike
+        WHERE underlying_symbol IN (${inList})
+        GROUP BY underlying_symbol
+      )
+      SELECT o.underlying_symbol AS sym, SUM(COALESCE(o.open_interest, 0))::double precision AS chain_oi
+      FROM options_flow_per_strike o
+      INNER JOIN latest l ON l.sym = o.underlying_symbol AND o.date = l.d
+      WHERE o.underlying_symbol IN (${inList})
+      GROUP BY o.underlying_symbol
+    `),
+  ]);
 
   const aggBySym = new Map<string, { blocks: number; sweeps: number; vol4h: number }>();
   for (const row of (aggRows.rows ?? []) as Record<string, unknown>[]) {
@@ -101,35 +144,6 @@ export async function fetchScannerFlowContextForSymbols(
       vol4h: vol,
     });
   }
-
-  const topRows = await db.execute(sql`
-    WITH strike_vol AS (
-      SELECT
-        underlying_symbol AS sym,
-        strike,
-        option_type,
-        expiration::text AS expiration,
-        SUM(size)::double precision AS strike_vol
-      FROM options_flow_raw_trades
-      WHERE underlying_symbol IN (${inList})
-        AND timestamp IS NOT NULL
-        AND timestamp >= ${cutoffIso}::timestamptz
-      GROUP BY underlying_symbol, strike, option_type, expiration
-    ),
-    ranked AS (
-      SELECT
-        sym,
-        strike,
-        option_type,
-        expiration,
-        strike_vol,
-        ROW_NUMBER() OVER (PARTITION BY sym ORDER BY strike_vol DESC, strike ASC, expiration ASC) AS rn
-      FROM strike_vol
-    )
-    SELECT sym, strike, option_type, expiration, strike_vol
-    FROM ranked
-    WHERE rn = 1
-  `);
 
   const topBySym = new Map<
     string,
@@ -148,20 +162,6 @@ export async function fetchScannerFlowContextForSymbols(
       strike_vol: strikeVol,
     });
   }
-
-  const oiRows = await db.execute(sql`
-    WITH latest AS (
-      SELECT underlying_symbol AS sym, MAX(date) AS d
-      FROM options_flow_per_strike
-      WHERE underlying_symbol IN (${inList})
-      GROUP BY underlying_symbol
-    )
-    SELECT o.underlying_symbol AS sym, SUM(COALESCE(o.open_interest, 0))::double precision AS chain_oi
-    FROM options_flow_per_strike o
-    INNER JOIN latest l ON l.sym = o.underlying_symbol AND o.date = l.d
-    WHERE o.underlying_symbol IN (${inList})
-    GROUP BY o.underlying_symbol
-  `);
 
   const chainOiBySym = new Map<string, number>();
   for (const row of (oiRows.rows ?? []) as Record<string, unknown>[]) {
