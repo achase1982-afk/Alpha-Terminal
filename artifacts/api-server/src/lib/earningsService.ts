@@ -34,7 +34,7 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 const inflight = new Map<string, Promise<NextEarnings>>();
 
-function daysFromTodayTo(dateYmd: string): number | null {
+export function daysFromTodayTo(dateYmd: string): number | null {
   const d = new Date(dateYmd + "T16:00:00-04:00");
   if (Number.isNaN(d.getTime())) return null;
   const now = new Date();

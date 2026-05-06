@@ -12,6 +12,7 @@ import { loadPresets, PRESET_ALIASES } from "../lib/scannerPresetLoad.js";
 import { resolveScannerUniverseSymbolsForUser } from "./scanner.js";
 import { fetchSchwabBatchQuotesForSymbolsBestToken } from "../lib/schwabBatchQuotes.js";
 import { fetchScannerVolContextForSymbols } from "../lib/scannerVolContext.js";
+import { fetchScannerCatalystsForSymbols } from "../lib/scannerCatalysts.js";
 import { getBestAccessToken } from "../lib/tokenStore.js";
 
 const router: IRouter = Router();
@@ -117,17 +118,29 @@ router.get("/v3/universe", async (req, res) => {
 
     const volMap = await fetchScannerVolContextForSymbols(tickers, schwabIvBySymbol);
 
+    const catalystMap = await fetchScannerCatalystsForSymbols(tickers);
+
     let layer3_iv30_hits = 0;
     let layer3_hv30_hits = 0;
     let layer3_ivr_hits = 0;
+
+    let layer4_earnings_hits = 0;
+    let layer4_ex_div_hits = 0;
+    let layer4_reactions_hits = 0;
 
     const cards = tickers.map((raw) => {
       const symbol = raw.trim().toUpperCase();
       const q = quoteMap.get(symbol);
       const v = volMap.get(symbol);
+      const cat = catalystMap.get(symbol);
       if (v?.iv30 != null) layer3_iv30_hits++;
       if (v?.hv30 != null) layer3_hv30_hits++;
       if (v?.ivr != null) layer3_ivr_hits++;
+
+      if (cat?.next_earnings_date != null && cat.days_to_earnings != null) layer4_earnings_hits++;
+      if (cat?.next_ex_dividend_date != null) layer4_ex_div_hits++;
+      if (cat?.reactions_last_4q != null) layer4_reactions_hits++;
+
       return {
         symbol,
         name: q?.name ?? null,
@@ -142,6 +155,13 @@ router.get("/v3/universe", async (req, res) => {
         ivr: v?.ivr ?? null,
         hv30: v?.hv30 ?? null,
         iv_vs_hv: v?.ivVsHv ?? null,
+        next_earnings_date: cat?.next_earnings_date ?? null,
+        earnings_timing_hint: cat?.earnings_timing_hint ?? null,
+        days_to_earnings: cat?.days_to_earnings ?? null,
+        next_ex_dividend_date: cat?.next_ex_dividend_date ?? null,
+        ex_dividend_amount: cat?.ex_dividend_amount ?? null,
+        days_to_ex_dividend: cat?.days_to_ex_dividend ?? null,
+        reactions_last_4q: cat?.reactions_last_4q ?? null,
       };
     });
 
@@ -157,6 +177,9 @@ router.get("/v3/universe", async (req, res) => {
       layer3_iv30_hits,
       layer3_hv30_hits,
       layer3_ivr_hits,
+      layer4_earnings_hits,
+      layer4_ex_div_hits,
+      layer4_reactions_hits,
     };
 
     const duration_ms = Date.now() - started;
