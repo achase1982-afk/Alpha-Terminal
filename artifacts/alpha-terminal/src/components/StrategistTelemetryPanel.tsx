@@ -394,7 +394,7 @@ function readStoredCopySelection(): Record<CopySectionId, boolean> | null {
 }
 
 function TelemetryEntryCopyButton({ row }: { row: TelemetryRow }) {
-  const isDesktop = useIsTablet();
+  const isWide = useIsTablet();
   const [open, setOpen] = useState(false);
   const [checked, setChecked] = useState<Record<CopySectionId, boolean>>(emptyChecked);
   const [justCopiedIcon, setJustCopiedIcon] = useState(false);
@@ -455,10 +455,10 @@ function TelemetryEntryCopyButton({ row }: { row: TelemetryRow }) {
         /* ignore quota / private mode */
       }
       toast.message(`Copied ${ids.length} section${ids.length === 1 ? "" : "s"}`);
-      setOpen(false);
+      onOpenChange(false);
       flashCopied();
     }
-  }, [row, checked, flashCopied]);
+  }, [row, checked, flashCopied, onOpenChange]);
 
   const onExportFull = useCallback(
     async (e: React.MouseEvent) => {
@@ -468,20 +468,20 @@ function TelemetryEntryCopyButton({ row }: { row: TelemetryRow }) {
       const ok = await writeClipboard(text);
       if (ok) {
         toast.message("Copied full row");
-        setOpen(false);
+        onOpenChange(false);
         flashCopied();
       }
     },
-    [row, flashCopied],
+    [row, flashCopied, onOpenChange],
   );
 
   const menuBody = (
     <div
-      className={isDesktop ? "p-0" : "flex min-h-0 flex-1 flex-col overflow-hidden"}
+      className={isWide ? "p-0" : "flex min-h-0 flex-1 flex-col overflow-hidden"}
       onClick={(e) => e.stopPropagation()}
     >
       <div className="font-mono text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2">Copy sections</div>
-      <div className={isDesktop ? "" : "flex min-h-0 flex-1 flex-col overflow-hidden"}>
+      <div className={isWide ? "" : "flex min-h-0 flex-1 flex-col overflow-hidden"}>
         <label className="flex items-center gap-2 cursor-pointer py-1.5 border-b border-zinc-800 mb-1 shrink-0">
           <input
             ref={selectAllRef}
@@ -494,7 +494,7 @@ function TelemetryEntryCopyButton({ row }: { row: TelemetryRow }) {
         </label>
         <div
           className={
-            isDesktop
+            isWide
               ? "max-h-[min(48vh,18rem)] overflow-y-auto overscroll-contain"
               : "max-h-[min(52vh,22rem)] flex-1 overflow-y-auto overscroll-contain pr-1"
           }
@@ -542,7 +542,7 @@ function TelemetryEntryCopyButton({ row }: { row: TelemetryRow }) {
       data-telemetry-row-copy
       onClick={(e) => {
         e.stopPropagation();
-        if (!isDesktop) onOpenChange(true);
+        if (!isWide) onOpenChange(true);
       }}
       aria-label="Copy telemetry sections"
       aria-haspopup="dialog"
@@ -554,7 +554,7 @@ function TelemetryEntryCopyButton({ row }: { row: TelemetryRow }) {
     </button>
   );
 
-  if (isDesktop) {
+  if (isWide) {
     return (
       <span data-telemetry-row-copy className="inline-flex shrink-0">
         <Popover open={open} onOpenChange={onOpenChange}>
