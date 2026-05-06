@@ -1,4 +1,4 @@
-import { getUniverseSnapshot, type UniverseSnapshot } from "./universeBuilder.js";
+import { getUniverseSnapshot } from "./universeBuilder.js";
 import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
 import { MID_CAP_200_SYMBOL_STRINGS } from "../data/midCap200Symbols.js";
 
@@ -56,13 +56,17 @@ export function loadPresets(): Record<string, { label: string; description: stri
   };
 
   const snap = getUniverseSnapshot();
-  if (snap && snap.symbols.length > 0) {
-    combined.core383 = {
-      label: "Core Balanced 383",
-      description: `${snap.symbols.length} sector-balanced, options-liquid stocks (built ${new Date(snap.buildTimestamp).toLocaleDateString()})`,
-      symbols: snap.symbols,
-    };
+  const coreSymbols = snap?.symbols ?? [];
+  combined.core383 = {
+    label: "Core Balanced 383",
+    description:
+      snap && coreSymbols.length > 0
+        ? `${coreSymbols.length} sector-balanced, options-liquid stocks (built ${new Date(snap.buildTimestamp).toLocaleDateString()})`
+        : "Sector-balanced options-liquid breadth universe (same snapshot as Market Pulse; symbols populate after universe build).",
+    symbols: coreSymbols,
+  };
 
+  if (snap && snap.symbols.length > 0) {
     for (const [sector, syms] of Object.entries(snap.bySector)) {
       const key = SECTOR_SHORTHAND_REVERSE[sector];
       if (key && syms.length > 0) {
