@@ -279,6 +279,17 @@ function pruneThinkingBuffer() {
   }
 }
 
+/** Drop DB-only Conviction Desk diagnostic from `deskResult` before JSON to clients (kept on `entry.result` for persistence). */
+function strategistV2ResultForWire(result: StrategistV2Result | null): StrategistV2Result | null {
+  if (result == null) return null;
+  const desk = result.deskResult;
+  if (desk == null || typeof desk !== "object" || !("convictionDeskRunDiagnostic" in desk)) return result;
+  const d = desk as { convictionDeskRunDiagnostic?: unknown };
+  if (d.convictionDeskRunDiagnostic == null) return result;
+  const { convictionDeskRunDiagnostic: _omit, ...deskRest } = d;
+  return { ...result, deskResult: deskRest as typeof desk };
+}
+
 /** Shared shape for `/thinking` polling and `/job/:id/final` reconciliation after tab resume. */
 function thinkingShapeFromEntry(entry: ThinkingEntry, since: number): {
   jobId: string;
@@ -301,7 +312,7 @@ function thinkingShapeFromEntry(entry: ThinkingEntry, since: number): {
   const tokens = s < totalTokens ? entry.tokens.slice(s) : [];
   const result = entry.kind === "validation"
     ? (entry.validationResult ?? null)
-    : (entry.result ?? null);
+    : strategistV2ResultForWire(entry.result ?? null);
   const safeError = entry.cancelled ? null : entry.error != null ? "Analysis failed. Please retry." : null;
   return {
     jobId: entry.jobId,
@@ -608,7 +619,7 @@ router.post("/analyze", async (req, res): Promise<void> => {
       },
         scannerContext,
       );
-      res.json(result);
+      res.json(strategistV2ResultForWire(result));
     } finally {
       analyzeInFlightTickers.delete(upperTicker);
     }
@@ -958,7 +969,7 @@ router.get("/job/:jobId/final", async (req, res): Promise<void> => {
       done: true,
       result: isValidation
         ? (card["validation"] as ValidationVerdictPayload)
-        : (card as unknown as StrategistV2Result),
+        : strategistV2ResultForWire(card as unknown as StrategistV2Result),
       validationMeta: isValidation
         ? {
             ticker,
