@@ -57,19 +57,19 @@ export type ScannerCardData = {
     volumeOverOi: number | null;
   } | null;
 
-  // Technical (derived from existing equity_daily, no new integration)
+  /** Layer 6 — price action (scanner V3 API); null fields render as dashes. */
   technical: {
-    week52High: number;
-    week52Low: number;
-    pctOffHigh: number;
-    aboveMa20: boolean;
-    aboveMa50: boolean;
-    aboveMa200: boolean;
-    return5d: number;
-    return30d: number;
+    fiftyTwoWeekLow: number | null;
+    fiftyTwoWeekHigh: number | null;
+    offFiftyTwoWeekHighPct: number | null;
+    vsTwentyMaPct: number | null;
+    vsFiftyMaPct: number | null;
+    vsTwoHundredMaPct: number | null;
+    fiveDayReturnPct: number | null;
+    thirtyDayReturnPct: number | null;
   } | null;
 
-  // Layer 6
+  // Composite score (reserved for future scanner scoring pass)
   score: number | null;
   scoreComponents: {
     liquidity: number;

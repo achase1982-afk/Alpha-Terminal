@@ -8,6 +8,7 @@ import type { ScannerCardAction } from "./scannerCard.types";
 import {
   dashCell,
   formatCompactInt,
+  formatDollarRange,
   formatIvPct,
   formatRatio,
   formatSignedMoney,
@@ -50,15 +51,6 @@ function termLabel(shape: NonNullable<ScannerCardData["termStructure"]>["shape"]
   if (shape === "contango") return "Contango";
   if (shape === "backwardation") return "Backwardation";
   return "Flat";
-}
-
-function MaVs({ above }: { above: boolean | null }) {
-  if (above == null) return <span className="font-mono tabular-nums text-zinc-600">{dashCell()}</span>;
-  return above ? (
-    <span className="font-mono text-terminal-success">Above</span>
-  ) : (
-    <span className="font-mono text-terminal-danger">Below</span>
-  );
 }
 
 /**
@@ -196,28 +188,62 @@ export function ScannerCardDetail({
             dense
             label="52w Range"
             value={
-              tech && Number.isFinite(tech.week52Low) && Number.isFinite(tech.week52High)
-                ? `${tech.week52Low.toFixed(1)}–${tech.week52High.toFixed(1)}`
-                : dashCell()
+              tech != null ? formatDollarRange(tech.fiftyTwoWeekLow, tech.fiftyTwoWeekHigh) : dashCell()
             }
           />
           <ScannerCardPanelRow
             dense
             label="Off 52w High"
-            value={tech != null && Number.isFinite(tech.pctOffHigh) ? formatSignedPct(tech.pctOffHigh) : dashCell()}
+            value={
+              tech != null && tech.offFiftyTwoWeekHighPct != null && Number.isFinite(tech.offFiftyTwoWeekHighPct)
+                ? formatSignedPct(tech.offFiftyTwoWeekHighPct)
+                : dashCell()
+            }
           />
-          <ScannerCardPanelRow dense label="vs 20MA" value={<MaVs above={tech?.aboveMa20 ?? null} />} />
-          <ScannerCardPanelRow dense label="vs 50MA" value={<MaVs above={tech?.aboveMa50 ?? null} />} />
-          <ScannerCardPanelRow dense label="vs 200MA" value={<MaVs above={tech?.aboveMa200 ?? null} />} />
+          <ScannerCardPanelRow
+            dense
+            label="vs 20MA"
+            value={
+              tech != null && tech.vsTwentyMaPct != null && Number.isFinite(tech.vsTwentyMaPct)
+                ? formatSignedPct(tech.vsTwentyMaPct)
+                : dashCell()
+            }
+          />
+          <ScannerCardPanelRow
+            dense
+            label="vs 50MA"
+            value={
+              tech != null && tech.vsFiftyMaPct != null && Number.isFinite(tech.vsFiftyMaPct)
+                ? formatSignedPct(tech.vsFiftyMaPct)
+                : dashCell()
+            }
+          />
+          <ScannerCardPanelRow
+            dense
+            label="vs 200MA"
+            value={
+              tech != null && tech.vsTwoHundredMaPct != null && Number.isFinite(tech.vsTwoHundredMaPct)
+                ? formatSignedPct(tech.vsTwoHundredMaPct)
+                : dashCell()
+            }
+          />
           <ScannerCardPanelRow
             dense
             label="5d Return"
-            value={tech != null && Number.isFinite(tech.return5d) ? formatSignedPct(tech.return5d) : dashCell()}
+            value={
+              tech != null && tech.fiveDayReturnPct != null && Number.isFinite(tech.fiveDayReturnPct)
+                ? formatSignedPct(tech.fiveDayReturnPct)
+                : dashCell()
+            }
           />
           <ScannerCardPanelRow
             dense
             label="30d Return"
-            value={tech != null && Number.isFinite(tech.return30d) ? formatSignedPct(tech.return30d) : dashCell()}
+            value={
+              tech != null && tech.thirtyDayReturnPct != null && Number.isFinite(tech.thirtyDayReturnPct)
+                ? formatSignedPct(tech.thirtyDayReturnPct)
+                : dashCell()
+            }
           />
         </ScannerCardPanel>
       </div>
