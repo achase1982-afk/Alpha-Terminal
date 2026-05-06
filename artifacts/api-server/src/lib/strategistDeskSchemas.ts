@@ -193,13 +193,31 @@ const ConvictionRegimeIndicatorsSchema = z.object({
   market_pulse_20d_avg: z.number().nullable(),
 });
 
-const ConvictionOutcomeDistSchema = z.object({
-  p5: z.number(),
-  p25: z.number(),
-  p50: z.number(),
-  p75: z.number(),
-  p95: z.number(),
-});
+/** Models often emit P5..P95; schema expects p5..p95 (see user-facing memo JSON). */
+function normalizeConvictionOutcomeDistributionInput(data: unknown): unknown {
+  if (data == null || typeof data !== "object" || Array.isArray(data)) return data;
+  const o = data as Record<string, unknown>;
+  const out: Record<string, unknown> = { ...o };
+  const keys = ["p5", "p25", "p50", "p75", "p95"] as const;
+  for (const k of keys) {
+    if (out[k] !== undefined) continue;
+    const alt = k.toUpperCase();
+    const v = o[alt];
+    if (typeof v === "number") out[k] = v;
+  }
+  return out;
+}
+
+const ConvictionOutcomeDistSchema = z.preprocess(
+  normalizeConvictionOutcomeDistributionInput,
+  z.object({
+    p5: z.number(),
+    p25: z.number(),
+    p50: z.number(),
+    p75: z.number(),
+    p95: z.number(),
+  }),
+);
 
 const ConvictionGreeksEntrySchema = z.object({
   delta: z.number(),
@@ -241,7 +259,7 @@ const ConvictionChosenSchema = z.object({
   expiry: z.string(),
   credit_or_debit: z.number(),
   greeks_entry: ConvictionGreeksEntrySchema,
-  greeks_evolution: z.array(ConvictionGreeksEvolutionCellSchema).length(9),
+  greeks_evolution: z.array(ConvictionGreeksEvolutionCellSchema).min(1).max(9),
   outcome_distribution: ConvictionOutcomeDistSchema,
   ev_dollars: z.number(),
   max_loss: z.number(),
@@ -263,7 +281,7 @@ export const ConvictionDeskOutputSchema = z.object({
     decision_intent: z.enum(["trade", "pass"]),
   }),
   decision: z.object({
-    candidates_considered: z.array(ConvictionCandidateSchema).length(3),
+    candidates_considered: z.array(ConvictionCandidateSchema).min(1).max(5),
     chosen: ConvictionChosenSchema.nullable(),
     rejected_alternatives: z
       .array(
@@ -272,7 +290,8 @@ export const ConvictionDeskOutputSchema = z.object({
           reason: z.string(),
         }),
       )
-      .length(2),
+      .min(0)
+      .max(4),
   }),
   failure_scenario: z.object({
     steelman: z.string(),
