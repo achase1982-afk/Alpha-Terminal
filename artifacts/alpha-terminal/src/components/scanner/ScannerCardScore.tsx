@@ -30,32 +30,57 @@ export function ScannerCardScore({ data }: { data: ScannerCardData }) {
     composite != null && Number.isFinite(composite) ? Math.min(100, Math.max(0, composite)) : 0;
 
   return (
-    <div className="space-y-2 text-sm" style={scannerNumericFontStyle}>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-muted-foreground font-medium">Composite</span>
+    <div className="space-y-1.5 text-xs min-w-0" style={scannerNumericFontStyle}>
+      {/* Composite row — label + dot + score + bar fills remainder */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 w-full min-w-0">
+        <span className="text-muted-foreground font-medium shrink-0">Composite</span>
         <TierDot score={composite} />
         {composite != null && Number.isFinite(composite) ? (
-          <span className="text-foreground font-bold tabular-nums">{Math.round(composite)}/100</span>
+          <span className="text-foreground font-bold tabular-nums shrink-0">{Math.round(composite)}/100</span>
         ) : null}
-        <div className="flex-1 min-w-[120px] max-w-[220px]">
+        <div className="flex-1 min-w-[100px] basis-[40%]">
           <Progress value={barPct} className="h-1.5 bg-zinc-800 [&>div]:bg-primary" />
         </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+
+      {/* V3: five components in one horizontal row, equal-width cells */}
+      <div className="grid grid-cols-5 gap-px sm:gap-0.5 w-full min-w-0 rounded border border-zinc-800/80 overflow-hidden bg-zinc-800/40">
         {rows.map((r) => {
           const cell = r.value != null && Number.isFinite(r.value) ? String(Math.round(r.value)) : dashCell();
           const isDash = cell === dashCell();
           return (
-            <div key={r.label} className="flex justify-between gap-2 tabular-nums">
-              <span className="text-muted-foreground">{r.label}</span>
-              <span className={cn("text-right min-w-[2ch]", isDash ? "text-muted-foreground" : "text-foreground")}>{cell}</span>
+            <div
+              key={r.label}
+              className="flex flex-col items-center justify-center gap-0.5 min-w-0 bg-zinc-950/50 px-0.5 py-1 text-center"
+            >
+              <span
+                className="w-full text-[9px] sm:text-[10px] uppercase tracking-wide text-muted-foreground leading-none truncate"
+                title={r.label}
+              >
+                {r.label}
+              </span>
+              <span
+                className={cn(
+                  "tabular-nums text-[11px] sm:text-xs font-semibold leading-none",
+                  isDash ? "text-muted-foreground" : "text-foreground",
+                )}
+              >
+                {cell}
+              </span>
             </div>
           );
         })}
       </div>
-      <div className="flex justify-between gap-2 text-xs uppercase tracking-wide text-muted-foreground pt-0.5 border-t border-zinc-800/60">
+
+      <div className="flex justify-between gap-2 items-baseline text-[10px] uppercase tracking-wide text-muted-foreground pt-0.5 border-t border-zinc-800/60">
         <span>Preset</span>
-        <span className={cn("font-mono normal-case tracking-normal tabular-nums", !data.preset?.trim() ? "text-muted-foreground" : "text-foreground")}>
+        <span
+          className={cn(
+            "font-mono normal-case tracking-normal tabular-nums text-right min-w-0 max-w-[70%] truncate",
+            !data.preset?.trim() ? "text-muted-foreground" : "text-foreground",
+          )}
+          title={data.preset?.trim() || undefined}
+        >
           {data.preset?.trim() || dashCell()}
         </span>
       </div>
