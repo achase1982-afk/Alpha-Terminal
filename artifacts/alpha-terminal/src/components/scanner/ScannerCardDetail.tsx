@@ -11,8 +11,24 @@ import {
   formatRatio,
   formatSignedMoney,
   formatSignedPct,
+  formatShortMonthDay,
   scannerNumericFontStyle,
 } from "./scannerCard.utils";
+
+function catalystEarningsCell(earn: NonNullable<ScannerCardData["nextEarnings"]>): string {
+  const datePart = formatShortMonthDay(earn.date);
+  const head = earn.timing ? `${datePart} ${earn.timing}` : datePart;
+  if (earn.daysTo <= 30) {
+    return `${head} · ${earn.daysTo}d`;
+  }
+  return head;
+}
+
+function catalystExDivCell(ex: NonNullable<ScannerCardData["nextExDiv"]>): string {
+  const amt =
+    ex.amount != null && Number.isFinite(ex.amount) ? `$${ex.amount.toFixed(2)}` : dashCell();
+  return `${formatShortMonthDay(ex.date)} · ${amt}`;
+}
 import { cn } from "@/lib/utils";
 
 function IvBar({ ivr, dense }: { ivr: number | null; dense?: boolean }) {
@@ -107,48 +123,33 @@ export function ScannerCardDetail({
           <ScannerCardPanelRow
             dense
             label="Earnings"
-            value={
-              earn
-                ? `${earn.date} · ${earn.daysTo}d${earn.timing ? ` · ${earn.timing}` : ""}`
-                : dashCell()
-            }
+            value={earn ? catalystEarningsCell(earn) : dashCell()}
           />
           <ScannerCardPanelRow
             dense
             label="Ex-Dividend"
-            value={
-              ex
-                ? `${ex.date} · ${ex.daysTo}d${
-                    ex.amount != null && Number.isFinite(ex.amount)
-                      ? ` · $${ex.amount.toFixed(2)}`
-                      : ""
-                  }`
-                : dashCell()
-            }
+            value={ex ? catalystExDivCell(ex) : dashCell()}
           />
           <div className="text-xs uppercase tracking-wider text-white pt-0.5">Reactions Last 4Q</div>
-          {data.earningsHistory && data.earningsHistory.length > 0 ? (
-            <ul className="space-y-0">
-              {data.earningsHistory.slice(0, 4).map((h, i) => (
-                <li key={`${h.quarter}-${i}`} className="flex justify-between gap-1 text-sm font-mono tabular-nums">
-                  <span className="text-white truncate">{h.quarter}</span>
-                  <span
-                    className={cn(
-                      "shrink-0",
-                      !Number.isFinite(h.absMovePct)
-                        ? "text-gray-400"
-                        : h.absMovePct > 0
-                          ? "text-terminal-success"
-                          : h.absMovePct < 0
-                            ? "text-terminal-danger"
-                            : "text-white",
-                    )}
-                  >
-                    {Number.isFinite(h.absMovePct) ? `${h.absMovePct >= 0 ? "+" : ""}${h.absMovePct.toFixed(1)}%` : dashCell()}
-                  </span>
-                </li>
+          {data.earningsHistory && data.earningsHistory.length === 4 ? (
+            <div className="flex flex-wrap justify-end gap-x-1.5 gap-y-0.5 text-sm font-mono tabular-nums">
+              {data.earningsHistory.map((h, i) => (
+                <span
+                  key={`rx-${i}`}
+                  className={cn(
+                    !Number.isFinite(h.absMovePct)
+                      ? "text-gray-400"
+                      : h.absMovePct > 0
+                        ? "text-terminal-success"
+                        : h.absMovePct < 0
+                          ? "text-terminal-danger"
+                          : "text-white",
+                  )}
+                >
+                  {Number.isFinite(h.absMovePct) ? formatSignedPct(h.absMovePct) : dashCell()}
+                </span>
               ))}
-            </ul>
+            </div>
           ) : (
             <div className="text-right text-sm font-mono tabular-nums text-gray-400">{dashCell()}</div>
           )}

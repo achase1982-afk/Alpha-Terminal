@@ -41,6 +41,18 @@ export function formatCompactInt(n: number | null | undefined): string {
   return `${Math.round(n)}`;
 }
 
+const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** `YYYY-MM-DD` → `Nov 14` (US-style short month, no year). */
+export function formatShortMonthDay(ymd: string): string {
+  const m = ymd.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return ymd;
+  const mi = parseInt(m[2]!, 10) - 1;
+  const day = parseInt(m[3]!, 10);
+  if (mi < 0 || mi > 11 || day < 1 || day > 31) return ymd;
+  return `${MONTHS_SHORT[mi]} ${day}`;
+}
+
 export function formatIvPct(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return dashCell();
   return `${(n * 100).toFixed(1)}%`;
@@ -147,8 +159,8 @@ export function catalystPillEligible(data: ScannerCardData): boolean {
 
 export function catalystPillLabel(data: ScannerCardData): string | null {
   if (!catalystPillEligible(data)) return null;
-  const d = data.nextEarnings!.daysTo;
-  if (d === 0) return "Earnings today";
-  if (d === 1) return "Earnings 1d";
-  return `Earnings ${d}d`;
+  const ne = data.nextEarnings!;
+  const d = ne.daysTo;
+  const hint = ne.timing === "BMO" || ne.timing === "AMC" ? ` ${ne.timing}` : "";
+  return `ER ${d}d${hint}`;
 }

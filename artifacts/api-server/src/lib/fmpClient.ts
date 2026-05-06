@@ -597,3 +597,70 @@ export async function getFmpAnalystEstimatesQuarterly(
 
   return [];
 }
+
+/** Upcoming dividend calendar row (ex-dividend date + per-share cash amount when present). */
+export interface FmpDividendCalendarRow {
+  symbol: string;
+  /** Ex-dividend calendar date YYYY-MM-DD */
+  date: string;
+  dividend: number | null;
+}
+
+function normaliseDividendCalendarRow(raw: Record<string, unknown>): FmpDividendCalendarRow | null {
+  const symbol = pickString(raw["symbol"])?.toUpperCase();
+  const dateRaw =
+    pickString(raw["date"])
+    ?? pickString(raw["exDividendDate"])
+    ?? pickString(raw["dividendDate"]);
+  if (!symbol || !dateRaw) return null;
+  const date = dateRaw.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const dividend =
+    pickNumber(raw["dividend"])
+    ?? pickNumber(raw["adjDividend"])
+    ?? pickNumber(raw["cashAmount"])
+    ?? pickNumber(raw["payment"]);
+  return { symbol, date, dividend };
+}
+
+/**
+ * Market-wide dividends calendar for [from, to] inclusive (FMP stable).
+ * Returns empty array when `FMP_API_KEY` is unset or on non-200 (caller treats as no ex-div data).
+ * @see https://financialmodelingprep.com/stable/dividends-calendar
+ */
+export async function getFmpDividendsCalendar(from: Date | string, to: Date | string): Promise<FmpDividendCalendarRow[]> {
+  if (!FMP_API_KEY) return [];
+
+  const fromStr = toYmd(from);
+  const toStr = toYmd(to);
+
+  const apiKey = getFmpApiKeyOrThrow();
+  const params = new URLSearchParams({
+    from: fromStr,
+    to: toStr,
+    apikey: apiKey,
+  });
+  const url = `${FMP_STABLE_BASE}/dividends-calendar?${params.toString()}`;
+
+  const res = await httpLimit(() =>
+    fetchWithRetry(url, { headers: { Accept: "application/json" } }),
+  );
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    logger.warn({ status: res.status, body: text.slice(0, 300) }, "FMP dividends-calendar non-200");
+    return [];
+  }
+
+  const data = (await res.json()) as unknown;
+  if (!Array.isArray(data)) return [];
+
+  const out: FmpDividendCalendarRow[] = [];
+  for (const item of data) {
+    if (item && typeof item === "object") {
+      const row = normaliseDividendCalendarRow(item as Record<string, unknown>);
+      if (row) out.push(row);
+    }
+  }
+  return out;
+}
