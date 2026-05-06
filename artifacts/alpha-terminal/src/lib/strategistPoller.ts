@@ -38,6 +38,16 @@ export interface StrategistThinkingPollPayload {
 
 type PollOutcome = 'running' | 'completed' | 'failed';
 
+/** Strip server-only conviction diagnostics so zustand persist (localStorage) does not choke on multi‑MB payloads. */
+function stripConvictionDiagnosticsFromPollResult(result: unknown): unknown {
+  if (!result || typeof result !== "object") return result;
+  const r = result as Record<string, unknown>;
+  const dr = r.deskResult as Record<string, unknown> | undefined;
+  if (!dr || dr.mode !== "conviction_desk" || dr.convictionDeskRunDiagnostic == null) return result;
+  const { convictionDeskRunDiagnostic: _omit, ...restDesk } = dr;
+  return { ...r, deskResult: restDesk };
+}
+
 /**
  * Apply one `/thinking` or `/job/:id/final` payload to the store. When `done` is
  * true, completion is handled first so a persisted snapshot with `nextSince: 0`
@@ -69,7 +79,7 @@ export function applyThinkingPollResponse(jobId: string, t: StrategistThinkingPo
       return 'failed';
     }
     if (t.result) {
-      useTerminalStore.getState().completeStrategistJob(jobId, t.result);
+      useTerminalStore.getState().completeStrategistJob(jobId, stripConvictionDiagnosticsFromPollResult(t.result));
       return 'completed';
     }
     useTerminalStore
@@ -237,7 +247,7 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
         if (row && (row as { cardJson?: unknown }).cardJson) {
           useTerminalStore
             .getState()
-            .completeStrategistJob(jobId, (row as { cardJson: unknown }).cardJson);
+            .completeStrategistJob(jobId, stripConvictionDiagnosticsFromPollResult((row as { cardJson: unknown }).cardJson));
           return true;
         }
         return false;

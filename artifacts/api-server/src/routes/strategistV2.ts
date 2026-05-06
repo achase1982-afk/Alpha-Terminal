@@ -33,6 +33,7 @@ import {
   markStrategistAnalyzeCancelled,
   clearStrategistAnalyzeCancelled,
 } from "../lib/strategistAnalyzeCancellation.js";
+import { stripConvictionDeskDiagnosticsForClient, stripHistoryCardJsonForClient } from "../lib/strategistClientSanitize.js";
 
 const router: IRouter = Router();
 
@@ -282,12 +283,7 @@ function pruneThinkingBuffer() {
 /** Drop DB-only Conviction Desk diagnostic from `deskResult` before JSON to clients (kept on `entry.result` for persistence). */
 function strategistV2ResultForWire(result: StrategistV2Result | null): StrategistV2Result | null {
   if (result == null) return null;
-  const desk = result.deskResult;
-  if (desk == null || typeof desk !== "object" || !("convictionDeskRunDiagnostic" in desk)) return result;
-  const d = desk as { convictionDeskRunDiagnostic?: unknown };
-  if (d.convictionDeskRunDiagnostic == null) return result;
-  const { convictionDeskRunDiagnostic: _omit, ...deskRest } = d;
-  return { ...result, deskResult: deskRest as typeof desk };
+  return stripConvictionDeskDiagnosticsForClient(result);
 }
 
 /** Shared shape for `/thinking` polling and `/job/:id/final` reconciliation after tab resume. */
@@ -310,7 +306,7 @@ function thinkingShapeFromEntry(entry: ThinkingEntry, since: number): {
   const s = Math.max(0, since);
   const totalTokens = entry.tokens.length;
   const tokens = s < totalTokens ? entry.tokens.slice(s) : [];
-  const result = entry.kind === "validation"
+  const rawResult = entry.kind === "validation"
     ? (entry.validationResult ?? null)
     : strategistV2ResultForWire(entry.result ?? null);
   const safeError = entry.cancelled ? null : entry.error != null ? "Analysis failed. Please retry." : null;
@@ -323,7 +319,7 @@ function thinkingShapeFromEntry(entry: ThinkingEntry, since: number): {
     nextSince: totalTokens,
     transcript: entry.transcript,
     done: entry.done,
-    result,
+    result: rawResult,
     validationMeta: entry.validationMeta ?? null,
     error: safeError,
     cancelled: entry.cancelled === true,
@@ -1010,7 +1006,12 @@ router.get("/history", async (_req, res) => {
       .where(eq(strategistHistoryTable.cleared, false))
       .orderBy(desc(strategistHistoryTable.createdAt))
       .limit(100);
-    res.json(rows);
+    res.json(
+      rows.map((row) => ({
+        ...row,
+        cardJson: stripHistoryCardJsonForClient(row.cardJson),
+      })),
+    );
   } catch (err) {
     logger.error({ err }, "StrategistV2: history fetch failed");
     res.status(500).json({ error: "Failed to fetch history" });
