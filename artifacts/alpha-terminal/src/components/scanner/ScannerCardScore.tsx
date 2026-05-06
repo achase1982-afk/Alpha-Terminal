@@ -35,7 +35,7 @@ export function ScannerCardScore({ data }: { data: ScannerCardData }) {
         <span className="text-sm font-medium text-white shrink-0">Composite</span>
         <TierDot score={composite} />
         {composite != null && Number.isFinite(composite) ? (
-          <span className="text-base font-mono font-bold tabular-nums text-white shrink-0">{Math.round(composite)}/100</span>
+          <span className="text-base font-bold tabular-nums text-white shrink-0">{Math.round(composite)}/100</span>
         ) : null}
         <div className="flex-1 min-w-[100px] basis-[40%]">
           <Progress value={barPct} className="h-1.5 bg-zinc-800 [&>div]:bg-primary" />
@@ -59,7 +59,7 @@ export function ScannerCardScore({ data }: { data: ScannerCardData }) {
               </span>
               <span
                 className={cn(
-                  "text-base font-mono font-semibold tabular-nums leading-none",
+                  "text-base font-semibold tabular-nums leading-none",
                   isDash ? "text-gray-400" : "text-white",
                 )}
               >
