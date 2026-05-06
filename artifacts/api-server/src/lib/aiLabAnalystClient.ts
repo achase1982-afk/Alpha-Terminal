@@ -37,7 +37,16 @@ interface GeminiGroundingMetadata {
 }
 
 interface GeminiCandidateChunk {
-  candidates?: Array<{ groundingMetadata?: GeminiGroundingMetadata }>;
+  candidates?: Array<{
+    groundingMetadata?: GeminiGroundingMetadata;
+    finishReason?: string;
+  }>;
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    totalTokenCount?: number;
+    thoughtsTokenCount?: number;
+  };
 }
 
 /**
@@ -82,7 +91,7 @@ interface OpenAIResponsesClientNonStream {
     create: (
       p: Record<string, unknown>,
       opts?: { signal?: AbortSignal },
-    ) => Promise<{ output?: unknown; output_text?: string }>;
+    ) => Promise<{ output?: unknown; output_text?: string; usage?: unknown; status?: string; model?: string }>;
   };
 }
 
@@ -625,6 +634,37 @@ function xaiReasoningProviderOptions(model: string): { xai: XaiLanguageModelResp
   return undefined;
 }
 
+/** Best-effort token envelope from @ai-sdk/xai — fields stay null when the provider omits them (do not invent). */
+async function envelopeFromXaiAiSdkResult(
+  model: string,
+  result: {
+    usage?: unknown | Promise<unknown>;
+    finishReason?: unknown | Promise<unknown>;
+  },
+): Promise<WebSearchEnvelope> {
+  const env = createEmptyEnvelope("xai", model);
+  try {
+    const usageRaw = await Promise.resolve(result.usage);
+    const finishReason = await Promise.resolve(result.finishReason);
+    env.stopReason = finishReason != null && finishReason !== "" ? String(finishReason) : null;
+    if (usageRaw && typeof usageRaw === "object") {
+      const u = usageRaw as Record<string, unknown>;
+      const prompt = u.promptTokens ?? u.inputTokens;
+      const completion = u.completionTokens ?? u.outputTokens;
+      const total = u.totalTokens;
+      const reasoning = u.reasoningTokens;
+      env.usage.inputTokens = typeof prompt === "number" ? prompt : null;
+      env.usage.outputTokens = typeof completion === "number" ? completion : null;
+      env.usage.totalTokens = typeof total === "number" ? total : null;
+      env.usage.reasoningTokens = typeof reasoning === "number" ? reasoning : null;
+    }
+    env.reasoningText = null;
+  } catch {
+    /* xAI may omit usage/finish_reason — leave nulls */
+  }
+  return env;
+}
+
 export async function callXaiWithSystemAndWebSearch(
   model: string,
   temperature: number,
@@ -649,9 +689,12 @@ export async function callXaiWithSystemAndWebSearch(
   const text = result.text.trim();
   if (!text) throw new Error("No text content in Strategist LLM response (xAI web search)");
 
+  const envelope = await envelopeFromXaiAiSdkResult(model, result);
+
   return {
     text,
     trace: { webSearchUsed: queries.length > 0, queries, sources },
+    envelope,
   };
 }
 
@@ -693,9 +736,12 @@ export async function streamCallXaiWithSystemAndWebSearch(
 
   const { queries, sources } = mergeXaiWebSearchTraceFromSteps(steps);
 
+  const envelope = await envelopeFromXaiAiSdkResult(model, result);
+
   return {
     text,
     trace: { webSearchUsed: queries.length > 0, queries, sources },
+    envelope,
   };
 }
 
@@ -799,9 +845,42 @@ export interface WebSearchTrace {
   queries: string[];
   sources: WebSearchSource[];
 }
+
+export type WebSearchEnvelopeProvider = "anthropic" | "openai" | "xai" | "gemini";
+
+/** Provider metadata captured after each LLM call (null fields when the SDK does not expose a value). */
+export interface WebSearchEnvelope {
+  provider: WebSearchEnvelopeProvider;
+  modelId: string;
+  stopReason: string | null;
+  usage: {
+    inputTokens: number | null;
+    outputTokens: number | null;
+    reasoningTokens: number | null;
+    totalTokens: number | null;
+  };
+  reasoningText: string | null;
+}
+
+export function createEmptyEnvelope(provider: WebSearchEnvelopeProvider, modelId: string): WebSearchEnvelope {
+  return {
+    provider,
+    modelId,
+    stopReason: null,
+    usage: {
+      inputTokens: null,
+      outputTokens: null,
+      reasoningTokens: null,
+      totalTokens: null,
+    },
+    reasoningText: null,
+  };
+}
+
 export interface WebSearchResult {
   text: string;
   trace: WebSearchTrace;
+  envelope: WebSearchEnvelope;
 }
 
 const ANTHROPIC_WEB_SEARCH_MAX_USES = 5;
@@ -818,6 +897,76 @@ function asAnthropicContentBlocks(content: unknown): AnthropicMessageContentBloc
 
 function asAnthropicStreamEvent(event: unknown): AnthropicStreamEvent {
   return event as AnthropicStreamEvent;
+}
+
+function anthropicThinkingTextFromContent(content: unknown): string | null {
+  const blocks = asAnthropicContentBlocks(content);
+  const parts: string[] = [];
+  for (const block of blocks) {
+    if ((block.type as string | undefined) === "thinking") {
+      const t = (block as { thinking?: string }).thinking;
+      if (typeof t === "string" && t.length > 0) parts.push(t);
+    }
+  }
+  return parts.length > 0 ? parts.join("\n\n") : null;
+}
+
+function anthropicUsageFromSdk(usage: unknown): WebSearchEnvelope["usage"] {
+  const empty = { inputTokens: null, outputTokens: null, reasoningTokens: null, totalTokens: null };
+  if (!usage || typeof usage !== "object") return empty;
+  const u = usage as Record<string, unknown>;
+  const input = u.input_tokens;
+  const output = u.output_tokens;
+  const rt = u.reasoning_tokens;
+  const total = u.total_tokens;
+  return {
+    inputTokens: typeof input === "number" ? input : null,
+    outputTokens: typeof output === "number" ? output : null,
+    reasoningTokens: typeof rt === "number" ? rt : null,
+    totalTokens: typeof total === "number" ? total : null,
+  };
+}
+
+function openAiUsageFromSdk(usage: unknown): WebSearchEnvelope["usage"] {
+  const empty = { inputTokens: null, outputTokens: null, reasoningTokens: null, totalTokens: null };
+  if (!usage || typeof usage !== "object") return empty;
+  const u = usage as Record<string, unknown>;
+  const inp = u.input_tokens ?? u.prompt_tokens;
+  const out = u.output_tokens ?? u.completion_tokens;
+  const total = u.total_tokens;
+  let reasoning: number | null = null;
+  const od = u.output_tokens_details;
+  if (od && typeof od === "object") {
+    const r = (od as Record<string, unknown>).reasoning_tokens;
+    if (typeof r === "number") reasoning = r;
+  }
+  return {
+    inputTokens: typeof inp === "number" ? inp : null,
+    outputTokens: typeof out === "number" ? out : null,
+    reasoningTokens: reasoning,
+    totalTokens: typeof total === "number" ? total : null,
+  };
+}
+
+function geminiEnvelopeFromModelChunk(model: string, lastChunk: unknown): WebSearchEnvelope {
+  const base = createEmptyEnvelope("gemini", model);
+  if (!lastChunk || typeof lastChunk !== "object") return base;
+  const root = lastChunk as GeminiCandidateChunk;
+  const cand = root.candidates?.[0];
+  const fr = cand?.finishReason;
+  base.stopReason = fr != null && fr !== "" ? String(fr) : null;
+  const um = root.usageMetadata;
+  if (um && typeof um === "object") {
+    const prompt = um.promptTokenCount;
+    const candTok = um.candidatesTokenCount;
+    const total = um.totalTokenCount;
+    const thoughts = um.thoughtsTokenCount;
+    base.usage.inputTokens = typeof prompt === "number" ? prompt : null;
+    base.usage.outputTokens = typeof candTok === "number" ? candTok : null;
+    base.usage.totalTokens = typeof total === "number" ? total : null;
+    base.usage.reasoningTokens = typeof thoughts === "number" ? thoughts : null;
+  }
+  return base;
 }
 
 export async function callAnthropicWithSystemAndWebSearch(
@@ -884,6 +1033,14 @@ export async function callAnthropicWithSystemAndWebSearch(
   const text = textChunks.join("\n").trim();
   if (!text) throw new Error("No text content in Strategist LLM response (web search)");
 
+  const envelope: WebSearchEnvelope = {
+    provider: "anthropic",
+    modelId: model,
+    stopReason: message.stop_reason != null ? String(message.stop_reason) : null,
+    usage: anthropicUsageFromSdk(message.usage),
+    reasoningText: anthropicThinkingTextFromContent(message.content),
+  };
+
   return {
     text,
     trace: {
@@ -891,6 +1048,7 @@ export async function callAnthropicWithSystemAndWebSearch(
       queries,
       sources,
     },
+    envelope,
   };
 }
 
@@ -985,11 +1143,20 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
     }
   }
 
+  let envelope = createEmptyEnvelope("anthropic", model);
+
   // Ensure final message captures any tool results we may have missed
   // via the streamed events (server_tool_use results sometimes arrive
   // batched inside the final message).
   try {
     const finalMessage = await stream.finalMessage();
+    envelope = {
+      provider: "anthropic",
+      modelId: model,
+      stopReason: finalMessage.stop_reason != null ? String(finalMessage.stop_reason) : null,
+      usage: anthropicUsageFromSdk(finalMessage.usage),
+      reasoningText: anthropicThinkingTextFromContent(finalMessage.content),
+    };
     for (const block of asAnthropicContentBlocks(finalMessage.content)) {
       const t = block.type as string | undefined;
       if (t === "server_tool_use") {
@@ -1028,6 +1195,7 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
       queries,
       sources,
     },
+    envelope,
   };
 }
 
@@ -1096,6 +1264,7 @@ export async function callGeminiWithSystemAndWebSearch(
       queries,
       sources,
     },
+    envelope: geminiEnvelopeFromModelChunk(model, response),
   };
 }
 
@@ -1179,6 +1348,7 @@ export async function streamCallGeminiWithSystemAndWebSearch(
   return {
     text,
     trace: { webSearchUsed: queries.length > 0, queries, sources },
+    envelope: geminiEnvelopeFromModelChunk(model, lastChunk),
   };
 }
 
@@ -1208,7 +1378,7 @@ export async function streamCallGeminiDeskJson(
   }
 
   onStatus?.("Calling Gemini (JSON)…");
-  const { fullText } = await withGeminiRetry(
+  const { fullText, lastChunk } = await withGeminiRetry(
     "generateContentStream",
     model,
     async () => {
@@ -1221,13 +1391,15 @@ export async function streamCallGeminiDeskJson(
       });
 
       let attemptText = "";
+      let attemptLastChunk: unknown = null;
       for await (const chunk of stream) {
+        attemptLastChunk = chunk;
         const txt = (chunk as { text?: string }).text;
         if (txt) {
           attemptText += txt;
         }
       }
-      return { fullText: attemptText, lastChunk: null };
+      return { fullText: attemptText, lastChunk: attemptLastChunk };
     },
   );
 
@@ -1241,6 +1413,7 @@ export async function streamCallGeminiDeskJson(
   return {
     text,
     trace: { webSearchUsed: false, queries: [], sources: [] },
+    envelope: geminiEnvelopeFromModelChunk(model, lastChunk),
   };
 }
 
@@ -1362,9 +1535,18 @@ export async function callOpenAIWithSystemAndWebSearch(
   const text = (textChunks.join("\n").trim() || (response.output_text ?? "").trim());
   if (!text) throw new Error("No text content in Strategist LLM response (OpenAI web search)");
 
+  const envelope: WebSearchEnvelope = {
+    provider: "openai",
+    modelId: model,
+    stopReason: response.status != null ? String(response.status) : null,
+    usage: openAiUsageFromSdk(response.usage),
+    reasoningText: null,
+  };
+
   return {
     text,
     trace: { webSearchUsed: queries.length > 0, queries, sources },
+    envelope,
   };
 }
 
@@ -1391,6 +1573,7 @@ export async function streamCallOpenAIWithSystemAndWebSearch(
   const seenUrls = new Set<string>();
   let fullText = "";
   let finalResponse: unknown = null;
+  let reasoningSummaryText = "";
 
   for await (const event of stream) {
     const evType = event.type as string | undefined;
@@ -1405,9 +1588,11 @@ export async function streamCallOpenAIWithSystemAndWebSearch(
     } else if (evType === "response.web_search_call.completed") {
       onStatus?.("Web search complete");
     } else if (evType === "response.reasoning_summary_text.delta") {
-      // Surface reasoning summaries as status, not as text content.
       const delta = event.delta as string | undefined;
-      if (delta) onStatus?.(`Reasoning: ${delta.slice(0, 80)}`);
+      if (delta) {
+        reasoningSummaryText += delta;
+        onStatus?.(`Reasoning: ${delta.slice(0, 80)}`);
+      }
     } else if (evType === "response.output_item.added") {
       const item = event.item as Record<string, unknown> | undefined;
       if (item?.type === "web_search_call") {
@@ -1432,9 +1617,18 @@ export async function streamCallOpenAIWithSystemAndWebSearch(
   const text = fullText.trim();
   if (!text) throw new Error("No text content in Strategist LLM stream (OpenAI)");
 
+  const envelope = createEmptyEnvelope("openai", model);
+  if (finalResponse && typeof finalResponse === "object") {
+    const fr = finalResponse as Record<string, unknown>;
+    envelope.stopReason = fr.status != null ? String(fr.status) : null;
+    envelope.usage = openAiUsageFromSdk(fr.usage);
+  }
+  envelope.reasoningText = reasoningSummaryText.trim() || null;
+
   return {
     text,
     trace: { webSearchUsed: queries.length > 0, queries, sources },
+    envelope,
   };
 }
 

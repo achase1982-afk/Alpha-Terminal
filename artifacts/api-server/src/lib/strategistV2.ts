@@ -1282,6 +1282,8 @@ async function analyzeTickerV2Inner(
       const deskResult = attachConvictionDeskPayoffScenarios(deskResultRaw, dataPackage);
       const incomplete =
         deskResult.convictionDeskJsonDegraded === "schema_validation_failed_after_retry" ||
+        deskResult.convictionDeskJsonDegraded === "stream_error" ||
+        deskResult.convictionDeskJsonDegraded === "extraction_error" ||
         deskResult.conviction == null ||
         (deskResult.errors?.some((e) => e.startsWith("Conviction Desk output failed validation")) ?? false);
       const hasTrade =
