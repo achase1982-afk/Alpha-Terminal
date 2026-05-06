@@ -81,14 +81,14 @@ function parseSchwabQuoteEntry(entry: Record<string, unknown> | undefined): Schw
   }
 
   const nameRaw =
-    (typeof ref?.["description"] === "string" && ref.description.trim()) ||
-    (typeof ref?.["companyName"] === "string" && ref.companyName.trim()) ||
-    (typeof q["description"] === "string" && q.description.trim()) ||
-    (typeof q["companyName"] === "string" && q.companyName.trim()) ||
+    (typeof ref?.["description"] === "string" && ref["description"].trim()) ||
+    (typeof ref?.["companyName"] === "string" && ref["companyName"].trim()) ||
+    (typeof q["description"] === "string" && q["description"].trim()) ||
+    (typeof q["companyName"] === "string" && q["companyName"].trim()) ||
     null;
 
   const sectorRaw =
-    typeof f?.["sector"] === "string" && f.sector.trim() ? f.sector.trim() : null;
+    typeof f?.["sector"] === "string" && f["sector"].trim() ? f["sector"].trim() : null;
 
   const price =
     last != null && Number.isFinite(last) && last > 0 ? last : null;
