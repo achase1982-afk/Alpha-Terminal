@@ -62,6 +62,12 @@ export interface CatalystAnalystOutput {
   read: string;
 }
 
+export interface DeskExitPlan {
+  profit_target: number;
+  stop_loss: number;
+  time_stop: string;
+}
+
 export interface PmOutput {
   decision: "trade" | "pass";
   structure: DeskStructure | null;
