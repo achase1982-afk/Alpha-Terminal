@@ -1048,13 +1048,11 @@ function buildMinimalDeskDataPackageForOrderValidation(
   const mc = input.marketContext;
   const t = input.ticket;
   const ticker = t.ticker.toUpperCase();
-  const ticketMd = buildValidationContext(input).dataPackage;
   const farLegIso = computeFarLegExpirationForValidationTicket(t);
 
   const pkg: Record<string, unknown> = {
     schemaVersion: 1,
     orderTicketReview: true,
-    orderTicketValidationMarkdown: ticketMd,
     ticker,
     currentDate: new Date().toISOString().slice(0, 10),
     price: t.underlyingPrice ?? null,

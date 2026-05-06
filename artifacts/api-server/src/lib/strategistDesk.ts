@@ -228,20 +228,6 @@ function parseJsonFromText(raw: string): Record<string, unknown> | null {
   return extractJsonAndParse(raw).parsedJson;
 }
 
-function mergeTraces(...traces: WebSearchTrace[]): WebSearchTrace {
-  const seenUrls = new Set<string>();
-  const sources = traces.flatMap(t => t.sources).filter(s => {
-    if (seenUrls.has(s.url)) return false;
-    seenUrls.add(s.url);
-    return true;
-  });
-  return {
-    webSearchUsed: traces.some(t => t.webSearchUsed),
-    queries: [...new Set(traces.flatMap(t => t.queries))],
-    sources,
-  };
-}
-
 export async function runDeskAnalysis(args: {
   dataPackage: string;
   settings: StrategistConfig;
@@ -524,7 +510,7 @@ async function runAnalystWithRetry<T>(
   if (validation.success) {
     return {
       parsed: validation.data,
-      trace: initialTrace ? mergeTraces(initialTrace, turn.trace) : turn.trace,
+      trace: initialTrace ? mergeValidationTraces(initialTrace, turn.trace) : turn.trace,
     };
   }
 
@@ -549,10 +535,10 @@ async function runAnalystWithRetry<T>(
   const retryValidation = schema.safeParse(retryJson);
 
   if (retryValidation.success) {
-    const merged = mergeTraces(turn.trace, retryTurn.trace);
+    const merged = mergeValidationTraces(turn.trace, retryTurn.trace);
     return {
       parsed: retryValidation.data,
-      trace: initialTrace ? mergeTraces(initialTrace, merged) : merged,
+      trace: initialTrace ? mergeValidationTraces(initialTrace, merged) : merged,
     };
   }
 
@@ -561,10 +547,10 @@ async function runAnalystWithRetry<T>(
   logger.error({ role, ticker, model: model.model, provider: model.provider, label: model.label }, `StrategistDesk: ${errorMsg}`);
 
   const fallback = buildFallbackOutput(role, retryTurn.text);
-  const mergedFail = mergeTraces(turn.trace, retryTurn.trace);
+  const mergedFail = mergeValidationTraces(turn.trace, retryTurn.trace);
   return {
     parsed: fallback as T,
-    trace: initialTrace ? mergeTraces(initialTrace, mergedFail) : mergedFail,
+    trace: initialTrace ? mergeValidationTraces(initialTrace, mergedFail) : mergedFail,
   };
 }
 
