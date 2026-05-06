@@ -575,7 +575,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
             <button
               type="button"
               onClick={handleScanClick}
-              disabled={!accessToken || unified.phase === "scanning" || currentSymCount === 0 || shockActive}
+              disabled={!accessToken || currentSymCount === 0 || shockActive}
               className="inline-flex items-center justify-center rounded-lg border border-primary/80 bg-[#0c0c0c] px-6 py-2.5 font-mono text-[13px] font-bold tracking-wider text-primary transition-colors hover:bg-primary/10 active:scale-[0.98] active:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Run Scan
