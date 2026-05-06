@@ -2,6 +2,10 @@
  * Scanner Layer 5 — options flow over a rolling wall-clock window (default 4h).
  *
  * Sources `options_flow_raw_trades` (Polygon tape / watcher / strategist backfill).
+ * When the primary window (4h by default) has **no** prints for a symbol, we **fall back once**
+ * to a **24h** window so sparse tape / off-hours sessions still populate the Flow panel when
+ * recent data exists (UI label remains "Flow 4h" — values may reflect up to 24h of tape).
+ *
  * - **Blocks / sweeps**: persisted `is_block` / `is_sweep` flags from
  *   {@link classifyForFlowPersistence} (block = size ≥ 100 contracts and not a sweep;
  *   sweep = OPRA condition 219).
@@ -18,6 +22,7 @@ import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
 export const SCANNER_FLOW_DEFAULT_WINDOW_MS = 4 * 60 * 60 * 1000;
+const FALLBACK_WHEN_PRIMARY_EMPTY_MS = 24 * 60 * 60 * 1000;
 
 /** Wire shape merged onto GET /api/scanner/v3/universe cards (`flow` field). */
 export type ScannerFlowLayer5Wire = {
@@ -58,23 +63,15 @@ function intOrZero(v: unknown): number {
   return n != null ? Math.trunc(n) : 0;
 }
 
-/**
- * Per-symbol flow metrics. Returns `null` for symbols with no qualifying prints in the window.
- */
-export async function fetchScannerFlowContextForSymbols(
-  symbols: string[],
+async function computeFlowLayer5ForCutoff(
+  uniq: string[],
+  cutoffIso: string,
   underlyingPriceBySymbol: ReadonlyMap<string, number | null | undefined>,
-  opts?: { windowMs?: number },
 ): Promise<Map<string, ScannerFlowLayer5Wire | null>> {
-  const windowMs = opts?.windowMs ?? SCANNER_FLOW_DEFAULT_WINDOW_MS;
-  const uniq = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
   const out = new Map<string, ScannerFlowLayer5Wire | null>();
   for (const s of uniq) out.set(s, null);
-
   if (uniq.length === 0) return out;
 
-  const cutoff = new Date(Date.now() - windowMs);
-  const cutoffIso = cutoff.toISOString();
   const inList = sql.join(uniq.map((s) => sql`${s}`), sql`, `);
 
   // Narrow by `date` so scans use `options_flow_raw_trades_sym_date_ts_idx`
@@ -312,6 +309,35 @@ export async function fetchScannerFlowContextForSymbols(
     };
 
     out.set(sym, wire);
+  }
+
+  return out;
+}
+
+/**
+ * Per-symbol flow metrics. Returns `null` for symbols with no qualifying prints in the window.
+ */
+export async function fetchScannerFlowContextForSymbols(
+  symbols: string[],
+  underlyingPriceBySymbol: ReadonlyMap<string, number | null | undefined>,
+  opts?: { windowMs?: number },
+): Promise<Map<string, ScannerFlowLayer5Wire | null>> {
+  const windowMs = opts?.windowMs ?? SCANNER_FLOW_DEFAULT_WINDOW_MS;
+  const uniq = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
+
+  const cutoffIso = new Date(Date.now() - windowMs).toISOString();
+  const out = await computeFlowLayer5ForCutoff(uniq, cutoffIso, underlyingPriceBySymbol);
+
+  if (windowMs <= SCANNER_FLOW_DEFAULT_WINDOW_MS) {
+    const missing = uniq.filter((s) => out.get(s) == null);
+    if (missing.length > 0) {
+      const fbIso = new Date(Date.now() - FALLBACK_WHEN_PRIMARY_EMPTY_MS).toISOString();
+      const fb = await computeFlowLayer5ForCutoff(missing, fbIso, underlyingPriceBySymbol);
+      for (const s of missing) {
+        const v = fb.get(s);
+        if (v != null) out.set(s, v);
+      }
+    }
   }
 
   return out;

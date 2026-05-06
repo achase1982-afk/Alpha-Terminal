@@ -29,6 +29,7 @@ import {
   persistMutedSymbols,
   pruneAndFilterMutedSymbols,
   readMutedSymbols,
+  enrichScannerCardFromV2Candidate,
   scannerWireCardToScannerCardData,
 } from "@/components/scanner";
 import type { ScannerV3WireCard } from "@/hooks/useUnifiedScan";
@@ -441,15 +442,17 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
     const cards = unified.layer1Universe?.cards;
     const scanAt = unified.layer1Universe?.scan_at;
     if (!Array.isArray(cards) || !scanAt) return new Map<string, ScannerCardData>();
+    const candBySym = new Map(unified.candidates.map((c) => [c.ticker.trim().toUpperCase(), c] as const));
     const m = new Map<string, ScannerCardData>();
     for (const c of cards) {
       if (!c || typeof c !== "object" || typeof c.symbol !== "string") continue;
       const sym = c.symbol.trim().toUpperCase();
       if (!sym) continue;
-      m.set(sym, scannerWireCardToScannerCardData(c as ScannerV3WireCard, scanAt));
+      const fromWire = scannerWireCardToScannerCardData(c as ScannerV3WireCard, scanAt);
+      m.set(sym, enrichScannerCardFromV2Candidate(fromWire, candBySym.get(sym)));
     }
     return m;
-  }, [unified.layer1Universe?.cards, unified.layer1Universe?.scan_at]);
+  }, [unified.layer1Universe?.cards, unified.layer1Universe?.scan_at, unified.candidates]);
 
   const layer1FilteredSymbols = useMemo(() => {
     if (!unified.layer1Universe?.tickers?.length) return [];

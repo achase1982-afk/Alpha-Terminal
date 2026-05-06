@@ -1,8 +1,62 @@
-import type { ScannerCardData } from "@/lib/unifiedScanTypes";
+import type { ScannerCardData, UnifiedScanCandidate } from "@/lib/unifiedScanTypes";
 import type { ScannerV3WireCard, ScannerV3WireCardFlow } from "@/hooks/useUnifiedScan";
 import { emptyScannerCardData } from "./scannerCard.utils";
 
 export type { ScannerV3WireCard };
+
+function formatTopStrikeLabelFromStrike(strike: number, optionType: "call" | "put"): string {
+  const strikeStr = Number.isInteger(strike) ? String(strike) : strike.toFixed(2).replace(/\.?0+$/, "");
+  return `$${strikeStr}${optionType === "call" ? "C" : "P"}`;
+}
+
+/**
+ * When GET /scanner/v3/universe omits flow (older server) or returns null (no 4h tape),
+ * hydrate at least **Top Strike** from the v2 snapshot candidate for the same ticker so the
+ * Flow panel is not a blind spot for symbols that appear in `/v2/scan`.
+ */
+export function enrichScannerCardFromV2Candidate(
+  data: ScannerCardData,
+  candidate: UnifiedScanCandidate | undefined,
+): ScannerCardData {
+  if (!candidate || data.flow != null) return data;
+  const fs = candidate.flowSnapshot;
+  if (!fs) return data;
+  const hasSignal =
+    fs.topStrike != null ||
+    (fs.notional24h != null && fs.notional24h > 0) ||
+    (fs.tapeQuality != null && fs.tapeQuality !== "not_run");
+  if (!hasSignal) return data;
+
+  const ts = fs.topStrike;
+  const topStrikeLabel = ts ? formatTopStrikeLabelFromStrike(ts.strike, ts.type) : null;
+  const exp =
+    ts && typeof ts.expiry === "string"
+      ? ts.expiry.length >= 10
+        ? ts.expiry.slice(0, 10)
+        : ts.expiry
+      : "";
+
+  return {
+    ...data,
+    flow: {
+      blocks4h: null,
+      sweeps4h: null,
+      netDeltaDollar: null,
+      topStrikeLabel,
+      topStrike: ts
+        ? {
+            strike: ts.strike,
+            optionType: ts.type,
+            expiration: exp,
+            volumeAtStrike: 0,
+            openInterest: null,
+          }
+        : null,
+      volume4h: null,
+      volumeOverOi: null,
+    },
+  };
+}
 
 function mapFlowWire(flow: ScannerV3WireCardFlow | null | undefined): ScannerCardData["flow"] {
   if (flow == null) return null;
