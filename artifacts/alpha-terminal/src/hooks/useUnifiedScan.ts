@@ -40,12 +40,30 @@ export interface V2ScanResponse {
   scan_at: string;
 }
 
+/** Layer 2 Schwab batch quote merge — same order as `tickers`. */
+export interface ScannerV3WireCard {
+  symbol: string;
+  name: string | null;
+  sector: string | null;
+  price: number | null;
+  change_abs: number | null;
+  change_pct: number | null;
+  volume: number | null;
+  avg_volume_20d: number | null;
+  day_range: { low: number; high: number } | null;
+}
+
 export interface ScannerV3UniverseResponse {
   tickers: string[];
   scan_at: string;
   count: number;
   /** Echo of the `universe` query param (kebab id or composite `preset:…` / `watchlist:…` / `screen:…`). */
   universe?: string;
+  /** Populated when Schwab batch quotes succeed for symbols; otherwise null fields per symbol. */
+  cards?: ScannerV3WireCard[];
+  /** True when a Schwab access token is available for batch quotes. */
+  schwab_access_token_present?: boolean;
+  layer2_quote_hits?: number;
 }
 
 export interface UseUnifiedScanState {
@@ -123,7 +141,24 @@ export function useUnifiedScan(): UseUnifiedScanState {
         typeof layer1.universe === "string" && layer1.universe.length > 0
           ? layer1.universe
           : scannerV3UniverseQueryFromSelection(_universeId);
-      setLayer1Universe({ tickers, scan_at, count, universe: universeEcho });
+      const cards = Array.isArray(layer1.cards) ? layer1.cards : undefined;
+      const schwab_access_token_present =
+        typeof layer1.schwab_access_token_present === "boolean"
+          ? layer1.schwab_access_token_present
+          : undefined;
+      const layer2_quote_hits =
+        typeof layer1.layer2_quote_hits === "number" && Number.isFinite(layer1.layer2_quote_hits)
+          ? layer1.layer2_quote_hits
+          : undefined;
+      setLayer1Universe({
+        tickers,
+        scan_at,
+        count,
+        universe: universeEcho,
+        cards,
+        schwab_access_token_present,
+        layer2_quote_hits,
+      });
 
       const params = new URLSearchParams({
         universe: _universeId,

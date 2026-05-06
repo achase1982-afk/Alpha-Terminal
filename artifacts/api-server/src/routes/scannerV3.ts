@@ -10,6 +10,8 @@ import {
 } from "../lib/scannerUniverses.js";
 import { loadPresets, PRESET_ALIASES } from "../lib/scannerPresetLoad.js";
 import { resolveScannerUniverseSymbolsForUser } from "./scanner.js";
+import { fetchSchwabBatchQuotesForSymbolsBestToken } from "../lib/schwabBatchQuotes.js";
+import { getBestAccessToken } from "../lib/tokenStore.js";
 
 const router: IRouter = Router();
 
@@ -102,12 +104,36 @@ router.get("/v3/universe", async (req, res) => {
       tickers = getScannerUniverseTickers(universeKey as ScannerUniverseId);
     }
 
+    const schwab_access_token_present = !!getBestAccessToken();
+    const quoteMap = schwab_access_token_present
+      ? await fetchSchwabBatchQuotesForSymbolsBestToken(tickers)
+      : new Map();
+
+    const cards = tickers.map((raw) => {
+      const symbol = raw.trim().toUpperCase();
+      const q = quoteMap.get(symbol);
+      return {
+        symbol,
+        name: q?.name ?? null,
+        sector: q?.sector ?? null,
+        price: q?.price ?? null,
+        change_abs: q?.changeAbs ?? null,
+        change_pct: q?.changePct ?? null,
+        volume: q?.volume ?? null,
+        avg_volume_20d: q?.avgVolume20d ?? null,
+        day_range: q?.dayRange ?? null,
+      };
+    });
+
     const scan_at = new Date().toISOString();
     const payload = {
       tickers,
       universe: universeKey,
       scan_at,
       count: tickers.length,
+      cards,
+      schwab_access_token_present,
+      layer2_quote_hits: quoteMap.size,
     };
 
     const duration_ms = Date.now() - started;

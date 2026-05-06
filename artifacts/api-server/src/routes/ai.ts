@@ -49,6 +49,7 @@ import {
 } from "../lib/deterministicStrategist.js";
 import { resolveStrikes, type AccountSnapshot, type ChainData, type ResolvedTrade, type StrikeResolutionError } from "../lib/strikeResolver.js";
 import { createGeminiClient, getGeminiApiKey } from "../lib/geminiClient.js";
+import { getXaiApiKey } from "../lib/xaiEnv.js";
 import { geminiThinkingConfigForModel } from "../lib/geminiThinkingConfig.js";
 
 const router: IRouter = Router();
