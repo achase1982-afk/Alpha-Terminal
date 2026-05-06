@@ -40,17 +40,21 @@ export type ScannerCardData = {
   nextExDiv: { date: string; daysTo: number; amount: number | null } | null;
   earningsHistory: { quarter: string; absMovePct: number }[] | null;
 
-  // Layer 5
+  // Layer 5 (rolling 4h window; null panel when no prints in window)
   flow: {
-    blocks4h: number;
-    sweeps4h: number;
-    netDeltaNotional: number;
+    blocks4h: number | null;
+    sweeps4h: number | null;
+    netDeltaDollar: number | null;
+    topStrikeLabel: string | null;
     topStrike: {
       strike: number;
-      volume: number;
-      oi: number;
+      optionType: "call" | "put";
       expiration: string;
+      volumeAtStrike: number;
+      openInterest: number | null;
     } | null;
+    volume4h: number | null;
+    volumeOverOi: number | null;
   } | null;
 
   // Technical (derived from existing equity_daily, no new integration)

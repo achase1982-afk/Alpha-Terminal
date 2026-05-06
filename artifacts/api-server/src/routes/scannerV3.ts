@@ -13,6 +13,7 @@ import { resolveScannerUniverseSymbolsForUser } from "./scanner.js";
 import { fetchSchwabBatchQuotesForSymbolsBestToken } from "../lib/schwabBatchQuotes.js";
 import { fetchScannerVolContextForSymbols } from "../lib/scannerVolContext.js";
 import { fetchScannerCatalystsForSymbols } from "../lib/scannerCatalysts.js";
+import { fetchScannerFlowContextForSymbols } from "../lib/scannerFlowContext.js";
 import { getBestAccessToken } from "../lib/tokenStore.js";
 
 const router: IRouter = Router();
@@ -120,6 +121,12 @@ router.get("/v3/universe", async (req, res) => {
 
     const catalystMap = await fetchScannerCatalystsForSymbols(tickers);
 
+    const priceBySymbol = new Map<string, number | null>();
+    for (const [sym, q] of quoteMap) {
+      priceBySymbol.set(sym, q.price ?? null);
+    }
+    const flowMap = await fetchScannerFlowContextForSymbols(tickers, priceBySymbol);
+
     let layer3_iv30_hits = 0;
     let layer3_hv30_hits = 0;
     let layer3_ivr_hits = 0;
@@ -127,12 +134,15 @@ router.get("/v3/universe", async (req, res) => {
     let layer4_earnings_hits = 0;
     let layer4_ex_div_hits = 0;
     let layer4_reactions_hits = 0;
+    let layer5_flow_hits = 0;
 
     const cards = tickers.map((raw) => {
       const symbol = raw.trim().toUpperCase();
       const q = quoteMap.get(symbol);
       const v = volMap.get(symbol);
       const cat = catalystMap.get(symbol);
+      const flow = flowMap.get(symbol);
+      if (flow != null) layer5_flow_hits++;
       if (v?.iv30 != null) layer3_iv30_hits++;
       if (v?.hv30 != null) layer3_hv30_hits++;
       if (v?.ivr != null) layer3_ivr_hits++;
@@ -162,6 +172,7 @@ router.get("/v3/universe", async (req, res) => {
         ex_dividend_amount: cat?.ex_dividend_amount ?? null,
         days_to_ex_dividend: cat?.days_to_ex_dividend ?? null,
         reactions_last_4q: cat?.reactions_last_4q ?? null,
+        flow: flow ?? null,
       };
     });
 
@@ -180,6 +191,7 @@ router.get("/v3/universe", async (req, res) => {
       layer4_earnings_hits,
       layer4_ex_div_hits,
       layer4_reactions_hits,
+      layer5_flow_hits,
     };
 
     const duration_ms = Date.now() - started;
