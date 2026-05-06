@@ -156,7 +156,10 @@ router.get("/v3/universe", async (req, res) => {
       const layer7 = computeScannerLayer7Scores({
         volume: q?.volume ?? null,
         avg_volume_20d: q?.avgVolume20d ?? null,
+        price: q?.price ?? null,
+        iv30: v?.iv30 ?? null,
         ivr: v?.ivr ?? null,
+        iv_vs_hv: v?.ivVsHv ?? null,
         days_to_earnings: cat?.days_to_earnings ?? null,
         reactions_last_4q: cat?.reactions_last_4q ?? null,
         flow,
