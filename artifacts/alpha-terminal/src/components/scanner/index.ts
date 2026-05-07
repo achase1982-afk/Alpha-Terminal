@@ -17,4 +17,8 @@ export {
   persistMutedSymbols,
   SCANNER_V3_MUTED_SYMBOLS_KEY,
 } from "./scannerCard.utils";
-export { scannerWireCardToScannerCardData, type ScannerV3WireCard } from "./scannerCardLayer2";
+export {
+  scannerWireCardToScannerCardData,
+  enrichScannerCardFromV2Candidate,
+  type ScannerV3WireCard,
+} from "./scannerCardLayer2";

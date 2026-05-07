@@ -361,6 +361,13 @@ export function buildStrategistDiagnosticView(fullPayload: StrategistFullPayload
       watchFor = typeof pm.watch_for === "string" ? pm.watch_for : "";
       sizeDiag = pm.size;
       whoseSide = pm.whose_side;
+    } else {
+      thesis = "";
+      edgeCheck = "";
+      biggestRisk = "";
+      watchFor = "";
+      sizeDiag = "small";
+      whoseSide = "neither";
     }
   } else {
     const pm = deskResult.pm;

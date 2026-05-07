@@ -5,6 +5,8 @@
  * `SCANNER_FLOW_LAYER5_WINDOW_MS` (milliseconds, clamped 1h–48h) when tape is stale.
  *
  * Sources `options_flow_raw_trades` (Polygon tape / watcher / strategist backfill).
+ * When the primary window is empty, {@link fetchScannerFlowContextForSymbols} retries a **24h**
+ * cutoff, then `options_flow_exec_per_strike` session rollup, then `ticker_signal_snapshot.flow_summary`.
  * - **Blocks / sweeps**: persisted `is_block` / `is_sweep` flags from
  *   {@link classifyForFlowPersistence} (block = size ≥ 100 contracts and not a sweep;
  *   sweep = OPRA condition 219).
@@ -17,10 +19,12 @@
  *   `options_flow_per_strike` snapshot (chain-level OI).
  */
 
-import { db } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { db, tickerSignalSnapshotTable } from "@workspace/db";
+import { inArray, sql } from "drizzle-orm";
 
 export const SCANNER_FLOW_DEFAULT_WINDOW_MS = 4 * 60 * 60 * 1000;
+
+const FALLBACK_WHEN_PRIMARY_EMPTY_MS = 24 * 60 * 60 * 1000;
 
 const FLOW_WINDOW_MS_MIN = 60 * 60 * 1000;
 /** Upper bound for env-driven window (7d). Larger windows are heavier on `options_flow_raw_trades`. */
@@ -89,19 +93,251 @@ function intOrZero(v: unknown): number {
   return n != null ? Math.trunc(n) : 0;
 }
 
+async function fetchChainOiBySymbols(uniq: string[]): Promise<Map<string, number>> {
+  const chainOiBySym = new Map<string, number>();
+  if (uniq.length === 0) return chainOiBySym;
+  const inList = sql.join(uniq.map((s) => sql`${s}`), sql`, `);
+  const oiRows = await db.execute(sql`
+    WITH latest AS (
+      SELECT underlying_symbol AS sym, MAX(date) AS d
+      FROM options_flow_per_strike
+      WHERE underlying_symbol IN (${inList})
+      GROUP BY underlying_symbol
+    )
+    SELECT o.underlying_symbol AS sym, SUM(COALESCE(o.open_interest, 0))::double precision AS chain_oi
+    FROM options_flow_per_strike o
+    INNER JOIN latest l ON l.sym = o.underlying_symbol AND o.date = l.d
+    WHERE o.underlying_symbol IN (${inList})
+    GROUP BY o.underlying_symbol
+  `);
+  for (const row of (oiRows.rows ?? []) as Record<string, unknown>[]) {
+    const sym = String(row.sym ?? "").toUpperCase();
+    const oi = numOrNull(row.chain_oi) ?? 0;
+    if (sym) chainOiBySym.set(sym, oi);
+  }
+  return chainOiBySym;
+}
+
+/** Latest session date rollup from `options_flow_exec_per_strike` (rollup job from raw tape). */
+async function fetchExecPerStrikeSessionRollup(
+  uniq: string[],
+  chainOiBySym: Map<string, number>,
+): Promise<Map<string, ScannerFlowLayer5Wire | null>> {
+  const out = new Map<string, ScannerFlowLayer5Wire | null>();
+  for (const s of uniq) out.set(s, null);
+  if (uniq.length === 0) return out;
+
+  const inList = sql.join(uniq.map((s) => sql`${s}`), sql`, `);
+
+  const rows = await db.execute(sql`
+    WITH latest AS (
+      SELECT underlying_symbol AS sym, MAX(date) AS d
+      FROM options_flow_exec_per_strike
+      WHERE underlying_symbol IN (${inList})
+      GROUP BY underlying_symbol
+    ),
+    strike_roll AS (
+      SELECT
+        e.underlying_symbol AS sym,
+        e.strike,
+        e.option_type,
+        e.expiration::text AS expiration,
+        SUM(e.sweep_volume + e.block_volume + e.regular_volume)::double precision AS strike_vol
+      FROM options_flow_exec_per_strike e
+      INNER JOIN latest l ON l.sym = e.underlying_symbol AND e.date = l.d
+      WHERE e.underlying_symbol IN (${inList})
+      GROUP BY e.underlying_symbol, e.strike, e.option_type, e.expiration
+    ),
+    ranked AS (
+      SELECT
+        sym,
+        strike,
+        option_type,
+        expiration,
+        strike_vol,
+        ROW_NUMBER() OVER (PARTITION BY sym ORDER BY strike_vol DESC, strike ASC, expiration ASC) AS rn
+      FROM strike_roll
+    ),
+    tot AS (
+      SELECT
+        e.underlying_symbol AS sym,
+        SUM(e.sweep_count)::int AS sweeps,
+        SUM(e.block_count)::int AS blocks,
+        SUM(e.sweep_volume + e.block_volume + e.regular_volume)::double precision AS vol
+      FROM options_flow_exec_per_strike e
+      INNER JOIN latest l ON l.sym = e.underlying_symbol AND e.date = l.d
+      WHERE e.underlying_symbol IN (${inList})
+      GROUP BY e.underlying_symbol
+    )
+    SELECT
+      tot.sym,
+      tot.sweeps,
+      tot.blocks,
+      tot.vol,
+      rk.strike AS top_strike,
+      rk.option_type AS top_type,
+      rk.expiration AS top_exp,
+      rk.strike_vol AS top_strike_vol
+    FROM tot
+    LEFT JOIN ranked rk ON rk.sym = tot.sym AND rk.rn = 1
+    WHERE tot.vol > 0
+  `);
+
+  type TopKey = { sym: string; strike: number; exp: string; ot: string };
+  const topKeys: TopKey[] = [];
+
+  for (const row of (rows.rows ?? []) as Record<string, unknown>[]) {
+    const sym = String(row.sym ?? "").toUpperCase();
+    if (!sym) continue;
+    const vol = numOrNull(row.vol) ?? 0;
+    if (vol <= 0) continue;
+    const strike = numOrNull(row.top_strike);
+    const topVol = numOrNull(row.top_strike_vol) ?? 0;
+    const otRaw = String(row.top_type ?? "call");
+    const exp = String(row.top_exp ?? "");
+    let top: ScannerFlowLayer5Wire["top_strike"] = null;
+    let label: string | null = null;
+    if (strike != null && exp.length > 0) {
+      label = formatTopStrikeLabel(strike, otRaw);
+      topKeys.push({ sym, strike, exp, ot: otRaw });
+      top = {
+        strike,
+        option_type: parseOptionType(otRaw),
+        expiration: exp.length >= 10 ? exp.slice(0, 10) : exp,
+        volume_at_strike: Math.round(topVol),
+        open_interest: null,
+      };
+    }
+    const chainOi = chainOiBySym.get(sym) ?? 0;
+    const volumeOverOi =
+      chainOi > 0 && Number.isFinite(vol) ? Math.round((vol / chainOi) * 10_000) / 10_000 : null;
+
+    out.set(sym, {
+      blocks_4h: intOrZero(row.blocks),
+      sweeps_4h: intOrZero(row.sweeps),
+      net_delta_dollar: null,
+      top_strike_label: label,
+      top_strike: top,
+      volume_4h: Math.round(vol),
+      volume_over_oi: volumeOverOi,
+    });
+  }
+
+  if (topKeys.length > 0) {
+    const tupleSql = sql.join(
+      topKeys.map((p) => sql`(${p.sym}::text, ${p.strike}::double precision, ${p.exp}::date, ${p.ot}::text)`),
+      sql`, `,
+    );
+    const oiStrikeRows = await db.execute(sql`
+      WITH latest AS (
+        SELECT underlying_symbol AS sym, MAX(date) AS d
+        FROM options_flow_per_strike
+        WHERE underlying_symbol IN (${inList})
+        GROUP BY underlying_symbol
+      ),
+      wanted(sym, strike, expiration, option_type) AS (VALUES ${tupleSql})
+      SELECT p.underlying_symbol AS sym, p.open_interest AS oi
+      FROM options_flow_per_strike p
+      INNER JOIN latest l ON l.sym = p.underlying_symbol AND p.date = l.d
+      INNER JOIN wanted w
+        ON w.sym = p.underlying_symbol
+        AND w.strike = p.strike
+        AND w.expiration = p.expiration
+        AND w.option_type = p.option_type
+    `);
+    const oiBySym = new Map<string, number | null>();
+    for (const row of (oiStrikeRows.rows ?? []) as Record<string, unknown>[]) {
+      oiBySym.set(String(row.sym ?? "").toUpperCase(), row.oi != null ? intOrZero(row.oi) : null);
+    }
+    for (const sym of Array.from(out.keys())) {
+      const w = out.get(sym);
+      if (!w?.top_strike) continue;
+      const oi = oiBySym.get(sym) ?? null;
+      out.set(sym, { ...w, top_strike: { ...w.top_strike, open_interest: oi } });
+    }
+  }
+
+  return out;
+}
+
+function parseFlowSummaryToWire(flowSummary: unknown): ScannerFlowLayer5Wire | null {
+  if (flowSummary == null || typeof flowSummary !== "object" || Array.isArray(flowSummary)) return null;
+  const f = flowSummary as Record<string, unknown>;
+  const ask = numOrNull(f.ask_notional) ?? 0;
+  const bid = numOrNull(f.bid_notional) ?? 0;
+  const mid = numOrNull(f.mid_notional) ?? 0;
+  const hasNotional = ask > 0 || bid > 0 || mid > 0;
+  const tierRaw = f.tape_coverage_tier ?? f.tape_quality;
+  const tier = typeof tierRaw === "string" ? tierRaw : "";
+  const hasTier = tier !== "" && tier !== "not_run";
+
+  const top = f.top_strike;
+  let topStrike: ScannerFlowLayer5Wire["top_strike"] = null;
+  let label: string | null = null;
+  if (top && typeof top === "object" && !Array.isArray(top)) {
+    const t = top as Record<string, unknown>;
+    const strike = numOrNull(t.strike);
+    if (strike != null && Number.isFinite(strike)) {
+      const otRaw = String(t.type ?? "call");
+      const expRaw = t.expiry != null ? String(t.expiry) : t.expiration != null ? String(t.expiration) : "";
+      const expiration = expRaw.length >= 10 ? expRaw.slice(0, 10) : expRaw;
+      label = formatTopStrikeLabel(strike, otRaw);
+      topStrike = {
+        strike,
+        option_type: parseOptionType(otRaw),
+        expiration,
+        volume_at_strike: 0,
+        open_interest: null,
+      };
+    }
+  }
+
+  if (!label && !hasNotional && !hasTier) return null;
+
+  return {
+    blocks_4h: null,
+    sweeps_4h: null,
+    net_delta_dollar: null,
+    top_strike_label: label,
+    top_strike: topStrike,
+    volume_4h: null,
+    volume_over_oi: null,
+  };
+}
+
+async function fetchTickerSnapshotFlowFallback(uniq: string[]): Promise<Map<string, ScannerFlowLayer5Wire | null>> {
+  const out = new Map<string, ScannerFlowLayer5Wire | null>();
+  for (const s of uniq) out.set(s, null);
+  if (uniq.length === 0) return out;
+
+  const rows = await db
+    .select({
+      ticker: tickerSignalSnapshotTable.ticker,
+      flowSummary: tickerSignalSnapshotTable.flowSummary,
+    })
+    .from(tickerSignalSnapshotTable)
+    .where(inArray(tickerSignalSnapshotTable.ticker, uniq));
+
+  for (const r of rows) {
+    const sym = r.ticker.trim().toUpperCase();
+    const wire = parseFlowSummaryToWire(r.flowSummary);
+    if (wire) out.set(sym, wire);
+  }
+  return out;
+}
+
 /**
- * Per-symbol flow metrics. Returns `null` for symbols with no qualifying prints in the window.
+ * Single rolling cutoff: aggregate `options_flow_raw_trades` + diagnostics for that window.
  */
-export async function fetchScannerFlowContextForSymbols(
-  symbols: string[],
+async function computeScannerFlowForWindow(
+  uniq: string[],
+  cutoffIso: string,
   underlyingPriceBySymbol: ReadonlyMap<string, number | null | undefined>,
-  opts?: { windowMs?: number },
+  diagnosticsWindowMs: number,
 ): Promise<{
   bySymbol: Map<string, ScannerFlowLayer5Wire | null>;
   diagnostics: ScannerFlowContextDiagnostics;
 }> {
-  const windowMs = resolveScannerFlowWindowMs(opts);
-  const uniq = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
   const out = new Map<string, ScannerFlowLayer5Wire | null>();
   for (const s of uniq) out.set(s, null);
 
@@ -109,16 +345,14 @@ export async function fetchScannerFlowContextForSymbols(
     return {
       bySymbol: out,
       diagnostics: {
-        window_ms: windowMs,
-        cutoff_iso: new Date(Date.now() - windowMs).toISOString(),
+        window_ms: diagnosticsWindowMs,
+        cutoff_iso: cutoffIso,
         rows_in_window: 0,
         max_trade_ts_in_window: null,
       },
     };
   }
 
-  const cutoff = new Date(Date.now() - windowMs);
-  const cutoffIso = cutoff.toISOString();
   const inList = sql.join(uniq.map((s) => sql`${s}`), sql`, `);
 
   const [aggRows, topRows, oiRows, windowDiagRows] = await Promise.all([
@@ -189,7 +423,7 @@ export async function fetchScannerFlowContextForSymbols(
   const diagRow = (windowDiagRows.rows ?? [])[0] as Record<string, unknown> | undefined;
   const maxTsRaw = diagRow?.max_trade_ts_in_window;
   const diagnostics: ScannerFlowContextDiagnostics = {
-    window_ms: windowMs,
+    window_ms: diagnosticsWindowMs,
     cutoff_iso: cutoffIso,
     rows_in_window: intOrZero(diagRow?.rows_in_window),
     max_trade_ts_in_window:
@@ -364,6 +598,70 @@ export async function fetchScannerFlowContextForSymbols(
     };
 
     out.set(sym, wire);
+  }
+
+  return { bySymbol: out, diagnostics };
+}
+
+export async function fetchScannerFlowContextForSymbols(
+  symbols: string[],
+  underlyingPriceBySymbol: ReadonlyMap<string, number | null | undefined>,
+  opts?: { windowMs?: number },
+): Promise<{
+  bySymbol: Map<string, ScannerFlowLayer5Wire | null>;
+  diagnostics: ScannerFlowContextDiagnostics;
+}> {
+  const windowMs = resolveScannerFlowWindowMs(opts);
+  const uniq = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
+  const emptyOut = new Map<string, ScannerFlowLayer5Wire | null>();
+  for (const s of uniq) emptyOut.set(s, null);
+
+  if (uniq.length === 0) {
+    return {
+      bySymbol: emptyOut,
+      diagnostics: {
+        window_ms: windowMs,
+        cutoff_iso: new Date(Date.now() - windowMs).toISOString(),
+        rows_in_window: 0,
+        max_trade_ts_in_window: null,
+      },
+    };
+  }
+
+  const cutoffIsoPrimary = new Date(Date.now() - windowMs).toISOString();
+  const primary = await computeScannerFlowForWindow(uniq, cutoffIsoPrimary, underlyingPriceBySymbol, windowMs);
+  const out = primary.bySymbol;
+  const diagnostics = primary.diagnostics;
+
+  if (windowMs <= SCANNER_FLOW_DEFAULT_WINDOW_MS) {
+    const missing24 = uniq.filter((s) => out.get(s) == null);
+    if (missing24.length > 0) {
+      const fbIso = new Date(Date.now() - FALLBACK_WHEN_PRIMARY_EMPTY_MS).toISOString();
+      const fb = await computeScannerFlowForWindow(missing24, fbIso, underlyingPriceBySymbol, windowMs);
+      for (const s of missing24) {
+        const w = fb.bySymbol.get(s);
+        if (w != null) out.set(s, w);
+      }
+    }
+  }
+
+  let missing = uniq.filter((s) => out.get(s) == null);
+  if (missing.length > 0) {
+    const chainOi = await fetchChainOiBySymbols(missing);
+    const sessionMap = await fetchExecPerStrikeSessionRollup(missing, chainOi);
+    for (const s of missing) {
+      const w = sessionMap.get(s);
+      if (w != null) out.set(s, w);
+    }
+  }
+
+  missing = uniq.filter((s) => out.get(s) == null);
+  if (missing.length > 0) {
+    const snapMap = await fetchTickerSnapshotFlowFallback(missing);
+    for (const s of missing) {
+      const w = snapMap.get(s);
+      if (w != null) out.set(s, w);
+    }
   }
 
   return { bySymbol: out, diagnostics };

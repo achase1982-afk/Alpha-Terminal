@@ -214,73 +214,13 @@ export function useUnifiedScan(): UseUnifiedScanState {
           ? layer1.universe
           : scannerV3UniverseQueryFromSelection(_universeId);
       const cards = Array.isArray(layer1.cards) ? layer1.cards : undefined;
-      const schwab_access_token_present =
-        typeof layer1.schwab_access_token_present === "boolean"
-          ? layer1.schwab_access_token_present
-          : undefined;
-      const layer2_quote_hits =
-        typeof layer1.layer2_quote_hits === "number" && Number.isFinite(layer1.layer2_quote_hits)
-          ? layer1.layer2_quote_hits
-          : undefined;
       setLayer1Universe({
+        ...layer1,
         tickers,
         scan_at,
         count,
         universe: universeEcho,
         cards,
-        schwab_access_token_present,
-        layer2_quote_hits,
-        layer3_iv30_hits:
-          typeof layer1.layer3_iv30_hits === "number" && Number.isFinite(layer1.layer3_iv30_hits)
-            ? layer1.layer3_iv30_hits
-            : undefined,
-        layer3_hv30_hits:
-          typeof layer1.layer3_hv30_hits === "number" && Number.isFinite(layer1.layer3_hv30_hits)
-            ? layer1.layer3_hv30_hits
-            : undefined,
-        layer3_ivr_hits:
-          typeof layer1.layer3_ivr_hits === "number" && Number.isFinite(layer1.layer3_ivr_hits)
-            ? layer1.layer3_ivr_hits
-            : undefined,
-        layer4_earnings_hits:
-          typeof layer1.layer4_earnings_hits === "number" && Number.isFinite(layer1.layer4_earnings_hits)
-            ? layer1.layer4_earnings_hits
-            : undefined,
-        layer4_ex_div_hits:
-          typeof layer1.layer4_ex_div_hits === "number" && Number.isFinite(layer1.layer4_ex_div_hits)
-            ? layer1.layer4_ex_div_hits
-            : undefined,
-        layer4_reactions_hits:
-          typeof layer1.layer4_reactions_hits === "number" && Number.isFinite(layer1.layer4_reactions_hits)
-            ? layer1.layer4_reactions_hits
-            : undefined,
-        layer5_flow_hits:
-          typeof layer1.layer5_flow_hits === "number" && Number.isFinite(layer1.layer5_flow_hits)
-            ? layer1.layer5_flow_hits
-            : undefined,
-        layer5_flow_window_ms:
-          typeof layer1.layer5_flow_window_ms === "number" && Number.isFinite(layer1.layer5_flow_window_ms)
-            ? layer1.layer5_flow_window_ms
-            : undefined,
-        layer5_flow_cutoff_iso:
-          typeof layer1.layer5_flow_cutoff_iso === "string" && layer1.layer5_flow_cutoff_iso.length > 0
-            ? layer1.layer5_flow_cutoff_iso
-            : undefined,
-        layer5_flow_rows_in_window:
-          typeof layer1.layer5_flow_rows_in_window === "number" && Number.isFinite(layer1.layer5_flow_rows_in_window)
-            ? layer1.layer5_flow_rows_in_window
-            : undefined,
-        layer5_flow_max_trade_ts_in_window:
-          layer1.layer5_flow_max_trade_ts_in_window === null
-            ? null
-            : typeof layer1.layer5_flow_max_trade_ts_in_window === "string" &&
-                layer1.layer5_flow_max_trade_ts_in_window.length > 0
-              ? layer1.layer5_flow_max_trade_ts_in_window
-              : undefined,
-        layer6_technical_hits:
-          typeof layer1.layer6_technical_hits === "number" && Number.isFinite(layer1.layer6_technical_hits)
-            ? layer1.layer6_technical_hits
-            : undefined,
       });
 
       const params = new URLSearchParams({
