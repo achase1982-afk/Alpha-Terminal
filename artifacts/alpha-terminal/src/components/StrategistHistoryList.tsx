@@ -154,9 +154,18 @@ export function StrategistHistoryList({ onSendToOrder, onReopenValidatedOrder, e
                 if (dr?.mode === "conviction_desk") {
                   const c = dr.conviction;
                   if (!c) return "Conviction: incomplete";
-                  const hasTrade = c.decision.chosen != null && c.size !== "no-trade";
-                  return hasTrade
-                    ? `Conviction: ${String(c.decision.chosen?.structure ?? "Trade").replace(/_/g, " ")}`
+                  const pm = (c as { pm?: { decision?: string; structure?: { type?: string } | null } }).pm;
+                  if (pm && typeof pm === "object") {
+                    const hasTrade = pm.decision === "trade" && pm.structure != null;
+                    return hasTrade
+                      ? `Conviction: ${String(pm.structure?.type ?? "Trade").replace(/_/g, " ")}`
+                      : "Conviction: no trade";
+                  }
+                  const legacyChosen = (c as { decision?: { chosen?: { structure?: string } | null } | null }).decision?.chosen;
+                  const legacySize = (c as { size?: string }).size;
+                  const legacyHasTrade = legacyChosen != null && legacySize !== "no-trade";
+                  return legacyHasTrade
+                    ? `Conviction: ${String(legacyChosen?.structure ?? "Trade").replace(/_/g, " ")}`
                     : "Conviction: no trade";
                 }
                 return `Desk: ${dr.pm.decision === "trade" ? dr.pm.structure?.type?.replace(/_/g, " ") ?? "Trade" : "Pass"}`;
