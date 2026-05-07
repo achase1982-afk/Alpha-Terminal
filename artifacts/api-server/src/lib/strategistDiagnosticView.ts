@@ -353,16 +353,19 @@ export function buildStrategistDiagnosticView(fullPayload: StrategistFullPayload
 
   if (deskResult.mode === "conviction_desk") {
     const conv = (deskResult as ConvictionDeskResult).conviction;
-    thesis = conv?.view?.paragraph ?? "";
     edgeCheck = "";
-    biggestRisk = conv?.failure_scenario?.steelman ?? "";
     watchFor = "";
-    if (conv && (conv.size === "medium" || conv.size === "large" || conv.size === "no-trade")) {
-      sizeDiag = conv.size;
-    } else {
-      sizeDiag = "small";
-    }
     whoseSide = "neither";
+    if (!conv) {
+      thesis = "";
+      biggestRisk = "";
+      sizeDiag = "small";
+    } else {
+      thesis = conv.view.paragraph ?? "";
+      biggestRisk = conv.failure_scenario.steelman ?? "";
+      sizeDiag =
+        conv.size === "medium" || conv.size === "large" || conv.size === "no-trade" ? conv.size : "small";
+    }
   } else {
     const pm = deskResult.pm;
     const edgeRaw = pm.edge_check ?? "";
