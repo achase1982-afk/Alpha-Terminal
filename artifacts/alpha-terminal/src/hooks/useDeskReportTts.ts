@@ -6,6 +6,8 @@ import { STRATEGIST_ANALYSIS_CANCEL_EVENT, STRATEGIST_ANALYSIS_START_EVENT } fro
 
 const SESSION_RATE_KEY = "strategistDeskSpeechRate";
 
+const EMPTY_DESK_REPORT_TTS_VOICE_CONFIG: Record<string, unknown> = {};
+
 /** Skip / rewind step in the desk audio bar (seconds within the current segment). */
 export const DESK_AUDIO_SKIP_SECONDS = 15;
 
@@ -41,7 +43,13 @@ export function useDeskReportTts(args: {
   onPause: () => void;
   onAudioElementError: () => void;
 } {
-  const { deskAudioText, deskResultId, voiceConfig = {}, resetDependency, containerRef } = args;
+  const {
+    deskAudioText,
+    deskResultId,
+    voiceConfig = EMPTY_DESK_REPORT_TTS_VOICE_CONFIG,
+    resetDependency,
+    containerRef,
+  } = args;
 
   const deskAudioChunks = useMemo(() => splitDeskAudioTextIntoChunks(deskAudioText), [deskAudioText]);
 
