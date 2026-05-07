@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } fr
 import { createPortal } from "react-dom";
 import { useTerminalStore, type StrategistValidationMeta, type StrategistTranscriptTurn } from "@/lib/store";
 import { isDeskStrategistTranscript } from "@/lib/strategistTranscriptDesk";
+import { strategistTuningModeHeaderLabel } from "@/lib/strategistModeLabels";
 import { StrategistValidationCard } from "@/components/StrategistValidationCard";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import {
@@ -1642,14 +1643,22 @@ function DebateTranscript({
   isStreaming,
   defaultCollapsed = false,
   title = "Bull · Bear Debate",
+  strategistTuningMode = null,
 }: {
   transcript: import("@/lib/store").StrategistTranscriptTurn[];
   isStreaming: boolean;
   defaultCollapsed?: boolean;
   title?: string;
+  /** When set (1–5), AI-brain header follows Strategist settings instead of inferring from transcript rows. */
+  strategistTuningMode?: number | null;
 }) {
   const isDesk = useMemo(() => isDeskStrategistTranscript(transcript), [transcript]);
-  const headerTitle = isDesk ? "DESK MODE" : title;
+  const headerTitle =
+    strategistTuningMode != null && strategistTuningMode >= 1 && strategistTuningMode <= 5
+      ? strategistTuningModeHeaderLabel(strategistTuningMode)
+      : isDesk
+        ? "DESK MODE"
+        : title;
 
   const groups = useMemo(() => {
     const m = new Map<1 | 2 | 3 | "synthesis" | "solo" | "desk", StrategistTranscriptTurn[]>();
@@ -1829,12 +1838,8 @@ function DebateTranscript({
           className="flex items-center gap-2 flex-1 min-w-0 text-left"
           aria-label={
             collapsed
-              ? isDesk
-                ? "Expand desk transcript"
-                : "Expand debate transcript"
-              : isDesk
-                ? "Collapse desk transcript"
-                : "Collapse debate transcript"
+              ? `Expand ${headerTitle} transcript`
+              : `Collapse ${headerTitle} transcript`
           }
         >
           <span className="font-mono text-[11px] text-[#FFB800] leading-none">
@@ -2608,6 +2613,8 @@ function AiIntelligenceTabInner({
   onStrategistDeepLinkHandled,
 }: AiIntelligenceTabProps) {
   const [strategistMode, setStrategistMode] = useState<StrategistMode>("options");
+  /** Server `strategistMode` (1–5); drives AI-brain chrome independently of stale transcript rows. */
+  const [strategistTuningMode, setStrategistTuningMode] = useState<number | null>(null);
   const {
     symbol, setSymbol, accessToken,
     aiFeatureSettings,
@@ -2766,6 +2773,18 @@ function AiIntelligenceTabInner({
     }
   }, [setStrategistHistoryStore]);
 
+  const refreshStrategistTuningMode = useCallback(async () => {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/strategist/settings`);
+      if (!res.ok) return;
+      const json = (await res.json()) as { current?: Record<string, number> };
+      const m = json.current?.strategistMode;
+      if (typeof m === "number" && m >= 1 && m <= 5) setStrategistTuningMode(m);
+    } catch {
+      /* best-effort */
+    }
+  }, []);
+
   const pushHydrateHandledRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -2812,8 +2831,20 @@ function AiIntelligenceTabInner({
     if (subTab === "strategist") {
       markStrategistJobsViewed();
       void refreshHistory();
+      void refreshStrategistTuningMode();
     }
-  }, [subTab, markStrategistJobsViewed, refreshHistory]);
+  }, [subTab, markStrategistJobsViewed, refreshHistory, refreshStrategistTuningMode]);
+
+  useEffect(() => {
+    if (subTab !== "strategist") return;
+    const onTuningModeChanged = (ev: Event) => {
+      const m = (ev as CustomEvent<{ mode?: number }>).detail?.mode;
+      if (typeof m === "number" && m >= 1 && m <= 5) setStrategistTuningMode(m);
+      else void refreshStrategistTuningMode();
+    };
+    window.addEventListener("strategistTuningModeChanged", onTuningModeChanged as EventListener);
+    return () => window.removeEventListener("strategistTuningModeChanged", onTuningModeChanged as EventListener);
+  }, [subTab, refreshStrategistTuningMode]);
 
   // Keep the pipeline status in sync with whether a job is actually running.
   // This restores the "Analyzing..." indicator when the user navigates back
@@ -3588,7 +3619,11 @@ function AiIntelligenceTabInner({
                   </div>
                 )}
                 {v2Transcript.length > 0 ? (
-                  <DebateTranscript transcript={v2Transcript} isStreaming={isV2Running} />
+                  <DebateTranscript
+                    transcript={v2Transcript}
+                    isStreaming={isV2Running}
+                    strategistTuningMode={strategistTuningMode}
+                  />
                 ) : (
                   <AiThinkingFeed texts={v2ThinkingTokens} isStreaming={isV2Running} />
                 )}
