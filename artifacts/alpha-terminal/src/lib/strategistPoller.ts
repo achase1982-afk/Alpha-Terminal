@@ -1,6 +1,7 @@
 import { useTerminalStore, type StrategistTranscriptTurn, type StrategistValidationMeta } from "./store";
 import { fetchWithAuth } from "./fetchWithAuth";
 import { toast } from "sonner";
+import { deskRecommendationHasTrade, deskTradeStructureSentenceCase } from "./strategistDeskResult";
 
 const API_BASE = "/api";
 
@@ -168,14 +169,26 @@ function maybeToastForegroundRecovery(jobId: string) {
         description: verdict ? verdict.replace(/_/g, " ") : undefined,
       });
     } else {
-      const status = (j.result as { status?: string } | null)?.status;
+      const raw = j.result as { status?: string; deskResult?: import("@/lib/strategistDeskResult").DeskResult | null } | null;
+      const status = raw?.status;
+      let description: string;
+      if (status === "recommendation") {
+        description = "Analysis finished — open the Strategist tab for the card.";
+      } else if (status === "ivr_populating") {
+        description = "IVR still loading — open the Strategist tab.";
+      } else if (status === "desk_recommendation" && raw) {
+        const hasTrade = deskRecommendationHasTrade(raw);
+        const label = hasTrade ? deskTradeStructureSentenceCase(raw) : null;
+        description = hasTrade
+          ? label
+            ? `${label} trade ready — open the Strategist tab for details.`
+            : "Trade recommendation ready — open the Strategist tab for details."
+          : "Analysis finished with no trade — open the Strategist tab for details.";
+      } else {
+        description = "Analysis finished.";
+      }
       toast.success(`Strategist — ${ticker}`, {
-        description:
-          status === "recommendation"
-            ? "Analysis finished — open the Strategist tab for the card."
-            : status === "ivr_populating"
-              ? "IVR still loading — open the Strategist tab."
-              : "Analysis finished.",
+        description,
       });
     }
   } else if (j.status === "error") {

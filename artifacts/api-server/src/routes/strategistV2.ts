@@ -27,7 +27,7 @@ import {
   getLatestIvrBackfillJobForSymbol,
   type IvrCoverageResult,
 } from "../lib/onDemandIvrBackfill.js";
-import { notifyStrategistCompletion } from "../lib/strategistNotifications.js";
+import { buildStrategistAnalyzeCompletionPush, notifyStrategistCompletion } from "../lib/strategistNotifications.js";
 import { sendPushToAll } from "../lib/pushService.js";
 import {
   markStrategistAnalyzeCancelled,
@@ -532,22 +532,17 @@ router.post("/analyze", async (req, res): Promise<void> => {
                 { jobId, ticker: upperTicker, getFinalResultStatus: verify.resultStatus },
                 "StrategistV2: persisted analysis verified readable; dispatching strategist push",
               );
+              const completionPush = buildStrategistAnalyzeCompletionPush(result, upperTicker);
               notifyStrategistCompletion({
                 jobId,
                 ticker: upperTicker,
-                kind: result.status === "recommendation" ? "ready" : "failed",
-                message: result.status === "recommendation"
-                  ? `Strategist ready for ${upperTicker}`
-                  : `Strategist failed for ${upperTicker}`,
+                kind: completionPush.notifyKind,
+                message: completionPush.notifyMessage,
                 resultStatus: result.status,
               });
               void sendPushToAll({
-                title: result.status === "recommendation"
-                  ? `Strategist ready — ${upperTicker}`
-                  : `Strategist — ${upperTicker}`,
-                body: result.status === "recommendation"
-                  ? "Analysis finished. Open the app to view the card."
-                  : "Analysis finished with no trade. Open the app for details.",
+                title: completionPush.pushTitle,
+                body: completionPush.pushBody,
                 tag: `strategist-${jobId}`,
                 data: { type: "strategist", jobId, ticker: upperTicker, kind: "analyze" as const },
               });
