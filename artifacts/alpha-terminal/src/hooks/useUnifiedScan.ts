@@ -4,6 +4,20 @@ import type { UnifiedScanCandidate } from "@/lib/unifiedScanTypes";
 
 const API_BASE = "/api";
 
+/** Avoid hung scanner UI if Clerk session token never resolves (matches desk TTS / audio paths). */
+const SCAN_CLERK_TOKEN_MS = 8_000;
+/** Per HTTP leg — v3 universe can be DB + Schwab heavy; v2 scan reads snapshot. */
+const SCAN_FETCH_TIMEOUT_MS = 90_000;
+
+function abortAfter(ms: number): { signal: AbortSignal; clear: () => void } {
+  const c = new AbortController();
+  const tid = setTimeout(() => c.abort(), ms);
+  return {
+    signal: c.signal,
+    clear: () => clearTimeout(tid),
+  };
+}
+
 /** Maps dropdown preset keys to the `universe` query value for GET /api/scanner/v3/universe. */
 const PRESET_KEY_TO_V3_UNIVERSE_QUERY: Record<string, string> = {
   liquidCore130: "liquid-core-130",
@@ -187,9 +201,17 @@ export function useUnifiedScan(): UseUnifiedScanState {
     setLayer1Universe(null);
     try {
       const v3UniverseParam = encodeURIComponent(scannerV3UniverseQueryFromSelection(_universeId));
-      const v3Res = await fetchWithAuth(`${API_BASE}/scanner/v3/universe?universe=${v3UniverseParam}`, {
-        method: "GET",
-      });
+      const v3Timer = abortAfter(SCAN_FETCH_TIMEOUT_MS);
+      let v3Res: Response;
+      try {
+        v3Res = await fetchWithAuth(`${API_BASE}/scanner/v3/universe?universe=${v3UniverseParam}`, {
+          method: "GET",
+          signal: v3Timer.signal,
+          clerkTokenTimeoutMs: SCAN_CLERK_TOKEN_MS,
+        });
+      } finally {
+        v3Timer.clear();
+      }
       if (v3Res.status === 401) {
         setPhase("error");
         setErrorMessage("Unauthorized — sign in again.");
@@ -228,7 +250,17 @@ export function useUnifiedScan(): UseUnifiedScanState {
         limit: "25",
         minScore: "0",
       });
-      const res = await fetchWithAuth(`${API_BASE}/v2/scan?${params.toString()}`, { method: "GET" });
+      const v2Timer = abortAfter(SCAN_FETCH_TIMEOUT_MS);
+      let res: Response;
+      try {
+        res = await fetchWithAuth(`${API_BASE}/v2/scan?${params.toString()}`, {
+          method: "GET",
+          signal: v2Timer.signal,
+          clerkTokenTimeoutMs: SCAN_CLERK_TOKEN_MS,
+        });
+      } finally {
+        v2Timer.clear();
+      }
       if (res.status === 401) {
         setPhase("error");
         setErrorMessage("Unauthorized — sign in again.");
@@ -270,9 +302,14 @@ export function useUnifiedScan(): UseUnifiedScanState {
       setStale(typeof staleFlag === "boolean" ? staleFlag : null);
       setScanAt(typeof data.scan_at === "string" ? data.scan_at : new Date().toISOString());
       setPhase("complete");
-    } catch {
+    } catch (e) {
+      const aborted = e instanceof DOMException && e.name === "AbortError";
       setPhase("error");
-      setErrorMessage("Network error. Check connection and try again.");
+      setErrorMessage(
+        aborted
+          ? "Scanner request timed out. The server may be slow or unavailable — try again in a moment."
+          : "Network error. Check connection and try again.",
+      );
     }
   }, []);
 

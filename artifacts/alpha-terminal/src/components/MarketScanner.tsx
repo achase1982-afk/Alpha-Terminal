@@ -597,8 +597,10 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
           <div className="flex items-center gap-3">
             <Loader2 className="w-8 h-8 text-[#FFB800] animate-spin shrink-0" />
             <div className="min-w-0">
-              <p className="text-sm font-bold text-zinc-200">Loading candidates...</p>
-              <p className="text-[11px] text-zinc-500 mt-1">Reading precomputed snapshot for this universe.</p>
+              <p className="text-sm font-bold text-zinc-200">Loading scanner…</p>
+              <p className="text-[11px] text-zinc-500 mt-1">
+                Fetching universe cards (quotes, flow, technicals), then ranked candidates from the snapshot.
+              </p>
             </div>
           </div>
         </div>
