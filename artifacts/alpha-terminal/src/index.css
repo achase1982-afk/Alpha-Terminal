@@ -293,11 +293,19 @@
   padding-top: 0px;
 }
 
-.ui-reduced-motion *,
-.ui-reduced-motion *::before,
-.ui-reduced-motion *::after {
-  animation-duration: 0.01ms !important;
-  animation-iteration-count: 1 !important;
-  transition-duration: 0.01ms !important;
-  scroll-behavior: auto !important;
+/* Telemetry copy: native <dialog> — top layer, works when portaled z-index does not */
+dialog.telemetry-copy-dialog {
+  margin: auto;
+  max-height: min(88vh, 720px);
+  width: min(calc(100vw - 1.5rem), 32rem);
+  padding: 1rem;
+  border: 1px solid #52525b;
+  border-radius: 0.5rem;
+  background: #0c0c0c;
+  color: #f4f4f5;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+dialog.telemetry-copy-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.8);
 }

@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { createPortal } from "react-dom";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { ChevronDown, ChevronUp, Activity, Search as SearchIcon, Copy, Check } from "lucide-react";
+import { ChevronDown, ChevronUp, Activity, Search as SearchIcon, Copy } from "lucide-react";
 import { toast } from "sonner";
 import {
   buildSectionedCopyPayload,
@@ -10,7 +9,6 @@ import {
   parseDataPackageRecord,
   type CopySectionId,
 } from "@/lib/strategistTelemetryCopyPayload";
-import { TELEMETRY_COPY_LAYER_Z } from "@/lib/telemetryCopyLayer";
 
 interface TelemetryRow {
   id: number;
@@ -120,58 +118,178 @@ async function writeClipboard(text: string): Promise<boolean> {
   }
 }
 
-/** Single `document.body` portal — no Popover/Vaul nesting inside Telemetry scroll areas. */
-function TelemetryCopyModal({
-  open,
+function emptyChecked(): Record<CopySectionId, boolean> {
+  return Object.fromEntries(COPY_SECTIONS.map((s) => [s.id, false])) as Record<CopySectionId, boolean>;
+}
+
+function readStoredCopySelection(): Record<CopySectionId, boolean> | null {
+  try {
+    const raw = sessionStorage.getItem(COPY_SECTIONS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    const next = emptyChecked();
+    for (const id of parsed) {
+      if (typeof id === "string" && id in next) next[id as CopySectionId] = true;
+    }
+    return next;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Native `<dialog>` + `showModal()` renders in the browser top layer (above every z-index stack).
+ * One dialog for the whole panel; `row` selects which trade is being copied.
+ */
+function TelemetryCopySectionsDialog({
+  row,
   onClose,
-  title,
-  children,
 }: {
-  open: boolean;
+  row: TelemetryRow | null;
   onClose: () => void;
-  title: string;
-  children: React.ReactNode;
 }) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const selectAllRef = useRef<HTMLInputElement>(null);
+  const [checked, setChecked] = useState<Record<CopySectionId, boolean>>(emptyChecked);
+
+  const isOpen = row !== null;
 
   useEffect(() => {
-    if (!open || typeof document === "undefined") return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [open]);
+    const el = dialogRef.current;
+    if (!el) return;
+    if (isOpen) {
+      const stored = readStoredCopySelection();
+      setChecked(stored ?? emptyChecked());
+      if (!el.open) el.showModal();
+    } else if (el.open) {
+      el.close();
+    }
+  }, [isOpen]);
 
-  if (!open || typeof document === "undefined") return null;
+  useEffect(() => {
+    if (!isOpen) return;
+    const id = window.requestAnimationFrame(() => selectAllRef.current?.focus());
+    return () => window.cancelAnimationFrame(id);
+  }, [isOpen]);
 
-  return createPortal(
-    <div
-      className="fixed inset-0 flex items-center justify-center p-3 sm:p-4"
-      style={{ zIndex: TELEMETRY_COPY_LAYER_Z }}
+  const allSelected = COPY_SECTIONS.every((s) => checked[s.id]);
+  const noneSelected = COPY_SECTIONS.every((s) => !checked[s.id]);
+
+  useEffect(() => {
+    const el = selectAllRef.current;
+    if (el) el.indeterminate = !allSelected && !noneSelected;
+  }, [allSelected, noneSelected]);
+
+  const toggleSelectAll = useCallback(() => {
+    const nextVal = !allSelected;
+    setChecked(Object.fromEntries(COPY_SECTIONS.map((s) => [s.id, nextVal])) as Record<CopySectionId, boolean>);
+  }, [allSelected]);
+
+  const toggleOne = useCallback((id: CopySectionId) => {
+    setChecked((prev) => ({ ...prev, [id]: !prev[id] }));
+  }, []);
+
+  const onCopySelected = useCallback(async () => {
+    if (!row) return;
+    const ids = COPY_SECTIONS.filter((s) => checked[s.id]).map((s) => s.id);
+    if (ids.length === 0) {
+      toast.message("Select at least one section");
+      return;
+    }
+    const payload = buildSectionedCopyPayload(row, new Set(ids));
+    const text = JSON.stringify(payload, null, 2);
+    const ok = await writeClipboard(text);
+    if (ok) {
+      try {
+        sessionStorage.setItem(COPY_SECTIONS_STORAGE_KEY, JSON.stringify(ids));
+      } catch {
+        /* ignore */
+      }
+      toast.message(`Copied ${ids.length} section${ids.length === 1 ? "" : "s"}`);
+      onClose();
+    }
+  }, [row, checked, onClose]);
+
+  const onExportFull = useCallback(
+    async (e: React.MouseEvent) => {
+      e.preventDefault();
+      if (!row) return;
+      const payload = { id: row.id, timestamp: row.timestamp, ticker: row.ticker, result: row.result, fullRow: row };
+      const text = JSON.stringify(payload);
+      const ok = await writeClipboard(text);
+      if (ok) {
+        toast.message("Copied full row");
+        onClose();
+      }
+    },
+    [row, onClose],
+  );
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="telemetry-copy-dialog"
+      data-telemetry-copy-native-dialog="1"
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
-      <button type="button" className="absolute inset-0 bg-black/80" aria-label="Close" onClick={onClose} />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="telemetry-copy-modal-title"
-        className="relative z-[1] flex max-h-[min(88vh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-zinc-600 bg-[#0c0c0c] p-4 text-zinc-100 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 id="telemetry-copy-modal-title" className="mb-3 font-mono text-sm font-bold uppercase tracking-wider text-zinc-300">
-          {title}
-        </h2>
-        <div className="min-h-0 flex flex-1 flex-col overflow-hidden">{children}</div>
-      </div>
-    </div>,
-    document.body,
+      {row ? (
+        <div className="flex max-h-[min(85vh,680px)] flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          <p className="mb-3 font-mono text-[11px] uppercase tracking-wider text-zinc-500">
+            {row.ticker} · Copy sections
+          </p>
+          <label className="mb-2 flex cursor-pointer items-center gap-2 border-b border-zinc-800 py-2">
+            <input
+              ref={selectAllRef}
+              type="checkbox"
+              className="rounded border-zinc-600"
+              checked={allSelected}
+              onChange={toggleSelectAll}
+            />
+            <span className="font-mono text-xs">Select all</span>
+          </label>
+          <div className="max-h-60 min-h-0 overflow-y-auto overscroll-contain py-1 sm:max-h-72">
+            <ul className="space-y-1">
+              {COPY_SECTIONS.map((s) => (
+                <li key={s.id}>
+                  <label className="-mx-1 flex cursor-pointer items-start gap-2 rounded px-1 py-1 hover:bg-zinc-900/80">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 shrink-0 rounded border-zinc-600"
+                      checked={checked[s.id]}
+                      onChange={() => toggleOne(s.id)}
+                    />
+                    <span className="font-mono text-[12px] leading-snug text-zinc-200">{s.label}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="mt-3 shrink-0 border-t border-zinc-800 pt-3">
+            <button
+              type="button"
+              onClick={onCopySelected}
+              className="mb-2 w-full rounded-md bg-zinc-100 py-2 font-mono text-xs font-bold text-zinc-900 hover:bg-white"
+            >
+              Copy selected
+            </button>
+            <button
+              type="button"
+              onClick={onExportFull}
+              className="w-full py-1 text-center font-mono text-[11px] text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+            >
+              Export full row
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </dialog>
   );
 }
 
@@ -184,6 +302,7 @@ export function StrategistTelemetryPanel() {
   const [tickerFilter, setTickerFilter] = useState("");
   const [resultFilter, setResultFilter] = useState<string>("");
   const [ibkrTickLine, setIbkrTickLine] = useState<string | null>(null);
+  const [copyDialogRow, setCopyDialogRow] = useState<TelemetryRow | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -322,7 +441,18 @@ export function StrategistTelemetryPanel() {
                   )}
                 </button>
                 <div className="flex shrink-0 items-center gap-2 py-1">
-                  <TelemetryEntryCopyButton row={row} />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCopyDialogRow(row);
+                    }}
+                    aria-label="Copy telemetry sections"
+                    className="inline-flex shrink-0 items-center justify-center rounded-md border border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-white"
+                    style={{ minWidth: 44, minHeight: 44 }}
+                  >
+                    <Copy className="h-4 w-4" aria-hidden />
+                  </button>
                   <span className="font-mono text-[12px] text-zinc-400">{fmtDt(row.timestamp)}</span>
                   <button
                     type="button"
@@ -420,177 +550,8 @@ export function StrategistTelemetryPanel() {
           ))}
         </div>
       )}
+      <TelemetryCopySectionsDialog row={copyDialogRow} onClose={() => setCopyDialogRow(null)} />
     </div>
-  );
-}
-
-function emptyChecked(): Record<CopySectionId, boolean> {
-  return Object.fromEntries(COPY_SECTIONS.map((s) => [s.id, false])) as Record<CopySectionId, boolean>;
-}
-
-function readStoredCopySelection(): Record<CopySectionId, boolean> | null {
-  try {
-    const raw = sessionStorage.getItem(COPY_SECTIONS_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return null;
-    const next = emptyChecked();
-    for (const id of parsed) {
-      if (typeof id === "string" && id in next) next[id as CopySectionId] = true;
-    }
-    return next;
-  } catch {
-    return null;
-  }
-}
-
-function TelemetryEntryCopyButton({ row }: { row: TelemetryRow }) {
-  const [open, setOpen] = useState(false);
-  const [checked, setChecked] = useState<Record<CopySectionId, boolean>>(emptyChecked);
-  const [justCopiedIcon, setJustCopiedIcon] = useState(false);
-  const selectAllRef = useRef<HTMLInputElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-
-  const close = useCallback(() => {
-    setOpen(false);
-    window.requestAnimationFrame(() => triggerRef.current?.focus());
-  }, []);
-
-  const openModal = useCallback(() => {
-    setOpen(true);
-    const stored = readStoredCopySelection();
-    setChecked(stored ?? emptyChecked());
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    const id = window.requestAnimationFrame(() => selectAllRef.current?.focus());
-    return () => window.cancelAnimationFrame(id);
-  }, [open]);
-
-  const allSelected = COPY_SECTIONS.every((s) => checked[s.id]);
-  const noneSelected = COPY_SECTIONS.every((s) => !checked[s.id]);
-
-  const toggleSelectAll = useCallback(() => {
-    const nextVal = !allSelected;
-    setChecked(Object.fromEntries(COPY_SECTIONS.map((s) => [s.id, nextVal])) as Record<CopySectionId, boolean>);
-  }, [allSelected]);
-
-  const toggleOne = useCallback((id: CopySectionId) => {
-    setChecked((prev) => ({ ...prev, [id]: !prev[id] }));
-  }, []);
-
-  useEffect(() => {
-    const el = selectAllRef.current;
-    if (el) el.indeterminate = !allSelected && !noneSelected;
-  }, [allSelected, noneSelected]);
-
-  const flashCopied = useCallback(() => {
-    setJustCopiedIcon(true);
-    window.setTimeout(() => setJustCopiedIcon(false), 2000);
-  }, []);
-
-  const onCopySelected = useCallback(async () => {
-    const ids = COPY_SECTIONS.filter((s) => checked[s.id]).map((s) => s.id);
-    if (ids.length === 0) {
-      toast.message("Select at least one section");
-      return;
-    }
-    const payload = buildSectionedCopyPayload(row, new Set(ids));
-    const text = JSON.stringify(payload, null, 2);
-    const ok = await writeClipboard(text);
-    if (ok) {
-      try {
-        sessionStorage.setItem(COPY_SECTIONS_STORAGE_KEY, JSON.stringify(ids));
-      } catch {
-        /* ignore */
-      }
-      toast.message(`Copied ${ids.length} section${ids.length === 1 ? "" : "s"}`);
-      close();
-      flashCopied();
-    }
-  }, [row, checked, close, flashCopied]);
-
-  const onExportFull = useCallback(
-    async (e: React.MouseEvent) => {
-      e.preventDefault();
-      const payload = { id: row.id, timestamp: row.timestamp, ticker: row.ticker, result: row.result, fullRow: row };
-      const text = JSON.stringify(payload);
-      const ok = await writeClipboard(text);
-      if (ok) {
-        toast.message("Copied full row");
-        close();
-        flashCopied();
-      }
-    },
-    [row, close, flashCopied],
-  );
-
-  return (
-    <>
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          openModal();
-        }}
-        aria-label="Copy telemetry sections"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        className="inline-flex shrink-0 items-center justify-center rounded-md border border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-white"
-        style={{ minWidth: 44, minHeight: 44 }}
-      >
-        {justCopiedIcon ? <Check className="h-4 w-4 text-emerald-400" aria-hidden /> : <Copy className="h-4 w-4" aria-hidden />}
-      </button>
-      <TelemetryCopyModal open={open} onClose={close} title="Copy sections">
-        <div className="flex min-h-0 flex-1 flex-col" onClick={(e) => e.stopPropagation()}>
-          <label className="mb-2 flex cursor-pointer items-center gap-2 border-b border-zinc-800 py-2">
-            <input
-              ref={selectAllRef}
-              type="checkbox"
-              className="rounded border-zinc-600"
-              checked={allSelected}
-              onChange={toggleSelectAll}
-            />
-            <span className="font-mono text-xs">Select all</span>
-          </label>
-          <div className="max-h-60 min-h-0 overflow-y-auto overscroll-contain py-1 sm:max-h-72">
-            <ul className="space-y-1">
-              {COPY_SECTIONS.map((s) => (
-                <li key={s.id}>
-                  <label className="-mx-1 flex cursor-pointer items-start gap-2 rounded px-1 py-1 hover:bg-zinc-900/80">
-                    <input
-                      type="checkbox"
-                      className="mt-0.5 shrink-0 rounded border-zinc-600"
-                      checked={checked[s.id]}
-                      onChange={() => toggleOne(s.id)}
-                    />
-                    <span className="font-mono text-[12px] leading-snug text-zinc-200">{s.label}</span>
-                  </label>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className="mt-3 shrink-0 border-t border-zinc-800 pt-3">
-            <button
-              type="button"
-              onClick={onCopySelected}
-              className="mb-2 w-full rounded-md bg-zinc-100 py-2 font-mono text-xs font-bold text-zinc-900 hover:bg-white"
-            >
-              Copy selected
-            </button>
-            <button
-              type="button"
-              onClick={onExportFull}
-              className="w-full py-1 text-center font-mono text-[11px] text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
-            >
-              Export full row
-            </button>
-          </div>
-        </div>
-      </TelemetryCopyModal>
-    </>
   );
 }
 
