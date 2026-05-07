@@ -146,3 +146,35 @@ export interface ConvictionDeskResult {
 
 /** Desk recommendation payload: classic four-topic desk or Conviction memo JSON. */
 export type DeskResult = DeskResultClassic | ConvictionDeskResult;
+
+/** Mirrors server push logic for toast copy (trade vs pass on desk / conviction desk). */
+export function deskRecommendationHasTrade(result: {
+  status?: string;
+  deskResult?: DeskResult | null;
+}): boolean {
+  if (result.status !== "desk_recommendation" || !result.deskResult) return false;
+  const dr = result.deskResult;
+  if (dr.mode === "conviction_desk") {
+    return (
+      dr.conviction != null &&
+      dr.conviction.pm.decision === "trade" &&
+      dr.conviction.pm.structure != null
+    );
+  }
+  return dr.pm.decision === "trade";
+}
+
+/** Human-readable structure label when `deskRecommendationHasTrade` is true (e.g. "bull call spread"). */
+export function deskTradeStructureSentenceCase(result: {
+  status?: string;
+  deskResult?: DeskResult | null;
+}): string | null {
+  if (!deskRecommendationHasTrade(result) || !result.deskResult) return null;
+  const dr = result.deskResult;
+  const structure =
+    dr.mode === "conviction_desk" ? dr.conviction?.pm.structure ?? null : dr.pm.structure;
+  const raw = structure?.type;
+  if (!raw || typeof raw !== "string") return null;
+  const words = raw.replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
