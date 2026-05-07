@@ -102,120 +102,35 @@ export interface DeskResultClassic {
   soloDeskJsonDegraded?: "schema_validation_failed_after_retry";
 }
 
-export interface ConvictionOutcomeDistribution {
-  p5: number;
-  p25: number;
-  p50: number;
-  p75: number;
-  p95: number;
-}
-
-export interface ConvictionGreeksEntry {
-  delta: number;
-  gamma: number;
-  theta: number;
-  vega: number;
-  front_vega?: number;
-  back_vega?: number;
-}
-
-export interface ConvictionGreeksEvolutionCell {
-  stock_path: "+1σ" | "0" | "-1σ";
-  days_held: 1 | 3 | "expiry-eve";
-  greeks: {
-    delta: number;
-    gamma: number;
-    theta: number;
-    vega: number;
-  };
-}
-
-export interface ConvictionChosenStructure {
-  structure: string;
-  legs: unknown[];
-  expiry: string;
-  credit_or_debit: number;
-  greeks_entry: ConvictionGreeksEntry;
-  greeks_evolution: ConvictionGreeksEvolutionCell[];
-  outcome_distribution: ConvictionOutcomeDistribution;
-  ev_dollars: number;
-  max_loss: number;
-  stop_loss?: number;
-}
-
 export interface ConvictionDeskOutput {
-  regime: {
-    summary: string;
-    vol: string;
-    sector: string;
-    macro: string;
-    stock: string;
-    holding_period_window: string;
-    indicators: Record<string, number | null>;
+  vol: VolAnalystOutput;
+  flow: FlowAnalystOutput;
+  catalyst: CatalystAnalystOutput;
+  pm: PmOutput;
+  regime_synthesis: {
+    regime_read:
+      | "long_premium"
+      | "short_premium"
+      | "neutral_premium"
+      | "directional_long"
+      | "directional_short"
+      | "no_edge";
+    synthesis: string;
   };
-  view: {
-    paragraph: string;
-    decision_intent: "trade" | "pass";
+  risk_of_ruin: string;
+  positioning_context: {
+    crowd_state: "crowded_long" | "crowded_short" | "balanced" | "unclear";
+    sell_side_targets_vs_price: string;
+    implied_vs_consensus: string;
+    fade_risk: string;
   };
-  decision: {
-    candidates_considered: Array<{
-      structure: string;
-      legs: unknown[];
-      debit_credit: number;
-      greeks_entry: ConvictionGreeksEntry;
-      max_profit: number;
-      max_loss: number;
-      breakevens: number[];
-      outcome_distribution: ConvictionOutcomeDistribution;
-      ev_dollars: number;
-      regime_fit: "fits" | "neutral" | "fights";
-      regime_fit_reasoning: string;
-    }>;
-    chosen: ConvictionChosenStructure | null;
-    rejected_alternatives: Array<{ structure: string; reason: string }>;
+  structure_family_discipline: {
+    directional_evaluated: string;
+    vol_surface_evaluated: string;
+    premium_evaluated: string;
+    chosen_family: "directional" | "vol_surface" | "premium" | "no_trade";
+    defense: string;
   };
-  failure_scenario: {
-    steelman: string;
-    response: string;
-    sufficient: boolean;
-  };
-  scenarios: {
-    designed: {
-      description: string;
-      trade_value_path: string;
-      greek_changes: string;
-      pnl_per_spread: number;
-    };
-    adverse_bounded: {
-      description: string;
-      trade_value_path: string;
-      greek_changes: string;
-      pnl_per_spread: number;
-      stop_trigger: string;
-    };
-    tail: {
-      description: string;
-      trade_value_path: string;
-      pnl_per_spread: number;
-    };
-  } | null;
-  exit_plan: {
-    profit_take: Array<{ level: string; scale_out_pct: number }>;
-    vol_trigger: string | null;
-    price_trigger: string | null;
-    time_stop: string;
-  } | null;
-  self_grade: {
-    vol: string;
-    flow: string;
-    catalyst: string;
-    regime: string;
-    structure_fit: string;
-    failure_scenario_strength: string;
-    conviction: string;
-    conviction_threshold_met: boolean;
-  };
-  size: "small" | "medium" | "large" | "no-trade";
 }
 
 export interface ConvictionDeskResult {
