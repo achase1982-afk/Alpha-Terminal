@@ -1,136 +1,82 @@
 import type { ConvictionDeskOutput } from "./strategistDeskSchemas.js";
 
-/** Map structure label to one primary family for desk-span validation. */
-export function convictionStructureFamily(
-  structure: string,
-): "directional" | "vol_surface" | "premium" {
-  const s = structure.toLowerCase();
-
-  if (/\biron condor\b|\b(short premium|sell premium|cash[- ]secured put|naked short)\b/.test(s)) {
+/**
+ * Map pm.structure.type labels (free-form) to structure family for alignment checks.
+ * Order matters: calendar_diagonal before generic calendar; premium before broad "spread" matches.
+ */
+export function inferExpectedFamilyFromPmStructureType(typeRaw: string): "directional" | "vol_surface" | "premium" | null {
+  const t = typeRaw.toLowerCase().replace(/\s+/g, "_").replace(/-/g, "_");
+  if (t.includes("calendar_diagonal")) return "directional";
+  if (/iron_condor|credit_spread|short_put_spread|short_call_spread|put_credit|call_credit|\bcsp\b|cash_secured/.test(t)) {
     return "premium";
   }
-
-  if (
-    /\b(calendar|double calendar|calendar spread)\b/.test(s) ||
-    /\b(butterfly|iron fly|ironfly|straddle|strangle)\b/.test(s) ||
-    (/\bfly\b/.test(s) && !/\biron condor\b/.test(s))
-  ) {
+  if (/calendar|butterfly|iron_butterfly|iron_fly|ironfly|straddle|strangle/.test(t)) {
     return "vol_surface";
   }
-
-  if (
-    /\b(naked\b|\bcredit spread\b|\bcovered call\b|\bcsp\b|\bshort put\b|\bshort call\b|\bsell vol\b)\b/.test(s) ||
-    (/\bcredit\b/.test(s) && /\b(short|sell)\b/.test(s))
-  ) {
-    return "premium";
+  if (/bull_call|bear_put|long_call|long_put|diagonal|vertical/.test(t)) {
+    return "directional";
   }
-
-  return "directional";
-}
-
-/** Mean of P5..P95 used as EV proxy vs model EV dollars (rule 6). */
-export function impliedEvFromOutcomeDistribution(dist: {
-  p5: number;
-  p25: number;
-  p50: number;
-  p75: number;
-  p95: number;
-}): number {
-  return (dist.p5 + dist.p25 + dist.p50 + dist.p75 + dist.p95) / 5;
-}
-
-export function normalizeConvictionDeskOutput(o: ConvictionDeskOutput): ConvictionDeskOutput {
-  const copy = JSON.parse(JSON.stringify(o)) as ConvictionDeskOutput;
-
-  const convictionGradeBad =
-    copy.self_grade.conviction === "C" ||
-    copy.self_grade.conviction === "D" ||
-    copy.self_grade.conviction === "F";
-
-  if (convictionGradeBad) {
-    copy.self_grade.conviction_threshold_met = false;
-  }
-
-  const mustNoTrade =
-    !copy.failure_scenario.sufficient ||
-    copy.view.decision_intent === "pass" ||
-    convictionGradeBad ||
-    !copy.self_grade.conviction_threshold_met;
-
-  if (mustNoTrade) {
-    copy.decision.chosen = null;
-    copy.scenarios = null;
-    copy.exit_plan = null;
-    copy.size = "no-trade";
-  }
-
-  return copy;
+  return null;
 }
 
 export function validateConvictionDeskBusinessRules(o: ConvictionDeskOutput): string[] {
   const errs: string[] = [];
 
-  if (o.decision.candidates_considered.length !== 3) {
-    errs.push("decision.candidates_considered must have exactly 3 entries");
+  if (o.pm.decision === "trade" && !o.pm.thesis?.trim()) {
+    errs.push("pm.thesis must be non-empty when pm.decision is trade");
   }
 
-  if (o.decision.rejected_alternatives.length !== 2) {
-    errs.push("decision.rejected_alternatives must have exactly 2 entries");
+  if (!o.regime_synthesis.synthesis?.trim()) {
+    errs.push("regime_synthesis.synthesis must be non-empty");
   }
 
-  const fams = new Set(
-    o.decision.candidates_considered.map((c) => convictionStructureFamily(c.structure)),
-  );
-  if (fams.size < 2) {
-    errs.push("candidates_considered must span at least two structure families (directional, vol_surface, premium)");
+  const ror = o.risk_of_ruin?.trim() ?? "";
+  if (ror.length < 20) {
+    errs.push("risk_of_ruin must be at least 20 characters");
   }
 
-  const chosen = o.decision.chosen;
-  const candidateStructures = o.decision.candidates_considered.map((c) => c.structure.trim());
+  const sfd = o.structure_family_discipline;
+  if (
+    !sfd.directional_evaluated?.trim() ||
+    !sfd.vol_surface_evaluated?.trim() ||
+    !sfd.premium_evaluated?.trim()
+  ) {
+    errs.push(
+      "structure_family_discipline.directional_evaluated, vol_surface_evaluated, and premium_evaluated must each be non-empty",
+    );
+  }
 
-  if (chosen) {
-    if (!candidateStructures.includes(chosen.structure.trim())) {
-      errs.push("decision.chosen.structure must appear in decision.candidates_considered");
+  if (o.pm.decision === "trade") {
+    const pc = o.positioning_context;
+    if (
+      !pc.sell_side_targets_vs_price?.trim() ||
+      !pc.implied_vs_consensus?.trim() ||
+      !pc.fade_risk?.trim()
+    ) {
+      errs.push("positioning_context string fields must all be non-empty when pm.decision is trade");
     }
-    if (chosen.greeks_evolution.length !== 9) {
-      errs.push("decision.chosen.greeks_evolution must have exactly 9 entries");
-    }
-    const evModel = chosen.ev_dollars;
-    const evImplied = impliedEvFromOutcomeDistribution(chosen.outcome_distribution);
-    if (Number.isFinite(evModel) && Number.isFinite(evImplied) && Math.abs(evImplied) > 1e-9) {
-      const rel = Math.abs((evModel - evImplied) / evImplied);
-      if (rel > 0.05) {
-        errs.push(
-          `decision.chosen.ev_dollars must be within 5% of the mean of outcome_distribution P5..P95 (expected ~${evImplied.toFixed(4)}, got ${evModel})`,
-        );
-      }
-    }
-    if (chosen.stop_loss != null && Number.isFinite(chosen.stop_loss) && Number.isFinite(chosen.max_loss)) {
-      if (chosen.stop_loss === chosen.max_loss) {
-        errs.push("decision.chosen.stop_loss must not equal max_loss");
-      }
+    if (!sfd.defense?.trim()) {
+      errs.push("structure_family_discipline.defense must be non-empty when pm.decision is trade");
     }
   }
 
-  if (o.failure_scenario.sufficient === false) {
-    if (o.decision.chosen != null || o.scenarios != null || o.exit_plan != null) {
-      errs.push("when failure_scenario.sufficient is false, chosen, scenarios, and exit_plan must be null");
-    }
-  }
+  const fam = sfd.chosen_family;
 
-  if (o.view.decision_intent === "pass") {
-    if (o.decision.chosen != null || o.scenarios != null || o.exit_plan != null) {
-      errs.push('when view.decision_intent is "pass", chosen, scenarios, and exit_plan must be null');
+  if (o.pm.decision === "pass" || o.pm.structure == null) {
+    if (fam !== "no_trade") {
+      errs.push('structure_family_discipline.chosen_family must be "no_trade" when pm.decision is pass or pm.structure is null');
     }
-  }
-
-  const badConv = o.self_grade.conviction === "C" || o.self_grade.conviction === "D" || o.self_grade.conviction === "F";
-  if (badConv) {
-    if (o.self_grade.conviction_threshold_met !== false) {
-      errs.push("when self_grade.conviction is C, D, or F, conviction_threshold_met must be false");
-    }
-    if (o.decision.chosen != null || o.scenarios != null || o.exit_plan != null) {
-      errs.push("when conviction grade is C or below, chosen, scenarios, and exit_plan must be null");
+  } else {
+    const typeStr = o.pm.structure.type;
+    const expected = inferExpectedFamilyFromPmStructureType(typeStr);
+    if (expected == null) {
+      errs.push(
+        `could not classify pm.structure.type "${typeStr}" into directional, vol_surface, or premium for family alignment`,
+      );
+    } else if (fam !== expected) {
+      errs.push(
+        `structure_family_discipline.chosen_family must be "${expected}" for pm.structure.type "${typeStr}" (got "${fam}")`,
+      );
     }
   }
 

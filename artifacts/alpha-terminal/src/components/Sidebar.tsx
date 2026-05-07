@@ -174,7 +174,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
     <>
       {activePage && createPortal(
         <div
-          className="fixed left-0 right-0 z-[100] bg-background animate-in slide-in-from-bottom-8 duration-300 flex flex-col shadow-2xl border-t border-card-border"
+          className="fixed left-0 right-0 z-[100] min-w-0 max-w-[100vw] overflow-x-hidden bg-background animate-in slide-in-from-bottom-8 duration-300 flex flex-col shadow-2xl border-t border-card-border"
           style={{ top: `${headerHeight}px`, bottom: "80px" }}
         >
           {activePage !== "Calendar" && (
@@ -201,7 +201,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
             </div>
           )}
 
-          <div className={`flex-1 overflow-y-auto pb-4 ${activePage === "Calendar" ? "px-3 pt-1 pb-3" : "p-4 sm:p-6"}`}>
+          <div className={`flex-1 min-w-0 overflow-y-auto overflow-x-hidden pb-4 ${activePage === "Calendar" ? "px-3 pt-1 pb-3" : "p-4 sm:p-6"}`}>
             {activePage === "Calendar" && <MarketCalendar onClose={() => setActivePage(null)} />}
             {activePage === "Linked Brokerage" && <LinkedBrokeragePage />}
             {activePage === "Security & Privacy" && <SecurityPrivacyPage />}
@@ -365,7 +365,7 @@ function LinkedBrokeragePage() {
 // this page now only renders settings that are wired into the backend strategist.
 function StrategistTuningPage() {
   return (
-    <div className="space-y-8 max-w-xl mx-auto">
+    <div className="space-y-8 max-w-xl mx-auto w-full min-w-0">
       <StrategistSettingsPanel />
     </div>
   );

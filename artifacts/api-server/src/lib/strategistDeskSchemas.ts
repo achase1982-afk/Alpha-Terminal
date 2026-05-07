@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ConvictionDeskRunDiagnostic } from "./convictionDeskRunDiagnostic.js";
 
 /** Strategist options-chain skew snapshot (summarizeOptionsChain / ChainSummary subset). */
 export const StrategistSkew25DeltaSchema = z.object({
@@ -166,164 +167,37 @@ export interface DeskResult {
   errors?: string[];
 }
 
-const ConvictionRegimeVolSchema = z.enum(["chop", "breakout", "squeeze", "panic", "dead"]);
-const ConvictionRegimeSectorSchema = z.enum(["leadership", "lagging", "rotation", "neutral", "unavailable"]);
-const ConvictionRegimeMacroSchema = z.enum(["risk-on", "risk-off", "event-pending", "mixed"]);
-const ConvictionRegimeStockSchema = z.enum([
-  "momentum-up",
-  "momentum-down",
-  "mean-reverting",
-  "range-bound",
-  "breaking-out",
-  "breaking-down",
-]);
-const ConvictionHoldingWindowSchema = z.enum(["5d", "20d", "50d"]);
-
-const ConvictionRegimeIndicatorsSchema = z.object({
-  iv_percentile: z.number().nullable(),
-  hv20_percentile: z.number().nullable(),
-  pct_from_20dma: z.number().nullable(),
-  pct_from_50dma: z.number().nullable(),
-  atr14_percentile: z.number().nullable(),
-  pct_from_52w_high: z.number().nullable(),
-  vix_level: z.number().nullable(),
-  days_to_next_macro: z.number().nullable(),
-  market_pulse_current: z.number().nullable(),
-  market_pulse_20d_avg: z.number().nullable(),
-});
-
-const ConvictionOutcomeDistSchema = z.object({
-  p5: z.number(),
-  p25: z.number(),
-  p50: z.number(),
-  p75: z.number(),
-  p95: z.number(),
-});
-
-const ConvictionGreeksEntrySchema = z.object({
-  delta: z.number(),
-  gamma: z.number(),
-  theta: z.number(),
-  vega: z.number(),
-  front_vega: z.number().optional(),
-  back_vega: z.number().optional(),
-});
-
-const ConvictionCandidateSchema = z.object({
-  structure: z.string(),
-  legs: z.array(z.unknown()),
-  debit_credit: z.number(),
-  greeks_entry: ConvictionGreeksEntrySchema,
-  max_profit: z.number(),
-  max_loss: z.number(),
-  breakevens: z.array(z.number()),
-  outcome_distribution: ConvictionOutcomeDistSchema,
-  ev_dollars: z.number(),
-  regime_fit: z.enum(["fits", "neutral", "fights"]),
-  regime_fit_reasoning: z.string(),
-});
-
-const ConvictionGreeksEvolutionCellSchema = z.object({
-  stock_path: z.enum(["+1σ", "0", "-1σ"]),
-  days_held: z.union([z.literal(1), z.literal(3), z.literal("expiry-eve")]),
-  greeks: z.object({
-    delta: z.number(),
-    gamma: z.number(),
-    theta: z.number(),
-    vega: z.number(),
-  }),
-});
-
-const ConvictionChosenSchema = z.object({
-  structure: z.string(),
-  legs: z.array(z.unknown()),
-  expiry: z.string(),
-  credit_or_debit: z.number(),
-  greeks_entry: ConvictionGreeksEntrySchema,
-  greeks_evolution: z.array(ConvictionGreeksEvolutionCellSchema).length(9),
-  outcome_distribution: ConvictionOutcomeDistSchema,
-  ev_dollars: z.number(),
-  max_loss: z.number(),
-  stop_loss: z.number().optional(),
-});
-
+/** Solo Desk JSON shape plus Conviction-only synthesis and discipline fields (same vol/flow/catalyst/pm schemas). */
 export const ConvictionDeskOutputSchema = z.object({
-  regime: z.object({
-    vol: ConvictionRegimeVolSchema,
-    sector: ConvictionRegimeSectorSchema,
-    macro: ConvictionRegimeMacroSchema,
-    stock: ConvictionRegimeStockSchema,
-    holding_period_window: ConvictionHoldingWindowSchema,
-    indicators: ConvictionRegimeIndicatorsSchema,
-    summary: z.string(),
+  vol: VolAnalystOutputSchema,
+  flow: FlowAnalystOutputSchema,
+  catalyst: CatalystAnalystOutputSchema,
+  pm: PmOutputSchema,
+  regime_synthesis: z.object({
+    regime_read: z.enum([
+      "long_premium",
+      "short_premium",
+      "neutral_premium",
+      "directional_long",
+      "directional_short",
+      "no_edge",
+    ]),
+    synthesis: z.string(),
   }),
-  view: z.object({
-    paragraph: z.string(),
-    decision_intent: z.enum(["trade", "pass"]),
+  risk_of_ruin: z.string(),
+  positioning_context: z.object({
+    crowd_state: z.enum(["crowded_long", "crowded_short", "balanced", "unclear"]),
+    sell_side_targets_vs_price: z.string(),
+    implied_vs_consensus: z.string(),
+    fade_risk: z.string(),
   }),
-  decision: z.object({
-    candidates_considered: z.array(ConvictionCandidateSchema).length(3),
-    chosen: ConvictionChosenSchema.nullable(),
-    rejected_alternatives: z
-      .array(
-        z.object({
-          structure: z.string(),
-          reason: z.string(),
-        }),
-      )
-      .length(2),
+  structure_family_discipline: z.object({
+    directional_evaluated: z.string(),
+    vol_surface_evaluated: z.string(),
+    premium_evaluated: z.string(),
+    chosen_family: z.enum(["directional", "vol_surface", "premium", "no_trade"]),
+    defense: z.string(),
   }),
-  failure_scenario: z.object({
-    steelman: z.string(),
-    response: z.string(),
-    sufficient: z.boolean(),
-  }),
-  scenarios: z
-    .object({
-      designed: z.object({
-        description: z.string(),
-        trade_value_path: z.string(),
-        greek_changes: z.string(),
-        pnl_per_spread: z.number(),
-      }),
-      adverse_bounded: z.object({
-        description: z.string(),
-        trade_value_path: z.string(),
-        greek_changes: z.string(),
-        pnl_per_spread: z.number(),
-        stop_trigger: z.string(),
-      }),
-      tail: z.object({
-        description: z.string(),
-        trade_value_path: z.string(),
-        pnl_per_spread: z.number(),
-      }),
-    })
-    .nullable(),
-  exit_plan: z
-    .object({
-      profit_take: z.array(
-        z.object({
-          level: z.string(),
-          scale_out_pct: z.number(),
-        }),
-      ),
-      vol_trigger: z.string().nullable(),
-      price_trigger: z.string().nullable(),
-      time_stop: z.string(),
-    })
-    .nullable(),
-  self_grade: z.object({
-    vol: z.enum(["A", "B", "C", "D", "F"]),
-    flow: z.enum(["A", "B", "C", "D", "F"]),
-    catalyst: z.enum(["A", "B", "C", "D", "F"]),
-    regime: z.enum(["A", "B", "C", "D", "F"]),
-    structure_fit: z.enum(["A", "B", "C", "D", "F", "N/A"]),
-    failure_scenario_strength: z.enum(["A", "B", "C", "D", "F"]),
-    conviction: z.enum(["A", "B", "C", "D", "F"]),
-    conviction_threshold_met: z.boolean(),
-  }),
-  size: z.enum(["small", "medium", "large", "no-trade"]),
 });
 
 export type ConvictionDeskOutput = z.infer<typeof ConvictionDeskOutputSchema>;
@@ -337,7 +211,9 @@ export interface ConvictionDeskResult {
   errors?: string[];
   payoffScenarios?: PayoffScenario[] | null;
   payoffSummary?: PayoffScenariosSummary | null;
-  convictionDeskJsonDegraded?: "schema_validation_failed_after_retry";
+  convictionDeskJsonDegraded?: "schema_validation_failed_after_retry" | "stream_error" | "extraction_error";
+  /** Persisted on every run for DB-only diagnosis (large; not for logs). */
+  convictionDeskRunDiagnostic?: ConvictionDeskRunDiagnostic;
 }
 
 export type AnyDeskResult = DeskResult | ConvictionDeskResult;

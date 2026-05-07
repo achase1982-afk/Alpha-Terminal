@@ -1,5 +1,5 @@
 import type { ScannerCardData, UnifiedScanCandidate } from "@/lib/unifiedScanTypes";
-import type { ScannerV3WireCard, ScannerV3WireCardFlow } from "@/hooks/useUnifiedScan";
+import type { ScannerV3WireCard, ScannerV3WireCardFlow, ScannerV3WireCardTechnical } from "@/hooks/useUnifiedScan";
 import { emptyScannerCardData } from "./scannerCard.utils";
 
 export type { ScannerV3WireCard };
@@ -55,6 +55,20 @@ function flowFromV2Snapshot(fs: NonNullable<UnifiedScanCandidate["flowSnapshot"]
       : null,
     volume4h: null,
     volumeOverOi: null,
+  };
+}
+
+function mapTechnicalWire(t: ScannerV3WireCardTechnical | null | undefined): ScannerCardData["technical"] {
+  if (t == null) return null;
+  return {
+    fiftyTwoWeekLow: t.fifty_two_week_low ?? null,
+    fiftyTwoWeekHigh: t.fifty_two_week_high ?? null,
+    offFiftyTwoWeekHighPct: t.off_fifty_two_week_high_pct ?? null,
+    vsTwentyMaPct: t.vs_twenty_ma_pct ?? null,
+    vsFiftyMaPct: t.vs_fifty_ma_pct ?? null,
+    vsTwoHundredMaPct: t.vs_two_hundred_ma_pct ?? null,
+    fiveDayReturnPct: t.five_day_return_pct ?? null,
+    thirtyDayReturnPct: t.thirty_day_return_pct ?? null,
   };
 }
 
@@ -222,6 +236,18 @@ export function scannerWireCardToScannerCardData(wire: ScannerV3WireCard, scanAt
     nextExDiv,
     earningsHistory,
     flow: mapFlowWire(wire.flow),
+    technical: mapTechnicalWire(wire.technical),
+    score: wire.score ?? null,
+    scoreComponents: wire.score_components
+      ? {
+          liquidity: wire.score_components.liquidity ?? null,
+          volContext: wire.score_components.vol_context ?? null,
+          catalyst: wire.score_components.catalyst ?? null,
+          flow: wire.score_components.flow ?? null,
+          technical: wire.score_components.technical ?? null,
+        }
+      : null,
+    matchedPreset: wire.matched_preset?.trim() ? wire.matched_preset.trim() : null,
     lastUpdate: scanAt,
   };
 }

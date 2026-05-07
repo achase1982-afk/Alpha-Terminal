@@ -14,6 +14,13 @@ import { fetchSchwabBatchQuotesForSymbolsBestToken } from "../lib/schwabBatchQuo
 import { fetchScannerVolContextForSymbols } from "../lib/scannerVolContext.js";
 import { fetchScannerCatalystsForSymbols } from "../lib/scannerCatalysts.js";
 import { fetchScannerFlowContextForSymbols } from "../lib/scannerFlowContext.js";
+import {
+  EMPTY_SCANNER_TECHNICAL_LAYER6_WIRE,
+  fetchScannerTechnicalContextForSymbols,
+  technicalLayer6HasAnyData,
+} from "../lib/scannerTechnicalContext.js";
+import { computeScannerLayer7Scores } from "../lib/scannerLayer7Scores.js";
+import { matchScannerTradingPreset } from "../lib/scannerTradingPresets.js";
 import { getBestAccessToken } from "../lib/tokenStore.js";
 
 const router: IRouter = Router();
@@ -125,7 +132,24 @@ router.get("/v3/universe", async (req, res) => {
     for (const [sym, q] of quoteMap) {
       priceBySymbol.set(sym, q.price ?? null);
     }
-    const flowMap = await fetchScannerFlowContextForSymbols(tickers, priceBySymbol);
+    const flowBatch = await fetchScannerFlowContextForSymbols(tickers, priceBySymbol);
+    const flowMap = flowBatch.bySymbol;
+    const layer5_flow_diag = flowBatch.diagnostics;
+
+    if (layer5_flow_diag.rows_in_window === 0 && tickers.length > 0) {
+      log.info(
+        {
+          op: "scanner_v3.layer5_empty_window",
+          universe: universeKey,
+          window_ms: layer5_flow_diag.window_ms,
+          cutoff_iso: layer5_flow_diag.cutoff_iso,
+          rows_in_window: 0,
+        },
+        "Layer 5 Flow: no options_flow_raw_trades rows in rolling window (UI shows dashes). Check tape backfill / watcher; optional env SCANNER_FLOW_LAYER5_WINDOW_MS widens the window.",
+      );
+    }
+
+    const technicalMap = await fetchScannerTechnicalContextForSymbols(tickers, quoteMap);
 
     let layer3_iv30_hits = 0;
     let layer3_hv30_hits = 0;
@@ -135,14 +159,34 @@ router.get("/v3/universe", async (req, res) => {
     let layer4_ex_div_hits = 0;
     let layer4_reactions_hits = 0;
     let layer5_flow_hits = 0;
+    let layer6_technical_hits = 0;
 
     const cards = tickers.map((raw) => {
       const symbol = raw.trim().toUpperCase();
       const q = quoteMap.get(symbol);
       const v = volMap.get(symbol);
       const cat = catalystMap.get(symbol);
-      const flow = flowMap.get(symbol);
+      const flow = flowMap.get(symbol) ?? null;
+      const technical = technicalMap.get(symbol) ?? EMPTY_SCANNER_TECHNICAL_LAYER6_WIRE;
+      const layer7 = computeScannerLayer7Scores({
+        volume: q?.volume ?? null,
+        avg_volume_20d: q?.avgVolume20d ?? null,
+        price: q?.price ?? null,
+        iv30: v?.iv30 ?? null,
+        ivr: v?.ivr ?? null,
+        iv_vs_hv: v?.ivVsHv ?? null,
+        days_to_earnings: cat?.days_to_earnings ?? null,
+        reactions_last_4q: cat?.reactions_last_4q ?? null,
+        flow,
+        technical,
+      });
+      const matched_preset = matchScannerTradingPreset({
+        ...layer7,
+        daysToEarnings: cat?.days_to_earnings ?? null,
+        technical,
+      });
       if (flow != null) layer5_flow_hits++;
+      if (technicalLayer6HasAnyData(technical)) layer6_technical_hits++;
       if (v?.iv30 != null) layer3_iv30_hits++;
       if (v?.hv30 != null) layer3_hv30_hits++;
       if (v?.ivr != null) layer3_ivr_hits++;
@@ -173,6 +217,16 @@ router.get("/v3/universe", async (req, res) => {
         days_to_ex_dividend: cat?.days_to_ex_dividend ?? null,
         reactions_last_4q: cat?.reactions_last_4q ?? null,
         flow: flow ?? null,
+        technical,
+        score: layer7.compositeScore,
+        score_components: {
+          liquidity: layer7.liquidityScore,
+          vol_context: layer7.volatilityScore,
+          catalyst: layer7.catalystScore,
+          flow: layer7.flowScore,
+          technical: layer7.technicalScore,
+        },
+        matched_preset,
       };
     });
 
@@ -192,6 +246,11 @@ router.get("/v3/universe", async (req, res) => {
       layer4_ex_div_hits,
       layer4_reactions_hits,
       layer5_flow_hits,
+      layer5_flow_window_ms: layer5_flow_diag.window_ms,
+      layer5_flow_cutoff_iso: layer5_flow_diag.cutoff_iso,
+      layer5_flow_rows_in_window: layer5_flow_diag.rows_in_window,
+      layer5_flow_max_trade_ts_in_window: layer5_flow_diag.max_trade_ts_in_window,
+      layer6_technical_hits,
     };
 
     const duration_ms = Date.now() - started;

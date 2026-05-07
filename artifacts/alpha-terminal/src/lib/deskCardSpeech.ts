@@ -3,8 +3,8 @@
  * Presentation-only: natural phrasing, no raw JSON field names in spoken text.
  */
 
-import type { DeskResult, DeskResultClassic } from "@/lib/strategistDeskResult";
-import { buildConvictionDeskMemoPlainText } from "@/lib/convictionDeskMemoPlain";
+import type { DeskResult, DeskResultClassic, ConvictionDeskResult, ConvictionDeskOutput } from "@/lib/strategistDeskResult";
+import type { BlockReason, StrategistOutcome } from "@/components/StrategistV2Card";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -152,7 +152,15 @@ export function preprocessForSpeech(raw: string, ticker: string): string {
   return t.replace(/\s+/g, " ").trim();
 }
 
-export type DeskSpeechSectionId = "pm" | "vol" | "flow" | "catalyst" | "memo";
+export type DeskSpeechSectionId =
+  | "pm"
+  | "vol"
+  | "flow"
+  | "catalyst"
+  | "regime_synthesis"
+  | "risk_of_ruin"
+  | "positioning_context"
+  | "structure_family_discipline";
 
 export interface DeskSpeechSection {
   id: DeskSpeechSectionId;
@@ -273,13 +281,225 @@ function buildCatalystSpeech(desk: DeskResultClassic): string {
   ].filter(Boolean).join(" ");
 }
 
+function convictionDeskResultToClassic(dr: ConvictionDeskResult): DeskResultClassic | null {
+  if (!dr.conviction) return null;
+  const c = dr.conviction;
+  return {
+    mode: "solo_desk",
+    ticker: dr.ticker,
+    vol: c.vol,
+    flow: c.flow,
+    catalyst: c.catalyst,
+    pm: c.pm,
+    models: dr.models,
+    errors: dr.errors,
+  };
+}
+
+function buildRegimeSynthesisSpeech(c: ConvictionDeskOutput, ticker: string): string {
+  const t = ticker.toUpperCase();
+  return [
+    `Regime read is ${preprocessForSpeech(c.regime_synthesis.regime_read.replace(/_/g, " "), t)}.`,
+    preprocessForSpeech(c.regime_synthesis.synthesis, t),
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function buildRiskOfRuinSpeech(c: ConvictionDeskOutput, ticker: string): string {
+  return preprocessForSpeech(c.risk_of_ruin, ticker.toUpperCase());
+}
+
+function buildPositioningSpeech(c: ConvictionDeskOutput, ticker: string): string {
+  const t = ticker.toUpperCase();
+  return [
+    sentence("Crowd state", c.positioning_context.crowd_state.replace(/_/g, " "), t),
+    sentence("Sell-side targets versus price", c.positioning_context.sell_side_targets_vs_price, t),
+    sentence("Implied versus consensus", c.positioning_context.implied_vs_consensus, t),
+    sentence("Fade risk", c.positioning_context.fade_risk, t),
+  ].filter(Boolean).join(" ");
+}
+
+function buildStructureFamilySpeech(c: ConvictionDeskOutput, ticker: string): string {
+  const t = ticker.toUpperCase();
+  return [
+    sentence("Directional family evaluated", c.structure_family_discipline.directional_evaluated, t),
+    sentence("Vol surface family evaluated", c.structure_family_discipline.vol_surface_evaluated, t),
+    sentence("Premium family evaluated", c.structure_family_discipline.premium_evaluated, t),
+    `Chosen family is ${preprocessForSpeech(c.structure_family_discipline.chosen_family.replace(/_/g, " "), t)}.`,
+    preprocessForSpeech(c.structure_family_discipline.defense, t),
+  ].filter(Boolean).join(" ");
+}
+
+/** Plain text for Conviction Desk (Solo Desk sections plus conviction-only fields). */
+export function buildConvictionDeskCardPlainText(args: {
+  deskResult: ConvictionDeskResult;
+  generatedAt?: string | number | null;
+  strategistOutcome?: StrategistOutcome;
+  blockReason?: BlockReason;
+}): string {
+  const { deskResult, generatedAt, strategistOutcome, blockReason } = args;
+
+  const when =
+    generatedAt == null
+      ? null
+      : typeof generatedAt === "number"
+        ? new Date(generatedAt).toLocaleString()
+        : String(generatedAt);
+
+  const lines: string[] = [];
+
+  if (deskResult.convictionDeskJsonDegraded === "schema_validation_failed_after_retry") {
+    lines.push(
+      "CONVICTION DESK — OUTPUT PARSE FAILED",
+      "The consolidated JSON did not match the required schema after retry.",
+      "",
+    );
+  } else if (strategistOutcome === "ANALYSIS_INCOMPLETE" || blockReason?.category === "ANALYSIS_INCOMPLETE") {
+    lines.push("ANALYSIS INCOMPLETE", blockReason?.detail ?? "The desk output did not validate after retry.", "");
+  }
+
+  const conviction = deskResult.conviction;
+  if (!conviction) {
+    lines.push(`PASS  ${deskResult.ticker}  CONVICTION DESK`);
+    if (when) lines.push(`Generated: ${when}`);
+    lines.push("", "Desk JSON could not be validated.");
+    return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  const { pm, vol, flow, catalyst } = conviction;
+  const isTrade = pm.decision === "trade" && pm.structure != null;
+  const errors = deskResult.errors;
+
+  lines.push(`${isTrade ? "TRADE" : "PASS"}  ${deskResult.ticker}  CONVICTION DESK`);
+  if (when) lines.push(`Generated: ${when}`);
+  lines.push("");
+
+  if (isTrade && pm.structure) {
+    const s = pm.structure;
+    lines.push(
+      s.type.replace(/_/g, " ").toUpperCase(),
+      `Expiry: ${s.expiry}  ·  ${s.credit_or_debit < 0 ? "Credit" : "Debit"}: $${Math.abs(s.credit_or_debit).toFixed(2)}`,
+    );
+    for (const leg of s.legs) {
+      const q = leg.quantity && leg.quantity > 1 ? ` x${leg.quantity}` : "";
+      lines.push(`${leg.action.toUpperCase()} ${leg.type.toUpperCase()} ${leg.strike} (${leg.expiration})${q}`);
+    }
+    lines.push("");
+  }
+
+  if (!isTrade && pm.watch_for) {
+    lines.push("WATCH FOR", pm.watch_for, "");
+  }
+
+  lines.push("THESIS", pm.thesis, "");
+  if (pm.edge_check) {
+    lines.push("EDGE CHECK", pm.edge_check, "");
+  }
+  const dev = pm.deviation_from_analysts?.trim();
+  if (dev && dev.toLowerCase() !== "none") {
+    lines.push("DEVIATION FROM VOLATILITY SECTION", dev, "");
+  }
+  lines.push("SIZE", pm.size.toUpperCase());
+  lines.push("ALIGNMENT", pm.whose_side.replace(/_/g, " "));
+
+  if (isTrade) {
+    lines.push("PROFIT TARGET", `$${pm.exit_plan.profit_target.toFixed(2)}`);
+    lines.push("STOP LOSS", `$${pm.exit_plan.stop_loss.toFixed(2)}`);
+    if (pm.exit_plan.time_stop) lines.push("TIME STOP", pm.exit_plan.time_stop);
+  }
+  lines.push("");
+
+  lines.push("BIGGEST RISK", pm.biggest_risk, "");
+
+  if (errors && errors.length > 0) {
+    lines.push("NOTES / WARNINGS");
+    for (const e of errors) lines.push(`- ${e}`);
+    lines.push("");
+  }
+
+  lines.push("TOPIC SECTIONS", "");
+
+  lines.push("— Volatility —");
+  lines.push("IV State", vol.iv_state);
+  lines.push("Term Structure", vol.term_structure);
+  lines.push("Skew", vol.skew);
+  lines.push("IV vs Realized", vol.implied_vs_realized);
+  lines.push("Read", vol.read, "");
+
+  lines.push("— Flow —");
+  lines.push("Dominant Flow", flow.dominant_flow);
+  lines.push("Institutional", flow.institutional_signal);
+  lines.push("Retail", flow.retail_signal);
+  if (flow.key_strikes.length > 0) {
+    lines.push("Key Strikes");
+    for (const ks of flow.key_strikes) {
+      lines.push(`  ${ks.type.toUpperCase()} ${ks.strike} (${ks.expiry}): ${ks.observation}`);
+    }
+  }
+  lines.push("Read", flow.read, "");
+
+  lines.push("— Catalyst —");
+  lines.push("Primary Catalyst", catalyst.primary_catalyst);
+  lines.push("Bar to Clear", catalyst.bar_to_clear);
+  lines.push("Asymmetry", catalyst.asymmetry);
+  lines.push("Historical", catalyst.historical_pattern);
+  lines.push("Read", catalyst.read, "");
+
+  lines.push("— Regime synthesis —");
+  lines.push("Regime read", conviction.regime_synthesis.regime_read.replace(/_/g, " "));
+  lines.push("Synthesis", conviction.regime_synthesis.synthesis, "");
+
+  lines.push("— Risk of ruin —");
+  lines.push(conviction.risk_of_ruin, "");
+
+  lines.push("— Positioning context —");
+  lines.push("Crowd state", conviction.positioning_context.crowd_state.replace(/_/g, " "));
+  lines.push("Sell-side targets vs price", conviction.positioning_context.sell_side_targets_vs_price);
+  lines.push("Implied vs consensus", conviction.positioning_context.implied_vs_consensus);
+  lines.push("Fade risk", conviction.positioning_context.fade_risk, "");
+
+  lines.push("— Structure family discipline —");
+  lines.push("Directional evaluated", conviction.structure_family_discipline.directional_evaluated);
+  lines.push("Vol surface evaluated", conviction.structure_family_discipline.vol_surface_evaluated);
+  lines.push("Premium evaluated", conviction.structure_family_discipline.premium_evaluated);
+  lines.push("Chosen family", conviction.structure_family_discipline.chosen_family.replace(/_/g, " "));
+  lines.push("Defense", conviction.structure_family_discipline.defense, "");
+
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 export function buildDeskSpeechSections(
   deskResult: DeskResult,
   opts: { bannerTitle?: string; bannerBody?: string; generatedAt?: string | number | null },
 ): DeskSpeechSection[] {
   if (deskResult.mode === "conviction_desk") {
-    const text = buildConvictionDeskMemoPlainText({ deskResult, generatedAt: opts.generatedAt });
-    return [{ id: "memo", label: "Conviction memo", text }];
+    const classic = convictionDeskResultToClassic(deskResult);
+    if (!classic || !deskResult.conviction) {
+      const t = deskResult.ticker.toUpperCase();
+      return [
+        {
+          id: "pm",
+          label: "Conviction Desk",
+          text: preprocessForSpeech("Conviction desk output could not be validated.", t),
+        },
+      ];
+    }
+    const c = deskResult.conviction;
+    return [
+      { id: "pm", label: "Decision", text: buildPmSpeech(classic, opts) },
+      { id: "vol", label: "Volatility", text: buildVolSpeech(classic) },
+      { id: "flow", label: "Flow", text: buildFlowSpeech(classic) },
+      { id: "catalyst", label: "Catalyst", text: buildCatalystSpeech(classic) },
+      { id: "regime_synthesis", label: "Regime synthesis", text: buildRegimeSynthesisSpeech(c, deskResult.ticker) },
+      { id: "risk_of_ruin", label: "Risk of ruin", text: buildRiskOfRuinSpeech(c, deskResult.ticker) },
+      { id: "positioning_context", label: "Positioning context", text: buildPositioningSpeech(c, deskResult.ticker) },
+      {
+        id: "structure_family_discipline",
+        label: "Structure family discipline",
+        text: buildStructureFamilySpeech(c, deskResult.ticker),
+      },
+    ];
   }
   const classic = deskResult as DeskResultClassic;
   const pmText = buildPmSpeech(classic, opts);

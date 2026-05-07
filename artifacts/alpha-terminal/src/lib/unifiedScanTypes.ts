@@ -4,7 +4,7 @@
 
 export type TermStructureShape = "contango" | "flat" | "backwardation";
 
-/** Full scanner card model for Layer 1–6 (frontend / future API mapping). */
+/** Full scanner card model for Layers 1–8 (GET /api/scanner/v3/universe wire → UI). */
 export type ScannerCardData = {
   // Layer 1+2 minimum
   symbol: string;
@@ -57,28 +57,29 @@ export type ScannerCardData = {
     volumeOverOi: number | null;
   } | null;
 
-  // Technical (derived from existing equity_daily, no new integration)
+  /** Layer 6 — price action (scanner V3 API); null fields render as dashes. */
   technical: {
-    week52High: number;
-    week52Low: number;
-    pctOffHigh: number;
-    aboveMa20: boolean;
-    aboveMa50: boolean;
-    aboveMa200: boolean;
-    return5d: number;
-    return30d: number;
+    fiftyTwoWeekLow: number | null;
+    fiftyTwoWeekHigh: number | null;
+    offFiftyTwoWeekHighPct: number | null;
+    vsTwentyMaPct: number | null;
+    vsFiftyMaPct: number | null;
+    vsTwoHundredMaPct: number | null;
+    fiveDayReturnPct: number | null;
+    thirtyDayReturnPct: number | null;
   } | null;
 
-  // Layer 6
+  // Layer 7 composite + components (scanner V3 wire)
   score: number | null;
   scoreComponents: {
-    liquidity: number;
-    volContext: number;
-    catalyst: number;
-    flow: number;
-    technical: number;
+    liquidity: number | null;
+    volContext: number | null;
+    catalyst: number | null;
+    flow: number | null;
+    technical: number | null;
   } | null;
-  preset: string | null;
+  /** Layer 8 curated preset label from GET /api/scanner/v3/universe `matched_preset`. */
+  matchedPreset: string | null;
 
   // Meta
   lastUpdate: string;

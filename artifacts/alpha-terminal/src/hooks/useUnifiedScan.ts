@@ -66,7 +66,31 @@ export interface ScannerV3WireCard {
   reactions_last_4q?: number[] | null;
   /** Layer 5 — options flow (4h); omit or null when no prints in window. */
   flow?: ScannerV3WireCardFlow | null;
+  /** Layer 6 — technicals from Schwab 52w + daily closes (equity_daily / Polygon). */
+  technical?: ScannerV3WireCardTechnical | null;
+  /** Layer 7 composite + components; optional on older payloads. */
+  score?: number | null;
+  score_components?: {
+    liquidity: number | null;
+    vol_context: number | null;
+    catalyst: number | null;
+    flow: number | null;
+    technical: number | null;
+  } | null;
+  /** Layer 8 curated trading preset label; null when no rule matches. */
+  matched_preset?: string | null;
 }
+
+export type ScannerV3WireCardTechnical = {
+  fifty_two_week_low: number | null;
+  fifty_two_week_high: number | null;
+  off_fifty_two_week_high_pct: number | null;
+  vs_twenty_ma_pct: number | null;
+  vs_fifty_ma_pct: number | null;
+  vs_two_hundred_ma_pct: number | null;
+  five_day_return_pct: number | null;
+  thirty_day_return_pct: number | null;
+};
 
 /** Layer 5 wire payload from GET /api/scanner/v3/universe. */
 export type ScannerV3WireCardFlow = {
@@ -103,6 +127,15 @@ export interface ScannerV3UniverseResponse {
   layer4_ex_div_hits?: number;
   layer4_reactions_hits?: number;
   layer5_flow_hits?: number;
+  /** Same window as Layer 5 aggregation (default 4h unless `SCANNER_FLOW_LAYER5_WINDOW_MS` is set server-side). */
+  layer5_flow_window_ms?: number;
+  /** ISO lower bound of the rolling window (inclusive). */
+  layer5_flow_cutoff_iso?: string;
+  /** Count of raw option prints in `options_flow_raw_trades` for universe symbols in the window (diagnostic). */
+  layer5_flow_rows_in_window?: number;
+  /** Latest trade timestamp among those rows; null when the window is empty. */
+  layer5_flow_max_trade_ts_in_window?: string | null;
+  layer6_technical_hits?: number;
 }
 
 export interface UseUnifiedScanState {

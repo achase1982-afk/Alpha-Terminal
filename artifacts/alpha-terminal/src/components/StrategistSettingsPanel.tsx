@@ -167,9 +167,11 @@ export function StrategistSettingsPanel() {
   const scannerIdioWarning = Math.abs(scannerIdioSum - 100) > 0.5;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="font-mono text-sm font-bold text-white tracking-wider uppercase">Scanner & Strategist Tuning</h2>
+    <div className="space-y-6 min-w-0 max-w-full">
+      <div className="flex items-center justify-between gap-2 min-w-0">
+        <h2 className="font-mono text-sm font-bold text-white tracking-wider uppercase min-w-0 leading-tight">
+          Scanner & Strategist Tuning
+        </h2>
         {resetConfirm ? (
           <div className="flex items-center gap-2">
             <span className="text-xs text-zinc-400 font-mono">Reset all?</span>
@@ -177,37 +179,49 @@ export function StrategistSettingsPanel() {
             <button onClick={() => setResetConfirm(false)} className="text-xs text-zinc-400 font-mono px-2 py-1 rounded border border-zinc-600 hover:bg-zinc-800">No</button>
           </div>
         ) : (
-          <button onClick={() => setResetConfirm(true)} className="flex items-center gap-1 text-xs text-zinc-500 hover:text-white font-mono">
+          <button onClick={() => setResetConfirm(true)} className="flex shrink-0 items-center gap-1 text-xs text-zinc-500 hover:text-white font-mono">
             <RotateCcw className="w-3 h-3" /> Reset
           </button>
         )}
       </div>
 
       {ioWarning && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-900/20 border border-amber-500/30">
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-900/20 border border-amber-500/30 min-w-0">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-          <span className="font-mono text-[11px] text-amber-300">IOScore weights sum to {ioSum.toFixed(2)} — should be 1.00</span>
+          <span className="font-mono text-[11px] text-amber-300 min-w-0 break-words">IOScore weights sum to {ioSum.toFixed(2)} — should be 1.00</span>
         </div>
       )}
       {scannerDefaultWarning && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-900/20 border border-blue-500/30">
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-900/20 border border-blue-500/30 min-w-0">
           <AlertTriangle className="w-3.5 h-3.5 text-blue-300 flex-shrink-0" />
-          <span className="font-mono text-[11px] text-blue-200">
+          <span className="font-mono text-[11px] text-blue-200 min-w-0 break-words">
             Scanner Default weights sum to {scannerDefaultSum} (defaults sum to 100). Engine normalizes by total so the score range is unaffected — this is informational only, showing your weights have drifted from defaults.
           </span>
         </div>
       )}
       {scannerIdioWarning && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-900/20 border border-blue-500/30">
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-900/20 border border-blue-500/30 min-w-0">
           <AlertTriangle className="w-3.5 h-3.5 text-blue-300 flex-shrink-0" />
-          <span className="font-mono text-[11px] text-blue-200">
+          <span className="font-mono text-[11px] text-blue-200 min-w-0 break-words">
             Scanner Idiosyncratic weights sum to {scannerIdioSum} (defaults sum to 100). Engine normalizes by total so the score range is unaffected — this is informational only, showing your weights have drifted from defaults.
           </span>
         </div>
       )}
 
+      {isConvictionDeskMode && (
+        <div className="px-3 py-2 rounded-lg bg-zinc-900/50 border border-zinc-700/60">
+          <span className="font-mono text-[11px] text-zinc-300 leading-relaxed block">
+            <span className="text-zinc-500 uppercase tracking-wide">Conviction Desk — LLM swap</span>
+            {" "}Use <strong className="text-zinc-100">Conviction Desk model</strong> below. Primary presets: index{" "}
+            <strong className="text-zinc-100">0</strong> Claude Opus 4.7,{" "}
+            <strong className="text-zinc-100">1</strong> GPT-5.5 + Thinking,{" "}
+            <strong className="text-zinc-100">3</strong> Gemini 3 Pro. Same data package; providers differ in tone and structure discipline.
+          </span>
+        </div>
+      )}
+
       {sortedGroups(groups).map(([group, items]) => (
-        <div key={group} className="space-y-3">
+        <div key={group} className="space-y-3 min-w-0">
           <h3 className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest font-medium border-b border-zinc-800 pb-1">{group}</h3>
           {items.map((m) => {
             const val = data.current[m.key] ?? m.default;
@@ -224,17 +238,17 @@ export function StrategistSettingsPanel() {
             const overriddenByUnlimited =
               m.key === "spreadWidth" && (data.current["spreadWidthUnlimited"] ?? 1) === 1;
             return (
-              <div key={m.key} className={`space-y-1 ${overriddenByUnlimited ? "opacity-50" : ""}`}>
-                <div className="flex items-center justify-between">
-                  <label className="font-mono text-[11px] text-white">{m.label}</label>
-                  <div className="flex items-center gap-2">
-                    {saving === m.key && <span className="text-[10px] text-zinc-500 font-mono">saving...</span>}
-                    {saved === m.key && <Check className="w-3 h-3 text-green-400" />}
+              <div key={m.key} className={`space-y-1 min-w-0 ${overriddenByUnlimited ? "opacity-50" : ""}`}>
+                <div className="flex flex-col gap-2 min-w-0 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                  <label className="font-mono text-[11px] text-white min-w-0 shrink sm:pr-2">{m.label}</label>
+                  <div className="flex items-center justify-end gap-2 min-w-0 sm:shrink-0">
+                    {saving === m.key && <span className="text-[10px] text-zinc-500 font-mono whitespace-nowrap">saving...</span>}
+                    {saved === m.key && <Check className="w-3 h-3 shrink-0 text-green-400" />}
                     {isDropdown ? (
                       <select
                         value={val}
                         onChange={(e) => handleChange(m.key, Number(e.target.value))}
-                        className="font-mono text-[11px] text-white bg-zinc-900 border border-zinc-700 rounded px-2 py-1 hover:border-[#f5a623] focus:border-[#f5a623] focus:outline-none"
+                        className="font-mono text-[11px] text-white bg-zinc-900 border border-zinc-700 rounded px-2 py-1 hover:border-[#f5a623] focus:border-[#f5a623] focus:outline-none max-w-full min-w-0 w-full sm:w-auto sm:max-w-sm"
                       >
                         {effectiveOptions!.map((opt) => (
                           <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -267,7 +281,7 @@ export function StrategistSettingsPanel() {
                     style={{ accentColor: "#f5a623", background: "#2A2A2C" }}
                   />
                 )}
-                <p className="font-mono text-[9px] text-zinc-600 leading-tight">{m.description}</p>
+                <p className="font-mono text-[9px] text-zinc-600 leading-tight break-words">{m.description}</p>
               </div>
             );
           })}

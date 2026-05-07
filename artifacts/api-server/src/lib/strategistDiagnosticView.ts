@@ -101,7 +101,7 @@ function deskDecision(
       return "fail";
     }
     const c = cd.conviction;
-    if (c.decision.chosen != null && c.size !== "no-trade") return "recommend";
+    if (c.pm.decision === "trade" && c.pm.structure != null) return "recommend";
     return "pass";
   }
   const d = desk as DeskResult;
@@ -114,9 +114,9 @@ function deskDecision(
 
 function structureLabelFromDesk(desk: ConvictionDeskResult | DeskResult): string | null {
   if (desk.mode === "conviction_desk") {
-    const ch = desk.conviction?.decision.chosen;
-    if (!ch) return null;
-    return `${ch.structure} @ ${ch.expiry}`;
+    const pm = desk.conviction?.pm.structure;
+    if (!pm) return null;
+    return `${pm.type} @ ${pm.expiry}`;
   }
   const pm = (desk as DeskResult).pm.structure;
   if (!pm) return null;
@@ -352,19 +352,22 @@ export function buildStrategistDiagnosticView(fullPayload: StrategistFullPayload
   let whoseSide = "neither";
 
   if (deskResult.mode === "conviction_desk") {
-    const conv = (deskResult as ConvictionDeskResult).conviction;
-    edgeCheck = "";
-    watchFor = "";
-    whoseSide = "neither";
-    if (!conv) {
-      thesis = "";
-      biggestRisk = "";
-      sizeDiag = "small";
+    const pm = (deskResult as ConvictionDeskResult).conviction?.pm;
+    if (pm) {
+      const edgeRaw = pm.edge_check ?? "";
+      thesis = typeof pm.thesis === "string" ? pm.thesis : "";
+      edgeCheck = typeof edgeRaw === "string" ? edgeRaw : "";
+      biggestRisk = typeof pm.biggest_risk === "string" ? pm.biggest_risk : "";
+      watchFor = typeof pm.watch_for === "string" ? pm.watch_for : "";
+      sizeDiag = pm.size;
+      whoseSide = pm.whose_side;
     } else {
-      thesis = conv.view.paragraph ?? "";
-      biggestRisk = conv.failure_scenario.steelman ?? "";
-      sizeDiag =
-        conv.size === "medium" || conv.size === "large" || conv.size === "no-trade" ? conv.size : "small";
+      thesis = "";
+      edgeCheck = "";
+      biggestRisk = "";
+      watchFor = "";
+      sizeDiag = "small";
+      whoseSide = "neither";
     }
   } else {
     const pm = deskResult.pm;

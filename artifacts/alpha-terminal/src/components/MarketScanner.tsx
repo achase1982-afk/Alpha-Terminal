@@ -12,7 +12,6 @@ import {
   Loader2,
   Filter,
   RefreshCw,
-  Radar,
 } from "lucide-react";
 import { useScannerUniverses } from "@/hooks/useScannerUniverses";
 import { ScreenBuilder } from "./ScreenBuilder";
@@ -31,13 +30,16 @@ import {
   readMutedSymbols,
   enrichScannerCardFromV2Candidate,
   scannerWireCardToScannerCardData,
+  ScannerChromeBar,
+  ScannerIdleEmptyState,
+  ScannerZeroCandidatesInline,
 } from "@/components/scanner";
 import type { ScannerV3WireCard } from "@/hooks/useUnifiedScan";
 import type { ScannerCardAction } from "@/components/scanner/scannerCard.types";
 import { isUsEquitiesMarketHoursEt } from "@/lib/usMarketHours";
 import { cn } from "@/lib/utils";
 
-function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCreateScreen, onEditScreen, onDeleteScreen, onRefreshScreen, refreshingScreenId, onCreateWatchlist, onEditWatchlist, onDeleteWatchlist, compactTrigger }: {
+function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCreateScreen, onEditScreen, onDeleteScreen, onRefreshScreen, refreshingScreenId, onCreateWatchlist, onEditWatchlist, onDeleteWatchlist, chromeTrigger }: {
   value: string;
   onChange: (v: string) => void;
   presets: Record<string, { label: string; description: string; count: number }>;
@@ -51,8 +53,8 @@ function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCre
   onCreateWatchlist?: () => void;
   onEditWatchlist?: (id: number) => void;
   onDeleteWatchlist?: (id: number) => void;
-  /** Narrow trigger + slightly shorter control for scanner header row on small screens */
-  compactTrigger?: boolean;
+  /** Scanner chrome: hug-content trigger, ~36px tall, `text-sm` + `rounded-lg`. */
+  chromeTrigger?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -108,22 +110,26 @@ function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCre
       ? !new RegExp(`\\b${selectedCount}\\b`).test(selectedLabel)
       : true;
 
+  const showCount = showCountBadge && !chromeTrigger;
+
   return (
-    <div className="relative">
+    <div className={cn("relative", chromeTrigger ? "block w-full min-w-0 max-w-full" : "")}>
       <button
         ref={btnRef}
         type="button"
+        aria-expanded={open}
+        aria-haspopup="menu"
         onClick={() => setOpen(o => !o)}
         className={cn(
-          "flex w-full items-center justify-between gap-1.5 rounded-full border border-zinc-700/60 bg-zinc-900/70 text-foreground transition-colors hover:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-primary/40",
-          compactTrigger
-            ? "min-h-[32px] px-2.5 py-1 text-[11px]"
-            : "min-h-[40px] px-3 py-2 text-sm",
+          "border text-foreground transition-colors focus:outline-none focus:ring-1 focus:ring-primary/40",
+          chromeTrigger
+            ? "relative flex h-9 max-h-9 w-full min-w-0 items-center rounded-lg border-zinc-700/60 bg-zinc-900/80 py-1.5 pl-3 pr-8 text-left text-sm hover:border-zinc-500"
+            : "flex w-full min-h-[40px] items-center justify-between gap-2 rounded-md border-card-border bg-card px-3 py-2 text-sm hover:border-zinc-600",
         )}
       >
-        <span className={cn("min-w-0 font-medium leading-tight", compactTrigger ? "truncate" : "")}>
+        <span className={cn("min-w-0 font-medium leading-snug", chromeTrigger ? "block truncate" : "")}>
           {selectedLabel}
-          {showCountBadge ? (
+          {showCount ? (
             <span className="whitespace-nowrap font-normal text-muted-foreground">
               {" "}
               ({selectedCount})
@@ -132,10 +138,13 @@ function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCre
         </span>
         <ChevronDown
           className={cn(
-            "shrink-0 text-muted-foreground transition-transform",
+            "text-muted-foreground/70 transition-transform",
             open && "rotate-180",
-            compactTrigger ? "h-3 w-3" : "h-4 w-4",
+            chromeTrigger
+              ? "pointer-events-none absolute right-2.5 top-1/2 h-3 w-3 -translate-y-1/2 shrink-0"
+              : "h-4 w-4 shrink-0",
           )}
+          aria-hidden
         />
       </button>
 
@@ -523,83 +532,64 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
         </div>
       )}
 
-      <div className="bg-card border border-card-border rounded-xl overflow-hidden">
-        <div className="bg-[#0c0c0c] px-2 pb-2 pt-2 sm:px-3 sm:pb-2 sm:pt-2">
-          <div className="flex flex-row items-center gap-1.5">
-            <div
-              className={cn(
-                "min-w-0 shrink-0",
-                unified.phase === "idle" ? "flex-1" : "basis-[48%] max-w-[min(12rem,56vw)] sm:max-w-[min(15rem,46%)]",
-              )}
+      <ScannerChromeBar
+        universeSlot={
+          <UniverseDropdown
+            value={universe}
+            onChange={setUniverse}
+            presets={universeData.presets}
+            watchlists={universeData.watchlists}
+            screens={universeData.screens}
+            onCreateScreen={() => { setEditingScreen(null); setShowScreenBuilder(true); }}
+            onEditScreen={(id) => { setEditingScreen(id); setShowScreenBuilder(true); }}
+            onDeleteScreen={async (id) => {
+              await universeData.deleteScreen(id);
+              if (universe === `screen:${id}`) setUniverse("preset:liquidCore130");
+            }}
+            onRefreshScreen={handleRefreshScreen}
+            refreshingScreenId={refreshingScreenId}
+            onCreateWatchlist={() => { setEditingWatchlistId(null); setShowWatchlistEditor(true); }}
+            onEditWatchlist={(id) => { setEditingWatchlistId(id); setShowWatchlistEditor(true); }}
+            onDeleteWatchlist={async (id) => {
+              await universeData.deleteWatchlist(id);
+              if (universe === `watchlist:${id}`) setUniverse("preset:liquidCore130");
+            }}
+            chromeTrigger
+          />
+        }
+        scanSlot={
+          unified.phase !== "idle" ? (
+            <button
+              type="button"
+              onClick={handleScanClick}
+              disabled={!accessToken || unified.phase === "scanning" || currentSymCount === 0 || shockActive}
+              className="inline-flex h-9 max-h-9 shrink-0 flex-none items-center justify-center whitespace-nowrap rounded-lg border border-primary/75 bg-transparent px-3 py-1.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-30 active:scale-[0.99]"
             >
-              <UniverseDropdown
-                value={universe}
-                onChange={setUniverse}
-                presets={universeData.presets}
-                watchlists={universeData.watchlists}
-                screens={universeData.screens}
-                onCreateScreen={() => { setEditingScreen(null); setShowScreenBuilder(true); }}
-                onEditScreen={(id) => { setEditingScreen(id); setShowScreenBuilder(true); }}
-                onDeleteScreen={async (id) => {
-                  await universeData.deleteScreen(id);
-                  if (universe === `screen:${id}`) setUniverse("preset:liquidCore130");
-                }}
-                onRefreshScreen={handleRefreshScreen}
-                refreshingScreenId={refreshingScreenId}
-                onCreateWatchlist={() => { setEditingWatchlistId(null); setShowWatchlistEditor(true); }}
-                onEditWatchlist={(id) => { setEditingWatchlistId(id); setShowWatchlistEditor(true); }}
-                onDeleteWatchlist={async (id) => {
-                  await universeData.deleteWatchlist(id);
-                  if (universe === `watchlist:${id}`) setUniverse("preset:liquidCore130");
-                }}
-                compactTrigger
-              />
-            </div>
-            {unified.phase !== "idle" ? (
-              <button
-                type="button"
-                onClick={handleScanClick}
-                disabled={!accessToken || unified.phase === "scanning" || currentSymCount === 0 || shockActive}
-                className="flex min-h-[32px] min-w-0 flex-1 items-center justify-center rounded-full border border-primary/65 bg-transparent px-3 font-mono text-[11px] font-semibold tracking-wide text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-30 active:scale-[0.99]"
-              >
-                {unified.phase === "scanning" ? (
-                  <span className="flex items-center justify-center gap-1.5">
-                    <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                    <span className="truncate">Loading</span>
-                  </span>
-                ) : (
-                  "Scan"
-                )}
-              </button>
-            ) : null}
-          </div>
-          {!accessToken && (
+              {unified.phase === "scanning" ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                  <span className="truncate">Loading</span>
+                </span>
+              ) : (
+                "Scan"
+              )}
+            </button>
+          ) : undefined
+        }
+        footerSlot={
+          !accessToken ? (
             <div className="mt-2 flex justify-center">
               <ConnectBrokerPrompt label="Connect Brokerage For Market Scanner" compact />
             </div>
-          )}
-        </div>
-      </div>
+          ) : undefined
+        }
+      />
 
       {unified.phase === "idle" && !unified.errorMessage && (
-        <div className="py-8 text-center">
-          <div className="mx-auto mb-5 max-w-xs border-b border-zinc-800/40 pb-4">
-            <h2 className="font-mono text-sm font-bold tracking-wider text-zinc-200">SCANNER</h2>
-            <p className="mt-1 font-mono text-[11px] tracking-widest text-zinc-500">Market candidates</p>
-          </div>
-          <div className="relative mx-auto mb-4 flex h-10 w-10 items-center justify-center">
-            <Radar className="h-8 w-8 text-primary opacity-50" aria-hidden />
-          </div>
-          <p className="mb-6 font-mono text-xs text-zinc-500">No scan run yet</p>
-          <button
-            type="button"
-            onClick={handleScanClick}
-            disabled={!accessToken || currentSymCount === 0 || shockActive}
-            className="inline-flex items-center justify-center rounded-lg border border-primary/80 bg-transparent px-6 py-2.5 font-mono text-[13px] font-bold tracking-wider text-primary transition-colors hover:bg-primary/10 active:scale-[0.98] active:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Run Scan
-          </button>
-        </div>
+        <ScannerIdleEmptyState
+          onRunScan={handleScanClick}
+          runDisabled={!accessToken || currentSymCount === 0 || shockActive}
+        />
       )}
 
       {unified.phase === "scanning" && (
@@ -638,13 +628,12 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
               <div id="scanner-v3-layer1-heading" className="sr-only">
                 Scanner universe list
               </div>
-              <div className="overflow-hidden rounded-xl border border-card-border bg-[#0c0c0c]">
-                <div
-                  role="list"
-                  aria-labelledby="scanner-v3-layer1-heading"
-                  aria-label={`Scanner universe, ${layer1FilteredSymbols.length} visible tickers`}
-                  className="max-h-[min(560px,55vh)] space-y-2 overflow-y-auto p-2"
-                >
+              <div
+                role="list"
+                aria-labelledby="scanner-v3-layer1-heading"
+                aria-label={`Scanner universe, ${layer1FilteredSymbols.length} visible tickers`}
+                className="divide-y divide-zinc-800/45 border-t border-b border-zinc-800/45"
+              >
                   {layer1FilteredSymbols.map((sym) => (
                     <ScannerCard
                       key={sym}
@@ -667,7 +656,6 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
                     />
                   ))}
                 </div>
-              </div>
             </>
           )}
           <div className="flex flex-wrap items-end justify-between gap-2 px-1">
@@ -685,17 +673,9 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
               Retry
             </button>
           </div>
-          <div className="flex flex-wrap items-center gap-2 px-1">
-            <span className="text-[11px] text-zinc-400 font-bold uppercase tracking-wider">
-              {candidates.length} CANDIDATES · {universeLabel}
-            </span>
-          </div>
-
-          {candidates.length === 0 ? (
-            <div className="py-10 text-center text-[12px] text-zinc-500 bg-card border border-card-border rounded-xl px-4">
-              No candidates found. Try a different universe or wait for the next market session.
-            </div>
-          ) : (
+          {candidates.length === 0 && layer1FilteredSymbols.length === 0 ? (
+            <ScannerZeroCandidatesInline />
+          ) : candidates.length > 0 ? (
             <div className="space-y-2">
               {candidates.map((c, i) => (
                 <UnifiedScannerCard
@@ -729,7 +709,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
                 />
               ))}
             </div>
-          )}
+          ) : null}
         </div>
       )}
 

@@ -70,7 +70,8 @@ export const STRATEGIST_MODEL_OPTIONS: StrategistModelOption[] = [
   { provider: "anthropic", model: "claude-opus-4-7", label: "Claude Opus 4.7 (Anthropic)" },
   { provider: "openai", model: "gpt-5.5", label: "GPT-5.5 + Thinking (OpenAI)" },
   { provider: "openai", model: "gpt-5.4-mini", label: "GPT-5.4 Mini (OpenAI)" },
-  { provider: "google", model: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (Google)" },
+  /** API id is preview; label reflects Gemini 3 family for Conviction / Solo swaps. */
+  { provider: "google", model: "gemini-3.1-pro-preview", label: "Gemini 3 Pro (Google)" },
   { provider: "google", model: "gemini-3-flash-preview", label: "Gemini 3 Flash (Google)" },
   { provider: "xai", model: "grok-4-1-fast-reasoning", label: "Grok 4.1 fast reasoning (xAI)" },
 ];
@@ -461,7 +462,7 @@ export function getSettingMeta(): SettingMetaEntry[] {
       { value: 5, label: "Conviction Desk (memo JSON)" },
     ] },
     { key: "strategistSoloModelIdx", label: "Solo Model", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used in Solo mode and Solo Desk mode (one consolidated Desk-shaped pass). In Desk mode this slot is used for the Volatility section.", options: modelOptions },
-    { key: "strategistConvictionModelIdx", label: "Conviction Desk", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used for Conviction Desk (single-pass trade memo JSON). Defaults to the same catalog index as Solo Model unless you change it.", options: modelOptions },
+    { key: "strategistConvictionModelIdx", label: "Conviction Desk", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Single-pass trade memo JSON for Conviction Desk. Catalog indices: 0 = Claude Opus 4.7, 1 = GPT-5.5 + Thinking, 2 = GPT-5.4 Mini, 3 = Gemini 3 Pro (JSON MIME; catalyst web search is pre-run when needed), 4 = Gemini 3 Flash, 5 = Grok. Swap models to compare defensible memos across Anthropic, OpenAI, and Google.", options: modelOptions },
     { key: "strategistDebateAModelIdx", label: "Debate — Bull Model", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used to argue the Bull side in Debate mode. In Desk mode this slot is used for the Flow section. Unused in Solo Desk mode (Solo model slot runs the full report).", options: modelOptions },
     { key: "strategistDebateBModelIdx", label: "Debate — Bear Model", group: "Strategist", default: 1, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used to argue the Bear side in Debate mode. In Desk mode this slot is used for the Catalyst section. Unused in Solo Desk mode (Solo model slot runs the full report).", options: modelOptions },
     { key: "strategistArbitratorModelIdx", label: "Debate — Arbitrator Model", group: "Strategist", default: 0, min: -1, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used in Phase 3 to arbitrate between Bull's and Bear's structure proposals and ship the final trade. In Desk mode this slot is used for the Decision section. Unused in Solo Desk mode (Solo model slot runs the full report).", options: [{ value: -1, label: "Debate Winner (winning side promoted to arbitrator pass)" }, ...modelOptions] },

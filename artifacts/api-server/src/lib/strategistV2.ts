@@ -31,6 +31,7 @@ import {
 import { runWithPolygonApiTraceAsync, takePolygonApiTrace } from "./polygonApiTrace.js";
 import { runInStrategistRunContext, getStrategistRunContext, mergeStrategistDiag } from "./strategistRunContext.js";
 import { buildScannerContextPromptBlock } from "./scannerStrategistContext.js";
+import { stripConvictionDiagnosticsFromDeskResult } from "./strategistClientSanitize.js";
 import {
   buildStrategistDiagnosticView,
   type StrategistDiagnosticView,
@@ -1156,10 +1157,21 @@ async function analyzeTickerV2Inner(
         ioScore,
         tickerData,
         toxicCheck,
-        telemetryDbResult: "recommendation",
+        telemetryDbResult: "desk_recommendation",
         aiDecision: null,
         thesis: null,
-        extras: { dataPackage, deskResult, runOutcomeOverride: outcomeOv },
+        extras: {
+          dataPackage,
+          deskResult,
+          runOutcomeOverride: outcomeOv,
+          error: deskResult.pmOutputIncomplete
+            ? {
+                message:
+                  deskResult.errors?.find((e) => e.startsWith("PM output failed")) ??
+                  "PM output did not match the required JSON schema after retry.",
+              }
+            : null,
+        },
       });
       result.telemetryId = telemetryId ?? undefined;
       result.strategistDiagnosticRequestId = getStrategistRunContext()?.requestId;
@@ -1237,10 +1249,21 @@ async function analyzeTickerV2Inner(
         ioScore,
         tickerData,
         toxicCheck,
-        telemetryDbResult: "recommendation",
+        telemetryDbResult: "desk_recommendation",
         aiDecision: null,
         thesis: null,
-        extras: { dataPackage, deskResult, runOutcomeOverride: outcomeOv },
+        extras: {
+          dataPackage,
+          deskResult,
+          runOutcomeOverride: outcomeOv,
+          error: incomplete
+            ? {
+                message:
+                  deskResult.errors?.find((e) => e.startsWith("Solo Desk output failed")) ??
+                  "Solo Desk output did not match the required JSON schema after retry.",
+              }
+            : null,
+        },
       });
       result.telemetryId = telemetryId ?? undefined;
       result.strategistDiagnosticRequestId = getStrategistRunContext()?.requestId;
@@ -1282,12 +1305,14 @@ async function analyzeTickerV2Inner(
       const deskResult = attachConvictionDeskPayoffScenarios(deskResultRaw, dataPackage);
       const incomplete =
         deskResult.convictionDeskJsonDegraded === "schema_validation_failed_after_retry" ||
+        deskResult.convictionDeskJsonDegraded === "stream_error" ||
+        deskResult.convictionDeskJsonDegraded === "extraction_error" ||
         deskResult.conviction == null ||
         (deskResult.errors?.some((e) => e.startsWith("Conviction Desk output failed validation")) ?? false);
       const hasTrade =
         deskResult.conviction != null &&
-        deskResult.conviction.decision.chosen != null &&
-        deskResult.conviction.size !== "no-trade";
+        deskResult.conviction.pm.decision === "trade" &&
+        deskResult.conviction.pm.structure != null;
       const result: StrategistV2Result = {
         status: "desk_recommendation",
         ticker,
@@ -1322,10 +1347,21 @@ async function analyzeTickerV2Inner(
         ioScore,
         tickerData,
         toxicCheck,
-        telemetryDbResult: "recommendation",
+        telemetryDbResult: "desk_recommendation",
         aiDecision: null,
         thesis: null,
-        extras: { dataPackage, deskResult, runOutcomeOverride: outcomeOv },
+        extras: {
+          dataPackage,
+          deskResult,
+          runOutcomeOverride: outcomeOv,
+          error: incomplete
+            ? {
+                message:
+                  deskResult.errors?.find((e) => e.startsWith("Conviction Desk")) ??
+                  "Conviction Desk output did not match the required JSON schema after retry.",
+              }
+            : null,
+        },
       });
       result.telemetryId = telemetryId ?? undefined;
       result.strategistDiagnosticRequestId = getStrategistRunContext()?.requestId;
@@ -4460,11 +4496,14 @@ async function emitFullDiagnosticTelemetry(args: {
   extras: TelemetryExtras;
 }): Promise<number | null> {
   const ctx = getStrategistRunContext();
+  const ed = args.extras.deskResult;
+  const deskForTelemetry = ed ? (stripConvictionDiagnosticsFromDeskResult(ed) ?? ed) : ed;
+  const extrasEff: TelemetryExtras = { ...args.extras, deskResult: deskForTelemetry };
   const dataPkgStr =
-    typeof args.extras.dataPackage === "string"
-      ? args.extras.dataPackage
-      : args.extras.dataPackage != null
-        ? JSON.stringify(args.extras.dataPackage)
+    typeof extrasEff.dataPackage === "string"
+      ? extrasEff.dataPackage
+      : extrasEff.dataPackage != null
+        ? JSON.stringify(extrasEff.dataPackage)
         : ctx?.diag.dataPackageStr;
   const parsedPkg = parseDataPackageForDiag(dataPkgStr);
   const tape = ctx?.diag.tapeBackfillStatus;
@@ -4473,29 +4512,29 @@ async function emitFullDiagnosticTelemetry(args: {
     ctx?.diag.soloModelLabel ?? getStrategistModel(args.settings.strategistSoloModelIdx).label;
   const modelAttr = buildModelAttributionPlaceholder({
     settings: args.settings,
-    deskResult: args.extras.deskResult ?? undefined,
+    deskResult: extrasEff.deskResult ?? undefined,
     soloModelLabel: soloLabel,
   });
   const strategistPayload = strategistPayloadFromResult({
     settings: args.settings,
-    deskResult: args.extras.deskResult ?? undefined,
-    aiResponse: args.extras.aiTradePayload ?? undefined,
+    deskResult: extrasEff.deskResult ?? undefined,
+    aiResponse: extrasEff.aiTradePayload ?? undefined,
   });
   const durationMs = ctx ? Date.now() - ctx.startedAt : 0;
   const deskTrade = ((): boolean => {
-    const dr = args.extras.deskResult;
+    const dr = extrasEff.deskResult;
     if (!dr) return false;
     if (dr.mode === "conviction_desk") {
       return (
         dr.conviction != null &&
-        dr.conviction.decision.chosen != null &&
-        dr.conviction.size !== "no-trade"
+        dr.conviction.pm.decision === "trade" &&
+        dr.conviction.pm.structure != null
       );
     }
     return dr.pm.decision === "trade";
   })();
   const outcome =
-    args.extras.runOutcomeOverride ??
+    extrasEff.runOutcomeOverride ??
     telemetryDbResultToOutcome(args.telemetryDbResult, deskTrade);
   const meta: StrategistRunMetadata = {
     timestamp: new Date().toISOString(),
@@ -4515,7 +4554,7 @@ async function emitFullDiagnosticTelemetry(args: {
     polygonTrace,
     runOutcome: outcome,
     runDurationMs: durationMs,
-    error: args.extras.error ?? null,
+    error: extrasEff.error ?? null,
     closingImbalancePresent: ctx?.diag.closingImbalancePresent,
     closingImbalanceLatencyMs: ctx?.diag.closingImbalanceLatencyMs ?? null,
     nasdaqDepthPresent: ctx?.diag.nasdaqDepthPresent ?? null,
@@ -4543,7 +4582,7 @@ async function emitFullDiagnosticTelemetry(args: {
     args.toxicCheck,
     args.aiDecision,
     args.thesis,
-    { ...args.extras, fullDiagnostic },
+    { ...extrasEff, fullDiagnostic },
   );
 }
 
