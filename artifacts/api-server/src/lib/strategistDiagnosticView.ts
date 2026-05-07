@@ -101,7 +101,7 @@ function deskDecision(
       return "fail";
     }
     const c = cd.conviction;
-    if (c.decision.chosen != null && c.size !== "no-trade") return "recommend";
+    if (c.pm.decision === "trade" && c.pm.structure != null) return "recommend";
     return "pass";
   }
   const d = desk as DeskResult;
@@ -114,9 +114,9 @@ function deskDecision(
 
 function structureLabelFromDesk(desk: ConvictionDeskResult | DeskResult): string | null {
   if (desk.mode === "conviction_desk") {
-    const ch = desk.conviction?.decision.chosen;
-    if (!ch) return null;
-    return `${ch.structure} @ ${ch.expiry}`;
+    const pm = desk.conviction?.pm.structure;
+    if (!pm) return null;
+    return `${pm.type} @ ${pm.expiry}`;
   }
   const pm = (desk as DeskResult).pm.structure;
   if (!pm) return null;

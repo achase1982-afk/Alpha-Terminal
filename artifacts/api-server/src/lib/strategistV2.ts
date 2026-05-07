@@ -1311,8 +1311,8 @@ async function analyzeTickerV2Inner(
         (deskResult.errors?.some((e) => e.startsWith("Conviction Desk output failed validation")) ?? false);
       const hasTrade =
         deskResult.conviction != null &&
-        deskResult.conviction.decision.chosen != null &&
-        deskResult.conviction.size !== "no-trade";
+        deskResult.conviction.pm.decision === "trade" &&
+        deskResult.conviction.pm.structure != null;
       const result: StrategistV2Result = {
         status: "desk_recommendation",
         ticker,
@@ -4527,8 +4527,8 @@ async function emitFullDiagnosticTelemetry(args: {
     if (dr.mode === "conviction_desk") {
       return (
         dr.conviction != null &&
-        dr.conviction.decision.chosen != null &&
-        dr.conviction.size !== "no-trade"
+        dr.conviction.pm.decision === "trade" &&
+        dr.conviction.pm.structure != null
       );
     }
     return dr.pm.decision === "trade";

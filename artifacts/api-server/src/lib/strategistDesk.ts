@@ -36,7 +36,7 @@ import {
   buildConvictionDeskUserPrompt,
 } from "./strategistDeskPrompts.js";
 import { CONVICTION_DESK_MODEL_SYSTEM_PROMPT } from "./convictionDeskSystemPrompt.js";
-import { normalizeConvictionDeskOutput, validateConvictionDeskBusinessRules } from "./strategistDeskConvictionRules.js";
+import { validateConvictionDeskBusinessRules } from "./strategistDeskConvictionRules.js";
 import {
   zodIssuesFromError,
   type ConvictionAttemptValidationResult,
@@ -732,8 +732,7 @@ function validateConvictionPipeline(
       businessRuleErrors: [],
     };
   }
-  const normalized = normalizeConvictionDeskOutput(zod.data);
-  const biz = validateConvictionDeskBusinessRules(normalized);
+  const biz = validateConvictionDeskBusinessRules(zod.data);
   if (biz.length > 0) {
     return {
       ok: false,
@@ -742,7 +741,7 @@ function validateConvictionPipeline(
       businessRuleErrors: biz,
     };
   }
-  return { ok: true, data: normalized };
+  return { ok: true, data: zod.data };
 }
 
 function validationResultForAttempt(
