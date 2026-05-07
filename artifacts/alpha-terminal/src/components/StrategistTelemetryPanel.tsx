@@ -1,10 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { ChevronDown, ChevronUp, Activity, Search as SearchIcon, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { BottomSheet } from "@/components/ui/BottomSheet";
-import { useIsTablet } from "@/hooks/useMediaQuery";
 import {
   buildSectionedCopyPayload,
   COPY_SECTIONS,
@@ -120,6 +118,61 @@ async function writeClipboard(text: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Single `document.body` portal — no Popover/Vaul nesting inside Telemetry scroll areas. */
+function TelemetryCopyModal({
+  open,
+  onClose,
+  title,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open || typeof document === "undefined") return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
+  if (!open || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 flex items-center justify-center p-3 sm:p-4"
+      style={{ zIndex: TELEMETRY_COPY_LAYER_Z }}
+    >
+      <button type="button" className="absolute inset-0 bg-black/80" aria-label="Close" onClick={onClose} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="telemetry-copy-modal-title"
+        className="relative z-[1] flex max-h-[min(88vh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-zinc-600 bg-[#0c0c0c] p-4 text-zinc-100 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id="telemetry-copy-modal-title" className="mb-3 font-mono text-sm font-bold uppercase tracking-wider text-zinc-300">
+          {title}
+        </h2>
+        <div className="min-h-0 flex flex-1 flex-col overflow-hidden">{children}</div>
+      </div>
+    </div>,
+    document.body,
+  );
 }
 
 export function StrategistTelemetryPanel() {
@@ -243,26 +296,14 @@ export function StrategistTelemetryPanel() {
           {filtered.map((row) => {
             const badge = getDecisionBadge(row);
             return (
-            <div key={row.id} className="rounded-lg overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
-              <div
-                role="button"
-                tabIndex={0}
-                className="w-full px-3 py-2.5 flex items-center justify-between cursor-pointer text-left"
-                onClick={(e) => {
-                  if ((e.target as HTMLElement).closest("[data-telemetry-row-copy]")) return;
-                  setExpandedId(expandedId === row.id ? null : row.id);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key !== "Enter" && e.key !== " ") return;
-                  const ae = document.activeElement as HTMLElement | null;
-                  if (ae && !e.currentTarget.contains(ae)) return;
-                  if (ae?.closest("[data-telemetry-row-copy]")) return;
-                  e.preventDefault();
-                  setExpandedId(expandedId === row.id ? null : row.id);
-                }}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="font-mono text-[12px] text-white font-bold w-12 flex-shrink-0">{row.ticker}</span>
+            <div key={row.id} className="rounded-lg border border-[#2A2A2C] bg-[#111113]">
+              <div className="flex items-stretch gap-1 px-2 py-2">
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-center gap-3 py-1 text-left"
+                  onClick={() => setExpandedId(expandedId === row.id ? null : row.id)}
+                >
+                  <span className="w-12 flex-shrink-0 font-mono text-[12px] font-bold text-white">{row.ticker}</span>
                   <span
                     className="font-mono text-[12px] font-bold px-1.5 py-0.5 rounded"
                     style={{ color: badge.color, background: `${badge.color}15` }}
@@ -275,15 +316,23 @@ export function StrategistTelemetryPanel() {
                     </span>
                   )}
                   {row.strategyDecision?.strategyType && (
-                    <span className="font-mono text-[12px] text-zinc-400 hidden sm:inline">
+                    <span className="hidden font-mono text-[12px] text-zinc-400 sm:inline">
                       {row.strategyDecision.strategyType.replace(/_/g, " ")}
                     </span>
                   )}
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
+                </button>
+                <div className="flex shrink-0 items-center gap-2 py-1">
                   <TelemetryEntryCopyButton row={row} />
                   <span className="font-mono text-[12px] text-zinc-400">{fmtDt(row.timestamp)}</span>
-                  {expandedId === row.id ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />}
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center p-1 text-zinc-400 hover:text-white"
+                    aria-expanded={expandedId === row.id}
+                    aria-label={expandedId === row.id ? "Collapse row" : "Expand row"}
+                    onClick={() => setExpandedId(expandedId === row.id ? null : row.id)}
+                  >
+                    {expandedId === row.id ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                  </button>
                 </div>
               </div>
               {expandedId === row.id && (
@@ -396,21 +445,21 @@ function readStoredCopySelection(): Record<CopySectionId, boolean> | null {
 }
 
 function TelemetryEntryCopyButton({ row }: { row: TelemetryRow }) {
-  const isWide = useIsTablet();
   const [open, setOpen] = useState(false);
   const [checked, setChecked] = useState<Record<CopySectionId, boolean>>(emptyChecked);
   const [justCopiedIcon, setJustCopiedIcon] = useState(false);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const onOpenChange = useCallback((next: boolean) => {
-    setOpen(next);
-    if (next) {
-      const stored = readStoredCopySelection();
-      setChecked(stored ?? emptyChecked());
-    } else {
-      window.requestAnimationFrame(() => triggerRef.current?.focus());
-    }
+  const close = useCallback(() => {
+    setOpen(false);
+    window.requestAnimationFrame(() => triggerRef.current?.focus());
+  }, []);
+
+  const openModal = useCallback(() => {
+    setOpen(true);
+    const stored = readStoredCopySelection();
+    setChecked(stored ?? emptyChecked());
   }, []);
 
   useEffect(() => {
@@ -454,13 +503,13 @@ function TelemetryEntryCopyButton({ row }: { row: TelemetryRow }) {
       try {
         sessionStorage.setItem(COPY_SECTIONS_STORAGE_KEY, JSON.stringify(ids));
       } catch {
-        /* ignore quota / private mode */
+        /* ignore */
       }
       toast.message(`Copied ${ids.length} section${ids.length === 1 ? "" : "s"}`);
-      onOpenChange(false);
+      close();
       flashCopied();
     }
-  }, [row, checked, flashCopied, onOpenChange]);
+  }, [row, checked, close, flashCopied]);
 
   const onExportFull = useCallback(
     async (e: React.MouseEvent) => {
@@ -470,125 +519,78 @@ function TelemetryEntryCopyButton({ row }: { row: TelemetryRow }) {
       const ok = await writeClipboard(text);
       if (ok) {
         toast.message("Copied full row");
-        onOpenChange(false);
+        close();
         flashCopied();
       }
     },
-    [row, flashCopied, onOpenChange],
+    [row, close, flashCopied],
   );
-
-  const menuBody = (
-    <div
-      className={isWide ? "p-0" : "flex min-h-0 flex-1 flex-col overflow-hidden"}
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="font-mono text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2">Copy sections</div>
-      <div className={isWide ? "" : "flex min-h-0 flex-1 flex-col overflow-hidden"}>
-        <label className="flex items-center gap-2 cursor-pointer py-1.5 border-b border-zinc-800 mb-1 shrink-0">
-          <input
-            ref={selectAllRef}
-            type="checkbox"
-            className="rounded border-zinc-600"
-            checked={allSelected}
-            onChange={toggleSelectAll}
-          />
-          <span className="font-mono text-xs">Select all</span>
-        </label>
-        <div
-          className={
-            isWide
-              ? "max-h-[min(48vh,18rem)] overflow-y-auto overscroll-contain"
-              : "max-h-[min(52vh,22rem)] flex-1 overflow-y-auto overscroll-contain pr-1"
-          }
-        >
-          <ul className="space-y-1 py-1">
-            {COPY_SECTIONS.map((s) => (
-              <li key={s.id}>
-                <label className="flex items-start gap-2 cursor-pointer py-1 rounded hover:bg-zinc-900/80 px-1 -mx-1">
-                  <input
-                    type="checkbox"
-                    className="rounded border-zinc-600 mt-0.5 shrink-0"
-                    checked={checked[s.id]}
-                    onChange={() => toggleOne(s.id)}
-                  />
-                  <span className="font-mono text-[12px] text-zinc-200 leading-snug">{s.label}</span>
-                </label>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-      <div className="shrink-0 border-t border-zinc-800 pt-3 mt-2">
-        <button
-          type="button"
-          onClick={onCopySelected}
-          className="w-full font-mono text-xs font-bold py-2 rounded-md bg-zinc-100 text-zinc-900 hover:bg-white mb-2"
-        >
-          Copy selected
-        </button>
-        <button
-          type="button"
-          onClick={onExportFull}
-          className="w-full text-center font-mono text-[11px] text-zinc-500 hover:text-zinc-300 underline-offset-2 hover:underline py-1"
-        >
-          Export full row
-        </button>
-      </div>
-    </div>
-  );
-
-  const triggerButton = (
-    <button
-      ref={triggerRef}
-      type="button"
-      data-telemetry-row-copy
-      onClick={(e) => {
-        e.stopPropagation();
-        if (!isWide) onOpenChange(true);
-      }}
-      aria-label="Copy telemetry sections"
-      aria-haspopup="dialog"
-      aria-expanded={open}
-      className="inline-flex items-center justify-center rounded-md border border-zinc-700 bg-zinc-900 text-zinc-300 hover:text-white hover:bg-zinc-800 shrink-0"
-      style={{ minWidth: 44, minHeight: 44 }}
-    >
-      {justCopiedIcon ? <Check className="w-4 h-4 text-emerald-400" aria-hidden /> : <Copy className="w-4 h-4" aria-hidden />}
-    </button>
-  );
-
-  if (isWide) {
-    return (
-      <span data-telemetry-row-copy className="inline-flex shrink-0">
-        <Popover modal open={open} onOpenChange={onOpenChange}>
-          <PopoverTrigger asChild>{triggerButton}</PopoverTrigger>
-          <PopoverContent
-            style={{ zIndex: TELEMETRY_COPY_LAYER_Z }}
-            className="w-[min(100vw-2rem,22rem)] border-zinc-700 bg-zinc-950 p-3 text-zinc-100 shadow-xl"
-            align="end"
-            side="bottom"
-            sideOffset={8}
-            collisionPadding={8}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {menuBody}
-          </PopoverContent>
-        </Popover>
-      </span>
-    );
-  }
 
   return (
-    <span data-telemetry-row-copy className="inline-flex shrink-0">
-      {triggerButton}
-      <BottomSheet
-        open={open}
-        onOpenChange={onOpenChange}
-        title="Copy sections"
-        description="Choose strategist telemetry sections to copy to the clipboard"
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          openModal();
+        }}
+        aria-label="Copy telemetry sections"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        className="inline-flex shrink-0 items-center justify-center rounded-md border border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-white"
+        style={{ minWidth: 44, minHeight: 44 }}
       >
-        {menuBody}
-      </BottomSheet>
-    </span>
+        {justCopiedIcon ? <Check className="h-4 w-4 text-emerald-400" aria-hidden /> : <Copy className="h-4 w-4" aria-hidden />}
+      </button>
+      <TelemetryCopyModal open={open} onClose={close} title="Copy sections">
+        <div className="flex min-h-0 flex-1 flex-col" onClick={(e) => e.stopPropagation()}>
+          <label className="mb-2 flex cursor-pointer items-center gap-2 border-b border-zinc-800 py-2">
+            <input
+              ref={selectAllRef}
+              type="checkbox"
+              className="rounded border-zinc-600"
+              checked={allSelected}
+              onChange={toggleSelectAll}
+            />
+            <span className="font-mono text-xs">Select all</span>
+          </label>
+          <div className="max-h-60 min-h-0 overflow-y-auto overscroll-contain py-1 sm:max-h-72">
+            <ul className="space-y-1">
+              {COPY_SECTIONS.map((s) => (
+                <li key={s.id}>
+                  <label className="-mx-1 flex cursor-pointer items-start gap-2 rounded px-1 py-1 hover:bg-zinc-900/80">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 shrink-0 rounded border-zinc-600"
+                      checked={checked[s.id]}
+                      onChange={() => toggleOne(s.id)}
+                    />
+                    <span className="font-mono text-[12px] leading-snug text-zinc-200">{s.label}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="mt-3 shrink-0 border-t border-zinc-800 pt-3">
+            <button
+              type="button"
+              onClick={onCopySelected}
+              className="mb-2 w-full rounded-md bg-zinc-100 py-2 font-mono text-xs font-bold text-zinc-900 hover:bg-white"
+            >
+              Copy selected
+            </button>
+            <button
+              type="button"
+              onClick={onExportFull}
+              className="w-full py-1 text-center font-mono text-[11px] text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+            >
+              Export full row
+            </button>
+          </div>
+        </div>
+      </TelemetryCopyModal>
+    </>
   );
 }
 
