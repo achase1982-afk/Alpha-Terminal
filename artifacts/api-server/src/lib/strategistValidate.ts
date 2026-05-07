@@ -17,6 +17,8 @@ import type { PolygonFlowHighlights } from "./polygonFlowHighlights.js";
 import type { ChainSummary, ChainSource } from "./strategistV2.js";
 import type { EquityDailyExtras } from "./equityDailyExtras.js";
 import type { NextEarnings } from "./earningsService.js";
+import { runDeskAnalysis } from "./strategistDesk.js";
+import type { DeskCallbacks } from "./strategistDesk.js";
 
 export type ValidationVerdict = "PROCEED" | "PROCEED_WITH_CAUTION" | "DO_NOT_PROCEED";
 export type ValidationMode = "opening" | "closing";
@@ -147,9 +149,9 @@ export interface ValidationVerdictPayload {
 // the Bull/Bear two-sided debate.
 export type ValidationTurn = {
   id: string;
-  round: 1 | 2 | 3 | "synthesis";
-  role: "A" | "B" | "synthesis" | "system" | "solo";
-  phase: "propose" | "critique" | "final" | "synthesis" | "info" | "solo";
+  round: 1 | 2 | 3 | "synthesis" | "solo" | "desk";
+  role: "A" | "B" | "synthesis" | "system" | "solo" | "vol" | "flow" | "catalyst" | "pm";
+  phase: "propose" | "critique" | "final" | "synthesis" | "info" | "solo" | "analyst" | "pm";
   model: string;
   label: string;
   text: string;
@@ -1023,6 +1025,245 @@ function buildValidationContext(input: ValidationInput): {
   return { dataPackage, scrubCanonical };
 }
 
+/** Catalyst window end date for Desk mode — mirrors strategistV2 POST /validate-trade. */
+function computeFarLegExpirationForValidationTicket(ticket: ValidationTicket): string {
+  const exps = (ticket.legs ?? [])
+    .map(l => l.expiration)
+    .filter((e): e is string => typeof e === "string" && /^\d{4}-\d{2}-\d{2}$/.test(e))
+    .sort();
+  if (exps.length > 0) return exps[exps.length - 1];
+  const d = new Date();
+  d.setDate(d.getDate() + 45);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Minimal strategist JSON snapshot for Desk prompts — built only from the same
+ * server-assembled `marketContext` that solo/debate validation already uses.
+ */
+function buildMinimalDeskDataPackageForOrderValidation(
+  input: ValidationInput,
+  settings: StrategistConfig,
+): string {
+  const mc = input.marketContext;
+  const t = input.ticket;
+  const ticker = t.ticker.toUpperCase();
+  const farLegIso = computeFarLegExpirationForValidationTicket(t);
+
+  const pkg: Record<string, unknown> = {
+    schemaVersion: 1,
+    orderTicketReview: true,
+    ticker,
+    currentDate: new Date().toISOString().slice(0, 10),
+    price: t.underlyingPrice ?? null,
+    dailyChangePct: t.underlyingChangePct ?? null,
+    ivr: mc?.ivr ?? null,
+    dataQualitySummary: {
+      marketSession: "unknown",
+      flags: ["validation_package_partial"],
+      note:
+        "Partial snapshot assembled for order-ticket desk validation from validate-trade context. Prefer literal reads; do not assume missing strategist enrichment.",
+    },
+    userPreferences: {
+      preferredDteMin: settings.preferredDteMin,
+      preferredDteMax: settings.preferredDteMax,
+      deskCatalystPositionWindowExpirationISO: farLegIso,
+      spreadWidth: settings.spreadWidth,
+      spreadWidthMode:
+        settings.spreadWidthUnlimited === 1
+          ? "UNLIMITED — disregard the spreadWidth value above and pick whatever width best fits your thesis. The user will adjust at execution time."
+          : `HARD CAP — do not propose a spread wider than $${settings.spreadWidth}.`,
+      minOpenInterest: settings.minOpenInterest,
+      maxBidAskSpreadPct: settings.maxBidAskSpreadPct,
+    },
+  };
+
+  const cs = mc?.chainSummary ?? null;
+  if (cs) {
+    pkg.optionsChainSummary = {
+      atmStrike: cs.atmStrike,
+      atmCall: { bid: cs.atmCallBid, ask: cs.atmCallAsk, iv: cs.atmCallIV, oi: cs.atmCallOI },
+      atmPut: { bid: cs.atmPutBid, ask: cs.atmPutAsk, iv: cs.atmPutIV, oi: cs.atmPutOI },
+      topVolumeCalls: cs.topVolumeCalls,
+      topVolumePuts: cs.topVolumePuts,
+      unusualActivity: cs.unusualActivity,
+      putCallVolumeRatio: cs.putCallVolumeRatio,
+      frontMonthIV: cs.frontMonthIV,
+      backMonthIV: cs.backMonthIV,
+      availableExpirations: cs.availableExpirations,
+      curatedExpirations: cs.curatedExpirations,
+      ivArtifactsClampedCount: cs.ivArtifactsClampedCount,
+      ivCeilingPct: cs.ivCeilingPct,
+      termStructure5pt: cs.termStructure5pt,
+      ivChainFilter: cs.ivChainFilter,
+      skew25Delta: cs.skew25Delta,
+      skew25DeltaReason: cs.skew25DeltaReason,
+      impliedMove: cs.impliedMove,
+    };
+  }
+
+  if (mc?.polygonHighlights) {
+    const ph = mc.polygonHighlights;
+    pkg.polygonFlowHighlights = {
+      asOfDate: ph.asOfDate,
+      totalCallVolume: ph.totalCallVolume,
+      totalPutVolume: ph.totalPutVolume,
+      putCallVolumeRatio: ph.putCallVolumeRatio,
+      unusualStrikeCount: ph.unusualStrikeCount,
+      unusualSkew: ph.unusualSkew,
+      unusualCallVolume: ph.unusualCallVolume,
+      unusualPutVolume: ph.unusualPutVolume,
+      topByVolume: ph.topByVolume,
+      topByVolOiRatio: ph.topByVolOiRatio,
+      largestPrint: ph.largestPrint,
+      sessionTape: ph.sessionTape,
+      sessionTapeDate: ph.sessionTapeDate,
+      sourceNote:
+        "Per-strike end-of-day snapshot (volume, OI, greeks). sessionTape.tapeKind `live` adds classified prints and aggressor mix.",
+    };
+  } else {
+    pkg.polygonFlowHighlights = {
+      available: false,
+      note: "No per-strike flow snapshot on file for this ticker — fall back to optionsChainSummary.unusualActivity.",
+    };
+  }
+
+  if (mc?.regime) {
+    pkg.regime = {
+      directionalConviction: mc.regime.directionalConviction,
+      systemicRiskLevel: mc.regime.systemicRiskLevel,
+      correlationRegime: mc.regime.correlationRegime,
+    };
+  }
+
+  if (mc?.ioScore && mc.ioScore.available) {
+    const io = mc.ioScore as IOScoreResult;
+    pkg.ioScore = {
+      final: io.final,
+      classification: io.classification,
+      beta: io.beta,
+      residualReturnZScore: io.residualReturnZScore,
+      components: {
+        marketIndependence: io.components.marketIndependence.contribution,
+        abnormalMove: io.components.abnormalMove.contribution,
+        catalyst: { value: io.components.catalyst.flagValue, reason: io.components.catalyst.reason },
+        flowDivergence: {
+          volOiRatio: io.components.flowDivergence.volOiRatio,
+          skewDivergence: io.components.flowDivergence.skewDivergence,
+        },
+      },
+    };
+  }
+
+  if (mc?.catalyst) {
+    pkg.catalystEvaluation = mc.catalyst;
+  }
+
+  if (mc?.nextEarnings) {
+    pkg.nextEarnings = mc.nextEarnings;
+  }
+
+  return JSON.stringify(pkg);
+}
+
+function deskCallbacksFromValidation(cb?: ValidationCallbacks): DeskCallbacks | undefined {
+  if (!cb) return undefined;
+  return {
+    onStatus: cb.onStatus,
+    onTurnDelta: cb.onTurnDelta,
+    onTurnDone: cb.onTurnDone,
+    onTurnStart: (turn) => {
+      cb.onTurnStart?.({
+        id: turn.id,
+        round: "desk",
+        role: turn.role as ValidationTurn["role"],
+        phase: turn.phase as ValidationTurn["phase"],
+        model: turn.model,
+        label: turn.label,
+        startedAt: turn.startedAt,
+      });
+    },
+  };
+}
+
+/** Desk mode (Strategist tuning = 3): Vol / Flow / Catalyst / PM order-ticket review. */
+async function runDeskOrderTicketValidation(
+  input: ValidationInput,
+  settings: StrategistConfig,
+  callbacks?: ValidationCallbacks,
+): Promise<ValidationVerdictPayload> {
+  const ticketMd = buildValidationContext(input).dataPackage;
+  const dataPackage = buildMinimalDeskDataPackageForOrderValidation(input, settings);
+  const farLeg = computeFarLegExpirationForValidationTicket(input.ticket);
+  const catalystEvaluation: CatalystEvaluation | null | undefined = input.marketContext?.catalyst;
+
+  logger.info(
+    {
+      ticker: input.ticket.ticker,
+      mode: input.ticket.mode,
+      strategistMode: "DESK_ORDER_TICKET",
+    },
+    "TradeValidation: desk (four-topic) order ticket run starting",
+  );
+
+  callbacks?.onStatus?.("Desk validation — Vol, Flow, Catalyst analysts + PM review…");
+
+  const deskResult = await runDeskAnalysis({
+    dataPackage,
+    settings,
+    ticker: input.ticket.ticker.toUpperCase(),
+    deskExpirationISO: farLeg,
+    catalystEvaluation: catalystEvaluation ?? null,
+    orderTicketValidationMarkdown: ticketMd,
+    callbacks: deskCallbacksFromValidation(callbacks),
+  });
+
+  const parsed = deskResult.orderTicketValidationVerdict;
+  if (!parsed) {
+    throw new Error("Desk order-ticket validation did not produce a verdict payload");
+  }
+
+  const payload: ValidationVerdictPayload = {
+    verdict: parsed.verdict,
+    confidence: parsed.confidence,
+    reasoningBullets: parsed.reasoningBullets,
+    risks: parsed.risks,
+    improvements: parsed.improvements,
+    bullConfidence: parsed.bullConfidence,
+    bearConfidence: parsed.bearConfidence,
+    trace: parsed.trace,
+  };
+
+  emitSystemTurn(
+    JSON.stringify({
+      phase: "VERDICT",
+      verdict: payload.verdict,
+      confidence: payload.confidence,
+      bullConfidence: payload.bullConfidence,
+      bearConfidence: payload.bearConfidence,
+      reasoningBullets: payload.reasoningBullets,
+      risks: payload.risks,
+      improvements: payload.improvements,
+    }, null, 2),
+    "Verdict",
+    "synthesis",
+    "info",
+    callbacks,
+  );
+
+  logger.info(
+    {
+      ticker: input.ticket.ticker,
+      verdict: payload.verdict,
+      confidence: payload.confidence,
+      strategistMode: "DESK_ORDER_TICKET",
+    },
+    "TradeValidation: desk order ticket completed",
+  );
+
+  return payload;
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // SOLO ORCHESTRATOR
 // One model. One pass. Mirrors regular per-ticker strategist's solo flow.
@@ -1124,7 +1365,7 @@ async function runSoloValidation(
 
 // ────────────────────────────────────────────────────────────────────────────
 // MAIN ORCHESTRATOR
-// Dispatches to solo or debate flow based on user's strategist mode setting.
+// Dispatches trade validation by strategist mode (same numbering as Strategist Tuning).
 // ────────────────────────────────────────────────────────────────────────────
 export async function runTradeValidation(
   input: ValidationInput,
@@ -1132,20 +1373,26 @@ export async function runTradeValidation(
 ): Promise<ValidationVerdictPayload> {
   const today = new Date().toISOString().slice(0, 10);
   const settings = await getSettings();
+  const mode = settings.strategistMode;
 
-  // Mirror the regular per-ticker strategist's mode dispatch. Solo mode →
-  // single-model verdict on the user's chosen solo model. Debate mode →
-  // two-model 3-round debate using the user's chosen Bull (A) / Bear (B)
-  // models. This is what the user expects: trade validation should obey
-  // the same Strategist Mode + model selections as the strategist itself.
-  const isDebateMode = settings.strategistMode === 2;
-  if (!isDebateMode) {
-    const model = getStrategistModel(settings.strategistSoloModelIdx);
-    return runSoloValidation(input, settings, callbacks, model);
+  // Mirror strategist "analyze" mode dispatch (strategistSettings strategistMode):
+  // 1 Solo, 2 Debate, 3 Desk, 4 Solo Desk, 5 Conviction Desk.
+  if (mode === 3) {
+    return runDeskOrderTicketValidation(input, settings, callbacks);
   }
 
-  // ── Debate path (existing 3-round Bull-vs-Bear flow) ──
-  const isExit = input.ticket.mode === "closing";
+  if (mode === 5) {
+    return runSoloValidation(
+      input,
+      settings,
+      callbacks,
+      getStrategistModel(settings.strategistConvictionModelIdx),
+    );
+  }
+
+  if (mode === 2) {
+    // ── Debate path (existing 3-round Bull-vs-Bear flow) ──
+    const isExit = input.ticket.mode === "closing";
   const personaA = isExit ? BULL_VALIDATOR_EXIT : BULL_VALIDATOR_ENTRY;
   const personaB = isExit ? BEAR_VALIDATOR_EXIT : BEAR_VALIDATOR_ENTRY;
   const sysA = `${VALIDATION_SYSTEM_PROMPT}\n\n${personaA}`;
@@ -1251,4 +1498,8 @@ export async function runTradeValidation(
     bearConfidence: bearConfR2,
     trace: aggregateTrace,
   };
+  }
+
+  // Mode 1 (Solo), 4 (Solo Desk), or unexpected values — solo model slot (same index Solo Desk uses for its pass).
+  return runSoloValidation(input, settings, callbacks);
 }

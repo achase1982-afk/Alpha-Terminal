@@ -31,10 +31,16 @@ import {
   buildFlowAnalystPrompt,
   buildCatalystAnalystPrompt,
   buildPmPrompt,
+  buildPmOrderTicketDeskValidationPrompt,
   buildSoloDeskUserPrompt,
   SOLO_DESK_MODEL_SYSTEM_PROMPT,
   buildConvictionDeskUserPrompt,
 } from "./strategistDeskPrompts.js";
+import {
+  mergeValidationTraces,
+  soloStyleDeskPmJsonToValidationPayload,
+  type ParsedOrderTicketValidationPayload,
+} from "./strategistOrderTicketVerdictParse.js";
 import { CONVICTION_DESK_MODEL_SYSTEM_PROMPT } from "./convictionDeskSystemPrompt.js";
 import { normalizeConvictionDeskOutput, validateConvictionDeskBusinessRules } from "./strategistDeskConvictionRules.js";
 import {
@@ -222,20 +228,6 @@ function parseJsonFromText(raw: string): Record<string, unknown> | null {
   return extractJsonAndParse(raw).parsedJson;
 }
 
-function mergeTraces(...traces: WebSearchTrace[]): WebSearchTrace {
-  const seenUrls = new Set<string>();
-  const sources = traces.flatMap(t => t.sources).filter(s => {
-    if (seenUrls.has(s.url)) return false;
-    seenUrls.add(s.url);
-    return true;
-  });
-  return {
-    webSearchUsed: traces.some(t => t.webSearchUsed),
-    queries: [...new Set(traces.flatMap(t => t.queries))],
-    sources,
-  };
-}
-
 export async function runDeskAnalysis(args: {
   dataPackage: string;
   settings: StrategistConfig;
@@ -244,8 +236,13 @@ export async function runDeskAnalysis(args: {
   deskExpirationISO?: string;
   catalystEvaluation?: CatalystEvaluation | null;
   callbacks?: DeskCallbacks;
-}): Promise<DeskResult> {
-  const { dataPackage, settings, ticker, deskExpirationISO, catalystEvaluation, callbacks } = args;
+  /**
+   * When set, PM runs **order-ticket validation** (same verdict JSON shape as /validate-trade solo)
+   * instead of proposing a fresh desk structure. Used so order tickets honor Strategist Mode "Desk".
+   */
+  orderTicketValidationMarkdown?: string;
+}): Promise<DeskResult & { orderTicketValidationVerdict?: ParsedOrderTicketValidationPayload }> {
+  const { dataPackage, settings, ticker, deskExpirationISO, catalystEvaluation, callbacks, orderTicketValidationMarkdown } = args;
   assertDeskNotCancelled(callbacks);
 
   const volModel = getStrategistModel(settings.strategistSoloModelIdx);
@@ -328,67 +325,134 @@ export async function runDeskAnalysis(args: {
     errors,
   );
 
-  callbacks?.onStatus?.("Desk: PM synthesizing analyst reads…");
-
-  const pmPrompt = buildPmPrompt(
-    dataPackage,
-    JSON.stringify(volResult.parsed),
-    JSON.stringify(flowResult.parsed),
-    JSON.stringify(catalystResult.parsed),
+  callbacks?.onStatus?.(
+    orderTicketValidationMarkdown ? "Desk: PM validating trader's order ticket…" : "Desk: PM synthesizing analyst reads…",
   );
 
-  assertDeskNotCancelled(callbacks);
-  const pmTurn = await runDeskTurn({
-    modelOpt: pmModel,
-    prompt: pmPrompt,
-    role: "pm",
-      label: "Decision",
-    callbacks,
-  });
-
   let pmParsed: PmOutput;
-  const pmJson = parseJsonFromText(pmTurn.text);
-  const pmValidation = PmOutputSchema.safeParse(pmJson);
-  if (pmValidation.success) {
-    pmParsed = pmValidation.data;
-  } else {
-    callbacks?.onTurnDiscarded?.(pmTurn.turnId);
-    callbacks?.onStatus?.("Desk: PM output failed validation, retrying…");
-    logger.warn(
-      { errors: pmValidation.error.issues, ticker, model: pmModel.model, provider: pmModel.provider, label: pmModel.label },
-      "StrategistDesk: PM output failed validation, retrying",
+  let orderTicketValidationVerdict: ParsedOrderTicketValidationPayload | undefined;
+
+  if (orderTicketValidationMarkdown) {
+    const pmPromptVal = buildPmOrderTicketDeskValidationPrompt(
+      dataPackage,
+      JSON.stringify(volResult.parsed),
+      JSON.stringify(flowResult.parsed),
+      JSON.stringify(catalystResult.parsed),
+      orderTicketValidationMarkdown,
     );
-    const retryTurn = await runDeskTurn({
+    assertDeskNotCancelled(callbacks);
+    let pmTurn = await runDeskTurn({
       modelOpt: pmModel,
-      prompt:
-        pmPrompt +
-        "\n\nYour previous response failed JSON validation. Return ONLY valid JSON matching the schema exactly. No markdown, no code fences, no commentary before or after the JSON.",
+      prompt: pmPromptVal,
       role: "pm",
-      label: "Decision (retry)",
+      label: "Order ticket review",
       callbacks,
     });
-    const retryJson = parseJsonFromText(retryTurn.text);
-    const retryValidation = PmOutputSchema.safeParse(retryJson);
-    if (retryValidation.success) {
-      pmParsed = retryValidation.data;
+    let pmJson = parseJsonFromText(pmTurn.text);
+    let parsedObj = pmJson && typeof pmJson === "object" ? (pmJson as Record<string, unknown>) : null;
+    let mergedTrace = mergeValidationTraces(volResult.trace, flowResult.trace, catalystResult.trace, pmTurn.trace);
+    let verdictPayload = soloStyleDeskPmJsonToValidationPayload(parsedObj, mergedTrace);
+
+    const complete =
+      parsedObj &&
+      typeof parsedObj["finalVerdict"] === "string" &&
+      Array.isArray(parsedObj["reasoningBullets"]) &&
+      (parsedObj["reasoningBullets"] as unknown[]).length > 0;
+
+    if (!complete) {
+      callbacks?.onTurnDiscarded?.(pmTurn.turnId);
+      callbacks?.onStatus?.("Desk: PM order-ticket verdict JSON incomplete, retrying…");
+      pmTurn = await runDeskTurn({
+        modelOpt: pmModel,
+        prompt:
+          pmPromptVal +
+          "\n\nYour previous response was incomplete or not valid JSON. Return ONLY one JSON object with all required keys: bullCase, bearCase, bullConfidence, bearConfidence, finalVerdict, finalConfidence, reasoningBullets, topRisks, improvements.",
+        role: "pm",
+        label: "Order ticket review (retry)",
+        callbacks,
+      });
+      pmJson = parseJsonFromText(pmTurn.text);
+      parsedObj = pmJson && typeof pmJson === "object" ? (pmJson as Record<string, unknown>) : null;
+      verdictPayload = soloStyleDeskPmJsonToValidationPayload(
+        parsedObj,
+        mergeValidationTraces(mergedTrace, pmTurn.trace),
+      );
+    }
+
+    orderTicketValidationVerdict = verdictPayload;
+    pmParsed = {
+      decision: verdictPayload.verdict === "DO_NOT_PROCEED" ? "pass" : "trade",
+      structure: null,
+      thesis: verdictPayload.reasoningBullets.join(" ") || "Order ticket validation verdict.",
+      edge_check: "",
+      deviation_from_analysts: "none",
+      size: "small",
+      whose_side: "neither",
+      biggest_risk: verdictPayload.risks[0] ?? "",
+      exit_plan: { profit_target: 0, stop_loss: 0, time_stop: "" },
+      watch_for: verdictPayload.improvements.join("; ") || "",
+    };
+  } else {
+    const pmPrompt = buildPmPrompt(
+      dataPackage,
+      JSON.stringify(volResult.parsed),
+      JSON.stringify(flowResult.parsed),
+      JSON.stringify(catalystResult.parsed),
+    );
+
+    assertDeskNotCancelled(callbacks);
+    const pmTurn = await runDeskTurn({
+      modelOpt: pmModel,
+      prompt: pmPrompt,
+      role: "pm",
+      label: "Decision",
+      callbacks,
+    });
+
+    const pmJson = parseJsonFromText(pmTurn.text);
+    const pmValidation = PmOutputSchema.safeParse(pmJson);
+    if (pmValidation.success) {
+      pmParsed = pmValidation.data;
     } else {
-      errors.push(`PM output failed validation after retry: ${retryValidation.error.issues.map(i => i.message).join("; ")}`);
-      pmParsed = {
-        decision: "pass",
-        structure: null,
-        thesis: retryTurn.text.slice(0, 500),
-        edge_check: "",
-        deviation_from_analysts: "none",
-        size: "small",
-        whose_side: "neither",
-        biggest_risk: "PM output could not be parsed",
-        exit_plan: { profit_target: 0, stop_loss: 0, time_stop: "" },
-        watch_for: "PM validation failure; retry the analysis",
-      };
+      callbacks?.onTurnDiscarded?.(pmTurn.turnId);
+      callbacks?.onStatus?.("Desk: PM output failed validation, retrying…");
+      logger.warn(
+        { errors: pmValidation.error.issues, ticker, model: pmModel.model, provider: pmModel.provider, label: pmModel.label },
+        "StrategistDesk: PM output failed validation, retrying",
+      );
+      const retryTurn = await runDeskTurn({
+        modelOpt: pmModel,
+        prompt:
+          pmPrompt +
+          "\n\nYour previous response failed JSON validation. Return ONLY valid JSON matching the schema exactly. No markdown, no code fences, no commentary before or after the JSON.",
+        role: "pm",
+        label: "Decision (retry)",
+        callbacks,
+      });
+      const retryJson = parseJsonFromText(retryTurn.text);
+      const retryValidation = PmOutputSchema.safeParse(retryJson);
+      if (retryValidation.success) {
+        pmParsed = retryValidation.data;
+      } else {
+        errors.push(`PM output failed validation after retry: ${retryValidation.error.issues.map(i => i.message).join("; ")}`);
+        pmParsed = {
+          decision: "pass",
+          structure: null,
+          thesis: retryTurn.text.slice(0, 500),
+          edge_check: "",
+          deviation_from_analysts: "none",
+          size: "small",
+          whose_side: "neither",
+          biggest_risk: "PM output could not be parsed",
+          exit_plan: { profit_target: 0, stop_loss: 0, time_stop: "" },
+          watch_for: "PM validation failure; retry the analysis",
+        };
+      }
     }
   }
 
-  const pmOutputIncomplete = errors.some((e) => e.startsWith("PM output failed validation after retry"));
+  const pmOutputIncomplete =
+    !orderTicketValidationMarkdown && errors.some((e) => e.startsWith("PM output failed validation after retry"));
 
   logger.info(
     {
@@ -418,6 +482,7 @@ export async function runDeskAnalysis(args: {
       pm: pmModel.label,
     },
     errors: errors.length > 0 ? errors : undefined,
+    ...(orderTicketValidationVerdict ? { orderTicketValidationVerdict } : {}),
   };
 }
 
@@ -445,7 +510,7 @@ async function runAnalystWithRetry<T>(
   if (validation.success) {
     return {
       parsed: validation.data,
-      trace: initialTrace ? mergeTraces(initialTrace, turn.trace) : turn.trace,
+      trace: initialTrace ? mergeValidationTraces(initialTrace, turn.trace) : turn.trace,
     };
   }
 
@@ -470,10 +535,10 @@ async function runAnalystWithRetry<T>(
   const retryValidation = schema.safeParse(retryJson);
 
   if (retryValidation.success) {
-    const merged = mergeTraces(turn.trace, retryTurn.trace);
+    const merged = mergeValidationTraces(turn.trace, retryTurn.trace);
     return {
       parsed: retryValidation.data,
-      trace: initialTrace ? mergeTraces(initialTrace, merged) : merged,
+      trace: initialTrace ? mergeValidationTraces(initialTrace, merged) : merged,
     };
   }
 
@@ -482,10 +547,10 @@ async function runAnalystWithRetry<T>(
   logger.error({ role, ticker, model: model.model, provider: model.provider, label: model.label }, `StrategistDesk: ${errorMsg}`);
 
   const fallback = buildFallbackOutput(role, retryTurn.text);
-  const mergedFail = mergeTraces(turn.trace, retryTurn.trace);
+  const mergedFail = mergeValidationTraces(turn.trace, retryTurn.trace);
   return {
     parsed: fallback as T,
-    trace: initialTrace ? mergeTraces(initialTrace, mergedFail) : mergedFail,
+    trace: initialTrace ? mergeValidationTraces(initialTrace, mergedFail) : mergedFail,
   };
 }
 

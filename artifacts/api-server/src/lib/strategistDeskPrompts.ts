@@ -345,6 +345,66 @@ Respond with ONLY a JSON object matching the existing schema (top-level **pm** s
 }`;
 }
 
+/**
+ * PM turn for **order-ticket review** (trader already built a ticket; no new structure).
+ * Same JSON output shape as the trade validator's solo pass (finalVerdict, cases, confidences).
+ */
+export function buildPmOrderTicketDeskValidationPrompt(
+  dataPackage: string,
+  volRead: string,
+  flowRead: string,
+  catalystRead: string,
+  orderTicketMarkdown: string,
+): string {
+  const isClosing = /Intent:\s*CLOSE/i.test(orderTicketMarkdown) || /CLOSE existing position/i.test(orderTicketMarkdown);
+  const bullLabel = isClosing
+    ? "the strongest honest case to **STAY IN** (thesis still intact, do not clip a winner early, do not panic-sell a paper loss)"
+    : "the strongest honest case **FOR** entering this exact trade as built";
+  const bearLabel = isClosing
+    ? "the strongest honest case to **CLOSE** (thesis broken, take it off, redeploy capital)"
+    : "the strongest honest case **AGAINST** entering this exact trade as built";
+  return `${SINGLE_VOICE_FRAMING}
+
+This turn is **order-ticket validation**, not a new trade idea. A trader has already constructed a specific broker order and is asking the desk to review **that exact ticket** before send. The Volatility, Flow, and Catalyst sections below are your colleagues' reads on the name. You must ground your verdict in those sections **and** the order ticket (mandatory — do not ignore the ticket or substitute a different structure).
+
+You are not paid to design a better spread for this session. You are paid to call whether **this** ticket is defensible right now. If the sections do not support the ticket, **DO_NOT_PROCEED** is a correct answer.
+
+## ORDER TICKET (authoritative — cite exact strikes, expiries, limits, quantities from here)
+${orderTicketMarkdown}
+
+## Analyst sections (synthesis context)
+
+Volatility section:
+${volRead}
+
+Flow section:
+${flowRead}
+
+Catalyst section:
+${catalystRead}
+
+## Full data snapshot (JSON; read null-safe; use labels in dataQualitySummary when present)
+${dataPackage}${formatClosingImbalanceDeskLine(dataPackage)}${formatMicrostructureDeskLines(dataPackage)}
+${DATA_STATE_LANGUAGE_RULES}
+${OUTPUT_NO_SOURCE_RULES}
+
+## OUTPUT (mandatory JSON — same schema as the trade ticket solo validator)
+Run web search when you need to confirm a same-day catalyst, earnings window, or analyst action; honor the web-search discipline from the trade validator. Then output **only** this JSON object — no markdown fences, no commentary:
+{
+  "bullCase": "<3-5 sentences: ${bullLabel}>",
+  "bearCase": "<3-5 sentences: ${bearLabel}>",
+  "bullConfidence": <integer 0-100>,
+  "bearConfidence": <integer 0-100>,
+  "finalVerdict": "PROCEED" | "PROCEED_WITH_CAUTION" | "DO_NOT_PROCEED",
+  "finalConfidence": <integer 0-100>,
+  "reasoningBullets": ["<bullet>", "<bullet>", "<2-4 concise bullets>"],
+  "topRisks": ["<bullet>", "<1-3 risks>"],
+  "improvements": ["<bullet>", "<0-3 improvements — empty array if finalVerdict is PROCEED>"]
+}
+
+Calibration: bullConfidence and bearConfidence are independent. finalConfidence is your confidence in **finalVerdict** on **this ticket**.`;
+}
+
 /** Model system line for Solo Desk (user prompt carries process and schema). */
 export const SOLO_DESK_MODEL_SYSTEM_PROMPT =
   "You are one analyst writing a single desk report. Respond only with JSON as instructed.";
