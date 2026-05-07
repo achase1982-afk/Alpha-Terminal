@@ -127,6 +127,14 @@ export interface ScannerV3UniverseResponse {
   layer4_ex_div_hits?: number;
   layer4_reactions_hits?: number;
   layer5_flow_hits?: number;
+  /** Same window as Layer 5 aggregation (default 4h unless `SCANNER_FLOW_LAYER5_WINDOW_MS` is set server-side). */
+  layer5_flow_window_ms?: number;
+  /** ISO lower bound of the rolling window (inclusive). */
+  layer5_flow_cutoff_iso?: string;
+  /** Count of raw option prints in `options_flow_raw_trades` for universe symbols in the window (diagnostic). */
+  layer5_flow_rows_in_window?: number;
+  /** Latest trade timestamp among those rows; null when the window is empty. */
+  layer5_flow_max_trade_ts_in_window?: string | null;
   layer6_technical_hits?: number;
 }
 
@@ -233,6 +241,45 @@ export function useUnifiedScan(): UseUnifiedScanState {
         layer3_ivr_hits:
           typeof layer1.layer3_ivr_hits === "number" && Number.isFinite(layer1.layer3_ivr_hits)
             ? layer1.layer3_ivr_hits
+            : undefined,
+        layer4_earnings_hits:
+          typeof layer1.layer4_earnings_hits === "number" && Number.isFinite(layer1.layer4_earnings_hits)
+            ? layer1.layer4_earnings_hits
+            : undefined,
+        layer4_ex_div_hits:
+          typeof layer1.layer4_ex_div_hits === "number" && Number.isFinite(layer1.layer4_ex_div_hits)
+            ? layer1.layer4_ex_div_hits
+            : undefined,
+        layer4_reactions_hits:
+          typeof layer1.layer4_reactions_hits === "number" && Number.isFinite(layer1.layer4_reactions_hits)
+            ? layer1.layer4_reactions_hits
+            : undefined,
+        layer5_flow_hits:
+          typeof layer1.layer5_flow_hits === "number" && Number.isFinite(layer1.layer5_flow_hits)
+            ? layer1.layer5_flow_hits
+            : undefined,
+        layer5_flow_window_ms:
+          typeof layer1.layer5_flow_window_ms === "number" && Number.isFinite(layer1.layer5_flow_window_ms)
+            ? layer1.layer5_flow_window_ms
+            : undefined,
+        layer5_flow_cutoff_iso:
+          typeof layer1.layer5_flow_cutoff_iso === "string" && layer1.layer5_flow_cutoff_iso.length > 0
+            ? layer1.layer5_flow_cutoff_iso
+            : undefined,
+        layer5_flow_rows_in_window:
+          typeof layer1.layer5_flow_rows_in_window === "number" && Number.isFinite(layer1.layer5_flow_rows_in_window)
+            ? layer1.layer5_flow_rows_in_window
+            : undefined,
+        layer5_flow_max_trade_ts_in_window:
+          layer1.layer5_flow_max_trade_ts_in_window === null
+            ? null
+            : typeof layer1.layer5_flow_max_trade_ts_in_window === "string" &&
+                layer1.layer5_flow_max_trade_ts_in_window.length > 0
+              ? layer1.layer5_flow_max_trade_ts_in_window
+              : undefined,
+        layer6_technical_hits:
+          typeof layer1.layer6_technical_hits === "number" && Number.isFinite(layer1.layer6_technical_hits)
+            ? layer1.layer6_technical_hits
             : undefined,
       });
 

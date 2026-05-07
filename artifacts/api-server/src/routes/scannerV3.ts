@@ -132,7 +132,22 @@ router.get("/v3/universe", async (req, res) => {
     for (const [sym, q] of quoteMap) {
       priceBySymbol.set(sym, q.price ?? null);
     }
-    const flowMap = await fetchScannerFlowContextForSymbols(tickers, priceBySymbol);
+    const flowBatch = await fetchScannerFlowContextForSymbols(tickers, priceBySymbol);
+    const flowMap = flowBatch.bySymbol;
+    const layer5_flow_diag = flowBatch.diagnostics;
+
+    if (layer5_flow_diag.rows_in_window === 0 && tickers.length > 0) {
+      log.info(
+        {
+          op: "scanner_v3.layer5_empty_window",
+          universe: universeKey,
+          window_ms: layer5_flow_diag.window_ms,
+          cutoff_iso: layer5_flow_diag.cutoff_iso,
+          rows_in_window: 0,
+        },
+        "Layer 5 Flow: no options_flow_raw_trades rows in rolling window (UI shows dashes). Check tape backfill / watcher; optional env SCANNER_FLOW_LAYER5_WINDOW_MS widens the window.",
+      );
+    }
 
     const technicalMap = await fetchScannerTechnicalContextForSymbols(tickers, quoteMap);
 
@@ -231,6 +246,10 @@ router.get("/v3/universe", async (req, res) => {
       layer4_ex_div_hits,
       layer4_reactions_hits,
       layer5_flow_hits,
+      layer5_flow_window_ms: layer5_flow_diag.window_ms,
+      layer5_flow_cutoff_iso: layer5_flow_diag.cutoff_iso,
+      layer5_flow_rows_in_window: layer5_flow_diag.rows_in_window,
+      layer5_flow_max_trade_ts_in_window: layer5_flow_diag.max_trade_ts_in_window,
       layer6_technical_hits,
     };
 
