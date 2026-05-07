@@ -9,23 +9,26 @@ function formatTopStrikeLabelFromStrike(strike: number, optionType: "call" | "pu
   return `$${strikeStr}${optionType === "call" ? "C" : "P"}`;
 }
 
-/**
- * When GET /scanner/v3/universe omits flow (older server) or returns null (no 4h tape),
- * hydrate at least **Top Strike** from the v2 snapshot candidate for the same ticker so the
- * Flow panel is not a blind spot for symbols that appear in `/v2/scan`.
- */
-export function enrichScannerCardFromV2Candidate(
-  data: ScannerCardData,
-  candidate: UnifiedScanCandidate | undefined,
-): ScannerCardData {
-  if (!candidate || data.flow != null) return data;
-  const fs = candidate.flowSnapshot;
-  if (!fs) return data;
+/** True when at least one Flow 4h row should show a value (not only dashes). */
+function hasRenderableScannerFlow(flow: ScannerCardData["flow"]): boolean {
+  if (flow == null) return false;
+  return (
+    (flow.blocks4h != null && Number.isFinite(flow.blocks4h)) ||
+    (flow.sweeps4h != null && Number.isFinite(flow.sweeps4h)) ||
+    (flow.netDeltaDollar != null && Number.isFinite(flow.netDeltaDollar)) ||
+    (flow.topStrikeLabel != null && flow.topStrikeLabel.trim().length > 0) ||
+    flow.topStrike != null ||
+    (flow.volume4h != null && Number.isFinite(flow.volume4h)) ||
+    (flow.volumeOverOi != null && Number.isFinite(flow.volumeOverOi))
+  );
+}
+
+function flowFromV2Snapshot(fs: NonNullable<UnifiedScanCandidate["flowSnapshot"]>): ScannerCardData["flow"] | null {
   const hasSignal =
     fs.topStrike != null ||
     (fs.notional24h != null && fs.notional24h > 0) ||
     (fs.tapeQuality != null && fs.tapeQuality !== "not_run");
-  if (!hasSignal) return data;
+  if (!hasSignal) return null;
 
   const ts = fs.topStrike;
   const topStrikeLabel = ts ? formatTopStrikeLabelFromStrike(ts.strike, ts.type) : null;
@@ -37,23 +40,51 @@ export function enrichScannerCardFromV2Candidate(
       : "";
 
   return {
+    blocks4h: null,
+    sweeps4h: null,
+    netDeltaDollar: null,
+    topStrikeLabel,
+    topStrike: ts
+      ? {
+          strike: ts.strike,
+          optionType: ts.type,
+          expiration: exp,
+          volumeAtStrike: 0,
+          openInterest: null,
+        }
+      : null,
+    volume4h: null,
+    volumeOverOi: null,
+  };
+}
+
+/**
+ * Merge `/v2/scan` flowSnapshot into the v3 card when universe `flow` is missing or not
+ * renderable (e.g. API used `expiry` on `top_strike` that the mapper dropped).
+ */
+export function enrichScannerCardFromV2Candidate(
+  data: ScannerCardData,
+  candidate: UnifiedScanCandidate | undefined,
+): ScannerCardData {
+  if (!candidate?.flowSnapshot) return data;
+  if (hasRenderableScannerFlow(data.flow)) return data;
+
+  const v2flow = flowFromV2Snapshot(candidate.flowSnapshot);
+  if (!v2flow) return data;
+
+  const cur = data.flow;
+  if (!cur) return { ...data, flow: v2flow };
+
+  return {
     ...data,
     flow: {
-      blocks4h: null,
-      sweeps4h: null,
-      netDeltaDollar: null,
-      topStrikeLabel,
-      topStrike: ts
-        ? {
-            strike: ts.strike,
-            optionType: ts.type,
-            expiration: exp,
-            volumeAtStrike: 0,
-            openInterest: null,
-          }
-        : null,
-      volume4h: null,
-      volumeOverOi: null,
+      blocks4h: cur.blocks4h ?? v2flow.blocks4h,
+      sweeps4h: cur.sweeps4h ?? v2flow.sweeps4h,
+      netDeltaDollar: cur.netDeltaDollar ?? v2flow.netDeltaDollar,
+      topStrikeLabel: cur.topStrikeLabel ?? v2flow.topStrikeLabel,
+      topStrike: cur.topStrike ?? v2flow.topStrike,
+      volume4h: cur.volume4h ?? v2flow.volume4h,
+      volumeOverOi: cur.volumeOverOi ?? v2flow.volumeOverOi,
     },
   };
 }
@@ -95,14 +126,20 @@ function mapFlowWire(flow: ScannerV3WireCardFlow | Record<string, unknown> | nul
         : ts.optionType === "put" || ts.optionType === "call"
           ? ts.optionType
           : null;
-    const expiration = typeof ts.expiration === "string" ? ts.expiration : "";
+    const expRaw =
+      typeof ts.expiration === "string" && ts.expiration.trim()
+        ? ts.expiration.trim()
+        : typeof ts.expiry === "string" && ts.expiry.trim()
+          ? ts.expiry.trim()
+          : "";
+    const expiration = /^(\d{4}-\d{2}-\d{2})/.test(expRaw) ? expRaw.slice(0, 10) : expRaw;
     const volumeAtStrike = num(ts.volume_at_strike ?? ts.volumeAtStrike);
     const openInterest = num(ts.open_interest ?? ts.openInterest);
-    if (strike != null && optionType && expiration) {
+    if (strike != null && optionType) {
       topStrike = {
         strike,
         optionType,
-        expiration,
+        expiration: expiration.length > 0 ? expiration : "",
         volumeAtStrike: volumeAtStrike ?? 0,
         openInterest: openInterest ?? null,
       };
