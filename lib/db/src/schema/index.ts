@@ -165,6 +165,7 @@ export const equityDailyTable = pgTable("equity_daily", {
   ivrSource: text("ivr_source"),
   hv20d: real("hv_20d"),
   hv30d: real("hv_30d"),
+  hv60d: real("hv_60d"),
   putCallRatio: real("put_call_ratio"),
   sma20: real("sma_20"),
   atr5: real("atr_5"),
@@ -456,6 +457,8 @@ export const corporateEventsTable = pgTable("corporate_events", {
   /** Forward estimates from FMP earnings calendar backfill (when present). */
   earningsEpsEstimate: doublePrecision("earnings_eps_estimate"),
   earningsRevenueEstimate: doublePrecision("earnings_revenue_estimate"),
+  earningsEpsActual: doublePrecision("earnings_eps_actual"),
+  earningsRevenueActual: doublePrecision("earnings_revenue_actual"),
   splitDate: date("split_date"),
   splitRatio: text("split_ratio"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -1056,3 +1059,89 @@ export const ibkrDiagnosticsRunsTable = pgTable("ibkr_diagnostics_runs", {
 ]);
 
 export type IbkrDiagnosticsRun = typeof ibkrDiagnosticsRunsTable.$inferSelect;
+
+/** Per-option-contract daily OHLCV from Polygon aggregates (tuning / research backfills). */
+export const optionsDailyTable = pgTable(
+  "options_daily",
+  {
+    occ: text("occ").notNull(),
+    date: date("date").notNull(),
+    open: real("open"),
+    high: real("high"),
+    low: real("low"),
+    close: real("close").notNull(),
+    volume: bigint("volume", { mode: "number" }),
+    vwap: real("vwap"),
+    transactions: integer("transactions"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.occ, t.date] }), index("idx_options_daily_occ_date_desc").on(t.occ, desc(t.date))],
+);
+
+export type OptionsDailyRow = typeof optionsDailyTable.$inferSelect;
+
+export const dividendsTable = pgTable(
+  "dividends",
+  {
+    symbol: text("symbol").notNull(),
+    exDate: date("ex_date").notNull(),
+    cashAmount: doublePrecision("cash_amount"),
+    recordDate: date("record_date"),
+    payDate: date("pay_date"),
+    declarationDate: date("declaration_date"),
+    currency: text("currency"),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.symbol, t.exDate] }), index("idx_dividends_symbol_ex_desc").on(t.symbol, desc(t.exDate))],
+);
+
+export type DividendsRow = typeof dividendsTable.$inferSelect;
+
+export const earningsReactionsTable = pgTable(
+  "earnings_reactions",
+  {
+    symbol: text("symbol").notNull(),
+    earningsDate: date("earnings_date").notNull(),
+    tZeroDate: date("t_zero_date").notNull(),
+    timeOfDay: text("time_of_day").notNull(),
+    preEventClose: doublePrecision("pre_event_close"),
+    eventOpen: doublePrecision("event_open"),
+    eventClose: doublePrecision("event_close"),
+    tplus1Close: doublePrecision("tplus1_close"),
+    tplus5Close: doublePrecision("tplus5_close"),
+    gapPct: doublePrecision("gap_pct"),
+    intradayPct: doublePrecision("intraday_pct"),
+    reaction1dPct: doublePrecision("reaction_1d_pct"),
+    reaction5dPct: doublePrecision("reaction_5d_pct"),
+    driftPostInitialPct: doublePrecision("drift_post_initial_pct"),
+    maxDrawdown5dPct: doublePrecision("max_drawdown_5d_pct"),
+    maxUpmove5dPct: doublePrecision("max_upmove_5d_pct"),
+    volumeVs20dAvg: doublePrecision("volume_vs_20d_avg"),
+    epsEstimate: doublePrecision("eps_estimate"),
+    epsActual: doublePrecision("eps_actual"),
+    epsSurprisePct: doublePrecision("eps_surprise_pct"),
+    revenueEstimate: doublePrecision("revenue_estimate"),
+    revenueActual: doublePrecision("revenue_actual"),
+    revenueSurprisePct: doublePrecision("revenue_surprise_pct"),
+    computedAt: timestamp("computed_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.symbol, t.earningsDate] }),
+    index("idx_earnings_reactions_symbol_date").on(t.symbol, desc(t.earningsDate)),
+  ],
+);
+
+export type EarningsReactionRow = typeof earningsReactionsTable.$inferSelect;
+
+export const backfillAuditRunsTable = pgTable("backfill_audit_runs", {
+  runId: uuid("run_id").defaultRandom().primaryKey(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  universe: text("universe").notNull(),
+  universeSize: integer("universe_size").notNull(),
+  perSymbolAudit: jsonb("per_symbol_audit").notNull(),
+  overallStatus: text("overall_status").notNull(),
+  notes: text("notes"),
+});
+
+export type BackfillAuditRunRow = typeof backfillAuditRunsTable.$inferSelect;

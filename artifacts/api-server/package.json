@@ -9,6 +9,7 @@
     "start": "node --enable-source-maps --max-http-header-size=65536 ./dist/index.mjs",
     "pretypecheck": "pnpm exec tsc --build --force ../../lib/db ../../lib/api-zod ../../lib/integrations-gemini-ai",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "tuning:backfill": "tsx src/jobs/tuningUniverseBackfill.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

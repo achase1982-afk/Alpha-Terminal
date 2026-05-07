@@ -16,14 +16,17 @@ function nyOffsetForYmd(ymd: string): "-04:00" | "-05:00" {
 }
 
 /** Calendar add in America/New_York (walk session dates without importing Temporal). */
-function addDaysYmd(ymd: string, deltaDays: number): string {
+export function addCalendarDaysNy(ymd: string, deltaDays: number): string {
   const off = nyOffsetForYmd(ymd);
   const d = new Date(`${ymd}T12:00:00${off}`);
   d.setTime(d.getTime() + deltaDays * 86_400_000);
   return nyCalendarYmd(d);
 }
 
-/** 0=Sun .. 6=Sat in America/New_York (for a noon wall-clock on that calendar date). */
+function addDaysYmd(ymd: string, deltaDays: number): string {
+  return addCalendarDaysNy(ymd, deltaDays);
+}
+
 function nyWeekdaySun0(ymd: string): number {
   const off = nyOffsetForYmd(ymd);
   const d = new Date(`${ymd}T12:00:00${off}`);
@@ -31,6 +34,44 @@ function nyWeekdaySun0(ymd: string): number {
   const names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   const i = names.indexOf(long);
   return i >= 0 ? i : 0;
+}
+
+/** True when this NY calendar date is a regular equity session (Mon–Fri, not a full-market holiday). */
+export async function isNyTradingSessionDate(dateYmd: string): Promise<boolean> {
+  const wd = nyWeekdaySun0(dateYmd);
+  if (wd === 0 || wd === 6) return false;
+  if (await isMarketHoliday(dateYmd)) return false;
+  return true;
+}
+
+export async function nextNyTradingDayYmd(ymd: string): Promise<string> {
+  let d = addCalendarDaysNy(ymd, 1);
+  for (let i = 0; i < 400; i++) {
+    if (await isNyTradingSessionDate(d)) return d;
+    d = addCalendarDaysNy(d, 1);
+  }
+  logger.error({}, "polygonMarketCalendar: nextNyTradingDayYmd exceeded lookback");
+  return d;
+}
+
+export async function prevNyTradingDayYmd(ymd: string): Promise<string> {
+  let d = addCalendarDaysNy(ymd, -1);
+  for (let i = 0; i < 400; i++) {
+    if (await isNyTradingSessionDate(d)) return d;
+    d = addCalendarDaysNy(d, -1);
+  }
+  logger.error({}, "polygonMarketCalendar: prevNyTradingDayYmd exceeded lookback");
+  return d;
+}
+
+export async function advanceNyTradingDaysYmd(ymd: string, deltaSessions: number): Promise<string> {
+  let d = ymd;
+  const steps = Math.abs(deltaSessions);
+  const dir = deltaSessions >= 0 ? 1 : -1;
+  for (let s = 0; s < steps; s++) {
+    d = dir > 0 ? await nextNyTradingDayYmd(d) : await prevNyTradingDayYmd(d);
+  }
+  return d;
 }
 
 const POLYGON_API = "https://api.polygon.io";
