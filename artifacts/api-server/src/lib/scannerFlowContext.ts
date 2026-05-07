@@ -1,6 +1,9 @@
 /**
  * Scanner Layer 5 — options flow over a rolling wall-clock window (default 4h).
  *
+ * Window length: {@link SCANNER_FLOW_DEFAULT_WINDOW_MS}, override with env
+ * `SCANNER_FLOW_LAYER5_WINDOW_MS` (milliseconds, clamped 1h–48h) when tape is stale.
+ *
  * Sources `options_flow_raw_trades` (Polygon tape / watcher / strategist backfill).
  * - **Blocks / sweeps**: persisted `is_block` / `is_sweep` flags from
  *   {@link classifyForFlowPersistence} (block = size ≥ 100 contracts and not a sweep;
@@ -18,6 +21,34 @@ import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
 export const SCANNER_FLOW_DEFAULT_WINDOW_MS = 4 * 60 * 60 * 1000;
+
+const FLOW_WINDOW_MS_MIN = 60 * 60 * 1000;
+/** Upper bound for env-driven window (7d). Larger windows are heavier on `options_flow_raw_trades`. */
+const FLOW_WINDOW_MS_MAX = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Override default 4h rolling window via `SCANNER_FLOW_LAYER5_WINDOW_MS` (milliseconds).
+ * Clamped to 1h–7d. Use when `options_flow_raw_trades` lags (e.g. tape backfill stalls) so the
+ * Flow panel can still surface recent prints without changing client code.
+ */
+export function resolveScannerFlowWindowMs(opts?: { windowMs?: number }): number {
+  if (opts?.windowMs != null && Number.isFinite(opts.windowMs) && opts.windowMs > 0) {
+    return Math.min(Math.max(opts.windowMs, FLOW_WINDOW_MS_MIN), FLOW_WINDOW_MS_MAX);
+  }
+  const raw = process.env.SCANNER_FLOW_LAYER5_WINDOW_MS;
+  if (raw == null || raw === "") return SCANNER_FLOW_DEFAULT_WINDOW_MS;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return SCANNER_FLOW_DEFAULT_WINDOW_MS;
+  return Math.min(Math.max(n, FLOW_WINDOW_MS_MIN), FLOW_WINDOW_MS_MAX);
+}
+
+/** Universe-level stats for the same window as {@link fetchScannerFlowContextForSymbols}. */
+export type ScannerFlowContextDiagnostics = {
+  window_ms: number;
+  cutoff_iso: string;
+  rows_in_window: number;
+  max_trade_ts_in_window: string | null;
+};
 
 /** Wire shape merged onto GET /api/scanner/v3/universe cards (`flow` field). */
 export type ScannerFlowLayer5Wire = {
@@ -65,19 +96,32 @@ export async function fetchScannerFlowContextForSymbols(
   symbols: string[],
   underlyingPriceBySymbol: ReadonlyMap<string, number | null | undefined>,
   opts?: { windowMs?: number },
-): Promise<Map<string, ScannerFlowLayer5Wire | null>> {
-  const windowMs = opts?.windowMs ?? SCANNER_FLOW_DEFAULT_WINDOW_MS;
+): Promise<{
+  bySymbol: Map<string, ScannerFlowLayer5Wire | null>;
+  diagnostics: ScannerFlowContextDiagnostics;
+}> {
+  const windowMs = resolveScannerFlowWindowMs(opts);
   const uniq = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
   const out = new Map<string, ScannerFlowLayer5Wire | null>();
   for (const s of uniq) out.set(s, null);
 
-  if (uniq.length === 0) return out;
+  if (uniq.length === 0) {
+    return {
+      bySymbol: out,
+      diagnostics: {
+        window_ms: windowMs,
+        cutoff_iso: new Date(Date.now() - windowMs).toISOString(),
+        rows_in_window: 0,
+        max_trade_ts_in_window: null,
+      },
+    };
+  }
 
   const cutoff = new Date(Date.now() - windowMs);
   const cutoffIso = cutoff.toISOString();
   const inList = sql.join(uniq.map((s) => sql`${s}`), sql`, `);
 
-  const [aggRows, topRows, oiRows] = await Promise.all([
+  const [aggRows, topRows, oiRows, windowDiagRows] = await Promise.all([
     db.execute(sql`
       SELECT
         underlying_symbol AS sym,
@@ -131,7 +175,30 @@ export async function fetchScannerFlowContextForSymbols(
       WHERE o.underlying_symbol IN (${inList})
       GROUP BY o.underlying_symbol
     `),
+    db.execute(sql`
+      SELECT
+        COUNT(*)::int AS rows_in_window,
+        MAX(timestamp) AS max_trade_ts_in_window
+      FROM options_flow_raw_trades
+      WHERE underlying_symbol IN (${inList})
+        AND timestamp IS NOT NULL
+        AND timestamp >= ${cutoffIso}::timestamptz
+    `),
   ]);
+
+  const diagRow = (windowDiagRows.rows ?? [])[0] as Record<string, unknown> | undefined;
+  const maxTsRaw = diagRow?.max_trade_ts_in_window;
+  const diagnostics: ScannerFlowContextDiagnostics = {
+    window_ms: windowMs,
+    cutoff_iso: cutoffIso,
+    rows_in_window: intOrZero(diagRow?.rows_in_window),
+    max_trade_ts_in_window:
+      maxTsRaw instanceof Date
+        ? maxTsRaw.toISOString()
+        : maxTsRaw != null && String(maxTsRaw).length > 0
+          ? String(maxTsRaw)
+          : null,
+  };
 
   const aggBySym = new Map<string, { blocks: number; sweeps: number; vol4h: number }>();
   for (const row of (aggRows.rows ?? []) as Record<string, unknown>[]) {
@@ -299,5 +366,5 @@ export async function fetchScannerFlowContextForSymbols(
     out.set(sym, wire);
   }
 
-  return out;
+  return { bySymbol: out, diagnostics };
 }
