@@ -47,7 +47,10 @@ export function StrategistSettingsPanel() {
     try {
       setLoading(true);
       setLoadError(null);
-      const res = await fetchWithAuth("/api/strategist/settings", { signal: controller.signal });
+      const res = await fetchWithAuth("/api/strategist/settings", {
+        signal: controller.signal,
+        clerkTokenTimeoutMs: 8_000,
+      });
       if (!res.ok) {
         throw new Error(`Settings request failed (${res.status})`);
       }
@@ -73,6 +76,7 @@ export function StrategistSettingsPanel() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ key, value }),
+        clerkTokenTimeoutMs: 12_000,
       });
       if (res.ok) {
         const json = await res.json();
@@ -86,7 +90,10 @@ export function StrategistSettingsPanel() {
 
   const handleReset = useCallback(async () => {
     try {
-      const res = await fetchWithAuth("/api/strategist/settings/reset", { method: "POST" });
+      const res = await fetchWithAuth("/api/strategist/settings/reset", {
+        method: "POST",
+        clerkTokenTimeoutMs: 12_000,
+      });
       if (res.ok) {
         const json = await res.json();
         setData((prev) => prev ? { ...prev, current: json.current } : prev);
