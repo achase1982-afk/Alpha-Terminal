@@ -17,6 +17,14 @@ interface SettingMeta {
   options?: Array<{ value: number; label: string }>;
 }
 
+/** Lets Strategist live UI (e.g. AI-brain transcript chrome) refresh without refetching all settings. */
+function dispatchStrategistTuningModeChanged(current: Record<string, number>) {
+  const m = current["strategistMode"];
+  if (typeof m === "number" && m >= 1 && m <= 5) {
+    window.dispatchEvent(new CustomEvent("strategistTuningModeChanged", { detail: { mode: m } }));
+  }
+}
+
 // Pin "Strategist" to the top so users see the mode/model controls first.
 const GROUP_ORDER = ["Strategist"];
 function sortedGroups<T>(groups: Map<string, T>): Array<[string, T]> {
@@ -56,6 +64,9 @@ export function StrategistSettingsPanel() {
       }
       const json = await res.json();
       setData(json);
+      if (json?.current && typeof json.current === "object") {
+        dispatchStrategistTuningModeChanged(json.current as Record<string, number>);
+      }
     } catch (err) {
       setData(null);
       setLoadError(err instanceof Error && err.name === "AbortError" ? "Settings request timed out" : "Failed to load settings");
@@ -81,6 +92,9 @@ export function StrategistSettingsPanel() {
       if (res.ok) {
         const json = await res.json();
         setData((prev) => prev ? { ...prev, current: json.current } : prev);
+        if (json.current && typeof json.current === "object") {
+          dispatchStrategistTuningModeChanged(json.current as Record<string, number>);
+        }
         setSaved(key);
         setTimeout(() => setSaved(null), 1500);
       }
@@ -97,6 +111,9 @@ export function StrategistSettingsPanel() {
       if (res.ok) {
         const json = await res.json();
         setData((prev) => prev ? { ...prev, current: json.current } : prev);
+        if (json.current && typeof json.current === "object") {
+          dispatchStrategistTuningModeChanged(json.current as Record<string, number>);
+        }
         setResetConfirm(false);
       }
     } catch {}
