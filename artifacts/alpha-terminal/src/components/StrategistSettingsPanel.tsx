@@ -49,7 +49,7 @@ export function StrategistSettingsPanel() {
       setLoadError(null);
       const res = await fetchWithAuth("/api/strategist/settings", {
         signal: controller.signal,
-        clerkTokenTimeoutMs: 12_000,
+        clerkTokenTimeoutMs: 8_000,
       });
       if (!res.ok) {
         throw new Error(`Settings request failed (${res.status})`);
