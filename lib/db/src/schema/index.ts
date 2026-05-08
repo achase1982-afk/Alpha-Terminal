@@ -1065,6 +1065,7 @@ export const optionsDailyTable = pgTable(
   "options_daily",
   {
     occ: text("occ").notNull(),
+    underlyingSymbol: text("underlying_symbol"),
     date: date("date").notNull(),
     open: real("open"),
     high: real("high"),
