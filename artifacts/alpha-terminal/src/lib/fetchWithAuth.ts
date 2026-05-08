@@ -1,27 +1,40 @@
-let clerkGetToken: (() => Promise<string | null>) | null = null;
+/** Mirrors Clerk `getToken` options we care about (long strategist polls + 401 recovery). */
+export type ClerkGetTokenOptions = { skipCache?: boolean };
 
-export function setClerkTokenGetter(fn: () => Promise<string | null>) {
+let clerkGetToken: ((opts?: ClerkGetTokenOptions) => Promise<string | null>) | null = null;
+
+export function setClerkTokenGetter(fn: (opts?: ClerkGetTokenOptions) => Promise<string | null>) {
   clerkGetToken = fn;
 }
 
 type FetchWithAuthInit = RequestInit & {
   /** If set, do not wait longer than this for Clerk session token (avoids hung UI). */
   clerkTokenTimeoutMs?: number;
+  /** Bypass Clerk JWT cache for this request (rare; paired with 401 retry logic). */
+  clerkSkipCache?: boolean;
+  /** @internal prevents infinite 401 retry loops */
+  _authRetry?: boolean;
 };
 
 export async function fetchWithAuth(
   input: RequestInfo | URL,
   init?: FetchWithAuthInit,
 ): Promise<Response> {
-  const { clerkTokenTimeoutMs, ...rest } = init ?? {};
-  const headers = new Headers(rest.headers);
+  const {
+    clerkTokenTimeoutMs,
+    clerkSkipCache,
+    _authRetry,
+    ...fetchInit
+  } = init ?? {};
+  const headers = new Headers(fetchInit.headers);
+  const tokenOpts: ClerkGetTokenOptions | undefined = clerkSkipCache === true ? { skipCache: true } : undefined;
 
   if (clerkGetToken) {
     try {
       let token: string | null;
       if (clerkTokenTimeoutMs != null && clerkTokenTimeoutMs > 0) {
         token = await Promise.race([
-          clerkGetToken(),
+          clerkGetToken(tokenOpts),
           new Promise<null>((resolve) => {
             if (typeof window !== "undefined") {
               window.setTimeout(() => resolve(null), clerkTokenTimeoutMs);
@@ -31,7 +44,7 @@ export async function fetchWithAuth(
           }),
         ]);
       } else {
-        token = await clerkGetToken();
+        token = await clerkGetToken(tokenOpts);
       }
       if (token) {
         headers.set("Authorization", `Bearer ${token}`);
@@ -43,7 +56,24 @@ export async function fetchWithAuth(
   const urlStr = typeof input === "string" ? input : input instanceof URL ? input.href : "request";
 
   try {
-    const res = await fetch(input, { ...rest, headers, redirect: "error" });
+    const res = await fetch(input, { ...fetchInit, headers, redirect: "error" });
+    if (
+      res.status === 401 &&
+      clerkGetToken &&
+      !_authRetry &&
+      typeof window !== "undefined"
+    ) {
+      try {
+        const fresh = await clerkGetToken({ skipCache: true });
+        if (fresh) {
+          const headers2 = new Headers(fetchInit.headers);
+          headers2.set("Authorization", `Bearer ${fresh}`);
+          return await fetch(input, { ...fetchInit, headers: headers2, redirect: "error" });
+        }
+      } catch {
+        /* return first 401 */
+      }
+    }
     return res;
   } catch (err) {
     const elapsedMs =
@@ -74,10 +104,10 @@ export async function fetchWithAuth(
   }
 }
 
-export async function getClerkToken(): Promise<string | null> {
+export async function getClerkToken(opts?: ClerkGetTokenOptions): Promise<string | null> {
   if (!clerkGetToken) return null;
   try {
-    return await clerkGetToken();
+    return await clerkGetToken(opts);
   } catch {
     return null;
   }
