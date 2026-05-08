@@ -42,6 +42,11 @@ import { fetchRecentEsDepthSummary } from "./ibEsDepthPersistence.js";
 import { acquireDynamicIbPool } from "./ibDynamicSubscriptionManager.js";
 import { isNasdaqPrimaryListing, resolveEquityListingForTotalview } from "./ibSymbolListingCache.js";
 import {
+  buildStrategistIntradayPackage,
+  ensureStrategistSchwabSubscriptions,
+  resolveStrategistBookVenue,
+} from "./strategistIntradayEnrichment.js";
+import {
   getCboeOneFeedDiagnostics,
   getIbDynamicPoolDiagnosticsSnapshot,
   getRecentTotalviewSummaryForTicker,
@@ -825,6 +830,16 @@ async function analyzeTickerV2Inner(
       null);
   }
 
+  try {
+    const symSub = ticker.toUpperCase().replace(/^\$/, "");
+    const listingSub = await resolveEquityListingForTotalview(symSub, {
+      schwabExchangeHint: tickerData.schwabExchangeHint ?? null,
+    });
+    ensureStrategistSchwabSubscriptions(symSub, resolveStrategistBookVenue(listingSub));
+  } catch (err) {
+    logger.warn({ err, ticker }, "StrategistV2: Schwab stream subscription bootstrap failed");
+  }
+
   const analystRatingsPack = await fetchPolygonAnalystRatingsAndConsensus(ticker, 300);
   const symU = ticker.toUpperCase().replace(/^\$/, "");
   const [fmpPt, fmpGrades, fmpSurprises] = await Promise.all([
@@ -1088,6 +1103,7 @@ async function analyzeTickerV2Inner(
       fmpAnalystGrades: fmpGrades,
       fmpEarningsSurprises: fmpSurprises,
     },
+    chain,
   );
   const scanCtxHandoff = getStrategistRunContext()?.scannerContext;
   if (scanCtxHandoff) {
@@ -3071,6 +3087,8 @@ async function buildDataPackage(
     fmpAnalystGrades?: import("./fmpDataService.js").AnalystGradeDbRow[] | null;
     fmpEarningsSurprises?: import("./fmpDataService.js").EarningsSurpriseDbRow[] | null;
   },
+  /** Full chain rows for stream enrichment; defaults empty when omitted (call sites always pass). */
+  optionsChain: ChainContract[] = [],
 ): Promise<string> {
   const currentDate = new Date().toISOString().slice(0, 10);
   const rawRv = volPackageExtras?.realizedVol ?? null;
@@ -3415,6 +3433,44 @@ async function buildDataPackage(
       topAskSize: e.topAskSize,
       updatedAt: e.summaryTimestamp.toISOString(),
     };
+  }
+
+  try {
+    const intradayPack = await buildStrategistIntradayPackage({
+      ticker: upperTicker,
+      spotPrice: tickerData.price,
+      listing,
+      chain: optionsChain,
+    });
+    pkg.intraday = intradayPack.intraday;
+    pkg.options_data_freshness = intradayPack.options_data_freshness;
+    pkg.schwab_stream_bid = intradayPack.schwab_stream_bid;
+    pkg.schwab_stream_ask = intradayPack.schwab_stream_ask;
+    pkg.schwab_stream_last = intradayPack.schwab_stream_last;
+    pkg.schwab_stream_age_ms = intradayPack.schwab_stream_age_ms;
+    pkg.ibkr_l1_bid = intradayPack.ibkr_l1_bid;
+    pkg.ibkr_l1_ask = intradayPack.ibkr_l1_ask;
+    pkg.ibkr_l1_last = intradayPack.ibkr_l1_last;
+    pkg.ibkr_l1_age_ms = intradayPack.ibkr_l1_age_ms;
+    pkg.ibkr_schwab_quote_delta_bps = intradayPack.ibkr_schwab_quote_delta_bps;
+  } catch (err) {
+    logger.warn({ err, ticker: upperTicker }, "StrategistV2: intraday enrichment assembly failed");
+    pkg.intraday = null;
+    pkg.options_data_freshness = {
+      source: "enrichment_error",
+      max_quote_age_ms: null,
+      contracts_live_stream_backed: 0,
+      contracts_rest_only: 0,
+    };
+    pkg.schwab_stream_bid = null;
+    pkg.schwab_stream_ask = null;
+    pkg.schwab_stream_last = null;
+    pkg.schwab_stream_age_ms = null;
+    pkg.ibkr_l1_bid = null;
+    pkg.ibkr_l1_ask = null;
+    pkg.ibkr_l1_last = null;
+    pkg.ibkr_l1_age_ms = null;
+    pkg.ibkr_schwab_quote_delta_bps = null;
   }
 
   return JSON.stringify(pkg);

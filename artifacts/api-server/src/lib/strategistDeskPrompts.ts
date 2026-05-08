@@ -21,6 +21,13 @@ OUTPUT STYLE (strict):
 - Write as if you are reading the chain and the surface directly: "the tape", "the chain", "listed expiries", "the vol surface", "flow on screen".
 - If something looks like a known market artifact (e.g. front-week IV clamping, stale prints), describe the artifact plainly without attributing it to a system or vendor name.`;
 
+/** When intraday / stream enrichments are present in the data package JSON. */
+export const CONVICTION_DESK_INTRADAY_DATA_GUIDANCE = `
+
+## INTRADAY AND LIVE STREAM CONTEXT (when JSON fields exist)
+The snapshot may include **intraday** (Volume Weighted Average Price, Relative Strength Index, equity block tape, live order book, scanner signal snapshot), **options_data_freshness**, optional parallel streamed equity quote timestamps (JSON keys include stream and tuning Level 1 enrichment), and quote divergence in basis points when both mids exist. In prose, use full phrases (**Volume Weighted Average Price**, **Relative Strength Index**) instead of abbreviations alone. Resting chain rows remain the authority when stream quotes are null or stale; **options_data_freshness** states whether the live options stream backed this run.
+`;
+
 /** Catalyst / event narrative: sell-side firms may be named as catalyst actors; retrieval plumbing and outlet attribution may not. */
 export const CATALYST_OUTPUT_ATTRIBUTION_RULES = `
 
@@ -695,7 +702,7 @@ ${CONVICTION_DESK_ADDITIONS_INSTRUCTIONS}
 
 ## DATA PACKAGE (single JSON snapshot)
 
-${snapshotBlock(dataPackage)}${OUTPUT_NO_SOURCE_RULES}${VOL_OUTPUT_ATTRIBUTION_RULES}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
+${snapshotBlock(dataPackage)}${CONVICTION_DESK_INTRADAY_DATA_GUIDANCE}${OUTPUT_NO_SOURCE_RULES}${VOL_OUTPUT_ATTRIBUTION_RULES}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
 
 Respond with ONLY one JSON object (no markdown fences, no extra prose). Top-level keys: vol, flow, catalyst, pm, regime_synthesis, risk_of_ruin, positioning_context, structure_family_discipline. Shapes must match desk mode exactly.
 

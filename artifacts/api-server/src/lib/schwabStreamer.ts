@@ -179,6 +179,140 @@ const nyseBookListeners = new Set<BookListener>();
 const nasdaqBookListeners = new Set<BookListener>();
 const optionsBookListeners = new Set<BookListener>();
 
+/** Rolling TIMESALE_EQUITY prints per symbol (strategist VWAP / block tape). */
+export interface SchwabTimesaleStrategistPoint {
+  ts: number;
+  price: number;
+  size: number;
+}
+
+const strategistTimesaleRing = new Map<string, SchwabTimesaleStrategistPoint[]>();
+const STRATEGIST_TIMESALE_MAX_POINTS_PER_SYMBOL = 120_000;
+const STRATEGIST_TIMESALE_MAX_AGE_MS = 10 * 60 * 60 * 1000;
+
+function appendStrategistTimesale(sym: string, pt: SchwabTimesaleStrategistPoint): void {
+  const u = sym.toUpperCase();
+  let arr = strategistTimesaleRing.get(u);
+  if (!arr) {
+    arr = [];
+    strategistTimesaleRing.set(u, arr);
+  }
+  arr.push(pt);
+  const cutoffAge = Date.now() - STRATEGIST_TIMESALE_MAX_AGE_MS;
+  while (arr.length > 0 && (arr[0].ts < cutoffAge || arr.length > STRATEGIST_TIMESALE_MAX_POINTS_PER_SYMBOL)) {
+    arr.shift();
+  }
+}
+
+export function getStrategistTimesalePoints(symbol: string): SchwabTimesaleStrategistPoint[] {
+  return strategistTimesaleRing.get(symbol.toUpperCase())?.slice() ?? [];
+}
+
+export interface SchwabVenueBookStrategistSnapshot {
+  rawBids: unknown;
+  rawAsks: unknown;
+  bookTimeMs: number | null;
+  recvTs: number;
+}
+
+const nyseBookStrategistCache = new Map<string, SchwabVenueBookStrategistSnapshot>();
+const nasdaqBookStrategistCache = new Map<string, SchwabVenueBookStrategistSnapshot>();
+
+export function getSchwabVenueBookStrategistSnapshot(
+  symbol: string,
+  venue: "NYSE" | "NASDAQ",
+): SchwabVenueBookStrategistSnapshot | undefined {
+  const u = symbol.toUpperCase();
+  return venue === "NYSE" ? nyseBookStrategistCache.get(u) : nasdaqBookStrategistCache.get(u);
+}
+
+/** Extract price/size rows from Schwab book payload (nested arrays or objects). */
+export function extractSchwabBookRows(side: unknown): Array<{ price: number; size: number }> {
+  const out: Array<{ price: number; size: number }> = [];
+  function walk(x: unknown): void {
+    if (x == null) return;
+    if (Array.isArray(x)) {
+      if (
+        x.length >= 2 &&
+        (typeof x[0] === "number" || typeof x[0] === "string") &&
+        (typeof x[1] === "number" || typeof x[1] === "string")
+      ) {
+        const price = Number(x[0]);
+        const size = Number(x[1]);
+        if (Number.isFinite(price) && Number.isFinite(size) && size >= 0) {
+          out.push({ price, size });
+        }
+        return;
+      }
+      for (const el of x) walk(el);
+      return;
+    }
+    if (typeof x === "object") {
+      const o = x as Record<string, unknown>;
+      const pRaw = o["price"] ?? o["Price"] ?? o["0"];
+      const sRaw = o["size"] ?? o["Size"] ?? o["count"] ?? o["volume"] ?? o["1"];
+      const price = numOrNull(pRaw);
+      const size = numOrNull(sRaw);
+      if (price !== null && size !== null && size >= 0) {
+        out.push({ price, size });
+      }
+      for (const v of Object.values(o)) walk(v);
+    }
+  }
+  walk(side);
+  return out;
+}
+
+export interface SchwabParsedBookMetrics {
+  topOfBookBidSize: number | null;
+  topOfBookAskSize: number | null;
+  bookImbalancePct: number | null;
+  depthWithin1pctBid: number | null;
+  depthWithin1pctAsk: number | null;
+}
+
+export function computeSchwabBookMetrics(bids: unknown, asks: unknown): SchwabParsedBookMetrics {
+  const bidRows = extractSchwabBookRows(bids).filter((r) => r.price > 0 && r.size > 0);
+  const askRows = extractSchwabBookRows(asks).filter((r) => r.price > 0 && r.size > 0);
+  bidRows.sort((a, b) => b.price - a.price);
+  askRows.sort((a, b) => a.price - b.price);
+  const bestBid = bidRows[0];
+  const bestAsk = askRows[0];
+  const topBidSz = bestBid?.size ?? null;
+  const topAskSz = bestAsk?.size ?? null;
+  let bookImbalancePct: number | null = null;
+  if (topBidSz != null && topAskSz != null && topBidSz + topAskSz > 0) {
+    bookImbalancePct = Math.round(((topBidSz - topAskSz) / (topBidSz + topAskSz)) * 10_000) / 100;
+  }
+  let mid: number | null = null;
+  if (bestBid && bestAsk) mid = (bestBid.price + bestAsk.price) / 2;
+  let depthWithin1pctBid: number | null = null;
+  let depthWithin1pctAsk: number | null = null;
+  if (mid != null && mid > 0) {
+    const lo = mid * 0.99;
+    const hi = mid * 1.01;
+    depthWithin1pctBid = bidRows.filter((r) => r.price >= lo && r.price <= mid).reduce((s, r) => s + r.size, 0);
+    depthWithin1pctAsk = askRows.filter((r) => r.price <= hi && r.price >= mid).reduce((s, r) => s + r.size, 0);
+    if (depthWithin1pctBid === 0) depthWithin1pctBid = null;
+    if (depthWithin1pctAsk === 0) depthWithin1pctAsk = null;
+  }
+  return {
+    topOfBookBidSize: topBidSz,
+    topOfBookAskSize: topAskSz,
+    bookImbalancePct,
+    depthWithin1pctBid,
+    depthWithin1pctAsk,
+  };
+}
+
+export function getSchwabStreamEquityQuoteFresh(symbol: string, maxAgeMs: number): LiveQuote | null {
+  const q = quoteCache.get(symbol.toUpperCase());
+  if (!q) return null;
+  const age = Date.now() - q.ts;
+  if (age > maxAgeMs) return null;
+  return q;
+}
+
 export function subscribeSchwabTimesaleEquityEvents(listener: TimesaleListener): () => void {
   timesaleEquityListeners.add(listener);
   return () => timesaleEquityListeners.delete(listener);
@@ -931,6 +1065,10 @@ function processTimesaleEquity(content: Record<string, unknown>[]) {
       sequence: numOrNull(item["4"]),
       raw: item,
     };
+    const tsMs = ev.tradeTimeMs ?? Date.now();
+    if (ev.lastPrice != null && ev.lastPrice > 0 && ev.lastSize != null && ev.lastSize > 0) {
+      appendStrategistTimesale(symbol, { ts: tsMs, price: ev.lastPrice, size: ev.lastSize });
+    }
     emitTimesaleEquityListeners(ev);
   }
 }
@@ -955,6 +1093,12 @@ function processNyseBook(content: Record<string, unknown>[]) {
       asks: item["3"] ?? null,
       raw: item,
     };
+    nyseBookStrategistCache.set(symbol, {
+      rawBids: ev.bids,
+      rawAsks: ev.asks,
+      bookTimeMs: ev.bookTimeMs,
+      recvTs: Date.now(),
+    });
     dispatchBookListeners(nyseBookListeners, ev);
   }
 }
@@ -979,6 +1123,12 @@ function processNasdaqBook(content: Record<string, unknown>[]) {
       asks: item["3"] ?? null,
       raw: item,
     };
+    nasdaqBookStrategistCache.set(symbol, {
+      rawBids: ev.bids,
+      rawAsks: ev.asks,
+      bookTimeMs: ev.bookTimeMs,
+      recvTs: Date.now(),
+    });
     dispatchBookListeners(nasdaqBookListeners, ev);
   }
 }
