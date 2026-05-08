@@ -318,7 +318,7 @@ function computeATR(candles: Candle[], period: number): number | null {
   return trs.reduce((a, b) => a + b, 0) / trs.length;
 }
 
-function computeHV20(closes: number[]): number | null {
+export function computeHV20(closes: number[]): number | null {
   if (closes.length < 21) return null;
   const recent = closes.slice(-21);
   const returns: number[] = [];
@@ -334,6 +334,19 @@ function computeHV20(closes: number[]): number | null {
 export function computeHV30(closes: number[]): number | null {
   if (closes.length < 31) return null;
   const recent = closes.slice(-31);
+  const returns: number[] = [];
+  for (let i = 1; i < recent.length; i++) {
+    returns.push(Math.log(recent[i] / recent[i - 1]));
+  }
+  const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+  const variance = returns.reduce((a, r) => a + (r - mean) ** 2, 0) / (returns.length - 1);
+  return Math.sqrt(variance) * Math.sqrt(252) * 100;
+}
+
+/** 60-day close-to-close HV (annualized %); 61 closes → 60 returns. */
+export function computeHV60(closes: number[]): number | null {
+  if (closes.length < 61) return null;
+  const recent = closes.slice(-61);
   const returns: number[] = [];
   for (let i = 1; i < recent.length; i++) {
     returns.push(Math.log(recent[i] / recent[i - 1]));
