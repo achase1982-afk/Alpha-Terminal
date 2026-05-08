@@ -36,6 +36,10 @@ import { StrategistHistoryList } from "@/components/StrategistHistoryList";
 
 const API_BASE = "/api";
 
+/** Module-stable fallbacks so child effects do not see a new function identity every render. */
+const STABLE_NOOP_EQUITY_SUBSCRIBE = (_symbols: string[]) => {};
+const STABLE_NOOP_NAVIGATE = () => {};
+
 /** Payload for legacy /ai/deterministic-strategist (scanner row cache). */
 interface DeterministicStrategistScannerPayload {
   symbol: string;
@@ -3777,8 +3781,8 @@ function AiIntelligenceTabInner({
       {subTab === "scanner" && (
         <div style={{ height: "100%", overflowY: "auto" }}>
           <MarketScanner
-            subscribeEquitySymbols={subscribeEquitySymbols ?? (() => {})}
-            onNavigateToSymbol={onNavigateToMarkets ?? (() => {})}
+            subscribeEquitySymbols={subscribeEquitySymbols ?? STABLE_NOOP_EQUITY_SUBSCRIBE}
+            onNavigateToSymbol={onNavigateToMarkets ?? STABLE_NOOP_NAVIGATE}
             onSendToStrategist={(sym: string, flowContext?: string) => {
               useTerminalStore.getState().setSymbol(sym);
               setStrategistMode("options");

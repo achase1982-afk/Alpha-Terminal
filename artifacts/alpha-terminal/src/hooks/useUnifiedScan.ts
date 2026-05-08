@@ -1,3 +1,4 @@
+import { useShallow } from "zustand/react/shallow";
 import { useScannerScanStore } from "@/stores/scannerScanStore";
 import type { UseUnifiedScanState } from "@/lib/scannerScanApiTypes";
 
@@ -13,17 +14,19 @@ export type {
 export { scannerV3UniverseQueryFromSelection } from "@/lib/scannerV3UniverseParams";
 
 export function useUnifiedScan(): UseUnifiedScanState {
-  return useScannerScanStore((s) => ({
-    phase: s.phase,
-    candidates: s.candidates,
-    snapshotCompletedAt: s.snapshotCompletedAt,
-    snapshotAgeSeconds: s.snapshotAgeSeconds,
-    stale: s.stale,
-    scanAt: s.scanAt,
-    tuningWatchlistEcho: s.tuningWatchlistEcho,
-    errorMessage: s.errorMessage,
-    layer1Universe: s.layer1Universe,
-    startScan: s.startScan,
-    cancelLocal: s.cancelLocal,
-  }));
+  return useScannerScanStore(
+    useShallow((s) => ({
+      phase: s.phase,
+      candidates: s.candidates,
+      snapshotCompletedAt: s.snapshotCompletedAt,
+      snapshotAgeSeconds: s.snapshotAgeSeconds,
+      stale: s.stale,
+      scanAt: s.scanAt,
+      tuningWatchlistEcho: s.tuningWatchlistEcho,
+      errorMessage: s.errorMessage,
+      layer1Universe: s.layer1Universe,
+      startScan: s.startScan,
+      cancelLocal: s.cancelLocal,
+    })),
+  );
 }
