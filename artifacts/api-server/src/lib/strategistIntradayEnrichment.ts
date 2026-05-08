@@ -488,7 +488,8 @@ function computeOptionsStreamFreshness(
   for (const c of chain) {
     if (examined >= maxExamine) break;
     const ot = (c.optionType ?? c.type ?? "CALL").toString().toUpperCase();
-    const occKey = buildSchwabOptionStreamerKey(symRoot, c.expiration, c.strike, ot.includes("PUT") ? "PUT" : "CALL");
+    const isPut = ot === "P" || ot.includes("PUT");
+    const occKey = buildSchwabOptionStreamerKey(symRoot, c.expiration, c.strike, isPut ? "PUT" : "CALL");
     if (!occKey) {
       restOnly++;
       examined++;

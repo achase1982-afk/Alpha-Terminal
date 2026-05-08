@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useQuote, type QuoteData } from "@/hooks/useQuote";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
-import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
 import { startStrategistPolling } from "@/lib/strategistPoller";
 import { useOptionsStreamStore } from "@/lib/options-stream-store";
 import {
@@ -889,8 +889,9 @@ export function StrategyBuilder({
       });
       if (!res.ok) {
         const errText = await res.text().catch(() => "Failed to start validation");
-        useTerminalStore.getState().errorStrategistJob(jobId, errText);
-        setErrorMsg(`Strategist dispatch failed: ${errText.slice(0, 200)}`);
+        const friendly = humanizeFailedApiBody(res.status, errText);
+        useTerminalStore.getState().errorStrategistJob(jobId, friendly);
+        setErrorMsg(`Strategist dispatch failed: ${friendly.slice(0, 200)}`);
         setStrategistDispatchInFlight(false);
         return;
       }

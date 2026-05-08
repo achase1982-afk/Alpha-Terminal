@@ -1,5 +1,5 @@
 import { useTerminalStore, type StrategistTranscriptTurn, type StrategistValidationMeta } from "./store";
-import { fetchWithAuth } from "./fetchWithAuth";
+import { fetchWithAuth, humanizeFailedApiBody } from "./fetchWithAuth";
 import { toast } from "sonner";
 import { deskRecommendationHasTrade, deskTradeStructureSentenceCase } from "./strategistDeskResult";
 
@@ -269,7 +269,7 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
       }
     };
     try {
-      while (Date.now() < stopAt) {
+      pollLoop: while (Date.now() < stopAt) {
         if (handle.aborted) {
           // Another poller has taken over; exit silently without touching
           // the registry (the new poller now owns the entry).
@@ -315,6 +315,14 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
         if (handle.aborted) return;
 
         if (!tres.ok) {
+          if (tres.status === 401 || tres.status === 403) {
+            const raw = await tres.text().catch(() => "");
+            useTerminalStore
+              .getState()
+              .errorStrategistJob(jobId, humanizeFailedApiBody(tres.status, raw));
+            resolved = true;
+            break pollLoop;
+          }
           // 404 right after a job is registered just means the server hasn't
           // accepted the POST /analyze yet. Don't count it against the
           // failure budget while we're still inside the grace window.
@@ -326,24 +334,41 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
           // 404: in-memory buffer may be pruned after tab sleep. Reconcile from
           // persisted history (full run state is keyed by jobId in the DB).
           if (tres.status === 404) {
-            try {
-              const finalRes = await fetchWithAuth(
-                `${API_BASE}/strategist/job/${encodeURIComponent(jobId)}/final?since=${current.nextSince}`,
-              );
-              if (finalRes.ok) {
-                const t = (await finalRes.json()) as StrategistThinkingPollPayload;
-                const outcome = applyThinkingPollResponse(jobId, t);
-                if (outcome !== "running") {
+            let reconciledFromFinal = false;
+            for (let attempt = 0; attempt < 3; attempt++) {
+              try {
+                const finalRes = await fetchWithAuth(
+                  `${API_BASE}/strategist/job/${encodeURIComponent(jobId)}/final?since=${current.nextSince}`,
+                );
+                if (!finalRes.ok && (finalRes.status === 401 || finalRes.status === 403)) {
+                  const raw = await finalRes.text().catch(() => "");
+                  useTerminalStore
+                    .getState()
+                    .errorStrategistJob(jobId, humanizeFailedApiBody(finalRes.status, raw));
                   resolved = true;
-                  await refreshHistoryAfterCompletion();
+                  break pollLoop;
+                }
+                if (finalRes.ok) {
+                  const t = (await finalRes.json()) as StrategistThinkingPollPayload;
+                  const outcome = applyThinkingPollResponse(jobId, t);
+                  if (outcome !== "running") {
+                    resolved = true;
+                    await refreshHistoryAfterCompletion();
+                    reconciledFromFinal = true;
+                    break;
+                  }
+                  consecutiveFailures = 0;
+                  await new Promise((r) => setTimeout(r, 1200));
+                  reconciledFromFinal = true;
                   break;
                 }
-                consecutiveFailures = 0;
-                await new Promise((r) => setTimeout(r, 1200));
-                continue;
+              } catch {
+                /* try next attempt */
               }
-            } catch {
-              // fall through to history recovery
+              await new Promise((r) => setTimeout(r, 1500));
+            }
+            if (reconciledFromFinal) {
+              continue;
             }
             const recovered = await tryRecoverFromHistory();
             if (recovered) {

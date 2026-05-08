@@ -8,7 +8,7 @@ import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import {
   useGetQuote, useGetPriceHistory, useGetOptionChain,
 } from "@workspace/api-client-react";
-import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
 // Strategist V2: polling lives in `strategistPoller` (survives tab background via sync + `/job/:id/final`).
 import { startStrategistPolling, abortStrategistPolling, hydrateStrategistJobFromPersistedFinal } from "@/lib/strategistPoller";
 import { consumePendingStrategistPushJobId } from "@/lib/strategistPushNav";
@@ -3041,7 +3041,7 @@ function AiIntelligenceTabInner({
 
       if (!res.ok) {
         const errText = await res.text().catch(() => "Unknown error");
-        setStrategistResult(`**Error:** ${errText}`);
+        setStrategistResult(`**Error:** ${humanizeFailedApiBody(res.status, errText)}`);
         setIsStrategizing(false);
         setStrategistStatus("");
         return;
@@ -3235,7 +3235,8 @@ function AiIntelligenceTabInner({
 
       if (!res.ok) {
         const errText = await res.text().catch(() => "Unknown error");
-        setDetResult({ criteria: null, rejection: errText, mode: "NO_EDGE", modeReason: errText, pulse: { composite: 0, confidence: 0, bias: "NO_EDGE" }, shockActive: false, portfolio: { microOverrideCount: 0 }, narrative: "" });
+        const friendly = humanizeFailedApiBody(res.status, errText);
+        setDetResult({ criteria: null, rejection: friendly, mode: "NO_EDGE", modeReason: friendly, pulse: { composite: 0, confidence: 0, bias: "NO_EDGE" }, shockActive: false, portfolio: { microOverrideCount: 0 }, narrative: "" });
         setIsDetRunning(false);
         setStrategistStatus("");
         return;
@@ -3409,7 +3410,7 @@ function AiIntelligenceTabInner({
             return;
           }
           const errText = await res.text().catch(() => "Unknown error");
-          errorStrategistJob(jobId, errText);
+          errorStrategistJob(jobId, humanizeFailedApiBody(res.status, errText));
           return;
         }
         startStrategistPolling(jobId);
