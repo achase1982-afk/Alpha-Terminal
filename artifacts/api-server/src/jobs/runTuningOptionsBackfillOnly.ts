@@ -18,8 +18,13 @@ async function main(): Promise<void> {
 
   for (const sym of symbols) {
     console.log(JSON.stringify({ msg: "ENTER tuning_options_daily_only", symbol: sym }));
-    const r = await backfillOptionsDailyForSymbol(sym);
-    console.log(JSON.stringify({ msg: "EXIT tuning_options_daily_only", symbol: sym, ...r }));
+    try {
+      const r = await backfillOptionsDailyForSymbol(sym);
+      console.log(JSON.stringify({ msg: "EXIT tuning_options_daily_only", symbol: sym, ...r }));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.log(JSON.stringify({ msg: "ERROR tuning_options_daily_only", symbol: sym, err: msg }));
+    }
   }
 }
 

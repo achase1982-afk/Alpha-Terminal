@@ -250,7 +250,6 @@ export function mergeSymbolOverallStatus(a: SymbolAuditJson): AuditStatus {
   if (domains.some((s) => s === "fail")) return "fail";
   if (domains.some((s) => s === "warn")) return "warn";
   return "ok";
-  return "ok";
 }
 
 export async function insertAuditRun(params: {
