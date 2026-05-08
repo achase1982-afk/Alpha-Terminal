@@ -79,6 +79,11 @@ function primaryListingForTuningSymbol(symbol: string): TuningPrimaryListing {
   }
 }
 
+/** Exported alias for venue routing (same rules as the internal mapper). */
+export function tuningPrimaryListing(symbol: string): TuningPrimaryListing {
+  return primaryListingForTuningSymbol(symbol);
+}
+
 export interface TuningUniverseEntry {
   symbol: string;
   primaryListing: TuningPrimaryListing;

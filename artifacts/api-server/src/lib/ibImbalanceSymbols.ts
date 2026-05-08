@@ -13,11 +13,11 @@ export const IMBALANCE_REQ_ID_BASE = 12_000;
 export const IMBALANCE_REQ_ID_SPAN = 128;
 
 function nyseLiquidCoreSymbols(): string[] {
-  return LIQUID_CORE_SYMBOLS.filter((e) => e.primaryListing === "NYSE").map((e) => e.symbol);
+  return LIQUID_CORE_SYMBOLS.filter((e) => e.primaryListing === "NYSE").map((e) => e.symbol.toUpperCase());
 }
 
 function nyseTuningSymbols(): string[] {
-  return TUNING_UNIVERSE.filter((e) => e.primaryListing === "NYSE").map((e) => e.symbol);
+  return TUNING_UNIVERSE.filter((e) => e.primaryListing === "NYSE").map((e) => e.symbol.toUpperCase());
 }
 
 function imbalanceUnionSorted(): string[] {
@@ -51,3 +51,5 @@ export const IMBALANCE_REQID_TO_SYMBOL = new Map<number, string>(
 );
 
 export const NYSE_PRIMARY_LIQUID_CORE_COUNT = nyseLiquidCoreSymbols().length;
+
+export const NYSE_IMBALANCE_UNION_COUNT = sortedUnion.length;

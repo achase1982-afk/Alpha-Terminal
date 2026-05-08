@@ -17,6 +17,8 @@ import { logger } from "./logger.js";
 const log = logger.child({ module: "tuningUniverseRegistrar" });
 
 let cached: readonly string[] | null = null;
+let cachedNyseTuning: readonly string[] | null = null;
+let cachedNasdaqTuning: readonly string[] | null = null;
 
 let aggregateHookInstalled = false;
 let aggregateLogged = false;
@@ -26,6 +28,12 @@ let pendingSchwabCounts: SchwabTuningPersistentCounts | null = null;
 export function registerTuningUniverseOnBoot(): void {
   if (cached) return;
   cached = Object.freeze(TUNING_SYMBOLS.map((s) => s.toUpperCase()));
+  cachedNyseTuning = Object.freeze(
+    TUNING_UNIVERSE.filter((e) => e.primaryListing === "NYSE").map((e) => e.symbol),
+  );
+  cachedNasdaqTuning = Object.freeze(
+    TUNING_UNIVERSE.filter((e) => e.primaryListing === "NASDAQ").map((e) => e.symbol),
+  );
   log.info({ symbolCount: cached.length }, "ENTER tuning_registrar");
 }
 
@@ -37,13 +45,13 @@ export function getTuningUniverseSymbols(): readonly string[] {
 }
 
 export function getNyseListedTuningSymbols(): readonly string[] {
-  registerTuningUniverseOnBoot();
-  return Object.freeze(TUNING_UNIVERSE.filter((e) => e.primaryListing === "NYSE").map((e) => e.symbol));
+  if (!cached) registerTuningUniverseOnBoot();
+  return cachedNyseTuning!;
 }
 
 export function getNasdaqListedTuningSymbols(): readonly string[] {
-  registerTuningUniverseOnBoot();
-  return Object.freeze(TUNING_UNIVERSE.filter((e) => e.primaryListing === "NASDAQ").map((e) => e.symbol));
+  if (!cached) registerTuningUniverseOnBoot();
+  return cachedNasdaqTuning!;
 }
 
 export interface SchwabTuningPersistentCounts {

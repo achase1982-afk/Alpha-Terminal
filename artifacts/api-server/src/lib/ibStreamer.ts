@@ -5,6 +5,7 @@ import { emitTelemetry } from "./telemetryStore.js";
 import type { LiveQuote } from "./schwabStreamer.js";
 import { getEnabledSymbols, type IBSymbolDef } from "./ibBreadthSymbols.js";
 import { IMBALANCE_REQID_TO_SYMBOL, IMBALANCE_SYMBOLS, IMBALANCE_REQ_ID_BASE } from "./ibImbalanceSymbols.js";
+import { TUNING_L1_SYMBOL_DEFS, TUNING_L1_REQ_ID_BASE } from "./ibTuningL1Symbols.js";
 import { enqueueImbalancePersist } from "./ibImbalancePersistence.js";
 import { ES_DEPTH_SYMBOL_DEF, ES_DEPTH_REQ_ID } from "./ibEsDepthSymbols.js";
 import { CBOE_ONE_EXCHANGE } from "./ibCboeOneSymbols.js";
@@ -25,7 +26,6 @@ import {
 import { enqueueTotalviewPersist, type NasdaqTotalviewSummaryPayload } from "./ibTotalviewPersistence.js";
 import { enqueueEsDepthPersist, type EsDepthSummaryPayload } from "./ibEsDepthPersistence.js";
 import { injectExternalQuote, injectCboeOneConsolidatedQuote } from "./schwabStreamer.js";
-import { TUNING_SYMBOLS } from "../data/tuningUniverse.js";
 
 export type { IBSymbolDef } from "./ibBreadthSymbols.js";
 
@@ -213,32 +213,8 @@ const reqIdToSymbol = new Map<number, IBSymbolDef>();
 for (const def of BREADTH_SYMBOLS) {
   reqIdToSymbol.set(def.reqId, def);
 }
-
-/** Permanent equity L1 for tuning universe — disjoint reqId block, stable symbol→reqId via sorted order. */
-const TUNING_L1_REQ_ID_BASE = 16_000;
-const TUNING_L1_REQ_SPAN = 32;
-
-const tuningL1Sorted = [...TUNING_SYMBOLS].map((s) => s.toUpperCase()).sort((a, b) => a.localeCompare(b));
-
-if (tuningL1Sorted.length > TUNING_L1_REQ_SPAN) {
-  throw new Error(`ibStreamer: tuning universe size ${tuningL1Sorted.length} exceeds reserved L1 span ${TUNING_L1_REQ_SPAN}`);
-}
-
-const TUNING_L1_DEFS: IBSymbolDef[] = tuningL1Sorted.map((sym, i) => ({
-  reqId: TUNING_L1_REQ_ID_BASE + i,
-  symbol: sym,
-  ibSymbol: sym,
-  secType: "STK",
-  exchange: "SMART",
-  displaySymbol: sym,
-  category: "TUNING_L1",
-  description: "Tuning universe permanent equity L1",
-  enabled: true,
-}));
-
-const tuningL1ReqIdToDef = new Map<number, IBSymbolDef>();
-for (const def of TUNING_L1_DEFS) {
-  tuningL1ReqIdToDef.set(def.reqId, def);
+for (const def of TUNING_L1_SYMBOL_DEFS) {
+  reqIdToSymbol.set(def.reqId, def);
 }
 
 let tuningL1BootLogged = false;
@@ -535,14 +511,14 @@ function subscribeAll() {
   logger.info({ count: imbCount, reqIdBase: IMBALANCE_REQ_ID_BASE }, "IB: subscribed NYSE imbalance pool (generic tick 225)");
 
   let tuningL1Subscribed = 0;
-  for (const def of TUNING_L1_DEFS) {
+  for (const def of TUNING_L1_SYMBOL_DEFS) {
     if (skippedMarketDataReqIds.has(def.reqId)) continue;
     const contract = buildContract(def);
     try {
       ib.reqMktData(def.reqId, contract, "", false, false);
       tuningL1Subscribed++;
     } catch (err) {
-      logger.warn({ err, symbol: def.displaySymbol }, "IB: failed to subscribe tuning universe L1 equity");
+      logger.warn({ err, symbol: def.displaySymbol }, "IB: failed to subscribe tuning universe L1");
     }
   }
   if (!tuningL1BootLogged) {
@@ -552,7 +528,7 @@ function subscribeAll() {
         event: "ENTER",
         phase: "tuning_ibkr_l1_registration",
         count: tuningL1Subscribed,
-        symbols: tuningL1Sorted,
+        symbols: TUNING_L1_SYMBOL_DEFS.map((d) => d.displaySymbol),
         reqIdBase: TUNING_L1_REQ_ID_BASE,
       },
       "IB: tuning universe permanent equity L1 subscribed",
@@ -797,11 +773,11 @@ function teardownIB() {
     for (const def of BREADTH_SYMBOLS) {
       try { ib.cancelMktData(def.reqId); } catch { /* ignore */ }
     }
-    teardownDynamicIbPools();
-    for (const def of IMBALANCE_SYMBOLS) {
+    for (const def of TUNING_L1_SYMBOL_DEFS) {
       try { ib.cancelMktData(def.reqId); } catch { /* ignore */ }
     }
-    for (const def of TUNING_L1_DEFS) {
+    teardownDynamicIbPools();
+    for (const def of IMBALANCE_SYMBOLS) {
       try { ib.cancelMktData(def.reqId); } catch { /* ignore */ }
     }
     for (const [reqId] of depthReqIdToSymbol) {
@@ -927,7 +903,7 @@ export async function connectIB(): Promise<void> {
     });
 
     ib.on(EventName.tickReqParams, (reqId: number, minTick: number, bboExchange: string, snapshotPermissions: number) => {
-      const def = reqIdToSymbol.get(reqId) ?? tuningL1ReqIdToDef.get(reqId);
+      const def = reqIdToSymbol.get(reqId);
       logger.debug({ symbol: def?.displaySymbol, reqId, minTick, bboExchange, snapshotPermissions }, "IB: tickReqParams received");
     });
 
@@ -977,7 +953,7 @@ export async function connectIB(): Promise<void> {
         return;
       }
       if (code === 200 && reqId > 0) {
-        const def = reqIdToSymbol.get(reqId) ?? tuningL1ReqIdToDef.get(reqId);
+        const def = reqIdToSymbol.get(reqId);
         const imb = IMBALANCE_REQID_TO_SYMBOL.get(reqId);
         logger.warn(
           { code, reqId, symbol: def?.ibSymbol ?? imb, msg: err.message },
@@ -996,11 +972,11 @@ export async function connectIB(): Promise<void> {
           );
           return;
         }
-        if (tuningL1ReqIdToDef.has(reqId)) {
+        const tuningDef = reqIdToSymbol.get(reqId);
+        if (tuningDef?.category === "TUNING_L1") {
           skippedMarketDataReqIds.add(reqId);
-          const sym = tuningL1ReqIdToDef.get(reqId)?.displaySymbol;
           logger.error(
-            { code, reqId, symbol: sym },
+            { code, reqId, symbol: tuningDef.displaySymbol },
             "IB: error 101 — market data subscription missing for tuning universe L1; skipping this reqId until process restart.",
           );
           return;
@@ -1163,7 +1139,7 @@ export async function connectIB(): Promise<void> {
         return;
       }
 
-      const def = reqIdToSymbol.get(reqId) ?? tuningL1ReqIdToDef.get(reqId);
+      const def = reqIdToSymbol.get(reqId);
       const dynSym = def ? null : dynamicQuoteReqIdToSymbol.get(reqId);
       if (!def && !dynSym) return;
 
@@ -1289,7 +1265,7 @@ export async function connectIB(): Promise<void> {
         return;
       }
 
-      const def = reqIdToSymbol.get(reqId) ?? tuningL1ReqIdToDef.get(reqId);
+      const def = reqIdToSymbol.get(reqId);
       const dynSym = def ? null : dynamicQuoteReqIdToSymbol.get(reqId);
       if (!def && !dynSym) return;
 
@@ -1322,7 +1298,7 @@ export async function connectIB(): Promise<void> {
     });
 
     ib.on(EventName.tickString, (reqId: number, tickType: number, value: string) => {
-      const def = reqIdToSymbol.get(reqId) ?? tuningL1ReqIdToDef.get(reqId);
+      const def = reqIdToSymbol.get(reqId);
       if (!def) return;
       const cnt = (tickLogCounts.get(def.displaySymbol + "_str") ?? 0) + 1;
       tickLogCounts.set(def.displaySymbol + "_str", cnt);
@@ -1332,7 +1308,7 @@ export async function connectIB(): Promise<void> {
     });
 
     ib.on(EventName.tickGeneric, (reqId: number, tickType: number, value: number) => {
-      const def = reqIdToSymbol.get(reqId) ?? tuningL1ReqIdToDef.get(reqId);
+      const def = reqIdToSymbol.get(reqId);
       if (!def) return;
       const cnt = (tickLogCounts.get(def.displaySymbol + "_gen") ?? 0) + 1;
       tickLogCounts.set(def.displaySymbol + "_gen", cnt);
