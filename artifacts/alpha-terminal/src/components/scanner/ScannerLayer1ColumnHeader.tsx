@@ -8,7 +8,7 @@ export function ScannerLayer1ColumnHeader({ id }: { id?: string }) {
       id={id}
       className={cn(
         SCANNER_LAYER1_GRID_CLASS,
-        "border-b border-zinc-800/45 bg-zinc-900/35 font-semibold uppercase tracking-wide text-muted-foreground",
+        "bg-zinc-900/35 font-semibold uppercase tracking-wide text-muted-foreground",
       )}
       style={scannerNumericFontStyle}
     >
