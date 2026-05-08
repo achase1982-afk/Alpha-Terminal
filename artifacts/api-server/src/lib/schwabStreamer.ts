@@ -748,6 +748,10 @@ function findKeysDeep(
 
 let equityTickSampleLogged = false;
 let futuresTickSampleLogged = false;
+let timesaleEquitySampleLogged = false;
+let nyseBookSampleLogged = false;
+let nasdaqBookSampleLogged = false;
+let optionsBookSampleLogged = false;
 
 function processEquityTick(content: Record<string, unknown>[]) {
   if (!equityTickSampleLogged && content.length > 0) {
@@ -906,10 +910,13 @@ function emitTimesaleEquityListeners(ev: SchwabTimesaleEquityEvent): void {
  */
 function processTimesaleEquity(content: Record<string, unknown>[]) {
   if (content.length === 0) return;
-  logger.info(
-    { event: "EXIT", phase: "schwab_timesale_equity_batch", batchSize: content.length },
-    "Schwab streamer: TIMESALE_EQUITY batch handled",
-  );
+  if (!timesaleEquitySampleLogged) {
+    timesaleEquitySampleLogged = true;
+    logger.info(
+      { event: "EXIT", phase: "schwab_timesale_equity_batch", batchSize: content.length },
+      "Schwab streamer: TIMESALE_EQUITY batch handled",
+    );
+  }
   for (const item of content) {
     const rawKey = (item["key"] ?? item["0"]) as string | undefined;
     const symbol = rawKey ? normalizeEquityKey(rawKey) : "";
@@ -928,10 +935,13 @@ function processTimesaleEquity(content: Record<string, unknown>[]) {
 
 function processNyseBook(content: Record<string, unknown>[]) {
   if (content.length === 0) return;
-  logger.info(
-    { event: "EXIT", phase: "schwab_nyse_book_batch", batchSize: content.length },
-    "Schwab streamer: NYSE_BOOK batch handled",
-  );
+  if (!nyseBookSampleLogged) {
+    nyseBookSampleLogged = true;
+    logger.info(
+      { event: "EXIT", phase: "schwab_nyse_book_batch", batchSize: content.length },
+      "Schwab streamer: NYSE_BOOK batch handled",
+    );
+  }
   for (const item of content) {
     const rawKey = (item["key"] ?? item["0"]) as string | undefined;
     const symbol = rawKey ? normalizeEquityKey(rawKey) : "";
@@ -949,10 +959,13 @@ function processNyseBook(content: Record<string, unknown>[]) {
 
 function processNasdaqBook(content: Record<string, unknown>[]) {
   if (content.length === 0) return;
-  logger.info(
-    { event: "EXIT", phase: "schwab_nasdaq_book_batch", batchSize: content.length },
-    "Schwab streamer: NASDAQ_BOOK batch handled",
-  );
+  if (!nasdaqBookSampleLogged) {
+    nasdaqBookSampleLogged = true;
+    logger.info(
+      { event: "EXIT", phase: "schwab_nasdaq_book_batch", batchSize: content.length },
+      "Schwab streamer: NASDAQ_BOOK batch handled",
+    );
+  }
   for (const item of content) {
     const rawKey = (item["key"] ?? item["0"]) as string | undefined;
     const symbol = rawKey ? normalizeEquityKey(rawKey) : "";
@@ -970,10 +983,13 @@ function processNasdaqBook(content: Record<string, unknown>[]) {
 
 function processOptionsBook(content: Record<string, unknown>[]) {
   if (content.length === 0) return;
-  logger.info(
-    { event: "EXIT", phase: "schwab_options_book_batch", batchSize: content.length },
-    "Schwab streamer: OPTIONS_BOOK batch handled",
-  );
+  if (!optionsBookSampleLogged) {
+    optionsBookSampleLogged = true;
+    logger.info(
+      { event: "EXIT", phase: "schwab_options_book_batch", batchSize: content.length },
+      "Schwab streamer: OPTIONS_BOOK batch handled",
+    );
+  }
   for (const item of content) {
     const rawKey = (item["key"] ?? item["0"]) as string | undefined;
     const symbol = rawKey ? String(rawKey).trim() : "";
