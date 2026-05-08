@@ -4,6 +4,11 @@ import { sql } from "drizzle-orm";
 
 const POLYGON_API = "https://api.polygon.io";
 
+/** Polygon next_url may use `apiKey` or `apikey`; treat either as present. */
+function polygonUrlHasApiKeyParam(url: string): boolean {
+  return /[?&]apikey=/i.test(url);
+}
+
 function addUtcDaysYmd(ymd: string, days: number): string {
   const d = new Date(`${ymd}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
@@ -81,19 +86,41 @@ async function listContractsForAsOf(
   let pages = 0;
   while (url && pages < 120) {
     const r = await fetchWithRetry(url);
-    if (!r?.ok) break;
+    if (!r) {
+      if (pages === 0) {
+        throw new Error(`Polygon options contracts: no HTTP response for ${symbol} as_of=${asOf}`);
+      }
+      break;
+    }
+    if (!r.ok) {
+      const errBody = await r.text().catch(() => "");
+      if (pages === 0) {
+        throw new Error(
+          `Polygon options contracts failed for ${symbol} as_of=${asOf}: HTTP ${r.status} ${errBody.slice(0, 240)}`,
+        );
+      }
+      break;
+    }
     const json = (await r.json()) as { results?: Array<Record<string, unknown>>; next_url?: string };
     for (const c of json.results ?? []) {
       const occ = c["ticker"] as string | undefined;
       const strike = c["strike_price"] as number | undefined;
       const exp = (c["expiration_date"] as string | undefined)?.slice(0, 10);
-      const listDate = (c["list_date"] as string | undefined)?.slice(0, 10);
-      if (!occ || !strike || !exp || !listDate) continue;
+      const listRaw = c["list_date"] as string | undefined;
+      const listFromApi =
+        typeof listRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(listRaw.slice(0, 10)) ? listRaw.slice(0, 10) : null;
+      /** Polygon contract index often omits list_date; as_of is a safe lower bound for first-seen contracts. */
+      const listDate = listFromApi ?? asOf;
+      if (!occ || !strike || !exp) continue;
       if (!occ.startsWith("O:")) continue;
       out.push({ occ, strike, expiration: exp, listDate });
     }
     const next = json.next_url;
-    url = next ? (next.includes("apiKey=") ? next : `${next}&apiKey=${encodeURIComponent(apiKey)}`) : null;
+    url = next
+      ? polygonUrlHasApiKeyParam(next)
+        ? next
+        : `${next}${next.includes("?") ? "&" : "?"}apiKey=${encodeURIComponent(apiKey)}`
+      : null;
     pages++;
     await sleep(60);
   }
@@ -161,7 +188,11 @@ async function fetchOptionAggs(
       });
     }
     const next = json.next_url;
-    url = next ? (next.includes("apiKey=") ? next : `${next}&apiKey=${encodeURIComponent(apiKey)}`) : null;
+    url = next
+      ? polygonUrlHasApiKeyParam(next)
+        ? next
+        : `${next}${next.includes("?") ? "&" : "?"}apiKey=${encodeURIComponent(apiKey)}`
+      : null;
     await sleep(40);
   }
   return out;
@@ -205,12 +236,20 @@ export async function backfillOptionsDailyForSymbol(symbol: string): Promise<{
       if (!isFridayYmd(c.expiration)) continue;
       const dte = dteCalendar(asOf, c.expiration);
       if (dte < 7 || dte > 550) continue;
-      contractKeys.set(c.occ, { occ: c.occ, listDate: c.listDate, expiration: c.expiration });
+      const prev = contractKeys.get(c.occ);
+      if (!prev || c.listDate < prev.listDate) {
+        contractKeys.set(c.occ, { occ: c.occ, listDate: c.listDate, expiration: c.expiration });
+      }
     }
     await sleep(40);
   }
 
   const contracts = [...contractKeys.values()];
+  if (contracts.length === 0) {
+    throw new Error(
+      `tuning options_daily: no contracts in scope for ${sym} (spot series ${closeByDate.size} days; check Polygon options access / filters)`,
+    );
+  }
   let rowsUpserted = 0;
   let contractsProcessed = 0;
 

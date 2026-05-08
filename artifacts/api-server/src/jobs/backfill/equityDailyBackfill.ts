@@ -4,6 +4,10 @@ import { computeHV20, computeHV30, computeHV60 } from "../../lib/dailySnapshot.j
 
 const POLYGON_API = "https://api.polygon.io";
 
+function polygonUrlHasApiKeyParam(url: string): boolean {
+  return /[?&]apikey=/i.test(url);
+}
+
 function addUtcDaysYmd(ymd: string, days: number): string {
   const d = new Date(`${ymd}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
@@ -75,10 +79,11 @@ async function fetchAllPolygonDailyAggs(symbol: string, fromYmd: string, toYmd: 
       });
     }
     const next = json.next_url;
-    url = next ? `${next}${next.includes("apiKey=") ? "" : `&apiKey=${encodeURIComponent(apiKey)}`}` : null;
-    if (url && !url.includes("apiKey=")) {
-      url = `${url}&apiKey=${encodeURIComponent(apiKey)}`;
-    }
+    url = next
+      ? polygonUrlHasApiKeyParam(next)
+        ? next
+        : `${next}${next.includes("?") ? "&" : "?"}apiKey=${encodeURIComponent(apiKey)}`
+      : null;
     await sleep(80);
   }
   return out;
