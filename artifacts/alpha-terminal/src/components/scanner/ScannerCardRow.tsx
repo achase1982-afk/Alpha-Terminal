@@ -2,6 +2,7 @@ import { ChevronRight, TrendingDown, TrendingUp } from "lucide-react";
 import type { ScannerCardData } from "@/lib/unifiedScanTypes";
 import { cn } from "@/lib/utils";
 import {
+  SCANNER_LAYER1_GRID_CLASS,
   catalystPillLabel,
   dashCell,
   formatCompactInt,
@@ -25,75 +26,78 @@ export function ScannerCardRow({ data, expanded }: { data: ScannerCardData; expa
   const ivrStr = data.ivr != null && Number.isFinite(data.ivr) ? String(Math.round(data.ivr)) : dashCell();
   const volStr = formatCompactInt(data.volume);
   const displayName = data.name?.trim();
+  const chgCls = hasCh ? (up ? "text-terminal-success" : "text-terminal-danger") : "text-muted-foreground";
 
   return (
-    <div
-      className="flex min-w-0 flex-nowrap items-center gap-x-1.5 overflow-x-auto px-2.5 py-2 text-sm sm:gap-x-2 sm:px-3"
-      style={scannerNumericFontStyle}
-    >
-      <span className="w-2 shrink-0 text-center text-zinc-600/45" aria-hidden>
-        <ChevronRight className={cn("mx-auto h-2.5 w-2.5 transition-transform", expanded && "rotate-90")} />
+    <div className={cn(SCANNER_LAYER1_GRID_CLASS, "text-foreground")} style={scannerNumericFontStyle}>
+      <span className="flex justify-center text-zinc-600/45" aria-hidden>
+        <ChevronRight className={cn("h-2.5 w-2.5 transition-transform", expanded && "rotate-90")} />
       </span>
 
-      <span className="shrink-0 font-bold tracking-tight text-foreground">{data.symbol}</span>
-
-      {displayName ? (
-        <span
-          className={cn(
-            "min-w-0 max-w-[10rem] shrink truncate text-muted-foreground sm:max-w-[12rem]",
-            "max-[480px]:portrait:hidden",
-          )}
-          title={displayName}
-        >
-          {displayName}
-        </span>
-      ) : null}
+      <div className="min-w-0">
+        <div className="truncate font-bold tracking-tight text-foreground">{data.symbol}</div>
+        {displayName ? (
+          <div className="truncate text-[9px] leading-snug text-muted-foreground sm:text-[10px]" title={displayName}>
+            {displayName}
+          </div>
+        ) : null}
+      </div>
 
       <span
         className={cn(
-          "min-w-[3.25rem] shrink-0 text-right tabular-nums",
+          "text-right tabular-nums tracking-tight",
           priceStr === dashCell() ? "text-muted-foreground" : "text-foreground",
         )}
       >
         {priceStr}
       </span>
 
-      <div
-        className={cn(
-          "flex min-w-[6.5rem] shrink-0 items-center justify-end gap-0.5 whitespace-nowrap text-right tabular-nums",
-          hasCh ? (up ? "text-terminal-success" : "text-terminal-danger") : "text-muted-foreground",
-        )}
-      >
+      <div className={cn("flex items-center justify-end gap-0.5 tabular-nums tracking-tight", chgCls)}>
         {hasCh ? (
-          <>
-            {up ? <TrendingUp className="h-3.5 w-3.5 shrink-0" aria-hidden /> : <TrendingDown className="h-3.5 w-3.5 shrink-0" aria-hidden />}
-            <span>
-              {formatSignedMoney(chAbs)} {formatSignedPct(chPct)}
-            </span>
-          </>
-        ) : (
-          dashCell()
-        )}
+          up ? (
+            <TrendingUp className="h-3 w-3 shrink-0" aria-hidden />
+          ) : (
+            <TrendingDown className="h-3 w-3 shrink-0" aria-hidden />
+          )
+        ) : null}
+        <span>{hasCh ? formatSignedMoney(chAbs) : dashCell()}</span>
       </div>
+
+      <span className={cn("text-right tabular-nums tracking-tight", chgCls)}>
+        {hasCh ? formatSignedPct(chPct) : dashCell()}
+      </span>
 
       <span
         className={cn(
-          "min-w-[2rem] shrink-0 text-right tabular-nums",
+          "text-right tabular-nums tracking-tight",
           ivrStr === dashCell() ? "text-muted-foreground" : "text-foreground",
         )}
+        title={ivrStr !== dashCell() ? "Implied volatility rank (0–100)" : undefined}
       >
         {ivrStr}
       </span>
 
-      <div className="flex w-[5.5rem] shrink-0 justify-center">
+      <div className="flex min-w-0 justify-center px-0.5">
         {pill ? (
-          <span className="inline-flex items-center whitespace-nowrap rounded-full border border-amber-500/45 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-200/95 sm:text-xs">
+          <span
+            className="max-w-full truncate rounded-full border border-amber-500/45 bg-amber-500/10 px-1.5 py-px text-[9px] font-bold text-amber-200/95 sm:px-2 sm:py-0.5 sm:text-[10px]"
+            title={pill}
+          >
             {pill}
           </span>
-        ) : null}
+        ) : (
+          <span className="text-muted-foreground">{dashCell()}</span>
+        )}
       </div>
 
-      <div className="flex min-w-[2.25rem] shrink-0 items-center justify-end gap-0.5 tabular-nums">
+      <div
+        className="flex items-center justify-end gap-0.5 tabular-nums tracking-tight"
+        title={
+          data.score != null && Number.isFinite(data.score)
+            ? `Composite scanner score ${Math.round(data.score)} / 100`
+            : undefined
+        }
+      >
         <span className={scannerScoreTierDotClassName(data.score, "sm")} aria-hidden />
         {data.score != null && Number.isFinite(data.score) ? (
           <span className="font-semibold text-foreground">{Math.round(data.score)}</span>
@@ -102,9 +106,15 @@ export function ScannerCardRow({ data, expanded }: { data: ScannerCardData; expa
         )}
       </div>
 
-      <div className="ml-auto shrink-0 whitespace-nowrap text-right tabular-nums sm:ml-0">
-        <span className={volStr === dashCell() ? "text-muted-foreground" : "text-foreground"}>{volStr}</span>
-        {volMult !== dashCell() ? <span className="ml-1 text-muted-foreground">({volMult})</span> : null}
+      <div className="flex min-w-0 flex-col items-end justify-center gap-0 leading-tight">
+        <span className={cn("tabular-nums tracking-tight", volStr === dashCell() ? "text-muted-foreground" : "text-foreground")}>
+          {volStr}
+        </span>
+        {volMult !== dashCell() ? (
+          <span className="text-[9px] tabular-nums text-muted-foreground sm:text-[10px]" title="Volume vs 20-day average">
+            {volMult} avg
+          </span>
+        ) : null}
       </div>
     </div>
   );

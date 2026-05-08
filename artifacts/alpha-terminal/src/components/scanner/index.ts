@@ -1,4 +1,5 @@
 export { ScannerCard } from "./ScannerCard";
+export { ScannerLayer1ColumnHeader } from "./ScannerLayer1ColumnHeader";
 export { ScannerCardRow } from "./ScannerCardRow";
 export { ScannerCardDetail } from "./ScannerCardDetail";
 export { ScannerCardIdentity } from "./ScannerCardIdentity";
