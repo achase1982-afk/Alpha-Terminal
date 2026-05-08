@@ -3087,7 +3087,8 @@ async function buildDataPackage(
     fmpAnalystGrades?: import("./fmpDataService.js").AnalystGradeDbRow[] | null;
     fmpEarningsSurprises?: import("./fmpDataService.js").EarningsSurpriseDbRow[] | null;
   },
-  optionsChain: ChainContract[],
+  /** Full chain rows for stream enrichment; defaults empty when omitted (call sites always pass). */
+  optionsChain: ChainContract[] = [],
 ): Promise<string> {
   const currentDate = new Date().toISOString().slice(0, 10);
   const rawRv = volPackageExtras?.realizedVol ?? null;
