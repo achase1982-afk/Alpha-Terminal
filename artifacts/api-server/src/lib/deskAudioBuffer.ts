@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import pLimit from "p-limit";
-import { generateSpeech, sha256Hex } from "./tts.js";
+import { generateSpeech, resolveTtsProvider, sha256Hex } from "./tts.js";
 import { splitDeskAudioTextIntoChunks } from "./deskAudioChunking.js";
 import { logFailure } from "./telemetry.js";
 
@@ -145,7 +145,7 @@ export async function generateSpeechWithBackoff(text: string, voiceConfig: DeskV
 }
 
 function deskAudioTextHash(text: string, voiceConfig: DeskVoiceConfig): string {
-  return sha256Hex(`${text}::${JSON.stringify(voiceConfig)}`);
+  return sha256Hex(`${resolveTtsProvider()}::${text}::${JSON.stringify(voiceConfig)}`);
 }
 
 async function runChunkWorker(sessionId: string, chunkIndex: number, chunkText: string, voiceConfig: DeskVoiceConfig): Promise<void> {

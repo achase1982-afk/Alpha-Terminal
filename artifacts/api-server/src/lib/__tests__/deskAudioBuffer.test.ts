@@ -5,6 +5,7 @@ const mp3ish = Buffer.from([0xff, 0xfb, 0x90, 0x00]);
 
 vi.mock("../tts.js", () => ({
   generateSpeech: vi.fn().mockImplementation(async () => mp3ish),
+  resolveTtsProvider: () => "openai" as const,
   sha256Hex: (input: string) => createHash("sha256").update(input, "utf8").digest("hex"),
 }));
 
