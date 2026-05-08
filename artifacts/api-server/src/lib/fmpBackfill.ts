@@ -10,6 +10,7 @@ import {
   macroCalendarTable,
 } from "@workspace/db";
 import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
+import { getTuningUniverseSymbols } from "./tuningUniverseRegistrar.js";
 import {
   getFmpAnalystEstimatesQuarterly,
   getFmpEarningsCalendar,
@@ -101,10 +102,16 @@ async function upsertCorporateEarningsFromCalendarRow(r: {
     });
 }
 
-const lcSet = () => new Set(LIQUID_CORE_SYMBOL_STRINGS.map((s) => s.toUpperCase()));
+function lcAndTuningSet(): Set<string> {
+  const s = new Set(LIQUID_CORE_SYMBOL_STRINGS.map((x) => x.toUpperCase()));
+  for (const sym of getTuningUniverseSymbols()) {
+    s.add(sym.toUpperCase());
+  }
+  return s;
+}
 
 /**
- * FMP earnings calendar → `corporate_events` for Liquid Core 130 (next 90 days).
+ * FMP earnings calendar → `corporate_events` for Liquid Core ∪ tuning symbols (next 90 days).
  */
 export async function backfillEarningsCalendar(): Promise<{
   rowsUpserted: number;
@@ -113,7 +120,7 @@ export async function backfillEarningsCalendar(): Promise<{
 }> {
   const from = todayUtcYmd();
   const to = addDaysUtcYmd(from, 90);
-  const set = lcSet();
+  const set = lcAndTuningSet();
 
   const calendar = await getFmpEarningsCalendar(from, to);
   const filtered = calendar.filter((r) => set.has(r.symbol));
@@ -141,7 +148,7 @@ export async function backfillEarningsCalendar(): Promise<{
 }
 
 export async function backfillAnalystPriceTargets(): Promise<{ rowsUpserted: number }> {
-  const set = lcSet();
+  const set = lcAndTuningSet();
   const asOf = todayUtcYmd();
   let rowsUpserted = 0;
 
@@ -182,7 +189,7 @@ export async function backfillAnalystPriceTargets(): Promise<{ rowsUpserted: num
 }
 
 export async function backfillAnalystGrades(): Promise<{ rowsAttempted: number }> {
-  const set = lcSet();
+  const set = lcAndTuningSet();
   const fromDate = new Date();
   fromDate.setUTCDate(fromDate.getUTCDate() - 30);
 
@@ -271,7 +278,7 @@ export async function backfillEconomicCalendar(): Promise<{ rowsUpserted: number
 }
 
 export async function backfillEarningsSurprises(): Promise<{ rowsUpserted: number }> {
-  const set = lcSet();
+  const set = lcAndTuningSet();
   let rowsUpserted = 0;
 
   for (const sym of set) {
@@ -326,7 +333,7 @@ export async function backfillEquityDailyHistory(): Promise<{
   symbolsAttempted: number;
   failures: Array<{ symbol: string; error: string }>;
 }> {
-  const set = lcSet();
+  const set = lcAndTuningSet();
   const to = todayUtcYmd();
   let rowsInserted = 0;
   const failures: Array<{ symbol: string; error: string }> = [];
@@ -383,7 +390,7 @@ export async function backfillAnalystEstimates(): Promise<{
   rowsUpserted: number;
   symbolsWithNoData: number;
 }> {
-  const set = lcSet();
+  const set = lcAndTuningSet();
   let rowsUpserted = 0;
   let symbolsWithNoData = 0;
 
