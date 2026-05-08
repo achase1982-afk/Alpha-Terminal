@@ -25,7 +25,3 @@ function buildTuningL1Defs(): IBSymbolDef[] {
 }
 
 export const TUNING_L1_SYMBOL_DEFS: IBSymbolDef[] = buildTuningL1Defs();
-
-export const TUNING_L1_REQID_TO_SYMBOL = new Map<number, string>(
-  TUNING_L1_SYMBOL_DEFS.map((d) => [d.reqId, d.displaySymbol]),
-);
