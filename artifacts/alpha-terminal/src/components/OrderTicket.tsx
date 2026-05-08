@@ -3,7 +3,7 @@ import { useTerminalStore } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
-import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
 import { startStrategistPolling } from "@/lib/strategistPoller";
 import { computeStrategyEconomics } from "@/lib/strategyCalculator";
 import { useGetOptionChain } from "@workspace/api-client-react";
@@ -967,8 +967,9 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       });
       if (!res.ok) {
         const errText = await res.text().catch(() => "Failed to start validation");
-        useTerminalStore.getState().errorStrategistJob(jobId, errText);
-        setErrorMsg(`Strategist dispatch failed: ${errText.slice(0, 200)}`);
+        const friendly = humanizeFailedApiBody(res.status, errText);
+        useTerminalStore.getState().errorStrategistJob(jobId, friendly);
+        setErrorMsg(`Strategist dispatch failed: ${friendly.slice(0, 200)}`);
         setStrategistDispatchInFlight(false);
         return; // stay on the ticket so the user can retry / adjust
       }

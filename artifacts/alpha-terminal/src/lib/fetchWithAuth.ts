@@ -82,3 +82,35 @@ export async function getClerkToken(): Promise<string | null> {
     return null;
   }
 }
+
+const MAX_ERROR_BODY_CHARS = 500;
+
+/**
+ * Turns raw `fetch` error bodies into short UI strings. Maps 401 / JSON
+ * `{ "error": "Unauthorized" }` to a session hint so operators do not confuse
+ * auth failures with model token limits or timeouts.
+ */
+export function humanizeFailedApiBody(status: number, bodyText: string): string {
+  if (status === 401 || status === 403) {
+    return "Session expired — sign in again and retry.";
+  }
+  const trimmed = bodyText.trim();
+  if (!trimmed) {
+    return `Request failed (HTTP ${status})`;
+  }
+  try {
+    const j = JSON.parse(trimmed) as { error?: unknown; message?: unknown };
+    const err = j.error != null ? String(j.error) : "";
+    const msg = j.message != null ? String(j.message) : "";
+    if (/unauthorized|forbidden/i.test(err) || /unauthorized|forbidden/i.test(msg)) {
+      return "Session expired — sign in again and retry.";
+    }
+    const pick = msg || err;
+    if (pick) {
+      return pick.length > MAX_ERROR_BODY_CHARS ? `${pick.slice(0, MAX_ERROR_BODY_CHARS - 1)}…` : pick;
+    }
+  } catch {
+    /* not JSON */
+  }
+  return trimmed.length > MAX_ERROR_BODY_CHARS ? `${trimmed.slice(0, MAX_ERROR_BODY_CHARS - 1)}…` : trimmed;
+}
