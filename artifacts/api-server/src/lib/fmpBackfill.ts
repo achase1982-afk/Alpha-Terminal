@@ -283,7 +283,7 @@ export async function backfillEarningsSurprises(): Promise<{ rowsUpserted: numbe
 
   for (const sym of set) {
     const surprises = await getFmpEarningsSurprises(sym, 100);
-    for (const s of surprises) {
+    for (const s of surprises.rows) {
       const surprisePct =
         s.surprisePercentage != null && Number.isFinite(s.surprisePercentage)
           ? String(s.surprisePercentage)
@@ -473,11 +473,13 @@ export async function syncCorporateEventsForTuningSymbol(symbol: string): Promis
   calendarUpserts: number;
   surpriseUpserts: number;
   splitUpserts: number;
+  fmpPremiumHistoricalUnavailable: boolean;
 }> {
   const sym = symbol.toUpperCase().trim();
   const horizonStart = addDaysUtcYmd(todayUtcYmd(), -365 * 5 - 45);
   const horizonEnd = addDaysUtcYmd(todayUtcYmd(), 180);
   let calendarUpserts = 0;
+  let fmpPremiumHistoricalUnavailable = false;
   let cur = horizonStart;
   while (cur <= horizonEnd) {
     const chunkEnd = addDaysUtcYmd(cur, 88);
@@ -492,13 +494,16 @@ export async function syncCorporateEventsForTuningSymbol(symbol: string): Promis
   }
 
   const surprises = await getFmpEarningsSurprises(sym, 100);
+  if (surprises.http402) fmpPremiumHistoricalUnavailable = true;
   let surpriseUpserts = 0;
-  for (const s of surprises) {
+  for (const s of surprises.rows) {
     await upsertCorporateEarningsFromSurpriseMerge(sym, s);
     surpriseUpserts++;
   }
 
-  const splitRows = await getFmpStockSplits(sym);
+  const splitFetch = await getFmpStockSplits(sym);
+  if (splitFetch.http402) fmpPremiumHistoricalUnavailable = true;
+  const splitRows = splitFetch.rows;
   let splitUpserts = 0;
   for (const sp of splitRows) {
     if (sp.symbol !== sym || sp.date < horizonStart) continue;
@@ -514,5 +519,5 @@ export async function syncCorporateEventsForTuningSymbol(symbol: string): Promis
   }
 
   invalidateCalendarEventsCache();
-  return { calendarUpserts, surpriseUpserts, splitUpserts };
+  return { calendarUpserts, surpriseUpserts, splitUpserts, fmpPremiumHistoricalUnavailable };
 }

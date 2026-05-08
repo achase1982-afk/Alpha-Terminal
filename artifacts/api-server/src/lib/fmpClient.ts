@@ -71,7 +71,10 @@ export interface FmpEarningsCalendarRow {
 
 function normaliseEarningsRow(raw: Record<string, unknown>): FmpEarningsCalendarRow | null {
   const symbol = pickString(raw["symbol"])?.toUpperCase();
-  const dateRaw = pickString(raw["date"]);
+  const dateRaw =
+    pickString(raw["date"]) ??
+    pickString(raw["earningsDate"]) ??
+    pickString(raw["reportDate"]);
   if (!symbol || !dateRaw) return null;
   const date = dateRaw.slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
@@ -418,13 +421,19 @@ function normaliseEarningsReportRow(raw: Record<string, unknown>): FmpEarningsSu
   };
 }
 
+export interface FmpEarningsSurprisesResult {
+  rows: FmpEarningsSurpriseRow[];
+  /** True when FMP returned HTTP 402 (premium-only historical earnings report). */
+  http402: boolean;
+}
+
 /**
  * Historical earnings with estimate vs actual EPS (FMP "Earnings Report" stable API).
  * @see https://financialmodelingprep.com/stable/earnings?symbol=
  */
-export async function getFmpEarningsSurprises(symbol: string, limit: number): Promise<FmpEarningsSurpriseRow[]> {
+export async function getFmpEarningsSurprises(symbol: string, limit: number): Promise<FmpEarningsSurprisesResult> {
   const sym = (symbol || "").toUpperCase().trim().replace(/^\$/, "");
-  if (!sym) return [];
+  if (!sym) return { rows: [], http402: false };
 
   const apiKey = getFmpApiKeyOrThrow();
   const params = new URLSearchParams({
@@ -440,12 +449,15 @@ export async function getFmpEarningsSurprises(symbol: string, limit: number): Pr
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    logger.warn({ status: res.status, body: text.slice(0, 300) }, "FMP earnings report non-200");
-    return [];
+    logger.warn({ status: res.status, body: text.slice(0, 300), symbol: sym }, "FMP earnings report non-200");
+    if (res.status === 402) {
+      return { rows: [], http402: true };
+    }
+    return { rows: [], http402: false };
   }
 
   const data = (await res.json()) as unknown;
-  if (!Array.isArray(data)) return [];
+  if (!Array.isArray(data)) return { rows: [], http402: false };
 
   const out: FmpEarningsSurpriseRow[] = [];
   for (const item of data) {
@@ -454,7 +466,7 @@ export async function getFmpEarningsSurprises(symbol: string, limit: number): Pr
       if (row) out.push(row);
     }
   }
-  return out;
+  return { rows: out, http402: false };
 }
 
 function normaliseHistoricalPriceRow(raw: Record<string, unknown>): FmpHistoricalPriceEodRow | null {
@@ -505,7 +517,11 @@ export async function getFmpHistoricalPriceEodFull(
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    logger.warn({ status: res.status, body: text.slice(0, 300) }, "FMP historical-price-eod/full non-200");
+    if (res.status === 402) {
+      logger.warn({ symbol: sym, body: text.slice(0, 240) }, "FMP historical-price-eod/full HTTP 402 (plan limit on from/to range)");
+    } else {
+      logger.warn({ status: res.status, body: text.slice(0, 300) }, "FMP historical-price-eod/full non-200");
+    }
     return [];
   }
 
@@ -715,13 +731,18 @@ function normaliseStockSplitRow(raw: Record<string, unknown>, fallbackSymbol: st
   return { symbol: sym, date: d, label, numerator: num, denominator: den };
 }
 
+export interface FmpStockSplitsResult {
+  rows: FmpStockSplitRow[];
+  http402: boolean;
+}
+
 /**
  * Historical stock splits for a symbol (FMP stable).
  * @see https://financialmodelingprep.com/stable/splits
  */
-export async function getFmpStockSplits(symbol: string): Promise<FmpStockSplitRow[]> {
+export async function getFmpStockSplits(symbol: string): Promise<FmpStockSplitsResult> {
   const sym = (symbol || "").toUpperCase().trim().replace(/^\$/, "");
-  if (!sym) return [];
+  if (!sym) return { rows: [], http402: false };
 
   const apiKey = getFmpApiKeyOrThrow();
   const params = new URLSearchParams({ symbol: sym, apikey: apiKey });
@@ -734,11 +755,14 @@ export async function getFmpStockSplits(symbol: string): Promise<FmpStockSplitRo
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     logger.warn({ status: res.status, body: text.slice(0, 300), symbol: sym }, "FMP splits non-200");
-    return [];
+    if (res.status === 402) {
+      return { rows: [], http402: true };
+    }
+    return { rows: [], http402: false };
   }
 
   const data = (await res.json()) as unknown;
-  if (!Array.isArray(data)) return [];
+  if (!Array.isArray(data)) return { rows: [], http402: false };
 
   const out: FmpStockSplitRow[] = [];
   for (const item of data) {
@@ -747,5 +771,5 @@ export async function getFmpStockSplits(symbol: string): Promise<FmpStockSplitRo
       if (row) out.push(row);
     }
   }
-  return out;
+  return { rows: out, http402: false };
 }

@@ -52,7 +52,12 @@ async function fetchAllPolygonDailyAggs(symbol: string, fromYmd: string, toYmd: 
 
   while (url) {
     const r = await fetchWithRetry(url);
-    if (!r?.ok) break;
+    if (!r?.ok) {
+      const detail = r ? await r.text().catch(() => "") : "no response";
+      throw new Error(
+        `Polygon equity daily aggs failed for ${symbol}: HTTP ${r?.status ?? "none"} ${detail.slice(0, 280)}`,
+      );
+    }
     const json = (await r.json()) as {
       results?: Array<Record<string, unknown>>;
       next_url?: string;
@@ -147,6 +152,17 @@ export async function backfillEquityDailyForSymbol(symbol: string): Promise<{ ro
         },
       });
     rowsUpserted += batch.length;
+  }
+
+  if (rowsUpserted > 0 && rowsUpserted < 800) {
+    console.warn(
+      JSON.stringify({
+        msg: "tuning_backfill equity_daily short history",
+        symbol: sym,
+        bars: rowsUpserted,
+        hint: "Polygon plan may cap history depth; expect ~1260 for five years on full access",
+      }),
+    );
   }
 
   return { rowsUpserted };

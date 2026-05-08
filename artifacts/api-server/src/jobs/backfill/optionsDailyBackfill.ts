@@ -36,9 +36,10 @@ async function fetchWithRetry(url: string, attempts = 4): Promise<Response | nul
   return null;
 }
 
-function isFridayYmd(ymd: string): boolean {
+function isMonWedOrFriExpirationYmd(ymd: string): boolean {
   const d = new Date(`${ymd}T12:00:00Z`);
-  return d.getUTCDay() === 5;
+  const day = d.getUTCDay();
+  return day === 1 || day === 3 || day === 5;
 }
 
 function dteCalendar(asOf: string, exp: string): number {
@@ -103,15 +104,18 @@ async function listContractsForAsOf(
     }
     const json = (await r.json()) as { results?: Array<Record<string, unknown>>; next_url?: string };
     for (const c of json.results ?? []) {
+      const ctype = (c["contract_type"] as string | undefined)?.toLowerCase();
+      if (ctype && ctype !== "call" && ctype !== "put") continue;
       const occ = c["ticker"] as string | undefined;
-      const strike = c["strike_price"] as number | undefined;
+      const strikeRaw = c["strike_price"];
+      const strike = typeof strikeRaw === "number" ? strikeRaw : Number(strikeRaw);
       const exp = (c["expiration_date"] as string | undefined)?.slice(0, 10);
       const listRaw = c["list_date"] as string | undefined;
       const listFromApi =
         typeof listRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(listRaw.slice(0, 10)) ? listRaw.slice(0, 10) : null;
       /** Polygon contract index often omits list_date; as_of is a safe lower bound for first-seen contracts. */
       const listDate = listFromApi ?? asOf;
-      if (!occ || !strike || !exp) continue;
+      if (!occ || !Number.isFinite(strike) || strike <= 0 || !exp) continue;
       if (!occ.startsWith("O:")) continue;
       out.push({ occ, strike, expiration: exp, listDate });
     }
@@ -233,7 +237,7 @@ export async function backfillOptionsDailyForSymbol(symbol: string): Promise<{
     const raw = await listContractsForAsOf(sym, asOf, apiKey);
     for (const c of raw) {
       if (c.strike < lo || c.strike > hi) continue;
-      if (!isFridayYmd(c.expiration)) continue;
+      if (!isMonWedOrFriExpirationYmd(c.expiration)) continue;
       const dte = dteCalendar(asOf, c.expiration);
       if (dte < 7 || dte > 550) continue;
       const prev = contractKeys.get(c.occ);
@@ -266,6 +270,7 @@ export async function backfillOptionsDailyForSymbol(symbol: string): Promise<{
       if (batch.length === 0) continue;
       const values = batch.map((b) => ({
         occ: c.occ,
+        underlyingSymbol: sym,
         date: b.date,
         open: b.open,
         high: b.high,
@@ -281,6 +286,7 @@ export async function backfillOptionsDailyForSymbol(symbol: string): Promise<{
         .onConflictDoUpdate({
           target: [optionsDailyTable.occ, optionsDailyTable.date],
           set: {
+            underlyingSymbol: sql`excluded.underlying_symbol`,
             open: sql`excluded.open`,
             high: sql`excluded.high`,
             low: sql`excluded.low`,

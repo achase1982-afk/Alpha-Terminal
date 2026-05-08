@@ -4,6 +4,7 @@ export async function backfillCorporateEventsForTuningSymbol(symbol: string): Pr
   calendarUpserts: number;
   surpriseUpserts: number;
   splitUpserts: number;
+  fmpPremiumHistoricalUnavailable: boolean;
 }> {
   return syncCorporateEventsForTuningSymbol(symbol);
 }

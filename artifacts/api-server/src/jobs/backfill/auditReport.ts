@@ -7,7 +7,7 @@ import {
   equityDailyTable,
   optionsDailyTable,
 } from "@workspace/db";
-import { and, count, eq, gte, isNotNull, like } from "drizzle-orm";
+import { and, count, eq, gte, isNotNull, like, or } from "drizzle-orm";
 
 export type AuditStatus = "ok" | "ok_empty" | "warn" | "fail";
 
@@ -28,6 +28,8 @@ export interface SymbolAuditJson {
   revenue_actual_coverage: { filled: number; total: number; pct: number; status: AuditStatus };
   options_daily: { rows: number; contracts_processed: number; status: AuditStatus };
   earnings_reactions: { rows: number; expected_min: number; status: AuditStatus };
+  /** True when FMP returned HTTP 402 on premium historical endpoints (/earnings or /splits). */
+  fmp_premium_historical_unavailable: boolean;
 }
 
 function pct(filled: number, total: number): number {
@@ -45,6 +47,7 @@ export async function buildSymbolAudit(params: {
   symbol: string;
   fiveYearCutoffYmd: string;
   optionsContractsProcessed: number;
+  fmpPremiumHistoricalUnavailable?: boolean;
 }): Promise<SymbolAuditJson> {
   const sym = params.symbol.toUpperCase();
 
@@ -158,7 +161,7 @@ export async function buildSymbolAudit(params: {
   const [optRow] = await db
     .select({ c: count() })
     .from(optionsDailyTable)
-    .where(like(optionsDailyTable.occ, `O:${sym}%`));
+    .where(or(eq(optionsDailyTable.underlyingSymbol, sym), like(optionsDailyTable.occ, `O:${sym}%`)));
   const optCount = Number(optRow?.c ?? 0);
 
   const [erRow] = await db
@@ -226,6 +229,7 @@ export async function buildSymbolAudit(params: {
       expected_min: 12,
       status: erCount >= 12 ? "ok" : erCount > 0 ? "warn" : "fail",
     },
+    fmp_premium_historical_unavailable: params.fmpPremiumHistoricalUnavailable === true,
   };
 }
 
@@ -245,6 +249,7 @@ export function mergeSymbolOverallStatus(a: SymbolAuditJson): AuditStatus {
   ];
   if (domains.some((s) => s === "fail")) return "fail";
   if (domains.some((s) => s === "warn")) return "warn";
+  return "ok";
   return "ok";
 }
 
