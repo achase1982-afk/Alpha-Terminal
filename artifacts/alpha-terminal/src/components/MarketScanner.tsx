@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import type { TuningWatchlist } from "@/lib/tuningWatchlistUi";
+import { parseTuningUniverseSelection, WATCHLIST_LABELS, WATCHLIST_SIZES } from "@/lib/tuningWatchlistUi";
 import ReactDOM from "react-dom";
 import { useTerminalStore } from "@/lib/store";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
@@ -32,7 +32,6 @@ import {
   enrichScannerCardFromV2Candidate,
   scannerWireCardToScannerCardData,
   ScannerChromeBar,
-  TuningWatchlistBar,
   ScannerIdleEmptyState,
   ScannerZeroCandidatesInline,
 } from "@/components/scanner";
@@ -41,10 +40,11 @@ import type { ScannerCardAction } from "@/components/scanner/scannerCard.types";
 import { isUsEquitiesMarketHoursEt } from "@/lib/usMarketHours";
 import { cn } from "@/lib/utils";
 
-function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCreateScreen, onEditScreen, onDeleteScreen, onRefreshScreen, refreshingScreenId, onCreateWatchlist, onEditWatchlist, onDeleteWatchlist, chromeTrigger }: {
+function UniverseDropdown({ value, onChange, presets, tuningEntries, watchlists, screens, onCreateScreen, onEditScreen, onDeleteScreen, onRefreshScreen, refreshingScreenId, onCreateWatchlist, onEditWatchlist, onDeleteWatchlist, chromeTrigger }: {
   value: string;
   onChange: (v: string) => void;
   presets: Record<string, { label: string; description: string; count: number }>;
+  tuningEntries: Array<{ universeKey: string; label: string; count: number }>;
   watchlists: Array<{ id: number; name: string; symbols: string[]; isProtected?: boolean }>;
   screens: Array<{ id: number; name: string; cachedCount: number | null; cachedAt: string | null; isDefault: boolean }>;
   onCreateScreen: () => void;
@@ -103,6 +103,10 @@ function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCre
     const sc = screens.find(s => s.id === parseInt(value.slice(7)));
     selectedLabel = sc?.name ?? "Screen";
     selectedCount = sc?.cachedCount ?? "—";
+  } else if (value.startsWith("tuning:")) {
+    const tw = tuningEntries.find((e) => e.universeKey === value);
+    selectedLabel = tw?.label ?? value;
+    selectedCount = tw?.count ?? 0;
   }
 
   const maxH = typeof window !== "undefined" ? Math.min(560, window.innerHeight - pos.top - 16) : 400;
@@ -179,6 +183,36 @@ function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCre
                 </button>
               );
             })}
+
+            {tuningEntries.length > 0 && (
+              <>
+                <div className="mx-3 my-1.5 border-t border-zinc-700/50" />
+                <div className="px-3 pt-2 pb-1.5">
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Tuning bench</span>
+                </div>
+                {tuningEntries.map((t) => {
+                  const isActive = value === t.universeKey;
+                  return (
+                    <button
+                      key={t.universeKey}
+                      type="button"
+                      onClick={() => {
+                        onChange(t.universeKey);
+                        setOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2.5 flex items-center justify-between gap-3 text-sm transition-colors ${
+                        isActive ? "bg-[#FFB800]/10 text-[#FFB800]" : "text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
+                      }`}
+                    >
+                      <span className="font-medium leading-snug">{t.label}</span>
+                      <span className={`text-xs tabular-nums shrink-0 ${isActive ? "text-[#FFB800]/60" : "text-zinc-600"}`}>
+                        {t.count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </>
+            )}
 
             {screens.length > 0 && (
               <>
@@ -307,6 +341,8 @@ function getUniverseDisplayLabel(
   watchlists: Array<{ id: number; name: string }>,
   screens: Array<{ id: number; name: string }>,
 ): string {
+  const tuning = parseTuningUniverseSelection(universeId);
+  if (tuning) return WATCHLIST_LABELS[tuning];
   if (universeId.startsWith("preset:")) {
     const p = presets[universeId.slice(7)];
     return p?.label ?? universeId;
@@ -388,17 +424,31 @@ function SnapshotFreshnessBanner(props: {
 
 type SendToStrategistFn = (sym: string) => void;
 
-const SCANNER_TUNING_WATCHLIST_KEY = "scanner_tuning_watchlist_v1";
+const SCANNER_UNIVERSE_STORAGE_KEY = "scanner_universe_selection_v2";
+const LEGACY_TUNING_WATCHLIST_LS = "scanner_tuning_watchlist_v1";
 
-function readStoredTuningWatchlist(): TuningWatchlist {
-  if (typeof window === "undefined") return "active_trade";
+const TUNING_DROPDOWN_ENTRIES = (["mega_cap_core", "active_trade", "cyclicals_macro"] as const).map((k) => ({
+  universeKey: `tuning:${k}`,
+  label: WATCHLIST_LABELS[k],
+  count: WATCHLIST_SIZES[k],
+}));
+
+function readInitialUniverse(): string {
+  if (typeof window === "undefined") return "preset:liquidCore130";
   try {
-    const v = localStorage.getItem(SCANNER_TUNING_WATCHLIST_KEY);
-    if (v === "mega_cap_core" || v === "active_trade" || v === "cyclicals_macro") return v;
+    const stored = localStorage.getItem(SCANNER_UNIVERSE_STORAGE_KEY);
+    if (stored && stored.length > 0) return stored;
+    const legacy = localStorage.getItem(LEGACY_TUNING_WATCHLIST_LS);
+    if (legacy === "mega_cap_core" || legacy === "active_trade" || legacy === "cyclicals_macro") {
+      localStorage.removeItem(LEGACY_TUNING_WATCHLIST_LS);
+      const migrated = `tuning:${legacy}`;
+      localStorage.setItem(SCANNER_UNIVERSE_STORAGE_KEY, migrated);
+      return migrated;
+    }
   } catch {
     /* ignore */
   }
-  return "active_trade";
+  return "preset:liquidCore130";
 }
 
 function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSendToStrategist }: {
@@ -412,8 +462,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   const universeData = useScannerUniverses();
   const unified = useUnifiedScan();
 
-  const [universe, setUniverse] = useState("preset:liquidCore130");
-  const [tuningWatchlist, setTuningWatchlist] = useState<TuningWatchlist>(() => readStoredTuningWatchlist());
+  const [universe, setUniverse] = useState(readInitialUniverse);
   const [resolvedSymbols, setResolvedSymbols] = useState<string[]>([]);
   const [expandedSymbols, setExpandedSymbols] = useState<Set<string>>(() => new Set());
   const [muteTick, setMuteTick] = useState(0);
@@ -428,11 +477,11 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
 
   useEffect(() => {
     try {
-      localStorage.setItem(SCANNER_TUNING_WATCHLIST_KEY, tuningWatchlist);
+      localStorage.setItem(SCANNER_UNIVERSE_STORAGE_KEY, universe);
     } catch {
       /* ignore */
     }
-  }, [tuningWatchlist]);
+  }, [universe]);
 
   useEffect(() => {
     let cancelled = false;
@@ -468,23 +517,8 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
     await unified.startScan(universe);
   };
 
-  const handleScanWatchlistOnly = async () => {
-    if (REMOVED_PRESETS.has(universe)) {
-      setUniverse("preset:liquidCore130");
-      return;
-    }
-    setExpandedSymbols(new Set());
-    await unified.startScan(universe, { tuningWatchlist });
-  };
-
   const scanComplete = unified.phase === "complete";
   const candidates = unified.candidates;
-
-  const tuningWatchlistLastScanLabel = useMemo(() => {
-    if (unified.phase !== "complete") return null;
-    if (unified.tuningWatchlistEcho !== tuningWatchlist) return null;
-    return formatScanTime(unified.scanAt);
-  }, [unified.phase, unified.tuningWatchlistEcho, unified.scanAt, tuningWatchlist]);
 
   const layer1CardDataBySymbol = useMemo(() => {
     const cards = unified.layer1Universe?.cards;
@@ -573,18 +607,11 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
 
       <ScannerChromeBar
         universeSlot={
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <TuningWatchlistBar
-              value={tuningWatchlist}
-              onChange={setTuningWatchlist}
-              lastScanLabel={tuningWatchlistLastScanLabel}
-              onScanWatchlist={handleScanWatchlistOnly}
-              scanDisabled={!accessToken || unified.phase === "scanning" || shockActive}
-            />
-            <UniverseDropdown
+          <UniverseDropdown
             value={universe}
             onChange={setUniverse}
             presets={universeData.presets}
+            tuningEntries={TUNING_DROPDOWN_ENTRIES}
             watchlists={universeData.watchlists}
             screens={universeData.screens}
             onCreateScreen={() => { setEditingScreen(null); setShowScreenBuilder(true); }}
@@ -603,26 +630,23 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
             }}
             chromeTrigger
           />
-          </div>
         }
         scanSlot={
-          unified.phase !== "idle" ? (
-            <button
-              type="button"
-              onClick={handleScanClick}
-              disabled={!accessToken || unified.phase === "scanning" || currentSymCount === 0 || shockActive}
-              className="inline-flex h-9 max-h-9 shrink-0 flex-none items-center justify-center whitespace-nowrap rounded-lg border border-primary/75 bg-transparent px-3 py-1.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-30 active:scale-[0.99]"
-            >
-              {unified.phase === "scanning" ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                  <span className="truncate">Loading</span>
-                </span>
-              ) : (
-                "Scan"
-              )}
-            </button>
-          ) : undefined
+          <button
+            type="button"
+            onClick={handleScanClick}
+            disabled={!accessToken || unified.phase === "scanning" || currentSymCount === 0 || shockActive}
+            className="inline-flex h-9 max-h-9 shrink-0 flex-none items-center justify-center whitespace-nowrap rounded-lg border border-primary/75 bg-transparent px-3 py-1.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-30 active:scale-[0.99]"
+          >
+            {unified.phase === "scanning" ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                <span className="truncate">Loading</span>
+              </span>
+            ) : (
+              "Scan"
+            )}
+          </button>
         }
         footerSlot={
           !accessToken ? (

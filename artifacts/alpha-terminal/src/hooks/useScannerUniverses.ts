@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { useTerminalStore } from "@/lib/store";
+import { TUNING_WATCHLIST_SYMBOLS, type TuningWatchlist } from "@/lib/tuningWatchlistUi";
 
 const API_BASE = "/api";
 
@@ -135,6 +136,14 @@ export function useScannerUniverses(): UniverseData {
   }, [loading, watchlists]);
 
   const getSymbols = useCallback(async (universeKey: string): Promise<string[]> => {
+    if (universeKey.startsWith("tuning:")) {
+      const key = universeKey.slice(7);
+      if (key === "mega_cap_core" || key === "active_trade" || key === "cyclicals_macro") {
+        return [...TUNING_WATCHLIST_SYMBOLS[key as TuningWatchlist]];
+      }
+      return [];
+    }
+
     if (universeKey.startsWith("preset:")) {
       const key = universeKey.slice(7);
       if (presetSymbolsCache.has(key)) return presetSymbolsCache.get(key)!;

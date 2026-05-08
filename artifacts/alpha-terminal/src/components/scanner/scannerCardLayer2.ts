@@ -1,5 +1,5 @@
 import type { ScannerCardData, UnifiedScanCandidate } from "@/lib/unifiedScanTypes";
-import type { ScannerV3WireCard, ScannerV3WireCardFlow, ScannerV3WireCardTechnical } from "@/hooks/useUnifiedScan";
+import type { ScannerV3WireCard, ScannerV3WireCardFlow, ScannerV3WireCardTechnical } from "@/lib/scannerScanApiTypes";
 import { emptyScannerCardData } from "./scannerCard.utils";
 
 export type { ScannerV3WireCard };
