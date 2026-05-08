@@ -5,6 +5,7 @@ import { emitTelemetry } from "./telemetryStore.js";
 import type { LiveQuote } from "./schwabStreamer.js";
 import { getEnabledSymbols, type IBSymbolDef } from "./ibBreadthSymbols.js";
 import { IMBALANCE_REQID_TO_SYMBOL, IMBALANCE_SYMBOLS, IMBALANCE_REQ_ID_BASE } from "./ibImbalanceSymbols.js";
+import { TUNING_L1_SYMBOL_DEFS, TUNING_L1_REQ_ID_BASE } from "./ibTuningL1Symbols.js";
 import { enqueueImbalancePersist } from "./ibImbalancePersistence.js";
 import { ES_DEPTH_SYMBOL_DEF, ES_DEPTH_REQ_ID } from "./ibEsDepthSymbols.js";
 import { CBOE_ONE_EXCHANGE } from "./ibCboeOneSymbols.js";
@@ -210,6 +211,9 @@ const BREADTH_SYMBOLS: IBSymbolDef[] = getEnabledSymbols();
 
 const reqIdToSymbol = new Map<number, IBSymbolDef>();
 for (const def of BREADTH_SYMBOLS) {
+  reqIdToSymbol.set(def.reqId, def);
+}
+for (const def of TUNING_L1_SYMBOL_DEFS) {
   reqIdToSymbol.set(def.reqId, def);
 }
 
@@ -489,6 +493,19 @@ function subscribeAll() {
   }
   logger.info({ permanent: permCount, registered: permanentSymbolSet.size }, "IB: permanently subscribed indicator symbols at connect");
 
+  let tuningL1Count = 0;
+  for (const def of TUNING_L1_SYMBOL_DEFS) {
+    if (skippedMarketDataReqIds.has(def.reqId)) continue;
+    const contract = buildContract(def);
+    try {
+      ib.reqMktData(def.reqId, contract, "", false, false);
+      tuningL1Count++;
+    } catch (err) {
+      logger.warn({ err, symbol: def.displaySymbol }, "IB: failed to subscribe tuning universe L1");
+    }
+  }
+  logger.info({ count: tuningL1Count, reqIdBase: TUNING_L1_REQ_ID_BASE }, "IB: subscribed tuning universe L1 pool");
+
   subscribeTotalviewEsCboeOne();
 
   let imbCount = 0;
@@ -742,6 +759,9 @@ function teardownIB() {
     for (const def of BREADTH_SYMBOLS) {
       try { ib.cancelMktData(def.reqId); } catch { /* ignore */ }
     }
+    for (const def of TUNING_L1_SYMBOL_DEFS) {
+      try { ib.cancelMktData(def.reqId); } catch { /* ignore */ }
+    }
     teardownDynamicIbPools();
     for (const def of IMBALANCE_SYMBOLS) {
       try { ib.cancelMktData(def.reqId); } catch { /* ignore */ }
@@ -935,6 +955,18 @@ export async function connectIB(): Promise<void> {
           logger.error(
             { code, reqId, symbol: sym },
             "IB: error 101 — market data subscription missing for NYSE imbalance stream; skipping this reqId until process restart.",
+          );
+          return;
+        }
+        if (
+          reqId >= TUNING_L1_REQ_ID_BASE &&
+          reqId < TUNING_L1_REQ_ID_BASE + TUNING_L1_SYMBOL_DEFS.length
+        ) {
+          skippedMarketDataReqIds.add(reqId);
+          const sym = TUNING_L1_SYMBOL_DEFS[reqId - TUNING_L1_REQ_ID_BASE]?.displaySymbol;
+          logger.error(
+            { code, reqId, symbol: sym },
+            "IB: error 101 — market data subscription missing for tuning L1; skipping this reqId until process restart.",
           );
           return;
         }

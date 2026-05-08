@@ -28,6 +28,32 @@
 //
 // ============================================================================
 
+import { LIQUID_CORE_SYMBOLS } from "./liquidCore130.js";
+
+const LC_PRIMARY_LISTING = new Map<string, "NYSE" | "NASDAQ">();
+for (const e of LIQUID_CORE_SYMBOLS) {
+  if (e.primaryListing === "NYSE" || e.primaryListing === "NASDAQ") {
+    LC_PRIMARY_LISTING.set(e.symbol.toUpperCase(), e.primaryListing);
+  }
+}
+
+export type TuningPrimaryListing = "NYSE" | "NASDAQ";
+
+/**
+ * Primary listing for IBKR / venue routing (does not change backfill coverage).
+ * Prefer `liquidCore130` when the symbol exists there.
+ * Explicit locks from SEC company ticker / exchange mapping (NYSE vs Nasdaq), verified 2026-05-07:
+ * ORCL and IONQ → NYSE; ADBE → NASDAQ.
+ */
+export function tuningPrimaryListing(symbol: string): TuningPrimaryListing {
+  const u = symbol.toUpperCase();
+  const fromLc = LC_PRIMARY_LISTING.get(u);
+  if (fromLc) return fromLc;
+  if (u === "ORCL" || u === "IONQ") return "NYSE";
+  if (u === "ADBE") return "NASDAQ";
+  return "NASDAQ";
+}
+
 export type TuningWatchlist =
   | 'mega_cap_core'
   | 'active_trade'
@@ -52,6 +78,7 @@ export interface TuningUniverseEntry {
   watchlist: TuningWatchlist;
   sector: TuningSector;
   volRegime: VolRegime;
+  primaryListing: TuningPrimaryListing;
   /** Names the trader actively deploys capital on. */
   activelyTraded: boolean;
   /** Brief rationale for inclusion. Visible in dashboards / logs. */
@@ -60,32 +87,32 @@ export interface TuningUniverseEntry {
 
 export const TUNING_UNIVERSE: TuningUniverseEntry[] = [
   // Watchlist 1: Mega Cap Core (8)
-  { symbol: 'NVDA',  watchlist: 'mega_cap_core', sector: 'semis',                  volRegime: 'very_high', activelyTraded: false, rationale: 'AI/semis bellwether, max IV personality, fat earnings reactions' },
-  { symbol: 'AAPL',  watchlist: 'mega_cap_core', sector: 'mega_cap_tech',          volRegime: 'low',       activelyTraded: false, rationale: 'Mega-cap tech, low IV, clean tape, threshold-calibration testbed' },
-  { symbol: 'MSFT',  watchlist: 'mega_cap_core', sector: 'mega_cap_tech',          volRegime: 'low',       activelyTraded: false, rationale: 'Enterprise/cloud/AI mega cap, distinct from ORCL personality' },
-  { symbol: 'GOOGL', watchlist: 'mega_cap_core', sector: 'communication_services', volRegime: 'mid',       activelyTraded: false, rationale: 'Search/ads/cloud/AI, antitrust overhang as unique signal' },
-  { symbol: 'AMZN',  watchlist: 'mega_cap_core', sector: 'mega_cap_tech',          volRegime: 'mid',       activelyTraded: false, rationale: 'Retail cycle plus AWS, fattest earnings reactions among mega caps historically' },
-  { symbol: 'META',  watchlist: 'mega_cap_core', sector: 'communication_services', volRegime: 'mid',       activelyTraded: false, rationale: 'Ad-cycle binary on earnings, distinct from search/streaming patterns' },
-  { symbol: 'AVGO',  watchlist: 'mega_cap_core', sector: 'semis',                  volRegime: 'mid',       activelyTraded: false, rationale: 'Custom silicon plus dividend, non-NVDA semi angle' },
-  { symbol: 'TSLA',  watchlist: 'mega_cap_core', sector: 'consumer_discretionary', volRegime: 'high',      activelyTraded: false, rationale: 'High beta, retail-driven, fat-tailed mega cap' },
+  { symbol: 'NVDA',  watchlist: 'mega_cap_core', sector: 'semis',                  volRegime: 'very_high', primaryListing: tuningPrimaryListing('NVDA'),  activelyTraded: false, rationale: 'AI/semis bellwether, max IV personality, fat earnings reactions' },
+  { symbol: 'AAPL',  watchlist: 'mega_cap_core', sector: 'mega_cap_tech',          volRegime: 'low',       primaryListing: tuningPrimaryListing('AAPL'),  activelyTraded: false, rationale: 'Mega-cap tech, low IV, clean tape, threshold-calibration testbed' },
+  { symbol: 'MSFT',  watchlist: 'mega_cap_core', sector: 'mega_cap_tech',          volRegime: 'low',       primaryListing: tuningPrimaryListing('MSFT'),  activelyTraded: false, rationale: 'Enterprise/cloud/AI mega cap, distinct from ORCL personality' },
+  { symbol: 'GOOGL', watchlist: 'mega_cap_core', sector: 'communication_services', volRegime: 'mid',       primaryListing: tuningPrimaryListing('GOOGL'), activelyTraded: false, rationale: 'Search/ads/cloud/AI, antitrust overhang as unique signal' },
+  { symbol: 'AMZN',  watchlist: 'mega_cap_core', sector: 'mega_cap_tech',          volRegime: 'mid',       primaryListing: tuningPrimaryListing('AMZN'),  activelyTraded: false, rationale: 'Retail cycle plus AWS, fattest earnings reactions among mega caps historically' },
+  { symbol: 'META',  watchlist: 'mega_cap_core', sector: 'communication_services', volRegime: 'mid',       primaryListing: tuningPrimaryListing('META'),  activelyTraded: false, rationale: 'Ad-cycle binary on earnings, distinct from search/streaming patterns' },
+  { symbol: 'AVGO',  watchlist: 'mega_cap_core', sector: 'semis',                  volRegime: 'mid',       primaryListing: tuningPrimaryListing('AVGO'),  activelyTraded: false, rationale: 'Custom silicon plus dividend, non-NVDA semi angle' },
+  { symbol: 'TSLA',  watchlist: 'mega_cap_core', sector: 'consumer_discretionary', volRegime: 'high',      primaryListing: tuningPrimaryListing('TSLA'),  activelyTraded: false, rationale: 'High beta, retail-driven, fat-tailed mega cap' },
 
   // Watchlist 2: Active Trade Names (8)
-  { symbol: 'MU',    watchlist: 'active_trade', sector: 'semis',                   volRegime: 'very_high', activelyTraded: true,  rationale: 'Memory cycle, market cap up over 100 percent in two months, ridiculous vol' },
-  { symbol: 'ORCL',  watchlist: 'active_trade', sector: 'enterprise_software',     volRegime: 'mid',       activelyTraded: true,  rationale: 'Enterprise/cloud, distinct from MSFT personality' },
-  { symbol: 'MRVL',  watchlist: 'active_trade', sector: 'semis',                   volRegime: 'high',      activelyTraded: true,  rationale: 'Hyperscaler custom silicon, optical, distinct earnings rhythm' },
-  { symbol: 'SMCI',  watchlist: 'active_trade', sector: 'semis',                   volRegime: 'very_high', activelyTraded: true,  rationale: 'AI server hardware, accounting overhang, fattest reactions in cohort' },
-  { symbol: 'ADBE',  watchlist: 'active_trade', sector: 'enterprise_software',     volRegime: 'mid',       activelyTraded: true,  rationale: 'Creative software cycle, AI-narrative impact on multiples' },
-  { symbol: 'RIVN',  watchlist: 'active_trade', sector: 'consumer_discretionary',  volRegime: 'very_high', activelyTraded: true,  rationale: 'Sub-20 dollar EV mechanics, smaller cap volatility, retail-driven' },
-  { symbol: 'IONQ',  watchlist: 'active_trade', sector: 'speculative',             volRegime: 'very_high', activelyTraded: true,  rationale: 'Quantum spec, narrative-driven, options-led tape' },
-  { symbol: 'PLTR',  watchlist: 'active_trade', sector: 'enterprise_software',     volRegime: 'high',      activelyTraded: false, rationale: 'AI software (gov plus commercial), distinct from hardware AI cohort' },
+  { symbol: 'MU',    watchlist: 'active_trade', sector: 'semis',                   volRegime: 'very_high', primaryListing: tuningPrimaryListing('MU'),    activelyTraded: true,  rationale: 'Memory cycle, market cap up over 100 percent in two months, ridiculous vol' },
+  { symbol: 'ORCL',  watchlist: 'active_trade', sector: 'enterprise_software',     volRegime: 'mid',       primaryListing: tuningPrimaryListing('ORCL'),  activelyTraded: true,  rationale: 'Enterprise/cloud, distinct from MSFT personality' },
+  { symbol: 'MRVL',  watchlist: 'active_trade', sector: 'semis',                   volRegime: 'high',      primaryListing: tuningPrimaryListing('MRVL'),  activelyTraded: true,  rationale: 'Hyperscaler custom silicon, optical, distinct earnings rhythm' },
+  { symbol: 'SMCI',  watchlist: 'active_trade', sector: 'semis',                   volRegime: 'very_high', primaryListing: tuningPrimaryListing('SMCI'),  activelyTraded: true,  rationale: 'AI server hardware, accounting overhang, fattest reactions in cohort' },
+  { symbol: 'ADBE',  watchlist: 'active_trade', sector: 'enterprise_software',     volRegime: 'mid',       primaryListing: tuningPrimaryListing('ADBE'),  activelyTraded: true,  rationale: 'Creative software cycle, AI-narrative impact on multiples' },
+  { symbol: 'RIVN',  watchlist: 'active_trade', sector: 'consumer_discretionary',  volRegime: 'very_high', primaryListing: tuningPrimaryListing('RIVN'),  activelyTraded: true,  rationale: 'Sub-20 dollar EV mechanics, smaller cap volatility, retail-driven' },
+  { symbol: 'IONQ',  watchlist: 'active_trade', sector: 'speculative',             volRegime: 'very_high', primaryListing: tuningPrimaryListing('IONQ'),  activelyTraded: true,  rationale: 'Quantum spec, narrative-driven, options-led tape' },
+  { symbol: 'PLTR',  watchlist: 'active_trade', sector: 'enterprise_software',     volRegime: 'high',      primaryListing: tuningPrimaryListing('PLTR'),  activelyTraded: false, rationale: 'AI software (gov plus commercial), distinct from hardware AI cohort' },
 
   // Watchlist 3: Cyclicals & Macro (6)
-  { symbol: 'JPM',   watchlist: 'cyclicals_macro', sector: 'financials',             volRegime: 'low', activelyTraded: false, rationale: 'Bulge bracket, rate-sensitive, NIM cycle' },
-  { symbol: 'COF',   watchlist: 'cyclicals_macro', sector: 'financials',             volRegime: 'mid', activelyTraded: true,  rationale: 'Consumer credit cycle, charge-off trends, distinct from JPM' },
-  { symbol: 'XOM',   watchlist: 'cyclicals_macro', sector: 'energy',                 volRegime: 'mid', activelyTraded: false, rationale: 'Energy/commodity-driven, macro regime' },
-  { symbol: 'LLY',   watchlist: 'cyclicals_macro', sector: 'healthcare',             volRegime: 'mid', activelyTraded: false, rationale: 'GLP-1 momentum cohort, healthcare regime' },
-  { symbol: 'NFLX',  watchlist: 'cyclicals_macro', sector: 'communication_services', volRegime: 'mid', activelyTraded: false, rationale: 'Streaming/content, sub/ad-tier earnings binary' },
-  { symbol: 'COST',  watchlist: 'cyclicals_macro', sector: 'consumer_staples',       volRegime: 'low', activelyTraded: false, rationale: 'Defensive consumer, slow vol, no-trade canary for strategist' },
+  { symbol: 'JPM',   watchlist: 'cyclicals_macro', sector: 'financials',             volRegime: 'low', primaryListing: tuningPrimaryListing('JPM'),   activelyTraded: false, rationale: 'Bulge bracket, rate-sensitive, NIM cycle' },
+  { symbol: 'COF',   watchlist: 'cyclicals_macro', sector: 'financials',             volRegime: 'mid', primaryListing: tuningPrimaryListing('COF'),   activelyTraded: true,  rationale: 'Consumer credit cycle, charge-off trends, distinct from JPM' },
+  { symbol: 'XOM',   watchlist: 'cyclicals_macro', sector: 'energy',                 volRegime: 'mid', primaryListing: tuningPrimaryListing('XOM'),   activelyTraded: false, rationale: 'Energy/commodity-driven, macro regime' },
+  { symbol: 'LLY',   watchlist: 'cyclicals_macro', sector: 'healthcare',             volRegime: 'mid', primaryListing: tuningPrimaryListing('LLY'),   activelyTraded: false, rationale: 'GLP-1 momentum cohort, healthcare regime' },
+  { symbol: 'NFLX',  watchlist: 'cyclicals_macro', sector: 'communication_services', volRegime: 'mid', primaryListing: tuningPrimaryListing('NFLX'),  activelyTraded: false, rationale: 'Streaming/content, sub/ad-tier earnings binary' },
+  { symbol: 'COST',  watchlist: 'cyclicals_macro', sector: 'consumer_staples',       volRegime: 'low', primaryListing: tuningPrimaryListing('COST'),  activelyTraded: false, rationale: 'Defensive consumer, slow vol, no-trade canary for strategist' },
 ];
 
 export const WATCHLIST_LABELS: Record<TuningWatchlist, string> = {
