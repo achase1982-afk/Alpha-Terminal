@@ -118,6 +118,19 @@ export async function getFmpEarningsCalendar(
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
+    if (res.status === 402) {
+      logger.warn(
+        {
+          status: res.status,
+          body: text.slice(0, 500),
+          from: fromStr,
+          to: toStr,
+          symbol: opts?.symbol ?? null,
+        },
+        "FMP earnings calendar returned 402 (plan limit on historical range); skipping this window",
+      );
+      return [];
+    }
     logger.error({ status: res.status, body: text.slice(0, 500) }, "FMP earnings calendar non-200");
     throw new Error(`FMP earnings calendar failed: HTTP ${res.status}`);
   }

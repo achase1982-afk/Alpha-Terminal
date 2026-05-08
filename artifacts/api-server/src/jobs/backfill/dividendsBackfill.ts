@@ -3,6 +3,10 @@ import { sql } from "drizzle-orm";
 
 const POLYGON_API = "https://api.polygon.io";
 
+function polygonUrlHasApiKeyParam(url: string): boolean {
+  return /[?&]apikey=/i.test(url);
+}
+
 function addUtcDaysYmd(ymd: string, days: number): string {
   const d = new Date(`${ymd}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
@@ -96,7 +100,11 @@ export async function backfillDividendsForSymbol(symbol: string): Promise<{ rows
       rowsUpserted++;
     }
     const next = json.next_url;
-    url = next ? (next.includes("apiKey=") ? next : `${next}&apiKey=${encodeURIComponent(apiKey)}`) : null;
+    url = next
+      ? polygonUrlHasApiKeyParam(next)
+        ? next
+        : `${next}${next.includes("?") ? "&" : "?"}apiKey=${encodeURIComponent(apiKey)}`
+      : null;
     await sleep(80);
   }
 
