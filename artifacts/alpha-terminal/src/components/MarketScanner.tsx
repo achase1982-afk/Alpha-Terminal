@@ -713,7 +713,6 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
                 <ScannerLayer1ColumnHeader id="scanner-v3-layer1-col-header" />
                 <div
                   role="list"
-                  aria-labelledby="scanner-v3-layer1-col-header"
                   aria-label={`Scanner universe, ${layer1FilteredSymbols.length} visible tickers`}
                   className="divide-y divide-zinc-800/45"
                 >
