@@ -52,7 +52,7 @@ export function ScannerCardRow({ data, expanded }: { data: ScannerCardData; expa
         className="col-start-2 row-start-2 min-w-0 truncate text-xs leading-snug text-muted-foreground"
         title={displayName || undefined}
       >
-        {displayName ?? "\u00a0"}
+        {displayName || "\u00a0"}
       </div>
 
       {/* Row 3 — strictly $ / % / IVR (never shares a row with Name) */}
