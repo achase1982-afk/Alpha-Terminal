@@ -289,7 +289,7 @@ async function migrateStrategistModelCatalogV3ToV4IfNeeded(merged: StrategistCon
 
   logger.info(
     { solo, debateA, debateB, arbitrator, from: 3, to: STRATEGIST_MODEL_CATALOG_VERSION },
-    "Strategist settings: migrated model indices to six-model catalog (v4)",
+    "Strategist settings: migrated model indices to eight-model catalog (v5)",
   );
   return true;
 }
