@@ -11,7 +11,6 @@ const log = logger.child({ module: "tuningUniverseRegistrar" });
 let cached: readonly string[] | null = null;
 
 let cachedNyseTuning: readonly string[] | null = null;
-let cachedNasdaqTuning: readonly string[] | null = null;
 
 /** Idempotent. Logs once on first call. */
 export function registerTuningUniverseOnBoot(): void {
@@ -20,20 +19,12 @@ export function registerTuningUniverseOnBoot(): void {
   cachedNyseTuning = Object.freeze(
     TUNING_UNIVERSE.filter((e) => e.primaryListing === "NYSE").map((e) => e.symbol.toUpperCase()),
   );
-  cachedNasdaqTuning = Object.freeze(
-    TUNING_UNIVERSE.filter((e) => e.primaryListing === "NASDAQ").map((e) => e.symbol.toUpperCase()),
-  );
   log.info({ symbolCount: cached.length }, "ENTER tuning_registrar");
 }
 
 export function getNyseListedTuningSymbols(): readonly string[] {
   if (!cached) registerTuningUniverseOnBoot();
   return cachedNyseTuning!;
-}
-
-export function getNasdaqListedTuningSymbols(): readonly string[] {
-  if (!cached) registerTuningUniverseOnBoot();
-  return cachedNasdaqTuning!;
 }
 
 export function getTuningUniverseSymbols(): readonly string[] {
