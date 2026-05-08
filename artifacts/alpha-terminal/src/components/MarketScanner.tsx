@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import type { TuningWatchlist } from "@/lib/tuningWatchlistUi";
 import ReactDOM from "react-dom";
 import { useTerminalStore } from "@/lib/store";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
@@ -31,6 +32,7 @@ import {
   enrichScannerCardFromV2Candidate,
   scannerWireCardToScannerCardData,
   ScannerChromeBar,
+  TuningWatchlistBar,
   ScannerIdleEmptyState,
   ScannerZeroCandidatesInline,
 } from "@/components/scanner";
@@ -386,6 +388,19 @@ function SnapshotFreshnessBanner(props: {
 
 type SendToStrategistFn = (sym: string) => void;
 
+const SCANNER_TUNING_WATCHLIST_KEY = "scanner_tuning_watchlist_v1";
+
+function readStoredTuningWatchlist(): TuningWatchlist {
+  if (typeof window === "undefined") return "active_trade";
+  try {
+    const v = localStorage.getItem(SCANNER_TUNING_WATCHLIST_KEY);
+    if (v === "mega_cap_core" || v === "active_trade" || v === "cyclicals_macro") return v;
+  } catch {
+    /* ignore */
+  }
+  return "active_trade";
+}
+
 function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSendToStrategist }: {
   subscribeEquitySymbols?: (symbols: string[]) => void;
   onNavigateToSymbol?: (sym: string) => void;
@@ -398,6 +413,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   const unified = useUnifiedScan();
 
   const [universe, setUniverse] = useState("preset:liquidCore130");
+  const [tuningWatchlist, setTuningWatchlist] = useState<TuningWatchlist>(() => readStoredTuningWatchlist());
   const [resolvedSymbols, setResolvedSymbols] = useState<string[]>([]);
   const [expandedSymbols, setExpandedSymbols] = useState<Set<string>>(() => new Set());
   const [muteTick, setMuteTick] = useState(0);
@@ -409,6 +425,14 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   const [editingWatchlistId, setEditingWatchlistId] = useState<number | null>(null);
 
   const REMOVED_PRESETS = new Set(["preset:sp500", "preset:sp100", "preset:ndx100"]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SCANNER_TUNING_WATCHLIST_KEY, tuningWatchlist);
+    } catch {
+      /* ignore */
+    }
+  }, [tuningWatchlist]);
 
   useEffect(() => {
     let cancelled = false;
@@ -444,8 +468,23 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
     await unified.startScan(universe);
   };
 
+  const handleScanWatchlistOnly = async () => {
+    if (REMOVED_PRESETS.has(universe)) {
+      setUniverse("preset:liquidCore130");
+      return;
+    }
+    setExpandedSymbols(new Set());
+    await unified.startScan(universe, { tuningWatchlist });
+  };
+
   const scanComplete = unified.phase === "complete";
   const candidates = unified.candidates;
+
+  const tuningWatchlistLastScanLabel = useMemo(() => {
+    if (unified.phase !== "complete") return null;
+    if (unified.tuningWatchlistEcho !== tuningWatchlist) return null;
+    return formatScanTime(unified.scanAt);
+  }, [unified.phase, unified.tuningWatchlistEcho, unified.scanAt, tuningWatchlist]);
 
   const layer1CardDataBySymbol = useMemo(() => {
     const cards = unified.layer1Universe?.cards;
@@ -534,7 +573,15 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
 
       <ScannerChromeBar
         universeSlot={
-          <UniverseDropdown
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <TuningWatchlistBar
+              value={tuningWatchlist}
+              onChange={setTuningWatchlist}
+              lastScanLabel={tuningWatchlistLastScanLabel}
+              onScanWatchlist={handleScanWatchlistOnly}
+              scanDisabled={!accessToken || unified.phase === "scanning" || shockActive}
+            />
+            <UniverseDropdown
             value={universe}
             onChange={setUniverse}
             presets={universeData.presets}
@@ -556,6 +603,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
             }}
             chromeTrigger
           />
+          </div>
         }
         scanSlot={
           unified.phase !== "idle" ? (

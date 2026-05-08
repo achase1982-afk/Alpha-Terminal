@@ -38,6 +38,7 @@ export interface V2ScanResponse {
   snapshot_age_seconds: number | null;
   stale: boolean | null;
   scan_at: string;
+  tuning_watchlist?: "mega_cap_core" | "active_trade" | "cyclicals_macro";
 }
 
 /** Layer 2 Schwab batch quote merge — same order as `tickers`. */
@@ -145,10 +146,11 @@ export interface UseUnifiedScanState {
   snapshotAgeSeconds: number | null;
   stale: boolean | null;
   scanAt: string | null;
+  tuningWatchlistEcho: V2ScanResponse["tuning_watchlist"];
   errorMessage: string | null;
   /** Layer 1 — ticker list from GET /api/scanner/v3/universe for the selected universe */
   layer1Universe: ScannerV3UniverseResponse | null;
-  startScan: (universeId: string) => Promise<void>;
+  startScan: (universeId: string, opts?: { tuningWatchlist?: V2ScanResponse["tuning_watchlist"] }) => Promise<void>;
   cancelLocal: () => void;
 }
 
@@ -166,6 +168,7 @@ export function useUnifiedScan(): UseUnifiedScanState {
   const [snapshotAgeSeconds, setSnapshotAgeSeconds] = useState<number | null>(null);
   const [stale, setStale] = useState<boolean | null>(null);
   const [scanAt, setScanAt] = useState<string | null>(null);
+  const [tuningWatchlistEcho, setTuningWatchlistEcho] = useState<V2ScanResponse["tuning_watchlist"]>(undefined);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [layer1Universe, setLayer1Universe] = useState<ScannerV3UniverseResponse | null>(null);
 
@@ -176,15 +179,17 @@ export function useUnifiedScan(): UseUnifiedScanState {
     setSnapshotAgeSeconds(null);
     setStale(null);
     setScanAt(null);
+    setTuningWatchlistEcho(undefined);
     setErrorMessage(null);
     setLayer1Universe(null);
   }, []);
 
-  const startScan = useCallback(async (_universeId: string) => {
+  const startScan = useCallback(async (_universeId: string, opts?: { tuningWatchlist?: V2ScanResponse["tuning_watchlist"] }) => {
     setPhase("scanning");
     setErrorMessage(null);
     setCandidates([]);
     setLayer1Universe(null);
+    setTuningWatchlistEcho(undefined);
     try {
       const v3UniverseParam = encodeURIComponent(scannerV3UniverseQueryFromSelection(_universeId));
       const v3Res = await fetchWithAuth(`${API_BASE}/scanner/v3/universe?universe=${v3UniverseParam}`, {
@@ -228,6 +233,9 @@ export function useUnifiedScan(): UseUnifiedScanState {
         limit: "25",
         minScore: "0",
       });
+      if (opts?.tuningWatchlist) {
+        params.set("tuning_watchlist", opts.tuningWatchlist);
+      }
       const res = await fetchWithAuth(`${API_BASE}/v2/scan?${params.toString()}`, { method: "GET" });
       if (res.status === 401) {
         setPhase("error");
@@ -269,6 +277,7 @@ export function useUnifiedScan(): UseUnifiedScanState {
       setSnapshotAgeSeconds(ageSec);
       setStale(typeof staleFlag === "boolean" ? staleFlag : null);
       setScanAt(typeof data.scan_at === "string" ? data.scan_at : new Date().toISOString());
+      setTuningWatchlistEcho(data.tuning_watchlist);
       setPhase("complete");
     } catch {
       setPhase("error");
@@ -283,6 +292,7 @@ export function useUnifiedScan(): UseUnifiedScanState {
     snapshotAgeSeconds,
     stale,
     scanAt,
+    tuningWatchlistEcho,
     errorMessage,
     layer1Universe,
     startScan,

@@ -131,6 +131,8 @@ let streamerInfo: StreamerInfo | null = null;
 let subscribedSymbols = new Set<string>();
 let subscribedFuturesSymbols = new Set<string>();
 let subscribedOptionSymbols = new Set<string>();
+/** Option underlyings subscribed for the active tuning watchlist (removed when watchlist changes). */
+const tuningWatchlistOptionRoots = new Set<string>();
 let subscribedFuturesOptionSymbols = new Set<string>();
 let requestCounter = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1205,6 +1207,7 @@ export function stopStreamer() {
   subscribedSymbols.clear();
   subscribedFuturesSymbols.clear();
   subscribedOptionSymbols.clear();
+  tuningWatchlistOptionRoots.clear();
   subscribedFuturesOptionSymbols.clear();
   acctActivitySubscribed = false;
   consecutivePostLoginFlap1006 = 0;
@@ -1256,6 +1259,29 @@ export function addOptionSymbols(symbols: string[]) {
 
   if (newSyms.length > 0 && connectionState === "connected") {
     sendOptionSubscription([...subscribedOptionSymbols]);
+  }
+}
+
+/**
+ * Replace LEVELONE_OPTIONS underlyings owned by the tuning watchlist selector.
+ * Does not remove option roots subscribed from other pathways (e.g. client WS).
+ */
+export function setTuningWatchlistOptionUnderlyings(symbols: string[]): void {
+  const next = [...new Set(symbols.map((s) => s.replace(/^\$/, "").toUpperCase()))];
+  for (const s of tuningWatchlistOptionRoots) {
+    if (!next.includes(s)) subscribedOptionSymbols.delete(s);
+  }
+  tuningWatchlistOptionRoots.clear();
+  for (const s of next) {
+    tuningWatchlistOptionRoots.add(s);
+    subscribedOptionSymbols.add(s);
+  }
+  if (connectionState === "connected") {
+    sendOptionSubscription([...subscribedOptionSymbols]);
+    logger.info(
+      { count: next.length, sample: next.slice(0, 8).join(",") },
+      "Schwab streamer: tuning watchlist LEVELONE_OPTIONS refresh",
+    );
   }
 }
 

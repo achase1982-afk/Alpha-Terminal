@@ -6,6 +6,7 @@ export { ScannerCardScore } from "./ScannerCardScore";
 export { ScannerCardPanel, ScannerCardPanelRow } from "./ScannerCardPanel";
 export { ScannerCardActions } from "./ScannerCardActions";
 export { ScannerChromeBar } from "./ScannerChromeBar";
+export { TuningWatchlistBar } from "./TuningWatchlistBar";
 export { ScannerIdleEmptyState } from "./ScannerIdleEmptyState";
 export { ScannerZeroCandidatesInline } from "./ScannerZeroCandidatesInline";
 export type { ScannerCardProps, ScannerCardAction, ScannerCardRowProps, ScannerCardDetailProps } from "./scannerCard.types";
