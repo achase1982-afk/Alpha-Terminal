@@ -38,6 +38,7 @@ import { recoverOrphanedIvrJobs } from "./lib/onDemandIvrBackfill";
 import { startSnapshotRefreshWorker } from "./lib/snapshotRefreshWorker.js";
 import {
   getTuningUniverseSymbols,
+  registerPersistentSchwabTuningStreaming,
   registerTuningUniverseOnBoot,
 } from "./lib/tuningUniverseRegistrar.js";
 
@@ -633,6 +634,7 @@ async function boot() {
         startSchwabStreamer().then(() => {
           addFuturesSymbols([...SCHWAB_FUTURES_SYMS_EARLY]);
           if (SCHWAB_EQUITY_SYMS_EARLY.length > 0) addSchwabSymbols(SCHWAB_EQUITY_SYMS_EARLY);
+          registerPersistentSchwabTuningStreaming();
           initSyntheticDxy();
         }).catch((err) => logger.warn({ err }, "Schwab streamer start failed (deferred init)"));
       } else {
@@ -782,11 +784,13 @@ async function boot() {
         startSchwabStreamer().then(() => {
           addFuturesSymbols([...SCHWAB_FUTURES_SYMS, ...SCHWAB_FUTURES_INDEX_SYMS]);
           if (SCHWAB_EQUITY_SYMS.length > 0) addSchwabSymbols(SCHWAB_EQUITY_SYMS);
+          registerPersistentSchwabTuningStreaming();
           initSyntheticDxy();
         }).catch((err) => logger.warn({ err }, "Schwab streamer start failed (token refresh callback)"));
       } else {
         addFuturesSymbols([...SCHWAB_FUTURES_SYMS, ...SCHWAB_FUTURES_INDEX_SYMS]);
         if (SCHWAB_EQUITY_SYMS.length > 0) addSchwabSymbols(SCHWAB_EQUITY_SYMS);
+        registerPersistentSchwabTuningStreaming();
         schwabTokenRefreshed();
         initSyntheticDxy();
       }

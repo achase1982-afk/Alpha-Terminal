@@ -1,6 +1,6 @@
 import type { IBSymbolDef } from "./ibBreadthSymbols.js";
 import { LIQUID_CORE_SYMBOLS } from "../data/liquidCore130.js";
-import { getNyseListedTuningSymbols } from "./tuningUniverseRegistrar.js";
+import { TUNING_UNIVERSE } from "../data/tuningUniverse.js";
 
 /**
  * Dedicated reqId pool for NYSE closing auction imbalance (generic tick 225).
@@ -9,26 +9,38 @@ import { getNyseListedTuningSymbols } from "./tuningUniverseRegistrar.js";
  */
 export const IMBALANCE_REQ_ID_BASE = 12_000;
 
-/** Reserved span for imbalance reqIds (stable Map allocation below). */
-export const IMBALANCE_REQ_ID_RESERVED = 128;
+/** Reserved span for stable symbol→reqId mapping within [BASE, BASE + SPAN). */
+export const IMBALANCE_REQ_ID_SPAN = 128;
 
-const nyseLc = LIQUID_CORE_SYMBOLS.filter((e) => e.primaryListing === "NYSE").map((e) => e.symbol.toUpperCase());
-const nyseTuning = [...getNyseListedTuningSymbols()];
-const nyseMerged = [...new Set([...nyseLc, ...nyseTuning])].sort();
+function nyseLiquidCoreSymbols(): string[] {
+  return LIQUID_CORE_SYMBOLS.filter((e) => e.primaryListing === "NYSE").map((e) => e.symbol.toUpperCase());
+}
 
-if (nyseMerged.length > IMBALANCE_REQ_ID_RESERVED) {
+function nyseTuningSymbols(): string[] {
+  return TUNING_UNIVERSE.filter((e) => e.primaryListing === "NYSE").map((e) => e.symbol.toUpperCase());
+}
+
+function imbalanceUnionSorted(): string[] {
+  const set = new Set<string>([...nyseLiquidCoreSymbols(), ...nyseTuningSymbols()]);
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+const sortedUnion = imbalanceUnionSorted();
+
+if (sortedUnion.length > IMBALANCE_REQ_ID_SPAN) {
   throw new Error(
-    `ibImbalanceSymbols: NYSE union exceeds ${IMBALANCE_REQ_ID_RESERVED} (${nyseMerged.length}). Raise reserved span or split pools.`,
+    `ibImbalanceSymbols: NYSE imbalance union (${sortedUnion.length}) exceeds reserved reqId span ${IMBALANCE_REQ_ID_SPAN}`,
   );
 }
 
-export const IMBALANCE_SYMBOLS: IBSymbolDef[] = nyseMerged.map((symbol, i) => ({
+/** Stable reqId = BASE + index in sorted union of LC130-NYSE and tuning-NYSE. */
+export const IMBALANCE_SYMBOLS: IBSymbolDef[] = sortedUnion.map((sym, i) => ({
   reqId: IMBALANCE_REQ_ID_BASE + i,
-  symbol,
-  ibSymbol: symbol,
+  symbol: sym,
+  ibSymbol: sym,
   secType: "STK",
   exchange: "NYSE",
-  displaySymbol: symbol,
+  displaySymbol: sym,
   category: "NYSE_IMBALANCE",
   description: `NYSE closing auction imbalance stream (generic tick 225)`,
   enabled: true,
@@ -38,5 +50,6 @@ export const IMBALANCE_REQID_TO_SYMBOL = new Map<number, string>(
   IMBALANCE_SYMBOLS.map((d) => [d.reqId, d.displaySymbol]),
 );
 
-export const NYSE_PRIMARY_LIQUID_CORE_COUNT = nyseLc.length;
-export const NYSE_IMBALANCE_UNION_COUNT = nyseMerged.length;
+export const NYSE_PRIMARY_LIQUID_CORE_COUNT = nyseLiquidCoreSymbols().length;
+
+export const NYSE_IMBALANCE_UNION_COUNT = sortedUnion.length;

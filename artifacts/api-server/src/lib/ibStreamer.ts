@@ -217,6 +217,8 @@ for (const def of TUNING_L1_SYMBOL_DEFS) {
   reqIdToSymbol.set(def.reqId, def);
 }
 
+let tuningL1BootLogged = false;
+
 interface IBQuoteState {
   last: number | null;
   bid: number | null;
@@ -493,19 +495,6 @@ function subscribeAll() {
   }
   logger.info({ permanent: permCount, registered: permanentSymbolSet.size }, "IB: permanently subscribed indicator symbols at connect");
 
-  let tuningL1Count = 0;
-  for (const def of TUNING_L1_SYMBOL_DEFS) {
-    if (skippedMarketDataReqIds.has(def.reqId)) continue;
-    const contract = buildContract(def);
-    try {
-      ib.reqMktData(def.reqId, contract, "", false, false);
-      tuningL1Count++;
-    } catch (err) {
-      logger.warn({ err, symbol: def.displaySymbol }, "IB: failed to subscribe tuning universe L1");
-    }
-  }
-  logger.info({ count: tuningL1Count, reqIdBase: TUNING_L1_REQ_ID_BASE }, "IB: subscribed tuning universe L1 pool");
-
   subscribeTotalviewEsCboeOne();
 
   let imbCount = 0;
@@ -520,6 +509,31 @@ function subscribeAll() {
     }
   }
   logger.info({ count: imbCount, reqIdBase: IMBALANCE_REQ_ID_BASE }, "IB: subscribed NYSE imbalance pool (generic tick 225)");
+
+  let tuningL1Subscribed = 0;
+  for (const def of TUNING_L1_SYMBOL_DEFS) {
+    if (skippedMarketDataReqIds.has(def.reqId)) continue;
+    const contract = buildContract(def);
+    try {
+      ib.reqMktData(def.reqId, contract, "", false, false);
+      tuningL1Subscribed++;
+    } catch (err) {
+      logger.warn({ err, symbol: def.displaySymbol }, "IB: failed to subscribe tuning universe L1");
+    }
+  }
+  if (!tuningL1BootLogged) {
+    tuningL1BootLogged = true;
+    logger.info(
+      {
+        event: "ENTER",
+        phase: "tuning_ibkr_l1_registration",
+        count: tuningL1Subscribed,
+        symbols: TUNING_L1_SYMBOL_DEFS.map((d) => d.displaySymbol),
+        reqIdBase: TUNING_L1_REQ_ID_BASE,
+      },
+      "IB: tuning universe permanent equity L1 subscribed",
+    );
+  }
 
   for (const [symbol, reqId] of dynamicQuoteSymbols) {
     const contract = buildDynamicContract(symbol);
@@ -958,15 +972,12 @@ export async function connectIB(): Promise<void> {
           );
           return;
         }
-        if (
-          reqId >= TUNING_L1_REQ_ID_BASE &&
-          reqId < TUNING_L1_REQ_ID_BASE + TUNING_L1_SYMBOL_DEFS.length
-        ) {
+        const tuningDef = reqIdToSymbol.get(reqId);
+        if (tuningDef?.category === "TUNING_L1") {
           skippedMarketDataReqIds.add(reqId);
-          const sym = TUNING_L1_SYMBOL_DEFS[reqId - TUNING_L1_REQ_ID_BASE]?.displaySymbol;
           logger.error(
-            { code, reqId, symbol: sym },
-            "IB: error 101 — market data subscription missing for tuning L1; skipping this reqId until process restart.",
+            { code, reqId, symbol: tuningDef.displaySymbol },
+            "IB: error 101 — market data subscription missing for tuning universe L1; skipping this reqId until process restart.",
           );
           return;
         }

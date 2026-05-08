@@ -145,8 +145,10 @@ async function main(): Promise<void> {
 
     await run("equity_daily", () => backfillEquityDailyForSymbol(symbol));
     await run("dividends", () => backfillDividendsForSymbol(symbol));
+    let fmpPremiumHistoricalUnavailable = false;
     await run("corporate_events", async () => {
       const r = await backfillCorporateEventsForTuningSymbol(symbol);
+      fmpPremiumHistoricalUnavailable = r.fmpPremiumHistoricalUnavailable;
       return { rowsUpserted: r.calendarUpserts + r.surpriseUpserts + r.splitUpserts };
     });
     let optContracts = 0;
@@ -161,6 +163,7 @@ async function main(): Promise<void> {
       symbol,
       fiveYearCutoffYmd: fiveCut,
       optionsContractsProcessed: optContracts,
+      fmpPremiumHistoricalUnavailable,
     });
     if (rawAudit.corporate_events_earnings.rows < 12) {
       console.warn(
