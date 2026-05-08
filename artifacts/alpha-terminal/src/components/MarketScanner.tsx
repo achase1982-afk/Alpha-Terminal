@@ -541,7 +541,6 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
     const raw = readMutedSymbols();
     const now = Date.now();
     const { pruned, activeMuted } = pruneAndFilterMutedSymbols(raw, now);
-    if (pruned.length !== raw.length) persistMutedSymbols(pruned);
     return unified.layer1Universe.tickers
       .map((s) => s.trim().toUpperCase())
       .filter((s) => s.length > 0 && !activeMuted.has(s))
@@ -549,12 +548,24 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   }, [unified.layer1Universe, muteTick]);
 
   useEffect(() => {
-    if (!scanComplete || !subscribeEquitySymbols) return;
+    const raw = readMutedSymbols();
+    const now = Date.now();
+    const { pruned } = pruneAndFilterMutedSymbols(raw, now);
+    if (pruned.length !== raw.length) persistMutedSymbols(pruned);
+  }, [unified.layer1Universe, muteTick]);
+
+  const subscribeEquityRef = useRef(subscribeEquitySymbols);
+  subscribeEquityRef.current = subscribeEquitySymbols;
+
+  useEffect(() => {
+    if (!scanComplete) return;
+    const sub = subscribeEquityRef.current;
+    if (!sub) return;
     const fromLayer1 = layer1FilteredSymbols;
     const fromCandidates = candidates.map((c) => c.ticker);
     const merged = [...new Set([...fromLayer1, ...fromCandidates])];
-    if (merged.length) subscribeEquitySymbols(merged);
-  }, [scanComplete, layer1FilteredSymbols, candidates, subscribeEquitySymbols]);
+    if (merged.length) void sub(merged);
+  }, [scanComplete, layer1FilteredSymbols, candidates]);
 
   const bumpMuteRender = useCallback(() => {
     setMuteTick((n) => n + 1);
