@@ -236,6 +236,26 @@ interface IBQuoteState {
 
 const ibQuoteCache = new Map<string, IBQuoteState>();
 
+const TUNING_L1_UPPER = new Set(TUNING_L1_SYMBOL_DEFS.map((d) => d.displaySymbol.toUpperCase()));
+
+export function getIbTuningL1QuoteSnapshot(symbol: string): {
+  bid: number | null;
+  ask: number | null;
+  last: number | null;
+  ageMs: number;
+} | null {
+  const u = symbol.toUpperCase();
+  if (!TUNING_L1_UPPER.has(u)) return null;
+  const st = ibQuoteCache.get(u);
+  if (!st) return null;
+  return {
+    bid: st.bid,
+    ask: st.ask,
+    last: st.last,
+    ageMs: Date.now() - st.ts,
+  };
+}
+
 let ib: IBApi | null = null;
 let connState: ConnectionState = "DISCONNECTED";
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
