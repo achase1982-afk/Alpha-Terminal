@@ -186,26 +186,46 @@ export interface SchwabTimesaleStrategistPoint {
   size: number;
 }
 
-const strategistTimesaleRing = new Map<string, SchwabTimesaleStrategistPoint[]>();
+interface StrategistTimesaleRingBuf {
+  buf: SchwabTimesaleStrategistPoint[];
+  head: number;
+  size: number;
+}
+
+const strategistTimesaleRing = new Map<string, StrategistTimesaleRingBuf>();
 const STRATEGIST_TIMESALE_MAX_POINTS_PER_SYMBOL = 120_000;
 const STRATEGIST_TIMESALE_MAX_AGE_MS = 10 * 60 * 60 * 1000;
 
 function appendStrategistTimesale(sym: string, pt: SchwabTimesaleStrategistPoint): void {
   const u = sym.toUpperCase();
-  let arr = strategistTimesaleRing.get(u);
-  if (!arr) {
-    arr = [];
-    strategistTimesaleRing.set(u, arr);
+  const cap = STRATEGIST_TIMESALE_MAX_POINTS_PER_SYMBOL;
+  let r = strategistTimesaleRing.get(u);
+  if (!r) {
+    r = { buf: new Array<SchwabTimesaleStrategistPoint>(cap), head: 0, size: 0 };
+    strategistTimesaleRing.set(u, r);
   }
-  arr.push(pt);
+  if (r.size === cap) {
+    r.head = (r.head + 1) % cap;
+    r.size--;
+  }
+  r.buf[(r.head + r.size) % cap] = pt;
+  r.size++;
   const cutoffAge = Date.now() - STRATEGIST_TIMESALE_MAX_AGE_MS;
-  while (arr.length > 0 && (arr[0].ts < cutoffAge || arr.length > STRATEGIST_TIMESALE_MAX_POINTS_PER_SYMBOL)) {
-    arr.shift();
+  while (r.size > 0 && r.buf[r.head]!.ts < cutoffAge) {
+    r.head = (r.head + 1) % cap;
+    r.size--;
   }
 }
 
 export function getStrategistTimesalePoints(symbol: string): SchwabTimesaleStrategistPoint[] {
-  return strategistTimesaleRing.get(symbol.toUpperCase())?.slice() ?? [];
+  const r = strategistTimesaleRing.get(symbol.toUpperCase());
+  if (!r || r.size === 0) return [];
+  const cap = STRATEGIST_TIMESALE_MAX_POINTS_PER_SYMBOL;
+  const out: SchwabTimesaleStrategistPoint[] = [];
+  for (let i = 0; i < r.size; i++) {
+    out.push(r.buf[(r.head + i) % cap]!);
+  }
+  return out;
 }
 
 export interface SchwabVenueBookStrategistSnapshot {
