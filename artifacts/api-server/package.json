@@ -35,6 +35,7 @@
     "drizzle-orm": "catalog:",
     "express": "^5",
     "linkedom": "^0.18.12",
+    "node-edge-tts": "^1.2.10",
     "openai": "^6.34.0",
     "p-limit": "^7.3.0",
     "pino": "^9",
