@@ -187,6 +187,15 @@ async function boot() {
         target.setUTCDate(target.getUTCDate() + 1);
       }
       while (!isTradingDay(target)) {
+        // 01:00 UTC is often the next UTC calendar day after the US session whose
+        // extended hours just ended; `target` may fall on a US holiday weekday while
+        // the prior UTC day was still a trading day — keep that slot (holiday eve).
+        const dow = target.getUTCDay();
+        if (dow >= 1 && dow <= 5) {
+          const prevUtcDay = new Date(target);
+          prevUtcDay.setUTCDate(prevUtcDay.getUTCDate() - 1);
+          if (isTradingDay(prevUtcDay)) break;
+        }
         target.setUTCDate(target.getUTCDate() + 1);
       }
       const ms = target.getTime() - now.getTime();
