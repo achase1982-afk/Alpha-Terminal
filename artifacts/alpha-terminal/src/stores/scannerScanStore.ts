@@ -94,10 +94,9 @@ export const useScannerScanStore = create<ScannerScanStore>((set, get) => ({
 
     const seq = get()._requestSeq;
     const tuningWl = parseTuningUniverseSelection(universeId);
-    const v3UniverseId = tuningWl ? "preset:liquidCore130" : universeId;
 
     try {
-      const v3UniverseParam = encodeURIComponent(scannerV3UniverseQueryFromSelection(v3UniverseId));
+      const v3UniverseParam = encodeURIComponent(scannerV3UniverseQueryFromSelection(universeId));
       const v3Res = await fetchWithAuth(`${API_BASE}/scanner/v3/universe?universe=${v3UniverseParam}`, {
         method: "GET",
       });
@@ -127,7 +126,7 @@ export const useScannerScanStore = create<ScannerScanStore>((set, get) => ({
       const universeEcho =
         typeof layer1Raw.universe === "string" && layer1Raw.universe.length > 0
           ? layer1Raw.universe
-          : scannerV3UniverseQueryFromSelection(v3UniverseId);
+          : scannerV3UniverseQueryFromSelection(universeId);
       const cards = Array.isArray(layer1Raw.cards) ? layer1Raw.cards : undefined;
 
       let layer1: ScannerV3UniverseResponse = {
@@ -146,7 +145,7 @@ export const useScannerScanStore = create<ScannerScanStore>((set, get) => ({
       set({ layer1Universe: layer1 });
 
       const params = new URLSearchParams({
-        universe: tuningWl ? "preset:liquidCore130" : universeId,
+        universe: universeId,
         limit: "25",
         minScore: "0",
       });

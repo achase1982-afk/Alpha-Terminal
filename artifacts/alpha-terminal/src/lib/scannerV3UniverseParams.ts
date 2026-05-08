@@ -18,13 +18,21 @@ const PRESET_KEY_TO_V3_UNIVERSE_QUERY: Record<string, string> = {
 
 const TUNING_PREFIX = "tuning:";
 
+/** Maps `tuning:<key>` dropdown values to GET /api/scanner/v3/universe ids (small fixed symbol lists). */
+const TUNING_SELECTION_TO_V3_UNIVERSE: Record<string, string> = {
+  mega_cap_core: "tuning-mega-cap-core",
+  active_trade: "tuning-active-trade",
+  cyclicals_macro: "tuning-cyclicals-macro",
+};
+
 /**
  * Maps the scanner universe dropdown value to the `universe` query string for GET /api/scanner/v3/universe.
- * Tuning bench selections use Liquid Core 130 for the wire payload, then the client filters to the watchlist.
+ * Tuning bench selections map to compact scanner universes that contain only that bench’s tickers.
  */
 export function scannerV3UniverseQueryFromSelection(universeId: string): string {
   if (universeId.startsWith(TUNING_PREFIX)) {
-    return "liquid-core-130";
+    const key = universeId.slice(TUNING_PREFIX.length);
+    return TUNING_SELECTION_TO_V3_UNIVERSE[key] ?? universeId;
   }
   if (universeId.startsWith("preset:")) {
     const key = universeId.slice(7);

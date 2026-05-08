@@ -1,5 +1,6 @@
 import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
 import { MID_CAP_200_SYMBOL_STRINGS } from "../data/midCap200Symbols.js";
+import { getSymbolsByWatchlist, WATCHLIST_LABELS } from "../data/tuningUniverse.js";
 import { loadPresets } from "./scannerPresetLoad.js";
 
 export type ScannerUniverseId =
@@ -16,7 +17,10 @@ export type ScannerUniverseId =
   | "top-consumer-staples"
   | "top-materials"
   | "top-utilities"
-  | "top-real-estate";
+  | "top-real-estate"
+  | "tuning-mega-cap-core"
+  | "tuning-active-trade"
+  | "tuning-cyclicals-macro";
 
 export interface ScannerUniverse {
   id: ScannerUniverseId;
@@ -32,6 +36,8 @@ const CORE_383_SOURCE =
   "src/lib/universeBuilder.ts — buildCoreOptionsUniverse() snapshot symbols (merged in scannerPresetLoad.loadPresets as core383)";
 const SECTOR_SOURCE =
   "src/lib/universeBuilder.ts — sector slice from UniverseSnapshot.bySector (wired in scannerPresetLoad.loadPresets)";
+const TUNING_WL_SOURCE =
+  "src/data/tuningUniverse.ts — getSymbolsByWatchlist(...)";
 
 function sectorSource(sector: string): string {
   return `${SECTOR_SOURCE} — sector "${sector}"`;
@@ -122,6 +128,24 @@ export const SCANNER_UNIVERSES: Record<ScannerUniverseId, ScannerUniverse> = {
     symbols: [],
     symbolSource: sectorSource("Real Estate"),
   },
+  "tuning-mega-cap-core": {
+    id: "tuning-mega-cap-core",
+    label: WATCHLIST_LABELS.mega_cap_core,
+    symbols: [...getSymbolsByWatchlist("mega_cap_core")],
+    symbolSource: `${TUNING_WL_SOURCE} ('mega_cap_core')`,
+  },
+  "tuning-active-trade": {
+    id: "tuning-active-trade",
+    label: WATCHLIST_LABELS.active_trade,
+    symbols: [...getSymbolsByWatchlist("active_trade")],
+    symbolSource: `${TUNING_WL_SOURCE} ('active_trade')`,
+  },
+  "tuning-cyclicals-macro": {
+    id: "tuning-cyclicals-macro",
+    label: WATCHLIST_LABELS.cyclicals_macro,
+    symbols: [...getSymbolsByWatchlist("cyclicals_macro")],
+    symbolSource: `${TUNING_WL_SOURCE} ('cyclicals_macro')`,
+  },
 };
 
 const PRESET_KEY_BY_UNIVERSE_ID: Record<ScannerUniverseId, keyof ReturnType<typeof loadPresets> | null> = {
@@ -139,6 +163,9 @@ const PRESET_KEY_BY_UNIVERSE_ID: Record<ScannerUniverseId, keyof ReturnType<type
   "top-materials": "top_materials",
   "top-utilities": "top_utilities",
   "top-real-estate": "top_real_estate",
+  "tuning-mega-cap-core": null,
+  "tuning-active-trade": null,
+  "tuning-cyclicals-macro": null,
 };
 
 export const SCANNER_UNIVERSE_IDS = Object.keys(SCANNER_UNIVERSES) as ScannerUniverseId[];
