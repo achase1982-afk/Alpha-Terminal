@@ -1,5 +1,5 @@
 /**
- * Background refresh of ticker_signal_snapshot for LC130 (30s cadence in session window).
+ * Background refresh of ticker_signal_snapshot for the tuning universe (session-aware cadence).
  */
 import pLimit from "p-limit";
 import { and, desc, eq, gte } from "drizzle-orm";
@@ -12,7 +12,8 @@ import {
   scannerTickerCycleCoverageTable,
   tickerSignalSnapshotTable,
 } from "@workspace/db";
-import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
+import { getTuningUniverseSymbols } from "./tuningUniverseRegistrar.js";
+import { isMarketHoliday, nyCalendarYmd } from "./polygonMarketCalendar.js";
 import { fetchPolygonChain, type PolygonParsedContract } from "./polygonChain.js";
 import { getNextEarningsDate } from "./earningsService.js";
 import { getPolygonFlowHighlights } from "./polygonFlowHighlights.js";
@@ -48,9 +49,79 @@ import {
 
 const log = logger.child({ module: "snapshotRefreshWorker" });
 
-const REFRESH_INTERVAL_MS = 30_000;
+const SCHEDULER_TICK_MS = 30_000;
+const INTRADAY_REFRESH_MS = 120_000;
+const CLOSING_CAPTURE_GAP_MS = 270_000;
 const CONCURRENCY = 10;
-const LC130 = [...LIQUID_CORE_SYMBOL_STRINGS];
+
+type ChainRefreshTrigger = "cold_start" | "intraday" | "closing_capture";
+
+function tuningSnapshotSymbols(): string[] {
+  return [...getTuningUniverseSymbols()];
+}
+
+let lastIntradayRunAt = 0;
+let closingCaptureNyYmd: string | null = null;
+let closingCaptureRuns = 0;
+let lastClosingCaptureRunAt = 0;
+
+function resetClosingCaptureForNyDate(nyYmd: string) {
+  if (closingCaptureNyYmd !== nyYmd) {
+    closingCaptureNyYmd = nyYmd;
+    closingCaptureRuns = 0;
+    lastClosingCaptureRunAt = 0;
+  }
+}
+
+function isNyWeekdaySessionParts(now: Date): { mins: number } | null {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+    weekday: "short",
+  }).formatToParts(now);
+  const wd = parts.find((p) => p.type === "weekday")?.value ?? "Mon";
+  if (wd === "Sat" || wd === "Sun") return null;
+  const h = parseInt(parts.find((p) => p.type === "hour")?.value ?? "0", 10);
+  const m = parseInt(parts.find((p) => p.type === "minute")?.value ?? "0", 10);
+  return { mins: h * 60 + m };
+}
+
+async function planTuningChainRefresh(
+  now: Date,
+): Promise<{ run: boolean; trigger?: ChainRefreshTrigger }> {
+  const ymd = nyCalendarYmd(now);
+  if (await isMarketHoliday(ymd)) return { run: false };
+
+  const parts = isNyWeekdaySessionParts(now);
+  if (!parts) return { run: false };
+
+  const { mins } = parts;
+  const inIntraday = mins >= 9 * 60 + 30 && mins < 16 * 60;
+  const inClosingCapture = mins >= 16 * 60 && mins < 16 * 60 + 15;
+
+  if (inIntraday) {
+    if (lastIntradayRunAt === 0 || now.getTime() - lastIntradayRunAt >= INTRADAY_REFRESH_MS) {
+      return { run: true, trigger: "intraday" };
+    }
+    return { run: false };
+  }
+
+  if (inClosingCapture) {
+    resetClosingCaptureForNyDate(ymd);
+    if (closingCaptureRuns >= 3) return { run: false };
+    if (
+      lastClosingCaptureRunAt === 0 ||
+      now.getTime() - lastClosingCaptureRunAt >= CLOSING_CAPTURE_GAP_MS
+    ) {
+      return { run: true, trigger: "closing_capture" };
+    }
+    return { run: false };
+  }
+
+  return { run: false };
+}
 
 type MarketCapTier = "mega" | "large" | "mid" | "small";
 
@@ -64,23 +135,6 @@ function tierFromMarketCapUsd(mc: number | null | undefined): MarketCapTier {
 
 function nyYmd(d: Date): string {
   return d.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
-}
-
-/** 9:00–16:30 ET: regular hours plus 30m extended pre/post. */
-function isSnapshotWorkerWindowEt(now = new Date()): boolean {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    hour: "numeric",
-    minute: "numeric",
-    hour12: false,
-    weekday: "short",
-  }).formatToParts(now);
-  const wd = parts.find((p) => p.type === "weekday")?.value ?? "Mon";
-  if (wd === "Sat" || wd === "Sun") return false;
-  const h = parseInt(parts.find((p) => p.type === "hour")?.value ?? "0", 10);
-  const m = parseInt(parts.find((p) => p.type === "minute")?.value ?? "0", 10);
-  const mins = h * 60 + m;
-  return mins >= 9 * 60 && mins < 16 * 60 + 30;
 }
 
 function mid(b?: number, a?: number): number | null {
@@ -784,10 +838,14 @@ async function refreshTicker(
 
 let workerTimer: ReturnType<typeof setInterval> | null = null;
 
-async function runOneCycle(): Promise<void> {
+async function runOneCycle(trigger: ChainRefreshTrigger): Promise<void> {
+  const tickers = tuningSnapshotSymbols();
   const cycleStarted = new Date();
+  const tEnter = Date.now();
   const failed: Array<{ ticker: string; error: string }> = [];
   let ok = 0;
+
+  log.info({ trigger, symbols: tickers.length }, "ENTER tuning_chain_refresh");
 
   const { indicators } = getLiveMarketIndicatorsForPulse();
   const regimeShockActive = evaluateRegimeShock(indicators).shockActive;
@@ -804,7 +862,7 @@ async function runOneCycle(): Promise<void> {
 
   const limit = pLimit(CONCURRENCY);
   await Promise.all(
-    LC130.map((ticker) =>
+    tickers.map((ticker) =>
       limit(async () => {
         try {
           const out = await refreshTicker(ticker, regimeShockActive);
@@ -824,7 +882,7 @@ async function runOneCycle(): Promise<void> {
     ),
   );
 
-  for (const sym of LC130) {
+  for (const sym of tickers) {
     const u = sym.toUpperCase();
     if (!succeededTickers.has(u)) {
       rowsForCoverage.push({
@@ -840,7 +898,7 @@ async function runOneCycle(): Promise<void> {
   const inserted = await db.insert(scannerHealthTable).values({
     cycleStartedAt: cycleStarted,
     cycleCompletedAt: new Date(),
-    tickersAttempted: LC130.length,
+    tickersAttempted: tickers.length,
     tickersSucceeded: ok,
     tickersFailed: failed.length,
     failedTickers: failed.length ? failed : null,
@@ -880,14 +938,42 @@ async function runOneCycle(): Promise<void> {
       log.error({ err }, "scanner_ticker_cycle_coverage batch insert failed");
     }
   }
+
+  log.info(
+    {
+      trigger,
+      duration_ms: Date.now() - tEnter,
+      rows_written: ok,
+      symbols: tickers.length,
+    },
+    "EXIT tuning_chain_refresh",
+  );
 }
 
 export function startSnapshotRefreshWorker(): void {
   if (workerTimer) return;
   log.info("snapshot worker started");
-  void runOneCycle().catch((err) => log.error({ err }, "snapshot worker initial cycle failed"));
+  void runOneCycle("cold_start").catch((err) =>
+    log.error({ err }, "snapshot worker cold_start cycle failed"),
+  );
   workerTimer = setInterval(() => {
-    if (!isSnapshotWorkerWindowEt()) return;
-    void runOneCycle().catch((err) => log.error({ err }, "snapshot worker cycle failed"));
-  }, REFRESH_INTERVAL_MS);
+    void (async () => {
+      try {
+        const now = new Date();
+        const plan = await planTuningChainRefresh(now);
+        if (!plan.run || !plan.trigger) return;
+        const trig = plan.trigger;
+        await runOneCycle(trig);
+        if (trig === "intraday") {
+          lastIntradayRunAt = Date.now();
+        } else if (trig === "closing_capture") {
+          resetClosingCaptureForNyDate(nyCalendarYmd(now));
+          closingCaptureRuns += 1;
+          lastClosingCaptureRunAt = Date.now();
+        }
+      } catch (err) {
+        log.error({ err }, "snapshot worker scheduled cycle failed");
+      }
+    })();
+  }, SCHEDULER_TICK_MS);
 }
