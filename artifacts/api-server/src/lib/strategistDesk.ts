@@ -56,8 +56,8 @@ import { runCatalystDeskStructuredSearches } from "./strategistDeskCatalystWebSe
 import { throwIfStrategistAnalyzeCancelled } from "./strategistAnalyzeCancellation.js";
 
 const TEMPERATURE = 0;
-/** Conviction memo + greeks grid can exceed default model caps; truncates cause parse/extract failures. */
-const CONVICTION_DESK_MAX_OUTPUT_TOKENS = 32768;
+/** Conviction memo + greeks grid can exceed default model caps; truncates cause parse/extract failures. Providers may clamp lower at runtime. */
+const CONVICTION_DESK_MAX_OUTPUT_TOKENS = 65536;
 
 export interface DeskCallbacks {
   /** Background analyze job id for cooperative cancel checks. */

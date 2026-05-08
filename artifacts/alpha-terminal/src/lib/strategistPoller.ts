@@ -326,24 +326,33 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
           // 404: in-memory buffer may be pruned after tab sleep. Reconcile from
           // persisted history (full run state is keyed by jobId in the DB).
           if (tres.status === 404) {
-            try {
-              const finalRes = await fetchWithAuth(
-                `${API_BASE}/strategist/job/${encodeURIComponent(jobId)}/final?since=${current.nextSince}`,
-              );
-              if (finalRes.ok) {
-                const t = (await finalRes.json()) as StrategistThinkingPollPayload;
-                const outcome = applyThinkingPollResponse(jobId, t);
-                if (outcome !== "running") {
-                  resolved = true;
-                  await refreshHistoryAfterCompletion();
+            let reconciledFromFinal = false;
+            for (let attempt = 0; attempt < 3; attempt++) {
+              try {
+                const finalRes = await fetchWithAuth(
+                  `${API_BASE}/strategist/job/${encodeURIComponent(jobId)}/final?since=${current.nextSince}`,
+                );
+                if (finalRes.ok) {
+                  const t = (await finalRes.json()) as StrategistThinkingPollPayload;
+                  const outcome = applyThinkingPollResponse(jobId, t);
+                  if (outcome !== "running") {
+                    resolved = true;
+                    await refreshHistoryAfterCompletion();
+                    reconciledFromFinal = true;
+                    break;
+                  }
+                  consecutiveFailures = 0;
+                  await new Promise((r) => setTimeout(r, 1200));
+                  reconciledFromFinal = true;
                   break;
                 }
-                consecutiveFailures = 0;
-                await new Promise((r) => setTimeout(r, 1200));
-                continue;
+              } catch {
+                /* try next attempt */
               }
-            } catch {
-              // fall through to history recovery
+              await new Promise((r) => setTimeout(r, 1500));
+            }
+            if (reconciledFromFinal) {
+              continue;
             }
             const recovered = await tryRecoverFromHistory();
             if (recovered) {
