@@ -1,6 +1,6 @@
 # Data source wiring inspection (HTTP API backend package)
 
-**Scope:** Static inspection of the `artifacts/` TypeScript server package only (no runtime probes).  
+**Scope:** Static inspection of the TypeScript market backend under `artifacts/` (Express entrypoint `src/index.ts`) only; no runtime probes.  
 **Date:** 2026-05-08  
 **Focus:** Live subscriptions, scheduled jobs, and active REST/WebSocket paths for Schwab, IBKR (Gateway), Polygon, and FMP.
 
