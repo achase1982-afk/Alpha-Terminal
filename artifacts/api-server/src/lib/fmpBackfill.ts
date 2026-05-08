@@ -94,8 +94,8 @@ async function upsertCorporateEarningsFromCalendarRow(r: {
         earningsTimeRaw: sql`excluded.earnings_time_raw`,
         earningsEpsEstimate: sql`excluded.earnings_eps_estimate`,
         earningsRevenueEstimate: sql`excluded.earnings_revenue_estimate`,
-        earningsEpsActual: sql`excluded.earnings_eps_actual`,
-        earningsRevenueActual: sql`excluded.earnings_revenue_actual`,
+        earningsEpsActual: sql`COALESCE(excluded.earnings_eps_actual, corporate_events.earnings_eps_actual)`,
+        earningsRevenueActual: sql`COALESCE(excluded.earnings_revenue_actual, corporate_events.earnings_revenue_actual)`,
         updatedAt: sql`excluded.updated_at`,
       },
     });
