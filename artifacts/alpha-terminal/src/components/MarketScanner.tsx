@@ -669,12 +669,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
         }
       />
 
-      {unified.phase === "idle" && !unified.errorMessage && (
-        <ScannerIdleEmptyState
-          onRunScan={handleScanClick}
-          runDisabled={!accessToken || currentSymCount === 0 || shockActive}
-        />
-      )}
+      {unified.phase === "idle" && !unified.errorMessage && <ScannerIdleEmptyState />}
 
       {unified.phase === "scanning" && (
         <div className="flex flex-col gap-3 bg-card rounded-xl border border-card-border p-4">
