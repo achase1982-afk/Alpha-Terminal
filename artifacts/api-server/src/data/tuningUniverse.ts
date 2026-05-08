@@ -26,7 +26,15 @@
 //   Importers should choose one or the other deliberately. Do NOT swap
 //   this for LC130 in a production scanner code path.
 //
+// Primary listing
+//   Copied from liquidCore130.ts where the symbol exists there; ORCL,
+//   ADBE, IONQ use the same SEC company_tickers_exchange.json methodology
+//   as liquidCore130.ts (verification 2026-05-08). liquidCore130.ts is
+//   not modified here.
+//
 // ============================================================================
+
+import { LIQUID_CORE_SYMBOLS } from "./liquidCore130.js";
 
 export type TuningWatchlist =
   | 'mega_cap_core'
@@ -47,8 +55,33 @@ export type TuningSector =
 
 export type VolRegime = 'low' | 'mid' | 'high' | 'very_high';
 
+export type TuningPrimaryListing = 'NYSE' | 'NASDAQ';
+
+const lcListing = new Map(LIQUID_CORE_SYMBOLS.map((e) => [e.symbol, e.primaryListing]));
+
+/**
+ * ORCL, ADBE, IONQ are absent from liquidCore130.ts. Venue follows the same SEC
+ * `company_tickers_exchange.json` rule documented in liquidCore130.ts (NYSE vs Nasdaq priority).
+ * Verified against that file: 2026-05-08.
+ */
+function primaryListingForTuningSymbol(symbol: string): TuningPrimaryListing {
+  const u = symbol.toUpperCase();
+  const pl = lcListing.get(u);
+  if (pl === "NYSE" || pl === "NASDAQ") return pl;
+  switch (u) {
+    case "ORCL":
+    case "IONQ":
+      return "NYSE";
+    case "ADBE":
+      return "NASDAQ";
+    default:
+      throw new Error(`tuningUniverse: missing primaryListing mapping for ${u}`);
+  }
+}
+
 export interface TuningUniverseEntry {
   symbol: string;
+  primaryListing: TuningPrimaryListing;
   watchlist: TuningWatchlist;
   sector: TuningSector;
   volRegime: VolRegime;
@@ -58,7 +91,9 @@ export interface TuningUniverseEntry {
   rationale: string;
 }
 
-export const TUNING_UNIVERSE: TuningUniverseEntry[] = [
+type TuningUniverseEntryBase = Omit<TuningUniverseEntry, "primaryListing" | "symbol"> & { symbol: string };
+
+const TUNING_UNIVERSE_BASE: TuningUniverseEntryBase[] = [
   // Watchlist 1: Mega Cap Core (8)
   { symbol: 'NVDA',  watchlist: 'mega_cap_core', sector: 'semis',                  volRegime: 'very_high', activelyTraded: false, rationale: 'AI/semis bellwether, max IV personality, fat earnings reactions' },
   { symbol: 'AAPL',  watchlist: 'mega_cap_core', sector: 'mega_cap_tech',          volRegime: 'low',       activelyTraded: false, rationale: 'Mega-cap tech, low IV, clean tape, threshold-calibration testbed' },
@@ -88,6 +123,12 @@ export const TUNING_UNIVERSE: TuningUniverseEntry[] = [
   { symbol: 'COST',  watchlist: 'cyclicals_macro', sector: 'consumer_staples',       volRegime: 'low', activelyTraded: false, rationale: 'Defensive consumer, slow vol, no-trade canary for strategist' },
 ];
 
+export const TUNING_UNIVERSE: TuningUniverseEntry[] = TUNING_UNIVERSE_BASE.map((e) => {
+  const symbol = e.symbol.toUpperCase();
+  const primaryListing = primaryListingForTuningSymbol(symbol);
+  return { ...e, symbol, primaryListing };
+});
+
 export const WATCHLIST_LABELS: Record<TuningWatchlist, string> = {
   mega_cap_core: 'Mega Cap Core',
   active_trade: 'Active Trade Names',
@@ -107,7 +148,8 @@ export function getSymbolsByWatchlist(watchlist: TuningWatchlist): string[] {
 }
 
 export function getEntryBySymbol(symbol: string): TuningUniverseEntry | undefined {
-  return TUNING_UNIVERSE.find((e) => e.symbol === symbol);
+  const u = symbol.toUpperCase();
+  return TUNING_UNIVERSE.find((e) => e.symbol === u);
 }
 
 export function getActivelyTradedSymbols(): string[] {
@@ -155,4 +197,7 @@ for (const entry of TUNING_UNIVERSE) {
     throw new Error(`tuningUniverse: duplicate symbol ${entry.symbol}`);
   }
   _seenSymbols.add(entry.symbol);
+  if (entry.primaryListing !== "NYSE" && entry.primaryListing !== "NASDAQ") {
+    throw new Error(`tuningUniverse: invalid primaryListing on ${entry.symbol}`);
+  }
 }
