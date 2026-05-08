@@ -34,6 +34,7 @@ import {
   ScannerChromeBar,
   ScannerIdleEmptyState,
   ScannerZeroCandidatesInline,
+  ScannerLayer1ColumnHeader,
 } from "@/components/scanner";
 import type { ScannerV3WireCard } from "@/hooks/useUnifiedScan";
 import type { ScannerCardAction } from "@/components/scanner/scannerCard.types";
@@ -708,15 +709,14 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
               <div aria-live="polite" aria-atomic="true" className="sr-only">
                 {`Scanner universe loaded: ${unified.layer1Universe.count} tickers, ${layer1FilteredSymbols.length} visible after mutes.`}
               </div>
-              <div id="scanner-v3-layer1-heading" className="sr-only">
-                Scanner universe list
-              </div>
-              <div
-                role="list"
-                aria-labelledby="scanner-v3-layer1-heading"
-                aria-label={`Scanner universe, ${layer1FilteredSymbols.length} visible tickers`}
-                className="divide-y divide-zinc-800/45 border-t border-b border-zinc-800/45"
-              >
+              <div className="divide-y divide-zinc-800/45 border-t border-b border-zinc-800/45 overflow-hidden rounded-none">
+                <ScannerLayer1ColumnHeader id="scanner-v3-layer1-col-header" />
+                <div
+                  role="list"
+                  aria-labelledby="scanner-v3-layer1-col-header"
+                  aria-label={`Scanner universe, ${layer1FilteredSymbols.length} visible tickers`}
+                  className="divide-y divide-zinc-800/45"
+                >
                   {layer1FilteredSymbols.map((sym) => (
                     <ScannerCard
                       key={sym}
@@ -739,6 +739,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
                     />
                   ))}
                 </div>
+              </div>
             </>
           )}
           <div className="flex flex-wrap items-end justify-between gap-2 px-1">
