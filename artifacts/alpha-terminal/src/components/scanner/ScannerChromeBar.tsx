@@ -15,7 +15,7 @@ type ScannerChromeBarProps = {
  */
 export function ScannerChromeBar({ universeSlot, scanSlot, footerSlot }: ScannerChromeBarProps) {
   return (
-    <div className="sticky top-0 z-20 w-full border-b border-zinc-800/50 bg-[#0c0c0c] py-2">
+    <div className="sticky top-0 z-20 w-full border-b border-zinc-800/50 bg-[#0c0c0c] px-3 py-2 sm:px-4">
       <div className="flex w-full max-w-4xl min-h-[40px] max-h-11 items-center gap-2">
         <div className="min-w-0 flex-1 overflow-hidden">{universeSlot}</div>
         {scanSlot ? (

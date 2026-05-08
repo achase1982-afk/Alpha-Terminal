@@ -669,12 +669,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
         }
       />
 
-      {unified.phase === "idle" && !unified.errorMessage && (
-        <ScannerIdleEmptyState
-          onRunScan={handleScanClick}
-          runDisabled={!accessToken || currentSymCount === 0 || shockActive}
-        />
-      )}
+      {unified.phase === "idle" && !unified.errorMessage && <ScannerIdleEmptyState />}
 
       {unified.phase === "scanning" && (
         <div className="flex flex-col gap-3 bg-card rounded-xl border border-card-border p-4">
@@ -713,7 +708,6 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
                 <ScannerLayer1ColumnHeader id="scanner-v3-layer1-col-header" />
                 <div
                   role="list"
-                  aria-labelledby="scanner-v3-layer1-col-header"
                   aria-label={`Scanner universe, ${layer1FilteredSymbols.length} visible tickers`}
                   className="divide-y divide-zinc-800/45"
                 >

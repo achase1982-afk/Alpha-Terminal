@@ -12,12 +12,8 @@ const MONO =
 
 export const scannerNumericFontStyle: CSSProperties = { fontFamily: MONO };
 
-/**
- * Nine-column grid shared by `ScannerLayer1ColumnHeader` and `ScannerCardRow` so ticker,
- * price, and changes line up across every universe row without horizontal scrolling.
- */
-export const SCANNER_LAYER1_GRID_CLASS =
-  "grid w-full min-w-0 grid-cols-[0.625rem_minmax(2.25rem,3.75rem)_3.1rem_2.65rem_2.45rem_1.5rem_minmax(0,1fr)_2rem_3.05rem] gap-x-0.5 items-center px-2 py-1.5 text-[10px] sm:gap-x-1 sm:px-2.5 sm:py-2 sm:text-[11px]";
+/** Matches collapsed row chevron column (`w-4`) + `gap-1.5` so lines 2–3 align with ticker text. */
+export const SCANNER_LAYER1_BODY_INDENT = "pl-[1.375rem]";
 
 export function dashCell(): string {
   return "-";
