@@ -13,7 +13,7 @@ export async function emitDeskTtsClientEvent(payload: Record<string, unknown>): 
   }
 }
 
-export function deskTtsChunkUrl(sessionId: string, chunkIndex: number): string {
+function deskTtsChunkUrl(sessionId: string, chunkIndex: number): string {
   return `/api/tts/desk-audio?sessionId=${encodeURIComponent(sessionId)}&chunkIndex=${chunkIndex}`;
 }
 
