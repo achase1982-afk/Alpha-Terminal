@@ -10,7 +10,7 @@ import {
   snapshotCollectionLogTable,
   schwabChainIngestMetricsTable,
 } from "@workspace/db";
-import { eq, sql, and, gte, lte, desc } from "drizzle-orm";
+import { eq, sql, and, gte, lte, desc } from "@workspace/db";
 import { logger } from "../lib/logger";
 import { logFailure } from "../lib/telemetry";
 import { fetchPolygonReferenceStats } from "./polygonReferenceContracts";

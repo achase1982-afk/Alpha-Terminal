@@ -1,6 +1,6 @@
 import { db } from "@workspace/db";
 import { failureLogTable } from "@workspace/db/schema";
-import { lt } from "drizzle-orm";
+import { lt } from "@workspace/db";
 import { logger } from "./logger.js";
 import { sendPushToAll } from "./pushService.js";
 import { emitTelemetry, type TelemetrySystem as StoreSystem, type TelemetrySeverity as StoreSeverity } from "./telemetryStore.js";

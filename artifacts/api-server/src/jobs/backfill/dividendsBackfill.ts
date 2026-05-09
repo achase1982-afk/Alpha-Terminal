@@ -1,5 +1,5 @@
 import { db, dividendsTable } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { sql } from "@workspace/db";
 
 const POLYGON_API = "https://api.polygon.io";
 

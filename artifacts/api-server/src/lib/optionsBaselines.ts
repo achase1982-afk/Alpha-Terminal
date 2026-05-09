@@ -19,7 +19,7 @@
  *   the index, it would seq-scan ~1.7M rows per ticker (~280ms each).
  */
 
-import { sql } from "drizzle-orm";
+import { sql } from "@workspace/db";
 import { db } from "@workspace/db";
 import { logger } from "./logger.js";
 

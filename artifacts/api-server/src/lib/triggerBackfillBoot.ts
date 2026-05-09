@@ -1,5 +1,5 @@
 import { db, equityDailyTable, optionsFlowPerStrikeTable } from "@workspace/db";
-import { inArray, lte, sql } from "drizzle-orm";
+import { inArray, lte, sql } from "@workspace/db";
 import { backfillPolygonFlow, updateEquityDailyFromGroupedBars } from "./dailySnapshot.js";
 import { liquidCoreUnionTuningSymbols } from "./liquidCoreUniverse.js";
 import { logger } from "./logger.js";

@@ -4,7 +4,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { IBApi, EventName, SecType, TickByTickDataType, type Contract } from "@stoqey/ib";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq } from "@workspace/db";
 import { db, ibkrDiagnosticsRunsTable } from "@workspace/db";
 import { logger } from "./logger.js";
 

@@ -25,3 +25,5 @@ pool.on("error", (err) => {
 export const db = drizzle(pool, { schema });
 
 export * from "./schema";
+/** Re-export so consumers share one drizzle-orm instance with schema (avoids duplicate-install type fractures). */
+export * from "drizzle-orm";

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { getAuth } from "@clerk/express";
-import { and, desc, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, inArray, isNull, or, sql } from "@workspace/db";
 import { db, scannerHealthTable, tickerSignalSnapshotTable } from "@workspace/db";
 import { getSymbolsByWatchlist, type TuningWatchlist } from "../data/tuningUniverse.js";
 import { logger } from "../lib/logger.js";

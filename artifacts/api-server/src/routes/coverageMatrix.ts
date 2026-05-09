@@ -13,7 +13,7 @@ import {
   polygonOptionsHistoryTable,
   scannerTapeMetricsTable,
 } from "@workspace/db";
-import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, sql } from "@workspace/db";
 import { liquidCoreUnionTuningSymbols } from "../lib/liquidCoreUniverse.js";
 import { getTuningUniverseSymbols } from "../lib/tuningUniverseRegistrar.js";
 import { lastNyTradingSessionYmds } from "../lib/usEquityMarketCalendar.js";

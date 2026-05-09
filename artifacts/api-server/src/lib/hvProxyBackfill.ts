@@ -1,5 +1,5 @@
 import { db, equityDailyTable, ivrBackfillJobsTable } from "@workspace/db";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "@workspace/db";
 import { logger } from "./logger";
 import { validateIv30 } from "./ivSanityFloor";
 import { computeIVRForSymbol } from "./ivNormalize";

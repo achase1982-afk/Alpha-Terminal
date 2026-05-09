@@ -1,5 +1,5 @@
 import { db, equityDailyTable, optionsFlowPerStrikeTable, ivrBackfillJobsTable } from "@workspace/db";
-import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, sql } from "@workspace/db";
 import { logger } from "./logger";
 import { impliedVolatilityBSM } from "./bsmIV";
 import { probePolygonRate, type RateProbe } from "./polygonRateProbe";

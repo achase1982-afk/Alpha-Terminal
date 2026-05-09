@@ -1,6 +1,6 @@
 import { db } from "@workspace/db";
 import { tradeJournalTable, stagedExitsTable } from "@workspace/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and } from "@workspace/db";
 import { getTokens } from "./tokenStore.js";
 import { logger } from "./logger.js";
 import { sendPushToAll } from "./pushService.js";

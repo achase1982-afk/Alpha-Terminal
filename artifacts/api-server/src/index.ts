@@ -27,8 +27,7 @@ import { runFmpEarningsBackfill } from "./lib/fmpEarningsBackfill.js";
 import { getFmpApiKeyOrThrow } from "./lib/fmpClient.js";
 import { refreshMacroCalendarCacheFromDb } from "./lib/fmpMacroCalendarCache.js";
 import { LIQUID_CORE_SYMBOL_STRINGS } from "./data/liquidCore130";
-import { db, snapshotCollectionLogTable, trackedTickersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, eq, snapshotCollectionLogTable, trackedTickersTable } from "@workspace/db";
 import { startPolygonPCRatioPoller } from "./lib/polygonPutCallRatio";
 import { startOptionsWatcher } from "./lib/optionsWatcher";
 import { migrateAiLabSeedData } from "./lib/aiLabMigration";
@@ -469,8 +468,7 @@ async function boot() {
           }, "Polygon flat-files catchup: disabled");
           return;
         }
-        const { db: dbRef, polygonSyncLogTable } = await import("@workspace/db");
-        const { inArray } = await import("drizzle-orm");
+        const { db: dbRef, inArray, polygonSyncLogTable } = await import("@workspace/db");
         const days: Date[] = [];
         let cursor = priorTradingDay(new Date());
         for (let i = 0; i < catchupDays; i++) {

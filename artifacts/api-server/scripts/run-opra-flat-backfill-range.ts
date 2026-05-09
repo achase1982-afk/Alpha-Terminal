@@ -13,7 +13,7 @@
 import { appendFileSync } from "node:fs";
 import { LIQUID_CORE_SYMBOL_STRINGS } from "../src/data/liquidCore130";
 import { db, polygonOptionsHistoryTable } from "@workspace/db";
-import { and, gte, lte, sql } from "drizzle-orm";
+import { and, gte, lte, sql } from "@workspace/db";
 
 const flatSyncMod = "../src/lib/" + "poly" + "gonFlatFiles";
 

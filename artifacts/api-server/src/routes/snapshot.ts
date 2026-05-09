@@ -8,7 +8,7 @@ import { getBestAccessToken } from "../lib/tokenStore";
 import { logger } from "../lib/logger";
 import { db } from "@workspace/db";
 import { optionsFlowPerStrikeTable } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { sql } from "@workspace/db";
 import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
 
 function requireAdmin(req: { headers: Record<string, string | string[] | undefined> }): { ok: boolean; error?: string } {

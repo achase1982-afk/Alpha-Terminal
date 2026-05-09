@@ -1,5 +1,5 @@
 import { db, aiLabIdeasTable } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { sql } from "@workspace/db";
 import { logger } from "./logger";
 import seedDataRaw from "./aiLabSeedData.json";
 

@@ -1,5 +1,5 @@
 import { db, equityDailyTable, ivrBackfillJobsTable, trackedTickersTable } from "@workspace/db";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "@workspace/db";
 import { logger } from "./logger.js";
 import { notifyStrategistCompletion } from "./strategistNotifications.js";
 import { backfillEquityFromPolygon } from "./dailySnapshot.js";

@@ -1,5 +1,5 @@
 import { db, optionsFlowRawTradesTable, optionsTapeBackfillOccCacheTable, scannerTapeMetricsCycleLogTable, scannerTapeMetricsTable } from "@workspace/db";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "@workspace/db";
 import { logger } from "./logger.js";
 import { extractPgErrorContext, logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 import { getContract20dBaseline } from "./optionsBaselines.js";

@@ -2,7 +2,7 @@
  * Background refresh of ticker_signal_snapshot for the tuning universe (session-aware cadence).
  */
 import pLimit from "p-limit";
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte } from "@workspace/db";
 import {
   corporateEventsTable,
   db,

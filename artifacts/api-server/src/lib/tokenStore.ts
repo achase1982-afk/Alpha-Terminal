@@ -79,10 +79,7 @@ function saveToDisk() {
 async function ensureDbStore() {
   if (dbStoreReady) return true;
   try {
-    const [{ db }, { sql }] = await Promise.all([
-      import("@workspace/db"),
-      import("drizzle-orm"),
-    ]);
+    const { db, sql } = await import("@workspace/db");
     await db.execute(sql`
       create table if not exists schwab_tokens (
         kind text primary key,
@@ -104,10 +101,7 @@ async function ensureDbStore() {
 async function loadFromDb(): Promise<TokenFile> {
   if (!(await ensureDbStore())) return {};
   try {
-    const [{ db }, { sql }] = await Promise.all([
-      import("@workspace/db"),
-      import("drizzle-orm"),
-    ]);
+    const { db, sql } = await import("@workspace/db");
     const result = await db.execute(sql`
       select kind, access_token, refresh_token, expires_at, generation
       from schwab_tokens
@@ -134,10 +128,7 @@ async function loadFromDb(): Promise<TokenFile> {
 async function persistKindToDb(kind: "market" | "trader") {
   if (!(await ensureDbStore())) return;
   try {
-    const [{ db }, { sql }] = await Promise.all([
-      import("@workspace/db"),
-      import("drizzle-orm"),
-    ]);
+    const { db, sql } = await import("@workspace/db");
     const tokenSet = store[kind];
     if (!tokenSet) {
       await db.execute(sql`delete from schwab_tokens where kind = ${kind}`);
