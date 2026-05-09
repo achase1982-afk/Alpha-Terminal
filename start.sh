@@ -14,11 +14,9 @@ set -e
 SERVER_DIR="$PWD"
 
 echo "[start.sh] Running database migrations..."
-# Run from the monorepo root so pnpm resolves the workspace toolchain (tsx) and
-# @workspace/db the same way as local `pnpm --filter @workspace/db run migrate`.
-# The server image default working directory is the API bundle dir, not the repo root.
-cd /app
-pnpm --filter @workspace/db run migrate
+# Same forward-only step as api-server `pnpm run migrate:deploy`: drizzle-kit migrate
+# against lib/db/drizzle (journal + SQL). Requires DATABASE_URL.
+cd /app/lib/db && pnpm exec drizzle-kit migrate --config ./drizzle.config.ts
 
 echo "[start.sh] Migrations complete. Starting server..."
 cd "$SERVER_DIR"
