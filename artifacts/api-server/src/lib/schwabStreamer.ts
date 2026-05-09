@@ -194,7 +194,8 @@ interface StrategistTimesaleRingBuf {
 
 const strategistTimesaleRing = new Map<string, StrategistTimesaleRingBuf>();
 const STRATEGIST_TIMESALE_MAX_POINTS_PER_SYMBOL = 120_000;
-const STRATEGIST_TIMESALE_MAX_AGE_MS = 10 * 60 * 60 * 1000;
+/** Max retention for strategist equity timesales (must match eviction in `appendStrategistTimesale`). */
+export const STRATEGIST_TIMESALE_MAX_AGE_MS = 10 * 60 * 60 * 1000;
 
 function appendStrategistTimesale(sym: string, pt: SchwabTimesaleStrategistPoint): void {
   const u = sym.toUpperCase();

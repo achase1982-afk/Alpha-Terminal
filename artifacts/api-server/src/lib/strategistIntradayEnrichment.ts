@@ -15,6 +15,7 @@ import {
   getSchwabStreamEquityQuoteFresh,
   getSchwabVenueBookStrategistSnapshot,
   getStrategistTimesalePoints,
+  STRATEGIST_TIMESALE_MAX_AGE_MS,
   type SchwabTimesaleStrategistPoint,
 } from "./schwabStreamer.js";
 import { buildSchwabOptionStreamerKey } from "./schwabOptionOccKey.js";
@@ -352,11 +353,10 @@ export async function buildStrategistIntradayPackage(args: {
   let rsiStatus = "insufficient_bars";
   let rsi_as_of_session_date: string | null = null;
   if (sortedTimedBars.length >= 15) {
-    const lastBars = sortedTimedBars.slice(-15);
-    const closes15 = lastBars.map((b) => b.c);
-    rsi14 = computeRsiWilders(closes15, 14);
+    const closes = sortedTimedBars.map((b) => b.c);
+    rsi14 = computeRsiWilders(closes, 14);
     rsiStatus = rsi14 != null ? "available" : "insufficient_bars";
-    const lastBar = lastBars[lastBars.length - 1]!;
+    const lastBar = sortedTimedBars[sortedTimedBars.length - 1]!;
     rsi_as_of_session_date = nyCalendarYmd(new Date(lastBar.t));
   } else if (sortedTimedBars.length > 0) {
     rsiStatus = "insufficient_bars";
@@ -374,10 +374,12 @@ export async function buildStrategistIntradayPackage(args: {
     try {
       const prevDay = await prevNyTradingDayYmd(nyYmd);
       const pb = await rthBoundsMs(prevDay);
-      const ws = pb.closeMs - BLOCK_WINDOW_MS;
-      const we = pb.closeMs;
-      blocks = equityBlockMetricsWindow(tsPts, ws, we, pb.openMs, pb.closeMs, args.spotPrice || 0, nowMs);
-      equity_block_tape_as_of_session_date = prevDay;
+      if (nowMs - pb.closeMs <= STRATEGIST_TIMESALE_MAX_AGE_MS) {
+        const ws = pb.closeMs - BLOCK_WINDOW_MS;
+        const we = pb.closeMs;
+        blocks = equityBlockMetricsWindow(tsPts, ws, we, pb.openMs, pb.closeMs, args.spotPrice || 0, nowMs);
+        equity_block_tape_as_of_session_date = prevDay;
+      }
     } catch {
       equity_block_tape_as_of_session_date = null;
     }
