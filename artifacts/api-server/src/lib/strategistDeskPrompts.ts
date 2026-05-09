@@ -65,6 +65,17 @@ In prose, use full phrases (**Volume Weighted Average Price**, **Relative Streng
 - Pass-through computed signal columns from snapshot worker output (**intraday.signal_snapshot** fields such as **composite_score**, **component_scores**, **flow_summary**, **sector**, **market_cap_tier**, **spot**, **daily_change_pct**, **snapshot_at**, **ticker**): Latest persisted scanner snapshot slice joined for context; interpret jointly with **scannerContext** when both appear.
 `;
 
+/** Solo Desk + Conviction Desk: force cash-equity session facts into JSON strings, not options-only narrative. */
+export const STRATEGIST_EQUITY_MOVES_OUTPUT_RULES = `
+
+## EQUITY SESSION MOVES (integrate into JSON prose when snapshot fields exist)
+The report must reflect **underlying cash action**, not options marks alone. When **price**, **dailyChangePct**, **intraday**, **signal_snapshot**, or top-level equity enrichment fields (stream ages, quote cross-check deltas) are present in the snapshot, cite them in the output: at minimum session percent change from **dailyChangePct** when available, spot level from **price** when useful, and how spot relates to session **Volume Weighted Average Price** plus **Relative Strength Index** tone when **intraday.vwap** / **intraday.rsi** carry numbers. When **intraday.equity_block_tape** or **intraday.order_book** are populated, say whether large prints or displayed liquidity skew confirms or fights the listed-options flow read.
+
+Route these facts into the sections they inform: **flow** (**dominant_flow**, **institutional_signal**, **read**), **pm** (**thesis**, **edge_check**, **watch_for**), **vol** (**implied_vs_realized**, **read**) when spot versus implied move matters, **catalyst** (**read**) only when price action clearly ties to the event story. On Conviction Desk, also **regime_synthesis**, **positioning_context**, **risk_of_ruin**, and **structure_family_discipline** when cash positioning informs regime, crowding, or structure choice.
+
+When **intraday** is **null** or nested fields are mostly **null**, note briefly that live equity enrichments were thin on this run and lean on chain plus session tape; still surface **price** and **dailyChangePct** when present. Use full phrases (**Volume Weighted Average Price**, **Relative Strength Index**) and honor OUTPUT STYLE vendor rules.
+`;
+
 /** Catalyst / event narrative: sell-side firms may be named as catalyst actors; retrieval plumbing and outlet attribution may not. */
 export const CATALYST_OUTPUT_ATTRIBUTION_RULES = `
 
@@ -471,7 +482,7 @@ Read the volatility surface: IV state, term structure, skew, IV vs realized. Ide
 
 FLOW
 
-Read positioning: where real size is worked, where retail noise sits. Use aggressor mix, block size, sweep classification, and vol-over-OI ratios as evidence. When session tape is missing or limited, say so.
+Read positioning: where real size is worked, where retail noise sits. Use aggressor mix, block size, sweep classification, and vol-over-OI ratios as evidence. When session tape is missing or limited, say so. Relate listed flow to **underlying cash session moves** when **price**, **dailyChangePct**, or **intraday** appear in the snapshot (see **EQUITY SESSION MOVES** after the JSON block).
 
 CATALYST
 
@@ -494,6 +505,7 @@ OUTPUT FORMAT
 Single JSON object with the same schema as multi-section desk mode.
 
 Use the JSON snapshot fields below when present (same keys as multi-section desk analysts receive):
+- **price**, **dailyChangePct**, **intraday** (Volume Weighted Average Price, Relative Strength Index, equity block tape, order book, **signal_snapshot**), and top-level equity enrichment fields when present: follow **EQUITY SESSION MOVES** after the snapshot so cash session context appears in the JSON strings, not only listed options flow.
 - **dataQualitySummary**, including **data_source_gaps** when set, **flags**, **ivClampedCount** (deterministic IV removals: see **ivClampedReasons** for sentinel, ceiling, one-sided market, penny premium, invalid mid, spread vs mid, liquidity floor, surface outlier), **ivClampedReasons**, **ivCleanedRatio**, **bsmRecomputeStats** (vendor IV vs BSM-from-mid disagreement telemetry only), **termStructureExpiries** (how many curated expiries have a clean ATM IV vs total in the strip), **flow.tapeBackfillReason**, **flow.tapeBackfillReasonLegacy**, **flow.tapeBackfillStatus**, **flow.tapeBackfillTotalTradesFromPolygon**, **flow.tapeBackfillPersistRejected**, **flow.tapeBackfillTruncated**, **flow.tapeBackfillHttpError**, **sessionTapeKind**, and other degraded-state labels (never invent full tape when flags say otherwise). You should not need to manually strip clamped front-week IVs for term structure or skew — that is already done — but if **ivClampedCount** exceeds ~30% of listed contracts (**iv_contamination_elevated** in **flags**), say so and down-weight vol conclusions.
 - **tapeBackfill** (REST tape coverage: status, **tapeBackfillReason**, occ counts, trades inserted, truncation and Polygon HTTP flags when present).
 - **polygonFlowHighlights.sessionTape** (**tapeKind**, **tapeBackfillReason**, sweeps, blocks, aggressor totals, top prints).
@@ -599,7 +611,7 @@ ${pmBlock}
 
 ## DATA PACKAGE (single JSON snapshot)
 
-${snapshotBlock(dataPackage)}${OUTPUT_NO_SOURCE_RULES}${VOL_OUTPUT_ATTRIBUTION_RULES}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
+${snapshotBlock(dataPackage)}${STRATEGIST_EQUITY_MOVES_OUTPUT_RULES}${OUTPUT_NO_SOURCE_RULES}${VOL_OUTPUT_ATTRIBUTION_RULES}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
 
 Respond with ONLY a JSON object (no markdown fences, no extra prose). Top-level keys: vol, flow, catalyst, pm. Shapes must match desk mode exactly.
 
@@ -739,7 +751,7 @@ ${CONVICTION_DESK_ADDITIONS_INSTRUCTIONS}
 
 ## DATA PACKAGE (single JSON snapshot)
 
-${snapshotBlock(dataPackage)}${CONVICTION_DESK_INTRADAY_DATA_GUIDANCE}${OUTPUT_NO_SOURCE_RULES}${VOL_OUTPUT_ATTRIBUTION_RULES}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
+${snapshotBlock(dataPackage)}${CONVICTION_DESK_INTRADAY_DATA_GUIDANCE}${STRATEGIST_EQUITY_MOVES_OUTPUT_RULES}${OUTPUT_NO_SOURCE_RULES}${VOL_OUTPUT_ATTRIBUTION_RULES}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
 
 Respond with ONLY one JSON object (no markdown fences, no extra prose). Top-level keys: vol, flow, catalyst, pm, regime_synthesis, risk_of_ruin, positioning_context, structure_family_discipline. Shapes must match desk mode exactly.
 
