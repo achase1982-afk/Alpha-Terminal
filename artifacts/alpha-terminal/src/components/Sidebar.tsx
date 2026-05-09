@@ -27,6 +27,7 @@ import {
   SlidersHorizontal, Gauge, ListOrdered, CalendarDays, Palette,
   AlertTriangle, Settings2, Settings, ArrowLeft, FlaskConical,
   Stethoscope, Layers, Coins, ShieldAlert, User as UserIcon, Sparkles,
+  RefreshCw,
 } from "lucide-react";
 import { MarketCalendar } from "@/components/MarketCalendar";
 import { TelemetryPage, useTelemetryCount } from "@/components/TelemetryPage";
@@ -293,6 +294,21 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
                 >
                   <Power className="w-[22px] h-[22px] text-white/80" strokeWidth={2.5} />
                   <span className="font-extrabold text-[17px] tracking-[0.15em] uppercase text-white/90">Logout</span>
+                </button>
+
+                <div className="my-4 border-t border-card-border/50" aria-hidden />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActivePage(null);
+                    onClose();
+                    window.location.reload();
+                  }}
+                  className="flex w-full items-center gap-3 text-left transition-opacity hover:opacity-70 active:opacity-50"
+                >
+                  <RefreshCw className="w-[22px] h-[22px] text-white/80" strokeWidth={2.5} />
+                  <span className="font-extrabold text-[17px] tracking-[0.15em] uppercase text-white/90">Refresh</span>
                 </button>
               </div>
             </div>
