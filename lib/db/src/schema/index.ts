@@ -1149,3 +1149,22 @@ export const backfillAuditRunsTable = pgTable("backfill_audit_runs", {
 });
 
 export type BackfillAuditRunRow = typeof backfillAuditRunsTable.$inferSelect;
+
+/** Orchestrated LC130 ∪ tuning full backfill (admin POST /api/admin/run-full-backfill). */
+export const backfillRunJobsTable = pgTable(
+  "backfill_run_jobs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    status: text("status").notNull(),
+    perPipelineProgress: jsonb("per_pipeline_progress")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+  },
+  (t) => [index("backfill_run_jobs_started_at_idx").on(desc(t.startedAt))],
+);
+
+export type BackfillRunJobRow = typeof backfillRunJobsTable.$inferSelect;
+export type BackfillRunJobInsert = typeof backfillRunJobsTable.$inferInsert;
