@@ -12,6 +12,8 @@ import {
   backfillEquityDailyHistory,
 } from "../lib/fmpBackfill.js";
 
+import coverageMatrixRouter from "./coverageMatrix.js";
+
 const router = Router();
 
 function requireAdmin(req: { headers: Record<string, string | string[] | undefined> }): { ok: boolean; error?: string } {
@@ -121,5 +123,7 @@ router.post("/diagnostics/ibkr-tick-pilot", async (req, res) => {
     return res.status(500).json({ ok: false, error: msg });
   }
 });
+
+router.use(coverageMatrixRouter);
 
 export default router;

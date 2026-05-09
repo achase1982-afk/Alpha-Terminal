@@ -1,6 +1,5 @@
-import { db } from "@workspace/db";
-import { equityDailyTable, optionsFlowPerStrikeTable } from "@workspace/db";
-import { and, eq, gte, isNull, sql } from "drizzle-orm";
+import { db, equityDailyTable, optionsFlowPerStrikeTable, ivrBackfillJobsTable } from "@workspace/db";
+import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { impliedVolatilityBSM } from "./bsmIV";
 import { probePolygonRate, type RateProbe } from "./polygonRateProbe";
@@ -246,55 +245,125 @@ export interface BackfillJob {
   error: string | null;
 }
 
-const jobs = new Map<string, BackfillJob>();
-let activeJobId: string | null = null;
+const ADMIN_IV_JOB_KIND = "admin_iv_history";
 
-export function getBackfillJob(id: string): BackfillJob | null {
-  return jobs.get(id) ?? null;
+type AdminIvPayload = {
+  symbols: string[];
+  daysBack: number;
+  report?: BackfillReport;
+};
+
+function mapAdminIvRow(row: typeof ivrBackfillJobsTable.$inferSelect): BackfillJob {
+  const payload = (row.payload ?? {}) as AdminIvPayload;
+  return {
+    id: row.id,
+    status: row.status as BackfillJob["status"],
+    startedAt: (row.startedAt ?? row.createdAt).toISOString(),
+    completedAt: row.completedAt?.toISOString() ?? null,
+    symbolsTotal: payload.symbols?.length ?? 0,
+    daysBack: payload.daysBack ?? row.daysRequested,
+    report: payload.report ?? null,
+    error: row.errorMsg,
+  };
 }
 
-export function listBackfillJobs(): BackfillJob[] {
-  return [...jobs.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+export async function getBackfillJob(id: string): Promise<BackfillJob | null> {
+  const [row] = await db
+    .select()
+    .from(ivrBackfillJobsTable)
+    .where(and(eq(ivrBackfillJobsTable.id, id), eq(ivrBackfillJobsTable.jobKind, ADMIN_IV_JOB_KIND)))
+    .limit(1);
+  return row ? mapAdminIvRow(row) : null;
 }
 
-export function startBackfillJob(symbols: string[], daysBack: number): BackfillJob {
+export async function listBackfillJobs(): Promise<BackfillJob[]> {
+  const rows = await db
+    .select()
+    .from(ivrBackfillJobsTable)
+    .where(eq(ivrBackfillJobsTable.jobKind, ADMIN_IV_JOB_KIND))
+    .orderBy(desc(ivrBackfillJobsTable.createdAt))
+    .limit(50);
+  return rows.map(mapAdminIvRow);
+}
+
+export async function startBackfillJob(symbols: string[], daysBack: number): Promise<BackfillJob> {
+  const running = await db
+    .select({ id: ivrBackfillJobsTable.id })
+    .from(ivrBackfillJobsTable)
+    .where(and(eq(ivrBackfillJobsTable.jobKind, ADMIN_IV_JOB_KIND), eq(ivrBackfillJobsTable.status, "running")))
+    .limit(1);
+  if (running.length > 0) {
+    const sid = running[0]!.id;
+    logger.warn({ conflictingJobId: sid }, "Historical IV backfill: rejected — concurrent run");
+    return {
+      id: "rejected",
+      status: "failed",
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      symbolsTotal: 0,
+      daysBack,
+      report: null,
+      error: `another backfill is already running: ${sid}`,
+    };
+  }
+
   const id = `backfill-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const job: BackfillJob = {
+  const merged = [...new Set([...symbols.map((s) => s.toUpperCase()), ...SECTOR_ETFS])];
+  const startedAt = new Date();
+  await db.insert(ivrBackfillJobsTable).values({
+    id,
+    symbol: merged[0] ?? "ADMIN",
+    jobKind: ADMIN_IV_JOB_KIND,
+    payload: { symbols: merged, daysBack } satisfies AdminIvPayload,
+    status: "running",
+    source: "none",
+    daysRequested: daysBack,
+    startedAt,
+    errorMsg: null,
+  });
+
+  void backfillHistoricalIV(symbols, daysBack)
+    .then(async (report) => {
+      const [cur] = await db
+        .select({ payload: ivrBackfillJobsTable.payload })
+        .from(ivrBackfillJobsTable)
+        .where(eq(ivrBackfillJobsTable.id, id))
+        .limit(1);
+      const prev = (cur?.payload ?? {}) as AdminIvPayload;
+      await db
+        .update(ivrBackfillJobsTable)
+        .set({
+          status: "completed",
+          completedAt: new Date(),
+          payload: { ...prev, report },
+          errorMsg: null,
+        })
+        .where(eq(ivrBackfillJobsTable.id, id));
+      logger.info({ id, report }, "Historical IV backfill: job completed");
+    })
+    .catch(async (e) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      await db
+        .update(ivrBackfillJobsTable)
+        .set({
+          status: "failed",
+          completedAt: new Date(),
+          errorMsg: msg,
+        })
+        .where(eq(ivrBackfillJobsTable.id, id));
+      logger.error({ id, error: msg }, "Historical IV backfill: job failed");
+    });
+
+  return {
     id,
     status: "running",
-    startedAt: new Date().toISOString(),
+    startedAt: startedAt.toISOString(),
     completedAt: null,
-    symbolsTotal: symbols.length + SECTOR_ETFS.length,
+    symbolsTotal: merged.length,
     daysBack,
     report: null,
     error: null,
   };
-  jobs.set(id, job);
-  if (activeJobId && jobs.get(activeJobId)?.status === "running") {
-    job.status = "failed";
-    job.error = `another backfill is already running: ${activeJobId}`;
-    job.completedAt = new Date().toISOString();
-    logger.warn({ id, conflictingJobId: activeJobId }, "Historical IV backfill: rejected — concurrent run");
-    return job;
-  }
-  activeJobId = id;
-  void backfillHistoricalIV(symbols, daysBack)
-    .then((report) => {
-      job.status = "completed";
-      job.report = report;
-      job.completedAt = new Date().toISOString();
-      logger.info({ id, report }, "Historical IV backfill: job completed");
-    })
-    .catch((e) => {
-      job.status = "failed";
-      job.error = (e as Error).message;
-      job.completedAt = new Date().toISOString();
-      logger.error({ id, error: job.error }, "Historical IV backfill: job failed");
-    })
-    .finally(() => {
-      if (activeJobId === id) activeJobId = null;
-    });
-  return job;
 }
 
 export async function backfillHistoricalIV(

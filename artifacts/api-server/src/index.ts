@@ -14,7 +14,7 @@ import { initDeltaEngine } from "./lib/deltaEngine";
 import { runDailyScreenRefresh } from "./routes/scanner";
 import { initAiLabOrchestrator } from "./lib/aiLabOrchestrator";
 import { startUniverseRebuildSchedule } from "./lib/universeBuilder";
-import { updateEquityDailyFromGroupedBars, runFullSnapshot, backfillPolygonFlow, sweepStaleSnapshots } from "./lib/dailySnapshot";
+import { runFullSnapshot, sweepStaleSnapshots } from "./lib/dailySnapshot";
 import { accumulateCanonicalIvForDate } from "./lib/canonicalIvAccumulator";
 import {
   backfillAnalystEstimates,
@@ -27,8 +27,8 @@ import { runFmpEarningsBackfill } from "./lib/fmpEarningsBackfill.js";
 import { getFmpApiKeyOrThrow } from "./lib/fmpClient.js";
 import { refreshMacroCalendarCacheFromDb } from "./lib/fmpMacroCalendarCache.js";
 import { LIQUID_CORE_SYMBOL_STRINGS } from "./data/liquidCore130";
-import { db, equityDailyTable, snapshotCollectionLogTable, flowDailyAggregatesTable, trackedTickersTable } from "@workspace/db";
-import { inArray, desc, sql, eq } from "drizzle-orm";
+import { db, snapshotCollectionLogTable, trackedTickersTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import { startPolygonPCRatioPoller } from "./lib/polygonPutCallRatio";
 import { startOptionsWatcher } from "./lib/optionsWatcher";
 import { migrateAiLabSeedData } from "./lib/aiLabMigration";
@@ -41,12 +41,11 @@ import {
   registerPersistentSchwabTuningStreaming,
   registerTuningUniverseOnBoot,
 } from "./lib/tuningUniverseRegistrar.js";
+import { nyCalendarYmd, isNyTradingSessionDateSync } from "./lib/usEquityMarketCalendar.js";
+import { liquidCoreUnionTuningSymbols } from "./lib/liquidCoreUniverse.js";
+import { runLiquidCoreEquityBackfillOnce, runFlowBootstrapGapRepairOnce } from "./lib/triggerBackfillBoot.js";
 
 const rawPort = process.env["PORT"];
-
-function liquidCoreUnionTuningSymbols(): string[] {
-  return [...new Set([...LIQUID_CORE_SYMBOL_STRINGS, ...getTuningUniverseSymbols()])];
-}
 
 if (!rawPort) {
   throw new Error(
@@ -167,17 +166,9 @@ async function boot() {
   }
 
   function scheduleDailySnapshot() {
-    const US_MARKET_HOLIDAYS_2026 = [
-      "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03",
-      "2026-05-25", "2026-06-19", "2026-07-03", "2026-09-07",
-      "2026-11-26", "2026-12-25",
-    ];
-
     function isTradingDay(d: Date): boolean {
-      const day = d.getUTCDay();
-      if (day === 0 || day === 6) return false;
-      const iso = d.toISOString().slice(0, 10);
-      return !US_MARKET_HOLIDAYS_2026.includes(iso);
+      const iso = nyCalendarYmd(d);
+      return isNyTradingSessionDateSync(iso);
     }
 
     function scheduleNext() {
@@ -402,15 +393,9 @@ async function boot() {
     // early-return if the date is already being processed.
     const flatFilesInFlight = new Set<string>();
 
-    const US_HOLIDAYS = [
-      "2026-01-01","2026-01-19","2026-02-16","2026-04-03",
-      "2026-05-25","2026-06-19","2026-07-03","2026-09-07",
-      "2026-11-26","2026-12-25",
-    ];
     function isTradingDay(d: Date): boolean {
-      const day = d.getUTCDay();
-      if (day === 0 || day === 6) return false;
-      return !US_HOLIDAYS.includes(d.toISOString().slice(0, 10));
+      const iso = nyCalendarYmd(d);
+      return isNyTradingSessionDateSync(iso);
     }
     function priorTradingDay(from: Date): Date {
       const d = new Date(from);
@@ -671,97 +656,21 @@ async function boot() {
   async function triggerLiquidCoreBackfill() {
     if (backfillTriggered) return;
     backfillTriggered = true;
-    const symbols = liquidCoreUnionTuningSymbols();
-
     try {
-      const sampleSymbols = symbols.slice(0, 10);
-      const perSymbolCounts = await db
-        .select({
-          sym: equityDailyTable.symbol,
-          cnt: sql<number>`count(distinct date)`,
-        })
-        .from(equityDailyTable)
-        .where(inArray(equityDailyTable.symbol, sampleSymbols))
-        .groupBy(equityDailyTable.symbol);
-
-      const minDateCount = perSymbolCounts.length < sampleSymbols.length
-        ? 0
-        : Math.min(...perSymbolCounts.map(r => Number(r.cnt)));
-      const existingDateCount = minDateCount;
-
-      const MIN_HISTORY_DAYS = 60;
-      const needsDeepBackfill = existingDateCount < MIN_HISTORY_DAYS;
-      const targetDays = needsDeepBackfill ? 90 : 5;
-      const scanLimit = needsDeepBackfill ? 130 : 10;
-
-      const tradingDates: string[] = [];
-      const now = Date.now();
-      for (let i = 1; i <= scanLimit && tradingDates.length < targetDays; i++) {
-        const d = new Date(now - i * 86_400_000);
-        const dow = d.getUTCDay();
-        if (dow !== 0 && dow !== 6) {
-          tradingDates.push(d.toISOString().slice(0, 10));
-        }
-      }
-
-      logger.info({
-        count: symbols.length,
-        existingDateCount,
-        mode: needsDeepBackfill ? "initial_backfill" : "incremental",
-        dates: tradingDates.length,
-        range: `${tradingDates[tradingDates.length - 1]} → ${tradingDates[0]}`,
-      }, "Auto-triggering grouped daily equity update via Polygon");
-
-      await updateEquityDailyFromGroupedBars(symbols, tradingDates);
-
-      const postCheck = await db
-        .select({
-          sym: equityDailyTable.symbol,
-          cnt: sql<number>`count(distinct date)`,
-        })
-        .from(equityDailyTable)
-        .where(inArray(equityDailyTable.symbol, sampleSymbols))
-        .groupBy(equityDailyTable.symbol);
-      const postMin = postCheck.length > 0 ? Math.min(...postCheck.map(r => Number(r.cnt))) : 0;
-      logger.info({
-        symbolsChecked: postCheck.length,
-        minDaysAcrossSample: postMin,
-        scannerRequirement: 60,
-        ready: postMin >= 60,
-      }, "Equity backfill: post-backfill coverage check");
+      await runLiquidCoreEquityBackfillOnce();
     } catch (err) {
       backfillTriggered = false;
       logger.warn({ err }, "Grouped daily equity update failed");
     }
   }
 
-  // ── Boot-time Polygon flow bootstrap ─────────────────────────────────
-  // If `flow_daily_aggregates` is empty (fresh deploy / new DB), kick off
-  // a 30-day Polygon REST backfill so the deterministic scanner has flow
-  // data to score against. Uses POLYGON_API_KEY (no Schwab token required,
-  // no S3 flat-files required), so prod self-heals on first boot regardless
-  // of which other data paths are alive.
+  // ── Boot-time Polygon flow gap repair (per-symbol options_flow_per_strike coverage)
   let flowBootstrapTriggered = false;
   async function triggerFlowBootstrap() {
     if (flowBootstrapTriggered) return;
     flowBootstrapTriggered = true;
     try {
-      if (!process.env.POLYGON_API_KEY) {
-        logger.warn("Flow bootstrap: POLYGON_API_KEY missing — skipping");
-        return;
-      }
-      const [{ cnt }] = await db
-        .select({ cnt: sql<number>`count(*)` })
-        .from(flowDailyAggregatesTable);
-      const existing = Number(cnt);
-      if (existing > 0) {
-        logger.info({ existing }, "Flow bootstrap: aggregates already populated — skipping");
-        return;
-      }
-      const symbols = liquidCoreUnionTuningSymbols();
-      logger.warn({ symbols: symbols.length, daysBack: 30 }, "Flow bootstrap: aggregates empty — starting 30d Polygon REST backfill");
-      const result = await backfillPolygonFlow(symbols, 30, false);
-      logger.info(result, "Flow bootstrap: complete");
+      await runFlowBootstrapGapRepairOnce();
     } catch (err) {
       flowBootstrapTriggered = false;
       logger.error({ err }, "Flow bootstrap: failed");

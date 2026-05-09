@@ -13,7 +13,7 @@ import {
   tickerSignalSnapshotTable,
 } from "@workspace/db";
 import { getTuningUniverseSymbols } from "./tuningUniverseRegistrar.js";
-import { isMarketHoliday, nyCalendarYmd } from "./polygonMarketCalendar.js";
+import { polygonListedMarketClosure, nyCalendarYmd } from "./polygonMarketCalendar.js";
 import { fetchPolygonChain, type PolygonParsedContract } from "./polygonChain.js";
 import { getNextEarningsDate } from "./earningsService.js";
 import { getPolygonFlowHighlights } from "./polygonFlowHighlights.js";
@@ -92,7 +92,7 @@ async function planTuningChainRefresh(
   now: Date,
 ): Promise<{ run: boolean; trigger?: ChainRefreshTrigger }> {
   const ymd = nyCalendarYmd(now);
-  if (await isMarketHoliday(ymd)) return { run: false };
+  if (await polygonListedMarketClosure(ymd)) return { run: false };
 
   const parts = isNyWeekdaySessionParts(now);
   if (!parts) return { run: false };

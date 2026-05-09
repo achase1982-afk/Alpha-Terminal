@@ -268,6 +268,7 @@ export async function ensureIvrCoverage(symbol: string): Promise<IvrCoverageResu
     await db.insert(ivrBackfillJobsTable).values({
       id: jobId,
       symbol: sym,
+      jobKind: "ondemand_ivr",
       status: "queued",
       source: "none",
       daysRequested: IVR_TARGET_TRADING_DAYS,

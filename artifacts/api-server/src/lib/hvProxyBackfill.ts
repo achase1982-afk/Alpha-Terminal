@@ -1,5 +1,5 @@
-import { db, equityDailyTable } from "@workspace/db";
-import { and, eq, sql } from "drizzle-orm";
+import { db, equityDailyTable, ivrBackfillJobsTable } from "@workspace/db";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { validateIv30 } from "./ivSanityFloor";
 import { computeIVRForSymbol } from "./ivNormalize";
@@ -142,20 +142,61 @@ export interface HvProxyJob {
   error: string | null;
 }
 
-const jobs = new Map<string, HvProxyJob>();
-let activeJobId: string | null = null;
-
-export function getHvProxyJob(id: string): HvProxyJob | null { return jobs.get(id) ?? null; }
-export function listHvProxyJobs(): HvProxyJob[] {
-  return [...jobs.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-}
-
 export interface StartHvProxyOpts { skipAutoSectorEtfs?: boolean }
 
-export function startHvProxyBackfillJob(symbols: string[], daysBack: number, opts: StartHvProxyOpts = {}): HvProxyJob {
-  // Atomic check-and-claim. If another job is active, return a synthetic
-  // "rejected" job without registering it in the jobs map.
-  if (activeJobId && jobs.get(activeJobId)?.status === "running") {
+const ADMIN_HV_JOB_KIND = "admin_hv_proxy";
+
+type AdminHvPayload = {
+  symbols: string[];
+  daysBack: number;
+  skipAutoSectorEtfs?: boolean;
+  report?: HvProxyReport;
+};
+
+function mapHvRow(row: typeof ivrBackfillJobsTable.$inferSelect): HvProxyJob {
+  const payload = (row.payload ?? {}) as AdminHvPayload;
+  return {
+    id: row.id,
+    status: row.status as HvProxyJob["status"],
+    startedAt: (row.startedAt ?? row.createdAt).toISOString(),
+    completedAt: row.completedAt?.toISOString() ?? null,
+    symbolsTotal: payload.symbols?.length ?? 0,
+    daysBack: payload.daysBack ?? row.daysRequested,
+    report: payload.report ?? null,
+    error: row.errorMsg,
+  };
+}
+
+export async function getHvProxyJob(id: string): Promise<HvProxyJob | null> {
+  const [row] = await db
+    .select()
+    .from(ivrBackfillJobsTable)
+    .where(and(eq(ivrBackfillJobsTable.id, id), eq(ivrBackfillJobsTable.jobKind, ADMIN_HV_JOB_KIND)))
+    .limit(1);
+  return row ? mapHvRow(row) : null;
+}
+
+export async function listHvProxyJobs(): Promise<HvProxyJob[]> {
+  const rows = await db
+    .select()
+    .from(ivrBackfillJobsTable)
+    .where(eq(ivrBackfillJobsTable.jobKind, ADMIN_HV_JOB_KIND))
+    .orderBy(desc(ivrBackfillJobsTable.createdAt))
+    .limit(50);
+  return rows.map(mapHvRow);
+}
+
+export async function startHvProxyBackfillJob(
+  symbols: string[],
+  daysBack: number,
+  opts: StartHvProxyOpts = {},
+): Promise<HvProxyJob> {
+  const running = await db
+    .select({ id: ivrBackfillJobsTable.id })
+    .from(ivrBackfillJobsTable)
+    .where(and(eq(ivrBackfillJobsTable.jobKind, ADMIN_HV_JOB_KIND), eq(ivrBackfillJobsTable.status, "running")))
+    .limit(1);
+  if (running.length > 0) {
     return {
       id: "rejected",
       status: "failed",
@@ -164,35 +205,75 @@ export function startHvProxyBackfillJob(symbols: string[], daysBack: number, opt
       symbolsTotal: 0,
       daysBack,
       report: null,
-      error: `another hv-proxy backfill is already running: ${activeJobId}`,
+      error: `another hv-proxy backfill is already running: ${running[0]!.id}`,
     };
   }
+
   const id = `hvproxy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  activeJobId = id;
   const merged = opts.skipAutoSectorEtfs
-    ? symbols.map(s => s.toUpperCase())
-    : [...symbols, ...SECTOR_ETFS].map(s => s.toUpperCase());
-  const job: HvProxyJob = {
-    id, status: "running", startedAt: new Date().toISOString(), completedAt: null,
-    symbolsTotal: new Set(merged).size,
-    daysBack, report: null, error: null,
-  };
-  jobs.set(id, job);
+    ? symbols.map((s) => s.toUpperCase())
+    : [...symbols, ...SECTOR_ETFS].map((s) => s.toUpperCase());
+  const unique = [...new Set(merged)];
+  const startedAt = new Date();
+
+  await db.insert(ivrBackfillJobsTable).values({
+    id,
+    symbol: unique[0] ?? "ADMIN",
+    jobKind: ADMIN_HV_JOB_KIND,
+    payload: {
+      symbols: unique,
+      daysBack,
+      skipAutoSectorEtfs: opts.skipAutoSectorEtfs === true,
+    } satisfies AdminHvPayload,
+    status: "running",
+    source: "none",
+    daysRequested: daysBack,
+    startedAt,
+    errorMsg: null,
+  });
+
   void backfillHvProxy(symbols, daysBack, opts)
-    .then((report) => {
-      job.status = "completed";
-      job.report = report;
-      job.completedAt = new Date().toISOString();
+    .then(async (report) => {
+      const [cur] = await db
+        .select({ payload: ivrBackfillJobsTable.payload })
+        .from(ivrBackfillJobsTable)
+        .where(eq(ivrBackfillJobsTable.id, id))
+        .limit(1);
+      const prev = (cur?.payload ?? {}) as AdminHvPayload;
+      await db
+        .update(ivrBackfillJobsTable)
+        .set({
+          status: "completed",
+          completedAt: new Date(),
+          payload: { ...prev, report },
+          errorMsg: null,
+        })
+        .where(eq(ivrBackfillJobsTable.id, id));
       logger.info({ id, report }, "hvProxyBackfill: job completed");
     })
-    .catch((e) => {
-      job.status = "failed";
-      job.error = (e as Error).message;
-      job.completedAt = new Date().toISOString();
-      logger.error({ id, error: job.error }, "hvProxyBackfill: job failed");
-    })
-    .finally(() => { if (activeJobId === id) activeJobId = null; });
-  return job;
+    .catch(async (e) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      await db
+        .update(ivrBackfillJobsTable)
+        .set({
+          status: "failed",
+          completedAt: new Date(),
+          errorMsg: msg,
+        })
+        .where(eq(ivrBackfillJobsTable.id, id));
+      logger.error({ id, error: msg }, "hvProxyBackfill: job failed");
+    });
+
+  return {
+    id,
+    status: "running",
+    startedAt: startedAt.toISOString(),
+    completedAt: null,
+    symbolsTotal: unique.length,
+    daysBack,
+    report: null,
+    error: null,
+  };
 }
 
 export async function backfillHvProxy(symbols: string[], daysBack: number, opts: StartHvProxyOpts = {}): Promise<HvProxyReport> {

@@ -12,6 +12,7 @@ import {
 } from "./flowTradeEnrichment.js";
 import { classifyForFlowPersistence, shouldPersistBackfillRow } from "./optionsTradeClassifier.js";
 import { reclassifyUnclassifiedTrades } from "./optionsTradeReclassifier.js";
+import { resolveFreshOptionNbbo } from "./optionQuoteFreshNbbo.js";
 import { flushFlowPersistenceNow } from "./optionsFlowPersistence.js";
 import { runRollupOnceForSymbol } from "./optionsFlowRollup.js";
 import { FlowLegWindow } from "./flowMultilegExtras.js";
@@ -23,6 +24,7 @@ import {
   rthBoundsMs,
 } from "./polygonMarketCalendar.js";
 import { fetchPolygonPaged } from "./polygonPagedFetch.js";
+import { getNbbo } from "./polygonOptionsWs.js";
 import { type QuotePoint, nbboAtOrBefore, parseQuotes } from "./optionsQuoteNbbo.js";
 import {
   OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS,
@@ -744,11 +746,15 @@ export async function runStrategistTapeBackfill(args: {
     const rowsToInsert: Array<typeof optionsFlowRawTradesTable.$inferInsert> = [];
     let occPersistRejected = 0;
     for (const t of parsed) {
+      const fresh = resolveFreshOptionNbbo(occ, t.tsMs);
+      const polyOnly = getNbbo(occ);
+      const nbboMerged = fresh ?? (polyOnly ? { bid: polyOnly.bid, ask: polyOnly.ask } : null);
       const cl = classifyForFlowPersistence({
         price: t.price,
         size: t.size,
         conditions: t.conditions,
-        nbbo: null,
+        nbbo: nbboMerged ? { bid: nbboMerged.bid, ask: nbboMerged.ask } : null,
+        strictFreshQuote: fresh != null,
         largeNotionalThresholdUsd: marketCtx.largeNotionalThresholdUsd,
         avgDailyContractVolume20d: baselineAvgVol,
         openInterest: oiSnapshot > 0 ? oiSnapshot : null,
@@ -765,7 +771,7 @@ export async function runStrategistTapeBackfill(args: {
         occ,
         strike: meta.strike,
         expiration: meta.expiration,
-        side: null,
+        side: cl.side,
         size: t.size,
         notional: cl.notional,
       };
@@ -782,7 +788,7 @@ export async function runStrategistTapeBackfill(args: {
         tradePrice: t.price,
         size: t.size,
         notional: cl.notional,
-        side: null,
+        side: cl.side,
         isBlock: cl.isBlockForDb,
         isSweep: cl.isSweep,
         sourceTradeId: t.dedupId,
@@ -796,7 +802,7 @@ export async function runStrategistTapeBackfill(args: {
         marketCapUsd: marketCtx.marketCapUsd,
         marketCapTier: marketCtx.tier,
         notionalThresholdUsd: marketCtx.largeNotionalThresholdUsd,
-        aggressorConfidence: "unknown",
+        aggressorConfidence: cl.aggressorConfidence,
         syntheticLegGroupId: ml.syntheticLegGroupId,
         multiLegConfidence: ml.multiLegConfidence,
         extras: ml.extras,
