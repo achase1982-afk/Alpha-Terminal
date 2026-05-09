@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { emitDeskTtsClientEvent, fetchDeskTtsChunkBlob } from "@/lib/deskAudioApi";
+import {
+  emitDeskTtsClientEvent,
+  fetchAllDeskTtsChunksMerged,
+} from "@/lib/deskAudioApi";
 import { splitDeskAudioTextIntoChunks } from "@/lib/deskAudioChunking";
 import { STRATEGIST_ANALYSIS_CANCEL_EVENT, STRATEGIST_ANALYSIS_START_EVENT } from "@/lib/strategistDeskSpeechEvents";
 
@@ -8,8 +11,20 @@ const SESSION_RATE_KEY = "strategistDeskSpeechRate";
 
 const EMPTY_DESK_REPORT_TTS_VOICE_CONFIG: Record<string, unknown> = {};
 
-/** Skip / rewind step in the desk audio bar (seconds within the current segment). */
+/** Skip / rewind step in the desk audio bar (seconds on the continuous timeline). */
 export const DESK_AUDIO_SKIP_SECONDS = 15;
+
+type DeskSessionMeta = { sessionId: string; totalChunks: number };
+
+function parseStartResponse(j: unknown, fallbackChunkCount: number): DeskSessionMeta | null {
+  if (!j || typeof j !== "object") return null;
+  const sessionId = "sessionId" in j && typeof (j as { sessionId?: unknown }).sessionId === "string" ? (j as { sessionId: string }).sessionId : "";
+  const tc = "totalChunks" in j ? (j as { totalChunks?: unknown }).totalChunks : undefined;
+  const fromApi = typeof tc === "number" && Number.isInteger(tc) && tc >= 1 ? tc : 0;
+  const totalChunks = fromApi || Math.max(1, fallbackChunkCount);
+  if (!sessionId.trim()) return null;
+  return { sessionId: sessionId.trim(), totalChunks };
+}
 
 export function useDeskReportTts(args: {
   /** Full script for TTS (plain text). */
@@ -90,13 +105,10 @@ export function useDeskReportTts(args: {
   const objectUrlRef = useRef<string | null>(null);
   const audioPlayGenRef = useRef(0);
   const ttsFetchAbortRef = useRef<AbortController | null>(null);
-  const progressiveFetchAbortRef = useRef<AbortController | null>(null);
-  type ProgressiveSession = { playGen: number; chunks: string[]; index: number; sessionId: string };
-  const progressiveSessionRef = useRef<ProgressiveSession | null>(null);
   const deskTtsSessionIdRef = useRef<string | null>(null);
   const [deskTtsSessionId, setDeskTtsSessionId] = useState<string | null>(null);
-  const [segmentStall, setSegmentStall] = useState<{ chunkIndex: number } | null>(null);
-  const warmedDeskTtsRef = useRef<{ warmKey: string; sessionId: string } | null>(null);
+  const deskTtsSessionMetaRef = useRef<DeskSessionMeta | null>(null);
+  const warmedDeskTtsRef = useRef<{ warmKey: string } & DeskSessionMeta | null>(null);
   const warmGenRef = useRef(0);
   const ttsLoadingPlayGenRef = useRef<number | null>(null);
   const expectAudioPlaybackRef = useRef(false);
@@ -117,9 +129,6 @@ export function useDeskReportTts(args: {
     audioPlayGenRef.current += 1;
     ttsFetchAbortRef.current?.abort();
     ttsFetchAbortRef.current = null;
-    progressiveFetchAbortRef.current?.abort();
-    progressiveFetchAbortRef.current = null;
-    progressiveSessionRef.current = null;
     const el = audioRef.current;
     if (el) {
       el.pause();
@@ -134,9 +143,9 @@ export function useDeskReportTts(args: {
     ttsLoadingPlayGenRef.current = null;
     setAudioReady(false);
     setAudioError(null);
-    setSegmentStall(null);
     setDeskTtsSessionId(null);
     deskTtsSessionIdRef.current = null;
+    deskTtsSessionMetaRef.current = null;
     warmedDeskTtsRef.current = null;
   }, [revokeObjectUrl]);
 
@@ -145,12 +154,8 @@ export function useDeskReportTts(args: {
     const playGen = ++audioPlayGenRef.current;
     ttsFetchAbortRef.current?.abort();
     ttsFetchAbortRef.current = null;
-    progressiveFetchAbortRef.current?.abort();
-    progressiveFetchAbortRef.current = null;
-    progressiveSessionRef.current = null;
 
     setAudioError(null);
-    setSegmentStall(null);
     setAudioReady(false);
 
     const attachAndPlay = (blobUrl: string): boolean => {
@@ -199,15 +204,22 @@ export function useDeskReportTts(args: {
     setAudioLoading(true);
     ttsLoadingPlayGenRef.current = playGen;
 
-    const ensureSession = async (): Promise<string | null> => {
+    const fallbackChunkCount = Math.max(1, deskAudioChunks.length);
+
+    const ensureSession = async (): Promise<DeskSessionMeta | null> => {
       const warmed = warmedDeskTtsRef.current;
       if (warmed && warmed.warmKey === deskTtsWarmKey) {
-        deskTtsSessionIdRef.current = warmed.sessionId;
-        setDeskTtsSessionId(warmed.sessionId);
-        return warmed.sessionId;
+        const meta: DeskSessionMeta = { sessionId: warmed.sessionId, totalChunks: warmed.totalChunks };
+        deskTtsSessionMetaRef.current = meta;
+        deskTtsSessionIdRef.current = meta.sessionId;
+        setDeskTtsSessionId(meta.sessionId);
+        return meta;
       }
-      const existing = deskTtsSessionIdRef.current;
-      if (existing) return existing;
+      const cached = deskTtsSessionMetaRef.current;
+      const sid = deskTtsSessionIdRef.current;
+      if (cached && sid && cached.sessionId === sid) {
+        return cached;
+      }
       try {
         const res = await fetchWithAuth("/api/tts/desk-audio/start", {
           method: "POST",
@@ -224,13 +236,22 @@ export function useDeskReportTts(args: {
           });
           return null;
         }
-        const j = (await res.json()) as { sessionId?: string };
-        if (typeof j.sessionId === "string" && j.sessionId) {
-          setDeskTtsSessionId(j.sessionId);
-          deskTtsSessionIdRef.current = j.sessionId;
-          return j.sessionId;
+        const j = (await res.json()) as unknown;
+        const parsed = parseStartResponse(j, fallbackChunkCount);
+        if (!parsed) {
+          void emitDeskTtsClientEvent({
+            stage: "tts_session_start_failed",
+            httpStatus: res.status,
+            detail: "invalid_start_response",
+            deskResultId,
+          });
+          return null;
         }
-        return null;
+        const meta: DeskSessionMeta = parsed;
+        deskTtsSessionMetaRef.current = meta;
+        setDeskTtsSessionId(meta.sessionId);
+        deskTtsSessionIdRef.current = meta.sessionId;
+        return meta;
       } catch (e) {
         void emitDeskTtsClientEvent({
           stage: "tts_session_start_failed",
@@ -243,21 +264,18 @@ export function useDeskReportTts(args: {
     };
 
     try {
-      const sid = await ensureSession();
+      const meta = await ensureSession();
       if (playGen !== audioPlayGenRef.current) return;
-      if (!sid) {
+      if (!meta) {
         setAudioError("Audio unavailable — could not start playback session");
         setAudioBarOpen(true);
         return;
       }
 
-      const blob = await fetchDeskTtsChunkBlob(sid, 0, ac.signal);
+      const merged = await fetchAllDeskTtsChunksMerged(meta.sessionId, meta.totalChunks, ac.signal);
       if (playGen !== audioPlayGenRef.current) return;
-      const url = URL.createObjectURL(blob);
-      const ok = attachAndPlay(url);
-      if (ok && deskAudioChunks.length > 1) {
-        progressiveSessionRef.current = { playGen, chunks: deskAudioChunks, index: 0, sessionId: sid };
-      }
+      const url = URL.createObjectURL(merged);
+      attachAndPlay(url);
     } catch (e) {
       if (playGen !== audioPlayGenRef.current) return;
       const aborted = e instanceof DOMException && e.name === "AbortError";
@@ -275,90 +293,7 @@ export function useDeskReportTts(args: {
         ttsLoadingPlayGenRef.current = null;
       }
     }
-  }, [deskAudioChunks, deskAudioText, deskResultId, deskTtsWarmKey, voiceConfig, revokeObjectUrl]);
-
-  const loadProgressiveChunkAtIndex = useCallback(
-    async (targetIdx: number) => {
-      const sess = progressiveSessionRef.current;
-      if (!sess) return;
-      const { playGen, chunks, sessionId } = sess;
-      if (playGen !== audioPlayGenRef.current) return;
-      if (targetIdx < 0) return;
-      if (targetIdx >= chunks.length) {
-        progressiveSessionRef.current = null;
-        stopAudio();
-        return;
-      }
-      progressiveFetchAbortRef.current?.abort();
-      const ac = new AbortController();
-      progressiveFetchAbortRef.current = ac;
-      try {
-        const blob = await fetchDeskTtsChunkBlob(sessionId, targetIdx, ac.signal);
-        if (playGen !== audioPlayGenRef.current) return;
-        revokeObjectUrl();
-        const url = URL.createObjectURL(blob);
-        objectUrlRef.current = url;
-        progressiveSessionRef.current = { playGen, chunks, index: targetIdx, sessionId };
-        setSegmentStall(null);
-        const el = audioRef.current;
-        if (el) {
-          el.src = url;
-          el.playbackRate = speechRateRef.current;
-          expectAudioPlaybackRef.current = true;
-          try {
-            const p = el.play();
-            if (p !== undefined) {
-              void p.catch(() => {
-                expectAudioPlaybackRef.current = false;
-                if (playGen === audioPlayGenRef.current) {
-                  progressiveSessionRef.current = null;
-                  setAudioError("Audio unavailable — playback failed");
-                }
-              });
-            }
-          } catch {
-            expectAudioPlaybackRef.current = false;
-            if (playGen === audioPlayGenRef.current) {
-              progressiveSessionRef.current = null;
-              setAudioError("Audio unavailable — playback failed");
-            }
-          }
-        }
-      } catch (e) {
-        if (playGen !== audioPlayGenRef.current) return;
-        const msg = e instanceof Error ? e.message : String(e);
-        const is404 = /\b404\b/.test(msg);
-        if (is404) {
-          progressiveSessionRef.current = null;
-          setAudioError("Audio unavailable — session expired. Tap Play to start again.");
-          return;
-        }
-        const el = audioRef.current;
-        if (el && !el.paused) {
-          el.pause();
-          setPaused(true);
-        }
-        setSegmentStall({ chunkIndex: targetIdx });
-      } finally {
-        if (progressiveFetchAbortRef.current === ac) {
-          progressiveFetchAbortRef.current = null;
-        }
-      }
-    },
-    [revokeObjectUrl, stopAudio],
-  );
-
-  const resumeSegmentAfterStall = useCallback(() => {
-    const stall = segmentStall;
-    if (!stall) return;
-    void loadProgressiveChunkAtIndex(stall.chunkIndex);
-  }, [loadProgressiveChunkAtIndex, segmentStall]);
-
-  const advanceProgressiveChunk = useCallback(async () => {
-    const sess = progressiveSessionRef.current;
-    if (!sess) return;
-    await loadProgressiveChunkAtIndex(sess.index + 1);
-  }, [loadProgressiveChunkAtIndex]);
+  }, [deskAudioChunks.length, deskAudioText, deskResultId, deskTtsWarmKey, voiceConfig, revokeObjectUrl]);
 
   useEffect(() => {
     const text = deskAudioText.trim();
@@ -367,12 +302,14 @@ export function useDeskReportTts(args: {
       warmedDeskTtsRef.current = null;
       setDeskTtsSessionId(null);
       deskTtsSessionIdRef.current = null;
+      deskTtsSessionMetaRef.current = null;
       return;
     }
     warmGenRef.current += 1;
     const gen = warmGenRef.current;
     const warmKey = deskTtsWarmKey;
     const ac = new AbortController();
+    const fallbackChunks = Math.max(1, splitDeskAudioTextIntoChunks(text).length);
 
     void (async () => {
       try {
@@ -388,16 +325,25 @@ export function useDeskReportTts(args: {
           void emitDeskTtsClientEvent({ stage: "tts_warm_failed", httpStatus: res.status, deskResultId });
           return;
         }
-        const j = (await res.json()) as { sessionId?: string };
+        const j = (await res.json()) as unknown;
+        const parsed = parseStartResponse(j, fallbackChunks);
         if (gen !== warmGenRef.current) return;
-        if (typeof j.sessionId === "string" && j.sessionId) {
-          warmedDeskTtsRef.current = { warmKey, sessionId: j.sessionId };
-          setDeskTtsSessionId((prev) => {
-            if (prev) return prev;
-            deskTtsSessionIdRef.current = j.sessionId!;
-            return j.sessionId!;
+        if (!parsed) {
+          void emitDeskTtsClientEvent({
+            stage: "tts_warm_failed",
+            httpStatus: res.status,
+            detail: "invalid_start_response",
+            deskResultId,
           });
+          return;
         }
+        warmedDeskTtsRef.current = { warmKey, sessionId: parsed.sessionId, totalChunks: parsed.totalChunks };
+        deskTtsSessionMetaRef.current = parsed;
+        setDeskTtsSessionId((prev) => {
+          if (prev) return prev;
+          deskTtsSessionIdRef.current = parsed.sessionId;
+          return parsed.sessionId;
+        });
       } catch (e) {
         if (gen === warmGenRef.current) {
           void emitDeskTtsClientEvent({
@@ -471,64 +417,31 @@ export function useDeskReportTts(args: {
     }
   }, [audioBarOpen]);
 
-  const seekRelativeSeconds = useCallback(
-    (deltaSec: number) => {
-      const el = audioRef.current;
-      if (!el?.src || !audioReady) return;
+  const seekRelativeSeconds = useCallback((deltaSec: number) => {
+    const el = audioRef.current;
+    if (!el?.src || !audioReady) return;
 
-      const resumeIfPaused = () => {
-        if (el.paused) {
-          void el.play().catch(() => {});
-          setPaused(false);
-        }
-      };
+    const resumeIfPaused = () => {
+      if (el.paused) {
+        void el.play().catch(() => {});
+        setPaused(false);
+      }
+    };
 
-      if (deltaSec < 0) {
-        const t = el.currentTime + deltaSec;
-        if (t > 0.25) {
-          el.currentTime = Math.max(0, t);
-          resumeIfPaused();
-          return;
-        }
-        const sess = progressiveSessionRef.current;
-        if (sess && sess.playGen === audioPlayGenRef.current && sess.index > 0) {
-          void loadProgressiveChunkAtIndex(sess.index - 1);
-          return;
-        }
-        el.currentTime = 0;
-        resumeIfPaused();
-        return;
-      }
-
-      const dur = Number.isFinite(el.duration) ? el.duration : NaN;
-      const t = el.currentTime + deltaSec;
-      if (!Number.isFinite(dur) || dur <= 0) {
-        el.currentTime = Math.max(0, t);
-        resumeIfPaused();
-        return;
-      }
-      const nearEnd = t >= dur - 0.35 || el.currentTime >= dur - 0.25;
-      const sess = progressiveSessionRef.current;
-      const hasNextChunk =
-        sess && sess.playGen === audioPlayGenRef.current && sess.index < sess.chunks.length - 1;
-      if (nearEnd && hasNextChunk) {
-        void loadProgressiveChunkAtIndex(sess.index + 1);
-        return;
-      }
-      el.currentTime = Math.min(dur, t);
+    const dur = Number.isFinite(el.duration) ? el.duration : NaN;
+    const next = el.currentTime + deltaSec;
+    if (!Number.isFinite(dur) || dur <= 0) {
+      el.currentTime = Math.max(0, next);
       resumeIfPaused();
-    },
-    [loadProgressiveChunkAtIndex, audioReady],
-  );
+      return;
+    }
+    el.currentTime = Math.min(dur, Math.max(0, next));
+    resumeIfPaused();
+  }, [audioReady]);
 
   const onAudioEnded = useCallback(() => {
-    const sess = progressiveSessionRef.current;
-    if (sess && sess.playGen === audioPlayGenRef.current) {
-      void advanceProgressiveChunk();
-    } else {
-      stopAudio();
-    }
-  }, [advanceProgressiveChunk, stopAudio]);
+    stopAudio();
+  }, [stopAudio]);
 
   const onLoadedMetadata = useCallback(() => {
     const el = audioRef.current;
@@ -549,10 +462,11 @@ export function useDeskReportTts(args: {
   const onAudioElementError = useCallback(() => {
     if (!expectAudioPlaybackRef.current) return;
     expectAudioPlaybackRef.current = false;
-    progressiveSessionRef.current = null;
     setAudioError("Audio unavailable — media could not be played");
     setAudioReady(false);
   }, []);
+
+  const resumeSegmentAfterStall = useCallback(() => {}, []);
 
   return {
     audioRef,
@@ -561,7 +475,7 @@ export function useDeskReportTts(args: {
     audioReady,
     audioError,
     paused,
-    segmentStall,
+    segmentStall: null,
     speechRate,
     setSpeechRate,
     speedLabel,
