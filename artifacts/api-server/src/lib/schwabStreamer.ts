@@ -141,6 +141,7 @@ let subscribedOptionSymbols = new Set<string>();
 const tuningWatchlistOptionRoots = new Set<string>();
 let subscribedFuturesOptionSymbols = new Set<string>();
 let subscribedTimesaleEquitySymbols = new Set<string>();
+let subscribedChartEquitySymbols = new Set<string>();
 let subscribedNyseBookSymbols = new Set<string>();
 let subscribedNasdaqBookSymbols = new Set<string>();
 let subscribedOptionsBookSymbols = new Set<string>();
@@ -153,6 +154,8 @@ const NYSE_NASDAQ_OPTIONS_BOOK_FIELDS = "0,1,2,3";
  * See also schwab-py / official Schwab developer streaming documentation.
  */
 const TIMESALE_EQUITY_FIELDS = "0,1,2,3,4";
+/** One-minute CHART_EQUITY (TD/Schwab field IDs: key, time, O, H, L, C, volume). */
+const CHART_EQUITY_FIELDS = "0,1,2,3,4,5,6";
 
 export interface SchwabTimesaleEquityEvent {
   symbol: string;
@@ -226,6 +229,62 @@ export function getStrategistTimesalePoints(symbol: string): SchwabTimesaleStrat
     out.push(r.buf[(r.head + i) % cap]!);
   }
   return out;
+}
+
+/** CHART_EQUITY (1-minute aggregate): OHLCV per bar for strategist VWAP / RSI fallbacks. */
+export interface SchwabChartEquityBarPoint {
+  chartTimeMs: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+interface StrategistChartEquityBuf {
+  /** Sorted ascending by chartTimeMs; deduped per chart bar key. */
+  bars: SchwabChartEquityBarPoint[];
+}
+
+const strategistChartEquityRing = new Map<string, StrategistChartEquityBuf>();
+const STRATEGIST_CHART_MAX_BARS_PER_SYMBOL = 8_000;
+
+function normalizeChartTimeMs(raw: number): number {
+  if (!Number.isFinite(raw)) return NaN;
+  /* TD/Schwab lineage sometimes sends seconds since epoch for chart time. */
+  return raw > 1e12 ? raw : raw * 1000;
+}
+
+function appendStrategistChartEquity(sym: string, bar: SchwabChartEquityBarPoint): void {
+  const u = sym.toUpperCase();
+  let buf = strategistChartEquityRing.get(u);
+  if (!buf) {
+    buf = { bars: [] };
+    strategistChartEquityRing.set(u, buf);
+  }
+  const arr = buf.bars;
+  const idx = arr.findIndex((b) => b.chartTimeMs === bar.chartTimeMs);
+  if (idx >= 0) {
+    arr[idx] = bar;
+    return;
+  }
+  arr.push(bar);
+  arr.sort((a, b) => a.chartTimeMs - b.chartTimeMs);
+  const cap = STRATEGIST_CHART_MAX_BARS_PER_SYMBOL;
+  if (arr.length > cap) {
+    arr.splice(0, arr.length - cap);
+  }
+}
+
+/** Minute OHLCV bars from Schwab CHART_EQUITY stream cache (ascending). */
+export function getStrategistChartEquityBars(symbol: string): SchwabChartEquityBarPoint[] {
+  const buf = strategistChartEquityRing.get(symbol.toUpperCase());
+  return buf ? [...buf.bars] : [];
+}
+
+/** Chronological closes for walking intraday RSI backward across sessions. */
+export function getStrategistChartEquityCloses(symbol: string): Array<{ ts: number; close: number }> {
+  return getStrategistChartEquityBars(symbol).map((b) => ({ ts: b.chartTimeMs, close: b.close }));
 }
 
 export interface SchwabVenueBookStrategistSnapshot {
@@ -676,6 +735,20 @@ function sendTimesaleEquitySubscription(symbols: string[]) {
   }
 }
 
+function sendChartEquitySubscription(symbols: string[]) {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
+
+  const req = buildRequest("CHART_EQUITY", "SUBS", {
+    keys: symbols.join(","),
+    fields: CHART_EQUITY_FIELDS,
+  });
+
+  if (req) {
+    schwabWs.send(JSON.stringify({ requests: [req] }));
+    logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: CHART_EQUITY SUBS sent");
+  }
+}
+
 function sendNyseBookSubscription(symbols: string[]) {
   if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
 
@@ -905,6 +978,7 @@ function findKeysDeep(
 let equityTickSampleLogged = false;
 let futuresTickSampleLogged = false;
 let timesaleEquitySampleLogged = false;
+let chartEquitySampleLogged = false;
 let nyseBookSampleLogged = false;
 let nasdaqBookSampleLogged = false;
 let optionsBookSampleLogged = false;
@@ -1093,6 +1167,47 @@ function processTimesaleEquity(content: Record<string, unknown>[]) {
   }
 }
 
+/**
+ * CHART_EQUITY (1m): 0 key, 1 chart time, 2–5 OHLC, 6 volume (TD / Schwab streaming lineage).
+ */
+function processChartEquity(content: Record<string, unknown>[]) {
+  if (content.length === 0) return;
+  if (!chartEquitySampleLogged) {
+    chartEquitySampleLogged = true;
+    logger.info(
+      { event: "EXIT", phase: "schwab_chart_equity_batch", batchSize: content.length },
+      "Schwab streamer: CHART_EQUITY batch handled",
+    );
+  }
+  for (const item of content) {
+    const rawKey = (item["key"] ?? item["0"]) as string | undefined;
+    const symbol = rawKey ? normalizeEquityKey(rawKey) : "";
+    if (!symbol) continue;
+    const tRaw = numOrNull(item["1"]);
+    const chartTimeMs = tRaw != null ? normalizeChartTimeMs(tRaw) : NaN;
+    const open = numOrNull(item["2"]);
+    const high = numOrNull(item["3"]);
+    const low = numOrNull(item["4"]);
+    const close = numOrNull(item["5"]);
+    const volRaw = numOrNull(item["6"]);
+    const volume = volRaw != null && volRaw >= 0 && Number.isFinite(volRaw) ? volRaw : 0;
+    if (!Number.isFinite(chartTimeMs) || close == null || close <= 0) {
+      continue;
+    }
+    if (open == null || high == null || low == null) {
+      continue;
+    }
+    appendStrategistChartEquity(symbol, {
+      chartTimeMs,
+      open,
+      high,
+      low,
+      close,
+      volume,
+    });
+  }
+}
+
 function processNyseBook(content: Record<string, unknown>[]) {
   if (content.length === 0) return;
   if (!nyseBookSampleLogged) {
@@ -1236,6 +1351,9 @@ function handleMessage(raw: string) {
           if (subscribedTimesaleEquitySymbols.size > 0) {
             sendTimesaleEquitySubscription([...subscribedTimesaleEquitySymbols]);
           }
+          if (subscribedChartEquitySymbols.size > 0) {
+            sendChartEquitySubscription([...subscribedChartEquitySymbols]);
+          }
           if (subscribedNyseBookSymbols.size > 0) {
             sendNyseBookSubscription([...subscribedNyseBookSymbols]);
           }
@@ -1312,6 +1430,8 @@ function handleMessage(raw: string) {
         processAcctActivity(item.content);
       } else if (item.service === "TIMESALE_EQUITY") {
         processTimesaleEquity(item.content);
+      } else if (item.service === "CHART_EQUITY") {
+        processChartEquity(item.content);
       } else if (item.service === "NYSE_BOOK") {
         processNyseBook(item.content);
       } else if (item.service === "NASDAQ_BOOK") {
@@ -1638,6 +1758,7 @@ export function stopStreamer() {
   tuningWatchlistOptionRoots.clear();
   subscribedFuturesOptionSymbols.clear();
   subscribedTimesaleEquitySymbols.clear();
+  subscribedChartEquitySymbols.clear();
   subscribedNyseBookSymbols.clear();
   subscribedNasdaqBookSymbols.clear();
   subscribedOptionsBookSymbols.clear();
@@ -1742,6 +1863,20 @@ export function addTimesaleEquitySymbols(symbols: string[]) {
   }
   if (newSyms.length > 0 && connectionState === "connected") {
     sendTimesaleEquitySubscription([...subscribedTimesaleEquitySymbols]);
+  }
+}
+
+export function addChartEquitySymbols(symbols: string[]) {
+  const newSyms: string[] = [];
+  for (const s of symbols) {
+    const normalized = normalizeEquityKey(s);
+    if (!subscribedChartEquitySymbols.has(normalized)) {
+      subscribedChartEquitySymbols.add(normalized);
+      newSyms.push(normalized);
+    }
+  }
+  if (newSyms.length > 0 && connectionState === "connected") {
+    sendChartEquitySubscription([...subscribedChartEquitySymbols]);
   }
 }
 
