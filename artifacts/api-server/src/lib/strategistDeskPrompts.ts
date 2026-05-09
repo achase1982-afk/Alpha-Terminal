@@ -29,11 +29,9 @@ When any field in these sections is **null** or a parent object such as **intrad
 In prose, use full phrases (**Volume Weighted Average Price**, **Relative Strength Index**) instead of abbreviations alone. Resting chain rows remain the authority when stream-backed marks are **null** or stale; **options_data_freshness** summarizes how much of the active watchlist had fresh stream ticks versus REST-only reads.
 
 ### Live Intraday Equity Context (**intraday.vwap**, **intraday.rsi**)
-- Volume Weighted Average Price (session) (**intraday.vwap.vwap_session**): Session cumulative volume-weighted average price from eligible prints when time and sales exist, otherwise possibly filled from minute-bar volume weights.
-- Volume Weighted Average Price delta percent (current price vs session VWAP) (**intraday.vwap.vwap_delta_pct**): Spot versus session VWAP in percent (positive means spot above session VWAP, negative below, near zero at VWAP) when both numbers exist.
-- Volume Weighted Average Price status (**intraday.vwap.vwap_status**): How session VWAP was produced (for example live prints versus minute fallback versus insufficient data); use together with **vwap_delta_pct** rather than as a sentiment label by itself.
-- Relative Strength Index 14 (**intraday.rsi.rsi_14**): Wilder Relative Strength Index over 14 closes from recent minute bars when history is long enough.
-- Relative Strength Index status (**intraday.rsi.rsi_status**): Whether the oscillator computed (**available**) or bars were missing; when **rsi_14** is present, classify tactically as overbought or oversold versus neutral bands using the level itself.
+- Volume Weighted Average Price (session) (**intraday.vwap.vwap_session**): Session cumulative volume-weighted average price from eligible prints when time and sales exist, otherwise possibly filled from minute-bar volume weights; **null** when neither source yields a level.
+- Volume Weighted Average Price delta percent (current price vs session VWAP) (**intraday.vwap.vwap_delta_pct**): Spot versus session VWAP in percent (positive means spot above session VWAP, negative below, near zero at VWAP) when both numbers exist; **null** when session VWAP or spot is unavailable.
+- Relative Strength Index 14 (**intraday.rsi.rsi_14**): Wilder Relative Strength Index over 14 closes from recent minute bars when history is long enough; **null** when minute closes are insufficient to compute.
 
 ### Equity Block Tape Activity (rolling 30 minute window) (**intraday.equity_block_tape**)
 - Block count (**intraday.equity_block_tape.block_count_30min**): Count of large prints in the last thirty minutes by share-count or notional threshold.

@@ -265,8 +265,6 @@ export async function buildStrategistIntradayPackage(args: {
 
   const tsPts = getStrategistTimesalePoints(symU);
   let vwapSession = sessionVwapFromTimesales(tsPts, openMs, closeMs);
-  let vwapStatus: string =
-    vwapSession != null ? "live_from_timesale_session" : "insufficient_timesale_ticks";
 
   const polyBars = await fetchPolygonMinuteBarsToday(symU);
   const polyCloses = polyBars.map((b) => b.c).filter((c): c is number => typeof c === "number" && Number.isFinite(c));
@@ -274,7 +272,6 @@ export async function buildStrategistIntradayPackage(args: {
     const fb = polygonSessionVwapFallback(polyBars);
     if (fb != null) {
       vwapSession = fb;
-      vwapStatus = "polygon_minute_volume_weighted_fallback";
     }
   }
 
@@ -285,14 +282,8 @@ export async function buildStrategistIntradayPackage(args: {
   }
 
   let rsi14: number | null = null;
-  let rsiStatus = "insufficient_bars";
   if (polyCloses.length >= 15) {
     rsi14 = computeRsiWilders(polyCloses, 14);
-    rsiStatus = rsi14 != null ? "available" : "insufficient_bars";
-  } else if (polyCloses.length > 0) {
-    rsiStatus = "insufficient_bars";
-  } else {
-    rsiStatus = "polygon_minute_unavailable";
   }
 
   const blocks = equityBlockMetrics(tsPts, openMs, closeMs, args.spotPrice || 0, nowMs);
@@ -436,11 +427,9 @@ export async function buildStrategistIntradayPackage(args: {
     vwap: {
       vwap_session: vwapSession,
       vwap_delta_pct: vwapDeltaPct,
-      vwap_status: vwapStatus,
     },
     rsi: {
       rsi_14: rsi14,
-      rsi_status: rsiStatus,
     },
     equity_block_tape: blocks,
     order_book: orderBookPayload,
