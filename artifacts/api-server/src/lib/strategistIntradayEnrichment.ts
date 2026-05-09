@@ -1,7 +1,6 @@
-import { db, tickerSignalSnapshotTable } from "@workspace/db";
-import { eq } from "@workspace/db";
+import { db, eq, tickerSignalSnapshotTable } from "@workspace/db";
 import { logger } from "./logger.js";
-import { nyCalendarYmd, rthBoundsMs } from "./polygonMarketCalendar.js";
+import { nyCalendarYmd, prevNyTradingDayYmd, rthBoundsMs } from "./polygonMarketCalendar.js";
 import { isUsEquityRthEt } from "./ibTotalviewPersistence.js";
 import { getIbTuningL1QuoteSnapshot } from "./ibStreamer.js";
 import {
@@ -15,8 +14,9 @@ import {
   getOptionTick,
   getSchwabStreamEquityQuoteFresh,
   getSchwabVenueBookStrategistSnapshot,
-  getStrategistChartEquityCloses,
+  getStrategistChartEquityBars,
   getStrategistTimesalePoints,
+  type SchwabChartEquityBarPoint,
   type SchwabTimesaleStrategistPoint,
 } from "./schwabStreamer.js";
 import { buildSchwabOptionStreamerKey } from "./schwabOptionOccKey.js";
@@ -117,7 +117,28 @@ function sessionVwapFromTimesales(
   return Math.round((num / den) * 10000) / 10000;
 }
 
-/** ET calendar minute key for 1-minute OHLC-style aggregation from tape prints (America/New_York wall clock). */
+function sessionVwapFromChartBars(
+  bars: readonly SchwabChartEquityBarPoint[],
+  openMs: number,
+  closeMs: number,
+): number | null {
+  let num = 0;
+  let den = 0;
+  for (const b of bars) {
+    const t = b.chartTimeMs;
+    if (t < openMs || t > closeMs) continue;
+    const v = b.volume;
+    if (v <= 0 || !Number.isFinite(v)) continue;
+    const typical = (b.high + b.low + b.close) / 3;
+    if (!Number.isFinite(typical) || typical <= 0) continue;
+    num += typical * v;
+    den += v;
+  }
+  if (den <= 0) return null;
+  return Math.round((num / den) * 10000) / 10000;
+}
+
+/** ET calendar minute key for aligning tape prints with chart bars (America/New_York wall clock). */
 function etMinuteKey(tsMs: number): string {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
@@ -133,37 +154,50 @@ function etMinuteKey(tsMs: number): string {
 }
 
 /**
- * One-minute **last trade** closes from Schwab TIMESALE_EQUITY ticks only (session window).
- * Bar interval: **1 minute**, ET boundaries; each bar close is the last print in that minute.
+ * Merge Schwab minute buckets: chart fills history; TIMESALE last print overrides the same ET minute.
+ * Last fifteen closes feed Wilder's RSI (walks back across sessions via retained bars/tape).
  */
-function minuteClosesFromSchwabTimesales(
-  pts: SchwabTimesaleStrategistPoint[],
-  openMs: number,
-  closeMs: number,
-): number[] {
-  const filtered = pts.filter((p) => p.ts >= openMs && p.ts <= closeMs && p.price > 0);
-  filtered.sort((a, b) => a.ts - b.ts);
-  const lastCloseByMinute = new Map<string, number>();
-  for (const p of filtered) {
-    lastCloseByMinute.set(etMinuteKey(p.ts), p.price);
+function rsiFromSchwabMinuteMerge(
+  tsPts: SchwabTimesaleStrategistPoint[],
+  chartBars: readonly SchwabChartEquityBarPoint[],
+): { rsi: number | null; rsi_as_of_session_date: string | null } {
+  const minuteToClose = new Map<string, number>();
+  for (const c of chartBars) {
+    const k = etMinuteKey(c.chartTimeMs);
+    if (Number.isFinite(c.close) && c.close > 0 && !minuteToClose.has(k)) {
+      minuteToClose.set(k, c.close);
+    }
   }
-  const keys = [...lastCloseByMinute.keys()].sort();
-  return keys.map((k) => lastCloseByMinute.get(k)!);
+  for (const p of tsPts) {
+    minuteToClose.set(etMinuteKey(p.ts), p.price);
+  }
+  const keys = [...minuteToClose.keys()].sort();
+  if (keys.length < 15) return { rsi: null, rsi_as_of_session_date: null };
+  const last15 = keys.slice(-15);
+  const closes = last15.map((k) => minuteToClose.get(k)!);
+  const rsi = computeRsiWilders(closes, 14);
+  const lastKey = last15[last15.length - 1]!;
+  const dayPart = lastKey.slice(0, 10);
+  return {
+    rsi,
+    rsi_as_of_session_date: rsi != null ? dayPart : null,
+  };
 }
 
-function equityBlockMetrics(
+function equityBlockMetricsWindow(
   pts: SchwabTimesaleStrategistPoint[],
+  windowStartMs: number,
+  windowEndMs: number,
   sessionOpenMs: number,
   sessionCloseMs: number,
   spotPrice: number,
-  nowMs: number,
+  nowMsForAge: number,
 ): {
   block_count_30min: number | null;
   block_notional_30min: number | null;
   block_side_imbalance: number | null;
   last_block_age_seconds: number | null;
 } {
-  const windowStart = nowMs - BLOCK_WINDOW_MS;
   let buyN = 0;
   let sellN = 0;
   let blockCount = 0;
@@ -182,7 +216,7 @@ function equityBlockMetrics(
     sessionVwapDen > 0 ? sessionVwapNum / sessionVwapDen : spotPrice > 0 ? spotPrice : null;
 
   for (const p of pts) {
-    if (p.ts < windowStart || p.ts > nowMs) continue;
+    if (p.ts < windowStartMs || p.ts > windowEndMs) continue;
     const notional = p.price * p.size;
     const isBlock = p.size >= BLOCK_MIN_SHARES || notional >= BLOCK_MIN_NOTIONAL_USD;
     if (!isBlock) continue;
@@ -200,7 +234,7 @@ function equityBlockMetrics(
   if (pairSum > 0) imbalance = Math.round(((buyN - sellN) / pairSum) * 10_000) / 10_000;
 
   let lastAgeSec: number | null = null;
-  if (lastBlockTs != null) lastAgeSec = Math.max(0, Math.round((nowMs - lastBlockTs) / 1000));
+  if (lastBlockTs != null) lastAgeSec = Math.max(0, Math.round((nowMsForAge - lastBlockTs) / 1000));
 
   if (blockCount === 0) {
     return {
@@ -217,6 +251,22 @@ function equityBlockMetrics(
     block_side_imbalance: imbalance,
     last_block_age_seconds: lastAgeSec,
   };
+}
+
+function equityBlockMetrics(
+  pts: SchwabTimesaleStrategistPoint[],
+  sessionOpenMs: number,
+  sessionCloseMs: number,
+  spotPrice: number,
+  nowMs: number,
+): {
+  block_count_30min: number | null;
+  block_notional_30min: number | null;
+  block_side_imbalance: number | null;
+  last_block_age_seconds: number | null;
+} {
+  const windowStart = nowMs - BLOCK_WINDOW_MS;
+  return equityBlockMetricsWindow(pts, windowStart, nowMs, sessionOpenMs, sessionCloseMs, spotPrice, nowMs);
 }
 
 function pickVenueForBook(
@@ -260,8 +310,38 @@ export async function buildStrategistIntradayPackage(args: {
   }
 
   const tsPts = getStrategistTimesalePoints(symU);
-  // Session VWAP: Schwab TIMESALE_EQUITY tape only, share-volume-weighted over the NY regular-hours window.
+  const chartBars = getStrategistChartEquityBars(symU);
+
   let vwapSession = sessionVwapFromTimesales(tsPts, openMs, closeMs);
+  let vwapStatus: string =
+    vwapSession != null ? "live_from_timesale_session" : "insufficient_timesale_ticks";
+  let vwap_as_of_session_date: string | null = vwapSession != null ? nyYmd : null;
+
+  if (vwapSession == null) {
+    let dayCursor = await prevNyTradingDayYmd(nyYmd);
+    for (let i = 0; i < 15; i++) {
+      try {
+        const bounds = await rthBoundsMs(dayCursor);
+        const tsV = sessionVwapFromTimesales(tsPts, bounds.openMs, bounds.closeMs);
+        if (tsV != null) {
+          vwapSession = tsV;
+          vwapStatus = "prior_session_timesales";
+          vwap_as_of_session_date = dayCursor;
+          break;
+        }
+        const cv = sessionVwapFromChartBars(chartBars, bounds.openMs, bounds.closeMs);
+        if (cv != null) {
+          vwapSession = cv;
+          vwapStatus = "prior_session_chart_equity";
+          vwap_as_of_session_date = dayCursor;
+          break;
+        }
+      } catch {
+        /* try next session */
+      }
+      dayCursor = await prevNyTradingDayYmd(dayCursor);
+    }
+  }
 
   const spot = args.spotPrice > 0 ? args.spotPrice : null;
   let vwapDeltaPct: number | null = null;
@@ -269,21 +349,29 @@ export async function buildStrategistIntradayPackage(args: {
     vwapDeltaPct = Math.round(((spot - vwapSession) / vwapSession) * 10000) / 100;
   }
 
-  /**
-   * RSI(14): Wilder on **1-minute closes**. Primary = TIMESALE aggregation (ET minute bars, last print).
-   * Fallback = Schwab CHART_EQUITY **1-minute** bar closes (field 5) when the tape-backed series is short.
-   */
-  const closesFromTicks = minuteClosesFromSchwabTimesales(tsPts, openMs, closeMs);
-  let rsiCloses = closesFromTicks;
-  if (rsiCloses.length < 15) {
-    rsiCloses = getStrategistChartEquityCloses(symU, openMs, closeMs);
-  }
-  let rsi14: number | null = null;
-  if (rsiCloses.length >= 15) {
-    rsi14 = computeRsiWilders(rsiCloses, 14);
-  }
+  const rsiMerged = rsiFromSchwabMinuteMerge(tsPts, chartBars);
+  const rsi14 = rsiMerged.rsi;
+  const rsiStatus = rsi14 != null ? "available" : "insufficient_schwab_minute_closes";
+  const rsi_as_of_session_date = rsiMerged.rsi_as_of_session_date;
 
-  const blocks = equityBlockMetrics(tsPts, openMs, closeMs, args.spotPrice || 0, nowMs);
+  let blocks = equityBlockMetrics(tsPts, openMs, closeMs, args.spotPrice || 0, nowMs);
+  let equity_block_tape_as_of_session_date: string | null = null;
+  const hadCurrentBlocks =
+    (blocks.block_count_30min ?? 0) > 0 || (blocks.block_notional_30min ?? 0) > 0;
+  if (hadCurrentBlocks) {
+    equity_block_tape_as_of_session_date = nyYmd;
+  } else {
+    try {
+      const prevDay = await prevNyTradingDayYmd(nyYmd);
+      const pb = await rthBoundsMs(prevDay);
+      const ws = pb.closeMs - BLOCK_WINDOW_MS;
+      const we = pb.closeMs;
+      blocks = equityBlockMetricsWindow(tsPts, ws, we, pb.openMs, pb.closeMs, args.spotPrice || 0, nowMs);
+      equity_block_tape_as_of_session_date = prevDay;
+    } catch {
+      equity_block_tape_as_of_session_date = null;
+    }
+  }
 
   const venuePick = pickVenueForBook(venue);
   let orderBookPayload: Record<string, unknown> = {
@@ -424,11 +512,18 @@ export async function buildStrategistIntradayPackage(args: {
     vwap: {
       vwap_session: vwapSession,
       vwap_delta_pct: vwapDeltaPct,
+      vwap_status: vwapStatus,
+      vwap_as_of_session_date,
     },
     rsi: {
       rsi_14: rsi14,
+      rsi_status: rsiStatus,
+      rsi_as_of_session_date,
     },
-    equity_block_tape: blocks,
+    equity_block_tape: {
+      ...blocks,
+      equity_block_tape_as_of_session_date,
+    },
     order_book: orderBookPayload,
     signal_snapshot: signalSnapshot,
   };
