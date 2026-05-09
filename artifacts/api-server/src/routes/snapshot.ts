@@ -8,7 +8,7 @@ import { getBestAccessToken } from "../lib/tokenStore";
 import { logger } from "../lib/logger";
 import { db } from "@workspace/db";
 import { optionsFlowPerStrikeTable } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { sql } from "@workspace/db";
 import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
 
 function requireAdmin(req: { headers: Record<string, string | string[] | undefined> }): { ok: boolean; error?: string } {
@@ -264,22 +264,22 @@ router.post("/admin/backfill-iv-history", async (req, res) => {
   const { symbols, daysBack } = (req.body ?? {}) as { symbols?: string[]; daysBack?: number };
   const syms = (symbols && symbols.length > 0) ? symbols : [...LIQUID_CORE_SYMBOL_STRINGS];
   const days = (typeof daysBack === "number" && daysBack > 0 && daysBack <= 730) ? daysBack : 252;
-  const job = startBackfillJob(syms, days);
+  const job = await startBackfillJob(syms, days);
   return res.json({ ok: true, started: true, job });
 });
 
-router.get("/admin/backfill-iv-history/:id", (req, res) => {
+router.get("/admin/backfill-iv-history/:id", async (req, res) => {
   const auth = requireAdmin(req as never);
   if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
-  const job = getBackfillJob(req.params.id);
+  const job = await getBackfillJob(req.params.id);
   if (!job) return res.status(404).json({ ok: false, error: "job not found" });
   return res.json({ ok: true, job });
 });
 
-router.get("/admin/backfill-iv-history", (req, res) => {
+router.get("/admin/backfill-iv-history", async (req, res) => {
   const auth = requireAdmin(req as never);
   if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
-  return res.json({ ok: true, jobs: listBackfillJobs() });
+  return res.json({ ok: true, jobs: await listBackfillJobs() });
 });
 
 router.get("/admin/diagnose-list-contracts", async (req, res) => {
@@ -323,22 +323,22 @@ router.post("/admin/backfill-hv-proxy", async (req, res) => {
   const { symbols, daysBack, skipAutoSectorEtfs } = (req.body ?? {}) as { symbols?: string[]; daysBack?: number; skipAutoSectorEtfs?: boolean };
   const syms = (symbols && symbols.length > 0) ? symbols : [...LIQUID_CORE_SYMBOL_STRINGS];
   const days = (typeof daysBack === "number" && daysBack > 0 && daysBack <= 730) ? daysBack : 252;
-  const job = startHvProxyBackfillJob(syms, days, { skipAutoSectorEtfs: skipAutoSectorEtfs === true });
+  const job = await startHvProxyBackfillJob(syms, days, { skipAutoSectorEtfs: skipAutoSectorEtfs === true });
   return res.json({ ok: true, started: true, job });
 });
 
-router.get("/admin/backfill-hv-proxy/:id", (req, res) => {
+router.get("/admin/backfill-hv-proxy/:id", async (req, res) => {
   const auth = requireAdmin(req as never);
   if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
-  const job = getHvProxyJob(req.params.id);
+  const job = await getHvProxyJob(req.params.id);
   if (!job) return res.status(404).json({ ok: false, error: "job not found" });
   return res.json({ ok: true, job });
 });
 
-router.get("/admin/backfill-hv-proxy", (req, res) => {
+router.get("/admin/backfill-hv-proxy", async (req, res) => {
   const auth = requireAdmin(req as never);
   if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
-  return res.json({ ok: true, jobs: listHvProxyJobs() });
+  return res.json({ ok: true, jobs: await listHvProxyJobs() });
 });
 
 router.post("/admin/canonical-iv-accumulate", async (req, res) => {

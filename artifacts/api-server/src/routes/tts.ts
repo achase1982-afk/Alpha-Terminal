@@ -12,8 +12,8 @@ const router: IRouter = Router();
 
 const CACHE_DIR = process.env.TTS_CACHE_DIR ?? "/tmp/tts-cache";
 
-/** Bump when audio bytes format or provider changes so stale cache files are ignored. */
-const CACHE_FILE_VERSION = "v3-openai";
+/** Bump when audio bytes format or TTS engine changes (invalidates on-disk MP3 cache). */
+const CACHE_FILE_VERSION = "v5-edge";
 
 function looksLikeMp3(buf: Buffer): boolean {
   if (buf.length < 4) return false;

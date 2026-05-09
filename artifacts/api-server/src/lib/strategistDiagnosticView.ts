@@ -1,6 +1,17 @@
 import type { ConvictionDeskResult, DeskResult } from "./strategistDeskSchemas.js";
 import type { CatalystEvaluation } from "./catalystEvaluator.js";
 import type { StrategistDiagScratch } from "./strategistRunContext.js";
+import { z } from "zod";
+
+/**
+ * Loose validation for COPY DIAGNOSTIC `modelInput` (provider SDK snapshot(s)).
+ * Single consolidated call → one object; multi-turn desk → array of snapshots.
+ */
+export const strategistDiagnosticModelInputSchema = z.union([
+  z.null(),
+  z.record(z.string(), z.unknown()),
+  z.array(z.unknown()),
+]);
 
 /**
  * Full strategist snapshot passed to the diagnostic projector: the JSON data
@@ -72,6 +83,12 @@ export type StrategistDiagnosticView = {
   size: "small" | "medium" | "large" | "no-trade";
   alignment: string;
   whoseSide: string;
+  /**
+   * Exact pre-call payload(s) sent to the provider SDK for this strategist run
+   * (`anthropic.messages.stream`, OpenAI `responses.create`, etc.). Multiple
+   * entries when the desk pipeline performs more than one LLM call.
+   */
+  modelInput: unknown | null;
 };
 
 const MAX_INFO_STRING = 200;
@@ -344,6 +361,14 @@ export function buildStrategistDiagnosticView(fullPayload: StrategistFullPayload
   const closingImbalanceLatencyMs =
     diag?.closingImbalanceLatencyMs === undefined ? null : num(diag.closingImbalanceLatencyMs as unknown);
 
+  const modelInputs = diag?.modelSdkInputs;
+  const modelInput: StrategistDiagnosticView["modelInput"] =
+    modelInputs == null || modelInputs.length === 0
+      ? null
+      : modelInputs.length === 1
+        ? modelInputs[0]
+        : modelInputs;
+
   let thesis = "";
   let edgeCheck = "";
   let biggestRisk = "";
@@ -425,5 +450,6 @@ export function buildStrategistDiagnosticView(fullPayload: StrategistFullPayload
     size: sizeDiag,
     alignment,
     whoseSide,
+    modelInput,
   };
 }

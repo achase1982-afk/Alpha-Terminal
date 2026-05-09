@@ -11,6 +11,7 @@
     }
   },
   "scripts": {
+    "prepare": "command -v bash >/dev/null 2>&1 && bash scripts/install-git-hooks.sh || true",
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
     "build": "pnpm run typecheck && pnpm -r --filter='!@workspace/mockup-sandbox' --if-present run build",
     "typecheck:libs": "tsc --build",

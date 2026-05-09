@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, aiLabIdeasTable, aiLabIdeaOutcomesTable, aiLabWatchlistTable, aiLabDeliberationsTable, scannerWatchlistsTable } from "@workspace/db";
-import { eq, desc, and, inArray } from "drizzle-orm";
+import { eq, desc, and, inArray } from "@workspace/db";
 import { emitTelemetry, createTelemetryBatch } from "../lib/telemetryStore.js";
 import {
   getUniverseAnomalies,

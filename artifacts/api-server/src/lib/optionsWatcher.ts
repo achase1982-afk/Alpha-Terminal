@@ -1,6 +1,7 @@
 import { logger } from "./logger.js";
 import { enqueueClassifiedTrade, parseOcc } from "./optionsFlowPersistence.js";
 import { classifyForFlowPersistence, shouldPersistLiveWatcherRow } from "./optionsTradeClassifier.js";
+import { resolveFreshOptionNbbo } from "./optionQuoteFreshNbbo.js";
 import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 import { fetchPolygonChain, type PolygonParsedContract } from "./polygonChain.js";
 import {
@@ -347,16 +348,21 @@ function handleTrade(t: PolygonOptionTrade): void {
   if (legSide === "C") st.callNotional += notional;
   else if (legSide === "P") st.putNotional += notional;
 
-  const nbbo = getNbbo(t.sym);
   const chainRow = st.chainByOcc.get(t.sym);
   const oi = chainRow?.openInterest ?? 0;
   const mc = st.marketContext;
   const baselineVol = st.contractBaselineAvgVol20d.get(t.sym);
+
+  const tradeMs = t.timestamp || Date.now();
+  const freshNbbo = resolveFreshOptionNbbo(t.sym, tradeMs);
+  const polyOnly = getNbbo(t.sym);
+  const nbboMerged = freshNbbo ?? (polyOnly ? { bid: polyOnly.bid, ask: polyOnly.ask } : null);
   const classified = classifyForFlowPersistence({
     price: t.price,
     size: t.size,
     conditions: t.conditions,
-    nbbo: nbbo ? { bid: nbbo.bid, ask: nbbo.ask } : null,
+    nbbo: nbboMerged ? { bid: nbboMerged.bid, ask: nbboMerged.ask } : null,
+    strictFreshQuote: freshNbbo != null,
     largeNotionalThresholdUsd: mc?.largeNotionalThresholdUsd,
     avgDailyContractVolume20d:
       typeof baselineVol === "number" && baselineVol > 0 ? baselineVol : null,
@@ -389,7 +395,7 @@ function handleTrade(t: PolygonOptionTrade): void {
             ? "volume_spike"
             : "large",
     });
-    if (!nbbo) {
+    if (!nbboMerged) {
       logFlowPipelineWarn(
         "watcher_nbbo_miss",
         "optionsWatcher: NBBO cache miss — aggressor side null",
@@ -399,7 +405,7 @@ function handleTrade(t: PolygonOptionTrade): void {
       logFlowPipelineWarn(
         "watcher_aggressor",
         "optionsWatcher: aggressor side unavailable (NBBO present)",
-        { occ: t.sym, ticker, bid: nbbo.bid, ask: nbbo.ask, price: t.price },
+        { occ: t.sym, ticker, bid: nbboMerged.bid, ask: nbboMerged.ask, price: t.price },
       );
     }
     let syntheticLegGroupId: string | null | undefined;

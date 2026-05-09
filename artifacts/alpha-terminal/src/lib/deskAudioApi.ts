@@ -56,3 +56,28 @@ export async function fetchDeskTtsChunkBlob(sessionId: string, chunkIndex: numbe
   }
   throw lastError;
 }
+
+/** Fetch chunks in small parallel batches; concatenate MP3 blobs (sequential MPEG frames). */
+const MERGED_CHUNK_FETCH_CONCURRENCY = 4;
+
+export async function fetchAllDeskTtsChunksMerged(
+  sessionId: string,
+  totalChunks: number,
+  signal: AbortSignal,
+): Promise<Blob> {
+  if (!Number.isInteger(totalChunks) || totalChunks < 1) {
+    throw new Error("invalid_total_chunks");
+  }
+  if (totalChunks === 1) {
+    return fetchDeskTtsChunkBlob(sessionId, 0, signal);
+  }
+  const parts: Blob[] = [];
+  for (let start = 0; start < totalChunks; start += MERGED_CHUNK_FETCH_CONCURRENCY) {
+    const end = Math.min(start + MERGED_CHUNK_FETCH_CONCURRENCY, totalChunks);
+    const batch: Blob[] = await Promise.all(
+      Array.from({ length: end - start }, (_, k) => fetchDeskTtsChunkBlob(sessionId, start + k, signal)),
+    );
+    parts.push(...batch);
+  }
+  return new Blob(parts, { type: "audio/mpeg" });
+}

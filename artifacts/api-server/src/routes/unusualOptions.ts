@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, polygonOptionsHistoryTable } from "@workspace/db";
-import { sql, gte, desc } from "drizzle-orm";
+import { sql, gte, desc } from "@workspace/db";
 import { syncDateRange, syncDate, getSyncStatus } from "../lib/polygonFlatFiles";
 import { getTrailingUnusualFlow } from "../lib/optionsBaselines";
 import { getDeepScanSnapshot, getWatcherStatus, getCoverageInfo, isWatcherEnabled } from "../lib/optionsWatcher";

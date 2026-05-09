@@ -1,5 +1,5 @@
 import { db } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { sql } from "@workspace/db";
 import pLimit from "p-limit";
 import { getStoredIVR, normalizeIV } from "./ivNormalize.js";
 

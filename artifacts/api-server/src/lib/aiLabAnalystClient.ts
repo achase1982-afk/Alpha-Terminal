@@ -712,6 +712,18 @@ export async function streamCallXaiWithSystemAndWebSearch(
   onStatus?.("Calling xAI with web search…");
 
   const reasoningOpts = xaiReasoningProviderOptions(model);
+  const sdkCallParams = sdkDiagnosticsPayload("ai.streamText", {
+    model,
+    system: systemPrompt,
+    temperature,
+    prompt,
+    toolsNote: "ToolSet { web_search: xai.tools.webSearch() }",
+    stopWhen: "stepCountIs(15)",
+    maxTokens: options?.maxTokens ?? null,
+    providerOptions: jsonCloneForDiagnostics(reasoningOpts),
+    abortSignal: Boolean(cancelSignal),
+  });
+
   const result = streamText({
     model: xai.responses(model),
     system: systemPrompt,
@@ -744,6 +756,7 @@ export async function streamCallXaiWithSystemAndWebSearch(
     text,
     trace: { webSearchUsed: queries.length > 0, queries, sources },
     envelope,
+    sdkCallParams,
   };
 }
 
@@ -883,6 +896,34 @@ export interface WebSearchResult {
   text: string;
   trace: WebSearchTrace;
   envelope: WebSearchEnvelope;
+  /**
+   * JSON-serializable snapshot of the request passed into the provider SDK
+   * (`messages.stream`, `responses.create`, etc.). Omits secrets.
+   */
+  sdkCallParams?: Record<string, unknown>;
+}
+
+/** Deep-clone SDK params for strategist diagnostics (JSON round-trip). */
+function jsonCloneForDiagnostics(value: unknown): unknown {
+  try {
+    return JSON.parse(JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? v.toString() : v)));
+  } catch {
+    return null;
+  }
+}
+
+function sdkDiagnosticsPayload(sdk: string, body: unknown, extras?: Record<string, unknown>): Record<string, unknown> {
+  const cloned = jsonCloneForDiagnostics(body);
+  const out: Record<string, unknown> = {
+    sdk,
+    body: cloned,
+  };
+  if (extras) {
+    for (const [k, v] of Object.entries(extras)) {
+      out[k] = v;
+    }
+  }
+  return out;
 }
 
 const ANTHROPIC_WEB_SEARCH_MAX_USES = 5;
@@ -1094,6 +1135,12 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
   }
   void temperature;
 
+  const sdkCallParams = sdkDiagnosticsPayload(
+    "anthropic.messages.stream",
+    params,
+    cancelSignal ? { streamOptions: { abortSignal: true } } : undefined,
+  );
+
   const queries: string[] = [];
   const sources: WebSearchSource[] = [];
   const seenUrls = new Set<string>();
@@ -1202,6 +1249,7 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
       sources,
     },
     envelope,
+    sdkCallParams,
   };
 }
 
@@ -1384,6 +1432,14 @@ export async function streamCallGeminiDeskJson(
     config.thinkingConfig = thinkingCfg;
   }
 
+  const contents = [{ role: "user", parts: [{ text: systemPrompt + "\n\n" + prompt }] }];
+  const geminiRequestBody = { model, contents, config };
+  const sdkCallParams = sdkDiagnosticsPayload(
+    "google.genai.models.generateContentStream",
+    geminiRequestBody,
+    cancelSignal ? { requestOptions: { abortSignal: true } } : undefined,
+  );
+
   onStatus?.("Calling Gemini (JSON)…");
   const { fullText, lastChunk } = await withGeminiRetry(
     "generateContentStream",
@@ -1392,7 +1448,7 @@ export async function streamCallGeminiDeskJson(
       const ai = createGeminiClient();
       const stream = await ai.models.generateContentStream({
         model,
-        contents: [{ role: "user", parts: [{ text: systemPrompt + "\n\n" + prompt }] }],
+        contents,
         config: config as Parameters<typeof ai.models.generateContentStream>[0]["config"],
         ...(cancelSignal ? { abortSignal: cancelSignal } : {}),
       });
@@ -1421,6 +1477,7 @@ export async function streamCallGeminiDeskJson(
     text,
     trace: { webSearchUsed: false, queries: [], sources: [] },
     envelope: geminiEnvelopeFromModelChunk(model, lastChunk),
+    sdkCallParams,
   };
 }
 
@@ -1574,6 +1631,12 @@ export async function streamCallOpenAIWithSystemAndWebSearch(
     stream: true,
   };
 
+  const sdkCallParams = sdkDiagnosticsPayload(
+    "openai.responses.create",
+    params,
+    cancelSignal ? { requestOptions: { signal: true } } : undefined,
+  );
+
   onStatus?.("Calling OpenAI with web search…");
 
   const stream = cancelSignal
@@ -1641,6 +1704,7 @@ export async function streamCallOpenAIWithSystemAndWebSearch(
     text,
     trace: { webSearchUsed: queries.length > 0, queries, sources },
     envelope,
+    sdkCallParams,
   };
 }
 

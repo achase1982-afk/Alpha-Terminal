@@ -7,7 +7,7 @@ import {
   equityDailyTable,
   optionsDailyTable,
 } from "@workspace/db";
-import { and, count, eq, gte, isNotNull, like, or } from "drizzle-orm";
+import { and, count, eq, gte, isNotNull, like, or } from "@workspace/db";
 
 export type AuditStatus = "ok" | "ok_empty" | "warn" | "fail";
 

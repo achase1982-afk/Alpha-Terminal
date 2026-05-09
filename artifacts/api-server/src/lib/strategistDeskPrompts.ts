@@ -24,10 +24,58 @@ OUTPUT STYLE (strict):
 /** When intraday / stream enrichments are present in the data package JSON. */
 export const CONVICTION_DESK_INTRADAY_DATA_GUIDANCE = `
 
-## INTRADAY AND LIVE STREAM CONTEXT (when JSON fields exist)
-The snapshot may include **intraday** (Volume Weighted Average Price, Relative Strength Index, equity block tape, live order book, scanner signal snapshot), **options_data_freshness**, optional parallel streamed equity quote timestamps (JSON keys include stream and tuning Level 1 enrichment), and quote divergence in basis points when both mids exist. In prose, use full phrases (**Volume Weighted Average Price**, **Relative Strength Index**) instead of abbreviations alone. Resting chain rows remain the authority when stream quotes are null or stale; **options_data_freshness** states whether the live options stream backed this run.
+## INTRADAY AND LIVE EQUITY CONTEXT (data dictionary)
+When any field in these sections is **null** or a parent object such as **intraday** is **null**, the live source was unavailable on this run; do not interpret **null** as bearish or bullish, and fall back to the existing pre-computed snapshot fields for that dimension (**price**, chain marks, **polygonFlowHighlights**, **scannerContext**, **dataQualitySummary**, etc.).
+In prose, use full phrases (**Volume Weighted Average Price**, **Relative Strength Index**) instead of abbreviations alone. Resting chain rows remain the authority when stream-backed marks are **null** or stale; **options_data_freshness** summarizes how much of the active watchlist had fresh stream ticks versus REST-only reads.
 
-**Session-date attribution (intraday.vwap / intraday.rsi / intraday.equity_block_tape):** Each block may include **vwap_as_of_session_date**, **rsi_as_of_session_date**, and **equity_block_tape_as_of_session_date** (ISO **YYYY-MM-DD**, US equity **session** date in America/New_York). When these match **today's** session date, the metrics are anchored to the **current** regular session when tape or minute data exists. When they show an **earlier** calendar date, the **current** session had **no usable Schwab stream data** for that metric and the value was **filled from the most recent prior session** using **only** Schwab **TIMESALE_EQUITY** and **CHART_EQUITY** caches (no cross-vendor fallbacks). When **Volume Weighted Average Price** or **Relative Strength Index** is null, treat that as **no Schwab minute or tape history** in the current or recent sessions—down-weight intraday conviction accordingly. For **Relative Strength Index**, minute closes merge **TIMESALE_EQUITY** prints (when present) with **CHART_EQUITY** one-minute bars, walking backward across session boundaries until fifteen closes exist. Treat earlier dates as **stale relative to a live intraday tape**—down-weight conviction from those fields versus fresh session activity. Order book and streamed equity quotes do not use this fallback and may remain null when stale.
+**Session-date attribution (intraday.vwap / intraday.rsi / intraday.equity_block_tape):** Each block may include **vwap_as_of_session_date**, **rsi_as_of_session_date**, and **equity_block_tape_as_of_session_date** (ISO **YYYY-MM-DD**, US equity **session** date in America/New_York). When these match **today's** session date, the metrics are anchored to the **current** regular session when tape or minute data exists. When they show an **earlier** calendar date, the **current** session had **no usable stream-backed tape or chart minute history** for that metric and the value was **filled from the most recent prior session** using **only** the packaged broker stream caches for tape and one-minute bars (no cross-vendor fallbacks). When **Volume Weighted Average Price** or **Relative Strength Index** is null, treat that as **no usable minute or tape history** in the current or recent sessions—down-weight intraday conviction accordingly. For **Relative Strength Index**, minute closes merge tape prints (last trade per ET minute) with one-minute bar closes when needed, walking backward across session boundaries until fifteen closes exist. Treat earlier dates as **stale relative to a live intraday tape**—down-weight conviction from those fields versus fresh session activity. Order book and streamed equity quotes do not use this fallback and may remain null when stale.
+
+### Live Intraday Equity Context (**intraday.vwap**, **intraday.rsi**)
+- Volume Weighted Average Price (session) (**intraday.vwap.vwap_session**): Session cumulative VWAP from tape prints (volume-weighted in the packaged regular-session window); **null** when tape lacks sufficient prints. No non-packaged equity vendor fills this field.
+- Volume Weighted Average Price delta percent (current price vs session VWAP) (**intraday.vwap.vwap_delta_pct**): Spot versus session VWAP in percent (positive means spot above session VWAP, negative below, near zero at VWAP) when both numbers exist; **null** when session VWAP or spot is unavailable.
+- Relative Strength Index 14 (**intraday.rsi.rsi_14**): Wilder RSI on **1-minute closes**: primary series is **last trade per ET minute** from tape; if fewer than fifteen minute closes exist, the merge adds **one-minute bar closes** from the subscribed chart stream; **null** when neither path yields enough bars.
+
+### Equity Block Tape Activity (rolling 30 minute window) (**intraday.equity_block_tape**)
+- Block count (**intraday.equity_block_tape.block_count_30min**): Count of large prints in the last thirty minutes by share-count or notional threshold.
+- Block notional in dollars (**intraday.equity_block_tape.block_notional_30min**): Sum notional of those prints over the same window.
+- Block side imbalance (**intraday.equity_block_tape.block_side_imbalance**): Signed imbalance of block notional versus session VWAP (positive leans buy-heavy above VWAP, negative sell-heavy below, near zero balanced) when both sides have mass; **null** when classification lacks supporting notionals.
+- Last block age in seconds (**intraday.equity_block_tape.last_block_age_seconds**): Seconds since the newest qualifying block print, or **null** when no block fired in the window.
+
+### Live Order Book State (**intraday.order_book**)
+- Top of book bid size (**intraday.order_book.top_of_book_bid_size**): Displayed size at the best bid when the venue book snapshot is fresh.
+- Top of book ask size (**intraday.order_book.top_of_book_ask_size**): Displayed size at the best ask when the venue book snapshot is fresh.
+- Book imbalance percent (**intraday.order_book.book_imbalance_pct**): Top-of-book size imbalance in percent (positive means bid-heavy, negative ask-heavy) when both sides are present.
+- Depth within 1 percent of mid, bid side (**intraday.order_book.depth_within_1pct_bid**): Resting bid depth within one percent of mid when computable.
+- Depth within 1 percent of mid, ask side (**intraday.order_book.depth_within_1pct_ask**): Resting ask depth within one percent of mid when computable.
+- Book age in milliseconds (**intraday.order_book.book_age_ms**): Age of the venue book snapshot; stale ages may accompany **null** depth fields.
+- Listing venue for the book row (**intraday.order_book.venue**): Which listing feed supplied the row when resolved.
+
+### Quote Source Comparison (top-level snapshot fields)
+- Primary REST quote (**price**, **dailyChangePct**, and related header equity fields): Packaged cash equity mark and day change from the REST snapshot that anchors chain marks and desk context.
+- Stream quote enrichment (**schwab_stream_bid**, **schwab_stream_ask**, **schwab_stream_last**, **schwab_stream_age_ms**): Parallel streamed National Best Bid and Offer style updates when fresh; **null** fields mean no qualifying stream quote on this run.
+- Alternate venue Level 1 (**ibkr_l1_bid**, **ibkr_l1_ask**, **ibkr_l1_last**, **ibkr_l1_age_ms**): Cross-check quote path when the tuning gateway stream is live; wide **ibkr_l1_age_ms** with **null** bid or ask means stale or unavailable.
+- Quote delta in basis points (**ibkr_schwab_quote_delta_bps**): Mid versus mid gap in basis points when both stream and fresh alternate two-sided quotes exist; **null** when either side is missing.
+
+### Live Options Data Freshness (**options_data_freshness**)
+- Source (**options_data_freshness.source**): **schwab_rest_chain_only** means REST pull only, **mixed_stream_and_rest** is hybrid stream plus REST, **schwab_levelone_options_stream** means live stream backed the sampled contracts, **enrichment_error** means the enrichment pass failed.
+- Maximum quote age in milliseconds across active watchlist contracts (**options_data_freshness.max_quote_age_ms**): Oldest observed quote age among contracts sampled for freshness on this run.
+- Count of contracts backed by live stream (**options_data_freshness.contracts_live_stream_backed**): Contracts whose latest tick was inside the fresh stream window.
+- Count of contracts using REST fallback only (**options_data_freshness.contracts_rest_only**): Contracts without a fresh stream tick at snapshot time.
+
+### Ticker Signal Snapshot (**intraday.signal_snapshot**)
+- Snapshot age in seconds (**intraday.signal_snapshot.snapshot_age_seconds**): Time since the scanner worker row was written when a row exists.
+- Pass-through computed signal columns from snapshot worker output (**intraday.signal_snapshot** fields such as **composite_score**, **component_scores**, **flow_summary**, **sector**, **market_cap_tier**, **spot**, **daily_change_pct**, **snapshot_at**, **ticker**): Latest persisted scanner snapshot slice joined for context; interpret jointly with **scannerContext** when both appear.
+`;
+
+/** Solo Desk + Conviction Desk: force cash-equity session facts into JSON strings, not options-only narrative. */
+export const STRATEGIST_EQUITY_MOVES_OUTPUT_RULES = `
+
+## EQUITY SESSION MOVES (integrate into JSON prose when snapshot fields exist)
+The report must reflect **underlying cash action**, not options marks alone. When **price**, **dailyChangePct**, **intraday**, **signal_snapshot**, or top-level equity enrichment fields (stream ages, quote cross-check deltas) are present in the snapshot, cite them in the output: at minimum session percent change from **dailyChangePct** when available, spot level from **price** when useful, and how spot relates to session **Volume Weighted Average Price** plus **Relative Strength Index** tone when **intraday.vwap** / **intraday.rsi** carry numbers. When **intraday.equity_block_tape** or **intraday.order_book** are populated, say whether large prints or displayed liquidity skew confirms or fights the listed-options flow read.
+
+Route these facts into the sections they inform: **flow** (**dominant_flow**, **institutional_signal**, **read**), **pm** (**thesis**, **edge_check**, **watch_for**), **vol** (**implied_vs_realized**, **read**) when spot versus implied move matters, **catalyst** (**read**) only when price action clearly ties to the event story. On Conviction Desk, also **regime_synthesis**, **positioning_context**, **risk_of_ruin**, and **structure_family_discipline** when cash positioning informs regime, crowding, or structure choice.
+
+When **intraday** is **null** or nested fields are mostly **null**, note briefly that live equity enrichments were thin on this run and lean on chain plus session tape; still surface **price** and **dailyChangePct** when present. Use full phrases (**Volume Weighted Average Price**, **Relative Strength Index**) and honor OUTPUT STYLE vendor rules.
 `;
 
 /** Catalyst / event narrative: sell-side firms may be named as catalyst actors; retrieval plumbing and outlet attribution may not. */
@@ -436,7 +484,7 @@ Read the volatility surface: IV state, term structure, skew, IV vs realized. Ide
 
 FLOW
 
-Read positioning: where real size is worked, where retail noise sits. Use aggressor mix, block size, sweep classification, and vol-over-OI ratios as evidence. When session tape is missing or limited, say so.
+Read positioning: where real size is worked, where retail noise sits. Use aggressor mix, block size, sweep classification, and vol-over-OI ratios as evidence. When session tape is missing or limited, say so. Relate listed flow to **underlying cash session moves** when **price**, **dailyChangePct**, or **intraday** appear in the snapshot (see **EQUITY SESSION MOVES** after the JSON block).
 
 CATALYST
 
@@ -459,6 +507,7 @@ OUTPUT FORMAT
 Single JSON object with the same schema as multi-section desk mode.
 
 Use the JSON snapshot fields below when present (same keys as multi-section desk analysts receive):
+- **price**, **dailyChangePct**, **intraday** (Volume Weighted Average Price, Relative Strength Index, equity block tape, order book, **signal_snapshot**), and top-level equity enrichment fields when present: follow **EQUITY SESSION MOVES** after the snapshot so cash session context appears in the JSON strings, not only listed options flow.
 - **dataQualitySummary**, including **data_source_gaps** when set, **flags**, **ivClampedCount** (deterministic IV removals: see **ivClampedReasons** for sentinel, ceiling, one-sided market, penny premium, invalid mid, spread vs mid, liquidity floor, surface outlier), **ivClampedReasons**, **ivCleanedRatio**, **bsmRecomputeStats** (vendor IV vs BSM-from-mid disagreement telemetry only), **termStructureExpiries** (how many curated expiries have a clean ATM IV vs total in the strip), **flow.tapeBackfillReason**, **flow.tapeBackfillReasonLegacy**, **flow.tapeBackfillStatus**, **flow.tapeBackfillTotalTradesFromPolygon**, **flow.tapeBackfillPersistRejected**, **flow.tapeBackfillTruncated**, **flow.tapeBackfillHttpError**, **sessionTapeKind**, and other degraded-state labels (never invent full tape when flags say otherwise). You should not need to manually strip clamped front-week IVs for term structure or skew — that is already done — but if **ivClampedCount** exceeds ~30% of listed contracts (**iv_contamination_elevated** in **flags**), say so and down-weight vol conclusions.
 - **tapeBackfill** (REST tape coverage: status, **tapeBackfillReason**, occ counts, trades inserted, truncation and Polygon HTTP flags when present).
 - **polygonFlowHighlights.sessionTape** (**tapeKind**, **tapeBackfillReason**, sweeps, blocks, aggressor totals, top prints).
@@ -564,7 +613,7 @@ ${pmBlock}
 
 ## DATA PACKAGE (single JSON snapshot)
 
-${snapshotBlock(dataPackage)}${OUTPUT_NO_SOURCE_RULES}${VOL_OUTPUT_ATTRIBUTION_RULES}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
+${snapshotBlock(dataPackage)}${STRATEGIST_EQUITY_MOVES_OUTPUT_RULES}${OUTPUT_NO_SOURCE_RULES}${VOL_OUTPUT_ATTRIBUTION_RULES}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
 
 Respond with ONLY a JSON object (no markdown fences, no extra prose). Top-level keys: vol, flow, catalyst, pm. Shapes must match desk mode exactly.
 
@@ -704,7 +753,7 @@ ${CONVICTION_DESK_ADDITIONS_INSTRUCTIONS}
 
 ## DATA PACKAGE (single JSON snapshot)
 
-${snapshotBlock(dataPackage)}${CONVICTION_DESK_INTRADAY_DATA_GUIDANCE}${OUTPUT_NO_SOURCE_RULES}${VOL_OUTPUT_ATTRIBUTION_RULES}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
+${snapshotBlock(dataPackage)}${CONVICTION_DESK_INTRADAY_DATA_GUIDANCE}${STRATEGIST_EQUITY_MOVES_OUTPUT_RULES}${OUTPUT_NO_SOURCE_RULES}${VOL_OUTPUT_ATTRIBUTION_RULES}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
 
 Respond with ONLY one JSON object (no markdown fences, no extra prose). Top-level keys: vol, flow, catalyst, pm, regime_synthesis, risk_of_ruin, positioning_context, structure_family_discipline. Shapes must match desk mode exactly.
 

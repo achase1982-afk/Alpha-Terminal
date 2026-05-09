@@ -10,6 +10,7 @@ import {
   venueClassFromExchangeId,
 } from "./flowTradeEnrichment.js";
 import { classifyForFlowPersistence, shouldPersistBackfillRow } from "./optionsTradeClassifier.js";
+import { resolveFreshOptionNbbo } from "./optionQuoteFreshNbbo.js";
 import { getContract20dBaseline } from "./optionsBaselines.js";
 import { runRollupOnceForSymbol } from "./optionsFlowRollup.js";
 import { FlowLegWindow } from "./flowMultilegExtras.js";
@@ -25,7 +26,7 @@ import {
   lastCompletedTradingDayNy,
   nyCalendarYmd,
   rthBoundsMs,
-  isMarketHoliday,
+  polygonListedMarketClosure,
 } from "./polygonMarketCalendar.js";
 import {
   ensureConnected,
@@ -232,7 +233,7 @@ export async function resolveFlowSessionDate(opts: FlowCaptureOptions): Promise<
   if (wd === 0 || wd === 6) {
     return lastCompletedTradingDayNy(now);
   }
-  if (await isMarketHoliday(todayYmd)) {
+  if (await polygonListedMarketClosure(todayYmd)) {
     return lastCompletedTradingDayNy(now);
   }
   const { openMs, closeMs } = await rthBoundsMs(todayYmd);
@@ -572,7 +573,10 @@ async function runWebsocketCaptureInternal(
       wsLatency.subscribe_first_message_ms = wireNow;
     }
     void (async () => {
-      const nb = getNbbo(sym);
+      const tsMs = trade.timestamp;
+      const fresh = resolveFreshOptionNbbo(sym, tsMs);
+      const polyOnly = getNbbo(sym);
+      const nbboMerged = fresh ?? (polyOnly ? { bid: polyOnly.bid, ask: polyOnly.ask } : null);
       const meta = parseOccMeta(sym);
       if (!meta) return;
       let baselineAvgVol: number | null = null;
@@ -587,7 +591,8 @@ async function runWebsocketCaptureInternal(
         price: trade.price,
         size: trade.size,
         conditions: trade.conditions,
-        nbbo: nb ? { bid: nb.bid, ask: nb.ask } : null,
+        nbbo: nbboMerged ? { bid: nbboMerged.bid, ask: nbboMerged.ask } : null,
+        strictFreshQuote: fresh != null,
         largeNotionalThresholdUsd: marketCtx.largeNotionalThresholdUsd,
         avgDailyContractVolume20d: baselineAvgVol,
         openInterest: oiSnap > 0 ? oiSnap : null,
@@ -596,7 +601,6 @@ async function runWebsocketCaptureInternal(
       if (wsLatency.first_classified_trade_ms == null) {
         wsLatency.first_classified_trade_ms = Date.now();
       }
-      const tsMs = trade.timestamp;
       const dteDays = dteCalendarDays(meta.expiration, tsMs);
       const sessionPhase = sessionPhaseFromTradeMs(tsMs);
       const venueClass = venueClassFromExchangeId(trade.exchange);

@@ -7,11 +7,9 @@ import { runDeskAnalysis, runSoloDesk, runConvictionDesk, type DeskCallbacks } f
 import type { ConvictionDeskResult, DeskResult } from "./strategistDeskSchemas.js";
 import { throwIfStrategistAnalyzeCancelled } from "./strategistAnalyzeCancellation.js";
 import type { ScrubCanonical } from "./narrativeScrubbers.js";
-import { db, strategistTelemetryTable } from "@workspace/db";
+import { db, desc, eq, sql, and, strategistTelemetryTable, type InferInsertModel } from "@workspace/db";
 
 type StrategistTelemetryInsert = InferInsertModel<typeof strategistTelemetryTable>;
-import { desc, eq, sql, and } from "drizzle-orm";
-import type { InferInsertModel } from "drizzle-orm";
 import { fetchPolygonTickerMarketCapUsd, logMarketCapPolygonFallback } from "./polygonTickerMarketCap.js";
 import { getBestAccessToken } from "./tokenStore.js";
 import { fetchPolygonChain } from "./polygonChain.js";

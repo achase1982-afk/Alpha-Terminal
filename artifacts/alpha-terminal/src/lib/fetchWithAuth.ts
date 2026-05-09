@@ -1,3 +1,5 @@
+import { signalClerkAuthLost } from "./authNoticeStore";
+
 /** Mirrors Clerk `getToken` options we care about (long strategist polls + 401 recovery). */
 export type ClerkGetTokenOptions = { skipCache?: boolean };
 
@@ -58,7 +60,7 @@ export async function fetchWithAuth(
   try {
     const res = await fetch(input, { ...fetchInit, headers, redirect: "error" });
     if (
-      res.status === 401 &&
+      (res.status === 401 || res.status === 403) &&
       clerkGetToken &&
       !_authRetry &&
       typeof window !== "undefined"
@@ -68,8 +70,19 @@ export async function fetchWithAuth(
         if (fresh) {
           const headers2 = new Headers(fetchInit.headers);
           headers2.set("Authorization", `Bearer ${fresh}`);
-          return await fetch(input, { ...fetchInit, headers: headers2, redirect: "error" });
+          const res2 = await fetch(input, { ...fetchInit, headers: headers2, redirect: "error" });
+          if (res2.status === 401 || res2.status === 403) {
+            signalClerkAuthLost(
+              "The server rejected your account session.",
+              "Try Reload app below, or sign out and sign in again. After a deployment, reloading usually fixes stale auth.",
+            );
+          }
+          return res2;
         }
+        signalClerkAuthLost(
+          "No active account session token.",
+          "Sign in again, or reload the app if you just updated.",
+        );
       } catch {
         /* return first 401 */
       }

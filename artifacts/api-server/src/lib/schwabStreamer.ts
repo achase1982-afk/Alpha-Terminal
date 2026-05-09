@@ -154,8 +154,11 @@ const NYSE_NASDAQ_OPTIONS_BOOK_FIELDS = "0,1,2,3";
  * See also schwab-py / official Schwab developer streaming documentation.
  */
 const TIMESALE_EQUITY_FIELDS = "0,1,2,3,4";
-/** One-minute CHART_EQUITY (TD/Schwab field IDs: key, time, O, H, L, C, volume). */
-const CHART_EQUITY_FIELDS = "0,1,2,3,4,5,6";
+/**
+ * CHART_EQUITY — Schwab Streamer Guide / schwab-py ChartEquityFields:
+ * 0 symbol, 1 sequence, 2 open, 3 high, 4 low, 5 close, 6 volume, 7 chart time (epoch ms), 8 chart day.
+ */
+const CHART_EQUITY_FIELDS = "0,1,2,3,4,5,6,7,8";
 
 export interface SchwabTimesaleEquityEvent {
   symbol: string;
@@ -280,6 +283,11 @@ function appendStrategistChartEquity(sym: string, bar: SchwabChartEquityBarPoint
 export function getStrategistChartEquityBars(symbol: string): SchwabChartEquityBarPoint[] {
   const buf = strategistChartEquityRing.get(symbol.toUpperCase());
   return buf ? [...buf.bars] : [];
+}
+
+/** Chronological closes for diagnostics / RSI helpers. */
+export function getStrategistChartEquityCloses(symbol: string): Array<{ ts: number; close: number }> {
+  return getStrategistChartEquityBars(symbol).map((b) => ({ ts: b.chartTimeMs, close: b.close }));
 }
 
 export interface SchwabVenueBookStrategistSnapshot {
@@ -1163,7 +1171,7 @@ function processTimesaleEquity(content: Record<string, unknown>[]) {
 }
 
 /**
- * CHART_EQUITY (1m): 0 key, 1 chart time, 2–5 OHLC, 6 volume (TD / Schwab streaming lineage).
+ * CHART_EQUITY — one-minute bars; field **7** chart time (epoch ms), fields **2–6** OHLCV per Streamer Guide.
  */
 function processChartEquity(content: Record<string, unknown>[]) {
   if (content.length === 0) return;
@@ -1178,8 +1186,8 @@ function processChartEquity(content: Record<string, unknown>[]) {
     const rawKey = (item["key"] ?? item["0"]) as string | undefined;
     const symbol = rawKey ? normalizeEquityKey(rawKey) : "";
     if (!symbol) continue;
-    const tRaw = numOrNull(item["1"]);
-    const chartTimeMs = tRaw != null ? normalizeChartTimeMs(tRaw) : NaN;
+    const chartTimeRaw = numOrNull(item["7"]);
+    const chartTimeMs = chartTimeRaw != null ? normalizeChartTimeMs(chartTimeRaw) : NaN;
     const open = numOrNull(item["2"]);
     const high = numOrNull(item["3"]);
     const low = numOrNull(item["4"]);
@@ -1861,6 +1869,7 @@ export function addTimesaleEquitySymbols(symbols: string[]) {
   }
 }
 
+/** Subscribe strategist symbols to CHART_EQUITY (1-minute bars; RSI fallback vs TIMESALE aggregation). */
 export function addChartEquitySymbols(symbols: string[]) {
   const newSyms: string[] = [];
   for (const s of symbols) {

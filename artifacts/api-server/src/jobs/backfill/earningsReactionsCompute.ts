@@ -1,5 +1,5 @@
 import { db, corporateEventsTable, earningsReactionsTable, equityDailyTable } from "@workspace/db";
-import { and, asc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNotNull, sql } from "@workspace/db";
 import {
   advanceNyTradingDaysYmd,
   isNyTradingSessionDate,

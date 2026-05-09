@@ -4,7 +4,7 @@
  * from Polygon /v3/quotes via {@link fetchQuotesAroundTrade}.
  */
 import { db, optionsFlowRawTradesTable } from "@workspace/db";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "@workspace/db";
 import { logger } from "./logger.js";
 import { fetchSchwabMarketSnapshot } from "./schwabMarketSnapshot.js";
 import { buildMarketContextSnapshot } from "./flowMarketContext.js";

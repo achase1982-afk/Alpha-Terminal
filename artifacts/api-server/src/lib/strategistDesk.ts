@@ -54,6 +54,7 @@ import type { DebateRound } from "./strategistDebate.js";
 import type { CatalystEvaluation } from "./catalystEvaluator.js";
 import { runCatalystDeskStructuredSearches } from "./strategistDeskCatalystWebSearch.js";
 import { throwIfStrategistAnalyzeCancelled } from "./strategistAnalyzeCancellation.js";
+import { getStrategistRunContext, mergeStrategistDiag } from "./strategistRunContext.js";
 
 const TEMPERATURE = 0;
 /** Conviction memo + greeks grid can exceed default model caps; truncates cause parse/extract failures. Providers may clamp lower at runtime. */
@@ -121,8 +122,9 @@ async function streamModel(
   opts?: { convictionDeskLargeMemo?: boolean },
 ): Promise<WebSearchResult> {
   const cap = opts?.convictionDeskLargeMemo === true ? CONVICTION_DESK_MAX_OUTPUT_TOKENS : undefined;
+  let r: WebSearchResult;
   if (modelOpt.provider === "anthropic") {
-    return streamCallAnthropicWithSystemAndWebSearch(
+    r = await streamCallAnthropicWithSystemAndWebSearch(
       modelOpt.model,
       TEMPERATURE,
       systemPrompt,
@@ -132,9 +134,30 @@ async function streamModel(
       cancelSignal,
       cap != null ? { maxTokens: cap } : undefined,
     );
-  }
-  if (modelOpt.provider === "openai") {
-    return streamCallOpenAIWithSystemAndWebSearch(
+  } else if (modelOpt.provider === "openai") {
+    r = await streamCallOpenAIWithSystemAndWebSearch(
+      modelOpt.model,
+      TEMPERATURE,
+      systemPrompt,
+      prompt,
+      onDelta,
+      onStatus,
+      cancelSignal,
+      cap != null ? { maxOutputTokens: cap } : undefined,
+    );
+  } else if (modelOpt.provider === "xai") {
+    r = await streamCallXaiWithSystemAndWebSearch(
+      modelOpt.model,
+      TEMPERATURE,
+      systemPrompt,
+      prompt,
+      onDelta,
+      onStatus,
+      cancelSignal,
+      cap != null ? { maxTokens: cap } : undefined,
+    );
+  } else {
+    r = await streamCallGeminiDeskJson(
       modelOpt.model,
       TEMPERATURE,
       systemPrompt,
@@ -145,29 +168,13 @@ async function streamModel(
       cap != null ? { maxOutputTokens: cap } : undefined,
     );
   }
-  if (modelOpt.provider === "xai") {
-    return streamCallXaiWithSystemAndWebSearch(
-      modelOpt.model,
-      TEMPERATURE,
-      systemPrompt,
-      prompt,
-      onDelta,
-      onStatus,
-      cancelSignal,
-      cap != null ? { maxTokens: cap } : undefined,
-    );
+  const ctx = getStrategistRunContext();
+  if (ctx && r.sdkCallParams) {
+    mergeStrategistDiag({
+      modelSdkInputs: [...(ctx.diag.modelSdkInputs ?? []), r.sdkCallParams],
+    });
   }
-  // Desk JSON-only: Gemini cannot mix application/json with tools; skip web search for this path.
-  return streamCallGeminiDeskJson(
-    modelOpt.model,
-    TEMPERATURE,
-    systemPrompt,
-    prompt,
-    onDelta,
-    onStatus,
-    cancelSignal,
-    cap != null ? { maxOutputTokens: cap } : undefined,
-  );
+  return r;
 }
 
 async function runDeskTurn<T>(args: {
@@ -838,6 +845,7 @@ function convictionOutcomeFromAttemptsWhenFailed(
 /**
  * Conviction Desk: one LLM turn with the Conviction model slot (`strategistConvictionModelIdx`),
  * same catalyst web-search preamble as Solo Desk when using Gemini JSON-only flow.
+ * Packaged live-equity JSON keys are documented for the model in `CONVICTION_DESK_INTRADAY_DATA_GUIDANCE` (strategistDeskPrompts.ts).
  */
 export async function runConvictionDesk(args: {
   dataPackage: string;

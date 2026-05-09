@@ -101,6 +101,7 @@ function computeRsiWilders(closes: number[], period = 14): number | null {
   return Math.round((100 - 100 / (1 + rs)) * 100) / 100;
 }
 
+/** Share-volume-weighted session VWAP from Schwab TIMESALE_EQUITY prints in `[openMs, closeMs]` only. */
 function sessionVwapFromTimesales(
   pts: SchwabTimesaleStrategistPoint[],
   openMs: number,
@@ -138,34 +139,49 @@ function sessionVwapFromChartBars(
   return Math.round((num / den) * 10000) / 10000;
 }
 
+/** ET calendar minute key for aligning tape prints with chart bars (America/New_York wall clock). */
+function etMinuteKey(tsMs: number): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(tsMs));
+  const g = (t: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === t)?.value ?? "";
+  return `${g("year")}-${g("month")}-${g("day")}T${g("hour")}:${g("minute")}`;
+}
+
 /**
- * Merge Schwab minute buckets: TIMESALE prints override CHART_EQUITY closes for the same minute,
- * then take the most recent 14 + 1 closes for Wilder's RSI (same cadence as chart bars).
+ * Merge Schwab minute buckets: chart fills history; TIMESALE last print overrides the same ET minute.
+ * Last fifteen closes feed Wilder's RSI (walks back across sessions via retained bars/tape).
  */
 function rsiFromSchwabMinuteMerge(
   tsPts: SchwabTimesaleStrategistPoint[],
   chartBars: readonly SchwabChartEquityBarPoint[],
 ): { rsi: number | null; rsi_as_of_session_date: string | null } {
-  const minuteToClose = new Map<number, number>();
+  const minuteToClose = new Map<string, number>();
   for (const c of chartBars) {
-    const k = Math.floor(c.chartTimeMs / 60_000) * 60_000;
-    if (Number.isFinite(c.close) && c.close > 0) {
-      if (!minuteToClose.has(k)) minuteToClose.set(k, c.close);
+    const k = etMinuteKey(c.chartTimeMs);
+    if (Number.isFinite(c.close) && c.close > 0 && !minuteToClose.has(k)) {
+      minuteToClose.set(k, c.close);
     }
   }
   for (const p of tsPts) {
-    const k = Math.floor(p.ts / 60_000) * 60_000;
-    minuteToClose.set(k, p.price);
+    minuteToClose.set(etMinuteKey(p.ts), p.price);
   }
-  const keys = [...minuteToClose.keys()].sort((a, b) => a - b);
+  const keys = [...minuteToClose.keys()].sort();
   if (keys.length < 15) return { rsi: null, rsi_as_of_session_date: null };
   const last15 = keys.slice(-15);
   const closes = last15.map((k) => minuteToClose.get(k)!);
   const rsi = computeRsiWilders(closes, 14);
-  const lastK = last15[last15.length - 1]!;
+  const lastKey = last15[last15.length - 1]!;
+  const dayPart = lastKey.slice(0, 10);
   return {
     rsi,
-    rsi_as_of_session_date: rsi != null ? nyCalendarYmd(new Date(lastK)) : null,
+    rsi_as_of_session_date: rsi != null ? dayPart : null,
   };
 }
 
