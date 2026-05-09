@@ -5,6 +5,7 @@ import { useDepthStore, type DepthBook } from "@/lib/depth-store";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { useOrderAlertStore, type OrderAlert } from "@/stores/orderAlertStore";
 import { fetchWithAuth, getClerkToken } from "@/lib/fetchWithAuth";
+import { signalSchwabAuthLost } from "@/lib/authNoticeStore";
 import type { LiveQuote, LiveNewsItem } from "@/lib/store";
 
 declare global {
@@ -100,6 +101,7 @@ async function refreshAndRetry(retryCount: number): Promise<boolean> {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken: traderRefreshToken }),
+        _authRetry: true,
       });
       if (res.ok) {
         const data = (await res.json()) as {
@@ -124,6 +126,7 @@ async function refreshAndRetry(retryCount: number): Promise<boolean> {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken }),
+        _authRetry: true,
       });
       if (res.ok) {
         const data = (await res.json()) as {
@@ -142,6 +145,10 @@ async function refreshAndRetry(retryCount: number): Promise<boolean> {
   }
 
   if (!marketOk && !traderOk) {
+    signalSchwabAuthLost(
+      "Schwab stream rejected the current login.",
+      "Live data paused. Reconnect Schwab — your Alpha Terminal account stays signed in.",
+    );
     state.clearTokens();
     state.clearTraderTokens();
     return false;

@@ -11,6 +11,7 @@ import { useAutoLock, AutoLockProvider } from "@/hooks/useAutoLock";
 import TerminalPage from "@/pages/Terminal";
 import NotFound from "@/pages/not-found";
 import PushNotificationBanner from "@/components/PushNotificationBanner";
+import AuthSessionBanner from "@/components/AuthSessionBanner";
 import { registerServiceWorker } from "@/lib/pushNotifications";
 import OrderAlertWatcher from "@/components/OrderAlertWatcher";
 import SchwabSessionExpiredDialog from "@/components/SchwabSessionExpiredDialog";
@@ -224,6 +225,7 @@ function App() {
         <AutoLockProvider>
           <AuthReadyGate>
             <InactivityWarning />
+            <AuthSessionBanner />
             <PendingSessionLoader />
             <GlobalStrategistPollerResumer />
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
