@@ -8,7 +8,7 @@
  */
 import "../src/loadEnv.js";
 import { db, equityDailyTable } from "@workspace/db";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "@workspace/db";
 import { LIQUID_CORE_SYMBOL_STRINGS } from "../src/data/liquidCore130";
 import { computeHV30 } from "../src/lib/dailySnapshot";
 

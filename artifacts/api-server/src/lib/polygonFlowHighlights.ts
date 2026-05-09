@@ -1,5 +1,5 @@
 import { db, optionsFlowPerStrikeTable, optionsFlowExecPerStrikeTable, optionsFlowRawTradesTable } from "@workspace/db";
-import { and, eq, inArray, sql, desc } from "drizzle-orm";
+import { and, eq, inArray, sql, desc } from "@workspace/db";
 import { logger } from "./logger.js";
 import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 import type { TapeBackfillStatus, TapeBackfillDiagnosticReason } from "./strategistTapeBackfill.js";

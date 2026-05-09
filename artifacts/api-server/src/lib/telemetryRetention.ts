@@ -6,7 +6,7 @@
  * partitioning by day or a more aggressive retention policy.
  */
 import { db, telemetryEventsTable } from "@workspace/db";
-import { lt } from "drizzle-orm";
+import { lt } from "@workspace/db";
 
 const RETENTION_DAYS = 14;
 const RUN_INTERVAL_MS = 24 * 60 * 60 * 1000;

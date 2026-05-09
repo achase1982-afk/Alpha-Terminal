@@ -1,5 +1,5 @@
 import { db, optionsFlowRawTradesTable, optionsTapeBackfillOccCacheTable, scannerTapeMetricsCycleLogTable, scannerTapeMetricsTable } from "@workspace/db";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "@workspace/db";
 import { logger } from "./logger.js";
 import { extractPgErrorContext, logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 import { getContract20dBaseline } from "./optionsBaselines.js";
@@ -12,6 +12,7 @@ import {
 } from "./flowTradeEnrichment.js";
 import { classifyForFlowPersistence, shouldPersistBackfillRow } from "./optionsTradeClassifier.js";
 import { reclassifyUnclassifiedTrades } from "./optionsTradeReclassifier.js";
+import { resolveFreshOptionNbbo } from "./optionQuoteFreshNbbo.js";
 import { flushFlowPersistenceNow } from "./optionsFlowPersistence.js";
 import { runRollupOnceForSymbol } from "./optionsFlowRollup.js";
 import { FlowLegWindow } from "./flowMultilegExtras.js";
@@ -744,11 +745,13 @@ export async function runStrategistTapeBackfill(args: {
     const rowsToInsert: Array<typeof optionsFlowRawTradesTable.$inferInsert> = [];
     let occPersistRejected = 0;
     for (const t of parsed) {
+      const fresh = resolveFreshOptionNbbo(occ, t.tsMs);
       const cl = classifyForFlowPersistence({
         price: t.price,
         size: t.size,
         conditions: t.conditions,
-        nbbo: null,
+        nbbo: fresh,
+        strictFreshQuote: fresh != null,
         largeNotionalThresholdUsd: marketCtx.largeNotionalThresholdUsd,
         avgDailyContractVolume20d: baselineAvgVol,
         openInterest: oiSnapshot > 0 ? oiSnapshot : null,
@@ -765,7 +768,7 @@ export async function runStrategistTapeBackfill(args: {
         occ,
         strike: meta.strike,
         expiration: meta.expiration,
-        side: null,
+        side: cl.side,
         size: t.size,
         notional: cl.notional,
       };
@@ -782,7 +785,7 @@ export async function runStrategistTapeBackfill(args: {
         tradePrice: t.price,
         size: t.size,
         notional: cl.notional,
-        side: null,
+        side: cl.side,
         isBlock: cl.isBlockForDb,
         isSweep: cl.isSweep,
         sourceTradeId: t.dedupId,
@@ -796,7 +799,7 @@ export async function runStrategistTapeBackfill(args: {
         marketCapUsd: marketCtx.marketCapUsd,
         marketCapTier: marketCtx.tier,
         notionalThresholdUsd: marketCtx.largeNotionalThresholdUsd,
-        aggressorConfidence: "unknown",
+        aggressorConfidence: cl.aggressorConfidence,
         syntheticLegGroupId: ml.syntheticLegGroupId,
         multiLegConfidence: ml.multiLegConfidence,
         extras: ml.extras,

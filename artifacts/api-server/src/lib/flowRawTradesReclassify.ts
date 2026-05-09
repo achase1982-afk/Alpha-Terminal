@@ -3,7 +3,7 @@
  * options_flow_strike_baseline_daily (idempotent nightly job).
  */
 
-import { sql, lt } from "drizzle-orm";
+import { sql, lt } from "@workspace/db";
 import { db, optionsFlowRawTradesTable } from "@workspace/db";
 import { logger } from "./logger.js";
 import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";

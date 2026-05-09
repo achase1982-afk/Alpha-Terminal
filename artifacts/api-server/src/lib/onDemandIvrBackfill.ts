@@ -1,5 +1,5 @@
 import { db, equityDailyTable, ivrBackfillJobsTable, trackedTickersTable } from "@workspace/db";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "@workspace/db";
 import { logger } from "./logger.js";
 import { notifyStrategistCompletion } from "./strategistNotifications.js";
 import { backfillEquityFromPolygon } from "./dailySnapshot.js";
@@ -268,6 +268,7 @@ export async function ensureIvrCoverage(symbol: string): Promise<IvrCoverageResu
     await db.insert(ivrBackfillJobsTable).values({
       id: jobId,
       symbol: sym,
+      jobKind: "ondemand_ivr",
       status: "queued",
       source: "none",
       daysRequested: IVR_TARGET_TRADING_DAYS,

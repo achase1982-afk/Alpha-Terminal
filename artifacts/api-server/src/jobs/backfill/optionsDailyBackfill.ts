@@ -1,6 +1,4 @@
-import { db, equityDailyTable, optionsDailyTable } from "@workspace/db";
-import { asc, eq } from "drizzle-orm";
-import { sql } from "drizzle-orm";
+import { asc, db, equityDailyTable, eq, optionsDailyTable, sql } from "@workspace/db";
 
 const POLYGON_API = "https://api.polygon.io";
 

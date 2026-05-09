@@ -1,5 +1,5 @@
 import { db, equityDailyTable } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { sql } from "@workspace/db";
 import { computeHV20, computeHV30, computeHV60 } from "../../lib/dailySnapshot.js";
 
 const POLYGON_API = "https://api.polygon.io";

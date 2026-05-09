@@ -710,6 +710,9 @@ export type TrackedTickerInsert = typeof trackedTickersTable.$inferInsert;
 export const ivrBackfillJobsTable = pgTable("ivr_backfill_jobs", {
   id: text("id").primaryKey(),
   symbol: text("symbol").notNull(),
+  /** ondemand_ivr | admin_iv_history | admin_hv_proxy */
+  jobKind: text("job_kind").notNull().default("ondemand_ivr"),
+  payload: jsonb("payload").$type<Record<string, unknown> | null>(),
   status: text("status").notNull().default("queued"),
   source: text("source").notNull().default("none"),
   daysRequested: integer("days_requested").notNull().default(252),

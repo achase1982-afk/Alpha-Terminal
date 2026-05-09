@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { scannerWatchlistsTable, scannerScreensTable } from "@workspace/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { runFmpScreen, type ScreenFilters } from "../lib/fmpScreener.js";
 import { runDynamicScreener } from "../lib/schwabDynamicScreener.js";

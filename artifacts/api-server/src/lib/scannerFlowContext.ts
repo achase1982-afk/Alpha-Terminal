@@ -20,7 +20,7 @@
  */
 
 import { db, tickerSignalSnapshotTable } from "@workspace/db";
-import { inArray, sql } from "drizzle-orm";
+import { inArray, sql } from "@workspace/db";
 
 export const SCANNER_FLOW_DEFAULT_WINDOW_MS = 4 * 60 * 60 * 1000;
 
