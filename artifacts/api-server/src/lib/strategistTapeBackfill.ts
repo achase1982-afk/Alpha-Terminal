@@ -24,7 +24,6 @@ import {
   rthBoundsMs,
 } from "./polygonMarketCalendar.js";
 import { fetchPolygonPaged } from "./polygonPagedFetch.js";
-import { getNbbo } from "./polygonOptionsWs.js";
 import { type QuotePoint, nbboAtOrBefore, parseQuotes } from "./optionsQuoteNbbo.js";
 import {
   OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS,
@@ -747,13 +746,11 @@ export async function runStrategistTapeBackfill(args: {
     let occPersistRejected = 0;
     for (const t of parsed) {
       const fresh = resolveFreshOptionNbbo(occ, t.tsMs);
-      const polyOnly = getNbbo(occ);
-      const nbboMerged = fresh ?? (polyOnly ? { bid: polyOnly.bid, ask: polyOnly.ask } : null);
       const cl = classifyForFlowPersistence({
         price: t.price,
         size: t.size,
         conditions: t.conditions,
-        nbbo: nbboMerged ? { bid: nbboMerged.bid, ask: nbboMerged.ask } : null,
+        nbbo: fresh,
         strictFreshQuote: fresh != null,
         largeNotionalThresholdUsd: marketCtx.largeNotionalThresholdUsd,
         avgDailyContractVolume20d: baselineAvgVol,
