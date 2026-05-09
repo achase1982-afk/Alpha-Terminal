@@ -29,9 +29,9 @@ When any field in these sections is **null** or a parent object such as **intrad
 In prose, use full phrases (**Volume Weighted Average Price**, **Relative Strength Index**) instead of abbreviations alone. Resting chain rows remain the authority when stream-backed marks are **null** or stale; **options_data_freshness** summarizes how much of the active watchlist had fresh stream ticks versus REST-only reads.
 
 ### Live Intraday Equity Context (**intraday.vwap**, **intraday.rsi**)
-- Volume Weighted Average Price (session) (**intraday.vwap.vwap_session**): Session cumulative volume-weighted average price from eligible prints when time and sales exist, otherwise possibly filled from minute-bar volume weights; **null** when neither source yields a level.
+- Volume Weighted Average Price (session) (**intraday.vwap.vwap_session**): Session cumulative VWAP from **Schwab TIMESALE_EQUITY** prints (volume-weighted in the packaged regular-session window); **null** when tape lacks sufficient prints. No non-Schwab equity vendor fills this field.
 - Volume Weighted Average Price delta percent (current price vs session VWAP) (**intraday.vwap.vwap_delta_pct**): Spot versus session VWAP in percent (positive means spot above session VWAP, negative below, near zero at VWAP) when both numbers exist; **null** when session VWAP or spot is unavailable.
-- Relative Strength Index 14 (**intraday.rsi.rsi_14**): Wilder Relative Strength Index over 14 closes from recent minute bars when history is long enough; **null** when minute closes are insufficient to compute.
+- Relative Strength Index 14 (**intraday.rsi.rsi_14**): Wilder RSI on **1-minute closes**: primary series is **last trade per ET minute** from **Schwab TIMESALE_EQUITY**; if fewer than fifteen minute closes exist, the model may use **Schwab CHART_EQUITY** one-minute bar closes when that stream is subscribed; **null** when neither Schwab path yields enough bars.
 
 ### Equity Block Tape Activity (rolling 30 minute window) (**intraday.equity_block_tape**)
 - Block count (**intraday.equity_block_tape.block_count_30min**): Count of large prints in the last thirty minutes by share-count or notional threshold.
