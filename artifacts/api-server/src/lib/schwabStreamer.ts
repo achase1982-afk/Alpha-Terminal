@@ -1,5 +1,6 @@
 import type { Response } from "express";
 import WebSocket from "ws";
+import { db, schwabChartEquityBarsTable, sql } from "@workspace/db";
 import { logger } from "./logger.js";
 import { getValidAccessToken, forceRefresh } from "./tokenStore.js";
 import { sendPushToAll } from "./pushService.js";
@@ -252,6 +253,89 @@ interface StrategistChartEquityBuf {
 const strategistChartEquityRing = new Map<string, StrategistChartEquityBuf>();
 const STRATEGIST_CHART_MAX_BARS_PER_SYMBOL = 8_000;
 
+/** Debounced persist so CHART_EQUITY throughput stays smooth on live streams. */
+const CHART_BAR_PERSIST_DEBOUNCE_MS = 250;
+const chartBarPersistPending = new Map<
+  string,
+  {
+    symbol: string;
+    barTimeMs: number;
+    high: string;
+    low: string;
+    close: string;
+    volume: string;
+    sessionDate: string;
+  }
+>();
+let chartBarPersistFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function nySessionDateYmdFromBarMs(ms: number): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(ms));
+}
+
+function queuePersistSchwabChartBar(symbolUpper: string, bar: SchwabChartEquityBarPoint): void {
+  const key = `${symbolUpper}:${bar.chartTimeMs}`;
+  chartBarPersistPending.set(key, {
+    symbol: symbolUpper,
+    barTimeMs: bar.chartTimeMs,
+    high: String(bar.high),
+    low: String(bar.low),
+    close: String(bar.close),
+    volume: String(bar.volume),
+    sessionDate: nySessionDateYmdFromBarMs(bar.chartTimeMs),
+  });
+  scheduleFlushSchwabChartBarPersist();
+}
+
+function scheduleFlushSchwabChartBarPersist(): void {
+  if (chartBarPersistFlushTimer != null) return;
+  chartBarPersistFlushTimer = setTimeout(() => {
+    chartBarPersistFlushTimer = null;
+    void flushSchwabChartBarPersistBatch();
+  }, CHART_BAR_PERSIST_DEBOUNCE_MS);
+}
+
+async function flushSchwabChartBarPersistBatch(): Promise<void> {
+  if (chartBarPersistPending.size === 0) return;
+  const rows = [...chartBarPersistPending.values()];
+  chartBarPersistPending.clear();
+  const chunkSize = 250;
+  try {
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize).map((r) => ({
+        symbol: r.symbol,
+        barTimeMs: r.barTimeMs,
+        high: r.high,
+        low: r.low,
+        close: r.close,
+        volume: r.volume,
+        sessionDate: r.sessionDate,
+      }));
+      await db
+        .insert(schwabChartEquityBarsTable)
+        .values(chunk)
+        .onConflictDoUpdate({
+          target: [schwabChartEquityBarsTable.symbol, schwabChartEquityBarsTable.barTimeMs],
+          set: {
+            close: sql`excluded.close`,
+            high: sql`excluded.high`,
+            low: sql`excluded.low`,
+            volume: sql`excluded.volume`,
+            sessionDate: sql`excluded.session_date`,
+            insertedAt: sql`now()`,
+          },
+        });
+    }
+  } catch (err) {
+    logger.warn({ err, batchRows: rows.length }, "Schwab streamer: CHART_EQUITY persist batch failed");
+  }
+}
+
 function normalizeChartTimeMs(raw: number): number {
   if (!Number.isFinite(raw)) return NaN;
   /* TD/Schwab lineage sometimes sends seconds since epoch for chart time. */
@@ -269,6 +353,7 @@ function appendStrategistChartEquity(sym: string, bar: SchwabChartEquityBarPoint
   const idx = arr.findIndex((b) => b.chartTimeMs === bar.chartTimeMs);
   if (idx >= 0) {
     arr[idx] = bar;
+    queuePersistSchwabChartBar(u, bar);
     return;
   }
   arr.push(bar);
@@ -277,6 +362,7 @@ function appendStrategistChartEquity(sym: string, bar: SchwabChartEquityBarPoint
   if (arr.length > cap) {
     arr.splice(0, arr.length - cap);
   }
+  queuePersistSchwabChartBar(u, bar);
 }
 
 /** Minute OHLCV bars from Schwab CHART_EQUITY stream cache (ascending). */

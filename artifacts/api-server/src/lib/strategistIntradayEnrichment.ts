@@ -1,4 +1,4 @@
-import { db, eq, tickerSignalSnapshotTable } from "@workspace/db";
+import { db, eq, tickerSignalSnapshotTable, schwabChartEquityBarsTable, and, gte, lte, asc } from "@workspace/db";
 import { logger } from "./logger.js";
 import { nyCalendarYmd, prevNyTradingDayYmd, rthBoundsMs } from "./polygonMarketCalendar.js";
 import { isUsEquityRthEt } from "./ibTotalviewPersistence.js";
@@ -184,6 +184,78 @@ function rsiFromSchwabMinuteMerge(
   };
 }
 
+function mergeChartBarsPreferRing(
+  ring: readonly SchwabChartEquityBarPoint[],
+  persisted: readonly SchwabChartEquityBarPoint[],
+): SchwabChartEquityBarPoint[] {
+  const m = new Map<number, SchwabChartEquityBarPoint>();
+  for (const b of persisted) m.set(b.chartTimeMs, b);
+  for (const b of ring) m.set(b.chartTimeMs, b);
+  return [...m.values()].sort((a, b) => a.chartTimeMs - b.chartTimeMs);
+}
+
+function chartDbRowToBarPoint(row: {
+  barTimeMs: number;
+  high: string;
+  low: string;
+  close: string;
+  volume: string;
+}): SchwabChartEquityBarPoint {
+  const close = Number(row.close);
+  const high = Number(row.high);
+  const low = Number(row.low);
+  const volume = Number(row.volume);
+  return {
+    chartTimeMs: row.barTimeMs,
+    open: close,
+    high,
+    low,
+    close,
+    volume,
+  };
+}
+
+async function fetchPersistedChartBarsInRange(
+  symbolUpper: string,
+  openMs: number,
+  closeMs: number,
+): Promise<SchwabChartEquityBarPoint[]> {
+  const rows = await db
+    .select({
+      barTimeMs: schwabChartEquityBarsTable.barTimeMs,
+      high: schwabChartEquityBarsTable.high,
+      low: schwabChartEquityBarsTable.low,
+      close: schwabChartEquityBarsTable.close,
+      volume: schwabChartEquityBarsTable.volume,
+    })
+    .from(schwabChartEquityBarsTable)
+    .where(
+      and(
+        eq(schwabChartEquityBarsTable.symbol, symbolUpper),
+        gte(schwabChartEquityBarsTable.barTimeMs, openMs),
+        lte(schwabChartEquityBarsTable.barTimeMs, closeMs),
+      ),
+    )
+    .orderBy(asc(schwabChartEquityBarsTable.barTimeMs));
+  return rows.map(chartDbRowToBarPoint);
+}
+
+/** Bars at or after `sinceMs` for RSI history when the in-memory ring is cold. */
+async function fetchPersistedBarsSince(symbolUpper: string, sinceMs: number): Promise<SchwabChartEquityBarPoint[]> {
+  const rows = await db
+    .select({
+      barTimeMs: schwabChartEquityBarsTable.barTimeMs,
+      high: schwabChartEquityBarsTable.high,
+      low: schwabChartEquityBarsTable.low,
+      close: schwabChartEquityBarsTable.close,
+      volume: schwabChartEquityBarsTable.volume,
+    })
+    .from(schwabChartEquityBarsTable)
+    .where(and(eq(schwabChartEquityBarsTable.symbol, symbolUpper), gte(schwabChartEquityBarsTable.barTimeMs, sinceMs)))
+    .orderBy(asc(schwabChartEquityBarsTable.barTimeMs));
+  return rows.map(chartDbRowToBarPoint);
+}
+
 function equityBlockMetricsWindow(
   pts: SchwabTimesaleStrategistPoint[],
   windowStartMs: number,
@@ -311,6 +383,9 @@ export async function buildStrategistIntradayPackage(args: {
 
   const tsPts = getStrategistTimesalePoints(symU);
   const chartBars = getStrategistChartEquityBars(symU);
+  const chartBarsLookbackMs = 35 * 24 * 60 * 60 * 1000;
+  const persistedSince = await fetchPersistedBarsSince(symU, nowMs - chartBarsLookbackMs);
+  const chartBarsForRsi = mergeChartBarsPreferRing(chartBars, persistedSince);
 
   let vwapSession = sessionVwapFromTimesales(tsPts, openMs, closeMs);
   let vwapStatus: string =
@@ -329,7 +404,9 @@ export async function buildStrategistIntradayPackage(args: {
           vwap_as_of_session_date = dayCursor;
           break;
         }
-        const cv = sessionVwapFromChartBars(chartBars, bounds.openMs, bounds.closeMs);
+        const persistedWin = await fetchPersistedChartBarsInRange(symU, bounds.openMs, bounds.closeMs);
+        const mergedWin = mergeChartBarsPreferRing(chartBars, persistedWin);
+        const cv = sessionVwapFromChartBars(mergedWin, bounds.openMs, bounds.closeMs);
         if (cv != null) {
           vwapSession = cv;
           vwapStatus = "prior_session_chart_equity";
@@ -349,7 +426,7 @@ export async function buildStrategistIntradayPackage(args: {
     vwapDeltaPct = Math.round(((spot - vwapSession) / vwapSession) * 10000) / 100;
   }
 
-  const rsiMerged = rsiFromSchwabMinuteMerge(tsPts, chartBars);
+  const rsiMerged = rsiFromSchwabMinuteMerge(tsPts, chartBarsForRsi);
   const rsi14 = rsiMerged.rsi;
   const rsiStatus = rsi14 != null ? "available" : "insufficient_schwab_minute_closes";
   const rsi_as_of_session_date = rsiMerged.rsi_as_of_session_date;

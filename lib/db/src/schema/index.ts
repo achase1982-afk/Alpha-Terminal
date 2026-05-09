@@ -1137,6 +1137,27 @@ export const earningsReactionsTable = pgTable(
 
 export type EarningsReactionRow = typeof earningsReactionsTable.$inferSelect;
 
+/** Persisted Schwab CHART_EQUITY 1-minute bars (Railway-survivable strategist VWAP/RSI walkback). */
+export const schwabChartEquityBarsTable = pgTable(
+  "schwab_chart_equity_bars",
+  {
+    symbol: text("symbol").notNull(),
+    barTimeMs: bigint("bar_time_ms", { mode: "number" }).notNull(),
+    high: numeric("high", { precision: 20, scale: 8 }).notNull(),
+    low: numeric("low", { precision: 20, scale: 8 }).notNull(),
+    close: numeric("close", { precision: 20, scale: 8 }).notNull(),
+    volume: numeric("volume", { precision: 24, scale: 4 }).notNull(),
+    sessionDate: date("session_date").notNull(),
+    insertedAt: timestamp("inserted_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.symbol, t.barTimeMs] }),
+    index("schwab_chart_equity_bars_symbol_session_date_idx").on(t.symbol, t.sessionDate),
+  ],
+);
+
+export type SchwabChartEquityBarRow = typeof schwabChartEquityBarsTable.$inferSelect;
+
 export const backfillAuditRunsTable = pgTable("backfill_audit_runs", {
   runId: uuid("run_id").defaultRandom().primaryKey(),
   startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
