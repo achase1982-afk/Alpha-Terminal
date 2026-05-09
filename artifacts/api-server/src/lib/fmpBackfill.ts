@@ -10,6 +10,7 @@ import {
   macroCalendarTable,
 } from "@workspace/db";
 import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
+import { getTuningUniverseSymbols } from "./tuningUniverseRegistrar.js";
 import {
   getFmpAnalystEstimatesQuarterly,
   getFmpEarningsCalendar,
@@ -18,6 +19,8 @@ import {
   getFmpHistoricalPriceEodFull,
   getFmpAnalystGrades,
   getFmpAnalystPriceTargets,
+  getFmpStockSplits,
+  type FmpEarningsSurpriseRow,
 } from "./fmpClient.js";
 import { invalidateCalendarEventsCache } from "./calendarEventChecker.js";
 import { refreshMacroCalendarCacheFromDb } from "./fmpMacroCalendarCache.js";
@@ -62,10 +65,53 @@ function normalizeFmpEarningsTiming(timeRaw: string | null): { earningsTimeRaw: 
   return { earningsTimeRaw: t, earningsTiming: t };
 }
 
-const lcSet = () => new Set(LIQUID_CORE_SYMBOL_STRINGS.map((s) => s.toUpperCase()));
+async function upsertCorporateEarningsFromCalendarRow(r: {
+  symbol: string;
+  date: string;
+  time: string | null;
+  epsEstimated: number | null;
+  revenueEstimated: number | null;
+  epsActual?: number | null;
+  revenueActual?: number | null;
+}): Promise<void> {
+  const { earningsTimeRaw, earningsTiming } = normalizeFmpEarningsTiming(r.time);
+  await db
+    .insert(corporateEventsTable)
+    .values({
+      symbol: r.symbol,
+      earningsDate: r.date,
+      earningsTiming,
+      earningsTimeRaw,
+      earningsEpsEstimate: r.epsEstimated,
+      earningsRevenueEstimate: r.revenueEstimated,
+      earningsEpsActual: r.epsActual ?? null,
+      earningsRevenueActual: r.revenueActual ?? null,
+      updatedAt: sql`now()`,
+    })
+    .onConflictDoUpdate({
+      target: [corporateEventsTable.symbol, corporateEventsTable.earningsDate],
+      set: {
+        earningsTiming: sql`excluded.earnings_timing`,
+        earningsTimeRaw: sql`excluded.earnings_time_raw`,
+        earningsEpsEstimate: sql`excluded.earnings_eps_estimate`,
+        earningsRevenueEstimate: sql`excluded.earnings_revenue_estimate`,
+        earningsEpsActual: sql`COALESCE(excluded.earnings_eps_actual, corporate_events.earnings_eps_actual)`,
+        earningsRevenueActual: sql`COALESCE(excluded.earnings_revenue_actual, corporate_events.earnings_revenue_actual)`,
+        updatedAt: sql`excluded.updated_at`,
+      },
+    });
+}
+
+function lcAndTuningSet(): Set<string> {
+  const s = new Set(LIQUID_CORE_SYMBOL_STRINGS.map((x) => x.toUpperCase()));
+  for (const sym of getTuningUniverseSymbols()) {
+    s.add(sym.toUpperCase());
+  }
+  return s;
+}
 
 /**
- * FMP earnings calendar → `corporate_events` for Liquid Core 130 (next 90 days).
+ * FMP earnings calendar → `corporate_events` for Liquid Core ∪ tuning symbols (next 90 days).
  */
 export async function backfillEarningsCalendar(): Promise<{
   rowsUpserted: number;
@@ -74,7 +120,7 @@ export async function backfillEarningsCalendar(): Promise<{
 }> {
   const from = todayUtcYmd();
   const to = addDaysUtcYmd(from, 90);
-  const set = lcSet();
+  const set = lcAndTuningSet();
 
   const calendar = await getFmpEarningsCalendar(from, to);
   const filtered = calendar.filter((r) => set.has(r.symbol));
@@ -83,27 +129,7 @@ export async function backfillEarningsCalendar(): Promise<{
   const symbolsTouched = new Set<string>();
 
   for (const r of filtered) {
-    const { earningsTimeRaw, earningsTiming } = normalizeFmpEarningsTiming(r.time);
-    await db.insert(corporateEventsTable)
-      .values({
-        symbol: r.symbol,
-        earningsDate: r.date,
-        earningsTiming,
-        earningsTimeRaw,
-        earningsEpsEstimate: r.epsEstimated,
-        earningsRevenueEstimate: r.revenueEstimated,
-        updatedAt: sql`now()`,
-      })
-      .onConflictDoUpdate({
-        target: [corporateEventsTable.symbol, corporateEventsTable.earningsDate],
-        set: {
-          earningsTiming: sql`excluded.earnings_timing`,
-          earningsTimeRaw: sql`excluded.earnings_time_raw`,
-          earningsEpsEstimate: sql`excluded.earnings_eps_estimate`,
-          earningsRevenueEstimate: sql`excluded.earnings_revenue_estimate`,
-          updatedAt: sql`excluded.updated_at`,
-        },
-      });
+    await upsertCorporateEarningsFromCalendarRow(r);
     rowsUpserted++;
     symbolsTouched.add(r.symbol);
   }
@@ -122,7 +148,7 @@ export async function backfillEarningsCalendar(): Promise<{
 }
 
 export async function backfillAnalystPriceTargets(): Promise<{ rowsUpserted: number }> {
-  const set = lcSet();
+  const set = lcAndTuningSet();
   const asOf = todayUtcYmd();
   let rowsUpserted = 0;
 
@@ -163,7 +189,7 @@ export async function backfillAnalystPriceTargets(): Promise<{ rowsUpserted: num
 }
 
 export async function backfillAnalystGrades(): Promise<{ rowsAttempted: number }> {
-  const set = lcSet();
+  const set = lcAndTuningSet();
   const fromDate = new Date();
   fromDate.setUTCDate(fromDate.getUTCDate() - 30);
 
@@ -252,12 +278,12 @@ export async function backfillEconomicCalendar(): Promise<{ rowsUpserted: number
 }
 
 export async function backfillEarningsSurprises(): Promise<{ rowsUpserted: number }> {
-  const set = lcSet();
+  const set = lcAndTuningSet();
   let rowsUpserted = 0;
 
   for (const sym of set) {
     const surprises = await getFmpEarningsSurprises(sym, 100);
-    for (const s of surprises) {
+    for (const s of surprises.rows) {
       const surprisePct =
         s.surprisePercentage != null && Number.isFinite(s.surprisePercentage)
           ? String(s.surprisePercentage)
@@ -307,7 +333,7 @@ export async function backfillEquityDailyHistory(): Promise<{
   symbolsAttempted: number;
   failures: Array<{ symbol: string; error: string }>;
 }> {
-  const set = lcSet();
+  const set = lcAndTuningSet();
   const to = todayUtcYmd();
   let rowsInserted = 0;
   const failures: Array<{ symbol: string; error: string }> = [];
@@ -364,7 +390,7 @@ export async function backfillAnalystEstimates(): Promise<{
   rowsUpserted: number;
   symbolsWithNoData: number;
 }> {
-  const set = lcSet();
+  const set = lcAndTuningSet();
   let rowsUpserted = 0;
   let symbolsWithNoData = 0;
 
@@ -411,4 +437,87 @@ export async function backfillAnalystEstimates(): Promise<{
   void logFailure("DATABASE", "INFO", "fmp backfill completed", summary);
   logger.info(summary, "fmp backfill completed");
   return { rowsUpserted, symbolsWithNoData };
+}
+
+async function upsertCorporateEarningsFromSurpriseMerge(sym: string, s: FmpEarningsSurpriseRow): Promise<void> {
+  await db
+    .insert(corporateEventsTable)
+    .values({
+      symbol: sym,
+      earningsDate: s.date,
+      earningsEpsEstimate: s.epsEstimated,
+      earningsEpsActual: s.epsActual,
+      earningsRevenueEstimate: s.revenueEstimated,
+      earningsRevenueActual: s.revenueActual,
+      updatedAt: sql`now()`,
+    })
+    .onConflictDoUpdate({
+      target: [corporateEventsTable.symbol, corporateEventsTable.earningsDate],
+      set: {
+        earningsEpsEstimate: sql`COALESCE(excluded.earnings_eps_estimate, corporate_events.earnings_eps_estimate)`,
+        earningsRevenueEstimate: sql`COALESCE(excluded.earnings_revenue_estimate, corporate_events.earnings_revenue_estimate)`,
+        earningsEpsActual: sql`COALESCE(excluded.earnings_eps_actual, corporate_events.earnings_eps_actual)`,
+        earningsRevenueActual: sql`COALESCE(excluded.earnings_revenue_actual, corporate_events.earnings_revenue_actual)`,
+        earningsTiming: sql`COALESCE(corporate_events.earnings_timing, excluded.earnings_timing)`,
+        earningsTimeRaw: sql`COALESCE(corporate_events.earnings_time_raw, excluded.earnings_time_raw)`,
+        updatedAt: sql`excluded.updated_at`,
+      },
+    });
+}
+
+/**
+ * Scoped `corporate_events` sync for tuning symbols: chunked earnings-calendar (symbol filter),
+ * merged `/earnings` actuals, and split-only rows (FMP splits → corporate_events.split_*).
+ */
+export async function syncCorporateEventsForTuningSymbol(symbol: string): Promise<{
+  calendarUpserts: number;
+  surpriseUpserts: number;
+  splitUpserts: number;
+  fmpPremiumHistoricalUnavailable: boolean;
+}> {
+  const sym = symbol.toUpperCase().trim();
+  const horizonStart = addDaysUtcYmd(todayUtcYmd(), -365 * 5 - 45);
+  const horizonEnd = addDaysUtcYmd(todayUtcYmd(), 180);
+  let calendarUpserts = 0;
+  let fmpPremiumHistoricalUnavailable = false;
+  let cur = horizonStart;
+  while (cur <= horizonEnd) {
+    const chunkEnd = addDaysUtcYmd(cur, 88);
+    const end = chunkEnd > horizonEnd ? horizonEnd : chunkEnd;
+    const rows = await getFmpEarningsCalendar(cur, end, { symbol: sym });
+    for (const r of rows) {
+      if (r.symbol !== sym) continue;
+      await upsertCorporateEarningsFromCalendarRow(r);
+      calendarUpserts++;
+    }
+    cur = addDaysUtcYmd(end, 1);
+  }
+
+  const surprises = await getFmpEarningsSurprises(sym, 100);
+  if (surprises.http402) fmpPremiumHistoricalUnavailable = true;
+  let surpriseUpserts = 0;
+  for (const s of surprises.rows) {
+    await upsertCorporateEarningsFromSurpriseMerge(sym, s);
+    surpriseUpserts++;
+  }
+
+  const splitFetch = await getFmpStockSplits(sym);
+  if (splitFetch.http402) fmpPremiumHistoricalUnavailable = true;
+  const splitRows = splitFetch.rows;
+  let splitUpserts = 0;
+  for (const sp of splitRows) {
+    if (sp.symbol !== sym || sp.date < horizonStart) continue;
+    await db.execute(sql`
+      INSERT INTO corporate_events (symbol, earnings_date, split_date, split_ratio, updated_at)
+      VALUES (${sym}, NULL, ${sp.date}, ${sp.label}, NOW())
+      ON CONFLICT (symbol, split_date) WHERE earnings_date IS NULL AND split_date IS NOT NULL
+      DO UPDATE SET
+        split_ratio = EXCLUDED.split_ratio,
+        updated_at = EXCLUDED.updated_at
+    `);
+    splitUpserts++;
+  }
+
+  invalidateCalendarEventsCache();
+  return { calendarUpserts, surpriseUpserts, splitUpserts, fmpPremiumHistoricalUnavailable };
 }

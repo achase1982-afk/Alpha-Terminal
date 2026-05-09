@@ -5,10 +5,10 @@
 
 import { buildScannerContextPromptBlock, type ScannerStrategistContext } from "./scannerStrategistContext.js";
 import {
-  CONVICTION_DESK_JSON_SKELETON,
-  CONVICTION_DESK_MEMO_INSTRUCTIONS,
-} from "./convictionDeskMemoInstructions.js";
-
+  CONVICTION_DESK_ADDITIONS_INSTRUCTIONS,
+  CONVICTION_DESK_FULL_JSON_SKELETON,
+  CONVICTION_DESK_FINAL_SHAPE_GUARD,
+} from "./convictionDeskSoloSupersetPrompt.js";
 /** Single-voice rule injected into each section prompt. */
 const SINGLE_VOICE_FRAMING = `You are writing one analysis broken into clearly labeled sections. There is one voice and one analyst. Section headers exist to help the reader navigate the analysis, not to attribute authorship to different roles. Do not write as a separate team, desk, or role. Use plain topic labels in prose only when helpful: Volatility, Flow, Catalyst, Decision.`;
 
@@ -20,6 +20,13 @@ OUTPUT STYLE (strict):
 - Do not refer to "the payload", "the data package", "the feed", "the API", "the file", or similar ingestion or plumbing language.
 - Write as if you are reading the chain and the surface directly: "the tape", "the chain", "listed expiries", "the vol surface", "flow on screen".
 - If something looks like a known market artifact (e.g. front-week IV clamping, stale prints), describe the artifact plainly without attributing it to a system or vendor name.`;
+
+/** When intraday / stream enrichments are present in the data package JSON. */
+export const CONVICTION_DESK_INTRADAY_DATA_GUIDANCE = `
+
+## INTRADAY AND LIVE STREAM CONTEXT (when JSON fields exist)
+The snapshot may include **intraday** (Volume Weighted Average Price, Relative Strength Index, equity block tape, live order book, scanner signal snapshot), **options_data_freshness**, optional parallel streamed equity quote timestamps (JSON keys include stream and tuning Level 1 enrichment), and quote divergence in basis points when both mids exist. In prose, use full phrases (**Volume Weighted Average Price**, **Relative Strength Index**) instead of abbreviations alone. Resting chain rows remain the authority when stream quotes are null or stale; **options_data_freshness** states whether the live options stream backed this run.
+`;
 
 /** Catalyst / event narrative: sell-side firms may be named as catalyst actors; retrieval plumbing and outlet attribution may not. */
 export const CATALYST_OUTPUT_ATTRIBUTION_RULES = `
@@ -345,11 +352,71 @@ Respond with ONLY a JSON object matching the existing schema (top-level **pm** s
 }`;
 }
 
+/**
+ * PM turn for **order-ticket review** (trader already built a ticket; no new structure).
+ * Same JSON output shape as the trade validator's solo pass (finalVerdict, cases, confidences).
+ */
+export function buildPmOrderTicketDeskValidationPrompt(
+  dataPackage: string,
+  volRead: string,
+  flowRead: string,
+  catalystRead: string,
+  orderTicketMarkdown: string,
+): string {
+  const isClosing = /Intent:\s*CLOSE/i.test(orderTicketMarkdown) || /CLOSE existing position/i.test(orderTicketMarkdown);
+  const bullLabel = isClosing
+    ? "the strongest honest case to **STAY IN** (thesis still intact, do not clip a winner early, do not panic-sell a paper loss)"
+    : "the strongest honest case **FOR** entering this exact trade as built";
+  const bearLabel = isClosing
+    ? "the strongest honest case to **CLOSE** (thesis broken, take it off, redeploy capital)"
+    : "the strongest honest case **AGAINST** entering this exact trade as built";
+  return `${SINGLE_VOICE_FRAMING}
+
+This turn is **order-ticket validation**, not a new trade idea. A trader has already constructed a specific broker order and is asking the desk to review **that exact ticket** before send. The Volatility, Flow, and Catalyst sections below are your colleagues' reads on the name. You must ground your verdict in those sections **and** the order ticket (mandatory — do not ignore the ticket or substitute a different structure).
+
+You are not paid to design a better spread for this session. You are paid to call whether **this** ticket is defensible right now. If the sections do not support the ticket, **DO_NOT_PROCEED** is a correct answer.
+
+## ORDER TICKET (authoritative — cite exact strikes, expiries, limits, quantities from here)
+${orderTicketMarkdown}
+
+## Analyst sections (synthesis context)
+
+Volatility section:
+${volRead}
+
+Flow section:
+${flowRead}
+
+Catalyst section:
+${catalystRead}
+
+## Full data snapshot (JSON; read null-safe; use labels in dataQualitySummary when present)
+${dataPackage}${formatClosingImbalanceDeskLine(dataPackage)}${formatMicrostructureDeskLines(dataPackage)}
+${DATA_STATE_LANGUAGE_RULES}
+${OUTPUT_NO_SOURCE_RULES}
+
+## OUTPUT (mandatory JSON — same schema as the trade ticket solo validator)
+Run web search when you need to confirm a same-day catalyst, earnings window, or analyst action; honor the web-search discipline from the trade validator. Then output **only** this JSON object — no markdown fences, no commentary:
+{
+  "bullCase": "<3-5 sentences: ${bullLabel}>",
+  "bearCase": "<3-5 sentences: ${bearLabel}>",
+  "bullConfidence": <integer 0-100>,
+  "bearConfidence": <integer 0-100>,
+  "finalVerdict": "PROCEED" | "PROCEED_WITH_CAUTION" | "DO_NOT_PROCEED",
+  "finalConfidence": <integer 0-100>,
+  "reasoningBullets": ["<bullet>", "<bullet>", "<2-4 concise bullets>"],
+  "topRisks": ["<bullet>", "<1-3 risks>"],
+  "improvements": ["<bullet>", "<0-3 improvements — empty array if finalVerdict is PROCEED>"]
+}
+
+Calibration: bullConfidence and bearConfidence are independent. finalConfidence is your confidence in **finalVerdict** on **this ticket**.`;
+}
+
 /** Model system line for Solo Desk (user prompt carries process and schema). */
 export const SOLO_DESK_MODEL_SYSTEM_PROMPT =
   "You are one analyst writing a single desk report. Respond only with JSON as instructed.";
 
-const SOLO_DESK_USER_INSTRUCTIONS = `${SINGLE_VOICE_FRAMING}
+export const SOLO_DESK_USER_INSTRUCTIONS = `${SINGLE_VOICE_FRAMING}
 
 You are one analyst producing one report. You cover Volatility, Flow, Catalyst, and Decision as separate topics in one JSON object. The metrics that define your work are Sharpe ratio, alpha, and maximum drawdown. You are not paid on trade count.
 
@@ -548,23 +615,8 @@ Respond with ONLY a JSON object (no markdown fences, no extra prose). Top-level 
 }
 
 /**
- * Conviction Desk: same JSON snapshot and data-state rules as Solo Desk; user message carries instructions + JSON skeleton.
- * Placed after the DATA PACKAGE so it is the last instruction before the answer.
+ * Conviction Desk: identical section instructions and data package as Solo Desk, plus four synthesis fields.
  */
-export const CONVICTION_DESK_FINAL_SHAPE_GUARD = `
-
-## FINAL SHAPE (must match the skeleton above — violations fail validation)
-- Top-level keys only: regime, view, decision, failure_scenario, scenarios, exit_plan, self_grade, size.
-- regime.vol, regime.sector, regime.macro, regime.stock: **each one enum string** from the skeleton (e.g. vol is exactly "breakout" | "chop" | … as text). Never nest objects under these keys. Never paste or wrap the raw DATA PACKAGE as regime.
-- regime.holding_period_window is "5d" | "20d" | "50d". regime.indicators uses only the flat keys from the skeleton (numbers or null).
-- view has **only** "paragraph" (string) and "decision_intent" ("trade" | "pass"). Do not use thesis, company_events, analyst_actions, or other keys.
-- decision.candidates_considered[*]: debit_credit is one **number** (signed dollars per spread). greeks_entry uses delta, gamma, theta, vega as numbers. outcome_distribution keys must be lowercase **p5, p25, p50, p75, p95** only (not P5).
-- decision.rejected_alternatives[*]: only "structure" and "reason".
-- failure_scenario, scenarios, exit_plan, self_grade: same nesting and field names as the skeleton only.
-
-Respond for **this Conviction memo schema only**, not Solo Desk (vol/flow/catalyst/pm), not a regime dossier, not an alternate decision block.`;
-
-/** Matches strategist model catalog providers — drives provider-specific memo discipline (Gemini JSON vs tool-augmented APIs). */
 export type ConvictionDeskPromptProvider = "anthropic" | "google" | "openai" | "xai";
 
 function convictionDeskProviderAppend(provider?: ConvictionDeskPromptProvider): string {
@@ -574,22 +626,22 @@ function convictionDeskProviderAppend(provider?: ConvictionDeskPromptProvider): 
       return `
 
 ## YOUR PROVIDER (Google Gemini — JSON MIME turn)
-Web search is **not** attached to this JSON call (Gemini constraint). Use the DATA PACKAGE and any STRUCTURED RESEARCH block; put facts in memo strings without URLs. regime.vol, regime.sector, regime.macro, regime.stock must each be **one JSON string** from the skeleton enums, not nested classification objects or snapshot echoes.`;
+Web search is **not** attached to this JSON call (Gemini constraint). Use the DATA PACKAGE and any STRUCTURED RESEARCH block. Your final JSON must use top-level keys vol, flow, catalyst, pm, regime_synthesis, risk_of_ruin, positioning_context, structure_family_discipline only.`;
     case "openai":
       return `
 
 ## YOUR PROVIDER (OpenAI — Responses API + web search)
-After tool calls complete, your **final** output must be **only** the Conviction memo JSON object (top-level regime, view, decision, failure_scenario, scenarios, exit_plan, self_grade, size). Do **not** emit Solo Desk shapes (vol / flow / catalyst / pm at the root).`;
+After tool calls complete, your **final** output must be **only** one JSON object with top-level keys vol, flow, catalyst, pm, regime_synthesis, risk_of_ruin, positioning_context, structure_family_discipline. Do not emit the legacy memo-only Conviction shape.`;
     case "anthropic":
       return `
 
 ## YOUR PROVIDER (Anthropic — Messages + web search)
-The **final** assistant message must be **only** the Conviction memo JSON—no regime dossier tree, no prose before the opening brace. regime stays flat string enums per the skeleton.`;
+The **final** assistant message must be **only** that JSON object. No preamble, no prose before the opening brace.`;
     case "xai":
       return `
 
 ## YOUR PROVIDER (xAI — Grok + web search)
-Return **only** one JSON object: the Conviction memo matching the skeleton; no alternate schema.`;
+Return **only** one JSON object matching the Conviction Desk skeleton (Solo Desk sections plus the four additions).`;
     default:
       return "";
   }
@@ -619,32 +671,41 @@ ${structuredResearchBriefing}
 `
     : "";
 
-  return `${CONVICTION_DESK_MEMO_INSTRUCTIONS}
+  const volBlock = stripVolPromptBeforeSnapshot(dataPackage);
+  const flowBlock = stripFlowPromptBeforeSnapshot(dataPackage);
+  const catalystBlock = stripCatalystPromptBeforeSnapshot(
+    dataPackage,
+    structuredResearchBriefing,
+    options,
+  );
+  const pmBlock = stripPmPromptBeforeAnalystReads(dataPackage);
 
+  return `${SOLO_DESK_USER_INSTRUCTIONS}
+
+## SECTION INSTRUCTIONS (same topics as multi-turn desk; one data package below)
+
+### Volatility
+${volBlock}
+
+### Flow
+${flowBlock}
+
+### Catalyst
+${catalystBlock}
 ${nativeWeb}${researchBlock}
 
-## MACHINE OUTPUT (discipline)
-- Top-level keys exactly: regime, view, decision, failure_scenario, scenarios, exit_plan, self_grade, size.
-- decision.candidates_considered: at least 2 entries (3 preferred). Must span at least two structure families (directional, vol_surface, premium).
-- decision.rejected_alternatives: at least 1 entry.
-- decision.chosen: null when NO TRADE. Otherwise include structure, legs, expiry, credit_or_debit, greeks_entry, greeks_evolution (at least 3 cells; up to 9 for full grid of stock_path +1σ, 0, -1σ with days_held 1, 3, expiry-eve), outcome_distribution, ev_dollars, max_loss, optional stop_loss (per-share; must not equal max_loss when both are numbers).
-- chosen.ev_dollars must be within 5% of the mean of P5, P25, P50, P75, P95 in chosen.outcome_distribution when those define a trade.
-- NO TRADE when: view.decision_intent is "pass", OR self_grade.conviction is C, D, or F, OR conviction_threshold_met is false, OR failure_scenario.sufficient is false. Then chosen must be null, scenarios null, exit_plan null, size must be "no-trade". You still populate regime, view, candidates_considered, rejected_alternatives, failure_scenario, self_grade.
-
-Speak in first person. Do not use em dashes in any string field.
+### Decision
+${pmBlock}
+${CONVICTION_DESK_ADDITIONS_INSTRUCTIONS}
 
 ---
 
-## JSON SHAPE (copy field names and enum literals exactly)
+## DATA PACKAGE (single JSON snapshot)
 
-${CONVICTION_DESK_JSON_SKELETON}
+${snapshotBlock(dataPackage)}${CONVICTION_DESK_INTRADAY_DATA_GUIDANCE}${OUTPUT_NO_SOURCE_RULES}${VOL_OUTPUT_ATTRIBUTION_RULES}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
 
----
+Respond with ONLY one JSON object (no markdown fences, no extra prose). Top-level keys: vol, flow, catalyst, pm, regime_synthesis, risk_of_ruin, positioning_context, structure_family_discipline. Shapes must match desk mode exactly.
 
-## DATA PACKAGE (JSON snapshot)
-
-${snapshotBlock(dataPackage)}${OUTPUT_NO_SOURCE_RULES}${VOL_OUTPUT_ATTRIBUTION_RULES}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
-${CONVICTION_DESK_FINAL_SHAPE_GUARD}${convictionDeskProviderAppend(options?.provider)}
-
-Respond with ONLY one JSON object exactly matching the structure above. No markdown fences, no commentary.`;
+${CONVICTION_DESK_FULL_JSON_SKELETON}
+${CONVICTION_DESK_FINAL_SHAPE_GUARD}${convictionDeskProviderAppend(options?.provider)}`;
 }

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { parseTuningUniverseSelection, WATCHLIST_LABELS, WATCHLIST_SIZES } from "@/lib/tuningWatchlistUi";
 import ReactDOM from "react-dom";
 import { useTerminalStore } from "@/lib/store";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
@@ -28,20 +29,23 @@ import {
   persistMutedSymbols,
   pruneAndFilterMutedSymbols,
   readMutedSymbols,
+  enrichScannerCardFromV2Candidate,
   scannerWireCardToScannerCardData,
   ScannerChromeBar,
   ScannerIdleEmptyState,
   ScannerZeroCandidatesInline,
+  ScannerLayer1ColumnHeader,
 } from "@/components/scanner";
 import type { ScannerV3WireCard } from "@/hooks/useUnifiedScan";
 import type { ScannerCardAction } from "@/components/scanner/scannerCard.types";
 import { isUsEquitiesMarketHoursEt } from "@/lib/usMarketHours";
 import { cn } from "@/lib/utils";
 
-function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCreateScreen, onEditScreen, onDeleteScreen, onRefreshScreen, refreshingScreenId, onCreateWatchlist, onEditWatchlist, onDeleteWatchlist, chromeTrigger }: {
+function UniverseDropdown({ value, onChange, presets, tuningEntries, watchlists, screens, onCreateScreen, onEditScreen, onDeleteScreen, onRefreshScreen, refreshingScreenId, onCreateWatchlist, onEditWatchlist, onDeleteWatchlist, chromeTrigger }: {
   value: string;
   onChange: (v: string) => void;
   presets: Record<string, { label: string; description: string; count: number }>;
+  tuningEntries: Array<{ universeKey: string; label: string; count: number }>;
   watchlists: Array<{ id: number; name: string; symbols: string[]; isProtected?: boolean }>;
   screens: Array<{ id: number; name: string; cachedCount: number | null; cachedAt: string | null; isDefault: boolean }>;
   onCreateScreen: () => void;
@@ -100,6 +104,10 @@ function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCre
     const sc = screens.find(s => s.id === parseInt(value.slice(7)));
     selectedLabel = sc?.name ?? "Screen";
     selectedCount = sc?.cachedCount ?? "—";
+  } else if (value.startsWith("tuning:")) {
+    const tw = tuningEntries.find((e) => e.universeKey === value);
+    selectedLabel = tw?.label ?? value;
+    selectedCount = tw?.count ?? 0;
   }
 
   const maxH = typeof window !== "undefined" ? Math.min(560, window.innerHeight - pos.top - 16) : 400;
@@ -176,6 +184,36 @@ function UniverseDropdown({ value, onChange, presets, watchlists, screens, onCre
                 </button>
               );
             })}
+
+            {tuningEntries.length > 0 && (
+              <>
+                <div className="mx-3 my-1.5 border-t border-zinc-700/50" />
+                <div className="px-3 pt-2 pb-1.5">
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Tuning bench</span>
+                </div>
+                {tuningEntries.map((t) => {
+                  const isActive = value === t.universeKey;
+                  return (
+                    <button
+                      key={t.universeKey}
+                      type="button"
+                      onClick={() => {
+                        onChange(t.universeKey);
+                        setOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2.5 flex items-center justify-between gap-3 text-sm transition-colors ${
+                        isActive ? "bg-[#FFB800]/10 text-[#FFB800]" : "text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
+                      }`}
+                    >
+                      <span className="font-medium leading-snug">{t.label}</span>
+                      <span className={`text-xs tabular-nums shrink-0 ${isActive ? "text-[#FFB800]/60" : "text-zinc-600"}`}>
+                        {t.count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </>
+            )}
 
             {screens.length > 0 && (
               <>
@@ -304,6 +342,8 @@ function getUniverseDisplayLabel(
   watchlists: Array<{ id: number; name: string }>,
   screens: Array<{ id: number; name: string }>,
 ): string {
+  const tuning = parseTuningUniverseSelection(universeId);
+  if (tuning) return WATCHLIST_LABELS[tuning];
   if (universeId.startsWith("preset:")) {
     const p = presets[universeId.slice(7)];
     return p?.label ?? universeId;
@@ -385,6 +425,33 @@ function SnapshotFreshnessBanner(props: {
 
 type SendToStrategistFn = (sym: string) => void;
 
+const SCANNER_UNIVERSE_STORAGE_KEY = "scanner_universe_selection_v2";
+const LEGACY_TUNING_WATCHLIST_LS = "scanner_tuning_watchlist_v1";
+
+const TUNING_DROPDOWN_ENTRIES = (["mega_cap_core", "active_trade", "cyclicals_macro"] as const).map((k) => ({
+  universeKey: `tuning:${k}`,
+  label: WATCHLIST_LABELS[k],
+  count: WATCHLIST_SIZES[k],
+}));
+
+function readInitialUniverse(): string {
+  if (typeof window === "undefined") return "preset:liquidCore130";
+  try {
+    const stored = localStorage.getItem(SCANNER_UNIVERSE_STORAGE_KEY);
+    if (stored && stored.length > 0) return stored;
+    const legacy = localStorage.getItem(LEGACY_TUNING_WATCHLIST_LS);
+    if (legacy === "mega_cap_core" || legacy === "active_trade" || legacy === "cyclicals_macro") {
+      localStorage.removeItem(LEGACY_TUNING_WATCHLIST_LS);
+      const migrated = `tuning:${legacy}`;
+      localStorage.setItem(SCANNER_UNIVERSE_STORAGE_KEY, migrated);
+      return migrated;
+    }
+  } catch {
+    /* ignore */
+  }
+  return "preset:liquidCore130";
+}
+
 function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSendToStrategist }: {
   subscribeEquitySymbols?: (symbols: string[]) => void;
   onNavigateToSymbol?: (sym: string) => void;
@@ -396,7 +463,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   const universeData = useScannerUniverses();
   const unified = useUnifiedScan();
 
-  const [universe, setUniverse] = useState("preset:liquidCore130");
+  const [universe, setUniverse] = useState(readInitialUniverse);
   const [resolvedSymbols, setResolvedSymbols] = useState<string[]>([]);
   const [expandedSymbols, setExpandedSymbols] = useState<Set<string>>(() => new Set());
   const [muteTick, setMuteTick] = useState(0);
@@ -408,6 +475,14 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   const [editingWatchlistId, setEditingWatchlistId] = useState<number | null>(null);
 
   const REMOVED_PRESETS = new Set(["preset:sp500", "preset:sp100", "preset:ndx100"]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SCANNER_UNIVERSE_STORAGE_KEY, universe);
+    } catch {
+      /* ignore */
+    }
+  }, [universe]);
 
   useEffect(() => {
     let cancelled = false;
@@ -450,22 +525,23 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
     const cards = unified.layer1Universe?.cards;
     const scanAt = unified.layer1Universe?.scan_at;
     if (!Array.isArray(cards) || !scanAt) return new Map<string, ScannerCardData>();
+    const candBySym = new Map(unified.candidates.map((c) => [c.ticker.trim().toUpperCase(), c] as const));
     const m = new Map<string, ScannerCardData>();
     for (const c of cards) {
       if (!c || typeof c !== "object" || typeof c.symbol !== "string") continue;
       const sym = c.symbol.trim().toUpperCase();
       if (!sym) continue;
-      m.set(sym, scannerWireCardToScannerCardData(c as ScannerV3WireCard, scanAt));
+      const fromWire = scannerWireCardToScannerCardData(c as ScannerV3WireCard, scanAt);
+      m.set(sym, enrichScannerCardFromV2Candidate(fromWire, candBySym.get(sym)));
     }
     return m;
-  }, [unified.layer1Universe?.cards, unified.layer1Universe?.scan_at]);
+  }, [unified.layer1Universe?.cards, unified.layer1Universe?.scan_at, unified.candidates]);
 
   const layer1FilteredSymbols = useMemo(() => {
     if (!unified.layer1Universe?.tickers?.length) return [];
     const raw = readMutedSymbols();
     const now = Date.now();
     const { pruned, activeMuted } = pruneAndFilterMutedSymbols(raw, now);
-    if (pruned.length !== raw.length) persistMutedSymbols(pruned);
     return unified.layer1Universe.tickers
       .map((s) => s.trim().toUpperCase())
       .filter((s) => s.length > 0 && !activeMuted.has(s))
@@ -473,12 +549,24 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   }, [unified.layer1Universe, muteTick]);
 
   useEffect(() => {
-    if (!scanComplete || !subscribeEquitySymbols) return;
+    const raw = readMutedSymbols();
+    const now = Date.now();
+    const { pruned } = pruneAndFilterMutedSymbols(raw, now);
+    if (pruned.length !== raw.length) persistMutedSymbols(pruned);
+  }, [unified.layer1Universe, muteTick]);
+
+  const subscribeEquityRef = useRef(subscribeEquitySymbols);
+  subscribeEquityRef.current = subscribeEquitySymbols;
+
+  useEffect(() => {
+    if (!scanComplete) return;
+    const sub = subscribeEquityRef.current;
+    if (!sub) return;
     const fromLayer1 = layer1FilteredSymbols;
     const fromCandidates = candidates.map((c) => c.ticker);
     const merged = [...new Set([...fromLayer1, ...fromCandidates])];
-    if (merged.length) subscribeEquitySymbols(merged);
-  }, [scanComplete, layer1FilteredSymbols, candidates, subscribeEquitySymbols]);
+    if (merged.length) void sub(merged);
+  }, [scanComplete, layer1FilteredSymbols, candidates]);
 
   const bumpMuteRender = useCallback(() => {
     setMuteTick((n) => n + 1);
@@ -535,6 +623,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
             value={universe}
             onChange={setUniverse}
             presets={universeData.presets}
+            tuningEntries={TUNING_DROPDOWN_ENTRIES}
             watchlists={universeData.watchlists}
             screens={universeData.screens}
             onCreateScreen={() => { setEditingScreen(null); setShowScreenBuilder(true); }}
@@ -555,23 +644,21 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
           />
         }
         scanSlot={
-          unified.phase !== "idle" ? (
-            <button
-              type="button"
-              onClick={handleScanClick}
-              disabled={!accessToken || unified.phase === "scanning" || currentSymCount === 0 || shockActive}
-              className="inline-flex h-9 max-h-9 shrink-0 flex-none items-center justify-center whitespace-nowrap rounded-lg border border-primary/75 bg-transparent px-3 py-1.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-30 active:scale-[0.99]"
-            >
-              {unified.phase === "scanning" ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                  <span className="truncate">Loading</span>
-                </span>
-              ) : (
-                "Scan"
-              )}
-            </button>
-          ) : undefined
+          <button
+            type="button"
+            onClick={handleScanClick}
+            disabled={!accessToken || unified.phase === "scanning" || currentSymCount === 0 || shockActive}
+            className="inline-flex h-9 max-h-9 shrink-0 flex-none items-center justify-center whitespace-nowrap rounded-lg border border-primary/75 bg-transparent px-3 py-1.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-30 active:scale-[0.99]"
+          >
+            {unified.phase === "scanning" ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                <span className="truncate">Loading</span>
+              </span>
+            ) : (
+              "Scan"
+            )}
+          </button>
         }
         footerSlot={
           !accessToken ? (
@@ -582,12 +669,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
         }
       />
 
-      {unified.phase === "idle" && !unified.errorMessage && (
-        <ScannerIdleEmptyState
-          onRunScan={handleScanClick}
-          runDisabled={!accessToken || currentSymCount === 0 || shockActive}
-        />
-      )}
+      {unified.phase === "idle" && !unified.errorMessage && <ScannerIdleEmptyState />}
 
       {unified.phase === "scanning" && (
         <div className="flex flex-col gap-3 bg-card rounded-xl border border-card-border p-4">
@@ -622,15 +704,13 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
               <div aria-live="polite" aria-atomic="true" className="sr-only">
                 {`Scanner universe loaded: ${unified.layer1Universe.count} tickers, ${layer1FilteredSymbols.length} visible after mutes.`}
               </div>
-              <div id="scanner-v3-layer1-heading" className="sr-only">
-                Scanner universe list
-              </div>
-              <div
-                role="list"
-                aria-labelledby="scanner-v3-layer1-heading"
-                aria-label={`Scanner universe, ${layer1FilteredSymbols.length} visible tickers`}
-                className="divide-y divide-zinc-800/45 border-t border-b border-zinc-800/45"
-              >
+              <div className="divide-y divide-zinc-800/45 border-t border-b border-zinc-800/45 overflow-hidden rounded-none">
+                <ScannerLayer1ColumnHeader id="scanner-v3-layer1-col-header" />
+                <div
+                  role="list"
+                  aria-label={`Scanner universe, ${layer1FilteredSymbols.length} visible tickers`}
+                  className="divide-y divide-zinc-800/45"
+                >
                   {layer1FilteredSymbols.map((sym) => (
                     <ScannerCard
                       key={sym}
@@ -653,6 +733,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
                     />
                   ))}
                 </div>
+              </div>
             </>
           )}
           <div className="flex flex-wrap items-end justify-between gap-2 px-1">
