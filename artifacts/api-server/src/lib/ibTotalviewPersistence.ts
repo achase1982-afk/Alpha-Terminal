@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { db, nasdaqTotalviewSummaryTable } from "@workspace/db";
-import { desc, sql } from "drizzle-orm";
+import { desc, sql } from "@workspace/db";
 import { logger } from "./logger.js";
 
 export interface NasdaqTotalviewSummaryPayload {

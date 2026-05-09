@@ -5,6 +5,7 @@ import { nyCalendarYmd, prevNyTradingDayYmd, rthBoundsMs } from "./polygonMarket
 import { isUsEquityRthEt } from "./ibTotalviewPersistence.js";
 import { getIbTuningL1QuoteSnapshot } from "./ibStreamer.js";
 import {
+  addChartEquitySymbols,
   addNasdaqBookSymbols,
   addNyseBookSymbols,
   addOptionSymbols,
@@ -14,8 +15,9 @@ import {
   getOptionTick,
   getSchwabStreamEquityQuoteFresh,
   getSchwabVenueBookStrategistSnapshot,
+  getStrategistChartEquityBars,
   getStrategistTimesalePoints,
-  STRATEGIST_TIMESALE_MAX_AGE_MS,
+  type SchwabChartEquityBarPoint,
   type SchwabTimesaleStrategistPoint,
 } from "./schwabStreamer.js";
 import { buildSchwabOptionStreamerKey } from "./schwabOptionOccKey.js";
@@ -28,8 +30,6 @@ export type StrategistChainContractRef = {
   type: string;
   optionType?: string;
 };
-
-const POLYGON_API = "https://api.polygon.io";
 
 const STREAM_BOOK_MAX_AGE_MS = 30_000;
 const IBKR_L1_MAX_AGE_MS = 5_000;
@@ -49,6 +49,7 @@ export function ensureStrategistSchwabSubscriptions(ticker: string, venue: Strat
   try {
     addSymbols([u]);
     addTimesaleEquitySymbols([u]);
+    addChartEquitySymbols([u]);
     addOptionSymbols([u]);
     if (venue === "NASDAQ") addNasdaqBookSymbols([u]);
     else if (venue === "NYSE") addNyseBookSymbols([u]);
@@ -73,35 +74,6 @@ export function resolveStrategistBookVenue(
   listing: LiquidCorePrimaryListing | "OTHER_US" | null | undefined,
 ): StrategistBookVenue {
   return venueFromListing(listing);
-}
-
-interface PolygonMinuteBar {
-  /** Unix ms (bar start); Polygon agg v2. */
-  t?: number;
-  c?: number;
-  v?: number;
-  vw?: number;
-}
-
-/** Multi-session minute history for RSI / VWAP fallbacks (≈30 calendar days). */
-const POLYGON_RANGE_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
-
-async function fetchPolygonMinuteBarsRange(sym: string, fromMs: number, toMs: number): Promise<PolygonMinuteBar[]> {
-  const apiKey = process.env["POLYGON_API_KEY"] ?? "";
-  if (!apiKey) return [];
-  const upper = sym.toUpperCase().replace(/^\$/, "");
-  const url =
-    `${POLYGON_API}/v2/aggs/ticker/${encodeURIComponent(upper)}/range/1/minute/${Math.floor(fromMs)}/${Math.floor(toMs)}` +
-    `?adjusted=true&sort=asc&limit=50000&apiKey=${encodeURIComponent(apiKey)}`;
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
-    if (!res.ok) return [];
-    const json = (await res.json()) as { results?: PolygonMinuteBar[] };
-    return json.results ?? [];
-  } catch (err) {
-    logger.debug({ err, sym: upper }, "StrategistIntraday: Polygon minute bars range fetch failed");
-    return [];
-  }
 }
 
 function computeRsiWilders(closes: number[], period = 14): number | null {
@@ -129,6 +101,7 @@ function computeRsiWilders(closes: number[], period = 14): number | null {
   return Math.round((100 - 100 / (1 + rs)) * 100) / 100;
 }
 
+/** Share-volume-weighted session VWAP from Schwab TIMESALE_EQUITY prints in `[openMs, closeMs]` only. */
 function sessionVwapFromTimesales(
   pts: SchwabTimesaleStrategistPoint[],
   openMs: number,
@@ -145,18 +118,71 @@ function sessionVwapFromTimesales(
   return Math.round((num / den) * 10000) / 10000;
 }
 
-function polygonSessionVwapFallback(bars: PolygonMinuteBar[]): number | null {
+function sessionVwapFromChartBars(
+  bars: readonly SchwabChartEquityBarPoint[],
+  openMs: number,
+  closeMs: number,
+): number | null {
   let num = 0;
   let den = 0;
   for (const b of bars) {
-    const v = b.v ?? 0;
-    const vw = b.vw ?? null;
-    if (v <= 0 || vw == null || !Number.isFinite(vw)) continue;
-    num += vw * v;
+    const t = b.chartTimeMs;
+    if (t < openMs || t > closeMs) continue;
+    const v = b.volume;
+    if (v <= 0 || !Number.isFinite(v)) continue;
+    const typical = (b.high + b.low + b.close) / 3;
+    if (!Number.isFinite(typical) || typical <= 0) continue;
+    num += typical * v;
     den += v;
   }
   if (den <= 0) return null;
   return Math.round((num / den) * 10000) / 10000;
+}
+
+/** ET calendar minute key for aligning tape prints with chart bars (America/New_York wall clock). */
+function etMinuteKey(tsMs: number): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(tsMs));
+  const g = (t: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === t)?.value ?? "";
+  return `${g("year")}-${g("month")}-${g("day")}T${g("hour")}:${g("minute")}`;
+}
+
+/**
+ * Merge Schwab minute buckets: chart fills history; TIMESALE last print overrides the same ET minute.
+ * Last fifteen closes feed Wilder's RSI (walks back across sessions via retained bars/tape).
+ */
+function rsiFromSchwabMinuteMerge(
+  tsPts: SchwabTimesaleStrategistPoint[],
+  chartBars: readonly SchwabChartEquityBarPoint[],
+): { rsi: number | null; rsi_as_of_session_date: string | null } {
+  const minuteToClose = new Map<string, number>();
+  for (const c of chartBars) {
+    const k = etMinuteKey(c.chartTimeMs);
+    if (Number.isFinite(c.close) && c.close > 0 && !minuteToClose.has(k)) {
+      minuteToClose.set(k, c.close);
+    }
+  }
+  for (const p of tsPts) {
+    minuteToClose.set(etMinuteKey(p.ts), p.price);
+  }
+  const keys = [...minuteToClose.keys()].sort();
+  if (keys.length < 15) return { rsi: null, rsi_as_of_session_date: null };
+  const last15 = keys.slice(-15);
+  const closes = last15.map((k) => minuteToClose.get(k)!);
+  const rsi = computeRsiWilders(closes, 14);
+  const lastKey = last15[last15.length - 1]!;
+  const dayPart = lastKey.slice(0, 10);
+  return {
+    rsi,
+    rsi_as_of_session_date: rsi != null ? dayPart : null,
+  };
 }
 
 function equityBlockMetricsWindow(
@@ -244,13 +270,6 @@ function equityBlockMetrics(
   return equityBlockMetricsWindow(pts, windowStart, nowMs, sessionOpenMs, sessionCloseMs, spotPrice, nowMs);
 }
 
-function polygonBarsInSession(bars: PolygonMinuteBar[], openMs: number, closeMs: number): PolygonMinuteBar[] {
-  return bars.filter((b) => {
-    const t = b.t;
-    return typeof t === "number" && t >= openMs && t <= closeMs;
-  });
-}
-
 function pickVenueForBook(
   venue: StrategistBookVenue,
 ): "NYSE" | "NASDAQ" | null {
@@ -292,23 +311,12 @@ export async function buildStrategistIntradayPackage(args: {
   }
 
   const tsPts = getStrategistTimesalePoints(symU);
-  const polyFrom = nowMs - POLYGON_RANGE_LOOKBACK_MS;
-  const polyBarsExtended = await fetchPolygonMinuteBarsRange(symU, polyFrom, nowMs);
+  const chartBars = getStrategistChartEquityBars(symU);
 
   let vwapSession = sessionVwapFromTimesales(tsPts, openMs, closeMs);
   let vwapStatus: string =
     vwapSession != null ? "live_from_timesale_session" : "insufficient_timesale_ticks";
   let vwap_as_of_session_date: string | null = vwapSession != null ? nyYmd : null;
-
-  const barsCurrentSession = polygonBarsInSession(polyBarsExtended, openMs, closeMs);
-  if (vwapSession == null) {
-    const fbToday = polygonSessionVwapFallback(barsCurrentSession);
-    if (fbToday != null) {
-      vwapSession = fbToday;
-      vwapStatus = "polygon_minute_volume_weighted_fallback";
-      vwap_as_of_session_date = nyYmd;
-    }
-  }
 
   if (vwapSession == null) {
     let dayCursor = await prevNyTradingDayYmd(nyYmd);
@@ -322,11 +330,10 @@ export async function buildStrategistIntradayPackage(args: {
           vwap_as_of_session_date = dayCursor;
           break;
         }
-        const barsDay = polygonBarsInSession(polyBarsExtended, bounds.openMs, bounds.closeMs);
-        const pv = polygonSessionVwapFallback(barsDay);
-        if (pv != null) {
-          vwapSession = pv;
-          vwapStatus = "prior_session_polygon_minute";
+        const cv = sessionVwapFromChartBars(chartBars, bounds.openMs, bounds.closeMs);
+        if (cv != null) {
+          vwapSession = cv;
+          vwapStatus = "prior_session_chart_equity";
           vwap_as_of_session_date = dayCursor;
           break;
         }
@@ -343,26 +350,10 @@ export async function buildStrategistIntradayPackage(args: {
     vwapDeltaPct = Math.round(((spot - vwapSession) / vwapSession) * 10000) / 100;
   }
 
-  const sortedTimedBars = polyBarsExtended
-    .filter((b): b is PolygonMinuteBar & { t: number; c: number } =>
-      typeof b.t === "number" && typeof b.c === "number" && Number.isFinite(b.c),
-    )
-    .sort((a, b) => a.t - b.t);
-
-  let rsi14: number | null = null;
-  let rsiStatus = "insufficient_bars";
-  let rsi_as_of_session_date: string | null = null;
-  if (sortedTimedBars.length >= 15) {
-    const closes = sortedTimedBars.map((b) => b.c);
-    rsi14 = computeRsiWilders(closes, 14);
-    rsiStatus = rsi14 != null ? "available" : "insufficient_bars";
-    const lastBar = sortedTimedBars[sortedTimedBars.length - 1]!;
-    rsi_as_of_session_date = nyCalendarYmd(new Date(lastBar.t));
-  } else if (sortedTimedBars.length > 0) {
-    rsiStatus = "insufficient_bars";
-  } else {
-    rsiStatus = "polygon_minute_unavailable";
-  }
+  const rsiMerged = rsiFromSchwabMinuteMerge(tsPts, chartBars);
+  const rsi14 = rsiMerged.rsi;
+  const rsiStatus = rsi14 != null ? "available" : "insufficient_schwab_minute_closes";
+  const rsi_as_of_session_date = rsiMerged.rsi_as_of_session_date;
 
   let blocks = equityBlockMetrics(tsPts, openMs, closeMs, args.spotPrice || 0, nowMs);
   let equity_block_tape_as_of_session_date: string | null = null;
@@ -374,12 +365,10 @@ export async function buildStrategistIntradayPackage(args: {
     try {
       const prevDay = await prevNyTradingDayYmd(nyYmd);
       const pb = await rthBoundsMs(prevDay);
-      if (nowMs - pb.closeMs <= STRATEGIST_TIMESALE_MAX_AGE_MS) {
-        const ws = pb.closeMs - BLOCK_WINDOW_MS;
-        const we = pb.closeMs;
-        blocks = equityBlockMetricsWindow(tsPts, ws, we, pb.openMs, pb.closeMs, args.spotPrice || 0, nowMs);
-        equity_block_tape_as_of_session_date = prevDay;
-      }
+      const ws = pb.closeMs - BLOCK_WINDOW_MS;
+      const we = pb.closeMs;
+      blocks = equityBlockMetricsWindow(tsPts, ws, we, pb.openMs, pb.closeMs, args.spotPrice || 0, nowMs);
+      equity_block_tape_as_of_session_date = prevDay;
     } catch {
       equity_block_tape_as_of_session_date = null;
     }

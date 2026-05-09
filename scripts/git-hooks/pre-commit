@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Cursor Cloud Agent normally sets core.hooksPath to its dispatcher directory. This hook runs as
+# the only pre-commit entry once install-git-hooks.sh points hooksPath here; it strips the false-
+# positive Railway slug check then invokes the managed `pre-commit.cursor` scripts in order.
+set -euo pipefail
+
+strip_railway_service_from_scan_list() {
+  local raw="$1"
+  local out="" name
+  while IFS= read -r name || [ -n "$name" ]; do
+    name="${name#"${name%%[![:space:]]*}"}"
+    name="${name%"${name##*[![:space:]]}"}"
+    [ -z "$name" ] && continue
+    if [[ "$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')" == "railway_service" ]]; then
+      continue
+    fi
+    if [ -z "$out" ]; then
+      out="$name"
+    else
+      out="$out,$name"
+    fi
+  done < <(printf '%s' "$raw" | tr ',' '\n')
+
+  printf '%s' "$out"
+}
+
+if [ -n "${CLOUD_AGENT_INJECTED_SECRET_NAMES:-}" ]; then
+  CLOUD_AGENT_INJECTED_SECRET_NAMES="$(strip_railway_service_from_scan_list "$CLOUD_AGENT_INJECTED_SECRET_NAMES")"
+  export CLOUD_AGENT_INJECTED_SECRET_NAMES
+fi
+
+unset RAILWAY_SERVICE || true
+
+GIT_DIR="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || git rev-parse --absolute-git-dir)"
+CURSOR_DIR=""
+if [ -f "$GIT_DIR/cursor-managed-hooks-path" ]; then
+  CURSOR_DIR="$(tr -d '\r\n' <"$GIT_DIR/cursor-managed-hooks-path")"
+fi
+
+if [ -z "$CURSOR_DIR" ] || [ ! -d "$CURSOR_DIR" ]; then
+  exit 0
+fi
+
+shopt -s nullglob
+for cursor_hook in "$CURSOR_DIR"/pre-commit.cursor*; do
+  if [ -x "$cursor_hook" ]; then
+    "$cursor_hook" "$@"
+  fi
+done
+shopt -u nullglob
+
+exit 0

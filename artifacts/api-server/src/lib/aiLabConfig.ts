@@ -1,5 +1,5 @@
 import { db, aiLabConfigTable, aiLabPromptsTable } from "@workspace/db";
-import { sql, eq, and, desc } from "drizzle-orm";
+import { sql, eq, and, desc } from "@workspace/db";
 
 export type AiLabModelProvider = "anthropic" | "google" | "openai" | "xai";
 

@@ -1,5 +1,9 @@
 import { SWEEP_CONDITION_CODES, BLOCK_MIN_SIZE } from "./optionsConditionCodes.js";
-import { classifyAggressorFromNbbo, type AggressorSideTag } from "./flowAggressorSide.js";
+import {
+  classifyAggressorFromNbbo,
+  classifyAggressorFromNbboStrict,
+  type AggressorSideTag,
+} from "./flowAggressorSide.js";
 
 const DEFAULT_LARGE_NOTIONAL_USD = 100_000;
 const VOLUME_SPIKE_MULTIPLIER = 5;
@@ -66,6 +70,8 @@ export function classifyForFlowPersistence(args: {
   avgDailyContractVolume20d?: number | null;
   /** Open interest snapshot for vol/OI ratio. */
   openInterest?: number | null;
+  /** Exchange-fresh NBBO at ingest — use strict Lee-Ready (no epsilon). */
+  strictFreshQuote?: boolean;
 }): ClassifiedPersistenceRow {
   const notional = args.price * args.size * 100;
   const threshold = args.largeNotionalThresholdUsd ?? DEFAULT_LARGE_NOTIONAL_USD;
@@ -92,16 +98,24 @@ export function classifyForFlowPersistence(args: {
 
   if (nb && nb.bid > 0 && nb.ask > 0 && nb.ask >= nb.bid) {
     const sp = spreadPct(nb.bid, nb.ask);
-    const r = classifyAggressorFromNbbo(args.price, nb.bid, nb.ask);
-    side = r.side;
-    if (r.side == null) {
-      aggressorConfidence = r.reason === "invalid_nbbo" ? "unknown" : "low";
-    } else if (sp > 25) {
-      aggressorConfidence = "low";
-    } else if (sp > 10) {
-      aggressorConfidence = "medium";
+    if (args.strictFreshQuote) {
+      side = classifyAggressorFromNbboStrict(args.price, nb.bid, nb.ask);
+      if (side === null) aggressorConfidence = "unknown";
+      else if (sp > 25) aggressorConfidence = "low";
+      else if (sp > 10) aggressorConfidence = "medium";
+      else aggressorConfidence = "high";
     } else {
-      aggressorConfidence = "high";
+      const r = classifyAggressorFromNbbo(args.price, nb.bid, nb.ask);
+      side = r.side;
+      if (r.side == null) {
+        aggressorConfidence = r.reason === "invalid_nbbo" ? "unknown" : "low";
+      } else if (sp > 25) {
+        aggressorConfidence = "low";
+      } else if (sp > 10) {
+        aggressorConfidence = "medium";
+      } else {
+        aggressorConfidence = "high";
+      }
     }
   }
 

@@ -3,7 +3,7 @@ import { createGunzip } from "zlib";
 import { createInterface } from "readline";
 import { Readable } from "stream";
 import { db, polygonOptionsHistoryTable, polygonSyncLogTable } from "@workspace/db";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql } from "@workspace/db";
 
 function createS3Client(): S3Client {
   return new S3Client({

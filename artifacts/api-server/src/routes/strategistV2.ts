@@ -19,7 +19,7 @@ import { getNextEarningsDate } from "../lib/earningsService.js";
 import { getEquityDailyExtras } from "../lib/equityDailyExtras.js";
 import { db, strategistTelemetryTable, scannerTelemetryTable, strategistHistoryTable } from "@workspace/db";
 import { getScannerStrategistCorrelation } from "../lib/scannerCorrelation.js";
-import { desc, eq, sql, lte, and } from "drizzle-orm";
+import { desc, eq, sql, lte, and } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import {
   ensureIvrCoverage,

@@ -1,4 +1,4 @@
-import { isNotNull } from "drizzle-orm";
+import { isNotNull } from "@workspace/db";
 import { optionsFlowRawTradesTable } from "@workspace/db";
 
 /**

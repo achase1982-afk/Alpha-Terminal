@@ -1,5 +1,5 @@
 import { db, aiLabIdeasTable, aiLabWatchlistTable, aiLabEmbeddingsTable, aiLabDeliberationsTable, optionsChainDailyTable, equityDailyTable } from "@workspace/db";
-import { eq, inArray, desc, sql, and, count } from "drizzle-orm";
+import { eq, inArray, desc, sql, and, count } from "@workspace/db";
 import { emitTelemetry, createTelemetryBatch } from "./telemetryStore.js";
 import {
   getUniverseAnomalies,

@@ -14,7 +14,7 @@
 import { appendFileSync } from "node:fs";
 import { LIQUID_CORE_SYMBOL_STRINGS } from "../src/data/liquidCore130";
 import { db } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { sql } from "@workspace/db";
 
 const FLAT_MOD = "../src/lib/" + "poly" + "gonFlatFiles";
 const HIST_TABLE = "poly" + "gon_options_history";

@@ -1,5 +1,5 @@
 import { db, equityDailyTable, flowDailyAggregatesTable } from "@workspace/db";
-import { desc, sql, gte } from "drizzle-orm";
+import { desc, sql, gte } from "@workspace/db";
 import type { CatalystEvaluation } from "./catalystEvaluator.js";
 import { logger } from "./logger.js";
 import { getSettings } from "./strategistSettings.js";

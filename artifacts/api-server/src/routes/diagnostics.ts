@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { sql, eq, max, and } from "drizzle-orm";
+import { sql, eq, max, and } from "@workspace/db";
 import { db, optionsChainDailyTable, optionsFlowPerStrikeTable, schwabChainIngestMetricsTable } from "@workspace/db";
 import { getFlowCaptureDiagnostics } from "../lib/flowCaptureService.js";
 import { fetchPolygonReferenceContractCount } from "../lib/polygonReferenceContracts.js";
