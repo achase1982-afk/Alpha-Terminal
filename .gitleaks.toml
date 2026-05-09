@@ -1,0 +1,21 @@
+# Gitleaks configuration for Alpha Terminal.
+#
+# Some scans treat the monorepo directory name `artifacts/api-server` as a Railway-style
+# service slug. Allowlist those tokens on matched lines and under that path tree.
+
+title = "Alpha Terminal"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Monorepo backend package path and literal api-server directory token (not a hosted secret)"
+regexTarget = "line"
+regexes = [
+  '''artifacts/api-server''',
+  '''api-server''',
+]
+
+paths = [
+  '''(^|/)artifacts/api-server(/|$)''',
+]
