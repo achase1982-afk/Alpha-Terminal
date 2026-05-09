@@ -499,7 +499,7 @@ async function boot() {
     setTimeout(() => { void bootCatchup(); }, 60_000);
   }
 
-  /** Item 24: 90d retention + rebaseline volume_vs from strike baseline table (04:45 UTC). */
+  /** Item 24: 90d options_flow_raw_trades retention + Schwab chart-bar 30d prune + rebaseline volume_vs (04:45 UTC). */
   function scheduleNightlyFlowRawMaintenance() {
     if (process.env.DISABLE_FLOW_RAW_MAINTENANCE === "1" || process.env.DISABLE_FLOW_RAW_MAINTENANCE === "true") {
       logger.warn("Flow raw maintenance: DISABLE_FLOW_RAW_MAINTENANCE=1 — skipping schedule");
@@ -513,7 +513,7 @@ async function boot() {
         target.setUTCDate(target.getUTCDate() + 1);
       }
       const ms = target.getTime() - now.getTime();
-      logger.info({ targetUTC: target.toISOString(), msUntil: ms }, "Flow raw maintenance scheduled (04:45 UTC daily)");
+      logger.info({ targetUTC: target.toISOString(), msUntil: ms }, "Flow raw + Schwab chart-bar maintenance scheduled (04:45 UTC daily)");
       setTimeout(() => {
         void import("./lib/flowRawTradesReclassify.js")
           .then((m) => m.runNightlyFlowRawMaintenance())

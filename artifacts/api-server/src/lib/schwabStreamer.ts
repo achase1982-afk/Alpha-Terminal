@@ -1,5 +1,6 @@
 import type { Response } from "express";
 import WebSocket from "ws";
+import { db, schwabChartEquityBarsTable, sql } from "@workspace/db";
 import { logger } from "./logger.js";
 import { getValidAccessToken, forceRefresh } from "./tokenStore.js";
 import { sendPushToAll } from "./pushService.js";
@@ -154,11 +155,9 @@ const NYSE_NASDAQ_OPTIONS_BOOK_FIELDS = "0,1,2,3";
  * See also schwab-py / official Schwab developer streaming documentation.
  */
 const TIMESALE_EQUITY_FIELDS = "0,1,2,3,4";
-
 /**
- * CHART_EQUITY — numeric field IDs per Schwab Streamer Guide (schwab-py `ChartEquityFields`):
- * 0 symbol, 1 sequence, 2 open, 3 high, 4 low, 5 close (per-bar close on each streaming update), 6 volume,
- * 7 chart time (ms), 8 chart day.
+ * CHART_EQUITY — Schwab Streamer Guide / schwab-py ChartEquityFields:
+ * 0 symbol, 1 sequence, 2 open, 3 high, 4 low, 5 close, 6 volume, 7 chart time (epoch ms), 8 chart day.
  */
 const CHART_EQUITY_FIELDS = "0,1,2,3,4,5,6,7,8";
 
@@ -236,34 +235,145 @@ export function getStrategistTimesalePoints(symbol: string): SchwabTimesaleStrat
   return out;
 }
 
-/** Latest bar close per chart timestamp from CHART_EQUITY (strategist RSI fallback path). */
-const strategistChartEquityBars = new Map<string, Map<number, number>>();
-const STRATEGIST_CHART_EQUITY_MAX_BARS_PER_SYMBOL = 400;
+/** CHART_EQUITY (1-minute aggregate): OHLCV per bar for strategist VWAP / RSI fallbacks. */
+export interface SchwabChartEquityBarPoint {
+  chartTimeMs: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
 
-function appendStrategistChartEquityBar(sym: string, chartTimeMs: number, close: number): void {
-  const u = sym.toUpperCase();
-  let m = strategistChartEquityBars.get(u);
-  if (!m) {
-    m = new Map();
-    strategistChartEquityBars.set(u, m);
+interface StrategistChartEquityBuf {
+  /** Sorted ascending by chartTimeMs; deduped per chart bar key. */
+  bars: SchwabChartEquityBarPoint[];
+}
+
+const strategistChartEquityRing = new Map<string, StrategistChartEquityBuf>();
+const STRATEGIST_CHART_MAX_BARS_PER_SYMBOL = 8_000;
+
+/** Debounced persist so CHART_EQUITY throughput stays smooth on live streams. */
+const CHART_BAR_PERSIST_DEBOUNCE_MS = 250;
+const chartBarPersistPending = new Map<
+  string,
+  {
+    symbol: string;
+    barTimeMs: number;
+    high: string;
+    low: string;
+    close: string;
+    volume: string;
+    sessionDate: string;
   }
-  m.set(chartTimeMs, close);
-  if (m.size > STRATEGIST_CHART_EQUITY_MAX_BARS_PER_SYMBOL) {
-    const keys = [...m.keys()].sort((a, b) => a - b);
-    for (let i = 0; i < keys.length - STRATEGIST_CHART_EQUITY_MAX_BARS_PER_SYMBOL; i++) {
-      m.delete(keys[i]!);
+>();
+let chartBarPersistFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function nySessionDateYmdFromBarMs(ms: number): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(ms));
+}
+
+function queuePersistSchwabChartBar(symbolUpper: string, bar: SchwabChartEquityBarPoint): void {
+  const key = `${symbolUpper}:${bar.chartTimeMs}`;
+  chartBarPersistPending.set(key, {
+    symbol: symbolUpper,
+    barTimeMs: bar.chartTimeMs,
+    high: String(bar.high),
+    low: String(bar.low),
+    close: String(bar.close),
+    volume: String(bar.volume),
+    sessionDate: nySessionDateYmdFromBarMs(bar.chartTimeMs),
+  });
+  scheduleFlushSchwabChartBarPersist();
+}
+
+function scheduleFlushSchwabChartBarPersist(): void {
+  if (chartBarPersistFlushTimer != null) return;
+  chartBarPersistFlushTimer = setTimeout(() => {
+    chartBarPersistFlushTimer = null;
+    void flushSchwabChartBarPersistBatch();
+  }, CHART_BAR_PERSIST_DEBOUNCE_MS);
+}
+
+async function flushSchwabChartBarPersistBatch(): Promise<void> {
+  if (chartBarPersistPending.size === 0) return;
+  const rows = [...chartBarPersistPending.values()];
+  chartBarPersistPending.clear();
+  const chunkSize = 250;
+  try {
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize).map((r) => ({
+        symbol: r.symbol,
+        barTimeMs: r.barTimeMs,
+        high: r.high,
+        low: r.low,
+        close: r.close,
+        volume: r.volume,
+        sessionDate: r.sessionDate,
+      }));
+      await db
+        .insert(schwabChartEquityBarsTable)
+        .values(chunk)
+        .onConflictDoUpdate({
+          target: [schwabChartEquityBarsTable.symbol, schwabChartEquityBarsTable.barTimeMs],
+          set: {
+            close: sql`excluded.close`,
+            high: sql`excluded.high`,
+            low: sql`excluded.low`,
+            volume: sql`excluded.volume`,
+            sessionDate: sql`excluded.session_date`,
+            insertedAt: sql`now()`,
+          },
+        });
     }
+  } catch (err) {
+    logger.warn({ err, batchRows: rows.length }, "Schwab streamer: CHART_EQUITY persist batch failed");
   }
 }
 
-/**
- * Minute-bar closes from Schwab CHART_EQUITY for `[openMs, closeMs]` (field 7 timestamps, field 5 close).
- */
-export function getStrategistChartEquityCloses(symbol: string, openMs: number, closeMs: number): number[] {
-  const m = strategistChartEquityBars.get(symbol.toUpperCase());
-  if (!m || m.size === 0) return [];
-  const keys = [...m.keys()].filter((t) => t >= openMs && t <= closeMs).sort((a, b) => a - b);
-  return keys.map((k) => m.get(k)!).filter((c) => Number.isFinite(c) && c > 0);
+function normalizeChartTimeMs(raw: number): number {
+  if (!Number.isFinite(raw)) return NaN;
+  /* TD/Schwab lineage sometimes sends seconds since epoch for chart time. */
+  return raw > 1e12 ? raw : raw * 1000;
+}
+
+function appendStrategistChartEquity(sym: string, bar: SchwabChartEquityBarPoint): void {
+  const u = sym.toUpperCase();
+  let buf = strategistChartEquityRing.get(u);
+  if (!buf) {
+    buf = { bars: [] };
+    strategistChartEquityRing.set(u, buf);
+  }
+  const arr = buf.bars;
+  const idx = arr.findIndex((b) => b.chartTimeMs === bar.chartTimeMs);
+  if (idx >= 0) {
+    arr[idx] = bar;
+    queuePersistSchwabChartBar(u, bar);
+    return;
+  }
+  arr.push(bar);
+  arr.sort((a, b) => a.chartTimeMs - b.chartTimeMs);
+  const cap = STRATEGIST_CHART_MAX_BARS_PER_SYMBOL;
+  if (arr.length > cap) {
+    arr.splice(0, arr.length - cap);
+  }
+  queuePersistSchwabChartBar(u, bar);
+}
+
+/** Minute OHLCV bars from Schwab CHART_EQUITY stream cache (ascending). */
+export function getStrategistChartEquityBars(symbol: string): SchwabChartEquityBarPoint[] {
+  const buf = strategistChartEquityRing.get(symbol.toUpperCase());
+  return buf ? [...buf.bars] : [];
+}
+
+/** Chronological closes for diagnostics / RSI helpers. */
+export function getStrategistChartEquityCloses(symbol: string): Array<{ ts: number; close: number }> {
+  return getStrategistChartEquityBars(symbol).map((b) => ({ ts: b.chartTimeMs, close: b.close }));
 }
 
 export interface SchwabVenueBookStrategistSnapshot {
@@ -1147,8 +1257,7 @@ function processTimesaleEquity(content: Record<string, unknown>[]) {
 }
 
 /**
- * CHART_EQUITY — field IDs per `CHART_EQUITY_FIELDS` / Streamer Guide. Bar interval is **one minute**
- * per Schwab streaming chart semantics; field **7** is chart time (epoch ms), field **5** bar close.
+ * CHART_EQUITY — one-minute bars; field **7** chart time (epoch ms), fields **2–6** OHLCV per Streamer Guide.
  */
 function processChartEquity(content: Record<string, unknown>[]) {
   if (content.length === 0) return;
@@ -1163,11 +1272,28 @@ function processChartEquity(content: Record<string, unknown>[]) {
     const rawKey = (item["key"] ?? item["0"]) as string | undefined;
     const symbol = rawKey ? normalizeEquityKey(rawKey) : "";
     if (!symbol) continue;
-    const chartTimeMs = numOrNull(item["7"]);
+    const chartTimeRaw = numOrNull(item["7"]);
+    const chartTimeMs = chartTimeRaw != null ? normalizeChartTimeMs(chartTimeRaw) : NaN;
+    const open = numOrNull(item["2"]);
+    const high = numOrNull(item["3"]);
+    const low = numOrNull(item["4"]);
     const close = numOrNull(item["5"]);
-    if (chartTimeMs != null && close != null && close > 0) {
-      appendStrategistChartEquityBar(symbol, chartTimeMs, close);
+    const volRaw = numOrNull(item["6"]);
+    const volume = volRaw != null && volRaw >= 0 && Number.isFinite(volRaw) ? volRaw : 0;
+    if (!Number.isFinite(chartTimeMs) || close == null || close <= 0) {
+      continue;
     }
+    if (open == null || high == null || low == null) {
+      continue;
+    }
+    appendStrategistChartEquity(symbol, {
+      chartTimeMs,
+      open,
+      high,
+      low,
+      close,
+      volume,
+    });
   }
 }
 
@@ -1722,7 +1848,6 @@ export function stopStreamer() {
   subscribedFuturesOptionSymbols.clear();
   subscribedTimesaleEquitySymbols.clear();
   subscribedChartEquitySymbols.clear();
-  strategistChartEquityBars.clear();
   subscribedNyseBookSymbols.clear();
   subscribedNasdaqBookSymbols.clear();
   subscribedOptionsBookSymbols.clear();
