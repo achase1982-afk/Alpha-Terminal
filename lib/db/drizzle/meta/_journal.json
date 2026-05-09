@@ -183,6 +183,13 @@
       "when": 1779050000000,
       "tag": "0029_schwab_chart_equity_bars",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1779100000000,
+      "tag": "0030_backfill_run_jobs",
+      "breakpoints": true
     }
   ]
 }

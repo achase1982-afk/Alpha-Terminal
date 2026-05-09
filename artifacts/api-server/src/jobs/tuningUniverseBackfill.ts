@@ -91,7 +91,18 @@ function applyFailFlags(audit: SymbolAuditJson, flags: Set<DomainName>): SymbolA
   return out;
 }
 
-async function main(): Promise<void> {
+export async function runTuningUniverseBackfill(opts?: {
+  quiet?: boolean;
+}): Promise<{
+  runId: string;
+  startedAt: string;
+  completedAt: Date;
+  overallStatus: AuditStatus;
+  failedSymbols: string[];
+  warnedSymbols: string[];
+  durationMs: number;
+  universeSize: number;
+}> {
   const runId = randomUUID();
   const startedAt = new Date().toISOString();
   const tJob0 = Date.now();
@@ -203,7 +214,9 @@ async function main(): Promise<void> {
     notes: `tuning_universe_backfill`,
   });
 
-  printSummaryTable(summaryRows);
+  if (!opts?.quiet) {
+    printSummaryTable(summaryRows);
+  }
   logSummary({
     run_id: runId,
     universe_size: TUNING_SYMBOLS.length,
@@ -213,7 +226,21 @@ async function main(): Promise<void> {
     duration_ms: Date.now() - tJob0,
   });
 
-  if (overall === "fail") {
+  return {
+    runId,
+    startedAt,
+    completedAt,
+    overallStatus: overall,
+    failedSymbols,
+    warnedSymbols,
+    durationMs: Date.now() - tJob0,
+    universeSize: TUNING_SYMBOLS.length,
+  };
+}
+
+async function main(): Promise<void> {
+  const r = await runTuningUniverseBackfill();
+  if (r.overallStatus === "fail") {
     process.exitCode = 1;
   }
 }
