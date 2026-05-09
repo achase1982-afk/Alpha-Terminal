@@ -282,11 +282,6 @@ export function getStrategistChartEquityBars(symbol: string): SchwabChartEquityB
   return buf ? [...buf.bars] : [];
 }
 
-/** Chronological closes for walking intraday RSI backward across sessions. */
-export function getStrategistChartEquityCloses(symbol: string): Array<{ ts: number; close: number }> {
-  return getStrategistChartEquityBars(symbol).map((b) => ({ ts: b.chartTimeMs, close: b.close }));
-}
-
 export interface SchwabVenueBookStrategistSnapshot {
   rawBids: unknown;
   rawAsks: unknown;
