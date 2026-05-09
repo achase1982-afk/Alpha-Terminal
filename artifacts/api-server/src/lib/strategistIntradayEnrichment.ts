@@ -1,5 +1,4 @@
-import { db, tickerSignalSnapshotTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, eq, tickerSignalSnapshotTable } from "@workspace/db";
 import { logger } from "./logger.js";
 import { nyCalendarYmd, prevNyTradingDayYmd, rthBoundsMs } from "./polygonMarketCalendar.js";
 import { isUsEquityRthEt } from "./ibTotalviewPersistence.js";
