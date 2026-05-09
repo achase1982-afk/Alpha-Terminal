@@ -33,6 +33,7 @@ export function useAutoRefreshToken() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken }),
+        _authRetry: true,
       });
       if (!res.ok) {
         const detail = await readSchwabRefreshErrorDetail(res);
@@ -42,6 +43,7 @@ export function useAutoRefreshToken() {
             "Your saved Schwab session is no longer valid. Use Reconnect Schwab — you should not need to sign out of your account.",
         );
         toast.error("Schwab session ended", {
+          id: "schwab-session-ended",
           description: "Reconnect Schwab to restore live quotes and portfolio.",
         });
         clearTokens();
@@ -57,6 +59,7 @@ export function useAutoRefreshToken() {
         "The server returned an empty token. Reconnect Schwab from the banner or sidebar.",
       );
       toast.error("Schwab session ended", {
+        id: "schwab-session-ended",
         description: "Reconnect Schwab to restore live quotes and portfolio.",
       });
       clearTokens();
@@ -76,6 +79,7 @@ export function useAutoRefreshToken() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken: traderRefreshToken }),
+        _authRetry: true,
       });
       if (!res.ok) {
         const detail = await readSchwabRefreshErrorDetail(res);
@@ -85,6 +89,7 @@ export function useAutoRefreshToken() {
             "Your saved Schwab session is no longer valid. Use Reconnect Schwab — you should not need to sign out of your account.",
         );
         toast.error("Schwab session ended", {
+          id: "schwab-session-ended",
           description: "Reconnect Schwab to restore live quotes and portfolio.",
         });
         clearTraderTokens();
@@ -100,6 +105,7 @@ export function useAutoRefreshToken() {
         "The server returned an empty token. Reconnect Schwab from the banner or sidebar.",
       );
       toast.error("Schwab session ended", {
+        id: "schwab-session-ended",
         description: "Reconnect Schwab to restore live quotes and portfolio.",
       });
       clearTraderTokens();

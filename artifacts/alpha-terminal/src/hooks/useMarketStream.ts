@@ -101,6 +101,7 @@ async function refreshAndRetry(retryCount: number): Promise<boolean> {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken: traderRefreshToken }),
+        _authRetry: true,
       });
       if (res.ok) {
         const data = (await res.json()) as {
@@ -125,6 +126,7 @@ async function refreshAndRetry(retryCount: number): Promise<boolean> {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken }),
+        _authRetry: true,
       });
       if (res.ok) {
         const data = (await res.json()) as {
