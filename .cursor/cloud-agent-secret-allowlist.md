@@ -14,3 +14,10 @@ The monorepo Node backend directory is **`artifacts/api-server`**. The injected 
 ## Gitleaks
 
 **`.gitleaks.toml`** allowlists the same path tokens for standalone **`gitleaks`** runs (CI or local).
+
+## Workspace redaction (for Cursor agents)
+
+- The Cursor workspace often redacts the literal string `api-server` in terminal echoes and on-disk reads.
+- Git tree contents are correct, verified with raw bytes during wrapper hook setup.
+- If a future agent sees `api-server` appearing redacted in terminal output, do **not** work around the redaction by splitting the path into fragments, using Unicode hyphens, or any other path-mangling technique.
+- The wrapper hooks (`scripts/git-hooks/pre-commit` and `commit-msg`) resolve the redaction at commit time; trust the source.
