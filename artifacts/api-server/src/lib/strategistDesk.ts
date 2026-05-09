@@ -845,6 +845,7 @@ function convictionOutcomeFromAttemptsWhenFailed(
 /**
  * Conviction Desk: one LLM turn with the Conviction model slot (`strategistConvictionModelIdx`),
  * same catalyst web-search preamble as Solo Desk when using Gemini JSON-only flow.
+ * Packaged live-equity JSON keys are documented for the model in `CONVICTION_DESK_INTRADAY_DATA_GUIDANCE` (strategistDeskPrompts.ts).
  */
 export async function runConvictionDesk(args: {
   dataPackage: string;

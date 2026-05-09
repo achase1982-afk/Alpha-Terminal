@@ -24,8 +24,45 @@ OUTPUT STYLE (strict):
 /** When intraday / stream enrichments are present in the data package JSON. */
 export const CONVICTION_DESK_INTRADAY_DATA_GUIDANCE = `
 
-## INTRADAY AND LIVE STREAM CONTEXT (when JSON fields exist)
-The snapshot may include **intraday** (Volume Weighted Average Price, Relative Strength Index, equity block tape, live order book, scanner signal snapshot), **options_data_freshness**, optional parallel streamed equity quote timestamps (JSON keys include stream and tuning Level 1 enrichment), and quote divergence in basis points when both mids exist. In prose, use full phrases (**Volume Weighted Average Price**, **Relative Strength Index**) instead of abbreviations alone. Resting chain rows remain the authority when stream quotes are null or stale; **options_data_freshness** states whether the live options stream backed this run.
+## INTRADAY AND LIVE EQUITY CONTEXT (data dictionary)
+When any field in these sections is **null** or a parent object such as **intraday** is **null**, the live source was unavailable on this run; do not interpret **null** as bearish or bullish, and fall back to the existing pre-computed snapshot fields for that dimension (**price**, chain marks, **polygonFlowHighlights**, **scannerContext**, **dataQualitySummary**, etc.).
+In prose, use full phrases (**Volume Weighted Average Price**, **Relative Strength Index**) instead of abbreviations alone. Resting chain rows remain the authority when stream-backed marks are **null** or stale; **options_data_freshness** summarizes how much of the active watchlist had fresh stream ticks versus REST-only reads.
+
+### Live Intraday Equity Context (**intraday.vwap**, **intraday.rsi**)
+- Volume Weighted Average Price (session) (**intraday.vwap.vwap_session**): Session cumulative VWAP from **Schwab TIMESALE_EQUITY** prints (volume-weighted in the packaged regular-session window); **null** when tape lacks sufficient prints. No non-Schwab equity vendor fills this field.
+- Volume Weighted Average Price delta percent (current price vs session VWAP) (**intraday.vwap.vwap_delta_pct**): Spot versus session VWAP in percent (positive means spot above session VWAP, negative below, near zero at VWAP) when both numbers exist; **null** when session VWAP or spot is unavailable.
+- Relative Strength Index 14 (**intraday.rsi.rsi_14**): Wilder RSI on **1-minute closes**: primary series is **last trade per ET minute** from **Schwab TIMESALE_EQUITY**; if fewer than fifteen minute closes exist, the model may use **Schwab CHART_EQUITY** one-minute bar closes when that stream is subscribed; **null** when neither Schwab path yields enough bars.
+
+### Equity Block Tape Activity (rolling 30 minute window) (**intraday.equity_block_tape**)
+- Block count (**intraday.equity_block_tape.block_count_30min**): Count of large prints in the last thirty minutes by share-count or notional threshold.
+- Block notional in dollars (**intraday.equity_block_tape.block_notional_30min**): Sum notional of those prints over the same window.
+- Block side imbalance (**intraday.equity_block_tape.block_side_imbalance**): Signed imbalance of block notional versus session VWAP (positive leans buy-heavy above VWAP, negative sell-heavy below, near zero balanced) when both sides have mass; **null** when classification lacks supporting notionals.
+- Last block age in seconds (**intraday.equity_block_tape.last_block_age_seconds**): Seconds since the newest qualifying block print, or **null** when no block fired in the window.
+
+### Live Order Book State (**intraday.order_book**)
+- Top of book bid size (**intraday.order_book.top_of_book_bid_size**): Displayed size at the best bid when the venue book snapshot is fresh.
+- Top of book ask size (**intraday.order_book.top_of_book_ask_size**): Displayed size at the best ask when the venue book snapshot is fresh.
+- Book imbalance percent (**intraday.order_book.book_imbalance_pct**): Top-of-book size imbalance in percent (positive means bid-heavy, negative ask-heavy) when both sides are present.
+- Depth within 1 percent of mid, bid side (**intraday.order_book.depth_within_1pct_bid**): Resting bid depth within one percent of mid when computable.
+- Depth within 1 percent of mid, ask side (**intraday.order_book.depth_within_1pct_ask**): Resting ask depth within one percent of mid when computable.
+- Book age in milliseconds (**intraday.order_book.book_age_ms**): Age of the venue book snapshot; stale ages may accompany **null** depth fields.
+- Listing venue for the book row (**intraday.order_book.venue**): Which listing feed supplied the row when resolved.
+
+### Quote Source Comparison (top-level snapshot fields)
+- Schwab REST quote (existing primary source) (**price**, **dailyChangePct**, and related header equity fields): Primary packaged cash equity mark and day change from the REST snapshot that anchors chain marks and desk context.
+- Schwab stream quote (new enrichment, may be null when stream stale) (**schwab_stream_bid**, **schwab_stream_ask**, **schwab_stream_last**, **schwab_stream_age_ms**): Parallel streamed National Best Bid and Offer style updates when fresh; **null** fields mean no qualifying stream quote on this run.
+- IBKR Level 1 quote (new enrichment, tuning universe only, may be null when stale) (**ibkr_l1_bid**, **ibkr_l1_ask**, **ibkr_l1_last**, **ibkr_l1_age_ms**): Alternate venue Level 1 snapshot for cross-check when the tuning gateway path is live; wide **ibkr_l1_age_ms** with **null** bid or ask means stale or unavailable.
+- IBKR-Schwab quote delta in basis points (sanity check) (**ibkr_schwab_quote_delta_bps**): Mid versus mid gap in basis points when both stream Schwab and fresh IBKR two-sided quotes exist; **null** when either side is missing.
+
+### Live Options Data Freshness (**options_data_freshness**)
+- Source (**options_data_freshness.source**): **schwab_rest_chain_only** means REST pull only, **mixed_stream_and_rest** is hybrid stream plus REST, **schwab_levelone_options_stream** means live stream backed the sampled contracts, **enrichment_error** means the enrichment pass failed.
+- Maximum quote age in milliseconds across active watchlist contracts (**options_data_freshness.max_quote_age_ms**): Oldest observed quote age among contracts sampled for freshness on this run.
+- Count of contracts backed by live stream (**options_data_freshness.contracts_live_stream_backed**): Contracts whose latest tick was inside the fresh stream window.
+- Count of contracts using REST fallback only (**options_data_freshness.contracts_rest_only**): Contracts without a fresh stream tick at snapshot time.
+
+### Ticker Signal Snapshot (**intraday.signal_snapshot**)
+- Snapshot age in seconds (**intraday.signal_snapshot.snapshot_age_seconds**): Time since the scanner worker row was written when a row exists.
+- Pass-through computed signal columns from snapshot worker output (**intraday.signal_snapshot** fields such as **composite_score**, **component_scores**, **flow_summary**, **sector**, **market_cap_tier**, **spot**, **daily_change_pct**, **snapshot_at**, **ticker**): Latest persisted scanner snapshot slice joined for context; interpret jointly with **scannerContext** when both appear.
 `;
 
 /** Catalyst / event narrative: sell-side firms may be named as catalyst actors; retrieval plumbing and outlet attribution may not. */
