@@ -1,7 +1,7 @@
 import { db, tickerSignalSnapshotTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { logger } from "./logger.js";
-import { nyCalendarYmd, rthBoundsMs } from "./polygonMarketCalendar.js";
+import { nyCalendarYmd, prevNyTradingDayYmd, rthBoundsMs } from "./polygonMarketCalendar.js";
 import { isUsEquityRthEt } from "./ibTotalviewPersistence.js";
 import { getIbTuningL1QuoteSnapshot } from "./ibStreamer.js";
 import {
@@ -75,27 +75,30 @@ export function resolveStrategistBookVenue(
 }
 
 interface PolygonMinuteBar {
+  /** Unix ms (bar start); Polygon agg v2. */
+  t?: number;
   c?: number;
   v?: number;
   vw?: number;
 }
 
-async function fetchPolygonMinuteBarsToday(sym: string): Promise<PolygonMinuteBar[]> {
+/** Multi-session minute history for RSI / VWAP fallbacks (≈30 calendar days). */
+const POLYGON_RANGE_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
+
+async function fetchPolygonMinuteBarsRange(sym: string, fromMs: number, toMs: number): Promise<PolygonMinuteBar[]> {
   const apiKey = process.env["POLYGON_API_KEY"] ?? "";
   if (!apiKey) return [];
   const upper = sym.toUpperCase().replace(/^\$/, "");
-  const now = Date.now();
-  const from = now - 8 * 60 * 60 * 1000;
   const url =
-    `${POLYGON_API}/v2/aggs/ticker/${encodeURIComponent(upper)}/range/1/minute/${from}/${now}` +
-    `?adjusted=true&sort=asc&limit=5000&apiKey=${encodeURIComponent(apiKey)}`;
+    `${POLYGON_API}/v2/aggs/ticker/${encodeURIComponent(upper)}/range/1/minute/${Math.floor(fromMs)}/${Math.floor(toMs)}` +
+    `?adjusted=true&sort=asc&limit=50000&apiKey=${encodeURIComponent(apiKey)}`;
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
     if (!res.ok) return [];
     const json = (await res.json()) as { results?: PolygonMinuteBar[] };
     return json.results ?? [];
   } catch (err) {
-    logger.debug({ err, sym: upper }, "StrategistIntraday: Polygon minute bars fetch failed");
+    logger.debug({ err, sym: upper }, "StrategistIntraday: Polygon minute bars range fetch failed");
     return [];
   }
 }
@@ -155,19 +158,20 @@ function polygonSessionVwapFallback(bars: PolygonMinuteBar[]): number | null {
   return Math.round((num / den) * 10000) / 10000;
 }
 
-function equityBlockMetrics(
+function equityBlockMetricsWindow(
   pts: SchwabTimesaleStrategistPoint[],
+  windowStartMs: number,
+  windowEndMs: number,
   sessionOpenMs: number,
   sessionCloseMs: number,
   spotPrice: number,
-  nowMs: number,
+  nowMsForAge: number,
 ): {
   block_count_30min: number | null;
   block_notional_30min: number | null;
   block_side_imbalance: number | null;
   last_block_age_seconds: number | null;
 } {
-  const windowStart = nowMs - BLOCK_WINDOW_MS;
   let buyN = 0;
   let sellN = 0;
   let blockCount = 0;
@@ -186,7 +190,7 @@ function equityBlockMetrics(
     sessionVwapDen > 0 ? sessionVwapNum / sessionVwapDen : spotPrice > 0 ? spotPrice : null;
 
   for (const p of pts) {
-    if (p.ts < windowStart || p.ts > nowMs) continue;
+    if (p.ts < windowStartMs || p.ts > windowEndMs) continue;
     const notional = p.price * p.size;
     const isBlock = p.size >= BLOCK_MIN_SHARES || notional >= BLOCK_MIN_NOTIONAL_USD;
     if (!isBlock) continue;
@@ -204,7 +208,7 @@ function equityBlockMetrics(
   if (pairSum > 0) imbalance = Math.round(((buyN - sellN) / pairSum) * 10_000) / 10_000;
 
   let lastAgeSec: number | null = null;
-  if (lastBlockTs != null) lastAgeSec = Math.max(0, Math.round((nowMs - lastBlockTs) / 1000));
+  if (lastBlockTs != null) lastAgeSec = Math.max(0, Math.round((nowMsForAge - lastBlockTs) / 1000));
 
   if (blockCount === 0) {
     return {
@@ -221,6 +225,29 @@ function equityBlockMetrics(
     block_side_imbalance: imbalance,
     last_block_age_seconds: lastAgeSec,
   };
+}
+
+function equityBlockMetrics(
+  pts: SchwabTimesaleStrategistPoint[],
+  sessionOpenMs: number,
+  sessionCloseMs: number,
+  spotPrice: number,
+  nowMs: number,
+): {
+  block_count_30min: number | null;
+  block_notional_30min: number | null;
+  block_side_imbalance: number | null;
+  last_block_age_seconds: number | null;
+} {
+  const windowStart = nowMs - BLOCK_WINDOW_MS;
+  return equityBlockMetricsWindow(pts, windowStart, nowMs, sessionOpenMs, sessionCloseMs, spotPrice, nowMs);
+}
+
+function polygonBarsInSession(bars: PolygonMinuteBar[], openMs: number, closeMs: number): PolygonMinuteBar[] {
+  return bars.filter((b) => {
+    const t = b.t;
+    return typeof t === "number" && t >= openMs && t <= closeMs;
+  });
 }
 
 function pickVenueForBook(
@@ -264,17 +291,48 @@ export async function buildStrategistIntradayPackage(args: {
   }
 
   const tsPts = getStrategistTimesalePoints(symU);
+  const polyFrom = nowMs - POLYGON_RANGE_LOOKBACK_MS;
+  const polyBarsExtended = await fetchPolygonMinuteBarsRange(symU, polyFrom, nowMs);
+
   let vwapSession = sessionVwapFromTimesales(tsPts, openMs, closeMs);
   let vwapStatus: string =
     vwapSession != null ? "live_from_timesale_session" : "insufficient_timesale_ticks";
+  let vwap_as_of_session_date: string | null = vwapSession != null ? nyYmd : null;
 
-  const polyBars = await fetchPolygonMinuteBarsToday(symU);
-  const polyCloses = polyBars.map((b) => b.c).filter((c): c is number => typeof c === "number" && Number.isFinite(c));
+  const barsCurrentSession = polygonBarsInSession(polyBarsExtended, openMs, closeMs);
   if (vwapSession == null) {
-    const fb = polygonSessionVwapFallback(polyBars);
-    if (fb != null) {
-      vwapSession = fb;
+    const fbToday = polygonSessionVwapFallback(barsCurrentSession);
+    if (fbToday != null) {
+      vwapSession = fbToday;
       vwapStatus = "polygon_minute_volume_weighted_fallback";
+      vwap_as_of_session_date = nyYmd;
+    }
+  }
+
+  if (vwapSession == null) {
+    let dayCursor = await prevNyTradingDayYmd(nyYmd);
+    for (let i = 0; i < 15; i++) {
+      try {
+        const bounds = await rthBoundsMs(dayCursor);
+        const tsV = sessionVwapFromTimesales(tsPts, bounds.openMs, bounds.closeMs);
+        if (tsV != null) {
+          vwapSession = tsV;
+          vwapStatus = "prior_session_timesales";
+          vwap_as_of_session_date = dayCursor;
+          break;
+        }
+        const barsDay = polygonBarsInSession(polyBarsExtended, bounds.openMs, bounds.closeMs);
+        const pv = polygonSessionVwapFallback(barsDay);
+        if (pv != null) {
+          vwapSession = pv;
+          vwapStatus = "prior_session_polygon_minute";
+          vwap_as_of_session_date = dayCursor;
+          break;
+        }
+      } catch {
+        /* try next session */
+      }
+      dayCursor = await prevNyTradingDayYmd(dayCursor);
     }
   }
 
@@ -284,18 +342,46 @@ export async function buildStrategistIntradayPackage(args: {
     vwapDeltaPct = Math.round(((spot - vwapSession) / vwapSession) * 10000) / 100;
   }
 
+  const sortedTimedBars = polyBarsExtended
+    .filter((b): b is PolygonMinuteBar & { t: number; c: number } =>
+      typeof b.t === "number" && typeof b.c === "number" && Number.isFinite(b.c),
+    )
+    .sort((a, b) => a.t - b.t);
+
   let rsi14: number | null = null;
   let rsiStatus = "insufficient_bars";
-  if (polyCloses.length >= 15) {
-    rsi14 = computeRsiWilders(polyCloses, 14);
+  let rsi_as_of_session_date: string | null = null;
+  if (sortedTimedBars.length >= 15) {
+    const lastBars = sortedTimedBars.slice(-15);
+    const closes15 = lastBars.map((b) => b.c);
+    rsi14 = computeRsiWilders(closes15, 14);
     rsiStatus = rsi14 != null ? "available" : "insufficient_bars";
-  } else if (polyCloses.length > 0) {
+    const lastBar = lastBars[lastBars.length - 1]!;
+    rsi_as_of_session_date = nyCalendarYmd(new Date(lastBar.t));
+  } else if (sortedTimedBars.length > 0) {
     rsiStatus = "insufficient_bars";
   } else {
     rsiStatus = "polygon_minute_unavailable";
   }
 
-  const blocks = equityBlockMetrics(tsPts, openMs, closeMs, args.spotPrice || 0, nowMs);
+  let blocks = equityBlockMetrics(tsPts, openMs, closeMs, args.spotPrice || 0, nowMs);
+  let equity_block_tape_as_of_session_date: string | null = null;
+  const hadCurrentBlocks =
+    (blocks.block_count_30min ?? 0) > 0 || (blocks.block_notional_30min ?? 0) > 0;
+  if (hadCurrentBlocks) {
+    equity_block_tape_as_of_session_date = nyYmd;
+  } else {
+    try {
+      const prevDay = await prevNyTradingDayYmd(nyYmd);
+      const pb = await rthBoundsMs(prevDay);
+      const ws = pb.closeMs - BLOCK_WINDOW_MS;
+      const we = pb.closeMs;
+      blocks = equityBlockMetricsWindow(tsPts, ws, we, pb.openMs, pb.closeMs, args.spotPrice || 0, nowMs);
+      equity_block_tape_as_of_session_date = prevDay;
+    } catch {
+      equity_block_tape_as_of_session_date = null;
+    }
+  }
 
   const venuePick = pickVenueForBook(venue);
   let orderBookPayload: Record<string, unknown> = {
@@ -437,12 +523,17 @@ export async function buildStrategistIntradayPackage(args: {
       vwap_session: vwapSession,
       vwap_delta_pct: vwapDeltaPct,
       vwap_status: vwapStatus,
+      vwap_as_of_session_date,
     },
     rsi: {
       rsi_14: rsi14,
       rsi_status: rsiStatus,
+      rsi_as_of_session_date,
     },
-    equity_block_tape: blocks,
+    equity_block_tape: {
+      ...blocks,
+      equity_block_tape_as_of_session_date,
+    },
     order_book: orderBookPayload,
     signal_snapshot: signalSnapshot,
   };
