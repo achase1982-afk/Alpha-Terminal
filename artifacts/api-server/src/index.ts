@@ -43,6 +43,7 @@ import {
 import { nyCalendarYmd, isNyTradingSessionDateSync } from "./lib/usEquityMarketCalendar.js";
 import { liquidCoreUnionTuningSymbols } from "./lib/liquidCoreUniverse.js";
 import { runLiquidCoreEquityBackfillOnce, runFlowBootstrapGapRepairOnce } from "./lib/triggerBackfillBoot.js";
+import { ensureTelemetryEventsServiceColumn } from "./lib/ensureTelemetryEventsSchema.js";
 
 const rawPort = process.env["PORT"];
 
@@ -61,6 +62,7 @@ if (Number.isNaN(port) || port <= 0) {
 getFmpApiKeyOrThrow();
 
 async function boot() {
+  await ensureTelemetryEventsServiceColumn();
   registerTuningUniverseOnBoot();
   startSnapshotRefreshWorker();
   void refreshMacroCalendarCacheFromDb().catch((e) => {
