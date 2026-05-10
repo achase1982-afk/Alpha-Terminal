@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import type { Request, Response } from "express";
 import {
   getEvents,
   getGroupedEvents,
@@ -10,8 +11,120 @@ import {
   emitTelemetry,
 } from "../lib/telemetryStore.js";
 import { logFailure } from "../lib/telemetry.js";
+import {
+  parseRangeQuery,
+  queryTelemetryEvents,
+  rowsToCsv,
+  rowsToPlainText,
+  RUNTIME_LOG_MAX_LIMIT,
+} from "../lib/telemetryEventsDb.js";
 
 const router: IRouter = Router();
+
+function parseRuntimeLogParams(req: Request): {
+  from: Date;
+  to: Date;
+  limit: number;
+  q?: string;
+  systems?: string[];
+} | { error: string } {
+  const parsed = parseRangeQuery({
+    minutes: typeof req.query.minutes === "string" ? req.query.minutes : undefined,
+    from: typeof req.query.from === "string" ? req.query.from : undefined,
+    to: typeof req.query.to === "string" ? req.query.to : undefined,
+  });
+  if ("error" in parsed) {
+    return { error: parsed.error };
+  }
+  const limitRaw = typeof req.query.limit === "string" ? Number.parseInt(req.query.limit, 10) : 500;
+  const limit = Math.min(
+    RUNTIME_LOG_MAX_LIMIT,
+    Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 500),
+  );
+  const q = typeof req.query.q === "string" ? req.query.q : undefined;
+  const systemsRaw = typeof req.query.systems === "string" ? req.query.systems : "";
+  const systems = systemsRaw
+    .split(",")
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean);
+  return {
+    from: parsed.from,
+    to: parsed.to,
+    limit,
+    q,
+    systems: systems.length ? systems : undefined,
+  };
+}
+
+/** Durable telemetry_events (HTTP timing + emitTelemetry); Clerk-gated via /api middleware. */
+router.get("/runtime-logs", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const params = parseRuntimeLogParams(req);
+    if ("error" in params) {
+      res.status(400).json({ error: params.error });
+      return;
+    }
+    const rows = await queryTelemetryEvents({
+      from: params.from,
+      to: params.to,
+      limit: params.limit,
+      q: params.q,
+      systems: params.systems,
+    });
+    res.json({
+      entries: rows,
+      truncated: rows.length >= params.limit,
+      maxLimit: RUNTIME_LOG_MAX_LIMIT,
+    });
+  } catch (err: unknown) {
+    req.log?.error({ err }, "runtime-logs query failed");
+    res.status(500).json({ error: "Failed to fetch runtime logs" });
+  }
+});
+
+router.get("/runtime-logs/export", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const params = parseRuntimeLogParams(req);
+    if ("error" in params) {
+      res.status(400).json({ error: params.error });
+      return;
+    }
+    const fmtRaw = typeof req.query.format === "string" ? req.query.format.toLowerCase() : "json";
+    const format = fmtRaw === "text" || fmtRaw === "csv" || fmtRaw === "json" ? fmtRaw : "json";
+
+    const rows = await queryTelemetryEvents({
+      from: params.from,
+      to: params.to,
+      limit: params.limit,
+      q: params.q,
+      systems: params.systems,
+    });
+
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+
+    if (format === "json") {
+      const body = JSON.stringify(rows, null, 2);
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="telemetry-runtime-logs-${stamp}.json"`);
+      res.send(body);
+      return;
+    }
+    if (format === "csv") {
+      const body = rowsToCsv(rows);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="telemetry-runtime-logs-${stamp}.csv"`);
+      res.send(body);
+      return;
+    }
+    const body = rowsToPlainText(rows);
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="telemetry-runtime-logs-${stamp}.txt"`);
+    res.send(body);
+  } catch (err: unknown) {
+    req.log?.error({ err }, "runtime-logs export failed");
+    res.status(500).json({ error: "Failed to export runtime logs" });
+  }
+});
 
 router.get("/", async (req, res) => {
   try {

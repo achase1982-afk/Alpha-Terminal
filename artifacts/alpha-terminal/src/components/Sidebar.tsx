@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { MarketCalendar } from "@/components/MarketCalendar";
 import { TelemetryPage, useTelemetryCount } from "@/components/TelemetryPage";
+import { TelemetryLogsPanel } from "@/components/TelemetryLogsPanel";
 import { SecurityPrivacyPage } from "@/components/SecurityPrivacyPage";
 import { useAuth } from "@clerk/clerk-react";
 import { signOutWithFullNavigation } from "@/lib/clerkSignOut";
@@ -1597,13 +1598,14 @@ function OptionsChainDefaultsPage() {
 // a single tabbed entry so the sidebar can drop the "Strategist Telemetry"
 // item without losing access to those rows.
 function UnifiedTelemetryPage() {
-  const [tab, setTab] = useState<"events" | "trades">("events");
+  const [tab, setTab] = useState<"events" | "trades" | "logs">("events");
   return (
     <div className="space-y-3">
       <div className="flex gap-1 border-b border-card-border">
         {([
           { key: "events", label: "EVENTS" },
           { key: "trades", label: "TRADES" },
+          { key: "logs", label: "LOGS" },
         ] as const).map((t) => (
           <button
             key={t.key}
@@ -1619,7 +1621,13 @@ function UnifiedTelemetryPage() {
         ))}
       </div>
       <div>
-        {tab === "events" ? <TelemetryPage /> : <StrategistTelemetryPanel />}
+        {tab === "events" ? (
+          <TelemetryPage />
+        ) : tab === "trades" ? (
+          <StrategistTelemetryPanel />
+        ) : (
+          <TelemetryLogsPanel />
+        )}
       </div>
     </div>
   );
