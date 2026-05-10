@@ -3377,6 +3377,11 @@ function AiIntelligenceTabInner({
     // Register the job in the global store BEFORE the network round-trip so
     // the poller / UI can already reflect the running state.
     startStrategistJob(jobId, upperTicker);
+    // Start polling immediately — do not wait for POST /analyze to return.
+    // If the POST hangs (token refresh, proxy, flaky network), we still hit
+    // /thinking on the normal cadence (404 grace → eventual buffer) instead of
+    // a silent spinner with zero polls.
+    startStrategistPolling(jobId);
 
     // Fire-and-forget — server runs the analysis to completion regardless of
     // client navigation. We hand off polling to a module-level driver so it
@@ -3399,6 +3404,7 @@ function AiIntelligenceTabInner({
         if (postAc.signal.aborted) return;
         if (!useTerminalStore.getState().strategistJobs[jobId]) return;
         if (!res.ok) {
+          abortStrategistPolling(jobId);
           if (res.status === 409) {
             try {
               const body = await res.json() as { message?: string; ticker?: string };
@@ -3413,10 +3419,12 @@ function AiIntelligenceTabInner({
           errorStrategistJob(jobId, humanizeFailedApiBody(res.status, errText));
           return;
         }
-        startStrategistPolling(jobId);
+        // POST accepted — refresh poller so a stalled tab takeover wins cleanly.
+        startStrategistPolling(jobId, { force: true });
       } catch (err) {
         if (postAc.signal.aborted) return;
         if (!useTerminalStore.getState().strategistJobs[jobId]) return;
+        abortStrategistPolling(jobId);
         errorStrategistJob(jobId, err instanceof Error ? err.message : String(err));
       }
     })();
