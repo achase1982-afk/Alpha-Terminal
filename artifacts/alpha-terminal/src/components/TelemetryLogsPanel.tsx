@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
-import { Pause, Play } from "lucide-react";
+import { Pause, Play, Terminal } from "lucide-react";
+
+/** Live-tail accent aligned with terminal teal chrome */
+const TEAL_LIVE = "#00FFC2";
 
 const f = "'JetBrains Mono', 'Fira Code', 'SF Mono', monospace";
 
@@ -43,15 +46,15 @@ function displayServiceName(service: string): string {
 }
 
 const RANGE_PRESETS: { label: string; minutes: number }[] = [
-  { label: "2 min", minutes: 2 },
-  { label: "5 min", minutes: 5 },
-  { label: "10 min", minutes: 10 },
-  { label: "30 min", minutes: 30 },
-  { label: "1 h", minutes: 60 },
-  { label: "6 h", minutes: 360 },
-  { label: "24 h", minutes: 1440 },
-  { label: "7 d", minutes: 10080 },
-  { label: "30 d", minutes: 43200 },
+  { label: "Last 2 min", minutes: 2 },
+  { label: "Last 5 min", minutes: 5 },
+  { label: "Last 10 min", minutes: 10 },
+  { label: "Last 30 min", minutes: 30 },
+  { label: "Last 1 h", minutes: 60 },
+  { label: "Last 6 h", minutes: 360 },
+  { label: "Last 24 h", minutes: 1440 },
+  { label: "Last 7 d", minutes: 10080 },
+  { label: "Last 30 d", minutes: 43200 },
 ];
 
 function formatTime(iso: string): string {
@@ -100,7 +103,7 @@ function compactDataPayload(e: RuntimeLogEntry): string {
   }
 }
 
-function MinuteHistogram({ entries }: { entries: RuntimeLogEntry[] }) {
+function MinuteHistogram({ entries, barHeight = 22 }: { entries: RuntimeLogEntry[]; barHeight?: number }) {
   const buckets = useMemo(() => {
     const map = new Map<number, number>();
     for (const e of entries) {
@@ -112,7 +115,16 @@ function MinuteHistogram({ entries }: { entries: RuntimeLogEntry[] }) {
   const max = Math.max(1, ...buckets.map(([, c]) => c));
   const tail = buckets.slice(-48);
   return (
-    <div style={{ display: "flex", alignItems: "flex-end", gap: 1, height: 36, marginTop: 6, opacity: 0.9 }}>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-end",
+        gap: 1,
+        height: barHeight,
+        marginTop: 4,
+        opacity: 0.85,
+      }}
+    >
       {tail.map(([minuteKey, count], i) => (
         <div
           key={`${minuteKey}-${i}`}
@@ -120,7 +132,7 @@ function MinuteHistogram({ entries }: { entries: RuntimeLogEntry[] }) {
           style={{
             flex: 1,
             minWidth: 2,
-            height: `${Math.max(8, (count / max) * 100)}%`,
+            height: `${Math.max(6, (count / max) * 100)}%`,
             background: C.amber,
             borderRadius: 1,
           }}
@@ -283,7 +295,7 @@ export function TelemetryLogsPanel() {
   };
 
   const selectStyle: React.CSSProperties = {
-    padding: "5px 10px",
+    padding: "4px 8px",
     borderRadius: 6,
     border: `1px solid ${C.border}`,
     background: C.card,
@@ -291,6 +303,19 @@ export function TelemetryLogsPanel() {
     fontFamily: f,
     fontSize: 10,
     cursor: "pointer",
+    maxHeight: 30,
+  };
+
+  const searchInputStyle: React.CSSProperties = {
+    flex: "1 1 140px",
+    minWidth: 120,
+    padding: "6px 10px",
+    borderRadius: 6,
+    border: `1px solid ${C.border}`,
+    background: C.bg,
+    color: C.text,
+    fontFamily: f,
+    fontSize: 11,
   };
 
   return (
@@ -302,65 +327,14 @@ export function TelemetryLogsPanel() {
         display: "flex",
         flexDirection: "column",
         height: "100%",
-        gap: 10,
+        gap: 6,
       }}
+      title="Server rows: HTTP timing and emitTelemetry. Web app: browser errors. 30-day retention. Clerk session required."
     >
-      <div style={{ fontSize: 10, fontFamily: f, color: C.muted, lineHeight: 1.5 }}>
-        Unified log stream: <strong style={{ color: C.text }}>Server</strong> rows include HTTP timing and{" "}
-        <code style={{ color: C.amber }}>emitTelemetry</code>; <strong style={{ color: C.text }}>Web app</strong> rows come from browser errors
-        forwarded to the API. Retention 30 days. Clerk session required.
-      </div>
-
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-        <span style={{ fontSize: 10, fontFamily: f, color: C.dim }}>RANGE</span>
-        <select
-          value={String(rangeMinutes)}
-          onChange={(e) => setRangeMinutes(Number(e.target.value))}
-          style={{ ...selectStyle, minWidth: 108 }}
-          aria-label="Log time range"
-        >
-          {RANGE_PRESETS.map((p) => (
-            <option key={p.minutes} value={p.minutes}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-        <span style={{ fontSize: 10, fontFamily: f, color: C.dim }}>SOURCE</span>
-        {(
-          [
-            { key: "all", label: "All" },
-            { key: "server", label: "Server" },
-            { key: "browser", label: "Browser" },
-          ] as const
-        ).map(({ key, label }) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setServiceFilter(key)}
-            style={{
-              padding: "4px 12px",
-              borderRadius: 4,
-              fontSize: 10,
-              fontFamily: f,
-              fontWeight: 700,
-              border: `1px solid ${serviceFilter === key ? C.amber : C.border}`,
-              background: serviceFilter === key ? "rgba(245,158,11,0.08)" : "transparent",
-              color: serviceFilter === key ? C.amber : C.dim,
-              cursor: "pointer",
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
         <input
           type="search"
-          placeholder="Filter message / details…"
+          placeholder="Filter and search logs"
           value={filterQ}
           onChange={(e) => setFilterQ(e.target.value)}
           onKeyDown={(e) => {
@@ -371,103 +345,51 @@ export function TelemetryLogsPanel() {
               void fetchLogs({ q: qv, systems: filterSystems });
             }
           }}
-          style={{
-            flex: "1 1 180px",
-            minWidth: 140,
-            padding: "6px 10px",
-            borderRadius: 6,
-            border: `1px solid ${C.border}`,
-            background: C.card,
-            color: C.text,
-            fontFamily: f,
-            fontSize: 11,
-          }}
+          style={searchInputStyle}
+          aria-label="Filter logs"
         />
-        <input
-          type="text"
-          placeholder="Systems (comma): HTTP, STRATEGIST…"
-          value={filterSystems}
-          onChange={(e) => setFilterSystems(e.target.value)}
-          style={{
-            flex: "1 1 160px",
-            minWidth: 120,
-            padding: "6px 10px",
-            borderRadius: 6,
-            border: `1px solid ${C.border}`,
-            background: C.card,
-            color: C.text,
-            fontFamily: f,
-            fontSize: 11,
-          }}
-        />
-        <label style={{ fontSize: 10, fontFamily: f, color: C.dim, display: "flex", alignItems: "center", gap: 6 }}>
-          limit
-          <input
-            type="number"
-            min={50}
-            max={5000}
-            step={50}
-            value={limit}
-            onChange={(e) => setLimit(Number(e.target.value) || 500)}
-            style={{
-              width: 72,
-              padding: 4,
-              borderRadius: 4,
-              border: `1px solid ${C.border}`,
-              background: C.card,
-              color: C.text,
-              fontFamily: f,
-              fontSize: 11,
-            }}
-          />
-        </label>
-        <button
-          type="button"
-          onClick={() => {
-            const qv = filterQ.trim();
-            setAppliedQ(qv);
-            setAppliedSystems(filterSystems);
-            void fetchLogs({ q: qv, systems: filterSystems });
-          }}
-          style={{
-            padding: "6px 12px",
-            borderRadius: 6,
-            border: `1px solid ${C.amber}`,
-            background: "rgba(245,158,11,0.06)",
-            color: C.amber,
-            fontFamily: f,
-            fontSize: 10,
-            fontWeight: 700,
-            cursor: "pointer",
-          }}
+        <select
+          value={String(rangeMinutes)}
+          onChange={(e) => setRangeMinutes(Number(e.target.value))}
+          style={{ ...selectStyle, minWidth: 118 }}
+          aria-label="Time range"
         >
-          Apply
-        </button>
+          {RANGE_PRESETS.map((p) => (
+            <option key={p.minutes} value={p.minutes}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+        <select
+          value={serviceFilter}
+          onChange={(e) => setServiceFilter(e.target.value as ServiceFilter)}
+          style={{ ...selectStyle, minWidth: 112 }}
+          aria-label="Log source"
+        >
+          <option value="all">All sources</option>
+          <option value="server">Server</option>
+          <option value="browser">Web app</option>
+        </select>
         <button
           type="button"
           onClick={() => setLive((v) => !v)}
+          title={live ? "Pause live refresh" : "Resume live refresh"}
           style={{
-            display: "flex",
+            display: "inline-flex",
             alignItems: "center",
-            gap: 6,
-            padding: "6px 12px",
+            justifyContent: "center",
+            width: 32,
+            height: 30,
+            padding: 0,
             borderRadius: 6,
-            border: `1px solid ${live ? "#26a69a" : C.border}`,
-            background: live ? "rgba(38,166,154,0.06)" : "transparent",
-            color: live ? "#26a69a" : C.dim,
-            fontFamily: f,
-            fontSize: 10,
-            fontWeight: 700,
+            border: `1px solid ${live ? TEAL_LIVE : C.border}`,
+            background: live ? "rgba(0,255,194,0.06)" : "transparent",
+            color: live ? TEAL_LIVE : C.dim,
             cursor: "pointer",
           }}
         >
-          {live ? <Pause size={12} /> : <Play size={12} />}
-          {live ? "LIVE" : "PAUSED"}
+          {live ? <Pause size={14} strokeWidth={2.5} /> : <Play size={14} strokeWidth={2.5} />}
         </button>
-      </div>
-
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-        <span style={{ fontSize: 10, fontFamily: f, color: C.dim }}>EXPORT</span>
         <select
           value={exportChoice}
           onChange={(e) => {
@@ -481,52 +403,106 @@ export function TelemetryLogsPanel() {
             else if (v === "dl-csv") void downloadBlob("csv");
             else if (v === "dl-txt") void downloadBlob("text");
           }}
-          style={{ ...selectStyle, minWidth: 168 }}
-          aria-label="Copy or download logs"
+          style={{ ...selectStyle, minWidth: 104 }}
+          aria-label="Export logs"
         >
           <option value="">Export…</option>
-          <option value="copy-json">Copy as JSON</option>
-          <option value="copy-text">Copy as plain text</option>
+          <option value="copy-json">Copy JSON</option>
+          <option value="copy-text">Copy text</option>
           <option value="dl-json">Download JSON</option>
           <option value="dl-csv">Download CSV</option>
-          <option value="dl-txt">Download plain text</option>
+          <option value="dl-txt">Download .txt</option>
         </select>
-        {copyFlash && (
-          <span style={{ fontSize: 10, fontFamily: f, color: C.amberDim }}>Copied {copyFlash === "json" ? "JSON" : "text"}</span>
-        )}
+        {copyFlash ? (
+          <span style={{ fontSize: 9, fontFamily: f, color: C.amberDim }}>Copied</span>
+        ) : null}
       </div>
 
-      {!loading && entries.length > 0 && <MinuteHistogram entries={entries} />}
+      <details style={{ fontSize: 10, fontFamily: f, color: C.muted }}>
+        <summary style={{ cursor: "pointer", userSelect: "none" }}>Advanced filters</summary>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6, alignItems: "center" }}>
+          <input
+            type="text"
+            placeholder="Systems (comma): HTTP, STRATEGIST…"
+            value={filterSystems}
+            onChange={(e) => setFilterSystems(e.target.value)}
+            style={{ ...searchInputStyle, flex: "1 1 160px", minWidth: 140 }}
+          />
+          <label style={{ fontSize: 10, fontFamily: f, color: C.dim, display: "flex", alignItems: "center", gap: 6 }}>
+            Row limit
+            <input
+              type="number"
+              min={50}
+              max={5000}
+              step={50}
+              value={limit}
+              onChange={(e) => setLimit(Number(e.target.value) || 500)}
+              style={{
+                width: 68,
+                padding: "4px 6px",
+                borderRadius: 4,
+                border: `1px solid ${C.border}`,
+                background: C.card,
+                color: C.text,
+                fontFamily: f,
+                fontSize: 11,
+              }}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => {
+              const qv = filterQ.trim();
+              setAppliedQ(qv);
+              setAppliedSystems(filterSystems);
+              void fetchLogs({ q: qv, systems: filterSystems });
+            }}
+            style={{
+              padding: "5px 10px",
+              borderRadius: 6,
+              border: `1px solid ${C.amber}`,
+              background: "rgba(245,158,11,0.06)",
+              color: C.amber,
+              fontFamily: f,
+              fontSize: 10,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            Apply filters
+          </button>
+        </div>
+      </details>
 
-      <div style={{ fontSize: 10, fontFamily: f, color: truncated ? C.orange : C.dim }}>
-        {fetchError ? "—" : entries.length} rows
-        {truncated ? " (hit row limit — narrow range or raise limit)" : ""}
+      {!loading && entries.length > 0 ? <MinuteHistogram entries={entries} barHeight={22} /> : null}
+
+      <div style={{ fontSize: 9, fontFamily: f, color: truncated ? C.orange : C.dim }}>
+        {fetchError ? "—" : `${entries.length} row${entries.length === 1 ? "" : "s"}`}
+        {truncated ? " · truncated (narrow range or lower limit)" : ""}
       </div>
 
-      {fetchError && (
+      {fetchError ? (
         <div
           style={{
-            padding: "10px 12px",
+            padding: "8px 10px",
             borderRadius: 6,
             border: `1px solid ${C.red}`,
             background: "rgba(242,54,69,0.08)",
-            color: "#ff8888",
+            color: "#ffaaaa",
             fontFamily: f,
-            fontSize: 11,
+            fontSize: 10,
             lineHeight: 1.45,
+            whiteSpace: "pre-wrap",
           }}
         >
           {fetchError}
-          <div style={{ marginTop: 6, color: C.muted, fontSize: 10 }}>
-            After a deploy, confirm the database migration for <code style={{ color: C.amber }}>telemetry_events.service</code> ran. Auth errors: reload or sign in again.
-          </div>
         </div>
-      )}
+      ) : null}
 
       <div
         style={{
           flex: 1,
-          minHeight: 200,
+          minHeight: 160,
           border: `1px solid ${C.border}`,
           borderRadius: 8,
           background: C.card,
@@ -561,30 +537,35 @@ export function TelemetryLogsPanel() {
 
         <div style={{ flex: 1, overflowY: "auto", overflowX: "auto" }}>
           {loading ? (
-            <div style={{ textAlign: "center", color: C.dim, padding: 40, fontFamily: f, fontSize: 12 }}>Loading logs…</div>
+            <div style={{ textAlign: "center", color: C.dim, padding: 28, fontFamily: f, fontSize: 11 }}>Loading…</div>
           ) : fetchError ? (
-            <div style={{ textAlign: "center", color: C.dim, padding: 24, fontFamily: f, fontSize: 11 }}>
-              Fix the error above to load rows.
+            <div style={{ textAlign: "center", color: C.dim, padding: 20, fontFamily: f, fontSize: 11 }}>
+              Resolve the error above to load logs.
             </div>
           ) : entries.length === 0 ? (
-            <div style={{ textAlign: "center", color: C.dim, padding: 40, fontFamily: f, fontSize: 12 }}>
-              <div>No rows in this window</div>
-              {serviceFilter === "browser" && (
-                <div
-                  style={{
-                    marginTop: 14,
-                    marginLeft: "auto",
-                    marginRight: "auto",
-                    maxWidth: 340,
-                    fontSize: 10,
-                    color: C.muted,
-                    lineHeight: 1.5,
-                  }}
-                >
-                  <strong style={{ color: C.text }}>SOURCE → Browser</strong> only lists events posted from this web app (uncaught errors and unhandled promise rejections). If nothing broke in the UI, this list stays empty. Choose{" "}
-                  <strong style={{ color: C.text }}>All</strong> or <strong style={{ color: C.text }}>Server</strong> to see API traffic and server telemetry.
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "32px 16px",
+                color: C.muted,
+                fontFamily: f,
+                textAlign: "center",
+                gap: 8,
+              }}
+            >
+              <Terminal size={36} strokeWidth={1.25} style={{ opacity: 0.35 }} aria-hidden />
+              <div style={{ fontSize: 12, fontWeight: 600, color: C.text }}>No logs in this time range</div>
+              <div style={{ fontSize: 10, lineHeight: 1.5, maxWidth: 280 }}>
+                Logs appear here as they are recorded. Try a wider range or pick All sources.
+              </div>
+              {serviceFilter === "browser" ? (
+                <div style={{ fontSize: 10, lineHeight: 1.5, maxWidth: 300, marginTop: 4 }}>
+                  Web app only shows uncaught browser errors. Use All or Server for API telemetry.
                 </div>
-              )}
+              ) : null}
             </div>
           ) : (
             entries.map((e, idx) => (
