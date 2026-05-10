@@ -29,6 +29,41 @@ const DEV_USER_ID = "dev_user_local";
 
 const ALLOWED_SERVICES = new Set(["server", "web"]);
 
+/** Maps DB/schema failures to actionable JSON for the Logs UI (e.g. missing migration). */
+function runtimeLogsFailurePayload(
+  err: unknown,
+  mode: "list" | "export",
+): {
+  status: number;
+  payload: { error: string; hint?: string };
+} {
+  const msg = err instanceof Error ? err.message : String(err);
+  const code =
+    typeof err === "object" && err !== null && "code" in err
+      ? String((err as { code?: unknown }).code)
+      : "";
+  if (
+    code === "42703" ||
+    /column\s+"service"\s+does\s+not\s+exist/i.test(msg) ||
+    (/telemetry_events/i.test(msg) && /service/i.test(msg) && /does not exist/i.test(msg))
+  ) {
+    return {
+      status: 503,
+      payload: {
+        error:
+          "Runtime logs query failed: telemetry_events.service is missing (database schema is older than this API build).",
+        hint: "Apply migration 0031_telemetry_events_service.sql to Postgres, redeploy the API, then reload this page.",
+      },
+    };
+  }
+  return {
+    status: 500,
+    payload: {
+      error: mode === "export" ? "Failed to export runtime logs" : "Failed to fetch runtime logs",
+    },
+  };
+}
+
 const browserEventsBodySchema = z.object({
   events: z
     .array(
@@ -137,7 +172,8 @@ router.get("/runtime-logs", async (req: Request, res: Response): Promise<void> =
     });
   } catch (err: unknown) {
     req.log?.error({ err }, "runtime-logs query failed");
-    res.status(500).json({ error: "Failed to fetch runtime logs" });
+    const { status, payload } = runtimeLogsFailurePayload(err, "list");
+    res.status(status).json(payload);
   }
 });
 
@@ -182,7 +218,8 @@ router.get("/runtime-logs/export", async (req: Request, res: Response): Promise<
     res.send(body);
   } catch (err: unknown) {
     req.log?.error({ err }, "runtime-logs export failed");
-    res.status(500).json({ error: "Failed to export runtime logs" });
+    const { status, payload } = runtimeLogsFailurePayload(err, "export");
+    res.status(status).json(payload);
   }
 });
 

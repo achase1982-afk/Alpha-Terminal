@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
-import { Copy, Download, Pause, Play } from "lucide-react";
+import { Pause, Play } from "lucide-react";
 
 const f = "'JetBrains Mono', 'Fira Code', 'SF Mono', monospace";
 
@@ -143,6 +143,7 @@ export function TelemetryLogsPanel() {
   const [live, setLive] = useState(true);
   const [truncated, setTruncated] = useState(false);
   const [copyFlash, setCopyFlash] = useState<string | null>(null);
+  const [exportChoice, setExportChoice] = useState("");
   const [fetchError, setFetchError] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -220,18 +221,29 @@ export function TelemetryLogsPanel() {
   }, [live, fetchLogs]);
 
   const downloadBlob = async (format: "json" | "text" | "csv") => {
-    const p = buildParams();
-    p.set("format", format);
-    const res = await fetchWithAuth(`/api/telemetry/runtime-logs/export?${p.toString()}`);
-    if (!res.ok) return;
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const ext = format === "text" ? "txt" : format;
-    a.download = `telemetry-runtime-logs.${ext}`;
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const p = buildParams();
+      p.set("format", format);
+      const res = await fetchWithAuth(`/api/telemetry/runtime-logs/export?${p.toString()}`);
+      const text = await res.text();
+      if (!res.ok) {
+        setFetchError(humanizeFailedApiBody(res.status, text));
+        return;
+      }
+      const mime =
+        format === "json" ? "application/json" : format === "csv" ? "text/csv" : "text/plain";
+      const blob = new Blob([text], { type: `${mime};charset=utf-8` });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const ext = format === "text" ? "txt" : format;
+      a.download = `telemetry-runtime-logs.${ext}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Network error";
+      setFetchError(`${msg} — download failed.`);
+    }
   };
 
   const copyAs = async (format: "json" | "text") => {
@@ -270,14 +282,11 @@ export function TelemetryLogsPanel() {
     );
   };
 
-  const exportBtnStyle: React.CSSProperties = {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 6,
+  const selectStyle: React.CSSProperties = {
     padding: "5px 10px",
     borderRadius: 6,
     border: `1px solid ${C.border}`,
-    background: "rgba(255,255,255,0.03)",
+    background: C.card,
     color: C.text,
     fontFamily: f,
     fontSize: 10,
@@ -302,28 +311,20 @@ export function TelemetryLogsPanel() {
         forwarded to the API. Retention 30 days. Clerk session required.
       </div>
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-        <span style={{ fontSize: 10, fontFamily: f, color: C.dim, marginRight: 4 }}>RANGE</span>
-        {RANGE_PRESETS.map((p) => (
-          <button
-            key={p.minutes}
-            type="button"
-            onClick={() => setRangeMinutes(p.minutes)}
-            style={{
-              padding: "4px 10px",
-              borderRadius: 4,
-              fontSize: 10,
-              fontFamily: f,
-              fontWeight: 700,
-              border: `1px solid ${rangeMinutes === p.minutes ? C.amber : C.border}`,
-              background: rangeMinutes === p.minutes ? "rgba(245,158,11,0.08)" : "transparent",
-              color: rangeMinutes === p.minutes ? C.amber : C.dim,
-              cursor: "pointer",
-            }}
-          >
-            {p.label}
-          </button>
-        ))}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+        <span style={{ fontSize: 10, fontFamily: f, color: C.dim }}>RANGE</span>
+        <select
+          value={String(rangeMinutes)}
+          onChange={(e) => setRangeMinutes(Number(e.target.value))}
+          style={{ ...selectStyle, minWidth: 108 }}
+          aria-label="Log time range"
+        >
+          {RANGE_PRESETS.map((p) => (
+            <option key={p.minutes} value={p.minutes}>
+              {p.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
@@ -346,7 +347,7 @@ export function TelemetryLogsPanel() {
               fontFamily: f,
               fontWeight: 700,
               border: `1px solid ${serviceFilter === key ? C.amber : C.border}`,
-              background: serviceFilter === key ? "rgba(37,99,235,0.12)" : "transparent",
+              background: serviceFilter === key ? "rgba(245,158,11,0.08)" : "transparent",
               color: serviceFilter === key ? C.amber : C.dim,
               cursor: "pointer",
             }}
@@ -466,22 +467,32 @@ export function TelemetryLogsPanel() {
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-        <span style={{ fontSize: 10, fontFamily: f, color: C.dim }}>Export</span>
-        <button type="button" onClick={() => void copyAs("json")} style={exportBtnStyle}>
-          <Copy size={11} /> Copy JSON {copyFlash === "json" ? "✓" : ""}
-        </button>
-        <button type="button" onClick={() => void copyAs("text")} style={exportBtnStyle}>
-          <Copy size={11} /> Copy text {copyFlash === "text" ? "✓" : ""}
-        </button>
-        <button type="button" onClick={() => void downloadBlob("json")} style={exportBtnStyle}>
-          <Download size={11} /> JSON
-        </button>
-        <button type="button" onClick={() => void downloadBlob("csv")} style={exportBtnStyle}>
-          <Download size={11} /> CSV
-        </button>
-        <button type="button" onClick={() => void downloadBlob("text")} style={exportBtnStyle}>
-          <Download size={11} /> Plain text
-        </button>
+        <span style={{ fontSize: 10, fontFamily: f, color: C.dim }}>EXPORT</span>
+        <select
+          value={exportChoice}
+          onChange={(e) => {
+            const v = e.target.value;
+            setExportChoice("");
+            if (!v) return;
+            if (v === "copy-json") void copyAs("json");
+            else if (v === "copy-text") void copyAs("text");
+            else if (v === "dl-json") void downloadBlob("json");
+            else if (v === "dl-csv") void downloadBlob("csv");
+            else if (v === "dl-txt") void downloadBlob("text");
+          }}
+          style={{ ...selectStyle, minWidth: 168 }}
+          aria-label="Copy or download logs"
+        >
+          <option value="">Export…</option>
+          <option value="copy-json">Copy as JSON</option>
+          <option value="copy-text">Copy as plain text</option>
+          <option value="dl-json">Download JSON</option>
+          <option value="dl-csv">Download CSV</option>
+          <option value="dl-txt">Download plain text</option>
+        </select>
+        {copyFlash && (
+          <span style={{ fontSize: 10, fontFamily: f, color: C.amberDim }}>Copied {copyFlash === "json" ? "JSON" : "text"}</span>
+        )}
       </div>
 
       {!loading && entries.length > 0 && <MinuteHistogram entries={entries} />}
