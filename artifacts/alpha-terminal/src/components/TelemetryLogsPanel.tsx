@@ -346,7 +346,7 @@ export function TelemetryLogsPanel() {
               fontFamily: f,
               fontWeight: 700,
               border: `1px solid ${serviceFilter === key ? C.amber : C.border}`,
-              background: serviceFilter === key ? "rgba(37,99,235,0.12)" : "transparent",
+              background: serviceFilter === key ? "rgba(245,158,11,0.08)" : "transparent",
               color: serviceFilter === key ? C.amber : C.dim,
               cursor: "pointer",
             }}
