@@ -1,5 +1,14 @@
-import { db, telemetryEventsTable } from "@workspace/db";
-import { and, desc, gte, inArray, lte, sql } from "drizzle-orm";
+import {
+  and,
+  db,
+  desc,
+  gte,
+  inArray,
+  lte,
+  sql,
+  telemetryEventsTable,
+  type TelemetryEventRow,
+} from "@workspace/db";
 
 /** Hard cap per request to protect Postgres and payload sizes. */
 export const RUNTIME_LOG_MAX_LIMIT = 5000;
@@ -14,7 +23,7 @@ export type RuntimeLogRow = {
   details: unknown;
 };
 
-function rowToDto(r: typeof telemetryEventsTable.$inferSelect): RuntimeLogRow {
+function rowToDto(r: TelemetryEventRow): RuntimeLogRow {
   return {
     id: String(r.id),
     emittedAt: r.emittedAt.toISOString(),
