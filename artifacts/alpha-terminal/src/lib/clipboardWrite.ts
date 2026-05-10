@@ -64,7 +64,7 @@ export async function writeTextToClipboard(text: string): Promise<ClipboardWrite
 
   if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
     try {
-      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+      const blob = new Blob([text], { type: "text/plain" });
       await navigator.clipboard.write([
         new ClipboardItem({
           "text/plain": blob,
