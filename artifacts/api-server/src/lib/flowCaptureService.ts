@@ -543,26 +543,32 @@ async function runWebsocketCaptureInternal(
   let flushTimer: ReturnType<typeof setInterval> | null = null;
   const occSet = new Set(occList.map((o) => o.toUpperCase()));
   const legWindow = new FlowLegWindow();
+  /** Every in-flight `onTrade` classify/persist path; must drain before final flush (see flow note below). */
+  const pendingTradeOps = new Set<Promise<void>>();
+  let flushChain: Promise<void> = Promise.resolve();
 
   const flush = async (): Promise<void> => {
-    if (buffer.length === 0) return;
-    const batch = buffer.splice(0, buffer.length);
-    try {
-      let insertedThisFlush = 0;
-      for (let i = 0; i < batch.length; i += OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS) {
-        const slice = batch.slice(i, i + OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS);
-        const ins = await db
-          .insert(optionsFlowRawTradesTable)
-          .values(slice)
-          .onConflictDoNothing(OPTIONS_FLOW_RAW_TRADES_ON_CONFLICT_SOURCE_DEDUPE)
-          .returning({ id: optionsFlowRawTradesTable.id });
-        insertedThisFlush += ins.length;
+    flushChain = flushChain.then(async () => {
+      if (buffer.length === 0) return;
+      const batch = buffer.splice(0, buffer.length);
+      try {
+        let insertedThisFlush = 0;
+        for (let i = 0; i < batch.length; i += OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS) {
+          const slice = batch.slice(i, i + OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS);
+          const ins = await db
+            .insert(optionsFlowRawTradesTable)
+            .values(slice)
+            .onConflictDoNothing(OPTIONS_FLOW_RAW_TRADES_ON_CONFLICT_SOURCE_DEDUPE)
+            .returning({ id: optionsFlowRawTradesTable.id });
+          insertedThisFlush += ins.length;
+        }
+        rowsInserted += insertedThisFlush;
+      } catch (err) {
+        logFlowPipelineWarn("flow_capture_flush", "flowCaptureService: bulk insert failed", { err, ticker, batchLen: batch.length });
+        errors.push(`insert:${err instanceof Error ? err.message : String(err)}`);
       }
-      rowsInserted += insertedThisFlush;
-    } catch (err) {
-      logFlowPipelineWarn("flow_capture_flush", "flowCaptureService: bulk insert failed", { err, ticker, batchLen: batch.length });
-      errors.push(`insert:${err instanceof Error ? err.message : String(err)}`);
-    }
+    });
+    return flushChain;
   };
 
   const onTradeHandler = (trade: PolygonOptionTrade): void => {
@@ -572,7 +578,7 @@ async function runWebsocketCaptureInternal(
     if (wsLatency.subscribe_first_message_ms == null) {
       wsLatency.subscribe_first_message_ms = wireNow;
     }
-    void (async () => {
+    const op = (async (): Promise<void> => {
       const tsMs = trade.timestamp;
       const fresh = resolveFreshOptionNbbo(sym, tsMs);
       const polyOnly = getNbbo(sym);
@@ -648,6 +654,10 @@ async function runWebsocketCaptureInternal(
       });
       if (buffer.length >= FLUSH_BATCH_MAX) await flush();
     })();
+    pendingTradeOps.add(op);
+    void op.finally(() => {
+      pendingTradeOps.delete(op);
+    });
   };
 
   try {
@@ -722,6 +732,7 @@ async function runWebsocketCaptureInternal(
       clearInterval(flushTimer);
       flushTimer = null;
     }
+    await Promise.all(Array.from(pendingTradeOps));
     await flush();
     if (unregisterTrade) unregisterTrade();
     if (unregisterQuote) unregisterQuote();

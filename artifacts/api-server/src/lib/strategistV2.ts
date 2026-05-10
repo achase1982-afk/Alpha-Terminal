@@ -1113,6 +1113,28 @@ async function analyzeTickerV2Inner(
       /* keep original string */
     }
   }
+
+  try {
+    const finalizedPkg = JSON.parse(dataPackage) as {
+      dataQualitySummary?: { flow?: { tradesInserted?: number } };
+      polygonFlowHighlights?: { sessionTape?: { tapeKind?: string } };
+    };
+    const dqTrades = finalizedPkg.dataQualitySummary?.flow?.tradesInserted ?? 0;
+    const sessionTapeKind = finalizedPkg.polygonFlowHighlights?.sessionTape?.tapeKind;
+    if (dqTrades > 0 && sessionTapeKind === "eod_fallback") {
+      logger.error(
+        {
+          symbol: ticker,
+          runId: progress?.jobId ?? null,
+          sessionDate: tapeBackfillStatus?.sessionDate ?? null,
+        },
+        "StrategistV2: invariant violated — capture inserted trades but session tape is eod_fallback (likely race between requestFlowCapture and fetchSessionTape)",
+      );
+    }
+  } catch {
+    /* non-fatal — payload parse guard */
+  }
+
   assertAnalyzeNotCancelled(progress);
   mergeStrategistDiag({ dataPackageStr: dataPackage });
 
@@ -3026,6 +3048,8 @@ function buildDataQualitySummary(args: {
     flow: {
       highlightsAsOf: polygonHighlights?.asOfDate ?? null,
       sessionTapeKind: tapeKind,
+      /** Classified flow rows inserted for the capture session (from tape backfill / flow capture). */
+      tradesInserted: tapeBackfill?.tradesInserted ?? 0,
       tapeBackfillStatus,
       tapeBackfillReason:
         polygonHighlights?.sessionTape?.tapeBackfillReason ?? tapeBackfill?.tapeBackfillReason ?? null,
