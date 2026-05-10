@@ -984,7 +984,7 @@ async function analyzeTickerV2Inner(
           sessionDate: fc.sessionDate,
           coverageEndMs: Date.now(),
           occRequested: fc.occsSubscribed,
-          occCompleted: fc.occsSubscribed,
+          occCompleted: fc.rowsInserted > 0 ? fc.occsSubscribed : 0,
           tradesInserted: fc.rowsInserted,
           totalTradesFromPolygon: fc.rowsInserted,
           persistRejectedCount: 0,
@@ -1120,8 +1120,8 @@ async function analyzeTickerV2Inner(
         flow?: {
           tradesInserted?: number;
           tapeBackfill?: string | null;
-          occCompleted?: number | null;
-          occRequested?: number | null;
+          tapeBackfillOccCompleted?: number | null;
+          tapeBackfillOccRequested?: number | null;
         };
       };
       polygonFlowHighlights?: { sessionTape?: { tapeKind?: string } };
@@ -1141,15 +1141,15 @@ async function analyzeTickerV2Inner(
     }
     if (
       dqFlow?.tapeBackfill === "skipped" &&
-      (dqFlow.occCompleted ?? 0) === 0 &&
-      (dqFlow.occRequested ?? 0) > 0
+      (dqFlow.tapeBackfillOccCompleted ?? 0) === 0 &&
+      (dqFlow.tapeBackfillOccRequested ?? 0) > 0
     ) {
       logger.error(
         {
           symbol: ticker,
           runId: progress?.jobId ?? null,
           sessionDate: tapeBackfillStatus?.sessionDate ?? null,
-          occRequested: dqFlow.occRequested,
+          tapeBackfillOccRequested: dqFlow.tapeBackfillOccRequested,
         },
         "StrategistV2: invariant violated — flow capture exhausted timeout without completing any OCCs (likely Bug B regression in runStrategistTapeBackfill partial-completion path)",
       );
@@ -3075,8 +3075,6 @@ function buildDataQualitySummary(args: {
       tradesInserted: tapeBackfill?.tradesInserted ?? 0,
       /** Alias for **tapeBackfill.status** (Conviction diagnostics / invariants). */
       tapeBackfill: tapeBackfill?.status ?? null,
-      occCompleted: tapeBackfill?.occCompleted ?? null,
-      occRequested: tapeBackfill?.occRequested ?? null,
       tapeBackfillStatus,
       tapeBackfillReason:
         polygonHighlights?.sessionTape?.tapeBackfillReason ?? tapeBackfill?.tapeBackfillReason ?? null,
