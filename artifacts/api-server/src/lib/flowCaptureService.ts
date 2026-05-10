@@ -852,6 +852,7 @@ async function runWebsocketCaptureInternal(
 
 async function runCaptureOnce(ticker: string, sessionDate: string, opts: FlowCaptureOptions): Promise<FlowCaptureResult> {
   const t0 = Date.now();
+  const flowCaptureDeadlineAt = t0 + (opts.timeout ?? DEFAULT_TIMEOUT_MS);
   const errors: string[] = [];
 
   logger.info({ ticker, sessionDate, source: "routing" }, "flowCapture: request received");
@@ -877,6 +878,7 @@ async function runCaptureOnce(ticker: string, sessionDate: string, opts: FlowCap
           chainSummary: resolved.summary,
           marketCapTier: resolved.tier,
           forcedSessionDate: sessionDate,
+          flowCaptureDeadlineAt,
         }).catch((e) => {
           errors.push(String(e));
           return undefined;
@@ -915,6 +917,7 @@ async function runCaptureOnce(ticker: string, sessionDate: string, opts: FlowCap
     marketCapTier: resolved.tier,
     forcedSessionDate: sessionDate,
     budgetMs: tapeSymbolBudgetMsFromChainContractCount(resolved.chain.length),
+    flowCaptureDeadlineAt,
   });
   const dur = Date.now() - t0;
   rotateMetricsHour();
@@ -953,30 +956,7 @@ export async function requestFlowCapture(ticker: string, opts?: FlowCaptureOptio
   let p = inflightByKey.get(key);
   if (!p) {
     const mergedOpts = opts ?? {};
-    const timeoutMs = mergedOpts.timeout ?? DEFAULT_TIMEOUT_MS;
-    let overallTimer: ReturnType<typeof setTimeout> | undefined;
-    const timeoutPromise = new Promise<FlowCaptureResult>((resolve) => {
-      overallTimer = setTimeout(() => {
-        rotateMetricsHour();
-        metrics.failedLastHour++;
-        logger.warn({ ticker: sym, sessionDate, timeoutMs }, "flowCapture: overall timeout fired");
-        resolve({
-          sessionDate,
-          source: "rest",
-          rowsInserted: 0,
-          occsSubscribed: 0,
-          durationMs: timeoutMs,
-          errors: ["flow_capture_overall_timeout"],
-        });
-      }, timeoutMs);
-    });
-    const capturePromise = runCaptureOnce(sym, sessionDate, mergedOpts).finally(() => {
-      if (overallTimer !== undefined) {
-        clearTimeout(overallTimer);
-        overallTimer = undefined;
-      }
-    });
-    p = Promise.race([capturePromise, timeoutPromise])
+    p = runCaptureOnce(sym, sessionDate, mergedOpts)
       .catch((err): FlowCaptureResult => {
         rotateMetricsHour();
         metrics.failedLastHour++;

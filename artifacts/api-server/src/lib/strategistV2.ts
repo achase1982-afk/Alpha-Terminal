@@ -1116,11 +1116,19 @@ async function analyzeTickerV2Inner(
 
   try {
     const finalizedPkg = JSON.parse(dataPackage) as {
-      dataQualitySummary?: { flow?: { tradesInserted?: number } };
+      dataQualitySummary?: {
+        flow?: {
+          tradesInserted?: number;
+          tapeBackfill?: string | null;
+          occCompleted?: number | null;
+          occRequested?: number | null;
+        };
+      };
       polygonFlowHighlights?: { sessionTape?: { tapeKind?: string } };
     };
     const dqTrades = finalizedPkg.dataQualitySummary?.flow?.tradesInserted ?? 0;
     const sessionTapeKind = finalizedPkg.polygonFlowHighlights?.sessionTape?.tapeKind;
+    const dqFlow = finalizedPkg.dataQualitySummary?.flow;
     if (dqTrades > 0 && sessionTapeKind === "eod_fallback") {
       logger.error(
         {
@@ -1129,6 +1137,21 @@ async function analyzeTickerV2Inner(
           sessionDate: tapeBackfillStatus?.sessionDate ?? null,
         },
         "StrategistV2: invariant violated — capture inserted trades but session tape is eod_fallback (likely race between requestFlowCapture and fetchSessionTape)",
+      );
+    }
+    if (
+      dqFlow?.tapeBackfill === "skipped" &&
+      (dqFlow.occCompleted ?? 0) === 0 &&
+      (dqFlow.occRequested ?? 0) > 0
+    ) {
+      logger.error(
+        {
+          symbol: ticker,
+          runId: progress?.jobId ?? null,
+          sessionDate: tapeBackfillStatus?.sessionDate ?? null,
+          occRequested: dqFlow.occRequested,
+        },
+        "StrategistV2: invariant violated — flow capture exhausted timeout without completing any OCCs (likely Bug B regression in runStrategistTapeBackfill partial-completion path)",
       );
     }
   } catch {
@@ -3050,6 +3073,10 @@ function buildDataQualitySummary(args: {
       sessionTapeKind: tapeKind,
       /** Classified flow rows inserted for the capture session (from tape backfill / flow capture). */
       tradesInserted: tapeBackfill?.tradesInserted ?? 0,
+      /** Alias for **tapeBackfill.status** (Conviction diagnostics / invariants). */
+      tapeBackfill: tapeBackfill?.status ?? null,
+      occCompleted: tapeBackfill?.occCompleted ?? null,
+      occRequested: tapeBackfill?.occRequested ?? null,
       tapeBackfillStatus,
       tapeBackfillReason:
         polygonHighlights?.sessionTape?.tapeBackfillReason ?? tapeBackfill?.tapeBackfillReason ?? null,

@@ -457,6 +457,11 @@ export async function runStrategistTapeBackfill(args: {
   budgetMs?: number;
   /** When set, use this NY session calendar date instead of lastCompletedTradingDayNy (flow capture REST segments). */
   forcedSessionDate?: string;
+  /**
+   * Absolute wall-clock deadline (epoch ms) for strategist {@link requestFlowCapture} runs.
+   * Caps phase1/phase2 budgets so the REST path finishes inside the caller timeout with partial OCC completion instead of losing work to an outer Promise.race.
+   */
+  flowCaptureDeadlineAt?: number;
 }): Promise<TapeBackfillStatus> {
   const ticker = args.ticker.toUpperCase();
   const tapeBackfillRunStarted = Date.now();
@@ -565,6 +570,18 @@ export async function runStrategistTapeBackfill(args: {
   const phase1Ms = Math.max(PHASE_BUDGET_MIN_MS, Math.floor(budgetMs / 2));
   const phase2Ms = Math.max(PHASE_BUDGET_MIN_MS, budgetMs - phase1Ms);
 
+  const flowCap =
+    typeof args.flowCaptureDeadlineAt === "number" &&
+    Number.isFinite(args.flowCaptureDeadlineAt)
+      ? args.flowCaptureDeadlineAt
+      : Number.MAX_SAFE_INTEGER;
+
+  let aggPhase1RestMs = 0;
+  let aggPhase1ClassifyMs = 0;
+  let aggPhase1InsertMs = 0;
+  let aggPhase2QuotesMs = 0;
+  let aggPhase2UpdateMs = 0;
+
   logger.info(
     {
       ticker,
@@ -644,7 +661,7 @@ export async function runStrategistTapeBackfill(args: {
   }
 
   const limit = pLimit(CONCURRENCY);
-  const phase1Deadline = Date.now() + phase1Ms;
+  const phase1Deadline = Math.min(Date.now() + phase1Ms, flowCap);
 
   const processOccPhase1 = async (occIdx: number, occ: string): Promise<OccPhase1Result> => {
     const budgetSkip = (): OccPhase1Result => ({
@@ -714,6 +731,8 @@ export async function runStrategistTapeBackfill(args: {
 
     const tradeUrl = `${POLYGON_API}/v3/trades/${encodeURIComponent(occ)}?timestamp.gte=${gteNs}&timestamp.lte=${lteNs}&order=asc&limit=${TRADE_PAGE_LIMIT}`;
 
+    const tradeFetchStart = Date.now();
+
     let trTr = false;
     let trErr = false;
     let tradeRows: unknown[] = [];
@@ -740,6 +759,12 @@ export async function runStrategistTapeBackfill(args: {
     const parsed = parseTrades(occ, tradeRows);
     const occTotalPoly = parsed.length;
     parsed.sort((a, b) => a.tsMs - b.tsMs);
+
+    const restMs = Date.now() - tradeFetchStart;
+    aggPhase1RestMs += restMs;
+    logger.info({ ticker, occ, stage: "rest_trades_fetch", durationMs: restMs }, "strategistTapeBackfill: occ stage timing");
+
+    const classifyStart = Date.now();
 
     const occLegWindow = new FlowLegWindow();
     const rowsToInsert: Array<typeof optionsFlowRawTradesTable.$inferInsert> = [];
@@ -806,11 +831,16 @@ export async function runStrategistTapeBackfill(args: {
       });
     }
 
+    const classifyMs = Date.now() - classifyStart;
+    aggPhase1ClassifyMs += classifyMs;
+    logger.info({ ticker, occ, stage: "classification_phase1", durationMs: classifyMs }, "strategistTapeBackfill: occ stage timing");
+
     let occTradesInserted = 0;
     let occInsertedNullSide = 0;
     let occDedupeDropped = 0;
     let occDbError = false;
 
+    const insertStart = Date.now();
     try {
       await db.transaction(async (tx) => {
         if (rowsToInsert.length > 0) {
@@ -872,6 +902,10 @@ export async function runStrategistTapeBackfill(args: {
       occDbError = true;
     }
 
+    const insertMs = Date.now() - insertStart;
+    aggPhase1InsertMs += insertMs;
+    logger.info({ ticker, occ, stage: "batch_insert_phase1", durationMs: insertMs }, "strategistTapeBackfill: occ stage timing");
+
     return {
       occ,
       kind: "completed",
@@ -928,7 +962,7 @@ export async function runStrategistTapeBackfill(args: {
 
   const phase1FailedGlobally = occList.length > 0 && phase1CompletedCount === 0;
 
-  const phase2Deadline = Date.now() + phase2Ms;
+  const phase2Deadline = Math.min(Date.now() + phase2Ms, flowCap);
 
   const processOccPhase2 = async (occIdx: number, p1: OccPhase1Result): Promise<OccPhase2Result> => {
     if (phase1FailedGlobally) {
@@ -1009,17 +1043,23 @@ export async function runStrategistTapeBackfill(args: {
     }
     const oiSnapshot = openInterestForOcc(args.chain, meta);
 
+    const quotesFetchStart = Date.now();
     const {
       quotes,
       truncated: trQ,
       sawPolygonHttpError: qErr,
     } = await fetchQuotesWindowed(occ, apiKey, p1.parsed, gteNs, lteNs, occDeadline, polygonHttpTimeoutMs);
 
+    const quotesMs = Date.now() - quotesFetchStart;
+    aggPhase2QuotesMs += quotesMs;
+    logger.info({ ticker, occ, stage: "rest_quotes_fetch", durationMs: quotesMs }, "strategistTapeBackfill: occ stage timing");
+
     const occLegWindow = new FlowLegWindow();
     let rowsSideUpdated = 0;
     let remainingNullSide = 0;
     let occDbError = false;
 
+    const phase2ClassifyInsertStart = Date.now();
     try {
       await db.transaction(async (tx) => {
         for (const t of p1.parsed) {
@@ -1101,6 +1141,13 @@ export async function runStrategistTapeBackfill(args: {
       occDbError = true;
     }
 
+    const phase2UpdateMs = Date.now() - phase2ClassifyInsertStart;
+    aggPhase2UpdateMs += phase2UpdateMs;
+    logger.info(
+      { ticker, occ, stage: "classification_phase2_updates", durationMs: phase2UpdateMs },
+      "strategistTapeBackfill: occ stage timing",
+    );
+
     return {
       occ,
       kind: "completed",
@@ -1150,6 +1197,7 @@ export async function runStrategistTapeBackfill(args: {
   const stillNullSideAfterPhase2 = Number(nullSideAfterPhase2Result[0]?.c ?? 0);
 
   await flushFlowPersistenceNow();
+  const rollupT0 = Date.now();
   try {
     await runRollupOnceForSymbol(ticker, sessionDate);
   } catch (err) {
@@ -1160,6 +1208,7 @@ export async function runStrategistTapeBackfill(args: {
     );
     anyError = true;
   }
+  const rollupMs = Date.now() - rollupT0;
 
   let status: TapeBackfillStatusValue = "complete";
   if (phase1FailedGlobally) status = "failed";
@@ -1235,6 +1284,24 @@ export async function runStrategistTapeBackfill(args: {
     );
   }
 
+  const durationMs = Date.now() - tapeBackfillRunStarted;
+
+  logger.info(
+    {
+      ticker,
+      occRequested: occList.length,
+      occCompleted,
+      totalRestMs: aggPhase1RestMs,
+      totalClassifyMs: aggPhase1ClassifyMs,
+      totalInsertMs: aggPhase1InsertMs,
+      totalQuotesMs: aggPhase2QuotesMs,
+      totalPhase2UpdateMs: aggPhase2UpdateMs,
+      totalRollupMs: rollupMs,
+      totalCaptureMs: durationMs,
+    },
+    "strategistTapeBackfill: timing summary",
+  );
+
   logger.info(
     {
       ticker,
@@ -1255,8 +1322,6 @@ export async function runStrategistTapeBackfill(args: {
     },
     "strategistTapeBackfill: done",
   );
-
-  const durationMs = Date.now() - tapeBackfillRunStarted;
 
   try {
     await db
