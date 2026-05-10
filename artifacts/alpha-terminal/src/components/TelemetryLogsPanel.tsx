@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
-import { Pause, Play, Terminal } from "lucide-react";
+import { Copy, Pause, Play, Terminal } from "lucide-react";
 
 /** Live-tail accent aligned with terminal teal chrome */
 const TEAL_LIVE = "#00FFC2";
@@ -80,6 +80,28 @@ function entriesToPlainText(entries: RuntimeLogEntry[]): string {
   return lines.join("\n");
 }
 
+/** Sync clipboard — mobile Safari often rejects async clipboard.writeText after a select onChange; execCommand runs in the same turn. */
+function copyTextViaHiddenTextarea(text: string): boolean {
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    ta.style.top = "0";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 function compactDataPayload(e: RuntimeLogEntry): string {
   const base: Record<string, unknown> = {
     message: e.message,
@@ -155,6 +177,7 @@ export function TelemetryLogsPanel() {
   const [live, setLive] = useState(true);
   const [truncated, setTruncated] = useState(false);
   const [copyFlash, setCopyFlash] = useState<string | null>(null);
+  const [copyHint, setCopyHint] = useState<string | null>(null);
   const [exportChoice, setExportChoice] = useState("");
   const [fetchError, setFetchError] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -258,17 +281,33 @@ export function TelemetryLogsPanel() {
     }
   };
 
-  const copyAs = async (format: "json" | "text") => {
-    try {
-      if (format === "json") {
-        await navigator.clipboard.writeText(JSON.stringify(entries, null, 2));
-      } else {
-        await navigator.clipboard.writeText(entriesToPlainText(entries));
+  const copyAs = useCallback(
+    (format: "json" | "text") => {
+      const text = format === "json" ? JSON.stringify(entries, null, 2) : entriesToPlainText(entries);
+      if (copyTextViaHiddenTextarea(text)) {
+        setCopyHint(null);
+        setCopyFlash(format);
+        setTimeout(() => setCopyFlash(null), 2000);
+        return;
       }
-      setCopyFlash(format);
-      setTimeout(() => setCopyFlash(null), 2000);
-    } catch {}
-  };
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        void navigator.clipboard.writeText(text).then(
+          () => {
+            setCopyHint(null);
+            setCopyFlash(format);
+            setTimeout(() => setCopyFlash(null), 2000);
+          },
+          () =>
+            setCopyHint(
+              "Could not copy — use Export → Download, or allow clipboard access for this site in browser settings.",
+            ),
+        );
+        return;
+      }
+      setCopyHint("Copy not supported here — use Export → Download.");
+    },
+    [entries],
+  );
 
   const levelColor = (level: string) => {
     if (level === "ERROR") return C.red;
@@ -390,16 +429,66 @@ export function TelemetryLogsPanel() {
         >
           {live ? <Pause size={14} strokeWidth={2.5} /> : <Play size={14} strokeWidth={2.5} />}
         </button>
+        <button
+          type="button"
+          title="Copy rows as JSON"
+          aria-label="Copy rows as JSON"
+          onClick={() => copyAs("json")}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 32,
+            height: 30,
+            padding: 0,
+            borderRadius: 6,
+            border: `1px solid ${C.border}`,
+            background: "rgba(255,255,255,0.04)",
+            color: C.amberDim,
+            cursor: "pointer",
+          }}
+        >
+          <Copy size={14} strokeWidth={2.25} />
+        </button>
+        <button
+          type="button"
+          title="Copy rows as tab-separated text"
+          aria-label="Copy rows as plain text"
+          onClick={() => copyAs("text")}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 32,
+            height: 30,
+            padding: 0,
+            borderRadius: 6,
+            border: `1px solid ${C.border}`,
+            background: "rgba(255,255,255,0.04)",
+            color: C.amberDim,
+            cursor: "pointer",
+          }}
+        >
+          <Copy size={13} strokeWidth={2.25} />
+        </button>
         <select
           value={exportChoice}
           onChange={(e) => {
             const v = e.target.value;
             if (!v) return;
-            setExportChoice(v);
-            queueMicrotask(() => setExportChoice(""));
-            if (v === "copy-json") void copyAs("json");
-            else if (v === "copy-text") void copyAs("text");
-            else if (v === "dl-json") void downloadBlob("json");
+            const reset = () => requestAnimationFrame(() => setExportChoice(""));
+            if (v === "copy-json") {
+              copyAs("json");
+              reset();
+              return;
+            }
+            if (v === "copy-text") {
+              copyAs("text");
+              reset();
+              return;
+            }
+            reset();
+            if (v === "dl-json") void downloadBlob("json");
             else if (v === "dl-csv") void downloadBlob("csv");
             else if (v === "dl-txt") void downloadBlob("text");
           }}
@@ -415,6 +504,9 @@ export function TelemetryLogsPanel() {
         </select>
         {copyFlash ? (
           <span style={{ fontSize: 9, fontFamily: f, color: C.amberDim }}>Copied</span>
+        ) : null}
+        {copyHint ? (
+          <span style={{ fontSize: 9, fontFamily: f, color: C.orange, maxWidth: 200, lineHeight: 1.3 }}>{copyHint}</span>
         ) : null}
       </div>
 
