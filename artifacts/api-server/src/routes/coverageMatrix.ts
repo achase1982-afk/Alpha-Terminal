@@ -17,8 +17,34 @@ import { and, desc, eq, gte, inArray, sql } from "@workspace/db";
 import { liquidCoreUnionTuningSymbols } from "../lib/liquidCoreUniverse.js";
 import { getTuningUniverseSymbols } from "../lib/tuningUniverseRegistrar.js";
 import { lastNyTradingSessionYmds } from "../lib/usEquityMarketCalendar.js";
+import {
+  mergeSymbolOverallStatus,
+  type AuditStatus,
+  type SymbolAuditJson,
+} from "../jobs/backfill/auditReport.js";
 
 const router = Router();
+
+/** Matches `insertAuditRun` in auditReport.ts (tuningUniverseBackfill). */
+const TUNING_AUDIT_UNIVERSE_ROW = "tuning_universe";
+
+function perSymbolAuditMap(raw: unknown): Map<string, SymbolAuditJson> {
+  const out = new Map<string, SymbolAuditJson>();
+  if (!raw || typeof raw !== "object") return out;
+  for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
+    if (val && typeof val === "object" && "equity_daily" in val) {
+      out.set(key.toUpperCase(), val as SymbolAuditJson);
+    }
+  }
+  return out;
+}
+
+/** Maps mergeSymbolOverallStatus result to coverage-matrix cells (fail → missing). */
+function tuningAuditCellStatus(overall: AuditStatus): CellStatus {
+  if (overall === "fail") return "missing";
+  if (overall === "warn") return "partial";
+  return "complete";
+}
 
 function requireAdmin(req: { headers: Record<string, string | string[] | undefined> }): { ok: boolean; error?: string } {
   const adminKey = process.env.ADMIN_API_KEY;
@@ -64,13 +90,11 @@ router.get("/coverage-matrix", async (req, res) => {
   const [auditRun] = await db
     .select()
     .from(backfillAuditRunsTable)
+    .where(eq(backfillAuditRunsTable.universe, TUNING_AUDIT_UNIVERSE_ROW))
     .orderBy(desc(backfillAuditRunsTable.completedAt))
     .limit(1);
 
-  const auditJson = (auditRun?.perSymbolAudit ?? {}) as Record<
-    string,
-    { overall_status?: string }
-  >;
+  const auditBySymbol = perSymbolAuditMap(auditRun?.perSymbolAudit);
 
   const equityCounts = await db
     .select({
@@ -230,12 +254,14 @@ router.get("/coverage-matrix", async (req, res) => {
     let tuningStatus: CellStatus = "missing";
     let tuningDetail: string | null = "n/a";
     if (tuningSet.has(u)) {
-      const st = auditJson[u]?.overall_status;
-      tuningDetail = st ?? null;
-      if (st === "ok") tuningStatus = "complete";
-      else if (st === "warn") tuningStatus = "partial";
-      else if (st === "fail") tuningStatus = "missing";
-      else tuningStatus = "missing";
+      const entry = auditBySymbol.get(u);
+      if (entry) {
+        const overall = mergeSymbolOverallStatus(entry);
+        tuningStatus = tuningAuditCellStatus(overall);
+        tuningDetail = overall;
+      } else {
+        tuningDetail = auditRun ? "not_in_last_audit_run" : "no_tuning_audit_run";
+      }
     }
 
     rows[u] = {
