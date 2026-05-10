@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
+import { writeTextToClipboard } from "@/lib/clipboardWrite";
 import { Copy, Pause, Play, Terminal } from "lucide-react";
 
 /** Live-tail accent aligned with terminal teal chrome */
@@ -80,28 +81,6 @@ function entriesToPlainText(entries: RuntimeLogEntry[]): string {
   return lines.join("\n");
 }
 
-/** Sync clipboard — mobile Safari often rejects async clipboard.writeText after a select onChange; execCommand runs in the same turn. */
-function copyTextViaHiddenTextarea(text: string): boolean {
-  try {
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.setAttribute("readonly", "");
-    ta.style.position = "fixed";
-    ta.style.left = "-9999px";
-    ta.style.top = "0";
-    ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    ta.setSelectionRange(0, text.length);
-    const ok = document.execCommand("copy");
-    document.body.removeChild(ta);
-    return ok;
-  } catch {
-    return false;
-  }
-}
-
 function compactDataPayload(e: RuntimeLogEntry): string {
   const base: Record<string, unknown> = {
     message: e.message,
@@ -177,10 +156,11 @@ export function TelemetryLogsPanel() {
   const [live, setLive] = useState(true);
   const [truncated, setTruncated] = useState(false);
   const [copyFlash, setCopyFlash] = useState<string | null>(null);
-  const [copyHint, setCopyHint] = useState<string | null>(null);
+  const [manualCopy, setManualCopy] = useState<{ kind: "json" | "text"; text: string } | null>(null);
   const [exportChoice, setExportChoice] = useState("");
   const [fetchError, setFetchError] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const manualCopyRef = useRef<HTMLTextAreaElement | null>(null);
 
   const buildParams = useCallback(
     (override?: { q?: string; systems?: string }) => {
@@ -238,6 +218,17 @@ export function TelemetryLogsPanel() {
   );
 
   useEffect(() => {
+    if (!manualCopy) return;
+    const id = window.setTimeout(() => {
+      const el = manualCopyRef.current;
+      if (!el) return;
+      el.focus();
+      el.select();
+    }, 0);
+    return () => clearTimeout(id);
+  }, [manualCopy]);
+
+  useEffect(() => {
     setLoading(true);
     void fetchLogs();
   }, [fetchLogs]);
@@ -282,29 +273,17 @@ export function TelemetryLogsPanel() {
   };
 
   const copyAs = useCallback(
-    (format: "json" | "text") => {
+    async (format: "json" | "text") => {
       const text = format === "json" ? JSON.stringify(entries, null, 2) : entriesToPlainText(entries);
-      if (copyTextViaHiddenTextarea(text)) {
-        setCopyHint(null);
+      const result = await writeTextToClipboard(text);
+      if (result.ok) {
+        setManualCopy(null);
         setCopyFlash(format);
         setTimeout(() => setCopyFlash(null), 2000);
         return;
       }
-      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-        void navigator.clipboard.writeText(text).then(
-          () => {
-            setCopyHint(null);
-            setCopyFlash(format);
-            setTimeout(() => setCopyFlash(null), 2000);
-          },
-          () =>
-            setCopyHint(
-              "Could not copy — use Export → Download, or allow clipboard access for this site in browser settings.",
-            ),
-        );
-        return;
-      }
-      setCopyHint("Copy not supported here — use Export → Download.");
+      setManualCopy({ kind: format, text });
+      setCopyFlash(null);
     },
     [entries],
   );
@@ -433,35 +412,40 @@ export function TelemetryLogsPanel() {
           type="button"
           title="Copy rows as JSON"
           aria-label="Copy rows as JSON"
-          onClick={() => copyAs("json")}
+          onClick={() => void copyAs("json")}
           style={{
             display: "inline-flex",
+            flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            width: 32,
-            height: 30,
-            padding: 0,
+            gap: 1,
+            width: 36,
+            height: 34,
+            padding: "2px 0 0",
             borderRadius: 6,
-            border: `1px solid ${C.border}`,
+            border: `1px solid ${C.amberDim}`,
             background: "rgba(255,255,255,0.04)",
             color: C.amberDim,
             cursor: "pointer",
           }}
         >
-          <Copy size={14} strokeWidth={2.25} />
+          <Copy size={12} strokeWidth={2.25} />
+          <span style={{ fontSize: 7, fontFamily: f, fontWeight: 800, letterSpacing: 0.5 }}>JSON</span>
         </button>
         <button
           type="button"
           title="Copy rows as tab-separated text"
           aria-label="Copy rows as plain text"
-          onClick={() => copyAs("text")}
+          onClick={() => void copyAs("text")}
           style={{
             display: "inline-flex",
+            flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            width: 32,
-            height: 30,
-            padding: 0,
+            gap: 1,
+            width: 36,
+            height: 34,
+            padding: "2px 0 0",
             borderRadius: 6,
             border: `1px solid ${C.border}`,
             background: "rgba(255,255,255,0.04)",
@@ -469,7 +453,8 @@ export function TelemetryLogsPanel() {
             cursor: "pointer",
           }}
         >
-          <Copy size={13} strokeWidth={2.25} />
+          <Copy size={12} strokeWidth={2.25} />
+          <span style={{ fontSize: 7, fontFamily: f, fontWeight: 800, letterSpacing: 0.5 }}>TXT</span>
         </button>
         <select
           value={exportChoice}
@@ -478,12 +463,12 @@ export function TelemetryLogsPanel() {
             if (!v) return;
             const reset = () => requestAnimationFrame(() => setExportChoice(""));
             if (v === "copy-json") {
-              copyAs("json");
+              void copyAs("json");
               reset();
               return;
             }
             if (v === "copy-text") {
-              copyAs("text");
+              void copyAs("text");
               reset();
               return;
             }
@@ -505,10 +490,63 @@ export function TelemetryLogsPanel() {
         {copyFlash ? (
           <span style={{ fontSize: 9, fontFamily: f, color: C.amberDim }}>Copied</span>
         ) : null}
-        {copyHint ? (
-          <span style={{ fontSize: 9, fontFamily: f, color: C.orange, maxWidth: 200, lineHeight: 1.3 }}>{copyHint}</span>
-        ) : null}
       </div>
+
+      {manualCopy ? (
+        <div
+          style={{
+            border: `1px solid ${C.amber}`,
+            borderRadius: 8,
+            padding: "10px 12px",
+            background: "rgba(245,158,11,0.06)",
+          }}
+        >
+          <div style={{ fontSize: 10, fontFamily: f, color: C.text, marginBottom: 8, lineHeight: 1.45 }}>
+            Automatic copy was blocked (common on mobile browsers). Select all text in the box below, then use your device&apos;s{" "}
+            <strong>Copy</strong> command (long-press → Copy on iPhone).
+          </div>
+          <textarea
+            ref={manualCopyRef}
+            readOnly
+            value={manualCopy.text}
+            onFocus={(e) => e.target.select()}
+            rows={Math.min(14, Math.max(5, manualCopy.text.split("\n").length + 1))}
+            style={{
+              width: "100%",
+              maxHeight: 220,
+              boxSizing: "border-box",
+              padding: 8,
+              borderRadius: 6,
+              border: `1px solid ${C.border}`,
+              background: C.bg,
+              color: C.text,
+              fontFamily: f,
+              fontSize: 10,
+              lineHeight: 1.35,
+              resize: "vertical",
+            }}
+            aria-label={manualCopy.kind === "json" ? "Logs JSON to copy manually" : "Logs plain text to copy manually"}
+          />
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+            <button
+              type="button"
+              onClick={() => setManualCopy(null)}
+              style={{
+                padding: "5px 12px",
+                borderRadius: 6,
+                border: `1px solid ${C.border}`,
+                background: C.card,
+                color: C.muted,
+                fontFamily: f,
+                fontSize: 10,
+                cursor: "pointer",
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <details style={{ fontSize: 10, fontFamily: f, color: C.muted }}>
         <summary style={{ cursor: "pointer", userSelect: "none" }}>Advanced filters</summary>
