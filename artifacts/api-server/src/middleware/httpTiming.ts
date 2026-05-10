@@ -21,6 +21,14 @@ function shouldSkipTiming(path: string): boolean {
   return false;
 }
 
+/** High-frequency telemetry polling would flood durable telemetry_events; skip HTTP rows for those routes only. */
+function shouldSkipHttpTelemetryEmit(path: string, method: string): boolean {
+  if (path === "/api/telemetry/counts") return true;
+  if (path.startsWith("/api/telemetry/runtime-logs")) return true;
+  if (method === "GET" && path === "/api/telemetry") return true;
+  return false;
+}
+
 export function httpTimingMiddleware(req: Request, res: Response, next: NextFunction): void {
   if (shouldSkipTiming(req.path)) {
     next();
@@ -46,6 +54,10 @@ export function httpTimingMiddleware(req: Request, res: Response, next: NextFunc
 
     const status = res.statusCode;
     const level = status >= 500 ? "ERROR" : status >= 400 ? "WARN" : "INFO";
+
+    if (shouldSkipHttpTelemetryEmit(req.path, req.method)) {
+      return;
+    }
 
     try {
       emitTelemetry(
