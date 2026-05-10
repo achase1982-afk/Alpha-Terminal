@@ -472,8 +472,9 @@ export function TelemetryLogsPanel() {
           value={exportChoice}
           onChange={(e) => {
             const v = e.target.value;
-            setExportChoice("");
             if (!v) return;
+            setExportChoice(v);
+            queueMicrotask(() => setExportChoice(""));
             if (v === "copy-json") void copyAs("json");
             else if (v === "copy-text") void copyAs("text");
             else if (v === "dl-json") void downloadBlob("json");
