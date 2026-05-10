@@ -732,7 +732,7 @@ async function runWebsocketCaptureInternal(
       clearInterval(flushTimer);
       flushTimer = null;
     }
-    await Promise.all(Array.from(pendingTradeOps));
+    await Promise.allSettled(Array.from(pendingTradeOps));
     await flush();
     if (unregisterTrade) unregisterTrade();
     if (unregisterQuote) unregisterQuote();
