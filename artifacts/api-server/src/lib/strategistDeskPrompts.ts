@@ -78,6 +78,41 @@ Route these facts into the sections they inform: **flow** (**dominant_flow**, **
 When **intraday** is **null** or nested fields are mostly **null**, note briefly that live equity enrichments were thin on this run and lean on chain plus session tape; still surface **price** and **dailyChangePct** when present. Use full phrases (**Volume Weighted Average Price**, **Relative Strength Index**) and honor OUTPUT STYLE vendor rules.
 `;
 
+/**
+ * Conviction Desk only: **tapeKind** is pipeline capture state, not a trade thesis input outside Flow attribution.
+ * Placed before per-section instructions in **buildConvictionDeskUserPrompt**.
+ */
+export const CONVICTION_DESK_TAPE_AVAILABILITY_SCOPE = `
+
+## TAPE AVAILABILITY VS MARKET SIGNAL (Conviction Desk)
+
+Tape availability is a data-pipeline state, not a market signal. The session tape's **tapeKind** (**live** versus **eod_fallback**) describes what the system was able to capture for classified options prints, not what the market is doing.
+
+Tape availability **may** be cited in the **Flow** section's institutional versus retail attribution language (including the existing rule that when **tapeKind** is **eod_fallback**, you do not infer institutional versus retail from that synthesis).
+
+Tape availability **must not** be cited as a load-bearing reason in:
+- **pm.thesis** (the pass or structure rationale)
+- **pm.edge_check** (what would change the read)
+- **pm.biggest_risk** (the central risk to the position or the pass itself)
+- **structure_family_discipline.defense** (why each structure family was rejected)
+- **exit_plan** targets, stops, or time stops, or any blanket pass versus trade rule framed as "wait until classified tape returns" except inside **pm.watch_for** as a monitoring hook (see below)
+
+In those restricted fields, lean on the surface (volatility, term structure, skew, implied versus cleanly adjusted realized), the catalyst landscape (earnings, macro, legal), the positioning context (sell-side, crowded long or short, fade risk), and the regime read. If classified options tape is unavailable, drop the institutional-sponsorship sub-thesis and grade the remaining edges on their own merits.
+
+**pm.watch_for** may reference classified session tape returning as a **forward-looking data event** to monitor; that is allowed.
+`;
+
+/** Conviction Desk only: one-line reinforcement after Decision section strip (see **CONVICTION_DESK_TAPE_AVAILABILITY_SCOPE**). */
+const CONVICTION_DESK_TAPE_FIELD_REMINDERS = `
+
+### Tape availability reminders (restricted Decision and Conviction fields)
+- **pm.thesis**: Do not cite tape availability or **sessionTape.tapeKind** here; lean on surface, catalyst, and positioning evidence.
+- **pm.edge_check**: Do not cite tape availability or **sessionTape.tapeKind** here; falsify with real market conditions (surface dislocation, IV move, skew shift, catalyst resolution).
+- **pm.biggest_risk**: Do not cite tape or data-availability risk here; state a market risk (gap, IV crush, catalyst miss, regime flip).
+- **pm.exit_plan**: Anchor profit target, stop, and time stop to price, vol, or catalyst dates, not to waiting for classified tape.
+- **structure_family_discipline.defense**: Do not reject a family because options **tapeKind** was **eod_fallback**; compare families on vol surface, fundamentals, and positioning fit.
+`;
+
 /** Catalyst / event narrative: sell-side firms may be named as catalyst actors; retrieval plumbing and outlet attribution may not. */
 export const CATALYST_OUTPUT_ATTRIBUTION_RULES = `
 
@@ -238,6 +273,9 @@ The snapshot includes **polygonFlowHighlights** with:
 When **tapeBackfill** is present in the snapshot, read **tapeBackfill.status**. If it is **complete**, treat session tape as full coverage through **tapeBackfill.coverageEndMs** for that session. If **partial** or **failed**, you must state in **read** (and where relevant in flow fields) that session tape coverage is incomplete: cite **tapeBackfill.occCompleted** vs **tapeBackfill.occRequested** and **tapeBackfill.reason** in plain language (no vendor names). Do not imply full-session coverage. If **skipped**, say tape backfill did not run and why only if **tapeBackfill.reason** helps the trader (otherwise keep brief).
 
 When **sessionTape.tapeKind** is "live", anchor **dominant_flow**, **institutional_signal**, **retail_signal**, **key_strikes**, and **read** in concrete tape facts: sweeps, blocks, ask/bid lean, largest prints. When "eod_fallback", describe flow from volume concentration and unusual vol/OI only; do not claim sweeps, blocks, or aggressor. If **sessionTape** is null, lean on the EOD per-strike snapshot and chain unusual activity only. Do not invent sweep counts.
+
+OPTIONS AGGRESSOR VERSUS EQUITY CASH SESSION CONTEXT
+- Classified options prints and aggressor mix come from **polygonFlowHighlights.sessionTape** (see **tapeKind**). Equity cash-session context (Volume Weighted Average Price, equity block tape, Relative Strength Index, streamed quotes, order book) comes from **intraday** and related top-level snapshot fields. When options aggressor data is unavailable because **tapeKind** is **eod_fallback**, say so once in institutional-attribution language (**institutional_signal**, **read**). When equity intraday fields are **null** or thin, that is a **separate** condition; do not bundle both into one vague "no live tape" read.
 
 Example quality bar (adapt numbers to the snapshot): "Smart money accumulating 460 calls via sweeps (12 sweep prints totaling $850k notional, 78% ask-side). Retail chasing 490 lottos (small prints, mid-price executions, few sweeps)."
 
@@ -732,6 +770,7 @@ ${structuredResearchBriefing}
   const pmBlock = stripPmPromptBeforeAnalystReads(dataPackage);
 
   return `${SOLO_DESK_USER_INSTRUCTIONS}
+${CONVICTION_DESK_TAPE_AVAILABILITY_SCOPE}
 
 ## SECTION INSTRUCTIONS (same topics as multi-turn desk; one data package below)
 
@@ -747,6 +786,7 @@ ${nativeWeb}${researchBlock}
 
 ### Decision
 ${pmBlock}
+${CONVICTION_DESK_TAPE_FIELD_REMINDERS}
 ${CONVICTION_DESK_ADDITIONS_INSTRUCTIONS}
 
 ---
