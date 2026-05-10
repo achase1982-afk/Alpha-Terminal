@@ -1,10 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { generateText, stepCountIs, streamText, type ToolSet } from "ai";
-import { createXai, type XaiLanguageModelResponsesOptions } from "@ai-sdk/xai";
+import { createXai } from "@ai-sdk/xai";
 import { logger } from "./logger.js";
 import { createGeminiClient, hasGeminiApiKey } from "./geminiClient.js";
 import { geminiThinkingConfigForModel } from "./geminiThinkingConfig.js";
+import {
+  ANTHROPIC_EXTENDED_THINKING_BUDGET,
+  anthropicThinkingForMessagesApi,
+  xaiReasoningProviderOptions,
+} from "./llmReasoningConfig.js";
 import { getXaiApiKey } from "./xaiEnv.js";
 import type {
   AiLabAnalystClient,
@@ -456,21 +461,22 @@ export async function callAnthropicWithSystem(
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
   const client = new Anthropic({ apiKey, timeout: 20 * 60 * 1000 });
 
-  const isNew = /^claude-(opus|sonnet)-4-([7-9]|\d{2,})/.test(model);
-  const THINKING_BUDGET = 4096;
+  const thinking = anthropicThinkingForMessagesApi(model);
   const params: Anthropic.MessageCreateParamsNonStreaming = {
     model,
-    max_tokens: isNew ? 12288 : THINKING_BUDGET + 8192,
+    max_tokens: thinking
+      ? thinking.type === "adaptive"
+        ? 12288
+        : ANTHROPIC_EXTENDED_THINKING_BUDGET + 8192
+      : 8192,
     system: systemPrompt,
     messages: [{ role: "user", content: prompt }],
   };
-  if (isNew) {
-    // Claude 4.7+: adaptive thinking — SDK `thinking` union lags the Messages API shape.
-    params.thinking = { type: "adaptive", display: "summarized" } as Anthropic.MessageCreateParamsNonStreaming["thinking"];
+  if (thinking) {
+    params.thinking = thinking as Anthropic.MessageCreateParamsNonStreaming["thinking"];
+    if (thinking.type === "enabled") params.temperature = 1;
   } else {
-    // Older Claude: extended thinking with a budget; temperature must be 1
-    params.thinking = { type: "enabled", budget_tokens: THINKING_BUDGET };
-    params.temperature = 1;
+    params.temperature = temperature;
   }
   void temperature;
   const message = await client.messages.create(params, { signal: cancelSignal });
@@ -539,7 +545,7 @@ export async function callOpenAIWithSystem(
 
   // gpt-5.x and o-series require max_completion_tokens (not max_tokens),
   // ignore custom temperature, and use reasoning_effort for "thinking".
-  const thinking = /^gpt-5/.test(model) || /^o[34]/.test(model);
+  const thinking = /^gpt-5/.test(model) || /^o\d/.test(model);
   const params: Record<string, unknown> = {
     model,
     messages: [
@@ -623,15 +629,6 @@ function mergeXaiWebSearchTraceFromSteps(steps: unknown[]): { queries: string[];
     }
   }
   return { queries, sources };
-}
-
-function xaiReasoningProviderOptions(model: string): { xai: XaiLanguageModelResponsesOptions } | undefined {
-  if (model.includes("non-reasoning")) return { xai: { reasoningEffort: "low" } };
-  const isReasoningVariant =
-    (model.includes("reasoning") && !model.includes("non-reasoning"))
-    || /grok-4-1-fast-reasoning|grok-4-fast-reasoning|grok-4\.20-0309-reasoning|grok-4\.20-multi-agent/.test(model);
-  if (isReasoningVariant) return { xai: { reasoningEffort: "high" } };
-  return undefined;
 }
 
 /** Best-effort token envelope from @ai-sdk/xai — fields stay null when the provider omits them (do not invent). */
@@ -1023,20 +1020,18 @@ export async function callAnthropicWithSystemAndWebSearch(
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
   const client = new Anthropic({ apiKey, timeout: 20 * 60 * 1000 });
 
-  const isNew = /^claude-(opus|sonnet)-4-([7-9]|\d{2,})/.test(model);
-  const THINKING_BUDGET = 4096;
+  const thinking = anthropicThinkingForMessagesApi(model);
+  const THINKING_BUDGET = ANTHROPIC_EXTENDED_THINKING_BUDGET;
   const params: AnthropicMessageCreateParamsWithWebSearch = {
     model,
-    max_tokens: isNew ? 16384 : THINKING_BUDGET + 12288,
+    max_tokens: thinking ? (thinking.type === "adaptive" ? 16384 : THINKING_BUDGET + 12288) : 12288,
     system: systemPrompt,
     messages: [{ role: "user", content: prompt }],
     tools: [ANTHROPIC_WEB_SEARCH_TOOL],
   };
-  if (isNew) {
-    params.thinking = { type: "adaptive", display: "summarized" } as Anthropic.MessageCreateParamsNonStreaming["thinking"];
-  } else {
-    params.thinking = { type: "enabled", budget_tokens: THINKING_BUDGET };
-    params.temperature = 1;
+  if (thinking) {
+    params.thinking = thinking as Anthropic.MessageCreateParamsNonStreaming["thinking"];
+    if (thinking.type === "enabled") params.temperature = 1;
   }
   void temperature;
 
@@ -1113,9 +1108,9 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
   // failing mid-stream with an opaque "request timed out".
   const client = new Anthropic({ apiKey, timeout: 20 * 60 * 1000 });
 
-  const isNew = /^claude-(opus|sonnet)-4-([7-9]|\d{2,})/.test(model);
-  const THINKING_BUDGET = 4096;
-  const computedMax = isNew ? 16384 : THINKING_BUDGET + 12288;
+  const thinking = anthropicThinkingForMessagesApi(model);
+  const THINKING_BUDGET = ANTHROPIC_EXTENDED_THINKING_BUDGET;
+  const computedMax = thinking ? (thinking.type === "adaptive" ? 16384 : THINKING_BUDGET + 12288) : 12288;
   const max_tokens =
     options?.maxTokens != null ? Math.max(computedMax, options.maxTokens) : computedMax;
   const params: AnthropicMessageStreamParamsWithWebSearch = {
@@ -1126,12 +1121,9 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
     tools: [ANTHROPIC_WEB_SEARCH_TOOL],
     stream: true,
   };
-  if (isNew) {
-    // Streaming + adaptive thinking: same API shape as non-streaming; SDK types omit `adaptive` here.
-    params.thinking = { type: "adaptive", display: "summarized" } as Anthropic.MessageCreateParamsStreaming["thinking"];
-  } else {
-    params.thinking = { type: "enabled", budget_tokens: THINKING_BUDGET };
-    params.temperature = 1;
+  if (thinking) {
+    params.thinking = thinking as Anthropic.MessageCreateParamsStreaming["thinking"];
+    if (thinking.type === "enabled") params.temperature = 1;
   }
   void temperature;
 
@@ -1491,9 +1483,9 @@ export async function streamCallGeminiDeskJson(
 const OPENAI_MAX_OUTPUT_TOKENS = 16384;
 
 function isOpenAIThinkingModel(model: string): boolean {
-  // gpt-5.x family (5, 5.2, 5.4, 5.5, 5-mini, 5-nano) and o-series (o3, o4-mini)
-  // use the Responses API reasoning parameter and ignore custom temperature.
-  return /^gpt-5/.test(model) || /^o[34]/.test(model);
+  // gpt-5.x and OpenAI o-series (o1, o3, o4, …) use the Responses API `reasoning`
+  // parameter and ignore custom temperature.
+  return /^gpt-5/.test(model) || /^o\d/.test(model);
 }
 
 function makeOpenAIClient(): OpenAI {
