@@ -191,7 +191,7 @@ function GlobalStrategistPollerResumer() {
     resumeAllRunningPollers();
     const onVisible = () => {
       if (document.visibilityState === "visible") {
-        resumeAllRunningPollers();
+        resumeAllRunningPollers({ toastOnComplete: true });
       }
     };
     document.addEventListener("visibilitychange", onVisible);
