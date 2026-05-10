@@ -478,7 +478,7 @@ export function TelemetryLogsPanel() {
 
       <div style={{ fontSize: 9, fontFamily: f, color: truncated ? C.orange : C.dim }}>
         {fetchError ? "—" : `${entries.length} row${entries.length === 1 ? "" : "s"}`}
-        {truncated ? " · truncated (narrow range or lower limit)" : ""}
+        {truncated ? " · truncated (narrow range or raise limit)" : ""}
       </div>
 
       {fetchError ? (
