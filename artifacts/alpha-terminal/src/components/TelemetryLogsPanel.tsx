@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
 import { Copy, Download, Pause, Play } from "lucide-react";
 
 const f = "'JetBrains Mono', 'Fira Code', 'SF Mono', monospace";
@@ -143,6 +143,7 @@ export function TelemetryLogsPanel() {
   const [live, setLive] = useState(true);
   const [truncated, setTruncated] = useState(false);
   const [copyFlash, setCopyFlash] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const buildParams = useCallback(
@@ -169,13 +170,30 @@ export function TelemetryLogsPanel() {
     async (override?: { q?: string; systems?: string }) => {
       try {
         const res = await fetchWithAuth(`/api/telemetry/runtime-logs?${buildParams(override).toString()}`);
-        if (res.ok) {
-          const data = await res.json();
-          setEntries(data.entries ?? []);
-          setTruncated(Boolean(data.truncated));
+        const text = await res.text();
+        if (!res.ok) {
+          setFetchError(humanizeFailedApiBody(res.status, text));
+          setEntries([]);
+          setTruncated(false);
+          return;
         }
-      } catch {
+        let data: { entries?: RuntimeLogEntry[]; truncated?: boolean };
+        try {
+          data = JSON.parse(text) as { entries?: RuntimeLogEntry[]; truncated?: boolean };
+        } catch {
+          setFetchError("Could not parse logs response.");
+          setEntries([]);
+          setTruncated(false);
+          return;
+        }
+        setFetchError(null);
+        setEntries(data.entries ?? []);
+        setTruncated(Boolean(data.truncated));
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : "Network error";
+        setFetchError(`${msg} — check connection and retry.`);
         setEntries([]);
+        setTruncated(false);
       } finally {
         setLoading(false);
       }
@@ -469,9 +487,29 @@ export function TelemetryLogsPanel() {
       {!loading && entries.length > 0 && <MinuteHistogram entries={entries} />}
 
       <div style={{ fontSize: 10, fontFamily: f, color: truncated ? C.orange : C.dim }}>
-        {entries.length} rows
+        {fetchError ? "—" : entries.length} rows
         {truncated ? " (hit row limit — narrow range or raise limit)" : ""}
       </div>
+
+      {fetchError && (
+        <div
+          style={{
+            padding: "10px 12px",
+            borderRadius: 6,
+            border: `1px solid ${C.red}`,
+            background: "rgba(242,54,69,0.08)",
+            color: "#ff8888",
+            fontFamily: f,
+            fontSize: 11,
+            lineHeight: 1.45,
+          }}
+        >
+          {fetchError}
+          <div style={{ marginTop: 6, color: C.muted, fontSize: 10 }}>
+            After a deploy, confirm the database migration for <code style={{ color: C.amber }}>telemetry_events.service</code> ran. Auth errors: reload or sign in again.
+          </div>
+        </div>
+      )}
 
       <div
         style={{
@@ -512,8 +550,30 @@ export function TelemetryLogsPanel() {
         <div style={{ flex: 1, overflowY: "auto", overflowX: "auto" }}>
           {loading ? (
             <div style={{ textAlign: "center", color: C.dim, padding: 40, fontFamily: f, fontSize: 12 }}>Loading logs…</div>
+          ) : fetchError ? (
+            <div style={{ textAlign: "center", color: C.dim, padding: 24, fontFamily: f, fontSize: 11 }}>
+              Fix the error above to load rows.
+            </div>
           ) : entries.length === 0 ? (
-            <div style={{ textAlign: "center", color: C.dim, padding: 40, fontFamily: f, fontSize: 12 }}>No rows in this window</div>
+            <div style={{ textAlign: "center", color: C.dim, padding: 40, fontFamily: f, fontSize: 12 }}>
+              <div>No rows in this window</div>
+              {serviceFilter === "browser" && (
+                <div
+                  style={{
+                    marginTop: 14,
+                    marginLeft: "auto",
+                    marginRight: "auto",
+                    maxWidth: 340,
+                    fontSize: 10,
+                    color: C.muted,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  <strong style={{ color: C.text }}>SOURCE → Browser</strong> only lists events posted from this web app (uncaught errors and unhandled promise rejections). If nothing broke in the UI, this list stays empty. Choose{" "}
+                  <strong style={{ color: C.text }}>All</strong> or <strong style={{ color: C.text }}>Server</strong> to see API traffic and server telemetry.
+                </div>
+              )}
+            </div>
           ) : (
             entries.map((e, idx) => (
               <div
