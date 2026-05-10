@@ -142,15 +142,27 @@ export function humanizeFailedApiBody(status: number, bodyText: string): string 
     return `Request failed (HTTP ${status})`;
   }
   try {
-    const j = JSON.parse(trimmed) as { error?: unknown; message?: unknown };
+    const j = JSON.parse(trimmed) as { error?: unknown; message?: unknown; hint?: unknown };
     const err = j.error != null ? String(j.error) : "";
     const msg = j.message != null ? String(j.message) : "";
+    const hintRaw = j.hint != null ? String(j.hint) : "";
     if (/unauthorized|forbidden/i.test(err) || /unauthorized|forbidden/i.test(msg)) {
       return "Session expired — sign in again and retry.";
     }
     const pick = msg || err;
     if (pick) {
-      return pick.length > MAX_ERROR_BODY_CHARS ? `${pick.slice(0, MAX_ERROR_BODY_CHARS - 1)}…` : pick;
+      let out = pick.length > MAX_ERROR_BODY_CHARS ? `${pick.slice(0, MAX_ERROR_BODY_CHARS - 1)}…` : pick;
+      if (hintRaw) {
+        const hint =
+          hintRaw.length > 280 ? `${hintRaw.slice(0, 279)}…` : hintRaw;
+        out = `${out}\n\n${hint}`;
+      }
+      return out;
+    }
+    if (hintRaw) {
+      return hintRaw.length > MAX_ERROR_BODY_CHARS
+        ? `${hintRaw.slice(0, MAX_ERROR_BODY_CHARS - 1)}…`
+        : hintRaw;
     }
   } catch {
     /* not JSON */
