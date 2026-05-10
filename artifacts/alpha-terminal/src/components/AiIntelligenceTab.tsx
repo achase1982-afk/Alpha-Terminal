@@ -10,7 +10,12 @@ import {
 } from "@workspace/api-client-react";
 import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
 // Strategist V2: polling lives in `strategistPoller` (survives tab background via sync + `/job/:id/final`).
-import { startStrategistPolling, abortStrategistPolling, hydrateStrategistJobFromPersistedFinal } from "@/lib/strategistPoller";
+import {
+  startStrategistPolling,
+  abortStrategistPolling,
+  hydrateStrategistJobFromPersistedFinal,
+  syncRunningStrategistJobsFromServer,
+} from "@/lib/strategistPoller";
 import { consumePendingStrategistPushJobId } from "@/lib/strategistPushNav";
 import { dispatchStrategistAnalysisStart, dispatchStrategistAnalysisCancel } from "@/lib/strategistDeskSpeechEvents";
 import { toast } from "sonner";
@@ -3424,8 +3429,22 @@ function AiIntelligenceTabInner({
       } catch (err) {
         if (postAc.signal.aborted) return;
         if (!useTerminalStore.getState().strategistJobs[jobId]) return;
-        abortStrategistPolling(jobId);
-        errorStrategistJob(jobId, err instanceof Error ? err.message : String(err));
+        // POST may have committed on the server while the client threw (e.g. TCP
+        // dropped mid-response when switching tabs during the long options-tape
+        // phase). Reconcile before stopping polling — otherwise we strand a live
+        // server run with no client poller.
+        void (async () => {
+          await syncRunningStrategistJobsFromServer({ toastOnComplete: false });
+          const j = useTerminalStore.getState().strategistJobs[jobId];
+          if (j?.status === "running") {
+            startStrategistPolling(jobId, { force: true });
+            return;
+          }
+          abortStrategistPolling(jobId);
+          if (!j || j.status === "done") return;
+          if (j.status === "error") return;
+          errorStrategistJob(jobId, err instanceof Error ? err.message : String(err));
+        })();
       }
     })();
   }, [symbol, setSymbol, setStrategistResult, startStrategistJob, errorStrategistJob, cancelStrategistJob, runningAnalyzeTicker]);
