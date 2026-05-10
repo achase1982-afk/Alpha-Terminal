@@ -18,8 +18,29 @@ import {
   rowsToPlainText,
   RUNTIME_LOG_MAX_LIMIT,
 } from "../lib/telemetryEventsDb.js";
+import { db, telemetryEventsTable } from "@workspace/db";
+import { getAuth } from "@clerk/express";
+import { z } from "zod";
 
 const router: IRouter = Router();
+
+const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
+const DEV_USER_ID = "dev_user_local";
+
+const ALLOWED_SERVICES = new Set(["server", "web"]);
+
+const browserEventsBodySchema = z.object({
+  events: z
+    .array(
+      z.object({
+        level: z.enum(["INFO", "WARN", "ERROR"]),
+        message: z.string().min(1).max(8000),
+        details: z.record(z.unknown()).optional(),
+      }),
+    )
+    .min(1)
+    .max(40),
+});
 
 function parseRuntimeLogParams(req: Request): {
   from: Date;
@@ -27,6 +48,7 @@ function parseRuntimeLogParams(req: Request): {
   limit: number;
   q?: string;
   systems?: string[];
+  services?: string[];
 } | { error: string } {
   const parsed = parseRangeQuery({
     minutes: typeof req.query.minutes === "string" ? req.query.minutes : undefined,
@@ -47,14 +69,50 @@ function parseRuntimeLogParams(req: Request): {
     .split(",")
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean);
+  const servicesRaw = typeof req.query.services === "string" ? req.query.services : "";
+  const services = servicesRaw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => ALLOWED_SERVICES.has(s));
   return {
     from: parsed.from,
     to: parsed.to,
     limit,
     q,
     systems: systems.length ? systems : undefined,
+    services: services.length ? services : undefined,
   };
 }
+
+/** Ingests browser-side errors/events into telemetry_events (service alpha-terminal). Clerk session required. */
+router.post("/browser-events", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = DEV_BYPASS ? DEV_USER_ID : getAuth(req).userId;
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const parsed = browserEventsBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid body" });
+      return;
+    }
+    const rows = parsed.data.events.map((e) => ({
+      service: "web" as const,
+      system: "CLIENT",
+      level: e.level,
+      message: e.message,
+      subsystem: "BROWSER",
+      details: { ...(e.details ?? {}), clerk_user_id: userId },
+      requestId: null as string | null,
+    }));
+    await db.insert(telemetryEventsTable).values(rows);
+    res.json({ ok: true, inserted: rows.length });
+  } catch (err: unknown) {
+    req.log?.error({ err }, "browser-events insert failed");
+    res.status(500).json({ error: "Failed to record browser events" });
+  }
+});
 
 /** Durable telemetry_events (HTTP timing + emitTelemetry); Clerk-gated via /api middleware. */
 router.get("/runtime-logs", async (req: Request, res: Response): Promise<void> => {
@@ -70,6 +128,7 @@ router.get("/runtime-logs", async (req: Request, res: Response): Promise<void> =
       limit: params.limit,
       q: params.q,
       systems: params.systems,
+      services: params.services,
     });
     res.json({
       entries: rows,
@@ -98,6 +157,7 @@ router.get("/runtime-logs/export", async (req: Request, res: Response): Promise<
       limit: params.limit,
       q: params.q,
       systems: params.systems,
+      services: params.services,
     });
 
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");

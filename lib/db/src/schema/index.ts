@@ -1030,6 +1030,8 @@ export const telemetryEventsTable = pgTable(
   {
     id: bigint("id", { mode: "bigint" }).primaryKey().generatedAlwaysAsIdentity(),
     emittedAt: timestamp("emitted_at", { withTimezone: true }).defaultNow().notNull(),
+    /** Logical source: server (HTTP + emitTelemetry) vs web (browser POST). */
+    service: text("service").notNull().default("server"),
     system: text("system").notNull(),
     level: text("level").notNull(),
     message: text("message").notNull(),
@@ -1041,6 +1043,7 @@ export const telemetryEventsTable = pgTable(
     index("telemetry_events_emitted_at_idx").on(desc(t.emittedAt)),
     index("telemetry_events_message_emitted_at_idx").on(t.message, desc(t.emittedAt)),
     index("telemetry_events_system_emitted_at_idx").on(t.system, desc(t.emittedAt)),
+    index("telemetry_events_service_emitted_at_idx").on(t.service, desc(t.emittedAt)),
   ],
 );
 

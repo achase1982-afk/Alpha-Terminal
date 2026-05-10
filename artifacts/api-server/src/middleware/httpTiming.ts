@@ -25,6 +25,7 @@ function shouldSkipTiming(path: string): boolean {
 function shouldSkipHttpTelemetryEmit(path: string, method: string): boolean {
   if (path === "/api/telemetry/counts") return true;
   if (path.startsWith("/api/telemetry/runtime-logs")) return true;
+  if (method === "POST" && path === "/api/telemetry/browser-events") return true;
   if (method === "GET" && path === "/api/telemetry") return true;
   return false;
 }

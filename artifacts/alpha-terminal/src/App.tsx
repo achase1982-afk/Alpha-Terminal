@@ -16,6 +16,7 @@ import { registerServiceWorker } from "@/lib/pushNotifications";
 import OrderAlertWatcher from "@/components/OrderAlertWatcher";
 import SchwabSessionExpiredDialog from "@/components/SchwabSessionExpiredDialog";
 import { resumeAllRunningPollers } from "@/lib/strategistPoller";
+import { installBrowserTelemetryCapture } from "@/lib/browserTelemetry";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -205,6 +206,13 @@ function GlobalStrategistPollerResumer() {
   return null;
 }
 
+function BrowserTelemetryInstaller() {
+  useEffect(() => {
+    return installBrowserTelemetryCapture();
+  }, []);
+  return null;
+}
+
 function Router() {
   return (
     <Switch>
@@ -228,6 +236,7 @@ function App() {
             <AuthSessionBanner />
             <PendingSessionLoader />
             <GlobalStrategistPollerResumer />
+            <BrowserTelemetryInstaller />
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
               <Router />
             </WouterRouter>

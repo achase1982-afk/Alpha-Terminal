@@ -77,6 +77,7 @@ app.use(
         return url === "/api/healthz" ||
           url === "/api/telemetry/counts" ||
           url.startsWith("/api/telemetry/runtime-logs") ||
+          url === "/api/telemetry/browser-events" ||
           url === "/api/market/earnings-calendar" ||
           url === "/api/ai/market-pulse/latest";
       },
