@@ -462,9 +462,11 @@ export function abortStrategistPolling(jobId: string): void {
  * First reconciles each running job against persisted server state so a
  * backgrounded tab that missed the final `/thinking` poll still completes.
  */
-export function resumeAllRunningPollers(): void {
+export function resumeAllRunningPollers(opts?: { toastOnComplete?: boolean }): void {
   void (async () => {
-    await syncRunningStrategistJobsFromServer({ toastOnComplete: true });
+    await syncRunningStrategistJobsFromServer({
+      toastOnComplete: opts?.toastOnComplete ?? true,
+    });
     const jobs = useTerminalStore.getState().strategistJobs;
     for (const [jobId, job] of Object.entries(jobs)) {
       if (job.status === "running") {

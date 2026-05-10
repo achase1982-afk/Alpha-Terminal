@@ -35,6 +35,7 @@ import type { MarketPulseDashboardHandle } from "@/components/market-pulse/Marke
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { WatchlistView } from "@/components/WatchlistView";
 import { setPendingStrategistPushJobId } from "@/lib/strategistPushNav";
+import { resumeAllRunningPollers } from "@/lib/strategistPoller";
 import {
   Menu,
   RefreshCw,
@@ -416,6 +417,17 @@ export default function TerminalPage() {
   useEffect(() => {
     try { sessionStorage.setItem("alpha_session_ai_tab", aiSubTab); } catch {}
   }, [aiSubTab]);
+
+  // Polling lives in `strategistPoller` so it can survive AiIntelligenceTab
+  // unmount, but mobile Safari can throttle timer chains while other chrome is
+  // foregrounded and `visibilitychange` does not fire for in-app bottom-nav
+  // switches. When the user returns to the Strategist screen, reconcile against
+  // `/job/:id/final` and force-restart any stalled pollers (toast suppressed —
+  // foreground recovery still uses visibility/focus in App).
+  useEffect(() => {
+    if (activeBottom !== "ai" || aiSubTab !== "strategist") return;
+    resumeAllRunningPollers({ toastOnComplete: false });
+  }, [activeBottom, aiSubTab]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
