@@ -16,6 +16,7 @@ export const RUNTIME_LOG_MAX_LIMIT = 5000;
 export type RuntimeLogRow = {
   id: string;
   emittedAt: string;
+  service: string;
   system: string;
   level: string;
   message: string;
@@ -27,6 +28,7 @@ function rowToDto(r: TelemetryEventRow): RuntimeLogRow {
   return {
     id: String(r.id),
     emittedAt: r.emittedAt.toISOString(),
+    service: r.service ?? "server",
     system: r.system,
     level: r.level,
     message: r.message,
@@ -73,6 +75,8 @@ export async function queryTelemetryEvents(opts: {
   to: Date;
   q?: string;
   systems?: string[];
+  /** Filters telemetry_events.service (server | web). */
+  services?: string[];
   limit: number;
 }): Promise<RuntimeLogRow[]> {
   const lim = Math.min(Math.max(1, opts.limit), RUNTIME_LOG_MAX_LIMIT);
@@ -84,6 +88,10 @@ export async function queryTelemetryEvents(opts: {
 
   if (opts.systems?.length) {
     conditions.push(inArray(telemetryEventsTable.system, opts.systems));
+  }
+
+  if (opts.services?.length) {
+    conditions.push(inArray(telemetryEventsTable.service, opts.services));
   }
 
   const safeQ = (opts.q ?? "").trim().replace(/[%_]/g, "").slice(0, 240);
@@ -111,14 +119,14 @@ export function rowsToPlainText(rows: RuntimeLogRow[]): string {
       r.details !== null && typeof r.details === "object"
         ? JSON.stringify(r.details)
         : String(r.details ?? "");
-    lines.push(`${r.emittedAt}\t${r.system}\t${r.level}\t${r.message}\t${detailStr}`);
+    lines.push(`${r.emittedAt}\t${r.service}\t${r.system}\t${r.level}\t${r.message}\t${detailStr}`);
   }
   return lines.join("\n");
 }
 
 export function rowsToCsv(rows: RuntimeLogRow[]): string {
   const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
-  const header = ["emittedAt", "system", "level", "message", "subsystem", "details"];
+  const header = ["emittedAt", "service", "system", "level", "message", "subsystem", "details"];
   const out = [header.join(",")];
   for (const r of rows) {
     const detailStr =
@@ -128,6 +136,7 @@ export function rowsToCsv(rows: RuntimeLogRow[]): string {
     out.push(
       [
         esc(r.emittedAt),
+        esc(r.service),
         esc(r.system),
         esc(r.level),
         esc(r.message),
