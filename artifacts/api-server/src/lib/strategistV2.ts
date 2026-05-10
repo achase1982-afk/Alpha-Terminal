@@ -1061,6 +1061,28 @@ async function analyzeTickerV2Inner(
     logger.info({ ticker }, "StrategistV2: no Polygon flow highlights for ticker");
   }
 
+  if (polygonHighlights) {
+    const lc = polygonHighlights.sessionTapeLookupCounts;
+    const st = polygonHighlights.sessionTape;
+    if (
+      st?.tapeKind === "eod_fallback" &&
+      lc &&
+      lc.rawTradeRowCount > 0 &&
+      lc.execPerStrikeRowCount > 0
+    ) {
+      logger.error(
+        {
+          symbol: ticker,
+          runId: progress?.jobId ?? null,
+          sessionDate: lc.sessionDate,
+          rawTradeRowCount: lc.rawTradeRowCount,
+          execPerStrikeRowCount: lc.execPerStrikeRowCount,
+        },
+        "StrategistV2: invariant violated — eod_fallback returned despite live rows existing in options_flow_raw_trades and options_flow_exec_per_strike for this session_date",
+      );
+    }
+  }
+
   const [companyFinancials] = await Promise.all([
     fetchCompanyFinancialsForSymbol(ticker),
   ]);

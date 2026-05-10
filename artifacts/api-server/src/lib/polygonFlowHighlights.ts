@@ -115,6 +115,15 @@ export interface PolygonFlowHighlights {
   sessionTape: PolygonFlowTape | null;
   /** When set, session tape was read for this NY session date (may differ from asOfDate). */
   sessionTapeDate?: string;
+  /**
+   * Row counts in DB for **tapeBackfill.sessionDate** (or asOfDate when capture status absent),
+   * for invariant checks — independent of whether live tape was attached from that date.
+   */
+  sessionTapeLookupCounts?: {
+    sessionDate: string;
+    rawTradeRowCount: number;
+    execPerStrikeRowCount: number;
+  };
 }
 
 const MIN_VOLUME_FOR_VOI = 100;
@@ -141,13 +150,48 @@ function nyCalendarYmd(d: Date): string {
   return d.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 }
 
-/** Prefer intraday tape for NY "today" when EOD asOfDate lags the calendar session. */
-function sessionTapeDatesToFetch(asOfDate: string): string[] {
+/** Prefer capture session date first so strategist tape aligns with options_flow_raw_trades inserts. */
+function sessionTapeDatesToFetch(asOfDate: string, captureSessionDate?: string): string[] {
   const ny = nyCalendarYmd(new Date());
   const out: string[] = [];
+  if (typeof captureSessionDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(captureSessionDate)) {
+    out.push(captureSessionDate);
+  }
   if (asOfDate !== ny) out.push(asOfDate);
   out.push(ny);
   return [...new Set(out)];
+}
+
+/** Row counts for invariant / telemetry (same key as session tape: symbol + session calendar date). */
+async function countFlowRowsForSession(
+  symbol: string,
+  sessionDate: string,
+): Promise<{ rawTradeRowCount: number; execPerStrikeRowCount: number }> {
+  const sym = symbol.toUpperCase();
+  const [rawR, execR] = await Promise.all([
+    db
+      .select({ c: sql<number>`count(*)` })
+      .from(optionsFlowRawTradesTable)
+      .where(
+        and(
+          eq(optionsFlowRawTradesTable.underlyingSymbol, sym),
+          eq(optionsFlowRawTradesTable.date, sessionDate),
+        ),
+      ),
+    db
+      .select({ c: sql<number>`count(*)` })
+      .from(optionsFlowExecPerStrikeTable)
+      .where(
+        and(
+          eq(optionsFlowExecPerStrikeTable.underlyingSymbol, sym),
+          eq(optionsFlowExecPerStrikeTable.date, sessionDate),
+        ),
+      ),
+  ]);
+  return {
+    rawTradeRowCount: Number(rawR[0]?.c ?? 0),
+    execPerStrikeRowCount: Number(execR[0]?.c ?? 0),
+  };
 }
 
 interface RawStrikeRow {
@@ -594,9 +638,17 @@ export async function getPolygonFlowHighlights(
 
     const rawRows = rows as unknown as RawStrikeRow[];
     const summary = summarize(rawRows);
+    const lookupSessionDate = tapeBackfill?.sessionDate ?? asOfDate;
+    const counted = await countFlowRowsForSession(sym, lookupSessionDate);
+    const sessionTapeLookupCounts = {
+      sessionDate: lookupSessionDate,
+      rawTradeRowCount: counted.rawTradeRowCount,
+      execPerStrikeRowCount: counted.execPerStrikeRowCount,
+    };
+
     let sessionTape: PolygonFlowTape | null = null;
     let sessionTapeDate: string | undefined;
-    for (const d of sessionTapeDatesToFetch(asOfDate)) {
+    for (const d of sessionTapeDatesToFetch(asOfDate, tapeBackfill?.sessionDate)) {
       const st = await fetchSessionTape(sym, d);
       if (st) {
         sessionTape = {
@@ -607,13 +659,25 @@ export async function getPolygonFlowHighlights(
         break;
       }
     }
+
+    logger.info(
+      {
+        symbol: sym,
+        sessionDate: lookupSessionDate,
+        occCount: tapeBackfill?.occRequested ?? null,
+        rawTradeRowCount: sessionTapeLookupCounts.rawTradeRowCount,
+        execPerStrikeRowCount: sessionTapeLookupCounts.execPerStrikeRowCount,
+        willFallback: !sessionTape,
+      },
+      sessionTape
+        ? "polygonFlowHighlights: session tape lookup gate"
+        : "polygonFlowHighlights: session tape lookup gate (falling back to EOD synthesis)",
+    );
+
     if (!sessionTape) {
       sessionTape = buildEodFallbackSessionTape(asOfDate, rawRows, tapeBackfill);
-      if (sessionTape) {
-        logger.info({ symbol: sym, asOfDate }, "polygonFlowHighlights: using EOD fallback session tape (no live flow rows)");
-      }
     }
-    return { asOfDate, ...summary, sessionTape, sessionTapeDate };
+    return { asOfDate, ...summary, sessionTape, sessionTapeDate, sessionTapeLookupCounts };
   } catch (err) {
     logFlowPipelineWarn(
       "flow_highlights_lookup",
