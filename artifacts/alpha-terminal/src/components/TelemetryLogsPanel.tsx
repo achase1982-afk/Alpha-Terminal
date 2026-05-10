@@ -1,23 +1,24 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
 import { Copy, Download, Pause, Play } from "lucide-react";
 
 const f = "'JetBrains Mono', 'Fira Code', 'SF Mono', monospace";
 
-/** Railway-inspired dark shell */
-const rail = {
-  shell: "#0b0c15",
-  border: "#1e293b",
-  headerBg: "#12141f",
-  rowAlt: "rgba(255,255,255,0.02)",
-  accent: "#2563eb",
-  text: "#e2e8f0",
-  muted: "#64748b",
-  dim: "#475569",
+/** Matches `TelemetryPage` / native Telemetry styling */
+const C = {
+  bg: "#080808",
+  card: "#111111",
+  cardBorder: "#1a1a1c",
   amber: "#F59E0B",
+  amberDim: "#F59E0B99",
   red: "#f23645",
-  orange: "#fb923c",
+  orange: "#FF8C00",
+  dim: "#555",
+  text: "#ccc",
+  muted: "#777",
+  border: "#1f1f22",
 };
+const ROW_ALT = "rgba(255,255,255,0.02)";
 
 export interface RuntimeLogEntry {
   id: string;
@@ -120,7 +121,7 @@ function MinuteHistogram({ entries }: { entries: RuntimeLogEntry[] }) {
             flex: 1,
             minWidth: 2,
             height: `${Math.max(8, (count / max) * 100)}%`,
-            background: rail.accent,
+            background: C.amber,
             borderRadius: 1,
           }}
         />
@@ -142,6 +143,7 @@ export function TelemetryLogsPanel() {
   const [live, setLive] = useState(true);
   const [truncated, setTruncated] = useState(false);
   const [copyFlash, setCopyFlash] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const buildParams = useCallback(
@@ -168,13 +170,30 @@ export function TelemetryLogsPanel() {
     async (override?: { q?: string; systems?: string }) => {
       try {
         const res = await fetchWithAuth(`/api/telemetry/runtime-logs?${buildParams(override).toString()}`);
-        if (res.ok) {
-          const data = await res.json();
-          setEntries(data.entries ?? []);
-          setTruncated(Boolean(data.truncated));
+        const text = await res.text();
+        if (!res.ok) {
+          setFetchError(humanizeFailedApiBody(res.status, text));
+          setEntries([]);
+          setTruncated(false);
+          return;
         }
-      } catch {
+        let data: { entries?: RuntimeLogEntry[]; truncated?: boolean };
+        try {
+          data = JSON.parse(text) as { entries?: RuntimeLogEntry[]; truncated?: boolean };
+        } catch {
+          setFetchError("Could not parse logs response.");
+          setEntries([]);
+          setTruncated(false);
+          return;
+        }
+        setFetchError(null);
+        setEntries(data.entries ?? []);
+        setTruncated(Boolean(data.truncated));
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : "Network error";
+        setFetchError(`${msg} — check connection and retry.`);
         setEntries([]);
+        setTruncated(false);
       } finally {
         setLoading(false);
       }
@@ -228,9 +247,9 @@ export function TelemetryLogsPanel() {
   };
 
   const levelColor = (level: string) => {
-    if (level === "ERROR") return rail.red;
-    if (level === "WARN") return rail.orange;
-    return rail.muted;
+    if (level === "ERROR") return C.red;
+    if (level === "WARN") return C.orange;
+    return C.muted;
   };
 
   const svcPill = (service: string) => {
@@ -242,7 +261,7 @@ export function TelemetryLogsPanel() {
           fontSize: 10,
           fontFamily: f,
           fontWeight: 700,
-          color: isBrowser ? "#a78bfa" : rail.muted,
+          color: isBrowser ? C.amber : C.muted,
           letterSpacing: 0.3,
         }}
       >
@@ -257,9 +276,9 @@ export function TelemetryLogsPanel() {
     gap: 6,
     padding: "5px 10px",
     borderRadius: 6,
-    border: `1px solid ${rail.border}`,
+    border: `1px solid ${C.border}`,
     background: "rgba(255,255,255,0.03)",
-    color: rail.text,
+    color: C.text,
     fontFamily: f,
     fontSize: 10,
     cursor: "pointer",
@@ -268,7 +287,7 @@ export function TelemetryLogsPanel() {
   return (
     <div
       style={{
-        color: rail.text,
+        color: C.text,
         fontSize: 13,
         fontFamily: "'Inter', sans-serif",
         display: "flex",
@@ -277,14 +296,14 @@ export function TelemetryLogsPanel() {
         gap: 10,
       }}
     >
-      <div style={{ fontSize: 10, fontFamily: f, color: rail.muted, lineHeight: 1.5 }}>
-        Unified log stream (Railway-style): <strong style={{ color: rail.text }}>Server</strong> rows include HTTP timing and{" "}
-        <code style={{ color: rail.amber }}>emitTelemetry</code>; <strong style={{ color: rail.text }}>Web app</strong> rows come from browser errors
+      <div style={{ fontSize: 10, fontFamily: f, color: C.muted, lineHeight: 1.5 }}>
+        Unified log stream: <strong style={{ color: C.text }}>Server</strong> rows include HTTP timing and{" "}
+        <code style={{ color: C.amber }}>emitTelemetry</code>; <strong style={{ color: C.text }}>Web app</strong> rows come from browser errors
         forwarded to the API. Retention 30 days. Clerk session required.
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-        <span style={{ fontSize: 10, fontFamily: f, color: rail.dim, marginRight: 4 }}>RANGE</span>
+        <span style={{ fontSize: 10, fontFamily: f, color: C.dim, marginRight: 4 }}>RANGE</span>
         {RANGE_PRESETS.map((p) => (
           <button
             key={p.minutes}
@@ -296,9 +315,9 @@ export function TelemetryLogsPanel() {
               fontSize: 10,
               fontFamily: f,
               fontWeight: 700,
-              border: `1px solid ${rangeMinutes === p.minutes ? rail.amber : rail.border}`,
+              border: `1px solid ${rangeMinutes === p.minutes ? C.amber : C.border}`,
               background: rangeMinutes === p.minutes ? "rgba(245,158,11,0.08)" : "transparent",
-              color: rangeMinutes === p.minutes ? rail.amber : rail.dim,
+              color: rangeMinutes === p.minutes ? C.amber : C.dim,
               cursor: "pointer",
             }}
           >
@@ -308,7 +327,7 @@ export function TelemetryLogsPanel() {
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-        <span style={{ fontSize: 10, fontFamily: f, color: rail.dim }}>SOURCE</span>
+        <span style={{ fontSize: 10, fontFamily: f, color: C.dim }}>SOURCE</span>
         {(
           [
             { key: "all", label: "All" },
@@ -326,9 +345,9 @@ export function TelemetryLogsPanel() {
               fontSize: 10,
               fontFamily: f,
               fontWeight: 700,
-              border: `1px solid ${serviceFilter === key ? rail.accent : rail.border}`,
+              border: `1px solid ${serviceFilter === key ? C.amber : C.border}`,
               background: serviceFilter === key ? "rgba(37,99,235,0.12)" : "transparent",
-              color: serviceFilter === key ? rail.accent : rail.dim,
+              color: serviceFilter === key ? C.amber : C.dim,
               cursor: "pointer",
             }}
           >
@@ -356,9 +375,9 @@ export function TelemetryLogsPanel() {
             minWidth: 140,
             padding: "6px 10px",
             borderRadius: 6,
-            border: `1px solid ${rail.border}`,
-            background: rail.shell,
-            color: rail.text,
+            border: `1px solid ${C.border}`,
+            background: C.card,
+            color: C.text,
             fontFamily: f,
             fontSize: 11,
           }}
@@ -373,14 +392,14 @@ export function TelemetryLogsPanel() {
             minWidth: 120,
             padding: "6px 10px",
             borderRadius: 6,
-            border: `1px solid ${rail.border}`,
-            background: rail.shell,
-            color: rail.text,
+            border: `1px solid ${C.border}`,
+            background: C.card,
+            color: C.text,
             fontFamily: f,
             fontSize: 11,
           }}
         />
-        <label style={{ fontSize: 10, fontFamily: f, color: rail.dim, display: "flex", alignItems: "center", gap: 6 }}>
+        <label style={{ fontSize: 10, fontFamily: f, color: C.dim, display: "flex", alignItems: "center", gap: 6 }}>
           limit
           <input
             type="number"
@@ -393,9 +412,9 @@ export function TelemetryLogsPanel() {
               width: 72,
               padding: 4,
               borderRadius: 4,
-              border: `1px solid ${rail.border}`,
-              background: rail.shell,
-              color: rail.text,
+              border: `1px solid ${C.border}`,
+              background: C.card,
+              color: C.text,
               fontFamily: f,
               fontSize: 11,
             }}
@@ -412,9 +431,9 @@ export function TelemetryLogsPanel() {
           style={{
             padding: "6px 12px",
             borderRadius: 6,
-            border: `1px solid ${rail.amber}`,
+            border: `1px solid ${C.amber}`,
             background: "rgba(245,158,11,0.06)",
-            color: rail.amber,
+            color: C.amber,
             fontFamily: f,
             fontSize: 10,
             fontWeight: 700,
@@ -432,9 +451,9 @@ export function TelemetryLogsPanel() {
             gap: 6,
             padding: "6px 12px",
             borderRadius: 6,
-            border: `1px solid ${live ? "#26a69a" : rail.border}`,
+            border: `1px solid ${live ? "#26a69a" : C.border}`,
             background: live ? "rgba(38,166,154,0.06)" : "transparent",
-            color: live ? "#26a69a" : rail.dim,
+            color: live ? "#26a69a" : C.dim,
             fontFamily: f,
             fontSize: 10,
             fontWeight: 700,
@@ -447,7 +466,7 @@ export function TelemetryLogsPanel() {
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-        <span style={{ fontSize: 10, fontFamily: f, color: rail.dim }}>Export</span>
+        <span style={{ fontSize: 10, fontFamily: f, color: C.dim }}>Export</span>
         <button type="button" onClick={() => void copyAs("json")} style={exportBtnStyle}>
           <Copy size={11} /> Copy JSON {copyFlash === "json" ? "✓" : ""}
         </button>
@@ -467,18 +486,38 @@ export function TelemetryLogsPanel() {
 
       {!loading && entries.length > 0 && <MinuteHistogram entries={entries} />}
 
-      <div style={{ fontSize: 10, fontFamily: f, color: truncated ? rail.orange : rail.dim }}>
-        {entries.length} rows
+      <div style={{ fontSize: 10, fontFamily: f, color: truncated ? C.orange : C.dim }}>
+        {fetchError ? "—" : entries.length} rows
         {truncated ? " (hit row limit — narrow range or raise limit)" : ""}
       </div>
+
+      {fetchError && (
+        <div
+          style={{
+            padding: "10px 12px",
+            borderRadius: 6,
+            border: `1px solid ${C.red}`,
+            background: "rgba(242,54,69,0.08)",
+            color: "#ff8888",
+            fontFamily: f,
+            fontSize: 11,
+            lineHeight: 1.45,
+          }}
+        >
+          {fetchError}
+          <div style={{ marginTop: 6, color: C.muted, fontSize: 10 }}>
+            After a deploy, confirm the database migration for <code style={{ color: C.amber }}>telemetry_events.service</code> ran. Auth errors: reload or sign in again.
+          </div>
+        </div>
+      )}
 
       <div
         style={{
           flex: 1,
           minHeight: 200,
-          border: `1px solid ${rail.border}`,
+          border: `1px solid ${C.border}`,
           borderRadius: 8,
-          background: rail.shell,
+          background: C.card,
           overflow: "hidden",
           display: "flex",
           flexDirection: "column",
@@ -490,14 +529,14 @@ export function TelemetryLogsPanel() {
             gridTemplateColumns: "minmax(108px, 18%) minmax(96px, 22%) 1fr",
             gap: 0,
             padding: "8px 12px",
-            background: rail.headerBg,
-            borderBottom: `1px solid ${rail.border}`,
+            background: C.bg,
+            borderBottom: `1px solid ${C.border}`,
             fontSize: 9,
             fontFamily: f,
             fontWeight: 800,
             letterSpacing: 1,
             textTransform: "uppercase",
-            color: rail.dim,
+            color: C.dim,
             position: "sticky",
             top: 0,
             zIndex: 1,
@@ -510,9 +549,31 @@ export function TelemetryLogsPanel() {
 
         <div style={{ flex: 1, overflowY: "auto", overflowX: "auto" }}>
           {loading ? (
-            <div style={{ textAlign: "center", color: rail.dim, padding: 40, fontFamily: f, fontSize: 12 }}>Loading logs…</div>
+            <div style={{ textAlign: "center", color: C.dim, padding: 40, fontFamily: f, fontSize: 12 }}>Loading logs…</div>
+          ) : fetchError ? (
+            <div style={{ textAlign: "center", color: C.dim, padding: 24, fontFamily: f, fontSize: 11 }}>
+              Fix the error above to load rows.
+            </div>
           ) : entries.length === 0 ? (
-            <div style={{ textAlign: "center", color: rail.dim, padding: 40, fontFamily: f, fontSize: 12 }}>No rows in this window</div>
+            <div style={{ textAlign: "center", color: C.dim, padding: 40, fontFamily: f, fontSize: 12 }}>
+              <div>No rows in this window</div>
+              {serviceFilter === "browser" && (
+                <div
+                  style={{
+                    marginTop: 14,
+                    marginLeft: "auto",
+                    marginRight: "auto",
+                    maxWidth: 340,
+                    fontSize: 10,
+                    color: C.muted,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  <strong style={{ color: C.text }}>SOURCE → Browser</strong> only lists events posted from this web app (uncaught errors and unhandled promise rejections). If nothing broke in the UI, this list stays empty. Choose{" "}
+                  <strong style={{ color: C.text }}>All</strong> or <strong style={{ color: C.text }}>Server</strong> to see API traffic and server telemetry.
+                </div>
+              )}
+            </div>
           ) : (
             entries.map((e, idx) => (
               <div
@@ -523,25 +584,25 @@ export function TelemetryLogsPanel() {
                   gap: 8,
                   padding: "10px 12px",
                   alignItems: "start",
-                  borderBottom: `1px solid ${rail.border}`,
-                  borderLeft: `3px solid ${rail.accent}`,
-                  background: idx % 2 === 1 ? rail.rowAlt : "transparent",
+                  borderBottom: `1px solid ${C.border}`,
+                  borderLeft: `3px solid ${C.amber}`,
+                  background: idx % 2 === 1 ? ROW_ALT : "transparent",
                 }}
               >
-                <div style={{ fontSize: 10, fontFamily: f, color: rail.muted, lineHeight: 1.35 }}>{formatTime(e.emittedAt)}</div>
+                <div style={{ fontSize: 10, fontFamily: f, color: C.muted, lineHeight: 1.35 }}>{formatTime(e.emittedAt)}</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   {svcPill(e.service)}
                   <span style={{ fontSize: 9, fontFamily: f, color: levelColor(e.level), fontWeight: 700 }}>{e.level}</span>
-                  <span style={{ fontSize: 9, fontFamily: f, color: rail.dim }}>{e.system}</span>
+                  <span style={{ fontSize: 9, fontFamily: f, color: C.dim }}>{e.system}</span>
                 </div>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 11, fontFamily: f, color: rail.text, wordBreak: "break-word", marginBottom: 4 }}>{e.message}</div>
+                  <div style={{ fontSize: 11, fontFamily: f, color: C.text, wordBreak: "break-word", marginBottom: 4 }}>{e.message}</div>
                   <pre
                     style={{
                       margin: 0,
                       fontSize: 10,
                       fontFamily: f,
-                      color: "#94a3b8",
+                      color: C.muted,
                       whiteSpace: "pre-wrap",
                       wordBreak: "break-word",
                       maxHeight: 140,
