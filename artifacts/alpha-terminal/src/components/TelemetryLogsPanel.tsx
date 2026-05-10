@@ -85,6 +85,10 @@ function compactDataPayload(e: RuntimeLogEntry): string {
   if (e.subsystem) base.subsystem = e.subsystem;
   if (e.details !== null && typeof e.details === "object" && !Array.isArray(e.details)) {
     Object.assign(base, e.details as Record<string, unknown>);
+    base.message = e.message;
+    base.system = e.system;
+    base.level = e.level;
+    if (e.subsystem) base.subsystem = e.subsystem;
   } else if (e.details !== undefined && e.details !== null) {
     base.details = e.details;
   }

@@ -24,6 +24,9 @@ import { z } from "zod";
 
 const router: IRouter = Router();
 
+const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
+const DEV_USER_ID = "dev_user_local";
+
 const ALLOWED_SERVICES = new Set(["server", "web"]);
 
 const browserEventsBodySchema = z.object({
@@ -84,8 +87,8 @@ function parseRuntimeLogParams(req: Request): {
 /** Ingests browser-side errors/events into telemetry_events (service alpha-terminal). Clerk session required. */
 router.post("/browser-events", async (req: Request, res: Response): Promise<void> => {
   try {
-    const auth = getAuth(req);
-    if (!auth.userId) {
+    const userId = DEV_BYPASS ? DEV_USER_ID : getAuth(req).userId;
+    if (!userId) {
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
@@ -100,7 +103,7 @@ router.post("/browser-events", async (req: Request, res: Response): Promise<void
       level: e.level,
       message: e.message,
       subsystem: "BROWSER",
-      details: { ...(e.details ?? {}), clerk_user_id: auth.userId },
+      details: { ...(e.details ?? {}), clerk_user_id: userId },
       requestId: null as string | null,
     }));
     await db.insert(telemetryEventsTable).values(rows);
