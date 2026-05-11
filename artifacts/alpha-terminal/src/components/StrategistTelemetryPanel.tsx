@@ -138,6 +138,7 @@ async function fetchFullTelemetryRow(id: number): Promise<TelemetryRow | null> {
   }
 }
 
+/** Safe basename segment for downloaded JSON exports. */
 function telemetryExportFilenamePart(raw: string): string {
   const t = raw.replace(/[^a-zA-Z0-9._-]+/g, "_");
   return t.length > 48 ? t.slice(0, 48) : t;
@@ -155,7 +156,7 @@ function downloadTelemetryJson(filename: string, payload: unknown): boolean {
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 100);
     return true;
   } catch {
     return false;

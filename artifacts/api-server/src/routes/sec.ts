@@ -10,7 +10,7 @@ const HEADERS = {
 
 const FETCH_TIMEOUT_MS = 10_000;
 
-interface EdgarFiling {
+export interface EdgarFiling {
   id: string;
   formType: string;
   filedAt: string;
@@ -106,9 +106,10 @@ async function loadTickerMap(log?: any): Promise<Map<string, string>> {
   return map;
 }
 
-async function fetchEdgarFilings(
+export async function fetchEdgarFilings(
   ticker: string,
   log?: any,
+  signal?: AbortSignal,
 ): Promise<EdgarFiling[]> {
   const tickerUpper = ticker.toUpperCase().replace(/^\$/, "");
 
@@ -128,7 +129,7 @@ async function fetchEdgarFilings(
     `https://data.sec.gov/submissions/CIK${cik}.json`,
     {
       headers: HEADERS,
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      signal: signal ?? AbortSignal.timeout(FETCH_TIMEOUT_MS),
     },
   );
   if (!submissionsRes.ok) {
