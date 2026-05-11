@@ -10,8 +10,7 @@ export function stripConvictionDiagnosticsFromDeskResult(
 ): ConvictionDeskResult | DeskResult | null | undefined {
   if (deskResult == null) return deskResult;
   if (deskResult.mode !== "conviction_desk") return deskResult;
-  if (deskResult.convictionDeskRunDiagnostic == null) return deskResult;
-  const { convictionDeskRunDiagnostic: _omit, ...rest } = deskResult;
+  const { convictionDeskRunDiagnostic: _omitDiag, convictionDeskAudit: _omitAudit, ...rest } = deskResult;
   return rest as ConvictionDeskResult;
 }
 

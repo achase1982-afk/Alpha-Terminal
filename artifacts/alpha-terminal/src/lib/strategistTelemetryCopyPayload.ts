@@ -9,6 +9,17 @@ export type CopySectionId =
   | "flow"
   | "catalyst"
   | "dataQuality"
+  | "modelInput"
+  | "thinkingBlocks"
+  | "webSearchQueries"
+  | "webSearchResults"
+  | "toolsAttached"
+  | "extendedThinkingConfig"
+  | "systemPrompt"
+  | "rawApiResponse"
+  | "anthropicRequestId"
+  | "modelName"
+  | "dataPackage"
   | "diagnostic"
   | "rawAiResponse";
 
@@ -23,6 +34,17 @@ export const COPY_SECTIONS: { id: CopySectionId; label: string }[] = [
   { id: "flow", label: "Flow" },
   { id: "catalyst", label: "Catalyst" },
   { id: "dataQuality", label: "Data Quality" },
+  { id: "modelInput", label: "Model Input" },
+  { id: "thinkingBlocks", label: "Thinking / Extended Reasoning" },
+  { id: "webSearchQueries", label: "Web Search Queries" },
+  { id: "webSearchResults", label: "Web Search Results" },
+  { id: "toolsAttached", label: "Tools Attached" },
+  { id: "extendedThinkingConfig", label: "Extended Thinking Config" },
+  { id: "systemPrompt", label: "System Prompt" },
+  { id: "rawApiResponse", label: "Raw API Response" },
+  { id: "anthropicRequestId", label: "Anthropic Request ID" },
+  { id: "modelName", label: "Model Name" },
+  { id: "dataPackage", label: "Data Package" },
   { id: "diagnostic", label: "Diagnostic" },
   { id: "rawAiResponse", label: "Raw AI Response" },
 ];
@@ -68,6 +90,16 @@ export interface StrategistTelemetryCopyRow {
   scannerSurfacedBy?: string | null;
   scannerFlowScore?: number | null;
   scannerUniverse?: string | null;
+  modelInput?: string | null;
+  systemPrompt?: string | null;
+  toolsAttached?: unknown;
+  extendedThinkingConfig?: unknown;
+  rawApiResponse?: unknown;
+  thinkingBlocks?: string | null;
+  webSearchQueries?: unknown;
+  webSearchResults?: unknown;
+  anthropicRequestId?: string | null;
+  modelName?: string | null;
 }
 
 export function parseDataPackageRecord(dataPackage: unknown): Record<string, unknown> | null {
@@ -100,6 +132,32 @@ function pickSummaryDataPackageSlice(dp: Record<string, unknown>): Record<string
     if (!DP_KEYS_OTHER_SECTIONS.has(k)) out[k] = dp[k];
   }
   return out;
+}
+
+function formatWebSearchQueriesForCopy(queries: unknown): string {
+  if (!Array.isArray(queries)) return "";
+  return queries
+    .map((item, i) => {
+      if (item != null && typeof item === "object" && "query" in (item as object)) {
+        const q = (item as { query?: unknown }).query;
+        return `${i + 1}. ${typeof q === "string" ? q : JSON.stringify(q)}`;
+      }
+      return `${i + 1}. ${JSON.stringify(item)}`;
+    })
+    .join("\n");
+}
+
+function formatWebSearchResultsForCopy(results: unknown): string {
+  if (!Array.isArray(results)) return "";
+  return results
+    .map((item, i) => {
+      if (item != null && typeof item === "object") {
+        const r = item as { tool_use_id?: unknown; content?: unknown };
+        return `${i + 1}. tool_use_id=${r.tool_use_id != null ? String(r.tool_use_id) : ""}\n${JSON.stringify(r.content, null, 2)}`;
+      }
+      return `${i + 1}. ${JSON.stringify(item)}`;
+    })
+    .join("\n\n");
 }
 
 export function buildSectionedCopyPayload(
@@ -160,6 +218,51 @@ export function buildSectionedCopyPayload(
 
   if (selected.has("dataQuality")) {
     out.dataQuality = dp ? pickDp(dp, DP_KEYS_DATA_QUALITY as unknown as string[]) : {};
+  }
+
+  if (selected.has("modelInput")) {
+    out.modelInput = row.modelInput ?? "";
+  }
+
+  if (selected.has("thinkingBlocks")) {
+    out.thinkingBlocks = row.thinkingBlocks ?? "";
+  }
+
+  if (selected.has("webSearchQueries")) {
+    out.webSearchQueries = formatWebSearchQueriesForCopy(row.webSearchQueries);
+  }
+
+  if (selected.has("webSearchResults")) {
+    out.webSearchResults = formatWebSearchResultsForCopy(row.webSearchResults);
+  }
+
+  if (selected.has("toolsAttached")) {
+    out.toolsAttached = row.toolsAttached != null ? JSON.stringify(row.toolsAttached, null, 2) : "";
+  }
+
+  if (selected.has("extendedThinkingConfig")) {
+    out.extendedThinkingConfig =
+      row.extendedThinkingConfig != null ? JSON.stringify(row.extendedThinkingConfig, null, 2) : "";
+  }
+
+  if (selected.has("systemPrompt")) {
+    out.systemPrompt = row.systemPrompt ?? "";
+  }
+
+  if (selected.has("rawApiResponse")) {
+    out.rawApiResponse = row.rawApiResponse != null ? JSON.stringify(row.rawApiResponse, null, 2) : "";
+  }
+
+  if (selected.has("anthropicRequestId")) {
+    out.anthropicRequestId = row.anthropicRequestId ?? "";
+  }
+
+  if (selected.has("modelName")) {
+    out.modelName = row.modelName ?? "";
+  }
+
+  if (selected.has("dataPackage")) {
+    out.dataPackage = row.dataPackage != null ? JSON.stringify(parseDataPackageRecord(row.dataPackage) ?? row.dataPackage, null, 2) : "";
   }
 
   if (selected.has("diagnostic")) {

@@ -21,6 +21,7 @@ import { db, strategistTelemetryTable, scannerTelemetryTable, strategistHistoryT
 import { getScannerStrategistCorrelation } from "../lib/scannerCorrelation.js";
 import { desc, eq, sql, lte, and } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { trimStrategistTelemetryRowForListResponse } from "../lib/strategistTelemetryListResponse.js";
 import {
   ensureIvrCoverage,
   getIvrBackfillJob,
@@ -1090,6 +1091,29 @@ router.post("/settings/reset", async (_req, res) => {
   }
 });
 
+router.get("/telemetry/strategist/row/:id", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      res.status(400).json({ error: "invalid id" });
+      return;
+    }
+    const [row] = await db
+      .select()
+      .from(strategistTelemetryTable)
+      .where(eq(strategistTelemetryTable.id, id))
+      .limit(1);
+    if (!row) {
+      res.status(404).json({ error: "Telemetry row not found" });
+      return;
+    }
+    res.json(row);
+  } catch (err) {
+    logger.error({ err }, "StrategistV2: telemetry row lookup failed");
+    res.status(500).json({ error: "Failed to fetch telemetry row" });
+  }
+});
+
 router.get("/telemetry/strategist/request/:requestId", async (req, res) => {
   try {
     const requestId = String(req.params.requestId ?? "").trim();
@@ -1125,7 +1149,7 @@ router.get("/telemetry/strategist", async (req, res) => {
       : await db.select().from(strategistTelemetryTable)
           .orderBy(desc(strategistTelemetryTable.timestamp)).limit(limit);
 
-    res.json(rows);
+    res.json(rows.map((r) => trimStrategistTelemetryRowForListResponse(r as Record<string, unknown>)));
   } catch (err) {
     logger.error({ err }, "StrategistV2: telemetry fetch failed");
     res.status(500).json({ error: "Failed to fetch telemetry" });

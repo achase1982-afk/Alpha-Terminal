@@ -4623,6 +4623,17 @@ interface TelemetryExtras {
   runOutcomeOverride?: StrategistRunOutcomeTelemetry;
   error?: { message: string; stack?: string } | null;
   fullDiagnostic?: Record<string, unknown> | null;
+  /** Conviction Desk Anthropic audit (top-level telemetry columns). */
+  modelInput?: string | null;
+  systemPrompt?: string | null;
+  toolsAttached?: unknown;
+  extendedThinkingConfig?: unknown;
+  rawApiResponse?: unknown;
+  thinkingBlocks?: string | null;
+  webSearchQueries?: unknown;
+  webSearchResults?: unknown;
+  anthropicRequestId?: string | null;
+  modelName?: string | null;
 }
 
 async function emitFullDiagnosticTelemetry(args: {
@@ -4638,9 +4649,28 @@ async function emitFullDiagnosticTelemetry(args: {
   extras: TelemetryExtras;
 }): Promise<number | null> {
   const ctx = getStrategistRunContext();
-  const ed = args.extras.deskResult;
+  const rawDesk = args.extras.deskResult;
+  const anthropicConvictionAudit =
+    rawDesk?.mode === "conviction_desk" ? rawDesk.convictionDeskAudit ?? null : null;
+  const ed = rawDesk;
   const deskForTelemetry = ed ? (stripConvictionDiagnosticsFromDeskResult(ed) ?? ed) : ed;
   const extrasEff: TelemetryExtras = { ...args.extras, deskResult: deskForTelemetry };
+  const auditColumns =
+    anthropicConvictionAudit != null
+      ? {
+          modelInput: anthropicConvictionAudit.modelInput,
+          systemPrompt: anthropicConvictionAudit.systemPrompt,
+          toolsAttached: anthropicConvictionAudit.toolsAttached,
+          extendedThinkingConfig: anthropicConvictionAudit.extendedThinkingConfig,
+          rawApiResponse: anthropicConvictionAudit.rawApiResponse,
+          thinkingBlocks: anthropicConvictionAudit.thinkingBlocks,
+          webSearchQueries: anthropicConvictionAudit.webSearchQueries,
+          webSearchResults: anthropicConvictionAudit.webSearchResults,
+          anthropicRequestId: anthropicConvictionAudit.anthropicRequestId,
+          modelName: anthropicConvictionAudit.modelName,
+        }
+      : {};
+  const extrasForInsert: TelemetryExtras = { ...extrasEff, ...auditColumns };
   const dataPkgStr =
     typeof extrasEff.dataPackage === "string"
       ? extrasEff.dataPackage
@@ -4696,7 +4726,7 @@ async function emitFullDiagnosticTelemetry(args: {
     polygonTrace,
     runOutcome: outcome,
     runDurationMs: durationMs,
-    error: extrasEff.error ?? null,
+    error: extrasForInsert.error ?? null,
     closingImbalancePresent: ctx?.diag.closingImbalancePresent,
     closingImbalanceLatencyMs: ctx?.diag.closingImbalanceLatencyMs ?? null,
     nasdaqDepthPresent: ctx?.diag.nasdaqDepthPresent ?? null,
@@ -4714,6 +4744,7 @@ async function emitFullDiagnosticTelemetry(args: {
     cboeOnePoolCapacity: ctx?.diag.cboeOnePoolCapacity ?? null,
     cboeOneWasColdStart: ctx?.diag.cboeOneWasColdStart ?? null,
     convictionDeskAnthropicTelemetry: ctx?.diag.convictionDeskAnthropicTelemetry,
+    anthropicConvictionAudit,
   });
   return logTelemetry(
     args.ticker,
@@ -4725,7 +4756,7 @@ async function emitFullDiagnosticTelemetry(args: {
     args.toxicCheck,
     args.aiDecision,
     args.thesis,
-    { ...extrasEff, fullDiagnostic },
+    { ...extrasForInsert, fullDiagnostic },
   );
 }
 
@@ -4824,6 +4855,16 @@ async function logTelemetry(
       dataSource: extras.dataSource ?? null,
       fetchFailureMode: extras.fetchFailureMode ?? null,
       fullDiagnostic: extras.fullDiagnostic ?? null,
+      modelInput: extras.modelInput ?? null,
+      systemPrompt: extras.systemPrompt ?? null,
+      toolsAttached: extras.toolsAttached ?? null,
+      extendedThinkingConfig: extras.extendedThinkingConfig ?? null,
+      rawApiResponse: extras.rawApiResponse ?? null,
+      thinkingBlocks: extras.thinkingBlocks ?? null,
+      webSearchQueries: extras.webSearchQueries ?? null,
+      webSearchResults: extras.webSearchResults ?? null,
+      anthropicRequestId: extras.anthropicRequestId ?? null,
+      modelName: extras.modelName ?? null,
       ...(() => {
         const sc = getStrategistRunContext()?.scannerContext;
         if (!sc) {

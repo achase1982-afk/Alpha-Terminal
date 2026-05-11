@@ -4,6 +4,7 @@ import type { TapeBackfillStatus } from "./strategistTapeBackfill.js";
 import type { StrategistConfig } from "./strategistSettings.js";
 import type { PolygonApiCallRecord } from "./polygonApiTrace.js";
 import type { ConvictionDeskResult, DeskResult } from "./strategistDeskSchemas.js";
+import type { AnthropicConvictionDeskAuditSnapshot } from "./aiLabAnalystClient.js";
 
 /** Maps numeric strategist mode to stable string labels for diagnostics. */
 export function strategistModeLabel(mode: number): string {
@@ -114,6 +115,10 @@ export interface ModelCallAttributionRow {
   outputTokens: number | null;
   retryAttempts: number;
   extendedThinkingEnabled: boolean;
+  /** Populated for Conviction Desk Anthropic audit when extended thinking is configured. */
+  extendedThinkingBudgetTokens?: number | null;
+  /** Actual model id sent to the provider when it differs from the slot label. */
+  modelName?: string | null;
   estimatedCostUsd: number | null;
 }
 
@@ -203,6 +208,8 @@ export interface BuildFullDiagnosticArgs {
   cboeOneWasColdStart?: boolean | null;
   /** Anthropic Conviction Desk attempts: cache tokens + web_search tool_use counts (telemetry). */
   convictionDeskAnthropicTelemetry?: Array<Record<string, unknown>>;
+  /** Last Anthropic Conviction Desk request/response audit (mirrors strategist_telemetry columns). */
+  anthropicConvictionAudit?: AnthropicConvictionDeskAuditSnapshot | null;
 }
 
 export function buildStrategistFullDiagnosticJson(args: BuildFullDiagnosticArgs): Record<string, unknown> {
@@ -246,6 +253,31 @@ export function buildStrategistFullDiagnosticJson(args: BuildFullDiagnosticArgs)
   };
   const tapeDiag = buildTapeBackfillDiagnostic(args.tapeBackfillStatus);
 
+  const audit = args.anthropicConvictionAudit;
+  const extCfg = audit?.extendedThinkingConfig as { type?: string; budget_tokens?: number } | null | undefined;
+  const baseModelAttr = args.modelAttribution as {
+    mode?: string;
+    calls?: ModelCallAttributionRow[];
+    note?: string;
+  };
+  const mergedCalls = Array.isArray(baseModelAttr.calls)
+    ? baseModelAttr.calls.map((call) => ({
+        ...call,
+        extendedThinkingEnabled: extCfg?.type === "enabled",
+        extendedThinkingBudgetTokens: extCfg?.budget_tokens ?? null,
+        modelName: audit?.modelName ?? call.providerModel,
+      }))
+    : baseModelAttr.calls;
+
+  const modelAttribution = {
+    ...baseModelAttr,
+    calls: mergedCalls,
+    note:
+      audit != null
+        ? "Conviction Desk Anthropic: usage and cache fields are populated from the SDK final message when available."
+        : baseModelAttr.note,
+  };
+
   return {
     runMetadata: {
       ...args.runMetadata,
@@ -254,7 +286,7 @@ export function buildStrategistFullDiagnosticJson(args: BuildFullDiagnosticArgs)
     strategistPayload: args.strategistPayload,
     tapeBackfillStatus: tapeDiag,
     dataQualitySummary,
-    modelAttribution: args.modelAttribution,
+    modelAttribution,
     upstreamApiTrace: {
       polygon: args.polygonTrace,
     },
@@ -262,6 +294,20 @@ export function buildStrategistFullDiagnosticJson(args: BuildFullDiagnosticArgs)
     runOutcome: args.runOutcome,
     runDurationMs: args.runDurationMs,
     error: args.error,
+    ...(audit
+      ? {
+          modelInput: audit.modelInput,
+          systemPrompt: audit.systemPrompt,
+          toolsAttached: audit.toolsAttached,
+          extendedThinkingConfig: audit.extendedThinkingConfig,
+          rawApiResponse: audit.rawApiResponse,
+          thinkingBlocks: audit.thinkingBlocks,
+          webSearchQueries: audit.webSearchQueries,
+          webSearchResults: audit.webSearchResults,
+          anthropicRequestId: audit.anthropicRequestId,
+          modelName: audit.modelName,
+        }
+      : {}),
     ...(args.convictionDeskAnthropicTelemetry != null && args.convictionDeskAnthropicTelemetry.length > 0
       ? { convictionDeskAnthropicTelemetry: args.convictionDeskAnthropicTelemetry }
       : {}),

@@ -90,6 +90,17 @@ exports[`buildSectionedCopyPayload > matches snapshot when all sections selected
       "q": 1
     }
   },
+  "modelInput": "",
+  "thinkingBlocks": "",
+  "webSearchQueries": "",
+  "webSearchResults": "",
+  "toolsAttached": "",
+  "extendedThinkingConfig": "",
+  "systemPrompt": "",
+  "rawApiResponse": "",
+  "anthropicRequestId": "",
+  "modelName": "",
+  "dataPackage": "{\\n  \\"strategistPayload\\": {\\n    \\"sp\\": true\\n  },\\n  \\"optionsChainSummary\\": {\\n    \\"o\\": 1\\n  },\\n  \\"curatedExpirations\\": [\\n    \\"a\\"\\n  ],\\n  \\"polygonFlowHighlights\\": {\\n    \\"f\\": 1\\n  },\\n  \\"catalyst\\": {\\n    \\"c\\": 1\\n  },\\n  \\"dataQualitySummary\\": {\\n    \\"q\\": 1\\n  },\\n  \\"catalystEvaluation\\": {\\n    \\"ce\\": 1\\n  },\\n  \\"extraSummaryField\\": \\"keep\\"\\n}",
   "diagnostic": {
     "d": 4
   },

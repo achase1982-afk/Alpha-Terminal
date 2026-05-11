@@ -895,6 +895,20 @@ export function createEmptyEnvelope(provider: WebSearchEnvelopeProvider, modelId
   };
 }
 
+/** Conviction Desk Anthropic audit row + telemetry columns (JSON-serializable). */
+export interface AnthropicConvictionDeskAuditSnapshot {
+  modelInput: string;
+  systemPrompt: string;
+  toolsAttached: unknown;
+  extendedThinkingConfig: unknown;
+  modelName: string;
+  rawApiResponse: unknown;
+  thinkingBlocks: string | null;
+  webSearchQueries: Array<{ query?: string; server_tool_use_id?: string }>;
+  webSearchResults: Array<{ tool_use_id?: string; content?: unknown }>;
+  anthropicRequestId: string | null;
+}
+
 export interface WebSearchResult {
   text: string;
   trace: WebSearchTrace;
@@ -906,6 +920,8 @@ export interface WebSearchResult {
   sdkCallParams?: Record<string, unknown>;
   /** Anthropic Conviction Desk: count of server web_search tool invocations in the final message. */
   anthropicWebSearchToolUseCount?: number;
+  /** Anthropic Conviction Desk only: full request/response audit for strategist_telemetry. */
+  convictionDeskAudit?: AnthropicConvictionDeskAuditSnapshot;
 }
 
 /** Deep-clone SDK params for strategist diagnostics (JSON round-trip). */
@@ -1270,9 +1286,61 @@ function countAnthropicWebSearchServerToolUses(content: unknown): number {
   return n;
 }
 
+/** Anthropic Messages API model id enforced for Conviction Desk audit trail. */
+export const CONVICTION_DESK_ANTHROPIC_MODEL = "claude-opus-4-7";
+
+const CONVICTION_DESK_THINKING: { type: "enabled"; budget_tokens: number } = {
+  type: "enabled",
+  budget_tokens: 10_000,
+};
+
+function extractThinkingBlocksForAudit(content: unknown): string | null {
+  const blocks = asAnthropicContentBlocks(content);
+  const parts: string[] = [];
+  for (const block of blocks) {
+    const t = block.type as string | undefined;
+    if (t === "thinking") {
+      const text = (block as { thinking?: string }).thinking;
+      if (typeof text === "string" && text.length > 0) parts.push(text);
+    } else if (t === "redacted_thinking") {
+      parts.push("[redacted thinking block]");
+    }
+  }
+  return parts.length > 0 ? parts.join("\n\n") : null;
+}
+
+function extractWebSearchQueriesFromContent(content: unknown): Array<{ query?: string; server_tool_use_id?: string }> {
+  const blocks = asAnthropicContentBlocks(content);
+  const out: Array<{ query?: string; server_tool_use_id?: string }> = [];
+  for (const block of blocks) {
+    if ((block.type as string | undefined) !== "server_tool_use") continue;
+    const name = (block as { name?: string }).name;
+    if (name !== "web_search") continue;
+    const inp = (block as { input?: Record<string, unknown> }).input;
+    const q = inp?.query;
+    const id = (block as { id?: string }).id;
+    out.push({
+      query: typeof q === "string" ? q : undefined,
+      server_tool_use_id: typeof id === "string" ? id : undefined,
+    });
+  }
+  return out;
+}
+
+function extractWebSearchResultsFromContent(content: unknown): Array<{ tool_use_id?: string; content?: unknown }> {
+  const blocks = asAnthropicContentBlocks(content);
+  const out: Array<{ tool_use_id?: string; content?: unknown }> = [];
+  for (const block of blocks) {
+    if ((block.type as string | undefined) !== "web_search_tool_result") continue;
+    const b = block as { tool_use_id?: string; content?: unknown };
+    out.push({ tool_use_id: b.tool_use_id, content: jsonCloneForDiagnostics(b.content) });
+  }
+  return out;
+}
+
 /** Conviction Desk Anthropic path: supports multi-block cached user prefix and multi-turn validation retries. */
 export async function streamCallAnthropicConvictionDesk(
-  model: string,
+  _modelSlot: string,
   systemPrompt: string,
   messages: Anthropic.MessageParam[],
   onDelta: (text: string) => void,
@@ -1284,23 +1352,23 @@ export async function streamCallAnthropicConvictionDesk(
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
   const client = new Anthropic({ apiKey, timeout: 20 * 60 * 1000 });
 
-  const thinking = anthropicThinkingForMessagesApi(model);
-  const THINKING_BUDGET = ANTHROPIC_EXTENDED_THINKING_BUDGET;
-  const computedMax = thinking ? (thinking.type === "adaptive" ? 16384 : THINKING_BUDGET + 12288) : 12288;
-  const max_tokens =
-    options?.maxTokens != null ? Math.max(computedMax, options.maxTokens) : computedMax;
+  const modelNameEffective = CONVICTION_DESK_ANTHROPIC_MODEL;
+  const extendedThinkingConfig = CONVICTION_DESK_THINKING;
+  const toolsAttached = [ANTHROPIC_WEB_SEARCH_TOOL];
+  const modelInput = JSON.stringify(messages, null, 2);
+  const THINKING_BUDGET = extendedThinkingConfig.budget_tokens;
+  const computedMax = THINKING_BUDGET + 12288;
+  const max_tokens = options?.maxTokens != null ? Math.max(computedMax, options.maxTokens) : computedMax;
   const params: AnthropicMessageStreamParamsWithWebSearch = {
-    model,
+    model: modelNameEffective,
     max_tokens,
     system: systemPrompt,
     messages,
-    tools: [ANTHROPIC_WEB_SEARCH_TOOL],
+    tools: toolsAttached,
     stream: true,
+    thinking: extendedThinkingConfig as Anthropic.MessageCreateParamsStreaming["thinking"],
+    temperature: 1,
   };
-  if (thinking) {
-    params.thinking = thinking as Anthropic.MessageCreateParamsStreaming["thinking"];
-    if (thinking.type === "enabled") params.temperature = 1;
-  }
 
   const sdkCallParams = sdkDiagnosticsPayload(
     "anthropic.messages.stream.conviction_desk",
@@ -1363,15 +1431,16 @@ export async function streamCallAnthropicConvictionDesk(
     }
   }
 
-  let envelope = createEmptyEnvelope("anthropic", model);
+  let envelope = createEmptyEnvelope("anthropic", modelNameEffective);
   let anthropicWebSearchToolUseCount = 0;
+  let convictionDeskAudit: AnthropicConvictionDeskAuditSnapshot | undefined;
 
   try {
     const finalMessage = await stream.finalMessage();
     anthropicWebSearchToolUseCount = countAnthropicWebSearchServerToolUses(finalMessage.content);
     envelope = {
       provider: "anthropic",
-      modelId: model,
+      modelId: modelNameEffective,
       stopReason: finalMessage.stop_reason != null ? String(finalMessage.stop_reason) : null,
       usage: anthropicUsageFromSdk(finalMessage.usage),
       reasoningText: anthropicThinkingTextFromContent(finalMessage.content),
@@ -1400,6 +1469,19 @@ export async function streamCallAnthropicConvictionDesk(
         }
       }
     }
+
+    convictionDeskAudit = {
+      modelInput,
+      systemPrompt: systemPrompt,
+      toolsAttached: jsonCloneForDiagnostics(toolsAttached),
+      extendedThinkingConfig: jsonCloneForDiagnostics(extendedThinkingConfig),
+      modelName: modelNameEffective,
+      rawApiResponse: jsonCloneForDiagnostics(finalMessage.content),
+      thinkingBlocks: extractThinkingBlocksForAudit(finalMessage.content),
+      webSearchQueries: extractWebSearchQueriesFromContent(finalMessage.content),
+      webSearchResults: extractWebSearchResultsFromContent(finalMessage.content),
+      anthropicRequestId: finalMessage.id != null ? String(finalMessage.id) : null,
+    };
   } catch {
     /* ignore */
   }
@@ -1417,6 +1499,7 @@ export async function streamCallAnthropicConvictionDesk(
     envelope,
     sdkCallParams,
     anthropicWebSearchToolUseCount,
+    convictionDeskAudit,
   };
 }
 
