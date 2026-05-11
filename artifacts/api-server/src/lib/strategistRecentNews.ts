@@ -197,9 +197,9 @@ export async function getRecentNewsForTicker(
 
     const settled = await Promise.allSettled([
       fetchEdgarFilings(symbol, log, signal),
-      polygonKey ? fetchPolygonNews(symbol, polygonKey, log, signal) : Promise.resolve([] as NormalizedArticle[]),
-      vendorPrimaryKey ? fetchVendorPrimaryNews(symbol, vendorPrimaryKey, log, signal) : Promise.resolve([] as NormalizedArticle[]),
-      finnhubKey ? fetchFinnhubNews(symbol, finnhubKey, log, signal) : Promise.resolve([] as NormalizedArticle[]),
+      polygonKey ? fetchPolygonNews(symbol, polygonKey, log, signal, true) : Promise.resolve([] as NormalizedArticle[]),
+      vendorPrimaryKey ? fetchVendorPrimaryNews(symbol, vendorPrimaryKey, log, signal, true) : Promise.resolve([] as NormalizedArticle[]),
+      finnhubKey ? fetchFinnhubNews(symbol, finnhubKey, log, signal, true) : Promise.resolve([] as NormalizedArticle[]),
     ]);
 
     const secFilings: EdgarFiling[] = settled[0].status === "fulfilled" ? settled[0].value : [];

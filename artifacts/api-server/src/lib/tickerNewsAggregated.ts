@@ -94,6 +94,7 @@ export async function fetchPolygonNews(
   apiKey: string,
   log: { warn: (o: unknown, m?: string) => void; info: (o: unknown, m?: string) => void },
   signal?: AbortSignal,
+  rejectOnFetchError = false,
 ): Promise<NormalizedArticle[]> {
   const polygonTicker = polygonNewsTicker(symbol);
   const tickerParam = polygonTicker ? `&ticker=${encodeURIComponent(polygonTicker)}` : "";
@@ -104,6 +105,9 @@ export async function fetchPolygonNews(
 
     if (!response.ok) {
       log.warn({ status: response.status, symbol }, "Polygon news API error");
+      if (rejectOnFetchError) {
+        throw new Error(`Polygon news API error: ${response.status}`);
+      }
       return [];
     }
 
@@ -136,6 +140,9 @@ export async function fetchPolygonNews(
       related: polygonTicker || symbol,
     }));
   } catch (err) {
+    if (rejectOnFetchError) {
+      throw err;
+    }
     log.warn({ err, symbol }, "Polygon news fetch failed");
     return [];
   }
@@ -164,6 +171,7 @@ export async function fetchVendorPrimaryNews(
   apiKey: string,
   log: { warn: (o: unknown, m?: string) => void; info: (o: unknown, m?: string) => void },
   signal?: AbortSignal,
+  rejectOnFetchError = false,
 ): Promise<NormalizedArticle[]> {
   const ticker = vendorPrimaryTicker(symbol);
   const url =
@@ -177,6 +185,9 @@ export async function fetchVendorPrimaryNews(
 
     if (!response.ok) {
       log.warn({ status: response.status, symbol }, "Vendor news API error");
+      if (rejectOnFetchError) {
+        throw new Error(`Vendor news API error: ${response.status}`);
+      }
       return [];
     }
 
@@ -206,6 +217,9 @@ export async function fetchVendorPrimaryNews(
       related: ticker,
     }));
   } catch (err) {
+    if (rejectOnFetchError) {
+      throw err;
+    }
     log.warn({ err, symbol }, "Vendor news fetch failed");
     return [];
   }
@@ -216,6 +230,7 @@ export async function fetchFinnhubNews(
   apiKey: string,
   log: { warn: (o: unknown, m?: string) => void; info: (o: unknown, m?: string) => void },
   signal?: AbortSignal,
+  rejectOnFetchError = false,
 ): Promise<NormalizedArticle[]> {
   const now = new Date();
   const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -228,6 +243,9 @@ export async function fetchFinnhubNews(
 
     if (!response.ok) {
       log.warn({ status: response.status, symbol: cleanSymbol }, "Finnhub news API error");
+      if (rejectOnFetchError) {
+        throw new Error(`Finnhub news API error: ${response.status}`);
+      }
       return [];
     }
 
@@ -252,6 +270,9 @@ export async function fetchFinnhubNews(
     }
     return articles;
   } catch (err) {
+    if (rejectOnFetchError) {
+      throw err;
+    }
     log.warn({ err, symbol: cleanSymbol }, "Finnhub news fetch failed");
     return [];
   }
