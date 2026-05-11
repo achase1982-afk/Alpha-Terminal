@@ -1,71 +1,133 @@
-import { db, sql } from "@workspace/db";
+import { pool } from "@workspace/db";
 import { logger } from "./logger.js";
 
 /**
  * Best-effort schema alignment for strategist telemetry audit columns (0032 + 0033),
  * so reads/writes work without a manual migrate when the DB user can ALTER the table.
  *
- * Drizzle creates tables in **public** by default. Using `current_schema()` can mismatch
- * (first entry on search_path ≠ public) so column existence checks skip renames and ALTER
- * then fails with 42704 / odd DDL errors. Always qualify **public.strategist_telemetry**.
+ * Resolves the physical schema via `pg_catalog` (Drizzle default is `public`, but
+ * search_path / hosting can differ). Runs DDL with `pool.query` so dollar-quoted
+ * `DO $$` blocks are not altered by the Drizzle SQL layer.
  */
-const STRATEGIST_TELEMETRY_AUDIT_RENAME_SQL = [
-  `DO $$
+
+let strategistTelemetryTableLocation:
+  | { schema: string; fqn: string }
+  | null /** not found */
+  | undefined /** not resolved yet */
+  = undefined;
+
+function quoteIdent(ident: string): string {
+  return `"${ident.replace(/"/g, '""')}"`;
+}
+
+/** Resolve `"schema"."strategist_telemetry"` for ALTER / information_schema filters. */
+export async function resolveStrategistTelemetryPhysicalTable(): Promise<{
+  schema: string;
+  fqn: string;
+} | null> {
+  if (strategistTelemetryTableLocation !== undefined) {
+    return strategistTelemetryTableLocation;
+  }
+  try {
+    const r = await pool.query<{ nspname: string }>(`
+      SELECT n.nspname
+      FROM pg_catalog.pg_class c
+      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+      WHERE c.relname = 'strategist_telemetry'
+        AND c.relkind IN ('r', 'p')
+        AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+      ORDER BY CASE WHEN n.nspname = 'public' THEN 0 ELSE 1 END, n.nspname
+      LIMIT 1
+    `);
+    if (r.rows.length === 0) {
+      strategistTelemetryTableLocation = null;
+      logger.warn("strategist_telemetry: no relation named strategist_telemetry in pg_catalog (skip audit DDL)");
+      return null;
+    }
+    const schema = r.rows[0].nspname;
+    if (typeof schema !== "string" || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(schema)) {
+      strategistTelemetryTableLocation = null;
+      logger.warn({ schema }, "strategist_telemetry: unexpected schema name from pg_catalog (skip audit DDL)");
+      return null;
+    }
+    strategistTelemetryTableLocation = {
+      schema,
+      fqn: `${quoteIdent(schema)}.${quoteIdent("strategist_telemetry")}`,
+    };
+    return strategistTelemetryTableLocation;
+  } catch (err) {
+    logger.warn({ err }, "strategist_telemetry: pg_catalog lookup failed");
+    strategistTelemetryTableLocation = null;
+    return null;
+  }
+}
+
+function buildAuditRenameAndAlterStatements(loc: { schema: string; fqn: string }): readonly string[] {
+  const escSchema = loc.schema.replace(/'/g, "''");
+  const { fqn } = loc;
+  const q = (c: string) => quoteIdent(c);
+  return [
+    `DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'strategist_telemetry' AND column_name = 'anthropic_request_id'
+    WHERE table_schema = '${escSchema}' AND table_name = 'strategist_telemetry' AND column_name = 'anthropic_request_id'
   ) AND NOT EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'strategist_telemetry' AND column_name = 'provider_request_id'
+    WHERE table_schema = '${escSchema}' AND table_name = 'strategist_telemetry' AND column_name = 'provider_request_id'
   ) THEN
-    ALTER TABLE public.strategist_telemetry RENAME COLUMN anthropic_request_id TO provider_request_id;
+    ALTER TABLE ${fqn} RENAME COLUMN anthropic_request_id TO provider_request_id;
   END IF;
 END $$`,
-  `DO $$
+    `DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'strategist_telemetry' AND column_name = 'extended_thinking_config'
+    WHERE table_schema = '${escSchema}' AND table_name = 'strategist_telemetry' AND column_name = 'extended_thinking_config'
   ) AND NOT EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'strategist_telemetry' AND column_name = 'thinking_config'
+    WHERE table_schema = '${escSchema}' AND table_name = 'strategist_telemetry' AND column_name = 'thinking_config'
   ) THEN
-    ALTER TABLE public.strategist_telemetry RENAME COLUMN extended_thinking_config TO thinking_config;
+    ALTER TABLE ${fqn} RENAME COLUMN extended_thinking_config TO thinking_config;
   END IF;
 END $$`,
-];
+    `ALTER TABLE ${fqn} ADD COLUMN IF NOT EXISTS ${q("provider")} text`,
+    `ALTER TABLE ${fqn} ADD COLUMN IF NOT EXISTS ${q("model_input")} text`,
+    `ALTER TABLE ${fqn} ADD COLUMN IF NOT EXISTS ${q("system_prompt")} text`,
+    `ALTER TABLE ${fqn} ADD COLUMN IF NOT EXISTS ${q("tools_attached")} jsonb`,
+    `ALTER TABLE ${fqn} ADD COLUMN IF NOT EXISTS ${q("thinking_config")} jsonb`,
+    `ALTER TABLE ${fqn} ADD COLUMN IF NOT EXISTS ${q("raw_api_response")} jsonb`,
+    `ALTER TABLE ${fqn} ADD COLUMN IF NOT EXISTS ${q("thinking_blocks")} text`,
+    `ALTER TABLE ${fqn} ADD COLUMN IF NOT EXISTS ${q("web_search_queries")} jsonb`,
+    `ALTER TABLE ${fqn} ADD COLUMN IF NOT EXISTS ${q("web_search_results")} jsonb`,
+    `ALTER TABLE ${fqn} ADD COLUMN IF NOT EXISTS ${q("provider_request_id")} text`,
+    `ALTER TABLE ${fqn} ADD COLUMN IF NOT EXISTS ${q("model_name")} text`,
+  ];
+}
 
-const STRATEGIST_TELEMETRY_AUDIT_COLUMN_ALTER_SQL: readonly string[] = [
-  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS provider text`,
-  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS model_input text`,
-  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS system_prompt text`,
-  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS tools_attached jsonb`,
-  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS thinking_config jsonb`,
-  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS raw_api_response jsonb`,
-  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS thinking_blocks text`,
-  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS web_search_queries jsonb`,
-  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS web_search_results jsonb`,
-  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS provider_request_id text`,
-  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS model_name text`,
-];
-
-/** Applies renames + ADD IF NOT EXISTS (throws on DB error — for read-path retry). */
-export async function applyStrategistTelemetryAuditColumnMigrations(): Promise<void> {
-  for (const stmt of STRATEGIST_TELEMETRY_AUDIT_RENAME_SQL) {
-    await db.execute(sql.raw(stmt));
+/**
+ * Applies renames + ADD IF NOT EXISTS via `pool.query` (throws on DB error).
+ * @returns false when the table could not be located (caller should not mark primed).
+ */
+export async function applyStrategistTelemetryAuditColumnMigrations(): Promise<boolean> {
+  const loc = await resolveStrategistTelemetryPhysicalTable();
+  if (!loc) return false;
+  logger.info({ schema: loc.schema }, "strategist_telemetry: applying audit column DDL");
+  const stmts = buildAuditRenameAndAlterStatements(loc);
+  for (const stmt of stmts) {
+    await pool.query(stmt);
   }
-  for (const stmt of STRATEGIST_TELEMETRY_AUDIT_COLUMN_ALTER_SQL) {
-    await db.execute(sql.raw(stmt));
-  }
+  return true;
 }
 
 export async function ensureStrategistTelemetryAuditColumns(): Promise<void> {
   try {
-    await applyStrategistTelemetryAuditColumnMigrations();
-    logger.info(
-      "strategist_telemetry audit columns ensured at startup (0032/0033 self-heal; no manual migrate required for these columns)",
-    );
+    const ok = await applyStrategistTelemetryAuditColumnMigrations();
+    if (ok) {
+      logger.info(
+        "strategist_telemetry audit columns ensured at startup (0032/0033 self-heal; no manual migrate required for these columns)",
+      );
+    }
   } catch (err: unknown) {
     logger.warn(
       { err },
@@ -144,7 +206,14 @@ export async function withStrategistTelemetrySchemaHeal<T>(fn: () => Promise<T>)
       { err, pgCode: strategistTelemetryPostgresErrorCode(err) },
       "strategist_telemetry read failed (missing column); applying audit DDL then retrying once",
     );
-    await applyStrategistTelemetryAuditColumnMigrations();
+    try {
+      await applyStrategistTelemetryAuditColumnMigrations();
+    } catch (applyErr) {
+      logger.warn(
+        { applyErr, pgCode: strategistTelemetryPostgresErrorCode(applyErr) },
+        "strategist_telemetry: heal DDL attempt failed (retrying SELECT anyway)",
+      );
+    }
     return await fn();
   }
 }
@@ -169,8 +238,8 @@ export async function primeStrategistTelemetryReadSchema(): Promise<void> {
   }
   lastStrategistTelemetryPrimeAttemptMs = now;
   try {
-    await applyStrategistTelemetryAuditColumnMigrations();
-    strategistTelemetryReadSchemaPrimed = true;
+    const ok = await applyStrategistTelemetryAuditColumnMigrations();
+    if (ok) strategistTelemetryReadSchemaPrimed = true;
   } catch (err) {
     logger.warn({ err }, "strategist_telemetry: read-path schema prime failed (will retry)");
   }
