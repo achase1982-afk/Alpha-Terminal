@@ -12,11 +12,16 @@ function quoteIdent(ident: string): string {
  * Dynamic `INSERT` using only columns that exist in Postgres. Used when Drizzle
  * `insert()` fails (driver / SQL edge cases) while reads already work via `SELECT *`.
  */
-export async function insertStrategistTelemetryRowViaPool(values: Record<string, unknown>): Promise<number | null> {
+export async function insertStrategistTelemetryRowViaPool(
+  values: Record<string, unknown>,
+): Promise<number | null> {
   const loc = await resolveStrategistTelemetryPhysicalTable();
   const pgCols = await getStrategistTelemetryPgColumnSet();
   if (!loc || pgCols.size === 0) return null;
-  const filtered = filterStrategistTelemetryInsertForExistingColumns(values, pgCols);
+  const filtered = filterStrategistTelemetryInsertForExistingColumns(
+    values,
+    pgCols,
+  );
   if (!filtered.ticker || !filtered.result) return null;
 
   const colNames: string[] = [];
@@ -26,7 +31,7 @@ export async function insertStrategistTelemetryRowViaPool(values: Record<string,
     const snake = STRATEGIST_TELEMETRY_CAMEL_TO_SNAKE[camel];
     if (!snake || !pgCols.has(snake)) continue;
     colNames.push(quoteIdent(snake));
-    params.push(val);
+    params.push(Array.isArray(val) ? JSON.stringify(val) : val);
   }
   if (colNames.length === 0) return null;
   const placeholders = params.map((_, i) => `$${i + 1}`).join(", ");
