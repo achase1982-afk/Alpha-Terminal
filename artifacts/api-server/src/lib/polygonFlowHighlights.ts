@@ -593,7 +593,7 @@ function buildEodFallbackSessionTape(
     unknownPct: 100,
     printCount: 1,
   }));
-  const aggressorByStrike = aggressorByStrikeRaw.filter((a) => a.printCount >= 10);
+  const aggressorByStrike = aggressorByStrikeRaw;
 
   const totalPrints = withVol.length;
   const knownPct = 0;
