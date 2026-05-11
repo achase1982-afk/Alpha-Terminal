@@ -416,6 +416,7 @@ export function StrategistTelemetryPanel() {
   const [resultFilter, setResultFilter] = useState<string>("");
   const [ibkrTickLine, setIbkrTickLine] = useState<string | null>(null);
   const [copyDialogRow, setCopyDialogRow] = useState<TelemetryRow | null>(null);
+  const [strategistLoadErr, setStrategistLoadErr] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -425,7 +426,21 @@ export function StrategistTelemetryPanel() {
         fetchWithAuth("/api/strategist/telemetry/scanner?limit=20"),
         fetchWithAuth("/api/diagnostics/ibkr-tick-pilot/latest-summary"),
       ]);
-      if (sRes.ok) setStratRows(await sRes.json());
+      if (sRes.ok) {
+        setStrategistLoadErr(null);
+        setStratRows(await sRes.json());
+      } else {
+        let detail = `HTTP ${sRes.status}`;
+        try {
+          const j = (await sRes.json()) as { error?: string };
+          if (typeof j.error === "string" && j.error.trim()) detail = j.error.trim();
+        } catch {
+          /* ignore */
+        }
+        setStrategistLoadErr(detail);
+        setStratRows([]);
+        toast.error(`Strategist telemetry failed: ${detail}`);
+      }
       if (scRes.ok) setScanRows(await scRes.json());
       if (ibRes.ok) {
         const j = await ibRes.json();
@@ -450,8 +465,12 @@ export function StrategistTelemetryPanel() {
       } else {
         setIbkrTickLine("IBKR tick entitlement: Not tested — run from Settings.");
       }
-    } catch {
+    } catch (e) {
       setIbkrTickLine("IBKR tick entitlement: Not tested — run from Settings.");
+      const msg = e instanceof Error ? e.message : "Network error";
+      setStrategistLoadErr(msg);
+      setStratRows([]);
+      toast.error(`Strategist telemetry failed: ${msg}`);
     }
     setLoading(false);
   }, [tickerFilter]);
@@ -468,6 +487,16 @@ export function StrategistTelemetryPanel() {
       {ibkrTickLine && (
         <p className="font-mono text-[10px] text-zinc-500 border border-[#2A2A2C] rounded-md px-2 py-1.5 bg-[#0c0c0c]" role="status">
           {ibkrTickLine}
+        </p>
+      )}
+      {strategistLoadErr && (
+        <p
+          className="font-mono text-[11px] text-red-400 border border-red-900/60 rounded-md px-2 py-1.5 bg-red-950/40"
+          role="alert"
+        >
+          Could not load strategist trades: {strategistLoadErr}. If the app was just deployed, ensure the database
+          migration for strategist_telemetry ran (missing columns often cause HTTP 500). Check server logs for
+          &quot;telemetry fetch failed&quot;.
         </p>
       )}
       <div className="flex items-center justify-between">
