@@ -15,7 +15,9 @@ import { filterStrategistTelemetryInsertForExistingColumns } from "./strategistT
 import {
   applyStrategistTelemetryAuditColumnMigrations,
   strategistTelemetryPostgresErrorCode,
+  strategistTelemetryFlattenErrorMessage,
 } from "./ensureStrategistTelemetryAuditColumns.js";
+import { insertStrategistTelemetryRowViaPool } from "./strategistTelemetryPoolInsert.js";
 import { fetchPolygonTickerMarketCapUsd, logMarketCapPolygonFallback } from "./polygonTickerMarketCap.js";
 import { getBestAccessToken } from "./tokenStore.js";
 import { fetchPolygonChain } from "./polygonChain.js";
@@ -3895,6 +3897,9 @@ async function callAiForTradeViaDebate(
     ? `\n\n## RECENT UNUSUAL FLOW SNAPSHOT (just observed by user — incorporate into analysis)\n${progress.flowContext}\n`
     : "";
   const scanBlock = buildScannerContextPromptBlock(getStrategistRunContext()?.scannerContext ?? null);
+  // Same underlying JSON as Conviction Desk / Solo (`buildDataPackage` + `scannerContext` merged earlier).
+  // Debate additionally prepends `scanBlock` (Markdown scanner handoff) and appends optional `flowContextBlock`
+  // from Unusual Flow drill-down — Conviction uses the JSON only, with scanner also in `snapshotBlock` XML.
   const debateDataPackage = scanBlock + dataPackage + flowContextBlock;
 
   const outcome = await runDebate({
@@ -4932,28 +4937,53 @@ async function logTelemetry(
 
     try {
       const [row] = await insertRow(filtered);
-      return row?.id ?? null;
+      const id = row?.id ?? null;
+      if (id != null) {
+        logger.info({ ticker: values.ticker, telemetryId: id }, "StrategistV2: telemetry persisted");
+      }
+      return id;
     } catch (insertErr) {
-      if (strategistTelemetryPostgresErrorCode(insertErr) !== "42703") throw insertErr;
+      const pgCode = strategistTelemetryPostgresErrorCode(insertErr);
       logger.warn(
-        { insertErr },
-        "StrategistV2: telemetry insert hit undefined column (42703); running audit DDL and retrying once",
+        {
+          err: insertErr,
+          pgCode,
+          ticker: values.ticker,
+          flat: strategistTelemetryFlattenErrorMessage(insertErr),
+        },
+        "StrategistV2: Drizzle telemetry INSERT failed; attempting DDL heal + pool INSERT",
       );
-      try {
-        await applyStrategistTelemetryAuditColumnMigrations();
-      } catch (ddlErr) {
-        logger.warn({ ddlErr }, "StrategistV2: telemetry heal DDL failed before insert retry");
+      if (pgCode === "42703") {
+        try {
+          await applyStrategistTelemetryAuditColumnMigrations();
+        } catch (ddlErr) {
+          logger.warn({ ddlErr }, "StrategistV2: telemetry heal DDL after insert failure");
+        }
       }
       const pgCols2 = await getStrategistTelemetryPgColumnSet();
-      filtered = filterStrategistTelemetryInsertForExistingColumns(
+      const filtered2 = filterStrategistTelemetryInsertForExistingColumns(
         values as unknown as Record<string, unknown>,
         pgCols2,
       ) as StrategistTelemetryInsert;
-      const [row2] = await insertRow(filtered);
-      return row2?.id ?? null;
+      if (!filtered2.ticker || !filtered2.result) {
+        throw insertErr;
+      }
+      try {
+        const poolId = await insertStrategistTelemetryRowViaPool(filtered2 as unknown as Record<string, unknown>);
+        if (poolId != null) {
+          logger.info({ ticker: filtered2.ticker, telemetryId: poolId }, "StrategistV2: telemetry persisted (pool INSERT)");
+          return poolId;
+        }
+      } catch (poolErr) {
+        logger.error({ poolErr }, "StrategistV2: pool telemetry INSERT failed");
+      }
+      throw insertErr;
     }
   } catch (err) {
-    logger.error({ err }, "StrategistV2: telemetry logging failed");
+    logger.error(
+      { err, pgCode: strategistTelemetryPostgresErrorCode(err), ticker, flat: strategistTelemetryFlattenErrorMessage(err) },
+      "StrategistV2: telemetry logging failed",
+    );
     return null;
   }
 }
