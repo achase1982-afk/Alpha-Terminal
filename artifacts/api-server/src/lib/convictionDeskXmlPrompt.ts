@@ -3,6 +3,17 @@ import {
   CONVICTION_DESK_FINAL_SHAPE_GUARD,
 } from "./convictionDeskSoloSupersetPrompt.js";
 
+/** Prepended to catalyst_section_guidance in Conviction Desk static prefix (before per-topic catalyst instructions). */
+export const CONVICTION_DESK_RECENT_NEWS_XML = `<recent_news>
+recentNews in the data_package contains the trailing 7-day window of ticker-specific news items from the platform's own news pipeline. Each item has source (sec_edgar, yahoo, benzinga, etc.), publishedAt timestamp, title, summary when available, and filingType for SEC EDGAR items.
+
+These items are structurally part of the catalyst landscape. Before deciding catalyst.primary_catalyst, you MUST read recentNews.items. When any item in recentNews is plausibly driving current price action — clinical or regulatory update, EDGAR 8-K current report, partnership or product announcement, executive change, high-impact sell-side note in the body — that narrative IS the primary catalyst, regardless of what the structured earnings or macro calendar shows.
+
+If recentNews.fetchStatus is "error", treat the absence of news as an unknown, not as confirmed-empty, and note the gap in catalyst.read. If recentNews.fetchStatus is "ok" and items is empty, that absence is itself informative — confirms no current narrative driver is moving the name.
+
+Do not name news outlets, websites, vendors, or aggregators in any field of the output. The output_style rules still apply. You may reference what the item is about (the company's 8-K filing, an FDA action, a partnership announcement) without naming where the information was retrieved.
+</recent_news>`;
+
 export type ConvictionDeskPromptProvider = "anthropic" | "google" | "openai" | "xai";
 
 const CONVICTION_SHAPE_RULES_PLAIN = CONVICTION_DESK_FINAL_SHAPE_GUARD.replace(/^##[^\n]*\n?/gm, "")
