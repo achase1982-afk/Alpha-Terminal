@@ -935,6 +935,7 @@ export async function runConvictionDesk(args: {
   let text = "";
   let r: WebSearchResult | undefined;
   let lastFailed: Extract<ReturnType<typeof validateConvictionPipeline>, { ok: false }> | undefined;
+  let lastConvictionDeskAudit: ConvictionDeskResult["convictionDeskAudit"];
 
   for (let attemptNum = 1; attemptNum <= 3; attemptNum++) {
     const turnId = newTurnId();
@@ -966,6 +967,7 @@ export async function runConvictionDesk(args: {
           callbacks?.cancelSignal,
           { maxTokens: CONVICTION_DESK_MAX_OUTPUT_TOKENS },
         );
+        if (r.convictionDeskAudit) lastConvictionDeskAudit = r.convictionDeskAudit;
       } else {
         const streamPrompt =
           attemptNum === 1
@@ -1095,6 +1097,7 @@ export async function runConvictionDesk(args: {
           attempts,
           finalErrors: [`Conviction Desk stream failed (attempt ${attemptNum}): ${errPlain}`],
         },
+        ...(lastConvictionDeskAudit ? { convictionDeskAudit: lastConvictionDeskAudit } : {}),
       };
     }
   }
@@ -1137,6 +1140,7 @@ export async function runConvictionDesk(args: {
         attempts,
         finalErrors: errors,
       },
+      ...(lastConvictionDeskAudit ? { convictionDeskAudit: lastConvictionDeskAudit } : {}),
     };
   }
 
@@ -1174,5 +1178,6 @@ export async function runConvictionDesk(args: {
       finalErrors: [],
       ...(softWarnings.length > 0 ? { softValidationWarnings: softWarnings } : {}),
     },
+    ...(lastConvictionDeskAudit ? { convictionDeskAudit: lastConvictionDeskAudit } : {}),
   };
 }

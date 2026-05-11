@@ -1,0 +1,10 @@
+ALTER TABLE "strategist_telemetry" DROP COLUMN IF EXISTS "model_name";
+ALTER TABLE "strategist_telemetry" DROP COLUMN IF EXISTS "anthropic_request_id";
+ALTER TABLE "strategist_telemetry" DROP COLUMN IF EXISTS "web_search_results";
+ALTER TABLE "strategist_telemetry" DROP COLUMN IF EXISTS "web_search_queries";
+ALTER TABLE "strategist_telemetry" DROP COLUMN IF EXISTS "thinking_blocks";
+ALTER TABLE "strategist_telemetry" DROP COLUMN IF EXISTS "raw_api_response";
+ALTER TABLE "strategist_telemetry" DROP COLUMN IF EXISTS "extended_thinking_config";
+ALTER TABLE "strategist_telemetry" DROP COLUMN IF EXISTS "tools_attached";
+ALTER TABLE "strategist_telemetry" DROP COLUMN IF EXISTS "system_prompt";
+ALTER TABLE "strategist_telemetry" DROP COLUMN IF EXISTS "model_input";

@@ -42,6 +42,16 @@ interface TelemetryRow {
   scannerSurfacedBy?: string | null;
   scannerFlowScore?: number | null;
   scannerUniverse?: string | null;
+  modelInput?: string | null;
+  systemPrompt?: string | null;
+  toolsAttached?: unknown;
+  extendedThinkingConfig?: unknown;
+  rawApiResponse?: unknown;
+  thinkingBlocks?: string | null;
+  webSearchQueries?: unknown;
+  webSearchResults?: unknown;
+  anthropicRequestId?: string | null;
+  modelName?: string | null;
 }
 
 interface ScannerRow {
@@ -113,6 +123,40 @@ async function writeClipboard(text: string): Promise<boolean> {
     const ok = document.execCommand("copy");
     document.body.removeChild(ta);
     return ok;
+  } catch {
+    return false;
+  }
+}
+
+async function fetchFullTelemetryRow(id: number): Promise<TelemetryRow | null> {
+  try {
+    const res = await fetchWithAuth(`/api/strategist/telemetry/strategist/row/${id}`);
+    if (!res.ok) return null;
+    return (await res.json()) as TelemetryRow;
+  } catch {
+    return null;
+  }
+}
+
+function telemetryExportFilenamePart(raw: string): string {
+  const t = raw.replace(/[^a-zA-Z0-9._-]+/g, "_");
+  return t.length > 48 ? t.slice(0, 48) : t;
+}
+
+function downloadTelemetryJson(filename: string, payload: unknown): boolean {
+  try {
+    const text = JSON.stringify(payload, null, 2);
+    const blob = new Blob([text], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    return true;
   } catch {
     return false;
   }
@@ -192,12 +236,13 @@ function TelemetryCopySectionsDialog({
 
   const onCopySelected = useCallback(async () => {
     if (!row) return;
+    const full = (await fetchFullTelemetryRow(row.id)) ?? row;
     const ids = COPY_SECTIONS.filter((s) => checked[s.id]).map((s) => s.id);
     if (ids.length === 0) {
       toast.message("Select at least one section");
       return;
     }
-    const payload = buildSectionedCopyPayload(row, new Set(ids));
+    const payload = buildSectionedCopyPayload(full, new Set(ids));
     const text = JSON.stringify(payload, null, 2);
     const ok = await writeClipboard(text);
     if (ok) {
@@ -211,16 +256,23 @@ function TelemetryCopySectionsDialog({
     }
   }, [row, checked, onClose]);
 
-  const onExportFull = useCallback(
+  const onDownloadFullRow = useCallback(
     async (e: React.MouseEvent) => {
       e.preventDefault();
       if (!row) return;
-      const payload = { id: row.id, timestamp: row.timestamp, ticker: row.ticker, result: row.result, fullRow: row };
-      const text = JSON.stringify(payload);
-      const ok = await writeClipboard(text);
+      const full = (await fetchFullTelemetryRow(row.id)) ?? row;
+      const payload = { id: full.id, timestamp: full.timestamp, ticker: full.ticker, result: full.result, fullRow: full };
+      const tickerPart = telemetryExportFilenamePart(full.ticker || "UNKNOWN");
+      const tsPart = telemetryExportFilenamePart(
+        full.timestamp.includes("T") ? full.timestamp.slice(0, 19).replace(/:/g, "-") : String(full.timestamp),
+      );
+      const filename = `strategist-telemetry_${tickerPart}_${full.id}_${tsPart}.json`;
+      const ok = downloadTelemetryJson(filename, payload);
       if (ok) {
-        toast.message("Copied full row");
+        toast.message("Download started");
         onClose();
+      } else {
+        toast.error("Could not start download");
       }
     },
     [row, onClose],
@@ -281,10 +333,10 @@ function TelemetryCopySectionsDialog({
             </button>
             <button
               type="button"
-              onClick={onExportFull}
+              onClick={onDownloadFullRow}
               className="w-full py-1 text-center font-mono text-[11px] text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
             >
-              Export full row
+              Download full row (JSON)
             </button>
           </div>
         </div>
@@ -500,6 +552,39 @@ export function StrategistTelemetryPanel() {
                   {row.tickerData && (
                     <DetailBlock title="Ticker Data" data={row.tickerData} />
                   )}
+                  {row.modelInput && (
+                    <DetailBlock title="Model Input (full assembled prompt)" data={row.modelInput} collapsibleByDefault />
+                  )}
+                  {row.thinkingBlocks && (
+                    <DetailBlock title="Thinking / Extended Reasoning" data={row.thinkingBlocks} collapsibleByDefault />
+                  )}
+                  {row.webSearchQueries && Array.isArray(row.webSearchQueries) && row.webSearchQueries.length > 0 && (
+                    <DetailBlock title={`Web Search Queries (${row.webSearchQueries.length})`} data={row.webSearchQueries} />
+                  )}
+                  {row.webSearchResults && Array.isArray(row.webSearchResults) && row.webSearchResults.length > 0 && (
+                    <DetailBlock title={`Web Search Results (${row.webSearchResults.length})`} data={row.webSearchResults} collapsibleByDefault />
+                  )}
+                  {row.toolsAttached && (
+                    <DetailBlock title="Tools Attached to Request" data={row.toolsAttached} />
+                  )}
+                  {row.extendedThinkingConfig && (
+                    <DetailBlock title="Extended Thinking Config" data={row.extendedThinkingConfig} />
+                  )}
+                  {row.systemPrompt && (
+                    <DetailBlock title="System Prompt" data={row.systemPrompt} collapsibleByDefault />
+                  )}
+                  {row.rawApiResponse && (
+                    <DetailBlock title="Raw API Response (all blocks)" data={row.rawApiResponse} collapsibleByDefault />
+                  )}
+                  {row.anthropicRequestId && (
+                    <DetailBlock title="Anthropic Request ID" data={row.anthropicRequestId} />
+                  )}
+                  {row.modelName && (
+                    <DetailBlock title="Model" data={row.modelName} />
+                  )}
+                  {row.dataPackage && (
+                    <DetailBlock title="Data Package (snapshot sent to model)" data={row.dataPackage} collapsibleByDefault />
+                  )}
                 </div>
               )}
             </div>
@@ -555,8 +640,22 @@ export function StrategistTelemetryPanel() {
   );
 }
 
-function DetailBlock({ title, data }: { title: string; data: any }) {
-  const [open, setOpen] = useState(false);
+function DetailBlock({
+  title,
+  data,
+  collapsibleByDefault,
+}: {
+  title: string;
+  data: unknown;
+  collapsibleByDefault?: boolean;
+}) {
+  const [open, setOpen] = useState(!collapsibleByDefault);
+  const body =
+    typeof data === "string"
+      ? data
+      : typeof data === "number" || typeof data === "boolean"
+        ? String(data)
+        : JSON.stringify(data, null, 2);
   return (
     <div>
       <button type="button" onClick={() => setOpen(!open)} className="flex items-center gap-1.5 font-mono text-[12px] text-zinc-400 uppercase tracking-wider hover:text-white">
@@ -565,7 +664,7 @@ function DetailBlock({ title, data }: { title: string; data: any }) {
       </button>
       {open && (
         <pre className="mt-1.5 p-3 rounded bg-black/40 font-mono text-[13px] text-white overflow-x-auto max-h-80 whitespace-pre-wrap leading-relaxed">
-          {JSON.stringify(data, null, 2)}
+          {body}
         </pre>
       )}
     </div>

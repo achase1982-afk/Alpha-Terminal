@@ -785,6 +785,17 @@ export const strategistTelemetryTable = pgTable("strategist_telemetry", {
   scannerSurfacedBy: text("scanner_surfaced_by"),
   scannerFlowScore: integer("scanner_flow_score"),
   scannerUniverse: text("scanner_universe"),
+  /** Conviction Desk (Anthropic): assembled user messages JSON / full prompt text. */
+  modelInput: text("model_input"),
+  systemPrompt: text("system_prompt"),
+  toolsAttached: jsonb("tools_attached"),
+  extendedThinkingConfig: jsonb("extended_thinking_config"),
+  rawApiResponse: jsonb("raw_api_response"),
+  thinkingBlocks: text("thinking_blocks"),
+  webSearchQueries: jsonb("web_search_queries"),
+  webSearchResults: jsonb("web_search_results"),
+  anthropicRequestId: text("anthropic_request_id"),
+  modelName: text("model_name"),
 });
 
 export type StrategistTelemetry = typeof strategistTelemetryTable.$inferSelect;

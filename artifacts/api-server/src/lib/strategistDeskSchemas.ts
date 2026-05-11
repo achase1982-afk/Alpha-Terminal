@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ConvictionDeskRunDiagnostic } from "./convictionDeskRunDiagnostic.js";
+import type { AnthropicConvictionDeskAuditSnapshot } from "./aiLabAnalystClient.js";
 
 /** Strategist options-chain skew snapshot (summarizeOptionsChain / ChainSummary subset). */
 export const StrategistSkew25DeltaSchema = z.object({
@@ -251,6 +252,8 @@ export interface ConvictionDeskResult {
   convictionDeskJsonDegraded?: "schema_validation_failed_after_retry" | "stream_error" | "extraction_error";
   /** Persisted on every run for DB-only diagnosis (large; not for logs). */
   convictionDeskRunDiagnostic?: ConvictionDeskRunDiagnostic;
+  /** Anthropic-only: last consolidated call audit (prompt, tools, thinking, raw blocks, web search). */
+  convictionDeskAudit?: AnthropicConvictionDeskAuditSnapshot;
 }
 
 export type AnyDeskResult = DeskResult | ConvictionDeskResult;
