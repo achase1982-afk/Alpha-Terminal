@@ -26,6 +26,7 @@ import {
   type StrategistRunMetadata,
   type StrategistRunOutcomeTelemetry,
 } from "./strategistDiagnostics.js";
+import { getRecentNewsForTicker } from "./strategistRecentNews.js";
 import { runWithPolygonApiTraceAsync, takePolygonApiTrace } from "./polygonApiTrace.js";
 import { runInStrategistRunContext, getStrategistRunContext, mergeStrategistDiag } from "./strategistRunContext.js";
 import { buildScannerContextPromptBlock } from "./scannerStrategistContext.js";
@@ -3545,6 +3546,18 @@ async function buildDataPackage(
     pkg.ibkr_l1_age_ms = null;
     pkg.ibkr_schwab_quote_delta_bps = null;
   }
+
+  const snapshotGeneratedAt = new Date().toISOString();
+  const recentNews = await getRecentNewsForTicker(
+    upperTicker,
+    { lookbackDays: 7, perSourceLimit: 4, asOf: snapshotGeneratedAt },
+    logger,
+  );
+  const prevCatalyst =
+    typeof pkg.catalyst === "object" && pkg.catalyst !== null && !Array.isArray(pkg.catalyst)
+      ? (pkg.catalyst as Record<string, unknown>)
+      : {};
+  pkg.catalyst = { ...prevCatalyst, recentNews };
 
   return JSON.stringify(pkg);
 }

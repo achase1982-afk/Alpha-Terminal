@@ -4,7 +4,11 @@
  */
 
 import { buildScannerContextPromptBlock, type ScannerStrategistContext } from "./scannerStrategistContext.js";
-import { buildConvictionDeskStaticUserPrefix, type ConvictionDeskPromptProvider } from "./convictionDeskXmlPrompt.js";
+import {
+  buildConvictionDeskStaticUserPrefix,
+  CONVICTION_DESK_RECENT_NEWS_XML,
+  type ConvictionDeskPromptProvider,
+} from "./convictionDeskXmlPrompt.js";
 import { CONVICTION_DESK_WEB_SEARCH_GUIDANCE_BODY } from "./convictionDeskWebSearchGuidance.js";
 
 export type { ConvictionDeskPromptProvider };
@@ -287,16 +291,23 @@ Your output is read at institutional review meetings. Every fundamental claim mu
 
 You are not providing liquidity to smarter money. If the catalyst window is contaminated by macro overlap, you flag it. If consensus has moved sharply (sell-side cuts or raises), you cite the moves and infer what they tell you about the bar. Vague directional reads are not acceptable. Either the asymmetry is identifiable and specific, or you say it is not.
 
-The snapshot includes **catalyst.earnings_history** (up to six recent quarters that carry at least one reaction field), **catalyst.forward_estimates** (next scheduled print when present), **catalyst.earnings_reaction_summary** (full denominator counts), and **dataQualitySummary.data_source_gaps** when earnings enrichment ran (Strategist modes 3 and 4). Use **earnings_history[].price_reaction** for gap percent, close-to-close percent, five-day percent, and twenty-day drift percent when narrating "the bar to clear" and "historical pattern" (nulls mean equity history did not cover that window; this is normal for older quarters). Use **earnings_history[].iv_reaction.iv_crush_pct** when discussing whether selling premium into earnings has historically worked for this name. Use **forward_estimates.eps_consensus** and **forward_estimates.revenue_consensus** for the forward bar when non-null. Acknowledge **data_source_gaps** explicitly when present (subscription placeholders for high/low and analyst count are expected until RESC is wired). Older fiscal rows may show Polygon fiscal fields with null reactions; that pattern is expected, not a bug.
+The snapshot includes **catalyst.earnings_history** (up to six recent quarters that carry at least one reaction field), **catalyst.forward_estimates** (next scheduled print when present), **catalyst.earnings_reaction_summary** (full denominator counts), **catalyst.recentNews** (trailing-window platform news: items, fetchStatus, asOf, lookbackDays), and **dataQualitySummary.data_source_gaps** when earnings enrichment ran (Strategist modes 3 and 4). Use **earnings_history[].price_reaction** for gap percent, close-to-close percent, five-day percent, and twenty-day drift percent when narrating "the bar to clear" and "historical pattern" (nulls mean equity history did not cover that window; this is normal for older quarters). Use **earnings_history[].iv_reaction.iv_crush_pct** when discussing whether selling premium into earnings has historically worked for this name. Use **forward_estimates.eps_consensus** and **forward_estimates.revenue_consensus** for the forward bar when non-null. Acknowledge **data_source_gaps** explicitly when present (subscription placeholders for high/low and analyst count are expected until RESC is wired). Older fiscal rows may show Polygon fiscal fields with null reactions; that pattern is expected, not a bug.
 
 The JSON snapshot may include catalystEvaluation (scheduledEvents with types and sources, scope, alignment, residual) and macroEventsInPositionWindow (FOMC, CPI, PPI, NFP, GDP, PCE-style items through userPreferences.deskCatalystPositionWindowExpirationISO). Treat scheduled macro and earnings as authoritative when present. Combine with the structured research block for IR events, sell-side actions, earnings reaction history, sector/peer context, and conditional news themes.
 
-For each ticker, produce structured output identifying:
-- The primary catalyst in the position window (or no catalyst, with macro/technical context as substitute)
+Determine catalyst.primary_catalyst in this order:
+1. Read **catalyst.recentNews.items** in the trailing window (see **recentNews.lookbackDays**). If any item is plausibly driving price action (regulatory, clinical, product, partnership, EDGAR 8-K, high-impact sell-side body action), set primary_catalyst to that narrative.
+2. Else if catalystEvaluation indicates a confirmed company event inside the position window (earnings inside the window, scheduled binary), use that as primary_catalyst.
+3. Else if the position window contains HIGH-importance macro events and no company-specific catalyst, treat the window as macro-driven.
+4. Else state that no clear primary catalyst is visible and explain why the surface signals (vol, flow, skew) cannot be tied to a specific driver.
+
+Also produce structured output identifying:
 - The bar to clear in concrete terms (specific metrics, specific guidance, specific commentary)
 - The asymmetry direction with reasoning (overpriced, underpriced, symmetric)
 - The historical reaction pattern with specific data when available
 - A read that names which expirations capture the catalyst cleanly and which expirations are noisy
+
+When recentNews identifies an active narrative, tie that narrative to the vol surface (upside or downside skew, front-month IV richness, term backwardation) and to the flow read (call or put concentration, unusual strikes). Do not produce a catalyst section that ignores the narrative when one is present in recentNews. Do not reference any narrative in catalyst.read that is not grounded in recentNews (when fetchStatus is ok), structured research, catalystEvaluation, or the earnings snapshot fields — do not invent news context when none exists.
 
 If a theme has no support in the snapshot or structured research, write **data not surfaced** for that slice instead of inventing.
 
@@ -686,12 +697,13 @@ ${CONVICTION_DESK_WEB_SEARCH_GUIDANCE_BODY}
   const volBlock = stripVolPromptBeforeSnapshot(dataPackage);
   const flowBlock = stripFlowPromptBeforeSnapshot(dataPackage);
   const catalystBlock = stripCatalystPromptBeforeSnapshot(dataPackage, structuredResearchBriefing, options);
+  const catalystBlockWithRecentNews = `${CONVICTION_DESK_RECENT_NEWS_XML.trim()}\n\n${catalystBlock}`;
   const pmBlock = stripPmPromptBeforeAnalystReads(dataPackage);
 
   const staticPrefix = buildConvictionDeskStaticUserPrefix({
     volSectionGuidance: volBlock,
     flowSectionGuidance: flowBlock,
-    catalystSectionGuidance: catalystBlock,
+    catalystSectionGuidance: catalystBlockWithRecentNews,
     decisionSectionGuidance: pmBlock,
     provider: options?.provider,
     webSearchGuidanceBlock: webSearchGuidanceXml,
