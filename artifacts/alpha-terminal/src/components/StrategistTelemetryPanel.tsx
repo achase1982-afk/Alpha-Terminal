@@ -118,6 +118,31 @@ async function writeClipboard(text: string): Promise<boolean> {
   }
 }
 
+/** Safe basename segment for downloaded JSON exports. */
+function telemetryExportFilenamePart(raw: string): string {
+  const t = raw.replace(/[^a-zA-Z0-9._-]+/g, "_");
+  return t.length > 48 ? t.slice(0, 48) : t;
+}
+
+function downloadTelemetryJson(filename: string, payload: unknown): boolean {
+  try {
+    const text = JSON.stringify(payload, null, 2);
+    const blob = new Blob([text], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 100);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function emptyChecked(): Record<CopySectionId, boolean> {
   return Object.fromEntries(COPY_SECTIONS.map((s) => [s.id, false])) as Record<CopySectionId, boolean>;
 }
@@ -211,16 +236,22 @@ function TelemetryCopySectionsDialog({
     }
   }, [row, checked, onClose]);
 
-  const onExportFull = useCallback(
-    async (e: React.MouseEvent) => {
+  const onDownloadFullRow = useCallback(
+    (e: React.MouseEvent) => {
       e.preventDefault();
       if (!row) return;
       const payload = { id: row.id, timestamp: row.timestamp, ticker: row.ticker, result: row.result, fullRow: row };
-      const text = JSON.stringify(payload);
-      const ok = await writeClipboard(text);
+      const tickerPart = telemetryExportFilenamePart(row.ticker || "UNKNOWN");
+      const tsPart = telemetryExportFilenamePart(
+        row.timestamp.includes("T") ? row.timestamp.slice(0, 19).replace(/:/g, "-") : String(row.timestamp),
+      );
+      const filename = `strategist-telemetry_${tickerPart}_${row.id}_${tsPart}.json`;
+      const ok = downloadTelemetryJson(filename, payload);
       if (ok) {
-        toast.message("Copied full row");
+        toast.message("Download started");
         onClose();
+      } else {
+        toast.error("Could not start download");
       }
     },
     [row, onClose],
@@ -281,10 +312,10 @@ function TelemetryCopySectionsDialog({
             </button>
             <button
               type="button"
-              onClick={onExportFull}
+              onClick={onDownloadFullRow}
               className="w-full py-1 text-center font-mono text-[11px] text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
             >
-              Export full row
+              Download full row (JSON)
             </button>
           </div>
         </div>
