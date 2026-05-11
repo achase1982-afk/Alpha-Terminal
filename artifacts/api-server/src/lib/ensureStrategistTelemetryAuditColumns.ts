@@ -72,11 +72,48 @@ export async function ensureStrategistTelemetryAuditColumns(): Promise<void> {
   }
 }
 
+/** Walk `Error.cause` / nested objects — node-postgres + Drizzle often put `code` on inner errors. */
+export function strategistTelemetryFlattenErrorMessage(err: unknown): string {
+  const parts: string[] = [];
+  let cur: unknown = err;
+  const seen = new Set<unknown>();
+  for (let i = 0; i < 10 && cur != null && !seen.has(cur); i++) {
+    seen.add(cur);
+    if (cur instanceof Error) parts.push(cur.message);
+    else if (typeof cur === "string") parts.push(cur);
+    else if (typeof cur === "object" && cur !== null && "message" in cur) {
+      const m = (cur as { message: unknown }).message;
+      if (typeof m === "string") parts.push(m);
+    }
+    cur =
+      cur !== null && typeof cur === "object" && "cause" in cur
+        ? (cur as { cause: unknown }).cause
+        : undefined;
+  }
+  return parts.join(" · ");
+}
+
+export function strategistTelemetryPostgresErrorCode(err: unknown): string | undefined {
+  let cur: unknown = err;
+  const seen = new Set<unknown>();
+  for (let i = 0; i < 10 && cur != null && !seen.has(cur); i++) {
+    seen.add(cur);
+    if (typeof cur === "object" && cur !== null && "code" in cur) {
+      const c = (cur as { code: unknown }).code;
+      if (typeof c === "string" && c.length > 0) return c;
+    }
+    cur =
+      cur !== null && typeof cur === "object" && "cause" in cur
+        ? (cur as { cause: unknown }).cause
+        : undefined;
+  }
+  return undefined;
+}
+
 function isMissingStrategistTelemetryColumnError(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
-  const code = (err as { code?: string }).code;
+  const code = strategistTelemetryPostgresErrorCode(err);
   if (code === "42703") return true;
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = strategistTelemetryFlattenErrorMessage(err);
   return /column .*does not exist/i.test(msg);
 }
 
@@ -92,10 +129,38 @@ export async function withStrategistTelemetrySchemaHeal<T>(fn: () => Promise<T>)
       throw err;
     }
     logger.warn(
-      { err },
+      { err, pgCode: strategistTelemetryPostgresErrorCode(err) },
       "strategist_telemetry read failed (missing column); applying audit DDL then retrying once",
     );
     await applyStrategistTelemetryAuditColumnMigrations();
     return await fn();
+  }
+}
+
+let strategistTelemetryReadSchemaPrimed = false;
+let lastStrategistTelemetryPrimeAttemptMs = 0;
+
+const PRIME_COOLDOWN_MS = 5000;
+
+/**
+ * Runs audit DDL before the first successful strategist telemetry read (then no-ops).
+ * Throttles failed attempts to once per 5s so a denied ALTER does not spam the DB.
+ * Catches cases where the driver nests 42703 so our retry predicate never fired.
+ */
+export async function primeStrategistTelemetryReadSchema(): Promise<void> {
+  if (strategistTelemetryReadSchemaPrimed) return;
+  const now = Date.now();
+  if (
+    lastStrategistTelemetryPrimeAttemptMs > 0 &&
+    now - lastStrategistTelemetryPrimeAttemptMs < PRIME_COOLDOWN_MS
+  ) {
+    return;
+  }
+  lastStrategistTelemetryPrimeAttemptMs = now;
+  try {
+    await applyStrategistTelemetryAuditColumnMigrations();
+    strategistTelemetryReadSchemaPrimed = true;
+  } catch (err) {
+    logger.warn({ err }, "strategist_telemetry: read-path schema prime failed (will retry)");
   }
 }

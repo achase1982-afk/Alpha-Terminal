@@ -22,7 +22,12 @@ import { getScannerStrategistCorrelation } from "../lib/scannerCorrelation.js";
 import { desc, eq, sql, lte, and } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { trimStrategistTelemetryRowForListResponse } from "../lib/strategistTelemetryListResponse.js";
-import { withStrategistTelemetrySchemaHeal } from "../lib/ensureStrategistTelemetryAuditColumns.js";
+import {
+  withStrategistTelemetrySchemaHeal,
+  primeStrategistTelemetryReadSchema,
+  strategistTelemetryFlattenErrorMessage,
+  strategistTelemetryPostgresErrorCode,
+} from "../lib/ensureStrategistTelemetryAuditColumns.js";
 import {
   ensureIvrCoverage,
   getIvrBackfillJob,
@@ -1097,8 +1102,24 @@ router.post("/settings/reset", async (_req, res) => {
   }
 });
 
+function strategistTelemetryFetchErrorJson(err: unknown, mode: "list" | "row"): Record<string, unknown> {
+  const flat = strategistTelemetryFlattenErrorMessage(err);
+  const code = strategistTelemetryPostgresErrorCode(err);
+  const hint =
+    code === "42703" || /column .*does not exist/i.test(flat)
+      ? "strategist_telemetry is missing columns for this API build. Deploy the latest API, run lib/db migrations, or grant ALTER on strategist_telemetry."
+      : undefined;
+  return {
+    error: mode === "list" ? "Failed to fetch telemetry" : "Failed to fetch telemetry row",
+    ...(hint ? { hint } : {}),
+    ...(flat ? { detail: flat.slice(0, 500) } : {}),
+    ...(code ? { postgresCode: code } : {}),
+  };
+}
+
 router.get("/telemetry/strategist/row/:id", async (req, res) => {
   try {
+    await primeStrategistTelemetryReadSchema();
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id <= 0) {
       res.status(400).json({ error: "invalid id" });
@@ -1117,13 +1138,14 @@ router.get("/telemetry/strategist/row/:id", async (req, res) => {
     }
     res.json(row);
   } catch (err) {
-    logger.error({ err }, "StrategistV2: telemetry row lookup failed");
-    res.status(500).json({ error: "Failed to fetch telemetry row" });
+    logger.error({ err, pgCode: strategistTelemetryPostgresErrorCode(err) }, "StrategistV2: telemetry row lookup failed");
+    res.status(500).json(strategistTelemetryFetchErrorJson(err, "row"));
   }
 });
 
 router.get("/telemetry/strategist/request/:requestId", async (req, res) => {
   try {
+    await primeStrategistTelemetryReadSchema();
     const requestId = String(req.params.requestId ?? "").trim();
     if (!requestId) {
       res.status(400).json({ error: "requestId required" });
@@ -1142,13 +1164,14 @@ router.get("/telemetry/strategist/request/:requestId", async (req, res) => {
     }
     res.json(row);
   } catch (err) {
-    logger.error({ err }, "StrategistV2: telemetry request lookup failed");
-    res.status(500).json({ error: "Failed to fetch telemetry row" });
+    logger.error({ err, pgCode: strategistTelemetryPostgresErrorCode(err) }, "StrategistV2: telemetry request lookup failed");
+    res.status(500).json(strategistTelemetryFetchErrorJson(err, "row"));
   }
 });
 
 router.get("/telemetry/strategist", async (req, res) => {
   try {
+    await primeStrategistTelemetryReadSchema();
     const limit = Math.min(Number(req.query.limit) || 50, 100);
     const ticker = req.query.ticker as string | undefined;
 
@@ -1165,8 +1188,8 @@ router.get("/telemetry/strategist", async (req, res) => {
 
     res.json(rows.map((r) => trimStrategistTelemetryRowForListResponse(r as Record<string, unknown>)));
   } catch (err) {
-    logger.error({ err }, "StrategistV2: telemetry fetch failed");
-    res.status(500).json({ error: "Failed to fetch telemetry" });
+    logger.error({ err, pgCode: strategistTelemetryPostgresErrorCode(err) }, "StrategistV2: telemetry fetch failed");
+    res.status(500).json(strategistTelemetryFetchErrorJson(err, "list"));
   }
 });
 

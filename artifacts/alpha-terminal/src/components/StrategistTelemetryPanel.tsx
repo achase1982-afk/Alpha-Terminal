@@ -437,8 +437,20 @@ export function StrategistTelemetryPanel() {
       } else {
         let detail = `HTTP ${sRes.status}`;
         try {
-          const j = (await sRes.json()) as { error?: string };
+          const j = (await sRes.json()) as {
+            error?: string;
+            hint?: string;
+            detail?: string;
+            postgresCode?: string;
+          };
           if (typeof j.error === "string" && j.error.trim()) detail = j.error.trim();
+          if (typeof j.hint === "string" && j.hint.trim()) detail = `${detail} — ${j.hint.trim()}`;
+          if (typeof j.postgresCode === "string" && j.postgresCode.trim()) {
+            detail = `${detail} (code ${j.postgresCode.trim()})`;
+          }
+          if (typeof j.detail === "string" && j.detail.trim()) {
+            detail = `${detail}. ${j.detail.trim()}`;
+          }
         } catch {
           /* ignore */
         }
@@ -499,9 +511,9 @@ export function StrategistTelemetryPanel() {
           className="font-mono text-[11px] text-red-400 border border-red-900/60 rounded-md px-2 py-1.5 bg-red-950/40"
           role="alert"
         >
-          Could not load strategist trades: {strategistLoadErr}. This is usually a brief server/database mismatch after
-          deploy (missing strategist_telemetry columns). The API retries schema alignment on read; wait a few seconds and
-          pull to refresh, or confirm migrations ran and check logs for &quot;telemetry fetch failed&quot; / ALTER errors.
+          Could not load strategist trades: {strategistLoadErr}. If this persists after a fresh deploy, open the
+          response JSON in DevTools or check API logs for postgresCode 42703 (missing column) or permission errors on
+          ALTER TABLE strategist_telemetry.
         </p>
       )}
       <div className="flex items-center justify-between">
