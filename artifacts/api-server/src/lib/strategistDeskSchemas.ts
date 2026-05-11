@@ -167,37 +167,74 @@ export interface DeskResult {
   errors?: string[];
 }
 
-/** Solo Desk JSON shape plus Conviction-only synthesis and discipline fields (same vol/flow/catalyst/pm schemas). */
+const ConvictionFitScoreSchema = z.enum(["high", "medium", "low", "unfit"]);
+
+const ConvictionTradeFamilyHypothesisSchema = z.object({
+  family: z.enum(["long_vol", "short_vol", "directional"]),
+  candidate_structure: z.string().min(1),
+  entry_math: z.string().min(1),
+  thesis_this_family_represents: z.string(),
+  fit_score: ConvictionFitScoreSchema,
+  reason_for_score: z.string(),
+  what_would_make_it_unfit: z.string(),
+});
+
+const ConvictionPassHypothesisSchema = z.object({
+  family: z.literal("pass"),
+  candidate_structure: z.null(),
+  entry_math: z.null(),
+  thesis_this_family_represents: z.string(),
+  fit_score: ConvictionFitScoreSchema,
+  reason_for_score: z.string(),
+  what_would_make_it_unfit: z.string(),
+});
+
+/** Exactly four hypotheses: long_vol, short_vol, directional, pass (in that order). */
+export const ConvictionFamilyHypothesesSchema = z.tuple([
+  ConvictionTradeFamilyHypothesisSchema.extend({ family: z.literal("long_vol") }),
+  ConvictionTradeFamilyHypothesisSchema.extend({ family: z.literal("short_vol") }),
+  ConvictionTradeFamilyHypothesisSchema.extend({ family: z.literal("directional") }),
+  ConvictionPassHypothesisSchema,
+]);
+
+const ConvictionSelfCheckSchema = z.object({
+  each_family_priced_with_math: z.boolean(),
+  each_family_priced_with_math_reason: z.string(),
+  decision_consistent_with_strongest_hypothesis: z.boolean(),
+  decision_consistent_with_strongest_hypothesis_reason: z.string(),
+  call_survives_reverse_family_order: z.boolean(),
+  call_survives_reverse_family_order_reason: z.string(),
+});
+
+/** Solo Desk JSON shape plus Conviction-only deliberation and synthesis fields (same vol/flow/catalyst/pm schemas). */
 export const ConvictionDeskOutputSchema = z.object({
   vol: VolAnalystOutputSchema,
   flow: FlowAnalystOutputSchema,
   catalyst: CatalystAnalystOutputSchema,
-  pm: PmOutputSchema,
+  family_hypotheses: ConvictionFamilyHypothesesSchema,
   regime_synthesis: z.object({
     regime_read: z.enum([
-      "long_premium",
-      "short_premium",
-      "neutral_premium",
-      "directional_long",
-      "directional_short",
+      "short_premium_neutral",
+      "short_premium_directional",
+      "long_premium_neutral",
+      "long_premium_directional",
+      "pure_directional_long",
+      "pure_directional_short",
       "no_edge",
     ]),
+    strongest_hypothesis: z.enum(["long_vol", "short_vol", "directional", "pass"]),
     synthesis: z.string(),
   }),
+  pm: PmOutputSchema,
   risk_of_ruin: z.string(),
   positioning_context: z.object({
     crowd_state: z.enum(["crowded_long", "crowded_short", "balanced", "unclear"]),
     sell_side_targets_vs_price: z.string(),
     implied_vs_consensus: z.string(),
-    fade_risk: z.string(),
+    upside_fade_risk: z.string(),
+    downside_fade_risk: z.string(),
   }),
-  structure_family_discipline: z.object({
-    directional_evaluated: z.string(),
-    vol_surface_evaluated: z.string(),
-    premium_evaluated: z.string(),
-    chosen_family: z.enum(["directional", "vol_surface", "premium", "no_trade"]),
-    defense: z.string(),
-  }),
+  self_check: ConvictionSelfCheckSchema,
 });
 
 export type ConvictionDeskOutput = z.infer<typeof ConvictionDeskOutputSchema>;

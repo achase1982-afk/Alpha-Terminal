@@ -1,22 +1,46 @@
 import type { ConvictionDeskOutput } from "./strategistDeskSchemas.js";
 
-/**
- * Map pm.structure.type labels (free-form) to structure family for alignment checks.
- * Order matters: calendar_diagonal before generic calendar; premium before broad "spread" matches.
- */
-export function inferExpectedFamilyFromPmStructureType(typeRaw: string): "directional" | "vol_surface" | "premium" | null {
-  const t = typeRaw.toLowerCase().replace(/\s+/g, "_").replace(/-/g, "_");
-  if (t.includes("calendar_diagonal")) return "directional";
-  if (/iron_condor|credit_spread|short_put_spread|short_call_spread|put_credit|call_credit|\bcsp\b|cash_secured/.test(t)) {
-    return "premium";
+function normalizeStructureLabel(s: string): string {
+  return s
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, " ")
+    .replace(/[^a-z0-9 $./\-]/g, "");
+}
+
+/** True when pm.structure.type and the hypothesis line describe the same structure (allows naming variance). */
+export function pmStructureAlignsWithCandidate(pmType: string, candidateStructure: string): boolean {
+  const a = normalizeStructureLabel(pmType);
+  const b = normalizeStructureLabel(candidateStructure);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  return a.includes(b) || b.includes(a);
+}
+
+function tradeFamiliesPricedWithConcreteMath(familyHypotheses: ConvictionDeskOutput["family_hypotheses"]): boolean {
+  for (const h of familyHypotheses) {
+    if (h.family === "pass") continue;
+    const m = h.entry_math.trim();
+    if (m.length < 24) return false;
+    if (!/\d/.test(m)) return false;
+    const lower = m.toLowerCase();
+    const hasBreak =
+      /breakeven|break-even|break even|\bb\/e\b|\bbe at\b/i.test(lower) || /\bbe\b/.test(lower);
+    const hasMax = /max(imum)?\s*(profit|loss)/i.test(lower) || /max\s+profit|max\s+loss/i.test(lower);
+    if (!hasBreak || !hasMax) return false;
   }
-  if (/calendar|butterfly|iron_butterfly|iron_fly|ironfly|straddle|strangle/.test(t)) {
-    return "vol_surface";
+  return true;
+}
+
+function decisionConsistentWithStrongestHypothesis(o: ConvictionDeskOutput): boolean {
+  const { strongest_hypothesis } = o.regime_synthesis;
+  if (o.pm.decision === "pass" || o.pm.structure == null) {
+    return strongest_hypothesis === "pass";
   }
-  if (/bull_call|bear_put|long_call|long_put|diagonal|vertical/.test(t)) {
-    return "directional";
-  }
-  return null;
+  if (strongest_hypothesis === "pass") return false;
+  const hyp = o.family_hypotheses.find((h) => h.family === strongest_hypothesis);
+  if (!hyp || hyp.family === "pass") return false;
+  return pmStructureAlignsWithCandidate(o.pm.structure.type, hyp.candidate_structure);
 }
 
 export function validateConvictionDeskBusinessRules(o: ConvictionDeskOutput): string[] {
@@ -30,20 +54,34 @@ export function validateConvictionDeskBusinessRules(o: ConvictionDeskOutput): st
     errs.push("regime_synthesis.synthesis must be non-empty");
   }
 
+  const sh = o.regime_synthesis.strongest_hypothesis;
+  const families = o.family_hypotheses.map((h) => h.family);
+  if (families.join(",") !== "long_vol,short_vol,directional,pass") {
+    errs.push("family_hypotheses must be ordered long_vol, short_vol, directional, pass");
+  }
+  if (!families.includes(sh)) {
+    errs.push("regime_synthesis.strongest_hypothesis must match a family_hypotheses.family value");
+  }
+
   const ror = o.risk_of_ruin?.trim() ?? "";
   if (ror.length < 20) {
     errs.push("risk_of_ruin must be at least 20 characters");
   }
 
-  const sfd = o.structure_family_discipline;
-  if (
-    !sfd.directional_evaluated?.trim() ||
-    !sfd.vol_surface_evaluated?.trim() ||
-    !sfd.premium_evaluated?.trim()
-  ) {
-    errs.push(
-      "structure_family_discipline.directional_evaluated, vol_surface_evaluated, and premium_evaluated must each be non-empty",
-    );
+  if (o.pm.decision === "pass" || o.pm.structure == null) {
+    if (sh !== "pass") {
+      errs.push('regime_synthesis.strongest_hypothesis must be "pass" when pm.decision is pass or pm.structure is null');
+    }
+  } else {
+    if (sh === "pass") {
+      errs.push('regime_synthesis.strongest_hypothesis must not be "pass" when pm.decision is trade with a structure');
+    }
+    const hyp = o.family_hypotheses.find((h) => h.family === sh);
+    if (hyp && hyp.family !== "pass" && !pmStructureAlignsWithCandidate(o.pm.structure.type, hyp.candidate_structure)) {
+      errs.push(
+        `pm.structure.type must align with strongest_hypothesis candidate_structure (got "${o.pm.structure.type}" vs "${hyp.candidate_structure}")`,
+      );
+    }
   }
 
   if (o.pm.decision === "trade") {
@@ -51,33 +89,31 @@ export function validateConvictionDeskBusinessRules(o: ConvictionDeskOutput): st
     if (
       !pc.sell_side_targets_vs_price?.trim() ||
       !pc.implied_vs_consensus?.trim() ||
-      !pc.fade_risk?.trim()
+      !pc.upside_fade_risk?.trim() ||
+      !pc.downside_fade_risk?.trim()
     ) {
       errs.push("positioning_context string fields must all be non-empty when pm.decision is trade");
     }
-    if (!sfd.defense?.trim()) {
-      errs.push("structure_family_discipline.defense must be non-empty when pm.decision is trade");
-    }
   }
 
-  const fam = sfd.chosen_family;
+  if (!tradeFamiliesPricedWithConcreteMath(o.family_hypotheses)) {
+    errs.push(
+      "each trade family (long_vol, short_vol, directional) must have entry_math with numerics, breakeven language, and max profit/loss language",
+    );
+  }
 
-  if (o.pm.decision === "pass" || o.pm.structure == null) {
-    if (fam !== "no_trade") {
-      errs.push('structure_family_discipline.chosen_family must be "no_trade" when pm.decision is pass or pm.structure is null');
-    }
-  } else {
-    const typeStr = o.pm.structure.type;
-    const expected = inferExpectedFamilyFromPmStructureType(typeStr);
-    if (expected == null) {
-      errs.push(
-        `could not classify pm.structure.type "${typeStr}" into directional, vol_surface, or premium for family alignment`,
-      );
-    } else if (fam !== expected) {
-      errs.push(
-        `structure_family_discipline.chosen_family must be "${expected}" for pm.structure.type "${typeStr}" (got "${fam}")`,
-      );
-    }
+  const derivedPricingOk = tradeFamiliesPricedWithConcreteMath(o.family_hypotheses);
+  if (o.self_check.each_family_priced_with_math !== derivedPricingOk) {
+    errs.push("self_check.each_family_priced_with_math must match whether trade families carry concrete pricing math");
+  }
+
+  const derivedDecisionOk = decisionConsistentWithStrongestHypothesis(o);
+  if (o.self_check.decision_consistent_with_strongest_hypothesis !== derivedDecisionOk) {
+    errs.push("self_check.decision_consistent_with_strongest_hypothesis must match pm and regime_synthesis alignment");
+  }
+
+  if (!derivedDecisionOk) {
+    errs.push("pm.decision, pm.structure, and regime_synthesis.strongest_hypothesis are internally inconsistent");
   }
 
   return errs;

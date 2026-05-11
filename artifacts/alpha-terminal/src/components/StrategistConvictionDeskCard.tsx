@@ -4,7 +4,13 @@ import { buildOccSymbol } from "@/components/StrategistV2Card";
 import { AlertTriangle, Copy, Play, Pause, Square, Rewind, FastForward, Send } from "lucide-react";
 import { toast } from "sonner";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import type { ConvictionDeskResult, PayoffScenario, PayoffScenariosSummary, DeskResult } from "@/lib/strategistDeskResult";
+import type {
+  ConvictionDeskResult,
+  PayoffScenario,
+  PayoffScenariosSummary,
+  DeskResult,
+  ConvictionFitScore,
+} from "@/lib/strategistDeskResult";
 import { buildConvictionDeskCardPlainText, buildDeskSpeechSections } from "@/lib/deskCardSpeech";
 import {
   DESK_PAL as PAL,
@@ -24,7 +30,7 @@ const deskVoiceConfig: { voice?: string } = {};
 const BODY_PX = 14;
 const LABEL_PX = 10;
 
-type BadgeVariant = "green" | "gray" | "gold" | "amber";
+type BadgeVariant = "green" | "gray" | "gold" | "amber" | "red";
 
 function deskBadgeStyle(variant: BadgeVariant): CSSProperties {
   const m: Record<BadgeVariant, { color: string; bg: string; border: string }> = {
@@ -32,6 +38,7 @@ function deskBadgeStyle(variant: BadgeVariant): CSSProperties {
     gray: { color: "#a3a3a3", bg: "rgba(161,161,170,0.12)", border: "rgba(161,161,170,0.35)" },
     gold: { color: PAL.gold, bg: "rgba(251,191,36,0.1)", border: "rgba(251,191,36,0.3)" },
     amber: { color: PAL.goldHeader, bg: "rgba(245,158,11,0.1)", border: "rgba(245,158,11,0.35)" },
+    red: { color: PAL.red, bg: "rgba(239,68,68,0.1)", border: "rgba(239,68,68,0.35)" },
   };
   const t = m[variant];
   return {
@@ -50,6 +57,19 @@ function deskBadgeStyle(variant: BadgeVariant): CSSProperties {
 
 function formatEnumLabel(raw: string): string {
   return raw.replace(/_/g, " ");
+}
+
+function fitScoreBadgeVariant(score: ConvictionFitScore): BadgeVariant {
+  switch (score) {
+    case "high":
+      return "green";
+    case "medium":
+      return "amber";
+    case "low":
+      return "gray";
+    case "unfit":
+      return "red";
+  }
 }
 
 function convictionBanner(
@@ -401,7 +421,8 @@ export function StrategistConvictionDeskCard({
   const catalyst = conviction.catalyst;
   const rs = conviction.regime_synthesis;
   const pc = conviction.positioning_context;
-  const sfd = conviction.structure_family_discipline;
+  const fh = conviction.family_hypotheses;
+  const selfCheck = conviction.self_check;
 
   return (
     <div
@@ -805,10 +826,52 @@ export function StrategistConvictionDeskCard({
         </div>
 
         <div style={{ marginBottom: 8 }}>
+          <DeskCardCollapsibleSection title="Family hypotheses" defaultOpen>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {fh.map((h) => {
+                const isStrongest = rs.strongest_hypothesis === h.family;
+                return (
+                  <div
+                    key={h.family}
+                    style={{
+                      borderRadius: 8,
+                      border: `1px solid ${isStrongest ? "rgba(251,191,36,0.45)" : PAL.borderInner}`,
+                      background: isStrongest ? "rgba(251,191,36,0.06)" : PAL.bgInner,
+                      padding: 12,
+                    }}
+                  >
+                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <span style={{ fontSize: LABEL_PX, fontWeight: 700, color: PAL.white, letterSpacing: 0.8, textTransform: "uppercase" }}>
+                        {formatEnumLabel(h.family)}
+                      </span>
+                      <span style={deskBadgeStyle(fitScoreBadgeVariant(h.fit_score))}>{h.fit_score}</span>
+                      {isStrongest && <span style={deskBadgeStyle("gold")}>strongest</span>}
+                    </div>
+                    {h.family !== "pass" && (
+                      <>
+                        <DeskCardFieldRow label="Candidate structure" value={h.candidate_structure} valueSizePx={BODY_PX} />
+                        <DeskCardFieldRow label="Entry math" value={h.entry_math} valueSizePx={BODY_PX} />
+                      </>
+                    )}
+                    <DeskCardFieldRow label="Thesis" value={h.thesis_this_family_represents} valueSizePx={BODY_PX} />
+                    <DeskCardFieldRow label="Reason for score" value={h.reason_for_score} valueSizePx={BODY_PX} />
+                  </div>
+                );
+              })}
+            </div>
+          </DeskCardCollapsibleSection>
+        </div>
+
+        <div style={{ marginBottom: 8 }}>
           <DeskCardCollapsibleSection
             title="Regime synthesis"
             defaultOpen
-            headerAddon={<span style={deskBadgeStyle("gold")}>{formatEnumLabel(rs.regime_read)}</span>}
+            headerAddon={
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                <span style={deskBadgeStyle("gold")}>{formatEnumLabel(rs.regime_read)}</span>
+                <span style={deskBadgeStyle(rs.strongest_hypothesis === "pass" ? "gray" : "green")}>{formatEnumLabel(rs.strongest_hypothesis)}</span>
+              </div>
+            }
           >
             <div style={{ fontSize: BODY_PX, color: PAL.body, lineHeight: 1.65 }}>{rs.synthesis}</div>
           </DeskCardCollapsibleSection>
@@ -828,22 +891,38 @@ export function StrategistConvictionDeskCard({
           >
             <DeskCardFieldRow label="Sell-side targets vs price" value={pc.sell_side_targets_vs_price} valueSizePx={BODY_PX} />
             <DeskCardFieldRow label="Implied vs consensus" value={pc.implied_vs_consensus} valueSizePx={BODY_PX} />
-            <DeskCardFieldRow label="Fade risk" value={pc.fade_risk} valueSizePx={BODY_PX} />
+            <DeskCardFieldRow label="Upside fade risk" value={pc.upside_fade_risk} valueSizePx={BODY_PX} />
+            <DeskCardFieldRow label="Downside fade risk" value={pc.downside_fade_risk} valueSizePx={BODY_PX} />
           </DeskCardCollapsibleSection>
         </div>
 
         <div style={{ marginBottom: 8 }}>
           <DeskCardCollapsibleSection
-            title="Structure family discipline"
+            title="Self check"
             defaultOpen
-            headerAddon={<span style={deskBadgeStyle(sfd.chosen_family === "no_trade" ? "gray" : "green")}>{formatEnumLabel(sfd.chosen_family)}</span>}
+            headerAddon={
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                <span style={deskBadgeStyle(selfCheck.each_family_priced_with_math ? "green" : "red")}>math</span>
+                <span style={deskBadgeStyle(selfCheck.decision_consistent_with_strongest_hypothesis ? "green" : "red")}>decision</span>
+                <span style={deskBadgeStyle(selfCheck.call_survives_reverse_family_order ? "green" : "red")}>order</span>
+              </div>
+            }
           >
-            <DeskCardFieldRow label="Directional evaluated" value={sfd.directional_evaluated} valueSizePx={BODY_PX} />
-            <DeskCardFieldRow label="Vol surface evaluated" value={sfd.vol_surface_evaluated} valueSizePx={BODY_PX} />
-            <DeskCardFieldRow label="Premium evaluated" value={sfd.premium_evaluated} valueSizePx={BODY_PX} />
-            <div style={{ marginTop: 10, fontSize: BODY_PX, color: PAL.body, lineHeight: 1.65, borderTop: `1px solid ${PAL.borderInner}`, paddingTop: 10 }}>
-              {sfd.defense}
-            </div>
+            <DeskCardFieldRow
+              label="Each family priced with math"
+              value={`${selfCheck.each_family_priced_with_math ? "Yes" : "No"} — ${selfCheck.each_family_priced_with_math_reason}`}
+              valueSizePx={BODY_PX}
+            />
+            <DeskCardFieldRow
+              label="Decision vs strongest hypothesis"
+              value={`${selfCheck.decision_consistent_with_strongest_hypothesis ? "Yes" : "No"} — ${selfCheck.decision_consistent_with_strongest_hypothesis_reason}`}
+              valueSizePx={BODY_PX}
+            />
+            <DeskCardFieldRow
+              label="Reverse family order"
+              value={`${selfCheck.call_survives_reverse_family_order ? "Yes" : "No"} — ${selfCheck.call_survives_reverse_family_order_reason}`}
+              valueSizePx={BODY_PX}
+            />
           </DeskCardCollapsibleSection>
         </div>
       </div>
