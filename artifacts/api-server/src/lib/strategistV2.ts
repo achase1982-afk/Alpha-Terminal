@@ -10,6 +10,12 @@ import type { ScrubCanonical } from "./narrativeScrubbers.js";
 import { db, desc, eq, sql, and, strategistTelemetryTable, type InferInsertModel } from "@workspace/db";
 
 type StrategistTelemetryInsert = InferInsertModel<typeof strategistTelemetryTable>;
+import { getStrategistTelemetryPgColumnSet } from "./strategistTelemetryColumnCache.js";
+import { filterStrategistTelemetryInsertForExistingColumns } from "./strategistTelemetryInsertFilter.js";
+import {
+  applyStrategistTelemetryAuditColumnMigrations,
+  strategistTelemetryPostgresErrorCode,
+} from "./ensureStrategistTelemetryAuditColumns.js";
 import { fetchPolygonTickerMarketCapUsd, logMarketCapPolygonFallback } from "./polygonTickerMarketCap.js";
 import { getBestAccessToken } from "./tokenStore.js";
 import { fetchPolygonChain } from "./polygonChain.js";
@@ -4904,8 +4910,48 @@ async function logTelemetry(
         };
       })(),
     };
-    const [row] = await db.insert(strategistTelemetryTable).values(values).returning({ id: strategistTelemetryTable.id });
-    return row?.id ?? null;
+    const pgCols = await getStrategistTelemetryPgColumnSet();
+    if (pgCols.size === 0) {
+      logger.error("StrategistV2: telemetry insert skipped (no strategist_telemetry column metadata)");
+      return null;
+    }
+    let filtered = filterStrategistTelemetryInsertForExistingColumns(
+      values as unknown as Record<string, unknown>,
+      pgCols,
+    ) as StrategistTelemetryInsert;
+    if (!filtered.ticker || !filtered.result) {
+      logger.error(
+        { pgColCount: pgCols.size },
+        "StrategistV2: telemetry insert missing ticker/result after column filter",
+      );
+      return null;
+    }
+
+    const insertRow = async (v: StrategistTelemetryInsert) =>
+      db.insert(strategistTelemetryTable).values(v).returning({ id: strategistTelemetryTable.id });
+
+    try {
+      const [row] = await insertRow(filtered);
+      return row?.id ?? null;
+    } catch (insertErr) {
+      if (strategistTelemetryPostgresErrorCode(insertErr) !== "42703") throw insertErr;
+      logger.warn(
+        { insertErr },
+        "StrategistV2: telemetry insert hit undefined column (42703); running audit DDL and retrying once",
+      );
+      try {
+        await applyStrategistTelemetryAuditColumnMigrations();
+      } catch (ddlErr) {
+        logger.warn({ ddlErr }, "StrategistV2: telemetry heal DDL failed before insert retry");
+      }
+      const pgCols2 = await getStrategistTelemetryPgColumnSet();
+      filtered = filterStrategistTelemetryInsertForExistingColumns(
+        values as unknown as Record<string, unknown>,
+        pgCols2,
+      ) as StrategistTelemetryInsert;
+      const [row2] = await insertRow(filtered);
+      return row2?.id ?? null;
+    }
   } catch (err) {
     logger.error({ err }, "StrategistV2: telemetry logging failed");
     return null;
