@@ -68,10 +68,13 @@ export async function applyStrategistTelemetryAuditColumnMigrations(): Promise<b
   if (!loc) return false;
   logger.info({ schema: loc.schema }, "strategist_telemetry: applying audit column DDL");
   const stmts = buildAuditRenameAndAlterStatements(loc);
-  for (const stmt of stmts) {
-    await pool.query(stmt);
+  try {
+    for (const stmt of stmts) {
+      await pool.query(stmt);
+    }
+  } finally {
+    invalidateStrategistTelemetryPgColumnCache();
   }
-  invalidateStrategistTelemetryPgColumnCache();
   return true;
 }
 
