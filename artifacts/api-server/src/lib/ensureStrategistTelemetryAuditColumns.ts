@@ -5,47 +5,49 @@ import { logger } from "./logger.js";
  * Best-effort schema alignment for strategist telemetry audit columns (0032 + 0033),
  * so reads/writes work without a manual migrate when the DB user can ALTER the table.
  *
- * Uses `current_schema()` so checks match the connection search_path (not only `public`).
+ * Drizzle creates tables in **public** by default. Using `current_schema()` can mismatch
+ * (first entry on search_path ≠ public) so column existence checks skip renames and ALTER
+ * then fails with 42704 / odd DDL errors. Always qualify **public.strategist_telemetry**.
  */
 const STRATEGIST_TELEMETRY_AUDIT_RENAME_SQL = [
   `DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_schema = current_schema() AND table_name = 'strategist_telemetry' AND column_name = 'anthropic_request_id'
+    WHERE table_schema = 'public' AND table_name = 'strategist_telemetry' AND column_name = 'anthropic_request_id'
   ) AND NOT EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_schema = current_schema() AND table_name = 'strategist_telemetry' AND column_name = 'provider_request_id'
+    WHERE table_schema = 'public' AND table_name = 'strategist_telemetry' AND column_name = 'provider_request_id'
   ) THEN
-    ALTER TABLE "strategist_telemetry" RENAME COLUMN "anthropic_request_id" TO "provider_request_id";
+    ALTER TABLE public.strategist_telemetry RENAME COLUMN anthropic_request_id TO provider_request_id;
   END IF;
 END $$`,
   `DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_schema = current_schema() AND table_name = 'strategist_telemetry' AND column_name = 'extended_thinking_config'
+    WHERE table_schema = 'public' AND table_name = 'strategist_telemetry' AND column_name = 'extended_thinking_config'
   ) AND NOT EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_schema = current_schema() AND table_name = 'strategist_telemetry' AND column_name = 'thinking_config'
+    WHERE table_schema = 'public' AND table_name = 'strategist_telemetry' AND column_name = 'thinking_config'
   ) THEN
-    ALTER TABLE "strategist_telemetry" RENAME COLUMN "extended_thinking_config" TO "thinking_config";
+    ALTER TABLE public.strategist_telemetry RENAME COLUMN extended_thinking_config TO thinking_config;
   END IF;
 END $$`,
 ];
 
 const STRATEGIST_TELEMETRY_AUDIT_COLUMN_ALTER_SQL: readonly string[] = [
-  `ALTER TABLE "strategist_telemetry" ADD COLUMN IF NOT EXISTS "provider" text`,
-  `ALTER TABLE "strategist_telemetry" ADD COLUMN IF NOT EXISTS "model_input" text`,
-  `ALTER TABLE "strategist_telemetry" ADD COLUMN IF NOT EXISTS "system_prompt" text`,
-  `ALTER TABLE "strategist_telemetry" ADD COLUMN IF NOT EXISTS "tools_attached" jsonb`,
-  `ALTER TABLE "strategist_telemetry" ADD COLUMN IF NOT EXISTS "thinking_config" jsonb`,
-  `ALTER TABLE "strategist_telemetry" ADD COLUMN IF NOT EXISTS "raw_api_response" jsonb`,
-  `ALTER TABLE "strategist_telemetry" ADD COLUMN IF NOT EXISTS "thinking_blocks" text`,
-  `ALTER TABLE "strategist_telemetry" ADD COLUMN IF NOT EXISTS "web_search_queries" jsonb`,
-  `ALTER TABLE "strategist_telemetry" ADD COLUMN IF NOT EXISTS "web_search_results" jsonb`,
-  `ALTER TABLE "strategist_telemetry" ADD COLUMN IF NOT EXISTS "provider_request_id" text`,
-  `ALTER TABLE "strategist_telemetry" ADD COLUMN IF NOT EXISTS "model_name" text`,
+  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS provider text`,
+  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS model_input text`,
+  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS system_prompt text`,
+  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS tools_attached jsonb`,
+  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS thinking_config jsonb`,
+  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS raw_api_response jsonb`,
+  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS thinking_blocks text`,
+  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS web_search_queries jsonb`,
+  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS web_search_results jsonb`,
+  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS provider_request_id text`,
+  `ALTER TABLE public.strategist_telemetry ADD COLUMN IF NOT EXISTS model_name text`,
 ];
 
 /** Applies renames + ADD IF NOT EXISTS (throws on DB error — for read-path retry). */
@@ -70,6 +72,16 @@ export async function ensureStrategistTelemetryAuditColumns(): Promise<void> {
       "Could not self-heal strategist_telemetry audit columns — grant ALTER on strategist_telemetry or run pnpm db:migrate",
     );
   }
+}
+
+/** Avoid dumping multi-line SQL DO blocks into mobile JSON responses. */
+export function sanitizeStrategistTelemetryClientDetail(flat: string): string {
+  const s = flat.trim();
+  if (s.length === 0) return "";
+  if (/\bDO\s*\$\$/i.test(s) || (/\bALTER\s+TABLE\b/i.test(s) && s.length > 240)) {
+    return "Database schema alignment failed (full message in API server logs only).";
+  }
+  return s.slice(0, 500);
 }
 
 /** Walk `Error.cause` / nested objects — node-postgres + Drizzle often put `code` on inner errors. */
@@ -145,7 +157,6 @@ const PRIME_COOLDOWN_MS = 5000;
 /**
  * Runs audit DDL before the first successful strategist telemetry read (then no-ops).
  * Throttles failed attempts to once per 5s so a denied ALTER does not spam the DB.
- * Catches cases where the driver nests 42703 so our retry predicate never fired.
  */
 export async function primeStrategistTelemetryReadSchema(): Promise<void> {
   if (strategistTelemetryReadSchemaPrimed) return;

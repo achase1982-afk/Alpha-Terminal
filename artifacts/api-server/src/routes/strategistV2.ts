@@ -27,6 +27,7 @@ import {
   primeStrategistTelemetryReadSchema,
   strategistTelemetryFlattenErrorMessage,
   strategistTelemetryPostgresErrorCode,
+  sanitizeStrategistTelemetryClientDetail,
 } from "../lib/ensureStrategistTelemetryAuditColumns.js";
 import {
   ensureIvrCoverage,
@@ -1106,13 +1107,16 @@ function strategistTelemetryFetchErrorJson(err: unknown, mode: "list" | "row"): 
   const flat = strategistTelemetryFlattenErrorMessage(err);
   const code = strategistTelemetryPostgresErrorCode(err);
   const hint =
-    code === "42703" || /column .*does not exist/i.test(flat)
-      ? "strategist_telemetry is missing columns for this API build. Deploy the latest API, run lib/db migrations, or grant ALTER on strategist_telemetry."
+    code === "42703" ||
+    code === "42704" ||
+    /column .*does not exist/i.test(flat)
+      ? "strategist_telemetry schema does not match this API build. Deploy the latest server or run lib/db migrations against Postgres."
       : undefined;
+  const detail = sanitizeStrategistTelemetryClientDetail(flat);
   return {
     error: mode === "list" ? "Failed to fetch telemetry" : "Failed to fetch telemetry row",
     ...(hint ? { hint } : {}),
-    ...(flat ? { detail: flat.slice(0, 500) } : {}),
+    ...(detail ? { detail } : {}),
     ...(code ? { postgresCode: code } : {}),
   };
 }
