@@ -51,6 +51,15 @@ import { resolveStrikes, type AccountSnapshot, type ChainData, type ResolvedTrad
 import { createGeminiClient, getGeminiApiKey } from "../lib/geminiClient.js";
 import { getXaiApiKey } from "../lib/xaiEnv.js";
 import { geminiThinkingConfigForModel } from "../lib/geminiThinkingConfig.js";
+import {
+  anthropicThinkingForMessagesApi,
+  ANTHROPIC_EXTENDED_THINKING_BUDGET,
+  anthropicProviderOptionsForAiSdk,
+  isAnthropicAdaptiveThinkingModel,
+  xaiReasoningProviderOptionsForChat,
+} from "../lib/llmReasoningConfig.js";
+
+export { isClaude47OrNewer } from "../lib/llmReasoningConfig.js";
 
 const router: IRouter = Router();
 
@@ -263,10 +272,6 @@ const AVAILABLE_MODELS = [
   "grok-3",
 ];
 
-export function isClaude47OrNewer(model: string): boolean {
-  return /^claude-(opus|sonnet)-4-([7-9]|\d{2,})/.test(model);
-}
-
 interface NativeStreamOptions {
   prompt: string;
   systemPrompt?: string;
@@ -276,16 +281,6 @@ interface NativeStreamOptions {
   onThinking?: (text: string) => void;
   onText?: (text: string) => void;
 }
-
-const THINKING_CAPABLE_MODELS = new Set([
-  "claude-opus-4-7",
-  "claude-opus-4-6",
-  "claude-sonnet-4-6",
-  "claude-haiku-4-5",
-  "claude-opus-4-20250514",
-  "claude-sonnet-4-20250514",
-  "claude-3-7-sonnet-20250219",
-]);
 
 async function nativeStreamClaude(opts: NativeStreamOptions): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -304,16 +299,18 @@ async function nativeStreamClaude(opts: NativeStreamOptions): Promise<string> {
   const client = new Anthropic({ apiKey });
 
   const resolvedModel = modelName || DEFAULT_MODEL;
-  // Default thinking ON for all Claude models. Caller-supplied budget takes precedence; otherwise use 2048.
-  const effectiveBudget = thinkingBudget && thinkingBudget > 0 ? thinkingBudget : 2048;
-  const useThinking = THINKING_CAPABLE_MODELS.has(resolvedModel);
+  const callerBudget = thinkingBudget && thinkingBudget > 0 ? thinkingBudget : ANTHROPIC_EXTENDED_THINKING_BUDGET;
+  const thinking = anthropicThinkingForMessagesApi(resolvedModel);
 
   let fullText = "";
 
-  const isNew = isClaude47OrNewer(resolvedModel);
   const params: Anthropic.MessageStreamParams = {
     model: resolvedModel,
-    max_tokens: useThinking ? Math.max(16000, effectiveBudget + 8000) : 4096,
+    max_tokens: thinking
+      ? thinking.type === "adaptive"
+        ? Math.max(16000, 16000)
+        : Math.max(16000, callerBudget + 8000)
+      : 4096,
     messages: [{ role: "user", content: prompt }],
   };
 
@@ -321,17 +318,14 @@ async function nativeStreamClaude(opts: NativeStreamOptions): Promise<string> {
     params.system = systemPrompt;
   }
 
-  if (useThinking) {
-    if (isNew) {
-      // Claude 4.7+: extended thinking budgets removed; use adaptive instead
-      // Anthropic SDK types lag behind the Messages API "adaptive" thinking shape.
+  if (thinking) {
+    if (thinking.type === "adaptive") {
       params.thinking = { type: "adaptive", display: "summarized" } as Anthropic.MessageStreamParams["thinking"];
     } else {
-      params.thinking = { type: "enabled", budget_tokens: effectiveBudget };
+      params.thinking = { type: "enabled", budget_tokens: callerBudget };
       params.temperature = 1;
     }
-  } else if (!isNew) {
-    // Claude 4.7+: temperature/top_p/top_k must be omitted (400 otherwise)
+  } else if (!isAnthropicAdaptiveThinkingModel(resolvedModel)) {
     params.temperature = temperature;
   }
   void temperature;
@@ -421,11 +415,13 @@ async function nativeStreamGrok(opts: NativeStreamOptions): Promise<string> {
   } = opts;
 
   const xai = getXaiProvider();
+  const grokReasoning = xaiReasoningProviderOptionsForChat(modelName);
   const result = streamText({
     model: xai(modelName),
     system: systemPrompt,
     temperature,
     prompt,
+    ...(grokReasoning ? { providerOptions: grokReasoning } : {}),
   });
 
   let fullText = "";
@@ -463,12 +459,20 @@ async function callClaude(
     return "Error: ANTHROPIC_API_KEY not configured.";
   }
 
+  const thinking = anthropicThinkingForMessagesApi(modelName);
   const createParams: Anthropic.MessageCreateParamsNonStreaming = {
     model: modelName,
-    max_tokens: 4096,
+    max_tokens: thinking
+      ? thinking.type === "adaptive"
+        ? 12288
+        : ANTHROPIC_EXTENDED_THINKING_BUDGET + 8192
+      : 4096,
     messages: [{ role: "user", content: prompt }],
   };
-  if (!isClaude47OrNewer(modelName)) {
+  if (thinking) {
+    createParams.thinking = thinking as Anthropic.MessageCreateParamsNonStreaming["thinking"];
+    if (thinking.type === "enabled") createParams.temperature = 1;
+  } else if (!isAnthropicAdaptiveThinkingModel(modelName)) {
     createParams.temperature = temperature;
   }
   const message = await client.messages.create(createParams);
@@ -509,10 +513,12 @@ async function callModel(
   }
   if (isGrokModel(modelName)) {
     const xai = getXaiProvider();
+    const grokReasoning = xaiReasoningProviderOptionsForChat(modelName);
     const { text } = await generateText({
       model: xai(modelName),
       temperature,
       prompt,
+      ...(grokReasoning ? { providerOptions: grokReasoning } : {}),
     });
     return text.trim() || "No response";
   }
@@ -661,11 +667,21 @@ If data is insufficient for any field, use null. Base RSI on 14-period calculati
     const client = getClient();
     if (!client) return res.json({ error: "ANTHROPIC_API_KEY not configured" });
 
+    const thinking = anthropicThinkingForMessagesApi(DEFAULT_MODEL);
     const response = await client.messages.create({
       model: DEFAULT_MODEL,
-      max_tokens: 4096,
-      temperature: 0,
+      max_tokens: thinking
+        ? thinking.type === "adaptive"
+          ? 8192
+          : ANTHROPIC_EXTENDED_THINKING_BUDGET + 4096
+        : 4096,
       messages: [{ role: "user", content: prompt }],
+      ...(thinking
+        ? {
+            thinking: thinking as Anthropic.MessageCreateParamsNonStreaming["thinking"],
+            ...(thinking.type === "enabled" ? { temperature: 1 as const } : {}),
+          }
+        : { temperature: 0 }),
     });
     
     const content = response.content[0];
@@ -2543,6 +2559,7 @@ ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA ═══\n${marketContext
       }
 
       const xai = getXaiProvider();
+      const grokReasoning = xaiReasoningProviderOptionsForChat(chosenModel);
       const result = streamText({
         model: xai(chosenModel),
         system: systemPrompt,
@@ -2551,6 +2568,7 @@ ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA ═══\n${marketContext
           role: m.role as "user" | "assistant",
           content: m.content,
         })),
+        ...(grokReasoning ? { providerOptions: grokReasoning } : {}),
       });
 
       try {
@@ -2571,14 +2589,17 @@ ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA ═══\n${marketContext
     }
 
     const anthropic = createAnthropic({ apiKey });
+    const claudeThinking = anthropicProviderOptionsForAiSdk(chosenModel);
     const result = streamText({
       model: anthropic(chosenModel),
       system: systemPrompt,
       temperature: 0,
+      maxOutputTokens: 16384,
       messages: messages.map(m => ({
         role: m.role as "user" | "assistant",
         content: m.content,
       })),
+      ...(claudeThinking ?? {}),
     });
 
     try {
