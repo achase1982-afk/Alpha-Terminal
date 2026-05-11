@@ -420,6 +420,7 @@ export function StrategistTelemetryPanel() {
 
   const loadData = useCallback(async () => {
     setLoading(true);
+    let strategistPayloadOk = false;
     try {
       const [sRes, scRes, ibRes] = await Promise.all([
         fetchWithAuth(`/api/strategist/telemetry/strategist?limit=50${tickerFilter ? `&ticker=${tickerFilter}` : ""}`),
@@ -429,6 +430,7 @@ export function StrategistTelemetryPanel() {
       if (sRes.ok) {
         setStrategistLoadErr(null);
         setStratRows(await sRes.json());
+        strategistPayloadOk = true;
       } else {
         let detail = `HTTP ${sRes.status}`;
         try {
@@ -468,9 +470,11 @@ export function StrategistTelemetryPanel() {
     } catch (e) {
       setIbkrTickLine("IBKR tick entitlement: Not tested — run from Settings.");
       const msg = e instanceof Error ? e.message : "Network error";
-      setStrategistLoadErr(msg);
-      setStratRows([]);
-      toast.error(`Strategist telemetry failed: ${msg}`);
+      if (!strategistPayloadOk) {
+        setStrategistLoadErr(msg);
+        setStratRows([]);
+        toast.error(`Strategist telemetry failed: ${msg}`);
+      }
     }
     setLoading(false);
   }, [tickerFilter]);
