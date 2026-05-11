@@ -136,7 +136,7 @@ function downloadTelemetryJson(filename: string, payload: unknown): boolean {
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 100);
     return true;
   } catch {
     return false;
