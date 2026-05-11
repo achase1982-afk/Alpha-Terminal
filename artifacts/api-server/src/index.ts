@@ -44,6 +44,7 @@ import { nyCalendarYmd, isNyTradingSessionDateSync } from "./lib/usEquityMarketC
 import { liquidCoreUnionTuningSymbols } from "./lib/liquidCoreUniverse.js";
 import { runLiquidCoreEquityBackfillOnce, runFlowBootstrapGapRepairOnce } from "./lib/triggerBackfillBoot.js";
 import { ensureTelemetryEventsServiceColumn } from "./lib/ensureTelemetryEventsSchema.js";
+import { ensureStrategistTelemetryAuditColumns } from "./lib/ensureStrategistTelemetryAuditColumns.js";
 
 const rawPort = process.env["PORT"];
 
@@ -63,6 +64,7 @@ getFmpApiKeyOrThrow();
 
 async function boot() {
   await ensureTelemetryEventsServiceColumn();
+  await ensureStrategistTelemetryAuditColumns();
   registerTuningUniverseOnBoot();
   startSnapshotRefreshWorker();
   void refreshMacroCalendarCacheFromDb().catch((e) => {
