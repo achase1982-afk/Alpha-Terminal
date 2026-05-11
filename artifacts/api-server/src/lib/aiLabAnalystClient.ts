@@ -1289,11 +1289,6 @@ function countAnthropicWebSearchServerToolUses(content: unknown): number {
 /** Anthropic Messages API model id enforced for Conviction Desk audit trail. */
 export const CONVICTION_DESK_ANTHROPIC_MODEL = "claude-opus-4-7";
 
-const CONVICTION_DESK_THINKING: { type: "enabled"; budget_tokens: number } = {
-  type: "enabled",
-  budget_tokens: 10_000,
-};
-
 function extractThinkingBlocksForAudit(content: unknown): string | null {
   const blocks = asAnthropicContentBlocks(content);
   const parts: string[] = [];
@@ -1353,11 +1348,15 @@ export async function streamCallAnthropicConvictionDesk(
   const client = new Anthropic({ apiKey, timeout: 20 * 60 * 1000 });
 
   const modelNameEffective = CONVICTION_DESK_ANTHROPIC_MODEL;
-  const extendedThinkingConfig = CONVICTION_DESK_THINKING;
+  const thinking = anthropicThinkingForMessagesApi(modelNameEffective);
   const toolsAttached = [ANTHROPIC_WEB_SEARCH_TOOL];
   const modelInput = JSON.stringify(messages, null, 2);
-  const THINKING_BUDGET = extendedThinkingConfig.budget_tokens;
-  const computedMax = THINKING_BUDGET + 12288;
+  const convictionEnabledBudget = Math.max(10_000, ANTHROPIC_EXTENDED_THINKING_BUDGET);
+  const computedMax = thinking
+    ? thinking.type === "adaptive"
+      ? 16_384
+      : convictionEnabledBudget + 12_288
+    : 12_288;
   const max_tokens = options?.maxTokens != null ? Math.max(computedMax, options.maxTokens) : computedMax;
   const params: AnthropicMessageStreamParamsWithWebSearch = {
     model: modelNameEffective,
@@ -1366,9 +1365,21 @@ export async function streamCallAnthropicConvictionDesk(
     messages,
     tools: toolsAttached,
     stream: true,
-    thinking: extendedThinkingConfig as Anthropic.MessageCreateParamsStreaming["thinking"],
-    temperature: 1,
   };
+
+  if (thinking) {
+    if (thinking.type === "adaptive") {
+      params.thinking = { type: "adaptive", display: "summarized" } as Anthropic.MessageCreateParamsStreaming["thinking"];
+    } else {
+      params.thinking = {
+        type: "enabled",
+        budget_tokens: convictionEnabledBudget,
+      } as Anthropic.MessageCreateParamsStreaming["thinking"];
+      params.temperature = 1;
+    }
+  }
+
+  const extendedThinkingConfigForAudit = jsonCloneForDiagnostics(params.thinking ?? null);
 
   const sdkCallParams = sdkDiagnosticsPayload(
     "anthropic.messages.stream.conviction_desk",
@@ -1474,7 +1485,7 @@ export async function streamCallAnthropicConvictionDesk(
       modelInput,
       systemPrompt: systemPrompt,
       toolsAttached: jsonCloneForDiagnostics(toolsAttached),
-      extendedThinkingConfig: jsonCloneForDiagnostics(extendedThinkingConfig),
+      extendedThinkingConfig: extendedThinkingConfigForAudit,
       modelName: modelNameEffective,
       rawApiResponse: jsonCloneForDiagnostics(finalMessage.content),
       thinkingBlocks: extractThinkingBlocksForAudit(finalMessage.content),

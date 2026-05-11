@@ -263,8 +263,12 @@ export function buildStrategistFullDiagnosticJson(args: BuildFullDiagnosticArgs)
   const mergedCalls = Array.isArray(baseModelAttr.calls)
     ? baseModelAttr.calls.map((call) => ({
         ...call,
-        extendedThinkingEnabled: extCfg?.type === "enabled",
-        extendedThinkingBudgetTokens: extCfg?.budget_tokens ?? null,
+        extendedThinkingEnabled:
+          extCfg != null && (extCfg.type === "enabled" || extCfg.type === "adaptive"),
+        extendedThinkingBudgetTokens:
+          extCfg?.type === "enabled" && typeof extCfg.budget_tokens === "number"
+            ? extCfg.budget_tokens
+            : null,
         modelName: audit?.modelName ?? call.providerModel,
       }))
     : baseModelAttr.calls;
