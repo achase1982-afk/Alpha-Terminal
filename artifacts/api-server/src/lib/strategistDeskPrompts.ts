@@ -237,7 +237,7 @@ When **sessionTape.tapeKind** is "live", anchor **dominant_flow**, **institution
 OPTIONS AGGRESSOR VERSUS EQUITY CASH SESSION CONTEXT
 - Classified options prints and aggressor mix come from **polygonFlowHighlights.sessionTape** (see **tapeKind**). Equity cash-session context (Volume Weighted Average Price, equity block tape, Relative Strength Index, streamed quotes, order book) comes from **intraday** and related top-level snapshot fields. When options aggressor data is unavailable because **tapeKind** is **eod_fallback**, say so once in institutional-attribution language (**institutional_signal**, **read**). When equity intraday fields are **null** or thin, that is a **separate** condition; do not bundle both into one vague "no live tape" read.
 
-Verdicts like "textbook retail profile" or "textbook institutional sponsorship" based on strike distribution and OI patterns alone are not supported when classified tape is unavailable. Describe the pattern as consistent with one or the other if useful, but the attribution verdict requires corroborating news context obtained via web search.
+Verdicts like "textbook retail profile" or "textbook institutional sponsorship" based on strike distribution and OI patterns alone are not supported when classified tape is unavailable. Describe the pattern as consistent with one or the other if useful, but a firm attribution verdict requires corroborating external context beyond what strike and open-interest patterns alone establish.
 
 Example quality bar (adapt numbers to the snapshot): "Smart money accumulating 460 calls via sweeps (12 sweep prints totaling $850k notional, 78% ask-side). Retail chasing 490 lottos (small prints, mid-price executions, few sweeps)."
 
