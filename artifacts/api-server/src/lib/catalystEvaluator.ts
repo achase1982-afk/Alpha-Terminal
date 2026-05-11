@@ -29,6 +29,7 @@
 
 import { getNextEarningsDate } from "./earningsService.js";
 import { getUpcomingEvents } from "./calendarEventChecker.js";
+import { isEquityOptionsStrategistMacroEvent } from "./strategistMacroSnapshotFilter.js";
 
 export type CatalystType =
   | "EARNINGS"
@@ -230,9 +231,10 @@ export async function evaluateCatalyst(opts: {
   const macroWindow = Math.max(2, dteCalendar);
   for (const ev of getUpcomingEvents(macroWindow)) {
     if (ev.date < today || ev.date > expiration) continue;
+    if (!isEquityOptionsStrategistMacroEvent(ev)) continue;
     if (ev.type === "fomc") {
       scheduled.push({ type: "FED_MEETING", date: ev.date, title: ev.title, source: "calendar" });
-    } else if (ev.type === "economic" && (ev.importance === "HIGH" || ev.importance === "MEDIUM")) {
+    } else if (ev.type === "economic") {
       scheduled.push({ type: "ECONOMIC_RELEASE", date: ev.date, title: ev.title, source: "calendar" });
     }
   }

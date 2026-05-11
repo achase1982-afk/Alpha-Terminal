@@ -870,6 +870,10 @@ export interface WebSearchEnvelope {
     outputTokens: number | null;
     reasoningTokens: number | null;
     totalTokens: number | null;
+    /** Anthropic prompt cache write (input tokens). */
+    cacheCreationInputTokens?: number | null;
+    /** Anthropic prompt cache read (input tokens). */
+    cacheReadInputTokens?: number | null;
   };
   reasoningText: string | null;
 }
@@ -884,6 +888,8 @@ export function createEmptyEnvelope(provider: WebSearchEnvelopeProvider, modelId
       outputTokens: null,
       reasoningTokens: null,
       totalTokens: null,
+      cacheCreationInputTokens: null,
+      cacheReadInputTokens: null,
     },
     reasoningText: null,
   };
@@ -959,11 +965,15 @@ function anthropicUsageFromSdk(usage: unknown): WebSearchEnvelope["usage"] {
   const output = u.output_tokens;
   const rt = u.reasoning_tokens;
   const total = u.total_tokens;
+  const cc = u.cache_creation_input_tokens;
+  const cr = u.cache_read_input_tokens;
   return {
     inputTokens: typeof input === "number" ? input : null,
     outputTokens: typeof output === "number" ? output : null,
     reasoningTokens: typeof rt === "number" ? rt : null,
     totalTokens: typeof total === "number" ? total : null,
+    cacheCreationInputTokens: typeof cc === "number" ? cc : null,
+    cacheReadInputTokens: typeof cr === "number" ? cr : null,
   };
 }
 
@@ -1235,6 +1245,153 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
 
   return {
     text,
+    trace: {
+      webSearchUsed: queries.length > 0,
+      queries,
+      sources,
+    },
+    envelope,
+    sdkCallParams,
+  };
+}
+
+/** Conviction Desk Anthropic path: supports multi-block cached user prefix and multi-turn validation retries. */
+export async function streamCallAnthropicConvictionDesk(
+  model: string,
+  systemPrompt: string,
+  messages: Anthropic.MessageParam[],
+  onDelta: (text: string) => void,
+  onStatus?: (status: string) => void,
+  cancelSignal?: AbortSignal,
+  options?: { maxTokens?: number },
+): Promise<WebSearchResult> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
+  const client = new Anthropic({ apiKey, timeout: 20 * 60 * 1000 });
+
+  const thinking = anthropicThinkingForMessagesApi(model);
+  const THINKING_BUDGET = ANTHROPIC_EXTENDED_THINKING_BUDGET;
+  const computedMax = thinking ? (thinking.type === "adaptive" ? 16384 : THINKING_BUDGET + 12288) : 12288;
+  const max_tokens =
+    options?.maxTokens != null ? Math.max(computedMax, options.maxTokens) : computedMax;
+  const params: AnthropicMessageStreamParamsWithWebSearch = {
+    model,
+    max_tokens,
+    system: systemPrompt,
+    messages,
+    tools: [ANTHROPIC_WEB_SEARCH_TOOL],
+    stream: true,
+  };
+  if (thinking) {
+    params.thinking = thinking as Anthropic.MessageCreateParamsStreaming["thinking"];
+    if (thinking.type === "enabled") params.temperature = 1;
+  }
+
+  const sdkCallParams = sdkDiagnosticsPayload(
+    "anthropic.messages.stream.conviction_desk",
+    params,
+    cancelSignal ? { streamOptions: { abortSignal: true } } : undefined,
+  );
+
+  const queries: string[] = [];
+  const sources: WebSearchSource[] = [];
+  const seenUrls = new Set<string>();
+  let fullText = "";
+
+  const stream = client.messages.stream(params as Anthropic.MessageCreateParamsStreaming, { signal: cancelSignal });
+  for await (const event of stream) {
+    const ev = asAnthropicStreamEvent(event);
+    const evType = ev.type as string | undefined;
+    if (evType === "content_block_start") {
+      const block = ev.content_block as Record<string, unknown> | undefined;
+      const bType = block?.type as string | undefined;
+      if (bType === "server_tool_use") {
+        const inp = block?.input as Record<string, unknown> | undefined;
+        const q = inp?.query;
+        if (typeof q === "string" && q.trim()) {
+          queries.push(q.trim());
+          onStatus?.(`Searching the web: "${q.trim().slice(0, 80)}"`);
+        }
+      } else if (bType === "web_search_tool_result") {
+        const content = block?.content;
+        if (Array.isArray(content)) {
+          for (const item of content as Array<Record<string, unknown>>) {
+            const url = item.url as string | undefined;
+            if (!url || seenUrls.has(url)) continue;
+            seenUrls.add(url);
+            sources.push({
+              title: (item.title as string | undefined) ?? url,
+              url,
+              date: (item.page_age as string | undefined) ?? undefined,
+            });
+          }
+          onStatus?.(`Found ${sources.length} source${sources.length === 1 ? "" : "s"}`);
+        }
+      } else if (bType === "thinking") {
+        onStatus?.("Reasoning…");
+      } else if (bType === "text") {
+        onStatus?.("Drafting recommendation…");
+      }
+    } else if (evType === "content_block_delta") {
+      const delta = ev.delta as Record<string, unknown> | undefined;
+      const dType = delta?.type as string | undefined;
+      if (dType === "text_delta") {
+        const txt = delta?.text as string | undefined;
+        if (txt) {
+          fullText += txt;
+          onDelta(txt);
+        }
+      } else if (dType === "thinking_delta") {
+        const txt = (delta?.thinking as string | undefined) ?? "";
+        if (txt) onDelta(txt);
+      }
+    }
+  }
+
+  let envelope = createEmptyEnvelope("anthropic", model);
+
+  try {
+    const finalMessage = await stream.finalMessage();
+    envelope = {
+      provider: "anthropic",
+      modelId: model,
+      stopReason: finalMessage.stop_reason != null ? String(finalMessage.stop_reason) : null,
+      usage: anthropicUsageFromSdk(finalMessage.usage),
+      reasoningText: anthropicThinkingTextFromContent(finalMessage.content),
+    };
+    for (const block of asAnthropicContentBlocks(finalMessage.content)) {
+      const t = block.type as string | undefined;
+      if (t === "server_tool_use") {
+        const inp = (block as { input?: Record<string, unknown> }).input;
+        const q = inp?.query;
+        if (typeof q === "string" && q.trim() && !queries.includes(q.trim())) {
+          queries.push(q.trim());
+        }
+      } else if (t === "web_search_tool_result") {
+        const content = (block as { content?: unknown }).content;
+        if (Array.isArray(content)) {
+          for (const item of content as Array<Record<string, unknown>>) {
+            const url = item.url as string | undefined;
+            if (!url || seenUrls.has(url)) continue;
+            seenUrls.add(url);
+            sources.push({
+              title: (item.title as string | undefined) ?? url,
+              url,
+              date: (item.page_age as string | undefined) ?? undefined,
+            });
+          }
+        }
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  const textOut = fullText.trim();
+  if (!textOut) throw new Error("No text content in Strategist LLM response (stream)");
+
+  return {
+    text: textOut,
     trace: {
       webSearchUsed: queries.length > 0,
       queries,

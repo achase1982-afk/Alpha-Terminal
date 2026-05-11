@@ -118,3 +118,59 @@ export function validateConvictionDeskBusinessRules(o: ConvictionDeskOutput): st
 
   return errs;
 }
+
+/** Soft checks for telemetry only (do not fail schema validation). */
+export function deriveConvictionDeskSoftWarnings(
+  o: ConvictionDeskOutput,
+  dataPackageText: string,
+): string[] {
+  const w: string[] = [];
+  const midTag = /\bmid\b|at\s+mid|mid-?priced/i;
+  const debitCredit = /\d+(?:\.\d+)?\s*(debit|credit)\b/i;
+  const rrTalk = /\bR\s*:\s*R\b|\bR\/R\b|negative\s+R/i;
+  const texts = [o.pm.thesis, o.pm.edge_check ?? ""];
+  for (const h of o.family_hypotheses) {
+    if (h.family !== "pass") texts.push(h.entry_math);
+  }
+  for (const t of texts) {
+    const s = t.trim();
+    if (!s) continue;
+    if (!debitCredit.test(s) || !rrTalk.test(s)) continue;
+    if (!midTag.test(s)) {
+      w.push(
+        "mid_fill_rr_convention: debit/credit sizing appears alongside R:R language without an explicit mid label — review telemetry",
+      );
+      break;
+    }
+  }
+
+  let gaps: string[] = [];
+  try {
+    const pkg = JSON.parse(dataPackageText) as { dataQualitySummary?: { data_source_gaps?: unknown } };
+    const g = pkg.dataQualitySummary?.data_source_gaps;
+    if (Array.isArray(g)) gaps = g.filter((x): x is string => typeof x === "string" && x.length > 0);
+  } catch {
+    return w;
+  }
+  if (gaps.length === 0) return w;
+  const cat = o.catalyst.read.toLowerCase();
+  const watch = o.pm.watch_for.toLowerCase();
+  let hit = false;
+  for (const gap of gaps) {
+    const gl = gap.toLowerCase();
+    const head = gl.split(/[:]/)[0]?.trim().slice(0, 48) ?? "";
+    if (
+      cat.includes(gl)
+      || watch.includes(gl)
+      || (head.length > 4 && cat.includes(head))
+      || (head.length > 4 && watch.includes(head))
+    ) {
+      hit = true;
+      break;
+    }
+  }
+  if (!hit) {
+    w.push(`data_source_gaps_surfacing: data_quality_summary lists gaps (${gaps.join("; ")}) not clearly echoed in catalyst.read or pm.watch_for`);
+  }
+  return w;
+}

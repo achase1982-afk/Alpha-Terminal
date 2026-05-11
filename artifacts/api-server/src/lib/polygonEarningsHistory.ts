@@ -171,6 +171,22 @@ export function isCompleteReaction(row: EarningsHistoryRow): boolean {
   );
 }
 
+/** True when any price-reaction or IV-reaction field is populated. */
+function rowHasAnyReactionSignal(row: EarningsHistoryRow): boolean {
+  const p = row.price_reaction;
+  const v = row.iv_reaction;
+  return (
+    p.gap_open_pct != null
+    || p.close_to_close_pct != null
+    || p.five_day_return_pct != null
+    || p.post_earnings_drift_20d_pct != null
+    || v.implied_move_at_close_pct != null
+    || v.iv_at_close_pre_earnings != null
+    || v.iv_at_close_post_earnings != null
+    || v.iv_crush_pct != null
+  );
+}
+
 /** Price path complete; IV crush fields may be null (older equity_daily). */
 export function isUsableReaction(row: EarningsHistoryRow): boolean {
   const p = row.price_reaction;
@@ -510,11 +526,13 @@ export async function fetchEarningsHistoryAndForward(ticker: string): Promise<Fe
 
   const historicalTake = historicalRaw.slice(0, 16);
   const series = await loadEquityDailySeries(sym);
-  const earnings_history = historicalTake.map((r) => buildHistoryRow(r, series));
+  const earnings_history_full = historicalTake.map((r) => buildHistoryRow(r, series));
 
-  const quartersTotal = earnings_history.length;
-  const fullCount = earnings_history.filter(isCompleteReaction).length;
-  const usableCount = earnings_history.filter(isUsableReaction).length;
+  const quartersTotal = earnings_history_full.length;
+  const fullCount = earnings_history_full.filter(isCompleteReaction).length;
+  const usableCount = earnings_history_full.filter(isUsableReaction).length;
+
+  const earnings_history = earnings_history_full.filter(rowHasAnyReactionSignal).slice(0, 6);
 
   if (quartersTotal > 0 && usableCount < 8) {
     gaps.push(`equity_daily_history_insufficient: ${usableCount} of 16 quarters have usable price reaction data`);

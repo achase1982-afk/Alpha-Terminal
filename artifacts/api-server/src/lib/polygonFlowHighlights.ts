@@ -297,6 +297,18 @@ function tsToIso(t: unknown): string | null {
   return null;
 }
 
+function dedupeTopPrintRows(rows: FlowTopPrintRow[]): FlowTopPrintRow[] {
+  const seen = new Set<string>();
+  const out: FlowTopPrintRow[] = [];
+  for (const r of rows) {
+    const k = `${r.timestamp ?? ""}|${r.strike}|${r.expiration}|${r.optionType}|${r.tradePrice}|${r.size}|${String(r.side)}|${r.isBlock}|${r.isSweep}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(r);
+  }
+  return out;
+}
+
 /**
  * Live session tape: exec rollups, top prints, aggressor mix (same `date` as EOD per-strike row).
  */
@@ -391,6 +403,7 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
       });
     }
     aggressorByStrike.sort((a, b) => b.printCount - a.printCount);
+    const aggressorByStrikeFiltered = aggressorByStrike.filter((a) => a.printCount >= 10);
 
     let askCount = 0;
     let bidCount = 0;
@@ -439,7 +452,7 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
       lastEventTs: r.lastEventTs ? (r.lastEventTs instanceof Date ? r.lastEventTs.toISOString() : String(r.lastEventTs)) : null,
     }));
 
-    const topMapped: FlowTopPrintRow[] = topPrints.map((r) => ({
+    const topMappedRaw: FlowTopPrintRow[] = topPrints.map((r) => ({
       timestamp: tsToIso(r.timestamp),
       strike: r.strike,
       expiration: expToIso(r.expiration),
@@ -454,6 +467,7 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
       multiLegConfidence: r.multiLegConfidence ?? null,
       extras: r.extras && typeof r.extras === "object" ? (r.extras as Record<string, unknown>) : null,
     }));
+    const topMapped = dedupeTopPrintRows(topMappedRaw);
 
     return {
       sessionDate,
@@ -461,7 +475,7 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
       sessionAggregateSource: "live_raw_trades",
       execPerStrike,
       topPrints: topMapped,
-      aggressorByStrike,
+      aggressorByStrike: aggressorByStrikeFiltered,
       aggressorSessionTotals: {
         askCount,
         bidCount,
@@ -547,7 +561,7 @@ function buildEodFallbackSessionTape(
   });
 
   const topSource = [...withVol].sort((a, b) => (b.dailyVolume ?? 0) - (a.dailyVolume ?? 0)).slice(0, TOP_PRINTS_LIMIT);
-  const topPrints: FlowTopPrintRow[] = topSource.map((r) => {
+  const topPrintsRaw: FlowTopPrintRow[] = topSource.map((r) => {
     const mid = r.mid;
     const tradePrice = r.avgTradePrice ?? mid ?? 0;
     const v = r.dailyVolume ?? 0;
@@ -566,9 +580,10 @@ function buildEodFallbackSessionTape(
       side: null,
     };
   });
+  const topPrints = dedupeTopPrintRows(topPrintsRaw);
 
   const byVolDesc = [...withVol].sort((a, b) => (b.dailyVolume ?? 0) - (a.dailyVolume ?? 0));
-  const aggressorByStrike: FlowStrikeAggressorMix[] = byVolDesc.map((r) => ({
+  const aggressorByStrikeRaw: FlowStrikeAggressorMix[] = byVolDesc.map((r) => ({
     strike: r.strike,
     expiration: expToIso(r.expiration),
     optionType: r.optionType === "call" ? "call" : "put",
@@ -578,6 +593,7 @@ function buildEodFallbackSessionTape(
     unknownPct: 100,
     printCount: 1,
   }));
+  const aggressorByStrike = aggressorByStrikeRaw;
 
   const totalPrints = withVol.length;
   const knownPct = 0;

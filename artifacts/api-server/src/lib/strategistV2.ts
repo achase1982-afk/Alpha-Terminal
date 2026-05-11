@@ -52,6 +52,7 @@ import {
 import { getQuoteBySymbol } from "./schwabStreamer.js";
 import { lastCompletedTradingDayNy, nyCalendarYmd, rthBoundsMs } from "./polygonMarketCalendar.js";
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
+import { isEquityOptionsStrategistMacroEvent } from "./strategistMacroSnapshotFilter.js";
 import { getNextEarningsDate, type NextEarnings } from "./earningsService.js";
 import { evaluateCatalyst, deriveTradeDirection, type CatalystEvaluation } from "./catalystEvaluator.js";
 import { type OptionContract } from "./optionsStrategist.js";
@@ -1363,6 +1364,7 @@ async function analyzeTickerV2Inner(
     }
   }
 
+  // Conviction Desk: XML prompt layout, filtered snapshot payload, Anthropic prompt caching (ephemeral), and short correction retries are implemented in strategistDesk.runConvictionDesk and aiLabAnalystClient.streamCallAnthropicConvictionDesk.
   // ── Conviction Desk (mode 5): trade memo JSON, same data package as Solo Desk ──
   if (settings.strategistMode === 5) {
     status("Starting Conviction Desk analysis (trade memo, single pass)…");
@@ -3386,15 +3388,14 @@ async function buildDataPackage(
     }> = [];
     for (const ev of getUpcomingEvents(macroWindow)) {
       if (ev.date < currentDate || ev.date > exp) continue;
-      if (ev.type === "fomc" || (ev.type === "economic" && (ev.importance === "HIGH" || ev.importance === "MEDIUM"))) {
-        macroEventsInPositionWindow.push({
-          date: ev.date,
-          title: ev.title,
-          type: ev.type,
-          importance: ev.importance,
-          ...(ev.time ? { time: ev.time } : {}),
-        });
-      }
+      if (!isEquityOptionsStrategistMacroEvent(ev)) continue;
+      macroEventsInPositionWindow.push({
+        date: ev.date,
+        title: ev.title,
+        type: ev.type,
+        importance: ev.importance,
+        ...(ev.time ? { time: ev.time } : {}),
+      });
     }
     pkg.macroEventsInPositionWindow = macroEventsInPositionWindow;
   }
