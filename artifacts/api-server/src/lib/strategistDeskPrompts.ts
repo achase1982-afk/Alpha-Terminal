@@ -5,6 +5,7 @@
 
 import { buildScannerContextPromptBlock, type ScannerStrategistContext } from "./scannerStrategistContext.js";
 import { buildConvictionDeskStaticUserPrefix, type ConvictionDeskPromptProvider } from "./convictionDeskXmlPrompt.js";
+import { CONVICTION_DESK_WEB_SEARCH_GUIDANCE_BODY } from "./convictionDeskWebSearchGuidance.js";
 
 export type { ConvictionDeskPromptProvider };
 /** Single-voice rule injected into each section prompt. */
@@ -235,6 +236,8 @@ When **sessionTape.tapeKind** is "live", anchor **dominant_flow**, **institution
 
 OPTIONS AGGRESSOR VERSUS EQUITY CASH SESSION CONTEXT
 - Classified options prints and aggressor mix come from **polygonFlowHighlights.sessionTape** (see **tapeKind**). Equity cash-session context (Volume Weighted Average Price, equity block tape, Relative Strength Index, streamed quotes, order book) comes from **intraday** and related top-level snapshot fields. When options aggressor data is unavailable because **tapeKind** is **eod_fallback**, say so once in institutional-attribution language (**institutional_signal**, **read**). When equity intraday fields are **null** or thin, that is a **separate** condition; do not bundle both into one vague "no live tape" read.
+
+Verdicts like "textbook retail profile" or "textbook institutional sponsorship" based on strike distribution and OI patterns alone are not supported when classified tape is unavailable. Describe the pattern as consistent with one or the other if useful, but a firm attribution verdict requires corroborating external context beyond what strike and open-interest patterns alone establish.
 
 Example quality bar (adapt numbers to the snapshot): "Smart money accumulating 460 calls via sweeps (12 sweep prints totaling $850k notional, 78% ask-side). Retail chasing 490 lottos (small prints, mid-price executions, few sweeps)."
 
@@ -674,14 +677,11 @@ export function buildConvictionDeskUserPromptBundle(
   structuredResearchBriefing?: string,
   options?: { catalystSlotNativeWebSearch?: boolean; provider?: ConvictionDeskPromptProvider },
 ): ConvictionDeskUserPromptBundle {
-  const nativeWebBlock =
-    options?.catalystSlotNativeWebSearch
-      ? `<native_web_search>
-Your provider supports web search on this JSON turn. Use the built-in web search tool as needed before answering. Run focused searches aligned with: IR / company events, analyst actions (last ~60 days), earnings reaction history, sector ETF and peers, and (if the catalyst window warrants it) recent news. Prefer primary sources and major financial press; skip content farms.
-If a theme has no support after searching, write data not surfaced for that slice instead of inventing. Do not paste URLs or name outlets or vendors in the output.
-</native_web_search>
-`
-      : "";
+  const webSearchGuidanceXml = options?.catalystSlotNativeWebSearch
+    ? `<web_search_guidance>
+${CONVICTION_DESK_WEB_SEARCH_GUIDANCE_BODY}
+</web_search_guidance>`
+    : "";
 
   const volBlock = stripVolPromptBeforeSnapshot(dataPackage);
   const flowBlock = stripFlowPromptBeforeSnapshot(dataPackage);
@@ -694,7 +694,7 @@ If a theme has no support after searching, write data not surfaced for that slic
     catalystSectionGuidance: catalystBlock,
     decisionSectionGuidance: pmBlock,
     provider: options?.provider,
-    nativeWebCatalystBlock: nativeWebBlock ? `\n${nativeWebBlock.trim()}\n` : "",
+    webSearchGuidanceBlock: webSearchGuidanceXml,
   });
 
   const dataInner =

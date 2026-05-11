@@ -57,7 +57,7 @@ export function buildConvictionDeskStaticUserPrefix(args: {
   catalystSectionGuidance: string;
   decisionSectionGuidance: string;
   provider?: ConvictionDeskPromptProvider;
-  nativeWebCatalystBlock: string;
+  webSearchGuidanceBlock: string;
 }): string {
   const p = providerConstraintsXml(args.provider);
   return `<role>
@@ -103,7 +103,6 @@ Do not mark a family unfit solely because options tapeKind was eod_fallback; com
 <data_quality_adherence>
 When dataQualitySummary.data_source_gaps is non-empty (e.g. iv_crush_history_insufficient), you must reference the gap in catalyst.read or pm.watch_for. The model is not permitted to silently ignore data_source_gaps. When dataQualitySummary.flags contains iv_contamination_elevated, call it out in vol.iv_state or vol.read and down-weight vol conclusions. When marketSession is closed, note that wing-vol confidence is reduced due to weekend illiquidity unless iv_contamination_elevated is also present.
 </data_quality_adherence>
-${args.nativeWebCatalystBlock}
 <vol_section_guidance>
 ${args.volSectionGuidance.trim()}
 </vol_section_guidance>
@@ -115,8 +114,7 @@ ${args.flowSectionGuidance.trim()}
 <catalyst_section_guidance>
 ${args.catalystSectionGuidance.trim()}
 </catalyst_section_guidance>
-
-<decision_section_guidance>
+${args.webSearchGuidanceBlock ? `${args.webSearchGuidanceBlock}\n` : "\n"}<decision_section_guidance>
 ${args.decisionSectionGuidance.trim()}
 </decision_section_guidance>
 

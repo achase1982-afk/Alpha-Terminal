@@ -1364,6 +1364,7 @@ async function analyzeTickerV2Inner(
     }
   }
 
+  // Anthropic Conviction Desk uses messages.stream with tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }] (see ANTHROPIC_WEB_SEARCH_TOOL in aiLabAnalystClient.ts, streamCallAnthropicConvictionDesk).
   // Conviction Desk: XML prompt layout, filtered snapshot payload, Anthropic prompt caching (ephemeral), and short correction retries are implemented in strategistDesk.runConvictionDesk and aiLabAnalystClient.streamCallAnthropicConvictionDesk.
   // ── Conviction Desk (mode 5): trade memo JSON, same data package as Solo Desk ──
   if (settings.strategistMode === 5) {
@@ -4699,6 +4700,7 @@ async function emitFullDiagnosticTelemetry(args: {
     cboeOnePoolSize: ctx?.diag.cboeOnePoolSize ?? null,
     cboeOnePoolCapacity: ctx?.diag.cboeOnePoolCapacity ?? null,
     cboeOneWasColdStart: ctx?.diag.cboeOneWasColdStart ?? null,
+    convictionDeskAnthropicTelemetry: ctx?.diag.convictionDeskAnthropicTelemetry,
   });
   return logTelemetry(
     args.ticker,
