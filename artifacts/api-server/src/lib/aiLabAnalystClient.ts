@@ -22,6 +22,7 @@ import type {
   UniverseScreenResponse,
 } from "./aiLabLlmTypes.js";
 import { type AiLabModelProvider, getActivePrompt } from "./aiLabConfig.js";
+import type { ConvictionDeskTelemetryProvider } from "./convictionDeskRouting.js";
 
 const DEFAULT_ANALYST_MODEL = "claude-opus-4-6";
 const GEMINI_WEB_SEARCH_MAX_ATTEMPTS = 4;
@@ -899,8 +900,7 @@ export function createEmptyEnvelope(provider: WebSearchEnvelopeProvider, modelId
   };
 }
 
-/** Telemetry / DB `strategist_telemetry.provider` (Gemini rows use "gemini"). */
-export type ConvictionDeskTelemetryProvider = "anthropic" | "openai" | "gemini";
+export type { ConvictionDeskTelemetryProvider };
 
 /** Conviction Desk request/response audit (JSON-serializable; mirrors strategist_telemetry). */
 export interface ConvictionDeskProviderAuditSnapshot {
@@ -2113,7 +2113,7 @@ export async function streamCallOpenAIWithSystemAndWebSearch(
   onDelta: (text: string) => void,
   onStatus?: (status: string) => void,
   cancelSignal?: AbortSignal,
-  options?: { maxOutputTokens?: number },
+  options?: { maxOutputTokens?: number; includeConvictionDeskAudit?: boolean },
 ): Promise<WebSearchResult> {
   const client = makeOpenAIClient();
   const params = {
@@ -2191,7 +2191,7 @@ export async function streamCallOpenAIWithSystemAndWebSearch(
   envelope.reasoningText = reasoningSummaryText.trim() || null;
 
   let convictionDeskAudit: ConvictionDeskProviderAuditSnapshot | undefined;
-  if (finalResponse && typeof finalResponse === "object") {
+  if (options?.includeConvictionDeskAudit === true && finalResponse && typeof finalResponse === "object") {
     const fr = finalResponse as Record<string, unknown>;
     const thinkingBlocks =
       extractOpenAIThinkingAuditBlocks(finalResponse, envelope.usage) ??

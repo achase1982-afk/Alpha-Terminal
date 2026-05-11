@@ -979,7 +979,7 @@ export async function runConvictionDesk(args: {
           onDelta,
           (s) => callbacks?.onStatus?.(s),
           callbacks?.cancelSignal,
-          { maxOutputTokens: CONVICTION_DESK_MAX_OUTPUT_TOKENS },
+          { maxOutputTokens: CONVICTION_DESK_MAX_OUTPUT_TOKENS, includeConvictionDeskAudit: true },
         );
         if (r.convictionDeskAudit) lastConvictionDeskAudit = r.convictionDeskAudit;
       } else if (consolidatedModel.provider === "google") {
