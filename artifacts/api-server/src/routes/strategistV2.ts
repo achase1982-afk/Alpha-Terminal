@@ -22,6 +22,7 @@ import { getScannerStrategistCorrelation } from "../lib/scannerCorrelation.js";
 import { desc, eq, sql, lte, and } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { trimStrategistTelemetryRowForListResponse } from "../lib/strategistTelemetryListResponse.js";
+import { withStrategistTelemetrySchemaHeal } from "../lib/ensureStrategistTelemetryAuditColumns.js";
 import {
   ensureIvrCoverage,
   getIvrBackfillJob,
@@ -1103,11 +1104,13 @@ router.get("/telemetry/strategist/row/:id", async (req, res) => {
       res.status(400).json({ error: "invalid id" });
       return;
     }
-    const [row] = await db
-      .select()
-      .from(strategistTelemetryTable)
-      .where(eq(strategistTelemetryTable.id, id))
-      .limit(1);
+    const [row] = await withStrategistTelemetrySchemaHeal(() =>
+      db
+        .select()
+        .from(strategistTelemetryTable)
+        .where(eq(strategistTelemetryTable.id, id))
+        .limit(1),
+    );
     if (!row) {
       res.status(404).json({ error: "Telemetry row not found" });
       return;
@@ -1126,11 +1129,13 @@ router.get("/telemetry/strategist/request/:requestId", async (req, res) => {
       res.status(400).json({ error: "requestId required" });
       return;
     }
-    const [row] = await db
-      .select()
-      .from(strategistTelemetryTable)
-      .where(sql`(${strategistTelemetryTable.fullDiagnostic}->'runMetadata'->>'requestId') = ${requestId}`)
-      .limit(1);
+    const [row] = await withStrategistTelemetrySchemaHeal(() =>
+      db
+        .select()
+        .from(strategistTelemetryTable)
+        .where(sql`(${strategistTelemetryTable.fullDiagnostic}->'runMetadata'->>'requestId') = ${requestId}`)
+        .limit(1),
+    );
     if (!row) {
       res.status(404).json({ error: "Telemetry row not found for requestId" });
       return;
@@ -1147,12 +1152,16 @@ router.get("/telemetry/strategist", async (req, res) => {
     const limit = Math.min(Number(req.query.limit) || 50, 100);
     const ticker = req.query.ticker as string | undefined;
 
-    const rows = ticker
-      ? await db.select().from(strategistTelemetryTable)
-          .where(eq(strategistTelemetryTable.ticker, ticker.toUpperCase()))
-          .orderBy(desc(strategistTelemetryTable.timestamp)).limit(limit)
-      : await db.select().from(strategistTelemetryTable)
-          .orderBy(desc(strategistTelemetryTable.timestamp)).limit(limit);
+    const rows = await withStrategistTelemetrySchemaHeal(() =>
+      ticker
+        ? db
+            .select()
+            .from(strategistTelemetryTable)
+            .where(eq(strategistTelemetryTable.ticker, ticker.toUpperCase()))
+            .orderBy(desc(strategistTelemetryTable.timestamp))
+            .limit(limit)
+        : db.select().from(strategistTelemetryTable).orderBy(desc(strategistTelemetryTable.timestamp)).limit(limit),
+    );
 
     res.json(rows.map((r) => trimStrategistTelemetryRowForListResponse(r as Record<string, unknown>)));
   } catch (err) {

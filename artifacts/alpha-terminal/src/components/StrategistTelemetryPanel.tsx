@@ -499,9 +499,9 @@ export function StrategistTelemetryPanel() {
           className="font-mono text-[11px] text-red-400 border border-red-900/60 rounded-md px-2 py-1.5 bg-red-950/40"
           role="alert"
         >
-          Could not load strategist trades: {strategistLoadErr}. If the app was just deployed, ensure the database
-          migration for strategist_telemetry ran (missing columns often cause HTTP 500). Check server logs for
-          &quot;telemetry fetch failed&quot;.
+          Could not load strategist trades: {strategistLoadErr}. This is usually a brief server/database mismatch after
+          deploy (missing strategist_telemetry columns). The API retries schema alignment on read; wait a few seconds and
+          pull to refresh, or confirm migrations ran and check logs for &quot;telemetry fetch failed&quot; / ALTER errors.
         </p>
       )}
       <div className="flex items-center justify-between">
