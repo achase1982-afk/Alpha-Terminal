@@ -11,6 +11,7 @@ import {
   xaiReasoningProviderOptions,
 } from "./llmReasoningConfig.js";
 import { getXaiApiKey } from "./xaiEnv.js";
+import { randomUUID } from "node:crypto";
 import type {
   AiLabAnalystClient,
   AnalystRequest,
@@ -42,7 +43,9 @@ interface GeminiGroundingMetadata {
 }
 
 interface GeminiCandidateChunk {
+  responseId?: string;
   candidates?: Array<{
+    content?: { parts?: Array<{ text?: string; thought?: boolean }> };
     groundingMetadata?: GeminiGroundingMetadata;
     finishReason?: string;
   }>;
@@ -51,6 +54,7 @@ interface GeminiCandidateChunk {
     candidatesTokenCount?: number;
     totalTokenCount?: number;
     thoughtsTokenCount?: number;
+    responseId?: string;
   };
 }
 
@@ -895,19 +899,26 @@ export function createEmptyEnvelope(provider: WebSearchEnvelopeProvider, modelId
   };
 }
 
-/** Conviction Desk Anthropic audit row + telemetry columns (JSON-serializable). */
-export interface AnthropicConvictionDeskAuditSnapshot {
+/** Telemetry / DB `strategist_telemetry.provider` (Gemini rows use "gemini"). */
+export type ConvictionDeskTelemetryProvider = "anthropic" | "openai" | "gemini";
+
+/** Conviction Desk request/response audit (JSON-serializable; mirrors strategist_telemetry). */
+export interface ConvictionDeskProviderAuditSnapshot {
+  provider: ConvictionDeskTelemetryProvider;
   modelInput: string;
   systemPrompt: string;
   toolsAttached: unknown;
-  extendedThinkingConfig: unknown;
+  thinkingConfig: unknown;
   modelName: string;
   rawApiResponse: unknown;
   thinkingBlocks: string | null;
-  webSearchQueries: Array<{ query?: string; server_tool_use_id?: string }>;
-  webSearchResults: Array<{ tool_use_id?: string; content?: unknown }>;
-  anthropicRequestId: string | null;
+  webSearchQueries: unknown;
+  webSearchResults: unknown;
+  providerRequestId: string | null;
 }
+
+/** @deprecated Use ConvictionDeskProviderAuditSnapshot */
+export type AnthropicConvictionDeskAuditSnapshot = ConvictionDeskProviderAuditSnapshot;
 
 export interface WebSearchResult {
   text: string;
@@ -920,8 +931,8 @@ export interface WebSearchResult {
   sdkCallParams?: Record<string, unknown>;
   /** Anthropic Conviction Desk: count of server web_search tool invocations in the final message. */
   anthropicWebSearchToolUseCount?: number;
-  /** Anthropic Conviction Desk only: full request/response audit for strategist_telemetry. */
-  convictionDeskAudit?: AnthropicConvictionDeskAuditSnapshot;
+  /** Conviction Desk: full request/response audit for strategist_telemetry. */
+  convictionDeskAudit?: ConvictionDeskProviderAuditSnapshot;
 }
 
 /** Deep-clone SDK params for strategist diagnostics (JSON round-trip). */
@@ -1286,8 +1297,81 @@ function countAnthropicWebSearchServerToolUses(content: unknown): number {
   return n;
 }
 
-/** Anthropic Messages API model id enforced for Conviction Desk audit trail. */
+/** Default Anthropic model id for Conviction Desk when settings route to Opus. */
 export const CONVICTION_DESK_ANTHROPIC_MODEL = "claude-opus-4-7";
+
+function extractOpenAIOutputArray(response: unknown): Array<Record<string, unknown>> {
+  if (!response || typeof response !== "object") return [];
+  const output = (response as { output?: unknown }).output;
+  return Array.isArray(output) ? (output as Array<Record<string, unknown>>) : [];
+}
+
+function extractOpenAIThinkingAuditBlocks(
+  response: unknown,
+  usage: WebSearchEnvelope["usage"],
+): string | null {
+  const texts: string[] = [];
+  for (const item of extractOpenAIOutputArray(response)) {
+    const t = item.type as string | undefined;
+    if (t !== "reasoning") continue;
+    const summary = item.summary;
+    if (typeof summary === "string" && summary.trim()) texts.push(summary.trim());
+    else if (Array.isArray(summary)) {
+      for (const s of summary) {
+        if (typeof s === "string" && s.trim()) texts.push(s.trim());
+        else if (s && typeof s === "object" && "text" in s && typeof (s as { text?: string }).text === "string") {
+          const tx = (s as { text: string }).text.trim();
+          if (tx) texts.push(tx);
+        }
+      }
+    }
+    const content = item.content;
+    if (Array.isArray(content)) {
+      for (const c of content) {
+        if (!c || typeof c !== "object") continue;
+        const co = c as Record<string, unknown>;
+        if (co.type === "reasoning_text" && typeof co.text === "string" && co.text.trim()) {
+          texts.push(co.text.trim());
+        }
+      }
+    }
+  }
+  const joined = texts.join("\n\n").trim();
+  if (joined) return joined;
+  const rt = usage.reasoningTokens;
+  if (typeof rt === "number" && rt > 0) {
+    return `[reasoning hidden by provider] reasoning_tokens=${rt}`;
+  }
+  return null;
+}
+
+function extractOpenAIWebSearchQueriesForAudit(response: unknown): Array<{ query: string; tool_call_id?: string }> {
+  const out: Array<{ query: string; tool_call_id?: string }> = [];
+  for (const item of extractOpenAIOutputArray(response)) {
+    if ((item.type as string | undefined) !== "web_search_call") continue;
+    const id = item.id ?? item.call_id;
+    const action = item.action as Record<string, unknown> | undefined;
+    const q = action?.query;
+    if (typeof q === "string" && q.trim()) {
+      out.push({ query: q.trim(), tool_call_id: typeof id === "string" ? id : undefined });
+    }
+  }
+  return out;
+}
+
+function extractOpenAIWebSearchResultsForAudit(response: unknown): Array<{ tool_call_id?: string; content: unknown }> {
+  const out: Array<{ tool_call_id?: string; content: unknown }> = [];
+  for (const item of extractOpenAIOutputArray(response)) {
+    const t = item.type as string | undefined;
+    if (t !== "web_search_call_output" && t !== "web_search_call_results") continue;
+    const id = item.call_id ?? item.id;
+    out.push({
+      tool_call_id: typeof id === "string" ? id : undefined,
+      content: jsonCloneForDiagnostics(item.output ?? item.results ?? item),
+    });
+  }
+  return out;
+}
 
 function extractThinkingBlocksForAudit(content: unknown): string | null {
   const blocks = asAnthropicContentBlocks(content);
@@ -1335,27 +1419,30 @@ function extractWebSearchResultsFromContent(content: unknown): Array<{ tool_use_
 
 /** Conviction Desk Anthropic path: supports multi-block cached user prefix and multi-turn validation retries. */
 export async function streamCallAnthropicConvictionDesk(
-  _modelSlot: string,
+  anthropicModelId: string,
   systemPrompt: string,
   messages: Anthropic.MessageParam[],
   onDelta: (text: string) => void,
   onStatus?: (status: string) => void,
   cancelSignal?: AbortSignal,
-  options?: { maxTokens?: number },
+  options?: { maxTokens?: number; thinkingBudgetTokensOverride?: number },
 ): Promise<WebSearchResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
   const client = new Anthropic({ apiKey, timeout: 20 * 60 * 1000 });
 
-  const modelNameEffective = CONVICTION_DESK_ANTHROPIC_MODEL;
+  const modelNameEffective = anthropicModelId;
   const thinking = anthropicThinkingForMessagesApi(modelNameEffective);
   const toolsAttached = [ANTHROPIC_WEB_SEARCH_TOOL];
   const modelInput = JSON.stringify(messages, null, 2);
-  const convictionEnabledBudget = Math.max(10_000, ANTHROPIC_EXTENDED_THINKING_BUDGET);
+  let enabledThinkingBudget = Math.max(10_000, ANTHROPIC_EXTENDED_THINKING_BUDGET);
+  if (thinking?.type === "enabled" && options?.thinkingBudgetTokensOverride != null) {
+    enabledThinkingBudget = options.thinkingBudgetTokensOverride;
+  }
   const computedMax = thinking
     ? thinking.type === "adaptive"
       ? 32_000
-      : convictionEnabledBudget + 12_288
+      : enabledThinkingBudget + 12_288
     : 12_288;
   const max_tokens = options?.maxTokens != null ? Math.max(computedMax, options.maxTokens) : computedMax;
   const params: AnthropicMessageStreamParamsWithWebSearch = {
@@ -1373,13 +1460,13 @@ export async function streamCallAnthropicConvictionDesk(
     } else {
       params.thinking = {
         type: "enabled",
-        budget_tokens: convictionEnabledBudget,
+        budget_tokens: enabledThinkingBudget,
       } as Anthropic.MessageCreateParamsStreaming["thinking"];
       params.temperature = 1;
     }
   }
 
-  const extendedThinkingConfigForAudit = jsonCloneForDiagnostics(params.thinking ?? null);
+  const thinkingConfigForAudit = jsonCloneForDiagnostics(params.thinking ?? null);
 
   const sdkCallParams = sdkDiagnosticsPayload(
     "anthropic.messages.stream.conviction_desk",
@@ -1444,7 +1531,7 @@ export async function streamCallAnthropicConvictionDesk(
 
   let envelope = createEmptyEnvelope("anthropic", modelNameEffective);
   let anthropicWebSearchToolUseCount = 0;
-  let convictionDeskAudit: AnthropicConvictionDeskAuditSnapshot | undefined;
+  let convictionDeskAudit: ConvictionDeskProviderAuditSnapshot | undefined;
 
   try {
     const finalMessage = await stream.finalMessage();
@@ -1482,16 +1569,17 @@ export async function streamCallAnthropicConvictionDesk(
     }
 
     convictionDeskAudit = {
+      provider: "anthropic",
       modelInput,
       systemPrompt: systemPrompt,
       toolsAttached: jsonCloneForDiagnostics(toolsAttached),
-      extendedThinkingConfig: extendedThinkingConfigForAudit,
+      thinkingConfig: thinkingConfigForAudit,
       modelName: modelNameEffective,
       rawApiResponse: jsonCloneForDiagnostics(finalMessage.content),
       thinkingBlocks: extractThinkingBlocksForAudit(finalMessage.content),
       webSearchQueries: extractWebSearchQueriesFromContent(finalMessage.content),
       webSearchResults: extractWebSearchResultsFromContent(finalMessage.content),
-      anthropicRequestId: finalMessage.id != null ? String(finalMessage.id) : null,
+      providerRequestId: finalMessage.id != null ? String(finalMessage.id) : null,
     };
   } catch {
     /* ignore */
@@ -1664,6 +1752,147 @@ export async function streamCallGeminiWithSystemAndWebSearch(
     text,
     trace: { webSearchUsed: queries.length > 0, queries, sources },
     envelope: geminiEnvelopeFromModelChunk(model, lastChunk),
+  };
+}
+
+/**
+ * Conviction Desk: Gemini with Google Search grounding + thinking (no JSON MIME;
+ * caller validates JSON from model text).
+ */
+export async function streamCallGeminiConvictionDesk(
+  model: string,
+  temperature: number,
+  systemPrompt: string,
+  prompt: string,
+  onDelta: (text: string) => void,
+  onStatus?: (status: string) => void,
+  cancelSignal?: AbortSignal,
+  options?: { maxOutputTokens?: number },
+): Promise<WebSearchResult> {
+  if (!hasGeminiApiKey()) throw new Error("Gemini AI integration env vars not configured");
+
+  const thinkingCfg = geminiThinkingConfigForModel(model);
+  const maxOut = options?.maxOutputTokens ?? 32_000;
+  const toolsAttached = [{ googleSearch: {} }];
+  const config: Record<string, unknown> = {
+    maxOutputTokens: maxOut,
+    temperature,
+    tools: toolsAttached,
+  };
+  if (thinkingCfg) {
+    config.thinkingConfig = thinkingCfg;
+  }
+
+  const modelInput = `${systemPrompt}\n\n${prompt}`;
+  const sdkCallParams = sdkDiagnosticsPayload(
+    "google.genai.models.generateContentStream.conviction_desk",
+    { model, contents: [{ role: "user", parts: [{ text: modelInput }] }], config },
+    cancelSignal ? { requestOptions: { abortSignal: true } } : undefined,
+  );
+
+  onStatus?.("Calling Gemini with Google Search (Conviction Desk)…");
+  const { fullText, lastChunk } = await withGeminiRetry(
+    "generateContentStream",
+    model,
+    async () => {
+      const ai = createGeminiClient();
+      const stream = await ai.models.generateContentStream({
+        model,
+        contents: [{ role: "user", parts: [{ text: modelInput }] }],
+        config: config as Parameters<typeof ai.models.generateContentStream>[0]["config"],
+        ...(cancelSignal ? { abortSignal: cancelSignal } : {}),
+      });
+
+      let attemptText = "";
+      let attemptLastChunk: unknown = null;
+      for await (const chunk of stream) {
+        attemptLastChunk = chunk;
+        const txt = (chunk as { text?: string }).text;
+        if (txt) {
+          attemptText += txt;
+        }
+      }
+      return { fullText: attemptText, lastChunk: attemptLastChunk };
+    },
+  );
+
+  if (fullText) {
+    onDelta(fullText);
+  }
+
+  const lastGeminiChunk = lastChunk as GeminiCandidateChunk & { responseId?: string };
+  const cand = lastGeminiChunk.candidates?.[0];
+  const meta = cand?.groundingMetadata;
+  const queries: Array<{ query: string }> = [];
+  const webSearchResults: unknown[] = [];
+  const seenUrls = new Set<string>();
+  const sources: WebSearchSource[] = [];
+
+  if (meta && Array.isArray(meta.webSearchQueries)) {
+    for (const q of meta.webSearchQueries) {
+      if (typeof q === "string" && q.trim()) queries.push({ query: q.trim() });
+    }
+  }
+  if (meta && Array.isArray(meta.groundingChunks)) {
+    for (const ch of meta.groundingChunks) {
+      webSearchResults.push({
+        uri: ch.web?.uri ?? null,
+        title: ch.web?.title ?? null,
+      });
+      const url = ch.web?.uri;
+      if (!url || seenUrls.has(url)) continue;
+      seenUrls.add(url);
+      sources.push({ title: ch.web?.title ?? url, url });
+    }
+  }
+
+  const text = fullText.trim();
+  if (!text) throw new Error("No text content in Strategist LLM stream (Gemini Conviction)");
+
+  let thinkingBlocks: string | null = null;
+  const parts = cand?.content?.parts;
+  if (Array.isArray(parts)) {
+    const thoughts: string[] = [];
+    for (const p of parts) {
+      if (p && typeof p === "object" && (p as { thought?: boolean }).thought === true) {
+        const t = (p as { text?: string }).text;
+        if (typeof t === "string" && t.length > 0) thoughts.push(t);
+      }
+    }
+    thinkingBlocks = thoughts.length > 0 ? thoughts.join("\n\n") : null;
+  }
+
+  const um = lastGeminiChunk.usageMetadata;
+  const ridFromUsage = um && typeof um === "object" ? (um as { responseId?: string }).responseId : undefined;
+  const providerRequestId =
+    typeof lastGeminiChunk.responseId === "string" && lastGeminiChunk.responseId.length > 0
+      ? lastGeminiChunk.responseId
+      : typeof ridFromUsage === "string" && ridFromUsage.length > 0
+        ? ridFromUsage
+        : randomUUID();
+
+  const envelope = geminiEnvelopeFromModelChunk(model, lastChunk);
+
+  const convictionDeskAudit: ConvictionDeskProviderAuditSnapshot = {
+    provider: "gemini",
+    modelInput,
+    systemPrompt,
+    toolsAttached: jsonCloneForDiagnostics(toolsAttached),
+    thinkingConfig: jsonCloneForDiagnostics(thinkingCfg ?? null),
+    modelName: model,
+    rawApiResponse: jsonCloneForDiagnostics(parts ?? cand ?? null),
+    thinkingBlocks,
+    webSearchQueries: queries,
+    webSearchResults,
+    providerRequestId,
+  };
+
+  return {
+    text,
+    trace: { webSearchUsed: queries.length > 0, queries: queries.map((q) => q.query), sources },
+    envelope,
+    sdkCallParams,
+    convictionDeskAudit,
   };
 }
 
@@ -1961,11 +2190,37 @@ export async function streamCallOpenAIWithSystemAndWebSearch(
   }
   envelope.reasoningText = reasoningSummaryText.trim() || null;
 
+  let convictionDeskAudit: ConvictionDeskProviderAuditSnapshot | undefined;
+  if (finalResponse && typeof finalResponse === "object") {
+    const fr = finalResponse as Record<string, unknown>;
+    const thinkingBlocks =
+      extractOpenAIThinkingAuditBlocks(finalResponse, envelope.usage) ??
+      (reasoningSummaryText.trim() ? reasoningSummaryText.trim() : null);
+    convictionDeskAudit = {
+      provider: "openai",
+      modelInput: prompt,
+      systemPrompt,
+      toolsAttached: jsonCloneForDiagnostics((params as Record<string, unknown>).tools ?? []),
+      thinkingConfig: jsonCloneForDiagnostics(
+        isOpenAIThinkingModel(model)
+          ? { reasoning: { effort: /^gpt-5\.5/.test(model) ? "high" : "medium", summary: "auto" } }
+          : { temperature },
+      ),
+      modelName: model,
+      rawApiResponse: jsonCloneForDiagnostics(finalResponse),
+      thinkingBlocks,
+      webSearchQueries: extractOpenAIWebSearchQueriesForAudit(finalResponse),
+      webSearchResults: extractOpenAIWebSearchResultsForAudit(finalResponse),
+      providerRequestId: typeof fr.id === "string" ? fr.id : null,
+    };
+  }
+
   return {
     text,
     trace: { webSearchUsed: queries.length > 0, queries, sources },
     envelope,
     sdkCallParams,
+    convictionDeskAudit,
   };
 }
 

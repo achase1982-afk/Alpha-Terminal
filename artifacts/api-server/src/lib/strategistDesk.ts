@@ -3,6 +3,7 @@ import {
   streamCallAnthropicWithSystemAndWebSearch,
   streamCallAnthropicConvictionDesk,
   streamCallGeminiDeskJson,
+  streamCallGeminiConvictionDesk,
   streamCallOpenAIWithSystemAndWebSearch,
   streamCallXaiWithSystemAndWebSearch,
   extractJson,
@@ -58,6 +59,11 @@ import { runCatalystDeskStructuredSearches } from "./strategistDeskCatalystWebSe
 import { throwIfStrategistAnalyzeCancelled } from "./strategistAnalyzeCancellation.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { getStrategistRunContext, mergeStrategistDiag } from "./strategistRunContext.js";
+import {
+  resolveConvictionDeskRouting,
+  strategistProviderToTelemetryProvider,
+  type ConvictionDeskRoutingKey,
+} from "./convictionDeskRouting.js";
 
 const TEMPERATURE = 0;
 /** Conviction memo + greeks grid can exceed default model caps; truncates cause parse/extract failures. Providers may clamp lower at runtime. */
@@ -112,8 +118,9 @@ function newTurnId(): string {
  * - **OpenAI:** `streamCallOpenAIWithSystemAndWebSearch` uses `buildOpenAIResponseParams`, which sets
  *   `tools: [{ type: "web_search_preview" }]` on `responses.create` (see `aiLabAnalystClient.ts`).
  * - **xAI:** `streamCallXaiWithSystemAndWebSearch` sets `tools: { web_search: xai.tools.webSearch() }` on `streamText`.
- * - **Gemini:** `streamCallGeminiDeskJson` cannot attach tools with `responseMimeType: application/json`;
- *   Catalyst uses pre-search or prompt-only for Google (see orchestrator status strings).
+ * - **Gemini (Solo / four-analyst JSON turns):** `streamCallGeminiDeskJson` cannot attach tools with
+ *   `responseMimeType: application/json`; Catalyst may use pre-search for Google in those flows.
+ * - **Gemini (Conviction Desk):** `streamCallGeminiConvictionDesk` uses Google Search tools + streamed JSON text.
  */
 async function streamModel(
   modelOpt: StrategistModelOption,
@@ -871,41 +878,29 @@ export async function runConvictionDesk(args: {
   deskExpirationISO?: string;
   catalystEvaluation?: CatalystEvaluation | null;
   callbacks?: DeskCallbacks;
+  /** Optional per-run model routing (API body); otherwise `strategistConvictionModelIdx`. */
+  convictionDeskProvider?: ConvictionDeskRoutingKey | null;
 }): Promise<ConvictionDeskResult> {
-  const { dataPackage, settings, ticker, deskExpirationISO, catalystEvaluation, callbacks } = args;
+  const { dataPackage, settings, ticker, deskExpirationISO, catalystEvaluation, callbacks, convictionDeskProvider } =
+    args;
   const startedAtIso = new Date().toISOString();
 
-  const consolidatedModel = getStrategistModel(settings.strategistConvictionModelIdx);
+  const routing = resolveConvictionDeskRouting(settings, convictionDeskProvider ?? null);
+  const consolidatedModel = routing.model;
 
   let catalystResearchBriefing = "";
-  const catalystNativeWeb = consolidatedModel.provider !== "google";
+  const catalystNativeWeb = true;
 
-  if (deskExpirationISO && consolidatedModel.provider === "google") {
-    callbacks?.onStatus?.("Conviction Desk: Catalyst structured web research (Gemini JSON cannot use tools)…");
-    try {
-      const bundle = await runCatalystDeskStructuredSearches({
-        ticker,
-        catalystEval: catalystEvaluation ?? null,
-        deskExpirationISO,
-        model: consolidatedModel,
-        onStatus: callbacks?.onStatus,
-        cancelSignal: callbacks?.cancelSignal,
-      });
-      catalystResearchBriefing = bundle.briefing;
-    } catch (err) {
-      logger.warn(
-        { err, ticker },
-        "StrategistDesk: Conviction Desk structured catalyst web search bundle failed; continuing with calendar snapshot only",
-      );
-      catalystResearchBriefing =
-        "## STRUCTURED RESEARCH (catalyst desk)\nResearch pass failed; treat web-derived themes as **data not surfaced** unless the calendar snapshot alone supports them.";
-    }
-  } else if (deskExpirationISO && catalystNativeWeb) {
+  if (deskExpirationISO && consolidatedModel.provider !== "google") {
     logger.info(
       { ticker, provider: consolidatedModel.provider },
-      "StrategistDesk: Conviction Desk skipping catalyst structured pre-search; consolidated model uses native web search on JSON turn",
+      "StrategistDesk: Conviction Desk skipping catalyst structured pre-search; consolidated model uses native web search on consolidated turn",
     );
     callbacks?.onStatus?.("Conviction Desk: Catalyst web pre-search skipped (native web search on consolidated turn)…");
+  } else if (deskExpirationISO && consolidatedModel.provider === "google") {
+    callbacks?.onStatus?.(
+      "Conviction Desk: in-call Google Search grounding (structured catalyst pre-search skipped)…",
+    );
   }
 
   const promptBundle = buildConvictionDeskUserPromptBundle(dataPackage, catalystResearchBriefing || undefined, {
@@ -965,7 +960,42 @@ export async function runConvictionDesk(args: {
           onDelta,
           (s) => callbacks?.onStatus?.(s),
           callbacks?.cancelSignal,
-          { maxTokens: CONVICTION_DESK_MAX_OUTPUT_TOKENS },
+          {
+            maxTokens: CONVICTION_DESK_MAX_OUTPUT_TOKENS,
+            thinkingBudgetTokensOverride: routing.anthropicThinkingBudgetOverride,
+          },
+        );
+        if (r.convictionDeskAudit) lastConvictionDeskAudit = r.convictionDeskAudit;
+      } else if (consolidatedModel.provider === "openai") {
+        const streamPrompt =
+          attemptNum === 1
+            ? promptBundle.fullUserPrompt
+            : `${promptBundle.fullUserPrompt}\n\n---\n\n${formatConvictionValidationCorrectionMessage(lastFailed!)}`;
+        r = await streamCallOpenAIWithSystemAndWebSearch(
+          consolidatedModel.model,
+          TEMPERATURE,
+          CONVICTION_DESK_MODEL_SYSTEM_PROMPT,
+          streamPrompt,
+          onDelta,
+          (s) => callbacks?.onStatus?.(s),
+          callbacks?.cancelSignal,
+          { maxOutputTokens: CONVICTION_DESK_MAX_OUTPUT_TOKENS },
+        );
+        if (r.convictionDeskAudit) lastConvictionDeskAudit = r.convictionDeskAudit;
+      } else if (consolidatedModel.provider === "google") {
+        const streamPrompt =
+          attemptNum === 1
+            ? promptBundle.fullUserPrompt
+            : `${promptBundle.fullUserPrompt}\n\n---\n\n${formatConvictionValidationCorrectionMessage(lastFailed!)}`;
+        r = await streamCallGeminiConvictionDesk(
+          consolidatedModel.model,
+          TEMPERATURE,
+          CONVICTION_DESK_MODEL_SYSTEM_PROMPT,
+          streamPrompt,
+          onDelta,
+          (s) => callbacks?.onStatus?.(s),
+          callbacks?.cancelSignal,
+          { maxOutputTokens: CONVICTION_DESK_MAX_OUTPUT_TOKENS },
         );
         if (r.convictionDeskAudit) lastConvictionDeskAudit = r.convictionDeskAudit;
       } else {
@@ -987,8 +1017,18 @@ export async function runConvictionDesk(args: {
       text = r.text;
       callbacks?.onTurnDone?.(turnId, text);
 
-      if (consolidatedModel.provider === "anthropic") {
-        const webUses = r.anthropicWebSearchToolUseCount ?? 0;
+      if (
+        consolidatedModel.provider === "anthropic" ||
+        consolidatedModel.provider === "openai" ||
+        consolidatedModel.provider === "google" ||
+        consolidatedModel.provider === "xai"
+      ) {
+        const webUses =
+          consolidatedModel.provider === "anthropic"
+            ? (r.anthropicWebSearchToolUseCount ?? 0)
+            : Array.isArray(r.convictionDeskAudit?.webSearchQueries)
+              ? (r.convictionDeskAudit!.webSearchQueries as unknown[]).length
+              : r.trace.queries.length;
         logger.info(
           {
             ticker,
@@ -1000,16 +1040,18 @@ export async function runConvictionDesk(args: {
             reasoning_tokens: r.envelope.usage.reasoningTokens ?? null,
             total_tokens: r.envelope.usage.totalTokens ?? null,
             web_search_tool_uses: webUses,
+            provider: consolidatedModel.provider,
           },
-          "Conviction Desk Anthropic usage",
+          "Conviction Desk usage",
         );
         const ctx = getStrategistRunContext();
-        const prev = ctx?.diag.convictionDeskAnthropicTelemetry ?? [];
+        const prev = ctx?.diag.convictionDeskProviderTelemetry ?? [];
         mergeStrategistDiag({
-          convictionDeskAnthropicTelemetry: [
+          convictionDeskProviderTelemetry: [
             ...prev,
             {
               attempt: attemptNum,
+              provider: strategistProviderToTelemetryProvider(consolidatedModel.provider),
               cache_creation_input_tokens: r.envelope.usage.cacheCreationInputTokens ?? null,
               cache_read_input_tokens: r.envelope.usage.cacheReadInputTokens ?? null,
               input_tokens: r.envelope.usage.inputTokens ?? null,

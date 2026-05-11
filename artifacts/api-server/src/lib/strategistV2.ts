@@ -3,6 +3,7 @@ import { getCachedRegime, buildFallbackRegime, type StructuredRegime } from "./r
 import { computeIOScore, type IOScoreResult } from "./ioScoreEngine.js";
 import { getSettings, getStrategistModel, type StrategistConfig, type StrategistModelOption } from "./strategistSettings.js";
 import { runDebate, type DebateCallbacks, type DebateRound, type DebateRole, type DebatePhase } from "./strategistDebate.js";
+import type { ConvictionDeskRoutingKey } from "./convictionDeskRouting.js";
 import { runDeskAnalysis, runSoloDesk, runConvictionDesk, type DeskCallbacks } from "./strategistDesk.js";
 import type { ConvictionDeskResult, DeskResult } from "./strategistDeskSchemas.js";
 import { throwIfStrategistAnalyzeCancelled } from "./strategistAnalyzeCancellation.js";
@@ -726,6 +727,8 @@ export interface AnalyzeProgressCallbacks {
   jobId?: string;
   /** Aborts in-flight LLM HTTP when aborted (client disconnect or explicit cancel). */
   cancelSignal?: AbortSignal;
+  /** When set (e.g. POST /analyze body), overrides `strategistConvictionModelIdx` for mode 5 only. */
+  convictionDeskProvider?: ConvictionDeskRoutingKey;
 }
 
 function throwAnalyzeCancelled(): never {
@@ -1365,9 +1368,9 @@ async function analyzeTickerV2Inner(
     }
   }
 
-  // Anthropic Conviction Desk uses messages.stream with tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }] (see ANTHROPIC_WEB_SEARCH_TOOL in aiLabAnalystClient.ts, streamCallAnthropicConvictionDesk).
-  // Conviction Desk: XML prompt layout, filtered snapshot payload, Anthropic prompt caching (ephemeral), and short correction retries are implemented in strategistDesk.runConvictionDesk and aiLabAnalystClient.streamCallAnthropicConvictionDesk.
-  // ── Conviction Desk (mode 5): trade memo JSON, same data package as Solo Desk ──
+  // Conviction Desk: Anthropic `messages.stream` + OpenAI `responses.create` + Gemini
+  // `generateContentStream` (see aiLabAnalystClient). Routing and audit columns in
+  // strategistDesk.runConvictionDesk, convictionDeskRouting, and emitFullDiagnosticTelemetry.
   if (settings.strategistMode === 5) {
     status("Starting Conviction Desk analysis (trade memo, single pass)…");
     try {
@@ -1377,6 +1380,7 @@ async function analyzeTickerV2Inner(
         ticker,
         deskExpirationISO: deskCatalystExpirationISO,
         catalystEvaluation: deskCatalystEval,
+        convictionDeskProvider: progress?.convictionDeskProvider,
         callbacks: {
           jobId: progress?.jobId,
           cancelSignal: progress?.cancelSignal,
@@ -4623,16 +4627,17 @@ interface TelemetryExtras {
   runOutcomeOverride?: StrategistRunOutcomeTelemetry;
   error?: { message: string; stack?: string } | null;
   fullDiagnostic?: Record<string, unknown> | null;
-  /** Conviction Desk Anthropic audit (top-level telemetry columns). */
+  /** Conviction Desk audit (top-level telemetry columns). */
+  provider?: string | null;
   modelInput?: string | null;
   systemPrompt?: string | null;
   toolsAttached?: unknown;
-  extendedThinkingConfig?: unknown;
+  thinkingConfig?: unknown;
   rawApiResponse?: unknown;
   thinkingBlocks?: string | null;
   webSearchQueries?: unknown;
   webSearchResults?: unknown;
-  anthropicRequestId?: string | null;
+  providerRequestId?: string | null;
   modelName?: string | null;
 }
 
@@ -4650,24 +4655,25 @@ async function emitFullDiagnosticTelemetry(args: {
 }): Promise<number | null> {
   const ctx = getStrategistRunContext();
   const rawDesk = args.extras.deskResult;
-  const anthropicConvictionAudit =
+  const convictionDeskProviderAudit =
     rawDesk?.mode === "conviction_desk" ? rawDesk.convictionDeskAudit ?? null : null;
   const ed = rawDesk;
   const deskForTelemetry = ed ? (stripConvictionDiagnosticsFromDeskResult(ed) ?? ed) : ed;
   const extrasEff: TelemetryExtras = { ...args.extras, deskResult: deskForTelemetry };
   const auditColumns =
-    anthropicConvictionAudit != null
+    convictionDeskProviderAudit != null
       ? {
-          modelInput: anthropicConvictionAudit.modelInput,
-          systemPrompt: anthropicConvictionAudit.systemPrompt,
-          toolsAttached: anthropicConvictionAudit.toolsAttached,
-          extendedThinkingConfig: anthropicConvictionAudit.extendedThinkingConfig,
-          rawApiResponse: anthropicConvictionAudit.rawApiResponse,
-          thinkingBlocks: anthropicConvictionAudit.thinkingBlocks,
-          webSearchQueries: anthropicConvictionAudit.webSearchQueries,
-          webSearchResults: anthropicConvictionAudit.webSearchResults,
-          anthropicRequestId: anthropicConvictionAudit.anthropicRequestId,
-          modelName: anthropicConvictionAudit.modelName,
+          provider: convictionDeskProviderAudit.provider,
+          modelInput: convictionDeskProviderAudit.modelInput,
+          systemPrompt: convictionDeskProviderAudit.systemPrompt,
+          toolsAttached: convictionDeskProviderAudit.toolsAttached,
+          thinkingConfig: convictionDeskProviderAudit.thinkingConfig,
+          rawApiResponse: convictionDeskProviderAudit.rawApiResponse,
+          thinkingBlocks: convictionDeskProviderAudit.thinkingBlocks,
+          webSearchQueries: convictionDeskProviderAudit.webSearchQueries,
+          webSearchResults: convictionDeskProviderAudit.webSearchResults,
+          providerRequestId: convictionDeskProviderAudit.providerRequestId,
+          modelName: convictionDeskProviderAudit.modelName,
         }
       : {};
   const extrasForInsert: TelemetryExtras = { ...extrasEff, ...auditColumns };
@@ -4743,8 +4749,8 @@ async function emitFullDiagnosticTelemetry(args: {
     cboeOnePoolSize: ctx?.diag.cboeOnePoolSize ?? null,
     cboeOnePoolCapacity: ctx?.diag.cboeOnePoolCapacity ?? null,
     cboeOneWasColdStart: ctx?.diag.cboeOneWasColdStart ?? null,
-    convictionDeskAnthropicTelemetry: ctx?.diag.convictionDeskAnthropicTelemetry,
-    anthropicConvictionAudit,
+    convictionDeskProviderTelemetry: ctx?.diag.convictionDeskProviderTelemetry,
+    convictionDeskProviderAudit,
   });
   return logTelemetry(
     args.ticker,
@@ -4855,15 +4861,16 @@ async function logTelemetry(
       dataSource: extras.dataSource ?? null,
       fetchFailureMode: extras.fetchFailureMode ?? null,
       fullDiagnostic: extras.fullDiagnostic ?? null,
+      provider: extras.provider ?? null,
       modelInput: extras.modelInput ?? null,
       systemPrompt: extras.systemPrompt ?? null,
       toolsAttached: extras.toolsAttached ?? null,
-      extendedThinkingConfig: extras.extendedThinkingConfig ?? null,
+      thinkingConfig: extras.thinkingConfig ?? null,
       rawApiResponse: extras.rawApiResponse ?? null,
       thinkingBlocks: extras.thinkingBlocks ?? null,
       webSearchQueries: extras.webSearchQueries ?? null,
       webSearchResults: extras.webSearchResults ?? null,
-      anthropicRequestId: extras.anthropicRequestId ?? null,
+      providerRequestId: extras.providerRequestId ?? null,
       modelName: extras.modelName ?? null,
       ...(() => {
         const sc = getStrategistRunContext()?.scannerContext;
