@@ -61,7 +61,7 @@ import { getStrategistRunContext, mergeStrategistDiag } from "./strategistRunCon
 
 const TEMPERATURE = 0;
 /** Conviction memo + greeks grid can exceed default model caps; truncates cause parse/extract failures. Providers may clamp lower at runtime. */
-const CONVICTION_DESK_MAX_OUTPUT_TOKENS = 65536;
+const CONVICTION_DESK_MAX_OUTPUT_TOKENS = 32_000;
 
 export interface DeskCallbacks {
   /** Background analyze job id for cooperative cancel checks. */
@@ -997,6 +997,8 @@ export async function runConvictionDesk(args: {
             cache_read_input_tokens: r.envelope.usage.cacheReadInputTokens ?? null,
             input_tokens: r.envelope.usage.inputTokens ?? null,
             output_tokens: r.envelope.usage.outputTokens ?? null,
+            reasoning_tokens: r.envelope.usage.reasoningTokens ?? null,
+            total_tokens: r.envelope.usage.totalTokens ?? null,
             web_search_tool_uses: webUses,
           },
           "Conviction Desk Anthropic usage",
@@ -1012,6 +1014,8 @@ export async function runConvictionDesk(args: {
               cache_read_input_tokens: r.envelope.usage.cacheReadInputTokens ?? null,
               input_tokens: r.envelope.usage.inputTokens ?? null,
               output_tokens: r.envelope.usage.outputTokens ?? null,
+              reasoning_tokens: r.envelope.usage.reasoningTokens ?? null,
+              total_tokens: r.envelope.usage.totalTokens ?? null,
               web_search_tool_uses: webUses,
             },
           ],
