@@ -201,6 +201,8 @@ export interface BuildFullDiagnosticArgs {
   cboeOnePoolSize?: number | null;
   cboeOnePoolCapacity?: number | null;
   cboeOneWasColdStart?: boolean | null;
+  /** Anthropic Conviction Desk attempts: cache tokens + web_search tool_use counts (telemetry). */
+  convictionDeskAnthropicTelemetry?: Array<Record<string, unknown>>;
 }
 
 export function buildStrategistFullDiagnosticJson(args: BuildFullDiagnosticArgs): Record<string, unknown> {
@@ -260,6 +262,9 @@ export function buildStrategistFullDiagnosticJson(args: BuildFullDiagnosticArgs)
     runOutcome: args.runOutcome,
     runDurationMs: args.runDurationMs,
     error: args.error,
+    ...(args.convictionDeskAnthropicTelemetry != null && args.convictionDeskAnthropicTelemetry.length > 0
+      ? { convictionDeskAnthropicTelemetry: args.convictionDeskAnthropicTelemetry }
+      : {}),
   };
 }
 

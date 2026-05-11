@@ -904,6 +904,8 @@ export interface WebSearchResult {
    * (`messages.stream`, `responses.create`, etc.). Omits secrets.
    */
   sdkCallParams?: Record<string, unknown>;
+  /** Anthropic Conviction Desk: count of server web_search tool invocations in the final message. */
+  anthropicWebSearchToolUseCount?: number;
 }
 
 /** Deep-clone SDK params for strategist diagnostics (JSON round-trip). */
@@ -1255,6 +1257,19 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
   };
 }
 
+function countAnthropicWebSearchServerToolUses(content: unknown): number {
+  const blocks = asAnthropicContentBlocks(content);
+  let n = 0;
+  for (const block of blocks) {
+    const t = block.type as string | undefined;
+    if (t === "server_tool_use") {
+      const name = (block as { name?: string }).name;
+      if (name === "web_search") n++;
+    }
+  }
+  return n;
+}
+
 /** Conviction Desk Anthropic path: supports multi-block cached user prefix and multi-turn validation retries. */
 export async function streamCallAnthropicConvictionDesk(
   model: string,
@@ -1349,9 +1364,11 @@ export async function streamCallAnthropicConvictionDesk(
   }
 
   let envelope = createEmptyEnvelope("anthropic", model);
+  let anthropicWebSearchToolUseCount = 0;
 
   try {
     const finalMessage = await stream.finalMessage();
+    anthropicWebSearchToolUseCount = countAnthropicWebSearchServerToolUses(finalMessage.content);
     envelope = {
       provider: "anthropic",
       modelId: model,
@@ -1399,6 +1416,7 @@ export async function streamCallAnthropicConvictionDesk(
     },
     envelope,
     sdkCallParams,
+    anthropicWebSearchToolUseCount,
   };
 }
 

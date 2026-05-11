@@ -986,6 +986,7 @@ export async function runConvictionDesk(args: {
       callbacks?.onTurnDone?.(turnId, text);
 
       if (consolidatedModel.provider === "anthropic") {
+        const webUses = r.anthropicWebSearchToolUseCount ?? 0;
         logger.info(
           {
             ticker,
@@ -994,9 +995,25 @@ export async function runConvictionDesk(args: {
             cache_read_input_tokens: r.envelope.usage.cacheReadInputTokens ?? null,
             input_tokens: r.envelope.usage.inputTokens ?? null,
             output_tokens: r.envelope.usage.outputTokens ?? null,
+            web_search_tool_uses: webUses,
           },
           "Conviction Desk Anthropic usage",
         );
+        const ctx = getStrategistRunContext();
+        const prev = ctx?.diag.convictionDeskAnthropicTelemetry ?? [];
+        mergeStrategistDiag({
+          convictionDeskAnthropicTelemetry: [
+            ...prev,
+            {
+              attempt: attemptNum,
+              cache_creation_input_tokens: r.envelope.usage.cacheCreationInputTokens ?? null,
+              cache_read_input_tokens: r.envelope.usage.cacheReadInputTokens ?? null,
+              input_tokens: r.envelope.usage.inputTokens ?? null,
+              output_tokens: r.envelope.usage.outputTokens ?? null,
+              web_search_tool_uses: webUses,
+            },
+          ],
+        });
       }
 
       const ext = extractJsonAndParse(text);
