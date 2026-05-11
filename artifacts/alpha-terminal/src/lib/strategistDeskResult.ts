@@ -178,6 +178,26 @@ export interface ConvictionDeskResult {
   convictionDeskJsonDegraded?: "schema_validation_failed_after_retry" | "stream_error" | "extraction_error";
 }
 
+/**
+ * Conviction desk payloads from the wire or older cache rows may omit new fields (e.g. family_hypotheses)
+ * while still carrying pm/vol/flow/catalyst. Guards rendering and speech builders against partial objects.
+ */
+export function isConvictionDeskOutputComplete(c: unknown): c is ConvictionDeskOutput {
+  if (!c || typeof c !== "object") return false;
+  const o = c as Record<string, unknown>;
+  if (!o.pm || typeof o.pm !== "object") return false;
+  if (!o.vol || typeof o.vol !== "object") return false;
+  if (!o.flow || typeof o.flow !== "object") return false;
+  if (!o.catalyst || typeof o.catalyst !== "object") return false;
+  const fh = o.family_hypotheses;
+  if (!Array.isArray(fh) || fh.length === 0) return false;
+  if (!o.regime_synthesis || typeof o.regime_synthesis !== "object") return false;
+  if (typeof o.risk_of_ruin !== "string") return false;
+  if (!o.positioning_context || typeof o.positioning_context !== "object") return false;
+  if (!o.self_check || typeof o.self_check !== "object") return false;
+  return true;
+}
+
 /** Desk recommendation payload: classic four-topic desk or Conviction memo JSON. */
 export type DeskResult = DeskResultClassic | ConvictionDeskResult;
 
@@ -190,7 +210,7 @@ export function deskRecommendationHasTrade(result: {
   const dr = result.deskResult;
   if (dr.mode === "conviction_desk") {
     return (
-      dr.conviction != null &&
+      isConvictionDeskOutputComplete(dr.conviction) &&
       dr.conviction.pm.decision === "trade" &&
       dr.conviction.pm.structure != null
     );

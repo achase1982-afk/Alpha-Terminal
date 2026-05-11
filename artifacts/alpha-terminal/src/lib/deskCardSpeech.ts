@@ -3,7 +3,13 @@
  * Presentation-only: natural phrasing, no raw JSON field names in spoken text.
  */
 
-import type { DeskResult, DeskResultClassic, ConvictionDeskResult, ConvictionDeskOutput } from "@/lib/strategistDeskResult";
+import {
+  isConvictionDeskOutputComplete,
+  type DeskResult,
+  type DeskResultClassic,
+  type ConvictionDeskResult,
+  type ConvictionDeskOutput,
+} from "@/lib/strategistDeskResult";
 import type { BlockReason, StrategistOutcome } from "@/components/StrategistV2Card";
 
 const MONTHS = [
@@ -283,7 +289,7 @@ function buildCatalystSpeech(desk: DeskResultClassic): string {
 }
 
 function convictionDeskResultToClassic(dr: ConvictionDeskResult): DeskResultClassic | null {
-  if (!dr.conviction) return null;
+  if (!isConvictionDeskOutputComplete(dr.conviction)) return null;
   const c = dr.conviction;
   return {
     mode: "solo_desk",
@@ -389,6 +395,12 @@ export function buildConvictionDeskCardPlainText(args: {
     lines.push(`PASS  ${deskResult.ticker}  CONVICTION DESK`);
     if (when) lines.push(`Generated: ${when}`);
     lines.push("", "Desk JSON could not be validated.");
+    return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  }
+  if (!isConvictionDeskOutputComplete(conviction)) {
+    lines.push(`PASS  ${deskResult.ticker}  CONVICTION DESK`);
+    if (when) lines.push(`Generated: ${when}`);
+    lines.push("", "Conviction desk output is missing required sections (for example family hypotheses). Retry the run or refresh.");
     return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
   }
 

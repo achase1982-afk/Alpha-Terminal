@@ -4,12 +4,13 @@ import { buildOccSymbol } from "@/components/StrategistV2Card";
 import { AlertTriangle, Copy, Play, Pause, Square, Rewind, FastForward, Send } from "lucide-react";
 import { toast } from "sonner";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import type {
-  ConvictionDeskResult,
-  PayoffScenario,
-  PayoffScenariosSummary,
-  DeskResult,
-  ConvictionFitScore,
+import {
+  isConvictionDeskOutputComplete,
+  type ConvictionDeskResult,
+  type PayoffScenario,
+  type PayoffScenariosSummary,
+  type DeskResult,
+  type ConvictionFitScore,
 } from "@/lib/strategistDeskResult";
 import { buildConvictionDeskCardPlainText, buildDeskSpeechSections } from "@/lib/deskCardSpeech";
 import {
@@ -385,7 +386,7 @@ export function StrategistConvictionDeskCard({
     onSendToOrder({ ticker: deskResult.ticker, legs, netPrice, isCredit });
   }, [deskResult.ticker, onSendToOrder, structure]);
 
-  if (!conviction || !pm) {
+  if (!conviction || !pm || !isConvictionDeskOutputComplete(conviction)) {
     return (
       <div
         ref={rootRef}
