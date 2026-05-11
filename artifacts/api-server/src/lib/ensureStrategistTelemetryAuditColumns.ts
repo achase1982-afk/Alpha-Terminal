@@ -57,7 +57,6 @@ export async function resolveStrategistTelemetryPhysicalTable(): Promise<{
     return strategistTelemetryTableLocation;
   } catch (err) {
     logger.warn({ err }, "strategist_telemetry: pg_catalog lookup failed");
-    strategistTelemetryTableLocation = null;
     return null;
   }
 }
