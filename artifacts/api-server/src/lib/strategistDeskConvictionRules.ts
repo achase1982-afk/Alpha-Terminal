@@ -25,7 +25,7 @@ function tradeFamiliesPricedWithConcreteMath(familyHypotheses: ConvictionDeskOut
     if (!/\d/.test(m)) return false;
     const lower = m.toLowerCase();
     const hasBreak =
-      /breakeven|break-even|break even|\bb\/e\b|\bbe at\b/i.test(lower) || /\bbe\b/.test(lower);
+      /breakeven|break-even|break even|\bb\/e\b|\bbe at\b/i.test(lower) || /\bBE\b/.test(m);
     const hasMax = /max(imum)?\s*(profit|loss)/i.test(lower) || /max\s+profit|max\s+loss/i.test(lower);
     if (!hasBreak || !hasMax) return false;
   }
