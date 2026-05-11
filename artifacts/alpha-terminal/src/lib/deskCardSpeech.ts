@@ -157,10 +157,11 @@ export type DeskSpeechSectionId =
   | "vol"
   | "flow"
   | "catalyst"
+  | "family_hypotheses"
   | "regime_synthesis"
   | "risk_of_ruin"
   | "positioning_context"
-  | "structure_family_discipline";
+  | "self_check";
 
 export interface DeskSpeechSection {
   id: DeskSpeechSectionId;
@@ -300,6 +301,7 @@ function buildRegimeSynthesisSpeech(c: ConvictionDeskOutput, ticker: string): st
   const t = ticker.toUpperCase();
   return [
     `Regime read is ${preprocessForSpeech(c.regime_synthesis.regime_read.replace(/_/g, " "), t)}.`,
+    `Strongest hypothesis is ${preprocessForSpeech(c.regime_synthesis.strongest_hypothesis.replace(/_/g, " "), t)}.`,
     preprocessForSpeech(c.regime_synthesis.synthesis, t),
   ]
     .filter(Boolean)
@@ -316,19 +318,42 @@ function buildPositioningSpeech(c: ConvictionDeskOutput, ticker: string): string
     sentence("Crowd state", c.positioning_context.crowd_state.replace(/_/g, " "), t),
     sentence("Sell-side targets versus price", c.positioning_context.sell_side_targets_vs_price, t),
     sentence("Implied versus consensus", c.positioning_context.implied_vs_consensus, t),
-    sentence("Fade risk", c.positioning_context.fade_risk, t),
+    sentence("Upside fade risk", c.positioning_context.upside_fade_risk, t),
+    sentence("Downside fade risk", c.positioning_context.downside_fade_risk, t),
   ].filter(Boolean).join(" ");
 }
 
-function buildStructureFamilySpeech(c: ConvictionDeskOutput, ticker: string): string {
+function buildFamilyHypothesesSpeech(c: ConvictionDeskOutput, ticker: string): string {
   const t = ticker.toUpperCase();
+  const parts: string[] = ["Family hypotheses."];
+  for (const h of c.family_hypotheses) {
+    const fam = preprocessForSpeech(h.family.replace(/_/g, " "), t);
+    parts.push(`Hypothesis ${fam}.`);
+    if (h.family !== "pass") {
+      parts.push(sentence("Structure", h.candidate_structure, t));
+      parts.push(sentence("Entry math", h.entry_math, t));
+    }
+    parts.push(sentence("Thesis this family represents", h.thesis_this_family_represents, t));
+    parts.push(`Fit score ${preprocessForSpeech(h.fit_score, t)}.`);
+    parts.push(sentence("Reason for score", h.reason_for_score, t));
+    parts.push(sentence("What would make it unfit", h.what_would_make_it_unfit, t));
+  }
+  return parts.filter(Boolean).join(" ");
+}
+
+function buildSelfCheckSpeech(c: ConvictionDeskOutput, ticker: string): string {
+  const t = ticker.toUpperCase();
+  const sc = c.self_check;
   return [
-    sentence("Directional family evaluated", c.structure_family_discipline.directional_evaluated, t),
-    sentence("Vol surface family evaluated", c.structure_family_discipline.vol_surface_evaluated, t),
-    sentence("Premium family evaluated", c.structure_family_discipline.premium_evaluated, t),
-    `Chosen family is ${preprocessForSpeech(c.structure_family_discipline.chosen_family.replace(/_/g, " "), t)}.`,
-    preprocessForSpeech(c.structure_family_discipline.defense, t),
-  ].filter(Boolean).join(" ");
+    `Each trade family priced with math: ${sc.each_family_priced_with_math ? "yes" : "no"}.`,
+    sentence("Detail", sc.each_family_priced_with_math_reason, t),
+    `Decision consistent with strongest hypothesis: ${sc.decision_consistent_with_strongest_hypothesis ? "yes" : "no"}.`,
+    sentence("Detail", sc.decision_consistent_with_strongest_hypothesis_reason, t),
+    `Call survives reverse family order: ${sc.call_survives_reverse_family_order ? "yes" : "no"}.`,
+    sentence("Detail", sc.call_survives_reverse_family_order_reason, t),
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 /** Plain text for Conviction Desk (Solo Desk sections plus conviction-only fields). */
@@ -446,8 +471,22 @@ export function buildConvictionDeskCardPlainText(args: {
   lines.push("Historical", catalyst.historical_pattern);
   lines.push("Read", catalyst.read, "");
 
+  lines.push("— Family hypotheses —");
+  for (const h of conviction.family_hypotheses) {
+    lines.push(h.family.replace(/_/g, " ").toUpperCase());
+    if (h.family !== "pass") {
+      lines.push("Candidate structure", h.candidate_structure);
+      lines.push("Entry math", h.entry_math);
+    }
+    lines.push("Thesis", h.thesis_this_family_represents);
+    lines.push("Fit score", h.fit_score);
+    lines.push("Reason", h.reason_for_score);
+    lines.push("Unfit if", h.what_would_make_it_unfit, "");
+  }
+
   lines.push("— Regime synthesis —");
   lines.push("Regime read", conviction.regime_synthesis.regime_read.replace(/_/g, " "));
+  lines.push("Strongest hypothesis", conviction.regime_synthesis.strongest_hypothesis.replace(/_/g, " "));
   lines.push("Synthesis", conviction.regime_synthesis.synthesis, "");
 
   lines.push("— Risk of ruin —");
@@ -457,14 +496,26 @@ export function buildConvictionDeskCardPlainText(args: {
   lines.push("Crowd state", conviction.positioning_context.crowd_state.replace(/_/g, " "));
   lines.push("Sell-side targets vs price", conviction.positioning_context.sell_side_targets_vs_price);
   lines.push("Implied vs consensus", conviction.positioning_context.implied_vs_consensus);
-  lines.push("Fade risk", conviction.positioning_context.fade_risk, "");
+  lines.push("Upside fade risk", conviction.positioning_context.upside_fade_risk, "");
+  lines.push("Downside fade risk", conviction.positioning_context.downside_fade_risk, "");
 
-  lines.push("— Structure family discipline —");
-  lines.push("Directional evaluated", conviction.structure_family_discipline.directional_evaluated);
-  lines.push("Vol surface evaluated", conviction.structure_family_discipline.vol_surface_evaluated);
-  lines.push("Premium evaluated", conviction.structure_family_discipline.premium_evaluated);
-  lines.push("Chosen family", conviction.structure_family_discipline.chosen_family.replace(/_/g, " "));
-  lines.push("Defense", conviction.structure_family_discipline.defense, "");
+  lines.push("— Self check —");
+  lines.push(
+    "Each family priced with math",
+    String(conviction.self_check.each_family_priced_with_math),
+    conviction.self_check.each_family_priced_with_math_reason,
+  );
+  lines.push(
+    "Decision consistent with strongest hypothesis",
+    String(conviction.self_check.decision_consistent_with_strongest_hypothesis),
+    conviction.self_check.decision_consistent_with_strongest_hypothesis_reason,
+  );
+  lines.push(
+    "Survives reverse family order",
+    String(conviction.self_check.call_survives_reverse_family_order),
+    conviction.self_check.call_survives_reverse_family_order_reason,
+    "",
+  );
 
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
@@ -491,13 +542,14 @@ export function buildDeskSpeechSections(
       { id: "vol", label: "Volatility", text: buildVolSpeech(classic) },
       { id: "flow", label: "Flow", text: buildFlowSpeech(classic) },
       { id: "catalyst", label: "Catalyst", text: buildCatalystSpeech(classic) },
+      { id: "family_hypotheses", label: "Family hypotheses", text: buildFamilyHypothesesSpeech(c, deskResult.ticker) },
       { id: "regime_synthesis", label: "Regime synthesis", text: buildRegimeSynthesisSpeech(c, deskResult.ticker) },
       { id: "risk_of_ruin", label: "Risk of ruin", text: buildRiskOfRuinSpeech(c, deskResult.ticker) },
       { id: "positioning_context", label: "Positioning context", text: buildPositioningSpeech(c, deskResult.ticker) },
       {
-        id: "structure_family_discipline",
-        label: "Structure family discipline",
-        text: buildStructureFamilySpeech(c, deskResult.ticker),
+        id: "self_check",
+        label: "Self check",
+        text: buildSelfCheckSpeech(c, deskResult.ticker),
       },
     ];
   }

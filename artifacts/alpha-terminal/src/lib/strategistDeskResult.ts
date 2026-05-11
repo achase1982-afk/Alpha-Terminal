@@ -102,34 +102,68 @@ export interface DeskResultClassic {
   soloDeskJsonDegraded?: "schema_validation_failed_after_retry";
 }
 
+export type ConvictionFitScore = "high" | "medium" | "low" | "unfit";
+
+export type ConvictionTradeFamilyHypothesis = {
+  family: "long_vol" | "short_vol" | "directional";
+  candidate_structure: string;
+  entry_math: string;
+  thesis_this_family_represents: string;
+  fit_score: ConvictionFitScore;
+  reason_for_score: string;
+  what_would_make_it_unfit: string;
+};
+
+export type ConvictionPassHypothesis = {
+  family: "pass";
+  candidate_structure: null;
+  entry_math: null;
+  thesis_this_family_represents: string;
+  fit_score: ConvictionFitScore;
+  reason_for_score: string;
+  what_would_make_it_unfit: string;
+};
+
+export type ConvictionFamilyHypothesisEntry = ConvictionTradeFamilyHypothesis | ConvictionPassHypothesis;
+
 export interface ConvictionDeskOutput {
   vol: VolAnalystOutput;
   flow: FlowAnalystOutput;
   catalyst: CatalystAnalystOutput;
-  pm: PmOutput;
+  family_hypotheses: [
+    ConvictionTradeFamilyHypothesis & { family: "long_vol" },
+    ConvictionTradeFamilyHypothesis & { family: "short_vol" },
+    ConvictionTradeFamilyHypothesis & { family: "directional" },
+    ConvictionPassHypothesis,
+  ];
   regime_synthesis: {
     regime_read:
-      | "long_premium"
-      | "short_premium"
-      | "neutral_premium"
-      | "directional_long"
-      | "directional_short"
+      | "short_premium_neutral"
+      | "short_premium_directional"
+      | "long_premium_neutral"
+      | "long_premium_directional"
+      | "pure_directional_long"
+      | "pure_directional_short"
       | "no_edge";
+    strongest_hypothesis: "long_vol" | "short_vol" | "directional" | "pass";
     synthesis: string;
   };
+  pm: PmOutput;
   risk_of_ruin: string;
   positioning_context: {
     crowd_state: "crowded_long" | "crowded_short" | "balanced" | "unclear";
     sell_side_targets_vs_price: string;
     implied_vs_consensus: string;
-    fade_risk: string;
+    upside_fade_risk: string;
+    downside_fade_risk: string;
   };
-  structure_family_discipline: {
-    directional_evaluated: string;
-    vol_surface_evaluated: string;
-    premium_evaluated: string;
-    chosen_family: "directional" | "vol_surface" | "premium" | "no_trade";
-    defense: string;
+  self_check: {
+    each_family_priced_with_math: boolean;
+    each_family_priced_with_math_reason: string;
+    decision_consistent_with_strongest_hypothesis: boolean;
+    decision_consistent_with_strongest_hypothesis_reason: string;
+    call_survives_reverse_family_order: boolean;
+    call_survives_reverse_family_order_reason: string;
   };
 }
 

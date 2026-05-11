@@ -73,7 +73,7 @@ export const STRATEGIST_EQUITY_MOVES_OUTPUT_RULES = `
 ## EQUITY SESSION MOVES (integrate into JSON prose when snapshot fields exist)
 The report must reflect **underlying cash action**, not options marks alone. When **price**, **dailyChangePct**, **intraday**, **signal_snapshot**, or top-level equity enrichment fields (stream ages, quote cross-check deltas) are present in the snapshot, cite them in the output: at minimum session percent change from **dailyChangePct** when available, spot level from **price** when useful, and how spot relates to session **Volume Weighted Average Price** plus **Relative Strength Index** tone when **intraday.vwap** / **intraday.rsi** carry numbers. When **intraday.equity_block_tape** or **intraday.order_book** are populated, say whether large prints or displayed liquidity skew confirms or fights the listed-options flow read.
 
-Route these facts into the sections they inform: **flow** (**dominant_flow**, **institutional_signal**, **read**), **pm** (**thesis**, **edge_check**, **watch_for**), **vol** (**implied_vs_realized**, **read**) when spot versus implied move matters, **catalyst** (**read**) only when price action clearly ties to the event story. On Conviction Desk, also **regime_synthesis**, **positioning_context**, **risk_of_ruin**, and **structure_family_discipline** when cash positioning informs regime, crowding, or structure choice.
+Route these facts into the sections they inform: **flow** (**dominant_flow**, **institutional_signal**, **read**), **pm** (**thesis**, **edge_check**, **watch_for**), **vol** (**implied_vs_realized**, **read**) when spot versus implied move matters, **catalyst** (**read**) only when price action clearly ties to the event story. On Conviction Desk, also **family_hypotheses**, **regime_synthesis**, **positioning_context**, **risk_of_ruin**, and **self_check** when cash positioning informs regime, crowding, or structure choice.
 
 When **intraday** is **null** or nested fields are mostly **null**, note briefly that live equity enrichments were thin on this run and lean on chain plus session tape; still surface **price** and **dailyChangePct** when present. Use full phrases (**Volume Weighted Average Price**, **Relative Strength Index**) and honor OUTPUT STYLE vendor rules.
 `;
@@ -94,7 +94,7 @@ Tape availability **must not** be cited as a load-bearing reason in:
 - **pm.thesis** (the pass or structure rationale)
 - **pm.edge_check** (what would change the read)
 - **pm.biggest_risk** (the central risk to the position or the pass itself)
-- **structure_family_discipline.defense** (why each structure family was rejected)
+- **family_hypotheses** scoring fields (**reason_for_score**, **what_would_make_it_unfit**)
 - **exit_plan** targets, stops, or time stops, or any blanket pass versus trade rule framed as "wait until classified tape returns" except inside **pm.watch_for** as a monitoring hook (see below)
 
 In those restricted fields, lean on the surface (volatility, term structure, skew, implied versus cleanly adjusted realized), the catalyst landscape (earnings, macro, legal), the positioning context (sell-side, crowded long or short, fade risk), and the regime read. If classified options tape is unavailable, drop the institutional-sponsorship sub-thesis and grade the remaining edges on their own merits.
@@ -110,7 +110,7 @@ const CONVICTION_DESK_TAPE_FIELD_REMINDERS = `
 - **pm.edge_check**: Do not cite tape availability or **sessionTape.tapeKind** here; falsify with real market conditions (surface dislocation, IV move, skew shift, catalyst resolution).
 - **pm.biggest_risk**: Do not cite tape or data-availability risk here; state a market risk (gap, IV crush, catalyst miss, regime flip).
 - **pm.exit_plan**: Anchor profit target, stop, and time stop to price, vol, or catalyst dates, not to waiting for classified tape.
-- **structure_family_discipline.defense**: Do not reject a family because options **tapeKind** was **eod_fallback**; compare families on vol surface, fundamentals, and positioning fit.
+- **family_hypotheses.reason_for_score**: Do not mark a family unfit solely because options **tapeKind** was **eod_fallback**; compare families on vol surface, fundamentals, and positioning fit.
 `;
 
 /** Catalyst / event narrative: sell-side firms may be named as catalyst actors; retrieval plumbing and outlet attribution may not. */
@@ -228,11 +228,11 @@ OUTPUT STYLE (strict, Volatility topic):
 export function buildVolAnalystPrompt(dataPackage: string): string {
   return `${SINGLE_VOICE_FRAMING}
 
-This turn produces the **Volatility** section only (JSON fields below). Focus on the volatility surface: IV state, term structure, skew, IV vs realized, and where the surface is dislocated relative to fair value.
+This turn produces the **Volatility** section only (JSON fields below). Focus on the volatility surface: IV state, term structure, skew, IV vs realized, and where the surface is rich or cheap relative to your fair value. Identify both where the surface is rich relative to your fair value (short-vol fits: condors, credit spreads, calendars sold from the front, butterflies) and where the surface is cheap relative to your fair value (long-vol fits: long calendars from the back leg, long straddles into macro stacks, backspreads, long single-strike options when skew is flat). Skew interpretation must specifically address directional vol asymmetry — flat-to-bid call skew on a recent upside mover is cheap upside vol, not retail confirmation.
 
 Your output is read at institutional review meetings. Every IV number you quote, every vol point you cite, every term structure observation must be defensible. **termStructure5pt** ATM IVs and **skew25Delta** are assembled from chain IVs that already passed deterministic microstructure, liquidity-floor, and surface-consistency hygiene (see **dataQualitySummary.ivClampedCount** and **ivClampedReasons**); null ATM or null skew on a specific expiry means no trustworthy surviving contracts there — skip that expiry in the vol read rather than inferring from neighbors. If **dataQualitySummary.flags** includes **iv_contamination_elevated**, call that out: more than 30% of strikes had IV removed by reasons that count toward the contamination threshold (spread-wide and zero-liquidity microstructure removals may be excluded from that threshold only when **dataQualitySummary.marketSession** is **closed**; when **unknown**, the full threshold applies — see **ivClampedReasons** for the full breakdown). Math is checked before publication. If you state a number, you can defend it.${VOL_CLOSED_SESSION_CONTEXT}
 
-You are not providing liquidity to smarter money. If the surface does not show a real dislocation, your read is no actionable vol edge here and you say so. Do not invent edge to fill space.
+You are not providing liquidity to smarter money. If the surface shows neither a sell-able dislocation nor a buy-able opportunity, your read is no actionable vol edge here and you say so. Do not equate vol edge with vol surface richness — long-vol setups are vol edge too. Do not invent edge to fill space.
 
 For each ticker, produce structured output identifying:
 - Where IV percentile sits and what regime that implies (use **ivr** with **ivrContext** when present)
@@ -241,7 +241,7 @@ For each ticker, produce structured output identifying:
 - The implied vs realized comparison concretely (cite **realizedVol** HV20/HV30 when present; reference **impliedMove** vs spot when present)
 - A read that names specific structures that capture your view, with specific DTE windows and approximate strike placement
 
-Be concrete. "Vol is elevated" is bad. "IVR 76, back-month 80% vs realized 55%, 25 vol-point premium concentrated in the May 29 earnings expiry, prefer May 15 credit structures or May 29/June 18 calendars" is good.
+Be concrete. "Vol is elevated" is bad. Two contrasting examples of good reads: SHORT-VOL: "IVR 76, back-month 80% vs realized 55%, 25 vol-point premium concentrated in the May 29 earnings expiry, prefer May 15 credit structures or short-front calendars." LONG-VOL: "IVR 42, term structure flat at 65% with seven macro prints inside the position window, 25Δ skew flat-to-bid on a recent +90% mover, prefer 8/21 backspreads or long straddles capturing the macro stack."
 
 This section does not finalize a trade. It states the surface read. A later **Decision** section may propose structure.
 
@@ -518,7 +518,7 @@ Work through four topics in sequence inside one response. Each topic matches the
 
 VOLATILITY
 
-Read the volatility surface: IV state, term structure, skew, IV vs realized. Identify where the surface is dislocated relative to fair value. Term-structure ATM IVs and 25Δ skew are pre-cleaned using bid-ask microstructure (including spread vs mid), hard IV ceilings, a liquidity floor, and local surface outlier checks; use **dataQualitySummary.ivClampedCount** / **ivCleanedRatio** and null entries in **termStructure5pt** or **skew25Delta** to see where the surface is incomplete.
+Read the volatility surface: IV state, term structure, skew, IV vs realized. Identify both where the surface is rich relative to your fair value (short-vol fits: condors, credit spreads, calendars sold from the front, butterflies) and where the surface is cheap relative to your fair value (long-vol fits: long calendars from the back leg, long straddles into macro stacks, backspreads, long single-strike options when skew is flat). Skew interpretation must specifically address directional vol asymmetry — flat-to-bid call skew on a recent upside mover is cheap upside vol, not retail confirmation. Term-structure ATM IVs and 25Δ skew are pre-cleaned using bid-ask microstructure (including spread vs mid), hard IV ceilings, a liquidity floor, and local surface outlier checks; use **dataQualitySummary.ivClampedCount** / **ivCleanedRatio** and null entries in **termStructure5pt** or **skew25Delta** to see where the surface is incomplete.
 
 FLOW
 
@@ -715,12 +715,12 @@ function convictionDeskProviderAppend(provider?: ConvictionDeskPromptProvider): 
       return `
 
 ## YOUR PROVIDER (Google Gemini — JSON MIME turn)
-Web search is **not** attached to this JSON call (Gemini constraint). Use the DATA PACKAGE and any STRUCTURED RESEARCH block. Your final JSON must use top-level keys vol, flow, catalyst, pm, regime_synthesis, risk_of_ruin, positioning_context, structure_family_discipline only.`;
+Web search is **not** attached to this JSON call (Gemini constraint). Use the DATA PACKAGE and any STRUCTURED RESEARCH block. Your final JSON must use top-level keys vol, flow, catalyst, family_hypotheses, regime_synthesis, pm, risk_of_ruin, positioning_context, self_check only.`;
     case "openai":
       return `
 
 ## YOUR PROVIDER (OpenAI — Responses API + web search)
-After tool calls complete, your **final** output must be **only** one JSON object with top-level keys vol, flow, catalyst, pm, regime_synthesis, risk_of_ruin, positioning_context, structure_family_discipline. Do not emit the legacy memo-only Conviction shape.`;
+After tool calls complete, your **final** output must be **only** one JSON object with top-level keys vol, flow, catalyst, family_hypotheses, regime_synthesis, pm, risk_of_ruin, positioning_context, self_check. Do not emit the legacy memo-only Conviction shape.`;
     case "anthropic":
       return `
 
@@ -730,7 +730,7 @@ The **final** assistant message must be **only** that JSON object. No preamble, 
       return `
 
 ## YOUR PROVIDER (xAI — Grok + web search)
-Return **only** one JSON object matching the Conviction Desk skeleton (Solo Desk sections plus the four additions).`;
+Return **only** one JSON object matching the Conviction Desk skeleton (Solo Desk sections plus family_hypotheses, regime_synthesis, pm, risk_of_ruin, positioning_context, self_check).`;
     default:
       return "";
   }
@@ -795,7 +795,7 @@ ${CONVICTION_DESK_ADDITIONS_INSTRUCTIONS}
 
 ${snapshotBlock(dataPackage)}${CONVICTION_DESK_INTRADAY_DATA_GUIDANCE}${STRATEGIST_EQUITY_MOVES_OUTPUT_RULES}${OUTPUT_NO_SOURCE_RULES}${VOL_OUTPUT_ATTRIBUTION_RULES}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
 
-Respond with ONLY one JSON object (no markdown fences, no extra prose). Top-level keys: vol, flow, catalyst, pm, regime_synthesis, risk_of_ruin, positioning_context, structure_family_discipline. Shapes must match desk mode exactly.
+Respond with ONLY one JSON object (no markdown fences, no extra prose). Top-level keys in this exact order: vol, flow, catalyst, family_hypotheses, regime_synthesis, pm, risk_of_ruin, positioning_context, self_check. Field order matters — family_hypotheses must be generated before regime_synthesis, which must be generated before pm. Shapes must match the skeleton below exactly.
 
 ${CONVICTION_DESK_FULL_JSON_SKELETON}
 ${CONVICTION_DESK_FINAL_SHAPE_GUARD}${convictionDeskProviderAppend(options?.provider)}`;
