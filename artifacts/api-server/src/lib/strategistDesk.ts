@@ -62,7 +62,6 @@ import { getStrategistRunContext, mergeStrategistDiag } from "./strategistRunCon
 import {
   resolveConvictionDeskRouting,
   strategistProviderToTelemetryProvider,
-  type ConvictionDeskRoutingKey,
 } from "./convictionDeskRouting.js";
 
 const TEMPERATURE = 0;
@@ -879,7 +878,8 @@ export async function runConvictionDesk(args: {
   catalystEvaluation?: CatalystEvaluation | null;
   callbacks?: DeskCallbacks;
   /** Optional per-run model routing (API body); otherwise `strategistConvictionModelIdx`. */
-  convictionDeskProvider?: ConvictionDeskRoutingKey | null;
+  /** Optional per-run model routing (API body): legacy short-cuts or `provider:model` (see convictionDeskRouting). */
+  convictionDeskProvider?: string | null;
 }): Promise<ConvictionDeskResult> {
   const { dataPackage, settings, ticker, deskExpirationISO, catalystEvaluation, callbacks, convictionDeskProvider } =
     args;

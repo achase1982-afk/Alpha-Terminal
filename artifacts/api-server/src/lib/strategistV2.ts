@@ -3,7 +3,6 @@ import { getCachedRegime, buildFallbackRegime, type StructuredRegime } from "./r
 import { computeIOScore, type IOScoreResult } from "./ioScoreEngine.js";
 import { getSettings, getStrategistModel, type StrategistConfig, type StrategistModelOption } from "./strategistSettings.js";
 import { runDebate, type DebateCallbacks, type DebateRound, type DebateRole, type DebatePhase } from "./strategistDebate.js";
-import type { ConvictionDeskRoutingKey } from "./convictionDeskRouting.js";
 import { runDeskAnalysis, runSoloDesk, runConvictionDesk, type DeskCallbacks } from "./strategistDesk.js";
 import type { ConvictionDeskResult, DeskResult } from "./strategistDeskSchemas.js";
 import { throwIfStrategistAnalyzeCancelled } from "./strategistAnalyzeCancellation.js";
@@ -727,8 +726,8 @@ export interface AnalyzeProgressCallbacks {
   jobId?: string;
   /** Aborts in-flight LLM HTTP when aborted (client disconnect or explicit cancel). */
   cancelSignal?: AbortSignal;
-  /** When set (e.g. POST /analyze body), overrides `strategistConvictionModelIdx` for mode 5 only. */
-  convictionDeskProvider?: ConvictionDeskRoutingKey;
+  /** When set (e.g. POST /analyze body), overrides `strategistConvictionModelIdx` for mode 5 only. Legacy short-cuts or `provider:model`. */
+  convictionDeskProvider?: string;
 }
 
 function throwAnalyzeCancelled(): never {

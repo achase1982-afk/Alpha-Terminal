@@ -35,7 +35,7 @@ import {
   clearStrategistAnalyzeCancelled,
 } from "../lib/strategistAnalyzeCancellation.js";
 import { stripConvictionDeskDiagnosticsForClient, stripHistoryCardJsonForClient } from "../lib/strategistClientSanitize.js";
-import { isConvictionDeskRoutingKey } from "../lib/convictionDeskRouting.js";
+import { normalizeConvictionDeskProviderBody } from "../lib/convictionDeskRouting.js";
 
 const router: IRouter = Router();
 
@@ -427,7 +427,7 @@ router.post("/analyze", async (req, res): Promise<void> => {
       convictionDeskProvider?: unknown;
     };
     const scannerContext = parseScannerContext(rawScanner);
-    const convictionDeskProvider = isConvictionDeskRoutingKey(cdProvRaw) ? cdProvRaw : undefined;
+    const convictionDeskProvider = normalizeConvictionDeskProviderBody(cdProvRaw);
     if (!ticker || typeof ticker !== "string") {
       res.status(400).json({ error: "ticker is required" });
       return;
