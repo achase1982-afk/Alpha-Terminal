@@ -35,6 +35,7 @@ import {
   clearStrategistAnalyzeCancelled,
 } from "../lib/strategistAnalyzeCancellation.js";
 import { stripConvictionDeskDiagnosticsForClient, stripHistoryCardJsonForClient } from "../lib/strategistClientSanitize.js";
+import { isConvictionDeskRoutingKey } from "../lib/convictionDeskRouting.js";
 
 const router: IRouter = Router();
 
@@ -418,13 +419,15 @@ router.post("/analyze/cancel", async (req, res): Promise<void> => {
 
 router.post("/analyze", async (req, res): Promise<void> => {
   try {
-    const { ticker, jobId, flowContext, scannerContext: rawScanner } = req.body as {
+    const { ticker, jobId, flowContext, scannerContext: rawScanner, convictionDeskProvider: cdProvRaw } = req.body as {
       ticker?: string;
       jobId?: string;
       flowContext?: string;
       scannerContext?: unknown;
+      convictionDeskProvider?: unknown;
     };
     const scannerContext = parseScannerContext(rawScanner);
+    const convictionDeskProvider = isConvictionDeskRoutingKey(cdProvRaw) ? cdProvRaw : undefined;
     if (!ticker || typeof ticker !== "string") {
       res.status(400).json({ error: "ticker is required" });
       return;
@@ -512,6 +515,7 @@ router.post("/analyze", async (req, res): Promise<void> => {
               const i = entry.transcript.findIndex(x => x.id === turnId);
               if (i >= 0) entry.transcript.splice(i, 1);
             },
+            convictionDeskProvider,
           },
             scannerContext,
           );
@@ -610,6 +614,7 @@ router.post("/analyze", async (req, res): Promise<void> => {
         upperTicker,
         {
         flowContext: typeof flowContext === "string" && flowContext.length > 0 ? flowContext.slice(0, 8000) : undefined,
+        convictionDeskProvider,
       },
         scannerContext,
       );

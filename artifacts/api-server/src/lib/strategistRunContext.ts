@@ -26,9 +26,9 @@ export type StrategistDiagScratch = {
   cboeOneWasColdStart?: boolean;
   /** JSON-safe snapshots of provider SDK request payloads for strategist LLM calls (same order as turns). */
   modelSdkInputs?: unknown[];
-  /** Anthropic Conviction Desk per-attempt usage + web_search counts (mirrors fullDiagnostic). */
-  convictionDeskAnthropicTelemetry?: Array<Record<string, unknown>>;
-};
+  /** Conviction Desk per-attempt usage + web search counts (mirrors fullDiagnostic). */
+  convictionDeskProviderTelemetry?: Array<Record<string, unknown>>;
+}
 
 /** Async-local scratch for one strategist analyze run (diagnostics + trace correlation). */
 export type StrategistRunContext = {

@@ -14,6 +14,7 @@ export type CopySectionId =
   | "webSearchQueries"
   | "webSearchResults"
   | "toolsAttached"
+  | "provider"
   | "extendedThinkingConfig"
   | "systemPrompt"
   | "rawApiResponse"
@@ -39,10 +40,11 @@ export const COPY_SECTIONS: { id: CopySectionId; label: string }[] = [
   { id: "webSearchQueries", label: "Web Search Queries" },
   { id: "webSearchResults", label: "Web Search Results" },
   { id: "toolsAttached", label: "Tools Attached" },
-  { id: "extendedThinkingConfig", label: "Extended Thinking Config" },
+  { id: "provider", label: "LLM Provider" },
+  { id: "extendedThinkingConfig", label: "Thinking Config" },
   { id: "systemPrompt", label: "System Prompt" },
   { id: "rawApiResponse", label: "Raw API Response" },
-  { id: "anthropicRequestId", label: "Anthropic Request ID" },
+  { id: "anthropicRequestId", label: "Provider Request ID" },
   { id: "modelName", label: "Model Name" },
   { id: "dataPackage", label: "Data Package" },
   { id: "diagnostic", label: "Diagnostic" },
@@ -90,14 +92,17 @@ export interface StrategistTelemetryCopyRow {
   scannerSurfacedBy?: string | null;
   scannerFlowScore?: number | null;
   scannerUniverse?: string | null;
+  provider?: string | null;
   modelInput?: string | null;
   systemPrompt?: string | null;
   toolsAttached?: unknown;
+  thinkingConfig?: unknown;
   extendedThinkingConfig?: unknown;
   rawApiResponse?: unknown;
   thinkingBlocks?: string | null;
   webSearchQueries?: unknown;
   webSearchResults?: unknown;
+  providerRequestId?: string | null;
   anthropicRequestId?: string | null;
   modelName?: string | null;
 }
@@ -180,6 +185,7 @@ export function buildSectionedCopyPayload(
       scannerSurfacedBy: row.scannerSurfacedBy ?? null,
       scannerFlowScore: row.scannerFlowScore ?? null,
       scannerUniverse: row.scannerUniverse ?? null,
+      provider: row.provider ?? null,
     };
     if (dp) Object.assign(summary, pickSummaryDataPackageSlice(dp));
     out.summary = summary;
@@ -240,9 +246,13 @@ export function buildSectionedCopyPayload(
     out.toolsAttached = row.toolsAttached != null ? JSON.stringify(row.toolsAttached, null, 2) : "";
   }
 
+  if (selected.has("provider")) {
+    out.provider = row.provider ?? "";
+  }
+
   if (selected.has("extendedThinkingConfig")) {
-    out.extendedThinkingConfig =
-      row.extendedThinkingConfig != null ? JSON.stringify(row.extendedThinkingConfig, null, 2) : "";
+    const cfg = row.thinkingConfig ?? row.extendedThinkingConfig;
+    out.extendedThinkingConfig = cfg != null ? JSON.stringify(cfg, null, 2) : "";
   }
 
   if (selected.has("systemPrompt")) {
@@ -254,7 +264,7 @@ export function buildSectionedCopyPayload(
   }
 
   if (selected.has("anthropicRequestId")) {
-    out.anthropicRequestId = row.anthropicRequestId ?? "";
+    out.anthropicRequestId = (row.providerRequestId ?? row.anthropicRequestId) ?? "";
   }
 
   if (selected.has("modelName")) {

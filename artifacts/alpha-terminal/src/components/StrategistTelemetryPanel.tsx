@@ -42,14 +42,17 @@ interface TelemetryRow {
   scannerSurfacedBy?: string | null;
   scannerFlowScore?: number | null;
   scannerUniverse?: string | null;
+  provider?: string | null;
   modelInput?: string | null;
   systemPrompt?: string | null;
   toolsAttached?: unknown;
+  thinkingConfig?: unknown;
   extendedThinkingConfig?: unknown;
   rawApiResponse?: unknown;
   thinkingBlocks?: string | null;
   webSearchQueries?: unknown;
   webSearchResults?: unknown;
+  providerRequestId?: string | null;
   anthropicRequestId?: string | null;
   modelName?: string | null;
 }
@@ -126,7 +129,9 @@ type ConvictionRunTokenRollup = {
 
 function rollupConvictionAnthropicTokens(fullDiagnostic: unknown): ConvictionRunTokenRollup | null {
   if (fullDiagnostic == null || typeof fullDiagnostic !== "object") return null;
-  const arr = (fullDiagnostic as Record<string, unknown>).convictionDeskAnthropicTelemetry;
+  const fd = fullDiagnostic as Record<string, unknown>;
+  const arr =
+    (fd.convictionDeskProviderTelemetry as unknown) ?? (fd.convictionDeskAnthropicTelemetry as unknown);
   if (!Array.isArray(arr) || arr.length === 0) return null;
   let sumTotalReported = 0;
   let sumIn = 0;
@@ -668,8 +673,14 @@ export function StrategistTelemetryPanel() {
                   {row.toolsAttached && (
                     <DetailBlock title="Tools Attached to Request" data={row.toolsAttached} />
                   )}
-                  {row.extendedThinkingConfig && (
-                    <DetailBlock title="Extended Thinking Config" data={row.extendedThinkingConfig} />
+                  {row.provider && (
+                    <DetailBlock title="LLM Provider" data={row.provider} />
+                  )}
+                  {(row.thinkingConfig ?? row.extendedThinkingConfig) && (
+                    <DetailBlock
+                      title="Thinking Config"
+                      data={row.thinkingConfig ?? row.extendedThinkingConfig}
+                    />
                   )}
                   {row.systemPrompt && (
                     <DetailBlock title="System Prompt" data={row.systemPrompt} collapsibleByDefault />
@@ -677,8 +688,8 @@ export function StrategistTelemetryPanel() {
                   {row.rawApiResponse && (
                     <DetailBlock title="Raw API Response (all blocks)" data={row.rawApiResponse} collapsibleByDefault />
                   )}
-                  {row.anthropicRequestId && (
-                    <DetailBlock title="Anthropic Request ID" data={row.anthropicRequestId} />
+                  {(row.providerRequestId ?? row.anthropicRequestId) && (
+                    <DetailBlock title="Provider Request ID" data={row.providerRequestId ?? row.anthropicRequestId} />
                   )}
                   {row.modelName && (
                     <DetailBlock title="Model" data={row.modelName} />

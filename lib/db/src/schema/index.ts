@@ -785,16 +785,20 @@ export const strategistTelemetryTable = pgTable("strategist_telemetry", {
   scannerSurfacedBy: text("scanner_surfaced_by"),
   scannerFlowScore: integer("scanner_flow_score"),
   scannerUniverse: text("scanner_universe"),
-  /** Conviction Desk (Anthropic): assembled user messages JSON / full prompt text. */
+  /** LLM vendor for Conviction Desk audit rows: anthropic | openai | gemini. */
+  provider: text("provider"),
+  /** Conviction Desk: assembled user messages / full prompt text sent to the model. */
   modelInput: text("model_input"),
   systemPrompt: text("system_prompt"),
   toolsAttached: jsonb("tools_attached"),
-  extendedThinkingConfig: jsonb("extended_thinking_config"),
+  /** Provider-native reasoning / thinking configuration snapshot (JSON). */
+  thinkingConfig: jsonb("thinking_config"),
   rawApiResponse: jsonb("raw_api_response"),
   thinkingBlocks: text("thinking_blocks"),
   webSearchQueries: jsonb("web_search_queries"),
   webSearchResults: jsonb("web_search_results"),
-  anthropicRequestId: text("anthropic_request_id"),
+  /** Provider response id when available (OpenAI `response.id`, Anthropic message id, etc.). */
+  providerRequestId: text("provider_request_id"),
   modelName: text("model_name"),
 });
 
