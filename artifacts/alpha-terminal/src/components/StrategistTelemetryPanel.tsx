@@ -108,6 +108,66 @@ function getDecisionBadge(row: TelemetryRow): DecisionBadge {
   return { label: formatLegacyResultLabel(r), color: resultColorLegacy(r) };
 }
 
+function fmtTokenShort(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "0";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 10_000) return `${Math.round(n / 1000)}k`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(Math.round(n));
+}
+
+type ConvictionRunTokenRollup = {
+  sumTotalReported: number;
+  sumIn: number;
+  sumOut: number;
+  sumReasoning: number;
+  apiCalls: number;
+};
+
+function rollupConvictionAnthropicTokens(fullDiagnostic: unknown): ConvictionRunTokenRollup | null {
+  if (fullDiagnostic == null || typeof fullDiagnostic !== "object") return null;
+  const arr = (fullDiagnostic as Record<string, unknown>).convictionDeskAnthropicTelemetry;
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  let sumTotalReported = 0;
+  let sumIn = 0;
+  let sumOut = 0;
+  let sumReasoning = 0;
+  let any = false;
+  for (const e of arr) {
+    if (!e || typeof e !== "object") continue;
+    const o = e as Record<string, unknown>;
+    const inn = o.input_tokens;
+    const out = o.output_tokens;
+    const rt = o.reasoning_tokens;
+    const tt = o.total_tokens;
+    if (typeof inn === "number") {
+      sumIn += inn;
+      any = true;
+    }
+    if (typeof out === "number") {
+      sumOut += out;
+      any = true;
+    }
+    if (typeof rt === "number") {
+      sumReasoning += rt;
+      any = true;
+    }
+    if (typeof tt === "number") {
+      sumTotalReported += tt;
+      any = true;
+    }
+  }
+  if (!any) return null;
+  return { sumTotalReported, sumIn, sumOut, sumReasoning, apiCalls: arr.length };
+}
+
+function convictionRunTokenHeadline(r: ConvictionRunTokenRollup): string {
+  const total =
+    r.sumTotalReported > 0 ? r.sumTotalReported : r.sumIn + r.sumOut + r.sumReasoning;
+  const calls = r.apiCalls > 1 ? ` · ${r.apiCalls}× API` : "";
+  return `~${fmtTokenShort(total)} tok (in ${fmtTokenShort(r.sumIn)} · out ${fmtTokenShort(r.sumOut)}${r.sumReasoning ? ` · think ${fmtTokenShort(r.sumReasoning)}` : ""})${calls}`;
+}
+
 async function writeClipboard(text: string): Promise<boolean> {
   try {
     if (navigator.clipboard?.writeText) {
@@ -467,6 +527,7 @@ export function StrategistTelemetryPanel() {
           {filtered.length === 0 && <div className="text-center text-zinc-600 font-mono text-xs py-6">{stratRows.length === 0 ? "No analyses recorded yet" : "No matches"}</div>}
           {filtered.map((row) => {
             const badge = getDecisionBadge(row);
+            const tokenRollup = rollupConvictionAnthropicTokens(row.fullDiagnostic);
             return (
             <div key={row.id} className="rounded-lg border border-[#2A2A2C] bg-[#111113]">
               <div className="flex items-stretch gap-1 px-2 py-2">
@@ -518,6 +579,16 @@ export function StrategistTelemetryPanel() {
                   </button>
                 </div>
               </div>
+              {tokenRollup && (
+                <div className="border-t border-[#2A2A2C]/80 bg-[#f5a623]/[0.07] px-2 py-1.5">
+                  <p
+                    className="truncate font-mono text-[11px] font-bold uppercase tracking-wide text-[#f5a623]"
+                    title={`Anthropic usage (Conviction Desk, summed attempts): ${convictionRunTokenHeadline(tokenRollup)}`}
+                  >
+                    Run tokens: {convictionRunTokenHeadline(tokenRollup)}
+                  </p>
+                </div>
+              )}
               {expandedId === row.id && (
                 <div className="px-4 pb-4 border-t border-zinc-800/50 space-y-3 pt-3">
                   {row.recommendationThesis && (

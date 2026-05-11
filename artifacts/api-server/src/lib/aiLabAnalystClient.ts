@@ -1354,7 +1354,7 @@ export async function streamCallAnthropicConvictionDesk(
   const convictionEnabledBudget = Math.max(10_000, ANTHROPIC_EXTENDED_THINKING_BUDGET);
   const computedMax = thinking
     ? thinking.type === "adaptive"
-      ? 16_384
+      ? 32_000
       : convictionEnabledBudget + 12_288
     : 12_288;
   const max_tokens = options?.maxTokens != null ? Math.max(computedMax, options.maxTokens) : computedMax;
