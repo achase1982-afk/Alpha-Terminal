@@ -132,12 +132,12 @@ export function ScannerCardRow({ data, expanded }: { data: ScannerCardData; expa
               {primary === "sweep" ? (
                 <>
                   <Zap className="h-3.5 w-3.5 shrink-0 text-amber-400" aria-hidden />
-                  <span className="text-amber-200/95">Sweep</span>
+                  <span className="text-amber-200/95">SWEEP</span>
                 </>
               ) : (
                 <>
                   <Box className="h-3.5 w-3.5 shrink-0 text-zinc-400" aria-hidden />
-                  <span className="text-zinc-200">Block</span>
+                  <span className="text-zinc-200">BLOCK</span>
                   {flow?.largestEventNotional != null && Number.isFinite(flow.largestEventNotional) ? (
                     <span className="truncate font-mono font-normal normal-case tracking-tight text-muted-foreground">
                       {formatNotionalShort(flow.largestEventNotional)}

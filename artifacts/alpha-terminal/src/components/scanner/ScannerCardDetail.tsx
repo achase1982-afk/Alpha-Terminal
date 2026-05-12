@@ -136,12 +136,12 @@ export function ScannerCardDetail({
         {primary === "sweep" ? (
           <>
             <Zap className="h-4 w-4 text-amber-400" aria-hidden />
-            <span className="text-amber-200/95">Sweep</span>
+            <span className="text-amber-200/95">SWEEP</span>
           </>
         ) : primary === "block" ? (
           <>
             <Box className="h-4 w-4 text-zinc-400" aria-hidden />
-            <span className="text-zinc-200">Block</span>
+            <span className="text-zinc-200">BLOCK</span>
           </>
         ) : (
           <span className="text-zinc-500">Flow</span>
