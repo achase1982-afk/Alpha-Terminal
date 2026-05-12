@@ -54,6 +54,10 @@ export type ScannerFlowContextDiagnostics = {
   max_trade_ts_in_window: string | null;
 };
 
+export type ScannerFlowPrimaryEventType = "sweep" | "block";
+
+export type ScannerFlowNetDirection = "bullish" | "bearish" | "mixed" | "neutral";
+
 /** Wire shape merged onto GET /api/scanner/v3/universe cards (`flow` field). */
 export type ScannerFlowLayer5Wire = {
   blocks_4h: number | null;
@@ -69,7 +73,35 @@ export type ScannerFlowLayer5Wire = {
   } | null;
   volume_4h: number | null;
   volume_over_oi: number | null;
+  /** Count of persisted `options_flow_raw_trades` rows in the rolling flow window (all prints). */
+  events_today: number | null;
+  primary_event_type: ScannerFlowPrimaryEventType | null;
+  net_direction: ScannerFlowNetDirection;
+  last_event_ts: string | null;
+  sweep_count: number | null;
+  block_count: number | null;
+  largest_event_notional: number | null;
 };
+
+const NET_DIRECTION_USD_THRESHOLD = 5000;
+
+export function primaryEventTypeFromSweepBlockCounts(sweeps: number, blocks: number): ScannerFlowPrimaryEventType | null {
+  if (sweeps <= 0 && blocks <= 0) return null;
+  if (sweeps >= blocks) return "sweep";
+  return "block";
+}
+
+export function netDirectionFromEventsAndDelta(
+  eventsToday: number,
+  netDeltaDollar: number | null,
+): ScannerFlowNetDirection {
+  if (eventsToday === 0) return "neutral";
+  if (netDeltaDollar != null && Number.isFinite(netDeltaDollar)) {
+    if (netDeltaDollar > NET_DIRECTION_USD_THRESHOLD) return "bullish";
+    if (netDeltaDollar < -NET_DIRECTION_USD_THRESHOLD) return "bearish";
+  }
+  return "mixed";
+}
 
 function formatTopStrikeLabel(strike: number, optionType: string): string {
   const ot = optionType === "put" ? "put" : "call";
@@ -212,14 +244,23 @@ async function fetchExecPerStrikeSessionRollup(
     const volumeOverOi =
       chainOi > 0 && Number.isFinite(vol) ? Math.round((vol / chainOi) * 10_000) / 10_000 : null;
 
+    const sweepsCt = intOrZero(row.sweeps);
+    const blocksCt = intOrZero(row.blocks);
     out.set(sym, {
-      blocks_4h: intOrZero(row.blocks),
-      sweeps_4h: intOrZero(row.sweeps),
+      blocks_4h: blocksCt,
+      sweeps_4h: sweepsCt,
       net_delta_dollar: null,
       top_strike_label: label,
       top_strike: top,
       volume_4h: Math.round(vol),
       volume_over_oi: volumeOverOi,
+      events_today: null,
+      primary_event_type: primaryEventTypeFromSweepBlockCounts(sweepsCt, blocksCt),
+      net_direction: netDirectionFromEventsAndDelta(0, null),
+      last_event_ts: null,
+      sweep_count: sweepsCt,
+      block_count: blocksCt,
+      largest_event_notional: null,
     });
   }
 
@@ -302,6 +343,13 @@ function parseFlowSummaryToWire(flowSummary: unknown): ScannerFlowLayer5Wire | n
     top_strike: topStrike,
     volume_4h: null,
     volume_over_oi: null,
+    events_today: null,
+    primary_event_type: null,
+    net_direction: "neutral",
+    last_event_ts: null,
+    sweep_count: null,
+    block_count: null,
+    largest_event_notional: null,
   };
 }
 
@@ -359,9 +407,12 @@ async function computeScannerFlowForWindow(
     db.execute(sql`
       SELECT
         underlying_symbol AS sym,
+        COUNT(*)::int AS events_today,
         COUNT(*) FILTER (WHERE is_block IS TRUE)::int AS blocks,
         COUNT(*) FILTER (WHERE is_sweep IS TRUE)::int AS sweeps,
-        COALESCE(SUM(size), 0)::double precision AS vol_4h
+        COALESCE(SUM(size), 0)::double precision AS vol_4h,
+        MAX(timestamp) AS last_event_ts,
+        MAX(notional)::double precision AS largest_event_notional
       FROM options_flow_raw_trades
       WHERE underlying_symbol IN (${inList})
         AND timestamp IS NOT NULL
@@ -434,15 +485,35 @@ async function computeScannerFlowForWindow(
           : null,
   };
 
-  const aggBySym = new Map<string, { blocks: number; sweeps: number; vol4h: number }>();
+  const aggBySym = new Map<
+    string,
+    {
+      blocks: number;
+      sweeps: number;
+      vol4h: number;
+      events_today: number;
+      last_event_ts: string | null;
+      largest_event_notional: number | null;
+    }
+  >();
   for (const row of (aggRows.rows ?? []) as Record<string, unknown>[]) {
     const sym = String(row.sym ?? "").toUpperCase();
     if (!sym) continue;
     const vol = numOrNull(row.vol_4h) ?? 0;
+    const maxTsRaw = row.last_event_ts;
+    const last_event_ts =
+      maxTsRaw instanceof Date
+        ? maxTsRaw.toISOString()
+        : maxTsRaw != null && String(maxTsRaw).length > 0
+          ? String(maxTsRaw)
+          : null;
     aggBySym.set(sym, {
       blocks: intOrZero(row.blocks),
       sweeps: intOrZero(row.sweeps),
       vol4h: vol,
+      events_today: intOrZero(row.events_today),
+      last_event_ts,
+      largest_event_notional: numOrNull(row.largest_event_notional),
     });
   }
 
@@ -579,6 +650,10 @@ async function computeScannerFlowForWindow(
 
     const topStrikeOi = strikeOiBySym.get(sym) ?? null;
 
+    const events_today = agg.events_today;
+    const primary_event_type = primaryEventTypeFromSweepBlockCounts(agg.sweeps, agg.blocks);
+    const net_direction = netDirectionFromEventsAndDelta(events_today, net_delta_dollar);
+
     const wire: ScannerFlowLayer5Wire = {
       blocks_4h: agg.blocks,
       sweeps_4h: agg.sweeps,
@@ -595,6 +670,13 @@ async function computeScannerFlowForWindow(
         : null,
       volume_4h: Math.round(agg.vol4h),
       volume_over_oi: volumeOverOi,
+      events_today,
+      primary_event_type,
+      net_direction,
+      last_event_ts: agg.last_event_ts,
+      sweep_count: agg.sweeps,
+      block_count: agg.blocks,
+      largest_event_notional: agg.largest_event_notional,
     };
 
     out.set(sym, wire);

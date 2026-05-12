@@ -13,12 +13,11 @@ const MONO =
 export const scannerNumericFontStyle: CSSProperties = { fontFamily: MONO };
 
 /**
- * Six-column grid for collapsed scanner universe rows + header.
- * Rows: (1) ticker / last, (2) company name, (3) $Δ · %Δ · IVR, (4) catalyst · score · volume.
- * Explicit placement prevents flex wrap from mixing name with price metrics on narrow viewports.
+ * Collapsed scanner universe row layout: chevron column + flexible main column
+ * (identity + price, UAI signal, compact context). Matches `ScannerLayer1ColumnHeader`.
  */
 export const SCANNER_LAYER1_CARD_GRID_CLASS =
-  "grid w-full min-w-0 grid-cols-[1rem_minmax(0,1fr)_minmax(3rem,auto)_minmax(2.75rem,auto)_minmax(2rem,auto)_minmax(4.25rem,auto)] gap-x-2 gap-y-1 px-3 py-2.5 text-sm tabular-nums";
+  "flex w-full min-w-0 items-stretch gap-2 px-3 py-2.5 text-sm tabular-nums";
 
 export function dashCell(): string {
   return "-";

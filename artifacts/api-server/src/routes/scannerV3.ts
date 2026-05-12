@@ -22,6 +22,7 @@ import {
 import { computeScannerLayer7Scores } from "../lib/scannerLayer7Scores.js";
 import { matchScannerTradingPreset } from "../lib/scannerTradingPresets.js";
 import { getBestAccessToken } from "../lib/tokenStore.js";
+import { fetchUaiSymbolEvents, parseScannerSymbolEventsWindowMs } from "../lib/scannerV3SymbolEvents.js";
 
 const router: IRouter = Router();
 
@@ -59,6 +60,49 @@ function parseUniverseQuery(raw: unknown): { ok: true; universeKey: string } | {
   if (isCompositeUniverseId(s)) return { ok: true, universeKey: s };
   return { ok: false };
 }
+
+/** Rolling-window options prints for one symbol (UAI scanner detail timeline). */
+router.get("/v3/symbol/:symbol/events", async (req, res) => {
+  const started = Date.now();
+  try {
+    const userId = requireUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const rawSym = req.params.symbol;
+    if (typeof rawSym !== "string" || !rawSym.trim()) {
+      return res.status(400).json({ error: "symbol required" });
+    }
+    const symbol = rawSym.trim().toUpperCase();
+    if (!/^[A-Z][A-Z0-9.-]{0,31}$/.test(symbol)) {
+      return res.status(400).json({ error: "invalid symbol" });
+    }
+    const windowMs = parseScannerSymbolEventsWindowMs(req.query.window);
+    const schwab_access_token_present = !!getBestAccessToken();
+    const quoteMap = schwab_access_token_present
+      ? await fetchSchwabBatchQuotesForSymbolsBestToken([symbol])
+      : new Map();
+    const px = quoteMap.get(symbol)?.price ?? null;
+    const spot = px != null && Number.isFinite(px) ? px : null;
+    const payload = await fetchUaiSymbolEvents({ symbol, windowMs, spot });
+    const duration_ms = Date.now() - started;
+    try {
+      emitTelemetry(
+        "SCANNER",
+        "INFO",
+        "scanner_v3_symbol_events",
+        { duration_ms, symbol, window_ms: windowMs, count: payload.events.length },
+        "SCANNER",
+      );
+    } catch (err) {
+      log.error({ err, duration_ms }, "scanner_v3_symbol_events telemetry emit failed");
+    }
+    return res.json(payload);
+  } catch (err) {
+    log.error({ err }, "scanner v3 symbol events handler failed");
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 /** Layer 1: static or snapshot-backed universe — no DB for kebab ids except watchlist/screen composites. */
 router.get("/v3/universe", async (req, res) => {

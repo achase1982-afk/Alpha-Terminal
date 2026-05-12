@@ -42,6 +42,13 @@ export const DEV_SCANNER_CARD_FIXTURE: ScannerCardData = {
     },
     volume4h: 185_000,
     volumeOverOi: 0.42,
+    eventsToday: 42,
+    primaryEventType: "sweep",
+    netDirection: "bullish",
+    lastEventTs: new Date().toISOString(),
+    sweepCount: 34,
+    blockCount: 12,
+    largestEventNotional: 3_500_000,
   },
   technical: {
     fiftyTwoWeekLow: 95,

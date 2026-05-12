@@ -5,6 +5,7 @@ import { useTerminalStore } from "@/lib/store";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import {
   ChevronDown,
+  ChevronRight,
   AlertTriangle,
   List,
   Plus,
@@ -466,6 +467,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   const [universe, setUniverse] = useState(readInitialUniverse);
   const [resolvedSymbols, setResolvedSymbols] = useState<string[]>([]);
   const [expandedSymbols, setExpandedSymbols] = useState<Set<string>>(() => new Set());
+  const [quietTodayExpanded, setQuietTodayExpanded] = useState(false);
   const [muteTick, setMuteTick] = useState(0);
 
   const [showScreenBuilder, setShowScreenBuilder] = useState(false);
@@ -547,6 +549,36 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
       .filter((s) => s.length > 0 && !activeMuted.has(s))
       .sort((a, b) => a.localeCompare(b));
   }, [unified.layer1Universe, muteTick]);
+
+  const layer1ActiveAndQuiet = useMemo(() => {
+    const active: string[] = [];
+    const quiet: string[] = [];
+    for (const sym of layer1FilteredSymbols) {
+      const d = layer1CardDataBySymbol.get(sym) ?? emptyScannerCardData(sym);
+      const et = d.flow?.eventsToday ?? 0;
+      if (d.flow == null || et === 0) quiet.push(sym);
+      else active.push(sym);
+    }
+    const compareActive = (a: string, b: string) => {
+      const da = layer1CardDataBySymbol.get(a) ?? emptyScannerCardData(a);
+      const db = layer1CardDataBySymbol.get(b) ?? emptyScannerCardData(b);
+      const fa = da.flow;
+      const fb = db.flow;
+      const ea = fa?.eventsToday ?? 0;
+      const eb = fb?.eventsToday ?? 0;
+      if (eb !== ea) return eb - ea;
+      const sa = fa?.sweepCount ?? fa?.sweeps4h ?? 0;
+      const sb = fb?.sweepCount ?? fb?.sweeps4h ?? 0;
+      if (sb !== sa) return sb - sa;
+      const la = fa?.largestEventNotional ?? 0;
+      const lb = fb?.largestEventNotional ?? 0;
+      if (lb !== la) return lb - la;
+      return a.localeCompare(b);
+    };
+    active.sort(compareActive);
+    quiet.sort((a, b) => a.localeCompare(b));
+    return { active, quiet };
+  }, [layer1FilteredSymbols, layer1CardDataBySymbol]);
 
   useEffect(() => {
     const raw = readMutedSymbols();
@@ -702,16 +734,16 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
           {unified.layer1Universe && (
             <>
               <div aria-live="polite" aria-atomic="true" className="sr-only">
-                {`Scanner universe loaded: ${unified.layer1Universe.count} tickers, ${layer1FilteredSymbols.length} visible after mutes.`}
+                {`Scanner universe loaded: ${unified.layer1Universe.count} tickers, ${layer1ActiveAndQuiet.active.length} with flow today, ${layer1ActiveAndQuiet.quiet.length} quiet after mutes.`}
               </div>
               <div className="divide-y divide-zinc-800/45 border-t border-b border-zinc-800/45 overflow-hidden rounded-none">
                 <ScannerLayer1ColumnHeader id="scanner-v3-layer1-col-header" />
                 <div
                   role="list"
-                  aria-label={`Scanner universe, ${layer1FilteredSymbols.length} visible tickers`}
+                  aria-label={`Scanner universe, ${layer1ActiveAndQuiet.active.length} active tickers`}
                   className="divide-y divide-zinc-800/45"
                 >
-                  {layer1FilteredSymbols.map((sym) => (
+                  {layer1ActiveAndQuiet.active.map((sym) => (
                     <ScannerCard
                       key={sym}
                       data={layer1CardDataBySymbol.get(sym) ?? emptyScannerCardData(sym)}
@@ -720,10 +752,8 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
                         setExpandedSymbols((prev) => {
                           const next = new Set(prev);
                           if (next.has(sym)) {
-                            // TODO: emit scanner_v3_card_* telemetry once frontend telemetry plumbing is established.
                             next.delete(sym);
                           } else {
-                            // TODO: emit scanner_v3_card_* telemetry once frontend telemetry plumbing is established.
                             next.add(sym);
                           }
                           return next;
@@ -733,6 +763,59 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
                     />
                   ))}
                 </div>
+                {layer1ActiveAndQuiet.quiet.length > 0 ? (
+                  <div className="border-t border-zinc-800/50 bg-zinc-950/20">
+                    <button
+                      type="button"
+                      onClick={() => setQuietTodayExpanded((v) => !v)}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-muted-foreground hover:bg-zinc-900/50 hover:text-zinc-200"
+                    >
+                      {quietTodayExpanded ? (
+                        <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      ) : (
+                        <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      )}
+                      Quiet today ({layer1ActiveAndQuiet.quiet.length})
+                    </button>
+                    {quietTodayExpanded ? (
+                      <div className="border-t border-zinc-800/40 px-0 pb-1 pt-1">
+                        <div className="flex flex-wrap gap-1.5 px-3 pb-2 pt-0.5">
+                          {layer1ActiveAndQuiet.quiet.map((sym) => (
+                            <button
+                              key={sym}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setQuietTodayExpanded(true);
+                                setExpandedSymbols(new Set([sym]));
+                              }}
+                              className="rounded-md border border-zinc-700/60 bg-zinc-900/60 px-2 py-1 font-mono text-xs text-zinc-200 hover:border-primary/50 hover:text-primary"
+                            >
+                              {sym}
+                            </button>
+                          ))}
+                        </div>
+                        {layer1ActiveAndQuiet.quiet
+                          .filter((s) => expandedSymbols.has(s))
+                          .map((sym) => (
+                            <ScannerCard
+                              key={`quiet-expanded-${sym}`}
+                              data={layer1CardDataBySymbol.get(sym) ?? emptyScannerCardData(sym)}
+                              expanded
+                              onToggle={() => {
+                                setExpandedSymbols((prev) => {
+                                  const next = new Set(prev);
+                                  next.delete(sym);
+                                  return next;
+                                });
+                              }}
+                              onAction={(action) => handleScannerCardAction(sym, action)}
+                            />
+                          ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </>
           )}
