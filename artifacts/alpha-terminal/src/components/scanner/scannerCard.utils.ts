@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { Activity, Box, Zap } from "lucide-react";
 import type { ScannerCardData } from "@/lib/unifiedScanTypes";
 import { cn } from "@/lib/utils";
 import { getNextUsRegularSessionOpenEtIso } from "@/lib/usMarketHours";
@@ -17,6 +18,17 @@ export const scannerSansFontStyle: CSSProperties = {
   fontFamily:
     "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif",
 };
+
+/** Headline label + icon for primary flow event (collapsed row + expanded detail strip). */
+export function scannerPrimaryEventLabel(
+  primaryEventType: "sweep" | "block" | null,
+  eventsToday: number,
+): { label: string; Icon: typeof Zap } {
+  if (primaryEventType === "sweep") return { label: "SWEEP CLUSTER", Icon: Zap };
+  if (primaryEventType === "block") return { label: "BLOCK", Icon: Box };
+  if (eventsToday > 0) return { label: "ACCUMULATION", Icon: Activity };
+  return { label: "FLOW", Icon: Activity };
+}
 
 /**
  * Collapsed scanner universe row layout: chevron column + flexible main column

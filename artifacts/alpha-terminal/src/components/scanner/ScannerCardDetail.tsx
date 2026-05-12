@@ -1,14 +1,5 @@
 import { useMemo, useState } from "react";
-import {
-  Activity,
-  ArrowDownRight,
-  ArrowUpRight,
-  Box,
-  ChevronDown,
-  ChevronRight,
-  Minus,
-  Zap,
-} from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, ChevronDown, ChevronRight, Minus } from "lucide-react";
 import type { ScannerCardData } from "@/lib/unifiedScanTypes";
 import { cn } from "@/lib/utils";
 import { ScannerCardActions } from "./ScannerCardActions";
@@ -25,6 +16,7 @@ import {
   formatNotionalTickerUi,
   meaningfulVolVsAvgMultiplier,
   scannerNumericFontStyle,
+  scannerPrimaryEventLabel,
   scannerSansFontStyle,
   volumeVsAvgMultiplier,
 } from "./scannerCard.utils";
@@ -63,15 +55,6 @@ function formatCpNotionalRatio(callN: number, putN: number): string {
   return `${r.toFixed(1)}:1`;
 }
 
-function headlineEvent(flow: ScannerCardData["flow"]): { label: string; Icon: typeof Zap } {
-  const et = flow?.eventsToday ?? 0;
-  const p = flow?.primaryEventType ?? null;
-  if (p === "sweep") return { label: "SWEEP CLUSTER", Icon: Zap };
-  if (p === "block") return { label: "BLOCK", Icon: Box };
-  if (et > 0) return { label: "ACCUMULATION", Icon: Activity };
-  return { label: "FLOW", Icon: Activity };
-}
-
 /**
  * Expanded scanner card — pixel-aligned to UAI scanner mockup (black canvas, Inter labels, mono figures).
  */
@@ -90,7 +73,10 @@ export function ScannerCardDetail({
   const flow = data.flow;
   const tech = data.technical;
 
-  const { label: headlineEventLabel, Icon: HeadlineIcon } = headlineEvent(flow);
+  const { label: headlineEventLabel, Icon: HeadlineIcon } = scannerPrimaryEventLabel(
+    flow?.primaryEventType ?? null,
+    flow?.eventsToday ?? 0,
+  );
   const netDir = flow?.netDirection ?? "neutral";
   const eventsToday = flow?.eventsToday ?? 0;
 

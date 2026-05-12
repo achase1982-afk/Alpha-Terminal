@@ -6,7 +6,20 @@
  * as *local* time. Appending ` UTC` forces UTC interpretation before emitting canonical ISO Z.
  */
 export function dbNaiveUtcTimestampToIso(raw: unknown): string | null {
-  if (raw instanceof Date) return raw.toISOString();
+  if (raw instanceof Date) {
+    if (!Number.isFinite(raw.getTime())) return null;
+    // node-pg builds `timestamp without time zone` Dates in local time; treat those components as UTC wall time (same as `${s} UTC` on the string path).
+    const ms = Date.UTC(
+      raw.getFullYear(),
+      raw.getMonth(),
+      raw.getDate(),
+      raw.getHours(),
+      raw.getMinutes(),
+      raw.getSeconds(),
+      raw.getMilliseconds(),
+    );
+    return new Date(ms).toISOString();
+  }
   const s = raw == null ? "" : String(raw).trim();
   if (!s) return null;
   if (/[zZ]$|[+-]\d{2}:\d{2}(:\d{2})?$/.test(s)) {

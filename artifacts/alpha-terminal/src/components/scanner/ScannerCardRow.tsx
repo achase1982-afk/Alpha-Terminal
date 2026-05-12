@@ -1,13 +1,4 @@
-import {
-  ArrowDownRight,
-  ArrowRight,
-  ArrowUpRight,
-  Activity,
-  Box,
-  ChevronRight,
-  Minus,
-  Zap,
-} from "lucide-react";
+import { ArrowDownRight, ArrowRight, ArrowUpRight, ChevronRight, Minus } from "lucide-react";
 import type { ScannerCardData } from "@/lib/unifiedScanTypes";
 import { cn } from "@/lib/utils";
 import {
@@ -18,6 +9,7 @@ import {
   formatSignedPct,
   meaningfulVolVsAvgMultiplier,
   scannerNumericFontStyle,
+  scannerPrimaryEventLabel,
   scannerRowUrgencyScore,
   scannerSansFontStyle,
 } from "./scannerCard.utils";
@@ -35,13 +27,6 @@ function formatLastEventShort(iso: string | null | undefined): string {
   } catch {
     return dashCell();
   }
-}
-
-function primaryEventLabel(primary: "sweep" | "block" | null, eventsToday: number): { label: string; Icon: typeof Zap } {
-  if (primary === "sweep") return { label: "SWEEP CLUSTER", Icon: Zap };
-  if (primary === "block") return { label: "BLOCK", Icon: Box };
-  if (eventsToday > 0) return { label: "ACCUMULATION", Icon: Activity };
-  return { label: "FLOW", Icon: Activity };
 }
 
 export function ScannerCardRow({ data, expanded }: { data: ScannerCardData; expanded: boolean }) {
@@ -63,7 +48,7 @@ export function ScannerCardRow({ data, expanded }: { data: ScannerCardData; expa
   const lastEv = flow?.lastEventTs ?? null;
   const earnDays = data.nextEarnings?.daysTo;
 
-  const { label: eventTypeLabel, Icon: EventIcon } = primaryEventLabel(primary, eventsToday);
+  const { label: eventTypeLabel, Icon: EventIcon } = scannerPrimaryEventLabel(primary, eventsToday);
   const urgency = scannerRowUrgencyScore({ score: data.score, flow: data.flow });
 
   const dirIcon =
