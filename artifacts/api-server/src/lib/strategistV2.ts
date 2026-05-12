@@ -1061,6 +1061,7 @@ async function analyzeTickerV2Inner(
 
   mergeStrategistDiag({ tapeBackfillStatus });
   assertAnalyzeNotCancelled(progress);
+  status("Loading flow highlights…");
   const polygonHighlights = await getPolygonFlowHighlights(ticker, tapeBackfillStatus);
   if (polygonHighlights) {
     logger.info({
@@ -1095,6 +1096,8 @@ async function analyzeTickerV2Inner(
     }
   }
 
+  status("Loading company fundamentals…");
+  assertAnalyzeNotCancelled(progress);
   const [companyFinancials] = await Promise.all([
     fetchCompanyFinancialsForSymbol(ticker),
   ]);
@@ -1111,6 +1114,7 @@ async function analyzeTickerV2Inner(
   }
   assertAnalyzeNotCancelled(progress);
 
+  status("Building strategist data package…");
   let dataPackage = await buildDataPackage(
     ticker,
     tickerData,
