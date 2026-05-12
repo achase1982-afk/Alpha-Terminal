@@ -8,6 +8,7 @@ import {
   resolveScannerFlowWindowMs,
   SCANNER_FLOW_DEFAULT_WINDOW_MS,
 } from "./scannerFlowContext.js";
+import { dbNaiveUtcTimestampToIso } from "./dbNaiveUtcTimestampToIso.js";
 
 const FLOW_WINDOW_MS_MIN = 60 * 60 * 1000;
 const FLOW_WINDOW_MS_MAX = 7 * 24 * 60 * 60 * 1000;
@@ -195,12 +196,7 @@ function mapRowToUaiEvent(row: Record<string, unknown>, spot: number | null): Ua
   const id = intOrZero(row.id);
   if (id <= 0) return null;
   const tsRaw = row.timestamp;
-  const ts =
-    tsRaw instanceof Date
-      ? tsRaw.toISOString()
-      : tsRaw != null && String(tsRaw).length > 0
-        ? String(tsRaw)
-        : "";
+  const ts = dbNaiveUtcTimestampToIso(tsRaw) ?? "";
   if (!ts) return null;
 
   const optionSymbol = String(row.option_symbol ?? "").trim() || "-";

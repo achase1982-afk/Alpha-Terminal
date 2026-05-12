@@ -14,7 +14,11 @@ function formatTimeHm(iso: string): string {
   try {
     const d = new Date(iso);
     if (!Number.isFinite(d.getTime())) return dashCell();
-    return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    return d.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: "America/New_York",
+    });
   } catch {
     return dashCell();
   }
