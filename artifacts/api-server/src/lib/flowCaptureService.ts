@@ -70,7 +70,7 @@ async function drainWsPendingTradeOps(
     const remaining = deadlineMs - Date.now();
     if (remaining <= 0) break;
     await Promise.race([
-      Promise.all(snapshot),
+      Promise.allSettled(snapshot),
       new Promise<void>((res) => setTimeout(res, remaining)),
     ]);
   }
