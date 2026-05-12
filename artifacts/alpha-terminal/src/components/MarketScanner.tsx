@@ -736,12 +736,24 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
               <div aria-live="polite" aria-atomic="true" className="sr-only">
                 {`Scanner universe loaded: ${unified.layer1Universe.count} tickers, ${layer1ActiveAndQuiet.active.length} with flow today, ${layer1ActiveAndQuiet.quiet.length} quiet after mutes.`}
               </div>
-              <div className="divide-y divide-zinc-800/45 border-t border-b border-zinc-800/45 overflow-hidden rounded-none">
+              <div className="divide-y divide-zinc-900 border-y border-zinc-900 overflow-hidden rounded-none bg-black">
+                <div
+                  className="flex items-center justify-between bg-black px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-500"
+                  style={{
+                    fontFamily:
+                      "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif",
+                  }}
+                >
+                  <span>Sorted by max urgency</span>
+                  <span>
+                    {layer1ActiveAndQuiet.active.length} active · {layer1ActiveAndQuiet.quiet.length} quiet
+                  </span>
+                </div>
                 <ScannerLayer1ColumnHeader id="scanner-v3-layer1-col-header" />
                 <div
                   role="list"
                   aria-label={`Scanner universe, ${layer1ActiveAndQuiet.active.length} active tickers`}
-                  className="divide-y divide-zinc-800/45"
+                  className="divide-y divide-zinc-900"
                 >
                   {layer1ActiveAndQuiet.active.map((sym) => (
                     <ScannerCard
@@ -764,21 +776,21 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
                   ))}
                 </div>
                 {layer1ActiveAndQuiet.quiet.length > 0 ? (
-                  <div className="border-t border-zinc-800/50 bg-zinc-950/20">
+                  <div className="border-t border-zinc-900 bg-black">
                     <button
                       type="button"
                       onClick={() => setQuietTodayExpanded((v) => !v)}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-muted-foreground hover:bg-zinc-900/50 hover:text-zinc-200"
+                      className="flex w-full items-center gap-2 bg-black px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-zinc-500 hover:bg-zinc-950 hover:text-zinc-300"
                     >
                       {quietTodayExpanded ? (
                         <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
                       ) : (
                         <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden />
                       )}
-                      Quiet today ({layer1ActiveAndQuiet.quiet.length})
+                      QUIET TODAY ({layer1ActiveAndQuiet.quiet.length})
                     </button>
                     {quietTodayExpanded ? (
-                      <div className="border-t border-zinc-800/40 px-0 pb-1 pt-1">
+                      <div className="border-t border-zinc-900 px-0 pb-1 pt-1">
                         <div className="flex flex-wrap gap-1.5 px-3 pb-2 pt-0.5">
                           {layer1ActiveAndQuiet.quiet.map((sym) => (
                             <button
@@ -789,7 +801,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
                                 setQuietTodayExpanded(true);
                                 setExpandedSymbols(new Set([sym]));
                               }}
-                              className="rounded-md border border-zinc-700/60 bg-zinc-900/60 px-2 py-1 font-mono text-xs text-zinc-200 hover:border-primary/50 hover:text-primary"
+                              className="rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1 font-mono text-xs text-zinc-200 hover:border-[#FFB800]/60 hover:text-[#FFB800]"
                             >
                               {sym}
                             </button>
