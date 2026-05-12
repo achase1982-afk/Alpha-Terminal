@@ -593,19 +593,19 @@ export function StrategistV2RecommendationCard({
   const { recommendation: rec, regime, ioScore, systemicRiskElevated } = result;
 
   const ctx = result.recommendation?.contextSources ?? result.contextSources;
-  const transcript = result.debateTranscript ?? [];
 
   const cardRootRef = useRef<HTMLDivElement>(null);
 
   const deskAudioText = useMemo(() => {
     if (!result.recommendation) return "";
     const base = strategistCardToPlainText(result, generatedAt ?? undefined);
-    if (transcript.length > 0) {
-      const dt = transcriptToPlainText(transcript as StrategistTranscriptTurn[]);
+    const dti = result.debateTranscript;
+    if (dti && dti.length > 0) {
+      const dt = transcriptToPlainText(dti as StrategistTranscriptTurn[]);
       if (dt) return `${base}\n\n${dt}`;
     }
     return base;
-  }, [result, generatedAt, transcript]);
+  }, [result, generatedAt]);
 
   const deskAudioId = useMemo(() => {
     const rid = (result as { strategistDiagnosticRequestId?: string | null }).strategistDiagnosticRequestId;
@@ -671,9 +671,9 @@ export function StrategistV2RecommendationCard({
       : "—";
 
   const isDeskTranscript =
-    !!transcript &&
-    transcript.length > 0 &&
-    isDeskStrategistTranscript(transcript as StrategistTranscriptTurn[]);
+    !!result.debateTranscript &&
+    result.debateTranscript.length > 0 &&
+    isDeskStrategistTranscript(result.debateTranscript as StrategistTranscriptTurn[]);
 
   return (
     <div

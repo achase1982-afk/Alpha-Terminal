@@ -306,7 +306,7 @@ export function transcriptToPlainText(transcript: StrategistTranscriptTurn[]): s
   if (!transcript || transcript.length === 0) return "";
   const groups = new Map<1 | 2 | 3 | "synthesis" | "solo" | "desk", StrategistTranscriptTurn[]>();
   for (const t of transcript) {
-    if (!t.done) continue;
+    if (t.done === false) continue;
     const k = t.round;
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k)!.push(t);
