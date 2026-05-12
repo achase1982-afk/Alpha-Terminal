@@ -1,10 +1,11 @@
-import { useState, useMemo, useCallback, useEffect, useId } from "react";
+import { useState, useMemo, useCallback, useEffect, useId, useRef } from "react";
 import {
   ShieldCheck, AlertTriangle, ShieldX, Send,
   ChevronDown, ChevronUp, FileText, MessageSquare,
-  Copy, Check,
+  Copy, Check, Play, Pause, Square, Rewind, FastForward,
 } from "lucide-react";
 import type { StrategistValidationMeta, StrategistTranscriptTurn } from "@/lib/store";
+import { useValidationCardTts, VALIDATION_AUDIO_SKIP_SECONDS } from "@/hooks/useValidationCardTts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -44,6 +45,30 @@ const VERDICT_PALETTE: Record<ValidationVerdict, {
 
 const BULL_COLOR = "#fbbf24";
 const BEAR_COLOR = "#60a5fa";
+
+const VAL_AUDIO_FOCUS = "2px solid rgba(255,255,255,0.85)";
+
+function validationAudioCacheId(
+  storageKey: string | null | undefined,
+  verdictPayload: ValidationVerdictPayload,
+  validationMeta: StrategistValidationMeta | null | undefined,
+  turns: StrategistTranscriptTurn[],
+): string {
+  if (storageKey?.trim()) return `validation-${storageKey.trim()}`;
+  let h = 2166136261;
+  const s = JSON.stringify({
+    v: verdictPayload.verdict,
+    co: verdictPayload.confidence,
+    ticker: validationMeta?.ticket?.ticker ?? "",
+    tlen: turns.length,
+    tb: turns[turns.length - 1]?.text?.slice(0, 120) ?? "",
+  });
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return `validation-${(h >>> 0).toString(16)}`;
+}
 
 /** Session-only persistence for validation card expand/collapse (per job or history row). */
 const VALIDATION_CARD_EXPANDED_STORAGE_PREFIX = "strategistValidationCardExpanded:";
@@ -379,7 +404,14 @@ export function validationCardToPlainText(
     for (const s of payload.improvements) lines.push(`  • ${s}`);
   }
 
-  return lines.join("\n");
+  let out = lines.join("\n");
+  if (transcript && transcript.length > 0) {
+    const debate = transcriptToPlainText(transcript);
+    if (debate) {
+      out = `${out}\n\n${debate}`;
+    }
+  }
+  return out;
 }
 
 // Generic copy-to-clipboard button used across the validation card sections.
@@ -1259,6 +1291,50 @@ export function StrategistValidationCard({
     return d.toLocaleString();
   }, [generatedAt]);
 
+  const validationPlain = useMemo(() => {
+    if (!payload) return "";
+    return validationCardToPlainText(payload, meta, generatedAt, transcript);
+  }, [payload, meta, generatedAt, transcript]);
+
+  const validationAudioId = useMemo(() => {
+    if (!payload) return "validation-empty";
+    return validationAudioCacheId(collapseStorageKey, payload, meta ?? null, transcript);
+  }, [collapseStorageKey, payload, meta, transcript]);
+
+  const validationAudioReset = useMemo(
+    () => [collapseStorageKey, validationPlain] as const,
+    [collapseStorageKey, validationPlain],
+  );
+
+  const audioContainerRef = useRef<HTMLDivElement>(null);
+
+  const {
+    audioRef,
+    audioBarOpen,
+    audioLoading,
+    audioReady,
+    audioError,
+    paused,
+    speechRate,
+    setSpeechRate,
+    speedLabel,
+    startPlay,
+    stopAudio,
+    togglePause,
+    seekRelativeSeconds,
+    onAudioEnded,
+    onLoadedMetadata,
+    onPlay,
+    onPause,
+    onAudioElementError,
+    iconBtnBase,
+  } = useValidationCardTts({
+    plainText: validationPlain,
+    audioId: validationAudioId,
+    resetDependency: validationAudioReset,
+    containerRef: audioContainerRef,
+  });
+
   if (!payload) {
     return (
       <div
@@ -1308,6 +1384,7 @@ export function StrategistValidationCard({
 
   return (
     <div
+      ref={audioContainerRef}
       className="rounded-xl overflow-hidden"
       style={{
         background: "#141414",
@@ -1428,6 +1505,141 @@ export function StrategistValidationCard({
           </div>
         )}
       </div>
+
+      {/* ── Full report audio (same buffered desk TTS as Desk card) ── */}
+      {validationPlain.trim().length > 0 && (
+        <div className="px-4 pt-3 pb-3 border-b" style={{ borderColor: `${pal.border}55` }}>
+          <audio
+            ref={audioRef}
+            preload="auto"
+            playsInline
+            className="hidden"
+            onEnded={onAudioEnded}
+            onLoadedMetadata={onLoadedMetadata}
+            onPlay={onPlay}
+            onPause={onPause}
+            onError={onAudioElementError}
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <span style={{ color: "#525252", fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", marginRight: 4 }}>
+              Listen
+            </span>
+            {!audioBarOpen && (
+              <button
+                type="button"
+                onClick={() => void startPlay()}
+                disabled={audioLoading}
+                className="inline-flex items-center gap-1.5 min-h-11 px-3 rounded-md text-[10px] font-semibold uppercase tracking-wide border border-zinc-700 bg-[#0d0d0f] text-zinc-300 hover:bg-zinc-900 disabled:opacity-45 disabled:cursor-not-allowed"
+                style={{ fontFamily: SYS_FONT }}
+                aria-label="Play validation audio report"
+                onFocus={(e) => {
+                  e.currentTarget.style.outline = VAL_AUDIO_FOCUS;
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.outline = "none";
+                }}
+              >
+                <Play className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                {audioLoading ? "Loading…" : "Play"}
+              </button>
+            )}
+          </div>
+          {audioBarOpen && (
+            <div
+              role="region"
+              aria-label="Validation audio playback controls"
+              className="mt-2.5 flex flex-wrap items-center gap-2.5 rounded-lg px-3 py-2.5"
+              style={{ border: `1px solid ${pal.border}40`, background: "#0d0d0f" }}
+            >
+              {audioError ? (
+                <span className="text-xs text-red-400 w-full">{audioError}</span>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    style={iconBtnBase}
+                    aria-label={`Rewind ${VALIDATION_AUDIO_SKIP_SECONDS} seconds`}
+                    onClick={() => seekRelativeSeconds(-VALIDATION_AUDIO_SKIP_SECONDS)}
+                    disabled={!audioReady}
+                    onFocus={(e) => {
+                      e.currentTarget.style.outline = VAL_AUDIO_FOCUS;
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.outline = "none";
+                    }}
+                  >
+                    <Rewind className="w-5 h-5" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    style={iconBtnBase}
+                    aria-label={paused ? "Resume audio" : "Pause audio"}
+                    onClick={togglePause}
+                    disabled={!audioReady}
+                    onFocus={(e) => {
+                      e.currentTarget.style.outline = VAL_AUDIO_FOCUS;
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.outline = "none";
+                    }}
+                  >
+                    {paused ? <Play className="w-5 h-5" aria-hidden /> : <Pause className="w-5 h-5" aria-hidden />}
+                  </button>
+                  <button
+                    type="button"
+                    style={iconBtnBase}
+                    aria-label={`Fast-forward ${VALIDATION_AUDIO_SKIP_SECONDS} seconds`}
+                    onClick={() => seekRelativeSeconds(VALIDATION_AUDIO_SKIP_SECONDS)}
+                    disabled={!audioReady}
+                    onFocus={(e) => {
+                      e.currentTarget.style.outline = VAL_AUDIO_FOCUS;
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.outline = "none";
+                    }}
+                  >
+                    <FastForward className="w-5 h-5" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    style={iconBtnBase}
+                    aria-label="Stop audio"
+                    onClick={stopAudio}
+                    onFocus={(e) => {
+                      e.currentTarget.style.outline = VAL_AUDIO_FOCUS;
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.outline = "none";
+                    }}
+                  >
+                    <Square className="w-5 h-5" aria-hidden />
+                  </button>
+                  <label className="flex items-center gap-2 text-zinc-400 text-xs ml-auto">
+                    <span className="sr-only">Playback speed</span>
+                    <select
+                      aria-label={`Playback speed, currently ${speedLabel}`}
+                      value={speechRate}
+                      onChange={(e) => setSpeechRate(Number(e.target.value))}
+                      className="min-h-11 rounded-lg border border-zinc-700 bg-[#141414] text-zinc-300 text-xs px-2 outline-none"
+                      onFocus={(e) => {
+                        e.currentTarget.style.outline = VAL_AUDIO_FOCUS;
+                      }}
+                      onBlur={(e) => {
+                        e.currentTarget.style.outline = "none";
+                      }}
+                    >
+                      <option value={1}>1x</option>
+                      <option value={1.25}>1.25x</option>
+                      <option value={1.5}>1.5x</option>
+                      <option value={2}>2x</option>
+                    </select>
+                  </label>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Stock leg attached to THIS order ticket (married put / covered call / collar) ── */}
       {meta?.ticket?.stockLeg && meta.ticket.stockLeg.quantity > 0 && (() => {
