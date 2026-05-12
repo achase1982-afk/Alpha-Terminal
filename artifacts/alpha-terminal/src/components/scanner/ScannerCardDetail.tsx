@@ -26,6 +26,7 @@ import {
   meaningfulVolVsAvgMultiplier,
   scannerNumericFontStyle,
   scannerSansFontStyle,
+  scannerUiTw,
   volumeVsAvgMultiplier,
 } from "./scannerCard.utils";
 
@@ -43,7 +44,7 @@ function IvBar({ ivr, dense }: { ivr: number | null; dense?: boolean }) {
   return (
     <div className="flex min-w-0 items-center justify-end gap-1">
       <div className={cn("h-1 shrink-0 overflow-hidden rounded-full bg-zinc-800", dense ? "w-10" : "w-14")}>
-        <div className="h-full rounded-full bg-[#FFB800]" style={{ width: `${pct}%` }} />
+        <div className={cn("h-full rounded-full", scannerUiTw.bgGold)} style={{ width: `${pct}%` }} />
       </div>
       <span className="w-7 text-right font-mono tabular-nums text-zinc-200">{Math.round(ivr)}</span>
     </div>
@@ -96,11 +97,11 @@ export function ScannerCardDetail({
 
   const dirIcon =
     netDir === "bullish" ? (
-      <ArrowUpRight className="h-4 w-4 shrink-0 text-[#4ade80]" aria-hidden />
+      <ArrowUpRight className={cn("h-4 w-4 shrink-0", scannerUiTw.bull)} aria-hidden />
     ) : netDir === "bearish" ? (
-      <ArrowDownRight className="h-4 w-4 shrink-0 text-[#fb7185]" aria-hidden />
+      <ArrowDownRight className={cn("h-4 w-4 shrink-0", scannerUiTw.bear)} aria-hidden />
     ) : netDir === "mixed" ? (
-      <span className="inline-block w-4 text-center text-lg leading-none text-[#FFB800]" aria-hidden>
+      <span className={cn("inline-block w-4 text-center text-lg leading-none", scannerUiTw.gold)} aria-hidden>
         –
       </span>
     ) : (
@@ -109,11 +110,11 @@ export function ScannerCardDetail({
 
   const dirLabelCls =
     netDir === "bullish"
-      ? "text-[#4ade80]"
+      ? scannerUiTw.bull
       : netDir === "bearish"
-        ? "text-[#fb7185]"
+        ? scannerUiTw.bear
         : netDir === "mixed"
-          ? "text-[#FFB800]"
+          ? scannerUiTw.gold
           : "text-zinc-500";
 
   const dirText =
@@ -158,7 +159,7 @@ export function ScannerCardDetail({
         <span className="font-semibold text-white" style={scannerNumericFontStyle}>
           {left}
         </span>
-        <span className={cn("font-semibold", bull ? "text-[#4ade80]" : "text-[#fb7185]")} style={scannerNumericFontStyle}>
+        <span className={cn("font-semibold", bull ? scannerUiTw.bull : scannerUiTw.bear)} style={scannerNumericFontStyle}>
           {val}
         </span>
       </div>
@@ -172,7 +173,7 @@ export function ScannerCardDetail({
         className="flex flex-wrap items-center gap-2 border-b border-zinc-900 pb-2 text-[11px] font-semibold uppercase tracking-wide"
         style={scannerSansFontStyle}
       >
-        <HeadlineIcon className="h-4 w-4 shrink-0 text-[#FFB800]" aria-hidden />
+        <HeadlineIcon className={cn("h-4 w-4 shrink-0", scannerUiTw.orange)} aria-hidden />
         <span className="text-white">{headlineEventLabel}</span>
         <span className="text-zinc-700">·</span>
         <span className="inline-flex items-center gap-1 normal-case">
@@ -190,7 +191,7 @@ export function ScannerCardDetail({
           className="mb-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500"
           style={scannerSansFontStyle}
         >
-          Event timeline
+          EVENT TIMELINE
         </h3>
         <ScannerCardEventTimeline eventsState={eventsState} />
       </div>
@@ -199,13 +200,13 @@ export function ScannerCardDetail({
       <div className="border-b border-zinc-900 py-2">
         <div className="mb-2 flex items-start justify-between gap-2">
           <h3 className="text-[10px] font-bold uppercase tracking-widest text-zinc-500" style={scannerSansFontStyle}>
-            Directional bias
+            DIRECTIONAL BIAS
           </h3>
           {summary?.netDeltaDollar != null && Number.isFinite(summary.netDeltaDollar) ? (
             <span
               className={cn(
                 "text-xs font-semibold",
-                summary.netDeltaDollar >= 0 ? "text-[#4ade80]" : "text-[#fb7185]",
+                summary.netDeltaDollar >= 0 ? scannerUiTw.bull : scannerUiTw.bear,
               )}
               style={scannerNumericFontStyle}
             >
@@ -218,18 +219,18 @@ export function ScannerCardDetail({
           )}
         </div>
         {eventsState.error ? (
-          <p className="text-[11px] text-[#fb7185]">{eventsState.error}</p>
+          <p className={cn("text-[11px]", scannerUiTw.bear)}>{eventsState.error}</p>
         ) : eventsState.loading || !bias ? (
           <div className="h-20 animate-pulse rounded bg-zinc-950" />
         ) : (
           <>
             <div className="flex h-2.5 overflow-hidden rounded-sm bg-zinc-900">
               <div
-                className="h-full bg-[#4ade80]"
+                className={cn("h-full", scannerUiTw.bgBull)}
                 style={{ width: `${Math.min(100, Math.max(0, bias.bullPct))}%` }}
               />
               <div
-                className="h-full bg-[#fb7185]"
+                className={cn("h-full", scannerUiTw.bgBear)}
                 style={{ width: `${Math.min(100, Math.max(0, bias.bearPct))}%` }}
               />
             </div>
@@ -237,11 +238,11 @@ export function ScannerCardDetail({
               className="mt-1.5 flex justify-between text-[10px] font-medium"
               style={scannerNumericFontStyle}
             >
-              <span className="text-[#4ade80]">
+              <span className={scannerUiTw.bull}>
                 <span className="mr-0.5">●</span>
                 {bias.bullPct}% bullish · {formatNotionalTickerUi(bias.bull)}
               </span>
-              <span className="text-[#fb7185]">
+              <span className={scannerUiTw.bear}>
                 {formatNotionalTickerUi(bias.bear)} · {bias.bearPct}% bearish<span className="ml-0.5">●</span>
               </span>
             </div>
@@ -283,9 +284,9 @@ export function ScannerCardDetail({
       <div className="grid grid-cols-2 gap-2 border-b border-zinc-900 py-2 sm:grid-cols-4">
         {[
           { k: "IVR", v: ivrChip },
-          { k: "Earnings", v: earnChip },
-          { k: "Vol", v: volMult === dashCell() ? dashCell() : `${String(volMult).replace(/\u00d7/g, "x").replace(/×/g, "x")}` },
-          { k: "Top", v: topStrikeChip },
+          { k: "EARNINGS", v: earnChip },
+          { k: "VOL", v: volMult === dashCell() ? dashCell() : `${String(volMult).replace(/\u00d7/g, "x").replace(/×/g, "x")}` },
+          { k: "TOP", v: topStrikeChip },
         ].map((c) => (
           <div key={c.k} className="rounded-md border border-zinc-800 bg-black px-2 py-2">
             <div className="text-[9px] font-bold uppercase tracking-wider text-zinc-500" style={scannerSansFontStyle}>
@@ -319,7 +320,7 @@ export function ScannerCardDetail({
           className="flex w-full items-center justify-between gap-2 py-2 text-left text-[10px] font-bold uppercase tracking-widest text-zinc-500 hover:text-zinc-300"
           style={scannerSansFontStyle}
         >
-          <span>Reference data</span>
+          <span>REFERENCE DATA</span>
           {referenceOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         </button>
         {referenceOpen ? (
