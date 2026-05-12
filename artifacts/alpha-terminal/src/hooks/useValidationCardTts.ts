@@ -1,8 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
-import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { emitDeskTtsClientEvent, fetchAllDeskTtsChunksMerged } from "@/lib/deskBufferedTtsClient";
-import { splitDeskAudioTextIntoChunks } from "@/lib/deskAudioChunking";
-import { STRATEGIST_ANALYSIS_CANCEL_EVENT, STRATEGIST_ANALYSIS_START_EVENT } from "@/lib/strategistDeskSpeechEvents";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, RefObject } from "react";
+
+import { fetchWithAuth } from "../lib/fetchWithAuth";
+import { emitDeskTtsClientEvent, fetchAllDeskTtsChunksMerged } from "../lib/deskBufferedTtsClient";
+import { splitDeskAudioTextIntoChunks } from "../lib/deskAudioChunking";
+import {
+  STRATEGIST_ANALYSIS_CANCEL_EVENT,
+  STRATEGIST_ANALYSIS_START_EVENT,
+} from "../lib/strategistDeskSpeechEvents";
 
 const SESSION_RATE_KEY = "strategistValidationSpeechRate";
 
