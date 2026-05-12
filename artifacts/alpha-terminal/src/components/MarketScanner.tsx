@@ -20,7 +20,6 @@ import { ScreenBuilder } from "./ScreenBuilder";
 import { WatchlistEditor } from "./WatchlistEditor";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { useUnifiedScan } from "@/hooks/useUnifiedScan";
-import { UnifiedScannerCard } from "./UnifiedScannerCard";
 import { ScannerErrorBoundary } from "./ScannerErrorBoundary";
 import type { ScannerCardData } from "@/lib/unifiedScanTypes";
 import {
@@ -177,11 +176,11 @@ function UniverseDropdown({ value, onChange, presets, tuningEntries, watchlists,
                   key={key}
                   onClick={() => { onChange(pKey); setOpen(false); }}
                   className={`w-full text-left px-3 py-2.5 flex items-center justify-between gap-3 text-sm transition-colors ${
-                    value === pKey ? "bg-[#FFB800]/10 text-[#FFB800]" : "text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
+                    value === pKey ? "bg-[#FFD100]/10 text-[#FFD100]" : "text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
                   }`}
                 >
                   <span className="font-medium leading-snug">{p.label}</span>
-                  <span className={`text-xs tabular-nums shrink-0 ${value === pKey ? "text-[#FFB800]/60" : "text-zinc-600"}`}>{p.count}</span>
+                  <span className={`text-xs tabular-nums shrink-0 ${value === pKey ? "text-[#FFD100]/60" : "text-zinc-600"}`}>{p.count}</span>
                 </button>
               );
             })}
@@ -203,11 +202,11 @@ function UniverseDropdown({ value, onChange, presets, tuningEntries, watchlists,
                         setOpen(false);
                       }}
                       className={`w-full text-left px-3 py-2.5 flex items-center justify-between gap-3 text-sm transition-colors ${
-                        isActive ? "bg-[#FFB800]/10 text-[#FFB800]" : "text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
+                        isActive ? "bg-[#FFD100]/10 text-[#FFD100]" : "text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
                       }`}
                     >
                       <span className="font-medium leading-snug">{t.label}</span>
-                      <span className={`text-xs tabular-nums shrink-0 ${isActive ? "text-[#FFB800]/60" : "text-zinc-600"}`}>
+                      <span className={`text-xs tabular-nums shrink-0 ${isActive ? "text-[#FFD100]/60" : "text-zinc-600"}`}>
                         {t.count}
                       </span>
                     </button>
@@ -229,7 +228,7 @@ function UniverseDropdown({ value, onChange, presets, tuningEntries, watchlists,
                   return (
                     <div key={sc.id}
                       className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm transition-colors ${
-                        isActive ? "bg-[#FFB800]/10 text-[#FFB800]" : "text-zinc-300 hover:bg-zinc-800/60"
+                        isActive ? "bg-[#FFD100]/10 text-[#FFD100]" : "text-zinc-300 hover:bg-zinc-800/60"
                       }`}
                     >
                       <button onClick={() => { onChange(scKey); setOpen(false); }} className="flex-1 text-left">
@@ -240,7 +239,7 @@ function UniverseDropdown({ value, onChange, presets, tuningEntries, watchlists,
                           </span>
                         )}
                       </button>
-                      <span className={`text-xs tabular-nums shrink-0 ${isActive ? "text-[#FFB800]/60" : "text-zinc-600"}`}>
+                      <span className={`text-xs tabular-nums shrink-0 ${isActive ? "text-[#FFD100]/60" : "text-zinc-600"}`}>
                         {sc.cachedCount ?? "—"}
                       </span>
                       <div className="flex items-center gap-0.5">
@@ -283,13 +282,13 @@ function UniverseDropdown({ value, onChange, presets, tuningEntries, watchlists,
               return (
                 <div key={wl.id}
                   className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm transition-colors ${
-                    isActive ? "bg-[#FFB800]/10 text-[#FFB800]" : "text-zinc-300 hover:bg-zinc-800/60"
+                    isActive ? "bg-[#FFD100]/10 text-[#FFD100]" : "text-zinc-300 hover:bg-zinc-800/60"
                   }`}
                 >
                   <button onClick={() => { onChange(wlKey); setOpen(false); }} className="flex-1 text-left">
                     <span className="font-medium leading-snug">{wl.name}</span>
                   </button>
-                  <span className={`text-xs tabular-nums shrink-0 ${isActive ? "text-[#FFB800]/60" : "text-zinc-600"}`}>{wl.symbols.length}</span>
+                  <span className={`text-xs tabular-nums shrink-0 ${isActive ? "text-[#FFD100]/60" : "text-zinc-600"}`}>{wl.symbols.length}</span>
                   <div className="flex items-center gap-0.5">
                     {onEditWatchlist && (
                       <button onClick={(e) => { e.stopPropagation(); onEditWatchlist(wl.id); setOpen(false); }}
@@ -322,7 +321,7 @@ function UniverseDropdown({ value, onChange, presets, tuningEntries, watchlists,
             <div className="mx-3 my-1.5 border-t border-zinc-700/50" />
             <button
               onClick={() => { onCreateScreen(); setOpen(false); }}
-              className="w-full text-left px-3 py-2.5 flex items-center gap-2 text-sm text-zinc-400 hover:text-[#FFB800] hover:bg-zinc-800/60 transition-colors"
+              className="w-full text-left px-3 py-2.5 flex items-center gap-2 text-sm text-zinc-400 hover:text-[#FFD100] hover:bg-zinc-800/60 transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
               <span className="font-medium">Create Dynamic Screen</span>
@@ -487,6 +486,11 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   }, [universe]);
 
   useEffect(() => {
+    setExpandedSymbols(new Set());
+    setQuietTodayExpanded(false);
+  }, [universe]);
+
+  useEffect(() => {
     let cancelled = false;
     universeData.getSymbols(universe).then(syms => {
       if (!cancelled) setResolvedSymbols(syms);
@@ -499,6 +503,19 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   const universeLabel = useMemo(
     () => getUniverseDisplayLabel(universe, universeData.presets, universeData.watchlists, universeData.screens),
     [universe, universeData.presets, universeData.watchlists, universeData.screens],
+  );
+
+  const cachedScanUniverseLabel = useMemo(
+    () =>
+      unified.lastScanUniverseId
+        ? getUniverseDisplayLabel(
+            unified.lastScanUniverseId,
+            universeData.presets,
+            universeData.watchlists,
+            universeData.screens,
+          )
+        : null,
+    [unified.lastScanUniverseId, universeData.presets, universeData.watchlists, universeData.screens],
   );
 
   const handleRefreshScreen = async (id: number) => {
@@ -522,6 +539,14 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
 
   const scanComplete = unified.phase === "complete";
   const candidates = unified.candidates;
+
+  const scanResultsForUniverse = useMemo(
+    () =>
+      scanComplete &&
+      unified.lastScanUniverseId != null &&
+      unified.lastScanUniverseId === universe,
+    [scanComplete, unified.lastScanUniverseId, universe],
+  );
 
   const layer1CardDataBySymbol = useMemo(() => {
     const cards = unified.layer1Universe?.cards;
@@ -591,14 +616,14 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   subscribeEquityRef.current = subscribeEquitySymbols;
 
   useEffect(() => {
-    if (!scanComplete) return;
+    if (!scanComplete || !scanResultsForUniverse) return;
     const sub = subscribeEquityRef.current;
     if (!sub) return;
     const fromLayer1 = layer1FilteredSymbols;
     const fromCandidates = candidates.map((c) => c.ticker);
     const merged = [...new Set([...fromLayer1, ...fromCandidates])];
     if (merged.length) void sub(merged);
-  }, [scanComplete, layer1FilteredSymbols, candidates]);
+  }, [scanComplete, scanResultsForUniverse, layer1FilteredSymbols, candidates]);
 
   const bumpMuteRender = useCallback(() => {
     setMuteTick((n) => n + 1);
@@ -706,7 +731,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
       {unified.phase === "scanning" && (
         <div className="flex flex-col gap-3 bg-card rounded-xl border border-card-border p-4">
           <div className="flex items-center gap-3">
-            <Loader2 className="w-8 h-8 text-[#FFB800] animate-spin shrink-0" />
+            <Loader2 className="w-8 h-8 animate-spin shrink-0 text-[#FFD100]" />
             <div className="min-w-0">
               <p className="text-sm font-bold text-zinc-200">Loading candidates...</p>
               <p className="text-[11px] text-zinc-500 mt-1">Reading precomputed snapshot for this universe.</p>
@@ -731,7 +756,18 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
 
       {scanComplete && (
         <div className="space-y-3">
-          {unified.layer1Universe && (
+          {unified.lastScanUniverseId != null && !scanResultsForUniverse ? (
+            <p className="rounded-lg border border-zinc-800 bg-zinc-950/80 px-3 py-2 text-left text-xs leading-snug text-zinc-400">
+              Cached results are for{" "}
+              <span className="font-semibold text-zinc-200">
+                {cachedScanUniverseLabel ?? unified.lastScanUniverseId}
+              </span>
+              . Press <span className="font-semibold text-zinc-200">Scan</span> to load{" "}
+              <span className="font-semibold text-zinc-200">{universeLabel}</span>.
+            </p>
+          ) : null}
+
+          {scanResultsForUniverse && unified.layer1Universe && (
             <>
               <div aria-live="polite" aria-atomic="true" className="sr-only">
                 {`Scanner universe loaded: ${unified.layer1Universe.count} tickers, ${layer1ActiveAndQuiet.active.length} with flow today, ${layer1ActiveAndQuiet.quiet.length} quiet after mutes.`}
@@ -744,9 +780,9 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
                       "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif",
                   }}
                 >
-                  <span>Sorted by max urgency</span>
+                  <span>SORTED BY MAX URGENCY</span>
                   <span>
-                    {layer1ActiveAndQuiet.active.length} active · {layer1ActiveAndQuiet.quiet.length} quiet
+                    {layer1ActiveAndQuiet.active.length} ACTIVE · {layer1ActiveAndQuiet.quiet.length} QUIET
                   </span>
                 </div>
                 <ScannerLayer1ColumnHeader id="scanner-v3-layer1-col-header" />
@@ -801,7 +837,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
                                 setQuietTodayExpanded(true);
                                 setExpandedSymbols(new Set([sym]));
                               }}
-                              className="rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1 font-mono text-xs text-zinc-200 hover:border-[#FFB800]/60 hover:text-[#FFB800]"
+                              className="rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1 font-mono text-xs text-zinc-200 hover:border-[#FFA500]/60 hover:text-[#FFA500]"
                             >
                               {sym}
                             </button>
@@ -831,57 +867,25 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
               </div>
             </>
           )}
-          <div className="flex flex-wrap items-end justify-between gap-2 px-1">
-            <SnapshotFreshnessBanner
-              snapshotCompletedAt={unified.snapshotCompletedAt}
-              snapshotAgeSeconds={unified.snapshotAgeSeconds}
-              stale={unified.stale}
-            />
-            <button
-              type="button"
-              onClick={handleScanClick}
-              disabled={!accessToken || unified.phase === "scanning" || currentSymCount === 0 || shockActive}
-              className="text-[11px] font-bold px-2 py-1 rounded border border-zinc-600 bg-zinc-800 text-zinc-200 shrink-0 disabled:opacity-40"
-            >
-              Retry
-            </button>
-          </div>
-          {candidates.length === 0 && layer1FilteredSymbols.length === 0 ? (
-            <ScannerZeroCandidatesInline />
-          ) : candidates.length > 0 ? (
-            <div className="space-y-2">
-              {candidates.map((c, i) => (
-                <UnifiedScannerCard
-                  key={c.ticker}
-                  candidate={c}
-                  rank={i + 1}
-                  universeId={universe}
-                  universeLabel={universeLabel}
-                  expanded={expandedSymbols.has(c.ticker)}
-                  onToggle={() => {
-                    setExpandedSymbols((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(c.ticker)) {
-                        // TODO: emit scanner_v3_card_* telemetry once frontend telemetry plumbing is established.
-                        next.delete(c.ticker);
-                      } else {
-                        // TODO: emit scanner_v3_card_* telemetry once frontend telemetry plumbing is established.
-                        next.add(c.ticker);
-                      }
-                      return next;
-                    });
-                  }}
-                  onSendToStrategist={
-                    onSendToStrategist
-                      ? (sym) => {
-                          onNavigateToSymbol?.(sym);
-                          onSendToStrategist(sym);
-                        }
-                      : undefined
-                  }
-                />
-              ))}
+          {scanResultsForUniverse && (
+            <div className="flex flex-wrap items-end justify-between gap-2 px-1">
+              <SnapshotFreshnessBanner
+                snapshotCompletedAt={unified.snapshotCompletedAt}
+                snapshotAgeSeconds={unified.snapshotAgeSeconds}
+                stale={unified.stale}
+              />
+              <button
+                type="button"
+                onClick={handleScanClick}
+                disabled={!accessToken || unified.phase === "scanning" || currentSymCount === 0 || shockActive}
+                className="text-[11px] font-bold px-2 py-1 rounded border border-zinc-600 bg-zinc-800 text-zinc-200 shrink-0 disabled:opacity-40"
+              >
+                Retry
+              </button>
             </div>
+          )}
+          {scanResultsForUniverse && unified.layer1Universe && layer1FilteredSymbols.length === 0 ? (
+            <ScannerZeroCandidatesInline />
           ) : null}
         </div>
       )}

@@ -8,6 +8,7 @@ import {
   formatNotionalTickerUi,
   scannerNumericFontStyle,
   scannerSansFontStyle,
+  scannerUiTw,
 } from "./scannerCard.utils";
 
 function formatTimeHm(iso: string): string {
@@ -57,37 +58,57 @@ function eventRowGauge(e: ScannerUaiEventWire): number {
 function sideNotionalNode(e: ScannerUaiEventWire) {
   const amt = formatNotionalTickerUi(e.notional);
   if (e.side === "ask") {
-    return <span className="font-semibold text-[#4ade80]">BUY {amt}</span>;
+    return (
+      <span className="inline-flex items-baseline gap-1.5">
+        <span className={cn("font-semibold", scannerUiTw.bull)}>BUY</span>
+        <span className="font-semibold text-white">{amt}</span>
+      </span>
+    );
   }
   if (e.side === "bid") {
-    return <span className="font-semibold text-[#fb7185]">SELL {amt}</span>;
+    return (
+      <span className="inline-flex items-baseline gap-1.5">
+        <span className={cn("font-semibold", scannerUiTw.bear)}>SELL</span>
+        <span className="font-semibold text-white">{amt}</span>
+      </span>
+    );
   }
   if (e.side === "mid") {
-    return <span className="font-semibold text-[#FFB800]">mixed {amt}</span>;
+    return (
+      <span className="inline-flex items-baseline gap-1.5">
+        <span className={cn("font-semibold lowercase", scannerUiTw.gold)}>mixed</span>
+        <span className="font-semibold text-white">{amt}</span>
+      </span>
+    );
   }
-  return <span className="font-semibold text-zinc-500">— {amt}</span>;
+  return (
+    <span className="inline-flex items-baseline gap-1.5">
+      <span className="font-semibold text-zinc-500">—</span>
+      <span className="font-semibold text-white">{amt}</span>
+    </span>
+  );
 }
 
 function nbboPhrase(e: ScannerUaiEventWire): { text: string; cls: string } {
   const s = e.nbboPositionLabel.toLowerCase();
-  if (s.includes("sweep")) return { text: `· ${e.nbboPositionLabel}`, cls: "text-[#FFB800]" };
-  if (s.includes("above ask")) return { text: `· ${e.nbboPositionLabel}`, cls: "text-[#4ade80]" };
-  if (s.includes("below bid")) return { text: `· ${e.nbboPositionLabel}`, cls: "text-[#fb7185]" };
-  if (s.includes("at ask") || s.includes("at bid")) return { text: `· ${e.nbboPositionLabel}`, cls: "text-zinc-500" };
-  if (s === "mid") return { text: `· ${e.nbboPositionLabel}`, cls: "text-[#FFB800]" };
+  if (s.includes("sweep")) return { text: `· ${e.nbboPositionLabel}`, cls: scannerUiTw.orange };
+  if (s.includes("above ask")) return { text: `· ${e.nbboPositionLabel}`, cls: scannerUiTw.bull };
+  if (s.includes("below bid")) return { text: `· ${e.nbboPositionLabel}`, cls: scannerUiTw.bear };
+  if (s.includes("at ask") || s.includes("at bid")) return { text: `· ${e.nbboPositionLabel}`, cls: "text-zinc-400" };
+  if (s === "mid") return { text: `· ${e.nbboPositionLabel}`, cls: scannerUiTw.gold };
   return { text: `· ${e.nbboPositionLabel}`, cls: "text-zinc-500" };
 }
 
 function volOiPhrase(e: ScannerUaiEventWire): { text: string; show: boolean } {
   if (e.volOiRatio != null && Number.isFinite(e.volOiRatio) && e.volOiRatio > 1) {
-    return { text: ` · mid ${e.volOiRatio.toFixed(1)}x vol/OI`, show: true };
+    return { text: ` · vol/OI ${e.volOiRatio.toFixed(1)}x`, show: true };
   }
   return { text: "", show: false };
 }
 
 function dirArrow(e: ScannerUaiEventWire) {
-  if (e.direction === "bullish") return <span className="text-lg leading-none text-[#4ade80]">↗</span>;
-  if (e.direction === "bearish") return <span className="text-lg leading-none text-[#fb7185]">↘</span>;
+  if (e.direction === "bullish") return <span className={cn("text-lg leading-none", scannerUiTw.bull)}>↗</span>;
+  if (e.direction === "bearish") return <span className={cn("text-lg leading-none", scannerUiTw.bear)}>↘</span>;
   return <span className="text-lg leading-none text-zinc-500">→</span>;
 }
 
@@ -140,11 +161,11 @@ function EventRow({ e }: { e: ScannerUaiEventWire }) {
           </span>
           {e.isSweep ? (
             <span className="inline-flex shrink-0" title="Sweep">
-              <Zap className="h-3.5 w-3.5 text-[#FFB800]" aria-hidden />
+              <Zap className={cn("h-3.5 w-3.5", scannerUiTw.orange)} aria-hidden />
             </span>
           ) : e.isBlock ? (
             <span className="inline-flex shrink-0" title="Block">
-              <Box className="h-3.5 w-3.5 text-zinc-400" aria-hidden />
+              <Box className={cn("h-3.5 w-3.5", scannerUiTw.orange)} aria-hidden />
             </span>
           ) : (
             <span className="inline-block h-3.5 w-3.5 shrink-0 rounded-sm bg-zinc-800" aria-hidden />
@@ -170,11 +191,15 @@ function EventRow({ e }: { e: ScannerUaiEventWire }) {
           <span className="inline-flex items-center gap-1">{sideNotionalNode(e)}</span>
           <span className="text-zinc-500">{printsLabel}</span>
           <span className={cn("font-medium", nbbo.cls)}>{nbbo.text}</span>
-          {voi.show ? <span className="font-medium text-[#FFB800]">{voi.text}</span> : null}
+          {voi.show ? (
+            <span className="font-medium text-zinc-500" style={scannerNumericFontStyle}>
+              {voi.text}
+            </span>
+          ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <div className="relative h-1 w-14 overflow-hidden rounded-sm bg-zinc-800">
-            <div className="absolute inset-y-0 left-0 rounded-sm bg-amber-500" style={{ width: `${gauge}%` }} />
+            <div className={cn("absolute inset-y-0 left-0 rounded-sm", scannerUiTw.bgOrange)} style={{ width: `${gauge}%` }} />
           </div>
           <span
             className="w-6 text-right text-[10px] font-semibold tabular-nums text-zinc-300"
@@ -203,7 +228,10 @@ function ClusterBlock({
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center justify-between gap-2 py-1.5 text-left text-[11px] font-bold uppercase tracking-wide text-[#FFB800]"
+        className={cn(
+          "flex w-full items-center justify-between gap-2 py-1.5 text-left text-[11px] font-bold uppercase tracking-wide",
+          scannerUiTw.orange,
+        )}
         style={scannerSansFontStyle}
       >
         <span>
@@ -215,7 +243,7 @@ function ClusterBlock({
         {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
       </button>
       {open ? (
-        <div className="border-l border-[#FFB800]/35 pl-2">
+        <div className="border-l border-[#FFA500]/40 pl-2">
           {unit.items.map((ev) => (
             <EventRow key={ev.id} e={ev} />
           ))}
@@ -293,7 +321,7 @@ export function ScannerCardEventTimeline({ eventsState }: { eventsState: Scanner
   }
 
   if (error) {
-    return <p className="text-[11px] text-[#fb7185]">{error}</p>;
+    return <p className={cn("text-[11px]", scannerUiTw.bear)}>{error}</p>;
   }
 
   if (!payload || units.length === 0) {

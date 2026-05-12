@@ -12,7 +12,7 @@ export function ScannerCard({ data, expanded, onToggle, onAction }: ScannerCardP
         tabIndex={0}
         aria-expanded={expanded}
         aria-label={`Scanner card ${sym}${expanded ? ", expanded" : ", collapsed"}`}
-        className="w-full cursor-pointer text-left transition-colors hover:bg-zinc-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#FFB800]/50"
+        className="w-full cursor-pointer text-left transition-colors hover:bg-zinc-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#FFD100]/50"
         onClick={() => {
           // TODO: emit scanner_v3_card_* telemetry once frontend telemetry plumbing is established.
           onToggle();

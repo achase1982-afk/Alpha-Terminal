@@ -160,6 +160,8 @@ export interface UseUnifiedScanState {
   tuningWatchlistEcho: V2ScanResponse["tuning_watchlist"];
   errorMessage: string | null;
   layer1Universe: ScannerV3UniverseResponse | null;
+  /** Universe id passed to `startScan` for the current `phase === "complete"` payload (session cache). */
+  lastScanUniverseId: string | null;
   startScan: (universeId: string) => Promise<void>;
   cancelLocal: () => void;
 }

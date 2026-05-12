@@ -25,6 +25,7 @@ export function useUnifiedScan(): UseUnifiedScanState {
       tuningWatchlistEcho: s.tuningWatchlistEcho,
       errorMessage: s.errorMessage,
       layer1Universe: s.layer1Universe,
+      lastScanUniverseId: s.lastScanUniverseId,
       startScan: s.startScan,
       cancelLocal: s.cancelLocal,
     })),

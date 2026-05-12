@@ -20,6 +20,7 @@ import {
   scannerNumericFontStyle,
   scannerRowUrgencyScore,
   scannerSansFontStyle,
+  scannerUiTw,
 } from "./scannerCard.utils";
 
 function formatLastEventShort(iso: string | null | undefined): string {
@@ -54,7 +55,7 @@ export function ScannerCardRow({ data, expanded }: { data: ScannerCardData; expa
   const priceStr = formatPrice(data.price);
   const ivrStr = data.ivr != null && Number.isFinite(data.ivr) ? String(Math.round(data.ivr)) : dashCell();
   const displayName = data.name?.trim();
-  const chgCls = hasCh ? (up ? "text-[#4ade80]" : "text-[#fb7185]") : "text-zinc-500";
+  const chgCls = hasCh ? (up ? scannerUiTw.bull : scannerUiTw.bear) : "text-zinc-500";
 
   const flow = data.flow;
   const eventsToday = flow?.eventsToday ?? 0;
@@ -68,11 +69,11 @@ export function ScannerCardRow({ data, expanded }: { data: ScannerCardData; expa
 
   const dirIcon =
     netDir === "bullish" ? (
-      <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-[#4ade80]" aria-hidden />
+      <ArrowUpRight className={cn("h-3.5 w-3.5 shrink-0", scannerUiTw.bull)} aria-hidden />
     ) : netDir === "bearish" ? (
-      <ArrowDownRight className="h-3.5 w-3.5 shrink-0 text-[#fb7185]" aria-hidden />
+      <ArrowDownRight className={cn("h-3.5 w-3.5 shrink-0", scannerUiTw.bear)} aria-hidden />
     ) : netDir === "mixed" ? (
-      <span className="inline-block w-3.5 text-center text-[#FFB800]" aria-hidden>
+      <span className={cn("inline-block w-3.5 text-center", scannerUiTw.gold)} aria-hidden>
         –
       </span>
     ) : (
@@ -81,11 +82,11 @@ export function ScannerCardRow({ data, expanded }: { data: ScannerCardData; expa
 
   const dirLabelCls =
     netDir === "bullish"
-      ? "text-[#4ade80]"
+      ? scannerUiTw.bull
       : netDir === "bearish"
-        ? "text-[#fb7185]"
+        ? scannerUiTw.bear
         : netDir === "mixed"
-          ? "text-[#FFB800]"
+          ? scannerUiTw.gold
           : "text-zinc-500";
 
   const dirLabel =
@@ -123,7 +124,7 @@ export function ScannerCardRow({ data, expanded }: { data: ScannerCardData; expa
         {line2Visible ? (
           <div className="flex min-w-0 items-center gap-2">
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-white">
-              <EventIcon className="h-3.5 w-3.5 shrink-0 text-[#FFB800]" aria-hidden />
+              <EventIcon className={cn("h-3.5 w-3.5 shrink-0", scannerUiTw.orange)} aria-hidden />
               <span className="whitespace-nowrap">{eventTypeLabel}</span>
               <span className="text-zinc-600">·</span>
               <span className="inline-flex items-center gap-1 normal-case">
@@ -137,7 +138,7 @@ export function ScannerCardRow({ data, expanded }: { data: ScannerCardData; expa
             <div className="flex min-w-[96px] max-w-[140px] flex-1 items-center gap-2">
               <div className="relative h-[5px] min-w-0 flex-1 overflow-hidden rounded-sm bg-zinc-800">
                 <div
-                  className="absolute inset-y-0 left-0 rounded-sm bg-[#FFB800]"
+                  className={cn("absolute inset-y-0 left-0 rounded-sm", scannerUiTw.bgOrange)}
                   style={{ width: `${Math.min(100, Math.max(0, urgency))}%` }}
                 />
               </div>
@@ -165,7 +166,7 @@ export function ScannerCardRow({ data, expanded }: { data: ScannerCardData; expa
             {earnDays != null && Number.isFinite(earnDays) && earnDays <= 10 ? (
               <>
                 <span className="text-zinc-700"> · </span>
-                <span className="font-sans font-semibold text-[#FFB800]">ER {Math.round(earnDays)}d</span>
+                <span className={cn("font-sans font-semibold", scannerUiTw.gold)}>ER {Math.round(earnDays)}d</span>
               </>
             ) : null}
           </div>
