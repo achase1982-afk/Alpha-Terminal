@@ -56,6 +56,29 @@ const FLUSH_INTERVAL_MS = 5_000;
 const CAPACITY_QUEUE_MS = 30_000;
 const CHANNEL_POLL_MS = 200;
 
+/**
+ * After WS handlers are detached, wait for in-flight per-trade classify paths to finish.
+ * Uses a wall-clock deadline so a hung DB/baseline call cannot block strategist indefinitely.
+ */
+async function drainWsPendingTradeOps(
+  pending: Set<Promise<void>>,
+  deadlineMs: number,
+  onTimeout: (remaining: number) => void,
+): Promise<void> {
+  while (pending.size > 0 && Date.now() < deadlineMs) {
+    const snapshot = [...pending];
+    const remaining = deadlineMs - Date.now();
+    if (remaining <= 0) break;
+    await Promise.race([
+      Promise.all(snapshot),
+      new Promise<void>((res) => setTimeout(res, remaining)),
+    ]);
+  }
+  if (pending.size > 0) {
+    onTimeout(pending.size);
+  }
+}
+
 export type FlowCaptureSource = "websocket" | "rest" | "flat_file";
 
 export type SubscribeOutcome = "success" | "error" | "disconnect";
@@ -546,6 +569,8 @@ async function runWebsocketCaptureInternal(
   /** Every in-flight `onTrade` classify/persist path; must drain before final flush (see flow note below). */
   const pendingTradeOps = new Set<Promise<void>>();
   let flushChain: Promise<void> = Promise.resolve();
+  /** Set true in `finally` so `onTrade` stops enqueueing work while handlers are torn down. */
+  let wsCaptureTeardown = false;
 
   const flush = async (): Promise<void> => {
     flushChain = flushChain.then(async () => {
@@ -572,6 +597,7 @@ async function runWebsocketCaptureInternal(
   };
 
   const onTradeHandler = (trade: PolygonOptionTrade): void => {
+    if (wsCaptureTeardown) return;
     const sym = trade.sym.toUpperCase();
     if (!occSet.has(sym)) return;
     const wireNow = Date.now();
@@ -732,10 +758,26 @@ async function runWebsocketCaptureInternal(
       clearInterval(flushTimer);
       flushTimer = null;
     }
-    await Promise.all(Array.from(pendingTradeOps));
+    wsCaptureTeardown = true;
+    if (unregisterTrade) {
+      unregisterTrade();
+      unregisterTrade = null;
+    }
+    if (unregisterQuote) {
+      unregisterQuote();
+      unregisterQuote = null;
+    }
+    const drainDeadline =
+      Date.now() + Math.min(120_000, Math.max(25_000, timeoutMs));
+    await drainWsPendingTradeOps(pendingTradeOps, drainDeadline, (remaining) => {
+      errors.push("pending_trade_ops_drain_timeout");
+      logFlowPipelineWarn(
+        "flow_capture_pending_ops",
+        "flowCaptureService: in-flight trade handlers exceeded drain budget",
+        { ticker, sessionDate, remaining },
+      );
+    });
     await flush();
-    if (unregisterTrade) unregisterTrade();
-    if (unregisterQuote) unregisterQuote();
     try {
       unsubscribeContractsWithQuotes(occList);
     } catch (err) {
