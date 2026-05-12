@@ -55,6 +55,13 @@ export type ScannerCardData = {
     } | null;
     volume4h: number | null;
     volumeOverOi: number | null;
+    eventsToday: number | null;
+    primaryEventType: "sweep" | "block" | null;
+    netDirection: "bullish" | "bearish" | "mixed" | "neutral";
+    lastEventTs: string | null;
+    sweepCount: number | null;
+    blockCount: number | null;
+    largestEventNotional: number | null;
   } | null;
 
   /** Layer 6 — price action (scanner V3 API); null fields render as dashes. */

@@ -13,6 +13,7 @@ function formatTopStrikeLabelFromStrike(strike: number, optionType: "call" | "pu
 function hasRenderableScannerFlow(flow: ScannerCardData["flow"]): boolean {
   if (flow == null) return false;
   return (
+    (flow.eventsToday != null && Number.isFinite(flow.eventsToday) && flow.eventsToday >= 1) ||
     (flow.blocks4h != null && Number.isFinite(flow.blocks4h)) ||
     (flow.sweeps4h != null && Number.isFinite(flow.sweeps4h)) ||
     (flow.netDeltaDollar != null && Number.isFinite(flow.netDeltaDollar)) ||
@@ -55,6 +56,13 @@ function flowFromV2Snapshot(fs: NonNullable<UnifiedScanCandidate["flowSnapshot"]
       : null,
     volume4h: null,
     volumeOverOi: null,
+    eventsToday: null,
+    primaryEventType: null,
+    netDirection: "neutral",
+    lastEventTs: null,
+    sweepCount: null,
+    blockCount: null,
+    largestEventNotional: null,
   };
 }
 
@@ -99,6 +107,13 @@ export function enrichScannerCardFromV2Candidate(
       topStrike: cur.topStrike ?? v2flow.topStrike,
       volume4h: cur.volume4h ?? v2flow.volume4h,
       volumeOverOi: cur.volumeOverOi ?? v2flow.volumeOverOi,
+      eventsToday: cur.eventsToday ?? v2flow.eventsToday,
+      primaryEventType: cur.primaryEventType ?? v2flow.primaryEventType,
+      netDirection: cur.netDirection ?? v2flow.netDirection,
+      lastEventTs: cur.lastEventTs ?? v2flow.lastEventTs,
+      sweepCount: cur.sweepCount ?? v2flow.sweepCount,
+      blockCount: cur.blockCount ?? v2flow.blockCount,
+      largestEventNotional: cur.largestEventNotional ?? v2flow.largestEventNotional,
     },
   };
 }
@@ -123,6 +138,37 @@ function mapFlowWire(flow: ScannerV3WireCardFlow | Record<string, unknown> | nul
         : null;
   const vol4h = num(f.volume_4h ?? f.volume4h);
   const volOi = num(f.volume_over_oi ?? f.volumeOverOi);
+  const eventsToday = num(f.events_today ?? f.eventsToday);
+  const primaryRaw = f.primary_event_type ?? f.primaryEventType;
+  const primaryEventType =
+    primaryRaw === "sweep" || primaryRaw === "block" ? primaryRaw : null;
+  const netDirRaw = f.net_direction ?? f.netDirection;
+  const netDirParsed =
+    netDirRaw === "bullish" || netDirRaw === "bearish" || netDirRaw === "mixed" || netDirRaw === "neutral"
+      ? netDirRaw
+      : null;
+  const lastEventTs =
+    typeof f.last_event_ts === "string"
+      ? f.last_event_ts
+      : typeof f.lastEventTs === "string"
+        ? f.lastEventTs
+        : null;
+  const sweepCount = num(f.sweep_count ?? f.sweepCount);
+  const blockCount = num(f.block_count ?? f.blockCount);
+  const largestEventNotional = num(f.largest_event_notional ?? f.largestEventNotional);
+
+  const eventsTodayInt = eventsToday != null && Number.isFinite(eventsToday) ? Math.trunc(eventsToday) : null;
+  const netDirection =
+    netDirParsed ??
+    (() => {
+      const et = eventsTodayInt ?? 0;
+      if (et === 0) return "neutral" as const;
+      if (netDeltaDollar != null && Number.isFinite(netDeltaDollar)) {
+        if (netDeltaDollar > 5000) return "bullish" as const;
+        if (netDeltaDollar < -5000) return "bearish" as const;
+      }
+      return "mixed" as const;
+    })();
   const tsRaw = f.top_strike ?? f.topStrike;
   let topStrike: {
     strike: number;
@@ -161,6 +207,7 @@ function mapFlowWire(flow: ScannerV3WireCardFlow | Record<string, unknown> | nul
   }
 
   const hasAny =
+    (eventsToday != null && Number.isFinite(eventsToday) && eventsToday >= 1) ||
     (blocks4h != null && Number.isFinite(blocks4h)) ||
     (sweeps4h != null && Number.isFinite(sweeps4h)) ||
     (netDeltaDollar != null && Number.isFinite(netDeltaDollar)) ||
@@ -179,6 +226,13 @@ function mapFlowWire(flow: ScannerV3WireCardFlow | Record<string, unknown> | nul
     topStrike,
     volume4h: vol4h,
     volumeOverOi: volOi,
+    eventsToday: eventsTodayInt,
+    primaryEventType,
+    netDirection,
+    lastEventTs,
+    sweepCount,
+    blockCount,
+    largestEventNotional,
   };
 }
 

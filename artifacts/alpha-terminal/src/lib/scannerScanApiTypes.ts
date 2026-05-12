@@ -71,7 +71,62 @@ export type ScannerV3WireCardFlow = {
   } | null;
   volume_4h: number | null;
   volume_over_oi: number | null;
+  events_today: number | null;
+  primary_event_type: "sweep" | "block" | null;
+  net_direction: "bullish" | "bearish" | "mixed" | "neutral";
+  last_event_ts: string | null;
+  sweep_count: number | null;
+  block_count: number | null;
+  largest_event_notional: number | null;
 };
+
+export type ScannerUaiMoneynessBucket = "deep_itm" | "itm" | "atm" | "otm" | "deep_otm";
+
+/** GET /api/scanner/v3/symbol/:symbol/events — one persisted print, UAI-shaped. */
+export type ScannerUaiEventWire = {
+  id: number;
+  ts: string;
+  optionSymbol: string;
+  callPut: "C" | "P";
+  strike: number;
+  expiration: string;
+  dte: number;
+  moneynessBucket: ScannerUaiMoneynessBucket;
+  is0dte: boolean;
+  side: "ask" | "bid" | "mid" | null;
+  aggressorConfidence: number | null;
+  isSweep: boolean;
+  isBlock: boolean;
+  contracts: number;
+  notional: number;
+  tradePrice: number;
+  volOiRatio: number | null;
+  openInterestSnapshot: number | null;
+  volumeVsBaseline20d: number | null;
+  direction: "bullish" | "bearish" | "neutral";
+  syntheticLegGroupId: string | null;
+  multiLegConfidence: "high" | "medium" | "low" | null;
+  multiLegPartnerOcc: string | null;
+  nbboPositionLabel: string;
+};
+
+export type ScannerUaiEventsSummaryWire = {
+  totalEvents: number;
+  bullishNotional: number;
+  bearishNotional: number;
+  netDeltaDollar: number | null;
+  topBullishStrikes: Array<{ strike: number; expiration: string; callPut: "C" | "P"; notional: number }>;
+  topBearishStrikes: Array<{ strike: number; expiration: string; callPut: "C" | "P"; notional: number }>;
+  callNotional: number;
+  putNotional: number;
+};
+
+export interface ScannerV3SymbolEventsResponse {
+  symbol: string;
+  windowMs: number;
+  events: ScannerUaiEventWire[];
+  summary: ScannerUaiEventsSummaryWire;
+}
 
 export interface ScannerV3UniverseResponse {
   tickers: string[];
