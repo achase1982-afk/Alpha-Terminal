@@ -191,7 +191,11 @@ function EventRow({ e }: { e: ScannerUaiEventWire }) {
           <span className="inline-flex items-center gap-1">{sideNotionalNode(e)}</span>
           <span className="text-zinc-500">{printsLabel}</span>
           <span className={cn("font-medium", nbbo.cls)}>{nbbo.text}</span>
-          {voi.show ? <span className={cn("font-medium text-zinc-500", scannerNumericFontStyle)}>{voi.text}</span> : null}
+          {voi.show ? (
+            <span className="font-medium text-zinc-500" style={scannerNumericFontStyle}>
+              {voi.text}
+            </span>
+          ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <div className="relative h-1 w-14 overflow-hidden rounded-sm bg-zinc-800">

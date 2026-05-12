@@ -31,7 +31,6 @@ export const scannerUiTw = {
   bgOrange: "bg-[#FFA500]",
   bgBull: "bg-[#00C08B]",
   bgBear: "bg-[#FF4D6D]",
-  ringGold: "ring-[#FFD100]/50",
 } as const;
 
 /**
