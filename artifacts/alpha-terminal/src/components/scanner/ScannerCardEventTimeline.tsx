@@ -5,15 +5,20 @@ import type { ScannerUaiEventWire, ScannerV3SymbolEventsResponse } from "@/lib/s
 import { cn } from "@/lib/utils";
 import {
   dashCell,
-  formatCompactInt,
+  formatNotionalTickerUi,
   scannerNumericFontStyle,
+  scannerSansFontStyle,
 } from "./scannerCard.utils";
 
 function formatTimeHm(iso: string): string {
   try {
     const d = new Date(iso);
     if (!Number.isFinite(d.getTime())) return dashCell();
-    return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    return d.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: "America/New_York",
+    });
   } catch {
     return dashCell();
   }
@@ -32,24 +37,58 @@ function contractLabel(expiration: string, strike: number, callPut: "C" | "P"): 
 }
 
 function moneynessShort(bucket: ScannerUaiEventWire["moneynessBucket"]): string {
-  if (bucket === "deep_itm") return "deep ITM";
+  if (bucket === "deep_itm") return "DEEP ITM";
   if (bucket === "itm") return "ITM";
   if (bucket === "atm") return "ATM";
   if (bucket === "otm") return "OTM";
-  return "deep OTM";
+  return "DEEP OTM";
 }
 
-function sideBadge(side: ScannerUaiEventWire["side"]): { label: string; cls: string } {
-  if (side === "ask") return { label: "BUY", cls: "border-emerald-500/45 bg-emerald-500/10 text-emerald-200/95" };
-  if (side === "bid") return { label: "SELL", cls: "border-red-500/45 bg-red-500/10 text-red-200/95" };
-  if (side === "mid") return { label: "MID", cls: "border-zinc-600/50 bg-zinc-800/80 text-zinc-300" };
-  return { label: "—", cls: "border-zinc-700/60 bg-zinc-900/60 text-zinc-500" };
+function eventRowGauge(e: ScannerUaiEventWire): number {
+  if (e.volOiRatio != null && Number.isFinite(e.volOiRatio) && e.volOiRatio > 0) {
+    return Math.min(99, Math.max(35, Math.round(38 + e.volOiRatio * 16)));
+  }
+  if (e.aggressorConfidence != null && Number.isFinite(e.aggressorConfidence)) {
+    return Math.min(99, Math.max(30, Math.round(e.aggressorConfidence * 100)));
+  }
+  return 55;
+}
+
+function sideNotionalNode(e: ScannerUaiEventWire) {
+  const amt = formatNotionalTickerUi(e.notional);
+  if (e.side === "ask") {
+    return <span className="font-semibold text-[#4ade80]">BUY {amt}</span>;
+  }
+  if (e.side === "bid") {
+    return <span className="font-semibold text-[#fb7185]">SELL {amt}</span>;
+  }
+  if (e.side === "mid") {
+    return <span className="font-semibold text-[#FFB800]">mixed {amt}</span>;
+  }
+  return <span className="font-semibold text-zinc-500">— {amt}</span>;
+}
+
+function nbboPhrase(e: ScannerUaiEventWire): { text: string; cls: string } {
+  const s = e.nbboPositionLabel.toLowerCase();
+  if (s.includes("sweep")) return { text: `· ${e.nbboPositionLabel}`, cls: "text-[#FFB800]" };
+  if (s.includes("above ask")) return { text: `· ${e.nbboPositionLabel}`, cls: "text-[#4ade80]" };
+  if (s.includes("below bid")) return { text: `· ${e.nbboPositionLabel}`, cls: "text-[#fb7185]" };
+  if (s.includes("at ask") || s.includes("at bid")) return { text: `· ${e.nbboPositionLabel}`, cls: "text-zinc-500" };
+  if (s === "mid") return { text: `· ${e.nbboPositionLabel}`, cls: "text-[#FFB800]" };
+  return { text: `· ${e.nbboPositionLabel}`, cls: "text-zinc-500" };
+}
+
+function volOiPhrase(e: ScannerUaiEventWire): { text: string; show: boolean } {
+  if (e.volOiRatio != null && Number.isFinite(e.volOiRatio) && e.volOiRatio > 1) {
+    return { text: ` · mid ${e.volOiRatio.toFixed(1)}x vol/OI`, show: true };
+  }
+  return { text: "", show: false };
 }
 
 function dirArrow(e: ScannerUaiEventWire) {
-  if (e.direction === "bullish") return <span className="text-terminal-success">↗</span>;
-  if (e.direction === "bearish") return <span className="text-terminal-danger">↘</span>;
-  return <span className="text-muted-foreground">→</span>;
+  if (e.direction === "bullish") return <span className="text-lg leading-none text-[#4ade80]">↗</span>;
+  if (e.direction === "bearish") return <span className="text-lg leading-none text-[#fb7185]">↘</span>;
+  return <span className="text-lg leading-none text-zinc-500">→</span>;
 }
 
 type TimelineUnit =
@@ -58,17 +97,17 @@ type TimelineUnit =
 
 function buildTimelineUnits(events: ScannerUaiEventWire[]): TimelineUnit[] {
   const byGroup = new Map<string, ScannerUaiEventWire[]>();
-  for (const e of events) {
-    const g = e.syntheticLegGroupId;
+  for (const ev of events) {
+    const g = ev.syntheticLegGroupId;
     if (!g) continue;
     const arr = byGroup.get(g) ?? [];
-    arr.push(e);
+    arr.push(ev);
     byGroup.set(g, arr);
   }
   const emitted = new Set<string>();
   const out: TimelineUnit[] = [];
-  for (const e of events) {
-    const g = e.syntheticLegGroupId;
+  for (const ev of events) {
+    const g = ev.syntheticLegGroupId;
     if (g) {
       const legs = byGroup.get(g) ?? [];
       if (legs.length >= 2) {
@@ -80,46 +119,70 @@ function buildTimelineUnits(events: ScannerUaiEventWire[]): TimelineUnit[] {
         continue;
       }
     }
-    out.push({ kind: "single", event: e });
+    out.push({ kind: "single", event: ev });
   }
   return out;
 }
 
 function EventRow({ e }: { e: ScannerUaiEventWire }) {
-  const sb = sideBadge(e.side);
-  const prints = formatCompactInt(e.contracts);
-  const volOiExtra =
-    e.volOiRatio != null && Number.isFinite(e.volOiRatio) && e.volOiRatio > 1
-      ? `Vol/OI ${e.volOiRatio.toFixed(2)}`
-      : null;
+  const prints = Math.max(1, Math.round(e.contracts / 300));
+  const printsLabel = `${e.contracts.toLocaleString()}c · ${prints} prints`;
+  const nbbo = nbboPhrase(e);
+  const voi = volOiPhrase(e);
+  const gauge = eventRowGauge(e);
+
   return (
-    <div className="rounded border border-zinc-800/80 bg-zinc-950/40 px-2 py-1.5">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
-        <span className="font-mono text-zinc-400">{formatTimeHm(e.ts)}</span>
-        {e.isSweep ? (
-          <span title="Sweep" className="inline-flex">
-            <Zap className="h-3 w-3 shrink-0 text-amber-400" aria-hidden />
+    <div className="border-b border-zinc-900 py-2.5 last:border-b-0">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className="text-[11px] tabular-nums text-zinc-500" style={scannerNumericFontStyle}>
+            {formatTimeHm(e.ts)}
           </span>
-        ) : e.isBlock ? (
-          <span title="Block" className="inline-flex">
-            <Box className="h-3 w-3 shrink-0 text-zinc-400" aria-hidden />
+          {e.isSweep ? (
+            <span className="inline-flex shrink-0" title="Sweep">
+              <Zap className="h-3.5 w-3.5 text-[#FFB800]" aria-hidden />
+            </span>
+          ) : e.isBlock ? (
+            <span className="inline-flex shrink-0" title="Block">
+              <Box className="h-3.5 w-3.5 text-zinc-400" aria-hidden />
+            </span>
+          ) : (
+            <span className="inline-block h-3.5 w-3.5 shrink-0 rounded-sm bg-zinc-800" aria-hidden />
+          )}
+          <span
+            className="text-[13px] font-bold tabular-nums tracking-tight text-white"
+            style={scannerNumericFontStyle}
+          >
+            {contractLabel(e.expiration, e.strike, e.callPut)}
           </span>
-        ) : (
-          <span className="h-3 w-3 shrink-0 rounded-sm bg-zinc-700/80" aria-hidden />
-        )}
-        <span className="font-mono font-semibold text-zinc-100">{contractLabel(e.expiration, e.strike, e.callPut)}</span>
-        <span className="text-zinc-500">
-          {e.dte}d · {moneynessShort(e.moneynessBucket)}
-          {e.is0dte ? " · 0DTE" : ""}
-        </span>
-        <span className="ml-auto shrink-0">{dirArrow(e)}</span>
+          <span className="text-[11px] font-medium uppercase text-zinc-500" style={scannerSansFontStyle}>
+            {e.dte}D · {moneynessShort(e.moneynessBucket)}
+            {e.is0dte ? " · 0DTE" : ""}
+          </span>
+        </div>
+        <div className="shrink-0 pt-0.5">{dirArrow(e)}</div>
       </div>
-      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-zinc-400">
-        <span className={cn("rounded border px-1 py-0.5 font-mono font-bold uppercase", sb.cls)}>{sb.label}</span>
-        <span className="font-mono text-zinc-200">${e.notional.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-        <span className="font-mono">{prints} prints</span>
-        <span className="rounded border border-zinc-700/50 px-1 py-0.5 font-mono text-zinc-400">{e.nbboPositionLabel}</span>
-        {volOiExtra ? <span className="font-mono text-amber-200/80">{volOiExtra}</span> : null}
+      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+        <div
+          className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px]"
+          style={scannerNumericFontStyle}
+        >
+          <span className="inline-flex items-center gap-1">{sideNotionalNode(e)}</span>
+          <span className="text-zinc-500">{printsLabel}</span>
+          <span className={cn("font-medium", nbbo.cls)}>{nbbo.text}</span>
+          {voi.show ? <span className="font-medium text-[#FFB800]">{voi.text}</span> : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <div className="relative h-1 w-14 overflow-hidden rounded-sm bg-zinc-800">
+            <div className="absolute inset-y-0 left-0 rounded-sm bg-amber-500" style={{ width: `${gauge}%` }} />
+          </div>
+          <span
+            className="w-6 text-right text-[10px] font-semibold tabular-nums text-zinc-300"
+            style={scannerNumericFontStyle}
+          >
+            {gauge}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -136,22 +199,23 @@ function ClusterBlock({
 }) {
   const totalN = unit.items.reduce((s, x) => s + (Number.isFinite(x.notional) ? x.notional : 0), 0);
   return (
-    <div className="rounded border border-amber-500/35 bg-amber-500/5">
+    <div className="border-b border-zinc-900 py-1">
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-[11px] font-bold uppercase tracking-wide text-amber-200/95"
+        className="flex w-full items-center justify-between gap-2 py-1.5 text-left text-[11px] font-bold uppercase tracking-wide text-[#FFB800]"
+        style={scannerSansFontStyle}
       >
         <span>
-          Multi-leg · {unit.items.length} legs ·{" "}
-          <span className="font-mono font-semibold normal-case tracking-tight text-zinc-100">
-            ${totalN.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+          MULTI-LEG · {unit.items.length} legs ·{" "}
+          <span className="font-mono font-semibold normal-case text-white" style={scannerNumericFontStyle}>
+            {formatNotionalTickerUi(totalN)}
           </span>
         </span>
         {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
       </button>
       {open ? (
-        <div className="space-y-1 border-t border-amber-500/20 px-2 pb-2 pt-1">
+        <div className="border-l border-[#FFB800]/35 pl-2">
           {unit.items.map((ev) => (
             <EventRow key={ev.id} e={ev} />
           ))}
@@ -217,24 +281,27 @@ export function ScannerCardEventTimeline({ eventsState }: { eventsState: Scanner
 
   if (loading) {
     return (
-      <div className="space-y-1.5" style={scannerNumericFontStyle}>
+      <div className="space-y-0">
         {[0, 1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-12 animate-pulse rounded border border-zinc-800/60 bg-zinc-900/40" />
+          <div key={i} className="border-b border-zinc-900 py-3">
+            <div className="h-3 w-1/3 animate-pulse rounded bg-zinc-900" />
+            <div className="mt-2 h-3 w-2/3 animate-pulse rounded bg-zinc-900" />
+          </div>
         ))}
       </div>
     );
   }
 
   if (error) {
-    return <p className="text-[11px] text-red-400/90">{error}</p>;
+    return <p className="text-[11px] text-[#fb7185]">{error}</p>;
   }
 
   if (!payload || units.length === 0) {
-    return <p className="text-[11px] text-muted-foreground">No events in window.</p>;
+    return <p className="text-[11px] text-zinc-500">No events in window.</p>;
   }
 
   return (
-    <div className="space-y-1.5" style={scannerNumericFontStyle}>
+    <div>
       {units.map((u) =>
         u.kind === "cluster" ? (
           <ClusterBlock

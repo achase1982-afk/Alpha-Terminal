@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-/** Slightly lifted from page `#0c0c0c` to match terminal “cell” cards (see `ClusterCard` + polish). */
+/** Scanner reference cells — true black canvas to match UAI mockup. */
 const PANEL_SURFACE =
-  "overflow-hidden rounded-lg border border-[rgba(63,63,70,0.55)] bg-[#111113] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]";
+  "overflow-hidden rounded-lg border border-zinc-800 bg-black shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]";
 
 export function ScannerCardPanel({
   title,
@@ -22,7 +22,7 @@ export function ScannerCardPanel({
           dense ? "px-3 py-2" : "px-3 py-2.5",
         )}
       >
-        <h4 className="font-mono text-[11px] font-bold uppercase tracking-widest text-zinc-100">{title}</h4>
+        <h4 className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">{title}</h4>
       </div>
       <div
         className={cn(

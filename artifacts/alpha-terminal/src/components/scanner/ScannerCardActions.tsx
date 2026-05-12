@@ -9,39 +9,36 @@ export function ScannerCardActions({
 }) {
   return (
     <div
-      className="flex flex-wrap items-center justify-end gap-1.5 border-t border-zinc-800/80 pt-1.5"
+      className="flex flex-wrap items-stretch gap-2 border-t border-zinc-900 bg-black pt-2"
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => e.stopPropagation()}
     >
       <button
         type="button"
         onClick={() => {
-          // TODO: emit scanner_v3_card_* telemetry once frontend telemetry plumbing is established.
           onAction("mute");
         }}
-        className="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-[#0c0c0c]"
+        className="flex-1 rounded-md border border-zinc-700 bg-black px-3 py-2 text-sm font-semibold text-white transition-colors hover:border-zinc-500 hover:bg-zinc-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB800]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
       >
         Mute today
       </button>
       <button
         type="button"
         onClick={() => {
-          // TODO: emit scanner_v3_card_* telemetry once frontend telemetry plumbing is established.
           onAction("watchlist");
         }}
-        className="rounded-md border border-zinc-600 bg-zinc-900 px-3 py-1.5 text-sm font-bold text-zinc-200 transition-colors hover:bg-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0c0c0c]"
+        className="flex-1 rounded-md border border-zinc-700 bg-black px-3 py-2 text-sm font-semibold text-white transition-colors hover:border-zinc-500 hover:bg-zinc-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB800]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
       >
         + Watchlist
       </button>
       <button
         type="button"
         onClick={() => {
-          // TODO: emit scanner_v3_card_* telemetry once frontend telemetry plumbing is established.
           onAction("analyze");
         }}
-        className="rounded-md bg-primary px-3 py-1.5 text-sm font-bold text-primary-foreground transition-colors hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[#0c0c0c]"
+        className="flex-1 rounded-md bg-[#FFB800] px-3 py-2 text-sm font-bold text-black transition-colors hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB800] focus-visible:ring-offset-2 focus-visible:ring-offset-black"
       >
-        Analyze in Strategist
+        Analyze
       </button>
       <span className="sr-only">for {symbol}</span>
     </div>

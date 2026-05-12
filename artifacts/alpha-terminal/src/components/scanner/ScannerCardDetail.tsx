@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import {
+  Activity,
   ArrowDownRight,
-  ArrowRight,
   ArrowUpRight,
   Box,
   ChevronDown,
@@ -17,16 +17,23 @@ import { ScannerCardPanel, ScannerCardPanelRow } from "./ScannerCardPanel";
 import type { ScannerCardAction } from "./scannerCard.types";
 import {
   dashCell,
-  formatCompactInt,
   formatDollarRange,
   formatIvPct,
   formatRatio,
   formatSignedMoney,
   formatSignedPct,
+  formatNotionalTickerUi,
   meaningfulVolVsAvgMultiplier,
   scannerNumericFontStyle,
+  scannerSansFontStyle,
   volumeVsAvgMultiplier,
 } from "./scannerCard.utils";
+
+function mmDdYmd(ymd: string): string {
+  const m = ymd.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return ymd;
+  return `${m[2]}/${m[3]}`;
+}
 
 function IvBar({ ivr, dense }: { ivr: number | null; dense?: boolean }) {
   if (ivr == null || !Number.isFinite(ivr)) {
@@ -36,7 +43,7 @@ function IvBar({ ivr, dense }: { ivr: number | null; dense?: boolean }) {
   return (
     <div className="flex min-w-0 items-center justify-end gap-1">
       <div className={cn("h-1 shrink-0 overflow-hidden rounded-full bg-zinc-800", dense ? "w-10" : "w-14")}>
-        <div className="h-full rounded-full bg-amber-500/90" style={{ width: `${pct}%` }} />
+        <div className="h-full rounded-full bg-[#FFB800]" style={{ width: `${pct}%` }} />
       </div>
       <span className="w-7 text-right font-mono tabular-nums text-zinc-200">{Math.round(ivr)}</span>
     </div>
@@ -56,13 +63,17 @@ function formatCpNotionalRatio(callN: number, putN: number): string {
   return `${r.toFixed(1)}:1`;
 }
 
-function strikeChip(s: { strike: number; callPut: "C" | "P"; notional: number }): string {
-  const strikeStr = Number.isInteger(s.strike) ? String(s.strike) : s.strike.toFixed(2).replace(/\.?0+$/, "");
-  return `$${strikeStr}${s.callPut} ${formatCompactInt(s.notional)}`;
+function headlineEvent(flow: ScannerCardData["flow"]): { label: string; Icon: typeof Zap } {
+  const et = flow?.eventsToday ?? 0;
+  const p = flow?.primaryEventType ?? null;
+  if (p === "sweep") return { label: "SWEEP CLUSTER", Icon: Zap };
+  if (p === "block") return { label: "BLOCK", Icon: Box };
+  if (et > 0) return { label: "ACCUMULATION", Icon: Activity };
+  return { label: "FLOW", Icon: Activity };
 }
 
 /**
- * V3 expanded layout: event headline → live timeline → directional bias → chips → reference (collapsed) → actions.
+ * Expanded scanner card — pixel-aligned to UAI scanner mockup (black canvas, Inter labels, mono figures).
  */
 export function ScannerCardDetail({
   data,
@@ -79,29 +90,31 @@ export function ScannerCardDetail({
   const flow = data.flow;
   const tech = data.technical;
 
-  const primary = flow?.primaryEventType ?? null;
+  const { label: headlineEventLabel, Icon: HeadlineIcon } = headlineEvent(flow);
   const netDir = flow?.netDirection ?? "neutral";
   const eventsToday = flow?.eventsToday ?? 0;
 
   const dirIcon =
     netDir === "bullish" ? (
-      <ArrowUpRight className="h-4 w-4 shrink-0 text-terminal-success" aria-hidden />
+      <ArrowUpRight className="h-4 w-4 shrink-0 text-[#4ade80]" aria-hidden />
     ) : netDir === "bearish" ? (
-      <ArrowDownRight className="h-4 w-4 shrink-0 text-terminal-danger" aria-hidden />
+      <ArrowDownRight className="h-4 w-4 shrink-0 text-[#fb7185]" aria-hidden />
     ) : netDir === "mixed" ? (
-      <ArrowRight className="h-4 w-4 shrink-0 text-amber-400" aria-hidden />
+      <span className="inline-block w-4 text-center text-lg leading-none text-[#FFB800]" aria-hidden>
+        –
+      </span>
     ) : (
-      <Minus className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+      <Minus className="h-4 w-4 shrink-0 text-zinc-500" aria-hidden />
     );
 
   const dirLabelCls =
     netDir === "bullish"
-      ? "text-terminal-success"
+      ? "text-[#4ade80]"
       : netDir === "bearish"
-        ? "text-terminal-danger"
+        ? "text-[#fb7185]"
         : netDir === "mixed"
-          ? "text-amber-300/95"
-          : "text-muted-foreground";
+          ? "text-[#FFB800]"
+          : "text-zinc-500";
 
   const dirText =
     netDir === "bullish" ? "Bullish" : netDir === "bearish" ? "Bearish" : netDir === "mixed" ? "Mixed" : "Neutral";
@@ -120,105 +133,169 @@ export function ScannerCardDetail({
   const volMult =
     meaningfulVolVsAvgMultiplier(data.volume, data.avgVolume20d) ?? volumeVsAvgMultiplier(data.volume, data.avgVolume20d);
   const ivrChip = data.ivr != null && Number.isFinite(data.ivr) ? `${Math.round(data.ivr)}` : dashCell();
-  const earnChip = earn != null && Number.isFinite(earn.daysTo) ? `in ${Math.round(earn.daysTo)}d` : dashCell();
+  const earnChip =
+    earn != null && Number.isFinite(earn.daysTo) ? `${Math.round(earn.daysTo)}d` : dashCell();
   const topStrikeChip = flow?.topStrikeLabel?.trim() ? flow.topStrikeLabel : dashCell();
 
   const todayLine = useMemo(() => {
     if (!summary) return null;
     const totalAll = summary.callNotional + summary.putNotional;
     const ratio = formatCpNotionalRatio(summary.callNotional, summary.putNotional);
-    return `Today: ${summary.totalEvents} events · $${totalAll.toLocaleString(undefined, { maximumFractionDigits: 0 })} notional · C:P ${ratio}`;
+    return `Today: ${summary.totalEvents} events · ${formatNotionalTickerUi(totalAll)} notional · C:P ${ratio}`;
   }, [summary]);
 
+  const strikeLine = (
+    s: { strike: number; callPut: "C" | "P"; expiration: string; notional: number },
+    bull: boolean,
+    i: number,
+  ) => {
+    const mm = s.expiration.length >= 10 ? mmDdYmd(s.expiration.slice(0, 10)) : mmDdYmd(s.expiration);
+    const strikeStr = Number.isInteger(s.strike) ? String(s.strike) : s.strike.toFixed(2).replace(/\.?0+$/, "");
+    const left = `$${strikeStr}${s.callPut} ${mm}`;
+    const val = formatNotionalTickerUi(s.notional);
+    return (
+      <div key={i} className="flex items-center justify-between gap-2 text-[11px]">
+        <span className="font-semibold text-white" style={scannerNumericFontStyle}>
+          {left}
+        </span>
+        <span className={cn("font-semibold", bull ? "text-[#4ade80]" : "text-[#fb7185]")} style={scannerNumericFontStyle}>
+          {val}
+        </span>
+      </div>
+    );
+  };
+
   return (
-    <div className="space-y-2 border-t border-zinc-800/80 bg-[#080808]/95 px-2 pb-1.5 pt-1.5">
-      <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800/60 pb-2 text-xs font-semibold uppercase tracking-wide">
-        {primary === "sweep" ? (
-          <>
-            <Zap className="h-4 w-4 text-amber-400" aria-hidden />
-            <span className="text-amber-200/95">SWEEP</span>
-          </>
-        ) : primary === "block" ? (
-          <>
-            <Box className="h-4 w-4 text-zinc-400" aria-hidden />
-            <span className="text-zinc-200">BLOCK</span>
-          </>
-        ) : (
-          <span className="text-zinc-500">Flow</span>
-        )}
-        <span className="text-zinc-600">·</span>
-        {dirIcon}
-        <span className={cn("normal-case tracking-tight", dirLabelCls)}>{dirText}</span>
-        <span className="ml-auto font-mono text-[11px] font-bold normal-case text-zinc-300">{eventsToday} events</span>
+    <div className="space-y-0 border-t border-zinc-900 bg-black px-2 pb-2 pt-2 text-white">
+      {/* Headline strip */}
+      <div
+        className="flex flex-wrap items-center gap-2 border-b border-zinc-900 pb-2 text-[11px] font-semibold uppercase tracking-wide"
+        style={scannerSansFontStyle}
+      >
+        <HeadlineIcon className="h-4 w-4 shrink-0 text-[#FFB800]" aria-hidden />
+        <span className="text-white">{headlineEventLabel}</span>
+        <span className="text-zinc-700">·</span>
+        <span className="inline-flex items-center gap-1 normal-case">
+          {dirIcon}
+          <span className={cn("text-[12px] font-semibold tracking-tight", dirLabelCls)}>{dirText}</span>
+        </span>
+        <span className="ml-auto font-mono text-[11px] font-bold normal-case text-zinc-400" style={scannerNumericFontStyle}>
+          {eventsToday} events
+        </span>
       </div>
 
-      <ScannerCardPanel title="Event timeline (4h)" dense>
+      {/* Event timeline */}
+      <div className="border-b border-zinc-900 py-2">
+        <h3
+          className="mb-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500"
+          style={scannerSansFontStyle}
+        >
+          Event timeline
+        </h3>
         <ScannerCardEventTimeline eventsState={eventsState} />
-      </ScannerCardPanel>
+      </div>
 
-      <div className="rounded border border-zinc-800/80 bg-zinc-950/35 px-2 py-1.5">
-        <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Directional bias</div>
+      {/* Directional bias */}
+      <div className="border-b border-zinc-900 py-2">
+        <div className="mb-2 flex items-start justify-between gap-2">
+          <h3 className="text-[10px] font-bold uppercase tracking-widest text-zinc-500" style={scannerSansFontStyle}>
+            Directional bias
+          </h3>
+          {summary?.netDeltaDollar != null && Number.isFinite(summary.netDeltaDollar) ? (
+            <span
+              className={cn(
+                "text-xs font-semibold",
+                summary.netDeltaDollar >= 0 ? "text-[#4ade80]" : "text-[#fb7185]",
+              )}
+              style={scannerNumericFontStyle}
+            >
+              Net {formatSignedMoney(summary.netDeltaDollar)}
+            </span>
+          ) : (
+            <span className="text-xs text-zinc-600" style={scannerNumericFontStyle}>
+              {dashCell()}
+            </span>
+          )}
+        </div>
         {eventsState.error ? (
-          <p className="mt-2 text-[11px] text-red-400/80">{eventsState.error}</p>
+          <p className="text-[11px] text-[#fb7185]">{eventsState.error}</p>
         ) : eventsState.loading || !bias ? (
-          <div className="mt-2 h-16 animate-pulse rounded bg-zinc-900/50" />
+          <div className="h-20 animate-pulse rounded bg-zinc-950" />
         ) : (
           <>
-            <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-zinc-800">
+            <div className="flex h-2.5 overflow-hidden rounded-sm bg-zinc-900">
               <div
-                className="h-full bg-terminal-success/85"
+                className="h-full bg-[#4ade80]"
                 style={{ width: `${Math.min(100, Math.max(0, bias.bullPct))}%` }}
               />
               <div
-                className="h-full bg-terminal-danger/85"
+                className="h-full bg-[#fb7185]"
                 style={{ width: `${Math.min(100, Math.max(0, bias.bearPct))}%` }}
               />
             </div>
-            <div className="mt-1 flex justify-between font-mono text-[10px] text-zinc-400">
-              <span className="text-terminal-success">{bias.bullPct}% bull</span>
-              <span className="text-terminal-danger">{bias.bearPct}% bear</span>
+            <div
+              className="mt-1.5 flex justify-between text-[10px] font-medium"
+              style={scannerNumericFontStyle}
+            >
+              <span className="text-[#4ade80]">
+                <span className="mr-0.5">●</span>
+                {bias.bullPct}% bullish · {formatNotionalTickerUi(bias.bull)}
+              </span>
+              <span className="text-[#fb7185]">
+                {formatNotionalTickerUi(bias.bear)} · {bias.bearPct}% bearish<span className="ml-0.5">●</span>
+              </span>
             </div>
-            <div className="mt-2 font-mono text-xs text-zinc-200">
-              Net Δ$
-              {summary?.netDeltaDollar != null && Number.isFinite(summary.netDeltaDollar)
-                ? formatSignedMoney(summary.netDeltaDollar)
-                : dashCell()}
-            </div>
-            <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
+            <div className="mt-3 grid grid-cols-2 gap-4">
               <div>
-                <div className="font-bold uppercase tracking-wider text-terminal-success/90">Top bullish</div>
-                <ul className="mt-1 space-y-0.5 font-mono text-zinc-300">
-                  {(summary?.topBullishStrikes ?? []).map((s, i) => (
-                    <li key={`b-${i}`}>{strikeChip(s)}</li>
-                  ))}
-                </ul>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500" style={scannerSansFontStyle}>
+                  Top bullish
+                </div>
+                <div className="mt-1.5 space-y-1">
+                  {(summary?.topBullishStrikes ?? []).length === 0 ? (
+                    <div className="text-zinc-600" style={scannerNumericFontStyle}>
+                      {dashCell()}
+                    </div>
+                  ) : (
+                    (summary?.topBullishStrikes ?? []).map((s, i) => strikeLine(s, true, i))
+                  )}
+                </div>
               </div>
               <div>
-                <div className="font-bold uppercase tracking-wider text-terminal-danger/90">Top bearish</div>
-                <ul className="mt-1 space-y-0.5 font-mono text-zinc-300">
-                  {(summary?.topBearishStrikes ?? []).map((s, i) => (
-                    <li key={`r-${i}`}>{strikeChip(s)}</li>
-                  ))}
-                </ul>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500" style={scannerSansFontStyle}>
+                  Top bearish
+                </div>
+                <div className="mt-1.5 space-y-1">
+                  {(summary?.topBearishStrikes ?? []).length === 0 ? (
+                    <div className="text-zinc-600" style={scannerNumericFontStyle}>
+                      {dashCell()}
+                    </div>
+                  ) : (
+                    (summary?.topBearishStrikes ?? []).map((s, i) => strikeLine(s, false, i))
+                  )}
+                </div>
               </div>
             </div>
           </>
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+      {/* 4-up chips */}
+      <div className="grid grid-cols-2 gap-2 border-b border-zinc-900 py-2 sm:grid-cols-4">
         {[
           { k: "IVR", v: ivrChip },
           { k: "Earnings", v: earnChip },
-          { k: "Vol", v: volMult === dashCell() ? dashCell() : `${volMult} avg` },
+          { k: "Vol", v: volMult === dashCell() ? dashCell() : `${String(volMult).replace(/\u00d7/g, "x").replace(/×/g, "x")}` },
           { k: "Top", v: topStrikeChip },
         ].map((c) => (
-          <div
-            key={c.k}
-            className="rounded border border-zinc-800/70 bg-zinc-950/50 px-2 py-1 text-center font-mono text-[10px]"
-          >
-            <div className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">{c.k}</div>
-            <div className="mt-0.5 truncate text-[11px] text-zinc-200" title={String(c.v)}>
+          <div key={c.k} className="rounded-md border border-zinc-800 bg-black px-2 py-2">
+            <div className="text-[9px] font-bold uppercase tracking-wider text-zinc-500" style={scannerSansFontStyle}>
+              {c.k}
+            </div>
+            <div
+              className="mt-1 truncate text-sm font-semibold text-white"
+              style={scannerNumericFontStyle}
+              title={String(c.v)}
+            >
               {c.v}
             </div>
           </div>
@@ -226,22 +303,27 @@ export function ScannerCardDetail({
       </div>
 
       {todayLine ? (
-        <div className="rounded border border-zinc-800/60 bg-black/40 px-2 py-1 font-mono text-[10px] text-zinc-400">
+        <div
+          className="border-b border-zinc-900 py-2 font-mono text-[10px] text-zinc-500"
+          style={scannerNumericFontStyle}
+        >
           {todayLine}
         </div>
       ) : null}
 
-      <div className="rounded border border-zinc-800/70">
+      {/* Reference */}
+      <div className="border-b border-zinc-900">
         <button
           type="button"
           onClick={() => setReferenceOpen((o) => !o)}
-          className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-[11px] font-bold uppercase tracking-wide text-zinc-400 hover:text-zinc-200"
+          className="flex w-full items-center justify-between gap-2 py-2 text-left text-[10px] font-bold uppercase tracking-widest text-zinc-500 hover:text-zinc-300"
+          style={scannerSansFontStyle}
         >
           <span>Reference data</span>
           {referenceOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         </button>
         {referenceOpen ? (
-          <div className="grid gap-1 border-t border-zinc-800/60 p-1 sm:grid-cols-2">
+          <div className="grid gap-2 border-t border-zinc-900 pb-2 pt-2 sm:grid-cols-2">
             <ScannerCardPanel title="Vol Context" dense>
               <ScannerCardPanelRow dense label="IV30" value={formatIvPct(data.iv30)} />
               <ScannerCardPanelRow dense label="IVR" value={<IvBar ivr={data.ivr} dense />} />
@@ -341,7 +423,7 @@ export function ScannerCardDetail({
         ) : null}
       </div>
 
-      <div style={scannerNumericFontStyle}>
+      <div className="pt-2" style={scannerNumericFontStyle}>
         <ScannerCardActions symbol={data.symbol} onAction={onAction} />
       </div>
     </div>

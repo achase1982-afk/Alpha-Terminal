@@ -6,13 +6,13 @@ export function ScannerCard({ data, expanded, onToggle, onAction }: ScannerCardP
   const sym = data.symbol;
 
   return (
-    <article className="overflow-hidden bg-transparent">
+    <article className="overflow-hidden bg-black">
       <div
         role="button"
         tabIndex={0}
         aria-expanded={expanded}
         aria-label={`Scanner card ${sym}${expanded ? ", expanded" : ", collapsed"}`}
-        className="w-full text-left cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary hover:bg-zinc-900/50 transition-colors"
+        className="w-full cursor-pointer text-left transition-colors hover:bg-zinc-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#FFB800]/50"
         onClick={() => {
           // TODO: emit scanner_v3_card_* telemetry once frontend telemetry plumbing is established.
           onToggle();

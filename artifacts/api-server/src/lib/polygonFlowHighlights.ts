@@ -3,6 +3,7 @@ import { and, eq, inArray, sql, desc } from "@workspace/db";
 import { logger } from "./logger.js";
 import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 import type { TapeBackfillStatus, TapeBackfillDiagnosticReason } from "./strategistTapeBackfill.js";
+import { dbNaiveUtcTimestampToIso } from "./dbNaiveUtcTimestampToIso.js";
 
 export interface FlowStrikeHighlight {
   strike: number;
@@ -292,9 +293,7 @@ function expToIso(d: unknown): string {
 }
 
 function tsToIso(t: unknown): string | null {
-  if (t instanceof Date) return t.toISOString();
-  if (typeof t === "string") return t;
-  return null;
+  return dbNaiveUtcTimestampToIso(t);
 }
 
 function dedupeTopPrintRows(rows: FlowTopPrintRow[]): FlowTopPrintRow[] {
@@ -449,7 +448,7 @@ async function fetchSessionTape(symbol: string, sessionDate: string): Promise<Po
       sweepVolume: r.sweepVolume,
       blockVolume: r.blockVolume,
       regularVolume: r.regularVolume,
-      lastEventTs: r.lastEventTs ? (r.lastEventTs instanceof Date ? r.lastEventTs.toISOString() : String(r.lastEventTs)) : null,
+      lastEventTs: dbNaiveUtcTimestampToIso(r.lastEventTs),
     }));
 
     const topMappedRaw: FlowTopPrintRow[] = topPrints.map((r) => ({

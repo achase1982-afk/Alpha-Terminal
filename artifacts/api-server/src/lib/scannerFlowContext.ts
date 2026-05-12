@@ -21,6 +21,7 @@
 
 import { db, tickerSignalSnapshotTable } from "@workspace/db";
 import { inArray, sql } from "@workspace/db";
+import { dbNaiveUtcTimestampToIso } from "./dbNaiveUtcTimestampToIso.js";
 
 export const SCANNER_FLOW_DEFAULT_WINDOW_MS = 4 * 60 * 60 * 1000;
 
@@ -477,12 +478,7 @@ async function computeScannerFlowForWindow(
     window_ms: diagnosticsWindowMs,
     cutoff_iso: cutoffIso,
     rows_in_window: intOrZero(diagRow?.rows_in_window),
-    max_trade_ts_in_window:
-      maxTsRaw instanceof Date
-        ? maxTsRaw.toISOString()
-        : maxTsRaw != null && String(maxTsRaw).length > 0
-          ? String(maxTsRaw)
-          : null,
+    max_trade_ts_in_window: dbNaiveUtcTimestampToIso(maxTsRaw),
   };
 
   const aggBySym = new Map<
@@ -501,12 +497,7 @@ async function computeScannerFlowForWindow(
     if (!sym) continue;
     const vol = numOrNull(row.vol_4h) ?? 0;
     const maxTsRaw = row.last_event_ts;
-    const last_event_ts =
-      maxTsRaw instanceof Date
-        ? maxTsRaw.toISOString()
-        : maxTsRaw != null && String(maxTsRaw).length > 0
-          ? String(maxTsRaw)
-          : null;
+    const last_event_ts = dbNaiveUtcTimestampToIso(maxTsRaw);
     aggBySym.set(sym, {
       blocks: intOrZero(row.blocks),
       sweeps: intOrZero(row.sweeps),
