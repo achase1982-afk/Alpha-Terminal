@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useCallback, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { BlockReason, StrategistOutcome, StrategistSendToOrderPayload } from "@/components/StrategistV2Card";
 import { buildOccSymbol } from "@/components/StrategistV2Card";
 import { ChevronDown, ChevronUp, AlertTriangle, Copy, Play, Pause, Square, Rewind, FastForward, Send } from "lucide-react";
@@ -20,9 +13,7 @@ import type {
 } from "@/lib/strategistDeskResult";
 import { buildDeskSpeechSections } from "@/lib/deskCardSpeech";
 import { StrategistConvictionDeskCard } from "@/components/StrategistConvictionDeskCard";
-import { splitDeskAudioTextIntoChunks } from "@/lib/deskAudioChunking";
-import { emitDeskTtsClientEvent, fetchAllDeskTtsChunksMerged } from "@/lib/deskBufferedTtsClient";
-import { STRATEGIST_ANALYSIS_CANCEL_EVENT, STRATEGIST_ANALYSIS_START_EVENT } from "@/lib/strategistDeskSpeechEvents";
+import { useDeskBufferedCardTts } from "@/hooks/useDeskBufferedCardTts";
 
 export type { DeskResult } from "@/lib/strategistDeskResult";
 
@@ -623,411 +614,35 @@ function StrategistDeskCardInner({
     [deskResult, banner?.title, banner?.body],
   );
 
-  /** Split desk script into TTS-sized chunks (aligned with server `deskAudioBuffer`). */
-  const deskAudioChunks = useMemo(() => splitDeskAudioTextIntoChunks(deskAudioText), [deskAudioText]);
-
-  const deskTtsWarmKey = useMemo(
-    () => `${deskResultId}\0${deskAudioText.trim()}\0${JSON.stringify(deskVoiceConfig)}`,
-    [deskResultId, deskAudioText, deskVoiceConfig],
-  );
-
-  const SESSION_RATE_KEY = "strategistDeskSpeechRate";
-  const [speechRate, setSpeechRate] = useState<number>(() => {
-    if (typeof window === "undefined") return 1;
-    const v = Number(sessionStorage.getItem(SESSION_RATE_KEY));
-    return [1, 1.25, 1.5, 2].includes(v) ? v : 1;
-  });
-  const speechRateRef = useRef(speechRate);
-  speechRateRef.current = speechRate;
-
-  const [audioBarOpen, setAudioBarOpen] = useState(false);
-  const [paused, setPaused] = useState(false);
-  const [audioLoading, setAudioLoading] = useState(false);
-  const [audioReady, setAudioReady] = useState(false);
-  const [audioError, setAudioError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const objectUrlRef = useRef<string | null>(null);
-  const audioPlayGenRef = useRef(0);
-  const ttsFetchAbortRef = useRef<AbortController | null>(null);
-  const deskTtsSessionIdRef = useRef<string | null>(null);
-  const [deskTtsSessionId, setDeskTtsSessionId] = useState<string | null>(null);
-  const warmedDeskTtsRef = useRef<{ warmKey: string; sessionId: string; totalChunks: number } | null>(null);
-  const warmGenRef = useRef(0);
-  /** Which `startPlay` generation turned on `audioLoading` (fetch path); always clear in `finally` for that gen. */
-  const ttsLoadingPlayGenRef = useRef<number | null>(null);
-  /** True while we expect `<audio>` to decode/play our blob (ignore spurious errors from `stopAudio` clearing `src`). */
-  const expectAudioPlaybackRef = useRef(false);
 
-  const revokeObjectUrl = useCallback(() => {
-    if (objectUrlRef.current) {
-      URL.revokeObjectURL(objectUrlRef.current);
-      objectUrlRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => {
-    deskTtsSessionIdRef.current = deskTtsSessionId;
-  }, [deskTtsSessionId]);
-
-  const stopAudio = useCallback(() => {
-    expectAudioPlaybackRef.current = false;
-    audioPlayGenRef.current += 1;
-    ttsFetchAbortRef.current?.abort();
-    ttsFetchAbortRef.current = null;
-    const el = audioRef.current;
-    if (el) {
-      el.pause();
-      el.currentTime = 0;
-      el.removeAttribute("src");
-      el.load();
-    }
-    revokeObjectUrl();
-    setPaused(false);
-    setAudioBarOpen(false);
-    setAudioLoading(false);
-    ttsLoadingPlayGenRef.current = null;
-    setAudioReady(false);
-    setAudioError(null);
-    setDeskTtsSessionId(null);
-    deskTtsSessionIdRef.current = null;
-    warmedDeskTtsRef.current = null;
-  }, [revokeObjectUrl]);
-
-  const startPlay = useCallback(async () => {
-    if (!deskAudioText.trim() || deskAudioChunks.length === 0) return;
-    const playGen = ++audioPlayGenRef.current;
-    ttsFetchAbortRef.current?.abort();
-    ttsFetchAbortRef.current = null;
-
-    setAudioError(null);
-    setAudioReady(false);
-
-    const attachAndPlay = (blobUrl: string): boolean => {
-      const el = audioRef.current;
-      if (!el || playGen !== audioPlayGenRef.current) return false;
-      revokeObjectUrl();
-      objectUrlRef.current = blobUrl;
-      setAudioBarOpen(true);
-      setPaused(false);
-      setAudioReady(true);
-      el.src = blobUrl;
-      el.playbackRate = speechRateRef.current;
-      expectAudioPlaybackRef.current = true;
-      try {
-        const p = el.play();
-        if (p !== undefined) {
-          void p.catch(() => {
-            expectAudioPlaybackRef.current = false;
-            if (playGen === audioPlayGenRef.current) {
-              setAudioError("Audio unavailable — playback failed");
-              setAudioReady(false);
-            }
-          });
-        }
-      } catch {
-        expectAudioPlaybackRef.current = false;
-        if (playGen === audioPlayGenRef.current) {
-          setAudioError("Audio unavailable — playback failed");
-          setAudioReady(false);
-        }
-        return false;
-      }
-      return playGen === audioPlayGenRef.current;
-    };
-
-    const ac = new AbortController();
-    ttsFetchAbortRef.current = ac;
-    const TTS_FETCH_MS = 180_000;
-    const timeoutId =
-      typeof window !== "undefined"
-        ? window.setTimeout(() => {
-            ac.abort();
-          }, TTS_FETCH_MS)
-        : 0;
-
-    setAudioLoading(true);
-    ttsLoadingPlayGenRef.current = playGen;
-
-    const ensureSession = async (): Promise<{ sessionId: string; totalChunks: number } | null> => {
-      const warmed = warmedDeskTtsRef.current;
-      if (warmed && warmed.warmKey === deskTtsWarmKey) {
-        deskTtsSessionIdRef.current = warmed.sessionId;
-        setDeskTtsSessionId(warmed.sessionId);
-        return { sessionId: warmed.sessionId, totalChunks: warmed.totalChunks };
-      }
-      const existingId = deskTtsSessionIdRef.current;
-      if (existingId) {
-        return { sessionId: existingId, totalChunks: deskAudioChunks.length };
-      }
-      try {
-        const res = await fetchWithAuth("/api/tts/desk-audio/start", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: deskAudioText.trim(), voiceConfig: deskVoiceConfig }),
-          signal: ac.signal,
-          clerkTokenTimeoutMs: 8000,
-        });
-        if (!res.ok) {
-          void emitDeskTtsClientEvent({
-            stage: "tts_session_start_failed",
-            httpStatus: res.status,
-            deskResultId,
-          });
-          return null;
-        }
-        const j = (await res.json()) as { sessionId?: string; totalChunks?: number };
-        if (typeof j.sessionId !== "string" || !j.sessionId) return null;
-        const totalChunks =
-          typeof j.totalChunks === "number" && Number.isFinite(j.totalChunks) && j.totalChunks >= 1
-            ? Math.floor(j.totalChunks)
-            : deskAudioChunks.length;
-        setDeskTtsSessionId(j.sessionId);
-        deskTtsSessionIdRef.current = j.sessionId;
-        warmedDeskTtsRef.current = { warmKey: deskTtsWarmKey, sessionId: j.sessionId, totalChunks };
-        return { sessionId: j.sessionId, totalChunks };
-      } catch (e) {
-        void emitDeskTtsClientEvent({
-          stage: "tts_session_start_failed",
-          httpStatus: null,
-          detail: e instanceof Error ? e.message : String(e),
-          deskResultId,
-        });
-        return null;
-      }
-    };
-
-    try {
-      const session = await ensureSession();
-      if (playGen !== audioPlayGenRef.current) return;
-      if (!session) {
-        setAudioError("Audio unavailable — could not start playback session");
-        setAudioBarOpen(true);
-        return;
-      }
-
-      const { sessionId: sid, totalChunks: nRaw } = session;
-      const n =
-        typeof nRaw === "number" && Number.isFinite(nRaw) && nRaw >= 1 ? Math.floor(nRaw) : deskAudioChunks.length;
-
-      const merged = await fetchAllDeskTtsChunksMerged(sid, n, ac.signal);
-      if (playGen !== audioPlayGenRef.current) return;
-      const url = URL.createObjectURL(merged);
-      const ok = attachAndPlay(url);
-      if (!ok) {
-        URL.revokeObjectURL(url);
-      }
-    } catch (e) {
-      if (playGen !== audioPlayGenRef.current) return;
-      const aborted = e instanceof DOMException && e.name === "AbortError";
-      setAudioError(
-        aborted
-          ? "Audio unavailable — request timed out or was cancelled"
-          : "Audio unavailable — network error",
-      );
-      setAudioBarOpen(true);
-    } finally {
-      if (timeoutId) window.clearTimeout(timeoutId);
-      if (ttsFetchAbortRef.current === ac) {
-        ttsFetchAbortRef.current = null;
-      }
-      if (ttsLoadingPlayGenRef.current === playGen) {
-        setAudioLoading(false);
-        ttsLoadingPlayGenRef.current = null;
-      }
-    }
-  }, [deskAudioChunks, deskAudioText, deskResultId, deskTtsWarmKey, deskVoiceConfig, revokeObjectUrl]);
-
-  /** Warm buffered TTS session on mount so first chunk is often ready before Play. */
-  useEffect(() => {
-    const text = deskAudioText.trim();
-    if (!text) {
-      warmGenRef.current += 1;
-      warmedDeskTtsRef.current = null;
-      setDeskTtsSessionId(null);
-      deskTtsSessionIdRef.current = null;
-      return;
-    }
-    warmGenRef.current += 1;
-    const gen = warmGenRef.current;
-    const warmKey = deskTtsWarmKey;
-    const ac = new AbortController();
-
-    void (async () => {
-      try {
-        const res = await fetchWithAuth("/api/tts/desk-audio/start", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text, voiceConfig: deskVoiceConfig }),
-          signal: ac.signal,
-          clerkTokenTimeoutMs: 8000,
-        });
-        if (gen !== warmGenRef.current) return;
-        if (!res.ok) {
-          void emitDeskTtsClientEvent({ stage: "tts_warm_failed", httpStatus: res.status, deskResultId });
-          return;
-        }
-        const j = (await res.json()) as { sessionId?: string; totalChunks?: number };
-        if (gen !== warmGenRef.current) return;
-        if (typeof j.sessionId === "string" && j.sessionId) {
-          const totalChunks =
-            typeof j.totalChunks === "number" && Number.isFinite(j.totalChunks) && j.totalChunks >= 1
-              ? Math.floor(j.totalChunks)
-              : deskAudioChunks.length;
-          warmedDeskTtsRef.current = { warmKey, sessionId: j.sessionId, totalChunks };
-          setDeskTtsSessionId((prev) => {
-            if (prev) return prev;
-            deskTtsSessionIdRef.current = j.sessionId!;
-            return j.sessionId!;
-          });
-        }
-      } catch (e) {
-        if (gen === warmGenRef.current) {
-          void emitDeskTtsClientEvent({
-            stage: "tts_warm_failed",
-            httpStatus: null,
-            detail: e instanceof Error ? e.message : String(e),
-            deskResultId,
-          });
-        }
-      }
-    })();
-
-    return () => {
-      ac.abort();
-    };
-  }, [deskAudioChunks, deskAudioText, deskTtsWarmKey, deskResultId, deskVoiceConfig]);
-
-  useEffect(() => {
-    return () => {
-      stopAudio();
-    };
-  }, [stopAudio]);
-
-  useEffect(() => {
-    stopAudio();
-  }, [deskResult, stopAudio]);
-
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const mo = new MutationObserver(() => {
-      if (!root.isConnected) {
-        stopAudio();
-      }
-    });
-    mo.observe(document.body, { childList: true, subtree: true });
-    return () => mo.disconnect();
-  }, [stopAudio]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && audioBarOpen) {
-        e.preventDefault();
-        stopAudio();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [audioBarOpen, stopAudio]);
-
-  useEffect(() => {
-    const onAnalysisStart = () => stopAudio();
-    window.addEventListener(STRATEGIST_ANALYSIS_START_EVENT, onAnalysisStart);
-    window.addEventListener(STRATEGIST_ANALYSIS_CANCEL_EVENT, onAnalysisStart);
-    return () => {
-      window.removeEventListener(STRATEGIST_ANALYSIS_START_EVENT, onAnalysisStart);
-      window.removeEventListener(STRATEGIST_ANALYSIS_CANCEL_EVENT, onAnalysisStart);
-    };
-  }, [stopAudio]);
-
-  const togglePause = useCallback(() => {
-    if (!audioBarOpen) return;
-    const el = audioRef.current;
-    if (!el?.src) return;
-    if (el.paused) {
-      void el.play().catch(() => {});
-      setPaused(false);
-    } else {
-      el.pause();
-      setPaused(true);
-    }
-  }, [audioBarOpen]);
-
-  const setRate = useCallback(
-    (r: number) => {
-      setSpeechRate(r);
-      try {
-        sessionStorage.setItem(SESSION_RATE_KEY, String(r));
-      } catch {
-        /* QuotaExceededError on full session storage */
-      }
-      speechRateRef.current = r;
-      if (audioRef.current) {
-        audioRef.current.playbackRate = r;
-      }
-    },
-    [],
-  );
-
-  const seekRelativeSeconds = useCallback(
-    (deltaSec: number) => {
-      const el = audioRef.current;
-      if (!el?.src || !audioReady) return;
-
-      const resumeIfPaused = () => {
-        if (el.paused) {
-          void el.play().catch(() => {});
-          setPaused(false);
-        }
-      };
-
-      if (deltaSec < 0) {
-        const t = el.currentTime + deltaSec;
-        el.currentTime = Math.max(0, t);
-        resumeIfPaused();
-        return;
-      }
-
-      const dur = Number.isFinite(el.duration) ? el.duration : NaN;
-      const t = el.currentTime + deltaSec;
-      if (!Number.isFinite(dur) || dur <= 0) {
-        el.currentTime = Math.max(0, t);
-        resumeIfPaused();
-        return;
-      }
-      el.currentTime = Math.min(dur, Math.max(0, t));
-      resumeIfPaused();
-    },
-    [audioReady],
-  );
-
-  const onAudioEnded = useCallback(() => {
-    stopAudio();
-  }, [stopAudio]);
-
-  const onLoadedMetadata = useCallback(() => {
-    const el = audioRef.current;
-    if (el) {
-      el.playbackRate = speechRateRef.current;
-    }
-  }, []);
-
-  const onPlay = useCallback(() => {
-    expectAudioPlaybackRef.current = false;
-    setPaused(false);
-  }, []);
-
-  const onPause = useCallback(() => {
-    setPaused(true);
-  }, []);
-
-  const onAudioElementError = useCallback(() => {
-    if (!expectAudioPlaybackRef.current) return;
-    expectAudioPlaybackRef.current = false;
-    setAudioError("Audio unavailable — media could not be played");
-    setAudioReady(false);
-  }, []);
+  const {
+    audioRef,
+    audioBarOpen,
+    audioLoading,
+    audioReady,
+    audioError,
+    paused,
+    speechRate,
+    setSpeechRate,
+    speedLabel,
+    startPlay,
+    stopAudio,
+    togglePause,
+    seekRelativeSeconds,
+    onAudioEnded,
+    onLoadedMetadata,
+    onPlay,
+    onPause,
+    onAudioElementError,
+  } = useDeskBufferedCardTts({
+    plainText: deskAudioText,
+    audioId: deskResultId,
+    voiceConfig: deskVoiceConfig,
+    sessionRateStorageKey: "strategistDeskSpeechRate",
+    resetDependency: deskResult,
+    containerRef: rootRef,
+  });
 
   const iconBtnBase: CSSProperties = {
     minWidth: TOUCH_MIN,
@@ -1060,8 +675,6 @@ function StrategistDeskCardInner({
     fontFamily: SYS_FONT,
     outline: "none",
   };
-
-  const speedLabel = speechRate === 1 ? "1x" : speechRate === 1.25 ? "1.25x" : speechRate === 1.5 ? "1.5x" : "2x";
 
   return (
     <div
@@ -1245,7 +858,7 @@ function StrategistDeskCardInner({
             <select
               aria-label={`Playback speed, currently ${speedLabel}`}
               value={speechRate}
-              onChange={(e) => setRate(Number(e.target.value))}
+              onChange={(e) => setSpeechRate(Number(e.target.value))}
               style={{
                 minHeight: TOUCH_MIN,
                 padding: "0 12px",
