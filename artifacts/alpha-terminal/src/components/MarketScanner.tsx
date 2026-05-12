@@ -20,7 +20,6 @@ import { ScreenBuilder } from "./ScreenBuilder";
 import { WatchlistEditor } from "./WatchlistEditor";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { useUnifiedScan } from "@/hooks/useUnifiedScan";
-import { UnifiedScannerCard } from "./UnifiedScannerCard";
 import { ScannerErrorBoundary } from "./ScannerErrorBoundary";
 import type { ScannerCardData } from "@/lib/unifiedScanTypes";
 import {
@@ -487,6 +486,11 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   }, [universe]);
 
   useEffect(() => {
+    setExpandedSymbols(new Set());
+    setQuietTodayExpanded(false);
+  }, [universe]);
+
+  useEffect(() => {
     let cancelled = false;
     universeData.getSymbols(universe).then(syms => {
       if (!cancelled) setResolvedSymbols(syms);
@@ -499,6 +503,19 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   const universeLabel = useMemo(
     () => getUniverseDisplayLabel(universe, universeData.presets, universeData.watchlists, universeData.screens),
     [universe, universeData.presets, universeData.watchlists, universeData.screens],
+  );
+
+  const cachedScanUniverseLabel = useMemo(
+    () =>
+      unified.lastScanUniverseId
+        ? getUniverseDisplayLabel(
+            unified.lastScanUniverseId,
+            universeData.presets,
+            universeData.watchlists,
+            universeData.screens,
+          )
+        : null,
+    [unified.lastScanUniverseId, universeData.presets, universeData.watchlists, universeData.screens],
   );
 
   const handleRefreshScreen = async (id: number) => {
@@ -522,6 +539,14 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
 
   const scanComplete = unified.phase === "complete";
   const candidates = unified.candidates;
+
+  const scanResultsForUniverse = useMemo(
+    () =>
+      scanComplete &&
+      unified.lastScanUniverseId != null &&
+      unified.lastScanUniverseId === universe,
+    [scanComplete, unified.lastScanUniverseId, universe],
+  );
 
   const layer1CardDataBySymbol = useMemo(() => {
     const cards = unified.layer1Universe?.cards;
@@ -591,14 +616,14 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   subscribeEquityRef.current = subscribeEquitySymbols;
 
   useEffect(() => {
-    if (!scanComplete) return;
+    if (!scanComplete || !scanResultsForUniverse) return;
     const sub = subscribeEquityRef.current;
     if (!sub) return;
     const fromLayer1 = layer1FilteredSymbols;
     const fromCandidates = candidates.map((c) => c.ticker);
     const merged = [...new Set([...fromLayer1, ...fromCandidates])];
     if (merged.length) void sub(merged);
-  }, [scanComplete, layer1FilteredSymbols, candidates]);
+  }, [scanComplete, scanResultsForUniverse, layer1FilteredSymbols, candidates]);
 
   const bumpMuteRender = useCallback(() => {
     setMuteTick((n) => n + 1);
@@ -731,7 +756,18 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
 
       {scanComplete && (
         <div className="space-y-3">
-          {unified.layer1Universe && (
+          {unified.lastScanUniverseId != null && !scanResultsForUniverse ? (
+            <p className="rounded-lg border border-zinc-800 bg-zinc-950/80 px-3 py-2 text-left text-xs leading-snug text-zinc-400">
+              Cached results are for{" "}
+              <span className="font-semibold text-zinc-200">
+                {cachedScanUniverseLabel ?? unified.lastScanUniverseId}
+              </span>
+              . Press <span className="font-semibold text-zinc-200">Scan</span> to load{" "}
+              <span className="font-semibold text-zinc-200">{universeLabel}</span>.
+            </p>
+          ) : null}
+
+          {scanResultsForUniverse && unified.layer1Universe && (
             <>
               <div aria-live="polite" aria-atomic="true" className="sr-only">
                 {`Scanner universe loaded: ${unified.layer1Universe.count} tickers, ${layer1ActiveAndQuiet.active.length} with flow today, ${layer1ActiveAndQuiet.quiet.length} quiet after mutes.`}
@@ -831,57 +867,25 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
               </div>
             </>
           )}
-          <div className="flex flex-wrap items-end justify-between gap-2 px-1">
-            <SnapshotFreshnessBanner
-              snapshotCompletedAt={unified.snapshotCompletedAt}
-              snapshotAgeSeconds={unified.snapshotAgeSeconds}
-              stale={unified.stale}
-            />
-            <button
-              type="button"
-              onClick={handleScanClick}
-              disabled={!accessToken || unified.phase === "scanning" || currentSymCount === 0 || shockActive}
-              className="text-[11px] font-bold px-2 py-1 rounded border border-zinc-600 bg-zinc-800 text-zinc-200 shrink-0 disabled:opacity-40"
-            >
-              Retry
-            </button>
-          </div>
-          {candidates.length === 0 && layer1FilteredSymbols.length === 0 ? (
-            <ScannerZeroCandidatesInline />
-          ) : candidates.length > 0 ? (
-            <div className="space-y-2">
-              {candidates.map((c, i) => (
-                <UnifiedScannerCard
-                  key={c.ticker}
-                  candidate={c}
-                  rank={i + 1}
-                  universeId={universe}
-                  universeLabel={universeLabel}
-                  expanded={expandedSymbols.has(c.ticker)}
-                  onToggle={() => {
-                    setExpandedSymbols((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(c.ticker)) {
-                        // TODO: emit scanner_v3_card_* telemetry once frontend telemetry plumbing is established.
-                        next.delete(c.ticker);
-                      } else {
-                        // TODO: emit scanner_v3_card_* telemetry once frontend telemetry plumbing is established.
-                        next.add(c.ticker);
-                      }
-                      return next;
-                    });
-                  }}
-                  onSendToStrategist={
-                    onSendToStrategist
-                      ? (sym) => {
-                          onNavigateToSymbol?.(sym);
-                          onSendToStrategist(sym);
-                        }
-                      : undefined
-                  }
-                />
-              ))}
+          {scanResultsForUniverse && (
+            <div className="flex flex-wrap items-end justify-between gap-2 px-1">
+              <SnapshotFreshnessBanner
+                snapshotCompletedAt={unified.snapshotCompletedAt}
+                snapshotAgeSeconds={unified.snapshotAgeSeconds}
+                stale={unified.stale}
+              />
+              <button
+                type="button"
+                onClick={handleScanClick}
+                disabled={!accessToken || unified.phase === "scanning" || currentSymCount === 0 || shockActive}
+                className="text-[11px] font-bold px-2 py-1 rounded border border-zinc-600 bg-zinc-800 text-zinc-200 shrink-0 disabled:opacity-40"
+              >
+                Retry
+              </button>
             </div>
+          )}
+          {scanResultsForUniverse && unified.layer1Universe && layer1FilteredSymbols.length === 0 ? (
+            <ScannerZeroCandidatesInline />
           ) : null}
         </div>
       )}
