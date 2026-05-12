@@ -5,6 +5,7 @@ import { clerkMiddleware, getAuth } from "@clerk/express";
 import type { Request, Response, NextFunction } from "express";
 import router from "./routes";
 import healthRouter from "./routes/health";
+import runFullBackfillRouter from "./routes/runFullBackfill";
 import { logger } from "./lib/logger";
 import { httpTimingMiddleware } from "./middleware/httpTiming";
 
@@ -43,6 +44,11 @@ const PUBLIC_API_PREFIXES = [
 ];
 
 function apiRequireAuth(req: Request, res: Response, next: NextFunction) {
+  const adminKey = process.env.ADMIN_API_KEY;
+  const headerKey = req.headers["x-admin-key"];
+  if (adminKey && typeof headerKey === "string" && headerKey === adminKey) {
+    return next();
+  }
   // req.path is relative to the mount point ("/api"), so it starts with "/auth/...".
   if (PUBLIC_API_PATHS.has(req.path)) {
     return next();
@@ -70,6 +76,8 @@ app.use(
         const url = req.url?.split("?")[0] ?? "";
         return url === "/api/healthz" ||
           url === "/api/telemetry/counts" ||
+          url.startsWith("/api/telemetry/runtime-logs") ||
+          url === "/api/telemetry/browser-events" ||
           url === "/api/market/earnings-calendar" ||
           url === "/api/ai/market-pulse/latest";
       },
@@ -103,8 +111,10 @@ if (DEV_BYPASS) {
 
 app.use("/api", healthRouter);
 if (DEV_BYPASS) {
+  app.use("/api/admin/run-full-backfill", runFullBackfillRouter);
   app.use("/api", router);
 } else {
+  app.use("/api/admin/run-full-backfill", apiRequireAuth, runFullBackfillRouter);
   app.use("/api", apiRequireAuth, router);
 }
 

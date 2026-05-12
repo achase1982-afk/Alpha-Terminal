@@ -1,21 +1,52 @@
-import { ChevronRight, TrendingDown, TrendingUp } from "lucide-react";
+import {
+  ArrowDownRight,
+  ArrowRight,
+  ArrowUpRight,
+  Activity,
+  Box,
+  ChevronRight,
+  Minus,
+  Zap,
+} from "lucide-react";
 import type { ScannerCardData } from "@/lib/unifiedScanTypes";
 import { cn } from "@/lib/utils";
 import {
-  catalystPillLabel,
+  SCANNER_LAYER1_CARD_GRID_CLASS,
   dashCell,
-  formatCompactInt,
   formatPrice,
   formatSignedMoney,
   formatSignedPct,
+  meaningfulVolVsAvgMultiplier,
   scannerNumericFontStyle,
-  scannerScoreTierDotClassName,
-  volumeVsAvgMultiplier,
+  scannerRowUrgencyScore,
+  scannerSansFontStyle,
+  scannerUiTw,
 } from "./scannerCard.utils";
 
+function formatLastEventShort(iso: string | null | undefined): string {
+  if (iso == null || typeof iso !== "string" || !iso.trim()) return dashCell();
+  try {
+    const d = new Date(iso);
+    if (!Number.isFinite(d.getTime())) return dashCell();
+    return d.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: "America/New_York",
+    });
+  } catch {
+    return dashCell();
+  }
+}
+
+function primaryEventLabel(primary: "sweep" | "block" | null, eventsToday: number): { label: string; Icon: typeof Zap } {
+  if (primary === "sweep") return { label: "SWEEP CLUSTER", Icon: Zap };
+  if (primary === "block") return { label: "BLOCK", Icon: Box };
+  if (eventsToday > 0) return { label: "ACCUMULATION", Icon: Activity };
+  return { label: "FLOW", Icon: Activity };
+}
+
 export function ScannerCardRow({ data, expanded }: { data: ScannerCardData; expanded: boolean }) {
-  const pill = catalystPillLabel(data);
-  const volMult = volumeVsAvgMultiplier(data.volume, data.avgVolume20d);
+  const volMult = meaningfulVolVsAvgMultiplier(data.volume, data.avgVolume20d);
   const chAbs = data.changeAbs;
   const chPct = data.changePct;
   const hasCh = chAbs != null && chPct != null && Number.isFinite(chAbs) && Number.isFinite(chPct);
@@ -23,88 +54,124 @@ export function ScannerCardRow({ data, expanded }: { data: ScannerCardData; expa
 
   const priceStr = formatPrice(data.price);
   const ivrStr = data.ivr != null && Number.isFinite(data.ivr) ? String(Math.round(data.ivr)) : dashCell();
-  const volStr = formatCompactInt(data.volume);
   const displayName = data.name?.trim();
+  const chgCls = hasCh ? (up ? scannerUiTw.bull : scannerUiTw.bear) : "text-zinc-500";
+
+  const flow = data.flow;
+  const eventsToday = flow?.eventsToday ?? 0;
+  const primary = flow?.primaryEventType ?? null;
+  const netDir = flow?.netDirection ?? "neutral";
+  const lastEv = flow?.lastEventTs ?? null;
+  const earnDays = data.nextEarnings?.daysTo;
+
+  const { label: eventTypeLabel, Icon: EventIcon } = primaryEventLabel(primary, eventsToday);
+  const urgency = scannerRowUrgencyScore({ score: data.score, flow: data.flow });
+
+  const dirIcon =
+    netDir === "bullish" ? (
+      <ArrowUpRight className={cn("h-3.5 w-3.5 shrink-0", scannerUiTw.bull)} aria-hidden />
+    ) : netDir === "bearish" ? (
+      <ArrowDownRight className={cn("h-3.5 w-3.5 shrink-0", scannerUiTw.bear)} aria-hidden />
+    ) : netDir === "mixed" ? (
+      <span className={cn("inline-block w-3.5 text-center", scannerUiTw.gold)} aria-hidden>
+        –
+      </span>
+    ) : (
+      <Minus className="h-3.5 w-3.5 shrink-0 text-zinc-500" aria-hidden />
+    );
+
+  const dirLabelCls =
+    netDir === "bullish"
+      ? scannerUiTw.bull
+      : netDir === "bearish"
+        ? scannerUiTw.bear
+        : netDir === "mixed"
+          ? scannerUiTw.gold
+          : "text-zinc-500";
+
+  const dirLabel =
+    netDir === "bullish" ? "Bullish" : netDir === "bearish" ? "Bearish" : netDir === "mixed" ? "Mixed" : "Neutral";
+
+  const line2Visible = eventsToday >= 1;
 
   return (
-    <div
-      className="flex min-w-0 flex-nowrap items-center gap-x-1.5 overflow-x-auto px-2.5 py-2 text-sm sm:gap-x-2 sm:px-3"
-      style={scannerNumericFontStyle}
-    >
-      <span className="w-2 shrink-0 text-center text-zinc-600/45" aria-hidden>
-        <ChevronRight className={cn("mx-auto h-2.5 w-2.5 transition-transform", expanded && "rotate-90")} />
+    <div className={cn(SCANNER_LAYER1_CARD_GRID_CLASS, "border-b border-zinc-900 text-white")}>
+      <span className="flex w-4 shrink-0 justify-center pt-1 text-zinc-600" aria-hidden>
+        <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", expanded && "rotate-90")} />
       </span>
 
-      <span className="shrink-0 font-bold tracking-tight text-foreground">{data.symbol}</span>
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5" style={scannerSansFontStyle}>
+        {/* Line 1 — identity & price (mockup: bold symbol, grey name, white last + green/red Δ) */}
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="min-w-0 leading-tight">
+            <span className="text-base font-bold tracking-tight text-white">{data.symbol}</span>
+            {displayName ? (
+              <span className="ml-1.5 text-sm font-normal text-zinc-500" title={displayName}>
+                {displayName}
+              </span>
+            ) : null}
+          </div>
+          <div className="shrink-0 text-right" style={scannerNumericFontStyle}>
+            <div className={cn("text-base font-semibold tabular-nums tracking-tight text-white")}>{priceStr}</div>
+            <div className={cn("mt-0.5 flex items-center justify-end gap-1 text-xs font-medium tabular-nums", chgCls)}>
+              <span>{hasCh ? formatSignedMoney(chAbs) : dashCell()}</span>
+              <span>{hasCh ? formatSignedPct(chPct) : dashCell()}</span>
+            </div>
+          </div>
+        </div>
 
-      {displayName ? (
-        <span
-          className={cn(
-            "min-w-0 max-w-[10rem] shrink truncate text-muted-foreground sm:max-w-[12rem]",
-            "max-[480px]:portrait:hidden",
-          )}
-          title={displayName}
-        >
-          {displayName}
-        </span>
-      ) : null}
-
-      <span
-        className={cn(
-          "min-w-[3.25rem] shrink-0 text-right tabular-nums",
-          priceStr === dashCell() ? "text-muted-foreground" : "text-foreground",
-        )}
-      >
-        {priceStr}
-      </span>
-
-      <div
-        className={cn(
-          "flex min-w-[6.5rem] shrink-0 items-center justify-end gap-0.5 whitespace-nowrap text-right tabular-nums",
-          hasCh ? (up ? "text-terminal-success" : "text-terminal-danger") : "text-muted-foreground",
-        )}
-      >
-        {hasCh ? (
-          <>
-            {up ? <TrendingUp className="h-3.5 w-3.5 shrink-0" aria-hidden /> : <TrendingDown className="h-3.5 w-3.5 shrink-0" aria-hidden />}
-            <span>
-              {formatSignedMoney(chAbs)} {formatSignedPct(chPct)}
+        {/* Line 2 — event cluster + sentiment + event count + urgency bar (mockup) */}
+        {line2Visible ? (
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-white">
+              <EventIcon className={cn("h-3.5 w-3.5 shrink-0", scannerUiTw.orange)} aria-hidden />
+              <span className="whitespace-nowrap">{eventTypeLabel}</span>
+              <span className="text-zinc-600">·</span>
+              <span className="inline-flex items-center gap-1 normal-case">
+                {dirIcon}
+                <span className={cn("text-[12px] font-semibold tracking-tight", dirLabelCls)}>{dirLabel}</span>
+              </span>
+            </div>
+            <span className="shrink-0 whitespace-nowrap text-[11px] font-medium normal-case text-zinc-500">
+              {eventsToday} events
             </span>
-          </>
-        ) : (
-          dashCell()
-        )}
-      </div>
-
-      <span
-        className={cn(
-          "min-w-[2rem] shrink-0 text-right tabular-nums",
-          ivrStr === dashCell() ? "text-muted-foreground" : "text-foreground",
-        )}
-      >
-        {ivrStr}
-      </span>
-
-      <div className="flex w-[5.5rem] shrink-0 justify-center">
-        {pill ? (
-          <span className="inline-flex items-center whitespace-nowrap rounded-full border border-amber-500/45 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-200/95 sm:text-xs">
-            {pill}
-          </span>
+            <div className="flex min-w-[96px] max-w-[140px] flex-1 items-center gap-2">
+              <div className="relative h-[5px] min-w-0 flex-1 overflow-hidden rounded-sm bg-zinc-800">
+                <div
+                  className={cn("absolute inset-y-0 left-0 rounded-sm", scannerUiTw.bgOrange)}
+                  style={{ width: `${Math.min(100, Math.max(0, urgency))}%` }}
+                />
+              </div>
+              <span
+                className="w-7 shrink-0 text-right text-xs font-semibold tabular-nums text-zinc-200"
+                style={scannerNumericFontStyle}
+              >
+                {urgency}
+              </span>
+            </div>
+          </div>
         ) : null}
-      </div>
 
-      <div className="flex min-w-[2.25rem] shrink-0 items-center justify-end gap-0.5 tabular-nums">
-        <span className={scannerScoreTierDotClassName(data.score, "sm")} aria-hidden />
-        {data.score != null && Number.isFinite(data.score) ? (
-          <span className="font-semibold text-foreground">{Math.round(data.score)}</span>
-        ) : (
-          <span className="font-semibold text-muted-foreground">{dashCell()}</span>
-        )}
-      </div>
-
-      <div className="ml-auto shrink-0 whitespace-nowrap text-right tabular-nums sm:ml-0">
-        <span className={volStr === dashCell() ? "text-muted-foreground" : "text-foreground"}>{volStr}</span>
-        {volMult !== dashCell() ? <span className="ml-1 text-muted-foreground">({volMult})</span> : null}
+        {/* Line 3 — Vol · IVR · Last · ER + chevron */}
+        <div
+          className="flex min-w-0 items-center justify-between gap-2 text-[11px] leading-snug text-zinc-500"
+          style={scannerNumericFontStyle}
+        >
+          <div className="min-w-0 truncate">
+            {volMult != null ? <span>Vol {volMult} avg</span> : <span>Vol {dashCell()} avg</span>}
+            <span className="text-zinc-700"> · </span>
+            <span>IVR {ivrStr}</span>
+            <span className="text-zinc-700"> · </span>
+            <span>Last {formatLastEventShort(lastEv)}</span>
+            {earnDays != null && Number.isFinite(earnDays) && earnDays <= 10 ? (
+              <>
+                <span className="text-zinc-700"> · </span>
+                <span className={cn("font-sans font-semibold", scannerUiTw.gold)}>ER {Math.round(earnDays)}d</span>
+              </>
+            ) : null}
+          </div>
+          <ChevronRight className="h-3 w-3 shrink-0 text-zinc-600" aria-hidden />
+        </div>
       </div>
     </div>
   );

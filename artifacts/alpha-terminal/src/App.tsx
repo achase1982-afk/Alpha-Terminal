@@ -11,10 +11,12 @@ import { useAutoLock, AutoLockProvider } from "@/hooks/useAutoLock";
 import TerminalPage from "@/pages/Terminal";
 import NotFound from "@/pages/not-found";
 import PushNotificationBanner from "@/components/PushNotificationBanner";
+import AuthSessionBanner from "@/components/AuthSessionBanner";
 import { registerServiceWorker } from "@/lib/pushNotifications";
 import OrderAlertWatcher from "@/components/OrderAlertWatcher";
 import SchwabSessionExpiredDialog from "@/components/SchwabSessionExpiredDialog";
 import { resumeAllRunningPollers } from "@/lib/strategistPoller";
+import { installBrowserTelemetryCapture } from "@/lib/browserTelemetry";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -157,7 +159,7 @@ function AuthReadyGateInner({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    setClerkTokenGetter(() => getToken());
+    setClerkTokenGetter((opts) => getToken(opts));
     setAuthTokenGetter(() => getToken());
     setReady(true);
     return () => {
@@ -189,7 +191,7 @@ function GlobalStrategistPollerResumer() {
     resumeAllRunningPollers();
     const onVisible = () => {
       if (document.visibilityState === "visible") {
-        resumeAllRunningPollers();
+        resumeAllRunningPollers({ toastOnComplete: true });
       }
     };
     document.addEventListener("visibilitychange", onVisible);
@@ -200,6 +202,13 @@ function GlobalStrategistPollerResumer() {
       window.removeEventListener("focus", onVisible);
       window.removeEventListener("pageshow", onVisible);
     };
+  }, []);
+  return null;
+}
+
+function BrowserTelemetryInstaller() {
+  useEffect(() => {
+    return installBrowserTelemetryCapture();
   }, []);
   return null;
 }
@@ -224,8 +233,10 @@ function App() {
         <AutoLockProvider>
           <AuthReadyGate>
             <InactivityWarning />
+            <AuthSessionBanner />
             <PendingSessionLoader />
             <GlobalStrategistPollerResumer />
+            <BrowserTelemetryInstaller />
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
               <Router />
             </WouterRouter>

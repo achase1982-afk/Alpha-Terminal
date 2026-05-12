@@ -102,120 +102,69 @@ export interface DeskResultClassic {
   soloDeskJsonDegraded?: "schema_validation_failed_after_retry";
 }
 
-export interface ConvictionOutcomeDistribution {
-  p5: number;
-  p25: number;
-  p50: number;
-  p75: number;
-  p95: number;
-}
+export type ConvictionFitScore = "high" | "medium" | "low" | "unfit";
 
-export interface ConvictionGreeksEntry {
-  delta: number;
-  gamma: number;
-  theta: number;
-  vega: number;
-  front_vega?: number;
-  back_vega?: number;
-}
+export type ConvictionTradeFamilyHypothesis = {
+  family: "long_vol" | "short_vol" | "directional";
+  candidate_structure: string;
+  entry_math: string;
+  thesis_this_family_represents: string;
+  fit_score: ConvictionFitScore;
+  reason_for_score: string;
+  what_would_make_it_unfit: string;
+};
 
-export interface ConvictionGreeksEvolutionCell {
-  stock_path: "+1σ" | "0" | "-1σ";
-  days_held: 1 | 3 | "expiry-eve";
-  greeks: {
-    delta: number;
-    gamma: number;
-    theta: number;
-    vega: number;
-  };
-}
+export type ConvictionPassHypothesis = {
+  family: "pass";
+  candidate_structure: null;
+  entry_math: null;
+  thesis_this_family_represents: string;
+  fit_score: ConvictionFitScore;
+  reason_for_score: string;
+  what_would_make_it_unfit: string;
+};
 
-export interface ConvictionChosenStructure {
-  structure: string;
-  legs: unknown[];
-  expiry: string;
-  credit_or_debit: number;
-  greeks_entry: ConvictionGreeksEntry;
-  greeks_evolution: ConvictionGreeksEvolutionCell[];
-  outcome_distribution: ConvictionOutcomeDistribution;
-  ev_dollars: number;
-  max_loss: number;
-  stop_loss?: number;
-}
+export type ConvictionFamilyHypothesisEntry = ConvictionTradeFamilyHypothesis | ConvictionPassHypothesis;
 
 export interface ConvictionDeskOutput {
-  regime: {
-    summary: string;
-    vol: string;
-    sector: string;
-    macro: string;
-    stock: string;
-    holding_period_window: string;
-    indicators: Record<string, number | null>;
+  vol: VolAnalystOutput;
+  flow: FlowAnalystOutput;
+  catalyst: CatalystAnalystOutput;
+  family_hypotheses: [
+    ConvictionTradeFamilyHypothesis & { family: "long_vol" },
+    ConvictionTradeFamilyHypothesis & { family: "short_vol" },
+    ConvictionTradeFamilyHypothesis & { family: "directional" },
+    ConvictionPassHypothesis,
+  ];
+  regime_synthesis: {
+    regime_read:
+      | "short_premium_neutral"
+      | "short_premium_directional"
+      | "long_premium_neutral"
+      | "long_premium_directional"
+      | "pure_directional_long"
+      | "pure_directional_short"
+      | "no_edge";
+    strongest_hypothesis: "long_vol" | "short_vol" | "directional" | "pass";
+    synthesis: string;
   };
-  view: {
-    paragraph: string;
-    decision_intent: "trade" | "pass";
+  pm: PmOutput;
+  risk_of_ruin: string;
+  positioning_context: {
+    crowd_state: "crowded_long" | "crowded_short" | "balanced" | "unclear";
+    sell_side_targets_vs_price: string;
+    implied_vs_consensus: string;
+    upside_fade_risk: string;
+    downside_fade_risk: string;
   };
-  decision: {
-    candidates_considered: Array<{
-      structure: string;
-      legs: unknown[];
-      debit_credit: number;
-      greeks_entry: ConvictionGreeksEntry;
-      max_profit: number;
-      max_loss: number;
-      breakevens: number[];
-      outcome_distribution: ConvictionOutcomeDistribution;
-      ev_dollars: number;
-      regime_fit: "fits" | "neutral" | "fights";
-      regime_fit_reasoning: string;
-    }>;
-    chosen: ConvictionChosenStructure | null;
-    rejected_alternatives: Array<{ structure: string; reason: string }>;
+  self_check: {
+    each_family_priced_with_math: boolean;
+    each_family_priced_with_math_reason: string;
+    decision_consistent_with_strongest_hypothesis: boolean;
+    decision_consistent_with_strongest_hypothesis_reason: string;
+    call_survives_reverse_family_order: boolean;
+    call_survives_reverse_family_order_reason: string;
   };
-  failure_scenario: {
-    steelman: string;
-    response: string;
-    sufficient: boolean;
-  };
-  scenarios: {
-    designed: {
-      description: string;
-      trade_value_path: string;
-      greek_changes: string;
-      pnl_per_spread: number;
-    };
-    adverse_bounded: {
-      description: string;
-      trade_value_path: string;
-      greek_changes: string;
-      pnl_per_spread: number;
-      stop_trigger: string;
-    };
-    tail: {
-      description: string;
-      trade_value_path: string;
-      pnl_per_spread: number;
-    };
-  } | null;
-  exit_plan: {
-    profit_take: Array<{ level: string; scale_out_pct: number }>;
-    vol_trigger: string | null;
-    price_trigger: string | null;
-    time_stop: string;
-  } | null;
-  self_grade: {
-    vol: string;
-    flow: string;
-    catalyst: string;
-    regime: string;
-    structure_fit: string;
-    failure_scenario_strength: string;
-    conviction: string;
-    conviction_threshold_met: boolean;
-  };
-  size: "small" | "medium" | "large" | "no-trade";
 }
 
 export interface ConvictionDeskResult {
@@ -229,5 +178,57 @@ export interface ConvictionDeskResult {
   convictionDeskJsonDegraded?: "schema_validation_failed_after_retry" | "stream_error" | "extraction_error";
 }
 
+/**
+ * Conviction desk payloads from the wire or older cache rows may omit new fields (e.g. family_hypotheses)
+ * while still carrying pm/vol/flow/catalyst. Guards rendering and speech builders against partial objects.
+ */
+export function isConvictionDeskOutputComplete(c: unknown): c is ConvictionDeskOutput {
+  if (!c || typeof c !== "object") return false;
+  const o = c as Record<string, unknown>;
+  if (!o.pm || typeof o.pm !== "object") return false;
+  if (!o.vol || typeof o.vol !== "object") return false;
+  if (!o.flow || typeof o.flow !== "object") return false;
+  if (!o.catalyst || typeof o.catalyst !== "object") return false;
+  const fh = o.family_hypotheses;
+  if (!Array.isArray(fh) || fh.length === 0) return false;
+  if (!o.regime_synthesis || typeof o.regime_synthesis !== "object") return false;
+  if (typeof o.risk_of_ruin !== "string") return false;
+  if (!o.positioning_context || typeof o.positioning_context !== "object") return false;
+  if (!o.self_check || typeof o.self_check !== "object") return false;
+  return true;
+}
+
 /** Desk recommendation payload: classic four-topic desk or Conviction memo JSON. */
 export type DeskResult = DeskResultClassic | ConvictionDeskResult;
+
+/** Mirrors server push logic for toast copy (trade vs pass on desk / conviction desk). */
+export function deskRecommendationHasTrade(result: {
+  status?: string;
+  deskResult?: DeskResult | null;
+}): boolean {
+  if (result.status !== "desk_recommendation" || !result.deskResult) return false;
+  const dr = result.deskResult;
+  if (dr.mode === "conviction_desk") {
+    return (
+      isConvictionDeskOutputComplete(dr.conviction) &&
+      dr.conviction.pm.decision === "trade" &&
+      dr.conviction.pm.structure != null
+    );
+  }
+  return dr.pm.decision === "trade";
+}
+
+/** Human-readable structure label when `deskRecommendationHasTrade` is true (e.g. "bull call spread"). */
+export function deskTradeStructureSentenceCase(result: {
+  status?: string;
+  deskResult?: DeskResult | null;
+}): string | null {
+  if (!deskRecommendationHasTrade(result) || !result.deskResult) return null;
+  const dr = result.deskResult;
+  const structure =
+    dr.mode === "conviction_desk" ? dr.conviction?.pm.structure ?? null : dr.pm.structure;
+  const raw = structure?.type;
+  if (!raw || typeof raw !== "string") return null;
+  const words = raw.replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}

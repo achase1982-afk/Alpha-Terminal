@@ -1,6 +1,17 @@
 import type { ConvictionDeskResult, DeskResult } from "./strategistDeskSchemas.js";
 import type { CatalystEvaluation } from "./catalystEvaluator.js";
 import type { StrategistDiagScratch } from "./strategistRunContext.js";
+import { z } from "zod";
+
+/**
+ * Loose validation for COPY DIAGNOSTIC `modelInput` (provider SDK snapshot(s)).
+ * Single consolidated call → one object; multi-turn desk → array of snapshots.
+ */
+export const strategistDiagnosticModelInputSchema = z.union([
+  z.null(),
+  z.record(z.string(), z.unknown()),
+  z.array(z.unknown()),
+]);
 
 /**
  * Full strategist snapshot passed to the diagnostic projector: the JSON data
@@ -72,6 +83,12 @@ export type StrategistDiagnosticView = {
   size: "small" | "medium" | "large" | "no-trade";
   alignment: string;
   whoseSide: string;
+  /**
+   * Exact pre-call payload(s) sent to the provider SDK for this strategist run
+   * (`anthropic.messages.stream`, OpenAI `responses.create`, etc.). Multiple
+   * entries when the desk pipeline performs more than one LLM call.
+   */
+  modelInput: unknown | null;
 };
 
 const MAX_INFO_STRING = 200;
@@ -101,7 +118,7 @@ function deskDecision(
       return "fail";
     }
     const c = cd.conviction;
-    if (c.decision.chosen != null && c.size !== "no-trade") return "recommend";
+    if (c.pm.decision === "trade" && c.pm.structure != null) return "recommend";
     return "pass";
   }
   const d = desk as DeskResult;
@@ -114,9 +131,9 @@ function deskDecision(
 
 function structureLabelFromDesk(desk: ConvictionDeskResult | DeskResult): string | null {
   if (desk.mode === "conviction_desk") {
-    const ch = desk.conviction?.decision.chosen;
-    if (!ch) return null;
-    return `${ch.structure} @ ${ch.expiry}`;
+    const pm = desk.conviction?.pm.structure;
+    if (!pm) return null;
+    return `${pm.type} @ ${pm.expiry}`;
   }
   const pm = (desk as DeskResult).pm.structure;
   if (!pm) return null;
@@ -344,6 +361,14 @@ export function buildStrategistDiagnosticView(fullPayload: StrategistFullPayload
   const closingImbalanceLatencyMs =
     diag?.closingImbalanceLatencyMs === undefined ? null : num(diag.closingImbalanceLatencyMs as unknown);
 
+  const modelInputs = diag?.modelSdkInputs;
+  const modelInput: StrategistDiagnosticView["modelInput"] =
+    modelInputs == null || modelInputs.length === 0
+      ? null
+      : modelInputs.length === 1
+        ? modelInputs[0]
+        : modelInputs;
+
   let thesis = "";
   let edgeCheck = "";
   let biggestRisk = "";
@@ -352,18 +377,23 @@ export function buildStrategistDiagnosticView(fullPayload: StrategistFullPayload
   let whoseSide = "neither";
 
   if (deskResult.mode === "conviction_desk") {
-    const conv = (deskResult as ConvictionDeskResult).conviction;
-    thesis = conv?.view.paragraph ?? "";
-    edgeCheck = "";
-    biggestRisk = conv?.failure_scenario.steelman ?? "";
-    watchFor = "";
-    sizeDiag =
-      conv?.size === "medium" || conv?.size === "large" || conv?.size === "no-trade"
-        ? conv.size
-        : conv?.size === "small"
-          ? "small"
-          : "small";
-    whoseSide = "neither";
+    const pm = (deskResult as ConvictionDeskResult).conviction?.pm;
+    if (pm) {
+      const edgeRaw = pm.edge_check ?? "";
+      thesis = typeof pm.thesis === "string" ? pm.thesis : "";
+      edgeCheck = typeof edgeRaw === "string" ? edgeRaw : "";
+      biggestRisk = typeof pm.biggest_risk === "string" ? pm.biggest_risk : "";
+      watchFor = typeof pm.watch_for === "string" ? pm.watch_for : "";
+      sizeDiag = pm.size;
+      whoseSide = pm.whose_side;
+    } else {
+      thesis = "";
+      edgeCheck = "";
+      biggestRisk = "";
+      watchFor = "";
+      sizeDiag = "small";
+      whoseSide = "neither";
+    }
   } else {
     const pm = deskResult.pm;
     const edgeRaw = pm.edge_check ?? "";
@@ -420,5 +450,6 @@ export function buildStrategistDiagnosticView(fullPayload: StrategistFullPayload
     size: sizeDiag,
     alignment,
     whoseSide,
+    modelInput,
   };
 }

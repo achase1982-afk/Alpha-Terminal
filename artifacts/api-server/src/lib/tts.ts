@@ -1,73 +1,18 @@
 /**
- * TTS adapter for desk / legacy routes.
+ * Desk / legacy TTS: Microsoft Edge–compatible online neural speech via `node-edge-tts`
+ * (no API key; subject to Microsoft service availability and their terms of use).
  *
- * Providers:
- * - **openai** — OpenAI Speech API (billed per character).
- * - **edge** — Microsoft Edge–compatible online neural TTS via `node-edge-tts` (no API key;
- *   subject to Microsoft service availability and their terms of use).
- *
- * **TTS_PROVIDER**
- * - `edge` — Always use Edge (free API spend).
- * - `openai` — Always use OpenAI (throws if not configured).
- * - Unset — **auto**: OpenAI when `OPENAI_API_KEY` or integrations proxy env is set, otherwise Edge.
- *
- * To keep `OPENAI_API_KEY` for chat/models but stop paying for speech, set **`TTS_PROVIDER=edge`**.
- *
- * Edge tuning (optional): `EDGE_TTS_VOICE`, `EDGE_TTS_LANG`, `EDGE_TTS_TIMEOUT_MS`.
+ * Optional env: `EDGE_TTS_VOICE`, `EDGE_TTS_LANG`, `EDGE_TTS_TIMEOUT_MS`.
+ * Short strategist voice ids (e.g. alloy, verse) map to English neural voices below.
  */
 
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import OpenAI from "openai";
 import { EdgeTTS } from "node-edge-tts";
 
-const OPENAI_SPEECH_MAX_CHARS = 4096;
-const EDGE_SPEECH_MAX_CHARS = 4096;
-
-/** Default TTS model (OpenAI); override with OPENAI_TTS_MODEL. */
-const DEFAULT_TTS_MODEL = "gpt-4o-mini-tts";
-
-/** Default OpenAI voice; override with OPENAI_TTS_VOICE. */
-const DEFAULT_OPENAI_VOICE = "alloy";
-
-export type TtsProviderId = "openai" | "edge";
-
-function hasOpenAiSpeechConfigured(): boolean {
-  const directKey = process.env.OPENAI_API_KEY?.trim();
-  if (directKey) return true;
-  const intKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY?.trim();
-  const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL?.trim();
-  return !!(intKey && baseURL);
-}
-
-export function resolveTtsProvider(): TtsProviderId {
-  const raw = process.env.TTS_PROVIDER?.trim().toLowerCase();
-  if (raw === "edge") return "edge";
-  if (raw === "openai") return "openai";
-  return hasOpenAiSpeechConfigured() ? "openai" : "edge";
-}
-
-/** Disk cache segment so OpenAI vs Edge never reuse each other's MP3 bytes. */
-export function getTtsDiskCacheProfile(): string {
-  return resolveTtsProvider();
-}
-
-function getOpenAIForSpeech(): OpenAI {
-  const directKey = process.env.OPENAI_API_KEY?.trim();
-  if (directKey) {
-    return new OpenAI({ apiKey: directKey, timeout: 5 * 60 * 1000 });
-  }
-  const intKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY?.trim();
-  const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL?.trim();
-  if (intKey && baseURL) {
-    return new OpenAI({ apiKey: intKey, baseURL, timeout: 5 * 60 * 1000 });
-  }
-  throw new Error(
-    "OpenAI not configured for speech (set OPENAI_API_KEY, or AI_INTEGRATIONS_OPENAI_API_KEY + AI_INTEGRATIONS_OPENAI_BASE_URL)",
-  );
-}
+const SPEECH_MAX_CHARS = 4096;
 
 function clipSpeechInput(text: string, maxChars: number): string {
   const t = text.trim();
@@ -75,8 +20,8 @@ function clipSpeechInput(text: string, maxChars: number): string {
   return `${t.slice(0, maxChars - 20)}\n\n[truncated for TTS length limit]`;
 }
 
-/** Map OpenAI built-in voice ids to Edge neural voices (English). */
-const OPENAI_VOICE_TO_EDGE: Record<string, string> = {
+/** Map short strategist voice ids to Edge neural voices (English). */
+const SHORT_VOICE_TO_EDGE: Record<string, string> = {
   alloy: "en-US-AriaNeural",
   ash: "en-US-AndrewNeural",
   ballad: "en-US-JennyNeural",
@@ -98,7 +43,7 @@ function edgeVoiceFromOpts(opts?: { voice?: string }): string {
   if (raw.includes("-") && lower.includes("neural")) {
     return raw;
   }
-  return OPENAI_VOICE_TO_EDGE[lower] ?? process.env.EDGE_TTS_VOICE?.trim() ?? "en-US-AriaNeural";
+  return SHORT_VOICE_TO_EDGE[lower] ?? process.env.EDGE_TTS_VOICE?.trim() ?? "en-US-AriaNeural";
 }
 
 function langFromEdgeVoice(voice: string): string {
@@ -109,8 +54,11 @@ function langFromEdgeVoice(voice: string): string {
   return process.env.EDGE_TTS_LANG?.trim() || "en-US";
 }
 
-async function generateSpeechEdge(text: string, opts?: { voice?: string }): Promise<Buffer> {
-  const input = clipSpeechInput(text, EDGE_SPEECH_MAX_CHARS);
+/**
+ * Returns MP3 bytes for the given plain text (mono MP3).
+ */
+export async function generateSpeech(text: string, opts?: { voice?: string }): Promise<Buffer> {
+  const input = clipSpeechInput(text, SPEECH_MAX_CHARS);
   if (!input) {
     throw new Error("TTS text is empty");
   }
@@ -140,41 +88,6 @@ async function generateSpeechEdge(text: string, opts?: { voice?: string }): Prom
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   }
-}
-
-async function generateSpeechOpenAI(text: string, opts?: { voice?: string }): Promise<Buffer> {
-  const client = getOpenAIForSpeech();
-  const model = (process.env.OPENAI_TTS_MODEL ?? DEFAULT_TTS_MODEL).trim() || DEFAULT_TTS_MODEL;
-  const voice = (opts?.voice?.trim() || process.env.OPENAI_TTS_VOICE?.trim() || DEFAULT_OPENAI_VOICE).toLowerCase();
-
-  const input = clipSpeechInput(text, OPENAI_SPEECH_MAX_CHARS);
-  if (!input) {
-    throw new Error("TTS text is empty");
-  }
-
-  const response = await client.audio.speech.create({
-    model,
-    voice,
-    input,
-    response_format: "mp3",
-  });
-
-  const buf = Buffer.from(await response.arrayBuffer());
-  if (!buf.length) {
-    throw new Error("OpenAI speech response was empty");
-  }
-  return buf;
-}
-
-/**
- * Returns MP3 bytes for the given plain text (mono MP3).
- */
-export async function generateSpeech(text: string, opts?: { voice?: string }): Promise<Buffer> {
-  const provider = resolveTtsProvider();
-  if (provider === "edge") {
-    return generateSpeechEdge(text, opts);
-  }
-  return generateSpeechOpenAI(text, opts);
 }
 
 export function sha256Hex(input: string): string {

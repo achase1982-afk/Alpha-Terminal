@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildStrategistDiagnosticView } from "../strategistDiagnosticView.js";
+import {
+  buildStrategistDiagnosticView,
+  strategistDiagnosticModelInputSchema,
+} from "../strategistDiagnosticView.js";
 import type { DeskResult } from "../strategistDeskSchemas.js";
 
 const minimalDesk: DeskResult = {
@@ -133,6 +136,7 @@ describe("buildStrategistDiagnosticView", () => {
     expect(v.closingImbalanceLatencyMs).toBe(120);
     expect(v.ivContaminationFlags).toContain("oneSidedMarket");
     expect(v.thesis).toBe("Thesis line");
+    expect(v.modelInput).toBeNull();
   });
 
   it("maps PM incomplete to fail", () => {
@@ -141,5 +145,25 @@ describe("buildStrategistDiagnosticView", () => {
       deskResult: { ...minimalDesk, pmOutputIncomplete: true },
     });
     expect(v.decision).toBe("fail");
+    expect(v.modelInput).toBeNull();
+  });
+
+  it("surfaces model SDK snapshot(s) as modelInput", () => {
+    const snap = { sdk: "anthropic.messages.stream", body: { model: "claude-test", max_tokens: 100 } };
+    const v = buildStrategistDiagnosticView({
+      dataPackageStr: dataPackage,
+      deskResult: minimalDesk,
+      diag: { modelSdkInputs: [snap] },
+    });
+    expect(v.modelInput).toEqual(snap);
+    expect(strategistDiagnosticModelInputSchema.safeParse(v.modelInput).success).toBe(true);
+
+    const vMulti = buildStrategistDiagnosticView({
+      dataPackageStr: dataPackage,
+      deskResult: minimalDesk,
+      diag: { modelSdkInputs: [snap, { ...snap, sdk: "openai.responses.create" }] },
+    });
+    expect(Array.isArray(vMulti.modelInput)).toBe(true);
+    expect((vMulti.modelInput as unknown[]).length).toBe(2);
   });
 });

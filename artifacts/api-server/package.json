@@ -6,9 +6,12 @@
   "scripts": {
     "dev": "export NODE_ENV=development && node ./scripts/free-port.mjs 8080 && pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
-    "start": "node --enable-source-maps --max-http-header-size=65536 ./dist/index.mjs",
+    "migrate:deploy": "sh -c 'cd ../../lib/db && pnpm exec drizzle-kit migrate --config ./drizzle.config.ts'",
+    "start": "pnpm run migrate:deploy && node --enable-source-maps --max-http-header-size=65536 ./dist/index.mjs",
     "pretypecheck": "pnpm exec tsc --build --force ../../lib/db ../../lib/api-zod ../../lib/integrations-gemini-ai",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "tuning:backfill": "tsx src/jobs/tuningUniverseBackfill.ts",
+    "tuning:backfill:options": "tsx src/jobs/runTuningOptionsBackfillOnly.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -32,7 +35,6 @@
     "cookie-parser": "^1.4.7",
     "cors": "^2",
     "dotenv": "^16.6.1",
-    "drizzle-orm": "catalog:",
     "express": "^5",
     "linkedom": "^0.18.12",
     "node-edge-tts": "^1.2.10",

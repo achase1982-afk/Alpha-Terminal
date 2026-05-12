@@ -1,10 +1,18 @@
 import { Router, type IRouter } from "express";
 import { getAuth } from "@clerk/express";
-import { and, desc, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, inArray, isNull, or, sql } from "@workspace/db";
 import { db, scannerHealthTable, tickerSignalSnapshotTable } from "@workspace/db";
+import { getSymbolsByWatchlist, type TuningWatchlist } from "../data/tuningUniverse.js";
 import { logger } from "../lib/logger.js";
+import { setTuningWatchlistOptionUnderlyings } from "../lib/schwabStreamer.js";
 import { resolveScannerUniverseSymbolsForUser } from "./scanner.js";
 import { SCANNER_SUB_SCORE_HIGH } from "../lib/scannerScoringV2.js";
+
+function parseTuningWatchlistQuery(v: unknown): TuningWatchlist | null {
+  if (typeof v !== "string") return null;
+  if (v === "mega_cap_core" || v === "active_trade" || v === "cyclicals_macro") return v;
+  return null;
+}
 
 const STALE_AFTER_SECONDS = 5 * 60;
 const router: IRouter = Router();
@@ -168,9 +176,16 @@ router.get("/scan", async (req, res) => {
   const limit = Math.min(50, Math.max(1, Number.parseInt(String(limitRaw ?? "25"), 10) || 25));
   const minScore = Math.max(0, Number.parseFloat(String(minScoreRaw ?? "0")) || 0);
 
+  const tuningWatchlist = parseTuningWatchlistQuery(req.query["tuning_watchlist"]);
+
   let tickers: string[] = [];
   try {
-    tickers = await resolveScannerUniverseSymbolsForUser(universe.trim(), userId);
+    if (tuningWatchlist) {
+      tickers = getSymbolsByWatchlist(tuningWatchlist);
+      setTuningWatchlistOptionUnderlyings(tickers);
+    } else {
+      tickers = await resolveScannerUniverseSymbolsForUser(universe.trim(), userId);
+    }
   } catch (e) {
     log.error({ err: e }, "v2 scan universe resolve failed");
     return res.status(500).json({ error: "universe resolve failed" });
@@ -233,6 +248,7 @@ router.get("/scan", async (req, res) => {
     snapshot_age_seconds: ageSec,
     stale,
     scan_at: new Date().toISOString(),
+    ...(tuningWatchlist ? { tuning_watchlist: tuningWatchlist } : {}),
   });
 });
 

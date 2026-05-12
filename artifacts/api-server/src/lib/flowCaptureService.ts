@@ -10,6 +10,7 @@ import {
   venueClassFromExchangeId,
 } from "./flowTradeEnrichment.js";
 import { classifyForFlowPersistence, shouldPersistBackfillRow } from "./optionsTradeClassifier.js";
+import { resolveFreshOptionNbbo } from "./optionQuoteFreshNbbo.js";
 import { getContract20dBaseline } from "./optionsBaselines.js";
 import { runRollupOnceForSymbol } from "./optionsFlowRollup.js";
 import { FlowLegWindow } from "./flowMultilegExtras.js";
@@ -25,7 +26,7 @@ import {
   lastCompletedTradingDayNy,
   nyCalendarYmd,
   rthBoundsMs,
-  isMarketHoliday,
+  polygonListedMarketClosure,
 } from "./polygonMarketCalendar.js";
 import {
   ensureConnected,
@@ -54,6 +55,29 @@ const FLUSH_BATCH_MAX = OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS;
 const FLUSH_INTERVAL_MS = 5_000;
 const CAPACITY_QUEUE_MS = 30_000;
 const CHANNEL_POLL_MS = 200;
+
+/**
+ * After WS handlers are detached, wait for in-flight per-trade classify paths to finish.
+ * Uses a wall-clock deadline so a hung DB/baseline call cannot block strategist indefinitely.
+ */
+async function drainWsPendingTradeOps(
+  pending: Set<Promise<void>>,
+  deadlineMs: number,
+  onTimeout: (remaining: number) => void,
+): Promise<void> {
+  while (pending.size > 0 && Date.now() < deadlineMs) {
+    const snapshot = [...pending];
+    const remaining = deadlineMs - Date.now();
+    if (remaining <= 0) break;
+    await Promise.race([
+      Promise.all(snapshot),
+      new Promise<void>((res) => setTimeout(res, remaining)),
+    ]);
+  }
+  if (pending.size > 0) {
+    onTimeout(pending.size);
+  }
+}
 
 export type FlowCaptureSource = "websocket" | "rest" | "flat_file";
 
@@ -232,7 +256,7 @@ export async function resolveFlowSessionDate(opts: FlowCaptureOptions): Promise<
   if (wd === 0 || wd === 6) {
     return lastCompletedTradingDayNy(now);
   }
-  if (await isMarketHoliday(todayYmd)) {
+  if (await polygonListedMarketClosure(todayYmd)) {
     return lastCompletedTradingDayNy(now);
   }
   const { openMs, closeMs } = await rthBoundsMs(todayYmd);
@@ -542,37 +566,49 @@ async function runWebsocketCaptureInternal(
   let flushTimer: ReturnType<typeof setInterval> | null = null;
   const occSet = new Set(occList.map((o) => o.toUpperCase()));
   const legWindow = new FlowLegWindow();
+  /** Every in-flight `onTrade` classify/persist path; must drain before final flush (see flow note below). */
+  const pendingTradeOps = new Set<Promise<void>>();
+  let flushChain: Promise<void> = Promise.resolve();
+  /** Set true in `finally` so `onTrade` stops enqueueing work while handlers are torn down. */
+  let wsCaptureTeardown = false;
 
   const flush = async (): Promise<void> => {
-    if (buffer.length === 0) return;
-    const batch = buffer.splice(0, buffer.length);
-    try {
-      let insertedThisFlush = 0;
-      for (let i = 0; i < batch.length; i += OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS) {
-        const slice = batch.slice(i, i + OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS);
-        const ins = await db
-          .insert(optionsFlowRawTradesTable)
-          .values(slice)
-          .onConflictDoNothing(OPTIONS_FLOW_RAW_TRADES_ON_CONFLICT_SOURCE_DEDUPE)
-          .returning({ id: optionsFlowRawTradesTable.id });
-        insertedThisFlush += ins.length;
+    flushChain = flushChain.then(async () => {
+      if (buffer.length === 0) return;
+      const batch = buffer.splice(0, buffer.length);
+      try {
+        let insertedThisFlush = 0;
+        for (let i = 0; i < batch.length; i += OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS) {
+          const slice = batch.slice(i, i + OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS);
+          const ins = await db
+            .insert(optionsFlowRawTradesTable)
+            .values(slice)
+            .onConflictDoNothing(OPTIONS_FLOW_RAW_TRADES_ON_CONFLICT_SOURCE_DEDUPE)
+            .returning({ id: optionsFlowRawTradesTable.id });
+          insertedThisFlush += ins.length;
+        }
+        rowsInserted += insertedThisFlush;
+      } catch (err) {
+        logFlowPipelineWarn("flow_capture_flush", "flowCaptureService: bulk insert failed", { err, ticker, batchLen: batch.length });
+        errors.push(`insert:${err instanceof Error ? err.message : String(err)}`);
       }
-      rowsInserted += insertedThisFlush;
-    } catch (err) {
-      logFlowPipelineWarn("flow_capture_flush", "flowCaptureService: bulk insert failed", { err, ticker, batchLen: batch.length });
-      errors.push(`insert:${err instanceof Error ? err.message : String(err)}`);
-    }
+    });
+    return flushChain;
   };
 
   const onTradeHandler = (trade: PolygonOptionTrade): void => {
+    if (wsCaptureTeardown) return;
     const sym = trade.sym.toUpperCase();
     if (!occSet.has(sym)) return;
     const wireNow = Date.now();
     if (wsLatency.subscribe_first_message_ms == null) {
       wsLatency.subscribe_first_message_ms = wireNow;
     }
-    void (async () => {
-      const nb = getNbbo(sym);
+    const op = (async (): Promise<void> => {
+      const tsMs = trade.timestamp;
+      const fresh = resolveFreshOptionNbbo(sym, tsMs);
+      const polyOnly = getNbbo(sym);
+      const nbboMerged = fresh ?? (polyOnly ? { bid: polyOnly.bid, ask: polyOnly.ask } : null);
       const meta = parseOccMeta(sym);
       if (!meta) return;
       let baselineAvgVol: number | null = null;
@@ -587,7 +623,8 @@ async function runWebsocketCaptureInternal(
         price: trade.price,
         size: trade.size,
         conditions: trade.conditions,
-        nbbo: nb ? { bid: nb.bid, ask: nb.ask } : null,
+        nbbo: nbboMerged ? { bid: nbboMerged.bid, ask: nbboMerged.ask } : null,
+        strictFreshQuote: fresh != null,
         largeNotionalThresholdUsd: marketCtx.largeNotionalThresholdUsd,
         avgDailyContractVolume20d: baselineAvgVol,
         openInterest: oiSnap > 0 ? oiSnap : null,
@@ -596,7 +633,6 @@ async function runWebsocketCaptureInternal(
       if (wsLatency.first_classified_trade_ms == null) {
         wsLatency.first_classified_trade_ms = Date.now();
       }
-      const tsMs = trade.timestamp;
       const dteDays = dteCalendarDays(meta.expiration, tsMs);
       const sessionPhase = sessionPhaseFromTradeMs(tsMs);
       const venueClass = venueClassFromExchangeId(trade.exchange);
@@ -644,6 +680,10 @@ async function runWebsocketCaptureInternal(
       });
       if (buffer.length >= FLUSH_BATCH_MAX) await flush();
     })();
+    pendingTradeOps.add(op);
+    void op.finally(() => {
+      pendingTradeOps.delete(op);
+    });
   };
 
   try {
@@ -718,9 +758,26 @@ async function runWebsocketCaptureInternal(
       clearInterval(flushTimer);
       flushTimer = null;
     }
+    wsCaptureTeardown = true;
+    if (unregisterTrade) {
+      unregisterTrade();
+      unregisterTrade = null;
+    }
+    if (unregisterQuote) {
+      unregisterQuote();
+      unregisterQuote = null;
+    }
+    const drainDeadline =
+      Date.now() + Math.min(120_000, Math.max(25_000, timeoutMs));
+    await drainWsPendingTradeOps(pendingTradeOps, drainDeadline, (remaining) => {
+      errors.push("pending_trade_ops_drain_timeout");
+      logFlowPipelineWarn(
+        "flow_capture_pending_ops",
+        "flowCaptureService: in-flight trade handlers exceeded drain budget",
+        { ticker, sessionDate, remaining },
+      );
+    });
     await flush();
-    if (unregisterTrade) unregisterTrade();
-    if (unregisterQuote) unregisterQuote();
     try {
       unsubscribeContractsWithQuotes(occList);
     } catch (err) {
@@ -837,6 +894,7 @@ async function runWebsocketCaptureInternal(
 
 async function runCaptureOnce(ticker: string, sessionDate: string, opts: FlowCaptureOptions): Promise<FlowCaptureResult> {
   const t0 = Date.now();
+  const flowCaptureDeadlineAt = t0 + (opts.timeout ?? DEFAULT_TIMEOUT_MS);
   const errors: string[] = [];
 
   logger.info({ ticker, sessionDate, source: "routing" }, "flowCapture: request received");
@@ -862,6 +920,7 @@ async function runCaptureOnce(ticker: string, sessionDate: string, opts: FlowCap
           chainSummary: resolved.summary,
           marketCapTier: resolved.tier,
           forcedSessionDate: sessionDate,
+          flowCaptureDeadlineAt,
         }).catch((e) => {
           errors.push(String(e));
           return undefined;
@@ -900,6 +959,7 @@ async function runCaptureOnce(ticker: string, sessionDate: string, opts: FlowCap
     marketCapTier: resolved.tier,
     forcedSessionDate: sessionDate,
     budgetMs: tapeSymbolBudgetMsFromChainContractCount(resolved.chain.length),
+    flowCaptureDeadlineAt,
   });
   const dur = Date.now() - t0;
   rotateMetricsHour();
@@ -938,30 +998,7 @@ export async function requestFlowCapture(ticker: string, opts?: FlowCaptureOptio
   let p = inflightByKey.get(key);
   if (!p) {
     const mergedOpts = opts ?? {};
-    const timeoutMs = mergedOpts.timeout ?? DEFAULT_TIMEOUT_MS;
-    let overallTimer: ReturnType<typeof setTimeout> | undefined;
-    const timeoutPromise = new Promise<FlowCaptureResult>((resolve) => {
-      overallTimer = setTimeout(() => {
-        rotateMetricsHour();
-        metrics.failedLastHour++;
-        logger.warn({ ticker: sym, sessionDate, timeoutMs }, "flowCapture: overall timeout fired");
-        resolve({
-          sessionDate,
-          source: "rest",
-          rowsInserted: 0,
-          occsSubscribed: 0,
-          durationMs: timeoutMs,
-          errors: ["flow_capture_overall_timeout"],
-        });
-      }, timeoutMs);
-    });
-    const capturePromise = runCaptureOnce(sym, sessionDate, mergedOpts).finally(() => {
-      if (overallTimer !== undefined) {
-        clearTimeout(overallTimer);
-        overallTimer = undefined;
-      }
-    });
-    p = Promise.race([capturePromise, timeoutPromise])
+    p = runCaptureOnce(sym, sessionDate, mergedOpts)
       .catch((err): FlowCaptureResult => {
         rotateMetricsHour();
         metrics.failedLastHour++;

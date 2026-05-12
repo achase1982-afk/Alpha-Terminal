@@ -1,5 +1,5 @@
 import { getBestAccessToken } from "./tokenStore.js";
-import { nyCalendarYmd } from "./polygonMarketCalendar.js";
+import { nyCalendarYmd, isNyseFullDayClosureYmd } from "./usEquityMarketCalendar.js";
 import { logger } from "./logger.js";
 
 const SCHWAB_MARKETDATA = "https://api.schwabapi.com/marketdata/v1";
@@ -17,23 +17,6 @@ type Cached = {
 };
 
 let cache: Cached | null = null;
-
-/**
- * NYSE full-day closures for calendar year 2026 (NYSE official holiday schedule).
- * Source: https://www.nyse.com/markets/hours-calendars
- */
-const NYSE_FULL_CLOSURES_2026 = new Set<string>([
-  "2026-01-01",
-  "2026-01-19",
-  "2026-02-16",
-  "2026-04-03",
-  "2026-05-25",
-  "2026-06-19",
-  "2026-07-03",
-  "2026-09-07",
-  "2026-11-26",
-  "2026-12-25",
-]);
 
 function equitySessionDateYmd(): string {
   return nyCalendarYmd(new Date());
@@ -158,11 +141,10 @@ export function equitySessionFromNyCalendarFallback(nowMs: number): EquityMarket
   const day = get("day") ?? "";
   const hour = parseInt(get("hour") ?? "0", 10);
   const minute = parseInt(get("minute") ?? "0", 10);
-  const ymd = `${year}-${month}-${day}`;
   const minutes = hour * 60 + minute;
-
+  const ymd = `${year}-${month}-${day}`;
   if (weekday === "Sat" || weekday === "Sun") return "closed";
-  if (NYSE_FULL_CLOSURES_2026.has(ymd)) return "closed";
+  if (isNyseFullDayClosureYmd(ymd)) return "closed";
 
   if (minutes >= 20 * 60 || minutes < 4 * 60) return "closed";
   if (minutes >= 4 * 60 && minutes < 9 * 60 + 30) return "premarket";

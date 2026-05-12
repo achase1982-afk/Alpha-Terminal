@@ -1,7 +1,9 @@
 import { logger } from "./logger.js";
 import {
   streamCallAnthropicWithSystemAndWebSearch,
+  streamCallAnthropicConvictionDesk,
   streamCallGeminiDeskJson,
+  streamCallGeminiConvictionDesk,
   streamCallOpenAIWithSystemAndWebSearch,
   streamCallXaiWithSystemAndWebSearch,
   extractJson,
@@ -31,12 +33,19 @@ import {
   buildFlowAnalystPrompt,
   buildCatalystAnalystPrompt,
   buildPmPrompt,
+  buildPmOrderTicketDeskValidationPrompt,
   buildSoloDeskUserPrompt,
   SOLO_DESK_MODEL_SYSTEM_PROMPT,
   buildConvictionDeskUserPrompt,
+  buildConvictionDeskUserPromptBundle,
 } from "./strategistDeskPrompts.js";
+import {
+  mergeValidationTraces,
+  soloStyleDeskPmJsonToValidationPayload,
+  type ParsedOrderTicketValidationPayload,
+} from "./strategistOrderTicketVerdictParse.js";
 import { CONVICTION_DESK_MODEL_SYSTEM_PROMPT } from "./convictionDeskSystemPrompt.js";
-import { normalizeConvictionDeskOutput, validateConvictionDeskBusinessRules } from "./strategistDeskConvictionRules.js";
+import { validateConvictionDeskBusinessRules, deriveConvictionDeskSoftWarnings } from "./strategistDeskConvictionRules.js";
 import {
   zodIssuesFromError,
   type ConvictionAttemptValidationResult,
@@ -48,10 +57,16 @@ import type { DebateRound } from "./strategistDebate.js";
 import type { CatalystEvaluation } from "./catalystEvaluator.js";
 import { runCatalystDeskStructuredSearches } from "./strategistDeskCatalystWebSearch.js";
 import { throwIfStrategistAnalyzeCancelled } from "./strategistAnalyzeCancellation.js";
+import type Anthropic from "@anthropic-ai/sdk";
+import { getStrategistRunContext, mergeStrategistDiag } from "./strategistRunContext.js";
+import {
+  resolveConvictionDeskRouting,
+  strategistProviderToTelemetryProvider,
+} from "./convictionDeskRouting.js";
 
 const TEMPERATURE = 0;
-/** Conviction memo + greeks grid can exceed default model caps; truncates cause parse/extract failures. */
-const CONVICTION_DESK_MAX_OUTPUT_TOKENS = 32768;
+/** Conviction memo + greeks grid can exceed default model caps; truncates cause parse/extract failures. Providers may clamp lower at runtime. */
+const CONVICTION_DESK_MAX_OUTPUT_TOKENS = 32_000;
 
 export interface DeskCallbacks {
   /** Background analyze job id for cooperative cancel checks. */
@@ -102,8 +117,9 @@ function newTurnId(): string {
  * - **OpenAI:** `streamCallOpenAIWithSystemAndWebSearch` uses `buildOpenAIResponseParams`, which sets
  *   `tools: [{ type: "web_search_preview" }]` on `responses.create` (see `aiLabAnalystClient.ts`).
  * - **xAI:** `streamCallXaiWithSystemAndWebSearch` sets `tools: { web_search: xai.tools.webSearch() }` on `streamText`.
- * - **Gemini:** `streamCallGeminiDeskJson` cannot attach tools with `responseMimeType: application/json`;
- *   Catalyst uses pre-search or prompt-only for Google (see orchestrator status strings).
+ * - **Gemini (Solo / four-analyst JSON turns):** `streamCallGeminiDeskJson` cannot attach tools with
+ *   `responseMimeType: application/json`; Catalyst may use pre-search for Google in those flows.
+ * - **Gemini (Conviction Desk):** `streamCallGeminiConvictionDesk` uses Google Search tools + streamed JSON text.
  */
 async function streamModel(
   modelOpt: StrategistModelOption,
@@ -115,8 +131,9 @@ async function streamModel(
   opts?: { convictionDeskLargeMemo?: boolean },
 ): Promise<WebSearchResult> {
   const cap = opts?.convictionDeskLargeMemo === true ? CONVICTION_DESK_MAX_OUTPUT_TOKENS : undefined;
+  let r: WebSearchResult;
   if (modelOpt.provider === "anthropic") {
-    return streamCallAnthropicWithSystemAndWebSearch(
+    r = await streamCallAnthropicWithSystemAndWebSearch(
       modelOpt.model,
       TEMPERATURE,
       systemPrompt,
@@ -126,9 +143,30 @@ async function streamModel(
       cancelSignal,
       cap != null ? { maxTokens: cap } : undefined,
     );
-  }
-  if (modelOpt.provider === "openai") {
-    return streamCallOpenAIWithSystemAndWebSearch(
+  } else if (modelOpt.provider === "openai") {
+    r = await streamCallOpenAIWithSystemAndWebSearch(
+      modelOpt.model,
+      TEMPERATURE,
+      systemPrompt,
+      prompt,
+      onDelta,
+      onStatus,
+      cancelSignal,
+      cap != null ? { maxOutputTokens: cap } : undefined,
+    );
+  } else if (modelOpt.provider === "xai") {
+    r = await streamCallXaiWithSystemAndWebSearch(
+      modelOpt.model,
+      TEMPERATURE,
+      systemPrompt,
+      prompt,
+      onDelta,
+      onStatus,
+      cancelSignal,
+      cap != null ? { maxTokens: cap } : undefined,
+    );
+  } else {
+    r = await streamCallGeminiDeskJson(
       modelOpt.model,
       TEMPERATURE,
       systemPrompt,
@@ -139,29 +177,13 @@ async function streamModel(
       cap != null ? { maxOutputTokens: cap } : undefined,
     );
   }
-  if (modelOpt.provider === "xai") {
-    return streamCallXaiWithSystemAndWebSearch(
-      modelOpt.model,
-      TEMPERATURE,
-      systemPrompt,
-      prompt,
-      onDelta,
-      onStatus,
-      cancelSignal,
-      cap != null ? { maxTokens: cap } : undefined,
-    );
+  const ctx = getStrategistRunContext();
+  if (ctx && r.sdkCallParams) {
+    mergeStrategistDiag({
+      modelSdkInputs: [...(ctx.diag.modelSdkInputs ?? []), r.sdkCallParams],
+    });
   }
-  // Desk JSON-only: Gemini cannot mix application/json with tools; skip web search for this path.
-  return streamCallGeminiDeskJson(
-    modelOpt.model,
-    TEMPERATURE,
-    systemPrompt,
-    prompt,
-    onDelta,
-    onStatus,
-    cancelSignal,
-    cap != null ? { maxOutputTokens: cap } : undefined,
-  );
+  return r;
 }
 
 async function runDeskTurn<T>(args: {
@@ -222,20 +244,6 @@ function parseJsonFromText(raw: string): Record<string, unknown> | null {
   return extractJsonAndParse(raw).parsedJson;
 }
 
-function mergeTraces(...traces: WebSearchTrace[]): WebSearchTrace {
-  const seenUrls = new Set<string>();
-  const sources = traces.flatMap(t => t.sources).filter(s => {
-    if (seenUrls.has(s.url)) return false;
-    seenUrls.add(s.url);
-    return true;
-  });
-  return {
-    webSearchUsed: traces.some(t => t.webSearchUsed),
-    queries: [...new Set(traces.flatMap(t => t.queries))],
-    sources,
-  };
-}
-
 export async function runDeskAnalysis(args: {
   dataPackage: string;
   settings: StrategistConfig;
@@ -244,8 +252,13 @@ export async function runDeskAnalysis(args: {
   deskExpirationISO?: string;
   catalystEvaluation?: CatalystEvaluation | null;
   callbacks?: DeskCallbacks;
-}): Promise<DeskResult> {
-  const { dataPackage, settings, ticker, deskExpirationISO, catalystEvaluation, callbacks } = args;
+  /**
+   * When set, PM runs **order-ticket validation** (same verdict JSON shape as /validate-trade solo)
+   * instead of proposing a fresh desk structure. Used so order tickets honor Strategist Mode "Desk".
+   */
+  orderTicketValidationMarkdown?: string;
+}): Promise<DeskResult & { orderTicketValidationVerdict?: ParsedOrderTicketValidationPayload }> {
+  const { dataPackage, settings, ticker, deskExpirationISO, catalystEvaluation, callbacks, orderTicketValidationMarkdown } = args;
   assertDeskNotCancelled(callbacks);
 
   const volModel = getStrategistModel(settings.strategistSoloModelIdx);
@@ -328,67 +341,134 @@ export async function runDeskAnalysis(args: {
     errors,
   );
 
-  callbacks?.onStatus?.("Desk: PM synthesizing analyst reads…");
-
-  const pmPrompt = buildPmPrompt(
-    dataPackage,
-    JSON.stringify(volResult.parsed),
-    JSON.stringify(flowResult.parsed),
-    JSON.stringify(catalystResult.parsed),
+  callbacks?.onStatus?.(
+    orderTicketValidationMarkdown ? "Desk: PM validating trader's order ticket…" : "Desk: PM synthesizing analyst reads…",
   );
 
-  assertDeskNotCancelled(callbacks);
-  const pmTurn = await runDeskTurn({
-    modelOpt: pmModel,
-    prompt: pmPrompt,
-    role: "pm",
-      label: "Decision",
-    callbacks,
-  });
-
   let pmParsed: PmOutput;
-  const pmJson = parseJsonFromText(pmTurn.text);
-  const pmValidation = PmOutputSchema.safeParse(pmJson);
-  if (pmValidation.success) {
-    pmParsed = pmValidation.data;
-  } else {
-    callbacks?.onTurnDiscarded?.(pmTurn.turnId);
-    callbacks?.onStatus?.("Desk: PM output failed validation, retrying…");
-    logger.warn(
-      { errors: pmValidation.error.issues, ticker, model: pmModel.model, provider: pmModel.provider, label: pmModel.label },
-      "StrategistDesk: PM output failed validation, retrying",
+  let orderTicketValidationVerdict: ParsedOrderTicketValidationPayload | undefined;
+
+  if (orderTicketValidationMarkdown) {
+    const pmPromptVal = buildPmOrderTicketDeskValidationPrompt(
+      dataPackage,
+      JSON.stringify(volResult.parsed),
+      JSON.stringify(flowResult.parsed),
+      JSON.stringify(catalystResult.parsed),
+      orderTicketValidationMarkdown,
     );
-    const retryTurn = await runDeskTurn({
+    assertDeskNotCancelled(callbacks);
+    let pmTurn = await runDeskTurn({
       modelOpt: pmModel,
-      prompt:
-        pmPrompt +
-        "\n\nYour previous response failed JSON validation. Return ONLY valid JSON matching the schema exactly. No markdown, no code fences, no commentary before or after the JSON.",
+      prompt: pmPromptVal,
       role: "pm",
-      label: "Decision (retry)",
+      label: "Order ticket review",
       callbacks,
     });
-    const retryJson = parseJsonFromText(retryTurn.text);
-    const retryValidation = PmOutputSchema.safeParse(retryJson);
-    if (retryValidation.success) {
-      pmParsed = retryValidation.data;
+    let pmJson = parseJsonFromText(pmTurn.text);
+    let parsedObj = pmJson && typeof pmJson === "object" ? (pmJson as Record<string, unknown>) : null;
+    let mergedTrace = mergeValidationTraces(volResult.trace, flowResult.trace, catalystResult.trace, pmTurn.trace);
+    let verdictPayload = soloStyleDeskPmJsonToValidationPayload(parsedObj, mergedTrace);
+
+    const complete =
+      parsedObj &&
+      typeof parsedObj["finalVerdict"] === "string" &&
+      Array.isArray(parsedObj["reasoningBullets"]) &&
+      (parsedObj["reasoningBullets"] as unknown[]).length > 0;
+
+    if (!complete) {
+      callbacks?.onTurnDiscarded?.(pmTurn.turnId);
+      callbacks?.onStatus?.("Desk: PM order-ticket verdict JSON incomplete, retrying…");
+      pmTurn = await runDeskTurn({
+        modelOpt: pmModel,
+        prompt:
+          pmPromptVal +
+          "\n\nYour previous response was incomplete or not valid JSON. Return ONLY one JSON object with all required keys: bullCase, bearCase, bullConfidence, bearConfidence, finalVerdict, finalConfidence, reasoningBullets, topRisks, improvements.",
+        role: "pm",
+        label: "Order ticket review (retry)",
+        callbacks,
+      });
+      pmJson = parseJsonFromText(pmTurn.text);
+      parsedObj = pmJson && typeof pmJson === "object" ? (pmJson as Record<string, unknown>) : null;
+      verdictPayload = soloStyleDeskPmJsonToValidationPayload(
+        parsedObj,
+        mergeValidationTraces(mergedTrace, pmTurn.trace),
+      );
+    }
+
+    orderTicketValidationVerdict = verdictPayload;
+    pmParsed = {
+      decision: verdictPayload.verdict === "DO_NOT_PROCEED" ? "pass" : "trade",
+      structure: null,
+      thesis: verdictPayload.reasoningBullets.join(" ") || "Order ticket validation verdict.",
+      edge_check: "",
+      deviation_from_analysts: "none",
+      size: "small",
+      whose_side: "neither",
+      biggest_risk: verdictPayload.risks[0] ?? "",
+      exit_plan: { profit_target: 0, stop_loss: 0, time_stop: "" },
+      watch_for: verdictPayload.improvements.join("; ") || "",
+    };
+  } else {
+    const pmPrompt = buildPmPrompt(
+      dataPackage,
+      JSON.stringify(volResult.parsed),
+      JSON.stringify(flowResult.parsed),
+      JSON.stringify(catalystResult.parsed),
+    );
+
+    assertDeskNotCancelled(callbacks);
+    const pmTurn = await runDeskTurn({
+      modelOpt: pmModel,
+      prompt: pmPrompt,
+      role: "pm",
+      label: "Decision",
+      callbacks,
+    });
+
+    const pmJson = parseJsonFromText(pmTurn.text);
+    const pmValidation = PmOutputSchema.safeParse(pmJson);
+    if (pmValidation.success) {
+      pmParsed = pmValidation.data;
     } else {
-      errors.push(`PM output failed validation after retry: ${retryValidation.error.issues.map(i => i.message).join("; ")}`);
-      pmParsed = {
-        decision: "pass",
-        structure: null,
-        thesis: retryTurn.text.slice(0, 500),
-        edge_check: "",
-        deviation_from_analysts: "none",
-        size: "small",
-        whose_side: "neither",
-        biggest_risk: "PM output could not be parsed",
-        exit_plan: { profit_target: 0, stop_loss: 0, time_stop: "" },
-        watch_for: "PM validation failure; retry the analysis",
-      };
+      callbacks?.onTurnDiscarded?.(pmTurn.turnId);
+      callbacks?.onStatus?.("Desk: PM output failed validation, retrying…");
+      logger.warn(
+        { errors: pmValidation.error.issues, ticker, model: pmModel.model, provider: pmModel.provider, label: pmModel.label },
+        "StrategistDesk: PM output failed validation, retrying",
+      );
+      const retryTurn = await runDeskTurn({
+        modelOpt: pmModel,
+        prompt:
+          pmPrompt +
+          "\n\nYour previous response failed JSON validation. Return ONLY valid JSON matching the schema exactly. No markdown, no code fences, no commentary before or after the JSON.",
+        role: "pm",
+        label: "Decision (retry)",
+        callbacks,
+      });
+      const retryJson = parseJsonFromText(retryTurn.text);
+      const retryValidation = PmOutputSchema.safeParse(retryJson);
+      if (retryValidation.success) {
+        pmParsed = retryValidation.data;
+      } else {
+        errors.push(`PM output failed validation after retry: ${retryValidation.error.issues.map(i => i.message).join("; ")}`);
+        pmParsed = {
+          decision: "pass",
+          structure: null,
+          thesis: retryTurn.text.slice(0, 500),
+          edge_check: "",
+          deviation_from_analysts: "none",
+          size: "small",
+          whose_side: "neither",
+          biggest_risk: "PM output could not be parsed",
+          exit_plan: { profit_target: 0, stop_loss: 0, time_stop: "" },
+          watch_for: "PM validation failure; retry the analysis",
+        };
+      }
     }
   }
 
-  const pmOutputIncomplete = errors.some((e) => e.startsWith("PM output failed validation after retry"));
+  const pmOutputIncomplete =
+    !orderTicketValidationMarkdown && errors.some((e) => e.startsWith("PM output failed validation after retry"));
 
   logger.info(
     {
@@ -418,6 +498,7 @@ export async function runDeskAnalysis(args: {
       pm: pmModel.label,
     },
     errors: errors.length > 0 ? errors : undefined,
+    ...(orderTicketValidationVerdict ? { orderTicketValidationVerdict } : {}),
   };
 }
 
@@ -445,7 +526,7 @@ async function runAnalystWithRetry<T>(
   if (validation.success) {
     return {
       parsed: validation.data,
-      trace: initialTrace ? mergeTraces(initialTrace, turn.trace) : turn.trace,
+      trace: initialTrace ? mergeValidationTraces(initialTrace, turn.trace) : turn.trace,
     };
   }
 
@@ -470,10 +551,10 @@ async function runAnalystWithRetry<T>(
   const retryValidation = schema.safeParse(retryJson);
 
   if (retryValidation.success) {
-    const merged = mergeTraces(turn.trace, retryTurn.trace);
+    const merged = mergeValidationTraces(turn.trace, retryTurn.trace);
     return {
       parsed: retryValidation.data,
-      trace: initialTrace ? mergeTraces(initialTrace, merged) : merged,
+      trace: initialTrace ? mergeValidationTraces(initialTrace, merged) : merged,
     };
   }
 
@@ -482,10 +563,10 @@ async function runAnalystWithRetry<T>(
   logger.error({ role, ticker, model: model.model, provider: model.provider, label: model.label }, `StrategistDesk: ${errorMsg}`);
 
   const fallback = buildFallbackOutput(role, retryTurn.text);
-  const mergedFail = mergeTraces(turn.trace, retryTurn.trace);
+  const mergedFail = mergeValidationTraces(turn.trace, retryTurn.trace);
   return {
     parsed: fallback as T,
-    trace: initialTrace ? mergeTraces(initialTrace, mergedFail) : mergedFail,
+    trace: initialTrace ? mergeValidationTraces(initialTrace, mergedFail) : mergedFail,
   };
 }
 
@@ -732,8 +813,7 @@ function validateConvictionPipeline(
       businessRuleErrors: [],
     };
   }
-  const normalized = normalizeConvictionDeskOutput(zod.data);
-  const biz = validateConvictionDeskBusinessRules(normalized);
+  const biz = validateConvictionDeskBusinessRules(zod.data);
   if (biz.length > 0) {
     return {
       ok: false,
@@ -742,7 +822,7 @@ function validateConvictionPipeline(
       businessRuleErrors: biz,
     };
   }
-  return { ok: true, data: normalized };
+  return { ok: true, data: zod.data };
 }
 
 function validationResultForAttempt(
@@ -756,6 +836,20 @@ function validationResultForAttempt(
     zodIssues: v.zodIssues,
     businessRuleErrors: v.businessRuleErrors,
   };
+}
+
+function formatConvictionValidationCorrectionMessage(
+  v: Extract<ReturnType<typeof validateConvictionPipeline>, { ok: false }>,
+): string {
+  const lines: string[] = [];
+  for (const z of v.zodIssues) {
+    lines.push(`- ${z.path.length ? z.path.join(".") : "(root)"}: ${z.message}`);
+  }
+  for (const b of v.businessRuleErrors) {
+    lines.push(`- ${b}`);
+  }
+  if (lines.length === 0) lines.push(`- ${v.detail}`);
+  return `Your previous response failed validation against the schema. Specific errors:\n\n${lines.join("\n")}\n\nReturn ONLY a corrected JSON object matching the schema exactly. No commentary, no markdown, no preamble. Use the exact field names and enum values from the schema.`;
 }
 
 function strategistProviderToEnvelopeProvider(provider: StrategistModelOption["provider"]): WebSearchEnvelopeProvider {
@@ -774,6 +868,7 @@ function convictionOutcomeFromAttemptsWhenFailed(
 /**
  * Conviction Desk: one LLM turn with the Conviction model slot (`strategistConvictionModelIdx`),
  * same catalyst web-search preamble as Solo Desk when using Gemini JSON-only flow.
+ * Packaged live-equity JSON keys are documented for the model in `CONVICTION_DESK_INTRADAY_DATA_GUIDANCE` (strategistDeskPrompts.ts).
  */
 export async function runConvictionDesk(args: {
   dataPackage: string;
@@ -782,195 +877,249 @@ export async function runConvictionDesk(args: {
   deskExpirationISO?: string;
   catalystEvaluation?: CatalystEvaluation | null;
   callbacks?: DeskCallbacks;
+  /** Optional per-run model routing (API body); otherwise `strategistConvictionModelIdx`. */
+  /** Optional per-run model routing (API body): legacy short-cuts or `provider:model` (see convictionDeskRouting). */
+  convictionDeskProvider?: string | null;
 }): Promise<ConvictionDeskResult> {
-  const { dataPackage, settings, ticker, deskExpirationISO, catalystEvaluation, callbacks } = args;
+  const { dataPackage, settings, ticker, deskExpirationISO, catalystEvaluation, callbacks, convictionDeskProvider } =
+    args;
   const startedAtIso = new Date().toISOString();
 
-  const consolidatedModel = getStrategistModel(settings.strategistConvictionModelIdx);
+  const routing = resolveConvictionDeskRouting(settings, convictionDeskProvider ?? null);
+  const consolidatedModel = routing.model;
 
   let catalystResearchBriefing = "";
-  const catalystNativeWeb = consolidatedModel.provider !== "google";
+  const catalystNativeWeb = true;
 
-  if (deskExpirationISO && consolidatedModel.provider === "google") {
-    callbacks?.onStatus?.("Conviction Desk: Catalyst structured web research (Gemini JSON cannot use tools)…");
-    try {
-      const bundle = await runCatalystDeskStructuredSearches({
-        ticker,
-        catalystEval: catalystEvaluation ?? null,
-        deskExpirationISO,
-        model: consolidatedModel,
-        onStatus: callbacks?.onStatus,
-        cancelSignal: callbacks?.cancelSignal,
-      });
-      catalystResearchBriefing = bundle.briefing;
-    } catch (err) {
-      logger.warn(
-        { err, ticker },
-        "StrategistDesk: Conviction Desk structured catalyst web search bundle failed; continuing with calendar snapshot only",
-      );
-      catalystResearchBriefing =
-        "## STRUCTURED RESEARCH (catalyst desk)\nResearch pass failed; treat web-derived themes as **data not surfaced** unless the calendar snapshot alone supports them.";
-    }
-  } else if (deskExpirationISO && catalystNativeWeb) {
+  if (deskExpirationISO && consolidatedModel.provider !== "google") {
     logger.info(
       { ticker, provider: consolidatedModel.provider },
-      "StrategistDesk: Conviction Desk skipping catalyst structured pre-search; consolidated model uses native web search on JSON turn",
+      "StrategistDesk: Conviction Desk skipping catalyst structured pre-search; consolidated model uses native web search on consolidated turn",
     );
     callbacks?.onStatus?.("Conviction Desk: Catalyst web pre-search skipped (native web search on consolidated turn)…");
+  } else if (deskExpirationISO && consolidatedModel.provider === "google") {
+    callbacks?.onStatus?.(
+      "Conviction Desk: in-call Google Search grounding (structured catalyst pre-search skipped)…",
+    );
   }
 
-  const userPrompt = buildConvictionDeskUserPrompt(dataPackage, catalystResearchBriefing || undefined, {
+  const promptBundle = buildConvictionDeskUserPromptBundle(dataPackage, catalystResearchBriefing || undefined, {
     catalystSlotNativeWebSearch: catalystNativeWeb,
     provider: consolidatedModel.provider,
   });
+  const userPrompt = promptBundle.fullUserPrompt;
 
   callbacks?.onStatus?.("Conviction Desk: single consolidated memo pass…");
 
   assertDeskNotCancelled(callbacks);
 
-  const turnId = newTurnId();
-  callbacks?.onTurnStart?.({
-    id: turnId,
-    round: "desk",
-    role: "pm",
-    phase: "pm",
-    model: consolidatedModel.model,
-    label: "Conviction Desk",
-    startedAt: Date.now(),
-  });
-
-  let acc = "";
-  const onDelta = (delta: string) => {
-    acc += delta;
-    callbacks?.onTurnDelta?.(turnId, delta);
-  };
-
-  let text = "";
-  let r: WebSearchResult | undefined;
-  try {
-    r = await streamModel(
-      consolidatedModel,
-      CONVICTION_DESK_MODEL_SYSTEM_PROMPT,
-      userPrompt,
-      onDelta,
-      (s) => callbacks?.onStatus?.(s),
-      callbacks?.cancelSignal,
-      { convictionDeskLargeMemo: true },
-    );
-    text = r.text;
-    callbacks?.onTurnDone?.(turnId, text);
-  } catch (err) {
-    const errPlain = err instanceof Error ? err.message : String(err);
-    const errMsg = `\n\n[error: ${errPlain}]`;
-    callbacks?.onTurnDone?.(turnId, acc + errMsg);
-    const finishedAt = new Date().toISOString();
-    const ex = extractJsonAndParse(acc);
-    const valStream = validateConvictionPipeline(ex.parsedJson);
-    const diagAttempts: ConvictionDeskRunDiagnostic["attempts"] = [
-      {
-        attemptNumber: 1,
-        rawResponseText: acc,
-        envelope: createEmptyEnvelope(
-          strategistProviderToEnvelopeProvider(consolidatedModel.provider),
-          consolidatedModel.model,
-        ),
-        extractedJsonString: ex.extractedJsonString,
-        parsedJson: ex.parsedJson,
-        validationResult: validationResultForAttempt(valStream),
-      },
-    ];
-    return {
-      mode: "conviction_desk",
-      ticker,
-      conviction: null,
-      convictionDeskJsonDegraded: "stream_error",
-      models: {
-        vol: consolidatedModel.label,
-        flow: consolidatedModel.label,
-        catalyst: consolidatedModel.label,
-        pm: consolidatedModel.label,
-      },
-      errors: [`Conviction Desk stream failed: ${errPlain}`],
-      convictionDeskRunDiagnostic: {
-        ticker,
-        modelId: consolidatedModel.model,
-        provider: consolidatedModel.provider,
-        startedAt: startedAtIso,
-        finishedAt,
-        outcome: "stream_error",
-        attempts: diagAttempts,
-        finalErrors: [`Conviction Desk stream failed: ${errPlain}`],
-      },
-    };
-  }
-
   const errors: string[] = [];
   const attempts: ConvictionDeskRunDiagnostic["attempts"] = [];
 
-  const ext1 = extractJsonAndParse(text);
-  let validation = validateConvictionPipeline(ext1.parsedJson);
-  attempts.push({
-    attemptNumber: 1,
-    rawResponseText: text,
-    envelope: r.envelope,
-    extractedJsonString: ext1.extractedJsonString,
-    parsedJson: ext1.parsedJson,
-    validationResult: validationResultForAttempt(validation),
-  });
+  const initialAnthropicMessages: Anthropic.MessageParam[] = [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: promptBundle.anthropicStaticUserPrefix, cache_control: { type: "ephemeral" } },
+        { type: "text", text: promptBundle.anthropicDynamicUserSuffix },
+      ],
+    },
+  ];
+  let anthropicMessages: Anthropic.MessageParam[] = initialAnthropicMessages;
 
-  if (!validation.ok) {
-    logger.warn(
-      { ticker, detail: validation.detail, model: consolidatedModel.model, provider: consolidatedModel.provider },
-      "StrategistDesk: Conviction Desk output failed validation, retrying",
-    );
-    callbacks?.onStatus?.("Conviction Desk: memo output failed validation, retrying…");
-    assertDeskNotCancelled(callbacks);
-    const retryTurnId = newTurnId();
+  let text = "";
+  let r: WebSearchResult | undefined;
+  let lastFailed: Extract<ReturnType<typeof validateConvictionPipeline>, { ok: false }> | undefined;
+  let lastConvictionDeskAudit: ConvictionDeskResult["convictionDeskAudit"];
+
+  for (let attemptNum = 1; attemptNum <= 3; attemptNum++) {
+    const turnId = newTurnId();
+    const label = attemptNum === 1 ? "Conviction Desk" : `Conviction Desk (retry ${attemptNum - 1})`;
     callbacks?.onTurnStart?.({
-      id: retryTurnId,
+      id: turnId,
       round: "desk",
       role: "pm",
       phase: "pm",
       model: consolidatedModel.model,
-      label: "Conviction Desk (retry)",
+      label,
       startedAt: Date.now(),
     });
-    let retryAcc = "";
-    const onRetryDelta = (delta: string) => {
-      retryAcc += delta;
-      callbacks?.onTurnDelta?.(retryTurnId, delta);
+
+    let acc = "";
+    const onDelta = (delta: string) => {
+      acc += delta;
+      callbacks?.onTurnDelta?.(turnId, delta);
     };
-    const retryPrompt =
-      userPrompt +
-      `\n\nYour previous response failed validation: ${validation.detail}.\n\nReturn ONLY one valid JSON object exactly matching the structure shown in the skeleton above. Use the exact field names and enum values from the skeleton. No markdown, no code fences, no commentary before or after the JSON.`;
-    let retryR: WebSearchResult | undefined;
+
     try {
-      retryR = await streamModel(
-        consolidatedModel,
-        CONVICTION_DESK_MODEL_SYSTEM_PROMPT,
-        retryPrompt,
-        onRetryDelta,
-        (s) => callbacks?.onStatus?.(s),
-        callbacks?.cancelSignal,
-        { convictionDeskLargeMemo: true },
+      if (consolidatedModel.provider === "anthropic") {
+        r = await streamCallAnthropicConvictionDesk(
+          consolidatedModel.model,
+          CONVICTION_DESK_MODEL_SYSTEM_PROMPT,
+          anthropicMessages,
+          onDelta,
+          (s) => callbacks?.onStatus?.(s),
+          callbacks?.cancelSignal,
+          {
+            maxTokens: CONVICTION_DESK_MAX_OUTPUT_TOKENS,
+            thinkingBudgetTokensOverride: routing.anthropicThinkingBudgetOverride,
+          },
+        );
+        if (r.convictionDeskAudit) lastConvictionDeskAudit = r.convictionDeskAudit;
+      } else if (consolidatedModel.provider === "openai") {
+        const streamPrompt =
+          attemptNum === 1
+            ? promptBundle.fullUserPrompt
+            : `${promptBundle.fullUserPrompt}\n\n---\n\n${formatConvictionValidationCorrectionMessage(lastFailed!)}`;
+        r = await streamCallOpenAIWithSystemAndWebSearch(
+          consolidatedModel.model,
+          TEMPERATURE,
+          CONVICTION_DESK_MODEL_SYSTEM_PROMPT,
+          streamPrompt,
+          onDelta,
+          (s) => callbacks?.onStatus?.(s),
+          callbacks?.cancelSignal,
+          { maxOutputTokens: CONVICTION_DESK_MAX_OUTPUT_TOKENS, includeConvictionDeskAudit: true },
+        );
+        if (r.convictionDeskAudit) lastConvictionDeskAudit = r.convictionDeskAudit;
+      } else if (consolidatedModel.provider === "google") {
+        const streamPrompt =
+          attemptNum === 1
+            ? promptBundle.fullUserPrompt
+            : `${promptBundle.fullUserPrompt}\n\n---\n\n${formatConvictionValidationCorrectionMessage(lastFailed!)}`;
+        r = await streamCallGeminiConvictionDesk(
+          consolidatedModel.model,
+          TEMPERATURE,
+          CONVICTION_DESK_MODEL_SYSTEM_PROMPT,
+          streamPrompt,
+          onDelta,
+          (s) => callbacks?.onStatus?.(s),
+          callbacks?.cancelSignal,
+          { maxOutputTokens: CONVICTION_DESK_MAX_OUTPUT_TOKENS },
+        );
+        if (r.convictionDeskAudit) lastConvictionDeskAudit = r.convictionDeskAudit;
+      } else {
+        const streamPrompt =
+          attemptNum === 1
+            ? promptBundle.fullUserPrompt
+            : `${promptBundle.fullUserPrompt}\n\n---\n\n${formatConvictionValidationCorrectionMessage(lastFailed!)}`;
+        r = await streamModel(
+          consolidatedModel,
+          CONVICTION_DESK_MODEL_SYSTEM_PROMPT,
+          streamPrompt,
+          onDelta,
+          (s) => callbacks?.onStatus?.(s),
+          callbacks?.cancelSignal,
+          { convictionDeskLargeMemo: true },
+        );
+      }
+
+      text = r.text;
+      callbacks?.onTurnDone?.(turnId, text);
+
+      if (
+        consolidatedModel.provider === "anthropic" ||
+        consolidatedModel.provider === "openai" ||
+        consolidatedModel.provider === "google" ||
+        consolidatedModel.provider === "xai"
+      ) {
+        const webUses =
+          consolidatedModel.provider === "anthropic"
+            ? (r.anthropicWebSearchToolUseCount ?? 0)
+            : Array.isArray(r.convictionDeskAudit?.webSearchQueries)
+              ? (r.convictionDeskAudit!.webSearchQueries as unknown[]).length
+              : r.trace.queries.length;
+        logger.info(
+          {
+            ticker,
+            attempt: attemptNum,
+            cache_creation_input_tokens: r.envelope.usage.cacheCreationInputTokens ?? null,
+            cache_read_input_tokens: r.envelope.usage.cacheReadInputTokens ?? null,
+            input_tokens: r.envelope.usage.inputTokens ?? null,
+            output_tokens: r.envelope.usage.outputTokens ?? null,
+            reasoning_tokens: r.envelope.usage.reasoningTokens ?? null,
+            total_tokens: r.envelope.usage.totalTokens ?? null,
+            web_search_tool_uses: webUses,
+            provider: consolidatedModel.provider,
+          },
+          "Conviction Desk usage",
+        );
+        const ctx = getStrategistRunContext();
+        const prev = ctx?.diag.convictionDeskProviderTelemetry ?? [];
+        mergeStrategistDiag({
+          convictionDeskProviderTelemetry: [
+            ...prev,
+            {
+              attempt: attemptNum,
+              provider: strategistProviderToTelemetryProvider(consolidatedModel.provider),
+              cache_creation_input_tokens: r.envelope.usage.cacheCreationInputTokens ?? null,
+              cache_read_input_tokens: r.envelope.usage.cacheReadInputTokens ?? null,
+              input_tokens: r.envelope.usage.inputTokens ?? null,
+              output_tokens: r.envelope.usage.outputTokens ?? null,
+              reasoning_tokens: r.envelope.usage.reasoningTokens ?? null,
+              total_tokens: r.envelope.usage.totalTokens ?? null,
+              web_search_tool_uses: webUses,
+            },
+          ],
+        });
+      }
+
+      const ext = extractJsonAndParse(text);
+      const validation = validateConvictionPipeline(ext.parsedJson);
+      attempts.push({
+        attemptNumber: attemptNum as 1 | 2 | 3,
+        rawResponseText: text,
+        envelope: r.envelope,
+        extractedJsonString: ext.extractedJsonString,
+        parsedJson: ext.parsedJson,
+        validationResult: validationResultForAttempt(validation),
+      });
+
+      if (validation.ok) {
+        break;
+      }
+
+      lastFailed = validation;
+
+      if (attemptNum === 3) {
+        logger.warn(
+          { ticker, detail: validation.detail, model: consolidatedModel.model, provider: consolidatedModel.provider },
+          "StrategistDesk: Conviction Desk validation failed after max attempts",
+        );
+        break;
+      }
+
+      logger.warn(
+        { ticker, detail: validation.detail, model: consolidatedModel.model, provider: consolidatedModel.provider },
+        "StrategistDesk: Conviction Desk output failed validation, retrying",
       );
-      callbacks?.onTurnDone?.(retryTurnId, retryR.text);
+      callbacks?.onStatus?.("Conviction Desk: memo output failed validation, retrying…");
+      assertDeskNotCancelled(callbacks);
+      callbacks?.onTurnDiscarded?.(turnId);
+
+      if (consolidatedModel.provider === "anthropic") {
+        anthropicMessages = [
+          ...initialAnthropicMessages,
+          { role: "assistant", content: text },
+          { role: "user", content: formatConvictionValidationCorrectionMessage(validation) },
+        ];
+      }
     } catch (err) {
       const errPlain = err instanceof Error ? err.message : String(err);
       const errMsg = `\n\n[error: ${errPlain}]`;
-      callbacks?.onTurnDone?.(retryTurnId, retryAcc + errMsg);
+      callbacks?.onTurnDone?.(turnId, acc + errMsg);
       const finishedAt = new Date().toISOString();
-      const rex = extractJsonAndParse(retryAcc);
-      const rval = validateConvictionPipeline(rex.parsedJson);
+      const ex = extractJsonAndParse(acc);
+      const valStream = validateConvictionPipeline(ex.parsedJson);
       attempts.push({
-        attemptNumber: 2,
-        rawResponseText: retryAcc,
+        attemptNumber: attemptNum as 1 | 2 | 3,
+        rawResponseText: acc,
         envelope:
-          retryR?.envelope ??
+          r?.envelope ??
           createEmptyEnvelope(strategistProviderToEnvelopeProvider(consolidatedModel.provider), consolidatedModel.model),
-        extractedJsonString: rex.extractedJsonString,
-        parsedJson: rex.parsedJson,
-        validationResult: validationResultForAttempt(rval),
+        extractedJsonString: ex.extractedJsonString,
+        parsedJson: ex.parsedJson,
+        validationResult: validationResultForAttempt(valStream),
       });
       return {
         mode: "conviction_desk",
@@ -983,7 +1132,7 @@ export async function runConvictionDesk(args: {
           catalyst: consolidatedModel.label,
           pm: consolidatedModel.label,
         },
-        errors: [`Conviction Desk retry stream failed: ${errPlain}`],
+        errors: [`Conviction Desk stream failed (attempt ${attemptNum}): ${errPlain}`],
         convictionDeskRunDiagnostic: {
           ticker,
           modelId: consolidatedModel.model,
@@ -992,22 +1141,15 @@ export async function runConvictionDesk(args: {
           finishedAt,
           outcome: "stream_error",
           attempts,
-          finalErrors: [`Conviction Desk retry stream failed: ${errPlain}`],
+          finalErrors: [`Conviction Desk stream failed (attempt ${attemptNum}): ${errPlain}`],
         },
+        ...(lastConvictionDeskAudit ? { convictionDeskAudit: lastConvictionDeskAudit } : {}),
       };
     }
-
-    const ext2 = extractJsonAndParse(retryR.text);
-    validation = validateConvictionPipeline(ext2.parsedJson);
-    attempts.push({
-      attemptNumber: 2,
-      rawResponseText: retryR.text,
-      envelope: retryR.envelope,
-      extractedJsonString: ext2.extractedJsonString,
-      parsedJson: ext2.parsedJson,
-      validationResult: validationResultForAttempt(validation),
-    });
   }
+
+  const extLast = extractJsonAndParse(text);
+  let validation = validateConvictionPipeline(extLast.parsedJson);
 
   const finishedAt = new Date().toISOString();
 
@@ -1044,14 +1186,18 @@ export async function runConvictionDesk(args: {
         attempts,
         finalErrors: errors,
       },
+      ...(lastConvictionDeskAudit ? { convictionDeskAudit: lastConvictionDeskAudit } : {}),
     };
   }
+
+  const softWarnings = deriveConvictionDeskSoftWarnings(validation.data, dataPackage);
 
   logger.info(
     {
       ticker,
       convictionDeskModel: { provider: consolidatedModel.provider, model: consolidatedModel.model, label: consolidatedModel.label },
       convictionDeskPromptChars: userPrompt.length,
+      ...(softWarnings.length > 0 ? { convictionDeskSoftWarnings: softWarnings } : {}),
     },
     "StrategistDesk: completed Conviction Desk run",
   );
@@ -1076,6 +1222,8 @@ export async function runConvictionDesk(args: {
       outcome: "success",
       attempts,
       finalErrors: [],
+      ...(softWarnings.length > 0 ? { softValidationWarnings: softWarnings } : {}),
     },
+    ...(lastConvictionDeskAudit ? { convictionDeskAudit: lastConvictionDeskAudit } : {}),
   };
 }

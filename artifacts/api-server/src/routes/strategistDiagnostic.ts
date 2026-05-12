@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq } from "drizzle-orm";
+import { and, eq } from "@workspace/db";
 import { db, strategistHistoryTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import type { StrategistDiagnosticView } from "../lib/strategistDiagnosticView.js";

@@ -1,5 +1,5 @@
 import { db, equityDailyTable, flowDailyAggregatesTable, scannerWatchlistsTable } from "@workspace/db";
-import { inArray, desc, sql, eq, and, gte } from "drizzle-orm";
+import { inArray, desc, sql, eq, and, gte } from "@workspace/db";
 import { emitTelemetry, createTelemetryBatch } from "./telemetryStore.js";
 import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
 import { getAiLabStrategistConfig, getAiLabFullConfig } from "./aiLabConfig.js";

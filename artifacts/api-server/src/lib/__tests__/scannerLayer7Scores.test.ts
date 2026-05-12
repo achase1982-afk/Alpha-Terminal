@@ -44,6 +44,13 @@ describe("scannerLayer7Scores", () => {
       top_strike: null,
       volume_4h: null,
       volume_over_oi: 0.5,
+      events_today: null,
+      primary_event_type: null,
+      net_direction: "neutral",
+      last_event_ts: null,
+      sweep_count: null,
+      block_count: null,
+      largest_event_notional: null,
     };
     expect(scoreFlow(empty)).toBeNull();
   });
@@ -101,6 +108,13 @@ describe("scannerLayer7Scores", () => {
         top_strike: null,
         volume_4h: 120_000,
         volume_over_oi: 0.18,
+        events_today: 80,
+        primary_event_type: "sweep",
+        net_direction: "bearish",
+        last_event_ts: new Date().toISOString(),
+        sweep_count: 18,
+        block_count: 4,
+        largest_event_notional: 1_200_000,
       },
       technical: {
         fifty_two_week_low: 160,
@@ -131,6 +145,13 @@ describe("scannerLayer7Scores", () => {
         top_strike: null,
         volume_4h: 420_000,
         volume_over_oi: 0.65,
+        events_today: 200,
+        primary_event_type: "sweep",
+        net_direction: "bullish",
+        last_event_ts: new Date().toISOString(),
+        sweep_count: 55,
+        block_count: 22,
+        largest_event_notional: 5_000_000,
       },
       technical: {
         fifty_two_week_low: 400,

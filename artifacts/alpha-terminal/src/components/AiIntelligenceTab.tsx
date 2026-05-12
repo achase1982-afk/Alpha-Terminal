@@ -2,14 +2,20 @@ import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } fr
 import { createPortal } from "react-dom";
 import { useTerminalStore, type StrategistValidationMeta, type StrategistTranscriptTurn } from "@/lib/store";
 import { isDeskStrategistTranscript } from "@/lib/strategistTranscriptDesk";
+import { strategistTuningModeHeaderLabel } from "@/lib/strategistModeLabels";
 import { StrategistValidationCard } from "@/components/StrategistValidationCard";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import {
   useGetQuote, useGetPriceHistory, useGetOptionChain,
 } from "@workspace/api-client-react";
-import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
 // Strategist V2: polling lives in `strategistPoller` (survives tab background via sync + `/job/:id/final`).
-import { startStrategistPolling, abortStrategistPolling, hydrateStrategistJobFromPersistedFinal } from "@/lib/strategistPoller";
+import {
+  startStrategistPolling,
+  abortStrategistPolling,
+  hydrateStrategistJobFromPersistedFinal,
+  syncRunningStrategistJobsFromServer,
+} from "@/lib/strategistPoller";
 import { consumePendingStrategistPushJobId } from "@/lib/strategistPushNav";
 import { dispatchStrategistAnalysisStart, dispatchStrategistAnalysisCancel } from "@/lib/strategistDeskSpeechEvents";
 import { toast } from "sonner";
@@ -34,6 +40,10 @@ import { StrategistDeskCard, type DeskResult } from "@/components/StrategistDesk
 import { StrategistHistoryList } from "@/components/StrategistHistoryList";
 
 const API_BASE = "/api";
+
+/** Module-stable fallbacks so child effects do not see a new function identity every render. */
+const STABLE_NOOP_EQUITY_SUBSCRIBE = (_symbols: string[]) => {};
+const STABLE_NOOP_NAVIGATE = () => {};
 
 /** Payload for legacy /ai/deterministic-strategist (scanner row cache). */
 interface DeterministicStrategistScannerPayload {
@@ -1642,14 +1652,22 @@ function DebateTranscript({
   isStreaming,
   defaultCollapsed = false,
   title = "Bull · Bear Debate",
+  strategistTuningMode = null,
 }: {
   transcript: import("@/lib/store").StrategistTranscriptTurn[];
   isStreaming: boolean;
   defaultCollapsed?: boolean;
   title?: string;
+  /** When set (1–5), AI-brain header follows Strategist settings instead of inferring from transcript rows. */
+  strategistTuningMode?: number | null;
 }) {
   const isDesk = useMemo(() => isDeskStrategistTranscript(transcript), [transcript]);
-  const headerTitle = isDesk ? "DESK MODE" : title;
+  const headerTitle =
+    strategistTuningMode != null && strategistTuningMode >= 1 && strategistTuningMode <= 5
+      ? strategistTuningModeHeaderLabel(strategistTuningMode)
+      : isDesk
+        ? "DESK MODE"
+        : title;
 
   const groups = useMemo(() => {
     const m = new Map<1 | 2 | 3 | "synthesis" | "solo" | "desk", StrategistTranscriptTurn[]>();
@@ -1829,12 +1847,8 @@ function DebateTranscript({
           className="flex items-center gap-2 flex-1 min-w-0 text-left"
           aria-label={
             collapsed
-              ? isDesk
-                ? "Expand desk transcript"
-                : "Expand debate transcript"
-              : isDesk
-                ? "Collapse desk transcript"
-                : "Collapse debate transcript"
+              ? `Expand ${headerTitle} transcript`
+              : `Collapse ${headerTitle} transcript`
           }
         >
           <span className="font-mono text-[11px] text-[#FFB800] leading-none">
@@ -2608,6 +2622,8 @@ function AiIntelligenceTabInner({
   onStrategistDeepLinkHandled,
 }: AiIntelligenceTabProps) {
   const [strategistMode, setStrategistMode] = useState<StrategistMode>("options");
+  /** Server `strategistMode` (1–5); drives AI-brain chrome independently of stale transcript rows. */
+  const [strategistTuningMode, setStrategistTuningMode] = useState<number | null>(null);
   const {
     symbol, setSymbol, accessToken,
     aiFeatureSettings,
@@ -2766,6 +2782,18 @@ function AiIntelligenceTabInner({
     }
   }, [setStrategistHistoryStore]);
 
+  const refreshStrategistTuningMode = useCallback(async () => {
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/strategist/settings`);
+      if (!res.ok) return;
+      const json = (await res.json()) as { current?: Record<string, number> };
+      const m = json.current?.strategistMode;
+      if (typeof m === "number" && m >= 1 && m <= 5) setStrategistTuningMode(m);
+    } catch {
+      /* best-effort */
+    }
+  }, []);
+
   const pushHydrateHandledRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -2812,8 +2840,20 @@ function AiIntelligenceTabInner({
     if (subTab === "strategist") {
       markStrategistJobsViewed();
       void refreshHistory();
+      void refreshStrategistTuningMode();
     }
-  }, [subTab, markStrategistJobsViewed, refreshHistory]);
+  }, [subTab, markStrategistJobsViewed, refreshHistory, refreshStrategistTuningMode]);
+
+  useEffect(() => {
+    if (subTab !== "strategist") return;
+    const onTuningModeChanged = (ev: Event) => {
+      const m = (ev as CustomEvent<{ mode?: number }>).detail?.mode;
+      if (typeof m === "number" && m >= 1 && m <= 5) setStrategistTuningMode(m);
+      else void refreshStrategistTuningMode();
+    };
+    window.addEventListener("strategistTuningModeChanged", onTuningModeChanged as EventListener);
+    return () => window.removeEventListener("strategistTuningModeChanged", onTuningModeChanged as EventListener);
+  }, [subTab, refreshStrategistTuningMode]);
 
   // Keep the pipeline status in sync with whether a job is actually running.
   // This restores the "Analyzing..." indicator when the user navigates back
@@ -3006,7 +3046,7 @@ function AiIntelligenceTabInner({
 
       if (!res.ok) {
         const errText = await res.text().catch(() => "Unknown error");
-        setStrategistResult(`**Error:** ${errText}`);
+        setStrategistResult(`**Error:** ${humanizeFailedApiBody(res.status, errText)}`);
         setIsStrategizing(false);
         setStrategistStatus("");
         return;
@@ -3200,7 +3240,8 @@ function AiIntelligenceTabInner({
 
       if (!res.ok) {
         const errText = await res.text().catch(() => "Unknown error");
-        setDetResult({ criteria: null, rejection: errText, mode: "NO_EDGE", modeReason: errText, pulse: { composite: 0, confidence: 0, bias: "NO_EDGE" }, shockActive: false, portfolio: { microOverrideCount: 0 }, narrative: "" });
+        const friendly = humanizeFailedApiBody(res.status, errText);
+        setDetResult({ criteria: null, rejection: friendly, mode: "NO_EDGE", modeReason: friendly, pulse: { composite: 0, confidence: 0, bias: "NO_EDGE" }, shockActive: false, portfolio: { microOverrideCount: 0 }, narrative: "" });
         setIsDetRunning(false);
         setStrategistStatus("");
         return;
@@ -3341,6 +3382,11 @@ function AiIntelligenceTabInner({
     // Register the job in the global store BEFORE the network round-trip so
     // the poller / UI can already reflect the running state.
     startStrategistJob(jobId, upperTicker);
+    // Start polling immediately — do not wait for POST /analyze to return.
+    // If the POST hangs (token refresh, proxy, flaky network), we still hit
+    // /thinking on the normal cadence (404 grace → eventual buffer) instead of
+    // a silent spinner with zero polls.
+    startStrategistPolling(jobId);
 
     // Fire-and-forget — server runs the analysis to completion regardless of
     // client navigation. We hand off polling to a module-level driver so it
@@ -3363,6 +3409,7 @@ function AiIntelligenceTabInner({
         if (postAc.signal.aborted) return;
         if (!useTerminalStore.getState().strategistJobs[jobId]) return;
         if (!res.ok) {
+          abortStrategistPolling(jobId);
           if (res.status === 409) {
             try {
               const body = await res.json() as { message?: string; ticker?: string };
@@ -3374,14 +3421,30 @@ function AiIntelligenceTabInner({
             return;
           }
           const errText = await res.text().catch(() => "Unknown error");
-          errorStrategistJob(jobId, errText);
+          errorStrategistJob(jobId, humanizeFailedApiBody(res.status, errText));
           return;
         }
-        startStrategistPolling(jobId);
+        // POST accepted — refresh poller so a stalled tab takeover wins cleanly.
+        startStrategistPolling(jobId, { force: true });
       } catch (err) {
         if (postAc.signal.aborted) return;
         if (!useTerminalStore.getState().strategistJobs[jobId]) return;
-        errorStrategistJob(jobId, err instanceof Error ? err.message : String(err));
+        // POST may have committed on the server while the client threw (e.g. TCP
+        // dropped mid-response when switching tabs during the long options-tape
+        // phase). Reconcile before stopping polling — otherwise we strand a live
+        // server run with no client poller.
+        void (async () => {
+          await syncRunningStrategistJobsFromServer({ toastOnComplete: false });
+          const j = useTerminalStore.getState().strategistJobs[jobId];
+          if (j?.status === "running") {
+            startStrategistPolling(jobId, { force: true });
+            return;
+          }
+          abortStrategistPolling(jobId);
+          if (!j || j.status === "done") return;
+          if (j.status === "error") return;
+          errorStrategistJob(jobId, err instanceof Error ? err.message : String(err));
+        })();
       }
     })();
   }, [symbol, setSymbol, setStrategistResult, startStrategistJob, errorStrategistJob, cancelStrategistJob, runningAnalyzeTicker]);
@@ -3588,7 +3651,11 @@ function AiIntelligenceTabInner({
                   </div>
                 )}
                 {v2Transcript.length > 0 ? (
-                  <DebateTranscript transcript={v2Transcript} isStreaming={isV2Running} />
+                  <DebateTranscript
+                    transcript={v2Transcript}
+                    isStreaming={isV2Running}
+                    strategistTuningMode={strategistTuningMode}
+                  />
                 ) : (
                   <AiThinkingFeed texts={v2ThinkingTokens} isStreaming={isV2Running} />
                 )}
@@ -3742,8 +3809,8 @@ function AiIntelligenceTabInner({
       {subTab === "scanner" && (
         <div style={{ height: "100%", overflowY: "auto" }}>
           <MarketScanner
-            subscribeEquitySymbols={subscribeEquitySymbols ?? (() => {})}
-            onNavigateToSymbol={onNavigateToMarkets ?? (() => {})}
+            subscribeEquitySymbols={subscribeEquitySymbols ?? STABLE_NOOP_EQUITY_SUBSCRIBE}
+            onNavigateToSymbol={onNavigateToMarkets ?? STABLE_NOOP_NAVIGATE}
             onSendToStrategist={(sym: string, flowContext?: string) => {
               useTerminalStore.getState().setSymbol(sym);
               setStrategistMode("options");

@@ -1,232 +1,37 @@
-import { useCallback, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import type { BlockReason, StrategistOutcome, StrategistSendToOrderPayload } from "@/components/StrategistV2Card";
 import { buildOccSymbol } from "@/components/StrategistV2Card";
-import { ChevronDown, ChevronUp, AlertTriangle, Copy, Play, Pause, Square, Rewind, FastForward, Send } from "lucide-react";
+import { AlertTriangle, Copy, Play, Pause, Square, Rewind, FastForward, Send } from "lucide-react";
 import { toast } from "sonner";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import type {
   DeskResult,
   DeskResultClassic,
-  DeskStructure,
-  PayoffScenario,
-  PayoffScenariosSummary,
 } from "@/lib/strategistDeskResult";
 import { buildDeskSpeechSections } from "@/lib/deskCardSpeech";
 import { StrategistConvictionDeskCard } from "@/components/StrategistConvictionDeskCard";
-import { useDeskBufferedCardTts } from "@/hooks/useDeskBufferedCardTts";
+import { deskResultAudioId } from "@/lib/deskAudioId";
+import { useDeskReportTts, DESK_AUDIO_SKIP_SECONDS } from "@/hooks/useDeskReportTts";
+import {
+  DESK_PAL as PAL,
+  DESK_SYS_FONT as SYS_FONT,
+  DESK_FOCUS_RING as FOCUS_RING,
+  DESK_TOUCH_MIN as TOUCH_MIN,
+  DeskCardFieldRow as FieldRow,
+  DeskCardCollapsibleSection as CollapsibleSection,
+  DeskCardStructureDisplay as StructureDisplay,
+  DeskCardPayoffAtExpirationSection as PayoffAtExpirationSection,
+} from "@/components/deskCardShared";
 
 export type { DeskResult } from "@/lib/strategistDeskResult";
 
 const deskVoiceConfig: { voice?: string } = {};
-
-/** Skip / rewind step in the desk audio bar (seconds within the current segment). */
-const AUDIO_SKIP_SECONDS = 15;
-
-const PAL = {
-  bgCard: "#141414",
-  bgInner: "#0a0a0a",
-  border: "#2a2a2a",
-  borderInner: "#1f1f1f",
-  label: "#a3a3a3",
-  body: "#e5e5e5",
-  white: "#ffffff",
-  green: "#4ade80",
-  red: "#f87171",
-  gold: "#fbbf24",
-  goldHeader: "#f59e0b",
-};
-
-const SYS_FONT = "-apple-system, 'SF Pro Display', 'Inter', system-ui, sans-serif";
-
-const FOCUS_RING = "2px solid rgba(255,255,255,0.85)";
-const TOUCH_MIN = 44;
-
-/** Stable id for TTS cache partitioning (hash of serialized desk payload). */
-function deskResultAudioId(deskResult: DeskResult, bannerTitle?: string, bannerBody?: string): string {
-  const payload = JSON.stringify({
-    ticker: deskResult.ticker,
-    mode: deskResult.mode,
-    ...(deskResult.mode === "conviction_desk"
-      ? {
-          conviction: deskResult.conviction,
-          errors: deskResult.errors,
-        }
-      : {
-          pm: deskResult.pm,
-          vol: deskResult.vol,
-          flow: deskResult.flow,
-          catalyst: deskResult.catalyst,
-          errors: deskResult.errors,
-        }),
-    bannerTitle: bannerTitle ?? null,
-    bannerBody: bannerBody ?? null,
-  });
-  let h = 2166136261;
-  for (let i = 0; i < payload.length; i++) {
-    h ^= payload.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return `desk-${(h >>> 0).toString(16)}`;
-}
-
-function FieldRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
-      <span style={{ fontFamily: SYS_FONT, fontSize: 11, color: PAL.label, minWidth: 120, flexShrink: 0 }}>{label}</span>
-      <span style={{ fontFamily: SYS_FONT, fontSize: 11, color: PAL.body, lineHeight: 1.5 }}>{value}</span>
-    </div>
-  );
-}
-
-function CollapsibleSection({
-  title,
-  defaultOpen,
-  headerAddon,
-  children,
-}: {
-  title: string;
-  defaultOpen?: boolean;
-  headerAddon?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen ?? false);
-  return (
-    <div
-      style={{
-        border: `1px solid ${PAL.borderInner}`,
-        borderRadius: 8,
-        marginBottom: 8,
-        overflow: "hidden",
-      }}
-    >
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        style={{
-          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "8px 12px", background: PAL.bgInner, border: "none", cursor: "pointer",
-        }}
-      >
-        <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", textAlign: "left" }}>
-          <span style={{ fontFamily: SYS_FONT, fontSize: 12, fontWeight: 600, color: PAL.white, letterSpacing: 0.5 }}>{title}</span>
-          {headerAddon}
-        </span>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {open ? <ChevronUp size={14} color={PAL.label} /> : <ChevronDown size={14} color={PAL.label} />}
-        </div>
-      </button>
-      {open && <div style={{ padding: 12, background: PAL.bgCard }}>{children}</div>}
-    </div>
-  );
-}
-
-function fmtCurrencyPlain(n: number): string {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function fmtSignedUsd(n: number): string {
-  const abs = Math.abs(n).toFixed(2);
-  if (n > 0) return `+$${abs}`;
-  if (n < 0) return `-$${abs}`;
-  return `$${abs}`;
-}
-
-function PayoffAtExpirationSection({
-  scenarios,
-  summary,
-}: {
-  scenarios: PayoffScenario[];
-  summary: PayoffScenariosSummary;
-}) {
-  const profitZone =
-    summary.profitZoneLow != null && summary.profitZoneHigh != null
-      ? `${fmtCurrencyPlain(summary.profitZoneLow)} — ${fmtCurrencyPlain(summary.profitZoneHigh)}`
-      : null;
-
-  let breakdownLine: string | null = null;
-  const down = summary.downsideBreakdown;
-  const up = summary.upsideBreakdown;
-  if (down != null && up != null) {
-    breakdownLine = `below ${fmtCurrencyPlain(down)} or above ${fmtCurrencyPlain(up)}`;
-  } else if (down != null) {
-    breakdownLine = `below ${fmtCurrencyPlain(down)}`;
-  } else if (up != null) {
-    breakdownLine = `above ${fmtCurrencyPlain(up)}`;
-  }
-
-  const pnlColor = (c: PayoffScenario["pnlColor"]) =>
-    c === "green" ? PAL.green : c === "red" ? PAL.red : PAL.label;
-
-  const midIdx = Math.floor(scenarios.length / 2);
-  const spotRef = scenarios[midIdx]?.underlyingPrice ?? scenarios[0]?.underlyingPrice ?? 0;
-  const pctVsSpot = (price: number) => (spotRef > 0 ? (price / spotRef - 1) * 100 : 0);
-
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: PAL.label, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>
-        Payoff at expiration
-      </div>
-      <div style={{ fontSize: 11, color: PAL.body, lineHeight: 1.6, marginBottom: 10 }}>
-        <div>
-          Peak: {fmtSignedUsd(summary.peakPnl)} at {fmtCurrencyPlain(summary.peakPnlPrice)}
-        </div>
-        {profitZone && (
-          <div style={{ marginTop: 4 }}>
-            Profit zone: {profitZone}
-          </div>
-        )}
-        {breakdownLine && (
-          <div style={{ marginTop: 4 }}>
-            Breakdown: {breakdownLine}
-          </div>
-        )}
-      </div>
-      <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", marginLeft: -2, marginRight: -2 }}>
-        <table style={{ borderCollapse: "collapse", fontSize: 11, minWidth: "100%", fontFamily: SYS_FONT }}>
-          <tbody>
-            <tr>
-              <td style={{ padding: "6px 10px 6px 4px", color: PAL.label, whiteSpace: "nowrap", verticalAlign: "bottom" }}>Stock move</td>
-              {scenarios.map((s, i) => {
-                const p = pctVsSpot(s.underlyingPrice);
-                return (
-                  <td key={i} style={{ padding: "6px 8px", textAlign: "right", whiteSpace: "nowrap", verticalAlign: "bottom" }}>
-                    <div style={{ fontSize: 10, color: PAL.label }}>{p >= 0 ? "+" : ""}{p.toFixed(1)}%</div>
-                    <div style={{ color: PAL.white, fontWeight: 600 }}>{fmtCurrencyPlain(s.underlyingPrice)}</div>
-                  </td>
-                );
-              })}
-            </tr>
-            <tr style={{ borderTop: `1px solid ${PAL.borderInner}` }}>
-              <td style={{ padding: "6px 10px 6px 4px", color: PAL.label, whiteSpace: "nowrap" }}>Spread Value</td>
-              {scenarios.map((s, i) => (
-                <td key={i} style={{ padding: "6px 8px", textAlign: "right", color: PAL.body, whiteSpace: "nowrap" }}>
-                  {fmtCurrencyPlain(s.spreadValue)}
-                </td>
-              ))}
-            </tr>
-            <tr style={{ borderTop: `1px solid ${PAL.borderInner}` }}>
-              <td style={{ padding: "6px 10px 6px 4px", color: PAL.label, whiteSpace: "nowrap" }}>P/L</td>
-              {scenarios.map((s, i) => (
-                <td
-                  key={i}
-                  style={{
-                    padding: "6px 8px",
-                    textAlign: "right",
-                    fontWeight: 700,
-                    color: pnlColor(s.pnlColor),
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {fmtSignedUsd(s.pnl)}
-                </td>
-              ))}
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
 
 function buildDeskSendToOrderPayload(deskResult: DeskResultClassic): StrategistSendToOrderPayload {
   const s = deskResult.pm.structure!;
@@ -250,25 +55,6 @@ function buildDeskSendToOrderPayload(deskResult: DeskResultClassic): StrategistS
     };
   });
   return { ticker: deskResult.ticker, legs, netPrice, isCredit };
-}
-
-function StructureDisplay({ structure }: { structure: DeskStructure }) {
-  return (
-    <div style={{ background: PAL.bgInner, border: `1px solid ${PAL.borderInner}`, borderRadius: 6, padding: 10, marginBottom: 8 }}>
-      <div style={{ fontFamily: SYS_FONT, fontSize: 12, fontWeight: 600, color: PAL.goldHeader, marginBottom: 6, textTransform: "uppercase" }}>
-        {structure.type.replace(/_/g, " ")}
-      </div>
-      <div style={{ fontFamily: SYS_FONT, fontSize: 11, color: PAL.label, marginBottom: 4 }}>
-        Expiry: {structure.expiry} &middot; {structure.credit_or_debit < 0 ? "Credit" : "Debit"}: ${Math.abs(structure.credit_or_debit).toFixed(2)}
-      </div>
-      {structure.legs.map((leg, i) => (
-        <div key={i} style={{ fontFamily: SYS_FONT, fontSize: 11, color: PAL.body, padding: "2px 0" }}>
-          {leg.action.toUpperCase()} {leg.type.toUpperCase()} {leg.strike} ({leg.expiration})
-          {leg.quantity && leg.quantity > 1 ? ` x${leg.quantity}` : ""}
-        </div>
-      ))}
-    </div>
-  );
 }
 
 /** Plain text for the full Desk card (all sections including topic sections, regardless of collapse). */
@@ -623,6 +409,7 @@ function StrategistDeskCardInner({
     audioReady,
     audioError,
     paused,
+    segmentStall,
     speechRate,
     setSpeechRate,
     speedLabel,
@@ -630,19 +417,20 @@ function StrategistDeskCardInner({
     stopAudio,
     togglePause,
     seekRelativeSeconds,
+    resumeSegmentAfterStall,
     onAudioEnded,
     onLoadedMetadata,
     onPlay,
     onPause,
     onAudioElementError,
-  } = useDeskBufferedCardTts({
-    plainText: deskAudioText,
-    audioId: deskResultId,
+  } = useDeskReportTts({
+    deskAudioText,
+    deskResultId,
     voiceConfig: deskVoiceConfig,
-    sessionRateStorageKey: "strategistDeskSpeechRate",
     resetDependency: deskResult,
     containerRef: rootRef,
   });
+
 
   const iconBtnBase: CSSProperties = {
     minWidth: TOUCH_MIN,
@@ -675,6 +463,7 @@ function StrategistDeskCardInner({
     fontFamily: SYS_FONT,
     outline: "none",
   };
+
 
   return (
     <div
@@ -808,12 +597,39 @@ function StrategistDeskCardInner({
             <span style={{ fontSize: 12, color: PAL.red, flex: "1 1 100%" }}>{audioError}</span>
           ) : (
             <>
+              {segmentStall && (
+                <div
+                  style={{
+                    flex: "1 1 100%",
+                    fontSize: 12,
+                    color: PAL.body,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span>Couldn&apos;t load next segment</span>
+                  <button
+                    type="button"
+                    onClick={() => void resumeSegmentAfterStall()}
+                    style={{
+                      ...btnStyle,
+                      textTransform: "none",
+                      letterSpacing: 0,
+                      fontWeight: 600,
+                    }}
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
           <button
             type="button"
             style={iconBtnBase}
-            aria-label={`Rewind ${AUDIO_SKIP_SECONDS} seconds`}
-            onClick={() => seekRelativeSeconds(-AUDIO_SKIP_SECONDS)}
-            disabled={!audioReady}
+            aria-label={`Rewind ${DESK_AUDIO_SKIP_SECONDS} seconds`}
+            onClick={() => seekRelativeSeconds(-DESK_AUDIO_SKIP_SECONDS)}
+            disabled={!audioReady || !!segmentStall}
             onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
             onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
           >
@@ -824,7 +640,7 @@ function StrategistDeskCardInner({
             style={iconBtnBase}
             aria-label={paused ? "Resume audio playback" : "Pause audio playback"}
             onClick={togglePause}
-            disabled={!audioReady}
+            disabled={!audioReady || !!segmentStall}
             onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
             onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
           >
@@ -833,9 +649,9 @@ function StrategistDeskCardInner({
           <button
             type="button"
             style={iconBtnBase}
-            aria-label={`Fast-forward ${AUDIO_SKIP_SECONDS} seconds`}
-            onClick={() => seekRelativeSeconds(AUDIO_SKIP_SECONDS)}
-            disabled={!audioReady}
+            aria-label={`Fast-forward ${DESK_AUDIO_SKIP_SECONDS} seconds`}
+            onClick={() => seekRelativeSeconds(DESK_AUDIO_SKIP_SECONDS)}
+            disabled={!audioReady || !!segmentStall}
             onFocus={(e) => { e.currentTarget.style.outline = FOCUS_RING; }}
             onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
           >
@@ -859,6 +675,7 @@ function StrategistDeskCardInner({
               aria-label={`Playback speed, currently ${speedLabel}`}
               value={speechRate}
               onChange={(e) => setSpeechRate(Number(e.target.value))}
+              disabled={!!segmentStall}
               style={{
                 minHeight: TOUCH_MIN,
                 padding: "0 12px",

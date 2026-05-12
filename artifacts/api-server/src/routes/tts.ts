@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { constants as fsConstants } from "node:fs";
-import { generateSpeech, sha256Hex, getTtsDiskCacheProfile } from "../lib/tts.js";
+import { generateSpeech, sha256Hex } from "../lib/tts.js";
 import {
   getDeskAudioChunkBuffer,
   startDeskAudioSession,
@@ -12,8 +12,8 @@ const router: IRouter = Router();
 
 const CACHE_DIR = process.env.TTS_CACHE_DIR ?? "/tmp/tts-cache";
 
-/** Bump when audio bytes format changes; profile suffix separates OpenAI vs Edge caches. */
-const CACHE_FILE_VERSION = "v4";
+/** Bump when audio bytes format or TTS engine changes (invalidates on-disk MP3 cache). */
+const CACHE_FILE_VERSION = "v5-edge";
 
 function looksLikeMp3(buf: Buffer): boolean {
   if (buf.length < 4) return false;
@@ -153,7 +153,7 @@ router.post("/desk-audio", async (req, res): Promise<void> => {
   }
 
   const hash = sha256Hex(text);
-  const cachePath = path.join(CACHE_DIR, `${CACHE_FILE_VERSION}-${getTtsDiskCacheProfile()}-${hash}.mp3`);
+  const cachePath = path.join(CACHE_DIR, `${CACHE_FILE_VERSION}-${hash}.mp3`);
 
   try {
     await mkdir(CACHE_DIR, { recursive: true });

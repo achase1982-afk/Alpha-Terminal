@@ -5,10 +5,13 @@
 
 import { buildScannerContextPromptBlock, type ScannerStrategistContext } from "./scannerStrategistContext.js";
 import {
-  CONVICTION_DESK_JSON_SKELETON,
-  CONVICTION_DESK_MEMO_INSTRUCTIONS,
-} from "./convictionDeskMemoInstructions.js";
+  buildConvictionDeskStaticUserPrefix,
+  CONVICTION_DESK_RECENT_NEWS_XML,
+  type ConvictionDeskPromptProvider,
+} from "./convictionDeskXmlPrompt.js";
+import { CONVICTION_DESK_WEB_SEARCH_GUIDANCE_BODY } from "./convictionDeskWebSearchGuidance.js";
 
+export type { ConvictionDeskPromptProvider };
 /** Single-voice rule injected into each section prompt. */
 const SINGLE_VOICE_FRAMING = `You are writing one analysis broken into clearly labeled sections. There is one voice and one analyst. Section headers exist to help the reader navigate the analysis, not to attribute authorship to different roles. Do not write as a separate team, desk, or role. Use plain topic labels in prose only when helpful: Volatility, Flow, Catalyst, Decision.`;
 
@@ -20,6 +23,63 @@ OUTPUT STYLE (strict):
 - Do not refer to "the payload", "the data package", "the feed", "the API", "the file", or similar ingestion or plumbing language.
 - Write as if you are reading the chain and the surface directly: "the tape", "the chain", "listed expiries", "the vol surface", "flow on screen".
 - If something looks like a known market artifact (e.g. front-week IV clamping, stale prints), describe the artifact plainly without attributing it to a system or vendor name.`;
+
+/** When intraday / stream enrichments are present in the data package JSON. */
+export const CONVICTION_DESK_INTRADAY_DATA_GUIDANCE = `
+
+## INTRADAY AND LIVE EQUITY CONTEXT (data dictionary)
+When any field in these sections is **null** or a parent object such as **intraday** is **null**, the live source was unavailable on this run; do not interpret **null** as bearish or bullish, and fall back to the existing pre-computed snapshot fields for that dimension (**price**, chain marks, **polygonFlowHighlights**, **scannerContext**, **dataQualitySummary**, etc.).
+In prose, use full phrases (**Volume Weighted Average Price**, **Relative Strength Index**) instead of abbreviations alone. Resting chain rows remain the authority when stream-backed marks are **null** or stale; **options_data_freshness** summarizes how much of the active watchlist had fresh stream ticks versus REST-only reads.
+
+**Session-date attribution (intraday.vwap / intraday.rsi / intraday.equity_block_tape):** Each block may include **vwap_as_of_session_date**, **rsi_as_of_session_date**, and **equity_block_tape_as_of_session_date** (ISO **YYYY-MM-DD**, US equity **session** date in America/New_York). When these match **today's** session date, the metrics are anchored to the **current** regular session when tape or minute data exists. When they show an **earlier** calendar date, the **current** session had **no usable stream-backed tape or chart minute history** for that metric and the value was **filled from the most recent prior session** using **only** the packaged broker stream caches for tape and one-minute bars (no cross-vendor fallbacks). When **Volume Weighted Average Price** or **Relative Strength Index** is null, treat that as **no usable minute or tape history** in the current or recent sessions—down-weight intraday conviction accordingly. For **Relative Strength Index**, minute closes merge tape prints (last trade per ET minute) with one-minute bar closes when needed, walking backward across session boundaries until fifteen closes exist. Treat earlier dates as **stale relative to a live intraday tape**—down-weight conviction from those fields versus fresh session activity. Order book and streamed equity quotes do not use this fallback and may remain null when stale.
+
+### Live Intraday Equity Context (**intraday.vwap**, **intraday.rsi**)
+- Volume Weighted Average Price (session) (**intraday.vwap.vwap_session**): Session cumulative VWAP from tape prints (volume-weighted in the packaged regular-session window); **null** when tape lacks sufficient prints. No non-packaged equity vendor fills this field.
+- Volume Weighted Average Price delta percent (current price vs session VWAP) (**intraday.vwap.vwap_delta_pct**): Spot versus session VWAP in percent (positive means spot above session VWAP, negative below, near zero at VWAP) when both numbers exist; **null** when session VWAP or spot is unavailable.
+- Relative Strength Index 14 (**intraday.rsi.rsi_14**): Wilder RSI on **1-minute closes**: primary series is **last trade per ET minute** from tape; if fewer than fifteen minute closes exist, the merge adds **one-minute bar closes** from the subscribed chart stream; **null** when neither path yields enough bars.
+
+### Equity Block Tape Activity (rolling 30 minute window) (**intraday.equity_block_tape**)
+- Block count (**intraday.equity_block_tape.block_count_30min**): Count of large prints in the last thirty minutes by share-count or notional threshold.
+- Block notional in dollars (**intraday.equity_block_tape.block_notional_30min**): Sum notional of those prints over the same window.
+- Block side imbalance (**intraday.equity_block_tape.block_side_imbalance**): Signed imbalance of block notional versus session VWAP (positive leans buy-heavy above VWAP, negative sell-heavy below, near zero balanced) when both sides have mass; **null** when classification lacks supporting notionals.
+- Last block age in seconds (**intraday.equity_block_tape.last_block_age_seconds**): Seconds since the newest qualifying block print, or **null** when no block fired in the window.
+
+### Live Order Book State (**intraday.order_book**)
+- Top of book bid size (**intraday.order_book.top_of_book_bid_size**): Displayed size at the best bid when the venue book snapshot is fresh.
+- Top of book ask size (**intraday.order_book.top_of_book_ask_size**): Displayed size at the best ask when the venue book snapshot is fresh.
+- Book imbalance percent (**intraday.order_book.book_imbalance_pct**): Top-of-book size imbalance in percent (positive means bid-heavy, negative ask-heavy) when both sides are present.
+- Depth within 1 percent of mid, bid side (**intraday.order_book.depth_within_1pct_bid**): Resting bid depth within one percent of mid when computable.
+- Depth within 1 percent of mid, ask side (**intraday.order_book.depth_within_1pct_ask**): Resting ask depth within one percent of mid when computable.
+- Book age in milliseconds (**intraday.order_book.book_age_ms**): Age of the venue book snapshot; stale ages may accompany **null** depth fields.
+- Listing venue for the book row (**intraday.order_book.venue**): Which listing feed supplied the row when resolved.
+
+### Quote Source Comparison (top-level snapshot fields)
+- Primary REST quote (**price**, **dailyChangePct**, and related header equity fields): Packaged cash equity mark and day change from the REST snapshot that anchors chain marks and desk context.
+- Stream quote enrichment (**schwab_stream_bid**, **schwab_stream_ask**, **schwab_stream_last**, **schwab_stream_age_ms**): Parallel streamed National Best Bid and Offer style updates when fresh; **null** fields mean no qualifying stream quote on this run.
+- Alternate venue Level 1 (**ibkr_l1_bid**, **ibkr_l1_ask**, **ibkr_l1_last**, **ibkr_l1_age_ms**): Cross-check quote path when the tuning gateway stream is live; wide **ibkr_l1_age_ms** with **null** bid or ask means stale or unavailable.
+- Quote delta in basis points (**ibkr_schwab_quote_delta_bps**): Mid versus mid gap in basis points when both stream and fresh alternate two-sided quotes exist; **null** when either side is missing.
+
+### Live Options Data Freshness (**options_data_freshness**)
+- Source (**options_data_freshness.source**): **schwab_rest_chain_only** means REST pull only, **mixed_stream_and_rest** is hybrid stream plus REST, **schwab_levelone_options_stream** means live stream backed the sampled contracts, **enrichment_error** means the enrichment pass failed.
+- Maximum quote age in milliseconds across active watchlist contracts (**options_data_freshness.max_quote_age_ms**): Oldest observed quote age among contracts sampled for freshness on this run.
+- Count of contracts backed by live stream (**options_data_freshness.contracts_live_stream_backed**): Contracts whose latest tick was inside the fresh stream window.
+- Count of contracts using REST fallback only (**options_data_freshness.contracts_rest_only**): Contracts without a fresh stream tick at snapshot time.
+
+### Ticker Signal Snapshot (**intraday.signal_snapshot**)
+- Snapshot age in seconds (**intraday.signal_snapshot.snapshot_age_seconds**): Time since the scanner worker row was written when a row exists.
+- Pass-through computed signal columns from snapshot worker output (**intraday.signal_snapshot** fields such as **composite_score**, **component_scores**, **flow_summary**, **sector**, **market_cap_tier**, **spot**, **daily_change_pct**, **snapshot_at**, **ticker**): Latest persisted scanner snapshot slice joined for context; interpret jointly with **scannerContext** when both appear.
+`;
+
+/** Solo Desk + Conviction Desk: force cash-equity session facts into JSON strings, not options-only narrative. */
+export const STRATEGIST_EQUITY_MOVES_OUTPUT_RULES = `
+
+## EQUITY SESSION MOVES (integrate into JSON prose when snapshot fields exist)
+The report must reflect **underlying cash action**, not options marks alone. When **price**, **dailyChangePct**, **intraday**, **signal_snapshot**, or top-level equity enrichment fields (stream ages, quote cross-check deltas) are present in the snapshot, cite them in the output: at minimum session percent change from **dailyChangePct** when available, spot level from **price** when useful, and how spot relates to session **Volume Weighted Average Price** plus **Relative Strength Index** tone when **intraday.vwap** / **intraday.rsi** carry numbers. When **intraday.equity_block_tape** or **intraday.order_book** are populated, say whether large prints or displayed liquidity skew confirms or fights the listed-options flow read.
+
+Route these facts into the sections they inform: **flow** (**dominant_flow**, **institutional_signal**, **read**), **pm** (**thesis**, **edge_check**, **watch_for**), **vol** (**implied_vs_realized**, **read**) when spot versus implied move matters, **catalyst** (**read**) only when price action clearly ties to the event story. On Conviction Desk, also **family_hypotheses**, **regime_synthesis**, **positioning_context**, **risk_of_ruin**, and **self_check** when cash positioning informs regime, crowding, or structure choice.
+
+When **intraday** is **null** or nested fields are mostly **null**, note briefly that live equity enrichments were thin on this run and lean on chain plus session tape; still surface **price** and **dailyChangePct** when present. Use full phrases (**Volume Weighted Average Price**, **Relative Strength Index**) and honor OUTPUT STYLE vendor rules.
+`;
 
 /** Catalyst / event narrative: sell-side firms may be named as catalyst actors; retrieval plumbing and outlet attribution may not. */
 export const CATALYST_OUTPUT_ATTRIBUTION_RULES = `
@@ -134,13 +194,11 @@ OUTPUT STYLE (strict, Volatility topic):
 - Use **optionsChainSummary.impliedMove** when available. When **dataQualitySummary.impliedMove.available** is false, do not fabricate an implied move; explicitly note the gap reason (for example, the chain did not provide a two-sided ATM pair) and continue the rest of the volatility analysis with the signals that are present. When available is true, use the snapshot fields **termStructure5pt**, **skew25Delta** (25Δ put IV minus 25Δ call IV when present), **realizedVol** (HV20/HV30 when present), **impliedMove** (ATM straddle for the expiry in the object, which may be the first listed expiry with positive DTE if the sort order front was 0DTE), and **ivrContext** in your **iv_state**, **term_structure**, **skew**, **implied_vs_realized**, and **read** strings with explicit numbers when those objects are non-null.`;
 
 export function buildVolAnalystPrompt(dataPackage: string): string {
-  return `${SINGLE_VOICE_FRAMING}
-
-This turn produces the **Volatility** section only (JSON fields below). Focus on the volatility surface: IV state, term structure, skew, IV vs realized, and where the surface is dislocated relative to fair value.
+  return `Focus on the volatility surface: IV state, term structure, skew, IV vs realized, and where the surface is rich or cheap relative to your fair value. Identify both where the surface is rich relative to your fair value (short-vol fits: condors, credit spreads, calendars sold from the front, butterflies) and where the surface is cheap relative to your fair value (long-vol fits: long calendars from the back leg, long straddles into macro stacks, backspreads, long single-strike options when skew is flat). Skew interpretation must specifically address directional vol asymmetry — flat-to-bid call skew on a recent upside mover is cheap upside vol, not retail confirmation.
 
 Your output is read at institutional review meetings. Every IV number you quote, every vol point you cite, every term structure observation must be defensible. **termStructure5pt** ATM IVs and **skew25Delta** are assembled from chain IVs that already passed deterministic microstructure, liquidity-floor, and surface-consistency hygiene (see **dataQualitySummary.ivClampedCount** and **ivClampedReasons**); null ATM or null skew on a specific expiry means no trustworthy surviving contracts there — skip that expiry in the vol read rather than inferring from neighbors. If **dataQualitySummary.flags** includes **iv_contamination_elevated**, call that out: more than 30% of strikes had IV removed by reasons that count toward the contamination threshold (spread-wide and zero-liquidity microstructure removals may be excluded from that threshold only when **dataQualitySummary.marketSession** is **closed**; when **unknown**, the full threshold applies — see **ivClampedReasons** for the full breakdown). Math is checked before publication. If you state a number, you can defend it.${VOL_CLOSED_SESSION_CONTEXT}
 
-You are not providing liquidity to smarter money. If the surface does not show a real dislocation, your read is no actionable vol edge here and you say so. Do not invent edge to fill space.
+You are not providing liquidity to smarter money. If the surface shows neither a sell-able dislocation nor a buy-able opportunity, your read is no actionable vol edge here and you say so. Do not equate vol edge with vol surface richness — long-vol setups are vol edge too. Do not invent edge to fill space.
 
 For each ticker, produce structured output identifying:
 - Where IV percentile sits and what regime that implies (use **ivr** with **ivrContext** when present)
@@ -149,7 +207,7 @@ For each ticker, produce structured output identifying:
 - The implied vs realized comparison concretely (cite **realizedVol** HV20/HV30 when present; reference **impliedMove** vs spot when present)
 - A read that names specific structures that capture your view, with specific DTE windows and approximate strike placement
 
-Be concrete. "Vol is elevated" is bad. "IVR 76, back-month 80% vs realized 55%, 25 vol-point premium concentrated in the May 29 earnings expiry, prefer May 15 credit structures or May 29/June 18 calendars" is good.
+Be concrete. "Vol is elevated" is bad. Two contrasting examples of good reads: SHORT-VOL: "IVR 76, back-month 80% vs realized 55%, 25 vol-point premium concentrated in the May 29 earnings expiry, prefer May 15 credit structures or short-front calendars." LONG-VOL: "IVR 42, term structure flat at 65% with seven macro prints inside the position window, 25Δ skew flat-to-bid on a recent +90% mover, prefer 8/21 backspreads or long straddles capturing the macro stack."
 
 This section does not finalize a trade. It states the surface read. A later **Decision** section may propose structure.
 
@@ -166,9 +224,7 @@ Respond with ONLY a JSON object (no markdown fences, no extra prose):
 }
 
 export function buildFlowAnalystPrompt(dataPackage: string): string {
-  return `${SINGLE_VOICE_FRAMING}
-
-This turn produces the **Flow** section only (JSON fields below). Focus on positioning: where real size is being worked, where retail noise sits, what the aggressor profile shows, and what block and sweep tape attributes to institutional versus retail flow.
+  return `Focus on positioning: where real size is being worked, where retail noise sits, what the aggressor profile shows, and what block and sweep tape attributes to institutional versus retail flow.
 
 Your output is read at institutional review meetings. Every claim of institutional buying or retail noise must be supported by specific evidence: aggressor mix, block size, sweep classification, vol over open interest ratios, or absence of confirming tape. When session tape is missing or limited, say so explicitly and adjust conviction accordingly. Do not extrapolate institutional positioning from headline volume alone.
 
@@ -181,6 +237,11 @@ The snapshot includes **polygonFlowHighlights** with:
 When **tapeBackfill** is present in the snapshot, read **tapeBackfill.status**. If it is **complete**, treat session tape as full coverage through **tapeBackfill.coverageEndMs** for that session. If **partial** or **failed**, you must state in **read** (and where relevant in flow fields) that session tape coverage is incomplete: cite **tapeBackfill.occCompleted** vs **tapeBackfill.occRequested** and **tapeBackfill.reason** in plain language (no vendor names). Do not imply full-session coverage. If **skipped**, say tape backfill did not run and why only if **tapeBackfill.reason** helps the trader (otherwise keep brief).
 
 When **sessionTape.tapeKind** is "live", anchor **dominant_flow**, **institutional_signal**, **retail_signal**, **key_strikes**, and **read** in concrete tape facts: sweeps, blocks, ask/bid lean, largest prints. When "eod_fallback", describe flow from volume concentration and unusual vol/OI only; do not claim sweeps, blocks, or aggressor. If **sessionTape** is null, lean on the EOD per-strike snapshot and chain unusual activity only. Do not invent sweep counts.
+
+OPTIONS AGGRESSOR VERSUS EQUITY CASH SESSION CONTEXT
+- Classified options prints and aggressor mix come from **polygonFlowHighlights.sessionTape** (see **tapeKind**). Equity cash-session context (Volume Weighted Average Price, equity block tape, Relative Strength Index, streamed quotes, order book) comes from **intraday** and related top-level snapshot fields. When options aggressor data is unavailable because **tapeKind** is **eod_fallback**, say so once in institutional-attribution language (**institutional_signal**, **read**). When equity intraday fields are **null** or thin, that is a **separate** condition; do not bundle both into one vague "no live tape" read.
+
+Verdicts like "textbook retail profile" or "textbook institutional sponsorship" based on strike distribution and OI patterns alone are not supported when classified tape is unavailable. Describe the pattern as consistent with one or the other if useful, but a firm attribution verdict requires corroborating external context beyond what strike and open-interest patterns alone establish.
 
 Example quality bar (adapt numbers to the snapshot): "Smart money accumulating 460 calls via sweeps (12 sweep prints totaling $850k notional, 78% ask-side). Retail chasing 490 lottos (small prints, mid-price executions, few sweeps)."
 
@@ -224,24 +285,29 @@ ${structuredResearchBriefing}
 `
     : "";
 
-  return `${SINGLE_VOICE_FRAMING}
-
-This turn produces the **Catalyst** section only (JSON fields below). Map events: identify the primary catalyst, define the bar to clear in concrete terms, identify which expiry cleanly captures the catalyst, and read directional asymmetry into and out of the event.
+  return `Map events: identify the primary catalyst, define the bar to clear in concrete terms, identify which expiry cleanly captures the catalyst, and read directional asymmetry into and out of the event.
 
 Your output is read at institutional review meetings. Every fundamental claim must be sourced and current. Every consensus number must be cited or labeled as estimate. Every historical reaction must be specific (date, magnitude, surrounding context). When data is not surfaced, you say data not surfaced rather than guessing. The bar to clear must be falsifiable: state what the company has to deliver, in numbers where possible.
 
 You are not providing liquidity to smarter money. If the catalyst window is contaminated by macro overlap, you flag it. If consensus has moved sharply (sell-side cuts or raises), you cite the moves and infer what they tell you about the bar. Vague directional reads are not acceptable. Either the asymmetry is identifiable and specific, or you say it is not.
 
-The snapshot includes **catalyst.earnings_history** (up to 16 past prints), **catalyst.forward_estimates** (next scheduled print when present), and **dataQualitySummary.data_source_gaps** when earnings enrichment ran (Strategist modes 3 and 4). Use **earnings_history[].price_reaction** for gap percent, close-to-close percent, five-day percent, and twenty-day drift percent when narrating "the bar to clear" and "historical pattern" (nulls mean equity history did not cover that window; this is normal for older quarters). Use **earnings_history[].iv_reaction.iv_crush_pct** when discussing whether selling premium into earnings has historically worked for this name. Use **forward_estimates.eps_consensus** and **forward_estimates.revenue_consensus** for the forward bar when non-null. Acknowledge **data_source_gaps** explicitly when present (subscription placeholders for high/low and analyst count are expected until RESC is wired). The most recent four quarters typically have fuller reaction fields; older quarters often show Polygon fiscal fields with null reactions. That pattern is expected, not a bug.
+The snapshot includes **catalyst.earnings_history** (up to six recent quarters that carry at least one reaction field), **catalyst.forward_estimates** (next scheduled print when present), **catalyst.earnings_reaction_summary** (full denominator counts), **catalyst.recentNews** (trailing-window platform news: items, fetchStatus, asOf, lookbackDays), and **dataQualitySummary.data_source_gaps** when earnings enrichment ran (Strategist modes 3 and 4). Use **earnings_history[].price_reaction** for gap percent, close-to-close percent, five-day percent, and twenty-day drift percent when narrating "the bar to clear" and "historical pattern" (nulls mean equity history did not cover that window; this is normal for older quarters). Use **earnings_history[].iv_reaction.iv_crush_pct** when discussing whether selling premium into earnings has historically worked for this name. Use **forward_estimates.eps_consensus** and **forward_estimates.revenue_consensus** for the forward bar when non-null. Acknowledge **data_source_gaps** explicitly when present (subscription placeholders for high/low and analyst count are expected until RESC is wired). Older fiscal rows may show Polygon fiscal fields with null reactions; that pattern is expected, not a bug.
 
 The JSON snapshot may include catalystEvaluation (scheduledEvents with types and sources, scope, alignment, residual) and macroEventsInPositionWindow (FOMC, CPI, PPI, NFP, GDP, PCE-style items through userPreferences.deskCatalystPositionWindowExpirationISO). Treat scheduled macro and earnings as authoritative when present. Combine with the structured research block for IR events, sell-side actions, earnings reaction history, sector/peer context, and conditional news themes.
 
-For each ticker, produce structured output identifying:
-- The primary catalyst in the position window (or no catalyst, with macro/technical context as substitute)
+Determine catalyst.primary_catalyst in this order:
+1. Read **catalyst.recentNews.items** in the trailing window (see **recentNews.lookbackDays**). If any item is plausibly driving price action (regulatory, clinical, product, partnership, EDGAR 8-K, high-impact sell-side body action), set primary_catalyst to that narrative.
+2. Else if catalystEvaluation indicates a confirmed company event inside the position window (earnings inside the window, scheduled binary), use that as primary_catalyst.
+3. Else if the position window contains HIGH-importance macro events and no company-specific catalyst, treat the window as macro-driven.
+4. Else state that no clear primary catalyst is visible and explain why the surface signals (vol, flow, skew) cannot be tied to a specific driver.
+
+Also produce structured output identifying:
 - The bar to clear in concrete terms (specific metrics, specific guidance, specific commentary)
 - The asymmetry direction with reasoning (overpriced, underpriced, symmetric)
 - The historical reaction pattern with specific data when available
 - A read that names which expirations capture the catalyst cleanly and which expirations are noisy
+
+When recentNews identifies an active narrative, tie that narrative to the vol surface (upside or downside skew, front-month IV richness, term backwardation) and to the flow read (call or put concentration, unusual strikes). Do not produce a catalyst section that ignores the narrative when one is present in recentNews. Do not reference any narrative in catalyst.read that is not grounded in recentNews (when fetchStatus is ok), structured research, catalystEvaluation, or the earnings snapshot fields — do not invent news context when none exists.
 
 If a theme has no support in the snapshot or structured research, write **data not surfaced** for that slice instead of inventing.
 
@@ -267,9 +333,9 @@ export function buildPmPrompt(
   flowRead: string,
   catalystRead: string,
 ): string {
-  return `${SINGLE_VOICE_FRAMING}
+  return `Integrate the Volatility, Flow, and Catalyst sections below with the full snapshot. You are one analyst concluding the write-up: trade or pass, structure, thesis, and risk. The **decision** field is your conclusion, not a separate persona.
 
-This turn produces the **Decision** section only (same JSON schema as before: top-level key remains **pm** in machine output for compatibility). Integrate the Volatility, Flow, and Catalyst material below with the full snapshot. You are one analyst concluding the write-up: trade or pass, structure, thesis, and risk. The **decision** field is your conclusion, not a separate persona.
+In single JSON desk mode you emit vol, flow, catalyst, and pm in one object; in multi-turn desk mode the topic reads below are the prior sections for this name. Either way, the decision must stay consistent with those topic reads.
 
 Your output is read at institutional review meetings. Every trade must clear a quality bar: vol math must match the Volatility section, strike selection must reconcile with Flow positioning, directional tilt must align with the Catalyst asymmetry read or be explicitly justified as a deviation. If **edge_check** contradicts the Volatility or Flow numbers you already stated, the section fails before it ships.
 
@@ -279,7 +345,7 @@ When you trade, structures are clean: math defensible, strikes reconciled with f
 
 The standard is precision over volume. Better to publish two A-grade trades a week than ten B-grade trades. Better to publish a clean PASS than a sloppy trade.
 
-You already produced Volatility, Flow, and Catalyst sections (provided below as text). Stress-test them like an editor: find the weakest claim in each slice and pressure-test it. When sections agree, ask whether they reflect the same fact or the same surface read repeated.
+Stress-test the topic reads below like an editor: find the weakest claim in each slice and pressure-test it. When sections agree, ask whether they reflect the same fact or the same surface read repeated.
 
 FIND WHERE THE MARKET IS WRONG
 
@@ -345,11 +411,71 @@ Respond with ONLY a JSON object matching the existing schema (top-level **pm** s
 }`;
 }
 
+/**
+ * PM turn for **order-ticket review** (trader already built a ticket; no new structure).
+ * Same JSON output shape as the trade validator's solo pass (finalVerdict, cases, confidences).
+ */
+export function buildPmOrderTicketDeskValidationPrompt(
+  dataPackage: string,
+  volRead: string,
+  flowRead: string,
+  catalystRead: string,
+  orderTicketMarkdown: string,
+): string {
+  const isClosing = /Intent:\s*CLOSE/i.test(orderTicketMarkdown) || /CLOSE existing position/i.test(orderTicketMarkdown);
+  const bullLabel = isClosing
+    ? "the strongest honest case to **STAY IN** (thesis still intact, do not clip a winner early, do not panic-sell a paper loss)"
+    : "the strongest honest case **FOR** entering this exact trade as built";
+  const bearLabel = isClosing
+    ? "the strongest honest case to **CLOSE** (thesis broken, take it off, redeploy capital)"
+    : "the strongest honest case **AGAINST** entering this exact trade as built";
+  return `${SINGLE_VOICE_FRAMING}
+
+This turn is **order-ticket validation**, not a new trade idea. A trader has already constructed a specific broker order and is asking the desk to review **that exact ticket** before send. The Volatility, Flow, and Catalyst sections below are your colleagues' reads on the name. You must ground your verdict in those sections **and** the order ticket (mandatory — do not ignore the ticket or substitute a different structure).
+
+You are not paid to design a better spread for this session. You are paid to call whether **this** ticket is defensible right now. If the sections do not support the ticket, **DO_NOT_PROCEED** is a correct answer.
+
+## ORDER TICKET (authoritative — cite exact strikes, expiries, limits, quantities from here)
+${orderTicketMarkdown}
+
+## Analyst sections (synthesis context)
+
+Volatility section:
+${volRead}
+
+Flow section:
+${flowRead}
+
+Catalyst section:
+${catalystRead}
+
+## Full data snapshot (JSON; read null-safe; use labels in dataQualitySummary when present)
+${dataPackage}${formatClosingImbalanceDeskLine(dataPackage)}${formatMicrostructureDeskLines(dataPackage)}
+${DATA_STATE_LANGUAGE_RULES}
+${OUTPUT_NO_SOURCE_RULES}
+
+## OUTPUT (mandatory JSON — same schema as the trade ticket solo validator)
+Run web search when you need to confirm a same-day catalyst, earnings window, or analyst action; honor the web-search discipline from the trade validator. Then output **only** this JSON object — no markdown fences, no commentary:
+{
+  "bullCase": "<3-5 sentences: ${bullLabel}>",
+  "bearCase": "<3-5 sentences: ${bearLabel}>",
+  "bullConfidence": <integer 0-100>,
+  "bearConfidence": <integer 0-100>,
+  "finalVerdict": "PROCEED" | "PROCEED_WITH_CAUTION" | "DO_NOT_PROCEED",
+  "finalConfidence": <integer 0-100>,
+  "reasoningBullets": ["<bullet>", "<bullet>", "<2-4 concise bullets>"],
+  "topRisks": ["<bullet>", "<1-3 risks>"],
+  "improvements": ["<bullet>", "<0-3 improvements — empty array if finalVerdict is PROCEED>"]
+}
+
+Calibration: bullConfidence and bearConfidence are independent. finalConfidence is your confidence in **finalVerdict** on **this ticket**.`;
+}
+
 /** Model system line for Solo Desk (user prompt carries process and schema). */
 export const SOLO_DESK_MODEL_SYSTEM_PROMPT =
   "You are one analyst writing a single desk report. Respond only with JSON as instructed.";
 
-const SOLO_DESK_USER_INSTRUCTIONS = `${SINGLE_VOICE_FRAMING}
+export const SOLO_DESK_USER_INSTRUCTIONS = `${SINGLE_VOICE_FRAMING}
 
 You are one analyst producing one report. You cover Volatility, Flow, Catalyst, and Decision as separate topics in one JSON object. The metrics that define your work are Sharpe ratio, alpha, and maximum drawdown. You are not paid on trade count.
 
@@ -363,11 +489,11 @@ Work through four topics in sequence inside one response. Each topic matches the
 
 VOLATILITY
 
-Read the volatility surface: IV state, term structure, skew, IV vs realized. Identify where the surface is dislocated relative to fair value. Term-structure ATM IVs and 25Δ skew are pre-cleaned using bid-ask microstructure (including spread vs mid), hard IV ceilings, a liquidity floor, and local surface outlier checks; use **dataQualitySummary.ivClampedCount** / **ivCleanedRatio** and null entries in **termStructure5pt** or **skew25Delta** to see where the surface is incomplete.
+Read the volatility surface: IV state, term structure, skew, IV vs realized. Identify both where the surface is rich relative to your fair value (short-vol fits: condors, credit spreads, calendars sold from the front, butterflies) and where the surface is cheap relative to your fair value (long-vol fits: long calendars from the back leg, long straddles into macro stacks, backspreads, long single-strike options when skew is flat). Skew interpretation must specifically address directional vol asymmetry — flat-to-bid call skew on a recent upside mover is cheap upside vol, not retail confirmation. Term-structure ATM IVs and 25Δ skew are pre-cleaned using bid-ask microstructure (including spread vs mid), hard IV ceilings, a liquidity floor, and local surface outlier checks; use **dataQualitySummary.ivClampedCount** / **ivCleanedRatio** and null entries in **termStructure5pt** or **skew25Delta** to see where the surface is incomplete.
 
 FLOW
 
-Read positioning: where real size is worked, where retail noise sits. Use aggressor mix, block size, sweep classification, and vol-over-OI ratios as evidence. When session tape is missing or limited, say so.
+Read positioning: where real size is worked, where retail noise sits. Use aggressor mix, block size, sweep classification, and vol-over-OI ratios as evidence. When session tape is missing or limited, say so. Relate listed flow to **underlying cash session moves** when **price**, **dailyChangePct**, or **intraday** appear in the snapshot (see **EQUITY SESSION MOVES** after the JSON block).
 
 CATALYST
 
@@ -390,6 +516,7 @@ OUTPUT FORMAT
 Single JSON object with the same schema as multi-section desk mode.
 
 Use the JSON snapshot fields below when present (same keys as multi-section desk analysts receive):
+- **price**, **dailyChangePct**, **intraday** (Volume Weighted Average Price, Relative Strength Index, equity block tape, order book, **signal_snapshot**), and top-level equity enrichment fields when present: follow **EQUITY SESSION MOVES** after the snapshot so cash session context appears in the JSON strings, not only listed options flow.
 - **dataQualitySummary**, including **data_source_gaps** when set, **flags**, **ivClampedCount** (deterministic IV removals: see **ivClampedReasons** for sentinel, ceiling, one-sided market, penny premium, invalid mid, spread vs mid, liquidity floor, surface outlier), **ivClampedReasons**, **ivCleanedRatio**, **bsmRecomputeStats** (vendor IV vs BSM-from-mid disagreement telemetry only), **termStructureExpiries** (how many curated expiries have a clean ATM IV vs total in the strip), **flow.tapeBackfillReason**, **flow.tapeBackfillReasonLegacy**, **flow.tapeBackfillStatus**, **flow.tapeBackfillTotalTradesFromPolygon**, **flow.tapeBackfillPersistRejected**, **flow.tapeBackfillTruncated**, **flow.tapeBackfillHttpError**, **sessionTapeKind**, and other degraded-state labels (never invent full tape when flags say otherwise). You should not need to manually strip clamped front-week IVs for term structure or skew — that is already done — but if **ivClampedCount** exceeds ~30% of listed contracts (**iv_contamination_elevated** in **flags**), say so and down-weight vol conclusions.
 - **tapeBackfill** (REST tape coverage: status, **tapeBackfillReason**, occ counts, trades inserted, truncation and Polygon HTTP flags when present).
 - **polygonFlowHighlights.sessionTape** (**tapeKind**, **tapeBackfillReason**, sweeps, blocks, aggressor totals, top prints).
@@ -495,7 +622,7 @@ ${pmBlock}
 
 ## DATA PACKAGE (single JSON snapshot)
 
-${snapshotBlock(dataPackage)}${OUTPUT_NO_SOURCE_RULES}${VOL_OUTPUT_ATTRIBUTION_RULES}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
+${snapshotBlock(dataPackage)}${STRATEGIST_EQUITY_MOVES_OUTPUT_RULES}${OUTPUT_NO_SOURCE_RULES}${VOL_OUTPUT_ATTRIBUTION_RULES}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
 
 Respond with ONLY a JSON object (no markdown fences, no extra prose). Top-level keys: vol, flow, catalyst, pm. Shapes must match desk mode exactly.
 
@@ -548,51 +675,64 @@ Respond with ONLY a JSON object (no markdown fences, no extra prose). Top-level 
 }
 
 /**
- * Conviction Desk: same JSON snapshot and data-state rules as Solo Desk; user message carries instructions + JSON skeleton.
- * Placed after the DATA PACKAGE so it is the last instruction before the answer.
+ * Conviction Desk: XML instruction stack; dynamic data package and closing line are appended last for prompt caching.
  */
-export const CONVICTION_DESK_FINAL_SHAPE_GUARD = `
+export interface ConvictionDeskUserPromptBundle {
+  fullUserPrompt: string;
+  anthropicStaticUserPrefix: string;
+  anthropicDynamicUserSuffix: string;
+}
 
-## FINAL SHAPE (must match the skeleton above — violations fail validation)
-- Top-level keys only: regime, view, decision, failure_scenario, scenarios, exit_plan, self_grade, size.
-- regime.vol, regime.sector, regime.macro, regime.stock: **each one enum string** from the skeleton (e.g. vol is exactly "breakout" | "chop" | … as text). Never nest objects under these keys. Never paste or wrap the raw DATA PACKAGE as regime.
-- regime.holding_period_window is "5d" | "20d" | "50d". regime.indicators uses only the flat keys from the skeleton (numbers or null).
-- view has **only** "paragraph" (string) and "decision_intent" ("trade" | "pass"). Do not use thesis, company_events, analyst_actions, or other keys.
-- decision.candidates_considered[*]: debit_credit is one **number** (signed dollars per spread). greeks_entry uses delta, gamma, theta, vega as numbers. outcome_distribution keys must be lowercase **p5, p25, p50, p75, p95** only (not P5).
-- decision.rejected_alternatives[*]: only "structure" and "reason".
-- failure_scenario, scenarios, exit_plan, self_grade: same nesting and field names as the skeleton only.
+export function buildConvictionDeskUserPromptBundle(
+  dataPackage: string,
+  structuredResearchBriefing?: string,
+  options?: { catalystSlotNativeWebSearch?: boolean; provider?: ConvictionDeskPromptProvider },
+): ConvictionDeskUserPromptBundle {
+  const webSearchGuidanceXml = options?.catalystSlotNativeWebSearch
+    ? `<web_search_guidance>
+${CONVICTION_DESK_WEB_SEARCH_GUIDANCE_BODY}
+</web_search_guidance>`
+    : "";
 
-Respond for **this Conviction memo schema only**, not Solo Desk (vol/flow/catalyst/pm), not a regime dossier, not an alternate decision block.`;
+  const volBlock = stripVolPromptBeforeSnapshot(dataPackage);
+  const flowBlock = stripFlowPromptBeforeSnapshot(dataPackage);
+  const catalystBlock = stripCatalystPromptBeforeSnapshot(dataPackage, structuredResearchBriefing, options);
+  const catalystBlockWithRecentNews = `${CONVICTION_DESK_RECENT_NEWS_XML.trim()}\n\n${catalystBlock}`;
+  const pmBlock = stripPmPromptBeforeAnalystReads(dataPackage);
 
-/** Matches strategist model catalog providers — drives provider-specific memo discipline (Gemini JSON vs tool-augmented APIs). */
-export type ConvictionDeskPromptProvider = "anthropic" | "google" | "openai" | "xai";
+  const staticPrefix = buildConvictionDeskStaticUserPrefix({
+    volSectionGuidance: volBlock,
+    flowSectionGuidance: flowBlock,
+    catalystSectionGuidance: catalystBlockWithRecentNews,
+    decisionSectionGuidance: pmBlock,
+    provider: options?.provider,
+    webSearchGuidanceBlock: webSearchGuidanceXml,
+  });
 
-function convictionDeskProviderAppend(provider?: ConvictionDeskPromptProvider): string {
-  if (!provider) return "";
-  switch (provider) {
-    case "google":
-      return `
+  const dataInner =
+    snapshotBlock(dataPackage) + CONVICTION_DESK_INTRADAY_DATA_GUIDANCE + STRATEGIST_EQUITY_MOVES_OUTPUT_RULES;
 
-## YOUR PROVIDER (Google Gemini — JSON MIME turn)
-Web search is **not** attached to this JSON call (Gemini constraint). Use the DATA PACKAGE and any STRUCTURED RESEARCH block; put facts in memo strings without URLs. regime.vol, regime.sector, regime.macro, regime.stock must each be **one JSON string** from the skeleton enums, not nested classification objects or snapshot echoes.`;
-    case "openai":
-      return `
+  const structuredXml = structuredResearchBriefing
+    ? `<structured_research>
+Focused web research was already run; facts below are for synthesis only (do not cite URLs or outlets).
 
-## YOUR PROVIDER (OpenAI — Responses API + web search)
-After tool calls complete, your **final** output must be **only** the Conviction memo JSON object (top-level regime, view, decision, failure_scenario, scenarios, exit_plan, self_grade, size). Do **not** emit Solo Desk shapes (vol / flow / catalyst / pm at the root).`;
-    case "anthropic":
-      return `
+${structuredResearchBriefing}
+</structured_research>
 
-## YOUR PROVIDER (Anthropic — Messages + web search)
-The **final** assistant message must be **only** the Conviction memo JSON—no regime dossier tree, no prose before the opening brace. regime stays flat string enums per the skeleton.`;
-    case "xai":
-      return `
+`
+    : "";
 
-## YOUR PROVIDER (xAI — Grok + web search)
-Return **only** one JSON object: the Conviction memo matching the skeleton; no alternate schema.`;
-    default:
-      return "";
-  }
+  const anthropicDynamicUserSuffix = `${structuredXml}<data_package>
+${dataInner}
+</data_package>
+
+Respond with ONLY one JSON object matching the schema above. No preamble, no prose before the opening brace.`;
+
+  return {
+    fullUserPrompt: `${staticPrefix}\n\n${anthropicDynamicUserSuffix}`,
+    anthropicStaticUserPrefix: staticPrefix,
+    anthropicDynamicUserSuffix,
+  };
 }
 
 export function buildConvictionDeskUserPrompt(
@@ -600,51 +740,5 @@ export function buildConvictionDeskUserPrompt(
   structuredResearchBriefing?: string,
   options?: { catalystSlotNativeWebSearch?: boolean; provider?: ConvictionDeskPromptProvider },
 ): string {
-  const nativeWeb = options?.catalystSlotNativeWebSearch
-    ? `
-
-## WEB SEARCH (your turn, native tools)
-Your provider supports web search **on this JSON turn**. Use the built-in web search tool as needed before answering. Run focused searches aligned with: IR / company events, analyst actions (last ~60 days), earnings reaction history, sector ETF and peers, and (if the catalyst window warrants it) recent news. Prefer primary sources and major financial press; skip content farms.
-If a theme has no support after searching, write **data not surfaced** for that slice instead of inventing. Do not paste URLs or name outlets or vendors in the output.
-`
-    : "";
-
-  const researchBlock = structuredResearchBriefing
-    ? `
-
-## STRUCTURED RESEARCH (pre-run for you)
-Focused web research was already run; facts below are for synthesis only (do not cite URLs or outlets).
-
-${structuredResearchBriefing}
-`
-    : "";
-
-  return `${CONVICTION_DESK_MEMO_INSTRUCTIONS}
-
-${nativeWeb}${researchBlock}
-
-## MACHINE OUTPUT (discipline)
-- Top-level keys exactly: regime, view, decision, failure_scenario, scenarios, exit_plan, self_grade, size.
-- decision.candidates_considered: at least 2 entries (3 preferred). Must span at least two structure families (directional, vol_surface, premium).
-- decision.rejected_alternatives: at least 1 entry.
-- decision.chosen: null when NO TRADE. Otherwise include structure, legs, expiry, credit_or_debit, greeks_entry, greeks_evolution (at least 3 cells; up to 9 for full grid of stock_path +1σ, 0, -1σ with days_held 1, 3, expiry-eve), outcome_distribution, ev_dollars, max_loss, optional stop_loss (per-share; must not equal max_loss when both are numbers).
-- chosen.ev_dollars must be within 5% of the mean of P5, P25, P50, P75, P95 in chosen.outcome_distribution when those define a trade.
-- NO TRADE when: view.decision_intent is "pass", OR self_grade.conviction is C, D, or F, OR conviction_threshold_met is false, OR failure_scenario.sufficient is false. Then chosen must be null, scenarios null, exit_plan null, size must be "no-trade". You still populate regime, view, candidates_considered, rejected_alternatives, failure_scenario, self_grade.
-
-Speak in first person. Do not use em dashes in any string field.
-
----
-
-## JSON SHAPE (copy field names and enum literals exactly)
-
-${CONVICTION_DESK_JSON_SKELETON}
-
----
-
-## DATA PACKAGE (JSON snapshot)
-
-${snapshotBlock(dataPackage)}${OUTPUT_NO_SOURCE_RULES}${VOL_OUTPUT_ATTRIBUTION_RULES}${CATALYST_OUTPUT_ATTRIBUTION_RULES}
-${CONVICTION_DESK_FINAL_SHAPE_GUARD}${convictionDeskProviderAppend(options?.provider)}
-
-Respond with ONLY one JSON object exactly matching the structure above. No markdown fences, no commentary.`;
+  return buildConvictionDeskUserPromptBundle(dataPackage, structuredResearchBriefing, options).fullUserPrompt;
 }

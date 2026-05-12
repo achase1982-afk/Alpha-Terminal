@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { callOpenAIWithSystem, callXaiWithSystem } from "./aiLabAnalystClient.js";
 import { createGeminiClient, getGeminiApiKey } from "./geminiClient.js";
 import { geminiThinkingConfigForModel } from "./geminiThinkingConfig.js";
+import { anthropicThinkingForMessagesApi, ANTHROPIC_EXTENDED_THINKING_BUDGET } from "./llmReasoningConfig.js";
 import { logger } from "./logger.js";
 import type {
   AiLabSkepticClient,
@@ -232,20 +233,20 @@ async function callAnthropicWithSystem(model: string, temperature: number, syste
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
   const client = new Anthropic({ apiKey });
 
-  const isNew = /^claude-(opus|sonnet)-4-([7-9]|\d{2,})/.test(model);
-  const THINKING_BUDGET = 4096;
+  const thinking = anthropicThinkingForMessagesApi(model);
   const params: Anthropic.MessageCreateParamsNonStreaming = {
     model,
-    max_tokens: isNew ? 12288 : THINKING_BUDGET + 8192,
+    max_tokens: thinking
+      ? thinking.type === "adaptive"
+        ? 12288
+        : ANTHROPIC_EXTENDED_THINKING_BUDGET + 8192
+      : 8192,
     system: systemPrompt,
     messages: [{ role: "user", content: prompt }],
   };
-  if (isNew) {
-    // Anthropic Messages API adaptive thinking shape; SDK `thinking` union lags the API.
-    params.thinking = { type: "adaptive", display: "summarized" } as Anthropic.MessageCreateParamsNonStreaming["thinking"];
-  } else {
-    params.thinking = { type: "enabled", budget_tokens: THINKING_BUDGET };
-    params.temperature = 1;
+  if (thinking) {
+    params.thinking = thinking as Anthropic.MessageCreateParamsNonStreaming["thinking"];
+    if (thinking.type === "enabled") params.temperature = 1;
   }
   void temperature;
   const message = await client.messages.create(params);

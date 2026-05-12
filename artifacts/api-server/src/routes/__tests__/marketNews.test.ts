@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeFinnhubArticle } from "../market.js";
+import { normalizeFinnhubArticle } from "../../lib/tickerNewsAggregated.js";
 
 describe("Finnhub news normalization", () => {
   it("keeps direct publisher URLs", () => {

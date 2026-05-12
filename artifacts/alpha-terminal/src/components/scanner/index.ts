@@ -1,4 +1,5 @@
 export { ScannerCard } from "./ScannerCard";
+export { ScannerLayer1ColumnHeader } from "./ScannerLayer1ColumnHeader";
 export { ScannerCardRow } from "./ScannerCardRow";
 export { ScannerCardDetail } from "./ScannerCardDetail";
 export { ScannerCardIdentity } from "./ScannerCardIdentity";
@@ -17,4 +18,8 @@ export {
   persistMutedSymbols,
   SCANNER_V3_MUTED_SYMBOLS_KEY,
 } from "./scannerCard.utils";
-export { scannerWireCardToScannerCardData, type ScannerV3WireCard } from "./scannerCardLayer2";
+export {
+  scannerWireCardToScannerCardData,
+  enrichScannerCardFromV2Candidate,
+  type ScannerV3WireCard,
+} from "./scannerCardLayer2";

@@ -84,6 +84,7 @@ export function emitTelemetry(
   void db
     .insert(telemetryEventsTable)
     .values({
+      service: "server",
       system,
       level: severity,
       message,
