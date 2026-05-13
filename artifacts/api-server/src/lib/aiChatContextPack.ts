@@ -21,6 +21,9 @@ export function extractOptionStrikeHints(text: string): number[] {
     /\b(\d{2,4}(?:\.\d+)?)\s*(?:call|calls)\b/gi,
     /\b(\d{2,4}(?:\.\d+)?)c\b/gi,
     /\$(\d{2,4}(?:\.\d+)?)\s*(?:call|calls)\b/gi,
+    /\b(\d{2,4}(?:\.\d+)?)\s*(?:put|puts)\b/gi,
+    /\b(\d{2,4}(?:\.\d+)?)p\b/gi,
+    /\$(\d{2,4}(?:\.\d+)?)\s*(?:put|puts)\b/gi,
   ];
   for (const re of patterns) {
     re.lastIndex = 0;
