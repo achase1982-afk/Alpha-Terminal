@@ -5,6 +5,7 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Send, Square, RotateCcw, Plus, Trash2, MessageSquareText } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
+import { useVisualViewportKeyboardInset } from "@/hooks/useVisualViewportKeyboardInset";
 
 const ALL_CHAT_MODELS = [
   "claude-opus-4-7",
@@ -60,6 +61,8 @@ export function MarketNewsChatPanel() {
   const [isStreaming, setIsStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const keyboardInset = useVisualViewportKeyboardInset();
 
   useEffect(() => {
     ensureSymbol(symU);
@@ -180,8 +183,10 @@ export function MarketNewsChatPanel() {
 
   const threadOrder = bundle?.threadOrder ?? [];
 
+  const composerPadBottom = `calc(${keyboardInset}px + max(10px, env(safe-area-inset-bottom, 0px)))`;
+
   return (
-    <div className="flex flex-col min-h-[calc(100vh-220px)] md:min-h-[480px] bg-[#0a0a0a] border-t border-card-border/40">
+    <div className="flex flex-col flex-1 min-h-0 max-h-[calc(100dvh-9.5rem)] md:max-h-none md:min-h-[280px] bg-[#0a0a0a] border-t border-card-border/40">
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-card-border/50 shrink-0 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
           <MessageSquareText className="w-4 h-4 text-primary shrink-0" />
@@ -261,7 +266,7 @@ export function MarketNewsChatPanel() {
 
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto px-3 py-2 space-y-2 min-h-[200px]"
+        className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-2"
         style={{ scrollbarWidth: "thin", scrollbarColor: "#333 transparent" }}
       >
         {messages.length === 0 && (
@@ -305,16 +310,23 @@ export function MarketNewsChatPanel() {
       </div>
 
       <form
-        className="shrink-0 border-t border-card-border/50 p-2 flex gap-2 items-end"
+        className="z-20 flex shrink-0 gap-2 border-t border-card-border/50 bg-[#0a0a0a] p-2 items-end"
+        style={{ paddingBottom: composerPadBottom }}
         onSubmit={(e) => {
           e.preventDefault();
           if (input.trim() && !isStreaming) void sendMessage(input);
         }}
       >
         <textarea
+          ref={textareaRef}
           rows={2}
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onFocus={() => {
+            requestAnimationFrame(() => {
+              textareaRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+            });
+          }}
           placeholder={`Ask about ${symU}…`}
           className="flex-1 resize-none bg-[#111] border border-card-border rounded-md px-2 py-1.5 font-mono text-[11px] text-white/85 placeholder:text-white/25 outline-none focus:border-primary/40 min-h-[44px]"
         />

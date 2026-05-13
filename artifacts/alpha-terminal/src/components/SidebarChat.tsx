@@ -5,6 +5,7 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Send, Square, RotateCcw, BrainCircuit } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
+import { useVisualViewportKeyboardInset } from "@/hooks/useVisualViewportKeyboardInset";
 
 interface ChatMessage {
   id: string;
@@ -27,6 +28,7 @@ export function SidebarChat() {
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const keyboardInset = useVisualViewportKeyboardInset();
 
   const { data: quote } = useGetQuote(
     { symbol, accessToken: accessToken || "" },
@@ -184,14 +186,25 @@ export function SidebarChat() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="flex items-center gap-1.5 px-2 py-1.5">
+      <form
+        onSubmit={handleSubmit}
+        className="flex items-center gap-1.5 px-2 py-1.5"
+        style={{
+          paddingBottom: `calc(${keyboardInset}px + max(6px, env(safe-area-inset-bottom, 0px)))`,
+        }}
+      >
         <input
           ref={inputRef}
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          onFocus={() => { if (messages.length > 0) setIsExpanded(true); }}
+          onFocus={() => {
+            if (messages.length > 0) setIsExpanded(true);
+            requestAnimationFrame(() => {
+              inputRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+            });
+          }}
           placeholder={`Ask about ${symbol}...`}
           autoComplete="off"
           autoCorrect="off"
