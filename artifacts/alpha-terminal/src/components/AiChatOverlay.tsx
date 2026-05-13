@@ -69,7 +69,14 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
     }
   }, [isOpen]);
 
-  const composerPadBottom = `calc(${keyboardInset}px + max(12px, env(safe-area-inset-bottom, 0px)))`;
+  const composerPadBottom = `calc(max(${keyboardInset}px, env(keyboard-inset-height, 0px)) + max(12px, env(safe-area-inset-bottom, 0px)))`;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    remeasure();
+    const t = setTimeout(remeasure, 120);
+    return () => clearTimeout(t);
+  }, [isOpen, remeasure]);
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || isStreaming) return;
@@ -308,7 +315,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
       </div>
 
       <div
-        className="shrink-0 border-t border-card-border bg-[#0c0c0c] px-3 pt-2"
+        className="relative z-[101] shrink-0 border-t border-card-border bg-[#0c0c0c] px-3 pt-2"
         style={{ paddingBottom: composerPadBottom }}
       >
         <form onSubmit={handleFormSubmit} className="flex items-end gap-2">
@@ -317,12 +324,16 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPointerDownCapture={() => {
+              remeasure();
+            }}
             onFocus={() => {
               remeasure();
               setTimeout(remeasure, 80);
               setTimeout(remeasure, 280);
+              setTimeout(remeasure, 520);
               requestAnimationFrame(() => {
-                inputRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                inputRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
               });
             }}
             placeholder={`Search ${symbol}, markets, anything...`}
