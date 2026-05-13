@@ -232,9 +232,6 @@ export function MarketNewsChatPanel() {
           setTimeout(remeasure, 80);
           setTimeout(remeasure, 280);
           setTimeout(remeasure, 520);
-          requestAnimationFrame(() => {
-            textareaRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
-          });
         }}
         placeholder={`Ask about ${symU}…`}
         className="flex-1 resize-none bg-[#111] border border-card-border rounded-md px-2 py-1.5 font-mono text-[11px] text-white/85 placeholder:text-white/25 outline-none focus:border-primary/40 min-h-[44px]"

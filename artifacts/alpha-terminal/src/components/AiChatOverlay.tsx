@@ -332,9 +332,6 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
               setTimeout(remeasure, 80);
               setTimeout(remeasure, 280);
               setTimeout(remeasure, 520);
-              requestAnimationFrame(() => {
-                inputRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
-              });
             }}
             placeholder={`Search ${symbol}, markets, anything...`}
             rows={1}
