@@ -11,7 +11,6 @@ import { StrategistSettingsPanel } from "./StrategistSettingsPanel";
 import { StrategistTelemetryPanel } from "./StrategistTelemetryPanel";
 import { SystemSettingsPage } from "./SystemSettingsPage";
 import { IbkrTickDiagnosticsPanel } from "./IbkrTickDiagnosticsPanel";
-import { SidebarChat } from "./SidebarChat";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { queryClient } from "@/App";
 import { Input } from "@/components/ui/input";
@@ -111,7 +110,6 @@ export interface SidebarHandle {
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
-  onOpenChat?: () => void;
   onNavigate?: (dest: "markets" | "portfolio" | "ai-pulse" | "ai-strategist") => void;
   onToggle?: () => void;
 }
@@ -146,7 +144,7 @@ function MenuRow({ icon, label, onClick, badge }: { icon: React.ReactNode; label
   );
 }
 
-export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }, ref) {
+export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar({ isOpen, onClose, onNavigate }, ref) {
   const { signOut } = useAuthSignOutSafe();
   const [activePage, setActivePage] = useState<SidebarPage>(null);
   const telemetryCount = useTelemetryCount();
@@ -273,12 +271,6 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
 
               <div className="flex flex-col pb-2">
                 <MenuRow icon={<Settings />} label="Settings" badge={telemetryCount} onClick={() => { setActivePage("Settings"); onClose(); }} />
-              </div>
-
-              <div className="mx-5 border-b border-card-border/50 mt-2" />
-
-              <div className="px-3 pt-3">
-                <SidebarChat />
               </div>
 
               <div className="pt-6 pb-10 pl-5">

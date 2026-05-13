@@ -5,7 +5,8 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Send, Square, RotateCcw, Plus, Trash2, MessageSquareText } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
-import { useVisualViewportKeyboardInset } from "@/hooks/useVisualViewportKeyboardInset";
+import { useVisualViewportComposerMetrics } from "@/hooks/useVisualViewportKeyboardInset";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 
 const ALL_CHAT_MODELS = [
   "claude-opus-4-7",
@@ -62,7 +63,10 @@ export function MarketNewsChatPanel() {
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const keyboardInset = useVisualViewportKeyboardInset();
+  /** Reserve space for bottom tab bar when the keyboard is dismissed (see BottomNav). */
+  const narrowMobile = useMediaQuery("(max-width: 767px)");
+  const dockReservePx = narrowMobile ? 78 : 12;
+  const { dockBottomPx, remeasure } = useVisualViewportComposerMetrics(dockReservePx);
 
   useEffect(() => {
     ensureSymbol(symU);
@@ -183,8 +187,6 @@ export function MarketNewsChatPanel() {
 
   const threadOrder = bundle?.threadOrder ?? [];
 
-  const composerPadBottom = `calc(${keyboardInset}px + max(10px, env(safe-area-inset-bottom, 0px)))`;
-
   return (
     <div className="flex flex-col flex-1 min-h-0 max-h-[calc(100dvh-9.5rem)] md:max-h-none md:min-h-[280px] bg-[#0a0a0a] border-t border-card-border/40">
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-card-border/50 shrink-0 flex-wrap">
@@ -267,7 +269,15 @@ export function MarketNewsChatPanel() {
       <div
         ref={scrollRef}
         className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-2"
-        style={{ scrollbarWidth: "thin", scrollbarColor: "#333 transparent" }}
+        style={{
+          scrollbarWidth: "thin",
+          scrollbarColor: "#333 transparent",
+          ...(narrowMobile
+            ? {
+                paddingBottom: `calc(80px + ${dockBottomPx}px + env(safe-area-inset-bottom, 0px))`,
+              }
+            : {}),
+        }}
       >
         {messages.length === 0 && (
           <p className="font-mono text-[10px] text-zinc-600 leading-relaxed">
@@ -310,8 +320,18 @@ export function MarketNewsChatPanel() {
       </div>
 
       <form
-        className="z-20 flex shrink-0 gap-2 border-t border-card-border/50 bg-[#0a0a0a] p-2 items-end"
-        style={{ paddingBottom: composerPadBottom }}
+        className={[
+          "z-[60] flex gap-2 border-t border-card-border/50 bg-[#0a0a0a] p-2 items-end",
+          narrowMobile ? "fixed left-0 right-0 shadow-[0_-10px_30px_rgba(0,0,0,0.45)]" : "relative shrink-0",
+        ].join(" ")}
+        style={
+          narrowMobile
+            ? {
+                bottom: dockBottomPx,
+                paddingBottom: "max(8px, env(safe-area-inset-bottom, 0px))",
+              }
+            : { paddingBottom: "max(10px, env(safe-area-inset-bottom, 0px))" }
+        }
         onSubmit={(e) => {
           e.preventDefault();
           if (input.trim() && !isStreaming) void sendMessage(input);
@@ -323,8 +343,11 @@ export function MarketNewsChatPanel() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onFocus={() => {
+            remeasure();
+            setTimeout(remeasure, 80);
+            setTimeout(remeasure, 280);
             requestAnimationFrame(() => {
-              textareaRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+              textareaRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
             });
           }}
           placeholder={`Ask about ${symU}…`}

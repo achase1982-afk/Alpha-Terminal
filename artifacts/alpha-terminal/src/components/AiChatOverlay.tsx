@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { X, Send, Search, Square, RotateCw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
-import { useVisualViewportKeyboardInset } from "@/hooks/useVisualViewportKeyboardInset";
+import { useVisualViewportComposerMetrics } from "@/hooks/useVisualViewportKeyboardInset";
 
 function getChipsForSymbol(symbol: string): string[] {
   return [
@@ -55,7 +55,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const keyboardInset = useVisualViewportKeyboardInset();
+  const { keyboardInset, remeasure } = useVisualViewportComposerMetrics(0);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -318,8 +318,11 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             onFocus={() => {
+              remeasure();
+              setTimeout(remeasure, 80);
+              setTimeout(remeasure, 280);
               requestAnimationFrame(() => {
-                inputRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+                inputRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
               });
             }}
             placeholder={`Search ${symbol}, markets, anything...`}
