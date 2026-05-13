@@ -17,7 +17,11 @@ export interface VisualViewportComposerMetrics {
 
 function readExpandedExtent(vv: VisualViewport): number {
   const merged = vv.height + vv.offsetTop;
-  return Math.max(merged, window.innerHeight, document.documentElement.clientHeight);
+  const ih = window.innerHeight;
+  const docH = document.documentElement.clientHeight;
+  // Avoid `docH` inflating the baseline when it reflects scrollable document height.
+  const layoutH = docH > 0 && docH < ih * 1.35 ? Math.max(merged, ih, docH) : Math.max(merged, ih);
+  return layoutH;
 }
 
 /**
@@ -46,17 +50,20 @@ export function useVisualViewportComposerMetrics(reservePx = 0): VisualViewportC
 
     const update = () => {
       const ih = window.innerHeight;
-      const docH = document.documentElement.clientHeight;
       const merged = vv.height + vv.offsetTop;
 
       const fromBaseline = Math.max(0, baselineRef.current - merged);
-      const fromDoc = Math.max(0, docH - merged);
-      const fromInner = Math.max(0, ih - merged);
+      // Distance from bottom of layout viewport to bottom of visual viewport (keyboard overlap).
+      const fromGap = Math.max(0, ih - merged);
 
-      let next = Math.max(fromBaseline, fromDoc, fromInner);
-      const cap = Math.max(ih, docH, baselineRef.current || ih, 1) * 0.75;
-      next = Math.min(next, cap);
-      if (!Number.isFinite(next) || next < 0) next = 0;
+      let raw = Math.max(fromBaseline, fromGap);
+      const cap = Math.max(ih, baselineRef.current || ih, 1) * 0.68;
+      raw = Math.min(raw, cap);
+      if (!Number.isFinite(raw) || raw < 0) raw = 0;
+
+      // Raw overlap is often a few dozen px generous on iOS; tuck composers closer to the keys.
+      const TIGHTEN_PX = 36;
+      const next = raw >= 110 ? Math.max(0, raw - TIGHTEN_PX) : raw;
 
       // Keyboard dismissed (or nearly): adopt the current expanded layout for next open.
       if (next < 72) {

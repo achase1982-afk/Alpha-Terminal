@@ -69,7 +69,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
     }
   }, [isOpen]);
 
-  const composerPadBottom = `calc(max(${keyboardInset}px, env(keyboard-inset-height, 0px)) + max(12px, env(safe-area-inset-bottom, 0px)))`;
+  const composerPadBottom = `calc(${keyboardInset}px + max(12px, env(safe-area-inset-bottom, 0px)))`;
 
   useEffect(() => {
     if (!isOpen) return;
