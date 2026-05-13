@@ -5,6 +5,7 @@
  */
 import { and, db, desc, eq, optionsFlowRawTradesTable } from "@workspace/db";
 import { getPolygonFlowHighlights, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
+import { requestFlowCapture } from "./flowCaptureService.js";
 import { getQuoteBySymbol, type LiveQuote } from "./schwabStreamer.js";
 import { getStoredIVR } from "./ivNormalize.js";
 import { getNextEarningsDate } from "./earningsService.js";
@@ -181,12 +182,43 @@ export async function buildAiChatContextPack(input: AiChatContextPackInput): Pro
     sections.push("### Server Schwab / streamer quote cache\n(no cached equity quote for this symbol on the API server)");
   }
 
-  const [ivr, highlights, earnings, fmpLines] = await Promise.all([
+  const [ivr, earnings, fmpLines] = await Promise.all([
     getStoredIVR(sym),
-    getPolygonFlowHighlights(sym),
     getNextEarningsDate(sym).catch(() => null),
     fetchFmpHeadlines(sym),
   ]);
+
+  let highlights: PolygonFlowHighlights | null = await getPolygonFlowHighlights(sym);
+  let liveTapeCaptureMarkdown = "";
+
+  if (highlights?.sessionTape?.tapeKind === "eod_fallback") {
+    try {
+      const fc = await requestFlowCapture(sym, {
+        timeout: 12_000,
+        minDurationMs: 1_500,
+      });
+      const tb = fc.tapeBackfill;
+      const refreshed = await getPolygonFlowHighlights(sym, tb);
+      if (refreshed) highlights = refreshed;
+      liveTapeCaptureMarkdown =
+        "### Live options tape (on-demand for this chat request)\n"
+        + `- Ran server flow capture so classified prints can populate the DB before building this pack.\n`
+        + `- sessionDate=${fc.sessionDate} source=${fc.source} durationMs=${fc.durationMs} rowsInserted=${fc.rowsInserted}\n`
+        + `- errors: ${fc.errors.length ? fc.errors.join("; ") : "none"}\n`
+        + (tb
+          ? `- tapeBackfill: status=${tb.status ?? "?"} tradesInserted=${tb.tradesInserted ?? 0} occRequested=${tb.occRequested ?? 0} occCompleted=${tb.occCompleted ?? 0}\n`
+          : "");
+      logger.info(
+        { sym, rowsInserted: fc.rowsInserted, sessionDate: fc.sessionDate, tape: tb?.status },
+        "aiChatContextPack: on-demand flow capture for chat",
+      );
+    } catch (err) {
+      logger.warn({ err, sym }, "aiChatContextPack: on-demand flow capture failed");
+      liveTapeCaptureMarkdown =
+        "### Live options tape (on-demand for this chat request)\n"
+        + `- captureError: ${err instanceof Error ? err.message : String(err)}\n`;
+    }
+  }
 
   if (ivr) {
     sections.push(`### Stored IV rank (equity_daily)\nIVR=${ivr.ivr} asOf=${ivr.asOfDate} source=${ivr.source ?? "unknown"}`);
@@ -198,6 +230,10 @@ export async function buildAiChatContextPack(input: AiChatContextPackInput): Pro
     sections.push(
       `### Next earnings (service)\n${earnings.earningsDate}${earnings.confirmed ? " (confirmed)" : " (unconfirmed)"}`,
     );
+  }
+
+  if (liveTapeCaptureMarkdown) {
+    sections.push(liveTapeCaptureMarkdown.trimEnd());
   }
 
   if (highlights) {

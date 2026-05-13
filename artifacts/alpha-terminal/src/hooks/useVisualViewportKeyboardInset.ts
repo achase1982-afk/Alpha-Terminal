@@ -61,9 +61,8 @@ export function useVisualViewportComposerMetrics(reservePx = 0): VisualViewportC
       raw = Math.min(raw, cap);
       if (!Number.isFinite(raw) || raw < 0) raw = 0;
 
-      // Raw overlap is often a few dozen px generous on iOS; tuck composers closer to the keys.
-      const TIGHTEN_PX = 36;
-      const next = raw >= 110 ? Math.max(0, raw - TIGHTEN_PX) : raw;
+      // iOS overlap reads a bit generous — scale down only when clearly the keyboard band.
+      const next = raw >= 100 ? Math.round(raw * 0.88) : raw;
 
       // Keyboard dismissed (or nearly): adopt the current expanded layout for next open.
       if (next < 72) {

@@ -348,7 +348,7 @@ export function MarketNewsChatPanel() {
           scrollbarColor: "#333 transparent",
           ...(narrowMobile
             ? {
-                paddingBottom: `calc(56px + ${dockBottomPx}px + env(safe-area-inset-bottom, 0px))`,
+                paddingBottom: `calc(44px + ${dockBottomPx}px + env(safe-area-inset-bottom, 0px))`,
               }
             : {}),
         }}
