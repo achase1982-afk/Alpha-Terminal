@@ -85,7 +85,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
       const res = await fetchWithAuth("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history, marketContext, model: aiModel }),
+        body: JSON.stringify({ messages: history, marketContext, model: aiModel, symbol }),
         signal: controller.signal,
       });
 
@@ -160,7 +160,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
       abortRef.current = null;
       setIsStreaming(false);
     }
-  }, [messages, marketContext, isStreaming]);
+  }, [messages, marketContext, isStreaming, aiModel, symbol]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
