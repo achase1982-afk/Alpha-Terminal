@@ -9,6 +9,8 @@ import { AssistantListenButton, cancelAssistantSpeech } from "@/components/Assis
 import { useVisualViewportComposerMetrics } from "@/hooks/useVisualViewportKeyboardInset";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 
+const RETRYABLE_CHAT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+
 const ALL_CHAT_MODELS = [
   "claude-opus-4-7",
   "claude-opus-4-6",
@@ -62,12 +64,13 @@ export function MarketNewsChatPanel() {
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [composerFocused, setComposerFocused] = useState(false);
+  const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   /** Reserve space for bottom tab bar when the keyboard is dismissed (see BottomNav). */
   const narrowMobile = useMediaQuery("(max-width: 767px)");
-  const dockReservePx = narrowMobile ? 78 : 12;
+  const dockReservePx = narrowMobile ? (composerFocused ? 0 : 78) : 12;
   const { dockBottomPx, remeasure } = useVisualViewportComposerMetrics(dockReservePx, {
     composerFocused,
   });
@@ -85,6 +88,10 @@ export function MarketNewsChatPanel() {
       clearTimeout(t2);
     };
   }, [symU, remeasure]);
+
+  useEffect(() => {
+    setLastFailedMessage(null);
+  }, [symU, activeThreadId]);
 
   const { data: quote } = useGetQuote(
     { symbol: symU, accessToken: accessToken || "" },
@@ -124,6 +131,7 @@ export function MarketNewsChatPanel() {
       appendMessage(symU, tid, userMsg);
       setInput("");
       setIsStreaming(true);
+      setLastFailedMessage(null);
 
       const history = [...priorMessages, userMsg].map((m) => ({ role: m.role, content: m.content }));
       const controller = new AbortController();
@@ -144,39 +152,90 @@ export function MarketNewsChatPanel() {
           signal: controller.signal,
         });
 
-        if (!res.ok) {
-          setAssistantContent(symU, tid, assistantId, `Error ${res.status}. Try again.`);
+        const contentType = res.headers.get("content-type") || "";
+        const looksLikeHtml = contentType.includes("text/html");
+        if (!res.ok || looksLikeHtml) {
+          const retryable = RETRYABLE_CHAT_STATUS.has(res.status) || looksLikeHtml;
+          const label = !res.ok
+            ? `Server returned ${res.status}`
+            : "Received unexpected HTML response (API may be restarting)";
+          setAssistantContent(
+            symU,
+            tid,
+            assistantId,
+            `**Error:** ${label}.${retryable ? " Please retry in a moment." : ""}`,
+          );
+          if (retryable) setLastFailedMessage(text.trim());
           setIsStreaming(false);
           return;
         }
 
         const reader = res.body?.getReader();
         if (!reader) {
-          setAssistantContent(symU, tid, assistantId, "No response.");
+          setAssistantContent(
+            symU,
+            tid,
+            assistantId,
+            "**Error:** Empty response stream from server. Please retry.",
+          );
+          setLastFailedMessage(text.trim());
           setIsStreaming(false);
           return;
         }
 
         const decoder = new TextDecoder();
         let accumulated = "";
+        let htmlDetected = false;
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           accumulated += decoder.decode(value, { stream: true });
+
+          if (!htmlDetected && accumulated.length < 220 && /^\s*<!DOCTYPE|^\s*<html/i.test(accumulated)) {
+            htmlDetected = true;
+            reader.cancel();
+            break;
+          }
+
           setAssistantContent(symU, tid, assistantId, accumulated);
         }
 
+        if (htmlDetected) {
+          setAssistantContent(
+            symU,
+            tid,
+            assistantId,
+            "**Error:** API returned HTML instead of chat output. Please retry in a moment.",
+          );
+          setLastFailedMessage(text.trim());
+          return;
+        }
+
         if (!accumulated.trim()) {
-          setAssistantContent(symU, tid, assistantId, "*(No response)*");
+          setAssistantContent(
+            symU,
+            tid,
+            assistantId,
+            "**Error:** Empty response from model. Please retry.",
+          );
+          setLastFailedMessage(text.trim());
+        } else {
+          setLastFailedMessage(null);
         }
       } catch (err: unknown) {
         if ((err as Error).name === "AbortError") return;
+        const errMsg = (err as Error).message || "Connection failed";
+        const retryable =
+          errMsg.includes("Failed to fetch") ||
+          errMsg.includes("NetworkError") ||
+          errMsg.includes("Load failed");
+        if (retryable) setLastFailedMessage(text.trim());
         setAssistantContent(
           symU,
           tid,
           assistantId,
-          `Error: ${(err as Error).message}`,
+          `**Error:** ${errMsg}${retryable ? ". Please retry." : ""}`,
         );
       } finally {
         abortRef.current = null;
@@ -198,6 +257,13 @@ export function MarketNewsChatPanel() {
     abortRef.current?.abort();
     setIsStreaming(false);
   }, []);
+
+  const handleRetry = useCallback(() => {
+    if (!lastFailedMessage || isStreaming) return;
+    const retryText = lastFailedMessage;
+    setLastFailedMessage(null);
+    void sendMessage(retryText);
+  }, [lastFailedMessage, isStreaming, sendMessage]);
 
   const threadOrder = bundle?.threadOrder ?? [];
 
@@ -331,18 +397,31 @@ export function MarketNewsChatPanel() {
           New
         </button>
         {messages.length > 0 && (
-          <button
-            type="button"
-            onClick={() => {
-              handleStop();
-              cancelAssistantSpeech();
-              clearActiveThread(symU);
-            }}
-            className="ml-auto flex items-center gap-0.5 font-mono text-[9px] text-zinc-500 hover:text-zinc-300 px-1.5 shrink-0"
-          >
-            <RotateCcw className="w-3 h-3" />
-            Clear
-          </button>
+          <>
+            {lastFailedMessage && !isStreaming && (
+              <button
+                type="button"
+                onClick={handleRetry}
+                className="ml-auto flex items-center gap-0.5 font-mono text-[9px] text-primary/80 hover:text-primary px-1.5 shrink-0"
+              >
+                <RotateCcw className="w-3 h-3" />
+                Retry
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                handleStop();
+                cancelAssistantSpeech();
+                setLastFailedMessage(null);
+                clearActiveThread(symU);
+              }}
+              className={`${lastFailedMessage && !isStreaming ? "" : "ml-auto"} flex items-center gap-0.5 font-mono text-[9px] text-zinc-500 hover:text-zinc-300 px-1.5 shrink-0`}
+            >
+              <RotateCcw className="w-3 h-3" />
+              Clear
+            </button>
+          </>
         )}
       </div>
 
