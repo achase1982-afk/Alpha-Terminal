@@ -209,7 +209,7 @@ export function MarketNewsChatPanel() {
       style={
         narrowMobile
           ? {
-              bottom: `max(${dockBottomPx}px, env(keyboard-inset-height, 0px))`,
+              bottom: dockBottomPx,
               paddingBottom: "max(8px, env(safe-area-inset-bottom, 0px))",
             }
           : { paddingBottom: "max(10px, env(safe-area-inset-bottom, 0px))" }
@@ -348,7 +348,7 @@ export function MarketNewsChatPanel() {
           scrollbarColor: "#333 transparent",
           ...(narrowMobile
             ? {
-                paddingBottom: `calc(80px + ${dockBottomPx}px + env(safe-area-inset-bottom, 0px))`,
+                paddingBottom: `calc(56px + ${dockBottomPx}px + env(safe-area-inset-bottom, 0px))`,
               }
             : {}),
         }}
