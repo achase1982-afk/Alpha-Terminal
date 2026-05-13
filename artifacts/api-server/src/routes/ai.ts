@@ -10,8 +10,6 @@ import {
   RunTechnicalAnalysisResponse,
   RunOptionsAnalysisBody,
   RunOptionsAnalysisResponse,
-  RunChatQueryBody,
-  RunChatQueryResponse,
   GetAvailableModelsResponse,
 } from "@workspace/api-zod";
 import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
@@ -58,6 +56,7 @@ import {
   isAnthropicAdaptiveThinkingModel,
   xaiReasoningProviderOptionsForChat,
 } from "../lib/llmReasoningConfig.js";
+import { buildAiChatContextPack } from "../lib/aiChatContextPack.js";
 
 export { isClaude47OrNewer } from "../lib/llmReasoningConfig.js";
 
@@ -2468,10 +2467,12 @@ router.post("/options-strategist/stream", async (req, res) => {
 
 router.post("/chat", async (req, res) => {
   try {
-    const { messages, marketContext, model: reqModel } = req.body as {
+    const { messages, marketContext, model: reqModel, symbol: bodySymbol } = req.body as {
       messages?: Array<{ role: string; content: string }>;
       marketContext?: string;
       model?: string;
+      /** Terminal symbol — used to load Polygon flow, tape, IVR, FMP news on the server. */
+      symbol?: string;
     };
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -2479,23 +2480,48 @@ router.post("/chat", async (req, res) => {
     }
 
     const chosenModel = reqModel ?? DEFAULT_MODEL;
+    const lastUserMsg = messages[messages.length - 1]?.content ?? "";
+    const contextSymbol = (bodySymbol ?? "").trim().toUpperCase();
+
+    let terminalDataPack = "";
+    if (contextSymbol) {
+      try {
+        terminalDataPack = await buildAiChatContextPack({
+          symbol: contextSymbol,
+          lastUserMessage: lastUserMsg,
+        });
+      } catch (packErr) {
+        req.log.error({ err: packErr, contextSymbol }, "AI chat: context pack assembly failed");
+        terminalDataPack =
+          "(Terminal database context failed to load for this request — rely on Schwab line and user text.)";
+      }
+    }
 
     const systemPrompt = `You are Alpha Terminal, a world-class AI assistant powered by advanced AI. Your primary UI is the Alpha Financial Terminal.
 - Today is ${new Date().toDateString()}. Current time: ${new Date().toLocaleString()}.
 - If the user asks a general question (like how to make a pizza), answer it directly and concisely.
-- If the user asks about specific stock data and Schwab context is provided below, use that live data.
+- If the user asks about specific stock data and context blocks below are populated, use ONLY those blocks for numbers and flow facts.
 - Keep answers concise. Use bullet points or short lines when listing data.
 - Never start sentences with "As an AI..." or "I am a financial terminal and cannot..." or any variant. Just answer the question.
 - No greetings, no sign-offs, no "sure" or "great question."
 - Do not refuse to answer non-financial questions.
 
+OPTIONS FLOW & AGGRESSOR DISCIPLINE:
+- sessionTape.tapeKind "live" means classified prints and NBBO-derived aggressor tags exist; "eod_fallback" means volume was synthesized — do not over-claim sweep/aggressor detail when tapeKind is eod_fallback or sessionAggregateSource is eod_volume_only.
+- side ask/bid/mid is derived from trade price vs NBBO at ingest (see aggressor_confidence). It indicates aggressive lift/hit, not "institutional vs retail."
+- Do not label flow as institutional or retail unless the user explicitly asks for inference — then phrase as possibilities, not facts.
+
 STRICT DATA GROUNDING RULE FOR MARKET/TRADING QUESTIONS:
-- When answering questions about specific stock prices, trends, technical levels, or trading strategies, you must ONLY use the Context Data provided below.
-- You are FORBIDDEN from using your internal training knowledge to state current prices, recent price movements, support/resistance levels, or directional predictions for any specific security.
-- If no Schwab context data is provided and the user asks about a specific stock's current state, tell them to connect Schwab for live data.
+- When answering questions about specific stock prices, trends, technical levels, options flow, sweeps, blocks, or trading strategies, you must ONLY use the Context Data blocks below (Schwab line, terminal DB/JSON, FMP headlines).
+- You are FORBIDDEN from using your internal training knowledge to state current prices, recent price movements, support/resistance levels, or directional predictions for any specific security except where explicitly supported below.
+- If Schwab context is empty AND the terminal pack has no quote cache for the symbol, say live equity quote may require Schwab connection/streamer.
 - For general financial education (e.g. "what is a put option"), internal knowledge is fine.
 
-${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA ═══\n${marketContext}\n═══ END CONTEXT DATA ═══` : "No live Schwab data connected."}`;
+${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA (from client quote) ═══\n${marketContext}\n═══ END SCHWAB CONTEXT ═══` : "═══ LIVE SCHWAB CONTEXT DATA (from client quote) ═══\nNo client quote line sent.\n═══ END SCHWAB CONTEXT ═══"}
+
+═══ TERMINAL DATABASE & FLOW CONTEXT (server; symbol=${contextSymbol || "not sent"}) ═══
+${contextSymbol ? terminalDataPack : "(No symbol was sent — ask the user to set a terminal symbol, or restate the ticker.)"}
+═══ END TERMINAL DATABASE & FLOW CONTEXT ═══`;
 
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
     res.setHeader("Transfer-Encoding", "chunked");
