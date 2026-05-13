@@ -54,15 +54,24 @@ export function useVisualViewportComposerMetrics(reservePx = 0): VisualViewportC
 
       const fromBaseline = Math.max(0, baselineRef.current - merged);
       // Distance from bottom of layout viewport to bottom of visual viewport (keyboard overlap).
-      const fromGap = Math.max(0, ih - merged);
+      const directInset = Math.max(0, ih - merged);
 
-      let raw = Math.max(fromBaseline, fromGap);
-      const cap = Math.max(ih, baselineRef.current || ih, 1) * 0.68;
+      /**
+       * Prefer the direct inset whenever it is clearly non-zero. Taking `max(direct, baseline)`
+       * permanently let an inflated baseline dominate on some iOS builds, which set
+       * `position: fixed; bottom: …` hundreds of px too high — the composer floated mid-screen
+       * with chat scrolling underneath.
+       */
+      const TRUST_DIRECT_MIN = 20;
+      let raw =
+        directInset >= TRUST_DIRECT_MIN ? directInset : Math.max(directInset, fromBaseline);
+
+      const cap = Math.max(ih, baselineRef.current || ih, 1) * 0.62;
       raw = Math.min(raw, cap);
       if (!Number.isFinite(raw) || raw < 0) raw = 0;
 
-      // iOS overlap reads a bit generous — scale down only when clearly the keyboard band.
-      const next = raw >= 100 ? Math.round(raw * 0.88) : raw;
+      // Slight tuck when overlap is clearly the keyboard band.
+      const next = raw >= 100 ? Math.round(raw * 0.92) : raw;
 
       // Keyboard dismissed (or nearly): adopt the current expanded layout for next open.
       if (next < 72) {
@@ -73,7 +82,6 @@ export function useVisualViewportComposerMetrics(reservePx = 0): VisualViewportC
     };
 
     const remeasureInner = () => {
-      bumpBaseline();
       update();
     };
 
