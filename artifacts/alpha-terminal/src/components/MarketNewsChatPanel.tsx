@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useTerminalStore, type MarketNewsChatMessage } from "@/lib/store";
 import { useGetQuote } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
@@ -71,6 +72,16 @@ export function MarketNewsChatPanel() {
   useEffect(() => {
     ensureSymbol(symU);
   }, [symU, ensureSymbol]);
+
+  useEffect(() => {
+    remeasure();
+    const t1 = setTimeout(remeasure, 50);
+    const t2 = setTimeout(remeasure, 400);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [symU, remeasure]);
 
   const { data: quote } = useGetQuote(
     { symbol: symU, accessToken: accessToken || "" },
@@ -186,6 +197,69 @@ export function MarketNewsChatPanel() {
   }, []);
 
   const threadOrder = bundle?.threadOrder ?? [];
+
+  const renderComposer = () => (
+    <form
+      className={[
+        "flex gap-2 border-t border-card-border/50 bg-[#0a0a0a] p-2 items-end",
+        narrowMobile
+          ? "fixed left-0 right-0 z-[10050] shadow-[0_-10px_30px_rgba(0,0,0,0.45)]"
+          : "relative z-[60] shrink-0",
+      ].join(" ")}
+      style={
+        narrowMobile
+          ? {
+              bottom: `max(${dockBottomPx}px, env(keyboard-inset-height, 0px))`,
+              paddingBottom: "max(8px, env(safe-area-inset-bottom, 0px))",
+            }
+          : { paddingBottom: "max(10px, env(safe-area-inset-bottom, 0px))" }
+      }
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (input.trim() && !isStreaming) void sendMessage(input);
+      }}
+    >
+      <textarea
+        ref={textareaRef}
+        rows={2}
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onPointerDownCapture={() => {
+          remeasure();
+        }}
+        onFocus={() => {
+          remeasure();
+          setTimeout(remeasure, 80);
+          setTimeout(remeasure, 280);
+          setTimeout(remeasure, 520);
+          requestAnimationFrame(() => {
+            textareaRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+          });
+        }}
+        placeholder={`Ask about ${symU}…`}
+        className="flex-1 resize-none bg-[#111] border border-card-border rounded-md px-2 py-1.5 font-mono text-[11px] text-white/85 placeholder:text-white/25 outline-none focus:border-primary/40 min-h-[44px]"
+      />
+      {isStreaming ? (
+        <button
+          type="button"
+          onClick={handleStop}
+          className="shrink-0 p-2.5 rounded-md border border-red-500/40 text-red-400 hover:bg-red-500/10"
+          aria-label="Stop"
+        >
+          <Square className="w-4 h-4 fill-current" />
+        </button>
+      ) : (
+        <button
+          type="submit"
+          disabled={!input.trim()}
+          className="shrink-0 p-2.5 rounded-md border border-primary/40 text-primary disabled:opacity-30 hover:bg-primary/10"
+          aria-label="Send"
+        >
+          <Send className="w-4 h-4" />
+        </button>
+      )}
+    </form>
+  );
 
   return (
     <div className="flex flex-col flex-1 min-h-0 max-h-[calc(100dvh-9.5rem)] md:max-h-none md:min-h-[280px] bg-[#0a0a0a] border-t border-card-border/40">
@@ -319,60 +393,11 @@ export function MarketNewsChatPanel() {
         )}
       </div>
 
-      <form
-        className={[
-          "z-[60] flex gap-2 border-t border-card-border/50 bg-[#0a0a0a] p-2 items-end",
-          narrowMobile ? "fixed left-0 right-0 shadow-[0_-10px_30px_rgba(0,0,0,0.45)]" : "relative shrink-0",
-        ].join(" ")}
-        style={
-          narrowMobile
-            ? {
-                bottom: dockBottomPx,
-                paddingBottom: "max(8px, env(safe-area-inset-bottom, 0px))",
-              }
-            : { paddingBottom: "max(10px, env(safe-area-inset-bottom, 0px))" }
-        }
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (input.trim() && !isStreaming) void sendMessage(input);
-        }}
-      >
-        <textarea
-          ref={textareaRef}
-          rows={2}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onFocus={() => {
-            remeasure();
-            setTimeout(remeasure, 80);
-            setTimeout(remeasure, 280);
-            requestAnimationFrame(() => {
-              textareaRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-            });
-          }}
-          placeholder={`Ask about ${symU}…`}
-          className="flex-1 resize-none bg-[#111] border border-card-border rounded-md px-2 py-1.5 font-mono text-[11px] text-white/85 placeholder:text-white/25 outline-none focus:border-primary/40 min-h-[44px]"
-        />
-        {isStreaming ? (
-          <button
-            type="button"
-            onClick={handleStop}
-            className="shrink-0 p-2.5 rounded-md border border-red-500/40 text-red-400 hover:bg-red-500/10"
-            aria-label="Stop"
-          >
-            <Square className="w-4 h-4 fill-current" />
-          </button>
-        ) : (
-          <button
-            type="submit"
-            disabled={!input.trim()}
-            className="shrink-0 p-2.5 rounded-md border border-primary/40 text-primary disabled:opacity-30 hover:bg-primary/10"
-            aria-label="Send"
-          >
-            <Send className="w-4 h-4" />
-          </button>
-        )}
-      </form>
+      {narrowMobile && typeof document !== "undefined"
+        ? createPortal(renderComposer(), document.body)
+        : !narrowMobile
+          ? renderComposer()
+          : null}
     </div>
   );
 }

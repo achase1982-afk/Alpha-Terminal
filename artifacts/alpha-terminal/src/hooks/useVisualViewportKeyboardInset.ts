@@ -11,15 +11,25 @@ export interface VisualViewportComposerMetrics {
    * (bottom tab bar, etc.) and at least `keyboardInset` when the keyboard is open.
    */
   dockBottomPx: number;
-  /** Re-run measurement (call on textarea `focus` / after keyboard animation). */
+  /** Snapshot the largest layout extent *before* the keyboard animates; then re-measure. */
   remeasure: () => void;
 }
 
+function readExpandedExtent(vv: VisualViewport): number {
+  const merged = vv.height + vv.offsetTop;
+  return Math.max(merged, window.innerHeight, document.documentElement.clientHeight);
+}
+
 /**
- * iOS Safari often shrinks both `window.innerHeight` and `visualViewport.height` when
- * the keyboard opens, so `innerHeight - visualViewport.height` is ~0. We keep a
- * running baseline of the largest "expanded" viewport and subtract the current
- * visible merge height to recover keyboard overlap.
+ * iOS (Safari + PWA) often shrinks `window.innerHeight` together with `visualViewport`
+ * when the keyboard opens, so `innerHeight - visualViewport.height` is ~0.
+ *
+ * We keep a **monotonic baseline** of the largest expanded layout extent and set
+ * `keyboardInset = max(0, baseline - (vv.height + vv.offsetTop), …)`.
+ *
+ * The baseline is **only refreshed when the inset is small** (keyboard dismissed),
+ * never overwritten using the compressed "keyboard open" metrics — that mistake
+ * is what zeroed the inset on iOS before.
  */
 export function useVisualViewportComposerMetrics(reservePx = 0): VisualViewportComposerMetrics {
   const [keyboardInset, setKeyboardInset] = useState(0);
@@ -30,29 +40,40 @@ export function useVisualViewportComposerMetrics(reservePx = 0): VisualViewportC
     const vv = window.visualViewport;
     if (!vv) return;
 
-    const initBaseline = () => {
-      const ih = window.innerHeight;
-      baselineRef.current = Math.max(baselineRef.current, ih, vv.height + vv.offsetTop);
+    const bumpBaseline = () => {
+      baselineRef.current = Math.max(baselineRef.current, readExpandedExtent(vv));
     };
 
     const update = () => {
       const ih = window.innerHeight;
+      const docH = document.documentElement.clientHeight;
       const merged = vv.height + vv.offsetTop;
 
-      if (merged >= ih * 0.86) {
-        baselineRef.current = Math.max(baselineRef.current, merged, ih);
+      const fromBaseline = Math.max(0, baselineRef.current - merged);
+      const fromDoc = Math.max(0, docH - merged);
+      const fromInner = Math.max(0, ih - merged);
+      const gapInner = Math.max(0, ih - vv.height - vv.offsetTop);
+
+      let next = Math.max(fromBaseline, fromDoc, fromInner, gapInner);
+      const cap = Math.max(ih, docH, baselineRef.current || ih, 1) * 0.75;
+      next = Math.min(next, cap);
+      if (!Number.isFinite(next) || next < 0) next = 0;
+
+      // Keyboard dismissed (or nearly): adopt the current expanded layout for next open.
+      if (next < 72) {
+        bumpBaseline();
       }
 
-      const fromBaseline = Math.max(0, baselineRef.current - merged);
-      const fromInner = Math.max(0, ih - vv.height - vv.offsetTop);
-      let next = Math.max(fromBaseline, fromInner);
-      next = Math.min(next, ih * 0.72);
-      if (!Number.isFinite(next)) next = 0;
       setKeyboardInset(next);
     };
 
-    updateRef.current = update;
-    initBaseline();
+    const remeasureInner = () => {
+      bumpBaseline();
+      update();
+    };
+
+    updateRef.current = remeasureInner;
+    bumpBaseline();
     update();
 
     vv.addEventListener("resize", update);
@@ -60,11 +81,11 @@ export function useVisualViewportComposerMetrics(reservePx = 0): VisualViewportC
     window.addEventListener("resize", update);
 
     const onOrientation = () => {
+      baselineRef.current = 0;
       setTimeout(() => {
-        baselineRef.current = 0;
-        initBaseline();
+        bumpBaseline();
         update();
-      }, 280);
+      }, 320);
     };
     window.addEventListener("orientationchange", onOrientation);
 
