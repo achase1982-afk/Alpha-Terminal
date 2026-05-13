@@ -604,7 +604,6 @@ export default function TerminalPage() {
           ref={sidebarRef}
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
-          onOpenChat={() => {}}
           onNavigate={(dest) => {
             if (dest === "markets") setActiveBottom("markets");
             else if (dest === "portfolio") setActiveBottom("portfolio");
