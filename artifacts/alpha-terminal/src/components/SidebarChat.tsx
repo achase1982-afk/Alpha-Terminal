@@ -5,7 +5,7 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Send, Square, RotateCcw, BrainCircuit } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
-import { useVisualViewportKeyboardInset } from "@/hooks/useVisualViewportKeyboardInset";
+import { useVisualViewportComposerMetrics } from "@/hooks/useVisualViewportKeyboardInset";
 
 interface ChatMessage {
   id: string;
@@ -28,7 +28,7 @@ export function SidebarChat() {
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const keyboardInset = useVisualViewportKeyboardInset();
+  const { keyboardInset, remeasure } = useVisualViewportComposerMetrics(0);
 
   const { data: quote } = useGetQuote(
     { symbol, accessToken: accessToken || "" },
@@ -201,8 +201,11 @@ export function SidebarChat() {
           onKeyDown={handleKeyDown}
           onFocus={() => {
             if (messages.length > 0) setIsExpanded(true);
+            remeasure();
+            setTimeout(remeasure, 80);
+            setTimeout(remeasure, 280);
             requestAnimationFrame(() => {
-              inputRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+              inputRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
             });
           }}
           placeholder={`Ask about ${symbol}...`}
