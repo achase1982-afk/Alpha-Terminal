@@ -1,16 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
-import { Newspaper, BarChart2, Building2, LineChart } from "lucide-react";
+import { Newspaper, BarChart2, Building2, LineChart, MessagesSquare } from "lucide-react";
 
-export type MarketDataTab = "news" | "options" | "company" | "chart";
+export type MarketDataTab = "news" | "options" | "company" | "newsChat" | "chart";
 
 const TAB_DEFS: Record<MarketDataTab, { label: string; icon: React.ReactNode }> = {
-  news:    { label: "NEWS",    icon: <Newspaper className="w-4 h-4" /> },
-  options: { label: "OPTIONS", icon: <BarChart2 className="w-4 h-4" /> },
-  company: { label: "COMPANY", icon: <Building2 className="w-4 h-4" /> },
-  chart:   { label: "CHART",   icon: <LineChart className="w-4 h-4" /> },
+  news:     { label: "NEWS",      icon: <Newspaper className="w-4 h-4" /> },
+  options:  { label: "OPTIONS",   icon: <BarChart2 className="w-4 h-4" /> },
+  company:  { label: "COMPANY",   icon: <Building2 className="w-4 h-4" /> },
+  newsChat: { label: "NEWS CHAT", icon: <MessagesSquare className="w-4 h-4" /> },
+  chart:    { label: "CHART",     icon: <LineChart className="w-4 h-4" /> },
 };
 
-const DEFAULT_ORDER: MarketDataTab[] = ["news", "options", "company", "chart"];
+const DEFAULT_ORDER: MarketDataTab[] = ["news", "options", "company", "newsChat", "chart"];
 const STORAGE_KEY = "alphaTerminalTabOrder";
 const LONG_PRESS_MS = 450;
 
@@ -20,11 +21,22 @@ function loadOrder(): MarketDataTab[] {
     if (raw) {
       const parsed = JSON.parse(raw) as string[];
       if (Array.isArray(parsed)) {
-        const filtered = parsed.filter((t): t is MarketDataTab => t in TAB_DEFS);
+        let filtered = parsed.filter((t): t is MarketDataTab => t in TAB_DEFS);
+        // Migrate saved 4-tab bar (pre–News chat): insert `newsChat` before CHART.
+        if (filtered.length === 4 && !filtered.includes("newsChat")) {
+          const ci = filtered.indexOf("chart");
+          if (ci >= 0) {
+            filtered = [...filtered.slice(0, ci), "newsChat", ...filtered.slice(ci)];
+          } else {
+            filtered = [...filtered, "newsChat"];
+          }
+        }
         if (
           filtered.length === DEFAULT_ORDER.length &&
           DEFAULT_ORDER.every((t) => filtered.includes(t))
-        ) return filtered;
+        ) {
+          return filtered;
+        }
       }
     }
   } catch {}
@@ -279,7 +291,7 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
       `}</style>
       <div
         ref={containerRef}
-        className="relative flex w-full items-stretch p-0 border-t border-card-border/20 overflow-hidden"
+        className="relative flex w-full items-stretch p-0 border-t border-card-border/20 overflow-x-auto"
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         style={{ touchAction: dragging ? "none" : "auto" }}
@@ -314,7 +326,7 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
                 }}
                 onTouchStart={(e) => handleTouchStart(i, e)}
                 className={[
-                  "flex flex-1 items-center justify-center gap-2 py-2.5 border-b-2 select-none",
+                  "flex flex-1 min-w-[72px] sm:min-w-0 items-center justify-center gap-1.5 sm:gap-2 py-2.5 border-b-2 select-none",
                   isActive ? "border-primary text-white" : "border-transparent text-zinc-500",
                   jiggling && !isBeingDragged ? "tab-jiggle tab-slot-shift" : "",
                   isBeingDragged ? "tab-dragging" : "",

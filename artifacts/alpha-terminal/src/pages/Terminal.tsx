@@ -26,6 +26,7 @@ import { StrategyBuilder, type StrategyLeg } from "@/components/StrategyBuilder"
 import type { OptionsContract } from "@/components/OptionsTab";
 import { MarketSessionClock } from "@/components/MarketSessionClock";
 import { NewsTab } from "@/components/NewsTab";
+import { MarketNewsChatPanel } from "@/components/MarketNewsChatPanel";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
 import { BottomNav } from "@/components/BottomNav";
 import { PortfolioView } from "@/components/PortfolioView";
@@ -57,18 +58,19 @@ const DESKTOP_CONTEXT_TABS: { id: MarketDataTab; label: string }[] = [
   { id: "news", label: "News" },
   { id: "options", label: "Options" },
   { id: "company", label: "Company" },
+  { id: "newsChat", label: "News chat" },
 ];
 
 function DesktopContextTabs({ activeTab, setActiveTab }: { activeTab: MarketDataTab; setActiveTab: (t: MarketDataTab) => void }) {
   return (
-    <div className="flex items-stretch border-b border-zinc-800/60" style={{ background: "#111" }}>
+    <div className="flex items-stretch border-b border-zinc-800/60 overflow-x-auto" style={{ background: "#111" }}>
       {DESKTOP_CONTEXT_TABS.map((tab) => {
-        const isActive = activeTab === tab.id || (activeTab === "chart" && tab.id === "news");
+        const isActive = activeTab === tab.id;
         return (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className="flex-1 py-2 font-mono text-[11px] font-bold tracking-wider transition-colors border-b-2"
+            className="flex-1 min-w-[76px] py-2 font-mono text-[10px] sm:text-[11px] font-bold tracking-wider transition-colors border-b-2"
             style={{
               color: isActive ? "#FFB800" : "#71717a",
               borderColor: isActive ? "#FFB800" : "transparent",
@@ -632,7 +634,7 @@ export default function TerminalPage() {
                   {contextTab === "news" && <NewsTab />}
                   {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                   {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles} stickyOffset={stickyH} />}
-                  
+                  {contextTab === "newsChat" && <MarketNewsChatPanel />}
                   {contextTab === "chart" && (
                     <>
                       <ChartControls />
@@ -683,7 +685,7 @@ export default function TerminalPage() {
                     {contextTab === "news" && <NewsTab />}
                     {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                     {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles} stickyOffset={0} />}
-                    
+                    {contextTab === "newsChat" && <MarketNewsChatPanel />}
                   </div>
                 </div>
               </>
@@ -713,7 +715,7 @@ export default function TerminalPage() {
                   {contextTab === "news" && <NewsTab />}
                   {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                   {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles} stickyOffset={stickyH} />}
-                  
+                  {contextTab === "newsChat" && <MarketNewsChatPanel />}
                   {contextTab === "chart" && (
                     <>
                       <ChartControls />
