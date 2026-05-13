@@ -4,6 +4,7 @@ import { useGetQuote } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Send, Square, RotateCcw, Plus, Trash2, MessageSquareText } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
 
 const ALL_CHAT_MODELS = [
   "claude-opus-4-7",
@@ -247,6 +248,7 @@ export function MarketNewsChatPanel() {
             type="button"
             onClick={() => {
               handleStop();
+              cancelAssistantSpeech();
               clearActiveThread(symU);
             }}
             className="ml-auto flex items-center gap-0.5 font-mono text-[9px] text-zinc-500 hover:text-zinc-300 px-1.5 shrink-0"
@@ -276,16 +278,19 @@ export function MarketNewsChatPanel() {
                 {msg.content}
               </span>
             ) : (
-              <div
-                className="font-mono text-[10px] text-white/70 leading-relaxed prose prose-invert prose-sm max-w-none
+              <div className="text-left">
+                <div
+                  className="font-mono text-[10px] text-white/70 leading-relaxed prose prose-invert prose-sm max-w-none
                 prose-p:my-0.5 prose-p:text-[10px] prose-p:leading-relaxed prose-p:text-white/70
                 prose-strong:text-white/90 prose-code:text-primary prose-code:text-[9px]
                 prose-headings:text-[11px] prose-headings:text-white/80 prose-headings:mt-1.5 prose-headings:mb-0.5
                 prose-li:text-[10px] prose-li:text-white/70 prose-li:my-0
                 prose-ul:my-0.5 prose-ol:my-0.5
                 prose-a:text-primary prose-pre:text-[9px] prose-pre:bg-black/40 prose-pre:rounded prose-pre:p-1.5"
-              >
-                <ReactMarkdown>{msg.content}</ReactMarkdown>
+                >
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                </div>
+                <AssistantListenButton messageId={msg.id} markdownText={msg.content} size="sm" />
               </div>
             )}
           </div>

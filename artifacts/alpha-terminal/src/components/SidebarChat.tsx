@@ -4,6 +4,7 @@ import { useGetQuote } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Send, Square, RotateCcw, BrainCircuit } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
 
 interface ChatMessage {
   id: string;
@@ -109,6 +110,7 @@ export function SidebarChat() {
 
   const handleClear = useCallback(() => {
     handleStop();
+    cancelAssistantSpeech();
     setMessages([]);
     setIsExpanded(false);
   }, [handleStop]);
@@ -156,14 +158,17 @@ export function SidebarChat() {
                   {msg.content}
                 </span>
               ) : (
-                <div className="font-mono text-[10px] text-white/70 leading-relaxed prose prose-invert prose-sm max-w-none
-                  prose-p:my-0.5 prose-p:text-[10px] prose-p:leading-relaxed prose-p:text-white/70
-                  prose-strong:text-white/90 prose-code:text-primary prose-code:text-[9px]
-                  prose-headings:text-[11px] prose-headings:text-white/80 prose-headings:mt-1.5 prose-headings:mb-0.5
-                  prose-li:text-[10px] prose-li:text-white/70 prose-li:my-0
-                  prose-ul:my-0.5 prose-ol:my-0.5
-                  prose-a:text-primary prose-pre:text-[9px] prose-pre:bg-black/40 prose-pre:rounded prose-pre:p-1.5">
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                <div className="text-left">
+                  <div className="font-mono text-[10px] text-white/70 leading-relaxed prose prose-invert prose-sm max-w-none
+                    prose-p:my-0.5 prose-p:text-[10px] prose-p:leading-relaxed prose-p:text-white/70
+                    prose-strong:text-white/90 prose-code:text-primary prose-code:text-[9px]
+                    prose-headings:text-[11px] prose-headings:text-white/80 prose-headings:mt-1.5 prose-headings:mb-0.5
+                    prose-li:text-[10px] prose-li:text-white/70 prose-li:my-0
+                    prose-ul:my-0.5 prose-ol:my-0.5
+                    prose-a:text-primary prose-pre:text-[9px] prose-pre:bg-black/40 prose-pre:rounded prose-pre:p-1.5">
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  </div>
+                  <AssistantListenButton messageId={msg.id} markdownText={msg.content} size="sm" />
                 </div>
               )}
             </div>

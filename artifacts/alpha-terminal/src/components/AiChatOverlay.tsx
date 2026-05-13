@@ -5,6 +5,7 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Button } from "@/components/ui/button";
 import { X, Send, Search, Square, RotateCw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
 
 function getChipsForSymbol(symbol: string): string[] {
   return [
@@ -169,6 +170,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
 
   const handleClear = useCallback(() => {
     handleStop();
+    cancelAssistantSpeech();
     setMessages([]);
     setLastFailedMessage(null);
   }, [handleStop]);
@@ -271,6 +273,9 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
                 prose-headings:text-foreground prose-li:text-gray-200 prose-strong:text-white`}>
                 <ReactMarkdown>{msg.content}</ReactMarkdown>
               </div>
+              {msg.role === "assistant" && (
+                <AssistantListenButton messageId={msg.id} markdownText={msg.content} size="md" />
+              )}
               {msg.retryable && !isStreaming && (
                 <button
                   onClick={handleRetry}
