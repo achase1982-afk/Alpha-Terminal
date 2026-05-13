@@ -2507,7 +2507,7 @@ router.post("/chat", async (req, res) => {
 - Do not refuse to answer non-financial questions.
 
 OPTIONS FLOW & AGGRESSOR DISCIPLINE:
-- sessionTape.tapeKind "live" means classified prints and NBBO-derived aggressor tags exist; "eod_fallback" means volume was synthesized — do not over-claim sweep/aggressor detail when tapeKind is eod_fallback or sessionAggregateSource is eod_volume_only.
+- sessionTape.tapeKind "live" means classified prints and NBBO-derived aggressor tags exist; "eod_fallback" means the pack initially had no classified rows in options_flow_raw_trades for that NY session date (volume-only synthesis) — that is a server DB/pipeline state, not proof the cash market is closed. If "### Live options tape (on-demand for this chat request)" appears above, the server ran a short capture for this request; use the refreshed JSON that follows it.
 - side ask/bid/mid is derived from trade price vs NBBO at ingest (see aggressor_confidence). It indicates aggressive lift/hit, not "institutional vs retail."
 - Do not label flow as institutional or retail unless the user explicitly asks for inference — then phrase as possibilities, not facts.
 
