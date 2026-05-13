@@ -52,9 +52,8 @@ export function useVisualViewportComposerMetrics(reservePx = 0): VisualViewportC
       const fromBaseline = Math.max(0, baselineRef.current - merged);
       const fromDoc = Math.max(0, docH - merged);
       const fromInner = Math.max(0, ih - merged);
-      const gapInner = Math.max(0, ih - vv.height - vv.offsetTop);
 
-      let next = Math.max(fromBaseline, fromDoc, fromInner, gapInner);
+      let next = Math.max(fromBaseline, fromDoc, fromInner);
       const cap = Math.max(ih, docH, baselineRef.current || ih, 1) * 0.75;
       next = Math.min(next, cap);
       if (!Number.isFinite(next) || next < 0) next = 0;
