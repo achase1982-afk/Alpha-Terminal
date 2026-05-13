@@ -1,15 +1,25 @@
 /**
  * Assembles a bounded text context bundle for `/api/ai/chat`: Schwab quote cache,
- * Polygon-backed options flow highlights + session tape, optional strike-focused
- * prints (parsed from the user's question), stored IVR, next earnings, FMP headlines.
+ * session VWAP (Schwab 1m bars) + daily RSI14, Polygon-backed options flow highlights + session tape,
+ * optional strike-focused prints (parsed from the user's question), stored IVR, next earnings, FMP headlines.
  */
-import { and, db, desc, eq, optionsFlowRawTradesTable } from "@workspace/db";
+import {
+  and,
+  asc,
+  db,
+  desc,
+  eq,
+  equityDailyTable,
+  optionsFlowRawTradesTable,
+  schwabChartEquityBarsTable,
+} from "@workspace/db";
 import { getPolygonFlowHighlights, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
 import { requestFlowCapture } from "./flowCaptureService.js";
 import { getQuoteBySymbol, type LiveQuote } from "./schwabStreamer.js";
 import { getStoredIVR } from "./ivNormalize.js";
 import { getNextEarningsDate } from "./earningsService.js";
 import { logger } from "./logger.js";
+import { nyCalendarYmd } from "./polygonMarketCalendar.js";
 
 const FMP_NEWS_LIMIT = 12;
 const FOCUSED_PRINTS_PER_STRIKE = 25;
@@ -41,15 +51,97 @@ function formatLiveQuote(sym: string, q: LiveQuote): string {
   const parts = [
     `symbol=${sym}`,
     `last=${q.last ?? "n/a"}`,
-    `bid=${q.bid ?? "n/a"}`,
-    `ask=${q.ask ?? "n/a"}`,
+    `regularLast=${q.regularLast ?? "n/a"}`,
+    `bid=${q.bid ?? "n/a"} bidSize=${q.bidSize ?? "n/a"}`,
+    `ask=${q.ask ?? "n/a"} askSize=${q.askSize ?? "n/a"}`,
     `changePct=${q.changePct ?? "n/a"}`,
     `volume=${q.volume ?? "n/a"}`,
     `high=${q.high ?? "n/a"}`,
     `low=${q.low ?? "n/a"}`,
+    `prevClose=${q.close ?? "n/a"}`,
     `quoteSource=${q.quoteSource ?? "unknown"}`,
+    "note=Schwab LEVEL_ONE equity stream populates this cache on the API server when subscribed (not every ticker may be live-subscribed).",
   ];
   return parts.join(" ");
+}
+
+/** Wilder RSI on closing prices, oldest → newest. */
+function computeWilderRsi14(closes: number[]): number | null {
+  if (closes.length < 15) return null;
+  let gains = 0;
+  let losses = 0;
+  for (let i = 1; i <= 14; i++) {
+    const ch = closes[i]! - closes[i - 1]!;
+    if (ch >= 0) gains += ch;
+    else losses -= ch;
+  }
+  let avgGain = gains / 14;
+  let avgLoss = losses / 14;
+  for (let i = 15; i < closes.length; i++) {
+    const ch = closes[i]! - closes[i - 1]!;
+    avgGain = (avgGain * 13 + (ch > 0 ? ch : 0)) / 14;
+    avgLoss = (avgLoss * 13 + (ch < 0 ? -ch : 0)) / 14;
+  }
+  if (avgLoss === 0) return avgGain > 0 ? 100 : null;
+  const rs = avgGain / avgLoss;
+  return Math.round((100 - 100 / (1 + rs)) * 100) / 100;
+}
+
+async function fetchSessionApproxVwapLine(sym: string): Promise<string> {
+  const sessionDate = nyCalendarYmd(new Date());
+  const rows = await db
+    .select({
+      high: schwabChartEquityBarsTable.high,
+      low: schwabChartEquityBarsTable.low,
+      close: schwabChartEquityBarsTable.close,
+      volume: schwabChartEquityBarsTable.volume,
+    })
+    .from(schwabChartEquityBarsTable)
+    .where(
+      and(
+        eq(schwabChartEquityBarsTable.symbol, sym),
+        eq(schwabChartEquityBarsTable.sessionDate, sessionDate),
+      ),
+    )
+    .orderBy(asc(schwabChartEquityBarsTable.barTimeMs));
+  if (rows.length === 0) {
+    return `sessionApproxVwap=n/a (no schwab_chart_equity_bars rows for ${sym} sessionDate=${sessionDate} — CHART_EQUITY 1m stream may not be persisting for this symbol yet)`;
+  }
+  let pv = 0;
+  let vol = 0;
+  for (const r of rows) {
+    const h = Number(r.high);
+    const l = Number(r.low);
+    const cl = Number(r.close);
+    const v = Number(r.volume);
+    if (!Number.isFinite(v) || v <= 0) continue;
+    if (!Number.isFinite(h) || !Number.isFinite(l) || !Number.isFinite(cl)) continue;
+    const tp = (h + l + cl) / 3;
+    pv += tp * v;
+    vol += v;
+  }
+  const vwap = vol > 0 ? Math.round((pv / vol) * 100) / 100 : null;
+  return `sessionApproxVwap_hlc3_volumeWeighted=${vwap ?? "n/a"} sessionDate=${sessionDate} barCount=${rows.length} (from persisted Schwab CHART_EQUITY 1m bars; aligns with RTH session when bars exist)`;
+}
+
+async function fetchDailyRsi14Line(sym: string): Promise<string> {
+  const rows = await db
+    .select({ close: equityDailyTable.close, date: equityDailyTable.date })
+    .from(equityDailyTable)
+    .where(eq(equityDailyTable.symbol, sym))
+    .orderBy(desc(equityDailyTable.date))
+    .limit(80);
+  if (rows.length < 15) {
+    return `RSI14=n/a (need ≥15 daily closes in equity_daily for ${sym}; have ${rows.length})`;
+  }
+  const chrono = [...rows].reverse();
+  const closes = chrono.map((r) => Number(r.close)).filter((n) => Number.isFinite(n));
+  if (closes.length < 15) return `RSI14=n/a (non-numeric closes in equity_daily for ${sym})`;
+  const rsi = computeWilderRsi14(closes);
+  const asOfRaw = chrono[chrono.length - 1]?.date as unknown;
+  const asOf =
+    asOfRaw instanceof Date ? asOfRaw.toISOString().slice(0, 10) : String(asOfRaw ?? "");
+  return `RSI14_wilder=${rsi ?? "n/a"} asOfDailyClose=${asOf} lookbackDays=${closes.length} (computed from equity_daily closes; differs from intraday RSI)`;
 }
 
 async function fetchFmpHeadlines(symbol: string): Promise<string[]> {
@@ -182,14 +274,26 @@ export async function buildAiChatContextPack(input: AiChatContextPackInput): Pro
   if (cached) {
     sections.push("### Server Schwab / streamer quote cache\n" + formatLiveQuote(sym, cached));
   } else {
-    sections.push("### Server Schwab / streamer quote cache\n(no cached equity quote for this symbol on the API server)");
+    sections.push(
+      "### Server Schwab / streamer quote cache\n"
+        + "(no cached equity quote for this symbol on the API server — Schwab LEVEL_ONE stream may not be subscribed for this ticker on the API process, or quotes are only on the client)",
+    );
   }
 
-  const [ivr, earnings, fmpLines] = await Promise.all([
+  const [ivr, earnings, fmpLines, techBlock] = await Promise.all([
     getStoredIVR(sym),
     getNextEarningsDate(sym).catch(() => null),
     fetchFmpHeadlines(sym),
+    (async () => {
+      const [v, r] = await Promise.all([
+        fetchSessionApproxVwapLine(sym),
+        fetchDailyRsi14Line(sym),
+      ]);
+      return `${v}\n${r}`;
+    })(),
   ]);
+
+  sections.push("### Intraday / daily technicals (server)\n" + techBlock);
 
   let highlights: PolygonFlowHighlights | null = await getPolygonFlowHighlights(sym);
   let liveTapeCaptureMarkdown = "";

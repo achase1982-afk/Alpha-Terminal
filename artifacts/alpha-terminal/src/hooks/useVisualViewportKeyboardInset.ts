@@ -35,10 +35,25 @@ function readExpandedExtent(vv: VisualViewport): number {
  * never overwritten using the compressed "keyboard open" metrics — that mistake
  * is what zeroed the inset on iOS before.
  */
-export function useVisualViewportComposerMetrics(reservePx = 0): VisualViewportComposerMetrics {
+export interface VisualViewportComposerOptions {
+  /**
+   * When false (composer not focused), keyboard inset uses **only** the direct
+   * `innerHeight - visualViewport` gap. That ignores the monotonic baseline, which
+   * otherwise stayed inflated on some iPhones and pinned the fixed composer hundreds
+   * of px above the bottom nav when the keyboard was closed.
+   */
+  composerFocused?: boolean;
+}
+
+export function useVisualViewportComposerMetrics(
+  reservePx = 0,
+  opts?: VisualViewportComposerOptions,
+): VisualViewportComposerMetrics {
   const [keyboardInset, setKeyboardInset] = useState(0);
   const baselineRef = useRef(0);
   const updateRef = useRef<() => void>(() => {});
+  const focusedRef = useRef(false);
+  focusedRef.current = opts?.composerFocused ?? false;
 
   useEffect(() => {
     const vv = window.visualViewport;
@@ -55,19 +70,26 @@ export function useVisualViewportComposerMetrics(reservePx = 0): VisualViewportC
       const fromBaseline = Math.max(0, baselineRef.current - merged);
       // Distance from bottom of layout viewport to bottom of visual viewport (keyboard overlap).
       const directInset = Math.max(0, ih - merged);
-
-      /**
-       * Prefer the direct inset whenever it is clearly non-zero. Taking `max(direct, baseline)`
-       * permanently let an inflated baseline dominate on some iOS builds, which set
-       * `position: fixed; bottom: …` hundreds of px too high — the composer floated mid-screen
-       * with chat scrolling underneath.
-       */
-      const TRUST_DIRECT_MIN = 20;
-      let raw =
-        directInset >= TRUST_DIRECT_MIN ? directInset : Math.max(directInset, fromBaseline);
-
       const cap = Math.max(ih, baselineRef.current || ih, 1) * 0.62;
-      raw = Math.min(raw, cap);
+
+      const focused = focusedRef.current;
+      let raw: number;
+      if (!focused) {
+        // Keyboard dismissed (or no focus): never let a stale baseline lift the dock.
+        raw = Math.min(Math.max(0, directInset), cap);
+      } else {
+        /**
+         * Prefer the direct inset whenever it is clearly non-zero. Taking `max(direct, baseline)`
+         * permanently let an inflated baseline dominate on some iOS builds, which set
+         * `position: fixed; bottom: …` hundreds of px too high — the composer floated mid-screen
+         * with chat scrolling underneath.
+         */
+        const TRUST_DIRECT_MIN = 20;
+        raw =
+          directInset >= TRUST_DIRECT_MIN ? directInset : Math.max(directInset, fromBaseline);
+        raw = Math.min(raw, cap);
+      }
+
       if (!Number.isFinite(raw) || raw < 0) raw = 0;
 
       // Slight tuck when overlap is clearly the keyboard band.

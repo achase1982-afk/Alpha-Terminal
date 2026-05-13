@@ -51,11 +51,12 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [composerFocused, setComposerFocused] = useState(false);
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const { keyboardInset, remeasure } = useVisualViewportComposerMetrics(0);
+  const { keyboardInset, remeasure } = useVisualViewportComposerMetrics(0, { composerFocused });
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -328,10 +329,16 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
               remeasure();
             }}
             onFocus={() => {
+              setComposerFocused(true);
               remeasure();
               setTimeout(remeasure, 80);
               setTimeout(remeasure, 280);
               setTimeout(remeasure, 520);
+            }}
+            onBlur={() => {
+              setComposerFocused(false);
+              setTimeout(remeasure, 0);
+              setTimeout(remeasure, 120);
             }}
             placeholder={`Search ${symbol}, markets, anything...`}
             rows={1}
