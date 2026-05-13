@@ -7,7 +7,7 @@ const TAB_DEFS: Record<MarketDataTab, { label: string; icon: React.ReactNode }> 
   news:     { label: "NEWS",      icon: <Newspaper className="w-4 h-4" /> },
   options:  { label: "OPTIONS",   icon: <BarChart2 className="w-4 h-4" /> },
   company:  { label: "COMPANY",   icon: <Building2 className="w-4 h-4" /> },
-  newsChat: { label: "NEWS CHAT", icon: <MessagesSquare className="w-4 h-4" /> },
+  newsChat: { label: "CHAT", icon: <MessagesSquare className="w-4 h-4" /> },
   chart:    { label: "CHART",     icon: <LineChart className="w-4 h-4" /> },
 };
 
@@ -22,7 +22,7 @@ function loadOrder(): MarketDataTab[] {
       const parsed = JSON.parse(raw) as string[];
       if (Array.isArray(parsed)) {
         let filtered = parsed.filter((t): t is MarketDataTab => t in TAB_DEFS);
-        // Migrate saved 4-tab bar (pre–News chat): insert `newsChat` before CHART.
+        // Migrate saved 4-tab bar (pre–Chat tab): insert `newsChat` before CHART.
         if (filtered.length === 4 && !filtered.includes("newsChat")) {
           const ci = filtered.indexOf("chart");
           if (ci >= 0) {

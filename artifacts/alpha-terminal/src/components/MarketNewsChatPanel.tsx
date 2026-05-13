@@ -191,7 +191,7 @@ export function MarketNewsChatPanel() {
         <div className="flex items-center gap-2 min-w-0">
           <MessageSquareText className="w-4 h-4 text-primary shrink-0" />
           <span className="font-mono text-[10px] font-bold text-white/70 tracking-widest uppercase truncate">
-            News chat · {symU}
+            Chat · {symU}
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">

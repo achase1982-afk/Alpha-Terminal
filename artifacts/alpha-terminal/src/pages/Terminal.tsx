@@ -58,7 +58,7 @@ const DESKTOP_CONTEXT_TABS: { id: MarketDataTab; label: string }[] = [
   { id: "news", label: "News" },
   { id: "options", label: "Options" },
   { id: "company", label: "Company" },
-  { id: "newsChat", label: "News chat" },
+  { id: "newsChat", label: "Chat" },
 ];
 
 function DesktopContextTabs({ activeTab, setActiveTab }: { activeTab: MarketDataTab; setActiveTab: (t: MarketDataTab) => void }) {
