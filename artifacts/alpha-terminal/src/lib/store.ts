@@ -140,7 +140,7 @@ interface ChatMessage {
   content: string;
 }
 
-/** Per-message id for streaming updates in Markets "News chat". */
+/** Per-message id for streaming updates in Markets Chat tab. */
 export interface MarketNewsChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -325,7 +325,7 @@ export interface TerminalState {
   addChatMessage: (msg: ChatMessage) => void;
   clearChat: () => void;
 
-  /** Markets tab "News chat": persisted per ticker, multi-thread (localStorage). */
+  /** Markets Chat tab: persisted per ticker, multi-thread (localStorage). */
   marketNewsChatBySymbol: Record<string, MarketNewsChatBundle>;
   marketNewsChatEnsureSymbol: (symbol: string) => void;
   marketNewsChatAppendMessage: (symbol: string, threadId: string, msg: MarketNewsChatMessage) => void;

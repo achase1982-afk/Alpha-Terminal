@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { X, Send, Search, Square, RotateCw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
+import { useVisualViewportKeyboardInset } from "@/hooks/useVisualViewportKeyboardInset";
 
 function getChipsForSymbol(symbol: string): string[] {
   return [
@@ -54,6 +55,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const keyboardInset = useVisualViewportKeyboardInset();
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -66,6 +68,8 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
       setTimeout(() => inputRef.current?.focus(), 300);
     }
   }, [isOpen]);
+
+  const composerPadBottom = `calc(${keyboardInset}px + max(12px, env(safe-area-inset-bottom, 0px)))`;
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || isStreaming) return;
@@ -201,7 +205,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col" style={{ background: "#0c0c0c" }}>
+    <div className="fixed inset-0 z-[100] flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden" style={{ background: "#0c0c0c" }}>
       <div className="flex items-center justify-between px-4 h-12 border-b border-card-border bg-[#0c0c0c] shrink-0">
         <div className="flex items-center gap-2">
           <Search className="w-4 h-4 text-primary" />
@@ -227,9 +231,9 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
         </div>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-4">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
         {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center px-6">
+          <div className="flex flex-col items-center justify-center py-10 text-center px-6 sm:py-14">
             <div className="w-16 h-16 rounded-2xl border border-primary/20 flex items-center justify-center mb-4">
               <Search className="w-8 h-8 text-primary" />
             </div>
@@ -303,13 +307,21 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
         )}
       </div>
 
-      <div className="shrink-0 border-t border-card-border bg-[#0c0c0c] px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+      <div
+        className="shrink-0 border-t border-card-border bg-[#0c0c0c] px-3 pt-2"
+        style={{ paddingBottom: composerPadBottom }}
+      >
         <form onSubmit={handleFormSubmit} className="flex items-end gap-2">
           <textarea
             ref={inputRef}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            onFocus={() => {
+              requestAnimationFrame(() => {
+                inputRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+              });
+            }}
             placeholder={`Search ${symbol}, markets, anything...`}
             rows={1}
             autoComplete="off"
