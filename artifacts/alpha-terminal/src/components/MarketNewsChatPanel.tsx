@@ -5,8 +5,7 @@ import { useGetQuote } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Send, Square, RotateCcw, Plus, Trash2, MessageSquare } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import { cancelAssistantSpeech } from "@/components/AssistantListenButton";
-import { MarketNewsAssistantDeskPlay, stopAllMarketNewsDeskTts } from "@/components/MarketNewsAssistantDeskPlay";
+import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
 import { useVisualViewportComposerMetrics } from "@/hooks/useVisualViewportKeyboardInset";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 
@@ -64,12 +63,10 @@ export function MarketNewsChatPanel() {
 
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
-  const [streamingAssistantId, setStreamingAssistantId] = useState<string | null>(null);
   const [composerFocused, setComposerFocused] = useState(false);
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const panelRootRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   /** Reserve space for bottom tab bar when the keyboard is dismissed (see BottomNav). */
   const narrowMobile = useMediaQuery("(max-width: 767px)");
@@ -141,7 +138,6 @@ export function MarketNewsChatPanel() {
       abortRef.current = controller;
 
       appendMessage(symU, tid, { id: assistantId, role: "assistant", content: "" });
-      setStreamingAssistantId(assistantId);
 
       try {
         const res = await fetchWithAuth("/api/ai/chat", {
@@ -171,7 +167,6 @@ export function MarketNewsChatPanel() {
           );
           if (retryable) setLastFailedMessage(text.trim());
           setIsStreaming(false);
-          setStreamingAssistantId(null);
           return;
         }
 
@@ -185,7 +180,6 @@ export function MarketNewsChatPanel() {
           );
           setLastFailedMessage(text.trim());
           setIsStreaming(false);
-          setStreamingAssistantId(null);
           return;
         }
 
@@ -246,7 +240,6 @@ export function MarketNewsChatPanel() {
       } finally {
         abortRef.current = null;
         setIsStreaming(false);
-        setStreamingAssistantId(null);
       }
     },
     [
@@ -263,8 +256,6 @@ export function MarketNewsChatPanel() {
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
     setIsStreaming(false);
-    setStreamingAssistantId(null);
-    stopAllMarketNewsDeskTts();
   }, []);
 
   const handleRetry = useCallback(() => {
@@ -343,7 +334,7 @@ export function MarketNewsChatPanel() {
   );
 
   return (
-    <div ref={panelRootRef} className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#0a0a0a]">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#0a0a0a]">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-card-border/50 px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <MessageSquare className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
@@ -418,7 +409,6 @@ export function MarketNewsChatPanel() {
               type="button"
               onClick={() => {
                 handleStop();
-                stopAllMarketNewsDeskTts();
                 cancelAssistantSpeech();
                 setLastFailedMessage(null);
                 clearActiveThread(symU);
@@ -470,15 +460,7 @@ export function MarketNewsChatPanel() {
                 >
                   <ReactMarkdown>{msg.content}</ReactMarkdown>
                 </div>
-                {msg.content.trim() && !(isStreaming && msg.id === streamingAssistantId) && (
-                  <MarketNewsAssistantDeskPlay
-                    messageId={msg.id}
-                    markdownText={msg.content}
-                    symbolUpper={symU}
-                    threadId={activeThreadId}
-                    containerRef={panelRootRef}
-                  />
-                )}
+                <AssistantListenButton messageId={msg.id} markdownText={msg.content} size="sm" />
               </div>
             )}
           </div>
