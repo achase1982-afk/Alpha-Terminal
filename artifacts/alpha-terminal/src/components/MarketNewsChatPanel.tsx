@@ -438,7 +438,7 @@ export function MarketNewsChatPanel() {
         }}
       >
         {messages.length === 0 && (
-          <p className="font-mono text-[14px] text-white/70 leading-relaxed">
+          <p className="font-mono text-[15px] font-light text-white/70 leading-relaxed">
             Ask about {symU} — flow, tape, and headlines load on the server for each message. Conversations
             stay per ticker until you clear them. Use <strong>New</strong> for another thread (e.g. scenarios
             vs earnings prep).
@@ -447,19 +447,19 @@ export function MarketNewsChatPanel() {
         {messages.map((msg) => (
           <div key={msg.id} className={msg.role === "user" ? "text-right" : "text-left"}>
             {msg.role === "user" ? (
-              <span className="inline-block font-mono text-[14px] text-white bg-[#1a1a1a] border border-card-border rounded px-3 py-2 max-w-[95%] text-left leading-relaxed">
+              <span className="inline-block font-mono text-[15px] font-light text-white bg-[#1a1a1a] border border-card-border rounded px-3 py-2 max-w-[95%] text-left leading-relaxed">
                 {msg.content}
               </span>
             ) : (
               <div className="text-left">
                 <div
-                  className="font-mono text-[14px] text-white leading-relaxed prose prose-invert prose-sm max-w-none
-                prose-p:my-1 prose-p:text-[14px] prose-p:leading-relaxed prose-p:text-white
-                prose-strong:text-white prose-code:text-white prose-code:text-[13px]
-                prose-headings:text-[15px] prose-headings:text-white prose-headings:mt-2 prose-headings:mb-1
-                prose-li:text-[14px] prose-li:text-white prose-li:my-0.5
+                  className="font-mono text-[15px] font-light text-white leading-relaxed prose prose-invert prose-sm max-w-none
+                prose-p:my-1 prose-p:text-[15px] prose-p:font-light prose-p:leading-relaxed prose-p:text-white
+                prose-strong:text-white prose-strong:font-normal prose-code:text-white prose-code:text-[14px] prose-code:font-light
+                prose-headings:text-[16px] prose-headings:font-light prose-headings:text-white prose-headings:mt-2 prose-headings:mb-1
+                prose-li:text-[15px] prose-li:font-light prose-li:text-white prose-li:my-0.5
                 prose-ul:my-0.5 prose-ol:my-0.5
-                prose-a:text-white prose-pre:text-[13px] prose-pre:bg-black/40 prose-pre:rounded prose-pre:p-2"
+                prose-a:text-white prose-pre:text-[14px] prose-pre:font-light prose-pre:bg-black/40 prose-pre:rounded prose-pre:p-2"
                 >
                   <ReactMarkdown>{msg.content}</ReactMarkdown>
                 </div>
