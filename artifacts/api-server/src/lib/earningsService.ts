@@ -248,7 +248,7 @@ export async function getNextEarningsDate(symbol: string): Promise<NextEarnings>
     let source: NextEarnings["source"] = null;
     let extras: Partial<VendorPrimaryCalendarResult> = {};
 
-    if (corp && !corp.stale) {
+    if (corp) {
       const today = new Date();
       const target = new Date(corp.earningsDate + "T16:00:00-04:00").getTime();
       const daysOut = Math.round((target - today.getTime()) / 86_400_000);
@@ -258,8 +258,18 @@ export async function getNextEarningsDate(symbol: string): Promise<NextEarnings>
       extras = {
         lastEarningsDate: vendor?.lastEarningsDate ?? null,
         time: corp.earningsTiming,
-        epsEstimate: formatEstimateNum(corp.earningsEpsEstimate),
-        revenueEstimate: formatEstimateNum(corp.earningsRevenueEstimate),
+        epsEstimate:
+          corp.earningsEpsEstimate != null
+            ? formatEstimateNum(corp.earningsEpsEstimate)
+            : (vendor?.epsEstimate ?? null),
+        revenueEstimate:
+          corp.earningsRevenueEstimate != null
+            ? formatEstimateNum(corp.earningsRevenueEstimate)
+            : (vendor?.revenueEstimate ?? null),
+        epsPrior: vendor?.epsPrior ?? null,
+        revenuePrior: vendor?.revenuePrior ?? null,
+        period: vendor?.period ?? null,
+        periodYear: vendor?.periodYear ?? null,
       };
     } else if (vendor?.earningsDate && vendor.confirmed) {
       earningsDate = vendor.earningsDate;

@@ -165,6 +165,7 @@ export const equityDailyTable = pgTable("equity_daily", {
   ivrSource: text("ivr_source"),
   hv20d: real("hv_20d"),
   hv30d: real("hv_30d"),
+  hv60d: real("hv_60d"),
   putCallRatio: real("put_call_ratio"),
   sma20: real("sma_20"),
   atr5: real("atr_5"),
@@ -456,6 +457,8 @@ export const corporateEventsTable = pgTable("corporate_events", {
   /** Forward estimates from FMP earnings calendar backfill (when present). */
   earningsEpsEstimate: doublePrecision("earnings_eps_estimate"),
   earningsRevenueEstimate: doublePrecision("earnings_revenue_estimate"),
+  earningsEpsActual: doublePrecision("earnings_eps_actual"),
+  earningsRevenueActual: doublePrecision("earnings_revenue_actual"),
   splitDate: date("split_date"),
   splitRatio: text("split_ratio"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -707,6 +710,9 @@ export type TrackedTickerInsert = typeof trackedTickersTable.$inferInsert;
 export const ivrBackfillJobsTable = pgTable("ivr_backfill_jobs", {
   id: text("id").primaryKey(),
   symbol: text("symbol").notNull(),
+  /** ondemand_ivr | admin_iv_history | admin_hv_proxy */
+  jobKind: text("job_kind").notNull().default("ondemand_ivr"),
+  payload: jsonb("payload").$type<Record<string, unknown> | null>(),
   status: text("status").notNull().default("queued"),
   source: text("source").notNull().default("none"),
   daysRequested: integer("days_requested").notNull().default(252),
@@ -779,6 +785,21 @@ export const strategistTelemetryTable = pgTable("strategist_telemetry", {
   scannerSurfacedBy: text("scanner_surfaced_by"),
   scannerFlowScore: integer("scanner_flow_score"),
   scannerUniverse: text("scanner_universe"),
+  /** LLM vendor for Conviction Desk audit rows: anthropic | openai | gemini. */
+  provider: text("provider"),
+  /** Conviction Desk: assembled user messages / full prompt text sent to the model. */
+  modelInput: text("model_input"),
+  systemPrompt: text("system_prompt"),
+  toolsAttached: jsonb("tools_attached"),
+  /** Provider-native reasoning / thinking configuration snapshot (JSON). */
+  thinkingConfig: jsonb("thinking_config"),
+  rawApiResponse: jsonb("raw_api_response"),
+  thinkingBlocks: text("thinking_blocks"),
+  webSearchQueries: jsonb("web_search_queries"),
+  webSearchResults: jsonb("web_search_results"),
+  /** Provider response id when available (OpenAI `response.id`, Anthropic message id, etc.). */
+  providerRequestId: text("provider_request_id"),
+  modelName: text("model_name"),
 });
 
 export type StrategistTelemetry = typeof strategistTelemetryTable.$inferSelect;
@@ -1024,6 +1045,8 @@ export const telemetryEventsTable = pgTable(
   {
     id: bigint("id", { mode: "bigint" }).primaryKey().generatedAlwaysAsIdentity(),
     emittedAt: timestamp("emitted_at", { withTimezone: true }).defaultNow().notNull(),
+    /** Logical source: server (HTTP + emitTelemetry) vs web (browser POST). */
+    service: text("service").notNull().default("server"),
     system: text("system").notNull(),
     level: text("level").notNull(),
     message: text("message").notNull(),
@@ -1035,6 +1058,7 @@ export const telemetryEventsTable = pgTable(
     index("telemetry_events_emitted_at_idx").on(desc(t.emittedAt)),
     index("telemetry_events_message_emitted_at_idx").on(t.message, desc(t.emittedAt)),
     index("telemetry_events_system_emitted_at_idx").on(t.system, desc(t.emittedAt)),
+    index("telemetry_events_service_emitted_at_idx").on(t.service, desc(t.emittedAt)),
   ],
 );
 
@@ -1056,3 +1080,130 @@ export const ibkrDiagnosticsRunsTable = pgTable("ibkr_diagnostics_runs", {
 ]);
 
 export type IbkrDiagnosticsRun = typeof ibkrDiagnosticsRunsTable.$inferSelect;
+
+/** Per-option-contract daily OHLCV from Polygon aggregates (tuning / research backfills). */
+export const optionsDailyTable = pgTable(
+  "options_daily",
+  {
+    occ: text("occ").notNull(),
+    underlyingSymbol: text("underlying_symbol"),
+    date: date("date").notNull(),
+    open: real("open"),
+    high: real("high"),
+    low: real("low"),
+    close: real("close").notNull(),
+    volume: bigint("volume", { mode: "number" }),
+    vwap: real("vwap"),
+    transactions: integer("transactions"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.occ, t.date] }), index("idx_options_daily_occ_date_desc").on(t.occ, desc(t.date))],
+);
+
+export type OptionsDailyRow = typeof optionsDailyTable.$inferSelect;
+
+export const dividendsTable = pgTable(
+  "dividends",
+  {
+    symbol: text("symbol").notNull(),
+    exDate: date("ex_date").notNull(),
+    cashAmount: doublePrecision("cash_amount"),
+    recordDate: date("record_date"),
+    payDate: date("pay_date"),
+    declarationDate: date("declaration_date"),
+    currency: text("currency"),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.symbol, t.exDate] }), index("idx_dividends_symbol_ex_desc").on(t.symbol, desc(t.exDate))],
+);
+
+export type DividendsRow = typeof dividendsTable.$inferSelect;
+
+export const earningsReactionsTable = pgTable(
+  "earnings_reactions",
+  {
+    symbol: text("symbol").notNull(),
+    earningsDate: date("earnings_date").notNull(),
+    tZeroDate: date("t_zero_date").notNull(),
+    timeOfDay: text("time_of_day").notNull(),
+    preEventClose: doublePrecision("pre_event_close"),
+    eventOpen: doublePrecision("event_open"),
+    eventClose: doublePrecision("event_close"),
+    tplus1Close: doublePrecision("tplus1_close"),
+    tplus5Close: doublePrecision("tplus5_close"),
+    gapPct: doublePrecision("gap_pct"),
+    intradayPct: doublePrecision("intraday_pct"),
+    reaction1dPct: doublePrecision("reaction_1d_pct"),
+    reaction5dPct: doublePrecision("reaction_5d_pct"),
+    driftPostInitialPct: doublePrecision("drift_post_initial_pct"),
+    maxDrawdown5dPct: doublePrecision("max_drawdown_5d_pct"),
+    maxUpmove5dPct: doublePrecision("max_upmove_5d_pct"),
+    volumeVs20dAvg: doublePrecision("volume_vs_20d_avg"),
+    epsEstimate: doublePrecision("eps_estimate"),
+    epsActual: doublePrecision("eps_actual"),
+    epsSurprisePct: doublePrecision("eps_surprise_pct"),
+    revenueEstimate: doublePrecision("revenue_estimate"),
+    revenueActual: doublePrecision("revenue_actual"),
+    revenueSurprisePct: doublePrecision("revenue_surprise_pct"),
+    computedAt: timestamp("computed_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.symbol, t.earningsDate] }),
+    index("idx_earnings_reactions_symbol_date").on(t.symbol, desc(t.earningsDate)),
+  ],
+);
+
+export type EarningsReactionRow = typeof earningsReactionsTable.$inferSelect;
+
+/** Persisted Schwab CHART_EQUITY 1-minute bars (Railway-survivable strategist VWAP/RSI walkback). */
+export const schwabChartEquityBarsTable = pgTable(
+  "schwab_chart_equity_bars",
+  {
+    symbol: text("symbol").notNull(),
+    barTimeMs: bigint("bar_time_ms", { mode: "number" }).notNull(),
+    high: numeric("high", { precision: 20, scale: 8 }).notNull(),
+    low: numeric("low", { precision: 20, scale: 8 }).notNull(),
+    close: numeric("close", { precision: 20, scale: 8 }).notNull(),
+    volume: numeric("volume", { precision: 24, scale: 4 }).notNull(),
+    sessionDate: date("session_date").notNull(),
+    insertedAt: timestamp("inserted_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.symbol, t.barTimeMs] }),
+    index("schwab_chart_equity_bars_symbol_session_date_idx").on(t.symbol, t.sessionDate),
+  ],
+);
+
+export type SchwabChartEquityBarRow = typeof schwabChartEquityBarsTable.$inferSelect;
+
+export const backfillAuditRunsTable = pgTable("backfill_audit_runs", {
+  runId: uuid("run_id").defaultRandom().primaryKey(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  universe: text("universe").notNull(),
+  universeSize: integer("universe_size").notNull(),
+  perSymbolAudit: jsonb("per_symbol_audit").notNull(),
+  overallStatus: text("overall_status").notNull(),
+  notes: text("notes"),
+});
+
+export type BackfillAuditRunRow = typeof backfillAuditRunsTable.$inferSelect;
+
+/** Orchestrated LC130 ∪ tuning full backfill (admin POST /api/admin/run-full-backfill). */
+export const backfillRunJobsTable = pgTable(
+  "backfill_run_jobs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    status: text("status").notNull(),
+    perPipelineProgress: jsonb("per_pipeline_progress")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+  },
+  (t) => [index("backfill_run_jobs_started_at_idx").on(desc(t.startedAt))],
+);
+
+export type BackfillRunJobRow = typeof backfillRunJobsTable.$inferSelect;
+export type BackfillRunJobInsert = typeof backfillRunJobsTable.$inferInsert;

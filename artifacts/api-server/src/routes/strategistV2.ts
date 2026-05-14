@@ -19,21 +19,34 @@ import { getNextEarningsDate } from "../lib/earningsService.js";
 import { getEquityDailyExtras } from "../lib/equityDailyExtras.js";
 import { db, strategistTelemetryTable, scannerTelemetryTable, strategistHistoryTable } from "@workspace/db";
 import { getScannerStrategistCorrelation } from "../lib/scannerCorrelation.js";
-import { desc, eq, sql, lte, and } from "drizzle-orm";
+import { desc, eq, lte, and } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { trimStrategistTelemetryRowForListResponse } from "../lib/strategistTelemetryListResponse.js";
+import {
+  primeStrategistTelemetryReadSchema,
+  strategistTelemetryFlattenErrorMessage,
+  strategistTelemetryPostgresErrorCode,
+  sanitizeStrategistTelemetryClientDetail,
+} from "../lib/ensureStrategistTelemetryAuditColumns.js";
+import {
+  selectStrategistTelemetryRows,
+  selectStrategistTelemetryRowById,
+  selectStrategistTelemetryRowByRequestId,
+} from "../lib/strategistTelemetryFlexibleSelect.js";
 import {
   ensureIvrCoverage,
   getIvrBackfillJob,
   getLatestIvrBackfillJobForSymbol,
   type IvrCoverageResult,
 } from "../lib/onDemandIvrBackfill.js";
-import { notifyStrategistCompletion } from "../lib/strategistNotifications.js";
+import { buildStrategistAnalyzeCompletionPush, notifyStrategistCompletion } from "../lib/strategistNotifications.js";
 import { sendPushToAll } from "../lib/pushService.js";
 import {
   markStrategistAnalyzeCancelled,
   clearStrategistAnalyzeCancelled,
 } from "../lib/strategistAnalyzeCancellation.js";
 import { stripConvictionDeskDiagnosticsForClient, stripHistoryCardJsonForClient } from "../lib/strategistClientSanitize.js";
+import { normalizeConvictionDeskProviderBody } from "../lib/convictionDeskRouting.js";
 
 const router: IRouter = Router();
 
@@ -215,7 +228,10 @@ type ThinkingEntry = {
   finishedAt?: number;
 };
 const strategistThinkingBuffer = new Map<string, ThinkingEntry>();
-const THINKING_TTL_MS = 10 * 60 * 1000;
+/** How long to keep a **finished** job in RAM for `/thinking` polling (tab resume, slow clients). */
+const THINKING_TTL_DONE_MS = 25 * 60 * 1000;
+/** Drop **stuck** incomplete jobs after this wall-clock span (long Conviction + web-search runs). */
+const THINKING_TTL_STUCK_MS = 120 * 60 * 1000;
 
 /** One in-flight ticker analyze (POST /analyze with jobId) at a time per symbol. */
 const analyzeInFlightTickers = new Set<string>();
@@ -271,10 +287,9 @@ function pickAnchorPrice(ticket: ValidationTicket, strikes: number[]): number {
 function pruneThinkingBuffer() {
   const now = Date.now();
   for (const [k, v] of strategistThinkingBuffer.entries()) {
-    if (v.done && v.finishedAt && now - v.finishedAt > THINKING_TTL_MS) {
+    if (v.done && v.finishedAt && now - v.finishedAt > THINKING_TTL_DONE_MS) {
       strategistThinkingBuffer.delete(k);
-    } else if (!v.done && now - v.startedAt > 5 * THINKING_TTL_MS) {
-      // safety: drop stuck entries after 50 minutes
+    } else if (!v.done && now - v.startedAt > THINKING_TTL_STUCK_MS) {
       strategistThinkingBuffer.delete(k);
     }
   }
@@ -415,13 +430,15 @@ router.post("/analyze/cancel", async (req, res): Promise<void> => {
 
 router.post("/analyze", async (req, res): Promise<void> => {
   try {
-    const { ticker, jobId, flowContext, scannerContext: rawScanner } = req.body as {
+    const { ticker, jobId, flowContext, scannerContext: rawScanner, convictionDeskProvider: cdProvRaw } = req.body as {
       ticker?: string;
       jobId?: string;
       flowContext?: string;
       scannerContext?: unknown;
+      convictionDeskProvider?: unknown;
     };
     const scannerContext = parseScannerContext(rawScanner);
+    const convictionDeskProvider = normalizeConvictionDeskProviderBody(cdProvRaw);
     if (!ticker || typeof ticker !== "string") {
       res.status(400).json({ error: "ticker is required" });
       return;
@@ -509,6 +526,7 @@ router.post("/analyze", async (req, res): Promise<void> => {
               const i = entry.transcript.findIndex(x => x.id === turnId);
               if (i >= 0) entry.transcript.splice(i, 1);
             },
+            convictionDeskProvider,
           },
             scannerContext,
           );
@@ -532,22 +550,17 @@ router.post("/analyze", async (req, res): Promise<void> => {
                 { jobId, ticker: upperTicker, getFinalResultStatus: verify.resultStatus },
                 "StrategistV2: persisted analysis verified readable; dispatching strategist push",
               );
+              const completionPush = buildStrategistAnalyzeCompletionPush(result, upperTicker);
               notifyStrategistCompletion({
                 jobId,
                 ticker: upperTicker,
-                kind: result.status === "recommendation" ? "ready" : "failed",
-                message: result.status === "recommendation"
-                  ? `Strategist ready for ${upperTicker}`
-                  : `Strategist failed for ${upperTicker}`,
+                kind: completionPush.notifyKind,
+                message: completionPush.notifyMessage,
                 resultStatus: result.status,
               });
               void sendPushToAll({
-                title: result.status === "recommendation"
-                  ? `Strategist ready — ${upperTicker}`
-                  : `Strategist — ${upperTicker}`,
-                body: result.status === "recommendation"
-                  ? "Analysis finished. Open the app to view the card."
-                  : "Analysis finished with no trade. Open the app for details.",
+                title: completionPush.pushTitle,
+                body: completionPush.pushBody,
                 tag: `strategist-${jobId}`,
                 data: { type: "strategist", jobId, ticker: upperTicker, kind: "analyze" as const },
               });
@@ -612,6 +625,7 @@ router.post("/analyze", async (req, res): Promise<void> => {
         upperTicker,
         {
         flowContext: typeof flowContext === "string" && flowContext.length > 0 ? flowContext.slice(0, 8000) : undefined,
+        convictionDeskProvider,
       },
         scannerContext,
       );
@@ -1093,45 +1107,79 @@ router.post("/settings/reset", async (_req, res) => {
   }
 });
 
+function strategistTelemetryFetchErrorJson(err: unknown, mode: "list" | "row"): Record<string, unknown> {
+  const flat = strategistTelemetryFlattenErrorMessage(err);
+  const code = strategistTelemetryPostgresErrorCode(err);
+  const hint =
+    code === "42703" ||
+    code === "42704" ||
+    /column .*does not exist/i.test(flat)
+      ? "strategist_telemetry schema does not match this API build. Deploy the latest server or run lib/db migrations against Postgres."
+      : undefined;
+  const detail = sanitizeStrategistTelemetryClientDetail(flat);
+  return {
+    error: mode === "list" ? "Failed to fetch telemetry" : "Failed to fetch telemetry row",
+    ...(hint ? { hint } : {}),
+    ...(detail ? { detail } : {}),
+    ...(code ? { postgresCode: code } : {}),
+  };
+}
+
+router.get("/telemetry/strategist/row/:id", async (req, res) => {
+  try {
+    await primeStrategistTelemetryReadSchema();
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      res.status(400).json({ error: "invalid id" });
+      return;
+    }
+    const row = await selectStrategistTelemetryRowById(id);
+    if (!row) {
+      res.status(404).json({ error: "Telemetry row not found" });
+      return;
+    }
+    res.json(row);
+  } catch (err) {
+    logger.error({ err, pgCode: strategistTelemetryPostgresErrorCode(err) }, "StrategistV2: telemetry row lookup failed");
+    res.status(500).json(strategistTelemetryFetchErrorJson(err, "row"));
+  }
+});
+
 router.get("/telemetry/strategist/request/:requestId", async (req, res) => {
   try {
+    await primeStrategistTelemetryReadSchema();
     const requestId = String(req.params.requestId ?? "").trim();
     if (!requestId) {
       res.status(400).json({ error: "requestId required" });
       return;
     }
-    const [row] = await db
-      .select()
-      .from(strategistTelemetryTable)
-      .where(sql`(${strategistTelemetryTable.fullDiagnostic}->'runMetadata'->>'requestId') = ${requestId}`)
-      .limit(1);
+    const row = await selectStrategistTelemetryRowByRequestId(requestId);
     if (!row) {
       res.status(404).json({ error: "Telemetry row not found for requestId" });
       return;
     }
     res.json(row);
   } catch (err) {
-    logger.error({ err }, "StrategistV2: telemetry request lookup failed");
-    res.status(500).json({ error: "Failed to fetch telemetry row" });
+    logger.error({ err, pgCode: strategistTelemetryPostgresErrorCode(err) }, "StrategistV2: telemetry request lookup failed");
+    res.status(500).json(strategistTelemetryFetchErrorJson(err, "row"));
   }
 });
 
 router.get("/telemetry/strategist", async (req, res) => {
   try {
+    await primeStrategistTelemetryReadSchema();
     const limit = Math.min(Number(req.query.limit) || 50, 100);
     const ticker = req.query.ticker as string | undefined;
 
-    const rows = ticker
-      ? await db.select().from(strategistTelemetryTable)
-          .where(eq(strategistTelemetryTable.ticker, ticker.toUpperCase()))
-          .orderBy(desc(strategistTelemetryTable.timestamp)).limit(limit)
-      : await db.select().from(strategistTelemetryTable)
-          .orderBy(desc(strategistTelemetryTable.timestamp)).limit(limit);
+    const rows = await selectStrategistTelemetryRows({
+      limit,
+      tickerUpper: ticker ? ticker.toUpperCase() : undefined,
+    });
 
-    res.json(rows);
+    res.json(rows.map((r) => trimStrategistTelemetryRowForListResponse(r as Record<string, unknown>)));
   } catch (err) {
-    logger.error({ err }, "StrategistV2: telemetry fetch failed");
-    res.status(500).json({ error: "Failed to fetch telemetry" });
+    logger.error({ err, pgCode: strategistTelemetryPostgresErrorCode(err) }, "StrategistV2: telemetry fetch failed");
+    res.status(500).json(strategistTelemetryFetchErrorJson(err, "list"));
   }
 });
 

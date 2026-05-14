@@ -1,14 +1,14 @@
 /**
- * Item 24: prune old raw flow rows; refresh volume_vs_baseline_20d from
- * options_flow_strike_baseline_daily (idempotent nightly job).
+ * Item 24: prune old raw flow rows; prune Schwab CHART_EQUITY minute bars (30d);
+ * refresh volume_vs_baseline_20d from options_flow_strike_baseline_daily (04:45 UTC nightly).
  */
 
-import { sql, lt } from "drizzle-orm";
-import { db, optionsFlowRawTradesTable } from "@workspace/db";
+import { db, lt, optionsFlowRawTradesTable, schwabChartEquityBarsTable, sql } from "@workspace/db";
 import { logger } from "./logger.js";
 import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 
 const RETENTION_DAYS = 90;
+const SCHWAB_CHART_EQUITY_RETENTION_DAYS = 30;
 
 export async function pruneOptionsFlowRawTradesOlderThanRetention(): Promise<void> {
   const cutoff = new Date();
@@ -16,6 +16,17 @@ export async function pruneOptionsFlowRawTradesOlderThanRetention(): Promise<voi
   const cutoffStr = cutoff.toISOString().slice(0, 10);
   await db.delete(optionsFlowRawTradesTable).where(lt(optionsFlowRawTradesTable.date, cutoffStr));
   logger.info({ op: "flowRaw.prune", cutoffDate: cutoffStr, retentionDays: RETENTION_DAYS }, "options_flow_raw_trades retention prune");
+}
+
+export async function pruneSchwabChartEquityBarsOlderThanRetention(): Promise<void> {
+  const cutoff = new Date();
+  cutoff.setUTCDate(cutoff.getUTCDate() - SCHWAB_CHART_EQUITY_RETENTION_DAYS);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  await db.delete(schwabChartEquityBarsTable).where(lt(schwabChartEquityBarsTable.sessionDate, cutoffStr));
+  logger.info(
+    { op: "schwabChartBars.prune", cutoffDate: cutoffStr, retentionDays: SCHWAB_CHART_EQUITY_RETENTION_DAYS },
+    "schwab_chart_equity_bars retention prune",
+  );
 }
 
 /** Recompute volume_vs_baseline_20d from materialized strike baselines (all dates with matching rows). */
@@ -45,5 +56,6 @@ export async function refreshVolumeVsBaselineFromStrikeTable(): Promise<number> 
 
 export async function runNightlyFlowRawMaintenance(): Promise<void> {
   await pruneOptionsFlowRawTradesOlderThanRetention();
+  await pruneSchwabChartEquityBarsOlderThanRetention();
   await refreshVolumeVsBaselineFromStrikeTable();
 }

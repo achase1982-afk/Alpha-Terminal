@@ -11,7 +11,6 @@ import { StrategistSettingsPanel } from "./StrategistSettingsPanel";
 import { StrategistTelemetryPanel } from "./StrategistTelemetryPanel";
 import { SystemSettingsPage } from "./SystemSettingsPage";
 import { IbkrTickDiagnosticsPanel } from "./IbkrTickDiagnosticsPanel";
-import { SidebarChat } from "./SidebarChat";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { queryClient } from "@/App";
 import { Input } from "@/components/ui/input";
@@ -27,9 +26,11 @@ import {
   SlidersHorizontal, Gauge, ListOrdered, CalendarDays, Palette,
   AlertTriangle, Settings2, Settings, ArrowLeft, FlaskConical,
   Stethoscope, Layers, Coins, ShieldAlert, User as UserIcon, Sparkles,
+  RefreshCw,
 } from "lucide-react";
 import { MarketCalendar } from "@/components/MarketCalendar";
 import { TelemetryPage, useTelemetryCount } from "@/components/TelemetryPage";
+import { TelemetryLogsPanel } from "@/components/TelemetryLogsPanel";
 import { SecurityPrivacyPage } from "@/components/SecurityPrivacyPage";
 import { useAuth } from "@clerk/clerk-react";
 import { signOutWithFullNavigation } from "@/lib/clerkSignOut";
@@ -109,7 +110,6 @@ export interface SidebarHandle {
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
-  onOpenChat?: () => void;
   onNavigate?: (dest: "markets" | "portfolio" | "ai-pulse" | "ai-strategist") => void;
   onToggle?: () => void;
 }
@@ -144,7 +144,7 @@ function MenuRow({ icon, label, onClick, badge }: { icon: React.ReactNode; label
   );
 }
 
-export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar({ isOpen, onClose, onOpenChat, onNavigate }, ref) {
+export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar({ isOpen, onClose, onNavigate }, ref) {
   const { signOut } = useAuthSignOutSafe();
   const [activePage, setActivePage] = useState<SidebarPage>(null);
   const telemetryCount = useTelemetryCount();
@@ -273,12 +273,6 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
                 <MenuRow icon={<Settings />} label="Settings" badge={telemetryCount} onClick={() => { setActivePage("Settings"); onClose(); }} />
               </div>
 
-              <div className="mx-5 border-b border-card-border/50 mt-2" />
-
-              <div className="px-3 pt-3">
-                <SidebarChat />
-              </div>
-
               <div className="pt-6 pb-10 pl-5">
                 <button
                   type="button"
@@ -293,6 +287,21 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
                 >
                   <Power className="w-[22px] h-[22px] text-white/80" strokeWidth={2.5} />
                   <span className="font-extrabold text-[17px] tracking-[0.15em] uppercase text-white/90">Logout</span>
+                </button>
+
+                <div className="my-4 border-t border-card-border/50" aria-hidden />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActivePage(null);
+                    onClose();
+                    window.location.reload();
+                  }}
+                  className="flex w-full items-center gap-3 text-left transition-opacity hover:opacity-70 active:opacity-50"
+                >
+                  <RefreshCw className="w-[22px] h-[22px] text-white/80" strokeWidth={2.5} />
+                  <span className="font-extrabold text-[17px] tracking-[0.15em] uppercase text-white/90">Refresh</span>
                 </button>
               </div>
             </div>
@@ -517,6 +526,7 @@ const ANTHROPIC_MODELS = [
   "claude-opus-4-7",
   "claude-opus-4-6",
   "claude-sonnet-4-6",
+  "claude-haiku-4-5",
   "claude-opus-4-20250514",
   "claude-sonnet-4-20250514",
   "claude-3-7-sonnet-20250219",
@@ -1580,13 +1590,14 @@ function OptionsChainDefaultsPage() {
 // a single tabbed entry so the sidebar can drop the "Strategist Telemetry"
 // item without losing access to those rows.
 function UnifiedTelemetryPage() {
-  const [tab, setTab] = useState<"events" | "trades">("events");
+  const [tab, setTab] = useState<"events" | "trades" | "logs">("events");
   return (
     <div className="space-y-3">
       <div className="flex gap-1 border-b border-card-border">
         {([
           { key: "events", label: "EVENTS" },
           { key: "trades", label: "TRADES" },
+          { key: "logs", label: "LOGS" },
         ] as const).map((t) => (
           <button
             key={t.key}
@@ -1602,7 +1613,13 @@ function UnifiedTelemetryPage() {
         ))}
       </div>
       <div>
-        {tab === "events" ? <TelemetryPage /> : <StrategistTelemetryPanel />}
+        {tab === "events" ? (
+          <TelemetryPage />
+        ) : tab === "trades" ? (
+          <StrategistTelemetryPanel />
+        ) : (
+          <TelemetryLogsPanel />
+        )}
       </div>
     </div>
   );

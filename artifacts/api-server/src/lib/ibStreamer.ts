@@ -5,6 +5,7 @@ import { emitTelemetry } from "./telemetryStore.js";
 import type { LiveQuote } from "./schwabStreamer.js";
 import { getEnabledSymbols, type IBSymbolDef } from "./ibBreadthSymbols.js";
 import { IMBALANCE_REQID_TO_SYMBOL, IMBALANCE_SYMBOLS, IMBALANCE_REQ_ID_BASE } from "./ibImbalanceSymbols.js";
+import { TUNING_L1_SYMBOL_DEFS, TUNING_L1_REQ_ID_BASE } from "./ibTuningL1Symbols.js";
 import { enqueueImbalancePersist } from "./ibImbalancePersistence.js";
 import { ES_DEPTH_SYMBOL_DEF, ES_DEPTH_REQ_ID } from "./ibEsDepthSymbols.js";
 import { CBOE_ONE_EXCHANGE } from "./ibCboeOneSymbols.js";
@@ -212,6 +213,11 @@ const reqIdToSymbol = new Map<number, IBSymbolDef>();
 for (const def of BREADTH_SYMBOLS) {
   reqIdToSymbol.set(def.reqId, def);
 }
+for (const def of TUNING_L1_SYMBOL_DEFS) {
+  reqIdToSymbol.set(def.reqId, def);
+}
+
+let tuningL1BootLogged = false;
 
 interface IBQuoteState {
   last: number | null;
@@ -229,6 +235,26 @@ interface IBQuoteState {
 }
 
 const ibQuoteCache = new Map<string, IBQuoteState>();
+
+const TUNING_L1_UPPER = new Set(TUNING_L1_SYMBOL_DEFS.map((d) => d.displaySymbol.toUpperCase()));
+
+export function getIbTuningL1QuoteSnapshot(symbol: string): {
+  bid: number | null;
+  ask: number | null;
+  last: number | null;
+  ageMs: number;
+} | null {
+  const u = symbol.toUpperCase();
+  if (!TUNING_L1_UPPER.has(u)) return null;
+  const st = ibQuoteCache.get(u);
+  if (!st) return null;
+  return {
+    bid: st.bid,
+    ask: st.ask,
+    last: st.last,
+    ageMs: Date.now() - st.ts,
+  };
+}
 
 let ib: IBApi | null = null;
 let connState: ConnectionState = "DISCONNECTED";
@@ -504,6 +530,31 @@ function subscribeAll() {
   }
   logger.info({ count: imbCount, reqIdBase: IMBALANCE_REQ_ID_BASE }, "IB: subscribed NYSE imbalance pool (generic tick 225)");
 
+  let tuningL1Subscribed = 0;
+  for (const def of TUNING_L1_SYMBOL_DEFS) {
+    if (skippedMarketDataReqIds.has(def.reqId)) continue;
+    const contract = buildContract(def);
+    try {
+      ib.reqMktData(def.reqId, contract, "", false, false);
+      tuningL1Subscribed++;
+    } catch (err) {
+      logger.warn({ err, symbol: def.displaySymbol }, "IB: failed to subscribe tuning universe L1");
+    }
+  }
+  if (!tuningL1BootLogged) {
+    tuningL1BootLogged = true;
+    logger.info(
+      {
+        event: "ENTER",
+        phase: "tuning_ibkr_l1_registration",
+        count: tuningL1Subscribed,
+        symbols: TUNING_L1_SYMBOL_DEFS.map((d) => d.displaySymbol),
+        reqIdBase: TUNING_L1_REQ_ID_BASE,
+      },
+      "IB: tuning universe permanent equity L1 subscribed",
+    );
+  }
+
   for (const [symbol, reqId] of dynamicQuoteSymbols) {
     const contract = buildDynamicContract(symbol);
     try {
@@ -742,6 +793,9 @@ function teardownIB() {
     for (const def of BREADTH_SYMBOLS) {
       try { ib.cancelMktData(def.reqId); } catch { /* ignore */ }
     }
+    for (const def of TUNING_L1_SYMBOL_DEFS) {
+      try { ib.cancelMktData(def.reqId); } catch { /* ignore */ }
+    }
     teardownDynamicIbPools();
     for (const def of IMBALANCE_SYMBOLS) {
       try { ib.cancelMktData(def.reqId); } catch { /* ignore */ }
@@ -935,6 +989,15 @@ export async function connectIB(): Promise<void> {
           logger.error(
             { code, reqId, symbol: sym },
             "IB: error 101 — market data subscription missing for NYSE imbalance stream; skipping this reqId until process restart.",
+          );
+          return;
+        }
+        const tuningDef = reqIdToSymbol.get(reqId);
+        if (tuningDef?.category === "TUNING_L1") {
+          skippedMarketDataReqIds.add(reqId);
+          logger.error(
+            { code, reqId, symbol: tuningDef.displaySymbol },
+            "IB: error 101 — market data subscription missing for tuning universe L1; skipping this reqId until process restart.",
           );
           return;
         }

@@ -57,7 +57,7 @@ export async function fetchDeskTtsChunkBlob(sessionId: string, chunkIndex: numbe
   throw lastError;
 }
 
-/** Fetch chunks in small parallel batches to avoid slamming the API; concatenate MP3 bytes (valid for sequential MPEG frames). */
+/** Fetch chunks in small parallel batches; concatenate MP3 blobs (sequential MPEG frames). */
 const MERGED_CHUNK_FETCH_CONCURRENCY = 4;
 
 export async function fetchAllDeskTtsChunksMerged(

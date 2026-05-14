@@ -12,6 +12,64 @@ const MONO =
 
 export const scannerNumericFontStyle: CSSProperties = { fontFamily: MONO };
 
+/** UI labels / event-type copy — Inter per scanner mockup (numerics use `scannerNumericFontStyle`). */
+export const scannerSansFontStyle: CSSProperties = {
+  fontFamily:
+    "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif",
+};
+
+/**
+ * UAI scanner mockup palette (mobile reference): discrete bull/bear, gold CTAs / mixed, orange urgency.
+ * Tailwind class fragments (full literals) so JIT always emits utilities.
+ */
+export const scannerUiTw = {
+  bull: "text-[#00C08B]",
+  bear: "text-[#FF4D6D]",
+  gold: "text-[#FFD100]",
+  orange: "text-[#FFA500]",
+  bgGold: "bg-[#FFD100]",
+  bgOrange: "bg-[#FFA500]",
+  bgBull: "bg-[#00C08B]",
+  bgBear: "bg-[#FF4D6D]",
+} as const;
+
+/**
+ * Collapsed scanner universe row layout: chevron column + flexible main column
+ * (identity + price, UAI signal, compact context). Matches `ScannerLayer1ColumnHeader`.
+ */
+export const SCANNER_LAYER1_CARD_GRID_CLASS =
+  "flex w-full min-w-0 items-stretch gap-2 bg-black px-3 py-2 text-sm tabular-nums";
+
+/**
+ * Urgency readout for collapsed-row bar (0–99). Prefers Layer-7 composite score when present;
+ * otherwise a monotone blend of sweep/block density vs `flow.eventsToday` (universe `events_today`; no randomness).
+ */
+export function scannerRowUrgencyScore(data: {
+  score: number | null;
+  flow: ScannerCardData["flow"];
+}): number {
+  const sc = data.score;
+  if (sc != null && Number.isFinite(sc)) {
+    return Math.min(99, Math.max(0, Math.round(sc)));
+  }
+  const f = data.flow;
+  const et = f?.eventsToday ?? 0;
+  if (et <= 0) return 0;
+  const sweeps = f?.sweepCount ?? f?.sweeps4h ?? 0;
+  const blocks = f?.blockCount ?? f?.blocks4h ?? 0;
+  const density = (typeof sweeps === "number" ? sweeps : 0) + 0.5 * (typeof blocks === "number" ? blocks : 0);
+  return Math.min(99, Math.max(12, Math.round(28 + (density / et) * 70)));
+}
+
+/** `$552k` / `$1.2M` style for mockup timeline + strike rows. */
+export function formatNotionalTickerUi(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n) || n < 0) return dashCell();
+  if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
+  if (n >= 1e3) return `$${(n / 1e3).toFixed(0)}k`;
+  return `$${Math.round(n)}`;
+}
+
 export function dashCell(): string {
   return "-";
 }

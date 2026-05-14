@@ -1,5 +1,5 @@
 import { db, equityDailyTable } from "@workspace/db";
-import { desc, eq, sql, and, gte } from "drizzle-orm";
+import { desc, eq, sql, and, gte } from "@workspace/db";
 import { logger } from "./logger.js";
 
 export interface EquityDailyExtras {

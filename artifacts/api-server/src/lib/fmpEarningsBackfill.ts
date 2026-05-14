@@ -1,4 +1,4 @@
-import { eq, and, gte } from "drizzle-orm";
+import { eq, and, gte } from "@workspace/db";
 import { db, corporateEventsTable } from "@workspace/db";
 
 export { backfillEarningsCalendar as runFmpEarningsBackfill } from "./fmpBackfill.js";

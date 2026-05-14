@@ -1,10 +1,14 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import {
   TrendingUp, TrendingDown, Minus, Shield,
   ChevronDown, ChevronUp, Send, Copy, Check, Activity, AlertCircle, RefreshCw,
+  Play, Pause, Square, Rewind, FastForward,
 } from "lucide-react";
 import { strategistCardToPlainText } from "@/lib/strategistPlaintext";
 import { isDeskStrategistTranscript } from "@/lib/strategistTranscriptDesk";
+import type { StrategistTranscriptTurn } from "@/lib/store";
+import { transcriptToPlainText } from "@/components/StrategistValidationCard";
+import { useValidationCardTts, VALIDATION_AUDIO_SKIP_SECONDS } from "@/hooks/useValidationCardTts";
 
 // Legacy (debate/IOScore semantic palette — used by sub-cards below the main body).
 const GOLD = "#f5a623";
@@ -587,6 +591,63 @@ export function StrategistV2RecommendationCard({
   generatedAt?: string | number | null;
 }) {
   const { recommendation: rec, regime, ioScore, systemicRiskElevated } = result;
+
+  const ctx = result.recommendation?.contextSources ?? result.contextSources;
+  const transcript = result.debateTranscript ?? [];
+
+  const cardRootRef = useRef<HTMLDivElement>(null);
+
+  const deskAudioText = useMemo(() => {
+    if (!result.recommendation) return "";
+    const base = strategistCardToPlainText(result, generatedAt ?? undefined);
+    if (transcript.length > 0) {
+      const dt = transcriptToPlainText(transcript as StrategistTranscriptTurn[]);
+      if (dt) return `${base}\n\n${dt}`;
+    }
+    return base;
+  }, [result, generatedAt, transcript]);
+
+  const deskAudioId = useMemo(() => {
+    const rid = (result as { strategistDiagnosticRequestId?: string | null }).strategistDiagnosticRequestId;
+    if (rid && String(rid).trim()) return `strategist-v2rec-${String(rid).trim()}`;
+    let h = 2166136261;
+    const s = `${result.ticker}\0${result.status}\0${deskAudioText.slice(0, 8000)}`;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return `strategist-v2rec-${result.ticker}-${(h >>> 0).toString(16)}`;
+  }, [result, deskAudioText]);
+
+  const {
+    audioRef,
+    audioBarOpen,
+    audioLoading,
+    audioReady,
+    audioError,
+    paused,
+    speechRate,
+    setSpeechRate,
+    speedLabel,
+    startPlay,
+    stopAudio,
+    togglePause,
+    seekRelativeSeconds,
+    onAudioEnded,
+    onLoadedMetadata,
+    onPlay,
+    onPause,
+    onAudioElementError,
+    iconBtnBase,
+  } = useValidationCardTts({
+    plainText: deskAudioText,
+    audioId: deskAudioId,
+    resetDependency: result,
+    containerRef: cardRootRef,
+  });
+
+  const REC_AUDIO_FOCUS = "2px solid rgba(255,255,255,0.85)";
+
   if (!rec) return null;
 
   const earningsAlert = result.earningsAlert;
@@ -609,15 +670,14 @@ export function StrategistV2RecommendationCard({
       ? `$${Math.abs(rec.entryRangeMin).toFixed(2)} – $${Math.abs(rec.entryRangeMax).toFixed(2)}`
       : "—";
 
-  const ctx = result.recommendation?.contextSources ?? result.contextSources;
-  const transcript = result.debateTranscript;
   const isDeskTranscript =
     !!transcript &&
     transcript.length > 0 &&
-    isDeskStrategistTranscript(transcript as import("@/lib/store").StrategistTranscriptTurn[]);
+    isDeskStrategistTranscript(transcript as StrategistTranscriptTurn[]);
 
   return (
     <div
+      ref={cardRootRef}
       className="rounded-2xl overflow-hidden"
       style={{
         background: PAL.bgCard,
@@ -711,6 +771,154 @@ export function StrategistV2RecommendationCard({
         <div style={{ width: 1, height: 32, background: PAL.border }} />
         <StatBlock value={`${rec.riskReward.toFixed(2)}:1`} label="R:R" />
       </div>
+
+      {deskAudioText.trim().length > 0 && (
+        <div className="px-5 pt-3 pb-2" style={{ borderBottom: `1px solid ${PAL.border}` }}>
+          <audio
+            ref={audioRef}
+            preload="auto"
+            playsInline
+            className="hidden"
+            onEnded={onAudioEnded}
+            onLoadedMetadata={onLoadedMetadata}
+            onPlay={onPlay}
+            onPause={onPause}
+            onError={onAudioElementError}
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <span style={{ color: PAL.label, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", marginRight: 4 }}>
+              Listen
+            </span>
+            {!audioBarOpen && (
+              <button
+                type="button"
+                onClick={() => void startPlay()}
+                disabled={audioLoading}
+                className="inline-flex items-center gap-1.5 min-h-[44px] px-3 rounded-md font-mono text-[10px] font-bold uppercase tracking-wider transition-colors"
+                style={{
+                  border: `1px solid ${PAL.borderInner}`,
+                  background: PAL.bgInner,
+                  color: PAL.label,
+                  opacity: audioLoading ? 0.55 : 1,
+                  cursor: audioLoading ? "not-allowed" : "pointer",
+                }}
+                aria-label="Play strategist audio report"
+                onFocus={(e) => {
+                  e.currentTarget.style.outline = REC_AUDIO_FOCUS;
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.outline = "none";
+                }}
+              >
+                <Play className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                {audioLoading ? "Loading…" : "Play"}
+              </button>
+            )}
+          </div>
+          {audioBarOpen && (
+            <div
+              role="region"
+              aria-label="Strategist audio playback controls"
+              className="mt-2 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2"
+              style={{ border: `1px solid ${PAL.borderInner}`, background: PAL.bgInner }}
+            >
+              {audioError ? (
+                <span className="text-xs w-full" style={{ color: PAL.red }}>
+                  {audioError}
+                </span>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    style={iconBtnBase}
+                    aria-label={`Rewind ${VALIDATION_AUDIO_SKIP_SECONDS} seconds`}
+                    onClick={() => seekRelativeSeconds(-VALIDATION_AUDIO_SKIP_SECONDS)}
+                    disabled={!audioReady}
+                    onFocus={(e) => {
+                      e.currentTarget.style.outline = REC_AUDIO_FOCUS;
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.outline = "none";
+                    }}
+                  >
+                    <Rewind className="w-5 h-5" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    style={iconBtnBase}
+                    aria-label={paused ? "Resume audio" : "Pause audio"}
+                    onClick={togglePause}
+                    disabled={!audioReady}
+                    onFocus={(e) => {
+                      e.currentTarget.style.outline = REC_AUDIO_FOCUS;
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.outline = "none";
+                    }}
+                  >
+                    {paused ? <Play className="w-5 h-5" aria-hidden /> : <Pause className="w-5 h-5" aria-hidden />}
+                  </button>
+                  <button
+                    type="button"
+                    style={iconBtnBase}
+                    aria-label={`Fast-forward ${VALIDATION_AUDIO_SKIP_SECONDS} seconds`}
+                    onClick={() => seekRelativeSeconds(VALIDATION_AUDIO_SKIP_SECONDS)}
+                    disabled={!audioReady}
+                    onFocus={(e) => {
+                      e.currentTarget.style.outline = REC_AUDIO_FOCUS;
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.outline = "none";
+                    }}
+                  >
+                    <FastForward className="w-5 h-5" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    style={iconBtnBase}
+                    aria-label="Stop audio"
+                    onClick={stopAudio}
+                    onFocus={(e) => {
+                      e.currentTarget.style.outline = REC_AUDIO_FOCUS;
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.outline = "none";
+                    }}
+                  >
+                    <Square className="w-5 h-5" aria-hidden />
+                  </button>
+                  <label className="flex items-center gap-2 ml-auto" style={{ color: PAL.body, fontSize: 12 }}>
+                    <span className="sr-only">Playback speed</span>
+                    <select
+                      aria-label={`Playback speed, currently ${speedLabel}`}
+                      value={speechRate}
+                      onChange={(e) => setSpeechRate(Number(e.target.value))}
+                      className="min-h-[44px] rounded-lg px-2 outline-none"
+                      style={{
+                        border: `1px solid ${PAL.borderInner}`,
+                        background: PAL.bgCard,
+                        color: PAL.body,
+                        fontSize: 12,
+                      }}
+                      onFocus={(e) => {
+                        e.currentTarget.style.outline = REC_AUDIO_FOCUS;
+                      }}
+                      onBlur={(e) => {
+                        e.currentTarget.style.outline = "none";
+                      }}
+                    >
+                      <option value={1}>1x</option>
+                      <option value={1.25}>1.25x</option>
+                      <option value={1.5}>1.5x</option>
+                      <option value={2}>2x</option>
+                    </select>
+                  </label>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ---- 3. COMPANY ---- */}
       {rec.companyContext && (

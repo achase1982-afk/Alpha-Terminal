@@ -1,5 +1,5 @@
 import { db, equityDailyTable, equityIvCanonicalTable, optionsChainDailyTable } from "@workspace/db";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "@workspace/db";
 import { logger } from "./logger";
 import { validateIv30 } from "./ivSanityFloor";
 

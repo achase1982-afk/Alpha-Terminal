@@ -30,7 +30,7 @@ export interface ConvictionDeskRunDiagnostic {
   finishedAt: string;
   outcome: ConvictionDeskRunOutcome;
   attempts: Array<{
-    attemptNumber: 1 | 2;
+    attemptNumber: 1 | 2 | 3;
     rawResponseText: string;
     envelope: WebSearchEnvelope;
     extractedJsonString: string | null;
@@ -38,6 +38,8 @@ export interface ConvictionDeskRunDiagnostic {
     validationResult: ConvictionAttemptValidationResult;
   }>;
   finalErrors: string[];
+  /** Telemetry-only soft checks (mid/fill convention, data_source_gaps surfacing). */
+  softValidationWarnings?: string[];
 }
 
 function issueToDiagnostic(i: ZodIssue): ConvictionZodIssueDiagnostic {

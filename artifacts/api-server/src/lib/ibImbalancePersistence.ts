@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { db, nyseOrderImbalancesTable } from "@workspace/db";
-import { desc, sql } from "drizzle-orm";
+import { desc, sql } from "@workspace/db";
 import { logger } from "./logger.js";
 import type { IbImbalanceState } from "./ibStreamer.js";
 

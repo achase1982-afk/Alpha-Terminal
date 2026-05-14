@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { emitDeskTtsClientEvent, fetchAllDeskTtsChunksMerged } from "@/lib/deskBufferedTtsClient";
+import { emitDeskTtsClientEvent, fetchAllDeskTtsChunksMerged } from "@/lib/deskAudioApi";
 import { splitDeskAudioTextIntoChunks } from "@/lib/deskAudioChunking";
 
 const SESSION_RATE_KEY = "strategistDeskSpeechRate";

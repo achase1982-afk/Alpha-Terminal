@@ -11,7 +11,7 @@
  */
 
 import { db, equityDailyTable } from "@workspace/db";
-import { and, asc, gte, inArray } from "drizzle-orm";
+import { and, asc, gte, inArray } from "@workspace/db";
 import pLimit from "p-limit";
 import { logger } from "./logger.js";
 import type { SchwabScannerBatchQuote } from "./schwabBatchQuotes.js";

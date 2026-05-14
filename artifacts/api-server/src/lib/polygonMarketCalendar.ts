@@ -1,36 +1,63 @@
 import { logger } from "./logger.js";
+import {
+  addCalendarDaysNy,
+  isNyseFullDayClosureYmd,
+  nyCalendarYmd,
+  nyOffsetForYmd,
+  nyWeekdaySun0,
+  nyseStandardFullClosureYmdsForYear,
+} from "./usEquityMarketCalendar.js";
 
-export function nyCalendarYmd(d: Date): string {
-  return d.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
-}
+export {
+  addCalendarDaysNy,
+  nyCalendarYmd,
+  nyOffsetForYmd,
+  nyWeekdaySun0,
+  nyseStandardFullClosureYmdsForYear,
+  isNyseFullDayClosureYmd,
+};
 
-function nyOffsetForYmd(ymd: string): "-04:00" | "-05:00" {
-  const probe = new Date(`${ymd}T12:00:00Z`);
-  const part = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    timeZoneName: "shortOffset",
-  })
-    .formatToParts(probe)
-    .find((p) => p.type === "timeZoneName")?.value ?? "";
-  return part.includes("-4") || part.includes("EDT") ? "-04:00" : "-05:00";
-}
-
-/** Calendar add in America/New_York (walk session dates without importing Temporal). */
 function addDaysYmd(ymd: string, deltaDays: number): string {
-  const off = nyOffsetForYmd(ymd);
-  const d = new Date(`${ymd}T12:00:00${off}`);
-  d.setTime(d.getTime() + deltaDays * 86_400_000);
-  return nyCalendarYmd(d);
+  return addCalendarDaysNy(ymd, deltaDays);
 }
 
-/** 0=Sun .. 6=Sat in America/New_York (for a noon wall-clock on that calendar date). */
-function nyWeekdaySun0(ymd: string): number {
-  const off = nyOffsetForYmd(ymd);
-  const d = new Date(`${ymd}T12:00:00${off}`);
-  const long = d.toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "long" });
-  const names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-  const i = names.indexOf(long);
-  return i >= 0 ? i : 0;
+/** True when this NY calendar date is a regular equity session (Mon–Fri, not a full-market holiday). */
+export async function isNyTradingSessionDate(dateYmd: string): Promise<boolean> {
+  const wd = nyWeekdaySun0(dateYmd);
+  if (wd === 0 || wd === 6) return false;
+  if (isNyseFullDayClosureYmd(dateYmd)) return false;
+  if (await polygonListedMarketClosure(dateYmd)) return false;
+  return true;
+}
+
+export async function nextNyTradingDayYmd(ymd: string): Promise<string> {
+  let d = addCalendarDaysNy(ymd, 1);
+  for (let i = 0; i < 400; i++) {
+    if (await isNyTradingSessionDate(d)) return d;
+    d = addCalendarDaysNy(d, 1);
+  }
+  logger.error({}, "polygonMarketCalendar: nextNyTradingDayYmd exceeded lookback");
+  return d;
+}
+
+export async function prevNyTradingDayYmd(ymd: string): Promise<string> {
+  let d = addCalendarDaysNy(ymd, -1);
+  for (let i = 0; i < 400; i++) {
+    if (await isNyTradingSessionDate(d)) return d;
+    d = addCalendarDaysNy(d, -1);
+  }
+  logger.error({}, "polygonMarketCalendar: prevNyTradingDayYmd exceeded lookback");
+  return d;
+}
+
+export async function advanceNyTradingDaysYmd(ymd: string, deltaSessions: number): Promise<string> {
+  let d = ymd;
+  const steps = Math.abs(deltaSessions);
+  const dir = deltaSessions >= 0 ? 1 : -1;
+  for (let s = 0; s < steps; s++) {
+    d = dir > 0 ? await nextNyTradingDayYmd(d) : await prevNyTradingDayYmd(d);
+  }
+  return d;
 }
 
 const POLYGON_API = "https://api.polygon.io";
@@ -143,8 +170,11 @@ export async function getEarlyCloseUtcIso(dateYmd: string): Promise<string | nul
   return null;
 }
 
-/** True if Polygon lists this NY session date as fully closed (NYSE/NASDAQ). Weekends are handled separately in session logic. */
-export async function isMarketHoliday(dateYmd: string): Promise<boolean> {
+/**
+ * True if Polygon upcoming-market API lists this NY session date as fully closed.
+ * Weekends are handled separately. Complements {@link isNyseFullDayClosureYmd} (rule-based exchange calendar).
+ */
+export async function polygonListedMarketClosure(dateYmd: string): Promise<boolean> {
   const row = await holidayRowForDate(dateYmd);
   return row?.status === "closed";
 }
@@ -201,7 +231,7 @@ export async function lastCompletedTradingDayNy(now: Date): Promise<string> {
       ymd = addDaysYmd(ymd, -1);
       continue;
     }
-    if (await isMarketHoliday(ymd)) {
+    if (await polygonListedMarketClosure(ymd)) {
       ymd = addDaysYmd(ymd, -1);
       continue;
     }

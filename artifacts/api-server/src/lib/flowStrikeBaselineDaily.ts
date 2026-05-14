@@ -3,7 +3,7 @@
  * `options_flow_strike_baseline_daily` for reuse by tape + re-classify jobs.
  */
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "@workspace/db";
 import { db, optionsFlowStrikeBaselineDailyTable } from "@workspace/db";
 import { getContracts20dBaselineBatch } from "./optionsBaselines.js";
 import { logger } from "./logger.js";

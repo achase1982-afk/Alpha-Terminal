@@ -22,6 +22,7 @@ import {
 import { computeScannerLayer7Scores } from "../lib/scannerLayer7Scores.js";
 import { matchScannerTradingPreset } from "../lib/scannerTradingPresets.js";
 import { getBestAccessToken } from "../lib/tokenStore.js";
+import { fetchUaiSymbolEvents, parseScannerSymbolEventsWindowMs } from "../lib/scannerV3SymbolEvents.js";
 
 const router: IRouter = Router();
 
@@ -59,6 +60,49 @@ function parseUniverseQuery(raw: unknown): { ok: true; universeKey: string } | {
   if (isCompositeUniverseId(s)) return { ok: true, universeKey: s };
   return { ok: false };
 }
+
+/** Rolling-window options prints for one symbol (UAI scanner detail timeline). */
+router.get("/v3/symbol/:symbol/events", async (req, res) => {
+  const started = Date.now();
+  try {
+    const userId = requireUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const rawSym = req.params.symbol;
+    if (typeof rawSym !== "string" || !rawSym.trim()) {
+      return res.status(400).json({ error: "symbol required" });
+    }
+    const symbol = rawSym.trim().toUpperCase();
+    if (!/^[A-Z][A-Z0-9.-]{0,31}$/.test(symbol)) {
+      return res.status(400).json({ error: "invalid symbol" });
+    }
+    const windowMs = parseScannerSymbolEventsWindowMs(req.query.window);
+    const schwab_access_token_present = !!getBestAccessToken();
+    const quoteMap = schwab_access_token_present
+      ? await fetchSchwabBatchQuotesForSymbolsBestToken([symbol])
+      : new Map();
+    const px = quoteMap.get(symbol)?.price ?? null;
+    const spot = px != null && Number.isFinite(px) ? px : null;
+    const payload = await fetchUaiSymbolEvents({ symbol, windowMs, spot });
+    const duration_ms = Date.now() - started;
+    try {
+      emitTelemetry(
+        "SCANNER",
+        "INFO",
+        "scanner_v3_symbol_events",
+        { duration_ms, symbol, window_ms: windowMs, count: payload.events.length },
+        "SCANNER",
+      );
+    } catch (err) {
+      log.error({ err, duration_ms }, "scanner_v3_symbol_events telemetry emit failed");
+    }
+    return res.json(payload);
+  } catch (err) {
+    log.error({ err }, "scanner v3 symbol events handler failed");
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 /** Layer 1: static or snapshot-backed universe — no DB for kebab ids except watchlist/screen composites. */
 router.get("/v3/universe", async (req, res) => {
@@ -132,7 +176,22 @@ router.get("/v3/universe", async (req, res) => {
     for (const [sym, q] of quoteMap) {
       priceBySymbol.set(sym, q.price ?? null);
     }
-    const flowMap = await fetchScannerFlowContextForSymbols(tickers, priceBySymbol);
+    const flowBatch = await fetchScannerFlowContextForSymbols(tickers, priceBySymbol);
+    const flowMap = flowBatch.bySymbol;
+    const layer5_flow_diag = flowBatch.diagnostics;
+
+    if (layer5_flow_diag.rows_in_window === 0 && tickers.length > 0) {
+      log.info(
+        {
+          op: "scanner_v3.layer5_empty_window",
+          universe: universeKey,
+          window_ms: layer5_flow_diag.window_ms,
+          cutoff_iso: layer5_flow_diag.cutoff_iso,
+          rows_in_window: 0,
+        },
+        "Layer 5 Flow: no options_flow_raw_trades rows in rolling window (UI shows dashes). Check tape backfill / watcher; optional env SCANNER_FLOW_LAYER5_WINDOW_MS widens the window.",
+      );
+    }
 
     const technicalMap = await fetchScannerTechnicalContextForSymbols(tickers, quoteMap);
 
@@ -231,6 +290,10 @@ router.get("/v3/universe", async (req, res) => {
       layer4_ex_div_hits,
       layer4_reactions_hits,
       layer5_flow_hits,
+      layer5_flow_window_ms: layer5_flow_diag.window_ms,
+      layer5_flow_cutoff_iso: layer5_flow_diag.cutoff_iso,
+      layer5_flow_rows_in_window: layer5_flow_diag.rows_in_window,
+      layer5_flow_max_trade_ts_in_window: layer5_flow_diag.max_trade_ts_in_window,
       layer6_technical_hits,
     };
 

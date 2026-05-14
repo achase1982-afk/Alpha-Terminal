@@ -36,6 +36,7 @@ import type { MarketPulseDashboardHandle } from "@/components/market-pulse/Marke
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { WatchlistView } from "@/components/WatchlistView";
 import { setPendingStrategistPushJobId } from "@/lib/strategistPushNav";
+import { resumeAllRunningPollers } from "@/lib/strategistPoller";
 import {
   Menu,
   RefreshCw,
@@ -56,20 +57,20 @@ function optionTradeStreamKey(contract: OptionsContract): string {
 const DESKTOP_CONTEXT_TABS: { id: MarketDataTab; label: string }[] = [
   { id: "news", label: "News" },
   { id: "options", label: "Options" },
-  { id: "chat", label: "Chat" },
   { id: "company", label: "Company" },
+  { id: "newsChat", label: "Chat" },
 ];
 
 function DesktopContextTabs({ activeTab, setActiveTab }: { activeTab: MarketDataTab; setActiveTab: (t: MarketDataTab) => void }) {
   return (
-    <div className="flex items-stretch border-b border-zinc-800/60" style={{ background: "#111" }}>
+    <div className="flex items-stretch border-b border-zinc-800/60 overflow-x-auto" style={{ background: "#111" }}>
       {DESKTOP_CONTEXT_TABS.map((tab) => {
-        const isActive = activeTab === tab.id || (activeTab === "chart" && tab.id === "news");
+        const isActive = activeTab === tab.id;
         return (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className="flex-1 py-2 font-mono text-[11px] font-bold tracking-wider transition-colors border-b-2"
+            className="flex-1 min-w-[76px] py-2 font-mono text-[10px] sm:text-[11px] font-bold tracking-wider transition-colors border-b-2"
             style={{
               color: isActive ? "#FFB800" : "#71717a",
               borderColor: isActive ? "#FFB800" : "transparent",
@@ -419,6 +420,17 @@ export default function TerminalPage() {
     try { sessionStorage.setItem("alpha_session_ai_tab", aiSubTab); } catch {}
   }, [aiSubTab]);
 
+  // Polling lives in `strategistPoller` so it can survive AiIntelligenceTab
+  // unmount, but mobile Safari can throttle timer chains while other chrome is
+  // foregrounded and `visibilitychange` does not fire for in-app bottom-nav
+  // switches. When the user returns to the Strategist screen, reconcile against
+  // `/job/:id/final` and force-restart any stalled pollers (toast suppressed —
+  // foreground recovery still uses visibility/focus in App).
+  useEffect(() => {
+    if (activeBottom !== "ai" || aiSubTab !== "strategist") return;
+    resumeAllRunningPollers({ toastOnComplete: false });
+  }, [activeBottom, aiSubTab]);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const sb = params.get("sb");
@@ -592,7 +604,6 @@ export default function TerminalPage() {
           ref={sidebarRef}
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
-          onOpenChat={() => {}}
           onNavigate={(dest) => {
             if (dest === "markets") setActiveBottom("markets");
             else if (dest === "portfolio") setActiveBottom("portfolio");
@@ -608,22 +619,37 @@ export default function TerminalPage() {
         )}
 
         {!isWide ? (
-          <main ref={scrollRef} onScroll={handleScroll} className={`flex-1 min-h-0 min-w-0 app-content overflow-x-hidden ${activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming ? "overflow-hidden" : "overflow-y-auto"}`}>
+          <main
+            ref={scrollRef}
+            onScroll={handleScroll}
+            className={`app-content flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden ${
+              activeBottom === "markets" && contextTab === "newsChat"
+                ? "overflow-hidden"
+                : activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming
+                  ? "overflow-hidden"
+                  : "overflow-y-auto"
+            }`}
+          >
 
             {activeBottom === "markets" && (
-              <>
+              <div className="flex flex-1 min-h-0 flex-col">
                 {showMiniCards && !isCompact && <MacroBar />}
-                <div ref={stickyWrapRef} className="sticky top-0 z-40 bg-background">
+                <div ref={stickyWrapRef} className="sticky top-0 z-40 bg-background shrink-0">
                   <MetricsBar compact={isScrolled} onTrade={openOrder} />
                   <VolumeBar />
                   <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
                 </div>
-                <div>
+                <div
+                  className={
+                    contextTab === "newsChat"
+                      ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+                      : "flex min-h-0 flex-1 flex-col"
+                  }
+                >
                   {contextTab === "news" && <NewsTab />}
                   {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
-                  {contextTab === "chat" && <MarketsChatTab />}
                   {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles} stickyOffset={stickyH} />}
-                  
+                  {contextTab === "newsChat" && <MarketsChatTab />}
                   {contextTab === "chart" && (
                     <>
                       <ChartControls />
@@ -633,7 +659,7 @@ export default function TerminalPage() {
                     </>
                   )}
                 </div>
-              </>
+              </div>
             )}
 
             {activeBottom === "ai" && (
@@ -666,16 +692,21 @@ export default function TerminalPage() {
                   </div>
                 </div>
 
-                <div className="flex flex-col shrink-0 border-l border-zinc-800/60 overflow-hidden" style={{ width: 360, background: "#0c0c0c" }}>
+                <div className="flex min-h-0 w-[360px] shrink-0 flex-col overflow-hidden border-l border-zinc-800/60" style={{ background: "#0c0c0c" }}>
                   <div className="shrink-0">
                     <DesktopContextTabs activeTab={contextTab} setActiveTab={setContextTab} />
                   </div>
-                  <div className="flex-1 overflow-y-auto">
+                  <div
+                    className={
+                      contextTab === "newsChat"
+                        ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+                        : "flex min-h-0 flex-1 flex-col overflow-y-auto"
+                    }
+                  >
                     {contextTab === "news" && <NewsTab />}
                     {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
-                    {contextTab === "chat" && <MarketsChatTab />}
                     {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles} stickyOffset={0} />}
-                    
+                    {contextTab === "newsChat" && <MarketsChatTab />}
                   </div>
                 </div>
               </>
@@ -691,22 +722,34 @@ export default function TerminalPage() {
             )}
           </>
         ) : (
-          <main ref={scrollRef} onScroll={handleScroll} className="flex-1 min-w-0 app-content pb-4 overflow-y-auto" style={activeBottom === "portfolio" ? { overscrollBehaviorY: "none" } : undefined}>
+          <main
+            ref={scrollRef}
+            onScroll={handleScroll}
+            className={`app-content flex min-h-0 flex-1 min-w-0 flex-col pb-4 ${
+              activeBottom === "markets" && contextTab === "newsChat" ? "overflow-hidden" : "overflow-y-auto"
+            }`}
+            style={activeBottom === "portfolio" ? { overscrollBehaviorY: "none" } : undefined}
+          >
             {activeBottom === "markets" && (
-              <>
+              <div className="flex min-h-0 flex-1 flex-col">
                 <div className="shrink-0 border-b border-zinc-800/60" style={{ background: "#0a0a0a" }}>
                   <MetricsBar compact={isScrolled} onTrade={openOrder} />
                   <VolumeBar />
                 </div>
-                <div ref={stickyWrapRef} className="sticky top-0 z-40 bg-background">
+                <div ref={stickyWrapRef} className="sticky top-0 z-40 shrink-0 bg-background">
                   <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
                 </div>
-                <div>
+                <div
+                  className={
+                    contextTab === "newsChat"
+                      ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+                      : "flex min-h-0 flex-1 flex-col"
+                  }
+                >
                   {contextTab === "news" && <NewsTab />}
                   {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
-                  {contextTab === "chat" && <MarketsChatTab />}
                   {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles} stickyOffset={stickyH} />}
-                  
+                  {contextTab === "newsChat" && <MarketsChatTab />}
                   {contextTab === "chart" && (
                     <>
                       <ChartControls />
@@ -716,7 +759,7 @@ export default function TerminalPage() {
                     </>
                   )}
                 </div>
-              </>
+              </div>
             )}
 
             {activeBottom === "ai" && (

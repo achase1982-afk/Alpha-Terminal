@@ -1,5 +1,5 @@
 import { db, strategistTelemetryTable } from "@workspace/db";
-import { and, gte, sql, eq } from "drizzle-orm";
+import { and, gte, sql, eq } from "@workspace/db";
 import type { ScannerSourceForStrategist } from "./scannerStrategistContext.js";
 
 export type ScoreBucket = "50-59" | "60-69" | "70-79" | "80-89" | "90-100";

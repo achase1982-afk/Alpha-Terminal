@@ -7,11 +7,17 @@ import { runDeskAnalysis, runSoloDesk, runConvictionDesk, type DeskCallbacks } f
 import type { ConvictionDeskResult, DeskResult } from "./strategistDeskSchemas.js";
 import { throwIfStrategistAnalyzeCancelled } from "./strategistAnalyzeCancellation.js";
 import type { ScrubCanonical } from "./narrativeScrubbers.js";
-import { db, strategistTelemetryTable } from "@workspace/db";
+import { db, desc, eq, sql, and, strategistTelemetryTable, type InferInsertModel } from "@workspace/db";
 
 type StrategistTelemetryInsert = InferInsertModel<typeof strategistTelemetryTable>;
-import { desc, eq, sql, and } from "drizzle-orm";
-import type { InferInsertModel } from "drizzle-orm";
+import { getStrategistTelemetryPgColumnSet } from "./strategistTelemetryColumnCache.js";
+import { filterStrategistTelemetryInsertForExistingColumns } from "./strategistTelemetryInsertFilter.js";
+import {
+  applyStrategistTelemetryAuditColumnMigrations,
+  strategistTelemetryPostgresErrorCode,
+  strategistTelemetryFlattenErrorMessage,
+} from "./ensureStrategistTelemetryAuditColumns.js";
+import { insertStrategistTelemetryRowViaPool } from "./strategistTelemetryPoolInsert.js";
 import { fetchPolygonTickerMarketCapUsd, logMarketCapPolygonFallback } from "./polygonTickerMarketCap.js";
 import { getBestAccessToken } from "./tokenStore.js";
 import { fetchPolygonChain } from "./polygonChain.js";
@@ -28,6 +34,7 @@ import {
   type StrategistRunMetadata,
   type StrategistRunOutcomeTelemetry,
 } from "./strategistDiagnostics.js";
+import { getRecentNewsForTicker } from "./strategistRecentNews.js";
 import { runWithPolygonApiTraceAsync, takePolygonApiTrace } from "./polygonApiTrace.js";
 import { runInStrategistRunContext, getStrategistRunContext, mergeStrategistDiag } from "./strategistRunContext.js";
 import { buildScannerContextPromptBlock } from "./scannerStrategistContext.js";
@@ -42,6 +49,11 @@ import { fetchRecentEsDepthSummary } from "./ibEsDepthPersistence.js";
 import { acquireDynamicIbPool } from "./ibDynamicSubscriptionManager.js";
 import { isNasdaqPrimaryListing, resolveEquityListingForTotalview } from "./ibSymbolListingCache.js";
 import {
+  buildStrategistIntradayPackage,
+  ensureStrategistSchwabSubscriptions,
+  resolveStrategistBookVenue,
+} from "./strategistIntradayEnrichment.js";
+import {
   getCboeOneFeedDiagnostics,
   getIbDynamicPoolDiagnosticsSnapshot,
   getRecentTotalviewSummaryForTicker,
@@ -49,6 +61,7 @@ import {
 import { getQuoteBySymbol } from "./schwabStreamer.js";
 import { lastCompletedTradingDayNy, nyCalendarYmd, rthBoundsMs } from "./polygonMarketCalendar.js";
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
+import { isEquityOptionsStrategistMacroEvent } from "./strategistMacroSnapshotFilter.js";
 import { getNextEarningsDate, type NextEarnings } from "./earningsService.js";
 import { evaluateCatalyst, deriveTradeDirection, type CatalystEvaluation } from "./catalystEvaluator.js";
 import { type OptionContract } from "./optionsStrategist.js";
@@ -721,6 +734,8 @@ export interface AnalyzeProgressCallbacks {
   jobId?: string;
   /** Aborts in-flight LLM HTTP when aborted (client disconnect or explicit cancel). */
   cancelSignal?: AbortSignal;
+  /** When set (e.g. POST /analyze body), overrides `strategistConvictionModelIdx` for mode 5 only. Legacy short-cuts or `provider:model`. */
+  convictionDeskProvider?: string;
 }
 
 function throwAnalyzeCancelled(): never {
@@ -823,6 +838,16 @@ async function analyzeTickerV2Inner(
     return noViable(ticker, regime, settings, toxicCheck, tickerData,
       { category: "STOCK_HALTED", detail: "Stock is halted.", suggestedAction: "Wait for the halt to lift and retry." },
       null);
+  }
+
+  try {
+    const symSub = ticker.toUpperCase().replace(/^\$/, "");
+    const listingSub = await resolveEquityListingForTotalview(symSub, {
+      schwabExchangeHint: tickerData.schwabExchangeHint ?? null,
+    });
+    ensureStrategistSchwabSubscriptions(symSub, resolveStrategistBookVenue(listingSub));
+  } catch (err) {
+    logger.warn({ err, ticker }, "StrategistV2: Schwab stream subscription bootstrap failed");
   }
 
   const analystRatingsPack = await fetchPolygonAnalystRatingsAndConsensus(ticker, 300);
@@ -1036,6 +1061,7 @@ async function analyzeTickerV2Inner(
 
   mergeStrategistDiag({ tapeBackfillStatus });
   assertAnalyzeNotCancelled(progress);
+  status("Loading flow highlights…");
   const polygonHighlights = await getPolygonFlowHighlights(ticker, tapeBackfillStatus);
   if (polygonHighlights) {
     logger.info({
@@ -1048,6 +1074,30 @@ async function analyzeTickerV2Inner(
     logger.info({ ticker }, "StrategistV2: no Polygon flow highlights for ticker");
   }
 
+  if (polygonHighlights) {
+    const lc = polygonHighlights.sessionTapeLookupCounts;
+    const st = polygonHighlights.sessionTape;
+    if (
+      st?.tapeKind === "eod_fallback" &&
+      lc &&
+      lc.rawTradeRowCount > 0 &&
+      lc.execPerStrikeRowCount > 0
+    ) {
+      logger.error(
+        {
+          symbol: ticker,
+          runId: progress?.jobId ?? null,
+          sessionDate: lc.sessionDate,
+          rawTradeRowCount: lc.rawTradeRowCount,
+          execPerStrikeRowCount: lc.execPerStrikeRowCount,
+        },
+        "StrategistV2: invariant violated — eod_fallback returned despite live rows existing in options_flow_raw_trades and options_flow_exec_per_strike for this session_date",
+      );
+    }
+  }
+
+  status("Loading company fundamentals…");
+  assertAnalyzeNotCancelled(progress);
   const [companyFinancials] = await Promise.all([
     fetchCompanyFinancialsForSymbol(ticker),
   ]);
@@ -1064,6 +1114,7 @@ async function analyzeTickerV2Inner(
   }
   assertAnalyzeNotCancelled(progress);
 
+  status("Building strategist data package…");
   let dataPackage = await buildDataPackage(
     ticker,
     tickerData,
@@ -1088,6 +1139,7 @@ async function analyzeTickerV2Inner(
       fmpAnalystGrades: fmpGrades,
       fmpEarningsSurprises: fmpSurprises,
     },
+    chain,
   );
   const scanCtxHandoff = getStrategistRunContext()?.scannerContext;
   if (scanCtxHandoff) {
@@ -1099,6 +1151,51 @@ async function analyzeTickerV2Inner(
       /* keep original string */
     }
   }
+
+  try {
+    const finalizedPkg = JSON.parse(dataPackage) as {
+      dataQualitySummary?: {
+        flow?: {
+          tradesInserted?: number;
+          tapeBackfill?: string | null;
+          occCompleted?: number | null;
+          occRequested?: number | null;
+        };
+      };
+      polygonFlowHighlights?: { sessionTape?: { tapeKind?: string } };
+    };
+    const dqTrades = finalizedPkg.dataQualitySummary?.flow?.tradesInserted ?? 0;
+    const sessionTapeKind = finalizedPkg.polygonFlowHighlights?.sessionTape?.tapeKind;
+    const dqFlow = finalizedPkg.dataQualitySummary?.flow;
+    if (dqTrades > 0 && sessionTapeKind === "eod_fallback") {
+      logger.error(
+        {
+          symbol: ticker,
+          runId: progress?.jobId ?? null,
+          sessionDate: tapeBackfillStatus?.sessionDate ?? null,
+        },
+        "StrategistV2: invariant violated — capture inserted trades but session tape is eod_fallback (likely race between requestFlowCapture and fetchSessionTape)",
+      );
+    }
+    if (
+      dqFlow?.tapeBackfill === "skipped" &&
+      (dqFlow.occCompleted ?? 0) === 0 &&
+      (dqFlow.occRequested ?? 0) > 0
+    ) {
+      logger.error(
+        {
+          symbol: ticker,
+          runId: progress?.jobId ?? null,
+          sessionDate: tapeBackfillStatus?.sessionDate ?? null,
+          occRequested: dqFlow.occRequested,
+        },
+        "StrategistV2: invariant violated — flow capture exhausted timeout without completing any OCCs (likely Bug B regression in runStrategistTapeBackfill partial-completion path)",
+      );
+    }
+  } catch {
+    /* non-fatal — payload parse guard */
+  }
+
   assertAnalyzeNotCancelled(progress);
   mergeStrategistDiag({ dataPackageStr: dataPackage });
 
@@ -1282,7 +1379,9 @@ async function analyzeTickerV2Inner(
     }
   }
 
-  // ── Conviction Desk (mode 5): trade memo JSON, same data package as Solo Desk ──
+  // Conviction Desk: Anthropic `messages.stream` + OpenAI `responses.create` + Gemini
+  // `generateContentStream` (see aiLabAnalystClient). Routing and audit columns in
+  // strategistDesk.runConvictionDesk, convictionDeskRouting, and emitFullDiagnosticTelemetry.
   if (settings.strategistMode === 5) {
     status("Starting Conviction Desk analysis (trade memo, single pass)…");
     try {
@@ -1292,6 +1391,7 @@ async function analyzeTickerV2Inner(
         ticker,
         deskExpirationISO: deskCatalystExpirationISO,
         catalystEvaluation: deskCatalystEval,
+        convictionDeskProvider: progress?.convictionDeskProvider,
         callbacks: {
           jobId: progress?.jobId,
           cancelSignal: progress?.cancelSignal,
@@ -1311,8 +1411,8 @@ async function analyzeTickerV2Inner(
         (deskResult.errors?.some((e) => e.startsWith("Conviction Desk output failed validation")) ?? false);
       const hasTrade =
         deskResult.conviction != null &&
-        deskResult.conviction.decision.chosen != null &&
-        deskResult.conviction.size !== "no-trade";
+        deskResult.conviction.pm.decision === "trade" &&
+        deskResult.conviction.pm.structure != null;
       const result: StrategistV2Result = {
         status: "desk_recommendation",
         ticker,
@@ -3012,6 +3112,12 @@ function buildDataQualitySummary(args: {
     flow: {
       highlightsAsOf: polygonHighlights?.asOfDate ?? null,
       sessionTapeKind: tapeKind,
+      /** Classified flow rows inserted for the capture session (from tape backfill / flow capture). */
+      tradesInserted: tapeBackfill?.tradesInserted ?? 0,
+      /** Alias for **tapeBackfill.status** (Conviction diagnostics / invariants). */
+      tapeBackfill: tapeBackfill?.status ?? null,
+      occCompleted: tapeBackfill?.occCompleted ?? null,
+      occRequested: tapeBackfill?.occRequested ?? null,
       tapeBackfillStatus,
       tapeBackfillReason:
         polygonHighlights?.sessionTape?.tapeBackfillReason ?? tapeBackfill?.tapeBackfillReason ?? null,
@@ -3071,6 +3177,8 @@ async function buildDataPackage(
     fmpAnalystGrades?: import("./fmpDataService.js").AnalystGradeDbRow[] | null;
     fmpEarningsSurprises?: import("./fmpDataService.js").EarningsSurpriseDbRow[] | null;
   },
+  /** Full chain rows for stream enrichment; defaults empty when omitted (call sites always pass). */
+  optionsChain: ChainContract[] = [],
 ): Promise<string> {
   const currentDate = new Date().toISOString().slice(0, 10);
   const rawRv = volPackageExtras?.realizedVol ?? null;
@@ -3297,15 +3405,14 @@ async function buildDataPackage(
     }> = [];
     for (const ev of getUpcomingEvents(macroWindow)) {
       if (ev.date < currentDate || ev.date > exp) continue;
-      if (ev.type === "fomc" || (ev.type === "economic" && (ev.importance === "HIGH" || ev.importance === "MEDIUM"))) {
-        macroEventsInPositionWindow.push({
-          date: ev.date,
-          title: ev.title,
-          type: ev.type,
-          importance: ev.importance,
-          ...(ev.time ? { time: ev.time } : {}),
-        });
-      }
+      if (!isEquityOptionsStrategistMacroEvent(ev)) continue;
+      macroEventsInPositionWindow.push({
+        date: ev.date,
+        title: ev.title,
+        type: ev.type,
+        importance: ev.importance,
+        ...(ev.time ? { time: ev.time } : {}),
+      });
     }
     pkg.macroEventsInPositionWindow = macroEventsInPositionWindow;
   }
@@ -3416,6 +3523,56 @@ async function buildDataPackage(
       updatedAt: e.summaryTimestamp.toISOString(),
     };
   }
+
+  try {
+    const intradayPack = await buildStrategistIntradayPackage({
+      ticker: upperTicker,
+      spotPrice: tickerData.price,
+      listing,
+      chain: optionsChain,
+    });
+    pkg.intraday = intradayPack.intraday;
+    pkg.options_data_freshness = intradayPack.options_data_freshness;
+    pkg.schwab_stream_bid = intradayPack.schwab_stream_bid;
+    pkg.schwab_stream_ask = intradayPack.schwab_stream_ask;
+    pkg.schwab_stream_last = intradayPack.schwab_stream_last;
+    pkg.schwab_stream_age_ms = intradayPack.schwab_stream_age_ms;
+    pkg.ibkr_l1_bid = intradayPack.ibkr_l1_bid;
+    pkg.ibkr_l1_ask = intradayPack.ibkr_l1_ask;
+    pkg.ibkr_l1_last = intradayPack.ibkr_l1_last;
+    pkg.ibkr_l1_age_ms = intradayPack.ibkr_l1_age_ms;
+    pkg.ibkr_schwab_quote_delta_bps = intradayPack.ibkr_schwab_quote_delta_bps;
+  } catch (err) {
+    logger.warn({ err, ticker: upperTicker }, "StrategistV2: intraday enrichment assembly failed");
+    pkg.intraday = null;
+    pkg.options_data_freshness = {
+      source: "enrichment_error",
+      max_quote_age_ms: null,
+      contracts_live_stream_backed: 0,
+      contracts_rest_only: 0,
+    };
+    pkg.schwab_stream_bid = null;
+    pkg.schwab_stream_ask = null;
+    pkg.schwab_stream_last = null;
+    pkg.schwab_stream_age_ms = null;
+    pkg.ibkr_l1_bid = null;
+    pkg.ibkr_l1_ask = null;
+    pkg.ibkr_l1_last = null;
+    pkg.ibkr_l1_age_ms = null;
+    pkg.ibkr_schwab_quote_delta_bps = null;
+  }
+
+  const snapshotGeneratedAt = new Date().toISOString();
+  const recentNews = await getRecentNewsForTicker(
+    upperTicker,
+    { lookbackDays: 7, perSourceLimit: 4, asOf: snapshotGeneratedAt },
+    logger,
+  );
+  const prevCatalyst =
+    typeof pkg.catalyst === "object" && pkg.catalyst !== null && !Array.isArray(pkg.catalyst)
+      ? (pkg.catalyst as Record<string, unknown>)
+      : {};
+  pkg.catalyst = { ...prevCatalyst, recentNews };
 
   return JSON.stringify(pkg);
 }
@@ -3744,6 +3901,9 @@ async function callAiForTradeViaDebate(
     ? `\n\n## RECENT UNUSUAL FLOW SNAPSHOT (just observed by user — incorporate into analysis)\n${progress.flowContext}\n`
     : "";
   const scanBlock = buildScannerContextPromptBlock(getStrategistRunContext()?.scannerContext ?? null);
+  // Same underlying JSON as Conviction Desk / Solo (`buildDataPackage` + `scannerContext` merged earlier).
+  // Debate additionally prepends `scanBlock` (Markdown scanner handoff) and appends optional `flowContextBlock`
+  // from Unusual Flow drill-down — Conviction uses the JSON only, with scanner also in `snapshotBlock` XML.
   const debateDataPackage = scanBlock + dataPackage + flowContextBlock;
 
   const outcome = await runDebate({
@@ -4481,6 +4641,18 @@ interface TelemetryExtras {
   runOutcomeOverride?: StrategistRunOutcomeTelemetry;
   error?: { message: string; stack?: string } | null;
   fullDiagnostic?: Record<string, unknown> | null;
+  /** Conviction Desk audit (top-level telemetry columns). */
+  provider?: string | null;
+  modelInput?: string | null;
+  systemPrompt?: string | null;
+  toolsAttached?: unknown;
+  thinkingConfig?: unknown;
+  rawApiResponse?: unknown;
+  thinkingBlocks?: string | null;
+  webSearchQueries?: unknown;
+  webSearchResults?: unknown;
+  providerRequestId?: string | null;
+  modelName?: string | null;
 }
 
 async function emitFullDiagnosticTelemetry(args: {
@@ -4496,9 +4668,29 @@ async function emitFullDiagnosticTelemetry(args: {
   extras: TelemetryExtras;
 }): Promise<number | null> {
   const ctx = getStrategistRunContext();
-  const ed = args.extras.deskResult;
+  const rawDesk = args.extras.deskResult;
+  const convictionDeskProviderAudit =
+    rawDesk?.mode === "conviction_desk" ? rawDesk.convictionDeskAudit ?? null : null;
+  const ed = rawDesk;
   const deskForTelemetry = ed ? (stripConvictionDiagnosticsFromDeskResult(ed) ?? ed) : ed;
   const extrasEff: TelemetryExtras = { ...args.extras, deskResult: deskForTelemetry };
+  const auditColumns =
+    convictionDeskProviderAudit != null
+      ? {
+          provider: convictionDeskProviderAudit.provider,
+          modelInput: convictionDeskProviderAudit.modelInput,
+          systemPrompt: convictionDeskProviderAudit.systemPrompt,
+          toolsAttached: convictionDeskProviderAudit.toolsAttached,
+          thinkingConfig: convictionDeskProviderAudit.thinkingConfig,
+          rawApiResponse: convictionDeskProviderAudit.rawApiResponse,
+          thinkingBlocks: convictionDeskProviderAudit.thinkingBlocks,
+          webSearchQueries: convictionDeskProviderAudit.webSearchQueries,
+          webSearchResults: convictionDeskProviderAudit.webSearchResults,
+          providerRequestId: convictionDeskProviderAudit.providerRequestId,
+          modelName: convictionDeskProviderAudit.modelName,
+        }
+      : {};
+  const extrasForInsert: TelemetryExtras = { ...extrasEff, ...auditColumns };
   const dataPkgStr =
     typeof extrasEff.dataPackage === "string"
       ? extrasEff.dataPackage
@@ -4527,8 +4719,8 @@ async function emitFullDiagnosticTelemetry(args: {
     if (dr.mode === "conviction_desk") {
       return (
         dr.conviction != null &&
-        dr.conviction.decision.chosen != null &&
-        dr.conviction.size !== "no-trade"
+        dr.conviction.pm.decision === "trade" &&
+        dr.conviction.pm.structure != null
       );
     }
     return dr.pm.decision === "trade";
@@ -4554,7 +4746,7 @@ async function emitFullDiagnosticTelemetry(args: {
     polygonTrace,
     runOutcome: outcome,
     runDurationMs: durationMs,
-    error: extrasEff.error ?? null,
+    error: extrasForInsert.error ?? null,
     closingImbalancePresent: ctx?.diag.closingImbalancePresent,
     closingImbalanceLatencyMs: ctx?.diag.closingImbalanceLatencyMs ?? null,
     nasdaqDepthPresent: ctx?.diag.nasdaqDepthPresent ?? null,
@@ -4571,6 +4763,8 @@ async function emitFullDiagnosticTelemetry(args: {
     cboeOnePoolSize: ctx?.diag.cboeOnePoolSize ?? null,
     cboeOnePoolCapacity: ctx?.diag.cboeOnePoolCapacity ?? null,
     cboeOneWasColdStart: ctx?.diag.cboeOneWasColdStart ?? null,
+    convictionDeskProviderTelemetry: ctx?.diag.convictionDeskProviderTelemetry,
+    convictionDeskProviderAudit,
   });
   return logTelemetry(
     args.ticker,
@@ -4582,7 +4776,7 @@ async function emitFullDiagnosticTelemetry(args: {
     args.toxicCheck,
     args.aiDecision,
     args.thesis,
-    { ...extrasEff, fullDiagnostic },
+    { ...extrasForInsert, fullDiagnostic },
   );
 }
 
@@ -4681,6 +4875,17 @@ async function logTelemetry(
       dataSource: extras.dataSource ?? null,
       fetchFailureMode: extras.fetchFailureMode ?? null,
       fullDiagnostic: extras.fullDiagnostic ?? null,
+      provider: extras.provider ?? null,
+      modelInput: extras.modelInput ?? null,
+      systemPrompt: extras.systemPrompt ?? null,
+      toolsAttached: extras.toolsAttached ?? null,
+      thinkingConfig: extras.thinkingConfig ?? null,
+      rawApiResponse: extras.rawApiResponse ?? null,
+      thinkingBlocks: extras.thinkingBlocks ?? null,
+      webSearchQueries: extras.webSearchQueries ?? null,
+      webSearchResults: extras.webSearchResults ?? null,
+      providerRequestId: extras.providerRequestId ?? null,
+      modelName: extras.modelName ?? null,
       ...(() => {
         const sc = getStrategistRunContext()?.scannerContext;
         if (!sc) {
@@ -4714,10 +4919,75 @@ async function logTelemetry(
         };
       })(),
     };
-    const [row] = await db.insert(strategistTelemetryTable).values(values).returning({ id: strategistTelemetryTable.id });
-    return row?.id ?? null;
+    const pgCols = await getStrategistTelemetryPgColumnSet();
+    if (pgCols.size === 0) {
+      logger.error("StrategistV2: telemetry insert skipped (no strategist_telemetry column metadata)");
+      return null;
+    }
+    let filtered = filterStrategistTelemetryInsertForExistingColumns(
+      values as unknown as Record<string, unknown>,
+      pgCols,
+    ) as StrategistTelemetryInsert;
+    if (!filtered.ticker || !filtered.result) {
+      logger.error(
+        { pgColCount: pgCols.size },
+        "StrategistV2: telemetry insert missing ticker/result after column filter",
+      );
+      return null;
+    }
+
+    const insertRow = async (v: StrategistTelemetryInsert) =>
+      db.insert(strategistTelemetryTable).values(v).returning({ id: strategistTelemetryTable.id });
+
+    try {
+      const [row] = await insertRow(filtered);
+      const id = row?.id ?? null;
+      if (id != null) {
+        logger.info({ ticker: values.ticker, telemetryId: id }, "StrategistV2: telemetry persisted");
+      }
+      return id;
+    } catch (insertErr) {
+      const pgCode = strategistTelemetryPostgresErrorCode(insertErr);
+      logger.warn(
+        {
+          err: insertErr,
+          pgCode,
+          ticker: values.ticker,
+          flat: strategistTelemetryFlattenErrorMessage(insertErr),
+        },
+        "StrategistV2: Drizzle telemetry INSERT failed; attempting DDL heal + pool INSERT",
+      );
+      if (pgCode === "42703") {
+        try {
+          await applyStrategistTelemetryAuditColumnMigrations();
+        } catch (ddlErr) {
+          logger.warn({ ddlErr }, "StrategistV2: telemetry heal DDL after insert failure");
+        }
+      }
+      const pgCols2 = await getStrategistTelemetryPgColumnSet();
+      const filtered2 = filterStrategistTelemetryInsertForExistingColumns(
+        values as unknown as Record<string, unknown>,
+        pgCols2,
+      ) as StrategistTelemetryInsert;
+      if (!filtered2.ticker || !filtered2.result) {
+        throw insertErr;
+      }
+      try {
+        const poolId = await insertStrategistTelemetryRowViaPool(filtered2 as unknown as Record<string, unknown>);
+        if (poolId != null) {
+          logger.info({ ticker: filtered2.ticker, telemetryId: poolId }, "StrategistV2: telemetry persisted (pool INSERT)");
+          return poolId;
+        }
+      } catch (poolErr) {
+        logger.error({ poolErr }, "StrategistV2: pool telemetry INSERT failed");
+      }
+      throw insertErr;
+    }
   } catch (err) {
-    logger.error({ err }, "StrategistV2: telemetry logging failed");
+    logger.error(
+      { err, pgCode: strategistTelemetryPostgresErrorCode(err), ticker, flat: strategistTelemetryFlattenErrorMessage(err) },
+      "StrategistV2: telemetry logging failed",
+    );
     return null;
   }
 }

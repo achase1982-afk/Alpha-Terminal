@@ -21,3 +21,15 @@ export function classifyAggressorFromNbbo(
   if (tradePrice <= bid + eps) return { side: "bid", reason: null };
   return { side: "mid", reason: null };
 }
+
+/**
+ * Lee-Ready without spread epsilon: for exchange-fresh NBBO (e.g. sub-2s quote at ingest).
+ * price >= ask → ask; price <= bid → bid; else mid.
+ */
+export function classifyAggressorFromNbboStrict(tradePrice: number, bid: number, ask: number): AggressorSideTag | null {
+  if (!Number.isFinite(tradePrice) || !Number.isFinite(bid) || !Number.isFinite(ask)) return null;
+  if (bid <= 0 || ask <= 0 || ask < bid) return null;
+  if (tradePrice >= ask) return "ask";
+  if (tradePrice <= bid) return "bid";
+  return "mid";
+}

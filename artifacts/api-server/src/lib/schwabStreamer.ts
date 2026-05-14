@@ -1,5 +1,6 @@
 import type { Response } from "express";
 import WebSocket from "ws";
+import { db, schwabChartEquityBarsTable, sql } from "@workspace/db";
 import { logger } from "./logger.js";
 import { getValidAccessToken, forceRefresh } from "./tokenStore.js";
 import { sendPushToAll } from "./pushService.js";
@@ -125,13 +126,380 @@ function normalizeEquityKey(sym: string): string {
   return SCHWAB_INDEX_NORM[upper] ?? upper;
 }
 
+function numOrNull(val: unknown): number | null {
+  if (val === undefined || val === null) return null;
+  const n = Number(val);
+  return Number.isFinite(n) ? n : null;
+}
+
 let wsBroadcast: ((event: string, data: unknown) => void) | null = null;
 let schwabWs: WebSocket | null = null;
 let streamerInfo: StreamerInfo | null = null;
 let subscribedSymbols = new Set<string>();
 let subscribedFuturesSymbols = new Set<string>();
 let subscribedOptionSymbols = new Set<string>();
+/** Option underlyings subscribed for the active tuning watchlist (removed when watchlist changes). */
+const tuningWatchlistOptionRoots = new Set<string>();
 let subscribedFuturesOptionSymbols = new Set<string>();
+let subscribedTimesaleEquitySymbols = new Set<string>();
+let subscribedChartEquitySymbols = new Set<string>();
+let subscribedNyseBookSymbols = new Set<string>();
+let subscribedNasdaqBookSymbols = new Set<string>();
+let subscribedOptionsBookSymbols = new Set<string>();
+
+/** Level 2 book — field IDs align with schwab-py `BookFields` (SYMBOL, BOOK_TIME, BIDS, ASKS). */
+const NYSE_NASDAQ_OPTIONS_BOOK_FIELDS = "0,1,2,3";
+
+/**
+ * Equity time & sale — numeric field IDs per Schwab Trader API Streamer Guide (legacy TD streaming lineage).
+ * See also schwab-py / official Schwab developer streaming documentation.
+ */
+const TIMESALE_EQUITY_FIELDS = "0,1,2,3,4";
+/**
+ * CHART_EQUITY — Schwab Streamer Guide / schwab-py ChartEquityFields:
+ * 0 symbol, 1 sequence, 2 open, 3 high, 4 low, 5 close, 6 volume, 7 chart time (epoch ms), 8 chart day.
+ */
+const CHART_EQUITY_FIELDS = "0,1,2,3,4,5,6,7,8";
+
+export interface SchwabTimesaleEquityEvent {
+  symbol: string;
+  lastPrice: number | null;
+  lastSize: number | null;
+  tradeTimeMs: number | null;
+  sequence: number | null;
+  raw: Record<string, unknown>;
+}
+
+export interface SchwabBookLevel2Event {
+  symbol: string;
+  bookTimeMs: number | null;
+  bids: unknown;
+  asks: unknown;
+  raw: Record<string, unknown>;
+}
+
+type TimesaleListener = (ev: SchwabTimesaleEquityEvent) => void;
+type BookListener = (ev: SchwabBookLevel2Event) => void;
+
+const timesaleEquityListeners = new Set<TimesaleListener>();
+const nyseBookListeners = new Set<BookListener>();
+const nasdaqBookListeners = new Set<BookListener>();
+const optionsBookListeners = new Set<BookListener>();
+
+/** Rolling TIMESALE_EQUITY prints per symbol (strategist VWAP / block tape). */
+export interface SchwabTimesaleStrategistPoint {
+  ts: number;
+  price: number;
+  size: number;
+}
+
+interface StrategistTimesaleRingBuf {
+  buf: SchwabTimesaleStrategistPoint[];
+  head: number;
+  size: number;
+}
+
+const strategistTimesaleRing = new Map<string, StrategistTimesaleRingBuf>();
+const STRATEGIST_TIMESALE_MAX_POINTS_PER_SYMBOL = 120_000;
+const STRATEGIST_TIMESALE_MAX_AGE_MS = 10 * 60 * 60 * 1000;
+
+function appendStrategistTimesale(sym: string, pt: SchwabTimesaleStrategistPoint): void {
+  const u = sym.toUpperCase();
+  const cap = STRATEGIST_TIMESALE_MAX_POINTS_PER_SYMBOL;
+  let r = strategistTimesaleRing.get(u);
+  if (!r) {
+    r = { buf: new Array<SchwabTimesaleStrategistPoint>(cap), head: 0, size: 0 };
+    strategistTimesaleRing.set(u, r);
+  }
+  if (r.size === cap) {
+    r.head = (r.head + 1) % cap;
+    r.size--;
+  }
+  r.buf[(r.head + r.size) % cap] = pt;
+  r.size++;
+  const cutoffAge = Date.now() - STRATEGIST_TIMESALE_MAX_AGE_MS;
+  while (r.size > 0 && r.buf[r.head]!.ts < cutoffAge) {
+    r.head = (r.head + 1) % cap;
+    r.size--;
+  }
+}
+
+export function getStrategistTimesalePoints(symbol: string): SchwabTimesaleStrategistPoint[] {
+  const r = strategistTimesaleRing.get(symbol.toUpperCase());
+  if (!r || r.size === 0) return [];
+  const cap = STRATEGIST_TIMESALE_MAX_POINTS_PER_SYMBOL;
+  const out: SchwabTimesaleStrategistPoint[] = [];
+  for (let i = 0; i < r.size; i++) {
+    out.push(r.buf[(r.head + i) % cap]!);
+  }
+  return out;
+}
+
+/** CHART_EQUITY (1-minute aggregate): OHLCV per bar for strategist VWAP / RSI fallbacks. */
+export interface SchwabChartEquityBarPoint {
+  chartTimeMs: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+interface StrategistChartEquityBuf {
+  /** Sorted ascending by chartTimeMs; deduped per chart bar key. */
+  bars: SchwabChartEquityBarPoint[];
+}
+
+const strategistChartEquityRing = new Map<string, StrategistChartEquityBuf>();
+const STRATEGIST_CHART_MAX_BARS_PER_SYMBOL = 8_000;
+
+/** Debounced persist so CHART_EQUITY throughput stays smooth on live streams. */
+const CHART_BAR_PERSIST_DEBOUNCE_MS = 250;
+const chartBarPersistPending = new Map<
+  string,
+  {
+    symbol: string;
+    barTimeMs: number;
+    high: string;
+    low: string;
+    close: string;
+    volume: string;
+    sessionDate: string;
+  }
+>();
+let chartBarPersistFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function nySessionDateYmdFromBarMs(ms: number): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(ms));
+}
+
+function queuePersistSchwabChartBar(symbolUpper: string, bar: SchwabChartEquityBarPoint): void {
+  const key = `${symbolUpper}:${bar.chartTimeMs}`;
+  chartBarPersistPending.set(key, {
+    symbol: symbolUpper,
+    barTimeMs: bar.chartTimeMs,
+    high: String(bar.high),
+    low: String(bar.low),
+    close: String(bar.close),
+    volume: String(bar.volume),
+    sessionDate: nySessionDateYmdFromBarMs(bar.chartTimeMs),
+  });
+  scheduleFlushSchwabChartBarPersist();
+}
+
+function scheduleFlushSchwabChartBarPersist(): void {
+  if (chartBarPersistFlushTimer != null) return;
+  chartBarPersistFlushTimer = setTimeout(() => {
+    chartBarPersistFlushTimer = null;
+    void flushSchwabChartBarPersistBatch();
+  }, CHART_BAR_PERSIST_DEBOUNCE_MS);
+}
+
+async function flushSchwabChartBarPersistBatch(): Promise<void> {
+  if (chartBarPersistPending.size === 0) return;
+  const rows = [...chartBarPersistPending.values()];
+  chartBarPersistPending.clear();
+  const chunkSize = 250;
+  try {
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize).map((r) => ({
+        symbol: r.symbol,
+        barTimeMs: r.barTimeMs,
+        high: r.high,
+        low: r.low,
+        close: r.close,
+        volume: r.volume,
+        sessionDate: r.sessionDate,
+      }));
+      await db
+        .insert(schwabChartEquityBarsTable)
+        .values(chunk)
+        .onConflictDoUpdate({
+          target: [schwabChartEquityBarsTable.symbol, schwabChartEquityBarsTable.barTimeMs],
+          set: {
+            close: sql`excluded.close`,
+            high: sql`excluded.high`,
+            low: sql`excluded.low`,
+            volume: sql`excluded.volume`,
+            sessionDate: sql`excluded.session_date`,
+            insertedAt: sql`now()`,
+          },
+        });
+    }
+  } catch (err) {
+    logger.warn({ err, batchRows: rows.length }, "Schwab streamer: CHART_EQUITY persist batch failed");
+  }
+}
+
+function normalizeChartTimeMs(raw: number): number {
+  if (!Number.isFinite(raw)) return NaN;
+  /* TD/Schwab lineage sometimes sends seconds since epoch for chart time. */
+  return raw > 1e12 ? raw : raw * 1000;
+}
+
+function appendStrategistChartEquity(sym: string, bar: SchwabChartEquityBarPoint): void {
+  const u = sym.toUpperCase();
+  let buf = strategistChartEquityRing.get(u);
+  if (!buf) {
+    buf = { bars: [] };
+    strategistChartEquityRing.set(u, buf);
+  }
+  const arr = buf.bars;
+  const idx = arr.findIndex((b) => b.chartTimeMs === bar.chartTimeMs);
+  if (idx >= 0) {
+    arr[idx] = bar;
+    queuePersistSchwabChartBar(u, bar);
+    return;
+  }
+  arr.push(bar);
+  arr.sort((a, b) => a.chartTimeMs - b.chartTimeMs);
+  const cap = STRATEGIST_CHART_MAX_BARS_PER_SYMBOL;
+  if (arr.length > cap) {
+    arr.splice(0, arr.length - cap);
+  }
+  queuePersistSchwabChartBar(u, bar);
+}
+
+/** Minute OHLCV bars from Schwab CHART_EQUITY stream cache (ascending). */
+export function getStrategistChartEquityBars(symbol: string): SchwabChartEquityBarPoint[] {
+  const buf = strategistChartEquityRing.get(symbol.toUpperCase());
+  return buf ? [...buf.bars] : [];
+}
+
+/** Chronological closes for diagnostics / RSI helpers. */
+export function getStrategistChartEquityCloses(symbol: string): Array<{ ts: number; close: number }> {
+  return getStrategistChartEquityBars(symbol).map((b) => ({ ts: b.chartTimeMs, close: b.close }));
+}
+
+export interface SchwabVenueBookStrategistSnapshot {
+  rawBids: unknown;
+  rawAsks: unknown;
+  bookTimeMs: number | null;
+  recvTs: number;
+}
+
+const nyseBookStrategistCache = new Map<string, SchwabVenueBookStrategistSnapshot>();
+const nasdaqBookStrategistCache = new Map<string, SchwabVenueBookStrategistSnapshot>();
+
+export function getSchwabVenueBookStrategistSnapshot(
+  symbol: string,
+  venue: "NYSE" | "NASDAQ",
+): SchwabVenueBookStrategistSnapshot | undefined {
+  const u = symbol.toUpperCase();
+  return venue === "NYSE" ? nyseBookStrategistCache.get(u) : nasdaqBookStrategistCache.get(u);
+}
+
+/** Extract price/size rows from Schwab book payload (nested arrays or objects). */
+export function extractSchwabBookRows(side: unknown): Array<{ price: number; size: number }> {
+  const out: Array<{ price: number; size: number }> = [];
+  function walk(x: unknown): void {
+    if (x == null) return;
+    if (Array.isArray(x)) {
+      if (
+        x.length >= 2 &&
+        (typeof x[0] === "number" || typeof x[0] === "string") &&
+        (typeof x[1] === "number" || typeof x[1] === "string")
+      ) {
+        const price = Number(x[0]);
+        const size = Number(x[1]);
+        if (Number.isFinite(price) && Number.isFinite(size) && size >= 0) {
+          out.push({ price, size });
+        }
+        return;
+      }
+      for (const el of x) walk(el);
+      return;
+    }
+    if (typeof x === "object") {
+      const o = x as Record<string, unknown>;
+      const pRaw = o["price"] ?? o["Price"] ?? o["0"];
+      const sRaw = o["size"] ?? o["Size"] ?? o["count"] ?? o["volume"] ?? o["1"];
+      const price = numOrNull(pRaw);
+      const size = numOrNull(sRaw);
+      if (price !== null && size !== null && size >= 0) {
+        out.push({ price, size });
+      }
+      for (const v of Object.values(o)) walk(v);
+    }
+  }
+  walk(side);
+  return out;
+}
+
+export interface SchwabParsedBookMetrics {
+  topOfBookBidSize: number | null;
+  topOfBookAskSize: number | null;
+  bookImbalancePct: number | null;
+  depthWithin1pctBid: number | null;
+  depthWithin1pctAsk: number | null;
+}
+
+export function computeSchwabBookMetrics(bids: unknown, asks: unknown): SchwabParsedBookMetrics {
+  const bidRows = extractSchwabBookRows(bids).filter((r) => r.price > 0 && r.size > 0);
+  const askRows = extractSchwabBookRows(asks).filter((r) => r.price > 0 && r.size > 0);
+  bidRows.sort((a, b) => b.price - a.price);
+  askRows.sort((a, b) => a.price - b.price);
+  const bestBid = bidRows[0];
+  const bestAsk = askRows[0];
+  const topBidSz = bestBid?.size ?? null;
+  const topAskSz = bestAsk?.size ?? null;
+  let bookImbalancePct: number | null = null;
+  if (topBidSz != null && topAskSz != null && topBidSz + topAskSz > 0) {
+    bookImbalancePct = Math.round(((topBidSz - topAskSz) / (topBidSz + topAskSz)) * 10_000) / 100;
+  }
+  let mid: number | null = null;
+  if (bestBid && bestAsk) mid = (bestBid.price + bestAsk.price) / 2;
+  let depthWithin1pctBid: number | null = null;
+  let depthWithin1pctAsk: number | null = null;
+  if (mid != null && mid > 0) {
+    const lo = mid * 0.99;
+    const hi = mid * 1.01;
+    depthWithin1pctBid = bidRows.filter((r) => r.price >= lo && r.price <= mid).reduce((s, r) => s + r.size, 0);
+    depthWithin1pctAsk = askRows.filter((r) => r.price <= hi && r.price >= mid).reduce((s, r) => s + r.size, 0);
+    if (depthWithin1pctBid === 0) depthWithin1pctBid = null;
+    if (depthWithin1pctAsk === 0) depthWithin1pctAsk = null;
+  }
+  return {
+    topOfBookBidSize: topBidSz,
+    topOfBookAskSize: topAskSz,
+    bookImbalancePct,
+    depthWithin1pctBid,
+    depthWithin1pctAsk,
+  };
+}
+
+export function getSchwabStreamEquityQuoteFresh(symbol: string, maxAgeMs: number): LiveQuote | null {
+  const q = quoteCache.get(symbol.toUpperCase());
+  if (!q) return null;
+  const age = Date.now() - q.ts;
+  if (age > maxAgeMs) return null;
+  return q;
+}
+
+export function subscribeSchwabTimesaleEquityEvents(listener: TimesaleListener): () => void {
+  timesaleEquityListeners.add(listener);
+  return () => timesaleEquityListeners.delete(listener);
+}
+
+export function subscribeSchwabNyseBookEvents(listener: BookListener): () => void {
+  nyseBookListeners.add(listener);
+  return () => nyseBookListeners.delete(listener);
+}
+
+export function subscribeSchwabNasdaqBookEvents(listener: BookListener): () => void {
+  nasdaqBookListeners.add(listener);
+  return () => nasdaqBookListeners.delete(listener);
+}
+
+export function subscribeSchwabOptionsBookEvents(listener: BookListener): () => void {
+  optionsBookListeners.add(listener);
+  return () => optionsBookListeners.delete(listener);
+}
 let requestCounter = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectDelay = 2000;
@@ -150,17 +518,23 @@ let acctActivitySubTimeout: ReturnType<typeof setTimeout> | null = null;
 // keepalive, no connect/login timeouts, and only reset backoff on LOGIN
 // success — so a 1006 during CONNECT produced unbounded backoff growth
 // (capped at 60s) and never triggered a token refresh. These state vars
-// + timers close those gaps.
+// + timers close those gaps. A separate counter covers LOGIN-then-immediate
+// 1006 (duplicate session / credential issues) which pre-login 1006 logic
+// never saw because WASCONNECTED was true.
 const CONNECT_TIMEOUT_MS = 15_000;      // time to complete WS handshake
 const LOGIN_RESPONSE_TIMEOUT_MS = 10_000; // time for LOGIN reply after open
 const PING_INTERVAL_MS = 20_000;        // client-initiated ping cadence
 const PONG_TIMEOUT_MS = 45_000;         // no pong → force-close
 const ABNORMAL_CLOSE_REFRESH_THRESHOLD = 3; // 1006-before-login count → force token refresh
+/** Post-LOGIN 1006 with session shorter than this is treated as a "flap" (server RST, duplicate session, etc.). */
+const SHORT_LIVED_SESSION_ABNORMAL_MS = 5_000;
 let connectTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
 let loginTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
 let pingIntervalTimer: ReturnType<typeof setInterval> | null = null;
 let pongWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
 let consecutiveAbnormalCloses = 0;
+/** Counts rapid 1006 after successful LOGIN; same threshold triggers token refresh as pre-login 1006 streak. */
+let consecutivePostLoginFlap1006 = 0;
 let consecutiveLoginFailures = 0;     // tracks LOGIN-after-TCP-open failures
 let forceTokenRefreshOnNextConnect = false;
 let connectAttemptStartedAt: number | null = null; // when current handshake began (age-gates CONNECTING termination)
@@ -436,6 +810,76 @@ function sendFuturesOptionSubscription(symbols: string[]) {
   }
 }
 
+function sendTimesaleEquitySubscription(symbols: string[]) {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
+
+  const req = buildRequest("TIMESALE_EQUITY", "SUBS", {
+    keys: symbols.join(","),
+    fields: TIMESALE_EQUITY_FIELDS,
+  });
+
+  if (req) {
+    schwabWs.send(JSON.stringify({ requests: [req] }));
+    logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: TIMESALE_EQUITY SUBS sent");
+  }
+}
+
+function sendChartEquitySubscription(symbols: string[]) {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
+
+  const req = buildRequest("CHART_EQUITY", "SUBS", {
+    keys: symbols.join(","),
+    fields: CHART_EQUITY_FIELDS,
+  });
+
+  if (req) {
+    schwabWs.send(JSON.stringify({ requests: [req] }));
+    logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: CHART_EQUITY SUBS sent");
+  }
+}
+
+function sendNyseBookSubscription(symbols: string[]) {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
+
+  const req = buildRequest("NYSE_BOOK", "SUBS", {
+    keys: symbols.join(","),
+    fields: NYSE_NASDAQ_OPTIONS_BOOK_FIELDS,
+  });
+
+  if (req) {
+    schwabWs.send(JSON.stringify({ requests: [req] }));
+    logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: NYSE_BOOK SUBS sent");
+  }
+}
+
+function sendNasdaqBookSubscription(symbols: string[]) {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
+
+  const req = buildRequest("NASDAQ_BOOK", "SUBS", {
+    keys: symbols.join(","),
+    fields: NYSE_NASDAQ_OPTIONS_BOOK_FIELDS,
+  });
+
+  if (req) {
+    schwabWs.send(JSON.stringify({ requests: [req] }));
+    logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: NASDAQ_BOOK SUBS sent");
+  }
+}
+
+function sendOptionsBookSubscription(symbols: string[]) {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
+
+  const req = buildRequest("OPTIONS_BOOK", "SUBS", {
+    keys: symbols.join(","),
+    fields: NYSE_NASDAQ_OPTIONS_BOOK_FIELDS,
+  });
+
+  if (req) {
+    schwabWs.send(JSON.stringify({ requests: [req] }));
+    logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: OPTIONS_BOOK SUBS sent");
+  }
+}
+
 function sendAcctActivitySubscription() {
   if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo) return;
   if (acctActivitySubscribed) return;
@@ -622,6 +1066,11 @@ function findKeysDeep(
 
 let equityTickSampleLogged = false;
 let futuresTickSampleLogged = false;
+let timesaleEquitySampleLogged = false;
+let chartEquitySampleLogged = false;
+let nyseBookSampleLogged = false;
+let nasdaqBookSampleLogged = false;
+let optionsBookSampleLogged = false;
 
 function processEquityTick(content: Record<string, unknown>[]) {
   if (!equityTickSampleLogged && content.length > 0) {
@@ -755,10 +1204,181 @@ function processFuturesTick(content: Record<string, unknown>[]) {
   }
 }
 
-function numOrNull(val: unknown): number | null {
-  if (val === undefined || val === null) return null;
-  const n = Number(val);
-  return Number.isFinite(n) ? n : null;
+function dispatchBookListeners(listeners: Set<BookListener>, ev: SchwabBookLevel2Event): void {
+  for (const fn of listeners) {
+    try {
+      fn(ev);
+    } catch (err) {
+      logger.error({ err }, "Schwab streamer: OPTIONS/NASDAQ/NYSE book listener threw");
+    }
+  }
+}
+
+function emitTimesaleEquityListeners(ev: SchwabTimesaleEquityEvent): void {
+  for (const fn of timesaleEquityListeners) {
+    try {
+      fn(ev);
+    } catch (err) {
+      logger.error({ err }, "Schwab streamer: TIMESALE_EQUITY listener threw");
+    }
+  }
+}
+
+/**
+ * Field mapping: 1 = trade time (ms), 2 = last price, 3 = last size, 4 = sequence (Streamer Guide / TD lineage).
+ */
+function processTimesaleEquity(content: Record<string, unknown>[]) {
+  if (content.length === 0) return;
+  if (!timesaleEquitySampleLogged) {
+    timesaleEquitySampleLogged = true;
+    logger.info(
+      { event: "EXIT", phase: "schwab_timesale_equity_batch", batchSize: content.length },
+      "Schwab streamer: TIMESALE_EQUITY batch handled",
+    );
+  }
+  for (const item of content) {
+    const rawKey = (item["key"] ?? item["0"]) as string | undefined;
+    const symbol = rawKey ? normalizeEquityKey(rawKey) : "";
+    if (!symbol) continue;
+    const ev: SchwabTimesaleEquityEvent = {
+      symbol,
+      tradeTimeMs: numOrNull(item["1"]),
+      lastPrice: numOrNull(item["2"]),
+      lastSize: numOrNull(item["3"]),
+      sequence: numOrNull(item["4"]),
+      raw: item,
+    };
+    const tsMs = ev.tradeTimeMs ?? Date.now();
+    if (ev.lastPrice != null && ev.lastPrice > 0 && ev.lastSize != null && ev.lastSize > 0) {
+      appendStrategistTimesale(symbol, { ts: tsMs, price: ev.lastPrice, size: ev.lastSize });
+    }
+    emitTimesaleEquityListeners(ev);
+  }
+}
+
+/**
+ * CHART_EQUITY — one-minute bars; field **7** chart time (epoch ms), fields **2–6** OHLCV per Streamer Guide.
+ */
+function processChartEquity(content: Record<string, unknown>[]) {
+  if (content.length === 0) return;
+  if (!chartEquitySampleLogged) {
+    chartEquitySampleLogged = true;
+    logger.info(
+      { event: "EXIT", phase: "schwab_chart_equity_batch", batchSize: content.length },
+      "Schwab streamer: CHART_EQUITY batch handled",
+    );
+  }
+  for (const item of content) {
+    const rawKey = (item["key"] ?? item["0"]) as string | undefined;
+    const symbol = rawKey ? normalizeEquityKey(rawKey) : "";
+    if (!symbol) continue;
+    const chartTimeRaw = numOrNull(item["7"]);
+    const chartTimeMs = chartTimeRaw != null ? normalizeChartTimeMs(chartTimeRaw) : NaN;
+    const open = numOrNull(item["2"]);
+    const high = numOrNull(item["3"]);
+    const low = numOrNull(item["4"]);
+    const close = numOrNull(item["5"]);
+    const volRaw = numOrNull(item["6"]);
+    const volume = volRaw != null && volRaw >= 0 && Number.isFinite(volRaw) ? volRaw : 0;
+    if (!Number.isFinite(chartTimeMs) || close == null || close <= 0) {
+      continue;
+    }
+    if (open == null || high == null || low == null) {
+      continue;
+    }
+    appendStrategistChartEquity(symbol, {
+      chartTimeMs,
+      open,
+      high,
+      low,
+      close,
+      volume,
+    });
+  }
+}
+
+function processNyseBook(content: Record<string, unknown>[]) {
+  if (content.length === 0) return;
+  if (!nyseBookSampleLogged) {
+    nyseBookSampleLogged = true;
+    logger.info(
+      { event: "EXIT", phase: "schwab_nyse_book_batch", batchSize: content.length },
+      "Schwab streamer: NYSE_BOOK batch handled",
+    );
+  }
+  for (const item of content) {
+    const rawKey = (item["key"] ?? item["0"]) as string | undefined;
+    const symbol = rawKey ? normalizeEquityKey(rawKey) : "";
+    if (!symbol) continue;
+    const ev: SchwabBookLevel2Event = {
+      symbol,
+      bookTimeMs: numOrNull(item["1"]),
+      bids: item["2"] ?? null,
+      asks: item["3"] ?? null,
+      raw: item,
+    };
+    nyseBookStrategistCache.set(symbol, {
+      rawBids: ev.bids,
+      rawAsks: ev.asks,
+      bookTimeMs: ev.bookTimeMs,
+      recvTs: Date.now(),
+    });
+    dispatchBookListeners(nyseBookListeners, ev);
+  }
+}
+
+function processNasdaqBook(content: Record<string, unknown>[]) {
+  if (content.length === 0) return;
+  if (!nasdaqBookSampleLogged) {
+    nasdaqBookSampleLogged = true;
+    logger.info(
+      { event: "EXIT", phase: "schwab_nasdaq_book_batch", batchSize: content.length },
+      "Schwab streamer: NASDAQ_BOOK batch handled",
+    );
+  }
+  for (const item of content) {
+    const rawKey = (item["key"] ?? item["0"]) as string | undefined;
+    const symbol = rawKey ? normalizeEquityKey(rawKey) : "";
+    if (!symbol) continue;
+    const ev: SchwabBookLevel2Event = {
+      symbol,
+      bookTimeMs: numOrNull(item["1"]),
+      bids: item["2"] ?? null,
+      asks: item["3"] ?? null,
+      raw: item,
+    };
+    nasdaqBookStrategistCache.set(symbol, {
+      rawBids: ev.bids,
+      rawAsks: ev.asks,
+      bookTimeMs: ev.bookTimeMs,
+      recvTs: Date.now(),
+    });
+    dispatchBookListeners(nasdaqBookListeners, ev);
+  }
+}
+
+function processOptionsBook(content: Record<string, unknown>[]) {
+  if (content.length === 0) return;
+  if (!optionsBookSampleLogged) {
+    optionsBookSampleLogged = true;
+    logger.info(
+      { event: "EXIT", phase: "schwab_options_book_batch", batchSize: content.length },
+      "Schwab streamer: OPTIONS_BOOK batch handled",
+    );
+  }
+  for (const item of content) {
+    const rawKey = (item["key"] ?? item["0"]) as string | undefined;
+    const symbol = rawKey ? String(rawKey).trim() : "";
+    if (!symbol) continue;
+    const ev: SchwabBookLevel2Event = {
+      symbol,
+      bookTimeMs: numOrNull(item["1"]),
+      bids: item["2"] ?? null,
+      asks: item["3"] ?? null,
+      raw: item,
+    };
+    dispatchBookListeners(optionsBookListeners, ev);
+  }
 }
 
 function handleMessage(raw: string) {
@@ -816,6 +1436,21 @@ function handleMessage(raw: string) {
           }
           if (subscribedFuturesOptionSymbols.size > 0) {
             sendFuturesOptionSubscription([...subscribedFuturesOptionSymbols]);
+          }
+          if (subscribedTimesaleEquitySymbols.size > 0) {
+            sendTimesaleEquitySubscription([...subscribedTimesaleEquitySymbols]);
+          }
+          if (subscribedChartEquitySymbols.size > 0) {
+            sendChartEquitySubscription([...subscribedChartEquitySymbols]);
+          }
+          if (subscribedNyseBookSymbols.size > 0) {
+            sendNyseBookSubscription([...subscribedNyseBookSymbols]);
+          }
+          if (subscribedNasdaqBookSymbols.size > 0) {
+            sendNasdaqBookSubscription([...subscribedNasdaqBookSymbols]);
+          }
+          if (subscribedOptionsBookSymbols.size > 0) {
+            sendOptionsBookSubscription([...subscribedOptionsBookSymbols]);
           }
           sendAcctActivitySubscription();
         } else {
@@ -882,6 +1517,16 @@ function handleMessage(raw: string) {
         processOptionTick(item.content);
       } else if (item.service === "ACCT_ACTIVITY") {
         processAcctActivity(item.content);
+      } else if (item.service === "TIMESALE_EQUITY") {
+        processTimesaleEquity(item.content);
+      } else if (item.service === "CHART_EQUITY") {
+        processChartEquity(item.content);
+      } else if (item.service === "NYSE_BOOK") {
+        processNyseBook(item.content);
+      } else if (item.service === "NASDAQ_BOOK") {
+        processNasdaqBook(item.content);
+      } else if (item.service === "OPTIONS_BOOK") {
+        processOptionsBook(item.content);
       } else {
         const keys = item.content?.map((c: Record<string, unknown>) => c["key"]).slice(0, 3);
         logger.info({ service: item.service, sampleKeys: keys }, "Schwab streamer: unhandled data service");
@@ -1092,10 +1737,43 @@ async function connectSchwabStreamer() {
       consecutiveAbnormalCloses = 0;
     }
 
-    logger.warn({ code, reason: reason?.toString(), sessionDurationMs: sessionDuration, wasConnected, consecutiveAbnormalCloses, consecutiveLoginFailures },
-      "Schwab streamer: WebSocket closed");
+    const shortPostLoginFlap =
+      code === 1006 &&
+      wasConnected &&
+      sessionDuration !== null &&
+      sessionDuration < SHORT_LIVED_SESSION_ABNORMAL_MS;
+    if (shortPostLoginFlap) {
+      consecutivePostLoginFlap1006++;
+      if (consecutivePostLoginFlap1006 >= ABNORMAL_CLOSE_REFRESH_THRESHOLD) {
+        forceTokenRefreshOnNextConnect = true;
+        logger.warn(
+          { consecutivePostLoginFlap1006, threshold: ABNORMAL_CLOSE_REFRESH_THRESHOLD, sessionDurationMs: sessionDuration },
+          "Schwab streamer: repeated short-lived session after LOGIN (1006) — will force token refresh on next connect",
+        );
+      }
+    } else {
+      consecutivePostLoginFlap1006 = 0;
+    }
+
+    logger.warn({
+      code,
+      reason: reason?.toString(),
+      sessionDurationMs: sessionDuration,
+      wasConnected,
+      consecutiveAbnormalCloses,
+      consecutivePostLoginFlap1006,
+      consecutiveLoginFailures,
+    }, "Schwab streamer: WebSocket closed");
     void logFailure("SCHWAB_STREAM", "WARN", `Schwab WebSocket disconnected (code ${code})`,
-      { code, reason: reason?.toString(), sessionDurationMs: sessionDuration, wasConnected, consecutiveAbnormalCloses, consecutiveLoginFailures });
+      {
+        code,
+        reason: reason?.toString(),
+        sessionDurationMs: sessionDuration,
+        wasConnected,
+        consecutiveAbnormalCloses,
+        consecutivePostLoginFlap1006,
+        consecutiveLoginFailures,
+      });
 
     clearLifecycleTimers();
     schwabWs = null;
@@ -1166,8 +1844,15 @@ export function stopStreamer() {
   subscribedSymbols.clear();
   subscribedFuturesSymbols.clear();
   subscribedOptionSymbols.clear();
+  tuningWatchlistOptionRoots.clear();
   subscribedFuturesOptionSymbols.clear();
+  subscribedTimesaleEquitySymbols.clear();
+  subscribedChartEquitySymbols.clear();
+  subscribedNyseBookSymbols.clear();
+  subscribedNasdaqBookSymbols.clear();
+  subscribedOptionsBookSymbols.clear();
   acctActivitySubscribed = false;
+  consecutivePostLoginFlap1006 = 0;
 }
 
 export function addSymbols(symbols: string[]) {
@@ -1219,6 +1904,29 @@ export function addOptionSymbols(symbols: string[]) {
   }
 }
 
+/**
+ * Replace LEVELONE_OPTIONS underlyings owned by the tuning watchlist selector.
+ * Does not remove option roots subscribed from other pathways (e.g. client WS).
+ */
+export function setTuningWatchlistOptionUnderlyings(symbols: string[]): void {
+  const next = [...new Set(symbols.map((s) => s.replace(/^\$/, "").toUpperCase()))];
+  for (const s of tuningWatchlistOptionRoots) {
+    if (!next.includes(s)) subscribedOptionSymbols.delete(s);
+  }
+  tuningWatchlistOptionRoots.clear();
+  for (const s of next) {
+    tuningWatchlistOptionRoots.add(s);
+    subscribedOptionSymbols.add(s);
+  }
+  if (connectionState === "connected") {
+    sendOptionSubscription([...subscribedOptionSymbols]);
+    logger.info(
+      { count: next.length, sample: next.slice(0, 8).join(",") },
+      "Schwab streamer: tuning watchlist LEVELONE_OPTIONS refresh",
+    );
+  }
+}
+
 export function addFuturesOptionSymbols(symbols: string[]) {
   const newSyms: string[] = [];
   for (const s of symbols) {
@@ -1230,6 +1938,79 @@ export function addFuturesOptionSymbols(symbols: string[]) {
 
   if (newSyms.length > 0 && connectionState === "connected") {
     sendFuturesOptionSubscription([...subscribedFuturesOptionSymbols]);
+  }
+}
+
+export function addTimesaleEquitySymbols(symbols: string[]) {
+  const newSyms: string[] = [];
+  for (const s of symbols) {
+    const normalized = normalizeEquityKey(s);
+    if (!subscribedTimesaleEquitySymbols.has(normalized)) {
+      subscribedTimesaleEquitySymbols.add(normalized);
+      newSyms.push(normalized);
+    }
+  }
+  if (newSyms.length > 0 && connectionState === "connected") {
+    sendTimesaleEquitySubscription([...subscribedTimesaleEquitySymbols]);
+  }
+}
+
+/** Subscribe strategist symbols to CHART_EQUITY (1-minute bars; RSI fallback vs TIMESALE aggregation). */
+export function addChartEquitySymbols(symbols: string[]) {
+  const newSyms: string[] = [];
+  for (const s of symbols) {
+    const normalized = normalizeEquityKey(s);
+    if (!subscribedChartEquitySymbols.has(normalized)) {
+      subscribedChartEquitySymbols.add(normalized);
+      newSyms.push(normalized);
+    }
+  }
+  if (newSyms.length > 0 && connectionState === "connected") {
+    sendChartEquitySubscription([...subscribedChartEquitySymbols]);
+  }
+}
+
+export function addNyseBookSymbols(symbols: string[]) {
+  const newSyms: string[] = [];
+  for (const s of symbols) {
+    const normalized = normalizeEquityKey(s);
+    if (!subscribedNyseBookSymbols.has(normalized)) {
+      subscribedNyseBookSymbols.add(normalized);
+      newSyms.push(normalized);
+    }
+  }
+  if (newSyms.length > 0 && connectionState === "connected") {
+    sendNyseBookSubscription([...subscribedNyseBookSymbols]);
+  }
+}
+
+export function addNasdaqBookSymbols(symbols: string[]) {
+  const newSyms: string[] = [];
+  for (const s of symbols) {
+    const normalized = normalizeEquityKey(s);
+    if (!subscribedNasdaqBookSymbols.has(normalized)) {
+      subscribedNasdaqBookSymbols.add(normalized);
+      newSyms.push(normalized);
+    }
+  }
+  if (newSyms.length > 0 && connectionState === "connected") {
+    sendNasdaqBookSubscription([...subscribedNasdaqBookSymbols]);
+  }
+}
+
+/** On-demand OPTIONS_BOOK keys (OCC / Schwab option keys). Full replacement SUBS like other services. */
+export function addOptionsBookSymbols(symbols: string[]) {
+  const newSyms: string[] = [];
+  for (const s of symbols) {
+    const k = s.trim();
+    if (!k) continue;
+    if (!subscribedOptionsBookSymbols.has(k)) {
+      subscribedOptionsBookSymbols.add(k);
+      newSyms.push(k);
+    }
+  }
+  if (newSyms.length > 0 && connectionState === "connected") {
+    sendOptionsBookSubscription([...subscribedOptionsBookSymbols]);
   }
 }
 

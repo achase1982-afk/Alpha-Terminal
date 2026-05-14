@@ -1,5 +1,5 @@
 import { db, equityDailyTable } from "@workspace/db";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "@workspace/db";
 import { logger } from "./logger";
 
 const IV_MIN_VALID = 0.01;

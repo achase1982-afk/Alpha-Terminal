@@ -11,8 +11,9 @@
  * Usage (via npm script):
  *   pnpm --filter @workspace/db run migrate
  *
- * Called automatically by start.sh before the server process starts on
- * every Railway deploy, ensuring schema is always in sync with code.
+ * Production deploys should run `drizzle-kit migrate` (see api-server `migrate:deploy`
+ * and repo `start.sh`) so migrations stay aligned with generated SQL; this script is an
+ * alternate programmatic runner using the same drizzle folder.
  */
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";

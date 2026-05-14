@@ -4,6 +4,7 @@ import type { TapeBackfillStatus } from "./strategistTapeBackfill.js";
 import type { StrategistConfig } from "./strategistSettings.js";
 import type { PolygonApiCallRecord } from "./polygonApiTrace.js";
 import type { ConvictionDeskResult, DeskResult } from "./strategistDeskSchemas.js";
+import type { ConvictionDeskProviderAuditSnapshot } from "./aiLabAnalystClient.js";
 
 /** Maps numeric strategist mode to stable string labels for diagnostics. */
 export function strategistModeLabel(mode: number): string {
@@ -114,6 +115,10 @@ export interface ModelCallAttributionRow {
   outputTokens: number | null;
   retryAttempts: number;
   extendedThinkingEnabled: boolean;
+  /** Populated for Conviction Desk Anthropic audit when extended thinking is configured. */
+  extendedThinkingBudgetTokens?: number | null;
+  /** Actual model id sent to the provider when it differs from the slot label. */
+  modelName?: string | null;
   estimatedCostUsd: number | null;
 }
 
@@ -201,6 +206,14 @@ export interface BuildFullDiagnosticArgs {
   cboeOnePoolSize?: number | null;
   cboeOnePoolCapacity?: number | null;
   cboeOneWasColdStart?: boolean | null;
+  /** Conviction Desk per-attempt usage (+ web search counts when available). */
+  convictionDeskProviderTelemetry?: Array<Record<string, unknown>>;
+  /** @deprecated Old key name; prefer convictionDeskProviderTelemetry when present. */
+  convictionDeskAnthropicTelemetry?: Array<Record<string, unknown>>;
+  /** Last Conviction Desk request/response audit (mirrors strategist_telemetry columns). */
+  convictionDeskProviderAudit?: ConvictionDeskProviderAuditSnapshot | null;
+  /** @deprecated Old arg name — use convictionDeskProviderAudit. */
+  anthropicConvictionAudit?: ConvictionDeskProviderAuditSnapshot | null;
 }
 
 export function buildStrategistFullDiagnosticJson(args: BuildFullDiagnosticArgs): Record<string, unknown> {
@@ -244,6 +257,35 @@ export function buildStrategistFullDiagnosticJson(args: BuildFullDiagnosticArgs)
   };
   const tapeDiag = buildTapeBackfillDiagnostic(args.tapeBackfillStatus);
 
+  const audit = args.convictionDeskProviderAudit ?? args.anthropicConvictionAudit;
+  const extCfg = audit?.thinkingConfig as { type?: string; budget_tokens?: number } | null | undefined;
+  const baseModelAttr = args.modelAttribution as {
+    mode?: string;
+    calls?: ModelCallAttributionRow[];
+    note?: string;
+  };
+  const mergedCalls = Array.isArray(baseModelAttr.calls)
+    ? baseModelAttr.calls.map((call) => ({
+        ...call,
+        extendedThinkingEnabled:
+          extCfg != null && (extCfg.type === "enabled" || extCfg.type === "adaptive"),
+        extendedThinkingBudgetTokens:
+          extCfg?.type === "enabled" && typeof extCfg.budget_tokens === "number"
+            ? extCfg.budget_tokens
+            : null,
+        modelName: audit?.modelName ?? call.providerModel,
+      }))
+    : baseModelAttr.calls;
+
+  const modelAttribution = {
+    ...baseModelAttr,
+    calls: mergedCalls,
+    note:
+      audit != null
+        ? "Conviction Desk: usage/cache fields reflect the provider SDK when exposed; audit snapshot mirrors strategist_telemetry."
+        : baseModelAttr.note,
+  };
+
   return {
     runMetadata: {
       ...args.runMetadata,
@@ -252,7 +294,7 @@ export function buildStrategistFullDiagnosticJson(args: BuildFullDiagnosticArgs)
     strategistPayload: args.strategistPayload,
     tapeBackfillStatus: tapeDiag,
     dataQualitySummary,
-    modelAttribution: args.modelAttribution,
+    modelAttribution,
     upstreamApiTrace: {
       polygon: args.polygonTrace,
     },
@@ -260,6 +302,31 @@ export function buildStrategistFullDiagnosticJson(args: BuildFullDiagnosticArgs)
     runOutcome: args.runOutcome,
     runDurationMs: args.runDurationMs,
     error: args.error,
+    ...(audit
+      ? {
+          provider: audit.provider,
+          modelInput: audit.modelInput,
+          systemPrompt: audit.systemPrompt,
+          toolsAttached: audit.toolsAttached,
+          thinkingConfig: audit.thinkingConfig,
+          extendedThinkingConfig: audit.thinkingConfig,
+          rawApiResponse: audit.rawApiResponse,
+          thinkingBlocks: audit.thinkingBlocks,
+          webSearchQueries: audit.webSearchQueries,
+          webSearchResults: audit.webSearchResults,
+          providerRequestId: audit.providerRequestId,
+          anthropicRequestId: audit.providerRequestId,
+          modelName: audit.modelName,
+        }
+      : {}),
+    ...(() => {
+      const tel = args.convictionDeskProviderTelemetry ?? args.convictionDeskAnthropicTelemetry;
+      if (tel == null || tel.length === 0) return {};
+      return {
+        convictionDeskProviderTelemetry: tel,
+        convictionDeskAnthropicTelemetry: tel,
+      };
+    })(),
   };
 }
 

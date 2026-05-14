@@ -1,5 +1,5 @@
 import { db, optionsFlowExecPerStrikeTable, optionsFlowRawTradesTable } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { sql } from "@workspace/db";
 import { logger } from "./logger.js";
 import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 

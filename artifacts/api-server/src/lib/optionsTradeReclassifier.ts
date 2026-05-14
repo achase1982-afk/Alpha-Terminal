@@ -4,7 +4,7 @@
  * from Polygon /v3/quotes via {@link fetchQuotesAroundTrade}.
  */
 import { db, optionsFlowRawTradesTable } from "@workspace/db";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "@workspace/db";
 import { logger } from "./logger.js";
 import { fetchSchwabMarketSnapshot } from "./schwabMarketSnapshot.js";
 import { buildMarketContextSnapshot } from "./flowMarketContext.js";
@@ -15,8 +15,8 @@ import { fetchQuotesAroundTrade, nbboAtOrBefore } from "./optionsQuoteNbbo.js";
 /** Only attempt rows whose trade timestamp is within this window (default 7 days). */
 export const RECLASSIFY_LOOKBACK_MS = 7 * 86_400_000;
 
-const DEFAULT_MAX_ROWS = 5000;
-const DEFAULT_DEADLINE_MS = 30_000;
+const DEFAULT_MAX_ROWS = 20_000;
+const DEFAULT_DEADLINE_MS = 120_000;
 
 export async function reclassifyUnclassifiedTrades(
   ticker: string,

@@ -24,7 +24,11 @@ export type StrategistDiagScratch = {
   cboeOnePoolSize?: number | null;
   cboeOnePoolCapacity?: number | null;
   cboeOneWasColdStart?: boolean;
-};
+  /** JSON-safe snapshots of provider SDK request payloads for strategist LLM calls (same order as turns). */
+  modelSdkInputs?: unknown[];
+  /** Conviction Desk per-attempt usage + web search counts (mirrors fullDiagnostic). */
+  convictionDeskProviderTelemetry?: Array<Record<string, unknown>>;
+}
 
 /** Async-local scratch for one strategist analyze run (diagnostics + trace correlation). */
 export type StrategistRunContext = {

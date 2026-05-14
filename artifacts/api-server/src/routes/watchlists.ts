@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { getAuth } from "@clerk/express";
 import { db, terminalWatchlistsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 
 const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
