@@ -567,7 +567,9 @@ export async function runStrategistTapeBackfill(args: {
     TAPE_SYMBOL_BUDGET_CAP_MS,
     Math.max(symbolBudgetMs, args.budgetMs ?? DEFAULT_BUDGET_MS),
   );
-  const phase1Ms = Math.max(PHASE_BUDGET_MIN_MS, Math.floor(budgetMs / 2));
+  // Phase 2 (Polygon quotes + per-row NBBO classification) is heavier than phase 1 (trades fetch + insert).
+  // A 50/50 split routinely exhausts phase2 before all OCCs are updated, leaving large `side IS NULL` backlogs.
+  const phase1Ms = Math.max(PHASE_BUDGET_MIN_MS, Math.floor(budgetMs * 0.38));
   const phase2Ms = Math.max(PHASE_BUDGET_MIN_MS, budgetMs - phase1Ms);
 
   const flowCap =
@@ -1263,9 +1265,24 @@ export async function runStrategistTapeBackfill(args: {
 
   if (anyTruncated || stillNullSideAfterPhase2 > 0) {
     queueMicrotask(() => {
-      void reclassifyUnclassifiedTrades(ticker).catch((err: unknown) => {
-        logger.error({ err, ticker }, "optionsTradeReclassifier: failed");
-      });
+      void (async () => {
+        try {
+          const maxPasses = 8;
+          for (let pass = 0; pass < maxPasses; pass++) {
+            const r = await reclassifyUnclassifiedTrades(ticker, {
+              maxRows: 20_000,
+              deadlineMs: 120_000,
+            });
+            logger.info(
+              { ticker, pass, stillNullSideAfterPhase2, ...r },
+              "optionsTradeReclassifier: catch-up pass after tape backfill",
+            );
+            if (r.reclassified < 25) break;
+          }
+        } catch (err: unknown) {
+          logger.error({ err, ticker }, "optionsTradeReclassifier: failed");
+        }
+      })();
     });
   }
 
