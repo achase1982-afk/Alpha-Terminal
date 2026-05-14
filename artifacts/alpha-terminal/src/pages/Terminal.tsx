@@ -26,7 +26,7 @@ import { StrategyBuilder, type StrategyLeg } from "@/components/StrategyBuilder"
 import type { OptionsContract } from "@/components/OptionsTab";
 import { MarketSessionClock } from "@/components/MarketSessionClock";
 import { NewsTab } from "@/components/NewsTab";
-import { MarketsChatTab } from "@/components/MarketsChatTab";
+import { MarketNewsChatPanel } from "@/components/MarketNewsChatPanel";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
 import { BottomNav } from "@/components/BottomNav";
 import { PortfolioView } from "@/components/PortfolioView";
@@ -649,7 +649,7 @@ export default function TerminalPage() {
                   {contextTab === "news" && <NewsTab />}
                   {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                   {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles} stickyOffset={stickyH} />}
-                  {contextTab === "newsChat" && <MarketsChatTab />}
+                  {contextTab === "newsChat" && <MarketNewsChatPanel />}
                   {contextTab === "chart" && (
                     <>
                       <ChartControls />
@@ -706,7 +706,7 @@ export default function TerminalPage() {
                     {contextTab === "news" && <NewsTab />}
                     {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                     {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles} stickyOffset={0} />}
-                    {contextTab === "newsChat" && <MarketsChatTab />}
+                    {contextTab === "newsChat" && <MarketNewsChatPanel />}
                   </div>
                 </div>
               </>
@@ -749,7 +749,7 @@ export default function TerminalPage() {
                   {contextTab === "news" && <NewsTab />}
                   {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                   {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles} stickyOffset={stickyH} />}
-                  {contextTab === "newsChat" && <MarketsChatTab />}
+                  {contextTab === "newsChat" && <MarketNewsChatPanel />}
                   {contextTab === "chart" && (
                     <>
                       <ChartControls />
