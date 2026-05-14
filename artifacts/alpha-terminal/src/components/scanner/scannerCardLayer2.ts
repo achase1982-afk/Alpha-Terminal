@@ -138,6 +138,7 @@ function mapFlowWire(flow: ScannerV3WireCardFlow | Record<string, unknown> | nul
         : null;
   const vol4h = num(f.volume_4h ?? f.volume4h);
   const volOi = num(f.volume_over_oi ?? f.volumeOverOi);
+  /** Canonical event count for list row + expanded headline: universe `flow.events_today` (same window as Layer 5 flow). */
   const eventsToday = num(f.events_today ?? f.eventsToday);
   const primaryRaw = f.primary_event_type ?? f.primaryEventType;
   const primaryEventType =

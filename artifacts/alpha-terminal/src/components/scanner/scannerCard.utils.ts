@@ -42,7 +42,7 @@ export const SCANNER_LAYER1_CARD_GRID_CLASS =
 
 /**
  * Urgency readout for collapsed-row bar (0–99). Prefers Layer-7 composite score when present;
- * otherwise a monotone blend of sweep/block density vs `events_today` (no randomness).
+ * otherwise a monotone blend of sweep/block density vs `flow.eventsToday` (universe `events_today`; no randomness).
  */
 export function scannerRowUrgencyScore(data: {
   score: number | null;
