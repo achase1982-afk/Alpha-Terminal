@@ -334,7 +334,7 @@ export function MarketNewsChatPanel() {
   );
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 max-h-[calc(100dvh-9.5rem)] md:max-h-none md:min-h-[280px] bg-[#0a0a0a] border-t border-card-border/40">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#0a0a0a]">
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-card-border/50 shrink-0 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
           <span className="font-mono text-[14px] font-semibold text-white tracking-wide uppercase truncate">
