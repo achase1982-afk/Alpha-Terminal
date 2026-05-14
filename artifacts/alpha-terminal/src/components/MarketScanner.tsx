@@ -166,29 +166,9 @@ function UniverseDropdown({ value, onChange, presets, tuningEntries, watchlists,
             style={{ maxHeight: maxH, WebkitOverflowScrolling: "touch" } satisfies React.CSSProperties}
             onTouchMove={e => e.stopPropagation()}
           >
-            <div className="px-3 pt-3 pb-1.5">
-              <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Presets</span>
-            </div>
-            {Object.entries(presets).map(([key, p]) => {
-              const pKey = `preset:${key}`;
-              return (
-                <button
-                  key={key}
-                  onClick={() => { onChange(pKey); setOpen(false); }}
-                  className={`w-full text-left px-3 py-2.5 flex items-center justify-between gap-3 text-sm transition-colors ${
-                    value === pKey ? "bg-[#FFD100]/10 text-[#FFD100]" : "text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
-                  }`}
-                >
-                  <span className="font-medium leading-snug">{p.label}</span>
-                  <span className={`text-xs tabular-nums shrink-0 ${value === pKey ? "text-[#FFD100]/60" : "text-zinc-600"}`}>{p.count}</span>
-                </button>
-              );
-            })}
-
             {tuningEntries.length > 0 && (
               <>
-                <div className="mx-3 my-1.5 border-t border-zinc-700/50" />
-                <div className="px-3 pt-2 pb-1.5">
+                <div className="px-3 pt-3 pb-1.5">
                   <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Tuning bench</span>
                 </div>
                 {tuningEntries.map((t) => {
@@ -212,8 +192,28 @@ function UniverseDropdown({ value, onChange, presets, tuningEntries, watchlists,
                     </button>
                   );
                 })}
+                <div className="mx-3 my-1.5 border-t border-zinc-700/50" />
               </>
             )}
+
+            <div className="px-3 pt-3 pb-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Presets</span>
+            </div>
+            {Object.entries(presets).map(([key, p]) => {
+              const pKey = `preset:${key}`;
+              return (
+                <button
+                  key={key}
+                  onClick={() => { onChange(pKey); setOpen(false); }}
+                  className={`w-full text-left px-3 py-2.5 flex items-center justify-between gap-3 text-sm transition-colors ${
+                    value === pKey ? "bg-[#FFD100]/10 text-[#FFD100]" : "text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
+                  }`}
+                >
+                  <span className="font-medium leading-snug">{p.label}</span>
+                  <span className={`text-xs tabular-nums shrink-0 ${value === pKey ? "text-[#FFD100]/60" : "text-zinc-600"}`}>{p.count}</span>
+                </button>
+              );
+            })}
 
             {screens.length > 0 && (
               <>
