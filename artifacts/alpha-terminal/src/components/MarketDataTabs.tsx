@@ -1,16 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
-import { Newspaper, BarChart2, Building2, LineChart } from "lucide-react";
+import { Newspaper, BarChart2, Building2, LineChart, MessageSquare } from "lucide-react";
 
-export type MarketDataTab = "news" | "options" | "company" | "chart";
+export type MarketDataTab = "news" | "options" | "chat" | "company" | "chart";
 
 const TAB_DEFS: Record<MarketDataTab, { label: string; icon: React.ReactNode }> = {
   news:    { label: "NEWS",    icon: <Newspaper className="w-4 h-4" /> },
   options: { label: "OPTIONS", icon: <BarChart2 className="w-4 h-4" /> },
+  chat:    { label: "CHAT",    icon: <MessageSquare className="w-4 h-4" /> },
   company: { label: "COMPANY", icon: <Building2 className="w-4 h-4" /> },
   chart:   { label: "CHART",   icon: <LineChart className="w-4 h-4" /> },
 };
 
-const DEFAULT_ORDER: MarketDataTab[] = ["news", "options", "company", "chart"];
+const DEFAULT_ORDER: MarketDataTab[] = ["news", "options", "chat", "company", "chart"];
 const STORAGE_KEY = "alphaTerminalTabOrder";
 const LONG_PRESS_MS = 450;
 
