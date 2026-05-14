@@ -277,12 +277,12 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
                   : "bg-[#1a1a1a] text-gray-200 rounded-2xl rounded-bl-md border border-card-border"
               }`}
             >
-              <div className={`prose prose-sm max-w-none ${
+              <div className={`prose prose-sm max-w-none font-light ${
                 msg.role === "user"
-                  ? "prose-invert prose-p:text-primary-foreground"
-                  : "prose-invert prose-p:text-gray-200"
-              } prose-p:leading-relaxed prose-p:my-1 prose-pre:text-xs prose-code:text-primary prose-a:text-primary
-                prose-headings:text-foreground prose-li:text-gray-200 prose-strong:text-white`}>
+                  ? "prose-invert prose-p:text-primary-foreground prose-p:text-[16px] prose-li:text-[16px] prose-li:text-primary-foreground"
+                  : "prose-invert prose-p:text-gray-200 prose-p:text-[16px] prose-li:text-[16px] prose-li:text-gray-200"
+              } prose-p:leading-relaxed prose-p:my-1 prose-pre:text-[14px] prose-code:text-primary prose-a:text-primary
+                prose-headings:text-[17px] prose-headings:font-light prose-headings:text-foreground prose-strong:font-normal prose-strong:text-white`}>
                 <ReactMarkdown>{msg.content}</ReactMarkdown>
               </div>
               {msg.role === "assistant" && (
