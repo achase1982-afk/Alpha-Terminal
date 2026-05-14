@@ -348,10 +348,9 @@ export function MarketsChatTab() {
   return (
     <div
       ref={rootRef}
-      className="flex flex-col rounded-lg border border-card-border bg-[#0a0a0a] overflow-hidden"
-      style={{ minHeight: 280 }}
+      className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-card-border bg-[#0a0a0a]"
     >
-      <div className="flex items-center justify-between px-3 py-2 border-b border-card-border/50">
+      <div className="flex shrink-0 items-center justify-between px-3 py-2 border-b border-card-border/50">
         <div className="flex items-center gap-2">
           <MessageSquare className="w-3.5 h-3.5 text-primary" />
           <span className="font-mono text-[10px] font-bold text-white/70 tracking-widest uppercase">Chat</span>
@@ -381,66 +380,67 @@ export function MarketsChatTab() {
         onError={onAudioElementError}
       />
 
-      {messages.length > 0 && (
-        <div
-          ref={scrollRef}
-          className="max-h-[min(420px,50vh)] overflow-y-auto px-2.5 py-2 space-y-2"
-          style={{ scrollbarWidth: "thin", scrollbarColor: "#333 transparent" }}
-        >
-          {messages.map((msg) => (
-            <div key={msg.id} className={msg.role === "user" ? "text-right" : "text-left"}>
-              {msg.role === "user" ? (
-                <span className="inline-block font-mono text-[10px] text-primary/80 bg-primary/8 border border-primary/15 rounded px-2 py-1 max-w-[90%] text-left">
-                  {msg.content}
-                </span>
-              ) : (
-                <div className="space-y-2">
-                  <div
-                    className="font-mono text-[10px] text-white/70 leading-relaxed prose prose-invert prose-sm max-w-none
+      <div
+        ref={scrollRef}
+        className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2 space-y-2"
+        style={{ scrollbarWidth: "thin", scrollbarColor: "#333 transparent" }}
+      >
+        {messages.map((msg) => (
+          <div key={msg.id} className={msg.role === "user" ? "text-right" : "text-left"}>
+            {msg.role === "user" ? (
+              <span className="inline-block font-mono text-[10px] text-primary/80 bg-primary/8 border border-primary/15 rounded px-2 py-1 max-w-[90%] text-left">
+                {msg.content}
+              </span>
+            ) : (
+              <div className="space-y-2">
+                <div
+                  className="font-mono text-[10px] text-white/70 leading-relaxed prose prose-invert prose-sm max-w-none
                     prose-p:my-0.5 prose-p:text-[10px] prose-p:leading-relaxed prose-p:text-white/70
                     prose-strong:text-white/90 prose-code:text-primary prose-code:text-[9px]
                     prose-headings:text-[11px] prose-headings:text-white/80 prose-headings:mt-1.5 prose-headings:mb-0.5
                     prose-li:text-[10px] prose-li:text-white/70 prose-li:my-0
                     prose-ul:my-0.5 prose-ol:my-0.5
                     prose-a:text-primary prose-pre:text-[9px] prose-pre:bg-black/40 prose-pre:rounded prose-pre:p-1.5"
-                  >
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
-                  </div>
-                  <AssistantMessageAudio
-                    msg={msg}
-                    isStreaming={isStreaming}
-                    streamingAssistantId={streamingAssistantId}
-                    playbackMessageId={playbackMessageId}
-                    audioBarOpen={audioBarOpen}
-                    audioLoading={audioLoading}
-                    audioReady={audioReady}
-                    audioError={audioError}
-                    paused={paused}
-                    speechRate={speechRate}
-                    setSpeechRate={setSpeechRate}
-                    speedLabel={speedLabel}
-                    startPlay={startPlay}
-                    stopAudio={stopAudio}
-                    togglePause={togglePause}
-                    seekRelativeSeconds={seekRelativeSeconds}
-                    iconBtnBase={iconBtnBase}
-                  />
+                >
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
                 </div>
-              )}
-            </div>
-          ))}
+                <AssistantMessageAudio
+                  msg={msg}
+                  isStreaming={isStreaming}
+                  streamingAssistantId={streamingAssistantId}
+                  playbackMessageId={playbackMessageId}
+                  audioBarOpen={audioBarOpen}
+                  audioLoading={audioLoading}
+                  audioReady={audioReady}
+                  audioError={audioError}
+                  paused={paused}
+                  speechRate={speechRate}
+                  setSpeechRate={setSpeechRate}
+                  speedLabel={speedLabel}
+                  startPlay={startPlay}
+                  stopAudio={stopAudio}
+                  togglePause={togglePause}
+                  seekRelativeSeconds={seekRelativeSeconds}
+                  iconBtnBase={iconBtnBase}
+                />
+              </div>
+            )}
+          </div>
+        ))}
 
-          {isStreaming && streamingAssistantId && (
-            <div className="flex items-center gap-1.5 py-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" style={{ animationDelay: "150ms" }} />
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" style={{ animationDelay: "300ms" }} />
-            </div>
-          )}
-        </div>
-      )}
+        {isStreaming && streamingAssistantId && (
+          <div className="flex items-center gap-1.5 py-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" style={{ animationDelay: "150ms" }} />
+            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" style={{ animationDelay: "300ms" }} />
+          </div>
+        )}
+      </div>
 
-      <form onSubmit={handleSubmit} className="flex items-center gap-1.5 px-2 py-1.5 border-t border-card-border/40 mt-auto">
+      <form
+        onSubmit={handleSubmit}
+        className="flex shrink-0 items-center gap-1.5 border-t border-card-border/40 px-2 py-1.5"
+      >
         <input
           ref={inputRef}
           type="text"
