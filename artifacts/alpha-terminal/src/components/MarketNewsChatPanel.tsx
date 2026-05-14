@@ -360,7 +360,7 @@ export function MarketNewsChatPanel() {
         }}
       >
         {messages.length === 0 && (
-          <p className="font-mono text-[10px] text-zinc-600 leading-relaxed">
+          <p className="font-mono text-[11px] font-light text-zinc-600 leading-relaxed">
             Ask about {symU} — flow, tape, and headlines load on the server for each message. Conversations
             stay per ticker until you clear them. Use <strong>New</strong> for another thread (e.g. scenarios
             vs earnings prep).
@@ -369,19 +369,19 @@ export function MarketNewsChatPanel() {
         {messages.map((msg) => (
           <div key={msg.id} className={msg.role === "user" ? "text-right" : "text-left"}>
             {msg.role === "user" ? (
-              <span className="inline-block font-mono text-[10px] text-primary/80 bg-primary/8 border border-primary/15 rounded px-2 py-1 max-w-[95%] text-left">
+              <span className="inline-block font-mono text-[11px] font-light text-primary/80 bg-primary/8 border border-primary/15 rounded px-2 py-1 max-w-[95%] text-left">
                 {msg.content}
               </span>
             ) : (
               <div className="text-left">
                 <div
-                  className="font-mono text-[10px] text-white/70 leading-relaxed prose prose-invert prose-sm max-w-none
-                prose-p:my-0.5 prose-p:text-[10px] prose-p:leading-relaxed prose-p:text-white/70
-                prose-strong:text-white/90 prose-code:text-primary prose-code:text-[9px]
-                prose-headings:text-[11px] prose-headings:text-white/80 prose-headings:mt-1.5 prose-headings:mb-0.5
-                prose-li:text-[10px] prose-li:text-white/70 prose-li:my-0
+                  className="font-mono text-[11px] font-light text-white/70 leading-relaxed prose prose-invert prose-sm max-w-none
+                prose-p:my-0.5 prose-p:text-[11px] prose-p:font-light prose-p:leading-relaxed prose-p:text-white/70
+                prose-strong:text-white/90 prose-strong:font-normal prose-code:text-primary prose-code:text-[10px] prose-code:font-light
+                prose-headings:text-[12px] prose-headings:font-light prose-headings:text-white/80 prose-headings:mt-1.5 prose-headings:mb-0.5
+                prose-li:text-[11px] prose-li:font-light prose-li:text-white/70 prose-li:my-0
                 prose-ul:my-0.5 prose-ol:my-0.5
-                prose-a:text-primary prose-pre:text-[9px] prose-pre:bg-black/40 prose-pre:rounded prose-pre:p-1.5"
+                prose-a:text-primary prose-pre:text-[10px] prose-pre:font-light prose-pre:bg-black/40 prose-pre:rounded prose-pre:p-1.5"
                 >
                   <ReactMarkdown>{msg.content}</ReactMarkdown>
                 </div>
