@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useTerminalStore, type MarketNewsChatMessage } from "@/lib/store";
 import { useGetQuote } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { Send, Square, RotateCcw, Plus, Trash2, MessageSquareText } from "lucide-react";
+import { Send, Square, RotateCcw, Plus, Trash2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
 import { useVisualViewportComposerMetrics } from "@/hooks/useVisualViewportKeyboardInset";
@@ -309,7 +309,7 @@ export function MarketNewsChatPanel() {
           setTimeout(remeasure, 120);
         }}
         placeholder={`Ask about ${symU}…`}
-        className="flex-1 resize-none bg-[#111] border border-card-border rounded-md px-2 py-1.5 font-mono text-[11px] text-white/85 placeholder:text-white/25 outline-none focus:border-primary/40 min-h-[44px]"
+        className="flex-1 resize-none bg-[#111] border border-card-border rounded-md px-3 py-2 font-mono text-[14px] text-white placeholder:text-white/55 outline-none focus:border-white/40 min-h-[48px]"
       />
       {isStreaming ? (
         <button
@@ -324,10 +324,10 @@ export function MarketNewsChatPanel() {
         <button
           type="submit"
           disabled={!input.trim()}
-          className="shrink-0 p-2.5 rounded-md border border-primary/40 text-primary disabled:opacity-30 hover:bg-primary/10"
+          className="shrink-0 p-2.5 text-white disabled:opacity-30 hover:text-white/75"
           aria-label="Send"
         >
-          <Send className="w-4 h-4" />
+          <Send className="w-5 h-5" />
         </button>
       )}
     </form>
@@ -337,16 +337,15 @@ export function MarketNewsChatPanel() {
     <div className="flex flex-col flex-1 min-h-0 max-h-[calc(100dvh-9.5rem)] md:max-h-none md:min-h-[280px] bg-[#0a0a0a] border-t border-card-border/40">
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-card-border/50 shrink-0 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
-          <MessageSquareText className="w-4 h-4 text-primary shrink-0" />
-          <span className="font-mono text-[10px] font-bold text-white/70 tracking-widest uppercase truncate">
-            Chat · {symU}
+          <span className="font-mono text-[14px] font-semibold text-white tracking-wide uppercase truncate">
+            {symU}
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <select
             value={modelSend}
             onChange={(e) => setAiFeatureSetting("chat", "model", e.target.value)}
-            className="bg-black/60 border border-card-border rounded px-1.5 py-1 font-mono text-[9px] text-white/80 max-w-[140px] sm:max-w-[200px]"
+            className="bg-black/60 border border-card-border rounded px-2 py-1.5 font-mono text-[14px] text-white max-w-[180px] sm:max-w-[230px]"
             aria-label="Chat model"
           >
             {ALL_CHAT_MODELS.map((m) => (
@@ -369,8 +368,8 @@ export function MarketNewsChatPanel() {
                 type="button"
                 onClick={() => selectThread(symU, tid)}
                 className={[
-                  "font-mono text-[9px] px-2 py-1 rounded border max-w-[120px] truncate",
-                  isSel ? "border-primary text-primary bg-primary/10" : "border-transparent text-zinc-500 hover:text-zinc-300",
+                  "font-mono text-[14px] px-2.5 py-1.5 rounded border max-w-[150px] truncate",
+                  isSel ? "border-white/35 text-white bg-white/10" : "border-transparent text-white/65 hover:text-white",
                 ].join(" ")}
               >
                 {t.title}
@@ -391,7 +390,7 @@ export function MarketNewsChatPanel() {
         <button
           type="button"
           onClick={() => createThread(symU)}
-          className="flex items-center gap-0.5 font-mono text-[9px] text-primary/80 hover:text-primary px-1.5 py-1 shrink-0"
+          className="flex items-center gap-1 font-mono text-[14px] text-white/80 hover:text-white px-1.5 py-1.5 shrink-0"
         >
           <Plus className="w-3 h-3" />
           New
@@ -402,7 +401,7 @@ export function MarketNewsChatPanel() {
               <button
                 type="button"
                 onClick={handleRetry}
-                className="ml-auto flex items-center gap-0.5 font-mono text-[9px] text-primary/80 hover:text-primary px-1.5 shrink-0"
+                className="ml-auto flex items-center gap-1 font-mono text-[14px] text-white/80 hover:text-white px-1.5 shrink-0"
               >
                 <RotateCcw className="w-3 h-3" />
                 Retry
@@ -416,7 +415,7 @@ export function MarketNewsChatPanel() {
                 setLastFailedMessage(null);
                 clearActiveThread(symU);
               }}
-              className={`${lastFailedMessage && !isStreaming ? "" : "ml-auto"} flex items-center gap-0.5 font-mono text-[9px] text-zinc-500 hover:text-zinc-300 px-1.5 shrink-0`}
+              className={`${lastFailedMessage && !isStreaming ? "" : "ml-auto"} flex items-center gap-1 font-mono text-[14px] text-white/65 hover:text-white px-1.5 shrink-0`}
             >
               <RotateCcw className="w-3 h-3" />
               Clear
@@ -439,7 +438,7 @@ export function MarketNewsChatPanel() {
         }}
       >
         {messages.length === 0 && (
-          <p className="font-mono text-[10px] text-zinc-600 leading-relaxed">
+          <p className="font-mono text-[14px] text-white/70 leading-relaxed">
             Ask about {symU} — flow, tape, and headlines load on the server for each message. Conversations
             stay per ticker until you clear them. Use <strong>New</strong> for another thread (e.g. scenarios
             vs earnings prep).
@@ -448,19 +447,19 @@ export function MarketNewsChatPanel() {
         {messages.map((msg) => (
           <div key={msg.id} className={msg.role === "user" ? "text-right" : "text-left"}>
             {msg.role === "user" ? (
-              <span className="inline-block font-mono text-[10px] text-primary/80 bg-primary/8 border border-primary/15 rounded px-2 py-1 max-w-[95%] text-left">
+              <span className="inline-block font-mono text-[14px] text-white bg-[#1a1a1a] border border-card-border rounded px-3 py-2 max-w-[95%] text-left leading-relaxed">
                 {msg.content}
               </span>
             ) : (
               <div className="text-left">
                 <div
-                  className="font-mono text-[10px] text-white/70 leading-relaxed prose prose-invert prose-sm max-w-none
-                prose-p:my-0.5 prose-p:text-[10px] prose-p:leading-relaxed prose-p:text-white/70
-                prose-strong:text-white/90 prose-code:text-primary prose-code:text-[9px]
-                prose-headings:text-[11px] prose-headings:text-white/80 prose-headings:mt-1.5 prose-headings:mb-0.5
-                prose-li:text-[10px] prose-li:text-white/70 prose-li:my-0
+                  className="font-mono text-[14px] text-white leading-relaxed prose prose-invert prose-sm max-w-none
+                prose-p:my-1 prose-p:text-[14px] prose-p:leading-relaxed prose-p:text-white
+                prose-strong:text-white prose-code:text-white prose-code:text-[13px]
+                prose-headings:text-[15px] prose-headings:text-white prose-headings:mt-2 prose-headings:mb-1
+                prose-li:text-[14px] prose-li:text-white prose-li:my-0.5
                 prose-ul:my-0.5 prose-ol:my-0.5
-                prose-a:text-primary prose-pre:text-[9px] prose-pre:bg-black/40 prose-pre:rounded prose-pre:p-1.5"
+                prose-a:text-white prose-pre:text-[13px] prose-pre:bg-black/40 prose-pre:rounded prose-pre:p-2"
                 >
                   <ReactMarkdown>{msg.content}</ReactMarkdown>
                 </div>
@@ -471,9 +470,9 @@ export function MarketNewsChatPanel() {
         ))}
         {isStreaming && messages.length > 0 && messages[messages.length - 1]?.role === "user" && (
           <div className="flex items-center gap-1.5 py-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" style={{ animationDelay: "150ms" }} />
-            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" style={{ animationDelay: "300ms" }} />
+            <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "150ms" }} />
+            <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "300ms" }} />
           </div>
         )}
       </div>
