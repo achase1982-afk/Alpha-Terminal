@@ -280,57 +280,187 @@ function mapRowToUaiEvent(row: Record<string, unknown>, spot: number | null): Ua
   };
 }
 
-type StrikeAggKey = `${number}|${string}|${"C" | "P"}`;
-
-function strikeAggKey(strike: number, expiration: string, callPut: "C" | "P"): StrikeAggKey {
-  return `${strike}|${expiration}|${callPut}`;
+function mapTopStrikeRow(row: Record<string, unknown>): UaiEventsSummary["topBullishStrikes"][number] | null {
+  const strike = numOrNull(row.strike);
+  if (strike == null || !(strike > 0)) return null;
+  const ot = String(row.option_type ?? "call").trim().toLowerCase();
+  const callPut: "C" | "P" = ot === "put" ? "P" : "C";
+  const expiration = expirationIsoFromRow(row.expiration);
+  const n = numOrNull(row.leg_notional) ?? 0;
+  return { strike, expiration, callPut, notional: Number.isFinite(n) ? Math.max(0, n) : 0 };
 }
 
-function buildSummary(events: UaiEvent[], netDeltaDollar: number | null): UaiEventsSummary {
-  let bullishNotional = 0;
-  let bearishNotional = 0;
-  let callNotional = 0;
-  let putNotional = 0;
+/**
+ * Full-window aggregates over `options_flow_raw_trades` for the same cutoff + symbol filter as
+ * `computeScannerFlowForWindow` (scannerFlowContext) / universe `flow.events_today` (no row LIMIT).
+ * Directional notionals exclude `side` mid / null / unknown; net delta matches universe SQL (ask/bid only).
+ */
+async function fetchUaiSymbolEventsSummarySql(args: {
+  sym: string;
+  cutoffIso: string;
+  spot: number | null;
+}): Promise<UaiEventsSummary> {
+  const { sym, cutoffIso, spot } = args;
+  const priceTuples =
+    spot != null && Number.isFinite(spot) && spot > 0
+      ? sql`(${sym}::text, ${spot}::double precision)`
+      : sql`(${sym}::text, NULL::double precision)`;
 
-  const bullishMap = new Map<StrikeAggKey, { strike: number; expiration: string; callPut: "C" | "P"; notional: number }>();
-  const bearishMap = new Map<StrikeAggKey, { strike: number; expiration: string; callPut: "C" | "P"; notional: number }>();
+  const [aggRes, topBullRes, topBearRes] = await Promise.all([
+    db.execute(sql`
+      WITH w AS (
+        SELECT
+          t.underlying_symbol,
+          t.date,
+          t.option_type,
+          t.strike,
+          t.expiration,
+          t.size,
+          t.notional,
+          t.side,
+          lower(trim(both from coalesce(t.side::text, ''))) AS side_norm,
+          lower(trim(both from coalesce(t.option_type::text, ''))) AS ot_norm
+        FROM options_flow_raw_trades t
+        WHERE t.underlying_symbol = ${sym}
+          AND t.timestamp IS NOT NULL
+          AND t.timestamp >= ${cutoffIso}::timestamptz
+      ),
+      prices(sym, px) AS (VALUES ${priceTuples})
+      SELECT
+        (SELECT COUNT(*)::int FROM w) AS total_events,
+        (SELECT COALESCE(
+          SUM(
+            CASE
+              WHEN side_norm = 'ask' AND ot_norm = 'call' THEN COALESCE(notional, 0)::double precision
+              WHEN side_norm = 'bid' AND ot_norm = 'put' THEN COALESCE(notional, 0)::double precision
+              ELSE 0::double precision
+            END
+          ),
+          0
+        )::double precision FROM w) AS bullish_notional,
+        (SELECT COALESCE(
+          SUM(
+            CASE
+              WHEN side_norm = 'ask' AND ot_norm = 'put' THEN COALESCE(notional, 0)::double precision
+              WHEN side_norm = 'bid' AND ot_norm = 'call' THEN COALESCE(notional, 0)::double precision
+              ELSE 0::double precision
+            END
+          ),
+          0
+        )::double precision FROM w) AS bearish_notional,
+        (SELECT COALESCE(
+          SUM(
+            CASE
+              WHEN ot_norm = 'call' THEN COALESCE(notional, 0)::double precision
+              ELSE 0::double precision
+            END
+          ),
+          0
+        )::double precision FROM w) AS call_notional,
+        (SELECT COALESCE(
+          SUM(
+            CASE
+              WHEN ot_norm = 'put' THEN COALESCE(notional, 0)::double precision
+              ELSE 0::double precision
+            END
+          ),
+          0
+        )::double precision FROM w) AS put_notional,
+        (
+          SELECT SUM(
+            CASE
+              WHEN w2.side_norm IN ('ask', 'bid')
+                AND p.delta IS NOT NULL
+                AND COALESCE(w2.size, 0) > 0
+                AND pr.px IS NOT NULL
+              THEN
+                (CASE WHEN w2.side_norm = 'ask' THEN 1::double precision ELSE -1::double precision END)
+                * p.delta::double precision
+                * w2.size::double precision
+                * 100.0::double precision
+                * pr.px::double precision
+              ELSE NULL::double precision
+            END
+          )
+          FROM w AS w2
+          LEFT JOIN prices pr ON pr.sym = w2.underlying_symbol
+          LEFT JOIN options_flow_per_strike p
+            ON p.underlying_symbol = w2.underlying_symbol
+            AND p.date = w2.date
+            AND p.option_type = w2.option_type
+            AND p.strike = w2.strike
+            AND p.expiration = w2.expiration
+        ) AS net_delta_dollar
+    `),
+    db.execute(sql`
+      SELECT
+        t.strike,
+        t.expiration,
+        t.option_type,
+        SUM(COALESCE(t.notional, 0))::double precision AS leg_notional
+      FROM options_flow_raw_trades t
+      WHERE t.underlying_symbol = ${sym}
+        AND t.timestamp IS NOT NULL
+        AND t.timestamp >= ${cutoffIso}::timestamptz
+        AND (
+          (
+            lower(trim(both from coalesce(t.side::text, ''))) = 'ask'
+            AND lower(trim(both from coalesce(t.option_type::text, ''))) = 'call'
+          )
+          OR (
+            lower(trim(both from coalesce(t.side::text, ''))) = 'bid'
+            AND lower(trim(both from coalesce(t.option_type::text, ''))) = 'put'
+          )
+        )
+      GROUP BY t.strike, t.expiration, t.option_type
+      ORDER BY leg_notional DESC
+      LIMIT 3
+    `),
+    db.execute(sql`
+      SELECT
+        t.strike,
+        t.expiration,
+        t.option_type,
+        SUM(COALESCE(t.notional, 0))::double precision AS leg_notional
+      FROM options_flow_raw_trades t
+      WHERE t.underlying_symbol = ${sym}
+        AND t.timestamp IS NOT NULL
+        AND t.timestamp >= ${cutoffIso}::timestamptz
+        AND (
+          (
+            lower(trim(both from coalesce(t.side::text, ''))) = 'ask'
+            AND lower(trim(both from coalesce(t.option_type::text, ''))) = 'put'
+          )
+          OR (
+            lower(trim(both from coalesce(t.side::text, ''))) = 'bid'
+            AND lower(trim(both from coalesce(t.option_type::text, ''))) = 'call'
+          )
+        )
+      GROUP BY t.strike, t.expiration, t.option_type
+      ORDER BY leg_notional DESC
+      LIMIT 3
+    `),
+  ]);
 
-  for (const e of events) {
-    if (e.callPut === "C") callNotional += e.notional;
-    else putNotional += e.notional;
+  const aggRow = (aggRes.rows ?? [])[0] as Record<string, unknown> | undefined;
+  const totalEvents = intOrZero(aggRow?.total_events);
+  const bullishNotional = Math.max(0, numOrNull(aggRow?.bullish_notional) ?? 0);
+  const bearishNotional = Math.max(0, numOrNull(aggRow?.bearish_notional) ?? 0);
+  const callNotional = Math.max(0, numOrNull(aggRow?.call_notional) ?? 0);
+  const putNotional = Math.max(0, numOrNull(aggRow?.put_notional) ?? 0);
+  const netRaw = numOrNull(aggRow?.net_delta_dollar);
+  const netDeltaDollar =
+    netRaw != null && Number.isFinite(netRaw) ? Math.round(netRaw * 100) / 100 : null;
 
-    if (e.direction === "bullish") {
-      bullishNotional += e.notional;
-      const k = strikeAggKey(e.strike, e.expiration, e.callPut);
-      const cur = bullishMap.get(k);
-      bullishMap.set(k, {
-        strike: e.strike,
-        expiration: e.expiration,
-        callPut: e.callPut,
-        notional: (cur?.notional ?? 0) + e.notional,
-      });
-    } else if (e.direction === "bearish") {
-      bearishNotional += e.notional;
-      const k = strikeAggKey(e.strike, e.expiration, e.callPut);
-      const cur = bearishMap.get(k);
-      bearishMap.set(k, {
-        strike: e.strike,
-        expiration: e.expiration,
-        callPut: e.callPut,
-        notional: (cur?.notional ?? 0) + e.notional,
-      });
-    }
-  }
-
-  const topBullishStrikes = [...bullishMap.values()]
-    .sort((a, b) => b.notional - a.notional)
-    .slice(0, 3);
-  const topBearishStrikes = [...bearishMap.values()]
-    .sort((a, b) => b.notional - a.notional)
-    .slice(0, 3);
+  const topBullishStrikes = (topBullRes.rows ?? [])
+    .map((r) => mapTopStrikeRow(r as Record<string, unknown>))
+    .filter((x): x is NonNullable<typeof x> => x != null);
+  const topBearishStrikes = (topBearRes.rows ?? [])
+    .map((r) => mapTopStrikeRow(r as Record<string, unknown>))
+    .filter((x): x is NonNullable<typeof x> => x != null);
 
   return {
-    totalEvents: events.length,
+    totalEvents,
     bullishNotional,
     bearishNotional,
     netDeltaDollar,
@@ -363,66 +493,50 @@ export async function fetchUaiSymbolEvents(args: {
   const priceTuples =
     spot != null ? sql`(${sym}::text, ${spot}::double precision)` : sql`(${sym}::text, NULL::double precision)`;
 
-  const rows = await db.execute(sql`
-    WITH prices(sym, px) AS (VALUES ${priceTuples})
-    SELECT
-      t.id,
-      t.timestamp,
-      t.option_symbol,
-      t.option_type,
-      t.strike,
-      t.expiration,
-      t.date,
-      t.size,
-      t.notional,
-      t.trade_price,
-      t.side,
-      t.is_block,
-      t.is_sweep,
-      t.vol_oi_ratio,
-      t.open_interest_snapshot,
-      t.volume_vs_baseline_20d,
-      t.aggressor_confidence,
-      t.synthetic_leg_group_id,
-      t.multi_leg_confidence,
-      t.extras,
-      t.dte_days,
-      p.delta AS strike_delta
-    FROM options_flow_raw_trades t
-    LEFT JOIN prices pr ON pr.sym = t.underlying_symbol
-    LEFT JOIN options_flow_per_strike p
-      ON p.underlying_symbol = t.underlying_symbol
-      AND p.date = t.date
-      AND p.option_type = t.option_type
-      AND p.strike = t.strike
-      AND p.expiration = t.expiration
-    WHERE t.underlying_symbol = ${sym}
-      AND t.timestamp IS NOT NULL
-      AND t.timestamp >= ${cutoffIso}::timestamptz
-    ORDER BY t.timestamp DESC
-    LIMIT ${MAX_EVENTS_RETURNED}
-  `);
+  const [summary, rows] = await Promise.all([
+    fetchUaiSymbolEventsSummarySql({ sym, cutoffIso, spot }),
+    db.execute(sql`
+      WITH prices(sym, px) AS (VALUES ${priceTuples})
+      SELECT
+        t.id,
+        t.timestamp,
+        t.option_symbol,
+        t.option_type,
+        t.strike,
+        t.expiration,
+        t.date,
+        t.size,
+        t.notional,
+        t.trade_price,
+        t.side,
+        t.is_block,
+        t.is_sweep,
+        t.vol_oi_ratio,
+        t.open_interest_snapshot,
+        t.volume_vs_baseline_20d,
+        t.aggressor_confidence,
+        t.synthetic_leg_group_id,
+        t.multi_leg_confidence,
+        t.extras,
+        t.dte_days,
+        p.delta AS strike_delta
+      FROM options_flow_raw_trades t
+      LEFT JOIN prices pr ON pr.sym = t.underlying_symbol
+      LEFT JOIN options_flow_per_strike p
+        ON p.underlying_symbol = t.underlying_symbol
+        AND p.date = t.date
+        AND p.option_type = t.option_type
+        AND p.strike = t.strike
+        AND p.expiration = t.expiration
+      WHERE t.underlying_symbol = ${sym}
+        AND t.timestamp IS NOT NULL
+        AND t.timestamp >= ${cutoffIso}::timestamptz
+      ORDER BY t.timestamp DESC
+      LIMIT ${MAX_EVENTS_RETURNED}
+    `),
+  ]);
 
   const events: UaiEvent[] = [];
-  let netDeltaDollar: number | null = null;
-
-  if (spot != null) {
-    let net = 0;
-    let hasDelta = false;
-    for (const row of (rows.rows ?? []) as Record<string, unknown>[]) {
-      const sideRaw = row.side != null ? String(row.side).trim().toLowerCase() : "";
-      const sign =
-        sideRaw === "ask" ? 1 : sideRaw === "bid" ? -1 : sideRaw === "mid" ? 0 : 0;
-      const delta = numOrNull(row.strike_delta);
-      const size = intOrZero(row.size);
-      if (sign !== 0 && delta != null && Number.isFinite(delta) && size > 0) {
-        hasDelta = true;
-        net += sign * delta * size * 100 * spot;
-      }
-    }
-    if (hasDelta) netDeltaDollar = Math.round(net * 100) / 100;
-  }
-
   for (const row of (rows.rows ?? []) as Record<string, unknown>[]) {
     const ev = mapRowToUaiEvent(row, spot);
     if (ev) events.push(ev);
@@ -432,6 +546,6 @@ export async function fetchUaiSymbolEvents(args: {
     symbol: sym,
     windowMs,
     events,
-    summary: buildSummary(events, netDeltaDollar),
+    summary,
   };
 }

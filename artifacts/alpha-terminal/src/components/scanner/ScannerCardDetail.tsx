@@ -36,6 +36,17 @@ function mmDdYmd(ymd: string): string {
   return `${m[2]}/${m[3]}`;
 }
 
+function DirectionalBiasEmpty() {
+  return (
+    <div
+      className="rounded border border-zinc-900 py-3 text-center text-[11px] text-zinc-600"
+      style={scannerNumericFontStyle}
+    >
+      —
+    </div>
+  );
+}
+
 function IvBar({ ivr, dense }: { ivr: number | null; dense?: boolean }) {
   if (ivr == null || !Number.isFinite(ivr)) {
     return <span className="font-mono tabular-nums text-zinc-600">{dashCell()}</span>;
@@ -121,14 +132,21 @@ export function ScannerCardDetail({
     netDir === "bullish" ? "Bullish" : netDir === "bearish" ? "Bearish" : netDir === "mixed" ? "Mixed" : "Neutral";
 
   const summary = eventsState.payload?.summary;
-  const bias = useMemo(() => {
+  /** Split bar only when both sides have directional notional; never default to 50/50. */
+  const directionalSplit = useMemo(() => {
     if (!summary) return null;
-    const bull = summary.bullishNotional;
-    const bear = summary.bearishNotional;
-    const t = bull + bear;
-    const bullPct = t > 0 ? Math.round((bull / t) * 1000) / 10 : 50;
-    const bearPct = t > 0 ? Math.round((bear / t) * 1000) / 10 : 50;
-    return { bull, bear, bullPct, bearPct };
+    const totalDirectionalNotional = summary.bullishNotional + summary.bearishNotional;
+    if (!Number.isFinite(totalDirectionalNotional) || totalDirectionalNotional <= 0) {
+      return "empty" as const;
+    }
+    const bullishPct = Math.round((summary.bullishNotional / totalDirectionalNotional) * 1000) / 10;
+    const bearishPct = Math.round((100 - bullishPct) * 10) / 10;
+    return {
+      bull: summary.bullishNotional,
+      bear: summary.bearishNotional,
+      bullishPct,
+      bearishPct,
+    };
   }, [summary]);
 
   const volMult =
@@ -139,11 +157,11 @@ export function ScannerCardDetail({
   const topStrikeChip = flow?.topStrikeLabel?.trim() ? flow.topStrikeLabel : dashCell();
 
   const todayLine = useMemo(() => {
-    if (!summary) return null;
+    if (eventsToday <= 0 || !summary) return null;
     const totalAll = summary.callNotional + summary.putNotional;
     const ratio = formatCpNotionalRatio(summary.callNotional, summary.putNotional);
-    return `Today: ${summary.totalEvents} events · ${formatNotionalTickerUi(totalAll)} notional · C:P ${ratio}`;
-  }, [summary]);
+    return `Today: ${eventsToday} events · ${formatNotionalTickerUi(totalAll)} notional · C:P ${ratio}`;
+  }, [eventsToday, summary]);
 
   const strikeLine = (
     s: { strike: number; callPut: "C" | "P"; expiration: string; notional: number },
@@ -180,7 +198,11 @@ export function ScannerCardDetail({
           {dirIcon}
           <span className={cn("text-[12px] font-semibold tracking-tight", dirLabelCls)}>{dirText}</span>
         </span>
-        <span className="ml-auto font-mono text-[11px] font-bold normal-case text-zinc-400" style={scannerNumericFontStyle}>
+        <span
+          className="ml-auto font-mono text-[11px] font-bold normal-case text-zinc-400"
+          style={scannerNumericFontStyle}
+          title="Count from universe flow.events_today (same rolling window as Layer 5 flow)"
+        >
           {eventsToday} events
         </span>
       </div>
@@ -220,64 +242,75 @@ export function ScannerCardDetail({
         </div>
         {eventsState.error ? (
           <p className={cn("text-[11px]", scannerUiTw.bear)}>{eventsState.error}</p>
-        ) : eventsState.loading || !bias ? (
+        ) : eventsState.loading || !summary ? (
           <div className="h-20 animate-pulse rounded bg-zinc-950" />
-        ) : (
-          <>
-            <div className="flex h-2.5 overflow-hidden rounded-sm bg-zinc-900">
+        ) : (() => {
+          const d = directionalSplit;
+          if (d === null || d === "empty") return <DirectionalBiasEmpty />;
+          return (
+            <>
+              <div className="flex h-2.5 overflow-hidden rounded-sm bg-zinc-900">
+                <div
+                  className={cn("h-full", scannerUiTw.bgBull)}
+                  style={{ width: `${Math.min(100, Math.max(0, d.bullishPct))}%` }}
+                />
+                <div
+                  className={cn("h-full", scannerUiTw.bgBear)}
+                  style={{ width: `${Math.min(100, Math.max(0, d.bearishPct))}%` }}
+                />
+              </div>
               <div
-                className={cn("h-full", scannerUiTw.bgBull)}
-                style={{ width: `${Math.min(100, Math.max(0, bias.bullPct))}%` }}
-              />
-              <div
-                className={cn("h-full", scannerUiTw.bgBear)}
-                style={{ width: `${Math.min(100, Math.max(0, bias.bearPct))}%` }}
-              />
-            </div>
-            <div
-              className="mt-1.5 flex justify-between text-[10px] font-medium"
-              style={scannerNumericFontStyle}
-            >
-              <span className={scannerUiTw.bull}>
-                <span className="mr-0.5">●</span>
-                {bias.bullPct}% bullish · {formatNotionalTickerUi(bias.bull)}
-              </span>
-              <span className={scannerUiTw.bear}>
-                {formatNotionalTickerUi(bias.bear)} · {bias.bearPct}% bearish<span className="ml-0.5">●</span>
-              </span>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-4">
-              <div>
-                <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500" style={scannerSansFontStyle}>
-                  Top bullish
+                className="mt-1.5 flex justify-between text-[10px] font-medium"
+                style={scannerNumericFontStyle}
+              >
+                <span className={scannerUiTw.bull}>
+                  <span className="mr-0.5">●</span>
+                  {d.bullishPct}% bullish · {formatNotionalTickerUi(d.bull)}
+                </span>
+                <span className={scannerUiTw.bear}>
+                  {formatNotionalTickerUi(d.bear)} · {d.bearishPct}% bearish
+                  <span className="ml-0.5">●</span>
+                </span>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-4">
+                <div>
+                  <div
+                    className="text-[10px] font-bold uppercase tracking-widest text-zinc-500"
+                    style={scannerSansFontStyle}
+                  >
+                    TOP BULLISH
+                  </div>
+                  <div className="mt-1.5 space-y-1">
+                    {(summary.topBullishStrikes ?? []).length === 0 ? (
+                      <div className="text-zinc-600" style={scannerNumericFontStyle}>
+                        {dashCell()}
+                      </div>
+                    ) : (
+                      (summary.topBullishStrikes ?? []).map((s, i) => strikeLine(s, true, i))
+                    )}
+                  </div>
                 </div>
-                <div className="mt-1.5 space-y-1">
-                  {(summary?.topBullishStrikes ?? []).length === 0 ? (
-                    <div className="text-zinc-600" style={scannerNumericFontStyle}>
-                      {dashCell()}
-                    </div>
-                  ) : (
-                    (summary?.topBullishStrikes ?? []).map((s, i) => strikeLine(s, true, i))
-                  )}
+                <div>
+                  <div
+                    className="text-[10px] font-bold uppercase tracking-widest text-zinc-500"
+                    style={scannerSansFontStyle}
+                  >
+                    TOP BEARISH
+                  </div>
+                  <div className="mt-1.5 space-y-1">
+                    {(summary.topBearishStrikes ?? []).length === 0 ? (
+                      <div className="text-zinc-600" style={scannerNumericFontStyle}>
+                        {dashCell()}
+                      </div>
+                    ) : (
+                      (summary.topBearishStrikes ?? []).map((s, i) => strikeLine(s, false, i))
+                    )}
+                  </div>
                 </div>
               </div>
-              <div>
-                <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500" style={scannerSansFontStyle}>
-                  Top bearish
-                </div>
-                <div className="mt-1.5 space-y-1">
-                  {(summary?.topBearishStrikes ?? []).length === 0 ? (
-                    <div className="text-zinc-600" style={scannerNumericFontStyle}>
-                      {dashCell()}
-                    </div>
-                  ) : (
-                    (summary?.topBearishStrikes ?? []).map((s, i) => strikeLine(s, false, i))
-                  )}
-                </div>
-              </div>
-            </div>
-          </>
-        )}
+            </>
+          );
+        })()}
       </div>
 
       {/* 4-up chips */}
