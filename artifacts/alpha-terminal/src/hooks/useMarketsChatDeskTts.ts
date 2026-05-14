@@ -75,6 +75,8 @@ export function useMarketsChatDeskTts(args: {
   const [deskTtsSessionId, setDeskTtsSessionId] = useState<string | null>(null);
   const warmedDeskTtsRef = useRef<{ warmKey: string; sessionId: string; totalChunks: number } | null>(null);
   const ttsLoadingPlayGenRef = useRef<number | null>(null);
+  const expectAudioPlaybackRef = useRef(false);
+
   useEffect(() => {
     deskTtsSessionIdRef.current = deskTtsSessionId;
   }, [deskTtsSessionId]);
@@ -108,6 +110,8 @@ export function useMarketsChatDeskTts(args: {
     setPlaybackMessageId(null);
     setDeskTtsSessionId(null);
     deskTtsSessionIdRef.current = null;
+    warmedDeskTtsRef.current = null;
+  }, [revokeObjectUrl]);
 
   const startPlay = useCallback(
     async (messageId: string, plainText: string) => {

@@ -346,6 +346,11 @@ export function MarketsChatTab() {
   };
 
   return (
+    <div
+      ref={rootRef}
+      className="flex flex-col rounded-lg border border-card-border bg-[#0a0a0a] overflow-hidden"
+      style={{ minHeight: 280 }}
+    >
       <div className="flex items-center justify-between px-3 py-2 border-b border-card-border/50">
         <div className="flex items-center gap-2">
           <MessageSquare className="w-3.5 h-3.5 text-primary" />
