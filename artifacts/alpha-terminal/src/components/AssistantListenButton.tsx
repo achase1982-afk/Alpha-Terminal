@@ -21,8 +21,8 @@ export function markdownToSpeakable(md: string): string {
   return t;
 }
 
-const listeners = new Set<() => void>();
 const RATE_STORAGE_KEY = "assistantSpeechRate";
+const listeners = new Set<() => void>();
 
 type PlaybackState = {
   activeMessageId: string | null;
@@ -33,7 +33,7 @@ type PlaybackState = {
   speechRate: number;
 };
 
-const playbackState: PlaybackState = {
+let playbackState: PlaybackState = {
   activeMessageId: null,
   loading: false,
   ready: false,
@@ -54,13 +54,11 @@ let mediaSessionBound = false;
 
 function subscribeActiveTts(listener: () => void) {
   listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
+  return () => listeners.delete(listener);
 }
 
 function getActiveTtsSnapshot() {
-  return { ...playbackState };
+  return playbackState;
 }
 
 function emitPlayback() {
@@ -68,45 +66,69 @@ function emitPlayback() {
 }
 
 function setPlaybackState(patch: Partial<PlaybackState>) {
-  Object.assign(playbackState, patch);
+  playbackState = { ...playbackState, ...patch };
   emitPlayback();
 }
 
 function revokeObjectUrl() {
-  if (objectUrl) {
-    URL.revokeObjectURL(objectUrl);
-    objectUrl = null;
+  if (!objectUrl) return;
+  URL.revokeObjectURL(objectUrl);
+  objectUrl = null;
+}
+
+function setAssistantSpeechRate(rate: number) {
+  const normalized = [0.75, 1, 1.25, 1.5, 2].includes(rate) ? rate : 1;
+  playbackState = { ...playbackState, speechRate: normalized };
+  try {
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem(RATE_STORAGE_KEY, String(normalized));
+    }
+  } catch {
+    /* QuotaExceededError */
   }
+  if (globalAudio) {
+    globalAudio.playbackRate = normalized;
+  }
+  emitPlayback();
+}
+
+function stopAssistantPlayback() {
+  playNonce += 1;
+  fetchAbort?.abort();
+  fetchAbort = null;
+
+  if (globalAudio) {
+    globalAudio.pause();
+    globalAudio.currentTime = 0;
+    globalAudio.removeAttribute("src");
+    globalAudio.load();
+  }
+  revokeObjectUrl();
+  setPlaybackState({
+    activeMessageId: null,
+    loading: false,
+    ready: false,
+    paused: false,
+    error: null,
+  });
 }
 
 function ensureAudioElement() {
   if (globalAudio) return globalAudio;
   const audio = new Audio();
   audio.preload = "auto";
-  audio.playsInline = true;
+  audio.setAttribute("playsinline", "true");
   audio.playbackRate = playbackState.speechRate;
 
   audio.addEventListener("play", () => {
     setPlaybackState({ paused: false, loading: false, ready: true, error: null });
   });
   audio.addEventListener("pause", () => {
-    if (!audio.ended) {
-      setPlaybackState({ paused: true });
-    }
+    if (!audio.ended) setPlaybackState({ paused: true });
   });
   audio.addEventListener("ended", () => {
-    audio.pause();
     audio.currentTime = 0;
-    audio.removeAttribute("src");
-    audio.load();
-    revokeObjectUrl();
-    setPlaybackState({
-      activeMessageId: null,
-      loading: false,
-      ready: false,
-      paused: false,
-      error: null,
-    });
+    setPlaybackState({ loading: false, ready: true, paused: true, error: null });
   });
   audio.addEventListener("error", () => {
     setPlaybackState({
@@ -125,9 +147,7 @@ function ensureAudioElement() {
       audio.pause();
     });
     navigator.mediaSession.setActionHandler("stop", () => {
-      audio.pause();
-      audio.currentTime = 0;
-      setPlaybackState({ paused: false });
+      stopAssistantPlayback();
     });
     navigator.mediaSession.setActionHandler("seekbackward", () => {
       audio.currentTime = Math.max(0, audio.currentTime - 15);
@@ -150,11 +170,11 @@ function parseStartResponse(
   if (!payload || typeof payload !== "object") return null;
   const rec = payload as { sessionId?: unknown; totalChunks?: unknown };
   if (typeof rec.sessionId !== "string" || !rec.sessionId.trim()) return null;
-  const count =
+  const totalChunks =
     typeof rec.totalChunks === "number" && Number.isInteger(rec.totalChunks) && rec.totalChunks >= 1
       ? rec.totalChunks
       : Math.max(1, fallbackChunks);
-  return { sessionId: rec.sessionId.trim(), totalChunks: count };
+  return { sessionId: rec.sessionId.trim(), totalChunks };
 }
 
 async function startAssistantPlayback(messageId: string, plainText: string): Promise<void> {
@@ -178,6 +198,7 @@ async function startAssistantPlayback(messageId: string, plainText: string): Pro
   const fallbackChunks = Math.max(1, splitDeskAudioTextIntoChunks(plainText).length);
 
   try {
+    // Same desk TTS pipeline as validation cards (/api/tts/desk-audio).
     const startRes = await fetchWithAuth("/api/tts/desk-audio/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -188,8 +209,7 @@ async function startAssistantPlayback(messageId: string, plainText: string): Pro
     if (!startRes.ok) {
       throw new Error(`HTTP ${startRes.status}`);
     }
-    const startJson = (await startRes.json()) as unknown;
-    const startMeta = parseStartResponse(startJson, fallbackChunks);
+    const startMeta = parseStartResponse((await startRes.json()) as unknown, fallbackChunks);
     if (!startMeta) {
       throw new Error("invalid_start_response");
     }
@@ -202,7 +222,11 @@ async function startAssistantPlayback(messageId: string, plainText: string): Pro
     objectUrl = nextUrl;
     audio.src = nextUrl;
     audio.playbackRate = playbackState.speechRate;
-    if (typeof navigator !== "undefined" && "mediaSession" in navigator) {
+    if (
+      typeof navigator !== "undefined" &&
+      "mediaSession" in navigator &&
+      typeof MediaMetadata !== "undefined"
+    ) {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: "Alpha Terminal chat response",
       });
@@ -237,43 +261,6 @@ function resumeAssistantPlayback() {
   void globalAudio.play();
 }
 
-function stopAssistantPlayback() {
-  playNonce += 1;
-  fetchAbort?.abort();
-  fetchAbort = null;
-
-  if (globalAudio) {
-    globalAudio.pause();
-    globalAudio.currentTime = 0;
-    globalAudio.removeAttribute("src");
-    globalAudio.load();
-  }
-  revokeObjectUrl();
-  setPlaybackState({
-    activeMessageId: null,
-    loading: false,
-    ready: false,
-    paused: false,
-    error: null,
-  });
-}
-
-function setAssistantSpeechRate(rate: number) {
-  const normalized = [0.75, 1, 1.25, 1.5, 2].includes(rate) ? rate : 1;
-  playbackState.speechRate = normalized;
-  try {
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem(RATE_STORAGE_KEY, String(normalized));
-    }
-  } catch {
-    /* QuotaExceededError */
-  }
-  if (globalAudio) {
-    globalAudio.playbackRate = normalized;
-  }
-  emitPlayback();
-}
-
 /** Stop any in-flight assistant TTS (e.g. when clearing chat). */
 export function cancelAssistantSpeech() {
   stopAssistantPlayback();
@@ -288,18 +275,20 @@ interface AssistantListenButtonProps {
 }
 
 /**
- * Play / stop speech for one assistant bubble. Uses `speechSynthesis` (no server).
- * Only one message plays globally; starting another cancels the previous.
+ * Bubble-level controls backed by global desk TTS playback:
+ * - Same voice pipeline as validation cards
+ * - Play/pause/stop + speed
+ * - Playback survives bubble re-renders and view transitions
  */
 export function AssistantListenButton({ messageId, markdownText, size = "md" }: AssistantListenButtonProps) {
-  const playingId = useSyncExternalStore(subscribeActiveTts, getActiveTtsSnapshot, getActiveTtsSnapshot);
+  const state = useSyncExternalStore(subscribeActiveTts, getActiveTtsSnapshot, getActiveTtsSnapshot);
   const plain = useMemo(() => markdownToSpeakable(markdownText), [markdownText]);
-  const isActive = playingId.activeMessageId === messageId;
-  const isPlaying = isActive && playingId.ready && !playingId.paused;
-  const isPaused = isActive && playingId.ready && playingId.paused;
   const canSpeak = plain.length > 0;
+  const isActive = state.activeMessageId === messageId;
+  const isPlaying = isActive && state.ready && !state.paused;
+  const isPaused = isActive && state.ready && state.paused;
 
-  const onClick = useCallback(() => {
+  const onPlayToggle = useCallback(() => {
     if (!canSpeak) return;
     if (isPlaying) {
       pauseAssistantPlayback();
@@ -322,34 +311,24 @@ export function AssistantListenButton({ messageId, markdownText, size = "md" }: 
     stopAssistantPlayback();
   }, [isActive]);
 
-  const onRateChange = useCallback((nextRate: number) => {
-    setAssistantSpeechRate(nextRate);
-  }, []);
-
   const iconClass = size === "sm" ? "w-3.5 h-3.5" : "w-5 h-5";
-  const baseBtn =
+  const iconButtonBase =
     "inline-flex items-center justify-center rounded-md text-white/90 hover:text-white disabled:opacity-35 disabled:cursor-not-allowed";
-  const controlBtn = size === "sm" ? "h-8 w-8" : "h-9 w-9";
+  const iconButtonSize = size === "sm" ? "h-8 w-8" : "h-9 w-9";
 
-  if (!canSpeak && !isActive) {
-    return null;
-  }
+  if (!canSpeak && !isActive) return null;
 
   return (
     <div className={size === "sm" ? "mt-1 flex items-center gap-1.5" : "mt-2 flex items-center gap-2"}>
       <button
         type="button"
-        onClick={onClick}
-        disabled={!canSpeak || playingId.loading}
+        onClick={onPlayToggle}
+        disabled={!canSpeak || state.loading}
         title={isPlaying ? "Pause" : isPaused ? "Resume" : "Play"}
         aria-label={isPlaying ? "Pause audio" : isPaused ? "Resume audio" : "Play audio"}
-        className={`${baseBtn} ${controlBtn}`}
+        className={`${iconButtonBase} ${iconButtonSize}`}
       >
-        {isPlaying ? (
-          <Pause className={iconClass} />
-        ) : (
-          <Play className={iconClass} />
-        )}
+        {isPlaying ? <Pause className={iconClass} /> : <Play className={iconClass} />}
       </button>
 
       {isActive && (
@@ -360,7 +339,7 @@ export function AssistantListenButton({ messageId, markdownText, size = "md" }: 
             disabled={!isPlaying}
             title="Pause"
             aria-label="Pause audio"
-            className={`${baseBtn} ${controlBtn}`}
+            className={`${iconButtonBase} ${iconButtonSize}`}
           >
             <Pause className={iconClass} />
           </button>
@@ -370,13 +349,13 @@ export function AssistantListenButton({ messageId, markdownText, size = "md" }: 
             disabled={!isActive}
             title="Stop"
             aria-label="Stop audio"
-            className={`${baseBtn} ${controlBtn}`}
+            className={`${iconButtonBase} ${iconButtonSize}`}
           >
             <Square className={`${iconClass} fill-current`} />
           </button>
           <select
-            value={playingId.speechRate}
-            onChange={(e) => onRateChange(Number(e.target.value))}
+            value={state.speechRate}
+            onChange={(e) => setAssistantSpeechRate(Number(e.target.value))}
             aria-label="Playback speed"
             className={
               size === "sm"
@@ -393,14 +372,14 @@ export function AssistantListenButton({ messageId, markdownText, size = "md" }: 
         </>
       )}
 
-      {isActive && playingId.loading && (
+      {isActive && state.loading && (
         <span className={size === "sm" ? "font-mono text-[10px] text-white/65" : "font-mono text-xs text-white/65"}>
           Loading...
         </span>
       )}
-      {isActive && playingId.error && (
+      {isActive && state.error && (
         <span className={size === "sm" ? "font-mono text-[10px] text-red-300" : "font-mono text-xs text-red-300"}>
-          {playingId.error}
+          {state.error}
         </span>
       )}
     </div>
