@@ -313,13 +313,13 @@ export function AssistantListenButton({ messageId, markdownText, size = "md" }: 
 
   const iconClass = size === "sm" ? "w-3.5 h-3.5" : "w-5 h-5";
   const iconButtonBase =
-    "inline-flex items-center justify-center rounded-md text-white/90 hover:text-white disabled:opacity-35 disabled:cursor-not-allowed";
-  const iconButtonSize = size === "sm" ? "h-8 w-8" : "h-9 w-9";
+    "inline-flex items-center justify-center rounded border border-white/10 bg-transparent text-zinc-400 hover:text-zinc-200 hover:border-white/25 disabled:opacity-35 disabled:cursor-not-allowed";
+  const iconButtonSize = size === "sm" ? "h-9 w-9 p-1" : "h-10 w-10 p-2";
 
   if (!canSpeak && !isActive) return null;
 
   return (
-    <div className={size === "sm" ? "mt-1 flex items-center gap-1.5" : "mt-2 flex items-center gap-2"}>
+    <div className={size === "sm" ? "mt-1 flex flex-wrap items-center gap-1.5" : "mt-2 flex flex-wrap items-center gap-2"}>
       <button
         type="button"
         onClick={onPlayToggle}
@@ -359,8 +359,8 @@ export function AssistantListenButton({ messageId, markdownText, size = "md" }: 
             aria-label="Playback speed"
             className={
               size === "sm"
-                ? "h-8 rounded bg-[#101010] border border-white/15 text-white text-[11px] px-1.5"
-                : "h-9 rounded bg-[#101010] border border-white/15 text-white text-xs px-2"
+                ? "h-9 rounded border border-white/10 bg-[#101010] px-1.5 text-[11px] text-zinc-300"
+                : "h-10 rounded border border-white/10 bg-[#101010] px-2 text-xs text-zinc-300"
             }
           >
             <option value={0.75}>0.75x</option>
