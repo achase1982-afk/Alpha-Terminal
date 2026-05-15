@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo, type CSSProperties } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useTerminalStore, type MarketNewsChatMessage } from "@/lib/store";
 import { useGetQuote } from "@workspace/api-client-react";
@@ -8,7 +8,7 @@ import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech, markdownToSpeakable } from "@/components/AssistantListenButton";
 import { useVisualViewportComposerMetrics } from "@/hooks/useVisualViewportKeyboardInset";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
-import { toast as pushToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 
 const RETRYABLE_CHAT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const MULTI_AGENT_MODEL = "__multi_agent__";
@@ -45,83 +45,11 @@ function nextMsgId(): string {
   return `mnc-${Date.now()}-${++msgCounter}`;
 }
 
-/** Per-slot hues for parallel-model loading (no gold / primary yellow). */
-const MULTI_AGENT_DOT_PALETTE = [
-  { fill: "hsl(188 95% 48% / 0.92)", glow: "hsl(188 100% 55% / 0.42)" },
-  { fill: "hsl(268 88% 66% / 0.9)", glow: "hsl(268 95% 72% / 0.38)" },
-  { fill: "hsl(328 82% 62% / 0.88)", glow: "hsl(328 88% 68% / 0.32)" },
-  { fill: "hsl(158 72% 46% / 0.9)", glow: "hsl(158 78% 52% / 0.36)" },
-  { fill: "hsl(218 88% 62% / 0.88)", glow: "hsl(218 92% 68% / 0.34)" },
-  { fill: "hsl(12 82% 58% / 0.88)", glow: "hsl(12 88% 62% / 0.3)" },
-] as const;
-
-function MultiAgentStreamingStatus({
-  activeCount,
-  modelIds,
-}: {
-  activeCount: number;
-  modelIds: string[];
-}) {
-  const [nameIdx, setNameIdx] = useState(0);
-  useEffect(() => {
-    if (modelIds.length <= 1) return undefined;
-    const timer = window.setInterval(() => {
-      setNameIdx((i) => (i + 1) % modelIds.length);
-    }, 2000);
-    return () => window.clearInterval(timer);
-  }, [modelIds]);
-
-  const safeModels =
-    modelIds.length > 0 ? modelIds : Array.from({ length: Math.max(1, activeCount) }, (_, i) => `slot ${i + 1}`);
-  const nodeCount = Math.min(Math.max(safeModels.length, activeCount), 6);
-  const half = (nodeCount - 1) / 2;
-  const spotlight = safeModels[nameIdx % safeModels.length] ?? "";
-
-  return (
-    <div className="rounded-lg border border-zinc-700/80 bg-gradient-to-b from-zinc-900/95 to-black px-3 py-2.5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <div className="relative flex items-end justify-center gap-[5px] pb-1 pt-0.5 min-h-[3.1rem]">
-        {Array.from({ length: nodeCount }, (_, i) => {
-          const pullPx = (i - half) * 20;
-          const pal = MULTI_AGENT_DOT_PALETTE[i % MULTI_AGENT_DOT_PALETTE.length]!;
-          return (
-            <span
-              key={`${safeModels[i] ?? "n"}-${i}`}
-              className="chat-multi-agent-node h-2.5 w-2.5 shrink-0 rounded-full"
-              style={
-                {
-                  backgroundColor: pal.fill,
-                  boxShadow: `0 0 14px ${pal.glow}`,
-                  animationDelay: `${i * 110}ms`,
-                  ["--ma-pull" as string]: `${pullPx}px`,
-                } as CSSProperties
-              }
-            />
-          );
-        })}
-        <span className="relative mx-1 flex h-8 w-8 shrink-0 items-center justify-center">
-          <span className="chat-multi-agent-hub absolute inset-0 rounded-full border border-zinc-500/40" />
-          <span className="absolute inset-[2px] rounded-full border border-cyan-400/25" />
-          <Bot className="relative h-4 w-4 text-zinc-200" />
-        </span>
-      </div>
-      <p className="font-mono text-[10px] uppercase tracking-wider text-zinc-500">Parallel providers</p>
-      <p className="mt-1 font-mono text-[11px] text-zinc-300 leading-snug">
-        Spotlight:{" "}
-        <span key={nameIdx} className="text-cyan-100/95 break-all">
-          {spotlight}
-        </span>
-      </p>
-      <p className="mt-0.5 font-mono text-[10px] text-zinc-500 leading-snug">
-        Same prompt to each model; they do not see each other. The app merges their replies locally when they finish.
-      </p>
-    </div>
-  );
-}
-
 export function MarketNewsChatPanel() {
   const symbol = useTerminalStore((s) => s.symbol);
   const accessToken = useTerminalStore((s) => s.accessToken);
   const aiModel = useTerminalStore((s) => s.aiFeatureSettings.chat.model);
+  const councilChairModel = useTerminalStore((s) => s.aiFeatureSettings.chat.councilChairModel);
   const setAiFeatureSetting = useTerminalStore((s) => s.setAiFeatureSetting);
   const ensureSymbol = useTerminalStore((s) => s.marketNewsChatEnsureSymbol);
   const appendMessage = useTerminalStore((s) => s.marketNewsChatAppendMessage);
@@ -142,8 +70,9 @@ export function MarketNewsChatPanel() {
   const [composerFocused, setComposerFocused] = useState(false);
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const [activeMultiAgentCount, setActiveMultiAgentCount] = useState(0);
-  const [streamingMultiModels, setStreamingMultiModels] = useState<string[]>([]);
+  const [copyToastText, setCopyToastText] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const copyToastTimerRef = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   /** Reserve space for bottom tab bar when the keyboard is dismissed (see BottomNav). */
@@ -185,6 +114,7 @@ export function MarketNewsChatPanel() {
   }, [quote, symU]);
 
   const modelSend = ALL_CHAT_MODELS.includes(aiModel) ? aiModel : ALL_CHAT_MODELS[0]!;
+  const chairSend = ALL_CHAT_MODELS.includes(councilChairModel) ? councilChairModel : ALL_CHAT_MODELS[0]!;
   const [useMultiAgent, setUseMultiAgent] = useState(false);
   const [multiModelPickerOpen, setMultiModelPickerOpen] = useState(false);
   const [multiAgentModels, setMultiAgentModels] = useState<string[]>(() => {
@@ -216,6 +146,14 @@ export function MarketNewsChatPanel() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isStreaming]);
+
+  useEffect(() => {
+    return () => {
+      if (copyToastTimerRef.current !== null && typeof window !== "undefined") {
+        window.clearTimeout(copyToastTimerRef.current);
+      }
+    };
+  }, []);
 
   type ChatHistoryMessage = { role: "user" | "assistant"; content: string };
   type ModelSuccess = { model: string; text: string };
@@ -303,42 +241,44 @@ export function MarketNewsChatPanel() {
     [marketContext, symU],
   );
 
-  const synthesizeMultiModel = useCallback((successes: ModelSuccess[], failures: ModelFailure[]): string => {
-    const shortNote =
-      "_Each model below answered the same prompt on its own (parallel runs). There was no back-and-forth between models. **Synthesis** is one full reply picked in the app (longest among successes), not a merged rewrite._";
-
-    const failureBlocks =
-      failures.length > 0
-        ? ["", "## Could not complete", ...failures.map((f) => `- **${f.model}:** ${f.message}`)]
-        : [];
-
-    if (successes.length === 1) {
-      const only = successes[0]!;
-      return [
-        "## Individual responses",
-        "",
-        `### ${only.model}`,
-        only.text,
-        ...failureBlocks,
-      ].join("\n");
-    }
-
-    const perModel = successes.flatMap((s) => ["", `### ${s.model}`, s.text]);
-    const finalBase = successes.slice().sort((a, b) => b.text.length - a.text.length)[0]!;
-
-    return [
-      shortNote,
-      "",
-      "## Individual responses",
-      ...perModel,
-      ...failureBlocks,
-      "",
-      "## Synthesis",
-      `*Primary reply from **${finalBase.model}** (longest successful answer among ${successes.length}).*`,
-      "",
-      finalBase.text,
-    ].join("\n");
-  }, []);
+  const synthesizeMultiModel = useCallback(
+    (
+      successes: ModelSuccess[],
+      failures: ModelFailure[],
+      opts?: { chairModel?: string; chairText?: string | null; chairError?: string | null },
+    ): string => {
+      const lines: string[] = ["## Individual responses", ""];
+      for (const s of successes) {
+        lines.push(`### ${s.model}`, "", s.text, "");
+      }
+      if (failures.length > 0) {
+        lines.push("## Could not complete", "");
+        for (const f of failures) {
+          lines.push(`- **${f.model}**: ${f.message}`);
+        }
+        lines.push("");
+      }
+      const fallbackLongest = successes.slice().sort((a, b) => b.text.length - a.text.length)[0]!;
+      lines.push("## Synthesis", "");
+      if (opts?.chairText?.trim()) {
+        lines.push(
+          `*Merged answer from **${opts.chairModel ?? "chair"}** using the independent drafts above (not a cross-model debate).*`,
+          "",
+          opts.chairText.trim(),
+        );
+      } else if (opts?.chairError) {
+        lines.push(
+          `*Chair model could not synthesize (${opts.chairError}). Showing the longest successful draft.*`,
+          "",
+          fallbackLongest.text,
+        );
+      } else {
+        lines.push(fallbackLongest.text);
+      }
+      return lines.join("\n");
+    },
+    [],
+  );
 
   const runAssistantGeneration = useCallback(
     async (args: {
@@ -359,7 +299,6 @@ export function MarketNewsChatPanel() {
       abortRef.current = controller;
       setIsStreaming(true);
       setActiveMultiAgentCount(selectedModels.length > 1 ? selectedModels.length : 0);
-      setStreamingMultiModels(selectedModels.length > 1 ? [...selectedModels] : []);
       setLastFailedMessage(null);
 
       try {
@@ -405,7 +344,44 @@ export function MarketNewsChatPanel() {
           return;
         }
 
-        setAssistantContent(symU, tid, assistantId, synthesizeMultiModel(successes, failures));
+        let chairText: string | null = null;
+        let chairError: string | null = null;
+        if (successes.length >= 2) {
+          const failureSummary =
+            failures.length === 0
+              ? ""
+              : `\nSome parallel models failed: ${failures.map((f) => `${f.model}: ${f.message}`).join("; ")}.\n`;
+          const drafts = successes.map((s) => `[${s.model}]\n${s.text}`).join("\n\n---\n\n");
+          const chairPack = [
+            "You are the council chair for Alpha Terminal Markets Chat.",
+            "Several models answered the SAME user question independently (same thread + server context). Their drafts are below.",
+            "Write ONE markdown answer for the trader. Do not imply the models counseled each other or voted. Merge aligned points; note material disagreements briefly if needed.",
+            failureSummary.trimEnd(),
+            "--- DRAFTS ---",
+            drafts,
+          ]
+            .filter(Boolean)
+            .join("\n\n");
+          const chairHistory: ChatHistoryMessage[] = [...history, { role: "user", content: chairPack }];
+          try {
+            chairText = await fetchModelReply(chairSend, chairHistory, controller.signal);
+          } catch (err: unknown) {
+            const parsed = normalizeFetchError(err);
+            chairError = parsed.message;
+            if (parsed.retryable) setLastFailedMessage(sourcePrompt);
+          }
+        }
+
+        setAssistantContent(
+          symU,
+          tid,
+          assistantId,
+          synthesizeMultiModel(successes, failures, {
+            chairModel: chairSend,
+            chairText,
+            chairError,
+          }),
+        );
         if (failures.some((f) => f.retryable)) {
           setLastFailedMessage(sourcePrompt);
         }
@@ -424,11 +400,18 @@ export function MarketNewsChatPanel() {
           abortRef.current = null;
         }
         setActiveMultiAgentCount(0);
-        setStreamingMultiModels([]);
         setIsStreaming(false);
       }
     },
-    [activeModels, fetchModelReply, normalizeFetchError, setAssistantContent, symU, synthesizeMultiModel],
+    [
+      activeModels,
+      chairSend,
+      fetchModelReply,
+      normalizeFetchError,
+      setAssistantContent,
+      symU,
+      synthesizeMultiModel,
+    ],
   );
 
   const sendMessage = useCallback(
@@ -515,11 +498,23 @@ export function MarketNewsChatPanel() {
   const handleCopyAssistant = useCallback(async (content: string) => {
     const plain = markdownToSpeakable(content);
     if (!plain) return;
+    const flashCopyToast = (label: string) => {
+      setCopyToastText(label);
+      if (copyToastTimerRef.current !== null) {
+        window.clearTimeout(copyToastTimerRef.current);
+      }
+      copyToastTimerRef.current = window.setTimeout(() => {
+        setCopyToastText(null);
+        copyToastTimerRef.current = null;
+      }, 1100);
+    };
     try {
       await navigator.clipboard.writeText(plain);
-      pushToast({ title: "Copied", duration: 2200 });
+      toast.message("Copied");
+      flashCopyToast("Copied");
     } catch {
-      pushToast({ title: "Copy failed", variant: "destructive", duration: 3200 });
+      toast.message("Copy failed");
+      flashCopyToast("Copy failed");
     }
   }, []);
 
@@ -632,6 +627,21 @@ export function MarketNewsChatPanel() {
             >
               {multiAgentModels.length || 0} selected
             </button>
+          )}
+          {useMultiAgent && (
+            <select
+              value={chairSend}
+              onChange={(e) => setAiFeatureSetting("chat", "councilChairModel", e.target.value)}
+              className="bg-black/60 border border-card-border rounded px-2 py-1.5 font-mono text-[11px] text-white max-w-[140px] sm:max-w-[180px]"
+              aria-label="Council chair model"
+              title="Model that merges parallel drafts into one synthesis"
+            >
+              {ALL_CHAT_MODELS.map((m) => (
+                <option key={`chair-${m}`} value={m}>
+                  chair: {m}
+                </option>
+              ))}
+            </select>
           )}
           {useMultiAgent && multiModelPickerOpen && (
             <div className="absolute right-0 top-[calc(100%+6px)] z-[10120] min-w-[220px] rounded-md border border-card-border bg-[#0b0b0b] p-2 shadow-xl">
@@ -783,28 +793,47 @@ export function MarketNewsChatPanel() {
             )}
           </div>
         ))}
-        {(() => {
-          const last = messages.length > 0 ? messages[messages.length - 1] : undefined;
-          const showStreamingChrome =
-            isStreaming &&
-            last?.role === "assistant" &&
-            (activeMultiAgentCount > 1 || !last.content?.trim());
-          if (!showStreamingChrome) return null;
-
-          if (activeMultiAgentCount > 1) {
-            const models = streamingMultiModels.length > 0 ? streamingMultiModels : multiAgentModels;
-            return <MultiAgentStreamingStatus activeCount={activeMultiAgentCount} modelIds={models} />;
-          }
-
-          return (
+        {isStreaming &&
+          messages.length > 0 &&
+          (() => {
+            const last = messages[messages.length - 1];
+            const assistantPending =
+              last?.role === "assistant" && typeof last.content === "string" && !last.content.trim();
+            return last?.role === "user" || assistantPending;
+          })() && (
+          activeMultiAgentCount > 1 ? (
+            <div className="flex items-center gap-2 py-1 text-white/75">
+              <div className="relative h-6 w-6 shrink-0">
+                <span className="absolute inset-0 rounded-full border border-white/20" />
+                <span className="absolute inset-0 animate-spin" style={{ animationDuration: "1.6s" }}>
+                  <span className="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-white/80" />
+                </span>
+                <Bot className="absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 text-white/70" />
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" />
+                <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "130ms" }} />
+                <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "260ms" }} />
+              </div>
+              <span className="font-mono text-[11px] text-white/65">
+                {activeMultiAgentCount} agents thinking...
+              </span>
+            </div>
+          ) : (
             <div className="flex items-center gap-1.5 py-1">
               <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
               <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "150ms" }} />
               <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "300ms" }} />
             </div>
-          );
-        })()}
+          )
+        )}
       </div>
+
+      {copyToastText && (
+        <div className="pointer-events-none absolute left-1/2 bottom-20 z-[10130] -translate-x-1/2 rounded border border-white/20 bg-black/90 px-2 py-1 font-mono text-[11px] text-white shadow-lg">
+          {copyToastText}
+        </div>
+      )}
 
       {narrowMobile && typeof document !== "undefined"
         ? createPortal(renderComposer(), document.body)

@@ -215,14 +215,14 @@ export interface TerminalState {
     marketPulse:   { model: string; temperature: number };
     technicals:    { model: string; temperature: number };
     strategist:    { model: string; temperature: number };
-    chat:          { model: string; temperature: number };
+    chat:          { model: string; temperature: number; councilChairModel: string };
     scanner:       { model: string; temperature: number };
   };
-  setAiFeatureSetting: (
-    feature: keyof TerminalState['aiFeatureSettings'],
-    key: 'model' | 'temperature',
-    value: string | number,
-  ) => void;
+  setAiFeatureSetting: {
+    (feature: 'chat', key: 'councilChairModel', value: string): void;
+    (feature: keyof TerminalState['aiFeatureSettings'], key: 'model', value: string): void;
+    (feature: keyof TerminalState['aiFeatureSettings'], key: 'temperature', value: number): void;
+  };
 
   notificationPrefs: {
     masterEnabled: boolean;
@@ -560,10 +560,10 @@ export const useTerminalStore = create<TerminalState>()(
         marketPulse:   { model: 'claude-opus-4-6', temperature: 0 },
         technicals:    { model: 'claude-opus-4-6', temperature: 0 },
         strategist:    { model: 'claude-opus-4-6', temperature: 0 },
-        chat:          { model: 'claude-opus-4-6', temperature: 0 },
+        chat:          { model: 'claude-opus-4-6', temperature: 0, councilChairModel: 'claude-opus-4-6' },
         scanner:       { model: 'claude-opus-4-6', temperature: 0 },
       },
-      setAiFeatureSetting: (feature, key, value) =>
+      setAiFeatureSetting: (feature: keyof TerminalState['aiFeatureSettings'], key: string, value: string | number) =>
         set((state) => ({
           aiFeatureSettings: {
             ...state.aiFeatureSettings,
@@ -1085,7 +1085,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 24,
+      version: 25,
       storage: createJSONStorage(() => quotaSafeLocalStorage),
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
@@ -1282,6 +1282,17 @@ export const useTerminalStore = create<TerminalState>()(
             s["marketNewsChatBySymbol"] = {};
           }
         }
+        if (version < 25) {
+          const features = s["aiFeatureSettings"] as Record<string, Record<string, unknown>> | undefined;
+          const chat = features?.chat;
+          if (chat && typeof chat === "object") {
+            if (typeof chat.councilChairModel !== "string" || !chat.councilChairModel) {
+              chat.councilChairModel =
+                typeof chat.model === "string" && chat.model ? chat.model : "claude-opus-4-6";
+            }
+          }
+        }
+
         if (version < 23) {
           const hist = s['strategistHistory'];
           if (Array.isArray(hist) && hist.length > MAX_PERSISTED_STRATEGIST_HISTORY) {
