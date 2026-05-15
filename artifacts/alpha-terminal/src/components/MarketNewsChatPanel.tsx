@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useTerminalStore, type MarketNewsChatMessage } from "@/lib/store";
 import { useGetQuote } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { Send, Square, RotateCcw, Plus, Trash2 } from "lucide-react";
+import { Send, Square, RotateCcw, Plus, Trash2, MessageSquare } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
 import { useVisualViewportComposerMetrics } from "@/hooks/useVisualViewportKeyboardInset";
@@ -270,7 +270,7 @@ export function MarketNewsChatPanel() {
   const renderComposer = () => (
     <form
       className={[
-        "flex gap-2 border-t border-card-border/50 bg-[#0a0a0a] p-2 items-end",
+        "flex items-center gap-1.5 border-t border-card-border/40 bg-[#0a0a0a] px-2 py-1.5",
         narrowMobile
           ? "fixed left-0 right-0 z-[10050] shadow-[0_-10px_30px_rgba(0,0,0,0.45)]"
           : "relative z-[60] shrink-0",
@@ -281,7 +281,7 @@ export function MarketNewsChatPanel() {
               bottom: dockBottomPx,
               paddingBottom: "max(8px, env(safe-area-inset-bottom, 0px))",
             }
-          : { paddingBottom: "max(10px, env(safe-area-inset-bottom, 0px))" }
+          : { paddingBottom: "max(8px, env(safe-area-inset-bottom, 0px))" }
       }
       onSubmit={(e) => {
         e.preventDefault();
@@ -309,55 +309,53 @@ export function MarketNewsChatPanel() {
           setTimeout(remeasure, 120);
         }}
         placeholder={`Ask about ${symU}…`}
-        className="flex-1 resize-none bg-[#111] border border-card-border rounded-md px-3 py-2 font-mono text-[14px] text-white placeholder:text-white/55 outline-none focus:border-white/40 min-h-[48px]"
+        className="min-h-[36px] max-h-[88px] flex-1 resize-y rounded border border-primary/15 bg-primary/5 px-2 py-1.5 font-mono text-[11px] leading-snug text-white/80 outline-none placeholder:text-white/25 focus:border-primary/35"
       />
       {isStreaming ? (
         <button
           type="button"
           onClick={handleStop}
-          className="shrink-0 p-2.5 rounded-md border border-red-500/40 text-red-400 hover:bg-red-500/10"
+          className="shrink-0 p-1 text-red-400 transition-colors hover:text-red-300"
           aria-label="Stop"
         >
-          <Square className="w-4 h-4 fill-current" />
+          <Square className="w-3 h-3 fill-current" />
         </button>
       ) : (
         <button
           type="submit"
           disabled={!input.trim()}
-          className="shrink-0 p-2.5 text-white disabled:opacity-30 hover:text-white/75"
+          className="shrink-0 p-1 text-primary/50 transition-colors hover:text-primary disabled:text-white/10"
           aria-label="Send"
         >
-          <Send className="w-5 h-5" />
+          <Send className="w-3 h-3" />
         </button>
       )}
     </form>
   );
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 max-h-[calc(100dvh-9.5rem)] md:max-h-none md:min-h-[280px] bg-[#0a0a0a] border-t border-card-border/40">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-card-border/50 shrink-0 flex-wrap">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="font-mono text-[14px] font-semibold text-white tracking-wide uppercase truncate">
-            {symU}
-          </span>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#0a0a0a]">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-card-border/50 px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <MessageSquare className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
+          <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-white/70">Chat</span>
+          <span className="truncate font-mono text-[9px] text-white/35">{symU}</span>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <select
-            value={modelSend}
-            onChange={(e) => setAiFeatureSetting("chat", "model", e.target.value)}
-            className="bg-black/60 border border-card-border rounded px-2 py-1.5 font-mono text-[14px] text-white max-w-[180px] sm:max-w-[230px]"
-            aria-label="Chat model"
-          >
-            {ALL_CHAT_MODELS.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </div>
+        <select
+          value={modelSend}
+          onChange={(e) => setAiFeatureSetting("chat", "model", e.target.value)}
+          className="max-w-[min(160px,46vw)] shrink-0 rounded border border-card-border/60 bg-black/50 px-1.5 py-1 font-mono text-[9px] text-white/90"
+          aria-label="Chat model"
+        >
+          {ALL_CHAT_MODELS.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
       </div>
 
-      <div className="flex items-center gap-1 px-2 py-1.5 border-b border-card-border/30 overflow-x-auto shrink-0">
+      <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-card-border/30 px-2 py-1">
         {threadOrder.map((tid) => {
           const t = bundle?.threads[tid];
           if (!t) return null;
@@ -368,8 +366,8 @@ export function MarketNewsChatPanel() {
                 type="button"
                 onClick={() => selectThread(symU, tid)}
                 className={[
-                  "font-mono text-[14px] px-2.5 py-1.5 rounded border max-w-[150px] truncate",
-                  isSel ? "border-white/35 text-white bg-white/10" : "border-transparent text-white/65 hover:text-white",
+                  "max-w-[140px] truncate rounded border px-2 py-1 font-mono text-[10px]",
+                  isSel ? "border-primary/35 bg-primary/10 text-white" : "border-transparent text-white/55 hover:text-white/90",
                 ].join(" ")}
               >
                 {t.title}
@@ -378,7 +376,7 @@ export function MarketNewsChatPanel() {
                 <button
                   type="button"
                   onClick={() => deleteThread(symU, tid)}
-                  className="p-0.5 text-zinc-600 hover:text-red-400"
+                  className="p-0.5 text-white/25 hover:text-red-400"
                   aria-label={`Delete ${t.title}`}
                 >
                   <Trash2 className="w-3 h-3" />
@@ -390,7 +388,7 @@ export function MarketNewsChatPanel() {
         <button
           type="button"
           onClick={() => createThread(symU)}
-          className="flex items-center gap-1 font-mono text-[14px] text-white/80 hover:text-white px-1.5 py-1.5 shrink-0"
+          className="flex shrink-0 items-center gap-0.5 px-1 py-1 font-mono text-[9px] uppercase tracking-wider text-primary/70 hover:text-primary"
         >
           <Plus className="w-3 h-3" />
           New
@@ -401,7 +399,7 @@ export function MarketNewsChatPanel() {
               <button
                 type="button"
                 onClick={handleRetry}
-                className="ml-auto flex items-center gap-1 font-mono text-[14px] text-white/80 hover:text-white px-1.5 shrink-0"
+                className="ml-auto flex shrink-0 items-center gap-1 px-1 font-mono text-[8px] uppercase tracking-wider text-white/40 hover:text-white/70"
               >
                 <RotateCcw className="w-3 h-3" />
                 Retry
@@ -415,7 +413,7 @@ export function MarketNewsChatPanel() {
                 setLastFailedMessage(null);
                 clearActiveThread(symU);
               }}
-              className={`${lastFailedMessage && !isStreaming ? "" : "ml-auto"} flex items-center gap-1 font-mono text-[14px] text-white/65 hover:text-white px-1.5 shrink-0`}
+              className={`${lastFailedMessage && !isStreaming ? "" : "ml-auto"} flex shrink-0 items-center gap-1 px-1 font-mono text-[8px] uppercase tracking-wider text-white/30 hover:text-white/60`}
             >
               <RotateCcw className="w-3 h-3" />
               Clear
@@ -426,7 +424,7 @@ export function MarketNewsChatPanel() {
 
       <div
         ref={scrollRef}
-        className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-2"
+        className="min-h-0 flex-1 space-y-2 overflow-y-auto px-2.5 py-2"
         style={{
           scrollbarWidth: "thin",
           scrollbarColor: "#333 transparent",
@@ -438,10 +436,9 @@ export function MarketNewsChatPanel() {
         }}
       >
         {messages.length === 0 && (
-          <p className="font-mono text-[14px] text-white/70 leading-relaxed">
-            Ask about {symU} — flow, tape, and headlines load on the server for each message. Conversations
-            stay per ticker until you clear them. Use <strong>New</strong> for another thread (e.g. scenarios
-            vs earnings prep).
+          <p className="font-mono text-[10px] leading-relaxed text-white/45">
+            Ask about {symU} — server loads flow, tape, and headlines per message. Threads stay on this symbol; use{" "}
+            <span className="text-primary/80">New</span> for another scenario.
           </p>
         )}
         {messages.map((msg) => (
@@ -451,7 +448,7 @@ export function MarketNewsChatPanel() {
                 {msg.content}
               </span>
             ) : (
-              <div className="text-left">
+              <div className="space-y-2 text-left">
                 <div
                   className="font-mono font-medium text-[14px] text-[#f5f5f5] leading-relaxed prose prose-invert prose-sm max-w-none
                 prose-p:my-1 prose-p:text-[14px] prose-p:leading-relaxed prose-p:text-[#f5f5f5]
@@ -470,9 +467,9 @@ export function MarketNewsChatPanel() {
         ))}
         {isStreaming && messages.length > 0 && messages[messages.length - 1]?.role === "user" && (
           <div className="flex items-center gap-1.5 py-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
-            <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "150ms" }} />
-            <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "300ms" }} />
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" style={{ animationDelay: "150ms" }} />
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" style={{ animationDelay: "300ms" }} />
           </div>
         )}
       </div>

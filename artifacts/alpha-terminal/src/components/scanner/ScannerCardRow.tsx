@@ -58,6 +58,7 @@ export function ScannerCardRow({ data, expanded }: { data: ScannerCardData; expa
   const chgCls = hasCh ? (up ? scannerUiTw.bull : scannerUiTw.bear) : "text-zinc-500";
 
   const flow = data.flow;
+  /** Same count as expanded headline: universe `flow.events_today` via `scannerCardLayer2.mapFlowWire`. */
   const eventsToday = flow?.eventsToday ?? 0;
   const primary = flow?.primaryEventType ?? null;
   const netDir = flow?.netDirection ?? "neutral";

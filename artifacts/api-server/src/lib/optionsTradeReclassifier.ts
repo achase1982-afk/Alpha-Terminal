@@ -15,8 +15,8 @@ import { fetchQuotesAroundTrade, nbboAtOrBefore } from "./optionsQuoteNbbo.js";
 /** Only attempt rows whose trade timestamp is within this window (default 7 days). */
 export const RECLASSIFY_LOOKBACK_MS = 7 * 86_400_000;
 
-const DEFAULT_MAX_ROWS = 5000;
-const DEFAULT_DEADLINE_MS = 30_000;
+const DEFAULT_MAX_ROWS = 20_000;
+const DEFAULT_DEADLINE_MS = 120_000;
 
 export async function reclassifyUnclassifiedTrades(
   ticker: string,
