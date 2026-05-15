@@ -163,6 +163,36 @@ function sessionTapeDatesToFetch(asOfDate: string, captureSessionDate?: string):
   return [...new Set(out)];
 }
 
+function toYmd(value: unknown): string | null {
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return null;
+}
+
+/**
+ * Return recent session dates that actually have persisted classified/raw flow rows.
+ * Used as a closed-market fallback so aggressor state can reuse last known session
+ * instead of immediately degrading to EOD-only synthesis.
+ */
+async function recentPersistedRawFlowDates(symbol: string, limit = 7): Promise<string[]> {
+  const sym = symbol.toUpperCase();
+  const rows = await db
+    .select({ d: optionsFlowRawTradesTable.date })
+    .from(optionsFlowRawTradesTable)
+    .where(eq(optionsFlowRawTradesTable.underlyingSymbol, sym))
+    .groupBy(optionsFlowRawTradesTable.date)
+    .orderBy(desc(optionsFlowRawTradesTable.date))
+    .limit(limit);
+
+  const out: string[] = [];
+  for (const row of rows) {
+    const ymd = toYmd(row.d);
+    if (!ymd) continue;
+    if (!out.includes(ymd)) out.push(ymd);
+  }
+  return out;
+}
+
 /** Row counts for invariant / telemetry (same key as session tape: symbol + session calendar date). */
 async function countFlowRowsForSession(
   symbol: string,
@@ -663,7 +693,9 @@ export async function getPolygonFlowHighlights(
 
     let sessionTape: PolygonFlowTape | null = null;
     let sessionTapeDate: string | undefined;
-    for (const d of sessionTapeDatesToFetch(asOfDate, tapeBackfill?.sessionDate)) {
+    const candidateDates = sessionTapeDatesToFetch(asOfDate, tapeBackfill?.sessionDate);
+    const triedDates = new Set(candidateDates);
+    for (const d of candidateDates) {
       const st = await fetchSessionTape(sym, d);
       if (st) {
         sessionTape = {
@@ -671,6 +703,25 @@ export async function getPolygonFlowHighlights(
           tapeBackfillReason: mapTapeBackfillToSessionContext(tapeBackfill, false),
         };
         sessionTapeDate = d;
+        break;
+      }
+    }
+
+    if (!sessionTape) {
+      const historicalDates = await recentPersistedRawFlowDates(sym);
+      for (const d of historicalDates) {
+        if (triedDates.has(d)) continue;
+        const st = await fetchSessionTape(sym, d);
+        if (!st) continue;
+        sessionTape = {
+          ...st,
+          tapeBackfillReason: mapTapeBackfillToSessionContext(tapeBackfill, false),
+        };
+        sessionTapeDate = d;
+        logger.info(
+          { symbol: sym, asOfDate, fallbackSessionTapeDate: d },
+          "polygonFlowHighlights: reusing last persisted classified session tape",
+        );
         break;
       }
     }
@@ -762,11 +813,28 @@ export async function getPolygonFlowHighlightsBulk(
       const summary = summarize(bucket);
       let sessionTape: PolygonFlowTape | null = null;
       let sessionTapeDate: string | undefined;
-      for (const d of sessionTapeDatesToFetch(asOfDate)) {
+      const candidateDates = sessionTapeDatesToFetch(asOfDate);
+      const triedDates = new Set(candidateDates);
+      for (const d of candidateDates) {
         const st = await fetchSessionTape(sym, d);
         if (st) {
           sessionTape = st;
           sessionTapeDate = d;
+          break;
+        }
+      }
+      if (!sessionTape) {
+        const historicalDates = await recentPersistedRawFlowDates(sym);
+        for (const d of historicalDates) {
+          if (triedDates.has(d)) continue;
+          const st = await fetchSessionTape(sym, d);
+          if (!st) continue;
+          sessionTape = st;
+          sessionTapeDate = d;
+          logger.info(
+            { symbol: sym, asOfDate, fallbackSessionTapeDate: d },
+            "polygonFlowHighlights: bulk lookup reusing last persisted classified session tape",
+          );
           break;
         }
       }
