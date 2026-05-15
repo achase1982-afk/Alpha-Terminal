@@ -8,7 +8,7 @@ import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech, markdownToSpeakable } from "@/components/AssistantListenButton";
 import { useVisualViewportComposerMetrics } from "@/hooks/useVisualViewportKeyboardInset";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
-import { toast } from "sonner";
+import { toast as pushToast } from "@/hooks/use-toast";
 
 const RETRYABLE_CHAT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const MULTI_AGENT_MODEL = "__multi_agent__";
@@ -70,9 +70,7 @@ export function MarketNewsChatPanel() {
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const [activeMultiAgentCount, setActiveMultiAgentCount] = useState(0);
   const [streamingMultiModels, setStreamingMultiModels] = useState<string[]>([]);
-  const [copyToastText, setCopyToastText] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const copyToastTimerRef = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   /** Reserve space for bottom tab bar when the keyboard is dismissed (see BottomNav). */
@@ -145,14 +143,6 @@ export function MarketNewsChatPanel() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isStreaming]);
-
-  useEffect(() => {
-    return () => {
-      if (copyToastTimerRef.current !== null && typeof window !== "undefined") {
-        window.clearTimeout(copyToastTimerRef.current);
-      }
-    };
-  }, []);
 
   type ChatHistoryMessage = { role: "user" | "assistant"; content: string };
   type ModelSuccess = { model: string; text: string };
@@ -461,23 +451,11 @@ export function MarketNewsChatPanel() {
   const handleCopyAssistant = useCallback(async (content: string) => {
     const plain = markdownToSpeakable(content);
     if (!plain) return;
-    const flashCopyToast = (label: string) => {
-      setCopyToastText(label);
-      if (copyToastTimerRef.current !== null) {
-        window.clearTimeout(copyToastTimerRef.current);
-      }
-      copyToastTimerRef.current = window.setTimeout(() => {
-        setCopyToastText(null);
-        copyToastTimerRef.current = null;
-      }, 1100);
-    };
     try {
       await navigator.clipboard.writeText(plain);
-      toast.message("Copied");
-      flashCopyToast("Copied");
+      pushToast({ title: "Copied", duration: 2200 });
     } catch {
-      toast.message("Copy failed");
-      flashCopyToast("Copy failed");
+      pushToast({ title: "Copy failed", variant: "destructive", duration: 3200 });
     }
   }, []);
 
@@ -803,12 +781,6 @@ export function MarketNewsChatPanel() {
           );
         })()}
       </div>
-
-      {copyToastText && (
-        <div className="pointer-events-none absolute left-1/2 bottom-20 z-[10130] -translate-x-1/2 rounded border border-white/20 bg-black/90 px-2 py-1 font-mono text-[11px] text-white shadow-lg">
-          {copyToastText}
-        </div>
-      )}
 
       {narrowMobile && typeof document !== "undefined"
         ? createPortal(renderComposer(), document.body)
