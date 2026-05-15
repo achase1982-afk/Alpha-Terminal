@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { useTerminalStore, type MarketNewsChatMessage } from "@/lib/store";
 import { useGetQuote } from "@workspace/api-client-react";
@@ -69,6 +69,7 @@ export function MarketNewsChatPanel() {
   const [composerFocused, setComposerFocused] = useState(false);
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const [activeMultiAgentCount, setActiveMultiAgentCount] = useState(0);
+  const [streamingMultiModels, setStreamingMultiModels] = useState<string[]>([]);
   const [copyToastText, setCopyToastText] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const copyToastTimerRef = useRef<number | null>(null);
@@ -304,6 +305,7 @@ export function MarketNewsChatPanel() {
       abortRef.current = controller;
       setIsStreaming(true);
       setActiveMultiAgentCount(selectedModels.length > 1 ? selectedModels.length : 0);
+      setStreamingMultiModels(selectedModels.length > 1 ? [...selectedModels] : []);
       setLastFailedMessage(null);
 
       try {
@@ -368,6 +370,7 @@ export function MarketNewsChatPanel() {
           abortRef.current = null;
         }
         setActiveMultiAgentCount(0);
+        setStreamingMultiModels([]);
         setIsStreaming(false);
       }
     },
@@ -738,33 +741,67 @@ export function MarketNewsChatPanel() {
             )}
           </div>
         ))}
-        {isStreaming && messages.length > 0 && messages[messages.length - 1]?.role === "user" && (
-          activeMultiAgentCount > 1 ? (
-            <div className="flex items-center gap-2 py-1 text-white/75">
-              <div className="relative h-6 w-6 shrink-0">
-                <span className="absolute inset-0 rounded-full border border-white/20" />
-                <span className="absolute inset-0 animate-spin" style={{ animationDuration: "1.6s" }}>
-                  <span className="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-white/80" />
-                </span>
-                <Bot className="absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 text-white/70" />
+        {(() => {
+          const last = messages.length > 0 ? messages[messages.length - 1] : undefined;
+          const showStreamingChrome =
+            isStreaming &&
+            last?.role === "assistant" &&
+            (activeMultiAgentCount > 1 || !last.content?.trim());
+          if (!showStreamingChrome) return null;
+
+          if (activeMultiAgentCount > 1) {
+            const models = streamingMultiModels.length > 0 ? streamingMultiModels : multiAgentModels;
+            const listed = models.slice(0, 4);
+            const rest = models.length - listed.length;
+            const namesLine =
+              listed.length > 0
+                ? `${listed.join(", ")}${rest > 0 ? `, +${rest} more` : ""}…`
+                : `${activeMultiAgentCount} models…`;
+
+            const nodeCount = Math.min(Math.max(models.length, activeMultiAgentCount), 6);
+            const half = (nodeCount - 1) / 2;
+
+            return (
+              <div className="rounded-md border border-card-border/60 bg-black/35 px-3 py-2.5 text-left">
+                <div className="flex items-center justify-center gap-0.5 py-1.5 min-h-[2.25rem]">
+                  {Array.from({ length: nodeCount }, (_, i) => {
+                    const pullPx = (i - half) * 22;
+                    return (
+                      <span
+                        key={i}
+                        className="chat-multi-agent-node h-2 w-2 shrink-0 rounded-full bg-[hsl(43_100%_50%_/_0.92)] shadow-[0_0_10px_hsl(43_100%_50%_/_0.35)]"
+                        style={
+                          {
+                            animationDelay: `${i * 140}ms`,
+                            ["--ma-pull" as string]: `${pullPx}px`,
+                          } as CSSProperties
+                        }
+                      />
+                    );
+                  })}
+                  <span className="relative mx-1.5 flex h-7 w-7 shrink-0 items-center justify-center">
+                    <span className="absolute inset-0 rounded-full border border-[hsl(43_100%_50%_/_0.35)]" />
+                    <Bot className="relative h-3.5 w-3.5 text-[hsl(43_100%_50%_/_0.95)]" />
+                  </span>
+                </div>
+                <p className="font-mono text-[11px] leading-snug text-white/70">
+                  Running multi-agent ({activeMultiAgentCount} models): {namesLine}
+                </p>
+                <p className="mt-1 font-mono text-[10px] uppercase tracking-wide text-white/45">
+                  Models converge on one synthesized reply
+                </p>
               </div>
-              <div className="flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" />
-                <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "130ms" }} />
-                <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "260ms" }} />
-              </div>
-              <span className="font-mono text-[11px] text-white/65">
-                {activeMultiAgentCount} agents thinking...
-              </span>
-            </div>
-          ) : (
+            );
+          }
+
+          return (
             <div className="flex items-center gap-1.5 py-1">
               <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
               <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "150ms" }} />
               <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "300ms" }} />
             </div>
-          )
-        )}
+          );
+        })()}
       </div>
 
       {copyToastText && (
