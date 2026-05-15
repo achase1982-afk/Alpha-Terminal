@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useTerminalStore, type MarketNewsChatMessage } from "@/lib/store";
 import { useGetQuote } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { Send, Square, RotateCcw, Plus, Trash2 } from "lucide-react";
+import { Send, Square, RotateCcw, Plus, Trash2, Bot } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech, markdownToSpeakable } from "@/components/AssistantListenButton";
 import { useVisualViewportComposerMetrics } from "@/hooks/useVisualViewportKeyboardInset";
@@ -68,7 +68,10 @@ export function MarketNewsChatPanel() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [composerFocused, setComposerFocused] = useState(false);
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
+  const [activeMultiAgentCount, setActiveMultiAgentCount] = useState(0);
+  const [copyToastText, setCopyToastText] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const copyToastTimerRef = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   /** Reserve space for bottom tab bar when the keyboard is dismissed (see BottomNav). */
@@ -141,6 +144,14 @@ export function MarketNewsChatPanel() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isStreaming]);
+
+  useEffect(() => {
+    return () => {
+      if (copyToastTimerRef.current !== null && typeof window !== "undefined") {
+        window.clearTimeout(copyToastTimerRef.current);
+      }
+    };
+  }, []);
 
   type ChatHistoryMessage = { role: "user" | "assistant"; content: string };
   type ModelSuccess = { model: string; text: string };
@@ -292,6 +303,7 @@ export function MarketNewsChatPanel() {
       const controller = new AbortController();
       abortRef.current = controller;
       setIsStreaming(true);
+      setActiveMultiAgentCount(selectedModels.length > 1 ? selectedModels.length : 0);
       setLastFailedMessage(null);
 
       try {
@@ -307,12 +319,7 @@ export function MarketNewsChatPanel() {
           return;
         }
 
-        setAssistantContent(
-          symU,
-          tid,
-          assistantId,
-          `Running multi-agent (${selectedModels.length} models): ${selectedModels.join(", ")}...`,
-        );
+        setAssistantContent(symU, tid, assistantId, "");
 
         const settled = await Promise.all(
           selectedModels.map(async (model): Promise<ModelSuccess | ModelFailure> => {
@@ -360,6 +367,7 @@ export function MarketNewsChatPanel() {
         if (abortRef.current === controller) {
           abortRef.current = null;
         }
+        setActiveMultiAgentCount(0);
         setIsStreaming(false);
       }
     },
@@ -450,11 +458,23 @@ export function MarketNewsChatPanel() {
   const handleCopyAssistant = useCallback(async (content: string) => {
     const plain = markdownToSpeakable(content);
     if (!plain) return;
+    const flashCopyToast = (label: string) => {
+      setCopyToastText(label);
+      if (copyToastTimerRef.current !== null) {
+        window.clearTimeout(copyToastTimerRef.current);
+      }
+      copyToastTimerRef.current = window.setTimeout(() => {
+        setCopyToastText(null);
+        copyToastTimerRef.current = null;
+      }, 1100);
+    };
     try {
       await navigator.clipboard.writeText(plain);
       toast.message("Copied");
+      flashCopyToast("Copied");
     } catch {
       toast.message("Copy failed");
+      flashCopyToast("Copy failed");
     }
   }, []);
 
@@ -527,7 +547,7 @@ export function MarketNewsChatPanel() {
   );
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 max-h-[calc(100dvh-9.5rem)] md:max-h-none md:min-h-[280px] bg-[#0a0a0a] border-t border-card-border/40">
+    <div className="relative flex flex-col flex-1 min-h-0 max-h-[calc(100dvh-9.5rem)] md:max-h-none md:min-h-[280px] bg-[#0a0a0a] border-t border-card-border/40">
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-card-border/50 shrink-0 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
           <span className="font-mono text-[14px] font-semibold text-white tracking-wide uppercase truncate">
@@ -719,13 +739,39 @@ export function MarketNewsChatPanel() {
           </div>
         ))}
         {isStreaming && messages.length > 0 && messages[messages.length - 1]?.role === "user" && (
-          <div className="flex items-center gap-1.5 py-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
-            <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "150ms" }} />
-            <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "300ms" }} />
-          </div>
+          activeMultiAgentCount > 1 ? (
+            <div className="flex items-center gap-2 py-1 text-white/75">
+              <div className="relative h-6 w-6 shrink-0">
+                <span className="absolute inset-0 rounded-full border border-white/20" />
+                <span className="absolute inset-0 animate-spin" style={{ animationDuration: "1.6s" }}>
+                  <span className="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-white/80" />
+                </span>
+                <Bot className="absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 text-white/70" />
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" />
+                <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "130ms" }} />
+                <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "260ms" }} />
+              </div>
+              <span className="font-mono text-[11px] text-white/65">
+                {activeMultiAgentCount} agents thinking...
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 py-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "150ms" }} />
+              <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "300ms" }} />
+            </div>
+          )
         )}
       </div>
+
+      {copyToastText && (
+        <div className="pointer-events-none absolute left-1/2 bottom-20 z-[10130] -translate-x-1/2 rounded border border-white/20 bg-black/90 px-2 py-1 font-mono text-[11px] text-white shadow-lg">
+          {copyToastText}
+        </div>
+      )}
 
       {narrowMobile && typeof document !== "undefined"
         ? createPortal(renderComposer(), document.body)

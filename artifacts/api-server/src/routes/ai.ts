@@ -4,6 +4,7 @@ import { emitTelemetry, createTelemetryBatch } from "../lib/telemetryStore.js";
 import Anthropic from "@anthropic-ai/sdk";
 import { generateText, streamText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 import { createXai } from "@ai-sdk/xai";
 import {
   RunTechnicalAnalysisBody,
@@ -353,6 +354,10 @@ function isGrokModel(model: string): boolean {
   return model.startsWith("grok-");
 }
 
+function isOpenAiModel(model: string): boolean {
+  return model.startsWith("gpt-") || /^o\d/.test(model);
+}
+
 function getXaiProvider() {
   const apiKey = getXaiApiKey();
   if (!apiKey) throw new Error("xAI API key not configured (set XAI_API_KEY or GROK_XAI)");
@@ -431,6 +436,35 @@ async function nativeStreamGrok(opts: NativeStreamOptions): Promise<string> {
   return fullText;
 }
 
+async function nativeStreamOpenAi(opts: NativeStreamOptions): Promise<string> {
+  const {
+    prompt,
+    systemPrompt,
+    modelName = "gpt-5.5",
+    temperature = 0,
+    onText,
+  } = opts;
+  void opts.onThinking;
+
+  const openAiApiKey = process.env.OPENAI_API_KEY;
+  if (!openAiApiKey) throw new Error("OpenAI API key not configured (set OPENAI_API_KEY)");
+
+  const openai = createOpenAI({ apiKey: openAiApiKey });
+  const result = streamText({
+    model: openai(modelName),
+    system: systemPrompt,
+    temperature,
+    prompt,
+  });
+
+  let fullText = "";
+  for await (const chunk of result.textStream) {
+    fullText += chunk;
+    if (onText) onText(chunk);
+  }
+  return fullText;
+}
+
 async function nativeStream(opts: NativeStreamOptions): Promise<string> {
   const model = opts.modelName || DEFAULT_MODEL;
   if (isGeminiModel(model)) {
@@ -438,6 +472,9 @@ async function nativeStream(opts: NativeStreamOptions): Promise<string> {
   }
   if (isGrokModel(model)) {
     return nativeStreamGrok(opts);
+  }
+  if (isOpenAiModel(model)) {
+    return nativeStreamOpenAi(opts);
   }
   return nativeStreamClaude(opts);
 }
@@ -502,6 +539,23 @@ async function callGeminiDirect(
   return (response.text ?? "").trim() || "No response";
 }
 
+async function callOpenAiDirect(
+  prompt: string,
+  modelName: string = "gpt-5.5",
+  temperature: number = 0
+): Promise<string> {
+  const openAiApiKey = process.env.OPENAI_API_KEY;
+  if (!openAiApiKey) return "Error: OPENAI_API_KEY not configured.";
+
+  const openai = createOpenAI({ apiKey: openAiApiKey });
+  const { text } = await generateText({
+    model: openai(modelName),
+    temperature,
+    prompt,
+  });
+  return text.trim() || "No response";
+}
+
 async function callModel(
   prompt: string,
   modelName: string = DEFAULT_MODEL,
@@ -520,6 +574,9 @@ async function callModel(
       ...(grokReasoning ? { providerOptions: grokReasoning } : {}),
     });
     return text.trim() || "No response";
+  }
+  if (isOpenAiModel(modelName)) {
+    return callOpenAiDirect(prompt, modelName, temperature);
   }
   return callClaude(prompt, modelName, temperature);
 }
@@ -2596,6 +2653,35 @@ ${contextSymbol ? terminalDataPack : "(No symbol was sent — ask the user to se
           content: m.content,
         })),
         ...(grokReasoning ? { providerOptions: grokReasoning } : {}),
+      });
+
+      try {
+        for await (const chunk of result.textStream) {
+          if (!firstChunkSent) { firstChunkSent = true; clearInterval(heartbeat); }
+          res.write(chunk);
+        }
+      } finally {
+        clearInterval(heartbeat);
+      }
+      res.end();
+      return;
+    }
+    if (isOpenAiModel(chosenModel)) {
+      const openAiApiKey = process.env.OPENAI_API_KEY;
+      if (!openAiApiKey) {
+        clearInterval(heartbeat);
+        return res.status(500).json({ error: "OpenAI API key not configured." });
+      }
+
+      const openai = createOpenAI({ apiKey: openAiApiKey });
+      const result = streamText({
+        model: openai(chosenModel),
+        system: systemPrompt,
+        temperature: 0,
+        messages: messages.map(m => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        })),
       });
 
       try {
