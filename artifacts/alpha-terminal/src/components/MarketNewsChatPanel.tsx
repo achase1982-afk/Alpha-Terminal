@@ -444,19 +444,19 @@ export function MarketNewsChatPanel() {
         {messages.map((msg) => (
           <div key={msg.id} className={msg.role === "user" ? "text-right" : "text-left"}>
             {msg.role === "user" ? (
-              <span className="inline-block max-w-[90%] rounded border border-primary/15 bg-primary/8 px-2 py-1 text-left font-mono text-[10px] text-primary/80">
+              <span className="inline-block font-mono font-medium text-[14px] text-[#f5f5f5] bg-[#1a1a1a] border border-card-border rounded px-3 py-2 max-w-[95%] text-left leading-relaxed">
                 {msg.content}
               </span>
             ) : (
               <div className="space-y-2 text-left">
                 <div
-                  className="max-w-none font-mono text-[10px] leading-relaxed text-white/70 prose prose-invert prose-sm
-                    prose-p:my-0.5 prose-p:text-[10px] prose-p:leading-relaxed prose-p:text-white/70
-                    prose-strong:text-white/90 prose-code:text-primary prose-code:text-[9px]
-                    prose-headings:text-[11px] prose-headings:text-white/80 prose-headings:mt-1.5 prose-headings:mb-0.5
-                    prose-li:my-0 prose-li:text-[10px] prose-li:text-white/70
-                    prose-ul:my-0.5 prose-ol:my-0.5
-                    prose-a:text-primary prose-pre:rounded prose-pre:bg-black/40 prose-pre:p-1.5 prose-pre:text-[9px]"
+                  className="font-mono font-medium text-[14px] text-[#f5f5f5] leading-relaxed prose prose-invert prose-sm max-w-none
+                prose-p:my-1 prose-p:text-[14px] prose-p:leading-relaxed prose-p:text-[#f5f5f5]
+                prose-strong:text-[#f5f5f5] prose-code:text-[#f5f5f5] prose-code:text-[13px]
+                prose-headings:text-[15px] prose-headings:text-[#f5f5f5] prose-headings:mt-2 prose-headings:mb-1
+                prose-li:text-[14px] prose-li:text-[#f5f5f5] prose-li:my-0.5
+                prose-ul:my-0.5 prose-ol:my-0.5
+                prose-a:text-[#f5f5f5] prose-pre:text-[13px] prose-pre:bg-black/40 prose-pre:rounded prose-pre:p-2"
                 >
                   <ReactMarkdown>{msg.content}</ReactMarkdown>
                 </div>
