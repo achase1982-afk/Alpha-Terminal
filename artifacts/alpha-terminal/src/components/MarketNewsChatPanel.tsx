@@ -5,11 +5,14 @@ import { useGetQuote } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Send, Square, RotateCcw, Plus, Trash2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
+import { AssistantListenButton, cancelAssistantSpeech, markdownToSpeakable } from "@/components/AssistantListenButton";
 import { useVisualViewportComposerMetrics } from "@/hooks/useVisualViewportKeyboardInset";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { toast } from "sonner";
 
 const RETRYABLE_CHAT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+const MULTI_AGENT_MODEL = "__multi_agent__";
+const MULTI_AGENT_STORAGE_KEY = "marketNewsChatMultiModels";
 
 const ALL_CHAT_MODELS = [
   "claude-opus-4-7",
@@ -107,12 +110,261 @@ export function MarketNewsChatPanel() {
   }, [quote, symU]);
 
   const modelSend = ALL_CHAT_MODELS.includes(aiModel) ? aiModel : ALL_CHAT_MODELS[0]!;
+  const [useMultiAgent, setUseMultiAgent] = useState(false);
+  const [multiModelPickerOpen, setMultiModelPickerOpen] = useState(false);
+  const [multiAgentModels, setMultiAgentModels] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = sessionStorage.getItem(MULTI_AGENT_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((m): m is string => typeof m === "string" && ALL_CHAT_MODELS.includes(m));
+    } catch {
+      return [];
+    }
+  });
+  const activeModels = useMultiAgent ? multiAgentModels : [modelSend];
+  const modelControlValue = useMultiAgent ? MULTI_AGENT_MODEL : modelSend;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      sessionStorage.setItem(MULTI_AGENT_STORAGE_KEY, JSON.stringify(multiAgentModels));
+    } catch {
+      /* QuotaExceededError */
+    }
+  }, [multiAgentModels]);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isStreaming]);
+
+  type ChatHistoryMessage = { role: "user" | "assistant"; content: string };
+  type ModelSuccess = { model: string; text: string };
+  type ModelFailure = { model: string; message: string; retryable: boolean };
+
+  const normalizeFetchError = useCallback((err: unknown): { message: string; retryable: boolean } => {
+    if (
+      err &&
+      typeof err === "object" &&
+      "message" in err &&
+      typeof (err as { message?: unknown }).message === "string"
+    ) {
+      const retryable =
+        "retryable" in err && typeof (err as { retryable?: unknown }).retryable === "boolean"
+          ? (err as { retryable: boolean }).retryable
+          : false;
+      return { message: (err as { message: string }).message, retryable };
+    }
+    const fallback = err instanceof Error ? err.message : "Connection failed";
+    const retryable =
+      fallback.includes("Failed to fetch") ||
+      fallback.includes("NetworkError") ||
+      fallback.includes("Load failed");
+    return { message: fallback, retryable };
+  }, []);
+
+  const fetchModelReply = useCallback(
+    async (
+      model: string,
+      history: ChatHistoryMessage[],
+      signal: AbortSignal,
+      onPartial?: (partial: string) => void,
+    ): Promise<string> => {
+      const res = await fetchWithAuth("/api/ai/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: history,
+          marketContext,
+          model,
+          symbol: symU,
+        }),
+        signal,
+      });
+
+      const contentType = res.headers.get("content-type") || "";
+      const looksLikeHtml = contentType.includes("text/html");
+      if (!res.ok || looksLikeHtml) {
+        const retryable = RETRYABLE_CHAT_STATUS.has(res.status) || looksLikeHtml;
+        const label = !res.ok
+          ? `Server returned ${res.status}`
+          : "Received unexpected HTML response (API may be restarting)";
+        throw { message: label, retryable };
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        throw { message: "Empty response stream from server.", retryable: true };
+      }
+
+      const decoder = new TextDecoder();
+      let accumulated = "";
+      let htmlDetected = false;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        accumulated += decoder.decode(value, { stream: true });
+        if (!htmlDetected && accumulated.length < 220 && /^\s*<!DOCTYPE|^\s*<html/i.test(accumulated)) {
+          htmlDetected = true;
+          reader.cancel();
+          break;
+        }
+        onPartial?.(accumulated);
+      }
+
+      if (htmlDetected) {
+        throw { message: "API returned HTML instead of chat output.", retryable: true };
+      }
+      if (!accumulated.trim()) {
+        throw { message: "Empty response from model.", retryable: true };
+      }
+      return accumulated.trim();
+    },
+    [marketContext, symU],
+  );
+
+  const synthesizeMultiModel = useCallback((successes: ModelSuccess[], failures: ModelFailure[]): string => {
+    const firstSentence = (text: string): string => {
+      const cleaned = text.replace(/\s+/g, " ").trim();
+      if (!cleaned) return "";
+      const m = cleaned.match(/(.+?[.!?])(\s|$)/);
+      return (m?.[1] ?? cleaned).slice(0, 220);
+    };
+
+    if (successes.length === 1) {
+      const lines = [
+        "### Consensus",
+        `- Only one model succeeded: **${successes[0]!.model}**.`,
+        "",
+        "### Disagreements",
+        "- Not applicable with a single successful model.",
+      ];
+      if (failures.length > 0) {
+        lines.push(...failures.map((f) => `- Model failed: **${f.model}** (${f.message}).`));
+      }
+      lines.push("", "### Final synthesis", successes[0]!.text);
+      return lines.join("\n");
+    }
+
+    const uniqueLead = [...new Set(successes.map((s) => firstSentence(s.text)).filter(Boolean))];
+    const consensusLine =
+      uniqueLead.length <= 1
+        ? `- Models aligned on the same core answer (${successes.map((s) => `**${s.model}**`).join(", ")}).`
+        : `- Models agree on the broad direction, but differ on emphasis/detail (${successes.map((s) => `**${s.model}**`).join(", ")}).`;
+
+    const disagreementLines = successes.map((s) => `- **${s.model}**: ${firstSentence(s.text) || s.text.slice(0, 160)}`);
+    const failureLines = failures.map((f) => `- Model failed: **${f.model}** (${f.message}).`);
+    const finalBase = successes.slice().sort((a, b) => b.text.length - a.text.length)[0]!;
+
+    return [
+      "### Consensus",
+      consensusLine,
+      "",
+      "### Disagreements",
+      ...disagreementLines,
+      ...(failureLines.length > 0 ? failureLines : []),
+      "",
+      "### Final synthesis",
+      finalBase.text,
+    ].join("\n");
+  }, []);
+
+  const runAssistantGeneration = useCallback(
+    async (args: {
+      tid: string;
+      assistantId: string;
+      history: ChatHistoryMessage[];
+      sourcePrompt: string;
+      allowStreamingSingle?: boolean;
+    }) => {
+      const { tid, assistantId, history, sourcePrompt, allowStreamingSingle = false } = args;
+      const selectedModels = activeModels.filter((m): m is string => typeof m === "string" && m.length > 0);
+      if (selectedModels.length === 0) {
+        setAssistantContent(symU, tid, assistantId, "**Error:** Select at least one model for multi-agent.");
+        return;
+      }
+
+      const controller = new AbortController();
+      abortRef.current = controller;
+      setIsStreaming(true);
+      setLastFailedMessage(null);
+
+      try {
+        if (selectedModels.length === 1) {
+          const singleModel = selectedModels[0]!;
+          const text = await fetchModelReply(
+            singleModel,
+            history,
+            controller.signal,
+            allowStreamingSingle ? (partial) => setAssistantContent(symU, tid, assistantId, partial) : undefined,
+          );
+          setAssistantContent(symU, tid, assistantId, text);
+          return;
+        }
+
+        setAssistantContent(
+          symU,
+          tid,
+          assistantId,
+          `Running multi-agent (${selectedModels.length} models): ${selectedModels.join(", ")}...`,
+        );
+
+        const settled = await Promise.all(
+          selectedModels.map(async (model): Promise<ModelSuccess | ModelFailure> => {
+            try {
+              const text = await fetchModelReply(model, history, controller.signal);
+              return { model, text };
+            } catch (err: unknown) {
+              const parsed = normalizeFetchError(err);
+              return { model, message: parsed.message, retryable: parsed.retryable };
+            }
+          }),
+        );
+
+        const successes = settled.filter((r): r is ModelSuccess => "text" in r);
+        const failures = settled.filter((r): r is ModelFailure => "message" in r);
+
+        if (successes.length === 0) {
+          const firstFailure = failures[0];
+          const retryable = failures.some((f) => f.retryable);
+          if (retryable) setLastFailedMessage(sourcePrompt);
+          setAssistantContent(
+            symU,
+            tid,
+            assistantId,
+            `**Error:** ${firstFailure?.message ?? "All selected models failed."}${retryable ? " Please retry." : ""}`,
+          );
+          return;
+        }
+
+        setAssistantContent(symU, tid, assistantId, synthesizeMultiModel(successes, failures));
+        if (failures.some((f) => f.retryable)) {
+          setLastFailedMessage(sourcePrompt);
+        }
+      } catch (err: unknown) {
+        if ((err as Error).name === "AbortError") return;
+        const parsed = normalizeFetchError(err);
+        if (parsed.retryable) setLastFailedMessage(sourcePrompt);
+        setAssistantContent(
+          symU,
+          tid,
+          assistantId,
+          `**Error:** ${parsed.message}${parsed.retryable ? ". Please retry." : ""}`,
+        );
+      } finally {
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+        }
+        setIsStreaming(false);
+      }
+    },
+    [activeModels, fetchModelReply, normalizeFetchError, setAssistantContent, symU, synthesizeMultiModel],
+  );
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -125,132 +377,62 @@ export function MarketNewsChatPanel() {
       if (!tid) return;
 
       const priorMessages = b0.threads[tid]?.messages ?? [];
-
       const userMsg: MarketNewsChatMessage = { id: nextMsgId(), role: "user", content: text.trim() };
       const assistantId = nextMsgId();
       appendMessage(symU, tid, userMsg);
+      appendMessage(symU, tid, { id: assistantId, role: "assistant", content: "" });
       setInput("");
-      setIsStreaming(true);
-      setLastFailedMessage(null);
 
       const history = [...priorMessages, userMsg].map((m) => ({ role: m.role, content: m.content }));
-      const controller = new AbortController();
-      abortRef.current = controller;
-
-      appendMessage(symU, tid, { id: assistantId, role: "assistant", content: "" });
-
-      try {
-        const res = await fetchWithAuth("/api/ai/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            messages: history,
-            marketContext,
-            model: modelSend,
-            symbol: symU,
-          }),
-          signal: controller.signal,
-        });
-
-        const contentType = res.headers.get("content-type") || "";
-        const looksLikeHtml = contentType.includes("text/html");
-        if (!res.ok || looksLikeHtml) {
-          const retryable = RETRYABLE_CHAT_STATUS.has(res.status) || looksLikeHtml;
-          const label = !res.ok
-            ? `Server returned ${res.status}`
-            : "Received unexpected HTML response (API may be restarting)";
-          setAssistantContent(
-            symU,
-            tid,
-            assistantId,
-            `**Error:** ${label}.${retryable ? " Please retry in a moment." : ""}`,
-          );
-          if (retryable) setLastFailedMessage(text.trim());
-          setIsStreaming(false);
-          return;
-        }
-
-        const reader = res.body?.getReader();
-        if (!reader) {
-          setAssistantContent(
-            symU,
-            tid,
-            assistantId,
-            "**Error:** Empty response stream from server. Please retry.",
-          );
-          setLastFailedMessage(text.trim());
-          setIsStreaming(false);
-          return;
-        }
-
-        const decoder = new TextDecoder();
-        let accumulated = "";
-        let htmlDetected = false;
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          accumulated += decoder.decode(value, { stream: true });
-
-          if (!htmlDetected && accumulated.length < 220 && /^\s*<!DOCTYPE|^\s*<html/i.test(accumulated)) {
-            htmlDetected = true;
-            reader.cancel();
-            break;
-          }
-
-          setAssistantContent(symU, tid, assistantId, accumulated);
-        }
-
-        if (htmlDetected) {
-          setAssistantContent(
-            symU,
-            tid,
-            assistantId,
-            "**Error:** API returned HTML instead of chat output. Please retry in a moment.",
-          );
-          setLastFailedMessage(text.trim());
-          return;
-        }
-
-        if (!accumulated.trim()) {
-          setAssistantContent(
-            symU,
-            tid,
-            assistantId,
-            "**Error:** Empty response from model. Please retry.",
-          );
-          setLastFailedMessage(text.trim());
-        } else {
-          setLastFailedMessage(null);
-        }
-      } catch (err: unknown) {
-        if ((err as Error).name === "AbortError") return;
-        const errMsg = (err as Error).message || "Connection failed";
-        const retryable =
-          errMsg.includes("Failed to fetch") ||
-          errMsg.includes("NetworkError") ||
-          errMsg.includes("Load failed");
-        if (retryable) setLastFailedMessage(text.trim());
-        setAssistantContent(
-          symU,
-          tid,
-          assistantId,
-          `**Error:** ${errMsg}${retryable ? ". Please retry." : ""}`,
-        );
-      } finally {
-        abortRef.current = null;
-        setIsStreaming(false);
-      }
+      await runAssistantGeneration({
+        tid,
+        assistantId,
+        history,
+        sourcePrompt: text.trim(),
+        allowStreamingSingle: true,
+      });
     },
-    [
-      symU,
-      isStreaming,
-      marketContext,
-      modelSend,
-      ensureSymbol,
-      appendMessage,
-      setAssistantContent,
-    ],
+    [appendMessage, ensureSymbol, isStreaming, runAssistantGeneration, symU],
+  );
+
+  const retryAssistantBubble = useCallback(
+    async (assistantId: string) => {
+      if (isStreaming) return;
+      ensureSymbol(symU);
+      const snap = useTerminalStore.getState();
+      const b0 = snap.marketNewsChatBySymbol[symU];
+      const tid = b0?.activeThreadId;
+      if (!tid) return;
+
+      const threadMessages = b0.threads[tid]?.messages ?? [];
+      const assistantIdx = threadMessages.findIndex((m) => m.id === assistantId && m.role === "assistant");
+      if (assistantIdx < 0) return;
+
+      let userIdx = -1;
+      for (let i = assistantIdx - 1; i >= 0; i -= 1) {
+        if (threadMessages[i]?.role === "user") {
+          userIdx = i;
+          break;
+        }
+      }
+      if (userIdx < 0) return;
+
+      const userText = threadMessages[userIdx]!.content.trim();
+      if (!userText) return;
+
+      setAssistantContent(symU, tid, assistantId, "");
+      const history = threadMessages
+        .slice(0, userIdx + 1)
+        .map((m) => ({ role: m.role, content: m.content }));
+
+      await runAssistantGeneration({
+        tid,
+        assistantId,
+        history,
+        sourcePrompt: userText,
+      });
+    },
+    [ensureSymbol, isStreaming, runAssistantGeneration, setAssistantContent, symU],
   );
 
   const handleStop = useCallback(() => {
@@ -260,10 +442,21 @@ export function MarketNewsChatPanel() {
 
   const handleRetry = useCallback(() => {
     if (!lastFailedMessage || isStreaming) return;
-    const retryText = lastFailedMessage;
-    setLastFailedMessage(null);
-    void sendMessage(retryText);
-  }, [lastFailedMessage, isStreaming, sendMessage]);
+    const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+    if (!lastAssistant) return;
+    void retryAssistantBubble(lastAssistant.id);
+  }, [isStreaming, lastFailedMessage, messages, retryAssistantBubble]);
+
+  const handleCopyAssistant = useCallback(async (content: string) => {
+    const plain = markdownToSpeakable(content);
+    if (!plain) return;
+    try {
+      await navigator.clipboard.writeText(plain);
+      toast.message("Copied");
+    } catch {
+      toast.message("Copy failed");
+    }
+  }, []);
 
   const threadOrder = bundle?.threadOrder ?? [];
 
@@ -341,19 +534,65 @@ export function MarketNewsChatPanel() {
             {symU}
           </span>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="relative flex items-center gap-2 shrink-0">
           <select
-            value={modelSend}
-            onChange={(e) => setAiFeatureSetting("chat", "model", e.target.value)}
+            value={modelControlValue}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (value === MULTI_AGENT_MODEL) {
+                setUseMultiAgent(true);
+                setMultiModelPickerOpen(true);
+                return;
+              }
+              setUseMultiAgent(false);
+              setMultiModelPickerOpen(false);
+              setAiFeatureSetting("chat", "model", value);
+            }}
             className="bg-black/60 border border-card-border rounded px-2 py-1.5 font-mono text-[14px] text-white max-w-[180px] sm:max-w-[230px]"
             aria-label="Chat model"
           >
+            <option value={MULTI_AGENT_MODEL}>multi-agent</option>
             {ALL_CHAT_MODELS.map((m) => (
               <option key={m} value={m}>
                 {m}
               </option>
             ))}
           </select>
+          {useMultiAgent && (
+            <button
+              type="button"
+              onClick={() => setMultiModelPickerOpen((v) => !v)}
+              className="rounded border border-card-border bg-black/60 px-2 py-1 font-mono text-[11px] text-white/85"
+              aria-label="Choose multi-agent models"
+            >
+              {multiAgentModels.length || 0} selected
+            </button>
+          )}
+          {useMultiAgent && multiModelPickerOpen && (
+            <div className="absolute right-0 top-[calc(100%+6px)] z-[10120] min-w-[220px] rounded-md border border-card-border bg-[#0b0b0b] p-2 shadow-xl">
+              <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-white/60">Select models</p>
+              <div className="max-h-56 overflow-y-auto space-y-1 pr-1">
+                {ALL_CHAT_MODELS.map((model) => {
+                  const checked = multiAgentModels.includes(model);
+                  return (
+                    <label key={model} className="flex items-center gap-2 rounded px-1 py-1 hover:bg-white/5">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          const next = e.target.checked
+                            ? [...multiAgentModels, model]
+                            : multiAgentModels.filter((m) => m !== model);
+                          setMultiAgentModels(next);
+                        }}
+                      />
+                      <span className="font-mono text-[11px] text-white/90">{model}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -463,7 +702,18 @@ export function MarketNewsChatPanel() {
                 >
                   <ReactMarkdown>{msg.content}</ReactMarkdown>
                 </div>
-                <AssistantListenButton messageId={msg.id} markdownText={msg.content} size="sm" />
+                <AssistantListenButton
+                  messageId={msg.id}
+                  markdownText={msg.content}
+                  size="sm"
+                  onCopy={() => {
+                    void handleCopyAssistant(msg.content);
+                  }}
+                  onRetry={() => {
+                    void retryAssistantBubble(msg.id);
+                  }}
+                  retryDisabled={isStreaming}
+                />
               </div>
             )}
           </div>
