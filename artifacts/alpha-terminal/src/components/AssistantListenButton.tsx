@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
-import { Pause, Play, Square } from "lucide-react";
+import { Copy, Pause, Play, RotateCw, Square } from "lucide-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { fetchAllDeskTtsChunksMerged } from "@/lib/deskAudioApi";
 import { splitDeskAudioTextIntoChunks } from "@/lib/deskAudioChunking";
@@ -272,6 +272,9 @@ interface AssistantListenButtonProps {
   markdownText: string;
   /** Visual size for dense sidebar vs overlay. */
   size?: "sm" | "md";
+  onCopy?: () => void;
+  onRetry?: () => void;
+  retryDisabled?: boolean;
 }
 
 /**
@@ -280,7 +283,14 @@ interface AssistantListenButtonProps {
  * - Play/pause/stop + speed
  * - Playback survives bubble re-renders and view transitions
  */
-export function AssistantListenButton({ messageId, markdownText, size = "md" }: AssistantListenButtonProps) {
+export function AssistantListenButton({
+  messageId,
+  markdownText,
+  size = "md",
+  onCopy,
+  onRetry,
+  retryDisabled = false,
+}: AssistantListenButtonProps) {
   const state = useSyncExternalStore(subscribeActiveTts, getActiveTtsSnapshot, getActiveTtsSnapshot);
   const plain = useMemo(() => markdownToSpeakable(markdownText), [markdownText]);
   const canSpeak = plain.length > 0;
@@ -329,6 +339,26 @@ export function AssistantListenButton({ messageId, markdownText, size = "md" }: 
         className={`${iconButtonBase} ${iconButtonSize}`}
       >
         {isPlaying ? <Pause className={iconClass} /> : <Play className={iconClass} />}
+      </button>
+      <button
+        type="button"
+        onClick={onCopy}
+        disabled={!onCopy}
+        title="Copy"
+        aria-label="Copy response"
+        className={`${iconButtonBase} ${iconButtonSize}`}
+      >
+        <Copy className={iconClass} />
+      </button>
+      <button
+        type="button"
+        onClick={onRetry}
+        disabled={!onRetry || retryDisabled}
+        title="Retry"
+        aria-label="Retry response"
+        className={`${iconButtonBase} ${iconButtonSize}`}
+      >
+        <RotateCw className={iconClass} />
       </button>
 
       {isActive && (
