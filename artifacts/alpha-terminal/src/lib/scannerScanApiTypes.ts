@@ -184,4 +184,6 @@ export interface UseUnifiedScanState {
   lastScanUniverseId: string | null;
   startScan: (universeId: string) => Promise<void>;
   cancelLocal: () => void;
+  /** Drop persisted Layer 1 when NY session date or RTH window no longer matches live symbol-events. */
+  invalidateStaleLayer1IfSessionDrift: () => void;
 }

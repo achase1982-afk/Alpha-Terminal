@@ -20,6 +20,7 @@ import { ScreenBuilder } from "./ScreenBuilder";
 import { WatchlistEditor } from "./WatchlistEditor";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { useUnifiedScan } from "@/hooks/useUnifiedScan";
+import { useScannerScanStore } from "@/stores/scannerScanStore";
 import { ScannerErrorBoundary } from "./ScannerErrorBoundary";
 import type { ScannerCardData } from "@/lib/unifiedScanTypes";
 import {
@@ -462,6 +463,20 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   const shockActive = pulseData?.shockState === "ACTIVE";
   const universeData = useScannerUniverses();
   const unified = useUnifiedScan();
+
+  useEffect(() => {
+    const inv = () => useScannerScanStore.getState().invalidateStaleLayer1IfSessionDrift();
+    inv();
+    const t = window.setInterval(inv, 60_000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") inv();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
 
   const [universe, setUniverse] = useState(readInitialUniverse);
   const [resolvedSymbols, setResolvedSymbols] = useState<string[]>([]);

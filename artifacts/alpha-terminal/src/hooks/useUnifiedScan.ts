@@ -28,6 +28,7 @@ export function useUnifiedScan(): UseUnifiedScanState {
       lastScanUniverseId: s.lastScanUniverseId,
       startScan: s.startScan,
       cancelLocal: s.cancelLocal,
+      invalidateStaleLayer1IfSessionDrift: s.invalidateStaleLayer1IfSessionDrift,
     })),
   );
 }

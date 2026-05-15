@@ -13,10 +13,11 @@ import type {
   V2ScanResponse,
   UseUnifiedScanState,
 } from "@/lib/scannerScanApiTypes";
+import { shouldInvalidateLayer1Universe } from "@/lib/scannerEtSession";
 
 const API_BASE = "/api";
 
-const PERSIST_KEY = "alpha-terminal-scanner-scan-v1";
+const PERSIST_KEY = "alpha-terminal-scanner-scan-v2";
 
 function parseSnapshotAge(res: Response): number | null {
   const raw = res.headers.get("X-Scanner-Snapshot-Age-Seconds");
@@ -94,6 +95,18 @@ export const useScannerScanStore = create<ScannerScanStore>()(
           phase: "idle",
           ...initialResultSlice,
         }));
+      },
+
+      invalidateStaleLayer1IfSessionDrift: () => {
+        set((s) => {
+          if (!shouldInvalidateLayer1Universe(s.layer1Universe ?? undefined)) return s;
+          return {
+            ...s,
+            ...initialResultSlice,
+            _requestSeq: s._requestSeq,
+            phase: "idle",
+          };
+        });
       },
 
       startScan: async (universeId: string) => {
@@ -252,6 +265,9 @@ export const useScannerScanStore = create<ScannerScanStore>()(
           clearPersistedScanSlice(state);
         }
         if (state.lastScanUniverseId === undefined) state.lastScanUniverseId = null;
+        if (state.layer1Universe && shouldInvalidateLayer1Universe(state.layer1Universe)) {
+          clearPersistedScanSlice(state);
+        }
       },
     },
   ),
