@@ -1,7 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Box, ChevronDown, ChevronRight, Zap } from "lucide-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import type { ScannerUaiEventWire, ScannerV3SymbolEventsResponse } from "@/lib/scannerScanApiTypes";
+import type {
+  ScannerEventsPageWire,
+  ScannerFlowSessionWire,
+  ScannerUaiEventWire,
+  ScannerUaiEventsSummaryWire,
+} from "@/lib/scannerScanApiTypes";
 import { cn } from "@/lib/utils";
 import {
   dashCell,
@@ -255,14 +260,47 @@ function ClusterBlock({
 
 export type ScannerSymbolEventsState = {
   loading: boolean;
+  loadingMore: boolean;
   error: string | null;
-  payload: ScannerV3SymbolEventsResponse | null;
+  summary: ScannerUaiEventsSummaryWire | null;
+  session: ScannerFlowSessionWire | null;
+  events: ScannerUaiEventWire[];
+  page: ScannerEventsPageWire | null;
+  loadMore: () => Promise<void>;
 };
 
 export function useScannerSymbolEvents(symbol: string): ScannerSymbolEventsState {
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [payload, setPayload] = useState<ScannerV3SymbolEventsResponse | null>(null);
+  const [summary, setSummary] = useState<ScannerUaiEventsSummaryWire | null>(null);
+  const [session, setSession] = useState<ScannerFlowSessionWire | null>(null);
+  const [events, setEvents] = useState<ScannerUaiEventWire[]>([]);
+  const [page, setPage] = useState<ScannerEventsPageWire | null>(null);
+
+  const loadMore = useCallback(async () => {
+    const sym = symbol.trim().toUpperCase();
+    if (!sym || !page?.nextCursor || loadingMore || loading) return;
+    setLoadingMore(true);
+    try {
+      const qs = new URLSearchParams({ limit: "100", cursor: page.nextCursor });
+      const res = await fetchWithAuth(`/api/scanner/v3/symbol/${encodeURIComponent(sym)}/events?${qs.toString()}`, {});
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(t.trim() || `HTTP ${res.status}`);
+      }
+      const json = (await res.json()) as {
+        events: ScannerUaiEventWire[];
+        page: ScannerEventsPageWire;
+      };
+      setEvents((prev) => [...prev, ...(Array.isArray(json.events) ? json.events : [])]);
+      setPage(json.page ?? null);
+    } catch (e) {
+      setErr((e as Error).message || "Failed to load more events");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [symbol, page?.nextCursor, loadingMore, loading]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -270,17 +308,32 @@ export function useScannerSymbolEvents(symbol: string): ScannerSymbolEventsState
     const sym = symbol.trim().toUpperCase();
     (async () => {
       setLoading(true);
+      setLoadingMore(false);
       setErr(null);
+      setSummary(null);
+      setSession(null);
+      setEvents([]);
+      setPage(null);
       try {
-        const res = await fetchWithAuth(`/api/scanner/v3/symbol/${encodeURIComponent(sym)}/events?window=4h`, {
+        const res = await fetchWithAuth(`/api/scanner/v3/symbol/${encodeURIComponent(sym)}/events?limit=100`, {
           signal: ac.signal,
         });
         if (!res.ok) {
           const t = await res.text().catch(() => "");
           throw new Error(t.trim() || `HTTP ${res.status}`);
         }
-        const json = (await res.json()) as ScannerV3SymbolEventsResponse;
-        if (!cancelled) setPayload(json);
+        const json = (await res.json()) as {
+          summary: ScannerUaiEventsSummaryWire;
+          session: ScannerFlowSessionWire;
+          events: ScannerUaiEventWire[];
+          page: ScannerEventsPageWire;
+        };
+        if (!cancelled) {
+          setSummary(json.summary);
+          setSession(json.session);
+          setEvents(Array.isArray(json.events) ? json.events : []);
+          setPage(json.page ?? null);
+        }
       } catch (e) {
         if ((e as Error).name === "AbortError") return;
         if (!cancelled) setErr((e as Error).message || "Failed to load events");
@@ -294,18 +347,17 @@ export function useScannerSymbolEvents(symbol: string): ScannerSymbolEventsState
     };
   }, [symbol]);
 
-  return { loading, error: err, payload };
+  return { loading, loadingMore, error: err, summary, session, events, page, loadMore };
 }
 
 export function ScannerCardEventTimeline({ eventsState }: { eventsState: ScannerSymbolEventsState }) {
-  const { loading, error, payload } = eventsState;
+  const { loading, loadingMore, error, session, events } = eventsState;
   const [openClusters, setOpenClusters] = useState<Set<string>>(() => new Set());
 
   const units = useMemo(() => {
-    const evs = payload?.events;
-    if (!Array.isArray(evs)) return [];
-    return buildTimelineUnits(evs);
-  }, [payload?.events]);
+    if (!Array.isArray(events)) return [];
+    return buildTimelineUnits(events);
+  }, [events]);
 
   if (loading) {
     return (
@@ -324,8 +376,18 @@ export function ScannerCardEventTimeline({ eventsState }: { eventsState: Scanner
     return <p className={cn("text-[11px]", scannerUiTw.bear)}>{error}</p>;
   }
 
-  if (!payload || units.length === 0) {
-    return <p className="text-[11px] text-zinc-500">No events in window.</p>;
+  if (session && !session.active) {
+    const reason =
+      session.reason === "before_open"
+        ? "Before 9:30 AM ET."
+        : session.reason === "after_rth"
+          ? "After 4:00 PM ET."
+          : "No regular session today.";
+    return <p className="text-[11px] text-zinc-500">Outside RTH — {reason} No session prints.</p>;
+  }
+
+  if (units.length === 0) {
+    return <p className="text-[11px] text-zinc-500">No prints in today&apos;s session yet.</p>;
   }
 
   return (
@@ -349,6 +411,19 @@ export function ScannerCardEventTimeline({ eventsState }: { eventsState: Scanner
           <EventRow key={u.event.id} e={u.event} />
         ),
       )}
+      {eventsState.page?.hasMore ? (
+        <div className="border-t border-zinc-900 pt-2">
+          <button
+            type="button"
+            onClick={() => void eventsState.loadMore()}
+            disabled={eventsState.loadingMore}
+            className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 hover:text-zinc-200 disabled:opacity-40"
+            style={scannerSansFontStyle}
+          >
+            {eventsState.loadingMore ? "Loading…" : "Load older prints"}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

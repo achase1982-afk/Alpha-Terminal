@@ -1,19 +1,15 @@
 /**
- * GET /api/scanner/v3/symbol/:symbol/events — UAI-shaped rows from `options_flow_raw_trades`.
+ * GET /api/scanner/v3/symbol/:symbol/events — UAI-shaped rows from `options_flow_raw_trades`
+ * for the **same RTH session-to-date window** as Layer 5 (`scannerFlowSessionWindow`).
  */
 
 import { db } from "@workspace/db";
 import { sql } from "@workspace/db";
-import {
-  resolveScannerFlowWindowMs,
-  SCANNER_FLOW_DEFAULT_WINDOW_MS,
-} from "./scannerFlowContext.js";
 import { dbNaiveUtcTimestampToIso } from "./dbNaiveUtcTimestampToIso.js";
+import { getScannerRthSessionToDateWindow } from "./scannerFlowSessionWindow.js";
 
-const FLOW_WINDOW_MS_MIN = 60 * 60 * 1000;
-const FLOW_WINDOW_MS_MAX = 7 * 24 * 60 * 60 * 1000;
-
-const MAX_EVENTS_RETURNED = 500;
+const DEFAULT_PAGE_LIMIT = 100;
+const MAX_PAGE_LIMIT = 500;
 
 export type UaiMoneynessBucket = "deep_itm" | "itm" | "atm" | "otm" | "deep_otm";
 
@@ -67,11 +63,28 @@ export type UaiEventsSummary = {
   putNotional: number;
 };
 
+export type UaiSessionWire = {
+  active: boolean;
+  reason?: "not_trading_day" | "before_open" | "after_rth";
+  sessionDateEt?: string;
+  startIso?: string;
+  endIso?: string;
+};
+
+export type UaiEventsPageWire = {
+  limit: number;
+  nextCursor: string | null;
+  hasMore: boolean;
+};
+
 export type UaiEventsPayload = {
   symbol: string;
+  /** Span in ms when session active (end − start); 0 when inactive. */
   windowMs: number;
+  session: UaiSessionWire;
   events: UaiEvent[];
   summary: UaiEventsSummary;
+  page: UaiEventsPageWire;
 };
 
 function numOrNull(v: unknown): number | null {
@@ -85,20 +98,43 @@ function intOrZero(v: unknown): number {
   return n != null ? Math.trunc(n) : 0;
 }
 
-function parseWindowMsParam(raw: unknown): number {
-  if (raw === undefined || raw === null || raw === "") return SCANNER_FLOW_DEFAULT_WINDOW_MS;
-  if (typeof raw !== "string") return SCANNER_FLOW_DEFAULT_WINDOW_MS;
-  const s = raw.trim().toLowerCase();
-  const m = s.match(/^(\d+(?:\.\d+)?)(h|d|m)$/);
-  if (!m) return SCANNER_FLOW_DEFAULT_WINDOW_MS;
-  const n = Number(m[1]);
-  const u = m[2];
-  if (!Number.isFinite(n) || n <= 0) return SCANNER_FLOW_DEFAULT_WINDOW_MS;
-  let ms: number;
-  if (u === "h") ms = n * 60 * 60 * 1000;
-  else if (u === "d") ms = n * 24 * 60 * 60 * 1000;
-  else ms = n * 60 * 1000;
-  return Math.min(Math.max(ms, FLOW_WINDOW_MS_MIN), FLOW_WINDOW_MS_MAX);
+function emptySummary(): UaiEventsSummary {
+  return {
+    totalEvents: 0,
+    bullishNotional: 0,
+    bearishNotional: 0,
+    netDeltaDollar: null,
+    topBullishStrikes: [],
+    topBearishStrikes: [],
+    callNotional: 0,
+    putNotional: 0,
+  };
+}
+
+export function parseEventsPageLimit(query: unknown): number {
+  if (query === undefined || query === null || query === "") return DEFAULT_PAGE_LIMIT;
+  if (typeof query !== "string" && typeof query !== "number") return DEFAULT_PAGE_LIMIT;
+  const n = typeof query === "number" ? query : Number(query.trim());
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_PAGE_LIMIT;
+  return Math.min(Math.max(Math.trunc(n), 1), MAX_PAGE_LIMIT);
+}
+
+function encodeCursor(id: number, tsIso: string): string {
+  return Buffer.from(JSON.stringify({ id, ts: tsIso }), "utf8").toString("base64url");
+}
+
+export function parseEventsCursor(raw: unknown): { id: number; tsIso: string } | null {
+  if (raw === undefined || raw === null || raw === "") return null;
+  if (typeof raw !== "string") return null;
+  const s = raw.trim();
+  if (!s) return null;
+  try {
+    const j = JSON.parse(Buffer.from(s, "base64url").toString("utf8")) as { id?: unknown; ts?: unknown };
+    if (typeof j.id !== "number" || !Number.isFinite(j.id) || typeof j.ts !== "string" || !j.ts.trim()) return null;
+    return { id: Math.trunc(j.id), tsIso: j.ts.trim() };
+  } catch {
+    return null;
+  }
 }
 
 function optionTypeToCp(optionType: string): "C" | "P" {
@@ -291,16 +327,15 @@ function mapTopStrikeRow(row: Record<string, unknown>): UaiEventsSummary["topBul
 }
 
 /**
- * Full-window aggregates over `options_flow_raw_trades` for the same cutoff + symbol filter as
- * `computeScannerFlowForWindow` (scannerFlowContext) / universe `flow.events_today` (no row LIMIT).
- * Directional notionals exclude `side` mid / null / unknown; net delta matches universe SQL (ask/bid only).
+ * Full-session aggregates over `options_flow_raw_trades` (same bounds as Layer 5).
  */
 async function fetchUaiSymbolEventsSummarySql(args: {
   sym: string;
-  cutoffIso: string;
+  startIso: string;
+  endIso: string;
   spot: number | null;
 }): Promise<UaiEventsSummary> {
-  const { sym, cutoffIso, spot } = args;
+  const { sym, startIso, endIso, spot } = args;
   const priceTuples =
     spot != null && Number.isFinite(spot) && spot > 0
       ? sql`(${sym}::text, ${spot}::double precision)`
@@ -323,7 +358,8 @@ async function fetchUaiSymbolEventsSummarySql(args: {
         FROM options_flow_raw_trades t
         WHERE t.underlying_symbol = ${sym}
           AND t.timestamp IS NOT NULL
-          AND t.timestamp >= ${cutoffIso}::timestamptz
+          AND t.timestamp >= ${startIso}::timestamptz
+          AND t.timestamp <= ${endIso}::timestamptz
       ),
       prices(sym, px) AS (VALUES ${priceTuples})
       SELECT
@@ -401,7 +437,8 @@ async function fetchUaiSymbolEventsSummarySql(args: {
       FROM options_flow_raw_trades t
       WHERE t.underlying_symbol = ${sym}
         AND t.timestamp IS NOT NULL
-        AND t.timestamp >= ${cutoffIso}::timestamptz
+        AND t.timestamp >= ${startIso}::timestamptz
+        AND t.timestamp <= ${endIso}::timestamptz
         AND (
           (
             lower(trim(both from coalesce(t.side::text, ''))) = 'ask'
@@ -425,7 +462,8 @@ async function fetchUaiSymbolEventsSummarySql(args: {
       FROM options_flow_raw_trades t
       WHERE t.underlying_symbol = ${sym}
         AND t.timestamp IS NOT NULL
-        AND t.timestamp >= ${cutoffIso}::timestamptz
+        AND t.timestamp >= ${startIso}::timestamptz
+        AND t.timestamp <= ${endIso}::timestamptz
         AND (
           (
             lower(trim(both from coalesce(t.side::text, ''))) = 'ask'
@@ -471,81 +509,182 @@ async function fetchUaiSymbolEventsSummarySql(args: {
   };
 }
 
-export function parseScannerSymbolEventsWindowMs(query: unknown): number {
-  return parseWindowMsParam(query);
-}
-
 /**
- * Loads raw trades for one symbol in `[now - windowMs, now]` and shapes UAI events + summary.
+ * Cursor-paginated session prints (newest first). Pass `limit+1` rows to detect `has_more`.
  */
-export async function fetchUaiSymbolEvents(args: {
-  symbol: string;
-  windowMs?: number;
+async function fetchUaiSymbolEventsPageSql(args: {
+  sym: string;
+  startIso: string;
+  endIso: string;
   spot: number | null;
-}): Promise<UaiEventsPayload> {
-  const sym = args.symbol.trim().toUpperCase();
-  const windowMs = resolveScannerFlowWindowMs({ windowMs: args.windowMs });
-  const cutoffIso = new Date(Date.now() - windowMs).toISOString();
-
-  const spot =
-    args.spot != null && Number.isFinite(args.spot) && args.spot > 0 ? args.spot : null;
-
+  limit: number;
+  cursor: { id: number; tsIso: string } | null;
+}): Promise<UaiEvent[]> {
+  const { sym, startIso, endIso, spot, limit, cursor } = args;
   const priceTuples =
-    spot != null ? sql`(${sym}::text, ${spot}::double precision)` : sql`(${sym}::text, NULL::double precision)`;
+    spot != null && Number.isFinite(spot) && spot > 0
+      ? sql`(${sym}::text, ${spot}::double precision)`
+      : sql`(${sym}::text, NULL::double precision)`;
 
-  const [summary, rows] = await Promise.all([
-    fetchUaiSymbolEventsSummarySql({ sym, cutoffIso, spot }),
-    db.execute(sql`
-      WITH prices(sym, px) AS (VALUES ${priceTuples})
-      SELECT
-        t.id,
-        t.timestamp,
-        t.option_symbol,
-        t.option_type,
-        t.strike,
-        t.expiration,
-        t.date,
-        t.size,
-        t.notional,
-        t.trade_price,
-        t.side,
-        t.is_block,
-        t.is_sweep,
-        t.vol_oi_ratio,
-        t.open_interest_snapshot,
-        t.volume_vs_baseline_20d,
-        t.aggressor_confidence,
-        t.synthetic_leg_group_id,
-        t.multi_leg_confidence,
-        t.extras,
-        t.dte_days,
-        p.delta AS strike_delta
-      FROM options_flow_raw_trades t
-      LEFT JOIN prices pr ON pr.sym = t.underlying_symbol
-      LEFT JOIN options_flow_per_strike p
-        ON p.underlying_symbol = t.underlying_symbol
-        AND p.date = t.date
-        AND p.option_type = t.option_type
-        AND p.strike = t.strike
-        AND p.expiration = t.expiration
-      WHERE t.underlying_symbol = ${sym}
-        AND t.timestamp IS NOT NULL
-        AND t.timestamp >= ${cutoffIso}::timestamptz
-      ORDER BY t.timestamp DESC
-      LIMIT ${MAX_EVENTS_RETURNED}
-    `),
-  ]);
+  const rows =
+    cursor == null
+      ? await db.execute(sql`
+          WITH prices(sym, px) AS (VALUES ${priceTuples})
+          SELECT
+            t.id,
+            t.timestamp,
+            t.option_symbol,
+            t.option_type,
+            t.strike,
+            t.expiration,
+            t.date,
+            t.size,
+            t.notional,
+            t.trade_price,
+            t.side,
+            t.is_block,
+            t.is_sweep,
+            t.vol_oi_ratio,
+            t.open_interest_snapshot,
+            t.volume_vs_baseline_20d,
+            t.aggressor_confidence,
+            t.synthetic_leg_group_id,
+            t.multi_leg_confidence,
+            t.extras,
+            t.dte_days,
+            p.delta AS strike_delta
+          FROM options_flow_raw_trades t
+          LEFT JOIN prices pr ON pr.sym = t.underlying_symbol
+          LEFT JOIN options_flow_per_strike p
+            ON p.underlying_symbol = t.underlying_symbol
+            AND p.date = t.date
+            AND p.option_type = t.option_type
+            AND p.strike = t.strike
+            AND p.expiration = t.expiration
+          WHERE t.underlying_symbol = ${sym}
+            AND t.timestamp IS NOT NULL
+            AND t.timestamp >= ${startIso}::timestamptz
+            AND t.timestamp <= ${endIso}::timestamptz
+          ORDER BY t.timestamp DESC, t.id DESC
+          LIMIT ${limit}
+        `)
+      : await db.execute(sql`
+          WITH prices(sym, px) AS (VALUES ${priceTuples})
+          SELECT
+            t.id,
+            t.timestamp,
+            t.option_symbol,
+            t.option_type,
+            t.strike,
+            t.expiration,
+            t.date,
+            t.size,
+            t.notional,
+            t.trade_price,
+            t.side,
+            t.is_block,
+            t.is_sweep,
+            t.vol_oi_ratio,
+            t.open_interest_snapshot,
+            t.volume_vs_baseline_20d,
+            t.aggressor_confidence,
+            t.synthetic_leg_group_id,
+            t.multi_leg_confidence,
+            t.extras,
+            t.dte_days,
+            p.delta AS strike_delta
+          FROM options_flow_raw_trades t
+          LEFT JOIN prices pr ON pr.sym = t.underlying_symbol
+          LEFT JOIN options_flow_per_strike p
+            ON p.underlying_symbol = t.underlying_symbol
+            AND p.date = t.date
+            AND p.option_type = t.option_type
+            AND p.strike = t.strike
+            AND p.expiration = t.expiration
+          WHERE t.underlying_symbol = ${sym}
+            AND t.timestamp IS NOT NULL
+            AND t.timestamp >= ${startIso}::timestamptz
+            AND t.timestamp <= ${endIso}::timestamptz
+            AND (t.timestamp, t.id) < (${cursor.tsIso}::timestamptz, ${cursor.id}::bigint)
+          ORDER BY t.timestamp DESC, t.id DESC
+          LIMIT ${limit}
+        `);
 
   const events: UaiEvent[] = [];
   for (const row of (rows.rows ?? []) as Record<string, unknown>[]) {
     const ev = mapRowToUaiEvent(row, spot);
     if (ev) events.push(ev);
   }
+  return events;
+}
+
+/**
+ * Session-to-date journal: full-session summary + one page of events (same DB rows as Layer 5).
+ */
+export async function fetchUaiSymbolEvents(args: {
+  symbol: string;
+  spot: number | null;
+  limit?: number;
+  cursor?: string | null;
+}): Promise<UaiEventsPayload> {
+  const sym = args.symbol.trim().toUpperCase();
+  const limit = Math.min(Math.max(args.limit ?? DEFAULT_PAGE_LIMIT, 1), MAX_PAGE_LIMIT);
+  const spot =
+    args.spot != null && Number.isFinite(args.spot) && args.spot > 0 ? args.spot : null;
+  const decoded = parseEventsCursor(args.cursor ?? null);
+
+  const session = await getScannerRthSessionToDateWindow();
+  if (!session.active) {
+    return {
+      symbol: sym,
+      windowMs: 0,
+      session: { active: false, reason: session.reason },
+      events: [],
+      summary: emptySummary(),
+      page: { limit, nextCursor: null, hasMore: false },
+    };
+  }
+
+  const windowMs = Math.max(0, new Date(session.endIso).getTime() - new Date(session.startIso).getTime());
+  const fetchLimit = Math.min(limit + 1, MAX_PAGE_LIMIT + 1);
+
+  const [summary, rawPage] = await Promise.all([
+    fetchUaiSymbolEventsSummarySql({
+      sym,
+      startIso: session.startIso,
+      endIso: session.endIso,
+      spot,
+    }),
+    fetchUaiSymbolEventsPageSql({
+      sym,
+      startIso: session.startIso,
+      endIso: session.endIso,
+      spot,
+      limit: fetchLimit,
+      cursor: decoded,
+    }),
+  ]);
+
+  const hasMore = rawPage.length > limit;
+  const events = hasMore ? rawPage.slice(0, limit) : rawPage;
+  const last = events.length > 0 ? events[events.length - 1] : null;
+  const nextCursor = hasMore && last != null ? encodeCursor(last.id, last.ts) : null;
 
   return {
     symbol: sym,
     windowMs,
+    session: {
+      active: true,
+      sessionDateEt: session.sessionDateEtYmd,
+      startIso: session.startIso,
+      endIso: session.endIso,
+    },
     events,
     summary,
+    page: {
+      limit,
+      nextCursor,
+      hasMore,
+    },
   };
 }

@@ -121,11 +121,27 @@ export type ScannerUaiEventsSummaryWire = {
   putNotional: number;
 };
 
+export type ScannerFlowSessionWire = {
+  active: boolean;
+  reason?: "not_trading_day" | "before_open" | "after_rth";
+  sessionDateEt?: string;
+  startIso?: string;
+  endIso?: string;
+};
+
+export type ScannerEventsPageWire = {
+  limit: number;
+  nextCursor: string | null;
+  hasMore: boolean;
+};
+
 export interface ScannerV3SymbolEventsResponse {
   symbol: string;
   windowMs: number;
+  session: ScannerFlowSessionWire;
   events: ScannerUaiEventWire[];
   summary: ScannerUaiEventsSummaryWire;
+  page: ScannerEventsPageWire;
 }
 
 export interface ScannerV3UniverseResponse {
@@ -145,6 +161,10 @@ export interface ScannerV3UniverseResponse {
   layer5_flow_hits?: number;
   layer5_flow_window_ms?: number;
   layer5_flow_cutoff_iso?: string;
+  layer5_flow_session_end_iso?: string;
+  layer5_flow_session_active?: boolean;
+  layer5_flow_session_date_et?: string | null;
+  layer5_flow_session_inactive_reason?: string | null;
   layer5_flow_rows_in_window?: number;
   layer5_flow_max_trade_ts_in_window?: string | null;
   layer6_technical_hits?: number;

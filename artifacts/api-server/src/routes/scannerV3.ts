@@ -22,7 +22,7 @@ import {
 import { computeScannerLayer7Scores } from "../lib/scannerLayer7Scores.js";
 import { matchScannerTradingPreset } from "../lib/scannerTradingPresets.js";
 import { getBestAccessToken } from "../lib/tokenStore.js";
-import { fetchUaiSymbolEvents, parseScannerSymbolEventsWindowMs } from "../lib/scannerV3SymbolEvents.js";
+import { fetchUaiSymbolEvents, parseEventsCursor, parseEventsPageLimit } from "../lib/scannerV3SymbolEvents.js";
 
 const router: IRouter = Router();
 
@@ -61,7 +61,7 @@ function parseUniverseQuery(raw: unknown): { ok: true; universeKey: string } | {
   return { ok: false };
 }
 
-/** Rolling-window options prints for one symbol (UAI scanner detail timeline). */
+/** RTH session-to-date options prints for one symbol (UAI scanner detail timeline + summary). */
 router.get("/v3/symbol/:symbol/events", async (req, res) => {
   const started = Date.now();
   try {
@@ -77,21 +77,40 @@ router.get("/v3/symbol/:symbol/events", async (req, res) => {
     if (!/^[A-Z][A-Z0-9.-]{0,31}$/.test(symbol)) {
       return res.status(400).json({ error: "invalid symbol" });
     }
-    const windowMs = parseScannerSymbolEventsWindowMs(req.query.window);
+    const limit = parseEventsPageLimit(req.query.limit);
+    const cursorParam = req.query.cursor;
+    let cursor: string | null = null;
+    if (cursorParam != null && cursorParam !== "") {
+      if (typeof cursorParam !== "string") {
+        return res.status(400).json({ error: "invalid cursor" });
+      }
+      const trimmed = cursorParam.trim();
+      if (trimmed.length > 0 && parseEventsCursor(trimmed) === null) {
+        return res.status(400).json({ error: "invalid cursor" });
+      }
+      cursor = trimmed.length > 0 ? trimmed : null;
+    }
     const schwab_access_token_present = !!getBestAccessToken();
     const quoteMap = schwab_access_token_present
       ? await fetchSchwabBatchQuotesForSymbolsBestToken([symbol])
       : new Map();
     const px = quoteMap.get(symbol)?.price ?? null;
     const spot = px != null && Number.isFinite(px) ? px : null;
-    const payload = await fetchUaiSymbolEvents({ symbol, windowMs, spot });
+    const payload = await fetchUaiSymbolEvents({ symbol, spot, limit, cursor });
     const duration_ms = Date.now() - started;
     try {
       emitTelemetry(
         "SCANNER",
         "INFO",
         "scanner_v3_symbol_events",
-        { duration_ms, symbol, window_ms: windowMs, count: payload.events.length },
+        {
+          duration_ms,
+          symbol,
+          window_ms: payload.windowMs,
+          session_active: payload.session.active,
+          count: payload.events.length,
+          has_more: payload.page.hasMore,
+        },
         "SCANNER",
       );
     } catch (err) {
@@ -180,16 +199,17 @@ router.get("/v3/universe", async (req, res) => {
     const flowMap = flowBatch.bySymbol;
     const layer5_flow_diag = flowBatch.diagnostics;
 
-    if (layer5_flow_diag.rows_in_window === 0 && tickers.length > 0) {
+    if (layer5_flow_diag.session_active && layer5_flow_diag.rows_in_window === 0 && tickers.length > 0) {
       log.info(
         {
-          op: "scanner_v3.layer5_empty_window",
+          op: "scanner_v3.layer5_empty_session",
           universe: universeKey,
-          window_ms: layer5_flow_diag.window_ms,
+          session_date_et: layer5_flow_diag.session_date_et,
           cutoff_iso: layer5_flow_diag.cutoff_iso,
+          session_end_iso: layer5_flow_diag.session_end_iso,
           rows_in_window: 0,
         },
-        "Layer 5 Flow: no options_flow_raw_trades rows in rolling window (UI shows dashes). Check tape backfill / watcher; optional env SCANNER_FLOW_LAYER5_WINDOW_MS widens the window.",
+        "Layer 5 Flow: no options_flow_raw_trades rows in RTH session-to-date window.",
       );
     }
 
@@ -292,6 +312,10 @@ router.get("/v3/universe", async (req, res) => {
       layer5_flow_hits,
       layer5_flow_window_ms: layer5_flow_diag.window_ms,
       layer5_flow_cutoff_iso: layer5_flow_diag.cutoff_iso,
+      layer5_flow_session_end_iso: layer5_flow_diag.session_end_iso,
+      layer5_flow_session_active: layer5_flow_diag.session_active,
+      layer5_flow_session_date_et: layer5_flow_diag.session_date_et,
+      layer5_flow_session_inactive_reason: layer5_flow_diag.session_inactive_reason,
       layer5_flow_rows_in_window: layer5_flow_diag.rows_in_window,
       layer5_flow_max_trade_ts_in_window: layer5_flow_diag.max_trade_ts_in_window,
       layer6_technical_hits,

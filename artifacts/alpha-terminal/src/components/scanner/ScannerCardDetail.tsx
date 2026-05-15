@@ -131,7 +131,7 @@ export function ScannerCardDetail({
   const dirText =
     netDir === "bullish" ? "Bullish" : netDir === "bearish" ? "Bearish" : netDir === "mixed" ? "Mixed" : "Neutral";
 
-  const summary = eventsState.payload?.summary;
+  const summary = eventsState.summary;
   /** Split bar only when both sides have directional notional; never default to 50/50. */
   const directionalSplit = useMemo(() => {
     if (!summary) return null;
@@ -201,7 +201,7 @@ export function ScannerCardDetail({
         <span
           className="ml-auto font-mono text-[11px] font-bold normal-case text-zinc-400"
           style={scannerNumericFontStyle}
-          title="Count from universe flow.events_today (same rolling window as Layer 5 flow)"
+          title="Count from universe flow.events_today (RTH session-to-date prints in options_flow_raw_trades)"
         >
           {eventsToday} events
         </span>
