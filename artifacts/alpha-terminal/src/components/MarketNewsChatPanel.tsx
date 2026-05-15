@@ -304,55 +304,37 @@ export function MarketNewsChatPanel() {
   );
 
   const synthesizeMultiModel = useCallback((successes: ModelSuccess[], failures: ModelFailure[]): string => {
-    /** Explains that merge is deterministic in the client, not an extra LLM call. */
-    const mergePreamble =
-      "*How this answer is produced:* your selected models run **in parallel**. **There is no separate “synthesizer” model**—Alpha Terminal **merges** their outputs in the app using simple rules: list failures, compare **opening lines** for rough alignment, then show one **primary** block. That block is always **verbatim text from one model**: the **longest** successful full reply when several succeed; otherwise the only successful reply.";
+    const shortNote =
+      "_Each model below answered the same prompt on its own (parallel runs). There was no back-and-forth between models. **Synthesis** is one full reply picked in the app (longest among successes), not a merged rewrite._";
 
-    const firstSentence = (text: string): string => {
-      const cleaned = text.replace(/\s+/g, " ").trim();
-      if (!cleaned) return "";
-      const m = cleaned.match(/(.+?[.!?])(\s|$)/);
-      return (m?.[1] ?? cleaned).slice(0, 220);
-    };
-
-    const failureLines = failures.map((f) => `- **${f.model}** failed: ${f.message}`);
+    const failureBlocks =
+      failures.length > 0
+        ? ["", "## Could not complete", ...failures.map((f) => `- **${f.model}:** ${f.message}`)]
+        : [];
 
     if (successes.length === 1) {
       const only = successes[0]!;
       return [
-        mergePreamble,
+        "## Individual responses",
         "",
-        "## Multi-agent results",
-        `- **Succeeded:** ${only.model}`,
-        ...failureLines,
-        "",
-        `### Primary answer (verbatim from **${only.model}** only)`,
+        `### ${only.model}`,
         only.text,
+        ...failureBlocks,
       ].join("\n");
     }
 
-    const uniqueLead = [...new Set(successes.map((s) => firstSentence(s.text)).filter(Boolean))];
-    const consensusLine =
-      uniqueLead.length <= 1
-        ? `- Opening lines point the same way among ${successes.map((s) => `**${s.model}**`).join(", ")}.`
-        : `- Opening lines agree on direction but differ on emphasis/detail (${successes.map((s) => `**${s.model}**`).join(", ")}).`;
-
-    const leadLines = successes.map((s) => `- **${s.model}**: ${firstSentence(s.text) || s.text.slice(0, 160)}`);
+    const perModel = successes.flatMap((s) => ["", `### ${s.model}`, s.text]);
     const finalBase = successes.slice().sort((a, b) => b.text.length - a.text.length)[0]!;
 
     return [
-      mergePreamble,
+      shortNote,
       "",
-      "## Multi-agent results",
-      ...(failureLines.length > 0 ? ["### Models that could not complete", ...failureLines, ""] : []),
-      "### Agreement (from first lines only)",
-      consensusLine,
+      "## Individual responses",
+      ...perModel,
+      ...failureBlocks,
       "",
-      "### Lead from each successful model",
-      ...leadLines,
-      "",
-      `### Primary answer (full text from **${finalBase.model}** only)`,
-      "_This block is not blended or rewritten by another model; it was chosen as the longest successful reply._",
+      "## Synthesis",
+      `*Primary reply from **${finalBase.model}** (longest successful answer among ${successes.length}).*`,
       "",
       finalBase.text,
     ].join("\n");
