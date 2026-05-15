@@ -91,8 +91,8 @@ export function AssistantListenButton({ messageId, markdownText, size = "md" }: 
   const iconClass = size === "sm" ? "w-3.5 h-3.5" : "w-5 h-5";
   const pad =
     size === "sm"
-      ? "mt-1 inline-flex p-1"
-      : "mt-2 inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-2 p-2.5";
+      ? "p-1 mt-1 min-h-[36px] min-w-[36px]"
+      : "p-2.5 mt-2 min-h-[44px] min-w-[44px] justify-center gap-2";
 
   return (
     <button
@@ -102,13 +102,13 @@ export function AssistantListenButton({ messageId, markdownText, size = "md" }: 
       title={isPlaying ? "Stop" : "Listen"}
       aria-label={isPlaying ? "Stop reading" : "Play reading of this reply"}
       className={[
-        "inline-flex items-center gap-1 rounded border border-transparent font-mono tracking-wider shadow-none transition-colors outline-none focus-visible:ring-1 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-0 focus-visible:ring-offset-transparent",
+        "inline-flex items-center gap-1 rounded border font-mono tracking-wider transition-colors",
         pad,
         size === "sm" ? "text-[8px]" : "text-[9px]",
         isPlaying
-          ? "text-zinc-200 hover:text-white"
-          : "text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-300",
-        !canSpeak && !isPlaying ? "cursor-not-allowed opacity-30" : "",
+          ? "border-zinc-500/40 text-zinc-200 bg-zinc-800/40"
+          : "border-transparent text-zinc-500 hover:border-transparent hover:text-zinc-300",
+        !canSpeak && !isPlaying ? "opacity-30 cursor-not-allowed" : "",
       ].join(" ")}
     >
       {isPlaying ? <Square className={`${iconClass} fill-current`} /> : <Play className={iconClass} />}
