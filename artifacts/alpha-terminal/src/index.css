@@ -282,21 +282,37 @@
   90% { transform: translateX(2px); }
 }
 
-/* Market news chat: multi-agent nodes easing toward a central synthesis hub */
+/* Market news chat: multi-agent nodes — staggered wave (hues set inline per dot) */
 @keyframes chat-multi-agent-pull {
   0%,
   100% {
-    transform: translateX(var(--ma-pull, 0px)) scale(0.88);
-    opacity: 0.4;
+    transform: translateX(var(--ma-pull, 0px)) translateY(2px) scale(0.86);
+    opacity: 0.38;
   }
   50% {
-    transform: translateX(0) scale(1.08);
+    transform: translateX(calc(var(--ma-pull, 0px) * 0.22)) translateY(-5px) scale(1.06);
     opacity: 1;
   }
 }
 
 .chat-multi-agent-node {
-  animation: chat-multi-agent-pull 2.1s ease-in-out infinite;
+  animation: chat-multi-agent-pull 2.35s ease-in-out infinite;
+}
+
+@keyframes chat-multi-agent-hub {
+  0%,
+  100% {
+    opacity: 0.42;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.88;
+    transform: scale(1.05);
+  }
+}
+
+.chat-multi-agent-hub {
+  animation: chat-multi-agent-hub 3s ease-in-out infinite;
 }
 
 .safe-bottom {

@@ -45,6 +45,79 @@ function nextMsgId(): string {
   return `mnc-${Date.now()}-${++msgCounter}`;
 }
 
+/** Per-slot hues for parallel-model loading (no gold / primary yellow). */
+const MULTI_AGENT_DOT_PALETTE = [
+  { fill: "hsl(188 95% 48% / 0.92)", glow: "hsl(188 100% 55% / 0.42)" },
+  { fill: "hsl(268 88% 66% / 0.9)", glow: "hsl(268 95% 72% / 0.38)" },
+  { fill: "hsl(328 82% 62% / 0.88)", glow: "hsl(328 88% 68% / 0.32)" },
+  { fill: "hsl(158 72% 46% / 0.9)", glow: "hsl(158 78% 52% / 0.36)" },
+  { fill: "hsl(218 88% 62% / 0.88)", glow: "hsl(218 92% 68% / 0.34)" },
+  { fill: "hsl(12 82% 58% / 0.88)", glow: "hsl(12 88% 62% / 0.3)" },
+] as const;
+
+function MultiAgentStreamingStatus({
+  activeCount,
+  modelIds,
+}: {
+  activeCount: number;
+  modelIds: string[];
+}) {
+  const [nameIdx, setNameIdx] = useState(0);
+  useEffect(() => {
+    if (modelIds.length <= 1) return undefined;
+    const timer = window.setInterval(() => {
+      setNameIdx((i) => (i + 1) % modelIds.length);
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [modelIds]);
+
+  const safeModels =
+    modelIds.length > 0 ? modelIds : Array.from({ length: Math.max(1, activeCount) }, (_, i) => `slot ${i + 1}`);
+  const nodeCount = Math.min(Math.max(safeModels.length, activeCount), 6);
+  const half = (nodeCount - 1) / 2;
+  const spotlight = safeModels[nameIdx % safeModels.length] ?? "";
+
+  return (
+    <div className="rounded-lg border border-zinc-700/80 bg-gradient-to-b from-zinc-900/95 to-black px-3 py-2.5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <div className="relative flex items-end justify-center gap-[5px] pb-1 pt-0.5 min-h-[3.1rem]">
+        {Array.from({ length: nodeCount }, (_, i) => {
+          const pullPx = (i - half) * 20;
+          const pal = MULTI_AGENT_DOT_PALETTE[i % MULTI_AGENT_DOT_PALETTE.length]!;
+          return (
+            <span
+              key={`${safeModels[i] ?? "n"}-${i}`}
+              className="chat-multi-agent-node h-2.5 w-2.5 shrink-0 rounded-full"
+              style={
+                {
+                  backgroundColor: pal.fill,
+                  boxShadow: `0 0 14px ${pal.glow}`,
+                  animationDelay: `${i * 110}ms`,
+                  ["--ma-pull" as string]: `${pullPx}px`,
+                } as CSSProperties
+              }
+            />
+          );
+        })}
+        <span className="relative mx-1 flex h-8 w-8 shrink-0 items-center justify-center">
+          <span className="chat-multi-agent-hub absolute inset-0 rounded-full border border-zinc-500/40" />
+          <span className="absolute inset-[2px] rounded-full border border-cyan-400/25" />
+          <Bot className="relative h-4 w-4 text-zinc-200" />
+        </span>
+      </div>
+      <p className="font-mono text-[10px] uppercase tracking-wider text-zinc-500">Parallel providers</p>
+      <p className="mt-1 font-mono text-[11px] text-zinc-300 leading-snug">
+        Spotlight:{" "}
+        <span key={nameIdx} className="text-cyan-100/95 break-all">
+          {spotlight}
+        </span>
+      </p>
+      <p className="mt-0.5 font-mono text-[10px] text-zinc-500 leading-snug">
+        Same prompt to each model; they do not see each other. The app merges their replies locally when they finish.
+      </p>
+    </div>
+  );
+}
+
 export function MarketNewsChatPanel() {
   const symbol = useTerminalStore((s) => s.symbol);
   const accessToken = useTerminalStore((s) => s.accessToken);
@@ -231,6 +304,10 @@ export function MarketNewsChatPanel() {
   );
 
   const synthesizeMultiModel = useCallback((successes: ModelSuccess[], failures: ModelFailure[]): string => {
+    /** Explains that merge is deterministic in the client, not an extra LLM call. */
+    const mergePreamble =
+      "*How this answer is produced:* your selected models run **in parallel**. **There is no separate “synthesizer” model**—Alpha Terminal **merges** their outputs in the app using simple rules: list failures, compare **opening lines** for rough alignment, then show one **primary** block. That block is always **verbatim text from one model**: the **longest** successful full reply when several succeed; otherwise the only successful reply.";
+
     const firstSentence = (text: string): string => {
       const cleaned = text.replace(/\s+/g, " ").trim();
       if (!cleaned) return "";
@@ -238,40 +315,45 @@ export function MarketNewsChatPanel() {
       return (m?.[1] ?? cleaned).slice(0, 220);
     };
 
+    const failureLines = failures.map((f) => `- **${f.model}** failed: ${f.message}`);
+
     if (successes.length === 1) {
-      const lines = [
-        "### Consensus",
-        `- Only one model succeeded: **${successes[0]!.model}**.`,
+      const only = successes[0]!;
+      return [
+        mergePreamble,
         "",
-        "### Disagreements",
-        "- Not applicable with a single successful model.",
-      ];
-      if (failures.length > 0) {
-        lines.push(...failures.map((f) => `- Model failed: **${f.model}** (${f.message}).`));
-      }
-      lines.push("", "### Final synthesis", successes[0]!.text);
-      return lines.join("\n");
+        "## Multi-agent results",
+        `- **Succeeded:** ${only.model}`,
+        ...failureLines,
+        "",
+        `### Primary answer (verbatim from **${only.model}** only)`,
+        only.text,
+      ].join("\n");
     }
 
     const uniqueLead = [...new Set(successes.map((s) => firstSentence(s.text)).filter(Boolean))];
     const consensusLine =
       uniqueLead.length <= 1
-        ? `- Models aligned on the same core answer (${successes.map((s) => `**${s.model}**`).join(", ")}).`
-        : `- Models agree on the broad direction, but differ on emphasis/detail (${successes.map((s) => `**${s.model}**`).join(", ")}).`;
+        ? `- Opening lines point the same way among ${successes.map((s) => `**${s.model}**`).join(", ")}.`
+        : `- Opening lines agree on direction but differ on emphasis/detail (${successes.map((s) => `**${s.model}**`).join(", ")}).`;
 
-    const disagreementLines = successes.map((s) => `- **${s.model}**: ${firstSentence(s.text) || s.text.slice(0, 160)}`);
-    const failureLines = failures.map((f) => `- Model failed: **${f.model}** (${f.message}).`);
+    const leadLines = successes.map((s) => `- **${s.model}**: ${firstSentence(s.text) || s.text.slice(0, 160)}`);
     const finalBase = successes.slice().sort((a, b) => b.text.length - a.text.length)[0]!;
 
     return [
-      "### Consensus",
+      mergePreamble,
+      "",
+      "## Multi-agent results",
+      ...(failureLines.length > 0 ? ["### Models that could not complete", ...failureLines, ""] : []),
+      "### Agreement (from first lines only)",
       consensusLine,
       "",
-      "### Disagreements",
-      ...disagreementLines,
-      ...(failureLines.length > 0 ? failureLines : []),
+      "### Lead from each successful model",
+      ...leadLines,
       "",
-      "### Final synthesis",
+      `### Primary answer (full text from **${finalBase.model}** only)`,
+      "_This block is not blended or rewritten by another model; it was chosen as the longest successful reply._",
+      "",
       finalBase.text,
     ].join("\n");
   }, []);
@@ -729,47 +811,7 @@ export function MarketNewsChatPanel() {
 
           if (activeMultiAgentCount > 1) {
             const models = streamingMultiModels.length > 0 ? streamingMultiModels : multiAgentModels;
-            const listed = models.slice(0, 4);
-            const rest = models.length - listed.length;
-            const namesLine =
-              listed.length > 0
-                ? `${listed.join(", ")}${rest > 0 ? `, +${rest} more` : ""}…`
-                : `${activeMultiAgentCount} models…`;
-
-            const nodeCount = Math.min(Math.max(models.length, activeMultiAgentCount), 6);
-            const half = (nodeCount - 1) / 2;
-
-            return (
-              <div className="rounded-md border border-card-border/60 bg-black/35 px-3 py-2.5 text-left">
-                <div className="flex items-center justify-center gap-0.5 py-1.5 min-h-[2.25rem]">
-                  {Array.from({ length: nodeCount }, (_, i) => {
-                    const pullPx = (i - half) * 22;
-                    return (
-                      <span
-                        key={i}
-                        className="chat-multi-agent-node h-2 w-2 shrink-0 rounded-full bg-[hsl(43_100%_50%_/_0.92)] shadow-[0_0_10px_hsl(43_100%_50%_/_0.35)]"
-                        style={
-                          {
-                            animationDelay: `${i * 140}ms`,
-                            ["--ma-pull" as string]: `${pullPx}px`,
-                          } as CSSProperties
-                        }
-                      />
-                    );
-                  })}
-                  <span className="relative mx-1.5 flex h-7 w-7 shrink-0 items-center justify-center">
-                    <span className="absolute inset-0 rounded-full border border-[hsl(43_100%_50%_/_0.35)]" />
-                    <Bot className="relative h-3.5 w-3.5 text-[hsl(43_100%_50%_/_0.95)]" />
-                  </span>
-                </div>
-                <p className="font-mono text-[11px] leading-snug text-white/70">
-                  Running multi-agent ({activeMultiAgentCount} models): {namesLine}
-                </p>
-                <p className="mt-1 font-mono text-[10px] uppercase tracking-wide text-white/45">
-                  Models converge on one synthesized reply
-                </p>
-              </div>
-            );
+            return <MultiAgentStreamingStatus activeCount={activeMultiAgentCount} modelIds={models} />;
           }
 
           return (
