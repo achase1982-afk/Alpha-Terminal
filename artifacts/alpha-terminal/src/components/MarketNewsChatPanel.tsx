@@ -12,6 +12,7 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 const RETRYABLE_CHAT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const MULTI_AGENT_MODEL = "__multi_agent__";
 const MULTI_AGENT_STORAGE_KEY = "marketNewsChatMultiModels";
+const MULTI_AGENT_SYNTH_STORAGE_KEY = "marketNewsChatSynthesizerModel";
 
 const ALL_CHAT_MODELS = [
   "claude-opus-4-7",
@@ -166,6 +167,17 @@ export function MarketNewsChatPanel() {
   const activeModels = useMultiAgent ? multiAgentModels : [modelSend];
   const modelControlValue = useMultiAgent ? MULTI_AGENT_MODEL : modelSend;
 
+  const [synthesizerModel, setSynthesizerModel] = useState<string>(() => {
+    if (typeof window === "undefined") return ALL_CHAT_MODELS[0]!;
+    try {
+      const raw = sessionStorage.getItem(MULTI_AGENT_SYNTH_STORAGE_KEY);
+      if (raw && ALL_CHAT_MODELS.includes(raw)) return raw;
+    } catch {
+      /* ignore */
+    }
+    return ALL_CHAT_MODELS[0]!;
+  });
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -174,6 +186,20 @@ export function MarketNewsChatPanel() {
       /* QuotaExceededError */
     }
   }, [multiAgentModels]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      sessionStorage.setItem(MULTI_AGENT_SYNTH_STORAGE_KEY, synthesizerModel);
+    } catch {
+      /* QuotaExceededError */
+    }
+  }, [synthesizerModel]);
+
+  useEffect(() => {
+    if (!useMultiAgent || multiAgentModels.length === 0) return;
+    setSynthesizerModel((prev) => (multiAgentModels.includes(prev) ? prev : multiAgentModels[0]!));
+  }, [multiAgentModels, useMultiAgent]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -280,11 +306,16 @@ export function MarketNewsChatPanel() {
     [marketContext, symU],
   );
 
-  const synthesizeMultiModel = useCallback((successes: ModelSuccess[], _failures: ModelFailure[]): string => {
-    if (successes.length === 0) return "";
-    const ranked = successes.slice().sort((a, b) => b.text.length - a.text.length);
-    return ranked[0]!.text.trim();
-  }, []);
+  const synthesizeMultiModel = useCallback(
+    (successes: ModelSuccess[], _failures: ModelFailure[], preferModel: string): string => {
+      if (successes.length === 0) return "";
+      const preferred = successes.find((x) => x.model === preferModel);
+      if (preferred) return preferred.text.trim();
+      const ranked = successes.slice().sort((a, b) => b.text.length - a.text.length);
+      return ranked[0]!.text.trim();
+    },
+    [],
+  );
 
   const runAssistantGeneration = useCallback(
     async (args: {
@@ -350,7 +381,7 @@ export function MarketNewsChatPanel() {
           return;
         }
 
-        setAssistantContent(symU, tid, assistantId, synthesizeMultiModel(successes, failures));
+        setAssistantContent(symU, tid, assistantId, synthesizeMultiModel(successes, failures, synthesizerModel));
         if (failures.some((f) => f.retryable)) {
           setLastFailedMessage(sourcePrompt);
         }
@@ -372,7 +403,7 @@ export function MarketNewsChatPanel() {
         setIsStreaming(false);
       }
     },
-    [activeModels, fetchModelReply, normalizeFetchError, setAssistantContent, symU, synthesizeMultiModel],
+    [activeModels, fetchModelReply, normalizeFetchError, setAssistantContent, symU, synthesizeMultiModel, synthesizerModel],
   );
 
   const sendMessage = useCallback(
@@ -566,6 +597,24 @@ export function MarketNewsChatPanel() {
             >
               {multiAgentModels.length || 0} selected
             </button>
+          )}
+          {useMultiAgent && multiAgentModels.length > 0 && (
+            <label className="flex items-center gap-1 min-w-0">
+              <span className="hidden sm:inline font-mono text-[10px] text-white/55 shrink-0">Synthesize</span>
+              <select
+                value={synthesizerModel}
+                onChange={(e) => setSynthesizerModel(e.target.value)}
+                className="min-w-0 max-w-[120px] sm:max-w-[200px] truncate bg-black/60 border border-card-border rounded px-1.5 py-1 font-mono text-[11px] text-white"
+                aria-label="Final answer from model"
+                title="Pick which model's reply is shown as the single synthesized answer"
+              >
+                {multiAgentModels.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </label>
           )}
           {useMultiAgent && multiModelPickerOpen && (
             <div className="absolute right-0 top-[calc(100%+6px)] z-[10120] min-w-[220px] rounded-md border border-card-border bg-[#0b0b0b] p-2 shadow-xl">
