@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo, type CSSProperties } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useTerminalStore, type MarketNewsChatMessage } from "@/lib/store";
 import { useGetQuote } from "@workspace/api-client-react";
@@ -8,7 +8,7 @@ import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech, markdownToSpeakable } from "@/components/AssistantListenButton";
 import { useVisualViewportComposerMetrics } from "@/hooks/useVisualViewportKeyboardInset";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
-import { toast as pushToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 
 const RETRYABLE_CHAT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const MULTI_AGENT_MODEL = "__multi_agent__";
@@ -69,8 +69,9 @@ export function MarketNewsChatPanel() {
   const [composerFocused, setComposerFocused] = useState(false);
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const [activeMultiAgentCount, setActiveMultiAgentCount] = useState(0);
-  const [streamingMultiModels, setStreamingMultiModels] = useState<string[]>([]);
+  const [copyToastText, setCopyToastText] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const copyToastTimerRef = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   /** Reserve space for bottom tab bar when the keyboard is dismissed (see BottomNav). */
@@ -143,6 +144,14 @@ export function MarketNewsChatPanel() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isStreaming]);
+
+  useEffect(() => {
+    return () => {
+      if (copyToastTimerRef.current !== null && typeof window !== "undefined") {
+        window.clearTimeout(copyToastTimerRef.current);
+      }
+    };
+  }, []);
 
   type ChatHistoryMessage = { role: "user" | "assistant"; content: string };
   type ModelSuccess = { model: string; text: string };
@@ -231,6 +240,10 @@ export function MarketNewsChatPanel() {
   );
 
   const synthesizeMultiModel = useCallback((successes: ModelSuccess[], failures: ModelFailure[]): string => {
+    /** Explains that merge is deterministic in the client, not an extra LLM call. */
+    const mergePreamble =
+      "*How this answer is produced:* your selected models run **in parallel**. **There is no separate “synthesizer” model**—Alpha Terminal **merges** their outputs in the app using simple rules: list failures, compare **opening lines** for rough alignment, then show one **primary** block. That block is always **verbatim text from one model**: the **longest** successful full reply when several succeed; otherwise the only successful reply.";
+
     const firstSentence = (text: string): string => {
       const cleaned = text.replace(/\s+/g, " ").trim();
       if (!cleaned) return "";
@@ -238,40 +251,45 @@ export function MarketNewsChatPanel() {
       return (m?.[1] ?? cleaned).slice(0, 220);
     };
 
+    const failureLines = failures.map((f) => `- **${f.model}** failed: ${f.message}`);
+
     if (successes.length === 1) {
-      const lines = [
-        "### Consensus",
-        `- Only one model succeeded: **${successes[0]!.model}**.`,
+      const only = successes[0]!;
+      return [
+        mergePreamble,
         "",
-        "### Disagreements",
-        "- Not applicable with a single successful model.",
-      ];
-      if (failures.length > 0) {
-        lines.push(...failures.map((f) => `- Model failed: **${f.model}** (${f.message}).`));
-      }
-      lines.push("", "### Final synthesis", successes[0]!.text);
-      return lines.join("\n");
+        "## Multi-agent results",
+        `- **Succeeded:** ${only.model}`,
+        ...failureLines,
+        "",
+        `### Primary answer (verbatim from **${only.model}** only)`,
+        only.text,
+      ].join("\n");
     }
 
     const uniqueLead = [...new Set(successes.map((s) => firstSentence(s.text)).filter(Boolean))];
     const consensusLine =
       uniqueLead.length <= 1
-        ? `- Models aligned on the same core answer (${successes.map((s) => `**${s.model}**`).join(", ")}).`
-        : `- Models agree on the broad direction, but differ on emphasis/detail (${successes.map((s) => `**${s.model}**`).join(", ")}).`;
+        ? `- Opening lines point the same way among ${successes.map((s) => `**${s.model}**`).join(", ")}.`
+        : `- Opening lines agree on direction but differ on emphasis/detail (${successes.map((s) => `**${s.model}**`).join(", ")}).`;
 
-    const disagreementLines = successes.map((s) => `- **${s.model}**: ${firstSentence(s.text) || s.text.slice(0, 160)}`);
-    const failureLines = failures.map((f) => `- Model failed: **${f.model}** (${f.message}).`);
+    const leadLines = successes.map((s) => `- **${s.model}**: ${firstSentence(s.text) || s.text.slice(0, 160)}`);
     const finalBase = successes.slice().sort((a, b) => b.text.length - a.text.length)[0]!;
 
     return [
-      "### Consensus",
+      mergePreamble,
+      "",
+      "## Multi-agent results",
+      ...(failureLines.length > 0 ? ["### Models that could not complete", ...failureLines, ""] : []),
+      "### Agreement (from first lines only)",
       consensusLine,
       "",
-      "### Disagreements",
-      ...disagreementLines,
-      ...(failureLines.length > 0 ? failureLines : []),
+      "### Lead from each successful model",
+      ...leadLines,
       "",
-      "### Final synthesis",
+      `### Primary answer (full text from **${finalBase.model}** only)`,
+      "_This block is not blended or rewritten by another model; it was chosen as the longest successful reply._",
+      "",
       finalBase.text,
     ].join("\n");
   }, []);
@@ -295,7 +313,6 @@ export function MarketNewsChatPanel() {
       abortRef.current = controller;
       setIsStreaming(true);
       setActiveMultiAgentCount(selectedModels.length > 1 ? selectedModels.length : 0);
-      setStreamingMultiModels(selectedModels.length > 1 ? [...selectedModels] : []);
       setLastFailedMessage(null);
 
       try {
@@ -360,7 +377,6 @@ export function MarketNewsChatPanel() {
           abortRef.current = null;
         }
         setActiveMultiAgentCount(0);
-        setStreamingMultiModels([]);
         setIsStreaming(false);
       }
     },
@@ -451,11 +467,23 @@ export function MarketNewsChatPanel() {
   const handleCopyAssistant = useCallback(async (content: string) => {
     const plain = markdownToSpeakable(content);
     if (!plain) return;
+    const flashCopyToast = (label: string) => {
+      setCopyToastText(label);
+      if (copyToastTimerRef.current !== null) {
+        window.clearTimeout(copyToastTimerRef.current);
+      }
+      copyToastTimerRef.current = window.setTimeout(() => {
+        setCopyToastText(null);
+        copyToastTimerRef.current = null;
+      }, 1100);
+    };
     try {
       await navigator.clipboard.writeText(plain);
-      pushToast({ title: "Copied", duration: 2200 });
+      toast.message("Copied");
+      flashCopyToast("Copied");
     } catch {
-      pushToast({ title: "Copy failed", variant: "destructive", duration: 3200 });
+      toast.message("Copy failed");
+      flashCopyToast("Copy failed");
     }
   }, []);
 
@@ -719,68 +747,40 @@ export function MarketNewsChatPanel() {
             )}
           </div>
         ))}
-        {(() => {
-          const last = messages.length > 0 ? messages[messages.length - 1] : undefined;
-          const showStreamingChrome =
-            isStreaming &&
-            last?.role === "assistant" &&
-            (activeMultiAgentCount > 1 || !last.content?.trim());
-          if (!showStreamingChrome) return null;
-
-          if (activeMultiAgentCount > 1) {
-            const models = streamingMultiModels.length > 0 ? streamingMultiModels : multiAgentModels;
-            const listed = models.slice(0, 4);
-            const rest = models.length - listed.length;
-            const namesLine =
-              listed.length > 0
-                ? `${listed.join(", ")}${rest > 0 ? `, +${rest} more` : ""}…`
-                : `${activeMultiAgentCount} models…`;
-
-            const nodeCount = Math.min(Math.max(models.length, activeMultiAgentCount), 6);
-            const half = (nodeCount - 1) / 2;
-
-            return (
-              <div className="rounded-md border border-card-border/60 bg-black/35 px-3 py-2.5 text-left">
-                <div className="flex items-center justify-center gap-0.5 py-1.5 min-h-[2.25rem]">
-                  {Array.from({ length: nodeCount }, (_, i) => {
-                    const pullPx = (i - half) * 22;
-                    return (
-                      <span
-                        key={i}
-                        className="chat-multi-agent-node h-2 w-2 shrink-0 rounded-full bg-[hsl(43_100%_50%_/_0.92)] shadow-[0_0_10px_hsl(43_100%_50%_/_0.35)]"
-                        style={
-                          {
-                            animationDelay: `${i * 140}ms`,
-                            ["--ma-pull" as string]: `${pullPx}px`,
-                          } as CSSProperties
-                        }
-                      />
-                    );
-                  })}
-                  <span className="relative mx-1.5 flex h-7 w-7 shrink-0 items-center justify-center">
-                    <span className="absolute inset-0 rounded-full border border-[hsl(43_100%_50%_/_0.35)]" />
-                    <Bot className="relative h-3.5 w-3.5 text-[hsl(43_100%_50%_/_0.95)]" />
-                  </span>
-                </div>
-                <p className="font-mono text-[11px] leading-snug text-white/70">
-                  Running multi-agent ({activeMultiAgentCount} models): {namesLine}
-                </p>
-                <p className="mt-1 font-mono text-[10px] uppercase tracking-wide text-white/45">
-                  Models converge on one synthesized reply
-                </p>
+        {isStreaming && messages.length > 0 && messages[messages.length - 1]?.role === "user" && (
+          activeMultiAgentCount > 1 ? (
+            <div className="flex items-center gap-2 py-1 text-white/75">
+              <div className="relative h-6 w-6 shrink-0">
+                <span className="absolute inset-0 rounded-full border border-white/20" />
+                <span className="absolute inset-0 animate-spin" style={{ animationDuration: "1.6s" }}>
+                  <span className="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-white/80" />
+                </span>
+                <Bot className="absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 text-white/70" />
               </div>
-            );
-          }
-
-          return (
+              <div className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" />
+                <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "130ms" }} />
+                <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "260ms" }} />
+              </div>
+              <span className="font-mono text-[11px] text-white/65">
+                {activeMultiAgentCount} agents thinking...
+              </span>
+            </div>
+          ) : (
             <div className="flex items-center gap-1.5 py-1">
               <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
               <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "150ms" }} />
               <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "300ms" }} />
             </div>
-          );
-        })()}
+          )
+        )}
       </div>
+
+      {copyToastText && (
+        <div className="pointer-events-none absolute left-1/2 bottom-20 z-[10130] -translate-x-1/2 rounded border border-white/20 bg-black/90 px-2 py-1 font-mono text-[11px] text-white shadow-lg">
+          {copyToastText}
+        </div>
+      )}
 
       {narrowMobile && typeof document !== "undefined"
         ? createPortal(renderComposer(), document.body)
