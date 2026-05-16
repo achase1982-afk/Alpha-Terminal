@@ -8,7 +8,7 @@ import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech, markdownToSpeakable } from "@/components/AssistantListenButton";
 import { useVisualViewportComposerMetrics } from "@/hooks/useVisualViewportKeyboardInset";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
-import { toast as pushToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 
 const RETRYABLE_CHAT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const MULTI_AGENT_MODEL = "__multi_agent__";
@@ -112,7 +112,8 @@ function MultiAgentStreamingStatus({
         </span>
       </p>
       <p className="mt-0.5 font-mono text-[10px] text-zinc-500 leading-snug">
-        Same prompt to each model; they do not see each other. The app merges their replies locally when they finish.
+        Same prompt to each; they do not see each other. With two or more successes your chosen chair writes one
+        synthesis; every model&apos;s full reply is still listed below.
       </p>
     </div>
   );
@@ -122,6 +123,7 @@ export function MarketNewsChatPanel() {
   const symbol = useTerminalStore((s) => s.symbol);
   const accessToken = useTerminalStore((s) => s.accessToken);
   const aiModel = useTerminalStore((s) => s.aiFeatureSettings.chat.model);
+  const councilChairModel = useTerminalStore((s) => s.aiFeatureSettings.chat.councilChairModel);
   const setAiFeatureSetting = useTerminalStore((s) => s.setAiFeatureSetting);
   const ensureSymbol = useTerminalStore((s) => s.marketNewsChatEnsureSymbol);
   const appendMessage = useTerminalStore((s) => s.marketNewsChatAppendMessage);
@@ -143,7 +145,9 @@ export function MarketNewsChatPanel() {
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const [activeMultiAgentCount, setActiveMultiAgentCount] = useState(0);
   const [streamingMultiModels, setStreamingMultiModels] = useState<string[]>([]);
+  const [copyToastText, setCopyToastText] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const copyToastTimerRef = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   /** Reserve space for bottom tab bar when the keyboard is dismissed (see BottomNav). */
@@ -185,6 +189,7 @@ export function MarketNewsChatPanel() {
   }, [quote, symU]);
 
   const modelSend = ALL_CHAT_MODELS.includes(aiModel) ? aiModel : ALL_CHAT_MODELS[0]!;
+  const chairSend = ALL_CHAT_MODELS.includes(councilChairModel) ? councilChairModel : ALL_CHAT_MODELS[0]!;
   const [useMultiAgent, setUseMultiAgent] = useState(false);
   const [multiModelPickerOpen, setMultiModelPickerOpen] = useState(false);
   const [multiAgentModels, setMultiAgentModels] = useState<string[]>(() => {
@@ -216,6 +221,14 @@ export function MarketNewsChatPanel() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isStreaming]);
+
+  useEffect(() => {
+    return () => {
+      if (copyToastTimerRef.current !== null && typeof window !== "undefined") {
+        window.clearTimeout(copyToastTimerRef.current);
+      }
+    };
+  }, []);
 
   type ChatHistoryMessage = { role: "user" | "assistant"; content: string };
   type ModelSuccess = { model: string; text: string };
@@ -303,42 +316,44 @@ export function MarketNewsChatPanel() {
     [marketContext, symU],
   );
 
-  const synthesizeMultiModel = useCallback((successes: ModelSuccess[], failures: ModelFailure[]): string => {
-    const shortNote =
-      "_Each model below answered the same prompt on its own (parallel runs). There was no back-and-forth between models. **Synthesis** is one full reply picked in the app (longest among successes), not a merged rewrite._";
-
-    const failureBlocks =
-      failures.length > 0
-        ? ["", "## Could not complete", ...failures.map((f) => `- **${f.model}:** ${f.message}`)]
-        : [];
-
-    if (successes.length === 1) {
-      const only = successes[0]!;
-      return [
-        "## Individual responses",
-        "",
-        `### ${only.model}`,
-        only.text,
-        ...failureBlocks,
-      ].join("\n");
-    }
-
-    const perModel = successes.flatMap((s) => ["", `### ${s.model}`, s.text]);
-    const finalBase = successes.slice().sort((a, b) => b.text.length - a.text.length)[0]!;
-
-    return [
-      shortNote,
-      "",
-      "## Individual responses",
-      ...perModel,
-      ...failureBlocks,
-      "",
-      "## Synthesis",
-      `*Primary reply from **${finalBase.model}** (longest successful answer among ${successes.length}).*`,
-      "",
-      finalBase.text,
-    ].join("\n");
-  }, []);
+  const synthesizeMultiModel = useCallback(
+    (
+      successes: ModelSuccess[],
+      failures: ModelFailure[],
+      opts?: { chairModel?: string; chairText?: string | null; chairError?: string | null },
+    ): string => {
+      const lines: string[] = ["## Individual responses", ""];
+      for (const s of successes) {
+        lines.push(`### ${s.model}`, "", s.text, "");
+      }
+      if (failures.length > 0) {
+        lines.push("## Could not complete", "");
+        for (const f of failures) {
+          lines.push(`- **${f.model}**: ${f.message}`);
+        }
+        lines.push("");
+      }
+      const fallbackLongest = successes.slice().sort((a, b) => b.text.length - a.text.length)[0]!;
+      lines.push("## Synthesis", "");
+      if (opts?.chairText?.trim()) {
+        lines.push(
+          `*Merged answer from **${opts.chairModel ?? "chair"}** using the independent drafts above (not a cross-model debate).*`,
+          "",
+          opts.chairText.trim(),
+        );
+      } else if (opts?.chairError) {
+        lines.push(
+          `*Chair model could not synthesize (${opts.chairError}). Showing the longest successful draft.*`,
+          "",
+          fallbackLongest.text,
+        );
+      } else {
+        lines.push(fallbackLongest.text);
+      }
+      return lines.join("\n");
+    },
+    [],
+  );
 
   const runAssistantGeneration = useCallback(
     async (args: {
@@ -405,7 +420,44 @@ export function MarketNewsChatPanel() {
           return;
         }
 
-        setAssistantContent(symU, tid, assistantId, synthesizeMultiModel(successes, failures));
+        let chairText: string | null = null;
+        let chairError: string | null = null;
+        if (successes.length >= 2) {
+          const failureSummary =
+            failures.length === 0
+              ? ""
+              : `\nSome parallel models failed: ${failures.map((f) => `${f.model}: ${f.message}`).join("; ")}.\n`;
+          const drafts = successes.map((s) => `[${s.model}]\n${s.text}`).join("\n\n---\n\n");
+          const chairPack = [
+            "You are the council chair for Alpha Terminal Markets Chat.",
+            "Several models answered the SAME user question independently (same thread + server context). Their drafts are below.",
+            "Write ONE markdown answer for the trader. Do not imply the models counseled each other or voted. Merge aligned points; note material disagreements briefly if needed.",
+            failureSummary.trimEnd(),
+            "--- DRAFTS ---",
+            drafts,
+          ]
+            .filter(Boolean)
+            .join("\n\n");
+          const chairHistory: ChatHistoryMessage[] = [...history, { role: "user", content: chairPack }];
+          try {
+            chairText = await fetchModelReply(chairSend, chairHistory, controller.signal);
+          } catch (err: unknown) {
+            const parsed = normalizeFetchError(err);
+            chairError = parsed.message;
+            if (parsed.retryable) setLastFailedMessage(sourcePrompt);
+          }
+        }
+
+        setAssistantContent(
+          symU,
+          tid,
+          assistantId,
+          synthesizeMultiModel(successes, failures, {
+            chairModel: chairSend,
+            chairText,
+            chairError,
+          }),
+        );
         if (failures.some((f) => f.retryable)) {
           setLastFailedMessage(sourcePrompt);
         }
@@ -428,7 +480,15 @@ export function MarketNewsChatPanel() {
         setIsStreaming(false);
       }
     },
-    [activeModels, fetchModelReply, normalizeFetchError, setAssistantContent, symU, synthesizeMultiModel],
+    [
+      activeModels,
+      chairSend,
+      fetchModelReply,
+      normalizeFetchError,
+      setAssistantContent,
+      symU,
+      synthesizeMultiModel,
+    ],
   );
 
   const sendMessage = useCallback(
@@ -515,11 +575,23 @@ export function MarketNewsChatPanel() {
   const handleCopyAssistant = useCallback(async (content: string) => {
     const plain = markdownToSpeakable(content);
     if (!plain) return;
+    const flashCopyToast = (label: string) => {
+      setCopyToastText(label);
+      if (copyToastTimerRef.current !== null) {
+        window.clearTimeout(copyToastTimerRef.current);
+      }
+      copyToastTimerRef.current = window.setTimeout(() => {
+        setCopyToastText(null);
+        copyToastTimerRef.current = null;
+      }, 1100);
+    };
     try {
       await navigator.clipboard.writeText(plain);
-      pushToast({ title: "Copied", duration: 2200 });
+      toast.message("Copied");
+      flashCopyToast("Copied");
     } catch {
-      pushToast({ title: "Copy failed", variant: "destructive", duration: 3200 });
+      toast.message("Copy failed");
+      flashCopyToast("Copy failed");
     }
   }, []);
 
@@ -632,6 +704,21 @@ export function MarketNewsChatPanel() {
             >
               {multiAgentModels.length || 0} selected
             </button>
+          )}
+          {useMultiAgent && (
+            <select
+              value={chairSend}
+              onChange={(e) => setAiFeatureSetting("chat", "councilChairModel", e.target.value)}
+              className="bg-black/60 border border-card-border rounded px-2 py-1.5 font-mono text-[11px] text-white max-w-[140px] sm:max-w-[180px]"
+              aria-label="Council chair model"
+              title="Model that merges parallel drafts into one synthesis"
+            >
+              {ALL_CHAT_MODELS.map((m) => (
+                <option key={`chair-${m}`} value={m}>
+                  chair: {m}
+                </option>
+              ))}
+            </select>
           )}
           {useMultiAgent && multiModelPickerOpen && (
             <div className="absolute right-0 top-[calc(100%+6px)] z-[10120] min-w-[220px] rounded-md border border-card-border bg-[#0b0b0b] p-2 shadow-xl">
@@ -805,6 +892,12 @@ export function MarketNewsChatPanel() {
           );
         })()}
       </div>
+
+      {copyToastText && (
+        <div className="pointer-events-none absolute left-1/2 bottom-20 z-[10130] -translate-x-1/2 rounded border border-white/20 bg-black/90 px-2 py-1 font-mono text-[11px] text-white shadow-lg">
+          {copyToastText}
+        </div>
+      )}
 
       {narrowMobile && typeof document !== "undefined"
         ? createPortal(renderComposer(), document.body)
