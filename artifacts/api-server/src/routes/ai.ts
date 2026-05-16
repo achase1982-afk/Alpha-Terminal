@@ -2720,6 +2720,12 @@ ${contextSymbol ? terminalDataPack : "(No symbol was sent — ask the user to se
         if (!firstChunkSent) { firstChunkSent = true; clearInterval(heartbeat); }
         res.write(chunk);
       }
+    } catch (streamErr) {
+      req.log.error({ err: streamErr }, "AI chat: Claude text stream failed");
+      if (!res.writableEnded) {
+        const msg = streamErr instanceof Error ? streamErr.message : String(streamErr);
+        res.write(`\n\n**Error:** ${msg}`);
+      }
     } finally {
       clearInterval(heartbeat);
     }

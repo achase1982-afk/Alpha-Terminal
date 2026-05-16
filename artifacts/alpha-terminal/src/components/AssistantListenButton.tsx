@@ -294,6 +294,35 @@ export function AssistantListenButton({
   const state = useSyncExternalStore(subscribeActiveTts, getActiveTtsSnapshot, getActiveTtsSnapshot);
   const plain = useMemo(() => markdownToSpeakable(markdownText), [markdownText]);
   const canSpeak = plain.length > 0;
+  const [copyHint, setCopyHint] = useState<string | null>(null);
+  const copyHintTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyHintTimerRef.current !== null) {
+        window.clearTimeout(copyHintTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleCopyClick = useCallback(async () => {
+    if (!plain) return;
+    const showHint = (label: string) => {
+      setCopyHint(label);
+      if (copyHintTimerRef.current !== null) window.clearTimeout(copyHintTimerRef.current);
+      copyHintTimerRef.current = window.setTimeout(() => {
+        setCopyHint(null);
+        copyHintTimerRef.current = null;
+      }, 1400);
+    };
+    try {
+      await navigator.clipboard.writeText(plain);
+      showHint("Copied");
+      onCopy?.();
+    } catch {
+      showHint("Copy failed");
+    }
+  }, [onCopy, plain]);
   const isActive = state.activeMessageId === messageId;
   const isPlaying = isActive && state.ready && !state.paused;
   const isPaused = isActive && state.ready && state.paused;
