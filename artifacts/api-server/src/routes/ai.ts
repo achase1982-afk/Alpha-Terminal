@@ -2522,6 +2522,17 @@ router.post("/options-strategist/stream", async (req, res) => {
   }
 });
 
+
+/** Strip empty assistant bubbles — Anthropic / SDKs reject `content: ""` on assistant turns. */
+function chatMessagesForStream(messages: Array<{ role: string; content: string }>): Array<{ role: "user" | "assistant"; content: string }> {
+  return messages
+    .map((m) => ({
+      role: (m.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
+      content: typeof m.content === "string" ? m.content : "",
+    }))
+    .filter((m) => m.role !== "assistant" || m.content.trim().length > 0);
+}
+
 router.post("/chat", async (req, res) => {
   try {
     const { messages, marketContext, model: reqModel, symbol: bodySymbol } = req.body as {
@@ -2536,8 +2547,15 @@ router.post("/chat", async (req, res) => {
       return res.status(400).json({ error: "Messages array is required." });
     }
 
+    const streamMessages = chatMessagesForStream(messages);
+    if (streamMessages.length === 0) {
+      return res.status(400).json({ error: "Messages array is required." });
+    }
+
     const chosenModel = reqModel ?? DEFAULT_MODEL;
-    const lastUserMsg = messages[messages.length - 1]?.content ?? "";
+    const lastUserMsg =
+      [...messages].reverse().find((m) => m.role === "user" && String(m.content ?? "").trim())?.content?.trim()
+      ?? String(messages[messages.length - 1]?.content ?? "");
     const contextSymbol = (bodySymbol ?? "").trim().toUpperCase();
 
     let terminalDataPack = "";
@@ -2602,8 +2620,8 @@ ${contextSymbol ? terminalDataPack : "(No symbol was sent — ask the user to se
 
       const ai = createGeminiClient();
 
-      const lastUserMsg = messages[messages.length - 1]?.content ?? "";
-      const conversationHistory = messages.slice(0, -1).map(m =>
+      const lastUserMsg = streamMessages[streamMessages.length - 1]?.content ?? "";
+      const conversationHistory = streamMessages.slice(0, -1).map(m =>
         `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`
       ).join("\n\n");
 
@@ -2648,7 +2666,7 @@ ${contextSymbol ? terminalDataPack : "(No symbol was sent — ask the user to se
         model: xai(chosenModel),
         system: systemPrompt,
         temperature: 0,
-        messages: messages.map(m => ({
+        messages: streamMessages.map(m => ({
           role: m.role as "user" | "assistant",
           content: m.content,
         })),
@@ -2678,7 +2696,7 @@ ${contextSymbol ? terminalDataPack : "(No symbol was sent — ask the user to se
         model: openai(chosenModel),
         system: systemPrompt,
         temperature: 0,
-        messages: messages.map(m => ({
+        messages: streamMessages.map(m => ({
           role: m.role as "user" | "assistant",
           content: m.content,
         })),
@@ -2708,7 +2726,7 @@ ${contextSymbol ? terminalDataPack : "(No symbol was sent — ask the user to se
       system: systemPrompt,
       ...(claudeThinking ? {} : { temperature: 0 }),
       maxOutputTokens: 16384,
-      messages: messages.map(m => ({
+      messages: streamMessages.map(m => ({
         role: m.role as "user" | "assistant",
         content: m.content,
       })),

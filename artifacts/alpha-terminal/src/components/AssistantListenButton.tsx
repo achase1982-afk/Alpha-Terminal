@@ -294,35 +294,61 @@ export function AssistantListenButton({
   const state = useSyncExternalStore(subscribeActiveTts, getActiveTtsSnapshot, getActiveTtsSnapshot);
   const plain = useMemo(() => markdownToSpeakable(markdownText), [markdownText]);
   const canSpeak = plain.length > 0;
-  const [copyHint, setCopyHint] = useState<string | null>(null);
-  const copyHintTimerRef = useRef<number | null>(null);
+  const textToCopy = useMemo(() => {
+    const t = plain.trim();
+    if (t.length > 0) return t;
+    return markdownText.trim();
+  }, [markdownText, plain]);
+
+  const [copyFlash, setCopyFlash] = useState<null | "ok" | "fail">(null);
+  const copyFlashTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     return () => {
-      if (copyHintTimerRef.current !== null) {
-        window.clearTimeout(copyHintTimerRef.current);
-      }
+      if (copyFlashTimerRef.current !== null) window.clearTimeout(copyFlashTimerRef.current);
     };
   }, []);
 
   const handleCopyClick = useCallback(async () => {
-    if (!plain) return;
-    const showHint = (label: string) => {
-      setCopyHint(label);
-      if (copyHintTimerRef.current !== null) window.clearTimeout(copyHintTimerRef.current);
-      copyHintTimerRef.current = window.setTimeout(() => {
-        setCopyHint(null);
-        copyHintTimerRef.current = null;
-      }, 1400);
+    if (!textToCopy) return;
+    const flash = (kind: "ok" | "fail") => {
+      setCopyFlash(kind);
+      if (copyFlashTimerRef.current !== null) window.clearTimeout(copyFlashTimerRef.current);
+      copyFlashTimerRef.current = window.setTimeout(() => {
+        setCopyFlash(null);
+        copyFlashTimerRef.current = null;
+      }, 650);
     };
     try {
-      await navigator.clipboard.writeText(plain);
-      showHint("Copied");
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(textToCopy);
+      } else {
+        throw new Error("clipboard unavailable");
+      }
+      flash("ok");
       onCopy?.();
     } catch {
-      showHint("Copy failed");
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = textToCopy;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        const ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+        if (!ok) throw new Error("execCommand failed");
+        flash("ok");
+        onCopy?.();
+      } catch {
+        flash("fail");
+      }
     }
-  }, [onCopy, plain]);
+  }, [onCopy, textToCopy]);
+
   const isActive = state.activeMessageId === messageId;
   const isPlaying = isActive && state.ready && !state.paused;
   const isPaused = isActive && state.ready && state.paused;
@@ -371,11 +397,19 @@ export function AssistantListenButton({
       </button>
       <button
         type="button"
-        onClick={onCopy}
-        disabled={!onCopy}
+        onClick={() => void handleCopyClick()}
+        disabled={!textToCopy}
         title="Copy"
-        aria-label="Copy response"
-        className={`${iconButtonBase} ${iconButtonSize}`}
+        aria-label={
+          copyFlash === "ok" ? "Copied to clipboard" : copyFlash === "fail" ? "Copy failed" : "Copy response"
+        }
+        className={`${iconButtonBase} ${iconButtonSize}${
+          copyFlash === "ok"
+            ? " ring-2 ring-emerald-400/70 border-emerald-400/55 bg-emerald-500/15 text-emerald-100"
+            : copyFlash === "fail"
+              ? " ring-2 ring-red-400/65 border-red-400/50 bg-red-500/10 text-red-100"
+              : ""
+        }`}
       >
         <Copy className={iconClass} />
       </button>

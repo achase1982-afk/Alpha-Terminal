@@ -22,6 +22,8 @@ export function isAnthropicExtendedThinkingCapableModel(model: string): boolean 
   if (!/^claude-/i.test(model)) return false;
   // Claude 3.x does not accept the same `@ai-sdk/anthropic` thinking payload as 4.x; sending it causes hard API errors.
   if (/^claude-3-/i.test(model)) return false;
+  // Haiku models do not use the same extended-thinking path as Opus/Sonnet in our Anthropic integration.
+  if (/haiku/i.test(model)) return false;
   return true;
 }
 

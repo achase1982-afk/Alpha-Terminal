@@ -44,6 +44,45 @@ function nextMsgId(): string {
   return `mnc-${Date.now()}-${++msgCounter}`;
 }
 
+const MULTI_AGENT_ORBIT_COLORS = ["#22d3ee", "#a78bfa", "#fbbf24", "#fb7185", "#4ade80", "#38bdf8"] as const;
+
+function MultiAgentOrbit({ count }: { count: number }) {
+  const n = Math.min(Math.max(count, 2), 6);
+  return (
+    <div className="relative h-6 w-6 shrink-0" title={`${count} agents`}>
+      <span className="pointer-events-none absolute inset-0 rounded-full border border-white/25" aria-hidden />
+      <span className="pointer-events-none absolute inset-[5px] rounded-full border border-white/10" aria-hidden />
+      <div
+        className="absolute inset-0 animate-spin"
+        style={{ animationDuration: "2.6s", animationTimingFunction: "linear" }}
+        aria-hidden
+      >
+        {Array.from({ length: n }).map((_, i) => (
+          <div
+            key={i}
+            className="absolute inset-0"
+            style={{ transform: `rotate(${(360 / n) * i}deg)` }}
+          >
+            <div
+              className="absolute left-1/2 top-0 -translate-x-1/2 animate-spin"
+              style={{
+                animationDuration: "2.6s",
+                animationTimingFunction: "linear",
+                animationDirection: "reverse",
+              }}
+            >
+              <Bot
+                className="h-2.5 w-2.5 drop-shadow-[0_0_4px_rgba(0,0,0,0.9)]"
+                style={{ color: MULTI_AGENT_ORBIT_COLORS[i % MULTI_AGENT_ORBIT_COLORS.length] }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function MarketNewsChatPanel() {
   const symbol = useTerminalStore((s) => s.symbol);
   const accessToken = useTerminalStore((s) => s.accessToken);
@@ -142,6 +181,19 @@ export function MarketNewsChatPanel() {
     }
   }, [messages, isStreaming]);
 
+  useEffect(() => {
+    if (isStreaming) return;
+    remeasure();
+    const t1 = setTimeout(remeasure, 50);
+    const t2 = setTimeout(remeasure, 220);
+    const t3 = setTimeout(remeasure, 520);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, [isStreaming, remeasure]);
+
   type ChatHistoryMessage = { role: "user" | "assistant"; content: string };
   type ModelSuccess = { model: string; text: string };
   type ModelFailure = { model: string; message: string; retryable: boolean };
@@ -228,50 +280,10 @@ export function MarketNewsChatPanel() {
     [marketContext, symU],
   );
 
-  const synthesizeMultiModel = useCallback((successes: ModelSuccess[], failures: ModelFailure[]): string => {
-    const firstSentence = (text: string): string => {
-      const cleaned = text.replace(/\s+/g, " ").trim();
-      if (!cleaned) return "";
-      const m = cleaned.match(/(.+?[.!?])(\s|$)/);
-      return (m?.[1] ?? cleaned).slice(0, 220);
-    };
-
-    if (successes.length === 1) {
-      const lines = [
-        "### Consensus",
-        `- Only one model succeeded: **${successes[0]!.model}**.`,
-        "",
-        "### Disagreements",
-        "- Not applicable with a single successful model.",
-      ];
-      if (failures.length > 0) {
-        lines.push(...failures.map((f) => `- Model failed: **${f.model}** (${f.message}).`));
-      }
-      lines.push("", "### Final synthesis", successes[0]!.text);
-      return lines.join("\n");
-    }
-
-    const uniqueLead = [...new Set(successes.map((s) => firstSentence(s.text)).filter(Boolean))];
-    const consensusLine =
-      uniqueLead.length <= 1
-        ? `- Models aligned on the same core answer (${successes.map((s) => `**${s.model}**`).join(", ")}).`
-        : `- Models agree on the broad direction, but differ on emphasis/detail (${successes.map((s) => `**${s.model}**`).join(", ")}).`;
-
-    const disagreementLines = successes.map((s) => `- **${s.model}**: ${firstSentence(s.text) || s.text.slice(0, 160)}`);
-    const failureLines = failures.map((f) => `- Model failed: **${f.model}** (${f.message}).`);
-    const finalBase = successes.slice().sort((a, b) => b.text.length - a.text.length)[0]!;
-
-    return [
-      "### Consensus",
-      consensusLine,
-      "",
-      "### Disagreements",
-      ...disagreementLines,
-      ...(failureLines.length > 0 ? failureLines : []),
-      "",
-      "### Final synthesis",
-      finalBase.text,
-    ].join("\n");
+  const synthesizeMultiModel = useCallback((successes: ModelSuccess[], _failures: ModelFailure[]): string => {
+    if (successes.length === 0) return "";
+    const ranked = successes.slice().sort((a, b) => b.text.length - a.text.length);
+    return ranked[0]!.text.trim();
   }, []);
 
   const runAssistantGeneration = useCallback(
@@ -708,13 +720,7 @@ export function MarketNewsChatPanel() {
           !messages[messages.length - 1]!.content.trim() && (
           activeMultiAgentCount > 1 ? (
             <div className="flex items-center gap-2 py-1 text-white/75">
-              <div className="relative h-6 w-6 shrink-0">
-                <span className="absolute inset-0 rounded-full border border-white/20" />
-                <span className="absolute inset-0 animate-spin" style={{ animationDuration: "1.6s" }}>
-                  <span className="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-white/80" />
-                </span>
-                <Bot className="absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 text-white/70" />
-              </div>
+              <MultiAgentOrbit count={activeMultiAgentCount} />
               <div className="flex items-center gap-1">
                 <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" />
                 <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "130ms" }} />
