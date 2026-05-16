@@ -45,6 +45,49 @@ function nextMsgId(): string {
   return `mnc-${Date.now()}-${++msgCounter}`;
 }
 
+const SYNTH_DRAFT_CHAR_CAP = 8000;
+
+type SynthDraft = { model: string; text: string };
+type SynthFailure = { model: string; message: string };
+
+function buildMultiAgentSynthesisUserContent(successes: SynthDraft[], failures: SynthFailure[]): string {
+  const blocks = successes
+    .map((x) => {
+      const raw = x.text.trim();
+      const clipped =
+        raw.length > SYNTH_DRAFT_CHAR_CAP
+          ? `${raw.slice(0, SYNTH_DRAFT_CHAR_CAP)}\n\n_[Draft truncated for length]_`
+          : raw;
+      return `### Draft from \`${x.model}\`\n\n${clipped}`;
+    })
+    .join("\n\n---\n\n");
+
+  const failNote =
+    failures.length > 0
+      ? `\n\n### Research runs that failed (no draft)\n\n${failures.map((f) => `- \`${f.model}\`: ${f.message}`).join("\n")}`
+      : "";
+
+  return `You are the final **synthesizer** for Alpha Terminal.
+
+Several models ran in parallel on the trader's question (full conversation is above, including any live Schwab / terminal context the assistant already received).
+
+Below are **research drafts**. Treat them as **unvetted** — they may disagree, omit data, or hallucinate facts, prices, symbols, or catalysts.
+
+### Your instructions
+
+1. Output **one** markdown answer as the **single source of truth** for the trader.
+2. **Ground** every material factual claim in: the user's messages, and any explicit numbers / flow / headlines in the conversation or server context above. Use a draft sentence only when it **clearly** matches that evidence.
+3. When drafts conflict on facts, **prefer** what is supported by server/market context in the thread; if none resolves it, say so briefly instead of guessing.
+4. **Discard** claims that look invented or unsupported (e.g. unrelated ticker, impossible prints, numbers contradicting context, "hard numbers" with no basis in context).
+5. Write as **one** coherent analyst response — **no** "Model A / Model B", no "consensus" headings, no process narration.
+
+### Research drafts
+
+${blocks}${failNote}
+
+Write the final markdown answer now.`;
+}
+
 const MULTI_AGENT_ORBIT_COLORS = ["#22d3ee", "#a78bfa", "#fbbf24", "#fb7185", "#4ade80", "#38bdf8"] as const;
 
 function MultiAgentOrbit({ count }: { count: number }) {
@@ -306,17 +349,6 @@ export function MarketNewsChatPanel() {
     [marketContext, symU],
   );
 
-  const synthesizeMultiModel = useCallback(
-    (successes: ModelSuccess[], _failures: ModelFailure[], preferModel: string): string => {
-      if (successes.length === 0) return "";
-      const preferred = successes.find((x) => x.model === preferModel);
-      if (preferred) return preferred.text.trim();
-      const ranked = successes.slice().sort((a, b) => b.text.length - a.text.length);
-      return ranked[0]!.text.trim();
-    },
-    [],
-  );
-
   const runAssistantGeneration = useCallback(
     async (args: {
       tid: string;
@@ -381,7 +413,30 @@ export function MarketNewsChatPanel() {
           return;
         }
 
-        setAssistantContent(symU, tid, assistantId, synthesizeMultiModel(successes, failures, synthesizerModel));
+        setActiveMultiAgentCount(0);
+        const synthesisMessage: ChatHistoryMessage = {
+          role: "user",
+          content: buildMultiAgentSynthesisUserContent(successes, failures),
+        };
+        const synthesisHistory: ChatHistoryMessage[] = [...history, synthesisMessage];
+        try {
+          const finalText = await fetchModelReply(
+            synthesizerModel,
+            synthesisHistory,
+            controller.signal,
+            (partial) => setAssistantContent(symU, tid, assistantId, partial),
+          );
+          setAssistantContent(symU, tid, assistantId, finalText);
+        } catch (synErr: unknown) {
+          const parsed = normalizeFetchError(synErr);
+          if (parsed.retryable) setLastFailedMessage(sourcePrompt);
+          setAssistantContent(
+            symU,
+            tid,
+            assistantId,
+            `**Error:** Synthesis failed (${parsed.message}).${parsed.retryable ? " Please retry." : ""}`,
+          );
+        }
         if (failures.some((f) => f.retryable)) {
           setLastFailedMessage(sourcePrompt);
         }
@@ -403,7 +458,7 @@ export function MarketNewsChatPanel() {
         setIsStreaming(false);
       }
     },
-    [activeModels, fetchModelReply, normalizeFetchError, setAssistantContent, symU, synthesizeMultiModel, synthesizerModel],
+    [activeModels, fetchModelReply, normalizeFetchError, setAssistantContent, symU, synthesizerModel],
   );
 
   const sendMessage = useCallback(
@@ -605,8 +660,8 @@ export function MarketNewsChatPanel() {
                 value={synthesizerModel}
                 onChange={(e) => setSynthesizerModel(e.target.value)}
                 className="min-w-0 max-w-[120px] sm:max-w-[200px] truncate bg-black/60 border border-card-border rounded px-1.5 py-1 font-mono text-[11px] text-white"
-                aria-label="Final answer from model"
-                title="Pick which model's reply is shown as the single synthesized answer"
+                aria-label="Model that runs the final synthesis pass"
+                title="After parallel research, this model receives every draft and writes one grounded answer"
               >
                 {multiAgentModels.map((m) => (
                   <option key={m} value={m}>
