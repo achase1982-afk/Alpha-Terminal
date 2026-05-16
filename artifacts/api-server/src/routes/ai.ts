@@ -57,7 +57,7 @@ import {
   isAnthropicAdaptiveThinkingModel,
   xaiReasoningProviderOptionsForChat,
 } from "../lib/llmReasoningConfig.js";
-import { buildAiChatContextPack } from "../lib/aiChatContextPack.js";
+import { buildAiChatContextPack, resolveAiChatContextSymbol } from "../lib/aiChatContextPack.js";
 
 export { isClaude47OrNewer } from "../lib/llmReasoningConfig.js";
 
@@ -2543,12 +2543,9 @@ router.post("/chat", async (req, res) => {
     let terminalDataPack = "";
     if (contextSymbol) {
       try {
-        const chatPackToken = getBestAccessToken();
         terminalDataPack = await buildAiChatContextPack({
           symbol: contextSymbol,
           lastUserMessage: lastUserMsg,
-          schwabAccessToken: chatPackToken ?? undefined,
-          packLog: req.log,
         });
       } catch (packErr) {
         req.log.error({ err: packErr, contextSymbol }, "AI chat: context pack assembly failed");

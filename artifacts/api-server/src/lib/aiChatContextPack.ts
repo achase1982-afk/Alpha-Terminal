@@ -25,6 +25,200 @@ import { getOrFetchChain, type CachedChain } from "../routes/market.js";
 
 const FMP_NEWS_LIMIT = 12;
 const FOCUSED_PRINTS_PER_STRIKE = 25;
+/**
+ * Uppercase tokens that look like tickers but are usually English / chart jargon.
+ * Must match the stopword list in the alpha-terminal `resolveChatContextSymbol` helper.
+ */
+export const AI_CHAT_TICKER_STOPWORDS = new Set<string>([
+  "AND",
+  "ARE",
+  "ATH",
+  "ATL",
+  "ASK",
+  "BID",
+  "BUT",
+  "BUY",
+  "CAN",
+  "DAY",
+  "DID",
+  "DOES",
+  "DOWN",
+  "EPS",
+  "ETF",
+  "FOR",
+  "GET",
+  "GOT",
+  "HAD",
+  "HAS",
+  "HER",
+  "HIM",
+  "HIS",
+  "HOW",
+  "IPO",
+  "ITS",
+  "IV",
+  "LET",
+  "LOW",
+  "MAY",
+  "NAV",
+  "NEW",
+  "NOT",
+  "NOW",
+  "ONE",
+  "OUR",
+  "OUT",
+  "PUT",
+  "RSI",
+  "SAW",
+  "SAY",
+  "SELL",
+  "SHE",
+  "THE",
+  "TOO",
+  "TWO",
+  "USE",
+  "VIX",
+  "WAS",
+  "WAY",
+  "WHO",
+  "WHY",
+  "YES",
+  "YET",
+  "YOU",
+  "YTD",
+  "OPEN",
+  "HIGH",
+  "CLOSE",
+  "FROM",
+  "INTO",
+  "THAN",
+  "THEN",
+  "THEM",
+  "WITH",
+  "JUST",
+  "ALSO",
+  "ONLY",
+  "SOME",
+  "SUCH",
+  "VERY",
+  "WHAT",
+  "WHEN",
+  "WHERE",
+  "WHICH",
+  "YOUR",
+  "ABOUT",
+  "AFTER",
+  "AGAIN",
+  "BEING",
+  "COULD",
+  "FIRST",
+  "GOING",
+  "GOOD",
+  "GREAT",
+  "HEDGE",
+  "HERE",
+  "LAST",
+  "LIKE",
+  "LONG",
+  "MADE",
+  "MAKE",
+  "MANY",
+  "MORE",
+  "MOST",
+  "MUCH",
+  "NEXT",
+  "OVER",
+  "PART",
+  "SAME",
+  "SEEN",
+  "SHOW",
+  "STAY",
+  "TAKE",
+  "THAT",
+  "THESE",
+  "THEY",
+  "THIS",
+  "TIME",
+  "THOSE",
+  "UNDER",
+  "WELL",
+  "WERE",
+  "WILL",
+  "WORK",
+  "BACK",
+  "CALL",
+  "CASH",
+  "COME",
+  "EVEN",
+  "EVER",
+  "FEEL",
+  "FIND",
+  "FORM",
+  "FULL",
+  "GAVE",
+  "GIVE",
+  "HELP",
+  "HOLD",
+  "KEEP",
+  "KNOW",
+  "LIFE",
+  "LIVE",
+  "LOOK",
+  "MOVE",
+  "NAME",
+  "NEED",
+  "PLAY",
+  "READ",
+  "REAL",
+  "RUNS",
+  "SAID",
+  "SEEM",
+  "SIDE",
+  "SURE",
+  "TELL",
+  "TURN",
+  "USED",
+  "WANT",
+  "WEEK",
+  "YEAR",
+]);
+
+/**
+ * Pick which equity symbol should drive terminal DB tape / flow context when the
+ * terminal page symbol may differ from the ticker named in the user's text.
+ */
+export function resolveAiChatContextSymbol(pageSymbol: string, routingText: string): string {
+  const page = pageSymbol.trim().toUpperCase();
+  const text = routingText.trim().toUpperCase();
+  if (!text) return page || "";
+
+  const dollarSyms: string[] = [];
+  const reDollar = /\$([A-Z]{2,5})\b/g;
+  let dm: RegExpExecArray | null;
+  while ((dm = reDollar.exec(text)) !== null) {
+    dollarSyms.push(dm[1]!);
+  }
+  if (dollarSyms.length > 0) {
+    return dollarSyms[dollarSyms.length - 1]!;
+  }
+
+  const bareOrdered: string[] = [];
+  const reBare = /\b([A-Z]{2,5})\b/g;
+  let bm: RegExpExecArray | null;
+  while ((bm = reBare.exec(text)) !== null) {
+    if (bm.index > 0 && text[bm.index - 1] === "$") continue;
+    const w = bm[1]!;
+    if (AI_CHAT_TICKER_STOPWORDS.has(w)) continue;
+    bareOrdered.push(w);
+  }
+  if (bareOrdered.length === 0) return page || "";
+
+  const last = bareOrdered[bareOrdered.length - 1]!;
+  if (last === page && bareOrdered.length >= 2) {
+    return bareOrdered[bareOrdered.length - 2]!;
+  }
+  return last;
+}
 
 /** Delta band for AI chat chain snapshot (absolute delta). */
 const CHAT_CHAIN_DELTA_MIN = 0.08;
