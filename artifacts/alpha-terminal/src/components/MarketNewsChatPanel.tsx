@@ -145,14 +145,6 @@ export function MarketNewsChatPanel() {
     }
   }, [messages, isStreaming]);
 
-  useEffect(() => {
-    return () => {
-      if (copyToastTimerRef.current !== null && typeof window !== "undefined") {
-        window.clearTimeout(copyToastTimerRef.current);
-      }
-    };
-  }, []);
-
   type ChatHistoryMessage = { role: "user" | "assistant"; content: string };
   type ModelSuccess = { model: string; text: string };
   type ModelFailure = { model: string; message: string; retryable: boolean };
@@ -236,7 +228,7 @@ export function MarketNewsChatPanel() {
       }
       return accumulated.trim();
     },
-    [accessToken, marketContext, symU],
+    [marketContext, symU],
   );
 
   const synthesizeMultiModel = useCallback((successes: ModelSuccess[], failures: ModelFailure[]): string => {

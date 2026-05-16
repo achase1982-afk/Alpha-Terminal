@@ -57,7 +57,7 @@ import {
   isAnthropicAdaptiveThinkingModel,
   xaiReasoningProviderOptionsForChat,
 } from "../lib/llmReasoningConfig.js";
-import { buildAiChatContextPack, resolveAiChatContextSymbol } from "../lib/aiChatContextPack.js";
+import { buildAiChatContextPack } from "../lib/aiChatContextPack.js";
 
 export { isClaude47OrNewer } from "../lib/llmReasoningConfig.js";
 
@@ -2706,7 +2706,7 @@ ${contextSymbol ? terminalDataPack : "(No symbol was sent — ask the user to se
     const result = streamText({
       model: anthropic(chosenModel),
       system: systemPrompt,
-      temperature: 0,
+      ...(claudeThinking ? {} : { temperature: 0 }),
       maxOutputTokens: 16384,
       messages: messages.map(m => ({
         role: m.role as "user" | "assistant",

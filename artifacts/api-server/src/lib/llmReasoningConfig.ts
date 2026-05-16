@@ -19,7 +19,12 @@ export function isAnthropicAdaptiveThinkingModel(model: string): boolean {
 export const isClaude47OrNewer = isAnthropicAdaptiveThinkingModel;
 
 export function isAnthropicExtendedThinkingCapableModel(model: string): boolean {
-  return /^claude-/i.test(model);
+  const m = model.trim().toLowerCase();
+  if (!m.startsWith("claude-")) return false;
+  // Claude 3.x Messages API does not accept the newer extended-thinking block shape
+  // used by @ai-sdk/anthropic — enabling it causes hard API errors for e.g. 3.7 Sonnet.
+  if (/^claude-3-/.test(m)) return false;
+  return true;
 }
 
 export type AnthropicMessagesApiThinking =
