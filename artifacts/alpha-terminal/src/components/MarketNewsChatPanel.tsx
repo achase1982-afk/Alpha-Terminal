@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { useTerminalStore, type MarketNewsChatMessage } from "@/lib/store";
-import { useGetQuote, getQuote } from "@workspace/api-client-react";
+import { useGetQuote } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { resolveChatContextSymbol, formatAiChatMarketContext } from "@/lib/resolveChatContextSymbol";
 import { Send, Square, RotateCcw, Plus, Trash2, Bot } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech, markdownToSpeakable } from "@/components/AssistantListenButton";
@@ -106,7 +105,7 @@ function MultiAgentStreamingStatus({
         </span>
       </div>
       <p className="mt-1 font-mono text-[11px] text-zinc-300 leading-snug">
-        Spotlight:{" "}
+        Multi-agent:{" "}
         <span key={nameIdx} className="text-cyan-100/95 break-all">
           {spotlight}
         </span>
@@ -257,36 +256,15 @@ export function MarketNewsChatPanel() {
       history: ChatHistoryMessage[],
       signal: AbortSignal,
       onPartial?: (partial: string) => void,
-      contextRoutingText?: string,
     ): Promise<string> => {
-      const routing =
-        (contextRoutingText ?? "").trim() ||
-        [...history].reverse().find((m) => m.role === "user")?.content?.trim() ||
-        "";
-      const ctxSym = resolveChatContextSymbol(symU, routing);
-      let effectiveMarketContext = marketContext;
-      if (ctxSym !== symU) {
-        if (accessToken) {
-          try {
-            const q = await getQuote({ symbol: ctxSym, accessToken }, { signal });
-            effectiveMarketContext = formatAiChatMarketContext(ctxSym, q);
-          } catch {
-            effectiveMarketContext = `No live market context available for ${ctxSym}.`;
-          }
-        } else {
-          effectiveMarketContext = `No live market context available for ${ctxSym} (sign in for quotes).`;
-        }
-      }
-
       const res = await fetchWithAuth("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: history,
-          marketContext: effectiveMarketContext,
+          marketContext,
           model,
           symbol: symU,
-          ...(routing ? { contextRoutingText: routing } : {}),
         }),
         signal,
       });
@@ -330,7 +308,7 @@ export function MarketNewsChatPanel() {
       }
       return accumulated.trim();
     },
-    [accessToken, marketContext, symU],
+    [marketContext, symU],
   );
 
   const synthesizeMultiModel = useCallback(
@@ -339,28 +317,28 @@ export function MarketNewsChatPanel() {
       failures: ModelFailure[],
       opts?: { chairModel?: string; chairText?: string | null; chairError?: string | null },
     ): string => {
-      const lines: string[] = ["## Individual responses", ""];
+      const lines: string[] = ["## Multi-agent", ""];
       for (const s of successes) {
         lines.push(`### ${s.model}`, "", s.text, "");
       }
       if (failures.length > 0) {
-        lines.push("## Could not complete", "");
+        lines.push("## Runs that did not finish", "");
         for (const f of failures) {
           lines.push(`- **${f.model}**: ${f.message}`);
         }
         lines.push("");
       }
       const fallbackLongest = successes.slice().sort((a, b) => b.text.length - a.text.length)[0]!;
-      lines.push("## Synthesis", "");
+      lines.push("## Combined answer", "");
       if (opts?.chairText?.trim()) {
         lines.push(
-          `*Merged answer from **${opts.chairModel ?? "chair"}** using the independent drafts above (not a cross-model debate).*`,
+          `*Synthesized by **${opts.chairModel ?? "chair"}** from the drafts above.*`,
           "",
           opts.chairText.trim(),
         );
       } else if (opts?.chairError) {
         lines.push(
-          `*Chair model could not synthesize (${opts.chairError}). Showing the longest successful draft.*`,
+          `*Chair run failed (${opts.chairError}). Showing the longest successful draft.*`,
           "",
           fallbackLongest.text,
         );
@@ -402,7 +380,6 @@ export function MarketNewsChatPanel() {
             history,
             controller.signal,
             allowStreamingSingle ? (partial) => setAssistantContent(symU, tid, assistantId, partial) : undefined,
-            sourcePrompt,
           );
           setAssistantContent(symU, tid, assistantId, text);
           return;
@@ -413,7 +390,7 @@ export function MarketNewsChatPanel() {
         const settled = await Promise.all(
           selectedModels.map(async (model): Promise<ModelSuccess | ModelFailure> => {
             try {
-              const text = await fetchModelReply(model, history, controller.signal, undefined, sourcePrompt);
+              const text = await fetchModelReply(model, history, controller.signal);
               return { model, text };
             } catch (err: unknown) {
               const parsed = normalizeFetchError(err);
@@ -458,7 +435,7 @@ export function MarketNewsChatPanel() {
             .join("\n\n");
           const chairHistory: ChatHistoryMessage[] = [...history, { role: "user", content: chairPack }];
           try {
-            chairText = await fetchModelReply(chairSend, chairHistory, controller.signal, undefined, sourcePrompt);
+            chairText = await fetchModelReply(chairSend, chairHistory, controller.signal);
           } catch (err: unknown) {
             const parsed = normalizeFetchError(err);
             chairError = parsed.message;
