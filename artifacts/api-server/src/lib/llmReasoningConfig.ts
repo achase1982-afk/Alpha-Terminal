@@ -19,7 +19,10 @@ export function isAnthropicAdaptiveThinkingModel(model: string): boolean {
 export const isClaude47OrNewer = isAnthropicAdaptiveThinkingModel;
 
 export function isAnthropicExtendedThinkingCapableModel(model: string): boolean {
-  return /^claude-/i.test(model);
+  if (!/^claude-/i.test(model)) return false;
+  // Claude 3.x does not accept the same `@ai-sdk/anthropic` thinking payload as 4.x; sending it causes hard API errors.
+  if (/^claude-3-/i.test(model)) return false;
+  return true;
 }
 
 export type AnthropicMessagesApiThinking =

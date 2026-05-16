@@ -5,10 +5,9 @@ import { useGetQuote } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Send, Square, RotateCcw, Plus, Trash2, Bot } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import { AssistantListenButton, cancelAssistantSpeech, markdownToSpeakable } from "@/components/AssistantListenButton";
+import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
 import { useVisualViewportComposerMetrics } from "@/hooks/useVisualViewportKeyboardInset";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
-import { toast } from "sonner";
 
 const RETRYABLE_CHAT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const MULTI_AGENT_MODEL = "__multi_agent__";
@@ -69,9 +68,7 @@ export function MarketNewsChatPanel() {
   const [composerFocused, setComposerFocused] = useState(false);
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const [activeMultiAgentCount, setActiveMultiAgentCount] = useState(0);
-  const [copyToastText, setCopyToastText] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const copyToastTimerRef = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   /** Reserve space for bottom tab bar when the keyboard is dismissed (see BottomNav). */
@@ -144,14 +141,6 @@ export function MarketNewsChatPanel() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isStreaming]);
-
-  useEffect(() => {
-    return () => {
-      if (copyToastTimerRef.current !== null && typeof window !== "undefined") {
-        window.clearTimeout(copyToastTimerRef.current);
-      }
-    };
-  }, []);
 
   type ChatHistoryMessage = { role: "user" | "assistant"; content: string };
   type ModelSuccess = { model: string; text: string };
@@ -236,7 +225,7 @@ export function MarketNewsChatPanel() {
       }
       return accumulated.trim();
     },
-    [accessToken, marketContext, symU],
+    [marketContext, symU],
   );
 
   const synthesizeMultiModel = useCallback((successes: ModelSuccess[], failures: ModelFailure[]): string => {
@@ -445,6 +434,7 @@ export function MarketNewsChatPanel() {
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
+    setActiveMultiAgentCount(0);
     setIsStreaming(false);
   }, []);
 
@@ -454,29 +444,6 @@ export function MarketNewsChatPanel() {
     if (!lastAssistant) return;
     void retryAssistantBubble(lastAssistant.id);
   }, [isStreaming, lastFailedMessage, messages, retryAssistantBubble]);
-
-  const handleCopyAssistant = useCallback(async (content: string) => {
-    const plain = markdownToSpeakable(content);
-    if (!plain) return;
-    const flashCopyToast = (label: string) => {
-      setCopyToastText(label);
-      if (copyToastTimerRef.current !== null) {
-        window.clearTimeout(copyToastTimerRef.current);
-      }
-      copyToastTimerRef.current = window.setTimeout(() => {
-        setCopyToastText(null);
-        copyToastTimerRef.current = null;
-      }, 1100);
-    };
-    try {
-      await navigator.clipboard.writeText(plain);
-      toast.message("Copied");
-      flashCopyToast("Copied");
-    } catch {
-      toast.message("Copy failed");
-      flashCopyToast("Copy failed");
-    }
-  }, []);
 
   const threadOrder = bundle?.threadOrder ?? [];
 
@@ -726,9 +693,6 @@ export function MarketNewsChatPanel() {
                   messageId={msg.id}
                   markdownText={msg.content}
                   size="sm"
-                  onCopy={() => {
-                    void handleCopyAssistant(msg.content);
-                  }}
                   onRetry={() => {
                     void retryAssistantBubble(msg.id);
                   }}
@@ -738,7 +702,10 @@ export function MarketNewsChatPanel() {
             )}
           </div>
         ))}
-        {isStreaming && messages.length > 0 && messages[messages.length - 1]?.role === "user" && (
+        {isStreaming &&
+          messages.length > 0 &&
+          messages[messages.length - 1]?.role === "assistant" &&
+          !messages[messages.length - 1]!.content.trim() && (
           activeMultiAgentCount > 1 ? (
             <div className="flex items-center gap-2 py-1 text-white/75">
               <div className="relative h-6 w-6 shrink-0">
@@ -766,12 +733,6 @@ export function MarketNewsChatPanel() {
           )
         )}
       </div>
-
-      {copyToastText && (
-        <div className="pointer-events-none absolute left-1/2 bottom-20 z-[10130] -translate-x-1/2 rounded border border-white/20 bg-black/90 px-2 py-1 font-mono text-[11px] text-white shadow-lg">
-          {copyToastText}
-        </div>
-      )}
 
       {narrowMobile && typeof document !== "undefined"
         ? createPortal(renderComposer(), document.body)

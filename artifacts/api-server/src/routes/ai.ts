@@ -57,7 +57,7 @@ import {
   isAnthropicAdaptiveThinkingModel,
   xaiReasoningProviderOptionsForChat,
 } from "../lib/llmReasoningConfig.js";
-import { buildAiChatContextPack, resolveAiChatContextSymbol } from "../lib/aiChatContextPack.js";
+import { buildAiChatContextPack } from "../lib/aiChatContextPack.js";
 
 export { isClaude47OrNewer } from "../lib/llmReasoningConfig.js";
 
@@ -2706,7 +2706,7 @@ ${contextSymbol ? terminalDataPack : "(No symbol was sent — ask the user to se
     const result = streamText({
       model: anthropic(chosenModel),
       system: systemPrompt,
-      temperature: 0,
+      ...(claudeThinking ? {} : { temperature: 0 }),
       maxOutputTokens: 16384,
       messages: messages.map(m => ({
         role: m.role as "user" | "assistant",
@@ -2719,6 +2719,12 @@ ${contextSymbol ? terminalDataPack : "(No symbol was sent — ask the user to se
       for await (const chunk of result.textStream) {
         if (!firstChunkSent) { firstChunkSent = true; clearInterval(heartbeat); }
         res.write(chunk);
+      }
+    } catch (streamErr) {
+      req.log.error({ err: streamErr }, "AI chat: Claude text stream failed");
+      if (!res.writableEnded) {
+        const msg = streamErr instanceof Error ? streamErr.message : String(streamErr);
+        res.write(`\n\n**Error:** ${msg}`);
       }
     } finally {
       clearInterval(heartbeat);
