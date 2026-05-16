@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
-import { useGetQuote } from "@workspace/api-client-react";
+import { useGetQuote, getQuote } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { resolveChatContextSymbol, formatAiChatMarketContext } from "@/lib/resolveChatContextSymbol";
 import { Button } from "@/components/ui/button";
 import { X, Send, Search, Square, RotateCw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -37,16 +38,17 @@ function nextId(): string {
 
 export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
   const { symbol, accessToken, aiFeatureSettings } = useTerminalStore();
+  const symU = symbol.toUpperCase();
   const aiModel = aiFeatureSettings.chat.model;
 
   const { data: quote } = useGetQuote(
-    { symbol, accessToken: accessToken || "" },
-    { query: { queryKey: ["quote", symbol, accessToken], enabled: !!accessToken } }
+    { symbol: symU, accessToken: accessToken || "" },
+    { query: { queryKey: ["quote", symU, accessToken], enabled: !!accessToken } }
   );
 
   const marketContext = quote
-    ? `CURRENT MARKET CONTEXT for ${symbol}:\nLast: $${quote.last}\nChange: ${quote.changePct}%\nVol: ${quote.volume}\nRange: ${quote.low}-${quote.high}`
-    : `No live market context available for ${symbol}.`;
+    ? formatAiChatMarketContext(symU, quote)
+    : `No live market context available for ${symU}.`;
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -94,11 +96,33 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
     const controller = new AbortController();
     abortRef.current = controller;
 
+    const routing = text.trim();
+    const ctxSym = resolveChatContextSymbol(symU, routing);
+    let effectiveMarketContext = marketContext;
+    if (ctxSym !== symU) {
+      if (accessToken) {
+        try {
+          const q = await getQuote({ symbol: ctxSym, accessToken }, { signal: controller.signal });
+          effectiveMarketContext = formatAiChatMarketContext(ctxSym, q);
+        } catch {
+          effectiveMarketContext = `No live market context available for ${ctxSym}.`;
+        }
+      } else {
+        effectiveMarketContext = `No live market context available for ${ctxSym} (sign in for quotes).`;
+      }
+    }
+
     try {
       const res = await fetchWithAuth("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history, marketContext, model: aiModel, symbol }),
+        body: JSON.stringify({
+          messages: history,
+          marketContext: effectiveMarketContext,
+          model: aiModel,
+          symbol: symU,
+          contextRoutingText: routing,
+        }),
         signal: controller.signal,
       });
 
@@ -173,7 +197,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
       abortRef.current = null;
       setIsStreaming(false);
     }
-  }, [messages, marketContext, isStreaming, aiModel, symbol]);
+  }, [messages, marketContext, isStreaming, aiModel, symU, accessToken]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
@@ -218,7 +242,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
         <div className="flex items-center gap-2">
           <Search className="w-4 h-4 text-primary" />
           <span className="font-mono text-xs font-bold text-primary tracking-wider">SEARCH</span>
-          <span className="font-mono text-[10px] text-muted-foreground">— {symbol}</span>
+          <span className="font-mono text-[10px] text-muted-foreground">— {symU}</span>
         </div>
         <div className="flex items-center gap-2">
           {messages.length > 0 && (
@@ -250,7 +274,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
               Stocks, fundamentals, macro, earnings — or anything else.
             </p>
             <div className="flex flex-wrap justify-center gap-2 max-w-sm">
-              {getChipsForSymbol(symbol).map(chip => (
+              {getChipsForSymbol(symU).map(chip => (
                 <button
                   key={chip}
                   onClick={() => { setInput(chip); inputRef.current?.focus(); }}
@@ -340,7 +364,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
               setTimeout(remeasure, 0);
               setTimeout(remeasure, 120);
             }}
-            placeholder={`Search ${symbol}, markets, anything...`}
+            placeholder={`Ask about any ticker (watch: ${symU})…`}
             rows={1}
             autoComplete="off"
             autoCorrect="off"

@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback, useMemo, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { useTerminalStore, type MarketNewsChatMessage } from "@/lib/store";
-import { useGetQuote } from "@workspace/api-client-react";
+import { useGetQuote, getQuote } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { resolveChatContextSymbol, formatAiChatMarketContext } from "@/lib/resolveChatContextSymbol";
 import { Send, Square, RotateCcw, Plus, Trash2, Bot } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech, markdownToSpeakable } from "@/components/AssistantListenButton";
@@ -104,16 +105,11 @@ function MultiAgentStreamingStatus({
           <Bot className="relative h-4 w-4 text-zinc-200" />
         </span>
       </div>
-      <p className="font-mono text-[10px] uppercase tracking-wider text-zinc-500">Parallel providers</p>
       <p className="mt-1 font-mono text-[11px] text-zinc-300 leading-snug">
         Spotlight:{" "}
         <span key={nameIdx} className="text-cyan-100/95 break-all">
           {spotlight}
         </span>
-      </p>
-      <p className="mt-0.5 font-mono text-[10px] text-zinc-500 leading-snug">
-        Same prompt to each; they do not see each other. With two or more successes your chosen chair writes one
-        synthesis; every model&apos;s full reply is still listed below.
       </p>
     </div>
   );
@@ -261,15 +257,36 @@ export function MarketNewsChatPanel() {
       history: ChatHistoryMessage[],
       signal: AbortSignal,
       onPartial?: (partial: string) => void,
+      contextRoutingText?: string,
     ): Promise<string> => {
+      const routing =
+        (contextRoutingText ?? "").trim() ||
+        [...history].reverse().find((m) => m.role === "user")?.content?.trim() ||
+        "";
+      const ctxSym = resolveChatContextSymbol(symU, routing);
+      let effectiveMarketContext = marketContext;
+      if (ctxSym !== symU) {
+        if (accessToken) {
+          try {
+            const q = await getQuote({ symbol: ctxSym, accessToken }, { signal });
+            effectiveMarketContext = formatAiChatMarketContext(ctxSym, q);
+          } catch {
+            effectiveMarketContext = `No live market context available for ${ctxSym}.`;
+          }
+        } else {
+          effectiveMarketContext = `No live market context available for ${ctxSym} (sign in for quotes).`;
+        }
+      }
+
       const res = await fetchWithAuth("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: history,
-          marketContext,
+          marketContext: effectiveMarketContext,
           model,
           symbol: symU,
+          ...(routing ? { contextRoutingText: routing } : {}),
         }),
         signal,
       });
@@ -313,7 +330,7 @@ export function MarketNewsChatPanel() {
       }
       return accumulated.trim();
     },
-    [marketContext, symU],
+    [accessToken, marketContext, symU],
   );
 
   const synthesizeMultiModel = useCallback(
@@ -385,6 +402,7 @@ export function MarketNewsChatPanel() {
             history,
             controller.signal,
             allowStreamingSingle ? (partial) => setAssistantContent(symU, tid, assistantId, partial) : undefined,
+            sourcePrompt,
           );
           setAssistantContent(symU, tid, assistantId, text);
           return;
@@ -395,7 +413,7 @@ export function MarketNewsChatPanel() {
         const settled = await Promise.all(
           selectedModels.map(async (model): Promise<ModelSuccess | ModelFailure> => {
             try {
-              const text = await fetchModelReply(model, history, controller.signal);
+              const text = await fetchModelReply(model, history, controller.signal, undefined, sourcePrompt);
               return { model, text };
             } catch (err: unknown) {
               const parsed = normalizeFetchError(err);
@@ -440,7 +458,7 @@ export function MarketNewsChatPanel() {
             .join("\n\n");
           const chairHistory: ChatHistoryMessage[] = [...history, { role: "user", content: chairPack }];
           try {
-            chairText = await fetchModelReply(chairSend, chairHistory, controller.signal);
+            chairText = await fetchModelReply(chairSend, chairHistory, controller.signal, undefined, sourcePrompt);
           } catch (err: unknown) {
             const parsed = normalizeFetchError(err);
             chairError = parsed.message;

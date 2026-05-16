@@ -27,6 +27,7 @@ import type { OptionsContract } from "@/components/OptionsTab";
 import { MarketSessionClock } from "@/components/MarketSessionClock";
 import { NewsTab } from "@/components/NewsTab";
 import { MarketNewsChatPanel } from "@/components/MarketNewsChatPanel";
+import { AiChatOverlay } from "@/components/AiChatOverlay";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
 import { BottomNav } from "@/components/BottomNav";
 import { PortfolioView } from "@/components/PortfolioView";

@@ -57,7 +57,7 @@ import {
   isAnthropicAdaptiveThinkingModel,
   xaiReasoningProviderOptionsForChat,
 } from "../lib/llmReasoningConfig.js";
-import { buildAiChatContextPack } from "../lib/aiChatContextPack.js";
+import { buildAiChatContextPack, resolveAiChatContextSymbol } from "../lib/aiChatContextPack.js";
 
 export { isClaude47OrNewer } from "../lib/llmReasoningConfig.js";
 
@@ -2524,12 +2524,14 @@ router.post("/options-strategist/stream", async (req, res) => {
 
 router.post("/chat", async (req, res) => {
   try {
-    const { messages, marketContext, model: reqModel, symbol: bodySymbol } = req.body as {
+    const { messages, marketContext, model: reqModel, symbol: bodySymbol, contextRoutingText } = req.body as {
       messages?: Array<{ role: string; content: string }>;
       marketContext?: string;
       model?: string;
-      /** Terminal symbol — used to load Polygon flow, tape, IVR, FMP news on the server. */
+      /** Terminal watch / page symbol (UI). Tape pack may follow a ticker parsed from the question. */
       symbol?: string;
+      /** Optional: text used to route DB/tape to a ticker (e.g. real user prompt when `messages` ends with synthetic content). */
+      contextRoutingText?: string;
     };
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -2537,15 +2539,35 @@ router.post("/chat", async (req, res) => {
     }
 
     const chosenModel = reqModel ?? DEFAULT_MODEL;
-    const lastUserMsg = messages[messages.length - 1]?.content ?? "";
-    const contextSymbol = (bodySymbol ?? "").trim().toUpperCase();
+    const pageSymbol = (bodySymbol ?? "").trim().toUpperCase();
+    const explicitRouting = typeof contextRoutingText === "string" ? contextRoutingText.trim() : "";
+    let routingSource = explicitRouting;
+    if (!routingSource) {
+      for (let i = messages.length - 1; i >= 0; i -= 1) {
+        const m = messages[i];
+        if (!m || m.role?.toLowerCase() !== "user") continue;
+        const c = typeof m.content === "string" ? m.content : "";
+        const lower = c.toLowerCase();
+        if (lower.includes("--- drafts ---") && lower.includes("council chair")) continue;
+        routingSource = c.trim();
+        break;
+      }
+    }
+    if (!routingSource) {
+      const last = messages[messages.length - 1];
+      routingSource = typeof last?.content === "string" ? last.content.trim() : "";
+    }
+    const contextSymbol = resolveAiChatContextSymbol(pageSymbol, routingSource);
+    const packUserText = routingSource || (typeof messages[messages.length - 1]?.content === "string"
+      ? messages[messages.length - 1]!.content
+      : "");
 
     let terminalDataPack = "";
     if (contextSymbol) {
       try {
         terminalDataPack = await buildAiChatContextPack({
           symbol: contextSymbol,
-          lastUserMessage: lastUserMsg,
+          lastUserMessage: packUserText,
         });
       } catch (packErr) {
         req.log.error({ err: packErr, contextSymbol }, "AI chat: context pack assembly failed");
@@ -2553,6 +2575,11 @@ router.post("/chat", async (req, res) => {
           "(Terminal database context failed to load for this request — rely on Schwab line and user text.)";
       }
     }
+
+    const pageVsPackNote =
+      pageSymbol && contextSymbol && pageSymbol !== contextSymbol
+        ? `\n- NOTE: The terminal watch symbol is ${pageSymbol} but this request's database/tape context is built for **${contextSymbol}** (parsed from the user's wording). Use ${contextSymbol} for ticker-specific tape, flow, and technical facts unless the question is clearly only about ${pageSymbol}.`
+        : "";
 
     const systemPrompt = `You are Alpha Terminal, a world-class AI assistant powered by advanced AI. Your primary UI is the Alpha Financial Terminal.
 - Today is ${new Date().toDateString()}. Current time: ${new Date().toLocaleString()}.
@@ -2573,7 +2600,7 @@ STRICT DATA GROUNDING RULE FOR MARKET/TRADING QUESTIONS:
 - You are FORBIDDEN from using your internal training knowledge to state current prices, recent price movements, support/resistance levels, or directional predictions for any specific security except where explicitly supported below.
 - If Schwab context is empty AND the terminal pack has no quote cache for the symbol, say live equity quote may require Schwab connection/streamer.
 - "### Intraday / daily technicals (server)" may include session VWAP (volume-weighted typical price from persisted Schwab CHART_EQUITY 1m bars) and RSI14 Wilder (from equity_daily closes). Use those lines for VWAP/RSI questions when present; intraday RSI on other platforms may differ.
-- For general financial education (e.g. "what is a put option"), internal knowledge is fine.
+- For general financial education (e.g. "what is a put option"), internal knowledge is fine.${pageVsPackNote}
 
 ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA (from client quote) ═══\n${marketContext}\n═══ END SCHWAB CONTEXT ═══` : "═══ LIVE SCHWAB CONTEXT DATA (from client quote) ═══\nNo client quote line sent.\n═══ END SCHWAB CONTEXT ═══"}
 
@@ -2602,14 +2629,14 @@ ${contextSymbol ? terminalDataPack : "(No symbol was sent — ask the user to se
 
       const ai = createGeminiClient();
 
-      const lastUserMsg = messages[messages.length - 1]?.content ?? "";
+      const finalTurnContent = messages[messages.length - 1]?.content ?? "";
       const conversationHistory = messages.slice(0, -1).map(m =>
         `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`
       ).join("\n\n");
 
       const fullPrompt = conversationHistory
-        ? `${systemPrompt}\n\nConversation so far:\n${conversationHistory}\n\nUser: ${lastUserMsg}`
-        : `${systemPrompt}\n\nUser: ${lastUserMsg}`;
+        ? `${systemPrompt}\n\nConversation so far:\n${conversationHistory}\n\nUser: ${finalTurnContent}`
+        : `${systemPrompt}\n\nUser: ${finalTurnContent}`;
 
       try {
         const gemThinking = geminiThinkingConfigForModel(chosenModel);
