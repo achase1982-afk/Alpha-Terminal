@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
-import { useGetQuote } from "@workspace/api-client-react";
+import { useGetQuote, getQuote } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { formatAiChatMarketContext, resolveChatContextSymbol } from "@/lib/resolveChatContextSymbol";
 import { Button } from "@/components/ui/button";
 import { X, Send, Search, Square, RotateCw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -309,7 +310,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
                 <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "150ms" }} />
                 <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "300ms" }} />
               </span>
-              <span className="text-xs text-muted-foreground ml-1">Generating response…</span>
+              <span className="text-xs text-muted-foreground ml-1">Claude is searching live data...</span>
             </div>
           </div>
         )}

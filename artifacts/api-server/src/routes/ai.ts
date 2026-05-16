@@ -57,7 +57,7 @@ import {
   isAnthropicAdaptiveThinkingModel,
   xaiReasoningProviderOptionsForChat,
 } from "../lib/llmReasoningConfig.js";
-import { buildAiChatContextPack } from "../lib/aiChatContextPack.js";
+import { buildAiChatContextPack, resolveAiChatContextSymbol } from "../lib/aiChatContextPack.js";
 
 export { isClaude47OrNewer } from "../lib/llmReasoningConfig.js";
 
@@ -2523,8 +2523,6 @@ router.post("/options-strategist/stream", async (req, res) => {
 });
 
 router.post("/chat", async (req, res) => {
-  let chosenModel = DEFAULT_MODEL;
-  let contextSymbol = "";
   try {
     const { messages, marketContext, model: reqModel, symbol: bodySymbol } = req.body as {
       messages?: Array<{ role: string; content: string }>;
@@ -2538,9 +2536,9 @@ router.post("/chat", async (req, res) => {
       return res.status(400).json({ error: "Messages array is required." });
     }
 
-    chosenModel = reqModel ?? DEFAULT_MODEL;
+    const chosenModel = reqModel ?? DEFAULT_MODEL;
     const lastUserMsg = messages[messages.length - 1]?.content ?? "";
-    contextSymbol = (bodySymbol ?? "").trim().toUpperCase();
+    const contextSymbol = (bodySymbol ?? "").trim().toUpperCase();
 
     let terminalDataPack = "";
     if (contextSymbol) {
@@ -2728,11 +2726,7 @@ ${contextSymbol ? terminalDataPack : "(No symbol was sent — ask the user to se
     res.end();
     return;
   } catch (error) {
-    const errMessage = error instanceof Error ? error.message : String(error);
-    req.log.error(
-      { err: error, chosenModel, contextSymbol: contextSymbol || undefined, errMessage },
-      "Chat stream error",
-    );
+    req.log.error({ err: error }, "Chat stream error");
     if (!res.headersSent) {
       return res.status(500).json({ error: "Internal Server Error" });
     }
