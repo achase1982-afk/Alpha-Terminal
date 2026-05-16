@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useGetQuote, getQuote } from "@workspace/api-client-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { formatAiChatMarketContext, resolveChatContextSymbol } from "@/lib/resolveChatContextSymbol";
+import { buildChatClientMarketContext, extractChatRoutingSourceText } from "@/lib/resolveChatContextSymbol";
 import { Button } from "@/components/ui/button";
 import { X, Send, Search, Square, RotateCw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -44,10 +44,6 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
     { symbol, accessToken: accessToken || "" },
     { query: { queryKey: ["quote", symbol, accessToken], enabled: !!accessToken } }
   );
-
-  const marketContext = quote
-    ? `CURRENT MARKET CONTEXT for ${symbol}:\nLast: $${quote.last}\nChange: ${quote.changePct}%\nVol: ${quote.volume}\nRange: ${quote.low}-${quote.high}`
-    : `No live market context available for ${symbol}.`;
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -96,6 +92,9 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
     abortRef.current = controller;
 
     try {
+      const routingText = extractChatRoutingSourceText(history);
+      const marketContext = await buildChatClientMarketContext(symbol, routingText, quote, accessToken);
+
       const res = await fetchWithAuth("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -174,7 +173,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
       abortRef.current = null;
       setIsStreaming(false);
     }
-  }, [messages, marketContext, isStreaming, aiModel, symbol]);
+  }, [messages, isStreaming, aiModel, symbol, quote, accessToken]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
