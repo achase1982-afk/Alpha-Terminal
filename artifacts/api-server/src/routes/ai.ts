@@ -2543,9 +2543,12 @@ router.post("/chat", async (req, res) => {
     let terminalDataPack = "";
     if (contextSymbol) {
       try {
+        const chatPackToken = getBestAccessToken();
         terminalDataPack = await buildAiChatContextPack({
           symbol: contextSymbol,
           lastUserMessage: lastUserMsg,
+          schwabAccessToken: chatPackToken ?? undefined,
+          packLog: req.log,
         });
       } catch (packErr) {
         req.log.error({ err: packErr, contextSymbol }, "AI chat: context pack assembly failed");

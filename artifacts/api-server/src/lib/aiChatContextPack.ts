@@ -1,6 +1,7 @@
 /**
  * Assembles a bounded text context bundle for `/api/ai/chat`: Schwab quote cache,
- * session VWAP (Schwab 1m bars) + daily RSI14, Polygon-backed options flow highlights + session tape,
+ * session VWAP (Schwab 1m bars) + daily RSI14, Schwab/Polygon options chain (delta-banded),
+ * Polygon-backed options flow highlights + session tape,
  * optional strike-focused prints (parsed from the user's question), stored IVR, next earnings, FMP headlines.
  */
 import {
@@ -20,9 +21,162 @@ import { getStoredIVR } from "./ivNormalize.js";
 import { getNextEarningsDate } from "./earningsService.js";
 import { logger } from "./logger.js";
 import { nyCalendarYmd } from "./polygonMarketCalendar.js";
+import { getOrFetchChain, type CachedChain } from "../routes/market.js";
 
 const FMP_NEWS_LIMIT = 12;
 const FOCUSED_PRINTS_PER_STRIKE = 25;
+
+/** Delta band for AI chat chain snapshot (absolute delta). */
+const CHAT_CHAIN_DELTA_MIN = 0.08;
+const CHAT_CHAIN_DELTA_MAX = 0.25;
+const CHAT_CHAIN_MAX_EXPIRATIONS = 4;
+
+export type AiChatPackLog = {
+  info: (obj: unknown, msg?: string) => void;
+  warn: (obj: unknown, msg?: string) => void;
+  error: (obj: unknown, msg?: string) => void;
+};
+
+function expirationSortKey(exp: string): string {
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(exp.trim());
+  return m?.[1] ?? exp.trim();
+}
+
+type ChainRow = {
+  expKey: string;
+  strike: number;
+  type: "C" | "P";
+  bid?: number;
+  ask?: number;
+  delta?: number;
+  iv?: number;
+  oi?: number;
+};
+
+function deltaInChatBand(delta: number | undefined): boolean {
+  if (delta == null || !Number.isFinite(delta)) return false;
+  const a = Math.abs(delta);
+  return a >= CHAT_CHAIN_DELTA_MIN && a <= CHAT_CHAIN_DELTA_MAX;
+}
+
+function collectChainRowsForChat(chain: CachedChain): { rows: ChainRow[]; expKeys: string[] } {
+  const nyToday = nyCalendarYmd(new Date());
+  const expSet = new Set<string>();
+  for (const c of chain.calls) expSet.add(expirationSortKey(c.expiration));
+  for (const p of chain.puts) expSet.add(expirationSortKey(p.expiration));
+
+  const sortedFuture = [...expSet].filter((e) => e >= nyToday).sort();
+  const chosen =
+    sortedFuture.length > 0
+      ? sortedFuture.slice(0, CHAT_CHAIN_MAX_EXPIRATIONS)
+      : [...expSet].sort().slice(0, CHAT_CHAIN_MAX_EXPIRATIONS);
+  const chosenSet = new Set(chosen);
+
+  const rows: ChainRow[] = [];
+  for (const c of chain.calls) {
+    const expKey = expirationSortKey(c.expiration);
+    if (!chosenSet.has(expKey)) continue;
+    if (!deltaInChatBand(c.delta)) continue;
+    rows.push({
+      expKey,
+      strike: c.strike,
+      type: "C",
+      bid: c.bid,
+      ask: c.ask,
+      delta: c.delta,
+      iv: c.iv,
+      oi: c.openInterest,
+    });
+  }
+  for (const p of chain.puts) {
+    const expKey = expirationSortKey(p.expiration);
+    if (!chosenSet.has(expKey)) continue;
+    if (!deltaInChatBand(p.delta)) continue;
+    rows.push({
+      expKey,
+      strike: p.strike,
+      type: "P",
+      bid: p.bid,
+      ask: p.ask,
+      delta: p.delta,
+      iv: p.iv,
+      oi: p.openInterest,
+    });
+  }
+
+  rows.sort((a, b) => {
+    const e = a.expKey.localeCompare(b.expKey);
+    if (e !== 0) return e;
+    if (a.strike !== b.strike) return a.strike - b.strike;
+    return a.type.localeCompare(b.type);
+  });
+
+  return { rows, expKeys: chosen };
+}
+
+function fmtChainNum(n: number | undefined, decimals: number): string {
+  if (n == null || !Number.isFinite(n)) return "-";
+  return decimals === 0 ? String(Math.round(n)) : n.toFixed(decimals);
+}
+
+function formatOptionsChainBlock(chain: CachedChain, symbol: string): string {
+  const { rows, expKeys } = collectChainRowsForChat(chain);
+  const lines: string[] = [
+    "### Options chain (|delta| 0.08–0.25, next 4 expirations)",
+    `symbol=${symbol} underlying=${chain.underlyingPrice ?? "n/a"} fetchedAtMs=${chain.fetchedAt} totalCalls=${chain.totalCalls} totalPuts=${chain.totalPuts}`,
+    `expirationsIncluded=${expKeys.join(", ") || "none"}`,
+    "Columns: strike ty bid ask del iv oi (tab-separated; ty=C call P put)",
+  ];
+
+  if (rows.length === 0) {
+    lines.push("(no contracts in delta band for selected expirations -- chain may lack greeks or use a different strike range)");
+    return lines.join("\n");
+  }
+
+  let curExp = "";
+  for (const r of rows) {
+    if (r.expKey !== curExp) {
+      curExp = r.expKey;
+      lines.push("", `#### ${curExp}`, "strike	ty	bid	ask	del	iv	oi");
+    }
+    lines.push(
+      [
+        String(r.strike),
+        r.type,
+        fmtChainNum(r.bid, 2),
+        fmtChainNum(r.ask, 2),
+        fmtChainNum(r.delta, 4),
+        fmtChainNum(r.iv, 4),
+        fmtChainNum(r.oi, 0),
+      ].join("	"),
+    );
+  }
+
+  return lines.join("\n");
+}
+
+async function fetchOptionsChainForChatPack(
+  symbol: string,
+  accessToken: string | null | undefined,
+  packLog: AiChatPackLog,
+): Promise<string | null> {
+  const tok = (accessToken ?? "").trim();
+  if (!tok) {
+    packLog.info({ symbol }, "aiChatContextPack: skip options chain (no Schwab token)");
+    return null;
+  }
+  try {
+    const chain = await getOrFetchChain(symbol, tok, packLog);
+    if (!chain || (chain.calls.length === 0 && chain.puts.length === 0)) {
+      packLog.warn({ symbol }, "aiChatContextPack: options chain empty");
+      return null;
+    }
+    return formatOptionsChainBlock(chain, symbol);
+  } catch (err) {
+    packLog.warn({ err, symbol }, "aiChatContextPack: options chain fetch failed");
+    return null;
+  }
+}
 
 /** Pull likely equity option strike(s) the user named (e.g. "800 call", "800c"). */
 export function extractOptionStrikeHints(text: string): number[] {
@@ -258,6 +412,10 @@ export interface AiChatContextPackInput {
   symbol: string;
   /** Last user message — used to pull extra tape rows for named strikes. */
   lastUserMessage?: string;
+  /** Schwab OAuth token for `/chains` (same cache as GET /api/market/options). Omit to skip chain block. */
+  schwabAccessToken?: string | null;
+  /** Request-scoped logger (e.g. `req.log`); defaults to module logger. */
+  packLog?: AiChatPackLog;
 }
 
 /**
@@ -268,6 +426,7 @@ export async function buildAiChatContextPack(input: AiChatContextPackInput): Pro
   const sym = input.symbol.toUpperCase().trim();
   if (!sym) return "(No symbol — terminal context pack skipped.)";
 
+  const packLog: AiChatPackLog = input.packLog ?? logger;
   const sections: string[] = [];
 
   const cached = getQuoteBySymbol(sym);
@@ -280,7 +439,7 @@ export async function buildAiChatContextPack(input: AiChatContextPackInput): Pro
     );
   }
 
-  const [ivr, earnings, fmpLines, techBlock] = await Promise.all([
+  const [ivr, earnings, fmpLines, techBlock, chainBlock] = await Promise.all([
     getStoredIVR(sym),
     getNextEarningsDate(sym).catch(() => null),
     fetchFmpHeadlines(sym),
@@ -291,9 +450,14 @@ export async function buildAiChatContextPack(input: AiChatContextPackInput): Pro
       ]);
       return `${v}\n${r}`;
     })(),
+    fetchOptionsChainForChatPack(sym, input.schwabAccessToken, packLog),
   ]);
 
   sections.push("### Intraday / daily technicals (server)\n" + techBlock);
+
+  if (chainBlock) {
+    sections.push(chainBlock);
+  }
 
   let highlights: PolygonFlowHighlights | null = await getPolygonFlowHighlights(sym);
   let liveTapeCaptureMarkdown = "";
