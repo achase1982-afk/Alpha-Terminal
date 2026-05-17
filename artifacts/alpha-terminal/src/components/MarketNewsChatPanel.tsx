@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useTerminalStore, type MarketNewsChatMessage } from "@/lib/store";
 import { useGetQuote } from "@workspace/api-client-react";
@@ -8,6 +8,7 @@ import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
 import { useVisualViewportComposerMetrics } from "@/hooks/useVisualViewportKeyboardInset";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { buildChatClientMarketContext, extractChatRoutingSourceText } from "@/lib/resolveChatContextSymbol";
 
 const RETRYABLE_CHAT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const MULTI_AGENT_MODEL = "__multi_agent__";
@@ -184,14 +185,6 @@ export function MarketNewsChatPanel() {
     { query: { queryKey: ["quote", symU, accessToken], enabled: !!accessToken } },
   );
 
-  const marketContext = useMemo(() => {
-    if (!quote) return `No live market context available for ${symU}.`;
-    return (
-      `CURRENT MARKET CONTEXT for ${symU}:\nLast: $${quote.last}\nChange: ${quote.changePct}%\n` +
-      `Vol: ${quote.volume}\nRange: ${quote.low}-${quote.high}`
-    );
-  }, [quote, symU]);
-
   const modelSend = ALL_CHAT_MODELS.includes(aiModel) ? aiModel : ALL_CHAT_MODELS[0]!;
   const [useMultiAgent, setUseMultiAgent] = useState(false);
   const [multiModelPickerOpen, setMultiModelPickerOpen] = useState(false);
@@ -295,6 +288,8 @@ export function MarketNewsChatPanel() {
       signal: AbortSignal,
       onPartial?: (partial: string) => void,
     ): Promise<string> => {
+      const routingText = extractChatRoutingSourceText(history);
+      const marketContext = await buildChatClientMarketContext(symU, routingText, quote, accessToken);
       const res = await fetchWithAuth("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -346,7 +341,7 @@ export function MarketNewsChatPanel() {
       }
       return accumulated.trim();
     },
-    [marketContext, symU],
+    [accessToken, quote, symU],
   );
 
   const runAssistantGeneration = useCallback(

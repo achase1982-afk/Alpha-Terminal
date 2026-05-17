@@ -57,7 +57,7 @@ import {
   isAnthropicAdaptiveThinkingModel,
   xaiReasoningProviderOptionsForChat,
 } from "../lib/llmReasoningConfig.js";
-import { buildAiChatContextPack } from "../lib/aiChatContextPack.js";
+import { buildAiChatContextPack, resolveAiChatContextSymbol } from "../lib/aiChatContextPack.js";
 
 export { isClaude47OrNewer } from "../lib/llmReasoningConfig.js";
 
@@ -2556,17 +2556,19 @@ router.post("/chat", async (req, res) => {
     const lastUserMsg =
       [...messages].reverse().find((m) => m.role === "user" && String(m.content ?? "").trim())?.content?.trim()
       ?? String(messages[messages.length - 1]?.content ?? "");
-    const contextSymbol = (bodySymbol ?? "").trim().toUpperCase();
+    const pageSymbol = (bodySymbol ?? "").trim().toUpperCase();
+    const routed = resolveAiChatContextSymbol(pageSymbol, lastUserMsg).trim();
+    const packSymbol = (routed || pageSymbol).trim();
 
     let terminalDataPack = "";
-    if (contextSymbol) {
+    if (packSymbol) {
       try {
         terminalDataPack = await buildAiChatContextPack({
-          symbol: contextSymbol,
+          symbol: packSymbol,
           lastUserMessage: lastUserMsg,
         });
       } catch (packErr) {
-        req.log.error({ err: packErr, contextSymbol }, "AI chat: context pack assembly failed");
+        req.log.error({ err: packErr, packSymbol }, "AI chat: context pack assembly failed");
         terminalDataPack =
           "(Terminal database context failed to load for this request — rely on Schwab line and user text.)";
       }
@@ -2593,10 +2595,16 @@ STRICT DATA GROUNDING RULE FOR MARKET/TRADING QUESTIONS:
 - "### Intraday / daily technicals (server)" may include session VWAP (volume-weighted typical price from persisted Schwab CHART_EQUITY 1m bars) and RSI14 Wilder (from equity_daily closes). Use those lines for VWAP/RSI questions when present; intraday RSI on other platforms may differ.
 - For general financial education (e.g. "what is a put option"), internal knowledge is fine.
 
+TICKER ROUTING (read carefully):
+- **Page / navigation ticker** (where the user opened the chat): **${pageSymbol || "not sent"}**
+- **Data ticker** (what the terminal DB + Polygon + FMP pack below was built for): **${packSymbol || "none"}**
+- When the user names a different ticker in their message (\`$TICKER\` or uppercase token), **${packSymbol}** follows that mention. Answer using the **terminal database block** for **${packSymbol}**; do **not** claim the user's question is "out of scope" because the page ticker differs.
+- If the client Schwab block only shows the page ticker but the user asked about **${packSymbol}**, use the server pack (and any second client block) for **${packSymbol}** prices and flow — not the page-only line.
+
 ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA (from client quote) ═══\n${marketContext}\n═══ END SCHWAB CONTEXT ═══` : "═══ LIVE SCHWAB CONTEXT DATA (from client quote) ═══\nNo client quote line sent.\n═══ END SCHWAB CONTEXT ═══"}
 
-═══ TERMINAL DATABASE & FLOW CONTEXT (server; symbol=${contextSymbol || "not sent"}) ═══
-${contextSymbol ? terminalDataPack : "(No symbol was sent — ask the user to set a terminal symbol, or restate the ticker.)"}
+═══ TERMINAL DATABASE & FLOW CONTEXT (server; data ticker=${packSymbol || "not sent"}; page ticker=${pageSymbol || "not sent"}) ═══
+${packSymbol ? terminalDataPack : "(No symbol was sent — ask the user to set a terminal symbol, or restate the ticker.)"}
 ═══ END TERMINAL DATABASE & FLOW CONTEXT ═══`;
 
     res.setHeader("Content-Type", "text/plain; charset=utf-8");

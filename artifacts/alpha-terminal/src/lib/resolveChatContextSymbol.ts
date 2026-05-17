@@ -1,4 +1,4 @@
-import type { QuoteResponse } from "@workspace/api-client-react";
+import { getQuote, type QuoteResponse } from "@workspace/api-client-react";
 
 /**
  * Ticker routing for AI chat: stopword list must match the API server `AI_CHAT_TICKER_STOPWORDS`.
@@ -197,4 +197,48 @@ export function formatAiChatMarketContext(sym: string, quote: QuoteResponse | nu
     `CURRENT MARKET CONTEXT for ${sym}:\nLast: $${quote.last}\nChange: ${quote.changePct}%\n` +
     `Vol: ${quote.volume}\nRange: ${quote.low}-${quote.high}`
   );
+}
+
+/** Last real user turn for ticker routing (skips multi-agent synthesizer injection). */
+export function extractChatRoutingSourceText(history: Array<{ role: string; content: string }>): string {
+  const userTurns = history
+    .filter((m) => m.role === "user")
+    .map((m) => String(m.content ?? "").trim())
+    .filter(Boolean);
+  const lastU = userTurns[userTurns.length - 1] ?? "";
+  const synthMarker = "You are the final **synthesizer**";
+  if (lastU.includes(synthMarker) && userTurns.length >= 2) return userTurns[userTurns.length - 2]!;
+  return lastU;
+}
+
+/**
+ * Schwab quote line(s) for `/api/ai/chat`: page ticker plus an extra client block when the user names
+ * another symbol (must match server `resolveAiChatContextSymbol` routing).
+ */
+export async function buildChatClientMarketContext(
+  pageSymbol: string,
+  routingText: string,
+  pageQuote: QuoteResponse | null | undefined,
+  accessToken: string | null | undefined,
+): Promise<string> {
+  const symU = pageSymbol.trim().toUpperCase();
+  const pageLine = formatAiChatMarketContext(symU, pageQuote);
+  const routed = resolveChatContextSymbol(symU, routingText);
+  if (!routed || routed === symU) return pageLine;
+  const tok = (accessToken ?? "").trim();
+  if (!tok) {
+    return (
+      `${pageLine}\n\n═══ Client quote for message ticker (${routed}) ═══\n` +
+      `No access token — could not fetch a client quote for ${routed}. The server terminal pack may still include a streamer cache line for ${routed}.`
+    );
+  }
+  try {
+    const q2 = await getQuote({ symbol: routed, accessToken: tok });
+    return `${pageLine}\n\n═══ Client quote for message ticker (${routed}) ═══\n${formatAiChatMarketContext(routed, q2)}`;
+  } catch {
+    return (
+      `${pageLine}\n\n═══ Client quote for message ticker (${routed}) ═══\n` +
+      `No live client quote available for ${routed} (request failed).`
+    );
+  }
 }
