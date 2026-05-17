@@ -155,6 +155,13 @@ const CHAT_TICKER_STOPWORDS = new Set<string>([
   "WANT",
   "WEEK",
   "YEAR",
+  // Natural-language tokens that match [A-Z]{2,5} but are not tickers (e.g. "what's AMZN stock doing").
+  "DOING",
+  "STOCK",
+  "STOCKS",
+  "SHARE",
+  "SHARES",
+  "TODAY",
 ]);
 
 /** Which symbol should drive Schwab quote + server tape routing for this chat turn. */
