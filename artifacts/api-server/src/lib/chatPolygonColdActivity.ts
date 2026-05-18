@@ -253,6 +253,11 @@ export async function augmentPolygonColdTickerForChat(args: {
       ...strikeOpts,
       log: args.packLog,
     });
+    const hadStrikeBand = strikeOpts.strikeMin != null && strikeOpts.strikeMax != null;
+    if (chain == null && hadStrikeBand) {
+      args.packLog.info({ sym }, "chatPolygonColdActivity: empty chain with strike band — retrying without strike filter");
+      chain = await fetchPolygonChain(sym, apiKey, { maxDte: 60, maxPages: 12, log: args.packLog });
+    }
   } catch (err) {
     args.packLog.warn({ err, sym }, "chatPolygonColdActivity: chain fetch threw");
     return {
@@ -268,7 +273,7 @@ export async function augmentPolygonColdTickerForChat(args: {
     const raw = chain?.rawContractsFetched;
     const detail =
       chain == null
-        ? "(Polygon REST returned **zero** raw option rows — check `POLYGON_API_KEY`, plan entitlements, symbol, or non-200 responses in server logs.)"
+        ? "(Polygon REST returned **zero** raw option rows after any strike-band retry — check `POLYGON_API_KEY`, **Options snapshot entitlements**, HTTP status in server logs, and that the symbol is a US equity option root. Snapshot expiration window uses **NYSE calendar dates**, not UTC midnight.)"
         : typeof raw === "number" && raw > 0
           ? `(Polygon returned **${raw}** raw contract rows but **0** contracts after parse — unexpected API shape; check server logs. After deploy, retry once.)`
         : "(Polygon REST returned no usable option contracts for this underlying.)";
