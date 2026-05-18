@@ -57,7 +57,11 @@ import {
   isAnthropicAdaptiveThinkingModel,
   xaiReasoningProviderOptionsForChat,
 } from "../lib/llmReasoningConfig.js";
-import { buildAiChatContextPack, resolveAiChatContextSymbol } from "../lib/aiChatContextPack.js";
+import {
+  buildAiChatContextPack,
+  extractRoutingTextFromChatMessages,
+  resolveAiChatContextSymbol,
+} from "../lib/aiChatContextPack.js";
 
 export { isClaude47OrNewer } from "../lib/llmReasoningConfig.js";
 
@@ -2553,11 +2557,12 @@ router.post("/chat", async (req, res) => {
     }
 
     const chosenModel = reqModel ?? DEFAULT_MODEL;
+    const routingText = extractRoutingTextFromChatMessages(streamMessages);
     const lastUserMsg =
-      [...messages].reverse().find((m) => m.role === "user" && String(m.content ?? "").trim())?.content?.trim()
-      ?? String(messages[messages.length - 1]?.content ?? "");
+      [...streamMessages].reverse().find((m) => m.role === "user" && String(m.content ?? "").trim())?.content?.trim()
+      ?? String(streamMessages[streamMessages.length - 1]?.content ?? "");
     const pageSymbol = (bodySymbol ?? "").trim().toUpperCase();
-    const routed = resolveAiChatContextSymbol(pageSymbol, lastUserMsg).trim();
+    const routed = resolveAiChatContextSymbol(pageSymbol, routingText).trim();
     const packSymbol = (routed || pageSymbol).trim();
 
     let terminalDataPack = "";
@@ -2565,7 +2570,7 @@ router.post("/chat", async (req, res) => {
       try {
         terminalDataPack = await buildAiChatContextPack({
           symbol: packSymbol,
-          lastUserMessage: lastUserMsg,
+          lastUserMessage: routingText,
         });
       } catch (packErr) {
         req.log.error({ err: packErr, packSymbol }, "AI chat: context pack assembly failed");
@@ -2603,6 +2608,7 @@ STRICT DATA GROUNDING RULE FOR MARKET/TRADING QUESTIONS:
 TICKER ROUTING (read carefully):
 - **Page / navigation ticker** (where the user opened the chat): **${pageSymbol || "not sent"}**
 - **Data ticker** (what the terminal DB + Polygon + FMP pack below was built for): **${packSymbol || "none"}**
+- **Tape wording:** Phrases like **"the tape"**, **"options tape"**, **"session tape"**, **"tape prints"**, **"market tape"** mean **time & sales / listed prints for the page ticker** — not the separate NYSE-listed **TAPE** equity unless the user clearly asks about that company (e.g. "TAPE stock", "shares of TAPE") or writes **\`$TAPE\`**. If the pack is built for the page ticker, answer from that pack; do not invent a second symbol called "TAPE" from desk slang.
 - When the user names a different ticker in their message (\`$TICKER\` or uppercase token), **${packSymbol}** follows that mention. Answer using the **terminal database block** for **${packSymbol}**; do **not** claim the user's question is "out of scope" because the page ticker differs.
 - If the client Schwab block only shows the page ticker but the user asked about **${packSymbol}**, use the server pack (and any second client block) for **${packSymbol}** prices and flow — not the page-only line.
 
@@ -2633,7 +2639,6 @@ ${packSymbol ? terminalDataPack : "(No symbol was sent — ask the user to set a
 
       const ai = createGeminiClient();
 
-      const lastUserMsg = streamMessages[streamMessages.length - 1]?.content ?? "";
       const conversationHistory = streamMessages.slice(0, -1).map(m =>
         `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`
       ).join("\n\n");
