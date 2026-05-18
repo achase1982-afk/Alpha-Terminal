@@ -94,7 +94,10 @@ const MULTI_AGENT_ORBIT_COLORS = ["#22d3ee", "#a78bfa", "#fbbf24", "#fb7185", "#
 function MultiAgentOrbit({ count }: { count: number }) {
   const n = Math.min(Math.max(count, 2), 6);
   return (
-    <div className="relative h-6 w-6 shrink-0" title={`${count} agents`}>
+    <div
+      className="relative h-6 w-6 shrink-0"
+      title={`${count} research models run in parallel; when all finish, one synthesizer merges drafts.`}
+    >
       <span className="pointer-events-none absolute inset-0 rounded-full border border-white/25" aria-hidden />
       <span className="pointer-events-none absolute inset-[5px] rounded-full border border-white/10" aria-hidden />
       <div
@@ -587,6 +590,7 @@ export function MarketNewsChatPanel() {
       {isStreaming ? (
         <button
           type="button"
+          onPointerDown={(e) => e.preventDefault()}
           onClick={handleStop}
           className="shrink-0 p-2.5 rounded-md border border-red-500/40 text-red-400 hover:bg-red-500/10"
           aria-label="Stop"
@@ -595,8 +599,12 @@ export function MarketNewsChatPanel() {
         </button>
       ) : (
         <button
-          type="submit"
+          type="button"
           disabled={!input.trim()}
+          onPointerDown={(e) => e.preventDefault()}
+          onClick={() => {
+            if (input.trim() && !isStreaming) void sendMessage(input);
+          }}
           className="shrink-0 p-2.5 text-white disabled:opacity-30 hover:text-white/75"
           aria-label="Send"
         >
@@ -617,6 +625,11 @@ export function MarketNewsChatPanel() {
         <div className="relative flex items-center gap-2 shrink-0">
           <select
             value={modelControlValue}
+            title={
+              useMultiAgent
+                ? "Research models run in parallel; when all finish, the synthesizer runs once to merge drafts."
+                : "Single model for this reply."
+            }
             onChange={(e) => {
               const value = e.target.value;
               if (value === MULTI_AGENT_MODEL) {
@@ -826,7 +839,7 @@ export function MarketNewsChatPanel() {
                 <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "260ms" }} />
               </div>
               <span className="font-mono text-[11px] text-white/65">
-                {activeMultiAgentCount} agents thinking...
+                {activeMultiAgentCount} models in parallel (slowest sets the wait), then synthesis…
               </span>
             </div>
           ) : (

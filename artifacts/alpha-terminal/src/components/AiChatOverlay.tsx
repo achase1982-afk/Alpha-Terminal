@@ -354,6 +354,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
           {isStreaming ? (
             <Button
               type="button"
+              onPointerDown={(e) => e.preventDefault()}
               onClick={handleStop}
               size="icon"
               className="h-10 w-10 rounded-full bg-destructive hover:bg-destructive/80 text-destructive-foreground shrink-0"
@@ -364,6 +365,7 @@ export function AiChatOverlay({ isOpen, onClose }: AiChatOverlayProps) {
             <Button
               type="submit"
               disabled={!input.trim()}
+              onPointerDown={(e) => e.preventDefault()}
               size="icon"
               className="h-10 w-10 rounded-full bg-primary hover:bg-primary/80 text-primary-foreground shrink-0 disabled:opacity-30"
             >

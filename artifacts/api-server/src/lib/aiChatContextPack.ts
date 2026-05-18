@@ -178,6 +178,8 @@ export const AI_CHAT_TICKER_STOPWORDS = new Set<string>([
   "SEEM",
   "SIDE",
   "SURE",
+  // Time & sales / flow jargon ("what's the tape"); use $TAPE for the equity.
+  "TAPE",
   "TELL",
   "TURN",
   "USED",
