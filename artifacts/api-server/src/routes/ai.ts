@@ -2596,7 +2596,7 @@ STRICT DATA GROUNDING RULE FOR MARKET/TRADING QUESTIONS:
 - When answering questions about specific stock prices, trends, technical levels, options flow, sweeps, blocks, or trading strategies, you must ONLY use the Context Data blocks below (Schwab line, terminal DB/JSON, FMP headlines).
 - You are FORBIDDEN from using your internal training knowledge to state current prices, recent price movements, support/resistance levels, or directional predictions for any specific security except where explicitly supported below.
 - If Schwab context is empty AND the terminal pack has no quote cache for the symbol, say live equity quote may require Schwab connection/streamer.
-- "### Intraday / daily technicals (server)" may include session VWAP (volume-weighted typical price from persisted Schwab CHART_EQUITY 1m bars) and RSI14 Wilder (from equity_daily closes). Use those lines for VWAP/RSI questions when present; intraday RSI on other platforms may differ.
+- "### Intraday / daily technicals (server)" may include session VWAP (volume-weighted typical price from persisted Schwab CHART_EQUITY 1m bars), RSI14 Wilder (from equity_daily closes), and **daily Bollinger Bands (20-period, 2 std dev)** on the same daily closes (middle/upper/lower, %B, bandwidth, position vs bands). Use those lines for VWAP/RSI/Bollinger questions when present; intraday RSI and intraday Bollinger settings on other platforms may differ.
 - For general financial education (e.g. "what is a put option"), internal knowledge is fine.
 
 TICKER ROUTING (read carefully):
