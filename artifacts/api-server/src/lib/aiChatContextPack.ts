@@ -257,6 +257,22 @@ export function routingTextNamesTapeEquity(routingText: string): boolean {
   );
 }
 
+/** True when the user is asking for headlines, catalysts, filings, or "why is it moving" style context. */
+export function routingTextWantsNewsOrCatalyst(routingText: string): boolean {
+  const t = routingText.trim().toUpperCase().replace(/\u2019/g, "'");
+  if (!t) return false;
+  if (
+    /\b(RUMOU?R|HEADLINES?|NEWS|BREAKING|UPGRADE|DOWNGRADE|CATALYST|ANNOUNCEMENT|MERGER|ACQUISITION|TAKEOVER|CHATTER|GUIDANCE|FILING|8-K|10-Q|10-K|PRESS\s+RELEASE)\b/.test(t)
+  ) {
+    return true;
+  }
+  if (/\b(WHY|WHAT)\b.*\b(MOVE|MOVES|MOVING|PUMP|DUMP|RIP|RIPS|RIPPING|RALLY|SURGE|SPIKE)\b/.test(t)) return true;
+  if (/\b(HAPPENED|HAPPENING|GOING\s+ON|DRIVING|DRIVES)\b/.test(t)) return true;
+  if (/\b(EARNINGS|REVENUE)\b.*\b(BEAT|MISS|SURPRISE|PRINT)\b/.test(t)) return true;
+  if (/\b(CAUSE|REASON)\b.*\b(MOVE|PRICE|STOCK|ACTION)\b/.test(t)) return true;
+  return false;
+}
+
 /**
  * Pick which equity symbol should drive terminal DB tape / flow context when the
  * terminal page symbol may differ from the ticker named in the user's text.
@@ -694,13 +710,22 @@ export interface AiChatContextPackInput {
   packLog?: AiChatPackLog;
 }
 
+export type AiChatContextPackResult = {
+  /** Markdown sections joined for the system prompt. */
+  markdown: string;
+  /** True when FMP stock_news returned zero rows or the API key is missing. */
+  fmpHeadlinesEmpty: boolean;
+};
+
 /**
  * Returns a large markdown-ish text block appended under Schwab quote context.
  * Safe to concatenate into the system prompt.
  */
-export async function buildAiChatContextPack(input: AiChatContextPackInput): Promise<string> {
+export async function buildAiChatContextPack(input: AiChatContextPackInput): Promise<AiChatContextPackResult> {
   const sym = input.symbol.toUpperCase().trim();
-  if (!sym) return "(No symbol — terminal context pack skipped.)";
+  if (!sym) {
+    return { markdown: "(No symbol — terminal context pack skipped.)", fmpHeadlinesEmpty: true };
+  }
 
   const packLog: AiChatPackLog = input.packLog ?? logger;
   const sections: string[] = [];
@@ -829,5 +854,6 @@ export async function buildAiChatContextPack(input: AiChatContextPackInput): Pro
     sections.push("### Recent headlines (FMP)\n(none returned or FMP_API_KEY not configured)");
   }
 
-  return sections.join("\n\n");
+  const fmpHeadlinesEmpty = fmpLines.length === 0;
+  return { markdown: sections.join("\n\n"), fmpHeadlinesEmpty };
 }

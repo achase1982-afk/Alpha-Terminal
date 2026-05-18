@@ -47,7 +47,7 @@ import {
   type StrategistOutput,
 } from "../lib/deterministicStrategist.js";
 import { resolveStrikes, type AccountSnapshot, type ChainData, type ResolvedTrade, type StrikeResolutionError } from "../lib/strikeResolver.js";
-import { createGeminiClient, getGeminiApiKey } from "../lib/geminiClient.js";
+import { createGeminiClient, getGeminiApiKey, hasGeminiApiKey } from "../lib/geminiClient.js";
 import { getXaiApiKey } from "../lib/xaiEnv.js";
 import { geminiThinkingConfigForModel } from "../lib/geminiThinkingConfig.js";
 import {
@@ -61,7 +61,9 @@ import {
   buildAiChatContextPack,
   extractRoutingTextFromChatMessages,
   resolveAiChatContextSymbol,
+  routingTextWantsNewsOrCatalyst,
 } from "../lib/aiChatContextPack.js";
+import { callGeminiWithSystemAndWebSearch } from "../lib/aiLabAnalystClient.js";
 
 export { isClaude47OrNewer } from "../lib/llmReasoningConfig.js";
 
@@ -2537,6 +2539,8 @@ function chatMessagesForStream(messages: Array<{ role: string; content: string }
     .filter((m) => m.role !== "assistant" || m.content.trim().length > 0);
 }
 
+const DEFAULT_AI_CHAT_NEWS_WEB_MODEL = "gemini-2.0-flash";
+
 router.post("/chat", async (req, res) => {
   try {
     const { messages, marketContext, model: reqModel, symbol: bodySymbol } = req.body as {
@@ -2566,18 +2570,78 @@ router.post("/chat", async (req, res) => {
     const packSymbol = (routed || pageSymbol).trim();
 
     let terminalDataPack = "";
+    let fmpHeadlinesEmpty = true;
     if (packSymbol) {
       try {
-        terminalDataPack = await buildAiChatContextPack({
+        const pack = await buildAiChatContextPack({
           symbol: packSymbol,
           lastUserMessage: routingText,
         });
+        terminalDataPack = pack.markdown;
+        fmpHeadlinesEmpty = pack.fmpHeadlinesEmpty;
       } catch (packErr) {
         req.log.error({ err: packErr, packSymbol }, "AI chat: context pack assembly failed");
         terminalDataPack =
           "(Terminal database context failed to load for this request — rely on Schwab line and user text.)";
       }
     }
+
+    let webNewsSupplement = "";
+    let webNewsSupplementOk = false;
+    if (
+      packSymbol &&
+      fmpHeadlinesEmpty &&
+      routingTextWantsNewsOrCatalyst(routingText) &&
+      hasGeminiApiKey()
+    ) {
+      const newsModel = (process.env.AI_CHAT_NEWS_WEB_MODEL ?? DEFAULT_AI_CHAT_NEWS_WEB_MODEL).trim();
+      const webSys =
+        "You search the public web with Google Search. Output rules:\n"
+        + "- At most 12 bullet lines; each line is one verified fact or headline relevant to the ticker, ending with (source: site or short title).\n"
+        + "- If search returns nothing usable, output exactly one line: (No verified headlines from web search.)\n"
+        + "- No preamble, no section headings, no speculation or invented stories.";
+      const webUser =
+        `Ticker: ${packSymbol}.\n`
+        + `User question (may span multiple prior turns):\n${routingText}\n\n`
+        + "Prioritize the last few calendar days: company-specific news, analyst actions, SEC items, partnerships or M&A, product launches tied to this symbol.";
+      try {
+        const ws = await callGeminiWithSystemAndWebSearch(
+          newsModel,
+          0,
+          webSys,
+          webUser,
+          AbortSignal.timeout(24_000),
+        );
+        const body = ws.text.trim().slice(0, 12_000);
+        const urls = ws.trace.sources
+          .slice(0, 18)
+          .map((s) => `- ${String(s.title ?? "source").replace(/\s+/g, " ").slice(0, 120)} — ${s.url}`);
+        webNewsSupplement =
+          "\n\n### Web headlines (Google Search; supplement because FMP returned no headlines)\n"
+          + "_Use only this section (plus URLs below) for headline or catalyst claims when FMP is empty._\n\n"
+          + body
+          + (urls.length ? `\n\n**Search result URLs**\n${urls.join("\n")}` : "");
+        webNewsSupplementOk = true;
+      } catch (webErr) {
+        req.log.warn({ err: webErr, packSymbol, newsModel }, "AI chat: web news supplement failed or timed out");
+        webNewsSupplement =
+          "\n\n### Web headlines (Google Search)\n"
+          + "(Web supplement failed or timed out — do **not** invent headlines or catalysts.)\n";
+      }
+    }
+
+    const terminalPackForPrompt = packSymbol
+      ? terminalDataPack + webNewsSupplement
+      : "(No symbol was sent — ask the user to set a terminal symbol, or restate the ticker.)";
+
+    const webNewsGroundingLine = webNewsSupplementOk
+      ? "- When **### Web headlines (Google Search** appears in the terminal pack, you may use those bullets and the listed URLs for headline or catalyst claims. Prefer them over guessing when FMP headlines were empty."
+      : "";
+
+    const noWebNewsGroundingLine =
+      fmpHeadlinesEmpty && !webNewsSupplementOk && routingTextWantsNewsOrCatalyst(routingText)
+        ? "- **FMP headlines are empty** and **no working web headline supplement** was attached. For catalyst / headline / \"why did it move\" questions: summarize only what the **tape, options flow JSON, and price** blocks prove. **Do not** list hypothetical catalyst categories (analyst upgrade, M&A, product rumor, etc.) as possibilities. State plainly that headline-level detail is **not in the supplied pack**; the user can open the in-app **News** tab or configure **FMP_API_KEY** on the API host."
+        : "";
 
     const systemPrompt = `You are Alpha Terminal, a world-class AI assistant powered by advanced AI. Your primary UI is the Alpha Financial Terminal.
 - Today is ${new Date().toDateString()}. Current time: ${new Date().toLocaleString()}.
@@ -2599,8 +2663,10 @@ COLD-TICKER POLYGON OPTIONS (when "### On-demand Polygon options snapshot (cold 
 - If that heading **states the snapshot was skipped** (missing API key) or **shows an error**, repeat that fact to the user — do not imply a successful empty chain. If the heading is **absent** from the pack entirely, the server build may be outdated or the context pack failed before assembly completed.
 
 STRICT DATA GROUNDING RULE FOR MARKET/TRADING QUESTIONS:
-- When answering questions about specific stock prices, trends, technical levels, options flow, sweeps, blocks, or trading strategies, you must ONLY use the Context Data blocks below (Schwab line, terminal DB/JSON, FMP headlines).
+- When answering questions about specific stock prices, trends, technical levels, options flow, sweeps, blocks, or trading strategies, you must ONLY use the Context Data blocks below (Schwab line, terminal DB/JSON, FMP headlines${webNewsSupplementOk ? ", and the Web headlines supplement when present" : ""}).
 - You are FORBIDDEN from using your internal training knowledge to state current prices, recent price movements, support/resistance levels, or directional predictions for any specific security except where explicitly supported below.
+${webNewsGroundingLine}
+${noWebNewsGroundingLine}
 - If Schwab context is empty AND the terminal pack has no quote cache for the symbol, say live equity quote may require Schwab connection/streamer.
 - "### Intraday / daily technicals (server)" may include session VWAP (volume-weighted typical price from persisted Schwab CHART_EQUITY 1m bars), RSI14 Wilder (from equity_daily closes), and **daily Bollinger Bands (20-period, 2 std dev)** on the same daily closes (middle/upper/lower, %B, bandwidth, position vs bands). Use those lines for VWAP/RSI/Bollinger questions when present; intraday RSI and intraday Bollinger settings on other platforms may differ.
 - For general financial education (e.g. "what is a put option"), internal knowledge is fine.
@@ -2616,7 +2682,7 @@ TICKER ROUTING (read carefully):
 ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA (from client quote) ═══\n${marketContext}\n═══ END SCHWAB CONTEXT ═══` : "═══ LIVE SCHWAB CONTEXT DATA (from client quote) ═══\nNo client quote line sent.\n═══ END SCHWAB CONTEXT ═══"}
 
 ═══ TERMINAL DATABASE & FLOW CONTEXT (server; data ticker=${packSymbol || "not sent"}; page ticker=${pageSymbol || "not sent"}) ═══
-${packSymbol ? terminalDataPack : "(No symbol was sent — ask the user to set a terminal symbol, or restate the ticker.)"}
+${terminalPackForPrompt}
 ═══ END TERMINAL DATABASE & FLOW CONTEXT ═══`;
 
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
