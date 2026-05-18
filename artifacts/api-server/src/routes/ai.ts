@@ -2588,6 +2588,10 @@ OPTIONS FLOW & AGGRESSOR DISCIPLINE:
 - side ask/bid/mid is derived from trade price vs NBBO at ingest (see aggressor_confidence). It indicates aggressive lift/hit, not "institutional vs retail."
 - Do not label flow as institutional or retail unless the user explicitly asks for inference — then phrase as possibilities, not facts.
 
+COLD-TICKER POLYGON OPTIONS (when "### On-demand Polygon options snapshot (cold path)" appears):
+- **Tier A JSON** is from Polygon REST snapshot rankings (day volume, vol/OI, approximate notionals). It is **not** classified tape (no sweep/block tags). Use it for "where is volume" / "what strikes are busy" without prior DB backfill.
+- **Tier B** runs only when the user asks tape-style questions or the snapshot flags concentrated volume, unless live classified tape is already present. When Tier B ran, prefer **Polygon / DB flow highlights** JSON below for sweep/block/time-of-sale style facts; if Tier B shows rowsInserted≈0, say tape was quiet for the subscribed strikes and lean on Tier A.
+
 STRICT DATA GROUNDING RULE FOR MARKET/TRADING QUESTIONS:
 - When answering questions about specific stock prices, trends, technical levels, options flow, sweeps, blocks, or trading strategies, you must ONLY use the Context Data blocks below (Schwab line, terminal DB/JSON, FMP headlines).
 - You are FORBIDDEN from using your internal training knowledge to state current prices, recent price movements, support/resistance levels, or directional predictions for any specific security except where explicitly supported below.

@@ -1,7 +1,7 @@
 /**
  * Assembles a bounded text context bundle for `/api/ai/chat`: Schwab quote cache,
  * session VWAP (Schwab 1m bars) + daily RSI14, Schwab/Polygon options chain (delta-banded),
- * Polygon-backed options flow highlights + session tape,
+ * on-demand Polygon snapshot (cold ticker Tier A/B) + Polygon-backed options flow highlights + session tape,
  * optional strike-focused prints (parsed from the user's question), stored IVR, next earnings, FMP headlines.
  */
 import {
@@ -14,6 +14,7 @@ import {
   optionsFlowRawTradesTable,
   schwabChartEquityBarsTable,
 } from "@workspace/db";
+import { augmentPolygonColdTickerForChat } from "./chatPolygonColdActivity.js";
 import { getPolygonFlowHighlights, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
 import { requestFlowCapture } from "./flowCaptureService.js";
 import { getQuoteBySymbol, type LiveQuote } from "./schwabStreamer.js";
@@ -654,9 +655,22 @@ export async function buildAiChatContextPack(input: AiChatContextPackInput): Pro
   }
 
   let highlights: PolygonFlowHighlights | null = await getPolygonFlowHighlights(sym);
+  const coldAug = await augmentPolygonColdTickerForChat({
+    symbol: sym,
+    lastUserMessage: input.lastUserMessage ?? "",
+    highlightsBefore: highlights,
+    packLog,
+  });
+  if (coldAug.section) {
+    sections.push(coldAug.section);
+  }
+  if (coldAug.highlights !== undefined) {
+    highlights = coldAug.highlights;
+  }
+
   let liveTapeCaptureMarkdown = "";
 
-  if (highlights?.sessionTape?.tapeKind === "eod_fallback") {
+  if (highlights?.sessionTape?.tapeKind === "eod_fallback" && !coldAug.tierBCaptureAttempted) {
     try {
       const fc = await requestFlowCapture(sym, {
         timeout: 12_000,
