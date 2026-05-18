@@ -1,7 +1,8 @@
 /**
  * Assembles a bounded text context bundle for `/api/ai/chat`: Schwab quote cache,
  * session VWAP (Schwab 1m bars) + daily RSI14, Schwab/Polygon options chain (delta-banded),
- * Polygon-backed options flow highlights + session tape,
+ * on-demand Polygon snapshot (cold ticker Tier A/B) + Polygon-backed options flow highlights + session tape,
+ * daily Bollinger Bands (20, 2) from equity_daily closes,
  * optional strike-focused prints (parsed from the user's question), stored IVR, next earnings, FMP headlines.
  */
 import {
@@ -14,6 +15,7 @@ import {
   optionsFlowRawTradesTable,
   schwabChartEquityBarsTable,
 } from "@workspace/db";
+import { augmentPolygonColdTickerForChat } from "./chatPolygonColdActivity.js";
 import { getPolygonFlowHighlights, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
 import { requestFlowCapture } from "./flowCaptureService.js";
 import { getQuoteBySymbol, type LiveQuote } from "./schwabStreamer.js";
@@ -21,6 +23,7 @@ import { getStoredIVR } from "./ivNormalize.js";
 import { getNextEarningsDate } from "./earningsService.js";
 import { logger } from "./logger.js";
 import { nyCalendarYmd } from "./polygonMarketCalendar.js";
+import { fetchDailyBollinger20Line } from "./bollingerBandsDaily.js";
 import { getOrFetchChain, type CachedChain } from "../routes/market.js";
 
 const FMP_NEWS_LIMIT = 12;
@@ -645,11 +648,12 @@ export async function buildAiChatContextPack(input: AiChatContextPackInput): Pro
     getNextEarningsDate(sym).catch(() => null),
     fetchFmpHeadlines(sym),
     (async () => {
-      const [v, r] = await Promise.all([
+      const [v, r, bb] = await Promise.all([
         fetchSessionApproxVwapLine(sym),
         fetchDailyRsi14Line(sym),
+        fetchDailyBollinger20Line(sym),
       ]);
-      return `${v}\n${r}`;
+      return `${v}\n${r}\n${bb}`;
     })(),
     fetchOptionsChainForChatPack(sym, input.schwabAccessToken, packLog),
   ]);
@@ -661,9 +665,22 @@ export async function buildAiChatContextPack(input: AiChatContextPackInput): Pro
   }
 
   let highlights: PolygonFlowHighlights | null = await getPolygonFlowHighlights(sym);
+  const coldAug = await augmentPolygonColdTickerForChat({
+    symbol: sym,
+    lastUserMessage: input.lastUserMessage ?? "",
+    highlightsBefore: highlights,
+    packLog,
+  });
+  if (coldAug.section) {
+    sections.push(coldAug.section);
+  }
+  if (coldAug.highlights !== undefined) {
+    highlights = coldAug.highlights;
+  }
+
   let liveTapeCaptureMarkdown = "";
 
-  if (highlights?.sessionTape?.tapeKind === "eod_fallback") {
+  if (highlights?.sessionTape?.tapeKind === "eod_fallback" && !coldAug.tierBCaptureAttempted) {
     try {
       const fc = await requestFlowCapture(sym, {
         timeout: 12_000,
