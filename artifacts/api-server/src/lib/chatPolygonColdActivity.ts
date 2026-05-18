@@ -9,6 +9,7 @@ import type { PolygonChainResult, PolygonParsedContract } from "./polygonChain.j
 import { fetchPolygonChain } from "./polygonChain.js";
 import { requestFlowCapture } from "./flowCaptureService.js";
 import { getPolygonFlowHighlights, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
+import { getQuoteBySymbol } from "./schwabStreamer.js";
 import type { ChainSummaryLike } from "./strategistTapeBackfill.js";
 
 type ColdPackLog = { info: (obj: unknown, msg?: string) => void; warn: (obj: unknown, msg?: string) => void };
@@ -224,24 +225,59 @@ export async function augmentPolygonColdTickerForChat(args: {
   const sym = args.symbol.toUpperCase().trim();
   const apiKey = (process.env.POLYGON_API_KEY ?? "").trim();
   if (!apiKey) {
-    return { section: "", tierBCaptureAttempted: false };
-  }
-
-  let chain: PolygonChainResult | null;
-  try {
-    chain = await fetchPolygonChain(sym, apiKey, { maxDte: 60, maxPages: 8, log: args.packLog });
-  } catch (err) {
-    args.packLog.warn({ err, sym }, "chatPolygonColdActivity: chain fetch threw");
-    return { section: "", tierBCaptureAttempted: false };
-  }
-
-  if (!chain || ((chain.calls?.length ?? 0) === 0 && (chain.puts?.length ?? 0) === 0)) {
     return {
       tierBCaptureAttempted: false,
       section:
         "### On-demand Polygon options snapshot (cold path)\n"
         + `symbol=${sym}\n`
-        + "(Polygon REST returned no option contracts for this underlying — may be illiquid, bad symbol, or API empty.)",
+        + "- **Skipped:** `POLYGON_API_KEY` is not set on this API server — no Polygon REST snapshot can run. Set the key (or use an environment where it is configured) to populate chain rankings here.",
+    };
+  }
+
+  let chain: PolygonChainResult | null;
+  try {
+    const q = getQuoteBySymbol(sym);
+    const livePx =
+      typeof q?.last === "number" && Number.isFinite(q.last)
+        ? q.last
+        : typeof q?.close === "number" && Number.isFinite(q.close)
+          ? q.close
+          : undefined;
+    const strikeOpts =
+      livePx != null && livePx > 0
+        ? { strikeMin: Math.floor(livePx * 0.65), strikeMax: Math.ceil(livePx * 1.35) }
+        : {};
+    chain = await fetchPolygonChain(sym, apiKey, {
+      maxDte: 60,
+      maxPages: 12,
+      ...strikeOpts,
+      log: args.packLog,
+    });
+  } catch (err) {
+    args.packLog.warn({ err, sym }, "chatPolygonColdActivity: chain fetch threw");
+    return {
+      tierBCaptureAttempted: false,
+      section:
+        "### On-demand Polygon options snapshot (cold path)\n"
+        + `symbol=${sym}\n`
+        + `- **Error:** Polygon chain fetch threw before any rows were read: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
+  if (!chain || ((chain.calls?.length ?? 0) === 0 && (chain.puts?.length ?? 0) === 0)) {
+    const raw = chain?.rawContractsFetched;
+    const detail =
+      chain == null
+        ? "(Polygon REST returned **zero** raw option rows — check `POLYGON_API_KEY`, plan entitlements, symbol, or non-200 responses in server logs.)"
+        : typeof raw === "number" && raw > 0
+          ? `(Polygon returned **${raw}** raw contract rows but **0** contracts after parse — unexpected API shape; check server logs. After deploy, retry once.)`
+        : "(Polygon REST returned no usable option contracts for this underlying.)";
+    return {
+      tierBCaptureAttempted: false,
+      section:
+        "### On-demand Polygon options snapshot (cold path)\n"
+        + `symbol=${sym}\n`
+        + detail,
     };
   }
 
