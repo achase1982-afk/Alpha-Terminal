@@ -2539,7 +2539,7 @@ function chatMessagesForStream(messages: Array<{ role: string; content: string }
     .filter((m) => m.role !== "assistant" || m.content.trim().length > 0);
 }
 
-const DEFAULT_AI_CHAT_NEWS_WEB_MODEL = "gemini-2.0-flash";
+const DEFAULT_AI_CHAT_NEWS_WEB_MODEL = "gemini-2.5-flash";
 
 router.post("/chat", async (req, res) => {
   try {
@@ -2594,7 +2594,13 @@ router.post("/chat", async (req, res) => {
       routingTextWantsNewsOrCatalyst(routingText) &&
       hasGeminiApiKey()
     ) {
-      const newsModel = (process.env.AI_CHAT_NEWS_WEB_MODEL ?? DEFAULT_AI_CHAT_NEWS_WEB_MODEL).trim();
+      const primaryModel = (process.env.AI_CHAT_NEWS_WEB_MODEL ?? DEFAULT_AI_CHAT_NEWS_WEB_MODEL).trim();
+      const fallbackModel = (process.env.AI_CHAT_NEWS_WEB_FALLBACK_MODEL ?? "gemini-2.0-flash").trim();
+      const modelCandidates = primaryModel === fallbackModel ? [primaryModel] : [primaryModel, fallbackModel];
+      const timeoutParsed = Number.parseInt(process.env.AI_CHAT_NEWS_WEB_TIMEOUT_MS ?? "", 10);
+      const timeoutMs = Number.isFinite(timeoutParsed)
+        ? Math.min(120_000, Math.max(15_000, timeoutParsed))
+        : 90_000;
       const webSys =
         "You search the public web with Google Search. Output rules:\n"
         + "- At most 12 bullet lines; each line is one verified fact or headline relevant to the ticker, ending with (source: site or short title).\n"
@@ -2604,26 +2610,36 @@ router.post("/chat", async (req, res) => {
         `Ticker: ${packSymbol}.\n`
         + `User question (may span multiple prior turns):\n${routingText}\n\n`
         + "Prioritize the last few calendar days: company-specific news, analyst actions, SEC items, partnerships or M&A, product launches tied to this symbol.";
-      try {
-        const ws = await callGeminiWithSystemAndWebSearch(
-          newsModel,
-          0,
-          webSys,
-          webUser,
-          AbortSignal.timeout(24_000),
-        );
-        const body = ws.text.trim().slice(0, 12_000);
-        const urls = ws.trace.sources
-          .slice(0, 18)
-          .map((s) => `- ${String(s.title ?? "source").replace(/\s+/g, " ").slice(0, 120)} — ${s.url}`);
-        webNewsSupplement =
-          "\n\n### Web headlines (Google Search; supplement because FMP returned no headlines)\n"
-          + "_Use only this section (plus URLs below) for headline or catalyst claims when FMP is empty._\n\n"
-          + body
-          + (urls.length ? `\n\n**Search result URLs**\n${urls.join("\n")}` : "");
-        webNewsSupplementOk = true;
-      } catch (webErr) {
-        req.log.warn({ err: webErr, packSymbol, newsModel }, "AI chat: web news supplement failed or timed out");
+      let lastWebErr: unknown = null;
+      for (const newsModel of modelCandidates) {
+        try {
+          const ws = await callGeminiWithSystemAndWebSearch(newsModel, 0, webSys, webUser, {
+            signal: AbortSignal.timeout(timeoutMs),
+            disableThinking: true,
+            maxOutputTokens: 4096,
+            allowEmptyText: true,
+          });
+          const body = ws.text.trim().slice(0, 12_000);
+          const urls = ws.trace.sources
+            .slice(0, 18)
+            .map((s) => `- ${String(s.title ?? "source").replace(/\s+/g, " ").slice(0, 120)} — ${s.url}`);
+          webNewsSupplement =
+            "\n\n### Web headlines (Google Search; supplement because FMP returned no headlines)\n"
+            + "_Use only this section (plus URLs below) for headline or catalyst claims when FMP is empty._\n\n"
+            + body
+            + (urls.length ? `\n\n**Search result URLs**\n${urls.join("\n")}` : "");
+          webNewsSupplementOk = true;
+          break;
+        } catch (webErr) {
+          lastWebErr = webErr;
+          req.log.warn(
+            { err: webErr, packSymbol, newsModel, timeoutMs },
+            "AI chat: web news supplement attempt failed",
+          );
+        }
+      }
+      if (!webNewsSupplementOk) {
+        req.log.warn({ err: lastWebErr, packSymbol, modelCandidates, timeoutMs }, "AI chat: all web news supplement attempts failed");
         webNewsSupplement =
           "\n\n### Web headlines (Google Search)\n"
           + "(Web supplement failed or timed out — do **not** invent headlines or catalysts.)\n";

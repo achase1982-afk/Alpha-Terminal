@@ -1602,19 +1602,39 @@ export async function streamCallAnthropicConvictionDesk(
   };
 }
 
+export type CallGeminiWebSearchExtras = {
+  signal?: AbortSignal;
+  /** Skip extended thinking (lower latency for short headline passes). */
+  disableThinking?: boolean;
+  maxOutputTokens?: number;
+  /** When true, empty assistant text yields a placeholder instead of throwing (URLs may still attach). */
+  allowEmptyText?: boolean;
+};
+
+function normalizeGeminiWebSearchExtras(
+  extras?: AbortSignal | CallGeminiWebSearchExtras,
+): CallGeminiWebSearchExtras {
+  if (extras == null) return {};
+  if (typeof AbortSignal !== "undefined" && extras instanceof AbortSignal) return { signal: extras };
+  return extras as CallGeminiWebSearchExtras;
+}
+
 export async function callGeminiWithSystemAndWebSearch(
   model: string,
   temperature: number,
   systemPrompt: string,
   prompt: string,
-  cancelSignal?: AbortSignal,
+  extras?: AbortSignal | CallGeminiWebSearchExtras,
 ): Promise<WebSearchResult> {
   if (!hasGeminiApiKey()) throw new Error("Gemini AI integration env vars not configured");
 
-  const thinkingCfg = geminiThinkingConfigForModel(model);
+  const { signal: cancelSignal, disableThinking, maxOutputTokens, allowEmptyText } =
+    normalizeGeminiWebSearchExtras(extras);
+
+  const thinkingCfg = disableThinking ? undefined : geminiThinkingConfigForModel(model);
   // Note: Gemini does not allow responseMimeType=application/json with tools.
   const config: Record<string, unknown> = {
-    maxOutputTokens: 12288,
+    maxOutputTokens: maxOutputTokens ?? 12288,
     temperature,
     tools: [{ googleSearch: {} }],
   };
@@ -1636,7 +1656,41 @@ export async function callGeminiWithSystemAndWebSearch(
   );
 
   const rawText = (response.text ?? "").trim();
-  if (!rawText) throw new Error("No text content in Strategist LLM response (Gemini web search)");
+  if (!rawText) {
+    if (!allowEmptyText) {
+      throw new Error("No text content in Strategist LLM response (Gemini web search)");
+    }
+    const queries: string[] = [];
+    const sources: WebSearchSource[] = [];
+    const seenUrls = new Set<string>();
+    const geminiResponseEmpty = response as GeminiCandidateChunk;
+    const candidatesE = geminiResponseEmpty.candidates;
+    const metaE = candidatesE?.[0]?.groundingMetadata;
+    if (metaE) {
+      if (Array.isArray(metaE.webSearchQueries)) {
+        for (const q of metaE.webSearchQueries) {
+          if (typeof q === "string" && q.trim()) queries.push(q.trim());
+        }
+      }
+      if (Array.isArray(metaE.groundingChunks)) {
+        for (const ch of metaE.groundingChunks) {
+          const url = ch.web?.uri;
+          if (!url || seenUrls.has(url)) continue;
+          seenUrls.add(url);
+          sources.push({ title: ch.web?.title ?? url, url });
+        }
+      }
+    }
+    return {
+      text: "(No verified headline text in model output — use search URLs below if present.)",
+      trace: {
+        webSearchUsed: queries.length > 0,
+        queries,
+        sources,
+      },
+      envelope: geminiEnvelopeFromModelChunk(model, response),
+    };
+  }
 
   const queries: string[] = [];
   const sources: WebSearchSource[] = [];
