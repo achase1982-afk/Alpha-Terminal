@@ -225,7 +225,13 @@ export async function augmentPolygonColdTickerForChat(args: {
   const sym = args.symbol.toUpperCase().trim();
   const apiKey = (process.env.POLYGON_API_KEY ?? "").trim();
   if (!apiKey) {
-    return { section: "", tierBCaptureAttempted: false };
+    return {
+      tierBCaptureAttempted: false,
+      section:
+        "### On-demand Polygon options snapshot (cold path)\n"
+        + `symbol=${sym}\n`
+        + "- **Skipped:** `POLYGON_API_KEY` is not set on this API server — no Polygon REST snapshot can run. Set the key (or use an environment where it is configured) to populate chain rankings here.",
+    };
   }
 
   let chain: PolygonChainResult | null;
@@ -249,7 +255,13 @@ export async function augmentPolygonColdTickerForChat(args: {
     });
   } catch (err) {
     args.packLog.warn({ err, sym }, "chatPolygonColdActivity: chain fetch threw");
-    return { section: "", tierBCaptureAttempted: false };
+    return {
+      tierBCaptureAttempted: false,
+      section:
+        "### On-demand Polygon options snapshot (cold path)\n"
+        + `symbol=${sym}\n`
+        + `- **Error:** Polygon chain fetch threw before any rows were read: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
 
   if (!chain || ((chain.calls?.length ?? 0) === 0 && (chain.puts?.length ?? 0) === 0)) {
