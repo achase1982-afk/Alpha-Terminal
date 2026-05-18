@@ -196,8 +196,10 @@ export const AI_CHAT_TICKER_STOPWORDS = new Set<string>([
 const MULTI_AGENT_SYNTH_MARKER = "You are the final **synthesizer**";
 
 /**
- * Concatenate recent **user** turns for ticker routing and pack heuristics.
- * Drops the multi-agent synthesizer pseudo-user turn when it is the latest entry.
+ * Concatenate recent **user** turns for ticker routing, flow-intent heuristics, and the context pack.
+ * Follow-up messages ("pull options flow") often omit the symbol; scanning prior user lines keeps
+ * `$MSFT` / `MSFT` from the thread. Drops the multi-agent synthesizer pseudo-user turn when it is
+ * the latest slice entry.
  */
 export function extractRoutingTextFromChatMessages(
   messages: ReadonlyArray<{ role: string; content: string }>,

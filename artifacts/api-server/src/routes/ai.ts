@@ -2610,6 +2610,7 @@ TICKER ROUTING (read carefully):
 - **Data ticker** (what the terminal DB + Polygon + FMP pack below was built for): **${packSymbol || "none"}**
 - **Tape wording:** Phrases like **"the tape"**, **"options tape"**, **"session tape"**, **"tape prints"**, **"market tape"** mean **time & sales / listed prints for the page ticker** — not the separate NYSE-listed **TAPE** equity unless the user clearly asks about that company (e.g. "TAPE stock", "shares of TAPE") or writes **\`$TAPE\`**. If the pack is built for the page ticker, answer from that pack; do not invent a second symbol called "TAPE" from desk slang.
 - When the user names a different ticker in their message (\`$TICKER\` or uppercase token), **${packSymbol}** follows that mention. Answer using the **terminal database block** for **${packSymbol}**; do **not** claim the user's question is "out of scope" because the page ticker differs.
+- **Routing scans the last several user turns** (joined for parsing), not only the final user line — follow-ups like "pull options flow" still pick up \`$TICKER\` / symbols from earlier in the thread.
 - If the client Schwab block only shows the page ticker but the user asked about **${packSymbol}**, use the server pack (and any second client block) for **${packSymbol}** prices and flow — not the page-only line.
 
 ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA (from client quote) ═══\n${marketContext}\n═══ END SCHWAB CONTEXT ═══` : "═══ LIVE SCHWAB CONTEXT DATA (from client quote) ═══\nNo client quote line sent.\n═══ END SCHWAB CONTEXT ═══"}
