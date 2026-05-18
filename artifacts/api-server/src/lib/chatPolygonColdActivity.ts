@@ -9,6 +9,7 @@ import type { PolygonChainResult, PolygonParsedContract } from "./polygonChain.j
 import { fetchPolygonChain } from "./polygonChain.js";
 import { requestFlowCapture } from "./flowCaptureService.js";
 import { getPolygonFlowHighlights, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
+import { getQuoteBySymbol } from "./schwabStreamer.js";
 import type { ChainSummaryLike } from "./strategistTapeBackfill.js";
 
 type ColdPackLog = { info: (obj: unknown, msg?: string) => void; warn: (obj: unknown, msg?: string) => void };
@@ -229,19 +230,42 @@ export async function augmentPolygonColdTickerForChat(args: {
 
   let chain: PolygonChainResult | null;
   try {
-    chain = await fetchPolygonChain(sym, apiKey, { maxDte: 60, maxPages: 8, log: args.packLog });
+    const q = getQuoteBySymbol(sym);
+    const livePx =
+      typeof q?.last === "number" && Number.isFinite(q.last)
+        ? q.last
+        : typeof q?.close === "number" && Number.isFinite(q.close)
+          ? q.close
+          : undefined;
+    const strikeOpts =
+      livePx != null && livePx > 0
+        ? { strikeMin: Math.floor(livePx * 0.65), strikeMax: Math.ceil(livePx * 1.35) }
+        : {};
+    chain = await fetchPolygonChain(sym, apiKey, {
+      maxDte: 60,
+      maxPages: 12,
+      ...strikeOpts,
+      log: args.packLog,
+    });
   } catch (err) {
     args.packLog.warn({ err, sym }, "chatPolygonColdActivity: chain fetch threw");
     return { section: "", tierBCaptureAttempted: false };
   }
 
   if (!chain || ((chain.calls?.length ?? 0) === 0 && (chain.puts?.length ?? 0) === 0)) {
+    const raw = chain?.rawContractsFetched;
+    const detail =
+      chain == null
+        ? "(Polygon REST returned **zero** raw option rows — check `POLYGON_API_KEY`, plan entitlements, symbol, or non-200 responses in server logs.)"
+        : typeof raw === "number" && raw > 0
+          ? `(Polygon returned **${raw}** raw contract rows but **0** contracts after parse — unexpected API shape; check server logs. After deploy, retry once.)`
+        : "(Polygon REST returned no usable option contracts for this underlying.)";
     return {
       tierBCaptureAttempted: false,
       section:
         "### On-demand Polygon options snapshot (cold path)\n"
         + `symbol=${sym}\n`
-        + "(Polygon REST returned no option contracts for this underlying — may be illiquid, bad symbol, or API empty.)",
+        + detail,
     };
   }
 

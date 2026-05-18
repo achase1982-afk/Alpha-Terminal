@@ -66,6 +66,8 @@ export interface PolygonChainResult {
   calls: PolygonParsedContract[];
   puts: PolygonParsedContract[];
   underlyingPrice?: number;
+  /** Raw option rows returned by Polygon before parse filtering (diagnostics). */
+  rawContractsFetched?: number;
 }
 
 function polygonTickerToSchwabSymbol(polygonTicker: string): string {
@@ -94,6 +96,9 @@ function parseResults(results: PolygonOptionResult[]): {
   for (const r of results) {
     if (!r.details?.strike_price || !r.details.expiration_date || !r.details.contract_type) continue;
 
+    const ctype = String(r.details.contract_type).trim().toLowerCase();
+    if (ctype !== "call" && ctype !== "put") continue;
+
     if (underlyingPrice == null && r.underlying_asset?.price) {
       underlyingPrice = r.underlying_asset.price;
     }
@@ -117,8 +122,8 @@ function parseResults(results: PolygonOptionResult[]): {
       dte: computeDte(r.details.expiration_date),
     };
 
-    if (r.details.contract_type === "call") calls.push(c);
-    else if (r.details.contract_type === "put") puts.push(c);
+    if (ctype === "call") calls.push(c);
+    else puts.push(c);
   }
 
   return { calls, puts, underlyingPrice };
@@ -190,7 +195,11 @@ export async function fetchPolygonChain(
         break;
       }
       const json = JSON.parse(bodyText) as PolygonSnapshotPage;
-      if (json.status !== "OK" || !json.results?.length) break;
+      if (!json.results?.length) break;
+      const st = json.status == null ? "OK" : String(json.status).toUpperCase();
+      if (st !== "OK" && st !== "DELAYED") {
+        log?.warn({ status: json.status, symbol, page: pages }, "Polygon chain page: unexpected status (still ingesting results)");
+      }
       allResults.push(...json.results);
       nextUrl = json.next_url;
       pages++;
@@ -216,6 +225,12 @@ export async function fetchPolygonChain(
   }
 
   const { calls, puts, underlyingPrice } = parseResults(allResults);
+  if (calls.length + puts.length === 0 && allResults.length > 0) {
+    log?.warn(
+      { symbol, rawCount: allResults.length },
+      "Polygon chain: 0 contracts after parse — check details.contract_type / expiration_date shape",
+    );
+  }
   // eslint-disable-next-line no-console
   console.log("[LIVE_FL_DIAG] fetchPolygonChain parsed", {
     symbol,
@@ -223,10 +238,11 @@ export async function fetchPolygonChain(
     puts: puts.length,
     pages,
     underlyingPrice: underlyingPrice ?? null,
+    rawCount: allResults.length,
   });
   log?.info(
-    { symbol, calls: calls.length, puts: puts.length, pages, underlyingPrice },
+    { symbol, calls: calls.length, puts: puts.length, pages, underlyingPrice, rawCount: allResults.length },
     "Polygon chain fetched"
   );
-  return { calls, puts, underlyingPrice };
+  return { calls, puts, underlyingPrice, rawContractsFetched: allResults.length };
 }
