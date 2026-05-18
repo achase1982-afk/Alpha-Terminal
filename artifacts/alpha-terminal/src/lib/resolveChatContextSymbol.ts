@@ -206,16 +206,20 @@ export function formatAiChatMarketContext(sym: string, quote: QuoteResponse | nu
   );
 }
 
-/** Last real user turn for ticker routing (skips multi-agent synthesizer injection). */
+/** Recent user turns for ticker routing (matches server `extractRoutingTextFromChatMessages`). */
 export function extractChatRoutingSourceText(history: Array<{ role: string; content: string }>): string {
   const userTurns = history
     .filter((m) => m.role === "user")
     .map((m) => String(m.content ?? "").trim())
     .filter(Boolean);
-  const lastU = userTurns[userTurns.length - 1] ?? "";
+  const maxUserTurns = 6;
+  let slice = userTurns.slice(-maxUserTurns);
+  const lastU = slice[slice.length - 1] ?? "";
   const synthMarker = "You are the final **synthesizer**";
-  if (lastU.includes(synthMarker) && userTurns.length >= 2) return userTurns[userTurns.length - 2]!;
-  return lastU;
+  if (lastU.includes(synthMarker) && slice.length >= 2) {
+    slice = slice.slice(0, -1);
+  }
+  return slice.join("\n");
 }
 
 /**

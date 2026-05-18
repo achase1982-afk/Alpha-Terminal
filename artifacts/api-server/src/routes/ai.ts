@@ -57,7 +57,7 @@ import {
   isAnthropicAdaptiveThinkingModel,
   xaiReasoningProviderOptionsForChat,
 } from "../lib/llmReasoningConfig.js";
-import { buildAiChatContextPack, resolveAiChatContextSymbol } from "../lib/aiChatContextPack.js";
+import { buildAiChatContextPack, resolveAiChatContextSymbol, extractRoutingTextFromChatMessages } from "../lib/aiChatContextPack.js";
 
 export { isClaude47OrNewer } from "../lib/llmReasoningConfig.js";
 
@@ -2553,11 +2553,12 @@ router.post("/chat", async (req, res) => {
     }
 
     const chosenModel = reqModel ?? DEFAULT_MODEL;
+    const routingText = extractRoutingTextFromChatMessages(streamMessages);
     const lastUserMsg =
-      [...messages].reverse().find((m) => m.role === "user" && String(m.content ?? "").trim())?.content?.trim()
-      ?? String(messages[messages.length - 1]?.content ?? "");
+      [...streamMessages].reverse().find((m) => m.role === "user" && String(m.content ?? "").trim())?.content?.trim()
+      ?? String(streamMessages[streamMessages.length - 1]?.content ?? "");
     const pageSymbol = (bodySymbol ?? "").trim().toUpperCase();
-    const routed = resolveAiChatContextSymbol(pageSymbol, lastUserMsg).trim();
+    const routed = resolveAiChatContextSymbol(pageSymbol, routingText).trim();
     const packSymbol = (routed || pageSymbol).trim();
 
     let terminalDataPack = "";
@@ -2565,7 +2566,7 @@ router.post("/chat", async (req, res) => {
       try {
         terminalDataPack = await buildAiChatContextPack({
           symbol: packSymbol,
-          lastUserMessage: lastUserMsg,
+          lastUserMessage: routingText,
         });
       } catch (packErr) {
         req.log.error({ err: packErr, packSymbol }, "AI chat: context pack assembly failed");
@@ -2604,6 +2605,7 @@ TICKER ROUTING (read carefully):
 - **Page / navigation ticker** (where the user opened the chat): **${pageSymbol || "not sent"}**
 - **Data ticker** (what the terminal DB + Polygon + FMP pack below was built for): **${packSymbol || "none"}**
 - When the user names a different ticker in their message (\`$TICKER\` or uppercase token), **${packSymbol}** follows that mention. Answer using the **terminal database block** for **${packSymbol}**; do **not** claim the user's question is "out of scope" because the page ticker differs.
+- **Routing scans the last several user turns** (joined for parsing), not only the final user line — follow-ups like "pull options flow" still pick up \`$TICKER\` / symbols from earlier in the thread.
 - If the client Schwab block only shows the page ticker but the user asked about **${packSymbol}**, use the server pack (and any second client block) for **${packSymbol}** prices and flow — not the page-only line.
 
 ${marketContext ? `═══ LIVE SCHWAB CONTEXT DATA (from client quote) ═══\n${marketContext}\n═══ END SCHWAB CONTEXT ═══` : "═══ LIVE SCHWAB CONTEXT DATA (from client quote) ═══\nNo client quote line sent.\n═══ END SCHWAB CONTEXT ═══"}

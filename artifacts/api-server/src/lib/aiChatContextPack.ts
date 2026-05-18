@@ -193,6 +193,30 @@ export const AI_CHAT_TICKER_STOPWORDS = new Set<string>([
   "TODAY",
 ]);
 
+const MULTI_AGENT_SYNTH_MARKER = "You are the final **synthesizer**";
+
+/**
+ * Concatenate recent **user** turns for ticker routing and flow-intent heuristics.
+ * Follow-up messages ("pull options flow") often omit the symbol; scanning prior
+ * user lines keeps `$MSFT` / `MSFT` from the thread. Drops the multi-agent
+ * synthesizer pseudo-user turn when it is the latest slice entry.
+ */
+export function extractRoutingTextFromChatMessages(
+  messages: ReadonlyArray<{ role: string; content: string }>,
+  maxUserTurns = 6,
+): string {
+  const userTurns = messages
+    .filter((m) => m.role === "user")
+    .map((m) => String(m.content ?? "").trim())
+    .filter(Boolean);
+  let slice = userTurns.slice(-maxUserTurns);
+  const last = slice[slice.length - 1] ?? "";
+  if (last.includes(MULTI_AGENT_SYNTH_MARKER) && slice.length >= 2) {
+    slice = slice.slice(0, -1);
+  }
+  return slice.join("\n");
+}
+
 /**
  * Pick which equity symbol should drive terminal DB tape / flow context when the
  * terminal page symbol may differ from the ticker named in the user's text.
