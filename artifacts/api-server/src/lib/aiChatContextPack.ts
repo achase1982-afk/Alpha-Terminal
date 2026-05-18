@@ -196,10 +196,10 @@ export const AI_CHAT_TICKER_STOPWORDS = new Set<string>([
 const MULTI_AGENT_SYNTH_MARKER = "You are the final **synthesizer**";
 
 /**
- * Concatenate recent **user** turns for ticker routing and flow-intent heuristics.
- * Follow-up messages ("pull options flow") often omit the symbol; scanning prior
- * user lines keeps `$MSFT` / `MSFT` from the thread. Drops the multi-agent
- * synthesizer pseudo-user turn when it is the latest slice entry.
+ * Concatenate recent **user** turns for ticker routing, flow-intent heuristics, and the context pack.
+ * Follow-up messages ("pull options flow") often omit the symbol; scanning prior user lines keeps
+ * `$MSFT` / `MSFT` from the thread. Drops the multi-agent synthesizer pseudo-user turn when it is
+ * the latest slice entry.
  */
 export function extractRoutingTextFromChatMessages(
   messages: ReadonlyArray<{ role: string; content: string }>,
@@ -218,12 +218,52 @@ export function extractRoutingTextFromChatMessages(
 }
 
 /**
+ * Time & sales / options-print desk phrasing ("the tape", "options tape").
+ * When this matches and the user did not clearly name the TAPE equity, the **page**
+ * symbol should drive flow/tape context. Use `$TAPE` to force the TAPE equity ticker.
+ */
+export function routingTextLooksLikeSessionTape(routingText: string): boolean {
+  const t = routingText.trim().toUpperCase().replace(/\u2019/g, "'");
+  if (!t) return false;
+  const patterns: RegExp[] = [
+    /\bTHE\s+TAPE\b/,
+    /\bOPTIONS?\s+TAPE\b/,
+    /\bSESSION\s+TAPE\b/,
+    /\bMARKET\s+TAPE\b/,
+    /\bFLOW\s+TAPE\b/,
+    /\bLIVE\s+TAPE\b/,
+    /\bON\s+THE\s+TAPE\b/,
+    /\bFROM\s+THE\s+TAPE\b/,
+    /\bREAD\s+THE\s+TAPE\b/,
+    /\bWHAT(?:'S| IS)\s+THE\s+TAPE\b/,
+    /\bHOW(?:'S| IS)\s+THE\s+TAPE\b/,
+    /\bTAPE\s+PRINTS?\b/,
+    /\bTAPE\s+ACTIVITY\b/,
+  ];
+  return patterns.some((re) => re.test(t));
+}
+
+/** User is likely asking about the TAPE equity ticker, not time & sales. */
+export function routingTextNamesTapeEquity(routingText: string): boolean {
+  const t = routingText.trim().toUpperCase().replace(/\u2019/g, "'");
+  if (!t) return false;
+  return (
+    /\bSHARES?\s+OF\s+TAPE\b/.test(t) ||
+    /\bTAPE\s+SHARES?\b/.test(t) ||
+    /\bTAPE\s+STOCK\b/.test(t) ||
+    /\bTAPE\s+(?:EARNINGS|GUIDANCE|REVENUE|FLOAT)\b/.test(t) ||
+    /\b(?:BUY|SELL|SHORT|LONG)\s+TAPE\b/.test(t) ||
+    /\bTAPE\s+(?:PRICE|CHART|IV|IVR|OPTIONS)\b/.test(t)
+  );
+}
+
+/**
  * Pick which equity symbol should drive terminal DB tape / flow context when the
  * terminal page symbol may differ from the ticker named in the user's text.
  */
 export function resolveAiChatContextSymbol(pageSymbol: string, routingText: string): string {
   const page = pageSymbol.trim().toUpperCase();
-  const text = routingText.trim().toUpperCase();
+  const text = routingText.trim().toUpperCase().replace(/\u2019/g, "'");
   if (!text) return page || "";
 
   const dollarSyms: string[] = [];
@@ -234,6 +274,14 @@ export function resolveAiChatContextSymbol(pageSymbol: string, routingText: stri
   }
   if (dollarSyms.length > 0) {
     return dollarSyms[dollarSyms.length - 1]!;
+  }
+
+  if (
+    page &&
+    routingTextLooksLikeSessionTape(text) &&
+    !routingTextNamesTapeEquity(text)
+  ) {
+    return page;
   }
 
   const bareOrdered: string[] = [];

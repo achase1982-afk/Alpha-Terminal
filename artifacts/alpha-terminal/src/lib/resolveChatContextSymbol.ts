@@ -164,10 +164,45 @@ const CHAT_TICKER_STOPWORDS = new Set<string>([
   "TODAY",
 ]);
 
+/** Keep patterns aligned with `routingTextLooksLikeSessionTape` / `routingTextNamesTapeEquity` in api-server `aiChatContextPack.ts`. */
+function routingTextLooksLikeSessionTape(routingText: string): boolean {
+  const t = routingText.trim().toUpperCase().replace(/\u2019/g, "'");
+  if (!t) return false;
+  const patterns: RegExp[] = [
+    /\bTHE\s+TAPE\b/,
+    /\bOPTIONS?\s+TAPE\b/,
+    /\bSESSION\s+TAPE\b/,
+    /\bMARKET\s+TAPE\b/,
+    /\bFLOW\s+TAPE\b/,
+    /\bLIVE\s+TAPE\b/,
+    /\bON\s+THE\s+TAPE\b/,
+    /\bFROM\s+THE\s+TAPE\b/,
+    /\bREAD\s+THE\s+TAPE\b/,
+    /\bWHAT(?:'S| IS)\s+THE\s+TAPE\b/,
+    /\bHOW(?:'S| IS)\s+THE\s+TAPE\b/,
+    /\bTAPE\s+PRINTS?\b/,
+    /\bTAPE\s+ACTIVITY\b/,
+  ];
+  return patterns.some((re) => re.test(t));
+}
+
+function routingTextNamesTapeEquity(routingText: string): boolean {
+  const t = routingText.trim().toUpperCase().replace(/\u2019/g, "'");
+  if (!t) return false;
+  return (
+    /\bSHARES?\s+OF\s+TAPE\b/.test(t) ||
+    /\bTAPE\s+SHARES?\b/.test(t) ||
+    /\bTAPE\s+STOCK\b/.test(t) ||
+    /\bTAPE\s+(?:EARNINGS|GUIDANCE|REVENUE|FLOAT)\b/.test(t) ||
+    /\b(?:BUY|SELL|SHORT|LONG)\s+TAPE\b/.test(t) ||
+    /\bTAPE\s+(?:PRICE|CHART|IV|IVR|OPTIONS)\b/.test(t)
+  );
+}
+
 /** Which symbol should drive Schwab quote + server tape routing for this chat turn. */
 export function resolveChatContextSymbol(pageSymbol: string, routingText: string): string {
   const page = pageSymbol.trim().toUpperCase();
-  const text = routingText.trim().toUpperCase();
+  const text = routingText.trim().toUpperCase().replace(/\u2019/g, "'");
   if (!text) return page || "";
 
   const dollarSyms: string[] = [];
@@ -178,6 +213,10 @@ export function resolveChatContextSymbol(pageSymbol: string, routingText: string
   }
   if (dollarSyms.length > 0) {
     return dollarSyms[dollarSyms.length - 1]!;
+  }
+
+  if (page && routingTextLooksLikeSessionTape(text) && !routingTextNamesTapeEquity(text)) {
+    return page;
   }
 
   const bareOrdered: string[] = [];
@@ -206,6 +245,8 @@ export function formatAiChatMarketContext(sym: string, quote: QuoteResponse | nu
   );
 }
 
+const MULTI_AGENT_SYNTH_MARKER = "You are the final **synthesizer**";
+
 /** Recent user turns for ticker routing (matches server `extractRoutingTextFromChatMessages`). */
 export function extractChatRoutingSourceText(history: Array<{ role: string; content: string }>): string {
   const userTurns = history
@@ -215,8 +256,7 @@ export function extractChatRoutingSourceText(history: Array<{ role: string; cont
   const maxUserTurns = 6;
   let slice = userTurns.slice(-maxUserTurns);
   const lastU = slice[slice.length - 1] ?? "";
-  const synthMarker = "You are the final **synthesizer**";
-  if (lastU.includes(synthMarker) && slice.length >= 2) {
+  if (lastU.includes(MULTI_AGENT_SYNTH_MARKER) && slice.length >= 2) {
     slice = slice.slice(0, -1);
   }
   return slice.join("\n");
