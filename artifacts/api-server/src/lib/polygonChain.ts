@@ -1,4 +1,5 @@
 import { appendPolygonApiTraceRecord } from "./polygonApiTrace.js";
+import { addCalendarDaysNy, nyCalendarYmd } from "./polygonMarketCalendar.js";
 
 interface PolygonOptionResult {
   day?: {
@@ -78,9 +79,15 @@ function polygonTickerToSchwabSymbol(polygonTicker: string): string {
   return `${root.trim().padEnd(6, " ")}${rest}`;
 }
 
+function normalizeExpirationYmd(expirationDate: string): string {
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(expirationDate.trim());
+  return m ? m[1]! : expirationDate.trim().slice(0, 10);
+}
+
 function computeDte(expirationDate: string): number {
+  const ymd = normalizeExpirationYmd(expirationDate);
   const now = new Date();
-  const exp = new Date(`${expirationDate}T20:00:00Z`);
+  const exp = new Date(`${ymd}T20:00:00Z`);
   return Math.max(0, Math.round((exp.getTime() - now.getTime()) / 86_400_000));
 }
 
@@ -105,7 +112,7 @@ function parseResults(results: PolygonOptionResult[]): {
 
     const c: PolygonParsedContract = {
       strike: Math.round(r.details.strike_price * 100) / 100,
-      expiration: r.details.expiration_date,
+      expiration: normalizeExpirationYmd(r.details.expiration_date),
       schwabSymbol: r.details.ticker ? polygonTickerToSchwabSymbol(r.details.ticker) : undefined,
       bid: r.last_quote?.bid,
       ask: r.last_quote?.ask,
@@ -142,9 +149,10 @@ export async function fetchPolygonChain(
 ): Promise<PolygonChainResult | null> {
   const { maxDte = 60, strikeMin, strikeMax, maxPages = 12, log } = opts;
 
-  const today = new Date();
-  const minDate = today.toISOString().slice(0, 10);
-  const maxDate = new Date(today.getTime() + maxDte * 86_400_000).toISOString().slice(0, 10);
+  /** NY calendar dates — avoids UTC `expiration_date_gte` running "ahead" of US and filtering out all near-term listings. */
+  const nyToday = nyCalendarYmd(new Date());
+  const minDate = nyToday;
+  const maxDate = addCalendarDaysNy(nyToday, maxDte);
 
   const params = new URLSearchParams({
     expiration_date_gte: minDate,
