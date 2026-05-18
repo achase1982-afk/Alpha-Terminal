@@ -55,6 +55,8 @@ const FLUSH_BATCH_MAX = OPTIONS_FLOW_RAW_TRADES_INSERT_MAX_ROWS;
 const FLUSH_INTERVAL_MS = 5_000;
 const CAPACITY_QUEUE_MS = 30_000;
 const CHANNEL_POLL_MS = 200;
+/** Keep this much wall time after REST tape backfill for WS subscribe, capture, and drain. */
+const WS_CAPTURE_TAIL_RESERVE_MS = 90_000;
 
 /**
  * After WS handlers are detached, wait for in-flight per-trade classify paths to finish.
@@ -121,6 +123,12 @@ export interface FlowCaptureOptions {
   chain?: ChainLike[];
   chainSummary?: ChainSummaryLike;
   marketCapTier?: MarketCapTier | string;
+  /**
+   * Wall-clock epoch ms when flow capture must stop (including REST tape backfill
+   * before the Polygon WS segment). Set by {@link runCaptureOnce} so large chains
+   * cannot exceed the caller's timeout.
+   */
+  flowCaptureDeadlineAt?: number;
 }
 
 const inflightByKey = new Map<string, Promise<FlowCaptureResult>>();
@@ -465,7 +473,10 @@ async function runWebsocketCaptureInternal(
   let rowsInserted = 0;
   const minDur = Math.max(0, opts.minDurationMs ?? DEFAULT_MIN_CAPTURE_MS);
   const timeoutMs = opts.timeout ?? DEFAULT_TIMEOUT_MS;
-  const deadline = t0 + timeoutMs;
+  const deadline =
+    typeof opts.flowCaptureDeadlineAt === "number" && Number.isFinite(opts.flowCaptureDeadlineAt)
+      ? opts.flowCaptureDeadlineAt
+      : t0 + timeoutMs;
 
   const neededChannels = occList.length * 2;
   metrics.queueDepth++;
@@ -517,6 +528,11 @@ async function runWebsocketCaptureInternal(
   let restSegment: TapeBackfillStatus | undefined;
   if (sessionDate === todayYmd && chainResolved) {
     try {
+      const nowMs = Date.now();
+      const restBackfillDeadline = Math.min(
+        deadline,
+        nowMs + Math.max(5_000, deadline - nowMs - WS_CAPTURE_TAIL_RESERVE_MS),
+      );
       restSegment = await runStrategistTapeBackfill({
         ticker,
         chain: chainResolved.chain,
@@ -527,6 +543,7 @@ async function runWebsocketCaptureInternal(
           TAPE_SYMBOL_BUDGET_CAP_MS,
           Math.max(tapeSymbolBudgetMsFromChainContractCount(chain.length), Math.min(120_000, timeoutMs)),
         ),
+        flowCaptureDeadlineAt: restBackfillDeadline,
       });
       rowsInserted += restSegment.tradesInserted;
     } catch (err) {
@@ -767,8 +784,10 @@ async function runWebsocketCaptureInternal(
       unregisterQuote();
       unregisterQuote = null;
     }
-    const drainDeadline =
-      Date.now() + Math.min(120_000, Math.max(25_000, timeoutMs));
+    const drainDeadline = Math.min(
+      deadline,
+      Date.now() + Math.min(120_000, Math.max(25_000, timeoutMs)),
+    );
     await drainWsPendingTradeOps(pendingTradeOps, drainDeadline, (remaining) => {
       errors.push("pending_trade_ops_drain_timeout");
       logFlowPipelineWarn(
@@ -874,6 +893,7 @@ async function runWebsocketCaptureInternal(
           marketCapTier: resolved.tier,
           forcedSessionDate: sessionDate,
           budgetMs: tapeSymbolBudgetMsFromChainContractCount(resolved.chain.length),
+          flowCaptureDeadlineAt: deadline,
         });
         fc.rowsInserted += fb.tradesInserted;
         fc.source = "rest";
@@ -938,7 +958,7 @@ async function runCaptureOnce(ticker: string, sessionDate: string, opts: FlowCap
   }
 
   if (polygonWsEnabled() && inRthToday) {
-    return runWebsocketCaptureInternal(ticker, sessionDate, occList, opts);
+    return runWebsocketCaptureInternal(ticker, sessionDate, occList, { ...opts, flowCaptureDeadlineAt });
   }
 
   if (!resolved) {
