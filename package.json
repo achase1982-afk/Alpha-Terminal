@@ -16,7 +16,7 @@
     "build": "pnpm run typecheck && pnpm -r --filter='!@workspace/mockup-sandbox' --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
-    "db:migrate": "sh -c 'cd lib/db && pnpm exec drizzle-kit migrate --config ./drizzle.config.ts'"
+    "db:migrate": "pnpm --filter @workspace/[REDACTED] run migrate:deploy"
   },
   "private": true,
   "devDependencies": {

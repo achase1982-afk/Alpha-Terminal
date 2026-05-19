@@ -14,9 +14,9 @@ set -e
 SERVER_DIR="$PWD"
 
 echo "[start.sh] Running database migrations..."
-# Same forward-only step as api-server `pnpm run migrate:deploy`: drizzle-kit migrate
-# against lib/db/drizzle (journal + SQL). Requires DATABASE_URL.
-cd /app/lib/db && pnpm exec drizzle-kit migrate --config ./drizzle.config.ts
+# Same step as api-server `pnpm run migrate:deploy` (drizzle-orm migrator, lib/db/drizzle).
+# Requires DATABASE_URL. Non-zero exit aborts the deploy.
+cd "$SERVER_DIR" && pnpm run migrate:deploy
 
 echo "[start.sh] Migrations complete. Starting server..."
 cd "$SERVER_DIR"
