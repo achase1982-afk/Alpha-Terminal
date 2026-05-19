@@ -11,6 +11,33 @@ import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
 // composite key, so partial failures or restart never produce duplicates.
 
 const ROLLUP_INTERVAL_MS = 60 * 1000; // 1 minute
+/** Default wall-clock cap for per-symbol rollup during strategist tape capture. */
+export const SYMBOL_ROLLUP_DEFAULT_MAX_MS = 45_000;
+
+export type SymbolRollupResult = {
+  rowsUpserted: number;
+  rawScanned: number;
+  durationMs: number;
+  timedOut?: boolean;
+};
+
+export type SymbolRollupOptions = {
+  /** Wall-clock budget; strategist capture passes remaining time until flowCaptureDeadlineAt. */
+  maxMs?: number;
+};
+
+function raceWithWallClock<T>(work: Promise<T>, maxMs: number, label: string): Promise<T> {
+  if (!Number.isFinite(maxMs) || maxMs <= 0) {
+    return Promise.reject(new Error(`${label}_budget_exhausted`));
+  }
+  return Promise.race([
+    work,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(`${label}_timeout`)), maxMs);
+    }),
+  ]);
+}
+
 let rollupTimer: ReturnType<typeof setInterval> | null = null;
 let lastRunTs: number | null = null;
 let lastRunRows = 0;
@@ -43,8 +70,6 @@ export async function runRollupOnce(forDate?: string): Promise<{ rowsUpserted: n
   const t0 = Date.now();
   const date = forDate ?? todayIso();
 
-  // Snapshot raw row count first so the log line reflects the size of the
-  // input set this tick is summarizing (not the cumulative table size).
   const rawCountResult = await db.execute(
     sql`SELECT COUNT(*)::int AS n FROM options_flow_raw_trades WHERE date = ${date}`,
   );
@@ -53,9 +78,6 @@ export async function runRollupOnce(forDate?: string): Promise<{ rowsUpserted: n
 
   let rowsUpserted = 0;
   try {
-    // Aggregate raw trades for the date, grouped by strike key.
-    // sweep takes precedence over block in classification (Polygon's sweep
-    // condition often co-occurs with size>=100); regular = neither.
     const rolled = await db.execute(sql`
     INSERT INTO options_flow_exec_per_strike (
       underlying_symbol, date, option_type, strike, expiration,
@@ -108,11 +130,10 @@ export async function runRollupOnce(forDate?: string): Promise<{ rowsUpserted: n
   return { rowsUpserted, rawScanned, durationMs };
 }
 
-/** Same as runRollupOnce but only raw rows for one underlying (Strategist tape backfill). */
-export async function runRollupOnceForSymbol(
+async function runRollupOnceForSymbolCore(
   underlyingSymbol: string,
   forDate?: string,
-): Promise<{ rowsUpserted: number; rawScanned: number; durationMs: number }> {
+): Promise<SymbolRollupResult> {
   const t0 = Date.now();
   const date = forDate ?? todayIso();
   const sym = underlyingSymbol.toUpperCase();
@@ -177,10 +198,40 @@ export async function runRollupOnceForSymbol(
   return { rowsUpserted, rawScanned, durationMs };
 }
 
+/** Same as runRollupOnce but only raw rows for one underlying (Strategist tape backfill). */
+export async function runRollupOnceForSymbol(
+  underlyingSymbol: string,
+  forDate?: string,
+  opts?: SymbolRollupOptions,
+): Promise<SymbolRollupResult> {
+  const maxMs = opts?.maxMs ?? SYMBOL_ROLLUP_DEFAULT_MAX_MS;
+  const t0 = Date.now();
+  try {
+    return await raceWithWallClock(
+      runRollupOnceForSymbolCore(underlyingSymbol, forDate),
+      maxMs,
+      "symbol_rollup",
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg === "symbol_rollup_timeout" || msg === "symbol_rollup_budget_exhausted") {
+      const sym = underlyingSymbol.toUpperCase();
+      const date = forDate ?? todayIso();
+      logFlowPipelineWarn(
+        "rollup_symbol_timeout",
+        "optionsFlowRollup: per-symbol rollup exceeded wall-clock budget (analysis continues)",
+        { underlyingSymbol: sym, date, maxMs, durationMs: Date.now() - t0 },
+      );
+      return { rowsUpserted: 0, rawScanned: 0, durationMs: Date.now() - t0, timedOut: true };
+    }
+    throw err;
+  }
+}
+
 let lastRawScanned = 0;
 
 async function tick(): Promise<void> {
-  if (!isMarketHoursUtc()) return; // skip overnight/weekends — nothing new flowing
+  if (!isMarketHoursUtc()) return;
   try {
     const { rowsUpserted, rawScanned, durationMs } = await runRollupOnce();
     totalRuns++;
@@ -188,11 +239,6 @@ async function tick(): Promise<void> {
     lastRunRows = rowsUpserted;
     lastRawScanned = rawScanned;
     lastRunMs = durationMs;
-    // Per-tick observability: how big the raw input was, how many strike
-    // summaries were upserted, and how long the round-trip took. Counter
-    // stays cheap (one log line / minute) and gives an immediate signal
-    // if the watcher goes dark (rawScanned plateaus) or the rollup stalls
-    // (no log line within ~2 minutes during market hours).
     logger.info({
       op: "flowRollup.tick",
       rawScanned,
@@ -214,7 +260,6 @@ export function startFlowRollup(): void {
   if (rollupTimer) return;
   rollupTimer = setInterval(() => { void tick(); }, ROLLUP_INTERVAL_MS);
   rollupTimer.unref?.();
-  // Fire once on startup so the first scan after restart isn't empty.
   void tick();
   logger.info({ op: "flowRollup.start", intervalMs: ROLLUP_INTERVAL_MS }, "Options flow rollup started");
 }

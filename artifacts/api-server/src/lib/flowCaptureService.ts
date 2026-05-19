@@ -804,10 +804,18 @@ async function runWebsocketCaptureInternal(
     }
     logger.info({ ticker, rowsInserted }, "flowCapture: flushed");
     logger.info({ ticker }, "flowCapture: unsubscribed");
-    try {
-      await runRollupOnceForSymbol(ticker, sessionDate);
-    } catch (err) {
-      logFlowPipelineWarn("flow_capture_rollup", "flowCaptureService: rollup failed", { err, ticker });
+    const rollupBudgetMs = Math.max(0, Math.min(30_000, deadline - Date.now()));
+    if (rollupBudgetMs >= 2_000) {
+      try {
+        const rollup = await runRollupOnceForSymbol(ticker, sessionDate, { maxMs: rollupBudgetMs });
+        if (rollup.timedOut) {
+          errors.push("symbol_rollup_timeout");
+        }
+      } catch (err) {
+        logFlowPipelineWarn("flow_capture_rollup", "flowCaptureService: rollup failed", { err, ticker });
+      }
+    } else {
+      errors.push("symbol_rollup_skipped_deadline");
     }
   }
 
@@ -1001,10 +1009,50 @@ async function runCaptureOnce(ticker: string, sessionDate: string, opts: FlowCap
   };
 }
 
+function flowCaptureTimeoutResult(sessionDate: string, timeoutMs: number, reason: string): FlowCaptureResult {
+  return {
+    sessionDate,
+    source: "rest",
+    rowsInserted: 0,
+    occsSubscribed: 0,
+    durationMs: timeoutMs,
+    errors: [reason],
+  };
+}
+
+function withCallerFlowCaptureDeadline(
+  capture: Promise<FlowCaptureResult>,
+  sessionDate: string,
+  callerDeadlineAt: number,
+): Promise<FlowCaptureResult> {
+  const waitMs = Math.max(0, callerDeadlineAt - Date.now());
+  if (waitMs <= 0) {
+    return Promise.resolve(
+      flowCaptureTimeoutResult(sessionDate, 0, "flow_capture_caller_deadline_exceeded"),
+    );
+  }
+  return Promise.race([
+    capture,
+    new Promise<FlowCaptureResult>((resolve) => {
+      setTimeout(() => {
+        logFlowPipelineWarn(
+          "flow_capture_caller_timeout",
+          "flowCaptureService: caller deadline exceeded while waiting for capture (analysis continues)",
+          { sessionDate, waitMs },
+        );
+        resolve(flowCaptureTimeoutResult(sessionDate, waitMs, "flow_capture_caller_timeout"));
+      }, waitMs);
+    }),
+  ]);
+}
+
+
 export async function requestFlowCapture(ticker: string, opts?: FlowCaptureOptions): Promise<FlowCaptureResult> {
   const sym = ticker.toUpperCase();
   const sessionDate = await resolveFlowSessionDate(opts ?? {});
   const key = sessionKey(sym, sessionDate);
+  const captureTimeoutMs = opts?.timeout ?? DEFAULT_TIMEOUT_MS;
+  const callerDeadlineAt = Date.now() + captureTimeoutMs;
 
   refCountByKey.set(key, (refCountByKey.get(key) ?? 0) + 1);
 
@@ -1037,7 +1085,7 @@ export async function requestFlowCapture(ticker: string, opts?: FlowCaptureOptio
     inflightByKey.set(key, p);
   }
 
-  return wrapDec(p);
+  return wrapDec(withCallerFlowCaptureDeadline(p, sessionDate, callerDeadlineAt));
 }
 
 export function getFlowCaptureDiagnostics(): {

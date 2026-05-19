@@ -1200,15 +1200,27 @@ export async function runStrategistTapeBackfill(args: {
 
   await flushFlowPersistenceNow();
   const rollupT0 = Date.now();
-  try {
-    await runRollupOnceForSymbol(ticker, sessionDate);
-  } catch (err) {
-    logFlowPipelineWarn(
-      "tape_backfill_symbol_rollup",
-      "strategistTapeBackfill: symbol rollup failed",
-      { err, ticker },
+  const rollupBudgetMs = Math.max(0, Math.min(45_000, flowCap - Date.now()));
+  if (rollupBudgetMs >= 2_000) {
+    try {
+      const rollup = await runRollupOnceForSymbol(ticker, sessionDate, { maxMs: rollupBudgetMs });
+      if (rollup.timedOut) {
+        anyTruncated = true;
+      }
+    } catch (err) {
+      logFlowPipelineWarn(
+        "tape_backfill_symbol_rollup",
+        "strategistTapeBackfill: symbol rollup failed",
+        { err, ticker },
+      );
+      anyError = true;
+    }
+  } else {
+    logger.info(
+      { ticker, sessionDate, flowCap, rollupBudgetMs },
+      "strategistTapeBackfill: skipping symbol rollup — flow capture deadline exhausted",
     );
-    anyError = true;
+    anyTruncated = true;
   }
   const rollupMs = Date.now() - rollupT0;
 
