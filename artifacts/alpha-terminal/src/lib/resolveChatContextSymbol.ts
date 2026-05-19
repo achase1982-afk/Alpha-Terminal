@@ -29,6 +29,8 @@ const CHAT_TICKER_STOPWORDS = new Set<string>([
   "HIS",
   "HOW",
   "IPO",
+  "IS",
+  "IT",
   "ITS",
   "IV",
   "LET",
@@ -48,6 +50,7 @@ const CHAT_TICKER_STOPWORDS = new Set<string>([
   "SELL",
   "SHE",
   "THE",
+  "TO",
   "TOO",
   "TWO",
   "USE",
@@ -63,7 +66,9 @@ const CHAT_TICKER_STOPWORDS = new Set<string>([
   "OPEN",
   "HIGH",
   "CLOSE",
+  "FLOW",
   "FROM",
+  "HOLD",
   "INTO",
   "THAN",
   "THEN",
@@ -119,6 +124,7 @@ const CHAT_TICKER_STOPWORDS = new Set<string>([
   "WERE",
   "WILL",
   "WORK",
+  "WORTH",
   "BACK",
   "CALL",
   "CASH",
@@ -199,6 +205,40 @@ function routingTextNamesTapeEquity(routingText: string): boolean {
   );
 }
 
+/** Matches server `routingTextIsPageContextualQuestion` in `aiChatContextPack.ts`. */
+function routingTextIsPageContextualQuestion(routingText: string): boolean {
+  const t = routingText.trim().toUpperCase().replace(/\u2019/g, "'");
+  if (!t) return false;
+  if (/\$[A-Z]{2,5}\b/.test(t)) return false;
+
+  const reBare = /\b([A-Z]{2,5})\b/g;
+  let bm: RegExpExecArray | null;
+  while ((bm = reBare.exec(t)) !== null) {
+    if (bm.index > 0 && t[bm.index - 1] === "$") continue;
+    const w = bm[1]!;
+    if (CHAT_TICKER_STOPWORDS.has(w)) continue;
+    if (w.length >= 3) return false;
+  }
+
+  if (
+    /\bTHIS\b/.test(t) &&
+    /\b(STOCK|STOCKS|SHARE|SHARES|COMPANY|TICKER|SYMBOL|PLAY|NAME|CHART)\b/.test(t)
+  ) {
+    return true;
+  }
+  if (
+    /\b(IS|ARE)\s+(THIS|IT)\b/.test(t) &&
+    /\b(GOOD|BAD|BUY|SELL|HOLD|WORTH|OVERVALUED|UNDERVALUED|BULLISH|BEARISH|PICK|BET|INVEST)\b/.test(t)
+  ) {
+    return true;
+  }
+  if (/\b(SHOULD\s+I|DO\s+YOU\s+THINK|WORTH)\b.*\b(BUY|SELL|HOLD|INVEST|ADD|TRIM|SHORT|LONG)\b/.test(t)) {
+    return true;
+  }
+  if (/\b(GOOD|GREAT|BAD)\s+(STOCK|BUY|PICK|ENTRY|SETUP)\b/.test(t)) return true;
+  return false;
+}
+
 /** Which symbol should drive Schwab quote + server tape routing for this chat turn. */
 export function resolveChatContextSymbol(pageSymbol: string, routingText: string): string {
   const page = pageSymbol.trim().toUpperCase();
@@ -216,6 +256,10 @@ export function resolveChatContextSymbol(pageSymbol: string, routingText: string
   }
 
   if (page && routingTextLooksLikeSessionTape(text) && !routingTextNamesTapeEquity(text)) {
+    return page;
+  }
+
+  if (page && routingTextIsPageContextualQuestion(text)) {
     return page;
   }
 

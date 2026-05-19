@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { extractRoutingTextFromChatMessages, resolveAiChatContextSymbol } from "../aiChatContextPack.js";
+import {
+  extractRoutingTextFromChatMessages,
+  resolveAiChatContextSymbol,
+  routingTextIsPageContextualQuestion,
+} from "../aiChatContextPack.js";
 
 describe("extractRoutingTextFromChatMessages", () => {
   it("joins last user turns for routing", () => {
@@ -30,5 +34,31 @@ describe("resolveAiChatContextSymbol with multi-turn routing", () => {
       { role: "user", content: "Now show options flow only please" },
     ]);
     expect(resolveAiChatContextSymbol("NVDA", text)).toBe("MSFT");
+  });
+});
+
+describe("routingTextIsPageContextualQuestion", () => {
+  it("detects deictic stock advice without a named ticker", () => {
+    expect(routingTextIsPageContextualQuestion("Is this a good stock to buy?")).toBe(true);
+    expect(routingTextIsPageContextualQuestion("Should I buy this")).toBe(true);
+    expect(routingTextIsPageContextualQuestion("Is it worth holding?")).toBe(true);
+  });
+
+  it("does not fire when the user names a ticker with $", () => {
+    expect(routingTextIsPageContextualQuestion("Is $AAPL a good buy?")).toBe(false);
+  });
+});
+
+describe("resolveAiChatContextSymbol contextual page questions", () => {
+  it("routes 'Is this a good stock to buy?' to the open page symbol (not TO from 'to buy')", () => {
+    expect(resolveAiChatContextSymbol("GOOGL", "Is this a good stock to buy?")).toBe("GOOGL");
+  });
+
+  it("still routes explicit $tickers over the page", () => {
+    expect(resolveAiChatContextSymbol("GOOGL", "Is $MSFT a better buy than this?")).toBe("MSFT");
+  });
+
+  it("still routes bare ticker mentions when not contextual", () => {
+    expect(resolveAiChatContextSymbol("GOOGL", "How is NVDA doing today?")).toBe("NVDA");
   });
 });

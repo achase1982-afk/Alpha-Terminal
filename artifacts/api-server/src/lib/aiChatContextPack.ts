@@ -58,6 +58,8 @@ export const AI_CHAT_TICKER_STOPWORDS = new Set<string>([
   "HIS",
   "HOW",
   "IPO",
+  "IS",
+  "IT",
   "ITS",
   "IV",
   "LET",
@@ -77,6 +79,7 @@ export const AI_CHAT_TICKER_STOPWORDS = new Set<string>([
   "SELL",
   "SHE",
   "THE",
+  "TO",
   "TOO",
   "TWO",
   "USE",
@@ -92,7 +95,9 @@ export const AI_CHAT_TICKER_STOPWORDS = new Set<string>([
   "OPEN",
   "HIGH",
   "CLOSE",
+  "FLOW",
   "FROM",
+  "HOLD",
   "INTO",
   "THAN",
   "THEN",
@@ -148,6 +153,7 @@ export const AI_CHAT_TICKER_STOPWORDS = new Set<string>([
   "WERE",
   "WILL",
   "WORK",
+  "WORTH",
   "BACK",
   "CALL",
   "CASH",
@@ -274,6 +280,43 @@ export function routingTextWantsNewsOrCatalyst(routingText: string): boolean {
 }
 
 /**
+ * User is asking about the symbol on screen (deictic / advice phrasing) without naming a ticker.
+ * Example: "Is this a good stock to buy?" on the GOOGL page must not route to bare "TO" from "to buy".
+ */
+export function routingTextIsPageContextualQuestion(routingText: string): boolean {
+  const t = routingText.trim().toUpperCase().replace(/\u2019/g, "'");
+  if (!t) return false;
+  if (/\$[A-Z]{2,5}\b/.test(t)) return false;
+
+  const reBare = /\b([A-Z]{2,5})\b/g;
+  let bm: RegExpExecArray | null;
+  while ((bm = reBare.exec(t)) !== null) {
+    if (bm.index > 0 && t[bm.index - 1] === "$") continue;
+    const w = bm[1]!;
+    if (AI_CHAT_TICKER_STOPWORDS.has(w)) continue;
+    if (w.length >= 3) return false;
+  }
+
+  if (
+    /\bTHIS\b/.test(t) &&
+    /\b(STOCK|STOCKS|SHARE|SHARES|COMPANY|TICKER|SYMBOL|PLAY|NAME|CHART)\b/.test(t)
+  ) {
+    return true;
+  }
+  if (
+    /\b(IS|ARE)\s+(THIS|IT)\b/.test(t) &&
+    /\b(GOOD|BAD|BUY|SELL|HOLD|WORTH|OVERVALUED|UNDERVALUED|BULLISH|BEARISH|PICK|BET|INVEST)\b/.test(t)
+  ) {
+    return true;
+  }
+  if (/\b(SHOULD\s+I|DO\s+YOU\s+THINK|WORTH)\b.*\b(BUY|SELL|HOLD|INVEST|ADD|TRIM|SHORT|LONG)\b/.test(t)) {
+    return true;
+  }
+  if (/\b(GOOD|GREAT|BAD)\s+(STOCK|BUY|PICK|ENTRY|SETUP)\b/.test(t)) return true;
+  return false;
+}
+
+/**
  * Pick which equity symbol should drive terminal DB tape / flow context when the
  * terminal page symbol may differ from the ticker named in the user's text.
  */
@@ -297,6 +340,10 @@ export function resolveAiChatContextSymbol(pageSymbol: string, routingText: stri
     routingTextLooksLikeSessionTape(text) &&
     !routingTextNamesTapeEquity(text)
   ) {
+    return page;
+  }
+
+  if (page && routingTextIsPageContextualQuestion(text)) {
     return page;
   }
 
