@@ -1,0 +1,11 @@
+# Railway service config (api-server / monorepo backend).
+# Ensures pending Drizzle migrations run before the Node process starts on every deploy.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Default Dockerfile CMD is also /app/start.sh; this reinforces migrate-then-serve if the
+# dashboard overrides CMD without migrations.
+startCommand = "/bin/sh /app/start.sh"

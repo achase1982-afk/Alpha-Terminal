@@ -13,7 +13,7 @@ If self-healing logs a warning (permissions, read-only user), use the manual ste
 1. **Provision Postgres** and copy the **internal** connection URL (TLS where required).
 2. Set **`DATABASE_URL`** on the **same process** that runs the Node backend.
 
-3. **Start command:** keep the default **`CMD`** from the root Dockerfile (`/app/start.sh`). That script runs Drizzle migrations under `lib/db`, then starts the compiled server. If you override the start command to only run `node …` without migrating first, new columns (such as `telemetry_events.service`) may still be added by self-healing on boot; other migrations still need the normal migrate step.
+3. **Start command:** keep the default **`CMD`** from the root Dockerfile (`/app/start.sh`) or `railway.toml` **`startCommand`** (same path). That runs `artifacts/api-server` **`pnpm run migrate:deploy`** (programmatic Drizzle migrator over `lib/db/drizzle`), then starts the compiled server. Do **not** override the start command to only `node dist/index.mjs` — new tables (e.g. `chat_threads` / `chat_messages` from migration 0034) will be missing and chat will 500.
 
 4. **Redeploy** after changing `DATABASE_URL` or pulling migrations.
 
@@ -26,7 +26,14 @@ export DATABASE_URL='postgresql://…'
 pnpm db:migrate
 ```
 
-This runs the same `drizzle-kit migrate` step as `start.sh`. Requires `pnpm install` at repo root first.
+This runs the same migrator as production `migrate:deploy` / `start.sh`. Requires `pnpm install` at repo root first.
+
+From the api-server package:
+
+```bash
+export DATABASE_URL='postgresql://…'
+pnpm --filter @workspace/[REDACTED] run migrate:deploy
+```
 
 ## Alternate workspace script
 
