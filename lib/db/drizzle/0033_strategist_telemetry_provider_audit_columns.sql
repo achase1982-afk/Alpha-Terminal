@@ -11,7 +11,7 @@ BEGIN
     ALTER TABLE public.strategist_telemetry ADD COLUMN "provider" text;
   END IF;
 END $$;
-
+--> statement-breakpoint
 -- Rename anthropic_request_id -> provider_request_id only when source exists and target does not.
 DO $$
 BEGIN
@@ -25,7 +25,7 @@ BEGIN
     ALTER TABLE public.strategist_telemetry RENAME COLUMN anthropic_request_id TO provider_request_id;
   END IF;
 END $$;
-
+--> statement-breakpoint
 -- Rename extended_thinking_config -> thinking_config only when source exists and target does not.
 DO $$
 BEGIN
