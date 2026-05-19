@@ -86,7 +86,7 @@ export function createChatTools(ctx: ChatToolContext) {
       inputSchema: z.object({
         symbol: z.string().describe("US equity ticker, e.g. AAPL"),
       }),
-      execute: async ({ symbol }) => fetchQuoteForChat(symbol),
+      execute: async ({ symbol }) => fetchQuoteForChat(symbol, "equity quote"),
     }),
 
     get_technicals: tool({

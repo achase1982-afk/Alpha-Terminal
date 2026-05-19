@@ -15,7 +15,13 @@ export type ChatSseEvent =
     }
   | { type: "done"; thread_id: string; assistant_message_id: string }
   | { type: "error"; message: string }
-  | { type: "status"; note: string };
+  | {
+      type: "status";
+      note?: string;
+      phase?: string;
+      model_count?: number;
+      synthesizer_model?: string;
+    };
 
 function parseSseBlock(block: string): ChatSseEvent | null {
   let event = "message";
@@ -55,7 +61,15 @@ function parseSseBlock(block: string): ChatSseEvent | null {
       case "error":
         return { type: "error", message: String(payload.message ?? "Error") };
       case "status":
-        return { type: "status", note: String(payload.note ?? "") };
+        return {
+          type: "status",
+          ...(typeof payload.note === "string" ? { note: payload.note } : {}),
+          ...(typeof payload.phase === "string" ? { phase: payload.phase } : {}),
+          ...(typeof payload.model_count === "number" ? { model_count: payload.model_count } : {}),
+          ...(typeof payload.synthesizer_model === "string"
+            ? { synthesizer_model: payload.synthesizer_model }
+            : {}),
+        };
       default:
         return null;
     }

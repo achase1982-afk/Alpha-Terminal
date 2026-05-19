@@ -5,7 +5,7 @@ import {
   createChatThread,
   getChatThreadForUser,
 } from "./chatDb.js";
-import { runChatTurn, type ChatStreamEvent } from "./chatOrchestrator.js";
+import { runChatTurn, runMultiAgentChatTurn, type ChatStreamEvent } from "./chatOrchestrator.js";
 import { isGrokModel, XAI_CHAT_TOOLS_NOTE } from "./chatModel.js";
 
 const DEV_USER_ID = "dev-bypass-user";
@@ -21,7 +21,7 @@ function writeSse(res: Response, event: string, data: unknown): void {
 }
 
 /**
- * POST body: `{ thread_id?, message, model?, symbol? }`
+ * POST body: `{ thread_id?, message, model?, symbol?, multi_agent?: { models, synthesizer_model } }`
  * SSE events: thread, text, tool_call_start, tool_call_end, done, error
  */
 export async function handleChatMessageSse(req: Request, res: Response): Promise<void> {
@@ -36,6 +36,10 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
     message?: string;
     model?: string;
     symbol?: string;
+    multi_agent?: {
+      models?: string[];
+      synthesizer_model?: string;
+    };
   };
 
   const message = typeof body.message === "string" ? body.message.trim() : "";
@@ -44,8 +48,17 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
     return;
   }
 
-  const model = (body.model ?? "claude-opus-4-6").trim();
   const ambientSymbol = typeof body.symbol === "string" ? body.symbol.trim().toUpperCase() : null;
+  const multiAgentRaw = body.multi_agent;
+  const multiAgentModels = Array.isArray(multiAgentRaw?.models)
+    ? multiAgentRaw!.models!.filter((m): m is string => typeof m === "string" && m.trim().length > 0)
+    : [];
+  const synthesizerModel =
+    typeof multiAgentRaw?.synthesizer_model === "string"
+      ? multiAgentRaw.synthesizer_model.trim()
+      : "";
+  const useMultiAgent = multiAgentModels.length >= 2 && synthesizerModel.length > 0;
+  const model = (useMultiAgent ? synthesizerModel : (body.model ?? "claude-opus-4-6")).trim();
 
   let threadId = typeof body.thread_id === "string" ? body.thread_id.trim() : "";
   let thread = threadId ? await getChatThreadForUser(userId, threadId) : null;
@@ -73,19 +86,25 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
   if (isGrokModel(model)) {
     writeSse(res, "status", { note: XAI_CHAT_TOOLS_NOTE });
   }
+  if (useMultiAgent) {
+    writeSse(res, "status", {
+      phase: "multi_agent_drafting",
+      model_count: multiAgentModels.length,
+      synthesizer_model: synthesizerModel,
+    });
+  }
 
   const heartbeat = setInterval(() => {
     if (!res.writableEnded) res.write(": ping\n\n");
   }, 15_000);
 
-  try {
-    await runChatTurn({
-      thread,
-      userMessage: message,
-      model,
-      ambientSymbol,
-      toolContext: { userId, schwabAccessToken },
-      onEvent: (ev: ChatStreamEvent) => {
+  const turnArgs = {
+    thread,
+    userMessage: message,
+    model,
+    ambientSymbol,
+    toolContext: { userId, schwabAccessToken },
+    onEvent: (ev: ChatStreamEvent) => {
         if (res.writableEnded) return;
         switch (ev.type) {
           case "text":
@@ -116,7 +135,17 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
             break;
         }
       },
-    });
+  };
+
+  try {
+    if (useMultiAgent) {
+      await runMultiAgentChatTurn({
+        ...turnArgs,
+        multiAgent: { models: multiAgentModels, synthesizer_model: synthesizerModel },
+      });
+    } else {
+      await runChatTurn(turnArgs);
+    }
   } catch (err) {
     req.log?.error?.({ err, threadId }, "chat message stream failed");
     if (!res.writableEnded) {

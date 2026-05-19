@@ -124,21 +124,164 @@ export type RunChatTurnArgs = {
   onEvent: (ev: ChatStreamEvent) => void;
 };
 
-export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
-  const { thread, userMessage, model, ambientSymbol, toolContext, onEvent } = args;
+export type MultiAgentConfig = {
+  models: string[];
+  synthesizer_model: string;
+};
 
+const SYNTH_DRAFT_CHAR_CAP = 8000;
+
+const MULTI_AGENT_SYNTH_SYSTEM = `You are the final synthesizer for Alpha Terminal.
+
+Several models produced research drafts on the trader's question. Treat drafts as unvetted — they may disagree or hallucinate.
+
+Output one markdown answer as the single source of truth. Ground material claims in the user's messages and tool-backed facts from the conversation. When drafts conflict, prefer evidence from the thread; if unresolved, say so briefly. Discard invented tickers or unsupported numbers. Do not mention "Model A/B" or the synthesis process.`;
+
+function buildMultiAgentSynthesisUserContent(
+  successes: Array<{ model: string; text: string }>,
+  failures: Array<{ model: string; message: string }>,
+): string {
+  const blocks = successes
+    .map((x) => {
+      const raw = x.text.trim();
+      const clipped =
+        raw.length > SYNTH_DRAFT_CHAR_CAP
+          ? `${raw.slice(0, SYNTH_DRAFT_CHAR_CAP)}\n\n_[Draft truncated for length]_`
+          : raw;
+      return `### Draft from \`${x.model}\`\n\n${clipped}`;
+    })
+    .join("\n\n---\n\n");
+
+  const failNote =
+    failures.length > 0
+      ? `\n\n### Research runs that failed (no draft)\n\n${failures.map((f) => `- \`${f.model}\`: ${f.message}`).join("\n")}`
+      : "";
+
+  return `${blocks}${failNote}\n\nWrite the final markdown answer now.`;
+}
+
+async function prepareTurnMessages(
+  thread: ChatThreadRow,
+  userMessage: string,
+): Promise<{ summary: string | null; modelMessages: ModelMessage[] }> {
   await insertChatMessage({
     threadId: thread.id,
     role: "user",
     content: userMessage.trim(),
   });
-
   const summary = await maybeSummarizeThread(thread);
   const history = await listChatMessages(thread.id);
   const modelMessages: ModelMessage[] = [
     ...buildModelMessagesFromHistory(history.slice(0, -1), summary),
     { role: "user", content: userMessage.trim() },
   ];
+  return { summary, modelMessages };
+}
+
+async function runDraftChatTurn(args: {
+  model: string;
+  modelMessages: ModelMessage[];
+  ambientSymbol?: string | null;
+  toolContext: ChatToolContext;
+}): Promise<{ model: string; text?: string; error?: string }> {
+  const tools = createChatTools(args.toolContext);
+  const resolved = resolveChatLanguageModel(args.model);
+  const system = buildChatSystemPrompt(args.ambientSymbol);
+  try {
+    const result = await generateText({
+      model: resolved.model,
+      system,
+      messages: args.modelMessages,
+      tools,
+      stopWhen: stepCountIs(12),
+      ...("temperature" in resolved ? { temperature: resolved.temperature } : {}),
+      ...("providerOptions" in resolved ? resolved.providerOptions : {}),
+    });
+    const text = result.text.trim();
+    if (!text) return { model: args.model, error: "Empty draft" };
+    return { model: args.model, text };
+  } catch (err) {
+    return {
+      model: args.model,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/** Parallel draft models (not persisted), then stream synthesizer-only output to the client. */
+export async function runMultiAgentChatTurn(
+  args: RunChatTurnArgs & { multiAgent: MultiAgentConfig },
+): Promise<void> {
+  const { thread, userMessage, ambientSymbol, toolContext, onEvent, multiAgent } = args;
+  const models = multiAgent.models.filter((m) => m.trim().length > 0);
+  const synthesizerModel = multiAgent.synthesizer_model.trim();
+  if (models.length === 0) {
+    onEvent({ type: "error", message: "multi_agent.models must include at least one model." });
+    return;
+  }
+  if (!synthesizerModel) {
+    onEvent({ type: "error", message: "multi_agent.synthesizer_model is required." });
+    return;
+  }
+
+  const { modelMessages } = await prepareTurnMessages(thread, userMessage);
+
+  const settled = await Promise.all(
+    models.map((model) => runDraftChatTurn({ model, modelMessages, ambientSymbol, toolContext })),
+  );
+
+  const successes = settled.filter((r): r is { model: string; text: string } => Boolean(r.text));
+  const failures = settled
+    .filter((r) => !r.text)
+    .map((r) => ({ model: r.model, message: r.error ?? "Draft failed" }));
+
+  if (successes.length === 0) {
+    onEvent({ type: "error", message: failures[0]?.message ?? "All research models failed." });
+    return;
+  }
+
+  const synthResolved = resolveChatLanguageModel(synthesizerModel);
+  const synthMessages: ModelMessage[] = [
+    ...modelMessages,
+    { role: "user", content: buildMultiAgentSynthesisUserContent(successes, failures) },
+  ];
+
+  let assistantText = "";
+  try {
+    const result = streamText({
+      model: synthResolved.model,
+      system: MULTI_AGENT_SYNTH_SYSTEM,
+      messages: synthMessages,
+      stopWhen: stepCountIs(8),
+      ...("temperature" in synthResolved ? { temperature: synthResolved.temperature } : {}),
+      ...("providerOptions" in synthResolved ? synthResolved.providerOptions : {}),
+    });
+
+    for await (const part of result.fullStream) {
+      if (part.type === "text-delta" && part.text) {
+        assistantText += part.text;
+        onEvent({ type: "text", delta: part.text });
+      }
+    }
+
+    const finalText = (await result.text).trim() || assistantText.trim();
+    const saved = await insertChatMessage({
+      threadId: thread.id,
+      role: "assistant",
+      content: finalText || "(No response generated)",
+    });
+    onEvent({ type: "done", threadId: thread.id, assistantMessageId: saved.id });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    onEvent({ type: "error", message: msg });
+    throw err;
+  }
+}
+
+export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
+  const { thread, userMessage, model, ambientSymbol, toolContext, onEvent } = args;
+
+  const { modelMessages } = await prepareTurnMessages(thread, userMessage);
 
   const tools = createChatTools(toolContext);
   const resolved = resolveChatLanguageModel(model);

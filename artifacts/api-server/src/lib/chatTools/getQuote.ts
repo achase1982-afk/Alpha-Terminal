@@ -1,6 +1,13 @@
 import { getQuoteBySymbol, type LiveQuote } from "../schwabStreamer.js";
+import { augmentPolygonColdTickerForChat } from "../chatPolygonColdActivity.js";
+import { logger } from "../logger.js";
 
 const POLYGON_API = "https://api.polygon.io";
+
+const packLog = {
+  info: (obj: unknown, msg?: string) => logger.info(obj, msg),
+  warn: (obj: unknown, msg?: string) => logger.warn(obj, msg),
+};
 
 function formatSchwabQuote(sym: string, q: LiveQuote): Record<string, unknown> {
   return {
@@ -45,19 +52,44 @@ async function polygonLastTrade(sym: string): Promise<Record<string, unknown> | 
   }
 }
 
-/** Schwab streamer cache first, then Polygon daily aggs fallback. */
-export async function fetchQuoteForChat(symbol: string): Promise<Record<string, unknown>> {
+/**
+ * Schwab streamer cache first, Polygon aggs fallback, then cold Polygon snapshot supplement
+ * (same cold-path helper as get_flow).
+ */
+export async function fetchQuoteForChat(
+  symbol: string,
+  lastUserMessage = "equity quote",
+): Promise<Record<string, unknown>> {
   const sym = symbol.trim().toUpperCase();
+  let base: Record<string, unknown>;
+
   const cached = getQuoteBySymbol(sym);
   if (cached && (cached.last != null || cached.bid != null)) {
-    return formatSchwabQuote(sym, cached);
+    base = formatSchwabQuote(sym, cached);
+  } else {
+    const poly = await polygonLastTrade(sym);
+    if (poly) {
+      base = poly;
+    } else {
+      base = {
+        symbol: sym,
+        source: "none",
+        error:
+          "No live quote in Schwab streamer cache for this symbol on the API host, and Polygon aggs returned no data.",
+      };
+    }
   }
-  const poly = await polygonLastTrade(sym);
-  if (poly) return poly;
-  return {
+
+  const cold = await augmentPolygonColdTickerForChat({
     symbol: sym,
-    source: "none",
-    error:
-      "No live quote in Schwab streamer cache for this symbol on the API host, and Polygon fallback returned no data.",
+    lastUserMessage,
+    highlightsBefore: null,
+    packLog,
+  });
+
+  return {
+    ...base,
+    polygonColdSnapshot: cold.section,
+    polygonColdTierBCaptureAttempted: cold.tierBCaptureAttempted,
   };
 }

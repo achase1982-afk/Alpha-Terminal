@@ -3,13 +3,16 @@ import { createPortal } from "react-dom";
 import { useTerminalStore } from "@/lib/store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { consumeChatSse, type ChatSseEvent } from "@/lib/chatSse";
-import { Send, Square, RotateCcw, Plus } from "lucide-react";
+import { Send, Square, RotateCcw, Plus, Bot } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
 import { useVisualViewportComposerMetrics } from "@/hooks/useVisualViewportKeyboardInset";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 
 const RETRYABLE_CHAT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+const MULTI_AGENT_MODEL = "__multi_agent__";
+const MULTI_AGENT_STORAGE_KEY = "marketNewsChatMultiModels";
+const MULTI_AGENT_SYNTH_STORAGE_KEY = "marketNewsChatSynthesizerModel";
 
 const ALL_CHAT_MODELS = [
   "claude-opus-4-7",
@@ -26,6 +29,48 @@ const ALL_CHAT_MODELS = [
   "grok-4-1-fast-reasoning",
   "grok-4",
 ];
+
+const MULTI_AGENT_ORBIT_COLORS = ["#22d3ee", "#a78bfa", "#fbbf24", "#fb7185", "#4ade80", "#38bdf8"] as const;
+
+function MultiAgentOrbit({ count }: { count: number }) {
+  const n = Math.min(Math.max(count, 2), 6);
+  return (
+    <div
+      className="relative h-6 w-6 shrink-0"
+      title={`${count} research models run in parallel; when all finish, one synthesizer merges drafts.`}
+    >
+      <span className="pointer-events-none absolute inset-0 rounded-full border border-white/25" aria-hidden />
+      <span className="pointer-events-none absolute inset-[5px] rounded-full border border-white/10" aria-hidden />
+      <div
+        className="absolute inset-0 animate-spin"
+        style={{ animationDuration: "2.6s", animationTimingFunction: "linear" }}
+        aria-hidden
+      >
+        {Array.from({ length: n }).map((_, i) => (
+          <div
+            key={i}
+            className="absolute inset-0"
+            style={{ transform: `rotate(${(360 / n) * i}deg)` }}
+          >
+            <div
+              className="absolute left-1/2 top-0 -translate-x-1/2 animate-spin"
+              style={{
+                animationDuration: "2.6s",
+                animationTimingFunction: "linear",
+                animationDirection: "reverse",
+              }}
+            >
+              <Bot
+                className="h-2.5 w-2.5 drop-shadow-[0_0_4px_rgba(0,0,0,0.9)]"
+                style={{ color: MULTI_AGENT_ORBIT_COLORS[i % MULTI_AGENT_ORBIT_COLORS.length] }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 type ServerThread = {
   id: string;
@@ -68,6 +113,33 @@ export function MarketNewsChatPanel() {
 
   const symU = symbol.toUpperCase();
   const modelSend = ALL_CHAT_MODELS.includes(aiModel) ? aiModel : ALL_CHAT_MODELS[0]!;
+
+  const [useMultiAgent, setUseMultiAgent] = useState(false);
+  const [multiModelPickerOpen, setMultiModelPickerOpen] = useState(false);
+  const [multiAgentModels, setMultiAgentModels] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = sessionStorage.getItem(MULTI_AGENT_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((m): m is string => typeof m === "string" && ALL_CHAT_MODELS.includes(m));
+    } catch {
+      return [];
+    }
+  });
+  const [synthesizerModel, setSynthesizerModel] = useState<string>(() => {
+    if (typeof window === "undefined") return ALL_CHAT_MODELS[0]!;
+    try {
+      const raw = sessionStorage.getItem(MULTI_AGENT_SYNTH_STORAGE_KEY);
+      if (raw && ALL_CHAT_MODELS.includes(raw)) return raw;
+    } catch {
+      /* ignore */
+    }
+    return ALL_CHAT_MODELS[0]!;
+  });
+  const [activeMultiAgentCount, setActiveMultiAgentCount] = useState(0);
+  const modelControlValue = useMultiAgent ? MULTI_AGENT_MODEL : modelSend;
 
   const [threads, setThreads] = useState<ServerThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
@@ -130,6 +202,29 @@ export function MarketNewsChatPanel() {
   }, [activeThreadId, loadThreadMessages]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      sessionStorage.setItem(MULTI_AGENT_STORAGE_KEY, JSON.stringify(multiAgentModels));
+    } catch {
+      /* QuotaExceededError */
+    }
+  }, [multiAgentModels]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      sessionStorage.setItem(MULTI_AGENT_SYNTH_STORAGE_KEY, synthesizerModel);
+    } catch {
+      /* QuotaExceededError */
+    }
+  }, [synthesizerModel]);
+
+  useEffect(() => {
+    if (!useMultiAgent || multiAgentModels.length === 0) return;
+    setSynthesizerModel((prev) => (multiAgentModels.includes(prev) ? prev : multiAgentModels[0]!));
+  }, [multiAgentModels, useMultiAgent]);
+
+  useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
@@ -139,6 +234,22 @@ export function MarketNewsChatPanel() {
     async (text: string) => {
       if (!text.trim() || isStreaming) return;
 
+      const useServerMultiAgent = useMultiAgent && multiAgentModels.length >= 2;
+      if (useMultiAgent && multiAgentModels.length < 2) {
+        const assistantId = nextMsgId();
+        setMessages((prev) => [
+          ...prev,
+          { id: nextMsgId(), role: "user", content: text.trim() },
+          {
+            id: assistantId,
+            role: "assistant",
+            content: "**Error:** Select at least two models for multi-agent.",
+          },
+        ]);
+        setInput("");
+        return;
+      }
+
       const userMsg: UiMessage = { id: nextMsgId(), role: "user", content: text.trim() };
       const assistantId = nextMsgId();
       setMessages((prev) => [...prev, userMsg, { id: assistantId, role: "assistant", content: "" }]);
@@ -146,11 +257,26 @@ export function MarketNewsChatPanel() {
       setToolPills([]);
       setIsStreaming(true);
       setLastFailedMessage(null);
+      setActiveMultiAgentCount(useServerMultiAgent ? multiAgentModels.length : 0);
 
       const controller = new AbortController();
       abortRef.current = controller;
 
       let threadId = activeThreadId;
+
+      const requestBody: Record<string, unknown> = {
+        thread_id: threadId ?? undefined,
+        message: text.trim(),
+        symbol: symU,
+      };
+      if (useServerMultiAgent) {
+        requestBody.multi_agent = {
+          models: multiAgentModels,
+          synthesizer_model: synthesizerModel,
+        };
+      } else {
+        requestBody.model = modelSend;
+      }
 
       try {
         const res = await fetchWithAuth("/api/ai/chat", {
@@ -159,12 +285,7 @@ export function MarketNewsChatPanel() {
             "Content-Type": "application/json",
             Accept: "text/event-stream",
           },
-          body: JSON.stringify({
-            thread_id: threadId ?? undefined,
-            message: text.trim(),
-            model: modelSend,
-            symbol: symU,
-          }),
+          body: JSON.stringify(requestBody),
           signal: controller.signal,
         });
 
@@ -187,7 +308,10 @@ export function MarketNewsChatPanel() {
           if (ev.type === "thread" && ev.thread_id) {
             threadId = ev.thread_id;
             setActiveThreadId(ev.thread_id);
+          } else if (ev.type === "status" && ev.phase === "multi_agent_drafting") {
+            setActiveMultiAgentCount(ev.model_count ?? multiAgentModels.length);
           } else if (ev.type === "text") {
+            setActiveMultiAgentCount(0);
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantId ? { ...m, content: m.content + ev.delta } : m,
@@ -232,15 +356,26 @@ export function MarketNewsChatPanel() {
         abortRef.current = null;
         setIsStreaming(false);
         setToolPills([]);
+        setActiveMultiAgentCount(0);
       }
     },
-    [activeThreadId, isStreaming, modelSend, refreshThreads, symU],
+    [
+      activeThreadId,
+      isStreaming,
+      modelSend,
+      multiAgentModels,
+      refreshThreads,
+      symU,
+      synthesizerModel,
+      useMultiAgent,
+    ],
   );
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
     setIsStreaming(false);
     setToolPills([]);
+    setActiveMultiAgentCount(0);
   }, []);
 
   const handleNewThread = useCallback(() => {
@@ -328,18 +463,96 @@ export function MarketNewsChatPanel() {
         <span className="font-mono text-[14px] font-semibold text-white tracking-wide uppercase truncate">
           {symU}
         </span>
-        <select
-          value={modelSend}
-          onChange={(e) => setAiFeatureSetting("chat", "model", e.target.value)}
-          className="bg-black/60 border border-card-border rounded px-2 py-1.5 font-mono text-[12px] text-white max-w-[200px]"
-          aria-label="Chat model"
-        >
-          {ALL_CHAT_MODELS.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
+        <div className="relative flex items-center gap-2 shrink-0">
+          <select
+            value={modelControlValue}
+            title={
+              useMultiAgent
+                ? "Research models run in parallel; when all finish, the synthesizer streams one merged answer."
+                : "Single model for this reply."
+            }
+            onChange={(e) => {
+              const value = e.target.value;
+              if (value === MULTI_AGENT_MODEL) {
+                setUseMultiAgent(true);
+                setMultiModelPickerOpen(true);
+                return;
+              }
+              setUseMultiAgent(false);
+              setMultiModelPickerOpen(false);
+              setAiFeatureSetting("chat", "model", value);
+            }}
+            className="bg-black/60 border border-card-border rounded px-2 py-1.5 font-mono text-[12px] text-white max-w-[180px] sm:max-w-[230px]"
+            aria-label="Chat model"
+          >
+            <option value={MULTI_AGENT_MODEL}>multi-agent</option>
+            {ALL_CHAT_MODELS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+          {useMultiAgent && (
+            <button
+              type="button"
+              onClick={() => setMultiModelPickerOpen((v) => !v)}
+              className="rounded border border-card-border bg-black/60 px-2 py-1 font-mono text-[11px] text-white/85"
+              aria-label="Choose multi-agent models"
+            >
+              {multiAgentModels.length || 0} selected
+            </button>
+          )}
+          {useMultiAgent && multiAgentModels.length > 0 && (
+            <label className="flex items-center gap-1 min-w-0">
+              <span className="hidden sm:inline font-mono text-[10px] text-white/55 shrink-0">
+                Synthesize
+              </span>
+              <select
+                value={synthesizerModel}
+                onChange={(e) => setSynthesizerModel(e.target.value)}
+                className="min-w-0 max-w-[120px] sm:max-w-[200px] truncate bg-black/60 border border-card-border rounded px-1.5 py-1 font-mono text-[11px] text-white"
+                aria-label="Model that runs the final synthesis pass"
+                title="After parallel research, this model receives every draft and writes one grounded answer"
+              >
+                {multiAgentModels.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {useMultiAgent && multiModelPickerOpen && (
+            <div className="absolute right-0 top-[calc(100%+6px)] z-[10120] min-w-[220px] rounded-md border border-card-border bg-[#0b0b0b] p-2 shadow-xl">
+              <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-white/60">
+                Select models
+              </p>
+              <div className="max-h-56 overflow-y-auto space-y-1 pr-1">
+                {ALL_CHAT_MODELS.map((model) => {
+                  const checked = multiAgentModels.includes(model);
+                  return (
+                    <label
+                      key={model}
+                      className="flex items-center gap-2 rounded px-1 py-1 hover:bg-white/5"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          const next = e.target.checked
+                            ? [...multiAgentModels, model]
+                            : multiAgentModels.filter((m) => m !== model);
+                          setMultiAgentModels(next);
+                        }}
+                      />
+                      <span className="font-mono text-[11px] text-white/90">{model}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center gap-1 px-2 py-1.5 border-b border-card-border/30 overflow-x-auto shrink-0">
@@ -431,6 +644,41 @@ export function MarketNewsChatPanel() {
             )}
           </div>
         ))}
+        {isStreaming &&
+          messages.length > 0 &&
+          messages[messages.length - 1]?.role === "assistant" &&
+          !messages[messages.length - 1]!.content.trim() &&
+          (activeMultiAgentCount > 1 ? (
+            <div className="flex items-center gap-2 py-1 text-white/75">
+              <MultiAgentOrbit count={activeMultiAgentCount} />
+              <div className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" />
+                <span
+                  className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse"
+                  style={{ animationDelay: "130ms" }}
+                />
+                <span
+                  className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse"
+                  style={{ animationDelay: "260ms" }}
+                />
+              </div>
+              <span className="font-mono text-[11px] text-white/65">
+                {activeMultiAgentCount} models in parallel, then synthesis…
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 py-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse"
+                style={{ animationDelay: "150ms" }}
+              />
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse"
+                style={{ animationDelay: "300ms" }}
+              />
+            </div>
+          ))}
       </div>
 
       {narrowMobile && typeof document !== "undefined"
