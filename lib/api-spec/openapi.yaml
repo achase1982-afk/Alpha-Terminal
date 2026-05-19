@@ -261,7 +261,7 @@ paths:
     post:
       operationId: runChatQuery
       tags: [ai]
-      summary: Run free-form AI chat with market context
+      summary: Stream AI chat turn (SSE) with tool-based context
       requestBody:
         required: true
         content:
@@ -270,11 +270,50 @@ paths:
               $ref: "#/components/schemas/ChatRequest"
       responses:
         "200":
-          description: AI chat response
+          description: Server-sent events (text, tool_call_start, tool_call_end, done)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /chat/threads:
+    get:
+      operationId: listChatThreads
+      tags: [ai]
+      summary: List chat threads for the signed-in user
+      parameters:
+        - name: symbol
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Thread list
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AiAnalysisResponse"
+                $ref: "#/components/schemas/ChatThreadsResponse"
+
+  /chat/threads/{threadId}/messages:
+    get:
+      operationId: listChatThreadMessages
+      tags: [ai]
+      summary: Messages for a chat thread
+      parameters:
+        - name: threadId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Message list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatMessagesResponse"
 
   /ai/models:
     get:
@@ -540,16 +579,90 @@ components:
     ChatRequest:
       type: object
       properties:
-        question:
+        thread_id:
           type: string
-        marketContext:
+          format: uuid
+        message:
           type: string
         model:
           type: string
-        temperature:
-          type: number
+        symbol:
+          type: string
+          description: Ambient page symbol (e.g. GOOGL) — not a routing override
       required:
-        - question
+        - message
+
+    ChatThread:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        symbol:
+          type: string
+          nullable: true
+        title:
+          type: string
+        summary:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - createdAt
+        - updatedAt
+
+    ChatThreadsResponse:
+      type: object
+      properties:
+        threads:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatThread"
+      required:
+        - threads
+
+    ChatMessage:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+        toolCalls:
+          type: object
+          nullable: true
+        toolResults:
+          type: object
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - role
+        - content
+        - createdAt
+
+    ChatMessagesResponse:
+      type: object
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatMessage"
+      required:
+        - messages
 
     AiAnalysisResponse:
       type: object

@@ -1,14 +1,13 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { useTerminalStore, type MarketNewsChatMessage } from "@/lib/store";
-import { useGetQuote } from "@workspace/api-client-react";
+import { useTerminalStore } from "@/lib/store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { Send, Square, RotateCcw, Plus, Trash2, Bot } from "lucide-react";
+import { consumeChatSse, type ChatSseEvent } from "@/lib/chatSse";
+import { Send, Square, RotateCcw, Plus, Bot } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
 import { useVisualViewportComposerMetrics } from "@/hooks/useVisualViewportKeyboardInset";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
-import { buildChatClientMarketContext, extractChatRoutingSourceText } from "@/lib/resolveChatContextSymbol";
 
 const RETRYABLE_CHAT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const MULTI_AGENT_MODEL = "__multi_agent__";
@@ -20,74 +19,16 @@ const ALL_CHAT_MODELS = [
   "claude-opus-4-6",
   "claude-sonnet-4-6",
   "claude-haiku-4-5",
-  "claude-opus-4-20250514",
-  "claude-sonnet-4-20250514",
-  "claude-3-7-sonnet-20250219",
   "gemini-3.1-pro-preview",
   "gemini-3-flash-preview",
   "gemini-2.5-pro",
   "gemini-2.5-flash",
-  "gemini-2.0-flash",
-  "gpt-5.5",
   "gpt-5.4",
   "gpt-5.4-mini",
-  "gpt-5.2",
-  "gpt-5",
   "gpt-5-mini",
-  "gpt-5-nano",
-  "o4-mini",
   "grok-4-1-fast-reasoning",
   "grok-4",
-  "grok-3",
 ];
-
-let msgCounter = 0;
-function nextMsgId(): string {
-  return `mnc-${Date.now()}-${++msgCounter}`;
-}
-
-const SYNTH_DRAFT_CHAR_CAP = 8000;
-
-type SynthDraft = { model: string; text: string };
-type SynthFailure = { model: string; message: string };
-
-function buildMultiAgentSynthesisUserContent(successes: SynthDraft[], failures: SynthFailure[]): string {
-  const blocks = successes
-    .map((x) => {
-      const raw = x.text.trim();
-      const clipped =
-        raw.length > SYNTH_DRAFT_CHAR_CAP
-          ? `${raw.slice(0, SYNTH_DRAFT_CHAR_CAP)}\n\n_[Draft truncated for length]_`
-          : raw;
-      return `### Draft from \`${x.model}\`\n\n${clipped}`;
-    })
-    .join("\n\n---\n\n");
-
-  const failNote =
-    failures.length > 0
-      ? `\n\n### Research runs that failed (no draft)\n\n${failures.map((f) => `- \`${f.model}\`: ${f.message}`).join("\n")}`
-      : "";
-
-  return `You are the final **synthesizer** for Alpha Terminal.
-
-Several models ran in parallel on the trader's question (full conversation is above, including any live Schwab / terminal context the assistant already received).
-
-Below are **research drafts**. Treat them as **unvetted** — they may disagree, omit data, or hallucinate facts, prices, symbols, or catalysts.
-
-### Your instructions
-
-1. Output **one** markdown answer as the **single source of truth** for the trader.
-2. **Ground** every material factual claim in: the user's messages, and any explicit numbers / flow / headlines in the conversation or server context above. Use a draft sentence only when it **clearly** matches that evidence.
-3. When drafts conflict on facts, **prefer** what is supported by server/market context in the thread; if none resolves it, say so briefly instead of guessing.
-4. **Discard** claims that look invented or unsupported (e.g. unrelated ticker, impossible prints, numbers contradicting context, "hard numbers" with no basis in context).
-5. Write as **one** coherent analyst response — **no** "Model A / Model B", no "consensus" headings, no process narration.
-
-### Research drafts
-
-${blocks}${failNote}
-
-Write the final markdown answer now.`;
-}
 
 const MULTI_AGENT_ORBIT_COLORS = ["#22d3ee", "#a78bfa", "#fbbf24", "#fb7185", "#4ade80", "#38bdf8"] as const;
 
@@ -131,64 +72,48 @@ function MultiAgentOrbit({ count }: { count: number }) {
   );
 }
 
+type ServerThread = {
+  id: string;
+  symbol: string | null;
+  title: string;
+  updatedAt: string;
+};
+
+type UiMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  retryable?: boolean;
+};
+
+type ToolPill = {
+  toolCallId: string;
+  toolName: string;
+  status: "running" | "done";
+  input?: unknown;
+};
+
+let msgCounter = 0;
+function nextMsgId(): string {
+  return `mnc-${Date.now()}-${++msgCounter}`;
+}
+
+function toolLabel(name: string, input: unknown): string {
+  const sym =
+    input && typeof input === "object" && "symbol" in input
+      ? String((input as { symbol?: string }).symbol ?? "")
+      : "";
+  return sym ? `${name} (${sym})` : name;
+}
+
 export function MarketNewsChatPanel() {
   const symbol = useTerminalStore((s) => s.symbol);
-  const accessToken = useTerminalStore((s) => s.accessToken);
   const aiModel = useTerminalStore((s) => s.aiFeatureSettings.chat.model);
   const setAiFeatureSetting = useTerminalStore((s) => s.setAiFeatureSetting);
-  const ensureSymbol = useTerminalStore((s) => s.marketNewsChatEnsureSymbol);
-  const appendMessage = useTerminalStore((s) => s.marketNewsChatAppendMessage);
-  const setAssistantContent = useTerminalStore((s) => s.marketNewsChatSetAssistantContent);
-  const createThread = useTerminalStore((s) => s.marketNewsChatCreateThread);
-  const selectThread = useTerminalStore((s) => s.marketNewsChatSelectThread);
-  const clearActiveThread = useTerminalStore((s) => s.marketNewsChatClearActiveThread);
-  const deleteThread = useTerminalStore((s) => s.marketNewsChatDeleteThread);
-  const bundle = useTerminalStore((s) => s.marketNewsChatBySymbol[s.symbol.toUpperCase()]);
 
   const symU = symbol.toUpperCase();
-  const activeThreadId = bundle?.activeThreadId ?? "";
-  const activeThread = bundle?.threads[activeThreadId];
-  const messages = activeThread?.messages ?? [];
-
-  const [input, setInput] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [composerFocused, setComposerFocused] = useState(false);
-  const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
-  const [activeMultiAgentCount, setActiveMultiAgentCount] = useState(0);
-  const abortRef = useRef<AbortController | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  /** Reserve space for bottom tab bar when the keyboard is dismissed (see BottomNav). */
-  const narrowMobile = useMediaQuery("(max-width: 767px)");
-  const dockReservePx = narrowMobile ? (composerFocused ? 0 : 78) : 12;
-  const { dockBottomPx, remeasure } = useVisualViewportComposerMetrics(dockReservePx, {
-    composerFocused,
-  });
-
-  useEffect(() => {
-    ensureSymbol(symU);
-  }, [symU, ensureSymbol]);
-
-  useEffect(() => {
-    remeasure();
-    const t1 = setTimeout(remeasure, 50);
-    const t2 = setTimeout(remeasure, 400);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
-  }, [symU, remeasure]);
-
-  useEffect(() => {
-    setLastFailedMessage(null);
-  }, [symU, activeThreadId]);
-
-  const { data: quote } = useGetQuote(
-    { symbol: symU, accessToken: accessToken || "" },
-    { query: { queryKey: ["quote", symU, accessToken], enabled: !!accessToken } },
-  );
-
   const modelSend = ALL_CHAT_MODELS.includes(aiModel) ? aiModel : ALL_CHAT_MODELS[0]!;
+
   const [useMultiAgent, setUseMultiAgent] = useState(false);
   const [multiModelPickerOpen, setMultiModelPickerOpen] = useState(false);
   const [multiAgentModels, setMultiAgentModels] = useState<string[]>(() => {
@@ -203,9 +128,6 @@ export function MarketNewsChatPanel() {
       return [];
     }
   });
-  const activeModels = useMultiAgent ? multiAgentModels : [modelSend];
-  const modelControlValue = useMultiAgent ? MULTI_AGENT_MODEL : modelSend;
-
   const [synthesizerModel, setSynthesizerModel] = useState<string>(() => {
     if (typeof window === "undefined") return ALL_CHAT_MODELS[0]!;
     try {
@@ -216,6 +138,68 @@ export function MarketNewsChatPanel() {
     }
     return ALL_CHAT_MODELS[0]!;
   });
+  const [activeMultiAgentCount, setActiveMultiAgentCount] = useState(0);
+  const modelControlValue = useMultiAgent ? MULTI_AGENT_MODEL : modelSend;
+
+  const [threads, setThreads] = useState<ServerThread[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<UiMessage[]>([]);
+  const [toolPills, setToolPills] = useState<ToolPill[]>([]);
+  const [input, setInput] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [composerFocused, setComposerFocused] = useState(false);
+  const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
+
+  const abortRef = useRef<AbortController | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const narrowMobile = useMediaQuery("(max-width: 767px)");
+  const dockReservePx = narrowMobile ? (composerFocused ? 0 : 78) : 12;
+  const { dockBottomPx, remeasure } = useVisualViewportComposerMetrics(dockReservePx, {
+    composerFocused,
+  });
+
+  const refreshThreads = useCallback(async () => {
+    try {
+      const res = await fetchWithAuth(`/api/chat/threads?symbol=${encodeURIComponent(symU)}`);
+      if (!res.ok) return;
+      const data = (await res.json()) as { threads?: ServerThread[] };
+      setThreads(data.threads ?? []);
+    } catch {
+      /* ignore */
+    }
+  }, [symU]);
+
+  const loadThreadMessages = useCallback(async (threadId: string) => {
+    try {
+      const res = await fetchWithAuth(`/api/chat/threads/${encodeURIComponent(threadId)}/messages`);
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        messages?: Array<{ id: string; role: string; content: string }>;
+      };
+      setMessages(
+        (data.messages ?? []).map((m) => ({
+          id: m.id,
+          role: m.role === "user" ? "user" : "assistant",
+          content: m.content,
+        })),
+      );
+    } catch {
+      setMessages([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshThreads();
+    setActiveThreadId(null);
+    setMessages([]);
+  }, [symU, refreshThreads]);
+
+  useEffect(() => {
+    if (activeThreadId) void loadThreadMessages(activeThreadId);
+    else setMessages([]);
+  }, [activeThreadId, loadThreadMessages]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -244,304 +228,172 @@ export function MarketNewsChatPanel() {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, isStreaming]);
-
-  useEffect(() => {
-    if (isStreaming) return;
-    remeasure();
-    const t1 = setTimeout(remeasure, 50);
-    const t2 = setTimeout(remeasure, 220);
-    const t3 = setTimeout(remeasure, 520);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-    };
-  }, [isStreaming, remeasure]);
-
-  type ChatHistoryMessage = { role: "user" | "assistant"; content: string };
-  type ModelSuccess = { model: string; text: string };
-  type ModelFailure = { model: string; message: string; retryable: boolean };
-
-  const normalizeFetchError = useCallback((err: unknown): { message: string; retryable: boolean } => {
-    if (
-      err &&
-      typeof err === "object" &&
-      "message" in err &&
-      typeof (err as { message?: unknown }).message === "string"
-    ) {
-      const retryable =
-        "retryable" in err && typeof (err as { retryable?: unknown }).retryable === "boolean"
-          ? (err as { retryable: boolean }).retryable
-          : false;
-      return { message: (err as { message: string }).message, retryable };
-    }
-    const fallback = err instanceof Error ? err.message : "Connection failed";
-    const retryable =
-      fallback.includes("Failed to fetch") ||
-      fallback.includes("NetworkError") ||
-      fallback.includes("Load failed");
-    return { message: fallback, retryable };
-  }, []);
-
-  const fetchModelReply = useCallback(
-    async (
-      model: string,
-      history: ChatHistoryMessage[],
-      signal: AbortSignal,
-      onPartial?: (partial: string) => void,
-    ): Promise<string> => {
-      const routingText = extractChatRoutingSourceText(history);
-      const marketContext = await buildChatClientMarketContext(symU, routingText, quote, accessToken);
-      const res = await fetchWithAuth("/api/ai/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: history,
-          marketContext,
-          model,
-          symbol: symU,
-        }),
-        signal,
-      });
-
-      const contentType = res.headers.get("content-type") || "";
-      const looksLikeHtml = contentType.includes("text/html");
-      if (!res.ok || looksLikeHtml) {
-        const retryable = RETRYABLE_CHAT_STATUS.has(res.status) || looksLikeHtml;
-        const label = !res.ok
-          ? `Server returned ${res.status}`
-          : "Received unexpected HTML response (API may be restarting)";
-        throw { message: label, retryable };
-      }
-
-      const reader = res.body?.getReader();
-      if (!reader) {
-        throw { message: "Empty response stream from server.", retryable: true };
-      }
-
-      const decoder = new TextDecoder();
-      let accumulated = "";
-      let htmlDetected = false;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        accumulated += decoder.decode(value, { stream: true });
-        if (!htmlDetected && accumulated.length < 220 && /^\s*<!DOCTYPE|^\s*<html/i.test(accumulated)) {
-          htmlDetected = true;
-          reader.cancel();
-          break;
-        }
-        onPartial?.(accumulated);
-      }
-
-      if (htmlDetected) {
-        throw { message: "API returned HTML instead of chat output.", retryable: true };
-      }
-      if (!accumulated.trim()) {
-        throw { message: "Empty response from model.", retryable: true };
-      }
-      return accumulated.trim();
-    },
-    [accessToken, quote, symU],
-  );
-
-  const runAssistantGeneration = useCallback(
-    async (args: {
-      tid: string;
-      assistantId: string;
-      history: ChatHistoryMessage[];
-      sourcePrompt: string;
-      allowStreamingSingle?: boolean;
-    }) => {
-      const { tid, assistantId, history, sourcePrompt, allowStreamingSingle = false } = args;
-      const selectedModels = activeModels.filter((m): m is string => typeof m === "string" && m.length > 0);
-      if (selectedModels.length === 0) {
-        setAssistantContent(symU, tid, assistantId, "**Error:** Select at least one model for multi-agent.");
-        return;
-      }
-
-      const controller = new AbortController();
-      abortRef.current = controller;
-      setIsStreaming(true);
-      setActiveMultiAgentCount(selectedModels.length > 1 ? selectedModels.length : 0);
-      setLastFailedMessage(null);
-
-      try {
-        if (selectedModels.length === 1) {
-          const singleModel = selectedModels[0]!;
-          const text = await fetchModelReply(
-            singleModel,
-            history,
-            controller.signal,
-            allowStreamingSingle ? (partial) => setAssistantContent(symU, tid, assistantId, partial) : undefined,
-          );
-          setAssistantContent(symU, tid, assistantId, text);
-          return;
-        }
-
-        setAssistantContent(symU, tid, assistantId, "");
-
-        const settled = await Promise.all(
-          selectedModels.map(async (model): Promise<ModelSuccess | ModelFailure> => {
-            try {
-              const text = await fetchModelReply(model, history, controller.signal);
-              return { model, text };
-            } catch (err: unknown) {
-              const parsed = normalizeFetchError(err);
-              return { model, message: parsed.message, retryable: parsed.retryable };
-            }
-          }),
-        );
-
-        const successes = settled.filter((r): r is ModelSuccess => "text" in r);
-        const failures = settled.filter((r): r is ModelFailure => "message" in r);
-
-        if (successes.length === 0) {
-          const firstFailure = failures[0];
-          const retryable = failures.some((f) => f.retryable);
-          if (retryable) setLastFailedMessage(sourcePrompt);
-          setAssistantContent(
-            symU,
-            tid,
-            assistantId,
-            `**Error:** ${firstFailure?.message ?? "All selected models failed."}${retryable ? " Please retry." : ""}`,
-          );
-          return;
-        }
-
-        setActiveMultiAgentCount(0);
-        const synthesisMessage: ChatHistoryMessage = {
-          role: "user",
-          content: buildMultiAgentSynthesisUserContent(successes, failures),
-        };
-        const synthesisHistory: ChatHistoryMessage[] = [...history, synthesisMessage];
-        try {
-          const finalText = await fetchModelReply(
-            synthesizerModel,
-            synthesisHistory,
-            controller.signal,
-            (partial) => setAssistantContent(symU, tid, assistantId, partial),
-          );
-          setAssistantContent(symU, tid, assistantId, finalText);
-        } catch (synErr: unknown) {
-          const parsed = normalizeFetchError(synErr);
-          if (parsed.retryable) setLastFailedMessage(sourcePrompt);
-          setAssistantContent(
-            symU,
-            tid,
-            assistantId,
-            `**Error:** Synthesis failed (${parsed.message}).${parsed.retryable ? " Please retry." : ""}`,
-          );
-        }
-        if (failures.some((f) => f.retryable)) {
-          setLastFailedMessage(sourcePrompt);
-        }
-      } catch (err: unknown) {
-        if ((err as Error).name === "AbortError") return;
-        const parsed = normalizeFetchError(err);
-        if (parsed.retryable) setLastFailedMessage(sourcePrompt);
-        setAssistantContent(
-          symU,
-          tid,
-          assistantId,
-          `**Error:** ${parsed.message}${parsed.retryable ? ". Please retry." : ""}`,
-        );
-      } finally {
-        if (abortRef.current === controller) {
-          abortRef.current = null;
-        }
-        setActiveMultiAgentCount(0);
-        setIsStreaming(false);
-      }
-    },
-    [activeModels, fetchModelReply, normalizeFetchError, setAssistantContent, symU, synthesizerModel],
-  );
+  }, [messages, isStreaming, toolPills]);
 
   const sendMessage = useCallback(
     async (text: string) => {
       if (!text.trim() || isStreaming) return;
 
-      ensureSymbol(symU);
-      const snap = useTerminalStore.getState();
-      const b0 = snap.marketNewsChatBySymbol[symU];
-      const tid = b0?.activeThreadId;
-      if (!tid) return;
-
-      const priorMessages = b0.threads[tid]?.messages ?? [];
-      const userMsg: MarketNewsChatMessage = { id: nextMsgId(), role: "user", content: text.trim() };
-      const assistantId = nextMsgId();
-      appendMessage(symU, tid, userMsg);
-      appendMessage(symU, tid, { id: assistantId, role: "assistant", content: "" });
-      setInput("");
-
-      const history = [...priorMessages, userMsg].map((m) => ({ role: m.role, content: m.content }));
-      await runAssistantGeneration({
-        tid,
-        assistantId,
-        history,
-        sourcePrompt: text.trim(),
-        allowStreamingSingle: true,
-      });
-    },
-    [appendMessage, ensureSymbol, isStreaming, runAssistantGeneration, symU],
-  );
-
-  const retryAssistantBubble = useCallback(
-    async (assistantId: string) => {
-      if (isStreaming) return;
-      ensureSymbol(symU);
-      const snap = useTerminalStore.getState();
-      const b0 = snap.marketNewsChatBySymbol[symU];
-      const tid = b0?.activeThreadId;
-      if (!tid) return;
-
-      const threadMessages = b0.threads[tid]?.messages ?? [];
-      const assistantIdx = threadMessages.findIndex((m) => m.id === assistantId && m.role === "assistant");
-      if (assistantIdx < 0) return;
-
-      let userIdx = -1;
-      for (let i = assistantIdx - 1; i >= 0; i -= 1) {
-        if (threadMessages[i]?.role === "user") {
-          userIdx = i;
-          break;
-        }
+      const useServerMultiAgent = useMultiAgent && multiAgentModels.length >= 2;
+      if (useMultiAgent && multiAgentModels.length < 2) {
+        const assistantId = nextMsgId();
+        setMessages((prev) => [
+          ...prev,
+          { id: nextMsgId(), role: "user", content: text.trim() },
+          {
+            id: assistantId,
+            role: "assistant",
+            content: "**Error:** Select at least two models for multi-agent.",
+          },
+        ]);
+        setInput("");
+        return;
       }
-      if (userIdx < 0) return;
 
-      const userText = threadMessages[userIdx]!.content.trim();
-      if (!userText) return;
+      const userMsg: UiMessage = { id: nextMsgId(), role: "user", content: text.trim() };
+      const assistantId = nextMsgId();
+      setMessages((prev) => [...prev, userMsg, { id: assistantId, role: "assistant", content: "" }]);
+      setInput("");
+      setToolPills([]);
+      setIsStreaming(true);
+      setLastFailedMessage(null);
+      setActiveMultiAgentCount(useServerMultiAgent ? multiAgentModels.length : 0);
 
-      setAssistantContent(symU, tid, assistantId, "");
-      const history = threadMessages
-        .slice(0, userIdx + 1)
-        .map((m) => ({ role: m.role, content: m.content }));
+      const controller = new AbortController();
+      abortRef.current = controller;
 
-      await runAssistantGeneration({
-        tid,
-        assistantId,
-        history,
-        sourcePrompt: userText,
-      });
+      let threadId = activeThreadId;
+
+      const requestBody: Record<string, unknown> = {
+        thread_id: threadId ?? undefined,
+        message: text.trim(),
+        symbol: symU,
+      };
+      if (useServerMultiAgent) {
+        requestBody.multi_agent = {
+          models: multiAgentModels,
+          synthesizer_model: synthesizerModel,
+        };
+      } else {
+        requestBody.model = modelSend;
+      }
+
+      try {
+        const res = await fetchWithAuth("/api/ai/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "text/event-stream",
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
+        });
+
+        const contentType = res.headers.get("content-type") || "";
+        if (!res.ok || contentType.includes("text/html")) {
+          const retryable = RETRYABLE_CHAT_STATUS.has(res.status) || contentType.includes("text/html");
+          const label = !res.ok ? `Server returned ${res.status}` : "Unexpected HTML response";
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, content: `**Error:** ${label}`, retryable }
+                : m,
+            ),
+          );
+          if (retryable) setLastFailedMessage(text.trim());
+          return;
+        }
+
+        await consumeChatSse(res, (ev: ChatSseEvent) => {
+          if (ev.type === "thread" && ev.thread_id) {
+            threadId = ev.thread_id;
+            setActiveThreadId(ev.thread_id);
+          } else if (ev.type === "status" && ev.phase === "multi_agent_drafting") {
+            setActiveMultiAgentCount(ev.model_count ?? multiAgentModels.length);
+          } else if (ev.type === "text") {
+            setActiveMultiAgentCount(0);
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId ? { ...m, content: m.content + ev.delta } : m,
+              ),
+            );
+          } else if (ev.type === "tool_call_start") {
+            setToolPills((prev) => [
+              ...prev.filter((p) => p.toolCallId !== ev.toolCallId),
+              {
+                toolCallId: ev.toolCallId,
+                toolName: ev.toolName,
+                status: "running",
+                input: ev.input,
+              },
+            ]);
+          } else if (ev.type === "tool_call_end") {
+            setToolPills((prev) =>
+              prev.map((p) =>
+                p.toolCallId === ev.toolCallId ? { ...p, status: "done" } : p,
+              ),
+            );
+          } else if (ev.type === "error") {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId ? { ...m, content: `**Error:** ${ev.message}` } : m,
+              ),
+            );
+          }
+        });
+
+        void refreshThreads();
+      } catch (err: unknown) {
+        if ((err as Error).name === "AbortError") return;
+        const errMsg = (err as Error).message || "Connection failed";
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId ? { ...m, content: `**Error:** ${errMsg}`, retryable: true } : m,
+          ),
+        );
+        setLastFailedMessage(text.trim());
+      } finally {
+        abortRef.current = null;
+        setIsStreaming(false);
+        setToolPills([]);
+        setActiveMultiAgentCount(0);
+      }
     },
-    [ensureSymbol, isStreaming, runAssistantGeneration, setAssistantContent, symU],
+    [
+      activeThreadId,
+      isStreaming,
+      modelSend,
+      multiAgentModels,
+      refreshThreads,
+      symU,
+      synthesizerModel,
+      useMultiAgent,
+    ],
   );
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
-    setActiveMultiAgentCount(0);
     setIsStreaming(false);
+    setToolPills([]);
+    setActiveMultiAgentCount(0);
   }, []);
+
+  const handleNewThread = useCallback(() => {
+    handleStop();
+    cancelAssistantSpeech();
+    setActiveThreadId(null);
+    setMessages([]);
+    setLastFailedMessage(null);
+  }, [handleStop]);
+
+  const handleClear = handleNewThread;
 
   const handleRetry = useCallback(() => {
     if (!lastFailedMessage || isStreaming) return;
-    const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
-    if (!lastAssistant) return;
-    void retryAssistantBubble(lastAssistant.id);
-  }, [isStreaming, lastFailedMessage, messages, retryAssistantBubble]);
-
-  const threadOrder = bundle?.threadOrder ?? [];
+    setMessages((prev) => prev.filter((m) => !m.retryable));
+    setLastFailedMessage(null);
+    void sendMessage(lastFailedMessage);
+  }, [isStreaming, lastFailedMessage, sendMessage]);
 
   const renderComposer = () => (
     <form
@@ -569,20 +421,13 @@ export function MarketNewsChatPanel() {
         rows={2}
         value={input}
         onChange={(e) => setInput(e.target.value)}
-        onPointerDownCapture={() => {
-          remeasure();
-        }}
         onFocus={() => {
           setComposerFocused(true);
           remeasure();
-          setTimeout(remeasure, 80);
-          setTimeout(remeasure, 280);
-          setTimeout(remeasure, 520);
         }}
         onBlur={() => {
           setComposerFocused(false);
-          setTimeout(remeasure, 0);
-          setTimeout(remeasure, 120);
+          remeasure();
         }}
         placeholder={`Ask about ${symU}…`}
         className="flex-1 resize-none bg-[#111] border border-card-border rounded-md px-3 py-2 font-mono text-[14px] text-white placeholder:text-white/55 outline-none focus:border-white/40 min-h-[48px]"
@@ -590,7 +435,6 @@ export function MarketNewsChatPanel() {
       {isStreaming ? (
         <button
           type="button"
-          onPointerDown={(e) => e.preventDefault()}
           onClick={handleStop}
           className="shrink-0 p-2.5 rounded-md border border-red-500/40 text-red-400 hover:bg-red-500/10"
           aria-label="Stop"
@@ -601,11 +445,10 @@ export function MarketNewsChatPanel() {
         <button
           type="button"
           disabled={!input.trim()}
-          onPointerDown={(e) => e.preventDefault()}
           onClick={() => {
-            if (input.trim() && !isStreaming) void sendMessage(input);
+            if (input.trim()) void sendMessage(input);
           }}
-          className="shrink-0 p-2.5 text-white disabled:opacity-30 hover:text-white/75"
+          className="shrink-0 p-2.5 text-white disabled:opacity-30"
           aria-label="Send"
         >
           <Send className="w-5 h-5" />
@@ -617,17 +460,15 @@ export function MarketNewsChatPanel() {
   return (
     <div className="relative flex flex-col flex-1 min-h-0 max-h-[calc(100dvh-9.5rem)] md:max-h-none md:min-h-[280px] bg-[#0a0a0a] border-t border-card-border/40">
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-card-border/50 shrink-0 flex-wrap">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="font-mono text-[14px] font-semibold text-white tracking-wide uppercase truncate">
-            {symU}
-          </span>
-        </div>
+        <span className="font-mono text-[14px] font-semibold text-white tracking-wide uppercase truncate">
+          {symU}
+        </span>
         <div className="relative flex items-center gap-2 shrink-0">
           <select
             value={modelControlValue}
             title={
               useMultiAgent
-                ? "Research models run in parallel; when all finish, the synthesizer runs once to merge drafts."
+                ? "Research models run in parallel; when all finish, the synthesizer streams one merged answer."
                 : "Single model for this reply."
             }
             onChange={(e) => {
@@ -641,7 +482,7 @@ export function MarketNewsChatPanel() {
               setMultiModelPickerOpen(false);
               setAiFeatureSetting("chat", "model", value);
             }}
-            className="bg-black/60 border border-card-border rounded px-2 py-1.5 font-mono text-[14px] text-white max-w-[180px] sm:max-w-[230px]"
+            className="bg-black/60 border border-card-border rounded px-2 py-1.5 font-mono text-[12px] text-white max-w-[180px] sm:max-w-[230px]"
             aria-label="Chat model"
           >
             <option value={MULTI_AGENT_MODEL}>multi-agent</option>
@@ -663,7 +504,9 @@ export function MarketNewsChatPanel() {
           )}
           {useMultiAgent && multiAgentModels.length > 0 && (
             <label className="flex items-center gap-1 min-w-0">
-              <span className="hidden sm:inline font-mono text-[10px] text-white/55 shrink-0">Synthesize</span>
+              <span className="hidden sm:inline font-mono text-[10px] text-white/55 shrink-0">
+                Synthesize
+              </span>
               <select
                 value={synthesizerModel}
                 onChange={(e) => setSynthesizerModel(e.target.value)}
@@ -681,12 +524,17 @@ export function MarketNewsChatPanel() {
           )}
           {useMultiAgent && multiModelPickerOpen && (
             <div className="absolute right-0 top-[calc(100%+6px)] z-[10120] min-w-[220px] rounded-md border border-card-border bg-[#0b0b0b] p-2 shadow-xl">
-              <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-white/60">Select models</p>
+              <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-white/60">
+                Select models
+              </p>
               <div className="max-h-56 overflow-y-auto space-y-1 pr-1">
                 {ALL_CHAT_MODELS.map((model) => {
                   const checked = multiAgentModels.includes(model);
                   return (
-                    <label key={model} className="flex items-center gap-2 rounded px-1 py-1 hover:bg-white/5">
+                    <label
+                      key={model}
+                      className="flex items-center gap-2 rounded px-1 py-1 hover:bg-white/5"
+                    >
                       <input
                         type="checkbox"
                         checked={checked}
@@ -708,120 +556,90 @@ export function MarketNewsChatPanel() {
       </div>
 
       <div className="flex items-center gap-1 px-2 py-1.5 border-b border-card-border/30 overflow-x-auto shrink-0">
-        {threadOrder.map((tid) => {
-          const t = bundle?.threads[tid];
-          if (!t) return null;
-          const isSel = tid === activeThreadId;
-          return (
-            <div key={tid} className="flex items-center shrink-0 gap-0.5">
-              <button
-                type="button"
-                onClick={() => selectThread(symU, tid)}
-                className={[
-                  "font-mono text-[14px] px-2.5 py-1.5 rounded border max-w-[150px] truncate",
-                  isSel ? "border-white/35 text-white bg-white/10" : "border-transparent text-white/65 hover:text-white",
-                ].join(" ")}
-              >
-                {t.title}
-              </button>
-              {threadOrder.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => deleteThread(symU, tid)}
-                  className="p-0.5 text-zinc-600 hover:text-red-400"
-                  aria-label={`Delete ${t.title}`}
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              )}
-            </div>
-          );
-        })}
+        {threads.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setActiveThreadId(t.id)}
+            className={[
+              "font-mono text-[12px] px-2 py-1 rounded border max-w-[140px] truncate shrink-0",
+              t.id === activeThreadId
+                ? "border-white/35 text-white bg-white/10"
+                : "border-transparent text-white/65 hover:text-white",
+            ].join(" ")}
+          >
+            {t.title}
+          </button>
+        ))}
         <button
           type="button"
-          onClick={() => createThread(symU)}
-          className="flex items-center gap-1 font-mono text-[14px] text-white/80 hover:text-white px-1.5 py-1.5 shrink-0"
+          onClick={handleNewThread}
+          className="flex items-center gap-1 font-mono text-[12px] text-white/80 hover:text-white px-1.5 shrink-0"
         >
           <Plus className="w-3 h-3" />
           New
         </button>
         {messages.length > 0 && (
-          <>
-            {lastFailedMessage && !isStreaming && (
-              <button
-                type="button"
-                onClick={handleRetry}
-                className="ml-auto flex items-center gap-1 font-mono text-[14px] text-white/80 hover:text-white px-1.5 shrink-0"
-              >
-                <RotateCcw className="w-3 h-3" />
-                Retry
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                handleStop();
-                cancelAssistantSpeech();
-                setLastFailedMessage(null);
-                clearActiveThread(symU);
-              }}
-              className={`${lastFailedMessage && !isStreaming ? "" : "ml-auto"} flex items-center gap-1 font-mono text-[14px] text-white/65 hover:text-white px-1.5 shrink-0`}
-            >
-              <RotateCcw className="w-3 h-3" />
-              Clear
-            </button>
-          </>
+          <button
+            type="button"
+            onClick={handleClear}
+            className="ml-auto flex items-center gap-1 font-mono text-[12px] text-white/65 hover:text-white px-1.5 shrink-0"
+          >
+            <RotateCcw className="w-3 h-3" />
+            Clear
+          </button>
         )}
       </div>
 
       <div
         ref={scrollRef}
         className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-2"
-        style={{
-          scrollbarWidth: "thin",
-          scrollbarColor: "#333 transparent",
-          ...(narrowMobile
-            ? {
-                paddingBottom: `calc(44px + ${dockBottomPx}px + env(safe-area-inset-bottom, 0px))`,
-              }
-            : {}),
-        }}
+        style={
+          narrowMobile
+            ? { paddingBottom: `calc(44px + ${dockBottomPx}px + env(safe-area-inset-bottom, 0px))` }
+            : undefined
+        }
       >
         {messages.length === 0 && (
           <p className="font-mono text-[14px] text-white/70 leading-relaxed">
-            Ask about {symU} — flow, tape, and headlines load on the server for each message. Conversations
-            stay per ticker until you clear them. Use <strong>New</strong> for another thread (e.g. scenarios
-            vs earnings prep).
+            Ask about {symU} — the assistant calls tools for live quotes, flow, news, and technicals.
+            Conversations are saved to your account.
           </p>
         )}
         {messages.map((msg) => (
           <div key={msg.id} className={msg.role === "user" ? "text-right" : "text-left"}>
             {msg.role === "user" ? (
-              <span className="inline-block font-mono font-medium text-[14px] text-[#f5f5f5] bg-[#1a1a1a] border border-card-border rounded px-3 py-2 max-w-[95%] text-left leading-relaxed">
+              <span className="inline-block font-mono text-[14px] text-[#f5f5f5] bg-[#1a1a1a] border border-card-border rounded px-3 py-2 max-w-[95%] text-left">
                 {msg.content}
               </span>
             ) : (
-              <div className="text-left">
-                <div
-                  className="font-mono font-medium text-[14px] text-[#f5f5f5] leading-relaxed prose prose-invert prose-sm max-w-none
-                prose-p:my-1 prose-p:text-[14px] prose-p:leading-relaxed prose-p:text-[#f5f5f5]
-                prose-strong:text-[#f5f5f5] prose-code:text-[#f5f5f5] prose-code:text-[13px]
-                prose-headings:text-[15px] prose-headings:text-[#f5f5f5] prose-headings:mt-2 prose-headings:mb-1
-                prose-li:text-[14px] prose-li:text-[#f5f5f5] prose-li:my-0.5
-                prose-ul:my-0.5 prose-ol:my-0.5
-                prose-a:text-[#f5f5f5] prose-pre:text-[13px] prose-pre:bg-black/40 prose-pre:rounded prose-pre:p-2"
-                >
+              <div>
+                {toolPills.length > 0 && msg.id === messages[messages.length - 1]?.id && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {toolPills.map((p) => (
+                      <span
+                        key={p.toolCallId}
+                        className={[
+                          "font-mono text-[10px] px-2 py-0.5 rounded-full border",
+                          p.status === "running"
+                            ? "border-amber-500/50 text-amber-200/90 animate-pulse"
+                            : "border-emerald-500/40 text-emerald-200/80",
+                        ].join(" ")}
+                      >
+                        {p.status === "running" ? "calling" : "done"} {toolLabel(p.toolName, p.input)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="font-mono text-[14px] text-[#f5f5f5] prose prose-invert prose-sm max-w-none">
                   <ReactMarkdown>{msg.content}</ReactMarkdown>
                 </div>
-                <AssistantListenButton
-                  messageId={msg.id}
-                  markdownText={msg.content}
-                  size="sm"
-                  onRetry={() => {
-                    void retryAssistantBubble(msg.id);
-                  }}
-                  retryDisabled={isStreaming}
-                />
+                <AssistantListenButton messageId={msg.id} markdownText={msg.content} size="sm" />
+                {msg.retryable && !isStreaming && (
+                  <button type="button" onClick={handleRetry} className="mt-1 text-[12px] text-white/70">
+                    Retry
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -829,34 +647,43 @@ export function MarketNewsChatPanel() {
         {isStreaming &&
           messages.length > 0 &&
           messages[messages.length - 1]?.role === "assistant" &&
-          !messages[messages.length - 1]!.content.trim() && (
-          activeMultiAgentCount > 1 ? (
+          !messages[messages.length - 1]!.content.trim() &&
+          (activeMultiAgentCount > 1 ? (
             <div className="flex items-center gap-2 py-1 text-white/75">
               <MultiAgentOrbit count={activeMultiAgentCount} />
               <div className="flex items-center gap-1">
                 <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" />
-                <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "130ms" }} />
-                <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "260ms" }} />
+                <span
+                  className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse"
+                  style={{ animationDelay: "130ms" }}
+                />
+                <span
+                  className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse"
+                  style={{ animationDelay: "260ms" }}
+                />
               </div>
               <span className="font-mono text-[11px] text-white/65">
-                {activeMultiAgentCount} models in parallel (slowest sets the wait), then synthesis…
+                {activeMultiAgentCount} models in parallel, then synthesis…
               </span>
             </div>
           ) : (
             <div className="flex items-center gap-1.5 py-1">
               <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
-              <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "150ms" }} />
-              <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" style={{ animationDelay: "300ms" }} />
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse"
+                style={{ animationDelay: "150ms" }}
+              />
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse"
+                style={{ animationDelay: "300ms" }}
+              />
             </div>
-          )
-        )}
+          ))}
       </div>
 
       {narrowMobile && typeof document !== "undefined"
         ? createPortal(renderComposer(), document.body)
-        : !narrowMobile
-          ? renderComposer()
-          : null}
+        : renderComposer()}
     </div>
   );
 }
