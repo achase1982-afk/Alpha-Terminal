@@ -4349,6 +4349,7 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
 
     const res = await fetch(`${SCHWAB_API}/quotes?symbols=${ticker}&fields=quote,fundamental,reference`, {
       headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(25_000),
     });
     if (!res.ok) {
       logger.warn({ ticker, status: res.status }, "StrategistV2: fetchTickerData failed — Schwab quotes HTTP non-OK");
