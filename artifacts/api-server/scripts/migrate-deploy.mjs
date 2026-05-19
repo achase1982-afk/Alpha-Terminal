@@ -33,6 +33,8 @@ try {
   console.log("[migrate:deploy] Schema is up to date.");
 } catch (err) {
   console.error("[migrate:deploy] Migration failed:", err instanceof Error ? err.message : err);
+  if (err?.cause) console.error("[migrate:deploy] Caused by:", err.cause);
+  if (err?.stack) console.error("[migrate:deploy] Stack:", err.stack);
   process.exit(1);
 } finally {
   await pool.end();
