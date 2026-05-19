@@ -1207,3 +1207,41 @@ export const backfillRunJobsTable = pgTable(
 
 export type BackfillRunJobRow = typeof backfillRunJobsTable.$inferSelect;
 export type BackfillRunJobInsert = typeof backfillRunJobsTable.$inferInsert;
+
+/** Per-user AI chat threads (Markets CHAT tab). */
+export const chatThreadsTable = pgTable(
+  "chat_threads",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: text("user_id").notNull(),
+    symbol: text("symbol"),
+    title: text("title").notNull().default("Chat"),
+    summary: text("summary"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("chat_threads_user_symbol_updated_idx").on(t.userId, t.symbol, desc(t.updatedAt))],
+);
+
+export type ChatThreadRow = typeof chatThreadsTable.$inferSelect;
+export type ChatThreadInsert = typeof chatThreadsTable.$inferInsert;
+
+export const chatMessagesTable = pgTable(
+  "chat_messages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    threadId: uuid("thread_id")
+      .notNull()
+      .references(() => chatThreadsTable.id, { onDelete: "cascade" }),
+    role: text("role").notNull(),
+    content: text("content").notNull().default(""),
+    toolCalls: jsonb("tool_calls").$type<unknown>(),
+    toolResults: jsonb("tool_results").$type<unknown>(),
+    tokenCount: integer("token_count").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("chat_messages_thread_created_idx").on(t.threadId, t.createdAt)],
+);
+
+export type ChatMessageRow = typeof chatMessagesTable.$inferSelect;
+export type ChatMessageInsert = typeof chatMessagesTable.$inferInsert;
