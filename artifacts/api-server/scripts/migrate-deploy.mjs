@@ -26,6 +26,9 @@ const pool = new Pool({
   connectionTimeoutMillis: 15_000,
 });
 
+await pool.query("CREATE EXTENSION IF NOT EXISTS plpgsql");
+console.log("[migrate:deploy] Ensured plpgsql extension is available.");
+
 try {
   const db = drizzle(pool);
   console.log("[migrate:deploy] Applying pending migrations from", migrationsFolder);
