@@ -10,16 +10,22 @@
 # sync schema.
 set -e
 
-# Railway startCommand (/bin/sh /app/start.sh) does not always inherit Dockerfile WORKDIR.
-# migrate:deploy lives in artifacts/api-server/package.json, not the workspace root.
+# Railway startCommand (/bin/sh /app/start.sh) does not inherit Dockerfile WORKDIR.
+# Must cd into artifacts/api-server (matches Dockerfile WORKDIR).
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVER_DIR="${ROOT_DIR}/artifacts/api-server"
 
+if [ ! -f "${SERVER_DIR}/package.json" ]; then
+  echo "[start.sh] ERROR: api-server package missing at ${SERVER_DIR}" >&2
+  echo "[start.sh] artifacts listing:" >&2
+  ls -la "${ROOT_DIR}/artifacts" 2>&1 >&2 || true
+  exit 1
+fi
+
 echo "[start.sh] Running database migrations in ${SERVER_DIR}..."
-# Same step as api-server `pnpm run migrate:deploy` (drizzle-orm migrator, lib/db/drizzle).
-# Requires DATABASE_URL. Non-zero exit aborts the deploy.
-cd "${SERVER_DIR}" && pnpm run migrate:deploy
+cd "${SERVER_DIR}"
+# Same as package.json "migrate:deploy"; call node directly so pnpm cannot read root package.json.
+node ./scripts/migrate-deploy.mjs
 
 echo "[start.sh] Migrations complete. Starting server..."
-cd "${SERVER_DIR}"
 exec node --enable-source-maps --max-http-header-size=65536 dist/index.mjs
