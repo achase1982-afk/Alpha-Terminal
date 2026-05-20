@@ -7,9 +7,8 @@ import { requestFlowCapture } from "../flowCaptureService.js";
 import { fetchPolygonChain } from "../polygonChain.js";
 import { getOrFetchChain } from "../../routes/market.js";
 import { getLatestMarketPulseForChat } from "../marketPulseCache.js";
-import { callGeminiWithSystemAndWebSearch } from "../aiLabAnalystClient.js";
-import { hasGeminiApiKey } from "../geminiClient.js";
 import { logger } from "../logger.js";
+import { runChatNativeWebSearch } from "./chatWebSearch.js";
 import { augmentPolygonColdTickerForChat } from "../chatPolygonColdActivity.js";
 import { fetchQuoteForChat } from "./getQuote.js";
 import { fetchTechnicalsForSymbol } from "./technicals.js";
@@ -230,26 +229,12 @@ export function createChatTools(ctx: ChatToolContext) {
 
     web_search: tool({
       description:
-        "Search the public web for catalysts, news, and recent events. Use for why-is-it-moving and headline questions.",
+        "Search the public web using the active chat model provider's native web search (Anthropic, Google Gemini, or OpenAI). Use for catalysts, why-is-it-moving, and recent headline questions.",
       inputSchema: z.object({
         query: z.string().describe("Search query, include ticker when relevant"),
       }),
       execute: async ({ query }) => {
-        if (!hasGeminiApiKey()) {
-          return { error: "Web search requires Gemini API key on the server." };
-        }
-        const model = (process.env.AI_CHAT_NEWS_WEB_MODEL ?? "gemini-2.0-flash").trim();
-        const ws = await callGeminiWithSystemAndWebSearch(
-          model,
-          0,
-          "You search the web with Google Search. Return concise bullet facts with source names. No speculation.",
-          query,
-          AbortSignal.timeout(24_000),
-        );
-        return {
-          text: ws.text.trim().slice(0, 12_000),
-          sources: ws.trace.sources.slice(0, 18),
-        };
+        return runChatNativeWebSearch(ctx.activeModel, query);
       },
     }),
 

@@ -1,3 +1,5 @@
+import { geminiThinkingConfigForModel } from "./geminiThinkingConfig.js";
+
 /**
  * Central defaults for provider-native reasoning / extended thinking across the stack.
  * Anthropic: Messages API `thinking`; Vercel AI SDK `providerOptions.anthropic.thinking`.
@@ -98,4 +100,51 @@ export function xaiReasoningProviderOptionsForChat(model: string): XaiChatReason
   const tier = xaiReasoningTier(model);
   if (tier == null) return undefined;
   return { xai: { reasoningEffort: tier === "low" ? "low" : "high" } };
+}
+
+export type OpenAiChatReasoningProviderOptions = {
+  openai: { reasoningEffort: "minimal" | "low" | "medium" | "high" };
+};
+
+/** GPT-5.x chat/reasoning via AI SDK `providerOptions.openai.reasoningEffort`. */
+export function openAiReasoningProviderOptionsForChat(
+  model: string,
+): OpenAiChatReasoningProviderOptions | undefined {
+  if (!/^gpt-5/.test(model) && !/^o\d/.test(model)) return undefined;
+  const effort = /^gpt-5\.5/.test(model) ? "high" : "medium";
+  return { openai: { reasoningEffort: effort } };
+}
+
+export type GoogleThinkingProviderOptions = {
+  google: {
+    thinkingConfig: {
+      thinkingBudget?: number;
+      includeThoughts?: boolean;
+      thinkingLevel?: "minimal" | "low" | "medium" | "high";
+    };
+  };
+};
+
+/** Maps `geminiThinkingConfigForModel` into AI SDK Google provider options. */
+export function googleThinkingProviderOptionsForAiSdk(
+  model: string,
+): GoogleThinkingProviderOptions | undefined {
+  const cfg = geminiThinkingConfigForModel(model);
+  if (!cfg) return undefined;
+  let thinkingLevel: "minimal" | "low" | "medium" | "high" | undefined;
+  if (cfg.thinkingLevel != null) {
+    const raw = String(cfg.thinkingLevel).toLowerCase();
+    if (raw === "minimal" || raw === "low" || raw === "medium" || raw === "high") {
+      thinkingLevel = raw;
+    }
+  }
+  return {
+    google: {
+      thinkingConfig: {
+        thinkingBudget: cfg.thinkingBudget,
+        includeThoughts: cfg.includeThoughts,
+        ...(thinkingLevel ? { thinkingLevel } : {}),
+      },
+    },
+  };
 }

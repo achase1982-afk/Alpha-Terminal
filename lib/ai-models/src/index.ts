@@ -23,14 +23,18 @@ export interface AiModelCatalogEntry {
   label: string;
 }
 
-/** User-requested production model set (order = strategist catalog indices 0–5). */
+/**
+ * Production model set (order = strategist catalog indices 0–5).
+ * - `gemini-3.5-flash` is Google's API id for Gemini 3.5 Flash; thinking is enabled via thinkingConfig (not a separate model name).
+ * - `gpt-5.4-mini` uses OpenAI reasoning_effort medium (5.5 uses high).
+ */
 export const AI_MODEL_CATALOG: readonly AiModelCatalogEntry[] = [
-  { id: "gemini-3.5-flash", provider: "google", label: "Gemini 3.5 + thinking" },
-  { id: "gemini-3.1-pro-preview", provider: "google", label: "Gemini 3.1 Pro" },
+  { id: "gemini-3.5-flash", provider: "google", label: "Gemini 3.5 Flash + thinking" },
+  { id: "gemini-3.1-pro-preview", provider: "google", label: "Gemini 3.1 Pro + thinking" },
   { id: "claude-opus-4-7", provider: "anthropic", label: "Claude Opus 4.7 + adaptive thinking" },
   { id: "claude-sonnet-4-6", provider: "anthropic", label: "Claude Sonnet 4.6 + thinking" },
-  { id: "gpt-5.5", provider: "openai", label: "GPT-5.5 + thinking" },
-  { id: "gpt-5.4-mini", provider: "openai", label: "GPT-5.4 Mini" },
+  { id: "gpt-5.5", provider: "openai", label: "GPT-5.5 + thinking (high)" },
+  { id: "gpt-5.4-mini", provider: "openai", label: "GPT-5.4 Mini + thinking (medium)" },
 ] as const;
 
 export const AI_MODEL_IDS: readonly AiModelId[] = AI_MODEL_CATALOG.map((e) => e.id);
