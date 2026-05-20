@@ -1,3 +1,5 @@
+import { stripLegacyEmptyAccessTokenQuery } from "@workspace/api-client-react";
+
 /** Mirrors Clerk `getToken` options we care about (long strategist polls + 401 recovery). */
 export type ClerkGetTokenOptions = { skipCache?: boolean };
 

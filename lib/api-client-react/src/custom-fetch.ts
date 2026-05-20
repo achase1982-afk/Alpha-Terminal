@@ -81,6 +81,37 @@ function resolveUrl(input: RequestInfo | URL): string {
   return input.url;
 }
 
+/** Drops deprecated empty `accessToken` query values before fetch. */
+export function stripLegacyEmptyAccessTokenQuery(url: string): string {
+  const qIdx = url.indexOf("?");
+  if (qIdx === -1) return url;
+
+  const base = url.slice(0, qIdx);
+  const params = new URLSearchParams(url.slice(qIdx + 1));
+  const legacy = params.get("accessToken");
+  if (legacy != null && legacy.trim() === "") {
+    params.delete("accessToken");
+  }
+
+  const next = params.toString();
+  return next ? `${base}?${next}` : base;
+}
+
+function sanitizeRequestUrl(input: RequestInfo | URL): RequestInfo | URL {
+  if (typeof input === "string") {
+    return stripLegacyEmptyAccessTokenQuery(input);
+  }
+  if (isUrl(input)) {
+    const cleaned = stripLegacyEmptyAccessTokenQuery(input.toString());
+    return cleaned === input.toString() ? input : new URL(cleaned);
+  }
+  if (isRequest(input)) {
+    const cleaned = stripLegacyEmptyAccessTokenQuery(input.url);
+    return cleaned === input.url ? input : new Request(cleaned, input);
+  }
+  return input;
+}
+
 function mergeHeaders(...sources: Array<HeadersInit | undefined>): Headers {
   const headers = new Headers();
 
