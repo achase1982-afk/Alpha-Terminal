@@ -10,14 +10,16 @@
 # sync schema.
 set -e
 
-# Capture WORKDIR set by Dockerfile so we can return to it after migrating.
-SERVER_DIR="$PWD"
+# Railway startCommand (/bin/sh /app/start.sh) does not always inherit Dockerfile WORKDIR.
+# migrate:deploy lives in artifacts/api-server/package.json, not the workspace root.
+ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SERVER_DIR="${ROOT_DIR}/artifacts/api-server"
 
-echo "[start.sh] Running database migrations..."
+echo "[start.sh] Running database migrations in ${SERVER_DIR}..."
 # Same step as api-server `pnpm run migrate:deploy` (drizzle-orm migrator, lib/db/drizzle).
 # Requires DATABASE_URL. Non-zero exit aborts the deploy.
-cd "$SERVER_DIR" && pnpm run migrate:deploy
+cd "${SERVER_DIR}" && pnpm run migrate:deploy
 
 echo "[start.sh] Migrations complete. Starting server..."
-cd "$SERVER_DIR"
+cd "${SERVER_DIR}"
 exec node --enable-source-maps --max-http-header-size=65536 dist/index.mjs
