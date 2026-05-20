@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from "react";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 
 // ── Live time-and-sales hook for a single OPRA contract ──────────────
 //
@@ -82,7 +83,7 @@ export function useFlowTimeSales(contract: string | null | undefined): {
       // REST backfill always runs — it's the dev-mode source of truth and
       // a useful prefetch in prod.
       try {
-        const r = await fetch(`${API_BASE}/flow/timesales/${encodeURIComponent(contract)}/recent?limit=200`);
+        const r = await fetchWithAuth(`${API_BASE}/flow/timesales/${encodeURIComponent(contract)}/recent?limit=200`);
         if (!r.ok) {
           // silent — we'll still probe the live stream below
         } else {
@@ -106,7 +107,7 @@ export function useFlowTimeSales(contract: string | null | undefined): {
       // so we stay in stable REST-only mode and report "disabled".
       let wsEnabled = false;
       try {
-        const s = await fetch(`${API_BASE}/flow/timesales/_status`);
+        const s = await fetchWithAuth(`${API_BASE}/flow/timesales/_status`);
         if (s.ok) {
           const j = await s.json() as { polygonWsEnabled?: boolean };
           wsEnabled = Boolean(j.polygonWsEnabled);

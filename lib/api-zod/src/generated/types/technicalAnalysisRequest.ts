@@ -7,6 +7,7 @@
  */
 import type { Candle } from "./candle";
 import type { QuoteResponse } from "./quoteResponse";
+import type { TechnicalAnalysisFundamentals } from "./technicalAnalysisFundamentals";
 
 export interface TechnicalAnalysisRequest {
   quote: QuoteResponse;
@@ -14,4 +15,5 @@ export interface TechnicalAnalysisRequest {
   model?: string;
   temperature?: number;
   customPrompt?: string;
+  fundamentals?: TechnicalAnalysisFundamentals;
 }

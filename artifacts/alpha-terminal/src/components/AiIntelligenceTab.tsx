@@ -2928,15 +2928,15 @@ function AiIntelligenceTabInner({
   }, [subTab]);
 
   const { data: quote } = useGetQuote(
-    { symbol, accessToken: "" },
+    { symbol },
     { query: { enabled: !!symbol } }
   );
   const { data: history } = useGetPriceHistory(
-    { symbol, accessToken: "", periodType: "month", period: 3, frequencyType: "daily", frequency: 1 },
+    { symbol, periodType: "month", period: 3, frequencyType: "daily", frequency: 1 },
     { query: { enabled: !!symbol } }
   );
   const { data: chain, isLoading: chainLoading } = useGetOptionChain(
-    { symbol, accessToken: "", contractType: "ALL", daysToExpiration: 45, strikeCount: 20 },
+    { symbol, contractType: "ALL", daysToExpiration: 45, strikeCount: 20 },
     { query: { enabled: !!symbol && chainEnabled } }
   );
 

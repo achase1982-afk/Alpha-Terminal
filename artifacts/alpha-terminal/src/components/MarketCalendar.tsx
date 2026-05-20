@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useTerminalStore } from "@/lib/store";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { ChevronLeft, ChevronRight, X, ExternalLink, Loader2 } from "lucide-react";
 import { generateMarketEvents, apiEarningsToEvents, apiEconToEvents, type CalendarEvent, type ApiEarningRow, type ApiEconEvent } from "@/lib/calendarEvents";
 
@@ -205,7 +206,7 @@ function ReportViewer({ url, onClose, onCloseAll }: { url: string; onClose: () =
 
   useEffect(() => {
     const blsType = url.includes("empsit") ? "nfp" : url.includes("cpi") ? "cpi" : url.includes("ppi") ? "ppi" : "nfp";
-    fetch(`${apiBase}/economic/bls-report?type=${blsType}`)
+    fetchWithAuth(`${apiBase}/economic/bls-report?type=${blsType}`)
       .then(async (res) => {
         const ct = res.headers.get("content-type") || "";
         if (ct.includes("text/html")) {
@@ -287,7 +288,7 @@ function ReportViewer({ url, onClose, onCloseAll }: { url: string; onClose: () =
 
 async function fetchBlsReport(blsType: string): Promise<BlsReportData | null> {
   try {
-    const res = await fetch(`${apiBase}/economic/report?type=${blsType}`);
+    const res = await fetchWithAuth(`${apiBase}/economic/report?type=${blsType}`);
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -297,7 +298,7 @@ async function fetchBlsReport(blsType: string): Promise<BlsReportData | null> {
 
 async function fetchNfpFull(): Promise<NfpFullData | null> {
   try {
-    const res = await fetch(`${apiBase}/economic/nfp-full`);
+    const res = await fetchWithAuth(`${apiBase}/economic/nfp-full`);
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -307,7 +308,7 @@ async function fetchNfpFull(): Promise<NfpFullData | null> {
 
 async function fetchPpiFull(): Promise<InflationFullData | null> {
   try {
-    const res = await fetch(`${apiBase}/economic/ppi-full`);
+    const res = await fetchWithAuth(`${apiBase}/economic/ppi-full`);
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -317,7 +318,7 @@ async function fetchPpiFull(): Promise<InflationFullData | null> {
 
 async function fetchCpiFull(): Promise<InflationFullData | null> {
   try {
-    const res = await fetch(`${apiBase}/economic/cpi-full`);
+    const res = await fetchWithAuth(`${apiBase}/economic/cpi-full`);
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -327,7 +328,7 @@ async function fetchCpiFull(): Promise<InflationFullData | null> {
 
 async function fetchFomcData(): Promise<FomcMeetingData[]> {
   try {
-    const res = await fetch(`${apiBase}/economic/fomc-data`);
+    const res = await fetchWithAuth(`${apiBase}/economic/fomc-data`);
     if (!res.ok) return [];
     const json = await res.json();
     return json.meetings || [];
@@ -361,7 +362,7 @@ export function MarketCalendar({ onClose }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${apiBase}/market/earnings-calendar`)
+    fetchWithAuth(`${apiBase}/market/earnings-calendar`)
       .then(r => r.json())
       .then((data: { earnings?: ApiEarningRow[] }) => {
         if (!cancelled && data.earnings && data.earnings.length > 0) {
@@ -369,7 +370,7 @@ export function MarketCalendar({ onClose }: Props) {
         }
       })
       .catch(() => {});
-    fetch(`${apiBase}/market/economic-calendar`)
+    fetchWithAuth(`${apiBase}/market/economic-calendar`)
       .then(r => r.json())
       .then((data: { events?: ApiEconEvent[] }) => {
         if (!cancelled && data.events && data.events.length > 0) {

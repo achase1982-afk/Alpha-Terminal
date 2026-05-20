@@ -118,7 +118,8 @@ paths:
             type: string
         - name: accessToken
           in: query
-          required: true
+          required: false
+          description: Deprecated — server uses stored Schwab tokens when omitted
           schema:
             type: string
       responses:
@@ -142,7 +143,8 @@ paths:
             type: string
         - name: accessToken
           in: query
-          required: true
+          required: false
+          description: Deprecated — server uses stored Schwab tokens when omitted
           schema:
             type: string
         - name: periodType
@@ -190,7 +192,8 @@ paths:
             type: string
         - name: accessToken
           in: query
-          required: true
+          required: false
+          description: Deprecated — server uses stored Schwab tokens when omitted
           schema:
             type: string
         - name: contractType
@@ -540,6 +543,35 @@ components:
         - calls
         - puts
 
+    TechnicalAnalysisFundamentals:
+      type: object
+      description: Optional fundamentals block for streaming technical analysis
+      properties:
+        marketCap:
+          type: number
+          nullable: true
+        sharesOutstanding:
+          type: number
+          nullable: true
+        peRatio:
+          type: number
+          nullable: true
+        eps:
+          type: number
+          nullable: true
+        beta:
+          type: number
+          nullable: true
+        dividendYield:
+          type: number
+          nullable: true
+        high52:
+          type: number
+          nullable: true
+        low52:
+          type: number
+          nullable: true
+
     TechnicalAnalysisRequest:
       type: object
       properties:
@@ -555,6 +587,8 @@ components:
           type: number
         customPrompt:
           type: string
+        fundamentals:
+          $ref: "#/components/schemas/TechnicalAnalysisFundamentals"
       required:
         - quote
         - candles

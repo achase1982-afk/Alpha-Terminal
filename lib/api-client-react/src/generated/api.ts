@@ -16,19 +16,25 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 
-type HookQueryOpts<T, E, D> = Omit<UseQueryOptions<T, E, D>, 'queryKey'> & { queryKey?: QueryKey };
+/** Caller-facing query options — queryKey is supplied by the generated hook. */
+type HookQueryOpts<T, E, D> = Omit<UseQueryOptions<T, E, D>, "queryKey"> & {
+  queryKey?: QueryKey;
+};
 
 import type {
   AiAnalysisResponse,
   AuthStatusResponse,
   AuthUrlResponse,
+  ChatMessagesResponse,
   ChatRequest,
+  ChatThreadsResponse,
   ErrorResponse,
   ExchangeCodeRequest,
   GetOptionChainParams,
   GetPriceHistoryParams,
   GetQuoteParams,
   HealthStatus,
+  ListChatThreadsParams,
   ModelsResponse,
   OptionChainResponse,
   OptionsAnalysisRequest,
@@ -72,7 +78,7 @@ export const getHealthCheckQueryOptions = <
   TData = Awaited<ReturnType<typeof healthCheck>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: HookQueryOpts<
+  query?: UseQueryOptions<
     Awaited<ReturnType<typeof healthCheck>>,
     TError,
     TData
@@ -107,7 +113,7 @@ export function useHealthCheck<
   TData = Awaited<ReturnType<typeof healthCheck>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: HookQueryOpts<
+  query?: UseQueryOptions<
     Awaited<ReturnType<typeof healthCheck>>,
     TError,
     TData
@@ -394,7 +400,7 @@ export const getGetAuthStatusQueryOptions = <
   TData = Awaited<ReturnType<typeof getAuthStatus>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: HookQueryOpts<
+  query?: UseQueryOptions<
     Awaited<ReturnType<typeof getAuthStatus>>,
     TError,
     TData
@@ -429,7 +435,7 @@ export function useGetAuthStatus<
   TData = Awaited<ReturnType<typeof getAuthStatus>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: HookQueryOpts<
+  query?: UseQueryOptions<
     Awaited<ReturnType<typeof getAuthStatus>>,
     TError,
     TData
@@ -901,7 +907,7 @@ export const useRunOptionsAnalysis = <
 };
 
 /**
- * @summary Run free-form AI chat with market context
+ * @summary Stream AI chat turn (SSE) with tool-based context
  */
 export const getRunChatQueryUrl = () => {
   return `/api/ai/chat`;
@@ -910,8 +916,8 @@ export const getRunChatQueryUrl = () => {
 export const runChatQuery = async (
   chatRequest: ChatRequest,
   options?: RequestInit,
-): Promise<AiAnalysisResponse> => {
-  return customFetch<AiAnalysisResponse>(getRunChatQueryUrl(), {
+): Promise<string> => {
+  return customFetch<string>(getRunChatQueryUrl(), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -964,7 +970,7 @@ export type RunChatQueryMutationBody = BodyType<ChatRequest>;
 export type RunChatQueryMutationError = ErrorType<unknown>;
 
 /**
- * @summary Run free-form AI chat with market context
+ * @summary Stream AI chat turn (SSE) with tool-based context
  */
 export const useRunChatQuery = <
   TError = ErrorType<unknown>,
@@ -985,6 +991,192 @@ export const useRunChatQuery = <
 > => {
   return useMutation(getRunChatQueryMutationOptions(options));
 };
+
+/**
+ * @summary List chat threads for the signed-in user
+ */
+export const getListChatThreadsUrl = (params?: ListChatThreadsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/chat/threads?${stringifiedParams}`
+    : `/api/chat/threads`;
+};
+
+export const listChatThreads = async (
+  params?: ListChatThreadsParams,
+  options?: RequestInit,
+): Promise<ChatThreadsResponse> => {
+  return customFetch<ChatThreadsResponse>(getListChatThreadsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListChatThreadsQueryKey = (params?: ListChatThreadsParams) => {
+  return [`/api/chat/threads`, ...(params ? [params] : [])] as const;
+};
+
+export const getListChatThreadsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listChatThreads>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListChatThreadsParams,
+  options?: {
+    query?: HookQueryOpts<
+      Awaited<ReturnType<typeof listChatThreads>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListChatThreadsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listChatThreads>>> = ({
+    signal,
+  }) => listChatThreads(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listChatThreads>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListChatThreadsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listChatThreads>>
+>;
+export type ListChatThreadsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List chat threads for the signed-in user
+ */
+
+export function useListChatThreads<
+  TData = Awaited<ReturnType<typeof listChatThreads>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListChatThreadsParams,
+  options?: {
+    query?: HookQueryOpts<
+      Awaited<ReturnType<typeof listChatThreads>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListChatThreadsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Messages for a chat thread
+ */
+export const getListChatThreadMessagesUrl = (threadId: string) => {
+  return `/api/chat/threads/${threadId}/messages`;
+};
+
+export const listChatThreadMessages = async (
+  threadId: string,
+  options?: RequestInit,
+): Promise<ChatMessagesResponse> => {
+  return customFetch<ChatMessagesResponse>(
+    getListChatThreadMessagesUrl(threadId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListChatThreadMessagesQueryKey = (threadId: string) => {
+  return [`/api/chat/threads/${threadId}/messages`] as const;
+};
+
+export const getListChatThreadMessagesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listChatThreadMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  threadId: string,
+  options?: {
+    query?: HookQueryOpts<
+      Awaited<ReturnType<typeof listChatThreadMessages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListChatThreadMessagesQueryKey(threadId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listChatThreadMessages>>
+  > = ({ signal }) =>
+    listChatThreadMessages(threadId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!threadId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listChatThreadMessages>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListChatThreadMessagesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listChatThreadMessages>>
+>;
+export type ListChatThreadMessagesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Messages for a chat thread
+ */
+
+export function useListChatThreadMessages<
+  TData = Awaited<ReturnType<typeof listChatThreadMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  threadId: string,
+  options?: {
+    query?: HookQueryOpts<
+      Awaited<ReturnType<typeof listChatThreadMessages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListChatThreadMessagesQueryOptions(threadId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Get available AI models
@@ -1010,7 +1202,7 @@ export const getGetAvailableModelsQueryOptions = <
   TData = Awaited<ReturnType<typeof getAvailableModels>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: HookQueryOpts<
+  query?: UseQueryOptions<
     Awaited<ReturnType<typeof getAvailableModels>>,
     TError,
     TData
@@ -1045,7 +1237,7 @@ export function useGetAvailableModels<
   TData = Awaited<ReturnType<typeof getAvailableModels>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: HookQueryOpts<
+  query?: UseQueryOptions<
     Awaited<ReturnType<typeof getAvailableModels>>,
     TError,
     TData

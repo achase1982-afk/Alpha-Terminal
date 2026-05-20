@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Download, RefreshCw, TrendingUp, TrendingDown, AlertCircle, Database, ChevronDown } from "lucide-react";
 
 const API = import.meta.env.BASE_URL + "api";
@@ -68,7 +69,7 @@ export function UnusualOptionsFlow({ watchedSymbols }: { watchedSymbols?: string
 
   const fetchStatus = useCallback(async () => {
     try {
-      const r = await fetch(`${API}/unusual-options/status`);
+      const r = await fetchWithAuth(`${API}/unusual-options/status`);
       const d = await r.json();
       setStatus(d);
     } catch { }
@@ -84,7 +85,7 @@ export function UnusualOptionsFlow({ watchedSymbols }: { watchedSymbols?: string
         limit: "300",
       });
       if (filterTicker) params.set("tickers", filterTicker.toUpperCase());
-      const r = await fetch(`${API}/unusual-options/activity?${params}`);
+      const r = await fetchWithAuth(`${API}/unusual-options/activity?${params}`);
       const d = await r.json();
       if (d.error) { setError(d.error); return; }
       setActivity(d.unusual ?? []);
@@ -116,7 +117,7 @@ export function UnusualOptionsFlow({ watchedSymbols }: { watchedSymbols?: string
         ? filterTicker.split(",").map(t => t.trim().toUpperCase()).filter(Boolean)
         : (watchedSymbols ?? []);
 
-      await fetch(`${API}/unusual-options/sync`, {
+      await fetchWithAuth(`${API}/unusual-options/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tickers, days: syncDays }),

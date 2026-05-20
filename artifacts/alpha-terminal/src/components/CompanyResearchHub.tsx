@@ -592,7 +592,7 @@ function useCompanyFinancials(ticker: string) {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`${API_BASE}/sec/company-financials?symbol=${encodeURIComponent(ticker)}`);
+        const res = await fetchWithAuth(`${API_BASE}/sec/company-financials?symbol=${encodeURIComponent(ticker)}`);
         if (!res.ok) throw new Error(`API returned ${res.status}`);
         const json = await res.json();
         if (!cancelled) setData(json.financials || null);
@@ -969,7 +969,7 @@ const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
       setError(null);
       setFilter("ALL");
       try {
-        const res = await fetch(`${API_BASE}/sec/filings?symbol=${encodeURIComponent(ticker)}`);
+        const res = await fetchWithAuth(`${API_BASE}/sec/filings?symbol=${encodeURIComponent(ticker)}`);
         if (!res.ok) throw new Error(`SEC API returned ${res.status}`);
         const json = await res.json();
         if (!cancelled) setData(json);
@@ -1164,8 +1164,8 @@ const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) 
       setError(null);
       try {
         const [insRes, holdRes] = await Promise.all([
-          fetch(`${API_BASE}/sec/insider-transactions?symbol=${encodeURIComponent(ticker)}`),
-          fetch(`${API_BASE}/sec/institutional-holders?symbol=${encodeURIComponent(ticker)}`),
+          fetchWithAuth(`${API_BASE}/sec/insider-transactions?symbol=${encodeURIComponent(ticker)}`),
+          fetchWithAuth(`${API_BASE}/sec/institutional-holders?symbol=${encodeURIComponent(ticker)}`),
         ]);
         if (!insRes.ok || !holdRes.ok) throw new Error("Failed to load ownership data");
         const insJson = await insRes.json();
@@ -2055,11 +2055,11 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
   const cacheRestoredRef = useRef(false);
 
   const { data: quote } = useGetQuote(
-    { symbol, accessToken: "" },
+    { symbol },
     { query: { enabled: !!accessToken } }
   );
   const { data: history } = useGetPriceHistory(
-    { symbol, accessToken: "", periodType: "month", period: 3, frequencyType: "daily", frequency: 1 },
+    { symbol, periodType: "month", period: 3, frequencyType: "daily", frequency: 1 },
     { query: { enabled: !!accessToken } }
   );
 

@@ -57,7 +57,7 @@ export function useQuote(symbol: string) {
   const streamQuote = directQuote ?? altQuote;
 
   const { data: restData } = useGetQuote(
-    { symbol, accessToken: "" },
+    { symbol },
     {
       query: {
         enabled: !!accessToken && !!symbol,

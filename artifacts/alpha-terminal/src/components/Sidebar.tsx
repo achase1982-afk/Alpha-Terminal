@@ -612,7 +612,7 @@ function AiLabStrategistControl() {
   const syncToBackend = useCallback((cfg: typeof aiLabStrategistConfig) => {
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     syncTimeoutRef.current = setTimeout(() => {
-      fetch("/api/ai-lab/config", {
+      fetchWithAuth("/api/ai-lab/config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(cfg),

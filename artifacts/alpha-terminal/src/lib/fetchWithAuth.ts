@@ -1,12 +1,36 @@
-import { signalClerkAuthLost } from "./authNoticeStore";
-
 /** Mirrors Clerk `getToken` options we care about (long strategist polls + 401 recovery). */
 export type ClerkGetTokenOptions = { skipCache?: boolean };
+
+type ClerkWindow = {
+  Clerk?: { session?: { getToken: (opts?: ClerkGetTokenOptions) => Promise<string | null> } };
+};
 
 let clerkGetToken: ((opts?: ClerkGetTokenOptions) => Promise<string | null>) | null = null;
 
 export function setClerkTokenGetter(fn: (opts?: ClerkGetTokenOptions) => Promise<string | null>) {
   clerkGetToken = fn;
+}
+
+/** Fresh Clerk session JWT — never from app store or URL query params. */
+async function resolveClerkToken(opts?: ClerkGetTokenOptions): Promise<string | null> {
+  if (typeof window !== "undefined") {
+    const getToken = (window as ClerkWindow).Clerk?.session?.getToken;
+    if (getToken) {
+      try {
+        return await getToken(opts);
+      } catch {
+        return null;
+      }
+    }
+  }
+  if (clerkGetToken) {
+    try {
+      return await clerkGetToken(opts);
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 type FetchWithAuthInit = RequestInit & {
@@ -31,28 +55,26 @@ export async function fetchWithAuth(
   const headers = new Headers(fetchInit.headers);
   const tokenOpts: ClerkGetTokenOptions | undefined = clerkSkipCache === true ? { skipCache: true } : undefined;
 
-  if (clerkGetToken) {
-    try {
-      let token: string | null;
-      if (clerkTokenTimeoutMs != null && clerkTokenTimeoutMs > 0) {
-        token = await Promise.race([
-          clerkGetToken(tokenOpts),
-          new Promise<null>((resolve) => {
-            if (typeof window !== "undefined") {
-              window.setTimeout(() => resolve(null), clerkTokenTimeoutMs);
-            } else {
-              resolve(null);
-            }
-          }),
-        ]);
-      } else {
-        token = await clerkGetToken(tokenOpts);
-      }
-      if (token) {
-        headers.set("Authorization", `Bearer ${token}`);
-      }
-    } catch {}
-  }
+  try {
+    let token: string | null;
+    if (clerkTokenTimeoutMs != null && clerkTokenTimeoutMs > 0) {
+      token = await Promise.race([
+        resolveClerkToken(tokenOpts),
+        new Promise<null>((resolve) => {
+          if (typeof window !== "undefined") {
+            window.setTimeout(() => resolve(null), clerkTokenTimeoutMs);
+          } else {
+            resolve(null);
+          }
+        }),
+      ]);
+    } else {
+      token = await resolveClerkToken(tokenOpts);
+    }
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+  } catch {}
 
   const startedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
   const urlStr = typeof input === "string" ? input : input instanceof URL ? input.href : "request";
@@ -60,30 +82,25 @@ export async function fetchWithAuth(
   try {
     const res = await fetch(input, { ...fetchInit, headers, redirect: "error" });
     if (
-      (res.status === 401 || res.status === 403) &&
-      clerkGetToken &&
+      res.status === 401 &&
       !_authRetry &&
       typeof window !== "undefined"
     ) {
       try {
-        const fresh = await clerkGetToken({ skipCache: true });
+        const fresh = await resolveClerkToken({ skipCache: true });
         if (fresh) {
           const headers2 = new Headers(fetchInit.headers);
           headers2.set("Authorization", `Bearer ${fresh}`);
           const res2 = await fetch(input, { ...fetchInit, headers: headers2, redirect: "error" });
-          if (res2.status === 401 || res2.status === 403) {
-            signalClerkAuthLost(
-              "The server rejected your account session.",
-              "Try Reload app below, or sign out and sign in again. After a deployment, reloading usually fixes stale auth.",
-            );
+          if (res2.status === 401) {
+            throw new Error(`Unauthorized after token refresh (${urlStr})`);
           }
           return res2;
         }
-        signalClerkAuthLost(
-          "No active account session token.",
-          "Sign in again, or reload the app if you just updated.",
-        );
-      } catch {
+      } catch (retryErr) {
+        if (retryErr instanceof Error && retryErr.message.startsWith("Unauthorized after token refresh")) {
+          throw retryErr;
+        }
         /* return first 401 */
       }
     }
@@ -118,12 +135,7 @@ export async function fetchWithAuth(
 }
 
 export async function getClerkToken(opts?: ClerkGetTokenOptions): Promise<string | null> {
-  if (!clerkGetToken) return null;
-  try {
-    return await clerkGetToken(opts);
-  } catch {
-    return null;
-  }
+  return resolveClerkToken(opts);
 }
 
 const MAX_ERROR_BODY_CHARS = 500;

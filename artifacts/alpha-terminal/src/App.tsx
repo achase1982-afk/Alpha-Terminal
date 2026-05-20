@@ -160,7 +160,7 @@ function AuthReadyGateInner({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setClerkTokenGetter((opts) => getToken(opts));
-    setAuthTokenGetter(() => getToken());
+    setAuthTokenGetter((opts) => getToken(opts));
     setReady(true);
     return () => {
       setClerkTokenGetter(async () => null);

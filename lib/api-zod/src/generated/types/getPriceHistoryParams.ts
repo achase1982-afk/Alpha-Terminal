@@ -8,7 +8,10 @@
 
 export type GetPriceHistoryParams = {
   symbol: string;
-  accessToken: string;
+  /**
+   * Deprecated — server uses stored Schwab tokens when omitted
+   */
+  accessToken?: string;
   periodType?: string;
   period?: number;
   frequencyType?: string;
