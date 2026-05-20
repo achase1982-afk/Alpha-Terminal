@@ -13,6 +13,50 @@ import { toast } from "sonner";
 const RETRYABLE_CHAT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const MULTI_AGENT_MODEL = "__multi_agent__";
 const MULTI_AGENT_STORAGE_KEY = "marketNewsChatMultiModels";
+const MULTI_AGENT_SYNTH_STORAGE_KEY = "marketNewsChatSynthesizerModel";
+
+const SYNTH_DRAFT_CHAR_CAP = 8000;
+
+type SynthDraft = { model: string; text: string };
+type SynthFailure = { model: string; message: string };
+
+function buildMultiAgentSynthesisUserContent(successes: SynthDraft[], failures: SynthFailure[]): string {
+  const blocks = successes
+    .map((x) => {
+      const raw = x.text.trim();
+      const clipped =
+        raw.length > SYNTH_DRAFT_CHAR_CAP
+          ? `${raw.slice(0, SYNTH_DRAFT_CHAR_CAP)}\n\n_[Draft truncated for length]_`
+          : raw;
+      return `### Draft from \`${x.model}\`\n\n${clipped}`;
+    })
+    .join("\n\n---\n\n");
+
+  const failNote =
+    failures.length > 0
+      ? `\n\n### Research runs that failed (no draft)\n\n${failures.map((f) => `- \`${f.model}\`: ${f.message}`).join("\n")}`
+      : "";
+
+  return `You are the final **synthesizer** for Alpha Terminal.
+
+Several models ran in parallel on the trader's question (full conversation is above, including any live Schwab / terminal context the assistant already received).
+
+Below are **research drafts**. Treat them as **unvetted** — they may disagree, omit data, or hallucinate facts, prices, symbols, or catalysts.
+
+### Your instructions
+
+1. Output **one** markdown answer as the **single source of truth** for the trader.
+2. **Ground** every material factual claim in: the user's messages, and any explicit numbers / flow / headlines in the conversation or server context above. Use a draft sentence only when it **clearly** matches that evidence.
+3. When drafts conflict on facts, **prefer** what is supported by server/market context in the thread; if none resolves it, say so briefly instead of guessing.
+4. **Discard** claims that look invented or unsupported (e.g. unrelated ticker, impossible prints, numbers contradicting context, "hard numbers" with no basis in context).
+5. Write as **one** coherent analyst response — **no** "Model A / Model B", no "consensus" headings, no process narration.
+
+### Research drafts
+
+${blocks}${failNote}
+
+Write the final markdown answer now.`;
+}
 
 const ALL_CHAT_MODELS = [
   "claude-opus-4-7",
@@ -97,6 +141,19 @@ export function MarketNewsChatPanel() {
   }, [symU, remeasure]);
 
   useEffect(() => {
+    if (isStreaming) return;
+    remeasure();
+    const t1 = setTimeout(remeasure, 50);
+    const t2 = setTimeout(remeasure, 220);
+    const t3 = setTimeout(remeasure, 520);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, [isStreaming, remeasure]);
+
+  useEffect(() => {
     setLastFailedMessage(null);
   }, [symU, activeThreadId]);
 
@@ -131,6 +188,17 @@ export function MarketNewsChatPanel() {
   const activeModels = useMultiAgent ? multiAgentModels : [modelSend];
   const modelControlValue = useMultiAgent ? MULTI_AGENT_MODEL : modelSend;
 
+  const [synthesizerModel, setSynthesizerModel] = useState<string>(() => {
+    if (typeof window === "undefined") return ALL_CHAT_MODELS[0]!;
+    try {
+      const raw = sessionStorage.getItem(MULTI_AGENT_SYNTH_STORAGE_KEY);
+      if (raw && ALL_CHAT_MODELS.includes(raw)) return raw;
+    } catch {
+      /* ignore */
+    }
+    return ALL_CHAT_MODELS[0]!;
+  });
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -139,6 +207,15 @@ export function MarketNewsChatPanel() {
       /* QuotaExceededError */
     }
   }, [multiAgentModels]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      sessionStorage.setItem(MULTI_AGENT_SYNTH_STORAGE_KEY, synthesizerModel);
+    } catch {
+      /* QuotaExceededError */
+    }
+  }, [synthesizerModel]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -240,52 +317,6 @@ export function MarketNewsChatPanel() {
     [marketContext, symU],
   );
 
-  const synthesizeMultiModel = useCallback((successes: ModelSuccess[], failures: ModelFailure[]): string => {
-    const firstSentence = (text: string): string => {
-      const cleaned = text.replace(/\s+/g, " ").trim();
-      if (!cleaned) return "";
-      const m = cleaned.match(/(.+?[.!?])(\s|$)/);
-      return (m?.[1] ?? cleaned).slice(0, 220);
-    };
-
-    if (successes.length === 1) {
-      const lines = [
-        "### Consensus",
-        `- Only one model succeeded: **${successes[0]!.model}**.`,
-        "",
-        "### Disagreements",
-        "- Not applicable with a single successful model.",
-      ];
-      if (failures.length > 0) {
-        lines.push(...failures.map((f) => `- Model failed: **${f.model}** (${f.message}).`));
-      }
-      lines.push("", "### Final synthesis", successes[0]!.text);
-      return lines.join("\n");
-    }
-
-    const uniqueLead = [...new Set(successes.map((s) => firstSentence(s.text)).filter(Boolean))];
-    const consensusLine =
-      uniqueLead.length <= 1
-        ? `- Models aligned on the same core answer (${successes.map((s) => `**${s.model}**`).join(", ")}).`
-        : `- Models agree on the broad direction, but differ on emphasis/detail (${successes.map((s) => `**${s.model}**`).join(", ")}).`;
-
-    const disagreementLines = successes.map((s) => `- **${s.model}**: ${firstSentence(s.text) || s.text.slice(0, 160)}`);
-    const failureLines = failures.map((f) => `- Model failed: **${f.model}** (${f.message}).`);
-    const finalBase = successes.slice().sort((a, b) => b.text.length - a.text.length)[0]!;
-
-    return [
-      "### Consensus",
-      consensusLine,
-      "",
-      "### Disagreements",
-      ...disagreementLines,
-      ...(failureLines.length > 0 ? failureLines : []),
-      "",
-      "### Final synthesis",
-      finalBase.text,
-    ].join("\n");
-  }, []);
-
   const runAssistantGeneration = useCallback(
     async (args: {
       tid: string;
@@ -351,7 +382,31 @@ export function MarketNewsChatPanel() {
           return;
         }
 
-        setAssistantContent(symU, tid, assistantId, synthesizeMultiModel(successes, failures));
+        const synthDrafts: SynthDraft[] = successes.map((s) => ({ model: s.model, text: s.text }));
+        const synthFailures: SynthFailure[] = failures.map((f) => ({ model: f.model, message: f.message }));
+        const synthesisMessage: ChatHistoryMessage = {
+          role: "user",
+          content: buildMultiAgentSynthesisUserContent(synthDrafts, synthFailures),
+        };
+        const synthesisHistory: ChatHistoryMessage[] = [...history, synthesisMessage];
+        try {
+          const finalText = await fetchModelReply(
+            synthesizerModel,
+            synthesisHistory,
+            controller.signal,
+            (partial) => setAssistantContent(symU, tid, assistantId, partial),
+          );
+          setAssistantContent(symU, tid, assistantId, finalText);
+        } catch (synErr: unknown) {
+          const parsed = normalizeFetchError(synErr);
+          if (parsed.retryable) setLastFailedMessage(sourcePrompt);
+          setAssistantContent(
+            symU,
+            tid,
+            assistantId,
+            `**Error:** Synthesis failed (${parsed.message}).${parsed.retryable ? " Please retry." : ""}`,
+          );
+        }
         if (failures.some((f) => f.retryable)) {
           setLastFailedMessage(sourcePrompt);
         }
@@ -374,7 +429,7 @@ export function MarketNewsChatPanel() {
         setIsStreaming(false);
       }
     },
-    [activeModels, fetchModelReply, normalizeFetchError, setAssistantContent, symU, synthesizeMultiModel],
+    [activeModels, fetchModelReply, normalizeFetchError, setAssistantContent, symU, synthesizerModel],
   );
 
   const sendMessage = useCallback(
@@ -448,6 +503,8 @@ export function MarketNewsChatPanel() {
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
+    setActiveMultiAgentCount(0);
+    setStreamingMultiModels([]);
     setIsStreaming(false);
   }, []);
 
@@ -590,6 +647,24 @@ export function MarketNewsChatPanel() {
             >
               {multiAgentModels.length || 0} selected
             </button>
+          )}
+          {useMultiAgent && multiAgentModels.length > 1 && (
+            <label className="flex items-center gap-1 min-w-0">
+              <span className="hidden sm:inline font-mono text-[10px] text-white/55 shrink-0">Synthesize</span>
+              <select
+                value={synthesizerModel}
+                onChange={(e) => setSynthesizerModel(e.target.value)}
+                className="min-w-0 max-w-[120px] sm:max-w-[200px] truncate bg-black/60 border border-card-border rounded px-1.5 py-1 font-mono text-[11px] text-white"
+                aria-label="Model that runs the final synthesis pass"
+                title="After parallel research, this model receives every draft and writes one grounded answer"
+              >
+                {ALL_CHAT_MODELS.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </label>
           )}
           {useMultiAgent && multiModelPickerOpen && (
             <div className="absolute right-0 top-[calc(100%+6px)] z-[10120] min-w-[220px] rounded-md border border-card-border bg-[#0b0b0b] p-2 shadow-xl">
@@ -788,7 +863,9 @@ export function MarketNewsChatPanel() {
                   Running multi-agent ({activeMultiAgentCount} models): {namesLine}
                 </p>
                 <p className="mt-1 font-mono text-[10px] uppercase tracking-wide text-white/45">
-                  Models converge on one synthesized reply
+                  {last.content?.trim()
+                    ? `Streaming final answer (${synthesizerModel})`
+                    : "Parallel research in progress — then one synthesized reply"}
                 </p>
               </div>
             );
