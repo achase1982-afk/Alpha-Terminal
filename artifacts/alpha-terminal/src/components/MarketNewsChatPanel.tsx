@@ -226,8 +226,13 @@ export function MarketNewsChatPanel() {
     }
   }, [messages, isStreaming, toolPills]);
 
+  type SendMessageOptions = {
+    /** Replace from this index: keep prior messages, drop this one and after, append new assistant only. */
+    truncateToIndex?: number;
+  };
+
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, options?: SendMessageOptions) => {
       if (!text.trim() || isStreaming) return;
 
       const useServerMultiAgent = useMultiAgent && multiAgentModels.length >= 2;
@@ -248,7 +253,14 @@ export function MarketNewsChatPanel() {
 
       const userMsg: UiMessage = { id: nextMsgId(), role: "user", content: text.trim() };
       const assistantId = nextMsgId();
-      setMessages((prev) => [...prev, userMsg, { id: assistantId, role: "assistant", content: "" }]);
+      const truncateToIndex = options?.truncateToIndex;
+      setMessages((prev) => {
+        const assistantPlaceholder: UiMessage = { id: assistantId, role: "assistant", content: "" };
+        if (truncateToIndex !== undefined) {
+          return [...prev.slice(0, truncateToIndex), assistantPlaceholder];
+        }
+        return [...prev, userMsg, assistantPlaceholder];
+      });
       setInput("");
       setToolPills([]);
       setIsStreaming(true);
@@ -384,12 +396,36 @@ export function MarketNewsChatPanel() {
 
   const handleClear = handleNewThread;
 
+  const regenerateAssistantMessage = useCallback(
+    (assistantMsgId: string) => {
+      if (isStreaming) return;
+      const idx = messages.findIndex((m) => m.id === assistantMsgId);
+      if (idx < 0) return;
+      let userText: string | null = null;
+      for (let i = idx - 1; i >= 0; i--) {
+        if (messages[i]?.role === "user") {
+          userText = messages[i]!.content;
+          break;
+        }
+      }
+      if (!userText) return;
+      cancelAssistantSpeech();
+      void sendMessage(userText, { truncateToIndex: idx });
+    },
+    [isStreaming, messages, sendMessage],
+  );
+
   const handleRetry = useCallback(() => {
     if (!lastFailedMessage || isStreaming) return;
-    setMessages((prev) => prev.filter((m) => !m.retryable));
+    const failedIdx = messages.findIndex((m) => m.retryable);
     setLastFailedMessage(null);
+    cancelAssistantSpeech();
+    if (failedIdx >= 0) {
+      void sendMessage(lastFailedMessage, { truncateToIndex: failedIdx });
+      return;
+    }
     void sendMessage(lastFailedMessage);
-  }, [isStreaming, lastFailedMessage, sendMessage]);
+  }, [isStreaming, lastFailedMessage, messages, sendMessage]);
 
   const renderComposer = () => (
     <form
@@ -630,7 +666,13 @@ export function MarketNewsChatPanel() {
                 <div className="font-mono text-[14px] text-[#f5f5f5] prose prose-invert prose-sm max-w-none">
                   <ReactMarkdown>{msg.content}</ReactMarkdown>
                 </div>
-                <AssistantListenButton messageId={msg.id} markdownText={msg.content} size="sm" />
+                <AssistantListenButton
+                  messageId={msg.id}
+                  markdownText={msg.content}
+                  size="sm"
+                  onRetry={() => regenerateAssistantMessage(msg.id)}
+                  retryDisabled={isStreaming}
+                />
                 {msg.retryable && !isStreaming && (
                   <button type="button" onClick={handleRetry} className="mt-1 text-[12px] text-white/70">
                     Retry
