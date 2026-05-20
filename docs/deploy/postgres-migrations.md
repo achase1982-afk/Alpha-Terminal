@@ -13,7 +13,7 @@ If self-healing logs a warning (permissions, read-only user), use the manual ste
 1. **Provision Postgres** and copy the **internal** connection URL (TLS where required).
 2. Set **`DATABASE_URL`** on the **same process** that runs the Node backend.
 
-3. **Start command:** keep the default **`CMD`** from the root Dockerfile (`/app/start.sh`) or `railway.toml` **`startCommand`** (same path). That runs `artifacts/api-server` **`pnpm run migrate:deploy`** (programmatic Drizzle migrator over `lib/db/drizzle`), then starts the compiled server. Do **not** override the start command to only `node dist/index.mjs` — new tables (e.g. `chat_threads` / `chat_messages` from migration 0034) will be missing and chat will 500.
+3. **Start command:** keep **`/bin/sh /app/start.sh`** from `artifacts/api-server/railway.toml` **`startCommand`** (or the Dockerfile `CMD`). That runs `artifacts/api-server` **`pnpm run migrate:deploy`** (programmatic Drizzle migrator over `lib/db/drizzle`), then starts the compiled server. Do **not** override the start command to only `node dist/index.mjs` — new tables (e.g. `chat_threads` / `chat_messages` from migration 0034) will be missing and chat will 500.
 
 4. **Redeploy** after changing `DATABASE_URL` or pulling migrations.
 

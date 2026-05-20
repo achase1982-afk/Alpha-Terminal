@@ -1,0 +1,12 @@
+# Railway: api-server (Express backend). Config file path in the service must be:
+#   artifacts/api-server/railway.toml
+# (absolute from repo root: /artifacts/api-server/railway.toml)
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "artifacts/api-server/Dockerfile"
+watchPatterns = ["artifacts/api-server/**", "lib/**", "start.sh", "pnpm-lock.yaml"]
+
+[deploy]
+startCommand = "/bin/sh /app/start.sh"
+healthcheckPath = "/api/healthz"
