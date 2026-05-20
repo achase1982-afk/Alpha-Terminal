@@ -5,10 +5,9 @@ set -e
 # fully-formed URL — no Railway reference syntax like ${{service.VAR}}.
 #
 # Priority:
-#   1. API_BACKEND is already set (Railway resolved it before container start,
-#      or the user set it explicitly as a plain URL).
-#   2. Construct it from API_SERVER_HOST + API_SERVER_PORT, falling back to
-#      the Railway internal hostname and port 8080.
+#   1. API_BACKEND is already set (Railway resolved it before container start).
+#   2. API_SERVER_URL (full base URL, no trailing slash).
+#   3. API_SERVER_HOST + API_SERVER_PORT, falling back to *.railway.internal:8080.
 #
 # On Railway, the backend listens on whatever port Railway hands it via PORT
 # (typically a random 5xxx port). The frontend container has no way to know
@@ -21,7 +20,12 @@ set -e
 DEFAULT_PORT="8080"
 USED_DEFAULT_PORT="0"
 
-if [ -z "${API_BACKEND}" ]; then
+if [ -n "${API_BACKEND}" ]; then
+    echo "[entrypoint] API_BACKEND already set: ${API_BACKEND}"
+elif [ -n "${API_SERVER_URL}" ]; then
+    API_BACKEND="${API_SERVER_URL}"
+    echo "[entrypoint] API_BACKEND from API_SERVER_URL: ${API_BACKEND}"
+else
     _host="${API_SERVER_HOST:-api-server.railway.internal}"
     if [ -z "${API_SERVER_PORT}" ]; then
         _port="${DEFAULT_PORT}"
@@ -31,8 +35,6 @@ if [ -z "${API_BACKEND}" ]; then
     fi
     API_BACKEND="http://${_host}:${_port}"
     echo "[entrypoint] API_BACKEND not set — constructed from host/port: ${API_BACKEND}"
-else
-    echo "[entrypoint] API_BACKEND already set: ${API_BACKEND}"
 fi
 
 export API_BACKEND
@@ -72,13 +74,16 @@ if [ "${USED_DEFAULT_PORT}" = "1" ]; then
   (typically 5xxx), so 8080 is almost certainly wrong. Every /api/* request
   from the frontend will hang or 502 because nothing is listening on 8080.
 
-  Fix: in the Railway dashboard for the alpha-terminal service, set ONE of:
+  Fix (alpha-terminal → Variables, use your backend service name from the canvas):
 
-    API_BACKEND=http://<backend-host>:${{<backend-service>.PORT}}
     API_SERVER_PORT=${{<backend-service>.PORT}}
+    — or —
+    API_BACKEND=http://${{<backend-service>.RAILWAY_PRIVATE_DOMAIN}}:${{<backend-service>.PORT}}
+    — or (public URL, no port needed) —
+    API_BACKEND=https://${{<backend-service>.RAILWAY_PUBLIC_DOMAIN}}
 
-  The ${{<service>.PORT}} reference is substituted by Railway at deploy
-  time with the backend service's actual assigned port.
+  Easiest alternative: on the BACKEND service only, set PORT=8080 and redeploy
+  both services (frontend defaults to port 8080 on *.railway.internal).
 ================================================================================
 WARN
 fi
@@ -116,13 +121,29 @@ else
     probe_result="skipped"
 fi
 
+# When still on the default 8080 guess, try a short /api/healthz sweep before nginx starts.
+if [ "${probe_result}" = "fail" ] && [ "${USED_DEFAULT_PORT}" = "1" ]; then
+    echo "[probe] default port unreachable — scanning common backend ports for /api/healthz ..."
+    for try_port in ${API_PORT_FALLBACK_LIST:-8080 3000 5000 8000 8081}; do
+        if wget -q -O /dev/null --timeout=2 --tries=1 \
+            "http://${_probe_host}:${try_port}/api/healthz" 2>/dev/null; then
+            API_BACKEND="http://${_probe_host}:${try_port}"
+            _probe_port="${try_port}"
+            USED_DEFAULT_PORT="0"
+            probe_result="ok"
+            echo "[probe] discovered backend at ${API_BACKEND} (GET /api/healthz)"
+            break
+        fi
+    done
+fi
+
 case "${probe_result}" in
     ok)
         echo "[probe] TCP OK: ${_probe_host}:${_probe_port} is reachable from frontend container"
         ;;
     fail)
         echo "[probe] TCP FAIL: ${_probe_host}:${_probe_port} is NOT reachable from frontend container"
-        echo "[probe] /api/* requests will hang or 502 until API_BACKEND points at a listening port"
+        echo "[probe] /api/* requests will hang, 502, or show empty UI until API_BACKEND is correct"
         ;;
     inconclusive)
         echo "[probe] TCP INCONCLUSIVE: ${_probe_host} resolved but TCP check via wget could not confirm connectivity"

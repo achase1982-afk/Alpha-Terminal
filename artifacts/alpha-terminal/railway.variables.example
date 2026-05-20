@@ -1,0 +1,8 @@
+# Paste into Railway → alpha-terminal → Variables (Raw Editor).
+# Replace "api-server" with your backend service name from the project canvas.
+
+API_SERVER_PORT=${{api-server.PORT}}
+
+# Or use one of these instead of API_SERVER_PORT:
+# API_BACKEND=http://${{api-server.RAILWAY_PRIVATE_DOMAIN}}:${{api-server.PORT}}
+# API_BACKEND=https://${{api-server.RAILWAY_PUBLIC_DOMAIN}}

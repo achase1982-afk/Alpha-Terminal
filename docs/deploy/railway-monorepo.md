@@ -29,3 +29,44 @@ In the deployment build logs you should see:
 - api-server: `load build definition from artifacts/api-server/Dockerfile`, then `[start.sh] Starting server...`
 
 If alpha-terminal logs show `start.sh` or `node dist/index.mjs`, the wrong config file or start command is still active.
+
+## UI loads but no data (empty quotes, “Loading news…”)
+
+The app calls `/api/*` on the **alpha-terminal** host; nginx proxies those to the **api-server** using `API_BACKEND`. If the backend port is wrong (frontend defaults to **8080**, Railway often assigns a random **5xxx** port), every API call fails and the UI looks empty.
+
+### Fix (pick one) — Railway → **alpha-terminal** → **Variables**
+
+Use the exact **api-server** service name from your project canvas (replace `api-server` below if yours differs):
+
+| Variable | Value |
+|----------|--------|
+| `API_SERVER_PORT` | `${{api-server.PORT}}` |
+
+Or set a full URL:
+
+| Variable | Value |
+|----------|--------|
+| `API_BACKEND` | `http://${{api-server.RAILWAY_PRIVATE_DOMAIN}}:${{api-server.PORT}}` |
+
+Or use the public backend URL (no port):
+
+| Variable | Value |
+|----------|--------|
+| `API_BACKEND` | `https://${{api-server.RAILWAY_PUBLIC_DOMAIN}}` |
+
+### Alternative — Railway → **api-server** → **Variables**
+
+| Variable | Value |
+|----------|--------|
+| `PORT` | `8080` |
+
+Redeploy **api-server**, then **alpha-terminal**. The frontend default `api-server.railway.internal:8080` will then match.
+
+### Verify
+
+In **alpha-terminal** deploy logs after restart:
+
+- `[probe] TCP OK` or `discovered backend at .../api/healthz`
+- Not `[probe] TCP FAIL` or the port-8080 warning
+
+In the browser (while logged in), open DevTools → Network → reload → `/api/market/quote` or `/api/market/news` should be **200**, not 502/504.

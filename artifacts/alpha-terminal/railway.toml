@@ -4,6 +4,9 @@
 #
 # Do NOT use the api-server railway.toml or start.sh here — that deploys Express and
 # returns "Cannot GET /" on the public domain.
+#
+# Live market data: set alpha-terminal variable API_SERVER_PORT=${{api-server.PORT}}
+# (see railway.variables.example and docs/deploy/railway-monorepo.md).
 
 [build]
 builder = "DOCKERFILE"
