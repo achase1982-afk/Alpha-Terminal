@@ -6,6 +6,7 @@ import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { useOrderAlertStore, type OrderAlert } from "@/stores/orderAlertStore";
 import { fetchWithAuth, getClerkToken } from "@/lib/fetchWithAuth";
 import { signalSchwabAuthLost } from "@/lib/authNoticeStore";
+import { refreshSchwabViaServer, syncSchwabTokensFromServer } from "@/lib/schwabTokenSync";
 import type { LiveQuote, LiveNewsItem } from "@/lib/store";
 
 declare global {
@@ -92,59 +93,10 @@ async function refreshAndRetry(retryCount: number): Promise<boolean> {
   }
 
   const state = useTerminalStore.getState();
-  const { refreshToken, traderRefreshToken } = state;
+  await syncSchwabTokensFromServer();
+  const { ok } = await refreshSchwabViaServer();
 
-  let traderOk = false;
-  if (traderRefreshToken) {
-    try {
-      const res = await fetchWithAuth("/api/auth/trader-refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken: traderRefreshToken }),
-        _authRetry: true,
-      });
-      if (res.ok) {
-        const data = (await res.json()) as {
-          accessToken?: string;
-          refreshToken?: string;
-        };
-        if (data.accessToken) {
-          state.setTraderTokens(
-            data.accessToken,
-            data.refreshToken ?? traderRefreshToken
-          );
-          traderOk = true;
-        }
-      }
-    } catch {}
-  }
-
-  let marketOk = false;
-  if (refreshToken) {
-    try {
-      const res = await fetchWithAuth("/api/auth/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken }),
-        _authRetry: true,
-      });
-      if (res.ok) {
-        const data = (await res.json()) as {
-          accessToken?: string;
-          refreshToken?: string;
-        };
-        if (data.accessToken) {
-          state.setTokens(
-            data.accessToken,
-            data.refreshToken ?? refreshToken
-          );
-          marketOk = true;
-        }
-      }
-    } catch {}
-  }
-
-  if (!marketOk && !traderOk) {
+  if (!ok) {
     signalSchwabAuthLost(
       "Schwab stream rejected the current login.",
       "Live data paused. Reconnect Schwab — your Alpha Terminal account stays signed in.",

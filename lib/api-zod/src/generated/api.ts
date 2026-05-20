@@ -41,7 +41,7 @@ export const ExchangeCodeResponse = zod.object({
  * @summary Refresh access token
  */
 export const RefreshTokenBody = zod.object({
-  refreshToken: zod.string(),
+  refreshToken: zod.string().optional(),
 });
 
 export const RefreshTokenResponse = zod.object({
