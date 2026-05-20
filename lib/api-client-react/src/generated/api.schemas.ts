@@ -116,10 +116,49 @@ export interface OptionsAnalysisRequest {
 }
 
 export interface ChatRequest {
-  question: string;
-  marketContext?: string;
+  thread_id?: string;
+  message: string;
   model?: string;
-  temperature?: number;
+  /** Ambient page symbol (e.g. GOOGL) — not a routing override */
+  symbol?: string;
+}
+
+export interface ChatThread {
+  id: string;
+  symbol?: string | null;
+  title: string;
+  summary?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChatThreadsResponse {
+  threads: ChatThread[];
+}
+
+export type ChatMessageRole =
+  (typeof ChatMessageRole)[keyof typeof ChatMessageRole];
+
+export const ChatMessageRole = {
+  user: "user",
+  assistant: "assistant",
+} as const;
+
+export type ChatMessageToolCalls = { [key: string]: unknown } | null;
+
+export type ChatMessageToolResults = { [key: string]: unknown } | null;
+
+export interface ChatMessage {
+  id: string;
+  role: ChatMessageRole;
+  content: string;
+  toolCalls?: ChatMessageToolCalls;
+  toolResults?: ChatMessageToolResults;
+  createdAt: string;
+}
+
+export interface ChatMessagesResponse {
+  messages: ChatMessage[];
 }
 
 export interface AiAnalysisResponse {
@@ -133,12 +172,18 @@ export interface ModelsResponse {
 
 export type GetQuoteParams = {
   symbol: string;
-  accessToken: string;
+  /**
+   * Deprecated — server uses stored Schwab tokens when omitted
+   */
+  accessToken?: string;
 };
 
 export type GetPriceHistoryParams = {
   symbol: string;
-  accessToken: string;
+  /**
+   * Deprecated — server uses stored Schwab tokens when omitted
+   */
+  accessToken?: string;
   periodType?: string;
   period?: number;
   frequencyType?: string;
@@ -147,11 +192,18 @@ export type GetPriceHistoryParams = {
 
 export type GetOptionChainParams = {
   symbol: string;
-  accessToken: string;
+  /**
+   * Deprecated — server uses stored Schwab tokens when omitted
+   */
+  accessToken?: string;
   contractType?: string;
   daysToExpiration?: number;
   /**
    * Number of strikes above and below ATM to return from broker
    */
   strikeCount?: number;
+};
+
+export type ListChatThreadsParams = {
+  symbol?: string;
 };

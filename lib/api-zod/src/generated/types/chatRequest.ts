@@ -7,8 +7,9 @@
  */
 
 export interface ChatRequest {
-  question: string;
-  marketContext?: string;
+  thread_id?: string;
+  message: string;
   model?: string;
-  temperature?: number;
+  /** Ambient page symbol (e.g. GOOGL) — not a routing override */
+  symbol?: string;
 }

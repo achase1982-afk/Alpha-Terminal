@@ -1259,7 +1259,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: rawData, isLoading, error, isFetching } = useGetOptionChain<OptionChainResponse>(
-    { symbol, accessToken: "", contractType: "ALL", strikeCount },
+    { symbol, contractType: "ALL", strikeCount },
     { query: { enabled: !!accessToken && !!symbol, staleTime: 30_000, gcTime: 5 * 60_000, retry: 2 } }
   );
 
@@ -1275,7 +1275,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
   const streamQuote = useTerminalStore((s) => s.streamPrices[symbol.toUpperCase()]);
 
   const { data: quote } = useGetQuote(
-    { symbol, accessToken: "" },
+    { symbol },
     { query: { enabled: !!accessToken } }
   );
 

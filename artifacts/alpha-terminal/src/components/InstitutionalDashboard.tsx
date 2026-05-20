@@ -235,12 +235,12 @@ export function InstitutionalDashboard({ candles }: Props) {
   const qqqQuote = useTerminalStore((s) => s.streamPrices["QQQ"]);
 
   const { data: fundData } = useGetQuote(
-    { symbol, accessToken: "" },
+    { symbol },
     { query: { enabled: !!symbol } }
   );
 
   const { data: historyData } = useGetPriceHistory(
-    { symbol, accessToken: "", periodType: "month", period: 3, frequencyType: "daily", frequency: 1 },
+    { symbol, periodType: "month", period: 3, frequencyType: "daily", frequency: 1 },
     { query: { enabled: !!symbol } }
   );
 

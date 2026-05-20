@@ -8,6 +8,7 @@ import healthRouter from "./routes/health";
 import runFullBackfillRouter from "./routes/runFullBackfill";
 import { logger } from "./lib/logger";
 import { httpTimingMiddleware } from "./middleware/httpTiming";
+import { clerkAuthBridge } from "./middleware/clerkAuthBridge";
 
 const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
 
@@ -106,6 +107,7 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 if (DEV_BYPASS) {
   logger.warn("DEV_BYPASS_AUTH is ON — all Clerk auth checks are disabled");
 } else {
+  app.use(clerkAuthBridge);
   app.use(clerkMiddleware());
 }
 

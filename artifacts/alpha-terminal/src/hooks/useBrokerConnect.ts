@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 
 const NAVIGATION_TIMEOUT_MS = 90_000;
 const RETURN_RESET_DELAY_MS = 4_000;
@@ -32,7 +33,7 @@ export function useBrokerConnect() {
     if (fetchInFlightRef.current) return;
     fetchInFlightRef.current = true;
     try {
-      const res = await fetch("/api/auth/trader-url", { credentials: "include" });
+      const res = await fetchWithAuth("/api/auth/trader-url", { credentials: "include" });
       const data = await res.json();
       if (data?.url) setOauthUrl(data.url);
     } catch {

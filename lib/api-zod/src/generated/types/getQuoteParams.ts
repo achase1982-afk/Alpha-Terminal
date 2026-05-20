@@ -8,5 +8,8 @@
 
 export type GetQuoteParams = {
   symbol: string;
-  accessToken: string;
+  /**
+   * Deprecated — server uses stored Schwab tokens when omitted
+   */
+  accessToken?: string;
 };

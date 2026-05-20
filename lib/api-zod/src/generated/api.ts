@@ -64,7 +64,10 @@ export const GetAuthStatusResponse = zod.object({
  */
 export const GetQuoteQueryParams = zod.object({
   symbol: zod.coerce.string(),
-  accessToken: zod.coerce.string(),
+  accessToken: zod.coerce
+    .string()
+    .optional()
+    .describe("Deprecated — server uses stored Schwab tokens when omitted"),
 });
 
 export const GetQuoteResponse = zod.object({
@@ -95,7 +98,10 @@ export const getPriceHistoryQueryFrequencyDefault = 1;
 
 export const GetPriceHistoryQueryParams = zod.object({
   symbol: zod.coerce.string(),
-  accessToken: zod.coerce.string(),
+  accessToken: zod.coerce
+    .string()
+    .optional()
+    .describe("Deprecated — server uses stored Schwab tokens when omitted"),
   periodType: zod.coerce
     .string()
     .default(getPriceHistoryQueryPeriodTypeDefault),
@@ -129,7 +135,10 @@ export const getOptionChainQueryDaysToExpirationDefault = 30;
 
 export const GetOptionChainQueryParams = zod.object({
   symbol: zod.coerce.string(),
-  accessToken: zod.coerce.string(),
+  accessToken: zod.coerce
+    .string()
+    .optional()
+    .describe("Deprecated — server uses stored Schwab tokens when omitted"),
   contractType: zod.coerce
     .string()
     .default(getOptionChainQueryContractTypeDefault),
@@ -146,7 +155,6 @@ export const GetOptionChainResponse = zod.object({
     zod.object({
       strike: zod.number(),
       expiration: zod.string(),
-      schwabSymbol: zod.string().optional(),
       bid: zod.number().optional(),
       ask: zod.number().optional(),
       bidSize: zod.number().optional(),
@@ -166,7 +174,6 @@ export const GetOptionChainResponse = zod.object({
     zod.object({
       strike: zod.number(),
       expiration: zod.string(),
-      schwabSymbol: zod.string().optional(),
       bid: zod.number().optional(),
       ask: zod.number().optional(),
       bidSize: zod.number().optional(),
@@ -203,6 +210,7 @@ export const RunTechnicalAnalysisBody = zod.object({
     fiftyTwoWeekHigh: zod.number().optional(),
     fiftyTwoWeekLow: zod.number().optional(),
     peRatio: zod.number().optional(),
+    nextEarningsDate: zod.string().optional(),
     error: zod.string().optional(),
   }),
   candles: zod.array(
@@ -215,16 +223,6 @@ export const RunTechnicalAnalysisBody = zod.object({
       volume: zod.number(),
     }),
   ),
-  fundamentals: zod.object({
-    marketCap: zod.number().nullable().optional(),
-    sharesOutstanding: zod.number().nullable().optional(),
-    peRatio: zod.number().nullable().optional(),
-    eps: zod.number().nullable().optional(),
-    beta: zod.number().nullable().optional(),
-    dividendYield: zod.number().nullable().optional(),
-    high52: zod.number().nullable().optional(),
-    low52: zod.number().nullable().optional(),
-  }).optional(),
   model: zod.string().optional(),
   temperature: zod.number().optional(),
   customPrompt: zod.string().optional(),
@@ -253,6 +251,7 @@ export const RunOptionsAnalysisBody = zod.object({
     fiftyTwoWeekHigh: zod.number().optional(),
     fiftyTwoWeekLow: zod.number().optional(),
     peRatio: zod.number().optional(),
+    nextEarningsDate: zod.string().optional(),
     error: zod.string().optional(),
   }),
   chain: zod.object({
@@ -309,18 +308,56 @@ export const RunOptionsAnalysisResponse = zod.object({
 });
 
 /**
- * @summary Run free-form AI chat with market context
+ * @summary Stream AI chat turn (SSE) with tool-based context
  */
 export const RunChatQueryBody = zod.object({
-  question: zod.string(),
-  marketContext: zod.string().optional(),
+  thread_id: zod.string().uuid().optional(),
+  message: zod.string(),
   model: zod.string().optional(),
-  temperature: zod.number().optional(),
+  symbol: zod
+    .string()
+    .optional()
+    .describe("Ambient page symbol (e.g. GOOGL) — not a routing override"),
 });
 
-export const RunChatQueryResponse = zod.object({
-  response: zod.string(),
-  error: zod.string().optional(),
+/**
+ * @summary List chat threads for the signed-in user
+ */
+export const ListChatThreadsQueryParams = zod.object({
+  symbol: zod.coerce.string().optional(),
+});
+
+export const ListChatThreadsResponse = zod.object({
+  threads: zod.array(
+    zod.object({
+      id: zod.string().uuid(),
+      symbol: zod.string().nullish(),
+      title: zod.string(),
+      summary: zod.string().nullish(),
+      createdAt: zod.date(),
+      updatedAt: zod.date(),
+    }),
+  ),
+});
+
+/**
+ * @summary Messages for a chat thread
+ */
+export const ListChatThreadMessagesParams = zod.object({
+  threadId: zod.coerce.string().uuid(),
+});
+
+export const ListChatThreadMessagesResponse = zod.object({
+  messages: zod.array(
+    zod.object({
+      id: zod.string().uuid(),
+      role: zod.enum(["user", "assistant"]),
+      content: zod.string(),
+      toolCalls: zod.object({}).passthrough().nullish(),
+      toolResults: zod.object({}).passthrough().nullish(),
+      createdAt: zod.date(),
+    }),
+  ),
 });
 
 /**

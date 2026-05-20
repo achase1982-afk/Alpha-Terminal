@@ -1,12 +1,18 @@
 export type CustomFetchOptions = RequestInit & {
   responseType?: "json" | "text" | "blob" | "auto";
+  /** @internal prevents infinite 401 retry loops */
+  _authRetry?: boolean;
 };
 
 export type ErrorType<T = unknown> = ApiError<T>;
 
 export type BodyType<T> = T;
 
-export type AuthTokenGetter = () => Promise<string | null> | string | null;
+export type AuthTokenGetterOptions = { skipCache?: boolean };
+
+export type AuthTokenGetter = (
+  opts?: AuthTokenGetterOptions,
+) => Promise<string | null> | string | null;
 
 const NO_BODY_STATUS = new Set([204, 205, 304]);
 const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
@@ -324,7 +330,7 @@ export async function customFetch<T = unknown>(
   options: CustomFetchOptions = {},
 ): Promise<T> {
   input = applyBaseUrl(input);
-  const { responseType = "auto", headers: headersInit, ...init } = options;
+  const { responseType = "auto", headers: headersInit, _authRetry, ...init } = options;
 
   const method = resolveMethod(input, init.method);
 
@@ -349,7 +355,7 @@ export async function customFetch<T = unknown>(
   // Attach bearer token when an auth getter is configured and no
   // Authorization header has been explicitly provided.
   if (_authTokenGetter && !headers.has("authorization")) {
-    const token = await _authTokenGetter();
+    const token = await Promise.resolve(_authTokenGetter());
     if (token) {
       headers.set("authorization", `Bearer ${token}`);
     }
@@ -357,7 +363,16 @@ export async function customFetch<T = unknown>(
 
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, method, headers });
+  let response = await fetch(input, { ...init, method, headers });
+
+  if (response.status === 401 && _authTokenGetter && !_authRetry) {
+    const fresh = await Promise.resolve(_authTokenGetter({ skipCache: true }));
+    if (fresh) {
+      const retryHeaders = mergeHeaders(isRequest(input) ? input.headers : undefined, headersInit);
+      retryHeaders.set("authorization", `Bearer ${fresh}`);
+      response = await fetch(input, { ...init, method, headers: retryHeaders });
+    }
+  }
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);

@@ -490,7 +490,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
 
   // ── Options chain for mixed equity+option legs ───────────────────────────
   const { data: extraChainData, isLoading: extraChainLoading } = useGetOptionChain(
-    { symbol, accessToken: "", contractType: "ALL", strikeCount: 100 },
+    { symbol, contractType: "ALL", strikeCount: 100 },
     { query: { enabled: !isMultiLeg && !isOption && chainFetchEnabled && !!accessToken, staleTime: 60_000, gcTime: 5 * 60_000 } }
   );
 

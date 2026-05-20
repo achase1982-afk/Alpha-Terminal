@@ -501,7 +501,6 @@ export default function TerminalPage() {
   const { data: historyData, isLoading: historyLoading } = useGetPriceHistory<PriceHistoryResponse>(
     {
       symbol,
-      accessToken: "",
       periodType: chartParams.periodType,
       period: chartParams.period,
       frequencyType: chartParams.frequencyType,
