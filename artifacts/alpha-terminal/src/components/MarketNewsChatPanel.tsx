@@ -8,27 +8,21 @@ import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
 import { useVisualViewportComposerMetrics } from "@/hooks/useVisualViewportKeyboardInset";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import {
+  AI_MODEL_IDS,
+  aiModelSelectLabel,
+  DEFAULT_AI_MODEL_ID,
+  isAiModelId,
+  migrateLegacyModelIdToCatalog,
+  type AiModelId,
+} from "@workspace/ai-models";
 
 const RETRYABLE_CHAT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const MULTI_AGENT_MODEL = "__multi_agent__";
 const MULTI_AGENT_STORAGE_KEY = "marketNewsChatMultiModels";
 const MULTI_AGENT_SYNTH_STORAGE_KEY = "marketNewsChatSynthesizerModel";
 
-const ALL_CHAT_MODELS = [
-  "claude-opus-4-7",
-  "claude-opus-4-6",
-  "claude-sonnet-4-6",
-  "claude-haiku-4-5",
-  "gemini-3.1-pro-preview",
-  "gemini-3-flash-preview",
-  "gemini-2.5-pro",
-  "gemini-2.5-flash",
-  "gpt-5.4",
-  "gpt-5.4-mini",
-  "gpt-5-mini",
-  "grok-4-1-fast-reasoning",
-  "grok-4",
-];
+const ALL_CHAT_MODELS: readonly AiModelId[] = AI_MODEL_IDS;
 
 const MULTI_AGENT_ORBIT_COLORS = ["#22d3ee", "#a78bfa", "#fbbf24", "#fb7185", "#4ade80", "#38bdf8"] as const;
 
@@ -112,7 +106,7 @@ export function MarketNewsChatPanel() {
   const setAiFeatureSetting = useTerminalStore((s) => s.setAiFeatureSetting);
 
   const symU = symbol.toUpperCase();
-  const modelSend = ALL_CHAT_MODELS.includes(aiModel) ? aiModel : ALL_CHAT_MODELS[0]!;
+  const modelSend = isAiModelId(aiModel) ? aiModel : DEFAULT_AI_MODEL_ID;
 
   const [useMultiAgent, setUseMultiAgent] = useState(false);
   const [multiModelPickerOpen, setMultiModelPickerOpen] = useState(false);
@@ -123,20 +117,22 @@ export function MarketNewsChatPanel() {
       if (!raw) return [];
       const parsed = JSON.parse(raw) as unknown;
       if (!Array.isArray(parsed)) return [];
-      return parsed.filter((m): m is string => typeof m === "string" && ALL_CHAT_MODELS.includes(m));
+      return parsed
+        .map((m) => (typeof m === "string" ? migrateLegacyModelIdToCatalog(m) : null))
+        .filter((m): m is AiModelId => m != null && isAiModelId(m));
     } catch {
       return [];
     }
   });
   const [synthesizerModel, setSynthesizerModel] = useState<string>(() => {
-    if (typeof window === "undefined") return ALL_CHAT_MODELS[0]!;
+    if (typeof window === "undefined") return DEFAULT_AI_MODEL_ID;
     try {
       const raw = sessionStorage.getItem(MULTI_AGENT_SYNTH_STORAGE_KEY);
-      if (raw && ALL_CHAT_MODELS.includes(raw)) return raw;
+      if (raw) return migrateLegacyModelIdToCatalog(raw);
     } catch {
       /* ignore */
     }
-    return ALL_CHAT_MODELS[0]!;
+    return DEFAULT_AI_MODEL_ID;
   });
   const [activeMultiAgentCount, setActiveMultiAgentCount] = useState(0);
   const modelControlValue = useMultiAgent ? MULTI_AGENT_MODEL : modelSend;
@@ -488,7 +484,7 @@ export function MarketNewsChatPanel() {
             <option value={MULTI_AGENT_MODEL}>multi-agent</option>
             {ALL_CHAT_MODELS.map((m) => (
               <option key={m} value={m}>
-                {m}
+                {aiModelSelectLabel(m)}
               </option>
             ))}
           </select>
@@ -545,7 +541,7 @@ export function MarketNewsChatPanel() {
                           setMultiAgentModels(next);
                         }}
                       />
-                      <span className="font-mono text-[11px] text-white/90">{model}</span>
+                      <span className="font-mono text-[11px] text-white/90">{aiModelSelectLabel(model)}</span>
                     </label>
                   );
                 })}

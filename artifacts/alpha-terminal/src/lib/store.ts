@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import { DEFAULT_AI_MODEL_ID, migrateLegacyModelIdToCatalog } from '@workspace/ai-models';
 import { fetchWithAuth } from './fetchWithAuth';
 
 const PERSIST_KEY = "alpha-terminal-storage";
@@ -551,17 +552,17 @@ export const useTerminalStore = create<TerminalState>()(
         overlays: { ...state.overlays, [overlay]: !state.overlays[overlay] } 
       })),
 
-      aiModel: 'claude-opus-4-6',
+      aiModel: DEFAULT_AI_MODEL_ID,
       setAiModel: (aiModel) => set({ aiModel }),
       aiTemp: 0,
       setAiTemp: (aiTemp) => set({ aiTemp }),
 
       aiFeatureSettings: {
-        marketPulse:   { model: 'claude-opus-4-6', temperature: 0 },
-        technicals:    { model: 'claude-opus-4-6', temperature: 0 },
-        strategist:    { model: 'claude-opus-4-6', temperature: 0 },
-        chat:          { model: 'claude-opus-4-6', temperature: 0, councilChairModel: 'claude-opus-4-6' },
-        scanner:       { model: 'claude-opus-4-6', temperature: 0 },
+        marketPulse:   { model: DEFAULT_AI_MODEL_ID, temperature: 0 },
+        technicals:    { model: DEFAULT_AI_MODEL_ID, temperature: 0 },
+        strategist:    { model: DEFAULT_AI_MODEL_ID, temperature: 0 },
+        chat:          { model: DEFAULT_AI_MODEL_ID, temperature: 0, councilChairModel: DEFAULT_AI_MODEL_ID },
+        scanner:       { model: DEFAULT_AI_MODEL_ID, temperature: 0 },
       },
       setAiFeatureSetting: (feature: keyof TerminalState['aiFeatureSettings'], key: string, value: string | number) =>
         set((state) => ({
@@ -1085,7 +1086,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 25,
+      version: 26,
       storage: createJSONStorage(() => quotaSafeLocalStorage),
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
@@ -1288,7 +1289,33 @@ export const useTerminalStore = create<TerminalState>()(
           if (chat && typeof chat === "object") {
             if (typeof chat.councilChairModel !== "string" || !chat.councilChairModel) {
               chat.councilChairModel =
-                typeof chat.model === "string" && chat.model ? chat.model : "claude-opus-4-6";
+                typeof chat.model === "string" && chat.model ? chat.model : DEFAULT_AI_MODEL_ID;
+            }
+          }
+        }
+        if (version < 26) {
+          if (typeof s["aiModel"] === "string") {
+            s["aiModel"] = migrateLegacyModelIdToCatalog(s["aiModel"]);
+          }
+          const features = s["aiFeatureSettings"] as Record<string, { model?: string; councilChairModel?: string }> | undefined;
+          if (features) {
+            for (const key of Object.keys(features)) {
+              const row = features[key];
+              if (row?.model) row.model = migrateLegacyModelIdToCatalog(row.model);
+              if (row?.councilChairModel) {
+                row.councilChairModel = migrateLegacyModelIdToCatalog(row.councilChairModel);
+              }
+            }
+          }
+          const cfg = s["aiLabStrategistConfig"] as Record<string, unknown> | undefined;
+          if (cfg && typeof cfg === "object") {
+            if (cfg["analystModelProvider"] === "xai") cfg["analystModelProvider"] = "google";
+            if (cfg["skepticModelProvider"] === "xai") cfg["skepticModelProvider"] = "google";
+            if (typeof cfg["analystModelName"] === "string") {
+              cfg["analystModelName"] = migrateLegacyModelIdToCatalog(cfg["analystModelName"]);
+            }
+            if (typeof cfg["skepticModelName"] === "string") {
+              cfg["skepticModelName"] = migrateLegacyModelIdToCatalog(cfg["skepticModelName"]);
             }
           }
         }

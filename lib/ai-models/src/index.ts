@@ -5,6 +5,7 @@
 
 export type AiModelProvider = "anthropic" | "google" | "openai";
 
+/** Strategist routing may still accept legacy xAI ids via `provider:model` overrides. */
 export type StrategistModelProvider = AiModelProvider | "xai";
 
 export type AiModelId =
@@ -46,6 +47,7 @@ export function isAiModelId(value: string): value is AiModelId {
   return AI_MODEL_ID_SET.has(value);
 }
 
+/** Coerce persisted or API model strings onto the catalog (unknown → default). */
 export function normalizeAiModelId(value: string | undefined | null): AiModelId {
   if (value && isAiModelId(value)) return value;
   return DEFAULT_AI_MODEL_ID;
@@ -73,6 +75,7 @@ export function modelsForProvider(provider: string): readonly AiModelId[] {
   return AI_MODEL_IDS;
 }
 
+/** Strategist settings store integer indices into this catalog. */
 export interface StrategistModelOption {
   provider: StrategistModelProvider;
   model: string;
@@ -87,8 +90,16 @@ export const STRATEGIST_MODEL_OPTIONS: readonly StrategistModelOption[] = AI_MOD
 
 export const STRATEGIST_MODEL_CATALOG_VERSION = 6;
 
+/** Remap v5 strategist catalog indices (8 models) → v6 (6 models). */
 export const STRATEGIST_CATALOG_V5_TO_V6_INDEX: readonly number[] = [
-  2, 4, 5, 1, 0, 2, 3, 3,
+  2, // 0 opus 4.7 → 2
+  4, // 1 gpt-5.5 → 4
+  5, // 2 gpt-5.4-mini → 5
+  1, // 3 gemini 3.1 pro → 1
+  0, // 4 gemini 3 flash → 0 (3.5 + thinking)
+  2, // 5 grok → 2 (opus)
+  3, // 6 sonnet 4.6 → 3
+  3, // 7 haiku → 3 (sonnet)
 ];
 
 export function remapStrategistCatalogIndexV5ToV6(idx: number): number {
@@ -100,6 +111,7 @@ export function remapStrategistCatalogIndexV5ToV6(idx: number): number {
   return 0;
 }
 
+/** Legacy persisted model ids → catalog id (AI Parameters / chat). */
 const LEGACY_MODEL_TO_CATALOG: Record<string, AiModelId> = {
   "claude-opus-4-6": "claude-opus-4-7",
   "claude-opus-4-20250514": "claude-opus-4-7",

@@ -8,8 +8,14 @@ import {
 /** Short-cut tokens for common Conviction Desk A/B configs (POST /analyze body). */
 export const CONVICTION_DESK_ROUTING_KEYS = [
   "anthropic-opus-4-7",
-  "anthropic-haiku-4-5",
+  "anthropic-sonnet-4-6",
   "openai-gpt-5-5-thinking",
+  "openai-gpt-5-4-mini",
+  "gemini-3-5-flash",
+  "gemini-3-1-pro",
+  /** @deprecated */
+  "anthropic-haiku-4-5",
+  /** @deprecated */
   "gemini-2-5-pro",
 ] as const;
 
@@ -61,17 +67,30 @@ const ROUTING_TABLE: Record<
   { model: StrategistModelOption; anthropicThinkingBudgetOverride?: number }
 > = {
   "anthropic-opus-4-7": {
-    model: { provider: "anthropic", model: "claude-opus-4-7", label: "Claude Opus 4.7 (Anthropic)" },
+    model: { provider: "anthropic", model: "claude-opus-4-7", label: "Claude Opus 4.7 + adaptive thinking" },
   },
-  "anthropic-haiku-4-5": {
-    model: { provider: "anthropic", model: "claude-haiku-4-5", label: "Claude Haiku 4.5 + thinking (Anthropic)" },
-    anthropicThinkingBudgetOverride: 10_000,
+  "anthropic-sonnet-4-6": {
+    model: { provider: "anthropic", model: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 + thinking" },
   },
   "openai-gpt-5-5-thinking": {
-    model: { provider: "openai", model: "gpt-5.5", label: "GPT-5.5 + Thinking (OpenAI)" },
+    model: { provider: "openai", model: "gpt-5.5", label: "GPT-5.5 + thinking" },
   },
+  "openai-gpt-5-4-mini": {
+    model: { provider: "openai", model: "gpt-5.4-mini", label: "GPT-5.4 Mini" },
+  },
+  "gemini-3-5-flash": {
+    model: { provider: "google", model: "gemini-3.5-flash", label: "Gemini 3.5 + thinking" },
+  },
+  "gemini-3-1-pro": {
+    model: { provider: "google", model: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro" },
+  },
+  /** @deprecated legacy routing key — maps to Gemini 3.5 + thinking */
+  "anthropic-haiku-4-5": {
+    model: { provider: "anthropic", model: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 + thinking" },
+  },
+  /** @deprecated legacy routing key — maps to Gemini 3.5 + thinking */
   "gemini-2-5-pro": {
-    model: { provider: "google", model: "gemini-2.5-pro", label: "Gemini 2.5 Pro (Google)" },
+    model: { provider: "google", model: "gemini-3.5-flash", label: "Gemini 3.5 + thinking" },
   },
 };
 
