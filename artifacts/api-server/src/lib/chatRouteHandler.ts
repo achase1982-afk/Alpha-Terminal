@@ -58,7 +58,7 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
       ? multiAgentRaw.synthesizer_model.trim()
       : "";
   const useMultiAgent = multiAgentModels.length >= 2 && synthesizerModel.length > 0;
-  const model = (useMultiAgent ? synthesizerModel : (body.model ?? "claude-opus-4-6")).trim();
+  const model = (useMultiAgent ? synthesizerModel : (body.model ?? "claude-opus-4-7")).trim();
 
   let threadId = typeof body.thread_id === "string" ? body.thread_id.trim() : "";
   let thread = threadId ? await getChatThreadForUser(userId, threadId) : null;

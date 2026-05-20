@@ -182,6 +182,9 @@ importers:
       '@tanstack/react-virtual':
         specifier: ^3.13.23
         version: 3.13.23(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+      '@workspace/ai-models':
+        specifier: workspace:*
+        version: link:../../lib/ai-models
       lightweight-charts:
         specifier: ^5.1.0
         version: 5.1.0
@@ -429,6 +432,9 @@ importers:
       '@stoqey/ib':
         specifier: ^1.5.3
         version: 1.5.3
+      '@workspace/ai-models':
+        specifier: workspace:*
+        version: link:../../lib/ai-models
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
@@ -709,6 +715,12 @@ importers:
       zod:
         specifier: 'catalog:'
         version: 3.25.76
+
+  lib/ai-models:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
 
   lib/api-client-react:
     dependencies:

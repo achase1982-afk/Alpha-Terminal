@@ -237,9 +237,10 @@ export function StrategistSettingsPanel() {
           <span className="font-mono text-[11px] text-zinc-300 leading-relaxed block">
             <span className="text-zinc-500 uppercase tracking-wide">Conviction Desk — LLM swap</span>
             {" "}Use <strong className="text-zinc-100">Conviction Desk model</strong> below. Primary presets: index{" "}
-            <strong className="text-zinc-100">0</strong> Claude Opus 4.7,{" "}
-            <strong className="text-zinc-100">1</strong> GPT-5.5 + Thinking,{" "}
-            <strong className="text-zinc-100">3</strong> Gemini 3 Pro. Same data package; providers differ in tone and structure discipline.
+            <strong className="text-zinc-100">0</strong> Gemini 3.5 + thinking,{" "}
+            <strong className="text-zinc-100">1</strong> Gemini 3.1 Pro,{" "}
+            <strong className="text-zinc-100">2</strong> Claude Opus 4.7 + adaptive thinking,{" "}
+            <strong className="text-zinc-100">4</strong> GPT-5.5 + thinking. Same data package; providers differ in tone and structure discipline.
           </span>
         </div>
       )}

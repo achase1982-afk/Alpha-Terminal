@@ -24,7 +24,7 @@ import type {
 import { type AiLabModelProvider, getActivePrompt } from "./aiLabConfig.js";
 import type { ConvictionDeskTelemetryProvider } from "./convictionDeskRouting.js";
 
-const DEFAULT_ANALYST_MODEL = "claude-opus-4-6";
+const DEFAULT_ANALYST_MODEL = "claude-opus-4-7";
 const GEMINI_WEB_SEARCH_MAX_ATTEMPTS = 4;
 
 function sleep(ms: number): Promise<void> {
