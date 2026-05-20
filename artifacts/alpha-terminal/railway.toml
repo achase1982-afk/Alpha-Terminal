@@ -1,0 +1,17 @@
+# Railway: alpha-terminal (Vite static site + nginx). Config file path in the service must be:
+#   artifacts/alpha-terminal/railway.toml
+# (absolute from repo root: /artifacts/alpha-terminal/railway.toml)
+#
+# Do NOT use the api-server railway.toml or start.sh here — that deploys Express and
+# returns "Cannot GET /" on the public domain.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "artifacts/alpha-terminal/Dockerfile"
+watchPatterns = ["artifacts/alpha-terminal/**", "lib/api-client-react/**", "pnpm-lock.yaml"]
+
+[deploy]
+# Use the Dockerfile ENTRYPOINT (nginx on port 80). Overrides any dashboard startCommand
+# left over from when the repo-root Dockerfile built the API.
+startCommand = "/docker-entrypoint.sh"
+healthcheckPath = "/"
