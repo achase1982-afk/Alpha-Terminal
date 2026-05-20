@@ -13,6 +13,7 @@ import {
   RunOptionsAnalysisResponse,
   GetAvailableModelsResponse,
 } from "@workspace/api-zod";
+import { AI_MODEL_IDS, DEFAULT_AI_MODEL_ID } from "@workspace/ai-models";
 import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
 import { runMarketPulseEngine, formatClusterDebugLine, verifyEngineScoring, type ClusterName, type MarketIndicators, type BiasLabel, type SessionType } from "../lib/marketPulseEngine.js";
 import {
@@ -245,32 +246,9 @@ function sseFlushPadding(res: import("express").Response) {
   safeSseWrite(res, pad);
 }
 
-const DEFAULT_MODEL = "claude-opus-4-6";
+const DEFAULT_MODEL = DEFAULT_AI_MODEL_ID;
 
-const AVAILABLE_MODELS = [
-  "claude-opus-4-7",
-  "claude-opus-4-6",
-  "claude-sonnet-4-6",
-  "claude-haiku-4-5",
-  "claude-opus-4-20250514",
-  "claude-sonnet-4-20250514",
-  "claude-3-7-sonnet-20250219",
-  "gemini-3.1-pro-preview",
-  "gemini-3-flash-preview",
-  "gemini-2.5-pro",
-  "gemini-2.5-flash",
-  "gemini-2.0-flash",
-  "gpt-5.5",
-  "gpt-5.4",
-  "gpt-5.4-mini",
-  "gpt-5.2",
-  "gpt-5",
-  "gpt-5-mini",
-  "gpt-5-nano",
-  "o4-mini",
-  "grok-4",
-  "grok-3",
-];
+const AVAILABLE_MODELS = [...AI_MODEL_IDS];
 
 interface NativeStreamOptions {
   prompt: string;

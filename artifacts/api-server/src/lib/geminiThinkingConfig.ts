@@ -5,7 +5,7 @@ export function geminiThinkingConfigForModel(model: string):
   | { thinkingBudget: number; includeThoughts: boolean; thinkingLevel?: ThinkingLevel }
   | undefined {
   if (!/^gemini-(2\.5|3)/.test(model)) return undefined;
-  if (model === "gemini-3-flash-preview") {
+  if (model === "gemini-3.5-flash" || model === "gemini-3-flash-preview") {
     return { thinkingBudget: -1, includeThoughts: true, thinkingLevel: ThinkingLevel.MEDIUM };
   }
   return { thinkingBudget: -1, includeThoughts: true };

@@ -11,6 +11,14 @@ import { StrategistSettingsPanel } from "./StrategistSettingsPanel";
 import { StrategistTelemetryPanel } from "./StrategistTelemetryPanel";
 import { SystemSettingsPage } from "./SystemSettingsPage";
 import { IbkrTickDiagnosticsPanel } from "./IbkrTickDiagnosticsPanel";
+import {
+  AI_MODEL_IDS,
+  aiModelSelectLabel,
+  DEFAULT_AI_MODEL_ID,
+  modelsForProvider,
+  migrateLegacyModelIdToCatalog,
+  type AiModelId,
+} from "@workspace/ai-models";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { queryClient } from "@/App";
 import { Input } from "@/components/ui/input";
@@ -505,62 +513,13 @@ function DisplayMarqueePage() {
   );
 }
 
-const OPENAI_MODELS = [
-  "gpt-5.5",
-  "gpt-5.4",
-  "gpt-5.4-mini",
-  "gpt-5.2",
-  "gpt-5",
-  "gpt-5-mini",
-  "gpt-5-nano",
-  "o4-mini",
-];
+const ALL_MODELS = [...AI_MODEL_IDS];
 
-const XAI_MODELS = [
-  "grok-4-1-fast-reasoning",
-  "grok-4",
-  "grok-3",
-];
 
-const ANTHROPIC_MODELS = [
-  "claude-opus-4-7",
-  "claude-opus-4-6",
-  "claude-sonnet-4-6",
-  "claude-haiku-4-5",
-  "claude-opus-4-20250514",
-  "claude-sonnet-4-20250514",
-  "claude-3-7-sonnet-20250219",
-];
-
-const GOOGLE_MODELS = [
-  "gemini-3.1-pro-preview",
-  "gemini-3-flash-preview",
-  "gemini-2.5-pro",
-  "gemini-2.5-flash",
-  "gemini-2.0-flash",
-];
-
-const ALL_MODELS = [...ANTHROPIC_MODELS, ...GOOGLE_MODELS, ...OPENAI_MODELS, ...XAI_MODELS];
-
-const ANALYST_MODELS: Record<string, string[]> = {
-  anthropic: ANTHROPIC_MODELS,
-  google: GOOGLE_MODELS,
-  openai: OPENAI_MODELS,
-  xai: XAI_MODELS,
-};
-
-const SKEPTIC_MODELS: Record<string, string[]> = {
-  anthropic: ANTHROPIC_MODELS,
-  google: GOOGLE_MODELS,
-  openai: OPENAI_MODELS,
-  xai: XAI_MODELS,
-};
-
-const PROVIDER_LABELS: Record<string, string> = {
+const PROVIDER_LABELS: Record<"anthropic" | "google" | "openai", string> = {
   anthropic: "ANTHROPIC (CLAUDE)",
   google: "GOOGLE (GEMINI)",
   openai: "OPENAI (CHATGPT)",
-  xai: "XAI (GROK)",
 };
 
 type AiFeatureKey = keyof TerminalState['aiFeatureSettings'];
@@ -598,7 +557,7 @@ function AiFeatureControl({ featureKey, label, icon }: {
         </span>
         <span className="flex items-center gap-2">
           <span className="font-mono text-[8px] text-zinc-500 tracking-wider">
-            {settings.model.replace('claude-', '').toUpperCase()}
+            {aiModelSelectLabel(migrateLegacyModelIdToCatalog(settings.model))}
           </span>
           <ChevronRight className={`w-3 h-3 text-zinc-500 transition-transform ${expanded ? 'rotate-90' : ''}`} />
         </span>
@@ -615,7 +574,9 @@ function AiFeatureControl({ featureKey, label, icon }: {
               style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
             >
               {ALL_MODELS.map((m) => (
-                <option key={m} value={m}>{m.toUpperCase()}</option>
+                <option key={m} value={m}>
+                  {aiModelSelectLabel(m)}
+                </option>
               ))}
             </select>
           </div>
@@ -664,25 +625,25 @@ function AiLabStrategistControl() {
     const next = { ...aiLabStrategistConfig, [key]: value };
 
     if (key === "analystModelProvider") {
-      const models = ANALYST_MODELS[value as string] ?? [];
-      if (models.length > 0 && !models.includes(aiLabStrategistConfig.analystModelName)) {
-        setAiLabStrategistConfig("analystModelName", models[0]);
-        next.analystModelName = models[0];
+      const models = modelsForProvider(String(value));
+      if (models.length > 0 && !models.includes(aiLabStrategistConfig.analystModelName as AiModelId)) {
+        setAiLabStrategistConfig("analystModelName", models[0]!);
+        next.analystModelName = models[0]!;
       }
     }
     if (key === "skepticModelProvider") {
-      const models = SKEPTIC_MODELS[value as string] ?? [];
-      if (models.length > 0 && !models.includes(aiLabStrategistConfig.skepticModelName)) {
-        setAiLabStrategistConfig("skepticModelName", models[0]);
-        next.skepticModelName = models[0];
+      const models = modelsForProvider(String(value));
+      if (models.length > 0 && !models.includes(aiLabStrategistConfig.skepticModelName as AiModelId)) {
+        setAiLabStrategistConfig("skepticModelName", models[0]!);
+        next.skepticModelName = models[0]!;
       }
     }
 
     syncToBackend(next);
   }, [aiLabStrategistConfig, setAiLabStrategistConfig, syncToBackend]);
 
-  const analystModels = ANALYST_MODELS[aiLabStrategistConfig.analystModelProvider] ?? [];
-  const skepticModels = SKEPTIC_MODELS[aiLabStrategistConfig.skepticModelProvider] ?? [];
+  const analystModels = modelsForProvider(aiLabStrategistConfig.analystModelProvider);
+  const skepticModels = modelsForProvider(aiLabStrategistConfig.skepticModelProvider);
 
   const selectStyle = {
     backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
@@ -746,7 +707,9 @@ function AiLabStrategistControl() {
                 style={selectStyle}
               >
                 {analystModels.map((m) => (
-                  <option key={m} value={m}>{m.toUpperCase()}</option>
+                  <option key={m} value={m}>
+                    {aiModelSelectLabel(m)}
+                  </option>
                 ))}
               </select>
             </div>
@@ -798,7 +761,9 @@ function AiLabStrategistControl() {
                 style={selectStyle}
               >
                 {skepticModels.map((m) => (
-                  <option key={m} value={m}>{m.toUpperCase()}</option>
+                  <option key={m} value={m}>
+                    {aiModelSelectLabel(m)}
+                  </option>
                 ))}
               </select>
             </div>
@@ -859,7 +824,9 @@ function AiParametersPage() {
         >
           <option value="" disabled>Apply one model to all features...</option>
           {ALL_MODELS.map((m) => (
-            <option key={m} value={m}>{m.toUpperCase()}</option>
+            <option key={m} value={m}>
+              {aiModelSelectLabel(m)}
+            </option>
           ))}
         </select>
       </div>

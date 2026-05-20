@@ -1,5 +1,14 @@
+import {
+  STRATEGIST_MODEL_CATALOG_VERSION,
+  STRATEGIST_MODEL_OPTIONS,
+  remapStrategistCatalogIndexV5ToV6,
+  type StrategistModelOption,
+} from "@workspace/ai-models";
 import { db, strategistSettingsTable } from "@workspace/db";
 import { logger } from "./logger.js";
+
+export type { StrategistModelOption };
+export { STRATEGIST_MODEL_OPTIONS, STRATEGIST_MODEL_CATALOG_VERSION };
 
 export interface StrategistConfig {
   ioWeightR2: number;
@@ -56,30 +65,6 @@ export interface StrategistConfig {
    */
   strategistModelCatalogVersion: number;
 }
-
-// Model catalog used by the strategist. Stored as an integer index in the
-// settings table (which is number-only) to avoid a schema migration.
-export interface StrategistModelOption {
-  provider: "anthropic" | "google" | "openai" | "xai";
-  model: string;
-  label: string;
-}
-
-/** Eight-model strategist catalog (indices 0–7). */
-export const STRATEGIST_MODEL_OPTIONS: StrategistModelOption[] = [
-  { provider: "anthropic", model: "claude-opus-4-7", label: "Claude Opus 4.7 (Anthropic)" },
-  { provider: "openai", model: "gpt-5.5", label: "GPT-5.5 + Thinking (OpenAI)" },
-  { provider: "openai", model: "gpt-5.4-mini", label: "GPT-5.4 Mini (OpenAI)" },
-  /** API id is preview; label reflects Gemini 3 family for Conviction / Solo swaps. */
-  { provider: "google", model: "gemini-3.1-pro-preview", label: "Gemini 3 Pro (Google)" },
-  { provider: "google", model: "gemini-3-flash-preview", label: "Gemini 3 Flash (Google)" },
-  { provider: "xai", model: "grok-4-1-fast-reasoning", label: "Grok 4.1 fast reasoning (xAI)" },
-  { provider: "anthropic", model: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 + thinking (Anthropic)" },
-  { provider: "anthropic", model: "claude-haiku-4-5", label: "Claude Haiku 4.5 + thinking (Anthropic)" },
-];
-
-/** Current catalog version written to `strategistModelCatalogVersion`. */
-export const STRATEGIST_MODEL_CATALOG_VERSION = 5;
 
 /**
  * Maps pre–four-model catalog indices (the former `STRATEGIST_MODEL_OPTIONS`
@@ -161,11 +146,11 @@ const DEFAULTS = {
   strategistMode: 1,
   strategistConvergence: 3,
   strategistTieBand: 10,
-  strategistSoloModelIdx: 0,
-  strategistConvictionModelIdx: 0,
-  strategistDebateAModelIdx: 0,
-  strategistDebateBModelIdx: 1,
-  strategistArbitratorModelIdx: 0,
+  strategistSoloModelIdx: 2,
+  strategistConvictionModelIdx: 2,
+  strategistDebateAModelIdx: 4,
+  strategistDebateBModelIdx: 2,
+  strategistArbitratorModelIdx: 2,
   strategistModelCatalogVersion: STRATEGIST_MODEL_CATALOG_VERSION,
 } satisfies StrategistConfig;
 
@@ -302,14 +287,57 @@ async function migrateStrategistModelCatalogV4ToV5IfNeeded(merged: StrategistCon
   const now = new Date();
   await db
     .insert(strategistSettingsTable)
-    .values({ key: "strategistModelCatalogVersion", value: STRATEGIST_MODEL_CATALOG_VERSION, updatedAt: now })
+    .values({ key: "strategistModelCatalogVersion", value: 5, updatedAt: now })
     .onConflictDoUpdate({
       target: strategistSettingsTable.key,
-      set: { value: STRATEGIST_MODEL_CATALOG_VERSION, updatedAt: now },
+      set: { value: 5, updatedAt: now },
     });
+  logger.info({ from: 4, to: 5 }, "Strategist settings: catalog version bump (v4 → v5)");
+  return true;
+}
+
+/** v6: six-model catalog (Gemini 3.5 + thinking, 3.1 Pro, Opus/Sonnet, GPT-5.5/Mini); remap indices. */
+async function migrateStrategistModelCatalogV5ToV6IfNeeded(merged: StrategistConfig): Promise<boolean> {
+  if (merged.strategistModelCatalogVersion !== 5) {
+    return false;
+  }
+  const remap = (idx: number) => remapStrategistCatalogIndexV5ToV6(idx);
+  merged.strategistSoloModelIdx = remap(merged.strategistSoloModelIdx);
+  merged.strategistConvictionModelIdx = remap(merged.strategistConvictionModelIdx);
+  merged.strategistDebateAModelIdx = remap(merged.strategistDebateAModelIdx);
+  merged.strategistDebateBModelIdx = remap(merged.strategistDebateBModelIdx);
+  if (merged.strategistArbitratorModelIdx >= 0) {
+    merged.strategistArbitratorModelIdx = remap(merged.strategistArbitratorModelIdx);
+  }
+  const now = new Date();
+  const keys = [
+    "strategistSoloModelIdx",
+    "strategistConvictionModelIdx",
+    "strategistDebateAModelIdx",
+    "strategistDebateBModelIdx",
+    "strategistArbitratorModelIdx",
+    "strategistModelCatalogVersion",
+  ] as const;
+  const values: Record<(typeof keys)[number], number> = {
+    strategistSoloModelIdx: merged.strategistSoloModelIdx,
+    strategistConvictionModelIdx: merged.strategistConvictionModelIdx,
+    strategistDebateAModelIdx: merged.strategistDebateAModelIdx,
+    strategistDebateBModelIdx: merged.strategistDebateBModelIdx,
+    strategistArbitratorModelIdx: merged.strategistArbitratorModelIdx,
+    strategistModelCatalogVersion: STRATEGIST_MODEL_CATALOG_VERSION,
+  };
+  for (const key of keys) {
+    await db
+      .insert(strategistSettingsTable)
+      .values({ key, value: values[key], updatedAt: now })
+      .onConflictDoUpdate({
+        target: strategistSettingsTable.key,
+        set: { value: values[key], updatedAt: now },
+      });
+  }
   logger.info(
-    { from: 4, to: STRATEGIST_MODEL_CATALOG_VERSION },
-    "Strategist settings: catalog version bump (v4 → v5: Sonnet 4.6 + Haiku 4.5 slots)",
+    { from: 5, to: STRATEGIST_MODEL_CATALOG_VERSION },
+    "Strategist settings: migrated model indices to six-model catalog (v6)",
   );
   return true;
 }
@@ -370,11 +398,18 @@ export async function getSettings(): Promise<StrategistConfig> {
       const bumpedV5 = await migrateStrategistModelCatalogV4ToV5IfNeeded(mergedAfter);
       const bumpV5Ms = Math.round(performance.now() - tBumpV5);
       if (bumpedV5) {
+        mergedAfter.strategistModelCatalogVersion = 5;
+      }
+
+      const tBumpV6 = performance.now();
+      const bumpedV6 = await migrateStrategistModelCatalogV5ToV6IfNeeded(mergedAfter);
+      const bumpV6Ms = Math.round(performance.now() - tBumpV6);
+      if (bumpedV6) {
         mergedAfter.strategistModelCatalogVersion = STRATEGIST_MODEL_CATALOG_VERSION;
       }
 
       const rowsFinal =
-        bumpedV4 || bumpedV5 ? await db.select().from(strategistSettingsTable) : rowsAfter;
+        bumpedV4 || bumpedV5 || bumpedV6 ? await db.select().from(strategistSettingsTable) : rowsAfter;
 
       const finalMerged: StrategistConfig = { ...DEFAULTS };
       for (const row of rowsFinal) {
@@ -493,7 +528,7 @@ export function getSettingMeta(): SettingMetaEntry[] {
       { value: 5, label: "Conviction Desk (memo JSON)" },
     ] },
     { key: "strategistSoloModelIdx", label: "Solo Model", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used in Solo mode and Solo Desk mode (one consolidated Desk-shaped pass). In Desk mode this slot is used for the Volatility section.", options: modelOptions },
-    { key: "strategistConvictionModelIdx", label: "Conviction Desk", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Single-pass trade memo JSON for Conviction Desk. Catalog indices: 0 = Claude Opus 4.7 (longest runs: adaptive thinking + web search; if polling errors mid-run, refresh sign-in or pick Sonnet/Haiku), 1 = GPT-5.5 + Thinking, 2 = GPT-5.4 Mini, 3 = Gemini 3 Pro (JSON MIME; catalyst web search is pre-run when needed), 4 = Gemini 3 Flash, 5 = Grok, 6 = Claude Sonnet 4.6 + thinking, 7 = Claude Haiku 4.5 + thinking.", options: modelOptions },
+    { key: "strategistConvictionModelIdx", label: "Conviction Desk", group: "Strategist", default: 2, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Single-pass trade memo JSON for Conviction Desk. Catalog: 0 = Gemini 3.5 + thinking, 1 = Gemini 3.1 Pro, 2 = Claude Opus 4.7 + adaptive thinking, 3 = Claude Sonnet 4.6 + thinking, 4 = GPT-5.5 + thinking, 5 = GPT-5.4 Mini.", options: modelOptions },
     { key: "strategistDebateAModelIdx", label: "Debate — Bull Model", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used to argue the Bull side in Debate mode. In Desk mode this slot is used for the Flow section. Unused in Solo Desk mode (Solo model slot runs the full report).", options: modelOptions },
     { key: "strategistDebateBModelIdx", label: "Debate — Bear Model", group: "Strategist", default: 1, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used to argue the Bear side in Debate mode. In Desk mode this slot is used for the Catalyst section. Unused in Solo Desk mode (Solo model slot runs the full report).", options: modelOptions },
     { key: "strategistArbitratorModelIdx", label: "Debate — Arbitrator Model", group: "Strategist", default: 0, min: -1, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used in Phase 3 to arbitrate between Bull's and Bear's structure proposals and ship the final trade. In Desk mode this slot is used for the Decision section. Unused in Solo Desk mode (Solo model slot runs the full report).", options: [{ value: -1, label: "Debate Winner (winning side promoted to arbitrator pass)" }, ...modelOptions] },
