@@ -120,7 +120,6 @@ export type GoogleThinkingProviderOptions = {
     thinkingConfig: {
       thinkingBudget?: number;
       includeThoughts?: boolean;
-      thinkingLevel?: "minimal" | "low" | "medium" | "high";
     };
   };
 };
@@ -131,19 +130,11 @@ export function googleThinkingProviderOptionsForAiSdk(
 ): GoogleThinkingProviderOptions | undefined {
   const cfg = geminiThinkingConfigForModel(model);
   if (!cfg) return undefined;
-  let thinkingLevel: "minimal" | "low" | "medium" | "high" | undefined;
-  if (cfg.thinkingLevel != null) {
-    const raw = String(cfg.thinkingLevel).toLowerCase();
-    if (raw === "minimal" || raw === "low" || raw === "medium" || raw === "high") {
-      thinkingLevel = raw;
-    }
-  }
   return {
     google: {
       thinkingConfig: {
         thinkingBudget: cfg.thinkingBudget,
         includeThoughts: cfg.includeThoughts,
-        ...(thinkingLevel ? { thinkingLevel } : {}),
       },
     },
   };
