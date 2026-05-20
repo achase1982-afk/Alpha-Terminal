@@ -6,12 +6,21 @@ import {
 import { geminiThinkingConfigForModel } from "../geminiThinkingConfig.js";
 
 describe("geminiThinkingConfigForModel", () => {
-  it("enables thinking for gemini-3.5-flash", () => {
+  it("uses thinkingLevel only for gemini-3.5-flash (not budget)", () => {
     const cfg = geminiThinkingConfigForModel("gemini-3.5-flash");
     expect(cfg).toBeDefined();
     expect(cfg?.includeThoughts).toBe(true);
-    expect(cfg?.thinkingBudget).toBe(-1);
-    expect(cfg?.thinkingLevel).toBeDefined();
+    expect("thinkingLevel" in cfg!).toBe(true);
+    expect("thinkingBudget" in cfg!).toBe(false);
+  });
+
+  it("uses thinkingBudget only for gemini-3.1-pro-preview", () => {
+    const cfg = geminiThinkingConfigForModel("gemini-3.1-pro-preview");
+    expect(cfg).toBeDefined();
+    expect(cfg?.includeThoughts).toBe(true);
+    expect("thinkingBudget" in cfg!).toBe(true);
+    expect("thinkingBudget" in cfg! && cfg.thinkingBudget).toBe(-1);
+    expect("thinkingLevel" in cfg!).toBe(false);
   });
 });
 
@@ -30,10 +39,19 @@ describe("openAiReasoningProviderOptionsForChat", () => {
 });
 
 describe("googleThinkingProviderOptionsForAiSdk", () => {
-  it("maps gemini-3.5-flash thinking into AI SDK google options", () => {
+  it("maps gemini-3.5-flash with thinkingLevel only", () => {
     const opts = googleThinkingProviderOptionsForAiSdk("gemini-3.5-flash");
-    expect(opts?.google.thinkingConfig?.includeThoughts).toBe(true);
-    expect(opts?.google.thinkingConfig?.thinkingBudget).toBe(-1);
-    expect(opts?.google.thinkingConfig?.thinkingLevel).toBe("medium");
+    const tc = opts?.google.thinkingConfig;
+    expect(tc?.includeThoughts).toBe(true);
+    expect(tc?.thinkingLevel).toBe("medium");
+    expect(tc?.thinkingBudget).toBeUndefined();
+  });
+
+  it("maps gemini-3.1-pro-preview with thinkingBudget only", () => {
+    const opts = googleThinkingProviderOptionsForAiSdk("gemini-3.1-pro-preview");
+    const tc = opts?.google.thinkingConfig;
+    expect(tc?.includeThoughts).toBe(true);
+    expect(tc?.thinkingBudget).toBe(-1);
+    expect(tc?.thinkingLevel).toBeUndefined();
   });
 });

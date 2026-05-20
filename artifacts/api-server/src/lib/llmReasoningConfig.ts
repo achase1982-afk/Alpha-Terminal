@@ -131,19 +131,25 @@ export function googleThinkingProviderOptionsForAiSdk(
 ): GoogleThinkingProviderOptions | undefined {
   const cfg = geminiThinkingConfigForModel(model);
   if (!cfg) return undefined;
-  let thinkingLevel: "minimal" | "low" | "medium" | "high" | undefined;
-  if (cfg.thinkingLevel != null) {
+  if ("thinkingLevel" in cfg) {
     const raw = String(cfg.thinkingLevel).toLowerCase();
-    if (raw === "minimal" || raw === "low" || raw === "medium" || raw === "high") {
-      thinkingLevel = raw;
-    }
+    const thinkingLevel =
+      raw === "minimal" || raw === "low" || raw === "medium" || raw === "high" ? raw : undefined;
+    if (!thinkingLevel) return undefined;
+    return {
+      google: {
+        thinkingConfig: {
+          includeThoughts: cfg.includeThoughts,
+          thinkingLevel,
+        },
+      },
+    };
   }
   return {
     google: {
       thinkingConfig: {
-        thinkingBudget: cfg.thinkingBudget,
         includeThoughts: cfg.includeThoughts,
-        ...(thinkingLevel ? { thinkingLevel } : {}),
+        thinkingBudget: cfg.thinkingBudget,
       },
     },
   };
