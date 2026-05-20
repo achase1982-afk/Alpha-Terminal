@@ -1,153 +1,98 @@
 import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useTerminalStore } from "@/lib/store";
-import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { signalSchwabAuthLost } from "@/lib/authNoticeStore";
+import {
+  refreshSchwabViaServer,
+  schwabRefreshErrorDetail,
+  syncSchwabTokensFromServer,
+} from "@/lib/schwabTokenSync";
 
-const REFRESH_INTERVAL_MS = 25 * 60 * 1000; // 25 minutes
+const REFRESH_INTERVAL_MS = 25 * 60 * 1000; // 25 minutes — server also refreshes ~5 min before expiry
 
-async function readSchwabRefreshErrorDetail(res: Response): Promise<string | undefined> {
-  const text = await res.text().catch(() => "");
-  if (!text) return undefined;
-  try {
-    const j = JSON.parse(text) as { message?: string; error?: string };
-    const pick = j.message || j.error;
-    return typeof pick === "string" && pick.length > 0 ? pick : undefined;
-  } catch {
-    return text.length > 200 ? `${text.slice(0, 199)}…` : text;
-  }
+function schwabSessionActive(): boolean {
+  const { accessToken, traderAccessToken, refreshToken, traderRefreshToken } =
+    useTerminalStore.getState();
+  return !!(accessToken || traderAccessToken || refreshToken || traderRefreshToken);
 }
 
 export function useAutoRefreshToken() {
-  const { refreshToken, setTokens, clearTokens } = useTerminalStore();
-  const { traderRefreshToken, setTraderTokens, clearTraderTokens } = useTerminalStore();
+  const accessToken = useTerminalStore((s) => s.accessToken);
+  const traderAccessToken = useTerminalStore((s) => s.traderAccessToken);
+  const clearTokens = useTerminalStore((s) => s.clearTokens);
+  const clearTraderTokens = useTerminalStore((s) => s.clearTraderTokens);
   const isRefreshing = useRef(false);
-  const isRefreshingTrader = useRef(false);
-  const didInitialRefresh = useRef(false);
+  const didInitialSync = useRef(false);
 
-  const refresh = useCallback(async (): Promise<boolean> => {
-    if (!refreshToken || isRefreshing.current) return false;
-    isRefreshing.current = true;
-    try {
-      const res = await fetchWithAuth("/api/auth/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken }),
-        _authRetry: true,
-      });
-      if (!res.ok) {
-        const detail = await readSchwabRefreshErrorDetail(res);
-        signalSchwabAuthLost(
-          "Schwab login could not be renewed automatically.",
-          detail ??
-            "Your saved Schwab session is no longer valid. Use Reconnect Schwab — you should not need to sign out of your account.",
-        );
-        toast.error("Schwab session ended", {
-          id: "schwab-session-ended",
-          description: "Reconnect Schwab to restore live quotes and portfolio.",
-        });
-        clearTokens();
-        return false;
-      }
-      const data = await res.json() as { accessToken?: string; refreshToken?: string };
-      if (data.accessToken) {
-        setTokens(data.accessToken, data.refreshToken ?? refreshToken);
-        return true;
-      }
+  const handleRefreshFailure = useCallback(
+    (status: number, bodyText: string) => {
+      if (status === 0) return false;
+      const detail = schwabRefreshErrorDetail(bodyText);
+      const isRevoked =
+        status === 400 &&
+        /invalid_grant|expired|revoked|refresh_token/i.test(bodyText);
+
+      if (!isRevoked) return false;
+
       signalSchwabAuthLost(
         "Schwab login could not be renewed automatically.",
-        "The server returned an empty token. Reconnect Schwab from the banner or sidebar.",
+        detail ??
+          "Your saved Schwab session is no longer valid. Use Reconnect Schwab — you should not need to sign out of your account.",
       );
       toast.error("Schwab session ended", {
         id: "schwab-session-ended",
         description: "Reconnect Schwab to restore live quotes and portfolio.",
       });
       clearTokens();
+      clearTraderTokens();
+      return true;
+    },
+    [clearTokens, clearTraderTokens],
+  );
+
+  /** Server-canonical refresh — never sends a stale client refresh_token to Schwab. */
+  const refresh = useCallback(async (): Promise<boolean> => {
+    if (!schwabSessionActive() || isRefreshing.current) return false;
+    isRefreshing.current = true;
+    try {
+      const { ok, status, bodyText } = await refreshSchwabViaServer();
+      if (ok) return true;
+      handleRefreshFailure(status, bodyText);
       return false;
     } catch {
       return false;
     } finally {
       isRefreshing.current = false;
     }
-  }, [refreshToken, setTokens, clearTokens]);
+  }, [handleRefreshFailure]);
 
-  const refreshTrader = useCallback(async (): Promise<boolean> => {
-    if (!traderRefreshToken || isRefreshingTrader.current) return false;
-    isRefreshingTrader.current = true;
-    try {
-      const res = await fetchWithAuth("/api/auth/trader-refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken: traderRefreshToken }),
-        _authRetry: true,
-      });
-      if (!res.ok) {
-        const detail = await readSchwabRefreshErrorDetail(res);
-        signalSchwabAuthLost(
-          "Schwab login could not be renewed automatically.",
-          detail ??
-            "Your saved Schwab session is no longer valid. Use Reconnect Schwab — you should not need to sign out of your account.",
-        );
-        toast.error("Schwab session ended", {
-          id: "schwab-session-ended",
-          description: "Reconnect Schwab to restore live quotes and portfolio.",
-        });
-        clearTraderTokens();
-        return false;
-      }
-      const data = await res.json() as { accessToken?: string; refreshToken?: string };
-      if (data.accessToken) {
-        setTraderTokens(data.accessToken, data.refreshToken ?? traderRefreshToken);
-        return true;
-      }
-      signalSchwabAuthLost(
-        "Schwab login could not be renewed automatically.",
-        "The server returned an empty token. Reconnect Schwab from the banner or sidebar.",
-      );
-      toast.error("Schwab session ended", {
-        id: "schwab-session-ended",
-        description: "Reconnect Schwab to restore live quotes and portfolio.",
-      });
-      clearTraderTokens();
-      return false;
-    } catch {
-      return false;
-    } finally {
-      isRefreshingTrader.current = false;
+  useEffect(() => {
+    if (!schwabSessionActive()) {
+      didInitialSync.current = false;
+      return;
     }
-  }, [traderRefreshToken, setTraderTokens, clearTraderTokens]);
+    if (didInitialSync.current) return;
+    didInitialSync.current = true;
+
+    void (async () => {
+      await syncSchwabTokensFromServer();
+      await refresh();
+    })();
+  }, [accessToken, traderAccessToken, refresh]);
 
   useEffect(() => {
-    if (didInitialRefresh.current) return;
-    if (!refreshToken && !traderRefreshToken) return;
-    didInitialRefresh.current = true;
-
-    const doInitial = async () => {
-      if (refreshToken) await refresh();
-      if (traderRefreshToken) await refreshTrader();
-    };
-    void doInitial();
-  }, [refreshToken, traderRefreshToken, refresh, refreshTrader]);
-
-  useEffect(() => {
-    if (!refreshToken) return;
-    const id = setInterval(refresh, REFRESH_INTERVAL_MS);
+    if (!schwabSessionActive()) return;
+    const id = setInterval(() => {
+      void refresh();
+    }, REFRESH_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [refreshToken, refresh]);
+  }, [accessToken, traderAccessToken, refresh]);
 
-  useEffect(() => {
-    if (!traderRefreshToken) return;
-    const id = setInterval(refreshTrader, REFRESH_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [traderRefreshToken, refreshTrader]);
-
-  // When returning from a backgrounded mobile tab, timers may have been throttled —
-  // opportunistically refresh so Schwab tokens do not sit stale until the next interval.
+  // Tab focus: sync tokens from server only (server owns the refresh grant).
   useEffect(() => {
     const onVisible = () => {
-      if (document.hidden) return;
-      void refresh();
-      void refreshTrader();
+      if (document.hidden || !schwabSessionActive()) return;
+      void syncSchwabTokensFromServer();
     };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("pageshow", onVisible);
@@ -155,7 +100,7 @@ export function useAutoRefreshToken() {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("pageshow", onVisible);
     };
-  }, [refresh, refreshTrader]);
+  }, [accessToken, traderAccessToken]);
 
-  return { refresh, refreshTrader };
+  return { refresh, refreshTrader: refresh };
 }

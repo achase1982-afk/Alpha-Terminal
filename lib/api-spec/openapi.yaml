@@ -368,8 +368,7 @@ components:
       properties:
         refreshToken:
           type: string
-      required:
-        - refreshToken
+          description: Optional when the server already holds the canonical Schwab refresh token
 
     TokenResponse:
       type: object

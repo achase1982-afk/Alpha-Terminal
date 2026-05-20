@@ -28,10 +28,7 @@ let traderTimer: ReturnType<typeof setTimeout> | null = null;
 let onTokenRefreshed: ((kind: "market" | "trader", accessToken: string) => void) | null = null;
 let dbStoreReady = false;
 
-const refreshInFlight: Record<string, Promise<boolean> | null> = {
-  market: null,
-  trader: null,
-};
+const refreshInFlight = new Map<string, Promise<boolean>>();
 
 /** True after this process has had a persisted token set for the kind (init load, store, or successful refresh). */
 const authEstablishedInProcess: Record<"market" | "trader", boolean> = {
@@ -158,6 +155,34 @@ function basicAuth(key: string, secret: string): string {
   return "Basic " + Buffer.from(`${key}:${secret}`).toString("base64");
 }
 
+/** When market and trader share one Schwab OAuth grant, keep both slots in sync. */
+function mirrorLinkedTokenKind(
+  sourceKind: "market" | "trader",
+  previousRefreshToken: string,
+  next: StoredTokenSet,
+) {
+  const otherKind = sourceKind === "market" ? "trader" : "market";
+  const other = store[otherKind];
+  if (!other || other.refreshToken !== previousRefreshToken) return;
+  store[otherKind] = {
+    ...next,
+    generation: (other.generation ?? 0) + 1,
+  };
+  persistKind(otherKind);
+  clearTimer(otherKind);
+}
+
+function refreshFlightKey(kind: "market" | "trader"): string {
+  const tokenSet = store[kind];
+  if (!tokenSet?.refreshToken) return kind;
+  const otherKind = kind === "market" ? "trader" : "market";
+  const other = store[otherKind];
+  if (other?.refreshToken === tokenSet.refreshToken) {
+    return `linked:${tokenSet.refreshToken}`;
+  }
+  return kind;
+}
+
 async function doRefresh(
   kind: "market" | "trader",
   retryCount: number = 0
@@ -267,14 +292,17 @@ async function doRefresh(
     const newRefresh = (data["refresh_token"] as string) ?? tokenSet.refreshToken;
     const expiresIn = (data["expires_in"] as number) ?? 1800;
 
-    const refreshTokenRotated = newRefresh !== tokenSet.refreshToken;
-    store[kind] = {
+    const previousRefreshToken = tokenSet.refreshToken;
+    const refreshTokenRotated = newRefresh !== previousRefreshToken;
+    const updated: StoredTokenSet = {
       accessToken: newAccess,
       refreshToken: newRefresh,
       expiresAt: Date.now() + expiresIn * 1000,
       generation: generationBefore + 1,
     };
+    store[kind] = updated;
     persistKind(kind);
+    mirrorLinkedTokenKind(kind, previousRefreshToken, updated);
     markAuthEstablished(kind);
 
     logger.info(
@@ -323,20 +351,22 @@ async function doRefresh(
 }
 
 async function refreshTokenSet(kind: "market" | "trader"): Promise<boolean> {
-  if (refreshInFlight[kind]) {
+  const flightKey = refreshFlightKey(kind);
+  const inFlight = refreshInFlight.get(flightKey);
+  if (inFlight) {
     logger.info("TokenStore: %s refresh already in progress — reusing", kind);
     logger.info(
       { ts: Date.now(), kind, outcome: "reused_in_flight_promise" },
       "[SCHWAB_TOKEN] refresh attempt",
     );
-    return refreshInFlight[kind]!;
+    return inFlight;
   }
   const p = doRefresh(kind);
-  refreshInFlight[kind] = p;
+  refreshInFlight.set(flightKey, p);
   try {
     return await p;
   } finally {
-    refreshInFlight[kind] = null;
+    refreshInFlight.delete(flightKey);
   }
 }
 
@@ -359,6 +389,16 @@ function scheduleRefresh(kind: "market" | "trader") {
 
   const tokenSet = store[kind];
   if (!tokenSet?.expiresAt) return;
+
+  const otherKind = kind === "market" ? "trader" : "market";
+  const other = store[otherKind];
+  if (
+    kind === "trader" &&
+    other?.refreshToken &&
+    other.refreshToken === tokenSet.refreshToken
+  ) {
+    return;
+  }
 
   const delay = Math.max(tokenSet.expiresAt - Date.now() - REFRESH_BUFFER_MS, 10_000);
 
@@ -463,13 +503,16 @@ export async function initTokenStore() {
   }
 
   if (store.trader?.refreshToken) {
+    const linkedToMarket =
+      store.market?.refreshToken != null &&
+      store.trader.refreshToken === store.market.refreshToken;
     logger.info("TokenStore: found persisted trader tokens");
     markAuthEstablished("trader");
     const isExpired = store.trader.expiresAt < Date.now();
-    if (isExpired) {
+    if (isExpired && !linkedToMarket) {
       logger.info("TokenStore: trader access token expired, refreshing now");
       await refreshTokenSet("trader");
-    } else {
+    } else if (!linkedToMarket) {
       scheduleRefresh("trader");
     }
   }

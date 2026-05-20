@@ -8,7 +8,14 @@ import {
   RefreshTokenResponse,
   GetAuthStatusResponse,
 } from "@workspace/api-zod";
-import { storeTokens, hasValidTokens, getTokens, clearTokens as clearServerTokens } from "../lib/tokenStore.js";
+import {
+  storeTokens,
+  hasValidTokens,
+  getTokens,
+  getRefreshToken,
+  clearTokens as clearServerTokens,
+  forceRefresh,
+} from "../lib/tokenStore.js";
 import { stopStreamer } from "../lib/schwabStreamer.js";
 
 const router: IRouter = Router();
@@ -326,29 +333,73 @@ router.post("/callback", async (req, res) => {
   }
 });
 
-router.post("/refresh", async (req, res) => {
-  const parsed = RefreshTokenBody.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: "validation_error", message: "Invalid request body" });
+function refreshResponseForKind(kind: "market" | "trader") {
+  const ts = getTokens(kind);
+  if (!ts?.accessToken) return null;
+  const expiresIn = Math.max(60, Math.floor((ts.expiresAt - Date.now()) / 1000));
+  return RefreshTokenResponse.parse({
+    accessToken: ts.accessToken,
+    refreshToken: ts.refreshToken,
+    expiresIn,
+    tokenType: "Bearer",
+  });
+}
+
+async function refreshSchwabKind(
+  kind: "market" | "trader",
+  bodyRefreshToken: string | undefined,
+  log: { error: (obj: unknown, msg: string) => void },
+): Promise<
+  | { ok: true; payload: ReturnType<typeof RefreshTokenResponse.parse> }
+  | { ok: false; status: number; error: string; message: string }
+> {
+  const serverRefresh = getRefreshToken(kind);
+  if (serverRefresh) {
+    const refreshed = await forceRefresh(kind);
+    const payload = refreshResponseForKind(kind);
+    if (refreshed && payload) {
+      return { ok: true, payload };
+    }
+    if (payload && hasValidTokens(kind)) {
+      return { ok: true, payload };
+    }
+    return {
+      ok: false,
+      status: 400,
+      error: "refresh_failed",
+      message: "Refresh token is invalid, expired or revoked",
+    };
   }
 
-  const { refreshToken } = parsed.data;
+  if (!bodyRefreshToken) {
+    return {
+      ok: false,
+      status: 400,
+      error: "missing_refresh_token",
+      message: "No Schwab session on server — reconnect Schwab",
+    };
+  }
+
   const appKey = process.env.SCHWAB_TRADER_APP_KEY;
   const appSecret = process.env.SCHWAB_TRADER_APP_SECRET;
-
   if (!appKey || !appSecret) {
-    return res.status(400).json({ error: "not_configured", message: "Schwab Trader API credentials not configured" });
+    return {
+      ok: false,
+      status: 400,
+      error: "not_configured",
+      message: "Schwab Trader API credentials not configured",
+    };
   }
 
   const body = new URLSearchParams();
   body.set("grant_type", "refresh_token");
-  body.set("refresh_token", refreshToken);
+  body.set("refresh_token", bodyRefreshToken);
 
   try {
     const response = await fetch(SCHWAB_TOKEN_URL, {
       method: "POST",
       headers: {
-        "Authorization": basicAuth(appKey, appSecret),
+        Authorization: basicAuth(appKey, appSecret),
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: body.toString(),
@@ -357,30 +408,54 @@ router.post("/refresh", async (req, res) => {
     const responseText = await response.text();
 
     if (!response.ok) {
-      req.log.error({ status: response.status, body: responseText }, "Token refresh failed");
+      log.error({ status: response.status, body: responseText }, "Token refresh failed");
       let detail = responseText;
       try {
-        const p = JSON.parse(responseText);
+        const p = JSON.parse(responseText) as { error_description?: string; message?: string };
         detail = p.error_description || p.message || responseText;
-      } catch { /* keep raw */ }
-      return res.status(400).json({ error: "refresh_failed", message: detail });
+      } catch {
+        /* keep raw */
+      }
+      return { ok: false, status: 400, error: "refresh_failed", message: detail };
     }
 
     const tokenData = JSON.parse(responseText) as Record<string, unknown>;
     const newAt = tokenData["access_token"] as string;
-    const newRt = (tokenData["refresh_token"] as string) ?? refreshToken;
+    const newRt = (tokenData["refresh_token"] as string) ?? bodyRefreshToken;
     const newEi = (tokenData["expires_in"] as number) ?? 1800;
-    storeTokens("market", newAt, newRt, newEi);
-    return res.json(RefreshTokenResponse.parse({
-      accessToken: newAt,
-      refreshToken: newRt,
-      expiresIn: newEi,
-      tokenType: tokenData["token_type"],
-    }));
+    storeTokens(kind, newAt, newRt, newEi);
+    const payload = refreshResponseForKind(kind);
+    if (!payload) {
+      return {
+        ok: false,
+        status: 500,
+        error: "internal_error",
+        message: "Failed to read tokens after refresh",
+      };
+    }
+    return { ok: true, payload };
   } catch (err) {
-    req.log.error({ err }, "Token refresh error");
-    return res.status(500).json({ error: "internal_error", message: "Failed to refresh token" });
+    log.error({ err }, "Token refresh error");
+    return {
+      ok: false,
+      status: 500,
+      error: "internal_error",
+      message: "Failed to refresh token",
+    };
   }
+}
+
+router.post("/refresh", async (req, res) => {
+  const parsed = RefreshTokenBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "validation_error", message: "Invalid request body" });
+  }
+
+  const result = await refreshSchwabKind("market", parsed.data.refreshToken, req.log);
+  if (!result.ok) {
+    return res.status(result.status).json({ error: result.error, message: result.message });
+  }
+  return res.json(result.payload);
 });
 
 router.get("/trader-url", (_req, res) => {
@@ -497,53 +572,16 @@ router.get("/trader-pending-session", (_req, res) => {
 });
 
 router.post("/trader-refresh", async (req, res) => {
-  const { refreshToken } = req.body as { refreshToken?: string };
-  if (!refreshToken) {
-    return res.status(400).json({ error: "missing_refresh_token" });
+  const parsed = RefreshTokenBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "validation_error", message: "Invalid request body" });
   }
 
-  const appKey = process.env.SCHWAB_TRADER_APP_KEY;
-  const appSecret = process.env.SCHWAB_TRADER_APP_SECRET;
-
-  if (!appKey || !appSecret) {
-    return res.status(400).json({ error: "not_configured", message: "Trader API credentials not configured" });
+  const result = await refreshSchwabKind("trader", parsed.data.refreshToken, req.log);
+  if (!result.ok) {
+    return res.status(result.status).json({ error: result.error, message: result.message });
   }
-
-  const body = new URLSearchParams();
-  body.set("grant_type", "refresh_token");
-  body.set("refresh_token", refreshToken);
-
-  try {
-    const response = await fetch(SCHWAB_TOKEN_URL, {
-      method: "POST",
-      headers: {
-        "Authorization": basicAuth(appKey, appSecret),
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: body.toString(),
-    });
-
-    const responseText = await response.text();
-
-    if (!response.ok) {
-      req.log.error({ status: response.status, body: responseText }, "Trader token refresh failed");
-      return res.status(400).json({ error: "refresh_failed", message: responseText.slice(0, 200) });
-    }
-
-    const tokenData = JSON.parse(responseText) as Record<string, unknown>;
-    const trAt = tokenData["access_token"] as string;
-    const trRt = (tokenData["refresh_token"] as string) ?? refreshToken;
-    const trEi = (tokenData["expires_in"] as number) ?? 1800;
-    storeTokens("trader", trAt, trRt, trEi);
-    return res.json({
-      accessToken: trAt,
-      refreshToken: trRt,
-      expiresIn: trEi,
-    });
-  } catch (err) {
-    req.log.error({ err }, "Trader token refresh error");
-    return res.status(500).json({ error: "internal_error", message: "Failed to refresh trader token" });
-  }
+  return res.json(result.payload);
 });
 
 router.post("/disconnect", (_req, res) => {
