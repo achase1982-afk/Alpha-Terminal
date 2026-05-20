@@ -11,7 +11,7 @@ describe("geminiThinkingConfigForModel", () => {
     expect(cfg).toBeDefined();
     expect(cfg?.includeThoughts).toBe(true);
     expect(cfg?.thinkingBudget).toBe(-1);
-    expect(cfg?.thinkingLevel).toBeDefined();
+    expect(cfg).not.toHaveProperty("thinkingLevel");
   });
 });
 
@@ -34,6 +34,6 @@ describe("googleThinkingProviderOptionsForAiSdk", () => {
     const opts = googleThinkingProviderOptionsForAiSdk("gemini-3.5-flash");
     expect(opts?.google.thinkingConfig?.includeThoughts).toBe(true);
     expect(opts?.google.thinkingConfig?.thinkingBudget).toBe(-1);
-    expect(opts?.google.thinkingConfig?.thinkingLevel).toBe("medium");
+    expect(opts?.google.thinkingConfig).not.toHaveProperty("thinkingLevel");
   });
 });
