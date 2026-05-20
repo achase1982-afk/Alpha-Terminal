@@ -28,6 +28,12 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Answer general questions");
     expect(prompt).not.toContain("Data ticker");
   });
+
+  it("documents provider-native web_search", () => {
+    const prompt = buildChatSystemPrompt("AAPL");
+    expect(prompt.toLowerCase()).toContain("provider-native");
+    expect(prompt).toMatch(/Claude web search|Gemini|OpenAI web search/i);
+  });
 });
 
 describe("shouldSummarizeThread", () => {
@@ -62,7 +68,7 @@ describe("buildModelMessagesFromHistory", () => {
 
 describe("createChatTools", () => {
   it("exposes expected tool names", () => {
-    const tools = createChatTools({ userId: "u1" });
+    const tools = createChatTools({ userId: "u1", activeModel: "claude-opus-4-7" });
     expect(Object.keys(tools).sort()).toEqual(
       [
         "get_earnings",

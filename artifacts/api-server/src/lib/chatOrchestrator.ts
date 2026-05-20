@@ -47,7 +47,9 @@ ${ambientBlock}
 - After tool results, synthesize a clear answer. If tools return errors or empty data, say so plainly.
 
 ## Tools available
-get_quote, get_technicals, get_options_chain, get_flow, get_ivr, get_earnings, get_news, get_market_pulse, web_search, web_fetch`;
+get_quote, get_technicals, get_options_chain, get_flow, get_ivr, get_earnings, get_news, get_market_pulse, web_search, web_fetch
+
+**web_search** uses your chat model's provider-native search (Claude web search, Gemini Google Search grounding, or OpenAI web search preview) — not a generic third-party scraper.`;
 }
 
 export function shouldSummarizeThread(totalTokens: number): boolean {
@@ -184,7 +186,7 @@ async function runDraftChatTurn(args: {
   ambientSymbol?: string | null;
   toolContext: ChatToolContext;
 }): Promise<{ model: string; text?: string; error?: string }> {
-  const tools = createChatTools(args.toolContext);
+  const tools = createChatTools({ ...args.toolContext, activeModel: args.model });
   const resolved = resolveChatLanguageModel(args.model);
   const system = buildChatSystemPrompt(args.ambientSymbol);
   try {
@@ -227,7 +229,14 @@ export async function runMultiAgentChatTurn(
   const { modelMessages } = await prepareTurnMessages(thread, userMessage);
 
   const settled = await Promise.all(
-    models.map((model) => runDraftChatTurn({ model, modelMessages, ambientSymbol, toolContext })),
+    models.map((model) =>
+      runDraftChatTurn({
+        model,
+        modelMessages,
+        ambientSymbol,
+        toolContext: { ...toolContext, activeModel: model },
+      }),
+    ),
   );
 
   const successes = settled.filter((r): r is { model: string; text: string } => Boolean(r.text));
@@ -283,7 +292,7 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
 
   const { modelMessages } = await prepareTurnMessages(thread, userMessage);
 
-  const tools = createChatTools(toolContext);
+  const tools = createChatTools({ ...toolContext, activeModel: model });
   const resolved = resolveChatLanguageModel(model);
   const system = buildChatSystemPrompt(ambientSymbol);
 

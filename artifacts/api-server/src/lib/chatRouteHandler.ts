@@ -103,7 +103,7 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
     userMessage: message,
     model,
     ambientSymbol,
-    toolContext: { userId, schwabAccessToken },
+    toolContext: { userId, schwabAccessToken, activeModel: model },
     onEvent: (ev: ChatStreamEvent) => {
         if (res.writableEnded) return;
         switch (ev.type) {
