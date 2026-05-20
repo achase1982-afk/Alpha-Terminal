@@ -226,6 +226,19 @@ export const RunTechnicalAnalysisBody = zod.object({
   model: zod.string().optional(),
   temperature: zod.number().optional(),
   customPrompt: zod.string().optional(),
+  fundamentals: zod
+    .object({
+      marketCap: zod.number().nullish(),
+      sharesOutstanding: zod.number().nullish(),
+      peRatio: zod.number().nullish(),
+      eps: zod.number().nullish(),
+      beta: zod.number().nullish(),
+      dividendYield: zod.number().nullish(),
+      high52: zod.number().nullish(),
+      low52: zod.number().nullish(),
+    })
+    .optional()
+    .describe("Optional fundamentals block for streaming technical analysis"),
 });
 
 export const RunTechnicalAnalysisResponse = zod.object({

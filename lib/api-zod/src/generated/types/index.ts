@@ -32,5 +32,6 @@ export * from "./optionsAnalysisRequest";
 export * from "./priceHistoryResponse";
 export * from "./quoteResponse";
 export * from "./refreshTokenRequest";
+export * from "./technicalAnalysisFundamentals";
 export * from "./technicalAnalysisRequest";
 export * from "./tokenResponse";

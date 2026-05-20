@@ -99,12 +99,27 @@ export interface OptionChainResponse {
   error?: string;
 }
 
+/**
+ * Optional fundamentals block for streaming technical analysis
+ */
+export interface TechnicalAnalysisFundamentals {
+  marketCap?: number | null;
+  sharesOutstanding?: number | null;
+  peRatio?: number | null;
+  eps?: number | null;
+  beta?: number | null;
+  dividendYield?: number | null;
+  high52?: number | null;
+  low52?: number | null;
+}
+
 export interface TechnicalAnalysisRequest {
   quote: QuoteResponse;
   candles: Candle[];
   model?: string;
   temperature?: number;
   customPrompt?: string;
+  fundamentals?: TechnicalAnalysisFundamentals;
 }
 
 export interface OptionsAnalysisRequest {
