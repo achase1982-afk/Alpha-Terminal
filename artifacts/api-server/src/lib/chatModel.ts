@@ -7,6 +7,8 @@ import { getGeminiApiKey } from "./geminiClient.js";
 import { getXaiApiKey } from "./xaiEnv.js";
 import {
   anthropicProviderOptionsForAiSdk,
+  googleThinkingProviderOptionsForAiSdk,
+  openAiReasoningProviderOptionsForChat,
   xaiReasoningProviderOptionsForChat,
 } from "./llmReasoningConfig.js";
 
@@ -24,15 +26,7 @@ export function isOpenAiModel(model: string): boolean {
 
 export type ResolvedChatModel =
   | { model: LanguageModel; temperature: number }
-  | {
-      model: LanguageModel;
-      providerOptions: NonNullable<ReturnType<typeof anthropicProviderOptionsForAiSdk>>;
-    }
-  | {
-      model: LanguageModel;
-      temperature: number;
-      providerOptions: NonNullable<ReturnType<typeof xaiReasoningProviderOptionsForChat>>;
-    };
+  | { model: LanguageModel; providerOptions: Record<string, unknown> };
 
 /** Resolve AI SDK language model for chat `streamText`. */
 export function resolveChatLanguageModel(modelId: string): ResolvedChatModel {
@@ -40,6 +34,10 @@ export function resolveChatLanguageModel(modelId: string): ResolvedChatModel {
     const apiKey = getGeminiApiKey();
     if (!apiKey) throw new Error("Gemini API key not configured.");
     const google = createGoogleGenerativeAI({ apiKey });
+    const thinking = googleThinkingProviderOptionsForAiSdk(modelId);
+    if (thinking) {
+      return { model: google(modelId), providerOptions: thinking as Record<string, unknown> };
+    }
     return { model: google(modelId), temperature: 0 };
   }
   if (isGrokModel(modelId)) {
@@ -49,14 +47,19 @@ export function resolveChatLanguageModel(modelId: string): ResolvedChatModel {
     const reasoning = xaiReasoningProviderOptionsForChat(modelId);
     return {
       model: xai(modelId),
-      temperature: 0,
-      ...(reasoning ? { providerOptions: reasoning } : {}),
+      ...(reasoning
+        ? { providerOptions: reasoning as Record<string, unknown> }
+        : { temperature: 0 }),
     };
   }
   if (isOpenAiModel(modelId)) {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error("OpenAI API key not configured.");
     const openai = createOpenAI({ apiKey });
+    const reasoning = openAiReasoningProviderOptionsForChat(modelId);
+    if (reasoning) {
+      return { model: openai(modelId), providerOptions: reasoning as Record<string, unknown> };
+    }
     return { model: openai(modelId), temperature: 0 };
   }
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -64,7 +67,7 @@ export function resolveChatLanguageModel(modelId: string): ResolvedChatModel {
   const anthropic = createAnthropic({ apiKey });
   const thinking = anthropicProviderOptionsForAiSdk(modelId);
   if (thinking) {
-    return { model: anthropic(modelId), providerOptions: thinking };
+    return { model: anthropic(modelId), providerOptions: thinking.providerOptions };
   }
   return { model: anthropic(modelId), temperature: 0 };
 }
