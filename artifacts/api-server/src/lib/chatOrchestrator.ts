@@ -49,7 +49,7 @@ ${ambientBlock}
 ## Tools available
 get_quote, get_technicals, get_options_chain, get_flow, get_ivr, get_earnings, get_news, get_market_pulse, web_search, web_fetch
 
-**web_search** uses your chat model's provider-native search (Claude web search, Gemini Google Search grounding, or OpenAI web search preview) — not a generic third-party scraper.`;
+**web_search** uses the dedicated Web Search API when WEB_SEARCH_API_KEY is set (with optional WEB_SEARCH_API_FALLBACK_KEY); otherwise your chat model's provider-native search (Claude, Gemini, or OpenAI).`;
 }
 
 export function shouldSummarizeThread(totalTokens: number): boolean {

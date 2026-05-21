@@ -23,6 +23,11 @@ import type {
 } from "./aiLabLlmTypes.js";
 import { type AiLabModelProvider, getActivePrompt } from "./aiLabConfig.js";
 import type { ConvictionDeskTelemetryProvider } from "./convictionDeskRouting.js";
+import { isDedicatedWebSearchApiEnabled } from "./webSearchApiClient.js";
+import {
+  callViaDedicatedWebSearchApi,
+  streamCallViaDedicatedWebSearchApi,
+} from "./webSearchDedicatedPath.js";
 
 const DEFAULT_ANALYST_MODEL = "claude-opus-4-7";
 const GEMINI_WEB_SEARCH_MAX_ATTEMPTS = 4;
@@ -534,6 +539,28 @@ async function callOpenAI(model: string, temperature: number, prompt: string, sy
   return callOpenAIWithSystem(model, temperature, systemPrompt, prompt, undefined);
 }
 
+/** OpenAI Responses API via user OPENAI_API_KEY (same billing path as strategist web search). */
+export async function callOpenAIStrategistWithSystem(
+  model: string,
+  temperature: number,
+  systemPrompt: string,
+  prompt: string,
+  cancelSignal?: AbortSignal,
+): Promise<string> {
+  const client = makeOpenAIClient();
+  const params = buildOpenAIResponseParams(model, temperature, systemPrompt, prompt, undefined, {
+    includeWebSearchTool: false,
+  });
+  const response = cancelSignal
+    ? await (client as OpenAIResponsesClientNonStream).responses.create(params, { signal: cancelSignal })
+    : await (client as OpenAIResponsesClientNonStream).responses.create(params);
+  const textChunks: string[] = [];
+  extractOpenAIResponseTrace(response.output, [], [], new Set(), textChunks);
+  const text = (textChunks.join("\n").trim() || (response.output_text ?? "").trim());
+  if (!text) throw new Error("No text content in Strategist LLM response (OpenAI)");
+  return text;
+}
+
 export async function callOpenAIWithSystem(
   model: string,
   temperature: number,
@@ -674,6 +701,16 @@ export async function callXaiWithSystemAndWebSearch(
   prompt: string,
   cancelSignal?: AbortSignal,
 ): Promise<WebSearchResult> {
+  if (isDedicatedWebSearchApiEnabled()) {
+    return callViaDedicatedWebSearchApi({
+      provider: "xai",
+      model,
+      temperature,
+      systemPrompt,
+      prompt,
+      cancelSignal,
+    });
+  }
   const xai = makeXaiProvider();
   const reasoningOpts = xaiReasoningProviderOptions(model);
   const result = await generateText({
@@ -710,6 +747,18 @@ export async function streamCallXaiWithSystemAndWebSearch(
   cancelSignal?: AbortSignal,
   options?: { maxTokens?: number },
 ): Promise<WebSearchResult> {
+  if (isDedicatedWebSearchApiEnabled()) {
+    return streamCallViaDedicatedWebSearchApi({
+      provider: "xai",
+      model,
+      temperature,
+      systemPrompt,
+      prompt,
+      onDelta,
+      onStatus,
+      cancelSignal,
+    });
+  }
   const xai = makeXaiProvider();
   onStatus?.("Calling xAI with web search…");
 
@@ -861,6 +910,9 @@ export interface WebSearchTrace {
   webSearchUsed: boolean;
   queries: string[];
   sources: WebSearchSource[];
+  /** Present when search ran via WEB_SEARCH_API_* instead of provider-native tools. */
+  searchBackend?: "dedicated_api" | "provider_native";
+  dedicatedApiEndpoint?: "primary" | "fallback";
 }
 
 export type WebSearchEnvelopeProvider = "anthropic" | "openai" | "xai" | "gemini";
@@ -1055,6 +1107,16 @@ export async function callAnthropicWithSystemAndWebSearch(
   prompt: string,
   cancelSignal?: AbortSignal,
 ): Promise<WebSearchResult> {
+  if (isDedicatedWebSearchApiEnabled()) {
+    return callViaDedicatedWebSearchApi({
+      provider: "anthropic",
+      model,
+      temperature,
+      systemPrompt,
+      prompt,
+      cancelSignal,
+    });
+  }
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
   const client = new Anthropic({ apiKey, timeout: 20 * 60 * 1000 });
@@ -1139,6 +1201,18 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
   cancelSignal?: AbortSignal,
   options?: { maxTokens?: number },
 ): Promise<WebSearchResult> {
+  if (isDedicatedWebSearchApiEnabled()) {
+    return streamCallViaDedicatedWebSearchApi({
+      provider: "anthropic",
+      model,
+      temperature,
+      systemPrompt,
+      prompt,
+      onDelta,
+      onStatus,
+      cancelSignal,
+    });
+  }
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
   // Opus 4.7 with adaptive thinking + web search can run 4-8 minutes per turn;
@@ -1609,6 +1683,16 @@ export async function callGeminiWithSystemAndWebSearch(
   prompt: string,
   cancelSignal?: AbortSignal,
 ): Promise<WebSearchResult> {
+  if (isDedicatedWebSearchApiEnabled()) {
+    return callViaDedicatedWebSearchApi({
+      provider: "google",
+      model,
+      temperature,
+      systemPrompt,
+      prompt,
+      cancelSignal,
+    });
+  }
   if (!hasGeminiApiKey()) throw new Error("Gemini AI integration env vars not configured");
 
   const thinkingCfg = geminiThinkingConfigForModel(model);
@@ -1680,6 +1764,18 @@ export async function streamCallGeminiWithSystemAndWebSearch(
   onStatus?: (status: string) => void,
   cancelSignal?: AbortSignal,
 ): Promise<WebSearchResult> {
+  if (isDedicatedWebSearchApiEnabled()) {
+    return streamCallViaDedicatedWebSearchApi({
+      provider: "google",
+      model,
+      temperature,
+      systemPrompt,
+      prompt,
+      onDelta,
+      onStatus,
+      cancelSignal,
+    });
+  }
   if (!hasGeminiApiKey()) throw new Error("Gemini AI integration env vars not configured");
 
   const thinkingCfg = geminiThinkingConfigForModel(model);
@@ -1769,6 +1865,18 @@ export async function streamCallGeminiConvictionDesk(
   cancelSignal?: AbortSignal,
   options?: { maxOutputTokens?: number },
 ): Promise<WebSearchResult> {
+  if (isDedicatedWebSearchApiEnabled()) {
+    return streamCallViaDedicatedWebSearchApi({
+      provider: "google",
+      model,
+      temperature,
+      systemPrompt,
+      prompt,
+      onDelta,
+      onStatus,
+      cancelSignal,
+    });
+  }
   if (!hasGeminiApiKey()) throw new Error("Gemini AI integration env vars not configured");
 
   const thinkingCfg = geminiThinkingConfigForModel(model);
@@ -2004,14 +2112,17 @@ function buildOpenAIResponseParams(
   systemPrompt: string,
   prompt: string,
   maxOutputTokensOverride?: number,
+  options?: { includeWebSearchTool?: boolean },
 ): Record<string, unknown> {
   const params: Record<string, unknown> = {
     model,
     instructions: systemPrompt,
     input: prompt,
-    tools: [{ type: "web_search_preview" }],
     max_output_tokens: maxOutputTokensOverride ?? OPENAI_MAX_OUTPUT_TOKENS,
   };
+  if (options?.includeWebSearchTool !== false) {
+    params.tools = [{ type: "web_search_preview" }];
+  }
   if (isOpenAIThinkingModel(model)) {
     // gpt-5.5 with thinking → high reasoning effort; others → medium for
     // balanced cost/quality. Summary "auto" surfaces reasoning summaries
@@ -2071,6 +2182,16 @@ export async function callOpenAIWithSystemAndWebSearch(
   prompt: string,
   cancelSignal?: AbortSignal,
 ): Promise<WebSearchResult> {
+  if (isDedicatedWebSearchApiEnabled()) {
+    return callViaDedicatedWebSearchApi({
+      provider: "openai",
+      model,
+      temperature,
+      systemPrompt,
+      prompt,
+      cancelSignal,
+    });
+  }
   const client = makeOpenAIClient();
   const params = buildOpenAIResponseParams(model, temperature, systemPrompt, prompt);
 
@@ -2115,6 +2236,18 @@ export async function streamCallOpenAIWithSystemAndWebSearch(
   cancelSignal?: AbortSignal,
   options?: { maxOutputTokens?: number; includeConvictionDeskAudit?: boolean },
 ): Promise<WebSearchResult> {
+  if (isDedicatedWebSearchApiEnabled()) {
+    return streamCallViaDedicatedWebSearchApi({
+      provider: "openai",
+      model,
+      temperature,
+      systemPrompt,
+      prompt,
+      onDelta,
+      onStatus,
+      cancelSignal,
+    });
+  }
   const client = makeOpenAIClient();
   const params = {
     ...buildOpenAIResponseParams(model, temperature, systemPrompt, prompt, options?.maxOutputTokens),

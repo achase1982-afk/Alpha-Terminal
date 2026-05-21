@@ -229,7 +229,7 @@ export function createChatTools(ctx: ChatToolContext) {
 
     web_search: tool({
       description:
-        "Search the public web using the active chat model provider's native web search (Anthropic, Google Gemini, or OpenAI). Use for catalysts, why-is-it-moving, and recent headline questions.",
+        "Search the public web via the dedicated Web Search API when configured (WEB_SEARCH_API_KEY), otherwise the active chat model provider's native search. Use for catalysts, why-is-it-moving, and recent headline questions.",
       inputSchema: z.object({
         query: z.string().describe("Search query, include ticker when relevant"),
       }),

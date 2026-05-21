@@ -29,10 +29,10 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("Data ticker");
   });
 
-  it("documents provider-native web_search", () => {
+  it("documents web_search API routing", () => {
     const prompt = buildChatSystemPrompt("AAPL");
-    expect(prompt.toLowerCase()).toContain("provider-native");
-    expect(prompt).toMatch(/Claude web search|Gemini|OpenAI web search/i);
+    expect(prompt).toContain("WEB_SEARCH_API_KEY");
+    expect(prompt).toMatch(/provider-native|Claude|Gemini|OpenAI/i);
   });
 });
 
