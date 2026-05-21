@@ -18,6 +18,10 @@ import {
 } from "@workspace/ai-models";
 
 const RETRYABLE_CHAT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+/** Clerk JWT wait + POST handshake; hung fetches otherwise leave stop button with stale composer text. */
+const CHAT_CLERK_TOKEN_TIMEOUT_MS = 12_000;
+/** Wall-clock cap for a single chat POST + SSE read (iOS "Load failed" / ghost streams). */
+const CHAT_REQUEST_TIMEOUT_MS = 120_000;
 const MULTI_AGENT_MODEL = "__multi_agent__";
 const MULTI_AGENT_STORAGE_KEY = "marketNewsChatMultiModels";
 const MULTI_AGENT_SYNTH_STORAGE_KEY = "marketNewsChatSynthesizerModel";
@@ -158,13 +162,18 @@ export function MarketNewsChatPanel() {
     setIsStreaming(next);
   }, []);
 
-  const abortActiveChatStream = useCallback(() => {
+  /** Abort fetch/SSE only — does not clear isStreaming (avoids a one-frame send unlock). */
+  const abortInFlightChatFetch = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
-    setStreamingState(false);
     setToolPills([]);
     setActiveMultiAgentCount(0);
-  }, [setStreamingState]);
+  }, []);
+
+  const abortActiveChatStream = useCallback(() => {
+    abortInFlightChatFetch();
+    setStreamingState(false);
+  }, [abortInFlightChatFetch, setStreamingState]);
 
   const narrowMobile = useMediaQuery("(max-width: 767px)");
   const dockReservePx = narrowMobile ? (composerFocused ? 0 : 78) : 12;
@@ -241,6 +250,16 @@ export function MarketNewsChatPanel() {
   }, [multiAgentModels, useMultiAgent]);
 
   useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden && isStreamingRef.current) {
+        abortActiveChatStream();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [abortActiveChatStream]);
+
+  useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
@@ -253,9 +272,10 @@ export function MarketNewsChatPanel() {
 
   const sendMessage = useCallback(
     async (text: string, options?: SendMessageOptions) => {
-      if (!text.trim()) return;
+      const trimmed = text.trim();
+      if (!trimmed) return;
 
-      abortActiveChatStream();
+      abortInFlightChatFetch();
 
       const useServerMultiAgent = useMultiAgent && multiAgentModels.length >= 2;
       if (useMultiAgent && multiAgentModels.length < 2) {
@@ -273,13 +293,25 @@ export function MarketNewsChatPanel() {
         return;
       }
 
-      const userMsg: UiMessage = { id: nextMsgId(), role: "user", content: text.trim() };
+      const userMsg: UiMessage = { id: nextMsgId(), role: "user", content: trimmed };
       const assistantId = nextMsgId();
       const truncateToIndex = options?.truncateToIndex;
       setMessages((prev) => {
         const assistantPlaceholder: UiMessage = { id: assistantId, role: "assistant", content: "" };
         if (truncateToIndex !== undefined) {
           return [...prev.slice(0, truncateToIndex), assistantPlaceholder];
+        }
+        const n = prev.length;
+        const last = prev[n - 1];
+        const prevUser = prev[n - 2];
+        if (
+          n >= 2 &&
+          last?.role === "assistant" &&
+          !last.content.trim() &&
+          prevUser?.role === "user" &&
+          prevUser.content === trimmed
+        ) {
+          return [...prev.slice(0, -2), prevUser, assistantPlaceholder];
         }
         return [...prev, userMsg, assistantPlaceholder];
       });
@@ -292,12 +324,16 @@ export function MarketNewsChatPanel() {
       const controller = new AbortController();
       abortRef.current = controller;
       const { signal } = controller;
+      const requestTimeoutId =
+        typeof window !== "undefined"
+          ? window.setTimeout(() => controller.abort(), CHAT_REQUEST_TIMEOUT_MS)
+          : undefined;
 
       let threadId = activeThreadId;
 
       const requestBody: Record<string, unknown> = {
         thread_id: threadId ?? undefined,
-        message: text.trim(),
+        message: trimmed,
         symbol: symU,
       };
       if (useServerMultiAgent) {
@@ -318,6 +354,7 @@ export function MarketNewsChatPanel() {
           },
           body: JSON.stringify(requestBody),
           signal,
+          clerkTokenTimeoutMs: CHAT_CLERK_TOKEN_TIMEOUT_MS,
         });
 
         const contentType = res.headers.get("content-type") || "";
@@ -331,7 +368,7 @@ export function MarketNewsChatPanel() {
                 : m,
             ),
           );
-          if (retryable) setLastFailedMessage(text.trim());
+          if (retryable) setLastFailedMessage(trimmed);
           return;
         }
 
@@ -376,15 +413,28 @@ export function MarketNewsChatPanel() {
 
         void refreshThreads();
       } catch (err: unknown) {
-        if (signal.aborted || (err as Error).name === "AbortError") return;
-        const errMsg = (err as Error).message || "Connection failed";
+        if (signal.aborted || (err as Error).name === "AbortError") {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId && !m.content.trim()
+                ? { ...m, content: "**Stopped.**" }
+                : m,
+            ),
+          );
+          return;
+        }
+        const rawMsg = (err as Error).message || "Connection failed";
+        const errMsg = /load failed|failed to fetch|networkerror/i.test(rawMsg)
+          ? "Connection lost — check network and tap Retry."
+          : rawMsg;
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId ? { ...m, content: `**Error:** ${errMsg}`, retryable: true } : m,
           ),
         );
-        setLastFailedMessage(text.trim());
+        setLastFailedMessage(trimmed);
       } finally {
+        if (requestTimeoutId != null) window.clearTimeout(requestTimeoutId);
         if (abortRef.current === controller) {
           abortRef.current = null;
           setStreamingState(false);
@@ -394,7 +444,7 @@ export function MarketNewsChatPanel() {
       }
     },
     [
-      abortActiveChatStream,
+      abortInFlightChatFetch,
       activeThreadId,
       modelSend,
       multiAgentModels,
@@ -461,13 +511,15 @@ export function MarketNewsChatPanel() {
 
   const handleComposerSend = useCallback(() => {
     if (composerSendLockRef.current) return;
-    if (!input.trim() || isStreamingRef.current) return;
+    const text = input.trim();
+    if (!text || isStreamingRef.current) return;
     composerSendLockRef.current = true;
-    void sendMessage(input);
+    setInput("");
+    void sendMessage(text);
     textareaRef.current?.blur();
-    queueMicrotask(() => {
+    window.setTimeout(() => {
       composerSendLockRef.current = false;
-    });
+    }, 400);
   }, [input, sendMessage]);
 
   const renderComposer = () => (
