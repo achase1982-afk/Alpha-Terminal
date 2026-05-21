@@ -148,8 +148,23 @@ export function MarketNewsChatPanel() {
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
+  const isStreamingRef = useRef(false);
+  const composerSendLockRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const setStreamingState = useCallback((next: boolean) => {
+    isStreamingRef.current = next;
+    setIsStreaming(next);
+  }, []);
+
+  const abortActiveChatStream = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setStreamingState(false);
+    setToolPills([]);
+    setActiveMultiAgentCount(0);
+  }, [setStreamingState]);
 
   const narrowMobile = useMediaQuery("(max-width: 767px)");
   const dockReservePx = narrowMobile ? (composerFocused ? 0 : 78) : 12;
@@ -192,7 +207,10 @@ export function MarketNewsChatPanel() {
     setActiveThreadId(null);
     setMessages([]);
     setThreadsMenuOpen(false);
-  }, [symU, refreshThreads]);
+    return () => {
+      abortActiveChatStream();
+    };
+  }, [symU, refreshThreads, abortActiveChatStream]);
 
   useEffect(() => {
     if (activeThreadId) void loadThreadMessages(activeThreadId);
@@ -235,7 +253,9 @@ export function MarketNewsChatPanel() {
 
   const sendMessage = useCallback(
     async (text: string, options?: SendMessageOptions) => {
-      if (!text.trim() || isStreaming) return;
+      if (!text.trim()) return;
+
+      abortActiveChatStream();
 
       const useServerMultiAgent = useMultiAgent && multiAgentModels.length >= 2;
       if (useMultiAgent && multiAgentModels.length < 2) {
@@ -265,12 +285,13 @@ export function MarketNewsChatPanel() {
       });
       setInput("");
       setToolPills([]);
-      setIsStreaming(true);
+      setStreamingState(true);
       setLastFailedMessage(null);
       setActiveMultiAgentCount(useServerMultiAgent ? multiAgentModels.length : 0);
 
       const controller = new AbortController();
       abortRef.current = controller;
+      const { signal } = controller;
 
       let threadId = activeThreadId;
 
@@ -296,7 +317,7 @@ export function MarketNewsChatPanel() {
             Accept: "text/event-stream",
           },
           body: JSON.stringify(requestBody),
-          signal: controller.signal,
+          signal,
         });
 
         const contentType = res.headers.get("content-type") || "";
@@ -315,6 +336,7 @@ export function MarketNewsChatPanel() {
         }
 
         await consumeChatSse(res, (ev: ChatSseEvent) => {
+          if (signal.aborted) return;
           if (ev.type === "thread" && ev.thread_id) {
             threadId = ev.thread_id;
             setActiveThreadId(ev.thread_id);
@@ -350,11 +372,11 @@ export function MarketNewsChatPanel() {
               ),
             );
           }
-        });
+        }, signal);
 
         void refreshThreads();
       } catch (err: unknown) {
-        if ((err as Error).name === "AbortError") return;
+        if (signal.aborted || (err as Error).name === "AbortError") return;
         const errMsg = (err as Error).message || "Connection failed";
         setMessages((prev) =>
           prev.map((m) =>
@@ -363,18 +385,21 @@ export function MarketNewsChatPanel() {
         );
         setLastFailedMessage(text.trim());
       } finally {
-        abortRef.current = null;
-        setIsStreaming(false);
-        setToolPills([]);
-        setActiveMultiAgentCount(0);
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+          setStreamingState(false);
+          setToolPills([]);
+          setActiveMultiAgentCount(0);
+        }
       }
     },
     [
+      abortActiveChatStream,
       activeThreadId,
-      isStreaming,
       modelSend,
       multiAgentModels,
       refreshThreads,
+      setStreamingState,
       symU,
       synthesizerModel,
       useMultiAgent,
@@ -382,11 +407,8 @@ export function MarketNewsChatPanel() {
   );
 
   const handleStop = useCallback(() => {
-    abortRef.current?.abort();
-    setIsStreaming(false);
-    setToolPills([]);
-    setActiveMultiAgentCount(0);
-  }, []);
+    abortActiveChatStream();
+  }, [abortActiveChatStream]);
 
   const handleNewThread = useCallback(() => {
     handleStop();
@@ -408,7 +430,7 @@ export function MarketNewsChatPanel() {
 
   const regenerateAssistantMessage = useCallback(
     (assistantMsgId: string) => {
-      if (isStreaming) return;
+      if (isStreamingRef.current) return;
       const idx = messages.findIndex((m) => m.id === assistantMsgId);
       if (idx < 0) return;
       let userText: string | null = null;
@@ -426,7 +448,7 @@ export function MarketNewsChatPanel() {
   );
 
   const handleRetry = useCallback(() => {
-    if (!lastFailedMessage || isStreaming) return;
+    if (!lastFailedMessage || isStreamingRef.current) return;
     const failedIdx = messages.findIndex((m) => m.retryable);
     setLastFailedMessage(null);
     cancelAssistantSpeech();
@@ -438,10 +460,15 @@ export function MarketNewsChatPanel() {
   }, [isStreaming, lastFailedMessage, messages, sendMessage]);
 
   const handleComposerSend = useCallback(() => {
-    if (!input.trim() || isStreaming) return;
+    if (composerSendLockRef.current) return;
+    if (!input.trim() || isStreamingRef.current) return;
+    composerSendLockRef.current = true;
     void sendMessage(input);
     textareaRef.current?.blur();
-  }, [input, isStreaming, sendMessage]);
+    queueMicrotask(() => {
+      composerSendLockRef.current = false;
+    });
+  }, [input, sendMessage]);
 
   const renderComposer = () => (
     <form
@@ -469,6 +496,11 @@ export function MarketNewsChatPanel() {
         rows={2}
         value={input}
         onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter" || e.shiftKey) return;
+          e.preventDefault();
+          handleComposerSend();
+        }}
         onFocus={() => {
           setComposerFocused(true);
           remeasure();
@@ -494,7 +526,7 @@ export function MarketNewsChatPanel() {
           type="button"
           disabled={!input.trim()}
           onPointerDown={(e) => {
-            if (!input.trim() || isStreaming) return;
+            if (!input.trim() || isStreamingRef.current) return;
             e.preventDefault();
             handleComposerSend();
           }}
