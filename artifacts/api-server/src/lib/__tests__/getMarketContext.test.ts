@@ -69,6 +69,18 @@ describe("getMarketContext", () => {
     const after = getMarketContext(etInstant(2026, 11, 27, 14, 0));
     expect(after.session).toBe("AFTERHOURS");
   });
+
+  it("session math is ET even when client display zone is Asia/Tokyo", () => {
+    const instant = etInstant(2026, 5, 21, 10, 30);
+    const et = getMarketContext(instant, "America/New_York");
+    const tokyo = getMarketContext(instant, "Asia/Tokyo");
+    expect(tokyo.session).toBe("OPEN");
+    expect(tokyo.session).toBe(et.session);
+    expect(tokyo.tradingDate).toBe("2026-05-21");
+    expect(tokyo.localLabel).toMatch(/ET/);
+    expect(tokyo.localLabel).toMatch(/your local:/i);
+    expect(et.localLabel).not.toMatch(/your local:/i);
+  });
 });
 
 describe("classifyOrigin", () => {

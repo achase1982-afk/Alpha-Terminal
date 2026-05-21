@@ -299,6 +299,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
       thread_id: threadId ?? undefined,
       message: text,
       symbol: symU,
+      clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     };
     if (useServerMultiAgent) {
       requestBody.multi_agent = {

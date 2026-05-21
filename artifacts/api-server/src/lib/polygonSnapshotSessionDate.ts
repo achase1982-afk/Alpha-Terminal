@@ -2,8 +2,9 @@
  * Derive US equity session calendar dates from Polygon options snapshot payloads.
  * Ingest must not default to request-day when the snapshot reflects prior-session data.
  */
-/** US equity session calendar (same zone as getMarketContext session math). */
-export const US_EQUITY_SESSION_TIME_ZONE = "America/New_York";
+import { US_EQUITY_SESSION_TIME_ZONE } from "./getMarketContext.js";
+
+export { US_EQUITY_SESSION_TIME_ZONE };
 
 /** Nanosecond SIP timestamp from Polygon → epoch ms. */
 export function parsePolygonSipTimestampNsToMs(raw: unknown): number | null {

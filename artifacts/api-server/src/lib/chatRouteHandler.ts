@@ -7,6 +7,7 @@ import {
 } from "./chatDb.js";
 import { runChatTurn, runMultiAgentChatTurn, type ChatStreamEvent } from "./chatOrchestrator.js";
 import { isGrokModel, XAI_CHAT_TOOLS_NOTE } from "./chatModel.js";
+import { readClientTimeZone } from "./marketClientTimeZone.js";
 
 const DEV_USER_ID = "dev-bypass-user";
 
@@ -36,6 +37,7 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
     message?: string;
     model?: string;
     symbol?: string;
+    clientTimeZone?: string;
     multi_agent?: {
       models?: string[];
       synthesizer_model?: string;
@@ -104,11 +106,17 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
   };
   req.on("close", onClientClose);
 
+  const clientTimeZone =
+    typeof body.clientTimeZone === "string" && body.clientTimeZone.trim().length > 0
+      ? body.clientTimeZone.trim()
+      : readClientTimeZone(req);
+
   const turnArgs = {
     thread,
     userMessage: message,
     model,
     ambientSymbol,
+    clientTimeZone,
     toolContext: { userId, schwabAccessToken, activeModel: model },
     abortSignal: clientAbort.signal,
     onEvent: (ev: ChatStreamEvent) => {
