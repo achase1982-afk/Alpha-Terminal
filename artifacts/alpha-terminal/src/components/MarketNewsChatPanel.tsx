@@ -323,22 +323,6 @@ export function MarketNewsChatPanel({
     scrollToBottom();
   }, [displayMessages, isStreaming, toolPills, scrollToBottom]);
 
-  useEffect(() => {
-    return () => {
-      abortStreamForThread(activeThreadId, symU);
-    };
-  }, [abortStreamForThread, activeThreadId, symU]);
-
-  useEffect(() => {
-    const onVisibility = () => {
-      if (document.hidden && isStreaming) {
-        abortStreamForThread(activeThreadId, symU);
-      }
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [abortStreamForThread, activeThreadId, isStreaming, symU]);
-
   const handleStop = useCallback(() => {
     abortStreamForThread(activeThreadId, symU);
   }, [abortStreamForThread, activeThreadId, symU]);
