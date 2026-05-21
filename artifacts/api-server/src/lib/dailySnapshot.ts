@@ -15,6 +15,8 @@ import { logger } from "../lib/logger";
 import { logFailure } from "../lib/telemetry";
 import { fetchPolygonReferenceStats } from "./polygonReferenceContracts";
 import { normalizeIV, computeIVRForSymbol } from "./ivNormalize";
+import { parsePolygonSnapshotResultToFlowRow } from "./polygonSnapshotFlowIngest.js";
+import { lastNyTradingSessionYmds, nyCalendarYmd } from "./usEquityMarketCalendar.js";
 
 const SCHWAB_API = "https://api.schwabapi.com/marketdata/v1";
 const POLYGON_API = "https://api.polygon.io";
@@ -185,52 +187,35 @@ function flowPerStrikeDedupeKey(
   return `${symUpper}|${sessionDate}|${optionType}|${strike}|${expiration}`;
 }
 
-function parsePolygonSnapshotResultToFlowRow(
-  r: Record<string, unknown>,
+async function loadEquitySpotBySessionDate(
+  sessionDates: Iterable<string>,
+): Promise<Map<string, Map<string, number>>> {
+  const bySym = new Map<string, Map<string, number>>();
+  for (const sessionDate of sessionDates) {
+    const equityRows = await db
+      .select({ sym: equityDailyTable.symbol, close: equityDailyTable.close })
+      .from(equityDailyTable)
+      .where(eq(equityDailyTable.date, sessionDate));
+    for (const r of equityRows) {
+      if (r.close == null || !(r.close > 0)) continue;
+      const sym = r.sym.toUpperCase();
+      let m = bySym.get(sym);
+      if (!m) {
+        m = new Map();
+        bySym.set(sym, m);
+      }
+      m.set(sessionDate, r.close);
+    }
+  }
+  return bySym;
+}
+
+function spotForSymbolSession(
+  spotBySymDate: Map<string, Map<string, number>>,
   symUpper: string,
-  date: string,
-): typeof optionsFlowPerStrikeTable.$inferInsert | null {
-  const details = r["details"] as Record<string, unknown> | undefined;
-  const day = r["day"] as Record<string, unknown> | undefined;
-  const lastQuote = r["last_quote"] as Record<string, unknown> | undefined;
-  const greeks = r["greeks"] as Record<string, unknown> | undefined;
-  if (!details) return null;
-
-  const rawCt = String(details["contract_type"] ?? "").toLowerCase();
-  const contractType = rawCt === "call" ? "call" : rawCt === "put" ? "put" : null;
-  if (!contractType) return null;
-  const strikePrice = details["strike_price"] as number;
-  const expDate = details["expiration_date"] as string;
-  if (expDate == null || strikePrice == null || !Number.isFinite(strikePrice)) return null;
-
-  const vol = (day?.["volume"] ?? 0) as number;
-  const oi = (r["open_interest"] ?? 0) as number;
-  const bid = (lastQuote?.["bid"] ?? 0) as number;
-  const ask = (lastQuote?.["ask"] ?? 0) as number;
-  const mid = (bid + ask) / 2;
-
-  const nowMs = Date.now();
-  const dte = Math.max(0, Math.round((new Date(`${expDate}T20:00:00Z`).getTime() - nowMs) / 86_400_000));
-
-  return {
-    underlyingSymbol: symUpper,
-    date,
-    optionType: contractType,
-    strike: strikePrice,
-    expiration: expDate,
-    dte,
-    dailyVolume: vol,
-    openInterest: oi,
-    bid,
-    ask,
-    mid,
-    impliedVolatility: normalizeIV((r["implied_volatility"] as number) ?? null),
-    delta: (greeks?.["delta"] as number) ?? null,
-    gamma: (greeks?.["gamma"] as number) ?? null,
-    theta: (greeks?.["theta"] as number) ?? null,
-    vega: (greeks?.["vega"] as number) ?? null,
-    avgTradePrice: (day?.["vwap"] as number) ?? mid,
-  };
+  sessionDate: string,
+): number {
+  return spotBySymDate.get(symUpper)?.get(sessionDate) ?? 0;
 }
 
 async function fetchQuotesBatch(
@@ -1060,38 +1045,59 @@ async function collectPolygonIVData(
   }
 }
 
+/** Expiration_date_gte for Polygon snapshot query when row session date is not fixed upfront. */
+function polygonFlowQueryExpirationMinYmd(explicitSessionDate: string | null): string | null {
+  if (explicitSessionDate) return explicitSessionDate;
+  const todayNy = nyCalendarYmd(new Date());
+  const prior = lastNyTradingSessionYmds(8).find((d: string) => d < todayNy) ?? null;
+  return prior;
+}
+
 export async function collectPolygonFlowFromAPI(
   symbols: string[],
   dateStr?: string,
-): Promise<{ strikeRows: number; tradeRows: number }> {
-  const date = dateStr ?? todayStr();
+): Promise<{ strikeRows: number; tradeRows: number; sessionDatesUsed: string[] }> {
+  const explicitSessionDate = dateStr?.trim() || null;
   const apiKey = process.env["POLYGON_API_KEY"];
-  if (!apiKey) return { strikeRows: 0, tradeRows: 0 };
+  if (!apiKey) return { strikeRows: 0, tradeRows: 0, sessionDatesUsed: [] };
 
-  logger.info({ count: symbols.length, date }, "Snapshot: collecting Polygon flow data");
-  void logFailure("POLYGON_API", "INFO", "Flow scan started", { symbols: symbols.length, date });
+  const queryExpMin = polygonFlowQueryExpirationMinYmd(explicitSessionDate);
+  if (!queryExpMin) {
+    logger.error("Snapshot: cannot resolve Polygon flow query expiration floor (no explicit date, no prior session)");
+    return { strikeRows: 0, tradeRows: 0, sessionDatesUsed: [] };
+  }
+
+  logger.info(
+    { count: symbols.length, explicitSessionDate, queryExpMin },
+    "Snapshot: collecting Polygon flow data",
+  );
+  void logFailure("POLYGON_API", "INFO", "Flow scan started", {
+    symbols: symbols.length,
+    explicitSessionDate,
+    queryExpMin,
+  });
 
   let strikeRows = 0;
-  let tradeRows = 0;
+  const tradeRows = 0;
   let apiCalls = 0;
   let apiErrors = 0;
+  let rowsSkippedNoSip = 0;
+  const sessionDatesUsed = new Set<string>();
 
-  const spotCache = new Map<string, number>();
-  const equityRows = await db.select({ sym: equityDailyTable.symbol, close: equityDailyTable.close })
-    .from(equityDailyTable)
-    .where(eq(equityDailyTable.date, date));
-  for (const r of equityRows) {
-    if (r.close && r.close > 0) spotCache.set(r.sym, r.close);
-  }
+  const spotBySymDate = explicitSessionDate
+    ? await loadEquitySpotBySessionDate([explicitSessionDate])
+    : new Map<string, Map<string, number>>();
+
+  const expMax = new Date(Date.now() + POLYGON_FLOW_EXP_MAX_DAYS * 86_400_000).toISOString().slice(0, 10);
 
   for (const sym of symbols) {
     try {
-      const spot = spotCache.get(sym.toUpperCase()) ?? 0;
-      const expMin = date;
-      const expMax = new Date(Date.now() + POLYGON_FLOW_EXP_MAX_DAYS * 86_400_000).toISOString().slice(0, 10);
+      const symUpper = sym.toUpperCase();
+      const stampDateForSpot = explicitSessionDate ?? queryExpMin;
+      const spot = spotForSymbolSession(spotBySymDate, symUpper, stampDateForSpot);
 
       const passes: Array<{ gte: string; lte: string; strikeMin?: string; strikeMax?: string }> = [
-        { gte: expMin, lte: expMax },
+        { gte: queryExpMin, lte: expMax },
       ];
 
       if (spot > 0) {
@@ -1105,10 +1111,10 @@ export async function collectPolygonFlowFromAPI(
         );
       }
 
-      const symUpper = sym.toUpperCase();
       const mergedByKey = new Map<string, typeof optionsFlowPerStrikeTable.$inferInsert>();
       let collapsedDuplicateCount = 0;
       let anyPageCapHit = false;
+      let symbolHadRows = false;
 
       for (const pass of passes) {
         const baseParams = new URLSearchParams({
@@ -1125,13 +1131,22 @@ export async function collectPolygonFlowFromAPI(
 
         if (lastHttpStatus < 200 || lastHttpStatus >= 300) {
           apiErrors++;
-          void logFailure("POLYGON_API", "WARN", `Options snapshot HTTP ${lastHttpStatus}`, { symbol: sym, status: lastHttpStatus, date });
+          void logFailure("POLYGON_API", "WARN", `Options snapshot HTTP ${lastHttpStatus}`, {
+            symbol: sym,
+            status: lastHttpStatus,
+            explicitSessionDate,
+          });
         }
 
         for (const r of results) {
-          const row = parsePolygonSnapshotResultToFlowRow(r, symUpper, date);
-          if (!row) continue;
-          const k = flowPerStrikeDedupeKey(symUpper, date, row.optionType, row.strike, row.expiration);
+          const row = parsePolygonSnapshotResultToFlowRow(r, symUpper, explicitSessionDate);
+          if (!row) {
+            rowsSkippedNoSip++;
+            continue;
+          }
+          symbolHadRows = true;
+          sessionDatesUsed.add(row.date);
+          const k = flowPerStrikeDedupeKey(symUpper, row.date, row.optionType, row.strike, row.expiration);
           const prev = mergedByKey.get(k);
           if (!prev) {
             mergedByKey.set(k, row);
@@ -1143,6 +1158,20 @@ export async function collectPolygonFlowFromAPI(
           if (vol > prevVol) mergedByKey.set(k, row);
         }
         await sleep(200);
+      }
+
+      if (!symbolHadRows) {
+        logger.error(
+          { symbol: sym, rowsSkippedNoSip },
+          "Snapshot: Polygon flow symbol produced no rows — missing SIP timestamps on all contracts",
+        );
+        void logFailure(
+          "POLYGON_API",
+          "ERROR",
+          `Flow scan: no derivable session date rows for ${sym}`,
+          { symbol: sym, explicitSessionDate, rowsSkippedNoSip },
+        );
+        continue;
       }
 
       if (collapsedDuplicateCount > 0) {
@@ -1167,22 +1196,40 @@ export async function collectPolygonFlowFromAPI(
     } catch (e) {
       apiErrors++;
       logger.warn({ sym, error: (e as Error).message }, "Snapshot: Polygon flow failed");
-      void logFailure("POLYGON_API", "WARN", `Flow scan failed for ${sym}`, { symbol: sym, error: (e as Error).message, date });
+      void logFailure("POLYGON_API", "WARN", `Flow scan failed for ${sym}`, {
+        symbol: sym,
+        error: (e as Error).message,
+        explicitSessionDate,
+      });
     }
     await sleep(300);
   }
 
+  const sessionDatesList = [...sessionDatesUsed].sort();
   const severity = apiErrors > 0 && apiErrors === symbols.length ? "ERROR" : apiErrors > 0 ? "WARN" : "INFO";
   void logFailure("POLYGON_API", severity, `Flow scan complete — ${strikeRows} strikes from ${apiCalls} calls`, {
-    strikeRows, tradeRows, apiCalls, apiErrors, date,
+    strikeRows,
+    tradeRows,
+    apiCalls,
+    apiErrors,
+    explicitSessionDate,
+    sessionDatesUsed: sessionDatesList,
+    rowsSkippedNoSip,
     successRate: apiCalls > 0 ? `${Math.round(((apiCalls - apiErrors) / apiCalls) * 100)}%` : "N/A",
   });
 
   if (strikeRows > 0) {
-    void logFailure("DATABASE", "INFO", `options_flow_per_strike: ${strikeRows} rows inserted`, { table: "options_flow_per_strike", rows: strikeRows, date });
+    void logFailure("DATABASE", "INFO", `options_flow_per_strike: ${strikeRows} rows inserted`, {
+      table: "options_flow_per_strike",
+      rows: strikeRows,
+      sessionDatesUsed: sessionDatesList,
+    });
   }
-  logger.info({ strikeRows, tradeRows, date }, "Snapshot: Polygon flow collection complete");
-  return { strikeRows, tradeRows };
+  logger.info(
+    { strikeRows, tradeRows, explicitSessionDate, sessionDatesUsed: sessionDatesList, rowsSkippedNoSip },
+    "Snapshot: Polygon flow collection complete",
+  );
+  return { strikeRows, tradeRows, sessionDatesUsed: sessionDatesList };
 }
 
 export async function computeFlowAggregates(
@@ -1416,6 +1463,25 @@ export async function computeIVFromFlow(
   return updated;
 }
 
+/** Run flow aggregates + IV for each ingested session date (or one explicit override). */
+export async function runFlowPostProcessing(
+  symbols: string[],
+  opts: { explicitSessionDate?: string; sessionDatesUsed: string[] },
+): Promise<{ aggregateRows: number; ivRows: number }> {
+  const explicit = opts.explicitSessionDate?.trim();
+  const dates = explicit ? [explicit] : [...opts.sessionDatesUsed].sort();
+  if (dates.length === 0) return { aggregateRows: 0, ivRows: 0 };
+
+  const ivSymbols = [...new Set([...symbols, ...SECTOR_ETF_SYMBOLS])];
+  let aggregateRows = 0;
+  let ivRows = 0;
+  for (const d of dates) {
+    aggregateRows += await computeFlowAggregates(symbols, d);
+    ivRows += await computeIVFromFlow(ivSymbols, d);
+  }
+  return { aggregateRows, ivRows };
+}
+
 export async function populateReferenceData(symbols: string[]): Promise<number> {
   let count = 0;
   for (const sym of symbols) {
@@ -1514,15 +1580,16 @@ export async function runFullSnapshot(
 
         const chainRows = await collectOptionsChainSnapshots(symbols, token, date);
 
-        const { strikeRows: flowRows } = await collectPolygonFlowFromAPI(symbols, date);
+        const flowExplicit = dateStr?.trim() || undefined;
+        const { strikeRows: flowRows, sessionDatesUsed } = await collectPolygonFlowFromAPI(
+          symbols,
+          flowExplicit,
+        );
 
-        const aggregateRows = await computeFlowAggregates(symbols, date);
-
-        // Include sector ETFs in the IV/IVR pass — they get equity rows from collectEquitySnapshots
-        // but were previously excluded from IVR computation.
-        const ivSymbols = [...new Set([...symbols, ...SECTOR_ETF_SYMBOLS])];
-        const ivRows = await computeIVFromFlow(ivSymbols, date);
-        void ivRows;
+        const { aggregateRows } = await runFlowPostProcessing(symbols, {
+          explicitSessionDate: flowExplicit,
+          sessionDatesUsed,
+        });
 
         return { equityRows, chainRows, flowRows, aggregateRows };
       })(),

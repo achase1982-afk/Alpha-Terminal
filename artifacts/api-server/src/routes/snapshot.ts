@@ -1,5 +1,16 @@
 import { Router } from "express";
-import { runFullSnapshot, getSnapshotStatus, collectEquitySnapshots, collectPolygonFlowFromAPI, computeFlowAggregates, computeIVFromFlow, backfillEquityHistory, backfillPolygonFlow, backfillEquityFromPolygon } from "../lib/dailySnapshot";
+import {
+  runFullSnapshot,
+  getSnapshotStatus,
+  collectEquitySnapshots,
+  collectPolygonFlowFromAPI,
+  runFlowPostProcessing,
+  computeFlowAggregates,
+  computeIVFromFlow,
+  backfillEquityHistory,
+  backfillPolygonFlow,
+  backfillEquityFromPolygon,
+} from "../lib/dailySnapshot";
 import { cleanupIVUnits, recomputeAllIVR } from "../lib/ivNormalize";
 import { startBackfillJob, getBackfillJob, listBackfillJobs, diagnoseListContracts } from "../lib/historicalIVBackfill";
 import { startHvProxyBackfillJob, getHvProxyJob, listHvProxyJobs } from "../lib/hvProxyBackfill";
@@ -72,10 +83,12 @@ router.post("/flow-only", async (req, res) => {
 
   if (sync) {
     try {
-      const { strikeRows } = await collectPolygonFlowFromAPI(scanSymbols, date);
-      const aggRows = await computeFlowAggregates(scanSymbols, date);
-      const ivRows = await computeIVFromFlow(scanSymbols, date);
-      res.json({ ok: true, strikeRows, aggRows, ivRows });
+      const { strikeRows, sessionDatesUsed } = await collectPolygonFlowFromAPI(scanSymbols, date);
+      const { aggregateRows: aggRows, ivRows } = await runFlowPostProcessing(scanSymbols, {
+        explicitSessionDate: date,
+        sessionDatesUsed,
+      });
+      res.json({ ok: true, strikeRows, aggRows, ivRows, sessionDatesUsed });
       return;
     } catch (e) {
       return res.status(500).json({ ok: false, error: (e as Error).message });
@@ -85,11 +98,12 @@ router.post("/flow-only", async (req, res) => {
   res.json({ ok: true, message: "Flow collection started", symbols: scanSymbols.length });
 
   collectPolygonFlowFromAPI(scanSymbols, date)
-    .then(({ strikeRows }) => computeFlowAggregates(scanSymbols, date).then(aggRows =>
-      computeIVFromFlow(scanSymbols, date).then(ivRows => {
-        logger.info({ strikeRows, aggRows, ivRows }, "Flow-only collection complete");
-      })
-    ))
+    .then(({ strikeRows, sessionDatesUsed }) =>
+      runFlowPostProcessing(scanSymbols, { explicitSessionDate: date, sessionDatesUsed }).then(
+        ({ aggregateRows: aggRows, ivRows }) => {
+          logger.info({ strikeRows, aggRows, ivRows, sessionDatesUsed }, "Flow-only collection complete");
+        },
+      ))
     .catch(e => {
       logger.error({ error: (e as Error).message }, "Background flow collection failed");
     });
