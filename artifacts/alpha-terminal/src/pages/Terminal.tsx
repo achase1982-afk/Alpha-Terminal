@@ -650,7 +650,9 @@ export default function TerminalPage() {
                   {contextTab === "news" && <NewsTab />}
                   {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                   {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles} stickyOffset={stickyH} />}
-                  {contextTab === "newsChat" && <MarketNewsChatPanel />}
+                  {contextTab === "newsChat" && (
+                    <MarketNewsChatPanel hideMobileComposerDock={searchOpen} />
+                  )}
                   {contextTab === "chart" && (
                     <>
                       <ChartControls />
@@ -707,7 +709,9 @@ export default function TerminalPage() {
                     {contextTab === "news" && <NewsTab />}
                     {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                     {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles} stickyOffset={0} />}
-                    {contextTab === "newsChat" && <MarketNewsChatPanel />}
+                    {contextTab === "newsChat" && (
+                    <MarketNewsChatPanel hideMobileComposerDock={searchOpen} />
+                  )}
                   </div>
                 </div>
               </>
@@ -750,7 +754,9 @@ export default function TerminalPage() {
                   {contextTab === "news" && <NewsTab />}
                   {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                   {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles} stickyOffset={stickyH} />}
-                  {contextTab === "newsChat" && <MarketNewsChatPanel />}
+                  {contextTab === "newsChat" && (
+                    <MarketNewsChatPanel hideMobileComposerDock={searchOpen} />
+                  )}
                   {contextTab === "chart" && (
                     <>
                       <ChartControls />

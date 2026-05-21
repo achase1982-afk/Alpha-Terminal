@@ -89,7 +89,17 @@ function toolLabel(name: string, input: unknown): string {
   return sym ? `${name} (${sym})` : name;
 }
 
-export function MarketNewsChatPanel() {
+/** Within this distance (px) of the bottom, treat the user as "following" the stream. */
+const CHAT_SCROLL_PIN_THRESHOLD_PX = 80;
+
+export interface MarketNewsChatPanelProps {
+  /** When true, do not portal the mobile composer (e.g. Search overlay is open). */
+  hideMobileComposerDock?: boolean;
+}
+
+export function MarketNewsChatPanel({
+  hideMobileComposerDock = false,
+}: MarketNewsChatPanelProps = {}) {
   const symbol = useTerminalStore((s) => s.symbol);
   const aiModel = useTerminalStore((s) => s.aiFeatureSettings.chat.model);
   const setAiFeatureSetting = useTerminalStore((s) => s.setAiFeatureSetting);
@@ -159,16 +169,42 @@ export function MarketNewsChatPanel() {
 
   const composerSendLockRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isPinnedToBottomRef = useRef(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composerFormRef = useRef<HTMLFormElement>(null);
   const [composerHeightPx, setComposerHeightPx] = useState(72);
 
   const narrowMobile = useMediaQuery("(max-width: 767px)");
+  const mobileComposerDockActive = narrowMobile && !hideMobileComposerDock;
   const { dockStyle, scrollPaddingBottomPx, remeasure } = useChatComposerDock(
-    narrowMobile,
+    mobileComposerDockActive,
     composerFocused,
     composerHeightPx,
   );
+
+  useEffect(() => {
+    if (!hideMobileComposerDock) return;
+    setComposerFocused(false);
+    textareaRef.current?.blur();
+    remeasure();
+  }, [hideMobileComposerDock, remeasure]);
+
+  const scrollToBottom = useCallback((force = false) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (force || isPinnedToBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, []);
+
+  const handleMessagesScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceFromBottom =
+      el.scrollHeight - el.scrollTop - el.clientHeight;
+    isPinnedToBottomRef.current =
+      distanceFromBottom <= CHAT_SCROLL_PIN_THRESHOLD_PX;
+  }, []);
 
   useEffect(() => {
     const el = composerFormRef.current;
@@ -279,10 +315,13 @@ export function MarketNewsChatPanel() {
   }, [multiAgentModels, useMultiAgent]);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [displayMessages, isStreaming, toolPills]);
+    isPinnedToBottomRef.current = true;
+    scrollToBottom(true);
+  }, [activeThreadId, symU, scrollToBottom]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [displayMessages, isStreaming, toolPills, scrollToBottom]);
 
   const handleStop = useCallback(() => {
     abortStreamForThread(activeThreadId, symU);
@@ -290,6 +329,7 @@ export function MarketNewsChatPanel() {
 
   const sendMessage = useCallback(
     async (text: string, options?: { truncateToIndex?: number }) => {
+      isPinnedToBottomRef.current = true;
       await sendChatMessage({
         text,
         symbol: symU,
@@ -671,9 +711,12 @@ export function MarketNewsChatPanel() {
 
         <div
           ref={scrollRef}
+          onScroll={handleMessagesScroll}
           className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-2"
           style={
-            narrowMobile ? { paddingBottom: `${scrollPaddingBottomPx}px` } : undefined
+            mobileComposerDockActive
+              ? { paddingBottom: `${scrollPaddingBottomPx}px` }
+              : undefined
           }
         >
           {displayMessages.length === 0 && (
@@ -763,7 +806,7 @@ export function MarketNewsChatPanel() {
         {!narrowMobile && renderComposer()}
       </div>
 
-      {narrowMobile && typeof document !== "undefined"
+      {mobileComposerDockActive && typeof document !== "undefined"
         ? createPortal(renderComposer(dockStyle), document.body)
         : null}
     </div>
