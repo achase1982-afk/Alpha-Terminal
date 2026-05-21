@@ -286,12 +286,19 @@ export function buildStrategistFullDiagnosticJson(args: BuildFullDiagnosticArgs)
         : baseModelAttr.note,
   };
 
+  const authoritativeMarketContext =
+    (args.dataPackageParsed.authoritativeMarketContext as Record<string, unknown> | undefined) ?? null;
+  const datasetFreshness =
+    (args.dataPackageParsed.datasetFreshness as Record<string, unknown> | undefined) ?? null;
+
   return {
     runMetadata: {
       ...args.runMetadata,
       totalRunDurationMs: args.runDurationMs,
     },
     strategistPayload: args.strategistPayload,
+    authoritativeMarketContext,
+    datasetFreshness,
     tapeBackfillStatus: tapeDiag,
     dataQualitySummary,
     modelAttribution,

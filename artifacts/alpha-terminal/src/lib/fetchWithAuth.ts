@@ -1,3 +1,5 @@
+import { appendClientTimeZoneToUrl } from "./clientTimeZone.js";
+
 /** Mirrors Clerk `getToken` options we care about (long strategist polls + 401 recovery). */
 export type ClerkGetTokenOptions = { skipCache?: boolean };
 
@@ -79,8 +81,15 @@ export async function fetchWithAuth(
   const startedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
   const urlStr = typeof input === "string" ? input : input instanceof URL ? input.href : "request";
 
+  let resolvedInput: RequestInfo | URL = input;
+  if (typeof input === "string" && input.includes("/api/market")) {
+    resolvedInput = appendClientTimeZoneToUrl(input);
+  } else if (input instanceof URL && input.pathname.includes("/api/market")) {
+    resolvedInput = new URL(appendClientTimeZoneToUrl(input.toString()));
+  }
+
   try {
-    const res = await fetch(input, { ...fetchInit, headers, redirect: "error" });
+    const res = await fetch(resolvedInput, { ...fetchInit, headers, redirect: "error" });
     if (
       res.status === 401 &&
       !_authRetry &&

@@ -19,6 +19,9 @@ import type { EquityDailyExtras } from "./equityDailyExtras.js";
 import type { NextEarnings } from "./earningsService.js";
 import { runDeskAnalysis } from "./strategistDesk.js";
 import type { DeskCallbacks } from "./strategistDesk.js";
+import { getMarketContext } from "./getMarketContext.js";
+import { buildDatasetFreshnessMeta, formatDatasetInlineTag } from "./datasetFreshness.js";
+import { formatMarketContextUserBlock } from "./marketContextPrompt.js";
 
 export type ValidationVerdict = "PROCEED" | "PROCEED_WITH_CAUTION" | "DO_NOT_PROCEED";
 export type ValidationMode = "opening" | "closing";
@@ -95,6 +98,8 @@ export interface ValidationInput {
   // numbers, no silent fallbacks. If we don't have it, the validators don't
   // see it and the prompt is shorter — they can still cite "data unavailable"
   // honestly.
+  /** Deterministic session clock (server-resolved; do not infer from model). */
+  sessionClock?: import("./getMarketContext.js").MarketContext;
   marketContext?: {
     // ── IVR (existing — unchanged) ────────────────────────────────────────
     ivr: number | null;
@@ -260,11 +265,11 @@ You are not arguing a side. You are calling the exit as you see it. PROCEED = th
 // ────────────────────────────────────────────────────────────────────────────
 // PROMPTS
 // ────────────────────────────────────────────────────────────────────────────
-const ROUND_1 = (today: string, side: "BULL" | "BEAR", mode: ValidationMode, dataPackage: string) => {
+const ROUND_1 = (side: "BULL" | "BEAR", mode: ValidationMode, dataPackage: string) => {
   const action = mode === "opening"
     ? (side === "BULL" ? "the strongest case FOR entering this exact trade" : "the strongest case AGAINST entering this exact trade")
     : (side === "BULL" ? "the strongest case AGAINST closing this position now" : "the strongest case FOR closing this position now");
-  return `Today is ${today}. PHASE 1 / ROUND 1 — initial pitch. You are the **${side}** validator. Run web searches per the WEB SEARCH MANDATE first, then deliver ${action} based on the data below.
+  return `PHASE 1 / ROUND 1 — initial pitch. You are the **${side}** validator. Run web searches per the WEB SEARCH MANDATE first, then deliver ${action} based on the data below.
 
 Output ONLY this JSON object — no markdown fences, no prose:
 {
@@ -329,7 +334,7 @@ ${otherR2}`;
 // The frontend parses the same `finalVerdict` / `finalConfidence` /
 // `reasoningBullets` / `topRisks` / `improvements` fields as Round 3 of
 // the debate, so the verdict-card renderer needs no changes.
-const SOLO_PROMPT = (today: string, mode: ValidationMode, dataPackage: string) => {
+const SOLO_PROMPT = (mode: ValidationMode, dataPackage: string) => {
   const bullLabel = mode === "opening"
     ? "FOR entering this exact trade"
     : "AGAINST closing this position now";
@@ -339,7 +344,7 @@ const SOLO_PROMPT = (today: string, mode: ValidationMode, dataPackage: string) =
   const improvementsHint = mode === "opening"
     ? "(different strike, different DTE, wait for pullback, reduce size, switch credit/debit, etc.)"
     : "(stay in until catalyst X, scale out partial, set tighter stop, etc.)";
-  return `Today is ${today}. SOLO VALIDATION — single pass. Run web searches per the WEB SEARCH MANDATE first, then steelman both sides honestly and deliver one verdict.
+  return `SOLO VALIDATION — single pass. Run web searches per the WEB SEARCH MANDATE first, then steelman both sides honestly and deliver one verdict.
 
 Output ONLY this JSON object — no markdown fences, no prose:
 {
@@ -371,6 +376,9 @@ function fmtNum(n: number | null | undefined, decimals = 2): string {
 function buildDataPackage(input: ValidationInput): string {
   const t = input.ticket;
   const lines: string[] = [];
+  const sessionClock = input.sessionClock ?? getMarketContext();
+  lines.push(formatMarketContextUserBlock(sessionClock));
+  lines.push("");
   lines.push(`## TRADE TICKET UNDER VALIDATION`);
   lines.push(`Ticker: ${t.ticker}`);
   const hasStockLeg = !!(t.stockLeg && t.stockLeg.quantity > 0);
@@ -661,8 +669,12 @@ function buildDataPackage(input: ValidationInput): string {
   // skew is "bullish" or "bearish", that's a real directional flow signal.
   const ph = mc?.polygonHighlights ?? null;
   if (ph) {
+    const flowTag = buildDatasetFreshnessMeta(ph.asOfDate, sessionClock);
+    const flowHeading = flowTag
+      ? formatDatasetInlineTag("OPTIONS FLOW", flowTag)
+      : `OPTIONS FLOW [asOf: ${ph.asOfDate}]`;
     lines.push(``);
-    lines.push(`## OPTIONS FLOW (Polygon EOD, as of ${ph.asOfDate})`);
+    lines.push(`## ${flowHeading}`);
     lines.push(`Total call volume: ${ph.totalCallVolume.toLocaleString()} | Total put volume: ${ph.totalPutVolume.toLocaleString()}`);
     if (ph.putCallVolumeRatio > 0) {
       lines.push(`P/C volume (flow): ${ph.putCallVolumeRatio.toFixed(2)}`);
@@ -1299,7 +1311,7 @@ async function runSoloValidation(
   const r = await runTurn({
     modelOpt: labeled,
     systemPrompt: sys,
-    prompt: SOLO_PROMPT(today, input.ticket.mode, dataPackage),
+    prompt: SOLO_PROMPT(input.ticket.mode, dataPackage),
     // Solo gets its own role + phase so the frontend transcript renders it
     // distinctly (no Bull/Bear color coding, no debate-round labels).
     round: 3,
@@ -1422,8 +1434,8 @@ export async function runTradeValidation(
   // ── Round 1 (parallel) ──
   callbacks?.onStatus?.("Round 1 — Bull and Bear pitching cases on this trade…");
   const [r1a, r1b] = await Promise.all([
-    runTurn({ modelOpt: labeledA, systemPrompt: sysA, prompt: ROUND_1(today, "BULL", input.ticket.mode, dataPackage), round: 1, role: "A", phase: "propose", callbacks, scrubCanonical }),
-    runTurn({ modelOpt: labeledB, systemPrompt: sysB, prompt: ROUND_1(today, "BEAR", input.ticket.mode, dataPackage), round: 1, role: "B", phase: "propose", callbacks, scrubCanonical }),
+    runTurn({ modelOpt: labeledA, systemPrompt: sysA, prompt: ROUND_1("BULL", input.ticket.mode, dataPackage), round: 1, role: "A", phase: "propose", callbacks, scrubCanonical }),
+    runTurn({ modelOpt: labeledB, systemPrompt: sysB, prompt: ROUND_1("BEAR", input.ticket.mode, dataPackage), round: 1, role: "B", phase: "propose", callbacks, scrubCanonical }),
   ]);
 
   // ── Round 2 (parallel) ──

@@ -37,6 +37,9 @@ import { checkEventConflicts, getUpcomingEvents, type EventCheckResult } from ".
 import { getNextEarningsDate } from "../lib/earningsService.js";
 import { chainCache, getOrFetchChain, CHAIN_CACHE_TTL, getCachedEconEvents } from "./market.js";
 import { recordPulseSnapshotForScanner } from "../lib/marketPulseCache.js";
+import { getMarketContext, type MarketContext, type MarketSessionLabel } from "../lib/getMarketContext.js";
+import { formatMarketContextUserBlock } from "../lib/marketContextPrompt.js";
+import { readClientTimeZone } from "../lib/marketClientTimeZone.js";
 import {
   runDeterministicStrategist,
   fetchPortfolioContext,
@@ -1114,51 +1117,71 @@ function buildPulseDataBlock(
 
 // ── MARKET SESSION DETECTION ─────────────────────────────────────────────────
 
-function sessionToEngineType(session: string): SessionType {
-  if (session.includes('Pre-Market')) return 'PRE_MARKET';
-  if (session.includes('Regular')) return 'RTH';
-  if (session.includes('Weekend')) return 'WEEKEND';
-  return 'OVERNIGHT';
+function marketSessionToEngineType(ctx: MarketContext): SessionType {
+  if (ctx.session === "PREMARKET") return "PRE_MARKET";
+  if (ctx.session === "OPEN") return "RTH";
+  if (ctx.session === "CLOSED") {
+    const wd = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      weekday: "short",
+    }).format(new Date(ctx.now));
+    if (wd === "Sat" || wd === "Sun") return "WEEKEND";
+  }
+  return "OVERNIGHT";
 }
 
-function getMarketSession(): { session: string; timeET: string; sessionGuidance: string } {
-  const now = new Date();
-  const formatter = new Intl.DateTimeFormat("en-US", {
+/** Legacy pulse labels + authoritative MarketContext for prompts and telemetry. */
+function getMarketSession(req?: Request): {
+  session: string;
+  timeET: string;
+  sessionGuidance: string;
+  marketContext: MarketContext;
+} {
+  const marketContext = getMarketContext(new Date(), req ? readClientTimeZone(req) : "America/New_York");
+  const timeParts = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
-    hour: "numeric",
+    hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+  }).formatToParts(new Date(marketContext.now));
+  const hour = timeParts.find((p) => p.type === "hour")?.value ?? "00";
+  const minute = timeParts.find((p) => p.type === "minute")?.value ?? "00";
+  const timeET = `${hour}:${minute} ET`;
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
     weekday: "long",
-  });
-  const parts = formatter.formatToParts(now);
-  const hour = parseInt(parts.find(p => p.type === "hour")?.value ?? "0");
-  const minute = parseInt(parts.find(p => p.type === "minute")?.value ?? "0");
-  const weekday = parts.find(p => p.type === "weekday")?.value ?? "Monday";
-  const timeET = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} ET`;
-  const isWeekend = weekday === "Saturday" || weekday === "Sunday";
-  const mins = hour * 60 + minute;
+  }).format(new Date(marketContext.now));
 
   let session: string;
   let sessionGuidance: string;
-
-  if (isWeekend) {
+  const label = marketContext.session as MarketSessionLabel;
+  if (label === "CLOSED" && (weekday === "Saturday" || weekday === "Sunday")) {
     session = `Weekend (${weekday})`;
-    sessionGuidance = "Markets are closed. Analyze the data as end-of-week positioning and provide a weekend outlook focused on what to watch for Monday's open. Discuss potential gap risk and key levels to monitor.";
-  } else if (mins >= 240 && mins < 570) {
+    sessionGuidance =
+      "Markets are closed. Analyze the data as end-of-week positioning and provide a weekend outlook focused on what to watch for Monday's open. Discuss potential gap risk and key levels to monitor.";
+  } else if (label === "PREMARKET") {
     session = "Pre-Market";
-    sessionGuidance = "It is pre-market (4:00–9:30 AM ET). Focus on overnight futures, gap expectations, key pre-market movers, and how the data sets up for the opening bell. Traders need actionable prep for the open.";
-  } else if (mins >= 570 && mins < 960) {
+    sessionGuidance =
+      "It is pre-market (4:00–9:30 AM ET). Focus on overnight futures, gap expectations, key pre-market movers, and how the data sets up for the opening bell. Traders need actionable prep for the open. Explicitly caveat prints as thin, low-volume, and not regular-session price discovery.";
+  } else if (label === "OPEN") {
     session = "Regular Trading Hours";
-    sessionGuidance = "Regular market hours are active (9:30 AM–4:00 PM ET). Provide a live intraday pulse — what is the market doing RIGHT NOW, momentum direction, key intraday levels, and whether to be aggressive or defensive into the close.";
-  } else if (mins >= 960 && mins < 1200) {
+    sessionGuidance =
+      "Regular market hours are active (9:30 AM–4:00 PM ET). Provide a live intraday pulse — what is the market doing RIGHT NOW, momentum direction, key intraday levels, and whether to be aggressive or defensive into the close.";
+  } else if (label === "AFTERHOURS") {
     session = "After-Hours";
-    sessionGuidance = "After-hours session (4:00–8:00 PM ET). Summarize how the regular session closed, key after-hours movers, and what the data implies for tomorrow's open. Help the trader plan overnight positioning.";
+    sessionGuidance =
+      "After-hours session (4:00–8:00 PM ET). Summarize how the regular session closed, key after-hours movers, and what the data implies for tomorrow's open. Explicitly caveat prints as thin, low-volume, and not regular-session price discovery.";
+  } else if (label === "CLOSED") {
+    session = "Overnight";
+    sessionGuidance =
+      "Overnight session (8:00 PM–4:00 AM ET). Minimal liquidity. Focus on futures direction, overnight risk factors, and what to watch when pre-market opens. Be brief and focused on risk management.";
   } else {
     session = "Overnight";
-    sessionGuidance = "Overnight session (8:00 PM–4:00 AM ET). Minimal liquidity. Focus on futures direction, overnight risk factors, and what to watch when pre-market opens. Be brief and focused on risk management.";
+    sessionGuidance =
+      "Overnight session. Minimal liquidity. Focus on futures direction, overnight risk factors, and what to watch when pre-market opens.";
   }
 
-  return { session, timeET, sessionGuidance };
+  return { session, timeET, sessionGuidance, marketContext };
 }
 
 router.post("/market-briefing", async (req, res) => {
@@ -1174,7 +1197,7 @@ router.post("/market-briefing", async (req, res) => {
     return res.json({ response: "**Error:** Schwab access token required for Live Market Pulse.", error: "no_token" });
   }
 
-  const { session, timeET, sessionGuidance } = getMarketSession();
+  const { session, timeET, sessionGuidance, marketContext } = getMarketSession(req);
 
   let dataBlock: string;
   try {
@@ -1182,7 +1205,7 @@ router.post("/market-briefing", async (req, res) => {
     const expectedCount = symbols && symbols.length > 0 ? symbols.length : PULSE_SYMBOLS.length;
     const minRequired = Math.max(5, Math.ceil(expectedCount * 0.4));
     const missingSym = PULSE_SYMBOLS.filter(s => !wsResult.dataMap.has(s.display)).map(s => s.display);
-    req.log.info({ source: "ib+schwab", hits: wsResult.hitCount, expected: expectedCount, minRequired, missing: missingSym }, "Pulse data from IB/Schwab cache");
+    req.log.info({ source: "ib+schwab", hits: wsResult.hitCount, expected: expectedCount, minRequired, missing: missingSym, marketContext }, "Pulse data from IB/Schwab cache");
     if (wsResult.hitCount < minRequired) {
       return res.json({ response: `**Waiting for WebSocket data.** Only ${wsResult.hitCount}/${expectedCount} symbols available (need ${minRequired}). Ensure the live streamer is connected.`, error: "insufficient_ws_data" });
     }
@@ -1274,7 +1297,7 @@ router.post("/market-pulse", async (req, res) => {
     riskTolerance?: string;
   };
 
-  const { session, timeET, sessionGuidance } = getMarketSession();
+  const { session, timeET, sessionGuidance, marketContext } = getMarketSession(req);
 
   let dataBlock: string;
   try {
@@ -1304,6 +1327,8 @@ router.post("/market-pulse", async (req, res) => {
   const prompt = `You are an elite Macro Prop Desk Analyst at a top-tier systematic hedge fund.
 
 STRICT GROUNDING RULE: You must ONLY use the Context Data provided below. Every price, ratio, volume, and indicator value you cite MUST come from this data. You are ABSOLUTELY FORBIDDEN from using your internal training knowledge for market trends, price targets, or directional predictions. If a data field shows "NO DATA AVAILABLE", skip it — do NOT substitute with internal knowledge.
+
+${formatMarketContextUserBlock(marketContext)}
 
 ═══════════════════════════════════════════════════════
 LIVE MARKET PULSE — ${timeET} | SESSION: ${session}
@@ -1444,11 +1469,12 @@ router.get("/market-pulse/latest", (_req, res) => {
 
 router.post("/market-pulse/stream", async (req, res) => {
   ensurePulseSubscriptions();
-  const { symbols, model, temperature, preferences, previousBias } = req.body as {
+  const { symbols, model, temperature, preferences, previousBias, clientTimeZone: bodyTz } = req.body as {
     accessToken?: string;
     symbols?: string[];
     model?: string;
     temperature?: number;
+    clientTimeZone?: string;
     previousBias?: BiasLabel;
     preferences?: {
       allowedStrategies?: string[];
@@ -1504,7 +1530,7 @@ router.post("/market-pulse/stream", async (req, res) => {
     safeSseWrite(res, ": ping\n\n");
   }, 5000);
 
-  const { session, timeET, sessionGuidance } = getMarketSession();
+  const { session, timeET, sessionGuidance, marketContext } = getMarketSession(req);
 
   let dataMap: Map<string, Record<string, unknown>>;
   let dataBlock: string;
@@ -1548,6 +1574,7 @@ router.post("/market-pulse/stream", async (req, res) => {
     dataSymbols: dataMap.size,
     session,
     timeET,
+    authoritativeMarketContext: marketContext,
   }, "MARKET_PULSE", pulseBatch);
 
   const indNames = ["vix", "vix9d", "vix3m", "vix1d", "tick", "trin", "add", "advn", "decn", "dvol", "uvol",
@@ -1572,7 +1599,7 @@ router.post("/market-pulse/stream", async (req, res) => {
     breadthData: { tick: indicators.tick, trin: indicators.trin, add: indicators.add, advn: indicators.advn, decn: indicators.decn },
     volTermData: { vix: indicators.vix, vix9d: indicators.vix9d, vix3m: indicators.vix3m },
   }, "Market pulse engine input (breadth + volTerm)");
-  const engineResult = runMarketPulseEngine(indicators, previousBias, sessionToEngineType(session));
+  const engineResult = runMarketPulseEngine(indicators, previousBias, marketSessionToEngineType(marketContext));
 
   void updateRegimeFromPulse(engineResult).catch(() => {});
 
@@ -1681,7 +1708,9 @@ router.post("/market-pulse/stream", async (req, res) => {
     ? `\n⚠️ REGIME SHOCK WARNING — ${shockResult.activeTriggers.length} triggers fired (${shockResult.activeTriggers.map(t => t.trigger).join(", ")}). Your narrative should note elevated regime stress and recommend caution. Suggest reduced position sizes.\n`
     : "";
 
-  const narrativePrompt = `You are a senior market strategist writing institutional-grade analysis. You receive pre-calculated market scores from a deterministic scoring engine. Your job is to INTERPRET the scores, NOT recalculate them.
+  const narrativePrompt = `${formatMarketContextUserBlock(marketContext)}
+
+You are a senior market strategist writing institutional-grade analysis. You receive pre-calculated market scores from a deterministic scoring engine. Your job is to INTERPRET the scores, NOT recalculate them.
 ${shockWarningBlock}
 RULES:
 - DO NOT change, override, or recalculate any cluster scores, composite score, bias label, or confidence values. They are final.
@@ -2052,7 +2081,8 @@ router.post("/options-strategist", async (req, res) => {
 
   const wsResult = readFromWebSocketCache();
   const indicators = extractMarketIndicators(wsResult.dataMap);
-  const engineResult = runMarketPulseEngine(indicators, undefined, sessionToEngineType(getMarketSession().session));
+  const pulseCtx = getMarketSession(req).marketContext;
+  const engineResult = runMarketPulseEngine(indicators, undefined, marketSessionToEngineType(pulseCtx));
   const regime = classifyRegime(engineResult, indicators);
 
   const userOverride = todayEdge && todayEdge !== "auto" && todayEdge !== engineResult.todayEdge ? todayEdge : null;
@@ -2248,7 +2278,8 @@ router.post("/options-strategist/stream", async (req, res) => {
 
   const wsResult = readFromWebSocketCache();
   const indicators = extractMarketIndicators(wsResult.dataMap);
-  const engineResult = runMarketPulseEngine(indicators, undefined, sessionToEngineType(getMarketSession().session));
+  const pulseCtx = getMarketSession(req).marketContext;
+  const engineResult = runMarketPulseEngine(indicators, undefined, marketSessionToEngineType(pulseCtx));
   const shockCheck = evaluateRegimeShock(indicators);
   const regime = classifyRegime(engineResult, indicators);
 
@@ -2679,7 +2710,8 @@ router.post("/deterministic-strategist", async (req, res) => {
 
   const { dataMap } = readFromWebSocketCache();
   const indicators = extractMarketIndicators(dataMap);
-  const engineResult = runMarketPulseEngine(indicators, undefined, sessionToEngineType(getMarketSession().session));
+  const pulseCtx = getMarketSession(req).marketContext;
+  const engineResult = runMarketPulseEngine(indicators, undefined, marketSessionToEngineType(pulseCtx));
   const shockResult = evaluateRegimeShock(indicators);
   const vix = getVixFromCache();
 

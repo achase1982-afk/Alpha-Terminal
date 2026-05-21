@@ -4,6 +4,8 @@
  */
 
 import { buildScannerContextPromptBlock, type ScannerStrategistContext } from "./scannerStrategistContext.js";
+import { formatMarketContextUserBlock } from "./marketContextPrompt.js";
+import type { MarketContext as MarketContextPayload } from "./getMarketContext.js";
 import {
   buildConvictionDeskStaticUserPrefix,
   CONVICTION_DESK_RECENT_NEWS_XML,
@@ -176,10 +178,26 @@ Closing imbalance (last 5 min): ${c.side} $${notionalM.toFixed(2)}M at ${c.indic
   }
 }
 
+function authoritativeMarketContextFromPackage(dataPackage: string): MarketContextPayload | null {
+  try {
+    const obj = JSON.parse(dataPackage) as { authoritativeMarketContext?: MarketContextPayload };
+    return obj.authoritativeMarketContext ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function marketContextBlockForDataPackage(dataPackage: string): string {
+  const mctx = authoritativeMarketContextFromPackage(dataPackage);
+  if (!mctx) return "";
+  return `${formatMarketContextUserBlock(mctx)}\n\n`;
+}
+
 export function snapshotBlock(dataPackage: string): string {
   const imb = formatClosingImbalanceDeskLine(dataPackage);
   const scanner = formatScannerContextDeskSection(dataPackage);
-  return `Market snapshot for this name (facts below only; use what is present and do not invent):
+  const mctxPrefix = marketContextBlockForDataPackage(dataPackage);
+  return `${mctxPrefix}Market snapshot for this name (facts below only; use what is present and do not invent):
 ${scanner}
 ${dataPackage}${DATA_STATE_LANGUAGE_RULES}${imb}${formatMicrostructureDeskLines(dataPackage)}`;
 }

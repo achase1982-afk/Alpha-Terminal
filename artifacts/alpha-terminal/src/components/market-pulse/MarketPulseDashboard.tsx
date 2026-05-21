@@ -349,6 +349,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, objec
 
     runPulseStream({
       accessToken: token,
+      clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       symbols: activeSymbols,
       model: aiModelRef.current,
       temperature: aiTempRef.current,

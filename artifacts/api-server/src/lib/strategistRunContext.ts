@@ -3,6 +3,8 @@ import { newStrategistRequestId } from "./strategistDiagnostics.js";
 
 import type { TapeBackfillStatus } from "./strategistTapeBackfill.js";
 import type { ScannerStrategistContext } from "./scannerStrategistContext.js";
+import type { MarketContext } from "./getMarketContext.js";
+import type { DatasetFreshnessMeta } from "./datasetFreshness.js";
 
 export type StrategistDiagScratch = {
   tapeBackfillStatus?: TapeBackfillStatus;
@@ -28,6 +30,10 @@ export type StrategistDiagScratch = {
   modelSdkInputs?: unknown[];
   /** Conviction Desk per-attempt usage + web search counts (mirrors fullDiagnostic). */
   convictionDeskProviderTelemetry?: Array<Record<string, unknown>>;
+  /** Deterministic session clock for this analyze run. */
+  marketTimeContext?: MarketContext;
+  /** Per-dataset asOf/origin captured when the data package was built. */
+  datasetFreshness?: Record<string, DatasetFreshnessMeta>;
 }
 
 /** Async-local scratch for one strategist analyze run (diagnostics + trace correlation). */
@@ -36,6 +42,8 @@ export type StrategistRunContext = {
   startedAt: number;
   userId: string | null;
   sessionIdentifier: string | null;
+  /** Client IANA timezone from analyze request (display clock). */
+  clientTimeZone: string;
   diag: StrategistDiagScratch;
   /** Optional handoff from Alpha Terminal scanner → strategist analyze. */
   scannerContext?: ScannerStrategistContext | null;
@@ -44,7 +52,12 @@ export type StrategistRunContext = {
 const storage = new AsyncLocalStorage<StrategistRunContext>();
 
 export function runInStrategistRunContext<T>(
-  opts: { userId?: string | null; sessionIdentifier?: string | null; scannerContext?: ScannerStrategistContext | null },
+  opts: {
+    userId?: string | null;
+    sessionIdentifier?: string | null;
+    scannerContext?: ScannerStrategistContext | null;
+    clientTimeZone?: string | null;
+  },
   fn: () => Promise<T>,
 ): Promise<T> {
   const ctx: StrategistRunContext = {
@@ -52,6 +65,10 @@ export function runInStrategistRunContext<T>(
     startedAt: Date.now(),
     userId: opts.userId ?? null,
     sessionIdentifier: opts.sessionIdentifier ?? null,
+    clientTimeZone:
+      typeof opts.clientTimeZone === "string" && opts.clientTimeZone.trim().length > 0
+        ? opts.clientTimeZone.trim()
+        : "America/New_York",
     diag: {},
     scannerContext: opts.scannerContext ?? null,
   };

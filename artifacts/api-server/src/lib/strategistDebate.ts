@@ -233,7 +233,7 @@ const DIRECTIONAL_PROPOSE_INSTRUCTION = (
   myPersonaName: string,
   otherPersonaName: string,
 ) =>
-  `Today is ${today}. You are the **${myPersonaName}** in a fast bull/bear directional debate against the **${otherPersonaName}**. This is PHASE 1 / ROUND 1 — directional argument only. NO trade structure yet.
+  `You are the **${myPersonaName}** in a fast bull/bear directional debate against the **${otherPersonaName}**. This is PHASE 1 / ROUND 1 — directional argument only. NO trade structure yet.
 
 Your job: deliver the strongest possible **${myPersonaName.toLowerCase()}** case for this name based on the data below. Use web search per the WEB SEARCH MANDATE in your system prompt for fresh catalysts and flow.
 
