@@ -98,12 +98,19 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
     if (!res.writableEnded) res.write(": ping\n\n");
   }, 15_000);
 
+  const clientAbort = new AbortController();
+  const onClientClose = () => {
+    if (!clientAbort.signal.aborted) clientAbort.abort();
+  };
+  req.on("close", onClientClose);
+
   const turnArgs = {
     thread,
     userMessage: message,
     model,
     ambientSymbol,
     toolContext: { userId, schwabAccessToken, activeModel: model },
+    abortSignal: clientAbort.signal,
     onEvent: (ev: ChatStreamEvent) => {
         if (res.writableEnded) return;
         switch (ev.type) {
@@ -147,13 +154,16 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
       await runChatTurn(turnArgs);
     }
   } catch (err) {
-    req.log?.error?.({ err, threadId }, "chat message stream failed");
-    if (!res.writableEnded) {
-      writeSse(res, "error", {
-        message: err instanceof Error ? err.message : "Chat failed",
-      });
+    if (!clientAbort.signal.aborted) {
+      req.log?.error?.({ err, threadId }, "chat message stream failed");
+      if (!res.writableEnded) {
+        writeSse(res, "error", {
+          message: err instanceof Error ? err.message : "Chat failed",
+        });
+      }
     }
   } finally {
+    req.off("close", onClientClose);
     clearInterval(heartbeat);
     res.end();
   }

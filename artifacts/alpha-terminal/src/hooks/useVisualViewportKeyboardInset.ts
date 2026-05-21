@@ -13,6 +13,8 @@ export interface VisualViewportComposerMetrics {
   dockBottomPx: number;
   /** Snapshot the largest layout extent *before* the keyboard animates; then re-measure. */
   remeasure: () => void;
+  /** Clear monotonic baseline after keyboard dismiss (avoids stuck panel height). */
+  resetBaseline: () => void;
 }
 
 function readExpandedExtent(vv: VisualViewport): number {
@@ -52,6 +54,7 @@ export function useVisualViewportComposerMetrics(
   const [keyboardInset, setKeyboardInset] = useState(0);
   const baselineRef = useRef(0);
   const updateRef = useRef<() => void>(() => {});
+  const resetBaselineRef = useRef<() => void>(() => {});
   const focusedRef = useRef(false);
   focusedRef.current = opts?.composerFocused ?? false;
 
@@ -108,6 +111,11 @@ export function useVisualViewportComposerMetrics(
     };
 
     updateRef.current = remeasureInner;
+    resetBaselineRef.current = () => {
+      baselineRef.current = 0;
+      bumpBaseline();
+      update();
+    };
     bumpBaseline();
     update();
 
@@ -136,9 +144,13 @@ export function useVisualViewportComposerMetrics(
     updateRef.current();
   }, []);
 
+  const resetBaseline = useCallback(() => {
+    resetBaselineRef.current();
+  }, []);
+
   const dockBottomPx = Math.max(reservePx, keyboardInset);
 
-  return { keyboardInset, dockBottomPx, remeasure };
+  return { keyboardInset, dockBottomPx, remeasure, resetBaseline };
 }
 
 /** Keyboard-only inset (no minimum dock). For simple `padding-bottom` tweaks. */
