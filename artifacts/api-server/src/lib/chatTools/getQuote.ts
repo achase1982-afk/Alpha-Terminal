@@ -9,13 +9,15 @@ const packLog = {
   warn: (obj: unknown, msg?: string) => logger.warn(obj, msg),
 };
 
-function formatSchwabQuote(sym: string, q: LiveQuote): Record<string, unknown> {
+export function formatSchwabQuote(sym: string, q: LiveQuote): Record<string, unknown> {
   return {
     symbol: sym,
     source: "schwab_streamer_cache",
-    last: q.last ?? null,
+    last: q.regularLast ?? q.last ?? null,
+    regularLast: q.regularLast ?? null,
     bid: q.bid ?? null,
     ask: q.ask ?? null,
+    change: q.change ?? null,
     changePct: q.changePct ?? null,
     volume: q.volume ?? null,
     high: q.high ?? null,
