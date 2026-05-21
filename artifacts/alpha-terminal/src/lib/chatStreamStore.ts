@@ -99,8 +99,6 @@ type ChatStreamStore = {
   getThreadStream: (threadId: string | null, symbol: string) => ChatThreadStreamState | null;
   isStreamingForThread: (threadId: string | null, symbol: string) => boolean;
 
-  /** Abort streams for all threads not matching symbol (symbol change). */
-  abortStreamsForOtherSymbols: (symbol: string) => void;
   abortStreamForThread: (threadId: string | null, symbol: string) => void;
 
   reconcileThreadFromServer: (threadId: string, serverMessageIds: string[]) => void;
@@ -121,30 +119,6 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
   isStreamingForThread: (threadId, symbol) => {
     const s = get().getThreadStream(threadId, symbol);
     return s?.isStreaming ?? false;
-  },
-
-  abortStreamsForOtherSymbols: (symbol) => {
-    const symU = symbol.toUpperCase();
-    const { streamsByThreadId } = get();
-    for (const [key, stream] of Object.entries(streamsByThreadId)) {
-      if (stream.symbol !== symU) {
-        stream.abortController?.abort();
-        set((st) => {
-          const next = { ...st.streamsByThreadId };
-          const cur = next[key];
-          if (!cur) return st;
-          next[key] = {
-            ...cur,
-            abortController: null,
-            activeSendId: null,
-            isStreaming: false,
-            toolPills: [],
-            activeMultiAgentCount: 0,
-          };
-          return { streamsByThreadId: next };
-        });
-      }
-    }
   },
 
   abortStreamForThread: (threadId, symbol) => {
