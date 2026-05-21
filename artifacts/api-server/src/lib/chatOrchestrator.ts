@@ -124,6 +124,7 @@ export type RunChatTurnArgs = {
   ambientSymbol?: string | null;
   toolContext: ChatToolContext;
   onEvent: (ev: ChatStreamEvent) => void;
+  abortSignal?: AbortSignal;
 };
 
 export type MultiAgentConfig = {
@@ -185,6 +186,7 @@ async function runDraftChatTurn(args: {
   modelMessages: ModelMessage[];
   ambientSymbol?: string | null;
   toolContext: ChatToolContext;
+  abortSignal?: AbortSignal;
 }): Promise<{ model: string; text?: string; error?: string }> {
   const tools = createChatTools({ ...args.toolContext, activeModel: args.model });
   const resolved = resolveChatLanguageModel(args.model);
@@ -196,6 +198,7 @@ async function runDraftChatTurn(args: {
       messages: args.modelMessages,
       tools,
       stopWhen: stepCountIs(12),
+      ...(args.abortSignal ? { abortSignal: args.abortSignal } : {}),
       ...("temperature" in resolved ? { temperature: resolved.temperature } : {}),
       ...("providerOptions" in resolved ? resolved.providerOptions : {}),
     });
@@ -203,6 +206,9 @@ async function runDraftChatTurn(args: {
     if (!text) return { model: args.model, error: "Empty draft" };
     return { model: args.model, text };
   } catch (err) {
+    if (args.abortSignal?.aborted) {
+      return { model: args.model, error: "Aborted" };
+    }
     return {
       model: args.model,
       error: err instanceof Error ? err.message : String(err),
@@ -214,7 +220,7 @@ async function runDraftChatTurn(args: {
 export async function runMultiAgentChatTurn(
   args: RunChatTurnArgs & { multiAgent: MultiAgentConfig },
 ): Promise<void> {
-  const { thread, userMessage, ambientSymbol, toolContext, onEvent, multiAgent } = args;
+  const { thread, userMessage, ambientSymbol, toolContext, onEvent, multiAgent, abortSignal } = args;
   const models = multiAgent.models.filter((m) => m.trim().length > 0);
   const synthesizerModel = multiAgent.synthesizer_model.trim();
   if (models.length === 0) {
@@ -228,6 +234,8 @@ export async function runMultiAgentChatTurn(
 
   const { modelMessages } = await prepareTurnMessages(thread, userMessage);
 
+  if (abortSignal?.aborted) return;
+
   const settled = await Promise.all(
     models.map((model) =>
       runDraftChatTurn({
@@ -235,9 +243,12 @@ export async function runMultiAgentChatTurn(
         modelMessages,
         ambientSymbol,
         toolContext: { ...toolContext, activeModel: model },
+        abortSignal,
       }),
     ),
   );
+
+  if (abortSignal?.aborted) return;
 
   const successes = settled.filter((r): r is { model: string; text: string } => Boolean(r.text));
   const failures = settled
@@ -262,16 +273,20 @@ export async function runMultiAgentChatTurn(
       system: MULTI_AGENT_SYNTH_SYSTEM,
       messages: synthMessages,
       stopWhen: stepCountIs(8),
+      ...(abortSignal ? { abortSignal } : {}),
       ...("temperature" in synthResolved ? { temperature: synthResolved.temperature } : {}),
       ...("providerOptions" in synthResolved ? synthResolved.providerOptions : {}),
     });
 
     for await (const part of result.fullStream) {
+      if (abortSignal?.aborted) break;
       if (part.type === "text-delta" && part.text) {
         assistantText += part.text;
         onEvent({ type: "text", delta: part.text });
       }
     }
+
+    if (abortSignal?.aborted) return;
 
     const finalText = (await result.text).trim() || assistantText.trim();
     const saved = await insertChatMessage({
@@ -281,6 +296,7 @@ export async function runMultiAgentChatTurn(
     });
     onEvent({ type: "done", threadId: thread.id, assistantMessageId: saved.id });
   } catch (err) {
+    if (abortSignal?.aborted) return;
     const msg = err instanceof Error ? err.message : String(err);
     onEvent({ type: "error", message: msg });
     throw err;
@@ -288,7 +304,7 @@ export async function runMultiAgentChatTurn(
 }
 
 export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
-  const { thread, userMessage, model, ambientSymbol, toolContext, onEvent } = args;
+  const { thread, userMessage, model, ambientSymbol, toolContext, onEvent, abortSignal } = args;
 
   const { modelMessages } = await prepareTurnMessages(thread, userMessage);
 
@@ -307,11 +323,13 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
       messages: modelMessages,
       tools,
       stopWhen: stepCountIs(12),
+      ...(abortSignal ? { abortSignal } : {}),
       ...("temperature" in resolved ? { temperature: resolved.temperature } : {}),
       ...("providerOptions" in resolved ? resolved.providerOptions : {}),
     });
 
     for await (const part of result.fullStream) {
+      if (abortSignal?.aborted) break;
       if (part.type === "text-delta" && part.text) {
         assistantText += part.text;
         onEvent({ type: "text", delta: part.text });
@@ -330,6 +348,8 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
       }
     }
 
+    if (abortSignal?.aborted) return;
+
     const finalText = (await result.text).trim() || assistantText.trim();
     const saved = await insertChatMessage({
       threadId: thread.id,
@@ -341,6 +361,7 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
 
     onEvent({ type: "done", threadId: thread.id, assistantMessageId: saved.id });
   } catch (err) {
+    if (abortSignal?.aborted) return;
     const msg = err instanceof Error ? err.message : String(err);
     onEvent({ type: "error", message: msg });
     throw err;

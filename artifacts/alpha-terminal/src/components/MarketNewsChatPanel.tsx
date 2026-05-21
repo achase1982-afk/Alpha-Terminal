@@ -1,9 +1,12 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { createPortal } from "react-dom";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { resolveActiveChatThreadId } from "@/lib/chatPersistence";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { consumeChatSse, type ChatSseEvent } from "@/lib/chatSse";
+import {
+  mergeChatDisplayMessages,
+  useChatStreamStore,
+  type ChatUiMessage,
+} from "@/lib/chatStreamStore";
 import { Send, Square, RotateCcw, Plus, Bot, Menu, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
@@ -18,7 +21,6 @@ import {
   type AiModelId,
 } from "@workspace/ai-models";
 
-const RETRYABLE_CHAT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const MULTI_AGENT_MODEL = "__multi_agent__";
 const MULTI_AGENT_STORAGE_KEY = "marketNewsChatMultiModels";
 const MULTI_AGENT_SYNTH_STORAGE_KEY = "marketNewsChatSynthesizerModel";
@@ -26,6 +28,10 @@ const MULTI_AGENT_SYNTH_STORAGE_KEY = "marketNewsChatSynthesizerModel";
 const ALL_CHAT_MODELS: readonly AiModelId[] = AI_MODEL_IDS;
 
 const MULTI_AGENT_ORBIT_COLORS = ["#22d3ee", "#a78bfa", "#fbbf24", "#fb7185", "#4ade80", "#38bdf8"] as const;
+
+function pendingStreamKey(symbol: string): string {
+  return `__pending__:${symbol.toUpperCase()}`;
+}
 
 function MultiAgentOrbit({ count }: { count: number }) {
   const n = Math.min(Math.max(count, 2), 6);
@@ -74,25 +80,6 @@ type ServerThread = {
   updatedAt: string;
 };
 
-type UiMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  retryable?: boolean;
-};
-
-type ToolPill = {
-  toolCallId: string;
-  toolName: string;
-  status: "running" | "done";
-  input?: unknown;
-};
-
-let msgCounter = 0;
-function nextMsgId(): string {
-  return `mnc-${Date.now()}-${++msgCounter}`;
-}
-
 function toolLabel(name: string, input: unknown): string {
   const sym =
     input && typeof input === "object" && "symbol" in input
@@ -136,41 +123,45 @@ export function MarketNewsChatPanel() {
     }
     return DEFAULT_AI_MODEL_ID;
   });
-  const [activeMultiAgentCount, setActiveMultiAgentCount] = useState(0);
   const modelControlValue = useMultiAgent ? MULTI_AGENT_MODEL : modelSend;
 
   const [threads, setThreads] = useState<ServerThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<UiMessage[]>([]);
-  const [toolPills, setToolPills] = useState<ToolPill[]>([]);
+  const [messages, setMessages] = useState<ChatUiMessage[]>([]);
   const [input, setInput] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
   const [composerFocused, setComposerFocused] = useState(false);
   const [threadsMenuOpen, setThreadsMenuOpen] = useState(false);
-  const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
 
-  const abortRef = useRef<AbortController | null>(null);
-  const isStreamingRef = useRef(false);
+  const streamsByThreadId = useChatStreamStore((s) => s.streamsByThreadId);
+  const sendChatMessage = useChatStreamStore((s) => s.sendMessage);
+  const abortStreamForThread = useChatStreamStore((s) => s.abortStreamForThread);
+  const reconcileThreadFromServer = useChatStreamStore((s) => s.reconcileThreadFromServer);
+  const clearLastFailedForThread = useChatStreamStore((s) => s.clearLastFailedForThread);
+
+  const streamState = useMemo(() => {
+    const pending = pendingStreamKey(symU);
+    if (activeThreadId && streamsByThreadId[activeThreadId]) {
+      return streamsByThreadId[activeThreadId];
+    }
+    return streamsByThreadId[pending] ?? null;
+  }, [streamsByThreadId, activeThreadId, symU]);
+
+  const isStreaming = streamState?.isStreaming ?? false;
+  const toolPills = streamState?.toolPills ?? [];
+  const activeMultiAgentCount = streamState?.activeMultiAgentCount ?? 0;
+  const lastFailedMessage = streamState?.lastFailedMessage ?? null;
+
+  const displayMessages = useMemo(
+    () => mergeChatDisplayMessages(messages, streamState),
+    [messages, streamState],
+  );
+
   const composerSendLockRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const setStreamingState = useCallback((next: boolean) => {
-    isStreamingRef.current = next;
-    setIsStreaming(next);
-  }, []);
-
-  const abortActiveChatStream = useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setStreamingState(false);
-    setToolPills([]);
-    setActiveMultiAgentCount(0);
-  }, [setStreamingState]);
-
   const narrowMobile = useMediaQuery("(max-width: 767px)");
-  const dockReservePx = narrowMobile ? (composerFocused ? 0 : 78) : 12;
-  const { dockBottomPx, remeasure } = useVisualViewportComposerMetrics(dockReservePx, {
+  const { keyboardInset, remeasure, resetBaseline } = useVisualViewportComposerMetrics(0, {
     composerFocused,
   });
 
@@ -195,29 +186,34 @@ export function MarketNewsChatPanel() {
     [symU, setActiveChatThreadForSymbol],
   );
 
-  const loadThreadMessages = useCallback(async (threadId: string) => {
-    try {
-      const res = await fetchWithAuth(`/api/chat/threads/${encodeURIComponent(threadId)}/messages`);
-      if (!res.ok) return;
-      const data = (await res.json()) as {
-        messages?: Array<{ id: string; role: string; content: string }>;
-      };
-      setMessages(
-        (data.messages ?? []).map((m) => ({
+  const loadThreadMessages = useCallback(
+    async (threadId: string) => {
+      try {
+        const res = await fetchWithAuth(`/api/chat/threads/${encodeURIComponent(threadId)}/messages`);
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          messages?: Array<{ id: string; role: string; content: string }>;
+        };
+        const loaded = (data.messages ?? []).map((m) => ({
           id: m.id,
-          role: m.role === "user" ? "user" : "assistant",
+          role: m.role === "user" ? ("user" as const) : ("assistant" as const),
           content: m.content,
-        })),
-      );
-    } catch {
-      setMessages([]);
-    }
-  }, []);
+        }));
+        setMessages(loaded);
+        reconcileThreadFromServer(
+          threadId,
+          loaded.map((m) => m.id),
+        );
+      } catch {
+        setMessages([]);
+      }
+    },
+    [reconcileThreadFromServer],
+  );
 
   useEffect(() => {
     let cancelled = false;
     setThreadsMenuOpen(false);
-    abortActiveChatStream();
 
     void (async () => {
       const list = await refreshThreads();
@@ -236,9 +232,8 @@ export function MarketNewsChatPanel() {
 
     return () => {
       cancelled = true;
-      abortActiveChatStream();
     };
-  }, [symU, refreshThreads, abortActiveChatStream, setActiveChatThreadForSymbol]);
+  }, [symU, refreshThreads, setActiveChatThreadForSymbol]);
 
   useEffect(() => {
     if (activeThreadId) void loadThreadMessages(activeThreadId);
@@ -272,203 +267,82 @@ export function MarketNewsChatPanel() {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, isStreaming, toolPills]);
+  }, [displayMessages, isStreaming, toolPills]);
 
-  type SendMessageOptions = {
-    /** Replace from this index: keep prior messages, drop this one and after, append new assistant only. */
-    truncateToIndex?: number;
-  };
+  const handleStop = useCallback(() => {
+    abortStreamForThread(activeThreadId, symU);
+  }, [abortStreamForThread, activeThreadId, symU]);
 
   const sendMessage = useCallback(
-    async (text: string, options?: SendMessageOptions) => {
-      if (!text.trim()) return;
-
-      abortActiveChatStream();
-
-      const useServerMultiAgent = useMultiAgent && multiAgentModels.length >= 2;
-      if (useMultiAgent && multiAgentModels.length < 2) {
-        const assistantId = nextMsgId();
-        setMessages((prev) => [
-          ...prev,
-          { id: nextMsgId(), role: "user", content: text.trim() },
-          {
-            id: assistantId,
-            role: "assistant",
-            content: "**Error:** Select at least two models for multi-agent.",
-          },
-        ]);
-        setInput("");
-        return;
-      }
-
-      const userMsg: UiMessage = { id: nextMsgId(), role: "user", content: text.trim() };
-      const assistantId = nextMsgId();
-      const truncateToIndex = options?.truncateToIndex;
-      setMessages((prev) => {
-        const assistantPlaceholder: UiMessage = { id: assistantId, role: "assistant", content: "" };
-        if (truncateToIndex !== undefined) {
-          return [...prev.slice(0, truncateToIndex), assistantPlaceholder];
-        }
-        return [...prev, userMsg, assistantPlaceholder];
+    async (text: string, options?: { truncateToIndex?: number }) => {
+      await sendChatMessage({
+        text,
+        symbol: symU,
+        threadId: activeThreadId,
+        model: modelSend,
+        useMultiAgent,
+        multiAgentModels,
+        synthesizerModel,
+        truncateToIndex: options?.truncateToIndex,
+        onThreadActivated: activateThread,
+        onRefreshThreads: () => {
+          void refreshThreads();
+        },
       });
       setInput("");
-      setToolPills([]);
-      setStreamingState(true);
-      setLastFailedMessage(null);
-      setActiveMultiAgentCount(useServerMultiAgent ? multiAgentModels.length : 0);
-
-      const controller = new AbortController();
-      abortRef.current = controller;
-      const { signal } = controller;
-
-      let threadId = activeThreadId;
-
-      const requestBody: Record<string, unknown> = {
-        thread_id: threadId ?? undefined,
-        message: text.trim(),
-        symbol: symU,
-      };
-      if (useServerMultiAgent) {
-        requestBody.multi_agent = {
-          models: multiAgentModels,
-          synthesizer_model: synthesizerModel,
-        };
-      } else {
-        requestBody.model = modelSend;
-      }
-
-      try {
-        const res = await fetchWithAuth("/api/ai/chat", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "text/event-stream",
-          },
-          body: JSON.stringify(requestBody),
-          signal,
-        });
-
-        const contentType = res.headers.get("content-type") || "";
-        if (!res.ok || contentType.includes("text/html")) {
-          const retryable = RETRYABLE_CHAT_STATUS.has(res.status) || contentType.includes("text/html");
-          const label = !res.ok ? `Server returned ${res.status}` : "Unexpected HTML response";
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantId
-                ? { ...m, content: `**Error:** ${label}`, retryable }
-                : m,
-            ),
-          );
-          if (retryable) setLastFailedMessage(text.trim());
-          return;
-        }
-
-        await consumeChatSse(res, (ev: ChatSseEvent) => {
-          if (signal.aborted) return;
-          if (ev.type === "thread" && ev.thread_id) {
-            threadId = ev.thread_id;
-            activateThread(ev.thread_id);
-          } else if (ev.type === "status" && ev.phase === "multi_agent_drafting") {
-            setActiveMultiAgentCount(ev.model_count ?? multiAgentModels.length);
-          } else if (ev.type === "text") {
-            setActiveMultiAgentCount(0);
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId ? { ...m, content: m.content + ev.delta } : m,
-              ),
-            );
-          } else if (ev.type === "tool_call_start") {
-            setToolPills((prev) => [
-              ...prev.filter((p) => p.toolCallId !== ev.toolCallId),
-              {
-                toolCallId: ev.toolCallId,
-                toolName: ev.toolName,
-                status: "running",
-                input: ev.input,
-              },
-            ]);
-          } else if (ev.type === "tool_call_end") {
-            setToolPills((prev) =>
-              prev.map((p) =>
-                p.toolCallId === ev.toolCallId ? { ...p, status: "done" } : p,
-              ),
-            );
-          } else if (ev.type === "error") {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId ? { ...m, content: `**Error:** ${ev.message}` } : m,
-              ),
-            );
-          }
-        }, signal);
-
-        void refreshThreads();
-      } catch (err: unknown) {
-        if (signal.aborted || (err as Error).name === "AbortError") return;
-        const errMsg = (err as Error).message || "Connection failed";
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId ? { ...m, content: `**Error:** ${errMsg}`, retryable: true } : m,
-          ),
-        );
-        setLastFailedMessage(text.trim());
-      } finally {
-        if (abortRef.current === controller) {
-          abortRef.current = null;
-          setStreamingState(false);
-          setToolPills([]);
-          setActiveMultiAgentCount(0);
-        }
-      }
     },
     [
-      abortActiveChatStream,
       activateThread,
       activeThreadId,
       modelSend,
       multiAgentModels,
       refreshThreads,
-      setStreamingState,
+      sendChatMessage,
       symU,
       synthesizerModel,
       useMultiAgent,
     ],
   );
 
-  const handleStop = useCallback(() => {
-    abortActiveChatStream();
-  }, [abortActiveChatStream]);
-
   const handleNewThread = useCallback(() => {
     handleStop();
     cancelAssistantSpeech();
     activateThread(null);
     setMessages([]);
-    setLastFailedMessage(null);
+    clearLastFailedForThread(null, symU);
     setThreadsMenuOpen(false);
-  }, [activateThread, handleStop]);
+  }, [activateThread, clearLastFailedForThread, handleStop, symU]);
 
   const handleSelectThread = useCallback(
     (threadId: string) => {
-      handleStop();
       cancelAssistantSpeech();
       activateThread(threadId);
       setThreadsMenuOpen(false);
     },
-    [activateThread, handleStop],
+    [activateThread],
   );
+
+  useEffect(() => {
+    if (!activeThreadId || !streamState?.inFlightAssistant?.complete) return;
+    void loadThreadMessages(activeThreadId);
+  }, [
+    activeThreadId,
+    loadThreadMessages,
+    streamState?.inFlightAssistant?.complete,
+    streamState?.inFlightAssistant?.id,
+  ]);
 
   const handleClear = handleNewThread;
 
   const regenerateAssistantMessage = useCallback(
     (assistantMsgId: string) => {
-      if (isStreamingRef.current) return;
-      const idx = messages.findIndex((m) => m.id === assistantMsgId);
+      if (isStreaming) return;
+      const idx = displayMessages.findIndex((m) => m.id === assistantMsgId);
       if (idx < 0) return;
       let userText: string | null = null;
       for (let i = idx - 1; i >= 0; i--) {
-        if (messages[i]?.role === "user") {
-          userText = messages[i]!.content;
+        if (displayMessages[i]?.role === "user") {
+          userText = displayMessages[i]!.content;
           break;
         }
       }
@@ -476,104 +350,58 @@ export function MarketNewsChatPanel() {
       cancelAssistantSpeech();
       void sendMessage(userText, { truncateToIndex: idx });
     },
-    [isStreaming, messages, sendMessage],
+    [displayMessages, isStreaming, sendMessage],
   );
 
   const handleRetry = useCallback(() => {
-    if (!lastFailedMessage || isStreamingRef.current) return;
-    const failedIdx = messages.findIndex((m) => m.retryable);
-    setLastFailedMessage(null);
+    if (!lastFailedMessage || isStreaming) return;
+    const failedIdx = displayMessages.findIndex((m) => m.retryable);
+    clearLastFailedForThread(activeThreadId, symU);
     cancelAssistantSpeech();
     if (failedIdx >= 0) {
       void sendMessage(lastFailedMessage, { truncateToIndex: failedIdx });
       return;
     }
     void sendMessage(lastFailedMessage);
-  }, [isStreaming, lastFailedMessage, messages, sendMessage]);
+  }, [
+    activeThreadId,
+    clearLastFailedForThread,
+    displayMessages,
+    isStreaming,
+    lastFailedMessage,
+    sendMessage,
+    symU,
+  ]);
 
   const handleComposerSend = useCallback(() => {
     if (composerSendLockRef.current) return;
-    if (!input.trim() || isStreamingRef.current) return;
+    if (!input.trim() || isStreaming) return;
     composerSendLockRef.current = true;
     void sendMessage(input);
     textareaRef.current?.blur();
     queueMicrotask(() => {
       composerSendLockRef.current = false;
     });
-  }, [input, sendMessage]);
+  }, [input, isStreaming, sendMessage]);
 
-  const renderComposer = () => (
-    <form
-      className={[
-        "flex gap-2 border-t border-card-border/50 bg-[#0a0a0a] p-2 items-end",
-        narrowMobile
-          ? "fixed left-0 right-0 z-[10050] shadow-[0_-10px_30px_rgba(0,0,0,0.45)]"
-          : "relative z-[60] shrink-0",
-      ].join(" ")}
-      style={
-        narrowMobile
-          ? {
-              bottom: dockBottomPx,
-              paddingBottom: "max(8px, env(safe-area-inset-bottom, 0px))",
-            }
-          : { paddingBottom: "max(10px, env(safe-area-inset-bottom, 0px))" }
+  const panelMaxHeightStyle = narrowMobile
+    ? {
+        maxHeight: `calc(100dvh - 9.5rem - ${keyboardInset}px)`,
       }
-      onSubmit={(e) => {
-        e.preventDefault();
-        handleComposerSend();
-      }}
-    >
-      <textarea
-        ref={textareaRef}
-        rows={2}
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key !== "Enter" || e.shiftKey) return;
-          e.preventDefault();
-          handleComposerSend();
-        }}
-        onFocus={() => {
-          setComposerFocused(true);
-          remeasure();
-        }}
-        onBlur={() => {
-          setComposerFocused(false);
-          remeasure();
-        }}
-        placeholder={`Ask about ${symU}…`}
-        className="flex-1 resize-none bg-[#111] border border-card-border rounded-md px-3 py-2 font-mono text-[14px] text-white placeholder:text-white/55 outline-none focus:border-white/40 min-h-[48px]"
-      />
-      {isStreaming ? (
-        <button
-          type="button"
-          onClick={handleStop}
-          className="shrink-0 p-2.5 rounded-md border border-red-500/40 text-red-400 hover:bg-red-500/10"
-          aria-label="Stop"
-        >
-          <Square className="w-4 h-4 fill-current" />
-        </button>
-      ) : (
-        <button
-          type="button"
-          disabled={!input.trim()}
-          onPointerDown={(e) => {
-            if (!input.trim() || isStreamingRef.current) return;
-            e.preventDefault();
-            handleComposerSend();
-          }}
-          className="shrink-0 p-2.5 text-white disabled:opacity-30 touch-manipulation transition-opacity active:opacity-60 aria-[busy=true]:opacity-50"
-          aria-label="Send"
-          aria-busy={isStreaming}
-        >
-          <Send className="w-5 h-5" />
-        </button>
-      )}
-    </form>
-  );
+    : undefined;
+
+  const lastDisplayMsg = displayMessages[displayMessages.length - 1];
+  const showThinkingDots =
+    isStreaming &&
+    displayMessages.length > 0 &&
+    lastDisplayMsg?.role === "assistant" &&
+    !lastDisplayMsg.content.trim();
 
   return (
-    <div className="relative flex flex-col flex-1 min-h-0 max-h-[calc(100dvh-9.5rem)] md:max-h-none md:min-h-[280px] bg-[#0a0a0a] border-t border-card-border/40">
+    <div
+      className="relative flex flex-col flex-1 min-h-0 max-h-[calc(100dvh-9.5rem)] md:max-h-none md:min-h-[280px] bg-[#0a0a0a] border-t border-card-border/40"
+      style={panelMaxHeightStyle}
+    >
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-card-border/50 shrink-0 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
           <button
@@ -739,7 +567,7 @@ export function MarketNewsChatPanel() {
                   <Plus className="w-3 h-3" />
                   New chat
                 </button>
-                {messages.length > 0 && (
+                {displayMessages.length > 0 && (
                   <button
                     type="button"
                     onClick={handleClear}
@@ -760,106 +588,148 @@ export function MarketNewsChatPanel() {
           </div>
         )}
 
-        <div
-          ref={scrollRef}
-          className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-2"
-        style={
-          narrowMobile
-            ? { paddingBottom: `calc(44px + ${dockBottomPx}px + env(safe-area-inset-bottom, 0px))` }
-            : undefined
-        }
-      >
-        {messages.length === 0 && (
-          <p className="font-mono text-[14px] text-white/70 leading-relaxed">
-            Ask about {symU} — the assistant calls tools for live quotes, flow, news, and technicals.
-            Conversations are saved to your account.
-          </p>
-        )}
-        {messages.map((msg) => (
-          <div key={msg.id} className={msg.role === "user" ? "text-right" : "text-left"}>
-            {msg.role === "user" ? (
-              <span className="inline-block font-mono text-[14px] text-[#f5f5f5] bg-[#1a1a1a] border border-card-border rounded px-3 py-2 max-w-[95%] text-left">
-                {msg.content}
-              </span>
-            ) : (
-              <div>
-                {toolPills.length > 0 && msg.id === messages[messages.length - 1]?.id && (
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    {toolPills.map((p) => (
-                      <span
-                        key={p.toolCallId}
-                        className={[
-                          "font-mono text-[10px] px-2 py-0.5 rounded-full border",
-                          p.status === "running"
-                            ? "border-amber-500/50 text-amber-200/90 animate-pulse"
-                            : "border-emerald-500/40 text-emerald-200/80",
-                        ].join(" ")}
-                      >
-                        {p.status === "running" ? "calling" : "done"} {toolLabel(p.toolName, p.input)}
-                      </span>
-                    ))}
+        <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-2">
+          {displayMessages.length === 0 && (
+            <p className="font-mono text-[14px] text-white/70 leading-relaxed">
+              Ask about {symU} — the assistant calls tools for live quotes, flow, news, and technicals.
+              Conversations are saved to your account.
+            </p>
+          )}
+          {displayMessages.map((msg) => (
+            <div key={msg.id} className={msg.role === "user" ? "text-right" : "text-left"}>
+              {msg.role === "user" ? (
+                <span className="inline-block font-mono text-[14px] text-[#f5f5f5] bg-[#1a1a1a] border border-card-border rounded px-3 py-2 max-w-[95%] text-left">
+                  {msg.content}
+                </span>
+              ) : (
+                <div>
+                  {toolPills.length > 0 && msg.id === lastDisplayMsg?.id && (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {toolPills.map((p) => (
+                        <span
+                          key={p.toolCallId}
+                          className={[
+                            "font-mono text-[10px] px-2 py-0.5 rounded-full border",
+                            p.status === "running"
+                              ? "border-amber-500/50 text-amber-200/90 animate-pulse"
+                              : "border-emerald-500/40 text-emerald-200/80",
+                          ].join(" ")}
+                        >
+                          {p.status === "running" ? "calling" : "done"} {toolLabel(p.toolName, p.input)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="font-mono text-[14px] text-[#f5f5f5] prose prose-invert prose-sm max-w-none">
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
                   </div>
-                )}
-                <div className="font-mono text-[14px] text-[#f5f5f5] prose prose-invert prose-sm max-w-none">
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  <AssistantListenButton
+                    messageId={msg.id}
+                    markdownText={msg.content}
+                    size="sm"
+                    onRetry={() => regenerateAssistantMessage(msg.id)}
+                    retryDisabled={isStreaming}
+                  />
+                  {msg.retryable && !isStreaming && (
+                    <button type="button" onClick={handleRetry} className="mt-1 text-[12px] text-white/70">
+                      Retry
+                    </button>
+                  )}
                 </div>
-                <AssistantListenButton
-                  messageId={msg.id}
-                  markdownText={msg.content}
-                  size="sm"
-                  onRetry={() => regenerateAssistantMessage(msg.id)}
-                  retryDisabled={isStreaming}
-                />
-                {msg.retryable && !isStreaming && (
-                  <button type="button" onClick={handleRetry} className="mt-1 text-[12px] text-white/70">
-                    Retry
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
-        {isStreaming &&
-          messages.length > 0 &&
-          messages[messages.length - 1]?.role === "assistant" &&
-          !messages[messages.length - 1]!.content.trim() &&
-          (activeMultiAgentCount > 1 ? (
-            <div className="flex items-center gap-2 py-1 text-white/75">
-              <MultiAgentOrbit count={activeMultiAgentCount} />
-              <div className="flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" />
-                <span
-                  className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse"
-                  style={{ animationDelay: "130ms" }}
-                />
-                <span
-                  className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse"
-                  style={{ animationDelay: "260ms" }}
-                />
-              </div>
-              <span className="font-mono text-[11px] text-white/65">
-                {activeMultiAgentCount} models in parallel, then synthesis…
-              </span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 py-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
-              <span
-                className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse"
-                style={{ animationDelay: "150ms" }}
-              />
-              <span
-                className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse"
-                style={{ animationDelay: "300ms" }}
-              />
+              )}
             </div>
           ))}
+          {showThinkingDots &&
+            (activeMultiAgentCount > 1 ? (
+              <div className="flex items-center gap-2 py-1 text-white/75">
+                <MultiAgentOrbit count={activeMultiAgentCount} />
+                <div className="flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" />
+                  <span
+                    className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse"
+                    style={{ animationDelay: "130ms" }}
+                  />
+                  <span
+                    className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse"
+                    style={{ animationDelay: "260ms" }}
+                  />
+                </div>
+                <span className="font-mono text-[11px] text-white/65">
+                  {activeMultiAgentCount} models in parallel, then synthesis…
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 py-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
+                <span
+                  className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse"
+                  style={{ animationDelay: "150ms" }}
+                />
+                <span
+                  className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse"
+                  style={{ animationDelay: "300ms" }}
+                />
+              </div>
+            ))}
         </div>
-      </div>
 
-      {narrowMobile && typeof document !== "undefined"
-        ? createPortal(renderComposer(), document.body)
-        : renderComposer()}
+        <form
+          className="relative z-[60] flex shrink-0 gap-2 border-t border-card-border/50 bg-[#0a0a0a] p-2 items-end shadow-[0_-10px_30px_rgba(0,0,0,0.25)]"
+          style={{ paddingBottom: "max(10px, env(safe-area-inset-bottom, 0px))" }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleComposerSend();
+          }}
+        >
+          <textarea
+            ref={textareaRef}
+            rows={2}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter" || e.shiftKey) return;
+              e.preventDefault();
+              handleComposerSend();
+            }}
+            onFocus={() => {
+              setComposerFocused(true);
+              remeasure();
+            }}
+            onBlur={() => {
+              setComposerFocused(false);
+              resetBaseline();
+              remeasure();
+            }}
+            placeholder={`Ask about ${symU}…`}
+            className="flex-1 resize-none bg-[#111] border border-card-border rounded-md px-3 py-2 font-mono text-[14px] text-white placeholder:text-white/55 outline-none focus:border-white/40 min-h-[48px]"
+          />
+          {isStreaming ? (
+            <button
+              type="button"
+              onClick={handleStop}
+              className="shrink-0 p-2.5 rounded-md border border-red-500/40 text-red-400 hover:bg-red-500/10"
+              aria-label="Stop"
+            >
+              <Square className="w-4 h-4 fill-current" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={!input.trim()}
+              onPointerDown={(e) => {
+                if (!input.trim() || isStreaming) return;
+                e.preventDefault();
+                handleComposerSend();
+              }}
+              className="shrink-0 p-2.5 text-white disabled:opacity-30 touch-manipulation transition-opacity active:opacity-60 aria-[busy=true]:opacity-50"
+              aria-label="Send"
+              aria-busy={isStreaming}
+            >
+              <Send className="w-5 h-5" />
+            </button>
+          )}
+        </form>
+      </div>
     </div>
   );
 }
