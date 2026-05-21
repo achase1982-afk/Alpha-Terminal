@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useTerminalStore } from "@/lib/store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { consumeChatSse, type ChatSseEvent } from "@/lib/chatSse";
-import { Send, Square, RotateCcw, Plus, Bot } from "lucide-react";
+import { Send, Square, RotateCcw, Plus, Bot, Menu, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
 import { useVisualViewportComposerMetrics } from "@/hooks/useVisualViewportKeyboardInset";
@@ -144,6 +144,7 @@ export function MarketNewsChatPanel() {
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [composerFocused, setComposerFocused] = useState(false);
+  const [threadsMenuOpen, setThreadsMenuOpen] = useState(false);
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -190,6 +191,7 @@ export function MarketNewsChatPanel() {
     void refreshThreads();
     setActiveThreadId(null);
     setMessages([]);
+    setThreadsMenuOpen(false);
   }, [symU, refreshThreads]);
 
   useEffect(() => {
@@ -392,6 +394,14 @@ export function MarketNewsChatPanel() {
     setActiveThreadId(null);
     setMessages([]);
     setLastFailedMessage(null);
+    setThreadsMenuOpen(false);
+  }, [handleStop]);
+
+  const handleSelectThread = useCallback((threadId: string) => {
+    handleStop();
+    cancelAssistantSpeech();
+    setActiveThreadId(threadId);
+    setThreadsMenuOpen(false);
   }, [handleStop]);
 
   const handleClear = handleNewThread;
@@ -427,6 +437,12 @@ export function MarketNewsChatPanel() {
     void sendMessage(lastFailedMessage);
   }, [isStreaming, lastFailedMessage, messages, sendMessage]);
 
+  const handleComposerSend = useCallback(() => {
+    if (!input.trim() || isStreaming) return;
+    void sendMessage(input);
+    textareaRef.current?.blur();
+  }, [input, isStreaming, sendMessage]);
+
   const renderComposer = () => (
     <form
       className={[
@@ -445,7 +461,7 @@ export function MarketNewsChatPanel() {
       }
       onSubmit={(e) => {
         e.preventDefault();
-        if (input.trim() && !isStreaming) void sendMessage(input);
+        handleComposerSend();
       }}
     >
       <textarea
@@ -477,11 +493,14 @@ export function MarketNewsChatPanel() {
         <button
           type="button"
           disabled={!input.trim()}
-          onClick={() => {
-            if (input.trim()) void sendMessage(input);
+          onPointerDown={(e) => {
+            if (!input.trim() || isStreaming) return;
+            e.preventDefault();
+            handleComposerSend();
           }}
-          className="shrink-0 p-2.5 text-white disabled:opacity-30"
+          className="shrink-0 p-2.5 text-white disabled:opacity-30 touch-manipulation transition-opacity active:opacity-60 aria-[busy=true]:opacity-50"
           aria-label="Send"
+          aria-busy={isStreaming}
         >
           <Send className="w-5 h-5" />
         </button>
@@ -492,9 +511,25 @@ export function MarketNewsChatPanel() {
   return (
     <div className="relative flex flex-col flex-1 min-h-0 max-h-[calc(100dvh-9.5rem)] md:max-h-none md:min-h-[280px] bg-[#0a0a0a] border-t border-card-border/40">
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-card-border/50 shrink-0 flex-wrap">
-        <span className="font-mono text-[14px] font-semibold text-white tracking-wide uppercase truncate">
-          {symU}
-        </span>
+        <div className="flex items-center gap-2 min-w-0">
+          <button
+            type="button"
+            onClick={() => setThreadsMenuOpen((v) => !v)}
+            className={[
+              "shrink-0 p-1.5 rounded border transition-colors touch-manipulation",
+              threadsMenuOpen
+                ? "border-white/35 text-white bg-white/10"
+                : "border-card-border text-white/80 hover:text-white hover:border-white/25",
+            ].join(" ")}
+            aria-label={threadsMenuOpen ? "Close chats menu" : "Open chats menu"}
+            aria-expanded={threadsMenuOpen}
+          >
+            {threadsMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+          </button>
+          <span className="font-mono text-[14px] font-semibold text-white tracking-wide uppercase truncate">
+            {symU}
+          </span>
+        </div>
         <div className="relative flex items-center gap-2 shrink-0">
           <select
             value={modelControlValue}
@@ -587,45 +622,83 @@ export function MarketNewsChatPanel() {
         </div>
       </div>
 
-      <div className="flex items-center gap-1 px-2 py-1.5 border-b border-card-border/30 overflow-x-auto shrink-0">
-        {threads.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setActiveThreadId(t.id)}
-            className={[
-              "font-mono text-[12px] px-2 py-1 rounded border max-w-[140px] truncate shrink-0",
-              t.id === activeThreadId
-                ? "border-white/35 text-white bg-white/10"
-                : "border-transparent text-white/65 hover:text-white",
-            ].join(" ")}
-          >
-            {t.title}
-          </button>
-        ))}
-        <button
-          type="button"
-          onClick={handleNewThread}
-          className="flex items-center gap-1 font-mono text-[12px] text-white/80 hover:text-white px-1.5 shrink-0"
-        >
-          <Plus className="w-3 h-3" />
-          New
-        </button>
-        {messages.length > 0 && (
-          <button
-            type="button"
-            onClick={handleClear}
-            className="ml-auto flex items-center gap-1 font-mono text-[12px] text-white/65 hover:text-white px-1.5 shrink-0"
-          >
-            <RotateCcw className="w-3 h-3" />
-            Clear
-          </button>
+      <div className="relative flex-1 min-h-0 flex flex-col">
+        {threadsMenuOpen && (
+          <div className="absolute inset-0 z-30 flex min-h-0" role="dialog" aria-label="Chat history">
+            <nav
+              className="flex flex-col w-[min(260px,78vw)] max-w-full shrink-0 border-r border-card-border/60 bg-[#0b0b0b] shadow-[4px_0_24px_rgba(0,0,0,0.55)]"
+              aria-label="Previous chats"
+            >
+              <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-card-border/40 shrink-0">
+                <span className="font-mono text-[11px] uppercase tracking-wider text-white/55">
+                  Chats · {symU}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setThreadsMenuOpen(false)}
+                  className="p-1 text-white/65 hover:text-white"
+                  aria-label="Close chats menu"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto py-1">
+                {threads.length === 0 ? (
+                  <p className="px-3 py-3 font-mono text-[12px] text-white/55 leading-relaxed">
+                    No saved chats for {symU} yet. Start a conversation below.
+                  </p>
+                ) : (
+                  threads.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => handleSelectThread(t.id)}
+                      className={[
+                        "w-full text-left font-mono text-[13px] px-3 py-2.5 truncate transition-colors",
+                        t.id === activeThreadId
+                          ? "bg-white/10 text-white border-l-2 border-white/50"
+                          : "text-white/70 hover:bg-white/5 hover:text-white border-l-2 border-transparent",
+                      ].join(" ")}
+                      title={t.title}
+                    >
+                      {t.title}
+                    </button>
+                  ))
+                )}
+              </div>
+              <div className="flex items-center gap-2 px-2 py-2 border-t border-card-border/40 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleNewThread}
+                  className="flex flex-1 items-center justify-center gap-1 font-mono text-[12px] text-white/85 hover:text-white py-1.5 rounded border border-card-border/60 hover:border-white/25"
+                >
+                  <Plus className="w-3 h-3" />
+                  New chat
+                </button>
+                {messages.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClear}
+                    className="flex items-center gap-1 font-mono text-[12px] text-white/65 hover:text-white px-2 py-1.5 shrink-0"
+                    title="Clear current chat"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </nav>
+            <button
+              type="button"
+              className="flex-1 min-w-0 bg-black/45"
+              aria-label="Close chats menu"
+              onClick={() => setThreadsMenuOpen(false)}
+            />
+          </div>
         )}
-      </div>
 
-      <div
-        ref={scrollRef}
-        className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-2"
+        <div
+          ref={scrollRef}
+          className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-2"
         style={
           narrowMobile
             ? { paddingBottom: `calc(44px + ${dockBottomPx}px + env(safe-area-inset-bottom, 0px))` }
@@ -717,6 +790,7 @@ export function MarketNewsChatPanel() {
               />
             </div>
           ))}
+        </div>
       </div>
 
       {narrowMobile && typeof document !== "undefined"
