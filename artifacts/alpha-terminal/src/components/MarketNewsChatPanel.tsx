@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { useTerminalStore } from "@/lib/store";
 import { resolveActiveChatThreadId } from "@/lib/chatPersistence";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
@@ -10,7 +11,7 @@ import {
 import { Send, Square, RotateCcw, Plus, Bot, Menu, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
-import { useKeyboardOverlapPx } from "@/hooks/useVisualViewportKeyboardInset";
+import { useChatComposerDock } from "@/hooks/useVisualViewportKeyboardInset";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import {
   AI_MODEL_IDS,
@@ -159,9 +160,25 @@ export function MarketNewsChatPanel() {
   const composerSendLockRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const composerFormRef = useRef<HTMLFormElement>(null);
+  const [composerHeightPx, setComposerHeightPx] = useState(72);
 
   const narrowMobile = useMediaQuery("(max-width: 767px)");
-  const { composerLiftPx, remeasure } = useKeyboardOverlapPx(composerFocused);
+  const { dockStyle, scrollPaddingBottomPx, remeasure } = useChatComposerDock(
+    narrowMobile,
+    composerFocused,
+    composerHeightPx,
+  );
+
+  useEffect(() => {
+    const el = composerFormRef.current;
+    if (!el || !narrowMobile) return;
+    const measure = () => setComposerHeightPx(el.offsetHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [narrowMobile]);
 
   const refreshThreads = useCallback(async (): Promise<ServerThread[]> => {
     try {
@@ -382,6 +399,78 @@ export function MarketNewsChatPanel() {
     });
   }, [input, isStreaming, sendMessage]);
 
+  const renderComposer = (extraStyle?: CSSProperties) => (
+    <form
+      ref={composerFormRef}
+      className={[
+        "flex gap-2 border-t border-card-border/50 bg-[#0a0a0a] p-2 items-end",
+        narrowMobile
+          ? "shadow-[0_-10px_30px_rgba(0,0,0,0.45)]"
+          : "relative z-[60] shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.25)]",
+      ].join(" ")}
+      style={{
+        paddingBottom: "max(10px, env(safe-area-inset-bottom, 0px))",
+        ...extraStyle,
+      }}
+      onSubmit={(e) => {
+        e.preventDefault();
+        handleComposerSend();
+      }}
+    >
+      <textarea
+        ref={textareaRef}
+        rows={2}
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter" || e.shiftKey) return;
+          e.preventDefault();
+          handleComposerSend();
+        }}
+        onFocus={() => {
+          setComposerFocused(true);
+          remeasure();
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              remeasure();
+            });
+          });
+        }}
+        onBlur={() => {
+          setComposerFocused(false);
+          remeasure();
+        }}
+        placeholder={`Ask about ${symU}…`}
+        className="flex-1 resize-none bg-[#111] border border-card-border rounded-md px-3 py-2 font-mono text-[14px] text-white placeholder:text-white/55 outline-none focus:border-white/40 min-h-[48px]"
+      />
+      {isStreaming ? (
+        <button
+          type="button"
+          onClick={handleStop}
+          className="shrink-0 p-2.5 rounded-md border border-red-500/40 text-red-400 hover:bg-red-500/10"
+          aria-label="Stop"
+        >
+          <Square className="w-4 h-4 fill-current" />
+        </button>
+      ) : (
+        <button
+          type="button"
+          disabled={!input.trim()}
+          onPointerDown={(e) => {
+            if (!input.trim() || isStreaming) return;
+            e.preventDefault();
+            handleComposerSend();
+          }}
+          className="shrink-0 p-2.5 text-white disabled:opacity-30 touch-manipulation transition-opacity active:opacity-60 aria-[busy=true]:opacity-50"
+          aria-label="Send"
+          aria-busy={isStreaming}
+        >
+          <Send className="w-5 h-5" />
+        </button>
+      )}
+    </form>
+  );
+
   const lastDisplayMsg = displayMessages[displayMessages.length - 1];
   const showThinkingDots =
     isStreaming &&
@@ -577,7 +666,13 @@ export function MarketNewsChatPanel() {
           </div>
         )}
 
-        <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-2">
+        <div
+          ref={scrollRef}
+          className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-2"
+          style={
+            narrowMobile ? { paddingBottom: `${scrollPaddingBottomPx}px` } : undefined
+          }
+        >
           {displayMessages.length === 0 && (
             <p className="font-mono text-[14px] text-white/70 leading-relaxed">
               Ask about {symU} — the assistant calls tools for live quotes, flow, news, and technicals.
@@ -662,73 +757,12 @@ export function MarketNewsChatPanel() {
             ))}
         </div>
 
-        <form
-          className="relative z-[60] flex shrink-0 gap-2 border-t border-card-border/50 bg-[#0a0a0a] p-2 items-end shadow-[0_-10px_30px_rgba(0,0,0,0.25)]"
-          style={{
-            paddingBottom: "max(10px, env(safe-area-inset-bottom, 0px))",
-            ...(narrowMobile && composerLiftPx > 0
-              ? { marginBottom: `${composerLiftPx}px` }
-              : {}),
-          }}
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleComposerSend();
-          }}
-        >
-          <textarea
-            ref={textareaRef}
-            rows={2}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key !== "Enter" || e.shiftKey) return;
-              e.preventDefault();
-              handleComposerSend();
-            }}
-            onFocus={() => {
-              setComposerFocused(true);
-              remeasure();
-              requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                  textareaRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-                  remeasure();
-                });
-              });
-            }}
-            onBlur={() => {
-              setComposerFocused(false);
-              remeasure();
-            }}
-            placeholder={`Ask about ${symU}…`}
-            className="flex-1 resize-none bg-[#111] border border-card-border rounded-md px-3 py-2 font-mono text-[14px] text-white placeholder:text-white/55 outline-none focus:border-white/40 min-h-[48px]"
-          />
-          {isStreaming ? (
-            <button
-              type="button"
-              onClick={handleStop}
-              className="shrink-0 p-2.5 rounded-md border border-red-500/40 text-red-400 hover:bg-red-500/10"
-              aria-label="Stop"
-            >
-              <Square className="w-4 h-4 fill-current" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              disabled={!input.trim()}
-              onPointerDown={(e) => {
-                if (!input.trim() || isStreaming) return;
-                e.preventDefault();
-                handleComposerSend();
-              }}
-              className="shrink-0 p-2.5 text-white disabled:opacity-30 touch-manipulation transition-opacity active:opacity-60 aria-[busy=true]:opacity-50"
-              aria-label="Send"
-              aria-busy={isStreaming}
-            >
-              <Send className="w-5 h-5" />
-            </button>
-          )}
-        </form>
+        {!narrowMobile && renderComposer()}
       </div>
+
+      {narrowMobile && typeof document !== "undefined"
+        ? createPortal(renderComposer(dockStyle), document.body)
+        : null}
     </div>
   );
 }
