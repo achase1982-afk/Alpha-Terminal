@@ -53,6 +53,16 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toMatch(/provider-native|Claude|Gemini|OpenAI/i);
   });
 
+  it("includes absolute formatting rules to avoid AI-tell structure", () => {
+    const prompt = buildChatSystemPrompt("AAPL");
+    expect(prompt).toContain("Formatting. Write in plain prose");
+    expect(prompt).toContain("No section dividers");
+    expect(prompt).toContain("No emoji anywhere");
+    expect(prompt).toContain('No label-colon section headers such as "Bottom line:"');
+    expect(prompt).toContain("Avoid em dashes");
+    expect(prompt).toContain("Do not impose a fixed report template");
+  });
+
   it("includes authoritative ET market context (not UTC server clock)", () => {
     const at105Et = etInstant(2026, 5, 21, 13, 5);
     const prompt = buildChatSystemPrompt(null, "America/New_York", at105Et);

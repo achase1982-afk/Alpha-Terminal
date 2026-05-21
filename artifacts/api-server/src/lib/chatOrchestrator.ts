@@ -13,6 +13,10 @@ import {
 import { resolveChatLanguageModel } from "./chatModel.js";
 import { getMarketContext } from "./getMarketContext.js";
 import { formatMarketContextUserBlock } from "./marketContextPrompt.js";
+import {
+  createChatOutputFormattingStream,
+  formatChatOutputText,
+} from "./chatOutputFormatting.js";
 
 export { CHAT_SUMMARY_TOKEN_THRESHOLD, estimateTokenCount };
 
@@ -80,6 +84,14 @@ ${ambientBlock}
 - A put/call ratio is a volume measure only. It does not indicate whether contracts were bought or sold. Do not cite it as evidence of direction.
 When the data cannot resolve direction, say so plainly. Show your reasoning and stay honest about what is inference rather than picking a side.
 - After tool results, synthesize a clear answer. If tools return errors or empty data, say so plainly.
+
+Formatting. Write in plain prose, the way a sharp analyst writes in a direct message. These rules are absolute:
+- No section dividers. Never output a line of dashes or any horizontal rule.
+- No emoji anywhere, including as bullets, headers, or status markers, and no green, red, or warning indicators.
+- No label-colon section headers such as "Bottom line:", "The Takeaway:", "Key Takeaways:", or "Catalyst Verification:". Just write the content.
+- No meta-framing or preamble such as "Here's what I can tell you" or "Here's why this matters." Start with the answer.
+- Avoid em dashes. Use commas, periods, or separate sentences instead.
+- Answer in the order the user asked. Do not impose a fixed report template.
 
 ## Tools available
 get_quote, get_technicals, get_options_chain, get_flow, get_ivr, get_earnings, get_news, get_market_pulse, web_search, web_fetch
@@ -243,11 +255,26 @@ async function synthesizeAfterEmptyToolTurn(args: {
     ...("temperature" in resolved ? { temperature: resolved.temperature } : {}),
     ...("providerOptions" in resolved ? resolved.providerOptions : {}),
   });
-  const text = result.text.trim();
+  const text = formatChatOutputText(result.text.trim());
   if (text) {
     args.onEvent({ type: "text", delta: text });
   }
   return text;
+}
+
+function createFormattedTextEmitter(onEvent: (ev: ChatStreamEvent) => void) {
+  const stream = createChatOutputFormattingStream();
+  return {
+    push(delta: string) {
+      if (!delta) return;
+      const out = stream.push(delta);
+      if (out) onEvent({ type: "text", delta: out });
+    },
+    flush() {
+      const tail = stream.flush();
+      if (tail) onEvent({ type: "text", delta: tail });
+    },
+  };
 }
 
 async function runDraftChatTurn(args: {
@@ -338,6 +365,7 @@ export async function runMultiAgentChatTurn(
   ];
 
   let assistantText = "";
+  const textEmitter = createFormattedTextEmitter(onEvent);
   try {
     const synthSystem = `${buildChatSystemPrompt(ambientSymbol, clientTimeZone)}\n\n${MULTI_AGENT_SYNTH_SYSTEM}`;
     const result = streamText({
@@ -354,13 +382,14 @@ export async function runMultiAgentChatTurn(
       if (abortSignal?.aborted) break;
       if (part.type === "text-delta" && part.text) {
         assistantText += part.text;
-        onEvent({ type: "text", delta: part.text });
+        textEmitter.push(part.text);
       }
     }
 
     if (abortSignal?.aborted) return;
 
-    let finalText = (await result.text).trim() || assistantText.trim();
+    textEmitter.flush();
+    let finalText = formatChatOutputText((await result.text).trim() || assistantText.trim());
     if (!finalText) {
       const response = await result.response;
       finalText = await synthesizeAfterEmptyToolTurn({
@@ -398,6 +427,7 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
   const toolCallsLog: Array<{ toolCallId: string; toolName: string; input: unknown }> = [];
   const toolResultsLog: Array<{ toolCallId: string; toolName: string; output: unknown }> = [];
   let assistantText = "";
+  const textEmitter = createFormattedTextEmitter(onEvent);
 
   try {
     const result = streamText({
@@ -415,7 +445,7 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
       if (abortSignal?.aborted) break;
       if (part.type === "text-delta" && part.text) {
         assistantText += part.text;
-        onEvent({ type: "text", delta: part.text });
+        textEmitter.push(part.text);
       } else if (part.type === "tool-call") {
         const toolCallId = part.toolCallId;
         const toolName = part.toolName;
@@ -433,7 +463,8 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
 
     if (abortSignal?.aborted) return;
 
-    let finalText = (await result.text).trim() || assistantText.trim();
+    textEmitter.flush();
+    let finalText = formatChatOutputText((await result.text).trim() || assistantText.trim());
     const hadToolResults = toolResultsLog.length > 0;
     if (!finalText && hadToolResults) {
       const response = await result.response;
