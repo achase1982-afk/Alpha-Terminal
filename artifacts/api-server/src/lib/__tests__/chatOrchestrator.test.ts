@@ -15,7 +15,11 @@ function etInstant(
 import {
   buildChatSystemPrompt,
   buildModelMessagesFromHistory,
+  CHAT_MAX_TOOL_STEPS,
   CHAT_SUMMARY_TOKEN_THRESHOLD,
+  EMPTY_CHAT_RESPONSE_AFTER_TOOLS,
+  EMPTY_CHAT_RESPONSE_PLAIN,
+  formatEmptyChatResponseMessage,
   shouldSummarizeThread,
 } from "../chatOrchestrator.js";
 import { estimateTokenCount } from "../chatDb.js";
@@ -57,6 +61,22 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toMatch(/1:05.*ET/i);
     expect(prompt).not.toMatch(/5:05/);
     expect(prompt).not.toContain("toLocaleString");
+  });
+});
+
+describe("formatEmptyChatResponseMessage", () => {
+  it("explains tool-step exhaustion when tools ran", () => {
+    expect(formatEmptyChatResponseMessage(true)).toBe(EMPTY_CHAT_RESPONSE_AFTER_TOOLS);
+  });
+
+  it("uses plain placeholder when no tools ran", () => {
+    expect(formatEmptyChatResponseMessage(false)).toBe(EMPTY_CHAT_RESPONSE_PLAIN);
+  });
+});
+
+describe("CHAT_MAX_TOOL_STEPS", () => {
+  it("allows enough steps for multi-ticker tool loops", () => {
+    expect(CHAT_MAX_TOOL_STEPS).toBeGreaterThanOrEqual(15);
   });
 });
 
