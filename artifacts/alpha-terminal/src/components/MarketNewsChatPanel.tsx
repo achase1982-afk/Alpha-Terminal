@@ -10,7 +10,7 @@ import {
 import { Send, Square, RotateCcw, Plus, Bot, Menu, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
-import { useVisualViewportComposerMetrics } from "@/hooks/useVisualViewportKeyboardInset";
+import { useKeyboardOverlapPx } from "@/hooks/useVisualViewportKeyboardInset";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import {
   AI_MODEL_IDS,
@@ -161,9 +161,7 @@ export function MarketNewsChatPanel() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const narrowMobile = useMediaQuery("(max-width: 767px)");
-  const { keyboardInset, remeasure, resetBaseline } = useVisualViewportComposerMetrics(0, {
-    composerFocused,
-  });
+  const { composerLiftPx, remeasure } = useKeyboardOverlapPx(composerFocused);
 
   const refreshThreads = useCallback(async (): Promise<ServerThread[]> => {
     try {
@@ -384,12 +382,6 @@ export function MarketNewsChatPanel() {
     });
   }, [input, isStreaming, sendMessage]);
 
-  const panelMaxHeightStyle = narrowMobile
-    ? {
-        maxHeight: `calc(100dvh - 9.5rem - ${keyboardInset}px)`,
-      }
-    : undefined;
-
   const lastDisplayMsg = displayMessages[displayMessages.length - 1];
   const showThinkingDots =
     isStreaming &&
@@ -398,10 +390,7 @@ export function MarketNewsChatPanel() {
     !lastDisplayMsg.content.trim();
 
   return (
-    <div
-      className="relative flex flex-col flex-1 min-h-0 max-h-[calc(100dvh-9.5rem)] md:max-h-none md:min-h-[280px] bg-[#0a0a0a] border-t border-card-border/40"
-      style={panelMaxHeightStyle}
-    >
+    <div className="relative flex flex-col flex-1 min-h-0 w-full max-md:max-h-none md:max-h-none md:min-h-[280px] bg-[#0a0a0a] border-t border-card-border/40">
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-card-border/50 shrink-0 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
           <button
@@ -675,7 +664,12 @@ export function MarketNewsChatPanel() {
 
         <form
           className="relative z-[60] flex shrink-0 gap-2 border-t border-card-border/50 bg-[#0a0a0a] p-2 items-end shadow-[0_-10px_30px_rgba(0,0,0,0.25)]"
-          style={{ paddingBottom: "max(10px, env(safe-area-inset-bottom, 0px))" }}
+          style={{
+            paddingBottom: "max(10px, env(safe-area-inset-bottom, 0px))",
+            ...(narrowMobile && composerLiftPx > 0
+              ? { marginBottom: `${composerLiftPx}px` }
+              : {}),
+          }}
           onSubmit={(e) => {
             e.preventDefault();
             handleComposerSend();
@@ -694,10 +688,15 @@ export function MarketNewsChatPanel() {
             onFocus={() => {
               setComposerFocused(true);
               remeasure();
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  textareaRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+                  remeasure();
+                });
+              });
             }}
             onBlur={() => {
               setComposerFocused(false);
-              resetBaseline();
               remeasure();
             }}
             placeholder={`Ask about ${symU}…`}

@@ -158,3 +158,77 @@ export function useVisualViewportKeyboardInset(): number {
   const { keyboardInset } = useVisualViewportComposerMetrics(0);
   return keyboardInset;
 }
+
+const KEYBOARD_OVERLAY_GAP_PX = 8;
+
+/**
+ * Height (px) of the software keyboard overlapping the layout viewport.
+ * Used to lift an in-flow composer via `margin-bottom` when `interactive-widget=overlays-content`.
+ */
+export function measureKeyboardOverlapPx(): number {
+  const vv = window.visualViewport;
+  if (!vv) return 0;
+  const raw = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+  if (!Number.isFinite(raw) || raw < 0) return 0;
+  return raw;
+}
+
+export interface KeyboardOverlapMetrics {
+  /** Keyboard band height; 0 when dismissed. */
+  overlapPx: number;
+  /** `overlapPx + gap` for composer margin when focused. */
+  composerLiftPx: number;
+  remeasure: () => void;
+}
+
+/**
+ * Lifts the chat composer above the keyboard with in-flow `margin-bottom` (no fixed overlay).
+ * When the keyboard is closed, overlap is forced to 0 so the composer sits on the panel bottom.
+ */
+export function useKeyboardOverlapPx(composerFocused: boolean): KeyboardOverlapMetrics {
+  const [overlapPx, setOverlapPx] = useState(0);
+  const focusedRef = useRef(composerFocused);
+  focusedRef.current = composerFocused;
+  const updateRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const update = () => {
+      const raw = measureKeyboardOverlapPx();
+      const focused = focusedRef.current;
+      // Keyboard dismissed: ignore small residual overlap from iOS viewport jitter.
+      const next = !focused && raw < 48 ? 0 : raw;
+      setOverlapPx(next);
+    };
+
+    updateRef.current = update;
+    update();
+
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    window.addEventListener("resize", update);
+
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, []);
+
+  const remeasure = useCallback(() => {
+    updateRef.current();
+  }, []);
+
+  const lift =
+    composerFocused && overlapPx > 0
+      ? overlapPx + KEYBOARD_OVERLAY_GAP_PX
+      : 0;
+
+  return {
+    overlapPx,
+    composerLiftPx: lift,
+    remeasure,
+  };
+}
