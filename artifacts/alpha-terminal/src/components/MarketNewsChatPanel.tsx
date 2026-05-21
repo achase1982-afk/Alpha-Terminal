@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useTerminalStore } from "@/lib/store";
+import { resolveActiveChatThreadId } from "@/lib/chatPersistence";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { consumeChatSse, type ChatSseEvent } from "@/lib/chatSse";
 import { Send, Square, RotateCcw, Plus, Bot, Menu, X } from "lucide-react";
@@ -104,6 +105,7 @@ export function MarketNewsChatPanel() {
   const symbol = useTerminalStore((s) => s.symbol);
   const aiModel = useTerminalStore((s) => s.aiFeatureSettings.chat.model);
   const setAiFeatureSetting = useTerminalStore((s) => s.setAiFeatureSetting);
+  const setActiveChatThreadForSymbol = useTerminalStore((s) => s.setActiveChatThreadForSymbol);
 
   const symU = symbol.toUpperCase();
   const modelSend = isAiModelId(aiModel) ? aiModel : DEFAULT_AI_MODEL_ID;
@@ -172,16 +174,26 @@ export function MarketNewsChatPanel() {
     composerFocused,
   });
 
-  const refreshThreads = useCallback(async () => {
+  const refreshThreads = useCallback(async (): Promise<ServerThread[]> => {
     try {
       const res = await fetchWithAuth(`/api/chat/threads?symbol=${encodeURIComponent(symU)}`);
-      if (!res.ok) return;
+      if (!res.ok) return [];
       const data = (await res.json()) as { threads?: ServerThread[] };
-      setThreads(data.threads ?? []);
+      const list = data.threads ?? [];
+      setThreads(list);
+      return list;
     } catch {
-      /* ignore */
+      return [];
     }
   }, [symU]);
+
+  const activateThread = useCallback(
+    (threadId: string | null) => {
+      setActiveThreadId(threadId);
+      setActiveChatThreadForSymbol(symU, threadId);
+    },
+    [symU, setActiveChatThreadForSymbol],
+  );
 
   const loadThreadMessages = useCallback(async (threadId: string) => {
     try {
@@ -203,14 +215,30 @@ export function MarketNewsChatPanel() {
   }, []);
 
   useEffect(() => {
-    void refreshThreads();
-    setActiveThreadId(null);
-    setMessages([]);
+    let cancelled = false;
     setThreadsMenuOpen(false);
+    abortActiveChatStream();
+
+    void (async () => {
+      const list = await refreshThreads();
+      if (cancelled) return;
+
+      const persisted = useTerminalStore.getState().activeChatThreadBySymbol[symU];
+      const threadId = resolveActiveChatThreadId(list, persisted);
+      if (threadId) {
+        setActiveThreadId(threadId);
+        setActiveChatThreadForSymbol(symU, threadId);
+      } else {
+        setActiveThreadId(null);
+        setActiveChatThreadForSymbol(symU, null);
+      }
+    })();
+
     return () => {
+      cancelled = true;
       abortActiveChatStream();
     };
-  }, [symU, refreshThreads, abortActiveChatStream]);
+  }, [symU, refreshThreads, abortActiveChatStream, setActiveChatThreadForSymbol]);
 
   useEffect(() => {
     if (activeThreadId) void loadThreadMessages(activeThreadId);
@@ -339,7 +367,7 @@ export function MarketNewsChatPanel() {
           if (signal.aborted) return;
           if (ev.type === "thread" && ev.thread_id) {
             threadId = ev.thread_id;
-            setActiveThreadId(ev.thread_id);
+            activateThread(ev.thread_id);
           } else if (ev.type === "status" && ev.phase === "multi_agent_drafting") {
             setActiveMultiAgentCount(ev.model_count ?? multiAgentModels.length);
           } else if (ev.type === "text") {
@@ -395,6 +423,7 @@ export function MarketNewsChatPanel() {
     },
     [
       abortActiveChatStream,
+      activateThread,
       activeThreadId,
       modelSend,
       multiAgentModels,
@@ -413,18 +442,21 @@ export function MarketNewsChatPanel() {
   const handleNewThread = useCallback(() => {
     handleStop();
     cancelAssistantSpeech();
-    setActiveThreadId(null);
+    activateThread(null);
     setMessages([]);
     setLastFailedMessage(null);
     setThreadsMenuOpen(false);
-  }, [handleStop]);
+  }, [activateThread, handleStop]);
 
-  const handleSelectThread = useCallback((threadId: string) => {
-    handleStop();
-    cancelAssistantSpeech();
-    setActiveThreadId(threadId);
-    setThreadsMenuOpen(false);
-  }, [handleStop]);
+  const handleSelectThread = useCallback(
+    (threadId: string) => {
+      handleStop();
+      cancelAssistantSpeech();
+      activateThread(threadId);
+      setThreadsMenuOpen(false);
+    },
+    [activateThread, handleStop],
+  );
 
   const handleClear = handleNewThread;
 

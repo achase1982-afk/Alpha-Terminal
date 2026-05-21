@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { DEFAULT_AI_MODEL_ID, migrateLegacyModelIdToCatalog } from '@workspace/ai-models';
 import { fetchWithAuth } from './fetchWithAuth';
+import type { ActiveChatThreadRef } from './chatPersistence';
 
 const PERSIST_KEY = "alpha-terminal-storage";
 const MAX_PERSISTED_STRATEGIST_HISTORY = 30;
@@ -139,37 +140,6 @@ export interface LiveQuote {
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
-}
-
-/** Per-message id for streaming updates in Markets Chat tab. */
-export interface MarketNewsChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-}
-
-export interface MarketNewsChatThread {
-  id: string;
-  title: string;
-  createdAt: number;
-  updatedAt: number;
-  messages: MarketNewsChatMessage[];
-}
-
-export interface MarketNewsChatBundle {
-  threadOrder: string[];
-  threads: Record<string, MarketNewsChatThread>;
-  activeThreadId: string;
-}
-
-const MAX_MARKET_NEWS_MESSAGES = 100;
-const MAX_MARKET_NEWS_THREADS = 12;
-
-function makeMarketNewsBundle(): MarketNewsChatBundle {
-  const id = `mnt-${Date.now()}`;
-  const now = Date.now();
-  const thread: MarketNewsChatThread = { id, title: "Main", createdAt: now, updatedAt: now, messages: [] };
-  return { threadOrder: [id], threads: { [id]: thread }, activeThreadId: id };
 }
 
 export type NotificationEventType =
@@ -326,15 +296,9 @@ export interface TerminalState {
   addChatMessage: (msg: ChatMessage) => void;
   clearChat: () => void;
 
-  /** Markets Chat tab: persisted per ticker, multi-thread (localStorage). */
-  marketNewsChatBySymbol: Record<string, MarketNewsChatBundle>;
-  marketNewsChatEnsureSymbol: (symbol: string) => void;
-  marketNewsChatAppendMessage: (symbol: string, threadId: string, msg: MarketNewsChatMessage) => void;
-  marketNewsChatSetAssistantContent: (symbol: string, threadId: string, messageId: string, content: string) => void;
-  marketNewsChatCreateThread: (symbol: string) => void;
-  marketNewsChatSelectThread: (symbol: string, threadId: string) => void;
-  marketNewsChatClearActiveThread: (symbol: string) => void;
-  marketNewsChatDeleteThread: (symbol: string, threadId: string) => void;
+  /** Markets Chat: persisted active server thread id per symbol (messages load from API). */
+  activeChatThreadBySymbol: Record<string, ActiveChatThreadRef>;
+  setActiveChatThreadForSymbol: (symbol: string, threadId: string | null) => void;
 
   watchlists: Record<string, { name: string; symbols: string[] }>;
   activeWatchlistId: string;
@@ -684,157 +648,21 @@ export const useTerminalStore = create<TerminalState>()(
       addChatMessage: (msg) => set((state) => ({ chatHistory: [...state.chatHistory, msg] })),
       clearChat: () => set({ chatHistory: [] }),
 
-      marketNewsChatBySymbol: {},
-      marketNewsChatEnsureSymbol: (symbol) => {
+      activeChatThreadBySymbol: {},
+      setActiveChatThreadForSymbol: (symbol, threadId) => {
         const sym = symbol.toUpperCase().trim();
         if (!sym) return;
         set((state) => {
-          if (state.marketNewsChatBySymbol[sym]) return {};
-          return {
-            marketNewsChatBySymbol: {
-              ...state.marketNewsChatBySymbol,
-              [sym]: makeMarketNewsBundle(),
-            },
-          };
-        });
-      },
-      marketNewsChatAppendMessage: (symbol, threadId, msg) => {
-        const sym = symbol.toUpperCase().trim();
-        if (!sym) return;
-        set((state) => {
-          let bundle = state.marketNewsChatBySymbol[sym];
-          if (!bundle) bundle = makeMarketNewsBundle();
-          const tid = threadId && bundle.threads[threadId] ? threadId : bundle.activeThreadId;
-          const th = bundle.threads[tid];
-          if (!th) return {};
-          let nextMsgs = [...th.messages, msg];
-          if (nextMsgs.length > MAX_MARKET_NEWS_MESSAGES) {
-            nextMsgs = nextMsgs.slice(-MAX_MARKET_NEWS_MESSAGES);
+          if (!threadId) {
+            if (!state.activeChatThreadBySymbol[sym]) return {};
+            const next = { ...state.activeChatThreadBySymbol };
+            delete next[sym];
+            return { activeChatThreadBySymbol: next };
           }
-          const now = Date.now();
-          const updatedThread: MarketNewsChatThread = { ...th, messages: nextMsgs, updatedAt: now };
-          const order = [tid, ...bundle.threadOrder.filter((id) => id !== tid)];
-          const nextBundle: MarketNewsChatBundle = {
-            ...bundle,
-            threads: { ...bundle.threads, [tid]: updatedThread },
-            threadOrder: order,
-            activeThreadId: tid,
-          };
-          return { marketNewsChatBySymbol: { ...state.marketNewsChatBySymbol, [sym]: nextBundle } };
-        });
-      },
-      marketNewsChatSetAssistantContent: (symbol, threadId, messageId, content) => {
-        const sym = symbol.toUpperCase().trim();
-        if (!sym) return;
-        set((state) => {
-          const bundle = state.marketNewsChatBySymbol[sym];
-          if (!bundle) return {};
-          const th = bundle.threads[threadId];
-          if (!th) return {};
-          const messages = th.messages.map((m) => (m.id === messageId ? { ...m, content } : m));
           return {
-            marketNewsChatBySymbol: {
-              ...state.marketNewsChatBySymbol,
-              [sym]: {
-                ...bundle,
-                threads: {
-                  ...bundle.threads,
-                  [threadId]: { ...th, messages, updatedAt: Date.now() },
-                },
-              },
-            },
-          };
-        });
-      },
-      marketNewsChatCreateThread: (symbol) => {
-        const sym = symbol.toUpperCase().trim();
-        if (!sym) return;
-        set((state) => {
-          let bundle = state.marketNewsChatBySymbol[sym] ?? makeMarketNewsBundle();
-          if (bundle.threadOrder.length >= MAX_MARKET_NEWS_THREADS) {
-            const dropId = bundle.threadOrder[bundle.threadOrder.length - 1]!;
-            const restThreads = { ...bundle.threads };
-            delete restThreads[dropId];
-            const restOrder = bundle.threadOrder.filter((id) => id !== dropId);
-            let activeThreadId = bundle.activeThreadId;
-            if (activeThreadId === dropId) activeThreadId = restOrder[0]!;
-            bundle = { ...bundle, threads: restThreads, threadOrder: restOrder, activeThreadId };
-          }
-          const newId = `mnt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          const now = Date.now();
-          const n = bundle.threadOrder.length + 1;
-          const thread: MarketNewsChatThread = {
-            id: newId,
-            title: `Chat ${n}`,
-            createdAt: now,
-            updatedAt: now,
-            messages: [],
-          };
-          const nextBundle: MarketNewsChatBundle = {
-            threadOrder: [newId, ...bundle.threadOrder],
-            threads: { ...bundle.threads, [newId]: thread },
-            activeThreadId: newId,
-          };
-          return { marketNewsChatBySymbol: { ...state.marketNewsChatBySymbol, [sym]: nextBundle } };
-        });
-      },
-      marketNewsChatSelectThread: (symbol, threadId) => {
-        const sym = symbol.toUpperCase().trim();
-        if (!sym) return;
-        set((state) => {
-          const bundle = state.marketNewsChatBySymbol[sym];
-          if (!bundle || !bundle.threads[threadId]) return {};
-          return {
-            marketNewsChatBySymbol: {
-              ...state.marketNewsChatBySymbol,
-              [sym]: { ...bundle, activeThreadId: threadId },
-            },
-          };
-        });
-      },
-      marketNewsChatClearActiveThread: (symbol) => {
-        const sym = symbol.toUpperCase().trim();
-        if (!sym) return;
-        set((state) => {
-          const bundle = state.marketNewsChatBySymbol[sym];
-          if (!bundle) return {};
-          const tid = bundle.activeThreadId;
-          const th = bundle.threads[tid];
-          if (!th) return {};
-          return {
-            marketNewsChatBySymbol: {
-              ...state.marketNewsChatBySymbol,
-              [sym]: {
-                ...bundle,
-                threads: { ...bundle.threads, [tid]: { ...th, messages: [], updatedAt: Date.now() } },
-              },
-            },
-          };
-        });
-      },
-      marketNewsChatDeleteThread: (symbol, threadId) => {
-        const sym = symbol.toUpperCase().trim();
-        if (!sym) return;
-        set((state) => {
-          const bundle = state.marketNewsChatBySymbol[sym];
-          if (!bundle || !bundle.threads[threadId]) return {};
-          if (bundle.threadOrder.length <= 1) {
-            return {
-              marketNewsChatBySymbol: {
-                ...state.marketNewsChatBySymbol,
-                [sym]: makeMarketNewsBundle(),
-              },
-            };
-          }
-          const threads = { ...bundle.threads };
-          delete threads[threadId];
-          const threadOrder = bundle.threadOrder.filter((id) => id !== threadId);
-          const activeThreadId =
-            bundle.activeThreadId === threadId ? threadOrder[0]! : bundle.activeThreadId;
-          return {
-            marketNewsChatBySymbol: {
-              ...state.marketNewsChatBySymbol,
-              [sym]: { ...bundle, threads, threadOrder, activeThreadId },
+            activeChatThreadBySymbol: {
+              ...state.activeChatThreadBySymbol,
+              [sym]: { threadId, updatedAt: Date.now() },
             },
           };
         });
@@ -1086,7 +914,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 26,
+      version: 27,
       storage: createJSONStorage(() => quotaSafeLocalStorage),
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
@@ -1278,10 +1106,35 @@ export const useTerminalStore = create<TerminalState>()(
             cfg['skepticModelName'] = fix(cfg['skepticModelName']);
           }
         }
-        if (version < 24) {
-          if (!s["marketNewsChatBySymbol"] || typeof s["marketNewsChatBySymbol"] !== "object") {
-            s["marketNewsChatBySymbol"] = {};
+        if (version < 27) {
+          const migrated: Record<string, ActiveChatThreadRef> = {};
+          const old = s["marketNewsChatBySymbol"] as
+            | Record<
+                string,
+                {
+                  activeThreadId?: string;
+                  threads?: Record<string, { updatedAt?: number }>;
+                }
+              >
+            | undefined;
+          if (old && typeof old === "object") {
+            for (const [rawSym, bundle] of Object.entries(old)) {
+              const sym = rawSym.toUpperCase().trim();
+              const tid = bundle?.activeThreadId;
+              if (!sym || typeof tid !== "string" || !tid) continue;
+              const th = bundle.threads?.[tid];
+              migrated[sym] = {
+                threadId: tid,
+                updatedAt: typeof th?.updatedAt === "number" ? th.updatedAt : Date.now(),
+              };
+            }
           }
+          delete s["marketNewsChatBySymbol"];
+          const existing = s["activeChatThreadBySymbol"];
+          s["activeChatThreadBySymbol"] =
+            existing && typeof existing === "object"
+              ? { ...migrated, ...(existing as Record<string, ActiveChatThreadRef>) }
+              : migrated;
         }
         if (version < 25) {
           const features = s["aiFeatureSettings"] as Record<string, Record<string, unknown>> | undefined;
