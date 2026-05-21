@@ -210,18 +210,6 @@ async function prepareTurnMessages(
   return { summary, modelMessages };
 }
 
-type ResolvedModelOpts = {
-  temperature?: number;
-  providerOptions?: Record<string, unknown>;
-};
-
-function resolvedModelOpts(resolved: ReturnType<typeof resolveChatLanguageModel>): ResolvedModelOpts {
-  return {
-    ...("temperature" in resolved ? { temperature: resolved.temperature } : {}),
-    ...("providerOptions" in resolved ? { providerOptions: resolved.providerOptions } : {}),
-  };
-}
-
 /**
  * When streamText stops after tool rounds with no user-visible text (step cap or
  * finishReason tool-calls), run one text-only synthesis pass over the full step transcript.
@@ -245,7 +233,8 @@ async function synthesizeAfterEmptyToolTurn(args: {
     system: args.system,
     messages: synthMessages,
     ...(args.abortSignal ? { abortSignal: args.abortSignal } : {}),
-    ...resolvedModelOpts(resolved),
+    ...("temperature" in resolved ? { temperature: resolved.temperature } : {}),
+    ...("providerOptions" in resolved ? resolved.providerOptions : {}),
   });
   const text = result.text.trim();
   if (text) {
@@ -411,7 +400,8 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
       tools,
       stopWhen: stepCountIs(CHAT_MAX_TOOL_STEPS),
       ...(abortSignal ? { abortSignal } : {}),
-      ...resolvedModelOpts(resolved),
+      ...("temperature" in resolved ? { temperature: resolved.temperature } : {}),
+      ...("providerOptions" in resolved ? resolved.providerOptions : {}),
     });
 
     for await (const part of result.fullStream) {
