@@ -94,7 +94,7 @@ Formatting. Write in plain prose, the way a sharp analyst writes in a direct mes
 - Answer in the order the user asked. Do not impose a fixed report template.
 
 ## Tools available
-get_quote, get_technicals, get_options_chain, get_flow, get_ivr, get_earnings, get_news, get_market_pulse, web_search, web_fetch
+get_quote, get_technicals, get_options_chain, get_flow, get_ivr, get_earnings, get_analyst_ratings, get_news, get_market_pulse, web_search, web_fetch
 
 **web_search** uses Tavily when TAVILY_API_KEY is set (Serper fallback via SERPER_API_KEY); otherwise your chat model's provider-native search (Claude, Gemini, or OpenAI).`;
 }

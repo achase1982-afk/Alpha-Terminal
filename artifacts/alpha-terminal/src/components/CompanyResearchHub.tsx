@@ -1551,6 +1551,8 @@ interface PolygonAnalystRatingsResponse {
   ratings: PolygonRatingRow[];
   consensus: PolygonConsensusComputed;
   coverage_reason?: string | null;
+  data_source?: string | null;
+  source_note?: string | null;
   error?: string;
 }
 
@@ -1590,6 +1592,8 @@ function usePolygonAnalystRatings(symbol: string) {
           strong_sell: 0,
         },
         coverage_reason: j.coverage_reason ?? null,
+        data_source: j.data_source ?? null,
+        source_note: j.source_note ?? null,
       };
     },
     enabled: !!symbol,
@@ -1749,6 +1753,16 @@ function AnalystCoverageBlock({ ticker }: { ticker: string }) {
           {coverageReason === "no_recent_coverage" || coverageReason == null || coverageReason === ""
             ? "No recent analyst coverage"
             : `Analyst data unavailable: ${coverageReason.length > 160 ? `${coverageReason.slice(0, 160)}…` : coverageReason}`}
+        </p>
+      )}
+
+      {(qRat.data?.source_note || qRat.data?.data_source) && (
+        <p style={{ fontSize: 9, fontFamily: f, color: C.textDim, padding: "4px 0 0", textAlign: "right" }}>
+          {qRat.data?.source_note
+            ? qRat.data.source_note
+            : qRat.data?.data_source
+              ? `Source: ${qRat.data.data_source}`
+              : null}
         </p>
       )}
 
