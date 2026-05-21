@@ -3,6 +3,15 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { consumeChatSse, type ChatSseEvent } from "@/lib/chatSse";
 
 const RETRYABLE_CHAT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+const CHAT_CLERK_TOKEN_TIMEOUT_MS = 12_000;
+const CHAT_REQUEST_TIMEOUT_MS = 120_000;
+
+function formatChatNetworkError(raw: string): string {
+  if (/load failed|failed to fetch|networkerror/i.test(raw)) {
+    return "Connection lost — check network and tap Retry.";
+  }
+  return raw;
+}
 
 export type ChatToolPill = {
   toolCallId: string;
@@ -100,6 +109,8 @@ type ChatStreamStore = {
   isStreamingForThread: (threadId: string | null, symbol: string) => boolean;
 
   abortStreamForThread: (threadId: string | null, symbol: string) => void;
+  /** Abort fetch/SSE without clearing isStreaming (supersede in-flight send). */
+  abortInFlightFetchForThread: (threadId: string | null, symbol: string) => void;
 
   reconcileThreadFromServer: (threadId: string, serverMessageIds: string[]) => void;
   clearLastFailedForThread: (threadId: string | null, symbol: string) => void;
@@ -121,7 +132,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
     return s?.isStreaming ?? false;
   },
 
-  abortStreamForThread: (threadId, symbol) => {
+  abortInFlightFetchForThread: (threadId, symbol) => {
     const symU = symbol.toUpperCase();
     const keys = threadId ? [threadId, pendingStreamKey(symU)] : [pendingStreamKey(symU)];
     for (const key of keys) {
@@ -138,10 +149,27 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
               ...cur,
               abortController: null,
               activeSendId: null,
-              isStreaming: false,
               toolPills: [],
               activeMultiAgentCount: 0,
             },
+          },
+        };
+      });
+    }
+  },
+
+  abortStreamForThread: (threadId, symbol) => {
+    get().abortInFlightFetchForThread(threadId, symbol);
+    const symU = symbol.toUpperCase();
+    const keys = threadId ? [threadId, pendingStreamKey(symU)] : [pendingStreamKey(symU)];
+    for (const key of keys) {
+      set((st) => {
+        const cur = st.streamsByThreadId[key];
+        if (!cur) return st;
+        return {
+          streamsByThreadId: {
+            ...st.streamsByThreadId,
+            [key]: { ...cur, isStreaming: false },
           },
         };
       });
@@ -193,7 +221,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
     const symU = params.symbol.toUpperCase();
     let streamKey = params.threadId ?? pendingStreamKey(symU);
 
-    get().abortStreamForThread(params.threadId, symU);
+    get().abortInFlightFetchForThread(params.threadId, symU);
 
     const useServerMultiAgent = params.useMultiAgent && params.multiAgentModels.length >= 2;
     if (params.useMultiAgent && params.multiAgentModels.length < 2) {
@@ -225,10 +253,25 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
 
     set((st) => {
       const base = st.streamsByThreadId[streamKey] ?? emptyThreadState(streamKey, symU);
-      const pendingUser =
-        params.truncateToIndex !== undefined
-          ? [userMsg]
-          : [...base.pendingUserMessages, userMsg];
+      let pendingUser: ChatUiMessage[];
+      if (params.truncateToIndex !== undefined) {
+        pendingUser = [userMsg];
+      } else {
+        const lastPending = base.pendingUserMessages[base.pendingUserMessages.length - 1];
+        const staleAssistant =
+          base.inFlightAssistant &&
+          !base.inFlightAssistant.complete &&
+          !base.inFlightAssistant.content.trim();
+        if (
+          staleAssistant &&
+          lastPending?.role === "user" &&
+          lastPending.content === text
+        ) {
+          pendingUser = [...base.pendingUserMessages.slice(0, -1), userMsg];
+        } else {
+          pendingUser = [...base.pendingUserMessages, userMsg];
+        }
+      }
       return {
         streamsByThreadId: {
           ...st.streamsByThreadId,
@@ -295,6 +338,11 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
       streamKey = newThreadId;
     };
 
+    const requestTimeoutId =
+      typeof window !== "undefined"
+        ? window.setTimeout(() => controller.abort(), CHAT_REQUEST_TIMEOUT_MS)
+        : undefined;
+
     try {
       const res = await fetchWithAuth("/api/ai/chat", {
         method: "POST",
@@ -304,6 +352,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
         },
         body: JSON.stringify(requestBody),
         signal,
+        clerkTokenTimeoutMs: CHAT_CLERK_TOKEN_TIMEOUT_MS,
       });
 
       const contentType = res.headers.get("content-type") || "";
@@ -409,7 +458,26 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
     } catch (err: unknown) {
       const cur = get().streamsByThreadId[streamKey];
       if (!cur || isSupersededSend(cur, sendId, controller)) return;
-      const errMsg = (err as Error).message || "Connection failed";
+      if (signal.aborted || (err as Error).name === "AbortError") {
+        const flight = cur.inFlightAssistant;
+        patchStream(streamKey, {
+          inFlightAssistant: {
+            id: assistantId,
+            content:
+              flight?.id === assistantId && !flight.content.trim()
+                ? "**Stopped.**"
+                : (flight?.content ?? "**Stopped.**"),
+            complete: true,
+          },
+          isStreaming: false,
+          abortController: null,
+          activeSendId: null,
+          toolPills: [],
+          activeMultiAgentCount: 0,
+        });
+        return;
+      }
+      const errMsg = formatChatNetworkError((err as Error).message || "Connection failed");
       patchStream(streamKey, {
         inFlightAssistant: {
           id: assistantId,
@@ -425,6 +493,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
         lastFailedMessage: text,
       });
     } finally {
+      if (requestTimeoutId != null) window.clearTimeout(requestTimeoutId);
       const cur = get().streamsByThreadId[streamKey];
       if (!cur || isSupersededSend(cur, sendId, controller)) return;
       if (cur.isStreaming) {
