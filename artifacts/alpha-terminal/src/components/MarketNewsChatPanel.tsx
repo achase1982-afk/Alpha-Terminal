@@ -284,6 +284,22 @@ export function MarketNewsChatPanel() {
     }
   }, [displayMessages, isStreaming, toolPills]);
 
+  useEffect(() => {
+    return () => {
+      abortStreamForThread(activeThreadId, symU);
+    };
+  }, [abortStreamForThread, activeThreadId, symU]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden && isStreaming) {
+        abortStreamForThread(activeThreadId, symU);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [abortStreamForThread, activeThreadId, isStreaming, symU]);
+
   const handleStop = useCallback(() => {
     abortStreamForThread(activeThreadId, symU);
   }, [abortStreamForThread, activeThreadId, symU]);
@@ -304,7 +320,6 @@ export function MarketNewsChatPanel() {
           void refreshThreads();
         },
       });
-      setInput("");
     },
     [
       activateThread,
@@ -390,13 +405,15 @@ export function MarketNewsChatPanel() {
 
   const handleComposerSend = useCallback(() => {
     if (composerSendLockRef.current) return;
-    if (!input.trim() || isStreaming) return;
+    const text = input.trim();
+    if (!text || isStreaming) return;
     composerSendLockRef.current = true;
-    void sendMessage(input);
+    setInput("");
+    void sendMessage(text);
     textareaRef.current?.blur();
-    queueMicrotask(() => {
+    window.setTimeout(() => {
       composerSendLockRef.current = false;
-    });
+    }, 400);
   }, [input, isStreaming, sendMessage]);
 
   const renderComposer = (extraStyle?: CSSProperties) => (
