@@ -217,7 +217,7 @@ export function createChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ symbol, limit }) => {
         const sym = symbol.toUpperCase().trim();
-        const lim = limit != null && Number.isFinite(limit) ? Math.min(300, Math.max(1, Math.floor(limit))) : 50;
+        const lim = limit != null && Number.isFinite(limit) ? Math.min(100, Math.max(1, Math.floor(limit))) : 20;
         const result = await fetchAnalystCoverage(sym, lim);
         return {
           symbol: result.symbol,

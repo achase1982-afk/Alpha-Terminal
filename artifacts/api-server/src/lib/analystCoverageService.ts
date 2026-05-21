@@ -1,7 +1,39 @@
 /**
  * Unified analyst coverage for Company Valuation and chat.
- * Tries Polygon Benzinga partner first, then direct Benzinga (free key), FMP DB, Schwab fundamentals snapshot.
+ * Prefers working sources (Benzinga direct, FMP, Schwab). Polygon Benzinga is optional when entitled.
  */
+const POLYGON_BLOCK_TTL_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_ANALYST_LIMIT = 20;
+
+let polygonBenzingaBlocked = false;
+let polygonBlockedAtMs = 0;
+
+/** Test hook — reset Polygon entitlement cache. */
+export function resetPolygonBenzingaBlockCache(): void {
+  polygonBenzingaBlocked = false;
+  polygonBlockedAtMs = 0;
+}
+
+function polygonBenzingaDisabledByEnv(): boolean {
+  const v = (process.env["POLYGON_BENZINGA_RATINGS_DISABLED"] ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+function shouldSkipPolygonBenzinga(): boolean {
+  if (polygonBenzingaDisabledByEnv()) return true;
+  if (!polygonBenzingaBlocked) return false;
+  if (Date.now() - polygonBlockedAtMs > POLYGON_BLOCK_TTL_MS) {
+    polygonBenzingaBlocked = false;
+    return false;
+  }
+  return true;
+}
+
+function markPolygonBenzingaUnauthorized(reason: string | null | undefined): void {
+  if (!reason || !/NOT_AUTHORIZED|not entitled/i.test(reason)) return;
+  polygonBenzingaBlocked = true;
+  polygonBlockedAtMs = Date.now();
+}
 import { getBestAccessToken } from "./tokenStore.js";
 import { getAnalystPriceTargets, getRecentAnalystGrades } from "./fmpDataService.js";
 import {
@@ -53,11 +85,16 @@ function pickNum(obj: Record<string, unknown> | undefined, keys: string[]): numb
 }
 
 async function fetchFromPolygon(symbol: string, limit: number): Promise<AnalystCoverageResult | null> {
+  if (shouldSkipPolygonBenzinga()) return null;
   const pack = await fetchPolygonAnalystRatingsAndConsensus(symbol, limit);
   if (!pack) return null;
   const reason = pack.analystConsensus.coverage_reason ?? "";
-  if (/NOT_AUTHORIZED|not entitled/i.test(reason)) return null;
+  if (/NOT_AUTHORIZED|not entitled/i.test(reason)) {
+    markPolygonBenzingaUnauthorized(reason);
+    return null;
+  }
   if (pack.ratings.length === 0 && pack.consensus.num_active_analysts === 0 && reason) {
+    markPolygonBenzingaUnauthorized(reason);
     if (reason.includes("polygon_ratings_unavailable")) return null;
   }
   if (pack.ratings.length === 0 && pack.consensus.num_active_analysts === 0) return null;
@@ -338,14 +375,11 @@ function emptyResult(symbol: string, reason: string): AnalystCoverageResult {
 
 /**
  * Resolve analyst coverage for Valuation tab and chat.
- * Order: Polygon Benzinga → Benzinga direct → FMP DB → Schwab fundamental snapshot.
+ * Order: Benzinga direct → FMP DB → Schwab snapshot → Polygon Benzinga (only when entitled).
  */
-export async function fetchAnalystCoverage(symbol: string, limit = 300): Promise<AnalystCoverageResult> {
+export async function fetchAnalystCoverage(symbol: string, limit = DEFAULT_ANALYST_LIMIT): Promise<AnalystCoverageResult> {
   const sym = symbol.trim().toUpperCase().replace(/^\$/, "");
-  const lim = Number.isFinite(limit) ? Math.min(500, Math.max(1, Math.floor(limit))) : 300;
-
-  const polygon = await fetchFromPolygon(sym, lim);
-  if (polygon) return polygon;
+  const lim = Number.isFinite(limit) ? Math.min(100, Math.max(1, Math.floor(limit))) : DEFAULT_ANALYST_LIMIT;
 
   const benzinga = await fetchFromBenzingaDirect(sym, lim);
   if (benzinga) return benzinga;
@@ -356,10 +390,12 @@ export async function fetchAnalystCoverage(symbol: string, limit = 300): Promise
   const schwab = await fetchFromSchwabFundamental(sym);
   if (schwab) return schwab;
 
-  const polygonFail = await fetchPolygonAnalystRatingsAndConsensus(sym, 1);
-  const reason =
-    polygonFail?.analystConsensus.coverage_reason
-    ?? "Analyst coverage unavailable (Polygon plan lacks Benzinga ratings; no Benzinga/FMP/Schwab fallback data).";
+  const polygon = await fetchFromPolygon(sym, lim);
+  if (polygon) return polygon;
+
+  const reason = shouldSkipPolygonBenzinga()
+    ? "Analyst coverage unavailable (Polygon Benzinga ratings not entitled; set BENZINGA_API_KEY, refresh FMP backfill, or connect Schwab)."
+    : "Analyst coverage unavailable (no Benzinga/FMP/Schwab data and Polygon returned no rows).";
 
   return emptyResult(sym, reason);
 }

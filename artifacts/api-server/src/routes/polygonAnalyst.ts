@@ -9,8 +9,8 @@ router.get("/analyst-ratings", async (req, res) => {
   const symbol = (req.query["symbol"] as string || "").trim().toUpperCase().replace(/^\$/, "");
   if (!symbol) return res.status(400).json({ error: "symbol required" });
 
-  const limitRaw = Number(req.query["limit"] ?? 300);
-  const limit = Number.isFinite(limitRaw) ? Math.min(500, Math.max(1, Math.floor(limitRaw))) : 300;
+  const limitRaw = Number(req.query["limit"] ?? 20);
+  const limit = Number.isFinite(limitRaw) ? Math.min(100, Math.max(1, Math.floor(limitRaw))) : 20;
 
   try {
     const result = await fetchAnalystCoverage(symbol, limit);

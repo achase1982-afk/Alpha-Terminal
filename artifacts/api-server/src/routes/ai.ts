@@ -35,6 +35,7 @@ import { getDeltaHealth, getSnapshotsForAI, triggerManualSnapshot, triggerEventS
 import { sendPushToAll } from "../lib/pushService.js";
 import { checkEventConflicts, getUpcomingEvents, type EventCheckResult } from "../lib/calendarEventChecker.js";
 import { getNextEarningsDate } from "../lib/earningsService.js";
+import { buildTechnicalAnalysisAnalystBlock } from "../lib/ambientSymbolContext.js";
 import { chainCache, getOrFetchChain, CHAIN_CACHE_TTL, getCachedEconEvents } from "./market.js";
 import { recordPulseSnapshotForScanner } from "../lib/marketPulseCache.js";
 import { getMarketContext, type MarketContext, type MarketSessionLabel } from "../lib/getMarketContext.js";
@@ -781,6 +782,14 @@ router.post("/technical-analysis/stream", async (req, res) => {
   }
 
   const { quote, candles, model, temperature, customPrompt, fundamentals } = parsed.data;
+  const quoteRec = quote as Record<string, unknown>;
+  const taSymbol =
+    typeof quoteRec["symbol"] === "string"
+      ? quoteRec["symbol"].trim().toUpperCase()
+      : typeof quoteRec["ticker"] === "string"
+        ? quoteRec["ticker"].trim().toUpperCase()
+        : "";
+  const analystBlock = taSymbol ? await buildTechnicalAnalysisAnalystBlock(taSymbol) : "";
 
   const fundBlock = fundamentals ? `
 FUNDAMENTALS DATA:
@@ -802,7 +811,7 @@ STRICT GROUNDING RULE: You must ONLY use the Context Data provided below for any
 ${formatQuote(quote as Record<string, unknown>)}
 
 ${formatCandles((candles ?? []) as Array<Record<string, unknown>>)}
-${fundBlock}
+${fundBlock}${analystBlock}
 ═══ END CONTEXT DATA ═══
 
 ${customPrompt ? `ADDITIONAL CONTEXT: ${customPrompt}` : ""}
