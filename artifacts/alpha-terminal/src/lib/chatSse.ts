@@ -78,32 +78,60 @@ function parseSseBlock(block: string): ChatSseEvent | null {
   }
 }
 
+function abortChatSseError(): DOMException {
+  return new DOMException("The operation was aborted.", "AbortError");
+}
+
 /** Consume POST `/api/ai/chat` SSE response body. */
 export async function consumeChatSse(
   response: Response,
   onEvent: (ev: ChatSseEvent) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const reader = response.body?.getReader();
   if (!reader) throw new Error("No response stream");
 
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw abortChatSseError();
+  };
+
+  throwIfAborted();
+
+  const onAbort = () => {
+    void reader.cancel().catch(() => {});
+  };
+  signal?.addEventListener("abort", onAbort);
+
   const decoder = new TextDecoder();
   let buffer = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const parts = buffer.split("\n\n");
-    buffer = parts.pop() ?? "";
-    for (const part of parts) {
-      const trimmed = part.trim();
-      if (!trimmed || trimmed.startsWith(":")) continue;
-      const ev = parseSseBlock(trimmed);
+  try {
+    while (true) {
+      throwIfAborted();
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() ?? "";
+      for (const part of parts) {
+        throwIfAborted();
+        const trimmed = part.trim();
+        if (!trimmed || trimmed.startsWith(":")) continue;
+        const ev = parseSseBlock(trimmed);
+        if (ev) onEvent(ev);
+      }
+    }
+    throwIfAborted();
+    if (buffer.trim()) {
+      const ev = parseSseBlock(buffer.trim());
       if (ev) onEvent(ev);
     }
-  }
-  if (buffer.trim()) {
-    const ev = parseSseBlock(buffer.trim());
-    if (ev) onEvent(ev);
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    try {
+      reader.releaseLock();
+    } catch {
+      /* already released */
+    }
   }
 }
