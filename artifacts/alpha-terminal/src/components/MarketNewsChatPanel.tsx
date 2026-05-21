@@ -386,6 +386,17 @@ export function MarketNewsChatPanel({
     streamState?.inFlightAssistant?.id,
   ]);
 
+  /** After app backgrounding, reload transcript in case the server finished while SSE was down. */
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onVisible = () => {
+      if (document.visibilityState !== "visible" || !activeThreadId) return;
+      void loadThreadMessages(activeThreadId);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [activeThreadId, loadThreadMessages]);
+
   const handleClear = handleNewThread;
 
   const regenerateAssistantMessage = useCallback(
