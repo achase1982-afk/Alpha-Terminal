@@ -159,11 +159,13 @@ export function useVisualViewportKeyboardInset(): number {
   return keyboardInset;
 }
 
-const KEYBOARD_OVERLAY_GAP_PX = 8;
+const KEYBOARD_GAP_PX = 8;
+
+/** Reserve above bottom tab bar when keyboard is closed (nav padding + icons). */
+export const MOBILE_BOTTOM_NAV_RESERVE_PX = 78;
 
 /**
  * Height (px) of the software keyboard overlapping the layout viewport.
- * Used to lift an in-flow composer via `margin-bottom` when `interactive-widget=overlays-content`.
  */
 export function measureKeyboardOverlapPx(): number {
   const vv = window.visualViewport;
@@ -173,34 +175,82 @@ export function measureKeyboardOverlapPx(): number {
   return raw;
 }
 
-export interface KeyboardOverlapMetrics {
-  /** Keyboard band height; 0 when dismissed. */
-  overlapPx: number;
-  /** `overlapPx + gap` for composer margin when focused. */
-  composerLiftPx: number;
+export type ComposerDockStyle = {
+  position: "fixed";
+  left: number;
+  right: number;
+  zIndex: number;
+  top?: number;
+  bottom?: number;
+};
+
+export interface ChatComposerDockMetrics {
+  /** Fixed positioning for a body-portaled composer. */
+  dockStyle: ComposerDockStyle;
+  /** Padding-bottom for the message scroller so content clears the docked composer. */
+  scrollPaddingBottomPx: number;
   remeasure: () => void;
 }
 
 /**
- * Lifts the chat composer above the keyboard with in-flow `margin-bottom` (no fixed overlay).
- * When the keyboard is closed, overlap is forced to 0 so the composer sits on the panel bottom.
+ * Docks the chat composer to the **visual viewport** bottom when focused (sits on top of the
+ * keyboard), or above the bottom nav when blurred. Uses `top` from `visualViewport` rather than
+ * layout `bottom` so iOS `interactive-widget=overlays-content` cannot cover the textarea.
  */
-export function useKeyboardOverlapPx(composerFocused: boolean): KeyboardOverlapMetrics {
-  const [overlapPx, setOverlapPx] = useState(0);
+export function useChatComposerDock(
+  enabled: boolean,
+  composerFocused: boolean,
+  composerHeightPx: number,
+): ChatComposerDockMetrics {
+  const [dock, setDock] = useState<ComposerDockStyle>({
+    position: "fixed",
+    left: 0,
+    right: 0,
+    zIndex: 10050,
+    bottom: MOBILE_BOTTOM_NAV_RESERVE_PX,
+  });
+  const [scrollPad, setScrollPad] = useState(
+    composerHeightPx + MOBILE_BOTTOM_NAV_RESERVE_PX,
+  );
   const focusedRef = useRef(composerFocused);
+  const heightRef = useRef(composerHeightPx);
   focusedRef.current = composerFocused;
+  heightRef.current = composerHeightPx;
   const updateRef = useRef<() => void>(() => {});
 
   useEffect(() => {
+    if (!enabled) return;
     const vv = window.visualViewport;
     if (!vv) return;
 
     const update = () => {
-      const raw = measureKeyboardOverlapPx();
+      const h = Math.max(56, heightRef.current);
+      const gap = KEYBOARD_GAP_PX;
       const focused = focusedRef.current;
-      // Keyboard dismissed: ignore small residual overlap from iOS viewport jitter.
-      const next = !focused && raw < 48 ? 0 : raw;
-      setOverlapPx(next);
+      const overlap = measureKeyboardOverlapPx();
+      const keyboardOpen = overlap >= 48;
+
+      if (focused || keyboardOpen) {
+        const top = Math.max(0, vv.offsetTop + vv.height - h - gap);
+        setDock({
+          position: "fixed",
+          left: 0,
+          right: 0,
+          zIndex: 10050,
+          top,
+        });
+        setScrollPad(Math.max(h + gap + 16, window.innerHeight - top));
+      } else {
+        const bottom = MOBILE_BOTTOM_NAV_RESERVE_PX;
+        setDock({
+          position: "fixed",
+          left: 0,
+          right: 0,
+          zIndex: 10050,
+          bottom,
+        });
+        setScrollPad(h + bottom + 8);
+      }
     };
 
     updateRef.current = update;
@@ -209,26 +259,23 @@ export function useKeyboardOverlapPx(composerFocused: boolean): KeyboardOverlapM
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
     window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
 
     return () => {
       vv.removeEventListener("resize", update);
       vv.removeEventListener("scroll", update);
       window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
     };
-  }, []);
+  }, [enabled]);
+
+  useEffect(() => {
+    updateRef.current();
+  }, [composerHeightPx, composerFocused]);
 
   const remeasure = useCallback(() => {
     updateRef.current();
   }, []);
 
-  const lift =
-    composerFocused && overlapPx > 0
-      ? overlapPx + KEYBOARD_OVERLAY_GAP_PX
-      : 0;
-
-  return {
-    overlapPx,
-    composerLiftPx: lift,
-    remeasure,
-  };
+  return { dockStyle: dock, scrollPaddingBottomPx: scrollPad, remeasure };
 }
