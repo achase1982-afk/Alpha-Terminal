@@ -11,6 +11,7 @@ import {
   updateChatThreadSummary,
 } from "./chatDb.js";
 import { resolveChatLanguageModel } from "./chatModel.js";
+import { buildAmbientSymbolContextBlock } from "./ambientSymbolContext.js";
 import { getMarketContext } from "./getMarketContext.js";
 import { formatMarketContextUserBlock } from "./marketContextPrompt.js";
 import {
@@ -74,6 +75,7 @@ ${ambientBlock}
 ## How to work
 - Answer general questions (definitions, strategy concepts, education) from your knowledge without tools.
 - Call tools when the user needs **current** prices, flow, technicals, news, earnings, IV rank, options chain, or market pulse data.
+- For sell-side ratings, consensus price targets, or valuation sentiment on the ambient ticker, use the **Terminal snapshot** block when present; otherwise call **get_analyst_ratings**. Do not invent analyst counts or price targets.
 - Use concise markdown; bullet lists for data. No "As an AI…" disclaimers. No greeting or sign-off fluff.
 - Options flow honesty. When you discuss options flow, these rules are absolute:
 - There is no open/close field in the data. Never state that activity is "opening," "closing," or "fresh positioning" as fact. You may infer opening activity, but only by showing the volume-vs-open-interest reasoning out loud (e.g. "X contracts traded against open interest of Y"), and only as an explicit inference. Volume far above open interest is a strong opening inference; volume near or below open interest is not.
@@ -94,9 +96,20 @@ Formatting. Write in plain prose, the way a sharp analyst writes in a direct mes
 - Answer in the order the user asked. Do not impose a fixed report template.
 
 ## Tools available
-get_quote, get_technicals, get_options_chain, get_flow, get_ivr, get_earnings, get_news, get_market_pulse, web_search, web_fetch
+get_quote, get_technicals, get_options_chain, get_flow, get_ivr, get_earnings, get_analyst_ratings, get_news, get_market_pulse, web_search, web_fetch
 
 **web_search** uses Tavily when TAVILY_API_KEY is set (Serper fallback via SERPER_API_KEY); otherwise your chat model's provider-native search (Claude, Gemini, or OpenAI).`;
+}
+
+/** System prompt plus live terminal snapshot (quote + analyst) for the page symbol. */
+export async function buildChatSystemPromptWithAmbient(
+  ambientSymbol?: string | null,
+  clientTimeZone?: string | null,
+  now: Date = new Date(),
+): Promise<string> {
+  const base = buildChatSystemPrompt(ambientSymbol, clientTimeZone, now);
+  const ambient = await buildAmbientSymbolContextBlock(ambientSymbol);
+  return ambient ? `${base}${ambient}` : base;
 }
 
 export function shouldSummarizeThread(totalTokens: number): boolean {
@@ -287,7 +300,7 @@ async function runDraftChatTurn(args: {
 }): Promise<{ model: string; text?: string; error?: string }> {
   const tools = createChatTools({ ...args.toolContext, activeModel: args.model });
   const resolved = resolveChatLanguageModel(args.model);
-  const system = buildChatSystemPrompt(args.ambientSymbol, args.clientTimeZone);
+  const system = await buildChatSystemPromptWithAmbient(args.ambientSymbol, args.clientTimeZone);
   try {
     const result = await generateText({
       model: resolved.model,
@@ -367,7 +380,7 @@ export async function runMultiAgentChatTurn(
   let assistantText = "";
   const textEmitter = createFormattedTextEmitter(onEvent);
   try {
-    const synthSystem = `${buildChatSystemPrompt(ambientSymbol, clientTimeZone)}\n\n${MULTI_AGENT_SYNTH_SYSTEM}`;
+    const synthSystem = `${await buildChatSystemPromptWithAmbient(ambientSymbol, clientTimeZone)}\n\n${MULTI_AGENT_SYNTH_SYSTEM}`;
     const result = streamText({
       model: synthResolved.model,
       system: synthSystem,
@@ -422,7 +435,7 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
 
   const tools = createChatTools({ ...toolContext, activeModel: model });
   const resolved = resolveChatLanguageModel(model);
-  const system = buildChatSystemPrompt(ambientSymbol, clientTimeZone);
+  const system = await buildChatSystemPromptWithAmbient(ambientSymbol, clientTimeZone);
 
   const toolCallsLog: Array<{ toolCallId: string; toolName: string; input: unknown }> = [];
   const toolResultsLog: Array<{ toolCallId: string; toolName: string; output: unknown }> = [];

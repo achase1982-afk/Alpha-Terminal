@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useId } from "react";
 import { Sidebar, type SidebarHandle } from "@/components/Sidebar";
 import { MetricsBar, VolumeBar } from "@/components/MetricsBar";
 import { TradingChart } from "@/components/TradingChart";
@@ -32,6 +32,7 @@ import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
 import { BottomNav } from "@/components/BottomNav";
 import { PortfolioView } from "@/components/PortfolioView";
 import { CompanySwipablePages } from "@/components/CompanySwipablePages";
+import { CompanySectionTabBar } from "@/components/CompanyResearchHub";
 import { AiSubTabs, type AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import type { MarketPulseDashboardHandle } from "@/components/market-pulse/MarketPulseDashboard";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
@@ -395,6 +396,8 @@ export default function TerminalPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickyWrapRef = useRef<HTMLDivElement>(null);
   const [stickyH, setStickyH] = useState(0);
+  const companyTabsId = useId();
+  const [companyPage, setCompanyPage] = useState(0);
   const pulseDashRef = useRef<MarketPulseDashboardHandle>(null);
   const sidebarRef = useRef<SidebarHandle>(null);
   useSchwabSessionReconciliation(sidebarRef);
@@ -472,6 +475,10 @@ export default function TerminalPage() {
       setContextTab("news");
     }
   }, [isThreePanel, contextTab]);
+
+  useEffect(() => {
+    setCompanyPage(0);
+  }, [symbol]);
 
   const COLLAPSE_PX = 80;
 
@@ -639,17 +646,28 @@ export default function TerminalPage() {
                   <MetricsBar compact={isScrolled} onTrade={openOrder} />
                   <VolumeBar />
                   <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
+                  {contextTab === "company" && (
+                    <CompanySectionTabBar page={companyPage} onPageChange={setCompanyPage} companyTabsId={companyTabsId} />
+                  )}
                 </div>
                 <div
                   className={
                     contextTab === "newsChat"
                       ? "flex min-h-0 flex-1 flex-col overflow-hidden"
-                      : "flex min-h-0 flex-1 flex-col"
+                      : "flex min-h-0 flex-1 flex-col overflow-visible"
                   }
                 >
                   {contextTab === "news" && <NewsTab />}
                   {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
-                  {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles} stickyOffset={stickyH} />}
+                  {contextTab === "company" && (
+                    <CompanySwipablePages
+                      candles={historyData?.candles}
+                      companyPage={companyPage}
+                      onCompanyPageChange={setCompanyPage}
+                      sectionTabsInHeader
+                      companyTabsId={companyTabsId}
+                    />
+                  )}
                   {contextTab === "newsChat" && (
                     <MarketNewsChatPanel hideMobileComposerDock={searchOpen} />
                   )}
@@ -698,17 +716,28 @@ export default function TerminalPage() {
                 <div className="flex min-h-0 w-[360px] shrink-0 flex-col overflow-hidden border-l border-zinc-800/60" style={{ background: "#0c0c0c" }}>
                   <div className="shrink-0">
                     <DesktopContextTabs activeTab={contextTab} setActiveTab={setContextTab} />
+                    {contextTab === "company" && (
+                      <CompanySectionTabBar page={companyPage} onPageChange={setCompanyPage} companyTabsId={companyTabsId} />
+                    )}
                   </div>
                   <div
                     className={
                       contextTab === "newsChat"
                         ? "flex min-h-0 flex-1 flex-col overflow-hidden"
-                        : "flex min-h-0 flex-1 flex-col overflow-y-auto"
+                        : "flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-visible"
                     }
                   >
                     {contextTab === "news" && <NewsTab />}
                     {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
-                    {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles} stickyOffset={0} />}
+                    {contextTab === "company" && (
+                      <CompanySwipablePages
+                        candles={historyData?.candles}
+                        companyPage={companyPage}
+                        onCompanyPageChange={setCompanyPage}
+                        sectionTabsInHeader
+                        companyTabsId={companyTabsId}
+                      />
+                    )}
                     {contextTab === "newsChat" && (
                     <MarketNewsChatPanel hideMobileComposerDock={searchOpen} />
                   )}
@@ -743,17 +772,28 @@ export default function TerminalPage() {
                 </div>
                 <div ref={stickyWrapRef} className="sticky top-0 z-40 shrink-0 bg-background">
                   <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
+                  {contextTab === "company" && (
+                    <CompanySectionTabBar page={companyPage} onPageChange={setCompanyPage} companyTabsId={companyTabsId} />
+                  )}
                 </div>
                 <div
                   className={
                     contextTab === "newsChat"
                       ? "flex min-h-0 flex-1 flex-col overflow-hidden"
-                      : "flex min-h-0 flex-1 flex-col"
+                      : "flex min-h-0 flex-1 flex-col overflow-visible"
                   }
                 >
                   {contextTab === "news" && <NewsTab />}
                   {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
-                  {contextTab === "company" && <CompanySwipablePages candles={historyData?.candles} stickyOffset={stickyH} />}
+                  {contextTab === "company" && (
+                    <CompanySwipablePages
+                      candles={historyData?.candles}
+                      companyPage={companyPage}
+                      onCompanyPageChange={setCompanyPage}
+                      sectionTabsInHeader
+                      companyTabsId={companyTabsId}
+                    />
+                  )}
                   {contextTab === "newsChat" && (
                     <MarketNewsChatPanel hideMobileComposerDock={searchOpen} />
                   )}

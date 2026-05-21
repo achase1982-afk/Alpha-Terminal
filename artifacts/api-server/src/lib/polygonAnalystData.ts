@@ -85,7 +85,7 @@ function normalizeAction(ratingAction: string, ptAction: string): string {
 
 type RatingBucket = "strong_buy" | "buy" | "hold" | "sell" | "strong_sell";
 
-function mapRatingToBucket(rating: string | null | undefined): RatingBucket | null {
+export function mapRatingToBucket(rating: string | null | undefined): RatingBucket | null {
   if (!rating) return null;
   const s = rating.toLowerCase().replace(/\s+/g, " ").trim();
   if (!s) return null;
@@ -309,7 +309,7 @@ export function mergeFmpPriceTargetIntoConsensus(
   return merged;
 }
 
-function consensusRatingLabel(dist: AnalystAggregationConsensus): string | null {
+export function consensusRatingLabel(dist: AnalystAggregationConsensus): string | null {
   const total =
     dist.strong_buy + dist.buy + dist.hold + dist.sell + dist.strong_sell;
   if (total <= 0) return null;

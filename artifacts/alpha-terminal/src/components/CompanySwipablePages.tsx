@@ -1,19 +1,21 @@
-import { CompanyResearchHub } from "@/components/CompanyResearchHub";
+import { CompanyResearchHub, type CompanyResearchHubProps } from "@/components/CompanyResearchHub";
 
-interface Candle {
-  datetime: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-}
+type Props = Pick<CompanyResearchHubProps, "candles" | "companyPage" | "onCompanyPageChange" | "sectionTabsInHeader" | "companyTabsId">;
 
-interface Props {
-  candles?: Candle[];
-  stickyOffset?: number;
-}
-
-export function CompanySwipablePages({ candles, stickyOffset }: Props) {
-  return <CompanyResearchHub candles={candles} stickyOffset={stickyOffset} />;
+export function CompanySwipablePages({
+  candles,
+  companyPage,
+  onCompanyPageChange,
+  sectionTabsInHeader = false,
+  companyTabsId,
+}: Props) {
+  return (
+    <CompanyResearchHub
+      candles={candles}
+      companyPage={companyPage}
+      onCompanyPageChange={onCompanyPageChange}
+      sectionTabsInHeader={sectionTabsInHeader}
+      companyTabsId={companyTabsId}
+    />
+  );
 }

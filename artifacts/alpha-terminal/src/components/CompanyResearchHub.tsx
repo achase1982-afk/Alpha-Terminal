@@ -40,7 +40,8 @@ const C = {
 const f = `'SFMono-Regular', 'SF Mono', ui-monospace, 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace`;
 const monoNum = "'JetBrains Mono', ui-monospace, monospace";
 const tt: React.CSSProperties = { background: C.card, border: `1px solid ${C.borderHi}`, borderRadius: 8, fontFamily: f, fontSize: 13, color: C.text, padding: "8px 12px" };
-const SUB_LABELS = ["Overview", "Financials", "SEC", "Ownership", "Valuation"] as const;
+export const COMPANY_SUB_LABELS = ["Overview", "Financials", "SEC", "Ownership", "Valuation"] as const;
+const SUB_LABELS = COMPANY_SUB_LABELS;
 const FINANCIALS_TABS = [["income", "Income"], ["balance", "Balance"], ["cashflow", "Cash Flow"]] as const;
 const SEC_FILTER_TYPES = ["ALL", "10-K", "10-Q", "8-K", "DEF 14A", "4", "SC 13G"] as const;
 const SEC_TYPE_COLORS: Record<string, string> = { "10-K": C.gold, "10-Q": C.cyan, "8-K": C.amber, "DEF 14A": C.purple, "4": C.green, "SC 13G": C.textMuted, "SC 13G/A": C.textMuted, "S-3": C.textDim, "S-1": C.textDim };
@@ -1551,6 +1552,8 @@ interface PolygonAnalystRatingsResponse {
   ratings: PolygonRatingRow[];
   consensus: PolygonConsensusComputed;
   coverage_reason?: string | null;
+  data_source?: string | null;
+  source_note?: string | null;
   error?: string;
 }
 
@@ -1573,7 +1576,7 @@ function usePolygonAnalystRatings(symbol: string) {
   return useQuery({
     queryKey: ["polygon-analyst-ratings", symbol],
     queryFn: async (): Promise<PolygonAnalystRatingsResponse> => {
-      const res = await fetchWithAuth(`${API_BASE}/polygon/analyst-ratings?symbol=${encodeURIComponent(symbol)}&limit=300`);
+      const res = await fetchWithAuth(`${API_BASE}/polygon/analyst-ratings?symbol=${encodeURIComponent(symbol)}&limit=20`);
       const j = (await res.json()) as PolygonAnalystRatingsResponse & { error?: string };
       if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
       return {
@@ -1590,6 +1593,8 @@ function usePolygonAnalystRatings(symbol: string) {
           strong_sell: 0,
         },
         coverage_reason: j.coverage_reason ?? null,
+        data_source: j.data_source ?? null,
+        source_note: j.source_note ?? null,
       };
     },
     enabled: !!symbol,
@@ -1749,6 +1754,16 @@ function AnalystCoverageBlock({ ticker }: { ticker: string }) {
           {coverageReason === "no_recent_coverage" || coverageReason == null || coverageReason === ""
             ? "No recent analyst coverage"
             : `Analyst data unavailable: ${coverageReason.length > 160 ? `${coverageReason.slice(0, 160)}…` : coverageReason}`}
+        </p>
+      )}
+
+      {(qRat.data?.source_note || qRat.data?.data_source) && (
+        <p style={{ fontSize: 9, fontFamily: f, color: C.textDim, padding: "4px 0 0", textAlign: "right" }}>
+          {qRat.data?.source_note
+            ? qRat.data.source_note
+            : qRat.data?.data_source
+              ? `Source: ${qRat.data.data_source}`
+              : null}
         </p>
       )}
 
@@ -2019,12 +2034,96 @@ const SubValuation = memo(function SubValuation({ ticker, fund }: { ticker: stri
 });
 
 
-interface CompanyResearchHubProps {
-  candles?: CandleData[];
-  stickyOffset?: number;
+/** Company sub-tabs rendered inside Terminal sticky header (Overview / Financials / …). */
+export function CompanySectionTabBar({
+  page,
+  onPageChange,
+  companyTabsId,
+}: {
+  page: number;
+  onPageChange: (index: number) => void;
+  companyTabsId: string;
+}) {
+  const focusTab = useCallback((index: number) => {
+    const el = document.getElementById(`${companyTabsId}-tab-${index}`);
+    el?.focus();
+  }, [companyTabsId]);
+
+  const onCompanyTabKeyDown = useCallback((e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      e.preventDefault();
+      const delta = e.key === "ArrowRight" ? 1 : -1;
+      const next = Math.max(0, Math.min(SUB_LABELS.length - 1, page + delta));
+      if (next !== page) onPageChange(next);
+      focusTab(next);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      onPageChange(0);
+      focusTab(0);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      const last = SUB_LABELS.length - 1;
+      onPageChange(last);
+      focusTab(last);
+    }
+  }, [page, onPageChange, focusTab]);
+
+  return (
+    <div
+      role="tablist"
+      aria-label="Company research sections"
+      onKeyDown={onCompanyTabKeyDown}
+      style={{
+        background: C.bg,
+        display: "flex",
+        gap: 4,
+        padding: "8px 16px",
+        overflowX: "auto",
+        borderBottom: `1px solid ${C.border}`,
+      }}
+    >
+      {SUB_LABELS.map((label, i) => (
+        <button
+          key={label}
+          type="button"
+          role="tab"
+          id={`${companyTabsId}-tab-${i}`}
+          aria-selected={page === i}
+          aria-controls={`${companyTabsId}-panel-${i}`}
+          tabIndex={page === i ? 0 : -1}
+          onClick={() => { onPageChange(i); focusTab(i); }}
+          className="company-tab-main"
+          style={{
+            padding: "6px 10px", fontSize: 12, fontFamily: f, fontWeight: 700,
+            color: page === i ? C.text : C.textDim,
+            background: "transparent",
+            border: "none",
+            borderBottom: page === i ? `2px solid ${C.gold}` : "2px solid transparent",
+            borderRadius: 0, cursor: "pointer", letterSpacing: 0.5, whiteSpace: "nowrap",
+            transition: "color 0.2s, border-color 0.2s",
+          }}
+        >{label}</button>
+      ))}
+    </div>
+  );
 }
 
-export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearchHubProps) {
+export interface CompanyResearchHubProps {
+  candles?: CandleData[];
+  companyPage: number;
+  onCompanyPageChange: (index: number) => void;
+  sectionTabsInHeader?: boolean;
+  /** Shared with {@link CompanySectionTabBar} when tabs render in Terminal sticky header. */
+  companyTabsId?: string;
+}
+
+export function CompanyResearchHub({
+  candles,
+  companyPage,
+  onCompanyPageChange,
+  sectionTabsInHeader = false,
+  companyTabsId: companyTabsIdProp,
+}: CompanyResearchHubProps) {
   const { symbol, accessToken, aiFeatureSettings, analysisResult, setAnalysisResult } = useTerminalStore();
   const aiModel = aiFeatureSettings.technicals.model;
   const aiTemp = aiFeatureSettings.technicals.temperature;
@@ -2033,8 +2132,10 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
 
   const [fundamentals, setFundamentals] = useState<FundamentalData | null>(null);
   const [fundLoading, setFundLoading] = useState(false);
-  const [page, setPage] = useState(0);
-  const companyTabsId = useId();
+  const page = companyPage;
+  const setPage = onCompanyPageChange;
+  const generatedTabsId = useId();
+  const companyTabsId = companyTabsIdProp ?? generatedTabsId;
   const startX = useRef(0);
   const startY = useRef(0);
   const swiping = useRef(false);
@@ -2231,39 +2332,15 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
     const delta = dragDelta.current;
     if (locked.current === "h") {
       if (delta < -threshold && page < SUB_LABELS.length - 1) {
-        setPage(p => p + 1);
+        setPage(page + 1);
       } else if (delta > threshold && page > 0) {
-        setPage(p => p - 1);
+        setPage(page - 1);
       }
     }
     locked.current = null;
     dragDelta.current = 0;
     setSliderOffset(0, true);
   }, [page, setSliderOffset]);
-
-  const focusTab = useCallback((index: number) => {
-    const el = document.getElementById(`${companyTabsId}-tab-${index}`);
-    el?.focus();
-  }, [companyTabsId]);
-
-  const onCompanyTabKeyDown = useCallback((e: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-      e.preventDefault();
-      const delta = e.key === "ArrowRight" ? 1 : -1;
-      const next = Math.max(0, Math.min(SUB_LABELS.length - 1, page + delta));
-      if (next !== page) setPage(next);
-      focusTab(next);
-    } else if (e.key === "Home") {
-      e.preventDefault();
-      setPage(0);
-      focusTab(0);
-    } else if (e.key === "End") {
-      e.preventDefault();
-      const last = SUB_LABELS.length - 1;
-      setPage(last);
-      focusTab(last);
-    }
-  }, [page, focusTab]);
 
   if (!accessToken) {
     return (
@@ -2285,35 +2362,9 @@ export function CompanyResearchHub({ candles, stickyOffset = 0 }: CompanyResearc
         .company-fin-subtab:focus { outline: none !important; box-shadow: none !important; }
         .company-fin-subtab:focus-visible { outline: 2px solid ${C.gold} !important; outline-offset: 2px !important; }
       `}</style>
-      <div
-        role="tablist"
-        aria-label="Company research sections"
-        onKeyDown={onCompanyTabKeyDown}
-        style={{ position: "sticky", top: stickyOffset, zIndex: 30, background: C.bg, display: "flex", gap: 4, padding: "8px 16px", overflowX: "auto", borderBottom: `1px solid ${C.border}` }}
-      >
-        {SUB_LABELS.map((label, i) => (
-          <button
-            key={label}
-            type="button"
-            role="tab"
-            id={`${companyTabsId}-tab-${i}`}
-            aria-selected={page === i}
-            aria-controls={`${companyTabsId}-panel-${i}`}
-            tabIndex={page === i ? 0 : -1}
-            onClick={() => { setPage(i); focusTab(i); }}
-            className="company-tab-main"
-            style={{
-              padding: "6px 10px", fontSize: 12, fontFamily: f, fontWeight: 700,
-              color: page === i ? C.text : C.textDim,
-              background: "transparent",
-              border: "none",
-              borderBottom: page === i ? `2px solid ${C.gold}` : "2px solid transparent",
-              borderRadius: 0, cursor: "pointer", letterSpacing: 0.5, whiteSpace: "nowrap",
-              transition: "color 0.2s, border-color 0.2s",
-            }}
-          >{label}</button>
-        ))}
-      </div>
+      {!sectionTabsInHeader && (
+        <CompanySectionTabBar page={page} onPageChange={setPage} companyTabsId={companyTabsId} />
+      )}
 
       {fundLoading ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>

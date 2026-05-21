@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { getStoredIVR } from "../ivNormalize.js";
+import { fetchAnalystCoverage } from "../analystCoverageService.js";
 import { getNextEarningsDate } from "../earningsService.js";
 import { getPolygonFlowHighlights } from "../polygonFlowHighlights.js";
 import { requestFlowCapture } from "../flowCaptureService.js";
@@ -204,6 +205,29 @@ export function createChatTools(ctx: ChatToolContext) {
       execute: async ({ symbol }) => {
         const e = await getNextEarningsDate(symbol.toUpperCase().trim()).catch(() => null);
         return e ?? { error: "No earnings date on file" };
+      },
+    }),
+
+    get_analyst_ratings: tool({
+      description:
+        "Sell-side analyst coverage for a US equity: consensus price target, rating distribution (strong buy through strong sell), and recent firm rating rows. Uses Polygon/Benzinga when entitled, else Benzinga direct, FMP backfill, or Schwab fundamental snapshot.",
+      inputSchema: z.object({
+        symbol: z.string(),
+        limit: z.number().optional().describe("Max rating rows to return (default 50)"),
+      }),
+      execute: async ({ symbol, limit }) => {
+        const sym = symbol.toUpperCase().trim();
+        const lim = limit != null && Number.isFinite(limit) ? Math.min(100, Math.max(1, Math.floor(limit))) : 20;
+        const result = await fetchAnalystCoverage(sym, lim);
+        return {
+          symbol: result.symbol,
+          data_source: result.data_source,
+          source_note: result.source_note,
+          coverage_reason: result.coverage_reason,
+          consensus: result.consensus,
+          recent_ratings: result.ratings.slice(0, lim),
+          rating_count: result.ratings.length,
+        };
       },
     }),
 
