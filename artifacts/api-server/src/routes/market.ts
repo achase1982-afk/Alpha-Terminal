@@ -9,6 +9,7 @@ import { getQuoteBySymbol, addOptionSymbols, getAllOptionTicks, type OptionTick 
 import { getIBCachedQuote, subscribeQuoteForSymbol, isIBConnected } from "../lib/ibStreamer.js";
 import { getNextEarningsDate } from "../lib/earningsService.js";
 import { emitTelemetry } from "../lib/telemetryStore.js";
+import { resolveMarketContextForRequest } from "../lib/marketClientTimeZone.js";
 import { logFailure } from "../lib/telemetry.js";
 import { fetchMergedMarketNewsArticles } from "../lib/tickerNewsAggregated.js";
 import { type OptionContract } from "../lib/optionsStrategist.js";
@@ -196,6 +197,7 @@ async function fetchCompanyNameBackground(displaySymbol: string, apiSymbol: stri
 router.get("/quote", async (req, res) => {
   const symbol = req.query["symbol"] as string;
   const accessToken = (req.query["accessToken"] as string) || getAccessToken("market");
+  const marketContext = resolveMarketContextForRequest(req);
 
   if (!symbol || !accessToken) {
     return res.status(400).json({ symbol: "", error: "symbol is required and no access token available" });
@@ -216,6 +218,10 @@ router.get("/quote", async (req, res) => {
     if (!cachedDesc && accessToken) {
       void fetchCompanyNameBackground(displaySymbol, apiSymbol, accessToken, req.log);
     }
+    req.log.info(
+      { symbol: displaySymbol, authoritativeMarketContext: marketContext },
+      "market.quote: resolved session context (cache hit)",
+    );
     const data = GetQuoteResponse.parse({
       symbol: displaySymbol,
       description: cachedDesc,

@@ -37,6 +37,13 @@ import {
 import { getRecentNewsForTicker } from "./strategistRecentNews.js";
 import { runWithPolygonApiTraceAsync, takePolygonApiTrace } from "./polygonApiTrace.js";
 import { runInStrategistRunContext, getStrategistRunContext, mergeStrategistDiag } from "./strategistRunContext.js";
+import { getMarketContext } from "./getMarketContext.js";
+import {
+  buildDatasetFreshnessMeta,
+  formatDatasetInlineTag,
+  type DatasetFreshnessMeta,
+} from "./datasetFreshness.js";
+import { marketContextBlockForDataPackage } from "./strategistDeskPrompts.js";
 import { buildScannerContextPromptBlock } from "./scannerStrategistContext.js";
 import { stripConvictionDiagnosticsFromDeskResult } from "./strategistClientSanitize.js";
 import {
@@ -763,6 +770,9 @@ async function analyzeTickerV2Inner(
   const status = (s: string) => progress?.onStatus?.(s);
   status("Loading regime + settings…");
   assertAnalyzeNotCancelled(progress);
+  const runCtx = getStrategistRunContext();
+  const marketTimeContext = getMarketContext(new Date(), runCtx?.clientTimeZone ?? "America/New_York");
+  mergeStrategistDiag({ marketTimeContext });
   const settings = await getSettings();
   mergeStrategistDiag({ soloModelLabel: getStrategistModel(settings.strategistSoloModelIdx).label });
   assertAnalyzeNotCancelled(progress);
@@ -3037,8 +3047,20 @@ function buildDataQualitySummary(args: {
     fundamentalsSummary?: Record<string, unknown> | null;
   };
   earningsDataSourceGaps?: string[] | null;
+  marketTimeContext?: ReturnType<typeof getMarketContext>;
+  datasetFreshness?: Record<string, DatasetFreshnessMeta>;
 }): Record<string, unknown> {
-  const { tickerData, chainSummary, ioScore, polygonHighlights, tapeBackfill, enrichment, earningsDataSourceGaps } = args;
+  const {
+    tickerData,
+    chainSummary,
+    ioScore,
+    polygonHighlights,
+    tapeBackfill,
+    enrichment,
+    earningsDataSourceGaps,
+    marketTimeContext,
+    datasetFreshness,
+  } = args;
   const chainOk = chainSummary.availableExpirations.length > 0 && chainSummary.atmStrike > 0;
   const skewState = chainSummary.skew25Delta != null ? "available" : "missing_or_indeterminate";
   const flowTape = polygonHighlights?.sessionTape;
@@ -3101,6 +3123,8 @@ function buildDataQualitySummary(args: {
 
   return {
     asOfDate: new Date().toISOString().slice(0, 10),
+    authoritativeMarketContext: marketTimeContext ?? null,
+    datasetFreshness: datasetFreshness ?? null,
     marketSession: chainSummary.marketSession,
     marketSessionSource: chainSummary.marketSessionSource,
     marketSessionAsOf: chainSummary.marketSessionAsOf,
@@ -3196,6 +3220,34 @@ async function buildDataPackage(
               ? tickerData.lastEarningsDate
               : null,
         };
+  const runCtx = getStrategistRunContext();
+  const marketTimeContext =
+    runCtx?.diag.marketTimeContext
+    ?? getMarketContext(new Date(), runCtx?.clientTimeZone ?? "America/New_York");
+  const datasetFreshness: Record<string, DatasetFreshnessMeta> = {};
+  if (polygonHighlights?.asOfDate) {
+    const m = buildDatasetFreshnessMeta(polygonHighlights.asOfDate, marketTimeContext);
+    if (m) datasetFreshness.optionsFlowRollup = m;
+  }
+  if (tickerData.ivrAsOfDate) {
+    const m = buildDatasetFreshnessMeta(tickerData.ivrAsOfDate, marketTimeContext);
+    if (m) datasetFreshness.ivr = m;
+  }
+  const ivrAsOf = volPackageExtras?.ivrContext?.asOfDate;
+  if (typeof ivrAsOf === "string" && ivrAsOf) {
+    const m = buildDatasetFreshnessMeta(ivrAsOf, marketTimeContext);
+    if (m) datasetFreshness.ivrContext = m;
+  }
+  if (realizedVolPayload?.asOfDate) {
+    const m = buildDatasetFreshnessMeta(realizedVolPayload.asOfDate, marketTimeContext);
+    if (m) datasetFreshness.realizedVol = m;
+  }
+  if (chainSummary.marketSessionAsOf) {
+    const m = buildDatasetFreshnessMeta(chainSummary.marketSessionAsOf, marketTimeContext);
+    if (m) datasetFreshness.equitySessionProbe = m;
+  }
+  mergeStrategistDiag({ marketTimeContext, datasetFreshness });
+
   const dataQualitySummary = buildDataQualitySummary({
     ticker,
     tickerData,
@@ -3205,10 +3257,18 @@ async function buildDataPackage(
     tapeBackfill,
     enrichment,
     earningsDataSourceGaps: enrichment?.earnings?.data_source_gaps ?? null,
+    marketTimeContext,
+    datasetFreshness,
   });
+  const optionsFlowDatasetTag = datasetFreshness.optionsFlowRollup
+    ? formatDatasetInlineTag("OPTIONS FLOW", datasetFreshness.optionsFlowRollup)
+    : null;
   const pkg: Record<string, unknown> = {
     schemaVersion: 1,
     dataQualitySummary,
+    authoritativeMarketContext: marketTimeContext,
+    datasetFreshness,
+    optionsFlowDatasetTag,
     ticker,
     currentDate,
     price: tickerData.price,
@@ -3295,7 +3355,9 @@ async function buildDataPackage(
     realizedVol: realizedVolPayload,
     ivrContext: volPackageExtras?.ivrContext ?? { source: null, asOfDate: null, daysOfHistory: null },
     polygonFlowHighlights: polygonHighlights ? {
+      datasetTag: optionsFlowDatasetTag,
       asOfDate: polygonHighlights.asOfDate,
+      origin: datasetFreshness.optionsFlowRollup?.origin ?? null,
       totalCallVolume: polygonHighlights.totalCallVolume,
       totalPutVolume: polygonHighlights.totalPutVolume,
       putCallVolumeRatio: polygonHighlights.putCallVolumeRatio,
@@ -3590,14 +3652,14 @@ async function callAiForTrade(
 
   logger.info({ provider, model, temperature, webSearch: true }, "StrategistV2: calling AI for trade");
 
-  const today = new Date().toISOString().slice(0, 10);
   const scanBlock = buildScannerContextPromptBlock(getStrategistRunContext()?.scannerContext ?? null);
   const flowContextBlock = progress?.flowContext
     ? `\n\n## RECENT UNUSUAL FLOW SNAPSHOT (just observed by user — incorporate into analysis)\n${progress.flowContext}\n`
     : "";
+  const marketBlock = marketContextBlockForDataPackage(dataPackage);
   const prompt = retryInstruction
     ? `${retryInstruction}\n\nOriginal data package:\n${dataPackage}${scanBlock}${flowContextBlock}`
-    : `Today is ${today}. Run web searches as required by the WEB SEARCH MANDATE in your system prompt, then analyze this ticker and recommend the best trade. Respond ONLY with a valid JSON object, no text before or after, no markdown fences.${scanBlock}${flowContextBlock}\n\n${dataPackage}`;
+    : `${marketBlock}Run web searches as required by the WEB SEARCH MANDATE in your system prompt, then analyze this ticker and recommend the best trade. Respond ONLY with a valid JSON object, no text before or after, no markdown fences.${scanBlock}${flowContextBlock}\n\n${dataPackage}`;
 
   let rawText: string;
   let trace: WebSearchTrace;
@@ -3904,7 +3966,8 @@ async function callAiForTradeViaDebate(
   // Same underlying JSON as Conviction Desk / Solo (`buildDataPackage` + `scannerContext` merged earlier).
   // Debate additionally prepends `scanBlock` (Markdown scanner handoff) and appends optional `flowContextBlock`
   // from Unusual Flow drill-down — Conviction uses the JSON only, with scanner also in `snapshotBlock` XML.
-  const debateDataPackage = scanBlock + dataPackage + flowContextBlock;
+  const debateDataPackage =
+    marketContextBlockForDataPackage(dataPackage) + scanBlock + dataPackage + flowContextBlock;
 
   const outcome = await runDebate({
     systemPrompt: STRATEGIST_SYSTEM_PROMPT,

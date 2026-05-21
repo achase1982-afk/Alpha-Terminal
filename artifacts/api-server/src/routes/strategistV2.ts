@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { analyzeTickerV2, type StrategistV2Result, type AnalyzeProgressCallbacks } from "../lib/strategistV2.js";
 import { runInStrategistRunContext } from "../lib/strategistRunContext.js";
+import { resolveMarketContextForRequest } from "../lib/marketClientTimeZone.js";
 import { parseScannerContext, type ScannerStrategistContext } from "../lib/scannerStrategistContext.js";
 import { getSettings, updateSetting, resetAllSettings, getDefaults, getSettingMeta } from "../lib/strategistSettings.js";
 import { getCachedRegime, buildFallbackRegime } from "../lib/regimePostProcessor.js";
@@ -240,8 +241,9 @@ async function runAnalyzeWithIvrGate(
   ticker: string,
   opts?: AnalyzeProgressCallbacks,
   scannerContext?: ScannerStrategistContext | null,
+  clientTimeZone?: string | null,
 ): Promise<StrategistV2Result> {
-  return runInStrategistRunContext({ scannerContext: scannerContext ?? null }, () =>
+  return runInStrategistRunContext({ scannerContext: scannerContext ?? null, clientTimeZone }, () =>
     (async () => {
       const coverage = await ensureIvrCoverage(ticker);
       if (coverage.status !== "ready") {
@@ -430,12 +432,13 @@ router.post("/analyze/cancel", async (req, res): Promise<void> => {
 
 router.post("/analyze", async (req, res): Promise<void> => {
   try {
-    const { ticker, jobId, flowContext, scannerContext: rawScanner, convictionDeskProvider: cdProvRaw } = req.body as {
+    const { ticker, jobId, flowContext, scannerContext: rawScanner, convictionDeskProvider: cdProvRaw, clientTimeZone } = req.body as {
       ticker?: string;
       jobId?: string;
       flowContext?: string;
       scannerContext?: unknown;
       convictionDeskProvider?: unknown;
+      clientTimeZone?: string;
     };
     const scannerContext = parseScannerContext(rawScanner);
     const convictionDeskProvider = normalizeConvictionDeskProviderBody(cdProvRaw);
@@ -529,6 +532,7 @@ router.post("/analyze", async (req, res): Promise<void> => {
             convictionDeskProvider,
           },
             scannerContext,
+            typeof clientTimeZone === "string" ? clientTimeZone : null,
           );
           if (entry.cancelled) {
             return;
@@ -628,6 +632,7 @@ router.post("/analyze", async (req, res): Promise<void> => {
         convictionDeskProvider,
       },
         scannerContext,
+        typeof clientTimeZone === "string" ? clientTimeZone : null,
       );
       res.json(strategistV2ResultForWire(result));
     } finally {
@@ -796,6 +801,8 @@ router.post("/validate-trade", (req, res): void => {
             }
           }
         }
+
+        input.sessionClock = resolveMarketContextForRequest(req);
 
         input.marketContext = {
           ivr: ivr?.ivr ?? null,
