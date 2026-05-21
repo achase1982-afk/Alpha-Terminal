@@ -1,10 +1,17 @@
 import { create } from "zustand";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { consumeChatSse, type ChatSseEvent } from "@/lib/chatSse";
+import {
+  findAssistantReplyForUserTurn,
+  isTransientChatNetworkError,
+  type ChatThreadMessageRow,
+} from "@/lib/chatThreadRecovery";
 
 const RETRYABLE_CHAT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const CHAT_CLERK_TOKEN_TIMEOUT_MS = 12_000;
 const CHAT_REQUEST_TIMEOUT_MS = 120_000;
+const CHAT_BACKGROUND_POLL_MS = 2_000;
+const CHAT_BACKGROUND_POLL_MAX_MS = 180_000;
 
 function formatChatNetworkError(raw: string): string {
   if (/load failed|failed to fetch|networkerror/i.test(raw)) {
@@ -100,6 +107,80 @@ function isSupersededSend(
   controller: AbortController,
 ): boolean {
   return state.activeSendId !== sendId || state.abortController !== controller;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchThreadMessages(threadId: string): Promise<ChatThreadMessageRow[]> {
+  const res = await fetchWithAuth(
+    `/api/chat/threads/${encodeURIComponent(threadId)}/messages`,
+    { clerkTokenTimeoutMs: CHAT_CLERK_TOKEN_TIMEOUT_MS },
+  );
+  if (!res.ok) return [];
+  const data = (await res.json()) as { messages?: ChatThreadMessageRow[] };
+  return data.messages ?? [];
+}
+
+/** Poll Postgres transcript after mobile background killed the SSE socket. */
+async function pollChatThreadForAssistant(args: {
+  threadId: string;
+  streamKey: string;
+  sendId: string;
+  placeholderAssistantId: string;
+  userText: string;
+  patchStream: (key: string, patch: Partial<ChatThreadStreamState>) => void;
+}): Promise<void> {
+  const deadline = Date.now() + CHAT_BACKGROUND_POLL_MAX_MS;
+  while (Date.now() < deadline) {
+    await sleep(CHAT_BACKGROUND_POLL_MS);
+    const cur = useChatStreamStore.getState().streamsByThreadId[args.streamKey];
+    if (!cur || cur.activeSendId !== args.sendId) return;
+
+    try {
+      const rows = await fetchThreadMessages(args.threadId);
+      const reply = findAssistantReplyForUserTurn(rows, args.userText);
+      if (!reply) continue;
+
+      args.patchStream(args.streamKey, {
+        inFlightAssistant: {
+          id: reply.id,
+          content: reply.content,
+          complete: true,
+        },
+        isStreaming: false,
+        abortController: null,
+        activeSendId: null,
+        toolPills: [],
+        activeMultiAgentCount: 0,
+        lastFailedMessage: null,
+      });
+      return;
+    } catch {
+      /* retry until deadline */
+    }
+  }
+
+  const cur = useChatStreamStore.getState().streamsByThreadId[args.streamKey];
+  if (!cur || cur.activeSendId !== args.sendId) return;
+  const partial = cur.inFlightAssistant?.content.trim();
+  args.patchStream(args.streamKey, {
+    inFlightAssistant: {
+      id: args.placeholderAssistantId,
+      content:
+        partial ||
+        "**Still working in the background.** Pull to refresh this chat in a moment, or tap Retry.",
+      complete: true,
+      retryable: true,
+    },
+    isStreaming: false,
+    abortController: null,
+    activeSendId: null,
+    toolPills: [],
+    activeMultiAgentCount: 0,
+    lastFailedMessage: args.userText,
+  });
 }
 
 type ChatStreamStore = {
@@ -478,6 +559,33 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
         });
         return;
       }
+
+      const resolvedThreadId = threadId ?? (streamKey.startsWith("__pending__") ? null : streamKey);
+      if (isTransientChatNetworkError(err) && resolvedThreadId) {
+        const flight = cur.inFlightAssistant;
+        patchStream(streamKey, {
+          inFlightAssistant: {
+            id: assistantId,
+            content: flight?.content ?? "",
+            complete: false,
+          },
+          isStreaming: true,
+          abortController: null,
+          activeSendId: sendId,
+          toolPills: [],
+          activeMultiAgentCount: 0,
+        });
+        void pollChatThreadForAssistant({
+          threadId: resolvedThreadId,
+          streamKey,
+          sendId,
+          placeholderAssistantId: assistantId,
+          userText: text,
+          patchStream,
+        });
+        return;
+      }
+
       const errMsg = formatChatNetworkError((err as Error).message || "Connection failed");
       patchStream(streamKey, {
         inFlightAssistant: {

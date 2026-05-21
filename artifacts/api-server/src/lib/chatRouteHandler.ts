@@ -100,12 +100,6 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
     if (!res.writableEnded) res.write(": ping\n\n");
   }, 15_000);
 
-  const clientAbort = new AbortController();
-  const onClientClose = () => {
-    if (!clientAbort.signal.aborted) clientAbort.abort();
-  };
-  req.on("close", onClientClose);
-
   const clientTimeZone =
     typeof body.clientTimeZone === "string" && body.clientTimeZone.trim().length > 0
       ? body.clientTimeZone.trim()
@@ -118,7 +112,7 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
     ambientSymbol,
     clientTimeZone,
     toolContext: { userId, schwabAccessToken, activeModel: model },
-    abortSignal: clientAbort.signal,
+    /** Keep generating after SSE disconnect so thread reload can pick up the assistant row. */
     onEvent: (ev: ChatStreamEvent) => {
         if (res.writableEnded) return;
         switch (ev.type) {
@@ -162,16 +156,13 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
       await runChatTurn(turnArgs);
     }
   } catch (err) {
-    if (!clientAbort.signal.aborted) {
-      req.log?.error?.({ err, threadId }, "chat message stream failed");
-      if (!res.writableEnded) {
-        writeSse(res, "error", {
-          message: err instanceof Error ? err.message : "Chat failed",
-        });
-      }
+    req.log?.error?.({ err, threadId }, "chat message stream failed");
+    if (!res.writableEnded) {
+      writeSse(res, "error", {
+        message: err instanceof Error ? err.message : "Chat failed",
+      });
     }
   } finally {
-    req.off("close", onClientClose);
     clearInterval(heartbeat);
     res.end();
   }
