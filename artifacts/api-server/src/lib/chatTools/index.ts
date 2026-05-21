@@ -229,7 +229,7 @@ export function createChatTools(ctx: ChatToolContext) {
 
     web_search: tool({
       description:
-        "Search the public web via the dedicated Web Search API when configured (WEB_SEARCH_API_KEY), otherwise the active chat model provider's native search. Use for catalysts, why-is-it-moving, and recent headline questions.",
+        "Search the public web via Tavily (TAVILY_API_KEY) with Serper fallback (SERPER_API_KEY) when configured; otherwise the active chat model provider's native search. Use for catalysts, why-is-it-moving, and recent headline questions.",
       inputSchema: z.object({
         query: z.string().describe("Search query, include ticker when relevant"),
       }),

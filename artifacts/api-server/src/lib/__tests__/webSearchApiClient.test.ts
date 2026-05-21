@@ -11,10 +11,12 @@ import {
 } from "../webSearchApiClient.js";
 
 const ENV_KEYS = [
+  "TAVILY_API_KEY",
+  "TAVILY_API_BASE_URL",
+  "SERPER_API_KEY",
+  "SERPER_API_BASE_URL",
   "WEB_SEARCH_API_KEY",
-  "WEB_SEARCH_API_BASE_URL",
   "WEB_SEARCH_API_FALLBACK_KEY",
-  "WEB_SEARCH_API_FALLBACK_BASE_URL",
 ] as const;
 
 function clearWebSearchEnv(): void {
@@ -29,21 +31,21 @@ describe("webSearchApiClient config", () => {
     vi.unstubAllGlobals();
   });
 
-  it("is disabled without WEB_SEARCH_API_KEY", () => {
+  it("is disabled without TAVILY_API_KEY", () => {
     clearWebSearchEnv();
     expect(isDedicatedWebSearchApiEnabled()).toBe(false);
     expect(getPrimaryWebSearchApiConfig()).toBeNull();
   });
 
-  it("reads primary and fallback configs", () => {
-    process.env.WEB_SEARCH_API_KEY = "primary-key";
-    process.env.WEB_SEARCH_API_BASE_URL = "https://search.example/v1";
-    process.env.WEB_SEARCH_API_FALLBACK_KEY = "fallback-key";
+  it("reads Tavily primary and Serper fallback", () => {
+    process.env.TAVILY_API_KEY = "tvly-primary";
+    process.env.SERPER_API_KEY = "serper-fallback";
     expect(isDedicatedWebSearchApiEnabled()).toBe(true);
-    expect(getPrimaryWebSearchApiConfig()?.apiKey).toBe("primary-key");
-    expect(getPrimaryWebSearchApiConfig()?.baseUrl).toBe("https://search.example/v1");
-    expect(getFallbackWebSearchApiConfig()?.apiKey).toBe("fallback-key");
-    expect(getFallbackWebSearchApiConfig()?.baseUrl).toBe("https://search.example/v1");
+    expect(getPrimaryWebSearchApiConfig()?.provider).toBe("tavily");
+    expect(getPrimaryWebSearchApiConfig()?.apiKey).toBe("tvly-primary");
+    expect(getFallbackWebSearchApiConfig()?.provider).toBe("serper");
+    expect(getFallbackWebSearchApiConfig()?.apiKey).toBe("serper-fallback");
+    expect(getFallbackWebSearchApiConfig()?.baseUrl).toContain("serper.dev");
   });
 });
 
@@ -62,35 +64,33 @@ describe("executeDedicatedWebSearch", () => {
     vi.unstubAllGlobals();
   });
 
-  it("uses fallback when primary returns 503", async () => {
-    process.env.WEB_SEARCH_API_KEY = "primary";
-    process.env.WEB_SEARCH_API_BASE_URL = "https://primary.test/search";
-    process.env.WEB_SEARCH_API_FALLBACK_KEY = "fallback";
-    process.env.WEB_SEARCH_API_FALLBACK_BASE_URL = "https://fallback.test/search";
+  it("uses Serper fallback when Tavily returns 503", async () => {
+    process.env.TAVILY_API_KEY = "tvly-test";
+    process.env.TAVILY_API_BASE_URL = "https://tavily.test/search";
+    process.env.SERPER_API_KEY = "serper-test";
+    process.env.SERPER_API_BASE_URL = "https://serper.test/search";
 
     const fetchMock = vi.fn(async (url: string | URL) => {
       const u = String(url);
-      if (u.includes("primary.test")) {
+      if (u.includes("tavily.test")) {
         return new Response("down", { status: 503 });
       }
       return Response.json({
-        query: "test",
-        answer: "Fallback answer",
-        results: [{ title: "Example", url: "https://example.com", content: "snippet" }],
+        organic: [{ title: "Example", link: "https://example.com", snippet: "snippet" }],
       });
     });
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await executeDedicatedWebSearch("test query");
-    expect(result.endpointUsed).toBe("fallback");
-    expect(result.trace.webSearchUsed).toBe(true);
+    expect(result.providerUsed).toBe("serper");
+    expect(result.trace.dedicatedApiProvider).toBe("serper");
     expect(result.trace.sources[0]?.url).toBe("https://example.com");
-    expect(formatDedicatedWebSearchForChat(result)).toContain("Fallback answer");
+    expect(formatDedicatedWebSearchForChat(result)).toContain("snippet");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("augments prompts with search block", async () => {
-    process.env.WEB_SEARCH_API_KEY = "k";
+  it("augments prompts with Tavily search block", async () => {
+    process.env.TAVILY_API_KEY = "tvly-k";
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -103,7 +103,7 @@ describe("executeDedicatedWebSearch", () => {
     const block = formatDedicatedWebSearchContextBlock(result);
     const augmented = augmentPromptWithDedicatedWebSearch("User task", block);
     expect(augmented).toContain("User task");
-    expect(augmented).toContain("WEB SEARCH RESULTS");
+    expect(augmented).toContain("Tavily");
     expect(result.trace.queries).toEqual(["hello"]);
   });
 });

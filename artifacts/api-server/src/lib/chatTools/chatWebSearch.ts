@@ -28,7 +28,7 @@ function missingKeyError(provider: ChatWebSearchResult["provider"]): string {
     case "openai":
       return "OpenAI API key not configured on the server.";
     case "web_search_api":
-      return "WEB_SEARCH_API_KEY not configured on the server.";
+      return "TAVILY_API_KEY not configured on the server.";
     default:
       return "Anthropic API key not configured on the server.";
   }

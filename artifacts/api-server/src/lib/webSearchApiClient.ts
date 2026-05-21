@@ -6,19 +6,25 @@ export interface WebSearchSource {
   date?: string;
 }
 
+export type WebSearchProviderName = "tavily" | "serper";
+
 export interface WebSearchTrace {
   webSearchUsed: boolean;
   queries: string[];
   sources: WebSearchSource[];
   searchBackend?: "dedicated_api" | "provider_native";
   dedicatedApiEndpoint?: WebSearchApiEndpoint;
+  /** Which vendor served this search (Tavily primary, Serper fallback). */
+  dedicatedApiProvider?: WebSearchProviderName;
 }
 
-const DEFAULT_TAVILY_SEARCH_URL = "https://api.tavily.com/search";
+const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
+const SERPER_SEARCH_URL = "https://google.serper.dev/search";
 
 export type WebSearchApiEndpoint = "primary" | "fallback";
 
 export interface WebSearchApiConfig {
+  provider: WebSearchProviderName;
   apiKey: string;
   baseUrl: string;
   endpoint: WebSearchApiEndpoint;
@@ -31,6 +37,7 @@ export interface DedicatedWebSearchResult {
   /** Bullet-friendly lines built from result snippets. */
   summaryLines: string[];
   endpointUsed: WebSearchApiEndpoint;
+  providerUsed: WebSearchProviderName;
 }
 
 function envTrim(name: string): string {
@@ -44,34 +51,49 @@ function envInt(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-function resolveBaseUrl(override: string): string {
-  const trimmed = override.trim();
-  return trimmed || DEFAULT_TAVILY_SEARCH_URL;
+function firstNonEmpty(...names: string[]): string {
+  for (const name of names) {
+    const v = envTrim(name);
+    if (v) return v;
+  }
+  return "";
 }
 
-/** True when `WEB_SEARCH_API_KEY` is set (dedicated API is the search backend). */
+/**
+ * Dedicated web search is on when the Tavily key is set.
+ * `WEB_SEARCH_API_KEY` is accepted as a legacy alias for `TAVILY_API_KEY`.
+ */
 export function isDedicatedWebSearchApiEnabled(): boolean {
-  return Boolean(envTrim("WEB_SEARCH_API_KEY"));
+  return Boolean(firstNonEmpty("TAVILY_API_KEY", "WEB_SEARCH_API_KEY"));
 }
 
+/** Primary: Tavily (`TAVILY_API_KEY`). */
 export function getPrimaryWebSearchApiConfig(): WebSearchApiConfig | null {
-  const apiKey = envTrim("WEB_SEARCH_API_KEY");
+  const apiKey = firstNonEmpty("TAVILY_API_KEY", "WEB_SEARCH_API_KEY");
   if (!apiKey) return null;
+  const baseUrl = envTrim("TAVILY_API_BASE_URL") || envTrim("WEB_SEARCH_API_BASE_URL") || TAVILY_SEARCH_URL;
   return {
+    provider: "tavily",
     apiKey,
-    baseUrl: resolveBaseUrl(envTrim("WEB_SEARCH_API_BASE_URL")),
+    baseUrl,
     endpoint: "primary",
   };
 }
 
+/** Fallback: Serper (`SERPER_API_KEY`). */
 export function getFallbackWebSearchApiConfig(): WebSearchApiConfig | null {
-  const apiKey = envTrim("WEB_SEARCH_API_FALLBACK_KEY");
+  const apiKey = firstNonEmpty("SERPER_API_KEY", "WEB_SEARCH_API_FALLBACK_KEY");
   if (!apiKey) return null;
-  const primary = getPrimaryWebSearchApiConfig();
-  const baseUrl = resolveBaseUrl(
-    envTrim("WEB_SEARCH_API_FALLBACK_BASE_URL") || primary?.baseUrl || "",
-  );
-  return { apiKey, baseUrl, endpoint: "fallback" };
+  const baseUrl =
+    envTrim("SERPER_API_BASE_URL") ||
+    envTrim("WEB_SEARCH_API_FALLBACK_BASE_URL") ||
+    SERPER_SEARCH_URL;
+  return {
+    provider: "serper",
+    apiKey,
+    baseUrl,
+    endpoint: "fallback",
+  };
 }
 
 export function getWebSearchApiMaxResults(): number {
@@ -102,7 +124,32 @@ function pickString(v: unknown): string | null {
   return null;
 }
 
-function normalizeApiResults(payload: unknown): { sources: WebSearchSource[]; answer: string | null; lines: string[] } {
+function pushResultRow(
+  row: Record<string, unknown>,
+  sources: WebSearchSource[],
+  lines: string[],
+  seenUrls: Set<string>,
+): void {
+  const url = pickString(row.url) ?? pickString(row.link);
+  if (!url || seenUrls.has(url)) return;
+  seenUrls.add(url);
+  const title = pickString(row.title) ?? url;
+  const date =
+    pickString(row.published_date) ??
+    pickString(row.publishedDate) ??
+    pickString(row.date) ??
+    undefined;
+  sources.push({ title, url, date });
+  const snippet =
+    pickString(row.content) ?? pickString(row.snippet) ?? pickString(row.description) ?? "";
+  if (snippet) {
+    lines.push(`- ${title}: ${snippet.slice(0, 500)} (${url})`);
+  } else {
+    lines.push(`- ${title} (${url})`);
+  }
+}
+
+function normalizeTavilyResults(payload: unknown): { sources: WebSearchSource[]; answer: string | null; lines: string[] } {
   const sources: WebSearchSource[] = [];
   const seenUrls = new Set<string>();
   const lines: string[] = [];
@@ -116,39 +163,59 @@ function normalizeApiResults(payload: unknown): { sources: WebSearchSource[]; an
   answer = pickString(root.answer) ?? pickString(root.summary);
 
   const results = root.results;
-  if (!Array.isArray(results)) {
-    return { sources, answer, lines };
-  }
-
-  for (const row of results) {
-    if (!row || typeof row !== "object") continue;
-    const r = row as Record<string, unknown>;
-    const url = pickString(r.url) ?? pickString(r.link);
-    if (!url || seenUrls.has(url)) continue;
-    seenUrls.add(url);
-    const title = pickString(r.title) ?? url;
-    const date =
-      pickString(r.published_date) ??
-      pickString(r.publishedDate) ??
-      pickString(r.date) ??
-      undefined;
-    sources.push({ title, url, date });
-    const snippet =
-      pickString(r.content) ??
-      pickString(r.snippet) ??
-      pickString(r.description) ??
-      "";
-    if (snippet) {
-      lines.push(`- ${title}: ${snippet.slice(0, 500)} (${url})`);
-    } else {
-      lines.push(`- ${title} (${url})`);
+  if (Array.isArray(results)) {
+    for (const row of results) {
+      if (!row || typeof row !== "object") continue;
+      pushResultRow(row as Record<string, unknown>, sources, lines, seenUrls);
     }
   }
 
   return { sources, answer, lines };
 }
 
-async function postWebSearchRequest(
+function normalizeSerperResults(payload: unknown): { sources: WebSearchSource[]; answer: string | null; lines: string[] } {
+  const sources: WebSearchSource[] = [];
+  const seenUrls = new Set<string>();
+  const lines: string[] = [];
+
+  if (!payload || typeof payload !== "object") {
+    return { sources, answer: null, lines };
+  }
+
+  const root = payload as Record<string, unknown>;
+  const answer =
+    pickString((root.answerBox as Record<string, unknown> | undefined)?.answer) ??
+    pickString((root.answerBox as Record<string, unknown> | undefined)?.snippet) ??
+    null;
+
+  const organic = root.organic;
+  if (Array.isArray(organic)) {
+    for (const row of organic) {
+      if (!row || typeof row !== "object") continue;
+      pushResultRow(row as Record<string, unknown>, sources, lines, seenUrls);
+    }
+  }
+
+  return { sources, answer, lines };
+}
+
+function buildTrace(
+  query: string,
+  config: WebSearchApiConfig,
+  sources: WebSearchSource[],
+  answer: string | null,
+): WebSearchTrace {
+  return {
+    webSearchUsed: sources.length > 0 || Boolean(answer?.trim()),
+    queries: [query],
+    sources,
+    searchBackend: "dedicated_api",
+    dedicatedApiEndpoint: config.endpoint,
+    dedicatedApiProvider: config.provider,
+  };
+}
+
+async function postTavilySearch(
   config: WebSearchApiConfig,
   query: string,
   signal?: AbortSignal,
@@ -181,34 +248,71 @@ async function postWebSearchRequest(
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
     const err = new Error(
-      `Web Search API ${config.endpoint} HTTP ${res.status}${errText ? `: ${errText.slice(0, 200)}` : ""}`,
+      `Tavily HTTP ${res.status}${errText ? `: ${errText.slice(0, 200)}` : ""}`,
     );
     (err as Error & { status?: number }).status = res.status;
     throw err;
   }
 
-  let payload: unknown;
-  try {
-    payload = await res.json();
-  } catch {
-    throw new Error(`Web Search API ${config.endpoint} returned non-JSON response`);
-  }
-
-  const { sources, answer, lines } = normalizeApiResults(payload);
-  const queries = [query];
-
+  const payload = await res.json();
+  const { sources, answer, lines } = normalizeTavilyResults(payload);
   return {
-    trace: {
-      webSearchUsed: sources.length > 0 || Boolean(answer?.trim()),
-      queries,
-      sources,
-      searchBackend: "dedicated_api",
-      dedicatedApiEndpoint: config.endpoint,
-    },
+    trace: buildTrace(query, config, sources, answer),
     answer,
     summaryLines: lines,
     endpointUsed: config.endpoint,
+    providerUsed: "tavily",
   };
+}
+
+async function postSerperSearch(
+  config: WebSearchApiConfig,
+  query: string,
+  signal?: AbortSignal,
+): Promise<DedicatedWebSearchResult> {
+  const maxResults = getWebSearchApiMaxResults();
+  const timeoutMs = getWebSearchApiTimeoutMs();
+
+  const res = await fetch(config.baseUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "X-API-KEY": config.apiKey,
+    },
+    body: JSON.stringify({ q: query, num: maxResults }),
+    signal: signal ?? AbortSignal.timeout(timeoutMs),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    const err = new Error(
+      `Serper HTTP ${res.status}${errText ? `: ${errText.slice(0, 200)}` : ""}`,
+    );
+    (err as Error & { status?: number }).status = res.status;
+    throw err;
+  }
+
+  const payload = await res.json();
+  const { sources, answer, lines } = normalizeSerperResults(payload);
+  return {
+    trace: buildTrace(query, config, sources, answer),
+    answer,
+    summaryLines: lines,
+    endpointUsed: config.endpoint,
+    providerUsed: "serper",
+  };
+}
+
+async function postWebSearchRequest(
+  config: WebSearchApiConfig,
+  query: string,
+  signal?: AbortSignal,
+): Promise<DedicatedWebSearchResult> {
+  if (config.provider === "serper") {
+    return postSerperSearch(config, query, signal);
+  }
+  return postTavilySearch(config, query, signal);
 }
 
 function shouldTryFallback(err: unknown): boolean {
@@ -223,9 +327,8 @@ function shouldTryFallback(err: unknown): boolean {
 }
 
 /**
- * Run a web search through the dedicated Web Search API.
- * Uses `WEB_SEARCH_API_KEY` / `WEB_SEARCH_API_BASE_URL`, then
- * `WEB_SEARCH_API_FALLBACK_KEY` / `WEB_SEARCH_API_FALLBACK_BASE_URL` on failure.
+ * Tavily (primary) then Serper (fallback).
+ * Keys: `TAVILY_API_KEY`, `SERPER_API_KEY`.
  */
 export async function executeDedicatedWebSearch(
   query: string,
@@ -238,7 +341,7 @@ export async function executeDedicatedWebSearch(
 
   const primary = getPrimaryWebSearchApiConfig();
   if (!primary) {
-    throw new Error("WEB_SEARCH_API_KEY not configured");
+    throw new Error("TAVILY_API_KEY not configured");
   }
 
   try {
@@ -251,11 +354,11 @@ export async function executeDedicatedWebSearch(
     logger.warn(
       {
         op: "web_search_api_fallback",
-        primaryBaseUrl: primary.baseUrl,
-        fallbackBaseUrl: fallback.baseUrl,
+        primaryProvider: primary.provider,
+        fallbackProvider: fallback.provider,
         error: primaryErr instanceof Error ? primaryErr.message : String(primaryErr),
       },
-      "Web Search API primary failed; trying fallback",
+      "Tavily web search failed; trying Serper fallback",
     );
     try {
       return await postWebSearchRequest(fallback, q, signal);
@@ -265,7 +368,7 @@ export async function executeDedicatedWebSearch(
           op: "web_search_api_fallback_failed",
           error: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr),
         },
-        "Web Search API fallback also failed",
+        "Serper web search fallback also failed",
       );
       throw fallbackErr;
     }
@@ -273,10 +376,11 @@ export async function executeDedicatedWebSearch(
 }
 
 export function formatDedicatedWebSearchContextBlock(result: DedicatedWebSearchResult): string {
+  const providerLabel = result.providerUsed === "tavily" ? "Tavily" : "Serper";
   const parts: string[] = [
     "## WEB SEARCH RESULTS (dedicated API)",
     `Query: ${result.trace.queries[0] ?? ""}`,
-    `Endpoint: ${result.endpointUsed}`,
+    `Provider: ${providerLabel} (${result.endpointUsed})`,
   ];
   if (result.answer?.trim()) {
     parts.push("", "Summary:", result.answer.trim());

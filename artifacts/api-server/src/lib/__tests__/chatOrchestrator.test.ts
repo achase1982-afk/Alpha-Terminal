@@ -31,7 +31,8 @@ describe("buildChatSystemPrompt", () => {
 
   it("documents web_search API routing", () => {
     const prompt = buildChatSystemPrompt("AAPL");
-    expect(prompt).toContain("WEB_SEARCH_API_KEY");
+    expect(prompt).toContain("TAVILY_API_KEY");
+    expect(prompt).toContain("SERPER_API_KEY");
     expect(prompt).toMatch(/provider-native|Claude|Gemini|OpenAI/i);
   });
 });

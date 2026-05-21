@@ -910,9 +910,10 @@ export interface WebSearchTrace {
   webSearchUsed: boolean;
   queries: string[];
   sources: WebSearchSource[];
-  /** Present when search ran via WEB_SEARCH_API_* instead of provider-native tools. */
+  /** Present when search ran via Tavily/Serper instead of provider-native tools. */
   searchBackend?: "dedicated_api" | "provider_native";
   dedicatedApiEndpoint?: "primary" | "fallback";
+  dedicatedApiProvider?: "tavily" | "serper";
 }
 
 export type WebSearchEnvelopeProvider = "anthropic" | "openai" | "xai" | "gemini";
