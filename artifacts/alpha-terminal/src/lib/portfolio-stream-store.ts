@@ -29,7 +29,7 @@ interface PortfolioOrder {
   tag: string | null;
 }
 
-interface PortfolioStatus {
+export interface PortfolioStatus {
   status: "ok" | "no_token" | "error";
   message?: string;
 }

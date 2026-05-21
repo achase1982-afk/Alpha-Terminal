@@ -96,6 +96,7 @@ const SETTINGS_SUBPAGES: ReadonlySet<SidebarPage> = new Set<SidebarPage>([
 
 export interface SidebarHandle {
   clearActivePage: () => void;
+  getActivePage: () => SidebarPage;
   openSettingsSubpage: (page:
     | "Allowed Strategies"
     | "Risk Defaults"
@@ -159,8 +160,9 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
 
   useImperativeHandle(ref, () => ({
     clearActivePage: () => setActivePage(null),
+    getActivePage: () => activePage,
     openSettingsSubpage: (page) => setActivePage(page),
-  }), []);
+  }), [activePage]);
 
   const handleCloseAll = () => {
     setActivePage(null);
