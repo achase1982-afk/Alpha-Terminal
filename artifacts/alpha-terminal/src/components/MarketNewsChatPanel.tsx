@@ -409,7 +409,10 @@ export function MarketNewsChatPanel() {
           : "relative z-[60] shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.25)]",
       ].join(" ")}
       style={{
-        paddingBottom: "max(10px, env(safe-area-inset-bottom, 0px))",
+        paddingBottom:
+          narrowMobile && composerFocused
+            ? "8px"
+            : "max(10px, env(safe-area-inset-bottom, 0px))",
         ...extraStyle,
       }}
       onSubmit={(e) => {

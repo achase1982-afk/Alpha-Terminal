@@ -159,7 +159,8 @@ export function useVisualViewportKeyboardInset(): number {
   return keyboardInset;
 }
 
-const KEYBOARD_GAP_PX = 8;
+/** Minimal seam between composer and keyboard (0 = flush). */
+const KEYBOARD_GAP_PX = 0;
 
 /** Reserve above bottom tab bar when keyboard is closed (nav padding + icons). */
 export const MOBILE_BOTTOM_NAV_RESERVE_PX = 78;
@@ -231,15 +232,17 @@ export function useChatComposerDock(
       const keyboardOpen = overlap >= 48;
 
       if (focused || keyboardOpen) {
-        const top = Math.max(0, vv.offsetTop + vv.height - h - gap);
+        // `bottom` from layout viewport tracks the keyboard band more tightly than `top`
+        // (avoids a visible seam above the keyboard / accessory bar on iOS).
+        const bottomInset = Math.max(0, overlap) + gap;
         setDock({
           position: "fixed",
           left: 0,
           right: 0,
           zIndex: 10050,
-          top,
+          bottom: bottomInset,
         });
-        setScrollPad(Math.max(h + gap + 16, window.innerHeight - top));
+        setScrollPad(h + bottomInset + 12);
       } else {
         const bottom = MOBILE_BOTTOM_NAV_RESERVE_PX;
         setDock({
