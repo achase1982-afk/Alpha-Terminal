@@ -11,6 +11,8 @@ import {
   updateChatThreadSummary,
 } from "./chatDb.js";
 import { resolveChatLanguageModel } from "./chatModel.js";
+import { getMarketContext } from "./getMarketContext.js";
+import { formatMarketContextUserBlock } from "./marketContextPrompt.js";
 
 export { CHAT_SUMMARY_TOKEN_THRESHOLD, estimateTokenCount };
 
@@ -25,7 +27,13 @@ export type ChatStreamEvent =
   | { type: "error"; message: string };
 
 /** Exported for tests — persona + ambient symbol + tool guidance (no regex routing, no eager pack). */
-export function buildChatSystemPrompt(ambientSymbol?: string | null): string {
+export function buildChatSystemPrompt(
+  ambientSymbol?: string | null,
+  clientTimeZone?: string | null,
+  now: Date = new Date(),
+): string {
+  const marketContext = getMarketContext(now, clientTimeZone?.trim() || "America/New_York");
+  const marketBlock = formatMarketContextUserBlock(marketContext);
   const sym = ambientSymbol?.trim().toUpperCase() || null;
   const ambientBlock = sym
     ? `The user is viewing **${sym}** in the terminal. Treat **${sym}** as the default referent for phrases like "this", "this stock", "it", or "here" — but only when the question is clearly about that company. Do not force every answer to be about ${sym}; general finance questions need no ticker tools unless useful.
@@ -35,7 +43,9 @@ If a phrase could refer to multiple tickers (e.g. "ON", "IT", "NOW") and context
 
   return `You are Alpha Terminal, an expert trading and markets assistant inside the Alpha Financial Terminal.
 
-Today is ${new Date().toDateString()}. ${new Date().toLocaleString()}.
+${marketBlock}
+
+When the user asks for the current time, market close, or time until close, use **only** the MARKET CONTEXT block above (US Eastern Time). Do not infer time from training data or any other clock.
 
 ${ambientBlock}
 
@@ -122,6 +132,7 @@ export type RunChatTurnArgs = {
   userMessage: string;
   model: string;
   ambientSymbol?: string | null;
+  clientTimeZone?: string | null;
   toolContext: ChatToolContext;
   onEvent: (ev: ChatStreamEvent) => void;
   abortSignal?: AbortSignal;
@@ -185,12 +196,13 @@ async function runDraftChatTurn(args: {
   model: string;
   modelMessages: ModelMessage[];
   ambientSymbol?: string | null;
+  clientTimeZone?: string | null;
   toolContext: ChatToolContext;
   abortSignal?: AbortSignal;
 }): Promise<{ model: string; text?: string; error?: string }> {
   const tools = createChatTools({ ...args.toolContext, activeModel: args.model });
   const resolved = resolveChatLanguageModel(args.model);
-  const system = buildChatSystemPrompt(args.ambientSymbol);
+  const system = buildChatSystemPrompt(args.ambientSymbol, args.clientTimeZone);
   try {
     const result = await generateText({
       model: resolved.model,
@@ -220,7 +232,7 @@ async function runDraftChatTurn(args: {
 export async function runMultiAgentChatTurn(
   args: RunChatTurnArgs & { multiAgent: MultiAgentConfig },
 ): Promise<void> {
-  const { thread, userMessage, ambientSymbol, toolContext, onEvent, multiAgent, abortSignal } = args;
+  const { thread, userMessage, ambientSymbol, clientTimeZone, toolContext, onEvent, multiAgent, abortSignal } = args;
   const models = multiAgent.models.filter((m) => m.trim().length > 0);
   const synthesizerModel = multiAgent.synthesizer_model.trim();
   if (models.length === 0) {
@@ -242,6 +254,7 @@ export async function runMultiAgentChatTurn(
         model,
         modelMessages,
         ambientSymbol,
+        clientTimeZone,
         toolContext: { ...toolContext, activeModel: model },
         abortSignal,
       }),
@@ -268,9 +281,10 @@ export async function runMultiAgentChatTurn(
 
   let assistantText = "";
   try {
+    const synthSystem = `${buildChatSystemPrompt(ambientSymbol, clientTimeZone)}\n\n${MULTI_AGENT_SYNTH_SYSTEM}`;
     const result = streamText({
       model: synthResolved.model,
-      system: MULTI_AGENT_SYNTH_SYSTEM,
+      system: synthSystem,
       messages: synthMessages,
       stopWhen: stepCountIs(8),
       ...(abortSignal ? { abortSignal } : {}),
@@ -304,13 +318,13 @@ export async function runMultiAgentChatTurn(
 }
 
 export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
-  const { thread, userMessage, model, ambientSymbol, toolContext, onEvent, abortSignal } = args;
+  const { thread, userMessage, model, ambientSymbol, clientTimeZone, toolContext, onEvent, abortSignal } = args;
 
   const { modelMessages } = await prepareTurnMessages(thread, userMessage);
 
   const tools = createChatTools({ ...toolContext, activeModel: model });
   const resolved = resolveChatLanguageModel(model);
-  const system = buildChatSystemPrompt(ambientSymbol);
+  const system = buildChatSystemPrompt(ambientSymbol, clientTimeZone);
 
   const toolCallsLog: Array<{ toolCallId: string; toolName: string; input: unknown }> = [];
   const toolResultsLog: Array<{ toolCallId: string; toolName: string; output: unknown }> = [];

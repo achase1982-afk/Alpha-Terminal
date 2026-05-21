@@ -6,6 +6,9 @@ import { lastNyTradingSessionYmds, nyCalendarYmd, nyOffsetForYmd } from "./usEqu
 
 export type MarketSessionLabel = "PREMARKET" | "OPEN" | "AFTERHOURS" | "CLOSED";
 
+/** US equity session calendar — session math always uses this zone, not the client display zone. */
+export const US_EQUITY_SESSION_TIME_ZONE = "America/New_York";
+
 export interface MarketContext {
   now: string;
   timeZone: string;
@@ -16,9 +19,27 @@ export interface MarketContext {
   optionsLive: boolean;
 }
 
-export function getMarketContext(now = new Date(), timeZone = "America/New_York"): MarketContext {
+function formatMarketLocalLabel(now: Date, clientTimeZone: string): string {
+  const etLabel = now.toLocaleString("en-US", {
+    timeZone: US_EQUITY_SESSION_TIME_ZONE,
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  const base = `${etLabel} ET`;
+  const client = clientTimeZone.trim() || US_EQUITY_SESSION_TIME_ZONE;
+  if (client === US_EQUITY_SESSION_TIME_ZONE) return base;
+  const userLocal = now.toLocaleString("en-US", {
+    timeZone: client,
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  return `${base} (your local: ${userLocal})`;
+}
+
+export function getMarketContext(now = new Date(), clientTimeZone = "America/New_York"): MarketContext {
+  const displayTz = clientTimeZone.trim() || US_EQUITY_SESSION_TIME_ZONE;
   const p = new Intl.DateTimeFormat("en-US", {
-    timeZone,
+    timeZone: US_EQUITY_SESSION_TIME_ZONE,
     weekday: "short",
     year: "numeric",
     month: "2-digit",
@@ -51,12 +72,8 @@ export function getMarketContext(now = new Date(), timeZone = "America/New_York"
 
   return {
     now: now.toISOString(),
-    timeZone,
-    localLabel: now.toLocaleString("en-US", {
-      timeZone,
-      dateStyle: "medium",
-      timeStyle: "short",
-    }),
+    timeZone: displayTz,
+    localLabel: formatMarketLocalLabel(now, displayTz),
     tradingDate: ymd,
     session,
     optionsLive,

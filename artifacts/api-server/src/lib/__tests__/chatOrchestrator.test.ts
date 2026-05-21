@@ -1,4 +1,17 @@
 import { describe, expect, it } from "vitest";
+
+function etInstant(
+  y: number,
+  m: number,
+  d: number,
+  hour: number,
+  minute: number,
+): Date {
+  const ymd = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  const isDst = m >= 3 && m <= 10;
+  const off = isDst ? "-04:00" : "-05:00";
+  return new Date(`${ymd}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00${off}`);
+}
 import {
   buildChatSystemPrompt,
   buildModelMessagesFromHistory,
@@ -34,6 +47,16 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("TAVILY_API_KEY");
     expect(prompt).toContain("SERPER_API_KEY");
     expect(prompt).toMatch(/provider-native|Claude|Gemini|OpenAI/i);
+  });
+
+  it("includes authoritative ET market context (not UTC server clock)", () => {
+    const at105Et = etInstant(2026, 5, 21, 13, 5);
+    const prompt = buildChatSystemPrompt(null, "America/New_York", at105Et);
+    expect(prompt).toContain("MARKET CONTEXT — authoritative");
+    expect(prompt).toContain("Session: OPEN");
+    expect(prompt).toMatch(/1:05.*ET/i);
+    expect(prompt).not.toMatch(/5:05/);
+    expect(prompt).not.toContain("toLocaleString");
   });
 });
 
