@@ -71,6 +71,21 @@ export function buildDatasetFreshnessMeta(
   return { asOf, origin: classifyOrigin(asOf, ctx) };
 }
 
+/**
+ * Desk data-package tag for options flow using upstream `asOf` only (never request time).
+ * `providerAsOf` is typically `polygonFlowHighlights.asOfDate` (max stored Polygon session date).
+ */
+export function buildOptionsFlowDatasetTag(
+  providerAsOf: string,
+  marketContext: MarketContext,
+): string {
+  const meta = buildDatasetFreshnessMeta(providerAsOf, marketContext);
+  if (!meta) {
+    return `OPTIONS FLOW [asOf: ${providerAsOf.slice(0, 10)}]`;
+  }
+  return formatDatasetInlineTag("OPTIONS FLOW", meta);
+}
+
 export function formatDatasetInlineTag(
   label: string,
   meta: DatasetFreshnessMeta | null | undefined,

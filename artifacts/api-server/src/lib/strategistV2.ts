@@ -40,7 +40,7 @@ import { runInStrategistRunContext, getStrategistRunContext, mergeStrategistDiag
 import { getMarketContext } from "./getMarketContext.js";
 import {
   buildDatasetFreshnessMeta,
-  formatDatasetInlineTag,
+  buildOptionsFlowDatasetTag,
   type DatasetFreshnessMeta,
 } from "./datasetFreshness.js";
 import { marketContextBlockForDataPackage } from "./strategistDeskPrompts.js";
@@ -3260,8 +3260,8 @@ async function buildDataPackage(
     marketTimeContext,
     datasetFreshness,
   });
-  const optionsFlowDatasetTag = datasetFreshness.optionsFlowRollup
-    ? formatDatasetInlineTag("OPTIONS FLOW", datasetFreshness.optionsFlowRollup)
+  const optionsFlowDatasetTag = polygonHighlights?.asOfDate
+    ? buildOptionsFlowDatasetTag(polygonHighlights.asOfDate, marketTimeContext)
     : null;
   const pkg: Record<string, unknown> = {
     schemaVersion: 1,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { classifyOrigin } from "../datasetFreshness.js";
-import { getMarketContext } from "../getMarketContext.js";
+import { buildOptionsFlowDatasetTag, classifyOrigin } from "../datasetFreshness.js";
+import { getMarketContext, US_EQUITY_SESSION_TIME_ZONE } from "../getMarketContext.js";
 
 function etInstant(
   y: number,
@@ -80,5 +80,29 @@ describe("classifyOrigin", () => {
   it("labels stale data older than prior trading day", () => {
     const ctx = getMarketContext(etInstant(2026, 5, 21, 7, 54));
     expect(classifyOrigin("2026-05-10", ctx)).toBe("STALE");
+  });
+});
+
+describe("buildOptionsFlowDatasetTag", () => {
+  it("tags PRIOR_SESSION when provider asOf is the prior trading day", () => {
+    const now = etInstant(2026, 5, 21, 7, 54);
+    const ctx = getMarketContext(now);
+    const tag = buildOptionsFlowDatasetTag("2026-05-20", ctx);
+    expect(tag).toContain("origin: PRIOR_SESSION");
+    expect(tag).toContain("asOf: 2026-05-20");
+    expect(tag).not.toContain(ctx.now.slice(0, 10));
+  });
+});
+
+describe("getMarketContext client display zone", () => {
+  it("uses hardcoded NY for session math; client timeZone affects display label only", () => {
+    const now = etInstant(2026, 5, 21, 7, 54);
+    const ny = getMarketContext(now, US_EQUITY_SESSION_TIME_ZONE);
+    const tokyo = getMarketContext(now, "Asia/Tokyo");
+
+    expect(ny.session).toBe(tokyo.session);
+    expect(ny.tradingDate).toBe(tokyo.tradingDate);
+    expect(ny.optionsLive).toBe(tokyo.optionsLive);
+    expect(tokyo.localLabel).not.toBe(ny.localLabel);
   });
 });

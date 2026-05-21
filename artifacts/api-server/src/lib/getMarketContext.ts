@@ -16,9 +16,15 @@ export interface MarketContext {
   optionsLive: boolean;
 }
 
-export function getMarketContext(now = new Date(), timeZone = "America/New_York"): MarketContext {
+/** US equity session boundaries are always computed in New York civil time. */
+export const US_EQUITY_SESSION_TIME_ZONE = "America/New_York" as const;
+
+export function getMarketContext(
+  now = new Date(),
+  timeZone: string = US_EQUITY_SESSION_TIME_ZONE,
+): MarketContext {
   const p = new Intl.DateTimeFormat("en-US", {
-    timeZone,
+    timeZone: US_EQUITY_SESSION_TIME_ZONE,
     weekday: "short",
     year: "numeric",
     month: "2-digit",

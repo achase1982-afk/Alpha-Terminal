@@ -20,7 +20,7 @@ import type { NextEarnings } from "./earningsService.js";
 import { runDeskAnalysis } from "./strategistDesk.js";
 import type { DeskCallbacks } from "./strategistDesk.js";
 import { getMarketContext } from "./getMarketContext.js";
-import { buildDatasetFreshnessMeta, formatDatasetInlineTag } from "./datasetFreshness.js";
+import { buildOptionsFlowDatasetTag } from "./datasetFreshness.js";
 import { formatMarketContextUserBlock } from "./marketContextPrompt.js";
 
 export type ValidationVerdict = "PROCEED" | "PROCEED_WITH_CAUTION" | "DO_NOT_PROCEED";
@@ -669,10 +669,7 @@ function buildDataPackage(input: ValidationInput): string {
   // skew is "bullish" or "bearish", that's a real directional flow signal.
   const ph = mc?.polygonHighlights ?? null;
   if (ph) {
-    const flowTag = buildDatasetFreshnessMeta(ph.asOfDate, sessionClock);
-    const flowHeading = flowTag
-      ? formatDatasetInlineTag("OPTIONS FLOW", flowTag)
-      : `OPTIONS FLOW [asOf: ${ph.asOfDate}]`;
+    const flowHeading = buildOptionsFlowDatasetTag(ph.asOfDate, sessionClock);
     lines.push(``);
     lines.push(`## ${flowHeading}`);
     lines.push(`Total call volume: ${ph.totalCallVolume.toLocaleString()} | Total put volume: ${ph.totalPutVolume.toLocaleString()}`);
