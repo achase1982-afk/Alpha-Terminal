@@ -16,8 +16,26 @@ import { formatMarketContextUserBlock } from "./marketContextPrompt.js";
 
 export { CHAT_SUMMARY_TOKEN_THRESHOLD, estimateTokenCount };
 
+/** Max tool+text steps per chat turn (multi-ticker prompts can use many tool rounds). */
+export const CHAT_MAX_TOOL_STEPS = 20;
+
 const SUMMARY_MODEL = "claude-haiku-4-5";
 const MAX_RECENT_MESSAGES = 40;
+
+const CHAT_SYNTHESIS_FALLBACK_USER =
+  "You have already called tools and received results above. Write the complete final markdown answer for the trader now. Do not call any more tools. If data is missing, say what you cannot confirm.";
+
+/** Shown when tools ran but the model never produced visible text (step limit or provider quirk). */
+export const EMPTY_CHAT_RESPONSE_AFTER_TOOLS =
+  "**Could not generate a reply** after loading data from tools. This often happens on long multi-ticker questions when the step limit is reached. Try a shorter question, fewer tickers at once, or tap Retry.";
+
+/** User-visible placeholder when the model returns no text and no tools ran. */
+export const EMPTY_CHAT_RESPONSE_PLAIN = "(No response generated)";
+
+/** Pick the persisted assistant message when streamText ends with empty text. */
+export function formatEmptyChatResponseMessage(hadToolResults: boolean): string {
+  return hadToolResults ? EMPTY_CHAT_RESPONSE_AFTER_TOOLS : EMPTY_CHAT_RESPONSE_PLAIN;
+}
 
 export type ChatStreamEvent =
   | { type: "text"; delta: string }
@@ -192,6 +210,39 @@ async function prepareTurnMessages(
   return { summary, modelMessages };
 }
 
+/**
+ * When streamText stops after tool rounds with no user-visible text (step cap or
+ * finishReason tool-calls), run one text-only synthesis pass over the full step transcript.
+ */
+async function synthesizeAfterEmptyToolTurn(args: {
+  model: string;
+  system: string;
+  modelMessages: ModelMessage[];
+  responseMessages: ModelMessage[];
+  onEvent: (ev: ChatStreamEvent) => void;
+  abortSignal?: AbortSignal;
+}): Promise<string> {
+  const resolved = resolveChatLanguageModel(args.model);
+  const synthMessages: ModelMessage[] = [
+    ...args.modelMessages,
+    ...args.responseMessages,
+    { role: "user", content: CHAT_SYNTHESIS_FALLBACK_USER },
+  ];
+  const result = await generateText({
+    model: resolved.model,
+    system: args.system,
+    messages: synthMessages,
+    ...(args.abortSignal ? { abortSignal: args.abortSignal } : {}),
+    ...("temperature" in resolved ? { temperature: resolved.temperature } : {}),
+    ...("providerOptions" in resolved ? resolved.providerOptions : {}),
+  });
+  const text = result.text.trim();
+  if (text) {
+    args.onEvent({ type: "text", delta: text });
+  }
+  return text;
+}
+
 async function runDraftChatTurn(args: {
   model: string;
   modelMessages: ModelMessage[];
@@ -209,7 +260,7 @@ async function runDraftChatTurn(args: {
       system,
       messages: args.modelMessages,
       tools,
-      stopWhen: stepCountIs(12),
+      stopWhen: stepCountIs(CHAT_MAX_TOOL_STEPS),
       ...(args.abortSignal ? { abortSignal: args.abortSignal } : {}),
       ...("temperature" in resolved ? { temperature: resolved.temperature } : {}),
       ...("providerOptions" in resolved ? resolved.providerOptions : {}),
@@ -302,11 +353,22 @@ export async function runMultiAgentChatTurn(
 
     if (abortSignal?.aborted) return;
 
-    const finalText = (await result.text).trim() || assistantText.trim();
+    let finalText = (await result.text).trim() || assistantText.trim();
+    if (!finalText) {
+      const response = await result.response;
+      finalText = await synthesizeAfterEmptyToolTurn({
+        model: synthesizerModel,
+        system: synthSystem,
+        modelMessages: synthMessages,
+        responseMessages: response.messages as ModelMessage[],
+        onEvent,
+        abortSignal,
+      });
+    }
     const saved = await insertChatMessage({
       threadId: thread.id,
       role: "assistant",
-      content: finalText || "(No response generated)",
+      content: finalText || formatEmptyChatResponseMessage(false),
     });
     onEvent({ type: "done", threadId: thread.id, assistantMessageId: saved.id });
   } catch (err) {
@@ -336,7 +398,7 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
       system,
       messages: modelMessages,
       tools,
-      stopWhen: stepCountIs(12),
+      stopWhen: stepCountIs(CHAT_MAX_TOOL_STEPS),
       ...(abortSignal ? { abortSignal } : {}),
       ...("temperature" in resolved ? { temperature: resolved.temperature } : {}),
       ...("providerOptions" in resolved ? resolved.providerOptions : {}),
@@ -364,11 +426,24 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
 
     if (abortSignal?.aborted) return;
 
-    const finalText = (await result.text).trim() || assistantText.trim();
+    let finalText = (await result.text).trim() || assistantText.trim();
+    const hadToolResults = toolResultsLog.length > 0;
+    if (!finalText && hadToolResults) {
+      const response = await result.response;
+      finalText = await synthesizeAfterEmptyToolTurn({
+        model,
+        system,
+        modelMessages,
+        responseMessages: response.messages as ModelMessage[],
+        onEvent,
+        abortSignal,
+      });
+    }
+
     const saved = await insertChatMessage({
       threadId: thread.id,
       role: "assistant",
-      content: finalText || "(No response generated)",
+      content: finalText || formatEmptyChatResponseMessage(hadToolResults),
       toolCalls: toolCallsLog.length ? toolCallsLog : undefined,
       toolResults: toolResultsLog.length ? toolResultsLog : undefined,
     });
