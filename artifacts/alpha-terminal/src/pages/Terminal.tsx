@@ -16,6 +16,7 @@ import type { PriceHistoryResponse } from "@workspace/api-client-react";
 import { ChartControls, chartParamsFromStore, isIntradayInterval } from "@/components/ChartControls";
 import { useAutoRefreshToken } from "@/hooks/useAutoRefreshToken";
 import { useMarketStream } from "@/hooks/useMarketStream";
+import { useSchwabSessionReconciliation } from "@/hooks/useSchwabSessionReconciliation";
 import { useViewportShell } from "@/hooks/useViewportShell";
 
 import { InAppBrowser } from "@/components/InAppBrowser";
@@ -396,6 +397,7 @@ export default function TerminalPage() {
   const [stickyH, setStickyH] = useState(0);
   const pulseDashRef = useRef<MarketPulseDashboardHandle>(null);
   const sidebarRef = useRef<SidebarHandle>(null);
+  useSchwabSessionReconciliation(sidebarRef);
   const { pulseData, isLoading: pulseLoading, isStreaming: pulseStreaming } = useMarketPulseStore();
   const { refresh } = useAutoRefreshToken();
   useViewportShell();

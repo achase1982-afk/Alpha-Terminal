@@ -12,6 +12,7 @@ interface AuthNoticeState {
   notice: AuthNotice | null;
   setNotice: (n: AuthNotice | null) => void;
   dismiss: () => void;
+  clearSchwabAuthNotice: () => void;
 }
 
 /** Avoid flooding the UI when many requests fail at once. */
@@ -35,7 +36,18 @@ export const useAuthNoticeStore = create<AuthNoticeState>((set) => ({
     }
     set({ notice: null });
   },
+  clearSchwabAuthNotice: () => {
+    const current = useAuthNoticeStore.getState().notice;
+    if (current?.kind !== "schwab") return;
+    delete lastSignalAt.schwab;
+    set({ notice: null });
+  },
 }));
+
+/** Clear the Schwab session-lost banner only; leaves Clerk notices untouched. */
+export function clearSchwabAuthNotice(): void {
+  useAuthNoticeStore.getState().clearSchwabAuthNotice();
+}
 
 /** Schwab OAuth / refresh-token chain broke — user should reconnect Schwab (Clerk may still be fine). */
 export function signalSchwabAuthLost(message: string, detail?: string): void {
