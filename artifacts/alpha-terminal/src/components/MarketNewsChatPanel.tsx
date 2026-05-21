@@ -135,7 +135,6 @@ export function MarketNewsChatPanel() {
   const streamsByThreadId = useChatStreamStore((s) => s.streamsByThreadId);
   const sendChatMessage = useChatStreamStore((s) => s.sendMessage);
   const abortStreamForThread = useChatStreamStore((s) => s.abortStreamForThread);
-  const abortStreamsForOtherSymbols = useChatStreamStore((s) => s.abortStreamsForOtherSymbols);
   const reconcileThreadFromServer = useChatStreamStore((s) => s.reconcileThreadFromServer);
   const clearLastFailedForThread = useChatStreamStore((s) => s.clearLastFailedForThread);
 
@@ -215,7 +214,6 @@ export function MarketNewsChatPanel() {
   useEffect(() => {
     let cancelled = false;
     setThreadsMenuOpen(false);
-    abortStreamsForOtherSymbols(symU);
 
     void (async () => {
       const list = await refreshThreads();
@@ -235,7 +233,7 @@ export function MarketNewsChatPanel() {
     return () => {
       cancelled = true;
     };
-  }, [symU, refreshThreads, abortStreamsForOtherSymbols, setActiveChatThreadForSymbol]);
+  }, [symU, refreshThreads, setActiveChatThreadForSymbol]);
 
   useEffect(() => {
     if (activeThreadId) void loadThreadMessages(activeThreadId);
