@@ -618,6 +618,10 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
   },
 }));
 
+function normalizeChatContent(content: string): string {
+  return content.trim().replace(/\s+/g, " ");
+}
+
 /** Merge persisted transcript with store in-flight state for display. */
 export function mergeChatDisplayMessages(
   persisted: ChatUiMessage[],
@@ -632,12 +636,20 @@ export function mergeChatDisplayMessages(
 
   const ids = new Set(base.map((m) => m.id));
   const out = [...base];
+  const lastBase = base[base.length - 1];
 
   for (const u of stream.pendingUserMessages) {
-    if (!ids.has(u.id)) {
-      out.push(u);
-      ids.add(u.id);
+    if (ids.has(u.id)) continue;
+    // First turn: server transcript reload uses different ids than optimistic pending lines.
+    if (
+      u.role === "user" &&
+      lastBase?.role === "user" &&
+      normalizeChatContent(lastBase.content) === normalizeChatContent(u.content)
+    ) {
+      continue;
     }
+    out.push(u);
+    ids.add(u.id);
   }
 
   if (stream.inFlightAssistant) {
