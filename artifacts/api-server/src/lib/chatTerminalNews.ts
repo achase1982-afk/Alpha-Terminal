@@ -45,15 +45,27 @@ function snip(text: string, max: number): string {
   return `${out}…`;
 }
 
-/** Format one headline line for chat / tool output. */
-export function formatChatNewsLine(article: NormalizedArticle, todayYmd: string): string {
+export type FormatChatNewsLineOptions = {
+  /** When false (default), omit wire/publisher names so the model synthesizes without citing sources. */
+  includeSource?: boolean;
+};
+
+/** Format one headline line for internal chat context / tool output. */
+export function formatChatNewsLine(
+  article: NormalizedArticle,
+  todayYmd: string,
+  options?: FormatChatNewsLineOptions,
+): string {
   const dayTag = article.datetime && etYmd(article.datetime) === todayYmd ? "[TODAY] " : "";
   const when = formatPublishedEt(article.datetime);
-  const src = article.source || "Unknown";
   const head = article.headline?.trim() || "(no headline)";
   const sum = article.summary?.trim();
   const sumPart = sum ? ` — ${snip(sum, SUMMARY_SNIP)}` : "";
-  return `${dayTag}${when} ET | ${src} | ${head}${sumPart}`;
+  if (options?.includeSource) {
+    const src = article.source || "Unknown";
+    return `${dayTag}${when} ET | ${src} | ${head}${sumPart}`;
+  }
+  return `${dayTag}${when} ET — ${head}${sumPart}`;
 }
 
 /** Markdown block for ambient system prompt (News tab parity). */
@@ -63,16 +75,13 @@ export function formatChatTerminalNewsBlock(
   now: Date = new Date(),
 ): string {
   if (articles.length === 0) {
-    return "Recent headlines (News tab feed): none returned from Polygon/Benzinga/Finnhub for this symbol.";
+    return "Recent headlines (internal): none available for this symbol.";
   }
   const todayYmd = etYmd(Math.floor(now.getTime() / 1000));
   const lines = articles
     .slice(0, CHAT_NEWS_HEADLINE_LIMIT)
     .map((a) => `- ${formatChatNewsLine(a, todayYmd)}`);
-  return [
-    `Recent headlines (News tab feed, merged Polygon + Benzinga + Finnhub, newest first):`,
-    ...lines,
-  ].join("\n");
+  return ["Recent headlines (internal, newest first):", ...lines].join("\n");
 }
 
 export async function fetchChatTerminalNewsArticles(
@@ -90,10 +99,8 @@ export type ChatNewsToolPayload = {
   headline_count: number;
   headlines: string[];
   articles: Array<{
-    source: string;
     headline: string;
     summary: string;
-    url: string;
     datetime: number;
     published_et: string;
     same_day_et: boolean;
@@ -111,7 +118,7 @@ export async function buildChatNewsToolPayload(
   const articles = await fetchChatTerminalNewsArticles(sym);
   const todayYmd = etYmd(Math.floor(now.getTime() / 1000));
   const limited = articles.slice(0, CHAT_NEWS_HEADLINE_LIMIT);
-  const headlines = limited.map((a) => formatChatNewsLine(a, todayYmd));
+  const headlines = limited.map((a) => formatChatNewsLine(a, todayYmd, { includeSource: false }));
   const seen = new Set(headlines.map((h) => h.toLowerCase().slice(0, 60)));
   const fmp_supplemental = fmpHeadlines.filter((h) => {
     const k = h.toLowerCase().slice(0, 60);
@@ -125,10 +132,8 @@ export async function buildChatNewsToolPayload(
     headline_count: limited.length,
     headlines: [...headlines, ...fmp_supplemental],
     articles: limited.map((a) => ({
-      source: a.source,
       headline: a.headline,
       summary: a.summary,
-      url: a.url,
       datetime: a.datetime,
       published_et: formatPublishedEt(a.datetime),
       same_day_et: Boolean(a.datetime && etYmd(a.datetime) === todayYmd),

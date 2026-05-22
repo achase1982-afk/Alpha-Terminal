@@ -234,7 +234,7 @@ export function createChatTools(ctx: ChatToolContext) {
 
     get_news: tool({
       description:
-        "Recent headlines for a ticker from the same merged News tab feed as the terminal (Polygon, Benzinga, Finnhub), plus optional FMP supplemental headlines.",
+        "Recent headlines for a ticker (internal). Use to learn catalysts; synthesize into plain prose without citing wire names, headline titles, or the news feed.",
       inputSchema: z.object({
         symbol: z.string().optional(),
         query: z.string().optional(),
@@ -259,7 +259,7 @@ export function createChatTools(ctx: ChatToolContext) {
 
     web_search: tool({
       description:
-        "Search the public web via Tavily (TAVILY_API_KEY) with Serper fallback (SERPER_API_KEY) when configured; otherwise the active chat model provider's native search. Use for catalysts, why-is-it-moving, and recent headline questions.",
+        "Search the public web for catalysts or missing context. Return facts for you to synthesize; do not quote publishers or say you searched the web in the final answer.",
       inputSchema: z.object({
         query: z.string().describe("Search query, include ticker when relevant"),
       }),

@@ -12,10 +12,7 @@ const AMBIENT_ANALYST_LIMIT = 20;
 
 function formatAnalystSnapshot(result: AnalystCoverageResult): string {
   const c = result.consensus;
-  const lines: string[] = [
-    `Symbol: ${result.symbol}`,
-    `Source: ${result.data_source}${result.source_note ? ` — ${result.source_note}` : ""}`,
-  ];
+  const lines: string[] = [`Symbol: ${result.symbol}`];
   if (result.coverage_reason) lines.push(`Coverage note: ${result.coverage_reason}`);
   if (c.consensus_pt != null) {
     lines.push(
@@ -28,7 +25,7 @@ function formatAnalystSnapshot(result: AnalystCoverageResult): string {
       `Rating mix: strong buy ${c.strong_buy}, buy ${c.buy}, hold ${c.hold}, sell ${c.sell}, strong sell ${c.strong_sell}`,
     );
   }
-  if (c.num_active_analysts > 0) lines.push(`Active analysts (snapshot): ${c.num_active_analysts}`);
+  if (c.num_active_analysts > 0) lines.push(`Active analysts: ${c.num_active_analysts}`);
   for (const r of result.ratings.slice(0, AMBIENT_ANALYST_LIMIT)) {
     const pt = r.pt_current != null ? `$${Math.round(r.pt_current)}` : "—";
     lines.push(
@@ -53,8 +50,8 @@ export async function buildAmbientSymbolContextBlock(symbol: string | null | und
   ]);
 
   const parts: string[] = [
-    `## Terminal snapshot (${sym})`,
-    "Use this block for analyst, quote, and headline questions before inventing data. Headlines match the Markets → News tab (merged Polygon, Benzinga, Finnhub). Call tools if you need fresher flow, options, or a different ticker.",
+    `## Context data (${sym}) — internal only`,
+    "Use quote, analyst, and headline facts below before inventing data. Do not mention this section, the terminal, news feed, wire names (Benzinga, Polygon, Finnhub, FMP, etc.), tool names, or web search in your reply. Synthesize into plain analyst prose: state price, catalyst, and sell-side as your own read.",
   ];
 
   if (quote && !("error" in quote && quote.error)) {
@@ -70,9 +67,7 @@ export async function buildAmbientSymbolContextBlock(symbol: string | null | und
   if (analyst && analyst.data_source !== "none") {
     parts.push("Analyst coverage:", formatAnalystSnapshot(analyst));
   } else {
-    parts.push(
-      "Analyst coverage: unavailable from terminal backends (Polygon Benzinga not entitled; no Benzinga/FMP/Schwab fallback). Say so plainly if asked.",
-    );
+    parts.push("Analyst coverage: unavailable from configured data. Say so plainly if asked, without naming backends.");
   }
 
   parts.push(formatChatTerminalNewsBlock(sym, newsArticles));
