@@ -28,6 +28,26 @@ describe("formatChatNewsLine", () => {
     expect(line).toContain("D-Wave surges");
   });
 
+  it("omits wire source names by default", () => {
+    const sec = Math.floor(new Date("2026-05-22T14:00:00-04:00").getTime() / 1000);
+    const line = formatChatNewsLine(
+      article({ headline: "IPO mandate story", datetime: sec }),
+      "2026-05-22",
+    );
+    expect(line).not.toContain("BENZINGA");
+    expect(line).toContain("IPO mandate story");
+  });
+
+  it("can include source when requested for debugging payloads", () => {
+    const sec = Math.floor(new Date("2026-05-22T14:00:00-04:00").getTime() / 1000);
+    const line = formatChatNewsLine(
+      article({ headline: "IPO mandate story", datetime: sec }),
+      "2026-05-22",
+      { includeSource: true },
+    );
+    expect(line).toContain("BENZINGA");
+  });
+
   it("omits [TODAY] for prior-day headlines", () => {
     const priorSec = Math.floor(new Date("2026-05-20T14:00:00-04:00").getTime() / 1000);
     const line = formatChatNewsLine(
@@ -44,12 +64,13 @@ describe("formatChatTerminalNewsBlock", () => {
       article({ headline: "Big move today", datetime: Math.floor(Date.now() / 1000) }),
       article({ headline: "Prior week story", datetime: Math.floor(new Date("2026-05-15T12:00:00Z").getTime() / 1000) }),
     ]);
-    expect(block).toContain("News tab feed");
+    expect(block).toContain("internal");
+    expect(block).not.toContain("BENZINGA");
     expect(block).toContain("Big move today");
     expect(block).toContain("Prior week story");
   });
 
   it("reports empty feed plainly", () => {
-    expect(formatChatTerminalNewsBlock("QBTS", [])).toContain("none returned");
+    expect(formatChatTerminalNewsBlock("QBTS", [])).toContain("none available");
   });
 });

@@ -46,25 +46,25 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("Data ticker");
   });
 
-  it("documents web_search API routing", () => {
+  it("documents web_search as internal supplement only", () => {
     const prompt = buildChatSystemPrompt("AAPL");
-    expect(prompt).toContain("TAVILY_API_KEY");
-    expect(prompt).toContain("SERPER_API_KEY");
-    expect(prompt).toMatch(/provider-native|Claude|Gemini|OpenAI/i);
-  });
-
-  it("instructs catalyst answers to use terminal news before claiming no news", () => {
-    const prompt = buildChatSystemPrompt("QBTS");
-    expect(prompt).toContain("Recent headlines");
-    expect(prompt).toContain("get_news");
     expect(prompt).toContain("web_search");
-    expect(prompt).toMatch(/do \*\*not\*\* claim there is no material same-day news/i);
+    expect(prompt).toMatch(/synthesize results, never attribute them to search/i);
   });
 
-  it("documents merged News tab feed for get_news", () => {
+  it("instructs catalyst answers to synthesize without citing feeds or wires", () => {
+    const prompt = buildChatSystemPrompt("QBTS");
+    expect(prompt).toContain("Context data");
+    expect(prompt).toContain("get_news");
+    expect(prompt).toMatch(/Never mention Alpha Terminal/i);
+    expect(prompt).toMatch(/quote headline titles/i);
+    expect(prompt).toMatch(/do \*\*not\*\* claim no same-day catalyst/i);
+  });
+
+  it("documents get_news as internal synthesis only", () => {
     const prompt = buildChatSystemPrompt("AAPL");
-    expect(prompt).toContain("merged News tab feed");
-    expect(prompt).toContain("Polygon, Benzinga, Finnhub");
+    expect(prompt).toContain("internal synthesis");
+    expect(prompt).not.toContain("merged News tab feed");
   });
 
   it("includes absolute formatting rules to avoid AI-tell structure", () => {
