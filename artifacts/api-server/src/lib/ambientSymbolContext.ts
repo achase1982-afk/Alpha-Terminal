@@ -2,6 +2,10 @@
  * Preload terminal-visible data for chat / TA so models see the same facts as Company → Valuation.
  */
 import { fetchAnalystCoverage, type AnalystCoverageResult } from "./analystCoverageService.js";
+import {
+  fetchChatTerminalNewsArticles,
+  formatChatTerminalNewsBlock,
+} from "./chatTerminalNews.js";
 import { fetchQuoteForChat } from "./chatTools/getQuote.js";
 
 const AMBIENT_ANALYST_LIMIT = 20;
@@ -42,12 +46,16 @@ export async function buildAmbientSymbolContextBlock(symbol: string | null | und
   const sym = symbol?.trim().toUpperCase();
   if (!sym) return "";
 
-  const [analyst, quote] = await Promise.all([
+  const [analyst, quote, newsArticles] = await Promise.all([
     fetchAnalystCoverage(sym, AMBIENT_ANALYST_LIMIT).catch(() => null),
     fetchQuoteForChat(sym, "ambient context").catch(() => null),
+    fetchChatTerminalNewsArticles(sym).catch(() => [] as Awaited<ReturnType<typeof fetchChatTerminalNewsArticles>>),
   ]);
 
-  const parts: string[] = [`## Terminal snapshot (${sym})`, "Use this block for analyst and quote questions before inventing data. Call tools if you need fresher flow, options, or news."];
+  const parts: string[] = [
+    `## Terminal snapshot (${sym})`,
+    "Use this block for analyst, quote, and headline questions before inventing data. Headlines match the Markets → News tab (merged Polygon, Benzinga, Finnhub). Call tools if you need fresher flow, options, or a different ticker.",
+  ];
 
   if (quote && !("error" in quote && quote.error)) {
     const q = quote as Record<string, unknown>;
@@ -66,6 +74,8 @@ export async function buildAmbientSymbolContextBlock(symbol: string | null | und
       "Analyst coverage: unavailable from terminal backends (Polygon Benzinga not entitled; no Benzinga/FMP/Schwab fallback). Say so plainly if asked.",
     );
   }
+
+  parts.push(formatChatTerminalNewsBlock(sym, newsArticles));
 
   return `\n\n${parts.join("\n")}`;
 }

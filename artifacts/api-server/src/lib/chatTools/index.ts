@@ -9,6 +9,7 @@ import { fetchPolygonChain } from "../polygonChain.js";
 import { getOrFetchChain } from "../../routes/market.js";
 import { getLatestMarketPulseForChat } from "../marketPulseCache.js";
 import { logger } from "../logger.js";
+import { buildChatNewsToolPayload } from "../chatTerminalNews.js";
 import { runChatNativeWebSearch } from "./chatWebSearch.js";
 import { augmentPolygonColdTickerForChat } from "../chatPolygonColdActivity.js";
 import { fetchQuoteForChat } from "./getQuote.js";
@@ -232,7 +233,8 @@ export function createChatTools(ctx: ChatToolContext) {
     }),
 
     get_news: tool({
-      description: "Recent headlines from FMP stock_news for a ticker, or general query hint in symbol field.",
+      description:
+        "Recent headlines for a ticker from the same merged News tab feed as the terminal (Polygon, Benzinga, Finnhub), plus optional FMP supplemental headlines.",
       inputSchema: z.object({
         symbol: z.string().optional(),
         query: z.string().optional(),
@@ -240,8 +242,12 @@ export function createChatTools(ctx: ChatToolContext) {
       execute: async ({ symbol, query }) => {
         const sym = (symbol ?? query ?? "").trim().toUpperCase();
         if (!sym) return { error: "Provide symbol or query" };
-        const headlines = await fetchFmpHeadlines(sym);
-        return { symbol: sym, headlines, fmpConfigured: !!(process.env.FMP_API_KEY ?? "").trim() };
+        const fmp = await fetchFmpHeadlines(sym);
+        const payload = await buildChatNewsToolPayload(sym, fmp);
+        return {
+          ...payload,
+          fmpConfigured: !!(process.env.FMP_API_KEY ?? "").trim(),
+        };
       },
     }),
 
