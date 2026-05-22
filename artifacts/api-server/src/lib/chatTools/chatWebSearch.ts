@@ -12,7 +12,7 @@ import {
 } from "../webSearchApiClient.js";
 
 const CHAT_WEB_SEARCH_SYSTEM_NATIVE =
-  "Search the public web using your provider's native web search. Return concise bullet facts; include source names or URLs when available. No speculation.";
+  "Search the public web. Return concise bullet facts (catalyst, numbers, dates). Omit publisher names and URLs unless essential. No speculation. Facts are for internal synthesis only.";
 
 export type ChatWebSearchResult = {
   provider: "anthropic" | "google" | "openai" | "web_search_api";
