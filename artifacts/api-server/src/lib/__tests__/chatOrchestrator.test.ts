@@ -53,6 +53,20 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toMatch(/provider-native|Claude|Gemini|OpenAI/i);
   });
 
+  it("instructs catalyst answers to use terminal news before claiming no news", () => {
+    const prompt = buildChatSystemPrompt("QBTS");
+    expect(prompt).toContain("Recent headlines");
+    expect(prompt).toContain("get_news");
+    expect(prompt).toContain("web_search");
+    expect(prompt).toMatch(/do \*\*not\*\* claim there is no material same-day news/i);
+  });
+
+  it("documents merged News tab feed for get_news", () => {
+    const prompt = buildChatSystemPrompt("AAPL");
+    expect(prompt).toContain("merged News tab feed");
+    expect(prompt).toContain("Polygon, Benzinga, Finnhub");
+  });
+
   it("includes absolute formatting rules to avoid AI-tell structure", () => {
     const prompt = buildChatSystemPrompt("AAPL");
     expect(prompt).toContain("Formatting. Write in plain prose");
@@ -125,6 +139,7 @@ describe("createChatTools", () => {
     const tools = createChatTools({ userId: "u1", activeModel: "claude-opus-4-7" });
     expect(Object.keys(tools).sort()).toEqual(
       [
+        "get_analyst_ratings",
         "get_earnings",
         "get_flow",
         "get_ivr",
