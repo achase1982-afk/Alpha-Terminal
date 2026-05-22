@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   augmentPromptWithDedicatedWebSearch,
+  clampWebSearchQuery,
   executeDedicatedWebSearch,
   extractWebSearchQueryFromPrompt,
   formatDedicatedWebSearchContextBlock,
@@ -8,6 +9,7 @@ import {
   getFallbackWebSearchApiConfig,
   getPrimaryWebSearchApiConfig,
   isDedicatedWebSearchApiEnabled,
+  TAVILY_MAX_QUERY_CHARS,
 } from "../webSearchApiClient.js";
 
 const ENV_KEYS = [
@@ -49,12 +51,47 @@ describe("webSearchApiClient config", () => {
   });
 });
 
+describe("clampWebSearchQuery", () => {
+  it("leaves short queries unchanged", () => {
+    expect(clampWebSearchQuery("QBTS news")).toBe("QBTS news");
+  });
+
+  it("truncates to Tavily max length", () => {
+    const long = "x".repeat(500);
+    const clamped = clampWebSearchQuery(long);
+    expect(clamped.length).toBeLessThanOrEqual(TAVILY_MAX_QUERY_CHARS);
+    expect(clamped.length).toBeGreaterThan(0);
+  });
+});
+
 describe("extractWebSearchQueryFromPrompt", () => {
   it("pulls focused catalyst query", () => {
     const q = extractWebSearchQueryFromPrompt(
       "Execute a web search focused on this exact query: AAPL analyst upgrades 2026\n\nSource priority when choosing",
     );
     expect(q).toBe("AAPL analyst upgrades 2026");
+  });
+
+  it("builds a compact query from strategist JSON data package", () => {
+    const huge = JSON.stringify({
+      ticker: "QBTS",
+      price: 27.76,
+      chain: { x: "y".repeat(8000) },
+    });
+    const prompt = `Run web searches then analyze.\n\n${huge}`;
+    const q = extractWebSearchQueryFromPrompt(prompt);
+    expect(q.length).toBeLessThanOrEqual(TAVILY_MAX_QUERY_CHARS);
+    expect(q).toContain("QBTS");
+    expect(q).toContain("catalyst");
+  });
+
+  it("clamps an overlong focused catalyst query", () => {
+    const longQuery = "AAPL " + "analyst upgrades ".repeat(40);
+    const q = extractWebSearchQueryFromPrompt(
+      `Execute a web search focused on this exact query: ${longQuery}\n\nSource priority when choosing`,
+    );
+    expect(q.length).toBeLessThanOrEqual(TAVILY_MAX_QUERY_CHARS);
+    expect(q.startsWith("AAPL")).toBe(true);
   });
 });
 
@@ -105,5 +142,18 @@ describe("executeDedicatedWebSearch", () => {
     expect(augmented).toContain("User task");
     expect(augmented).toContain("Tavily");
     expect(result.trace.queries).toEqual(["hello"]);
+  });
+
+  it("clamps overlong queries before Tavily POST body", async () => {
+    process.env.TAVILY_API_KEY = "tvly-k";
+    const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { query?: string };
+      expect(body.query?.length).toBeLessThanOrEqual(TAVILY_MAX_QUERY_CHARS);
+      return Response.json({ results: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await executeDedicatedWebSearch("z".repeat(900));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

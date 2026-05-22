@@ -21,6 +21,9 @@ export interface WebSearchTrace {
 const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 const SERPER_SEARCH_URL = "https://google.serper.dev/search";
 
+/** Tavily rejects queries longer than 400 characters (HTTP 400). */
+export const TAVILY_MAX_QUERY_CHARS = 400;
+
 export type WebSearchApiEndpoint = "primary" | "fallback";
 
 export interface WebSearchApiConfig {
@@ -104,15 +107,44 @@ export function getWebSearchApiTimeoutMs(): number {
   return Math.min(120_000, Math.max(5_000, envInt("WEB_SEARCH_API_TIMEOUT_MS", 20_000)));
 }
 
+/** Truncate to provider max length, preferring a word boundary when possible. */
+export function clampWebSearchQuery(query: string, maxLen = TAVILY_MAX_QUERY_CHARS): string {
+  const trimmed = query.trim();
+  if (trimmed.length <= maxLen) return trimmed;
+  const slice = trimmed.slice(0, maxLen);
+  const lastSpace = slice.lastIndexOf(" ");
+  if (lastSpace > maxLen * 0.6) return slice.slice(0, lastSpace).trim();
+  return slice.trim();
+}
+
+function extractTickerFromPrompt(prompt: string): string | null {
+  const jsonMatch = prompt.match(/"ticker"\s*:\s*"([A-Za-z0-9.-]+)"/i);
+  if (jsonMatch?.[1]?.trim()) return jsonMatch[1].trim().toUpperCase();
+  const runMatch = prompt.match(
+    /(?:analyze this ticker|recommend the best trade|Ticker)\s*[:\s]+([A-Z][A-Z0-9.-]{0,9})\b/i,
+  );
+  if (runMatch?.[1]?.trim()) return runMatch[1].trim().toUpperCase();
+  return null;
+}
+
+function buildTickerFocusedWebSearchQuery(ticker: string): string {
+  const y = new Date().getUTCFullYear();
+  return clampWebSearchQuery(
+    `${ticker} stock news catalyst earnings analyst price target options implied volatility ${y}`,
+  );
+}
+
 /** Pull an explicit query from catalyst/chat-style prompts when present. */
 export function extractWebSearchQueryFromPrompt(prompt: string): string {
   const focused = prompt.match(
     /Execute a web search focused on this exact query:\s*(.+?)(?:\n\n|\nSource priority|$)/is,
   );
-  if (focused?.[1]?.trim()) return focused[1].trim();
-  const trimmed = prompt.trim();
-  if (trimmed.length <= 600) return trimmed;
-  return trimmed.slice(0, 1200);
+  if (focused?.[1]?.trim()) return clampWebSearchQuery(focused[1].trim());
+
+  const ticker = extractTickerFromPrompt(prompt);
+  if (ticker) return buildTickerFocusedWebSearchQuery(ticker);
+
+  return clampWebSearchQuery(prompt);
 }
 
 function isRetryableHttpStatus(status: number): boolean {
@@ -334,7 +366,7 @@ export async function executeDedicatedWebSearch(
   query: string,
   signal?: AbortSignal,
 ): Promise<DedicatedWebSearchResult> {
-  const q = query.trim();
+  const q = clampWebSearchQuery(query);
   if (!q) {
     throw new Error("Web search query is empty");
   }
