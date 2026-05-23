@@ -304,7 +304,7 @@ function FilteredSection({ filtered }: { filtered: FilteredName[] }) {
       {open && (
         <div style={{ background: BG }}>
           <p className="px-3 py-2 font-mono border-b" style={{ color: MUTED, fontSize: 11, borderColor: BORDER }}>
-            Stripped from the movers list — leveraged ETFs, sub-$5 names, and (later) micro-caps.
+            Stripped from the movers list — leveraged ETFs, sub-$5 names, and market cap under $500M.
           </p>
           {filtered.map((row) => (
             <div

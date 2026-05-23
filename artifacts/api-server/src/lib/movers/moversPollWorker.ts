@@ -10,7 +10,7 @@ let lastManualPollAt = 0;
 
 async function executePoll(): Promise<void> {
   const rows = await fetchAllFmpMoverLists();
-  const feed = buildMoversFeedFromRows(rows);
+  const feed = await buildMoversFeedFromRows(rows);
   await persistMoversFeed(feed);
   logger.info(
     {

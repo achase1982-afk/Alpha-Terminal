@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import type { FmpMoverRow } from "../fmpMoversClient.js";
 import { stripMover } from "../stripMover.js";
-import { buildMoversFeedFromRows } from "../buildMoversFeed.js";
+import { applyStage1Strip } from "../buildMoversFeed.js";
 
 const fixturePath = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -60,19 +60,9 @@ describe("stripMover", () => {
     expect(stripMover({ name: "Penny Co", price: 4.99 })).toEqual({ keep: false, reason: "SUB_5" });
   });
 
-  it("buildMoversFeedFromRows maps survivors to single PENDING situations", () => {
-    const feed = buildMoversFeedFromRows(loadFixture());
-    expect(feed.flagged).toEqual([]);
-    expect(feed.funnel.detected).toBe(49);
-    expect(feed.funnel.filtered).toBe(33);
-    expect(feed.funnel.tradeable).toBe(16);
-    expect(feed.situations).toHaveLength(16);
-    for (const s of feed.situations) {
-      expect(s.kind).toBe("single");
-      expect(s.catalystType).toBe("PENDING");
-      expect(s.posture).toBe("PENDING");
-      expect(s.catalyst).toBeNull();
-      expect(s.read).toBeNull();
-    }
+  it("applyStage1Strip counts survivors before enrichment", () => {
+    const { survivors, filtered } = applyStage1Strip(loadFixture());
+    expect(survivors).toHaveLength(16);
+    expect(filtered).toHaveLength(33);
   });
 });
