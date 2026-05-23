@@ -68,9 +68,10 @@ export function buildMoversFeedFromRows(rows: FmpMoverRow[], capturedAt = new Da
   };
 }
 
-export function emptyMoversFeed(capturedAt = new Date()): MoversFeed {
+/** Placeholder when no poll has been persisted yet (`capturedAt` is empty). */
+export function emptyMoversFeed(): MoversFeed {
   return {
-    capturedAt: capturedAt.toISOString(),
+    capturedAt: "",
     funnel: { detected: 0, filtered: 0, tradeable: 0, situations: 0 },
     situations: [],
     flagged: [],

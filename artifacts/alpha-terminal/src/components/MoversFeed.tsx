@@ -1,8 +1,9 @@
-import { useCallback, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Loader2, RefreshCw } from "lucide-react";
 import type { FilteredName, MoversFeed, Situation } from "@workspace/movers-types";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { MOVERS_MANUAL_REFRESH_DEBOUNCE_MS, MOVERS_POLL_INTERVAL_MS } from "@workspace/movers-types";
 
 const BG = "#0c0c0c";
 const PANEL = "#111";
@@ -23,16 +24,29 @@ function fmtPrice(n: number): string {
   return n.toFixed(n < 1 ? 3 : 2);
 }
 
-function fmtCaptured(iso: string): string {
+/** Format feed `capturedAt` (FMP poll time), not the browser fetch time. */
+function fmtCapturedAt(iso: string): string {
+  if (!iso) return "";
   try {
-    return new Date(iso).toLocaleTimeString("en-US", {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
       hour: "numeric",
       minute: "2-digit",
       timeZone: "America/New_York",
+      timeZoneName: "short",
     });
   } catch {
-    return "—";
+    return "";
   }
+}
+
+function pollStatusLabel(feed: MoversFeed | undefined): string {
+  if (!feed?.capturedAt) return "Waiting for first poll";
+  const stamped = fmtCapturedAt(feed.capturedAt);
+  return stamped ? `Last poll ${stamped}` : "Waiting for first poll";
 }
 
 function FunnelBar({ funnel }: { funnel: MoversFeed["funnel"] }) {
@@ -177,12 +191,15 @@ function FilteredSection({ filtered }: { filtered: FilteredName[] }) {
 }
 
 export function MoversFeed({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: string) => void }) {
+  const queryClient = useQueryClient();
+  const lastManualRefreshAt = useRef(0);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
+
   const {
     data,
     isLoading,
     isFetching,
     error,
-    refetch,
   } = useQuery({
     queryKey: ["movers-feed"],
     queryFn: async () => {
@@ -190,12 +207,31 @@ export function MoversFeed({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: 
       if (!res.ok) throw new Error(`Movers feed HTTP ${res.status}`);
       return (await res.json()) as MoversFeed;
     },
-    refetchInterval: 5 * 60 * 1000,
-    staleTime: 60 * 1000,
+    refetchInterval: MOVERS_POLL_INTERVAL_MS,
+    staleTime: 30_000,
   });
 
   const feed = data;
-  const onRefresh = useCallback(() => void refetch(), [refetch]);
+
+  const onRefresh = useCallback(async () => {
+    const now = Date.now();
+    if (now - lastManualRefreshAt.current < MOVERS_MANUAL_REFRESH_DEBOUNCE_MS) return;
+    lastManualRefreshAt.current = now;
+
+    setManualRefreshing(true);
+    try {
+      const res = await fetchWithAuth("/api/movers/refresh", { method: "POST" });
+      if (!res.ok) throw new Error(`Movers refresh HTTP ${res.status}`);
+      const body = (await res.json()) as { feed: MoversFeed; debounced?: boolean };
+      queryClient.setQueryData(["movers-feed"], body.feed);
+    } catch {
+      await queryClient.invalidateQueries({ queryKey: ["movers-feed"] });
+    } finally {
+      setManualRefreshing(false);
+    }
+  }, [queryClient]);
+
+  const refreshBusy = manualRefreshing || isFetching;
 
   return (
     <div className="flex flex-col min-h-full" style={{ background: BG, color: "#fafafa" }}>
@@ -208,20 +244,18 @@ export function MoversFeed({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: 
             MOVERS
           </h1>
           <p className="font-mono text-[9px] mt-0.5" style={{ color: MUTED }}>
-            {feed?.capturedAt
-              ? `Last poll ${fmtCaptured(feed.capturedAt)} ET`
-              : "Waiting for first market-hours poll"}
+            {pollStatusLabel(feed)}
           </p>
         </div>
         <button
           type="button"
-          onClick={onRefresh}
-          disabled={isFetching}
+          onClick={() => void onRefresh()}
+          disabled={refreshBusy}
           className="p-2 rounded-lg border transition-opacity disabled:opacity-40"
           style={{ borderColor: BORDER, color: MUTED }}
           aria-label="Refresh movers"
         >
-          {isFetching ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          {refreshBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
         </button>
       </div>
 
