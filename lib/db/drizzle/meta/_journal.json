@@ -218,6 +218,13 @@
       "when": 1779300000000,
       "tag": "0034_chat_threads_messages",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1779350000000,
+      "tag": "0035_movers_feed",
+      "breakpoints": true
     }
   ]
 }

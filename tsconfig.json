@@ -17,6 +17,9 @@
     },
     {
       "path": "./lib/ai-models"
+    },
+    {
+      "path": "./lib/movers-types"
     }
   ]
 }

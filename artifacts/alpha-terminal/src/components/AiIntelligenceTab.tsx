@@ -30,7 +30,7 @@ import { StrategistAuditPanel, type StrategistAuditData } from "@/components/mar
 import type { AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
 import { useStrategistCache, type StrategistCacheData } from "@/hooks/useStrategistCache";
-import { MarketScanner } from "@/components/MarketScanner";
+import { MoversFeed } from "@/components/MoversFeed";
 import { TabErrorBoundary } from "@/components/TabErrorBoundary";
 import { takePendingScannerStrategistContext } from "@/lib/pendingScannerStrategistContext";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
@@ -3806,20 +3806,11 @@ function AiIntelligenceTabInner({
         </div>
       )}
 
-      {subTab === "scanner" && (
+      {subTab === "movers" && (
         <div style={{ height: "100%", overflowY: "auto" }}>
-          <MarketScanner
-            subscribeEquitySymbols={subscribeEquitySymbols ?? STABLE_NOOP_EQUITY_SUBSCRIBE}
-            onNavigateToSymbol={onNavigateToMarkets ?? STABLE_NOOP_NAVIGATE}
-            onSendToStrategist={(sym: string, flowContext?: string) => {
-              useTerminalStore.getState().setSymbol(sym);
-              setStrategistMode("options");
-              onSubTabChange("strategist");
-              setTimeout(() => {
-                handleRunV2(sym, flowContext);
-              }, 500);
-            }}
-          />
+          <TabErrorBoundary tabName="Movers">
+            <MoversFeed onNavigateToSymbol={onNavigateToMarkets ?? STABLE_NOOP_NAVIGATE} />
+          </TabErrorBoundary>
         </div>
       )}
     </div>

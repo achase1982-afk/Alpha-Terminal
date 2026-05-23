@@ -1,0 +1,394 @@
+[
+  {
+    "symbol": "AKTX",
+    "price": 18.27,
+    "name": "Akari Therapeutics, Plc",
+    "change": 13.13,
+    "changesPercentage": 255.44747,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "PCLA",
+    "price": 6.62,
+    "name": "PicoCELA Inc.",
+    "change": 4.37,
+    "changesPercentage": 194.22222,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "RYOJ",
+    "price": 5,
+    "name": "rYojbaba Co., Ltd. Common Shares",
+    "change": 2.99,
+    "changesPercentage": 148.75622,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "QTEX",
+    "price": 0.727,
+    "name": "Inspira Technologies Oxy B.H.N. Ltd.",
+    "change": 0.4241,
+    "changesPercentage": 140.01321,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "BIYA",
+    "price": 1.3,
+    "name": "Baiya International Group Inc. Ordinary Shares",
+    "change": 0.6825,
+    "changesPercentage": 110.52632,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "LFS",
+    "price": 3.55,
+    "name": "LEIFRAS Co., Ltd. American Depositary Shares",
+    "change": 1.675,
+    "changesPercentage": 89.33333,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "VCIG",
+    "price": 1.33,
+    "name": "VCI Global Limited",
+    "change": 0.5229,
+    "changesPercentage": 64.78751,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "HYLN",
+    "price": 5.99,
+    "name": "Hyliion Holdings Corp.",
+    "change": 1.79,
+    "changesPercentage": 42.61905,
+    "exchange": "AMEX"
+  },
+  {
+    "symbol": "RGTX",
+    "price": 40.78,
+    "name": "Daily Target 2X Long RGTI ETF",
+    "change": 11.68,
+    "changesPercentage": 40.13746,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "MKLYR",
+    "price": 0.14,
+    "name": "McKinley Acquisition Corporation Rights",
+    "change": 0.04,
+    "changesPercentage": 40,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "EMISR",
+    "price": 0.14,
+    "name": "Emmis Acquisition Corp. Rights",
+    "change": 0.0398,
+    "changesPercentage": 39.72056,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "MEHA",
+    "price": 0.1061,
+    "name": "Functional Brands, Inc. Common Stock",
+    "change": 0.0296,
+    "changesPercentage": 38.69281,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "CODX",
+    "price": 5.07,
+    "name": "Co-Diagnostics, Inc.",
+    "change": 1.36,
+    "changesPercentage": 36.65768,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "SVRN",
+    "price": 12.69,
+    "name": "OceanPal Inc. Common Stock",
+    "change": 3.39,
+    "changesPercentage": 36.45161,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "MTVA",
+    "price": 3.85,
+    "name": "MetaVia Inc.",
+    "change": 0.98,
+    "changesPercentage": 34.14634,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "THH",
+    "price": 0.402,
+    "name": "TryHard Holdings Limited",
+    "change": 0.102,
+    "changesPercentage": 34,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "OP",
+    "price": 12.345,
+    "name": "OceanPal Inc.",
+    "change": 3.045,
+    "changesPercentage": 32.74194,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "DLLL",
+    "price": 104.49,
+    "name": "GraniteShares 2x Long DELL Daily ETF",
+    "change": 25.7048,
+    "changesPercentage": 32.62643,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "GOVX",
+    "price": 3.64,
+    "name": "GeoVax Labs, Inc.",
+    "change": 0.89,
+    "changesPercentage": 32.36364,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "MRM",
+    "price": 1.27,
+    "name": "MEDIROM Healthcare Technologies Inc.",
+    "change": 0.295,
+    "changesPercentage": 30.25641,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "FEMY",
+    "price": 0.438,
+    "name": "Femasys Inc.",
+    "change": 0.1007,
+    "changesPercentage": 29.85473,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "TDTH",
+    "price": 1.825,
+    "name": "Trident Digital Tech Holdings Ltd",
+    "change": 0.415,
+    "changesPercentage": 29.43262,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "HMR",
+    "price": 1.5,
+    "name": "Heidmar Maritime Holdings Corp.",
+    "change": 0.34,
+    "changesPercentage": 29.31034,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "UZX",
+    "price": 0.4461,
+    "name": "Linkage Global Inc. Class A Ordinary Shares",
+    "change": 0.1011,
+    "changesPercentage": 29.30435,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "VSME",
+    "price": 1.05,
+    "name": "VS Media Holdings Limited Class A Ordinary Shares",
+    "change": 0.2371,
+    "changesPercentage": 29.16718,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "CPSH",
+    "price": 6,
+    "name": "CPS Technologies Corporation",
+    "change": 1.33,
+    "changesPercentage": 28.47966,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "AIB",
+    "price": 2.81,
+    "name": "BlockchAIn Digital Infrastructure, Inc.",
+    "change": 0.61,
+    "changesPercentage": 27.72727,
+    "exchange": "AMEX"
+  },
+  {
+    "symbol": "HOVR",
+    "price": 3.14,
+    "name": "New Horizon Aircraft Ltd.",
+    "change": 0.66,
+    "changesPercentage": 26.6129,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "KIDZ",
+    "price": 0.458,
+    "name": "Classover Holdings, Inc. Class B Common Stock",
+    "change": 0.0908,
+    "changesPercentage": 24.72767,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "GITS",
+    "price": 1.79,
+    "name": "Global Interactive Technologies, Inc.",
+    "change": 0.35,
+    "changesPercentage": 24.30556,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "SIDU",
+    "price": 5.12,
+    "name": "Sidus Space, Inc.",
+    "change": 0.99,
+    "changesPercentage": 23.97094,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "QCML",
+    "price": 35.72,
+    "name": "GraniteShares 2x Long QCOM Daily ETF",
+    "change": 6.76,
+    "changesPercentage": 23.34254,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "ZBAO",
+    "price": 1,
+    "name": "Zhibao Technology Inc. Class A Ordinary Shares",
+    "change": 0.188,
+    "changesPercentage": 23.15271,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "NXXT",
+    "price": 0.861,
+    "name": "NextNRG Inc.",
+    "change": 0.1613,
+    "changesPercentage": 23.05274,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "QCMU",
+    "price": 44.28,
+    "name": "Direxion Daily QCOM Bull 2X ETF",
+    "change": 8.27,
+    "changesPercentage": 22.96584,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "WTO",
+    "price": 1.13,
+    "name": "UTime Limited",
+    "change": 0.2102,
+    "changesPercentage": 22.85279,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "CCHH",
+    "price": 0.4948,
+    "name": "CCH Holdings Ltd Ordinary Shares",
+    "change": 0.0913,
+    "changesPercentage": 22.62701,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "PRPH",
+    "price": 0.11,
+    "name": "ProPhase Labs, Inc.",
+    "change": 0.02,
+    "changesPercentage": 22.22222,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "PLRZ",
+    "price": 15.255,
+    "name": "Polyrizon Ltd.",
+    "change": 2.605,
+    "changesPercentage": 20.59289,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "MSN",
+    "price": 0.498,
+    "name": "Emerson Radio Corp.",
+    "change": 0.0839,
+    "changesPercentage": 20.26081,
+    "exchange": "AMEX"
+  },
+  {
+    "symbol": "NVTS",
+    "price": 29.25,
+    "name": "Navitas Semiconductor Corporation",
+    "change": 4.87,
+    "changesPercentage": 19.97539,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "RGTI",
+    "price": 26.42,
+    "name": "Rigetti Computing, Inc.",
+    "change": 4.38,
+    "changesPercentage": 19.87296,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "HLIT",
+    "price": 15.2,
+    "name": "Harmonic Inc.",
+    "change": 2.5,
+    "changesPercentage": 19.68504,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "FABC",
+    "price": 6.09,
+    "name": "StableX Technologies, Inc.",
+    "change": 0.99,
+    "changesPercentage": 19.41176,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "KULR",
+    "price": 4.61,
+    "name": "KULR Technology Group, Inc.",
+    "change": 0.74,
+    "changesPercentage": 19.12145,
+    "exchange": "AMEX"
+  },
+  {
+    "symbol": "AMTX",
+    "price": 2.68,
+    "name": "Aemetis, Inc.",
+    "change": 0.43,
+    "changesPercentage": 19.11111,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "BB",
+    "price": 7.91,
+    "name": "BlackBerry Limited",
+    "change": 1.26,
+    "changesPercentage": 18.94737,
+    "exchange": "NYSE"
+  },
+  {
+    "symbol": "BZFD",
+    "price": 2.09,
+    "name": "BuzzFeed, Inc.",
+    "change": 0.33,
+    "changesPercentage": 18.75,
+    "exchange": "NASDAQ"
+  },
+  {
+    "symbol": "LPTH",
+    "price": 16.95,
+    "name": "LightPath Technologies, Inc.",
+    "change": 2.67,
+    "changesPercentage": 18.69748,
+    "exchange": "NASDAQ"
+  }
+]
