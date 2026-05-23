@@ -13,16 +13,29 @@ export interface MoversFeed {
   filtered: FilteredName[];
 }
 
+export type MoversCatalystType =
+  | "GOV"
+  | "ANALYST"
+  | "CONTRACT"
+  | "EARNINGS"
+  | "MA"
+  | "SECTOR"
+  | "NONE";
+
+export type MoversPosture = "WATCH" | "WAIT" | "PASS";
+
+export type MoversConfidence = "HIGH" | "MED" | "LOW";
+
 export interface Situation {
   kind: "cluster" | "single";
   id: string;
   label: string;
   tickers: TickerStat[];
-  catalystType: "GOV" | "ANALYST" | "CONTRACT" | "EARNINGS" | "MA" | "SECTOR" | "NONE" | "PENDING";
-  catalyst: string | null;
-  read: string | null;
-  posture: "WATCH" | "WAIT" | "PASS" | "PENDING";
-  confidence: "HIGH" | "MED" | "LOW" | null;
+  catalystType: MoversCatalystType;
+  catalyst: string;
+  read: string;
+  posture: MoversPosture;
+  confidence: MoversConfidence;
 }
 
 export interface TickerStat {
@@ -34,6 +47,7 @@ export interface TickerStat {
   sector?: string;
   industry?: string;
   marketCap?: number;
+  description?: string;
 }
 
 export interface FilteredName {

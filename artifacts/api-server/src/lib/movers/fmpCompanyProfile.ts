@@ -9,6 +9,7 @@ export interface FmpCompanyProfile {
   marketCap: number | null;
   sector: string | null;
   industry: string | null;
+  description: string | null;
   averageVolume: number | null;
 }
 
@@ -31,6 +32,7 @@ function normaliseProfile(raw: Record<string, unknown>, fallbackSymbol: string):
     marketCap: pickNumber(raw["marketCap"]) ?? pickNumber(raw["mktCap"]),
     sector: pickString(raw["sector"]),
     industry: pickString(raw["industry"]),
+    description: pickString(raw["description"]),
     averageVolume: pickNumber(raw["averageVolume"]) ?? pickNumber(raw["volAvg"]),
   };
 }

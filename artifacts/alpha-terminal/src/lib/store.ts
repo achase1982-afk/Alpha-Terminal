@@ -243,6 +243,9 @@ export interface TerminalState {
     skepticModelName: string;
     skepticTemperature: number;
     enabled: boolean;
+    moversModelProvider: 'anthropic' | 'google' | 'openai' | 'xai';
+    moversModelName: string;
+    moversTemperature: number;
   };
   setAiLabStrategistConfig: (
     key: string,
@@ -592,6 +595,9 @@ export const useTerminalStore = create<TerminalState>()(
         skepticModelName: 'gemini-3.1-pro-preview',
         skepticTemperature: 0,
         enabled: true,
+        moversModelProvider: 'anthropic',
+        moversModelName: 'claude-sonnet-4-6',
+        moversTemperature: 0,
       },
       setAiLabStrategistConfig: (key, value) =>
         set((state) => ({
@@ -914,7 +920,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 27,
+      version: 28,
       storage: createJSONStorage(() => quotaSafeLocalStorage),
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
@@ -1104,6 +1110,20 @@ export const useTerminalStore = create<TerminalState>()(
           if (cfg && typeof cfg === 'object') {
             cfg['analystModelName'] = fix(cfg['analystModelName']);
             cfg['skepticModelName'] = fix(cfg['skepticModelName']);
+          }
+        }
+        if (version < 28) {
+          const cfg = s['aiLabStrategistConfig'] as Record<string, unknown> | undefined;
+          if (cfg && typeof cfg === 'object') {
+            if (typeof cfg['moversModelProvider'] !== 'string') {
+              cfg['moversModelProvider'] = cfg['analystModelProvider'] ?? 'anthropic';
+            }
+            if (typeof cfg['moversModelName'] !== 'string') {
+              cfg['moversModelName'] = cfg['analystModelName'] ?? 'claude-sonnet-4-6';
+            }
+            if (typeof cfg['moversTemperature'] !== 'number') {
+              cfg['moversTemperature'] = 0;
+            }
           }
         }
         if (version < 27) {

@@ -18,8 +18,17 @@ function toTickerStat(row: FmpMoverRow, profile?: FmpCompanyProfile) {
     ...(profile?.sector ? { sector: profile.sector } : {}),
     ...(profile?.industry ? { industry: profile.industry } : {}),
     ...(profile?.marketCap != null ? { marketCap: profile.marketCap } : {}),
+    ...(profile?.description ? { description: profile.description } : {}),
   };
 }
+
+const PLACEHOLDER_SITUATION = {
+  catalystType: "NONE" as const,
+  catalyst: "",
+  read: "",
+  posture: "WAIT" as const,
+  confidence: "LOW" as const,
+};
 
 function makeClusterId(label: string): string {
   const slug = label
@@ -35,11 +44,7 @@ function singleSituation(item: EnrichedMover): Situation {
     id: item.row.symbol,
     label: item.row.symbol,
     tickers: [toTickerStat(item.row, item.profile)],
-    catalystType: "PENDING",
-    catalyst: null,
-    read: null,
-    posture: "PENDING",
-    confidence: null,
+    ...PLACEHOLDER_SITUATION,
   };
 }
 
@@ -52,11 +57,7 @@ function clusterSituation(label: string, items: EnrichedMover[]): Situation {
     id: makeClusterId(label),
     label,
     tickers: sorted.map((i) => toTickerStat(i.row, i.profile)),
-    catalystType: "PENDING",
-    catalyst: null,
-    read: null,
-    posture: "PENDING",
-    confidence: null,
+    ...PLACEHOLDER_SITUATION,
   };
 }
 

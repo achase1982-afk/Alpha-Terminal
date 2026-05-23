@@ -37,7 +37,9 @@ function normaliseMoverRow(raw: Record<string, unknown>): FmpMoverRow | null {
   return { symbol, name, exchange, price, change, changesPercentage };
 }
 
-async function fetchMoverList(path: "biggest-gainers" | "biggest-losers"): Promise<FmpMoverRow[]> {
+async function fetchMoverList(
+  path: "biggest-gainers" | "biggest-losers" | "most-actives",
+): Promise<FmpMoverRow[]> {
   const apiKey = getFmpApiKeyOrThrow();
   const url = `${FMP_STABLE_BASE}/${path}?apikey=${encodeURIComponent(apiKey)}`;
   const res = await httpLimit(() =>
@@ -61,14 +63,15 @@ async function fetchMoverList(path: "biggest-gainers" | "biggest-losers"): Promi
   return out;
 }
 
-/** Gainers + losers only — most-actives is excluded (perpetual mega-cap volume, not movers). */
+/** Gainers, losers, and most-actives — deduped by symbol (first list wins). */
 export async function fetchAllFmpMoverLists(): Promise<FmpMoverRow[]> {
-  const [gainers, losers] = await Promise.all([
+  const [gainers, losers, actives] = await Promise.all([
     fetchMoverList("biggest-gainers"),
     fetchMoverList("biggest-losers"),
+    fetchMoverList("most-actives"),
   ]);
   const bySymbol = new Map<string, FmpMoverRow>();
-  for (const row of [...gainers, ...losers]) {
+  for (const row of [...gainers, ...losers, ...actives]) {
     if (!bySymbol.has(row.symbol)) {
       bySymbol.set(row.symbol, row);
     }
