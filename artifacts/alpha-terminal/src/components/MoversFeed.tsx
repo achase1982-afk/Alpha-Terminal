@@ -194,6 +194,14 @@ function FunnelBar({ funnel }: { funnel: MoversFeed["funnel"] }) {
   );
 }
 
+function tickerColumnLabel(situation: Situation): string {
+  if (situation.kind !== "cluster") return situation.tickers[0]?.symbol ?? "";
+  if (situation.tickers.length <= 2) {
+    return situation.tickers.map((x) => x.symbol).join(", ");
+  }
+  return `${situation.tickers[0]?.symbol ?? ""}+${situation.tickers.length - 1}`;
+}
+
 function SituationCard({
   situation,
   onNavigate,
@@ -205,6 +213,7 @@ function SituationCard({
   const t = primaryTicker(situation);
   if (!t) return null;
   const up = t.changePct >= 0;
+  const isCluster = situation.kind === "cluster";
 
   return (
     <div className="border-b" style={{ borderColor: BORDER, background: BG }}>
@@ -226,7 +235,7 @@ function SituationCard({
           <ChevronRight className="w-4 h-4 shrink-0 justify-self-center" style={{ color: MUTED }} />
         )}
         <span className="font-mono font-bold truncate" style={{ color: "#fafafa", fontSize: ROW_FONT_PX }}>
-          {t.symbol}
+          {tickerColumnLabel(situation)}
         </span>
         <span className="font-mono truncate" style={{ color: MUTED, fontSize: ROW_FONT_PX }}>
           {companyLabel(situation)}
@@ -256,23 +265,60 @@ function SituationCard({
         </span>
       </button>
       {expanded && (
-        <div className="px-3 pb-2 pt-0 space-y-1" style={{ paddingLeft: 36 }}>
-          <p className="font-mono leading-snug" style={{ color: "#a1a1aa", fontSize: ROW_FONT_PX }}>
-            {t.name}
-          </p>
-          <p className="font-mono" style={{ color: MUTED, fontSize: ROW_FONT_PX }}>
-            {t.exchange}
-            {situation.kind === "cluster" ? ` · ${situation.tickers.length} names` : ""}
-          </p>
-          {onNavigate && (
-            <button
-              type="button"
-              className="font-mono font-bold tracking-wider mt-1"
-              style={{ color: GOLD, fontSize: ROW_FONT_PX }}
-              onClick={() => onNavigate(t.symbol)}
-            >
-              OPEN IN MARKETS →
-            </button>
+        <div className="px-3 pb-2 pt-0 space-y-2" style={{ paddingLeft: 36 }}>
+          {isCluster ? (
+            situation.tickers.map((ct) => (
+              <div
+                key={ct.symbol}
+                className="flex items-center gap-2 font-mono border-b pb-1"
+                style={{ borderColor: BORDER, fontSize: ROW_FONT_PX }}
+              >
+                <span className="font-bold w-12 shrink-0" style={{ color: "#fafafa" }}>
+                  {ct.symbol}
+                </span>
+                <span className="flex-1 truncate" style={{ color: MUTED }}>
+                  {ct.name}
+                </span>
+                <span className="tabular-nums" style={{ color: "#e4e4e7" }}>
+                  ${fmtPrice(ct.price)}
+                </span>
+                <span
+                  className="font-bold tabular-nums w-14 text-right"
+                  style={{ color: ct.changePct >= 0 ? GREEN : RED }}
+                >
+                  {fmtPct(ct.changePct)}
+                </span>
+                {onNavigate && (
+                  <button
+                    type="button"
+                    className="font-bold tracking-wider shrink-0"
+                    style={{ color: GOLD, fontSize: 10 }}
+                    onClick={() => onNavigate(ct.symbol)}
+                  >
+                    OPEN →
+                  </button>
+                )}
+              </div>
+            ))
+          ) : (
+            <>
+              <p className="font-mono leading-snug" style={{ color: "#a1a1aa", fontSize: ROW_FONT_PX }}>
+                {t.name}
+              </p>
+              <p className="font-mono" style={{ color: MUTED, fontSize: ROW_FONT_PX }}>
+                {t.exchange}
+              </p>
+              {onNavigate && (
+                <button
+                  type="button"
+                  className="font-mono font-bold tracking-wider mt-1"
+                  style={{ color: GOLD, fontSize: ROW_FONT_PX }}
+                  onClick={() => onNavigate(t.symbol)}
+                >
+                  OPEN IN MARKETS →
+                </button>
+              )}
+            </>
           )}
         </div>
       )}

@@ -1,22 +1,9 @@
-import type { FilteredName, MoversFeed, Situation, TickerStat } from "@workspace/movers-types";
+import type { FilteredName, MoversFeed } from "@workspace/movers-types";
 import type { FmpMoverRow } from "./fmpMoversClient.js";
-import type { FmpCompanyProfile } from "./fmpCompanyProfile.js";
 import { fetchFmpCompanyProfiles } from "./fmpCompanyProfile.js";
+import { clusterEnrichedMovers } from "./clusterMovers.js";
 import { stripMover } from "./stripMover.js";
 import { stripMicroCap } from "./stripMicroCap.js";
-
-function toTickerStat(row: FmpMoverRow, profile?: FmpCompanyProfile): TickerStat {
-  return {
-    symbol: row.symbol,
-    name: row.name,
-    exchange: row.exchange,
-    price: row.price,
-    changePct: row.changesPercentage,
-    ...(profile?.sector ? { sector: profile.sector } : {}),
-    ...(profile?.industry ? { industry: profile.industry } : {}),
-    ...(profile?.marketCap != null ? { marketCap: profile.marketCap } : {}),
-  };
-}
 
 function toFiltered(row: FmpMoverRow, reason: FilteredName["reason"]): FilteredName {
   return {
@@ -25,20 +12,6 @@ function toFiltered(row: FmpMoverRow, reason: FilteredName["reason"]): FilteredN
     price: row.price,
     changePct: row.changesPercentage,
     reason,
-  };
-}
-
-function singleSituation(row: FmpMoverRow, profile?: FmpCompanyProfile): Situation {
-  return {
-    kind: "single",
-    id: row.symbol,
-    label: row.symbol,
-    tickers: [toTickerStat(row, profile)],
-    catalystType: "PENDING",
-    catalyst: null,
-    read: null,
-    posture: "PENDING",
-    confidence: null,
   };
 }
 
@@ -73,9 +46,8 @@ export async function buildMoversFeedFromRows(
 
   const filtered = [...stage1Filtered, ...microFiltered];
 
-  tradeable.sort((a, b) => Math.abs(b.changesPercentage) - Math.abs(a.changesPercentage));
-
-  const situations = tradeable.map((row) => singleSituation(row, profiles.get(row.symbol)));
+  const enriched = tradeable.map((row) => ({ row, profile: profiles.get(row.symbol) }));
+  const situations = clusterEnrichedMovers(enriched);
 
   return {
     capturedAt: capturedAt.toISOString(),
