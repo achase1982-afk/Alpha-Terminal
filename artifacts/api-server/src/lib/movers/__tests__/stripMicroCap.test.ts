@@ -18,6 +18,7 @@ function row(symbol: string, mcap: number): { row: FmpMoverRow; profile: FmpComp
     marketCap: mcap,
     sector: "Technology",
     industry: "Software",
+    description: null,
     averageVolume: 1_000_000,
   };
   return { row: fmpRow, profile };

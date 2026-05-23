@@ -47,6 +47,10 @@ export interface AiLabFullConfig {
   validatorMinOiPerLeg: number;
   validatorMaxSpreadPct: number;
   validatorMinAvgVolumeStock: number;
+
+  moversModelProvider: AiLabModelProvider;
+  moversModelName: string;
+  moversTemperature: number;
 }
 
 export type AiLabStrategistConfig = AiLabFullConfig;
@@ -54,7 +58,7 @@ export type AiLabStrategistConfig = AiLabFullConfig;
 const VALID_PROVIDERS = new Set<AiLabModelProvider>(["anthropic", "google", "openai", "xai"]);
 
 const NUMERIC_KEYS = new Set([
-  "analystTemperature", "skepticTemperature",
+  "analystTemperature", "skepticTemperature", "moversTemperature",
   "maxDeliberationRounds", "skepticCritiqueThreshold",
   "overnightTopN", "premarketTopN",
   "triggerMinAvgVolume", "priceShockMinMovePct",
@@ -111,6 +115,7 @@ type AiLabNumericConfigKey =
 const STRING_KEYS = new Set([
   "analystModelProvider", "analystModelName",
   "skepticModelProvider", "skepticModelName",
+  "moversModelProvider", "moversModelName",
   "universe",
 ]);
 
@@ -160,6 +165,10 @@ export const DEFAULT_CONFIG: AiLabFullConfig = {
   validatorMinOiPerLeg: 50,
   validatorMaxSpreadPct: 0.10,
   validatorMinAvgVolumeStock: 100000,
+
+  moversModelProvider: "anthropic",
+  moversModelName: "claude-sonnet-4-6",
+  moversTemperature: 0,
 };
 
 let currentConfig: AiLabFullConfig = { ...DEFAULT_CONFIG };
@@ -191,11 +200,19 @@ function validateAndClamp(merged: Record<string, unknown>): AiLabFullConfig {
   if (typeof merged.skepticModelName === "string" && merged.skepticModelName.length > 0) {
     result.skepticModelName = merged.skepticModelName;
   }
+  if (typeof merged.moversModelProvider === "string" && VALID_PROVIDERS.has(merged.moversModelProvider as AiLabModelProvider)) {
+    result.moversModelProvider = merged.moversModelProvider as AiLabModelProvider;
+  }
+  if (typeof merged.moversModelName === "string" && merged.moversModelName.length > 0) {
+    result.moversModelName = merged.moversModelName;
+  }
 
   const at = Number(merged.analystTemperature);
   if (Number.isFinite(at)) result.analystTemperature = Math.max(0, Math.min(1, at));
   const st = Number(merged.skepticTemperature);
   if (Number.isFinite(st)) result.skepticTemperature = Math.max(0, Math.min(1, st));
+  const mt = Number(merged.moversTemperature);
+  if (Number.isFinite(mt)) result.moversTemperature = Math.max(0, Math.min(1, mt));
 
   if (typeof merged.enabled === "boolean") result.enabled = merged.enabled;
 
@@ -314,6 +331,19 @@ export function getAiLabFullConfig(): Readonly<AiLabFullConfig> {
   return currentConfig;
 }
 
+export function getMoversAiConfig(): Readonly<{
+  provider: AiLabModelProvider;
+  modelName: string;
+  temperature: number;
+}> {
+  const cfg = currentConfig;
+  return {
+    provider: cfg.moversModelProvider,
+    modelName: cfg.moversModelName,
+    temperature: cfg.moversTemperature,
+  };
+}
+
 export function getAiLabConfigDefaults(): Readonly<AiLabFullConfig> {
   return DEFAULT_CONFIG;
 }
@@ -332,6 +362,9 @@ export function updateAiLabStrategistConfig(
   if (sanitized.skepticModelProvider !== undefined && !VALID_PROVIDERS.has(sanitized.skepticModelProvider as AiLabModelProvider)) {
     throw new Error(`Invalid skepticModelProvider: ${sanitized.skepticModelProvider}`);
   }
+  if (sanitized.moversModelProvider !== undefined && !VALID_PROVIDERS.has(sanitized.moversModelProvider as AiLabModelProvider)) {
+    throw new Error(`Invalid moversModelProvider: ${sanitized.moversModelProvider}`);
+  }
 
   for (const numKey of NUMERIC_KEYS) {
     if (sanitized[numKey] !== undefined) {
@@ -341,7 +374,7 @@ export function updateAiLabStrategistConfig(
     }
   }
 
-  for (const strKey of ["analystModelName", "skepticModelName", "universe"]) {
+  for (const strKey of ["analystModelName", "skepticModelName", "moversModelName", "universe"]) {
     if (sanitized[strKey] !== undefined && typeof sanitized[strKey] !== "string") {
       throw new Error(`${strKey} must be a string`);
     }

@@ -857,8 +857,151 @@ function AiParametersPage() {
         {AI_FEATURES.map((f) => (
           <AiFeatureControl key={f.key} featureKey={f.key} label={f.label} icon={f.icon} />
         ))}
+        <MoversAiControl />
         <AiLabStrategistControl />
       </div>
+    </div>
+  );
+}
+
+function MoversAiControl() {
+  const { aiLabStrategistConfig, setAiLabStrategistConfig } = useTerminalStore();
+  const [expanded, setExpanded] = useState(false);
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    fetchWithAuth("/api/ai-lab/config")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const cfg = data?.config;
+        if (!cfg) return;
+        if (cfg.moversModelProvider) setAiLabStrategistConfig("moversModelProvider", cfg.moversModelProvider);
+        if (cfg.moversModelName) setAiLabStrategistConfig("moversModelName", cfg.moversModelName);
+        if (typeof cfg.moversTemperature === "number") {
+          setAiLabStrategistConfig("moversTemperature", cfg.moversTemperature);
+        }
+      })
+      .catch(() => {});
+  }, [setAiLabStrategistConfig]);
+
+  const syncToBackend = useCallback((cfg: typeof aiLabStrategistConfig) => {
+    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+    syncTimeoutRef.current = setTimeout(() => {
+      fetchWithAuth("/api/ai-lab/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          moversModelProvider: cfg.moversModelProvider,
+          moversModelName: cfg.moversModelName,
+          moversTemperature: cfg.moversTemperature,
+        }),
+      }).catch(() => {});
+    }, 300);
+  }, []);
+
+  const update = useCallback(
+    (key: string, value: string | number) => {
+      setAiLabStrategistConfig(key, value);
+      const next = { ...aiLabStrategistConfig, [key]: value };
+      if (key === "moversModelProvider") {
+        const models = modelsForProvider(String(value));
+        if (models.length > 0 && !models.includes(aiLabStrategistConfig.moversModelName as AiModelId)) {
+          setAiLabStrategistConfig("moversModelName", models[0]!);
+          next.moversModelName = models[0]!;
+        }
+      }
+      syncToBackend(next);
+    },
+    [aiLabStrategistConfig, setAiLabStrategistConfig, syncToBackend],
+  );
+
+  const moversModels = modelsForProvider(aiLabStrategistConfig.moversModelProvider);
+
+  const selectStyle = {
+    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+    backgroundRepeat: "no-repeat" as const,
+    backgroundPosition: "right 8px center",
+  };
+
+  return (
+    <div className="border border-card-border rounded-lg overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-3 py-2.5 bg-card cursor-pointer active:bg-zinc-800/60 transition-colors"
+      >
+        <span className="flex items-center gap-2 font-mono text-[10px] text-white tracking-wide">
+          <span>📈</span>
+          MOVERS
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="font-mono text-[8px] text-white tracking-wider">
+            {aiModelSelectLabel(migrateLegacyModelIdToCatalog(aiLabStrategistConfig.moversModelName))}
+          </span>
+          <ChevronRight className={`w-3 h-3 text-white transition-transform ${expanded ? "rotate-90" : ""}`} />
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="px-3 py-3 space-y-4 bg-[#0a0a0a] border-t border-card-border">
+          <div className="space-y-2">
+            <span className="font-mono text-[9px] text-white uppercase tracking-widest font-medium">
+              Catalyst Model
+            </span>
+
+            <div className="space-y-1.5">
+              <span className="font-mono text-[8px] text-white uppercase tracking-widest">Provider</span>
+              <select
+                value={aiLabStrategistConfig.moversModelProvider}
+                onChange={(e) => update("moversModelProvider", e.target.value)}
+                className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
+                style={selectStyle}
+              >
+                {Object.entries(PROVIDER_LABELS).map(([k, label]) => (
+                  <option key={k} value={k}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="font-mono text-[8px] text-white uppercase tracking-widest">Model</span>
+              <select
+                value={aiLabStrategistConfig.moversModelName}
+                onChange={(e) => update("moversModelName", e.target.value)}
+                className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
+                style={selectStyle}
+              >
+                {moversModels.map((m) => (
+                  <option key={m} value={m}>
+                    {aiModelSelectLabel(m)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[8px] text-white uppercase tracking-widest">Temperature</span>
+                <span className="font-mono text-[10px] text-primary tabular-nums">
+                  {aiLabStrategistConfig.moversTemperature.toFixed(1)}
+                </span>
+              </div>
+              <Slider
+                value={[aiLabStrategistConfig.moversTemperature]}
+                onValueChange={(v) => update("moversTemperature", v[0])}
+                max={1}
+                step={0.1}
+                className="py-1"
+              />
+              <div className="flex justify-between">
+                <span className="font-mono text-[8px] text-white">Precise</span>
+                <span className="font-mono text-[8px] text-white">Creative</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

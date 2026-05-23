@@ -23,6 +23,7 @@ function enriched(
       marketCap: 2_000_000_000,
       sector: "Technology",
       industry,
+      description: null,
       averageVolume: 1_000_000,
     },
   };

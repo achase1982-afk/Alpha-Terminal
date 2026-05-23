@@ -3,9 +3,17 @@ import type { FmpMoverRow } from "../fmpMoversClient.js";
 import type { FmpCompanyProfile } from "../fmpCompanyProfile.js";
 import { buildMoversFeedFromRows } from "../buildMoversFeed.js";
 import * as fmpCompanyProfile from "../fmpCompanyProfile.js";
+import * as moversCatalystAttribution from "../moversCatalystAttribution.js";
 
 vi.mock("../fmpCompanyProfile.js", () => ({
   fetchFmpCompanyProfiles: vi.fn(),
+}));
+
+vi.mock("../moversCatalystAttribution.js", () => ({
+  attributeMoversSituations: vi.fn(async (situations: unknown[]) => ({
+    situations,
+    flagged: [],
+  })),
 }));
 
 const fetchProfiles = vi.mocked(fmpCompanyProfile.fetchFmpCompanyProfiles);
@@ -40,6 +48,7 @@ describe("buildMoversFeedFromRows enrichment", () => {
           marketCap: 20_000_000,
           sector: "Healthcare",
           industry: "Biotechnology",
+          description: null,
           averageVolume: 500_000,
         },
       ],
@@ -50,6 +59,7 @@ describe("buildMoversFeedFromRows enrichment", () => {
           marketCap: 6_800_000_000,
           sector: "Technology",
           industry: "Semiconductors",
+          description: "Power semiconductors.",
           averageVolume: 5_000_000,
         },
       ],
