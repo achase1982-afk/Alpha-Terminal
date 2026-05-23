@@ -3,6 +3,7 @@ export {
   MOVERS_MANUAL_REFRESH_DEBOUNCE_MS,
   MOVERS_POLL_INTERVAL_MS,
 } from "./constants.js";
+export { MOVERS_THEME_TICKER_MAP } from "./themeTickers.js";
 
 export interface MoversFeed {
   capturedAt: string;
