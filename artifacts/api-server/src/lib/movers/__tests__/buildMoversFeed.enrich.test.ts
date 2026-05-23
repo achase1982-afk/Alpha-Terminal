@@ -63,8 +63,10 @@ describe("buildMoversFeedFromRows enrichment", () => {
     expect(feed.funnel.tradeable).toBe(1);
     expect(feed.filtered[0]?.reason).toBe("MICRO_CAP");
     expect(feed.situations).toHaveLength(1);
+    expect(feed.funnel.situations).toBe(1);
     const t = feed.situations[0]?.tickers[0];
     expect(t?.symbol).toBe("NVTS");
+    expect(feed.situations[0]?.kind).toBe("single");
     expect(t?.sector).toBe("Technology");
     expect(t?.industry).toBe("Semiconductors");
     expect(t?.marketCap).toBe(6_800_000_000);
