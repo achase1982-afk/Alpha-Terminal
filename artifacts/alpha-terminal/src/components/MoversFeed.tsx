@@ -8,36 +8,105 @@ import type {
   MoversFeed,
   MoversPosture,
   Situation,
+  TickerStat,
 } from "@workspace/movers-types";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { MOVERS_MANUAL_REFRESH_DEBOUNCE_MS, MOVERS_POLL_INTERVAL_MS } from "@workspace/movers-types";
 
-const BG = "#0D0D0D";
-const CARD = "#1A1A1A";
-const ELEVATED = "#222222";
-const BORDER = "#2A2A2A";
-const BORDER_STRONG = "#3A3A3A";
-const PRIMARY = "#0064FF";
+const BG = "#0c0c0c";
+const PANEL = "#111";
+const BORDER = "rgba(39, 39, 42, 0.8)";
+const MUTED = "#71717a";
 const GOLD = "#FFB800";
-const GREEN = "#00C853";
-const RED = "#FF3B30";
-const WHITE = "#FFFFFF";
+const GREEN = "#00d166";
+const RED = "#f23645";
+const ROW_FONT_PX = 12;
 
-const CATALYST_COLORS: Record<MoversCatalystType, string> = {
-  GOV: PRIMARY,
+type SortKey = "symbol" | "name" | "price" | "changePct";
+type SortDir = "asc" | "desc";
+
+const VALID_CATALYST_TYPES = new Set<MoversCatalystType>([
+  "GOV",
+  "ANALYST",
+  "CONTRACT",
+  "EARNINGS",
+  "MA",
+  "SECTOR",
+  "NONE",
+]);
+const VALID_POSTURES = new Set<MoversPosture>(["WATCH", "WAIT", "PASS"]);
+const VALID_CONFIDENCE = new Set<MoversConfidence>(["HIGH", "MED", "LOW"]);
+
+const CATALYST_TAG_COLORS: Record<MoversCatalystType, string> = {
+  GOV: "#0064FF",
   ANALYST: "#7C4DFF",
   CONTRACT: "#00B8D4",
   EARNINGS: GOLD,
   MA: "#FF6D00",
   SECTOR: "#69F0AE",
-  NONE: BORDER_STRONG,
+  NONE: MUTED,
 };
 
-const POSTURE_STYLES: Record<MoversPosture, { bg: string; color: string; border: string }> = {
-  WATCH: { bg: `${PRIMARY}22`, color: PRIMARY, border: PRIMARY },
-  WAIT: { bg: `${GOLD}22`, color: GOLD, border: GOLD },
-  PASS: { bg: `${RED}22`, color: RED, border: RED },
+const POSTURE_COLORS: Record<MoversPosture, string> = {
+  WATCH: "#0064FF",
+  WAIT: GOLD,
+  PASS: RED,
 };
+
+/** Tolerate legacy PENDING payloads still in movers_feed or client cache. */
+function normalizeSituation(raw: Situation): Situation | null {
+  const catalystType = VALID_CATALYST_TYPES.has(raw.catalystType as MoversCatalystType)
+    ? raw.catalystType
+    : null;
+  const posture = VALID_POSTURES.has(raw.posture as MoversPosture) ? raw.posture : null;
+  const confidence = VALID_CONFIDENCE.has(raw.confidence as MoversConfidence)
+    ? raw.confidence
+    : "LOW";
+
+  if (!catalystType || !posture || catalystType === "NONE") return null;
+
+  return {
+    ...raw,
+    catalystType,
+    posture,
+    confidence,
+    catalyst: typeof raw.catalyst === "string" ? raw.catalyst : "",
+    read: typeof raw.read === "string" ? raw.read : "",
+  };
+}
+
+function normalizeFeed(feed: MoversFeed): MoversFeed {
+  const situations: Situation[] = [];
+  const flagged = [...feed.flagged];
+
+  for (const s of feed.situations) {
+    const normalized = normalizeSituation(s);
+    if (normalized) {
+      situations.push(normalized);
+      continue;
+    }
+    const note =
+      typeof s.catalyst === "string" && s.catalyst
+        ? s.catalyst
+        : "Catalyst attribution pending or unavailable";
+    for (const t of s.tickers) {
+      flagged.push({
+        symbol: t.symbol,
+        name: t.name,
+        price: t.price,
+        changePct: t.changePct,
+        note,
+      });
+    }
+  }
+
+  return {
+    ...feed,
+    situations,
+    flagged,
+    funnel: { ...feed.funnel, situations: situations.length },
+  };
+}
 
 function fmtPct(n: number): string {
   const sign = n >= 0 ? "+" : "";
@@ -74,37 +143,140 @@ function pollStatusLabel(feed: MoversFeed | undefined): string {
   return stamped ? `Last poll ${stamped}` : "Waiting for first poll";
 }
 
-function tickerHeadline(s: Situation): string {
-  if (s.kind === "cluster") {
-    return s.tickers.map((t) => t.symbol).join(" · ");
+function primaryTicker(s: Situation): TickerStat | undefined {
+  return s.tickers[0];
+}
+
+function companyLabel(s: Situation): string {
+  const t = primaryTicker(s);
+  if (s.kind === "cluster" && s.label) return s.label;
+  return t?.name ?? s.label;
+}
+
+function compareSituations(a: Situation, b: Situation, key: SortKey, dir: SortDir): number {
+  const ta = primaryTicker(a);
+  const tb = primaryTicker(b);
+  let cmp = 0;
+  switch (key) {
+    case "symbol":
+      cmp = (ta?.symbol ?? "").localeCompare(tb?.symbol ?? "");
+      break;
+    case "name":
+      cmp = companyLabel(a).localeCompare(companyLabel(b));
+      break;
+    case "price":
+      cmp = (ta?.price ?? 0) - (tb?.price ?? 0);
+      break;
+    case "changePct":
+      cmp = (ta?.changePct ?? 0) - (tb?.changePct ?? 0);
+      break;
   }
-  return s.tickers[0]?.symbol ?? s.label;
+  return dir === "asc" ? cmp : -cmp;
+}
+
+function SortColumnHeader({
+  label,
+  columnKey,
+  align = "left",
+  sortKey,
+  sortDir,
+  onSort,
+}: {
+  label: string;
+  columnKey: SortKey;
+  align?: "left" | "right";
+  sortKey: SortKey | null;
+  sortDir: SortDir;
+  onSort: (key: SortKey) => void;
+}) {
+  const active = sortKey === columnKey;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(columnKey)}
+      className="font-mono tracking-wider flex items-center gap-0.5 transition-colors min-w-0"
+      style={{
+        color: active ? "#a1a1aa" : MUTED,
+        fontSize: ROW_FONT_PX,
+        padding: "6px 4px",
+        justifyContent: align === "right" ? "flex-end" : "flex-start",
+        width: "100%",
+      }}
+    >
+      <span className="truncate">{label}</span>
+      {active && (
+        <span style={{ fontSize: 9, flexShrink: 0 }}>{sortDir === "asc" ? "▲" : "▼"}</span>
+      )}
+    </button>
+  );
+}
+
+function MoversListHeader({
+  sortKey,
+  sortDir,
+  onSort,
+}: {
+  sortKey: SortKey | null;
+  sortDir: SortDir;
+  onSort: (key: SortKey) => void;
+}) {
+  return (
+    <div
+      className="grid items-center border-b shrink-0"
+      style={{
+        background: PANEL,
+        borderColor: BORDER,
+        gridTemplateColumns: "20px 56px minmax(0, 1fr) 72px 76px 108px",
+        columnGap: 4,
+        paddingLeft: 8,
+        paddingRight: 8,
+      }}
+    >
+      <span />
+      <SortColumnHeader label="Ticker" columnKey="symbol" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+      <SortColumnHeader label="Company name" columnKey="name" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+      <SortColumnHeader
+        label="Price"
+        columnKey="price"
+        align="right"
+        sortKey={sortKey}
+        sortDir={sortDir}
+        onSort={onSort}
+      />
+      <SortColumnHeader
+        label="% Change"
+        columnKey="changePct"
+        align="right"
+        sortKey={sortKey}
+        sortDir={sortDir}
+        onSort={onSort}
+      />
+      <span
+        className="font-mono tracking-wider text-right pr-1"
+        style={{ color: MUTED, fontSize: ROW_FONT_PX }}
+      >
+        Posture
+      </span>
+    </div>
+  );
 }
 
 function FunnelBar({ funnel }: { funnel: MoversFeed["funnel"] }) {
   const items = [
-    { label: "Detected", value: funnel.detected },
-    { label: "Filtered", value: funnel.filtered },
-    { label: "Tradeable", value: funnel.tradeable },
-    { label: "Situations", value: funnel.situations },
+    { label: "DETECTED", value: funnel.detected, color: MUTED },
+    { label: "FILTERED", value: funnel.filtered, color: MUTED },
+    { label: "TRADEABLE", value: funnel.tradeable, color: GOLD },
+    { label: "SITUATIONS", value: funnel.situations, color: "#fafafa" },
   ];
   return (
     <div
-      className="grid grid-cols-4 gap-2 px-3 py-3 border-b shrink-0"
-      style={{ background: CARD, borderColor: BORDER, fontFamily: "Inter, system-ui, sans-serif" }}
+      className="grid grid-cols-4 gap-1 px-3 py-2 border-b font-mono tracking-wider shrink-0"
+      style={{ background: PANEL, borderColor: BORDER, fontSize: ROW_FONT_PX }}
     >
       {items.map((item) => (
-        <div key={item.label} className="text-center rounded-md py-1.5" style={{ background: ELEVATED }}>
-          <div className="text-[10px] uppercase tracking-widest" style={{ color: WHITE }}>
-            {item.label}
-          </div>
-          <div
-            className="font-bold mt-1 tabular-nums text-sm"
-            style={{
-              color: item.label === "Tradeable" ? GOLD : WHITE,
-              fontFamily: "'JetBrains Mono', monospace",
-            }}
-          >
+        <div key={item.label} className="text-center">
+          <div style={{ color: MUTED, fontSize: 10 }}>{item.label}</div>
+          <div className="font-bold mt-0.5" style={{ color: item.color, fontSize: ROW_FONT_PX }}>
             {item.value}
           </div>
         </div>
@@ -113,39 +285,58 @@ function FunnelBar({ funnel }: { funnel: MoversFeed["funnel"] }) {
   );
 }
 
-function CatalystTag({ type }: { type: MoversCatalystType }) {
+function CatalystExpandedDetail({ situation }: { situation: Situation }) {
+  const typeColor = CATALYST_TAG_COLORS[situation.catalystType] ?? GOLD;
+  const postureColor = POSTURE_COLORS[situation.posture] ?? GOLD;
+
   return (
-    <span
-      className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 rounded"
-      style={{
-        color: CATALYST_COLORS[type],
-        border: `1px solid ${CATALYST_COLORS[type]}55`,
-        background: `${CATALYST_COLORS[type]}18`,
-      }}
+    <div
+      className="rounded border p-2 space-y-2 mb-2"
+      style={{ borderColor: BORDER, background: PANEL }}
     >
-      {type}
-    </span>
+      <div className="flex flex-wrap items-center gap-2">
+        <span
+          className="font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+          style={{
+            fontSize: 10,
+            color: typeColor,
+            border: `1px solid ${typeColor}55`,
+            background: `${typeColor}18`,
+          }}
+        >
+          {situation.catalystType}
+        </span>
+        <span
+          className="font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+          style={{
+            fontSize: 10,
+            color: postureColor,
+            border: `1px solid ${postureColor}55`,
+            background: `${postureColor}18`,
+          }}
+        >
+          {situation.posture}
+        </span>
+        <span className="font-mono uppercase tracking-wider" style={{ color: "#fafafa", fontSize: 10 }}>
+          {situation.confidence} confidence
+        </span>
+      </div>
+      <p className="font-mono leading-snug" style={{ color: "#fafafa", fontSize: ROW_FONT_PX }}>
+        {situation.catalyst}
+      </p>
+      <p className="font-mono leading-snug italic" style={{ color: "#e4e4e7", fontSize: ROW_FONT_PX }}>
+        {situation.read}
+      </p>
+    </div>
   );
 }
 
-function PosturePill({ posture }: { posture: MoversPosture }) {
-  const style = POSTURE_STYLES[posture];
-  return (
-    <span
-      className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 rounded font-bold"
-      style={{ color: style.color, background: style.bg, border: `1px solid ${style.border}` }}
-    >
-      {posture}
-    </span>
-  );
-}
-
-function ConfidenceBadge({ level }: { level: MoversConfidence }) {
-  return (
-    <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: WHITE }}>
-      {level} confidence
-    </span>
-  );
+function tickerColumnLabel(situation: Situation): string {
+  if (situation.kind !== "cluster") return situation.tickers[0]?.symbol ?? "";
+  if (situation.tickers.length <= 2) {
+    return situation.tickers.map((x) => x.symbol).join(", ");
+  }
+  return `${situation.tickers[0]?.symbol ?? ""}+${situation.tickers.length - 1}`;
 }
 
 function SituationCard({
@@ -156,125 +347,117 @@ function SituationCard({
   onNavigate?: (sym: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const lead = situation.tickers[0];
-  if (!lead) return null;
-  const up = lead.changePct >= 0;
+  const t = primaryTicker(situation);
+  if (!t) return null;
+  const up = t.changePct >= 0;
   const isCluster = situation.kind === "cluster";
 
   return (
-    <div
-      className="mx-3 my-2 rounded-lg border overflow-hidden"
-      style={{ background: CARD, borderColor: BORDER_STRONG }}
-    >
+    <div className="border-b" style={{ borderColor: BORDER, background: BG }}>
       <button
         type="button"
-        className="w-full text-left px-3 py-3"
+        className="w-full text-left grid items-center py-2"
+        style={{
+          gridTemplateColumns: "20px 56px minmax(0, 1fr) 72px 76px 108px",
+          columnGap: 4,
+          paddingLeft: 8,
+          paddingRight: 8,
+          minHeight: 40,
+        }}
         onClick={() => setExpanded((e) => !e)}
       >
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            {expanded ? (
-              <ChevronDown className="w-4 h-4 shrink-0" style={{ color: WHITE }} />
-            ) : (
-              <ChevronRight className="w-4 h-4 shrink-0" style={{ color: WHITE }} />
-            )}
-            <div className="min-w-0">
-              <div
-                className="font-bold text-sm truncate"
-                style={{ color: WHITE, fontFamily: "'JetBrains Mono', monospace" }}
-              >
-                {tickerHeadline(situation)}
-              </div>
-              {isCluster && (
-                <div className="text-[11px] mt-0.5 truncate" style={{ color: WHITE, fontFamily: "Inter, sans-serif" }}>
-                  {situation.label}
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="text-right shrink-0">
-            <div
-              className="font-bold tabular-nums text-sm"
-              style={{ color: WHITE, fontFamily: "'JetBrains Mono', monospace" }}
-            >
-              ${fmtPrice(lead.price)}
-            </div>
-            <div
-              className="font-bold tabular-nums text-sm"
-              style={{ color: up ? GREEN : RED, fontFamily: "'JetBrains Mono', monospace" }}
-            >
-              {fmtPct(lead.changePct)}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 mt-2">
-          <CatalystTag type={situation.catalystType} />
-          <PosturePill posture={situation.posture} />
-          <ConfidenceBadge level={situation.confidence} />
-        </div>
-
-        <p className="mt-2 text-[12px] leading-snug" style={{ color: WHITE, fontFamily: "Inter, sans-serif" }}>
-          {situation.catalyst}
-        </p>
-        <p
-          className="mt-1 text-[11px] leading-snug italic"
-          style={{ color: WHITE, fontFamily: "'JetBrains Mono', monospace" }}
+        {expanded ? (
+          <ChevronDown className="w-4 h-4 shrink-0 justify-self-center" style={{ color: MUTED }} />
+        ) : (
+          <ChevronRight className="w-4 h-4 shrink-0 justify-self-center" style={{ color: MUTED }} />
+        )}
+        <span className="font-mono font-bold truncate" style={{ color: "#fafafa", fontSize: ROW_FONT_PX }}>
+          {tickerColumnLabel(situation)}
+        </span>
+        <span className="font-mono truncate" style={{ color: MUTED, fontSize: ROW_FONT_PX }}>
+          {companyLabel(situation)}
+        </span>
+        <span
+          className="font-mono tabular-nums text-right truncate"
+          style={{ color: "#e4e4e7", fontSize: ROW_FONT_PX }}
         >
-          {situation.read}
-        </p>
+          ${fmtPrice(t.price)}
+        </span>
+        <span
+          className="font-mono font-bold tabular-nums text-right"
+          style={{ color: up ? GREEN : RED, fontSize: ROW_FONT_PX }}
+        >
+          {fmtPct(t.changePct)}
+        </span>
+        <span
+          className="font-mono font-bold tracking-wide px-1.5 py-0.5 rounded justify-self-end truncate max-w-[108px]"
+          style={{
+            fontSize: 10,
+            background: `${POSTURE_COLORS[situation.posture] ?? GOLD}18`,
+            color: POSTURE_COLORS[situation.posture] ?? GOLD,
+            border: `1px solid ${POSTURE_COLORS[situation.posture] ?? GOLD}44`,
+          }}
+        >
+          {situation.posture}
+        </span>
       </button>
-
       {expanded && (
-        <div className="px-3 pb-3 pt-0 border-t space-y-2" style={{ borderColor: BORDER }}>
-          {situation.tickers.map((t) => (
-            <div
-              key={t.symbol}
-              className="flex items-start gap-2 py-2 border-b last:border-b-0"
-              style={{ borderColor: BORDER }}
-            >
-              <div className="w-14 shrink-0 font-bold text-xs" style={{ color: WHITE, fontFamily: "'JetBrains Mono', monospace" }}>
-                {t.symbol}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[11px] truncate" style={{ color: WHITE, fontFamily: "Inter, sans-serif" }}>
-                  {t.name}
-                </p>
-                {t.sector && (
-                  <p className="text-[10px] mt-0.5" style={{ color: WHITE, fontFamily: "Inter, sans-serif" }}>
-                    {t.sector}
-                    {t.industry ? ` · ${t.industry}` : ""}
-                  </p>
-                )}
-                {t.description && (
-                  <p className="text-[10px] mt-1 line-clamp-3" style={{ color: WHITE, fontFamily: "Inter, sans-serif" }}>
-                    {t.description}
-                  </p>
-                )}
-              </div>
-              <div className="text-right shrink-0">
-                <div className="tabular-nums text-xs font-bold" style={{ color: WHITE, fontFamily: "'JetBrains Mono', monospace" }}>
-                  ${fmtPrice(t.price)}
-                </div>
-                <div
-                  className="tabular-nums text-xs font-bold"
-                  style={{ color: t.changePct >= 0 ? GREEN : RED, fontFamily: "'JetBrains Mono', monospace" }}
+        <div className="px-3 pb-2 pt-0 space-y-2" style={{ paddingLeft: 36 }}>
+          <CatalystExpandedDetail situation={situation} />
+          {isCluster ? (
+            situation.tickers.map((ct) => (
+              <div
+                key={ct.symbol}
+                className="flex items-center gap-2 font-mono border-b pb-1"
+                style={{ borderColor: BORDER, fontSize: ROW_FONT_PX }}
+              >
+                <span className="font-bold w-12 shrink-0" style={{ color: "#fafafa" }}>
+                  {ct.symbol}
+                </span>
+                <span className="flex-1 truncate" style={{ color: MUTED }}>
+                  {ct.name}
+                </span>
+                <span className="tabular-nums" style={{ color: "#e4e4e7" }}>
+                  ${fmtPrice(ct.price)}
+                </span>
+                <span
+                  className="font-bold tabular-nums w-14 text-right"
+                  style={{ color: ct.changePct >= 0 ? GREEN : RED }}
                 >
-                  {fmtPct(t.changePct)}
-                </div>
+                  {fmtPct(ct.changePct)}
+                </span>
                 {onNavigate && (
                   <button
                     type="button"
-                    className="mt-1 text-[10px] font-bold uppercase tracking-wider"
-                    style={{ color: PRIMARY }}
-                    onClick={() => onNavigate(t.symbol)}
+                    className="font-bold tracking-wider shrink-0"
+                    style={{ color: GOLD, fontSize: 10 }}
+                    onClick={() => onNavigate(ct.symbol)}
                   >
-                    Open →
+                    OPEN →
                   </button>
                 )}
               </div>
-            </div>
-          ))}
+            ))
+          ) : (
+            <>
+              <p className="font-mono leading-snug" style={{ color: "#a1a1aa", fontSize: ROW_FONT_PX }}>
+                {t.name}
+              </p>
+              <p className="font-mono" style={{ color: MUTED, fontSize: ROW_FONT_PX }}>
+                {t.exchange}
+              </p>
+              {onNavigate && (
+                <button
+                  type="button"
+                  className="font-mono font-bold tracking-wider mt-1"
+                  style={{ color: GOLD, fontSize: ROW_FONT_PX }}
+                  onClick={() => onNavigate(t.symbol)}
+                >
+                  OPEN IN MARKETS →
+                </button>
+              )}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -286,49 +469,59 @@ function FilteredSection({ filtered }: { filtered: FilteredName[] }) {
   if (filtered.length === 0) return null;
 
   const reasonLabel: Record<FilteredName["reason"], string> = {
-    LEVERAGED_ETF: "Leveraged exchange-traded fund",
-    SUB_5: "Price below five dollars",
-    MICRO_CAP: "Market capitalization below five hundred million",
+    LEVERAGED_ETF: "Leveraged ETF",
+    SUB_5: "Sub $5",
+    MICRO_CAP: "Micro cap",
   };
 
   return (
-    <div className="border-t shrink-0 mx-0" style={{ borderColor: BORDER }}>
+    <div className="border-t shrink-0" style={{ borderColor: BORDER }}>
       <button
         type="button"
         className="w-full flex items-center justify-between px-3 py-2.5 font-mono font-bold tracking-wider"
-        style={{ background: CARD, color: WHITE, fontSize: 12 }}
+        style={{ background: PANEL, color: MUTED, fontSize: ROW_FONT_PX }}
         onClick={() => setOpen((o) => !o)}
       >
-        <span>Filtered ({filtered.length})</span>
+        <span>FILTERED ({filtered.length})</span>
         {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
       </button>
       {open && (
         <div style={{ background: BG }}>
-          <p className="px-3 py-2 border-b text-[11px]" style={{ color: WHITE, borderColor: BORDER, fontFamily: "Inter, sans-serif" }}>
-            Names removed by leverage filter, minimum price, or market capitalization.
+          <p className="px-3 py-2 font-mono border-b" style={{ color: MUTED, fontSize: 11, borderColor: BORDER }}>
+            Stripped from the movers list — leveraged ETFs, sub-$5 names, and market cap under $500M.
           </p>
           {filtered.map((row) => (
             <div
               key={`${row.symbol}-${row.reason}`}
-              className="flex items-center gap-2 px-3 py-2 border-b"
-              style={{ borderColor: BORDER, fontSize: 12 }}
+              className="grid items-center border-b"
+              style={{
+                borderColor: BORDER,
+                minHeight: 36,
+                gridTemplateColumns: "56px minmax(0, 1fr) 72px 76px 88px",
+                columnGap: 4,
+                paddingLeft: 12,
+                paddingRight: 8,
+              }}
             >
-              <span className="font-bold w-14 shrink-0" style={{ color: WHITE, fontFamily: "'JetBrains Mono', monospace" }}>
+              <span className="font-mono font-bold" style={{ color: "#a1a1aa", fontSize: ROW_FONT_PX }}>
                 {row.symbol}
               </span>
-              <span className="flex-1 truncate" style={{ color: WHITE, fontFamily: "Inter, sans-serif" }}>
+              <span className="font-mono truncate" style={{ color: MUTED, fontSize: ROW_FONT_PX }}>
                 {row.name}
               </span>
-              <span className="tabular-nums shrink-0" style={{ color: WHITE, fontFamily: "'JetBrains Mono', monospace" }}>
+              <span className="font-mono tabular-nums text-right" style={{ color: "#e4e4e7", fontSize: ROW_FONT_PX }}>
                 ${fmtPrice(row.price)}
               </span>
               <span
-                className="tabular-nums font-bold w-16 text-right shrink-0"
-                style={{ color: row.changePct >= 0 ? GREEN : RED, fontFamily: "'JetBrains Mono', monospace" }}
+                className="font-mono font-bold tabular-nums text-right"
+                style={{ color: row.changePct >= 0 ? GREEN : RED, fontSize: ROW_FONT_PX }}
               >
                 {fmtPct(row.changePct)}
               </span>
-              <span className="text-[10px] uppercase tracking-wide w-28 text-right shrink-0" style={{ color: WHITE }}>
+              <span
+                className="font-mono uppercase tracking-wide text-right truncate"
+                style={{ color: "#52525b", fontSize: 10 }}
+              >
                 {reasonLabel[row.reason]}
               </span>
             </div>
@@ -343,19 +536,49 @@ export function MoversFeed({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: 
   const queryClient = useQueryClient();
   const lastManualRefreshAt = useRef(0);
   const [manualRefreshing, setManualRefreshing] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-  const { data, isLoading, isFetching, error } = useQuery({
+  const {
+    data,
+    isLoading,
+    isFetching,
+    error,
+  } = useQuery({
     queryKey: ["movers-feed"],
     queryFn: async () => {
       const res = await fetchWithAuth("/api/movers");
       if (!res.ok) throw new Error(`Movers feed HTTP ${res.status}`);
-      return (await res.json()) as MoversFeed;
+      return normalizeFeed((await res.json()) as MoversFeed);
     },
     refetchInterval: MOVERS_POLL_INTERVAL_MS,
     staleTime: 30_000,
   });
 
   const feed = data;
+
+  const handleSort = useCallback(
+    (key: SortKey) => {
+      if (sortKey === key) {
+        if (sortDir === "asc") {
+          setSortDir("desc");
+        } else {
+          setSortKey(null);
+          setSortDir("asc");
+        }
+      } else {
+        setSortKey(key);
+        setSortDir("asc");
+      }
+    },
+    [sortKey, sortDir],
+  );
+
+  const sortedSituations = useMemo(() => {
+    const list = feed?.situations ?? [];
+    if (!sortKey) return list;
+    return [...list].sort((a, b) => compareSituations(a, b, sortKey, sortDir));
+  }, [feed?.situations, sortKey, sortDir]);
 
   const onRefresh = useCallback(async () => {
     const now = Date.now();
@@ -367,7 +590,7 @@ export function MoversFeed({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: 
       const res = await fetchWithAuth("/api/movers/refresh", { method: "POST" });
       if (!res.ok) throw new Error(`Movers refresh HTTP ${res.status}`);
       const body = (await res.json()) as { feed: MoversFeed; debounced?: boolean };
-      queryClient.setQueryData(["movers-feed"], body.feed);
+      queryClient.setQueryData(["movers-feed"], normalizeFeed(body.feed));
     } catch {
       await queryClient.invalidateQueries({ queryKey: ["movers-feed"] });
     } finally {
@@ -377,22 +600,17 @@ export function MoversFeed({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: 
 
   const refreshBusy = manualRefreshing || isFetching;
 
-  const situations = useMemo(() => feed?.situations ?? [], [feed?.situations]);
-
   return (
-    <div className="flex flex-col min-h-full" style={{ background: BG, color: WHITE }}>
+    <div className="flex flex-col min-h-full" style={{ background: BG, color: "#fafafa" }}>
       <div
         className="flex items-center justify-between px-3 py-2 border-b shrink-0"
-        style={{ borderColor: BORDER, background: CARD }}
+        style={{ borderColor: BORDER, background: PANEL }}
       >
         <div>
-          <h1
-            className="font-bold tracking-[0.2em] uppercase text-sm"
-            style={{ color: GOLD, fontFamily: "Inter, sans-serif" }}
-          >
-            Movers
+          <h1 className="font-mono font-bold tracking-[0.2em]" style={{ color: GOLD, fontSize: ROW_FONT_PX }}>
+            MOVERS
           </h1>
-          <p className="mt-0.5 text-[11px]" style={{ color: WHITE, fontFamily: "'JetBrains Mono', monospace" }}>
+          <p className="font-mono mt-0.5" style={{ color: MUTED, fontSize: ROW_FONT_PX }}>
             {pollStatusLabel(feed)}
           </p>
         </div>
@@ -401,7 +619,7 @@ export function MoversFeed({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: 
           onClick={() => void onRefresh()}
           disabled={refreshBusy}
           className="p-2 rounded-lg border transition-opacity disabled:opacity-40"
-          style={{ borderColor: BORDER_STRONG, color: WHITE }}
+          style={{ borderColor: BORDER, color: MUTED }}
           aria-label="Refresh movers"
         >
           {refreshBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
@@ -410,12 +628,12 @@ export function MoversFeed({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: 
 
       {isLoading && !feed && (
         <div className="flex flex-1 items-center justify-center py-16">
-          <Loader2 className="w-6 h-6 animate-spin" style={{ color: PRIMARY }} />
+          <Loader2 className="w-6 h-6 animate-spin" style={{ color: GOLD }} />
         </div>
       )}
 
       {error && !feed && (
-        <div className="px-3 py-6 text-center text-sm" style={{ color: RED, fontFamily: "Inter, sans-serif" }}>
+        <div className="px-3 py-6 font-mono text-center" style={{ color: RED, fontSize: ROW_FONT_PX }}>
           Failed to load movers feed
         </div>
       )}
@@ -423,15 +641,18 @@ export function MoversFeed({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: 
       {feed && (
         <>
           <FunnelBar funnel={feed.funnel} />
-          <div className="flex-1 min-h-0 overflow-y-auto pb-2">
-            {situations.length === 0 ? (
-              <p className="px-3 py-8 text-center text-sm" style={{ color: WHITE, fontFamily: "Inter, sans-serif" }}>
-                No attributed situations in the latest poll.
+          <div className="flex-1 min-h-0 flex flex-col">
+            {feed.situations.length === 0 ? (
+              <p className="px-3 py-8 font-mono text-center" style={{ color: MUTED, fontSize: ROW_FONT_PX }}>
+                No tradeable movers in the latest poll.
               </p>
             ) : (
-              situations.map((s) => (
-                <SituationCard key={s.id} situation={s} onNavigate={onNavigateToSymbol} />
-              ))
+              <>
+                <MoversListHeader sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                {sortedSituations.map((s: Situation) => (
+                  <SituationCard key={s.id} situation={s} onNavigate={onNavigateToSymbol} />
+                ))}
+              </>
             )}
           </div>
           <FilteredSection filtered={feed.filtered} />
