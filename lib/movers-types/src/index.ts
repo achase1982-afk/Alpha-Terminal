@@ -1,4 +1,8 @@
-export { MOVERS_POLL_INTERVAL_MS, MOVERS_MANUAL_REFRESH_DEBOUNCE_MS } from "./constants.js";
+export {
+  MARKET_CAP_FLOOR,
+  MOVERS_MANUAL_REFRESH_DEBOUNCE_MS,
+  MOVERS_POLL_INTERVAL_MS,
+} from "./constants.js";
 
 export interface MoversFeed {
   capturedAt: string;

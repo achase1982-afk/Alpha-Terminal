@@ -1,14 +1,20 @@
 import type { FilteredName, MoversFeed, Situation, TickerStat } from "@workspace/movers-types";
 import type { FmpMoverRow } from "./fmpMoversClient.js";
+import type { FmpCompanyProfile } from "./fmpCompanyProfile.js";
+import { fetchFmpCompanyProfiles } from "./fmpCompanyProfile.js";
 import { stripMover } from "./stripMover.js";
+import { stripMicroCap } from "./stripMicroCap.js";
 
-function toTickerStat(row: FmpMoverRow): TickerStat {
+function toTickerStat(row: FmpMoverRow, profile?: FmpCompanyProfile): TickerStat {
   return {
     symbol: row.symbol,
     name: row.name,
     exchange: row.exchange,
     price: row.price,
     changePct: row.changesPercentage,
+    ...(profile?.sector ? { sector: profile.sector } : {}),
+    ...(profile?.industry ? { industry: profile.industry } : {}),
+    ...(profile?.marketCap != null ? { marketCap: profile.marketCap } : {}),
   };
 }
 
@@ -22,12 +28,12 @@ function toFiltered(row: FmpMoverRow, reason: FilteredName["reason"]): FilteredN
   };
 }
 
-function singleSituation(row: FmpMoverRow): Situation {
+function singleSituation(row: FmpMoverRow, profile?: FmpCompanyProfile): Situation {
   return {
     kind: "single",
     id: row.symbol,
     label: row.symbol,
-    tickers: [toTickerStat(row)],
+    tickers: [toTickerStat(row, profile)],
     catalystType: "PENDING",
     catalyst: null,
     read: null,
@@ -36,8 +42,10 @@ function singleSituation(row: FmpMoverRow): Situation {
   };
 }
 
-export function buildMoversFeedFromRows(rows: FmpMoverRow[], capturedAt = new Date()): MoversFeed {
-  const detected = rows.length;
+export function applyStage1Strip(rows: FmpMoverRow[]): {
+  survivors: FmpMoverRow[];
+  filtered: FilteredName[];
+} {
   const filtered: FilteredName[] = [];
   const survivors: FmpMoverRow[] = [];
 
@@ -50,16 +58,31 @@ export function buildMoversFeedFromRows(rows: FmpMoverRow[], capturedAt = new Da
     }
   }
 
-  survivors.sort((a, b) => Math.abs(b.changesPercentage) - Math.abs(a.changesPercentage));
+  return { survivors, filtered };
+}
 
-  const situations = survivors.map(singleSituation);
+export async function buildMoversFeedFromRows(
+  rows: FmpMoverRow[],
+  capturedAt = new Date(),
+): Promise<MoversFeed> {
+  const detected = rows.length;
+  const { survivors: stage1Survivors, filtered: stage1Filtered } = applyStage1Strip(rows);
+
+  const profiles = await fetchFmpCompanyProfiles(stage1Survivors.map((r) => r.symbol));
+  const { tradeable, filtered: microFiltered } = stripMicroCap(stage1Survivors, profiles);
+
+  const filtered = [...stage1Filtered, ...microFiltered];
+
+  tradeable.sort((a, b) => Math.abs(b.changesPercentage) - Math.abs(a.changesPercentage));
+
+  const situations = tradeable.map((row) => singleSituation(row, profiles.get(row.symbol)));
 
   return {
     capturedAt: capturedAt.toISOString(),
     funnel: {
       detected,
       filtered: filtered.length,
-      tradeable: survivors.length,
+      tradeable: tradeable.length,
       situations: situations.length,
     },
     situations,
