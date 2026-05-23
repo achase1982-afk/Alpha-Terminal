@@ -9,3 +9,5 @@ export const PRICE_FLOOR = 5;
 
 /** Rows retained in movers_feed after each insert. */
 export const MOVERS_FEED_RETENTION = 50;
+
+export { MOVERS_THEME_KEYWORDS } from "./moversThemeKeywords.js";
