@@ -148,8 +148,9 @@ export default function TerminalPage() {
   const [contextTab, setContextTab] = useState<ContextTab>("news");
   const [aiSubTab, setAiSubTab] = useState<AiSubTab>(() => {
     try {
-      const saved = sessionStorage.getItem("alpha_session_ai_tab") as AiSubTab | null;
-      const valid: AiSubTab[] = ["pulse", "strategist", "scanner"];
+      const savedRaw = sessionStorage.getItem("alpha_session_ai_tab");
+      const saved = (savedRaw === "scanner" ? "movers" : savedRaw) as AiSubTab | null;
+      const valid: AiSubTab[] = ["pulse", "strategist", "movers"];
       return saved && valid.includes(saved) ? saved : "pulse";
     } catch { return "pulse"; }
   });
@@ -565,8 +566,8 @@ export default function TerminalPage() {
         <div className="shrink-0 bg-background z-40">
           <div className="px-3 sm:px-4 lg:px-5 pt-1 pb-1">
             <div className="flex w-full p-1">
-              {(["pulse", "scanner", "strategist"] as AiSubTab[]).map((tab) => {
-                const label = tab === "pulse" ? "MARKET PULSE" : tab === "scanner" ? "SCANNER" : "STRATEGIST";
+              {(["pulse", "movers", "strategist"] as AiSubTab[]).map((tab) => {
+                const label = tab === "pulse" ? "MARKET PULSE" : tab === "movers" ? "MOVERS" : "STRATEGIST";
                 const showIndicator = tab === "strategist" && aiSubTab !== "strategist" && (strategistRunningCount > 0 || strategistUnviewedCount > 0);
                 const indicatorIsRunning = strategistRunningCount > 0;
                 return (

@@ -45,6 +45,7 @@ import { liquidCoreUnionTuningSymbols } from "./lib/liquidCoreUniverse.js";
 import { runLiquidCoreEquityBackfillOnce, runFlowBootstrapGapRepairOnce } from "./lib/triggerBackfillBoot.js";
 import { ensureTelemetryEventsServiceColumn } from "./lib/ensureTelemetryEventsSchema.js";
 import { ensureStrategistTelemetryAuditColumns } from "./lib/ensureStrategistTelemetryAuditColumns.js";
+import { startMoversPollWorker } from "./lib/movers/moversPollWorker.js";
 
 const rawPort = process.env["PORT"];
 
@@ -67,6 +68,7 @@ async function boot() {
   await ensureStrategistTelemetryAuditColumns();
   registerTuningUniverseOnBoot();
   startSnapshotRefreshWorker();
+  startMoversPollWorker();
   void refreshMacroCalendarCacheFromDb().catch((e) => {
     logger.warn({ err: e }, "FMP macro calendar cache warm failed");
   });

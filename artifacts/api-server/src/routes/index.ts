@@ -26,6 +26,7 @@ import polygonAnalystRouter from "./polygonAnalyst";
 import diagnosticsRouter from "./diagnostics";
 import ttsRouter from "./tts";
 import adminRouter from "./admin";
+import moversRouter from "./movers";
 const router: IRouter = Router();
 
 router.use("/auth", authRouter);
@@ -55,5 +56,6 @@ router.use("/polygon", polygonAnalystRouter);
 router.use("/diagnostics", diagnosticsRouter);
 router.use("/tts", ttsRouter);
 router.use("/admin", adminRouter);
+router.use("/movers", moversRouter);
 
 export default router;

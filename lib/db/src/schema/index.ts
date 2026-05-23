@@ -1245,3 +1245,17 @@ export const chatMessagesTable = pgTable(
 
 export type ChatMessageRow = typeof chatMessagesTable.$inferSelect;
 export type ChatMessageInsert = typeof chatMessagesTable.$inferInsert;
+
+/** Latest polled FMP movers feed snapshots (JSON MoversFeed payload). */
+export const moversFeedTable = pgTable(
+  "movers_feed",
+  {
+    id: serial("id").primaryKey(),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  },
+  (t) => [index("movers_feed_captured_at_idx").on(desc(t.capturedAt))],
+);
+
+export type MoversFeedRow = typeof moversFeedTable.$inferSelect;
+export type MoversFeedInsert = typeof moversFeedTable.$inferInsert;
