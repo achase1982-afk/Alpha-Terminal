@@ -39,6 +39,78 @@ const POSTURE_STYLES: Record<MoversPosture, { bg: string; color: string; border:
   PASS: { bg: `${RED}22`, color: RED, border: RED },
 };
 
+const VALID_CATALYST_TYPES = new Set<MoversCatalystType>([
+  "GOV",
+  "ANALYST",
+  "CONTRACT",
+  "EARNINGS",
+  "MA",
+  "SECTOR",
+  "NONE",
+]);
+const VALID_POSTURES = new Set<MoversPosture>(["WATCH", "WAIT", "PASS"]);
+const VALID_CONFIDENCE = new Set<MoversConfidence>(["HIGH", "MED", "LOW"]);
+
+/** Tolerate pre–catalyst-attribution payloads still cached or stored in movers_feed. */
+function normalizeSituation(raw: Situation): Situation | null {
+  const catalystType = VALID_CATALYST_TYPES.has(raw.catalystType as MoversCatalystType)
+    ? raw.catalystType
+    : null;
+  const posture = VALID_POSTURES.has(raw.posture as MoversPosture) ? raw.posture : null;
+  const confidence = VALID_CONFIDENCE.has(raw.confidence as MoversConfidence)
+    ? raw.confidence
+    : "LOW";
+
+  if (!catalystType || !posture || catalystType === "NONE") {
+    return null;
+  }
+
+  return {
+    ...raw,
+    catalystType,
+    posture,
+    confidence,
+    catalyst: typeof raw.catalyst === "string" ? raw.catalyst : "",
+    read: typeof raw.read === "string" ? raw.read : "",
+  };
+}
+
+function normalizeFeed(feed: MoversFeed): MoversFeed {
+  const situations: Situation[] = [];
+  const flagged = [...feed.flagged];
+
+  for (const s of feed.situations) {
+    const normalized = normalizeSituation(s);
+    if (normalized) {
+      situations.push(normalized);
+      continue;
+    }
+    const note =
+      typeof s.catalyst === "string" && s.catalyst
+        ? s.catalyst
+        : "Catalyst attribution pending or unavailable";
+    for (const t of s.tickers) {
+      flagged.push({
+        symbol: t.symbol,
+        name: t.name,
+        price: t.price,
+        changePct: t.changePct,
+        note,
+      });
+    }
+  }
+
+  return {
+    ...feed,
+    situations,
+    flagged,
+    funnel: {
+      ...feed.funnel,
+      situations: situations.length,
+    },
+  };
+}
+
 function fmtPct(n: number): string {
   const sign = n >= 0 ? "+" : "";
   return `${sign}${n.toFixed(2)}%`;
@@ -114,13 +186,14 @@ function FunnelBar({ funnel }: { funnel: MoversFeed["funnel"] }) {
 }
 
 function CatalystTag({ type }: { type: MoversCatalystType }) {
+  const color = CATALYST_COLORS[type] ?? BORDER_STRONG;
   return (
     <span
       className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 rounded"
       style={{
-        color: CATALYST_COLORS[type],
-        border: `1px solid ${CATALYST_COLORS[type]}55`,
-        background: `${CATALYST_COLORS[type]}18`,
+        color,
+        border: `1px solid ${color}55`,
+        background: `${color}18`,
       }}
     >
       {type}
@@ -129,7 +202,7 @@ function CatalystTag({ type }: { type: MoversCatalystType }) {
 }
 
 function PosturePill({ posture }: { posture: MoversPosture }) {
-  const style = POSTURE_STYLES[posture];
+  const style = POSTURE_STYLES[posture] ?? POSTURE_STYLES.WAIT;
   return (
     <span
       className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 rounded font-bold"
@@ -349,7 +422,7 @@ export function MoversFeed({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: 
     queryFn: async () => {
       const res = await fetchWithAuth("/api/movers");
       if (!res.ok) throw new Error(`Movers feed HTTP ${res.status}`);
-      return (await res.json()) as MoversFeed;
+      return normalizeFeed((await res.json()) as MoversFeed);
     },
     refetchInterval: MOVERS_POLL_INTERVAL_MS,
     staleTime: 30_000,
@@ -367,7 +440,7 @@ export function MoversFeed({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: 
       const res = await fetchWithAuth("/api/movers/refresh", { method: "POST" });
       if (!res.ok) throw new Error(`Movers refresh HTTP ${res.status}`);
       const body = (await res.json()) as { feed: MoversFeed; debounced?: boolean };
-      queryClient.setQueryData(["movers-feed"], body.feed);
+      queryClient.setQueryData(["movers-feed"], normalizeFeed(body.feed));
     } catch {
       await queryClient.invalidateQueries({ queryKey: ["movers-feed"] });
     } finally {
