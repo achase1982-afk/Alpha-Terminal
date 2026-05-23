@@ -46,6 +46,7 @@ import { runLiquidCoreEquityBackfillOnce, runFlowBootstrapGapRepairOnce } from "
 import { ensureTelemetryEventsServiceColumn } from "./lib/ensureTelemetryEventsSchema.js";
 import { ensureStrategistTelemetryAuditColumns } from "./lib/ensureStrategistTelemetryAuditColumns.js";
 import { startMoversPollWorker } from "./lib/movers/moversPollWorker.js";
+import { ensureMoversFeedTable } from "./lib/ensureMoversFeedSchema.js";
 
 const rawPort = process.env["PORT"];
 
@@ -66,6 +67,7 @@ getFmpApiKeyOrThrow();
 async function boot() {
   await ensureTelemetryEventsServiceColumn();
   await ensureStrategistTelemetryAuditColumns();
+  await ensureMoversFeedTable();
   registerTuningUniverseOnBoot();
   startSnapshotRefreshWorker();
   startMoversPollWorker();
