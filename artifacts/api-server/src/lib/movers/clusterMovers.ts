@@ -1,7 +1,7 @@
 import type { Situation } from "@workspace/movers-types";
+import { MOVERS_THEME_TICKER_MAP } from "@workspace/movers-types";
 import type { FmpMoverRow } from "./fmpMoversClient.js";
 import type { FmpCompanyProfile } from "./fmpCompanyProfile.js";
-import { MOVERS_THEME_KEYWORDS } from "./moversThemeKeywords.js";
 
 export interface EnrichedMover {
   row: FmpMoverRow;
@@ -21,64 +21,37 @@ function toTickerStat(row: FmpMoverRow, profile?: FmpCompanyProfile) {
   };
 }
 
-function themeLabelFor(item: EnrichedMover): string | null {
-  const haystack = `${item.row.name} ${item.profile?.industry ?? ""} ${item.profile?.sector ?? ""}`;
-  for (const { label, pattern } of MOVERS_THEME_KEYWORDS) {
-    if (pattern.test(haystack)) return label;
-  }
-  return null;
-}
-
-function clusterKey(item: EnrichedMover): string {
-  const theme = themeLabelFor(item);
-  if (theme) return `theme:${theme}`;
-  const industry = item.profile?.industry?.trim();
-  if (industry) return `industry:${industry}`;
-  return `single:${item.row.symbol}`;
-}
-
-function clusterLabel(key: string, items: EnrichedMover[]): string {
-  if (key.startsWith("theme:")) return key.slice("theme:".length);
-  if (key.startsWith("industry:")) return key.slice("industry:".length);
-  return items[0]?.row.symbol ?? "Mover";
-}
-
-function makeClusterId(key: string): string {
-  const slug = key
-    .replace(/^theme:|^industry:|^single:/, "")
+function makeClusterId(label: string): string {
+  const slug = label
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
   return `cluster-${slug || "group"}`;
 }
 
-function situationFromGroup(key: string, items: EnrichedMover[]): Situation {
+function singleSituation(item: EnrichedMover): Situation {
+  return {
+    kind: "single",
+    id: item.row.symbol,
+    label: item.row.symbol,
+    tickers: [toTickerStat(item.row, item.profile)],
+    catalystType: "PENDING",
+    catalyst: null,
+    read: null,
+    posture: "PENDING",
+    confidence: null,
+  };
+}
+
+function clusterSituation(label: string, items: EnrichedMover[]): Situation {
   const sorted = [...items].sort(
     (a, b) => Math.abs(b.row.changesPercentage) - Math.abs(a.row.changesPercentage),
   );
-  const tickers = sorted.map((i) => toTickerStat(i.row, i.profile));
-  const label = clusterLabel(key, sorted);
-
-  if (sorted.length === 1) {
-    const only = sorted[0]!;
-    return {
-      kind: "single",
-      id: only.row.symbol,
-      label: only.row.symbol,
-      tickers,
-      catalystType: "PENDING",
-      catalyst: null,
-      read: null,
-      posture: "PENDING",
-      confidence: null,
-    };
-  }
-
   return {
     kind: "cluster",
-    id: makeClusterId(key),
+    id: makeClusterId(label),
     label,
-    tickers,
+    tickers: sorted.map((i) => toTickerStat(i.row, i.profile)),
     catalystType: "PENDING",
     catalyst: null,
     read: null,
@@ -88,21 +61,32 @@ function situationFromGroup(key: string, items: EnrichedMover[]): Situation {
 }
 
 /**
- * Group tradeable movers by theme keyword (first) then industry. Groups of ≥2 become clusters.
+ * Group tradeable movers by curated theme ticker map only. Industry/sector are never
+ * clustering axes. A theme cluster includes only symbols present in this poll's feed.
  */
 export function clusterEnrichedMovers(items: EnrichedMover[]): Situation[] {
-  const groups = new Map<string, EnrichedMover[]>();
+  const feedBySymbol = new Map(items.map((i) => [i.row.symbol, i]));
+  const assigned = new Set<string>();
+  const situations: Situation[] = [];
 
-  for (const item of items) {
-    const key = clusterKey(item);
-    const list = groups.get(key) ?? [];
-    list.push(item);
-    groups.set(key, list);
+  for (const { label, tickers } of MOVERS_THEME_TICKER_MAP) {
+    const members: EnrichedMover[] = [];
+    for (const sym of tickers) {
+      const upper = sym.toUpperCase();
+      const item = feedBySymbol.get(upper);
+      if (item) members.push(item);
+    }
+
+    if (members.length >= 2) {
+      situations.push(clusterSituation(label, members));
+      for (const m of members) assigned.add(m.row.symbol);
+    }
   }
 
-  const situations: Situation[] = [];
-  for (const [key, group] of groups) {
-    situations.push(situationFromGroup(key, group));
+  for (const item of items) {
+    if (assigned.has(item.row.symbol)) continue;
+    situations.push(singleSituation(item));
+    assigned.add(item.row.symbol);
   }
 
   situations.sort((a, b) => {
