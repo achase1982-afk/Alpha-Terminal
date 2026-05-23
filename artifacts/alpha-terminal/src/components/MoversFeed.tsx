@@ -22,7 +22,7 @@ const GREEN = "#00d166";
 const RED = "#f23645";
 const ROW_FONT_PX = 12;
 
-type SortKey = "symbol" | "name" | "price" | "changePct";
+type SortKey = "symbol" | "price" | "changePct";
 type SortDir = "asc" | "desc";
 
 const VALID_CATALYST_TYPES = new Set<MoversCatalystType>([
@@ -52,6 +52,20 @@ const POSTURE_COLORS: Record<MoversPosture, string> = {
   WAIT: GOLD,
   PASS: RED,
 };
+
+const CATALYST_TYPE_LABELS: Record<MoversCatalystType, string> = {
+  GOV: "GOVERNMENT FUNDING",
+  ANALYST: "ANALYST ACTION",
+  CONTRACT: "CONTRACT WIN",
+  EARNINGS: "EARNINGS",
+  MA: "M&A",
+  SECTOR: "SECTOR",
+  NONE: "NO CATALYST",
+};
+
+/** Collapsed row: chevron | ticker | price | % change | catalyst | posture */
+const COLLAPSED_GRID =
+  "20px 52px 64px 72px minmax(0, 1fr) 72px";
 
 /** Tolerate legacy PENDING payloads still in movers_feed or client cache. */
 function normalizeSituation(raw: Situation): Situation | null {
@@ -147,12 +161,6 @@ function primaryTicker(s: Situation): TickerStat | undefined {
   return s.tickers[0];
 }
 
-function companyLabel(s: Situation): string {
-  const t = primaryTicker(s);
-  if (s.kind === "cluster" && s.label) return s.label;
-  return t?.name ?? s.label;
-}
-
 function compareSituations(a: Situation, b: Situation, key: SortKey, dir: SortDir): number {
   const ta = primaryTicker(a);
   const tb = primaryTicker(b);
@@ -160,9 +168,6 @@ function compareSituations(a: Situation, b: Situation, key: SortKey, dir: SortDi
   switch (key) {
     case "symbol":
       cmp = (ta?.symbol ?? "").localeCompare(tb?.symbol ?? "");
-      break;
-    case "name":
-      cmp = companyLabel(a).localeCompare(companyLabel(b));
       break;
     case "price":
       cmp = (ta?.price ?? 0) - (tb?.price ?? 0);
@@ -226,7 +231,7 @@ function MoversListHeader({
       style={{
         background: PANEL,
         borderColor: BORDER,
-        gridTemplateColumns: "20px 56px minmax(0, 1fr) 72px 76px 108px",
+        gridTemplateColumns: COLLAPSED_GRID,
         columnGap: 4,
         paddingLeft: 8,
         paddingRight: 8,
@@ -234,7 +239,6 @@ function MoversListHeader({
     >
       <span />
       <SortColumnHeader label="Ticker" columnKey="symbol" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
-      <SortColumnHeader label="Company name" columnKey="name" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
       <SortColumnHeader
         label="Price"
         columnKey="price"
@@ -251,6 +255,12 @@ function MoversListHeader({
         sortDir={sortDir}
         onSort={onSort}
       />
+      <span
+        className="font-mono tracking-wider truncate min-w-0"
+        style={{ color: MUTED, fontSize: ROW_FONT_PX }}
+      >
+        Catalyst
+      </span>
       <span
         className="font-mono tracking-wider text-right pr-1"
         style={{ color: MUTED, fontSize: ROW_FONT_PX }}
@@ -286,7 +296,6 @@ function FunnelBar({ funnel }: { funnel: MoversFeed["funnel"] }) {
 }
 
 function CatalystExpandedDetail({ situation }: { situation: Situation }) {
-  const typeColor = CATALYST_TAG_COLORS[situation.catalystType] ?? GOLD;
   const postureColor = POSTURE_COLORS[situation.posture] ?? GOLD;
 
   return (
@@ -295,21 +304,11 @@ function CatalystExpandedDetail({ situation }: { situation: Situation }) {
       style={{ borderColor: BORDER, background: PANEL }}
     >
       <div className="flex flex-wrap items-center gap-2">
+        <CatalystTypeTag type={situation.catalystType} />
         <span
           className="font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
           style={{
-            fontSize: 10,
-            color: typeColor,
-            border: `1px solid ${typeColor}55`,
-            background: `${typeColor}18`,
-          }}
-        >
-          {situation.catalystType}
-        </span>
-        <span
-          className="font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
-          style={{
-            fontSize: 10,
+            fontSize: ROW_FONT_PX,
             color: postureColor,
             border: `1px solid ${postureColor}55`,
             background: `${postureColor}18`,
@@ -317,7 +316,7 @@ function CatalystExpandedDetail({ situation }: { situation: Situation }) {
         >
           {situation.posture}
         </span>
-        <span className="font-mono uppercase tracking-wider" style={{ color: "#fafafa", fontSize: 10 }}>
+        <span className="font-mono uppercase tracking-wider" style={{ color: "#fafafa", fontSize: ROW_FONT_PX }}>
           {situation.confidence} confidence
         </span>
       </div>
@@ -328,6 +327,26 @@ function CatalystExpandedDetail({ situation }: { situation: Situation }) {
         {situation.read}
       </p>
     </div>
+  );
+}
+
+function CatalystTypeTag({ type }: { type: MoversCatalystType }) {
+  const color = CATALYST_TAG_COLORS[type] ?? GOLD;
+  const label = CATALYST_TYPE_LABELS[type] ?? type;
+  return (
+    <span
+      className="font-mono font-bold uppercase tracking-wide px-1.5 py-0.5 rounded truncate min-w-0 justify-self-start"
+      style={{
+        fontSize: ROW_FONT_PX,
+        color,
+        border: `1px solid ${color}55`,
+        background: `${color}18`,
+        maxWidth: "100%",
+      }}
+      title={label}
+    >
+      {label}
+    </span>
   );
 }
 
@@ -358,11 +377,11 @@ function SituationCard({
         type="button"
         className="w-full text-left grid items-center py-2"
         style={{
-          gridTemplateColumns: "20px 56px minmax(0, 1fr) 72px 76px 108px",
+          gridTemplateColumns: COLLAPSED_GRID,
           columnGap: 4,
           paddingLeft: 8,
           paddingRight: 8,
-          minHeight: 40,
+          minHeight: 44,
         }}
         onClick={() => setExpanded((e) => !e)}
       >
@@ -373,9 +392,6 @@ function SituationCard({
         )}
         <span className="font-mono font-bold truncate" style={{ color: "#fafafa", fontSize: ROW_FONT_PX }}>
           {tickerColumnLabel(situation)}
-        </span>
-        <span className="font-mono truncate" style={{ color: MUTED, fontSize: ROW_FONT_PX }}>
-          {companyLabel(situation)}
         </span>
         <span
           className="font-mono tabular-nums text-right truncate"
@@ -389,10 +405,11 @@ function SituationCard({
         >
           {fmtPct(t.changePct)}
         </span>
+        <CatalystTypeTag type={situation.catalystType} />
         <span
-          className="font-mono font-bold tracking-wide px-1.5 py-0.5 rounded justify-self-end truncate max-w-[108px]"
+          className="font-mono font-bold tracking-wide px-1.5 py-0.5 rounded justify-self-end truncate"
           style={{
-            fontSize: 10,
+            fontSize: ROW_FONT_PX,
             background: `${POSTURE_COLORS[situation.posture] ?? GOLD}18`,
             color: POSTURE_COLORS[situation.posture] ?? GOLD,
             border: `1px solid ${POSTURE_COLORS[situation.posture] ?? GOLD}44`,
