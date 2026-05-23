@@ -1,7 +1,7 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Loader2, RefreshCw } from "lucide-react";
-import type { FilteredName, MoversFeed, Situation } from "@workspace/movers-types";
+import type { FilteredName, MoversFeed, Situation, TickerStat } from "@workspace/movers-types";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { MOVERS_MANUAL_REFRESH_DEBOUNCE_MS, MOVERS_POLL_INTERVAL_MS } from "@workspace/movers-types";
 
@@ -12,6 +12,10 @@ const MUTED = "#71717a";
 const GOLD = "#FFB800";
 const GREEN = "#00d166";
 const RED = "#f23645";
+const ROW_FONT_PX = 12;
+
+type SortKey = "symbol" | "name" | "price" | "changePct";
+type SortDir = "asc" | "desc";
 
 function fmtPct(n: number): string {
   const sign = n >= 0 ? "+" : "";
@@ -24,7 +28,6 @@ function fmtPrice(n: number): string {
   return n.toFixed(n < 1 ? 3 : 2);
 }
 
-/** Format feed `capturedAt` (FMP poll time), not the browser fetch time. */
 function fmtCapturedAt(iso: string): string {
   if (!iso) return "";
   try {
@@ -49,6 +52,124 @@ function pollStatusLabel(feed: MoversFeed | undefined): string {
   return stamped ? `Last poll ${stamped}` : "Waiting for first poll";
 }
 
+function primaryTicker(s: Situation): TickerStat | undefined {
+  return s.tickers[0];
+}
+
+function companyLabel(s: Situation): string {
+  const t = primaryTicker(s);
+  if (s.kind === "cluster" && s.label) return s.label;
+  return t?.name ?? s.label;
+}
+
+function compareSituations(a: Situation, b: Situation, key: SortKey, dir: SortDir): number {
+  const ta = primaryTicker(a);
+  const tb = primaryTicker(b);
+  let cmp = 0;
+  switch (key) {
+    case "symbol":
+      cmp = (ta?.symbol ?? "").localeCompare(tb?.symbol ?? "");
+      break;
+    case "name":
+      cmp = companyLabel(a).localeCompare(companyLabel(b));
+      break;
+    case "price":
+      cmp = (ta?.price ?? 0) - (tb?.price ?? 0);
+      break;
+    case "changePct":
+      cmp = (ta?.changePct ?? 0) - (tb?.changePct ?? 0);
+      break;
+  }
+  return dir === "asc" ? cmp : -cmp;
+}
+
+function SortColumnHeader({
+  label,
+  columnKey,
+  align = "left",
+  sortKey,
+  sortDir,
+  onSort,
+}: {
+  label: string;
+  columnKey: SortKey;
+  align?: "left" | "right";
+  sortKey: SortKey | null;
+  sortDir: SortDir;
+  onSort: (key: SortKey) => void;
+}) {
+  const active = sortKey === columnKey;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(columnKey)}
+      className="font-mono tracking-wider flex items-center gap-0.5 transition-colors min-w-0"
+      style={{
+        color: active ? "#a1a1aa" : MUTED,
+        fontSize: ROW_FONT_PX,
+        padding: "6px 4px",
+        justifyContent: align === "right" ? "flex-end" : "flex-start",
+        width: "100%",
+      }}
+    >
+      <span className="truncate">{label}</span>
+      {active && (
+        <span style={{ fontSize: 9, flexShrink: 0 }}>{sortDir === "asc" ? "▲" : "▼"}</span>
+      )}
+    </button>
+  );
+}
+
+function MoversListHeader({
+  sortKey,
+  sortDir,
+  onSort,
+}: {
+  sortKey: SortKey | null;
+  sortDir: SortDir;
+  onSort: (key: SortKey) => void;
+}) {
+  return (
+    <div
+      className="grid items-center border-b shrink-0"
+      style={{
+        background: PANEL,
+        borderColor: BORDER,
+        gridTemplateColumns: "20px 56px minmax(0, 1fr) 72px 76px 108px",
+        columnGap: 4,
+        paddingLeft: 8,
+        paddingRight: 8,
+      }}
+    >
+      <span />
+      <SortColumnHeader label="Ticker" columnKey="symbol" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+      <SortColumnHeader label="Company name" columnKey="name" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+      <SortColumnHeader
+        label="Price"
+        columnKey="price"
+        align="right"
+        sortKey={sortKey}
+        sortDir={sortDir}
+        onSort={onSort}
+      />
+      <SortColumnHeader
+        label="% Change"
+        columnKey="changePct"
+        align="right"
+        sortKey={sortKey}
+        sortDir={sortDir}
+        onSort={onSort}
+      />
+      <span
+        className="font-mono tracking-wider text-right pr-1"
+        style={{ color: MUTED, fontSize: ROW_FONT_PX }}
+      >
+        Status
+      </span>
+    </div>
+  );
+}
+
 function FunnelBar({ funnel }: { funnel: MoversFeed["funnel"] }) {
   const items = [
     { label: "DETECTED", value: funnel.detected, color: MUTED },
@@ -58,13 +179,13 @@ function FunnelBar({ funnel }: { funnel: MoversFeed["funnel"] }) {
   ];
   return (
     <div
-      className="grid grid-cols-4 gap-1 px-3 py-2 border-b font-mono text-[9px] tracking-wider"
-      style={{ background: PANEL, borderColor: BORDER }}
+      className="grid grid-cols-4 gap-1 px-3 py-2 border-b font-mono tracking-wider shrink-0"
+      style={{ background: PANEL, borderColor: BORDER, fontSize: ROW_FONT_PX }}
     >
       {items.map((item) => (
         <div key={item.label} className="text-center">
-          <div style={{ color: MUTED }}>{item.label}</div>
-          <div className="text-sm font-bold mt-0.5" style={{ color: item.color }}>
+          <div style={{ color: MUTED, fontSize: 10 }}>{item.label}</div>
+          <div className="font-bold mt-0.5" style={{ color: item.color, fontSize: ROW_FONT_PX }}>
             {item.value}
           </div>
         </div>
@@ -81,7 +202,7 @@ function SituationCard({
   onNavigate?: (sym: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const t = situation.tickers[0];
+  const t = primaryTicker(situation);
   if (!t) return null;
   const up = t.changePct >= 0;
 
@@ -89,50 +210,65 @@ function SituationCard({
     <div className="border-b" style={{ borderColor: BORDER, background: BG }}>
       <button
         type="button"
-        className="w-full text-left px-3 py-1.5 flex items-center gap-2 min-h-[36px]"
+        className="w-full text-left grid items-center py-2"
+        style={{
+          gridTemplateColumns: "20px 56px minmax(0, 1fr) 72px 76px 108px",
+          columnGap: 4,
+          paddingLeft: 8,
+          paddingRight: 8,
+          minHeight: 40,
+        }}
         onClick={() => setExpanded((e) => !e)}
       >
         {expanded ? (
-          <ChevronDown className="w-3.5 h-3.5 shrink-0" style={{ color: MUTED }} />
+          <ChevronDown className="w-4 h-4 shrink-0 justify-self-center" style={{ color: MUTED }} />
         ) : (
-          <ChevronRight className="w-3.5 h-3.5 shrink-0" style={{ color: MUTED }} />
+          <ChevronRight className="w-4 h-4 shrink-0 justify-self-center" style={{ color: MUTED }} />
         )}
-        <span className="font-mono text-xs font-bold w-12 shrink-0" style={{ color: "#fafafa" }}>
+        <span className="font-mono font-bold truncate" style={{ color: "#fafafa", fontSize: ROW_FONT_PX }}>
           {t.symbol}
         </span>
-        <span className="flex-1 truncate font-mono text-[10px]" style={{ color: MUTED }}>
-          {situation.label}
+        <span className="font-mono truncate" style={{ color: MUTED, fontSize: ROW_FONT_PX }}>
+          {companyLabel(situation)}
         </span>
-        <span className="font-mono text-[11px] tabular-nums shrink-0" style={{ color: "#e4e4e7" }}>
+        <span
+          className="font-mono tabular-nums text-right truncate"
+          style={{ color: "#e4e4e7", fontSize: ROW_FONT_PX }}
+        >
           ${fmtPrice(t.price)}
         </span>
         <span
-          className="font-mono text-[11px] font-bold tabular-nums w-14 text-right shrink-0"
-          style={{ color: up ? GREEN : RED }}
+          className="font-mono font-bold tabular-nums text-right"
+          style={{ color: up ? GREEN : RED, fontSize: ROW_FONT_PX }}
         >
           {fmtPct(t.changePct)}
         </span>
         <span
-          className="font-mono text-[8px] font-bold tracking-wide px-1.5 py-0.5 rounded shrink-0"
-          style={{ background: "rgba(255,184,0,0.12)", color: GOLD, border: `1px solid ${GOLD}33` }}
+          className="font-mono font-bold tracking-wide px-1.5 py-0.5 rounded justify-self-end truncate max-w-[108px]"
+          style={{
+            fontSize: 10,
+            background: "rgba(255,184,0,0.12)",
+            color: GOLD,
+            border: `1px solid ${GOLD}33`,
+          }}
         >
           CATALYST PENDING
         </span>
       </button>
       {expanded && (
-        <div className="px-3 pb-2 pt-0 pl-9 space-y-1">
-          <p className="font-mono text-[10px] leading-snug" style={{ color: "#a1a1aa" }}>
+        <div className="px-3 pb-2 pt-0 space-y-1" style={{ paddingLeft: 36 }}>
+          <p className="font-mono leading-snug" style={{ color: "#a1a1aa", fontSize: ROW_FONT_PX }}>
             {t.name}
           </p>
-          <p className="font-mono text-[9px]" style={{ color: MUTED }}>
+          <p className="font-mono" style={{ color: MUTED, fontSize: ROW_FONT_PX }}>
             {t.exchange}
             {situation.kind === "cluster" ? ` · ${situation.tickers.length} names` : ""}
           </p>
           {onNavigate && (
             <button
               type="button"
-              className="font-mono text-[9px] font-bold tracking-wider mt-1"
-              style={{ color: GOLD }}
+              className="font-mono font-bold tracking-wider mt-1"
+              style={{ color: GOLD, fontSize: ROW_FONT_PX }}
               onClick={() => onNavigate(t.symbol)}
             >
               OPEN IN MARKETS →
@@ -155,31 +291,53 @@ function FilteredSection({ filtered }: { filtered: FilteredName[] }) {
   };
 
   return (
-    <div className="border-t" style={{ borderColor: BORDER }}>
+    <div className="border-t shrink-0" style={{ borderColor: BORDER }}>
       <button
         type="button"
-        className="w-full flex items-center justify-between px-3 py-2 font-mono text-[10px] font-bold tracking-wider"
-        style={{ background: PANEL, color: MUTED }}
+        className="w-full flex items-center justify-between px-3 py-2.5 font-mono font-bold tracking-wider"
+        style={{ background: PANEL, color: MUTED, fontSize: ROW_FONT_PX }}
         onClick={() => setOpen((o) => !o)}
       >
         <span>FILTERED ({filtered.length})</span>
-        {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+        {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
       </button>
       {open && (
         <div style={{ background: BG }}>
+          <p className="px-3 py-2 font-mono border-b" style={{ color: MUTED, fontSize: 11, borderColor: BORDER }}>
+            Stripped from the movers list — leveraged ETFs, sub-$5 names, and (later) micro-caps.
+          </p>
           {filtered.map((row) => (
             <div
               key={`${row.symbol}-${row.reason}`}
-              className="flex items-center gap-2 px-3 py-1 font-mono text-[10px] border-b"
-              style={{ borderColor: BORDER, minHeight: 28 }}
+              className="grid items-center border-b"
+              style={{
+                borderColor: BORDER,
+                minHeight: 36,
+                gridTemplateColumns: "56px minmax(0, 1fr) 72px 76px 88px",
+                columnGap: 4,
+                paddingLeft: 12,
+                paddingRight: 8,
+              }}
             >
-              <span className="w-11 font-bold" style={{ color: "#a1a1aa" }}>
+              <span className="font-mono font-bold" style={{ color: "#a1a1aa", fontSize: ROW_FONT_PX }}>
                 {row.symbol}
               </span>
-              <span className="flex-1 truncate" style={{ color: MUTED }}>
+              <span className="font-mono truncate" style={{ color: MUTED, fontSize: ROW_FONT_PX }}>
                 {row.name}
               </span>
-              <span className="text-[9px] uppercase tracking-wide shrink-0" style={{ color: "#52525b" }}>
+              <span className="font-mono tabular-nums text-right" style={{ color: "#e4e4e7", fontSize: ROW_FONT_PX }}>
+                ${fmtPrice(row.price)}
+              </span>
+              <span
+                className="font-mono font-bold tabular-nums text-right"
+                style={{ color: row.changePct >= 0 ? GREEN : RED, fontSize: ROW_FONT_PX }}
+              >
+                {fmtPct(row.changePct)}
+              </span>
+              <span
+                className="font-mono uppercase tracking-wide text-right truncate"
+                style={{ color: "#52525b", fontSize: 10 }}
+              >
                 {reasonLabel[row.reason]}
               </span>
             </div>
@@ -194,6 +352,8 @@ export function MoversFeed({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: 
   const queryClient = useQueryClient();
   const lastManualRefreshAt = useRef(0);
   const [manualRefreshing, setManualRefreshing] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   const {
     data,
@@ -212,6 +372,29 @@ export function MoversFeed({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: 
   });
 
   const feed = data;
+
+  const handleSort = useCallback(
+    (key: SortKey) => {
+      if (sortKey === key) {
+        if (sortDir === "asc") {
+          setSortDir("desc");
+        } else {
+          setSortKey(null);
+          setSortDir("asc");
+        }
+      } else {
+        setSortKey(key);
+        setSortDir("asc");
+      }
+    },
+    [sortKey, sortDir],
+  );
+
+  const sortedSituations = useMemo(() => {
+    const list = feed?.situations ?? [];
+    if (!sortKey) return list;
+    return [...list].sort((a, b) => compareSituations(a, b, sortKey, sortDir));
+  }, [feed?.situations, sortKey, sortDir]);
 
   const onRefresh = useCallback(async () => {
     const now = Date.now();
@@ -240,10 +423,10 @@ export function MoversFeed({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: 
         style={{ borderColor: BORDER, background: PANEL }}
       >
         <div>
-          <h1 className="font-mono text-xs font-bold tracking-[0.2em]" style={{ color: GOLD }}>
+          <h1 className="font-mono font-bold tracking-[0.2em]" style={{ color: GOLD, fontSize: ROW_FONT_PX }}>
             MOVERS
           </h1>
-          <p className="font-mono text-[9px] mt-0.5" style={{ color: MUTED }}>
+          <p className="font-mono mt-0.5" style={{ color: MUTED, fontSize: ROW_FONT_PX }}>
             {pollStatusLabel(feed)}
           </p>
         </div>
@@ -266,7 +449,7 @@ export function MoversFeed({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: 
       )}
 
       {error && !feed && (
-        <div className="px-3 py-6 font-mono text-xs text-center" style={{ color: RED }}>
+        <div className="px-3 py-6 font-mono text-center" style={{ color: RED, fontSize: ROW_FONT_PX }}>
           Failed to load movers feed
         </div>
       )}
@@ -274,15 +457,18 @@ export function MoversFeed({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: 
       {feed && (
         <>
           <FunnelBar funnel={feed.funnel} />
-          <div className="flex-1">
+          <div className="flex-1 min-h-0 flex flex-col">
             {feed.situations.length === 0 ? (
-              <p className="px-3 py-8 font-mono text-[11px] text-center" style={{ color: MUTED }}>
+              <p className="px-3 py-8 font-mono text-center" style={{ color: MUTED, fontSize: ROW_FONT_PX }}>
                 No tradeable movers in the latest poll.
               </p>
             ) : (
-              feed.situations.map((s: Situation) => (
-                <SituationCard key={s.id} situation={s} onNavigate={onNavigateToSymbol} />
-              ))
+              <>
+                <MoversListHeader sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                {sortedSituations.map((s: Situation) => (
+                  <SituationCard key={s.id} situation={s} onNavigate={onNavigateToSymbol} />
+                ))}
+              </>
             )}
           </div>
           <FilteredSection filtered={feed.filtered} />
