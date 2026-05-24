@@ -4,6 +4,10 @@ export {
   MOVERS_POLL_INTERVAL_MS,
 } from "./constants.js";
 export { MOVERS_THEME_TICKER_MAP } from "./themeTickers.js";
+export {
+  MOVERS_CATALYST_KEYWORD_GROUPS,
+  classifyCatalystTypeFromHeadline,
+} from "./catalystKeywords.js";
 
 export interface MoversFeed {
   capturedAt: string;
@@ -31,11 +35,20 @@ export interface Situation {
   id: string;
   label: string;
   tickers: TickerStat[];
+  /** Deterministic keyword classification from driving headline. */
   catalystType: MoversCatalystType;
+  /** Most recent relevant FMP headline (catalyst summary). */
   catalyst: string;
+  /** Cache key from driving news; empty when type is NONE. */
+  newsKey: string;
+}
+
+/** Lazy-generated on GET /api/movers/read (not included in feed payload). */
+export interface MoversSituationRead {
   read: string;
   posture: MoversPosture;
   confidence: MoversConfidence;
+  cached?: boolean;
 }
 
 export interface TickerStat {

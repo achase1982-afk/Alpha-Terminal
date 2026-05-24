@@ -2,7 +2,7 @@ import type { FilteredName, MoversFeed } from "@workspace/movers-types";
 import type { FmpMoverRow } from "./fmpMoversClient.js";
 import { fetchFmpCompanyProfiles } from "./fmpCompanyProfile.js";
 import { clusterEnrichedMovers } from "./clusterMovers.js";
-import { attributeMoversSituations } from "./moversCatalystAttribution.js";
+import { applyDeterministicCatalystToSituations } from "./moversDeterministicCatalyst.js";
 import { stripMover } from "./stripMover.js";
 import { stripMicroCap } from "./stripMicroCap.js";
 
@@ -49,7 +49,7 @@ export async function buildMoversFeedFromRows(
 
   const enriched = tradeable.map((row) => ({ row, profile: profiles.get(row.symbol) }));
   const clustered = clusterEnrichedMovers(enriched);
-  const { situations, flagged } = await attributeMoversSituations(clustered);
+  const { situations, flagged } = await applyDeterministicCatalystToSituations(clustered);
 
   return {
     capturedAt: capturedAt.toISOString(),

@@ -1259,3 +1259,19 @@ export const moversFeedTable = pgTable(
 
 export type MoversFeedRow = typeof moversFeedTable.$inferSelect;
 export type MoversFeedInsert = typeof moversFeedTable.$inferInsert;
+
+/** Lazy LLM read cache keyed by driving-news fingerprint (7-day retention). */
+export const moversCatalystCacheTable = pgTable(
+  "movers_catalyst_cache",
+  {
+    newsKey: text("news_key").primaryKey(),
+    read: text("read").notNull(),
+    posture: text("posture").notNull(),
+    confidence: text("confidence").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("movers_catalyst_cache_created_at_idx").on(t.createdAt)],
+);
+
+export type MoversCatalystCacheRow = typeof moversCatalystCacheTable.$inferSelect;
+export type MoversCatalystCacheInsert = typeof moversCatalystCacheTable.$inferInsert;

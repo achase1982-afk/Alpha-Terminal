@@ -25,9 +25,7 @@ function toTickerStat(row: FmpMoverRow, profile?: FmpCompanyProfile) {
 const PLACEHOLDER_SITUATION = {
   catalystType: "NONE" as const,
   catalyst: "",
-  read: "",
-  posture: "WAIT" as const,
-  confidence: "LOW" as const,
+  newsKey: "",
 };
 
 function makeClusterId(label: string): string {
