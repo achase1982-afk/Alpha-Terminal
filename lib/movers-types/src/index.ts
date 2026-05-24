@@ -7,6 +7,7 @@ export { MOVERS_THEME_TICKER_MAP } from "./themeTickers.js";
 export {
   MOVERS_CATALYST_KEYWORD_GROUPS,
   classifyCatalystTypeFromHeadline,
+  headlineMatchesKeyword,
 } from "./catalystKeywords.js";
 
 export interface MoversFeed {
@@ -24,6 +25,7 @@ export type MoversCatalystType =
   | "EARNINGS"
   | "MA"
   | "SECTOR"
+  | "UNKNOWN"
   | "NONE";
 
 export type MoversPosture = "WATCH" | "WAIT" | "PASS";

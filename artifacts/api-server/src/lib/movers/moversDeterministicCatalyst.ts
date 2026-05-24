@@ -1,4 +1,4 @@
-import type { FlaggedName, Situation } from "@workspace/movers-types";
+import type { FlaggedName, MoversCatalystType, Situation } from "@workspace/movers-types";
 import { classifyCatalystTypeFromHeadline } from "@workspace/movers-types";
 import pLimit from "p-limit";
 import { fetchHeadlinesForSituation } from "./fmpMoversNews.js";
@@ -6,6 +6,33 @@ import { buildMoversNewsKey, pickDrivingHeadline } from "./moversNewsKey.js";
 import { logger } from "../logger.js";
 
 const classifyLimit = pLimit(6);
+
+const TELEMETRY_CATALYST_TYPES: MoversCatalystType[] = [
+  "GOV",
+  "ANALYST",
+  "CONTRACT",
+  "EARNINGS",
+  "MA",
+  "SECTOR",
+  "UNKNOWN",
+  "NONE",
+];
+
+function logMoversCatalystTypeCounts(situations: Situation[]): void {
+  const catalystTypeCounts = Object.fromEntries(
+    TELEMETRY_CATALYST_TYPES.map((t) => [t, 0]),
+  ) as Record<MoversCatalystType, number>;
+  for (const s of situations) {
+    const key = TELEMETRY_CATALYST_TYPES.includes(s.catalystType)
+      ? s.catalystType
+      : "UNKNOWN";
+    catalystTypeCounts[key] += 1;
+  }
+  logger.info(
+    { catalystTypeCounts, situations: situations.length },
+    "Movers catalyst type counts",
+  );
+}
 
 export async function applyDeterministicCatalystToSituations(
   situations: Situation[],
@@ -72,6 +99,8 @@ export async function applyDeterministicCatalystToSituations(
     const bPct = Math.max(...b.tickers.map((t) => Math.abs(t.changePct)));
     return bPct - aPct;
   });
+
+  logMoversCatalystTypeCounts(situationsOut);
 
   return { situations: situationsOut, flagged: flaggedOut };
 }

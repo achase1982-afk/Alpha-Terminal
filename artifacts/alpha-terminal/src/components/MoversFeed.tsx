@@ -39,6 +39,7 @@ const VALID_CATALYST_TYPES = new Set<MoversCatalystType>([
   "EARNINGS",
   "MA",
   "SECTOR",
+  "UNKNOWN",
   "NONE",
 ]);
 const POSTURE_COLORS: Record<MoversPosture, string> = {
@@ -54,12 +55,12 @@ const CATALYST_TYPE_LABELS: Record<MoversCatalystType, string> = {
   EARNINGS: "EARNINGS",
   MA: "M&A",
   SECTOR: "SECTOR",
+  UNKNOWN: "NO CATALYST",
   NONE: "NO CATALYST",
 };
 
-/** Collapsed row: chevron | ticker | price | % change | catalyst | posture */
-const COLLAPSED_GRID =
-  "20px 52px 64px 72px minmax(0, 1fr) 72px";
+/** Collapsed row: chevron | ticker | price | % change | catalyst */
+const COLLAPSED_GRID = "20px 52px 64px 72px minmax(0, 1fr)";
 
 /** Coerce legacy feed rows (pre–lazy-read) onto the current Situation shape. */
 function normalizeSituation(raw: Situation & { read?: string; posture?: string; confidence?: string }): Situation {
@@ -222,12 +223,6 @@ function MoversListHeader({
       >
         Catalyst
       </span>
-      <span
-        className="font-mono tracking-wider text-right pr-1"
-        style={{ color: MUTED, fontSize: ROW_FONT_PX }}
-      >
-        Posture
-      </span>
     </div>
   );
 }
@@ -366,10 +361,6 @@ function SituationCard({
   const up = t.changePct >= 0;
   const isCluster = situation.kind === "cluster";
   const cachedRead = sessionRead.get(situation.id);
-  const postureLabel = cachedRead?.posture ?? "—";
-  const postureColor = cachedRead?.posture
-    ? (POSTURE_COLORS[cachedRead.posture] ?? GOLD)
-    : TEXT_SECONDARY;
 
   useEffect(() => {
     if (!expanded || cachedRead) return;
@@ -435,17 +426,6 @@ function SituationCard({
           {fmtPct(t.changePct)}
         </span>
         <CatalystTypeLabel type={situation.catalystType} />
-        <span
-          className="font-mono font-bold tracking-wide px-1.5 py-0.5 rounded justify-self-end truncate"
-          style={{
-            fontSize: MIN_FONT_PX,
-            background: cachedRead ? `${postureColor}18` : "transparent",
-            color: postureColor,
-            border: cachedRead ? `1px solid ${postureColor}44` : `1px solid ${BORDER}`,
-          }}
-        >
-          {postureLabel}
-        </span>
       </button>
       {expanded && (
         <div className="px-3 pb-3 pt-1 space-y-2" style={{ paddingLeft: 36 }}>
