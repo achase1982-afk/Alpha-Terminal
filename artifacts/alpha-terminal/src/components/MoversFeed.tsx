@@ -60,8 +60,11 @@ const CATALYST_TYPE_LABELS: Record<MoversCatalystType, string> = {
   NONE: "NO CATALYST",
 };
 
-/** Collapsed row: chevron + four equal-width columns (content centered in each). */
-const COLLAPSED_GRID = "20px repeat(4, minmax(0, 1fr))";
+/**
+ * Collapsed row: chevron + three flexible numeric columns + wider catalyst column
+ * (fits "NO CATALYST" and longer labels at 12px without truncation).
+ */
+const COLLAPSED_GRID = "20px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(6.75rem, 1.55fr)";
 
 const collapsedRowGridStyle = {
   gridTemplateColumns: COLLAPSED_GRID,
@@ -183,15 +186,22 @@ function SortColumnHeader({
   );
 }
 
-/** Centers label/value within an equal-width grid column (like watchlist column rhythm). */
-function CollapsedCell({ children }: { children: ReactNode }) {
+/** Centers label/value in a grid column; catalyst uses start so full label reads leftward. */
+function CollapsedCell({
+  children,
+  align = "center",
+}: {
+  children: ReactNode;
+  align?: "center" | "start";
+}) {
+  const centered = align === "center";
   return (
     <div
-      className="min-w-0 flex items-center justify-center"
+      className={`min-w-0 flex items-center ${centered ? "justify-center" : "justify-start"}`}
       style={{
         paddingLeft: COLLAPSED_CELL_PAD_PX,
-        paddingRight: COLLAPSED_CELL_PAD_PX,
-        textAlign: "center",
+        paddingRight: centered ? COLLAPSED_CELL_PAD_PX : 4,
+        textAlign: centered ? "center" : "left",
       }}
     >
       {children}
@@ -233,11 +243,8 @@ function MoversListHeader({
           onSort={onSort}
         />
       </CollapsedCell>
-      <CollapsedCell>
-        <span
-          className="font-mono tracking-wider truncate w-full"
-          style={{ color: MUTED, fontSize: ROW_FONT_PX }}
-        >
+      <CollapsedCell align="start">
+        <span className="font-mono tracking-wider whitespace-nowrap" style={{ color: MUTED, fontSize: ROW_FONT_PX }}>
           Catalyst
         </span>
       </CollapsedCell>
@@ -273,7 +280,7 @@ function CatalystTypeLabel({ type }: { type: MoversCatalystType }) {
   const label = CATALYST_TYPE_LABELS[type] ?? type;
   return (
     <span
-      className="font-mono font-bold uppercase tracking-wide truncate block w-full text-center"
+      className="font-mono font-bold uppercase tracking-wide whitespace-nowrap"
       style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX }}
       title={label}
     >
@@ -446,7 +453,7 @@ function SituationCard({
             {fmtPct(t.changePct)}
           </span>
         </CollapsedCell>
-        <CollapsedCell>
+        <CollapsedCell align="start">
           <CatalystTypeLabel type={situation.catalystType} />
         </CollapsedCell>
       </button>
