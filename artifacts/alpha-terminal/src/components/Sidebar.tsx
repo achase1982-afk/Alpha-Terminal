@@ -524,6 +524,8 @@ const PROVIDER_LABELS: Record<"anthropic" | "google" | "openai", string> = {
   openai: "OPENAI (CHATGPT)",
 };
 
+const MOVERS_PROVIDER_LABELS: Record<"anthropic" | "google" | "openai", string> = PROVIDER_LABELS;
+
 type AiFeatureKey = keyof TerminalState['aiFeatureSettings'];
 
 const AI_FEATURES: Array<{
@@ -904,7 +906,10 @@ function MoversAiControl() {
       setAiLabStrategistConfig(key, value);
       const next = { ...aiLabStrategistConfig, [key]: value };
       if (key === "moversModelProvider") {
-        const models = modelsForProvider(String(value));
+        const provider = String(value);
+        const allowed = provider === "anthropic" || provider === "google" || provider === "openai";
+        if (!allowed) return;
+        const models = modelsForProvider(provider);
         if (models.length > 0 && !models.includes(aiLabStrategistConfig.moversModelName as AiModelId)) {
           setAiLabStrategistConfig("moversModelName", models[0]!);
           next.moversModelName = models[0]!;
@@ -915,7 +920,12 @@ function MoversAiControl() {
     [aiLabStrategistConfig, setAiLabStrategistConfig, syncToBackend],
   );
 
-  const moversModels = modelsForProvider(aiLabStrategistConfig.moversModelProvider);
+  const moversProvider =
+    aiLabStrategistConfig.moversModelProvider === "google" ||
+    aiLabStrategistConfig.moversModelProvider === "openai"
+      ? aiLabStrategistConfig.moversModelProvider
+      : "anthropic";
+  const moversModels = modelsForProvider(moversProvider);
 
   const selectStyle = {
     backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
@@ -951,12 +961,12 @@ function MoversAiControl() {
             <div className="space-y-1.5">
               <span className="font-mono text-[8px] text-white uppercase tracking-widest">Provider</span>
               <select
-                value={aiLabStrategistConfig.moversModelProvider}
+                value={moversProvider}
                 onChange={(e) => update("moversModelProvider", e.target.value)}
                 className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
                 style={selectStyle}
               >
-                {Object.entries(PROVIDER_LABELS).map(([k, label]) => (
+                {Object.entries(MOVERS_PROVIDER_LABELS).map(([k, label]) => (
                   <option key={k} value={k}>
                     {label}
                   </option>

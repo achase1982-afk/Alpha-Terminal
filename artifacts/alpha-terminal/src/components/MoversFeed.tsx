@@ -1,12 +1,12 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Loader2, RefreshCw } from "lucide-react";
 import type {
   FilteredName,
   MoversCatalystType,
-  MoversConfidence,
   MoversFeed,
   MoversPosture,
+  MoversSituationRead,
   Situation,
   TickerStat,
 } from "@workspace/movers-types";
@@ -41,19 +41,6 @@ const VALID_CATALYST_TYPES = new Set<MoversCatalystType>([
   "SECTOR",
   "NONE",
 ]);
-const VALID_POSTURES = new Set<MoversPosture>(["WATCH", "WAIT", "PASS"]);
-const VALID_CONFIDENCE = new Set<MoversConfidence>(["HIGH", "MED", "LOW"]);
-
-const CATALYST_TAG_COLORS: Record<MoversCatalystType, string> = {
-  GOV: "#0064FF",
-  ANALYST: "#7C4DFF",
-  CONTRACT: "#00B8D4",
-  EARNINGS: GOLD,
-  MA: "#FF6D00",
-  SECTOR: "#69F0AE",
-  NONE: MUTED,
-};
-
 const POSTURE_COLORS: Record<MoversPosture, string> = {
   WATCH: "#0064FF",
   WAIT: GOLD,
@@ -74,57 +61,24 @@ const CATALYST_TYPE_LABELS: Record<MoversCatalystType, string> = {
 const COLLAPSED_GRID =
   "20px 52px 64px 72px minmax(0, 1fr) 72px";
 
-/** Tolerate legacy PENDING payloads still in movers_feed or client cache. */
-function normalizeSituation(raw: Situation): Situation | null {
+/** Coerce legacy feed rows (pre–lazy-read) onto the current Situation shape. */
+function normalizeSituation(raw: Situation & { read?: string; posture?: string; confidence?: string }): Situation {
   const catalystType = VALID_CATALYST_TYPES.has(raw.catalystType as MoversCatalystType)
     ? raw.catalystType
-    : null;
-  const posture = VALID_POSTURES.has(raw.posture as MoversPosture) ? raw.posture : null;
-  const confidence = VALID_CONFIDENCE.has(raw.confidence as MoversConfidence)
-    ? raw.confidence
-    : "LOW";
-
-  if (!catalystType || !posture || catalystType === "NONE") return null;
-
+    : "NONE";
   return {
     ...raw,
     catalystType,
-    posture,
-    confidence,
     catalyst: typeof raw.catalyst === "string" ? raw.catalyst : "",
-    read: typeof raw.read === "string" ? raw.read : "",
+    newsKey: typeof raw.newsKey === "string" ? raw.newsKey : "",
   };
 }
 
 function normalizeFeed(feed: MoversFeed): MoversFeed {
-  const situations: Situation[] = [];
-  const flagged = [...feed.flagged];
-
-  for (const s of feed.situations) {
-    const normalized = normalizeSituation(s);
-    if (normalized) {
-      situations.push(normalized);
-      continue;
-    }
-    const note =
-      typeof s.catalyst === "string" && s.catalyst
-        ? s.catalyst
-        : "Catalyst attribution pending or unavailable";
-    for (const t of s.tickers) {
-      flagged.push({
-        symbol: t.symbol,
-        name: t.name,
-        price: t.price,
-        changePct: t.changePct,
-        note,
-      });
-    }
-  }
-
+  const situations = feed.situations.map((s) => normalizeSituation(s as Situation & { read?: string }));
   return {
     ...feed,
     situations,
-    flagged,
     funnel: { ...feed.funnel, situations: situations.length },
   };
 }
@@ -302,75 +256,87 @@ function FunnelBar({ funnel }: { funnel: MoversFeed["funnel"] }) {
   );
 }
 
-function CatalystExpandedDetail({ situation }: { situation: Situation }) {
-  const postureColor = POSTURE_COLORS[situation.posture] ?? GOLD;
+function CatalystTypeLabel({ type }: { type: MoversCatalystType }) {
+  const label = CATALYST_TYPE_LABELS[type] ?? type;
+  return (
+    <span
+      className="font-mono font-bold uppercase tracking-wide truncate min-w-0 justify-self-start"
+      style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX, maxWidth: "100%" }}
+      title={label}
+    >
+      {label}
+    </span>
+  );
+}
+
+function CatalystExpandedDetail({
+  situation,
+  read,
+  readLoading,
+}: {
+  situation: Situation;
+  read: MoversSituationRead | undefined;
+  readLoading: boolean;
+}) {
+  const posture = read?.posture;
+  const postureColor = posture ? (POSTURE_COLORS[posture] ?? GOLD) : TEXT_SECONDARY;
 
   return (
     <div
       className="rounded border space-y-2 mb-2"
       style={{ borderColor: BORDER, background: PANEL, padding: "10px 12px" }}
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <CatalystTypeTag type={situation.catalystType} />
-        <span
-          className="font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+      {situation.catalyst ? (
+        <p
+          className="font-mono"
           style={{
-            fontSize: MIN_FONT_PX,
-            color: postureColor,
-            border: `1px solid ${postureColor}55`,
-            background: `${postureColor}18`,
+            color: TEXT_PRIMARY,
+            fontSize: CATALYST_BODY_PX,
+            lineHeight: BODY_LINE_HEIGHT,
           }}
         >
-          {situation.posture}
-        </span>
-        <span
-          className="font-mono uppercase tracking-wider"
-          style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}
-        >
-          {situation.confidence} confidence
-        </span>
-      </div>
-      <p
-        className="font-mono"
-        style={{
-          color: TEXT_PRIMARY,
-          fontSize: CATALYST_BODY_PX,
-          lineHeight: BODY_LINE_HEIGHT,
-        }}
-      >
-        {situation.catalyst}
-      </p>
-      <p
-        className="font-mono italic"
-        style={{
-          color: TEXT_PRIMARY,
-          fontSize: CATALYST_BODY_PX,
-          lineHeight: BODY_LINE_HEIGHT,
-        }}
-      >
-        {situation.read}
-      </p>
+          {situation.catalyst}
+        </p>
+      ) : null}
+      {readLoading ? (
+        <div className="flex items-center gap-2 py-1" style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX }}>
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span className="font-mono">Loading read…</span>
+        </div>
+      ) : read ? (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className="font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+              style={{
+                fontSize: MIN_FONT_PX,
+                color: postureColor,
+                border: `1px solid ${postureColor}55`,
+                background: `${postureColor}18`,
+              }}
+            >
+              {read.posture}
+            </span>
+            <span
+              className="font-mono uppercase tracking-wider"
+              style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}
+            >
+              {read.confidence} confidence
+            </span>
+          </div>
+          <p
+            className="font-mono italic"
+            style={{
+              color: TEXT_PRIMARY,
+              fontSize: CATALYST_BODY_PX,
+              lineHeight: BODY_LINE_HEIGHT,
+            }}
+          >
+            {read.read}
+          </p>
+        </>
+      ) : null}
     </div>
-  );
-}
-
-function CatalystTypeTag({ type }: { type: MoversCatalystType }) {
-  const color = CATALYST_TAG_COLORS[type] ?? GOLD;
-  const label = CATALYST_TYPE_LABELS[type] ?? type;
-  return (
-    <span
-      className="font-mono font-bold uppercase tracking-wide px-1.5 py-0.5 rounded truncate min-w-0 justify-self-start"
-      style={{
-        fontSize: ROW_FONT_PX,
-        color,
-        border: `1px solid ${color}55`,
-        background: `${color}18`,
-        maxWidth: "100%",
-      }}
-      title={label}
-    >
-      {label}
-    </span>
   );
 }
 
@@ -385,15 +351,54 @@ function tickerColumnLabel(situation: Situation): string {
 function SituationCard({
   situation,
   onNavigate,
+  sessionRead,
+  onReadLoaded,
 }: {
   situation: Situation;
   onNavigate?: (sym: string) => void;
+  sessionRead: Map<string, MoversSituationRead>;
+  onReadLoaded: (situationId: string, read: MoversSituationRead) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [readLoading, setReadLoading] = useState(false);
   const t = primaryTicker(situation);
   if (!t) return null;
   const up = t.changePct >= 0;
   const isCluster = situation.kind === "cluster";
+  const cachedRead = sessionRead.get(situation.id);
+  const postureLabel = cachedRead?.posture ?? "—";
+  const postureColor = cachedRead?.posture
+    ? (POSTURE_COLORS[cachedRead.posture] ?? GOLD)
+    : TEXT_SECONDARY;
+
+  useEffect(() => {
+    if (!expanded || cachedRead) return;
+    let cancelled = false;
+    setReadLoading(true);
+    void fetchWithAuth(`/api/movers/read?id=${encodeURIComponent(situation.id)}`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`Movers read HTTP ${res.status}`);
+        return (await res.json()) as MoversSituationRead;
+      })
+      .then((data) => {
+        if (!cancelled) onReadLoaded(situation.id, data);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          onReadLoaded(situation.id, {
+            read: "Read unavailable.",
+            posture: "WAIT",
+            confidence: "LOW",
+          });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setReadLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [expanded, situation.id, cachedRead, onReadLoaded]);
 
   return (
     <div className="border-b" style={{ borderColor: BORDER, background: BG }}>
@@ -429,22 +434,26 @@ function SituationCard({
         >
           {fmtPct(t.changePct)}
         </span>
-        <CatalystTypeTag type={situation.catalystType} />
+        <CatalystTypeLabel type={situation.catalystType} />
         <span
           className="font-mono font-bold tracking-wide px-1.5 py-0.5 rounded justify-self-end truncate"
           style={{
             fontSize: MIN_FONT_PX,
-            background: `${POSTURE_COLORS[situation.posture] ?? GOLD}18`,
-            color: POSTURE_COLORS[situation.posture] ?? GOLD,
-            border: `1px solid ${POSTURE_COLORS[situation.posture] ?? GOLD}44`,
+            background: cachedRead ? `${postureColor}18` : "transparent",
+            color: postureColor,
+            border: cachedRead ? `1px solid ${postureColor}44` : `1px solid ${BORDER}`,
           }}
         >
-          {situation.posture}
+          {postureLabel}
         </span>
       </button>
       {expanded && (
         <div className="px-3 pb-3 pt-1 space-y-2" style={{ paddingLeft: 36 }}>
-          <CatalystExpandedDetail situation={situation} />
+          <CatalystExpandedDetail
+            situation={situation}
+            read={cachedRead}
+            readLoading={readLoading && !cachedRead}
+          />
           {isCluster ? (
             situation.tickers.map((ct) => (
               <div
@@ -579,9 +588,16 @@ function FilteredSection({ filtered }: { filtered: FilteredName[] }) {
 export function MoversFeed({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: string) => void }) {
   const queryClient = useQueryClient();
   const lastManualRefreshAt = useRef(0);
+  const sessionReadRef = useRef(new Map<string, MoversSituationRead>());
+  const [, bumpReadCache] = useState(0);
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  const onReadLoaded = useCallback((situationId: string, read: MoversSituationRead) => {
+    sessionReadRef.current.set(situationId, read);
+    bumpReadCache((n) => n + 1);
+  }, []);
 
   const {
     data,
@@ -694,7 +710,13 @@ export function MoversFeed({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: 
               <>
                 <MoversListHeader sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                 {sortedSituations.map((s: Situation) => (
-                  <SituationCard key={s.id} situation={s} onNavigate={onNavigateToSymbol} />
+                  <SituationCard
+                    key={s.id}
+                    situation={s}
+                    onNavigate={onNavigateToSymbol}
+                    sessionRead={sessionReadRef.current}
+                    onReadLoaded={onReadLoaded}
+                  />
                 ))}
               </>
             )}

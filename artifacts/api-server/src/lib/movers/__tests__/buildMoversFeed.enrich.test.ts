@@ -3,14 +3,14 @@ import type { FmpMoverRow } from "../fmpMoversClient.js";
 import type { FmpCompanyProfile } from "../fmpCompanyProfile.js";
 import { buildMoversFeedFromRows } from "../buildMoversFeed.js";
 import * as fmpCompanyProfile from "../fmpCompanyProfile.js";
-import * as moversCatalystAttribution from "../moversCatalystAttribution.js";
+import * as moversDeterministicCatalyst from "../moversDeterministicCatalyst.js";
 
 vi.mock("../fmpCompanyProfile.js", () => ({
   fetchFmpCompanyProfiles: vi.fn(),
 }));
 
-vi.mock("../moversCatalystAttribution.js", () => ({
-  attributeMoversSituations: vi.fn(async (situations: unknown[]) => ({
+vi.mock("../moversDeterministicCatalyst.js", () => ({
+  applyDeterministicCatalystToSituations: vi.fn(async (situations: unknown[]) => ({
     situations,
     flagged: [],
   })),

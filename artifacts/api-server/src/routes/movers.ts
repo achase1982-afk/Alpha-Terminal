@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { getLatestMoversFeed } from "../lib/movers/moversFeedStore.js";
+import { getOrCreateMoversSituationRead } from "../lib/movers/moversCatalystRead.js";
 import { requestMoversPollNow, runMoversPollOnce } from "../lib/movers/moversPollWorker.js";
 
 const router: IRouter = Router();
@@ -24,6 +25,23 @@ router.get("/", async (_req, res) => {
 });
 
 /** Force an immediate FMP poll (debounced ~30s server-side). */
+router.get("/read", async (req, res) => {
+  try {
+    const situationId = typeof req.query.id === "string" ? req.query.id.trim() : "";
+    if (!situationId) {
+      return res.status(400).json({ error: "Query parameter id is required" });
+    }
+    const read = await getOrCreateMoversSituationRead(situationId);
+    return res.json(read);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("not found")) {
+      return res.status(404).json({ error: message });
+    }
+    return res.status(500).json({ error: "Failed to load movers read" });
+  }
+});
+
 router.post("/refresh", async (_req, res) => {
   try {
     const result = await requestMoversPollNow();
