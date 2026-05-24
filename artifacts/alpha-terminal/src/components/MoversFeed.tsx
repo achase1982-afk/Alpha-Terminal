@@ -50,7 +50,7 @@ const POSTURE_COLORS: Record<MoversPosture, string> = {
 };
 
 const CATALYST_TYPE_LABELS: Record<MoversCatalystType, string> = {
-  GOV: "GOVERNMENT FUNDING",
+  GOV: "GOVERNMENT",
   ANALYST: "ANALYST ACTION",
   CONTRACT: "CONTRACT WIN",
   EARNINGS: "EARNINGS",
