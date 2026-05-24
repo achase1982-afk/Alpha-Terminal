@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Loader2, RefreshCw } from "lucide-react";
 import type {
@@ -23,9 +23,10 @@ const RED = "#f23645";
 /** Minimum readable size at arm's length on mobile — nothing smaller in Movers UI. */
 const MIN_FONT_PX = 12;
 const ROW_FONT_PX = MIN_FONT_PX;
-/** Catalyst sentence + read: same floor, slightly larger line for long copy. */
-const CATALYST_BODY_PX = 13;
 const BODY_LINE_HEIGHT = 1.55;
+/** Even horizontal rhythm between collapsed columns (ticker / price / change / catalyst). */
+const COLLAPSED_COLUMN_GAP_PX = 10;
+const COLLAPSED_CELL_PAD_PX = 6;
 const TEXT_PRIMARY = "#fafafa";
 const TEXT_SECONDARY = "#e4e4e7";
 
@@ -59,8 +60,8 @@ const CATALYST_TYPE_LABELS: Record<MoversCatalystType, string> = {
   NONE: "NO CATALYST",
 };
 
-/** Collapsed row: chevron | ticker | price | % change | catalyst */
-const COLLAPSED_GRID = "20px 52px 64px 72px minmax(0, 1fr)";
+/** Collapsed row: chevron + four equal flexible data columns */
+const COLLAPSED_GRID = `20px repeat(4, minmax(0, 1fr))`;
 
 /** Coerce legacy feed rows (pre–lazy-read) onto the current Situation shape. */
 function normalizeSituation(raw: Situation & { read?: string; posture?: string; confidence?: string }): Situation {
@@ -193,36 +194,41 @@ function MoversListHeader({
       style={{
         background: PANEL,
         borderColor: BORDER,
-        gridTemplateColumns: COLLAPSED_GRID,
-        columnGap: 4,
-        paddingLeft: 8,
-        paddingRight: 8,
+        ...collapsedRowGridStyle,
       }}
     >
       <span />
-      <SortColumnHeader label="Ticker" columnKey="symbol" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
-      <SortColumnHeader
-        label="Price"
-        columnKey="price"
-        align="right"
-        sortKey={sortKey}
-        sortDir={sortDir}
-        onSort={onSort}
-      />
-      <SortColumnHeader
-        label="% Change"
-        columnKey="changePct"
-        align="right"
-        sortKey={sortKey}
-        sortDir={sortDir}
-        onSort={onSort}
-      />
-      <span
-        className="font-mono tracking-wider truncate min-w-0"
-        style={{ color: MUTED, fontSize: ROW_FONT_PX }}
-      >
-        Catalyst
-      </span>
+      <CollapsedCell>
+        <SortColumnHeader label="Ticker" columnKey="symbol" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+      </CollapsedCell>
+      <CollapsedCell align="right">
+        <SortColumnHeader
+          label="Price"
+          columnKey="price"
+          align="right"
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSort={onSort}
+        />
+      </CollapsedCell>
+      <CollapsedCell align="right">
+        <SortColumnHeader
+          label="% Change"
+          columnKey="changePct"
+          align="right"
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSort={onSort}
+        />
+      </CollapsedCell>
+      <CollapsedCell align="right">
+        <span
+          className="font-mono tracking-wider truncate w-full text-right"
+          style={{ color: MUTED, fontSize: ROW_FONT_PX }}
+        >
+          Catalyst
+        </span>
+      </CollapsedCell>
     </div>
   );
 }
@@ -255,12 +261,64 @@ function CatalystTypeLabel({ type }: { type: MoversCatalystType }) {
   const label = CATALYST_TYPE_LABELS[type] ?? type;
   return (
     <span
-      className="font-mono font-bold uppercase tracking-wide truncate min-w-0 justify-self-start"
-      style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX, maxWidth: "100%" }}
+      className="font-mono font-bold uppercase tracking-wide truncate block w-full text-right"
+      style={{
+        color: TEXT_PRIMARY,
+        fontSize: ROW_FONT_PX,
+        paddingLeft: COLLAPSED_CELL_PAD_PX,
+        paddingRight: COLLAPSED_CELL_PAD_PX,
+      }}
       title={label}
     >
       {label}
     </span>
+  );
+}
+
+function PostureOutlineBadge({ posture }: { posture: MoversPosture }) {
+  const color = POSTURE_COLORS[posture] ?? GOLD;
+  return (
+    <span
+      className="font-mono font-bold uppercase tracking-wider shrink-0"
+      style={{
+        fontSize: ROW_FONT_PX,
+        color,
+        border: `1px solid ${color}`,
+        background: "transparent",
+        padding: "2px 8px",
+        borderRadius: 4,
+      }}
+    >
+      {posture}
+    </span>
+  );
+}
+
+const collapsedRowGridStyle = {
+  gridTemplateColumns: COLLAPSED_GRID,
+  columnGap: COLLAPSED_COLUMN_GAP_PX,
+  paddingLeft: 8,
+  paddingRight: 8,
+} as const;
+
+function CollapsedCell({
+  children,
+  align = "left",
+}: {
+  children: ReactNode;
+  align?: "left" | "right";
+}) {
+  return (
+    <div
+      className="min-w-0 flex items-center"
+      style={{
+        justifyContent: align === "right" ? "flex-end" : "flex-start",
+        paddingLeft: COLLAPSED_CELL_PAD_PX,
+        paddingRight: COLLAPSED_CELL_PAD_PX,
+      }}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -273,20 +331,14 @@ function CatalystExpandedDetail({
   read: MoversSituationRead | undefined;
   readLoading: boolean;
 }) {
-  const posture = read?.posture;
-  const postureColor = posture ? (POSTURE_COLORS[posture] ?? GOLD) : TEXT_SECONDARY;
-
   return (
-    <div
-      className="rounded border space-y-2 mb-2"
-      style={{ borderColor: BORDER, background: PANEL, padding: "10px 12px" }}
-    >
+    <div className="space-y-3 mb-2">
       {situation.catalyst ? (
         <p
           className="font-mono"
           style={{
             color: TEXT_PRIMARY,
-            fontSize: CATALYST_BODY_PX,
+            fontSize: ROW_FONT_PX,
             lineHeight: BODY_LINE_HEIGHT,
           }}
         >
@@ -300,30 +352,20 @@ function CatalystExpandedDetail({
         </div>
       ) : read ? (
         <>
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              className="font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
-              style={{
-                fontSize: MIN_FONT_PX,
-                color: postureColor,
-                border: `1px solid ${postureColor}55`,
-                background: `${postureColor}18`,
-              }}
-            >
-              {read.posture}
-            </span>
+          <div className="flex flex-wrap items-center gap-3">
+            <PostureOutlineBadge posture={read.posture} />
             <span
               className="font-mono uppercase tracking-wider"
-              style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}
+              style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX }}
             >
               {read.confidence} confidence
             </span>
           </div>
           <p
-            className="font-mono italic"
+            className="font-mono"
             style={{
               color: TEXT_PRIMARY,
-              fontSize: CATALYST_BODY_PX,
+              fontSize: ROW_FONT_PX,
               lineHeight: BODY_LINE_HEIGHT,
             }}
           >
@@ -395,12 +437,9 @@ function SituationCard({
     <div className="border-b" style={{ borderColor: BORDER, background: BG }}>
       <button
         type="button"
-        className="w-full text-left grid items-center py-2"
+        className="w-full text-left grid items-center py-2.5"
         style={{
-          gridTemplateColumns: COLLAPSED_GRID,
-          columnGap: 4,
-          paddingLeft: 8,
-          paddingRight: 8,
+          ...collapsedRowGridStyle,
           minHeight: 44,
         }}
         onClick={() => setExpanded((e) => !e)}
@@ -410,22 +449,30 @@ function SituationCard({
         ) : (
           <ChevronRight className="w-4 h-4 shrink-0 justify-self-center" style={{ color: MUTED }} />
         )}
-        <span className="font-mono font-bold truncate" style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX }}>
-          {tickerColumnLabel(situation)}
-        </span>
-        <span
-          className="font-mono tabular-nums text-right truncate"
-          style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX }}
-        >
-          ${fmtPrice(t.price)}
-        </span>
-        <span
-          className="font-mono font-bold tabular-nums text-right"
-          style={{ color: up ? GREEN : RED, fontSize: ROW_FONT_PX }}
-        >
-          {fmtPct(t.changePct)}
-        </span>
-        <CatalystTypeLabel type={situation.catalystType} />
+        <CollapsedCell>
+          <span className="font-mono font-bold truncate w-full" style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX }}>
+            {tickerColumnLabel(situation)}
+          </span>
+        </CollapsedCell>
+        <CollapsedCell align="right">
+          <span
+            className="font-mono tabular-nums truncate"
+            style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX }}
+          >
+            ${fmtPrice(t.price)}
+          </span>
+        </CollapsedCell>
+        <CollapsedCell align="right">
+          <span
+            className="font-mono font-bold tabular-nums whitespace-nowrap"
+            style={{ color: up ? GREEN : RED, fontSize: ROW_FONT_PX }}
+          >
+            {fmtPct(t.changePct)}
+          </span>
+        </CollapsedCell>
+        <CollapsedCell align="right">
+          <CatalystTypeLabel type={situation.catalystType} />
+        </CollapsedCell>
       </button>
       {expanded && (
         <div className="px-3 pb-3 pt-1 space-y-2" style={{ paddingLeft: 36 }}>
