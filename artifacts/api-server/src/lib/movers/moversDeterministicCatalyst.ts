@@ -1,45 +1,54 @@
 import type { FlaggedName, MoversCatalystType, Situation } from "@workspace/movers-types";
 import { classifyCatalystTypeFromHeadline } from "@workspace/movers-types";
 import pLimit from "p-limit";
+import type { MoversNewsHeadline } from "./fmpMoversNews.js";
 import { fetchHeadlinesForSituation } from "./fmpMoversNews.js";
 import { buildMoversNewsKey, pickDrivingHeadline } from "./moversNewsKey.js";
+import {
+  classifyUnknownResidualWithTier2,
+  type Tier2UnknownCandidate,
+} from "./moversTier2Catalyst.js";
 import { logger } from "../logger.js";
 
 const classifyLimit = pLimit(6);
 
-const TELEMETRY_CATALYST_TYPES: MoversCatalystType[] = [
+const DEFINITE_TYPES: MoversCatalystType[] = [
   "GOV",
   "ANALYST",
   "CONTRACT",
   "EARNINGS",
   "MA",
   "SECTOR",
-  "UNKNOWN",
-  "NONE",
 ];
 
-function logMoversCatalystTypeCounts(situations: Situation[]): void {
-  const catalystTypeCounts = Object.fromEntries(
-    TELEMETRY_CATALYST_TYPES.map((t) => [t, 0]),
-  ) as Record<MoversCatalystType, number>;
+type Tier1Outcome =
+  | { kind: "classified"; situation: Situation; headlines: MoversNewsHeadline[] }
+  | { kind: "flagged"; flagged: FlaggedName[] };
+
+function isTier1Definite(type: MoversCatalystType): boolean {
+  return DEFINITE_TYPES.includes(type);
+}
+
+function logMoversCatalystTelemetry(
+  tier1Assigned: number,
+  tier2Assigned: number,
+  situations: Situation[],
+): void {
+  let finalNone = 0;
   for (const s of situations) {
-    const key = TELEMETRY_CATALYST_TYPES.includes(s.catalystType)
-      ? s.catalystType
-      : "UNKNOWN";
-    catalystTypeCounts[key] += 1;
+    if (s.catalystType === "NONE") finalNone += 1;
   }
   logger.info(
-    { catalystTypeCounts, situations: situations.length },
-    "Movers catalyst type counts",
+    { tier1Assigned, tier2Assigned, finalNone, situations: situations.length },
+    "Movers catalyst tier counts",
   );
 }
 
 export async function applyDeterministicCatalystToSituations(
   situations: Situation[],
 ): Promise<{ situations: Situation[]; flagged: FlaggedName[] }> {
-  const results: Array<
-    { index: number; situation: Situation } | { index: number; flagged: FlaggedName[] }
-  > = [];
+  const results: Array<Tier1Outcome & { index: number }> = [];
+  let tier1Assigned = 0;
 
   await Promise.all(
     situations.map((situation, index) =>
@@ -50,6 +59,8 @@ export async function applyDeterministicCatalystToSituations(
           if (!driving) {
             results.push({
               index,
+              kind: "classified",
+              headlines,
               situation: {
                 ...situation,
                 catalystType: "NONE",
@@ -60,8 +71,11 @@ export async function applyDeterministicCatalystToSituations(
             return;
           }
           const catalystType = classifyCatalystTypeFromHeadline(driving.title);
+          if (isTier1Definite(catalystType)) tier1Assigned += 1;
           results.push({
             index,
+            kind: "classified",
+            headlines,
             situation: {
               ...situation,
               catalystType,
@@ -73,6 +87,7 @@ export async function applyDeterministicCatalystToSituations(
           logger.warn({ err, situationId: situation.id }, "Movers deterministic catalyst failed");
           results.push({
             index,
+            kind: "flagged",
             flagged: situation.tickers.map((t) => ({
               symbol: t.symbol,
               name: t.name,
@@ -86,12 +101,33 @@ export async function applyDeterministicCatalystToSituations(
     ),
   );
 
-  const situationsOut: Situation[] = [];
   const flaggedOut: FlaggedName[] = [];
-  results.sort((a, b) => a.index - b.index);
+  const tier1ByIndex = new Map<number, Tier1Outcome & { kind: "classified" }>();
   for (const r of results) {
-    if ("situation" in r) situationsOut.push(r.situation);
-    else flaggedOut.push(...r.flagged);
+    if (r.kind === "flagged") {
+      flaggedOut.push(...r.flagged);
+      continue;
+    }
+    tier1ByIndex.set(r.index, r);
+  }
+
+  const unknownCandidates: Tier2UnknownCandidate[] = [];
+  for (const r of tier1ByIndex.values()) {
+    if (r.situation.catalystType === "UNKNOWN") {
+      unknownCandidates.push({ situation: r.situation, headlines: r.headlines });
+    }
+  }
+
+  const { situations: tier2Updated, tier2Assigned } =
+    await classifyUnknownResidualWithTier2(unknownCandidates);
+
+  const tier2ById = new Map(tier2Updated.map((s) => [s.id, s]));
+
+  const situationsOut: Situation[] = [];
+  for (let i = 0; i < situations.length; i++) {
+    const row = tier1ByIndex.get(i);
+    if (!row) continue;
+    situationsOut.push(tier2ById.get(row.situation.id) ?? row.situation);
   }
 
   situationsOut.sort((a, b) => {
@@ -100,7 +136,7 @@ export async function applyDeterministicCatalystToSituations(
     return bPct - aPct;
   });
 
-  logMoversCatalystTypeCounts(situationsOut);
+  logMoversCatalystTelemetry(tier1Assigned, tier2Assigned, situationsOut);
 
   return { situations: situationsOut, flagged: flaggedOut };
 }
