@@ -20,7 +20,14 @@ const MUTED = "#71717a";
 const GOLD = "#FFB800";
 const GREEN = "#00d166";
 const RED = "#f23645";
-const ROW_FONT_PX = 12;
+/** Minimum readable size at arm's length on mobile — nothing smaller in Movers UI. */
+const MIN_FONT_PX = 12;
+const ROW_FONT_PX = MIN_FONT_PX;
+/** Catalyst sentence + read: same floor, slightly larger line for long copy. */
+const CATALYST_BODY_PX = 13;
+const BODY_LINE_HEIGHT = 1.55;
+const TEXT_PRIMARY = "#fafafa";
+const TEXT_SECONDARY = "#e4e4e7";
 
 type SortKey = "symbol" | "price" | "changePct";
 type SortDir = "asc" | "desc";
@@ -210,7 +217,7 @@ function SortColumnHeader({
     >
       <span className="truncate">{label}</span>
       {active && (
-        <span style={{ fontSize: 9, flexShrink: 0 }}>{sortDir === "asc" ? "▲" : "▼"}</span>
+        <span style={{ fontSize: MIN_FONT_PX, flexShrink: 0 }}>{sortDir === "asc" ? "▲" : "▼"}</span>
       )}
     </button>
   );
@@ -285,7 +292,7 @@ function FunnelBar({ funnel }: { funnel: MoversFeed["funnel"] }) {
     >
       {items.map((item) => (
         <div key={item.label} className="text-center">
-          <div style={{ color: MUTED, fontSize: 10 }}>{item.label}</div>
+          <div style={{ color: TEXT_SECONDARY, fontSize: MIN_FONT_PX }}>{item.label}</div>
           <div className="font-bold mt-0.5" style={{ color: item.color, fontSize: ROW_FONT_PX }}>
             {item.value}
           </div>
@@ -300,15 +307,15 @@ function CatalystExpandedDetail({ situation }: { situation: Situation }) {
 
   return (
     <div
-      className="rounded border p-2 space-y-2 mb-2"
-      style={{ borderColor: BORDER, background: PANEL }}
+      className="rounded border space-y-2 mb-2"
+      style={{ borderColor: BORDER, background: PANEL, padding: "10px 12px" }}
     >
       <div className="flex flex-wrap items-center gap-2">
         <CatalystTypeTag type={situation.catalystType} />
         <span
           className="font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
           style={{
-            fontSize: ROW_FONT_PX,
+            fontSize: MIN_FONT_PX,
             color: postureColor,
             border: `1px solid ${postureColor}55`,
             background: `${postureColor}18`,
@@ -316,14 +323,31 @@ function CatalystExpandedDetail({ situation }: { situation: Situation }) {
         >
           {situation.posture}
         </span>
-        <span className="font-mono uppercase tracking-wider" style={{ color: "#fafafa", fontSize: ROW_FONT_PX }}>
+        <span
+          className="font-mono uppercase tracking-wider"
+          style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}
+        >
           {situation.confidence} confidence
         </span>
       </div>
-      <p className="font-mono leading-snug" style={{ color: "#fafafa", fontSize: ROW_FONT_PX }}>
+      <p
+        className="font-mono"
+        style={{
+          color: TEXT_PRIMARY,
+          fontSize: CATALYST_BODY_PX,
+          lineHeight: BODY_LINE_HEIGHT,
+        }}
+      >
         {situation.catalyst}
       </p>
-      <p className="font-mono leading-snug italic" style={{ color: "#e4e4e7", fontSize: ROW_FONT_PX }}>
+      <p
+        className="font-mono italic"
+        style={{
+          color: TEXT_PRIMARY,
+          fontSize: CATALYST_BODY_PX,
+          lineHeight: BODY_LINE_HEIGHT,
+        }}
+      >
         {situation.read}
       </p>
     </div>
@@ -390,12 +414,12 @@ function SituationCard({
         ) : (
           <ChevronRight className="w-4 h-4 shrink-0 justify-self-center" style={{ color: MUTED }} />
         )}
-        <span className="font-mono font-bold truncate" style={{ color: "#fafafa", fontSize: ROW_FONT_PX }}>
+        <span className="font-mono font-bold truncate" style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX }}>
           {tickerColumnLabel(situation)}
         </span>
         <span
           className="font-mono tabular-nums text-right truncate"
-          style={{ color: "#e4e4e7", fontSize: ROW_FONT_PX }}
+          style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX }}
         >
           ${fmtPrice(t.price)}
         </span>
@@ -409,7 +433,7 @@ function SituationCard({
         <span
           className="font-mono font-bold tracking-wide px-1.5 py-0.5 rounded justify-self-end truncate"
           style={{
-            fontSize: ROW_FONT_PX,
+            fontSize: MIN_FONT_PX,
             background: `${POSTURE_COLORS[situation.posture] ?? GOLD}18`,
             color: POSTURE_COLORS[situation.posture] ?? GOLD,
             border: `1px solid ${POSTURE_COLORS[situation.posture] ?? GOLD}44`,
@@ -419,7 +443,7 @@ function SituationCard({
         </span>
       </button>
       {expanded && (
-        <div className="px-3 pb-2 pt-0 space-y-2" style={{ paddingLeft: 36 }}>
+        <div className="px-3 pb-3 pt-1 space-y-2" style={{ paddingLeft: 36 }}>
           <CatalystExpandedDetail situation={situation} />
           {isCluster ? (
             situation.tickers.map((ct) => (
@@ -431,7 +455,7 @@ function SituationCard({
                 <span className="font-bold w-12 shrink-0" style={{ color: "#fafafa" }}>
                   {ct.symbol}
                 </span>
-                <span className="flex-1 truncate" style={{ color: MUTED }}>
+                <span className="flex-1 truncate" style={{ color: TEXT_SECONDARY }}>
                   {ct.name}
                 </span>
                 <span className="tabular-nums" style={{ color: "#e4e4e7" }}>
@@ -447,7 +471,7 @@ function SituationCard({
                   <button
                     type="button"
                     className="font-bold tracking-wider shrink-0"
-                    style={{ color: GOLD, fontSize: 10 }}
+                    style={{ color: GOLD, fontSize: MIN_FONT_PX }}
                     onClick={() => onNavigate(ct.symbol)}
                   >
                     OPEN →
@@ -457,10 +481,10 @@ function SituationCard({
             ))
           ) : (
             <>
-              <p className="font-mono leading-snug" style={{ color: "#a1a1aa", fontSize: ROW_FONT_PX }}>
+              <p className="font-mono" style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX, lineHeight: BODY_LINE_HEIGHT }}>
                 {t.name}
               </p>
-              <p className="font-mono" style={{ color: MUTED, fontSize: ROW_FONT_PX }}>
+              <p className="font-mono" style={{ color: TEXT_SECONDARY, fontSize: ROW_FONT_PX }}>
                 {t.exchange}
               </p>
               {onNavigate && (
@@ -504,7 +528,10 @@ function FilteredSection({ filtered }: { filtered: FilteredName[] }) {
       </button>
       {open && (
         <div style={{ background: BG }}>
-          <p className="px-3 py-2 font-mono border-b" style={{ color: MUTED, fontSize: 11, borderColor: BORDER }}>
+          <p
+            className="px-3 py-2 font-mono border-b"
+            style={{ color: TEXT_SECONDARY, fontSize: MIN_FONT_PX, borderColor: BORDER, lineHeight: BODY_LINE_HEIGHT }}
+          >
             Stripped from the movers list — leveraged ETFs, sub-$5 names, and market cap under $500M.
           </p>
           {filtered.map((row) => (
@@ -537,7 +564,7 @@ function FilteredSection({ filtered }: { filtered: FilteredName[] }) {
               </span>
               <span
                 className="font-mono uppercase tracking-wide text-right truncate"
-                style={{ color: "#52525b", fontSize: 10 }}
+                style={{ color: TEXT_SECONDARY, fontSize: MIN_FONT_PX }}
               >
                 {reasonLabel[row.reason]}
               </span>
@@ -627,7 +654,7 @@ export function MoversFeed({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: 
           <h1 className="font-mono font-bold tracking-[0.2em]" style={{ color: GOLD, fontSize: ROW_FONT_PX }}>
             MOVERS
           </h1>
-          <p className="font-mono mt-0.5" style={{ color: MUTED, fontSize: ROW_FONT_PX }}>
+          <p className="font-mono mt-0.5" style={{ color: TEXT_SECONDARY, fontSize: MIN_FONT_PX }}>
             {pollStatusLabel(feed)}
           </p>
         </div>
