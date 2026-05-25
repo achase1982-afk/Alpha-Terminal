@@ -23,20 +23,31 @@ function countStreak(moves: number[]): number {
   return streak;
 }
 
+export type CatalystDriftClass = "trending_up" | "trending_down" | "choppy";
+
+/** Same thresholds as pattern-read templates (§4). */
+export function classifyDriftFromMoves(moves: number[]): CatalystDriftClass {
+  const ups = moves.filter((m) => m > 0).length;
+  if (ups >= 5) return "trending_up";
+  if (ups <= 1) return "trending_down";
+  return "choppy";
+}
+
 export function buildPatternRead(moves: number[], streak: number): string {
   const ups = moves.filter((m) => m > 0).length;
   const last = moves[moves.length - 1] ?? 0;
   const signWord = last >= 0 ? "green" : "red";
   const cum5 = sumTail(moves, 5);
   const cumFmt = `${cum5 >= 0 ? "+" : ""}${cum5.toFixed(1)}%`;
+  const drift = classifyDriftFromMoves(moves);
 
   if (streak >= 5) {
     return `Strong directional drift — ${streak} straight ${signWord} sessions, ${cumFmt} into print.`;
   }
-  if (ups >= 5) {
+  if (drift === "trending_up") {
     return `Building accumulation — ${ups} of 6 sessions up.`;
   }
-  if (ups <= 1) {
+  if (drift === "trending_down") {
     const downs = moves.length - ups;
     return `Building distribution — ${downs} of 6 sessions down.`;
   }

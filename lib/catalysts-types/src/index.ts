@@ -45,6 +45,8 @@ export interface CatalystCard {
   /** ISO timestamp for client card-state / fall-off (BMO ≈ 09:30 ET, AMC ≈ 16:00 ET on earningsDate). */
   reportAtIso: string;
   lastPrice: number | null;
+  /** ATM straddle % of spot for first expiry covering earnings; null when unavailable. */
+  impliedMovePct: number | null;
   snapshot: CatalystSessionSnapshot;
 }
 
