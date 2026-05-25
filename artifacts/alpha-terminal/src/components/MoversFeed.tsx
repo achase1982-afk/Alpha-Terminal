@@ -532,6 +532,8 @@ function FilteredSection({ filtered }: { filtered: FilteredName[] }) {
     LEVERAGED_ETF: "Leveraged ETF",
     SUB_5: "Sub $5",
     MICRO_CAP: "Micro cap",
+    LOW_VOLUME: "Low volume",
+    NO_OPTIONS: "No options",
   };
 
   return (

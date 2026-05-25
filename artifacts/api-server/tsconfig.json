@@ -21,6 +21,9 @@
     },
     {
       "path": "../../lib/movers-types"
+    },
+    {
+      "path": "../../lib/catalysts-types"
     }
   ]
 }

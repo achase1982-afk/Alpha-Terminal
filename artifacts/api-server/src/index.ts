@@ -46,7 +46,9 @@ import { runLiquidCoreEquityBackfillOnce, runFlowBootstrapGapRepairOnce } from "
 import { ensureTelemetryEventsServiceColumn } from "./lib/ensureTelemetryEventsSchema.js";
 import { ensureStrategistTelemetryAuditColumns } from "./lib/ensureStrategistTelemetryAuditColumns.js";
 import { startMoversPollWorker } from "./lib/movers/moversPollWorker.js";
+import { startCatalystsRebuildWorker } from "./lib/catalysts/catalystsRebuildWorker.js";
 import { ensureMoversFeedTable } from "./lib/ensureMoversFeedSchema.js";
+import { ensureCatalystsFeedTable } from "./lib/ensureCatalystsFeedSchema.js";
 import { ensureMoversCatalystCacheTable } from "./lib/ensureMoversCatalystCacheSchema.js";
 import { ensureMoversTier2CacheTable } from "./lib/ensureMoversTier2CacheSchema.js";
 
@@ -70,11 +72,13 @@ async function boot() {
   await ensureTelemetryEventsServiceColumn();
   await ensureStrategistTelemetryAuditColumns();
   await ensureMoversFeedTable();
+  await ensureCatalystsFeedTable();
   await ensureMoversCatalystCacheTable();
   await ensureMoversTier2CacheTable();
   registerTuningUniverseOnBoot();
   startSnapshotRefreshWorker();
   startMoversPollWorker();
+  startCatalystsRebuildWorker();
   void refreshMacroCalendarCacheFromDb().catch((e) => {
     logger.warn({ err: e }, "FMP macro calendar cache warm failed");
   });

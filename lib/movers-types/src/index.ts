@@ -1,4 +1,5 @@
 export {
+  AVG_VOLUME_FLOOR,
   MARKET_CAP_FLOOR,
   MOVERS_MANUAL_REFRESH_DEBOUNCE_MS,
   MOVERS_POLL_INTERVAL_CLOSED_MS,
@@ -66,12 +67,19 @@ export interface TickerStat {
   description?: string;
 }
 
+export type TradeabilityRejectReason =
+  | "LEVERAGED_ETF"
+  | "SUB_5"
+  | "MICRO_CAP"
+  | "LOW_VOLUME"
+  | "NO_OPTIONS";
+
 export interface FilteredName {
   symbol: string;
   name: string;
   price: number;
   changePct: number;
-  reason: "LEVERAGED_ETF" | "SUB_5" | "MICRO_CAP";
+  reason: TradeabilityRejectReason;
 }
 
 export interface FlaggedName {

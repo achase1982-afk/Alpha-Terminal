@@ -4,7 +4,7 @@ import { fetchFmpCompanyProfiles } from "./fmpCompanyProfile.js";
 import { clusterEnrichedMovers } from "./clusterMovers.js";
 import { applyDeterministicCatalystToSituations } from "./moversDeterministicCatalyst.js";
 import { stripMover } from "./stripMover.js";
-import { stripMicroCap } from "./stripMicroCap.js";
+import { applyTradeabilityGate, moverRowToCandidate } from "./tradeabilityGate.js";
 
 function toFiltered(row: FmpMoverRow, reason: FilteredName["reason"]): FilteredName {
   return {
@@ -43,11 +43,19 @@ export async function buildMoversFeedFromRows(
   const { survivors: stage1Survivors, filtered: stage1Filtered } = applyStage1Strip(rows);
 
   const profiles = await fetchFmpCompanyProfiles(stage1Survivors.map((r) => r.symbol));
-  const { tradeable, filtered: microFiltered } = stripMicroCap(stage1Survivors, profiles);
+  const candidates = stage1Survivors.map(moverRowToCandidate);
+  const { tradeable: tradeableCandidates, filtered: gateFiltered } = applyTradeabilityGate(
+    candidates,
+    profiles,
+  );
+  const tradeableSyms = new Set(tradeableCandidates.map((t) => t.symbol));
+  const tradeable = stage1Survivors.filter((r) => tradeableSyms.has(r.symbol.toUpperCase()));
+  const filtered = [...stage1Filtered, ...gateFiltered];
 
-  const filtered = [...stage1Filtered, ...microFiltered];
-
-  const enriched = tradeable.map((row) => ({ row, profile: profiles.get(row.symbol) }));
+  const enriched = tradeable.map((row) => ({
+    row,
+    profile: profiles.get(row.symbol.toUpperCase()),
+  }));
   const clustered = clusterEnrichedMovers(enriched);
   const { situations, flagged } = await applyDeterministicCatalystToSituations(clustered);
 
