@@ -764,9 +764,15 @@ router.get("/cpi-full", async (req, res) => {
     }
 
     const allIds = Object.values(CPI_FULL_SERIES).map((s) => s.id);
-    const allData = await fetchBlsSeriesBatch(allIds);
+    const [allData, fedInflationRows] = await Promise.all([
+      fetchBlsSeriesBatch(allIds),
+      fetchFedInflationRows(24),
+    ]);
     const seriesEntries = Object.entries(CPI_FULL_SERIES) as [string, { id: string; label: string }][];
-    const results = buildInflationByMonth(seriesEntries, allData, CPI_FULL_SERIES.headline.id, "https://www.bls.gov/news.release/cpi.nr0.htm", "cpi");
+    let results = buildInflationByMonth(seriesEntries, allData, CPI_FULL_SERIES.headline.id, "https://www.bls.gov/news.release/cpi.nr0.htm", "cpi");
+    if (fedInflationRows.length) {
+      results = mergeMassiveCpiIntoResults(results, buildCpiMonthsFromFedInflation(fedInflationRows));
+    }
 
     let expected: string | null = null;
     try {

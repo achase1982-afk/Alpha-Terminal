@@ -1171,8 +1171,8 @@ export function MarketCalendar({ onClose }: Props) {
 
             {!inflLoading && !headline && monthNotYetAvailable && (
               <div className="flex flex-col items-center justify-center py-8 gap-3 px-4">
-                <span className="font-mono text-[13px] text-zinc-400 text-center">{refLabel} data not yet available from BLS.</span>
-                <span className="font-mono text-[11px] text-zinc-600 text-center">The BLS API typically updates within a few hours of the official release.</span>
+                <span className="font-mono text-[13px] text-zinc-400 text-center">{refLabel} data not yet available.</span>
+                <span className="font-mono text-[11px] text-zinc-600 text-center">Checking Massive Fed inflation data and BLS — updates usually within a few hours of release.</span>
                 <button
                   onClick={() => setReportIframeUrl(reportUrl)}
                   className="flex items-center gap-1.5 font-mono text-[13px] font-bold tracking-wider transition-opacity hover:opacity-70 mt-2"
