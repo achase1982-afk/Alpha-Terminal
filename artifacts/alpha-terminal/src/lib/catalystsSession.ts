@@ -1,5 +1,11 @@
-import type { CatalystCard } from "@workspace/catalysts-types";
+import {
+  classifyCatalystDrift,
+  type CatalystCard,
+  type CatalystDirectionFilter,
+  type CatalystDriftClass,
+} from "@workspace/catalysts-types";
 import type { QuoteData } from "@/hooks/useQuote";
+import type { LiveQuote } from "@/lib/store";
 
 const BG = "#0D0D0D";
 const CARD = "#1A1A1A";
@@ -176,3 +182,59 @@ export function pctColor(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n) || n === 0) return TEXT;
   return n > 0 ? GREEN : RED;
 }
+
+export function driftClassForCard(
+  card: CatalystCard,
+  liveMovePct: number | null,
+): CatalystDriftClass {
+  return classifyCatalystDrift(card.snapshot.sessionMovesPct, liveMovePct);
+}
+
+export function matchesDirectionFilter(
+  card: CatalystCard,
+  filter: CatalystDirectionFilter,
+  liveMovePct: number | null,
+): boolean {
+  if (filter === "all") return true;
+  return driftClassForCard(card, liveMovePct) === filter;
+}
+
+/** Live session % for drift filter (6th session in the trailing window). */
+export function liveMovePctFromQuote(quote: QuoteData | null | undefined): number | null {
+  if (!quote) return null;
+  const mode = liveTapeMode();
+  if (mode === "SESSION") {
+    return sessionSettledPct(quote) ?? quote.changePct;
+  }
+  return quote.changePct;
+}
+
+export function liveMovePctFromStream(quote: LiveQuote | undefined): number | null {
+  if (!quote) return null;
+  return liveMovePctFromQuote({
+    symbol: quote.symbol,
+    description: null,
+    last: quote.last,
+    regularLast: quote.regularLast,
+    extendedLast: quote.extendedLast,
+    bid: quote.bid,
+    ask: quote.ask,
+    bidSize: quote.bidSize,
+    askSize: quote.askSize,
+    change: quote.change,
+    changePct: quote.changePct,
+    volume: quote.volume,
+    high: quote.high,
+    low: quote.low,
+    close: quote.close,
+    fiftyTwoWeekHigh: null,
+    fiftyTwoWeekLow: null,
+    peRatio: null,
+  });
+}
+
+export const DIRECTION_FILTER_EMPTY: Record<Exclude<CatalystDirectionFilter, "all">, string> = {
+  trending_up: "No names trending up in the next 10 days",
+  trending_down: "No names trending down in the next 10 days",
+  choppy: "No choppy names in the next 10 days",
+};

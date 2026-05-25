@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { classifyCatalystDrift } from "@workspace/catalysts-types";
 import { buildPatternRead, computeSessionSnapshot } from "../catalystMetrics.js";
 
 describe("catalystMetrics", () => {
@@ -23,5 +24,11 @@ describe("catalystMetrics", () => {
   it("returns choppy pattern when moves mixed", () => {
     const moves = [1, -1, 1, -1, 0.5];
     expect(buildPatternRead(moves, 1)).toContain("Choppy");
+  });
+
+  it("classifyCatalystDrift matches pattern-read thresholds", () => {
+    expect(classifyCatalystDrift([1, 2, 1, 2, 1], null)).toBe("trending_up");
+    expect(classifyCatalystDrift([-1, -2, -1, -2, -1], null)).toBe("trending_down");
+    expect(classifyCatalystDrift([1, -1, 1, -1, 0], null)).toBe("choppy");
   });
 });

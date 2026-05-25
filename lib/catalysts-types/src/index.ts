@@ -52,6 +52,28 @@ export interface CatalystCard {
 
 export type CatalystsSortKey = "soonest" | "fiveDayMove" | "streak";
 
+export type CatalystDriftClass = "trending_up" | "trending_down" | "choppy";
+
+export type CatalystDirectionFilter = "all" | CatalystDriftClass;
+
+/**
+ * Classify pre-earnings drift from trailing session moves (5 settled + optional live = 6).
+ * Thresholds match pattern-read templates in the cache job.
+ */
+export function classifyCatalystDrift(
+  settledMovesPct: number[],
+  liveMovePct: number | null,
+): CatalystDriftClass {
+  const moves =
+    liveMovePct != null && Number.isFinite(liveMovePct)
+      ? [...settledMovesPct, liveMovePct]
+      : settledMovesPct;
+  const ups = moves.filter((m) => m > 0).length;
+  if (ups >= 5) return "trending_up";
+  if (ups <= 1) return "trending_down";
+  return "choppy";
+}
+
 export function emptyCatalystsFeed(): CatalystsFeed {
   return {
     builtAt: "",
