@@ -150,7 +150,7 @@ export default function TerminalPage() {
     try {
       const savedRaw = sessionStorage.getItem("alpha_session_ai_tab");
       const saved = (savedRaw === "scanner" ? "movers" : savedRaw) as AiSubTab | null;
-      const valid: AiSubTab[] = ["pulse", "strategist", "movers"];
+      const valid: AiSubTab[] = ["pulse", "strategist", "movers", "catalysts"];
       return saved && valid.includes(saved) ? saved : "pulse";
     } catch { return "pulse"; }
   });
@@ -565,17 +565,25 @@ export default function TerminalPage() {
       {activeBottom === "ai" && (
         <div className="shrink-0 bg-background z-40">
           <div className="px-3 sm:px-4 lg:px-5 pt-1 pb-1">
-            <div className="flex w-full p-1">
-              {(["pulse", "movers", "strategist"] as AiSubTab[]).map((tab) => {
-                const label = tab === "pulse" ? "MARKET PULSE" : tab === "movers" ? "MOVERS" : "STRATEGIST";
+            <div className="flex w-full max-w-full overflow-x-auto p-1 gap-0.5" style={{ scrollbarWidth: "thin" }}>
+              {(["pulse", "movers", "catalysts", "strategist"] as AiSubTab[]).map((tab) => {
+                const label =
+                  tab === "pulse"
+                    ? "MARKET PULSE"
+                    : tab === "movers"
+                      ? "MOVERS"
+                      : tab === "catalysts"
+                        ? "CATALYSTS"
+                        : "STRATEGIST";
                 const showIndicator = tab === "strategist" && aiSubTab !== "strategist" && (strategistRunningCount > 0 || strategistUnviewedCount > 0);
                 const indicatorIsRunning = strategistRunningCount > 0;
                 return (
                   <button
                     key={tab}
                     onClick={() => setAiSubTab(tab)}
-                    className="flex-1 font-mono text-xs font-bold tracking-wider py-2 rounded-lg transition-all duration-200 relative"
+                    className="shrink-0 flex-1 min-w-[5.5rem] font-mono font-bold tracking-wider py-2 rounded-lg transition-all duration-200 relative"
                     style={{
+                      fontSize: 12,
                       background: aiSubTab === tab ? "#1a1a1a" : "transparent",
                       color: aiSubTab === tab ? "#fafafa" : "#71717a",
                       border: "none",
