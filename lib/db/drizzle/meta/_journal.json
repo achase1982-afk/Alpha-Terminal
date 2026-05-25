@@ -225,6 +225,13 @@
       "when": 1779350000000,
       "tag": "0035_movers_feed",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1779400000000,
+      "tag": "0039_catalyst_earnings_dates",
+      "breakpoints": true
     }
   ]
 }

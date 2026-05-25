@@ -47,8 +47,10 @@ import { ensureTelemetryEventsServiceColumn } from "./lib/ensureTelemetryEventsS
 import { ensureStrategistTelemetryAuditColumns } from "./lib/ensureStrategistTelemetryAuditColumns.js";
 import { startMoversPollWorker } from "./lib/movers/moversPollWorker.js";
 import { startCatalystsRebuildWorker } from "./lib/catalysts/catalystsRebuildWorker.js";
+import { startCatalystEarningsHarvestWorker } from "./lib/catalysts/catalystEarningsHarvestWorker.js";
 import { ensureMoversFeedTable } from "./lib/ensureMoversFeedSchema.js";
 import { ensureCatalystsFeedTable } from "./lib/ensureCatalystsFeedSchema.js";
+import { ensureCatalystEarningsDatesTable } from "./lib/ensureCatalystEarningsDatesSchema.js";
 import { ensureMoversCatalystCacheTable } from "./lib/ensureMoversCatalystCacheSchema.js";
 import { ensureMoversTier2CacheTable } from "./lib/ensureMoversTier2CacheSchema.js";
 
@@ -73,11 +75,13 @@ async function boot() {
   await ensureStrategistTelemetryAuditColumns();
   await ensureMoversFeedTable();
   await ensureCatalystsFeedTable();
+  await ensureCatalystEarningsDatesTable();
   await ensureMoversCatalystCacheTable();
   await ensureMoversTier2CacheTable();
   registerTuningUniverseOnBoot();
   startSnapshotRefreshWorker();
   startMoversPollWorker();
+  void startCatalystEarningsHarvestWorker();
   startCatalystsRebuildWorker();
   void refreshMacroCalendarCacheFromDb().catch((e) => {
     logger.warn({ err: e }, "FMP macro calendar cache warm failed");

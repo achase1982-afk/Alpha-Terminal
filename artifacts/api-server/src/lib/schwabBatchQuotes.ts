@@ -1,7 +1,7 @@
 import { getBestAccessToken } from "./tokenStore.js";
 import { normalizeIV } from "./ivNormalize.js";
 
-const SCHWAB_MARKETDATA = "https://api.schwabapi.com/marketdata/v1";
+export const SCHWAB_MARKETDATA = "https://api.schwabapi.com/marketdata/v1";
 
 /**
  * Matches {@link ./schwabDynamicScreener.ts} batching — Schwab documents a limit on
