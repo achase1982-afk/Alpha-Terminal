@@ -32,6 +32,8 @@ function isTier1Definite(type: MoversCatalystType): boolean {
 function logMoversCatalystTelemetry(
   tier1Assigned: number,
   tier2Assigned: number,
+  tier2CacheHits: number,
+  tier2LlmBatchSize: number,
   situations: Situation[],
 ): void {
   let finalNone = 0;
@@ -39,7 +41,14 @@ function logMoversCatalystTelemetry(
     if (s.catalystType === "NONE") finalNone += 1;
   }
   logger.info(
-    { tier1Assigned, tier2Assigned, finalNone, situations: situations.length },
+    {
+      tier1Assigned,
+      tier2Assigned,
+      tier2CacheHits,
+      tier2LlmBatchSize,
+      finalNone,
+      situations: situations.length,
+    },
     "Movers catalyst tier counts",
   );
 }
@@ -118,8 +127,12 @@ export async function applyDeterministicCatalystToSituations(
     }
   }
 
-  const { situations: tier2Updated, tier2Assigned } =
-    await classifyUnknownResidualWithTier2(unknownCandidates);
+  const {
+    situations: tier2Updated,
+    tier2Assigned,
+    tier2CacheHits,
+    tier2LlmBatchSize,
+  } = await classifyUnknownResidualWithTier2(unknownCandidates);
 
   const tier2ById = new Map(tier2Updated.map((s) => [s.id, s]));
 
@@ -136,7 +149,13 @@ export async function applyDeterministicCatalystToSituations(
     return bPct - aPct;
   });
 
-  logMoversCatalystTelemetry(tier1Assigned, tier2Assigned, situationsOut);
+  logMoversCatalystTelemetry(
+    tier1Assigned,
+    tier2Assigned,
+    tier2CacheHits,
+    tier2LlmBatchSize,
+    situationsOut,
+  );
 
   return { situations: situationsOut, flagged: flaggedOut };
 }

@@ -12,6 +12,11 @@ import { logger } from "../logger.js";
 import type { MoversNewsHeadline } from "./fmpMoversNews.js";
 import { formatHeadlinesForPrompt } from "./fmpMoversNews.js";
 import { buildMoversNewsKey, resolveHeadlineByTitle } from "./moversNewsKey.js";
+import {
+  buildHeadlineSetKey,
+  getTier2CacheEntry,
+  writeTier2CacheEntry,
+} from "./moversTier2Cache.js";
 
 const CLASSIFIABLE_TYPES = ["GOV", "ANALYST", "CONTRACT", "EARNINGS", "MA", "SECTOR", "NONE"] as const;
 type Tier2CatalystType = (typeof CLASSIFIABLE_TYPES)[number];
@@ -36,6 +41,13 @@ export type Tier2TickerPayload = {
   ticker: string;
   changePct: number;
   headlines: MoversNewsHeadline[];
+};
+
+export type Tier2ClassifyResult = {
+  situations: Situation[];
+  tier2Assigned: number;
+  tier2CacheHits: number;
+  tier2LlmBatchSize: number;
 };
 
 type MoversAiProvider = "anthropic" | "google" | "openai";
@@ -133,6 +145,10 @@ function isTier2Classified(type: MoversCatalystType): type is Tier2CatalystType 
   return (CLASSIFIABLE_TYPES as readonly string[]).includes(type);
 }
 
+function countTier2Assigned(situation: Situation): number {
+  return situation.catalystType !== "NONE" && situation.catalystType !== "UNKNOWN" ? 1 : 0;
+}
+
 export function applyTier2ResultToSituation(
   situation: Situation,
   headlines: MoversNewsHeadline[],
@@ -154,21 +170,53 @@ export function applyTier2ResultToSituation(
 }
 
 /**
- * One batched LLM call for all UNKNOWN residuals. Returns count of situations updated to a
- * non-NONE classifiable type.
+ * Tier-2 for UNKNOWN residuals: headline-set cache first, then one batched LLM for misses only.
  */
 export async function classifyUnknownResidualWithTier2(
   candidates: Tier2UnknownCandidate[],
-): Promise<{ situations: Situation[]; tier2Assigned: number }> {
-  if (candidates.length === 0) return { situations: [], tier2Assigned: 0 };
+): Promise<Tier2ClassifyResult> {
+  if (candidates.length === 0) {
+    return { situations: [], tier2Assigned: 0, tier2CacheHits: 0, tier2LlmBatchSize: 0 };
+  }
 
-  const payloads = buildTier2TickerPayloads(candidates);
+  const candidateBySituationId = new Map(candidates.map((c) => [c.situation.id, c]));
+  const llmCandidates: Tier2UnknownCandidate[] = [];
+  let tier2CacheHits = 0;
+  let tier2Assigned = 0;
+
+  for (const candidate of candidates) {
+    const headlineSetKey = buildHeadlineSetKey(candidate.headlines);
+    const cached = await getTier2CacheEntry(headlineSetKey);
+    if (cached) {
+      tier2CacheHits += 1;
+      const lead = leadTickerForSituation(candidate.situation);
+      const updated = applyTier2ResultToSituation(candidate.situation, candidate.headlines, {
+        ticker: lead.symbol,
+        catalystType: cached.catalystType as z.infer<typeof Tier2ItemSchema>["catalystType"],
+        drivingHeadline: cached.drivingHeadline,
+      });
+      candidateBySituationId.set(candidate.situation.id, { ...candidate, situation: updated });
+      tier2Assigned += countTier2Assigned(updated);
+      continue;
+    }
+    llmCandidates.push(candidate);
+  }
+
+  const tier2LlmBatchSize = llmCandidates.length;
+  if (tier2LlmBatchSize === 0) {
+    return {
+      situations: [...candidateBySituationId.values()].map((c) => c.situation),
+      tier2Assigned,
+      tier2CacheHits,
+      tier2LlmBatchSize: 0,
+    };
+  }
+
+  const payloads = buildTier2TickerPayloads(llmCandidates);
 
   try {
     const batch = await callTier2Llm(buildTier2UserPrompt(payloads));
     const payloadByTicker = new Map(payloads.map((p) => [p.ticker.toUpperCase(), p]));
-    const candidateBySituationId = new Map(candidates.map((c) => [c.situation.id, c]));
-    let tier2Assigned = 0;
 
     for (const item of batch.results) {
       const payload = payloadByTicker.get(item.ticker.toUpperCase());
@@ -176,23 +224,27 @@ export async function classifyUnknownResidualWithTier2(
       const candidate = candidateBySituationId.get(payload.situationId);
       if (!candidate) continue;
 
+      const headlineSetKey = buildHeadlineSetKey(candidate.headlines);
+      await writeTier2CacheEntry(headlineSetKey, {
+        catalystType: item.catalystType as MoversCatalystType,
+        drivingHeadline: item.drivingHeadline,
+      });
+
       const updated = applyTier2ResultToSituation(candidate.situation, candidate.headlines, item);
       candidateBySituationId.set(candidate.situation.id, {
         ...candidate,
         situation: updated,
       });
-      if (item.catalystType !== "NONE") tier2Assigned += 1;
+      tier2Assigned += countTier2Assigned(updated);
     }
-
-    return {
-      situations: [...candidateBySituationId.values()].map((c) => c.situation),
-      tier2Assigned,
-    };
   } catch (err) {
-    logger.warn({ err, count: candidates.length }, "Movers tier-2 catalyst classification failed");
-    return {
-      situations: candidates.map((c) => c.situation),
-      tier2Assigned: 0,
-    };
+    logger.warn({ err, count: llmCandidates.length }, "Movers tier-2 catalyst classification failed");
   }
+
+  return {
+    situations: [...candidateBySituationId.values()].map((c) => c.situation),
+    tier2Assigned,
+    tier2CacheHits,
+    tier2LlmBatchSize,
+  };
 }

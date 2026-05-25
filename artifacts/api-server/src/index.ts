@@ -48,6 +48,7 @@ import { ensureStrategistTelemetryAuditColumns } from "./lib/ensureStrategistTel
 import { startMoversPollWorker } from "./lib/movers/moversPollWorker.js";
 import { ensureMoversFeedTable } from "./lib/ensureMoversFeedSchema.js";
 import { ensureMoversCatalystCacheTable } from "./lib/ensureMoversCatalystCacheSchema.js";
+import { ensureMoversTier2CacheTable } from "./lib/ensureMoversTier2CacheSchema.js";
 
 const rawPort = process.env["PORT"];
 
@@ -70,6 +71,7 @@ async function boot() {
   await ensureStrategistTelemetryAuditColumns();
   await ensureMoversFeedTable();
   await ensureMoversCatalystCacheTable();
+  await ensureMoversTier2CacheTable();
   registerTuningUniverseOnBoot();
   startSnapshotRefreshWorker();
   startMoversPollWorker();
