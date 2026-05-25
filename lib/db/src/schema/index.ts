@@ -1260,6 +1260,20 @@ export const moversFeedTable = pgTable(
 export type MoversFeedRow = typeof moversFeedTable.$inferSelect;
 export type MoversFeedInsert = typeof moversFeedTable.$inferInsert;
 
+/** Pre-earnings Catalysts snapshot cache (JSON CatalystsFeed payload). */
+export const catalystsFeedTable = pgTable(
+  "catalysts_feed",
+  {
+    id: serial("id").primaryKey(),
+    builtAt: timestamp("built_at", { withTimezone: true }).notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  },
+  (t) => [index("catalysts_feed_built_at_idx").on(desc(t.builtAt))],
+);
+
+export type CatalystsFeedRow = typeof catalystsFeedTable.$inferSelect;
+export type CatalystsFeedInsert = typeof catalystsFeedTable.$inferInsert;
+
 /** Lazy LLM read cache keyed by driving-news fingerprint (7-day retention). */
 export const moversCatalystCacheTable = pgTable(
   "movers_catalyst_cache",
