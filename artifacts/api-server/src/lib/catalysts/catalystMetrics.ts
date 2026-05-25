@@ -1,4 +1,8 @@
-import type { CatalystSessionSnapshot } from "@workspace/catalysts-types";
+import {
+  classifyCatalystDrift,
+  type CatalystDriftClass,
+  type CatalystSessionSnapshot,
+} from "@workspace/catalysts-types";
 
 function pctMove(from: number, to: number): number {
   if (!Number.isFinite(from) || from === 0 || !Number.isFinite(to)) return 0;
@@ -23,23 +27,13 @@ function countStreak(moves: number[]): number {
   return streak;
 }
 
-export type CatalystDriftClass = "trending_up" | "trending_down" | "choppy";
-
-/** Same thresholds as pattern-read templates (§4). */
-export function classifyDriftFromMoves(moves: number[]): CatalystDriftClass {
-  const ups = moves.filter((m) => m > 0).length;
-  if (ups >= 5) return "trending_up";
-  if (ups <= 1) return "trending_down";
-  return "choppy";
-}
-
 export function buildPatternRead(moves: number[], streak: number): string {
   const ups = moves.filter((m) => m > 0).length;
   const last = moves[moves.length - 1] ?? 0;
   const signWord = last >= 0 ? "green" : "red";
   const cum5 = sumTail(moves, 5);
   const cumFmt = `${cum5 >= 0 ? "+" : ""}${cum5.toFixed(1)}%`;
-  const drift = classifyDriftFromMoves(moves);
+  const drift = classifyCatalystDrift(moves, null);
 
   if (streak >= 5) {
     return `Strong directional drift — ${streak} straight ${signWord} sessions, ${cumFmt} into print.`;

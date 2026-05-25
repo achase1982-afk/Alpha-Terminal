@@ -1,19 +1,29 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Flame, Loader2 } from "lucide-react";
-import type { CatalystCard, CatalystsFeed, CatalystsSortKey } from "@workspace/catalysts-types";
+import type {
+  CatalystCard,
+  CatalystDirectionFilter,
+  CatalystsFeed,
+  CatalystsSortKey,
+} from "@workspace/catalysts-types";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { useQuote } from "@/hooks/useQuote";
+import { useTerminalStore } from "@/lib/store";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import {
   CATALYSTS_COLORS,
   CATALYSTS_MIN_FONT_PX,
+  DIRECTION_FILTER_EMPTY,
   afterHoursPct,
   catalystCardPhase,
   daysUntilEarnings,
   earningsBadgeLabel,
   fmtPct,
+  liveMovePctFromQuote,
+  liveMovePctFromStream,
   liveTapeMode,
+  matchesDirectionFilter,
   pctColor,
   sessionSettledPct,
   shouldFallOffCatalyst,
@@ -31,6 +41,13 @@ const SORT_CHIPS: { key: SortKey; label: string }[] = [
   { key: "soonest", label: "SOONEST" },
   { key: "fiveDayMove", label: "5-DAY MOVE" },
   { key: "streak", label: "STREAK" },
+];
+
+const FILTER_CHIPS: { key: CatalystDirectionFilter; label: string }[] = [
+  { key: "all", label: "ALL" },
+  { key: "trending_up", label: "TRENDING UP" },
+  { key: "trending_down", label: "TRENDING DOWN" },
+  { key: "choppy", label: "CHOPPY" },
 ];
 
 function SparkBar({ moves, livePct }: { moves: number[]; livePct: number | null }) {
@@ -108,6 +125,9 @@ function CatalystCardRow({
   const streakHot = card.snapshot.streak >= 5;
   const cum5 = card.snapshot.cumulative5d;
 
+  const { data: quote } = useQuote(card.symbol);
+  const livePct = liveMovePctFromQuote(quote);
+
   return (
     <div
       style={{
@@ -117,39 +137,49 @@ function CatalystCardRow({
         opacity: muted ? 0.85 : 1,
       }}
     >
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full text-left px-3 py-3 flex flex-col gap-2"
-      >
+      <div className="px-3 py-3 flex flex-col gap-2">
         <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
+          <div className="min-w-0 flex-1 flex items-start gap-2">
+            <button
+              type="button"
+              onClick={onToggle}
+              className="shrink-0 p-0.5"
+              aria-label={expanded ? "Collapse card" : "Expand card"}
+            >
               {expanded ? (
-                <ChevronDown className="w-4 h-4 shrink-0" style={{ color: TEXT }} />
+                <ChevronDown className="w-4 h-4" style={{ color: TEXT }} />
               ) : (
-                <ChevronRight className="w-4 h-4 shrink-0" style={{ color: TEXT }} />
+                <ChevronRight className="w-4 h-4" style={{ color: TEXT }} />
               )}
-              <button
-                type="button"
-                className="font-bold tracking-wider"
-                style={{ ...MONO, fontSize: 14, color: BLUE }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onNavigate?.(card.symbol);
-                }}
-              >
-                {card.symbol}
+            </button>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                {onNavigate ? (
+                  <button
+                    type="button"
+                    className="font-bold tracking-wider"
+                    style={{ ...MONO, fontSize: 14, color: BLUE }}
+                    onClick={() => onNavigate(card.symbol)}
+                  >
+                    {card.symbol}
+                  </button>
+                ) : (
+                  <span className="font-bold tracking-wider" style={{ ...MONO, fontSize: 14, color: BLUE }}>
+                    {card.symbol}
+                  </span>
+                )}
+                {held && (
+                  <span style={{ ...LABEL, color: GOLD, fontWeight: 700 }}>HELD</span>
+                )}
+                {streakHot && <Flame className="w-4 h-4" style={{ color: GOLD }} />}
+              </div>
+              <button type="button" onClick={onToggle} className="w-full text-left mt-1">
+                <p className="truncate" style={BODY}>
+                  {card.name}
+                  {card.sector ? ` · ${card.sector}` : ""}
+                </p>
               </button>
-              {held && (
-                <span style={{ ...LABEL, color: GOLD, fontWeight: 700 }}>HELD</span>
-              )}
-              {streakHot && <Flame className="w-4 h-4" style={{ color: GOLD }} />}
             </div>
-            <p className="mt-1 truncate" style={BODY}>
-              {card.name}
-              {card.sector ? ` · ${card.sector}` : ""}
-            </p>
           </div>
           <div className="shrink-0 flex flex-col items-end gap-1">
             <span style={{ ...LABEL, color: goldEdge ? GOLD : TEXT }}>{earningsBadgeLabel(card)}</span>
@@ -159,15 +189,17 @@ function CatalystCardRow({
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-3">
-          <SparkBar moves={card.snapshot.sessionMovesPct} livePct={null} />
-          <div className="flex flex-col items-end gap-0.5">
-            <span style={{ ...LABEL, fontWeight: 500 }}>5-DAY</span>
-            <span style={{ ...BODY, color: pctColor(cum5) }}>{fmtPct(cum5)}</span>
-            <LiveTapeColumn symbol={card.symbol} />
+        <button type="button" onClick={onToggle} className="w-full text-left">
+          <div className="flex items-center justify-between gap-3">
+            <SparkBar moves={card.snapshot.sessionMovesPct} livePct={livePct} />
+            <div className="flex flex-col items-end gap-0.5">
+              <span style={{ ...LABEL, fontWeight: 500 }}>5-DAY</span>
+              <span style={{ ...BODY, color: pctColor(cum5) }}>{fmtPct(cum5)}</span>
+              <LiveTapeColumn symbol={card.symbol} />
+            </div>
           </div>
-        </div>
-      </button>
+        </button>
+      </div>
 
       {expanded && (
         <div className="px-3 pb-3 pt-0 border-t flex flex-col gap-3" style={{ borderColor: BORDER }}>
@@ -270,8 +302,10 @@ export function CatalystsFeed({
   subscribeEquitySymbols?: (syms: string[]) => void;
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("soonest");
+  const [directionFilter, setDirectionFilter] = useState<CatalystDirectionFilter>("all");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const account = usePortfolioStreamStore((s) => s.account);
+  const streamPrices = useTerminalStore((s) => s.streamPrices);
 
   const heldSymbols = useMemo(() => {
     const set = new Set<string>();
@@ -305,8 +339,15 @@ export function CatalystsFeed({
     subscribeEquitySymbols(visibleCards.map((c: CatalystCard) => c.symbol));
   }, [visibleCards, subscribeEquitySymbols]);
 
+  const directionFiltered = useMemo(() => {
+    return visibleCards.filter((card: CatalystCard) => {
+      const livePct = liveMovePctFromStream(streamPrices[card.symbol.toUpperCase()]);
+      return matchesDirectionFilter(card, directionFilter, livePct);
+    });
+  }, [visibleCards, directionFilter, streamPrices]);
+
   const sorted = useMemo(() => {
-    const list = [...visibleCards];
+    const list = [...directionFiltered];
     switch (sortKey) {
       case "fiveDayMove":
         list.sort(
@@ -326,7 +367,12 @@ export function CatalystsFeed({
         );
     }
     return list;
-  }, [visibleCards, sortKey]);
+  }, [directionFiltered, sortKey]);
+
+  const emptyFilterMessage =
+    directionFilter !== "all" && directionFiltered.length === 0 && visibleCards.length > 0
+      ? DIRECTION_FILTER_EMPTY[directionFilter]
+      : null;
 
   const toggle = useCallback((sym: string) => {
     setExpanded((prev) => ({ ...prev, [sym]: !prev[sym] }));
@@ -341,10 +387,34 @@ export function CatalystsFeed({
         <p style={{ ...BODY, marginTop: 6 }}>
           EARNINGS · NEXT 10 DAYS · {sorted.length} NAMES
         </p>
-        <p style={{ ...BODY, marginTop: 4, fontWeight: 300 }}>
+        <p style={{ ...BODY, marginTop: 4, fontWeight: 400 }}>
           Pre-earnings drift into scheduled prints. Settled sessions are frozen at the prior close.
         </p>
-        <div className="flex gap-2 mt-3 overflow-x-auto pb-1">
+        <p style={{ ...LABEL, marginTop: 10, fontWeight: 500 }}>FILTER</p>
+        <div className="flex gap-2 mt-2 overflow-x-auto pb-1">
+          {FILTER_CHIPS.map((chip) => {
+            const active = directionFilter === chip.key;
+            return (
+              <button
+                key={chip.key}
+                type="button"
+                onClick={() => setDirectionFilter(chip.key)}
+                className="shrink-0 px-3 py-1.5 rounded-full font-mono tracking-wider"
+                style={{
+                  ...LABEL,
+                  border: `1px solid ${active ? BLUE : BORDER_STRONG}`,
+                  color: active ? BLUE : TEXT,
+                  background: CARD,
+                  fontWeight: active ? 700 : 500,
+                }}
+              >
+                {chip.label}
+              </button>
+            );
+          })}
+        </div>
+        <p style={{ ...LABEL, marginTop: 10, fontWeight: 500 }}>SORT</p>
+        <div className="flex gap-2 mt-2 overflow-x-auto pb-1">
           {SORT_CHIPS.map((chip) => {
             const active = sortKey === chip.key;
             return (
@@ -358,6 +428,7 @@ export function CatalystsFeed({
                   border: `1px solid ${active ? GOLD : BORDER_STRONG}`,
                   color: active ? GOLD : TEXT,
                   background: CARD,
+                  fontWeight: active ? 700 : 500,
                 }}
               >
                 {chip.label}
@@ -385,7 +456,13 @@ export function CatalystsFeed({
         </p>
       )}
 
-      {data && !building && sorted.length === 0 && (
+      {emptyFilterMessage && (
+        <p className="px-3 py-8 text-center" style={BODY}>
+          {emptyFilterMessage}
+        </p>
+      )}
+
+      {data && !building && !emptyFilterMessage && sorted.length === 0 && (
         <p className="px-3 py-8 text-center" style={BODY}>
           No upcoming earnings names passed the tradeability gate in the next 10 days.
         </p>
