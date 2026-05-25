@@ -1,6 +1,7 @@
 import { desc } from "drizzle-orm";
 import { catalystEarningsDatesTable, db } from "@workspace/db";
 import { logger } from "../logger.js";
+import { runCatalystsRebuildOnce } from "./catalystsRebuildWorker.js";
 import { runCatalystEarningsHarvest } from "./catalystEarningsHarvest.js";
 
 let activeHarvest: Promise<void> | null = null;
@@ -40,6 +41,8 @@ export function runCatalystEarningsHarvestOnce(): Promise<void> {
           ? { delayBetweenBatchesMs: delayMs }
           : undefined,
       );
+      logger.info("Catalyst earnings harvest done — starting catalysts feed rebuild");
+      await runCatalystsRebuildOnce();
     } catch (err) {
       logger.error({ err }, "Catalyst earnings harvest failed");
     } finally {

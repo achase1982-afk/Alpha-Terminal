@@ -16,6 +16,7 @@ import {
   runCatalystEarningsHarvest,
   CATALYST_EARNINGS_BATCH_DELAY_MS,
 } from "../lib/catalysts/catalystEarningsHarvest.js";
+import { runCatalystsRebuildOnce } from "../lib/catalysts/catalystsRebuildWorker.js";
 import { catalystEarningsDatesTable, db } from "@workspace/db";
 
 async function main(): Promise<void> {
@@ -47,6 +48,10 @@ async function main(): Promise<void> {
     skipFmpBackfill: skipFmp,
   });
 
+  console.log(JSON.stringify({ msg: "catalysts_feed_rebuild_start" }));
+  await runCatalystsRebuildOnce();
+  const feed = await import("../lib/catalysts/catalystsFeedStore.js").then((m) => m.getLatestCatalystsFeed());
+
   const sweepRows = await db
     .select({
       symbol: catalystEarningsDatesTable.symbol,
@@ -74,6 +79,9 @@ async function main(): Promise<void> {
           lastEarningsDate: r.lastEarningsDate ? String(r.lastEarningsDate) : null,
           nextEarningsDate: String(r.nextEarningsDate),
         })),
+      feedBuiltAt: feed.builtAt,
+      feedTradeableCards: feed.cards.length,
+      feedSymbols: feed.cards.map((c) => c.symbol),
     }),
   );
 }
