@@ -106,7 +106,20 @@ export async function fetchFedLaborMarketRows(limit = 24): Promise<FedLaborMarke
   }
 }
 
-type InflationSeriesLike = Record<string, unknown>;
+export type InflationSeriesLike = Record<string, unknown>;
+
+export type FedCpiMonthBundle = {
+  headline?: InflationSeriesLike;
+  core?: InflationSeriesLike;
+  _meta?: Record<string, unknown>;
+};
+
+export type FedLaborMonthBundle = {
+  unemployment?: Record<string, unknown>;
+  lfpr?: Record<string, unknown>;
+  earningsMom?: Record<string, unknown>;
+  _meta?: Record<string, unknown>;
+};
 
 function buildInflationMomSeries(
   label: string,
@@ -152,12 +165,12 @@ function buildInflationMomSeries(
 }
 
 /** Build CPI headline/core MoM from Fed inflation rows (API returns newest first). */
-export function buildCpiMonthsFromFedInflation(rows: FedInflationRow[]): Record<string, Record<string, InflationSeriesLike>> {
+export function buildCpiMonthsFromFedInflation(rows: FedInflationRow[]): Record<string, FedCpiMonthBundle> {
   const sorted = [...rows]
     .filter((r) => r.date && Number.isFinite(r.cpi))
     .sort((a, b) => b.date.localeCompare(a.date));
 
-  const byMonth: Record<string, Record<string, InflationSeriesLike>> = {};
+  const byMonth: Record<string, FedCpiMonthBundle> = {};
 
   for (let i = 0; i < sorted.length - 1; i++) {
     const curRow = sorted[i];
@@ -178,7 +191,7 @@ export function buildCpiMonthsFromFedInflation(rows: FedInflationRow[]): Record<
     );
     if (!headline) continue;
 
-    const monthData: Record<string, InflationSeriesLike> = { headline };
+    const monthData: FedCpiMonthBundle = { headline };
 
     if (Number.isFinite(curRow.cpi_core) && Number.isFinite(prevRow.cpi_core)) {
       const core = buildInflationMomSeries(
@@ -226,16 +239,16 @@ function buildPercentLevelSeries(
 }
 
 /** Build labor-market fields from Fed rows (newest first). */
-export function buildLaborMonthsFromFed(rows: FedLaborMarketRow[]): Record<string, Record<string, unknown>> {
+export function buildLaborMonthsFromFed(rows: FedLaborMarketRow[]): Record<string, FedLaborMonthBundle> {
   const sorted = [...rows].filter((r) => r.date).sort((a, b) => b.date.localeCompare(a.date));
-  const byMonth: Record<string, Record<string, unknown>> = {};
+  const byMonth: Record<string, FedLaborMonthBundle> = {};
 
   for (let i = 0; i < sorted.length - 1; i++) {
     const cur = sorted[i];
     const prev = sorted[i + 1];
     const key = monthKeyFromFedDate(cur.date);
     const { month, year } = periodLabelFromKey(key);
-    const monthData: Record<string, unknown> = {
+    const monthData: FedLaborMonthBundle = {
       _meta: { month, year, source: "massive" },
     };
 
@@ -281,9 +294,9 @@ export function buildLaborMonthsFromFed(rows: FedLaborMarketRow[]): Record<strin
 }
 
 function latestMonthKeyFromResults(results: Record<string, any>): string | null {
-  const h = results.headline;
+  const h = results["headline"] as { month?: string; year?: string } | undefined;
   if (h?.month && h?.year) return monthKeyFromBlsPeriod(h.month, h.year);
-  const n = results.nfp;
+  const n = results["nfp"] as { month?: string; year?: string } | undefined;
   if (n?.month && n?.year) return monthKeyFromBlsPeriod(n.month, n.year);
   return null;
 }
@@ -291,7 +304,7 @@ function latestMonthKeyFromResults(results: Record<string, any>): string | null 
 /** Prefer Massive for the latest month when BLS has not caught up. */
 export function mergeMassiveCpiIntoResults(
   blsResults: Record<string, any>,
-  fedByMonth: Record<string, Record<string, InflationSeriesLike>>
+  fedByMonth: Record<string, FedCpiMonthBundle>
 ): Record<string, any> {
   const fedKeys = Object.keys(fedByMonth).sort();
   if (!fedKeys.length) return blsResults;
@@ -300,12 +313,11 @@ export function mergeMassiveCpiIntoResults(
   const blsKey = latestMonthKeyFromResults(blsResults);
   if (blsKey && latestFedKey <= blsKey) return blsResults;
 
-  const out = { ...blsResults, byMonth: { ...(blsResults.byMonth || {}) } };
+  const out: Record<string, any> = { ...blsResults, byMonth: { ...(blsResults.byMonth || {}) } };
   const fedLatest = fedByMonth[latestFedKey]!;
 
-  for (const k of ["headline", "core"] as const) {
-    if (fedLatest[k]) out[k] = { ...fedLatest[k] };
-  }
+  if (fedLatest.headline) out["headline"] = { ...fedLatest.headline };
+  if (fedLatest.core) out["core"] = { ...fedLatest.core };
 
   out.byMonth[latestFedKey] = {
     ...(out.byMonth[latestFedKey] || {}),
@@ -313,7 +325,7 @@ export function mergeMassiveCpiIntoResults(
   };
 
   const { month, year } = periodLabelFromKey(latestFedKey);
-  out._meta = {
+  out["_meta"] = {
     ...(out._meta || {}),
     month,
     year,
@@ -326,7 +338,7 @@ export function mergeMassiveCpiIntoResults(
 
 export function mergeMassiveLaborIntoNfpResults(
   blsResults: Record<string, any>,
-  fedByMonth: Record<string, Record<string, unknown>>
+  fedByMonth: Record<string, FedLaborMonthBundle>
 ): Record<string, any> {
   const fedKeys = Object.keys(fedByMonth).sort();
   if (!fedKeys.length) return blsResults;
@@ -335,20 +347,20 @@ export function mergeMassiveLaborIntoNfpResults(
   const blsKey = latestMonthKeyFromResults(blsResults);
   if (blsKey && latestFedKey <= blsKey) return blsResults;
 
-  const out = { ...blsResults, byMonth: { ...(blsResults.byMonth || {}) } };
+  const out: Record<string, any> = { ...blsResults, byMonth: { ...(blsResults.byMonth || {}) } };
   const fedLatest = fedByMonth[latestFedKey]!;
 
-  for (const k of ["unemployment", "lfpr", "earningsMom"] as const) {
-    if (fedLatest[k]) out[k] = { ...(fedLatest[k] as object) };
-  }
+  if (fedLatest.unemployment) out["unemployment"] = { ...fedLatest.unemployment };
+  if (fedLatest.lfpr) out["lfpr"] = { ...fedLatest.lfpr };
+  if (fedLatest.earningsMom) out["earningsMom"] = { ...fedLatest.earningsMom };
 
   out.byMonth[latestFedKey] = {
     ...(out.byMonth[latestFedKey] || {}),
     ...fedLatest,
   };
 
-  if (out._meta) {
-    out._meta = { ...out._meta, source: "massive", massiveAsOf: latestFedKey };
+  if (out["_meta"]) {
+    out["_meta"] = { ...out["_meta"], source: "massive", massiveAsOf: latestFedKey };
   }
 
   return out;

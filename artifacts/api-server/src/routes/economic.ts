@@ -1,5 +1,13 @@
 import { Router } from "express";
 import { logger } from "../lib/logger";
+import {
+  buildCpiMonthsFromFedInflation,
+  buildLaborMonthsFromFed,
+  fetchFedInflationRows,
+  fetchFedLaborMarketRows,
+  mergeMassiveCpiIntoResults,
+  mergeMassiveLaborIntoNfpResults,
+} from "../lib/polygonFedEconomy.js";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -481,9 +489,15 @@ router.get("/nfp-full", async (req, res) => {
     }
 
     const allSeriesIds = Object.values(NFP_SERIES).map(s => s.id);
-    const allData = await fetchBlsSeriesBatch(allSeriesIds);
+    const [allData, fedLaborRows] = await Promise.all([
+      fetchBlsSeriesBatch(allSeriesIds),
+      fetchFedLaborMarketRows(24),
+    ]);
 
-    const results = computeNfpAtOffset(allData, 0);
+    let results: Record<string, any> = computeNfpAtOffset(allData, 0);
+    if (fedLaborRows.length) {
+      results = mergeMassiveLaborIntoNfpResults(results, buildLaborMonthsFromFed(fedLaborRows));
+    }
 
     const nfpRawData = allData[NFP_SERIES.nfp.id] ?? [];
     const nfpMonthly = nfpRawData.filter(d => d.period.startsWith("M"));
@@ -730,16 +744,16 @@ router.get("/ppi-full", async (req, res) => {
     try {
       expected = await fetchTradingEconomicsForecast("ppi");
     } catch {}
-    if (expected && results.headline && !results.headline.error) {
+    if (expected && results["headline"] && !results["headline"].error) {
       const expNum = parseFloat(expected.replace(/[+%]/g, ""));
-      if (Number.isFinite(expNum) && Math.abs(expNum - results.headline.momRaw) < 2) {
-        results.headline.expected = expected;
+      if (Number.isFinite(expNum) && Math.abs(expNum - results["headline"].momRaw) < 2) {
+        results["headline"].expected = expected;
         const latestKey = results._meta ? `${results._meta.year}-${String(new Date(`${results._meta.month} 1, ${results._meta.year}`).getMonth() + 1).padStart(2, "0")}` : null;
         if (latestKey && results.byMonth?.[latestKey]?.headline) {
           results.byMonth[latestKey].headline.expected = expected;
         }
       } else {
-        logger.info({ expected, momRaw: results.headline.momRaw }, "PPI TE forecast skipped — likely YoY, not MoM");
+        logger.info({ expected, momRaw: results["headline"].momRaw }, "PPI TE forecast skipped — likely YoY, not MoM");
       }
     }
 
@@ -769,7 +783,7 @@ router.get("/cpi-full", async (req, res) => {
       fetchFedInflationRows(24),
     ]);
     const seriesEntries = Object.entries(CPI_FULL_SERIES) as [string, { id: string; label: string }][];
-    let results = buildInflationByMonth(seriesEntries, allData, CPI_FULL_SERIES.headline.id, "https://www.bls.gov/news.release/cpi.nr0.htm", "cpi");
+    let results: Record<string, any> = buildInflationByMonth(seriesEntries, allData, CPI_FULL_SERIES.headline.id, "https://www.bls.gov/news.release/cpi.nr0.htm", "cpi");
     if (fedInflationRows.length) {
       results = mergeMassiveCpiIntoResults(results, buildCpiMonthsFromFedInflation(fedInflationRows));
     }
@@ -778,16 +792,16 @@ router.get("/cpi-full", async (req, res) => {
     try {
       expected = await fetchTradingEconomicsForecast("cpi");
     } catch {}
-    if (expected && results.headline && !results.headline.error) {
+    if (expected && results["headline"] && !results["headline"].error) {
       const expNum = parseFloat(expected.replace(/[+%]/g, ""));
-      if (Number.isFinite(expNum) && Math.abs(expNum - results.headline.momRaw) < 2) {
-        results.headline.expected = expected;
+      if (Number.isFinite(expNum) && Math.abs(expNum - results["headline"].momRaw) < 2) {
+        results["headline"].expected = expected;
         const latestKey = results._meta ? `${results._meta.year}-${String(new Date(`${results._meta.month} 1, ${results._meta.year}`).getMonth() + 1).padStart(2, "0")}` : null;
         if (latestKey && results.byMonth?.[latestKey]?.headline) {
           results.byMonth[latestKey].headline.expected = expected;
         }
       } else {
-        logger.info({ expected, momRaw: results.headline.momRaw }, "CPI TE forecast skipped — likely YoY, not MoM");
+        logger.info({ expected, momRaw: results["headline"].momRaw }, "CPI TE forecast skipped — likely YoY, not MoM");
       }
     }
 
