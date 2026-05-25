@@ -1,3 +1,7 @@
+/**
+ * @deprecated Catalysts no longer uses this bulk Benzinga calendar (see CATALYSTS_EARNINGS_SOURCE.md).
+ * Kept for reference; market routes may use separate vendor helpers.
+ */
 import { addCalendarDaysNy, nyCalendarYmd, nyOffsetForYmd } from "../usEquityMarketCalendar.js";
 
 export type VendorEarningsRow = {

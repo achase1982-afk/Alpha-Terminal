@@ -2,11 +2,12 @@ import { logger } from "../logger.js";
 import { nyCalendarYmd, nyOffsetForYmd } from "../usEquityMarketCalendar.js";
 import { buildCatalystsFeed } from "./buildCatalystsFeed.js";
 import { persistCatalystsFeed, getLatestCatalystsFeed } from "./catalystsFeedStore.js";
-import { fetchVendorEarningsCalendar, filterEarningsInWindow } from "./vendorEarningsCalendar.js";
-import { CATALYSTS_WINDOW_CALENDAR_DAYS } from "@workspace/catalysts-types";
+import {
+  CATALYST_EARNINGS_STALE_DAYS,
+  latestCatalystEarningsHarvestAt,
+} from "./catalystEarningsDiscovery.js";
 
 let activeRebuild: Promise<void> | null = null;
-let calendarRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 let nightlyTimer: ReturnType<typeof setTimeout> | null = null;
 
 function msUntilNextNyTime(hour: number, minute: number): number {
@@ -28,6 +29,19 @@ export function runCatalystsRebuildOnce(): Promise<void> {
 
   activeRebuild = (async () => {
     try {
+      const lastHarvest = await latestCatalystEarningsHarvestAt();
+      if (lastHarvest) {
+        const ageDays = (Date.now() - lastHarvest.getTime()) / 86_400_000;
+        if (ageDays > CATALYST_EARNINGS_STALE_DAYS) {
+          logger.warn(
+            { ageDays: Math.round(ageDays), lastHarvest: lastHarvest.toISOString() },
+            "Catalysts rebuild: earnings harvest is stale — discovery may be empty",
+          );
+        }
+      } else {
+        logger.warn("Catalysts rebuild: catalyst_earnings_dates empty — run earnings harvest first");
+      }
+
       const feed = await buildCatalystsFeed();
       await persistCatalystsFeed(feed);
       logger.info(
@@ -44,20 +58,6 @@ export function runCatalystsRebuildOnce(): Promise<void> {
   return activeRebuild;
 }
 
-/** Light refresh: vendor calendar only — does not recompute settled bars. */
-async function refreshEarningsCalendarCache(): Promise<void> {
-  try {
-    await fetchVendorEarningsCalendar(logger);
-    const rows = filterEarningsInWindow(
-      await fetchVendorEarningsCalendar(logger),
-      CATALYSTS_WINDOW_CALENDAR_DAYS,
-    );
-    logger.info({ count: rows.length }, "Catalysts earnings calendar refresh");
-  } catch (err) {
-    logger.warn({ err }, "Catalysts earnings calendar refresh failed");
-  }
-}
-
 function scheduleNightlyRebuild(): void {
   if (nightlyTimer) clearTimeout(nightlyTimer);
   const ms = msUntilNextNyTime(16, 5);
@@ -67,13 +67,6 @@ function scheduleNightlyRebuild(): void {
   logger.info({ msUntil: ms }, "Catalysts nightly rebuild scheduled (4:05 PM ET)");
 }
 
-function scheduleCalendarRefresh(): void {
-  if (calendarRefreshTimer) clearTimeout(calendarRefreshTimer);
-  calendarRefreshTimer = setTimeout(() => {
-    void refreshEarningsCalendarCache().finally(() => scheduleCalendarRefresh());
-  }, 20 * 60 * 1000);
-}
-
 export function startCatalystsRebuildWorker(): void {
   void getLatestCatalystsFeed().then((feed) => {
     if (!feed.builtAt) {
@@ -81,14 +74,11 @@ export function startCatalystsRebuildWorker(): void {
     }
   });
   scheduleNightlyRebuild();
-  scheduleCalendarRefresh();
   logger.info("Catalysts rebuild worker started");
 }
 
 /** @internal tests */
 export function __stopCatalystsRebuildWorkerForTests(): void {
   if (nightlyTimer) clearTimeout(nightlyTimer);
-  if (calendarRefreshTimer) clearTimeout(calendarRefreshTimer);
   nightlyTimer = null;
-  calendarRefreshTimer = null;
 }
