@@ -1274,6 +1274,29 @@ export const catalystsFeedTable = pgTable(
 export type CatalystsFeedRow = typeof catalystsFeedTable.$inferSelect;
 export type CatalystsFeedInsert = typeof catalystsFeedTable.$inferInsert;
 
+/**
+ * Weekly Schwab-harvested next earnings dates for S&P Composite 1500 (Catalysts discovery).
+ * Populated by the paced background sweep — not read from calendar vendors on page load.
+ */
+export const catalystEarningsDatesTable = pgTable(
+  "catalyst_earnings_dates",
+  {
+    symbol: text("symbol").primaryKey().notNull(),
+    nextEarningsDate: date("next_earnings_date"),
+    /** Null when Schwab does not expose a confirmed/estimated signal. */
+    earningsConfirmed: boolean("earnings_confirmed"),
+    harvestedAt: timestamp("harvested_at", { withTimezone: true }).notNull(),
+    sweepId: text("sweep_id"),
+  },
+  (t) => [
+    index("catalyst_earnings_dates_next_date_idx").on(t.nextEarningsDate),
+    index("catalyst_earnings_dates_harvested_at_idx").on(desc(t.harvestedAt)),
+  ],
+);
+
+export type CatalystEarningsDateRow = typeof catalystEarningsDatesTable.$inferSelect;
+export type CatalystEarningsDateInsert = typeof catalystEarningsDatesTable.$inferInsert;
+
 /** Lazy LLM read cache keyed by driving-news fingerprint (7-day retention). */
 export const moversCatalystCacheTable = pgTable(
   "movers_catalyst_cache",
