@@ -31,6 +31,7 @@ import type { AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
 import { useStrategistCache, type StrategistCacheData } from "@/hooks/useStrategistCache";
 import { MoversFeed } from "@/components/MoversFeed";
+import { CatalystsFeed } from "@/components/CatalystsFeed";
 import { TabErrorBoundary } from "@/components/TabErrorBoundary";
 import { takePendingScannerStrategistContext } from "@/lib/pendingScannerStrategistContext";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
@@ -3810,6 +3811,17 @@ function AiIntelligenceTabInner({
         <div style={{ height: "100%", overflowY: "auto" }}>
           <TabErrorBoundary tabName="Movers">
             <MoversFeed onNavigateToSymbol={onNavigateToMarkets ?? STABLE_NOOP_NAVIGATE} />
+          </TabErrorBoundary>
+        </div>
+      )}
+
+      {subTab === "catalysts" && (
+        <div style={{ height: "100%", overflowY: "auto" }}>
+          <TabErrorBoundary tabName="Catalysts">
+            <CatalystsFeed
+              onNavigateToSymbol={onNavigateToMarkets ?? STABLE_NOOP_NAVIGATE}
+              subscribeEquitySymbols={subscribeEquitySymbols}
+            />
           </TabErrorBoundary>
         </div>
       )}
