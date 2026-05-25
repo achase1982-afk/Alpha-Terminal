@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "tuning:backfill": "tsx src/jobs/tuningUniverseBackfill.ts",
     "tuning:backfill:options": "tsx src/jobs/runTuningOptionsBackfillOnly.ts",
+    "catalyst:harvest": "tsx src/jobs/runCatalystEarningsHarvest.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

@@ -10,6 +10,7 @@ import {
   macroCalendarTable,
 } from "@workspace/db";
 import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
+import { SP_COMPOSITE_1500_SYMBOL_STRINGS } from "../data/spComposite1500Symbols.js";
 import { getTuningUniverseSymbols } from "./tuningUniverseRegistrar.js";
 import {
   getFmpAnalystEstimatesQuarterly,
@@ -144,6 +145,49 @@ export async function backfillEarningsCalendar(): Promise<{
   };
   void logFailure("DATABASE", "INFO", "fmp backfill completed", summary);
   logger.info(summary, "fmp backfill completed");
+  return { rowsUpserted, symbolsTouched: symbolsTouched.size, fmpRowsInRange: filtered.length };
+}
+
+function spComposite1500Set(): Set<string> {
+  return new Set(SP_COMPOSITE_1500_SYMBOL_STRINGS.map((s) => s.toUpperCase()));
+}
+
+/**
+ * FMP earnings calendar → `corporate_events` for S&P Composite 1500 (next `windowDays` calendar days).
+ * Run before the Catalysts earnings harvest so `next_earnings_date` coverage can approach full universe size.
+ */
+export async function backfillEarningsCalendarForSp1500(windowDays = 120): Promise<{
+  rowsUpserted: number;
+  symbolsTouched: number;
+  fmpRowsInRange: number;
+}> {
+  const from = todayUtcYmd();
+  const to = addDaysUtcYmd(from, windowDays);
+  const set = spComposite1500Set();
+
+  const calendar = await getFmpEarningsCalendar(from, to);
+  const filtered = calendar.filter((r) => set.has(r.symbol));
+
+  let rowsUpserted = 0;
+  const symbolsTouched = new Set<string>();
+
+  for (const r of filtered) {
+    await upsertCorporateEarningsFromCalendarRow(r);
+    rowsUpserted++;
+    symbolsTouched.add(r.symbol);
+  }
+
+  const summary = {
+    job: "backfillEarningsCalendarForSp1500",
+    rowsUpserted,
+    symbolsTouched: symbolsTouched.size,
+    fmpRowsInRange: filtered.length,
+    universe: set.size,
+    from,
+    to,
+  };
+  void logFailure("DATABASE", "INFO", "fmp backfill completed", summary);
+  logger.info(summary, "fmp SP1500 earnings calendar backfill completed");
   return { rowsUpserted, symbolsTouched: symbolsTouched.size, fmpRowsInRange: filtered.length };
 }
 

@@ -23,12 +23,23 @@ function msUntilNextSunday0200Utc(): number {
   return Math.max(60_000, target.getTime() - now.getTime());
 }
 
+/** Run harvest immediately (e.g. admin trigger). Shares in-flight guard with scheduled runs. */
+export function runCatalystEarningsHarvestNow(): Promise<void> {
+  return runCatalystEarningsHarvestOnce();
+}
+
 export function runCatalystEarningsHarvestOnce(): Promise<void> {
   if (activeHarvest) return activeHarvest;
 
   activeHarvest = (async () => {
     try {
-      await runCatalystEarningsHarvest();
+      const delayRaw = process.env["CATALYST_EARNINGS_BATCH_DELAY_MS"];
+      const delayMs = delayRaw ? Math.max(0, Number(delayRaw)) : undefined;
+      await runCatalystEarningsHarvest(
+        delayMs != null && Number.isFinite(delayMs)
+          ? { delayBetweenBatchesMs: delayMs }
+          : undefined,
+      );
     } catch (err) {
       logger.error({ err }, "Catalyst earnings harvest failed");
     } finally {

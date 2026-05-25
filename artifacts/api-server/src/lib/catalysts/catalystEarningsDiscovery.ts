@@ -2,8 +2,6 @@ import { and, desc, gte, isNotNull, lte } from "drizzle-orm";
 import { CATALYSTS_WINDOW_CALENDAR_DAYS } from "@workspace/catalysts-types";
 import { catalystEarningsDatesTable, db } from "@workspace/db";
 import { addCalendarDaysNy, nyCalendarYmd } from "../usEquityMarketCalendar.js";
-import { fetchSchwabEarningsDatesBestToken } from "./schwabEarningsFromQuotes.js";
-
 /** Rows older than this are excluded from Catalysts discovery (staleness guard). */
 export const CATALYST_EARNINGS_STALE_DAYS = 10;
 
