@@ -1275,3 +1275,18 @@ export const moversCatalystCacheTable = pgTable(
 
 export type MoversCatalystCacheRow = typeof moversCatalystCacheTable.$inferSelect;
 export type MoversCatalystCacheInsert = typeof moversCatalystCacheTable.$inferInsert;
+
+/** Poll-time tier-2 LLM catalyst cache keyed by deduped headline title set (7-day retention). */
+export const moversTier2CacheTable = pgTable(
+  "movers_tier2_cache",
+  {
+    headlineSetKey: text("headline_set_key").primaryKey(),
+    catalystType: text("catalyst_type").notNull(),
+    drivingHeadline: text("driving_headline").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("movers_tier2_cache_created_at_idx").on(t.createdAt)],
+);
+
+export type MoversTier2CacheRow = typeof moversTier2CacheTable.$inferSelect;
+export type MoversTier2CacheInsert = typeof moversTier2CacheTable.$inferInsert;

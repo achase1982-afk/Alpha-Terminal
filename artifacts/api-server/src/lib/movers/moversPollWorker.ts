@@ -3,10 +3,12 @@ import type { MoversFeed } from "@workspace/movers-types";
 import { fetchAllFmpMoverLists } from "./fmpMoversClient.js";
 import { buildMoversFeedFromRows } from "./buildMoversFeed.js";
 import { getLatestMoversFeed, persistMoversFeed } from "./moversFeedStore.js";
-import { MOVERS_MANUAL_REFRESH_DEBOUNCE_MS, MOVERS_POLL_INTERVAL_MS } from "./moversConfig.js";
+import { MOVERS_MANUAL_REFRESH_DEBOUNCE_MS } from "./moversConfig.js";
+import { moversPollIntervalMs } from "./moversPollCadence.js";
 
 let activePoll: Promise<void> | null = null;
 let lastManualPollAt = 0;
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
 async function executePoll(): Promise<void> {
   const rows = await fetchAllFmpMoverLists();
@@ -59,8 +61,23 @@ export async function requestMoversPollNow(): Promise<MoversPollNowResult> {
   return { feed: await getLatestMoversFeed(), debounced: false };
 }
 
+function scheduleNextPoll(): void {
+  if (pollTimer) clearTimeout(pollTimer);
+  const intervalMs = moversPollIntervalMs();
+  pollTimer = setTimeout(() => {
+    void runMoversPollOnce().finally(() => scheduleNextPoll());
+  }, intervalMs);
+}
+
 export function startMoversPollWorker(): void {
-  void runMoversPollOnce();
-  setInterval(() => void runMoversPollOnce(), MOVERS_POLL_INTERVAL_MS);
-  logger.info({ intervalMs: MOVERS_POLL_INTERVAL_MS }, "Movers poll worker started (24/7)");
+  void runMoversPollOnce().finally(() => scheduleNextPoll());
+  logger.info("Movers poll worker started (session-aware cadence)");
+}
+
+/** @internal tests — stop scheduled polls. */
+export function __stopMoversPollWorkerForTests(): void {
+  if (pollTimer) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+  }
 }
