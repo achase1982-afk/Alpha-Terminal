@@ -232,12 +232,24 @@ function CatalystCardRow({
           </div>
 
           <div
-            className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t"
+            className="flex flex-col gap-2 pt-1 border-t"
             style={{ borderColor: BORDER }}
           >
-            <span style={BODY}>
-              LAST {card.lastPrice != null ? `$${card.lastPrice.toFixed(2)}` : "—"}
-            </span>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span style={BODY}>
+                LAST {card.lastPrice != null ? `$${card.lastPrice.toFixed(2)}` : "—"}
+              </span>
+              <span style={BODY}>
+                IMPLIED MOVE{" "}
+                {card.impliedMovePct != null && Number.isFinite(card.impliedMovePct) ? (
+                  <span style={{ color: GOLD, fontWeight: 600 }}>
+                    ±{card.impliedMovePct.toFixed(1)}%
+                  </span>
+                ) : (
+                  "—"
+                )}
+              </span>
+            </div>
             <span style={BODY}>
               EARNINGS {card.earningsDate}
               {card.earningsTiming ? ` · ${card.earningsTiming}` : ""}

@@ -13,6 +13,7 @@ import {
   type TradeabilityCandidate,
 } from "../movers/tradeabilityGate.js";
 import { computeSessionSnapshot } from "./catalystMetrics.js";
+import { fetchImpliedMovePct } from "./catalystsImpliedMove.js";
 import { resolveSymbolsWithOptions } from "./optionsExistence.js";
 import { lastSettledSessionYmd, settledSessionYmdsEndingAt } from "./settledSessions.js";
 import {
@@ -127,6 +128,8 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
     const profile = profiles.get(sym);
     const timing: EarningsTiming =
       e.time === "BMO" || e.time === "AMC" ? e.time : null;
+    const lastPrice = tradeableBySymbol.get(sym)?.price ?? null;
+    const impliedMovePct = await fetchImpliedMovePct(sym, e.date, lastPrice);
 
     cards.push({
       symbol: sym,
@@ -137,7 +140,8 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
       earningsTiming: timing,
       earningsConfirmed: e.confirmed,
       reportAtIso: reportAtIso(e.date, timing),
-      lastPrice: tradeableBySymbol.get(sym)?.price ?? null,
+      lastPrice,
+      impliedMovePct,
       snapshot,
     });
   }
