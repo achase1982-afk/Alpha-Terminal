@@ -57,8 +57,26 @@ function normalizeCard(card: CatalystCard): CatalystCard {
   };
 }
 
+function feedNeedsNormalization(feed: CatalystsFeed): boolean {
+  const legacy = feed as LegacyFeed;
+  if (legacy.benchmarkDrift5dPct != null && legacy.benchmarkDrift10dPct == null) return true;
+  const first = feed.cards?.[0];
+  if (!first) return false;
+  const snap = first.snapshot;
+  return (
+    (snap.sessionMovesPct?.length ?? 0) !== CATALYST_DRIFT_SESSION_COUNT ||
+    (snap.sessionMovesRawPct?.length ?? 0) !== CATALYST_DRIFT_SESSION_COUNT
+  );
+}
+
 /** Upgrades cached feeds built before the 10-session Schwab drift rebuild. */
 export function normalizeCatalystsFeed(feed: CatalystsFeed): CatalystsFeed {
+  if (!feedNeedsNormalization(feed)) {
+    return {
+      ...feed,
+      benchmarkDrift10dPct: feed.benchmarkDrift10dPct ?? null,
+    };
+  }
   const legacy = feed as LegacyFeed;
   const benchmarkDrift10dPct =
     legacy.benchmarkDrift10dPct ?? legacy.benchmarkDrift5dPct ?? null;

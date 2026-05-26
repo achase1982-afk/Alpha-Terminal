@@ -3,7 +3,12 @@ export {
   DEFAULT_CATALYST_GATE_SETTINGS,
   formatMarketCapFloorLabel,
   formatVolumeFloorLabel,
+  marketCapUsdToBillionsInput,
   normalizeCatalystGateSettings,
+  parseMarketCapBillionsInput,
+  parsePriceFloorInput,
+  parseVolumeFloorInput,
+  volumeFloorToInput,
   type CatalystGateSettings,
 } from "./gateSettings.js";
 
