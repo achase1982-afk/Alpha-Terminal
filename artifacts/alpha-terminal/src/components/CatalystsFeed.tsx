@@ -1,7 +1,13 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Flame, Loader2, RefreshCw } from "lucide-react";
-import type { CatalystCard, CatalystsFeed, CatalystsSortKey } from "@workspace/catalysts-types";
+import type {
+  CatalystCard,
+  CatalystFilterBreakdown,
+  CatalystsFeed,
+  CatalystsSortKey,
+} from "@workspace/catalysts-types";
+import { MOVERS_MANUAL_REFRESH_DEBOUNCE_MS } from "@workspace/movers-types";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import {
@@ -120,6 +126,21 @@ function Sparkline({ moves }: { moves: number[] }) {
   );
 }
 
+function filterBreakdownSummary(bd: CatalystFilterBreakdown | undefined): string {
+  if (!bd) return "";
+  const parts: string[] = [];
+  const push = (label: string, n: number) => {
+    if (n > 0) parts.push(`${label} ${n}`);
+  };
+  push("no options", bd.NO_OPTIONS);
+  push("low volume", bd.LOW_VOLUME);
+  push("micro cap", bd.MICRO_CAP);
+  push("sub $5", bd.SUB_5);
+  push("leveraged ETF", bd.LEVERAGED_ETF);
+  push("missing session data", bd.NO_SESSION_DATA);
+  return parts.join(" · ");
+}
+
 function CatalystsFunnelBar({
   funnel,
   onStreak,
@@ -129,6 +150,7 @@ function CatalystsFunnelBar({
   onStreak: number;
   reportsToday: number;
 }) {
+  const breakdownText = filterBreakdownSummary(funnel.filterBreakdown);
   const items = [
     { label: "SCHEDULED", value: funnel.calendar, color: MUTED },
     { label: "TRADEABLE", value: funnel.tradeable, color: GOLD },
@@ -148,6 +170,14 @@ function CatalystsFunnelBar({
           </div>
         </div>
       ))}
+      {breakdownText ? (
+        <div
+          className="col-span-4 text-center font-mono mt-1 px-1"
+          style={{ color: MUTED, fontSize: MIN_FONT_PX, lineHeight: BODY_LINE_HEIGHT }}
+        >
+          Filtered out: {breakdownText}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -334,6 +364,8 @@ export function CatalystsFeed({
   onNavigateToSymbol?: (sym: string) => void;
   subscribeEquitySymbols?: (syms: string[]) => void;
 }) {
+  const queryClient = useQueryClient();
+  const lastManualRefreshAt = useRef(0);
   const [sortKey, setSortKey] = useState<SortKey>("soonest");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [manualRefreshing, setManualRefreshing] = useState(false);
@@ -350,7 +382,7 @@ export function CatalystsFeed({
     return set;
   }, [account?.positions]);
 
-  const { data, isLoading, error, isFetching, refetch } = useQuery({
+  const { data, isLoading, error, isFetching } = useQuery({
     queryKey: ["catalysts-feed"],
     queryFn: async () => {
       const res = await fetchWithAuth("/api/catalysts");
@@ -412,13 +444,22 @@ export function CatalystsFeed({
   }, []);
 
   const onRefresh = useCallback(async () => {
+    const now = Date.now();
+    if (now - lastManualRefreshAt.current < MOVERS_MANUAL_REFRESH_DEBOUNCE_MS) return;
+    lastManualRefreshAt.current = now;
+
     setManualRefreshing(true);
     try {
-      await refetch();
+      const res = await fetchWithAuth("/api/catalysts/refresh", { method: "POST" });
+      if (!res.ok) throw new Error(`Catalysts refresh HTTP ${res.status}`);
+      const body = (await res.json()) as { ok: boolean; feed: CatalystsFeed };
+      queryClient.setQueryData(["catalysts-feed"], body.feed);
+    } catch {
+      await queryClient.invalidateQueries({ queryKey: ["catalysts-feed"] });
     } finally {
       setManualRefreshing(false);
     }
-  }, [refetch]);
+  }, [queryClient]);
 
   const building = data?.status === "building" || (data?.status === "empty" && !data.builtAt);
   const refreshBusy = manualRefreshing || isFetching;

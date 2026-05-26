@@ -14,14 +14,30 @@ router.get("/", async (_req, res) => {
   }
 });
 
+async function rebuildAndReturnFeed() {
+  await runCatalystsRebuildOnce();
+  return getLatestCatalystsFeed();
+}
+
+/** Rebuild catalysts feed from harvest + tradeability gates (same as nightly job). */
 router.post("/rebuild", async (req, res) => {
   try {
-    void runCatalystsRebuildOnce();
-    const feed = await getLatestCatalystsFeed();
+    const feed = await rebuildAndReturnFeed();
     return res.json({ ok: true, feed });
   } catch (err) {
     req.log?.error({ err }, "Catalysts rebuild request failed");
-    return res.status(500).json({ error: "Failed to start catalysts rebuild" });
+    return res.status(500).json({ error: "Failed to rebuild catalysts feed" });
+  }
+});
+
+/** Alias for UI refresh — awaits full rebuild, not a cache read. */
+router.post("/refresh", async (req, res) => {
+  try {
+    const feed = await rebuildAndReturnFeed();
+    return res.json({ ok: true, feed });
+  } catch (err) {
+    req.log?.error({ err }, "Catalysts refresh request failed");
+    return res.status(500).json({ error: "Failed to refresh catalysts feed" });
   }
 });
 
