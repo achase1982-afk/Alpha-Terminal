@@ -1,6 +1,12 @@
 import { logger } from "./logger.js";
 import { getForwardCorporateEarningsWithFreshness } from "./fmpDataService.js";
 
+/**
+ * Per-symbol earnings resolver (Strategist, scanner, `/api/market/earnings-date`).
+ *
+ * **Catalysts tab** uses `catalyst_earnings_dates` (weekly Schwab S&P 1500 harvest) instead —
+ * see `lib/catalysts/CATALYSTS_EARNINGS_SOURCE.md`.
+ */
 export interface NextEarnings {
   symbol: string;
   earningsDate: string | null;

@@ -47,6 +47,8 @@ export interface CatalystCard {
   lastPrice: number | null;
   /** ATM straddle % of spot for first expiry covering earnings; null when unavailable. */
   impliedMovePct: number | null;
+  /** Optional display tag — S&P Composite 1500 membership; does not gate inclusion. */
+  inSp1500?: boolean;
   snapshot: CatalystSessionSnapshot;
 }
 

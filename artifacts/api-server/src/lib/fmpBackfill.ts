@@ -147,6 +147,91 @@ export async function backfillEarningsCalendar(): Promise<{
   return { rowsUpserted, symbolsTouched: symbolsTouched.size, fmpRowsInRange: filtered.length };
 }
 
+/** FMP stable `/earnings-calendar` returns at most ~4000 rows per request (observed cap). */
+export const FMP_EARNINGS_CALENDAR_ROW_CAP_WARN = 4000;
+
+export type CatalystsEarningsCalendarBackfillReport = {
+  rowsUpserted: number;
+  symbolsTouched: number;
+  fmpRowsRaw: number;
+  windowTruncated: boolean;
+  from: string;
+  to: string;
+  windowDays: number;
+};
+
+/**
+ * FMP earnings calendar → `corporate_events` for Catalysts harvest.
+ * Full calendar in window (no index gate). Default **16 days** forward — weekly harvest +
+ * 10-day display window without hitting the ~4k row cap.
+ */
+export async function backfillEarningsCalendarForCatalystsHarvest(
+  windowDays = 16,
+): Promise<CatalystsEarningsCalendarBackfillReport> {
+  const from = todayUtcYmd();
+  const to = addDaysUtcYmd(from, windowDays);
+
+  const calendar = await getFmpEarningsCalendar(from, to);
+  const windowTruncated = calendar.length >= FMP_EARNINGS_CALENDAR_ROW_CAP_WARN;
+  if (windowTruncated) {
+    logger.warn(
+      { from, to, rows: calendar.length },
+      "FMP earnings calendar at observed row cap — paginate or shorten window",
+    );
+  }
+
+  let rowsUpserted = 0;
+  const symbolsTouched = new Set<string>();
+
+  for (const r of calendar) {
+    await upsertCorporateEarningsFromCalendarRow(r);
+    rowsUpserted++;
+    symbolsTouched.add(r.symbol);
+  }
+
+  const summary = {
+    job: "backfillEarningsCalendarForCatalystsHarvest",
+    rowsUpserted,
+    symbolsTouched: symbolsTouched.size,
+    fmpRowsRaw: calendar.length,
+    windowTruncated,
+    from,
+    to,
+    windowDays,
+  };
+  void logFailure("DATABASE", "INFO", "fmp backfill completed", summary);
+  logger.info(summary, "fmp Catalysts earnings calendar backfill completed");
+  return {
+    rowsUpserted,
+    symbolsTouched: symbolsTouched.size,
+    fmpRowsRaw: calendar.length,
+    windowTruncated,
+    from,
+    to,
+    windowDays,
+  };
+}
+
+/**
+ * @deprecated S&P 1500 no longer gates Catalysts. Use {@link backfillEarningsCalendarForCatalystsHarvest}.
+ */
+export async function backfillEarningsCalendarForSp1500(windowDays = 16): Promise<{
+  rowsUpserted: number;
+  symbolsTouched: number;
+  fmpRowsInRange: number;
+  fmpRowsRaw: number;
+  windowTruncated: boolean;
+}> {
+  const r = await backfillEarningsCalendarForCatalystsHarvest(windowDays);
+  return {
+    rowsUpserted: r.rowsUpserted,
+    symbolsTouched: r.symbolsTouched,
+    fmpRowsInRange: r.symbolsTouched,
+    fmpRowsRaw: r.fmpRowsRaw,
+    windowTruncated: r.windowTruncated,
+  };
+}
+
 export async function backfillAnalystPriceTargets(): Promise<{ rowsUpserted: number }> {
   const set = lcAndTuningSet();
   const asOf = todayUtcYmd();

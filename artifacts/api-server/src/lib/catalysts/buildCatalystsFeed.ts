@@ -13,16 +13,14 @@ import {
   type TradeabilityCandidate,
 } from "../movers/tradeabilityGate.js";
 import { computeSessionSnapshot } from "./catalystMetrics.js";
+import { discoverCatalystEarningsInWindow } from "./catalystEarningsDiscovery.js";
+import { loadEarningsTimingHints } from "./catalystEarningsTiming.js";
+import { reportAtIso } from "./catalystEarningsUtils.js";
 import { fetchImpliedMovePct } from "./catalystsImpliedMove.js";
 import { resolveSymbolsWithOptions } from "./optionsExistence.js";
 import { lastSettledSessionYmd, settledSessionYmdsEndingAt } from "./settledSessions.js";
-import {
-  fetchVendorEarningsCalendar,
-  filterEarningsInWindow,
-  reportAtIso,
-  type VendorEarningsRow,
-} from "./vendorEarningsCalendar.js";
 import { logger } from "../logger.js";
+import { isSpComposite1500Member } from "./sp1500Membership.js";
 
 async function loadClosesForSessions(
   symbol: string,
@@ -62,30 +60,17 @@ async function loadClosesForSessions(
   return map;
 }
 
-function dedupeEarningsRows(rows: VendorEarningsRow[]): VendorEarningsRow[] {
-  const byTicker = new Map<string, VendorEarningsRow>();
-  for (const r of rows) {
-    const sym = r.ticker.toUpperCase();
-    const existing = byTicker.get(sym);
-    if (!existing || r.date < existing.date) {
-      byTicker.set(sym, r);
-    }
-  }
-  return [...byTicker.values()];
-}
-
 export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFeed> {
-  const allEarnings = await fetchVendorEarningsCalendar(logger);
-  const inWindow = filterEarningsInWindow(allEarnings, CATALYSTS_WINDOW_CALENDAR_DAYS, now);
-  const calendar = dedupeEarningsRows(inWindow);
+  const calendar = await discoverCatalystEarningsInWindow(now);
 
   if (calendar.length === 0) {
+    logger.info("Catalysts rebuild: no fresh harvested earnings in window");
     return { ...emptyCatalystsFeed(), status: "ready", builtAt: now.toISOString() };
   }
 
   const candidates: TradeabilityCandidate[] = calendar.map((e) => ({
-    symbol: e.ticker.toUpperCase(),
-    name: e.name,
+    symbol: e.symbol,
+    name: e.symbol,
     price: 10,
     changePct: 0,
   }));
@@ -115,10 +100,11 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
   const endSettled = lastSettledSessionYmd(now);
   const sessionDates = settledSessionYmdsEndingAt(endSettled, 5);
 
+  const timingHints = await loadEarningsTimingHints(calendar.map((e) => e.symbol));
   const cards: CatalystCard[] = [];
 
   for (const e of calendar) {
-    const sym = e.ticker.toUpperCase();
+    const sym = e.symbol;
     if (!tradeableBySymbol.has(sym)) continue;
 
     const closesByDate = await loadClosesForSessions(sym, sessionDates);
@@ -126,22 +112,23 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
     if (!snapshot) continue;
 
     const profile = profiles.get(sym);
-    const timing: EarningsTiming =
-      e.time === "BMO" || e.time === "AMC" ? e.time : null;
+    const timing: EarningsTiming = timingHints.get(sym) ?? null;
     const lastPrice = tradeableBySymbol.get(sym)?.price ?? null;
-    const impliedMovePct = await fetchImpliedMovePct(sym, e.date, lastPrice);
+    const impliedMovePct = await fetchImpliedMovePct(sym, e.earningsDate, lastPrice);
 
+    const tradeableRow = tradeableBySymbol.get(sym);
     cards.push({
       symbol: sym,
-      name: e.name,
+      name: tradeableRow?.name ?? sym,
       sector: profile?.sector ?? null,
       industry: profile?.industry ?? null,
-      earningsDate: e.date,
+      earningsDate: e.earningsDate,
       earningsTiming: timing,
-      earningsConfirmed: e.confirmed,
-      reportAtIso: reportAtIso(e.date, timing),
+      earningsConfirmed: e.earningsConfirmed,
+      reportAtIso: reportAtIso(e.earningsDate, timing),
       lastPrice,
       impliedMovePct,
+      inSp1500: isSpComposite1500Member(sym),
       snapshot,
     });
   }
