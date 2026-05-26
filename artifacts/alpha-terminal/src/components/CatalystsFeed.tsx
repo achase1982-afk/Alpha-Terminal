@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Flame, Loader2, RefreshCw } from "lucide-react";
 import type {
@@ -60,6 +69,10 @@ const SORT_CHIPS: { key: SortKey; label: string }[] = [
   { key: "fiveDayMove", label: "10-DAY DRIFT" },
   { key: "streak", label: "STREAK" },
 ];
+
+/** Avoid mounting 1000+ rows — drift is cached; live quotes are not used on this tab. */
+const CATALYSTS_RENDER_INITIAL = 120;
+const CATALYSTS_RENDER_STEP = 120;
 
 function fmtBuiltAtShort(iso: string): string {
   if (!iso) return "";
@@ -215,7 +228,7 @@ function CatalystsListHeader() {
   );
 }
 
-function CatalystRow({
+const CatalystRow = memo(function CatalystRow({
   card,
   held,
   expanded,
@@ -306,7 +319,7 @@ function CatalystRow({
       </button>
 
       {expanded && (
-        <div className="px-3 pb-3 pt-1 space-y-2" style={{ paddingLeft: 36 }}>
+        <div className="px-3 pb-2 pt-1 space-y-1.5" style={{ paddingLeft: 36 }}>
           <p className="font-mono" style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX, lineHeight: BODY_LINE_HEIGHT }}>
             {card.snapshot.patternRead}
           </p>
@@ -412,24 +425,22 @@ function CatalystRow({
       )}
     </div>
   );
-}
+});
 
 export function CatalystsFeed({
   onNavigateToSymbol,
   onSendToStrategist,
-  subscribeEquitySymbols,
 }: {
   onNavigateToSymbol?: (sym: string) => void;
   onSendToStrategist?: (sym: string, flowContext: string) => void;
-  subscribeEquitySymbols?: (syms: string[]) => void;
 }) {
   const queryClient = useQueryClient();
-  const catalystGateSettings = useTerminalStore((s) => s.catalystGateSettings);
   const setCatalystGateSettings = useTerminalStore((s) => s.setCatalystGateSettings);
   const lastManualRefreshAt = useRef(0);
   const [sortKey, setSortKey] = useState<SortKey>("soonest");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [manualRefreshing, setManualRefreshing] = useState(false);
+  const [renderLimit, setRenderLimit] = useState(CATALYSTS_RENDER_INITIAL);
   const account = usePortfolioStreamStore((s) => s.account);
 
   const heldSymbols = useMemo(() => {
@@ -461,8 +472,8 @@ export function CatalystsFeed({
       if (!res.ok) throw new Error(`Catalysts feed HTTP ${res.status}`);
       return normalizeCatalystsFeed((await res.json()) as CatalystsFeed);
     },
-    staleTime: 60_000,
-    refetchInterval: 120_000,
+    staleTime: 120_000,
+    refetchInterval: false,
   });
 
   const visibleCards = useMemo(() => {
@@ -482,11 +493,6 @@ export function CatalystsFeed({
     }
     return { onStreak, reportsToday };
   }, [visibleCards]);
-
-  useEffect(() => {
-    if (!subscribeEquitySymbols || visibleCards.length === 0) return;
-    subscribeEquitySymbols(visibleCards.map((c: CatalystCard) => c.symbol));
-  }, [visibleCards, subscribeEquitySymbols]);
 
   const sorted = useMemo(() => {
     const list = [...visibleCards];
@@ -511,6 +517,16 @@ export function CatalystsFeed({
     return list;
   }, [visibleCards, sortKey]);
 
+  useEffect(() => {
+    setRenderLimit(CATALYSTS_RENDER_INITIAL);
+  }, [sortKey, data?.builtAt, visibleCards.length]);
+
+  const displayed = useMemo(
+    () => sorted.slice(0, renderLimit),
+    [sorted, renderLimit],
+  );
+  const hasMore = sorted.length > displayed.length;
+
   const toggle = useCallback((sym: string) => {
     setExpanded((prev) => ({ ...prev, [sym]: !prev[sym] }));
   }, []);
@@ -525,7 +541,7 @@ export function CatalystsFeed({
       const res = await fetchWithAuth("/api/catalysts/refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ settings: catalystGateSettings }),
+        body: JSON.stringify({ settings: useTerminalStore.getState().catalystGateSettings }),
       });
       if (!res.ok) throw new Error(`Catalysts refresh HTTP ${res.status}`);
       const body = (await res.json()) as { ok: boolean; feed: CatalystsFeed };
@@ -535,7 +551,7 @@ export function CatalystsFeed({
     } finally {
       setManualRefreshing(false);
     }
-  }, [queryClient, catalystGateSettings]);
+  }, [queryClient]);
 
   const building = data?.status === "building" || (data?.status === "empty" && !data.builtAt);
   const refreshBusy = manualRefreshing || isFetching;
@@ -634,7 +650,16 @@ export function CatalystsFeed({
           ) : (
             <>
               <CatalystsListHeader />
-              {sorted.map((card) => (
+              {hasMore && (
+                <p
+                  className="px-3 py-2 font-mono text-center border-b"
+                  style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX, borderColor: BORDER }}
+                >
+                  Showing {displayed.length} of {sorted.length} — tighten gates or load more below.
+                  Large lists do not subscribe live quotes (keeps the app responsive).
+                </p>
+              )}
+              {displayed.map((card) => (
                 <CatalystRow
                   key={card.symbol}
                   card={card}
@@ -646,6 +671,18 @@ export function CatalystsFeed({
                   onSendToStrategist={onSendToStrategist}
                 />
               ))}
+              {hasMore && (
+                <button
+                  type="button"
+                  className="w-full py-3 font-mono font-bold border-t"
+                  style={{ color: GOLD, fontSize: ROW_FONT_PX, borderColor: BORDER }}
+                  onClick={() =>
+                    setRenderLimit((n) => Math.min(sorted.length, n + CATALYSTS_RENDER_STEP))
+                  }
+                >
+                  Load {Math.min(CATALYSTS_RENDER_STEP, sorted.length - displayed.length)} more
+                </button>
+              )}
             </>
           )}
         </div>
