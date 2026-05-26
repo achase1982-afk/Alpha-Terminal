@@ -1,18 +1,22 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   CATALYSTS_WINDOW_CALENDAR_DAYS,
+  emptyCatalystFilterBreakdown,
   emptyCatalystsFeed,
+  normalizeCatalystGateSettings,
   type CatalystCard,
+  type CatalystFilterBreakdown,
+  type CatalystGateSettings,
   type CatalystsFeed,
   type EarningsTiming,
 } from "@workspace/catalysts-types";
+import type { FilteredName } from "@workspace/movers-types";
 import { db, equityDailyTable } from "@workspace/db";
 import { fetchFmpCompanyProfiles } from "../movers/fmpCompanyProfile.js";
-import {
-  applyTradeabilityGate,
-  type TradeabilityCandidate,
-} from "../movers/tradeabilityGate.js";
-import { computeSessionSnapshot } from "./catalystMetrics.js";
+import type { TradeabilityCandidate } from "../movers/tradeabilityGate.js";
+import { applyCatalystGates } from "./applyCatalystGates.js";
+import { getCatalystGateSettings } from "./catalystGateSettingsStore.js";
+import { computeSessionSnapshot, emptySessionSnapshot } from "./catalystMetrics.js";
 import { discoverCatalystEarningsInWindow } from "./catalystEarningsDiscovery.js";
 import { loadEarningsTimingHints } from "./catalystEarningsTiming.js";
 import { reportAtIso } from "./catalystEarningsUtils.js";
@@ -60,12 +64,42 @@ async function loadClosesForSessions(
   return map;
 }
 
-export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFeed> {
+function tallyFilterBreakdown(
+  filtered: FilteredName[],
+  noSessionData: number,
+): CatalystFilterBreakdown {
+  const breakdown = emptyCatalystFilterBreakdown();
+  for (const row of filtered) {
+    const reason = row.reason;
+    if (reason === "LEVERAGED_ETF") breakdown.LEVERAGED_ETF += 1;
+    else if (reason === "SUB_5") breakdown.SUB_5 += 1;
+    else if (reason === "MICRO_CAP") breakdown.MICRO_CAP += 1;
+    else if (reason === "LOW_VOLUME") breakdown.LOW_VOLUME += 1;
+    else if (reason === "NO_OPTIONS") breakdown.NO_OPTIONS += 1;
+  }
+  breakdown.NO_SESSION_DATA = noSessionData;
+  return breakdown;
+}
+
+export async function buildCatalystsFeed(
+  now = new Date(),
+  gateSettingsOverride?: Partial<CatalystGateSettings>,
+): Promise<CatalystsFeed> {
+  const gateSettings = normalizeCatalystGateSettings({
+    ...getCatalystGateSettings(),
+    ...gateSettingsOverride,
+  });
+
   const calendar = await discoverCatalystEarningsInWindow(now);
 
   if (calendar.length === 0) {
     logger.info("Catalysts rebuild: no fresh harvested earnings in window");
-    return { ...emptyCatalystsFeed(), status: "ready", builtAt: now.toISOString() };
+    return {
+      ...emptyCatalystsFeed(),
+      status: "ready",
+      builtAt: now.toISOString(),
+      gateSettings,
+    };
   }
 
   const candidates: TradeabilityCandidate[] = calendar.map((e) => ({
@@ -90,11 +124,15 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
     else if (profile?.marketCap != null) c.price = Math.max(5, c.price);
   }
 
-  const symbolsWithOptions = await resolveSymbolsWithOptions(candidates.map((c) => c.symbol));
-  const { tradeable, filtered } = applyTradeabilityGate(candidates, profiles, {
-    requireOptionsChain: true,
+  const symbolsWithOptions = gateSettings.requireOptionsChain
+    ? await resolveSymbolsWithOptions(candidates.map((c) => c.symbol))
+    : new Set(candidates.map((c) => c.symbol.toUpperCase()));
+  const { tradeable, filtered } = applyCatalystGates(
+    candidates,
+    profiles,
+    gateSettings,
     symbolsWithOptions,
-  });
+  );
 
   const tradeableBySymbol = new Map(tradeable.map((t) => [t.symbol, t]));
   const endSettled = lastSettledSessionYmd(now);
@@ -105,16 +143,29 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
   const spyCloses = await loadClosesForSessions("SPY", sessionDates);
   const spySnapshot = computeSessionSnapshot(sessionDates, spyCloses);
   const benchmarkDrift5dPct = spySnapshot?.cumulative5d ?? null;
+  if (benchmarkDrift5dPct == null) {
+    logger.warn(
+      { sessionDates, spyClosesFound: spyCloses.size },
+      "Catalysts rebuild: SPY session snapshot missing — vs S&P column will show raw only",
+    );
+  }
 
   const cards: CatalystCard[] = [];
+  let droppedNoSessionData = 0;
 
   for (const e of calendar) {
     const sym = e.symbol;
     if (!tradeableBySymbol.has(sym)) continue;
 
     const closesByDate = await loadClosesForSessions(sym, sessionDates);
-    const snapshot = computeSessionSnapshot(sessionDates, closesByDate);
-    if (!snapshot) continue;
+    let snapshot = computeSessionSnapshot(sessionDates, closesByDate);
+    if (!snapshot) {
+      if (gateSettings.requireSessionSnapshot) {
+        droppedNoSessionData += 1;
+        continue;
+      }
+      snapshot = emptySessionSnapshot();
+    }
 
     const profile = profiles.get(sym);
     const timing: EarningsTiming = timingHints.get(sym) ?? null;
@@ -148,8 +199,10 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
       calendar: calendar.length,
       filtered: filtered.length,
       tradeable: cards.length,
+      filterBreakdown: tallyFilterBreakdown(filtered, droppedNoSessionData),
     },
     benchmarkDrift5dPct,
+    gateSettings,
     cards,
   };
 }

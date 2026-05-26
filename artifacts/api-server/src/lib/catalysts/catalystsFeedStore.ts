@@ -1,6 +1,11 @@
 import { desc, sql } from "drizzle-orm";
 import type { CatalystsFeed } from "@workspace/catalysts-types";
-import { emptyCatalystsFeed } from "@workspace/catalysts-types";
+import {
+  DEFAULT_CATALYST_GATE_SETTINGS,
+  emptyCatalystFilterBreakdown,
+  emptyCatalystsFeed,
+  normalizeCatalystGateSettings,
+} from "@workspace/catalysts-types";
 import { db, catalystsFeedTable } from "@workspace/db";
 
 const CATALYSTS_FEED_RETENTION = 30;
@@ -32,5 +37,17 @@ export async function getLatestCatalystsFeed(): Promise<CatalystsFeed> {
   if (!row?.payload || typeof row.payload !== "object") {
     return emptyCatalystsFeed();
   }
-  return row.payload as unknown as CatalystsFeed;
+  const raw = row.payload as unknown as CatalystsFeed;
+  return {
+    ...emptyCatalystsFeed(),
+    ...raw,
+    funnel: {
+      ...emptyCatalystsFeed().funnel,
+      ...raw.funnel,
+      filterBreakdown: raw.funnel?.filterBreakdown ?? emptyCatalystFilterBreakdown(),
+    },
+    gateSettings: normalizeCatalystGateSettings(raw.gateSettings ?? DEFAULT_CATALYST_GATE_SETTINGS),
+    benchmarkDrift5dPct: raw.benchmarkDrift5dPct ?? null,
+    cards: raw.cards ?? [],
+  };
 }
