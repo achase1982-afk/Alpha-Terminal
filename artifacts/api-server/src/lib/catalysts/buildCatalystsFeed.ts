@@ -1,11 +1,14 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   CATALYSTS_WINDOW_CALENDAR_DAYS,
+  emptyCatalystFilterBreakdown,
   emptyCatalystsFeed,
   type CatalystCard,
+  type CatalystFilterBreakdown,
   type CatalystsFeed,
   type EarningsTiming,
 } from "@workspace/catalysts-types";
+import type { FilteredName } from "@workspace/movers-types";
 import { db, equityDailyTable } from "@workspace/db";
 import { fetchFmpCompanyProfiles } from "../movers/fmpCompanyProfile.js";
 import {
@@ -60,6 +63,23 @@ async function loadClosesForSessions(
   return map;
 }
 
+function tallyFilterBreakdown(
+  filtered: FilteredName[],
+  noSessionData: number,
+): CatalystFilterBreakdown {
+  const breakdown = emptyCatalystFilterBreakdown();
+  for (const row of filtered) {
+    const reason = row.reason;
+    if (reason === "LEVERAGED_ETF") breakdown.LEVERAGED_ETF += 1;
+    else if (reason === "SUB_5") breakdown.SUB_5 += 1;
+    else if (reason === "MICRO_CAP") breakdown.MICRO_CAP += 1;
+    else if (reason === "LOW_VOLUME") breakdown.LOW_VOLUME += 1;
+    else if (reason === "NO_OPTIONS") breakdown.NO_OPTIONS += 1;
+  }
+  breakdown.NO_SESSION_DATA = noSessionData;
+  return breakdown;
+}
+
 export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFeed> {
   const calendar = await discoverCatalystEarningsInWindow(now);
 
@@ -107,6 +127,7 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
   const benchmarkDrift5dPct = spySnapshot?.cumulative5d ?? null;
 
   const cards: CatalystCard[] = [];
+  let droppedNoSessionData = 0;
 
   for (const e of calendar) {
     const sym = e.symbol;
@@ -114,7 +135,10 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
 
     const closesByDate = await loadClosesForSessions(sym, sessionDates);
     const snapshot = computeSessionSnapshot(sessionDates, closesByDate);
-    if (!snapshot) continue;
+    if (!snapshot) {
+      droppedNoSessionData += 1;
+      continue;
+    }
 
     const profile = profiles.get(sym);
     const timing: EarningsTiming = timingHints.get(sym) ?? null;
@@ -148,6 +172,7 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
       calendar: calendar.length,
       filtered: filtered.length,
       tradeable: cards.length,
+      filterBreakdown: tallyFilterBreakdown(filtered, droppedNoSessionData),
     },
     benchmarkDrift5dPct,
     cards,
