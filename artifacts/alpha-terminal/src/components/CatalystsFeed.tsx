@@ -27,11 +27,6 @@ import {
   catalystCardPhase,
   daysUntilEarnings,
   driftVsSpy10d,
-  liveSpotPrice,
-  liveTapeMode,
-  liveTodayTapeLabel,
-  liveVsSpyDayPct,
-  priorSettledClose,
   rawDrift10d,
   earningsDaysAwayLabel,
   fmtEarningsShort,
@@ -40,10 +35,8 @@ import {
   shouldFallOffCatalyst,
 } from "@/lib/catalystsSession";
 import { normalizeCatalystsFeed } from "@/lib/normalizeCatalystsFeed";
-import {
-  buildSettledSessionRowsNewestFirst,
-  catalystFeedFreshnessLabel,
-} from "@/lib/catalystSessionDisplay";
+import { catalystFeedFreshnessLabel } from "@/lib/catalystSessionDisplay";
+import { CatalystExpandedBody } from "@/components/CatalystExpandedBody";
 
 /** Match Movers feed tokens so both tabs feel like one designer. */
 const BG = "#0c0c0c";
@@ -242,11 +235,6 @@ const CatalystRow = memo(function CatalystRow({
   const strategistSentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { data: stockQuote } = useQuote(card.symbol);
   const { data: spyQuote } = useQuote("SPY");
-  const tapeMode = liveTapeMode();
-  const priorClose = priorSettledClose(card);
-  const liveSpot = liveSpotPrice(stockQuote, tapeMode);
-  const liveMoves = liveVsSpyDayPct(stockQuote, spyQuote, priorClose, tapeMode);
-  const liveLabel = liveTodayTapeLabel(tapeMode);
 
   const rel10 = driftVsSpy10d(card);
   const raw10 = rawDrift10d(card);
@@ -319,180 +307,28 @@ const CatalystRow = memo(function CatalystRow({
       </button>
 
       {expanded && (
-        <div className="px-3 pb-2 pt-1 space-y-1.5" style={{ paddingLeft: 36 }}>
-          <p className="font-mono" style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX, lineHeight: BODY_LINE_HEIGHT }}>
-            {card.snapshot.patternRead}
-          </p>
-          <div
-            className="rounded-lg border px-2 py-1.5 font-mono"
-            style={{ borderColor: GOLD, background: PANEL }}
-          >
-            <p className="mb-1" style={{ color: GOLD, fontSize: MIN_FONT_PX }}>
-              {liveLabel} · live (vs prior settled close)
-            </p>
-            <div
-              className="grid gap-x-2"
-              style={{
-                fontSize: MIN_FONT_PX,
-                gridTemplateColumns: "minmax(2.5rem, auto) 1fr 1fr 1fr",
-              }}
-            >
-              <span />
-              <span className="text-right" style={{ color: TEXT_PRIMARY }}>
-                RAW
-              </span>
-              <span className="text-right" style={{ color: TEXT_PRIMARY }}>
-                S&amp;P
-              </span>
-              <span className="text-right" style={{ color: TEXT_PRIMARY }}>
-                VS S&amp;P
-              </span>
-              <span style={{ color: TEXT_PRIMARY }}>{liveLabel}</span>
-              <span className="text-right tabular-nums" style={{ color: pctColor(liveMoves.raw) }}>
-                {fmtPct(liveMoves.raw)}
-              </span>
-              <span className="text-right tabular-nums" style={{ color: pctColor(liveMoves.spy) }}>
-                {spyHistoryOk ? fmtPct(liveMoves.spy) : "—"}
-              </span>
-              <span className="text-right tabular-nums" style={{ color: pctColor(liveMoves.vs) }}>
-                {spyHistoryOk ? fmtPct(liveMoves.vs) : fmtPct(liveMoves.raw)}
-              </span>
-            </div>
-            {liveSpot != null ? (
-              <p className="mt-1 tabular-nums" style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}>
-                Spot ${liveSpot.toFixed(2)}
-                {priorClose != null ? ` · ref ${priorClose.toFixed(2)}` : ""}
-              </p>
-            ) : (
-              <p className="mt-1" style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}>
-                Awaiting live quote…
-              </p>
-            )}
-          </div>
-          <p className="font-mono" style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX, lineHeight: BODY_LINE_HEIGHT }}>
-            Cumulative drift (sum of daily moves vs S&amp;P 500)
-          </p>
-          <div
-            className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 font-mono"
-            style={{ fontSize: ROW_FONT_PX }}
-          >
-            {(
-              [
-                ["T-1", card.snapshot.cumulative1d],
-                ["T-3", card.snapshot.cumulative3d],
-                ["T-5", card.snapshot.cumulative5d],
-                ["T-10", card.snapshot.cumulative10d],
-              ] as const
-            ).map(([label, val]) => (
-              <span key={label} className="tabular-nums whitespace-nowrap">
-                <span style={{ color: TEXT_PRIMARY }}>{label} </span>
-                <span className="font-bold" style={{ color: pctColor(val) }}>
-                  {fmtPct(val)}
-                </span>
-              </span>
-            ))}
-          </div>
-          <div>
-            <p className="font-mono mb-1" style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}>
-              SETTLED SESSIONS (T-1 … T-10) · cached at feed build
-            </p>
-            <div
-              className="grid font-mono gap-x-2 py-0.5"
-              style={{
-                fontSize: MIN_FONT_PX,
-                gridTemplateColumns: "minmax(2.5rem, auto) 1fr 1fr 1fr",
-              }}
-            >
-              <span style={{ color: TEXT_PRIMARY }} />
-              <span className="text-right" style={{ color: TEXT_PRIMARY }}>
-                RAW
-              </span>
-              <span className="text-right" style={{ color: TEXT_PRIMARY }}>
-                S&amp;P
-              </span>
-              <span className="text-right" style={{ color: TEXT_PRIMARY }}>
-                VS S&amp;P
-              </span>
-              {buildSettledSessionRowsNewestFirst(card, spyHistoryOk).map((row) => (
-                <div key={`${row.dateYmd}-${row.label}`} className="contents">
-                  <span style={{ color: TEXT_PRIMARY }}>{row.label}</span>
-                  <span className="text-right tabular-nums" style={{ color: pctColor(row.rawPct) }}>
-                    {fmtPct(row.rawPct)}
-                  </span>
-                  <span className="text-right tabular-nums" style={{ color: pctColor(row.spyPct) }}>
-                    {spyHistoryOk ? fmtPct(row.spyPct) : "—"}
-                  </span>
-                  <span className="text-right tabular-nums" style={{ color: pctColor(row.vsSpyPct) }}>
-                    {fmtPct(row.vsSpyPct)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-2 font-mono" style={{ fontSize: ROW_FONT_PX }}>
-            <span style={{ color: TEXT_PRIMARY }}>
-              {liveSpot != null ? (
-                <>
-                  LAST <span className="font-bold">${liveSpot.toFixed(2)}</span> live
-                </>
-              ) : card.lastPrice != null ? (
-                <>
-                  LAST <span className="font-bold">${card.lastPrice.toFixed(2)}</span> settled
-                </>
-              ) : (
-                "LAST —"
-              )}
-            </span>
-            <span style={{ color: TEXT_SECONDARY }}>
-              IMPLIED{" "}
-              {card.impliedMovePct != null && Number.isFinite(card.impliedMovePct) ? (
-                <span style={{ color: GOLD, fontWeight: 700 }}>±{card.impliedMovePct.toFixed(1)}%</span>
-              ) : (
-                "—"
-              )}
-            </span>
-            <span style={{ color: TEXT_SECONDARY }}>
-              STREAK {card.snapshot.streak}
-              {!card.earningsConfirmed ? " · EST." : ""}
-            </span>
-          </div>
-          <div className="flex items-center justify-between gap-3 mt-2 font-mono font-bold tracking-wider">
-            {onNavigate ? (
-              <button
-                type="button"
-                className="shrink-0"
-                style={{ color: GOLD, fontSize: ROW_FONT_PX }}
-                onClick={() => onNavigate(card.symbol)}
-              >
-                Open {card.symbol} →
-              </button>
-            ) : (
-              <span />
-            )}
-            {onSendToStrategist ? (
-              <button
-                type="button"
-                className="shrink-0 ml-auto"
-                style={{ color: BLUE, fontSize: ROW_FONT_PX }}
-                onClick={() => {
-                  if (strategistSent) return;
-                  onSendToStrategist(
-                    card.symbol,
-                    buildCatalystStrategistFlowContext(card, spyHistoryOk),
-                  );
-                  setStrategistSent(true);
-                  if (strategistSentTimerRef.current) clearTimeout(strategistSentTimerRef.current);
-                  strategistSentTimerRef.current = setTimeout(() => {
-                    setStrategistSent(false);
-                    strategistSentTimerRef.current = null;
-                  }, 2000);
-                }}
-              >
-                {strategistSent ? "Sent to Strategist" : "Send to Strategist"}
-              </button>
-            ) : null}
-          </div>
-        </div>
+        <CatalystExpandedBody
+          card={card}
+          spyHistoryOk={spyHistoryOk}
+          stockQuote={stockQuote}
+          spyQuote={spyQuote}
+          onNavigate={onNavigate}
+          onSendToStrategist={onSendToStrategist}
+          strategistSent={strategistSent}
+          onStrategistClick={() => {
+            if (strategistSent || !onSendToStrategist) return;
+            onSendToStrategist(
+              card.symbol,
+              buildCatalystStrategistFlowContext(card, spyHistoryOk),
+            );
+            setStrategistSent(true);
+            if (strategistSentTimerRef.current) clearTimeout(strategistSentTimerRef.current);
+            strategistSentTimerRef.current = setTimeout(() => {
+              setStrategistSent(false);
+              strategistSentTimerRef.current = null;
+            }, 2000);
+          }}
+        />
       )}
     </div>
   );
