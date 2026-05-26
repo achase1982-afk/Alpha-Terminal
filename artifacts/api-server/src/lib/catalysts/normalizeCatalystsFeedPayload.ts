@@ -17,6 +17,11 @@ function padMoves(moves: number[], len: number): number[] {
   return [...Array.from({ length: len - moves.length }, () => 0), ...moves];
 }
 
+function padSuspect(flags: boolean[], len: number): boolean[] {
+  if (flags.length >= len) return flags.slice(-len);
+  return [...Array.from({ length: len - flags.length }, () => false), ...flags];
+}
+
 function normalizeSnapshot(raw: LegacySnapshot): CatalystSessionSnapshot {
   const moves = padMoves(raw.sessionMovesPct ?? [], CATALYST_DRIFT_SESSION_COUNT);
   const rawMoves = padMoves(
@@ -29,6 +34,7 @@ function normalizeSnapshot(raw: LegacySnapshot): CatalystSessionSnapshot {
       ? dates.slice(-CATALYST_DRIFT_SESSION_COUNT)
       : [...Array.from({ length: CATALYST_DRIFT_SESSION_COUNT - dates.length }, () => ""), ...dates];
   const closes = padMoves(raw.closes ?? [], CATALYST_DRIFT_SESSION_COUNT);
+  const suspect = padSuspect(raw.sessionSuspect ?? [], CATALYST_DRIFT_SESSION_COUNT);
   const sumTail = (n: number) => moves.slice(-n).reduce((a, b) => a + b, 0);
 
   return {
@@ -36,6 +42,7 @@ function normalizeSnapshot(raw: LegacySnapshot): CatalystSessionSnapshot {
     closes,
     sessionMovesPct: moves,
     sessionMovesRawPct: rawMoves,
+    sessionSuspect: suspect,
     cumulative1d: raw.cumulative1d ?? sumTail(1),
     cumulative3d: raw.cumulative3d ?? sumTail(3),
     cumulative5d: raw.cumulative5d ?? sumTail(5),
