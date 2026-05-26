@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { CATALYSTS_WINDOW_CALENDAR_DAYS } from "@workspace/catalysts-types";
 import { catalystEarningsDatesTable, db } from "@workspace/db";
 import { backfillEarningsCalendarForSp1500 } from "../fmpBackfill.js";
 import { SP_COMPOSITE_1500_SYMBOL_STRINGS } from "../../data/spComposite1500Symbols.js";
@@ -43,7 +44,8 @@ export async function runCatalystEarningsHarvest(opts?: {
 
   let fmpBackfillSymbolsTouched = 0;
   if (!opts?.skipFmpBackfill) {
-    const backfill = await backfillEarningsCalendarForSp1500(opts?.fmpWindowDays ?? 120);
+    const fmpDays = opts?.fmpWindowDays ?? CATALYSTS_WINDOW_CALENDAR_DAYS + 11;
+    const backfill = await backfillEarningsCalendarForSp1500(fmpDays);
     fmpBackfillSymbolsTouched = backfill.symbolsTouched;
   }
 

@@ -152,20 +152,34 @@ function spComposite1500Set(): Set<string> {
   return new Set(SP_COMPOSITE_1500_SYMBOL_STRINGS.map((s) => s.toUpperCase()));
 }
 
+/** FMP stable `/earnings-calendar` returns at most ~4000 rows per request (observed cap). */
+const FMP_EARNINGS_CALENDAR_ROW_CAP_WARN = 4000;
+
 /**
- * FMP earnings calendar → `corporate_events` for S&P Composite 1500 (next `windowDays` calendar days).
- * Run before the Catalysts earnings harvest so `next_earnings_date` coverage can approach full universe size.
+ * FMP earnings calendar → `corporate_events` for S&P Composite 1500.
+ *
+ * Default **21 calendar days** — wide windows (e.g. 120d) hit the FMP row cap and drop
+ * near-term names (OKTA, ADSK, COST, etc.) that still appear in a 10-day pull.
+ * Run before the Catalysts earnings harvest.
  */
-export async function backfillEarningsCalendarForSp1500(windowDays = 120): Promise<{
+export async function backfillEarningsCalendarForSp1500(windowDays = 21): Promise<{
   rowsUpserted: number;
   symbolsTouched: number;
   fmpRowsInRange: number;
+  fmpRowsRaw: number;
+  windowTruncated: boolean;
 }> {
   const from = todayUtcYmd();
   const to = addDaysUtcYmd(from, windowDays);
   const set = spComposite1500Set();
 
   const calendar = await getFmpEarningsCalendar(from, to);
+  if (calendar.length >= FMP_EARNINGS_CALENDAR_ROW_CAP_WARN) {
+    logger.warn(
+      { from, to, rows: calendar.length },
+      "FMP earnings calendar at observed row cap — shorten window or use chunked backfill",
+    );
+  }
   const filtered = calendar.filter((r) => set.has(r.symbol));
 
   let rowsUpserted = 0;
@@ -177,18 +191,28 @@ export async function backfillEarningsCalendarForSp1500(windowDays = 120): Promi
     symbolsTouched.add(r.symbol);
   }
 
+  const windowTruncated = calendar.length >= FMP_EARNINGS_CALENDAR_ROW_CAP_WARN;
   const summary = {
     job: "backfillEarningsCalendarForSp1500",
     rowsUpserted,
     symbolsTouched: symbolsTouched.size,
     fmpRowsInRange: filtered.length,
+    fmpRowsRaw: calendar.length,
+    windowTruncated,
     universe: set.size,
     from,
     to,
+    windowDays,
   };
   void logFailure("DATABASE", "INFO", "fmp backfill completed", summary);
   logger.info(summary, "fmp SP1500 earnings calendar backfill completed");
-  return { rowsUpserted, symbolsTouched: symbolsTouched.size, fmpRowsInRange: filtered.length };
+  return {
+    rowsUpserted,
+    symbolsTouched: symbolsTouched.size,
+    fmpRowsInRange: filtered.length,
+    fmpRowsRaw: calendar.length,
+    windowTruncated,
+  };
 }
 
 export async function backfillAnalystPriceTargets(): Promise<{ rowsUpserted: number }> {
