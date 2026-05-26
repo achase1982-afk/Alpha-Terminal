@@ -1,5 +1,5 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
 import {
+  CATALYST_DRIFT_SESSION_COUNT,
   CATALYSTS_WINDOW_CALENDAR_DAYS,
   emptyCatalystFilterBreakdown,
   emptyCatalystsFeed,
@@ -11,58 +11,26 @@ import {
   type EarningsTiming,
 } from "@workspace/catalysts-types";
 import type { FilteredName } from "@workspace/movers-types";
-import { db, equityDailyTable } from "@workspace/db";
 import { fetchFmpCompanyProfiles } from "../movers/fmpCompanyProfile.js";
 import type { TradeabilityCandidate } from "../movers/tradeabilityGate.js";
 import { applyCatalystGates } from "./applyCatalystGates.js";
+import { applyCatalystOptionsGate } from "./applyCatalystCheapGates.js";
+import type { CatalystOptionsChainVerdict } from "./catalystOptionsChainLive.js";
 import { getCatalystGateSettings } from "./catalystGateSettingsStore.js";
+import { resolveLiveOptionsChainVerdicts } from "./catalystOptionsChainLive.js";
 import { computeSessionSnapshot, emptySessionSnapshot } from "./catalystMetrics.js";
 import { discoverCatalystEarningsInWindow } from "./catalystEarningsDiscovery.js";
 import { loadEarningsTimingHints } from "./catalystEarningsTiming.js";
 import { reportAtIso } from "./catalystEarningsUtils.js";
 import { fetchImpliedMovePct } from "./catalystsImpliedMove.js";
-import { resolveSymbolsWithOptions } from "./optionsExistence.js";
+import {
+  fetchSchwabDailyClosesBatch,
+  fetchSchwabDailyClosesByNyDate,
+  latestCloseFromMap,
+} from "./schwabDailyCloses.js";
 import { lastSettledSessionYmd, settledSessionYmdsEndingAt } from "./settledSessions.js";
 import { logger } from "../logger.js";
 import { isSpComposite1500Member } from "./sp1500Membership.js";
-
-async function loadClosesForSessions(
-  symbol: string,
-  sessionDates: string[],
-): Promise<Map<string, number>> {
-  const sym = symbol.toUpperCase();
-  const needDates = new Set(sessionDates);
-  const earliest = sessionDates[0];
-  if (!earliest) return new Map();
-
-  const rows = await db
-    .select({ date: equityDailyTable.date, close: equityDailyTable.close })
-    .from(equityDailyTable)
-    .where(and(eq(equityDailyTable.symbol, sym), inArray(equityDailyTable.date, [...needDates])))
-    .orderBy(desc(equityDailyTable.date));
-
-  const map = new Map<string, number>();
-  for (const r of rows) {
-    const d = String(r.date);
-    map.set(d, r.close);
-  }
-
-  if (map.size < sessionDates.length) {
-    const priorRows = await db
-      .select({ date: equityDailyTable.date, close: equityDailyTable.close })
-      .from(equityDailyTable)
-      .where(eq(equityDailyTable.symbol, sym))
-      .orderBy(desc(equityDailyTable.date))
-      .limit(12);
-
-    for (const r of priorRows) {
-      const d = String(r.date);
-      if (!map.has(d)) map.set(d, r.close);
-    }
-  }
-
-  return map;
-}
 
 function tallyFilterBreakdown(
   filtered: FilteredName[],
@@ -102,63 +70,82 @@ export async function buildCatalystsFeed(
     };
   }
 
-  const candidates: TradeabilityCandidate[] = calendar.map((e) => ({
-    symbol: e.symbol,
-    name: e.symbol,
-    price: 10,
-    changePct: 0,
-  }));
+  const symbols = calendar.map((e) => e.symbol);
+  const profiles = await fetchFmpCompanyProfiles(symbols);
+  const closesBySymbol = await fetchSchwabDailyClosesBatch(symbols);
 
-  const profiles = await fetchFmpCompanyProfiles(candidates.map((c) => c.symbol));
+  const candidates: TradeabilityCandidate[] = calendar.map((e) => {
+    const sym = e.symbol.toUpperCase();
+    const px = latestCloseFromMap(closesBySymbol.get(sym) ?? new Map());
+    const profile = profiles.get(sym);
+    return {
+      symbol: sym,
+      name: profile?.sector ? sym : sym,
+      price: px ?? (profile?.marketCap != null ? 10 : 5),
+      changePct: 0,
+    };
+  });
 
   for (const c of candidates) {
     const profile = profiles.get(c.symbol);
-    const rows = await db
-      .select({ close: equityDailyTable.close })
-      .from(equityDailyTable)
-      .where(eq(equityDailyTable.symbol, c.symbol))
-      .orderBy(desc(equityDailyTable.date))
-      .limit(1);
-    const px = rows[0]?.close;
-    if (px != null && Number.isFinite(px)) c.price = px;
-    else if (profile?.marketCap != null) c.price = Math.max(5, c.price);
+    if (c.price < 5 && profile?.marketCap != null) c.price = 10;
   }
 
-  const symbolsWithOptions = gateSettings.requireOptionsChain
-    ? await resolveSymbolsWithOptions(candidates.map((c) => c.symbol))
-    : new Set(candidates.map((c) => c.symbol.toUpperCase()));
-  const { tradeable, filtered } = applyCatalystGates(
+  const cheapGateSettings = { ...gateSettings, requireOptionsChain: false };
+  const { tradeable: survivors, filtered: cheapFiltered } = applyCatalystGates(
     candidates,
     profiles,
-    gateSettings,
-    symbolsWithOptions,
+    cheapGateSettings,
+    new Set(candidates.map((c) => c.symbol.toUpperCase())),
   );
 
-  const tradeableBySymbol = new Map(tradeable.map((t) => [t.symbol, t]));
-  const endSettled = lastSettledSessionYmd(now);
-  const sessionDates = settledSessionYmdsEndingAt(endSettled, 5);
+  let tradeable: TradeabilityCandidate[];
+  let optionsFiltered: FilteredName[] = [];
+  let optionsStatusBySymbol = new Map<string, CatalystOptionsChainVerdict>();
 
+  if (gateSettings.requireOptionsChain) {
+    const optionsVerdicts = await resolveLiveOptionsChainVerdicts(
+      survivors.map((c) => c.symbol),
+    );
+    ({
+      tradeable,
+      filtered: optionsFiltered,
+      optionsStatusBySymbol,
+    } = applyCatalystOptionsGate(survivors, optionsVerdicts));
+  } else {
+    tradeable = survivors;
+  }
+
+  const filtered = [...cheapFiltered, ...optionsFiltered];
+
+  const endSettled = lastSettledSessionYmd(now);
+  const sessionDates = settledSessionYmdsEndingAt(endSettled, CATALYST_DRIFT_SESSION_COUNT);
   const timingHints = await loadEarningsTimingHints(calendar.map((e) => e.symbol));
 
-  const spyCloses = await loadClosesForSessions("SPY", sessionDates);
-  const spySnapshot = computeSessionSnapshot(sessionDates, spyCloses);
-  const benchmarkDrift5dPct = spySnapshot?.cumulative5d ?? null;
-  if (benchmarkDrift5dPct == null) {
+  const spyCloses = await fetchSchwabDailyClosesByNyDate("SPY");
+  const spySnapshot =
+    sessionDates.length === CATALYST_DRIFT_SESSION_COUNT
+      ? computeSessionSnapshot(sessionDates, spyCloses, spyCloses)
+      : null;
+  const benchmarkDrift10dPct = spySnapshot?.cumulative10d ?? null;
+  const spyHistoryOk = spySnapshot != null;
+  if (!spyHistoryOk) {
     logger.warn(
-      { sessionDates, spyClosesFound: spyCloses.size },
-      "Catalysts rebuild: SPY session snapshot missing — vs S&P column will show raw only",
+      { sessionDates, spyBars: spyCloses.size },
+      "Catalysts rebuild: SPY Schwab history missing — vs S&P will show raw only",
     );
   }
 
+  const tradeableBySymbol = new Map(tradeable.map((t) => [t.symbol, t]));
   const cards: CatalystCard[] = [];
   let droppedNoSessionData = 0;
 
   for (const e of calendar) {
-    const sym = e.symbol;
+    const sym = e.symbol.toUpperCase();
     if (!tradeableBySymbol.has(sym)) continue;
 
-    const closesByDate = await loadClosesForSessions(sym, sessionDates);
-    let snapshot = computeSessionSnapshot(sessionDates, closesByDate);
+    const stockCloses = closesBySymbol.get(sym) ?? new Map();
+    let snapshot = computeSessionSnapshot(sessionDates, stockCloses, spyCloses);
     if (!snapshot) {
       if (gateSettings.requireSessionSnapshot) {
         droppedNoSessionData += 1;
@@ -169,13 +156,12 @@ export async function buildCatalystsFeed(
 
     const profile = profiles.get(sym);
     const timing: EarningsTiming = timingHints.get(sym) ?? null;
-    const lastPrice = tradeableBySymbol.get(sym)?.price ?? null;
+    const lastPrice = latestCloseFromMap(stockCloses) ?? tradeableBySymbol.get(sym)?.price ?? null;
     const impliedMovePct = await fetchImpliedMovePct(sym, e.earningsDate, lastPrice);
 
-    const tradeableRow = tradeableBySymbol.get(sym);
     cards.push({
       symbol: sym,
-      name: tradeableRow?.name ?? sym,
+      name: sym,
       sector: profile?.sector ?? null,
       industry: profile?.industry ?? null,
       earningsDate: e.earningsDate,
@@ -185,8 +171,13 @@ export async function buildCatalystsFeed(
       lastPrice,
       impliedMovePct,
       inSp1500: isSpComposite1500Member(sym),
+      optionsChainUnconfirmed: optionsStatusBySymbol.get(sym) === "unknown",
       snapshot,
     });
+  }
+
+  if (droppedNoSessionData > 0) {
+    logger.info({ droppedNoSessionData }, "Catalysts rebuild: symbols missing 10-day Schwab history");
   }
 
   cards.sort((a, b) => a.earningsDate.localeCompare(b.earningsDate) || a.symbol.localeCompare(b.symbol));
@@ -201,7 +192,7 @@ export async function buildCatalystsFeed(
       tradeable: cards.length,
       filterBreakdown: tallyFilterBreakdown(filtered, droppedNoSessionData),
     },
-    benchmarkDrift5dPct,
+    benchmarkDrift10dPct: spyHistoryOk ? benchmarkDrift10dPct : null,
     gateSettings,
     cards,
   };

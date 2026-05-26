@@ -13,15 +13,18 @@ import { normalizeCatalystGateSettings } from "@workspace/catalysts-types";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import {
+  buildCatalystStrategistFlowContext,
   catalystCardPhase,
   daysUntilEarnings,
-  driftVsSpy5d,
+  driftVsSpy10d,
+  rawDrift10d,
   earningsDaysAwayLabel,
   fmtEarningsShort,
   fmtPct,
   pctColor,
   shouldFallOffCatalyst,
 } from "@/lib/catalystsSession";
+import { normalizeCatalystsFeed } from "@/lib/normalizeCatalystsFeed";
 
 /** Match Movers feed tokens so both tabs feel like one designer. */
 const BG = "#0c0c0c";
@@ -223,21 +226,27 @@ function CatalystRow({
   card,
   held,
   expanded,
-  benchmarkDrift5dPct,
+  spyHistoryOk,
   onToggle,
   onNavigate,
+  onSendToStrategist,
 }: {
   card: CatalystCard;
   held: boolean;
   expanded: boolean;
-  benchmarkDrift5dPct: number | null;
+  spyHistoryOk: boolean;
   onToggle: () => void;
   onNavigate?: (sym: string) => void;
+  onSendToStrategist?: (sym: string, flowContext: string) => void;
 }) {
-  const drift5d = card.snapshot.cumulative5d;
-  const vsSpy = driftVsSpy5d(card, benchmarkDrift5dPct);
+  const [strategistSent, setStrategistSent] = useState(false);
+  const strategistSentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const rel10 = driftVsSpy10d(card);
+  const raw10 = rawDrift10d(card);
+  const vsDisplay = spyHistoryOk ? rel10 : raw10;
   const streakHot = card.snapshot.streak >= 5;
-  const tickerColor = drift5d >= 0 ? GREEN : RED;
+  const tickerColor = rel10 >= 0 ? GREEN : RED;
   const phase = catalystCardPhase(card);
   const earningsAccent = phase === "reports_today" || phase === "reporting_after_close";
 
@@ -264,14 +273,17 @@ function CatalystRow({
             >
               {card.symbol}
             </span>
-            {streakHot && <Flame className="w-3.5 h-3.5 shrink-0" style={{ color: GOLD }} />}
-          </div>
-          <p className="font-mono truncate w-full mt-0.5" style={{ color: TEXT_SECONDARY, fontSize: MIN_FONT_PX }}>
-            {held && (
-              <span style={{ color: BLUE, fontWeight: 700 }}>HELD · </span>
-            )}
-            {card.name}
-          </p>
+              {streakHot && <Flame className="w-3.5 h-3.5 shrink-0" style={{ color: GOLD }} />}
+            </div>
+            <p className="font-mono truncate w-full mt-0.5" style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}>
+              {held && (
+                <span style={{ color: BLUE, fontWeight: 700 }}>HELD · </span>
+              )}
+              {card.optionsChainUnconfirmed && (
+                <span style={{ color: GOLD, fontWeight: 700 }}>OPTIONS UNCONFIRMED · </span>
+              )}
+              {card.name}
+            </p>
         </CollapsedCell>
         <CollapsedCell>
           <Sparkline moves={card.snapshot.sessionMovesPct} />
@@ -290,12 +302,12 @@ function CatalystRow({
         <CollapsedCell>
           <span
             className="font-mono font-bold tabular-nums whitespace-nowrap"
-            style={{ color: pctColor(vsSpy ?? drift5d), fontSize: ROW_FONT_PX }}
+            style={{ color: pctColor(vsDisplay), fontSize: ROW_FONT_PX }}
           >
-            {vsSpy != null ? fmtPct(vsSpy) : benchmarkDrift5dPct == null ? "—" : fmtPct(drift5d)}
+            {fmtPct(vsDisplay)}
           </span>
-          <span className="font-mono mt-0.5 whitespace-nowrap" style={{ color: MUTED, fontSize: MIN_FONT_PX }}>
-            {vsSpy != null ? `raw ${fmtPct(drift5d)}` : benchmarkDrift5dPct == null ? "SPY n/a" : "vs SPY n/a"}
+          <span className="font-mono mt-0.5 whitespace-nowrap" style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}>
+            {spyHistoryOk ? `raw ${fmtPct(raw10)}` : "raw only"}
           </span>
         </CollapsedCell>
       </button>
@@ -306,25 +318,55 @@ function CatalystRow({
             {card.snapshot.patternRead}
           </p>
           <div
-            className="grid grid-cols-5 gap-2 text-center font-mono border rounded-lg py-2"
+            className="grid grid-cols-4 gap-2 text-center font-mono border rounded-lg py-2"
             style={{ borderColor: BORDER, background: PANEL, fontSize: ROW_FONT_PX }}
           >
             {(
               [
                 ["1D", card.snapshot.cumulative1d],
-                ["2D", card.snapshot.cumulative2d],
                 ["3D", card.snapshot.cumulative3d],
-                ["4D", card.snapshot.cumulative4d],
                 ["5D", card.snapshot.cumulative5d],
+                ["10D", card.snapshot.cumulative10d],
               ] as const
             ).map(([label, val]) => (
               <div key={label}>
-                <p style={{ color: MUTED, fontSize: MIN_FONT_PX }}>{label}</p>
+                <p style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}>{label}</p>
                 <p className="font-bold mt-0.5" style={{ color: pctColor(val) }}>
                   {fmtPct(val)}
                 </p>
               </div>
             ))}
+          </div>
+          <div>
+            <p className="font-mono mb-2" style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}>
+              SESSION-BY-SESSION (VS S&P)
+            </p>
+            <div className="flex flex-col gap-0.5 max-h-48 overflow-y-auto">
+              {card.snapshot.sessionDates.map((d, i) => {
+                const n = card.snapshot.sessionDates.length;
+                const offset = n - 1 - i;
+                const sessionLabel =
+                  offset === 0 ? "NOW" : offset === 1 ? "D-1" : `D-${offset}`;
+                return (
+                <div
+                  key={`${d}-${i}`}
+                  className="flex items-center justify-between font-mono py-1 px-2 rounded"
+                  style={{
+                    background: i === card.snapshot.sessionDates.length - 1 ? PANEL : "transparent",
+                    fontSize: MIN_FONT_PX,
+                  }}
+                >
+                  <span style={{ color: TEXT_PRIMARY }}>
+                    {sessionLabel}
+                    {d ? ` · ${d}` : ""}
+                  </span>
+                  <span style={{ color: pctColor(card.snapshot.sessionMovesPct[i]) }}>
+                    {fmtPct(card.snapshot.sessionMovesPct[i])}
+                  </span>
+                </div>
+              );
+              })}
+            </div>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 font-mono" style={{ fontSize: ROW_FONT_PX }}>
             <span style={{ color: TEXT_SECONDARY }}>
@@ -343,16 +385,45 @@ function CatalystRow({
               {!card.earningsConfirmed ? " · EST." : ""}
             </span>
           </div>
-          {onNavigate && (
-            <button
-              type="button"
-              className="font-mono font-bold tracking-wider mt-1"
-              style={{ color: GOLD, fontSize: ROW_FONT_PX }}
-              onClick={() => onNavigate(card.symbol)}
-            >
-              OPEN IN MARKETS →
-            </button>
-          )}
+          <div className="flex flex-col gap-2 mt-2">
+            {onSendToStrategist && (
+              <button
+                type="button"
+                className="w-full font-mono font-bold tracking-wider rounded-lg py-2.5 transition-opacity"
+                style={{
+                  background: BLUE,
+                  color: TEXT_PRIMARY,
+                  fontSize: ROW_FONT_PX,
+                  opacity: strategistSent ? 0.85 : 1,
+                }}
+                onClick={() => {
+                  if (strategistSent) return;
+                  onSendToStrategist(
+                    card.symbol,
+                    buildCatalystStrategistFlowContext(card, spyHistoryOk),
+                  );
+                  setStrategistSent(true);
+                  if (strategistSentTimerRef.current) clearTimeout(strategistSentTimerRef.current);
+                  strategistSentTimerRef.current = setTimeout(() => {
+                    setStrategistSent(false);
+                    strategistSentTimerRef.current = null;
+                  }, 2000);
+                }}
+              >
+                {strategistSent ? "Sent to Strategist" : "Send to Strategist"}
+              </button>
+            )}
+            {onNavigate && (
+              <button
+                type="button"
+                className="font-mono font-bold tracking-wider"
+                style={{ color: GOLD, fontSize: ROW_FONT_PX }}
+                onClick={() => onNavigate(card.symbol)}
+              >
+                Open {card.symbol} →
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -361,9 +432,11 @@ function CatalystRow({
 
 export function CatalystsFeed({
   onNavigateToSymbol,
+  onSendToStrategist,
   subscribeEquitySymbols,
 }: {
   onNavigateToSymbol?: (sym: string) => void;
+  onSendToStrategist?: (sym: string, flowContext: string) => void;
   subscribeEquitySymbols?: (syms: string[]) => void;
 }) {
   const queryClient = useQueryClient();
@@ -402,7 +475,7 @@ export function CatalystsFeed({
     queryFn: async () => {
       const res = await fetchWithAuth("/api/catalysts");
       if (!res.ok) throw new Error(`Catalysts feed HTTP ${res.status}`);
-      return (await res.json()) as CatalystsFeed;
+      return normalizeCatalystsFeed((await res.json()) as CatalystsFeed);
     },
     staleTime: 60_000,
     refetchInterval: 120_000,
@@ -437,7 +510,7 @@ export function CatalystsFeed({
       case "fiveDayMove":
         list.sort(
           (a, b) =>
-            Math.abs(b.snapshot.cumulative5d) - Math.abs(a.snapshot.cumulative5d),
+            Math.abs(b.snapshot.cumulative10d) - Math.abs(a.snapshot.cumulative10d),
         );
         break;
       case "streak":
@@ -472,7 +545,7 @@ export function CatalystsFeed({
       });
       if (!res.ok) throw new Error(`Catalysts refresh HTTP ${res.status}`);
       const body = (await res.json()) as { ok: boolean; feed: CatalystsFeed };
-      queryClient.setQueryData(["catalysts-feed"], body.feed);
+      queryClient.setQueryData(["catalysts-feed"], normalizeCatalystsFeed(body.feed));
     } catch {
       await queryClient.invalidateQueries({ queryKey: ["catalysts-feed"] });
     } finally {
@@ -482,7 +555,7 @@ export function CatalystsFeed({
 
   const building = data?.status === "building" || (data?.status === "empty" && !data.builtAt);
   const refreshBusy = manualRefreshing || isFetching;
-  const benchmarkDrift5dPct = data?.benchmarkDrift5dPct ?? null;
+  const spyHistoryOk = data?.benchmarkDrift10dPct != null;
 
   return (
     <div className="flex flex-col min-h-full" style={{ background: BG, color: TEXT_PRIMARY }}>
@@ -579,9 +652,10 @@ export function CatalystsFeed({
                   card={card}
                   held={heldSymbols.has(card.symbol)}
                   expanded={!!expanded[card.symbol]}
-                  benchmarkDrift5dPct={benchmarkDrift5dPct}
+                  spyHistoryOk={spyHistoryOk}
                   onToggle={() => toggle(card.symbol)}
                   onNavigate={onNavigateToSymbol}
+                  onSendToStrategist={onSendToStrategist}
                 />
               ))}
             </>

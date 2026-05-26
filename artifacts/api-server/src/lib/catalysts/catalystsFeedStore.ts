@@ -7,6 +7,7 @@ import {
   normalizeCatalystGateSettings,
 } from "@workspace/catalysts-types";
 import { db, catalystsFeedTable } from "@workspace/db";
+import { normalizeCatalystsFeedPayload } from "./normalizeCatalystsFeedPayload.js";
 
 const CATALYSTS_FEED_RETENTION = 30;
 
@@ -37,17 +38,21 @@ export async function getLatestCatalystsFeed(): Promise<CatalystsFeed> {
   if (!row?.payload || typeof row.payload !== "object") {
     return emptyCatalystsFeed();
   }
-  const raw = row.payload as unknown as CatalystsFeed;
+
+  const normalized = normalizeCatalystsFeedPayload(row.payload as unknown as CatalystsFeed);
   return {
     ...emptyCatalystsFeed(),
-    ...raw,
+    ...normalized,
     funnel: {
       ...emptyCatalystsFeed().funnel,
-      ...raw.funnel,
-      filterBreakdown: raw.funnel?.filterBreakdown ?? emptyCatalystFilterBreakdown(),
+      ...normalized.funnel,
+      filterBreakdown:
+        normalized.funnel?.filterBreakdown ?? emptyCatalystFilterBreakdown(),
     },
-    gateSettings: normalizeCatalystGateSettings(raw.gateSettings ?? DEFAULT_CATALYST_GATE_SETTINGS),
-    benchmarkDrift5dPct: raw.benchmarkDrift5dPct ?? null,
-    cards: raw.cards ?? [],
+    gateSettings: normalizeCatalystGateSettings(
+      normalized.gateSettings ?? DEFAULT_CATALYST_GATE_SETTINGS,
+    ),
+    benchmarkDrift10dPct: normalized.benchmarkDrift10dPct ?? null,
+    cards: normalized.cards ?? [],
   };
 }

@@ -13,7 +13,7 @@ export interface CatalystGateSettings {
   requireVolumeFloor: boolean;
   /** Minimum average volume when requireVolumeFloor (0 = off). */
   avgVolumeFloor: number;
-  /** Require 5 settled equity_daily sessions for drift / vs S&P. */
+  /** Require 10 settled Schwab sessions for drift / vs S&P. */
   requireSessionSnapshot: boolean;
 }
 

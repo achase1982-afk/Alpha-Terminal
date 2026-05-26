@@ -10,6 +10,8 @@ export {
   type CatalystGateSettings,
 };
 
+export { CATALYST_DRIFT_SESSION_COUNT } from "./constants.js";
+
 export const CATALYSTS_WINDOW_CALENDAR_DAYS = 10;
 
 export type CatalystsFeedStatus = "ready" | "building" | "empty";
@@ -25,7 +27,7 @@ export type CatalystTradeabilityRejectReason =
   | "NO_OPTIONS";
 
 export type CatalystFilterBreakdown = Record<CatalystTradeabilityRejectReason, number> & {
-  /** Passed tradeability but missing 5 settled sessions in equity_daily. */
+  /** Passed tradeability but missing 10 settled Schwab sessions for drift. */
   NO_SESSION_DATA: number;
 };
 
@@ -42,25 +44,25 @@ export interface CatalystsFeed {
     tradeable: number;
     filterBreakdown: CatalystFilterBreakdown;
   };
-  /** SPY settled-session cumulative 5d % — for vs-S&P column on cards. */
-  benchmarkDrift5dPct: number | null;
+  /** SPY 10-session cumulative drift (sum of daily SPY %); null when SPY poll failed. */
+  benchmarkDrift10dPct: number | null;
   /** Gate profile used for this build (for UI + debugging). */
   gateSettings: CatalystGateSettings;
   cards: CatalystCard[];
 }
 
 export interface CatalystSessionSnapshot {
-  /** Settled session dates D-5..D-1 (oldest first). */
+  /** Ten settled NYSE dates (oldest first), D-9 … D-0. */
   sessionDates: string[];
-  /** Official 4:00 PM ET closes for each sessionDates entry. */
   closes: number[];
-  /** Per-session % move vs prior settled close (length 5, aligned with sessionDates). */
+  /** Per session: stock daily % − SPY daily % (length 10). */
   sessionMovesPct: number[];
+  /** Raw stock daily % (length 10) for display when SPY unavailable. */
+  sessionMovesRawPct: number[];
   cumulative1d: number;
-  cumulative2d: number;
   cumulative3d: number;
-  cumulative4d: number;
   cumulative5d: number;
+  cumulative10d: number;
   streak: number;
   upCount: number;
   downCount: number;
@@ -82,6 +84,8 @@ export interface CatalystCard {
   impliedMovePct: number | null;
   /** Optional display tag — S&P Composite 1500 membership; does not gate inclusion. */
   inSp1500?: boolean;
+  /** Live options probe could not confirm chain — name kept per repair spec. */
+  optionsChainUnconfirmed?: boolean;
   snapshot: CatalystSessionSnapshot;
 }
 
@@ -109,7 +113,7 @@ export function emptyCatalystsFeed(): CatalystsFeed {
       tradeable: 0,
       filterBreakdown: emptyCatalystFilterBreakdown(),
     },
-    benchmarkDrift5dPct: null,
+    benchmarkDrift10dPct: null,
     gateSettings: { ...DEFAULT_CATALYST_GATE_SETTINGS },
     cards: [],
   };
