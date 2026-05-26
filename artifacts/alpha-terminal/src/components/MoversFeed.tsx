@@ -513,7 +513,7 @@ function SituationCard({
                   style={{ color: GOLD, fontSize: ROW_FONT_PX }}
                   onClick={() => onNavigate(t.symbol)}
                 >
-                  OPEN IN MARKETS →
+                  Open {t.symbol} →
                 </button>
               )}
             </>
