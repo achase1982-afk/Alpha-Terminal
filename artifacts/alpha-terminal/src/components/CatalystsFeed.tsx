@@ -12,7 +12,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Flame, Loader2, RefreshCw } from "lucide-react";
 import type {
   CatalystCard,
-  CatalystFilterBreakdown,
   CatalystsFeed,
   CatalystsSortKey,
 } from "@workspace/catalysts-types";
@@ -35,7 +34,6 @@ import {
   shouldFallOffCatalyst,
 } from "@/lib/catalystsSession";
 import { normalizeCatalystsFeed } from "@/lib/normalizeCatalystsFeed";
-import { catalystFeedFreshnessLabel } from "@/lib/catalystSessionDisplay";
 import { CatalystExpandedBody } from "@/components/CatalystExpandedBody";
 
 /** Match Movers feed tokens so both tabs feel like one designer. */
@@ -120,62 +118,6 @@ function Sparkline({ moves }: { moves: number[] }) {
     <svg width={w} height={h} className="shrink-0" aria-hidden>
       <polyline fill="none" stroke={stroke} strokeWidth="1.5" points={points} />
     </svg>
-  );
-}
-
-function filterBreakdownSummary(bd: CatalystFilterBreakdown | undefined): string {
-  if (!bd) return "";
-  const parts: string[] = [];
-  const push = (label: string, n: number) => {
-    if (n > 0) parts.push(`${label} ${n}`);
-  };
-  push("no options", bd.NO_OPTIONS);
-  push("low volume", bd.LOW_VOLUME);
-  push("micro cap", bd.MICRO_CAP);
-  push("sub $5", bd.SUB_5);
-  push("leveraged ETF", bd.LEVERAGED_ETF);
-  push("missing session data", bd.NO_SESSION_DATA);
-  return parts.join(" · ");
-}
-
-function CatalystsFunnelBar({
-  funnel,
-  onStreak,
-  reportsToday,
-}: {
-  funnel: CatalystsFeed["funnel"];
-  onStreak: number;
-  reportsToday: number;
-}) {
-  const breakdownText = filterBreakdownSummary(funnel.filterBreakdown);
-  const items = [
-    { label: "SCHEDULED", value: funnel.calendar, color: MUTED },
-    { label: "TRADEABLE", value: funnel.tradeable, color: GOLD },
-    { label: "ON STREAK", value: onStreak, color: TEXT_PRIMARY },
-    { label: "REPORTS TODAY", value: reportsToday, color: reportsToday > 0 ? GOLD : MUTED },
-  ];
-  return (
-    <div
-      className="grid grid-cols-4 gap-1 px-3 py-2 border-b font-mono tracking-wider shrink-0"
-      style={{ background: PANEL, borderColor: BORDER, fontSize: ROW_FONT_PX }}
-    >
-      {items.map((item) => (
-        <div key={item.label} className="text-center">
-          <div style={{ color: TEXT_SECONDARY, fontSize: MIN_FONT_PX }}>{item.label}</div>
-          <div className="font-bold mt-0.5" style={{ color: item.color, fontSize: ROW_FONT_PX }}>
-            {item.value}
-          </div>
-        </div>
-      ))}
-      {breakdownText ? (
-        <div
-          className="col-span-4 text-center font-mono mt-1 px-1"
-          style={{ color: MUTED, fontSize: MIN_FONT_PX, lineHeight: BODY_LINE_HEIGHT }}
-        >
-          Filtered out: {breakdownText}
-        </div>
-      ) : null}
-    </div>
   );
 }
 
@@ -392,18 +334,6 @@ export function CatalystsFeed({
     return cards.filter((c: CatalystCard) => !shouldFallOffCatalyst(c, now));
   }, [data?.cards]);
 
-  const summary = useMemo(() => {
-    const now = new Date();
-    let onStreak = 0;
-    let reportsToday = 0;
-    for (const c of visibleCards) {
-      if (c.snapshot.streak >= 5) onStreak += 1;
-      const phase = catalystCardPhase(c, now);
-      if (phase === "reports_today" || phase === "reporting_after_close") reportsToday += 1;
-    }
-    return { onStreak, reportsToday };
-  }, [visibleCards]);
-
   const sorted = useMemo(() => {
     const list = [...visibleCards];
     switch (sortKey) {
@@ -476,46 +406,23 @@ export function CatalystsFeed({
   return (
     <div className="flex flex-col min-h-full" style={{ background: BG, color: TEXT_PRIMARY }}>
       <div
-        className="flex items-start justify-between gap-2 px-3 py-2 border-b shrink-0"
+        className="flex items-center justify-between px-3 py-2 border-b shrink-0"
         style={{ borderColor: BORDER, background: PANEL }}
       >
-        <div className="min-w-0 flex-1">
-          <h1 className="font-mono font-bold tracking-[0.2em]" style={{ color: GOLD, fontSize: ROW_FONT_PX }}>
-            CATALYSTS
-          </h1>
-          <p className="font-mono truncate" style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}>
-            Earnings next 10 days · drift vs S&P 500
-          </p>
-        </div>
-        <div className="flex flex-col items-end gap-1 shrink-0">
-          {data?.builtAt ? (
-            <span
-              className="font-mono text-right max-w-[14rem] leading-snug"
-              style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}
-            >
-              {catalystFeedFreshnessLabel(data.builtAt)}
-            </span>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => void onRefresh()}
-            disabled={refreshBusy}
-            className="p-2 rounded-lg border transition-opacity disabled:opacity-40"
-            style={{ borderColor: BORDER, color: TEXT_PRIMARY }}
-            aria-label="Refresh catalysts"
-          >
-            {refreshBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-          </button>
-        </div>
+        <h1 className="font-mono font-bold tracking-[0.2em]" style={{ color: GOLD, fontSize: ROW_FONT_PX }}>
+          CATALYSTS
+        </h1>
+        <button
+          type="button"
+          onClick={() => void onRefresh()}
+          disabled={refreshBusy}
+          className="p-2 rounded-lg border transition-opacity disabled:opacity-40"
+          style={{ borderColor: BORDER, color: TEXT_PRIMARY }}
+          aria-label="Refresh catalysts"
+        >
+          {refreshBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+        </button>
       </div>
-
-      {data && !building && (
-        <CatalystsFunnelBar
-          funnel={data.funnel}
-          onStreak={summary.onStreak}
-          reportsToday={summary.reportsToday}
-        />
-      )}
 
       <div
         className="flex gap-2 px-3 py-2 border-b shrink-0 overflow-x-auto"

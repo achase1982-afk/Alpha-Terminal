@@ -37,12 +37,8 @@ import { AiSubTabs, type AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import type { MarketPulseDashboardHandle } from "@/components/market-pulse/MarketPulseDashboard";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { WatchlistView } from "@/components/WatchlistView";
-import {
-  peekPendingStrategistPushJobId,
-  setPendingStrategistPushJobId,
-} from "@/lib/strategistPushNav";
+import { peekPendingStrategistPushJobId, setPendingStrategistPushJobId } from "@/lib/strategistPushNav";
 import { readStashedStrategistPushJob } from "@/lib/strategistPushCache";
-import { installStrategistPushMessageListener } from "@/lib/strategistPushMessages";
 import { openStrategistJobFromNotification, resumeAllRunningPollers } from "@/lib/strategistPoller";
 import {
   Menu,
@@ -472,7 +468,9 @@ export default function TerminalPage() {
       const stashed = await readStashedStrategistPushJob();
       const pending = peekPendingStrategistPushJobId();
       const jobId = stashed?.jobId ?? pending;
-      if (jobId) routeStrategistPushOpen(jobId, stashed?.ticker);
+      if (jobId) {
+        routeStrategistPushOpen(jobId, stashed?.ticker);
+      }
     })();
   }, [routeStrategistPushOpen]);
 

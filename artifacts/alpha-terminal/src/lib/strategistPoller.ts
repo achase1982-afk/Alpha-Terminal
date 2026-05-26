@@ -14,14 +14,17 @@ type PollerHandle = {
   lastTickAt: number;
 };
 const activePollers = new Map<string, PollerHandle>();
+/** While a push/deep-link open is hydrating, block stale pollers from restarting. */
+const pushOpenInFlight = new Set<string>();
+const pushOpenPromiseByJobId = new Map<string, Promise<OpenStrategistFromPushResult>>();
+
+export function isStrategistPushOpenInFlight(jobId: string): boolean {
+  return pushOpenInFlight.has(jobId);
+}
 
 export type OpenStrategistFromPushResult =
   | { ok: true; ticker: string | null; jobId: string }
   | { ok: false; jobId: string; stillRunning: boolean };
-
-/** While a push/deep-link open is hydrating, block stale pollers from restarting. */
-const pushOpenInFlight = new Set<string>();
-const pushOpenPromiseByJobId = new Map<string, Promise<OpenStrategistFromPushResult>>();
 
 // If an existing poller hasn't ticked in this long, a new caller takes over.
 const STALE_POLLER_MS = 8_000;
