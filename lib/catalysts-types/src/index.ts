@@ -1,14 +1,16 @@
-import {
+export {
+  CATALYST_GATE_LIMITS,
   DEFAULT_CATALYST_GATE_SETTINGS,
+  formatMarketCapFloorLabel,
+  formatVolumeFloorLabel,
   normalizeCatalystGateSettings,
   type CatalystGateSettings,
 } from "./gateSettings.js";
 
-export {
+import {
   DEFAULT_CATALYST_GATE_SETTINGS,
-  normalizeCatalystGateSettings,
   type CatalystGateSettings,
-};
+} from "./gateSettings.js";
 
 export { CATALYST_DRIFT_SESSION_COUNT } from "./constants.js";
 
