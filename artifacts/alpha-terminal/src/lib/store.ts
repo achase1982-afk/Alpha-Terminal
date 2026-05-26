@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { DEFAULT_AI_MODEL_ID, migrateLegacyModelIdToCatalog } from '@workspace/ai-models';
+import {
+  DEFAULT_CATALYST_GATE_SETTINGS,
+  normalizeCatalystGateSettings,
+  type CatalystGateSettings,
+} from '@workspace/catalysts-types';
 import { fetchWithAuth } from './fetchWithAuth';
 import type { ActiveChatThreadRef } from './chatPersistence';
 
@@ -251,6 +256,13 @@ export interface TerminalState {
     key: string,
     value: string | number | boolean,
   ) => void;
+
+  catalystGateSettings: CatalystGateSettings;
+  setCatalystGateSetting: <K extends keyof CatalystGateSettings>(
+    key: K,
+    value: CatalystGateSettings[K],
+  ) => void;
+  setCatalystGateSettings: (patch: Partial<CatalystGateSettings>) => void;
 
   tickerTapeSymbols: string[];
   setTickerTapeSymbols: (symbols: string[]) => void;
@@ -607,6 +619,16 @@ export const useTerminalStore = create<TerminalState>()(
           },
         })),
 
+      catalystGateSettings: { ...DEFAULT_CATALYST_GATE_SETTINGS },
+      setCatalystGateSetting: (key, value) =>
+        set((state) => ({
+          catalystGateSettings: { ...state.catalystGateSettings, [key]: value },
+        })),
+      setCatalystGateSettings: (patch) =>
+        set((state) => ({
+          catalystGateSettings: { ...state.catalystGateSettings, ...patch },
+        })),
+
       tickerTapeSymbols: ['SPY', 'QQQ', 'IWM', 'DIA', 'VIX', 'TSLA', 'NVDA', 'AAPL', 'META', 'MSFT', 'AMZN', 'GOOGL'],
       setTickerTapeSymbols: (tickerTapeSymbols) => set({ tickerTapeSymbols }),
       tapeSpeed: 25,
@@ -920,7 +942,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 28,
+      version: 29,
       storage: createJSONStorage(() => quotaSafeLocalStorage),
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
@@ -1125,6 +1147,11 @@ export const useTerminalStore = create<TerminalState>()(
               cfg['moversTemperature'] = 0;
             }
           }
+        }
+        if (version < 29) {
+          s['catalystGateSettings'] = normalizeCatalystGateSettings(
+            s['catalystGateSettings'] as Partial<CatalystGateSettings> | undefined,
+          );
         }
         if (version < 27) {
           const migrated: Record<string, ActiveChatThreadRef> = {};
