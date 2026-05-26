@@ -1,22 +1,23 @@
 import { sql } from "drizzle-orm";
-import { CATALYSTS_WINDOW_CALENDAR_DAYS } from "@workspace/catalysts-types";
 import { catalystEarningsDatesTable, db } from "@workspace/db";
-import { backfillEarningsCalendarForSp1500 } from "../fmpBackfill.js";
-import { SP_COMPOSITE_1500_SYMBOL_STRINGS } from "../../data/spComposite1500Symbols.js";
+import { backfillEarningsCalendarForCatalystsHarvest } from "../fmpBackfill.js";
 import { logger } from "../logger.js";
-import { loadForwardEarningsFromCorporateEvents } from "./catalystEarningsFromCorporateEvents.js";
+import { CATALYST_EARNINGS_HARVEST_FORWARD_DAYS } from "./catalystEarningsConstants.js";
+import { loadAllForwardEarningsInHorizon } from "./catalystEarningsFromCorporateEvents.js";
 import { fetchSchwabEarningsDatesBestToken } from "./schwabEarningsFromQuotes.js";
 
-/** ~4s between 50-symbol batches → ~2 min for 1,500 names (rate-limit safe). */
+/** ~4s between 50-symbol batches — rate-limit safe for weekly Schwab last-date pull. */
 export const CATALYST_EARNINGS_BATCH_DELAY_MS = 4_000;
 
 export type CatalystEarningsHarvestReport = {
   sweepId: string;
-  symbols: number;
+  symbolsDiscovered: number;
   written: number;
   withLastDate: number;
   withNextDate: number;
   fmpBackfillSymbolsTouched: number;
+  fmpRowsRaw: number;
+  fmpWindowTruncated: boolean;
   startedAt: string;
   finishedAt: string;
 };
@@ -26,34 +27,39 @@ function newSweepId(): string {
 }
 
 /**
- * Weekly Catalysts earnings harvest for S&P Composite 1500.
+ * Weekly Catalysts earnings harvest — full FMP calendar in window (no index gate).
  *
- * 1. FMP earnings calendar → `corporate_events` (primary `next_earnings_date` source).
- * 2. Schwab batch `/quotes` → `last_earnings_date` (reference; always stored when present).
- * 3. Merge forward `corporate_events` into `catalyst_earnings_dates`.
+ * 1. FMP earnings calendar → `corporate_events` ({@link CATALYST_EARNINGS_HARVEST_FORWARD_DAYS} days).
+ * 2. Schwab `/quotes` last-earnings for discovered symbols only.
+ * 3. Upsert `catalyst_earnings_dates` (tradeability gate runs at feed build).
  */
 export async function runCatalystEarningsHarvest(opts?: {
   delayBetweenBatchesMs?: number;
   skipFmpBackfill?: boolean;
-  fmpWindowDays?: number;
+  harvestForwardDays?: number;
 }): Promise<CatalystEarningsHarvestReport> {
   const sweepId = newSweepId();
   const startedAt = new Date();
-  const symbols = [...SP_COMPOSITE_1500_SYMBOL_STRINGS];
+  const forwardDays = opts?.harvestForwardDays ?? CATALYST_EARNINGS_HARVEST_FORWARD_DAYS;
   const harvestedAt = new Date();
 
   let fmpBackfillSymbolsTouched = 0;
+  let fmpRowsRaw = 0;
+  let fmpWindowTruncated = false;
+
   if (!opts?.skipFmpBackfill) {
-    const fmpDays = opts?.fmpWindowDays ?? CATALYSTS_WINDOW_CALENDAR_DAYS + 11;
-    const backfill = await backfillEarningsCalendarForSp1500(fmpDays);
+    const backfill = await backfillEarningsCalendarForCatalystsHarvest(forwardDays);
     fmpBackfillSymbolsTouched = backfill.symbolsTouched;
+    fmpRowsRaw = backfill.fmpRowsRaw;
+    fmpWindowTruncated = backfill.windowTruncated;
   }
+
+  const forward = await loadAllForwardEarningsInHorizon(forwardDays);
+  const symbols = [...forward.keys()];
 
   const quotes = await fetchSchwabEarningsDatesBestToken(symbols, {
     delayBetweenBatchesMs: opts?.delayBetweenBatchesMs ?? CATALYST_EARNINGS_BATCH_DELAY_MS,
   });
-
-  const forward = await loadForwardEarningsFromCorporateEvents(symbols);
 
   let written = 0;
   let withLastDate = 0;
@@ -103,11 +109,13 @@ export async function runCatalystEarningsHarvest(opts?: {
   const finishedAt = new Date();
   const report: CatalystEarningsHarvestReport = {
     sweepId,
-    symbols: symbols.length,
+    symbolsDiscovered: symbols.length,
     written,
     withLastDate,
     withNextDate,
     fmpBackfillSymbolsTouched,
+    fmpRowsRaw,
+    fmpWindowTruncated,
     startedAt: startedAt.toISOString(),
     finishedAt: finishedAt.toISOString(),
   };

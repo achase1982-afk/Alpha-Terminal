@@ -1,5 +1,5 @@
 /**
- * One-shot: FMP SP1500 earnings calendar backfill + Schwab last-earnings harvest → catalyst_earnings_dates.
+ * One-shot: FMP full-calendar earnings backfill + Schwab last-earnings harvest → catalyst_earnings_dates.
  *
  * Usage (from artifacts/api-server):
  *   pnpm run catalyst:harvest

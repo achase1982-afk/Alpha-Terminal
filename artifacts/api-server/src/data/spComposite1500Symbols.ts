@@ -1,10 +1,10 @@
 /**
  * S&P Composite 1500 — S&P 500 + S&P 400 MidCap + S&P 600 SmallCap (deduplicated).
  *
- * Maintained via `node scripts/generate-sp1500-symbols.mjs` (Wikipedia constituent tables
- * + repo `universes.json` S&P 500). Refresh on index reconstitution only.
+ * **Display-only** optional tag on Catalyst cards (`inSp1500`). Does not gate universe
+ * inclusion — discovery uses the full FMP earnings calendar + tradeability gate.
  *
- * Verification: generated 1461 symbols.
+ * Maintained via `node scripts/generate-sp1500-symbols.mjs`. Refresh on index reconstitution only.
  */
 export const SP_COMPOSITE_1500_SYMBOL_STRINGS: readonly string[] = [
   "AA", "AAL", "AAMI", "AAON", "AAP", "AAPL", "AAT", "ABBV", "ABCB", "ABG", "ABM", "ABNB",

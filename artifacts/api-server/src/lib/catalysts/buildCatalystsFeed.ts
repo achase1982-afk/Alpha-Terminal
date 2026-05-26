@@ -20,6 +20,7 @@ import { fetchImpliedMovePct } from "./catalystsImpliedMove.js";
 import { resolveSymbolsWithOptions } from "./optionsExistence.js";
 import { lastSettledSessionYmd, settledSessionYmdsEndingAt } from "./settledSessions.js";
 import { logger } from "../logger.js";
+import { isSpComposite1500Member } from "./sp1500Membership.js";
 
 async function loadClosesForSessions(
   symbol: string,
@@ -127,6 +128,7 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
       reportAtIso: reportAtIso(e.earningsDate, timing),
       lastPrice,
       impliedMovePct,
+      inSp1500: isSpComposite1500Member(sym),
       snapshot,
     });
   }
