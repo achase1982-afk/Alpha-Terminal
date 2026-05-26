@@ -20,11 +20,10 @@ const ROW_BAND = "rgba(255, 255, 255, 0.03)";
 const GREEN = "#00d166";
 const RED = "#f23645";
 const GOLD = "#FFB800";
-const BLUE = "#0064FF";
 const MIN_FONT_PX = 12;
 const KEY_PRICE_PX = 17;
 const VS_LEAD_PX = 15;
-const SECTION_GAP_PX = 20;
+const SECTION_GAP_PX = 16;
 const TICK_FLASH_MS = 300;
 const BODY_LINE_HEIGHT = 1.55;
 
@@ -44,24 +43,35 @@ const dimRefStyle: CSSProperties = {
   fontWeight: 400,
 };
 
-function useTickFlashColor(price: number | null): string {
+function directionPriceColor(movePct: number | null): string {
+  if (movePct == null || !Number.isFinite(movePct) || movePct === 0) return TEXT_PRIMARY;
+  return movePct > 0 ? GREEN : RED;
+}
+
+/** Quote-style live price: green/red by session move, brief flash on each tick. */
+function useLivePriceColor(liveSpot: number | null, movePct: number | null): string {
+  const base = directionPriceColor(movePct);
   const prev = useRef<number | null>(null);
-  const [color, setColor] = useState(TEXT_PRIMARY);
+  const [color, setColor] = useState(base);
 
   useEffect(() => {
-    if (price == null) {
-      prev.current = price;
+    setColor(base);
+  }, [base]);
+
+  useEffect(() => {
+    if (liveSpot == null) {
+      prev.current = liveSpot;
       return undefined;
     }
-    if (prev.current != null && price !== prev.current) {
-      setColor(price > prev.current ? GREEN : RED);
-      const t = setTimeout(() => setColor(TEXT_PRIMARY), TICK_FLASH_MS);
-      prev.current = price;
+    if (prev.current != null && liveSpot !== prev.current) {
+      setColor(liveSpot > prev.current ? GREEN : RED);
+      const t = setTimeout(() => setColor(base), TICK_FLASH_MS);
+      prev.current = liveSpot;
       return () => clearTimeout(t);
     }
-    prev.current = price;
+    prev.current = liveSpot;
     return undefined;
-  }, [price]);
+  }, [liveSpot, base]);
 
   return color;
 }
@@ -79,18 +89,11 @@ function LiveSpotStrip({
   liveMoves: { raw: number | null; spy: number | null; vs: number | null };
   spyHistoryOk: boolean;
 }) {
-  const spotColor = useTickFlashColor(liveSpot);
   const movePct = spyHistoryOk ? liveMoves.vs : liveMoves.raw;
+  const spotColor = useLivePriceColor(liveSpot, movePct);
 
   return (
-    <div
-      className="flex items-center justify-between gap-3 font-mono px-2.5 py-2"
-      style={{
-        border: `1px solid ${BORDER_HAIRLINE}`,
-        borderRadius: 6,
-        background: "transparent",
-      }}
-    >
+    <div className="flex items-center justify-between gap-3 font-mono py-1">
       <div className="flex items-baseline gap-2 min-w-0 flex-wrap">
         <span style={{ fontSize: MIN_FONT_PX, fontWeight: 700, color: TEXT_PRIMARY, opacity: 0.55 }}>
           {liveLabel} · LIVE
@@ -117,8 +120,8 @@ function LiveSpotStrip({
         )}
       </div>
       {priorClose != null ? (
-        <span className="tabular-nums shrink-0" style={dimRefStyle}>
-          ref ${priorClose.toFixed(2)}
+        <span className="tabular-nums shrink-0 text-right" style={dimRefStyle}>
+          Prior close ${priorClose.toFixed(2)}
         </span>
       ) : null}
     </div>
@@ -135,7 +138,6 @@ function CumulativeDriftSection({ card }: { card: CatalystCard }) {
 
   return (
     <section>
-      <p style={sectionLabelStyle}>Cumulative drift · sum of daily moves vs S&amp;P 500</p>
       <div className="grid grid-cols-4 gap-2">
         {chips.map(({ label, val }) => (
           <div
@@ -175,7 +177,7 @@ function SettledSessionsSection({
 
   return (
     <section>
-      <p style={sectionLabelStyle}>Settled sessions · T-1 … T-10</p>
+      <p style={sectionLabelStyle}>Settled · T-1 … T-10</p>
       <div
         className="font-mono overflow-hidden"
         style={{ border: `1px solid ${BORDER_HAIRLINE}`, borderRadius: 6 }}
@@ -303,7 +305,7 @@ export const CatalystExpandedBody = memo(function CatalystExpandedBody({
           <button
             type="button"
             className="shrink-0 ml-auto"
-            style={{ color: BLUE, fontSize: MIN_FONT_PX }}
+            style={{ color: GOLD, fontSize: MIN_FONT_PX }}
             onClick={onStrategistClick}
           >
             {strategistSent ? "Sent to Strategist" : "Send to Strategist"}
