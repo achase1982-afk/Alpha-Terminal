@@ -38,7 +38,7 @@ import type { MarketPulseDashboardHandle } from "@/components/market-pulse/Marke
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { WatchlistView } from "@/components/WatchlistView";
 import { setPendingStrategistPushJobId } from "@/lib/strategistPushNav";
-import { resumeAllRunningPollers } from "@/lib/strategistPoller";
+import { openStrategistJobFromNotification, resumeAllRunningPollers } from "@/lib/strategistPoller";
 import {
   Menu,
   RefreshCw,
@@ -447,6 +447,11 @@ export default function TerminalPage() {
       setPendingStrategistPushJobId(id);
       setActiveBottom("ai");
       setAiSubTab("strategist");
+      void openStrategistJobFromNotification(id).then((result) => {
+        if (result.ok && result.ticker) {
+          useTerminalStore.getState().setSymbol(result.ticker);
+        }
+      });
       const u = new URL(window.location.href);
       u.searchParams.delete("sb");
       u.searchParams.delete("strategistJob");
@@ -465,6 +470,11 @@ export default function TerminalPage() {
       setPendingStrategistPushJobId(jobId);
       setActiveBottom("ai");
       setAiSubTab("strategist");
+      void openStrategistJobFromNotification(jobId).then((result) => {
+        if (result.ok && result.ticker) {
+          useTerminalStore.getState().setSymbol(result.ticker);
+        }
+      });
     };
     const sw = navigator.serviceWorker;
     sw?.addEventListener?.("message", onMsg);

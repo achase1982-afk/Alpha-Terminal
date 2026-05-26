@@ -14,6 +14,7 @@ import {
   startStrategistPolling,
   abortStrategistPolling,
   hydrateStrategistJobFromPersistedFinal,
+  openStrategistJobFromNotification,
   syncRunningStrategistJobsFromServer,
 } from "@/lib/strategistPoller";
 import { consumePendingStrategistPushJobId } from "@/lib/strategistPushNav";
@@ -2714,7 +2715,14 @@ function AiIntelligenceTabInner({
   // This prevents the "ran a scan, navigated away, came back to a blank tab,
   // then typed another ticker and the old result popped up" UX.
   const RECENT_JOB_MS = 30 * 60 * 1000;
+  const deepLinkJobId =
+    strategistDeepLinkJobId && strategistDeepLinkJobId.trim().length > 0
+      ? strategistDeepLinkJobId.trim()
+      : null;
   const activeJobIdForSymbol = useMemo(() => {
+    if (deepLinkJobId && strategistJobs[deepLinkJobId]) {
+      return deepLinkJobId;
+    }
     const upper = symbol.toUpperCase();
     let bestForSymbol: { id: string; startedAt: number } | null = null;
     let bestRecent: { id: string; startedAt: number } | null = null;
@@ -2734,7 +2742,7 @@ function AiIntelligenceTabInner({
       }
     }
     return (bestForSymbol?.id ?? bestRecent?.id) ?? null;
-  }, [strategistJobs, symbol]);
+  }, [strategistJobs, symbol, deepLinkJobId]);
 
   const v2Result: StrategistV2ResultType | null = (() => {
     if (!activeJobIdForSymbol) return null;
@@ -2799,37 +2807,45 @@ function AiIntelligenceTabInner({
 
   useEffect(() => {
     if (subTab !== "strategist") return;
-    let jobId = (strategistDeepLinkJobId && strategistDeepLinkJobId.trim()) || "";
+    let jobId = deepLinkJobId || "";
     if (!jobId) {
       jobId = consumePendingStrategistPushJobId() || "";
     }
     if (!jobId) return;
     if (pushHydrateHandledRef.current === jobId) return;
-    pushHydrateHandledRef.current = jobId;
 
     let cancelled = false;
-    void (async () => {
-      const ok = await hydrateStrategistJobFromPersistedFinal(jobId);
+    const MAX_PUSH_OPEN_ATTEMPTS = 6;
+
+    const runOpen = async (attempt: number) => {
+      const result = await openStrategistJobFromNotification(jobId);
       if (cancelled) return;
       await refreshHistory();
       if (cancelled) return;
-      if (ok) {
-        const j = useTerminalStore.getState().strategistJobs[jobId];
-        if (j?.ticker) setSymbol(j.ticker);
+
+      if (result.ok) {
+        pushHydrateHandledRef.current = jobId;
+        if (result.ticker) setSymbol(result.ticker);
         setActiveResult("strategist");
         onStrategistDeepLinkHandled?.();
         return;
       }
-      const j = useTerminalStore.getState().strategistJobs[jobId];
-      if (j?.status === "running") {
-        startStrategistPolling(jobId, { force: true });
+
+      if (result.stillRunning && attempt < MAX_PUSH_OPEN_ATTEMPTS) {
+        await new Promise((r) => setTimeout(r, 1200));
+        if (!cancelled) void runOpen(attempt + 1);
+        return;
       }
+
+      pushHydrateHandledRef.current = jobId;
       onStrategistDeepLinkHandled?.();
-    })();
+    };
+
+    void runOpen(0);
     return () => {
       cancelled = true;
     };
-  }, [subTab, strategistDeepLinkJobId, refreshHistory, setSymbol, onStrategistDeepLinkHandled]);
+  }, [subTab, deepLinkJobId, refreshHistory, setSymbol, onStrategistDeepLinkHandled]);
 
   useEffect(() => {
     void refreshHistory();
