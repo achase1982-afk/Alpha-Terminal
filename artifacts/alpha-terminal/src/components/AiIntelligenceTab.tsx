@@ -3824,7 +3824,6 @@ function AiIntelligenceTabInner({
                 onSubTabChange("strategist");
                 handleRunV2(sym, flowContext);
               }}
-              subscribeEquitySymbols={subscribeEquitySymbols}
             />
           </TabErrorBoundary>
         </div>
