@@ -2818,7 +2818,9 @@ function AiIntelligenceTabInner({
     const MAX_PUSH_OPEN_ATTEMPTS = 6;
 
     const runOpen = async (attempt: number) => {
-      const result = await openStrategistJobFromNotification(jobId);
+      const result = await openStrategistJobFromNotification(jobId, {
+        ticker: useTerminalStore.getState().strategistJobs[jobId]?.ticker ?? symbol,
+      });
       if (cancelled) return;
       await refreshHistory();
       if (cancelled) return;

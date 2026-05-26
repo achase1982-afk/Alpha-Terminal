@@ -15,6 +15,14 @@ type PollerHandle = {
 };
 const activePollers = new Map<string, PollerHandle>();
 
+export type OpenStrategistFromPushResult =
+  | { ok: true; ticker: string | null; jobId: string }
+  | { ok: false; jobId: string; stillRunning: boolean };
+
+/** While a push/deep-link open is hydrating, block stale pollers from restarting. */
+const pushOpenInFlight = new Set<string>();
+const pushOpenPromiseByJobId = new Map<string, Promise<OpenStrategistFromPushResult>>();
+
 // If an existing poller hasn't ticked in this long, a new caller takes over.
 const STALE_POLLER_MS = 8_000;
 /** Running jobs older than this without completion get an error card (lost poll / server crash). */
@@ -215,32 +223,84 @@ export async function hydrateStrategistJobFromPersistedFinal(jobId: string): Pro
   }
 }
 
-export type OpenStrategistFromPushResult =
-  | { ok: true; ticker: string | null; jobId: string }
-  | { ok: false; jobId: string; stillRunning: boolean };
+async function recoverStrategistJobFromHistoryByTicker(ticker: string): Promise<string | null> {
+  const upper = ticker.toUpperCase();
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/strategist/history`);
+    if (!res.ok) return null;
+    const rows = await res.json();
+    if (!Array.isArray(rows)) return null;
+    useTerminalStore.getState().setStrategistHistory(rows);
+    for (const r of rows) {
+      if (!r || typeof r !== "object") continue;
+      const row = r as { ticker?: string; jobId?: string; cardJson?: unknown };
+      if (row.ticker?.toUpperCase() !== upper || !row.jobId || row.cardJson == null) continue;
+      const ok = await recoverStrategistJobFromHistory(row.jobId);
+      if (ok) return row.jobId;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
-/**
- * Open flow after a completion push: load the finished card immediately, stop
- * stale pollers, and only resume polling when the server still reports running.
- */
-export async function openStrategistJobFromNotification(
+async function openStrategistJobFromNotificationInner(
   jobId: string,
+  opts?: { ticker?: string },
 ): Promise<OpenStrategistFromPushResult> {
+  pushOpenInFlight.add(jobId);
   abortStrategistPolling(jobId);
 
-  const hydrated = await hydrateStrategistJobFromPersistedFinal(jobId);
-  if (hydrated) {
+  try {
+    const hydrated = await hydrateStrategistJobFromPersistedFinal(jobId);
+    if (hydrated) {
+      const j = useTerminalStore.getState().strategistJobs[jobId];
+      return { ok: true, ticker: j?.ticker ?? null, jobId };
+    }
+
+    const tickerHint = opts?.ticker?.toUpperCase();
+    if (tickerHint) {
+      const recoveredJobId = await recoverStrategistJobFromHistoryByTicker(tickerHint);
+      if (recoveredJobId) {
+        const j = useTerminalStore.getState().strategistJobs[recoveredJobId];
+        return { ok: true, ticker: j?.ticker ?? tickerHint, jobId: recoveredJobId };
+      }
+    }
+
     const j = useTerminalStore.getState().strategistJobs[jobId];
-    return { ok: true, ticker: j?.ticker ?? null, jobId };
-  }
+    if (j?.status === "running") {
+      startStrategistPolling(jobId, { force: true });
+      return { ok: false, jobId, stillRunning: true };
+    }
 
-  const j = useTerminalStore.getState().strategistJobs[jobId];
-  if (j?.status === "running") {
-    startStrategistPolling(jobId, { force: true });
-    return { ok: false, jobId, stillRunning: true };
+    return { ok: false, jobId, stillRunning: false };
+  } finally {
+    pushOpenInFlight.delete(jobId);
   }
+}
 
-  return { ok: false, jobId, stillRunning: false };
+export function openStrategistJobFromNotification(
+  jobId: string,
+  opts?: { ticker?: string },
+): Promise<OpenStrategistFromPushResult> {
+  const existing = pushOpenPromiseByJobId.get(jobId);
+  if (existing) return existing;
+
+  const promise = openStrategistJobFromNotificationInner(jobId, opts).finally(() => {
+    pushOpenPromiseByJobId.delete(jobId);
+  });
+  pushOpenPromiseByJobId.set(jobId, promise);
+  return promise;
+}
+
+/** Reconcile every in-flight job against persisted server/history (foreground push safety net). */
+export async function reconcileRunningStrategistJobs(): Promise<void> {
+  const jobs = useTerminalStore.getState().strategistJobs;
+  for (const [jobId, job] of Object.entries(jobs)) {
+    if (job.status !== "running" && job.status !== "interrupted") continue;
+    if (pushOpenInFlight.has(jobId)) continue;
+    await hydrateStrategistJobFromPersistedFinal(jobId);
+  }
 }
 
 const completionToastSent = new Set<string>();
@@ -301,6 +361,8 @@ async function refreshHistoryAfterCompletion() {
 }
 
 export function startStrategistPolling(jobId: string, opts?: { force?: boolean }): void {
+  if (pushOpenInFlight.has(jobId)) return;
+
   const existing = activePollers.get(jobId);
   if (existing && !existing.aborted) {
     const stale = Date.now() - existing.lastTickAt > STALE_POLLER_MS;
@@ -366,8 +428,10 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
 
         let tres: Response;
         try {
+          // Use `/final` (DB-first when a terminal card exists) so a backgrounded
+          // tab that missed live `/thinking` polls still completes on resume.
           tres = await fetchWithAuth(
-            `${API_BASE}/strategist/thinking/${jobId}?since=${current.nextSince}`,
+            `${API_BASE}/strategist/job/${encodeURIComponent(jobId)}/final?since=${current.nextSince}`,
           );
         } catch {
           consecutiveFailures += 1;
@@ -538,7 +602,7 @@ export function resumeAllRunningPollers(opts?: { toastOnComplete?: boolean }): v
     });
     const jobs = useTerminalStore.getState().strategistJobs;
     for (const [jobId, job] of Object.entries(jobs)) {
-      if (job.status === "running") {
+      if (job.status === "running" && !pushOpenInFlight.has(jobId)) {
         startStrategistPolling(jobId, { force: true });
       }
     }

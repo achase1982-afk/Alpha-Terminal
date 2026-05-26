@@ -37,7 +37,12 @@ import { AiSubTabs, type AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import type { MarketPulseDashboardHandle } from "@/components/market-pulse/MarketPulseDashboard";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { WatchlistView } from "@/components/WatchlistView";
-import { setPendingStrategistPushJobId } from "@/lib/strategistPushNav";
+import {
+  peekPendingStrategistPushJobId,
+  setPendingStrategistPushJobId,
+} from "@/lib/strategistPushNav";
+import { readStashedStrategistPushJob } from "@/lib/strategistPushCache";
+import { installStrategistPushMessageListener } from "@/lib/strategistPushMessages";
 import { openStrategistJobFromNotification, resumeAllRunningPollers } from "@/lib/strategistPoller";
 import {
   Menu,
@@ -437,49 +442,50 @@ export default function TerminalPage() {
     resumeAllRunningPollers({ toastOnComplete: false });
   }, [activeBottom, aiSubTab]);
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const sb = params.get("sb");
-    const jid = params.get("strategistJob");
-    if (sb === "strategist" && jid && jid.trim().length > 0) {
-      const id = jid.trim();
-      setStrategistDeepLinkJobId(id);
-      setPendingStrategistPushJobId(id);
-      setActiveBottom("ai");
-      setAiSubTab("strategist");
-      void openStrategistJobFromNotification(id).then((result) => {
-        if (result.ok && result.ticker) {
-          useTerminalStore.getState().setSymbol(result.ticker);
-        }
-      });
-      const u = new URL(window.location.href);
-      u.searchParams.delete("sb");
-      u.searchParams.delete("strategistJob");
-      const next = u.pathname + (u.searchParams.toString() ? `?${u.searchParams.toString()}` : "") + u.hash;
-      window.history.replaceState({}, "", next);
-    }
+  const routeStrategistPushOpen = useCallback((jobId: string, ticker?: string) => {
+    setStrategistDeepLinkJobId(jobId);
+    setPendingStrategistPushJobId(jobId);
+    setActiveBottom("ai");
+    setAiSubTab("strategist");
+    void openStrategistJobFromNotification(jobId, { ticker }).then((result) => {
+      if (result.ok && result.ticker) {
+        useTerminalStore.getState().setSymbol(result.ticker);
+      }
+    });
   }, []);
 
   useEffect(() => {
-    const onMsg = (ev: MessageEvent) => {
-      const d = ev.data;
-      if (!d || d.type !== "STRATEGIST_PUSH_NAV") return;
-      const jobId = typeof d.jobId === "string" ? d.jobId.trim() : "";
+    void (async () => {
+      const params = new URLSearchParams(window.location.search);
+      const sb = params.get("sb");
+      const jid = params.get("strategistJob");
+      if (sb === "strategist" && jid && jid.trim().length > 0) {
+        const id = jid.trim();
+        routeStrategistPushOpen(id);
+        const u = new URL(window.location.href);
+        u.searchParams.delete("sb");
+        u.searchParams.delete("strategistJob");
+        const next = u.pathname + (u.searchParams.toString() ? `?${u.searchParams.toString()}` : "") + u.hash;
+        window.history.replaceState({}, "", next);
+        return;
+      }
+      const stashed = await readStashedStrategistPushJob();
+      const pending = peekPendingStrategistPushJobId();
+      const jobId = stashed?.jobId ?? pending;
+      if (jobId) routeStrategistPushOpen(jobId, stashed?.ticker);
+    })();
+  }, [routeStrategistPushOpen]);
+
+  useEffect(() => {
+    const onPushOpen = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ jobId?: string; ticker?: string }>).detail;
+      const jobId = typeof detail?.jobId === "string" ? detail.jobId.trim() : "";
       if (!jobId) return;
-      setStrategistDeepLinkJobId(jobId);
-      setPendingStrategistPushJobId(jobId);
-      setActiveBottom("ai");
-      setAiSubTab("strategist");
-      void openStrategistJobFromNotification(jobId).then((result) => {
-        if (result.ok && result.ticker) {
-          useTerminalStore.getState().setSymbol(result.ticker);
-        }
-      });
+      routeStrategistPushOpen(jobId, detail.ticker);
     };
-    const sw = navigator.serviceWorker;
-    sw?.addEventListener?.("message", onMsg);
-    return () => sw?.removeEventListener?.("message", onMsg);
-  }, []);
+    window.addEventListener("strategist-push-open", onPushOpen);
+    return () => window.removeEventListener("strategist-push-open", onPushOpen);
+  }, [routeStrategistPushOpen]);
 
   useEffect(() => {
     if (isThreePanel && contextTab === "chart") {
