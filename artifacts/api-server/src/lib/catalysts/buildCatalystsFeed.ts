@@ -8,16 +8,17 @@ import {
 } from "@workspace/catalysts-types";
 import { db, equityDailyTable } from "@workspace/db";
 import { fetchFmpCompanyProfiles } from "../movers/fmpCompanyProfile.js";
+import type { TradeabilityCandidate } from "../movers/tradeabilityGate.js";
 import {
-  applyTradeabilityGate,
-  type TradeabilityCandidate,
-} from "../movers/tradeabilityGate.js";
+  applyCatalystCheapGates,
+  applyCatalystOptionsGate,
+} from "./applyCatalystCheapGates.js";
+import { resolveLiveOptionsChainVerdicts } from "./catalystOptionsChainLive.js";
 import { computeSessionSnapshot } from "./catalystMetrics.js";
 import { discoverCatalystEarningsInWindow } from "./catalystEarningsDiscovery.js";
 import { loadEarningsTimingHints } from "./catalystEarningsTiming.js";
 import { reportAtIso } from "./catalystEarningsUtils.js";
 import { fetchImpliedMovePct } from "./catalystsImpliedMove.js";
-import { resolveSymbolsWithOptions } from "./optionsExistence.js";
 import { lastSettledSessionYmd, settledSessionYmdsEndingAt } from "./settledSessions.js";
 import { logger } from "../logger.js";
 import { isSpComposite1500Member } from "./sp1500Membership.js";
@@ -90,11 +91,16 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
     else if (profile?.marketCap != null) c.price = Math.max(5, c.price);
   }
 
-  const symbolsWithOptions = await resolveSymbolsWithOptions(candidates.map((c) => c.symbol));
-  const { tradeable, filtered } = applyTradeabilityGate(candidates, profiles, {
-    requireOptionsChain: true,
-    symbolsWithOptions,
-  });
+  const { survivors, filtered: cheapFiltered } = applyCatalystCheapGates(candidates, profiles);
+  const optionsVerdicts = await resolveLiveOptionsChainVerdicts(
+    survivors.map((c) => c.symbol),
+  );
+  const {
+    tradeable,
+    filtered: optionsFiltered,
+    optionsStatusBySymbol,
+  } = applyCatalystOptionsGate(survivors, optionsVerdicts);
+  const filtered = [...cheapFiltered, ...optionsFiltered];
 
   const tradeableBySymbol = new Map(tradeable.map((t) => [t.symbol, t]));
   const endSettled = lastSettledSessionYmd(now);
@@ -134,6 +140,7 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
       lastPrice,
       impliedMovePct,
       inSp1500: isSpComposite1500Member(sym),
+      optionsChainUnconfirmed: optionsStatusBySymbol.get(sym) === "unknown",
       snapshot,
     });
   }

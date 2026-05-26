@@ -51,6 +51,8 @@ export interface CatalystCard {
   impliedMovePct: number | null;
   /** Optional display tag — S&P Composite 1500 membership; does not gate inclusion. */
   inSp1500?: boolean;
+  /** Live options probe could not confirm chain — name kept per repair spec. */
+  optionsChainUnconfirmed?: boolean;
   snapshot: CatalystSessionSnapshot;
 }
 

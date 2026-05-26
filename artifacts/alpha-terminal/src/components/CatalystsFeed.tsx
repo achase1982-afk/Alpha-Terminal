@@ -232,14 +232,17 @@ function CatalystRow({
             >
               {card.symbol}
             </span>
-            {streakHot && <Flame className="w-3.5 h-3.5 shrink-0" style={{ color: GOLD }} />}
-          </div>
-          <p className="font-mono truncate w-full mt-0.5" style={{ color: TEXT_SECONDARY, fontSize: MIN_FONT_PX }}>
-            {held && (
-              <span style={{ color: BLUE, fontWeight: 700 }}>HELD · </span>
-            )}
-            {card.name}
-          </p>
+              {streakHot && <Flame className="w-3.5 h-3.5 shrink-0" style={{ color: GOLD }} />}
+            </div>
+            <p className="font-mono truncate w-full mt-0.5" style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}>
+              {held && (
+                <span style={{ color: BLUE, fontWeight: 700 }}>HELD · </span>
+              )}
+              {card.optionsChainUnconfirmed && (
+                <span style={{ color: GOLD, fontWeight: 700 }}>OPTIONS UNCONFIRMED · </span>
+              )}
+              {card.name}
+            </p>
         </CollapsedCell>
         <CollapsedCell>
           <Sparkline moves={card.snapshot.sessionMovesPct} />
