@@ -197,12 +197,14 @@ export function earningsDaysAwayLabel(card: CatalystCard, now = new Date()): str
   return `${days} days away`;
 }
 
-export function driftVsSpy5d(card: CatalystCard, benchmarkDrift5dPct: number | null): number | null {
-  const raw = card.snapshot.cumulative5d;
-  if (!Number.isFinite(raw) || benchmarkDrift5dPct == null || !Number.isFinite(benchmarkDrift5dPct)) {
-    return null;
-  }
-  return raw - benchmarkDrift5dPct;
+/** Headline vs-S&P cumulative (already stock − SPY per session). */
+export function driftVsSpy10d(card: CatalystCard): number {
+  return card.snapshot.cumulative10d;
+}
+
+export function rawDrift10d(card: CatalystCard): number {
+  const moves = card.snapshot.sessionMovesRawPct ?? [];
+  return moves.reduce((a, b) => a + b, 0);
 }
 
 export function pctColor(n: number | null | undefined): string {

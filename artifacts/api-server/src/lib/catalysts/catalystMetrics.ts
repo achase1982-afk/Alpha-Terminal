@@ -1,4 +1,7 @@
-import type { CatalystSessionSnapshot } from "@workspace/catalysts-types";
+import {
+  CATALYST_DRIFT_SESSION_COUNT,
+  type CatalystSessionSnapshot,
+} from "@workspace/catalysts-types";
 
 function pctMove(from: number, to: number): number {
   if (!Number.isFinite(from) || from === 0 || !Number.isFinite(to)) return 0;
@@ -25,11 +28,28 @@ function countStreak(moves: number[]): number {
 
 export type CatalystDriftClass = "trending_up" | "trending_down" | "choppy";
 
-/** Same thresholds as pattern-read templates (§4). */
+export function emptySessionSnapshot(): CatalystSessionSnapshot {
+  const zeros = Array.from({ length: CATALYST_DRIFT_SESSION_COUNT }, () => 0);
+  return {
+    sessionDates: [],
+    closes: [],
+    sessionMovesPct: [...zeros],
+    sessionMovesRawPct: [...zeros],
+    cumulative1d: 0,
+    cumulative3d: 0,
+    cumulative5d: 0,
+    cumulative10d: 0,
+    streak: 0,
+    upCount: 0,
+    downCount: 0,
+    patternRead: "Session drift unavailable — Schwab price history missing for this symbol.",
+  };
+}
+
 export function classifyDriftFromMoves(moves: number[]): CatalystDriftClass {
   const ups = moves.filter((m) => m > 0).length;
-  if (ups >= 5) return "trending_up";
-  if (ups <= 1) return "trending_down";
+  if (ups >= 7) return "trending_up";
+  if (ups <= 3) return "trending_down";
   return "choppy";
 }
 
@@ -37,48 +57,60 @@ export function buildPatternRead(moves: number[], streak: number): string {
   const ups = moves.filter((m) => m > 0).length;
   const last = moves[moves.length - 1] ?? 0;
   const signWord = last >= 0 ? "green" : "red";
-  const cum5 = sumTail(moves, 5);
-  const cumFmt = `${cum5 >= 0 ? "+" : ""}${cum5.toFixed(1)}%`;
+  const cum10 = sumTail(moves, 10);
+  const cumFmt = `${cum10 >= 0 ? "+" : ""}${cum10.toFixed(1)}%`;
   const drift = classifyDriftFromMoves(moves);
 
   if (streak >= 5) {
-    return `Strong directional drift — ${streak} straight ${signWord} sessions, ${cumFmt} into print.`;
+    return `Strong directional drift — ${streak} straight ${signWord} sessions vs S&P, ${cumFmt} into print.`;
   }
   if (drift === "trending_up") {
-    return `Building accumulation — ${ups} of 6 sessions up.`;
+    return `Building accumulation — ${ups} of ${CATALYST_DRIFT_SESSION_COUNT} sessions outperforming S&P.`;
   }
   if (drift === "trending_down") {
     const downs = moves.length - ups;
-    return `Building distribution — ${downs} of 6 sessions down.`;
+    return `Building distribution — ${downs} of ${CATALYST_DRIFT_SESSION_COUNT} sessions under S&P.`;
   }
-  return "Choppy — no clear pre-earnings direction. Treat as noise.";
+  return "Choppy vs S&P — no clear pre-earnings direction. Treat as noise.";
+}
+
+function priorCloseOnMap(closesByDate: Map<string, number>, sessionYmd: string): number | null {
+  const priorDates = [...closesByDate.keys()].filter((k) => k < sessionYmd).sort();
+  const priorKey = priorDates[priorDates.length - 1];
+  if (!priorKey) return null;
+  const px = closesByDate.get(priorKey);
+  return px != null && Number.isFinite(px) ? px : null;
 }
 
 /**
- * `sessionDates` = five settled dates D-5..D-1 (oldest first).
- * `closesByDate` must include each session date and the trading day immediately before D-5.
+ * Ten settled sessions; per-day move is stock daily % minus SPY daily %.
  */
 export function computeSessionSnapshot(
   sessionDates: string[],
-  closesByDate: Map<string, number>,
+  stockClosesByDate: Map<string, number>,
+  spyClosesByDate: Map<string, number>,
 ): CatalystSessionSnapshot | null {
-  if (sessionDates.length !== 5) return null;
+  if (sessionDates.length !== CATALYST_DRIFT_SESSION_COUNT) return null;
 
   const sessionMovesPct: number[] = [];
+  const sessionMovesRawPct: number[] = [];
   const closes: number[] = [];
 
-  for (let i = 0; i < sessionDates.length; i++) {
-    const d = sessionDates[i]!;
-    const close = closesByDate.get(d);
-    if (close == null || !Number.isFinite(close)) return null;
+  for (const d of sessionDates) {
+    const close = stockClosesByDate.get(d);
+    const spyClose = spyClosesByDate.get(d);
+    if (close == null || !Number.isFinite(close) || spyClose == null || !Number.isFinite(spyClose)) {
+      return null;
+    }
     closes.push(close);
 
-    const priorDates = [...closesByDate.keys()].filter((k) => k < d).sort();
-    const priorKey = priorDates[priorDates.length - 1];
-    const priorClose = priorKey ? closesByDate.get(priorKey) : null;
-    sessionMovesPct.push(
-      priorClose != null && Number.isFinite(priorClose) ? pctMove(priorClose, close) : 0,
-    );
+    const priorStock = priorCloseOnMap(stockClosesByDate, d);
+    const priorSpy = priorCloseOnMap(spyClosesByDate, d);
+    const stockDay =
+      priorStock != null && Number.isFinite(priorStock) ? pctMove(priorStock, close) : 0;
+    const spyDay = priorSpy != null && Number.isFinite(priorSpy) ? pctMove(priorSpy, spyClose) : 0;
+    sessionMovesRawPct.push(stockDay);
+    sessionMovesPct.push(stockDay - spyDay);
   }
 
   const upCount = sessionMovesPct.filter((m) => m > 0).length;
@@ -90,11 +122,11 @@ export function computeSessionSnapshot(
     sessionDates,
     closes,
     sessionMovesPct,
+    sessionMovesRawPct,
     cumulative1d: sumTail(sessionMovesPct, 1),
-    cumulative2d: sumTail(sessionMovesPct, 2),
     cumulative3d: sumTail(sessionMovesPct, 3),
-    cumulative4d: sumTail(sessionMovesPct, 4),
     cumulative5d: sumTail(sessionMovesPct, 5),
+    cumulative10d: sumTail(sessionMovesPct, 10),
     streak,
     upCount,
     downCount,

@@ -2,6 +2,7 @@ import { desc, sql } from "drizzle-orm";
 import type { CatalystsFeed } from "@workspace/catalysts-types";
 import { emptyCatalystsFeed } from "@workspace/catalysts-types";
 import { db, catalystsFeedTable } from "@workspace/db";
+import { normalizeCatalystsFeedPayload } from "./normalizeCatalystsFeedPayload.js";
 
 const CATALYSTS_FEED_RETENTION = 30;
 
@@ -32,5 +33,5 @@ export async function getLatestCatalystsFeed(): Promise<CatalystsFeed> {
   if (!row?.payload || typeof row.payload !== "object") {
     return emptyCatalystsFeed();
   }
-  return row.payload as unknown as CatalystsFeed;
+  return normalizeCatalystsFeedPayload(row.payload as unknown as CatalystsFeed);
 }
