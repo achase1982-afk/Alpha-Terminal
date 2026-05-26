@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Flame, Loader2, RefreshCw } from "lucide-react";
 import type { CatalystCard, CatalystsFeed, CatalystsSortKey } from "@workspace/catalysts-types";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import {
+  buildCatalystStrategistFlowContext,
   catalystCardPhase,
   daysUntilEarnings,
   driftVsSpy10d,
@@ -196,6 +197,7 @@ function CatalystRow({
   spyHistoryOk,
   onToggle,
   onNavigate,
+  onSendToStrategist,
 }: {
   card: CatalystCard;
   held: boolean;
@@ -203,7 +205,11 @@ function CatalystRow({
   spyHistoryOk: boolean;
   onToggle: () => void;
   onNavigate?: (sym: string) => void;
+  onSendToStrategist?: (sym: string, flowContext: string) => void;
 }) {
+  const [strategistSent, setStrategistSent] = useState(false);
+  const strategistSentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const rel10 = driftVsSpy10d(card);
   const raw10 = rawDrift10d(card);
   const vsDisplay = spyHistoryOk ? rel10 : raw10;
@@ -347,16 +353,45 @@ function CatalystRow({
               {!card.earningsConfirmed ? " · EST." : ""}
             </span>
           </div>
-          {onNavigate && (
-            <button
-              type="button"
-              className="font-mono font-bold tracking-wider mt-1"
-              style={{ color: GOLD, fontSize: ROW_FONT_PX }}
-              onClick={() => onNavigate(card.symbol)}
-            >
-              OPEN IN MARKETS →
-            </button>
-          )}
+          <div className="flex flex-col gap-2 mt-2">
+            {onSendToStrategist && (
+              <button
+                type="button"
+                className="w-full font-mono font-bold tracking-wider rounded-lg py-2.5 transition-opacity"
+                style={{
+                  background: BLUE,
+                  color: TEXT_PRIMARY,
+                  fontSize: ROW_FONT_PX,
+                  opacity: strategistSent ? 0.85 : 1,
+                }}
+                onClick={() => {
+                  if (strategistSent) return;
+                  onSendToStrategist(
+                    card.symbol,
+                    buildCatalystStrategistFlowContext(card, spyHistoryOk),
+                  );
+                  setStrategistSent(true);
+                  if (strategistSentTimerRef.current) clearTimeout(strategistSentTimerRef.current);
+                  strategistSentTimerRef.current = setTimeout(() => {
+                    setStrategistSent(false);
+                    strategistSentTimerRef.current = null;
+                  }, 2000);
+                }}
+              >
+                {strategistSent ? "Sent to Strategist" : "Send to Strategist"}
+              </button>
+            )}
+            {onNavigate && (
+              <button
+                type="button"
+                className="font-mono font-bold tracking-wider"
+                style={{ color: GOLD, fontSize: ROW_FONT_PX }}
+                onClick={() => onNavigate(card.symbol)}
+              >
+                Open {card.symbol} →
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -365,9 +400,11 @@ function CatalystRow({
 
 export function CatalystsFeed({
   onNavigateToSymbol,
+  onSendToStrategist,
   subscribeEquitySymbols,
 }: {
   onNavigateToSymbol?: (sym: string) => void;
+  onSendToStrategist?: (sym: string, flowContext: string) => void;
   subscribeEquitySymbols?: (syms: string[]) => void;
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("soonest");
@@ -558,6 +595,7 @@ export function CatalystsFeed({
                   spyHistoryOk={spyHistoryOk}
                   onToggle={() => toggle(card.symbol)}
                   onNavigate={onNavigateToSymbol}
+                  onSendToStrategist={onSendToStrategist}
                 />
               ))}
             </>

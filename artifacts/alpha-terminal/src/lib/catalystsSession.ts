@@ -207,6 +207,27 @@ export function rawDrift10d(card: CatalystCard): number {
   return moves.reduce((a, b) => a + b, 0);
 }
 
+/** One-shot `flowContext` for POST /strategist/analyze from the Catalysts tab. */
+export function buildCatalystStrategistFlowContext(
+  card: CatalystCard,
+  spyHistoryOk: boolean,
+): string {
+  const rel = driftVsSpy10d(card);
+  const raw = rawDrift10d(card);
+  const timing = card.earningsTiming ? ` ${card.earningsTiming}` : "";
+  const vsLine = spyHistoryOk
+    ? `10-day drift vs S&P: ${fmtPct(rel)} (market-adjusted; raw stock ${fmtPct(raw)}).`
+    : `10-day drift (raw only — SPY history unavailable): ${fmtPct(raw)}.`;
+  return [
+    `Catalysts handoff for ${card.symbol}.`,
+    `Earnings ${card.earningsDate}${timing}${card.earningsConfirmed ? "" : " (timing estimated)"}.`,
+    vsLine,
+    `Streak ${card.snapshot.streak} session(s) vs S&P.`,
+    `Cumulative vs S&P — 1D ${fmtPct(card.snapshot.cumulative1d)}, 3D ${fmtPct(card.snapshot.cumulative3d)}, 5D ${fmtPct(card.snapshot.cumulative5d)}, 10D ${fmtPct(card.snapshot.cumulative10d)}.`,
+    card.snapshot.patternRead,
+  ].join(" ");
+}
+
 export function pctColor(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n) || n === 0) return TEXT;
   return n > 0 ? GREEN : RED;

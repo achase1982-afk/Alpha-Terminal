@@ -3820,6 +3820,10 @@ function AiIntelligenceTabInner({
           <TabErrorBoundary tabName="Catalysts">
             <CatalystsFeed
               onNavigateToSymbol={onNavigateToMarkets ?? STABLE_NOOP_NAVIGATE}
+              onSendToStrategist={(sym, flowContext) => {
+                onSubTabChange("strategist");
+                handleRunV2(sym, flowContext);
+              }}
               subscribeEquitySymbols={subscribeEquitySymbols}
             />
           </TabErrorBoundary>
