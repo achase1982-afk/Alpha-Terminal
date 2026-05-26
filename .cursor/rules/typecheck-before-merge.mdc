@@ -1,0 +1,17 @@
+---
+description: Run the full workspace typecheck and fix all errors before push or merge to main.
+alwaysApply: true
+---
+
+# Typecheck gate (required before push / merge)
+
+Before **every** `git push`, before opening or updating a PR, and before considering work complete for merge to `main`:
+
+1. Run **`pnpm run typecheck`** from the repository root (not a single package only).
+2. If it fails, **fix all reported errors** in the same branch — do not push broken TypeScript.
+3. Re-run typecheck after fixes until it exits **0**.
+4. Only then commit (if needed), push, and create or update the PR.
+
+Do not rely on CI alone; local typecheck must pass on the agent branch before push.
+
+When TypeScript did not change, still run typecheck if the branch touches shared types, workspace libs, or imports that could break dependents.

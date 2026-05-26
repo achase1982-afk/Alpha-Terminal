@@ -241,7 +241,6 @@ export function CatalystGatesSettingsPage() {
           style={{
             fontSize: MIN_FONT_PX,
             borderColor: dirty ? BLUE : BORDER,
-            color: TEXT,
             background: dirty ? BLUE : "transparent",
             color: dirty ? TEXT : MUTED,
           }}

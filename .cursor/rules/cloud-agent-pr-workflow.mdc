@@ -8,10 +8,9 @@ alwaysApply: true
 When the user (or a follow-up message) requests **new work**, **fixes**, or **changes** after a prior PR was opened or merged:
 
 1. **Create a new branch** off `main` (or the user-specified base) with the `cursor/` prefix and `-0d42` suffix, e.g. `cursor/catalyst-gate-inputs-perf-0d42`.
-2. **Commit and push** the scoped changes on that branch.
-3. **Open a new draft PR** with `ManagePullRequest` (`create_pr`) — one concern per PR unless the user explicitly asks to stack or amend an open PR.
-4. Do **not** assume the previous PR branch is still the right vehicle after merge; merged branches are historical only.
+2. **Implement changes**, then run **`pnpm run typecheck`** per `typecheck-before-merge.mdc` — fix all failures before push.
+3. **Commit and push** the scoped changes on that branch.
+4. **Open a new draft PR** with `ManagePullRequest` (`create_pr`) — one concern per PR unless the user explicitly asks to stack or amend an open PR.
+5. Do **not** assume the previous PR branch is still the right vehicle after merge; merged branches are historical only.
 
 If an open PR on the same topic is still **open and unmerged**, update that PR only when the new request is clearly a continuation of the same PR (review feedback, small follow-up). If the user asks for "a new PR" or the prior PR is **merged**, always start a fresh branch + PR.
-
-Before finishing the turn: `pnpm run typecheck` when TypeScript changed; commit, push, then create or update the PR.
