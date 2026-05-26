@@ -2,16 +2,15 @@
 
 The **Catalysts** tab does **not** call Benzinga or Schwab on page load.
 
-| Field | Source |
+| Layer | Source |
 |-------|--------|
-| Universe | S&P Composite 1500 (`spComposite1500Symbols.ts`) |
-| `last_earnings_date` | Schwab `/quotes` fundamental (`lastEarningsDate`) — reference only, harvested weekly |
-| `next_earnings_date` | **Primary:** FMP earnings calendar → `corporate_events` (backfilled for SP1500 before each harvest) |
-| BMO/AMC on cards | Inferred from `corporate_events` history when consistent; otherwise omitted |
-| Strategist / scanner / `/earnings-date` | `earningsService.ts` (unchanged) |
+| **Universe** | Full FMP earnings calendar in harvest window → tradeability gate + options (no index gate) |
+| `last_earnings_date` | Schwab `/quotes` `lastEarningsDate` (reference; weekly harvest for discovered symbols) |
+| `next_earnings_date` | FMP calendar → `corporate_events` → `catalyst_earnings_dates` |
+| **Harvest window** | **16 calendar days** forward (weekly sweep + 10-day tab buffer) |
+| **Optional tag** | `inSp1500` on cards from `spComposite1500Symbols.ts` (display only) |
+| Strategist / scanner | `earningsService.ts` (unchanged) |
 
-Schwab batch quotes rarely expose `nextEarningsDate`; do not rely on it for discovery coverage.
+**Manual harvest:** `pnpm run catalyst:harvest` (FMP backfill + Schwab last dates + feed rebuild).
 
-**FMP calendar backfill** uses a **~21-day** window (not 120d): the stable `/earnings-calendar` endpoint returns at most ~**4000 rows** per call, so a wide range truncates and drops this week’s reporters.
-
-**Manual / scheduled harvest:** `pnpm run catalyst:harvest` (FMP backfill + Schwab last-date sweep + DB merge).
+`spComposite1500Symbols.ts` is retained for optional labeling only — it does **not** gate inclusion.

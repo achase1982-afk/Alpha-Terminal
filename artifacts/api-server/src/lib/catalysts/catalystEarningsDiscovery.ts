@@ -17,13 +17,11 @@ function staleCutoff(now: Date): Date {
 }
 
 /**
- * Discovery for Catalysts rebuild: Schwab-harvested `catalyst_earnings_dates` only.
+ * Discovery for Catalysts rebuild: `catalyst_earnings_dates` (full FMP calendar harvest).
  *
+ * - No index filter — tradeability + options gates run in {@link ./buildCatalystsFeed.ts}.
  * - Window: next {@link CATALYSTS_WINDOW_CALENDAR_DAYS} calendar days (inclusive).
- * - Drops passed `next_earnings_date` and rows with `harvested_at` older than ~10 days.
- *
- * Catalysts intentionally does not call Benzinga or per-page Schwab here; Strategist/scanner
- * continue to use `earningsService.ts` for per-symbol resolution.
+ * - Drops passed dates and rows with `harvested_at` older than ~10 days.
  */
 export async function discoverCatalystEarningsInWindow(
   now = new Date(),
