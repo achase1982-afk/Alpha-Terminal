@@ -1,3 +1,5 @@
+export { CATALYST_DRIFT_SESSION_COUNT } from "./constants.js";
+
 export const CATALYSTS_WINDOW_CALENDAR_DAYS = 10;
 
 export type CatalystsFeedStatus = "ready" | "building" | "empty";
@@ -13,23 +15,23 @@ export interface CatalystsFeed {
     filtered: number;
     tradeable: number;
   };
-  /** SPY settled-session cumulative 5d % — for vs-S&P column on cards. */
-  benchmarkDrift5dPct: number | null;
+  /** SPY 10-session cumulative drift (sum of daily SPY %); null when SPY poll failed. */
+  benchmarkDrift10dPct: number | null;
   cards: CatalystCard[];
 }
 
 export interface CatalystSessionSnapshot {
-  /** Settled session dates D-5..D-1 (oldest first). */
+  /** Ten settled NYSE dates (oldest first), D-9 … D-0. */
   sessionDates: string[];
-  /** Official 4:00 PM ET closes for each sessionDates entry. */
   closes: number[];
-  /** Per-session % move vs prior settled close (length 5, aligned with sessionDates). */
+  /** Per session: stock daily % − SPY daily % (length 10). */
   sessionMovesPct: number[];
+  /** Raw stock daily % (length 10) for display when SPY unavailable. */
+  sessionMovesRawPct: number[];
   cumulative1d: number;
-  cumulative2d: number;
   cumulative3d: number;
-  cumulative4d: number;
   cumulative5d: number;
+  cumulative10d: number;
   streak: number;
   upCount: number;
   downCount: number;
@@ -64,7 +66,7 @@ export function emptyCatalystsFeed(): CatalystsFeed {
     status: "empty",
     windowDays: CATALYSTS_WINDOW_CALENDAR_DAYS,
     funnel: { calendar: 0, filtered: 0, tradeable: 0 },
-    benchmarkDrift5dPct: null,
+    benchmarkDrift10dPct: null,
     cards: [],
   };
 }

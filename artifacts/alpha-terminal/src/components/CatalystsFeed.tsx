@@ -7,13 +7,15 @@ import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import {
   catalystCardPhase,
   daysUntilEarnings,
-  driftVsSpy5d,
+  driftVsSpy10d,
+  rawDrift10d,
   earningsDaysAwayLabel,
   fmtEarningsShort,
   fmtPct,
   pctColor,
   shouldFallOffCatalyst,
 } from "@/lib/catalystsSession";
+import { normalizeCatalystsFeed } from "@/lib/normalizeCatalystsFeed";
 
 /** Match Movers feed tokens so both tabs feel like one designer. */
 const BG = "#0c0c0c";
@@ -191,21 +193,22 @@ function CatalystRow({
   card,
   held,
   expanded,
-  benchmarkDrift5dPct,
+  spyHistoryOk,
   onToggle,
   onNavigate,
 }: {
   card: CatalystCard;
   held: boolean;
   expanded: boolean;
-  benchmarkDrift5dPct: number | null;
+  spyHistoryOk: boolean;
   onToggle: () => void;
   onNavigate?: (sym: string) => void;
 }) {
-  const drift5d = card.snapshot.cumulative5d;
-  const vsSpy = driftVsSpy5d(card, benchmarkDrift5dPct);
+  const rel10 = driftVsSpy10d(card);
+  const raw10 = rawDrift10d(card);
+  const vsDisplay = spyHistoryOk ? rel10 : raw10;
   const streakHot = card.snapshot.streak >= 5;
-  const tickerColor = drift5d >= 0 ? GREEN : RED;
+  const tickerColor = rel10 >= 0 ? GREEN : RED;
   const phase = catalystCardPhase(card);
   const earningsAccent = phase === "reports_today" || phase === "reporting_after_close";
 
@@ -261,12 +264,12 @@ function CatalystRow({
         <CollapsedCell>
           <span
             className="font-mono font-bold tabular-nums whitespace-nowrap"
-            style={{ color: pctColor(vsSpy), fontSize: ROW_FONT_PX }}
+            style={{ color: pctColor(vsDisplay), fontSize: ROW_FONT_PX }}
           >
-            {fmtPct(vsSpy)}
+            {fmtPct(vsDisplay)}
           </span>
-          <span className="font-mono mt-0.5 whitespace-nowrap" style={{ color: MUTED, fontSize: MIN_FONT_PX }}>
-            raw {fmtPct(drift5d)}
+          <span className="font-mono mt-0.5 whitespace-nowrap" style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}>
+            {spyHistoryOk ? `raw ${fmtPct(raw10)}` : "raw only"}
           </span>
         </CollapsedCell>
       </button>
@@ -277,25 +280,55 @@ function CatalystRow({
             {card.snapshot.patternRead}
           </p>
           <div
-            className="grid grid-cols-5 gap-2 text-center font-mono border rounded-lg py-2"
+            className="grid grid-cols-4 gap-2 text-center font-mono border rounded-lg py-2"
             style={{ borderColor: BORDER, background: PANEL, fontSize: ROW_FONT_PX }}
           >
             {(
               [
                 ["1D", card.snapshot.cumulative1d],
-                ["2D", card.snapshot.cumulative2d],
                 ["3D", card.snapshot.cumulative3d],
-                ["4D", card.snapshot.cumulative4d],
                 ["5D", card.snapshot.cumulative5d],
+                ["10D", card.snapshot.cumulative10d],
               ] as const
             ).map(([label, val]) => (
               <div key={label}>
-                <p style={{ color: MUTED, fontSize: MIN_FONT_PX }}>{label}</p>
+                <p style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}>{label}</p>
                 <p className="font-bold mt-0.5" style={{ color: pctColor(val) }}>
                   {fmtPct(val)}
                 </p>
               </div>
             ))}
+          </div>
+          <div>
+            <p className="font-mono mb-2" style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}>
+              SESSION-BY-SESSION (VS S&P)
+            </p>
+            <div className="flex flex-col gap-0.5 max-h-48 overflow-y-auto">
+              {card.snapshot.sessionDates.map((d, i) => {
+                const n = card.snapshot.sessionDates.length;
+                const offset = n - 1 - i;
+                const sessionLabel =
+                  offset === 0 ? "NOW" : offset === 1 ? "D-1" : `D-${offset}`;
+                return (
+                <div
+                  key={`${d}-${i}`}
+                  className="flex items-center justify-between font-mono py-1 px-2 rounded"
+                  style={{
+                    background: i === card.snapshot.sessionDates.length - 1 ? PANEL : "transparent",
+                    fontSize: MIN_FONT_PX,
+                  }}
+                >
+                  <span style={{ color: TEXT_PRIMARY }}>
+                    {sessionLabel}
+                    {d ? ` · ${d}` : ""}
+                  </span>
+                  <span style={{ color: pctColor(card.snapshot.sessionMovesPct[i]) }}>
+                    {fmtPct(card.snapshot.sessionMovesPct[i])}
+                  </span>
+                </div>
+              );
+              })}
+            </div>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 font-mono" style={{ fontSize: ROW_FONT_PX }}>
             <span style={{ color: TEXT_SECONDARY }}>
@@ -358,7 +391,7 @@ export function CatalystsFeed({
     queryFn: async () => {
       const res = await fetchWithAuth("/api/catalysts");
       if (!res.ok) throw new Error(`Catalysts feed HTTP ${res.status}`);
-      return (await res.json()) as CatalystsFeed;
+      return normalizeCatalystsFeed((await res.json()) as CatalystsFeed);
     },
     staleTime: 60_000,
     refetchInterval: 120_000,
@@ -393,7 +426,7 @@ export function CatalystsFeed({
       case "fiveDayMove":
         list.sort(
           (a, b) =>
-            Math.abs(b.snapshot.cumulative5d) - Math.abs(a.snapshot.cumulative5d),
+            Math.abs(b.snapshot.cumulative10d) - Math.abs(a.snapshot.cumulative10d),
         );
         break;
       case "streak":
@@ -425,7 +458,7 @@ export function CatalystsFeed({
 
   const building = data?.status === "building" || (data?.status === "empty" && !data.builtAt);
   const refreshBusy = manualRefreshing || isFetching;
-  const benchmarkDrift5dPct = data?.benchmarkDrift5dPct ?? null;
+  const spyHistoryOk = data?.benchmarkDrift10dPct != null;
 
   return (
     <div className="flex flex-col min-h-full" style={{ background: BG, color: TEXT_PRIMARY }}>
@@ -522,7 +555,7 @@ export function CatalystsFeed({
                   card={card}
                   held={heldSymbols.has(card.symbol)}
                   expanded={!!expanded[card.symbol]}
-                  benchmarkDrift5dPct={benchmarkDrift5dPct}
+                  spyHistoryOk={spyHistoryOk}
                   onToggle={() => toggle(card.symbol)}
                   onNavigate={onNavigateToSymbol}
                 />
