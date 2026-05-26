@@ -19,7 +19,8 @@ export interface CatalystGateSettings {
 
 export const CATALYST_GATE_LIMITS = {
   priceFloorUsd: { min: 0, max: 500, step: 1 },
-  marketCapFloorUsd: { min: 0, max: 20_000_000_000, step: 50_000_000 },
+  /** Off (0) or $1B–$2T — slide to ~$500B–$1T+ for mega-cap-only earnings weeks. */
+  marketCapFloorUsd: { min: 0, max: 2_000_000_000_000, step: 1_000_000_000 },
   avgVolumeFloor: { min: 0, max: 20_000_000, step: 10_000 },
 } as const;
 
@@ -74,7 +75,14 @@ function clampNum(v: unknown, fallback: number, min: number, max: number): numbe
 
 export function formatMarketCapFloorLabel(usd: number): string {
   if (usd <= 0) return "Off";
-  if (usd >= 1_000_000_000) return `$${(usd / 1_000_000_000).toFixed(usd % 1_000_000_000 === 0 ? 0 : 1)}B+`;
+  if (usd >= 1_000_000_000_000) {
+    const t = usd / 1_000_000_000_000;
+    return `$${t % 1 === 0 ? t.toFixed(0) : t.toFixed(2)}T+`;
+  }
+  if (usd >= 1_000_000_000) {
+    const b = usd / 1_000_000_000;
+    return `$${b % 1 === 0 ? b.toFixed(0) : b.toFixed(1)}B+`;
+  }
   if (usd >= 1_000_000) return `$${Math.round(usd / 1_000_000)}M+`;
   return `$${Math.round(usd / 1000)}K+`;
 }

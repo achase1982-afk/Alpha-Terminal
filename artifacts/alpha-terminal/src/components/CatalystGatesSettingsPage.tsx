@@ -51,6 +51,7 @@ function SidebarToggle({
 
 function GateSlider({
   label,
+  hint,
   valueLabel,
   min,
   max,
@@ -60,6 +61,7 @@ function GateSlider({
   onChange,
 }: {
   label: string;
+  hint?: string;
   valueLabel: string;
   min: number;
   max: number;
@@ -70,11 +72,21 @@ function GateSlider({
 }) {
   return (
     <div className="py-2 pl-1 space-y-1.5" style={{ opacity: disabled ? 0.45 : 1 }}>
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-mono" style={{ color: TEXT, fontSize: MIN_FONT_PX }}>
-          {label}
-        </span>
-        <span className="font-mono font-bold tabular-nums" style={{ color: GOLD, fontSize: MIN_FONT_PX }}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <span className="font-mono" style={{ color: TEXT, fontSize: MIN_FONT_PX }}>
+            {label}
+          </span>
+          {hint ? (
+            <p className="font-mono mt-1 leading-relaxed" style={{ color: MUTED, fontSize: MIN_FONT_PX }}>
+              {hint}
+            </p>
+          ) : null}
+        </div>
+        <span
+          className="font-mono font-bold tabular-nums shrink-0"
+          style={{ color: GOLD, fontSize: MIN_FONT_PX }}
+        >
           {valueLabel}
         </span>
       </div>
@@ -222,6 +234,7 @@ export function CatalystGatesSettingsPage() {
         />
         <GateSlider
           label="Market cap minimum"
+          hint="Off, or $1B steps up to $2T (e.g. $500B–$1T for mega-cap-only weeks)."
           valueLabel={formatMarketCapFloorLabel(
             catalystGateSettings.requireMicroCapFloor ? catalystGateSettings.marketCapFloorUsd : 0,
           )}
