@@ -22,7 +22,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
-        # no version field; reads packageManager from root package.json
+        with:
+          version: 10.33.3
 
       - uses: actions/setup-node@v4
         with:
@@ -44,7 +45,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
-        # no version field; reads packageManager from root package.json
+        with:
+          version: 10.33.3
 
       - uses: actions/setup-node@v4
         with:
