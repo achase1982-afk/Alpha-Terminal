@@ -26,7 +26,32 @@ const SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token";
 const isProd = process.env.NODE_ENV === "production";
 
 function getTraderRedirectUri(): string {
-  return (isProd ? process.env.SCHWAB_TRADER_REDIRECT_URI_PROD : process.env.SCHWAB_TRADER_REDIRECT_URI) || "";
+  const dev = process.env.SCHWAB_TRADER_REDIRECT_URI?.trim() ?? "";
+  const prod = process.env.SCHWAB_TRADER_REDIRECT_URI_PROD?.trim() ?? "";
+  if (isProd) return prod || dev;
+  return dev || prod;
+}
+
+/** Schwab OAuth error bodies are usually `{ error, error_description }`. */
+function schwabOAuthErrorDetail(responseText: string): string | undefined {
+  try {
+    const parsed = JSON.parse(responseText) as {
+      error?: string;
+      error_description?: string;
+      message?: string;
+    };
+    const code = typeof parsed.error === "string" ? parsed.error : "";
+    const desc =
+      (typeof parsed.error_description === "string" && parsed.error_description) ||
+      (typeof parsed.message === "string" && parsed.message) ||
+      "";
+    if (code && desc) return `${code}: ${desc}`;
+    return desc || code || undefined;
+  } catch {
+    const trimmed = responseText.trim();
+    if (trimmed.length > 0 && trimmed.length <= 280) return trimmed;
+    return undefined;
+  }
 }
 
 const pendingTokens = new Map<string, { accessToken: string; refreshToken: string; ts: number }>();
@@ -166,7 +191,17 @@ router.get("/url", (_req, res) => {
 });
 
 router.get("/redirect-uri", (_req, res) => {
-  return res.json({ redirectUri: getTraderRedirectUri() });
+  const redirectUri = getTraderRedirectUri();
+  return res.json({
+    redirectUri,
+    environment: isProd ? "production" : "development",
+    configured: !!(
+      process.env.SCHWAB_TRADER_APP_KEY &&
+      process.env.SCHWAB_TRADER_APP_SECRET &&
+      redirectUri
+    ),
+    expectedCallbackPath: "/api/auth/trader-callback",
+  });
 });
 
 router.get("/callback", async (req, res) => {
@@ -481,6 +516,22 @@ router.get("/trader-url", (_req, res) => {
 });
 
 router.get("/trader-callback", async (req, res) => {
+  const oauthError = req.query["error"] as string | undefined;
+  const oauthErrorDesc = req.query["error_description"] as string | undefined;
+  if (oauthError) {
+    req.log.warn(
+      { error: oauthError, error_description: oauthErrorDesc },
+      "GET /trader-callback — Schwab denied or aborted authorization",
+    );
+    const detail =
+      typeof oauthErrorDesc === "string" && oauthErrorDesc
+        ? oauthErrorDesc
+        : "Authorization was not completed at Schwab.";
+    return res
+      .status(400)
+      .send(errorPage("Authorization Not Completed", `${oauthError}: ${detail}`));
+  }
+
   const code = req.query["code"] as string | undefined;
   const state = req.query["state"] as string | undefined;
 
@@ -524,8 +575,24 @@ router.get("/trader-callback", async (req, res) => {
     const responseText = await response.text();
 
     if (!response.ok) {
-      req.log.error({ status: response.status, body: responseText }, "Trader token exchange failed");
-      return res.status(400).send(errorPage("Authentication Failed", "Schwab Trader API returned an error. Please try again."));
+      const schwabDetail = schwabOAuthErrorDetail(responseText);
+      req.log.error(
+        { status: response.status, body: responseText, redirect_uri: redirectUri, schwabDetail },
+        "Trader token exchange failed",
+      );
+      // iOS Safari often reloads the callback URL — the code is single-use, so the
+      // second exchange fails with invalid_grant even though the first succeeded.
+      if (
+        schwabDetail?.toLowerCase().includes("invalid_grant") &&
+        (hasValidTokens("trader") || pendingTokens.has("trader_latest"))
+      ) {
+        req.log.info("GET /trader-callback — invalid_grant but session already stored; showing success");
+        return res.send(traderSuccessPage());
+      }
+      const userMsg = schwabDetail
+        ? `Schwab Trader API returned an error. ${schwabDetail} If you just connected, close this tab and return to Alpha Terminal — your link may already be active. Otherwise try Connect again from Settings (do not refresh this page).`
+        : "Schwab Trader API returned an error. Please try again from Alpha Terminal Settings without refreshing this page.";
+      return res.status(400).send(errorPage("Authentication Failed", userMsg));
     }
 
     let tokenData: Record<string, unknown>;
