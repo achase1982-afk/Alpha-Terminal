@@ -172,6 +172,39 @@ export function fmtPct(n: number | null | undefined): string {
   return `${sign}${n.toFixed(1)}%`;
 }
 
+export function fmtEarningsShort(earningsDate: string): string {
+  try {
+    const d = new Date(`${earningsDate}T12:00:00Z`);
+    if (Number.isNaN(d.getTime())) return earningsDate;
+    return d.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: "America/New_York",
+    });
+  } catch {
+    return earningsDate;
+  }
+}
+
+export function earningsDaysAwayLabel(card: CatalystCard, now = new Date()): string {
+  const phase = catalystCardPhase(card, now);
+  if (phase === "reported") return "reported";
+  if (phase === "reporting_after_close") return "after close today";
+  if (phase === "reports_today") return "today";
+  const days = daysUntilEarnings(card.earningsDate, now);
+  if (days <= 0) return "today";
+  if (days === 1) return "1 day away";
+  return `${days} days away`;
+}
+
+export function driftVsSpy5d(card: CatalystCard, benchmarkDrift5dPct: number | null): number | null {
+  const raw = card.snapshot.cumulative5d;
+  if (!Number.isFinite(raw) || benchmarkDrift5dPct == null || !Number.isFinite(benchmarkDrift5dPct)) {
+    return null;
+  }
+  return raw - benchmarkDrift5dPct;
+}
+
 export function pctColor(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n) || n === 0) return TEXT;
   return n > 0 ? GREEN : RED;

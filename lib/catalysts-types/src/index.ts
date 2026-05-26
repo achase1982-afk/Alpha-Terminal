@@ -13,6 +13,8 @@ export interface CatalystsFeed {
     filtered: number;
     tradeable: number;
   };
+  /** SPY settled-session cumulative 5d % — for vs-S&P column on cards. */
+  benchmarkDrift5dPct: number | null;
   cards: CatalystCard[];
 }
 
@@ -60,6 +62,7 @@ export function emptyCatalystsFeed(): CatalystsFeed {
     status: "empty",
     windowDays: CATALYSTS_WINDOW_CALENDAR_DAYS,
     funnel: { calendar: 0, filtered: 0, tradeable: 0 },
+    benchmarkDrift5dPct: null,
     cards: [],
   };
 }

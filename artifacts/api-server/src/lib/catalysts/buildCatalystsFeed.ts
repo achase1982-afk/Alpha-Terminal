@@ -101,6 +101,11 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
   const sessionDates = settledSessionYmdsEndingAt(endSettled, 5);
 
   const timingHints = await loadEarningsTimingHints(calendar.map((e) => e.symbol));
+
+  const spyCloses = await loadClosesForSessions("SPY", sessionDates);
+  const spySnapshot = computeSessionSnapshot(sessionDates, spyCloses);
+  const benchmarkDrift5dPct = spySnapshot?.cumulative5d ?? null;
+
   const cards: CatalystCard[] = [];
 
   for (const e of calendar) {
@@ -144,6 +149,7 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
       filtered: filtered.length,
       tradeable: cards.length,
     },
+    benchmarkDrift5dPct,
     cards,
   };
 }
