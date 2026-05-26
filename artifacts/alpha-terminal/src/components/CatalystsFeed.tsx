@@ -1,10 +1,19 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Flame, Loader2, RefreshCw } from "lucide-react";
-import type { CatalystCard, CatalystsFeed, CatalystsSortKey } from "@workspace/catalysts-types";
+import type {
+  CatalystCard,
+  CatalystFilterBreakdown,
+  CatalystsFeed,
+  CatalystsSortKey,
+} from "@workspace/catalysts-types";
+import { MOVERS_MANUAL_REFRESH_DEBOUNCE_MS } from "@workspace/movers-types";
+import { useTerminalStore } from "@/lib/store";
+import { normalizeCatalystGateSettings } from "@workspace/catalysts-types";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import {
+  buildCatalystStrategistFlowContext,
   catalystCardPhase,
   daysUntilEarnings,
   driftVsSpy10d,
@@ -122,6 +131,21 @@ function Sparkline({ moves }: { moves: number[] }) {
   );
 }
 
+function filterBreakdownSummary(bd: CatalystFilterBreakdown | undefined): string {
+  if (!bd) return "";
+  const parts: string[] = [];
+  const push = (label: string, n: number) => {
+    if (n > 0) parts.push(`${label} ${n}`);
+  };
+  push("no options", bd.NO_OPTIONS);
+  push("low volume", bd.LOW_VOLUME);
+  push("micro cap", bd.MICRO_CAP);
+  push("sub $5", bd.SUB_5);
+  push("leveraged ETF", bd.LEVERAGED_ETF);
+  push("missing session data", bd.NO_SESSION_DATA);
+  return parts.join(" · ");
+}
+
 function CatalystsFunnelBar({
   funnel,
   onStreak,
@@ -131,6 +155,7 @@ function CatalystsFunnelBar({
   onStreak: number;
   reportsToday: number;
 }) {
+  const breakdownText = filterBreakdownSummary(funnel.filterBreakdown);
   const items = [
     { label: "SCHEDULED", value: funnel.calendar, color: MUTED },
     { label: "TRADEABLE", value: funnel.tradeable, color: GOLD },
@@ -150,6 +175,14 @@ function CatalystsFunnelBar({
           </div>
         </div>
       ))}
+      {breakdownText ? (
+        <div
+          className="col-span-4 text-center font-mono mt-1 px-1"
+          style={{ color: MUTED, fontSize: MIN_FONT_PX, lineHeight: BODY_LINE_HEIGHT }}
+        >
+          Filtered out: {breakdownText}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -196,6 +229,7 @@ function CatalystRow({
   spyHistoryOk,
   onToggle,
   onNavigate,
+  onSendToStrategist,
 }: {
   card: CatalystCard;
   held: boolean;
@@ -203,7 +237,11 @@ function CatalystRow({
   spyHistoryOk: boolean;
   onToggle: () => void;
   onNavigate?: (sym: string) => void;
+  onSendToStrategist?: (sym: string, flowContext: string) => void;
 }) {
+  const [strategistSent, setStrategistSent] = useState(false);
+  const strategistSentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const rel10 = driftVsSpy10d(card);
   const raw10 = rawDrift10d(card);
   const vsDisplay = spyHistoryOk ? rel10 : raw10;
@@ -347,16 +385,45 @@ function CatalystRow({
               {!card.earningsConfirmed ? " · EST." : ""}
             </span>
           </div>
-          {onNavigate && (
-            <button
-              type="button"
-              className="font-mono font-bold tracking-wider mt-1"
-              style={{ color: GOLD, fontSize: ROW_FONT_PX }}
-              onClick={() => onNavigate(card.symbol)}
-            >
-              OPEN IN MARKETS →
-            </button>
-          )}
+          <div className="flex flex-col gap-2 mt-2">
+            {onSendToStrategist && (
+              <button
+                type="button"
+                className="w-full font-mono font-bold tracking-wider rounded-lg py-2.5 transition-opacity"
+                style={{
+                  background: BLUE,
+                  color: TEXT_PRIMARY,
+                  fontSize: ROW_FONT_PX,
+                  opacity: strategistSent ? 0.85 : 1,
+                }}
+                onClick={() => {
+                  if (strategistSent) return;
+                  onSendToStrategist(
+                    card.symbol,
+                    buildCatalystStrategistFlowContext(card, spyHistoryOk),
+                  );
+                  setStrategistSent(true);
+                  if (strategistSentTimerRef.current) clearTimeout(strategistSentTimerRef.current);
+                  strategistSentTimerRef.current = setTimeout(() => {
+                    setStrategistSent(false);
+                    strategistSentTimerRef.current = null;
+                  }, 2000);
+                }}
+              >
+                {strategistSent ? "Sent to Strategist" : "Send to Strategist"}
+              </button>
+            )}
+            {onNavigate && (
+              <button
+                type="button"
+                className="font-mono font-bold tracking-wider"
+                style={{ color: GOLD, fontSize: ROW_FONT_PX }}
+                onClick={() => onNavigate(card.symbol)}
+              >
+                Open {card.symbol} →
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -365,11 +432,17 @@ function CatalystRow({
 
 export function CatalystsFeed({
   onNavigateToSymbol,
+  onSendToStrategist,
   subscribeEquitySymbols,
 }: {
   onNavigateToSymbol?: (sym: string) => void;
+  onSendToStrategist?: (sym: string, flowContext: string) => void;
   subscribeEquitySymbols?: (syms: string[]) => void;
 }) {
+  const queryClient = useQueryClient();
+  const catalystGateSettings = useTerminalStore((s) => s.catalystGateSettings);
+  const setCatalystGateSettings = useTerminalStore((s) => s.setCatalystGateSettings);
+  const lastManualRefreshAt = useRef(0);
   const [sortKey, setSortKey] = useState<SortKey>("soonest");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [manualRefreshing, setManualRefreshing] = useState(false);
@@ -386,7 +459,18 @@ export function CatalystsFeed({
     return set;
   }, [account?.positions]);
 
-  const { data, isLoading, error, isFetching, refetch } = useQuery({
+  useEffect(() => {
+    fetchWithAuth("/api/catalysts/settings")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body: { settings?: unknown } | null) => {
+        if (body?.settings) {
+          setCatalystGateSettings(normalizeCatalystGateSettings(body.settings as never));
+        }
+      })
+      .catch(() => {});
+  }, [setCatalystGateSettings]);
+
+  const { data, isLoading, error, isFetching } = useQuery({
     queryKey: ["catalysts-feed"],
     queryFn: async () => {
       const res = await fetchWithAuth("/api/catalysts");
@@ -448,13 +532,26 @@ export function CatalystsFeed({
   }, []);
 
   const onRefresh = useCallback(async () => {
+    const now = Date.now();
+    if (now - lastManualRefreshAt.current < MOVERS_MANUAL_REFRESH_DEBOUNCE_MS) return;
+    lastManualRefreshAt.current = now;
+
     setManualRefreshing(true);
     try {
-      await refetch();
+      const res = await fetchWithAuth("/api/catalysts/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings: catalystGateSettings }),
+      });
+      if (!res.ok) throw new Error(`Catalysts refresh HTTP ${res.status}`);
+      const body = (await res.json()) as { ok: boolean; feed: CatalystsFeed };
+      queryClient.setQueryData(["catalysts-feed"], normalizeCatalystsFeed(body.feed));
+    } catch {
+      await queryClient.invalidateQueries({ queryKey: ["catalysts-feed"] });
     } finally {
       setManualRefreshing(false);
     }
-  }, [refetch]);
+  }, [queryClient, catalystGateSettings]);
 
   const building = data?.status === "building" || (data?.status === "empty" && !data.builtAt);
   const refreshBusy = manualRefreshing || isFetching;
@@ -558,6 +655,7 @@ export function CatalystsFeed({
                   spyHistoryOk={spyHistoryOk}
                   onToggle={() => toggle(card.symbol)}
                   onNavigate={onNavigateToSymbol}
+                  onSendToStrategist={onSendToStrategist}
                 />
               ))}
             </>

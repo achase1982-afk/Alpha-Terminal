@@ -1,19 +1,24 @@
 import {
   CATALYST_DRIFT_SESSION_COUNT,
   CATALYSTS_WINDOW_CALENDAR_DAYS,
+  emptyCatalystFilterBreakdown,
   emptyCatalystsFeed,
+  normalizeCatalystGateSettings,
   type CatalystCard,
+  type CatalystFilterBreakdown,
+  type CatalystGateSettings,
   type CatalystsFeed,
   type EarningsTiming,
 } from "@workspace/catalysts-types";
+import type { FilteredName } from "@workspace/movers-types";
 import { fetchFmpCompanyProfiles } from "../movers/fmpCompanyProfile.js";
 import type { TradeabilityCandidate } from "../movers/tradeabilityGate.js";
-import {
-  applyCatalystCheapGates,
-  applyCatalystOptionsGate,
-} from "./applyCatalystCheapGates.js";
+import { applyCatalystGates } from "./applyCatalystGates.js";
+import { applyCatalystOptionsGate } from "./applyCatalystCheapGates.js";
+import type { CatalystOptionsChainVerdict } from "./catalystOptionsChainLive.js";
+import { getCatalystGateSettings } from "./catalystGateSettingsStore.js";
 import { resolveLiveOptionsChainVerdicts } from "./catalystOptionsChainLive.js";
-import { computeSessionSnapshot } from "./catalystMetrics.js";
+import { computeSessionSnapshot, emptySessionSnapshot } from "./catalystMetrics.js";
 import { discoverCatalystEarningsInWindow } from "./catalystEarningsDiscovery.js";
 import { loadEarningsTimingHints } from "./catalystEarningsTiming.js";
 import { reportAtIso } from "./catalystEarningsUtils.js";
@@ -27,12 +32,42 @@ import { lastSettledSessionYmd, settledSessionYmdsEndingAt } from "./settledSess
 import { logger } from "../logger.js";
 import { isSpComposite1500Member } from "./sp1500Membership.js";
 
-export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFeed> {
+function tallyFilterBreakdown(
+  filtered: FilteredName[],
+  noSessionData: number,
+): CatalystFilterBreakdown {
+  const breakdown = emptyCatalystFilterBreakdown();
+  for (const row of filtered) {
+    const reason = row.reason;
+    if (reason === "LEVERAGED_ETF") breakdown.LEVERAGED_ETF += 1;
+    else if (reason === "SUB_5") breakdown.SUB_5 += 1;
+    else if (reason === "MICRO_CAP") breakdown.MICRO_CAP += 1;
+    else if (reason === "LOW_VOLUME") breakdown.LOW_VOLUME += 1;
+    else if (reason === "NO_OPTIONS") breakdown.NO_OPTIONS += 1;
+  }
+  breakdown.NO_SESSION_DATA = noSessionData;
+  return breakdown;
+}
+
+export async function buildCatalystsFeed(
+  now = new Date(),
+  gateSettingsOverride?: Partial<CatalystGateSettings>,
+): Promise<CatalystsFeed> {
+  const gateSettings = normalizeCatalystGateSettings({
+    ...getCatalystGateSettings(),
+    ...gateSettingsOverride,
+  });
+
   const calendar = await discoverCatalystEarningsInWindow(now);
 
   if (calendar.length === 0) {
     logger.info("Catalysts rebuild: no fresh harvested earnings in window");
-    return { ...emptyCatalystsFeed(), status: "ready", builtAt: now.toISOString() };
+    return {
+      ...emptyCatalystsFeed(),
+      status: "ready",
+      builtAt: now.toISOString(),
+      gateSettings,
+    };
   }
 
   const symbols = calendar.map((e) => e.symbol);
@@ -56,15 +91,31 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
     if (c.price < 5 && profile?.marketCap != null) c.price = 10;
   }
 
-  const { survivors, filtered: cheapFiltered } = applyCatalystCheapGates(candidates, profiles);
-  const optionsVerdicts = await resolveLiveOptionsChainVerdicts(
-    survivors.map((c) => c.symbol),
+  const cheapGateSettings = { ...gateSettings, requireOptionsChain: false };
+  const { tradeable: survivors, filtered: cheapFiltered } = applyCatalystGates(
+    candidates,
+    profiles,
+    cheapGateSettings,
+    new Set(candidates.map((c) => c.symbol.toUpperCase())),
   );
-  const {
-    tradeable,
-    filtered: optionsFiltered,
-    optionsStatusBySymbol,
-  } = applyCatalystOptionsGate(survivors, optionsVerdicts);
+
+  let tradeable: TradeabilityCandidate[];
+  let optionsFiltered: FilteredName[] = [];
+  let optionsStatusBySymbol = new Map<string, CatalystOptionsChainVerdict>();
+
+  if (gateSettings.requireOptionsChain) {
+    const optionsVerdicts = await resolveLiveOptionsChainVerdicts(
+      survivors.map((c) => c.symbol),
+    );
+    ({
+      tradeable,
+      filtered: optionsFiltered,
+      optionsStatusBySymbol,
+    } = applyCatalystOptionsGate(survivors, optionsVerdicts));
+  } else {
+    tradeable = survivors;
+  }
+
   const filtered = [...cheapFiltered, ...optionsFiltered];
 
   const endSettled = lastSettledSessionYmd(now);
@@ -94,10 +145,13 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
     if (!tradeableBySymbol.has(sym)) continue;
 
     const stockCloses = closesBySymbol.get(sym) ?? new Map();
-    const snapshot = computeSessionSnapshot(sessionDates, stockCloses, spyCloses);
+    let snapshot = computeSessionSnapshot(sessionDates, stockCloses, spyCloses);
     if (!snapshot) {
-      droppedNoSessionData += 1;
-      continue;
+      if (gateSettings.requireSessionSnapshot) {
+        droppedNoSessionData += 1;
+        continue;
+      }
+      snapshot = emptySessionSnapshot();
     }
 
     const profile = profiles.get(sym);
@@ -136,8 +190,10 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
       calendar: calendar.length,
       filtered: filtered.length,
       tradeable: cards.length,
+      filterBreakdown: tallyFilterBreakdown(filtered, droppedNoSessionData),
     },
     benchmarkDrift10dPct: spyHistoryOk ? benchmarkDrift10dPct : null,
+    gateSettings,
     cards,
   };
 }

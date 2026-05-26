@@ -1,5 +1,7 @@
 import {
   CATALYST_DRIFT_SESSION_COUNT,
+  DEFAULT_CATALYST_GATE_SETTINGS,
+  normalizeCatalystGateSettings,
   type CatalystCard,
   type CatalystSessionSnapshot,
   type CatalystsFeed,
@@ -63,6 +65,13 @@ export function normalizeCatalystsFeed(feed: CatalystsFeed): CatalystsFeed {
   return {
     ...feed,
     benchmarkDrift10dPct,
+    gateSettings: normalizeCatalystGateSettings(
+      feed.gateSettings ?? DEFAULT_CATALYST_GATE_SETTINGS,
+    ),
+    funnel: {
+      ...feed.funnel,
+      filterBreakdown: feed.funnel?.filterBreakdown,
+    },
     cards: (feed.cards ?? []).map(normalizeCard),
   };
 }

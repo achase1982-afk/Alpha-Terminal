@@ -82,6 +82,8 @@ async function boot() {
   startSnapshotRefreshWorker();
   startMoversPollWorker();
   void startCatalystEarningsHarvestWorker();
+  const { ensureCatalystGateSettingsLoaded } = await import("./routes/catalysts.js");
+  await ensureCatalystGateSettingsLoaded();
   startCatalystsRebuildWorker();
   void refreshMacroCalendarCacheFromDb().catch((e) => {
     logger.warn({ err: e }, "FMP macro calendar cache warm failed");
