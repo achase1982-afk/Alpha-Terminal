@@ -53,14 +53,18 @@ function stripConvictionDiagnosticsFromPollResult(result: unknown): unknown {
  * Apply one `/thinking` or `/job/:id/final` payload to the store. When `done` is
  * true, completion is handled first so a persisted snapshot with `nextSince: 0`
  * cannot rewind the client's token cursor.
+ *
+ * Completion is applied even when the local job is `interrupted` or `error` so a
+ * push deep-link or `/job/:id/final` reconcile can replace stale persisted state.
+ * Incremental token/status updates are only applied while the job is `running`.
  */
 export function applyThinkingPollResponse(jobId: string, t: StrategistThinkingPollPayload): PollOutcome {
   const job = useTerminalStore.getState().strategistJobs[jobId];
-  if (!job || job.status !== 'running') return 'completed';
 
   if (t.done) {
+    if (!job) return 'completed';
     if (t.cancelled) {
-      if (job) useTerminalStore.getState().cancelStrategistJob(jobId);
+      useTerminalStore.getState().cancelStrategistJob(jobId);
       return 'completed';
     }
     if (t.status) {
@@ -89,6 +93,8 @@ export function applyThinkingPollResponse(jobId: string, t: StrategistThinkingPo
     return 'failed';
   }
 
+  if (!job || job.status !== 'running') return 'completed';
+
   if (Array.isArray(t.tokens) && t.tokens.length > 0) {
     useTerminalStore
       .getState()
@@ -115,6 +121,67 @@ export function applyThinkingPollResponse(jobId: string, t: StrategistThinkingPo
   return 'running';
 }
 
+async function recoverStrategistJobFromHistory(jobId: string): Promise<boolean> {
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/strategist/history`);
+    if (!res.ok) return false;
+    const rows = await res.json();
+    if (!Array.isArray(rows)) return false;
+    useTerminalStore.getState().setStrategistHistory(rows);
+    const row = rows.find(
+      (r) => r && typeof r === "object" && (r as { jobId?: string }).jobId === jobId,
+    );
+    if (!row || !(row as { cardJson?: unknown }).cardJson) return false;
+
+    const cardJson = (row as { cardJson: unknown }).cardJson;
+    const ticker =
+      typeof (row as { ticker?: string }).ticker === "string"
+        ? (row as { ticker: string }).ticker.toUpperCase()
+        : "";
+
+    const existing = useTerminalStore.getState().strategistJobs[jobId];
+    if (existing?.status === "done" && existing.result) {
+      return true;
+    }
+    if (existing && existing.status !== "running") {
+      useTerminalStore.getState().cancelStrategistJob(jobId);
+    }
+    if (!useTerminalStore.getState().strategistJobs[jobId]) {
+      if (!ticker) return false;
+      useTerminalStore.getState().startStrategistJob(jobId, ticker, { kind: "analyze" });
+    }
+
+    useTerminalStore
+      .getState()
+      .completeStrategistJob(jobId, stripConvictionDiagnosticsFromPollResult(cardJson));
+    return useTerminalStore.getState().strategistJobs[jobId]?.status === "done";
+  } catch {
+    return false;
+  }
+}
+
+function ensureStrategistJobSlotForFinal(
+  jobId: string,
+  t: StrategistThinkingPollPayload & { ticker?: string },
+): boolean {
+  const existing = useTerminalStore.getState().strategistJobs[jobId];
+  if (existing?.status === "done" && existing.result) {
+    return true;
+  }
+  if (existing && existing.status !== "running") {
+    useTerminalStore.getState().cancelStrategistJob(jobId);
+  }
+  const ticker = typeof t.ticker === "string" && t.ticker.length > 0 ? t.ticker.toUpperCase() : "";
+  if (!useTerminalStore.getState().strategistJobs[jobId]) {
+    if (!ticker) return false;
+    useTerminalStore.getState().startStrategistJob(jobId, ticker, {
+      kind: t.kind === "validation" ? "validation" : "analyze",
+      validationMeta: t.validationMeta ?? undefined,
+    });
+  }
+  return true;
+}
+
 /**
  * Fetches persisted final state for a job (push deep-link / cold resume) and
  * applies it to the store. Creates a transient running slot when the job is
@@ -125,33 +192,55 @@ export async function hydrateStrategistJobFromPersistedFinal(jobId: string): Pro
     const res = await fetchWithAuth(
       `${API_BASE}/strategist/job/${encodeURIComponent(jobId)}/final?since=0`,
     );
-    if (!res.ok) return false;
-    const t = (await res.json()) as StrategistThinkingPollPayload & { ticker?: string };
-    if (!t.done) return false;
-
-    const existing = useTerminalStore.getState().strategistJobs[jobId];
-    if (existing?.status === "done" && existing.result) {
-      return true;
+    if (res.ok) {
+      const t = (await res.json()) as StrategistThinkingPollPayload & { ticker?: string };
+      if (t.done) {
+        const existing = useTerminalStore.getState().strategistJobs[jobId];
+        if (existing?.status === "done" && existing.result) {
+          return true;
+        }
+        if (!ensureStrategistJobSlotForFinal(jobId, t)) {
+          return recoverStrategistJobFromHistory(jobId);
+        }
+        const outcome = applyThinkingPollResponse(jobId, t);
+        const after = useTerminalStore.getState().strategistJobs[jobId];
+        if (outcome !== "running" && after?.status === "done") {
+          return true;
+        }
+      }
     }
-    if (existing && existing.status !== "running") {
-      useTerminalStore.getState().cancelStrategistJob(jobId);
-    }
-
-    const ticker = typeof t.ticker === "string" && t.ticker.length > 0 ? t.ticker.toUpperCase() : "";
-    if (!useTerminalStore.getState().strategistJobs[jobId]) {
-      if (!ticker) return false;
-      useTerminalStore.getState().startStrategistJob(jobId, ticker, {
-        kind: t.kind === "validation" ? "validation" : "analyze",
-        validationMeta: t.validationMeta ?? undefined,
-      });
-    }
-
-    const outcome = applyThinkingPollResponse(jobId, t);
-    const after = useTerminalStore.getState().strategistJobs[jobId];
-    return outcome !== "running" && after?.status === "done";
+    return recoverStrategistJobFromHistory(jobId);
   } catch {
-    return false;
+    return recoverStrategistJobFromHistory(jobId);
   }
+}
+
+export type OpenStrategistFromPushResult =
+  | { ok: true; ticker: string | null; jobId: string }
+  | { ok: false; jobId: string; stillRunning: boolean };
+
+/**
+ * Open flow after a completion push: load the finished card immediately, stop
+ * stale pollers, and only resume polling when the server still reports running.
+ */
+export async function openStrategistJobFromNotification(
+  jobId: string,
+): Promise<OpenStrategistFromPushResult> {
+  abortStrategistPolling(jobId);
+
+  const hydrated = await hydrateStrategistJobFromPersistedFinal(jobId);
+  if (hydrated) {
+    const j = useTerminalStore.getState().strategistJobs[jobId];
+    return { ok: true, ticker: j?.ticker ?? null, jobId };
+  }
+
+  const j = useTerminalStore.getState().strategistJobs[jobId];
+  if (j?.status === "running") {
+    startStrategistPolling(jobId, { force: true });
+    return { ok: false, jobId, stillRunning: true };
+  }
+
+  return { ok: false, jobId, stillRunning: false };
 }
 
 const completionToastSent = new Set<string>();
@@ -247,27 +336,7 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
     // (server keeps it for 10 min after completion). If the persisted history
     // already has this jobId, treat it as completion instead of surfacing a
     // 404 to the user.
-    const tryRecoverFromHistory = async (): Promise<boolean> => {
-      try {
-        const res = await fetchWithAuth(`${API_BASE}/strategist/history`);
-        if (!res.ok) return false;
-        const rows = await res.json();
-        if (!Array.isArray(rows)) return false;
-        useTerminalStore.getState().setStrategistHistory(rows);
-        const row = rows.find(
-          (r) => r && typeof r === "object" && (r as { jobId?: string }).jobId === jobId,
-        );
-        if (row && (row as { cardJson?: unknown }).cardJson) {
-          useTerminalStore
-            .getState()
-            .completeStrategistJob(jobId, stripConvictionDiagnosticsFromPollResult((row as { cardJson: unknown }).cardJson));
-          return true;
-        }
-        return false;
-      } catch {
-        return false;
-      }
-    };
+    const tryRecoverFromHistory = async (): Promise<boolean> => recoverStrategistJobFromHistory(jobId);
     try {
       pollLoop: while (Date.now() < stopAt) {
         if (handle.aborted) {
@@ -421,7 +490,7 @@ export async function syncRunningStrategistJobsFromServer(opts?: {
 }): Promise<void> {
   const jobs = useTerminalStore.getState().strategistJobs;
   for (const [jobId, job] of Object.entries(jobs)) {
-    if (job.status !== "running") continue;
+    if (job.status !== "running" && job.status !== "interrupted") continue;
     try {
       const res = await fetchWithAuth(
         `${API_BASE}/strategist/job/${encodeURIComponent(jobId)}/final?since=${job.nextSince}`,
