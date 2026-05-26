@@ -374,6 +374,54 @@ async function persistHistory(
   }
 }
 
+function isTerminalStrategistHistoryCard(card: Record<string, unknown>): boolean {
+  if (card["kind"] === "validation") {
+    const verdict = String((card["validation"] as { verdict?: string })?.verdict ?? "");
+    return verdict.length > 0;
+  }
+  const st = typeof card["status"] === "string" ? card["status"] : "";
+  return st.length > 0 && st !== "ivr_populating";
+}
+
+function persistedFinalPayloadFromHistoryRow(
+  jobId: string,
+  row: { ticker: string; cardJson: unknown; createdAt?: Date | null },
+) {
+  const card = row.cardJson as Record<string, unknown>;
+  const isValidation = card["kind"] === "validation";
+  const ticker = row.ticker;
+  const transcriptRaw = card["debateTranscript"];
+  const safeTranscript = Array.isArray(transcriptRaw) ? (transcriptRaw as TranscriptTurn[]) : [];
+  return {
+    jobId,
+    kind: isValidation ? ("validation" as const) : ("analyze" as const),
+    ticker,
+    status: isValidation
+      ? `Verdict: ${String((card["validation"] as { verdict?: string })?.verdict ?? "done")}`
+      : "Done",
+    tokens: [] as string[],
+    nextSince: 0,
+    transcript: safeTranscript,
+    done: true,
+    result: isValidation
+      ? (card["validation"] as ValidationVerdictPayload)
+      : strategistV2ResultForWire(card as unknown as StrategistV2Result),
+    validationMeta: isValidation
+      ? {
+          ticker,
+          mode: (card["ticket"] as ValidationTicket).mode,
+          ticket: card["ticket"] as ValidationTicket,
+          thesis: typeof card["thesis"] === "string" ? card["thesis"] : undefined,
+          rollingShort: card["rollingShort"] === true,
+        }
+      : null,
+    error: null,
+    startedAt: row.createdAt?.getTime?.() ?? Date.now(),
+    finishedAt: row.createdAt?.getTime?.() ?? Date.now(),
+    source: "persisted" as const,
+  };
+}
+
 /** Ensures push/deep-link clients can read the completed row via GET /job/:id/final before we notify. */
 async function verifyStrategistHistoryReadable(jobId: string): Promise<{
   ok: boolean;
@@ -386,7 +434,7 @@ async function verifyStrategistHistoryReadable(jobId: string): Promise<{
       .where(and(eq(strategistHistoryTable.jobId, jobId), eq(strategistHistoryTable.cleared, false)))
       .limit(1);
     const card = rows[0]?.cardJson as Record<string, unknown> | undefined;
-    if (!card) return { ok: false };
+    if (!card || !isTerminalStrategistHistoryCard(card)) return { ok: false };
     if (card["kind"] === "validation") {
       const verdict = String((card["validation"] as { verdict?: string })?.verdict ?? "");
       return { ok: verdict.length > 0, resultStatus: verdict || undefined };
@@ -945,13 +993,9 @@ router.get("/job/:jobId/final", async (req, res): Promise<void> => {
     return;
   }
   pruneThinkingBuffer();
-  const inMem = strategistThinkingBuffer.get(jobId);
-  if (inMem) {
-    const sinceRaw = req.query.since;
-    const since = typeof sinceRaw === "string" ? Math.max(0, parseInt(sinceRaw, 10) || 0) : 0;
-    res.json(thinkingShapeFromEntry(inMem, since));
-    return;
-  }
+  const sinceRaw = req.query.since;
+  const since = typeof sinceRaw === "string" ? Math.max(0, parseInt(sinceRaw, 10) || 0) : 0;
+
   try {
     const rows = await db
       .select()
@@ -959,52 +1003,34 @@ router.get("/job/:jobId/final", async (req, res): Promise<void> => {
       .where(and(eq(strategistHistoryTable.jobId, jobId), eq(strategistHistoryTable.cleared, false)))
       .limit(1);
     const row = rows[0];
-    if (!row) {
-      res.status(404).json({ error: "job not found" });
-      return;
+    if (row) {
+      const card = row.cardJson as Record<string, unknown>;
+      if (isTerminalStrategistHistoryCard(card)) {
+        const logResultStatus =
+          card["kind"] === "validation"
+            ? String((card["validation"] as { verdict?: string })?.verdict ?? "")
+            : String(card["status"] ?? "");
+        logger.info(
+          { jobId, source: "persisted", done: true, resultStatus: logResultStatus },
+          "StrategistV2: GET /job/:id/final returning persisted completed payload",
+        );
+        res.json(persistedFinalPayloadFromHistoryRow(jobId, row));
+        return;
+      }
     }
-    const card = row.cardJson as Record<string, unknown>;
-    const isValidation = card["kind"] === "validation";
-    const ticker = row.ticker;
-    const transcriptRaw = card["debateTranscript"];
-    const safeTranscript = Array.isArray(transcriptRaw) ? (transcriptRaw as TranscriptTurn[]) : [];
-    const logResultStatus = isValidation
-      ? String((card["validation"] as { verdict?: string })?.verdict ?? "")
-      : String(card["status"] ?? "");
-    logger.info(
-      { jobId, source: "persisted", done: true, resultStatus: logResultStatus },
-      "StrategistV2: GET /job/:id/final returning persisted completed payload",
-    );
-    res.json({
-      jobId,
-      kind: isValidation ? "validation" : "analyze",
-      ticker,
-      status: isValidation ? `Verdict: ${String((card["validation"] as { verdict?: string })?.verdict ?? "done")}` : "Done",
-      tokens: [],
-      nextSince: 0,
-      transcript: safeTranscript,
-      done: true,
-      result: isValidation
-        ? (card["validation"] as ValidationVerdictPayload)
-        : strategistV2ResultForWire(card as unknown as StrategistV2Result),
-      validationMeta: isValidation
-        ? {
-            ticker,
-            mode: (card["ticket"] as ValidationTicket).mode,
-            ticket: card["ticket"] as ValidationTicket,
-            thesis: typeof card["thesis"] === "string" ? card["thesis"] : undefined,
-            rollingShort: card["rollingShort"] === true,
-          }
-        : null,
-      error: null,
-      startedAt: row.createdAt?.getTime?.() ?? Date.now(),
-      finishedAt: row.createdAt?.getTime?.() ?? Date.now(),
-      source: "persisted" as const,
-    });
   } catch (err) {
-    logger.error({ err, jobId }, "StrategistV2: job final fetch failed");
+    logger.error({ err, jobId }, "StrategistV2: job final history lookup failed");
     res.status(500).json({ error: "Failed to load job" });
+    return;
   }
+
+  const inMem = strategistThinkingBuffer.get(jobId);
+  if (inMem) {
+    res.json(thinkingShapeFromEntry(inMem, since));
+    return;
+  }
+
+  res.status(404).json({ error: "job not found" });
 });
 
 router.get("/thinking/:jobId", (req, res): void => {
