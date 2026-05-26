@@ -422,6 +422,37 @@ function persistedFinalPayloadFromHistoryRow(
   };
 }
 
+async function loadTerminalStrategistHistoryRow(jobId: string) {
+  const rows = await db
+    .select()
+    .from(strategistHistoryTable)
+    .where(and(eq(strategistHistoryTable.jobId, jobId), eq(strategistHistoryTable.cleared, false)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+/**
+ * Prefer a terminal persisted card over a stale in-memory buffer so polling
+ * (`/thinking`) and push hydration (`/job/:id/final`) agree after completion.
+ */
+async function resolveStrategistPollPayload(jobId: string, since: number) {
+  pruneThinkingBuffer();
+  try {
+    const row = await loadTerminalStrategistHistoryRow(jobId);
+    if (row) {
+      const card = row.cardJson as Record<string, unknown>;
+      if (isTerminalStrategistHistoryCard(card)) {
+        return persistedFinalPayloadFromHistoryRow(jobId, row);
+      }
+    }
+  } catch (err) {
+    logger.warn({ err, jobId }, "StrategistV2: resolveStrategistPollPayload history lookup failed");
+  }
+  const entry = strategistThinkingBuffer.get(jobId);
+  if (!entry) return null;
+  return thinkingShapeFromEntry(entry, since);
+}
+
 /** Ensures push/deep-link clients can read the completed row via GET /job/:id/final before we notify. */
 async function verifyStrategistHistoryReadable(jobId: string): Promise<{
   ok: boolean;
@@ -992,57 +1023,51 @@ router.get("/job/:jobId/final", async (req, res): Promise<void> => {
     res.status(400).json({ error: "jobId required" });
     return;
   }
-  pruneThinkingBuffer();
   const sinceRaw = req.query.since;
   const since = typeof sinceRaw === "string" ? Math.max(0, parseInt(sinceRaw, 10) || 0) : 0;
-
   try {
-    const rows = await db
-      .select()
-      .from(strategistHistoryTable)
-      .where(and(eq(strategistHistoryTable.jobId, jobId), eq(strategistHistoryTable.cleared, false)))
-      .limit(1);
-    const row = rows[0];
-    if (row) {
-      const card = row.cardJson as Record<string, unknown>;
-      if (isTerminalStrategistHistoryCard(card)) {
-        const logResultStatus =
-          card["kind"] === "validation"
-            ? String((card["validation"] as { verdict?: string })?.verdict ?? "")
-            : String(card["status"] ?? "");
-        logger.info(
-          { jobId, source: "persisted", done: true, resultStatus: logResultStatus },
-          "StrategistV2: GET /job/:id/final returning persisted completed payload",
-        );
-        res.json(persistedFinalPayloadFromHistoryRow(jobId, row));
-        return;
-      }
+    const payload = await resolveStrategistPollPayload(jobId, since);
+    if (!payload) {
+      res.status(404).json({ error: "job not found" });
+      return;
     }
+    if (payload.done && "source" in payload && payload.source === "persisted") {
+      const card = payload.result as Record<string, unknown> | null;
+      const logResultStatus =
+        payload.kind === "validation"
+          ? String((card as { verdict?: string })?.verdict ?? "")
+          : String((card as { status?: string })?.status ?? "");
+      logger.info(
+        { jobId, source: "persisted", done: true, resultStatus: logResultStatus },
+        "StrategistV2: GET /job/:id/final returning persisted completed payload",
+      );
+    }
+    res.json(payload);
   } catch (err) {
-    logger.error({ err, jobId }, "StrategistV2: job final history lookup failed");
+    logger.error({ err, jobId }, "StrategistV2: job final fetch failed");
     res.status(500).json({ error: "Failed to load job" });
-    return;
   }
-
-  const inMem = strategistThinkingBuffer.get(jobId);
-  if (inMem) {
-    res.json(thinkingShapeFromEntry(inMem, since));
-    return;
-  }
-
-  res.status(404).json({ error: "job not found" });
 });
 
-router.get("/thinking/:jobId", (req, res): void => {
-  pruneThinkingBuffer();
-  const entry = strategistThinkingBuffer.get(req.params.jobId);
-  if (!entry) {
-    res.status(404).json({ error: "job not found" });
+router.get("/thinking/:jobId", async (req, res): Promise<void> => {
+  const jobId = req.params.jobId;
+  if (!jobId) {
+    res.status(400).json({ error: "jobId required" });
     return;
   }
   const sinceRaw = req.query.since;
   const since = typeof sinceRaw === "string" ? Math.max(0, parseInt(sinceRaw, 10) || 0) : 0;
-  res.json(thinkingShapeFromEntry(entry, since));
+  try {
+    const payload = await resolveStrategistPollPayload(jobId, since);
+    if (!payload) {
+      res.status(404).json({ error: "job not found" });
+      return;
+    }
+    res.json(payload);
+  } catch (err) {
+    logger.error({ err, jobId }, "StrategistV2: thinking fetch failed");
+    res.status(500).json({ error: "Failed to load thinking" });
+  }
 });
 
 router.get("/history", async (_req, res) => {

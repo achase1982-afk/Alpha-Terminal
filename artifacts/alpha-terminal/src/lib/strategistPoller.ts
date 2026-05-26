@@ -16,10 +16,15 @@ type PollerHandle = {
 const activePollers = new Map<string, PollerHandle>();
 /** While a push/deep-link open is hydrating, block stale pollers from restarting. */
 const pushOpenInFlight = new Set<string>();
+const pushOpenPromiseByJobId = new Map<string, Promise<OpenStrategistFromPushResult>>();
 
 export function isStrategistPushOpenInFlight(jobId: string): boolean {
   return pushOpenInFlight.has(jobId);
 }
+
+export type OpenStrategistFromPushResult =
+  | { ok: true; ticker: string | null; jobId: string }
+  | { ok: false; jobId: string; stillRunning: boolean };
 
 // If an existing poller hasn't ticked in this long, a new caller takes over.
 const STALE_POLLER_MS = 8_000;
@@ -221,14 +226,6 @@ export async function hydrateStrategistJobFromPersistedFinal(jobId: string): Pro
   }
 }
 
-export type OpenStrategistFromPushResult =
-  | { ok: true; ticker: string | null; jobId: string }
-  | { ok: false; jobId: string; stillRunning: boolean };
-
-/**
- * Open flow after a completion push: load the finished card immediately, stop
- * stale pollers, and only resume polling when the server still reports running.
- */
 async function recoverStrategistJobFromHistoryByTicker(ticker: string): Promise<string | null> {
   const upper = ticker.toUpperCase();
   try {
@@ -237,20 +234,18 @@ async function recoverStrategistJobFromHistoryByTicker(ticker: string): Promise<
     const rows = await res.json();
     if (!Array.isArray(rows)) return null;
     useTerminalStore.getState().setStrategistHistory(rows);
-    const match = rows.find((r) => {
-      if (!r || typeof r !== "object") return false;
+    for (const r of rows) {
+      if (!r || typeof r !== "object") continue;
       const row = r as { ticker?: string; jobId?: string; cardJson?: unknown };
-      return row.ticker?.toUpperCase() === upper && row.cardJson != null && row.jobId;
-    }) as { jobId: string; cardJson: unknown; ticker?: string } | undefined;
-    if (!match?.jobId) return null;
-    const ok = await recoverStrategistJobFromHistory(match.jobId);
-    return ok ? match.jobId : null;
+      if (row.ticker?.toUpperCase() !== upper || !row.jobId || row.cardJson == null) continue;
+      const ok = await recoverStrategistJobFromHistory(row.jobId);
+      if (ok) return row.jobId;
+    }
+    return null;
   } catch {
     return null;
   }
 }
-
-const pushOpenPromiseByJobId = new Map<string, Promise<OpenStrategistFromPushResult>>();
 
 async function openStrategistJobFromNotificationInner(
   jobId: string,
@@ -299,6 +294,16 @@ export function openStrategistJobFromNotification(
   });
   pushOpenPromiseByJobId.set(jobId, promise);
   return promise;
+}
+
+/** Reconcile every in-flight job against persisted server/history (foreground push safety net). */
+export async function reconcileRunningStrategistJobs(): Promise<void> {
+  const jobs = useTerminalStore.getState().strategistJobs;
+  for (const [jobId, job] of Object.entries(jobs)) {
+    if (job.status !== "running" && job.status !== "interrupted") continue;
+    if (pushOpenInFlight.has(jobId)) continue;
+    await hydrateStrategistJobFromPersistedFinal(jobId);
+  }
 }
 
 const completionToastSent = new Set<string>();
@@ -426,8 +431,10 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
 
         let tres: Response;
         try {
+          // Use `/final` (DB-first when a terminal card exists) so a backgrounded
+          // tab that missed live `/thinking` polls still completes on resume.
           tres = await fetchWithAuth(
-            `${API_BASE}/strategist/thinking/${jobId}?since=${current.nextSince}`,
+            `${API_BASE}/strategist/job/${encodeURIComponent(jobId)}/final?since=${current.nextSince}`,
           );
         } catch {
           consecutiveFailures += 1;

@@ -475,17 +475,14 @@ export default function TerminalPage() {
   }, [routeStrategistPushOpen]);
 
   useEffect(() => {
-    const onMsg = (ev: MessageEvent) => {
-      const d = ev.data;
-      if (!d || d.type !== "STRATEGIST_PUSH_NAV") return;
-      const jobId = typeof d.jobId === "string" ? d.jobId.trim() : "";
+    const onPushOpen = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ jobId?: string; ticker?: string }>).detail;
+      const jobId = typeof detail?.jobId === "string" ? detail.jobId.trim() : "";
       if (!jobId) return;
-      const ticker = typeof d.ticker === "string" ? d.ticker : undefined;
-      routeStrategistPushOpen(jobId, ticker);
+      routeStrategistPushOpen(jobId, detail.ticker);
     };
-    const sw = navigator.serviceWorker;
-    sw?.addEventListener?.("message", onMsg);
-    return () => sw?.removeEventListener?.("message", onMsg);
+    window.addEventListener("strategist-push-open", onPushOpen);
+    return () => window.removeEventListener("strategist-push-open", onPushOpen);
   }, [routeStrategistPushOpen]);
 
   useEffect(() => {

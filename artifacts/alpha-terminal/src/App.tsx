@@ -15,7 +15,7 @@ import AuthSessionBanner from "@/components/AuthSessionBanner";
 import { registerServiceWorker } from "@/lib/pushNotifications";
 import OrderAlertWatcher from "@/components/OrderAlertWatcher";
 import SchwabSessionExpiredDialog from "@/components/SchwabSessionExpiredDialog";
-import { resumeAllRunningPollers } from "@/lib/strategistPoller";
+import StrategistJobBackgroundSync from "@/components/StrategistJobBackgroundSync";
 import { installBrowserTelemetryCapture } from "@/lib/browserTelemetry";
 
 export const queryClient = new QueryClient({
@@ -186,25 +186,6 @@ function InactivityWarning() {
   );
 }
 
-function GlobalStrategistPollerResumer() {
-  useEffect(() => {
-    resumeAllRunningPollers();
-    const onVisible = () => {
-      if (document.visibilityState === "visible") {
-        resumeAllRunningPollers({ toastOnComplete: true });
-      }
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onVisible);
-    window.addEventListener("pageshow", onVisible);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onVisible);
-      window.removeEventListener("pageshow", onVisible);
-    };
-  }, []);
-  return null;
-}
 
 function BrowserTelemetryInstaller() {
   useEffect(() => {
@@ -235,7 +216,7 @@ function App() {
             <InactivityWarning />
             <AuthSessionBanner />
             <PendingSessionLoader />
-            <GlobalStrategistPollerResumer />
+            <StrategistJobBackgroundSync />
             <BrowserTelemetryInstaller />
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
               <Router />

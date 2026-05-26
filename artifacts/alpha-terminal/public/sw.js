@@ -28,10 +28,26 @@ async function stashStrategistPushJob(jobId, ticker) {
   }
 }
 
+function postStrategistReadyToClients(clients, jobId, ticker) {
+  const msg = {
+    type: "STRATEGIST_PUSH_READY",
+    jobId,
+    ticker: typeof ticker === "string" ? ticker : undefined,
+  };
+  for (const client of clients) {
+    try {
+      client.postMessage(msg);
+    } catch {
+      // ignore
+    }
+  }
+}
+
 async function openStrategistFromNotification(clients, jobId, ticker, openPath) {
   const origin = self.location.origin;
   const url = `${origin}${openPath}`;
   await stashStrategistPushJob(jobId, ticker);
+  postStrategistReadyToClients(clients, jobId, ticker);
 
   for (const client of clients) {
     if (!client.url.includes(origin)) continue;
@@ -83,6 +99,11 @@ self.addEventListener("push", (e) => {
     (async () => {
       if (isStrategist) {
         await stashStrategistPushJob(jobId, data.ticker);
+        const clients = await self.clients.matchAll({
+          type: "window",
+          includeUncontrolled: true,
+        });
+        postStrategistReadyToClients(clients, jobId, data.ticker);
       }
       await self.registration.showNotification(title, options);
     })(),
