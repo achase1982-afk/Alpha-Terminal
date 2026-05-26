@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
 import crypto from "node:crypto";
 import {
   GetAuthUrlResponse,
@@ -108,6 +108,15 @@ function escapeHtml(str: string): string {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+function readQueryString(req: Request, key: string): string | undefined {
+  const value = req.query[key];
+  if (typeof value === "string" && value.length > 0) return value;
+  if (Array.isArray(value) && typeof value[0] === "string" && value[0].length > 0) {
+    return value[0];
+  }
+  return undefined;
+}
+
 function basicAuth(appKey: string, appSecret: string): string {
   return "Basic " + Buffer.from(`${appKey}:${appSecret}`).toString("base64");
 }
@@ -205,8 +214,8 @@ router.get("/redirect-uri", (_req, res) => {
 });
 
 router.get("/callback", async (req, res) => {
-  const code = req.query["code"] as string | undefined;
-  const state = req.query["state"] as string | undefined;
+  const code = readQueryString(req, "code");
+  const state = readQueryString(req, "state");
 
   if (!code) {
     return res.status(400).send(errorPage("Missing Code", "No authorization code was received from Schwab."));
@@ -516,24 +525,21 @@ router.get("/trader-url", (_req, res) => {
 });
 
 router.get("/trader-callback", async (req, res) => {
-  const oauthError = req.query["error"] as string | undefined;
-  const oauthErrorDesc = req.query["error_description"] as string | undefined;
+  const oauthError = readQueryString(req, "error");
+  const oauthErrorDesc = readQueryString(req, "error_description");
   if (oauthError) {
     req.log.warn(
-      { error: oauthError, error_description: oauthErrorDesc },
+      { error: oauthError, ...(oauthErrorDesc ? { error_description: oauthErrorDesc } : {}) },
       "GET /trader-callback — Schwab denied or aborted authorization",
     );
-    const detail =
-      typeof oauthErrorDesc === "string" && oauthErrorDesc
-        ? oauthErrorDesc
-        : "Authorization was not completed at Schwab.";
+    const detail = oauthErrorDesc ?? "Authorization was not completed at Schwab.";
     return res
       .status(400)
       .send(errorPage("Authorization Not Completed", `${oauthError}: ${detail}`));
   }
 
-  const code = req.query["code"] as string | undefined;
-  const state = req.query["state"] as string | undefined;
+  const code = readQueryString(req, "code");
+  const state = readQueryString(req, "state");
 
   if (!code) {
     return res.status(400).send(errorPage("Missing Code", "No authorization code was received from Schwab."));
@@ -577,7 +583,12 @@ router.get("/trader-callback", async (req, res) => {
     if (!response.ok) {
       const schwabDetail = schwabOAuthErrorDetail(responseText);
       req.log.error(
-        { status: response.status, body: responseText, redirect_uri: redirectUri, schwabDetail },
+        {
+          status: response.status,
+          body: responseText,
+          redirect_uri: redirectUri,
+          ...(schwabDetail ? { schwabDetail } : {}),
+        },
         "Trader token exchange failed",
       );
       // iOS Safari often reloads the callback URL — the code is single-use, so the
