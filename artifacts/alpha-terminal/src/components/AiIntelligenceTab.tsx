@@ -3835,6 +3835,7 @@ function AiIntelligenceTabInner({
         <div style={{ height: "100%", overflowY: "auto" }}>
           <TabErrorBoundary tabName="Catalysts">
             <CatalystsFeed
+              subscribeEquitySymbols={subscribeEquitySymbols}
               onNavigateToSymbol={onNavigateToMarkets ?? STABLE_NOOP_NAVIGATE}
               onSendToStrategist={(sym, flowContext) => {
                 onSubTabChange("strategist");

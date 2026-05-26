@@ -21,11 +21,17 @@ import { useTerminalStore } from "@/lib/store";
 import { normalizeCatalystGateSettings } from "@workspace/catalysts-types";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
+import { useQuote } from "@/hooks/useQuote";
 import {
   buildCatalystStrategistFlowContext,
   catalystCardPhase,
   daysUntilEarnings,
   driftVsSpy10d,
+  liveSpotPrice,
+  liveTapeMode,
+  liveTodayTapeLabel,
+  liveVsSpyDayPct,
+  priorSettledClose,
   rawDrift10d,
   earningsDaysAwayLabel,
   fmtEarningsShort,
@@ -74,7 +80,7 @@ const SORT_CHIPS: { key: SortKey; label: string }[] = [
   { key: "streak", label: "STREAK" },
 ];
 
-/** Avoid mounting 1000+ rows — drift is cached; live quotes are not used on this tab. */
+/** Cap DOM rows; mounted rows use on-demand live quotes (same path as search/quote). */
 const CATALYSTS_RENDER_INITIAL = 120;
 const CATALYSTS_RENDER_STEP = 120;
 
@@ -234,6 +240,13 @@ const CatalystRow = memo(function CatalystRow({
 }) {
   const [strategistSent, setStrategistSent] = useState(false);
   const strategistSentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { data: stockQuote } = useQuote(card.symbol);
+  const { data: spyQuote } = useQuote("SPY");
+  const tapeMode = liveTapeMode();
+  const priorClose = priorSettledClose(card);
+  const liveSpot = liveSpotPrice(stockQuote, tapeMode);
+  const liveMoves = liveVsSpyDayPct(stockQuote, spyQuote, priorClose, tapeMode);
+  const liveLabel = liveTodayTapeLabel(tapeMode);
 
   const rel10 = driftVsSpy10d(card);
   const raw10 = rawDrift10d(card);
@@ -310,6 +323,52 @@ const CatalystRow = memo(function CatalystRow({
           <p className="font-mono" style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX, lineHeight: BODY_LINE_HEIGHT }}>
             {card.snapshot.patternRead}
           </p>
+          <div
+            className="rounded-lg border px-2 py-1.5 font-mono"
+            style={{ borderColor: GOLD, background: PANEL }}
+          >
+            <p className="mb-1" style={{ color: GOLD, fontSize: MIN_FONT_PX }}>
+              {liveLabel} · live (vs prior settled close)
+            </p>
+            <div
+              className="grid gap-x-2"
+              style={{
+                fontSize: MIN_FONT_PX,
+                gridTemplateColumns: "minmax(2.5rem, auto) 1fr 1fr 1fr",
+              }}
+            >
+              <span />
+              <span className="text-right" style={{ color: TEXT_PRIMARY }}>
+                RAW
+              </span>
+              <span className="text-right" style={{ color: TEXT_PRIMARY }}>
+                S&amp;P
+              </span>
+              <span className="text-right" style={{ color: TEXT_PRIMARY }}>
+                VS S&amp;P
+              </span>
+              <span style={{ color: TEXT_PRIMARY }}>{liveLabel}</span>
+              <span className="text-right tabular-nums" style={{ color: pctColor(liveMoves.raw) }}>
+                {fmtPct(liveMoves.raw)}
+              </span>
+              <span className="text-right tabular-nums" style={{ color: pctColor(liveMoves.spy) }}>
+                {spyHistoryOk ? fmtPct(liveMoves.spy) : "—"}
+              </span>
+              <span className="text-right tabular-nums" style={{ color: pctColor(liveMoves.vs) }}>
+                {spyHistoryOk ? fmtPct(liveMoves.vs) : fmtPct(liveMoves.raw)}
+              </span>
+            </div>
+            {liveSpot != null ? (
+              <p className="mt-1 tabular-nums" style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}>
+                Spot ${liveSpot.toFixed(2)}
+                {priorClose != null ? ` · ref ${priorClose.toFixed(2)}` : ""}
+              </p>
+            ) : (
+              <p className="mt-1" style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}>
+                Awaiting live quote…
+              </p>
+            )}
+          </div>
           <p className="font-mono" style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX, lineHeight: BODY_LINE_HEIGHT }}>
             Cumulative drift (sum of daily moves vs S&amp;P 500)
           </p>
@@ -371,8 +430,18 @@ const CatalystRow = memo(function CatalystRow({
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 font-mono" style={{ fontSize: ROW_FONT_PX }}>
-            <span style={{ color: TEXT_SECONDARY }}>
-              LAST {card.lastPrice != null ? `$${card.lastPrice.toFixed(2)}` : "—"}
+            <span style={{ color: TEXT_PRIMARY }}>
+              {liveSpot != null ? (
+                <>
+                  LAST <span className="font-bold">${liveSpot.toFixed(2)}</span> live
+                </>
+              ) : card.lastPrice != null ? (
+                <>
+                  LAST <span className="font-bold">${card.lastPrice.toFixed(2)}</span> settled
+                </>
+              ) : (
+                "LAST —"
+              )}
             </span>
             <span style={{ color: TEXT_SECONDARY }}>
               IMPLIED{" "}
@@ -432,9 +501,12 @@ const CatalystRow = memo(function CatalystRow({
 export function CatalystsFeed({
   onNavigateToSymbol,
   onSendToStrategist,
+  subscribeEquitySymbols,
 }: {
   onNavigateToSymbol?: (sym: string) => void;
   onSendToStrategist?: (sym: string, flowContext: string) => void;
+  /** Same on-demand path as search/quote — registers symbols with the market stream. */
+  subscribeEquitySymbols?: (syms: string[]) => void;
 }) {
   const queryClient = useQueryClient();
   const setCatalystGateSettings = useTerminalStore((s) => s.setCatalystGateSettings);
@@ -528,6 +600,12 @@ export function CatalystsFeed({
     [sorted, renderLimit],
   );
   const hasMore = sorted.length > displayed.length;
+
+  useEffect(() => {
+    if (!subscribeEquitySymbols || displayed.length === 0) return;
+    const syms = [...new Set([...displayed.map((c) => c.symbol.toUpperCase()), "SPY"])];
+    subscribeEquitySymbols(syms);
+  }, [displayed, subscribeEquitySymbols]);
 
   const toggle = useCallback((sym: string) => {
     setExpanded((prev) => ({ ...prev, [sym]: !prev[sym] }));
@@ -661,7 +739,7 @@ export function CatalystsFeed({
                   style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX, borderColor: BORDER }}
                 >
                   Showing {displayed.length} of {sorted.length} — tighten gates or load more below.
-                  Large lists do not subscribe live quotes (keeps the app responsive).
+                  Live quotes apply to visible rows only.
                 </p>
               )}
               {displayed.map((card) => (

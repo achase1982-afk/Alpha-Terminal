@@ -62,6 +62,81 @@ export function liveTapeMode(now = new Date()): LiveTapeMode {
   return "OVERNIGHT";
 }
 
+/** Label for the live (non-settled) row on Catalysts. */
+export function liveTodayTapeLabel(mode: LiveTapeMode): string {
+  if (mode === "SESSION") return "TODAY";
+  if (mode === "AHRS") return "AHRS";
+  return "OVERNIGHT";
+}
+
+/** Last settled close from the cached feed (reference for live % vs prior session). */
+export function priorSettledClose(card: CatalystCard): number | null {
+  const closes = card.snapshot.closes;
+  if (closes.length > 0) {
+    const last = closes[closes.length - 1]!;
+    if (last != null && Number.isFinite(last)) return last;
+  }
+  return card.lastPrice;
+}
+
+export function liveSpotPrice(quote: QuoteData | null, mode: LiveTapeMode): number | null {
+  if (!quote) return null;
+  if (mode === "SESSION") {
+    return quote.last ?? quote.regularLast ?? null;
+  }
+  const ext = quote.extendedLast ?? quote.last;
+  return ext != null && Number.isFinite(ext) ? ext : null;
+}
+
+/** Stock % vs prior settled close (feed); falls back to stream changePct in regular hours. */
+export function liveStockDayPct(
+  quote: QuoteData | null,
+  priorSettled: number | null,
+  mode: LiveTapeMode,
+): number | null {
+  if (!quote) return null;
+  if (mode === "AHRS") return afterHoursPct(quote);
+  if (mode === "OVERNIGHT") {
+    const spot = liveSpotPrice(quote, mode);
+    if (spot != null && priorSettled != null && priorSettled !== 0) {
+      return ((spot - priorSettled) / priorSettled) * 100;
+    }
+    return null;
+  }
+  if (priorSettled != null && priorSettled !== 0) {
+    const spot = liveSpotPrice(quote, mode);
+    if (spot != null && Number.isFinite(spot)) {
+      return ((spot - priorSettled) / priorSettled) * 100;
+    }
+  }
+  return sessionSettledPct(quote);
+}
+
+export function liveSpyDayPct(quote: QuoteData | null, mode: LiveTapeMode): number | null {
+  if (!quote) return null;
+  if (mode === "AHRS") return afterHoursPct(quote);
+  if (mode === "SESSION") return sessionSettledPct(quote) ?? quote.changePct;
+  const spot = liveSpotPrice(quote, mode);
+  const prior = quote.close;
+  if (spot != null && prior != null && prior !== 0) {
+    return ((spot - prior) / prior) * 100;
+  }
+  return quote.changePct;
+}
+
+export function liveVsSpyDayPct(
+  stockQuote: QuoteData | null,
+  spyQuote: QuoteData | null,
+  priorSettled: number | null,
+  mode: LiveTapeMode,
+): { raw: number | null; spy: number | null; vs: number | null } {
+  const raw = liveStockDayPct(stockQuote, priorSettled, mode);
+  const spy = liveSpyDayPct(spyQuote, mode);
+  if (raw == null) return { raw: null, spy, vs: null };
+  if (spy == null) return { raw, spy: null, vs: raw };
+  return { raw, spy, vs: raw - spy };
+}
+
 export function daysUntilEarnings(earningsDate: string, now = new Date()): number {
   const today = nyParts(now).ymd;
   const t0 = Date.parse(`${today}T12:00:00Z`);
