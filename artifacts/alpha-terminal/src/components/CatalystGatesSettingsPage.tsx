@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  CATALYST_GATE_LIMITS,
   DEFAULT_CATALYST_GATE_SETTINGS,
+  formatMarketCapFloorLabel,
+  formatVolumeFloorLabel,
   normalizeCatalystGateSettings,
   type CatalystGateSettings,
 } from "@workspace/catalysts-types";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { useTerminalStore } from "@/lib/store";
+
+const MIN_FONT_PX = 12;
+const TEXT = "#fafafa";
+const MUTED = "#a1a1aa";
+const GOLD = "#FFB800";
+const BORDER = "#3f3f46";
 
 function SidebarToggle({
   label,
@@ -21,9 +30,13 @@ function SidebarToggle({
   return (
     <label className="flex items-start justify-between gap-3 cursor-pointer py-2">
       <div className="min-w-0">
-        <span className="font-mono text-[11px] text-[#e4e4e7] tracking-wide">{label}</span>
+        <span className="font-mono tracking-wide" style={{ color: TEXT, fontSize: MIN_FONT_PX }}>
+          {label}
+        </span>
         {hint ? (
-          <p className="font-mono text-[9px] text-[#71717a] mt-1 leading-relaxed">{hint}</p>
+          <p className="font-mono mt-1 leading-relaxed" style={{ color: MUTED, fontSize: MIN_FONT_PX }}>
+            {hint}
+          </p>
         ) : null}
       </div>
       <input
@@ -33,6 +46,62 @@ function SidebarToggle({
         className="rounded border-card-border bg-transparent accent-[#FFB800] w-4 h-4 mt-0.5 shrink-0"
       />
     </label>
+  );
+}
+
+function GateSlider({
+  label,
+  hint,
+  valueLabel,
+  min,
+  max,
+  step,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  valueLabel: string;
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+  disabled?: boolean;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="py-2 pl-1 space-y-1.5" style={{ opacity: disabled ? 0.45 : 1 }}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <span className="font-mono" style={{ color: TEXT, fontSize: MIN_FONT_PX }}>
+            {label}
+          </span>
+          {hint ? (
+            <p className="font-mono mt-1 leading-relaxed" style={{ color: MUTED, fontSize: MIN_FONT_PX }}>
+              {hint}
+            </p>
+          ) : null}
+        </div>
+        <span
+          className="font-mono font-bold tabular-nums shrink-0"
+          style={{ color: GOLD, fontSize: MIN_FONT_PX }}
+        >
+          {valueLabel}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full accent-[#FFB800]"
+        style={{ height: 20 }}
+      />
+    </div>
   );
 }
 
@@ -84,27 +153,31 @@ export function CatalystGatesSettingsPage() {
     }
   };
 
+  const lim = CATALYST_GATE_LIMITS;
+
   return (
     <div className="space-y-5 max-w-xl mx-auto">
-      <p className="font-mono text-[10px] text-muted-foreground/70 leading-relaxed">
+      <p className="font-mono leading-relaxed" style={{ color: MUTED, fontSize: MIN_FONT_PX }}>
         Controls which names appear on the Catalysts tab after the earnings harvest. Change gates here,
-        then tap <strong className="text-[#e4e4e7] font-normal">Refresh</strong> on Catalysts to rebuild the list.
+        then tap <strong style={{ color: TEXT, fontWeight: 600 }}>Refresh</strong> on Catalysts to rebuild the list.
         {savedHint ? (
-          <span className="text-[#FFB800] ml-2">{savedHint}</span>
+          <span style={{ color: GOLD, marginLeft: 8 }}>{savedHint}</span>
         ) : null}
       </p>
 
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          className="font-mono text-[10px] px-3 py-1.5 rounded-lg border border-[#FFB800] text-[#FFB800]"
+          className="font-mono px-3 py-1.5 rounded-lg border"
+          style={{ fontSize: MIN_FONT_PX, borderColor: GOLD, color: GOLD }}
           onClick={() => patch({ gatesEnabled: false })}
         >
           ALL GATES OFF
         </button>
         <button
           type="button"
-          className="font-mono text-[10px] px-3 py-1.5 rounded-lg border border-card-border text-zinc-400"
+          className="font-mono px-3 py-1.5 rounded-lg border"
+          style={{ fontSize: MIN_FONT_PX, borderColor: BORDER, color: MUTED }}
           onClick={() => patch({ ...DEFAULT_CATALYST_GATE_SETTINGS })}
         >
           RESET DEFAULTS
@@ -125,8 +198,8 @@ export function CatalystGatesSettingsPage() {
           onChange={() => toggle("requireOptionsChain")}
         />
         <SidebarToggle
-          label="Require 5-day session drift"
-          hint="Off = show names even without equity_daily history (vs S&P may be blank)."
+          label="Require 10-day session drift"
+          hint="Off = show names even without full price history (vs S&P may be blank)."
           checked={catalystGateSettings.requireSessionSnapshot}
           onChange={() => toggle("requireSessionSnapshot")}
         />
@@ -140,33 +213,54 @@ export function CatalystGatesSettingsPage() {
           checked={catalystGateSettings.requirePriceFloor}
           onChange={() => toggle("requirePriceFloor")}
         />
-        {catalystGateSettings.requirePriceFloor && (
-          <div className="py-2 pl-1 flex flex-wrap gap-2">
-            {[0, 5, 10].map((usd) => (
-              <button
-                key={usd}
-                type="button"
-                className="font-mono text-[10px] px-2 py-1 rounded border"
-                style={{
-                  borderColor: catalystGateSettings.priceFloorUsd === usd ? "#FFB800" : "#3f3f46",
-                  color: catalystGateSettings.priceFloorUsd === usd ? "#FFB800" : "#a1a1aa",
-                }}
-                onClick={() => patch({ priceFloorUsd: usd })}
-              >
-                {usd === 0 ? "OFF" : `$${usd}+`}
-              </button>
-            ))}
-          </div>
-        )}
+        <GateSlider
+          label="Price floor"
+          valueLabel={
+            !catalystGateSettings.requirePriceFloor || catalystGateSettings.priceFloorUsd <= 0
+              ? "Off"
+              : `$${catalystGateSettings.priceFloorUsd}+`
+          }
+          min={lim.priceFloorUsd.min}
+          max={lim.priceFloorUsd.max}
+          step={lim.priceFloorUsd.step}
+          value={catalystGateSettings.priceFloorUsd}
+          disabled={!catalystGateSettings.requirePriceFloor}
+          onChange={(v) => patch({ priceFloorUsd: v, requirePriceFloor: v > 0 })}
+        />
         <SidebarToggle
-          label="Market cap floor ($500M default)"
+          label="Market cap floor"
           checked={catalystGateSettings.requireMicroCapFloor}
           onChange={() => toggle("requireMicroCapFloor")}
         />
+        <GateSlider
+          label="Market cap minimum"
+          hint="Off, or $1B steps up to $2T (e.g. $500B–$1T for mega-cap-only weeks)."
+          valueLabel={formatMarketCapFloorLabel(
+            catalystGateSettings.requireMicroCapFloor ? catalystGateSettings.marketCapFloorUsd : 0,
+          )}
+          min={lim.marketCapFloorUsd.min}
+          max={lim.marketCapFloorUsd.max}
+          step={lim.marketCapFloorUsd.step}
+          value={catalystGateSettings.marketCapFloorUsd}
+          disabled={!catalystGateSettings.requireMicroCapFloor}
+          onChange={(v) => patch({ marketCapFloorUsd: v, requireMicroCapFloor: v > 0 })}
+        />
         <SidebarToggle
-          label="Average volume floor (500k default)"
+          label="Average volume floor"
           checked={catalystGateSettings.requireVolumeFloor}
           onChange={() => toggle("requireVolumeFloor")}
+        />
+        <GateSlider
+          label="Average volume minimum"
+          valueLabel={formatVolumeFloorLabel(
+            catalystGateSettings.requireVolumeFloor ? catalystGateSettings.avgVolumeFloor : 0,
+          )}
+          min={lim.avgVolumeFloor.min}
+          max={lim.avgVolumeFloor.max}
+          step={lim.avgVolumeFloor.step}
+          value={catalystGateSettings.avgVolumeFloor}
+          disabled={!catalystGateSettings.requireVolumeFloor}
+          onChange={(v) => patch({ avgVolumeFloor: v, requireVolumeFloor: v > 0 })}
         />
       </div>
     </div>

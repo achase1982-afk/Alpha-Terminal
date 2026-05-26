@@ -13,9 +13,16 @@ export interface CatalystGateSettings {
   requireVolumeFloor: boolean;
   /** Minimum average volume when requireVolumeFloor (0 = off). */
   avgVolumeFloor: number;
-  /** Require 10 settled Schwab sessions for drift / vs S&P. */
+  /** Require 10 settled sessions for drift / vs S&P. */
   requireSessionSnapshot: boolean;
 }
+
+export const CATALYST_GATE_LIMITS = {
+  priceFloorUsd: { min: 0, max: 500, step: 1 },
+  /** Off (0) or $1B–$2T — slide to ~$500B–$1T+ for mega-cap-only earnings weeks. */
+  marketCapFloorUsd: { min: 0, max: 2_000_000_000_000, step: 1_000_000_000 },
+  avgVolumeFloor: { min: 0, max: 20_000_000, step: 10_000 },
+} as const;
 
 export const DEFAULT_CATALYST_GATE_SETTINGS: CatalystGateSettings = {
   gatesEnabled: true,
@@ -35,16 +42,27 @@ export function normalizeCatalystGateSettings(
 ): CatalystGateSettings {
   const d = DEFAULT_CATALYST_GATE_SETTINGS;
   if (!raw || typeof raw !== "object") return { ...d };
+  const lim = CATALYST_GATE_LIMITS;
   return {
     gatesEnabled: raw.gatesEnabled ?? d.gatesEnabled,
     requireOptionsChain: raw.requireOptionsChain ?? d.requireOptionsChain,
     stripLeveragedEtfs: raw.stripLeveragedEtfs ?? d.stripLeveragedEtfs,
     requirePriceFloor: raw.requirePriceFloor ?? d.requirePriceFloor,
-    priceFloorUsd: clampNum(raw.priceFloorUsd, d.priceFloorUsd, 0, 10_000),
+    priceFloorUsd: clampNum(raw.priceFloorUsd, d.priceFloorUsd, lim.priceFloorUsd.min, lim.priceFloorUsd.max),
     requireMicroCapFloor: raw.requireMicroCapFloor ?? d.requireMicroCapFloor,
-    marketCapFloorUsd: clampNum(raw.marketCapFloorUsd, d.marketCapFloorUsd, 0, 1e12),
+    marketCapFloorUsd: clampNum(
+      raw.marketCapFloorUsd,
+      d.marketCapFloorUsd,
+      lim.marketCapFloorUsd.min,
+      lim.marketCapFloorUsd.max,
+    ),
     requireVolumeFloor: raw.requireVolumeFloor ?? d.requireVolumeFloor,
-    avgVolumeFloor: clampNum(raw.avgVolumeFloor, d.avgVolumeFloor, 0, 1e9),
+    avgVolumeFloor: clampNum(
+      raw.avgVolumeFloor,
+      d.avgVolumeFloor,
+      lim.avgVolumeFloor.min,
+      lim.avgVolumeFloor.max,
+    ),
     requireSessionSnapshot: raw.requireSessionSnapshot ?? d.requireSessionSnapshot,
   };
 }
@@ -53,4 +71,25 @@ function clampNum(v: unknown, fallback: number, min: number, max: number): numbe
   const n = typeof v === "number" ? v : Number(v);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, n));
+}
+
+export function formatMarketCapFloorLabel(usd: number): string {
+  if (usd <= 0) return "Off";
+  if (usd >= 1_000_000_000_000) {
+    const t = usd / 1_000_000_000_000;
+    return `$${t % 1 === 0 ? t.toFixed(0) : t.toFixed(2)}T+`;
+  }
+  if (usd >= 1_000_000_000) {
+    const b = usd / 1_000_000_000;
+    return `$${b % 1 === 0 ? b.toFixed(0) : b.toFixed(1)}B+`;
+  }
+  if (usd >= 1_000_000) return `$${Math.round(usd / 1_000_000)}M+`;
+  return `$${Math.round(usd / 1000)}K+`;
+}
+
+export function formatVolumeFloorLabel(n: number): string {
+  if (n <= 0) return "Off";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M+`;
+  if (n >= 1000) return `${Math.round(n / 1000)}K+`;
+  return `${n}+`;
 }

@@ -72,12 +72,19 @@ export async function buildCatalystsFeed(
 
   const symbols = calendar.map((e) => e.symbol);
   const profiles = await fetchFmpCompanyProfiles(symbols);
-  const closesBySymbol = await fetchSchwabDailyClosesBatch(symbols);
+
+  const needsPriceForGates =
+    gateSettings.gatesEnabled &&
+    gateSettings.requirePriceFloor &&
+    gateSettings.priceFloorUsd > 0;
+  const preGateCloses = needsPriceForGates
+    ? await fetchSchwabDailyClosesBatch(symbols)
+    : new Map<string, Map<string, number>>();
 
   const candidates: TradeabilityCandidate[] = calendar.map((e) => {
     const sym = e.symbol.toUpperCase();
-    const px = latestCloseFromMap(closesBySymbol.get(sym) ?? new Map());
     const profile = profiles.get(sym);
+    const px = latestCloseFromMap(preGateCloses.get(sym) ?? new Map());
     return {
       symbol: sym,
       name: profile?.sector ? sym : sym,
@@ -122,6 +129,9 @@ export async function buildCatalystsFeed(
   const sessionDates = settledSessionYmdsEndingAt(endSettled, CATALYST_DRIFT_SESSION_COUNT);
   const timingHints = await loadEarningsTimingHints(calendar.map((e) => e.symbol));
 
+  const driftSymbols = [...new Set(tradeable.map((t) => t.symbol.toUpperCase()))];
+  const closesBySymbol = await fetchSchwabDailyClosesBatch(driftSymbols);
+
   const spyCloses = await fetchSchwabDailyClosesByNyDate("SPY");
   const spySnapshot =
     sessionDates.length === CATALYST_DRIFT_SESSION_COUNT
@@ -152,6 +162,10 @@ export async function buildCatalystsFeed(
         continue;
       }
       snapshot = emptySessionSnapshot();
+      snapshot.patternRead =
+        stockCloses.size === 0
+          ? "Session drift unavailable — no price history from Schwab or FMP for this symbol."
+          : "Session drift unavailable — fewer than 10 settled sessions in price history.";
     }
 
     const profile = profiles.get(sym);

@@ -61,7 +61,7 @@ const SORT_CHIPS: { key: SortKey; label: string }[] = [
   { key: "streak", label: "STREAK" },
 ];
 
-function fmtBuiltAt(iso: string): string {
+function fmtBuiltAtShort(iso: string): string {
   if (!iso) return "";
   try {
     const d = new Date(iso);
@@ -72,17 +72,10 @@ function fmtBuiltAt(iso: string): string {
       hour: "numeric",
       minute: "2-digit",
       timeZone: "America/New_York",
-      timeZoneName: "short",
     });
   } catch {
     return "";
   }
-}
-
-function feedStatusLabel(feed: CatalystsFeed | undefined): string {
-  if (!feed?.builtAt) return "Waiting for first snapshot";
-  const stamped = fmtBuiltAt(feed.builtAt);
-  return stamped ? `Built ${stamped}` : "Waiting for first snapshot";
 }
 
 function CollapsedCell({
@@ -318,8 +311,8 @@ function CatalystRow({
             {card.snapshot.patternRead}
           </p>
           <div
-            className="grid grid-cols-4 gap-2 text-center font-mono border rounded-lg py-2"
-            style={{ borderColor: BORDER, background: PANEL, fontSize: ROW_FONT_PX }}
+            className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 font-mono"
+            style={{ fontSize: ROW_FONT_PX }}
           >
             {(
               [
@@ -329,19 +322,19 @@ function CatalystRow({
                 ["10D", card.snapshot.cumulative10d],
               ] as const
             ).map(([label, val]) => (
-              <div key={label}>
-                <p style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}>{label}</p>
-                <p className="font-bold mt-0.5" style={{ color: pctColor(val) }}>
+              <span key={label} className="tabular-nums whitespace-nowrap">
+                <span style={{ color: TEXT_PRIMARY }}>{label} </span>
+                <span className="font-bold" style={{ color: pctColor(val) }}>
                   {fmtPct(val)}
-                </p>
-              </div>
+                </span>
+              </span>
             ))}
           </div>
           <div>
-            <p className="font-mono mb-2" style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}>
+            <p className="font-mono mb-1" style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}>
               SESSION-BY-SESSION (VS S&P)
             </p>
-            <div className="flex flex-col gap-0.5 max-h-48 overflow-y-auto">
+            <div className="flex flex-col gap-0">
               {card.snapshot.sessionDates.map((d, i) => {
                 const n = card.snapshot.sessionDates.length;
                 const offset = n - 1 - i;
@@ -350,16 +343,10 @@ function CatalystRow({
                 return (
                 <div
                   key={`${d}-${i}`}
-                  className="flex items-center justify-between font-mono py-1 px-2 rounded"
-                  style={{
-                    background: i === card.snapshot.sessionDates.length - 1 ? PANEL : "transparent",
-                    fontSize: MIN_FONT_PX,
-                  }}
+                  className="flex items-center justify-between font-mono py-0.5"
+                  style={{ fontSize: MIN_FONT_PX }}
                 >
-                  <span style={{ color: TEXT_PRIMARY }}>
-                    {sessionLabel}
-                    {d ? ` · ${d}` : ""}
-                  </span>
+                  <span style={{ color: TEXT_PRIMARY }}>{sessionLabel}</span>
                   <span style={{ color: pctColor(card.snapshot.sessionMovesPct[i]) }}>
                     {fmtPct(card.snapshot.sessionMovesPct[i])}
                   </span>
@@ -385,17 +372,24 @@ function CatalystRow({
               {!card.earningsConfirmed ? " · EST." : ""}
             </span>
           </div>
-          <div className="flex flex-col gap-2 mt-2">
-            {onSendToStrategist && (
+          <div className="flex items-center justify-between gap-3 mt-2 font-mono font-bold tracking-wider">
+            {onNavigate ? (
               <button
                 type="button"
-                className="w-full font-mono font-bold tracking-wider rounded-lg py-2.5 transition-opacity"
-                style={{
-                  background: BLUE,
-                  color: TEXT_PRIMARY,
-                  fontSize: ROW_FONT_PX,
-                  opacity: strategistSent ? 0.85 : 1,
-                }}
+                className="shrink-0"
+                style={{ color: GOLD, fontSize: ROW_FONT_PX }}
+                onClick={() => onNavigate(card.symbol)}
+              >
+                Open {card.symbol} →
+              </button>
+            ) : (
+              <span />
+            )}
+            {onSendToStrategist ? (
+              <button
+                type="button"
+                className="shrink-0 ml-auto"
+                style={{ color: BLUE, fontSize: ROW_FONT_PX }}
                 onClick={() => {
                   if (strategistSent) return;
                   onSendToStrategist(
@@ -412,17 +406,7 @@ function CatalystRow({
               >
                 {strategistSent ? "Sent to Strategist" : "Send to Strategist"}
               </button>
-            )}
-            {onNavigate && (
-              <button
-                type="button"
-                className="font-mono font-bold tracking-wider"
-                style={{ color: GOLD, fontSize: ROW_FONT_PX }}
-                onClick={() => onNavigate(card.symbol)}
-              >
-                Open {card.symbol} →
-              </button>
-            )}
+            ) : null}
           </div>
         </div>
       )}
@@ -560,30 +544,34 @@ export function CatalystsFeed({
   return (
     <div className="flex flex-col min-h-full" style={{ background: BG, color: TEXT_PRIMARY }}>
       <div
-        className="flex items-center justify-between px-3 py-2 border-b shrink-0"
+        className="flex items-start justify-between gap-2 px-3 py-2 border-b shrink-0"
         style={{ borderColor: BORDER, background: PANEL }}
       >
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h1 className="font-mono font-bold tracking-[0.2em]" style={{ color: GOLD, fontSize: ROW_FONT_PX }}>
             CATALYSTS
           </h1>
-          <p className="font-mono mt-0.5 truncate" style={{ color: TEXT_SECONDARY, fontSize: MIN_FONT_PX }}>
+          <p className="font-mono truncate" style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}>
             Earnings next 10 days · drift vs S&P 500
           </p>
-          <p className="font-mono mt-0.5 truncate" style={{ color: MUTED, fontSize: MIN_FONT_PX }}>
-            {feedStatusLabel(data)}
-          </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void onRefresh()}
-          disabled={refreshBusy}
-          className="p-2 rounded-lg border transition-opacity disabled:opacity-40 shrink-0"
-          style={{ borderColor: BORDER, color: MUTED }}
-          aria-label="Refresh catalysts"
-        >
-          {refreshBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-        </button>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          {data?.builtAt ? (
+            <span className="font-mono whitespace-nowrap" style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}>
+              {fmtBuiltAtShort(data.builtAt)}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => void onRefresh()}
+            disabled={refreshBusy}
+            className="p-2 rounded-lg border transition-opacity disabled:opacity-40"
+            style={{ borderColor: BORDER, color: TEXT_PRIMARY }}
+            aria-label="Refresh catalysts"
+          >
+            {refreshBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          </button>
+        </div>
       </div>
 
       {data && !building && (
@@ -609,8 +597,8 @@ export function CatalystsFeed({
               style={{
                 fontSize: ROW_FONT_PX,
                 border: `1px solid ${active ? GOLD : BORDER}`,
-                color: active ? GOLD : MUTED,
-                background: active ? "rgba(255, 184, 0, 0.08)" : "transparent",
+                color: active ? GOLD : TEXT_PRIMARY,
+                background: "transparent",
               }}
             >
               {chip.label}
