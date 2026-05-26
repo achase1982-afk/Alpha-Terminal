@@ -1275,15 +1275,17 @@ export type CatalystsFeedRow = typeof catalystsFeedTable.$inferSelect;
 export type CatalystsFeedInsert = typeof catalystsFeedTable.$inferInsert;
 
 /**
- * Weekly Schwab-harvested next earnings dates for S&P Composite 1500 (Catalysts discovery).
- * Populated by the paced background sweep — not read from calendar vendors on page load.
+ * Catalysts earnings snapshot for S&P Composite 1500 (weekly harvest).
+ * - `lastEarningsDate`: Schwab `/quotes` fundamental (reference; always harvested when present).
+ * - `nextEarningsDate`: forward print from FMP-backed `corporate_events` (primary).
  */
 export const catalystEarningsDatesTable = pgTable(
   "catalyst_earnings_dates",
   {
     symbol: text("symbol").primaryKey().notNull(),
+    lastEarningsDate: date("last_earnings_date"),
     nextEarningsDate: date("next_earnings_date"),
-    /** Null when Schwab does not expose a confirmed/estimated signal. */
+    /** False = show EST. on Catalysts cards when sourced from FMP calendar. */
     earningsConfirmed: boolean("earnings_confirmed"),
     harvestedAt: timestamp("harvested_at", { withTimezone: true }).notNull(),
     sweepId: text("sweep_id"),

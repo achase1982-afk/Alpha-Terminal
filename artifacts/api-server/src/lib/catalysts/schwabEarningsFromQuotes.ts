@@ -2,21 +2,30 @@ import { getBestAccessToken } from "../tokenStore.js";
 import { SCHWAB_MARKETDATA, SCHWAB_QUOTES_BATCH_SIZE } from "../schwabBatchQuotes.js";
 
 export type SchwabHarvestedEarnings = {
+  /** Schwab `/quotes` fundamental — always stored when present (reference). */
+  lastEarningsDate: string | null;
+  /** Rare on batch quotes; stored when Schwab exposes it. */
   nextEarningsDate: string | null;
-  /** True/false when Schwab exposes a signal; null when unknown. */
   earningsConfirmed: boolean | null;
   name: string | null;
 };
 
-function parseNextEarningsDate(fundamental: Record<string, unknown> | undefined): string | null {
-  if (!fundamental) return null;
-  const raw =
-    fundamental["nextEarningsDate"] ??
-    fundamental["nextEarning"] ??
-    fundamental["earningsDate"];
+function parseEarningsYmd(raw: unknown): string | null {
   if (typeof raw !== "string" || !raw.trim()) return null;
   const ymd = raw.trim().slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : null;
+}
+
+function parseLastEarningsDate(fundamental: Record<string, unknown> | undefined): string | null {
+  if (!fundamental) return null;
+  return parseEarningsYmd(fundamental["lastEarningsDate"] ?? fundamental["lastEarningDate"]);
+}
+
+function parseNextEarningsDate(fundamental: Record<string, unknown> | undefined): string | null {
+  if (!fundamental) return null;
+  return parseEarningsYmd(
+    fundamental["nextEarningsDate"] ?? fundamental["nextEarning"] ?? fundamental["earningsDate"],
+  );
 }
 
 function parseEarningsConfirmed(fundamental: Record<string, unknown> | undefined): boolean | null {
@@ -53,8 +62,7 @@ function parseName(entry: Record<string, unknown> | undefined): string | null {
 }
 
 /**
- * Batched Schwab `/quotes` harvest for `nextEarningsDate` (fundamental payload).
- * Reuses the same batch size and fields as {@link ../schwabBatchQuotes.ts}.
+ * Batched Schwab `/quotes` harvest for earnings fields on the fundamental payload.
  */
 export async function fetchSchwabEarningsDatesForSymbols(
   symbols: string[],
@@ -93,6 +101,7 @@ export async function fetchSchwabEarningsDatesForSymbols(
         const entry = (json[sym] ?? json[upper]) as Record<string, unknown> | undefined;
         const f = entry?.["fundamental"] as Record<string, unknown> | undefined;
         out.set(upper, {
+          lastEarningsDate: parseLastEarningsDate(f),
           nextEarningsDate: parseNextEarningsDate(f),
           earningsConfirmed: parseEarningsConfirmed(f),
           name: parseName(entry),
