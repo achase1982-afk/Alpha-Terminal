@@ -1,11 +1,20 @@
+import { CATALYST_DRIFT_SESSION_COUNT } from "@workspace/catalysts-types";
 import pLimit from "p-limit";
 import { getFmpHistoricalPriceEodFull } from "../fmpClient.js";
 import { forceRefresh, getBestAccessToken, getValidAccessToken } from "../tokenStore.js";
-import { nyCalendarYmd } from "../usEquityMarketCalendar.js";
+import { addCalendarDaysNy, nyCalendarYmd } from "../usEquityMarketCalendar.js";
 import { logger } from "../logger.js";
 
 const SCHWAB_API_BASE = "https://api.schwabapi.com/marketdata/v1";
 const fetchLimit = pLimit(4);
+
+/**
+ * Calendar lookback for daily closes only needs to cover the drift window:
+ * 10 settled sessions + one prior close for day-over-day % (and holiday gaps).
+ * Not tied to the 16–17 day harvest cadence — drift never reads beyond that window.
+ */
+const DRIFT_HISTORY_CALENDAR_DAYS =
+  CATALYST_DRIFT_SESSION_COUNT + 12;
 
 type Candle = { close: number; datetime: number };
 
@@ -31,10 +40,12 @@ function candlesToNyDateMap(candles: Candle[]): Map<string, number> {
 
 async function fetchSchwabCandles(symbol: string, token: string): Promise<Candle[]> {
   const sym = symbol.toUpperCase();
+  // Schwab `day` period caps at 10 calendar days — too short for 10 NYSE sessions.
+  // One month of dailies is the smallest periodType that reliably covers our window.
   const params = new URLSearchParams({
     symbol: sym,
     periodType: "month",
-    period: "6",
+    period: "1",
     frequencyType: "daily",
     frequency: "1",
     needExtendedHoursData: "false",
@@ -54,9 +65,7 @@ async function fetchSchwabCandles(symbol: string, token: string): Promise<Candle
 async function fetchFmpDailyClosesByNyDate(symbol: string): Promise<Map<string, number>> {
   const sym = symbol.toUpperCase();
   const toYmd = nyCalendarYmd(new Date());
-  const from = new Date();
-  from.setDate(from.getDate() - 120);
-  const fromYmd = nyCalendarYmd(from);
+  const fromYmd = addCalendarDaysNy(toYmd, -DRIFT_HISTORY_CALENDAR_DAYS);
   try {
     const rows = await getFmpHistoricalPriceEodFull(sym, fromYmd, toYmd);
     const map = new Map<string, number>();
