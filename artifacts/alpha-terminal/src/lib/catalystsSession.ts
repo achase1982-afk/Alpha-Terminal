@@ -35,7 +35,7 @@ export type CatalystCardPhase =
   | "reporting_after_close"
   | "reported";
 
-function nyParts(now: Date): { ymd: string; hour: number; minute: number } {
+export function nyParts(now: Date): { ymd: string; hour: number; minute: number } {
   const fmt = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/New_York",
     year: "numeric",

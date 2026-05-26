@@ -34,6 +34,10 @@ import {
   shouldFallOffCatalyst,
 } from "@/lib/catalystsSession";
 import { normalizeCatalystsFeed } from "@/lib/normalizeCatalystsFeed";
+import {
+  buildSettledSessionRowsNewestFirst,
+  catalystFeedFreshnessLabel,
+} from "@/lib/catalystSessionDisplay";
 
 /** Match Movers feed tokens so both tabs feel like one designer. */
 const BG = "#0c0c0c";
@@ -73,23 +77,6 @@ const SORT_CHIPS: { key: SortKey; label: string }[] = [
 /** Avoid mounting 1000+ rows — drift is cached; live quotes are not used on this tab. */
 const CATALYSTS_RENDER_INITIAL = 120;
 const CATALYSTS_RENDER_STEP = 120;
-
-function fmtBuiltAtShort(iso: string): string {
-  if (!iso) return "";
-  try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
-    return d.toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      timeZone: "America/New_York",
-    });
-  } catch {
-    return "";
-  }
-}
 
 function CollapsedCell({
   children,
@@ -205,23 +192,23 @@ function CatalystsListHeader() {
     >
       <span />
       <CollapsedCell align="start">
-        <span className="font-mono tracking-wider" style={{ color: MUTED, fontSize: ROW_FONT_PX }}>
+        <span className="font-mono tracking-wider" style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX }}>
           Symbol
         </span>
       </CollapsedCell>
       <CollapsedCell>
-        <span className="font-mono tracking-wider whitespace-nowrap" style={{ color: MUTED, fontSize: ROW_FONT_PX }}>
-          10-Day Drift
+        <span className="font-mono tracking-wider whitespace-nowrap" style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX }}>
+          10-Session Drift
         </span>
       </CollapsedCell>
       <CollapsedCell>
-        <span className="font-mono tracking-wider whitespace-nowrap" style={{ color: MUTED, fontSize: ROW_FONT_PX }}>
+        <span className="font-mono tracking-wider whitespace-nowrap" style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX }}>
           Earnings
         </span>
       </CollapsedCell>
       <CollapsedCell>
-        <span className="font-mono tracking-wider whitespace-nowrap" style={{ color: MUTED, fontSize: ROW_FONT_PX }}>
-          vs S&P
+        <span className="font-mono tracking-wider whitespace-nowrap" style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX }}>
+          vs S&amp;P
         </span>
       </CollapsedCell>
     </div>
@@ -323,16 +310,19 @@ const CatalystRow = memo(function CatalystRow({
           <p className="font-mono" style={{ color: TEXT_PRIMARY, fontSize: ROW_FONT_PX, lineHeight: BODY_LINE_HEIGHT }}>
             {card.snapshot.patternRead}
           </p>
+          <p className="font-mono" style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX, lineHeight: BODY_LINE_HEIGHT }}>
+            Cumulative drift (sum of daily moves vs S&amp;P 500)
+          </p>
           <div
             className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 font-mono"
             style={{ fontSize: ROW_FONT_PX }}
           >
             {(
               [
-                ["1D", card.snapshot.cumulative1d],
-                ["3D", card.snapshot.cumulative3d],
-                ["5D", card.snapshot.cumulative5d],
-                ["10D", card.snapshot.cumulative10d],
+                ["T-1", card.snapshot.cumulative1d],
+                ["T-3", card.snapshot.cumulative3d],
+                ["T-5", card.snapshot.cumulative5d],
+                ["T-10", card.snapshot.cumulative10d],
               ] as const
             ).map(([label, val]) => (
               <span key={label} className="tabular-nums whitespace-nowrap">
@@ -345,27 +335,39 @@ const CatalystRow = memo(function CatalystRow({
           </div>
           <div>
             <p className="font-mono mb-1" style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}>
-              SESSION-BY-SESSION (VS S&P)
+              SETTLED SESSIONS (T-1 … T-10) · cached at feed build
             </p>
-            <div className="flex flex-col gap-0">
-              {card.snapshot.sessionDates.map((d, i) => {
-                const n = card.snapshot.sessionDates.length;
-                const offset = n - 1 - i;
-                const sessionLabel =
-                  offset === 0 ? "NOW" : offset === 1 ? "D-1" : `D-${offset}`;
-                return (
-                <div
-                  key={`${d}-${i}`}
-                  className="flex items-center justify-between font-mono py-0.5"
-                  style={{ fontSize: MIN_FONT_PX }}
-                >
-                  <span style={{ color: TEXT_PRIMARY }}>{sessionLabel}</span>
-                  <span style={{ color: pctColor(card.snapshot.sessionMovesPct[i]) }}>
-                    {fmtPct(card.snapshot.sessionMovesPct[i])}
+            <div
+              className="grid font-mono gap-x-2 py-0.5"
+              style={{
+                fontSize: MIN_FONT_PX,
+                gridTemplateColumns: "minmax(2.5rem, auto) 1fr 1fr 1fr",
+              }}
+            >
+              <span style={{ color: TEXT_PRIMARY }} />
+              <span className="text-right" style={{ color: TEXT_PRIMARY }}>
+                RAW
+              </span>
+              <span className="text-right" style={{ color: TEXT_PRIMARY }}>
+                S&amp;P
+              </span>
+              <span className="text-right" style={{ color: TEXT_PRIMARY }}>
+                VS S&amp;P
+              </span>
+              {buildSettledSessionRowsNewestFirst(card, spyHistoryOk).map((row) => (
+                <div key={`${row.dateYmd}-${row.label}`} className="contents">
+                  <span style={{ color: TEXT_PRIMARY }}>{row.label}</span>
+                  <span className="text-right tabular-nums" style={{ color: pctColor(row.rawPct) }}>
+                    {fmtPct(row.rawPct)}
+                  </span>
+                  <span className="text-right tabular-nums" style={{ color: pctColor(row.spyPct) }}>
+                    {spyHistoryOk ? fmtPct(row.spyPct) : "—"}
+                  </span>
+                  <span className="text-right tabular-nums" style={{ color: pctColor(row.vsSpyPct) }}>
+                    {fmtPct(row.vsSpyPct)}
                   </span>
                 </div>
-              );
-              })}
+              ))}
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 font-mono" style={{ fontSize: ROW_FONT_PX }}>
@@ -573,8 +575,11 @@ export function CatalystsFeed({
         </div>
         <div className="flex flex-col items-end gap-1 shrink-0">
           {data?.builtAt ? (
-            <span className="font-mono whitespace-nowrap" style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}>
-              {fmtBuiltAtShort(data.builtAt)}
+            <span
+              className="font-mono text-right max-w-[14rem] leading-snug"
+              style={{ color: TEXT_PRIMARY, fontSize: MIN_FONT_PX }}
+            >
+              {catalystFeedFreshnessLabel(data.builtAt)}
             </span>
           ) : null}
           <button
