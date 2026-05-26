@@ -35,8 +35,10 @@ import {
   AlertTriangle, Settings2, Settings, ArrowLeft, FlaskConical,
   Stethoscope, Layers, Coins, ShieldAlert, User as UserIcon, Sparkles,
   RefreshCw,
+  Flame,
 } from "lucide-react";
 import { MarketCalendar } from "@/components/MarketCalendar";
+import { CatalystGatesSettingsPage } from "@/components/CatalystGatesSettingsPage";
 import { TelemetryPage, useTelemetryCount } from "@/components/TelemetryPage";
 import { TelemetryLogsPanel } from "@/components/TelemetryLogsPanel";
 import { SecurityPrivacyPage } from "@/components/SecurityPrivacyPage";
@@ -62,6 +64,7 @@ type SidebarPage =
   | "Allowed Strategies"
   | "Risk Defaults"
   | "Market Pulse Display"
+  | "Catalyst Gates"
   | "Strategist Tuning"
   | "AI Parameters"
   | "AI Lab"
@@ -81,6 +84,7 @@ const SETTINGS_SUBPAGES: ReadonlySet<SidebarPage> = new Set<SidebarPage>([
   "Allowed Strategies",
   "Risk Defaults",
   "Market Pulse Display",
+  "Catalyst Gates",
   "Strategist Tuning",
   "AI Parameters",
   "AI Lab",
@@ -101,6 +105,7 @@ export interface SidebarHandle {
     | "Allowed Strategies"
     | "Risk Defaults"
     | "Market Pulse Display"
+    | "Catalyst Gates"
     | "Strategist Tuning"
     | "AI Parameters"
     | "AI Lab"
@@ -226,6 +231,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
             {activePage === "Allowed Strategies" && <AllowedStrategiesPage />}
             {activePage === "Risk Defaults" && <RiskDefaultsPage />}
             {activePage === "Market Pulse Display" && <MarketPulseDisplayPage />}
+            {activePage === "Catalyst Gates" && <CatalystGatesSettingsPage />}
             {activePage === "Strategist Tuning" && <StrategistTuningPage />}
             {activePage === "AI Parameters" && <AiParametersPage />}
             {activePage === "AI Lab" && <SystemSettingsPage />}
@@ -1450,6 +1456,7 @@ function SettingsHubPage({
         <SettingsHubRow icon={<Layers />} label="Allowed Strategies" subtitle="Which option structures the strategist may propose" onClick={() => onSelect("Allowed Strategies")} />
         <SettingsHubRow icon={<Coins />} label="Risk Defaults" subtitle="Spread width, account size tier, max risk per trade" onClick={() => onSelect("Risk Defaults")} />
         <SettingsHubRow icon={<Zap />} label="Market Pulse Display" subtitle="Bias strip, auto-refresh, cluster details" onClick={() => onSelect("Market Pulse Display")} />
+        <SettingsHubRow icon={<Flame />} label="Catalyst Gates" subtitle="Options, price floor, volume, session drift filters" onClick={() => onSelect("Catalyst Gates")} />
       </SettingsHubSection>
 
       <SettingsHubSection title="Intelligence">

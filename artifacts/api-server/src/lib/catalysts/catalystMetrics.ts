@@ -25,6 +25,24 @@ function countStreak(moves: number[]): number {
 
 export type CatalystDriftClass = "trending_up" | "trending_down" | "choppy";
 
+/** Placeholder when session snapshot gate is off or equity_daily is incomplete. */
+export function emptySessionSnapshot(): CatalystSessionSnapshot {
+  return {
+    sessionDates: [],
+    closes: [],
+    sessionMovesPct: [0, 0, 0, 0, 0],
+    cumulative1d: 0,
+    cumulative2d: 0,
+    cumulative3d: 0,
+    cumulative4d: 0,
+    cumulative5d: 0,
+    streak: 0,
+    upCount: 0,
+    downCount: 0,
+    patternRead: "Session drift unavailable — enable session gate or backfill equity_daily.",
+  };
+}
+
 /** Same thresholds as pattern-read templates (§4). */
 export function classifyDriftFromMoves(moves: number[]): CatalystDriftClass {
   const ups = moves.filter((m) => m > 0).length;

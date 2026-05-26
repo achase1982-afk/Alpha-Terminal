@@ -8,6 +8,8 @@ import type {
   CatalystsSortKey,
 } from "@workspace/catalysts-types";
 import { MOVERS_MANUAL_REFRESH_DEBOUNCE_MS } from "@workspace/movers-types";
+import { useTerminalStore } from "@/lib/store";
+import { normalizeCatalystGateSettings } from "@workspace/catalysts-types";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import {
@@ -288,12 +290,12 @@ function CatalystRow({
         <CollapsedCell>
           <span
             className="font-mono font-bold tabular-nums whitespace-nowrap"
-            style={{ color: pctColor(vsSpy), fontSize: ROW_FONT_PX }}
+            style={{ color: pctColor(vsSpy ?? drift5d), fontSize: ROW_FONT_PX }}
           >
-            {fmtPct(vsSpy)}
+            {vsSpy != null ? fmtPct(vsSpy) : benchmarkDrift5dPct == null ? "—" : fmtPct(drift5d)}
           </span>
           <span className="font-mono mt-0.5 whitespace-nowrap" style={{ color: MUTED, fontSize: MIN_FONT_PX }}>
-            raw {fmtPct(drift5d)}
+            {vsSpy != null ? `raw ${fmtPct(drift5d)}` : benchmarkDrift5dPct == null ? "SPY n/a" : "vs SPY n/a"}
           </span>
         </CollapsedCell>
       </button>
@@ -365,6 +367,8 @@ export function CatalystsFeed({
   subscribeEquitySymbols?: (syms: string[]) => void;
 }) {
   const queryClient = useQueryClient();
+  const catalystGateSettings = useTerminalStore((s) => s.catalystGateSettings);
+  const setCatalystGateSettings = useTerminalStore((s) => s.setCatalystGateSettings);
   const lastManualRefreshAt = useRef(0);
   const [sortKey, setSortKey] = useState<SortKey>("soonest");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -381,6 +385,17 @@ export function CatalystsFeed({
     }
     return set;
   }, [account?.positions]);
+
+  useEffect(() => {
+    fetchWithAuth("/api/catalysts/settings")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body: { settings?: unknown } | null) => {
+        if (body?.settings) {
+          setCatalystGateSettings(normalizeCatalystGateSettings(body.settings as never));
+        }
+      })
+      .catch(() => {});
+  }, [setCatalystGateSettings]);
 
   const { data, isLoading, error, isFetching } = useQuery({
     queryKey: ["catalysts-feed"],
@@ -450,7 +465,11 @@ export function CatalystsFeed({
 
     setManualRefreshing(true);
     try {
-      const res = await fetchWithAuth("/api/catalysts/refresh", { method: "POST" });
+      const res = await fetchWithAuth("/api/catalysts/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings: catalystGateSettings }),
+      });
       if (!res.ok) throw new Error(`Catalysts refresh HTTP ${res.status}`);
       const body = (await res.json()) as { ok: boolean; feed: CatalystsFeed };
       queryClient.setQueryData(["catalysts-feed"], body.feed);
@@ -459,7 +478,7 @@ export function CatalystsFeed({
     } finally {
       setManualRefreshing(false);
     }
-  }, [queryClient]);
+  }, [queryClient, catalystGateSettings]);
 
   const building = data?.status === "building" || (data?.status === "empty" && !data.builtAt);
   const refreshBusy = manualRefreshing || isFetching;

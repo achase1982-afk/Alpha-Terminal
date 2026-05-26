@@ -1,3 +1,15 @@
+import {
+  DEFAULT_CATALYST_GATE_SETTINGS,
+  normalizeCatalystGateSettings,
+  type CatalystGateSettings,
+} from "./gateSettings.js";
+
+export {
+  DEFAULT_CATALYST_GATE_SETTINGS,
+  normalizeCatalystGateSettings,
+  type CatalystGateSettings,
+};
+
 export const CATALYSTS_WINDOW_CALENDAR_DAYS = 10;
 
 export type CatalystsFeedStatus = "ready" | "building" | "empty";
@@ -32,6 +44,8 @@ export interface CatalystsFeed {
   };
   /** SPY settled-session cumulative 5d % — for vs-S&P column on cards. */
   benchmarkDrift5dPct: number | null;
+  /** Gate profile used for this build (for UI + debugging). */
+  gateSettings: CatalystGateSettings;
   cards: CatalystCard[];
 }
 
@@ -96,6 +110,7 @@ export function emptyCatalystsFeed(): CatalystsFeed {
       filterBreakdown: emptyCatalystFilterBreakdown(),
     },
     benchmarkDrift5dPct: null,
+    gateSettings: { ...DEFAULT_CATALYST_GATE_SETTINGS },
     cards: [],
   };
 }

@@ -3,19 +3,20 @@ import {
   CATALYSTS_WINDOW_CALENDAR_DAYS,
   emptyCatalystFilterBreakdown,
   emptyCatalystsFeed,
+  normalizeCatalystGateSettings,
   type CatalystCard,
   type CatalystFilterBreakdown,
+  type CatalystGateSettings,
   type CatalystsFeed,
   type EarningsTiming,
 } from "@workspace/catalysts-types";
 import type { FilteredName } from "@workspace/movers-types";
 import { db, equityDailyTable } from "@workspace/db";
 import { fetchFmpCompanyProfiles } from "../movers/fmpCompanyProfile.js";
-import {
-  applyTradeabilityGate,
-  type TradeabilityCandidate,
-} from "../movers/tradeabilityGate.js";
-import { computeSessionSnapshot } from "./catalystMetrics.js";
+import type { TradeabilityCandidate } from "../movers/tradeabilityGate.js";
+import { applyCatalystGates } from "./applyCatalystGates.js";
+import { getCatalystGateSettings } from "./catalystGateSettingsStore.js";
+import { computeSessionSnapshot, emptySessionSnapshot } from "./catalystMetrics.js";
 import { discoverCatalystEarningsInWindow } from "./catalystEarningsDiscovery.js";
 import { loadEarningsTimingHints } from "./catalystEarningsTiming.js";
 import { reportAtIso } from "./catalystEarningsUtils.js";
@@ -80,12 +81,25 @@ function tallyFilterBreakdown(
   return breakdown;
 }
 
-export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFeed> {
+export async function buildCatalystsFeed(
+  now = new Date(),
+  gateSettingsOverride?: Partial<CatalystGateSettings>,
+): Promise<CatalystsFeed> {
+  const gateSettings = normalizeCatalystGateSettings({
+    ...getCatalystGateSettings(),
+    ...gateSettingsOverride,
+  });
+
   const calendar = await discoverCatalystEarningsInWindow(now);
 
   if (calendar.length === 0) {
     logger.info("Catalysts rebuild: no fresh harvested earnings in window");
-    return { ...emptyCatalystsFeed(), status: "ready", builtAt: now.toISOString() };
+    return {
+      ...emptyCatalystsFeed(),
+      status: "ready",
+      builtAt: now.toISOString(),
+      gateSettings,
+    };
   }
 
   const candidates: TradeabilityCandidate[] = calendar.map((e) => ({
@@ -110,11 +124,15 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
     else if (profile?.marketCap != null) c.price = Math.max(5, c.price);
   }
 
-  const symbolsWithOptions = await resolveSymbolsWithOptions(candidates.map((c) => c.symbol));
-  const { tradeable, filtered } = applyTradeabilityGate(candidates, profiles, {
-    requireOptionsChain: true,
+  const symbolsWithOptions = gateSettings.requireOptionsChain
+    ? await resolveSymbolsWithOptions(candidates.map((c) => c.symbol))
+    : new Set(candidates.map((c) => c.symbol.toUpperCase()));
+  const { tradeable, filtered } = applyCatalystGates(
+    candidates,
+    profiles,
+    gateSettings,
     symbolsWithOptions,
-  });
+  );
 
   const tradeableBySymbol = new Map(tradeable.map((t) => [t.symbol, t]));
   const endSettled = lastSettledSessionYmd(now);
@@ -125,6 +143,12 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
   const spyCloses = await loadClosesForSessions("SPY", sessionDates);
   const spySnapshot = computeSessionSnapshot(sessionDates, spyCloses);
   const benchmarkDrift5dPct = spySnapshot?.cumulative5d ?? null;
+  if (benchmarkDrift5dPct == null) {
+    logger.warn(
+      { sessionDates, spyClosesFound: spyCloses.size },
+      "Catalysts rebuild: SPY session snapshot missing — vs S&P column will show raw only",
+    );
+  }
 
   const cards: CatalystCard[] = [];
   let droppedNoSessionData = 0;
@@ -134,10 +158,13 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
     if (!tradeableBySymbol.has(sym)) continue;
 
     const closesByDate = await loadClosesForSessions(sym, sessionDates);
-    const snapshot = computeSessionSnapshot(sessionDates, closesByDate);
+    let snapshot = computeSessionSnapshot(sessionDates, closesByDate);
     if (!snapshot) {
-      droppedNoSessionData += 1;
-      continue;
+      if (gateSettings.requireSessionSnapshot) {
+        droppedNoSessionData += 1;
+        continue;
+      }
+      snapshot = emptySessionSnapshot();
     }
 
     const profile = profiles.get(sym);
@@ -175,6 +202,7 @@ export async function buildCatalystsFeed(now = new Date()): Promise<CatalystsFee
       filterBreakdown: tallyFilterBreakdown(filtered, droppedNoSessionData),
     },
     benchmarkDrift5dPct,
+    gateSettings,
     cards,
   };
 }
