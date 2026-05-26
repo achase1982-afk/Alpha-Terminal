@@ -1,5 +1,6 @@
 import {
   CATALYST_DRIFT_SESSION_COUNT,
+  CATALYST_SUSPECT_SESSION_REL_MOVE_ABS_PCT,
   type CatalystSessionSnapshot,
 } from "@workspace/catalysts-types";
 
@@ -10,6 +11,31 @@ function pctMove(from: number, to: number): number {
 
 function sumTail(values: number[], n: number): number {
   return values.slice(-n).reduce((a, b) => a + b, 0);
+}
+
+export function detectSuspectSessionMoves(
+  sessionMovesPct: number[],
+  bound = CATALYST_SUSPECT_SESSION_REL_MOVE_ABS_PCT,
+): boolean[] {
+  return sessionMovesPct.map((m) => Math.abs(m) > bound);
+}
+
+/** Sum last N sessions, skipping suspect bars (bad prior close / data glitch). */
+export function sumTailExcludingSuspect(
+  values: number[],
+  suspect: boolean[],
+  n: number,
+): number {
+  const tail = values.slice(-n);
+  const tailSuspect = suspect.slice(-n);
+  return tail.reduce((acc, v, i) => acc + (tailSuspect[i] ? 0 : v), 0);
+}
+
+function movesForAggregate(
+  moves: number[],
+  suspect: boolean[],
+): number[] {
+  return moves.map((m, i) => (suspect[i] ? 0 : m));
 }
 
 function countStreak(moves: number[]): number {
@@ -35,6 +61,7 @@ export function emptySessionSnapshot(): CatalystSessionSnapshot {
     closes: [],
     sessionMovesPct: [...zeros],
     sessionMovesRawPct: [...zeros],
+    sessionSuspect: Array.from({ length: CATALYST_DRIFT_SESSION_COUNT }, () => false),
     cumulative1d: 0,
     cumulative3d: 0,
     cumulative5d: 0,
@@ -113,20 +140,23 @@ export function computeSessionSnapshot(
     sessionMovesPct.push(stockDay - spyDay);
   }
 
-  const upCount = sessionMovesPct.filter((m) => m > 0).length;
-  const downCount = sessionMovesPct.filter((m) => m < 0).length;
-  const streak = countStreak(sessionMovesPct);
-  const patternRead = buildPatternRead(sessionMovesPct, streak);
+  const sessionSuspect = detectSuspectSessionMoves(sessionMovesPct);
+  const aggregateMoves = movesForAggregate(sessionMovesPct, sessionSuspect);
+  const upCount = aggregateMoves.filter((m) => m > 0).length;
+  const downCount = aggregateMoves.filter((m) => m < 0).length;
+  const streak = countStreak(aggregateMoves);
+  const patternRead = buildPatternRead(aggregateMoves, streak);
 
   return {
     sessionDates,
     closes,
     sessionMovesPct,
     sessionMovesRawPct,
-    cumulative1d: sumTail(sessionMovesPct, 1),
-    cumulative3d: sumTail(sessionMovesPct, 3),
-    cumulative5d: sumTail(sessionMovesPct, 5),
-    cumulative10d: sumTail(sessionMovesPct, 10),
+    sessionSuspect,
+    cumulative1d: sumTailExcludingSuspect(sessionMovesPct, sessionSuspect, 1),
+    cumulative3d: sumTailExcludingSuspect(sessionMovesPct, sessionSuspect, 3),
+    cumulative5d: sumTailExcludingSuspect(sessionMovesPct, sessionSuspect, 5),
+    cumulative10d: sumTailExcludingSuspect(sessionMovesPct, sessionSuspect, 10),
     streak,
     upCount,
     downCount,

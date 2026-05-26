@@ -17,7 +17,10 @@ import {
   type CatalystGateSettings,
 } from "./gateSettings.js";
 
-export { CATALYST_DRIFT_SESSION_COUNT } from "./constants.js";
+export {
+  CATALYST_DRIFT_SESSION_COUNT,
+  CATALYST_SUSPECT_SESSION_REL_MOVE_ABS_PCT,
+} from "./constants.js";
 
 export const CATALYSTS_WINDOW_CALENDAR_DAYS = 10;
 
@@ -66,6 +69,8 @@ export interface CatalystSessionSnapshot {
   sessionMovesPct: number[];
   /** Raw stock daily % (length 10) for display when SPY unavailable. */
   sessionMovesRawPct: number[];
+  /** True when |sessionMovesPct| exceeded sanity bound at rebuild (excluded from cumulatives). */
+  sessionSuspect: boolean[];
   cumulative1d: number;
   cumulative3d: number;
   cumulative5d: number;
