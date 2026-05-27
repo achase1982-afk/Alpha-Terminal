@@ -16,6 +16,7 @@ import {
   hydrateStrategistJobFromPersistedFinal,
   openStrategistJobFromNotification,
   syncRunningStrategistJobsFromServer,
+  syncActiveStrategistJobsFromServer,
 } from "@/lib/strategistPoller";
 import { consumePendingStrategistPushJobId } from "@/lib/strategistPushNav";
 import { dispatchStrategistAnalysisStart, dispatchStrategistAnalysisCancel } from "@/lib/strategistDeskSpeechEvents";
@@ -37,7 +38,7 @@ import { TabErrorBoundary } from "@/components/TabErrorBoundary";
 import { takePendingScannerStrategistContext } from "@/lib/pendingScannerStrategistContext";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { AiLabStrategistView } from "@/components/AiLabStrategistView";
-import { StrategistV2RecommendationCard, StrategistV2BlockCard, type StrategistV2Result as StrategistV2ResultType, type StrategistSendToOrderPayload, type BlockReason } from "@/components/StrategistV2Card";
+import { StrategistV2RecommendationCard, StrategistV2BlockCard, IvrPopulatingCard, type StrategistV2Result as StrategistV2ResultType, type StrategistSendToOrderPayload, type BlockReason } from "@/components/StrategistV2Card";
 import { StrategistDeskCard, type DeskResult } from "@/components/StrategistDeskCard";
 import { StrategistHistoryList } from "@/components/StrategistHistoryList";
 
@@ -77,6 +78,54 @@ interface IvrBackfillJobStatus {
   ivRowsWritten: number;
   ivrRowsWritten: number;
   errorMsg?: string | null;
+}
+
+function normalizeBlockReasonDetail(result: StrategistV2ResultType): string {
+  const br = result.blockReason;
+  if (typeof br === "string") return br;
+  if (br && typeof br === "object" && typeof br.detail === "string") return br.detail;
+  return "";
+}
+
+function looksLikeIvrPopulatingResult(result: StrategistV2ResultType): boolean {
+  if (result.status === "ivr_populating" || result.status === "failed_insufficient_history") return true;
+  if (result.ivrBackfill) return true;
+  const detail = normalizeBlockReasonDetail(result);
+  return /ivr populating|preparing iv/i.test(detail);
+}
+
+function ivrProgressFromJob(
+  job: {
+    ivrBackfill?: {
+      jobId?: string | null;
+      status: IvrBackfillJobStatus["status"];
+      daysLoaded: number;
+      daysRequested: number;
+    } | null;
+    liveStatus?: string;
+  } | null,
+): {
+  status: IvrBackfillJobStatus["status"];
+  daysLoaded: number;
+  daysRequested: number;
+  errorMsg?: string | null;
+} | null {
+  if (job?.ivrBackfill) {
+    return {
+      status: job.ivrBackfill.status,
+      daysLoaded: job.ivrBackfill.daysLoaded,
+      daysRequested: job.ivrBackfill.daysRequested,
+    };
+  }
+  const m = job?.liveStatus?.match(/\((\d+)\/(\d+) days\)/);
+  if (m) {
+    return {
+      status: "running",
+      daysLoaded: Number(m[1]),
+      daysRequested: Number(m[2]),
+    };
+  }
+  return null;
 }
 
 const COMPANY_NAMES: Record<string, string> = {
@@ -2724,16 +2773,22 @@ function AiIntelligenceTabInner({
       return deepLinkJobId;
     }
     const upper = symbol.toUpperCase();
+    let bestRunningForSymbol: { id: string; startedAt: number } | null = null;
     let bestForSymbol: { id: string; startedAt: number } | null = null;
     let bestRecent: { id: string; startedAt: number } | null = null;
     const now = Date.now();
     for (const [id, job] of Object.entries(strategistJobs)) {
       if (job.ticker === upper) {
+        if (job.status === "running") {
+          if (!bestRunningForSymbol || job.startedAt > bestRunningForSymbol.startedAt) {
+            bestRunningForSymbol = { id, startedAt: job.startedAt };
+          }
+        }
         if (!bestForSymbol || job.startedAt > bestForSymbol.startedAt) {
           bestForSymbol = { id, startedAt: job.startedAt };
         }
       }
-      const isRunning = job.status === 'running';
+      const isRunning = job.status === "running";
       const finishedRecently = job.finishedAt != null && (now - job.finishedAt) < RECENT_JOB_MS;
       if (isRunning || finishedRecently) {
         if (!bestRecent || job.startedAt > bestRecent.startedAt) {
@@ -2741,8 +2796,13 @@ function AiIntelligenceTabInner({
         }
       }
     }
-    return (bestForSymbol?.id ?? bestRecent?.id) ?? null;
+    return (bestRunningForSymbol?.id ?? bestForSymbol?.id ?? bestRecent?.id) ?? null;
   }, [strategistJobs, symbol, deepLinkJobId]);
+
+  const hasRunningJobForSymbol = useMemo(() => {
+    const upper = symbol.toUpperCase();
+    return Object.values(strategistJobs).some((j) => j.ticker === upper && j.status === "running");
+  }, [strategistJobs, symbol]);
 
   const v2Result: StrategistV2ResultType | null = (() => {
     if (!activeJobIdForSymbol) return null;
@@ -2761,6 +2821,24 @@ function AiIntelligenceTabInner({
     ? strategistJobs[activeJobIdForSymbol]?.status === 'running'
     : false;
 
+  const activeJob = activeJobIdForSymbol ? strategistJobs[activeJobIdForSymbol] : null;
+  const isPreparingIv =
+    isV2Running &&
+    (activeJob?.phase === "preparing_iv" ||
+      activeJob?.liveStatus?.includes("Preparing IV") ||
+      activeJob?.ivrBackfill != null);
+
+  const showIvrPopulatingCard = useMemo(() => {
+    if (isPreparingIv) return true;
+    if (v2Result && looksLikeIvrPopulatingResult(v2Result) && !hasRunningJobForSymbol) {
+      if (ivrBackfillStatus?.status === "queued" || ivrBackfillStatus?.status === "running") {
+        return true;
+      }
+      return v2Result.status === "ivr_populating" || v2Result.status === "failed_insufficient_history";
+    }
+    return false;
+  }, [isPreparingIv, v2Result, hasRunningJobForSymbol, ivrBackfillStatus]);
+
   // V2 live tokens + status come from the global store so they survive
   // unmount/remount when the user navigates away from the strategist screen.
   const v2ThinkingTokens: string[] = activeJobIdForSymbol
@@ -2775,6 +2853,88 @@ function AiIntelligenceTabInner({
   const v2Transcript = activeJobIdForSymbol
     ? strategistJobs[activeJobIdForSymbol]?.transcript ?? []
     : [];
+
+  useEffect(() => {
+    if (subTab !== "strategist") return;
+    void syncActiveStrategistJobsFromServer();
+    const id = window.setInterval(() => void syncActiveStrategistJobsFromServer(), 4000);
+    return () => window.clearInterval(id);
+  }, [subTab]);
+
+  useEffect(() => {
+    if (subTab !== "strategist") return;
+    const needsPoll =
+      isPreparingIv ||
+      (v2Result != null && looksLikeIvrPopulatingResult(v2Result) && !hasRunningJobForSymbol);
+    if (!needsPoll) {
+      setIvrBackfillStatus(null);
+      return;
+    }
+    const upper = symbol.toUpperCase();
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetchWithAuth(
+          `${API_BASE}/strategist/ivr-backfill/symbol/${encodeURIComponent(upper)}`,
+        );
+        if (cancelled) return;
+        if (res.ok) {
+          setIvrBackfillStatus((await res.json()) as IvrBackfillJobStatus);
+        } else if (res.status === 404) {
+          setIvrBackfillStatus(null);
+        }
+      } catch {
+        // keep last known
+      }
+    };
+    void poll();
+    const id = window.setInterval(() => void poll(), 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [subTab, isPreparingIv, v2Result, hasRunningJobForSymbol, symbol]);
+
+  const ivrCardResult: StrategistV2ResultType = useMemo(() => {
+    const ticker = symbol.toUpperCase();
+    if (v2Result && looksLikeIvrPopulatingResult(v2Result) && !isPreparingIv) {
+      return v2Result;
+    }
+    const fromJob = activeJob?.ivrBackfill;
+    return {
+      status: "ivr_populating",
+      ticker,
+      ivrBackfill: {
+        jobId: fromJob?.jobId ?? ivrBackfillStatus?.id ?? null,
+        status: fromJob?.status ?? ivrBackfillStatus?.status ?? "running",
+        daysLoaded: fromJob?.daysLoaded ?? ivrBackfillStatus?.daysLoaded ?? 0,
+        daysRequested: fromJob?.daysRequested ?? ivrBackfillStatus?.daysRequested ?? 252,
+        message: "IVR populating, check back in ~2-3 minutes.",
+      },
+      regime: v2Result?.regime ?? {
+        directionalConviction: "NEUTRAL",
+        systemicRiskLevel: "NORMAL",
+        correlationRegime: "MODERATE",
+        compositeScore: 0,
+        idioOpportunityFlag: false,
+      },
+      systemicRiskElevated: v2Result?.systemicRiskElevated ?? false,
+    };
+  }, [symbol, v2Result, isPreparingIv, activeJob?.ivrBackfill, ivrBackfillStatus]);
+
+  const ivrCardProgress = useMemo(() => {
+    const fromJob = ivrProgressFromJob(activeJob);
+    if (fromJob) return fromJob;
+    if (ivrBackfillStatus) {
+      return {
+        status: ivrBackfillStatus.status,
+        daysLoaded: ivrBackfillStatus.daysLoaded,
+        daysRequested: ivrBackfillStatus.daysRequested,
+        errorMsg: ivrBackfillStatus.errorMsg,
+      };
+    }
+    return null;
+  }, [activeJob, ivrBackfillStatus]);
 
   // Fetch history on mount
   // active. This ensures cards saved on the server always re-appear when the
@@ -3271,17 +3431,25 @@ function AiIntelligenceTabInner({
 
             {activeResult === "strategist" && (
               <div className="space-y-4">
-                {v2Result && !isV2Running && (() => {
-                  const activeJob = activeJobIdForSymbol ? strategistJobs[activeJobIdForSymbol] : null;
-                  const generatedAt = activeJob?.finishedAt ?? activeJob?.startedAt ?? null;
+                {showIvrPopulatingCard && (
+                  <IvrPopulatingCard
+                    result={ivrCardResult}
+                    progress={ivrCardProgress}
+                    onRetry={handleRunV2}
+                  />
+                )}
+
+                {v2Result && !isV2Running && !showIvrPopulatingCard && !hasRunningJobForSymbol && (() => {
+                  const activeJobForCard = activeJobIdForSymbol ? strategistJobs[activeJobIdForSymbol] : null;
+                  const generatedAt = activeJobForCard?.finishedAt ?? activeJobForCard?.startedAt ?? null;
                   // Validation jobs render a verdict card; the v2Result here
                   // is actually a ValidationVerdictPayload (the poller stores
                   // whatever /thinking returns as `result`).
-                  if (activeJob?.kind === "validation") {
+                  if (activeJobForCard?.kind === "validation") {
                     return (
                       <StrategistValidationCard
                         result={v2Result as unknown}
-                        meta={activeJob.validationMeta ?? null}
+                        meta={activeJobForCard.validationMeta ?? null}
                         onReopenOrder={onReopenValidatedOrder}
                         generatedAt={generatedAt}
                         transcript={v2Transcript}

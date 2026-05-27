@@ -2,7 +2,7 @@ import type { StrategistJob } from "@workspace/db";
 import type { ValidationTicket, ValidationVerdictPayload } from "../strategistValidate.js";
 import type { StrategistV2Result } from "../strategistV2.js";
 import { stripConvictionDeskDiagnosticsForClient } from "../strategistClientSanitize.js";
-import type { JobProgressState, StrategistPollPayload, TranscriptTurn, ValidationMeta } from "./types.js";
+import type { JobProgressState, StrategistPollPayload, TranscriptTurn, ValidationMeta, IvrBackfillProgress } from "./types.js";
 
 export function strategistV2ResultForWire(result: StrategistV2Result | null): StrategistV2Result | null {
   if (result == null) return null;
@@ -12,6 +12,18 @@ export function strategistV2ResultForWire(result: StrategistV2Result | null): St
 function readProgress(job: StrategistJob): JobProgressState {
   const p = job.progress as JobProgressState | null;
   return p && typeof p === "object" ? p : {};
+}
+
+function readIvrBackfill(progress: JobProgressState): IvrBackfillProgress | null {
+  const raw = progress.ivrBackfill;
+  if (!raw || typeof raw !== "object") return null;
+  if (typeof raw.daysLoaded !== "number" || typeof raw.daysRequested !== "number") return null;
+  return {
+    jobId: typeof raw.jobId === "string" ? raw.jobId : null,
+    status: raw.status,
+    daysLoaded: raw.daysLoaded,
+    daysRequested: raw.daysRequested,
+  };
 }
 
 export function persistedFinalPayloadFromHistoryRow(
@@ -30,6 +42,8 @@ export function persistedFinalPayloadFromHistoryRow(
     status: isValidation
       ? `Verdict: ${String((card["validation"] as { verdict?: string })?.verdict ?? "done")}`
       : "Done",
+    phase: null,
+    ivrBackfill: null,
     tokens: [],
     nextSince: 0,
     transcript: safeTranscript,
@@ -62,11 +76,15 @@ export function runningPayloadFromJob(job: StrategistJob, since: number): Strate
   const kind = job.kind === "validate_trade" ? "validation" : "analyze";
   const startedAtMs = job.startedAt?.getTime?.() ?? job.createdAt.getTime();
   const heartbeatMs = job.lastHeartbeatAt?.getTime?.() ?? startedAtMs;
+  const ivrBackfill = readIvrBackfill(progress);
+
   return {
     jobId: job.id,
     kind,
     ticker: job.ticker,
     status: progress.liveStatus ?? (job.status === "queued" ? "Starting…" : "Running…"),
+    phase: job.phase ?? null,
+    ivrBackfill,
     tokens,
     nextSince: tokensAll.length,
     transcript: progress.transcript ?? [],
@@ -89,6 +107,8 @@ export function terminalNonSuccessPayload(job: StrategistJob, since: number): St
     return {
       ...base,
       status: "Cancelled",
+      phase: job.phase ?? null,
+      ivrBackfill: readIvrBackfill(readProgress(job)),
       tokens: [],
       nextSince: 0,
       done: true,
@@ -101,6 +121,8 @@ export function terminalNonSuccessPayload(job: StrategistJob, since: number): St
   return {
     ...base,
     status: "Analysis failed",
+    phase: job.phase ?? null,
+    ivrBackfill: readIvrBackfill(readProgress(job)),
     tokens: [],
     nextSince: 0,
     done: true,

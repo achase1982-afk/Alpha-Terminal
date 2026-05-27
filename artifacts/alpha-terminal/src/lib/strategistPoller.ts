@@ -1,4 +1,4 @@
-import { useTerminalStore, type StrategistTranscriptTurn, type StrategistValidationMeta } from "./store";
+import { useTerminalStore, type StrategistTranscriptTurn, type StrategistValidationMeta, type StrategistIvrBackfillProgress } from "./store";
 import { fetchWithAuth, humanizeFailedApiBody } from "./fetchWithAuth";
 import { toast } from "sonner";
 import { deskRecommendationHasTrade, deskTradeStructureSentenceCase } from "./strategistDeskResult";
@@ -32,6 +32,8 @@ const STALE_POLLER_MS = 8_000;
 /** One payload from `GET /strategist/thinking/:id` or `GET /strategist/job/:id/final`. */
 export interface StrategistThinkingPollPayload {
   status: string;
+  phase?: string | null;
+  ivrBackfill?: StrategistIvrBackfillProgress | null;
   tokens: string[];
   nextSince: number;
   transcript?: StrategistTranscriptTurn[];
@@ -46,9 +48,51 @@ export interface StrategistThinkingPollPayload {
   cancelled?: boolean;
   /** Server-side last in-job progress (ms); used for stall detection vs client wall clock. */
   serverProgressAt?: number;
+  ticker?: string;
 }
 
 type PollOutcome = 'running' | 'completed' | 'failed';
+
+function applyPollProgressFields(jobId: string, t: StrategistThinkingPollPayload): void {
+  const patch: { phase?: string | null; ivrBackfill?: StrategistIvrBackfillProgress | null } = {};
+  if (t.phase !== undefined) patch.phase = t.phase;
+  if (t.ivrBackfill !== undefined) patch.ivrBackfill = t.ivrBackfill;
+  if (Object.keys(patch).length > 0) {
+    useTerminalStore.getState().patchStrategistJobProgress(jobId, patch);
+  }
+}
+
+function readIvrFromServerProgress(progress: Record<string, unknown> | undefined): StrategistIvrBackfillProgress | null {
+  const raw = progress?.ivrBackfill;
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.daysLoaded !== "number" || typeof r.daysRequested !== "number") return null;
+  const status = r.status;
+  if (
+    status !== "queued" &&
+    status !== "running" &&
+    status !== "completed" &&
+    status !== "failed" &&
+    status !== "failed_insufficient_history"
+  ) {
+    return null;
+  }
+  return {
+    jobId: typeof r.jobId === "string" ? r.jobId : null,
+    status,
+    daysLoaded: r.daysLoaded,
+    daysRequested: r.daysRequested,
+  };
+}
+
+type ServerActiveJob = {
+  jobId: string;
+  ticker: string;
+  kind: "analyze" | "validate_trade";
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  phase: string | null;
+  progress?: Record<string, unknown>;
+};
 
 function recordServerProgressFromPoll(jobId: string, t: StrategistThinkingPollPayload) {
   const raw = t.serverProgressAt;
@@ -87,6 +131,7 @@ export function applyThinkingPollResponse(jobId: string, t: StrategistThinkingPo
     if (t.status) {
       useTerminalStore.getState().setStrategistLiveStatus(jobId, t.status);
     }
+    applyPollProgressFields(jobId, t);
     if (t.kind === 'validation' || t.validationMeta) {
       useTerminalStore.getState().setStrategistJobMeta(jobId, {
         kind: t.kind,
@@ -125,6 +170,7 @@ export function applyThinkingPollResponse(jobId: string, t: StrategistThinkingPo
   if (t.status) {
     useTerminalStore.getState().setStrategistLiveStatus(jobId, t.status);
   }
+  applyPollProgressFields(jobId, t);
 
   if (t.kind === 'validation' || t.validationMeta) {
     useTerminalStore.getState().setStrategistJobMeta(jobId, {
@@ -536,10 +582,50 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
   })();
 }
 
+/** Pull queued/running jobs from the server into the local store (fixes stale cards vs active strip). */
+export async function syncActiveStrategistJobsFromServer(): Promise<void> {
+  try {
+    const res = await fetchWithAuth(`${API_BASE}/strategist/jobs/active`);
+    if (!res.ok) return;
+    const json = (await res.json()) as { active?: ServerActiveJob[] };
+    if (!Array.isArray(json.active)) return;
+
+    for (const row of json.active) {
+      if (row.status !== "queued" && row.status !== "running") continue;
+      const jobId = row.jobId;
+      const ticker = row.ticker?.toUpperCase();
+      if (!jobId || !ticker) continue;
+
+      const store = useTerminalStore.getState();
+      let job = store.strategistJobs[jobId];
+      if (!job) {
+        store.startStrategistJob(jobId, ticker, {
+          kind: row.kind === "validate_trade" ? "validation" : "analyze",
+        });
+        startStrategistPolling(jobId, { force: true });
+        job = useTerminalStore.getState().strategistJobs[jobId];
+      }
+
+      const ivrBackfill = readIvrFromServerProgress(row.progress);
+      store.patchStrategistJobProgress(jobId, {
+        phase: row.phase ?? null,
+        ivrBackfill,
+      });
+
+      if (job?.status === "running" && !isPollerActive(jobId) && !pushOpenInFlight.has(jobId)) {
+        startStrategistPolling(jobId, { force: true });
+      }
+    }
+  } catch {
+    // best-effort
+  }
+}
+
 /** Reconciles running jobs after tab resume via `GET /strategist/job/:id/final` (not SSE). */
 export async function syncRunningStrategistJobsFromServer(opts?: {
   toastOnComplete?: boolean;
 }): Promise<void> {
+  await syncActiveStrategistJobsFromServer();
   const jobs = useTerminalStore.getState().strategistJobs;
   for (const [jobId, job] of Object.entries(jobs)) {
     if (job.status !== "running" && job.status !== "interrupted") continue;
