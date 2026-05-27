@@ -1,9 +1,14 @@
 import type { AnalyzeProgressCallbacks } from "../lib/strategistV2.js";
 import type { TranscriptTurn } from "../lib/strategistV3/types.js";
 import { mergeJobProgress } from "../lib/strategistV3/jobs.js";
+import { EXPECTED_TURNS } from "../lib/strategistDebate.js";
 
 const MAX_TOKENS = 6000;
 const MAX_TRANSCRIPT = 32;
+
+export function applyDebateTurnProgress(jobId: string, turn: number, expectedTurns = EXPECTED_TURNS): void {
+  void mergeJobProgress(jobId, { debateTurn: turn, expectedTurns });
+}
 
 export function createAnalyzeProgressCallbacks(jobId: string): {
   callbacks: AnalyzeProgressCallbacks;
@@ -58,4 +63,21 @@ export function createAnalyzeProgressCallbacks(jobId: string): {
   };
 
   return { callbacks, getTranscript: () => transcript };
+}
+
+/** Wire worker debate checkpoints + turn progress onto analyze callbacks. */
+export function attachWorkerDebateHooks(
+  jobId: string,
+  callbacks: AnalyzeProgressCallbacks,
+  hooks: {
+    onDebateTurnCheckpoint: NonNullable<AnalyzeProgressCallbacks["workerControl"]>["onDebateTurnCheckpoint"];
+    debateResumeTurns?: Record<string, string>;
+  },
+): void {
+  callbacks.workerControl = {
+    ...callbacks.workerControl,
+    debateResumeTurns: hooks.debateResumeTurns,
+    onDebateTurnCheckpoint: hooks.onDebateTurnCheckpoint,
+    onDebateProgress: (turn, expectedTurns) => applyDebateTurnProgress(jobId, turn, expectedTurns),
+  };
 }

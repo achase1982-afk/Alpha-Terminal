@@ -4,6 +4,11 @@ import type { ValidationTicket, ValidationVerdictPayload } from "../strategistVa
 import { logger } from "../logger.js";
 import type { TranscriptTurn } from "./types.js";
 import { fireStrategistJobPush } from "./push.js";
+import { verifyStrategistHistoryReadable } from "./historyVerify.js";
+import {
+  attachTelemetryIdToResult,
+  writeAnalyzeTelemetryPostCommit,
+} from "./telemetryPostCommit.js";
 
 export class TerminalRaceError extends Error {
   constructor(jobId: string) {
@@ -25,7 +30,10 @@ type ValidationCardJson = {
 
 function assembleCardJson(job: StrategistJob): unknown {
   const checkpoint = job.checkpoint as Record<string, unknown>;
-  const progress = job.progress as { transcript?: TranscriptTurn[]; validationMeta?: { ticket?: ValidationTicket; thesis?: string; rollingShort?: boolean } };
+  const progress = job.progress as {
+    transcript?: TranscriptTurn[];
+    validationMeta?: { ticket?: ValidationTicket; thesis?: string; rollingShort?: boolean };
+  };
 
   if (job.kind === "validate_trade") {
     const validation = checkpoint["validating"] as { validationResult?: ValidationVerdictPayload } | undefined;
@@ -45,13 +53,15 @@ function assembleCardJson(job: StrategistJob): unknown {
     return card;
   }
 
+  const validating = checkpoint["validating"] as { analyzeResult?: StrategistV2Result } | undefined;
   const analyzing = checkpoint["analyzing"] as { analyzeResult?: StrategistV2Result } | undefined;
-  if (!analyzing?.analyzeResult) {
+  const analyzeResult = validating?.analyzeResult ?? analyzing?.analyzeResult;
+  if (!analyzeResult) {
     throw new Error("Missing analyze result for persist");
   }
   const transcript = progress.transcript ?? [];
   const card: AnalyzeCardJson =
-    transcript.length > 0 ? { ...analyzing.analyzeResult, debateTranscript: transcript } : analyzing.analyzeResult;
+    transcript.length > 0 ? { ...analyzeResult, debateTranscript: transcript } : analyzeResult;
   return card;
 }
 
@@ -92,6 +102,31 @@ export async function persistAndComplete(job: StrategistJob): Promise<void> {
       throw new TerminalRaceError(job.id);
     }
   });
+
+  const completedJob = (await db
+    .select()
+    .from(strategistJobsTable)
+    .where(eq(strategistJobsTable.id, job.id))
+    .limit(1))[0];
+
+  if (completedJob) {
+    const telemetryId = await writeAnalyzeTelemetryPostCommit(completedJob);
+    if (telemetryId != null && job.kind === "analyze") {
+      const enriched = attachTelemetryIdToResult(cardJson as StrategistV2Result, telemetryId);
+      await db
+        .update(strategistHistoryTable)
+        .set({ cardJson: enriched })
+        .where(eq(strategistHistoryTable.jobId, job.id))
+        .catch((err) =>
+          logger.warn({ err, jobId: job.id }, "StrategistV3: failed to attach telemetryId to history"),
+        );
+    }
+  }
+
+  const readable = await verifyStrategistHistoryReadable(job.id);
+  if (!readable) {
+    logger.warn({ jobId: job.id, ticker: job.ticker }, "StrategistV3: history row not readable before push");
+  }
 
   const pushKind = job.kind === "validate_trade" ? "validation" : "analyze";
   await fireStrategistJobPush({

@@ -72,6 +72,36 @@ router.post("/analyze/cancel", async (req, res): Promise<void> => {
   }
 });
 
+router.post("/validate-trade/cancel", async (req, res): Promise<void> => {
+  if (!requireV3Enabled(req, res)) return;
+  const userId = requireStrategistUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  try {
+    const { jobId } = req.body as { jobId?: string };
+    if (!jobId || typeof jobId !== "string") {
+      res.status(400).json({ error: "jobId is required" });
+      return;
+    }
+    const job = await findJobById(jobId);
+    if (!job || job.userId !== userId) {
+      res.status(404).json({ error: "job not found or not cancellable" });
+      return;
+    }
+    if (job.kind !== "validate_trade" || !["queued", "running"].includes(job.status)) {
+      res.status(404).json({ error: "job not found or not cancellable" });
+      return;
+    }
+    await cancelJob(jobId);
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ err }, "StrategistV3: validate-trade cancel failed");
+    res.status(500).json({ error: "Cancel failed" });
+  }
+});
+
 router.post("/analyze", async (req, res): Promise<void> => {
   if (!requireV3Enabled(req, res)) return;
   const userId = requireStrategistUserId(req);

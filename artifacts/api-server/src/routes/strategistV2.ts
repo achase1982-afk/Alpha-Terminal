@@ -1,17 +1,17 @@
 import { Router, type IRouter } from "express";
 import { getSettings, updateSetting, resetAllSettings, getDefaults, getSettingMeta } from "../lib/strategistSettings.js";
 import { getCachedRegime, buildFallbackRegime } from "../lib/regimePostProcessor.js";
-import { db, strategistTelemetryTable, scannerTelemetryTable, strategistHistoryTable } from "@workspace/db";
+import { db, strategistTelemetryTable, scannerTelemetryTable, strategistHistoryTable, strategistJobsTable, eq, and } from "@workspace/db";
 import { getScannerStrategistCorrelation } from "../lib/scannerCorrelation.js";
-import { desc, eq, lte } from "@workspace/db";
+import { desc, lte } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { trimStrategistTelemetryRowForListResponse } from "../lib/strategistTelemetryListResponse.js";
 import {
-  primeStrategistTelemetryReadSchema,
   strategistTelemetryFlattenErrorMessage,
   strategistTelemetryPostgresErrorCode,
   sanitizeStrategistTelemetryClientDetail,
-} from "../lib/ensureStrategistTelemetryAuditColumns.js";
+} from "../lib/strategistTelemetryErrors.js";
+import { requireStrategistUserId } from "../lib/strategistAuth.js";
 import {
   selectStrategistTelemetryRows,
   selectStrategistTelemetryRowById,
@@ -82,12 +82,26 @@ router.get("/ivr-backfill/:jobId", async (req, res) => {
 });
 
 
-router.get("/history", async (_req, res) => {
+router.get("/history", async (req, res) => {
+  const userId = requireStrategistUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
   try {
     const rows = await db
-      .select()
+      .select({
+        id: strategistHistoryTable.id,
+        jobId: strategistHistoryTable.jobId,
+        ticker: strategistHistoryTable.ticker,
+        cardJson: strategistHistoryTable.cardJson,
+        cleared: strategistHistoryTable.cleared,
+        clearedAt: strategistHistoryTable.clearedAt,
+        createdAt: strategistHistoryTable.createdAt,
+      })
       .from(strategistHistoryTable)
-      .where(eq(strategistHistoryTable.cleared, false))
+      .innerJoin(strategistJobsTable, eq(strategistHistoryTable.jobId, strategistJobsTable.id))
+      .where(and(eq(strategistJobsTable.userId, userId), eq(strategistHistoryTable.cleared, false)))
       .orderBy(desc(strategistHistoryTable.createdAt))
       .limit(100);
     res.json(
@@ -197,7 +211,6 @@ function strategistTelemetryFetchErrorJson(err: unknown, mode: "list" | "row"): 
 
 router.get("/telemetry/strategist/row/:id", async (req, res) => {
   try {
-    await primeStrategistTelemetryReadSchema();
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id <= 0) {
       res.status(400).json({ error: "invalid id" });
@@ -217,7 +230,6 @@ router.get("/telemetry/strategist/row/:id", async (req, res) => {
 
 router.get("/telemetry/strategist/request/:requestId", async (req, res) => {
   try {
-    await primeStrategistTelemetryReadSchema();
     const requestId = String(req.params.requestId ?? "").trim();
     if (!requestId) {
       res.status(400).json({ error: "requestId required" });
@@ -237,7 +249,6 @@ router.get("/telemetry/strategist/request/:requestId", async (req, res) => {
 
 router.get("/telemetry/strategist", async (req, res) => {
   try {
-    await primeStrategistTelemetryReadSchema();
     const limit = Math.min(Number(req.query.limit) || 50, 100);
     const ticker = req.query.ticker as string | undefined;
 

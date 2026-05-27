@@ -33,6 +33,8 @@ export interface StrategistRunMetadata {
   requestId: string;
   userId: string | null;
   sessionIdentifier: string | null;
+  /** Client job id when run from V3 worker (telemetry correlation). */
+  jobId?: string | null;
   totalRunDurationMs: number;
 }
 

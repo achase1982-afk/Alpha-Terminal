@@ -12,6 +12,7 @@ import {
   type StrategistJobKind,
 } from "@workspace/db";
 import { ACTIVE_JOBS_TERMINAL_WINDOW_SEC } from "./config.js";
+import { logger } from "../logger.js";
 
 export async function findJobById(jobId: string): Promise<StrategistJob | undefined> {
   const rows = await db.select().from(strategistJobsTable).where(eq(strategistJobsTable.id, jobId)).limit(1);
@@ -232,24 +233,65 @@ export async function claimNextJob(workerId: string): Promise<StrategistJob | un
   });
 }
 
-export async function runReaperStaleJobs(): Promise<number> {
-  const result = await db.execute(sql`
-    UPDATE strategist_jobs
-    SET status = CASE
-        WHEN attempt < 3 AND last_completed_phase IS NOT NULL THEN 'queued'::strategist_job_status
-        ELSE 'failed'::strategist_job_status
-      END,
-      error = CASE
-        WHEN attempt < 3 AND last_completed_phase IS NOT NULL THEN NULL
-        ELSE jsonb_build_object('code', 'worker_crashed', 'message', 'Worker did not heartbeat in time')
-      END,
-      worker_id = NULL,
-      completed_at = CASE
-        WHEN attempt >= 3 OR last_completed_phase IS NULL THEN now()
-        ELSE NULL
-      END
-    WHERE status = 'running'
-      AND last_heartbeat_at < now() - interval '60 seconds'
-  `);
-  return result.rowCount ?? 0;
+export async function handleStaleRunningJob(
+  job: StrategistJob,
+  deps: {
+    markFailed: (job: StrategistJob, err: unknown) => Promise<void>;
+    release: (jobId: string) => Promise<void>;
+  },
+): Promise<"released" | "failed" | "skipped"> {
+  if (job.status !== "running") return "skipped";
+
+  if (job.attempt < 3 && job.lastCompletedPhase != null) {
+    await deps.release(job.id);
+    return "released";
+  }
+
+  await deps.markFailed(job, {
+    name: "WorkerCrashedError",
+    message: "Worker did not heartbeat in time",
+    code: "worker_crashed",
+  });
+  return "failed";
+}
+
+export async function runReaperStaleJobs(deps?: {
+  findJob?: typeof findJobById;
+  markFailed?: (job: StrategistJob, err: unknown) => Promise<void>;
+  release?: typeof releaseJobForRetry;
+}): Promise<number> {
+  const findJob = deps?.findJob ?? findJobById;
+  const markFailed =
+    deps?.markFailed ??
+    (async (job, err) => {
+      const { markJobFailed } = await import("./terminal.js");
+      await markJobFailed(job, err);
+    });
+  const release = deps?.release ?? releaseJobForRetry;
+
+  const stale = await db
+    .select({ id: strategistJobsTable.id })
+    .from(strategistJobsTable)
+    .where(
+      and(
+        eq(strategistJobsTable.status, "running"),
+        sql`${strategistJobsTable.lastHeartbeatAt} < now() - interval '60 seconds'`,
+      ),
+    );
+
+  if (stale.length === 0) return 0;
+
+  let handled = 0;
+
+  for (const row of stale) {
+    const job = await findJob(row.id);
+    if (!job) continue;
+    const outcome = await handleStaleRunningJob(job, { markFailed, release });
+    if (outcome !== "skipped") handled += 1;
+  }
+
+  if (handled > 0) {
+    logger.info({ count: handled }, "StrategistV3: reaper handled stale running jobs");
+  }
+  return handled;
 }

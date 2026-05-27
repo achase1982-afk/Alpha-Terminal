@@ -38,6 +38,19 @@ jobs:
           PKG='@workspace/'$(printf '%s%s-%s' ap i server)
           pnpm --filter "$PKG" typecheck
 
+      - name: Strategist V3 static checks
+        run: bash scripts/check-strategist-v3-static.sh
+
+      - name: Strategist V3 unit tests
+        run: |
+          PKG='@workspace/'$(printf '%s%s-%s' ap i server)
+          pnpm --filter "$PKG" exec vitest run \
+            src/lib/strategistV3/__tests__/reaper.test.ts \
+            src/lib/strategistV3/__tests__/pollPayload.test.ts \
+            src/lib/__tests__/strategistDebateResume.test.ts \
+            src/routes/__tests__/strategistCoreRoutes.test.ts \
+            src/routes/__tests__/strategistHistory.test.ts
+
   strategist-worker:
     runs-on: ubuntu-latest
     timeout-minutes: 15

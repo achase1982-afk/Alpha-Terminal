@@ -1,8 +1,15 @@
 import type { StrategistJob } from "@workspace/db";
-import { analyzeTickerV2 } from "../lib/strategistV2.js";
-import { runInStrategistRunContext } from "../lib/strategistRunContext.js";
+import {
+  analyzeTickerV2,
+  analyzeTickerV2FinalizeAfterDebate,
+  runDebateForWorker,
+  type WorkerPreparedPayload,
+} from "../lib/strategistV2.js";
+import { getStrategistRunContext, runInStrategistRunContext } from "../lib/strategistRunContext.js";
 import { parseScannerContext } from "../lib/scannerStrategistContext.js";
 import { normalizeConvictionDeskProviderBody } from "../lib/convictionDeskRouting.js";
+import { getSettings } from "../lib/strategistSettings.js";
+import { EXPECTED_TURNS } from "../lib/strategistDebate.js";
 import {
   findJobById,
   isJobCancelled,
@@ -14,7 +21,7 @@ import {
 import { markJobFailed, persistAndComplete, TerminalRaceError } from "../lib/strategistV3/terminal.js";
 import { WORKER_MAX_ATTEMPTS } from "../lib/strategistV3/config.js";
 import { ensureIvrReadyForWorker } from "./ensureIvr.js";
-import { createAnalyzeProgressCallbacks } from "./progressCallbacks.js";
+import { createAnalyzeProgressCallbacks, applyDebateTurnProgress } from "./progressCallbacks.js";
 import { logger } from "../lib/logger.js";
 
 function isTransientError(err: unknown): boolean {
@@ -28,6 +35,34 @@ function isTransientError(err: unknown): boolean {
     msg.includes("timeout") ||
     msg.includes("econnreset")
   );
+}
+
+type AnalyzingCheckpoint = {
+  prepared?: WorkerPreparedPayload;
+  analyzeResult?: unknown;
+  telemetryCapture?: Record<string, unknown>;
+};
+
+type DebatingCheckpoint = {
+  debateResult?: { response: unknown; trace: unknown; rawText: string };
+  resumeTurns?: Record<string, string>;
+};
+
+type ValidatingCheckpoint = {
+  analyzeResult?: unknown;
+  telemetryCapture?: Record<string, unknown>;
+};
+
+function readAnalyzing(checkpoint: Record<string, unknown>): AnalyzingCheckpoint {
+  return (checkpoint["analyzing"] as AnalyzingCheckpoint | undefined) ?? {};
+}
+
+function readDebating(checkpoint: Record<string, unknown>): DebatingCheckpoint {
+  return (checkpoint["debating"] as DebatingCheckpoint | undefined) ?? {};
+}
+
+function readValidating(checkpoint: Record<string, unknown>): ValidatingCheckpoint {
+  return (checkpoint["validating"] as ValidatingCheckpoint | undefined) ?? {};
 }
 
 export async function runAnalyzeJob(job: StrategistJob): Promise<void> {
@@ -47,6 +82,10 @@ export async function runAnalyzeJob(job: StrategistJob): Promise<void> {
     current = (await findJobById(job.id)) ?? current;
     checkpoint = (current.checkpoint ?? {}) as Record<string, unknown>;
 
+    const settings = await getSettings();
+    const isDebateMode = settings.strategistMode === 2;
+    const analyzingSlice = readAnalyzing(checkpoint);
+
     if (!checkpoint["analyzing"]) {
       if (await isJobCancelled(job.id)) return;
       await updateJobPhase(job.id, "analyzing");
@@ -63,15 +102,165 @@ export async function runAnalyzeJob(job: StrategistJob): Promise<void> {
       const { callbacks } = createAnalyzeProgressCallbacks(job.id);
       callbacks.flowContext = flowContext;
       callbacks.convictionDeskProvider = convictionDeskProvider;
+      callbacks.workerControl = {
+        returnPreparedBeforeDebate: isDebateMode,
+        onPipelinePhase: (phase) => {
+          void updateJobPhase(job.id, phase);
+        },
+        onDebateProgress: (turn, expectedTurns) => {
+          applyDebateTurnProgress(job.id, turn, expectedTurns);
+        },
+        onDebateTurnCheckpoint: async (turnKey, text, turnIndex, totalTurns) => {
+          const fresh = await findJobById(job.id);
+          if (!fresh) return;
+          const cp = (fresh.checkpoint ?? {}) as Record<string, unknown>;
+          const debating = readDebating(cp);
+          const resumeTurns = { ...(debating.resumeTurns ?? {}), [turnKey]: text };
+          await writeJobCheckpoint(
+            job.id,
+            "debating",
+            { ...debating, resumeTurns, lastTurnIndex: turnIndex },
+            "debating",
+          );
+          await mergeJobProgress(job.id, { debateTurn: turnIndex, expectedTurns: totalTurns });
+        },
+      };
 
       const analyzeResult = await runInStrategistRunContext(
-        { scannerContext: scannerContext ?? null, clientTimeZone },
+        {
+          scannerContext: scannerContext ?? null,
+          clientTimeZone,
+          userId: job.userId,
+          deferTelemetryUntilPersist: true,
+        },
         () => analyzeTickerV2(job.ticker, callbacks),
       );
 
       if (await isJobCancelled(job.id)) return;
 
-      await writeJobCheckpoint(job.id, "analyzing", { analyzeResult }, "analyzing");
+      if (isDebateMode && analyzeResult.workerPrepared) {
+        await writeJobCheckpoint(job.id, "analyzing", { prepared: analyzeResult.workerPrepared }, "analyzing");
+      } else {
+        const telemetryCapture = getStrategistRunContext()?.pendingTelemetryCapture ?? undefined;
+        await writeJobCheckpoint(
+          job.id,
+          "analyzing",
+          { analyzeResult, telemetryCapture },
+          "analyzing",
+        );
+      }
+    }
+
+    current = (await findJobById(job.id)) ?? current;
+    checkpoint = (current.checkpoint ?? {}) as Record<string, unknown>;
+    const prepared = readAnalyzing(checkpoint).prepared;
+
+    if (isDebateMode && prepared && !readDebating(checkpoint).debateResult) {
+      if (await isJobCancelled(job.id)) return;
+      await updateJobPhase(job.id, "debating");
+      await mergeJobProgress(job.id, {
+        liveStatus: "Starting strategist debate…",
+        debateTurn: readDebating(checkpoint).resumeTurns
+          ? Object.keys(readDebating(checkpoint).resumeTurns!).length
+          : 0,
+        expectedTurns: EXPECTED_TURNS,
+      });
+
+      const debatingSlice = readDebating(checkpoint);
+      const { callbacks } = createAnalyzeProgressCallbacks(job.id);
+      callbacks.flowContext =
+        typeof params["flowContext"] === "string" && params["flowContext"].length > 0
+          ? params["flowContext"].slice(0, 8000)
+          : undefined;
+      callbacks.convictionDeskProvider = normalizeConvictionDeskProviderBody(params["convictionDeskProvider"]);
+      callbacks.workerControl = {
+        debateResumeTurns: debatingSlice.resumeTurns,
+        onPipelinePhase: (phase) => {
+          void updateJobPhase(job.id, phase);
+        },
+        onDebateProgress: (turn, expectedTurns) => {
+          applyDebateTurnProgress(job.id, turn, expectedTurns);
+        },
+        onDebateTurnCheckpoint: async (turnKey, text, turnIndex, totalTurns) => {
+          const fresh = await findJobById(job.id);
+          if (!fresh) return;
+          const cp = (fresh.checkpoint ?? {}) as Record<string, unknown>;
+          const debating = readDebating(cp);
+          const resumeTurns = { ...(debating.resumeTurns ?? {}), [turnKey]: text };
+          await writeJobCheckpoint(
+            job.id,
+            "debating",
+            { ...debating, resumeTurns, lastTurnIndex: turnIndex },
+            "debating",
+          );
+          await mergeJobProgress(job.id, { debateTurn: turnIndex, expectedTurns: totalTurns });
+        },
+      };
+
+      const debateResult = await runInStrategistRunContext(
+        {
+          userId: job.userId,
+          clientTimeZone: typeof params["clientTimeZone"] === "string" ? params["clientTimeZone"] : null,
+          deferTelemetryUntilPersist: true,
+        },
+        () => runDebateForWorker(prepared, callbacks),
+      );
+
+      if (await isJobCancelled(job.id)) return;
+
+      const freshCp = (await findJobById(job.id))?.checkpoint as Record<string, unknown> | undefined;
+      const debating = readDebating(freshCp ?? {});
+      await writeJobCheckpoint(
+        job.id,
+        "debating",
+        { ...debating, debateResult },
+        "debating",
+      );
+    }
+
+    current = (await findJobById(job.id)) ?? current;
+    checkpoint = (current.checkpoint ?? {}) as Record<string, unknown>;
+
+    if (isDebateMode && prepared && !readValidating(checkpoint).analyzeResult) {
+      if (await isJobCancelled(job.id)) return;
+      await updateJobPhase(job.id, "validating");
+
+      const debateResult = readDebating(checkpoint).debateResult;
+      if (!debateResult) {
+        throw new Error("Missing debate result for validating phase");
+      }
+
+      const { callbacks } = createAnalyzeProgressCallbacks(job.id);
+      callbacks.workerControl = {
+        onPipelinePhase: (phase) => {
+          void updateJobPhase(job.id, phase);
+        },
+      };
+
+      const finalizeResult = await runInStrategistRunContext(
+        {
+          userId: job.userId,
+          clientTimeZone: typeof params["clientTimeZone"] === "string" ? params["clientTimeZone"] : null,
+          deferTelemetryUntilPersist: true,
+        },
+        () =>
+          analyzeTickerV2FinalizeAfterDebate(
+            job.ticker,
+            prepared,
+            debateResult as Parameters<typeof analyzeTickerV2FinalizeAfterDebate>[2],
+            callbacks,
+          ),
+      );
+
+      if (await isJobCancelled(job.id)) return;
+
+      const telemetryCapture = getStrategistRunContext()?.pendingTelemetryCapture ?? undefined;
+      await writeJobCheckpoint(
+        job.id,
+        "validating",
+        { analyzeResult: finalizeResult, telemetryCapture },
+        "validating",
+      );
     }
 
     if (await isJobCancelled(job.id)) return;

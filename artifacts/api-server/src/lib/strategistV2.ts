@@ -13,11 +13,9 @@ type StrategistTelemetryInsert = InferInsertModel<typeof strategistTelemetryTabl
 import { getStrategistTelemetryPgColumnSet } from "./strategistTelemetryColumnCache.js";
 import { filterStrategistTelemetryInsertForExistingColumns } from "./strategistTelemetryInsertFilter.js";
 import {
-  applyStrategistTelemetryAuditColumnMigrations,
   strategistTelemetryPostgresErrorCode,
   strategistTelemetryFlattenErrorMessage,
-} from "./ensureStrategistTelemetryAuditColumns.js";
-import { insertStrategistTelemetryRowViaPool } from "./strategistTelemetryPoolInsert.js";
+} from "./strategistTelemetryErrors.js";
 import { fetchPolygonTickerMarketCapUsd, logMarketCapPolygonFallback } from "./polygonTickerMarketCap.js";
 import { getBestAccessToken } from "./tokenStore.js";
 import { fetchPolygonChain } from "./polygonChain.js";
@@ -230,6 +228,8 @@ export interface StrategistV2Result {
   };
   /** Set for `no_viable_setup` when the block maps to a v2 strategist outcome card */
   strategistOutcome?: StrategistOutcome;
+  /** Intermediate worker checkpoint — not a user-facing card. */
+  workerPrepared?: WorkerPreparedPayload;
 }
 
 /** Item 23: client / history idempotency — bump when StrategistV2Result shape changes. */
@@ -743,7 +743,34 @@ export interface AnalyzeProgressCallbacks {
   cancelSignal?: AbortSignal;
   /** When set (e.g. POST /analyze body), overrides `strategistConvictionModelIdx` for mode 5 only. Legacy short-cuts or `provider:model`. */
   convictionDeskProvider?: string;
+  /** V3 worker pipeline control (checkpoints + phase hooks). */
+  workerControl?: WorkerAnalyzeControl;
 }
+
+/** Serializable state between worker analyzing and debating phases. */
+export type WorkerPreparedPayload = {
+  dataPackage: string;
+  settings: StrategistConfig;
+  regime: StructuredRegime;
+  toxicCheck: ToxicGateSnapshot;
+  tickerData: TickerData;
+  chain: ChainContract[];
+  chainSummary: Awaited<ReturnType<typeof summarizeOptionsChain>>;
+  ioScore: IOScoreResult;
+  dataSource: ChainSource;
+  deskCatalystEval: CatalystEvaluation | null;
+  deskCatalystExpirationISO: string;
+  debateScrubCanonical: ScrubCanonical;
+};
+
+export type WorkerAnalyzeControl = {
+  returnPreparedBeforeDebate?: boolean;
+  prepared?: WorkerPreparedPayload;
+  debateResumeTurns?: Record<string, string>;
+  onDebateTurnCheckpoint?: (turnKey: string, text: string, turnIndex: number, totalTurns: number) => Promise<void>;
+  onDebateProgress?: (turn: number, expectedTurns: number) => void;
+  onPipelinePhase?: (phase: "analyzing" | "debating" | "validating") => void;
+};
 
 function throwAnalyzeCancelled(): never {
   const e = new Error("Analysis cancelled");
@@ -763,11 +790,26 @@ export async function analyzeTickerV2(
   return runWithPolygonApiTraceAsync(() => analyzeTickerV2Inner(ticker, progress));
 }
 
+export async function runDebateForWorker(
+  prepared: WorkerPreparedPayload,
+  progress?: AnalyzeProgressCallbacks,
+): Promise<{ response: AiTradeResponse; trace: WebSearchTrace; rawText: string }> {
+  progress?.workerControl?.onPipelinePhase?.("debating");
+  const r = await callAiForTradeViaDebate(
+    prepared.dataPackage,
+    prepared.settings,
+    progress,
+    prepared.debateScrubCanonical,
+  );
+  return { response: r.response, trace: r.trace, rawText: r.rawText };
+}
+
 async function analyzeTickerV2Inner(
   ticker: string,
   progress?: AnalyzeProgressCallbacks,
 ): Promise<StrategistV2Result> {
   const status = (s: string) => progress?.onStatus?.(s);
+  progress?.workerControl?.onPipelinePhase?.("analyzing");
   status("Loading regime + settings…");
   assertAnalyzeNotCancelled(progress);
   const runCtx = getStrategistRunContext();
@@ -1491,6 +1533,41 @@ async function analyzeTickerV2Inner(
   }
 
   const isDebateMode = settings.strategistMode === 2;
+  const debateScrubCanonical: ScrubCanonical = {
+    ivr: tickerData.ivr,
+    pcRatio: Number.isFinite(chainSummary?.putCallVolumeRatio) ? chainSummary.putCallVolumeRatio : null,
+  };
+
+  if (isDebateMode && progress?.workerControl?.returnPreparedBeforeDebate) {
+    const systemicRiskElevated =
+      regime.systemicRiskLevel === "ELEVATED" || regime.systemicRiskLevel === "EXTREME";
+    return withResultSchemaVersion({
+      status: "no_viable_setup",
+      ticker,
+      blockReason: {
+        category: "UNKNOWN",
+        detail: "worker_pre_debate_checkpoint",
+        suggestedAction: "",
+      },
+      regime,
+      systemicRiskElevated,
+      workerPrepared: {
+        dataPackage,
+        settings,
+        regime,
+        toxicCheck,
+        tickerData,
+        chain,
+        chainSummary,
+        ioScore,
+        dataSource,
+        deskCatalystEval,
+        deskCatalystExpirationISO,
+        debateScrubCanonical,
+      },
+    });
+  }
+
   status(isDebateMode ? "Starting strategist debate…" : "Calling AI for trade recommendation…");
   let aiResponse: AiTradeResponse;
   let webTrace: WebSearchTrace;
@@ -1499,14 +1576,7 @@ async function analyzeTickerV2Inner(
   const soloModel = !isDebateMode ? getStrategistModel(settings.strategistSoloModelIdx) : undefined;
   try {
     if (isDebateMode) {
-      // Build the same canonical the post-synthesis scrub uses (see ~line 805)
-      // so the per-turn debate scrubber substitutes identical values.
-      // Without this, transcript turns shown to the user keep raw `{{IVR}}` /
-      // `{{PC_RATIO}}` placeholders even though the final card is clean.
-      const debateScrubCanonical: ScrubCanonical = {
-        ivr: tickerData.ivr,
-        pcRatio: Number.isFinite(chainSummary?.putCallVolumeRatio) ? chainSummary.putCallVolumeRatio : null,
-      };
+      progress?.workerControl?.onPipelinePhase?.("debating");
       const r = await callAiForTradeViaDebate(dataPackage, settings, progress, debateScrubCanonical);
       aiResponse = r.response;
       webTrace = r.trace;
@@ -1524,6 +1594,63 @@ async function analyzeTickerV2Inner(
       ioScore, { dataSource, dataPackage });
   }
 
+  return buildRecommendationFromAiState({
+    ticker,
+    aiResponse,
+    webTrace,
+    rawAiResponseText,
+    chain,
+    chainSummary,
+    settings,
+    regime,
+    toxicCheck,
+    tickerData,
+    ioScore,
+    dataSource,
+    dataPackage,
+    progress,
+    isDebateMode,
+  });
+}
+
+type BuildRecommendationFromAiStateInput = {
+  ticker: string;
+  aiResponse: AiTradeResponse;
+  webTrace: WebSearchTrace;
+  rawAiResponseText: string;
+  chain: ChainContract[];
+  chainSummary: Awaited<ReturnType<typeof summarizeOptionsChain>>;
+  settings: StrategistConfig;
+  regime: StructuredRegime;
+  toxicCheck: ToxicGateSnapshot;
+  tickerData: TickerData;
+  ioScore: IOScoreResult;
+  dataSource: ChainSource;
+  dataPackage: string;
+  progress?: AnalyzeProgressCallbacks;
+  isDebateMode: boolean;
+};
+
+async function buildRecommendationFromAiState(input: BuildRecommendationFromAiStateInput): Promise<StrategistV2Result> {
+  let {
+    ticker,
+    aiResponse,
+    webTrace,
+    rawAiResponseText,
+    chain,
+    chainSummary,
+    settings,
+    regime,
+    toxicCheck,
+    tickerData,
+    ioScore,
+    dataSource,
+    dataPackage,
+    progress,
+    isDebateMode,
+  } = input;
+  const status = (s: string) => progress?.onStatus?.(s);
+  const soloModel = !isDebateMode ? getStrategistModel(settings.strategistSoloModelIdx) : undefined;
   // Guard against AI responses with missing/non-numeric confidence — previously
   // `aiResponse.confidence < 20` was silently false for `undefined`, allowing
   // confidence-less recommendations to ship. Coerce here once.
@@ -1544,6 +1671,7 @@ async function analyzeTickerV2Inner(
     return blocked;
   }
 
+  progress?.workerControl?.onPipelinePhase?.("validating");
   const validationResult = validateAiResponse(aiResponse, chain, settings);
   if (!validationResult.valid) {
     try {
@@ -3979,6 +4107,10 @@ async function callAiForTradeViaDebate(
     personaNameB: "Bear",
     callbacks: debateCallbacks,
     scrubCanonical,
+    resumeTurns: progress?.workerControl?.debateResumeTurns,
+    onTurnCheckpoint: progress?.workerControl?.onDebateTurnCheckpoint,
+    onTurnProgress: (turnIndex, totalTurns) =>
+      progress?.workerControl?.onDebateProgress?.(turnIndex, totalTurns),
   });
 
   const parsed = parseAiTradeRawText(outcome.finalRawText, outcome.trace);
@@ -4719,7 +4851,7 @@ interface TelemetryExtras {
   modelName?: string | null;
 }
 
-async function emitFullDiagnosticTelemetry(args: {
+export type StrategistTelemetryCapture = {
   ticker: string;
   settings: StrategistConfig;
   regime: StructuredRegime;
@@ -4730,8 +4862,15 @@ async function emitFullDiagnosticTelemetry(args: {
   aiDecision: TelemetryStrategyDecision | null;
   thesis: string | null;
   extras: TelemetryExtras;
-}): Promise<number | null> {
+  jobId?: string;
+};
+
+async function emitFullDiagnosticTelemetry(args: StrategistTelemetryCapture): Promise<number | null> {
   const ctx = getStrategistRunContext();
+  if (ctx?.deferTelemetryUntilPersist) {
+    ctx.pendingTelemetryCapture = { ...args };
+    return null;
+  }
   const rawDesk = args.extras.deskResult;
   const convictionDeskProviderAudit =
     rawDesk?.mode === "conviction_desk" ? rawDesk.convictionDeskAudit ?? null : null;
@@ -4799,6 +4938,7 @@ async function emitFullDiagnosticTelemetry(args: {
     requestId: ctx?.requestId ?? newStrategistRequestId(),
     userId: ctx?.userId ?? null,
     sessionIdentifier: ctx?.sessionIdentifier ?? null,
+    jobId: args.jobId ?? null,
     totalRunDurationMs: durationMs,
   };
   const fullDiagnostic = buildStrategistFullDiagnosticJson({
@@ -5012,39 +5152,15 @@ async function logTelemetry(
       return id;
     } catch (insertErr) {
       const pgCode = strategistTelemetryPostgresErrorCode(insertErr);
-      logger.warn(
+      logger.error(
         {
           err: insertErr,
           pgCode,
           ticker: values.ticker,
           flat: strategistTelemetryFlattenErrorMessage(insertErr),
         },
-        "StrategistV2: Drizzle telemetry INSERT failed; attempting DDL heal + pool INSERT",
+        "StrategistV2: Drizzle telemetry INSERT failed",
       );
-      if (pgCode === "42703") {
-        try {
-          await applyStrategistTelemetryAuditColumnMigrations();
-        } catch (ddlErr) {
-          logger.warn({ ddlErr }, "StrategistV2: telemetry heal DDL after insert failure");
-        }
-      }
-      const pgCols2 = await getStrategistTelemetryPgColumnSet();
-      const filtered2 = filterStrategistTelemetryInsertForExistingColumns(
-        values as unknown as Record<string, unknown>,
-        pgCols2,
-      ) as StrategistTelemetryInsert;
-      if (!filtered2.ticker || !filtered2.result) {
-        throw insertErr;
-      }
-      try {
-        const poolId = await insertStrategistTelemetryRowViaPool(filtered2 as unknown as Record<string, unknown>);
-        if (poolId != null) {
-          logger.info({ ticker: filtered2.ticker, telemetryId: poolId }, "StrategistV2: telemetry persisted (pool INSERT)");
-          return poolId;
-        }
-      } catch (poolErr) {
-        logger.error({ poolErr }, "StrategistV2: pool telemetry INSERT failed");
-      }
       throw insertErr;
     }
   } catch (err) {
@@ -5297,4 +5413,36 @@ function buildContextSources(
     catalystAlignment: legacyAlignment,
     catalyst: catalyst ?? undefined,
   };
+}
+
+export async function emitFullDiagnosticTelemetryFromCapture(
+  capture: StrategistTelemetryCapture,
+): Promise<number | null> {
+  return emitFullDiagnosticTelemetry(capture);
+}
+
+export async function analyzeTickerV2FinalizeAfterDebate(
+  ticker: string,
+  prepared: WorkerPreparedPayload,
+  debate: { response: AiTradeResponse; trace: WebSearchTrace; rawText: string },
+  progress?: AnalyzeProgressCallbacks,
+): Promise<StrategistV2Result> {
+  progress?.workerControl?.onPipelinePhase?.("validating");
+  return buildRecommendationFromAiState({
+    ticker,
+    aiResponse: debate.response,
+    webTrace: debate.trace,
+    rawAiResponseText: debate.rawText,
+    chain: prepared.chain,
+    chainSummary: prepared.chainSummary,
+    settings: prepared.settings,
+    regime: prepared.regime,
+    toxicCheck: prepared.toxicCheck,
+    tickerData: prepared.tickerData,
+    ioScore: prepared.ioScore,
+    dataSource: prepared.dataSource,
+    dataPackage: prepared.dataPackage,
+    progress,
+    isDebateMode: true,
+  });
 }

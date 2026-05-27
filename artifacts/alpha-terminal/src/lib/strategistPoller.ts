@@ -305,13 +305,27 @@ export function openStrategistJobFromNotification(
 }
 
 /** Reconcile every in-flight job against persisted server/history (foreground push safety net). */
-export async function reconcileRunningStrategistJobs(): Promise<void> {
+export async function reconcileRunningStrategistJobs(opts?: { toastOnComplete?: boolean }): Promise<void> {
   const jobs = useTerminalStore.getState().strategistJobs;
   for (const [jobId, job] of Object.entries(jobs)) {
     if (job.status !== "running" && job.status !== "interrupted") continue;
     if (pushOpenInFlight.has(jobId)) continue;
+    const wasRunning = job.status === "running" || job.status === "interrupted";
     await hydrateStrategistJobFromPersistedFinal(jobId);
+    const after = useTerminalStore.getState().strategistJobs[jobId];
+    if (
+      opts?.toastOnComplete &&
+      wasRunning &&
+      after?.status === "done" &&
+      document.visibilityState === "hidden"
+    ) {
+      maybeToastForegroundRecovery(jobId);
+    }
   }
+}
+
+export function toastStrategistJobCompletionIfReady(jobId: string): void {
+  maybeToastForegroundRecovery(jobId);
 }
 
 const completionToastSent = new Set<string>();

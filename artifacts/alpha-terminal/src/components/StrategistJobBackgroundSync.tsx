@@ -4,6 +4,7 @@ import {
   reconcileRunningStrategistJobs,
   resumeAllRunningPollers,
   openStrategistJobFromNotification,
+  toastStrategistJobCompletionIfReady,
 } from "@/lib/strategistPoller";
 import { installStrategistPushMessageListener } from "@/lib/strategistPushMessages";
 import { readStashedStrategistPushJob } from "@/lib/strategistPushCache";
@@ -21,7 +22,7 @@ import {
 export default function StrategistJobBackgroundSync() {
   useEffect(() => {
     const resumeFromServer = async (opts?: { toastOnComplete?: boolean; reconnectHint?: boolean }) => {
-      await reconcileRunningStrategistJobs();
+      await reconcileRunningStrategistJobs({ toastOnComplete: opts?.toastOnComplete ?? false });
       resumeAllRunningPollers({
         toastOnComplete: opts?.toastOnComplete ?? false,
         reconnectHint: opts?.reconnectHint === true,
@@ -69,6 +70,9 @@ export default function StrategistJobBackgroundSync() {
       void openStrategistJobFromNotification(msg.jobId, { ticker: msg.ticker }).then((result) => {
         if (result.ok && result.ticker) {
           useTerminalStore.getState().setSymbol(result.ticker);
+        }
+        if (result.ok && document.visibilityState === "hidden") {
+          toastStrategistJobCompletionIfReady(msg.jobId);
         }
       });
     });

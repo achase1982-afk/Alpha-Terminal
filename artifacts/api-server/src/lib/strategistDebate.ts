@@ -441,6 +441,30 @@ function mergeTraces(a: WebSearchTrace, b: WebSearchTrace): WebSearchTrace {
 
 // ---------- Orchestrator ----------
 
+export const EXPECTED_TURNS = 7;
+
+const EMPTY_DEBATE_TRACE: WebSearchTrace = { webSearchUsed: false, queries: [], sources: [] };
+
+async function runOrResumeDebatedTurn(args: {
+  turnKey: string;
+  turnIndex: number;
+  resumeTurns?: Record<string, string>;
+  onTurnCheckpoint?: (turnKey: string, text: string, turnIndex: number, totalTurns: number) => Promise<void>;
+  onTurnProgress?: (turnIndex: number, totalTurns: number) => void;
+  run: () => Promise<{ text: string; trace: WebSearchTrace; turnId: string }>;
+}): Promise<{ text: string; trace: WebSearchTrace; turnId: string }> {
+  const { turnKey, turnIndex, resumeTurns, onTurnCheckpoint, onTurnProgress, run } = args;
+  const resumed = resumeTurns?.[turnKey];
+  if (typeof resumed === "string" && resumed.length > 0) {
+    onTurnProgress?.(turnIndex, EXPECTED_TURNS);
+    return { text: resumed, trace: EMPTY_DEBATE_TRACE, turnId: `resume_${turnKey}` };
+  }
+  const out = await run();
+  await onTurnCheckpoint?.(turnKey, out.text, turnIndex, EXPECTED_TURNS);
+  onTurnProgress?.(turnIndex, EXPECTED_TURNS);
+  return out;
+}
+
 export async function runDebate(args: {
   systemPrompt: string;
   dataPackage: string;
@@ -458,8 +482,21 @@ export async function runDebate(args: {
    *  build) so debate transcript turns are scrubbed identically to the
    *  final synthesis card. See runTurn for substitution policy. */
   scrubCanonical?: ScrubCanonical;
+  /** Worker resume: completed turn key → final scrubbed text. */
+  resumeTurns?: Record<string, string>;
+  onTurnCheckpoint?: (turnKey: string, text: string, turnIndex: number, totalTurns: number) => Promise<void>;
+  onTurnProgress?: (turnIndex: number, totalTurns: number) => void;
 }): Promise<DebateOutcome> {
-  const { systemPrompt, dataPackage, config, callbacks, scrubCanonical } = args;
+  const {
+    systemPrompt,
+    dataPackage,
+    config,
+    callbacks,
+    scrubCanonical,
+    resumeTurns,
+    onTurnCheckpoint,
+    onTurnProgress,
+  } = args;
   const personaNameA = args.personaNameA ?? "Bull";
   const personaNameB = args.personaNameB ?? "Bear";
   const sysA = args.personaA ? `${systemPrompt}\n\n${args.personaA}` : systemPrompt;
@@ -479,50 +516,82 @@ export async function runDebate(args: {
   // ---------- PHASE 1: Round 1 — directional propose (parallel) ----------
   callbacks?.onStatus?.(`Phase 1 / Round 1 — ${personaNameA} and ${personaNameB} pitching directional cases…`);
   const [r1a, r1b] = await Promise.all([
-    runTurn({
-      modelOpt: modelADisplay,
-      systemPrompt: sysA,
-      prompt: DIRECTIONAL_PROPOSE_INSTRUCTION(today, dataPackage, personaNameA, personaNameB),
-      round: 1,
-      role: "A",
-      phase: "propose",
-      callbacks,
-      scrubCanonical,
+    runOrResumeDebatedTurn({
+      turnKey: "r1a",
+      turnIndex: 1,
+      resumeTurns,
+      onTurnCheckpoint,
+      onTurnProgress,
+      run: () =>
+        runTurn({
+          modelOpt: modelADisplay,
+          systemPrompt: sysA,
+          prompt: DIRECTIONAL_PROPOSE_INSTRUCTION(today, dataPackage, personaNameA, personaNameB),
+          round: 1,
+          role: "A",
+          phase: "propose",
+          callbacks,
+          scrubCanonical,
+        }),
     }),
-    runTurn({
-      modelOpt: modelBDisplay,
-      systemPrompt: sysB,
-      prompt: DIRECTIONAL_PROPOSE_INSTRUCTION(today, dataPackage, personaNameB, personaNameA),
-      round: 1,
-      role: "B",
-      phase: "propose",
-      callbacks,
-      scrubCanonical,
+    runOrResumeDebatedTurn({
+      turnKey: "r1b",
+      turnIndex: 2,
+      resumeTurns,
+      onTurnCheckpoint,
+      onTurnProgress,
+      run: () =>
+        runTurn({
+          modelOpt: modelBDisplay,
+          systemPrompt: sysB,
+          prompt: DIRECTIONAL_PROPOSE_INSTRUCTION(today, dataPackage, personaNameB, personaNameA),
+          round: 1,
+          role: "B",
+          phase: "propose",
+          callbacks,
+          scrubCanonical,
+        }),
     }),
   ]);
 
   // ---------- PHASE 1: Round 2 — rebuttals (parallel) ----------
   callbacks?.onStatus?.(`Phase 1 / Round 2 — ${personaNameA} and ${personaNameB} rebutting…`);
   const [r2a, r2b] = await Promise.all([
-    runTurn({
-      modelOpt: modelADisplay,
-      systemPrompt: sysA,
-      prompt: DIRECTIONAL_REBUT_INSTRUCTION(personaNameA, personaNameB, r1a.text, r1b.text),
-      round: 2,
-      role: "A",
-      phase: "critique",
-      callbacks,
-      scrubCanonical,
+    runOrResumeDebatedTurn({
+      turnKey: "r2a",
+      turnIndex: 3,
+      resumeTurns,
+      onTurnCheckpoint,
+      onTurnProgress,
+      run: () =>
+        runTurn({
+          modelOpt: modelADisplay,
+          systemPrompt: sysA,
+          prompt: DIRECTIONAL_REBUT_INSTRUCTION(personaNameA, personaNameB, r1a.text, r1b.text),
+          round: 2,
+          role: "A",
+          phase: "critique",
+          callbacks,
+          scrubCanonical,
+        }),
     }),
-    runTurn({
-      modelOpt: modelBDisplay,
-      systemPrompt: sysB,
-      prompt: DIRECTIONAL_REBUT_INSTRUCTION(personaNameB, personaNameA, r1b.text, r1a.text),
-      round: 2,
-      role: "B",
-      phase: "critique",
-      callbacks,
-      scrubCanonical,
+    runOrResumeDebatedTurn({
+      turnKey: "r2b",
+      turnIndex: 4,
+      resumeTurns,
+      onTurnCheckpoint,
+      onTurnProgress,
+      run: () =>
+        runTurn({
+          modelOpt: modelBDisplay,
+          systemPrompt: sysB,
+          prompt: DIRECTIONAL_REBUT_INSTRUCTION(personaNameB, personaNameA, r1b.text, r1a.text),
+          round: 2,
+          role: "B",
+          phase: "critique",
+          callbacks,
+          scrubCanonical,
+        }),
     }),
   ]);
 
@@ -587,47 +656,63 @@ export async function runDebate(args: {
     `Phase 2 / Round 3 — ${personaNameA} and ${personaNameB} proposing trade structures…`,
   );
   const [s3a, s3b] = await Promise.all([
-    runTurn({
-      modelOpt: modelADisplay,
-      systemPrompt: sysA,
-      prompt: TRADE_STRUCTURE_PROPOSE_INSTRUCTION(
-        personaNameA,
-        personaNameB,
-        verdict,
-        bullConfidence,
-        bearConfidence,
-        r1a.text,
-        r2a.text,
-        r1b.text,
-        r2b.text,
-        dataPackage,
-      ),
-      round: 3,
-      role: "A",
-      phase: "propose",
-      callbacks,
-      scrubCanonical,
+    runOrResumeDebatedTurn({
+      turnKey: "s3a",
+      turnIndex: 5,
+      resumeTurns,
+      onTurnCheckpoint,
+      onTurnProgress,
+      run: () =>
+        runTurn({
+          modelOpt: modelADisplay,
+          systemPrompt: sysA,
+          prompt: TRADE_STRUCTURE_PROPOSE_INSTRUCTION(
+            personaNameA,
+            personaNameB,
+            verdict,
+            bullConfidence,
+            bearConfidence,
+            r1a.text,
+            r2a.text,
+            r1b.text,
+            r2b.text,
+            dataPackage,
+          ),
+          round: 3,
+          role: "A",
+          phase: "propose",
+          callbacks,
+          scrubCanonical,
+        }),
     }),
-    runTurn({
-      modelOpt: modelBDisplay,
-      systemPrompt: sysB,
-      prompt: TRADE_STRUCTURE_PROPOSE_INSTRUCTION(
-        personaNameB,
-        personaNameA,
-        verdict,
-        bullConfidence,
-        bearConfidence,
-        r1b.text,
-        r2b.text,
-        r1a.text,
-        r2a.text,
-        dataPackage,
-      ),
-      round: 3,
-      role: "B",
-      phase: "propose",
-      callbacks,
-      scrubCanonical,
+    runOrResumeDebatedTurn({
+      turnKey: "s3b",
+      turnIndex: 6,
+      resumeTurns,
+      onTurnCheckpoint,
+      onTurnProgress,
+      run: () =>
+        runTurn({
+          modelOpt: modelBDisplay,
+          systemPrompt: sysB,
+          prompt: TRADE_STRUCTURE_PROPOSE_INSTRUCTION(
+            personaNameB,
+            personaNameA,
+            verdict,
+            bullConfidence,
+            bearConfidence,
+            r1b.text,
+            r2b.text,
+            r1a.text,
+            r2a.text,
+            dataPackage,
+          ),
+          round: 3,
+          role: "B",
+          phase: "propose",
+          callbacks,
+          scrubCanonical,
+        }),
     }),
   ]);
 
@@ -665,26 +750,34 @@ export async function runDebate(args: {
 
   callbacks?.onStatus?.("Phase 3 — Senior PM arbitrating between structure proposals…");
 
-  const buildResult = await runTurn({
-    modelOpt: builderModelOpt,
-    systemPrompt, // neutral — no persona suffix
-    prompt: TRADE_BUILD_FROM_PROPOSALS_INSTRUCTION(
-      verdict,
-      bullConfidence,
-      bearConfidence,
-      s3a.text,
-      s3b.text,
-      r1a.text,
-      r2a.text,
-      r1b.text,
-      r2b.text,
-      dataPackage,
-    ),
-    round: "synthesis",
-    role: "synthesis",
-    phase: "final",
-    callbacks,
-    scrubCanonical,
+  const buildResult = await runOrResumeDebatedTurn({
+    turnKey: "build",
+    turnIndex: 7,
+    resumeTurns,
+    onTurnCheckpoint,
+    onTurnProgress,
+    run: () =>
+      runTurn({
+        modelOpt: builderModelOpt,
+        systemPrompt, // neutral — no persona suffix
+        prompt: TRADE_BUILD_FROM_PROPOSALS_INSTRUCTION(
+          verdict,
+          bullConfidence,
+          bearConfidence,
+          s3a.text,
+          s3b.text,
+          r1a.text,
+          r2a.text,
+          r1b.text,
+          r2b.text,
+          dataPackage,
+        ),
+        round: "synthesis",
+        role: "synthesis",
+        phase: "final",
+        callbacks,
+        scrubCanonical,
+      }),
   });
 
   const aggregateTrace = mergeTraces(

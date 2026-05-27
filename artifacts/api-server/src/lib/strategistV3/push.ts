@@ -27,7 +27,7 @@ export async function fireStrategistJobPush(input: {
         type: "strategist",
         jobId,
         ticker,
-        kind: "analyze_failed" as const,
+        kind: "failure" as const,
       },
     });
     return;
@@ -58,8 +58,11 @@ export async function fireStrategistJobPush(input: {
   const job = await findJobById(jobId);
   let result: StrategistV2Result | null = null;
   if (job?.checkpoint && typeof job.checkpoint === "object") {
-    const analyzing = (job.checkpoint as { analyzing?: { analyzeResult?: StrategistV2Result } }).analyzing;
-    result = analyzing?.analyzeResult ?? null;
+    const cp = job.checkpoint as {
+      validating?: { analyzeResult?: StrategistV2Result };
+      analyzing?: { analyzeResult?: StrategistV2Result };
+    };
+    result = cp.validating?.analyzeResult ?? cp.analyzing?.analyzeResult ?? null;
   }
   if (result) {
     const completionPush = buildStrategistAnalyzeCompletionPush(result, ticker);
