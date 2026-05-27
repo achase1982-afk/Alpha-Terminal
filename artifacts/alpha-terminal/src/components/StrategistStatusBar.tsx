@@ -15,9 +15,27 @@ type ActiveJob = {
   error?: { code: string; message: string } | null;
 };
 
+function ordinal(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1:
+      return `${n}st`;
+    case 2:
+      return `${n}nd`;
+    case 3:
+      return `${n}rd`;
+    default:
+      return `${n}th`;
+  }
+}
+
 function phaseLabel(job: ActiveJob): string {
   if (job.status === "queued") {
-    return job.queuePosition != null ? `queued (${job.queuePosition}${job.queuePosition === 1 ? "st" : "th"} in line)` : "queued";
+    if (job.queuePosition == null || job.queuePosition <= 1) {
+      return "starting";
+    }
+    return `queued (${ordinal(job.queuePosition)} in line)`;
   }
   if (job.status === "completed") return "ready";
   if (job.status === "failed") return "failed";
@@ -39,6 +57,7 @@ function phaseLabel(job: ActiveJob): string {
   }
 }
 
+/** Inline strip above the bottom nav — not fixed, so it does not cover scrollable content. */
 export default function StrategistStatusBar() {
   const [jobs, setJobs] = useState<ActiveJob[]>([]);
   const setSymbol = useTerminalStore((s) => s.setSymbol);
@@ -75,17 +94,19 @@ export default function StrategistStatusBar() {
 
   return (
     <div
-      className="fixed bottom-0 left-0 right-0 z-40 border-t border-zinc-700/80 bg-zinc-950/95 backdrop-blur-sm px-3 py-2 text-xs font-mono text-zinc-200"
+      className="shrink-0 border-t border-zinc-700/90 bg-zinc-950 px-3 py-2.5 sm:py-2 text-[13px] sm:text-xs font-mono text-zinc-100 z-50"
       role="status"
       aria-live="polite"
     >
-      <div className="max-w-screen-2xl mx-auto flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="text-zinc-400 shrink-0">{headline}:</span>
+      <div className="flex items-center gap-x-3 gap-y-1 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <span className="text-zinc-400 shrink-0 text-[11px] sm:text-xs uppercase tracking-wide">
+          {headline}
+        </span>
         {jobs.map((job) => (
           <button
             key={job.jobId}
             type="button"
-            className="text-emerald-400/90 hover:text-emerald-300 underline-offset-2 hover:underline"
+            className="shrink-0 text-emerald-400 hover:text-emerald-300 underline-offset-2 hover:underline whitespace-nowrap"
             onClick={() => {
               setSymbol(job.ticker);
               window.dispatchEvent(
@@ -95,7 +116,7 @@ export default function StrategistStatusBar() {
               );
             }}
           >
-            {job.ticker} ({phaseLabel(job)})
+            {job.ticker} · {phaseLabel(job)}
           </button>
         ))}
       </div>

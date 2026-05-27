@@ -66,7 +66,7 @@ export function runningPayloadFromJob(job: StrategistJob, since: number): Strate
     jobId: job.id,
     kind,
     ticker: job.ticker,
-    status: progress.liveStatus ?? (job.status === "queued" ? "Queued…" : "Running…"),
+    status: progress.liveStatus ?? (job.status === "queued" ? "Starting…" : "Running…"),
     tokens,
     nextSince: tokensAll.length,
     transcript: progress.transcript ?? [],
