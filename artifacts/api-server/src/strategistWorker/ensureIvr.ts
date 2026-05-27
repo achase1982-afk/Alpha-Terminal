@@ -1,6 +1,7 @@
 import { ensureIvrCoverage, getIvrBackfillJob } from "../lib/onDemandIvrBackfill.js";
 import { IVR_TIMEOUT_MS } from "../lib/strategistV3/config.js";
 import { mergeJobProgress, updateJobPhase } from "../lib/strategistV3/jobs.js";
+import type { IvrBackfillProgress } from "../lib/strategistV3/types.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -22,9 +23,51 @@ export class IvrTimeoutError extends Error {
   }
 }
 
+function ivrProgressPatch(
+  coverage: Awaited<ReturnType<typeof ensureIvrCoverage>>,
+  job?: Awaited<ReturnType<typeof getIvrBackfillJob>> | null,
+): { liveStatus: string; ivrBackfill: IvrBackfillProgress } {
+  const daysRequested =
+    coverage.status === "populating"
+      ? coverage.daysRequested
+      : coverage.status === "ready"
+        ? job?.daysRequested ?? 252
+        : 252;
+  const daysLoaded =
+    job?.daysLoaded ??
+    (coverage.status === "populating" ? coverage.daysLoaded : 0);
+  const status =
+    job?.status ??
+    (coverage.status === "populating" ? coverage.jobStatus : "queued");
+  const jobId =
+    job?.id ??
+    (coverage.status === "populating" ? coverage.jobId : null) ??
+    (coverage.status === "failed_insufficient_history" || coverage.status === "failed"
+      ? coverage.jobId
+      : null);
+
+  return {
+    liveStatus: `Preparing IV data… (${daysLoaded}/${daysRequested} days)`,
+    ivrBackfill: {
+      jobId,
+      status: status as IvrBackfillProgress["status"],
+      daysLoaded,
+      daysRequested,
+    },
+  };
+}
+
 export async function ensureIvrReadyForWorker(jobId: string, ticker: string): Promise<void> {
   await updateJobPhase(jobId, "preparing_iv");
-  await mergeJobProgress(jobId, { liveStatus: "Preparing IV data…" });
+  await mergeJobProgress(jobId, {
+    liveStatus: "Preparing IV data… (0/252 days)",
+    ivrBackfill: {
+      jobId: null,
+      status: "queued",
+      daysLoaded: 0,
+      daysRequested: 252,
+    },
+  });
 
   const deadline = Date.now() + IVR_TIMEOUT_MS;
   while (Date.now() < deadline) {
@@ -46,9 +89,7 @@ export async function ensureIvrReadyForWorker(jobId: string, ticker: string): Pr
       if (job?.status === "completed") {
         continue;
       }
-      await mergeJobProgress(jobId, {
-        liveStatus: `Preparing IV data… (${job?.daysLoaded ?? coverage.daysLoaded}/${coverage.daysRequested} days)`,
-      });
+      await mergeJobProgress(jobId, ivrProgressPatch(coverage, job));
     }
     await sleep(2_000);
   }

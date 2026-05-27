@@ -21,11 +21,21 @@ export type ValidationMeta = {
   rollingShort?: boolean;
 };
 
+export type IvrBackfillProgress = {
+  jobId: string | null;
+  status: "queued" | "running" | "completed" | "failed" | "failed_insufficient_history";
+  daysLoaded: number;
+  daysRequested: number;
+};
+
 export type JobProgressState = {
   liveStatus?: string;
   tokens?: string[];
   transcript?: TranscriptTurn[];
   validationMeta?: ValidationMeta | null;
+  ivrBackfill?: IvrBackfillProgress;
+  debateTurn?: number;
+  expectedTurns?: number;
 };
 
 export type StrategistPollPayload = {
@@ -33,6 +43,8 @@ export type StrategistPollPayload = {
   kind: "analyze" | "validation";
   ticker: string;
   status: string;
+  phase: string | null;
+  ivrBackfill: IvrBackfillProgress | null;
   tokens: string[];
   nextSince: number;
   transcript: TranscriptTurn[];

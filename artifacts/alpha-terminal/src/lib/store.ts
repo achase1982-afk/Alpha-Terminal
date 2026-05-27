@@ -152,6 +152,13 @@ export type NotificationEventType =
   | 'CancelAccepted' | 'OrderUROutCompleted' | 'OrderRejected'
   | 'CancelRejected' | 'OrderExpired' | 'OrderModified';
 
+export interface StrategistIvrBackfillProgress {
+  jobId?: string | null;
+  status: "queued" | "running" | "completed" | "failed" | "failed_insufficient_history";
+  daysLoaded: number;
+  daysRequested: number;
+}
+
 export interface TerminalState {
   accessToken: string | null;
   refreshToken: string | null;
@@ -350,6 +357,10 @@ export interface TerminalState {
     lastServerProgressAt: number;
     /** Brief UI hint while reconciling with `/job/:id/final` after tab resume. */
     resumeUi?: "reconnecting";
+    /** Server-reported pipeline phase (preparing_iv, debating, …). */
+    phase?: string | null;
+    /** IVR backfill progress while phase is preparing_iv. */
+    ivrBackfill?: StrategistIvrBackfillProgress | null;
     // Discriminator + metadata for trade-validation jobs (kicked off from
     // OrderTicket "Send to Strategist"). Absent / "analyze" for ticker
     // analysis jobs kicked off from the Strategist tab.
@@ -372,6 +383,11 @@ export interface TerminalState {
   setStrategistTranscript: (jobId: string, transcript: StrategistTranscriptTurn[]) => void;
   setStrategistLiveStatus: (jobId: string, status: string) => void;
   setStrategistJobMeta: (jobId: string, patch: { kind?: 'analyze' | 'validation'; validationMeta?: StrategistValidationMeta | null }) => void;
+  /** Patch server-reported phase / IVR progress from poll or /jobs/active. */
+  patchStrategistJobProgress: (
+    jobId: string,
+    patch: { phase?: string | null; ivrBackfill?: StrategistIvrBackfillProgress | null },
+  ) => void;
   /** Monotonic server-reported progress (ms); avoids false client timeouts while the tab is frozen. */
   touchStrategistServerProgress: (jobId: string, serverProgressAtMs: number) => void;
   /** All running jobs: show reconnecting banner (visibility resume only). */
@@ -884,6 +900,20 @@ export const useTerminalStore = create<TerminalState>()(
             strategistJobs: {
               ...state.strategistJobs,
               [jobId]: { ...job, liveStatus: status },
+            },
+          };
+        }),
+      patchStrategistJobProgress: (jobId, patch) =>
+        set((state) => {
+          const job = state.strategistJobs[jobId];
+          if (!job) return {};
+          const nextPhase = patch.phase !== undefined ? patch.phase : job.phase;
+          const nextIvr = patch.ivrBackfill !== undefined ? patch.ivrBackfill : job.ivrBackfill;
+          if (nextPhase === job.phase && nextIvr === job.ivrBackfill) return {};
+          return {
+            strategistJobs: {
+              ...state.strategistJobs,
+              [jobId]: { ...job, phase: nextPhase, ivrBackfill: nextIvr },
             },
           };
         }),
