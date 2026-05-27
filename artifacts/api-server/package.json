@@ -8,7 +8,6 @@
     "build": "pnpm run typecheck && node ./build.mjs",
     "migrate:deploy": "node ./scripts/migrate-deploy.mjs",
     "start": "pnpm run migrate:deploy && node --enable-source-maps --max-http-header-size=65536 ./dist/index.mjs",
-    "strategist-worker": "tsx src/strategistWorker/main.ts",
     "pretypecheck": "pnpm exec tsc --build --force ../../lib/ai-models ../../lib/db ../../lib/api-zod ../../lib/integrations-gemini-ai ../../lib/movers-types ../../lib/catalysts-types",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "tuning:backfill": "tsx src/jobs/tuningUniverseBackfill.ts",

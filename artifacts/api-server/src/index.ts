@@ -52,6 +52,7 @@ import { ensureCatalystsFeedTable } from "./lib/ensureCatalystsFeedSchema.js";
 import { ensureCatalystEarningsDatesTable } from "./lib/ensureCatalystEarningsDatesSchema.js";
 import { ensureMoversCatalystCacheTable } from "./lib/ensureMoversCatalystCacheSchema.js";
 import { ensureMoversTier2CacheTable } from "./lib/ensureMoversTier2CacheSchema.js";
+import { startStrategistReaper, startStrategistWorker } from "./strategistWorker/main.js";
 
 const rawPort = process.env["PORT"];
 
@@ -561,6 +562,9 @@ async function boot() {
     }
 
     logger.info({ host, port }, "Server listening");
+
+    startStrategistWorker();
+    startStrategistReaper();
   });
 
   // Discovery scan can exceed 120s (IOScore, earnings, flow highlights, large JSON).
