@@ -45,6 +45,22 @@ describe("applyThinkingPollResponse", () => {
     expect(useTerminalStore.getState().strategistJobs[jobId]?.status).toBe("done");
   });
 
+  it("advances lastServerProgressAt from serverProgressAt on partial polls", () => {
+    const jobId = "job-server-progress";
+    useTerminalStore.getState().startStrategistJob(jobId, "AAPL", { kind: "analyze" });
+    const t0 = useTerminalStore.getState().strategistJobs[jobId]!.lastServerProgressAt;
+    applyThinkingPollResponse(jobId, {
+      status: "Thinking",
+      tokens: [],
+      nextSince: 0,
+      done: false,
+      result: null,
+      error: null,
+      serverProgressAt: t0 + 60_000,
+    });
+    expect(useTerminalStore.getState().strategistJobs[jobId]?.lastServerProgressAt).toBe(t0 + 60_000);
+  });
+
   it("ignores incremental updates when the local job is not running", () => {
     const jobId = "job-done-skip-deltas";
     useTerminalStore.getState().startStrategistJob(jobId, "HPE", { kind: "analyze" });

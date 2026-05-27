@@ -20,16 +20,19 @@ import {
  */
 export default function StrategistJobBackgroundSync() {
   useEffect(() => {
-    const resumeFromServer = async (opts?: { toastOnComplete?: boolean }) => {
+    const resumeFromServer = async (opts?: { toastOnComplete?: boolean; reconnectHint?: boolean }) => {
       await reconcileRunningStrategistJobs();
-      resumeAllRunningPollers({ toastOnComplete: opts?.toastOnComplete ?? false });
+      resumeAllRunningPollers({
+        toastOnComplete: opts?.toastOnComplete ?? false,
+        reconnectHint: opts?.reconnectHint === true,
+      });
     };
 
     void resumeFromServer();
 
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
-      void resumeFromServer({ toastOnComplete: true });
+      void resumeFromServer({ toastOnComplete: true, reconnectHint: true });
     };
 
     document.addEventListener("visibilitychange", onVisible);

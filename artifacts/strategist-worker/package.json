@@ -1,0 +1,22 @@
+{
+  "name": "@workspace/strategist-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "pretypecheck": "pnpm exec tsc --build --force ../../lib/db",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@workspace/db": "workspace:*",
+    "dotenv": "^16.6.1",
+    "drizzle-orm": "catalog:",
+    "pg": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "~5.9.2"
+  }
+}
