@@ -4,19 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "tsx src/index.ts",
-    "pretypecheck": "pnpm exec tsc --build --force ../../lib/db",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
-  },
-  "dependencies": {
-    "@workspace/db": "workspace:*",
-    "dotenv": "^16.6.1",
-    "drizzle-orm": "catalog:",
-    "pg": "^8.20.0"
+    "start": "pnpm --filter @workspace/api-server run strategist-worker",
+    "typecheck": "pnpm --filter @workspace/api-server run typecheck"
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "tsx": "catalog:",
     "typescript": "~5.9.2"
   }
 }

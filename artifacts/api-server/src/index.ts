@@ -44,7 +44,6 @@ import { nyCalendarYmd, isNyTradingSessionDateSync } from "./lib/usEquityMarketC
 import { liquidCoreUnionTuningSymbols } from "./lib/liquidCoreUniverse.js";
 import { runLiquidCoreEquityBackfillOnce, runFlowBootstrapGapRepairOnce } from "./lib/triggerBackfillBoot.js";
 import { ensureTelemetryEventsServiceColumn } from "./lib/ensureTelemetryEventsSchema.js";
-import { ensureStrategistTelemetryAuditColumns } from "./lib/ensureStrategistTelemetryAuditColumns.js";
 import { startMoversPollWorker } from "./lib/movers/moversPollWorker.js";
 import { startCatalystsRebuildWorker } from "./lib/catalysts/catalystsRebuildWorker.js";
 import { startCatalystEarningsHarvestWorker } from "./lib/catalysts/catalystEarningsHarvestWorker.js";
@@ -72,7 +71,6 @@ getFmpApiKeyOrThrow();
 
 async function boot() {
   await ensureTelemetryEventsServiceColumn();
-  await ensureStrategistTelemetryAuditColumns();
   await ensureMoversFeedTable();
   await ensureCatalystsFeedTable();
   await ensureCatalystEarningsDatesTable();

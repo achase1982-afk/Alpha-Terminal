@@ -37,7 +37,7 @@ import { TabErrorBoundary } from "@/components/TabErrorBoundary";
 import { takePendingScannerStrategistContext } from "@/lib/pendingScannerStrategistContext";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { AiLabStrategistView } from "@/components/AiLabStrategistView";
-import { StrategistV2RecommendationCard, StrategistV2BlockCard, IvrPopulatingCard, type StrategistV2Result as StrategistV2ResultType, type StrategistSendToOrderPayload, type BlockReason } from "@/components/StrategistV2Card";
+import { StrategistV2RecommendationCard, StrategistV2BlockCard, type StrategistV2Result as StrategistV2ResultType, type StrategistSendToOrderPayload, type BlockReason } from "@/components/StrategistV2Card";
 import { StrategistDeskCard, type DeskResult } from "@/components/StrategistDeskCard";
 import { StrategistHistoryList } from "@/components/StrategistHistoryList";
 
@@ -2775,11 +2775,8 @@ function AiIntelligenceTabInner({
   const v2Transcript = activeJobIdForSymbol
     ? strategistJobs[activeJobIdForSymbol]?.transcript ?? []
     : [];
-  const [ivrBackfillJob, setIvrBackfillJob] = useState<IvrBackfillJobStatus | null>(null);
-  const ivrPopulatingResult = v2Result?.status === "ivr_populating" ? v2Result : null;
-  const ivrBackfillJobId = ivrPopulatingResult?.ivrBackfill?.jobId ?? null;
 
-  // Fetch history on mount AND every time the strategist sub-tab becomes
+  // Fetch history on mount
   // active. This ensures cards saved on the server always re-appear when the
   // user returns to the screen, even after a full page reload or after an
   // analysis was completed in another session.
@@ -3003,381 +3000,6 @@ function AiIntelligenceTabInner({
     runChecks();
   }, [realStrategies, pulseSnapshot, preTradeEnabled, preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, preTradeBlockOnRed, accountSize, isStreaming, isStrategizing]);
 
-  const handleRunStrategist = useCallback(async (targetTicker?: string) => {
-    const runSymbol = targetTicker?.toUpperCase() || symbol;
-    if (targetTicker && targetTicker.toUpperCase() !== symbol) {
-      setSymbol(targetTicker.toUpperCase());
-    }
-
-    const runId = ++strategistRunRef.current;
-    setStrategistResult(null);
-    setStrategistAudit(null);
-    setStreamingText("");
-    setIsStreaming(false);
-    setIsStrategizing(true);
-    setActiveResult("strategist");
-    setRealStrategies([]);
-    setNarrativeText("");
-    setRegimeInfo(null);
-    setPulseSnapshot(null);
-    setOverrideWarning(null);
-    setThinkingTokens([]);
-    setPreTradeResults({});
-    setDetResult(null);
-    setDetNarrative("");
-    setDetStreamingText("");
-    setDetThinking([]);
-    setStrategistStatus("Running market pulse engine...");
-    setLastRunSymbol(runSymbol);
-    setLastRunTime(Date.now());
-
-    const snap = useTerminalStore.getState();
-    const currentBias = snap.stratBias;
-    const stratSettings = snap.aiFeatureSettings?.strategist;
-    const currentAiModel =
-      stratSettings?.model && typeof stratSettings.model === "string" ? stratSettings.model : "claude-sonnet-4-6";
-    const currentAiTemp = typeof stratSettings?.temperature === "number" ? stratSettings.temperature : 0;
-
-    const collected: StrategistCacheData = {
-      strategies: [],
-      narrative: "",
-      regime: null,
-      pulse: null,
-      overrideWarning: null,
-      audit: null,
-      thinkingTokens: [],
-      resultStatus: null,
-      timestamp: 0,
-    };
-
-    try {
-      setStrategistStatus("Classifying regime & scanning chain...");
-      const res = await fetchWithAuth(`${API_BASE}/ai/options-strategist/stream`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          symbol: runSymbol,
-          accessToken: accessToken || "",
-          model: currentAiModel,
-          temperature: currentAiTemp,
-          todayEdge: currentBias === "auto" ? undefined : currentBias === "bullish" ? "BULLISH_EDGE" : currentBias === "bearish" ? "BEARISH_EDGE" : "NEUTRAL_EDGE",
-        }),
-      });
-
-      if (strategistRunRef.current !== runId) return;
-
-      if (!res.ok) {
-        const errText = await res.text().catch(() => "Unknown error");
-        setStrategistResult(`**Error:** ${humanizeFailedApiBody(res.status, errText)}`);
-        setIsStrategizing(false);
-        setStrategistStatus("");
-        return;
-      }
-
-      const contentType = res.headers.get("content-type") ?? "";
-      if (contentType.includes("application/json")) {
-        if (strategistRunRef.current !== runId) return;
-        const json = await res.json() as { strategies?: StrategyPayload[]; narrative?: string; error?: string; edge?: string; regime?: RegimeInfo; pulse?: PulseSnapshot; overrideWarning?: string };
-        if (json.regime) { setRegimeInfo(json.regime); collected.regime = json.regime; }
-        if (json.pulse) { setPulseSnapshot(json.pulse); collected.pulse = json.pulse; }
-        if (json.overrideWarning) { setOverrideWarning(json.overrideWarning); collected.overrideWarning = json.overrideWarning; }
-        if (json.error) {
-          setStrategistResult(`**Error:** ${json.error}`);
-        } else if (json.strategies && json.strategies.length > 0) {
-          setRealStrategies(json.strategies);
-          setNarrativeText(json.narrative ?? "");
-          setStrategistResult("done");
-          collected.strategies = json.strategies;
-          collected.narrative = json.narrative ?? "";
-          collected.resultStatus = "done";
-          setStrategistCache({ ...collected, timestamp: Date.now() });
-        } else {
-          setStrategistResult(json.narrative ?? "No strategies available.");
-          collected.resultStatus = json.narrative ?? "No strategies available.";
-          setStrategistCache({ ...collected, timestamp: Date.now() });
-        }
-        setIsStrategizing(false);
-        setStrategistStatus("");
-        return;
-      }
-
-      setIsStrategizing(false);
-      setIsStreaming(true);
-
-      const reader = res.body?.getReader();
-      if (!reader) { setStrategistResult("**Error:** No readable stream."); setIsStreaming(false); return; }
-
-      const decoder = new TextDecoder();
-      let buf = "";
-      let accumulated = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (strategistRunRef.current !== runId) { reader.cancel(); return; }
-        buf += decoder.decode(value, { stream: true });
-
-        const lines = buf.split("\n");
-        buf = lines.pop() ?? "";
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const payload = line.slice(6).trim();
-          if (payload === "[DONE]") break;
-          try {
-            const parsed = JSON.parse(payload) as {
-              strategies?: StrategyPayload[];
-              edge?: string;
-              underlyingPrice?: number;
-              text?: string;
-              reasoning?: string;
-              error?: string;
-              regime?: RegimeInfo;
-              pulse?: PulseSnapshot;
-              overrideWarning?: string;
-            };
-            if (parsed.error) {
-              const trimmed = parsed.error.trimStart();
-              const errMsg = trimmed.startsWith("{") || trimmed.startsWith("[")
-                ? "Analysis unavailable. Tap Analyze to retry."
-                : parsed.error;
-              setStrategistResult(`**Error:** ${errMsg}`);
-              setIsStreaming(false);
-              setStrategistStatus("");
-              return;
-            }
-            if (parsed.regime) { setRegimeInfo(parsed.regime); collected.regime = parsed.regime; }
-            if (parsed.pulse) { setPulseSnapshot(parsed.pulse); collected.pulse = parsed.pulse; }
-            if (parsed.overrideWarning) { setOverrideWarning(parsed.overrideWarning); collected.overrideWarning = parsed.overrideWarning; }
-            if (parsed.strategies) {
-              setStrategistStatus("Building AI thesis...");
-              setRealStrategies(parsed.strategies);
-              collected.strategies = parsed.strategies;
-              const q = quote as Record<string, unknown> | undefined;
-              const auditData: StrategistAuditData = {
-                symbol: runSymbol,
-                price: parsed.underlyingPrice ?? null,
-                change: q && typeof q.netChange === "number" ? q.netChange : null,
-                changePct: q && typeof q.netPercentChange === "number" ? q.netPercentChange : null,
-                volume: null,
-                autopilot: snap.stratAutopilot,
-                maxRisk: snap.stratMaxRisk,
-                minPoP: snap.stratMinPoP,
-                minRR: snap.stratMinRR,
-                bias: parsed.edge ?? "—",
-                premium: snap.stratPremium,
-                avoidEarnings: snap.stratAvoidEarnings,
-                chainCallCount: 0,
-                chainPutCount: 0,
-                model: currentAiModel,
-                temperature: currentAiTemp,
-                timestamp: Date.now(),
-              };
-              setStrategistAudit(auditData);
-              collected.audit = auditData;
-            }
-            if (parsed.reasoning) {
-              collected.thinkingTokens.push(parsed.reasoning);
-              setThinkingTokens(prev => [...prev, parsed.reasoning!]);
-            }
-            if (parsed.text) {
-              accumulated += parsed.text;
-              setStreamingText(accumulated);
-            }
-          } catch {}
-        }
-      }
-      if (strategistRunRef.current !== runId) return;
-      setNarrativeText(accumulated);
-      collected.narrative = accumulated;
-      collected.resultStatus = "done";
-      setStrategistResult("done");
-      setStreamingText("");
-      setIsStreaming(false);
-      setStrategistStatus("");
-      setStrategistCache({ ...collected, timestamp: Date.now() });
-    } catch (err) {
-      const raw = (err instanceof Error ? err.message : String(err)).trimStart();
-      const clean = raw.startsWith("{") || raw.startsWith("[")
-        ? "Analysis unavailable. Tap Analyze to retry."
-        : raw;
-      setStrategistResult(`**Error:** ${clean}`);
-      setIsStrategizing(false);
-      setIsStreaming(false);
-      setStrategistStatus("");
-    }
-  }, [quote, accessToken, symbol, setSymbol, setStrategistResult, setStrategistCache]);
-
-  const handleRunDetStrategist = useCallback(async (sym: string, candidate?: DeterministicStrategistScannerPayload) => {
-    const runId = ++detRunRef.current;
-    const upperSym = sym.toUpperCase();
-
-    if (candidate) {
-      scannerCandidateCache.current[upperSym] = candidate;
-    }
-    const resolvedCandidate = candidate || scannerCandidateCache.current[upperSym];
-
-    setDetResult(null);
-    setDetNarrative("");
-    setDetStreamingText("");
-    setDetThinking([]);
-    setIsDetRunning(true);
-    setIsDetStreaming(false);
-    setActiveResult("strategist");
-    setRealStrategies([]);
-    setNarrativeText("");
-    setStrategistResult(null);
-    setStrategistStatus("Running deterministic strategist...");
-    setLastRunSymbol(sym);
-    setLastRunTime(Date.now());
-
-    if (upperSym !== symbol) {
-      setSymbol(upperSym);
-    }
-
-    const scannerPayload = resolvedCandidate ? {
-      symbol: resolvedCandidate.symbol,
-      totalScore: resolvedCandidate.totalScore,
-      components: resolvedCandidate.components,
-      microOverrideEligible: resolvedCandidate.microOverrideEligible,
-      ivr: resolvedCandidate.ivr,
-      atmSpreadPct: resolvedCandidate.atmSpreadPct,
-      changePct: resolvedCandidate.changePct,
-      sector: resolvedCandidate.sector,
-      scanTimestamp: resolvedCandidate.scanTimestamp ?? Date.now(),
-    } : undefined;
-
-    try {
-      const res = await fetchWithAuth(`${API_BASE}/ai/deterministic-strategist`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          symbol: sym.toUpperCase(),
-          accessToken: accessToken || "",
-          scannerData: scannerPayload,
-        }),
-      });
-
-      if (detRunRef.current !== runId) return;
-
-      if (!res.ok) {
-        const errText = await res.text().catch(() => "Unknown error");
-        const friendly = humanizeFailedApiBody(res.status, errText);
-        setDetResult({ criteria: null, rejection: friendly, mode: "NO_EDGE", modeReason: friendly, pulse: { composite: 0, confidence: 0, bias: "NO_EDGE" }, shockActive: false, portfolio: { microOverrideCount: 0 }, narrative: "" });
-        setIsDetRunning(false);
-        setStrategistStatus("");
-        return;
-      }
-
-      const contentType = res.headers.get("content-type") ?? "";
-
-      if (contentType.includes("application/json")) {
-        const json = await res.json() as DetStrategistResult;
-        json.narrative = "";
-        setDetResult(json);
-        setIsDetRunning(false);
-        setStrategistStatus("");
-        return;
-      }
-
-      setIsDetRunning(false);
-      setIsDetStreaming(true);
-      setStrategistStatus("Building AI thesis...");
-
-      const reader = res.body?.getReader();
-      if (!reader) { setIsDetStreaming(false); setStrategistStatus(""); return; }
-
-      const decoder = new TextDecoder();
-      let buf = "";
-      let accumulated = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (detRunRef.current !== runId) { reader.cancel(); return; }
-        buf += decoder.decode(value, { stream: true });
-
-        const lines = buf.split("\n");
-        buf = lines.pop() ?? "";
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const payload = line.slice(6).trim();
-          if (payload === "[DONE]") break;
-          try {
-            const parsed = JSON.parse(payload) as {
-              criteria?: DetStrategyCriteria;
-              mode?: string;
-              modeReason?: string;
-              pulse?: { composite: number; confidence: number; bias: string };
-              shockActive?: boolean;
-              portfolio?: { microOverrideCount: number };
-              tickerData?: DetStrategistResult["tickerData"];
-              resolvedTrade?: ResolvedTrade;
-              resolutionError?: StrikeResolutionError;
-              text?: string;
-              reasoning?: string;
-              error?: string;
-            };
-            if (parsed.error) {
-              const trimmed = parsed.error.trimStart();
-              const errMsg = trimmed.startsWith("{") || trimmed.startsWith("[")
-                ? "Analysis unavailable. Tap Analyze to retry."
-                : parsed.error;
-              setDetResult(prev => prev
-                ? { ...prev, narrative: prev.narrative || errMsg }
-                : { criteria: null, rejection: errMsg, mode: "NO_EDGE", modeReason: errMsg, pulse: { composite: 0, confidence: 0, bias: "NO_EDGE" }, shockActive: false, portfolio: { microOverrideCount: 0 }, narrative: "" }
-              );
-              setIsDetStreaming(false);
-              setStrategistStatus("");
-              return;
-            }
-            if (parsed.criteria) {
-              setDetResult({
-                criteria: parsed.criteria,
-                rejection: null,
-                mode: parsed.mode ?? "NO_EDGE",
-                modeReason: parsed.modeReason ?? "",
-                pulse: parsed.pulse ?? { composite: 0, confidence: 0, bias: "NO_EDGE" },
-                shockActive: parsed.shockActive ?? false,
-                portfolio: parsed.portfolio ?? { microOverrideCount: 0 },
-                tickerData: parsed.tickerData,
-                narrative: "",
-              });
-            }
-            if (parsed.resolvedTrade) {
-              setDetResult(prev => prev ? { ...prev, resolvedTrade: parsed.resolvedTrade } : prev);
-              setStrategistStatus("Resolving strikes... done");
-            }
-            if (parsed.resolutionError) {
-              setDetResult(prev => prev ? { ...prev, resolutionError: parsed.resolutionError } : prev);
-            }
-            if (parsed.reasoning) {
-              setDetThinking(prev => [...prev, parsed.reasoning!]);
-            }
-            if (parsed.text) {
-              accumulated += parsed.text;
-              setDetStreamingText(accumulated);
-            }
-          } catch {}
-        }
-      }
-      if (detRunRef.current !== runId) return;
-      setDetNarrative(accumulated);
-      if (detRunRef.current === runId) {
-        setDetResult(prev => prev ? { ...prev, narrative: accumulated } : prev);
-      }
-      setDetStreamingText("");
-      setIsDetStreaming(false);
-      setStrategistStatus("");
-    } catch (err) {
-      setDetResult({ criteria: null, rejection: err instanceof Error ? err.message : String(err), mode: "NO_EDGE", modeReason: "Request failed", pulse: { composite: 0, confidence: 0, bias: "NO_EDGE" }, shockActive: false, portfolio: { microOverrideCount: 0 }, narrative: "" });
-      setIsDetRunning(false);
-      setIsDetStreaming(false);
-      setStrategistStatus("");
-    }
-  }, [accessToken, symbol, setSymbol, setStrategistResult]);
-
   const handleRunV2 = useCallback((ticker: string, flowContext?: string) => {
     dispatchStrategistAnalysisStart();
     const upperTicker = ticker.toUpperCase();
@@ -3558,49 +3180,7 @@ function AiIntelligenceTabInner({
     handleRunV2(ticker);
   }, [handleRunV2]);
 
-  useEffect(() => {
-    if (!ivrBackfillJobId || !ivrPopulatingResult) {
-      setIvrBackfillJob(null);
-      return;
-    }
-    let cancelled = false;
-    let relaunched = false;
-    const poll = async () => {
-      try {
-        const res = await fetchWithAuth(`${API_BASE}/strategist/ivr-backfill/${encodeURIComponent(ivrBackfillJobId)}`);
-        if (!res.ok) {
-          console.log("[ivr-backfill poll] !res.ok", {
-            jobId: ivrBackfillJobId,
-            status: res.status,
-            statusText: res.statusText,
-          });
-          return;
-        }
-        const job = await res.json() as IvrBackfillJobStatus;
-        console.log("[ivr-backfill poll] job", job);
-        if (cancelled) return;
-        setIvrBackfillJob(job);
-        if (job.status === "completed" && !relaunched) {
-          relaunched = true;
-          handleRunV2(job.symbol);
-        }
-      } catch (err) {
-        console.log("[ivr-backfill poll] catch", {
-          jobId: ivrBackfillJobId,
-          err: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : err,
-        });
-        // best-effort polling; the card remains visible and will retry
-      }
-    };
-    void poll();
-    const timer = window.setInterval(() => { void poll(); }, 3000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [ivrBackfillJobId, ivrPopulatingResult, handleRunV2]);
-
-  const isPendingAny = isStreaming || isStrategizing || isDetRunning || isDetStreaming || isV2Running;
+  const isPendingAny = isV2Running;
 
   const currentResult = activeResult === "strategist" ? strategistResult : null;
 
@@ -3688,10 +3268,6 @@ function AiIntelligenceTabInner({
 
             {activeResult === "strategist" && (
               <div className="space-y-4">
-                {(isDetRunning || isStrategizing) && (
-                  <StrategistPipeline status={strategistStatus} thinkingTokens={isDetRunning ? detThinking : thinkingTokens} />
-                )}
-
                 {v2Result && !isV2Running && (() => {
                   const activeJob = activeJobIdForSymbol ? strategistJobs[activeJobIdForSymbol] : null;
                   const generatedAt = activeJob?.finishedAt ?? activeJob?.startedAt ?? null;
@@ -3729,8 +3305,6 @@ function AiIntelligenceTabInner({
                         />
                       ) : v2Result.status === "recommendation" && v2Result.recommendation ? (
                         <StrategistV2RecommendationCard result={v2Result} onSendToOrder={onStrategistSendToOrder} generatedAt={generatedAt} />
-                      ) : v2Result.status === "ivr_populating" ? (
-                        <IvrPopulatingCard result={v2Result} progress={ivrBackfillJob} onRetry={handleRunV2} />
                       ) : (
                         <StrategistV2BlockCard result={v2Result} generatedAt={generatedAt} onRetry={handleRunV2} />
                       )}
@@ -3738,73 +3312,6 @@ function AiIntelligenceTabInner({
                   );
                 })()}
 
-                {detResult && !isDetRunning && !v2Result && (
-                  <>
-                    {detResult.criteria ? (
-                      <>
-                        <DetCriteriaCard
-                          result={detResult}
-                          onSendToOrder={onSendToOrder}
-                        />
-                        {detResult.resolvedTrade && onSendToOrder ? (
-                          <button
-                            onClick={() => onSendToOrder(detResult.resolvedTrade!)}
-                            className="flex items-center justify-center gap-2 w-full px-4 py-3.5 rounded-xl font-mono text-[14px] font-bold uppercase tracking-wider transition-all active:scale-[0.98]"
-                            style={{ background: "linear-gradient(135deg, #f5a623, #ffce73)", color: "#050607" }}
-                          >
-                            <ArrowRight className="w-4 h-4" />
-                            SEND TO ORDER
-                          </button>
-                        ) : detResult.criteria && (
-                          <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl"
-                            style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
-                            <Shield className="w-4 h-4 text-zinc-600" />
-                            <span className="font-mono text-[11px] text-zinc-600">
-                              {detResult.resolutionError ? "Strike resolution failed — cannot place order" : "Resolving strikes..."}
-                            </span>
-                          </div>
-                        )}
-                        <DetRiskOverviewCard result={detResult} />
-                      </>
-                    ) : (
-                      <DetRejectionCard result={detResult} />
-                    )}
-                    <CollapsibleAiReasoning
-                      detThinking={detThinking}
-                      isDetStreaming={isDetStreaming}
-                      detNarrative={detNarrative}
-                      detStreamingText={detStreamingText}
-                    />
-                  </>
-                )}
-
-                {!detResult && !isDetRunning && !isStrategizing && (isStreaming || hasRealStrategies) && (
-                  <>
-                    {(isStreaming || thinkingTokens.length > 0) && (
-                      <div className="rounded-xl overflow-hidden" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
-                        <AiThinkingFeed texts={thinkingTokens} isStreaming={isStreaming} />
-                      </div>
-                    )}
-                    {hasRealStrategies && (
-                      <StrategistResultView
-                        strategies={realStrategies}
-                        narrative={narrativeText}
-                        isStreaming={isStreaming}
-                        streamingText={streamingText}
-                        regime={regimeInfo}
-                        pulse={pulseSnapshot}
-                        overrideWarning={overrideWarning}
-                        preTradeResults={preTradeResults}
-                        symbol={lastRunSymbol ?? ""}
-                      />
-                    )}
-                  </>
-                )}
-                {!detResult && !isDetRunning && !isStrategizing && !isStreaming && !hasRealStrategies && currentResult && currentResult !== "done" && (
-                  <div className="rounded-xl overflow-hidden p-4" style={{ background: "#111113", border: "1px solid #2A2A2C" }}>
-                    <MarkdownResult content={currentResult} />
-                  </div>
-                )}
               </div>
             )}
 
@@ -3812,9 +3319,6 @@ function AiIntelligenceTabInner({
               <StrategistEmptyState />
             )}
 
-            {strategistAudit && activeResult === "strategist" && !isStreaming && !isStrategizing && !detResult && (
-              <StrategistAuditPanel audit={strategistAudit} />
-            )}
 
             {/* Recent strategies history — always at the bottom so the active trade
                 card stays directly under the reasoning feed. Excludes the currently

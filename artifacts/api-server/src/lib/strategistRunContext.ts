@@ -47,6 +47,10 @@ export type StrategistRunContext = {
   diag: StrategistDiagScratch;
   /** Optional handoff from Alpha Terminal scanner → strategist analyze. */
   scannerContext?: ScannerStrategistContext | null;
+  /** V3 worker: queue telemetry inserts until persistAndComplete post-commit. */
+  deferTelemetryUntilPersist?: boolean;
+  /** Captured telemetry args when deferTelemetryUntilPersist is true (last write wins). */
+  pendingTelemetryCapture?: Record<string, unknown> | null;
 };
 
 const storage = new AsyncLocalStorage<StrategistRunContext>();
@@ -57,6 +61,7 @@ export function runInStrategistRunContext<T>(
     sessionIdentifier?: string | null;
     scannerContext?: ScannerStrategistContext | null;
     clientTimeZone?: string | null;
+    deferTelemetryUntilPersist?: boolean;
   },
   fn: () => Promise<T>,
 ): Promise<T> {
@@ -71,6 +76,8 @@ export function runInStrategistRunContext<T>(
         : "America/New_York",
     diag: {},
     scannerContext: opts.scannerContext ?? null,
+    deferTelemetryUntilPersist: opts.deferTelemetryUntilPersist === true,
+    pendingTelemetryCapture: null,
   };
   return storage.run(ctx, fn);
 }
