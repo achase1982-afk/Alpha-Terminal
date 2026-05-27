@@ -1,4 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@workspace/db", () => ({
+  db: { select: vi.fn() },
+  eq: vi.fn(),
+  and: vi.fn(),
+  or: vi.fn(),
+  sql: vi.fn(),
+  inArray: vi.fn(),
+  desc: vi.fn(),
+  gte: vi.fn(),
+  strategistJobsTable: {},
+}));
+
 import type { StrategistJob } from "@workspace/db";
 import { handleStaleRunningJob } from "../jobs.js";
 
