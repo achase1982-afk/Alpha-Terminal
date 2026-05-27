@@ -1,15 +1,62 @@
 import { buildStrategistAnalyzeCompletionPush, notifyStrategistCompletion } from "../strategistNotifications.js";
 import { sendPushToAll } from "../pushService.js";
 import type { StrategistV2Result } from "../strategistV2.js";
-import { findJobById } from "./jobs.js";
+import type { StrategistJob } from "@workspace/db";
+import { claimStrategistPushSend, findJobById } from "./jobs.js";
+import { logger } from "../logger.js";
+
+function readAnalyzeResult(job: { checkpoint: unknown }): StrategistV2Result | null {
+  if (!job.checkpoint || typeof job.checkpoint !== "object") return null;
+  const cp = job.checkpoint as {
+    validating?: { analyzeResult?: StrategistV2Result };
+    analyzing?: { analyzeResult?: StrategistV2Result };
+  };
+  return cp.validating?.analyzeResult ?? cp.analyzing?.analyzeResult ?? null;
+}
+
+function progressPushSentAt(job: { progress: unknown }): string | null {
+  const p = job.progress;
+  if (!p || typeof p !== "object") return null;
+  const raw = (p as { pushSentAt?: unknown }).pushSentAt;
+  return typeof raw === "string" && raw.length > 0 ? raw : null;
+}
 
 export async function fireStrategistJobPush(input: {
   userId: string;
   jobId: string;
   ticker: string;
   kind: "analyze" | "validation" | "failure";
-}): Promise<void> {
+}): Promise<boolean> {
   const { jobId, ticker, kind } = input;
+  const allowedStatuses: StrategistJob["status"][] =
+    kind === "failure" ? ["failed"] : ["completed"];
+
+  const preview = await findJobById(jobId);
+  if (!preview || !allowedStatuses.includes(preview.status)) {
+    logger.info({ jobId, ticker, kind, status: preview?.status }, "StrategistV3: push skipped — job not terminal");
+    return false;
+  }
+  if (preview.phase != null && preview.phase !== "") {
+    logger.warn({ jobId, ticker, phase: preview.phase }, "StrategistV3: push skipped — pipeline phase still active");
+    return false;
+  }
+  if (progressPushSentAt(preview)) {
+    logger.info({ jobId, ticker, kind }, "StrategistV3: push skipped — already sent");
+    return false;
+  }
+  if (kind === "analyze") {
+    const result = readAnalyzeResult(preview);
+    if (result?.status === "ivr_populating") {
+      logger.warn({ jobId, ticker }, "StrategistV3: push skipped — IVR still populating");
+      return false;
+    }
+  }
+
+  const job = await claimStrategistPushSend(jobId, allowedStatuses);
+  if (!job) {
+    logger.info({ jobId, ticker, kind }, "StrategistV3: push skipped — duplicate claim");
+    return false;
+  }
 
   if (kind === "failure") {
     notifyStrategistCompletion({
@@ -30,14 +77,16 @@ export async function fireStrategistJobPush(input: {
         kind: "failure" as const,
       },
     });
-    return;
+    return true;
   }
 
   if (kind === "validation") {
-    const job = await findJobById(jobId);
     const verdict =
-      job?.checkpoint && typeof job.checkpoint === "object"
-        ? String((job.checkpoint as { validating?: { validationResult?: { verdict?: string } } }).validating?.validationResult?.verdict ?? "")
+      job.checkpoint && typeof job.checkpoint === "object"
+        ? String(
+            (job.checkpoint as { validating?: { validationResult?: { verdict?: string } } }).validating
+              ?.validationResult?.verdict ?? "",
+          )
         : "";
     notifyStrategistCompletion({
       jobId,
@@ -52,18 +101,10 @@ export async function fireStrategistJobPush(input: {
       tag: `strategist-${jobId}`,
       data: { type: "strategist", jobId, ticker, kind: "validation" as const },
     });
-    return;
+    return true;
   }
 
-  const job = await findJobById(jobId);
-  let result: StrategistV2Result | null = null;
-  if (job?.checkpoint && typeof job.checkpoint === "object") {
-    const cp = job.checkpoint as {
-      validating?: { analyzeResult?: StrategistV2Result };
-      analyzing?: { analyzeResult?: StrategistV2Result };
-    };
-    result = cp.validating?.analyzeResult ?? cp.analyzing?.analyzeResult ?? null;
-  }
+  const result = readAnalyzeResult(job);
   if (result) {
     const completionPush = buildStrategistAnalyzeCompletionPush(result, ticker);
     notifyStrategistCompletion({
@@ -79,7 +120,7 @@ export async function fireStrategistJobPush(input: {
       tag: `strategist-${jobId}`,
       data: { type: "strategist", jobId, ticker, kind: "analyze" as const },
     });
-    return;
+    return true;
   }
 
   notifyStrategistCompletion({
@@ -95,4 +136,5 @@ export async function fireStrategistJobPush(input: {
     tag: `strategist-${jobId}`,
     data: { type: "strategist", jobId, ticker, kind: "analyze" as const },
   });
+  return true;
 }

@@ -88,7 +88,7 @@ self.addEventListener("push", (e) => {
     icon: "/favicon.svg",
     badge: "/favicon.svg",
     tag: payload.tag || "order-alert",
-    renotify: true,
+    renotify: !isStrategist,
     vibrate: [200, 100, 200],
     data,
     requireInteraction: true,

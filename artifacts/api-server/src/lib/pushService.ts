@@ -25,6 +25,11 @@ const MAX_SUBSCRIPTIONS = 50;
 const subscriptions = new Map<string, PushSubscription>();
 
 export function addSubscription(sub: PushSubscription) {
+  if (!subscriptions.has(sub.endpoint)) {
+    // Single-user terminal: drop stale device registrations so one completion
+    // event does not fan out to multiple OS notifications.
+    subscriptions.clear();
+  }
   if (subscriptions.size >= MAX_SUBSCRIPTIONS && !subscriptions.has(sub.endpoint)) {
     const oldest = subscriptions.keys().next().value;
     if (oldest) subscriptions.delete(oldest);

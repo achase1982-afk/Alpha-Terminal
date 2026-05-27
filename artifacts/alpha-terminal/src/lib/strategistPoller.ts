@@ -379,7 +379,9 @@ const completionToastSent = new Set<string>();
 function maybeToastForegroundRecovery(jobId: string) {
   if (completionToastSent.has(jobId)) return;
   const j = useTerminalStore.getState().strategistJobs[jobId];
-  if (!j) return;
+  if (!j || (j.status !== "done" && j.status !== "error")) return;
+  // Background tab gets the OS push; avoid duplicate in-app toast on top of it.
+  if (document.visibilityState === "hidden") return;
   completionToastSent.add(jobId);
   const ticker = j.ticker;
   if (j.status === "done") {
