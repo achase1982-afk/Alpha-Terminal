@@ -1,5 +1,15 @@
 import { z } from "zod";
-import type { MoversConfidence, MoversPosture, MoversSituationRead, Situation } from "@workspace/movers-types";
+import type {
+  MoversCatalystType,
+  MoversConfidence,
+  MoversPosture,
+  MoversSituationRead,
+  Situation,
+} from "@workspace/movers-types";
+import {
+  headlineHasHardCatalystKeyword,
+  MOVERS_WEB_FALLBACK_MIN_ABS_CHANGE_PCT,
+} from "@workspace/movers-types";
 import { db, moversCatalystCacheTable, eq, lt } from "@workspace/db";
 import {
   callAnthropicWithSystem,
@@ -15,32 +25,66 @@ import {
   isDedicatedWebSearchApiEnabled,
 } from "../webSearchApiClient.js";
 import { logger } from "../logger.js";
+import type { MoversNewsHeadline } from "./fmpMoversNews.js";
 import { fetchHeadlinesForSituation, formatHeadlinesForPrompt } from "./fmpMoversNews.js";
+import { buildMoversNewsKey, pickCatalystHeadline } from "./moversNewsKey.js";
 import { getLatestMoversFeed } from "./moversFeedStore.js";
 
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const THIN_HEADLINE_COUNT = 2;
+
+const READ_CATALYST_TYPES = [
+  "GOV",
+  "ANALYST",
+  "CONTRACT",
+  "EARNINGS",
+  "MA",
+  "SECTOR",
+  "NONE",
+] as const;
 
 const ReadSchema = z.object({
   read: z.string(),
   posture: z.enum(["WATCH", "WAIT", "PASS"]),
   confidence: z.enum(["HIGH", "MED", "LOW"]),
+  catalystType: z.enum(READ_CATALYST_TYPES),
+  catalystSummary: z.string(),
 });
 
-const READ_SYSTEM_PROMPT = `You are a trading desk analyst writing a one-line read for a movers situation.
-You receive pre-gathered context only — do not search or invent facts beyond the context.
-Respond with JSON only:
+const READ_SYSTEM_PROMPT = `You are a trading desk analyst for an institutional movers feed.
+You receive pre-gathered context (FMP headlines and optional web search). Identify the primary catalyst for today's move.
+Respond with JSON only (no markdown):
 {
   "read": "one-line risk and timing verdict",
   "posture": "WATCH" | "WAIT" | "PASS",
-  "confidence": "HIGH" | "MED" | "LOW"
-}`;
+  "confidence": "HIGH" | "MED" | "LOW",
+  "catalystType": "GOV" | "ANALYST" | "CONTRACT" | "EARNINGS" | "MA" | "SECTOR" | "NONE",
+  "catalystSummary": "one sentence describing the driving catalyst headline"
+}
+Use NONE only when no credible catalyst exists. Do not invent facts beyond the context.`;
 
 export type MoversReadAiProvider = "anthropic" | "google" | "openai";
 
 function normalizeReadProvider(provider: AiLabModelProvider): MoversReadAiProvider {
   if (provider === "anthropic" || provider === "google" || provider === "openai") return provider;
   return "anthropic";
+}
+
+function maxAbsChangePct(situation: Situation): number {
+  if (situation.tickers.length === 0) return 0;
+  return Math.max(...situation.tickers.map((t) => Math.abs(t.changePct)));
+}
+
+/** Web fallback on expand when FMP is empty or headline lacks hard-catalyst signal on a large move. */
+export function shouldRunMoversWebFallback(
+  headlines: MoversNewsHeadline[],
+  selected: MoversNewsHeadline | null,
+  situation: Situation,
+  minAbsChangePct = MOVERS_WEB_FALLBACK_MIN_ABS_CHANGE_PCT,
+): boolean {
+  if (headlines.length === 0) return true;
+  if (maxAbsChangePct(situation) < minAbsChangePct) return false;
+  if (!selected) return true;
+  return !headlineHasHardCatalystKeyword(selected.title);
 }
 
 async function pruneOldCacheEntries(): Promise<void> {
@@ -57,12 +101,19 @@ async function getCachedRead(newsKey: string): Promise<MoversSituationRead | nul
     .limit(1);
   const row = rows[0];
   if (!row) return null;
-  return {
+  const out: MoversSituationRead = {
     read: row.read,
     posture: row.posture as MoversPosture,
     confidence: row.confidence as MoversConfidence,
     cached: true,
   };
+  if (row.catalystType?.trim()) {
+    out.catalystType = row.catalystType as MoversCatalystType;
+  }
+  if (row.catalystSummary?.trim()) {
+    out.catalystSummary = row.catalystSummary.trim();
+  }
+  return out;
 }
 
 async function writeCache(newsKey: string, payload: MoversSituationRead): Promise<void> {
@@ -73,6 +124,8 @@ async function writeCache(newsKey: string, payload: MoversSituationRead): Promis
       read: payload.read,
       posture: payload.posture,
       confidence: payload.confidence,
+      catalystType: payload.catalystType ?? null,
+      catalystSummary: payload.catalystSummary ?? null,
       createdAt: new Date(),
     })
     .onConflictDoUpdate({
@@ -81,13 +134,20 @@ async function writeCache(newsKey: string, payload: MoversSituationRead): Promis
         read: payload.read,
         posture: payload.posture,
         confidence: payload.confidence,
+        catalystType: payload.catalystType ?? null,
+        catalystSummary: payload.catalystSummary ?? null,
         createdAt: new Date(),
       },
     });
   await pruneOldCacheEntries();
 }
 
-function buildReadPrompt(situation: Situation, contextBlock: string): string {
+function buildReadPrompt(
+  situation: Situation,
+  contextBlock: string,
+  seedType: MoversCatalystType,
+  seedSummary: string,
+): string {
   const tickerLines = situation.tickers
     .map((t) => {
       return `- ${t.symbol} (${t.name}): $${t.price.toFixed(2)}, ${t.changePct >= 0 ? "+" : ""}${t.changePct.toFixed(2)}%`;
@@ -95,8 +155,8 @@ function buildReadPrompt(situation: Situation, contextBlock: string): string {
     .join("\n");
 
   return `Situation: ${situation.kind === "cluster" ? `cluster "${situation.label}"` : situation.id}
-Catalyst type (deterministic): ${situation.catalystType}
-Catalyst summary: ${situation.catalyst || "(none)"}
+Seed catalyst type (FMP/keyword): ${seedType}
+Seed catalyst summary: ${seedSummary || "(none)"}
 
 Tickers:
 ${tickerLines}
@@ -105,12 +165,15 @@ Context:
 ${contextBlock}`;
 }
 
-async function gatherReadContext(situation: Situation): Promise<string> {
+async function gatherReadContext(
+  situation: Situation,
+  options: { includeWebSearch: boolean },
+): Promise<string> {
   const headlines = await fetchHeadlinesForSituation(situation);
   const fmpBlock = formatHeadlinesForPrompt(headlines);
   const parts = [`FMP news:\n${fmpBlock}`];
 
-  if (headlines.length < THIN_HEADLINE_COUNT && isDedicatedWebSearchApiEnabled()) {
+  if (options.includeWebSearch && isDedicatedWebSearchApiEnabled()) {
     const symbols = situation.tickers.map((t) => t.symbol).join(" ");
     const query = `${symbols} stock news catalyst today`.slice(0, 380);
     try {
@@ -150,6 +213,8 @@ async function callReadLlm(
     read: parsed.read.trim(),
     posture: parsed.posture,
     confidence: parsed.confidence,
+    catalystType: parsed.catalystType,
+    catalystSummary: parsed.catalystSummary.trim(),
     cached: false,
   };
 }
@@ -164,7 +229,13 @@ export async function getOrCreateMoversSituationRead(situationId: string): Promi
   if (!situation) {
     throw new Error(`Situation not found: ${situationId}`);
   }
-  if (!situation.newsKey) {
+
+  const headlines = await fetchHeadlinesForSituation(situation);
+  const selected = pickCatalystHeadline(headlines);
+  const newsKey = selected ? buildMoversNewsKey(selected) : situation.newsKey;
+  const useWebFallback = shouldRunMoversWebFallback(headlines, selected, situation);
+
+  if (!newsKey && !useWebFallback) {
     return {
       read: "No driving news item — unable to generate a read.",
       posture: "WAIT",
@@ -173,14 +244,25 @@ export async function getOrCreateMoversSituationRead(situationId: string): Promi
     };
   }
 
-  const cached = await getCachedRead(situation.newsKey);
-  if (cached) return cached;
+  const cached = newsKey ? await getCachedRead(newsKey) : null;
+  if (cached && cached.catalystType && cached.catalystSummary && !useWebFallback) {
+    return cached;
+  }
 
   const aiCfg = getMoversAiConfig();
   const provider = normalizeReadProvider(aiCfg.provider);
-  const contextBlock = await gatherReadContext(situation);
-  const prompt = buildReadPrompt(situation, contextBlock);
+  const contextBlock = await gatherReadContext(situation, { includeWebSearch: useWebFallback });
+  const prompt = buildReadPrompt(
+    situation,
+    contextBlock,
+    situation.catalystType,
+    situation.catalyst || selected?.title || "",
+  );
   const generated = await callReadLlm(prompt, provider, aiCfg.modelName, aiCfg.temperature);
-  await writeCache(situation.newsKey, generated);
+
+  if (newsKey) {
+    await writeCache(newsKey, generated);
+  }
+
   return generated;
 }

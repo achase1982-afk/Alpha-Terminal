@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { MoversNewsHeadline } from "../fmpMoversNews.js";
 import {
   isLitigationSolicitationHeadline,
+  pickCatalystHeadline,
   pickDrivingHeadline,
   resolveHeadlineByTitle,
 } from "../moversNewsKey.js";
@@ -26,6 +27,25 @@ describe("isLitigationSolicitationHeadline", () => {
     expect(
       isLitigationSolicitationHeadline("China tightens regulatory scrutiny on online brokers"),
     ).toBe(false);
+  });
+});
+
+describe("pickCatalystHeadline", () => {
+  it("prefers hard-catalyst headline over newer ambient news", () => {
+    const headlines = [
+      headline("Broader market rally lifts fintech peers", "2026-05-24T14:00:00Z"),
+      headline("Analyst upgrades FUTU to Buy, raises price target", "2026-05-24T11:00:00Z"),
+    ];
+    const picked = pickCatalystHeadline(headlines);
+    expect(picked?.title).toContain("upgrades");
+  });
+
+  it("breaks equal hard-catalyst scores by recency", () => {
+    const headlines = [
+      headline("Company wins major government contract", "2026-05-24T09:00:00Z"),
+      headline("Firm awarded new defense contract", "2026-05-24T12:00:00Z"),
+    ];
+    expect(pickCatalystHeadline(headlines)?.title).toContain("awarded");
   });
 });
 

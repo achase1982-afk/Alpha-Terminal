@@ -12,3 +12,6 @@ export const MARKET_CAP_FLOOR = 500_000_000;
 
 /** Minimum average daily volume for tradeable names (shared with Catalysts gate). */
 export const AVG_VOLUME_FLOOR = 500_000;
+
+/** Min |% change| to trigger read-path web fallback when FMP headline lacks hard-catalyst keywords. */
+export const MOVERS_WEB_FALLBACK_MIN_ABS_CHANGE_PCT = 10;
