@@ -239,6 +239,13 @@
       "when": 1779450000000,
       "tag": "0040_catalyst_earnings_last_date",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1779500000000,
+      "tag": "0042_strategist_jobs",
+      "breakpoints": true
     }
   ]
 }

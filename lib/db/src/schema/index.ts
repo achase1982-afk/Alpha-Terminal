@@ -1,5 +1,5 @@
 import { desc, sql } from "drizzle-orm";
-import { pgTable, text, serial, real, integer, boolean, timestamp, jsonb, uniqueIndex, index, date, doublePrecision, bigint, numeric, primaryKey, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, real, integer, boolean, timestamp, jsonb, uniqueIndex, index, date, doublePrecision, bigint, numeric, primaryKey, uuid, pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -889,6 +889,80 @@ export const strategistHistoryTable = pgTable("strategist_history", {
 });
 
 export type StrategistHistory = typeof strategistHistoryTable.$inferSelect;
+
+/** Strategist V3 durable job queue (see docs/strategist-v3-architecture.md). */
+export const strategistJobStatusEnum = pgEnum("strategist_job_status", [
+  "queued",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+export const strategistJobKindEnum = pgEnum("strategist_job_kind", [
+  "analyze",
+  "validate_trade",
+]);
+
+export type StrategistJobStatus = (typeof strategistJobStatusEnum.enumValues)[number];
+export type StrategistJobKind = (typeof strategistJobKindEnum.enumValues)[number];
+
+export type StrategistJobPhase =
+  | "preparing_iv"
+  | "analyzing"
+  | "debating"
+  | "validating"
+  | "persisting";
+
+export type StrategistJobError = {
+  code: string;
+  message: string;
+  detail?: unknown;
+};
+
+export const strategistJobsTable = pgTable(
+  "strategist_jobs",
+  {
+    /** Client-supplied jobId; same string as strategist_history.job_id. */
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    kind: strategistJobKindEnum("kind").notNull(),
+    ticker: text("ticker").notNull(),
+    params: jsonb("params").notNull().$type<Record<string, unknown>>(),
+    status: strategistJobStatusEnum("status").notNull().default("queued"),
+    phase: text("phase"),
+    lastCompletedPhase: text("last_completed_phase"),
+    progress: jsonb("progress").notNull().default({}).$type<Record<string, unknown>>(),
+    checkpoint: jsonb("checkpoint").notNull().default({}).$type<Record<string, unknown>>(),
+    resultHistoryId: integer("result_history_id"),
+    error: jsonb("error").$type<StrategistJobError | null>(),
+    priority: integer("priority").notNull().default(0),
+    attempt: integer("attempt").notNull().default(0),
+    workerId: text("worker_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("idx_strategist_jobs_queue")
+      .on(t.status, t.priority, t.createdAt)
+      .where(sql`${t.status} = 'queued'`),
+    index("idx_strategist_jobs_dedup")
+      .on(t.userId, t.kind, t.ticker)
+      .where(sql`${t.status} in ('queued', 'running')`),
+    index("idx_strategist_jobs_user_recent").on(t.userId, t.createdAt),
+    index("idx_strategist_jobs_heartbeat")
+      .on(t.lastHeartbeatAt)
+      .where(sql`${t.status} = 'running'`),
+    index("idx_strategist_jobs_resumable")
+      .on(t.status, t.lastCompletedPhase)
+      .where(sql`${t.status} = 'running' and ${t.lastCompletedPhase} is not null`),
+  ],
+);
+
+export type StrategistJob = typeof strategistJobsTable.$inferSelect;
+export type StrategistJobInsert = typeof strategistJobsTable.$inferInsert;
 
 export const aiLabPromptsTable = pgTable("ai_lab_prompts", {
   id: serial("id").primaryKey(),
