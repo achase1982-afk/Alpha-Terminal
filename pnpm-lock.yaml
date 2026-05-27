@@ -729,26 +729,10 @@ importers:
         version: 3.25.76
 
   artifacts/strategist-worker:
-    dependencies:
-      '@workspace/db':
-        specifier: workspace:*
-        version: link:../../lib/db
-      dotenv:
-        specifier: ^16.6.1
-        version: 16.6.1
-      drizzle-orm:
-        specifier: 'catalog:'
-        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.18.0)(pg@8.20.0)
-      pg:
-        specifier: ^8.20.0
-        version: 8.20.0
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
         version: 25.3.5
-      tsx:
-        specifier: 'catalog:'
-        version: 4.21.0
       typescript:
         specifier: ~5.9.2
         version: 5.9.3
