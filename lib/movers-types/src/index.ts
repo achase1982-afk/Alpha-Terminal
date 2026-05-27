@@ -4,6 +4,7 @@ export {
   MOVERS_MANUAL_REFRESH_DEBOUNCE_MS,
   MOVERS_POLL_INTERVAL_CLOSED_MS,
   MOVERS_POLL_INTERVAL_MS,
+  MOVERS_WEB_FALLBACK_MIN_ABS_CHANGE_PCT,
 } from "./constants.js";
 export { MOVERS_THEME_TICKER_MAP } from "./themeTickers.js";
 export {
@@ -11,6 +12,12 @@ export {
   classifyCatalystTypeFromHeadline,
   headlineMatchesKeyword,
 } from "./catalystKeywords.js";
+export {
+  MOVERS_HARD_CATALYST_KEYWORDS,
+  headlineHasHardCatalystKeyword,
+  headlineMatchesHardCatalystKeyword,
+  scoreHeadlineHardCatalystStrength,
+} from "./hardCatalystKeywords.js";
 
 export interface MoversFeed {
   capturedAt: string;
@@ -52,6 +59,10 @@ export interface MoversSituationRead {
   read: string;
   posture: MoversPosture;
   confidence: MoversConfidence;
+  /** LLM-corrected catalyst type (persisted for next poll when expanded with web fallback). */
+  catalystType?: MoversCatalystType;
+  /** LLM-corrected catalyst headline summary. */
+  catalystSummary?: string;
   cached?: boolean;
 }
 

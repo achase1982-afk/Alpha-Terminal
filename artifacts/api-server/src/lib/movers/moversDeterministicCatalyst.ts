@@ -3,7 +3,8 @@ import { classifyCatalystTypeFromHeadline } from "@workspace/movers-types";
 import pLimit from "p-limit";
 import type { MoversNewsHeadline } from "./fmpMoversNews.js";
 import { fetchHeadlinesForSituation } from "./fmpMoversNews.js";
-import { buildMoversNewsKey, pickDrivingHeadline } from "./moversNewsKey.js";
+import { getCatalystAttributionFromCache } from "./moversCatalystAttributionCache.js";
+import { buildMoversNewsKey, pickCatalystHeadline } from "./moversNewsKey.js";
 import {
   classifyUnknownResidualWithTier2,
   type Tier2UnknownCandidate,
@@ -64,7 +65,7 @@ export async function applyDeterministicCatalystToSituations(
       classifyLimit(async () => {
         try {
           const headlines = await fetchHeadlinesForSituation(situation);
-          const driving = pickDrivingHeadline(headlines);
+          const driving = pickCatalystHeadline(headlines);
           if (!driving) {
             results.push({
               index,
@@ -79,8 +80,19 @@ export async function applyDeterministicCatalystToSituations(
             });
             return;
           }
-          const catalystType = classifyCatalystTypeFromHeadline(driving.title);
-          if (isTier1Definite(catalystType)) tier1Assigned += 1;
+          const newsKey = buildMoversNewsKey(driving);
+          let catalystType = classifyCatalystTypeFromHeadline(driving.title);
+          let catalyst = driving.title.trim();
+
+          const cachedAttr = await getCatalystAttributionFromCache(newsKey);
+          if (cachedAttr) {
+            catalystType = cachedAttr.catalystType;
+            catalyst = cachedAttr.catalystSummary;
+            if (isTier1Definite(catalystType)) tier1Assigned += 1;
+          } else if (isTier1Definite(catalystType)) {
+            tier1Assigned += 1;
+          }
+
           results.push({
             index,
             kind: "classified",
@@ -88,8 +100,8 @@ export async function applyDeterministicCatalystToSituations(
             situation: {
               ...situation,
               catalystType,
-              catalyst: driving.title.trim(),
-              newsKey: buildMoversNewsKey(driving),
+              catalyst,
+              newsKey,
             },
           });
         } catch (err) {
@@ -122,9 +134,12 @@ export async function applyDeterministicCatalystToSituations(
 
   const unknownCandidates: Tier2UnknownCandidate[] = [];
   for (const r of tier1ByIndex.values()) {
-    if (r.situation.catalystType === "UNKNOWN") {
-      unknownCandidates.push({ situation: r.situation, headlines: r.headlines });
-    }
+    if (r.situation.catalystType !== "UNKNOWN") continue;
+    const cachedAttr = r.situation.newsKey
+      ? await getCatalystAttributionFromCache(r.situation.newsKey)
+      : null;
+    if (cachedAttr) continue;
+    unknownCandidates.push({ situation: r.situation, headlines: r.headlines });
   }
 
   const {

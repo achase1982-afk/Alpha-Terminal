@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { scoreHeadlineHardCatalystStrength } from "@workspace/movers-types";
 import type { MoversNewsHeadline } from "./fmpMoversNews.js";
 
 export function buildMoversNewsKey(headline: MoversNewsHeadline): string {
@@ -33,17 +34,41 @@ export function isLitigationSolicitationHeadline(title: string): boolean {
   return patterns.some((p) => p.test(hay));
 }
 
-export function pickDrivingHeadline(headlines: MoversNewsHeadline[]): MoversNewsHeadline | null {
+/**
+ * Pick the headline with the strongest hard-catalyst signal; break ties by recency.
+ * Skips litigation-solicitation headlines when alternatives exist.
+ */
+export function pickCatalystHeadline(headlines: MoversNewsHeadline[]): MoversNewsHeadline | null {
   if (headlines.length === 0) return null;
-  const sorted = [...headlines].sort((a, b) => {
+
+  const sortedByRecency = [...headlines].sort((a, b) => {
     const ta = Date.parse(a.publishedAt) || 0;
     const tb = Date.parse(b.publishedAt) || 0;
     return tb - ta;
   });
-  const substantive = sorted.filter((h) => !isLitigationSolicitationHeadline(h.title));
-  const pool = substantive.length > 0 ? substantive : sorted;
-  return pool[0] ?? null;
+
+  const substantive = sortedByRecency.filter((h) => !isLitigationSolicitationHeadline(h.title));
+  const pool = substantive.length > 0 ? substantive : sortedByRecency;
+
+  let best: MoversNewsHeadline | null = null;
+  let bestScore = -1;
+  let bestTime = -1;
+
+  for (const h of pool) {
+    const score = scoreHeadlineHardCatalystStrength(h.title);
+    const t = Date.parse(h.publishedAt) || 0;
+    if (score > bestScore || (score === bestScore && t > bestTime)) {
+      bestScore = score;
+      bestTime = t;
+      best = h;
+    }
+  }
+
+  return best;
 }
+
+/** @deprecated Use pickCatalystHeadline */
+export const pickDrivingHeadline = pickCatalystHeadline;
 
 /** Match LLM-returned title to a fetched headline for newsKey generation. */
 export function resolveHeadlineByTitle(

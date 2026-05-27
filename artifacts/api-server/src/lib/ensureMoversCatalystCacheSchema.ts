@@ -1,7 +1,7 @@
 import { db, sql } from "@workspace/db";
 import { logger } from "./logger.js";
 
-/** Best-effort apply of `0036_movers_catalyst_cache` at boot. */
+/** Best-effort apply of movers_catalyst_cache schema at boot. */
 export async function ensureMoversCatalystCacheTable(): Promise<void> {
   try {
     await db.execute(sql`
@@ -16,6 +16,12 @@ export async function ensureMoversCatalystCacheTable(): Promise<void> {
     await db.execute(
       sql`CREATE INDEX IF NOT EXISTS movers_catalyst_cache_created_at_idx ON movers_catalyst_cache (created_at)`,
     );
+    await db.execute(sql`
+      ALTER TABLE movers_catalyst_cache ADD COLUMN IF NOT EXISTS catalyst_type text
+    `);
+    await db.execute(sql`
+      ALTER TABLE movers_catalyst_cache ADD COLUMN IF NOT EXISTS catalyst_summary text
+    `);
     logger.info("movers_catalyst_cache table ensured at startup");
   } catch (err) {
     logger.warn(

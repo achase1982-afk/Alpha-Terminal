@@ -1307,6 +1307,9 @@ export const moversCatalystCacheTable = pgTable(
     read: text("read").notNull(),
     posture: text("posture").notNull(),
     confidence: text("confidence").notNull(),
+    /** LLM-corrected catalyst type from expand-time read (applied on subsequent polls). */
+    catalystType: text("catalyst_type"),
+    catalystSummary: text("catalyst_summary"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("movers_catalyst_cache_created_at_idx").on(t.createdAt)],
