@@ -346,6 +346,10 @@ export interface TerminalState {
     nextSince: number;
     liveStatus: string;
     transcript: StrategistTranscriptTurn[];
+    /** Last time the server reported in-job progress (for stall detection vs wall-clock). */
+    lastServerProgressAt: number;
+    /** Brief UI hint while reconciling with `/job/:id/final` after tab resume. */
+    resumeUi?: "reconnecting";
     // Discriminator + metadata for trade-validation jobs (kicked off from
     // OrderTicket "Send to Strategist"). Absent / "analyze" for ticker
     // analysis jobs kicked off from the Strategist tab.
@@ -368,6 +372,10 @@ export interface TerminalState {
   setStrategistTranscript: (jobId: string, transcript: StrategistTranscriptTurn[]) => void;
   setStrategistLiveStatus: (jobId: string, status: string) => void;
   setStrategistJobMeta: (jobId: string, patch: { kind?: 'analyze' | 'validation'; validationMeta?: StrategistValidationMeta | null }) => void;
+  /** Monotonic server-reported progress (ms); avoids false client timeouts while the tab is frozen. */
+  touchStrategistServerProgress: (jobId: string, serverProgressAtMs: number) => void;
+  /** All running jobs: show reconnecting banner (visibility resume only). */
+  setRunningStrategistResumeUi: (resumeUi: "idle" | "reconnecting") => void;
   markStrategistJobsViewed: () => void;
   setStrategistHistory: (list: Array<{ id: number; jobId: string; ticker: string; createdAt: string; cardJson: unknown }>) => void;
   removeHistoryCard: (id: number) => void;
@@ -792,6 +800,7 @@ export const useTerminalStore = create<TerminalState>()(
             nextSince: 0,
             liveStatus: opts?.kind === "validation" ? "Starting trade validation…" : "Starting analysis…",
             transcript: [],
+            lastServerProgressAt: Date.now(),
             kind,
             validationMeta: opts?.validationMeta ?? null,
           };
@@ -878,6 +887,33 @@ export const useTerminalStore = create<TerminalState>()(
             },
           };
         }),
+      touchStrategistServerProgress: (jobId, serverProgressAtMs) =>
+        set((state) => {
+          const job = state.strategistJobs[jobId];
+          if (!job || job.status !== "running") return {};
+          const baseline = job.lastServerProgressAt ?? job.startedAt;
+          const nextTs = Math.max(baseline, serverProgressAtMs);
+          if (job.lastServerProgressAt === nextTs) return {};
+          return {
+            strategistJobs: {
+              ...state.strategistJobs,
+              [jobId]: { ...job, lastServerProgressAt: nextTs },
+            },
+          };
+        }),
+      setRunningStrategistResumeUi: (resumeUi) =>
+        set((state) => {
+          const next: typeof state.strategistJobs = { ...state.strategistJobs };
+          let changed = false;
+          const patchUi = resumeUi === "reconnecting" ? "reconnecting" as const : undefined;
+          for (const [id, j] of Object.entries(next)) {
+            if (j.status !== "running") continue;
+            if (j.resumeUi === patchUi) continue;
+            next[id] = { ...j, resumeUi: patchUi };
+            changed = true;
+          }
+          return changed ? { strategistJobs: next } : {};
+        }),
       completeStrategistJob: (jobId, result) =>
         set((state) => {
           const job = state.strategistJobs[jobId];
@@ -888,7 +924,7 @@ export const useTerminalStore = create<TerminalState>()(
               // viewed stays false on transition from running -> done so the
               // indicator can show "new result"; the consumer decides when to
               // mark viewed (e.g. when strategist tab is currently active).
-              [jobId]: { ...job, status: 'done', result, finishedAt: Date.now(), viewed: false },
+              [jobId]: { ...job, status: 'done', result, finishedAt: Date.now(), viewed: false, resumeUi: undefined },
             },
           };
         }),
@@ -899,7 +935,7 @@ export const useTerminalStore = create<TerminalState>()(
           return {
             strategistJobs: {
               ...state.strategistJobs,
-              [jobId]: { ...job, status: 'error', error: reason, finishedAt: Date.now() },
+              [jobId]: { ...job, status: 'error', error: reason, finishedAt: Date.now(), resumeUi: undefined },
             },
           };
         }),
@@ -942,7 +978,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 29,
+      version: 30,
       storage: createJSONStorage(() => quotaSafeLocalStorage),
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
@@ -1257,6 +1293,18 @@ export const useTerminalStore = create<TerminalState>()(
             }
           }
         }
+        if (version < 30) {
+          const jobs = s["strategistJobs"] as Record<string, { startedAt?: number; lastServerProgressAt?: number }> | undefined;
+          if (jobs && typeof jobs === "object") {
+            for (const id of Object.keys(jobs)) {
+              const j = jobs[id];
+              if (!j || typeof j.startedAt !== "number") continue;
+              if (typeof j.lastServerProgressAt !== "number") {
+                j.lastServerProgressAt = j.startedAt;
+              }
+            }
+          }
+        }
         return s;
       },
       partialize: (state) => {
@@ -1266,12 +1314,20 @@ export const useTerminalStore = create<TerminalState>()(
         // effect can resume polling on cold load. Jobs older than 10 minutes
         // are swept to "interrupted" during migration below to avoid polling
         // server-side jobs that have already been GC'd.
-        const { streamPrices, streamConnected, streamStatus, browserUrl, browserTitle, browserSource, browserSummary, liveNews, strategistHistory, ...rest } = state;
+        const { streamPrices, streamConnected, streamStatus, browserUrl, browserTitle, browserSource, browserSummary, liveNews, strategistHistory, strategistJobs, ...rest } = state;
         const cappedHistory =
           strategistHistory.length > MAX_PERSISTED_STRATEGIST_HISTORY
             ? strategistHistory.slice(-MAX_PERSISTED_STRATEGIST_HISTORY)
             : strategistHistory;
-        return { ...rest, strategistHistory: cappedHistory };
+        const slimJobs = { ...strategistJobs };
+        for (const k of Object.keys(slimJobs)) {
+          const j = slimJobs[k];
+          if (j?.resumeUi != null) {
+            const { resumeUi: _omit, ...restJob } = j;
+            slimJobs[k] = restJob as typeof j;
+          }
+        }
+        return { ...rest, strategistJobs: slimJobs, strategistHistory: cappedHistory };
       },
     }
   )

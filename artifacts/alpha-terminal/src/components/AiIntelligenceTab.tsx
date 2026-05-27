@@ -2769,6 +2769,9 @@ function AiIntelligenceTabInner({
   const v2LiveStatus: string = activeJobIdForSymbol
     ? strategistJobs[activeJobIdForSymbol]?.liveStatus ?? ""
     : "";
+  const v2ResumeReconnecting = activeJobIdForSymbol
+    ? strategistJobs[activeJobIdForSymbol]?.resumeUi === "reconnecting"
+    : false;
   const v2Transcript = activeJobIdForSymbol
     ? strategistJobs[activeJobIdForSymbol]?.transcript ?? []
     : [];
@@ -3662,11 +3665,13 @@ function AiIntelligenceTabInner({
                  the new StrategistValidationCard renders its own collapsible transcript. */
               (isV2Running || !(activeJobIdForSymbol && strategistJobs[activeJobIdForSymbol]?.kind === "validation")) && (
               <div className="space-y-2">
-                {isV2Running && (v2LiveStatus || strategistStatus) && (
+                {isV2Running && (v2ResumeReconnecting || v2LiveStatus || strategistStatus) && (
                   <div className="flex items-center gap-2 px-4 py-2 rounded-lg"
                     style={{ background: "#111113", border: "1px solid rgba(255,184,0,0.2)" }}>
                     <span className="w-3 h-3 border-2 border-[#FFB800] border-t-transparent rounded-full animate-spin" />
-                    <span className="font-mono text-[11px] text-[#FFB800] tracking-wider">{v2LiveStatus || strategistStatus}</span>
+                    <span className="font-mono text-[11px] text-[#FFB800] tracking-wider">
+                      {v2ResumeReconnecting ? "Reconnecting to server…" : (v2LiveStatus || strategistStatus)}
+                    </span>
                   </div>
                 )}
                 {v2Transcript.length > 0 ? (

@@ -46,9 +46,17 @@ export interface StrategistThinkingPollPayload {
   source?: 'persisted';
   /** User cancelled; do not treat as error or completion with result. */
   cancelled?: boolean;
+  /** Server-side last in-job progress (ms); used for stall detection vs client wall clock. */
+  serverProgressAt?: number;
 }
 
 type PollOutcome = 'running' | 'completed' | 'failed';
+
+function recordServerProgressFromPoll(jobId: string, t: StrategistThinkingPollPayload) {
+  const raw = t.serverProgressAt;
+  const ts = typeof raw === "number" && Number.isFinite(raw) ? raw : Date.now();
+  useTerminalStore.getState().touchStrategistServerProgress(jobId, ts);
+}
 
 /** Strip server-only conviction diagnostics so zustand persist (localStorage) does not choke on multi‑MB payloads. */
 function stripConvictionDiagnosticsFromPollResult(result: unknown): unknown {
@@ -105,6 +113,8 @@ export function applyThinkingPollResponse(jobId: string, t: StrategistThinkingPo
   }
 
   if (!job || job.status !== 'running') return 'completed';
+
+  recordServerProgressFromPoll(jobId, t);
 
   if (Array.isArray(t.tokens) && t.tokens.length > 0) {
     useTerminalStore
@@ -391,9 +401,9 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
 
   void (async () => {
     // Debate mode with Opus 4.7 + adaptive thinking + web search across 6 turns
-    // can run 15-25 min. Solo finishes in <2 min. Use a generous 30-min window
-    // so polling doesn't time out mid-debate.
-    const stopAt = Date.now() + 30 * 60 * 1000;
+    // can run 15-25 min. Use a long wall-clock ceiling only as a last-resort
+    // safety net; primary stall detection uses server `serverProgressAt`.
+    const stopAt = Date.now() + 60 * 60 * 1000;
     let resolved = false;
     let consecutiveFailures = 0;
 
@@ -416,7 +426,8 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
           resolved = true;
           break;
         }
-        if (current.kind !== "validation" && Date.now() - current.startedAt > STALE_RUNNING_JOB_MS) {
+        const baseLag = current.lastServerProgressAt ?? current.startedAt;
+        if (Date.now() - baseLag > STALE_RUNNING_JOB_MS) {
           useTerminalStore
             .getState()
             .errorStrategistJob(
@@ -539,7 +550,7 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
           .getState()
           .errorStrategistJob(
             jobId,
-            "Analysis timed out after 30 minutes (no server response)",
+            "Analysis timed out after 60 minutes (no server response)",
           );
       }
     } finally {
@@ -598,11 +609,25 @@ export function abortStrategistPolling(jobId: string): void {
  * First reconciles each running job against persisted server state so a
  * backgrounded tab that missed the final `/thinking` poll still completes.
  */
-export function resumeAllRunningPollers(opts?: { toastOnComplete?: boolean }): void {
+export function resumeAllRunningPollers(opts?: {
+  toastOnComplete?: boolean;
+  /** When true (tab became visible), briefly show reconnecting UI while `/final` sync runs. */
+  reconnectHint?: boolean;
+}): void {
   void (async () => {
-    await syncRunningStrategistJobsFromServer({
-      toastOnComplete: opts?.toastOnComplete ?? true,
-    });
+    const hint = opts?.reconnectHint === true;
+    if (hint) {
+      useTerminalStore.getState().setRunningStrategistResumeUi("reconnecting");
+    }
+    try {
+      await syncRunningStrategistJobsFromServer({
+        toastOnComplete: opts?.toastOnComplete ?? true,
+      });
+    } finally {
+      if (hint) {
+        useTerminalStore.getState().setRunningStrategistResumeUi("idle");
+      }
+    }
     const jobs = useTerminalStore.getState().strategistJobs;
     for (const [jobId, job] of Object.entries(jobs)) {
       if (job.status === "running" && !pushOpenInFlight.has(jobId)) {

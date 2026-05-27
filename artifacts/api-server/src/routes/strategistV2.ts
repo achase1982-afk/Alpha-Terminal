@@ -226,8 +226,14 @@ type ThinkingEntry = {
   /** User cancelled POST /analyze; do not persist history or treat as failure. */
   cancelled?: boolean;
   startedAt: number;
+  /** Wall-clock ms of last server-side progress (status/tokens/transcript/etc.). */
+  lastProgressAt: number;
   finishedAt?: number;
 };
+
+function bumpThinkingProgress(entry: ThinkingEntry) {
+  entry.lastProgressAt = Date.now();
+}
 const strategistThinkingBuffer = new Map<string, ThinkingEntry>();
 /** How long to keep a **finished** job in RAM for `/thinking` polling (tab resume, slow clients). */
 const THINKING_TTL_DONE_MS = 25 * 60 * 1000;
@@ -291,7 +297,7 @@ function pruneThinkingBuffer() {
   for (const [k, v] of strategistThinkingBuffer.entries()) {
     if (v.done && v.finishedAt && now - v.finishedAt > THINKING_TTL_DONE_MS) {
       strategistThinkingBuffer.delete(k);
-    } else if (!v.done && now - v.startedAt > THINKING_TTL_STUCK_MS) {
+    } else if (!v.done && now - (v.lastProgressAt ?? v.startedAt) > THINKING_TTL_STUCK_MS) {
       strategistThinkingBuffer.delete(k);
     }
   }
@@ -319,6 +325,7 @@ function thinkingShapeFromEntry(entry: ThinkingEntry, since: number): {
   cancelled?: boolean;
   startedAt: number;
   finishedAt: number | null;
+  serverProgressAt: number;
 } {
   const s = Math.max(0, since);
   const totalTokens = entry.tokens.length;
@@ -342,6 +349,7 @@ function thinkingShapeFromEntry(entry: ThinkingEntry, since: number): {
     cancelled: entry.cancelled === true,
     startedAt: entry.startedAt,
     finishedAt: entry.finishedAt ?? null,
+    serverProgressAt: entry.lastProgressAt ?? entry.startedAt,
   };
 }
 
@@ -418,6 +426,7 @@ function persistedFinalPayloadFromHistoryRow(
     error: null,
     startedAt: row.createdAt?.getTime?.() ?? Date.now(),
     finishedAt: row.createdAt?.getTime?.() ?? Date.now(),
+    serverProgressAt: row.createdAt?.getTime?.() ?? Date.now(),
     source: "persisted" as const,
   };
 }
@@ -497,6 +506,7 @@ router.post("/analyze/cancel", async (req, res): Promise<void> => {
     analyzeWorkerAbortByJobId.get(jobId)?.abort();
     const elapsedMs = Date.now() - entry.startedAt;
     logger.info({ ticker: entry.ticker, elapsedMs }, "StrategistDesk: run cancelled by user");
+    bumpThinkingProgress(entry);
     entry.cancelled = true;
     entry.status = "Cancelled";
     entry.done = true;
@@ -546,6 +556,7 @@ router.post("/analyze", async (req, res): Promise<void> => {
         return;
       }
       analyzeInFlightTickers.add(upperTicker);
+      const now = Date.now();
       const entry: ThinkingEntry = {
         jobId,
         kind: "analyze",
@@ -554,7 +565,8 @@ router.post("/analyze", async (req, res): Promise<void> => {
         tokens: [],
         transcript: [],
         done: false,
-        startedAt: Date.now(),
+        startedAt: now,
+        lastProgressAt: now,
       };
       strategistThinkingBuffer.set(jobId, entry);
 
@@ -571,12 +583,14 @@ router.post("/analyze", async (req, res): Promise<void> => {
             cancelSignal: workerAbort.signal,
             flowContext: typeof flowContext === "string" && flowContext.length > 0 ? flowContext.slice(0, 8000) : undefined,
             onStatus: (s) => {
+              bumpThinkingProgress(entry);
               entry.status = s;
             },
             onToken: (t) => {
               entry.tokens.push(t);
               // Cap memory: keep last ~6000 tokens (~24KB+)
               if (entry.tokens.length > 6000) entry.tokens.splice(0, entry.tokens.length - 6000);
+              bumpThinkingProgress(entry);
             },
             onTurnStart: (turn) => {
               entry.transcript.push({
@@ -592,10 +606,12 @@ router.post("/analyze", async (req, res): Promise<void> => {
               });
               // Defensive cap on transcript size (3 rounds * 2 + synthesis = 7 max).
               if (entry.transcript.length > 32) entry.transcript.splice(0, entry.transcript.length - 32);
+              bumpThinkingProgress(entry);
             },
             onTurnDelta: (turnId, delta) => {
               const t = entry.transcript.find(x => x.id === turnId);
               if (t) t.text += delta;
+              bumpThinkingProgress(entry);
             },
             onTurnDone: (turnId, finalText) => {
               const t = entry.transcript.find(x => x.id === turnId);
@@ -603,10 +619,12 @@ router.post("/analyze", async (req, res): Promise<void> => {
                 t.text = finalText;
                 t.done = true;
               }
+              bumpThinkingProgress(entry);
             },
             onTurnDiscarded: (turnId) => {
               const i = entry.transcript.findIndex(x => x.id === turnId);
               if (i >= 0) entry.transcript.splice(i, 1);
+              bumpThinkingProgress(entry);
             },
             convictionDeskProvider,
           },
@@ -618,6 +636,7 @@ router.post("/analyze", async (req, res): Promise<void> => {
           }
           entry.result = result;
           entry.status = "Done";
+          bumpThinkingProgress(entry);
           entry.done = true;
           entry.finishedAt = Date.now();
           const persistedOk = await persistHistory(jobId, upperTicker, result, entry.transcript);
@@ -665,6 +684,7 @@ router.post("/analyze", async (req, res): Promise<void> => {
           } else {
             entry.error = errMsg;
             entry.status = "Analysis failed";
+            bumpThinkingProgress(entry);
             notifyStrategistCompletion({
               jobId,
               ticker: upperTicker,
@@ -680,6 +700,7 @@ router.post("/analyze", async (req, res): Promise<void> => {
             });
             logger.error({ err, jobId, ticker: upperTicker }, "StrategistV2: background analyze failed");
           }
+          bumpThinkingProgress(entry);
           entry.done = true;
           entry.finishedAt = Date.now();
         } finally {
@@ -773,6 +794,7 @@ router.post("/validate-trade", (req, res): void => {
       done: false,
       validationMeta: meta,
       startedAt: Date.now(),
+      lastProgressAt: Date.now(),
     };
     strategistThinkingBuffer.set(jobId, entry);
 
@@ -916,26 +938,35 @@ router.post("/validate-trade", (req, res): void => {
           "TradeValidation: marketContext assembled",
         );
 
+        bumpThinkingProgress(entry);
+
         const result = await runTradeValidation(input, {
-          onStatus: (s) => { entry.status = s; },
+          onStatus: (s) => {
+            bumpThinkingProgress(entry);
+            entry.status = s;
+          },
           onTurnStart: (turn) => {
             entry.transcript.push({
               id: turn.id, round: turn.round, role: turn.role, phase: turn.phase,
               model: turn.model, label: turn.label, text: "", ts: turn.startedAt, done: false,
             });
             if (entry.transcript.length > 32) entry.transcript.splice(0, entry.transcript.length - 32);
+            bumpThinkingProgress(entry);
           },
           onTurnDelta: (turnId, delta) => {
             const t = entry.transcript.find(x => x.id === turnId);
             if (t) t.text += delta;
+            bumpThinkingProgress(entry);
           },
           onTurnDone: (turnId, finalText) => {
             const t = entry.transcript.find(x => x.id === turnId);
             if (t) { t.text = finalText; t.done = true; }
+            bumpThinkingProgress(entry);
           },
         });
         entry.validationResult = result;
         entry.status = `Verdict: ${result.verdict}`;
+        bumpThinkingProgress(entry);
         entry.done = true;
         entry.finishedAt = Date.now();
 
@@ -987,6 +1018,7 @@ router.post("/validate-trade", (req, res): void => {
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        bumpThinkingProgress(entry);
         entry.error = message;
         entry.status = "Validation failed";
         entry.done = true;
