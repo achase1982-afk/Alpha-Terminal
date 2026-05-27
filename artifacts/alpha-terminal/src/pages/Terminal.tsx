@@ -30,6 +30,7 @@ import { NewsTab } from "@/components/NewsTab";
 import { MarketNewsChatPanel } from "@/components/MarketNewsChatPanel";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
 import { BottomNav } from "@/components/BottomNav";
+import StrategistStatusBar from "@/components/StrategistStatusBar";
 import { PortfolioView } from "@/components/PortfolioView";
 import { CompanySwipablePages } from "@/components/CompanySwipablePages";
 import { CompanySectionTabBar } from "@/components/CompanyResearchHub";
@@ -842,6 +843,8 @@ export default function TerminalPage() {
           </main>
         )}
       </div>
+
+      <StrategistStatusBar />
 
       {!isWide && (
         <BottomNav

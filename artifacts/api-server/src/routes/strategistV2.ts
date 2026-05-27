@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { getSettings, updateSetting, resetAllSettings, getDefaults, getSettingMeta } from "../lib/strategistSettings.js";
 import { getCachedRegime, buildFallbackRegime } from "../lib/regimePostProcessor.js";
-import { db, strategistTelemetryTable, scannerTelemetryTable, strategistHistoryTable, strategistJobsTable, eq, and } from "@workspace/db";
+import { db, strategistTelemetryTable, scannerTelemetryTable, strategistHistoryTable, strategistJobsTable, eq, and, or, isNull } from "@workspace/db";
 import { getScannerStrategistCorrelation } from "../lib/scannerCorrelation.js";
 import { desc, lte } from "@workspace/db";
 import { logger } from "../lib/logger.js";
@@ -100,8 +100,13 @@ router.get("/history", async (req, res) => {
         createdAt: strategistHistoryTable.createdAt,
       })
       .from(strategistHistoryTable)
-      .innerJoin(strategistJobsTable, eq(strategistHistoryTable.jobId, strategistJobsTable.id))
-      .where(and(eq(strategistJobsTable.userId, userId), eq(strategistHistoryTable.cleared, false)))
+      .leftJoin(strategistJobsTable, eq(strategistHistoryTable.jobId, strategistJobsTable.id))
+      .where(
+        and(
+          or(eq(strategistJobsTable.userId, userId), isNull(strategistJobsTable.id)),
+          eq(strategistHistoryTable.cleared, false),
+        ),
+      )
       .orderBy(desc(strategistHistoryTable.createdAt))
       .limit(100);
     res.json(

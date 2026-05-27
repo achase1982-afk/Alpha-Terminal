@@ -523,6 +523,7 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
         if (outcome !== "running") {
           resolved = true;
           await refreshHistoryAfterCompletion();
+          maybeToastForegroundRecovery(jobId);
           break;
         }
       }

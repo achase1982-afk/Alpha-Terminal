@@ -3026,6 +3026,9 @@ function AiIntelligenceTabInner({
     // Register the job in the global store BEFORE the network round-trip so
     // the poller / UI can already reflect the running state.
     startStrategistJob(jobId, upperTicker);
+    toast.message(`Analyzing ${upperTicker}`, {
+      description: "Strategist is running. You'll get a notification when it's ready.",
+    });
     // Start polling immediately — do not wait for POST /analyze to return.
     // If the POST hangs (token refresh, proxy, flaky network), we still hit
     // /thinking on the normal cadence (404 grace → eventual buffer) instead of

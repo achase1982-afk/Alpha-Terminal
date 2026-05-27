@@ -1,9 +1,7 @@
-import "dotenv/config";
 import type { StrategistJob } from "@workspace/db";
 import {
   WORKER_CLAIM_POLL_MS,
   WORKER_CONCURRENCY,
-  WORKER_DRAIN_TIMEOUT_MS,
   WORKER_HEARTBEAT_MS,
   WORKER_REAPER_INTERVAL_MS,
 } from "../lib/strategistV3/config.js";
@@ -17,6 +15,7 @@ const WORKER_ID =
   `${process.env.HOSTNAME ?? "local"}-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
 
 let shuttingDown = false;
+let signalHandlersInstalled = false;
 const inflight = new Set<Promise<void>>();
 const heartbeatTimers = new Map<string, ReturnType<typeof setInterval>>();
 
@@ -69,21 +68,6 @@ async function claimLoop(): Promise<void> {
   }
 }
 
-function installSignalHandlers(): void {
-  const onStop = (signal: string) => {
-    logger.info({ signal, workerId: WORKER_ID }, "StrategistWorker: shutdown requested");
-    shuttingDown = true;
-    setTimeout(() => {
-      if (inflight.size > 0) {
-        logger.warn({ inflight: inflight.size }, "StrategistWorker: drain timeout exceeded");
-        process.exit(1);
-      }
-    }, WORKER_DRAIN_TIMEOUT_MS).unref();
-  };
-  process.on("SIGTERM", () => onStop("SIGTERM"));
-  process.on("SIGINT", () => onStop("SIGINT"));
-}
-
 async function reaperLoop(): Promise<void> {
   while (!shuttingDown) {
     try {
@@ -98,15 +82,28 @@ async function reaperLoop(): Promise<void> {
   }
 }
 
-installSignalHandlers();
+function installSignalHandlers(): void {
+  if (signalHandlersInstalled) return;
+  signalHandlersInstalled = true;
 
-logger.info({ workerId: WORKER_ID, concurrency: WORKER_CONCURRENCY }, "StrategistWorker: starting");
+  const onStop = (signal: string) => {
+    logger.info({ signal, workerId: WORKER_ID }, "StrategistWorker: shutdown requested — stop claiming new jobs");
+    shuttingDown = true;
+  };
+  process.on("SIGTERM", () => onStop("SIGTERM"));
+  process.on("SIGINT", () => onStop("SIGINT"));
+}
 
-void reaperLoop();
-void claimLoop().then(async () => {
-  while (inflight.size > 0) {
-    await Promise.race(inflight);
-  }
-  logger.info({ workerId: WORKER_ID }, "StrategistWorker: stopped");
-  process.exit(0);
-});
+/** In-process background task: poll Postgres and run claimed strategist jobs. */
+export function startStrategistWorker(): void {
+  installSignalHandlers();
+  logger.info({ workerId: WORKER_ID, concurrency: WORKER_CONCURRENCY }, "StrategistWorker: claim loop starting");
+  void claimLoop();
+}
+
+/** In-process background task: requeue or fail jobs with stale heartbeats. */
+export function startStrategistReaper(): void {
+  installSignalHandlers();
+  logger.info({ workerId: WORKER_ID, intervalMs: WORKER_REAPER_INTERVAL_MS }, "StrategistWorker: reaper starting");
+  void reaperLoop();
+}

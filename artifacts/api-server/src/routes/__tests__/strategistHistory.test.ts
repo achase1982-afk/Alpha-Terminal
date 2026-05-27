@@ -41,7 +41,7 @@ describe("GET /strategist/history user scoping", () => {
     mocks.requireStrategistUserId.mockReturnValue("user-scoped");
   });
 
-  it("joins strategist_jobs and filters by user id", async () => {
+  it("left-joins strategist_jobs and filters by user id (legacy rows without jobs included)", async () => {
     const limit = vi.fn().mockResolvedValue([
       {
         id: 1,
@@ -55,14 +55,14 @@ describe("GET /strategist/history user scoping", () => {
     ]);
     const orderBy = vi.fn(() => ({ limit }));
     const where = vi.fn(() => ({ orderBy }));
-    const innerJoin = vi.fn(() => ({ where }));
-    const from = vi.fn(() => ({ innerJoin }));
+    const leftJoin = vi.fn(() => ({ where }));
+    const from = vi.fn(() => ({ leftJoin }));
     mocks.dbSelect.mockReturnValue({ from });
 
     const res = await request(buildApp()).get("/strategist/history");
 
     expect(res.status).toBe(200);
-    expect(innerJoin).toHaveBeenCalled();
+    expect(leftJoin).toHaveBeenCalled();
     expect(where).toHaveBeenCalled();
     expect(res.body).toHaveLength(1);
   });

@@ -1,8 +1,0 @@
-{
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "noEmit": true,
-    "types": ["node"]
-  },
-  "include": ["../api-server/src/strategistWorker/**/*.ts", "../api-server/src/lib/strategistV3/**/*.ts"]
-}

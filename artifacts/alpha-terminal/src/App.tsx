@@ -16,7 +16,6 @@ import { registerServiceWorker } from "@/lib/pushNotifications";
 import OrderAlertWatcher from "@/components/OrderAlertWatcher";
 import SchwabSessionExpiredDialog from "@/components/SchwabSessionExpiredDialog";
 import StrategistJobBackgroundSync from "@/components/StrategistJobBackgroundSync";
-import StrategistStatusBar from "@/components/StrategistStatusBar";
 import { installBrowserTelemetryCapture } from "@/lib/browserTelemetry";
 
 export const queryClient = new QueryClient({
@@ -218,7 +217,6 @@ function App() {
             <AuthSessionBanner />
             <PendingSessionLoader />
             <StrategistJobBackgroundSync />
-            <StrategistStatusBar />
             <BrowserTelemetryInstaller />
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
               <Router />

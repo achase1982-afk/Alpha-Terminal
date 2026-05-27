@@ -3,7 +3,9 @@
 **Status:** Implemented on branch `cursor/strategist-v3-rebuild-3cd7`.  
 **Replaces:** V2 in-process `strategistThinkingBuffer` + fire-and-forget Express async pattern.
 
-Postgres-backed `strategist_jobs` is the lifecycle owner. A dedicated `@workspace/strategist-worker` service runs the analyze/validate pipeline. The API server enqueues work and serves poll/history only.
+> **Revision note:** The original spec called for a separate Railway service for the worker. That was overengineered for single-user scale and I/O-bound LLM work. The worker now runs as an in-process background task inside api-server (started when Express boots). All other V3 guarantees — durable jobs, single completion writer, checkpointing, push reliability, status bar, etc. — are unchanged.
+
+Postgres-backed `strategist_jobs` is the lifecycle owner. The analyze/validate pipeline runs in api-server’s in-process worker (`src/strategistWorker/`). HTTP routes enqueue work and serve poll/history.
 
 ---
 
@@ -12,7 +14,7 @@ Postgres-backed `strategist_jobs` is the lifecycle owner. A dedicated `@workspac
 1. **Single source of truth:** `strategist_jobs` owns lifecycle.
 2. **Declared completion:** `status = 'completed'` only in `persistAndComplete()` (`artifacts/api-server/src/lib/strategistV3/terminal.ts`).
 3. **Client decides nothing:** no wall-clock timeouts; server poll payload is authoritative.
-4. **API server stateless:** POST enqueue only; no in-memory job buffer.
+4. **API server owns enqueue + worker:** POST enqueue via HTTP; worker claim loop runs in the same Node process after `app.listen()`.
 5. **Worker owns pipeline:** including IVR coordination (client never sees `ivr_populating`).
 6. **Kill switch:** `STRATEGIST_V3_ENABLED=false` → `503 strategist_unavailable` (default `true`).
 
@@ -38,8 +40,8 @@ User scoping for history reads joins `strategist_jobs.user_id` on `job_id`.
 | Drizzle schema | `lib/db/src/schema/index.ts` → `strategistJobsTable` |
 | Enqueue + poll routes | `artifacts/api-server/src/routes/strategistCoreRoutes.ts` |
 | V3 lib (jobs, poll, terminal) | `artifacts/api-server/src/lib/strategistV3/` |
-| Worker entry | `artifacts/api-server/src/strategistWorker/main.ts` |
-| Worker package (Railway) | `artifacts/strategist-worker/` |
+| Worker (in-process) | `artifacts/api-server/src/strategistWorker/main.ts` |
+| Boot hook | `artifacts/api-server/src/index.ts` → `startStrategistWorker()` + `startStrategistReaper()` after listen |
 | Status bar UI | `artifacts/alpha-terminal/src/components/StrategistStatusBar.tsx` |
 | Client poller | `artifacts/alpha-terminal/src/lib/strategistPoller.ts` |
 | Background sync | `artifacts/alpha-terminal/src/components/StrategistJobBackgroundSync.tsx` |
@@ -114,7 +116,20 @@ Runtime DDL for telemetry audit columns removed; use migrations `0032` / `0033`.
 
 ---
 
-## 8. Terminal completion
+## 8. In-process worker and deployment
+
+The worker runs as background tasks inside api-server, started when the Express server boots (`index.ts` after `app.listen()`):
+
+- **`startStrategistWorker()`** — claim loop polls Postgres for `queued` jobs (concurrency cap 3, poll interval 1.5s, heartbeat every 10s).
+- **`startStrategistReaper()`** — every 30s, requeue or fail jobs whose heartbeat is stale (>60s).
+
+Both use the same Node.js process and Postgres connection pool as HTTP routes. **One Railway service** (api-server) — no separate worker service or dashboard setup.
+
+**SIGTERM on redeploy:** set a `shuttingDown` flag so the claim loop stops pulling new work. In-flight jobs are not drained; they remain `running` with a stale heartbeat until the reaper requeues them after restart (checkpoint resume via `last_completed_phase`).
+
+---
+
+## 9. Terminal completion
 
 `persistAndComplete`:
 
@@ -127,7 +142,7 @@ Runtime DDL for telemetry audit columns removed; use migrations `0032` / `0033`.
 
 ---
 
-## 9. Reaper
+## 10. Reaper
 
 `runReaperStaleJobs` (60s heartbeat stale):
 
@@ -136,7 +151,7 @@ Runtime DDL for telemetry audit columns removed; use migrations `0032` / `0033`.
 
 ---
 
-## 10. Client polling
+## 11. Client polling
 
 `strategistPoller.ts` — no client-side timeouts. Poll `/strategist/thinking/:jobId?since=N` while running; `/final` for terminal state.
 
@@ -144,35 +159,36 @@ Runtime DDL for telemetry audit columns removed; use migrations `0032` / `0033`.
 
 ---
 
-## 11. Status bar
+## 12. Status bar
 
 `StrategistStatusBar` polls `GET /jobs/active` every 3s. Debate phase shows `debating {turn}/{expectedTurns}` from job progress.
 
 ---
 
-## 12. History API
+## 13. History API
 
 `GET /api/strategist/history` — requires auth; inner join `strategist_jobs` on `job_id` filtered by `user_id`. Returns last 100 non-cleared rows.
 
 ---
 
-## 13. Legacy `/ai/*` strategist routes
+## 14. Legacy `/ai/*` strategist routes
 
 **Removed in this build.** Options/deterministic legacy strategist endpoints deleted from `routes/ai.ts`. UI uses V3 `/api/strategist/analyze` only. `deterministicStrategist.ts` retained for strike resolver types used elsewhere.
 
 ---
 
-## 14. Push notifications
+## 15. Push notifications
 
 Push payload `data.kind`: `analyze` | `validation` | `failure`.
 
 ---
 
-## 15. Failure modes
+## 16. Failure modes
 
 | Scenario | Behavior |
 |----------|----------|
 | Worker crash mid-phase | Reaper requeues if attempts remain + checkpoint; else failed + push |
+| api-server SIGTERM mid-job | Job stays `running` until reaper requeues after restart |
 | User cancel | `status = cancelled`; worker checks `isJobCancelled` between phases |
 | Terminal race | `TerminalRaceError` if concurrent cancel completes first |
 | Telemetry insert fail | Logged; job stays completed |
@@ -180,7 +196,7 @@ Push payload `data.kind`: `analyze` | `validation` | `failure`.
 
 ---
 
-## 16. Checkpoints schema (analyze)
+## 17. Checkpoints schema (analyze)
 
 ```json
 {
@@ -193,34 +209,36 @@ Push payload `data.kind`: `analyze` | `validation` | `failure`.
 
 ---
 
-## 17. Environment
+## 18. Environment
 
 | Variable | Default | Effect |
 |----------|---------|--------|
 | `STRATEGIST_V3_ENABLED` | `true` | `false` → analyze/validate enqueue 503 |
+| `STRATEGIST_WORKER_CONCURRENCY` | `3` | Max in-flight jobs in claim loop |
 
 ---
 
-## 18. CI / static checks
+## 19. CI / static checks
 
 - `pnpm --filter @workspace/api-server typecheck`
-- `pnpm --filter @workspace/strategist-worker typecheck`
+- `pnpm --filter @workspace/alpha-terminal typecheck`
 - `scripts/check-strategist-v3-static.sh` — single `completed` writer guard
 - Vitest: `src/lib/strategistV3/__tests__`, debate resume, cancel/history route tests
 
 ---
 
-## 19. Smoke tests (manual)
+## 20. Smoke tests (manual)
 
 1. Enqueue analyze → status bar phases through debating turn counter → card in history.
 2. Background tab → completion toast on return.
 3. Cancel validate_trade mid-run.
 4. History list only shows current user's jobs.
-5. Kill worker → reaper requeue or failed push.
+5. Force-restart api-server mid-job → reaper requeues within ~60s; job resumes from checkpoint.
+6. Railway dashboard shows **one** api-server service (no separate worker).
 
 ---
 
-## 20. Rollback
+## 21. Rollback
 
 1. Revert merge → prior V2 path returns if still in tree.
 2. Empty `strategist_jobs` harmless.
