@@ -59,12 +59,14 @@ router.post("/analyze/cancel", async (req, res): Promise<void> => {
       res.status(404).json({ error: "job not found or not cancellable" });
       return;
     }
-    if (job.kind !== "analyze" || !["queued", "running"].includes(job.status)) {
+    if (!["queued", "running"].includes(job.status)) {
       res.status(404).json({ error: "job not found or not cancellable" });
       return;
     }
     await cancelJob(jobId);
-    markStrategistAnalyzeCancelled(jobId);
+    if (job.kind === "analyze") {
+      markStrategistAnalyzeCancelled(jobId);
+    }
     res.json({ ok: true });
   } catch (err) {
     logger.error({ err }, "StrategistV3: analyze cancel failed");

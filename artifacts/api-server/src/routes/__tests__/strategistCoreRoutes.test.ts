@@ -42,6 +42,31 @@ function buildApp() {
   return app;
 }
 
+describe("POST /strategist/analyze/cancel", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.requireStrategistUserId.mockReturnValue("user-1");
+  });
+
+  it("cancels a running validate_trade job via analyze/cancel", async () => {
+    mocks.findJobById.mockResolvedValue({
+      id: "job-v1",
+      userId: "user-1",
+      kind: "validate_trade",
+      status: "running",
+    });
+    mocks.cancelJob.mockResolvedValue({ id: "job-v1", status: "cancelled" });
+
+    const res = await request(buildApp())
+      .post("/strategist/analyze/cancel")
+      .send({ jobId: "job-v1" });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    expect(mocks.cancelJob).toHaveBeenCalledWith("job-v1");
+  });
+});
+
 describe("POST /strategist/validate-trade/cancel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
