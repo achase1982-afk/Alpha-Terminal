@@ -28,8 +28,6 @@ export type OpenStrategistFromPushResult =
 
 // If an existing poller hasn't ticked in this long, a new caller takes over.
 const STALE_POLLER_MS = 8_000;
-/** Running jobs older than this without completion get an error card (lost poll / server crash). */
-const STALE_RUNNING_JOB_MS = 28 * 60 * 1000;
 
 /** One payload from `GET /strategist/thinking/:id` or `GET /strategist/job/:id/final`. */
 export interface StrategistThinkingPollPayload {
@@ -400,10 +398,6 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
   const jobStartedAt = job.startedAt;
 
   void (async () => {
-    // Debate mode with Opus 4.7 + adaptive thinking + web search across 6 turns
-    // can run 15-25 min. Use a long wall-clock ceiling only as a last-resort
-    // safety net; primary stall detection uses server `serverProgressAt`.
-    const stopAt = Date.now() + 60 * 60 * 1000;
     let resolved = false;
     let consecutiveFailures = 0;
 
@@ -413,7 +407,7 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
     // 404 to the user.
     const tryRecoverFromHistory = async (): Promise<boolean> => recoverStrategistJobFromHistory(jobId);
     try {
-      pollLoop: while (Date.now() < stopAt) {
+      pollLoop: while (true) {
         if (handle.aborted) {
           // Another poller has taken over; exit silently without touching
           // the registry (the new poller now owns the entry).
@@ -423,17 +417,6 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
 
         const current = useTerminalStore.getState().strategistJobs[jobId];
         if (!current || current.status !== "running") {
-          resolved = true;
-          break;
-        }
-        const baseLag = current.lastServerProgressAt ?? current.startedAt;
-        if (Date.now() - baseLag > STALE_RUNNING_JOB_MS) {
-          useTerminalStore
-            .getState()
-            .errorStrategistJob(
-              jobId,
-              "Analysis did not complete within the expected window. Tap Analyze to retry.",
-            );
           resolved = true;
           break;
         }
@@ -449,13 +432,6 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
           );
         } catch {
           consecutiveFailures += 1;
-          if (consecutiveFailures >= 10) {
-            useTerminalStore
-              .getState()
-              .errorStrategistJob(jobId, "Lost connection while polling analysis");
-            resolved = true;
-            break;
-          }
           await new Promise((r) => setTimeout(r, 800));
           continue;
         }
@@ -524,15 +500,6 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
             }
           }
           consecutiveFailures += 1;
-          if (consecutiveFailures >= 10) {
-            const finalMsg =
-              tres.status === 404
-                ? "Live thinking buffer expired — refresh history to view the saved card"
-                : `Polling failed (HTTP ${tres.status})`;
-            useTerminalStore.getState().errorStrategistJob(jobId, finalMsg);
-            resolved = true;
-            break;
-          }
           await new Promise((r) => setTimeout(r, 800));
           continue;
         }
@@ -544,14 +511,6 @@ export function startStrategistPolling(jobId: string, opts?: { force?: boolean }
           await refreshHistoryAfterCompletion();
           break;
         }
-      }
-      if (!resolved && !handle.aborted) {
-        useTerminalStore
-          .getState()
-          .errorStrategistJob(
-            jobId,
-            "Analysis timed out after 60 minutes (no server response)",
-          );
       }
     } finally {
       // Only clear the registry slot if we still own it. If a takeover poller

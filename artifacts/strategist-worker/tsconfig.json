@@ -1,12 +1,8 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "outDir": "dist",
-    "rootDir": "src",
-    "types": ["node"],
-    "noImplicitReturns": true,
-    "strictNullChecks": true
+    "noEmit": true,
+    "types": ["node"]
   },
-  "include": ["src"],
-  "references": [{ "path": "../../lib/db" }]
+  "include": ["../api-server/src/strategistWorker/**/*.ts", "../api-server/src/lib/strategistV3/**/*.ts"]
 }
