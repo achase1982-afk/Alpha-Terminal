@@ -3,22 +3,25 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-COMPLETED=$(rg -n "status:\s*['\"]completed['\"]|status\s*=\s*'completed'" artifacts/api-server/src --glob '*.ts' || true)
-COUNT=$(echo "$COMPLETED" | grep -c 'strategistJobsTable' || true)
+API_SRC="artifacts/api-server/src"
+
+COMPLETED=$(
+  grep -REn "status:[[:space:]]*['\"]completed['\"]|status[[:space:]]*=[[:space:]]*'completed'" "$API_SRC" --include='*.ts' 2>/dev/null || true
+)
 
 # Allow only terminal.ts persistAndComplete update
-if echo "$COMPLETED" | rg -v 'strategistV3/terminal\.ts' | rg -q "strategistJobsTable"; then
+if echo "$COMPLETED" | grep -v 'strategistV3/terminal\.ts' | grep -q "strategistJobsTable"; then
   echo "FAIL: found strategist_jobs completed status write outside strategistV3/terminal.ts:"
-  echo "$COMPLETED" | rg -v 'strategistV3/terminal\.ts' || true
+  echo "$COMPLETED" | grep -v 'strategistV3/terminal\.ts' || true
   exit 1
 fi
 
-if ! rg -q "status:\s*\"completed\"" artifacts/api-server/src/lib/strategistV3/terminal.ts; then
+if ! grep -qE 'status:[[:space:]]*"completed"' "$API_SRC/lib/strategistV3/terminal.ts"; then
   echo "FAIL: persistAndComplete must set status completed"
   exit 1
 fi
 
-if rg -q 'strategistThinkingBuffer' artifacts/api-server/src; then
+if grep -rq 'strategistThinkingBuffer' "$API_SRC"; then
   echo "FAIL: strategistThinkingBuffer still referenced"
   exit 1
 fi
