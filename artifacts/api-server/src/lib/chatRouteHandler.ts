@@ -24,7 +24,7 @@ function writeSse(res: Response, event: string, data: unknown): void {
 
 /**
  * POST body: `{ thread_id?, message, model?, symbol?, multi_agent?: { models, synthesizer_model } }`
- * SSE events: thread, text, tool_call_start, tool_call_end, done, error
+ * SSE events: thread, reasoning, text, tool_call_start, tool_call_end, done, error
  */
 export async function handleChatMessageSse(req: Request, res: Response): Promise<void> {
   const userId = getUserId(req);
@@ -126,6 +126,9 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
     onEvent: (ev: ChatStreamEvent) => {
         if (res.writableEnded) return;
         switch (ev.type) {
+          case "reasoning":
+            writeSse(res, "reasoning", { delta: ev.delta });
+            break;
           case "text":
             writeSse(res, "text", { delta: ev.delta });
             break;

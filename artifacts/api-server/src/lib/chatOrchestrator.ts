@@ -45,7 +45,16 @@ export function formatEmptyChatResponseMessage(hadToolResults: boolean): string 
   return hadToolResults ? EMPTY_CHAT_RESPONSE_AFTER_TOOLS : EMPTY_CHAT_RESPONSE_PLAIN;
 }
 
+
+function reasoningDeltaFromStreamPart(part: { type: string; delta?: string; text?: string }): string | null {
+  if (part.type !== "reasoning-delta") return null;
+  if (typeof part.delta === "string" && part.delta) return part.delta;
+  if (typeof part.text === "string" && part.text) return part.text;
+  return null;
+}
+
 export type ChatStreamEvent =
+  | { type: "reasoning"; delta: string }
   | { type: "text"; delta: string }
   | { type: "tool_call_start"; toolCallId: string; toolName: string; input: unknown }
   | { type: "tool_call_end"; toolCallId: string; toolName: string; output: unknown }
@@ -409,7 +418,10 @@ export async function runMultiAgentChatTurn(
 
     for await (const part of result.fullStream) {
       if (abortSignal?.aborted) break;
-      if (part.type === "text-delta" && part.text) {
+      const reasoningDelta = reasoningDeltaFromStreamPart(part);
+      if (reasoningDelta) {
+        onEvent({ type: "reasoning", delta: reasoningDelta });
+      } else if (part.type === "text-delta" && part.text) {
         assistantText += part.text;
         textEmitter.push(part.text);
       }
@@ -472,7 +484,10 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
 
     for await (const part of result.fullStream) {
       if (abortSignal?.aborted) break;
-      if (part.type === "text-delta" && part.text) {
+      const reasoningDelta = reasoningDeltaFromStreamPart(part);
+      if (reasoningDelta) {
+        onEvent({ type: "reasoning", delta: reasoningDelta });
+      } else if (part.type === "text-delta" && part.text) {
         assistantText += part.text;
         textEmitter.push(part.text);
       } else if (part.type === "tool-call") {
