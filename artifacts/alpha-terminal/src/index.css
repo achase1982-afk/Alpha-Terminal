@@ -342,3 +342,23 @@ dialog.telemetry-copy-dialog {
 dialog.telemetry-copy-dialog::backdrop {
   background: rgba(0, 0, 0, 0.8);
 }
+
+@keyframes chat-thinking-breath {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(1);
+    text-shadow: 0 0 0 transparent;
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.02);
+    text-shadow: 0 0 18px rgba(255, 255, 255, 0.42);
+  }
+}
+
+.chat-thinking-breath {
+  display: inline-block;
+  animation: chat-thinking-breath 1.8s ease-in-out infinite;
+  transform-origin: left center;
+}

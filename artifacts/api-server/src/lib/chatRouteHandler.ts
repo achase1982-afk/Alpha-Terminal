@@ -144,7 +144,10 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
     onEvent: (ev: ChatStreamEvent) => {
         if (res.writableEnded) return;
         switch (ev.type) {
-case "reasoning":
+          case "status":
+            writeSse(res, "status", { note: ev.note ?? "thinking" });
+            break;
+          case "reasoning":
             writeSse(res, "reasoning", { delta: ev.delta });
             break;
           case "text":

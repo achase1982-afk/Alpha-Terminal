@@ -464,7 +464,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
             pendingUserMessages: pendingUser,
             inFlightAssistant: { id: assistantId, content: "", complete: false },
             inFlightReasoning: "",
-            activityNote: "",
+            activityNote: "Connecting…",
             stopRequested: false,
             displayTruncateToIndex: params.truncateToIndex,
           },
@@ -568,6 +568,8 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
         return;
       }
 
+      let receivedDone = false;
+
       await consumeChatSse(res, (ev: ChatSseEvent) => {
         const cur = get().streamsByThreadId[streamKey];
         if (!cur || isSupersededSend(cur, sendId, controller)) return;
@@ -588,8 +590,13 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
         } else if (ev.type === "reasoning") {
           const latest = get().streamsByThreadId[streamKey];
           if (!latest?.inFlightAssistant || latest.inFlightAssistant.id !== assistantId) return;
+          const note = latest.activityNote?.trim().toLowerCase();
           patchStream(streamKey, {
             inFlightReasoning: latest.inFlightReasoning + ev.delta,
+            activityNote:
+              note === "" || note === "thinking" || note === "connecting…"
+                ? "Thinking through your question…"
+                : latest.activityNote,
           });
         } else if (ev.type === "text") {
           const latest = get().streamsByThreadId[streamKey];
@@ -645,6 +652,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
             activeMultiAgentCount: 0,
           });
         } else if (ev.type === "done") {
+          receivedDone = true;
           const persistedId = ev.assistant_message_id?.trim() || assistantId;
           patchStream(streamKey, {
             inFlightAssistant: {
@@ -663,6 +671,41 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
           });
         }
       }, signal);
+
+      if (!receivedDone) {
+        const after = get().streamsByThreadId[streamKey];
+        if (after && after.activeSendId === sendId && after.isStreaming) {
+          const resolvedThreadId =
+            threadId ?? (streamKey.startsWith("__pending__") ? null : streamKey);
+          if (resolvedThreadId) {
+            patchStream(streamKey, {
+              activityNote: "Reconnecting…",
+            });
+            startChatBackgroundPoll({
+              threadId: resolvedThreadId,
+              streamKey,
+              sendId,
+              placeholderAssistantId: assistantId,
+              userText: text,
+              patchStream,
+            });
+          } else {
+            patchStream(streamKey, {
+              inFlightAssistant: {
+                id: assistantId,
+                content: "**Error:** Connection closed before the reply finished. Tap Retry.",
+                retryable: true,
+                complete: true,
+              },
+              isStreaming: false,
+              abortController: null,
+              activeSendId: null,
+              toolPills: [],
+              activeMultiAgentCount: 0,
+            });
+          }
+        }
+      }
 
       void params.onRefreshThreads();
     } catch (err: unknown) {
