@@ -44,6 +44,7 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
   const aiModel = aiFeatureSettings.technicals.model;
   const aiTemp = aiFeatureSettings.technicals.temperature;
   const anthropicOpusEffort = aiFeatureSettings.technicals.anthropicOpusEffort;
+  const anthropicOpusSpeed = aiFeatureSettings.technicals.anthropicOpusSpeed;
 
   const [fundamentals, setFundamentals] = useState<FundamentalData | null>(null);
   const [fundLoading, setFundLoading] = useState(false);
@@ -74,7 +75,13 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
       const res = await fetchWithAuth(`${API_BASE}/ai/sympathy-plays`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol, model: aiModel, temperature: aiTemp, anthropic_opus_effort: anthropicOpusEffort }),
+        body: JSON.stringify({
+          symbol,
+          model: aiModel,
+          temperature: aiTemp,
+          anthropic_opus_effort: anthropicOpusEffort,
+          anthropic_opus_speed: anthropicOpusSpeed,
+        }),
       });
       const data = await res.json() as { response?: string };
       setSympathyResult(data.response ?? null);

@@ -13,12 +13,12 @@ import {
   type WebSearchTrace,
 } from "./aiLabAnalystClient.js";
 import {
-  getStrategistAnthropicOpusEffort,
+  getStrategistAnthropicOpusCallOptions,
   getStrategistModel,
   type StrategistModelOption,
   type StrategistConfig,
 } from "./strategistSettings.js";
-import type { AnthropicOpusEffort } from "@workspace/ai-models";
+import type { AnthropicOpusCallOptions } from "@workspace/ai-models";
 import {
   VolAnalystOutputSchema,
   FlowAnalystOutputSchema,
@@ -134,7 +134,7 @@ async function streamModel(
   onDelta: (text: string) => void,
   onStatus?: (s: string) => void,
   cancelSignal?: AbortSignal,
-  opts?: { convictionDeskLargeMemo?: boolean; opusEffort?: AnthropicOpusEffort | null },
+  opts?: { convictionDeskLargeMemo?: boolean; opus?: AnthropicOpusCallOptions | null },
 ): Promise<WebSearchResult> {
   const cap = opts?.convictionDeskLargeMemo === true ? CONVICTION_DESK_MAX_OUTPUT_TOKENS : undefined;
   let r: WebSearchResult;
@@ -149,7 +149,7 @@ async function streamModel(
       cancelSignal,
       {
         ...(cap != null ? { maxTokens: cap } : {}),
-        ...(opts?.opusEffort != null ? { opusEffort: opts.opusEffort } : {}),
+        ...(opts?.opus != null ? { opus: opts.opus } : {}),
       },
     );
   } else if (modelOpt.provider === "openai") {
@@ -201,9 +201,9 @@ async function runDeskTurn<T>(args: {
   role: "vol" | "flow" | "catalyst" | "pm";
   label: string;
   callbacks?: DeskCallbacks;
-  opusEffort?: AnthropicOpusEffort | null;
+  opus?: AnthropicOpusCallOptions | null;
 }): Promise<{ text: string; trace: WebSearchTrace; turnId: string }> {
-  const { modelOpt, prompt, role, label, callbacks, opusEffort } = args;
+  const { modelOpt, prompt, role, label, callbacks, opus } = args;
   assertDeskNotCancelled(callbacks);
   const turnId = newTurnId();
   callbacks?.onTurnStart?.({
@@ -231,7 +231,7 @@ async function runDeskTurn<T>(args: {
       onDelta,
       (s) => callbacks?.onStatus?.(s),
       callbacks?.cancelSignal,
-      opusEffort != null ? { opusEffort } : undefined,
+      opus != null ? { opus } : undefined,
     );
     callbacks?.onTurnDone?.(turnId, r.text);
     return { text: r.text, trace: r.trace, turnId };
@@ -278,7 +278,7 @@ export async function runDeskAnalysis(args: {
 }): Promise<DeskResult & { orderTicketValidationVerdict?: ParsedOrderTicketValidationPayload }> {
   const { dataPackage, settings, ticker, deskExpirationISO, catalystEvaluation, callbacks, orderTicketValidationMarkdown } = args;
   assertDeskNotCancelled(callbacks);
-  const opusEffort = getStrategistAnthropicOpusEffort(settings);
+  const opus = getStrategistAnthropicOpusCallOptions(settings);
 
   const volModel = getStrategistModel(settings.strategistSoloModelIdx);
   const flowModel = getStrategistModel(settings.strategistDebateAModelIdx);
@@ -344,8 +344,8 @@ export async function runDeskAnalysis(args: {
   callbacks?.onStatus?.("Desk: Vol and Catalyst analysts running…");
 
   const [volResult, catalystResult] = await Promise.all([
-    runAnalystWithRetry(ticker, "vol", volModel, buildVolAnalystPrompt(dataPackage), VolAnalystOutputSchema, callbacks, errors, undefined, opusEffort),
-    runAnalystWithRetry(ticker, "catalyst", catalystModel, catalystPrompt, CatalystAnalystOutputSchema, callbacks, errors, catalystSearchTrace, opusEffort),
+    runAnalystWithRetry(ticker, "vol", volModel, buildVolAnalystPrompt(dataPackage), VolAnalystOutputSchema, callbacks, errors, undefined, opus),
+    runAnalystWithRetry(ticker, "catalyst", catalystModel, catalystPrompt, CatalystAnalystOutputSchema, callbacks, errors, catalystSearchTrace, opus),
   ]);
 
   assertDeskNotCancelled(callbacks);
@@ -359,7 +359,7 @@ export async function runDeskAnalysis(args: {
     callbacks,
     errors,
     undefined,
-    opusEffort,
+    opus,
   );
 
   callbacks?.onStatus?.(
@@ -384,7 +384,7 @@ export async function runDeskAnalysis(args: {
       role: "pm",
       label: "Order ticket review",
       callbacks,
-      opusEffort,
+      opus,
     });
     let pmJson = parseJsonFromText(pmTurn.text);
     let parsedObj = pmJson && typeof pmJson === "object" ? (pmJson as Record<string, unknown>) : null;
@@ -408,7 +408,7 @@ export async function runDeskAnalysis(args: {
         role: "pm",
         label: "Order ticket review (retry)",
         callbacks,
-        opusEffort,
+        opus,
       });
       pmJson = parseJsonFromText(pmTurn.text);
       parsedObj = pmJson && typeof pmJson === "object" ? (pmJson as Record<string, unknown>) : null;
@@ -446,7 +446,7 @@ export async function runDeskAnalysis(args: {
       role: "pm",
       label: "Decision",
       callbacks,
-      opusEffort,
+      opus,
     });
 
     const pmJson = parseJsonFromText(pmTurn.text);
@@ -468,7 +468,7 @@ export async function runDeskAnalysis(args: {
         role: "pm",
         label: "Decision (retry)",
         callbacks,
-        opusEffort,
+        opus,
       });
       const retryJson = parseJsonFromText(retryTurn.text);
       const retryValidation = PmOutputSchema.safeParse(retryJson);
@@ -536,7 +536,7 @@ async function runAnalystWithRetry<T>(
   callbacks: DeskCallbacks | undefined,
   errors: string[],
   initialTrace?: WebSearchTrace,
-  opusEffort?: AnthropicOpusEffort | null,
+  opus?: AnthropicOpusCallOptions | null,
 ): Promise<{ parsed: T; trace: WebSearchTrace }> {
   const labels: Record<string, string> = {
     vol: "Volatility",
@@ -545,7 +545,7 @@ async function runAnalystWithRetry<T>(
   };
   const label = labels[role];
 
-  const turn = await runDeskTurn({ modelOpt: model, prompt, role, label, callbacks, opusEffort });
+  const turn = await runDeskTurn({ modelOpt: model, prompt, role, label, callbacks, opus });
   const json = parseJsonFromText(turn.text);
   const validation = schema.safeParse(json);
 
@@ -571,7 +571,7 @@ async function runAnalystWithRetry<T>(
     role,
     label: `${labels[role]} (retry)`,
     callbacks,
-    opusEffort,
+    opus,
   });
 
   const retryJson = parseJsonFromText(retryTurn.text);
@@ -639,7 +639,7 @@ export async function runSoloDesk(args: {
   callbacks?: DeskCallbacks;
 }): Promise<DeskResult> {
   const { dataPackage, settings, ticker, deskExpirationISO, catalystEvaluation, callbacks } = args;
-  const opusEffort = getStrategistAnthropicOpusEffort(settings);
+  const opus = getStrategistAnthropicOpusCallOptions(settings);
 
   const consolidatedModel = getStrategistModel(settings.strategistSoloModelIdx);
 
@@ -708,7 +708,7 @@ export async function runSoloDesk(args: {
       onDelta,
       (s) => callbacks?.onStatus?.(s),
       callbacks?.cancelSignal,
-      { opusEffort },
+      { opus },
     );
     text = r.text;
     callbacks?.onTurnDone?.(turnId, text);
@@ -753,7 +753,7 @@ export async function runSoloDesk(args: {
       onRetryDelta,
       (s) => callbacks?.onStatus?.(s),
       callbacks?.cancelSignal,
-      { opusEffort },
+      { opus },
     );
     callbacks?.onTurnDone?.(retryTurnId, retryR.text);
     json = parseJsonFromText(retryR.text);
@@ -914,7 +914,7 @@ export async function runConvictionDesk(args: {
   const { dataPackage, settings, ticker, deskExpirationISO, catalystEvaluation, callbacks, convictionDeskProvider } =
     args;
   const startedAtIso = new Date().toISOString();
-  const opusEffort = getStrategistAnthropicOpusEffort(settings);
+  const opus = getStrategistAnthropicOpusCallOptions(settings);
 
   const routing = resolveConvictionDeskRouting(settings, convictionDeskProvider ?? null);
   const consolidatedModel = routing.model;
@@ -994,7 +994,7 @@ export async function runConvictionDesk(args: {
           {
             maxTokens: CONVICTION_DESK_MAX_OUTPUT_TOKENS,
             thinkingBudgetTokensOverride: routing.anthropicThinkingBudgetOverride,
-            opusEffort,
+            opus,
           },
         );
         if (r.convictionDeskAudit) lastConvictionDeskAudit = r.convictionDeskAudit;
@@ -1042,7 +1042,7 @@ export async function runConvictionDesk(args: {
           onDelta,
           (s) => callbacks?.onStatus?.(s),
           callbacks?.cancelSignal,
-          { convictionDeskLargeMemo: true, opusEffort },
+          { convictionDeskLargeMemo: true, opus },
         );
       }
 

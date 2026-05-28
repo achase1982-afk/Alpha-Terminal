@@ -183,3 +183,61 @@ export function parseAnthropicOpusEffortBody(raw: unknown): AnthropicOpusEffort 
   if (typeof raw === "string") return normalizeAnthropicOpusEffort(raw);
   return undefined;
 }
+
+/** Anthropic Messages API `speed` for Claude Opus 4.6+ (fast ≈ 2.5× output tok/s, premium pricing). */
+export const ANTHROPIC_OPUS_SPEED_LEVELS = ["standard", "fast"] as const;
+
+export type AnthropicOpusSpeed = (typeof ANTHROPIC_OPUS_SPEED_LEVELS)[number];
+
+export const DEFAULT_ANTHROPIC_OPUS_SPEED: AnthropicOpusSpeed = "standard";
+
+const ANTHROPIC_OPUS_SPEED_SET = new Set<string>(ANTHROPIC_OPUS_SPEED_LEVELS);
+
+export const ANTHROPIC_OPUS_SPEED_LABELS: Record<AnthropicOpusSpeed, string> = {
+  standard: "Standard",
+  fast: "Fast (2.5× output speed)",
+};
+
+export function normalizeAnthropicOpusSpeed(value: unknown): AnthropicOpusSpeed {
+  if (typeof value === "string" && ANTHROPIC_OPUS_SPEED_SET.has(value)) {
+    return value as AnthropicOpusSpeed;
+  }
+  return DEFAULT_ANTHROPIC_OPUS_SPEED;
+}
+
+export function anthropicOpusSpeedFromStrategistIdx(idx: number): AnthropicOpusSpeed {
+  return Math.floor(idx) === 1 ? "fast" : "standard";
+}
+
+export function parseAnthropicOpusSpeedBody(raw: unknown): AnthropicOpusSpeed | undefined {
+  if (raw == null || raw === "") return undefined;
+  if (typeof raw === "string") return normalizeAnthropicOpusSpeed(raw);
+  return undefined;
+}
+
+/** Per-request Opus tuning passed from UI / strategist settings. */
+export type AnthropicOpusCallOptions = {
+  effort?: AnthropicOpusEffort | null;
+  speed?: AnthropicOpusSpeed | null;
+};
+
+export function parseAnthropicOpusCallOptionsBody(body: {
+  anthropic_opus_effort?: unknown;
+  anthropic_opus_speed?: unknown;
+}): AnthropicOpusCallOptions {
+  return {
+    effort: parseAnthropicOpusEffortBody(body.anthropic_opus_effort),
+    speed: parseAnthropicOpusSpeedBody(body.anthropic_opus_speed),
+  };
+}
+
+/** Combine persisted UI fields for API / SDK calls. */
+export function anthropicOpusCallOptionsFromSettings(
+  effort?: AnthropicOpusEffort | null,
+  speed?: AnthropicOpusSpeed | null,
+): AnthropicOpusCallOptions {
+  return {
+    ...(effort != null ? { effort } : {}),
+    ...(speed != null && speed !== DEFAULT_ANTHROPIC_OPUS_SPEED ? { speed } : {}),
+  };
+}

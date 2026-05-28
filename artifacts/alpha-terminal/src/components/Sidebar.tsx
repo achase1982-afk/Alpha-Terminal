@@ -595,8 +595,10 @@ function AiFeatureControl({ featureKey, label, icon }: {
 
           <AnthropicOpusEffortSelect
             modelId={settings.model}
-            value={settings.anthropicOpusEffort}
-            onChange={(effort) => setAiFeatureSetting(featureKey, 'anthropicOpusEffort', effort)}
+            effort={settings.anthropicOpusEffort}
+            speed={settings.anthropicOpusSpeed}
+            onEffortChange={(effort) => setAiFeatureSetting(featureKey, 'anthropicOpusEffort', effort)}
+            onSpeedChange={(speed) => setAiFeatureSetting(featureKey, 'anthropicOpusSpeed', speed)}
           />
 
           <div className="space-y-1.5">

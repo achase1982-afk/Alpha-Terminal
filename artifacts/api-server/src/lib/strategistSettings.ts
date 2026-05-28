@@ -1,5 +1,7 @@
 import {
   anthropicOpusEffortFromStrategistIdx,
+  anthropicOpusSpeedFromStrategistIdx,
+  type AnthropicOpusCallOptions,
   type AnthropicOpusEffort,
   STRATEGIST_MODEL_CATALOG_VERSION,
   STRATEGIST_MODEL_OPTIONS,
@@ -68,6 +70,8 @@ export interface StrategistConfig {
   strategistModelCatalogVersion: number;
   /** Index into `ANTHROPIC_OPUS_EFFORT_LEVELS` for Anthropic Opus strategist calls. */
   strategistAnthropicOpusEffortIdx: number;
+  /** 0 = standard, 1 = fast (`speed: "fast"` on Messages API). */
+  strategistAnthropicOpusSpeedIdx: number;
 }
 
 /**
@@ -102,6 +106,13 @@ export function getStrategistModel(idx: number): StrategistModelOption {
 
 export function getStrategistAnthropicOpusEffort(settings: StrategistConfig): AnthropicOpusEffort {
   return anthropicOpusEffortFromStrategistIdx(settings.strategistAnthropicOpusEffortIdx);
+}
+
+export function getStrategistAnthropicOpusCallOptions(settings: StrategistConfig): AnthropicOpusCallOptions {
+  return {
+    effort: getStrategistAnthropicOpusEffort(settings),
+    speed: anthropicOpusSpeedFromStrategistIdx(settings.strategistAnthropicOpusSpeedIdx),
+  };
 }
 
 /**
@@ -161,6 +172,7 @@ const DEFAULTS = {
   strategistArbitratorModelIdx: 2,
   strategistModelCatalogVersion: STRATEGIST_MODEL_CATALOG_VERSION,
   strategistAnthropicOpusEffortIdx: 2,
+  strategistAnthropicOpusSpeedIdx: 0,
 } satisfies StrategistConfig;
 
 let settingsCache: StrategistConfig | null = null;
@@ -563,6 +575,21 @@ export function getSettingMeta(): SettingMetaEntry[] {
         { value: 2, label: "High (default)" },
         { value: 3, label: "Extra (xhigh)" },
         { value: 4, label: "Max" },
+      ],
+    },
+    {
+      key: "strategistAnthropicOpusSpeedIdx",
+      label: "Opus speed (Anthropic)",
+      group: "Strategist",
+      default: 0,
+      min: 0,
+      max: 1,
+      step: 1,
+      description:
+        "Fast mode (`speed: fast`) for Claude Opus 4.6+ strategist calls — ~2.5× output token speed with premium pricing on Opus 4.8.",
+      options: [
+        { value: 0, label: "Standard" },
+        { value: 1, label: "Fast (2.5× output speed)" },
       ],
     },
 

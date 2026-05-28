@@ -259,7 +259,7 @@ export interface MarketPulseDashboardHandle {
 
 export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, object>(function MarketPulseDashboard(_props, ref) {
   const { accessToken, aiFeatureSettings } = useTerminalStore();
-  const { model: aiModel, temperature: aiTemp, anthropicOpusEffort } = aiFeatureSettings.marketPulse;
+  const { model: aiModel, temperature: aiTemp, anthropicOpusEffort, anthropicOpusSpeed } = aiFeatureSettings.marketPulse;
   const {
     pulseData,
     isLoading,
@@ -301,6 +301,9 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, objec
 
   const opusEffortRef = useRef(anthropicOpusEffort);
   useEffect(() => { opusEffortRef.current = anthropicOpusEffort; }, [anthropicOpusEffort]);
+
+  const opusSpeedRef = useRef(anthropicOpusSpeed);
+  useEffect(() => { opusSpeedRef.current = anthropicOpusSpeed; }, [anthropicOpusSpeed]);
 
   const settingsRef = useRef(settings);
   useEffect(() => { settingsRef.current = settings; }, [settings]);
@@ -357,6 +360,7 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, objec
       model: aiModelRef.current,
       temperature: aiTempRef.current,
       anthropic_opus_effort: opusEffortRef.current,
+      anthropic_opus_speed: opusSpeedRef.current,
       previousBias: pulseDataRef.current?.bias ?? undefined,
       preferences: {
         allowedStrategies: allowedList,

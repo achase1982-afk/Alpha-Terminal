@@ -264,7 +264,7 @@ export function createChatTools(ctx: ChatToolContext) {
         query: z.string().describe("Search query, include ticker when relevant"),
       }),
       execute: async ({ query }) => {
-        return runChatNativeWebSearch(ctx.activeModel, query, ctx.anthropicOpusEffort);
+        return runChatNativeWebSearch(ctx.activeModel, query, ctx.anthropicOpusOptions);
       },
     }),
 

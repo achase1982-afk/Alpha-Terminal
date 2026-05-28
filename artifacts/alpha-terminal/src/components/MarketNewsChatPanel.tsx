@@ -111,6 +111,7 @@ export function MarketNewsChatPanel({
   const symbol = useTerminalStore((s) => s.symbol);
   const aiModel = useTerminalStore((s) => s.aiFeatureSettings.chat.model);
   const anthropicOpusEffort = useTerminalStore((s) => s.aiFeatureSettings.chat.anthropicOpusEffort);
+  const anthropicOpusSpeed = useTerminalStore((s) => s.aiFeatureSettings.chat.anthropicOpusSpeed);
   const setAiFeatureSetting = useTerminalStore((s) => s.setAiFeatureSetting);
   const setActiveChatThreadForSymbol = useTerminalStore((s) => s.setActiveChatThreadForSymbol);
 
@@ -362,6 +363,7 @@ export function MarketNewsChatPanel({
         threadId: activeThreadId,
         model: modelSend,
         anthropicOpusEffort,
+        anthropicOpusSpeed,
         useMultiAgent,
         multiAgentModels,
         synthesizerModel,
@@ -371,7 +373,7 @@ export function MarketNewsChatPanel({
         onRefreshThreads: () => void refreshThreads(),
       });
     },
-    [abortStreamForThread, activateThread, activeThreadId, anthropicOpusEffort, modelSend, multiAgentModels, refreshThreads, sendChatMessage, symU, synthesizerModel, useMultiAgent],
+    [abortStreamForThread, activateThread, activeThreadId, anthropicOpusEffort, anthropicOpusSpeed, modelSend, multiAgentModels, refreshThreads, sendChatMessage, symU, synthesizerModel, useMultiAgent],
   );
 
   const handleNewThread = useCallback(() => {

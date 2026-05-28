@@ -7,7 +7,7 @@ import { createGeminiClient, hasGeminiApiKey } from "./geminiClient.js";
 import { geminiThinkingConfigForModel } from "./geminiThinkingConfig.js";
 import {
   ANTHROPIC_EXTENDED_THINKING_BUDGET,
-  anthropicMessagesOutputConfig,
+  anthropicOpusMessageExtras,
   anthropicThinkingForMessagesApi,
   xaiReasoningProviderOptions,
 } from "./llmReasoningConfig.js";
@@ -22,7 +22,7 @@ import type {
   UniverseScreenRequest,
   UniverseScreenResponse,
 } from "./aiLabLlmTypes.js";
-import type { AnthropicOpusEffort } from "@workspace/ai-models";
+import type { AnthropicOpusCallOptions } from "@workspace/ai-models";
 import { type AiLabModelProvider, getActivePrompt } from "./aiLabConfig.js";
 import type { ConvictionDeskTelemetryProvider } from "./convictionDeskRouting.js";
 import { isDedicatedWebSearchApiEnabled } from "./webSearchApiClient.js";
@@ -468,7 +468,7 @@ export async function callAnthropicWithSystem(
   systemPrompt: string,
   prompt: string,
   cancelSignal?: AbortSignal,
-  opusEffort?: AnthropicOpusEffort | null,
+  opus?: AnthropicOpusCallOptions | null,
 ): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
@@ -484,7 +484,7 @@ export async function callAnthropicWithSystem(
       : 8192,
     system: systemPrompt,
     messages: [{ role: "user", content: prompt }],
-    ...anthropicMessagesOutputConfig(model, opusEffort),
+    ...anthropicOpusMessageExtras(model, opus),
   };
   if (thinking) {
     params.thinking = thinking as Anthropic.MessageCreateParamsNonStreaming["thinking"];
@@ -1111,7 +1111,7 @@ export async function callAnthropicWithSystemAndWebSearch(
   systemPrompt: string,
   prompt: string,
   cancelSignal?: AbortSignal,
-  opusEffort?: AnthropicOpusEffort | null,
+  opus?: AnthropicOpusCallOptions | null,
 ): Promise<WebSearchResult> {
   if (isDedicatedWebSearchApiEnabled()) {
     return callViaDedicatedWebSearchApi({
@@ -1135,7 +1135,7 @@ export async function callAnthropicWithSystemAndWebSearch(
     system: systemPrompt,
     messages: [{ role: "user", content: prompt }],
     tools: [ANTHROPIC_WEB_SEARCH_TOOL],
-    ...anthropicMessagesOutputConfig(model, opusEffort),
+    ...anthropicOpusMessageExtras(model, opus),
   };
   if (thinking) {
     params.thinking = thinking as Anthropic.MessageCreateParamsNonStreaming["thinking"];
@@ -1206,7 +1206,7 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
   onDelta: (text: string) => void,
   onStatus?: (status: string) => void,
   cancelSignal?: AbortSignal,
-  options?: { maxTokens?: number; opusEffort?: AnthropicOpusEffort | null },
+  options?: { maxTokens?: number; opus?: AnthropicOpusCallOptions | null },
 ): Promise<WebSearchResult> {
   if (isDedicatedWebSearchApiEnabled()) {
     return streamCallViaDedicatedWebSearchApi({
@@ -1240,7 +1240,7 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
     messages: [{ role: "user", content: prompt }],
     tools: [ANTHROPIC_WEB_SEARCH_TOOL],
     stream: true,
-    ...anthropicMessagesOutputConfig(model, options?.opusEffort),
+    ...anthropicOpusMessageExtras(model, options?.opus),
   };
   if (thinking) {
     params.thinking = thinking as Anthropic.MessageCreateParamsStreaming["thinking"];
@@ -1510,7 +1510,7 @@ export async function streamCallAnthropicConvictionDesk(
   options?: {
     maxTokens?: number;
     thinkingBudgetTokensOverride?: number;
-    opusEffort?: AnthropicOpusEffort | null;
+    opus?: AnthropicOpusCallOptions | null;
   },
 ): Promise<WebSearchResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -1538,7 +1538,7 @@ export async function streamCallAnthropicConvictionDesk(
     messages,
     tools: toolsAttached,
     stream: true,
-    ...anthropicMessagesOutputConfig(modelNameEffective, options?.opusEffort),
+    ...anthropicOpusMessageExtras(modelNameEffective, options?.opus),
   };
 
   if (thinking) {

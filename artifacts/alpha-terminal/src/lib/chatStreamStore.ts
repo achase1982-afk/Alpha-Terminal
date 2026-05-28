@@ -1,5 +1,5 @@
 import type { ChatAttachmentInput } from "@workspace/chat-types";
-import type { AnthropicOpusEffort } from "@workspace/ai-models";
+import type { AnthropicOpusEffort, AnthropicOpusSpeed } from "@workspace/ai-models";
 import { create } from "zustand";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { consumeChatSse, type ChatSseEvent } from "@/lib/chatSse";
@@ -72,6 +72,7 @@ export type SendChatMessageParams = {
   threadId: string | null;
   model: string;
   anthropicOpusEffort?: AnthropicOpusEffort;
+  anthropicOpusSpeed?: AnthropicOpusSpeed;
   useMultiAgent: boolean;
   multiAgentModels: string[];
   synthesizerModel: string;
@@ -449,6 +450,9 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
       requestBody.model = params.model;
       if (params.anthropicOpusEffort) {
         requestBody.anthropic_opus_effort = params.anthropicOpusEffort;
+      }
+      if (params.anthropicOpusSpeed && params.anthropicOpusSpeed !== "standard") {
+        requestBody.anthropic_opus_speed = params.anthropicOpusSpeed;
       }
     }
 

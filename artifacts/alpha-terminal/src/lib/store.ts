@@ -3,9 +3,12 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import {
   DEFAULT_AI_MODEL_ID,
   DEFAULT_ANTHROPIC_OPUS_EFFORT,
+  DEFAULT_ANTHROPIC_OPUS_SPEED,
   migrateLegacyModelIdToCatalog,
   normalizeAnthropicOpusEffort,
+  normalizeAnthropicOpusSpeed,
   type AnthropicOpusEffort,
+  type AnthropicOpusSpeed,
 } from '@workspace/ai-models';
 import {
   DEFAULT_CATALYST_GATE_SETTINGS,
@@ -194,17 +197,18 @@ export interface TerminalState {
   setAiTemp: (t: number) => void;
 
   aiFeatureSettings: {
-    marketPulse:   { model: string; temperature: number; anthropicOpusEffort: AnthropicOpusEffort };
-    technicals:    { model: string; temperature: number; anthropicOpusEffort: AnthropicOpusEffort };
-    strategist:    { model: string; temperature: number; anthropicOpusEffort: AnthropicOpusEffort };
-    chat:          { model: string; temperature: number; councilChairModel: string; anthropicOpusEffort: AnthropicOpusEffort };
-    scanner:       { model: string; temperature: number; anthropicOpusEffort: AnthropicOpusEffort };
+    marketPulse:   { model: string; temperature: number; anthropicOpusEffort: AnthropicOpusEffort; anthropicOpusSpeed: AnthropicOpusSpeed };
+    technicals:    { model: string; temperature: number; anthropicOpusEffort: AnthropicOpusEffort; anthropicOpusSpeed: AnthropicOpusSpeed };
+    strategist:    { model: string; temperature: number; anthropicOpusEffort: AnthropicOpusEffort; anthropicOpusSpeed: AnthropicOpusSpeed };
+    chat:          { model: string; temperature: number; councilChairModel: string; anthropicOpusEffort: AnthropicOpusEffort; anthropicOpusSpeed: AnthropicOpusSpeed };
+    scanner:       { model: string; temperature: number; anthropicOpusEffort: AnthropicOpusEffort; anthropicOpusSpeed: AnthropicOpusSpeed };
   };
   setAiFeatureSetting: {
     (feature: 'chat', key: 'councilChairModel', value: string): void;
     (feature: keyof TerminalState['aiFeatureSettings'], key: 'model', value: string): void;
     (feature: keyof TerminalState['aiFeatureSettings'], key: 'temperature', value: number): void;
     (feature: keyof TerminalState['aiFeatureSettings'], key: 'anthropicOpusEffort', value: AnthropicOpusEffort): void;
+    (feature: keyof TerminalState['aiFeatureSettings'], key: 'anthropicOpusSpeed', value: AnthropicOpusSpeed): void;
   };
 
   notificationPrefs: {
@@ -552,11 +556,11 @@ export const useTerminalStore = create<TerminalState>()(
       setAiTemp: (aiTemp) => set({ aiTemp }),
 
       aiFeatureSettings: {
-        marketPulse:   { model: DEFAULT_AI_MODEL_ID, temperature: 0, anthropicOpusEffort: DEFAULT_ANTHROPIC_OPUS_EFFORT },
-        technicals:    { model: DEFAULT_AI_MODEL_ID, temperature: 0, anthropicOpusEffort: DEFAULT_ANTHROPIC_OPUS_EFFORT },
-        strategist:    { model: DEFAULT_AI_MODEL_ID, temperature: 0, anthropicOpusEffort: DEFAULT_ANTHROPIC_OPUS_EFFORT },
-        chat:          { model: DEFAULT_AI_MODEL_ID, temperature: 0, councilChairModel: DEFAULT_AI_MODEL_ID, anthropicOpusEffort: DEFAULT_ANTHROPIC_OPUS_EFFORT },
-        scanner:       { model: DEFAULT_AI_MODEL_ID, temperature: 0, anthropicOpusEffort: DEFAULT_ANTHROPIC_OPUS_EFFORT },
+        marketPulse:   { model: DEFAULT_AI_MODEL_ID, temperature: 0, anthropicOpusEffort: DEFAULT_ANTHROPIC_OPUS_EFFORT, anthropicOpusSpeed: DEFAULT_ANTHROPIC_OPUS_SPEED },
+        technicals:    { model: DEFAULT_AI_MODEL_ID, temperature: 0, anthropicOpusEffort: DEFAULT_ANTHROPIC_OPUS_EFFORT, anthropicOpusSpeed: DEFAULT_ANTHROPIC_OPUS_SPEED },
+        strategist:    { model: DEFAULT_AI_MODEL_ID, temperature: 0, anthropicOpusEffort: DEFAULT_ANTHROPIC_OPUS_EFFORT, anthropicOpusSpeed: DEFAULT_ANTHROPIC_OPUS_SPEED },
+        chat:          { model: DEFAULT_AI_MODEL_ID, temperature: 0, councilChairModel: DEFAULT_AI_MODEL_ID, anthropicOpusEffort: DEFAULT_ANTHROPIC_OPUS_EFFORT, anthropicOpusSpeed: DEFAULT_ANTHROPIC_OPUS_SPEED },
+        scanner:       { model: DEFAULT_AI_MODEL_ID, temperature: 0, anthropicOpusEffort: DEFAULT_ANTHROPIC_OPUS_EFFORT, anthropicOpusSpeed: DEFAULT_ANTHROPIC_OPUS_SPEED },
       },
       setAiFeatureSetting: (feature: keyof TerminalState['aiFeatureSettings'], key: string, value: string | number) =>
         set((state) => ({
@@ -985,7 +989,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 32,
+      version: 33,
       storage: createJSONStorage(() => quotaSafeLocalStorage),
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
@@ -1343,6 +1347,16 @@ export const useTerminalStore = create<TerminalState>()(
               const row = features[key];
               if (!row || typeof row !== "object") continue;
               row.anthropicOpusEffort = normalizeAnthropicOpusEffort(row.anthropicOpusEffort);
+            }
+          }
+        }
+        if (version < 33) {
+          const features = s["aiFeatureSettings"] as Record<string, { anthropicOpusSpeed?: unknown }> | undefined;
+          if (features) {
+            for (const key of Object.keys(features)) {
+              const row = features[key];
+              if (!row || typeof row !== "object") continue;
+              row.anthropicOpusSpeed = normalizeAnthropicOpusSpeed(row.anthropicOpusSpeed);
             }
           }
         }

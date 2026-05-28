@@ -13,7 +13,7 @@ import {
   truncateChatThreadFromMessage,
   updateChatThreadSummary,
 } from "./chatDb.js";
-import type { AnthropicOpusEffort } from "@workspace/ai-models";
+import type { AnthropicOpusCallOptions } from "@workspace/ai-models";
 import { resolveChatLanguageModel } from "./chatModel.js";
 import { buildAmbientSymbolContextBlock } from "./ambientSymbolContext.js";
 import { getMarketContext } from "./getMarketContext.js";
@@ -201,8 +201,8 @@ export type RunChatTurnArgs = {
   attachments?: ChatAttachmentStored[];
   truncateFromMessageId?: string | null;
   model: string;
-  /** Anthropic Opus 4.7+ Messages API `output_config.effort` (ignored for non-Opus models). */
-  anthropicOpusEffort?: AnthropicOpusEffort | null;
+  /** Anthropic Opus 4.7+ effort and fast mode (ignored for non-Opus models). */
+  anthropicOpusOptions?: AnthropicOpusCallOptions | null;
   ambientSymbol?: string | null;
   clientTimeZone?: string | null;
   toolContext: ChatToolContext;
@@ -276,14 +276,14 @@ async function prepareTurnMessages(
  */
 async function synthesizeAfterEmptyToolTurn(args: {
   model: string;
-  anthropicOpusEffort?: AnthropicOpusEffort | null;
+  anthropicOpusOptions?: AnthropicOpusCallOptions | null;
   system: string;
   modelMessages: ModelMessage[];
   responseMessages: ModelMessage[];
   onEvent: (ev: ChatStreamEvent) => void;
   abortSignal?: AbortSignal;
 }): Promise<string> {
-  const resolved = resolveChatLanguageModel(args.model, args.anthropicOpusEffort);
+  const resolved = resolveChatLanguageModel(args.model, args.anthropicOpusOptions);
   const synthMessages: ModelMessage[] = [
     ...args.modelMessages,
     ...args.responseMessages,
@@ -328,7 +328,7 @@ async function runDraftChatTurn(args: {
   abortSignal?: AbortSignal;
 }): Promise<{ model: string; text?: string; error?: string }> {
   const tools = createChatTools({ ...args.toolContext, activeModel: args.model });
-  const resolved = resolveChatLanguageModel(args.model, args.toolContext.anthropicOpusEffort);
+  const resolved = resolveChatLanguageModel(args.model, args.toolContext.anthropicOpusOptions);
   const system = await buildChatSystemPromptWithAmbient(args.ambientSymbol, args.clientTimeZone);
   try {
     const result = await generateText({
@@ -359,7 +359,7 @@ async function runDraftChatTurn(args: {
 export async function runMultiAgentChatTurn(
   args: RunChatTurnArgs & { multiAgent: MultiAgentConfig },
 ): Promise<void> {
-  const { thread, userMessage, anthropicOpusEffort, ambientSymbol, clientTimeZone, toolContext, onEvent, multiAgent, abortSignal } = args;
+  const { thread, userMessage, anthropicOpusOptions, ambientSymbol, clientTimeZone, toolContext, onEvent, multiAgent, abortSignal } = args;
   const models = multiAgent.models.filter((m) => m.trim().length > 0);
   const synthesizerModel = multiAgent.synthesizer_model.trim();
   if (models.length === 0) {
@@ -382,7 +382,7 @@ export async function runMultiAgentChatTurn(
         modelMessages,
         ambientSymbol,
         clientTimeZone,
-        toolContext: { ...toolContext, activeModel: model, anthropicOpusEffort },
+        toolContext: { ...toolContext, activeModel: model, anthropicOpusOptions },
         abortSignal,
       }),
     ),
@@ -400,7 +400,7 @@ export async function runMultiAgentChatTurn(
     return;
   }
 
-  const synthResolved = resolveChatLanguageModel(synthesizerModel, anthropicOpusEffort);
+  const synthResolved = resolveChatLanguageModel(synthesizerModel, anthropicOpusOptions);
   const synthMessages: ModelMessage[] = [
     ...modelMessages,
     { role: "user", content: buildMultiAgentSynthesisUserContent(successes, failures) },
@@ -439,7 +439,7 @@ export async function runMultiAgentChatTurn(
       const response = await result.response;
       finalText = await synthesizeAfterEmptyToolTurn({
         model: synthesizerModel,
-        anthropicOpusEffort,
+        anthropicOpusOptions,
         system: synthSystem,
         modelMessages: synthMessages,
         responseMessages: response.messages as ModelMessage[],
@@ -462,12 +462,12 @@ export async function runMultiAgentChatTurn(
 }
 
 export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
-  const { thread, userMessage, model, anthropicOpusEffort, ambientSymbol, clientTimeZone, toolContext, onEvent, abortSignal } = args;
+  const { thread, userMessage, model, anthropicOpusOptions, ambientSymbol, clientTimeZone, toolContext, onEvent, abortSignal } = args;
 
   const { modelMessages } = await prepareTurnMessages(thread, userMessage, args.attachments ?? [], args.truncateFromMessageId);
 
-  const tools = createChatTools({ ...toolContext, activeModel: model, anthropicOpusEffort });
-  const resolved = resolveChatLanguageModel(model, anthropicOpusEffort);
+  const tools = createChatTools({ ...toolContext, activeModel: model, anthropicOpusOptions });
+  const resolved = resolveChatLanguageModel(model, anthropicOpusOptions);
   const system = await buildChatSystemPromptWithAmbient(ambientSymbol, clientTimeZone);
 
   const toolCallsLog: Array<{ toolCallId: string; toolName: string; input: unknown }> = [];
@@ -519,7 +519,7 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
       const response = await result.response;
       finalText = await synthesizeAfterEmptyToolTurn({
         model,
-        anthropicOpusEffort,
+        anthropicOpusOptions,
         system,
         modelMessages,
         responseMessages: response.messages as ModelMessage[],
