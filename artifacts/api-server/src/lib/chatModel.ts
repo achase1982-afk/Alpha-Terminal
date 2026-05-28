@@ -8,10 +8,16 @@ import { getXaiApiKey } from "./xaiEnv.js";
 import type { AnthropicOpusCallOptions } from "@workspace/ai-models";
 import {
   anthropicProviderOptionsForAiSdk,
+  type ChatExtendedThinkingOptions,
   googleThinkingProviderOptionsForAiSdk,
   openAiReasoningProviderOptionsForChat,
   xaiReasoningProviderOptionsForChat,
 } from "./llmReasoningConfig.js";
+
+export type ResolveChatModelOptions = {
+  opus?: AnthropicOpusCallOptions | null;
+  extendedThinkingEnabled?: boolean;
+};
 
 export function isGeminiModel(model: string): boolean {
   return model.startsWith("gemini-");
@@ -29,18 +35,45 @@ export type ResolvedChatModel =
   | { model: LanguageModel; temperature: number }
   | { model: LanguageModel; providerOptions: Record<string, unknown> };
 
+function chatThinkingOpts(enabled: boolean | undefined): ChatExtendedThinkingOptions {
+  return { enabled: enabled !== false };
+}
+
+function isResolveChatModelOptions(
+  options: ResolveChatModelOptions | AnthropicOpusCallOptions,
+): options is ResolveChatModelOptions {
+  return "extendedThinkingEnabled" in options || "opus" in options;
+}
+
+function normalizeResolveChatModelOptions(
+  options?: ResolveChatModelOptions | AnthropicOpusCallOptions | null,
+): ResolveChatModelOptions {
+  if (!options) return { opus: null, extendedThinkingEnabled: true };
+  if (isResolveChatModelOptions(options)) {
+    return {
+      opus: options.opus ?? null,
+      extendedThinkingEnabled: options.extendedThinkingEnabled !== false,
+    };
+  }
+  return { opus: options, extendedThinkingEnabled: true };
+}
+
 /** Resolve AI SDK language model for chat `streamText`. */
 export function resolveChatLanguageModel(
   modelId: string,
-  opus?: AnthropicOpusCallOptions | null,
+  opusOrOptions?: ResolveChatModelOptions | AnthropicOpusCallOptions | null,
 ): ResolvedChatModel {
+  const resolved = normalizeResolveChatModelOptions(opusOrOptions);
+  const opus = resolved.opus ?? null;
+  const thinking = chatThinkingOpts(resolved.extendedThinkingEnabled);
+
   if (isGeminiModel(modelId)) {
     const apiKey = getGeminiApiKey();
     if (!apiKey) throw new Error("Gemini API key not configured.");
     const google = createGoogleGenerativeAI({ apiKey });
-    const thinking = googleThinkingProviderOptionsForAiSdk(modelId);
-    if (thinking) {
-      return { model: google(modelId), providerOptions: thinking as Record<string, unknown> };
+    const thinkingOpts = googleThinkingProviderOptionsForAiSdk(modelId, thinking);
+    if (thinkingOpts) {
+      return { model: google(modelId), providerOptions: thinkingOpts as Record<string, unknown> };
     }
     return { model: google(modelId), temperature: 0 };
   }
@@ -48,7 +81,7 @@ export function resolveChatLanguageModel(
     const apiKey = getXaiApiKey();
     if (!apiKey) throw new Error("xAI API key not configured.");
     const xai = createXai({ apiKey });
-    const reasoning = xaiReasoningProviderOptionsForChat(modelId);
+    const reasoning = xaiReasoningProviderOptionsForChat(modelId, thinking);
     return {
       model: xai(modelId),
       ...(reasoning
@@ -60,7 +93,7 @@ export function resolveChatLanguageModel(
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error("OpenAI API key not configured.");
     const openai = createOpenAI({ apiKey });
-    const reasoning = openAiReasoningProviderOptionsForChat(modelId);
+    const reasoning = openAiReasoningProviderOptionsForChat(modelId, thinking);
     if (reasoning) {
       return { model: openai(modelId), providerOptions: reasoning as Record<string, unknown> };
     }
@@ -69,9 +102,9 @@ export function resolveChatLanguageModel(
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("Claude API key not configured.");
   const anthropic = createAnthropic({ apiKey });
-  const thinking = anthropicProviderOptionsForAiSdk(modelId, opus);
-  if (thinking) {
-    return { model: anthropic(modelId), providerOptions: thinking.providerOptions };
+  const anthropicOpts = anthropicProviderOptionsForAiSdk(modelId, opus, thinking);
+  if (anthropicOpts) {
+    return { model: anthropic(modelId), providerOptions: anthropicOpts.providerOptions };
   }
   return { model: anthropic(modelId), temperature: 0 };
 }

@@ -7,4 +7,6 @@ export type ChatToolContext = {
   activeModel: string;
   /** Opus 4.7+ effort and fast mode for native Anthropic web search tool calls. */
   anthropicOpusOptions?: AnthropicOpusCallOptions | null;
+  /** Provider extended thinking / reasoning for this turn (default on). */
+  extendedThinkingEnabled?: boolean;
 };

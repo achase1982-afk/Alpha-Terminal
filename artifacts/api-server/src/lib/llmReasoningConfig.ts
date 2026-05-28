@@ -90,18 +90,27 @@ function resolveAnthropicOpusCallOptions(
  * Vercel AI SDK `@ai-sdk/anthropic`: spread into `streamText` / `generateText`.
  * Pass Opus options for `output_config.effort` and `speed: "fast"`.
  */
+export type ChatExtendedThinkingOptions = {
+  /** When false, omit provider-native reasoning/thinking for chat turns. Default true. */
+  enabled?: boolean;
+};
+
 export function anthropicProviderOptionsForAiSdk(
   model: string,
   opus?: AnthropicOpusCallOptions | null,
+  thinking?: ChatExtendedThinkingOptions | null,
 ): AnthropicAiSdkProviderOptions | undefined {
   if (!isAnthropicExtendedThinkingCapableModel(model)) return undefined;
   const { effort: resolvedEffort, speed: resolvedSpeed } = resolveAnthropicOpusCallOptions(model, opus);
 
   const anthropic: AnthropicAiSdkProviderOptions["providerOptions"]["anthropic"] = {};
-  if (isAnthropicAdaptiveThinkingModel(model)) {
-    anthropic.thinking = { type: "adaptive" };
-  } else {
-    anthropic.thinking = { type: "enabled", budgetTokens: ANTHROPIC_EXTENDED_THINKING_BUDGET };
+  const thinkingOn = thinking?.enabled !== false;
+  if (thinkingOn) {
+    if (isAnthropicAdaptiveThinkingModel(model)) {
+      anthropic.thinking = { type: "adaptive" };
+    } else {
+      anthropic.thinking = { type: "enabled", budgetTokens: ANTHROPIC_EXTENDED_THINKING_BUDGET };
+    }
   }
   if (resolvedEffort) {
     anthropic.effort = resolvedEffort as Anthropic.OutputConfig["effort"];
@@ -167,7 +176,11 @@ export function xaiReasoningProviderOptions(model: string): XaiReasoningProvider
  * xAI chat-language-model (`xai("grok-…")`) — only `low` and `high` are valid.
  * Maps internal `medium` tier to `high` so default Grok models still use reasoning.
  */
-export function xaiReasoningProviderOptionsForChat(model: string): XaiChatReasoningProviderOptions | undefined {
+export function xaiReasoningProviderOptionsForChat(
+  model: string,
+  thinking?: ChatExtendedThinkingOptions | null,
+): XaiChatReasoningProviderOptions | undefined {
+  if (thinking?.enabled === false) return undefined;
   const tier = xaiReasoningTier(model);
   if (tier == null) return undefined;
   return { xai: { reasoningEffort: tier === "low" ? "low" : "high" } };
@@ -180,7 +193,9 @@ export type OpenAiChatReasoningProviderOptions = {
 /** GPT-5.x chat/reasoning via AI SDK `providerOptions.openai.reasoningEffort`. */
 export function openAiReasoningProviderOptionsForChat(
   model: string,
+  thinking?: ChatExtendedThinkingOptions | null,
 ): OpenAiChatReasoningProviderOptions | undefined {
+  if (thinking?.enabled === false) return undefined;
   if (!/^gpt-5/.test(model) && !/^o\d/.test(model)) return undefined;
   const effort = /^gpt-5\.5/.test(model) ? "high" : "medium";
   return { openai: { reasoningEffort: effort } };
@@ -198,7 +213,9 @@ export type GoogleThinkingProviderOptions = {
 /** Maps `geminiThinkingConfigForModel` into AI SDK Google provider options. */
 export function googleThinkingProviderOptionsForAiSdk(
   model: string,
+  thinking?: ChatExtendedThinkingOptions | null,
 ): GoogleThinkingProviderOptions | undefined {
+  if (thinking?.enabled === false) return undefined;
   const cfg = geminiThinkingConfigForModel(model);
   if (!cfg) return undefined;
   return {

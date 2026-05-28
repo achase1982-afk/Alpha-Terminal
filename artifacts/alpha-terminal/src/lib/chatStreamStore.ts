@@ -2,6 +2,7 @@ import type { ChatAttachmentInput } from "@workspace/chat-types";
 import type { AnthropicOpusEffort, AnthropicOpusSpeed } from "@workspace/ai-models";
 import { create } from "zustand";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { logChatTelemetry } from "@/lib/chatTelemetry";
 import { consumeChatSse, type ChatSseEvent } from "@/lib/chatSse";
 import {
   findAssistantReplyForUserTurn,
@@ -75,6 +76,7 @@ export type SendChatMessageParams = {
   model: string;
   anthropicOpusEffort?: AnthropicOpusEffort;
   anthropicOpusSpeed?: AnthropicOpusSpeed;
+  extendedThinkingEnabled?: boolean;
   useMultiAgent: boolean;
   multiAgentModels: string[];
   synthesizerModel: string;
@@ -394,6 +396,19 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
 
     get().abortInFlightFetchForThread(params.threadId, symU);
 
+    logChatTelemetry("INFO", "Chat send started", {
+      symbol: symU,
+      threadId: params.threadId,
+      model: params.model,
+      useMultiAgent: params.useMultiAgent,
+      multiAgentCount: params.multiAgentModels.length,
+      extendedThinkingEnabled: params.extendedThinkingEnabled !== false,
+      anthropicOpusEffort: params.anthropicOpusEffort,
+      anthropicOpusSpeed: params.anthropicOpusSpeed,
+      textChars: text.length,
+      attachmentCount: attachments.length,
+    });
+
     const useServerMultiAgent = params.useMultiAgent && params.multiAgentModels.length >= 2;
     if (params.useMultiAgent && params.multiAgentModels.length < 2) {
       const assistantId = nextChatMsgId();
@@ -498,6 +513,9 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
         requestBody.anthropic_opus_speed = params.anthropicOpusSpeed;
       }
     }
+    if (params.extendedThinkingEnabled === false) {
+      requestBody.extended_thinking = false;
+    }
 
     const patchStream = (
       key: string,
@@ -534,6 +552,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
         : undefined;
 
     try {
+      logChatTelemetry("INFO", "Chat auth fetch starting", { endpoint: "/api/ai/chat" });
       const res = await fetchWithAuth("/api/ai/chat", {
         method: "POST",
         headers: {
@@ -546,6 +565,10 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
       });
 
       const contentType = res.headers.get("content-type") || "";
+      logChatTelemetry(res.ok ? "INFO" : "ERROR", "Chat HTTP response received", {
+        status: res.status,
+        contentType,
+      });
       if (!res.ok || contentType.includes("text/html")) {
         const retryable = RETRYABLE_CHAT_STATUS.has(res.status) || contentType.includes("text/html");
         const label = !res.ok ? `Server returned ${res.status}` : "Unexpected HTML response";
@@ -569,8 +592,13 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
       }
 
       let receivedDone = false;
+      let loggedStreamOpen = false;
 
       await consumeChatSse(res, (ev: ChatSseEvent) => {
+        if (!loggedStreamOpen) {
+          loggedStreamOpen = true;
+          logChatTelemetry("INFO", "Chat SSE stream opened", { threadId });
+        }
         const cur = get().streamsByThreadId[streamKey];
         if (!cur || isSupersededSend(cur, sendId, controller)) return;
 
@@ -637,6 +665,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
             activityNote: stillRunning ? latest.activityNote : "Composing answer…",
           });
         } else if (ev.type === "error") {
+          logChatTelemetry("ERROR", "Chat SSE error event", { message: ev.message });
           patchStream(streamKey, {
             inFlightAssistant: {
               id: assistantId,
@@ -653,6 +682,10 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
           });
         } else if (ev.type === "done") {
           receivedDone = true;
+          logChatTelemetry("INFO", "Chat SSE done", {
+            threadId: ev.thread_id,
+            assistantMessageId: ev.assistant_message_id,
+          });
           const persistedId = ev.assistant_message_id?.trim() || assistantId;
           patchStream(streamKey, {
             inFlightAssistant: {
@@ -714,6 +747,10 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
       const resolvedThreadId = threadId ?? (streamKey.startsWith("__pending__") ? null : streamKey);
 
       if (signal.aborted || (err as Error).name === "AbortError") {
+        logChatTelemetry("WARN", "Chat fetch aborted", {
+          stopRequested: cur.stopRequested,
+          hadThreadId: Boolean(resolvedThreadId),
+        });
         if (!cur.stopRequested && resolvedThreadId) {
           const flight = cur.inFlightAssistant;
           patchStream(streamKey, {
@@ -780,6 +817,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
       }
 
       const errMsg = formatChatNetworkError((err as Error).message || "Connection failed");
+      logChatTelemetry("ERROR", "Chat send failed", { message: errMsg });
       patchStream(streamKey, {
         inFlightAssistant: {
           id: assistantId,

@@ -246,6 +246,8 @@ export type RunChatTurnArgs = {
   model: string;
   /** Anthropic Opus 4.7+ effort and fast mode (ignored for non-Opus models). */
   anthropicOpusOptions?: AnthropicOpusCallOptions | null;
+  /** Provider extended thinking / reasoning (default on). */
+  extendedThinkingEnabled?: boolean;
   ambientSymbol?: string | null;
   clientTimeZone?: string | null;
   toolContext: ChatToolContext;
@@ -320,13 +322,17 @@ async function prepareTurnMessages(
 async function synthesizeAfterEmptyToolTurn(args: {
   model: string;
   anthropicOpusOptions?: AnthropicOpusCallOptions | null;
+  extendedThinkingEnabled?: boolean;
   system: string;
   modelMessages: ModelMessage[];
   responseMessages: ModelMessage[];
   onEvent: (ev: ChatStreamEvent) => void;
   abortSignal?: AbortSignal;
 }): Promise<string> {
-  const resolved = resolveChatLanguageModel(args.model, args.anthropicOpusOptions);
+  const resolved = resolveChatLanguageModel(args.model, {
+    opus: args.anthropicOpusOptions,
+    extendedThinkingEnabled: args.extendedThinkingEnabled,
+  });
   const synthMessages: ModelMessage[] = [
     ...args.modelMessages,
     ...args.responseMessages,
@@ -371,7 +377,10 @@ async function runDraftChatTurn(args: {
   abortSignal?: AbortSignal;
 }): Promise<{ model: string; text?: string; error?: string }> {
   const tools = createChatTools({ ...args.toolContext, activeModel: args.model });
-  const resolved = resolveChatLanguageModel(args.model, args.toolContext.anthropicOpusOptions);
+  const resolved = resolveChatLanguageModel(args.model, {
+    opus: args.toolContext.anthropicOpusOptions,
+    extendedThinkingEnabled: args.toolContext.extendedThinkingEnabled,
+  });
   const system = await buildChatSystemPromptWithAmbient(args.ambientSymbol, args.clientTimeZone);
   try {
     const result = await generateText({
@@ -425,7 +434,12 @@ export async function runMultiAgentChatTurn(
         modelMessages,
         ambientSymbol,
         clientTimeZone,
-        toolContext: { ...toolContext, activeModel: model, anthropicOpusOptions },
+        toolContext: {
+          ...toolContext,
+          activeModel: model,
+          anthropicOpusOptions,
+          extendedThinkingEnabled: args.extendedThinkingEnabled,
+        },
         abortSignal,
       }),
     ),
@@ -443,7 +457,10 @@ export async function runMultiAgentChatTurn(
     return;
   }
 
-  const synthResolved = resolveChatLanguageModel(synthesizerModel, anthropicOpusOptions);
+  const synthResolved = resolveChatLanguageModel(synthesizerModel, {
+    opus: anthropicOpusOptions,
+    extendedThinkingEnabled: args.extendedThinkingEnabled,
+  });
   const synthMessages: ModelMessage[] = [
     ...modelMessages,
     { role: "user", content: buildMultiAgentSynthesisUserContent(successes, failures) },
@@ -483,6 +500,7 @@ export async function runMultiAgentChatTurn(
       finalText = await synthesizeAfterEmptyToolTurn({
         model: synthesizerModel,
         anthropicOpusOptions,
+        extendedThinkingEnabled: args.extendedThinkingEnabled,
         system: synthSystem,
         modelMessages: synthMessages,
         responseMessages: response.messages as ModelMessage[],
@@ -510,7 +528,10 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
   const { modelMessages } = await prepareTurnMessages(thread, userMessage, args.attachments ?? [], args.truncateFromMessageId);
 
   const tools = createChatTools({ ...toolContext, activeModel: model, anthropicOpusOptions });
-  const resolved = resolveChatLanguageModel(model, anthropicOpusOptions);
+  const resolved = resolveChatLanguageModel(model, {
+    opus: anthropicOpusOptions,
+    extendedThinkingEnabled: args.extendedThinkingEnabled,
+  });
   const system = await buildChatSystemPromptWithAmbient(ambientSymbol, clientTimeZone);
 
   onEvent({ type: "status", note: "thinking" });
@@ -573,6 +594,7 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
       finalText = await synthesizeAfterEmptyToolTurn({
         model,
         anthropicOpusOptions,
+        extendedThinkingEnabled: args.extendedThinkingEnabled,
         system,
         modelMessages,
         responseMessages: response.messages as ModelMessage[],

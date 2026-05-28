@@ -132,15 +132,22 @@ router.post("/browser-events", async (req: Request, res: Response): Promise<void
       res.status(400).json({ error: "Invalid body" });
       return;
     }
-    const rows = parsed.data.events.map((e) => ({
-      service: "web" as const,
-      system: "CLIENT",
-      level: e.level,
-      message: e.message,
-      subsystem: "BROWSER",
-      details: { ...(e.details ?? {}), clerk_user_id: userId },
-      requestId: null as string | null,
-    }));
+    const rows = parsed.data.events.map((e) => {
+      const rawDetails = { ...(e.details ?? {}) } as Record<string, unknown>;
+      const telemetrySystem =
+        rawDetails.telemetrySystem === "CHAT" ? ("CHAT" as const) : ("CLIENT" as const);
+      delete rawDetails.telemetrySystem;
+      const details = { ...rawDetails, clerk_user_id: userId };
+      return {
+        service: "web" as const,
+        system: telemetrySystem,
+        level: e.level,
+        message: e.message,
+        subsystem: telemetrySystem === "CHAT" ? "CHAT" : "BROWSER",
+        details,
+        requestId: null as string | null,
+      };
+    });
     await db.insert(telemetryEventsTable).values(rows);
     res.json({ ok: true, inserted: rows.length });
   } catch (err: unknown) {

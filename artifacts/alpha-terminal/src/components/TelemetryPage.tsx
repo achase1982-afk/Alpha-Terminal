@@ -57,11 +57,12 @@ const SEV = {
 
 const SYSTEMS = [
   "SCHWAB_API", "SCHWAB_STREAM", "IBKR", "YAHOO", "SEC_EDGAR",
-  "SCANNER", "STRATEGIST", "RISK_GATE", "EXIT_STAGING",
+  "SCANNER", "STRATEGIST", "CHAT", "RISK_GATE", "EXIT_STAGING",
   "PUSH_NOTIFICATION", "MARKET_PULSE", "POLYGON_API", "DATABASE", "API",
 ];
 
 function fmtSystem(sys: string): string {
+  if (sys === "CHAT") return "Chat";
   return sys.replace(/_/g, " ");
 }
 
