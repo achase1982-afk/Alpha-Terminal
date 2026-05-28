@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   mergeChatDisplayMessages,
+  resolveChatStreamStateForSymbol,
   type ChatThreadStreamState,
   type ChatUiMessage,
 } from "../chatStreamStore";
@@ -17,6 +18,8 @@ function stream(partial: Partial<ChatThreadStreamState>): ChatThreadStreamState 
     toolPills: [],
     activeMultiAgentCount: 0,
     lastFailedMessage: null,
+    inFlightReasoning: "",
+    activityNote: "",
     ...partial,
   };
 }
@@ -45,5 +48,30 @@ describe("mergeChatDisplayMessages", () => {
     }));
     expect(merged).toHaveLength(3);
     expect(merged[2]?.id).toBe("u2");
+  });
+});
+
+
+describe("resolveChatStreamStateForSymbol", () => {
+  it("prefers an in-flight stream for the symbol during thread id migration", () => {
+    const sym = "AAPL";
+    const pending = "__pending__:AAPL";
+    const threadId = "thread-new";
+    const streams = {
+      [threadId]: stream({
+        threadId,
+        symbol: sym,
+        isStreaming: true,
+      }),
+    };
+    const resolved = resolveChatStreamStateForSymbol(streams, sym, null);
+    expect(resolved?.threadId).toBe(threadId);
+  });
+
+  it("ignores a stream for another symbol on the active thread id", () => {
+    const streams = {
+      t1: stream({ threadId: "t1", symbol: "MSFT", isStreaming: true }),
+    };
+    expect(resolveChatStreamStateForSymbol(streams, "AAPL", "t1")).toBeNull();
   });
 });
