@@ -29,7 +29,7 @@ import {
   streamCallViaDedicatedWebSearchApi,
 } from "./webSearchDedicatedPath.js";
 
-const DEFAULT_ANALYST_MODEL = "claude-opus-4-7";
+const DEFAULT_ANALYST_MODEL = "claude-opus-4-8";
 const GEMINI_WEB_SEARCH_MAX_ATTEMPTS = 4;
 
 function sleep(ms: number): Promise<void> {
@@ -1216,7 +1216,7 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
   }
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
-  // Opus 4.7 with adaptive thinking + web search can run 4-8 minutes per turn;
+  // Opus 4.8 with adaptive thinking + web search can run 4-8 minutes per turn;
   // a Debate (6 turns + arbitration) easily exceeds the SDK's default 10-minute
   // socket timeout. Bump to 20 minutes per call so debates complete instead of
   // failing mid-stream with an opaque "request timed out".
@@ -1373,7 +1373,7 @@ function countAnthropicWebSearchServerToolUses(content: unknown): number {
 }
 
 /** Default Anthropic model id for Conviction Desk when settings route to Opus. */
-export const CONVICTION_DESK_ANTHROPIC_MODEL = "claude-opus-4-7";
+export const CONVICTION_DESK_ANTHROPIC_MODEL = "claude-opus-4-8";
 
 function extractOpenAIOutputArray(response: unknown): Array<Record<string, unknown>> {
   if (!response || typeof response !== "object") return [];

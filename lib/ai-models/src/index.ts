@@ -11,7 +11,7 @@ export type StrategistModelProvider = AiModelProvider | "xai";
 export type AiModelId =
   | "gemini-3.5-flash"
   | "gemini-3.1-pro-preview"
-  | "claude-opus-4-7"
+  | "claude-opus-4-8"
   | "claude-sonnet-4-6"
   | "gpt-5.5"
   | "gpt-5.4-mini";
@@ -31,7 +31,7 @@ export interface AiModelCatalogEntry {
 export const AI_MODEL_CATALOG: readonly AiModelCatalogEntry[] = [
   { id: "gemini-3.5-flash", provider: "google", label: "Gemini 3.5 Flash + thinking" },
   { id: "gemini-3.1-pro-preview", provider: "google", label: "Gemini 3.1 Pro + thinking" },
-  { id: "claude-opus-4-7", provider: "anthropic", label: "Claude Opus 4.7 + adaptive thinking" },
+  { id: "claude-opus-4-8", provider: "anthropic", label: "Claude Opus 4.8 + adaptive thinking" },
   { id: "claude-sonnet-4-6", provider: "anthropic", label: "Claude Sonnet 4.6 + thinking" },
   { id: "gpt-5.5", provider: "openai", label: "GPT-5.5 + thinking (high)" },
   { id: "gpt-5.4-mini", provider: "openai", label: "GPT-5.4 Mini + thinking (medium)" },
@@ -39,7 +39,7 @@ export const AI_MODEL_CATALOG: readonly AiModelCatalogEntry[] = [
 
 export const AI_MODEL_IDS: readonly AiModelId[] = AI_MODEL_CATALOG.map((e) => e.id);
 
-export const DEFAULT_AI_MODEL_ID: AiModelId = "claude-opus-4-7";
+export const DEFAULT_AI_MODEL_ID: AiModelId = "claude-opus-4-8";
 
 const AI_MODEL_ID_SET = new Set<string>(AI_MODEL_IDS);
 
@@ -63,7 +63,7 @@ export function aiModelSelectLabel(id: string): string {
 }
 
 export const MODELS_BY_PROVIDER: Record<AiModelProvider, readonly AiModelId[]> = {
-  anthropic: ["claude-opus-4-7", "claude-sonnet-4-6"],
+  anthropic: ["claude-opus-4-8", "claude-sonnet-4-6"],
   google: ["gemini-3.5-flash", "gemini-3.1-pro-preview"],
   openai: ["gpt-5.5", "gpt-5.4-mini"],
 };
@@ -92,7 +92,7 @@ export const STRATEGIST_MODEL_CATALOG_VERSION = 6;
 
 /** Remap v5 strategist catalog indices (8 models) → v6 (6 models). */
 export const STRATEGIST_CATALOG_V5_TO_V6_INDEX: readonly number[] = [
-  2, // 0 opus 4.7 → 2
+  2, // 0 opus 4.8 → 2
   4, // 1 gpt-5.5 → 4
   5, // 2 gpt-5.4-mini → 5
   1, // 3 gemini 3.1 pro → 1
@@ -113,8 +113,9 @@ export function remapStrategistCatalogIndexV5ToV6(idx: number): number {
 
 /** Legacy persisted model ids → catalog id (AI Parameters / chat). */
 const LEGACY_MODEL_TO_CATALOG: Record<string, AiModelId> = {
-  "claude-opus-4-6": "claude-opus-4-7",
-  "claude-opus-4-20250514": "claude-opus-4-7",
+  "claude-opus-4-7": "claude-opus-4-8",
+  "claude-opus-4-6": "claude-opus-4-8",
+  "claude-opus-4-20250514": "claude-opus-4-8",
   "claude-haiku-4-5": "claude-sonnet-4-6",
   "gemini-3-flash-preview": "gemini-3.5-flash",
   "gemini-2.5-pro": "gemini-3.5-flash",
@@ -124,9 +125,9 @@ const LEGACY_MODEL_TO_CATALOG: Record<string, AiModelId> = {
   "gpt-5.2": "gpt-5.5",
   "gpt-5": "gpt-5.5",
   "gpt-5-mini": "gpt-5.4-mini",
-  "grok-4-1-fast-reasoning": "claude-opus-4-7",
-  "grok-4": "claude-opus-4-7",
-  "grok-3": "claude-opus-4-7",
+  "grok-4-1-fast-reasoning": "claude-opus-4-8",
+  "grok-4": "claude-opus-4-8",
+  "grok-3": "claude-opus-4-8",
 };
 
 export function migrateLegacyModelIdToCatalog(value: string | undefined | null): AiModelId {

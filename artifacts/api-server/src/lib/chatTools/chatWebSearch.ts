@@ -65,7 +65,7 @@ export async function runChatNativeWebSearch(
   activeModel: string,
   query: string,
 ): Promise<ChatWebSearchResult | { error: string }> {
-  const model = activeModel.trim() || "claude-opus-4-7";
+  const model = activeModel.trim() || "claude-opus-4-8";
   const signal = AbortSignal.timeout(24_000);
 
   if (isDedicatedWebSearchApiEnabled()) {

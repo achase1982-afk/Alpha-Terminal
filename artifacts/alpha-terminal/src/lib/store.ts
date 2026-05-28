@@ -609,7 +609,7 @@ export const useTerminalStore = create<TerminalState>()(
 
       aiLabStrategistConfig: {
         analystModelProvider: 'anthropic',
-        analystModelName: 'claude-opus-4-6',
+        analystModelName: 'claude-opus-4-8',
         analystTemperature: 0,
         skepticModelProvider: 'google',
         skepticModelName: 'gemini-3.1-pro-preview',
@@ -978,7 +978,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 30,
+      version: 31,
       storage: createJSONStorage(() => quotaSafeLocalStorage),
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
@@ -1302,6 +1302,30 @@ export const useTerminalStore = create<TerminalState>()(
               if (typeof j.lastServerProgressAt !== "number") {
                 j.lastServerProgressAt = j.startedAt;
               }
+            }
+          }
+        }
+        if (version < 31) {
+          if (typeof s["aiModel"] === "string") {
+            s["aiModel"] = migrateLegacyModelIdToCatalog(s["aiModel"]);
+          }
+          const features = s["aiFeatureSettings"] as Record<string, { model?: string; councilChairModel?: string }> | undefined;
+          if (features) {
+            for (const key of Object.keys(features)) {
+              const row = features[key];
+              if (row?.model) row.model = migrateLegacyModelIdToCatalog(row.model);
+              if (row?.councilChairModel) {
+                row.councilChairModel = migrateLegacyModelIdToCatalog(row.councilChairModel);
+              }
+            }
+          }
+          const cfg = s["aiLabStrategistConfig"] as Record<string, unknown> | undefined;
+          if (cfg && typeof cfg === "object") {
+            if (typeof cfg["analystModelName"] === "string") {
+              cfg["analystModelName"] = migrateLegacyModelIdToCatalog(cfg["analystModelName"]);
+            }
+            if (typeof cfg["skepticModelName"] === "string") {
+              cfg["skepticModelName"] = migrateLegacyModelIdToCatalog(cfg["skepticModelName"]);
             }
           }
         }

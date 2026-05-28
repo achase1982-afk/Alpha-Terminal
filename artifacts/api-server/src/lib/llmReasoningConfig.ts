@@ -11,7 +11,7 @@ export const ANTHROPIC_EXTENDED_THINKING_BUDGET = 4096;
 
 /**
  * Claude Opus/Sonnet 4.7+ use adaptive thinking in the Messages API.
- * Matches ids like `claude-opus-4-7`, `claude-sonnet-4-7-20250514`, etc.
+ * Matches ids like `claude-opus-4-8`, `claude-opus-4-7`, `claude-sonnet-4-7-20250514`, etc.
  */
 export function isAnthropicAdaptiveThinkingModel(model: string): boolean {
   return /^claude-(opus|sonnet)-4-([7-9]|\d{2,})(?:[-._]|$)/.test(model);

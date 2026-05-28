@@ -69,7 +69,7 @@ export interface StrategistConfig {
 /**
  * Maps pre–four-model catalog indices (the former `STRATEGIST_MODEL_OPTIONS`
  * order) to the new 0–5 index. Used for one-time DB migration.
- * Anthropic slots (non–Opus 4.7) → 0; OpenAI (non–5.5) → 1; Gemini (non–3.1 Pro) → 3;
+ * Anthropic slots (non–Opus 4.8) → 0; OpenAI (non–5.5) → 1; Gemini (non–3.1 Pro) → 3;
  * xAI (non–Grok 4.20 multi-agent snapshot) → 5.
  */
 const LEGACY_STRATEGIST_MODEL_INDEX_TO_NEW: readonly number[] = [
@@ -528,7 +528,7 @@ export function getSettingMeta(): SettingMetaEntry[] {
       { value: 5, label: "Conviction Desk (memo JSON)" },
     ] },
     { key: "strategistSoloModelIdx", label: "Solo Model", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used in Solo mode and Solo Desk mode (one consolidated Desk-shaped pass). In Desk mode this slot is used for the Volatility section.", options: modelOptions },
-    { key: "strategistConvictionModelIdx", label: "Conviction Desk", group: "Strategist", default: 2, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Single-pass trade memo JSON for Conviction Desk. Catalog: 0 = Gemini 3.5 + thinking, 1 = Gemini 3.1 Pro, 2 = Claude Opus 4.7 + adaptive thinking, 3 = Claude Sonnet 4.6 + thinking, 4 = GPT-5.5 + thinking, 5 = GPT-5.4 Mini.", options: modelOptions },
+    { key: "strategistConvictionModelIdx", label: "Conviction Desk", group: "Strategist", default: 2, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Single-pass trade memo JSON for Conviction Desk. Catalog: 0 = Gemini 3.5 + thinking, 1 = Gemini 3.1 Pro, 2 = Claude Opus 4.8 + adaptive thinking, 3 = Claude Sonnet 4.6 + thinking, 4 = GPT-5.5 + thinking, 5 = GPT-5.4 Mini.", options: modelOptions },
     { key: "strategistDebateAModelIdx", label: "Debate — Bull Model", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used to argue the Bull side in Debate mode. In Desk mode this slot is used for the Flow section. Unused in Solo Desk mode (Solo model slot runs the full report).", options: modelOptions },
     { key: "strategistDebateBModelIdx", label: "Debate — Bear Model", group: "Strategist", default: 1, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used to argue the Bear side in Debate mode. In Desk mode this slot is used for the Catalyst section. Unused in Solo Desk mode (Solo model slot runs the full report).", options: modelOptions },
     { key: "strategistArbitratorModelIdx", label: "Debate — Arbitrator Model", group: "Strategist", default: 0, min: -1, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used in Phase 3 to arbitrate between Bull's and Bear's structure proposals and ship the final trade. In Desk mode this slot is used for the Decision section. Unused in Solo Desk mode (Solo model slot runs the full report).", options: [{ value: -1, label: "Debate Winner (winning side promoted to arbitrator pass)" }, ...modelOptions] },
