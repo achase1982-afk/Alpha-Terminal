@@ -1,5 +1,7 @@
 import { generateText, stepCountIs, streamText, type ModelMessage } from "ai";
+import type { ChatAttachmentStored } from "@workspace/chat-types";
 import type { ChatMessageRow, ChatThreadRow } from "@workspace/db";
+import { buildUserModelContent } from "./chatAttachments.js";
 import { createChatTools } from "./chatTools/index.js";
 import type { ChatToolContext } from "./chatTools/types.js";
 import {
@@ -8,6 +10,7 @@ import {
   insertChatMessage,
   listChatMessages,
   sumThreadTokenCount,
+  truncateChatThreadFromMessage,
   updateChatThreadSummary,
 } from "./chatDb.js";
 import { resolveChatLanguageModel } from "./chatModel.js";
@@ -139,9 +142,10 @@ export function buildModelMessagesFromHistory(
   }
   for (const row of recent) {
     const text = row.content?.trim() ?? "";
-    if (!text && row.role === "assistant") continue;
+    const attachments = (row.attachments ?? []) as ChatAttachmentStored[];
+    if (!text && !attachments.length && row.role === "assistant") continue;
     if (row.role === "user") {
-      out.push({ role: "user", content: text });
+      out.push({ role: "user", content: buildUserModelContent(text, attachments) });
     } else if (row.role === "assistant") {
       out.push({ role: "assistant", content: text });
     }
@@ -184,6 +188,8 @@ export async function maybeSummarizeThread(thread: ChatThreadRow): Promise<strin
 export type RunChatTurnArgs = {
   thread: ChatThreadRow;
   userMessage: string;
+  attachments?: ChatAttachmentStored[];
+  truncateFromMessageId?: string | null;
   model: string;
   ambientSymbol?: string | null;
   clientTimeZone?: string | null;
@@ -231,17 +237,23 @@ function buildMultiAgentSynthesisUserContent(
 async function prepareTurnMessages(
   thread: ChatThreadRow,
   userMessage: string,
+  attachments: ChatAttachmentStored[],
+  truncateFromMessageId?: string | null,
 ): Promise<{ summary: string | null; modelMessages: ModelMessage[] }> {
+  if (truncateFromMessageId) {
+    await truncateChatThreadFromMessage(thread.id, truncateFromMessageId);
+  }
   await insertChatMessage({
     threadId: thread.id,
     role: "user",
     content: userMessage.trim(),
+    attachments: attachments.length > 0 ? attachments : null,
   });
   const summary = await maybeSummarizeThread(thread);
   const history = await listChatMessages(thread.id);
   const modelMessages: ModelMessage[] = [
     ...buildModelMessagesFromHistory(history.slice(0, -1), summary),
-    { role: "user", content: userMessage.trim() },
+    { role: "user", content: buildUserModelContent(userMessage.trim(), attachments) },
   ];
   return { summary, modelMessages };
 }
@@ -346,7 +358,7 @@ export async function runMultiAgentChatTurn(
     return;
   }
 
-  const { modelMessages } = await prepareTurnMessages(thread, userMessage);
+  const { modelMessages } = await prepareTurnMessages(thread, userMessage, args.attachments ?? [], args.truncateFromMessageId);
 
   if (abortSignal?.aborted) return;
 
@@ -435,7 +447,7 @@ export async function runMultiAgentChatTurn(
 export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
   const { thread, userMessage, model, ambientSymbol, clientTimeZone, toolContext, onEvent, abortSignal } = args;
 
-  const { modelMessages } = await prepareTurnMessages(thread, userMessage);
+  const { modelMessages } = await prepareTurnMessages(thread, userMessage, args.attachments ?? [], args.truncateFromMessageId);
 
   const tools = createChatTools({ ...toolContext, activeModel: model });
   const resolved = resolveChatLanguageModel(model);

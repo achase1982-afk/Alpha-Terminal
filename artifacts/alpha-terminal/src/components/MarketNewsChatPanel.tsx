@@ -8,7 +8,13 @@ import {
   useChatStreamStore,
   type ChatUiMessage,
 } from "@/lib/chatStreamStore";
-import { Send, Square, RotateCcw, Plus, Bot, Menu, X } from "lucide-react";
+import { Send, Square, RotateCcw, Plus, Bot, Menu, X, Paperclip } from "lucide-react";
+import { CHAT_ATTACHMENT_MAX_COUNT, type ChatAttachmentInput } from "@workspace/chat-types";
+import {
+  CHAT_ACCEPTED_FILE_TYPES,
+  filesToChatAttachments,
+} from "@/lib/chatAttachments";
+import { ChatUserMessage } from "@/components/ChatUserMessage";
 import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
 import { useChatComposerDock } from "@/hooks/useVisualViewportKeyboardInset";
@@ -140,8 +146,11 @@ export function MarketNewsChatPanel({
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatUiMessage[]>([]);
   const [input, setInput] = useState("");
+  const [pendingAttachments, setPendingAttachments] = useState<ChatAttachmentInput[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
   const [composerFocused, setComposerFocused] = useState(false);
   const [threadsMenuOpen, setThreadsMenuOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const streamsByThreadId = useChatStreamStore((s) => s.streamsByThreadId);
   const sendChatMessage = useChatStreamStore((s) => s.sendMessage);
@@ -243,12 +252,13 @@ export function MarketNewsChatPanel({
         const res = await fetchWithAuth(`/api/chat/threads/${encodeURIComponent(threadId)}/messages`);
         if (!res.ok) return;
         const data = (await res.json()) as {
-          messages?: Array<{ id: string; role: string; content: string }>;
+          messages?: Array<{ id: string; role: string; content: string; attachments?: ChatAttachmentInput[] | null }>;
         };
         const loaded = (data.messages ?? []).map((m) => ({
           id: m.id,
           role: m.role === "user" ? ("user" as const) : ("assistant" as const),
           content: m.content,
+          attachments: m.attachments?.length ? m.attachments : undefined,
         }));
         setMessages(loaded);
         reconcileThreadFromServer(
@@ -328,10 +338,19 @@ export function MarketNewsChatPanel({
   }, [abortStreamForThread, activeThreadId, symU]);
 
   const sendMessage = useCallback(
-    async (text: string, options?: { truncateToIndex?: number }) => {
+    async (
+      text: string,
+      options?: {
+        truncateToIndex?: number;
+        truncateFromMessageId?: string | null;
+        attachments?: ChatAttachmentInput[];
+      },
+    ) => {
       isPinnedToBottomRef.current = true;
+      abortStreamForThread(activeThreadId, symU);
       await sendChatMessage({
         text,
+        attachments: options?.attachments,
         symbol: symU,
         threadId: activeThreadId,
         model: modelSend,
@@ -339,23 +358,12 @@ export function MarketNewsChatPanel({
         multiAgentModels,
         synthesizerModel,
         truncateToIndex: options?.truncateToIndex,
+        truncateFromMessageId: options?.truncateFromMessageId,
         onThreadActivated: activateThread,
-        onRefreshThreads: () => {
-          void refreshThreads();
-        },
+        onRefreshThreads: () => void refreshThreads(),
       });
     },
-    [
-      activateThread,
-      activeThreadId,
-      modelSend,
-      multiAgentModels,
-      refreshThreads,
-      sendChatMessage,
-      symU,
-      synthesizerModel,
-      useMultiAgent,
-    ],
+    [abortStreamForThread, activateThread, activeThreadId, modelSend, multiAgentModels, refreshThreads, sendChatMessage, symU, synthesizerModel, useMultiAgent],
   );
 
   const handleNewThread = useCallback(() => {
@@ -401,21 +409,30 @@ export function MarketNewsChatPanel({
 
   const regenerateAssistantMessage = useCallback(
     (assistantMsgId: string) => {
-      if (isStreaming) return;
       const idx = displayMessages.findIndex((m) => m.id === assistantMsgId);
       if (idx < 0) return;
-      let userText: string | null = null;
+      let userMsg: ChatUiMessage | null = null;
       for (let i = idx - 1; i >= 0; i--) {
-        if (displayMessages[i]?.role === "user") {
-          userText = displayMessages[i]!.content;
-          break;
-        }
+        if (displayMessages[i]?.role === "user") userMsg = displayMessages[i]!;
       }
-      if (!userText) return;
+      if (!userMsg || (!userMsg.content.trim() && !(userMsg.attachments?.length ?? 0))) return;
       cancelAssistantSpeech();
-      void sendMessage(userText, { truncateToIndex: idx });
+      void sendMessage(userMsg.content, {
+        truncateToIndex: idx,
+        truncateFromMessageId: assistantMsgId,
+        attachments: userMsg.attachments,
+      });
     },
-    [displayMessages, isStreaming, sendMessage],
+    [displayMessages, sendMessage],
+  );
+
+  const handleEditUserMessage = useCallback(
+    (messageId: string, messageIndex: number, nextText: string) => {
+      cancelAssistantSpeech();
+      const truncateFromMessageId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(messageId) ? messageId : null;
+      void sendMessage(nextText, { truncateToIndex: messageIndex, truncateFromMessageId });
+    },
+    [sendMessage],
   );
 
   const handleRetry = useCallback(() => {
@@ -441,21 +458,34 @@ export function MarketNewsChatPanel({
   const handleComposerSend = useCallback(() => {
     if (composerSendLockRef.current) return;
     const text = input.trim();
-    if (!text || isStreaming) return;
+    const attachments = pendingAttachments;
+    if ((!text && attachments.length === 0) || isStreaming) return;
     composerSendLockRef.current = true;
     setInput("");
-    void sendMessage(text);
+    setPendingAttachments([]);
+    setAttachError(null);
+    void sendMessage(text, { attachments: attachments.length > 0 ? attachments : undefined });
     textareaRef.current?.blur();
-    window.setTimeout(() => {
-      composerSendLockRef.current = false;
-    }, 400);
-  }, [input, isStreaming, sendMessage]);
+    window.setTimeout(() => { composerSendLockRef.current = false; }, 400);
+  }, [input, isStreaming, pendingAttachments, sendMessage]);
+
+  const handlePickFiles = useCallback(async (files: FileList | null) => {
+    if (!files?.length) return;
+    setAttachError(null);
+    try {
+      const added = await filesToChatAttachments(files);
+      setPendingAttachments((prev) => [...prev, ...added].slice(0, CHAT_ATTACHMENT_MAX_COUNT));
+    } catch (err) {
+      setAttachError(err instanceof Error ? err.message : "Could not attach file");
+    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, []);
 
   const renderComposer = (extraStyle?: CSSProperties) => (
     <form
       ref={composerFormRef}
       className={[
-        "flex gap-2 border-t border-card-border/50 bg-[#0a0a0a] p-2 items-end",
+        "relative flex gap-2 border-t border-card-border/50 bg-[#0a0a0a] p-2 items-end",
         narrowMobile
           ? "shadow-[0_-10px_30px_rgba(0,0,0,0.45)]"
           : "relative z-[60] shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.25)]",
@@ -467,11 +497,29 @@ export function MarketNewsChatPanel({
             : "max(10px, env(safe-area-inset-bottom, 0px))",
         ...extraStyle,
       }}
-      onSubmit={(e) => {
-        e.preventDefault();
-        handleComposerSend();
-      }}
+      onSubmit={(e) => { e.preventDefault(); handleComposerSend(); }}
     >
+      <input ref={fileInputRef} type="file" accept={CHAT_ACCEPTED_FILE_TYPES} multiple className="hidden" onChange={(e) => void handlePickFiles(e.target.files)} />
+      {(pendingAttachments.length > 0 || attachError) && (
+        <div className="absolute left-2 right-2 bottom-full mb-1 flex flex-col gap-1">
+          {attachError && <p className="font-mono text-[11px] text-red-300/90">{attachError}</p>}
+          {pendingAttachments.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {pendingAttachments.map((att) => (
+                <span key={att.id} className="inline-flex items-center gap-1 font-mono text-[11px] text-white/80 bg-[#1a1a1a] border border-card-border rounded px-2 py-0.5">
+                  {att.name}
+                  <button type="button" className="text-white/50 hover:text-white" aria-label={`Remove ${att.name}`} onClick={() => setPendingAttachments((prev) => prev.filter((a) => a.id !== att.id))}>
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      <button type="button" disabled={isStreaming || pendingAttachments.length >= CHAT_ATTACHMENT_MAX_COUNT} onClick={() => fileInputRef.current?.click()} className="shrink-0 p-2.5 rounded-md border border-card-border text-white/75 hover:text-white disabled:opacity-30" aria-label="Attach file or photo">
+        <Paperclip className="w-4 h-4" />
+      </button>
       <textarea
         ref={textareaRef}
         rows={2}
@@ -510,9 +558,9 @@ export function MarketNewsChatPanel({
       ) : (
         <button
           type="button"
-          disabled={!input.trim()}
+          disabled={!input.trim() && pendingAttachments.length === 0}
           onPointerDown={(e) => {
-            if (!input.trim() || isStreaming) return;
+            if ((!input.trim() && pendingAttachments.length === 0) || isStreaming) return;
             e.preventDefault();
             handleComposerSend();
           }}
@@ -737,12 +785,14 @@ export function MarketNewsChatPanel({
               Conversations are saved to your account.
             </p>
           )}
-          {displayMessages.map((msg) => (
+          {displayMessages.map((msg, msgIndex) => (
             <div key={msg.id} className={msg.role === "user" ? "text-right" : "text-left"}>
               {msg.role === "user" ? (
-                <span className="inline-block font-mono text-[14px] text-[#f5f5f5] bg-[#1a1a1a] border border-card-border rounded px-3 py-2 max-w-[95%] text-left">
-                  {msg.content}
-                </span>
+                <ChatUserMessage
+                  content={msg.content}
+                  attachments={msg.attachments}
+                  onEditConfirm={(nextText) => handleEditUserMessage(msg.id, msgIndex, nextText)}
+                />
               ) : (
                 <div>
                   {toolPills.length > 0 && msg.id === lastDisplayMsg?.id && (

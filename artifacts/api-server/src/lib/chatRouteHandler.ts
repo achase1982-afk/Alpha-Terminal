@@ -5,6 +5,7 @@ import {
   createChatThread,
   getChatThreadForUser,
 } from "./chatDb.js";
+import { attachmentSummaryForTitle, sanitizeChatAttachments } from "./chatAttachments.js";
 import { runChatTurn, runMultiAgentChatTurn, type ChatStreamEvent } from "./chatOrchestrator.js";
 import { isGrokModel, XAI_CHAT_TOOLS_NOTE } from "./chatModel.js";
 import { readClientTimeZone } from "./marketClientTimeZone.js";
@@ -35,6 +36,8 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
   const body = req.body as {
     thread_id?: string;
     message?: string;
+    attachments?: unknown;
+    truncate_from_message_id?: string;
     model?: string;
     symbol?: string;
     clientTimeZone?: string;
@@ -45,8 +48,13 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
   };
 
   const message = typeof body.message === "string" ? body.message.trim() : "";
-  if (!message) {
-    res.status(400).json({ error: "message is required." });
+  const attachments = sanitizeChatAttachments(body.attachments);
+  const truncateFromMessageId =
+    typeof body.truncate_from_message_id === "string"
+      ? body.truncate_from_message_id.trim()
+      : "";
+  if (!message && attachments.length === 0) {
+    res.status(400).json({ error: "message or attachments required." });
     return;
   }
 
@@ -108,6 +116,8 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
   const turnArgs = {
     thread,
     userMessage: message,
+    attachments,
+    truncateFromMessageId: truncateFromMessageId || null,
     model,
     ambientSymbol,
     clientTimeZone,

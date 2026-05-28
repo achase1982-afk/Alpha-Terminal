@@ -1,3 +1,4 @@
+import type { ChatAttachmentInput } from "@workspace/chat-types";
 import { create } from "zustand";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { consumeChatSse, type ChatSseEvent } from "@/lib/chatSse";
@@ -31,6 +32,7 @@ export type ChatUiMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  attachments?: ChatAttachmentInput[];
   retryable?: boolean;
 };
 
@@ -61,6 +63,7 @@ export type ChatThreadStreamState = {
 
 export type SendChatMessageParams = {
   text: string;
+  attachments?: ChatAttachmentInput[];
   symbol: string;
   threadId: string | null;
   model: string;
@@ -68,6 +71,7 @@ export type SendChatMessageParams = {
   multiAgentModels: string[];
   synthesizerModel: string;
   truncateToIndex?: number;
+  truncateFromMessageId?: string | null;
   onThreadActivated: (threadId: string) => void;
   onRefreshThreads: () => void | Promise<void>;
 };
@@ -297,7 +301,8 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
 
   sendMessage: async (params) => {
     const text = params.text.trim();
-    if (!text) return;
+    const attachments = params.attachments ?? [];
+    if (!text && attachments.length === 0) return;
 
     const symU = params.symbol.toUpperCase();
     let streamKey = params.threadId ?? pendingStreamKey(symU);
@@ -327,7 +332,12 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
     }
 
     const sendId = nextSendId();
-    const userMsg: ChatUiMessage = { id: nextChatMsgId(), role: "user", content: text };
+    const userMsg: ChatUiMessage = {
+      id: nextChatMsgId(),
+      role: "user",
+      content: text,
+      attachments: attachments.length > 0 ? attachments : undefined,
+    };
     const assistantId = nextChatMsgId();
     const controller = new AbortController();
     const { signal } = controller;
@@ -382,6 +392,10 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
       symbol: symU,
       clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     };
+    if (attachments.length > 0) requestBody.attachments = attachments;
+    if (params.truncateFromMessageId) {
+      requestBody.truncate_from_message_id = params.truncateFromMessageId;
+    }
     if (useServerMultiAgent) {
       requestBody.multi_agent = {
         models: params.multiAgentModels,

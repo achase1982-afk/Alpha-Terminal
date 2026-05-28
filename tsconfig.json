@@ -23,6 +23,9 @@
     },
     {
       "path": "./lib/catalysts-types"
+    },
+    {
+      "path": "./lib/chat-types"
     }
   ]
 }

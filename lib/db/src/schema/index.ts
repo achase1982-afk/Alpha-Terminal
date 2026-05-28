@@ -1311,6 +1311,15 @@ export const chatMessagesTable = pgTable(
     content: text("content").notNull().default(""),
     toolCalls: jsonb("tool_calls").$type<unknown>(),
     toolResults: jsonb("tool_results").$type<unknown>(),
+    attachments: jsonb("attachments").$type<
+      Array<{
+        id: string;
+        name: string;
+        mimeType: string;
+        kind: "image" | "text";
+        data: string;
+      }>
+    >(),
     tokenCount: integer("token_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
