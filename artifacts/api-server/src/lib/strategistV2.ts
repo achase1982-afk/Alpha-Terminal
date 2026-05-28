@@ -1,3 +1,4 @@
+import { INVESTIGATIVE_REASONING_PROTOCOL } from "./investigativeReasoningProtocol.js";
 import { logger } from "./logger.js";
 import { getCachedRegime, buildFallbackRegime, type StructuredRegime } from "./regimePostProcessor.js";
 import { computeIOScore, type IOScoreResult } from "./ioScoreEngine.js";
@@ -640,6 +641,10 @@ After searching:
 - If a same-day catalyst is found that EXPLAINS the price action: cite it explicitly in your thesis with the source headline and date. Your direction MUST agree with the catalyst, or you must justify the contradiction in plain English. Bump confidence upward (+10-15%) when the catalyst clearly aligns with the thesis.
 - If a same-day catalyst is found that CONTRADICTS your candidate direction: flip the direction or return no_trade. A bullish call spread on a ticker that just printed bearish news is malpractice.
 - If NO material news is found after searching: state "No material news in last 7 days per web search" in the thesis and reason from the data payload alone. Confidence should be modest in this regime.
+
+## INVESTIGATIVE REASONING (explanatory / causal questions only)
+
+${INVESTIGATIVE_REASONING_PROTOCOL}
 
 ## SAME-DAY MOVE AWARENESS
 

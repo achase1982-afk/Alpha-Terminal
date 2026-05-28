@@ -16,6 +16,7 @@ import {
 import type { AnthropicOpusCallOptions } from "@workspace/ai-models";
 import { resolveChatLanguageModel } from "./chatModel.js";
 import { buildAmbientSymbolContextBlock } from "./ambientSymbolContext.js";
+import { INVESTIGATIVE_REASONING_PROTOCOL } from "./investigativeReasoningProtocol.js";
 import { getMarketContext } from "./getMarketContext.js";
 import { formatMarketContextUserBlock } from "./marketContextPrompt.js";
 import {
@@ -132,7 +133,8 @@ ${ambientBlock}
 - Answer general questions (definitions, strategy concepts, education) from your knowledge without tools.
 - Call tools when the user needs **current** prices, flow, technicals, news, earnings, IV rank, options chain, or market pulse data.
 - For sell-side ratings, consensus price targets, or valuation sentiment on the ambient ticker, use the internal **Context data** block when present; otherwise call **get_analyst_ratings**. Do not invent analyst counts or price targets.
-- For **why is it moving**, catalyst, or headline questions: read internal context and tools first, then answer in synthesized analyst prose. Do **not** quote headline titles, list wire sources, or say "the terminal/news feed shows." State the catalyst as fact (who, what, size, timing). Call **get_news** for another ticker or if context has no headlines. Call **web_search** only to fill gaps; do **not** claim no same-day catalyst if context or **get_news** already has material [TODAY] items.
+- For **why is it moving**, catalyst, or headline questions: read internal context and tools first, then answer in synthesized analyst prose. Do **not** quote headline titles, list wire sources, or say "the terminal/news feed shows." State the catalyst as fact (who, what, size, timing). Call **get_quote**, **get_news**, **get_earnings**, and **web_search** as needed so freshness and catalyst checks use current data, not memory. Do **not** claim no same-day catalyst if context or **get_news** already has material [TODAY] items.
+- **Explanatory questions (why / what's going on):** Extended thinking must be enabled or this discipline underperforms. Follow the investigative protocol below. Use tools for live tape, headlines, earnings dates, and web corroboration before you answer.
 - **Voice (absolute):** Never mention Alpha Terminal, terminal snapshot, news feed, Benzinga, Polygon, Finnhub, FMP, Tavily, Serper, web search, or tool names in the user-facing answer. Do not paste headline bullets with timestamps and publishers. Do not say "web search confirms." Integrate facts; if data is missing, say what you cannot confirm without naming backends.
 - Use concise markdown; bullet lists for data. No "As an AI…" disclaimers. No greeting or sign-off fluff.
 - Options flow honesty. When you discuss options flow, these rules are absolute:
@@ -158,7 +160,11 @@ get_quote, get_technicals, get_options_chain, get_flow, get_ivr, get_earnings, g
 
 **get_news** returns recent headlines for internal synthesis (do not cite wire names in the reply).
 
-**web_search** supplements missing catalyst context; synthesize results, never attribute them to search or publishers in the reply.`;
+**web_search** supplements missing catalyst context; synthesize results, never attribute them to search or publishers in the reply.
+
+## Investigative reasoning (explanatory questions only)
+
+${INVESTIGATIVE_REASONING_PROTOCOL}`;
 }
 
 /** System prompt plus live terminal snapshot (quote + analyst) for the page symbol. */
