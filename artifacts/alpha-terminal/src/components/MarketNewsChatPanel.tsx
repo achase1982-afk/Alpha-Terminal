@@ -17,6 +17,7 @@ import {
 import { ChatUserMessage } from "@/components/ChatUserMessage";
 import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
+import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
 import { useChatComposerDock } from "@/hooks/useVisualViewportKeyboardInset";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import {
@@ -169,6 +170,7 @@ export function MarketNewsChatPanel({
   const isStreaming = streamState?.isStreaming ?? false;
   const toolPills = streamState?.toolPills ?? [];
   const activeMultiAgentCount = streamState?.activeMultiAgentCount ?? 0;
+  const inFlightReasoning = streamState?.inFlightReasoning ?? "";
   const lastFailedMessage = streamState?.lastFailedMessage ?? null;
 
   const displayMessages = useMemo(
@@ -575,11 +577,13 @@ export function MarketNewsChatPanel({
   );
 
   const lastDisplayMsg = displayMessages[displayMessages.length - 1];
+  const showLiveReasoning = isStreaming && inFlightReasoning.length > 0;
   const showThinkingDots =
     isStreaming &&
     displayMessages.length > 0 &&
     lastDisplayMsg?.role === "assistant" &&
-    !lastDisplayMsg.content.trim();
+    !lastDisplayMsg.content.trim() &&
+    !inFlightReasoning.trim();
 
   return (
     <div className="relative flex flex-col flex-1 min-h-0 w-full max-md:max-h-none md:max-h-none md:min-h-[280px] bg-[#0a0a0a] border-t border-card-border/40">
@@ -831,6 +835,11 @@ export function MarketNewsChatPanel({
               )}
             </div>
           ))}
+          {showLiveReasoning && (
+            <div className="text-left mb-2">
+              <AiThinkingFeed texts={[inFlightReasoning]} isStreaming={isStreaming} />
+            </div>
+          )}
           {showThinkingDots &&
             (activeMultiAgentCount > 1 ? (
               <div className="flex items-center gap-2 py-1 text-white/75">

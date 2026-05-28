@@ -52,6 +52,8 @@ export type ChatThreadStreamState = {
   activeSendId: string | null;
   isStreaming: boolean;
   inFlightAssistant: ChatInFlightAssistant | null;
+  /** Live extended-thinking / reasoning stream for the active turn. */
+  inFlightReasoning: string;
   /** Optimistic user lines for this in-flight turn (not yet in server reload). */
   pendingUserMessages: ChatUiMessage[];
   /** While regenerating, slice persisted transcript for display merge. */
@@ -98,6 +100,7 @@ function emptyThreadState(threadId: string, symbol: string): ChatThreadStreamSta
     activeSendId: null,
     isStreaming: false,
     inFlightAssistant: null,
+    inFlightReasoning: "",
     pendingUserMessages: [],
     toolPills: [],
     activeMultiAgentCount: 0,
@@ -378,6 +381,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
             activeMultiAgentCount: useServerMultiAgent ? params.multiAgentModels.length : 0,
             pendingUserMessages: pendingUser,
             inFlightAssistant: { id: assistantId, content: "", complete: false },
+            inFlightReasoning: "",
             displayTruncateToIndex: params.truncateToIndex,
           },
         },
@@ -486,6 +490,12 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
           patchStream(streamKey, {
             activeMultiAgentCount: ev.model_count ?? params.multiAgentModels.length,
           });
+        } else if (ev.type === "reasoning") {
+          const latest = get().streamsByThreadId[streamKey];
+          if (!latest?.inFlightAssistant || latest.inFlightAssistant.id !== assistantId) return;
+          patchStream(streamKey, {
+            inFlightReasoning: latest.inFlightReasoning + ev.delta,
+          });
         } else if (ev.type === "text") {
           const latest = get().streamsByThreadId[streamKey];
           const flight = latest?.inFlightAssistant;
@@ -526,6 +536,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
               content: `**Error:** ${ev.message}`,
               complete: true,
             },
+            inFlightReasoning: "",
             isStreaming: false,
             abortController: null,
             activeSendId: null,
@@ -541,6 +552,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
                 get().streamsByThreadId[streamKey]?.inFlightAssistant?.content ?? "",
               complete: true,
             },
+            inFlightReasoning: "",
             isStreaming: false,
             abortController: null,
             activeSendId: null,

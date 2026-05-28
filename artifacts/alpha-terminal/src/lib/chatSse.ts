@@ -1,5 +1,6 @@
 export type ChatSseEvent =
   | { type: "thread"; thread_id: string }
+  | { type: "reasoning"; delta: string }
   | { type: "text"; delta: string }
   | {
       type: "tool_call_start";
@@ -36,6 +37,8 @@ function parseSseBlock(block: string): ChatSseEvent | null {
     switch (event) {
       case "thread":
         return { type: "thread", thread_id: String(payload.thread_id ?? "") };
+      case "reasoning":
+        return { type: "reasoning", delta: String(payload.delta ?? "") };
       case "text":
         return { type: "text", delta: String(payload.delta ?? "") };
       case "tool_call_start":
