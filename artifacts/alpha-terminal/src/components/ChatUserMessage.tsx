@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, FileText, X } from "lucide-react";
+import { Check, FileText, RotateCw, X } from "lucide-react";
 import type { ChatAttachmentInput } from "@workspace/chat-types";
 import { attachmentImageSrc } from "@/lib/chatAttachments";
 import { useLongPressActionMenu } from "@/hooks/useLongPressActionMenu";
@@ -8,10 +8,14 @@ export function ChatUserMessage({
   content,
   attachments = [],
   onEditConfirm,
+  showRetry = false,
+  onRetry,
 }: {
   content: string;
   attachments?: ChatAttachmentInput[];
   onEditConfirm: (nextText: string) => void;
+  showRetry?: boolean;
+  onRetry?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(content);
@@ -101,11 +105,11 @@ export function ChatUserMessage({
   }
 
   return (
-    <>
+    <div className="inline-flex flex-col items-end max-w-[95%]">
       {menu}
       <span
         {...bind()}
-        className="inline-block font-mono text-[14px] text-[#f5f5f5] bg-[#1a1a1a] border border-card-border rounded px-3 py-2 max-w-[95%] text-left touch-manipulation select-text"
+        className="inline-block font-mono text-[14px] text-[#f5f5f5] bg-[#1a1a1a] border border-card-border rounded px-3 py-2 max-w-full text-left touch-manipulation select-text"
       >
         {content ? <span className="whitespace-pre-wrap">{content}</span> : null}
         {attachments.length > 0 && (
@@ -116,7 +120,18 @@ export function ChatUserMessage({
           </div>
         )}
       </span>
-    </>
+      {showRetry && onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-1.5 inline-flex items-center gap-1 font-mono text-[12px] text-white/70 hover:text-white touch-manipulation"
+          aria-label="Retry"
+        >
+          <RotateCw className="w-3.5 h-3.5" />
+          Retry
+        </button>
+      )}
+    </div>
   );
 }
 
