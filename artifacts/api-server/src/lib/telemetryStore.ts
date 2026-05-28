@@ -9,6 +9,7 @@ export type TelemetrySystem =
   | "SEC_EDGAR"
   | "SCANNER"
   | "STRATEGIST"
+  | "CHAT"
   | "RISK_GATE"
   | "EXIT_STAGING"
   | "PUSH_NOTIFICATION"
@@ -105,6 +106,7 @@ function inferFeature(system: TelemetrySystem, message: string): TelemetryFeatur
   if (system === "MARKET_PULSE" || msgLower.includes("pulse")) return "MARKET_PULSE";
   if (system === "SCANNER" || msgLower.includes("scanner") || msgLower.includes("scan ") || msgLower.includes("discovery scan")) return "SCANNER";
   if (system === "STRATEGIST" || msgLower.includes("strategist") || msgLower.includes("analysis initiated")) return "STRATEGIST";
+  if (system === "CHAT" || msgLower.includes("chat stream") || msgLower.includes("chat send")) return "SYSTEM";
   if (system === "SCHWAB_STREAM" || system === "IBKR") return "STREAMER";
   if (system === "HTTP" || msgLower.includes("http_request")) return "HTTP";
   if (msgLower.includes("snapshot") || msgLower.includes("backfill")) return "SNAPSHOT";

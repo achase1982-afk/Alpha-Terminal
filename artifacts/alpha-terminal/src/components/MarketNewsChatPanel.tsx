@@ -9,7 +9,7 @@ import {
   useChatStreamStore,
   type ChatUiMessage,
 } from "@/lib/chatStreamStore";
-import { Send, Square, RotateCcw, Plus, Bot, Menu, X, Paperclip } from "lucide-react";
+import { Send, Square, RotateCcw, Plus, Bot, Menu, X, ChevronDown } from "lucide-react";
 import { CHAT_ATTACHMENT_MAX_COUNT, type ChatAttachmentInput } from "@workspace/chat-types";
 import {
   CHAT_ACCEPTED_FILE_TYPES,
@@ -22,16 +22,16 @@ import { useChatComposerDock } from "@/hooks/useVisualViewportKeyboardInset";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import {
   AI_MODEL_IDS,
-  aiModelSelectLabel,
   DEFAULT_AI_MODEL_ID,
   isAiModelId,
   migrateLegacyModelIdToCatalog,
   type AiModelId,
 } from "@workspace/ai-models";
-import { ChatModelToolbar, chatModelOptionsFromIds } from "./ai-shared/ChatModelToolbar";
 import { ChatThinkingIndicator } from "./ai-shared/ChatThinkingIndicator";
+import { ChatModelBottomSheet } from "./ai-shared/ChatModelBottomSheet";
+import { chatComposerPillLabel } from "./ai-shared/chatModelUi";
+import { logChatTelemetry } from "@/lib/chatTelemetry";
 
-const MULTI_AGENT_MODEL = "__multi_agent__";
 const MULTI_AGENT_STORAGE_KEY = "marketNewsChatMultiModels";
 const MULTI_AGENT_SYNTH_STORAGE_KEY = "marketNewsChatSynthesizerModel";
 
@@ -90,14 +90,6 @@ type ServerThread = {
   updatedAt: string;
 };
 
-function toolLabel(name: string, input: unknown): string {
-  const sym =
-    input && typeof input === "object" && "symbol" in input
-      ? String((input as { symbol?: string }).symbol ?? "")
-      : "";
-  return sym ? `${name} (${sym})` : name;
-}
-
 /** Within this distance (px) of the bottom, treat the user as "following" the stream. */
 const CHAT_SCROLL_PIN_THRESHOLD_PX = 80;
 
@@ -113,6 +105,7 @@ export function MarketNewsChatPanel({
   const aiModel = useTerminalStore((s) => s.aiFeatureSettings.chat.model);
   const anthropicOpusEffort = useTerminalStore((s) => s.aiFeatureSettings.chat.anthropicOpusEffort);
   const anthropicOpusSpeed = useTerminalStore((s) => s.aiFeatureSettings.chat.anthropicOpusSpeed);
+  const extendedThinking = useTerminalStore((s) => s.aiFeatureSettings.chat.extendedThinking);
   const setAiFeatureSetting = useTerminalStore((s) => s.setAiFeatureSetting);
   const setActiveChatThreadForSymbol = useTerminalStore((s) => s.setActiveChatThreadForSymbol);
 
@@ -120,7 +113,6 @@ export function MarketNewsChatPanel({
   const modelSend = isAiModelId(aiModel) ? aiModel : DEFAULT_AI_MODEL_ID;
 
   const [useMultiAgent, setUseMultiAgent] = useState(false);
-  const [multiModelPickerOpen, setMultiModelPickerOpen] = useState(false);
   const [multiAgentModels, setMultiAgentModels] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -153,6 +145,7 @@ export function MarketNewsChatPanel({
   const [attachError, setAttachError] = useState<string | null>(null);
   const [composerFocused, setComposerFocused] = useState(false);
   const [threadsMenuOpen, setThreadsMenuOpen] = useState(false);
+  const [modelSheetOpen, setModelSheetOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const streamsByThreadId = useChatStreamStore((s) => s.streamsByThreadId);
@@ -364,7 +357,6 @@ export function MarketNewsChatPanel({
       },
     ) => {
       isPinnedToBottomRef.current = true;
-      abortStreamForThread(activeThreadId, symU);
       await sendChatMessage({
         text,
         attachments: options?.attachments,
@@ -373,6 +365,7 @@ export function MarketNewsChatPanel({
         model: modelSend,
         anthropicOpusEffort,
         anthropicOpusSpeed,
+        extendedThinkingEnabled: extendedThinking,
         useMultiAgent,
         multiAgentModels,
         synthesizerModel,
@@ -382,8 +375,16 @@ export function MarketNewsChatPanel({
         onRefreshThreads: () => void refreshThreads(),
       });
     },
-    [abortStreamForThread, activateThread, activeThreadId, anthropicOpusEffort, anthropicOpusSpeed, modelSend, multiAgentModels, refreshThreads, sendChatMessage, symU, synthesizerModel, useMultiAgent],
+    [activateThread, activeThreadId, anthropicOpusEffort, anthropicOpusSpeed, extendedThinking, modelSend, multiAgentModels, refreshThreads, sendChatMessage, symU, synthesizerModel, useMultiAgent],
   );
+
+  useEffect(() => {
+    if (!isStreaming) return;
+    logChatTelemetry("INFO", "Chat panel stream active", {
+      symbol: symU,
+      threadId: activeThreadId,
+    });
+  }, [isStreaming, symU, activeThreadId]);
 
   const handleNewThread = useCallback(() => {
     handleStop();
@@ -513,11 +514,20 @@ export function MarketNewsChatPanel({
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
+  const modelPillLabel = chatComposerPillLabel({
+    useMultiAgent,
+    multiAgentCount: multiAgentModels.length,
+    modelId: modelSend,
+    effort: anthropicOpusEffort,
+    speed: anthropicOpusSpeed,
+    extendedThinking,
+  });
+
   const renderComposer = (extraStyle?: CSSProperties) => (
     <form
       ref={composerFormRef}
       className={[
-        "relative flex gap-2 border-t border-card-border/50 bg-[#0a0a0a] p-2 items-end",
+        "relative border-t border-card-border/50 bg-[#0a0a0a] p-2",
         narrowMobile
           ? "shadow-[0_-10px_30px_rgba(0,0,0,0.45)]"
           : "relative z-[60] shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.25)]",
@@ -532,77 +542,120 @@ export function MarketNewsChatPanel({
       onSubmit={(e) => { e.preventDefault(); handleComposerSend(); }}
     >
       <input ref={fileInputRef} type="file" accept={CHAT_ACCEPTED_FILE_TYPES} multiple className="hidden" onChange={(e) => void handlePickFiles(e.target.files)} />
-      {(pendingAttachments.length > 0 || attachError) && (
-        <div className="absolute left-2 right-2 bottom-full mb-1 flex flex-col gap-1">
-          {attachError && <p className="font-mono text-[11px] text-red-300/90">{attachError}</p>}
-          {pendingAttachments.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {pendingAttachments.map((att) => (
-                <span key={att.id} className="inline-flex items-center gap-1 font-mono text-[11px] text-white/80 bg-[#1a1a1a] border border-card-border rounded px-2 py-0.5">
-                  {att.name}
-                  <button type="button" className="text-white/50 hover:text-white" aria-label={`Remove ${att.name}`} onClick={() => setPendingAttachments((prev) => prev.filter((a) => a.id !== att.id))}>
-                    <X className="w-3 h-3" />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-      <button type="button" disabled={isStreaming || pendingAttachments.length >= CHAT_ATTACHMENT_MAX_COUNT} onClick={() => fileInputRef.current?.click()} className="shrink-0 p-2.5 rounded-md border border-card-border text-white/75 hover:text-white disabled:opacity-30" aria-label="Attach file or photo">
-        <Paperclip className="w-4 h-4" />
-      </button>
-      <textarea
-        ref={textareaRef}
-        rows={2}
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key !== "Enter" || e.shiftKey) return;
-          e.preventDefault();
-          handleComposerSend();
-        }}
-        onFocus={() => {
-          setComposerFocused(true);
-          remeasure();
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              remeasure();
-            });
-          });
-        }}
-        onBlur={() => {
-          setComposerFocused(false);
-          remeasure();
-        }}
-        placeholder={`Ask about ${symU}…`}
-        className="flex-1 resize-none bg-[#111] border border-card-border rounded-md px-3 py-2 font-mono text-[14px] text-white placeholder:text-white/55 outline-none focus:border-white/40 min-h-[48px]"
-      />
-      {isStreaming ? (
-        <button
-          type="button"
-          onClick={handleStop}
-          className="shrink-0 p-2.5 rounded-md border border-red-500/40 text-red-400 hover:bg-red-500/10"
-          aria-label="Stop"
-        >
-          <Square className="w-4 h-4 fill-current" />
-        </button>
-      ) : (
-        <button
-          type="button"
-          disabled={!input.trim() && pendingAttachments.length === 0}
-          onPointerDown={(e) => {
-            if ((!input.trim() && pendingAttachments.length === 0) || isStreaming) return;
+      <div className="rounded-2xl border border-card-border/80 bg-[#141414] px-3 pt-2.5 pb-2 flex flex-col gap-2">
+        {(pendingAttachments.length > 0 || attachError) && (
+          <div className="flex flex-col gap-1">
+            {attachError && <p className="font-mono text-[11px] text-red-300/90">{attachError}</p>}
+            {pendingAttachments.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {pendingAttachments.map((att) => (
+                  <span key={att.id} className="inline-flex items-center gap-1 font-mono text-[11px] text-white/80 bg-[#1a1a1a] border border-card-border rounded px-2 py-0.5">
+                    {att.name}
+                    <button type="button" className="text-white/50 hover:text-white" aria-label={`Remove ${att.name}`} onClick={() => setPendingAttachments((prev) => prev.filter((a) => a.id !== att.id))}>
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        <textarea
+          ref={textareaRef}
+          rows={2}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || e.shiftKey) return;
             e.preventDefault();
             handleComposerSend();
           }}
-          className="shrink-0 p-2.5 text-white disabled:opacity-30 touch-manipulation transition-opacity active:opacity-60 aria-[busy=true]:opacity-50"
-          aria-label="Send"
-          aria-busy={isStreaming}
-        >
-          <Send className="w-5 h-5" />
-        </button>
-      )}
+          onFocus={() => {
+            setComposerFocused(true);
+            remeasure();
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                remeasure();
+              });
+            });
+          }}
+          onBlur={() => {
+            setComposerFocused(false);
+            remeasure();
+          }}
+          placeholder={`Ask about ${symU}…`}
+          className="w-full resize-none bg-transparent font-mono text-[14px] text-white placeholder:text-white/55 outline-none min-h-[44px] max-h-[140px]"
+        />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={isStreaming || pendingAttachments.length >= CHAT_ATTACHMENT_MAX_COUNT}
+            onClick={() => fileInputRef.current?.click()}
+            className="shrink-0 flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white/90 hover:bg-white/15 disabled:opacity-30"
+            aria-label="Attach file or photo"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setModelSheetOpen(true)}
+            className="shrink-0 flex items-center gap-0.5 max-w-[min(200px,52vw)] rounded-full bg-white/10 px-3 py-1.5 font-mono text-[12px] text-white/90 hover:bg-white/15"
+            aria-label="Select model and options"
+          >
+            <span className="truncate">{modelPillLabel}</span>
+            <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-70" />
+          </button>
+          <div className="flex-1 min-w-0" />
+          {isStreaming ? (
+            <button
+              type="button"
+              onClick={handleStop}
+              className="shrink-0 flex h-9 w-9 items-center justify-center rounded-full bg-red-500/20 text-red-300 hover:bg-red-500/30"
+              aria-label="Stop"
+            >
+              <Square className="w-4 h-4 fill-current" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={!input.trim() && pendingAttachments.length === 0}
+              onPointerDown={(e) => {
+                if ((!input.trim() && pendingAttachments.length === 0) || isStreaming) return;
+                e.preventDefault();
+                handleComposerSend();
+              }}
+              className="shrink-0 flex h-9 w-9 items-center justify-center rounded-full bg-white text-black disabled:opacity-30 touch-manipulation"
+              aria-label="Send"
+              aria-busy={isStreaming}
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      </div>
+      <ChatModelBottomSheet
+        open={modelSheetOpen}
+        onClose={() => setModelSheetOpen(false)}
+        modelId={modelSend}
+        useMultiAgent={useMultiAgent}
+        multiAgentModels={multiAgentModels}
+        synthesizerModel={synthesizerModel}
+        effort={anthropicOpusEffort}
+        speed={anthropicOpusSpeed}
+        extendedThinking={extendedThinking}
+        onModelSelect={(value) => setAiFeatureSetting("chat", "model", value)}
+        onMultiAgentToggle={(enabled) => {
+          setUseMultiAgent(enabled);
+          if (enabled && multiAgentModels.length < 2) {
+            setMultiAgentModels([modelSend, ALL_CHAT_MODELS.find((m) => m !== modelSend) ?? modelSend]);
+          }
+        }}
+        onMultiAgentModelsChange={setMultiAgentModels}
+        onSynthesizerChange={setSynthesizerModel}
+        onEffortChange={(effort) => setAiFeatureSetting("chat", "anthropicOpusEffort", effort)}
+        onSpeedChange={(speed) => setAiFeatureSetting("chat", "anthropicOpusSpeed", speed)}
+        onExtendedThinkingChange={(enabled) => setAiFeatureSetting("chat", "extendedThinking", enabled)}
+      />
     </form>
   );
 
@@ -640,102 +693,6 @@ export function MarketNewsChatPanel({
           <span className="font-mono text-[14px] font-semibold text-white tracking-wide uppercase truncate">
             {symU}
           </span>
-        </div>
-        <div className="relative flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-          {useMultiAgent ? (
-            <select
-              value={MULTI_AGENT_MODEL}
-              title="Research models run in parallel; when all finish, the synthesizer streams one merged answer."
-              onChange={(e) => {
-                const value = e.target.value;
-                if (value !== MULTI_AGENT_MODEL) {
-                  setUseMultiAgent(false);
-                  setMultiModelPickerOpen(false);
-                  setAiFeatureSetting("chat", "model", value);
-                }
-              }}
-              className="bg-black/60 border border-card-border rounded px-2 py-1.5 font-mono text-[12px] text-white max-w-[180px] sm:max-w-[220px]"
-              aria-label="Chat model"
-            >
-              <option value={MULTI_AGENT_MODEL}>multi-agent</option>
-              {ALL_CHAT_MODELS.map((m) => (
-                <option key={m} value={m}>
-                  {aiModelSelectLabel(m)}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <ChatModelToolbar
-              modelValue={modelSend}
-              modelOptions={chatModelOptionsFromIds(ALL_CHAT_MODELS)}
-              onModelChange={(value) => setAiFeatureSetting("chat", "model", value)}
-              effort={anthropicOpusEffort}
-              speed={anthropicOpusSpeed}
-              onEffortChange={(effort) => setAiFeatureSetting("chat", "anthropicOpusEffort", effort)}
-              onSpeedChange={(speed) => setAiFeatureSetting("chat", "anthropicOpusSpeed", speed)}
-              modelAriaLabel="Chat model"
-            />
-          )}
-          {useMultiAgent && (
-            <button
-              type="button"
-              onClick={() => setMultiModelPickerOpen((v) => !v)}
-              className="rounded border border-card-border bg-black/60 px-2 py-1 font-mono text-[11px] text-white/85"
-              aria-label="Choose multi-agent models"
-            >
-              {multiAgentModels.length || 0} selected
-            </button>
-          )}
-          {useMultiAgent && multiAgentModels.length > 0 && (
-            <label className="flex items-center gap-1 min-w-0">
-              <span className="hidden sm:inline font-mono text-[10px] text-white/55 shrink-0">
-                Synthesize
-              </span>
-              <select
-                value={synthesizerModel}
-                onChange={(e) => setSynthesizerModel(e.target.value)}
-                className="min-w-0 max-w-[120px] sm:max-w-[200px] truncate bg-black/60 border border-card-border rounded px-1.5 py-1 font-mono text-[11px] text-white"
-                aria-label="Model that runs the final synthesis pass"
-                title="After parallel research, this model receives every draft and writes one grounded answer"
-              >
-                {multiAgentModels.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          {useMultiAgent && multiModelPickerOpen && (
-            <div className="absolute right-0 top-[calc(100%+6px)] z-[10120] min-w-[220px] rounded-md border border-card-border bg-[#0b0b0b] p-2 shadow-xl">
-              <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-white/60">
-                Select models
-              </p>
-              <div className="max-h-56 overflow-y-auto space-y-1 pr-1">
-                {ALL_CHAT_MODELS.map((model) => {
-                  const checked = multiAgentModels.includes(model);
-                  return (
-                    <label
-                      key={model}
-                      className="flex items-center gap-2 rounded px-1 py-1 hover:bg-white/5"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(e) => {
-                          const next = e.target.checked
-                            ? [...multiAgentModels, model]
-                            : multiAgentModels.filter((m) => m !== model);
-                          setMultiAgentModels(next);
-                        }}
-                      />
-                      <span className="font-mono text-[11px] text-white/90">{aiModelSelectLabel(model)}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </div>
       </div>
       </div>
