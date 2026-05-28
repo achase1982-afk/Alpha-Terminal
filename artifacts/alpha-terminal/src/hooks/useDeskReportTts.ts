@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { emitDeskTtsClientEvent } from "@/lib/deskAudioApi";
 import {
-  emitDeskTtsClientEvent,
-  fetchAllDeskTtsChunksMerged,
-} from "@/lib/deskAudioApi";
+  attachDeskAudioBlob,
+  DeskAudioChunkLoader,
+  parseDeskAudioStartResponse,
+} from "@/lib/deskAudioSequentialPlay";
 import { splitDeskAudioTextIntoChunks } from "@/lib/deskAudioChunking";
 import { STRATEGIST_ANALYSIS_CANCEL_EVENT, STRATEGIST_ANALYSIS_START_EVENT } from "@/lib/strategistDeskSpeechEvents";
 
@@ -15,16 +17,6 @@ const EMPTY_DESK_REPORT_TTS_VOICE_CONFIG: Record<string, unknown> = {};
 export const DESK_AUDIO_SKIP_SECONDS = 15;
 
 type DeskSessionMeta = { sessionId: string; totalChunks: number };
-
-function parseStartResponse(j: unknown, fallbackChunkCount: number): DeskSessionMeta | null {
-  if (!j || typeof j !== "object") return null;
-  const sessionId = "sessionId" in j && typeof (j as { sessionId?: unknown }).sessionId === "string" ? (j as { sessionId: string }).sessionId : "";
-  const tc = "totalChunks" in j ? (j as { totalChunks?: unknown }).totalChunks : undefined;
-  const fromApi = typeof tc === "number" && Number.isInteger(tc) && tc >= 1 ? tc : 0;
-  const totalChunks = fromApi || Math.max(1, fallbackChunkCount);
-  if (!sessionId.trim()) return null;
-  return { sessionId: sessionId.trim(), totalChunks };
-}
 
 export function useDeskReportTts(args: {
   /** Full script for TTS (plain text). */
@@ -112,6 +104,12 @@ export function useDeskReportTts(args: {
   const warmGenRef = useRef(0);
   const ttsLoadingPlayGenRef = useRef<number | null>(null);
   const expectAudioPlaybackRef = useRef(false);
+  const sequentialPlayRef = useRef<{
+    playGen: number;
+    chunkIndex: number;
+    totalChunks: number;
+    loader: DeskAudioChunkLoader;
+  } | null>(null);
 
   const revokeObjectUrl = useCallback(() => {
     if (objectUrlRef.current) {
@@ -126,6 +124,8 @@ export function useDeskReportTts(args: {
 
   const stopAudio = useCallback(() => {
     expectAudioPlaybackRef.current = false;
+    sequentialPlayRef.current?.loader.clearPrefetch();
+    sequentialPlayRef.current = null;
     audioPlayGenRef.current += 1;
     ttsFetchAbortRef.current?.abort();
     ttsFetchAbortRef.current = null;
@@ -158,30 +158,33 @@ export function useDeskReportTts(args: {
     setAudioError(null);
     setAudioReady(false);
 
-    const attachAndPlay = (blobUrl: string): boolean => {
+    const attachAndPlayBlob = async (
+      blob: Blob,
+      chunkIndex: number,
+      totalChunks: number,
+      loader: DeskAudioChunkLoader,
+    ): Promise<boolean> => {
       const el = audioRef.current;
       if (!el || playGen !== audioPlayGenRef.current) return false;
       revokeObjectUrl();
+      const blobUrl = attachDeskAudioBlob(el, blob, speechRateRef.current);
       objectUrlRef.current = blobUrl;
       setAudioBarOpen(true);
       setPaused(false);
       setAudioReady(true);
-      el.src = blobUrl;
-      el.playbackRate = speechRateRef.current;
+      setAudioLoading(false);
+      ttsLoadingPlayGenRef.current = null;
+      loader.prefetchChunk(chunkIndex + 1);
       expectAudioPlaybackRef.current = true;
+      sequentialPlayRef.current = { playGen, chunkIndex, totalChunks, loader };
       try {
         const p = el.play();
         if (p !== undefined) {
-          void p.catch(() => {
-            expectAudioPlaybackRef.current = false;
-            if (playGen === audioPlayGenRef.current) {
-              setAudioError("Audio unavailable — playback failed");
-              setAudioReady(false);
-            }
-          });
+          await p;
         }
       } catch {
         expectAudioPlaybackRef.current = false;
+        sequentialPlayRef.current = null;
         if (playGen === audioPlayGenRef.current) {
           setAudioError("Audio unavailable — playback failed");
           setAudioReady(false);
@@ -237,7 +240,7 @@ export function useDeskReportTts(args: {
           return null;
         }
         const j = (await res.json()) as unknown;
-        const parsed = parseStartResponse(j, fallbackChunkCount);
+        const parsed = parseDeskAudioStartResponse(j, fallbackChunkCount);
         if (!parsed) {
           void emitDeskTtsClientEvent({
             stage: "tts_session_start_failed",
@@ -272,10 +275,15 @@ export function useDeskReportTts(args: {
         return;
       }
 
-      const merged = await fetchAllDeskTtsChunksMerged(meta.sessionId, meta.totalChunks, ac.signal);
+      const loader = new DeskAudioChunkLoader(meta.sessionId, ac.signal);
+      loader.prefetchChunk(0);
+      const firstBlob = await loader.loadChunk(0);
       if (playGen !== audioPlayGenRef.current) return;
-      const url = URL.createObjectURL(merged);
-      attachAndPlay(url);
+      const ok = await attachAndPlayBlob(firstBlob, 0, meta.totalChunks, loader);
+      if (!ok && objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
     } catch (e) {
       if (playGen !== audioPlayGenRef.current) return;
       const aborted = e instanceof DOMException && e.name === "AbortError";
@@ -326,7 +334,7 @@ export function useDeskReportTts(args: {
           return;
         }
         const j = (await res.json()) as unknown;
-        const parsed = parseStartResponse(j, fallbackChunks);
+        const parsed = parseDeskAudioStartResponse(j, fallbackChunks);
         if (gen !== warmGenRef.current) return;
         if (!parsed) {
           void emitDeskTtsClientEvent({
@@ -440,8 +448,40 @@ export function useDeskReportTts(args: {
   }, [audioReady]);
 
   const onAudioEnded = useCallback(() => {
-    stopAudio();
-  }, [stopAudio]);
+    const seq = sequentialPlayRef.current;
+    const el = audioRef.current;
+    if (!seq || !el || seq.playGen !== audioPlayGenRef.current) {
+      stopAudio();
+      return;
+    }
+
+    const nextIndex = seq.chunkIndex + 1;
+    if (nextIndex >= seq.totalChunks) {
+      stopAudio();
+      return;
+    }
+
+    const currentPlayGen = seq.playGen;
+    const loader = seq.loader;
+    void (async () => {
+      try {
+        const blob = await loader.loadChunk(nextIndex);
+        if (currentPlayGen !== audioPlayGenRef.current) return;
+        revokeObjectUrl();
+        const blobUrl = attachDeskAudioBlob(el, blob, speechRateRef.current);
+        objectUrlRef.current = blobUrl;
+        seq.chunkIndex = nextIndex;
+        loader.prefetchChunk(nextIndex + 1);
+        expectAudioPlaybackRef.current = true;
+        await el.play();
+      } catch {
+        if (currentPlayGen === audioPlayGenRef.current) {
+          setAudioError("Audio unavailable — network error");
+          stopAudio();
+        }
+      }
+    })();
+  }, [revokeObjectUrl, stopAudio]);
 
   const onLoadedMetadata = useCallback(() => {
     const el = audioRef.current;
