@@ -54,6 +54,7 @@ export type ChatThreadStreamState = {
   inFlightAssistant: ChatInFlightAssistant | null;
   /** Live extended-thinking / reasoning stream for the active turn. */
   inFlightReasoning: string;
+  activityNote: string;
   /** Optimistic user lines for this in-flight turn (not yet in server reload). */
   pendingUserMessages: ChatUiMessage[];
   /** While regenerating, slice persisted transcript for display merge. */
@@ -78,8 +79,43 @@ export type SendChatMessageParams = {
   onRefreshThreads: () => void | Promise<void>;
 };
 
-function pendingStreamKey(symbol: string): string {
+export function pendingStreamKey(symbol: string): string {
   return `__pending__:${symbol.toUpperCase()}`;
+}
+
+export function chatToolActivityLabel(toolName: string): string {
+  const labels: Record<string, string> = {
+    web_search: "Searching the web",
+    web_fetch: "Fetching page",
+    get_news: "Fetching news",
+    get_quote: "Fetching quote",
+    get_technicals: "Loading technicals",
+    get_options_chain: "Loading options chain",
+    get_flow: "Loading options flow",
+    get_ivr: "Loading implied volatility",
+    get_earnings: "Loading earnings",
+    get_analyst_ratings: "Loading analyst ratings",
+    get_market_pulse: "Loading market pulse",
+  };
+  return labels[toolName] ?? `Running ${toolName.replace(/_/g, " ")}`;
+}
+
+export function resolveChatStreamStateForSymbol(
+  streamsByThreadId: Record<string, ChatThreadStreamState>,
+  symbol: string,
+  activeThreadId: string | null,
+): ChatThreadStreamState | null {
+  const symU = symbol.toUpperCase();
+  const match = (s: ChatThreadStreamState | undefined) =>
+    s && s.symbol === symU ? s : null;
+  for (const s of Object.values(streamsByThreadId)) {
+    if (s.symbol === symU && s.isStreaming) return s;
+  }
+  if (activeThreadId) {
+    const active = match(streamsByThreadId[activeThreadId]);
+    if (active) return active;
+  }
+  return match(streamsByThreadId[pendingStreamKey(symU)]);
 }
 
 let sendCounter = 0;
@@ -101,6 +137,7 @@ function emptyThreadState(threadId: string, symbol: string): ChatThreadStreamSta
     isStreaming: false,
     inFlightAssistant: null,
     inFlightReasoning: "",
+    activityNote: "",
     pendingUserMessages: [],
     toolPills: [],
     activeMultiAgentCount: 0,
@@ -382,6 +419,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
             pendingUserMessages: pendingUser,
             inFlightAssistant: { id: assistantId, content: "", complete: false },
             inFlightReasoning: "",
+            activityNote: "",
             displayTruncateToIndex: params.truncateToIndex,
           },
         },
@@ -486,10 +524,15 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
           threadId = ev.thread_id;
           migrateStreamKey(ev.thread_id);
           params.onThreadActivated(ev.thread_id);
-        } else if (ev.type === "status" && ev.phase === "multi_agent_drafting") {
-          patchStream(streamKey, {
-            activeMultiAgentCount: ev.model_count ?? params.multiAgentModels.length,
-          });
+        } else if (ev.type === "status") {
+          const latest = get().streamsByThreadId[streamKey];
+          if (!latest) return;
+          const patch: Partial<ChatThreadStreamState> = {};
+          if (ev.phase === "multi_agent_drafting") {
+            patch.activeMultiAgentCount = ev.model_count ?? params.multiAgentModels.length;
+          }
+          if (ev.note?.trim()) patch.activityNote = ev.note.trim();
+          if (Object.keys(patch).length > 0) patchStream(streamKey, patch);
         } else if (ev.type === "reasoning") {
           const latest = get().streamsByThreadId[streamKey];
           if (!latest?.inFlightAssistant || latest.inFlightAssistant.id !== assistantId) return;
@@ -502,6 +545,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
           if (!flight || flight.id !== assistantId) return;
           patchStream(streamKey, {
             activeMultiAgentCount: 0,
+            activityNote: "",
             inFlightAssistant: {
               ...flight,
               content: flight.content + ev.delta,
@@ -511,6 +555,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
           const latest = get().streamsByThreadId[streamKey];
           if (!latest) return;
           patchStream(streamKey, {
+            activityNote: chatToolActivityLabel(ev.toolName),
             toolPills: [
               ...latest.toolPills.filter((p) => p.toolCallId !== ev.toolCallId),
               {
@@ -524,10 +569,13 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
         } else if (ev.type === "tool_call_end") {
           const latest = get().streamsByThreadId[streamKey];
           if (!latest) return;
+          const toolPills = latest.toolPills.map((p) =>
+            p.toolCallId === ev.toolCallId ? { ...p, status: "done" as const } : p,
+          );
+          const stillRunning = toolPills.some((p) => p.status === "running");
           patchStream(streamKey, {
-            toolPills: latest.toolPills.map((p) =>
-              p.toolCallId === ev.toolCallId ? { ...p, status: "done" } : p,
-            ),
+            toolPills,
+            activityNote: stillRunning ? latest.activityNote : "Composing answer…",
           });
         } else if (ev.type === "error") {
           patchStream(streamKey, {
@@ -537,6 +585,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
               complete: true,
             },
             inFlightReasoning: "",
+            activityNote: "",
             isStreaming: false,
             abortController: null,
             activeSendId: null,
@@ -553,6 +602,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
               complete: true,
             },
             inFlightReasoning: "",
+            activityNote: "",
             isStreaming: false,
             abortController: null,
             activeSendId: null,

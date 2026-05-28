@@ -5,6 +5,7 @@ import { resolveActiveChatThreadId } from "@/lib/chatPersistence";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
   mergeChatDisplayMessages,
+  resolveChatStreamStateForSymbol,
   useChatStreamStore,
   type ChatUiMessage,
 } from "@/lib/chatStreamStore";
@@ -159,18 +160,16 @@ export function MarketNewsChatPanel({
   const reconcileThreadFromServer = useChatStreamStore((s) => s.reconcileThreadFromServer);
   const clearLastFailedForThread = useChatStreamStore((s) => s.clearLastFailedForThread);
 
-  const streamState = useMemo(() => {
-    const pending = pendingStreamKey(symU);
-    if (activeThreadId && streamsByThreadId[activeThreadId]) {
-      return streamsByThreadId[activeThreadId];
-    }
-    return streamsByThreadId[pending] ?? null;
-  }, [streamsByThreadId, activeThreadId, symU]);
+  const streamState = useMemo(
+    () => resolveChatStreamStateForSymbol(streamsByThreadId, symU, activeThreadId),
+    [streamsByThreadId, activeThreadId, symU],
+  );
 
   const isStreaming = streamState?.isStreaming ?? false;
   const toolPills = streamState?.toolPills ?? [];
   const activeMultiAgentCount = streamState?.activeMultiAgentCount ?? 0;
   const inFlightReasoning = streamState?.inFlightReasoning ?? "";
+  const activityNote = streamState?.activityNote ?? "";
   const lastFailedMessage = streamState?.lastFailedMessage ?? null;
 
   const displayMessages = useMemo(
@@ -277,6 +276,11 @@ export function MarketNewsChatPanel({
   useEffect(() => {
     let cancelled = false;
     setThreadsMenuOpen(false);
+    setMessages([]);
+    setActiveThreadId(null);
+    setInput("");
+    setPendingAttachments([]);
+    setAttachError(null);
 
     void (async () => {
       const list = await refreshThreads();
@@ -333,7 +337,7 @@ export function MarketNewsChatPanel({
 
   useEffect(() => {
     scrollToBottom();
-  }, [displayMessages, isStreaming, toolPills, scrollToBottom]);
+  }, [displayMessages, isStreaming, toolPills, activityNote, inFlightReasoning, scrollToBottom]);
 
   const handleStop = useCallback(() => {
     abortStreamForThread(activeThreadId, symU);
@@ -577,13 +581,20 @@ export function MarketNewsChatPanel({
   );
 
   const lastDisplayMsg = displayMessages[displayMessages.length - 1];
-  const showLiveReasoning = isStreaming && inFlightReasoning.length > 0;
-  const showThinkingDots =
+  const inFlightAssistantTurn =
     isStreaming &&
     displayMessages.length > 0 &&
     lastDisplayMsg?.role === "assistant" &&
-    !lastDisplayMsg.content.trim() &&
-    !inFlightReasoning.trim();
+    !lastDisplayMsg.content.trim();
+  const showLiveReasoning =
+    inFlightAssistantTurn && activeMultiAgentCount <= 1;
+  const showActivityStrip =
+    inFlightAssistantTurn && (toolPills.length > 0 || activityNote.length > 0);
+  const showThinkingDots =
+    inFlightAssistantTurn &&
+    activeMultiAgentCount <= 1 &&
+    !showLiveReasoning &&
+    !showActivityStrip;
 
   return (
     <div className="relative flex flex-col flex-1 min-h-0 w-full max-md:max-h-none md:max-h-none md:min-h-[280px] bg-[#0a0a0a] border-t border-card-border/40">
@@ -799,23 +810,6 @@ export function MarketNewsChatPanel({
                 />
               ) : (
                 <div>
-                  {toolPills.length > 0 && msg.id === lastDisplayMsg?.id && (
-                    <div className="flex flex-wrap gap-1.5 mb-2">
-                      {toolPills.map((p) => (
-                        <span
-                          key={p.toolCallId}
-                          className={[
-                            "font-mono text-[10px] px-2 py-0.5 rounded-full border",
-                            p.status === "running"
-                              ? "border-amber-500/50 text-amber-200/90 animate-pulse"
-                              : "border-emerald-500/40 text-emerald-200/80",
-                          ].join(" ")}
-                        >
-                          {p.status === "running" ? "calling" : "done"} {toolLabel(p.toolName, p.input)}
-                        </span>
-                      ))}
-                    </div>
-                  )}
                   <div className="font-mono text-[14px] text-[#f5f5f5] prose prose-invert prose-sm max-w-none">
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                   </div>

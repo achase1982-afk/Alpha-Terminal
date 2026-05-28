@@ -73,11 +73,23 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
   let threadId = typeof body.thread_id === "string" ? body.thread_id.trim() : "";
   let thread = threadId ? await getChatThreadForUser(userId, threadId) : null;
 
+  const threadSymbol = thread?.symbol?.trim().toUpperCase() ?? null;
+  if (
+    thread &&
+    ambientSymbol &&
+    threadSymbol &&
+    threadSymbol !== ambientSymbol
+  ) {
+    thread = null;
+    threadId = "";
+  }
+
   if (!thread) {
+    const titleBase = message || attachmentSummaryForTitle(attachments);
     thread = await createChatThread({
       userId,
       symbol: ambientSymbol,
-      title: message.slice(0, 48) || "Chat",
+      title: titleBase.slice(0, 48) || "Chat",
     });
     threadId = thread.id;
   }
@@ -92,6 +104,7 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
   });
 
   writeSse(res, "thread", { thread_id: threadId });
+  writeSse(res, "status", { note: "Starting analysis…" });
 
   if (isGrokModel(model)) {
     writeSse(res, "status", { note: XAI_CHAT_TOOLS_NOTE });
@@ -126,7 +139,7 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
     onEvent: (ev: ChatStreamEvent) => {
         if (res.writableEnded) return;
         switch (ev.type) {
-          case "reasoning":
+case "reasoning":
             writeSse(res, "reasoning", { delta: ev.delta });
             break;
           case "text":
