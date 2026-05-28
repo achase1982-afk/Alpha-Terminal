@@ -1,17 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, FileText, X } from "lucide-react";
+import { Check, FileText, RotateCw, X } from "lucide-react";
 import type { ChatAttachmentInput } from "@workspace/chat-types";
 import { attachmentImageSrc } from "@/lib/chatAttachments";
-import { useLongPressActionMenu } from "@/hooks/useLongPressActionMenu";
+import {
+  longPressMenuAnchorBelow,
+  useLongPressActionMenu,
+} from "@/hooks/useLongPressActionMenu";
 
 export function ChatUserMessage({
   content,
   attachments = [],
   onEditConfirm,
+  showRetry = false,
+  onRetry,
 }: {
   content: string;
   attachments?: ChatAttachmentInput[];
   onEditConfirm: (nextText: string) => void;
+  showRetry?: boolean;
+  onRetry?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(content);
@@ -70,7 +77,7 @@ export function ChatUserMessage({
           ref={textareaRef}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          rows={3}
+          rows={Math.max(3, draft.split("\n").length)}
           className="w-full min-w-[200px] resize-none bg-[#111] border border-white/30 rounded-md px-3 py-2 font-mono text-[14px] text-white outline-none"
         />
         {attachments.length > 0 && (
@@ -91,7 +98,7 @@ export function ChatUserMessage({
             type="button"
             onClick={confirmEdit}
             className="p-2 rounded border border-emerald-500/50 text-emerald-300"
-            aria-label="Save and restart"
+            aria-label="Save and resend"
           >
             <Check className="w-4 h-4" />
           </button>
@@ -101,13 +108,17 @@ export function ChatUserMessage({
   }
 
   return (
-    <>
+    <div className="inline-flex flex-col items-end max-w-[95%]">
       {menu}
       <span
-        {...bind()}
-        className="inline-block font-mono text-[14px] text-[#f5f5f5] bg-[#1a1a1a] border border-card-border rounded px-3 py-2 max-w-[95%] text-left touch-manipulation select-text"
+        {...bind(longPressMenuAnchorBelow)}
+        className="inline-block font-mono text-[14px] text-[#f5f5f5] bg-[#1a1a1a] border border-card-border rounded px-3 py-2 max-w-full text-left touch-manipulation select-none [-webkit-touch-callout:none] [-webkit-user-select:none] [user-select:none]"
       >
-        {content ? <span className="whitespace-pre-wrap">{content}</span> : null}
+        {content ? (
+          <span className="whitespace-pre-wrap select-none pointer-events-none">
+            {content}
+          </span>
+        ) : null}
         {attachments.length > 0 && (
           <div className={content ? "mt-2 space-y-2" : "space-y-2"}>
             {attachments.map((att) => (
@@ -116,7 +127,18 @@ export function ChatUserMessage({
           </div>
         )}
       </span>
-    </>
+      {showRetry && onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-1.5 inline-flex items-center gap-1 font-mono text-[12px] text-white/70 hover:text-white touch-manipulation"
+          aria-label="Retry this question"
+        >
+          <RotateCw className="w-3.5 h-3.5" />
+          Retry
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -127,12 +149,13 @@ function AttachmentPreview({ att }: { att: ChatAttachmentInput }) {
       <img
         src={src}
         alt={att.name}
-        className="max-h-40 max-w-full rounded border border-white/15 object-contain"
+        className="max-h-40 max-w-full rounded border border-white/15 object-contain pointer-events-none"
+        draggable={false}
       />
     );
   }
   return (
-    <span className="inline-flex items-center gap-1.5 font-mono text-[12px] text-white/75 bg-black/40 border border-white/10 rounded px-2 py-1">
+    <span className="inline-flex items-center gap-1.5 font-mono text-[12px] text-white/75 bg-black/40 border border-white/10 rounded px-2 py-1 select-none">
       <FileText className="w-3.5 h-3.5 shrink-0" />
       {att.name}
     </span>
