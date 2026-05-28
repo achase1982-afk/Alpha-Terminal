@@ -1,6 +1,13 @@
-import { getQuoteBySymbol, type LiveQuote } from "../schwabStreamer.js";
+import type { MarketSessionLabel } from "../getMarketContext.js";
+import { getMarketContext } from "../getMarketContext.js";
+import {
+  displayLastForSession,
+  resolveLiveQuoteFromStreamer,
+} from "../chatLiveQuote.js";
+import { fetchSchwabRestQuote } from "../schwabRestQuote.js";
 import { augmentPolygonColdTickerForChat } from "../chatPolygonColdActivity.js";
 import { logger } from "../logger.js";
+import type { LiveQuote } from "../schwabStreamer.js";
 
 const POLYGON_API = "https://api.polygon.io";
 
@@ -9,12 +16,21 @@ const packLog = {
   warn: (obj: unknown, msg?: string) => logger.warn(obj, msg),
 };
 
-export function formatSchwabQuote(sym: string, q: LiveQuote): Record<string, unknown> {
+export function formatSchwabQuote(
+  sym: string,
+  q: LiveQuote,
+  session: MarketSessionLabel = "OPEN",
+): Record<string, unknown> {
+  const displayLast = displayLastForSession(q, session);
+  const regularSessionLast = q.regularLast ?? null;
+  const latestPrint = q.last ?? q.extendedLast ?? null;
   return {
     symbol: sym,
-    source: "schwab_streamer_cache",
-    last: q.regularLast ?? q.last ?? null,
-    regularLast: q.regularLast ?? null,
+    source: "schwab_live_tape",
+    last: displayLast,
+    displayLast,
+    regularSessionLast,
+    latestPrint,
     bid: q.bid ?? null,
     ask: q.ask ?? null,
     change: q.change ?? null,
@@ -24,6 +40,41 @@ export function formatSchwabQuote(sym: string, q: LiveQuote): Record<string, unk
     low: q.low ?? null,
     prevClose: q.close ?? null,
     quoteSource: q.quoteSource ?? null,
+    quoteAgeMs: Math.max(0, Date.now() - (q.ts || 0)),
+    marketSession: session,
+    tapeNote:
+      session === "OPEN"
+        ? "regular_session_print"
+        : session === "PREMARKET" || session === "AFTERHOURS"
+          ? "extended_hours_print"
+          : "overnight_or_closed_may_be_stale",
+  };
+}
+
+function formatRestQuote(
+  sym: string,
+  rest: Awaited<ReturnType<typeof fetchSchwabRestQuote>>,
+  session: MarketSessionLabel,
+): Record<string, unknown> {
+  if (!rest) return { symbol: sym, source: "none", error: "no_quote" };
+  return {
+    symbol: sym,
+    source: "schwab_rest",
+    last: rest.last,
+    displayLast: rest.last,
+    regularSessionLast: rest.last,
+    latestPrint: rest.last,
+    bid: rest.bid,
+    ask: rest.ask,
+    change: rest.change,
+    changePct: rest.changePct,
+    volume: rest.volume,
+    high: rest.high,
+    low: rest.low,
+    prevClose: rest.prevClose,
+    quoteAgeMs: 0,
+    marketSession: session,
+    tapeNote: "schwab_rest_quote",
   };
 }
 
@@ -45,41 +96,63 @@ async function polygonLastTrade(sym: string): Promise<Record<string, unknown> | 
     if (!bar || bar.c == null) return null;
     return {
       symbol: sym,
-      source: "polygon_aggs",
+      source: "polygon_aggs_prior_session",
       last: bar.c,
+      displayLast: bar.c,
       volume: bar.v ?? null,
+      tapeNote: "polygon_eod_fallback_not_live",
     };
   } catch {
     return null;
   }
 }
 
+export type FetchQuoteForChatOptions = {
+  marketAccessToken?: string | null;
+  clientTimeZone?: string | null;
+  now?: Date;
+};
+
 /**
- * Schwab streamer cache first, Polygon aggs fallback, then cold Polygon snapshot supplement
- * (same cold-path helper as get_flow).
+ * Schwab live tape (subscribe-on-miss + stream cache + REST), then Polygon EOD fallback.
  */
 export async function fetchQuoteForChat(
   symbol: string,
   lastUserMessage = "equity quote",
+  options: FetchQuoteForChatOptions = {},
 ): Promise<Record<string, unknown>> {
   const sym = symbol.trim().toUpperCase();
+  const session = getMarketContext(options.now ?? new Date(), options.clientTimeZone ?? undefined).session;
+  const token = options.marketAccessToken?.trim() ?? null;
+
   let base: Record<string, unknown>;
 
-  const cached = getQuoteBySymbol(sym);
-  if (cached && (cached.last != null || cached.bid != null)) {
-    base = formatSchwabQuote(sym, cached);
+  const live = await resolveLiveQuoteFromStreamer(sym, token);
+  if (live && (live.last != null || live.bid != null)) {
+    base = formatSchwabQuote(sym, live, session);
+  } else if (token) {
+    const rest = await fetchSchwabRestQuote(sym, token);
+    if (rest?.last != null) {
+      base = formatRestQuote(sym, rest, session);
+    } else {
+      const poly = await polygonLastTrade(sym);
+      base =
+        poly ??
+        ({
+          symbol: sym,
+          source: "none",
+          error: "No live quote from Schwab stream or REST, and Polygon aggs returned no data.",
+        } as Record<string, unknown>);
+    }
   } else {
     const poly = await polygonLastTrade(sym);
-    if (poly) {
-      base = poly;
-    } else {
-      base = {
+    base =
+      poly ??
+      ({
         symbol: sym,
         source: "none",
-        error:
-          "No live quote in Schwab streamer cache for this symbol on the API host, and Polygon aggs returned no data.",
-      };
-    }
+        error: "No live quote available (Schwab not connected on server).",
+      } as Record<string, unknown>);
   }
 
   const cold = await augmentPolygonColdTickerForChat({

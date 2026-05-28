@@ -40,7 +40,7 @@ describe("formatSchwabQuote", () => {
     const out = formatSchwabQuote("IBM", q);
 
     expect(out.last).toBe(regularLast);
-    expect(out.regularLast).toBe(regularLast);
+    expect(out.regularSessionLast).toBe(regularLast);
     expect(out.change).toBe(change);
     expect(out.changePct).toBe(changePct);
     expect(out.prevClose).toBe(prevClose);
@@ -57,7 +57,14 @@ describe("formatSchwabQuote", () => {
     const q = baseQuote({ last: 198.5, regularLast: null });
     const out = formatSchwabQuote("IBM", q);
     expect(out.last).toBe(198.5);
-    expect(out.regularLast).toBeNull();
+    expect(out.regularSessionLast).toBeNull();
+  });
+
+  it("uses extended print for displayLast after hours", () => {
+    const q = baseQuote({ regularLast: 988, last: 991.5 });
+    const out = formatSchwabQuote("GS", q, "AFTERHOURS");
+    expect(out.displayLast).toBe(991.5);
+    expect(out.last).toBe(991.5);
   });
 
   it("returns change null without throwing when change is missing", () => {
