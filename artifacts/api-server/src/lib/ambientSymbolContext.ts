@@ -7,6 +7,15 @@ import {
   formatChatTerminalNewsBlock,
 } from "./chatTerminalNews.js";
 import { fetchQuoteForChat } from "./chatTools/getQuote.js";
+import { fetchChatPortfolioSnapshot, formatChatPortfolioAmbientBlock } from "./chatPortfolio.js";
+import type { MarketSessionLabel } from "./getMarketContext.js";
+import { getMarketContext } from "./getMarketContext.js";
+
+export type AmbientSymbolContextOptions = {
+  marketAccessToken?: string | null;
+  traderAccessToken?: string | null;
+  clientTimeZone?: string | null;
+};
 
 const AMBIENT_ANALYST_LIMIT = 20;
 
@@ -38,39 +47,76 @@ function formatAnalystSnapshot(result: AnalystCoverageResult): string {
   return lines.join("\n");
 }
 
-/** Markdown block appended to chat system prompt when user has a page symbol. */
-export async function buildAmbientSymbolContextBlock(symbol: string | null | undefined): Promise<string> {
-  const sym = symbol?.trim().toUpperCase();
-  if (!sym) return "";
+function formatAmbientQuoteLine(q: Record<string, unknown>, session: MarketSessionLabel): string {
+  const display = q.displayLast ?? q.last;
+  const chg = q.change;
+  const pct = q.changePct;
+  const bid = q.bid;
+  const ask = q.ask;
+  const ageSec =
+    typeof q.quoteAgeMs === "number" ? Math.round((q.quoteAgeMs as number) / 1000) : null;
+  const parts = [
+    `Live quote (${session}): ${display ?? "—"}`,
+    chg != null ? `change ${chg}` : null,
+    pct != null ? `(${pct}%)` : null,
+    bid != null && ask != null ? `bid ${bid} / ask ${ask}` : null,
+    q.regularSessionLast != null && session !== "OPEN"
+      ? `regular close print ${q.regularSessionLast}`
+      : null,
+    ageSec != null ? `quote age ${ageSec}s` : null,
+  ].filter(Boolean);
+  return parts.join(", ");
+}
 
-  const [analyst, quote, newsArticles] = await Promise.all([
-    fetchAnalystCoverage(sym, AMBIENT_ANALYST_LIMIT).catch(() => null),
-    fetchQuoteForChat(sym, "ambient context").catch(() => null),
-    fetchChatTerminalNewsArticles(sym).catch(() => [] as Awaited<ReturnType<typeof fetchChatTerminalNewsArticles>>),
+/** Markdown block appended to chat system prompt when user has a page symbol. */
+export async function buildAmbientSymbolContextBlock(
+  symbol: string | null | undefined,
+  options: AmbientSymbolContextOptions = {},
+): Promise<string> {
+  const sym = symbol?.trim().toUpperCase();
+  const session = getMarketContext(new Date(), options.clientTimeZone ?? undefined).session;
+
+  const [analyst, quote, newsArticles, portfolio] = await Promise.all([
+    sym
+      ? fetchAnalystCoverage(sym, AMBIENT_ANALYST_LIMIT).catch(() => null)
+      : Promise.resolve(null),
+    sym
+      ? fetchQuoteForChat(sym, "ambient context", {
+          marketAccessToken: options.marketAccessToken,
+          clientTimeZone: options.clientTimeZone,
+        }).catch(() => null)
+      : Promise.resolve(null),
+    sym
+      ? fetchChatTerminalNewsArticles(sym).catch(() => [] as Awaited<ReturnType<typeof fetchChatTerminalNewsArticles>>)
+      : Promise.resolve([]),
+    fetchChatPortfolioSnapshot(options.traderAccessToken).catch(() => ({
+      available: false,
+      positions: [],
+    })),
   ]);
 
   const parts: string[] = [
-    `## Context data (${sym}) — internal only`,
-    "Use quote, analyst, and headline facts below before inventing data. Do not mention this section, the terminal, news feed, wire names (Benzinga, Polygon, Finnhub, FMP, etc.), tool names, or web search in your reply. Synthesize into plain analyst prose: state price, catalyst, and sell-side as your own read.",
+    sym ? `## Context data (${sym}) — internal only` : "## Context data — internal only",
+    "Use quote, analyst, headline, and portfolio facts below before inventing data. Do not mention this section, the terminal, news feed, wire names, tools, or web search in your reply. Synthesize into plain analyst prose.",
+    "For current price and why it is moving now, use displayLast / live quote fields (extended-hours prints when session is PREMARKET or AFTERHOURS), not only the 4 PM regular-session mark.",
   ];
 
-  if (quote && !("error" in quote && quote.error)) {
-    const q = quote as Record<string, unknown>;
-    const last = q.last ?? q.price ?? q.regularMarketLastPrice;
-    const chg = q.netChange ?? q.change;
-    const pct = q.netPercentChange ?? q.percentChange;
-    parts.push(
-      `Quote: last ${last ?? "—"}${chg != null ? `, change ${chg}` : ""}${pct != null ? ` (${pct}%)` : ""}`,
-    );
+  if (sym && quote && !("error" in quote && quote.error)) {
+    parts.push(formatAmbientQuoteLine(quote as Record<string, unknown>, session));
+  } else if (sym) {
+    parts.push("Live quote: unavailable — call get_quote or check Schwab connection.");
   }
 
-  if (analyst && analyst.data_source !== "none") {
-    parts.push("Analyst coverage:", formatAnalystSnapshot(analyst));
-  } else {
-    parts.push("Analyst coverage: unavailable from configured data. Say so plainly if asked, without naming backends.");
+  if (sym) {
+    if (analyst && analyst.data_source !== "none") {
+      parts.push("Analyst coverage:", formatAnalystSnapshot(analyst));
+    } else {
+      parts.push("Analyst coverage: unavailable from configured data. Say so plainly if asked, without naming backends.");
+    }
+    parts.push(formatChatTerminalNewsBlock(sym, newsArticles));
   }
 
-  parts.push(formatChatTerminalNewsBlock(sym, newsArticles));
+  parts.push(formatChatPortfolioAmbientBlock(portfolio));
 
   return `\n\n${parts.join("\n")}`;
 }

@@ -7,6 +7,7 @@ import {
   mergeChatDisplayMessages,
   resolveChatStreamStateForSymbol,
   useChatStreamStore,
+  type ChatRetryableUserTurn,
   type ChatUiMessage,
 } from "@/lib/chatStreamStore";
 import { Send, Square, RotateCcw, Plus, Bot, Menu, X, ChevronDown } from "lucide-react";
@@ -171,6 +172,7 @@ export function MarketNewsChatPanel({
   const toolPills = streamState?.toolPills ?? [];
   const activityNote = streamState?.activityNote ?? "";
   const lastFailedMessage = streamState?.lastFailedMessage ?? null;
+  const retryableUserTurn = streamState?.retryableUserTurn ?? null;
 
   const displayMessages = useMemo(
     () => mergeChatDisplayMessages(messages, streamState),
@@ -490,6 +492,34 @@ export function MarketNewsChatPanel({
       });
     },
     [displayMessages, sendMessage],
+  );
+
+  const handleRetryStoppedUserTurn = useCallback(
+    (turn: ChatRetryableUserTurn) => {
+      if (isStreaming) return;
+      let assistantIdx = -1;
+      for (let i = displayMessages.length - 1; i >= 0; i--) {
+        if (displayMessages[i]?.role === "assistant") {
+          assistantIdx = i;
+          break;
+        }
+      }
+      const truncateFromMessageId =
+        assistantIdx >= 0 &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          displayMessages[assistantIdx]!.id,
+        )
+          ? displayMessages[assistantIdx]!.id
+          : null;
+      clearLastFailedForThread(activeThreadId, symU);
+      cancelAssistantSpeech();
+      void sendMessage(turn.text, {
+        attachments: turn.attachments,
+        truncateToIndex: assistantIdx >= 0 ? assistantIdx : undefined,
+        truncateFromMessageId,
+      });
+    },
+    [activeThreadId, clearLastFailedForThread, displayMessages, isStreaming, sendMessage, symU],
   );
 
   const handleEditUserMessage = useCallback(
@@ -832,6 +862,12 @@ export function MarketNewsChatPanel({
                   content={msg.content}
                   attachments={msg.attachments}
                   onEditConfirm={(nextText) => handleEditUserMessage(msg.id, msgIndex, nextText)}
+                  showRetry={
+                    !isStreaming &&
+                    retryableUserTurn != null &&
+                    msg.id === retryableUserTurn.userMessageId
+                  }
+                  onRetry={() => handleRetryStoppedUserTurn(retryableUserTurn!)}
                 />
               ) : (
                 <div>

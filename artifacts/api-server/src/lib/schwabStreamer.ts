@@ -121,7 +121,7 @@ const SCHWAB_INDEX_NORM: Record<string, string> = {
   "TRINQ": "$TRINQ", "TICKI": "$TICKI",
 };
 
-function normalizeEquityKey(sym: string): string {
+export function normalizeEquityKey(sym: string): string {
   const upper = sym.toUpperCase();
   return SCHWAB_INDEX_NORM[upper] ?? upper;
 }

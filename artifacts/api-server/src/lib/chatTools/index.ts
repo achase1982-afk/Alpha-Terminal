@@ -12,6 +12,7 @@ import { logger } from "../logger.js";
 import { buildChatNewsToolPayload } from "../chatTerminalNews.js";
 import { runChatNativeWebSearch } from "./chatWebSearch.js";
 import { augmentPolygonColdTickerForChat } from "../chatPolygonColdActivity.js";
+import { fetchChatPortfolioSnapshot } from "../chatPortfolio.js";
 import { fetchQuoteForChat } from "./getQuote.js";
 import { fetchTechnicalsForSymbol } from "./technicals.js";
 import type { ChatToolContext } from "./types.js";
@@ -83,11 +84,22 @@ export function createChatTools(ctx: ChatToolContext) {
   return {
     get_quote: tool({
       description:
-        "Live or recent equity quote for a US ticker. Uses Schwab streamer cache on the API server when subscribed, else Polygon daily aggs.",
+        "Live equity quote (Schwab streamer subscribe-on-miss + REST, same as terminal). Returns displayLast for extended hours, bid/ask, and quote age.",
       inputSchema: z.object({
         symbol: z.string().describe("US equity ticker, e.g. AAPL"),
       }),
-      execute: async ({ symbol }) => fetchQuoteForChat(symbol, "equity quote"),
+      execute: async ({ symbol }) =>
+        fetchQuoteForChat(symbol, "equity quote", {
+          marketAccessToken: ctx.schwabAccessToken,
+          clientTimeZone: ctx.clientTimeZone,
+        }),
+    }),
+
+    get_portfolio: tool({
+      description:
+        "Your Schwab account positions, balances, and day/open P/L (requires connected trader session). Use for holdings, exposure, and portfolio questions.",
+      inputSchema: z.object({}),
+      execute: async () => fetchChatPortfolioSnapshot(ctx.traderAccessToken),
     }),
 
     get_technicals: tool({
