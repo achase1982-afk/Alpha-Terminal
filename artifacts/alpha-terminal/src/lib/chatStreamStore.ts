@@ -22,6 +22,12 @@ function formatChatNetworkError(raw: string): string {
   return raw;
 }
 
+export type ChatRetryableUserTurn = {
+  userMessageId: string;
+  text: string;
+  attachments?: ChatAttachmentInput[];
+};
+
 export type ChatToolPill = {
   toolCallId: string;
   toolName: string;
@@ -65,6 +71,8 @@ export type ChatThreadStreamState = {
   toolPills: ChatToolPill[];
   activeMultiAgentCount: number;
   lastFailedMessage: string | null;
+  /** After Stop, retry the same user turn without retyping. */
+  retryableUserTurn: ChatRetryableUserTurn | null;
 };
 
 export type SendChatMessageParams = {
@@ -148,6 +156,20 @@ function emptyThreadState(threadId: string, symbol: string): ChatThreadStreamSta
     toolPills: [],
     activeMultiAgentCount: 0,
     lastFailedMessage: null,
+    retryableUserTurn: null,
+  };
+}
+
+function captureRetryableUserTurn(
+  cur: ChatThreadStreamState,
+): ChatRetryableUserTurn | null {
+  const lastUser = [...cur.pendingUserMessages].reverse().find((m) => m.role === "user");
+  if (!lastUser) return null;
+  if (!lastUser.content.trim() && !(lastUser.attachments?.length ?? 0)) return null;
+  return {
+    userMessageId: lastUser.id,
+    text: lastUser.content,
+    attachments: lastUser.attachments,
   };
 }
 
@@ -323,10 +345,15 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
       set((st) => {
         const cur = st.streamsByThreadId[key];
         if (!cur) return st;
+        const retryableUserTurn = captureRetryableUserTurn(cur);
         return {
           streamsByThreadId: {
             ...st.streamsByThreadId,
-            [key]: { ...cur, stopRequested: true },
+            [key]: {
+              ...cur,
+              stopRequested: true,
+              retryableUserTurn: retryableUserTurn ?? cur.retryableUserTurn,
+            },
           },
         };
       });
@@ -378,7 +405,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
       return {
         streamsByThreadId: {
           ...st.streamsByThreadId,
-          [key]: { ...cur, lastFailedMessage: null },
+          [key]: { ...cur, lastFailedMessage: null, retryableUserTurn: null },
         },
       };
     });
@@ -466,6 +493,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
             inFlightReasoning: "",
             activityNote: "Connecting…",
             stopRequested: false,
+            retryableUserTurn: null,
             displayTruncateToIndex: params.truncateToIndex,
           },
         },
@@ -736,6 +764,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
           });
           return;
         }
+        const retryableUserTurn = captureRetryableUserTurn(cur);
         const flight = cur.inFlightAssistant;
         patchStream(streamKey, {
           inFlightAssistant: {
@@ -753,6 +782,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
           activeSendId: null,
           toolPills: [],
           activeMultiAgentCount: 0,
+          retryableUserTurn: retryableUserTurn ?? cur.retryableUserTurn,
         });
         return;
       }
