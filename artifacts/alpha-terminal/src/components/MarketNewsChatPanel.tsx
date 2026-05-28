@@ -93,6 +93,10 @@ type ServerThread = {
 /** Within this distance (px) of the bottom, treat the user as "following" the stream. */
 const CHAT_SCROLL_PIN_THRESHOLD_PX = 80;
 
+function readPersistedChatThreadId(symbolUpper: string): string | null {
+  return useTerminalStore.getState().activeChatThreadBySymbol[symbolUpper]?.threadId ?? null;
+}
+
 export interface MarketNewsChatPanelProps {
   /** When true, do not portal the mobile composer (e.g. Search overlay is open). */
   hideMobileComposerDock?: boolean;
@@ -138,8 +142,11 @@ export function MarketNewsChatPanel({
     return DEFAULT_AI_MODEL_ID;
   });
   const [threads, setThreads] = useState<ServerThread[]>([]);
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(() =>
+    readPersistedChatThreadId(symU),
+  );
   const [messages, setMessages] = useState<ChatUiMessage[]>([]);
+  const [transcriptLoading, setTranscriptLoading] = useState(false);
   const [input, setInput] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<ChatAttachmentInput[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
@@ -172,6 +179,8 @@ export function MarketNewsChatPanel({
 
   const composerSendLockRef = useRef(false);
   const streamStartedAtRef = useRef<number | null>(null);
+  const prevSymURef = useRef(symU);
+  const lastLoadedThreadRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isPinnedToBottomRef = useRef(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -235,6 +244,9 @@ export function MarketNewsChatPanel({
 
   const activateThread = useCallback(
     (threadId: string | null) => {
+      if (threadId !== lastLoadedThreadRef.current) {
+        lastLoadedThreadRef.current = null;
+      }
       setActiveThreadId(threadId);
       setActiveChatThreadForSymbol(symU, threadId);
     },
@@ -243,6 +255,7 @@ export function MarketNewsChatPanel({
 
   const loadThreadMessages = useCallback(
     async (threadId: string) => {
+      setTranscriptLoading(true);
       try {
         const res = await fetchWithAuth(`/api/chat/threads/${encodeURIComponent(threadId)}/messages`);
         if (!res.ok) return;
@@ -256,25 +269,37 @@ export function MarketNewsChatPanel({
           attachments: m.attachments?.length ? m.attachments : undefined,
         }));
         setMessages(loaded);
+        lastLoadedThreadRef.current = threadId;
         reconcileThreadFromServer(
           threadId,
           loaded.map((m) => m.id),
         );
       } catch {
-        setMessages([]);
+        /* Keep prior transcript on reload failure (e.g. tab return during spotty network). */
+      } finally {
+        setTranscriptLoading(false);
       }
     },
     [reconcileThreadFromServer],
   );
 
+  /** Stop TTS when leaving the chat panel so audio does not run over an empty view. */
+  useEffect(() => () => cancelAssistantSpeech(), []);
+
   useEffect(() => {
     let cancelled = false;
     setThreadsMenuOpen(false);
-    setMessages([]);
-    setActiveThreadId(null);
-    setInput("");
-    setPendingAttachments([]);
-    setAttachError(null);
+    const symbolChanged = prevSymURef.current !== symU;
+    prevSymURef.current = symU;
+
+    if (symbolChanged) {
+      lastLoadedThreadRef.current = null;
+      setMessages([]);
+      setInput("");
+      setPendingAttachments([]);
+      setAttachError(null);
+      setActiveThreadId(readPersistedChatThreadId(symU));
+    }
 
     void (async () => {
       const list = await refreshThreads();
@@ -285,9 +310,10 @@ export function MarketNewsChatPanel({
       if (threadId) {
         setActiveThreadId(threadId);
         setActiveChatThreadForSymbol(symU, threadId);
-      } else {
+      } else if (symbolChanged) {
         setActiveThreadId(null);
         setActiveChatThreadForSymbol(symU, null);
+        setMessages([]);
       }
     })();
 
@@ -297,9 +323,15 @@ export function MarketNewsChatPanel({
   }, [symU, refreshThreads, setActiveChatThreadForSymbol]);
 
   useEffect(() => {
-    if (activeThreadId) void loadThreadMessages(activeThreadId);
-    else setMessages([]);
-  }, [activeThreadId, loadThreadMessages]);
+    if (!activeThreadId) {
+      if (!streamState?.isStreaming && !streamState?.inFlightAssistant) {
+        setMessages([]);
+      }
+      return;
+    }
+    if (lastLoadedThreadRef.current === activeThreadId) return;
+    void loadThreadMessages(activeThreadId);
+  }, [activeThreadId, loadThreadMessages, streamState?.inFlightAssistant, streamState?.isStreaming]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -398,6 +430,7 @@ export function MarketNewsChatPanel({
   const handleSelectThread = useCallback(
     (threadId: string) => {
       cancelAssistantSpeech();
+      lastLoadedThreadRef.current = null;
       activateThread(threadId);
       setThreadsMenuOpen(false);
     },
@@ -781,7 +814,12 @@ export function MarketNewsChatPanel({
               : undefined
           }
         >
-          {displayMessages.length === 0 && (
+          {displayMessages.length === 0 && transcriptLoading && (
+            <p className="font-mono text-[14px] text-white/55 leading-relaxed chat-thinking-breath">
+              Loading chat…
+            </p>
+          )}
+          {displayMessages.length === 0 && !transcriptLoading && (
             <p className="font-mono text-[14px] text-white/70 leading-relaxed">
               Ask about {symU} — the assistant calls tools for live quotes, flow, news, and technicals.
               Conversations are saved to your account.
