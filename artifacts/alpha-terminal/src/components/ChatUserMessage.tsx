@@ -109,9 +109,9 @@ export function ChatUserMessage({
       {menu}
       <span
         {...bind()}
-        className="inline-block font-mono text-[14px] text-[#f5f5f5] bg-[#1a1a1a] border border-card-border rounded px-3 py-2 max-w-full text-left touch-manipulation select-text"
+        className="inline-block font-mono text-[14px] text-[#f5f5f5] bg-[#1a1a1a] border border-card-border rounded px-3 py-2 max-w-full text-left touch-manipulation select-none [-webkit-touch-callout:none]"
       >
-        {content ? <span className="whitespace-pre-wrap">{content}</span> : null}
+        {content ? <span className="whitespace-pre-wrap select-none">{content}</span> : null}
         {attachments.length > 0 && (
           <div className={content ? "mt-2 space-y-2" : "space-y-2"}>
             {attachments.map((att) => (
