@@ -68,6 +68,13 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toMatch(/PREMARKET and AFTERHOURS/i);
   });
 
+  it("embeds investigative reasoning protocol", () => {
+    const prompt = buildChatSystemPrompt("AAPL");
+    expect(prompt).toContain("Investigative reasoning (explanatory questions only)");
+    expect(prompt).toContain("TRIGGER: Use the protocol below");
+    expect(prompt).toMatch(/Extended thinking must be enabled/i);
+  });
+
   it("documents get_news as internal synthesis only", () => {
     const prompt = buildChatSystemPrompt("AAPL");
     expect(prompt).toContain("internal synthesis");

@@ -16,6 +16,7 @@ import {
 import type { AnthropicOpusCallOptions } from "@workspace/ai-models";
 import { resolveChatLanguageModel } from "./chatModel.js";
 import { buildAmbientSymbolContextBlock } from "./ambientSymbolContext.js";
+import { INVESTIGATIVE_REASONING_PROTOCOL } from "./investigativeReasoningProtocol.js";
 import { getMarketContext } from "./getMarketContext.js";
 import { formatMarketContextUserBlock } from "./marketContextPrompt.js";
 import {
@@ -134,7 +135,8 @@ ${ambientBlock}
 - Call tools when the user needs **current** prices, flow, technicals, news, earnings, IV rank, options chain, or market pulse data.
 - For sell-side ratings, consensus price targets, or valuation sentiment on the ambient ticker, use the internal **Context data** block when present; otherwise call **get_analyst_ratings**. Do not invent analyst counts or price targets.
 - **Live tape:** You have the same Schwab live quote pipeline as the terminal (streamer + REST). Use **displayLast** / **latestPrint** for "price now", especially in PREMARKET and AFTERHOURS. Regular session is 9:30 AM–4:00 PM ET, but equity prints can update until ~8 PM ET; do not freeze the story at the 4 PM regular-session mark when extended data is present. If quote age is high or only prior close exists, say the tape may be stale.
-- For **why is it moving**, catalyst, or headline questions: read internal context and tools first, then answer in synthesized analyst prose. Do **not** quote headline titles, list wire sources, or say "the terminal/news feed shows." State the catalyst as fact (who, what, size, timing). Call **get_news** for another ticker or if context has no headlines. Call **web_search** only to fill gaps; do **not** claim no same-day catalyst if context or **get_news** already has material [TODAY] items.
+- For **why is it moving**, catalyst, or headline questions: read internal context and tools first, then answer in synthesized analyst prose. Do **not** quote headline titles, list wire sources, or say "the terminal/news feed shows." State the catalyst as fact (who, what, size, timing). Call **get_quote**, **get_news**, **get_earnings**, and **web_search** as needed so freshness and catalyst checks use current data, not memory. Do **not** claim no same-day catalyst if context or **get_news** already has material [TODAY] items.
+- **Explanatory questions (why / what's going on):** Extended thinking must be enabled or this discipline underperforms. Follow the investigative protocol below. Use tools for live tape, headlines, earnings dates, and web corroboration before you answer.
 - **Portfolio:** Internal context may include holdings. For exposure, sizing, overlap, or P/L questions, use **get_portfolio** when needed. Do not invent positions.
 - **Voice (absolute):** Never mention Alpha Terminal, terminal snapshot, news feed, Benzinga, Polygon, Finnhub, FMP, Tavily, Serper, web search, or tool names in the user-facing answer. Do not paste headline bullets with timestamps and publishers. Do not say "web search confirms." Integrate facts; if data is missing, say what you cannot confirm without naming backends.
 - Use concise markdown; bullet lists for data. No "As an AI…" disclaimers. No greeting or sign-off fluff.
@@ -161,7 +163,11 @@ get_quote, get_portfolio, get_technicals, get_options_chain, get_flow, get_ivr, 
 
 **get_news** returns recent headlines for internal synthesis (do not cite wire names in the reply).
 
-**web_search** supplements missing catalyst context; synthesize results, never attribute them to search or publishers in the reply.`;
+**web_search** supplements missing catalyst context; synthesize results, never attribute them to search or publishers in the reply.
+
+## Investigative reasoning (explanatory questions only)
+
+${INVESTIGATIVE_REASONING_PROTOCOL}`;
 }
 
 /** System prompt plus live terminal snapshot (quote + analyst) for the page symbol. */
