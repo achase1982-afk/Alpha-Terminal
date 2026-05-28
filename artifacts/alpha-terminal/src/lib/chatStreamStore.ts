@@ -55,6 +55,8 @@ export type ChatThreadStreamState = {
   /** Live extended-thinking / reasoning stream for the active turn. */
   inFlightReasoning: string;
   activityNote: string;
+  /** True when the user tapped Stop (not background tab / navigation). */
+  stopRequested: boolean;
   /** Optimistic user lines for this in-flight turn (not yet in server reload). */
   pendingUserMessages: ChatUiMessage[];
   /** While regenerating, slice persisted transcript for display merge. */
@@ -138,6 +140,7 @@ function emptyThreadState(threadId: string, symbol: string): ChatThreadStreamSta
     inFlightAssistant: null,
     inFlightReasoning: "",
     activityNote: "",
+    stopRequested: false,
     pendingUserMessages: [],
     toolPills: [],
     activeMultiAgentCount: 0,
@@ -168,6 +171,33 @@ async function fetchThreadMessages(threadId: string): Promise<ChatThreadMessageR
 }
 
 /** Poll Postgres transcript after mobile background killed the SSE socket. */
+
+function startChatBackgroundPoll(args: {
+  threadId: string;
+  streamKey: string;
+  sendId: string;
+  placeholderAssistantId: string;
+  userText: string;
+  patchStream: (key: string, patch: Partial<ChatThreadStreamState>) => void;
+}): void {
+  const cur = useChatStreamStore.getState().streamsByThreadId[args.streamKey];
+  if (
+    cur?.activeSendId === args.sendId &&
+    cur.isStreaming &&
+    cur.abortController === null
+  ) {
+    return;
+  }
+  args.patchStream(args.streamKey, {
+    abortController: null,
+    isStreaming: true,
+    activeSendId: args.sendId,
+    toolPills: [],
+    activeMultiAgentCount: 0,
+  });
+  void pollChatThreadForAssistant(args);
+}
+
 async function pollChatThreadForAssistant(args: {
   threadId: string;
   streamKey: string;
@@ -284,9 +314,21 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
   },
 
   abortStreamForThread: (threadId, symbol) => {
-    get().abortInFlightFetchForThread(threadId, symbol);
     const symU = symbol.toUpperCase();
     const keys = threadId ? [threadId, pendingStreamKey(symU)] : [pendingStreamKey(symU)];
+    for (const key of keys) {
+      set((st) => {
+        const cur = st.streamsByThreadId[key];
+        if (!cur) return st;
+        return {
+          streamsByThreadId: {
+            ...st.streamsByThreadId,
+            [key]: { ...cur, stopRequested: true },
+          },
+        };
+      });
+    }
+    get().abortInFlightFetchForThread(threadId, symbol);
     for (const key of keys) {
       set((st) => {
         const cur = st.streamsByThreadId[key];
@@ -420,6 +462,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
             inFlightAssistant: { id: assistantId, content: "", complete: false },
             inFlightReasoning: "",
             activityNote: "",
+            stopRequested: false,
             displayTruncateToIndex: params.truncateToIndex,
           },
         },
@@ -616,7 +659,31 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
     } catch (err: unknown) {
       const cur = get().streamsByThreadId[streamKey];
       if (!cur || isSupersededSend(cur, sendId, controller)) return;
+      const resolvedThreadId = threadId ?? (streamKey.startsWith("__pending__") ? null : streamKey);
+
       if (signal.aborted || (err as Error).name === "AbortError") {
+        if (!cur.stopRequested && resolvedThreadId) {
+          const flight = cur.inFlightAssistant;
+          patchStream(streamKey, {
+            inFlightAssistant: {
+              id: assistantId,
+              content: flight?.content ?? "",
+              complete: false,
+            },
+            inFlightReasoning: "",
+            activityNote: "",
+            stopRequested: false,
+          });
+          startChatBackgroundPoll({
+            threadId: resolvedThreadId,
+            streamKey,
+            sendId,
+            placeholderAssistantId: assistantId,
+            userText: text,
+            patchStream,
+          });
+          return;
+        }
         const flight = cur.inFlightAssistant;
         patchStream(streamKey, {
           inFlightAssistant: {
@@ -627,6 +694,8 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
                 : (flight?.content ?? "**Stopped.**"),
             complete: true,
           },
+          inFlightReasoning: "",
+          activityNote: "",
           isStreaming: false,
           abortController: null,
           activeSendId: null,
@@ -635,8 +704,6 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
         });
         return;
       }
-
-      const resolvedThreadId = threadId ?? (streamKey.startsWith("__pending__") ? null : streamKey);
       if (isTransientChatNetworkError(err) && resolvedThreadId) {
         const flight = cur.inFlightAssistant;
         patchStream(streamKey, {
@@ -645,13 +712,11 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
             content: flight?.content ?? "",
             complete: false,
           },
-          isStreaming: true,
-          abortController: null,
-          activeSendId: sendId,
-          toolPills: [],
-          activeMultiAgentCount: 0,
+          inFlightReasoning: "",
+          activityNote: "",
+          stopRequested: false,
         });
-        void pollChatThreadForAssistant({
+        startChatBackgroundPoll({
           threadId: resolvedThreadId,
           streamKey,
           sendId,
@@ -681,15 +746,28 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
       if (requestTimeoutId != null) window.clearTimeout(requestTimeoutId);
       const cur = get().streamsByThreadId[streamKey];
       if (!cur || isSupersededSend(cur, sendId, controller)) return;
-      if (cur.isStreaming) {
-        patchStream(streamKey, {
-          isStreaming: false,
-          abortController: null,
-          activeSendId: null,
-          toolPills: [],
-          activeMultiAgentCount: 0,
+      if (cur.activeSendId !== sendId || !cur.isStreaming) return;
+
+      const resolvedThreadId = threadId ?? (streamKey.startsWith("__pending__") ? null : streamKey);
+      if (!cur.stopRequested && resolvedThreadId) {
+        startChatBackgroundPoll({
+          threadId: resolvedThreadId,
+          streamKey,
+          sendId,
+          placeholderAssistantId: assistantId,
+          userText: text,
+          patchStream,
         });
+        return;
       }
+
+      patchStream(streamKey, {
+        isStreaming: false,
+        abortController: null,
+        activeSendId: null,
+        toolPills: [],
+        activeMultiAgentCount: 0,
+      });
     }
   },
 }));

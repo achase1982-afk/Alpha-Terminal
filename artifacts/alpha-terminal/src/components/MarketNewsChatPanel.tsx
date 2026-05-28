@@ -18,7 +18,6 @@ import {
 import { ChatUserMessage } from "@/components/ChatUserMessage";
 import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
-import { AiThinkingFeed } from "@/components/ai-shared/AiThinkingFeed";
 import { useChatComposerDock } from "@/hooks/useVisualViewportKeyboardInset";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import {
@@ -166,10 +165,7 @@ export function MarketNewsChatPanel({
   );
 
   const isStreaming = streamState?.isStreaming ?? false;
-  const toolPills = streamState?.toolPills ?? [];
   const activeMultiAgentCount = streamState?.activeMultiAgentCount ?? 0;
-  const inFlightReasoning = streamState?.inFlightReasoning ?? "";
-  const activityNote = streamState?.activityNote ?? "";
   const lastFailedMessage = streamState?.lastFailedMessage ?? null;
 
   const displayMessages = useMemo(
@@ -337,7 +333,7 @@ export function MarketNewsChatPanel({
 
   useEffect(() => {
     scrollToBottom();
-  }, [displayMessages, isStreaming, toolPills, activityNote, inFlightReasoning, scrollToBottom]);
+  }, [displayMessages, isStreaming, scrollToBottom]);
 
   const handleStop = useCallback(() => {
     abortStreamForThread(activeThreadId, symU);
@@ -410,6 +406,19 @@ export function MarketNewsChatPanel({
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [activeThreadId, loadThreadMessages]);
+
+  /** When returning to chat (e.g. Chart tab), pull transcript if the reply finished off-screen. */
+  useEffect(() => {
+    if (!activeThreadId) return;
+    const stream = resolveChatStreamStateForSymbol(
+      useChatStreamStore.getState().streamsByThreadId,
+      symU,
+      activeThreadId,
+    );
+    if (stream?.isStreaming || stream?.inFlightAssistant) {
+      void loadThreadMessages(activeThreadId);
+    }
+  }, [activeThreadId, symU, loadThreadMessages]);
 
   const handleClear = handleNewThread;
 
@@ -586,15 +595,8 @@ export function MarketNewsChatPanel({
     displayMessages.length > 0 &&
     lastDisplayMsg?.role === "assistant" &&
     !lastDisplayMsg.content.trim();
-  const showLiveReasoning =
+  const showThinkingLabel =
     inFlightAssistantTurn && activeMultiAgentCount <= 1;
-  const showActivityStrip =
-    inFlightAssistantTurn && (toolPills.length > 0 || activityNote.length > 0);
-  const showThinkingDots =
-    inFlightAssistantTurn &&
-    activeMultiAgentCount <= 1 &&
-    !showLiveReasoning &&
-    !showActivityStrip;
 
   return (
     <div className="relative flex flex-col flex-1 min-h-0 w-full max-md:max-h-none md:max-h-none md:min-h-[280px] bg-[#0a0a0a] border-t border-card-border/40">
@@ -829,43 +831,17 @@ export function MarketNewsChatPanel({
               )}
             </div>
           ))}
-          {showLiveReasoning && (
-            <div className="text-left mb-2">
-              <AiThinkingFeed texts={[inFlightReasoning]} isStreaming={isStreaming} />
+          {showThinkingLabel && (
+            <p className="text-left font-mono text-[14px] text-white py-1" aria-live="polite">
+              thinking
+            </p>
+          )}
+          {inFlightAssistantTurn && activeMultiAgentCount > 1 && (
+            <div className="flex items-center gap-2 py-1">
+              <MultiAgentOrbit count={activeMultiAgentCount} />
+              <span className="font-mono text-[14px] text-white">thinking</span>
             </div>
           )}
-          {showThinkingDots &&
-            (activeMultiAgentCount > 1 ? (
-              <div className="flex items-center gap-2 py-1 text-white/75">
-                <MultiAgentOrbit count={activeMultiAgentCount} />
-                <div className="flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse" />
-                  <span
-                    className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse"
-                    style={{ animationDelay: "130ms" }}
-                  />
-                  <span
-                    className="h-1.5 w-1.5 rounded-full bg-white/70 animate-pulse"
-                    style={{ animationDelay: "260ms" }}
-                  />
-                </div>
-                <span className="font-mono text-[11px] text-white/65">
-                  {activeMultiAgentCount} models in parallel, then synthesis…
-                </span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5 py-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
-                <span
-                  className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse"
-                  style={{ animationDelay: "150ms" }}
-                />
-                <span
-                  className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse"
-                  style={{ animationDelay: "300ms" }}
-                />
-              </div>
-            ))}
         </div>
 
         {!narrowMobile && renderComposer()}
