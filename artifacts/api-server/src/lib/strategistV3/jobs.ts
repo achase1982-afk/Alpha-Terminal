@@ -7,6 +7,7 @@ import {
   inArray,
   desc,
   gte,
+  isNull,
   strategistJobsTable,
   type StrategistJob,
   type StrategistJobKind,
@@ -17,6 +18,33 @@ import { logger } from "../logger.js";
 export async function findJobById(jobId: string): Promise<StrategistJob | undefined> {
   const rows = await db.select().from(strategistJobsTable).where(eq(strategistJobsTable.id, jobId)).limit(1);
   return rows[0];
+}
+
+/**
+ * Atomically claim the one allowed completion push for a terminal job.
+ * Returns the job row when this caller won the claim; null if already sent or not terminal.
+ */
+export async function claimStrategistPushSend(
+  jobId: string,
+  allowedStatuses: StrategistJob["status"][],
+): Promise<StrategistJob | null> {
+  if (allowedStatuses.length === 0) return null;
+  const pushSentAt = new Date().toISOString();
+  const rows = await db
+    .update(strategistJobsTable)
+    .set({
+      progress: sql`COALESCE(${strategistJobsTable.progress}, '{}'::jsonb) || jsonb_build_object('pushSentAt', ${pushSentAt}::text)`,
+    })
+    .where(
+      and(
+        eq(strategistJobsTable.id, jobId),
+        inArray(strategistJobsTable.status, allowedStatuses),
+        isNull(strategistJobsTable.phase),
+        sql`COALESCE(${strategistJobsTable.progress}->>'pushSentAt', '') = ''`,
+      ),
+    )
+    .returning();
+  return rows[0] ?? null;
 }
 
 export async function findActiveDuplicate(

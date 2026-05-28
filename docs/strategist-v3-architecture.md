@@ -181,6 +181,10 @@ Both use the same Node.js process and Postgres connection pool as HTTP routes. *
 
 Push payload `data.kind`: `analyze` | `validation` | `failure`.
 
+**One OS push per job:** `fireStrategistJobPush` atomically sets `progress.pushSentAt` on the job row (claim) and refuses to send if the job is not terminal, `phase` is still set, or a push was already sent. IVR backfill does not emit completion pushes — only the strategist worker does, after `persistAndComplete`.
+
+Stale web-push subscriptions are cleared on re-register so a single completion does not fan out to multiple device endpoints.
+
 ---
 
 ## 16. Failure modes
