@@ -13,7 +13,12 @@ import {
   RunOptionsAnalysisResponse,
   GetAvailableModelsResponse,
 } from "@workspace/api-zod";
-import { AI_MODEL_IDS, DEFAULT_AI_MODEL_ID } from "@workspace/ai-models";
+import {
+  AI_MODEL_IDS,
+  DEFAULT_AI_MODEL_ID,
+  parseAnthropicOpusEffortBody,
+  type AnthropicOpusEffort,
+} from "@workspace/ai-models";
 import { computeIndicators, formatTAContext, isDataStale, type Candle } from "../lib/ta.js";
 import { runMarketPulseEngine, formatClusterDebugLine, verifyEngineScoring, type ClusterName, type MarketIndicators, type BiasLabel, type SessionType } from "../lib/marketPulseEngine.js";
 import {
@@ -43,6 +48,7 @@ import { createGeminiClient, getGeminiApiKey, hasGeminiApiKey } from "../lib/gem
 import { getXaiApiKey } from "../lib/xaiEnv.js";
 import { geminiThinkingConfigForModel } from "../lib/geminiThinkingConfig.js";
 import {
+  anthropicMessagesOutputConfig,
   anthropicThinkingForMessagesApi,
   ANTHROPIC_EXTENDED_THINKING_BUDGET,
   anthropicProviderOptionsForAiSdk,
@@ -247,6 +253,7 @@ interface NativeStreamOptions {
   modelName?: string;
   temperature?: number;
   thinkingBudget?: number;
+  anthropicOpusEffort?: AnthropicOpusEffort | null;
   onThinking?: (text: string) => void;
   onText?: (text: string) => void;
 }
@@ -261,6 +268,7 @@ async function nativeStreamClaude(opts: NativeStreamOptions): Promise<string> {
     modelName,
     temperature = 0,
     thinkingBudget,
+    anthropicOpusEffort,
     onThinking,
     onText,
   } = opts;
@@ -281,6 +289,7 @@ async function nativeStreamClaude(opts: NativeStreamOptions): Promise<string> {
         : Math.max(16000, callerBudget + 8000)
       : 4096,
     messages: [{ role: "user", content: prompt }],
+    ...anthropicMessagesOutputConfig(resolvedModel, anthropicOpusEffort),
   };
 
   if (systemPrompt) {
@@ -457,7 +466,8 @@ function getClient(): Anthropic | null {
 async function callClaude(
   prompt: string,
   modelName: string = DEFAULT_MODEL,
-  temperature: number = 0
+  temperature: number = 0,
+  anthropicOpusEffort?: AnthropicOpusEffort | null,
 ): Promise<string> {
   const client = getClient();
   if (!client) {
@@ -473,6 +483,7 @@ async function callClaude(
         : ANTHROPIC_EXTENDED_THINKING_BUDGET + 8192
       : 4096,
     messages: [{ role: "user", content: prompt }],
+    ...anthropicMessagesOutputConfig(modelName, anthropicOpusEffort),
   };
   if (thinking) {
     createParams.thinking = thinking as Anthropic.MessageCreateParamsNonStreaming["thinking"];
@@ -528,7 +539,8 @@ async function callOpenAiDirect(
 async function callModel(
   prompt: string,
   modelName: string = DEFAULT_MODEL,
-  temperature: number = 0
+  temperature: number = 0,
+  anthropicOpusEffort?: AnthropicOpusEffort | null,
 ): Promise<string> {
   if (isGeminiModel(modelName)) {
     return callGeminiDirect(prompt, modelName, temperature);
@@ -547,7 +559,7 @@ async function callModel(
   if (isOpenAiModel(modelName)) {
     return callOpenAiDirect(prompt, modelName, temperature);
   }
-  return callClaude(prompt, modelName, temperature);
+  return callClaude(prompt, modelName, temperature, anthropicOpusEffort);
 }
 
 function formatQuote(quote: Record<string, unknown>): string {
@@ -751,8 +763,17 @@ Analyze ONLY the above data and provide:
 
 Be specific, data-driven, and concise. Use markdown formatting.`;
 
+  const anthropicOpusEffort = parseAnthropicOpusEffortBody(
+    (req.body as { anthropic_opus_effort?: string }).anthropic_opus_effort,
+  );
+
   try {
-    const response = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0);
+    const response = await callModel(
+      prompt,
+      model ?? DEFAULT_MODEL,
+      temperature ?? 0,
+      anthropicOpusEffort,
+    );
     return res.json(RunTechnicalAnalysisResponse.parse({ response }));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -769,6 +790,9 @@ router.post("/technical-analysis/stream", async (req, res) => {
   }
 
   const { quote, candles, model, temperature, customPrompt, fundamentals } = parsed.data;
+  const anthropicOpusEffort = parseAnthropicOpusEffortBody(
+    (req.body as { anthropic_opus_effort?: string }).anthropic_opus_effort,
+  );
   const quoteRec = quote as Record<string, unknown>;
   const taSymbol =
     typeof quoteRec["symbol"] === "string"
@@ -954,6 +978,7 @@ Every price level MUST come from the provided data. For fundamental sections, us
       prompt,
       modelName: chosenModel,
       temperature: temperature ?? 0,
+      anthropicOpusEffort,
       thinkingBudget: 2048,
       onThinking: (text) => {
         res.write(`data: ${JSON.stringify({ reasoning: text })}\n\n`);
@@ -986,6 +1011,9 @@ router.post("/options-analysis", async (req, res) => {
   }
 
   const { quote, chain, model, temperature, customPrompt } = parsed.data;
+  const anthropicOpusEffort = parseAnthropicOpusEffortBody(
+    (req.body as { anthropic_opus_effort?: string }).anthropic_opus_effort,
+  );
 
   const prompt = `You are an expert options trader and derivatives analyst.
 
@@ -1012,7 +1040,12 @@ Analyze ONLY the above data and provide:
 Be specific with strikes, expirations, and premium estimates. Use markdown formatting.`;
 
   try {
-    const response = await callModel(prompt, model ?? DEFAULT_MODEL, temperature ?? 0);
+    const response = await callModel(
+      prompt,
+      model ?? DEFAULT_MODEL,
+      temperature ?? 0,
+      anthropicOpusEffort,
+    );
     return res.json(RunOptionsAnalysisResponse.parse({ response }));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -1465,11 +1498,12 @@ router.get("/market-pulse/latest", (_req, res) => {
 
 router.post("/market-pulse/stream", async (req, res) => {
   ensurePulseSubscriptions();
-  const { symbols, model, temperature, preferences, previousBias, clientTimeZone: bodyTz } = req.body as {
+  const { symbols, model, temperature, anthropic_opus_effort, preferences, previousBias, clientTimeZone: bodyTz } = req.body as {
     accessToken?: string;
     symbols?: string[];
     model?: string;
     temperature?: number;
+    anthropic_opus_effort?: string;
     clientTimeZone?: string;
     previousBias?: BiasLabel;
     preferences?: {
@@ -1749,6 +1783,7 @@ Write ONLY the narrative fields. Return this exact JSON structure:
       prompt: narrativePrompt,
       modelName: model ?? DEFAULT_MODEL,
       temperature: temperature ?? 0,
+      anthropicOpusEffort: parseAnthropicOpusEffortBody(anthropic_opus_effort),
       thinkingBudget: 4096,
       onThinking: (text) => {
         hasEmittedThinking = true;

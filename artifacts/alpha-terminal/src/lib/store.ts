@@ -1,6 +1,12 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { DEFAULT_AI_MODEL_ID, migrateLegacyModelIdToCatalog } from '@workspace/ai-models';
+import {
+  DEFAULT_AI_MODEL_ID,
+  DEFAULT_ANTHROPIC_OPUS_EFFORT,
+  migrateLegacyModelIdToCatalog,
+  normalizeAnthropicOpusEffort,
+  type AnthropicOpusEffort,
+} from '@workspace/ai-models';
 import {
   DEFAULT_CATALYST_GATE_SETTINGS,
   normalizeCatalystGateSettings,
@@ -188,16 +194,17 @@ export interface TerminalState {
   setAiTemp: (t: number) => void;
 
   aiFeatureSettings: {
-    marketPulse:   { model: string; temperature: number };
-    technicals:    { model: string; temperature: number };
-    strategist:    { model: string; temperature: number };
-    chat:          { model: string; temperature: number; councilChairModel: string };
-    scanner:       { model: string; temperature: number };
+    marketPulse:   { model: string; temperature: number; anthropicOpusEffort: AnthropicOpusEffort };
+    technicals:    { model: string; temperature: number; anthropicOpusEffort: AnthropicOpusEffort };
+    strategist:    { model: string; temperature: number; anthropicOpusEffort: AnthropicOpusEffort };
+    chat:          { model: string; temperature: number; councilChairModel: string; anthropicOpusEffort: AnthropicOpusEffort };
+    scanner:       { model: string; temperature: number; anthropicOpusEffort: AnthropicOpusEffort };
   };
   setAiFeatureSetting: {
     (feature: 'chat', key: 'councilChairModel', value: string): void;
     (feature: keyof TerminalState['aiFeatureSettings'], key: 'model', value: string): void;
     (feature: keyof TerminalState['aiFeatureSettings'], key: 'temperature', value: number): void;
+    (feature: keyof TerminalState['aiFeatureSettings'], key: 'anthropicOpusEffort', value: AnthropicOpusEffort): void;
   };
 
   notificationPrefs: {
@@ -545,11 +552,11 @@ export const useTerminalStore = create<TerminalState>()(
       setAiTemp: (aiTemp) => set({ aiTemp }),
 
       aiFeatureSettings: {
-        marketPulse:   { model: DEFAULT_AI_MODEL_ID, temperature: 0 },
-        technicals:    { model: DEFAULT_AI_MODEL_ID, temperature: 0 },
-        strategist:    { model: DEFAULT_AI_MODEL_ID, temperature: 0 },
-        chat:          { model: DEFAULT_AI_MODEL_ID, temperature: 0, councilChairModel: DEFAULT_AI_MODEL_ID },
-        scanner:       { model: DEFAULT_AI_MODEL_ID, temperature: 0 },
+        marketPulse:   { model: DEFAULT_AI_MODEL_ID, temperature: 0, anthropicOpusEffort: DEFAULT_ANTHROPIC_OPUS_EFFORT },
+        technicals:    { model: DEFAULT_AI_MODEL_ID, temperature: 0, anthropicOpusEffort: DEFAULT_ANTHROPIC_OPUS_EFFORT },
+        strategist:    { model: DEFAULT_AI_MODEL_ID, temperature: 0, anthropicOpusEffort: DEFAULT_ANTHROPIC_OPUS_EFFORT },
+        chat:          { model: DEFAULT_AI_MODEL_ID, temperature: 0, councilChairModel: DEFAULT_AI_MODEL_ID, anthropicOpusEffort: DEFAULT_ANTHROPIC_OPUS_EFFORT },
+        scanner:       { model: DEFAULT_AI_MODEL_ID, temperature: 0, anthropicOpusEffort: DEFAULT_ANTHROPIC_OPUS_EFFORT },
       },
       setAiFeatureSetting: (feature: keyof TerminalState['aiFeatureSettings'], key: string, value: string | number) =>
         set((state) => ({
@@ -978,7 +985,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 31,
+      version: 32,
       storage: createJSONStorage(() => quotaSafeLocalStorage),
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
@@ -1326,6 +1333,16 @@ export const useTerminalStore = create<TerminalState>()(
             }
             if (typeof cfg["skepticModelName"] === "string") {
               cfg["skepticModelName"] = migrateLegacyModelIdToCatalog(cfg["skepticModelName"]);
+            }
+          }
+        }
+        if (version < 32) {
+          const features = s["aiFeatureSettings"] as Record<string, { anthropicOpusEffort?: unknown }> | undefined;
+          if (features) {
+            for (const key of Object.keys(features)) {
+              const row = features[key];
+              if (!row || typeof row !== "object") continue;
+              row.anthropicOpusEffort = normalizeAnthropicOpusEffort(row.anthropicOpusEffort);
             }
           }
         }

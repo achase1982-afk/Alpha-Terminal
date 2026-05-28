@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  anthropicMessagesOutputConfig,
+  anthropicProviderOptionsForAiSdk,
   googleThinkingProviderOptionsForAiSdk,
   openAiReasoningProviderOptionsForChat,
 } from "../llmReasoningConfig.js";
@@ -26,6 +28,22 @@ describe("openAiReasoningProviderOptionsForChat", () => {
     expect(openAiReasoningProviderOptionsForChat("gpt-5.4-mini")).toEqual({
       openai: { reasoningEffort: "medium" },
     });
+  });
+});
+
+describe("anthropicProviderOptionsForAiSdk", () => {
+  it("includes adaptive thinking and effort for claude-opus-4-8", () => {
+    const opts = anthropicProviderOptionsForAiSdk("claude-opus-4-8", "xhigh");
+    expect(opts?.providerOptions.anthropic.thinking).toEqual({ type: "adaptive" });
+    expect(opts?.providerOptions.anthropic.effort).toBe("xhigh");
+  });
+
+  it("omits output_config for non-Opus models", () => {
+    expect(anthropicMessagesOutputConfig("claude-sonnet-4-6", "max")).toBeUndefined();
+  });
+
+  it("sets output_config.effort for Opus", () => {
+    expect(anthropicMessagesOutputConfig("claude-opus-4-8", "low")?.output_config.effort).toBe("low");
   });
 });
 

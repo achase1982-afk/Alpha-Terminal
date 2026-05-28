@@ -1,4 +1,6 @@
 import {
+  anthropicOpusEffortFromStrategistIdx,
+  type AnthropicOpusEffort,
   STRATEGIST_MODEL_CATALOG_VERSION,
   STRATEGIST_MODEL_OPTIONS,
   remapStrategistCatalogIndexV5ToV6,
@@ -64,6 +66,8 @@ export interface StrategistConfig {
    * persisted integer indices once after upgrades.
    */
   strategistModelCatalogVersion: number;
+  /** Index into `ANTHROPIC_OPUS_EFFORT_LEVELS` for Anthropic Opus strategist calls. */
+  strategistAnthropicOpusEffortIdx: number;
 }
 
 /**
@@ -94,6 +98,10 @@ export function normalizeStrategistModelIndex(idx: number): number {
 
 export function getStrategistModel(idx: number): StrategistModelOption {
   return STRATEGIST_MODEL_OPTIONS[normalizeStrategistModelIndex(idx)];
+}
+
+export function getStrategistAnthropicOpusEffort(settings: StrategistConfig): AnthropicOpusEffort {
+  return anthropicOpusEffortFromStrategistIdx(settings.strategistAnthropicOpusEffortIdx);
 }
 
 /**
@@ -152,6 +160,7 @@ const DEFAULTS = {
   strategistDebateBModelIdx: 2,
   strategistArbitratorModelIdx: 2,
   strategistModelCatalogVersion: STRATEGIST_MODEL_CATALOG_VERSION,
+  strategistAnthropicOpusEffortIdx: 2,
 } satisfies StrategistConfig;
 
 let settingsCache: StrategistConfig | null = null;
@@ -538,6 +547,24 @@ export function getSettingMeta(): SettingMetaEntry[] {
       { value: 3, label: "Hybrid — agree → synthesis, disagree → higher confidence" },
     ] },
     { key: "strategistTieBand", label: "Debate Tie Band (confidence pts)", group: "Strategist", default: 10, min: 1, max: 30, step: 1, description: "How close the Bull and Bear confidences must be (in points) for the verdict to land on SIDEWAYS / vol-neutral. Not used in Desk or Solo Desk mode." },
+    {
+      key: "strategistAnthropicOpusEffortIdx",
+      label: "Opus effort (Anthropic)",
+      group: "Strategist",
+      default: 2,
+      min: 0,
+      max: 4,
+      step: 1,
+      description:
+        "Anthropic Messages API effort when a strategist slot uses Claude Opus 4.8 (or 4.7). Low/Medium save tokens; High is default; Extra (xhigh) for long agentic coding; Max for hardest tasks.",
+      options: [
+        { value: 0, label: "Low" },
+        { value: 1, label: "Medium" },
+        { value: 2, label: "High (default)" },
+        { value: 3, label: "Extra (xhigh)" },
+        { value: 4, label: "Max" },
+      ],
+    },
 
     { key: "ioWeightR2", label: "Market Independence (R²)", group: "IOScore", default: 0.30, min: 0, max: 0.50, step: 0.05, description: "How much weight the 'is this stock independent from SPY' factor gets." },
     { key: "ioWeightResidual", label: "Abnormal Move (Residual Return)", group: "IOScore", default: 0.25, min: 0, max: 0.50, step: 0.05, description: "How much weight the 'is this stock making an unusual move' factor gets." },

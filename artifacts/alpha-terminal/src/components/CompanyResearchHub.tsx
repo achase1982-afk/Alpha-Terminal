@@ -2216,7 +2216,7 @@ export function CompanyResearchHub({
     const collectedThinking: string[] = [];
     await consumeStream(
       `${API_BASE}/ai/technical-analysis/stream`,
-      { quote, candles: history.candles, model: aiModel, temperature: aiTemp, fundamentals: fundamentals ? { marketCap: fundamentals.marketCap, sharesOutstanding: fundamentals.sharesOutstanding, peRatio: fundamentals.peRatio, eps: fundamentals.eps, beta: fundamentals.beta, dividendYield: fundamentals.dividendYield, high52: fundamentals.high52, low52: fundamentals.low52 } : undefined },
+      { quote, candles: history.candles, model: aiModel, temperature: aiTemp, anthropic_opus_effort: aiFeatureSettings.technicals.anthropicOpusEffort, fundamentals: fundamentals ? { marketCap: fundamentals.marketCap, sharesOutstanding: fundamentals.sharesOutstanding, peRatio: fundamentals.peRatio, eps: fundamentals.eps, beta: fundamentals.beta, dividendYield: fundamentals.dividendYield, high52: fundamentals.high52, low52: fundamentals.low52 } : undefined },
       (chunk) => {
         if (taRunRef.current !== runId) return;
         accumulated += chunk;
@@ -2246,7 +2246,7 @@ export function CompanyResearchHub({
         setTaThinkingTokens((prev) => [...prev, reasoning]);
       },
     );
-  }, [quote, history, aiModel, aiTemp, fundamentals, setAnalysisResult, setTechnicalsCache]);
+  }, [quote, history, aiModel, aiTemp, aiFeatureSettings.technicals.anthropicOpusEffort, fundamentals, setAnalysisResult, setTechnicalsCache]);
 
   const fetchFundamentals = useCallback(async () => {
     if (!accessToken || !symbol) return;

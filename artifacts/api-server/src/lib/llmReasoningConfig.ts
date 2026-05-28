@@ -1,4 +1,16 @@
+import type Anthropic from "@anthropic-ai/sdk";
+import {
+  type AnthropicOpusEffort,
+  DEFAULT_ANTHROPIC_OPUS_EFFORT,
+  isAnthropicOpusEffortModel,
+  normalizeAnthropicOpusEffort,
+} from "@workspace/ai-models";
 import { geminiThinkingConfigForModel } from "./geminiThinkingConfig.js";
+
+/** SDK types may lag API (`xhigh`); runtime accepts all catalog effort levels. */
+function anthropicSdkOutputConfig(effort: AnthropicOpusEffort): Anthropic.OutputConfig {
+  return { effort: effort as Anthropic.OutputConfig["effort"] };
+}
 
 /**
  * Central defaults for provider-native reasoning / extended thinking across the stack.
@@ -41,29 +53,51 @@ export function anthropicThinkingForMessagesApi(model: string): AnthropicMessage
   return { type: "enabled", budget_tokens: ANTHROPIC_EXTENDED_THINKING_BUDGET };
 }
 
+type AnthropicAiSdkProviderOptions = {
+  providerOptions: {
+    anthropic: {
+      thinking?: { type: "adaptive" } | { type: "enabled"; budgetTokens: number };
+      effort?: Anthropic.OutputConfig["effort"];
+    };
+  };
+};
+
 /**
  * Vercel AI SDK `@ai-sdk/anthropic`: spread into `streamText` / `generateText`.
- * Without this, Claude runs with extended thinking disabled (plain completions).
+ * Pass `effort` for Opus 4.7+ (`output_config.effort` on the Messages API).
  */
-export function anthropicProviderOptionsForAiSdk(model: string):
-  | {
-      providerOptions: {
-        anthropic: {
-          thinking: { type: "adaptive" } | { type: "enabled"; budgetTokens: number };
-        };
-      };
-    }
-  | undefined {
+export function anthropicProviderOptionsForAiSdk(
+  model: string,
+  effort?: AnthropicOpusEffort | null,
+): AnthropicAiSdkProviderOptions | undefined {
   if (!isAnthropicExtendedThinkingCapableModel(model)) return undefined;
+  const resolvedEffort = isAnthropicOpusEffortModel(model)
+    ? normalizeAnthropicOpusEffort(effort ?? DEFAULT_ANTHROPIC_OPUS_EFFORT)
+    : null;
+
+  const anthropic: AnthropicAiSdkProviderOptions["providerOptions"]["anthropic"] = {};
   if (isAnthropicAdaptiveThinkingModel(model)) {
-    return { providerOptions: { anthropic: { thinking: { type: "adaptive" } } } };
+    anthropic.thinking = { type: "adaptive" };
+  } else {
+    anthropic.thinking = { type: "enabled", budgetTokens: ANTHROPIC_EXTENDED_THINKING_BUDGET };
   }
+  if (resolvedEffort) {
+    anthropic.effort = resolvedEffort as Anthropic.OutputConfig["effort"];
+  }
+
+  return { providerOptions: { anthropic } };
+}
+
+/** Native `@anthropic-ai/sdk` Messages API `output_config` for Opus effort. */
+export function anthropicMessagesOutputConfig(
+  model: string,
+  effort?: AnthropicOpusEffort | null,
+): { output_config: Anthropic.OutputConfig } | undefined {
+  if (!isAnthropicOpusEffortModel(model)) return undefined;
   return {
-    providerOptions: {
-      anthropic: {
-        thinking: { type: "enabled", budgetTokens: ANTHROPIC_EXTENDED_THINKING_BUDGET },
-      },
-    },
+    output_config: anthropicSdkOutputConfig(
+      normalizeAnthropicOpusEffort(effort ?? DEFAULT_ANTHROPIC_OPUS_EFFORT),
+    ),
   };
 }
 

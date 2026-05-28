@@ -18,7 +18,9 @@ import {
   modelsForProvider,
   migrateLegacyModelIdToCatalog,
   type AiModelId,
+  type AnthropicOpusEffort,
 } from "@workspace/ai-models";
+import { AnthropicOpusEffortSelect } from "./ai-shared/AnthropicOpusEffortSelect";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { queryClient } from "@/App";
 import { Input } from "@/components/ui/input";
@@ -590,6 +592,12 @@ function AiFeatureControl({ featureKey, label, icon }: {
               ))}
             </select>
           </div>
+
+          <AnthropicOpusEffortSelect
+            modelId={settings.model}
+            value={settings.anthropicOpusEffort}
+            onChange={(effort) => setAiFeatureSetting(featureKey, 'anthropicOpusEffort', effort)}
+          />
 
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">

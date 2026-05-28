@@ -8,6 +8,7 @@ import {
 import { attachmentSummaryForTitle, sanitizeChatAttachments } from "./chatAttachments.js";
 import { runChatTurn, runMultiAgentChatTurn, type ChatStreamEvent } from "./chatOrchestrator.js";
 import { isGrokModel, XAI_CHAT_TOOLS_NOTE } from "./chatModel.js";
+import { parseAnthropicOpusEffortBody } from "@workspace/ai-models";
 import { readClientTimeZone } from "./marketClientTimeZone.js";
 
 const DEV_USER_ID = "dev-bypass-user";
@@ -39,6 +40,7 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
     attachments?: unknown;
     truncate_from_message_id?: string;
     model?: string;
+    anthropic_opus_effort?: string;
     symbol?: string;
     clientTimeZone?: string;
     multi_agent?: {
@@ -69,6 +71,7 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
       : "";
   const useMultiAgent = multiAgentModels.length >= 2 && synthesizerModel.length > 0;
   const model = (useMultiAgent ? synthesizerModel : (body.model ?? "claude-opus-4-8")).trim();
+  const anthropicOpusEffort = parseAnthropicOpusEffortBody(body.anthropic_opus_effort);
 
   let threadId = typeof body.thread_id === "string" ? body.thread_id.trim() : "";
   let thread = threadId ? await getChatThreadForUser(userId, threadId) : null;
@@ -132,9 +135,10 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
     attachments,
     truncateFromMessageId: truncateFromMessageId || null,
     model,
+    anthropicOpusEffort,
     ambientSymbol,
     clientTimeZone,
-    toolContext: { userId, schwabAccessToken, activeModel: model },
+    toolContext: { userId, schwabAccessToken, activeModel: model, anthropicOpusEffort },
     /** Keep generating after SSE disconnect so thread reload can pick up the assistant row. */
     onEvent: (ev: ChatStreamEvent) => {
         if (res.writableEnded) return;

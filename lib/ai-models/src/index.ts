@@ -135,3 +135,51 @@ export function migrateLegacyModelIdToCatalog(value: string | undefined | null):
   if (isAiModelId(value)) return value;
   return LEGACY_MODEL_TO_CATALOG[value] ?? DEFAULT_AI_MODEL_ID;
 }
+
+/** Anthropic Messages API `output_config.effort` for Claude Opus 4.7+ (4.8 recommended). */
+export const ANTHROPIC_OPUS_EFFORT_LEVELS = [
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const;
+
+export type AnthropicOpusEffort = (typeof ANTHROPIC_OPUS_EFFORT_LEVELS)[number];
+
+export const DEFAULT_ANTHROPIC_OPUS_EFFORT: AnthropicOpusEffort = "high";
+
+const ANTHROPIC_OPUS_EFFORT_SET = new Set<string>(ANTHROPIC_OPUS_EFFORT_LEVELS);
+
+/** UI labels (API value `xhigh` shown as Extra per Claude product copy). */
+export const ANTHROPIC_OPUS_EFFORT_LABELS: Record<AnthropicOpusEffort, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra (xhigh)",
+  max: "Max",
+};
+
+export function isAnthropicOpusEffortModel(model: string): boolean {
+  return /^claude-opus-4-([78]|\d{2,})(?:[-._]|$)/.test(model);
+}
+
+export function normalizeAnthropicOpusEffort(value: unknown): AnthropicOpusEffort {
+  if (typeof value === "string" && ANTHROPIC_OPUS_EFFORT_SET.has(value)) {
+    return value as AnthropicOpusEffort;
+  }
+  return DEFAULT_ANTHROPIC_OPUS_EFFORT;
+}
+
+export function anthropicOpusEffortFromStrategistIdx(idx: number): AnthropicOpusEffort {
+  if (!Number.isFinite(idx) || idx < 0) return DEFAULT_ANTHROPIC_OPUS_EFFORT;
+  const i = Math.floor(idx);
+  return ANTHROPIC_OPUS_EFFORT_LEVELS[i] ?? DEFAULT_ANTHROPIC_OPUS_EFFORT;
+}
+
+/** Parse optional `anthropic_opus_effort` from API / chat POST bodies. */
+export function parseAnthropicOpusEffortBody(raw: unknown): AnthropicOpusEffort | undefined {
+  if (raw == null || raw === "") return undefined;
+  if (typeof raw === "string") return normalizeAnthropicOpusEffort(raw);
+  return undefined;
+}
