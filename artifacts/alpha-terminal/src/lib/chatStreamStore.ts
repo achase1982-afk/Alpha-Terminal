@@ -28,6 +28,12 @@ export type ChatToolPill = {
   input?: unknown;
 };
 
+export type ChatRetryableUserTurn = {
+  userMessageId: string;
+  text: string;
+  attachments?: ChatAttachmentInput[];
+};
+
 export type ChatUiMessage = {
   id: string;
   role: "user" | "assistant";
@@ -59,6 +65,8 @@ export type ChatThreadStreamState = {
   toolPills: ChatToolPill[];
   activeMultiAgentCount: number;
   lastFailedMessage: string | null;
+  /** Set when the user stops a turn so they can retry without retyping. */
+  retryableUserTurn: ChatRetryableUserTurn | null;
 };
 
 export type SendChatMessageParams = {
@@ -102,6 +110,20 @@ function emptyThreadState(threadId: string, symbol: string): ChatThreadStreamSta
     toolPills: [],
     activeMultiAgentCount: 0,
     lastFailedMessage: null,
+    retryableUserTurn: null,
+  };
+}
+
+function captureRetryableUserTurn(
+  cur: ChatThreadStreamState,
+): ChatRetryableUserTurn | null {
+  const lastUser = [...cur.pendingUserMessages].reverse().find((m) => m.role === "user");
+  if (!lastUser) return null;
+  if (!lastUser.content.trim() && !(lastUser.attachments?.length ?? 0)) return null;
+  return {
+    userMessageId: lastUser.id,
+    text: lastUser.content,
+    attachments: lastUser.attachments,
   };
 }
 
@@ -251,10 +273,15 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
       set((st) => {
         const cur = st.streamsByThreadId[key];
         if (!cur) return st;
+        const retryableUserTurn = captureRetryableUserTurn(cur);
         return {
           streamsByThreadId: {
             ...st.streamsByThreadId,
-            [key]: { ...cur, isStreaming: false },
+            [key]: {
+              ...cur,
+              isStreaming: false,
+              retryableUserTurn: retryableUserTurn ?? cur.retryableUserTurn,
+            },
           },
         };
       });
@@ -279,6 +306,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
             displayTruncateToIndex: undefined,
             toolPills: [],
             isStreaming: false,
+            retryableUserTurn: null,
           },
         },
       };
@@ -293,7 +321,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
       return {
         streamsByThreadId: {
           ...st.streamsByThreadId,
-          [key]: { ...cur, lastFailedMessage: null },
+          [key]: { ...cur, lastFailedMessage: null, retryableUserTurn: null },
         },
       };
     });
@@ -374,6 +402,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
             activeSendId: sendId,
             isStreaming: true,
             lastFailedMessage: null,
+            retryableUserTurn: null,
             toolPills: [],
             activeMultiAgentCount: useServerMultiAgent ? params.multiAgentModels.length : 0,
             pendingUserMessages: pendingUser,
@@ -556,6 +585,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
       if (!cur || isSupersededSend(cur, sendId, controller)) return;
       if (signal.aborted || (err as Error).name === "AbortError") {
         const flight = cur.inFlightAssistant;
+        const retryableUserTurn = captureRetryableUserTurn(cur);
         patchStream(streamKey, {
           inFlightAssistant: {
             id: assistantId,
@@ -570,6 +600,7 @@ export const useChatStreamStore = create<ChatStreamStore>((set, get) => ({
           activeSendId: null,
           toolPills: [],
           activeMultiAgentCount: 0,
+          retryableUserTurn: retryableUserTurn ?? cur.retryableUserTurn,
         });
         return;
       }
