@@ -185,6 +185,9 @@ importers:
       '@workspace/ai-models':
         specifier: workspace:*
         version: link:../../lib/ai-models
+      '@workspace/chat-types':
+        specifier: workspace:*
+        version: link:../../lib/chat-types
       lightweight-charts:
         specifier: ^5.1.0
         version: 5.1.0
@@ -447,6 +450,9 @@ importers:
       '@workspace/catalysts-types':
         specifier: workspace:*
         version: link:../../lib/catalysts-types
+      '@workspace/chat-types':
+        specifier: workspace:*
+        version: link:../../lib/chat-types
       '@workspace/db':
         specifier: workspace:*
         version: link:../../lib/db
@@ -759,6 +765,12 @@ importers:
         version: 3.25.76
 
   lib/catalysts-types:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+
+  lib/chat-types:
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

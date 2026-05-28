@@ -47,6 +47,7 @@ router.get("/threads/:threadId/messages", async (req, res) => {
       id: m.id,
       role: m.role,
       content: m.content,
+      attachments: m.attachments ?? null,
       toolCalls: m.toolCalls,
       toolResults: m.toolResults,
       createdAt: m.createdAt,

@@ -4,11 +4,13 @@ import {
   db,
   desc,
   eq,
+  gte,
   chatMessagesTable,
   chatThreadsTable,
   type ChatMessageRow,
   type ChatThreadRow,
 } from "@workspace/db";
+import type { ChatAttachmentStored } from "@workspace/chat-types";
 
 export const CHAT_SUMMARY_TOKEN_THRESHOLD = 80_000;
 
@@ -99,21 +101,25 @@ export async function insertChatMessage(args: {
   threadId: string;
   role: "user" | "assistant";
   content: string;
+  attachments?: ChatAttachmentStored[] | null;
   toolCalls?: unknown;
   toolResults?: unknown;
   tokenCount?: number;
 }): Promise<ChatMessageRow> {
+  const attachmentJson = args.attachments?.length ? args.attachments : null;
   const tokenCount =
     args.tokenCount ??
     estimateTokenCount(args.content) +
       estimateTokenCount(JSON.stringify(args.toolCalls ?? "")) +
-      estimateTokenCount(JSON.stringify(args.toolResults ?? ""));
+      estimateTokenCount(JSON.stringify(args.toolResults ?? "")) +
+      estimateTokenCount(JSON.stringify(attachmentJson ?? ""));
   const [row] = await db
     .insert(chatMessagesTable)
     .values({
       threadId: args.threadId,
       role: args.role,
       content: args.content,
+      attachments: attachmentJson,
       toolCalls: args.toolCalls ?? null,
       toolResults: args.toolResults ?? null,
       tokenCount,
@@ -121,4 +127,23 @@ export async function insertChatMessage(args: {
     .returning();
   await touchChatThread(args.threadId);
   return row!;
+}
+
+export async function truncateChatThreadFromMessage(
+  threadId: string,
+  fromMessageId: string,
+): Promise<boolean> {
+  const [pivot] = await db
+    .select({ createdAt: chatMessagesTable.createdAt })
+    .from(chatMessagesTable)
+    .where(and(eq(chatMessagesTable.threadId, threadId), eq(chatMessagesTable.id, fromMessageId)))
+    .limit(1);
+  if (!pivot) return false;
+  await db
+    .delete(chatMessagesTable)
+    .where(
+      and(eq(chatMessagesTable.threadId, threadId), gte(chatMessagesTable.createdAt, pivot.createdAt)),
+    );
+  await touchChatThread(threadId);
+  return true;
 }

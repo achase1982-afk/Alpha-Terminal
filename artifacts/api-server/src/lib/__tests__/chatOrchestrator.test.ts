@@ -122,6 +122,7 @@ describe("buildModelMessagesFromHistory", () => {
           content: "old question",
           toolCalls: null,
           toolResults: null,
+          attachments: null,
           tokenCount: 100,
           createdAt: new Date(),
         },

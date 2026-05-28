@@ -246,6 +246,13 @@
       "when": 1779500000000,
       "tag": "0042_strategist_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1779600000000,
+      "tag": "0043_chat_message_attachments",
+      "breakpoints": true
     }
   ]
 }
