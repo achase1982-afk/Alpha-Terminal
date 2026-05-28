@@ -25,11 +25,11 @@ import {
   aiModelSelectLabel,
   DEFAULT_AI_MODEL_ID,
   isAiModelId,
-  isAnthropicOpusEffortModel,
   migrateLegacyModelIdToCatalog,
   type AiModelId,
 } from "@workspace/ai-models";
-import { LlmOpusOptionsFields } from "./ai-shared/LlmOpusOptionsFields";
+import { ChatModelToolbar, chatModelOptionsFromIds } from "./ai-shared/ChatModelToolbar";
+import { ChatThinkingIndicator } from "./ai-shared/ChatThinkingIndicator";
 
 const MULTI_AGENT_MODEL = "__multi_agent__";
 const MULTI_AGENT_STORAGE_KEY = "marketNewsChatMultiModels";
@@ -145,16 +145,6 @@ export function MarketNewsChatPanel({
     }
     return DEFAULT_AI_MODEL_ID;
   });
-  const modelControlValue = useMultiAgent ? MULTI_AGENT_MODEL : modelSend;
-
-  const chatUsesOpus =
-    (!useMultiAgent && isAnthropicOpusEffortModel(modelSend)) ||
-    (useMultiAgent &&
-      (isAnthropicOpusEffortModel(synthesizerModel) ||
-        multiAgentModels.some((m) => isAnthropicOpusEffortModel(m))));
-
-  const opusControlModelId = useMultiAgent ? synthesizerModel : modelSend;
-
   const [threads, setThreads] = useState<ServerThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatUiMessage[]>([]);
@@ -178,6 +168,8 @@ export function MarketNewsChatPanel({
 
   const isStreaming = streamState?.isStreaming ?? false;
   const activeMultiAgentCount = streamState?.activeMultiAgentCount ?? 0;
+  const toolPills = streamState?.toolPills ?? [];
+  const activityNote = streamState?.activityNote ?? "";
   const lastFailedMessage = streamState?.lastFailedMessage ?? null;
 
   const displayMessages = useMemo(
@@ -186,6 +178,7 @@ export function MarketNewsChatPanel({
   );
 
   const composerSendLockRef = useRef(false);
+  const streamStartedAtRef = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isPinnedToBottomRef = useRef(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -345,7 +338,17 @@ export function MarketNewsChatPanel({
 
   useEffect(() => {
     scrollToBottom();
-  }, [displayMessages, isStreaming, scrollToBottom]);
+  }, [displayMessages, isStreaming, activityNote, toolPills, scrollToBottom]);
+
+  useEffect(() => {
+    if (isStreaming) {
+      if (streamStartedAtRef.current == null) {
+        streamStartedAtRef.current = Date.now();
+      }
+    } else {
+      streamStartedAtRef.current = null;
+    }
+  }, [isStreaming]);
 
   const handleStop = useCallback(() => {
     abortStreamForThread(activeThreadId, symU);
@@ -603,14 +606,17 @@ export function MarketNewsChatPanel({
     </form>
   );
 
-  const lastDisplayMsg = displayMessages[displayMessages.length - 1];
-  const inFlightAssistantTurn =
-    isStreaming &&
-    displayMessages.length > 0 &&
-    lastDisplayMsg?.role === "assistant" &&
-    !lastDisplayMsg.content.trim();
-  const showThinkingLabel =
-    inFlightAssistantTurn && activeMultiAgentCount <= 1;
+  const inFlightAssistant = streamState?.inFlightAssistant;
+  const waitingForAssistantText =
+    Boolean(
+      isStreaming &&
+        inFlightAssistant &&
+        !inFlightAssistant.complete &&
+        !inFlightAssistant.content.trim(),
+    );
+  const showThinkingLabel = waitingForAssistantText && activeMultiAgentCount <= 1;
+  const showMultiAgentThinking =
+    waitingForAssistantText && activeMultiAgentCount > 1;
 
   return (
     <div className="relative flex flex-col flex-1 min-h-0 w-full max-md:max-h-none md:max-h-none md:min-h-[280px] bg-[#0a0a0a] border-t border-card-border/40">
@@ -635,35 +641,41 @@ export function MarketNewsChatPanel({
             {symU}
           </span>
         </div>
-        <div className="relative flex items-center gap-2 shrink-0">
-          <select
-            value={modelControlValue}
-            title={
-              useMultiAgent
-                ? "Research models run in parallel; when all finish, the synthesizer streams one merged answer."
-                : "Single model for this reply."
-            }
-            onChange={(e) => {
-              const value = e.target.value;
-              if (value === MULTI_AGENT_MODEL) {
-                setUseMultiAgent(true);
-                setMultiModelPickerOpen(true);
-                return;
-              }
-              setUseMultiAgent(false);
-              setMultiModelPickerOpen(false);
-              setAiFeatureSetting("chat", "model", value);
-            }}
-            className="bg-black/60 border border-card-border rounded px-2 py-1.5 font-mono text-[12px] text-white max-w-[180px] sm:max-w-[230px]"
-            aria-label="Chat model"
-          >
-            <option value={MULTI_AGENT_MODEL}>multi-agent</option>
-            {ALL_CHAT_MODELS.map((m) => (
-              <option key={m} value={m}>
-                {aiModelSelectLabel(m)}
-              </option>
-            ))}
-          </select>
+        <div className="relative flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+          {useMultiAgent ? (
+            <select
+              value={MULTI_AGENT_MODEL}
+              title="Research models run in parallel; when all finish, the synthesizer streams one merged answer."
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value !== MULTI_AGENT_MODEL) {
+                  setUseMultiAgent(false);
+                  setMultiModelPickerOpen(false);
+                  setAiFeatureSetting("chat", "model", value);
+                }
+              }}
+              className="bg-black/60 border border-card-border rounded px-2 py-1.5 font-mono text-[12px] text-white max-w-[180px] sm:max-w-[220px]"
+              aria-label="Chat model"
+            >
+              <option value={MULTI_AGENT_MODEL}>multi-agent</option>
+              {ALL_CHAT_MODELS.map((m) => (
+                <option key={m} value={m}>
+                  {aiModelSelectLabel(m)}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <ChatModelToolbar
+              modelValue={modelSend}
+              modelOptions={chatModelOptionsFromIds(ALL_CHAT_MODELS)}
+              onModelChange={(value) => setAiFeatureSetting("chat", "model", value)}
+              effort={anthropicOpusEffort}
+              speed={anthropicOpusSpeed}
+              onEffortChange={(effort) => setAiFeatureSetting("chat", "anthropicOpusEffort", effort)}
+              onSpeedChange={(speed) => setAiFeatureSetting("chat", "anthropicOpusSpeed", speed)}
+              modelAriaLabel="Chat model"
+            />
+          )}
           {useMultiAgent && (
             <button
               type="button"
@@ -726,18 +738,6 @@ export function MarketNewsChatPanel({
           )}
         </div>
       </div>
-      {chatUsesOpus && (
-        <div className="px-3 pb-2">
-          <LlmOpusOptionsFields
-            compact
-            modelId={opusControlModelId}
-            effort={anthropicOpusEffort}
-            speed={anthropicOpusSpeed}
-            onEffortChange={(effort) => setAiFeatureSetting("chat", "anthropicOpusEffort", effort)}
-            onSpeedChange={(speed) => setAiFeatureSetting("chat", "anthropicOpusSpeed", speed)}
-          />
-        </div>
-      )}
       </div>
 
       <div className="relative flex-1 min-h-0 flex flex-col">
@@ -860,15 +860,21 @@ export function MarketNewsChatPanel({
             </div>
           ))}
           {showThinkingLabel && (
-            <p className="text-left font-mono text-[14px] text-white py-1" aria-live="polite">
-              thinking
-            </p>
+            <ChatThinkingIndicator
+              activityNote={activityNote}
+              toolPills={toolPills}
+              startedAtMs={streamStartedAtRef.current ?? undefined}
+            />
           )}
-          {inFlightAssistantTurn && activeMultiAgentCount > 1 && (
-            <div className="flex items-center gap-2 py-1">
-              <MultiAgentOrbit count={activeMultiAgentCount} />
-              <span className="font-mono text-[14px] text-white">thinking</span>
-            </div>
+          {showMultiAgentThinking && (
+            <ChatThinkingIndicator
+              multiAgent
+              multiAgentCount={activeMultiAgentCount}
+              activityNote={activityNote}
+              toolPills={toolPills}
+              orbit={<MultiAgentOrbit count={activeMultiAgentCount} />}
+              startedAtMs={streamStartedAtRef.current ?? undefined}
+            />
           )}
         </div>
 

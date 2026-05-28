@@ -28,9 +28,13 @@ type Props = {
   speed: AnthropicOpusSpeed | string | undefined;
   onEffortChange: (effort: AnthropicOpusEffort) => void;
   onSpeedChange: (speed: AnthropicOpusSpeed) => void;
-  compact?: boolean;
   className?: string;
+  /** Tighter layout for chat toolbar popover (no help copy). */
+  variant?: "default" | "compact";
 };
+
+const compactSelectClassName =
+  'w-full bg-black/50 border border-card-border rounded px-2 py-1.5 font-mono text-[11px] text-white focus:outline-none focus:border-primary/50 appearance-none cursor-pointer min-h-[32px]';
 
 export function AnthropicOpusEffortSelect({
   modelId,
@@ -38,37 +42,64 @@ export function AnthropicOpusEffortSelect({
   speed: speedProp,
   onEffortChange,
   onSpeedChange,
-  compact,
   className,
+  variant = "default",
 }: Props) {
   const effectiveModelId = migrateLegacyModelIdToCatalog(modelId);
   if (!isAnthropicOpusEffortModel(effectiveModelId)) return null;
 
   const effort = normalizeAnthropicOpusEffort(effortProp ?? DEFAULT_ANTHROPIC_OPUS_EFFORT);
   const speed = normalizeAnthropicOpusSpeed(speedProp ?? DEFAULT_ANTHROPIC_OPUS_SPEED);
+  const compact = variant === "compact";
+  const fieldSelectClass = compact ? compactSelectClassName : selectClassName;
 
-  const labelClass = compact
-    ? 'font-mono text-[8px] text-zinc-500 uppercase tracking-widest'
-    : 'font-mono text-[8px] text-zinc-500 uppercase tracking-widest';
-
-  const helpClass = compact
-    ? 'hidden'
-    : 'font-mono text-[8px] text-zinc-600 leading-tight';
-
-  const gridClass = compact
-    ? 'grid grid-cols-2 gap-2'
-    : 'space-y-3';
-
-  const fieldClass = compact ? 'space-y-1' : 'space-y-1.5';
+  if (compact) {
+    return (
+      <div className={className ?? "grid grid-cols-2 gap-2"}>
+        <label className="flex flex-col gap-0.5 min-w-0">
+          <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Effort</span>
+          <select
+            value={effort}
+            onChange={(e) => onEffortChange(normalizeAnthropicOpusEffort(e.target.value))}
+            className={fieldSelectClass}
+            style={selectStyle}
+            aria-label="Opus effort"
+          >
+            {ANTHROPIC_OPUS_EFFORT_LEVELS.map((level) => (
+              <option key={level} value={level}>
+                {ANTHROPIC_OPUS_EFFORT_LABELS[level]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-0.5 min-w-0">
+          <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Speed</span>
+          <select
+            value={speed}
+            onChange={(e) => onSpeedChange(normalizeAnthropicOpusSpeed(e.target.value))}
+            className={fieldSelectClass}
+            style={selectStyle}
+            aria-label="Opus speed"
+          >
+            {ANTHROPIC_OPUS_SPEED_LEVELS.map((level) => (
+              <option key={level} value={level}>
+                {ANTHROPIC_OPUS_SPEED_LABELS[level]}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+    );
+  }
 
   return (
-    <div className={className ?? gridClass}>
-      <div className={fieldClass}>
-        <span className={labelClass}>{compact ? 'Effort' : 'Opus effort'}</span>
+    <div className={className ?? 'space-y-3'}>
+      <div className="space-y-1.5">
+        <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Opus effort</span>
         <select
           value={effort}
           onChange={(e) => onEffortChange(normalizeAnthropicOpusEffort(e.target.value))}
-          className={selectClassName}
+          className={fieldSelectClass}
           style={selectStyle}
           aria-label="Opus effort"
         >
@@ -78,19 +109,17 @@ export function AnthropicOpusEffortSelect({
             </option>
           ))}
         </select>
-        {!compact && (
-          <p className={helpClass}>
-            Anthropic reasoning depth (API effort). Higher levels use more tokens and latency.
-          </p>
-        )}
+        <p className="font-mono text-[8px] text-zinc-600 leading-tight">
+          Anthropic reasoning depth (API effort). Higher levels use more tokens and latency.
+        </p>
       </div>
 
-      <div className={fieldClass}>
-        <span className={labelClass}>{compact ? 'Speed' : 'Opus speed'}</span>
+      <div className="space-y-1.5">
+        <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Opus speed</span>
         <select
           value={speed}
           onChange={(e) => onSpeedChange(normalizeAnthropicOpusSpeed(e.target.value))}
-          className={selectClassName}
+          className={fieldSelectClass}
           style={selectStyle}
           aria-label="Opus speed"
         >
@@ -100,11 +129,9 @@ export function AnthropicOpusEffortSelect({
             </option>
           ))}
         </select>
-        {!compact && (
-          <p className={helpClass}>
-            Fast mode increases output token speed (~2.5×) with premium Opus pricing.
-          </p>
-        )}
+        <p className="font-mono text-[8px] text-zinc-600 leading-tight">
+          Fast mode increases output token speed (~2.5×) with premium Opus pricing.
+        </p>
       </div>
     </div>
   );

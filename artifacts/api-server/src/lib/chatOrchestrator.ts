@@ -54,7 +54,50 @@ function reasoningDeltaFromStreamPart(part: { type: string; delta?: string; text
   return null;
 }
 
+const CHAT_STATUS_HEARTBEAT_MS = 10_000;
+const CHAT_STATUS_HEARTBEAT_NOTES = [
+  "Still thinking…",
+  "Working through context…",
+  "Preparing your answer…",
+] as const;
+
+function createChatStatusHeartbeat(onEvent: (ev: ChatStreamEvent) => void) {
+  let idx = 0;
+  let lastEmit = Date.now();
+  return {
+    touch() {
+      lastEmit = Date.now();
+    },
+    maybePulse() {
+      if (Date.now() - lastEmit < CHAT_STATUS_HEARTBEAT_MS) return;
+      lastEmit = Date.now();
+      onEvent({
+        type: "status",
+        note: CHAT_STATUS_HEARTBEAT_NOTES[idx++ % CHAT_STATUS_HEARTBEAT_NOTES.length],
+      });
+    },
+  };
+}
+
+function chatToolStatusLabel(toolName: string): string {
+  const labels: Record<string, string> = {
+    web_search: "Searching the web",
+    web_fetch: "Fetching page",
+    get_news: "Fetching news",
+    get_quote: "Fetching quote",
+    get_technicals: "Loading technicals",
+    get_options_chain: "Loading options chain",
+    get_flow: "Loading options flow",
+    get_ivr: "Loading implied volatility",
+    get_earnings: "Loading earnings",
+    get_analyst_ratings: "Loading analyst ratings",
+    get_market_pulse: "Loading market pulse",
+  };
+  return labels[toolName] ?? `Running ${toolName.replace(/_/g, " ")}`;
+}
+
 export type ChatStreamEvent =
+  | { type: "status"; note?: string }
   | { type: "reasoning"; delta: string }
   | { type: "text"; delta: string }
   | { type: "tool_call_start"; toolCallId: string; toolName: string; input: unknown }
@@ -470,6 +513,9 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
   const resolved = resolveChatLanguageModel(model, anthropicOpusOptions);
   const system = await buildChatSystemPromptWithAmbient(ambientSymbol, clientTimeZone);
 
+  onEvent({ type: "status", note: "thinking" });
+  const statusHeartbeat = createChatStatusHeartbeat(onEvent);
+
   const toolCallsLog: Array<{ toolCallId: string; toolName: string; input: unknown }> = [];
   const toolResultsLog: Array<{ toolCallId: string; toolName: string; output: unknown }> = [];
   let assistantText = "";
@@ -489,19 +535,26 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
 
     for await (const part of result.fullStream) {
       if (abortSignal?.aborted) break;
+      statusHeartbeat.maybePulse();
       const reasoningDelta = reasoningDeltaFromStreamPart(part);
       if (reasoningDelta) {
+        statusHeartbeat.touch();
         onEvent({ type: "reasoning", delta: reasoningDelta });
+        onEvent({ type: "status", note: "Thinking through your question…" });
       } else if (part.type === "text-delta" && part.text) {
+        statusHeartbeat.touch();
         assistantText += part.text;
         textEmitter.push(part.text);
       } else if (part.type === "tool-call") {
+        statusHeartbeat.touch();
         const toolCallId = part.toolCallId;
         const toolName = part.toolName;
         const input = "input" in part ? part.input : {};
         toolCallsLog.push({ toolCallId, toolName, input });
+        onEvent({ type: "status", note: chatToolStatusLabel(toolName) });
         onEvent({ type: "tool_call_start", toolCallId, toolName, input });
       } else if (part.type === "tool-result") {
+        statusHeartbeat.touch();
         const toolCallId = part.toolCallId;
         const toolName = part.toolName;
         const output = "output" in part ? part.output : null;

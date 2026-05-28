@@ -7,8 +7,6 @@ type Props = {
   speed: AnthropicOpusSpeed | string | undefined;
   onEffortChange: (effort: AnthropicOpusEffort) => void;
   onSpeedChange: (speed: AnthropicOpusSpeed) => void;
-  /** Tighter layout for chat header and similar toolbars. */
-  compact?: boolean;
   className?: string;
 };
 
@@ -19,7 +17,6 @@ export function LlmOpusOptionsFields({
   speed,
   onEffortChange,
   onSpeedChange,
-  compact,
   className,
 }: Props) {
   return (
@@ -29,7 +26,6 @@ export function LlmOpusOptionsFields({
       speed={speed}
       onEffortChange={onEffortChange}
       onSpeedChange={onSpeedChange}
-      compact={compact}
       className={className}
     />
   );
