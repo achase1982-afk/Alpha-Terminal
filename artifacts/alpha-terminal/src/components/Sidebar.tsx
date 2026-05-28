@@ -17,16 +17,9 @@ import {
   DEFAULT_AI_MODEL_ID,
   modelsForProvider,
   migrateLegacyModelIdToCatalog,
-  isAnthropicOpusEffortModel,
-  ANTHROPIC_OPUS_EFFORT_LABELS,
-  ANTHROPIC_OPUS_SPEED_LABELS,
-  normalizeAnthropicOpusEffort,
-  normalizeAnthropicOpusSpeed,
   type AiModelId,
-  type AnthropicOpusEffort,
-  type AnthropicOpusSpeed,
 } from "@workspace/ai-models";
-import { AnthropicOpusEffortSelect } from "./ai-shared/AnthropicOpusEffortSelect";
+import { LlmOpusOptionsFields } from "./ai-shared/LlmOpusOptionsFields";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { queryClient } from "@/App";
 import { Input } from "@/components/ui/input";
@@ -573,19 +566,11 @@ function AiFeatureControl({ featureKey, label, icon }: {
           <span>{icon}</span>
           {label}
         </span>
-        <span className="flex items-center gap-2 min-w-0">
-          <span className="font-mono text-[8px] text-zinc-500 tracking-wider text-right truncate max-w-[9rem] sm:max-w-[12rem]">
+        <span className="flex items-center gap-2">
+          <span className="font-mono text-[8px] text-zinc-500 tracking-wider">
             {aiModelSelectLabel(migrateLegacyModelIdToCatalog(settings.model))}
-            {isAnthropicOpusEffortModel(settings.model) && (
-              <>
-                {' · '}
-                {ANTHROPIC_OPUS_EFFORT_LABELS[normalizeAnthropicOpusEffort(settings.anthropicOpusEffort)]}
-                {' · '}
-                {ANTHROPIC_OPUS_SPEED_LABELS[normalizeAnthropicOpusSpeed(settings.anthropicOpusSpeed)]}
-              </>
-            )}
           </span>
-          <ChevronRight className={`w-3 h-3 text-zinc-500 transition-transform shrink-0 ${expanded ? 'rotate-90' : ''}`} />
+          <ChevronRight className={`w-3 h-3 text-zinc-500 transition-transform ${expanded ? 'rotate-90' : ''}`} />
         </span>
       </button>
 
@@ -607,8 +592,8 @@ function AiFeatureControl({ featureKey, label, icon }: {
             </select>
           </div>
 
-          <AnthropicOpusEffortSelect
-            modelId={migrateLegacyModelIdToCatalog(settings.model)}
+          <LlmOpusOptionsFields
+            modelId={settings.model}
             effort={settings.anthropicOpusEffort}
             speed={settings.anthropicOpusSpeed}
             onEffortChange={(effort) => setAiFeatureSetting(featureKey, 'anthropicOpusEffort', effort)}
@@ -639,7 +624,8 @@ function AiFeatureControl({ featureKey, label, icon }: {
 }
 
 function AiLabStrategistControl() {
-  const { aiLabStrategistConfig, setAiLabStrategistConfig } = useTerminalStore();
+  const { aiLabStrategistConfig, setAiLabStrategistConfig, aiFeatureSettings, setAiFeatureSetting } = useTerminalStore();
+  const labOpus = aiFeatureSettings.strategist;
   const [expanded, setExpanded] = useState(false);
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -748,6 +734,14 @@ function AiLabStrategistControl() {
               </select>
             </div>
 
+            <LlmOpusOptionsFields
+              modelId={aiLabStrategistConfig.analystModelName}
+              effort={labOpus.anthropicOpusEffort}
+              speed={labOpus.anthropicOpusSpeed}
+              onEffortChange={(effort) => setAiFeatureSetting('strategist', 'anthropicOpusEffort', effort)}
+              onSpeedChange={(speed) => setAiFeatureSetting('strategist', 'anthropicOpusSpeed', speed)}
+            />
+
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Temperature</span>
@@ -802,6 +796,14 @@ function AiLabStrategistControl() {
               </select>
             </div>
 
+            <LlmOpusOptionsFields
+              modelId={aiLabStrategistConfig.skepticModelName}
+              effort={labOpus.anthropicOpusEffort}
+              speed={labOpus.anthropicOpusSpeed}
+              onEffortChange={(effort) => setAiFeatureSetting('strategist', 'anthropicOpusEffort', effort)}
+              onSpeedChange={(speed) => setAiFeatureSetting('strategist', 'anthropicOpusSpeed', speed)}
+            />
+
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Temperature</span>
@@ -826,54 +828,11 @@ function AiLabStrategistControl() {
   );
 }
 
-function GlobalOpusTuningBlock() {
-  const { aiFeatureSettings, setAiFeatureSetting } = useTerminalStore();
-  const anyOpus = AI_FEATURES.some((f) => isAnthropicOpusEffortModel(aiFeatureSettings[f.key].model));
-  if (!anyOpus) return null;
-
-  const reference = aiFeatureSettings.chat;
-
-  const applyOpusEffortToAll = (effort: AnthropicOpusEffort) => {
-    for (const f of AI_FEATURES) {
-      if (isAnthropicOpusEffortModel(aiFeatureSettings[f.key].model)) {
-        setAiFeatureSetting(f.key, "anthropicOpusEffort", effort);
-      }
-    }
-  };
-
-  const applyOpusSpeedToAll = (speed: AnthropicOpusSpeed) => {
-    for (const f of AI_FEATURES) {
-      if (isAnthropicOpusEffortModel(aiFeatureSettings[f.key].model)) {
-        setAiFeatureSetting(f.key, "anthropicOpusSpeed", speed);
-      }
-    }
-  };
-
-  return (
-    <div className="rounded-lg border border-primary/25 bg-primary/5 px-3 py-3 space-y-2">
-      <div className="space-y-1">
-        <Label className="font-mono text-[9px] text-primary uppercase tracking-widest font-medium">
-          Claude Opus 4.8 tuning
-        </Label>
-        <p className="font-mono text-[8px] text-zinc-500 leading-relaxed">
-          Applies to every feature below that uses Opus. Expand a row to change model or temperature per feature.
-        </p>
-      </div>
-      <AnthropicOpusEffortSelect
-        modelId="claude-opus-4-8"
-        effort={reference.anthropicOpusEffort}
-        speed={reference.anthropicOpusSpeed}
-        onEffortChange={applyOpusEffortToAll}
-        onSpeedChange={applyOpusSpeedToAll}
-      />
-    </div>
-  );
-}
-
 function AiParametersPage() {
   const { aiFeatureSettings, setAiFeatureSetting } = useTerminalStore();
 
   const [globalTemp, setGlobalTemp] = useState(0);
+  const [setAllModel, setSetAllModel] = useState("");
 
   const setAllModels = (model: string) => {
     for (const f of AI_FEATURES) {
@@ -888,21 +847,32 @@ function AiParametersPage() {
     }
   };
 
+  const applyOpusEffortToAll = (effort: (typeof aiFeatureSettings.chat)["anthropicOpusEffort"]) => {
+    for (const f of AI_FEATURES) {
+      setAiFeatureSetting(f.key, "anthropicOpusEffort", effort);
+    }
+  };
+
+  const applyOpusSpeedToAll = (speed: (typeof aiFeatureSettings.chat)["anthropicOpusSpeed"]) => {
+    for (const f of AI_FEATURES) {
+      setAiFeatureSetting(f.key, "anthropicOpusSpeed", speed);
+    }
+  };
+
   return (
     <div className="space-y-4 max-w-xl mx-auto">
-      <p className="font-mono text-[9px] text-zinc-500 leading-relaxed">
-        Tap a feature row to expand model and temperature. Opus effort and fast mode appear when Claude Opus 4.8 is selected.
-      </p>
-
-      <GlobalOpusTuningBlock />
-
       <div className="space-y-1.5">
         <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
           <BrainCircuit className="w-3 h-3" /> Set All Models
         </Label>
         <select
-          value=""
-          onChange={(e) => { if (e.target.value) setAllModels(e.target.value); }}
+          value={setAllModel}
+          onChange={(e) => {
+            const model = e.target.value;
+            if (!model) return;
+            setSetAllModel(model);
+            setAllModels(model);
+          }}
           className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-zinc-400 focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
           style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
         >
@@ -913,6 +883,13 @@ function AiParametersPage() {
             </option>
           ))}
         </select>
+        <LlmOpusOptionsFields
+          modelId={setAllModel || aiFeatureSettings.chat.model}
+          effort={aiFeatureSettings.chat.anthropicOpusEffort}
+          speed={aiFeatureSettings.chat.anthropicOpusSpeed}
+          onEffortChange={applyOpusEffortToAll}
+          onSpeedChange={applyOpusSpeedToAll}
+        />
       </div>
 
       <div className="space-y-1.5">
@@ -947,7 +924,8 @@ function AiParametersPage() {
 }
 
 function MoversAiControl() {
-  const { aiLabStrategistConfig, setAiLabStrategistConfig } = useTerminalStore();
+  const { aiLabStrategistConfig, setAiLabStrategistConfig, aiFeatureSettings, setAiFeatureSetting } = useTerminalStore();
+  const labOpus = aiFeatureSettings.strategist;
   const [expanded, setExpanded] = useState(false);
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1069,6 +1047,14 @@ function MoversAiControl() {
                 ))}
               </select>
             </div>
+
+            <LlmOpusOptionsFields
+              modelId={aiLabStrategistConfig.moversModelName}
+              effort={labOpus.anthropicOpusEffort}
+              speed={labOpus.anthropicOpusSpeed}
+              onEffortChange={(effort) => setAiFeatureSetting('strategist', 'anthropicOpusEffort', effort)}
+              onSpeedChange={(speed) => setAiFeatureSetting('strategist', 'anthropicOpusSpeed', speed)}
+            />
 
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
@@ -1535,7 +1521,7 @@ function SettingsHubPage({
 
       <SettingsHubSection title="Intelligence">
         <SettingsHubRow icon={<BrainCircuit />} label="Strategist Tuning" subtitle="Backend strategist models, IOScore weights, scanner thresholds" onClick={() => onSelect("Strategist Tuning")} />
-        <SettingsHubRow icon={<Sparkles />} label="AI Parameters" subtitle="Per-feature model, Opus effort, and fast mode" onClick={() => onSelect("AI Parameters")} />
+        <SettingsHubRow icon={<Sparkles />} label="AI Parameters" subtitle="Per-feature model and temperature" onClick={() => onSelect("AI Parameters")} />
         <SettingsHubRow icon={<FlaskConical />} label="AI Lab" subtitle="Master toggle, deliberation, anomaly detection, schedule" onClick={() => onSelect("AI Lab")} />
         <SettingsHubRow icon={<LineChart />} label="Chart Overlays" subtitle="SMAs, Bollinger, RSI, volume" onClick={() => onSelect("Chart Overlays")} />
         <SettingsHubRow icon={<BarChart2 />} label="Options Chain Defaults" subtitle="Default contract type and max DTE" onClick={() => onSelect("Options Chain Defaults")} />

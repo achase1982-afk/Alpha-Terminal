@@ -1,6 +1,29 @@
 import { useState, useEffect, useCallback } from "react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { RotateCcw, AlertTriangle, Check } from "lucide-react";
+import { STRATEGIST_MODEL_OPTIONS } from "@workspace/ai-models";
+import { StrategistSlotOpusOptions } from "./ai-shared/StrategistSlotOpusOptions";
+
+const STRATEGIST_MODEL_SLOT_KEYS = new Set([
+  "strategistSoloModelIdx",
+  "strategistConvictionModelIdx",
+  "strategistDebateAModelIdx",
+  "strategistDebateBModelIdx",
+  "strategistArbitratorModelIdx",
+]);
+
+/** Shown inline under model slots; avoid duplicate rows in the settings list. */
+const STRATEGIST_OPUS_SETTING_KEYS = new Set([
+  "strategistAnthropicOpusEffortIdx",
+  "strategistAnthropicOpusSpeedIdx",
+]);
+
+function strategistModelIdFromIdx(idx: number): string {
+  if (!Number.isFinite(idx) || idx < 0 || idx >= STRATEGIST_MODEL_OPTIONS.length) {
+    return STRATEGIST_MODEL_OPTIONS[0]?.model ?? "claude-opus-4-8";
+  }
+  return STRATEGIST_MODEL_OPTIONS[Math.floor(idx)]!.model;
+}
 
 interface SettingMeta {
   key: string;
@@ -155,6 +178,7 @@ export function StrategistSettingsPanel() {
 
   const groups = new Map<string, SettingMeta[]>();
   for (const m of data.meta) {
+    if (STRATEGIST_OPUS_SETTING_KEYS.has(m.key)) continue;
     if (isDeskMode && HIDDEN_IN_DESK.has(m.key)) continue;
     const arr = groups.get(m.group) ?? [];
     const adjusted =
@@ -232,15 +256,6 @@ export function StrategistSettingsPanel() {
         </div>
       )}
 
-      <div className="px-3 py-2 rounded-lg bg-primary/5 border border-primary/25">
-        <span className="font-mono text-[10px] text-zinc-300 leading-relaxed block">
-          When a strategist slot uses <strong className="text-white">Claude Opus 4.8</strong>, set{" "}
-          <strong className="text-white">Opus effort (Anthropic)</strong> and{" "}
-          <strong className="text-white">Opus speed (Anthropic)</strong> in the Strategist section below
-          (Standard vs Fast). Per-feature overrides live under Settings → AI Parameters.
-        </span>
-      </div>
-
       {isConvictionDeskMode && (
         <div className="px-3 py-2 rounded-lg bg-zinc-900/50 border border-zinc-700/60">
           <span className="font-mono text-[11px] text-zinc-300 leading-relaxed block">
@@ -316,6 +331,15 @@ export function StrategistSettingsPanel() {
                   />
                 )}
                 <p className="font-mono text-[9px] text-zinc-600 leading-tight break-words">{m.description}</p>
+                {STRATEGIST_MODEL_SLOT_KEYS.has(m.key) && val >= 0 && (
+                  <StrategistSlotOpusOptions
+                    slotModelId={strategistModelIdFromIdx(val)}
+                    effortIdx={data.current.strategistAnthropicOpusEffortIdx ?? 2}
+                    speedIdx={data.current.strategistAnthropicOpusSpeedIdx ?? 0}
+                    onEffortIdxChange={(idx) => handleChange("strategistAnthropicOpusEffortIdx", idx)}
+                    onSpeedIdxChange={(idx) => handleChange("strategistAnthropicOpusSpeedIdx", idx)}
+                  />
+                )}
               </div>
             );
           })}
