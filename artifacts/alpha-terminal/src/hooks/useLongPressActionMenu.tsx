@@ -3,6 +3,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const LONG_PRESS_MS = 500;
 const MOVE_CANCEL_PX = 12;
 
+function clearTextSelection(): void {
+  const sel = typeof window !== "undefined" ? window.getSelection?.() : null;
+  if (sel && sel.rangeCount > 0) sel.removeAllRanges();
+}
+
 export type LongPressMenuAction = {
   id: string;
   label: string;
@@ -40,11 +45,18 @@ export function useLongPressActionMenu(actions: LongPressMenuAction[]) {
       onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
         if (e.button !== 0) return;
         didLongPressRef.current = false;
+        clearTextSelection();
         startRef.current = { x: e.clientX, y: e.clientY };
         const target = e.currentTarget;
         cancelTimer();
+        try {
+          target.setPointerCapture(e.pointerId);
+        } catch {
+          /* unsupported */
+        }
         timerRef.current = setTimeout(() => {
           didLongPressRef.current = true;
+          clearTextSelection();
           const rect = target.getBoundingClientRect();
           const pos = getAnchor
             ? getAnchor(target)
@@ -52,6 +64,12 @@ export function useLongPressActionMenu(actions: LongPressMenuAction[]) {
           setAnchor(pos);
           setOpen(true);
         }, LONG_PRESS_MS);
+      },
+      onSelectStart: (e: React.SyntheticEvent) => {
+        e.preventDefault();
+      },
+      onDragStart: (e: React.DragEvent) => {
+        e.preventDefault();
       },
       onPointerMove: (e: React.PointerEvent) => {
         const start = startRef.current;
@@ -63,9 +81,25 @@ export function useLongPressActionMenu(actions: LongPressMenuAction[]) {
           cancelTimer();
         }
       },
-      onPointerUp: () => {
+      onPointerUp: (e: React.PointerEvent<HTMLElement>) => {
         cancelTimer();
+        try {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        } catch {
+          /* unsupported */
+        }
+        if (didLongPressRef.current) {
+          e.preventDefault();
+          clearTextSelection();
+        }
         startRef.current = null;
+      },
+      onClick: (e: React.MouseEvent<HTMLElement>) => {
+        if (didLongPressRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          didLongPressRef.current = false;
+        }
       },
       onPointerLeave: () => {
         cancelTimer();
@@ -73,6 +107,7 @@ export function useLongPressActionMenu(actions: LongPressMenuAction[]) {
       },
       onContextMenu: (e: React.MouseEvent) => {
         e.preventDefault();
+        clearTextSelection();
         didLongPressRef.current = true;
         const target = e.currentTarget as HTMLElement;
         const rect = target.getBoundingClientRect();
