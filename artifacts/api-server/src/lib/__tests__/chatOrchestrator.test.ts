@@ -61,6 +61,13 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toMatch(/do \*\*not\*\* claim no same-day catalyst/i);
   });
 
+  it("documents live tape and portfolio tools", () => {
+    const prompt = buildChatSystemPrompt("AAPL");
+    expect(prompt).toContain("displayLast");
+    expect(prompt).toContain("get_portfolio");
+    expect(prompt).toMatch(/PREMARKET and AFTERHOURS/i);
+  });
+
   it("documents get_news as internal synthesis only", () => {
     const prompt = buildChatSystemPrompt("AAPL");
     expect(prompt).toContain("internal synthesis");
@@ -147,6 +154,7 @@ describe("createChatTools", () => {
         "get_market_pulse",
         "get_news",
         "get_options_chain",
+        "get_portfolio",
         "get_quote",
         "get_technicals",
         "web_fetch",

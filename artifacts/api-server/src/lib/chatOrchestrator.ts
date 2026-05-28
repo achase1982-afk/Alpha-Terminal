@@ -84,7 +84,8 @@ function chatToolStatusLabel(toolName: string): string {
     web_search: "Searching the web",
     web_fetch: "Fetching page",
     get_news: "Fetching news",
-    get_quote: "Fetching quote",
+    get_quote: "Fetching live quote",
+    get_portfolio: "Loading portfolio",
     get_technicals: "Loading technicals",
     get_options_chain: "Loading options chain",
     get_flow: "Loading options flow",
@@ -132,7 +133,9 @@ ${ambientBlock}
 - Answer general questions (definitions, strategy concepts, education) from your knowledge without tools.
 - Call tools when the user needs **current** prices, flow, technicals, news, earnings, IV rank, options chain, or market pulse data.
 - For sell-side ratings, consensus price targets, or valuation sentiment on the ambient ticker, use the internal **Context data** block when present; otherwise call **get_analyst_ratings**. Do not invent analyst counts or price targets.
+- **Live tape:** You have the same Schwab live quote pipeline as the terminal (streamer + REST). Use **displayLast** / **latestPrint** for "price now", especially in PREMARKET and AFTERHOURS. Regular session is 9:30 AM–4:00 PM ET, but equity prints can update until ~8 PM ET; do not freeze the story at the 4 PM regular-session mark when extended data is present. If quote age is high or only prior close exists, say the tape may be stale.
 - For **why is it moving**, catalyst, or headline questions: read internal context and tools first, then answer in synthesized analyst prose. Do **not** quote headline titles, list wire sources, or say "the terminal/news feed shows." State the catalyst as fact (who, what, size, timing). Call **get_news** for another ticker or if context has no headlines. Call **web_search** only to fill gaps; do **not** claim no same-day catalyst if context or **get_news** already has material [TODAY] items.
+- **Portfolio:** Internal context may include holdings. For exposure, sizing, overlap, or P/L questions, use **get_portfolio** when needed. Do not invent positions.
 - **Voice (absolute):** Never mention Alpha Terminal, terminal snapshot, news feed, Benzinga, Polygon, Finnhub, FMP, Tavily, Serper, web search, or tool names in the user-facing answer. Do not paste headline bullets with timestamps and publishers. Do not say "web search confirms." Integrate facts; if data is missing, say what you cannot confirm without naming backends.
 - Use concise markdown; bullet lists for data. No "As an AI…" disclaimers. No greeting or sign-off fluff.
 - Options flow honesty. When you discuss options flow, these rules are absolute:
@@ -154,7 +157,7 @@ Formatting. Write in plain prose, the way a sharp analyst writes in a direct mes
 - Answer in the order the user asked. Do not impose a fixed report template.
 
 ## Tools available
-get_quote, get_technicals, get_options_chain, get_flow, get_ivr, get_earnings, get_analyst_ratings, get_news, get_market_pulse, web_search, web_fetch
+get_quote, get_portfolio, get_technicals, get_options_chain, get_flow, get_ivr, get_earnings, get_analyst_ratings, get_news, get_market_pulse, web_search, web_fetch
 
 **get_news** returns recent headlines for internal synthesis (do not cite wire names in the reply).
 
@@ -162,13 +165,23 @@ get_quote, get_technicals, get_options_chain, get_flow, get_ivr, get_earnings, g
 }
 
 /** System prompt plus live terminal snapshot (quote + analyst) for the page symbol. */
+export type ChatAmbientDataAccess = {
+  marketAccessToken?: string | null;
+  traderAccessToken?: string | null;
+};
+
 export async function buildChatSystemPromptWithAmbient(
   ambientSymbol?: string | null,
   clientTimeZone?: string | null,
   now: Date = new Date(),
+  dataAccess: ChatAmbientDataAccess = {},
 ): Promise<string> {
   const base = buildChatSystemPrompt(ambientSymbol, clientTimeZone, now);
-  const ambient = await buildAmbientSymbolContextBlock(ambientSymbol);
+  const ambient = await buildAmbientSymbolContextBlock(ambientSymbol, {
+    marketAccessToken: dataAccess.marketAccessToken,
+    traderAccessToken: dataAccess.traderAccessToken,
+    clientTimeZone,
+  });
   return ambient ? `${base}${ambient}` : base;
 }
 
@@ -381,7 +394,10 @@ async function runDraftChatTurn(args: {
     opus: args.toolContext.anthropicOpusOptions,
     extendedThinkingEnabled: args.toolContext.extendedThinkingEnabled,
   });
-  const system = await buildChatSystemPromptWithAmbient(args.ambientSymbol, args.clientTimeZone);
+  const system = await buildChatSystemPromptWithAmbient(args.ambientSymbol, args.clientTimeZone, new Date(), {
+    marketAccessToken: args.toolContext.schwabAccessToken,
+    traderAccessToken: args.toolContext.traderAccessToken,
+  });
   try {
     const result = await generateText({
       model: resolved.model,
@@ -469,7 +485,10 @@ export async function runMultiAgentChatTurn(
   let assistantText = "";
   const textEmitter = createFormattedTextEmitter(onEvent);
   try {
-    const synthSystem = `${await buildChatSystemPromptWithAmbient(ambientSymbol, clientTimeZone)}\n\n${MULTI_AGENT_SYNTH_SYSTEM}`;
+    const synthSystem = `${await buildChatSystemPromptWithAmbient(ambientSymbol, clientTimeZone, new Date(), {
+      marketAccessToken: toolContext.schwabAccessToken,
+      traderAccessToken: toolContext.traderAccessToken,
+    })}\n\n${MULTI_AGENT_SYNTH_SYSTEM}`;
     const result = streamText({
       model: synthResolved.model,
       system: synthSystem,
@@ -532,7 +551,10 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<void> {
     opus: anthropicOpusOptions,
     extendedThinkingEnabled: args.extendedThinkingEnabled,
   });
-  const system = await buildChatSystemPromptWithAmbient(ambientSymbol, clientTimeZone);
+  const system = await buildChatSystemPromptWithAmbient(ambientSymbol, clientTimeZone, new Date(), {
+    marketAccessToken: toolContext.schwabAccessToken,
+    traderAccessToken: toolContext.traderAccessToken,
+  });
 
   onEvent({ type: "status", note: "thinking" });
   const statusHeartbeat = createChatStatusHeartbeat(onEvent);

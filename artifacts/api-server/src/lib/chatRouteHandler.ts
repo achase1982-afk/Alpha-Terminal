@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { getAuth } from "@clerk/express";
-import { getBestAccessToken } from "./tokenStore.js";
+import { getBestAccessToken, getTokens } from "./tokenStore.js";
 import {
   createChatThread,
   getChatThreadForUser,
@@ -115,6 +115,7 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
   }, telemetry);
 
   const schwabAccessToken = getBestAccessToken();
+  const traderAccessToken = getTokens("trader")?.accessToken ?? null;
 
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -170,6 +171,8 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
     toolContext: {
       userId,
       schwabAccessToken,
+      traderAccessToken,
+      clientTimeZone,
       activeModel: model,
       anthropicOpusOptions,
       extendedThinkingEnabled,
