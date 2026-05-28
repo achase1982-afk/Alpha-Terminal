@@ -160,8 +160,12 @@ export const ANTHROPIC_OPUS_EFFORT_LABELS: Record<AnthropicOpusEffort, string> =
   max: "Max",
 };
 
+/** True when the model resolves to catalog Opus 4.7+ (effort + fast mode supported). */
 export function isAnthropicOpusEffortModel(model: string): boolean {
-  return /^claude-opus-4-([78]|\d{2,})(?:[-._]|$)/.test(model);
+  if (!model?.trim()) return false;
+  const trimmed = model.trim();
+  if (migrateLegacyModelIdToCatalog(trimmed) === "claude-opus-4-8") return true;
+  return /^claude-opus-4-([7-9]|\d{2,})(?:[-._]|$)/.test(trimmed);
 }
 
 export function normalizeAnthropicOpusEffort(value: unknown): AnthropicOpusEffort {

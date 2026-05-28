@@ -17,8 +17,14 @@ import {
   DEFAULT_AI_MODEL_ID,
   modelsForProvider,
   migrateLegacyModelIdToCatalog,
+  isAnthropicOpusEffortModel,
+  ANTHROPIC_OPUS_EFFORT_LABELS,
+  ANTHROPIC_OPUS_SPEED_LABELS,
+  normalizeAnthropicOpusEffort,
+  normalizeAnthropicOpusSpeed,
   type AiModelId,
   type AnthropicOpusEffort,
+  type AnthropicOpusSpeed,
 } from "@workspace/ai-models";
 import { AnthropicOpusEffortSelect } from "./ai-shared/AnthropicOpusEffortSelect";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
@@ -567,11 +573,19 @@ function AiFeatureControl({ featureKey, label, icon }: {
           <span>{icon}</span>
           {label}
         </span>
-        <span className="flex items-center gap-2">
-          <span className="font-mono text-[8px] text-zinc-500 tracking-wider">
+        <span className="flex items-center gap-2 min-w-0">
+          <span className="font-mono text-[8px] text-zinc-500 tracking-wider text-right truncate max-w-[9rem] sm:max-w-[12rem]">
             {aiModelSelectLabel(migrateLegacyModelIdToCatalog(settings.model))}
+            {isAnthropicOpusEffortModel(settings.model) && (
+              <>
+                {' · '}
+                {ANTHROPIC_OPUS_EFFORT_LABELS[normalizeAnthropicOpusEffort(settings.anthropicOpusEffort)]}
+                {' · '}
+                {ANTHROPIC_OPUS_SPEED_LABELS[normalizeAnthropicOpusSpeed(settings.anthropicOpusSpeed)]}
+              </>
+            )}
           </span>
-          <ChevronRight className={`w-3 h-3 text-zinc-500 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+          <ChevronRight className={`w-3 h-3 text-zinc-500 transition-transform shrink-0 ${expanded ? 'rotate-90' : ''}`} />
         </span>
       </button>
 
@@ -594,7 +608,7 @@ function AiFeatureControl({ featureKey, label, icon }: {
           </div>
 
           <AnthropicOpusEffortSelect
-            modelId={settings.model}
+            modelId={migrateLegacyModelIdToCatalog(settings.model)}
             effort={settings.anthropicOpusEffort}
             speed={settings.anthropicOpusSpeed}
             onEffortChange={(effort) => setAiFeatureSetting(featureKey, 'anthropicOpusEffort', effort)}
@@ -812,6 +826,50 @@ function AiLabStrategistControl() {
   );
 }
 
+function GlobalOpusTuningBlock() {
+  const { aiFeatureSettings, setAiFeatureSetting } = useTerminalStore();
+  const anyOpus = AI_FEATURES.some((f) => isAnthropicOpusEffortModel(aiFeatureSettings[f.key].model));
+  if (!anyOpus) return null;
+
+  const reference = aiFeatureSettings.chat;
+
+  const applyOpusEffortToAll = (effort: AnthropicOpusEffort) => {
+    for (const f of AI_FEATURES) {
+      if (isAnthropicOpusEffortModel(aiFeatureSettings[f.key].model)) {
+        setAiFeatureSetting(f.key, "anthropicOpusEffort", effort);
+      }
+    }
+  };
+
+  const applyOpusSpeedToAll = (speed: AnthropicOpusSpeed) => {
+    for (const f of AI_FEATURES) {
+      if (isAnthropicOpusEffortModel(aiFeatureSettings[f.key].model)) {
+        setAiFeatureSetting(f.key, "anthropicOpusSpeed", speed);
+      }
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-primary/25 bg-primary/5 px-3 py-3 space-y-2">
+      <div className="space-y-1">
+        <Label className="font-mono text-[9px] text-primary uppercase tracking-widest font-medium">
+          Claude Opus 4.8 tuning
+        </Label>
+        <p className="font-mono text-[8px] text-zinc-500 leading-relaxed">
+          Applies to every feature below that uses Opus. Expand a row to change model or temperature per feature.
+        </p>
+      </div>
+      <AnthropicOpusEffortSelect
+        modelId="claude-opus-4-8"
+        effort={reference.anthropicOpusEffort}
+        speed={reference.anthropicOpusSpeed}
+        onEffortChange={applyOpusEffortToAll}
+        onSpeedChange={applyOpusSpeedToAll}
+      />
+    </div>
+  );
+}
+
 function AiParametersPage() {
   const { aiFeatureSettings, setAiFeatureSetting } = useTerminalStore();
 
@@ -832,6 +890,12 @@ function AiParametersPage() {
 
   return (
     <div className="space-y-4 max-w-xl mx-auto">
+      <p className="font-mono text-[9px] text-zinc-500 leading-relaxed">
+        Tap a feature row to expand model and temperature. Opus effort and fast mode appear when Claude Opus 4.8 is selected.
+      </p>
+
+      <GlobalOpusTuningBlock />
+
       <div className="space-y-1.5">
         <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
           <BrainCircuit className="w-3 h-3" /> Set All Models
@@ -1471,7 +1535,7 @@ function SettingsHubPage({
 
       <SettingsHubSection title="Intelligence">
         <SettingsHubRow icon={<BrainCircuit />} label="Strategist Tuning" subtitle="Backend strategist models, IOScore weights, scanner thresholds" onClick={() => onSelect("Strategist Tuning")} />
-        <SettingsHubRow icon={<Sparkles />} label="AI Parameters" subtitle="Per-feature model and temperature" onClick={() => onSelect("AI Parameters")} />
+        <SettingsHubRow icon={<Sparkles />} label="AI Parameters" subtitle="Per-feature model, Opus effort, and fast mode" onClick={() => onSelect("AI Parameters")} />
         <SettingsHubRow icon={<FlaskConical />} label="AI Lab" subtitle="Master toggle, deliberation, anomaly detection, schedule" onClick={() => onSelect("AI Lab")} />
         <SettingsHubRow icon={<LineChart />} label="Chart Overlays" subtitle="SMAs, Bollinger, RSI, volume" onClick={() => onSelect("Chart Overlays")} />
         <SettingsHubRow icon={<BarChart2 />} label="Options Chain Defaults" subtitle="Default contract type and max DTE" onClick={() => onSelect("Options Chain Defaults")} />

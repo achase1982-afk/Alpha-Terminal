@@ -6,6 +6,7 @@ import {
   DEFAULT_ANTHROPIC_OPUS_EFFORT,
   DEFAULT_ANTHROPIC_OPUS_SPEED,
   isAnthropicOpusEffortModel,
+  migrateLegacyModelIdToCatalog,
   normalizeAnthropicOpusEffort,
   normalizeAnthropicOpusSpeed,
   type AnthropicOpusEffort,
@@ -39,7 +40,8 @@ export function AnthropicOpusEffortSelect({
   onSpeedChange,
   className,
 }: Props) {
-  if (!isAnthropicOpusEffortModel(modelId)) return null;
+  const effectiveModelId = migrateLegacyModelIdToCatalog(modelId);
+  if (!isAnthropicOpusEffortModel(effectiveModelId)) return null;
 
   const effort = normalizeAnthropicOpusEffort(effortProp ?? DEFAULT_ANTHROPIC_OPUS_EFFORT);
   const speed = normalizeAnthropicOpusSpeed(speedProp ?? DEFAULT_ANTHROPIC_OPUS_SPEED);

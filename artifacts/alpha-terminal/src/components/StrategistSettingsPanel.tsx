@@ -232,6 +232,15 @@ export function StrategistSettingsPanel() {
         </div>
       )}
 
+      <div className="px-3 py-2 rounded-lg bg-primary/5 border border-primary/25">
+        <span className="font-mono text-[10px] text-zinc-300 leading-relaxed block">
+          When a strategist slot uses <strong className="text-white">Claude Opus 4.8</strong>, set{" "}
+          <strong className="text-white">Opus effort (Anthropic)</strong> and{" "}
+          <strong className="text-white">Opus speed (Anthropic)</strong> in the Strategist section below
+          (Standard vs Fast). Per-feature overrides live under Settings → AI Parameters.
+        </span>
+      </div>
+
       {isConvictionDeskMode && (
         <div className="px-3 py-2 rounded-lg bg-zinc-900/50 border border-zinc-700/60">
           <span className="font-mono text-[11px] text-zinc-300 leading-relaxed block">
