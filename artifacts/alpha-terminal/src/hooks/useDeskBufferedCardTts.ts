@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { emitDeskTtsClientEvent, fetchAllDeskTtsChunksMerged } from "@/lib/deskAudioApi";
+import { emitDeskTtsClientEvent } from "@/lib/deskAudioApi";
+import {
+  attachDeskAudioBlob,
+  DeskAudioChunkLoader,
+  parseDeskAudioStartResponse,
+} from "@/lib/deskAudioSequentialPlay";
 import { splitDeskAudioTextIntoChunks } from "@/lib/deskAudioChunking";
 import { STRATEGIST_ANALYSIS_CANCEL_EVENT, STRATEGIST_ANALYSIS_START_EVENT } from "@/lib/strategistDeskSpeechEvents";
 
@@ -85,6 +90,12 @@ export function useDeskBufferedCardTts(args: {
   const warmGenRef = useRef(0);
   const ttsLoadingPlayGenRef = useRef<number | null>(null);
   const expectAudioPlaybackRef = useRef(false);
+  const sequentialPlayRef = useRef<{
+    playGen: number;
+    chunkIndex: number;
+    totalChunks: number;
+    loader: DeskAudioChunkLoader;
+  } | null>(null);
 
   const revokeObjectUrl = useCallback(() => {
     if (objectUrlRef.current) {
@@ -99,6 +110,8 @@ export function useDeskBufferedCardTts(args: {
 
   const stopAudio = useCallback(() => {
     expectAudioPlaybackRef.current = false;
+    sequentialPlayRef.current?.loader.clearPrefetch();
+    sequentialPlayRef.current = null;
     audioPlayGenRef.current += 1;
     ttsFetchAbortRef.current?.abort();
     ttsFetchAbortRef.current = null;
@@ -130,30 +143,33 @@ export function useDeskBufferedCardTts(args: {
     setAudioError(null);
     setAudioReady(false);
 
-    const attachAndPlay = (blobUrl: string): boolean => {
+    const attachAndPlayBlob = async (
+      blob: Blob,
+      chunkIndex: number,
+      totalChunks: number,
+      loader: DeskAudioChunkLoader,
+    ): Promise<boolean> => {
       const el = audioRef.current;
       if (!el || playGen !== audioPlayGenRef.current) return false;
       revokeObjectUrl();
+      const blobUrl = attachDeskAudioBlob(el, blob, speechRateRef.current);
       objectUrlRef.current = blobUrl;
       setAudioBarOpen(true);
       setPaused(false);
       setAudioReady(true);
-      el.src = blobUrl;
-      el.playbackRate = speechRateRef.current;
+      setAudioLoading(false);
+      ttsLoadingPlayGenRef.current = null;
+      loader.prefetchChunk(chunkIndex + 1);
       expectAudioPlaybackRef.current = true;
+      sequentialPlayRef.current = { playGen, chunkIndex, totalChunks, loader };
       try {
         const p = el.play();
         if (p !== undefined) {
-          void p.catch(() => {
-            expectAudioPlaybackRef.current = false;
-            if (playGen === audioPlayGenRef.current) {
-              setAudioError("Audio unavailable — playback failed");
-              setAudioReady(false);
-            }
-          });
+          await p;
         }
       } catch {
         expectAudioPlaybackRef.current = false;
+        sequentialPlayRef.current = null;
         if (playGen === audioPlayGenRef.current) {
           setAudioError("Audio unavailable — playback failed");
           setAudioReady(false);
@@ -203,16 +219,13 @@ export function useDeskBufferedCardTts(args: {
           });
           return null;
         }
-        const j = (await res.json()) as { sessionId?: string; totalChunks?: number };
-        if (typeof j.sessionId !== "string" || !j.sessionId) return null;
-        const totalChunks =
-          typeof j.totalChunks === "number" && Number.isFinite(j.totalChunks) && j.totalChunks >= 1
-            ? Math.floor(j.totalChunks)
-            : deskAudioChunks.length;
-        setDeskTtsSessionId(j.sessionId);
-        deskTtsSessionIdRef.current = j.sessionId;
-        warmedDeskTtsRef.current = { warmKey: deskTtsWarmKey, sessionId: j.sessionId, totalChunks };
-        return { sessionId: j.sessionId, totalChunks };
+        const parsed = parseDeskAudioStartResponse((await res.json()) as unknown, deskAudioChunks.length);
+        if (!parsed) return null;
+        const totalChunks = parsed.totalChunks;
+        setDeskTtsSessionId(parsed.sessionId);
+        deskTtsSessionIdRef.current = parsed.sessionId;
+        warmedDeskTtsRef.current = { warmKey: deskTtsWarmKey, sessionId: parsed.sessionId, totalChunks };
+        return { sessionId: parsed.sessionId, totalChunks };
       } catch (e) {
         void emitDeskTtsClientEvent({
           stage: "tts_session_start_failed",
@@ -237,12 +250,14 @@ export function useDeskBufferedCardTts(args: {
       const n =
         typeof nRaw === "number" && Number.isFinite(nRaw) && nRaw >= 1 ? Math.floor(nRaw) : deskAudioChunks.length;
 
-      const merged = await fetchAllDeskTtsChunksMerged(sid, n, ac.signal);
+      const loader = new DeskAudioChunkLoader(sid, ac.signal);
+      loader.prefetchChunk(0);
+      const firstBlob = await loader.loadChunk(0);
       if (playGen !== audioPlayGenRef.current) return;
-      const url = URL.createObjectURL(merged);
-      const ok = attachAndPlay(url);
-      if (!ok) {
-        URL.revokeObjectURL(url);
+      const ok = await attachAndPlayBlob(firstBlob, 0, n, loader);
+      if (!ok && objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
       }
     } catch (e) {
       if (playGen !== audioPlayGenRef.current) return;
@@ -293,18 +308,14 @@ export function useDeskBufferedCardTts(args: {
           void emitDeskTtsClientEvent({ stage: "tts_warm_failed", httpStatus: res.status, deskResultId: audioId });
           return;
         }
-        const j = (await res.json()) as { sessionId?: string; totalChunks?: number };
+        const parsed = parseDeskAudioStartResponse((await res.json()) as unknown, deskAudioChunks.length);
         if (gen !== warmGenRef.current) return;
-        if (typeof j.sessionId === "string" && j.sessionId) {
-          const totalChunks =
-            typeof j.totalChunks === "number" && Number.isFinite(j.totalChunks) && j.totalChunks >= 1
-              ? Math.floor(j.totalChunks)
-              : deskAudioChunks.length;
-          warmedDeskTtsRef.current = { warmKey, sessionId: j.sessionId, totalChunks };
+        if (parsed) {
+          warmedDeskTtsRef.current = { warmKey, sessionId: parsed.sessionId, totalChunks: parsed.totalChunks };
           setDeskTtsSessionId((prev) => {
             if (prev) return prev;
-            deskTtsSessionIdRef.current = j.sessionId!;
-            return j.sessionId!;
+            deskTtsSessionIdRef.current = parsed.sessionId;
+            return parsed.sessionId;
           });
         }
       } catch (e) {
@@ -406,8 +417,40 @@ export function useDeskBufferedCardTts(args: {
   );
 
   const onAudioEnded = useCallback(() => {
-    stopAudio();
-  }, [stopAudio]);
+    const seq = sequentialPlayRef.current;
+    const el = audioRef.current;
+    if (!seq || !el || seq.playGen !== audioPlayGenRef.current) {
+      stopAudio();
+      return;
+    }
+
+    const nextIndex = seq.chunkIndex + 1;
+    if (nextIndex >= seq.totalChunks) {
+      stopAudio();
+      return;
+    }
+
+    const currentPlayGen = seq.playGen;
+    const loader = seq.loader;
+    void (async () => {
+      try {
+        const blob = await loader.loadChunk(nextIndex);
+        if (currentPlayGen !== audioPlayGenRef.current) return;
+        revokeObjectUrl();
+        const blobUrl = attachDeskAudioBlob(el, blob, speechRateRef.current);
+        objectUrlRef.current = blobUrl;
+        seq.chunkIndex = nextIndex;
+        loader.prefetchChunk(nextIndex + 1);
+        expectAudioPlaybackRef.current = true;
+        await el.play();
+      } catch {
+        if (currentPlayGen === audioPlayGenRef.current) {
+          setAudioError("Audio unavailable — network error");
+          stopAudio();
+        }
+      }
+    })();
+  }, [revokeObjectUrl, stopAudio]);
 
   const onLoadedMetadata = useCallback(() => {
     const el = audioRef.current;

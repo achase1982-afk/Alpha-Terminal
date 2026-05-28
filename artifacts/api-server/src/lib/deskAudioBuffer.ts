@@ -32,7 +32,7 @@ type Session = {
 const SESSION_TTL_MS = 10 * 60 * 1000;
 const MAX_SESSIONS = 50;
 const CHUNK_GEN_CONCURRENCY = 3;
-const GET_CHUNK_WAIT_MS = 8000;
+const GET_CHUNK_WAIT_MS = 30_000;
 const SPEECH_RETRY_DELAYS_MS = [500, 1500, 4000] as const;
 
 const sessions = new Map<string, Session>();

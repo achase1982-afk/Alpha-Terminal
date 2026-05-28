@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Copy, Pause, Play, RotateCw, Square } from "lucide-react";
-import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { fetchAllDeskTtsChunksMerged } from "@/lib/deskAudioApi";
+import {
+  attachDeskAudioBlob,
+  DeskAudioChunkLoader,
+  startDeskAudioSession,
+} from "@/lib/deskAudioSequentialPlay";
 import { splitDeskAudioTextIntoChunks } from "@/lib/deskAudioChunking";
 
 /** Strip common Markdown so TTS does not read markup literally. */
@@ -47,10 +50,20 @@ let playbackState: PlaybackState = {
 };
 
 let globalAudio: HTMLAudioElement | null = null;
-let objectUrl: string | null = null;
+const objectUrls: string[] = [];
 let fetchAbort: AbortController | null = null;
 let playNonce = 0;
 let mediaSessionBound = false;
+
+type SequentialPlayback = {
+  nonce: number;
+  sessionId: string;
+  totalChunks: number;
+  chunkIndex: number;
+  loader: DeskAudioChunkLoader;
+};
+
+let sequentialPlayback: SequentialPlayback | null = null;
 
 function subscribeActiveTts(listener: () => void) {
   listeners.add(listener);
@@ -70,10 +83,11 @@ function setPlaybackState(patch: Partial<PlaybackState>) {
   emitPlayback();
 }
 
-function revokeObjectUrl() {
-  if (!objectUrl) return;
-  URL.revokeObjectURL(objectUrl);
-  objectUrl = null;
+function revokeObjectUrls() {
+  while (objectUrls.length > 0) {
+    const url = objectUrls.pop();
+    if (url) URL.revokeObjectURL(url);
+  }
 }
 
 function setAssistantSpeechRate(rate: number) {
@@ -96,6 +110,8 @@ function stopAssistantPlayback() {
   playNonce += 1;
   fetchAbort?.abort();
   fetchAbort = null;
+  sequentialPlayback?.loader.clearPrefetch();
+  sequentialPlayback = null;
 
   if (globalAudio) {
     globalAudio.pause();
@@ -103,7 +119,7 @@ function stopAssistantPlayback() {
     globalAudio.removeAttribute("src");
     globalAudio.load();
   }
-  revokeObjectUrl();
+  revokeObjectUrls();
   setPlaybackState({
     activeMessageId: null,
     loading: false,
@@ -127,8 +143,7 @@ function ensureAudioElement() {
     if (!audio.ended) setPlaybackState({ paused: true });
   });
   audio.addEventListener("ended", () => {
-    audio.currentTime = 0;
-    setPlaybackState({ loading: false, ready: true, paused: true, error: null });
+    void onAssistantAudioEnded();
   });
   audio.addEventListener("error", () => {
     setPlaybackState({
@@ -163,18 +178,68 @@ function ensureAudioElement() {
   return audio;
 }
 
-function parseStartResponse(
-  payload: unknown,
-  fallbackChunks: number,
-): { sessionId: string; totalChunks: number } | null {
-  if (!payload || typeof payload !== "object") return null;
-  const rec = payload as { sessionId?: unknown; totalChunks?: unknown };
-  if (typeof rec.sessionId !== "string" || !rec.sessionId.trim()) return null;
-  const totalChunks =
-    typeof rec.totalChunks === "number" && Number.isInteger(rec.totalChunks) && rec.totalChunks >= 1
-      ? rec.totalChunks
-      : Math.max(1, fallbackChunks);
-  return { sessionId: rec.sessionId.trim(), totalChunks };
+async function playAssistantChunk(chunkIndex: number, nonce: number): Promise<void> {
+  const seq = sequentialPlayback;
+  const audio = globalAudio;
+  if (!seq || !audio || seq.nonce !== nonce || chunkIndex !== seq.chunkIndex) return;
+
+  try {
+    const blob = await seq.loader.loadChunk(chunkIndex);
+    if (seq.nonce !== nonce || sequentialPlayback !== seq) return;
+
+    const url = attachDeskAudioBlob(audio, blob, playbackState.speechRate);
+    objectUrls.push(url);
+    seq.loader.prefetchChunk(chunkIndex + 1);
+
+    if (
+      typeof navigator !== "undefined" &&
+      "mediaSession" in navigator &&
+      typeof MediaMetadata !== "undefined" &&
+      chunkIndex === 0
+    ) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: "Alpha Terminal chat response",
+      });
+    }
+
+    await audio.play();
+    if (seq.nonce !== nonce) return;
+    setPlaybackState({ loading: false, ready: true, paused: false, error: null });
+  } catch (err) {
+    if (seq.nonce !== nonce) return;
+    const aborted = err instanceof DOMException && err.name === "AbortError";
+    sequentialPlayback = null;
+    setPlaybackState({
+      loading: false,
+      ready: false,
+      paused: false,
+      error: aborted ? "Audio request was cancelled." : "Audio unavailable — network error.",
+    });
+  }
+}
+
+async function onAssistantAudioEnded(): Promise<void> {
+  const seq = sequentialPlayback;
+  const audio = globalAudio;
+  if (!seq || !audio) {
+    if (audio) {
+      audio.currentTime = 0;
+      setPlaybackState({ loading: false, ready: true, paused: true, error: null });
+    }
+    return;
+  }
+
+  const nonce = seq.nonce;
+  const nextIndex = seq.chunkIndex + 1;
+  if (nextIndex >= seq.totalChunks) {
+    sequentialPlayback = null;
+    audio.currentTime = 0;
+    setPlaybackState({ loading: false, ready: true, paused: true, error: null });
+    return;
+  }
+
+  seq.chunkIndex = nextIndex;
+  await playAssistantChunk(nextIndex, nonce);
 }
 
 async function startAssistantPlayback(messageId: string, plainText: string): Promise<void> {
@@ -184,6 +249,9 @@ async function startAssistantPlayback(messageId: string, plainText: string): Pro
 
   fetchAbort?.abort();
   fetchAbort = null;
+  sequentialPlayback?.loader.clearPrefetch();
+  sequentialPlayback = null;
+  revokeObjectUrls();
 
   setPlaybackState({
     activeMessageId: messageId,
@@ -198,45 +266,23 @@ async function startAssistantPlayback(messageId: string, plainText: string): Pro
   const fallbackChunks = Math.max(1, splitDeskAudioTextIntoChunks(plainText).length);
 
   try {
-    // Same desk TTS pipeline as validation cards (/api/tts/desk-audio).
-    const startRes = await fetchWithAuth("/api/tts/desk-audio/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: plainText.trim(), voiceConfig: {} }),
-      signal: ac.signal,
-      clerkTokenTimeoutMs: 8000,
-    });
-    if (!startRes.ok) {
-      throw new Error(`HTTP ${startRes.status}`);
-    }
-    const startMeta = parseStartResponse((await startRes.json()) as unknown, fallbackChunks);
-    if (!startMeta) {
-      throw new Error("invalid_start_response");
-    }
-
-    const merged = await fetchAllDeskTtsChunksMerged(startMeta.sessionId, startMeta.totalChunks, ac.signal);
+    const startMeta = await startDeskAudioSession(plainText, {}, ac.signal, fallbackChunks);
     if (nonce !== playNonce) return;
 
-    const nextUrl = URL.createObjectURL(merged);
-    revokeObjectUrl();
-    objectUrl = nextUrl;
-    audio.src = nextUrl;
-    audio.playbackRate = playbackState.speechRate;
-    if (
-      typeof navigator !== "undefined" &&
-      "mediaSession" in navigator &&
-      typeof MediaMetadata !== "undefined"
-    ) {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: "Alpha Terminal chat response",
-      });
-    }
-    await audio.play();
-    if (nonce !== playNonce) return;
-    setPlaybackState({ loading: false, ready: true, paused: false, error: null });
+    const loader = new DeskAudioChunkLoader(startMeta.sessionId, ac.signal);
+    sequentialPlayback = {
+      nonce,
+      sessionId: startMeta.sessionId,
+      totalChunks: startMeta.totalChunks,
+      chunkIndex: 0,
+      loader,
+    };
+    loader.prefetchChunk(0);
+    await playAssistantChunk(0, nonce);
   } catch (err) {
     if (nonce !== playNonce) return;
     const aborted = err instanceof DOMException && err.name === "AbortError";
+    sequentialPlayback = null;
     setPlaybackState({
       loading: false,
       ready: false,
@@ -308,6 +354,14 @@ export function AssistantListenButton({
       if (copyFlashTimerRef.current !== null) window.clearTimeout(copyFlashTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!plain.trim()) return;
+    const ac = new AbortController();
+    const fallbackChunks = Math.max(1, splitDeskAudioTextIntoChunks(plain).length);
+    void startDeskAudioSession(plain, {}, ac.signal, fallbackChunks).catch(() => {});
+    return () => ac.abort();
+  }, [plain]);
 
   const handleCopyClick = useCallback(async () => {
     if (!textToCopy) return;
