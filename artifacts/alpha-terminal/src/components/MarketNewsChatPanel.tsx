@@ -25,9 +25,11 @@ import {
   aiModelSelectLabel,
   DEFAULT_AI_MODEL_ID,
   isAiModelId,
+  isAnthropicOpusEffortModel,
   migrateLegacyModelIdToCatalog,
   type AiModelId,
 } from "@workspace/ai-models";
+import { LlmOpusOptionsFields } from "./ai-shared/LlmOpusOptionsFields";
 
 const MULTI_AGENT_MODEL = "__multi_agent__";
 const MULTI_AGENT_STORAGE_KEY = "marketNewsChatMultiModels";
@@ -144,6 +146,14 @@ export function MarketNewsChatPanel({
     return DEFAULT_AI_MODEL_ID;
   });
   const modelControlValue = useMultiAgent ? MULTI_AGENT_MODEL : modelSend;
+
+  const chatUsesOpus =
+    (!useMultiAgent && isAnthropicOpusEffortModel(modelSend)) ||
+    (useMultiAgent &&
+      (isAnthropicOpusEffortModel(synthesizerModel) ||
+        multiAgentModels.some((m) => isAnthropicOpusEffortModel(m))));
+
+  const opusControlModelId = useMultiAgent ? synthesizerModel : modelSend;
 
   const [threads, setThreads] = useState<ServerThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
@@ -604,7 +614,8 @@ export function MarketNewsChatPanel({
 
   return (
     <div className="relative flex flex-col flex-1 min-h-0 w-full max-md:max-h-none md:max-h-none md:min-h-[280px] bg-[#0a0a0a] border-t border-card-border/40">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-card-border/50 shrink-0 flex-wrap">
+      <div className="shrink-0 border-b border-card-border/50">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
           <button
             type="button"
@@ -714,6 +725,19 @@ export function MarketNewsChatPanel({
             </div>
           )}
         </div>
+      </div>
+      {chatUsesOpus && (
+        <div className="px-3 pb-2">
+          <LlmOpusOptionsFields
+            compact
+            modelId={opusControlModelId}
+            effort={anthropicOpusEffort}
+            speed={anthropicOpusSpeed}
+            onEffortChange={(effort) => setAiFeatureSetting("chat", "anthropicOpusEffort", effort)}
+            onSpeedChange={(speed) => setAiFeatureSetting("chat", "anthropicOpusSpeed", speed)}
+          />
+        </div>
+      )}
       </div>
 
       <div className="relative flex-1 min-h-0 flex flex-col">

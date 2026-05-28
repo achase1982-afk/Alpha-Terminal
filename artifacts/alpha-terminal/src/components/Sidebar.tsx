@@ -18,9 +18,8 @@ import {
   modelsForProvider,
   migrateLegacyModelIdToCatalog,
   type AiModelId,
-  type AnthropicOpusEffort,
 } from "@workspace/ai-models";
-import { AnthropicOpusEffortSelect } from "./ai-shared/AnthropicOpusEffortSelect";
+import { LlmOpusOptionsFields } from "./ai-shared/LlmOpusOptionsFields";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { queryClient } from "@/App";
 import { Input } from "@/components/ui/input";
@@ -593,7 +592,7 @@ function AiFeatureControl({ featureKey, label, icon }: {
             </select>
           </div>
 
-          <AnthropicOpusEffortSelect
+          <LlmOpusOptionsFields
             modelId={settings.model}
             effort={settings.anthropicOpusEffort}
             speed={settings.anthropicOpusSpeed}
@@ -625,7 +624,8 @@ function AiFeatureControl({ featureKey, label, icon }: {
 }
 
 function AiLabStrategistControl() {
-  const { aiLabStrategistConfig, setAiLabStrategistConfig } = useTerminalStore();
+  const { aiLabStrategistConfig, setAiLabStrategistConfig, aiFeatureSettings, setAiFeatureSetting } = useTerminalStore();
+  const labOpus = aiFeatureSettings.strategist;
   const [expanded, setExpanded] = useState(false);
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -734,6 +734,14 @@ function AiLabStrategistControl() {
               </select>
             </div>
 
+            <LlmOpusOptionsFields
+              modelId={aiLabStrategistConfig.analystModelName}
+              effort={labOpus.anthropicOpusEffort}
+              speed={labOpus.anthropicOpusSpeed}
+              onEffortChange={(effort) => setAiFeatureSetting('strategist', 'anthropicOpusEffort', effort)}
+              onSpeedChange={(speed) => setAiFeatureSetting('strategist', 'anthropicOpusSpeed', speed)}
+            />
+
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Temperature</span>
@@ -788,6 +796,14 @@ function AiLabStrategistControl() {
               </select>
             </div>
 
+            <LlmOpusOptionsFields
+              modelId={aiLabStrategistConfig.skepticModelName}
+              effort={labOpus.anthropicOpusEffort}
+              speed={labOpus.anthropicOpusSpeed}
+              onEffortChange={(effort) => setAiFeatureSetting('strategist', 'anthropicOpusEffort', effort)}
+              onSpeedChange={(speed) => setAiFeatureSetting('strategist', 'anthropicOpusSpeed', speed)}
+            />
+
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Temperature</span>
@@ -816,6 +832,7 @@ function AiParametersPage() {
   const { aiFeatureSettings, setAiFeatureSetting } = useTerminalStore();
 
   const [globalTemp, setGlobalTemp] = useState(0);
+  const [setAllModel, setSetAllModel] = useState("");
 
   const setAllModels = (model: string) => {
     for (const f of AI_FEATURES) {
@@ -830,6 +847,18 @@ function AiParametersPage() {
     }
   };
 
+  const applyOpusEffortToAll = (effort: (typeof aiFeatureSettings.chat)["anthropicOpusEffort"]) => {
+    for (const f of AI_FEATURES) {
+      setAiFeatureSetting(f.key, "anthropicOpusEffort", effort);
+    }
+  };
+
+  const applyOpusSpeedToAll = (speed: (typeof aiFeatureSettings.chat)["anthropicOpusSpeed"]) => {
+    for (const f of AI_FEATURES) {
+      setAiFeatureSetting(f.key, "anthropicOpusSpeed", speed);
+    }
+  };
+
   return (
     <div className="space-y-4 max-w-xl mx-auto">
       <div className="space-y-1.5">
@@ -837,8 +866,13 @@ function AiParametersPage() {
           <BrainCircuit className="w-3 h-3" /> Set All Models
         </Label>
         <select
-          value=""
-          onChange={(e) => { if (e.target.value) setAllModels(e.target.value); }}
+          value={setAllModel}
+          onChange={(e) => {
+            const model = e.target.value;
+            if (!model) return;
+            setSetAllModel(model);
+            setAllModels(model);
+          }}
           className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-zinc-400 focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
           style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
         >
@@ -849,6 +883,13 @@ function AiParametersPage() {
             </option>
           ))}
         </select>
+        <LlmOpusOptionsFields
+          modelId={setAllModel || aiFeatureSettings.chat.model}
+          effort={aiFeatureSettings.chat.anthropicOpusEffort}
+          speed={aiFeatureSettings.chat.anthropicOpusSpeed}
+          onEffortChange={applyOpusEffortToAll}
+          onSpeedChange={applyOpusSpeedToAll}
+        />
       </div>
 
       <div className="space-y-1.5">
@@ -883,7 +924,8 @@ function AiParametersPage() {
 }
 
 function MoversAiControl() {
-  const { aiLabStrategistConfig, setAiLabStrategistConfig } = useTerminalStore();
+  const { aiLabStrategistConfig, setAiLabStrategistConfig, aiFeatureSettings, setAiFeatureSetting } = useTerminalStore();
+  const labOpus = aiFeatureSettings.strategist;
   const [expanded, setExpanded] = useState(false);
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1005,6 +1047,14 @@ function MoversAiControl() {
                 ))}
               </select>
             </div>
+
+            <LlmOpusOptionsFields
+              modelId={aiLabStrategistConfig.moversModelName}
+              effort={labOpus.anthropicOpusEffort}
+              speed={labOpus.anthropicOpusSpeed}
+              onEffortChange={(effort) => setAiFeatureSetting('strategist', 'anthropicOpusEffort', effort)}
+              onSpeedChange={(speed) => setAiFeatureSetting('strategist', 'anthropicOpusSpeed', speed)}
+            />
 
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
