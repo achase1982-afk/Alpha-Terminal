@@ -7,6 +7,8 @@ import {
 
 /** Short-cut tokens for common Conviction Desk A/B configs (POST /analyze body). */
 export const CONVICTION_DESK_ROUTING_KEYS = [
+  "anthropic-opus-4-8",
+  /** @deprecated use anthropic-opus-4-8 */
   "anthropic-opus-4-7",
   "anthropic-sonnet-4-6",
   "openai-gpt-5-5-thinking",
@@ -66,8 +68,12 @@ const ROUTING_TABLE: Record<
   ConvictionDeskRoutingKey,
   { model: StrategistModelOption; anthropicThinkingBudgetOverride?: number }
 > = {
+  "anthropic-opus-4-8": {
+    model: { provider: "anthropic", model: "claude-opus-4-8", label: "Claude Opus 4.8 + adaptive thinking" },
+  },
+  /** @deprecated legacy routing key — maps to Opus 4.8 */
   "anthropic-opus-4-7": {
-    model: { provider: "anthropic", model: "claude-opus-4-7", label: "Claude Opus 4.7 + adaptive thinking" },
+    model: { provider: "anthropic", model: "claude-opus-4-8", label: "Claude Opus 4.8 + adaptive thinking" },
   },
   "anthropic-sonnet-4-6": {
     model: { provider: "anthropic", model: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 + thinking" },

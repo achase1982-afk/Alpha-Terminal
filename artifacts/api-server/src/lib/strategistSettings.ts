@@ -1,4 +1,8 @@
 import {
+  anthropicOpusEffortFromStrategistIdx,
+  anthropicOpusSpeedFromStrategistIdx,
+  type AnthropicOpusCallOptions,
+  type AnthropicOpusEffort,
   STRATEGIST_MODEL_CATALOG_VERSION,
   STRATEGIST_MODEL_OPTIONS,
   remapStrategistCatalogIndexV5ToV6,
@@ -64,12 +68,16 @@ export interface StrategistConfig {
    * persisted integer indices once after upgrades.
    */
   strategistModelCatalogVersion: number;
+  /** Index into `ANTHROPIC_OPUS_EFFORT_LEVELS` for Anthropic Opus strategist calls. */
+  strategistAnthropicOpusEffortIdx: number;
+  /** 0 = standard, 1 = fast (`speed: "fast"` on Messages API). */
+  strategistAnthropicOpusSpeedIdx: number;
 }
 
 /**
  * Maps pre–four-model catalog indices (the former `STRATEGIST_MODEL_OPTIONS`
  * order) to the new 0–5 index. Used for one-time DB migration.
- * Anthropic slots (non–Opus 4.7) → 0; OpenAI (non–5.5) → 1; Gemini (non–3.1 Pro) → 3;
+ * Anthropic slots (non–Opus 4.8) → 0; OpenAI (non–5.5) → 1; Gemini (non–3.1 Pro) → 3;
  * xAI (non–Grok 4.20 multi-agent snapshot) → 5.
  */
 const LEGACY_STRATEGIST_MODEL_INDEX_TO_NEW: readonly number[] = [
@@ -94,6 +102,17 @@ export function normalizeStrategistModelIndex(idx: number): number {
 
 export function getStrategistModel(idx: number): StrategistModelOption {
   return STRATEGIST_MODEL_OPTIONS[normalizeStrategistModelIndex(idx)];
+}
+
+export function getStrategistAnthropicOpusEffort(settings: StrategistConfig): AnthropicOpusEffort {
+  return anthropicOpusEffortFromStrategistIdx(settings.strategistAnthropicOpusEffortIdx);
+}
+
+export function getStrategistAnthropicOpusCallOptions(settings: StrategistConfig): AnthropicOpusCallOptions {
+  return {
+    effort: getStrategistAnthropicOpusEffort(settings),
+    speed: anthropicOpusSpeedFromStrategistIdx(settings.strategistAnthropicOpusSpeedIdx),
+  };
 }
 
 /**
@@ -152,6 +171,8 @@ const DEFAULTS = {
   strategistDebateBModelIdx: 2,
   strategistArbitratorModelIdx: 2,
   strategistModelCatalogVersion: STRATEGIST_MODEL_CATALOG_VERSION,
+  strategistAnthropicOpusEffortIdx: 2,
+  strategistAnthropicOpusSpeedIdx: 0,
 } satisfies StrategistConfig;
 
 let settingsCache: StrategistConfig | null = null;
@@ -528,7 +549,7 @@ export function getSettingMeta(): SettingMetaEntry[] {
       { value: 5, label: "Conviction Desk (memo JSON)" },
     ] },
     { key: "strategistSoloModelIdx", label: "Solo Model", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used in Solo mode and Solo Desk mode (one consolidated Desk-shaped pass). In Desk mode this slot is used for the Volatility section.", options: modelOptions },
-    { key: "strategistConvictionModelIdx", label: "Conviction Desk", group: "Strategist", default: 2, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Single-pass trade memo JSON for Conviction Desk. Catalog: 0 = Gemini 3.5 + thinking, 1 = Gemini 3.1 Pro, 2 = Claude Opus 4.7 + adaptive thinking, 3 = Claude Sonnet 4.6 + thinking, 4 = GPT-5.5 + thinking, 5 = GPT-5.4 Mini.", options: modelOptions },
+    { key: "strategistConvictionModelIdx", label: "Conviction Desk", group: "Strategist", default: 2, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Single-pass trade memo JSON for Conviction Desk. Catalog: 0 = Gemini 3.5 + thinking, 1 = Gemini 3.1 Pro, 2 = Claude Opus 4.8 + adaptive thinking, 3 = Claude Sonnet 4.6 + thinking, 4 = GPT-5.5 + thinking, 5 = GPT-5.4 Mini.", options: modelOptions },
     { key: "strategistDebateAModelIdx", label: "Debate — Bull Model", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used to argue the Bull side in Debate mode. In Desk mode this slot is used for the Flow section. Unused in Solo Desk mode (Solo model slot runs the full report).", options: modelOptions },
     { key: "strategistDebateBModelIdx", label: "Debate — Bear Model", group: "Strategist", default: 1, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used to argue the Bear side in Debate mode. In Desk mode this slot is used for the Catalyst section. Unused in Solo Desk mode (Solo model slot runs the full report).", options: modelOptions },
     { key: "strategistArbitratorModelIdx", label: "Debate — Arbitrator Model", group: "Strategist", default: 0, min: -1, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used in Phase 3 to arbitrate between Bull's and Bear's structure proposals and ship the final trade. In Desk mode this slot is used for the Decision section. Unused in Solo Desk mode (Solo model slot runs the full report).", options: [{ value: -1, label: "Debate Winner (winning side promoted to arbitrator pass)" }, ...modelOptions] },
@@ -538,6 +559,39 @@ export function getSettingMeta(): SettingMetaEntry[] {
       { value: 3, label: "Hybrid — agree → synthesis, disagree → higher confidence" },
     ] },
     { key: "strategistTieBand", label: "Debate Tie Band (confidence pts)", group: "Strategist", default: 10, min: 1, max: 30, step: 1, description: "How close the Bull and Bear confidences must be (in points) for the verdict to land on SIDEWAYS / vol-neutral. Not used in Desk or Solo Desk mode." },
+    {
+      key: "strategistAnthropicOpusEffortIdx",
+      label: "Opus effort (Anthropic)",
+      group: "Strategist",
+      default: 2,
+      min: 0,
+      max: 4,
+      step: 1,
+      description:
+        "Anthropic Messages API effort when a strategist slot uses Claude Opus 4.8 (or 4.7). Low/Medium save tokens; High is default; Extra (xhigh) for long agentic coding; Max for hardest tasks.",
+      options: [
+        { value: 0, label: "Low" },
+        { value: 1, label: "Medium" },
+        { value: 2, label: "High (default)" },
+        { value: 3, label: "Extra (xhigh)" },
+        { value: 4, label: "Max" },
+      ],
+    },
+    {
+      key: "strategistAnthropicOpusSpeedIdx",
+      label: "Opus speed (Anthropic)",
+      group: "Strategist",
+      default: 0,
+      min: 0,
+      max: 1,
+      step: 1,
+      description:
+        "Fast mode (`speed: fast`) for Claude Opus 4.6+ strategist calls — ~2.5× output token speed with premium pricing on Opus 4.8.",
+      options: [
+        { value: 0, label: "Standard" },
+        { value: 1, label: "Fast (2.5× output speed)" },
+      ],
+    },
 
     { key: "ioWeightR2", label: "Market Independence (R²)", group: "IOScore", default: 0.30, min: 0, max: 0.50, step: 0.05, description: "How much weight the 'is this stock independent from SPY' factor gets." },
     { key: "ioWeightResidual", label: "Abnormal Move (Residual Return)", group: "IOScore", default: 0.25, min: 0, max: 0.50, step: 0.05, description: "How much weight the 'is this stock making an unusual move' factor gets." },

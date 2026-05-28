@@ -7,6 +7,7 @@ import { createGeminiClient, hasGeminiApiKey } from "./geminiClient.js";
 import { geminiThinkingConfigForModel } from "./geminiThinkingConfig.js";
 import {
   ANTHROPIC_EXTENDED_THINKING_BUDGET,
+  anthropicOpusMessageExtras,
   anthropicThinkingForMessagesApi,
   xaiReasoningProviderOptions,
 } from "./llmReasoningConfig.js";
@@ -21,6 +22,7 @@ import type {
   UniverseScreenRequest,
   UniverseScreenResponse,
 } from "./aiLabLlmTypes.js";
+import type { AnthropicOpusCallOptions } from "@workspace/ai-models";
 import { type AiLabModelProvider, getActivePrompt } from "./aiLabConfig.js";
 import type { ConvictionDeskTelemetryProvider } from "./convictionDeskRouting.js";
 import { isDedicatedWebSearchApiEnabled } from "./webSearchApiClient.js";
@@ -29,7 +31,7 @@ import {
   streamCallViaDedicatedWebSearchApi,
 } from "./webSearchDedicatedPath.js";
 
-const DEFAULT_ANALYST_MODEL = "claude-opus-4-7";
+const DEFAULT_ANALYST_MODEL = "claude-opus-4-8";
 const GEMINI_WEB_SEARCH_MAX_ATTEMPTS = 4;
 
 function sleep(ms: number): Promise<void> {
@@ -466,6 +468,7 @@ export async function callAnthropicWithSystem(
   systemPrompt: string,
   prompt: string,
   cancelSignal?: AbortSignal,
+  opus?: AnthropicOpusCallOptions | null,
 ): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
@@ -481,6 +484,7 @@ export async function callAnthropicWithSystem(
       : 8192,
     system: systemPrompt,
     messages: [{ role: "user", content: prompt }],
+    ...anthropicOpusMessageExtras(model, opus),
   };
   if (thinking) {
     params.thinking = thinking as Anthropic.MessageCreateParamsNonStreaming["thinking"];
@@ -1107,6 +1111,7 @@ export async function callAnthropicWithSystemAndWebSearch(
   systemPrompt: string,
   prompt: string,
   cancelSignal?: AbortSignal,
+  opus?: AnthropicOpusCallOptions | null,
 ): Promise<WebSearchResult> {
   if (isDedicatedWebSearchApiEnabled()) {
     return callViaDedicatedWebSearchApi({
@@ -1130,6 +1135,7 @@ export async function callAnthropicWithSystemAndWebSearch(
     system: systemPrompt,
     messages: [{ role: "user", content: prompt }],
     tools: [ANTHROPIC_WEB_SEARCH_TOOL],
+    ...anthropicOpusMessageExtras(model, opus),
   };
   if (thinking) {
     params.thinking = thinking as Anthropic.MessageCreateParamsNonStreaming["thinking"];
@@ -1200,7 +1206,7 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
   onDelta: (text: string) => void,
   onStatus?: (status: string) => void,
   cancelSignal?: AbortSignal,
-  options?: { maxTokens?: number },
+  options?: { maxTokens?: number; opus?: AnthropicOpusCallOptions | null },
 ): Promise<WebSearchResult> {
   if (isDedicatedWebSearchApiEnabled()) {
     return streamCallViaDedicatedWebSearchApi({
@@ -1216,7 +1222,7 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
   }
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
-  // Opus 4.7 with adaptive thinking + web search can run 4-8 minutes per turn;
+  // Opus 4.8 with adaptive thinking + web search can run 4-8 minutes per turn;
   // a Debate (6 turns + arbitration) easily exceeds the SDK's default 10-minute
   // socket timeout. Bump to 20 minutes per call so debates complete instead of
   // failing mid-stream with an opaque "request timed out".
@@ -1234,6 +1240,7 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
     messages: [{ role: "user", content: prompt }],
     tools: [ANTHROPIC_WEB_SEARCH_TOOL],
     stream: true,
+    ...anthropicOpusMessageExtras(model, options?.opus),
   };
   if (thinking) {
     params.thinking = thinking as Anthropic.MessageCreateParamsStreaming["thinking"];
@@ -1373,7 +1380,7 @@ function countAnthropicWebSearchServerToolUses(content: unknown): number {
 }
 
 /** Default Anthropic model id for Conviction Desk when settings route to Opus. */
-export const CONVICTION_DESK_ANTHROPIC_MODEL = "claude-opus-4-7";
+export const CONVICTION_DESK_ANTHROPIC_MODEL = "claude-opus-4-8";
 
 function extractOpenAIOutputArray(response: unknown): Array<Record<string, unknown>> {
   if (!response || typeof response !== "object") return [];
@@ -1500,7 +1507,11 @@ export async function streamCallAnthropicConvictionDesk(
   onDelta: (text: string) => void,
   onStatus?: (status: string) => void,
   cancelSignal?: AbortSignal,
-  options?: { maxTokens?: number; thinkingBudgetTokensOverride?: number },
+  options?: {
+    maxTokens?: number;
+    thinkingBudgetTokensOverride?: number;
+    opus?: AnthropicOpusCallOptions | null;
+  },
 ): Promise<WebSearchResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
@@ -1527,6 +1538,7 @@ export async function streamCallAnthropicConvictionDesk(
     messages,
     tools: toolsAttached,
     stream: true,
+    ...anthropicOpusMessageExtras(modelNameEffective, options?.opus),
   };
 
   if (thinking) {

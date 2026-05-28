@@ -1,6 +1,15 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { DEFAULT_AI_MODEL_ID, migrateLegacyModelIdToCatalog } from '@workspace/ai-models';
+import {
+  DEFAULT_AI_MODEL_ID,
+  DEFAULT_ANTHROPIC_OPUS_EFFORT,
+  DEFAULT_ANTHROPIC_OPUS_SPEED,
+  migrateLegacyModelIdToCatalog,
+  normalizeAnthropicOpusEffort,
+  normalizeAnthropicOpusSpeed,
+  type AnthropicOpusEffort,
+  type AnthropicOpusSpeed,
+} from '@workspace/ai-models';
 import {
   DEFAULT_CATALYST_GATE_SETTINGS,
   normalizeCatalystGateSettings,
@@ -188,16 +197,18 @@ export interface TerminalState {
   setAiTemp: (t: number) => void;
 
   aiFeatureSettings: {
-    marketPulse:   { model: string; temperature: number };
-    technicals:    { model: string; temperature: number };
-    strategist:    { model: string; temperature: number };
-    chat:          { model: string; temperature: number; councilChairModel: string };
-    scanner:       { model: string; temperature: number };
+    marketPulse:   { model: string; temperature: number; anthropicOpusEffort: AnthropicOpusEffort; anthropicOpusSpeed: AnthropicOpusSpeed };
+    technicals:    { model: string; temperature: number; anthropicOpusEffort: AnthropicOpusEffort; anthropicOpusSpeed: AnthropicOpusSpeed };
+    strategist:    { model: string; temperature: number; anthropicOpusEffort: AnthropicOpusEffort; anthropicOpusSpeed: AnthropicOpusSpeed };
+    chat:          { model: string; temperature: number; councilChairModel: string; anthropicOpusEffort: AnthropicOpusEffort; anthropicOpusSpeed: AnthropicOpusSpeed };
+    scanner:       { model: string; temperature: number; anthropicOpusEffort: AnthropicOpusEffort; anthropicOpusSpeed: AnthropicOpusSpeed };
   };
   setAiFeatureSetting: {
     (feature: 'chat', key: 'councilChairModel', value: string): void;
     (feature: keyof TerminalState['aiFeatureSettings'], key: 'model', value: string): void;
     (feature: keyof TerminalState['aiFeatureSettings'], key: 'temperature', value: number): void;
+    (feature: keyof TerminalState['aiFeatureSettings'], key: 'anthropicOpusEffort', value: AnthropicOpusEffort): void;
+    (feature: keyof TerminalState['aiFeatureSettings'], key: 'anthropicOpusSpeed', value: AnthropicOpusSpeed): void;
   };
 
   notificationPrefs: {
@@ -545,11 +556,11 @@ export const useTerminalStore = create<TerminalState>()(
       setAiTemp: (aiTemp) => set({ aiTemp }),
 
       aiFeatureSettings: {
-        marketPulse:   { model: DEFAULT_AI_MODEL_ID, temperature: 0 },
-        technicals:    { model: DEFAULT_AI_MODEL_ID, temperature: 0 },
-        strategist:    { model: DEFAULT_AI_MODEL_ID, temperature: 0 },
-        chat:          { model: DEFAULT_AI_MODEL_ID, temperature: 0, councilChairModel: DEFAULT_AI_MODEL_ID },
-        scanner:       { model: DEFAULT_AI_MODEL_ID, temperature: 0 },
+        marketPulse:   { model: DEFAULT_AI_MODEL_ID, temperature: 0, anthropicOpusEffort: DEFAULT_ANTHROPIC_OPUS_EFFORT, anthropicOpusSpeed: DEFAULT_ANTHROPIC_OPUS_SPEED },
+        technicals:    { model: DEFAULT_AI_MODEL_ID, temperature: 0, anthropicOpusEffort: DEFAULT_ANTHROPIC_OPUS_EFFORT, anthropicOpusSpeed: DEFAULT_ANTHROPIC_OPUS_SPEED },
+        strategist:    { model: DEFAULT_AI_MODEL_ID, temperature: 0, anthropicOpusEffort: DEFAULT_ANTHROPIC_OPUS_EFFORT, anthropicOpusSpeed: DEFAULT_ANTHROPIC_OPUS_SPEED },
+        chat:          { model: DEFAULT_AI_MODEL_ID, temperature: 0, councilChairModel: DEFAULT_AI_MODEL_ID, anthropicOpusEffort: DEFAULT_ANTHROPIC_OPUS_EFFORT, anthropicOpusSpeed: DEFAULT_ANTHROPIC_OPUS_SPEED },
+        scanner:       { model: DEFAULT_AI_MODEL_ID, temperature: 0, anthropicOpusEffort: DEFAULT_ANTHROPIC_OPUS_EFFORT, anthropicOpusSpeed: DEFAULT_ANTHROPIC_OPUS_SPEED },
       },
       setAiFeatureSetting: (feature: keyof TerminalState['aiFeatureSettings'], key: string, value: string | number) =>
         set((state) => ({
@@ -609,7 +620,7 @@ export const useTerminalStore = create<TerminalState>()(
 
       aiLabStrategistConfig: {
         analystModelProvider: 'anthropic',
-        analystModelName: 'claude-opus-4-6',
+        analystModelName: 'claude-opus-4-8',
         analystTemperature: 0,
         skepticModelProvider: 'google',
         skepticModelName: 'gemini-3.1-pro-preview',
@@ -978,7 +989,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 30,
+      version: 33,
       storage: createJSONStorage(() => quotaSafeLocalStorage),
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
@@ -1302,6 +1313,50 @@ export const useTerminalStore = create<TerminalState>()(
               if (typeof j.lastServerProgressAt !== "number") {
                 j.lastServerProgressAt = j.startedAt;
               }
+            }
+          }
+        }
+        if (version < 31) {
+          if (typeof s["aiModel"] === "string") {
+            s["aiModel"] = migrateLegacyModelIdToCatalog(s["aiModel"]);
+          }
+          const features = s["aiFeatureSettings"] as Record<string, { model?: string; councilChairModel?: string }> | undefined;
+          if (features) {
+            for (const key of Object.keys(features)) {
+              const row = features[key];
+              if (row?.model) row.model = migrateLegacyModelIdToCatalog(row.model);
+              if (row?.councilChairModel) {
+                row.councilChairModel = migrateLegacyModelIdToCatalog(row.councilChairModel);
+              }
+            }
+          }
+          const cfg = s["aiLabStrategistConfig"] as Record<string, unknown> | undefined;
+          if (cfg && typeof cfg === "object") {
+            if (typeof cfg["analystModelName"] === "string") {
+              cfg["analystModelName"] = migrateLegacyModelIdToCatalog(cfg["analystModelName"]);
+            }
+            if (typeof cfg["skepticModelName"] === "string") {
+              cfg["skepticModelName"] = migrateLegacyModelIdToCatalog(cfg["skepticModelName"]);
+            }
+          }
+        }
+        if (version < 32) {
+          const features = s["aiFeatureSettings"] as Record<string, { anthropicOpusEffort?: unknown }> | undefined;
+          if (features) {
+            for (const key of Object.keys(features)) {
+              const row = features[key];
+              if (!row || typeof row !== "object") continue;
+              row.anthropicOpusEffort = normalizeAnthropicOpusEffort(row.anthropicOpusEffort);
+            }
+          }
+        }
+        if (version < 33) {
+          const features = s["aiFeatureSettings"] as Record<string, { anthropicOpusSpeed?: unknown }> | undefined;
+          if (features) {
+            for (const key of Object.keys(features)) {
+              const row = features[key];
+              if (!row || typeof row !== "object") continue;
+              row.anthropicOpusSpeed = normalizeAnthropicOpusSpeed(row.anthropicOpusSpeed);
             }
           }
         }

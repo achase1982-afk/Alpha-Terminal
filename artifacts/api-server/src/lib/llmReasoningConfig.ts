@@ -1,4 +1,20 @@
+import type Anthropic from "@anthropic-ai/sdk";
+import {
+  type AnthropicOpusCallOptions,
+  type AnthropicOpusEffort,
+  type AnthropicOpusSpeed,
+  DEFAULT_ANTHROPIC_OPUS_EFFORT,
+  DEFAULT_ANTHROPIC_OPUS_SPEED,
+  isAnthropicOpusEffortModel,
+  normalizeAnthropicOpusEffort,
+  normalizeAnthropicOpusSpeed,
+} from "@workspace/ai-models";
 import { geminiThinkingConfigForModel } from "./geminiThinkingConfig.js";
+
+/** SDK types may lag API (`xhigh`); runtime accepts all catalog effort levels. */
+function anthropicSdkOutputConfig(effort: AnthropicOpusEffort): Anthropic.OutputConfig {
+  return { effort: effort as Anthropic.OutputConfig["effort"] };
+}
 
 /**
  * Central defaults for provider-native reasoning / extended thinking across the stack.
@@ -11,7 +27,7 @@ export const ANTHROPIC_EXTENDED_THINKING_BUDGET = 4096;
 
 /**
  * Claude Opus/Sonnet 4.7+ use adaptive thinking in the Messages API.
- * Matches ids like `claude-opus-4-7`, `claude-sonnet-4-7-20250514`, etc.
+ * Matches ids like `claude-opus-4-8`, `claude-opus-4-7`, `claude-sonnet-4-7-20250514`, etc.
  */
 export function isAnthropicAdaptiveThinkingModel(model: string): boolean {
   return /^claude-(opus|sonnet)-4-([7-9]|\d{2,})(?:[-._]|$)/.test(model);
@@ -41,30 +57,85 @@ export function anthropicThinkingForMessagesApi(model: string): AnthropicMessage
   return { type: "enabled", budget_tokens: ANTHROPIC_EXTENDED_THINKING_BUDGET };
 }
 
-/**
- * Vercel AI SDK `@ai-sdk/anthropic`: spread into `streamText` / `generateText`.
- * Without this, Claude runs with extended thinking disabled (plain completions).
- */
-export function anthropicProviderOptionsForAiSdk(model: string):
-  | {
-      providerOptions: {
-        anthropic: {
-          thinking: { type: "adaptive" } | { type: "enabled"; budgetTokens: number };
-        };
-      };
-    }
-  | undefined {
-  if (!isAnthropicExtendedThinkingCapableModel(model)) return undefined;
-  if (isAnthropicAdaptiveThinkingModel(model)) {
-    return { providerOptions: { anthropic: { thinking: { type: "adaptive" } } } };
+type AnthropicAiSdkProviderOptions = {
+  providerOptions: {
+    anthropic: {
+      thinking?: { type: "adaptive" } | { type: "enabled"; budgetTokens: number };
+      effort?: Anthropic.OutputConfig["effort"];
+      speed?: "fast" | "standard";
+    };
+  };
+};
+
+/** Native Messages API extras for Opus (`output_config.effort`, top-level `speed`). */
+export type AnthropicOpusMessageExtras = {
+  output_config?: Anthropic.OutputConfig;
+  speed?: "fast";
+};
+
+function resolveAnthropicOpusCallOptions(
+  model: string,
+  opus?: AnthropicOpusCallOptions | null,
+): { effort: AnthropicOpusEffort | null; speed: AnthropicOpusSpeed | null } {
+  if (!isAnthropicOpusEffortModel(model)) {
+    return { effort: null, speed: null };
   }
   return {
-    providerOptions: {
-      anthropic: {
-        thinking: { type: "enabled", budgetTokens: ANTHROPIC_EXTENDED_THINKING_BUDGET },
-      },
-    },
+    effort: normalizeAnthropicOpusEffort(opus?.effort ?? DEFAULT_ANTHROPIC_OPUS_EFFORT),
+    speed: normalizeAnthropicOpusSpeed(opus?.speed ?? DEFAULT_ANTHROPIC_OPUS_SPEED),
   };
+}
+
+/**
+ * Vercel AI SDK `@ai-sdk/anthropic`: spread into `streamText` / `generateText`.
+ * Pass Opus options for `output_config.effort` and `speed: "fast"`.
+ */
+export function anthropicProviderOptionsForAiSdk(
+  model: string,
+  opus?: AnthropicOpusCallOptions | null,
+): AnthropicAiSdkProviderOptions | undefined {
+  if (!isAnthropicExtendedThinkingCapableModel(model)) return undefined;
+  const { effort: resolvedEffort, speed: resolvedSpeed } = resolveAnthropicOpusCallOptions(model, opus);
+
+  const anthropic: AnthropicAiSdkProviderOptions["providerOptions"]["anthropic"] = {};
+  if (isAnthropicAdaptiveThinkingModel(model)) {
+    anthropic.thinking = { type: "adaptive" };
+  } else {
+    anthropic.thinking = { type: "enabled", budgetTokens: ANTHROPIC_EXTENDED_THINKING_BUDGET };
+  }
+  if (resolvedEffort) {
+    anthropic.effort = resolvedEffort as Anthropic.OutputConfig["effort"];
+  }
+  if (resolvedSpeed === "fast") {
+    anthropic.speed = "fast";
+  }
+
+  return { providerOptions: { anthropic } };
+}
+
+/** Native `@anthropic-ai/sdk` Messages API extras for Opus effort + fast mode. */
+export function anthropicOpusMessageExtras(
+  model: string,
+  opus?: AnthropicOpusCallOptions | null,
+): AnthropicOpusMessageExtras {
+  const { effort: resolvedEffort, speed: resolvedSpeed } = resolveAnthropicOpusCallOptions(model, opus);
+  if (!resolvedEffort && resolvedSpeed !== "fast") {
+    return {};
+  }
+  return {
+    ...(resolvedEffort
+      ? { output_config: anthropicSdkOutputConfig(resolvedEffort) }
+      : {}),
+    ...(resolvedSpeed === "fast" ? { speed: "fast" as const } : {}),
+  };
+}
+
+/** @deprecated Use anthropicOpusMessageExtras */
+export function anthropicMessagesOutputConfig(
+  model: string,
+  effort?: AnthropicOpusEffort | null,
+): AnthropicOpusMessageExtras {
+  return anthropicOpusMessageExtras(model, { effort });
 }
 
 export type XaiReasoningProviderOptions = { xai: { reasoningEffort: "low" | "medium" | "high" } };

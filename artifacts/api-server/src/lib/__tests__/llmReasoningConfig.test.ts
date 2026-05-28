@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  anthropicOpusMessageExtras,
+  anthropicProviderOptionsForAiSdk,
   googleThinkingProviderOptionsForAiSdk,
   openAiReasoningProviderOptionsForChat,
 } from "../llmReasoningConfig.js";
@@ -26,6 +28,33 @@ describe("openAiReasoningProviderOptionsForChat", () => {
     expect(openAiReasoningProviderOptionsForChat("gpt-5.4-mini")).toEqual({
       openai: { reasoningEffort: "medium" },
     });
+  });
+});
+
+describe("anthropicProviderOptionsForAiSdk", () => {
+  it("includes adaptive thinking and effort for claude-opus-4-8", () => {
+    const opts = anthropicProviderOptionsForAiSdk("claude-opus-4-8", { effort: "xhigh" });
+    expect(opts?.providerOptions.anthropic.thinking).toEqual({ type: "adaptive" });
+    expect(opts?.providerOptions.anthropic.effort).toBe("xhigh");
+  });
+
+  it("sets speed fast when requested", () => {
+    const opts = anthropicProviderOptionsForAiSdk("claude-opus-4-8", { speed: "fast" });
+    expect(opts?.providerOptions.anthropic.speed).toBe("fast");
+  });
+
+  it("omits opus extras for non-Opus models", () => {
+    expect(anthropicOpusMessageExtras("claude-sonnet-4-6", { effort: "max" })).toEqual({});
+  });
+
+  it("sets output_config.effort for Opus", () => {
+    expect(anthropicOpusMessageExtras("claude-opus-4-8", { effort: "low" })?.output_config?.effort).toBe("low");
+  });
+
+  it("sets top-level speed fast for Opus Messages API", () => {
+    const extras = anthropicOpusMessageExtras("claude-opus-4-8", { speed: "fast" });
+    expect(extras.speed).toBe("fast");
+    expect(extras.output_config?.effort).toBe("high");
   });
 });
 

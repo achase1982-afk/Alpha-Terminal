@@ -5,6 +5,7 @@ import { createXai } from "@ai-sdk/xai";
 import type { LanguageModel } from "ai";
 import { getGeminiApiKey } from "./geminiClient.js";
 import { getXaiApiKey } from "./xaiEnv.js";
+import type { AnthropicOpusCallOptions } from "@workspace/ai-models";
 import {
   anthropicProviderOptionsForAiSdk,
   googleThinkingProviderOptionsForAiSdk,
@@ -29,7 +30,10 @@ export type ResolvedChatModel =
   | { model: LanguageModel; providerOptions: Record<string, unknown> };
 
 /** Resolve AI SDK language model for chat `streamText`. */
-export function resolveChatLanguageModel(modelId: string): ResolvedChatModel {
+export function resolveChatLanguageModel(
+  modelId: string,
+  opus?: AnthropicOpusCallOptions | null,
+): ResolvedChatModel {
   if (isGeminiModel(modelId)) {
     const apiKey = getGeminiApiKey();
     if (!apiKey) throw new Error("Gemini API key not configured.");
@@ -65,7 +69,7 @@ export function resolveChatLanguageModel(modelId: string): ResolvedChatModel {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("Claude API key not configured.");
   const anthropic = createAnthropic({ apiKey });
-  const thinking = anthropicProviderOptionsForAiSdk(modelId);
+  const thinking = anthropicProviderOptionsForAiSdk(modelId, opus);
   if (thinking) {
     return { model: anthropic(modelId), providerOptions: thinking.providerOptions };
   }
