@@ -3307,7 +3307,12 @@ function AiIntelligenceTabInner({
                           onSendToOrder={onStrategistSendToOrder}
                         />
                       ) : v2Result.status === "recommendation" && v2Result.recommendation ? (
-                        <StrategistV2RecommendationCard result={v2Result} onSendToOrder={onStrategistSendToOrder} generatedAt={generatedAt} />
+                        <StrategistV2RecommendationCard
+                          result={v2Result}
+                          onSendToOrder={onStrategistSendToOrder}
+                          generatedAt={generatedAt}
+                          collapseStorageKey={activeJobIdForSymbol ?? null}
+                        />
                       ) : (
                         <StrategistV2BlockCard result={v2Result} generatedAt={generatedAt} onRetry={handleRunV2} />
                       )}
