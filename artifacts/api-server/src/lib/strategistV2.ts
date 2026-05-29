@@ -102,6 +102,7 @@ import {
   computeEntryStockBand,
   computeRiskFirstReward,
   enrichExitTargets,
+  enforceCardBullets,
   stripEmDashes,
 } from "./strategistCardEnrichment.js";
 import { scrubAll } from "./narrativeScrubbers.js";
@@ -2180,8 +2181,8 @@ async function buildRecommendationFromAiState(input: BuildRecommendationFromAiSt
       underlyingAtSignal: tickerData.price,
       entryStockMin: stockBand.min,
       entryStockMax: stockBand.max,
-      whyBullets: brief.whyItWorks,
-      whatKillsBullets: brief.whatKillsIt,
+      whyBullets: enforceCardBullets(brief.whyItWorks),
+      whatKillsBullets: enforceCardBullets(brief.whatKillsIt),
       maxProfitDisplay,
       maxLossDisplay,
       reportDrawer: {

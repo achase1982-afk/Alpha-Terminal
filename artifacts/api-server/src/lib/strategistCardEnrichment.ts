@@ -218,39 +218,11 @@ export function stripEmDashes(text: string): string {
   return text.replace(EM_DASH, ",").trim();
 }
 
-/** Split prose into ranked bullets (max 6). */
-export function proseToBullets(text: string, max = 6): string[] {
-  if (!text?.trim()) return [];
-  const cleaned = stripEmDashes(text);
-  const parts = cleaned
-    .split(/\n+|(?<=[.!?])\s+(?=[A-Z])/)
-    .map((s) => s.replace(/^[-•*]\s*/, "").trim())
-    .filter((s) => s.length > 8);
-  return parts.slice(0, max);
-}
-
-export function buildBriefBullets(args: {
-  thesis: string;
-  bullInvalidation: string;
-  bearInvalidation: string;
-  riskOfRuin: string;
-  warnings: string | null;
-}): { whyItWorks: string[]; whatKillsIt: string[] } {
-  const whyFromThesis = proseToBullets(args.thesis, 4);
-  const whyExtra = proseToBullets(args.bullInvalidation, 2);
-  const whyItWorks = [...whyFromThesis, ...whyExtra].slice(0, 6);
-
-  const killFromBear = proseToBullets(args.bearInvalidation, 3);
-  const killFromRisk = proseToBullets(args.riskOfRuin, 2);
-  const killFromWarn = proseToBullets(args.warnings ?? "", 2);
-  const whatKillsIt = [...killFromBear, ...killFromRisk, ...killFromWarn].slice(0, 6);
-
-  if (whatKillsIt.length === 0 && args.warnings) {
-    whatKillsIt.push(stripEmDashes(args.warnings.slice(0, 120)));
-  }
-  if (whyItWorks.length === 0 && args.thesis) {
-    whyItWorks.push(stripEmDashes(args.thesis.slice(0, 160)));
-  }
-
-  return { whyItWorks, whatKillsIt };
-}
+export {
+  proseToCardBullets as proseToBullets,
+  buildCardBriefBullets as buildBriefBullets,
+  enforceCardBullets,
+  cardBulletSchema,
+  cardBulletsSchema,
+  parseCardBullets,
+} from "@workspace/strategist-card-bullets";

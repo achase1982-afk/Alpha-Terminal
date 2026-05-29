@@ -26,6 +26,9 @@
     },
     {
       "path": "./lib/chat-types"
+    },
+    {
+      "path": "./lib/strategist-card-bullets"
     }
   ]
 }
