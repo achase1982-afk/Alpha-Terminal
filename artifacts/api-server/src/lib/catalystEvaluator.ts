@@ -91,37 +91,9 @@ export interface AiCatalystSignal {
   residual?: { type?: string | null; date?: string | null } | null;
 }
 
-export type TradeDirection = "BULLISH" | "BEARISH" | "NEUTRAL";
-
-/**
- * Derive trade direction from the AI's chosen strategy / legs. Used to compute
- * deterministic catalystAlignment server-side and stop the AI from defaulting
- * to UNKNOWN.
- */
-export function deriveTradeDirection(
-  strategy: string | undefined | null,
-  legs: ReadonlyArray<{ type: "call" | "put"; action: "buy" | "sell" }> | undefined,
-): TradeDirection {
-  const s = (strategy ?? "").toLowerCase();
-  if (/(iron_condor|iron_butterfly|butterfly|straddle|strangle|calendar|double_calendar|diagonal)/.test(s)) {
-    return "NEUTRAL";
-  }
-  if (/(bull|long_call|put_credit|call_debit)/.test(s)) return "BULLISH";
-  if (/(bear|long_put|call_credit|put_debit)/.test(s)) return "BEARISH";
-  // Fall back to leg shape: net long calls = bullish, net long puts = bearish.
-  if (legs && legs.length > 0) {
-    let callBias = 0;
-    let putBias = 0;
-    for (const l of legs) {
-      const sign = l.action === "buy" ? 1 : -1;
-      if (l.type === "call") callBias += sign;
-      else if (l.type === "put") putBias += sign;
-    }
-    if (callBias > 0 && putBias <= 0) return "BULLISH";
-    if (putBias > 0 && callBias <= 0) return "BEARISH";
-  }
-  return "NEUTRAL";
-}
+import type { TradeDirection } from "@workspace/strategist-card-bullets";
+export type { TradeDirection } from "@workspace/strategist-card-bullets";
+export { deriveTradeDirection } from "@workspace/strategist-card-bullets";
 
 const VALID_TYPES: ReadonlySet<CatalystType> = new Set([
   "EARNINGS", "FED_MEETING", "ECONOMIC_RELEASE",

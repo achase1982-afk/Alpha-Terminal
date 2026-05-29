@@ -73,6 +73,10 @@ import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.j
 import { isEquityOptionsStrategistMacroEvent } from "./strategistMacroSnapshotFilter.js";
 import { getNextEarningsDate, type NextEarnings } from "./earningsService.js";
 import { evaluateCatalyst, deriveTradeDirection, type CatalystEvaluation } from "./catalystEvaluator.js";
+import {
+  tradeDirectionToCardLabel,
+  type DebateVerdict,
+} from "@workspace/strategist-card-bullets";
 import { type OptionContract } from "./optionsStrategist.js";
 import { getStoredIVR, getRealizedVolFromEquityDaily, countRealIvHistoryDays, countProxyIvHistoryDays } from "./ivNormalize.js";
 import { buildMarketContextSnapshot, type MarketContextSnapshot } from "./flowMarketContext.js";
@@ -1620,6 +1624,7 @@ async function analyzeTickerV2Inner(
   let aiResponse: AiTradeResponse;
   let webTrace: WebSearchTrace;
   let rawAiResponseText: string;
+  let debateVerdictFromRun: DebateVerdict | null = null;
   // Solo-mode override: pick the user-selected solo model, not aiLab default.
   const soloModel = !isDebateMode ? getStrategistModel(settings.strategistSoloModelIdx) : undefined;
   try {
@@ -1629,6 +1634,7 @@ async function analyzeTickerV2Inner(
       aiResponse = r.response;
       webTrace = r.trace;
       rawAiResponseText = r.rawText;
+      debateVerdictFromRun = r.debateVerdict;
     } else {
       const r = await callAiForTrade(dataPackage, undefined, progress, soloModel);
       aiResponse = r.response;
@@ -1658,6 +1664,7 @@ async function analyzeTickerV2Inner(
     dataPackage,
     progress,
     isDebateMode,
+    debateVerdict: isDebateMode ? debateVerdictFromRun : null,
   });
 }
 
@@ -1677,6 +1684,7 @@ type BuildRecommendationFromAiStateInput = {
   dataPackage: string;
   progress?: AnalyzeProgressCallbacks;
   isDebateMode: boolean;
+  debateVerdict?: DebateVerdict | null;
 };
 
 async function buildRecommendationFromAiState(input: BuildRecommendationFromAiStateInput): Promise<StrategistV2Result> {
@@ -1696,6 +1704,7 @@ async function buildRecommendationFromAiState(input: BuildRecommendationFromAiSt
     dataPackage,
     progress,
     isDebateMode,
+    debateVerdict,
   } = input;
   const status = (s: string) => progress?.onStatus?.(s);
   const soloModel = !isDebateMode ? getStrategistModel(settings.strategistSoloModelIdx) : undefined;
@@ -2092,7 +2101,9 @@ async function buildRecommendationFromAiState(input: BuildRecommendationFromAiSt
     }
   }
 
-  const direction = inferDirection(aiResponse.strategy, aiResponse.legs);
+  const direction = tradeDirectionToCardLabel(
+    deriveTradeDirection(aiResponse.strategy, aiResponse.legs, debateVerdict ?? null),
+  );
   const idioStrengthPct = Math.round(ioScore.final * 100);
   const macroPct = 100 - idioStrengthPct;
 
@@ -2114,7 +2125,13 @@ async function buildRecommendationFromAiState(input: BuildRecommendationFromAiSt
   });
 
   const rr = computeRiskFirstReward(maxProfit, maxLoss);
+  const tradeDir = deriveTradeDirection(
+    aiResponse.strategy,
+    aiResponse.legs,
+    debateVerdict ?? null,
+  );
   const brief = buildBriefBullets({
+    direction: tradeDir,
     thesis: aiResponse.thesis ?? "",
     bullInvalidation: aiResponse.bullInvalidation ?? "",
     bearInvalidation: aiResponse.bearInvalidation ?? "",
@@ -4215,7 +4232,13 @@ async function callAiForTradeViaDebate(
   // transcript turns leak `{{IVR}}` / `{{PC_RATIO}}` placeholders to the
   // user even though the final synthesis card is scrubbed downstream.
   scrubCanonical?: ScrubCanonical,
-): Promise<{ response: AiTradeResponse; trace: WebSearchTrace; rawText: string; debateLabel: string }> {
+): Promise<{
+  response: AiTradeResponse;
+  trace: WebSearchTrace;
+  rawText: string;
+  debateLabel: string;
+  debateVerdict: DebateVerdict;
+}> {
   const modelA = getStrategistModel(settings.strategistDebateAModelIdx);
   const modelB = getStrategistModel(settings.strategistDebateBModelIdx);
   // -1 = "Debate Winner" sentinel: arbitrator is resolved inside runDebate
@@ -4284,7 +4307,11 @@ async function callAiForTradeViaDebate(
   });
 
   const parsed = parseAiTradeRawText(outcome.finalRawText, outcome.trace);
-  return { ...parsed, debateLabel: outcome.chosenLabel };
+  return {
+    ...parsed,
+    debateLabel: outcome.chosenLabel,
+    debateVerdict: outcome.verdict,
+  };
 }
 
 function validateAiResponse(
@@ -4579,37 +4606,6 @@ function computeSpreadEconomics(
     maxLoss,
     structure,
   };
-}
-
-function inferDirection(strategy: string, legs: AiTradeResponse["legs"]): string {
-  const s = strategy.toLowerCase();
-  if (s.includes("bull") || s.includes("long_call") || s.includes("call_debit")) return "BULLISH";
-  if (s.includes("bear") || s.includes("long_put") || s.includes("put_debit")) return "BEARISH";
-  if (s === "naked_put") return "BULLISH";
-  if (s === "naked_call") return "BEARISH";
-  if (s.includes("condor") || s.includes("butterfly") || s.includes("straddle") || s.includes("strangle")) return "NON_DIRECTIONAL";
-  if (s.includes("calendar") || s.includes("diagonal")) return "NON_DIRECTIONAL";
-  if (s.includes("ratio")) {
-    const sells = legs.filter(l => l.action === "sell");
-    if (sells.length > 0) return sells[0].type === "call" ? "BEARISH" : "BULLISH";
-  }
-  const buys = legs.filter(l => l.action === "buy");
-  const sells = legs.filter(l => l.action === "sell");
-  if (legs.length === 1) {
-    const leg = legs[0];
-    if (leg.action === "buy") return leg.type === "call" ? "BULLISH" : "BEARISH";
-    if (leg.action === "sell") return leg.type === "put" ? "BULLISH" : "BEARISH";
-  }
-  if (buys.length === 1 && sells.length === 0) {
-    return buys[0].type === "call" ? "BULLISH" : "BEARISH";
-  }
-  if (sells.length === 1 && buys.length === 0) {
-    return sells[0].type === "put" ? "BULLISH" : "BEARISH";
-  }
-  if (buys.length === 1) {
-    return buys[0].type === "call" ? "BULLISH" : "BEARISH";
-  }
-  return "NON_DIRECTIONAL";
 }
 
 function buildStrategyLine(ticker: string, response: AiTradeResponse): string {

@@ -69,11 +69,11 @@ describe("enforceCardBullets", () => {
 describe("buildCardBriefBullets", () => {
   it("returns schema-valid why/kill lists", () => {
     const brief = buildCardBriefBullets({
+      direction: "BULLISH",
       thesis:
         "Credit spread captures elevated IV. Target 62% of max profit near $0.50 buyback.",
-      bullInvalidation: "Hold above short strike through expiration week.",
-      bearInvalidation:
-        "Break below $95 (invalidates) with rising put skew and volume.",
+      bullInvalidation: "Break below short strike kills the position.",
+      bearInvalidation: "Stock holds above short strike through expiry.",
       riskOfRuin: "Gap risk on earnings within DTE window.",
       warnings: "Low open interest on long wing (liquidity risk).",
     });
