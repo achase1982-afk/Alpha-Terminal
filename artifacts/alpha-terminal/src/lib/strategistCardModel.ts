@@ -1,5 +1,6 @@
 import type { StrategistV2Result } from "@/components/StrategistV2Card";
 import type { DeskResult, DeskResultClassic } from "@/lib/strategistDeskResult";
+import type { StrategistFullReport } from "@/lib/strategistFullReportTypes";
 
 export type StrategistCardLeg = {
   side: "BUY" | "SELL";
@@ -44,6 +45,7 @@ export type StrategistTradeCardModel = {
     levelsLiquidity: string;
     edgeRegime: string;
   };
+  fullReport?: StrategistFullReport | null;
   plainTextSource: StrategistV2Result | null;
   deskPlainText?: string;
 };
@@ -253,6 +255,23 @@ export function modelFromV2Result(
     whyBullets: rec.whyBullets ?? [],
     whatKillsBullets: rec.whatKillsBullets ?? [],
     reportDrawer: rec.reportDrawer,
+    fullReport:
+      rec.fullReport ??
+      (rec.reportDrawer
+        ? {
+            provenance: {
+              generatedAt: new Date().toISOString(),
+              signalPrice: rec.underlyingAtSignal ?? null,
+              freshness: [],
+              confidence: rec.confidence ?? 0,
+              confidenceTier: confidenceColor(rec.confidence ?? 0) as import("@/lib/strategistFullReportTypes").ReportTone,
+              confidenceRead: "Legacy report payload.",
+            },
+            thesisWithNumbers: { chips: [], body: rec.reportDrawer.thesis },
+            bearCase: { body: rec.reportDrawer.exitDetail },
+            dataAssumptions: { sources: ["Legacy card"], modeledFields: [] },
+          }
+        : null),
     plainTextSource: result,
   };
 }
