@@ -16,6 +16,8 @@ import type {
 } from "@/lib/strategistDeskResult";
 import { buildDeskSpeechSections } from "@/lib/deskCardSpeech";
 import { StrategistConvictionDeskCard } from "@/components/StrategistConvictionDeskCard";
+import { StrategistTradeCard } from "@/components/StrategistTradeCard";
+import { modelFromDeskResult } from "@/lib/strategistCardModel";
 import { deskResultAudioId } from "@/lib/deskAudioId";
 import { useDeskReportTts, DESK_AUDIO_SKIP_SECONDS } from "@/hooks/useDeskReportTts";
 import {
@@ -229,6 +231,7 @@ function StrategistDeskCardInner({
   const deskResult = deskRaw as DeskResultClassic;
   const { pm, vol, flow, catalyst, errors } = deskResult;
   const isTrade = pm.decision === "trade";
+
   const payoffScenarios = pm.scenarios;
   const payoffSummary = pm.scenariosSummary;
   const showPayoffTable =
@@ -395,6 +398,11 @@ function StrategistDeskCardInner({
     [deskResult, banner?.title, banner?.body, generatedAt],
   );
   const deskAudioText = useMemo(() => speechSections.map((s) => s.text).join("\n\n"), [speechSections]);
+  const universalModel = useMemo(
+    () => (isTrade ? modelFromDeskResult(deskResult, deskResult.ticker, generatedAt) : null),
+    [deskResult, generatedAt, isTrade],
+  );
+
   const deskResultId = useMemo(
     () => deskResultAudioId(deskResult, banner?.title, banner?.body),
     [deskResult, banner?.title, banner?.body],
@@ -464,6 +472,36 @@ function StrategistDeskCardInner({
     outline: "none",
   };
 
+
+  if (isTrade && universalModel && pm.structure) {
+    return (
+      <div style={{ fontFamily: SYS_FONT }}>
+        {banner ? (
+          <div
+            style={{
+              border: `1px solid ${banner.border}`,
+              background: banner.bg,
+              borderRadius: 8,
+              padding: 12,
+              marginBottom: 8,
+            }}
+          >
+            <div style={{ fontSize: 11, fontWeight: 700, color: banner.accent, marginBottom: 4 }}>
+              {banner.title}
+            </div>
+            <div style={{ fontSize: 12, color: PAL.body, lineHeight: 1.5 }}>{banner.body}</div>
+          </div>
+        ) : null}
+        <StrategistTradeCard
+          model={universalModel}
+          onSendToOrder={onSendToOrder}
+          buildSendPayload={() => buildDeskSendToOrderPayload(deskResult)}
+          plainText={deskAudioText}
+          generatedAt={generatedAt}
+        />
+      </div>
+    );
+  }
 
   return (
     <div

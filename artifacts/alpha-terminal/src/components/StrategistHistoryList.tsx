@@ -246,6 +246,7 @@ export function StrategistHistoryList({ onSendToOrder, onReopenValidatedOrder, e
                         result={result}
                         onSendToOrder={onSendToOrder}
                         generatedAt={row.createdAt}
+                        collapseStorageKey={row.jobId}
                       />
                     ) : (
                       <StrategistV2BlockCard result={result!} generatedAt={row.createdAt} />
