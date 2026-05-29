@@ -1,6 +1,10 @@
 import type { StrategistV2Result } from "@/components/StrategistV2Card";
 import type { DeskResult, DeskResultClassic } from "@/lib/strategistDeskResult";
 import type { StrategistFullReport } from "@/lib/strategistFullReportTypes";
+import {
+  enforceCardBullets,
+  proseToCardBullets,
+} from "@workspace/strategist-card-bullets";
 
 export type StrategistCardLeg = {
   side: "BUY" | "SELL";
@@ -252,8 +256,8 @@ export function modelFromV2Result(
     entryStockBand: formatMoneyRange(rec.entryStockMin, rec.entryStockMax),
     fillBand: formatFillRange(rec.entryRangeMin, rec.entryRangeMax),
     exitPlan,
-    whyBullets: rec.whyBullets ?? [],
-    whatKillsBullets: rec.whatKillsBullets ?? [],
+    whyBullets: enforceCardBullets(rec.whyBullets ?? []),
+    whatKillsBullets: enforceCardBullets(rec.whatKillsBullets ?? []),
     reportDrawer: rec.reportDrawer,
     fullReport:
       rec.fullReport ??
@@ -317,8 +321,8 @@ export function modelFromDeskResult(
     timeStop: ep.time_stop ? formatLegExpiry(ep.time_stop) : "",
   };
 
-  const whyBullets = dr.pm.thesis ? proseToBullets(dr.pm.thesis, 6) : [];
-  const whatKillsBullets = dr.pm.biggest_risk ? proseToBullets(dr.pm.biggest_risk, 6) : [];
+  const whyBullets = dr.pm.thesis ? proseToCardBullets(dr.pm.thesis) : [];
+  const whatKillsBullets = dr.pm.biggest_risk ? proseToCardBullets(dr.pm.biggest_risk) : [];
 
   return {
     ticker,
@@ -350,14 +354,6 @@ export function modelFromDeskResult(
     plainTextSource: null,
     deskPlainText: undefined,
   };
-}
-
-function proseToBullets(text: string, max: number): string[] {
-  return text
-    .split(/\n+|(?<=[.!?])\s+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 8)
-    .slice(0, max);
 }
 
 export { TOKENS };

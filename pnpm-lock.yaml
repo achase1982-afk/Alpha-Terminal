@@ -188,6 +188,9 @@ importers:
       '@workspace/chat-types':
         specifier: workspace:*
         version: link:../../lib/chat-types
+      '@workspace/strategist-card-bullets':
+        specifier: workspace:*
+        version: link:../../lib/strategist-card-bullets
       lightweight-charts:
         specifier: ^5.1.0
         version: 5.1.0
@@ -462,6 +465,9 @@ importers:
       '@workspace/movers-types':
         specifier: workspace:*
         version: link:../../lib/movers-types
+      '@workspace/strategist-card-bullets':
+        specifier: workspace:*
+        version: link:../../lib/strategist-card-bullets
       ai:
         specifier: ^6.0.138
         version: 6.0.138(zod@3.25.76)
@@ -821,6 +827,16 @@ importers:
         version: 25.3.5
 
   lib/movers-types:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+
+  lib/strategist-card-bullets:
+    dependencies:
+      zod:
+        specifier: 'catalog:'
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
