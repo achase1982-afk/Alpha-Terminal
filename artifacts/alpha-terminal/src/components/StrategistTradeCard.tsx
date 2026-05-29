@@ -11,6 +11,7 @@ import {
   type StrategistTradeCardModel,
 } from "@/lib/strategistCardModel";
 import { useValidationCardTts } from "@/hooks/useValidationCardTts";
+import { StrategistFullReportDrawer } from "@/components/StrategistFullReportDrawer";
 
 const SURFACE = "#161618";
 const SURFACE_2 = "#202023";
@@ -75,7 +76,6 @@ export function StrategistTradeCard({
 }) {
   const panelId = useId();
   const panelDomId = `strategist-trade-card-${panelId.replace(/:/g, "")}`;
-  const [reportOpen, setReportOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const dir = directionStyle(model.direction);
@@ -356,49 +356,8 @@ export function StrategistTradeCard({
         </div>
       )}
 
-      {/* §3.8 Report drawer */}
-      {model.reportDrawer && (
-        <div style={{ borderTop: `1px solid ${LINE}` }}>
-          <button
-            type="button"
-            onClick={() => setReportOpen((o) => !o)}
-            aria-expanded={reportOpen}
-            style={{
-              width: "100%",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "12px 18px",
-              background: "none",
-              border: "none",
-              color: WHITE,
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            Read full report
-            <ChevronDown
-              size={18}
-              aria-hidden
-              style={{
-                transform: reportOpen ? "rotate(90deg)" : "none",
-                transition: "transform 0.2s ease",
-                flexShrink: 0,
-              }}
-            />
-          </button>
-          {reportOpen && (
-            <div style={{ padding: "0 18px 12px", fontSize: 13, lineHeight: 1.5 }}>
-              <ReportSection title="Company" body={model.reportDrawer.company} />
-              <ReportSection title="Thesis" body={model.reportDrawer.thesis} />
-              <ReportSection title="Exit Detail" body={model.reportDrawer.exitDetail} />
-              <ReportSection title="Levels & Liquidity" body={model.reportDrawer.levelsLiquidity} />
-              <ReportSection title="Edge & Regime" body={model.reportDrawer.edgeRegime} />
-            </div>
-          )}
-        </div>
-      )}
+      {/* §3.8 Full report drawer (scoped component; card shell unchanged) */}
+      <StrategistFullReportDrawer report={model.fullReport} />
 
       {/* §3.9 Footer */}
       <div
@@ -525,26 +484,6 @@ function PlanRow({
     >
       <span style={{ fontSize: 12.5, fontWeight: 500 }}>{label}</span>
       <span style={{ fontSize: 14, fontWeight: 700, color: valueColor, textAlign: "right" }}>{value}</span>
-    </div>
-  );
-}
-
-function ReportSection({ title, body }: { title: string; body: string }) {
-  if (!body?.trim()) return null;
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 800,
-          color: AMBER,
-          textTransform: "uppercase",
-          marginBottom: 4,
-        }}
-      >
-        {title}
-      </div>
-      <div style={{ whiteSpace: "pre-wrap" }}>{body}</div>
     </div>
   );
 }
