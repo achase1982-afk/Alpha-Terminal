@@ -104,6 +104,7 @@ import {
   enrichExitTargets,
   stripEmDashes,
 } from "./strategistCardEnrichment.js";
+import { buildStrategistFullReport, buildStructureDescriptorFromLegs } from "./strategistFullReport/build.js";
 import { scrubAll } from "./narrativeScrubbers.js";
 import { getAiLabStrategistConfig } from "./aiLabConfig.js";
 import {
@@ -228,6 +229,7 @@ export interface StrategistV2Result {
       levelsLiquidity: string;
       edgeRegime: string;
     };
+    fullReport?: import("./strategistFullReport/types.js").StrategistFullReport;
     maxProfitDisplay?: string;
     maxLossDisplay?: string;
     bullInvalidation: string;
@@ -263,7 +265,7 @@ export interface StrategistV2Result {
 }
 
 /** Item 23: client / history idempotency — bump when StrategistV2Result shape changes. */
-export const STRATEGIST_RESULT_SCHEMA_VERSION = 4;
+export const STRATEGIST_RESULT_SCHEMA_VERSION = 5;
 
 function withResultSchemaVersion<T extends StrategistV2Result>(r: T): T {
   r.schemaVersion = STRATEGIST_RESULT_SCHEMA_VERSION;
@@ -2218,6 +2220,44 @@ async function buildRecommendationFromAiState(input: BuildRecommendationFromAiSt
   };
   if (earningsBlockReason) {
     logger.info({ ticker, earningsBlockReason, earningsAlert }, "StrategistV2: earnings telemetry");
+  }
+
+  try {
+    const stratLabel = aiResponse.strategy
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (c: string) => c.toUpperCase());
+    result.recommendation!.fullReport = await buildStrategistFullReport({
+      ticker,
+      generatedAt: new Date(),
+      signalPrice: tickerData.price,
+      dailyChangePct: tickerData.dailyChangePct,
+      confidence: aiResponse.confidence,
+      isCredit,
+      netEntry: entryAbs,
+      maxProfit,
+      maxLoss,
+      breakeven,
+      riskRewardDisplay: rr.display,
+      strategyName: stratLabel,
+      structureDescriptor: buildStructureDescriptorFromLegs(aiResponse.strategy, legs, dte),
+      direction,
+      legs,
+      dte,
+      ivr: tickerData.ivr,
+      putCallVolumeRatio: chainSummary?.putCallVolumeRatio ?? null,
+      ioScore,
+      idioPct: idioStrengthPct,
+      macroPct,
+      sector: tickerData.sector,
+      catalystInWindow: catalystEval?.catalystInWindow ?? false,
+      nextEarningsDate: tickerData.earningsDate,
+      enrichedExit,
+      thesis: aiResponse.thesis,
+      bearInvalidation: aiResponse.bearInvalidation,
+      riskOfRuin: aiResponse.riskOfRuin,
+    });
+  } catch (reportErr) {
+    logger.warn({ ticker, reportErr }, "StrategistV2: full report assembly failed");
   }
 
   const telemetryId = await emitFullDiagnosticTelemetry({

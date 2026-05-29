@@ -240,6 +240,7 @@ export interface StrategistV2Result {
       levelsLiquidity: string;
       edgeRegime: string;
     };
+    fullReport?: import("@/lib/strategistFullReportTypes").StrategistFullReport | null;
     maxProfitDisplay?: string;
     maxLossDisplay?: string;
     bullInvalidation?: string;
