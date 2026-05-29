@@ -48,21 +48,27 @@ function formatAnalystSnapshot(result: AnalystCoverageResult): string {
 }
 
 function formatAmbientQuoteLine(q: Record<string, unknown>, session: MarketSessionLabel): string {
+  const normalized = q.normalizedQuote as { summary?: string } | undefined;
+  if (normalized?.summary) {
+    const bid = q.bid;
+    const ask = q.ask;
+    const ageSec =
+      typeof q.quoteAgeMs === "number" ? Math.round((q.quoteAgeMs as number) / 1000) : null;
+    const extras = [
+      bid != null && ask != null ? `bid ${bid} / ask ${ask}` : null,
+      ageSec != null ? `quote age ${ageSec}s` : null,
+    ].filter(Boolean);
+    const tail = extras.length ? ` (${extras.join(", ")})` : "";
+    return `Live quote (${session}): ${normalized.summary}${tail}`;
+  }
   const display = q.displayLast ?? q.last;
-  const chg = q.change;
-  const pct = q.changePct;
   const bid = q.bid;
   const ask = q.ask;
   const ageSec =
     typeof q.quoteAgeMs === "number" ? Math.round((q.quoteAgeMs as number) / 1000) : null;
   const parts = [
     `Live quote (${session}): ${display ?? "—"}`,
-    chg != null ? `change ${chg}` : null,
-    pct != null ? `(${pct}%)` : null,
     bid != null && ask != null ? `bid ${bid} / ask ${ask}` : null,
-    q.regularSessionLast != null && session !== "OPEN"
-      ? `regular close print ${q.regularSessionLast}`
-      : null,
     ageSec != null ? `quote age ${ageSec}s` : null,
   ].filter(Boolean);
   return parts.join(", ");
@@ -98,7 +104,7 @@ export async function buildAmbientSymbolContextBlock(
   const parts: string[] = [
     sym ? `## Context data (${sym}) — internal only` : "## Context data — internal only",
     "Use quote, analyst, headline, and portfolio facts below before inventing data. Do not mention this section, the terminal, news feed, wire names, tools, or web search in your reply. Synthesize into plain analyst prose.",
-    "For current price and why it is moving now, use displayLast / live quote fields (extended-hours prints when session is PREMARKET or AFTERHOURS), not only the 4 PM regular-session mark.",
+    "For current price and session change, use the normalized quote summary verbatim (extended-hours prints when session is PREMARKET or AFTERHOURS). Never recompute change from raw prices.",
   ];
 
   if (sym && quote && !("error" in quote && quote.error)) {

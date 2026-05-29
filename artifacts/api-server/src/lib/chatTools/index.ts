@@ -84,7 +84,7 @@ export function createChatTools(ctx: ChatToolContext) {
   return {
     get_quote: tool({
       description:
-        "Live equity quote (Schwab streamer subscribe-on-miss + REST, same as terminal). Returns displayLast for extended hours, bid/ask, and quote age.",
+        "Live equity quote (Schwab streamer subscribe-on-miss + REST, same as terminal). Returns normalizedQuote with a pre-computed summary (session-aware change math); cite summary verbatim.",
       inputSchema: z.object({
         symbol: z.string().describe("US equity ticker, e.g. AAPL"),
       }),

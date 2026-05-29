@@ -16,6 +16,7 @@ import {
 import type { AnthropicOpusCallOptions } from "@workspace/ai-models";
 import { resolveChatLanguageModel } from "./chatModel.js";
 import { buildAmbientSymbolContextBlock } from "./ambientSymbolContext.js";
+import { QUOTE_CITATION_RULE } from "./chatTools/getQuote.js";
 import { INVESTIGATIVE_REASONING_PROTOCOL } from "./investigativeReasoningProtocol.js";
 import { getMarketContext } from "./getMarketContext.js";
 import { formatMarketContextUserBlock } from "./marketContextPrompt.js";
@@ -134,7 +135,8 @@ ${ambientBlock}
 - Answer general questions (definitions, strategy concepts, education) from your knowledge without tools.
 - Call tools when the user needs **current** prices, flow, technicals, news, earnings, IV rank, options chain, or market pulse data.
 - For sell-side ratings, consensus price targets, or valuation sentiment on the ambient ticker, use the internal **Context data** block when present; otherwise call **get_analyst_ratings**. Do not invent analyst counts or price targets.
-- **Live tape:** You have the same Schwab live quote pipeline as the terminal (streamer + REST). Use **displayLast** / **latestPrint** for "price now", especially in PREMARKET and AFTERHOURS. Regular session is 9:30 AM–4:00 PM ET, but equity prints can update until ~8 PM ET; do not freeze the story at the 4 PM regular-session mark when extended data is present. If quote age is high or only prior close exists, say the tape may be stale.
+- **Live tape:** You have the same Schwab live quote pipeline as the terminal (streamer + REST). Use the **normalizedQuote** object (especially its **summary**) for price and session change — never raw provider change fields. Regular session is 9:30 AM–4:00 PM ET, but equity prints can update until ~8 PM ET. If quote age is high or only prior close exists, say the tape may be stale.
+- ${QUOTE_CITATION_RULE}
 - For **why is it moving**, catalyst, or headline questions: read internal context and tools first, then answer in synthesized analyst prose. Do **not** quote headline titles, list wire sources, or say "the terminal/news feed shows." State the catalyst as fact (who, what, size, timing). Call **get_quote**, **get_news**, **get_earnings**, and **web_search** as needed so freshness and catalyst checks use current data, not memory. Do **not** claim no same-day catalyst if context or **get_news** already has material [TODAY] items.
 - **Explanatory questions (why / what's going on):** Extended thinking must be enabled or this discipline underperforms. Follow the investigative protocol below. Use tools for live tape, headlines, earnings dates, and web corroboration before you answer.
 - **Portfolio:** Internal context may include holdings. For exposure, sizing, overlap, or P/L questions, use **get_portfolio** when needed. Do not invent positions.
