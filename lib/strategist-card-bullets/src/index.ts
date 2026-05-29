@@ -1,4 +1,13 @@
 import { z } from "zod";
+import type { TradeDirection } from "./tradeDirection.js";
+
+export {
+  deriveTradeDirection,
+  tradeDirectionToCardLabel,
+  type TradeDirection,
+  type TradeLeg,
+  type DebateVerdict,
+} from "./tradeDirection.js";
 
 /** Card-face bullet limits: one idea, no numbers/parens, detail lives in full report. */
 export const CARD_BULLET_MAX_CHARS = 70;
@@ -158,6 +167,8 @@ const WHY_FALLBACK = "Defined risk with favorable skew";
 const KILL_FALLBACK = "Sharp move against the position";
 
 export function buildCardBriefBullets(args: {
+  /** Position P/L framing — not debate agent side. */
+  direction: TradeDirection;
   thesis: string;
   bullInvalidation: string;
   bearInvalidation: string;
@@ -165,20 +176,49 @@ export function buildCardBriefBullets(args: {
   warnings: string | null;
 }): { whyItWorks: string[]; whatKillsIt: string[] } {
   const whyFromThesis = proseToCardBullets(args.thesis, 4);
-  const whyExtra = proseToCardBullets(args.bullInvalidation, 2);
-  let whyItWorks = enforceCardBullets([...whyFromThesis, ...whyExtra]);
-
-  const killFromBear = proseToCardBullets(args.bearInvalidation, 3);
   const killFromRisk = proseToCardBullets(args.riskOfRuin, 2);
   const killFromWarn = proseToCardBullets(args.warnings ?? "", 2);
-  let whatKillsIt = enforceCardBullets([...killFromBear, ...killFromRisk, ...killFromWarn]);
+
+  let whySupport: string[] = [];
+  let killDrivers: string[] = [];
+
+  if (args.direction === "BULLISH") {
+    whySupport = proseToCardBullets(args.bearInvalidation, 2);
+    killDrivers = [
+      ...proseToCardBullets(args.bullInvalidation, 3),
+      ...killFromRisk,
+      ...killFromWarn,
+    ];
+  } else if (args.direction === "BEARISH") {
+    whySupport = proseToCardBullets(args.bullInvalidation, 2);
+    killDrivers = [
+      ...proseToCardBullets(args.bearInvalidation, 3),
+      ...killFromRisk,
+      ...killFromWarn,
+    ];
+  } else {
+    whySupport = proseToCardBullets(args.bullInvalidation, 1);
+    killDrivers = [
+      ...proseToCardBullets(args.bearInvalidation, 2),
+      ...killFromRisk,
+      ...killFromWarn,
+    ];
+  }
+
+  let whyItWorks = enforceCardBullets([...whyFromThesis, ...whySupport]);
+  let whatKillsIt = enforceCardBullets(killDrivers);
 
   if (whyItWorks.length === 0) {
     const fallback = compressCardBullet(args.thesis) ?? WHY_FALLBACK;
     whyItWorks = enforceCardBullets([fallback]);
   }
   if (whatKillsIt.length === 0) {
-    const src = args.warnings ?? args.bearInvalidation ?? args.riskOfRuin;
+    const src =
+      args.direction === "BULLISH"
+        ? args.bullInvalidation || args.warnings || args.riskOfRuin
+        : args.direction === "BEARISH"
+          ? args.bearInvalidation || args.warnings || args.riskOfRuin
+          : args.warnings ?? args.bearInvalidation ?? args.riskOfRuin;
     const fallback = (src && compressCardBullet(src)) || KILL_FALLBACK;
     whatKillsIt = enforceCardBullets([fallback]);
   }

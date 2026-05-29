@@ -2,8 +2,11 @@ import type { StrategistV2Result } from "@/components/StrategistV2Card";
 import type { DeskResult, DeskResultClassic } from "@/lib/strategistDeskResult";
 import type { StrategistFullReport } from "@/lib/strategistFullReportTypes";
 import {
+  deriveTradeDirection,
   enforceCardBullets,
   proseToCardBullets,
+  tradeDirectionToCardLabel,
+  type TradeLeg,
 } from "@workspace/strategist-card-bullets";
 
 export type StrategistCardLeg = {
@@ -204,7 +207,20 @@ export function modelFromV2Result(
 
   const isCredit = rec.credit != null && rec.credit > 0;
   const netEntry = (isCredit ? rec.credit : rec.debit) ?? 0;
-  const dir = (rec.direction?.toUpperCase() || "NEUTRAL") as StrategistTradeCardModel["direction"];
+  const structural = tradeDirectionToCardLabel(
+    deriveTradeDirection(
+      rec.strategyType,
+      rec.legs.map(
+        (l): TradeLeg => ({
+          type: l.type as TradeLeg["type"],
+          action: l.side as TradeLeg["action"],
+          strike: l.strike,
+        }),
+      ),
+    ),
+  );
+  const dir: StrategistTradeCardModel["direction"] =
+    structural === "BULLISH" || structural === "BEARISH" ? structural : "NEUTRAL";
   const exps = new Set(rec.legs.map((l) => l.expiration.split(":")[0].trim()));
   const isMultiExp = exps.size > 1;
 
