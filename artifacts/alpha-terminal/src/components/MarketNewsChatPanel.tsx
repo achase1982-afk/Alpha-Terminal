@@ -30,7 +30,11 @@ import {
 } from "@workspace/ai-models";
 import { ChatThinkingIndicator } from "./ai-shared/ChatThinkingIndicator";
 import { ChatModelBottomSheet } from "./ai-shared/ChatModelBottomSheet";
-import { chatComposerPillLabel } from "./ai-shared/chatModelUi";
+import {
+  CHAT_COMPOSER_BOX_CLASS,
+  CHAT_COMPOSER_CHIP_CLASS,
+  chatComposerPillLabel,
+} from "./ai-shared/chatModelUi";
 import { logChatTelemetry } from "@/lib/chatTelemetry";
 
 const MULTI_AGENT_STORAGE_KEY = "marketNewsChatMultiModels";
@@ -605,7 +609,7 @@ export function MarketNewsChatPanel({
       onSubmit={(e) => { e.preventDefault(); handleComposerSend(); }}
     >
       <input ref={fileInputRef} type="file" accept={CHAT_ACCEPTED_FILE_TYPES} multiple className="hidden" onChange={(e) => void handlePickFiles(e.target.files)} />
-      <div className="rounded-2xl border border-card-border/80 bg-[#141414] px-3 pt-2.5 pb-2 flex flex-col gap-2">
+      <div className={`${CHAT_COMPOSER_BOX_CLASS} px-3 pt-2.5 pb-2 flex flex-col gap-2`}>
         {(pendingAttachments.length > 0 || attachError) && (
           <div className="flex flex-col gap-1">
             {attachError && <p className="font-mono text-[11px] text-red-300/90">{attachError}</p>}
@@ -654,7 +658,7 @@ export function MarketNewsChatPanel({
             type="button"
             disabled={isStreaming || pendingAttachments.length >= CHAT_ATTACHMENT_MAX_COUNT}
             onClick={() => fileInputRef.current?.click()}
-            className="shrink-0 flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white/90 hover:bg-white/15 disabled:opacity-30"
+            className={`shrink-0 flex h-9 w-9 items-center justify-center disabled:opacity-30 ${CHAT_COMPOSER_CHIP_CLASS}`}
             aria-label="Attach file or photo"
           >
             <Plus className="w-4 h-4" />
@@ -662,7 +666,7 @@ export function MarketNewsChatPanel({
           <button
             type="button"
             onClick={() => setModelSheetOpen(true)}
-            className="shrink-0 flex items-center gap-0.5 max-w-[min(200px,52vw)] rounded-full bg-white/10 px-3 py-1.5 font-mono text-[12px] text-white/90 hover:bg-white/15"
+            className={`shrink-0 flex items-center gap-0.5 max-w-[min(200px,52vw)] px-3 py-1.5 font-mono text-[12px] ${CHAT_COMPOSER_CHIP_CLASS}`}
             aria-label="Select model and options"
           >
             <span className="truncate">{modelPillLabel}</span>
