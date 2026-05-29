@@ -16,12 +16,17 @@ import {
   type AnthropicOpusSpeed,
 } from "@workspace/ai-models";
 import { Check, ChevronRight, X } from "lucide-react";
-import { chatModelShortLabel } from "./chatModelUi";
+import {
+  CHAT_COMPOSER_CHIP_CLASS,
+  CHAT_COMPOSER_CHIP_SURFACE,
+  CHAT_MODEL_SHEET_CLASS,
+  chatModelShortLabel,
+} from "./chatModelUi";
 
 const MULTI_AGENT_VALUE = "__multi_agent__";
 
 const sheetSelectClass =
-  "w-full rounded-md border border-card-border bg-black/50 px-3 py-2 font-mono text-[13px] text-white focus:outline-none focus:border-primary/50 appearance-none cursor-pointer";
+  "w-full rounded-md border border-card-border bg-white/5 px-3 py-2 font-mono text-[13px] text-white focus:outline-none focus:border-primary/50 appearance-none cursor-pointer";
 
 type Props = {
   open: boolean;
@@ -63,10 +68,10 @@ function modelSubtitle(id: AiModelId): string {
 
 function rowClass(selected: boolean): string {
   return [
-    "w-full text-left rounded-lg px-3 py-3 flex items-start gap-3 transition-colors",
+    "w-full text-left rounded-lg px-3 py-3 flex items-start gap-3 transition-colors border",
     selected
-      ? "bg-white/10 border border-white/25 shadow-[0_0_0_1px_rgba(255,255,255,0.06)]"
-      : "border border-transparent hover:bg-white/5",
+      ? "bg-white/10 border-white/20 text-white"
+      : "border-transparent hover:bg-white/5",
   ].join(" ");
 }
 
@@ -115,15 +120,15 @@ export function ChatModelBottomSheet({
         onClick={onClose}
       />
       <div
-        className="relative max-h-[min(88vh,720px)] w-full rounded-t-2xl border-t border-card-border bg-[#0b0b0b] text-white shadow-[0_-12px_40px_rgba(0,0,0,0.75)] flex flex-col"
+        className={`relative max-h-[min(88vh,720px)] w-full flex flex-col ${CHAT_MODEL_SHEET_CLASS}`}
         role="dialog"
         aria-label="Select model"
       >
-        <div className="flex items-center justify-between px-4 pt-3 pb-2 shrink-0 border-b border-card-border/50">
+        <div className="flex items-center justify-between px-4 pt-3 pb-2 shrink-0 border-b border-card-border/60">
           <button
             type="button"
             onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-md border border-card-border text-white/75 hover:text-white hover:border-white/30"
+            className={`flex h-9 w-9 items-center justify-center shrink-0 ${CHAT_COMPOSER_CHIP_CLASS}`}
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -132,7 +137,7 @@ export function ChatModelBottomSheet({
           <div className="w-9" aria-hidden />
         </div>
 
-        <div className="mx-auto mt-2 mb-1 h-1 w-10 rounded-full bg-white/20 shrink-0" aria-hidden />
+        <div className="mx-auto mt-2 mb-1 h-1 w-10 rounded-full bg-white/25 shrink-0" aria-hidden />
 
         <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-[max(16px,env(safe-area-inset-bottom))]">
           <p className="px-2 pb-1.5 font-mono text-[10px] font-semibold text-white/50 uppercase tracking-widest">
@@ -153,7 +158,7 @@ export function ChatModelBottomSheet({
           </button>
 
           {useMultiAgent && (
-            <div className="mb-3 rounded-lg border border-card-border bg-[#141414] p-3 space-y-3">
+            <div className="mb-3 rounded-lg border border-card-border/80 bg-white/5 p-3 space-y-3">
               <p className="font-mono text-[11px] text-white/55 leading-snug">
                 Pick at least two research models. After they finish, the synthesizer runs once on all drafts.
               </p>
@@ -225,10 +230,10 @@ export function ChatModelBottomSheet({
                       </p>
                       {selected && !opus && (
                         <label
-                          className="mt-3 flex items-center justify-between gap-3 rounded-md bg-black/40 px-3 py-2 border border-card-border"
+                          className={`mt-3 flex items-center justify-between gap-3 rounded-lg px-3 py-2 border border-card-border/80 ${CHAT_COMPOSER_CHIP_SURFACE}`}
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <span className="font-mono text-[12px] text-white/85">With thinking</span>
+                          <span className="font-mono text-[12px] text-white/90">With thinking</span>
                           <input
                             type="checkbox"
                             className="h-4 w-4 accent-primary"
@@ -246,7 +251,7 @@ export function ChatModelBottomSheet({
           </ul>
 
           {!useMultiAgent && opus && (
-            <div className="mt-3 rounded-lg border border-card-border bg-[#141414] overflow-hidden divide-y divide-card-border/60">
+            <div className="mt-3 rounded-lg border border-card-border/80 bg-white/5 overflow-hidden divide-y divide-card-border/60">
               <label className="flex items-center justify-between px-4 py-3 gap-3">
                 <span className="font-mono text-[13px] text-white/90">With thinking</span>
                 <input
@@ -266,7 +271,7 @@ export function ChatModelBottomSheet({
                     aria-label="Opus effort"
                   >
                     {ANTHROPIC_OPUS_EFFORT_LEVELS.map((level) => (
-                      <option key={level} value={level} className="bg-[#111]">
+                      <option key={level} value={level} className="bg-[#2b2b2b]">
                         {ANTHROPIC_OPUS_EFFORT_LABELS[level]}
                       </option>
                     ))}
@@ -284,7 +289,7 @@ export function ChatModelBottomSheet({
                     aria-label="Opus speed"
                   >
                     {ANTHROPIC_OPUS_SPEED_LEVELS.map((level) => (
-                      <option key={level} value={level} className="bg-[#111]">
+                      <option key={level} value={level} className="bg-[#2b2b2b]">
                         {ANTHROPIC_OPUS_SPEED_LABELS[level]}
                       </option>
                     ))}
