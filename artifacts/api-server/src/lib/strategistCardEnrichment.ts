@@ -47,10 +47,10 @@ export function computeRiskFirstReward(
   maxLoss: number,
 ): { ratio: number | null; display: string } {
   if (!Number.isFinite(maxProfit) || maxProfit >= 99999 || maxProfit <= 0) {
-    return { ratio: null, display: "open-ended" };
+    return { ratio: null, display: "OPEN-ENDED" };
   }
   if (!Number.isFinite(maxLoss) || maxLoss <= 0) {
-    return { ratio: null, display: "varies" };
+    return { ratio: null, display: "VARIES" };
   }
   const ratio = maxLoss / maxProfit;
   return { ratio, display: `${ratio.toFixed(2)} : 1` };
