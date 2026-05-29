@@ -97,6 +97,13 @@ import { fetchEarningsHistoryAndForward, type FetchEarningsBundle } from "./poly
 import { getAnalystPriceTargets, getRecentAnalystGrades, getEarningsSurpriseHistory } from "./fmpDataService.js";
 import { fetchCompanyFinancialsForSymbol, type CompanyFinancials } from "../routes/sec.js";
 import { clampProfitTargetToMaxPayout } from "./exitTargetMath.js";
+import {
+  buildBriefBullets,
+  computeEntryStockBand,
+  computeRiskFirstReward,
+  enrichExitTargets,
+  stripEmDashes,
+} from "./strategistCardEnrichment.js";
 import { scrubAll } from "./narrativeScrubbers.js";
 import { getAiLabStrategistConfig } from "./aiLabConfig.js";
 import {
@@ -203,7 +210,26 @@ export interface StrategistV2Result {
       stopLoss: number;
       stopLossUnderlying: number;
       timeStop: string;
+      profitTargetPct?: number;
+      stopLossPct?: number;
+      profitPerLot?: number;
+      stopPerLot?: number;
     };
+    underlyingAtSignal?: number;
+    entryStockMin?: number | null;
+    entryStockMax?: number | null;
+    riskRewardDisplay?: string;
+    whyBullets?: string[];
+    whatKillsBullets?: string[];
+    reportDrawer?: {
+      company: string;
+      thesis: string;
+      exitDetail: string;
+      levelsLiquidity: string;
+      edgeRegime: string;
+    };
+    maxProfitDisplay?: string;
+    maxLossDisplay?: string;
     bullInvalidation: string;
     bearInvalidation: string;
     riskOfRuin: string;
@@ -237,7 +263,7 @@ export interface StrategistV2Result {
 }
 
 /** Item 23: client / history idempotency — bump when StrategistV2Result shape changes. */
-export const STRATEGIST_RESULT_SCHEMA_VERSION = 3;
+export const STRATEGIST_RESULT_SCHEMA_VERSION = 4;
 
 function withResultSchemaVersion<T extends StrategistV2Result>(r: T): T {
   r.schemaVersion = STRATEGIST_RESULT_SCHEMA_VERSION;
@@ -2069,14 +2095,70 @@ async function buildRecommendationFromAiState(input: BuildRecommendationFromAiSt
 
   const strategyLine = buildStrategyLine(ticker, aiResponse);
 
+  const enrichedExit = enrichExitTargets({
+    raw: normalizedExitTargets,
+    isCredit,
+    netEntry: entryAbs,
+    maxProfit,
+    maxLoss,
+  });
+
+  const stockBand = computeEntryStockBand({
+    spot: tickerData.price,
+    legs,
+    fillMin: entryRangeMin,
+    fillMax: entryRangeMax,
+  });
+
+  const rr = computeRiskFirstReward(maxProfit, maxLoss);
+  const brief = buildBriefBullets({
+    thesis: aiResponse.thesis ?? "",
+    bullInvalidation: aiResponse.bullInvalidation ?? "",
+    bearInvalidation: aiResponse.bearInvalidation ?? "",
+    riskOfRuin: aiResponse.riskOfRuin ?? "",
+    warnings: aiResponse.warnings,
+  });
+
+  const isMultiExp = new Set(legs.map((l) => l.expiration)).size > 1;
+  const isSingleLong = legs.length === 1 && legs[0]?.side === "buy";
+  const maxProfitDisplay =
+    maxProfit >= 99999 || (isSingleLong && legs[0]?.type === "call")
+      ? "Unlimited"
+      : isMultiExp && maxProfit > 0
+        ? `~$${(maxProfit / 100).toFixed(2)} est.`
+        : undefined;
+  const maxLossDisplay =
+    isMultiExp && maxLoss > 0 ? `~$${(maxLoss / 100).toFixed(0)} est.` : undefined;
+
+  const shortStrike = legs.find((l) => l.side === "sell")?.strike;
+  const width =
+    legs.length >= 2
+      ? Math.max(...legs.map((l) => l.strike)) - Math.min(...legs.map((l) => l.strike))
+      : null;
+
+  const exitDetailLines = [
+    enrichedExit.profitTarget > 0
+      ? `Profit target: $${enrichedExit.profitTarget.toFixed(2)} (${enrichedExit.profitTargetPct}% of max, ${enrichedExit.profitPerLot >= 0 ? "+" : ""}$${enrichedExit.profitPerLot}/lot)`
+      : "",
+    enrichedExit.stopLoss > 0
+      ? `Stop: $${enrichedExit.stopLoss.toFixed(2)} (${enrichedExit.stopLossPct}% of max loss, $${enrichedExit.stopPerLot}/lot)`
+      : "",
+    enrichedExit.timeStop ? `Time stop: ${enrichedExit.timeStop}` : "",
+  ].filter(Boolean);
+
+  const oiLines = legs.map(
+    (l) =>
+      `${l.side.toUpperCase()} $${l.strike} ${l.type.toUpperCase()} (${l.expiration}): OI ${l.openInterest.toLocaleString()} (EOD)`,
+  );
+
   const result: StrategistV2Result = {
     status: "recommendation",
     ticker,
     recommendation: {
       strategyLine,
-      companyContext: aiResponse.companyContext || "",
-      thesis: aiResponse.thesis,
-      rationale: aiResponse.thesis,
+      companyContext: stripEmDashes(aiResponse.companyContext || ""),
+      thesis: stripEmDashes(aiResponse.thesis),
+      rationale: stripEmDashes(aiResponse.thesis),
       edgeAttribution: `Edge source: Idiosyncratic ${idioStrengthPct}% / Macro ${macroPct}%`,
       idioStrengthPct,
       macroPct,
@@ -2090,15 +2172,42 @@ async function buildRecommendationFromAiState(input: BuildRecommendationFromAiSt
       maxProfit,
       maxLoss,
       breakeven,
-      riskReward: maxLoss > 0 ? maxProfit / maxLoss : 0,
+      riskReward: rr.ratio ?? 0,
+      riskRewardDisplay: rr.display,
       dte,
       expiration,
-      exitTargets: normalizedExitTargets,
-      bullInvalidation: aiResponse.bullInvalidation || "",
-      bearInvalidation: aiResponse.bearInvalidation || "",
-      riskOfRuin: aiResponse.riskOfRuin || "",
+      exitTargets: enrichedExit,
+      underlyingAtSignal: tickerData.price,
+      entryStockMin: stockBand.min,
+      entryStockMax: stockBand.max,
+      whyBullets: brief.whyItWorks,
+      whatKillsBullets: brief.whatKillsIt,
+      maxProfitDisplay,
+      maxLossDisplay,
+      reportDrawer: {
+        company: stripEmDashes(aiResponse.companyContext || ""),
+        thesis: stripEmDashes(aiResponse.thesis),
+        exitDetail: exitDetailLines.join("\n"),
+        levelsLiquidity: [
+          `Breakeven: $${breakeven.toFixed(2)}`,
+          shortStrike != null ? `Short strike: $${shortStrike}` : "",
+          width != null ? `Width: $${width}` : "",
+          ...oiLines,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        edgeRegime: [
+          `Edge: ${idioStrengthPct}% idio / ${macroPct}% macro`,
+          `IO classification: ${ioScore.classification}`,
+          `Beta: ${ioScore.beta?.toFixed(2) ?? "n/a"}, residual Z: ${ioScore.residualReturnZScore?.toFixed(2) ?? "n/a"}`,
+          `Regime: conviction ${regime.directionalConviction}, risk ${regime.systemicRiskLevel}, correlation ${regime.correlationRegime}`,
+        ].join("\n"),
+      },
+      bullInvalidation: stripEmDashes(aiResponse.bullInvalidation || ""),
+      bearInvalidation: stripEmDashes(aiResponse.bearInvalidation || ""),
+      riskOfRuin: stripEmDashes(aiResponse.riskOfRuin || ""),
       confidence: aiResponse.confidence,
-      warnings: aiResponse.warnings,
+      warnings: aiResponse.warnings != null ? stripEmDashes(aiResponse.warnings) : aiResponse.warnings,
       contextSources: buildContextSources(aiResponse, webTrace, catalystEval),
     },
     contextSources: buildContextSources(aiResponse, webTrace, catalystEval),
