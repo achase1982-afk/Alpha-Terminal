@@ -63,9 +63,10 @@ describe("buildChatSystemPrompt", () => {
 
   it("documents live tape and portfolio tools", () => {
     const prompt = buildChatSystemPrompt("AAPL");
-    expect(prompt).toContain("displayLast");
+    expect(prompt).toContain("normalizedQuote");
     expect(prompt).toContain("get_portfolio");
-    expect(prompt).toMatch(/PREMARKET and AFTERHOURS/i);
+    expect(prompt).toMatch(/quote its `summary` verbatim/i);
+    expect(prompt).toMatch(/never pair a price from one session with a change from another/i);
   });
 
   it("embeds investigative reasoning protocol", () => {

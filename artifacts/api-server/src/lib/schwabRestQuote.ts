@@ -14,6 +14,9 @@ export type SchwabRestQuote = {
   high: number | null;
   low: number | null;
   prevClose: number | null;
+  /** Today's regular-session last when Schwab exposes it separately from extended last. */
+  regularMarketLast: number | null;
+  tradeTimeMs: number | null;
 };
 
 function pickNum(sources: Array<Record<string, unknown> | undefined>, ...keys: string[]): number | undefined {
@@ -53,9 +56,11 @@ export async function fetchSchwabRestQuote(
     const fundamental = entry["fundamental"] as Record<string, unknown> | undefined;
     const srcs = [quote, reference, fundamental];
 
-    const last = pickNum(srcs, "lastPrice", "last", "mark", "markPrice", "regularMarketLastPrice") ?? null;
+    const last = pickNum(srcs, "lastPrice", "last", "mark", "markPrice") ?? null;
+    const regularMarketLast = pickNum(srcs, "regularMarketLastPrice") ?? null;
     const prevClose =
       pickNum(srcs, "closePrice", "close", "previousClose", "regularMarketPreviousClose") ?? null;
+    const tradeTimeMs = pickNum(srcs, "tradeTime") ?? null;
     let change = pickNum(
       srcs,
       "netChange",
@@ -93,6 +98,8 @@ export async function fetchSchwabRestQuote(
       high: pickNum(srcs, "highPrice", "dayHigh", "regularMarketHigh") ?? null,
       low: pickNum(srcs, "lowPrice", "dayLow", "regularMarketLow") ?? null,
       prevClose,
+      regularMarketLast,
+      tradeTimeMs,
     };
   } catch {
     return null;

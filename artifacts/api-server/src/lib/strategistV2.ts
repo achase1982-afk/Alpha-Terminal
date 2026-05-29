@@ -64,7 +64,10 @@ import {
   getIbDynamicPoolDiagnosticsSnapshot,
   getRecentTotalviewSummaryForTicker,
 } from "./ibStreamer.js";
-import { getQuoteBySymbol } from "./schwabStreamer.js";
+import { getQuoteBySymbol, normalizeEquityKey } from "./schwabStreamer.js";
+import type { NormalizedQuote } from "./quote-normalizer.js";
+import { normalizeQuote } from "./quote-normalizer.js";
+import { rawQuoteFromLiveQuote, rawQuoteFromSchwabQuoteRow } from "./quoteRawBridge.js";
 import { lastCompletedTradingDayNy, nyCalendarYmd, rthBoundsMs } from "./polygonMarketCalendar.js";
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
 import { isEquityOptionsStrategistMacroEvent } from "./strategistMacroSnapshotFilter.js";
@@ -256,6 +259,7 @@ export interface CandidateLeg {
 interface TickerData {
   price: number;
   dailyChangePct: number;
+  normalizedQuote: NormalizedQuote | null;
   ivr: number | null;
   /** From getStoredIVR / equity_daily — surfaced in volatilityContext for the Volatility section. */
   ivrAsOfDate: string | null;
@@ -499,7 +503,15 @@ interface SchwabQuotesResponse {
 
 interface SchwabQuoteRow {
   lastPrice?: number;
+  last?: number;
   mark?: number;
+  markPrice?: number;
+  closePrice?: number;
+  close?: number;
+  previousClose?: number;
+  regularMarketPreviousClose?: number;
+  regularMarketLastPrice?: number;
+  tradeTime?: number;
   netPercentChangeInDouble?: number;
   totalVolume?: number;
   securityStatus?: string;
@@ -649,6 +661,8 @@ ${INVESTIGATIVE_REASONING_PROTOCOL}
 ## SAME-DAY MOVE AWARENESS
 
 The data payload includes the day's price change. If the ticker is moving > 3% in either direction on the day, your thesis MUST explicitly explain what is driving that move (citing the catalyst found via web search). Cards that ignore a 5%+ same-day move are unacceptable.
+
+When citing a quote, use ONLY the fields from the normalized quote object and quote its \`summary\` verbatim. Never compute a price change yourself, and never pair a price from one session with a change from another (e.g. an after-hours price with the regular-session change).
 
 ## REGIME OVERRIDE VIA IDIOSYNCRATIC CATALYST
 
@@ -3406,6 +3420,7 @@ async function buildDataPackage(
     currentDate,
     price: tickerData.price,
     dailyChangePct: tickerData.dailyChangePct,
+    normalizedQuote: tickerData.normalizedQuote,
     ivr: tickerData.ivr,
     avgVolume20d: tickerData.avgVolume20d,
     relativeVolume: tickerData.relativeVolume,
@@ -4567,7 +4582,25 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
       return { data: null, failureMode: "symbol_missing" };
     }
 
-    const price = q.lastPrice ?? q.mark ?? 0;
+    const now = new Date();
+    const session = getMarketContext(now).session;
+    const streamKey = normalizeEquityKey(upper);
+    const streamQ = getQuoteBySymbol(streamKey);
+    let normalizedQuote: NormalizedQuote | null = null;
+    const rawFromStream =
+      streamQ && (streamQ.last != null || streamQ.regularLast != null)
+        ? rawQuoteFromLiveQuote(upper, streamQ, session)
+        : null;
+    const rawFromRest = rawFromStream
+      ? null
+      : rawQuoteFromSchwabQuoteRow(upper, q as Record<string, unknown>, session);
+    const raw = rawFromStream ?? rawFromRest;
+    if (raw) {
+      normalizedQuote = normalizeQuote(raw, now);
+    }
+
+    const price = normalizedQuote?.lastPrice ?? q.lastPrice ?? q.mark ?? 0;
+    const dailyChangePct = normalizedQuote?.totalChangePct ?? 0;
     const avgVol = f.avg10DaysVolume ?? f.avgVol10Days ?? 1;
     const currentVol = q.totalVolume ?? 0;
     const rawCap = f.marketCap;
@@ -4615,7 +4648,8 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
     return {
       data: {
         price,
-        dailyChangePct: q.netPercentChangeInDouble ?? 0,
+        dailyChangePct,
+        normalizedQuote,
         ivr: null,
         ivrAsOfDate: null,
         ivrSource: null,
