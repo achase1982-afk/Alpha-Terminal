@@ -24,4 +24,10 @@ export {
   type CardBulletsValidation,
 } from "./cardBulletCore.js";
 
+export { CARD_FACE_BULLET_PROMPT } from "./cardBulletPrompt.js";
+export {
+  resolveCardBullets,
+  validateCardFaceBulletsFromAi,
+  type CardBulletResolveInput,
+} from "./resolveCardBullets.js";
 export { buildCardBriefBullets, type CardBulletBuildInput } from "./buildCardBullets.js";

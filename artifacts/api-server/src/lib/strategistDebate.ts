@@ -368,7 +368,7 @@ ARBITRATION RULES (apply in order):
 4. The verdict is binding on direction. BULLISH/BEARISH structures only for those verdicts; vol-neutral only for SIDEWAYS. No exceptions.
 5. State your arbitration choice explicitly in the "thesis" field: which proposal you took, why, and what (if anything) you adjusted.
 
-Output ONLY the full trade JSON object specified by your system prompt — strategy, legs, entryPrice, entryRangeMin/Max, maxRisk, maxProfit, breakeven, companyContext, thesis, exitTargets, bullInvalidation, bearInvalidation, riskOfRuin, confidence, warnings. No markdown fences, no extra prose. Honor the WEB SEARCH MANDATE only if you need to confirm a catalyst date.
+Output ONLY the full trade JSON object specified by your system prompt — strategy, legs, entryPrice, entryRangeMin/Max, maxRisk, maxProfit, breakeven, companyContext, thesis, whyBullets, whatKillsBullets, exitTargets, bullInvalidation, bearInvalidation, riskOfRuin, confidence, warnings, catalyst, citedHeadlines. No markdown fences, no extra prose. Honor the WEB SEARCH MANDATE — card bullets must cite real news/catalyst/levels from search and data.
 
 BULL'S STRUCTURE PROPOSAL:
 ${bullStructureProposal}

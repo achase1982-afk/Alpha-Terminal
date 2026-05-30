@@ -2,13 +2,14 @@ import { describe, it, expect } from "vitest";
 import {
   CARD_BULLET_MAX_CHARS,
   CARD_BULLET_MAX_WORDS,
-  buildCardBriefBullets,
   cardBulletSchema,
   compressCardBullet,
   enforceCardBullets,
   proseToCardBullets,
+  resolveCardBullets,
   tightenCardBullet,
   validateCardBullet,
+  validateCardFaceBulletsFromAi,
 } from "@workspace/strategist-card-bullets";
 
 describe("validateCardBullet", () => {
@@ -57,39 +58,43 @@ describe("enforceCardBullets", () => {
   });
 });
 
-describe("buildCardBriefBullets", () => {
-  it("builds data-driven why/kill for a bull put credit", () => {
-    const brief = buildCardBriefBullets({
-      ticker: "DELL",
+describe("resolveCardBullets", () => {
+  it("prefers valid AI bullets over prose fallback", () => {
+    const r = resolveCardBullets({
       direction: "BULLISH",
-      spot: 428,
-      ivr: 72,
-      pcRatio: 0.62,
-      shortStrike: 425,
-      shortType: "put",
-      breakeven: 418,
-      dte: 28,
-      catalystDate: "2026-05-28",
-      catalystType: "EARNINGS",
-      catalystAlignment: "ALIGNED",
-      dailyChangePct: 2.4,
-      idioPct: 68,
-      relativeVolume: 1.6,
-      earningsDate: null,
-      thesis: "Credit spread on elevated IV.",
-      bullInvalidation: "Break below $425 short put.",
-      bearInvalidation: "Hold above $425 through expiry.",
-      riskOfRuin: "Macro gap through structure.",
+      whyBulletsFromAi: ["May 28 earnings drift supports hold", "DELL IVR 72 — sell premium"],
+      whatKillsBulletsFromAi: ["Close below $425 kills bull put", "Macro gap flips thesis"],
+      thesis: "Long thesis prose.",
+      bullInvalidation: "Break below.",
+      bearInvalidation: "Hold above.",
+      riskOfRuin: "Gap risk.",
       warnings: null,
     });
-    expect(brief.whyItWorks.length).toBeGreaterThan(0);
-    expect(brief.whatKillsIt.length).toBeGreaterThan(0);
-    for (const b of [...brief.whyItWorks, ...brief.whatKillsIt]) {
-      expect(b.length).toBeLessThanOrEqual(CARD_BULLET_MAX_CHARS);
-      expect(b.split(/\s+/).length).toBeLessThanOrEqual(CARD_BULLET_MAX_WORDS);
-    }
-    expect(brief.whyItWorks.some((b) => /IVR|425|call flow/i.test(b))).toBe(true);
-    expect(brief.whatKillsIt.some((b) => /below|breakeven|macro/i.test(b))).toBe(true);
+    expect(r.source).toBe("ai");
+    expect(r.whyItWorks[0]).toContain("earnings");
+  });
+
+  it("falls back to clipped prose when AI bullets missing", () => {
+    const r = resolveCardBullets({
+      direction: "BULLISH",
+      whyBulletsFromAi: [],
+      whatKillsBulletsFromAi: [],
+      thesis: "Credit spread captures elevated implied volatility premium.",
+      bullInvalidation: "Break below short strike invalidates.",
+      bearInvalidation: "Hold above short strike.",
+      riskOfRuin: "Macro selloff.",
+      warnings: null,
+    });
+    expect(r.source).toBe("prose_fallback");
+    expect(r.whyItWorks.length).toBeGreaterThan(0);
+  });
+});
+
+describe("validateCardFaceBulletsFromAi", () => {
+  it("requires at least two valid bullets per section", () => {
+    expect(
+      validateCardFaceBulletsFromAi(["One valid bullet only here"], ["Close below $425", "Macro gap risk"]).ok,
+    ).toBe(false);
   });
 });
 
