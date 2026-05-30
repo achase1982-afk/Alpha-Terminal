@@ -25,11 +25,7 @@ describe("deriveTradeDirection", () => {
   });
 
   it("uses debate verdict only when structure is neutral", () => {
-    expect(
-      deriveTradeDirection("iron_condor", [], "BULLISH"),
-    ).toBe("NEUTRAL");
-    expect(
-      deriveTradeDirection("custom_structure", [], "BEARISH"),
-    ).toBe("BEARISH");
+    expect(deriveTradeDirection("iron_condor", [], "BULLISH")).toBe("NEUTRAL");
+    expect(deriveTradeDirection("custom_structure", [], "BEARISH")).toBe("BEARISH");
   });
 });

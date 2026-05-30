@@ -112,7 +112,7 @@ export function StrategistTradeCard({
   const row2Primary = model.isCredit
     ? model.maxLossDisplay ?? `$${(model.maxLoss / 100).toFixed(2)}`
     : model.maxProfitDisplay ??
-      (model.maxProfit >= 99999 ? "Unlimited" : `~$${(model.maxProfit / 100).toFixed(2)}`);
+      (model.maxProfit >= 99999 ? "Unlimited" : `$${(model.maxProfit / 100).toFixed(2)}`);
 
   const copyText =
     plainText ??
@@ -346,7 +346,7 @@ export function StrategistTradeCard({
                   marginBottom: 6,
                 }}
               >
-                ▲ Why it works
+                Why it works
               </div>
               <StrategistBulletList items={model.whyBullets} dotColor={GREEN} />
             </div>
@@ -362,7 +362,7 @@ export function StrategistTradeCard({
                   marginBottom: 6,
                 }}
               >
-                ▼ What kills it
+                What kills it
               </div>
               <StrategistBulletList items={model.whatKillsBullets} dotColor={RED} />
             </div>

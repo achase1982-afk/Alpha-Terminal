@@ -2130,14 +2130,8 @@ async function buildRecommendationFromAiState(input: BuildRecommendationFromAiSt
     aiResponse.legs,
     debateVerdict ?? null,
   );
-  const brief = buildBriefBullets({
-    direction: tradeDir,
-    thesis: aiResponse.thesis ?? "",
-    bullInvalidation: aiResponse.bullInvalidation ?? "",
-    bearInvalidation: aiResponse.bearInvalidation ?? "",
-    riskOfRuin: aiResponse.riskOfRuin ?? "",
-    warnings: aiResponse.warnings,
-  });
+  const shortLeg = legs.find((l) => l.side === "sell");
+  const shortStrike = shortLeg?.strike ?? null;
 
   const isMultiExp = new Set(legs.map((l) => l.expiration)).size > 1;
   const isSingleLong = legs.length === 1 && legs[0]?.side === "buy";
@@ -2145,12 +2139,38 @@ async function buildRecommendationFromAiState(input: BuildRecommendationFromAiSt
     maxProfit >= 99999 || (isSingleLong && legs[0]?.type === "call")
       ? "Unlimited"
       : isMultiExp && maxProfit > 0
-        ? `~$${(maxProfit / 100).toFixed(2)} est.`
+        ? `$${(maxProfit / 100).toFixed(2)} est.`
         : undefined;
   const maxLossDisplay =
-    isMultiExp && maxLoss > 0 ? `~$${(maxLoss / 100).toFixed(0)} est.` : undefined;
+    isMultiExp && maxLoss > 0 ? `$${(maxLoss / 100).toFixed(0)} est.` : undefined;
 
-  const shortStrike = legs.find((l) => l.side === "sell")?.strike;
+  const brief = buildBriefBullets({
+    ticker,
+    direction: tradeDir,
+    spot: tickerData.price,
+    ivr: tickerData.ivr,
+    ivrSource: tickerData.ivrSource,
+    pcRatio: Number.isFinite(chainSummary?.putCallVolumeRatio)
+      ? chainSummary.putCallVolumeRatio
+      : null,
+    shortStrike,
+    shortType: shortLeg?.type ?? null,
+    breakeven: Number.isFinite(breakeven) ? breakeven : null,
+    dte,
+    catalystDate: catalystEval.catalystDate,
+    catalystType: catalystEval.catalystType,
+    catalystAlignment: catalystEval.catalystAlignment,
+    dailyChangePct: tickerData.dailyChangePct,
+    idioPct: idioStrengthPct,
+    relativeVolume: tickerData.relativeVolume,
+    earningsDate: tickerData.earningsDate,
+    earningsInsideExpiry: earningsAlert?.insideExpiry ?? false,
+    thesis: aiResponse.thesis ?? "",
+    bullInvalidation: aiResponse.bullInvalidation ?? "",
+    bearInvalidation: aiResponse.bearInvalidation ?? "",
+    riskOfRuin: aiResponse.riskOfRuin ?? "",
+    warnings: aiResponse.warnings,
+  });
   const width =
     legs.length >= 2
       ? Math.max(...legs.map((l) => l.strike)) - Math.min(...legs.map((l) => l.strike))
