@@ -9,9 +9,9 @@ export {
   type DebateVerdict,
 } from "./tradeDirection.js";
 
-/** Card-face bullet limits: one idea, no numbers/parens, detail lives in full report. */
-export const CARD_BULLET_MAX_CHARS = 70;
-export const CARD_BULLET_MAX_WORDS = 10;
+/** Card-face bullet limits: must fit one mobile line (~13px body). */
+export const CARD_BULLET_MAX_CHARS = 48;
+export const CARD_BULLET_MAX_WORDS = 6;
 export const CARD_BULLET_MAX_COUNT = 6;
 export const CARD_BULLET_MIN_CHARS = 8;
 
@@ -96,6 +96,7 @@ export function compressCardBullet(raw: string, maxAttempts = 6): string | null 
       s = s
         .replace(/\d+(\.\d+)?%?/g, "")
         .replace(/[$%]/g, "")
+        .replace(/^⚠️?\s*/u, "")
         .replace(/\s{2,}/g, " ")
         .trim();
     }
@@ -103,13 +104,13 @@ export function compressCardBullet(raw: string, maxAttempts = 6): string | null 
       const clause = s.split(/[,;]/)[0]?.trim();
       if (clause && clause.length >= CARD_BULLET_MIN_CHARS) s = clause;
     }
-    if (attempt >= 4) {
+    if (attempt >= 3) {
       const words = s.split(/\s+/).filter(Boolean);
       if (words.length > CARD_BULLET_MAX_WORDS) {
         s = words.slice(0, CARD_BULLET_MAX_WORDS).join(" ");
       }
     }
-    if (attempt >= 5 && s.length > CARD_BULLET_MAX_CHARS) {
+    if (attempt >= 4 && s.length > CARD_BULLET_MAX_CHARS) {
       s = s.slice(0, CARD_BULLET_MAX_CHARS).trimEnd();
       const lastSpace = s.lastIndexOf(" ");
       if (lastSpace >= CARD_BULLET_MIN_CHARS) {

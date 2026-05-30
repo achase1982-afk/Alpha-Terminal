@@ -3,6 +3,7 @@ import { ChevronDown, Copy, Play, Check } from "lucide-react";
 import type { StrategistSendToOrderPayload, StrategistV2Result } from "@/components/StrategistV2Card";
 import { buildOccSymbol } from "@/components/StrategistV2Card";
 import { strategistCardToPlainText } from "@/lib/strategistPlaintext";
+import { enforceCardBullets } from "@workspace/strategist-card-bullets";
 import {
   confidenceColor,
   directionStyle,
@@ -26,19 +27,21 @@ const SYS_FONT =
 const VALUE_COL_W = 64;
 
 function StrategistBulletList({ items, dotColor }: { items: string[]; dotColor: string }) {
-  if (!items.length) return null;
+  const lines = enforceCardBullets(items);
+  if (!lines.length) return null;
   return (
     <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-      {items.map((text, i) => (
+      {lines.map((text, i) => (
         <li
           key={i}
           style={{
             fontSize: 13,
             fontWeight: 400,
             color: WHITE,
-            lineHeight: 1.4,
-            padding: "2px 0 2px 15px",
+            lineHeight: 1.35,
+            padding: "3px 0 3px 15px",
             position: "relative",
+            maxWidth: "100%",
           }}
         >
           <span
@@ -53,7 +56,18 @@ function StrategistBulletList({ items, dotColor }: { items: string[]; dotColor: 
               background: dotColor,
             }}
           />
-          {text}
+          <span
+            title={text}
+            style={{
+              display: "block",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              maxWidth: "100%",
+            }}
+          >
+            {text}
+          </span>
         </li>
       ))}
     </ul>

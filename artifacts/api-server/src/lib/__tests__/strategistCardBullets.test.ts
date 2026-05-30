@@ -26,9 +26,16 @@ describe("validateCardBullet", () => {
     ).toBe(false);
   });
 
-  it("rejects more than ten words", () => {
-    const words = Array.from({ length: 11 }, (_, i) => `word${i}`).join(" ");
+  it("rejects more than six words", () => {
+    const words = Array.from({ length: 7 }, (_, i) => `word${i}`).join(" ");
     expect(validateCardBullet(words).ok).toBe(false);
+  });
+
+  it("rejects bullets that would wrap on mobile", () => {
+    const r = validateCardBullet(
+      "While front-month implied volatility is highly elevated with an IVR",
+    );
+    expect(r.ok).toBe(false);
   });
 });
 
@@ -45,6 +52,17 @@ describe("compressCardBullet", () => {
     const long =
       "Momentum supports the structure while implied volatility remains elevated versus realized and skew favors premium sellers";
     const out = compressCardBullet(long);
+    expect(out).not.toBeNull();
+    if (out) {
+      expect(out.length).toBeLessThanOrEqual(CARD_BULLET_MAX_CHARS);
+      expect(out.split(/\s+/).length).toBeLessThanOrEqual(CARD_BULLET_MAX_WORDS);
+    }
+  });
+
+  it("compresses screenshot-style kill bullets to one line", () => {
+    const out = compressCardBullet(
+      "The single biggest threat is a sudden macro-driven market correction",
+    );
     expect(out).not.toBeNull();
     if (out) {
       expect(out.length).toBeLessThanOrEqual(CARD_BULLET_MAX_CHARS);
