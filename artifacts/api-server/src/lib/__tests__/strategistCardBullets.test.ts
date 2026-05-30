@@ -7,59 +7,32 @@ import {
   compressCardBullet,
   enforceCardBullets,
   proseToCardBullets,
+  tightenCardBullet,
   validateCardBullet,
 } from "@workspace/strategist-card-bullets";
 
 describe("validateCardBullet", () => {
-  it("accepts a compliant bullet", () => {
-    const r = validateCardBullet("Defined risk with favorable skew");
+  it("accepts a compliant bullet with levels and IVR", () => {
+    const r = validateCardBullet("DELL IVR 72 — sell rich premium");
     expect(r.ok).toBe(true);
   });
 
-  it("rejects digits, parentheses, and length", () => {
-    expect(validateCardBullet("OI 12,000 on short leg").ok).toBe(false);
-    expect(validateCardBullet("Break below $95 (invalidates)").ok).toBe(false);
-    expect(
-      validateCardBullet(
-        "This bullet is intentionally far too long to sit on the trade card face",
-      ).ok,
-    ).toBe(false);
-  });
-
-  it("rejects more than six words", () => {
-    const words = Array.from({ length: 7 }, (_, i) => `word${i}`).join(" ");
-    expect(validateCardBullet(words).ok).toBe(false);
-  });
-
-  it("rejects bullets that would wrap on mobile", () => {
-    const r = validateCardBullet(
+  it("tightens wrap-prone prose to max words and chars", () => {
+    const tightened = tightenCardBullet(
       "While front-month implied volatility is highly elevated with an IVR",
     );
-    expect(r.ok).toBe(false);
+    expect(tightened).not.toBeNull();
+    if (tightened) {
+      expect(tightened.length).toBeLessThanOrEqual(CARD_BULLET_MAX_CHARS);
+      expect(tightened.split(/\s+/).length).toBeLessThanOrEqual(CARD_BULLET_MAX_WORDS);
+    }
+    const words = Array.from({ length: 12 }, (_, i) => `token${i}`).join(" ");
+    expect(tightenCardBullet(words)?.split(/\s+/).length ?? 0).toBeLessThanOrEqual(CARD_BULLET_MAX_WORDS);
   });
 });
 
 describe("compressCardBullet", () => {
-  it("strips numbers and parentheses via retry", () => {
-    const out = compressCardBullet(
-      "Break below $95 (invalidates spread) on heavy volume.",
-    );
-    expect(out).not.toBeNull();
-    expect(cardBulletSchema.safeParse(out).success).toBe(true);
-  });
-
-  it("truncates to max words and chars", () => {
-    const long =
-      "Momentum supports the structure while implied volatility remains elevated versus realized and skew favors premium sellers";
-    const out = compressCardBullet(long);
-    expect(out).not.toBeNull();
-    if (out) {
-      expect(out.length).toBeLessThanOrEqual(CARD_BULLET_MAX_CHARS);
-      expect(out.split(/\s+/).length).toBeLessThanOrEqual(CARD_BULLET_MAX_WORDS);
-    }
-  });
-
-  it("compresses screenshot-style kill bullets to one line", () => {
+  it("compresses long kill prose to one line", () => {
     const out = compressCardBullet(
       "The single biggest threat is a sudden macro-driven market correction",
     );
@@ -74,7 +47,7 @@ describe("compressCardBullet", () => {
 describe("enforceCardBullets", () => {
   it("returns only schema-valid bullets after compress/retry", () => {
     const out = enforceCardBullets([
-      "Valid skew versus street expectations",
+      "Spot $428 above $425 short put",
       "Profit target at 62% ($0.80) — too specific for card",
     ]);
     expect(out.length).toBeGreaterThan(0);
@@ -85,31 +58,53 @@ describe("enforceCardBullets", () => {
 });
 
 describe("buildCardBriefBullets", () => {
-  it("returns schema-valid why/kill lists", () => {
+  it("builds data-driven why/kill for a bull put credit", () => {
     const brief = buildCardBriefBullets({
+      ticker: "DELL",
       direction: "BULLISH",
-      thesis:
-        "Credit spread captures elevated IV. Target 62% of max profit near $0.50 buyback.",
-      bullInvalidation: "Break below short strike kills the position.",
-      bearInvalidation: "Stock holds above short strike through expiry.",
-      riskOfRuin: "Gap risk on earnings within DTE window.",
-      warnings: "Low open interest on long wing (liquidity risk).",
+      spot: 428,
+      ivr: 72,
+      pcRatio: 0.62,
+      shortStrike: 425,
+      shortType: "put",
+      breakeven: 418,
+      dte: 28,
+      catalystDate: "2026-05-28",
+      catalystType: "EARNINGS",
+      catalystAlignment: "ALIGNED",
+      dailyChangePct: 2.4,
+      idioPct: 68,
+      relativeVolume: 1.6,
+      earningsDate: null,
+      thesis: "Credit spread on elevated IV.",
+      bullInvalidation: "Break below $425 short put.",
+      bearInvalidation: "Hold above $425 through expiry.",
+      riskOfRuin: "Macro gap through structure.",
+      warnings: null,
     });
+    expect(brief.whyItWorks.length).toBeGreaterThan(0);
+    expect(brief.whatKillsIt.length).toBeGreaterThan(0);
     for (const b of [...brief.whyItWorks, ...brief.whatKillsIt]) {
       expect(b.length).toBeLessThanOrEqual(CARD_BULLET_MAX_CHARS);
-      expect(b).not.toMatch(/\d/);
-      expect(b).not.toMatch(/[()]/);
       expect(b.split(/\s+/).length).toBeLessThanOrEqual(CARD_BULLET_MAX_WORDS);
     }
+    expect(brief.whyItWorks.some((b) => /IVR|425|call flow/i.test(b))).toBe(true);
+    expect(brief.whatKillsIt.some((b) => /below|breakeven|macro/i.test(b))).toBe(true);
   });
 });
 
 describe("proseToCardBullets", () => {
   it("splits prose into compliant bullets", () => {
     const bullets = proseToCardBullets(
-      "Edge from elevated implied vol. Thesis needs price to hold support. Second idea stands alone.",
+      "Edge from elevated implied vol. Thesis needs price to hold support.",
     );
     expect(bullets.length).toBeGreaterThan(0);
     expect(bullets.length).toBeLessThanOrEqual(6);
+  });
+});
+
+describe("tightenCardBullet", () => {
+  it("strips header symbols", () => {
+    expect(tightenCardBullet("▲ Hold above short strike zone")).toBe("Hold above short strike zone");
   });
 });
