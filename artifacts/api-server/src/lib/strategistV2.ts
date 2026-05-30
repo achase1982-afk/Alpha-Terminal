@@ -74,9 +74,13 @@ import { isEquityOptionsStrategistMacroEvent } from "./strategistMacroSnapshotFi
 import { getNextEarningsDate, type NextEarnings } from "./earningsService.js";
 import { evaluateCatalyst, deriveTradeDirection, type CatalystEvaluation } from "./catalystEvaluator.js";
 import {
+  CARD_FACE_BULLET_PROMPT,
+  resolveCardBullets,
+  validateCardFaceBulletsFromAi,
   tradeDirectionToCardLabel,
   type DebateVerdict,
 } from "@workspace/strategist-card-bullets";
+import { parseBulletArrayFromAi, parseCardBulletPatch } from "./strategistCardBulletPatch.js";
 import { type OptionContract } from "./optionsStrategist.js";
 import { getStoredIVR, getRealizedVolFromEquityDaily, countRealIvHistoryDays, countProxyIvHistoryDays } from "./ivNormalize.js";
 import { buildMarketContextSnapshot, type MarketContextSnapshot } from "./flowMarketContext.js";
@@ -102,11 +106,9 @@ import { getAnalystPriceTargets, getRecentAnalystGrades, getEarningsSurpriseHist
 import { fetchCompanyFinancialsForSymbol, type CompanyFinancials } from "../routes/sec.js";
 import { clampProfitTargetToMaxPayout } from "./exitTargetMath.js";
 import {
-  buildBriefBullets,
   computeEntryStockBand,
   computeRiskFirstReward,
   enrichExitTargets,
-  enforceCardBullets,
   stripEmDashes,
 } from "./strategistCardEnrichment.js";
 import { buildStrategistFullReport, buildStructureDescriptorFromLegs } from "./strategistFullReport/build.js";
@@ -405,6 +407,8 @@ interface AiTradeResponse {
   bullInvalidation: string;
   bearInvalidation: string;
   riskOfRuin: string;
+  whyBullets: string[];
+  whatKillsBullets: string[];
   confidence: number;
   warnings: string | null;
   // Self-reported by the model after running its own web searches.
@@ -728,6 +732,8 @@ You are not a PM hedging a $1B equity book. You are not sizing 500 contracts.
 You are not a market maker. You are not quoting two-sided.
 You are a prop trader hunting alpha in a concentrated, defined-risk book. Every trade makes money on its own or it does not get recommended.
 
+${CARD_FACE_BULLET_PROMPT}
+
 ## OUTPUT FORMAT
 
 The user's configurable preferences are included in the data package for context. Respect them when possible but if you see a compelling trade outside their preferences, recommend it and explain why.
@@ -743,6 +749,8 @@ Your response must be valid JSON with these fields:
 - breakeven: array of numbers (breakeven price points)
 - companyContext: string (2 sentences: what the company does, what sector, what it is levered to)
 - thesis: string (2-4 sentences on why this specific structure is the best expression of the edge right now, speaking in vol, flow, Greeks, catalyst, and probability terms; if selling close to the money explicitly justify why vol is rich enough to take that risk; if going wide on a spread explicitly justify the risk/reward)
+- whyBullets: string[] (required — see CARD-FACE BULLETS; at least 2 items, max 6)
+- whatKillsBullets: string[] (required — see CARD-FACE BULLETS; at least 2 items, max 6)
 - exitTargets: {profitTarget: number (PER-SHARE option contract price — what the option itself trades for, e.g. 3.30, NOT total dollar P&L on a lot), profitTargetUnderlying: number (underlying share price at that target), stopLoss: number (PER-SHARE option contract price at the stop, e.g. 0.85), stopLossUnderlying: number (underlying share price at that stop), timeStop: string (YYYY-MM-DD format, must be a FUTURE date — if DTE < 7, set timeStop to "" instead of computing expiration minus days)}
 - bullInvalidation: string (specific event or price action that kills the long side of the thesis)
 - bearInvalidation: string (specific event or price action that kills the short side of the thesis)
@@ -1730,6 +1738,9 @@ async function buildRecommendationFromAiState(input: BuildRecommendationFromAiSt
 
   progress?.workerControl?.onPipelinePhase?.("validating");
   const validationResult = validateAiResponse(aiResponse, chain, settings);
+  const bulletModel = isDebateMode
+    ? getStrategistModel(settings.strategistDebateAModelIdx)
+    : getStrategistModel(settings.strategistSoloModelIdx);
   if (!validationResult.valid) {
     try {
       status("Retrying with corrections…");
@@ -2018,6 +2029,14 @@ async function buildRecommendationFromAiState(input: BuildRecommendationFromAiSt
   aiResponse.bearInvalidation = scrubAndLog(aiResponse.bearInvalidation ?? "", "bearInvalidation");
   aiResponse.companyContext = scrubAndLog(aiResponse.companyContext ?? "", "companyContext");
 
+  await ensureCardFaceBullets({
+    ticker,
+    aiResponse,
+    dataPackage,
+    progress,
+    modelOverride: bulletModel,
+  });
+
   const firstLeg = aiResponse.legs[0];
   const expiration = firstLeg?.expiration ?? "";
   const expDate = new Date(expiration);
@@ -2144,33 +2163,19 @@ async function buildRecommendationFromAiState(input: BuildRecommendationFromAiSt
   const maxLossDisplay =
     isMultiExp && maxLoss > 0 ? `$${(maxLoss / 100).toFixed(0)} est.` : undefined;
 
-  const brief = buildBriefBullets({
-    ticker,
+  const cardBullets = resolveCardBullets({
     direction: tradeDir,
-    spot: tickerData.price,
-    ivr: tickerData.ivr,
-    ivrSource: tickerData.ivrSource,
-    pcRatio: Number.isFinite(chainSummary?.putCallVolumeRatio)
-      ? chainSummary.putCallVolumeRatio
-      : null,
-    shortStrike,
-    shortType: shortLeg?.type ?? null,
-    breakeven: Number.isFinite(breakeven) ? breakeven : null,
-    dte,
-    catalystDate: catalystEval.catalystDate,
-    catalystType: catalystEval.catalystType,
-    catalystAlignment: catalystEval.catalystAlignment,
-    dailyChangePct: tickerData.dailyChangePct,
-    idioPct: idioStrengthPct,
-    relativeVolume: tickerData.relativeVolume,
-    earningsDate: tickerData.earningsDate,
-    earningsInsideExpiry: earningsAlert?.insideExpiry ?? false,
+    whyBulletsFromAi: aiResponse.whyBullets,
+    whatKillsBulletsFromAi: aiResponse.whatKillsBullets,
     thesis: aiResponse.thesis ?? "",
     bullInvalidation: aiResponse.bullInvalidation ?? "",
     bearInvalidation: aiResponse.bearInvalidation ?? "",
     riskOfRuin: aiResponse.riskOfRuin ?? "",
     warnings: aiResponse.warnings,
   });
+  if (cardBullets.source === "prose_fallback") {
+    logger.info({ ticker }, "StrategistV2: card bullets from prose fallback");
+  }
   const width =
     legs.length >= 2
       ? Math.max(...legs.map((l) => l.strike)) - Math.min(...legs.map((l) => l.strike))
@@ -2220,8 +2225,8 @@ async function buildRecommendationFromAiState(input: BuildRecommendationFromAiSt
       underlyingAtSignal: tickerData.price,
       entryStockMin: stockBand.min,
       entryStockMax: stockBand.max,
-      whyBullets: enforceCardBullets(brief.whyItWorks),
-      whatKillsBullets: enforceCardBullets(brief.whatKillsIt),
+      whyBullets: cardBullets.whyItWorks,
+      whatKillsBullets: cardBullets.whatKillsIt,
       maxProfitDisplay,
       maxLossDisplay,
       reportDrawer: {
@@ -4081,6 +4086,86 @@ async function callAiForTrade(
   return parseAiTradeRawText(rawText, trace);
 }
 
+function buildCardBulletRetryPrompt(
+  ticker: string,
+  aiResponse: AiTradeResponse,
+  issues: string[],
+): string {
+  const cited = aiResponse.citedHeadlines ?? [];
+  const headlines =
+    cited.length > 0
+      ? cited
+          .slice(0, 5)
+          .map((h) => `- ${h.title}${h.date ? ` (${h.date})` : ""}`)
+          .join("\n")
+      : "(none cited)";
+  return `Your prior trade JSON for ${ticker} failed card-bullet validation.
+
+Issues:
+${issues.map((i) => `- ${i}`).join("\n")}
+
+Trade context (do not change structure):
+- strategy: ${aiResponse.strategy}
+- thesis: ${aiResponse.thesis}
+- bullInvalidation: ${aiResponse.bullInvalidation}
+- bearInvalidation: ${aiResponse.bearInvalidation}
+- riskOfRuin: ${aiResponse.riskOfRuin}
+- catalyst summary: ${aiResponse.catalyst?.summary ?? aiResponse.catalystSummary ?? "n/a"}
+- headlines used:
+${headlines}
+
+Run web search if you need a fresher headline or catalyst date. Respond with ONLY this JSON object (no markdown fences):
+{
+  "whyBullets": ["...", "..."],
+  "whatKillsBullets": ["...", "..."]
+}
+
+Follow CARD-FACE BULLETS rules from your system prompt: pointed, ticker-specific, max 7 words and 50 characters per bullet, at least 2 per array.`;
+}
+
+async function ensureCardFaceBullets(args: {
+  ticker: string;
+  aiResponse: AiTradeResponse;
+  dataPackage: string;
+  progress?: AnalyzeProgressCallbacks;
+  modelOverride?: { provider: "anthropic" | "google" | "openai" | "xai"; model: string; temperature?: number };
+}): Promise<void> {
+  const { ticker, aiResponse, dataPackage, progress, modelOverride } = args;
+  let check = validateCardFaceBulletsFromAi(
+    aiResponse.whyBullets,
+    aiResponse.whatKillsBullets,
+  );
+  if (check.ok) return;
+
+  progress?.onStatus?.("Refining card bullets…");
+  const retryPrompt = buildCardBulletRetryPrompt(ticker, aiResponse, check.issues);
+  try {
+    const r = await callAiForTrade(dataPackage, retryPrompt, progress, modelOverride);
+    const patch = parseCardBulletPatch(r.rawText);
+    if (patch) {
+      if (patch.whyBullets.length > 0) aiResponse.whyBullets = patch.whyBullets;
+      if (patch.whatKillsBullets.length > 0) aiResponse.whatKillsBullets = patch.whatKillsBullets;
+    } else if (r.response.whyBullets?.length || r.response.whatKillsBullets?.length) {
+      aiResponse.whyBullets = r.response.whyBullets;
+      aiResponse.whatKillsBullets = r.response.whatKillsBullets;
+    }
+    check = validateCardFaceBulletsFromAi(
+      aiResponse.whyBullets,
+      aiResponse.whatKillsBullets,
+    );
+    if (check.ok) {
+      logger.info({ ticker }, "StrategistV2: card bullets repaired via follow-up call");
+      return;
+    }
+  } catch (err) {
+    logger.warn({ err, ticker }, "StrategistV2: card bullet follow-up call failed");
+  }
+  logger.warn(
+    { ticker, issues: check.ok ? [] : check.issues },
+    "StrategistV2: card bullets invalid after retry — will use prose fallback",
+  );
+}
+
 // Shared parser for raw AI trade JSON. Used by both Solo (callAiForTrade) and
 // Debate (callAiForTradeViaDebate) code paths. Extracts JSON from the raw
 // text, normalizes the schema, and returns a fully-typed AiTradeResponse.
@@ -4148,6 +4233,8 @@ function parseAiTradeRawText(
       bullInvalidation: "",
       bearInvalidation: "",
       riskOfRuin: "",
+      whyBullets: [],
+      whatKillsBullets: [],
       confidence,
       warnings: resp.warnings ? sanitizeNarrative(String(resp.warnings)) : null,
       sameDayCatalyst: typeof resp.sameDayCatalyst === "boolean" ? resp.sameDayCatalyst : false,
@@ -4222,6 +4309,10 @@ function parseAiTradeRawText(
     bullInvalidation: sanitizeOpt(resp.bullInvalidation),
     bearInvalidation: sanitizeOpt(resp.bearInvalidation),
     riskOfRuin: sanitizeOpt(resp.riskOfRuin),
+    whyBullets: parseBulletArrayFromAi(resp.whyBullets ?? resp.why_it_works),
+    whatKillsBullets: parseBulletArrayFromAi(
+      resp.whatKillsBullets ?? resp.what_kills_it,
+    ),
     confidence,
     warnings: resp.warnings ? sanitizeNarrative(String(resp.warnings)) : null,
     sameDayCatalyst: typeof resp.sameDayCatalyst === "boolean" ? resp.sameDayCatalyst : false,
