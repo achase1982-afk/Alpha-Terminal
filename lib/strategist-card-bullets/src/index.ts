@@ -12,6 +12,8 @@ export {
   CARD_BULLET_MAX_COUNT,
   CARD_BULLET_MIN_CHARS,
   cardBulletWordCount,
+  cardBulletHasPlaceholder,
+  cardBulletHasJoinedIdeas,
   tightenCardBullet,
   validateCardBullet,
   cardBulletSchema,

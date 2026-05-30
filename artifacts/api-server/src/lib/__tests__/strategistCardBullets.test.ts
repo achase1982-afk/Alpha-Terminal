@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
+import { scrubAll } from "../narrativeScrubbers.js";
 import {
   CARD_BULLET_MAX_CHARS,
+  CARD_BULLET_MAX_COUNT,
   CARD_BULLET_MAX_WORDS,
   cardBulletSchema,
   compressCardBullet,
@@ -16,6 +18,12 @@ describe("validateCardBullet", () => {
   it("accepts a compliant bullet with levels and IVR", () => {
     const r = validateCardBullet("DELL IVR 72 — sell rich premium");
     expect(r.ok).toBe(true);
+  });
+
+  it("rejects narrative placeholders and joined ideas", () => {
+    expect(validateCardBullet("DELL {{IVR}} — sell premium").ok).toBe(false);
+    expect(validateCardBullet("Rich premium + firm tape").ok).toBe(false);
+    expect(validateCardBullet("Vol regime, macro gap").ok).toBe(false);
   });
 
   it("tightens wrap-prone prose to max words and chars", () => {
@@ -96,6 +104,15 @@ describe("validateCardFaceBulletsFromAi", () => {
       validateCardFaceBulletsFromAi(["One valid bullet only here"], ["Close below $425", "Macro gap risk"]).ok,
     ).toBe(false);
   });
+
+  it("flags placeholder tokens before scrub", () => {
+    const r = validateCardFaceBulletsFromAi(
+      ["DELL {{IVR}} — sell premium", "May 28 earnings drift supports hold"],
+      ["Close below $425", "Macro gap flips thesis"],
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.issues.some((i) => i.includes("placeholder"))).toBe(true);
+  });
 });
 
 describe("proseToCardBullets", () => {
@@ -104,7 +121,16 @@ describe("proseToCardBullets", () => {
       "Edge from elevated implied vol. Thesis needs price to hold support.",
     );
     expect(bullets.length).toBeGreaterThan(0);
-    expect(bullets.length).toBeLessThanOrEqual(6);
+    expect(bullets.length).toBeLessThanOrEqual(CARD_BULLET_MAX_COUNT);
+  });
+});
+
+describe("card bullet IVR scrub path", () => {
+  it("substitutes {{IVR}} with canonical value for card display", () => {
+    const r = scrubAll("DELL {{IVR}} — sell rich premium", { ivr: 72, pcRatio: null });
+    expect(r.text).not.toContain("{{IVR}}");
+    expect(r.text).toContain("72");
+    expect(validateCardBullet(r.text).ok).toBe(true);
   });
 });
 

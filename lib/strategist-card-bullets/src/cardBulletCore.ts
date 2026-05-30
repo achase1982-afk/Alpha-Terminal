@@ -3,7 +3,7 @@ import { z } from "zod";
 /** iPhone one-line card bullets (13px body). */
 export const CARD_BULLET_MAX_CHARS = 50;
 export const CARD_BULLET_MAX_WORDS = 7;
-export const CARD_BULLET_MAX_COUNT = 6;
+export const CARD_BULLET_MAX_COUNT = 4;
 export const CARD_BULLET_MIN_CHARS = 6;
 
 const FILLER = new Set([
@@ -30,9 +30,19 @@ export function cardBulletWordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
+/** Narrative placeholders must not appear on the card face. */
+export function cardBulletHasPlaceholder(text: string): boolean {
+  return /\{\{[A-Z0-9_]+\}\}/.test(text);
+}
+
+/** Card bullets are one idea each — no "+" or comma splicing. */
+export function cardBulletHasJoinedIdeas(text: string): boolean {
+  return /\s\+\s/.test(text) || /,/.test(text);
+}
+
 export function tightenCardBullet(raw: string): string | null {
   let s = raw
-    .replace(/\u2014/g, ",")
+    .replace(/\u2014/g, " — ")
     .replace(/^[⚠️~▲▼]+\s*/u, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -59,8 +69,11 @@ export function tightenCardBullet(raw: string): string | null {
 export function validateCardBullet(
   text: string,
 ): { ok: true; bullet: string } | { ok: false; reason: string } {
+  if (cardBulletHasPlaceholder(text)) return { ok: false, reason: "placeholder" };
   const bullet = tightenCardBullet(text);
   if (!bullet) return { ok: false, reason: "invalid" };
+  if (cardBulletHasPlaceholder(bullet)) return { ok: false, reason: "placeholder" };
+  if (cardBulletHasJoinedIdeas(bullet)) return { ok: false, reason: "joined_ideas" };
   return { ok: true, bullet };
 }
 
@@ -69,6 +82,8 @@ export const cardBulletSchema = z
   .min(CARD_BULLET_MIN_CHARS)
   .max(CARD_BULLET_MAX_CHARS)
   .refine((s) => !/[\r\n]/.test(s), { message: "card bullet must be a single line" })
+  .refine((s) => !cardBulletHasPlaceholder(s), { message: "card bullet must not contain placeholders" })
+  .refine((s) => !cardBulletHasJoinedIdeas(s), { message: "card bullet must be one idea" })
   .refine((s) => cardBulletWordCount(s) <= CARD_BULLET_MAX_WORDS, {
     message: `card bullet must be at most ${CARD_BULLET_MAX_WORDS} words`,
   });
@@ -126,7 +141,15 @@ export function enforceCardBullets(
 
   for (const raw of bullets) {
     if (out.length >= max) break;
-    const candidate = tightenCardBullet(raw) ?? compressCardBullet(raw);
+    const validated = validateCardBullet(raw);
+    const candidate = validated.ok
+      ? validated.bullet
+      : (() => {
+          const compressed = compressCardBullet(raw);
+          if (!compressed) return null;
+          const recheck = validateCardBullet(compressed);
+          return recheck.ok ? recheck.bullet : null;
+        })();
     if (!candidate) continue;
     const key = candidate.toLowerCase();
     if (seen.has(key)) continue;
