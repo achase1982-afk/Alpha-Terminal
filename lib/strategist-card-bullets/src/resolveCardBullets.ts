@@ -3,6 +3,8 @@ import {
   CARD_BULLET_MAX_CHARS,
   CARD_BULLET_MAX_COUNT,
   CARD_BULLET_MAX_WORDS,
+  cardBulletHasJoinedIdeas,
+  cardBulletHasPlaceholder,
   enforceCardBullets,
   proseToCardBullets,
 } from "./cardBulletCore.js";
@@ -95,6 +97,21 @@ export function validateCardFaceBulletsFromAi(
 
   const why = enforceCardBullets(rawWhy);
   const kill = enforceCardBullets(rawKill);
+
+  for (const [label, raw] of [
+    ["whyBullets", rawWhy],
+    ["whatKillsBullets", rawKill],
+  ] as const) {
+    for (const b of raw) {
+      if (typeof b !== "string") continue;
+      if (cardBulletHasPlaceholder(b)) {
+        issues.push(`${label}: contains {{...}} placeholder — use numeric IVR/P/C from data`);
+      }
+      if (cardBulletHasJoinedIdeas(b)) {
+        issues.push(`${label}: one idea per bullet — no "+" or comma joining`);
+      }
+    }
+  }
 
   if (why.length < MIN_BULLETS) {
     issues.push(
