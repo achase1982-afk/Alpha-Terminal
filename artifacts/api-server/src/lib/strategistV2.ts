@@ -2313,6 +2313,13 @@ async function buildRecommendationFromAiState(input: BuildRecommendationFromAiSt
       polygonHighlights?.putCallVolumeRatio != null && Number.isFinite(polygonHighlights.putCallVolumeRatio)
         ? polygonHighlights.putCallVolumeRatio
         : null;
+    const atmCallIv = chainSummary?.atmCallIV ?? null;
+    const atmPutIv = chainSummary?.atmPutIV ?? null;
+    const atmIvPct =
+      atmCallIv != null && atmPutIv != null
+        ? (atmCallIv + atmPutIv) / 2
+        : atmCallIv ?? atmPutIv ?? chainSummary?.frontMonthIV ?? null;
+
     result.recommendation!.fullReport = await buildStrategistFullReport({
       ticker,
       generatedAt: new Date(),
@@ -2326,17 +2333,20 @@ async function buildRecommendationFromAiState(input: BuildRecommendationFromAiSt
       breakeven,
       riskRewardDisplay: rr.display,
       strategyName: stratLabel,
+      strategyType: aiResponse.strategy,
       structureDescriptor: buildStructureDescriptorFromLegs(aiResponse.strategy, legs, dte),
       direction,
       legs,
       dte,
       ivr: tickerData.ivr,
+      atmIvPct,
       putCallVolumeRatio: chainSummary?.putCallVolumeRatio ?? null,
       polygonPutCallRatio: polygonPc,
       ioScore,
       idioPct: idioStrengthPct,
       macroPct,
       sector: tickerData.sector,
+      companyContext: aiResponse.companyContext,
       catalystInWindow: catalystEval?.catalystInWindow ?? false,
       nextEarningsDate: tickerData.earningsDate,
       lastEarningsDate: tickerData.lastEarningsDate,
@@ -2348,14 +2358,7 @@ async function buildRecommendationFromAiState(input: BuildRecommendationFromAiSt
       riskOfRuin: aiResponse.riskOfRuin,
       prose: {
         confidenceRead: aiResponse.reportConfidenceRead,
-        whyInPlay: aiResponse.reportWhyInPlay,
-        thesisWithNumbers: aiResponse.reportThesisWithNumbers,
-        streetVsTapeProse: aiResponse.reportStreetVsTape,
-        idioMacroNote: aiResponse.reportIdioMacroNote,
-        sectorExposureNote: aiResponse.reportSectorNote,
-        whyStructure: aiResponse.reportWhyStructure,
         bearCase: aiResponse.reportBearCase,
-        riskManagementProse: aiResponse.reportRiskManagement,
       },
     });
   } catch (reportErr) {
