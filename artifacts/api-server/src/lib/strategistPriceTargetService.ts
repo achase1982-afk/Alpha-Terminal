@@ -9,6 +9,7 @@ import {
   type AnalystGradeDbRow,
   type AnalystPriceTargetsRow,
 } from "./fmpDataService.js";
+import { getFmpAnalystGrades, getFmpAnalystPriceTargets } from "./fmpClient.js";
 import { logger } from "./logger.js";
 import type { RevisionTrend } from "./strategistFullReport/types.js";
 
@@ -75,16 +76,59 @@ export async function fetchNormalizedPriceTargets(
     recent: [],
   };
 
+  const sym = (ticker || "").toUpperCase().trim().replace(/^\$/, "");
   let pt: AnalystPriceTargetsRow | null = null;
   let grades: AnalystGradeDbRow[] = [];
+  let liveFetch = false;
   try {
     [pt, grades] = await Promise.all([
-      getAnalystPriceTargets(ticker),
-      getRecentAnalystGrades(ticker, GRADES_WINDOW_DAYS),
+      getAnalystPriceTargets(sym),
+      getRecentAnalystGrades(sym, GRADES_WINDOW_DAYS),
     ]);
   } catch (err) {
-    logger.warn({ ticker, err }, "Strategist PT service: fetch failed");
-    return { ...empty, staleReason: "fetch_failed" };
+    logger.warn({ ticker: sym, err }, "Strategist PT service: DB fetch failed");
+  }
+
+  if (!pt) {
+    try {
+      const live = await getFmpAnalystPriceTargets(sym);
+      if (live) {
+        liveFetch = true;
+        const today = new Date().toISOString().slice(0, 10);
+        pt = {
+          ticker: sym,
+          targetHigh: live.targetHigh,
+          targetLow: live.targetLow,
+          targetMedian: live.targetMedian,
+          targetConsensus: live.targetConsensus,
+          numAnalysts: live.numAnalysts,
+          asOfDate: today,
+          updatedAt: new Date(),
+        };
+        logger.info({ ticker: sym }, "Strategist PT service: using live FMP price-target-consensus");
+      }
+    } catch (err) {
+      logger.warn({ ticker: sym, err }, "Strategist PT service: live FMP PT fetch failed");
+    }
+  }
+
+  if (grades.length === 0) {
+    try {
+      const from = new Date();
+      from.setUTCDate(from.getUTCDate() - GRADES_WINDOW_DAYS);
+      const liveGrades = await getFmpAnalystGrades(sym, from);
+      grades = liveGrades.map((g) => ({
+        ticker: sym,
+        actionDate: g.date,
+        action: g.action,
+        gradingCompany: g.gradingCompany,
+        previousGrade: g.previousGrade,
+        newGrade: g.newGrade,
+      }));
+      if (grades.length > 0) liveFetch = true;
+    } catch (err) {
+      logger.warn({ ticker: sym, err }, "Strategist PT service: live FMP grades fetch failed");
+    }
   }
 
   if (!pt) {
@@ -102,7 +146,7 @@ export async function fetchNormalizedPriceTargets(
   if (consensus == null || !Number.isFinite(consensus) || consensus <= 0) {
     return { ...empty, asOfDate: asOf, staleReason: "invalid_consensus" };
   }
-  if (count != null && count < 2) {
+  if (count != null && count < 2 && !liveFetch) {
     return { ...empty, asOfDate: asOf, staleReason: "low_coverage" };
   }
 

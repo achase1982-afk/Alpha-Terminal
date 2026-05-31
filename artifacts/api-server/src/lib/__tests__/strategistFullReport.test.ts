@@ -1,24 +1,28 @@
 import { describe, it, expect } from "vitest";
 import { sanitizeReportDisplayText } from "../strategistFullReport/sanitizeReport.js";
-import { validateReportProse, stripDigitsFromProse } from "../strategistFullReport/validateProse.js";
+import { validateReportProse, cleanReportProse } from "../strategistFullReport/validateProse.js";
+import { buildBearCaseProse, looksLikeMaxProfitScenario } from "../strategistFullReport/reportFormat.js";
 import { streetTapeAlignment } from "../strategistTapeSignals.js";
 
 describe("validateReportProse", () => {
-  it("rejects prose containing digits", () => {
+  it("accepts prose containing digits", () => {
     const r = validateReportProse({
       confidenceRead: "Low conviction setup with no edge.",
-      whyInPlay: "Vol is elevated.",
-      thesisWithNumbers: "Structure fits the regime.",
+      whyInPlay: "IVR 72 and P/C 0.72 support the trade.",
+      thesisWithNumbers: "Susquehanna PT $700 vs spot $420.",
       streetVsTapeProse: "Tape and street agree.",
-      idioMacroNote: "Idio leads macro.",
+      idioMacroNote: "Idio 65% leads macro 35%.",
       sectorExposureNote: "Sector beta matters.",
-      whyStructure: "Spread defines risk.",
-      bearCase: "Gap risk remains.",
-      riskManagementProse: "Honor stops.",
+      whyStructure: "Butterfly sells post-crush vol.",
+      bearCase: "Gap below $407 loses the debit.",
+      riskManagementProse: "Stop at 54% of max loss.",
     });
     expect(r.ok).toBe(true);
+  });
+
+  it("rejects prose that is too short", () => {
     const bad = validateReportProse({
-      confidenceRead: "Score is 56",
+      confidenceRead: "Short",
       whyInPlay: "Vol is elevated.",
       thesisWithNumbers: "Structure fits the regime.",
       streetVsTapeProse: "Tape and street agree.",
@@ -31,8 +35,10 @@ describe("validateReportProse", () => {
     expect(bad.ok).toBe(false);
   });
 
-  it("strips digits for fallback synthesis", () => {
-    expect(stripDigitsFromProse("IVR 100 with 2.5 delta")).not.toMatch(/\d/);
+  it("cleanReportProse keeps digits", () => {
+    const s = cleanReportProse("IVR 100 with 2.5 delta and PT $700");
+    expect(s).toMatch(/\d/);
+    expect(s).toContain("700");
   });
 });
 
@@ -46,6 +52,20 @@ describe("sanitizeReportDisplayText", () => {
     expect(s).not.toContain("—");
     expect(s).not.toContain("_");
     expect(s).toContain("vol rich");
+  });
+});
+
+describe("buildBearCaseProse", () => {
+  it("excludes max-profit upside lines from bear case for bullish trades", () => {
+    const body = buildBearCaseProse({
+      direction: "BULLISH",
+      riskOfRuin: "Macro gap through structure.",
+      bullInvalidation: "Close above $460 caps profit on the fly.",
+      bearInvalidation: "Close below $407 invalidates the bull put.",
+    });
+    expect(looksLikeMaxProfitScenario("Close above $460 caps profit")).toBe(true);
+    expect(body).not.toMatch(/caps profit/i);
+    expect(body).toMatch(/407|Macro gap/i);
   });
 });
 
