@@ -10,7 +10,12 @@ export function formatReportDate(iso: string | null | undefined): string {
 
 export function fmtUsd(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return NA;
-  return `$${n.toFixed(2)}`;
+  const sign = n < 0 ? "-" : "";
+  const abs = Math.abs(n);
+  if (abs >= 1000) {
+    return `${sign}$${abs.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+  return `${sign}$${abs.toFixed(2)}`;
 }
 
 export function fmtPct(n: number | null | undefined): string {
@@ -23,6 +28,9 @@ export function fmtMaxLossLabel(maxLossField: number): string {
   if (!Number.isFinite(maxLossField) || maxLossField <= 0) return NA;
   const perShare = maxLossField / 100;
   const perContract = perShare * 100;
+  if (perContract >= 1000) {
+    return `${fmtUsd(perContract)}/contract`;
+  }
   if (perContract >= 100) {
     return `$${perContract.toFixed(0)}/contract`;
   }

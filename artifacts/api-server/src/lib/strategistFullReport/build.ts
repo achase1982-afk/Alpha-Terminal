@@ -17,6 +17,13 @@ import {
   fmtUsd,
   formatReportDate,
 } from "./reportFormat.js";
+import {
+  analystCountLabel,
+  buildReportProseFromChips,
+  extractSectorPeerTickers,
+  formatAtmIvPct,
+  formatEarningsChipValue,
+} from "./reportNarrative.js";
 
 function chip(label: string, value: string, tone: ReportTone = "white"): StatChip {
   return { label, value: value || NA, tone };
@@ -58,22 +65,10 @@ function fmtIoResidualZ(ioScore: IOScoreResult): string {
   return ioScore.residualReturnZScore.toFixed(2);
 }
 
-function formatEarningsChip(
-  nextEarnings: string | null,
-  lastEarnings: string | null,
-  earningsDaysAway: number | null,
-): string {
-  if (nextEarnings?.trim()) {
-    const d = formatReportDate(nextEarnings);
-    if (earningsDaysAway != null && Number.isFinite(earningsDaysAway)) {
-      return `Next ${d} (${earningsDaysAway}d)`;
-    }
-    return `Next ${d}`;
-  }
-  if (lastEarnings?.trim()) {
-    return `Last ${formatReportDate(lastEarnings)}`;
-  }
-  return NA;
+function resolveAtmIvPct(args: { atmIvPct?: number | null; iv30?: number | null }): number | null {
+  if (args.atmIvPct != null && Number.isFinite(args.atmIvPct)) return args.atmIvPct;
+  if (args.iv30 != null && Number.isFinite(args.iv30)) return args.iv30;
+  return null;
 }
 
 function shortLegDeltaChip(legs: CandidateLeg[]): StatChip {
@@ -121,12 +116,14 @@ export type BuildFullReportArgs = {
   breakeven: number;
   riskRewardDisplay: string;
   strategyName: string;
+  strategyType?: string;
   structureDescriptor: string;
   direction: string;
   legs: CandidateLeg[];
   dte: number;
   ivr: number | null;
   iv30?: number | null;
+  atmIvPct?: number | null;
   hv30?: number | null;
   /** Schwab chain volume P/C */
   putCallVolumeRatio: number | null;
@@ -136,6 +133,7 @@ export type BuildFullReportArgs = {
   idioPct: number;
   macroPct: number;
   sector: string;
+  companyContext?: string;
   catalystInWindow: boolean;
   nextEarningsDate: string | null;
   lastEarningsDate?: string | null;
@@ -148,7 +146,6 @@ export type BuildFullReportArgs = {
     timeStop?: string;
   };
   prose?: Partial<ReportProse>;
-  companyContext?: string;
   thesis?: string;
   bullInvalidation?: string;
   bearInvalidation?: string;
@@ -168,6 +165,7 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
     breakeven,
     riskRewardDisplay,
     strategyName,
+    strategyType = "",
     structureDescriptor,
     direction,
     legs,
@@ -176,9 +174,10 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
     putCallVolumeRatio,
     polygonPutCallRatio,
     ioScore,
-    idioPct,
-    macroPct,
+    idioPct: rawIdioPct,
+    macroPct: rawMacroPct,
     sector,
+    companyContext,
     catalystInWindow,
     nextEarningsDate,
     lastEarningsDate,
@@ -190,6 +189,11 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
     bearInvalidation,
     riskOfRuin,
   } = args;
+
+  const regressionOk = ioRegressionAvailable(ioScore);
+  const idioPct = regressionOk ? rawIdioPct : null;
+  const macroPct = regressionOk ? rawMacroPct : null;
+  const atmIvPct = resolveAtmIvPct({ atmIvPct: args.atmIvPct, iv30: args.iv30 });
 
   const flowPc =
     polygonPutCallRatio != null && Number.isFinite(polygonPutCallRatio)
@@ -206,7 +210,7 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
     signalPrice,
     dailyChangePct: args.dailyChangePct ?? 0,
     putCallVolumeRatio: flowPc,
-    residualZ: ioRegressionAvailable(ioScore) ? ioScore.residualReturnZScore : null,
+    residualZ: regressionOk ? ioScore.residualReturnZScore : null,
     shortStrike: legs.find((l) => l.side === "sell")?.strike ?? null,
   });
   const alignment = pt.available
@@ -214,35 +218,50 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
     : "aligned";
 
   const thesisClean = thesis?.trim() ? cleanReportProse(thesis) : "";
-  const whyStructureDefault = thesisClean || `${strategyName} expresses the edge with defined risk.`;
+  const sectorPeers = extractSectorPeerTickers(
+    [companyContext, proseIn?.sectorExposureNote, thesis].filter(Boolean).join(" "),
+    ticker,
+  );
 
-  const streetDefault = pt.available
-    ? alignment === "divergent"
-      ? `Sell-side revision tone (${pt.revisionTrend}) and ${flowPcSource} tape (${tape.tapeVerdict}, P/C ${flowPc ?? "n/a"}) disagree — size as a structure/vol bet, not consensus plus flow confirmation.`
-      : `Street revision trend (${pt.revisionTrend}) and ${flowPcSource} tape (${tape.tapeVerdict}, P/C ${flowPc ?? "n/a"}) align with the trade direction.`
-    : gradesOrCoverageNote(pt, thesisClean);
+  const chipProse = buildReportProseFromChips({
+    ticker,
+    ivr,
+    atmIvPct,
+    flowPc,
+    flowPcSource,
+    catalystInWindow,
+    pt,
+    tape,
+    alignment,
+    ioScore,
+    ioRegressionAvailable: regressionOk,
+    idioPct,
+    macroPct,
+    sector,
+    sectorPeers,
+    strategyName,
+    direction,
+    nextEarningsDate,
+    lastEarningsDate: lastEarningsDate ?? null,
+    earningsDaysAway: earningsDaysAway ?? null,
+    enrichedExit,
+    thesisFallback: thesisClean || `${strategyName} expresses the edge with defined risk.`,
+  });
 
   const prose: ReportProse = {
     confidenceRead: cleanReportProse(
       proseIn?.confidenceRead?.trim() || defaultConfidenceRead(confidence, tier),
     ),
-    whyInPlay: cleanReportProse(
-      proseIn?.whyInPlay?.trim() ||
-        `IV rank ${ivr != null ? Math.round(ivr) : "n/a"}, ${flowPcSource} P/C ${flowPc ?? "n/a"}, and catalyst window ${catalystInWindow ? "active" : "clear"} frame why ${ticker} is in play for this structure.`,
+    whyInPlay: cleanReportProse(chipProse.whyInPlay),
+    thesisWithNumbers: cleanReportProse(
+      thesisClean
+        ? `${thesisClean} (IVR ${ivr != null ? Math.round(ivr) : NA}, ATM IV ${formatAtmIvPct(atmIvPct)}.)`
+        : chipProse.thesisWithNumbers,
     ),
-    thesisWithNumbers: cleanReportProse(proseIn?.thesisWithNumbers?.trim() || thesisClean || NA),
-    streetVsTapeProse: cleanReportProse(proseIn?.streetVsTapeProse?.trim() || streetDefault),
-    idioMacroNote: cleanReportProse(
-      proseIn?.idioMacroNote?.trim() ||
-        `Idio ${idioPct}% vs macro ${macroPct}% attribution — favor the larger sleeve when sizing narrative risk.${ioRegressionAvailable(ioScore) ? ` Beta ${ioScore.beta.toFixed(2)}, residual Z ${ioScore.residualReturnZScore.toFixed(2)}.` : ""}`,
-    ),
-    sectorExposureNote: cleanReportProse(
-      proseIn?.sectorExposureNote?.trim() ||
-        (sector
-          ? `${ticker} trades with ${sector} beta — peer and macro moves can dominate a single-name options structure.`
-          : `Sector peer map is thin; macro and index correlation still matter for ${ticker}.`),
-    ),
-    whyStructure: cleanReportProse(proseIn?.whyStructure?.trim() || whyStructureDefault),
+    streetVsTapeProse: cleanReportProse(chipProse.streetVsTapeProse),
+    idioMacroNote: cleanReportProse(chipProse.idioMacroNote),
+    sectorExposureNote: cleanReportProse(chipProse.sectorExposureNote),
+    whyStructure: cleanReportProse(chipProse.whyStructure),
     bearCase: cleanReportProse(
       buildBearCaseProse({
         direction,
@@ -252,16 +271,25 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
         reportBearCase: proseIn?.bearCase,
       }),
     ),
-    riskManagementProse: cleanReportProse(
-      proseIn?.riskManagementProse?.trim() ||
-        `Target ${enrichedExit.profitTargetPct ?? 62}% of max profit at $${enrichedExit.profitTarget?.toFixed(2) ?? "n/a"} buyback; stop ${enrichedExit.stopLossPct ?? 30}% of max loss at $${enrichedExit.stopLoss?.toFixed(2) ?? "n/a"}; time stop ${formatReportDate(enrichedExit.timeStop)}.`,
-    ),
+    riskManagementProse: cleanReportProse(chipProse.riskManagementProse),
   };
 
   const profitTgtChip =
     enrichedExit.profitTargetPct != null && enrichedExit.profitTarget != null
       ? `${enrichedExit.profitTargetPct}% @ $${enrichedExit.profitTarget.toFixed(2)}`
       : fmtPct(enrichedExit.profitTargetPct);
+
+  const earningsChip = formatEarningsChipValue(
+    nextEarningsDate,
+    lastEarningsDate ?? null,
+    earningsDaysAway ?? null,
+    generatedAt,
+  );
+
+  const modeledFields = ["Entry stock band", "Exit buyback prices"];
+  if (strategyType.includes("calendar")) {
+    modeledFields.push("Calendar max profit est.");
+  }
 
   const genIso = generatedAt.toISOString();
 
@@ -293,6 +321,7 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
     whyInPlay: {
       chips: [
         chip("IV Rank", ivr != null ? String(Math.round(ivr)) : NA),
+        chip("ATM IV", formatAtmIvPct(atmIvPct)),
         chip(flowPcSource, flowPc != null ? String(flowPc) : NA),
         chip("Catalyst in window", catalystInWindow ? "yes" : "no", catalystInWindow ? "amber" : "white"),
       ],
@@ -301,8 +330,9 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
     thesisWithNumbers: {
       chips: [
         chip("IV Rank", ivr != null ? String(Math.round(ivr)) : NA),
+        chip("ATM IV", formatAtmIvPct(atmIvPct)),
         shortLegDeltaChip(legs),
-        chip("Earnings", formatEarningsChip(nextEarningsDate, lastEarningsDate ?? null, earningsDaysAway ?? null), "amber"),
+        chip("Earnings", earningsChip, "amber"),
       ],
       body: prose.thesisWithNumbers,
     },
@@ -313,11 +343,17 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
           ? [
               chip("Consensus PT", fmtUsd(pt.consensusPT)),
               chip("vs signal", fmtPct(pt.ptVsSignalPct), (pt.ptVsSignalPct ?? 0) >= 0 ? "green" : "red"),
-              chip("Analysts", pt.analystCount != null ? String(pt.analystCount) : NA),
+              chip("Analysts", analystCountLabel(pt)),
               chip("Revisions", `${pt.revisions.raises}↑ ${pt.revisions.cuts}↓`),
               chip("Trend", pt.revisionTrend),
             ]
-          : [chip("Coverage", "no sell-side row in feed", "amber")],
+          : pt.recent.length > 0
+            ? [
+                chip("Coverage", `${pt.recent.length} grade actions`, "amber"),
+                chip("Revisions", `${pt.revisions.raises}↑ ${pt.revisions.cuts}↓`),
+                chip("Trend", pt.revisionTrend),
+              ]
+            : [chip("Coverage", "no sell-side row in feed", "amber")],
         recent: pt.recent,
       },
       buySide: {
@@ -325,7 +361,7 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
           chip("Tape", tape.tapeVerdict, tape.tapeVerdict === "accumulation" ? "green" : tape.tapeVerdict === "distribution" ? "red" : "white"),
           chip("Flow bias", tape.flowBias),
           chip("P/C", tape.pcRatio != null ? String(tape.pcRatio) : NA),
-          chip("Residual Z", ioRegressionAvailable(ioScore) && tape.residualZ != null ? tape.residualZ.toFixed(2) : NA),
+          chip("Residual Z", regressionOk && tape.residualZ != null ? tape.residualZ.toFixed(2) : NA),
         ],
       },
       tapeVerdict: tape.tapeVerdict,
@@ -334,8 +370,8 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
     },
     idioMacro: {
       chips: [
-        chip("Idio", fmtPct(idioPct), "green"),
-        chip("Macro", fmtPct(macroPct), "amber"),
+        chip("Idio", idioPct != null ? fmtPct(idioPct) : NA, "green"),
+        chip("Macro", macroPct != null ? fmtPct(macroPct) : NA, "amber"),
         chip("Beta", fmtIoBeta(ioScore)),
         chip("R²", fmtIoRSquared(ioScore)),
         chip("Resid Z", fmtIoResidualZ(ioScore)),
@@ -343,7 +379,7 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
       body: prose.idioMacroNote,
     },
     sectorExposure: {
-      peers: sector ? [sector] : [],
+      peers: sectorPeers.length > 0 ? sectorPeers : sector ? [sector] : [],
       drivers: ["Rates", "Sector beta", "Peer earnings"],
       body: prose.sectorExposureNote,
     },
@@ -367,19 +403,9 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
         "IOScore engine",
         "IVR store",
       ],
-      modeledFields: ["Entry stock band", "Exit buyback prices", "Calendar max profit est."],
+      modeledFields,
     },
   };
 
   return sanitizeFullReportForDisplay(report);
-}
-
-function gradesOrCoverageNote(pt: NormalizedPriceTargetSnapshot, thesis: string): string {
-  if (pt.recent.length > 0) {
-    return `No consensus PT row in our feed, but recent grade actions are listed below. Reconcile any sell-side names in the thesis against this feed.`;
-  }
-  if (/\b(upgrade|downgrade|price target|PT \$|analyst)\b/i.test(thesis)) {
-    return "Thesis cites sell-side action but our FMP analyst feed has no PT row for this ticker — treat street numbers in the thesis as search-sourced until the feed is populated.";
-  }
-  return "No sell-side coverage in our feed. Tape still renders from chain and Polygon flow when present.";
 }

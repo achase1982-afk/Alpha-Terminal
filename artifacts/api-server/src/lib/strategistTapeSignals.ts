@@ -32,8 +32,8 @@ export type TapeSignalSnapshot = {
 
 function classifyFlowBias(pc: number | null): FlowBias {
   if (pc == null || !Number.isFinite(pc)) return "mixed";
-  if (pc < 0.7) return "call-buy/put-sell";
-  if (pc > 1.3) return "put-buy/call-sell";
+  if (pc <= 0.85) return "call-buy/put-sell";
+  if (pc >= 1.15) return "put-buy/call-sell";
   return "mixed";
 }
 
@@ -51,8 +51,8 @@ function classifyTapeVerdict(args: {
   if (dailyChangePct < -1.5) score -= 1;
   if (residualZ != null && residualZ > 1) score += 1;
   if (residualZ != null && residualZ < -1) score -= 1;
-  if (pc != null && pc < 0.6) score += 1;
-  if (pc != null && pc > 1.4) score -= 1;
+  if (pc != null && pc <= 0.85) score += 1;
+  if (pc != null && pc >= 1.15) score -= 1;
   if (score >= 2) return "accumulation";
   if (score <= -2) return "distribution";
   return "mixed";

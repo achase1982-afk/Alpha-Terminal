@@ -1,5 +1,20 @@
 import type { StrategistFullReport } from "./types.js";
 
+const MONTHS =
+  "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec";
+
+/** Collapse broken numeric/date ranges after dash stripping (e.g. "$380 $390" → "$380–$390"). */
+export function repairDisplayRanges(text: string): string {
+  let s = text;
+  s = s.replace(/(\$\d[\d,]*(?:\.\d+)?)\s+(\$\d[\d,]*(?:\.\d+)?)/g, "$1–$2");
+  s = s.replace(
+    new RegExp(`\\b(${MONTHS})\\s+(\\d{1,2})\\s+(\\d{1,2})\\b`, "g"),
+    "$1 $2–$3",
+  );
+  s = s.replace(/(\d+\.\d+)\s+(\d+\.\d+)(?!\s*%)/g, "$1–$2");
+  return s;
+}
+
 /** Remove external links and normalize punctuation for drawer display. */
 export function sanitizeReportDisplayText(text: string): string {
   if (!text) return text;
@@ -7,11 +22,13 @@ export function sanitizeReportDisplayText(text: string): string {
     .replace(/https?:\/\/[^\s)\]}>,]+/gi, " ")
     .replace(/\bwww\.[^\s)\]}>,]+/gi, " ")
     .replace(/\b[a-z0-9][-a-z0-9]*\.(?:com|org|net|io|co|uk|edu|gov)(?:\/[^\s)\]}>,]*)?/gi, " ")
-    .replace(/\u2014/g, " ")
-    .replace(/\u2013/g, " ")
+    .replace(/\s*—\s*/g, ". ")
+    .replace(/\s+-\s+/g, "–")
     .replace(/_/g, " ")
     .replace(/\s{2,}/g, " ")
     .trim();
+  s = repairDisplayRanges(s);
+  s = s.replace(/\.\s*\./g, ".");
   return s;
 }
 

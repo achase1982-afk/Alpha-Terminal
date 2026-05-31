@@ -298,13 +298,37 @@ export async function getNextEarningsDate(symbol: string): Promise<NextEarnings>
       }
     }
 
-    const lastEarningsDate = extras.lastEarningsDate ?? null;
+    const today = new Date().toISOString().slice(0, 10);
+    let lastEarningsDate = extras.lastEarningsDate ?? null;
+    let nextEarningsDate = earningsDate;
+
+    if (nextEarningsDate && nextEarningsDate < today) {
+      if (!lastEarningsDate || lastEarningsDate < nextEarningsDate) {
+        lastEarningsDate = nextEarningsDate;
+      }
+      nextEarningsDate = null;
+    }
+
+    if (!nextEarningsDate && vendor?.earningsDate && vendor.earningsDate >= today) {
+      nextEarningsDate = vendor.earningsDate;
+      confirmed = vendor.confirmed;
+      source = source ?? "vendor_primary";
+      extras = { ...extras, ...vendor };
+      if (!lastEarningsDate && vendor.lastEarningsDate) {
+        lastEarningsDate = vendor.lastEarningsDate;
+      }
+    }
+
+    if (!nextEarningsDate && !lastEarningsDate && vendor?.lastEarningsDate) {
+      lastEarningsDate = vendor.lastEarningsDate;
+    }
+
     const result: NextEarnings = {
       symbol: sym,
-      earningsDate,
+      earningsDate: nextEarningsDate,
       confirmed,
       source,
-      daysAway: earningsDate ? daysFromTodayTo(earningsDate) : null,
+      daysAway: nextEarningsDate ? daysFromTodayTo(nextEarningsDate) : null,
       time: extras.time ?? null,
       epsEstimate: extras.epsEstimate ?? null,
       epsPrior: extras.epsPrior ?? null,
