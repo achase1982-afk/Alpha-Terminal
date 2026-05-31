@@ -71,21 +71,6 @@ function buildDataWhy(input: CardBulletBuildInput): string[] {
     }
   }
 
-  if (
-    input.spot != null &&
-    input.shortStrike != null &&
-    Number.isFinite(input.spot) &&
-    Number.isFinite(input.shortStrike)
-  ) {
-    const spot = formatMoney(input.spot);
-    const strike = formatMoney(input.shortStrike);
-    if (input.shortType === "put" && bullish) {
-      pushUnique(out, tightenCardBullet(`Spot ${spot} above ${strike} short put`));
-    } else if (input.shortType === "call" && bearish) {
-      pushUnique(out, tightenCardBullet(`Spot ${spot} below ${strike} short call`));
-    }
-  }
-
   if (input.pcRatio != null && Number.isFinite(input.pcRatio)) {
     const pc = input.pcRatio.toFixed(2).replace(/\.?0+$/, "");
     if (bullish && input.pcRatio < 0.85) {

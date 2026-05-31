@@ -778,7 +778,7 @@ export async function getFmpStockSplits(symbol: string): Promise<FmpStockSplitsR
  * FMP stock peers — same sector / similar market cap on the exchange.
  * @see https://financialmodelingprep.com/stable/stock-peers?symbol=
  */
-export async function getFmpStockPeers(symbol: string, limit = 6): Promise<string[]> {
+export async function getFmpStockPeers(symbol: string, limit = 24): Promise<string[]> {
   const sym = (symbol || "").toUpperCase().trim().replace(/^\$/, "");
   if (!sym) return [];
 
