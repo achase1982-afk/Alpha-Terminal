@@ -3,6 +3,7 @@ import {
   CARD_BULLET_MAX_CHARS,
   CARD_BULLET_MAX_COUNT,
   cardBulletHasJoinedIdeas,
+  cardBulletHasMultipleSentences,
   cardBulletHasPlaceholder,
   enforceCardBullets,
   proseToCardBullets,
@@ -108,6 +109,9 @@ export function validateCardFaceBulletsFromAi(
       }
       if (cardBulletHasJoinedIdeas(b)) {
         issues.push(`${label}: one idea per bullet — no "+" or comma joining`);
+      }
+      if (cardBulletHasMultipleSentences(b)) {
+        issues.push(`${label}: exactly one sentence per bullet — never two sentences in one string`);
       }
     }
   }

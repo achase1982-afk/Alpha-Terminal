@@ -40,6 +40,35 @@ export function cardBulletHasJoinedIdeas(text: string): boolean {
   return /\s\+\s/.test(text) || /,/.test(text);
 }
 
+/** Keep only the first sentence (ignores decimals like $425.00). */
+export function takeFirstCardBulletSentence(text: string): string {
+  const s = text.trim();
+  if (!s) return s;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch !== "." && ch !== "!" && ch !== "?") continue;
+    if (ch === "." && i > 0 && i < s.length - 1 && /\d/.test(s[i - 1]) && /\d/.test(s[i + 1])) {
+      continue;
+    }
+    const after = s.slice(i + 1);
+    if (after.length === 0) return s.slice(0, i + 1).trim();
+    if (/^\s+/.test(after)) {
+      const remainder = after.trim().replace(/^[.!?]+/, "").trim();
+      if (remainder.length > 0) return s.slice(0, i + 1).trim();
+    }
+  }
+  return s;
+}
+
+/** More than one sentence in a single bullet string. */
+export function cardBulletHasMultipleSentences(text: string): boolean {
+  const s = text.trim();
+  if (!s) return false;
+  const first = takeFirstCardBulletSentence(s);
+  const remainder = s.slice(first.length).trim().replace(/^[.!?]+/, "").trim();
+  return remainder.length > 0;
+}
+
 export function tightenCardBullet(raw: string): string | null {
   let s = raw
     .replace(/\u2014/g, " — ")
@@ -47,6 +76,8 @@ export function tightenCardBullet(raw: string): string | null {
     .replace(/\s+/g, " ")
     .trim();
   if (!s) return null;
+
+  s = takeFirstCardBulletSentence(s);
 
   let words = s.split(" ").filter((w) => w.length > 0 && !FILLER.has(w.toLowerCase()));
   if (words.length === 0) return null;
@@ -65,6 +96,7 @@ export function validateCardBullet(
   text: string,
 ): { ok: true; bullet: string } | { ok: false; reason: string } {
   if (cardBulletHasPlaceholder(text)) return { ok: false, reason: "placeholder" };
+  if (cardBulletHasMultipleSentences(text)) return { ok: false, reason: "multiple_sentences" };
   const bullet = tightenCardBullet(text);
   if (!bullet) return { ok: false, reason: "invalid" };
   if (cardBulletHasPlaceholder(bullet)) return { ok: false, reason: "placeholder" };
@@ -78,7 +110,8 @@ export const cardBulletSchema = z
   .max(CARD_BULLET_MAX_CHARS)
   .refine((s) => !/[\r\n]/.test(s), { message: "card bullet must be a single line" })
   .refine((s) => !cardBulletHasPlaceholder(s), { message: "card bullet must not contain placeholders" })
-  .refine((s) => !cardBulletHasJoinedIdeas(s), { message: "card bullet must be one idea" });
+  .refine((s) => !cardBulletHasJoinedIdeas(s), { message: "card bullet must be one idea" })
+  .refine((s) => !cardBulletHasMultipleSentences(s), { message: "card bullet must be one sentence" });
 
 export const cardBulletsSchema = z.array(cardBulletSchema).max(CARD_BULLET_MAX_COUNT);
 
