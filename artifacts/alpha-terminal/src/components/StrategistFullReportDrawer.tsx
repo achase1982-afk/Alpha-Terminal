@@ -260,23 +260,6 @@ export function StrategistFullReportDrawer({ report }: { report: StrategistFullR
               />
             </>
           )}
-
-          {report.dataAssumptions && (
-            <footer
-              style={{
-                marginTop: 15,
-                paddingTop: 12,
-                borderTop: `1px solid ${LINE}`,
-                fontSize: 12,
-                lineHeight: 1.5,
-                color: DIM,
-              }}
-            >
-              <div style={{ fontWeight: 700, marginBottom: 6, color: WHITE }}>Data & Assumptions</div>
-              <div>Sources: {report.dataAssumptions.sources.join(" · ")}</div>
-              <div style={{ marginTop: 4 }}>Modeled: {report.dataAssumptions.modeledFields.join(" · ")}</div>
-            </footer>
-          )}
         </div>
       )}
     </div>
