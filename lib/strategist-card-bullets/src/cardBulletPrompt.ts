@@ -6,9 +6,9 @@ export const CARD_FACE_BULLET_PROMPT = `
 
 You MUST populate **whyBullets** and **whatKillsBullets** using web search, cited headlines, the data package, and your chosen structure. These are NOT the long thesis — they are scan lines on the trade card.
 
-**whyBullets** (max ${CARD_BULLET_MAX_COUNT}): Why we are putting this trade on — tailwinds, edge, catalyst, tape, vol/flow facts that support the position. Use real ticker-specific facts from search and data (levels, dates, IVR, headlines).
+**whyBullets** (max ${CARD_BULLET_MAX_COUNT}): Why we **make money** on this trade — catalyst, post-earnings drift, vol sale edge, tape/flow, headline, IVR/P/C regime. Each bullet is a **profit thesis**, not a structure diagram.
 
-**whatKillsBullets** (max ${CARD_BULLET_MAX_COUNT}): What invalidates the trade — precise failure modes (levels, events, vol regime, macro, earnings, news that flips the thesis).
+**whatKillsBullets** (max ${CARD_BULLET_MAX_COUNT}): What **loses money** — invalidation levels, gap risk, macro dates, vol expansion, news that flips the thesis. Strike vs spot belongs here, not in whyBullets.
 
 Rules for EVERY bullet:
 - **Exactly one sentence** — one claim or condition, then stop (at most one sentence-ending period, exclamation, or question mark); never put two sentences in one bullet
@@ -28,7 +28,10 @@ Bad: "Rich premium + firm tape" (two ideas joined)
 Bad: "Vol regime, macro risk" (comma-spliced pair)
 Bad: "Drift supports hold. Vol is still rich." (two sentences)
 Bad: "Tape risk" (vague label with no fact)
+Bad: "$370 short put sits below spot" (structure readout — not why we profit)
+Bad: "Spot $420 above $370 short put" (placement — belongs in whatKillsBullets if at all)
 Good: "DELL IVR 72 — rich premium to sell"
 Good: "May 28 earnings drift supports hold"
-Good: "Close below $425 kills bull put"
+Good: "Q1 revenue beat drives post-print drift"
+Good: "Close below $425 kills bull put" (whatKillsBullets only)
 `;

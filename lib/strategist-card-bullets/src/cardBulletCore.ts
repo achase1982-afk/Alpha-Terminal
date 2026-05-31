@@ -40,6 +40,23 @@ export function cardBulletHasJoinedIdeas(text: string): boolean {
   return /\s\+\s/.test(text) || /,/.test(text);
 }
 
+/**
+ * WHY bullets must state edge/catalyst/tape/vol — not strike placement vs spot.
+ * Allowed on WHAT KILLS only (invalidation levels).
+ */
+export function cardBulletIsStructureReadout(text: string): boolean {
+  const s = text.toLowerCase();
+  if (/\b(sits|sitting)\s+(below|above|under|over)\s+spot\b/.test(s)) return true;
+  if (/\bshort\s+(put|call)\s+(sits|below|above|under|over)\b/.test(s)) return true;
+  if (/\bspot\s+(above|below|under|over)\s+\$?\d/.test(s)) return true;
+  if (/\b(below|above|under|over)\s+spot\b/.test(s)) return true;
+  if (/\bshort\s+strike\b/.test(s)) return true;
+  if (/\b\d+\s*delta\b/.test(s) || /\bdelta\s+[\d.]+\b/.test(s)) return true;
+  if (/\b(thin|low)\s+oi\b/.test(s) || /\boi\s+\d/.test(s)) return true;
+  if (/\bcushion\s+against\b/.test(s)) return true;
+  return false;
+}
+
 /** Keep only the first sentence (ignores decimals like $425.00). */
 export function takeFirstCardBulletSentence(text: string): string {
   const s = text.trim();

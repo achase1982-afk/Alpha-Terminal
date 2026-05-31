@@ -4,6 +4,7 @@ import {
   CARD_BULLET_MAX_CHARS,
   CARD_BULLET_MAX_COUNT,
   cardBulletHasMultipleSentences,
+  cardBulletIsStructureReadout,
   cardBulletSchema,
   compressCardBullet,
   enforceCardBullets,
@@ -76,6 +77,46 @@ describe("enforceCardBullets", () => {
 });
 
 describe("resolveCardBullets", () => {
+  it("drops structure readouts from why and backfills from data", () => {
+    const r = resolveCardBullets({
+      direction: "BULLISH",
+      whyBulletsFromAi: ["$370 short put sits below spot", "May 28 earnings drift supports hold"],
+      whatKillsBulletsFromAi: ["Close below $425 kills bull put", "Macro gap flips thesis"],
+      thesis: "Long thesis prose.",
+      bullInvalidation: "Break below.",
+      bearInvalidation: "Hold above.",
+      riskOfRuin: "Gap risk.",
+      warnings: null,
+      dataBackfill: {
+        ticker: "DELL",
+        direction: "BULLISH",
+        spot: 420,
+        ivr: 37,
+        ivrSource: "chain",
+        pcRatio: 0.72,
+        shortStrike: 370,
+        shortType: "put",
+        breakeven: 366,
+        dte: 17,
+        catalystDate: null,
+        catalystType: null,
+        catalystAlignment: null,
+        dailyChangePct: 2,
+        idioPct: 41,
+        relativeVolume: 1.5,
+        earningsDate: "2026-05-28",
+        earningsInsideExpiry: false,
+        thesis: "Post-earnings drift.",
+        bullInvalidation: "Break below.",
+        bearInvalidation: "Hold above.",
+        riskOfRuin: "Gap risk.",
+        warnings: null,
+      },
+    });
+    expect(r.whyItWorks.some((b) => cardBulletIsStructureReadout(b))).toBe(false);
+    expect(r.whyItWorks.length).toBeGreaterThanOrEqual(2);
+  });
+
   it("prefers valid AI bullets over prose fallback", () => {
     const r = resolveCardBullets({
       direction: "BULLISH",
@@ -121,6 +162,15 @@ describe("validateCardFaceBulletsFromAi", () => {
     );
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.issues.some((i) => i.includes("one sentence"))).toBe(true);
+  });
+
+  it("rejects structure readouts in whyBullets", () => {
+    const r = validateCardFaceBulletsFromAi(
+      ["$370 short put sits below spot", "May 28 earnings drift supports hold"],
+      ["Close below $425 kills bull put", "Macro gap flips thesis"],
+    );
+    expect(r.ok).toBe(false);
+    expect(cardBulletIsStructureReadout("$370 short put sits below spot")).toBe(true);
   });
 
   it("flags placeholder tokens before scrub", () => {

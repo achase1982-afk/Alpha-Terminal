@@ -2203,6 +2203,7 @@ async function buildRecommendationFromAiState(input: BuildRecommendationFromAiSt
   const maxLossDisplay =
     isMultiExp && maxLoss > 0 ? `$${(maxLoss / 100).toFixed(0)} est.` : undefined;
 
+  const cat = aiResponse.catalyst;
   const cardBullets = resolveCardBullets({
     direction: tradeDir,
     whyBulletsFromAi: aiResponse.whyBullets,
@@ -2212,9 +2213,36 @@ async function buildRecommendationFromAiState(input: BuildRecommendationFromAiSt
     bearInvalidation: aiResponse.bearInvalidation ?? "",
     riskOfRuin: aiResponse.riskOfRuin ?? "",
     warnings: aiResponse.warnings,
+    dataBackfill: {
+      ticker,
+      direction: tradeDir,
+      spot: tickerData.price,
+      ivr: tickerData.ivr,
+      ivrSource: tickerData.ivrSource,
+      pcRatio: Number.isFinite(chainSummary?.putCallVolumeRatio)
+        ? chainSummary.putCallVolumeRatio
+        : null,
+      shortStrike,
+      shortType: shortLeg?.type ?? null,
+      breakeven: breakeven ?? null,
+      dte,
+      catalystDate: cat?.date ?? catalystEval.scheduledEvents[0]?.date ?? null,
+      catalystType: cat?.type ?? catalystEval.scheduledEvents[0]?.type ?? null,
+      catalystAlignment: cat?.alignment ?? catalystEval.catalystAlignment ?? null,
+      dailyChangePct: tickerData.dailyChangePct,
+      idioPct: idioStrengthPct,
+      relativeVolume: tickerData.relativeVolume,
+      earningsDate: tickerData.earningsDate,
+      earningsInsideExpiry: earningsAlert?.insideExpiry ?? false,
+      thesis: aiResponse.thesis ?? "",
+      bullInvalidation: aiResponse.bullInvalidation ?? "",
+      bearInvalidation: aiResponse.bearInvalidation ?? "",
+      riskOfRuin: aiResponse.riskOfRuin ?? "",
+      warnings: aiResponse.warnings,
+    },
   });
   if (cardBullets.source === "prose_fallback") {
-    logger.info({ ticker }, "StrategistV2: card bullets from prose fallback");
+    logger.info({ ticker }, "StrategistV2: card bullets from prose/data fallback");
   }
   const width =
     legs.length >= 2
@@ -4180,7 +4208,7 @@ Run web search if you need a fresher headline or catalyst date. Respond with ONL
   "whatKillsBullets": ["...", "..."]
 }
 
-Follow CARD-FACE BULLETS rules from your system prompt: pointed, ticker-specific, exactly one sentence per bullet, max 50 characters including spaces, at least 2 and at most 4 per array, one idea per bullet (no "+" or comma joining), numeric IVR from data (no {{IVR}} placeholders).`;
+Follow CARD-FACE BULLETS rules from your system prompt: pointed, ticker-specific, exactly one sentence per bullet, max 50 characters including spaces, at least 2 and at most 4 per array, one idea per bullet (no "+" or comma joining), numeric IVR from data (no {{IVR}} placeholders). whyBullets must be profit/catalyst/vol/tape thesis — never strike placement vs spot (those belong in whatKillsBullets).`;
 }
 
 async function ensureCardFaceBullets(args: {
