@@ -336,8 +336,18 @@ export function modelFromDeskResult(
     timeStop: ep.time_stop ? formatLegExpiry(ep.time_stop) : "",
   };
 
-  const whyBullets = dr.pm.thesis ? proseToCardBullets(dr.pm.thesis) : [];
-  const whatKillsBullets = dr.pm.biggest_risk ? proseToCardBullets(dr.pm.biggest_risk) : [];
+  const whyBullets =
+    dr.pm.why_bullets?.length
+      ? enforceCardBullets(dr.pm.why_bullets)
+      : dr.pm.thesis
+        ? proseToCardBullets(dr.pm.thesis)
+        : [];
+  const whatKillsBullets =
+    dr.pm.what_kills_bullets?.length
+      ? enforceCardBullets(dr.pm.what_kills_bullets)
+      : dr.pm.biggest_risk
+        ? proseToCardBullets(dr.pm.biggest_risk)
+        : [];
 
   return {
     ticker,

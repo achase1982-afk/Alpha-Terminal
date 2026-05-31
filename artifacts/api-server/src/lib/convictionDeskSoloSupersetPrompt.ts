@@ -138,6 +138,8 @@ export const CONVICTION_DESK_FULL_JSON_SKELETON = `
     "size": "small" | "medium" | "large",
     "whose_side": "institutional_alignment" | "retail_fade" | "neither",
     "biggest_risk": "<string>",
+    "why_bullets": ["<3-4 short thesis bullets when decision is trade; empty array when pass>"],
+    "what_kills_bullets": ["<3-4 short risk bullets when decision is trade; empty array when pass>"],
     "exit_plan": {
       "profit_target": <number>,
       "stop_loss": <number>,

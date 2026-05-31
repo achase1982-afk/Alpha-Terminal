@@ -12,6 +12,9 @@ import {
   type ConvictionDeskPromptProvider,
 } from "./convictionDeskXmlPrompt.js";
 import { CONVICTION_DESK_WEB_SEARCH_GUIDANCE_BODY } from "./convictionDeskWebSearchGuidance.js";
+import {
+  SOLO_DESK_CARD_BULLET_PROMPT,
+} from "@workspace/strategist-card-bullets";
 
 export type { ConvictionDeskPromptProvider };
 /** Single-voice rule injected into each section prompt. */
@@ -405,6 +408,8 @@ ${DATA_STATE_LANGUAGE_RULES}
 
 ${OUTPUT_NO_SOURCE_RULES}
 
+${SOLO_DESK_CARD_BULLET_PROMPT}
+
 Respond with ONLY a JSON object matching the existing schema (top-level **pm** shape in consolidated runs). No markdown, no commentary, just the JSON:
 {
   "decision": "trade" | "pass",
@@ -420,6 +425,8 @@ Respond with ONLY a JSON object matching the existing schema (top-level **pm** s
   "size": "small" | "medium" | "large",
   "whose_side": "institutional_alignment" | "retail_fade" | "neither",
   "biggest_risk": "<string>",
+  "why_bullets": ["<3-4 short thesis bullets when decision is trade; empty array when pass>"],
+  "what_kills_bullets": ["<3-4 short risk bullets when decision is trade; empty array when pass>"],
   "exit_plan": {
     "profit_target": <number, per-share option price target>,
     "stop_loss": <number, per-share option price stop>,
@@ -548,7 +555,7 @@ flow: dominant_flow, institutional_signal, retail_signal, key_strikes, read.
 
 catalyst: primary_catalyst, bar_to_clear, asymmetry, historical_pattern, read.
 
-pm: decision, structure (legs, expiry, credit_or_debit), thesis, edge_check, deviation_from_analysts, size, whose_side, biggest_risk, exit_plan (profit_target, stop_loss, time_stop).`;
+pm: decision, structure (legs, expiry, credit_or_debit), thesis, edge_check, deviation_from_analysts, size, whose_side, biggest_risk, why_bullets, what_kills_bullets, exit_plan (profit_target, stop_loss, time_stop).`;
 
 function stripVolPromptBeforeSnapshot(dataPackage: string): string {
   const full = buildVolAnalystPrompt(dataPackage);
@@ -682,6 +689,8 @@ Respond with ONLY a JSON object (no markdown fences, no extra prose). Top-level 
     "size": "small" | "medium" | "large",
     "whose_side": "institutional_alignment" | "retail_fade" | "neither",
     "biggest_risk": "<string>",
+    "why_bullets": ["<3-4 short thesis bullets when decision is trade; empty array when pass>"],
+    "what_kills_bullets": ["<3-4 short risk bullets when decision is trade; empty array when pass>"],
     "exit_plan": {
       "profit_target": <number>,
       "stop_loss": <number>,

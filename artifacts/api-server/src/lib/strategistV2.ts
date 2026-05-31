@@ -724,7 +724,7 @@ You must be honest about where every claim comes from.
 - Any specific number you cite from the data package (strike, volume, open interest, IV, delta, bid, ask) must match the payload exactly. Do not round, do not estimate, do not invent strikes that are not in the chain.
 - **IVR SOURCE AWARENESS**: The data payload includes \`ivrSource\`. If it is \`hv_proxy\`, the IVR figure was derived from realized vol (HV30 × volatility-risk-premium) because we do not yet have enough chain-based history. This is a reasonable but conservative estimate — true IV often runs 5–15% above realized, and during volatility spikes the proxy will under-state IV. When choosing between credit and debit structures on a hv_proxy IVR, lean slightly toward credits in low-IVR (proxy may be under-estimating), and demand a stronger directional thesis before paying premium. Once \`ivrSource\` becomes \`chain\` or \`canonical\`, treat IVR with full confidence.
 
-- **HARD RULE on IVR and P/C ratio**: Do NOT restate, reinterpret, paraphrase, scale, or invert the \`ivr\` or \`putCallVolumeRatio\` values from the data payload. In long narrative fields (thesis, invalidation, riskOfRuin, etc.) use the literal token \`{{IVR}}\` or \`{{PC_RATIO}}\` and the server will substitute the canonical value. In **whyBullets** and **whatKillsBullets** cite the numeric values from the data package directly (e.g. "IVR 72") — never use \`{{IVR}}\` on the card face. Do not compute "0.92" from "92" or vice versa. Do not append "%" to IVR — the placeholder is unitless. If you write a number next to "IVR" or "P/C" in narrative fields the server will overwrite it with the canonical value and log a quality warning against this generation.
+- **HARD RULE on IVR and P/C ratio**: Do NOT restate, reinterpret, paraphrase, scale, or invert the \`ivr\` or \`putCallVolumeRatio\` values from the data payload. In long narrative fields (thesis, invalidation, riskOfRuin, etc.) use the literal token \`{{IVR}}\` or \`{{PC_RATIO}}\` and the server will substitute the canonical value. **whyBullets** and **whatKillsBullets** must distill thesis and risk reasoning only — do not cite IVR, P/C, strikes, breakeven, or max loss on the card face (see CARD-FACE BULLETS). Do not use \`{{IVR}}\` or \`{{PC_RATIO}}\` placeholders in bullet arrays.
 - Any expiration date you recommend must come from the availableExpirations array provided. Do not calculate a date yourself.
 - When you reference information outside the payload (news, regulatory context, sector dynamics, historical patterns), briefly cite the source. Examples: "per recent SEC filing," "per current news on the PDT rule change," "per general knowledge of semiconductor capex cycles."
 - If a piece of information you want is not in the payload and you cannot verify it through search, say so. Do not fill gaps with plausible-sounding detail.
@@ -4180,7 +4180,9 @@ Run web search if you need a fresher headline or catalyst date. Respond with ONL
   "whatKillsBullets": ["...", "..."]
 }
 
-Follow CARD-FACE BULLETS rules from your system prompt: pointed, ticker-specific, exactly one sentence per bullet, max 50 characters including spaces, at least 2 and at most 4 per array, one idea per bullet (no "+" or comma joining), numeric IVR from data (no {{IVR}} placeholders).`;
+Distill ONLY from thesis, bullInvalidation, bearInvalidation, and riskOfRuin above — forward thesis and kill reasoning, not trade structure.
+
+CARD-FACE rules: exactly one sentence per bullet; max 50 characters including spaces; 2–4 bullets per array; one idea per bullet (no "+" or comma joining). Do NOT cite strikes, breakeven, max loss, IVR, P/C, or snapshot readouts. No {{IVR}} or {{PC_RATIO}} placeholders in bullets.`;
 }
 
 async function ensureCardFaceBullets(args: {

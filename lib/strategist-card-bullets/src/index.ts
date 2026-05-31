@@ -28,7 +28,11 @@ export {
   type CardBulletsValidation,
 } from "./cardBulletCore.js";
 
-export { CARD_FACE_BULLET_PROMPT } from "./cardBulletPrompt.js";
+export {
+  CARD_FACE_BULLET_PROMPT,
+  SOLO_DESK_CARD_BULLET_PROMPT,
+  CONVICTION_DESK_CARD_BULLET_PROMPT,
+} from "./cardBulletPrompt.js";
 export {
   resolveCardBullets,
   validateCardFaceBulletsFromAi,
