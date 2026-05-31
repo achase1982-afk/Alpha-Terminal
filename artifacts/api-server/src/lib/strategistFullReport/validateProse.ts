@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ReportProse } from "./types.js";
+import { sanitizeReportDisplayText } from "./sanitizeReport.js";
 
 const noDigits = (s: string) => !/\d/.test(s);
 
@@ -30,9 +31,10 @@ export function validateReportProse(raw: unknown): { ok: true; prose: ReportPros
 
 /** Strip digits from legacy AI text when synthesizing fallback prose. */
 export function stripDigitsFromProse(s: string): string {
-  return s
-    .replace(/\d+(\.\d+)?/g, "")
-    .replace(/\s{2,}/g, " ")
-    .replace(/—/g, ",")
-    .trim();
+  return sanitizeReportDisplayText(
+    s
+      .replace(/\d+(\.\d+)?/g, "")
+      .replace(/\s{2,}/g, " ")
+      .trim(),
+  );
 }

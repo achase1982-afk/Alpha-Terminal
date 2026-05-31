@@ -3,6 +3,7 @@ import { computeTapeSignals, streetTapeAlignment } from "../strategistTapeSignal
 import type { CandidateLeg } from "../strategistV2.js";
 import type { IOScoreResult } from "../ioScoreEngine.js";
 import type { ReportProse, ReportTone, StatChip, StrategistFullReport } from "./types.js";
+import { sanitizeFullReportForDisplay } from "./sanitizeReport.js";
 import { stripDigitsFromProse } from "./validateProse.js";
 
 const NA = "not available";
@@ -296,5 +297,5 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
     },
   };
 
-  return report;
+  return sanitizeFullReportForDisplay(report);
 }

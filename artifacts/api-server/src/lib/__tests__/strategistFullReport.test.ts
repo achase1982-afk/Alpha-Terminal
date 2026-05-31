@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { sanitizeReportDisplayText } from "../strategistFullReport/sanitizeReport.js";
 import { validateReportProse, stripDigitsFromProse } from "../strategistFullReport/validateProse.js";
 import { streetTapeAlignment } from "../strategistTapeSignals.js";
 
@@ -32,6 +33,19 @@ describe("validateReportProse", () => {
 
   it("strips digits for fallback synthesis", () => {
     expect(stripDigitsFromProse("IVR 100 with 2.5 delta")).not.toMatch(/\d/);
+  });
+});
+
+describe("sanitizeReportDisplayText", () => {
+  it("removes URLs, em dashes, and underscores", () => {
+    const s = sanitizeReportDisplayText(
+      "Read more at https://example.com/foo — vol_rich setup per www.bloomberg.com",
+    );
+    expect(s).not.toMatch(/https?:\/\//i);
+    expect(s).not.toMatch(/www\./i);
+    expect(s).not.toContain("—");
+    expect(s).not.toContain("_");
+    expect(s).toContain("vol rich");
   });
 });
 
