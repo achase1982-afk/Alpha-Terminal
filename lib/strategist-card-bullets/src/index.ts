@@ -14,6 +14,8 @@ export {
   cardBulletWordCount,
   cardBulletHasPlaceholder,
   cardBulletHasJoinedIdeas,
+  cardBulletHasMultipleSentences,
+  takeFirstCardBulletSentence,
   tightenCardBullet,
   validateCardBullet,
   cardBulletSchema,

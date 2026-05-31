@@ -3,11 +3,13 @@ import { scrubAll } from "../narrativeScrubbers.js";
 import {
   CARD_BULLET_MAX_CHARS,
   CARD_BULLET_MAX_COUNT,
+  cardBulletHasMultipleSentences,
   cardBulletSchema,
   compressCardBullet,
   enforceCardBullets,
   proseToCardBullets,
   resolveCardBullets,
+  takeFirstCardBulletSentence,
   tightenCardBullet,
   validateCardBullet,
   validateCardFaceBulletsFromAi,
@@ -23,6 +25,16 @@ describe("validateCardBullet", () => {
     expect(validateCardBullet("DELL {{IVR}} — sell premium").ok).toBe(false);
     expect(validateCardBullet("Rich premium + firm tape").ok).toBe(false);
     expect(validateCardBullet("Vol regime, macro gap").ok).toBe(false);
+  });
+
+  it("rejects multiple sentences and caps to the first on tighten", () => {
+    const multi = "Drift supports hold. Vol is still rich.";
+    expect(cardBulletHasMultipleSentences(multi)).toBe(true);
+    expect(validateCardBullet(multi).ok).toBe(false);
+    expect(takeFirstCardBulletSentence(multi)).toBe("Drift supports hold.");
+    const capped = tightenCardBullet(multi);
+    expect(capped).toBe("Drift supports hold.");
+    expect(cardBulletHasMultipleSentences("Close below $425.00 kills bull put")).toBe(false);
   });
 
   it("tightens wrap-prone prose to max 50 characters including spaces", () => {
@@ -100,6 +112,15 @@ describe("validateCardFaceBulletsFromAi", () => {
     expect(
       validateCardFaceBulletsFromAi(["One valid bullet only here"], ["Close below $425", "Macro gap risk"]).ok,
     ).toBe(false);
+  });
+
+  it("flags bullets with more than one sentence", () => {
+    const r = validateCardFaceBulletsFromAi(
+      ["Drift supports hold. Vol is still rich.", "May 28 earnings drift supports hold"],
+      ["Close below $425 kills bull put", "Macro gap flips thesis"],
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.issues.some((i) => i.includes("one sentence"))).toBe(true);
   });
 
   it("flags placeholder tokens before scrub", () => {
