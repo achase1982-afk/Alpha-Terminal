@@ -289,7 +289,6 @@ export function modelFromV2Result(
             },
             thesisWithNumbers: { chips: [], body: rec.reportDrawer.thesis },
             bearCase: { body: rec.reportDrawer.exitDetail },
-            dataAssumptions: { sources: ["Legacy card"], modeledFields: [] },
           }
         : null),
     plainTextSource: result,

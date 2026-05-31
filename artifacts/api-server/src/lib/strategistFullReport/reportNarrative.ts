@@ -59,7 +59,7 @@ export function formatEarningsChipValue(
   if (next) {
     const d = formatReportDate(next);
     if (earningsDaysAway != null && Number.isFinite(earningsDaysAway)) {
-      parts.push(`Next ${d} (${earningsDaysAway}d)`);
+      parts.push(`Next ${d}, ${earningsDaysAway}d`);
     } else {
       parts.push(`Next ${d}`);
     }
@@ -68,8 +68,8 @@ export function formatEarningsChipValue(
 }
 
 function revisionTrendLabel(trend: string): string {
-  if (trend === "rising") return "net upgrades/raises";
-  if (trend === "falling") return "net downgrades/cuts";
+  if (trend === "rising") return "net upgrades and raises";
+  if (trend === "falling") return "net downgrades and cuts";
   return "mixed revisions";
 }
 
@@ -89,13 +89,13 @@ export function buildRiskManagementProse(enrichedExit: ChipNarrativeInput["enric
   const stopPx = enrichedExit.stopLoss;
   const profitPart =
     pct != null && px != null
-      ? `Take profit at ${pct}% of max ($${px.toFixed(2)} option buyback)`
+      ? `Take profit at ${pct}% of max, $${px.toFixed(2)} option buyback`
       : pct != null
         ? `Take profit at ${pct}% of max`
         : "Profit target not available";
   const stopPart =
     stopPct != null && stopPx != null
-      ? `stop at ${stopPct}% of max loss ($${stopPx.toFixed(2)} buyback)`
+      ? `stop at ${stopPct}% of max loss, $${stopPx.toFixed(2)} buyback`
       : stopPct != null
         ? `stop at ${stopPct}% of max loss`
         : "stop not available";
@@ -141,17 +141,18 @@ export function buildReportProseFromChips(input: ChipNarrativeInput): ReportPros
   if (pt.available) {
     const rev = pt.revisions;
     const trendNote = revisionTrendLabel(pt.revisionTrend);
-    const ptLine = `Consensus PT ${fmtUsd(pt.consensusPT)} (${fmtPct(pt.ptVsSignalPct)} vs signal) from ${pt.analystCount ?? pt.recent.length} analyst sources; ${rev.raises} raises and ${rev.cuts} cuts (${trendNote}).`;
-    const tapeLine = `${flowPcSource} tape: ${tape.tapeVerdict} (${tape.flowBias}, P/C ${pcStr}).`;
+    const analystN = pt.analystCount ?? pt.recent.length;
+    const ptLine = `Consensus PT ${fmtUsd(pt.consensusPT)}, ${fmtPct(pt.ptVsSignalPct)} vs signal, from ${analystN} analyst sources; ${rev.raises} raises and ${rev.cuts} cuts, ${trendNote}.`;
+    const tapeLine = `${flowPcSource} tape: ${tape.tapeVerdict}, flow bias ${tape.flowBias}, P/C ${pcStr}.`;
     const alignLine =
       alignment === "divergent"
         ? "Street revision tone and tape disagree; treat as a structure/vol expression, not consensus plus flow confirmation."
         : "Street revision tone and tape direction align for this setup.";
     streetVsTapeProse = `${ptLine} ${tapeLine} ${alignLine}`;
   } else if (pt.recent.length > 0) {
-    streetVsTapeProse = `No consensus PT row in our feed; ${pt.recent.length} recent grade actions are listed below. ${flowPcSource} tape: ${tape.tapeVerdict} (${tape.flowBias}, P/C ${pcStr}).`;
+    streetVsTapeProse = `No consensus PT row in our feed; ${pt.recent.length} recent grade actions are listed below. ${flowPcSource} tape: ${tape.tapeVerdict}, flow bias ${tape.flowBias}, P/C ${pcStr}.`;
   } else {
-    streetVsTapeProse = `No sell-side PT row in our feed. ${flowPcSource} tape: ${tape.tapeVerdict} (${tape.flowBias}, P/C ${pcStr}).`;
+    streetVsTapeProse = `No sell-side PT row in our feed. ${flowPcSource} tape: ${tape.tapeVerdict}, flow bias ${tape.flowBias}, P/C ${pcStr}.`;
   }
 
   let idioMacroNote: string;
@@ -164,14 +165,14 @@ export function buildReportProseFromChips(input: ChipNarrativeInput): ReportPros
     const r2 = input.ioScore.components?.marketIndependence?.rSquared;
     const r2Str = r2 != null && Number.isFinite(r2) ? r2.toFixed(2) : NA;
     const z = input.ioScore.residualReturnZScore.toFixed(2);
-    idioMacroNote = `${dom}: ${idioPct}% idiosyncratic vs ${macroPct}% macro (beta ${beta}, R² ${r2Str}, residual Z ${z}).`;
+    idioMacroNote = `${dom}: ${idioPct}% idiosyncratic vs ${macroPct}% macro; beta ${beta}, R² ${r2Str}, residual Z ${z}.`;
   }
 
-  const peerList = sectorPeers.length > 0 ? sectorPeers.join(", ") : sector || NA;
+  const peerList = sectorPeers.length > 0 ? sectorPeers.join(", ") : NA;
   const sectorExposureNote = sectorPeers.length
-    ? `${ticker} (${sector || "sector n/a"}) moves with peers ${peerList}; group earnings and macro still matter for a single-name options structure.`
+    ? `${ticker} in ${sector || "its sector"} trades in sympathy with ${peerList}; group earnings and macro still matter for a single-name options structure.`
     : sector
-      ? `${ticker} trades in ${sector}; peer tape was not resolved in the feed.`
+      ? `${ticker} trades in ${sector}; FMP sympathy peers did not resolve for this symbol.`
       : `${ticker} sector peer map is thin; index and macro correlation still matter.`;
 
   const whyStructure = thesisFallback.trim()
@@ -189,42 +190,6 @@ export function buildReportProseFromChips(input: ChipNarrativeInput): ReportPros
     bearCase: "",
     riskManagementProse: buildRiskManagementProse(enrichedExit),
   };
-}
-
-export function extractSectorPeerTickers(text: string, mainTicker: string): string[] {
-  if (!text?.trim()) return [];
-  const stop = new Set([
-    "THE",
-    "AND",
-    "FOR",
-    "WITH",
-    "FROM",
-    "THIS",
-    "THAT",
-    "NYSE",
-    "NASDAQ",
-    "ETF",
-    "USD",
-    "EPS",
-    "IVR",
-    "ATM",
-    "DTE",
-    "PT",
-    "PE",
-    "CEO",
-    "CFO",
-    "API",
-    "FMP",
-    mainTicker.toUpperCase(),
-  ]);
-  const found: string[] = [];
-  for (const m of text.matchAll(/\b[A-Z]{2,5}\b/g)) {
-    const sym = m[0];
-    if (stop.has(sym) || found.includes(sym)) continue;
-    found.push(sym);
-    if (found.length >= 6) break;
-  }
-  return found;
 }
 
 export function analystCountLabel(pt: NormalizedPriceTargetSnapshot): string {

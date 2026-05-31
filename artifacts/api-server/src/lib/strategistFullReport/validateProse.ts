@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { ReportProse } from "./types.js";
 import { sanitizeReportDisplayText } from "./sanitizeReport.js";
+import { stripReportParentheses } from "./reportFormat.js";
 
 const proseField = z.string().min(8);
 
@@ -27,5 +28,5 @@ export function validateReportProse(raw: unknown): { ok: true; prose: ReportPros
 
 /** Light cleanup for report display — keeps all numbers. */
 export function cleanReportProse(s: string): string {
-  return sanitizeReportDisplayText(s.replace(/\s+/g, " ").trim());
+  return stripReportParentheses(sanitizeReportDisplayText(s.replace(/\s+/g, " ").trim()));
 }

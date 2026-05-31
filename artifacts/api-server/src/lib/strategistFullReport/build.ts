@@ -17,10 +17,10 @@ import {
   fmtUsd,
   formatReportDate,
 } from "./reportFormat.js";
+import { fetchStrategistSympathyPeers } from "../strategistSectorPeersService.js";
 import {
   analystCountLabel,
   buildReportProseFromChips,
-  extractSectorPeerTickers,
   formatAtmIvPct,
   formatEarningsChipValue,
 } from "./reportNarrative.js";
@@ -116,7 +116,6 @@ export type BuildFullReportArgs = {
   breakeven: number;
   riskRewardDisplay: string;
   strategyName: string;
-  strategyType?: string;
   structureDescriptor: string;
   direction: string;
   legs: CandidateLeg[];
@@ -133,7 +132,6 @@ export type BuildFullReportArgs = {
   idioPct: number;
   macroPct: number;
   sector: string;
-  companyContext?: string;
   catalystInWindow: boolean;
   nextEarningsDate: string | null;
   lastEarningsDate?: string | null;
@@ -165,7 +163,6 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
     breakeven,
     riskRewardDisplay,
     strategyName,
-    strategyType = "",
     structureDescriptor,
     direction,
     legs,
@@ -177,7 +174,6 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
     idioPct: rawIdioPct,
     macroPct: rawMacroPct,
     sector,
-    companyContext,
     catalystInWindow,
     nextEarningsDate,
     lastEarningsDate,
@@ -218,10 +214,7 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
     : "aligned";
 
   const thesisClean = thesis?.trim() ? cleanReportProse(thesis) : "";
-  const sectorPeers = extractSectorPeerTickers(
-    [companyContext, proseIn?.sectorExposureNote, thesis].filter(Boolean).join(" "),
-    ticker,
-  );
+  const sectorPeers = await fetchStrategistSympathyPeers(ticker);
 
   const chipProse = buildReportProseFromChips({
     ticker,
@@ -255,7 +248,7 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
     whyInPlay: cleanReportProse(chipProse.whyInPlay),
     thesisWithNumbers: cleanReportProse(
       thesisClean
-        ? `${thesisClean} (IVR ${ivr != null ? Math.round(ivr) : NA}, ATM IV ${formatAtmIvPct(atmIvPct)}.)`
+        ? `${thesisClean} IVR ${ivr != null ? Math.round(ivr) : NA}, ATM IV ${formatAtmIvPct(atmIvPct)}.`
         : chipProse.thesisWithNumbers,
     ),
     streetVsTapeProse: cleanReportProse(chipProse.streetVsTapeProse),
@@ -285,11 +278,6 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
     earningsDaysAway ?? null,
     generatedAt,
   );
-
-  const modeledFields = ["Entry stock band", "Exit buyback prices"];
-  if (strategyType.includes("calendar")) {
-    modeledFields.push("Calendar max profit est.");
-  }
 
   const genIso = generatedAt.toISOString();
 
@@ -379,7 +367,7 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
       body: prose.idioMacroNote,
     },
     sectorExposure: {
-      peers: sectorPeers.length > 0 ? sectorPeers : sector ? [sector] : [],
+      peers: sectorPeers,
       drivers: ["Rates", "Sector beta", "Peer earnings"],
       body: prose.sectorExposureNote,
     },
@@ -394,16 +382,6 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
         chip("Time", formatReportDate(enrichedExit.timeStop), "amber"),
       ],
       body: prose.riskManagementProse,
-    },
-    dataAssumptions: {
-      sources: [
-        "Schwab options chain",
-        flowPcSource,
-        "FMP analyst PT & grades (DB + live fallback)",
-        "IOScore engine",
-        "IVR store",
-      ],
-      modeledFields,
     },
   };
 
