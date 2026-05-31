@@ -120,6 +120,8 @@ export const PmOutputSchema = z.preprocess(
     size: z.enum(["small", "medium", "large"]),
     whose_side: z.enum(["institutional_alignment", "retail_fade", "neither"]),
     biggest_risk: z.string(),
+    why_bullets: z.array(z.string()).max(4).optional(),
+    what_kills_bullets: z.array(z.string()).max(4).optional(),
     exit_plan: DeskExitPlanSchema,
     watch_for: z.string(),
     /** Server-filled payoff grid at front expiration; omitted when not computed. */

@@ -1,37 +1,75 @@
 import { CARD_BULLET_MAX_CHARS, CARD_BULLET_MAX_COUNT } from "./cardBulletCore.js";
 
-/** Shared instruction block for Strategist trade JSON (solo + debate PM). */
-export const CARD_FACE_BULLET_PROMPT = `
-## CARD-FACE BULLETS (required — user reads these at a glance)
-
-You MUST populate **whyBullets** and **whatKillsBullets** using web search, cited headlines, the data package, and your chosen structure. These are NOT the long thesis — they are scan lines on the trade card.
-
-**whyBullets** (max ${CARD_BULLET_MAX_COUNT}): Why we **make money** on this trade — catalyst, post-earnings drift, vol sale edge, tape/flow, headline, IVR/P/C regime. Each bullet is a **profit thesis**, not a structure diagram.
-
-**whatKillsBullets** (max ${CARD_BULLET_MAX_COUNT}): What **loses money** — invalidation levels, gap risk, macro dates, vol expansion, news that flips the thesis. Strike vs spot belongs here, not in whyBullets.
-
+const CARD_BULLET_RULES = `
 Rules for EVERY bullet:
-- **Exactly one sentence** — one claim or condition, then stop (at most one sentence-ending period, exclamation, or question mark); never put two sentences in one bullet
-- ${CARD_BULLET_MAX_CHARS} characters maximum including spaces — one line on a phone (no separate word limit)
-- Complete thought; no fragment that continues on the next line
-- No filler ("while", "the", "highly elevated", "it is worth noting")
-- Do not pad to reach the count — use 2–${CARD_BULLET_MAX_COUNT} bullets only when you have real points; never add weak bullets to fill the array
-- One idea per bullet — never join two points with "+" or a comma; split into separate bullets or drop the weaker point
-- Name the concrete fact (strike, date, headline theme, IVR number from data) — not vague labels alone ("vol regime", "tape risk", "macro headwind")
-- Be pointed: a busy trader should know why and what breaks in one glance
-- Prefer concrete facts: "$425 short put", "May 28 earnings", "IVR 72", headline theme from search
-- For IVR and P/C on the card, cite the numeric values from the data package (e.g. "IVR 72") — do NOT use \`{{IVR}}\` or \`{{PC_RATIO}}\` placeholders in whyBullets or whatKillsBullets
-- Digits, $, and dates are allowed and encouraged when specific
+- **Exactly one sentence** — one claim, then stop; never two sentences in one bullet
+- ${CARD_BULLET_MAX_CHARS} characters maximum including spaces — one line on a phone
+- **3–4 bullets** per array when the source reasoning supports it (minimum 2, maximum ${CARD_BULLET_MAX_COUNT})
+- One idea per bullet — no "+" and no comma-splicing two ideas
+- No filler ("while", "highly elevated", "it is worth noting")
+- Do not pad weak bullets to fill the array
 
-Bad: "While front-month implied volatility is highly elevated with an IVR"
-Bad: "Rich premium + firm tape" (two ideas joined)
-Bad: "Vol regime, macro risk" (comma-spliced pair)
-Bad: "Drift supports hold. Vol is still rich." (two sentences)
-Bad: "Tape risk" (vague label with no fact)
-Bad: "$370 short put sits below spot" (structure readout — not why we profit)
-Bad: "Spot $420 above $370 short put" (placement — belongs in whatKillsBullets if at all)
-Good: "DELL IVR 72 — rich premium to sell"
-Good: "May 28 earnings drift supports hold"
-Good: "Q1 revenue beat drives post-print drift"
-Good: "Close below $425 kills bull put" (whatKillsBullets only)
+**FORBIDDEN in both arrays** (already shown on the trade card or in the data snapshot):
+- Trade structure: strikes, spreads, legs, DTE, delta, open interest, breakeven, max loss, max profit, credit/debit, "short put below spot", cushion vs spot
+- Raw snapshot readouts: IVR, P/C ratio, IV rank, rel vol, or "tape mixed" without a forward thesis reason
+- Trailing financials alone (revenue, EPS, margin) unless tied to **why the trade still works or breaks going forward**
+
+Allowed: forward reasoning from your thesis — catalyst timing, mispricing, vol regime view, tape/sponsorship narrative, macro/event risk, post-earnings drift, scenario that flips the edge. Use dates and $ levels only when they express **thesis risk**, not structure placement.
+`;
+
+/**
+ * Strategist Solo analyze / debate trade JSON — bullets from thesis reasoning only.
+ */
+export const CARD_FACE_BULLET_PROMPT = `
+## CARD-FACE BULLETS (required — summary card only)
+
+Populate **whyBullets** and **whatKillsBullets** after you write **thesis**, **bullInvalidation**, **bearInvalidation**, and **riskOfRuin**. Distill those fields — do **not** read the options chain table or invent bullets from leg math.
+
+**whyBullets** (${CARD_BULLET_MAX_COUNT} max): Scan lines for **why this setup has edge** — distill your directional/vol thesis (mispricing, catalyst, drift, vol sale/crush thesis, tape/sponsorship, event window). Source: your **thesis** paragraph and verdict on edge.
+
+**whatKillsBullets** (${CARD_BULLET_MAX_COUNT} max): Scan lines for **what breaks the thesis and loses money** — distill **riskOfRuin**, **bullInvalidation** / **bearInvalidation** (the side that kills the trade), and warnings. Source: analytical risk reasoning, not exit-plan math.
+
+${CARD_BULLET_RULES}
+
+Bad why: "$370 short put sits below spot" / "6/18 ATM IV 77.7 supports sale" / "Q1 revenue $43.84B" (structure or data readout)
+Good why: "Post-earnings drift after May 28 beat" / "Vol still rich vs realized after gap" / "Call flow confirms post-print chase"
+
+Bad kills: "Close below $366 breakeven" / "Gap below $350 maxes risk" (restates structure card)
+Good kills: "Jun 17 FOMC shock reprices vol against short premium" / "AI server demand reversal kills bull case"
+
+Also bad: "While front-month implied volatility is highly elevated" / "Rich premium + firm tape" / "Drift supports hold. Vol is still rich." (filler, joined ideas, or two sentences)
+`;
+
+/**
+ * Solo Desk **pm** block — bullets are explicit arrays, not clipped from structure fields.
+ */
+export const SOLO_DESK_CARD_BULLET_PROMPT = `
+## CARD-FACE BULLETS (pm — required on trade decisions)
+
+When **pm.decision** is **trade**, you MUST output **why_bullets** and **what_kills_bullets** as string arrays (in addition to the thesis paragraph and biggest_risk).
+
+Derive bullets only from your desk reasoning:
+- **why_bullets**: from **pm.thesis** and your integrated vol/flow/catalyst read — why the mispricing exists and why this expression wins.
+- **what_kills_bullets**: from **pm.biggest_risk**, **risk_of_ruin** (Solo consolidated), and what would invalidate the thesis — specific scenarios, not generic risk labels.
+
+${CARD_BULLET_RULES}
+
+The **thesis** and **biggest_risk** strings remain full paragraphs for the report; bullets are the phone-sized distillation. Do not copy breakeven, stop, or strike ladder from **pm.structure** or **exit_plan**.
+`;
+
+/**
+ * Conviction Desk **pm** block — bullets from PM synthesis and risk sections.
+ */
+export const CONVICTION_DESK_CARD_BULLET_PROMPT = `
+## CARD-FACE BULLETS (pm — required on trade decisions)
+
+When **pm.decision** is **trade**, output **why_bullets** and **what_kills_bullets** (string arrays, 3–4 items each when supported).
+
+Sources (write these sections first, then distill):
+- **why_bullets**: **regime_synthesis.synthesis**, **pm.thesis**, and the chosen **family_hypotheses** entry for the winning family — forward edge only.
+- **what_kills_bullets**: **risk_of_ruin**, **pm.biggest_risk**, and downside scenarios from the non-winning families or vol hypothesis **what_would_make_it_unfit** lines that apply to the traded structure.
+
+${CARD_BULLET_RULES}
+
+Do not restate **pm.structure** legs, **entry_math**, or exit targets. The trade card already shows structure; bullets carry thesis and kill **reasoning** only.
 `;

@@ -2,6 +2,7 @@ import {
   CONVICTION_DESK_FULL_JSON_SKELETON,
   CONVICTION_DESK_FINAL_SHAPE_GUARD,
 } from "./convictionDeskSoloSupersetPrompt.js";
+import { CONVICTION_DESK_CARD_BULLET_PROMPT } from "@workspace/strategist-card-bullets";
 
 /** Prepended to catalyst_section_guidance in Conviction Desk static prefix (before per-topic catalyst instructions). */
 export const CONVICTION_DESK_RECENT_NEWS_XML = `<recent_news>
@@ -128,6 +129,8 @@ ${args.catalystSectionGuidance.trim()}
 ${args.webSearchGuidanceBlock ? `${args.webSearchGuidanceBlock}\n` : "\n"}<decision_section_guidance>
 ${args.decisionSectionGuidance.trim()}
 </decision_section_guidance>
+
+${CONVICTION_DESK_CARD_BULLET_PROMPT.trim()}
 
 ${CONVICTION_XML_WORKED_EXAMPLES}
 

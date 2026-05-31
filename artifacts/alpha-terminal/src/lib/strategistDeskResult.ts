@@ -77,6 +77,10 @@ export interface PmOutput {
   size: "small" | "medium" | "large";
   whose_side: "institutional_alignment" | "retail_fade" | "neither";
   biggest_risk: string;
+  /** Card-face distillation of thesis (Solo / Conviction Desk). */
+  why_bullets?: string[];
+  /** Card-face distillation of risk reasoning (Solo / Conviction Desk). */
+  what_kills_bullets?: string[];
   exit_plan: DeskExitPlan;
   watch_for: string;
   /** Server-computed payoff grid; null when not available. */
