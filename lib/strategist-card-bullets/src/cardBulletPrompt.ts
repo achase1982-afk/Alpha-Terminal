@@ -1,32 +1,37 @@
-import { CARD_BULLET_MAX_CHARS, CARD_BULLET_MAX_COUNT } from "./cardBulletCore.js";
+import { CARD_BULLET_MAX_COUNT } from "./cardBulletCore.js";
 
 /** Shared instruction block for Strategist trade JSON (solo + debate PM). */
 export const CARD_FACE_BULLET_PROMPT = `
 ## CARD-FACE BULLETS (required — user reads these at a glance)
 
-You MUST populate **whyBullets** and **whatKillsBullets** using web search, cited headlines, the data package, and your chosen structure. These are NOT the long thesis — they are scan lines on the trade card.
+Populate **whyBullets** and **whatKillsBullets** from web search, headlines, the data package, and your structure. These are NOT the thesis — they are the card-face argument in plain language.
 
-**whyBullets** (max ${CARD_BULLET_MAX_COUNT}): Why we are putting this trade on — tailwinds, edge, catalyst, tape, vol/flow facts that support the position. Use real ticker-specific facts from search and data (levels, dates, IVR, headlines).
+### whyBullets (max ${CARD_BULLET_MAX_COUNT}) — WHY THE TRADE PROFITS
 
-**whatKillsBullets** (max ${CARD_BULLET_MAX_COUNT}): What invalidates the trade — precise failure modes (levels, events, vol regime, macro, earnings, news that flips the thesis).
+Each bullet is **exactly one** skeptical claim: a reason the position makes money that a trader could agree or disagree with — **not** a data readout.
 
-Rules for EVERY bullet:
-- ${CARD_BULLET_MAX_CHARS} characters maximum including spaces — one line on a phone (no separate word limit)
-- Complete thought; no fragment that continues on the next line
-- No filler ("while", "the", "highly elevated", "it is worth noting")
-- Do not pad to reach the count — use 2–${CARD_BULLET_MAX_COUNT} bullets only when you have real points; never add weak bullets to fill the array
-- One idea per bullet — never join two points with "+" or a comma; split into separate bullets or drop the weaker point
-- Name the concrete fact (strike, date, headline theme, IVR number from data) — not vague labels alone ("vol regime", "tape risk", "macro headwind")
-- Be pointed: a busy trader should know why and what breaks in one glance
-- Prefer concrete facts: "$425 short put", "May 28 earnings", "IVR 72", headline theme from search
-- For IVR and P/C on the card, cite the numeric values from the data package (e.g. "IVR 72") — do NOT use \`{{IVR}}\` or \`{{PC_RATIO}}\` placeholders in whyBullets or whatKillsBullets
-- Digits, $, and dates are allowed and encouraged when specific
+- **One point per bullet** — never two ideas, never "+" or comma joining.
+- **"So what?" test**: append "so what?" mentally. If there is no answer, it is data — rewrite as the implication.
+- When a stat is involved, state **what it implies for P/L**, not the raw value.
 
-Bad: "While front-month implied volatility is highly elevated with an IVR"
-Bad: "Rich premium + firm tape" (two ideas joined)
-Bad: "Vol regime, macro risk" (comma-spliced pair)
-Bad: "Tape risk" (vague label with no fact)
-Good: "DELL IVR 72 — rich premium to sell"
-Good: "May 28 earnings drift supports hold"
-Good: "Close below $425 kills bull put"
+Bad (data): "IVR 37" / "short put 25-delta" / "P/C 0.97" / "6/18 $420C ask blocks hit"
+Good (claim): "Rich vol lets us finance upside without paying full ATM premium"
+Good (claim): "Short strike is far enough OTM that expiry worthless is the base case"
+Good (claim): "Post-earnings drift still favors holding through this expiry window"
+
+### whatKillsBullets (max ${CARD_BULLET_MAX_COUNT}) — WHEN THE POSITION LOSES
+
+Each bullet is **exactly one** plain-language **loss condition** — when/why this trade bleeds or dies. Not a stat sheet; not a second why.
+
+Bad: "IV crush" (label only) / "Macro" / "Vol regime, headline risk"
+Good: "Close below short put strike and the credit spread loses max"
+Good: "AI guidance headlines reverse and gap through the long strike"
+Good: "FOMC day gaps tech lower through our body strike"
+
+### Format
+
+- Single line per bullet; no character limit — be as clear as needed, still one sentence.
+- 2–${CARD_BULLET_MAX_COUNT} bullets per array only when you have real points; do not pad.
+- No \`{{IVR}}\` or \`{{PC_RATIO}}\` placeholders — if you mention vol or flow, say what it **means** for the trade.
+- No filler ("while", "it is worth noting").
 `;

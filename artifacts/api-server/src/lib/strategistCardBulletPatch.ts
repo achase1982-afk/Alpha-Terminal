@@ -34,11 +34,15 @@ export function parseCardBulletPatch(
     const parsed = JSON.parse(extractJson(rawText)) as Record<string, unknown>;
     const whyBullets = enforceCardBullets(
       parseBulletArrayFromAi(parsed.whyBullets ?? parsed.why_it_works ?? parsed.whyItWorks),
+      undefined,
+      "why",
     );
     const whatKillsBullets = enforceCardBullets(
       parseBulletArrayFromAi(
         parsed.whatKillsBullets ?? parsed.what_kills_it ?? parsed.whatKillsIt,
       ),
+      undefined,
+      "kill",
     );
     if (whyBullets.length === 0 && whatKillsBullets.length === 0) return null;
     return { whyBullets, whatKillsBullets };

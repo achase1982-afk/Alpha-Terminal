@@ -57,13 +57,11 @@ function StrategistBulletList({ items, dotColor }: { items: string[]; dotColor: 
             }}
           />
           <span
-            title={text}
             style={{
               display: "block",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
               maxWidth: "100%",
+              whiteSpace: "normal",
+              wordBreak: "break-word",
             }}
           >
             {text}
