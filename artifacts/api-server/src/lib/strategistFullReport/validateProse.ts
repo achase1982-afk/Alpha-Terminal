@@ -2,13 +2,9 @@ import { z } from "zod";
 import type { ReportProse } from "./types.js";
 import { sanitizeReportDisplayText } from "./sanitizeReport.js";
 
-const noDigits = (s: string) => !/\d/.test(s);
+const proseField = z.string().min(8);
 
-const proseField = z
-  .string()
-  .min(8)
-  .refine(noDigits, { message: "prose must not contain digits" });
-
+/** Full-report prose may include digits (thesis, levels, PT, flow). */
 export const reportProseSchema = z.object({
   confidenceRead: proseField,
   whyInPlay: proseField,
@@ -29,12 +25,7 @@ export function validateReportProse(raw: unknown): { ok: true; prose: ReportPros
   return { ok: true, prose: parsed.data };
 }
 
-/** Strip digits from legacy AI text when synthesizing fallback prose. */
-export function stripDigitsFromProse(s: string): string {
-  return sanitizeReportDisplayText(
-    s
-      .replace(/\d+(\.\d+)?/g, "")
-      .replace(/\s{2,}/g, " ")
-      .trim(),
-  );
+/** Light cleanup for report display — keeps all numbers. */
+export function cleanReportProse(s: string): string {
+  return sanitizeReportDisplayText(s.replace(/\s+/g, " ").trim());
 }

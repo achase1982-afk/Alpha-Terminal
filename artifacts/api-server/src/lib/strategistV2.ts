@@ -428,6 +428,16 @@ interface AiTradeResponse {
     residual?: { type?: string | null; date?: string | null } | null;
   } | null;
   citedHeadlines?: Array<{ title: string; url?: string; date?: string }>;
+  /** Full-report drawer prose (numbers allowed). */
+  reportWhyInPlay?: string;
+  reportWhyStructure?: string;
+  reportThesisWithNumbers?: string;
+  reportStreetVsTape?: string;
+  reportIdioMacroNote?: string;
+  reportSectorNote?: string;
+  reportBearCase?: string;
+  reportRiskManagement?: string;
+  reportConfidenceRead?: string;
 }
 
 /** Snapshot persisted on strategist telemetry rows (matches `checkToxicGate` return shape). */
@@ -766,6 +776,15 @@ Your response must be valid JSON with these fields:
     - residual: optional object {type: same enum, date: "YYYY-MM-DD"} for a catalyst that fired in the LAST 14 DAYS that the price is still digesting (e.g. earnings 3-7 days ago driving post-earnings drift). Omit if not applicable.
   Most valid swing setups (post-earnings drift, mean reversion, vol regime, trend continuation) have NO scheduled catalyst between now and expiry — that is fine and expected. Do not invent a catalyst.
 - citedHeadlines: array of {title: string, url?: string, date?: string} (key headlines you actually used in the thesis; empty array allowed if none)
+- reportWhyInPlay: string (2-3 sentences: why this name is in play now — catalyst, vol, flow; include real numbers from data/search)
+- reportWhyStructure: string (2-3 sentences: why THIS options structure expresses the thesis — vol crush, drift, strikes; use reasoning from your thesis)
+- reportThesisWithNumbers: string (optional; if omitted server uses thesis) — full thesis with strikes, PT, flow, IVR, dates
+- reportStreetVsTape: string (2-3 sentences: sell-side PT/revisions vs tape/flow; if our feed has no PT row, say so — do not claim coverage the feed lacks)
+- reportIdioMacroNote: string (1-2 sentences: idio vs macro split and what it means for this trade)
+- reportSectorNote: string (1-2 sentences: sector/peer risks for this ticker)
+- reportBearCase: string (2-3 sentences: when this trade LOSES money — downside gap, macro, vol crush, debit lost; NOT max-profit scenarios)
+- reportRiskManagement: string (1-2 sentences: how to manage the position using exit targets)
+- reportConfidenceRead: string (optional one sentence on confidence tier)
 
 NARRATIVE DISCIPLINE: Your job is structure and thesis. The code computes economics from real Schwab leg prices after you respond. When your thesis prose mentions a specific debit, credit, risk/reward ratio, max profit, max loss, or breakeven, cite only numbers that match the legs and prices you are picking — do not invent or approximate. If you are uncertain of a number, describe the shape of the trade qualitatively instead of quoting a dollar figure. Dollar amounts and ratios you cite must match the strikes and real leg prices you selected; mismatches get auto-corrected by the server and logged as a quality issue.
 
@@ -821,6 +840,7 @@ export type WorkerPreparedPayload = {
   deskCatalystEval: CatalystEvaluation | null;
   deskCatalystExpirationISO: string;
   debateScrubCanonical: ScrubCanonical;
+  polygonHighlights: PolygonFlowHighlights | null;
 };
 
 export type WorkerAnalyzeControl = {
@@ -1624,6 +1644,7 @@ async function analyzeTickerV2Inner(
         deskCatalystEval,
         deskCatalystExpirationISO,
         debateScrubCanonical,
+        polygonHighlights,
       },
     });
   }
@@ -1670,6 +1691,7 @@ async function analyzeTickerV2Inner(
     ioScore,
     dataSource,
     dataPackage,
+    polygonHighlights,
     progress,
     isDebateMode,
     debateVerdict: isDebateMode ? debateVerdictFromRun : null,
@@ -1690,6 +1712,7 @@ type BuildRecommendationFromAiStateInput = {
   ioScore: IOScoreResult;
   dataSource: ChainSource;
   dataPackage: string;
+  polygonHighlights: PolygonFlowHighlights | null;
   progress?: AnalyzeProgressCallbacks;
   isDebateMode: boolean;
   debateVerdict?: DebateVerdict | null;
@@ -1710,6 +1733,7 @@ async function buildRecommendationFromAiState(input: BuildRecommendationFromAiSt
     ioScore,
     dataSource,
     dataPackage,
+    polygonHighlights,
     progress,
     isDebateMode,
     debateVerdict,
@@ -2285,6 +2309,10 @@ async function buildRecommendationFromAiState(input: BuildRecommendationFromAiSt
     const stratLabel = aiResponse.strategy
       .replace(/_/g, " ")
       .replace(/\b\w/g, (c: string) => c.toUpperCase());
+    const polygonPc =
+      polygonHighlights?.putCallVolumeRatio != null && Number.isFinite(polygonHighlights.putCallVolumeRatio)
+        ? polygonHighlights.putCallVolumeRatio
+        : null;
     result.recommendation!.fullReport = await buildStrategistFullReport({
       ticker,
       generatedAt: new Date(),
@@ -2304,16 +2332,31 @@ async function buildRecommendationFromAiState(input: BuildRecommendationFromAiSt
       dte,
       ivr: tickerData.ivr,
       putCallVolumeRatio: chainSummary?.putCallVolumeRatio ?? null,
+      polygonPutCallRatio: polygonPc,
       ioScore,
       idioPct: idioStrengthPct,
       macroPct,
       sector: tickerData.sector,
       catalystInWindow: catalystEval?.catalystInWindow ?? false,
       nextEarningsDate: tickerData.earningsDate,
+      lastEarningsDate: tickerData.lastEarningsDate,
+      earningsDaysAway: tickerData.earningsDaysAway,
       enrichedExit,
       thesis: aiResponse.thesis,
+      bullInvalidation: aiResponse.bullInvalidation,
       bearInvalidation: aiResponse.bearInvalidation,
       riskOfRuin: aiResponse.riskOfRuin,
+      prose: {
+        confidenceRead: aiResponse.reportConfidenceRead,
+        whyInPlay: aiResponse.reportWhyInPlay,
+        thesisWithNumbers: aiResponse.reportThesisWithNumbers,
+        streetVsTapeProse: aiResponse.reportStreetVsTape,
+        idioMacroNote: aiResponse.reportIdioMacroNote,
+        sectorExposureNote: aiResponse.reportSectorNote,
+        whyStructure: aiResponse.reportWhyStructure,
+        bearCase: aiResponse.reportBearCase,
+        riskManagementProse: aiResponse.reportRiskManagement,
+      },
     });
   } catch (reportErr) {
     logger.warn({ ticker, reportErr }, "StrategistV2: full report assembly failed");
@@ -4343,6 +4386,15 @@ function parseAiTradeRawText(
           date: h.date ? String(h.date) : undefined,
         })).filter(h => h.title)
       : [],
+    reportWhyInPlay: sanitizeOpt(resp.reportWhyInPlay),
+    reportWhyStructure: sanitizeOpt(resp.reportWhyStructure),
+    reportThesisWithNumbers: sanitizeOpt(resp.reportThesisWithNumbers),
+    reportStreetVsTape: sanitizeOpt(resp.reportStreetVsTape),
+    reportIdioMacroNote: sanitizeOpt(resp.reportIdioMacroNote),
+    reportSectorNote: sanitizeOpt(resp.reportSectorNote),
+    reportBearCase: sanitizeOpt(resp.reportBearCase),
+    reportRiskManagement: sanitizeOpt(resp.reportRiskManagement),
+    reportConfidenceRead: sanitizeOpt(resp.reportConfidenceRead),
   };
   return { response: fullResponse, trace, rawText };
 }
@@ -5754,7 +5806,9 @@ export async function analyzeTickerV2FinalizeAfterDebate(
     ioScore: prepared.ioScore,
     dataSource: prepared.dataSource,
     dataPackage: prepared.dataPackage,
+    polygonHighlights: prepared.polygonHighlights ?? null,
     progress,
     isDebateMode: true,
+    debateVerdict: null,
   });
 }
