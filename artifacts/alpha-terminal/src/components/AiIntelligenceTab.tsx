@@ -1176,7 +1176,7 @@ function StrategistCommandBar({ onRun, disabled, blockedTicker, lastRunSymbol, l
                 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB800] focus-visible:ring-offset-2 focus-visible:ring-offset-[#111113]"
               style={{
                 background: "#18181b",
-                color: "#FFB800",
+                color: "#f87171",
                 border: "none",
               }}
             >
