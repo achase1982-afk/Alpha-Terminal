@@ -15,6 +15,7 @@ export {
   cardBulletHasPlaceholder,
   cardBulletHasJoinedIdeas,
   cardBulletHasMultipleSentences,
+  cardBulletIsStructureReadout,
   takeFirstCardBulletSentence,
   tightenCardBullet,
   validateCardBullet,

@@ -10,5 +10,7 @@ describe("fetchStrategistSympathyPeers", () => {
     expect(peers.length).toBeGreaterThan(0);
     expect(peers.every((p) => /^[A-Z]{1,5}$/.test(p))).toBe(true);
     expect(peers).not.toContain("DELL");
+    expect(peers).not.toContain("MSTR");
+    expect(peers.some((p) => ["HPQ", "HPE", "STX", "WDC", "SMCI"].includes(p))).toBe(true);
   });
 });

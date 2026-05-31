@@ -17,7 +17,7 @@ import {
   fmtUsd,
   formatReportDate,
 } from "./reportFormat.js";
-import { fetchStrategistSympathyPeers } from "../strategistSectorPeersService.js";
+import { fetchStrategistSympathyContext } from "../strategistSectorPeersService.js";
 import {
   analystCountLabel,
   buildReportProseFromChips,
@@ -214,7 +214,10 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
     : "aligned";
 
   const thesisClean = thesis?.trim() ? cleanReportProse(thesis) : "";
-  const sectorPeers = await fetchStrategistSympathyPeers(ticker);
+  const sympathy = await fetchStrategistSympathyContext(ticker);
+  const sectorPeers = sympathy.peers;
+  const sectorLabel =
+    sector && sector !== "Unknown" ? sector : sympathy.sector ?? sector;
 
   const chipProse = buildReportProseFromChips({
     ticker,
@@ -230,7 +233,7 @@ export async function buildStrategistFullReport(args: BuildFullReportArgs): Prom
     ioRegressionAvailable: regressionOk,
     idioPct,
     macroPct,
-    sector,
+    sector: sectorLabel,
     sectorPeers,
     strategyName,
     direction,

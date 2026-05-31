@@ -36,6 +36,8 @@ Good why: "Post-earnings drift after May 28 beat" / "Vol still rich vs realized 
 
 Bad kills: "Close below $366 breakeven" / "Gap below $350 maxes risk" (restates structure card)
 Good kills: "Jun 17 FOMC shock reprices vol against short premium" / "AI server demand reversal kills bull case"
+
+Also bad: "While front-month implied volatility is highly elevated" / "Rich premium + firm tape" / "Drift supports hold. Vol is still rich." (filler, joined ideas, or two sentences)
 `;
 
 /**

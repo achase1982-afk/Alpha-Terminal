@@ -5,9 +5,11 @@ import {
   cardBulletHasJoinedIdeas,
   cardBulletHasMultipleSentences,
   cardBulletHasPlaceholder,
+  cardBulletIsStructureReadout,
   enforceCardBullets,
   proseToCardBullets,
 } from "./cardBulletCore.js";
+import { buildCardBriefBullets, type CardBulletBuildInput } from "./buildCardBullets.js";
 
 const MIN_BULLETS = 2;
 
@@ -20,7 +22,13 @@ export type CardBulletResolveInput = {
   bearInvalidation: string;
   riskOfRuin: string;
   warnings: string | null;
+  /** When AI why bullets are structure readouts, backfill from data + thesis. */
+  dataBackfill?: CardBulletBuildInput;
 };
+
+function filterWhyBullets(bullets: string[]): string[] {
+  return bullets.filter((b) => !cardBulletIsStructureReadout(b));
+}
 
 function proseFallback(input: CardBulletResolveInput): {
   whyItWorks: string[];
@@ -65,18 +73,39 @@ export function resolveCardBullets(input: CardBulletResolveInput): {
   whatKillsIt: string[];
   source: "ai" | "prose_fallback";
 } {
-  const whyFromAi = enforceCardBullets(input.whyBulletsFromAi ?? []);
+  const whyFromAiRaw = enforceCardBullets(input.whyBulletsFromAi ?? []);
+  const whyFromAi = filterWhyBullets(whyFromAiRaw);
   const killFromAi = enforceCardBullets(input.whatKillsBulletsFromAi ?? []);
 
-  if (whyFromAi.length >= MIN_BULLETS && killFromAi.length >= MIN_BULLETS) {
+  let whyItWorks = whyFromAi;
+  if (whyItWorks.length < MIN_BULLETS && input.dataBackfill) {
+    const built = buildCardBriefBullets(input.dataBackfill);
+    whyItWorks = enforceCardBullets([...built.whyItWorks, ...whyFromAi]).slice(0, CARD_BULLET_MAX_COUNT);
+  }
+
+  if (whyItWorks.length >= MIN_BULLETS && killFromAi.length >= MIN_BULLETS) {
     return {
-      whyItWorks: whyFromAi.slice(0, CARD_BULLET_MAX_COUNT),
+      whyItWorks,
       whatKillsIt: killFromAi.slice(0, CARD_BULLET_MAX_COUNT),
-      source: "ai",
+      source: whyFromAi.length >= MIN_BULLETS ? "ai" : "prose_fallback",
     };
   }
 
   const fb = proseFallback(input);
+  if (input.dataBackfill) {
+    const built = buildCardBriefBullets(input.dataBackfill);
+    const mergedWhy = enforceCardBullets([...built.whyItWorks, ...fb.whyItWorks]).slice(0, CARD_BULLET_MAX_COUNT);
+    if (mergedWhy.length >= MIN_BULLETS) {
+      return {
+        whyItWorks: mergedWhy,
+        whatKillsIt:
+          killFromAi.length >= MIN_BULLETS
+            ? killFromAi.slice(0, CARD_BULLET_MAX_COUNT)
+            : enforceCardBullets([...built.whatKillsIt, ...fb.whatKillsIt]).slice(0, CARD_BULLET_MAX_COUNT),
+        source: "prose_fallback",
+      };
+    }
+  }
   return { ...fb, source: "prose_fallback" };
 }
 
@@ -95,7 +124,7 @@ export function validateCardFaceBulletsFromAi(
     issues.push("whatKillsBullets: missing or empty — required array of card bullets");
   }
 
-  const why = enforceCardBullets(rawWhy);
+  const why = filterWhyBullets(enforceCardBullets(rawWhy));
   const kill = enforceCardBullets(rawKill);
 
   for (const [label, raw] of [
@@ -112,6 +141,11 @@ export function validateCardFaceBulletsFromAi(
       }
       if (cardBulletHasMultipleSentences(b)) {
         issues.push(`${label}: exactly one sentence per bullet — never two sentences in one string`);
+      }
+      if (label === "whyBullets" && cardBulletIsStructureReadout(b)) {
+        issues.push(
+          `${label}: "${b.slice(0, 40)}..." is a structure readout — use catalyst/vol/tape profit thesis, not strike vs spot`,
+        );
       }
     }
   }
