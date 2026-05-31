@@ -773,3 +773,62 @@ export async function getFmpStockSplits(symbol: string): Promise<FmpStockSplitsR
   }
   return { rows: out, http402: false };
 }
+
+/**
+ * FMP stock peers — same sector / similar market cap on the exchange.
+ * @see https://financialmodelingprep.com/stable/stock-peers?symbol=
+ */
+export async function getFmpStockPeers(symbol: string, limit = 6): Promise<string[]> {
+  const sym = (symbol || "").toUpperCase().trim().replace(/^\$/, "");
+  if (!sym) return [];
+
+  let apiKey: string;
+  try {
+    apiKey = getFmpApiKeyOrThrow();
+  } catch {
+    return [];
+  }
+
+  const params = new URLSearchParams({ symbol: sym, apikey: apiKey });
+  const url = `${FMP_STABLE_BASE}/stock-peers?${params.toString()}`;
+
+  try {
+    const res = await httpLimit(() =>
+      fetchWithRetry(url, { headers: { Accept: "application/json" } }),
+    );
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      logger.warn({ status: res.status, body: text.slice(0, 300), symbol: sym }, "FMP stock-peers non-200");
+      return [];
+    }
+
+    const data = (await res.json()) as unknown;
+    if (!Array.isArray(data)) return [];
+
+    const peers: string[] = [];
+    for (const item of data) {
+      if (typeof item === "string" && /^[A-Z]{1,5}$/.test(item)) {
+        const t = item.toUpperCase();
+        if (t !== sym && !peers.includes(t)) peers.push(t);
+      } else if (item && typeof item === "object") {
+        const raw = item as Record<string, unknown>;
+        const peerSym = pickString(raw["symbol"])?.toUpperCase();
+        if (peerSym && peerSym !== sym && /^[A-Z]{1,5}$/.test(peerSym) && !peers.includes(peerSym)) {
+          peers.push(peerSym);
+        }
+        const list = pickString(raw["peersList"]);
+        if (list) {
+          for (const part of list.split(",")) {
+            const t = part.trim().toUpperCase();
+            if (t && t !== sym && /^[A-Z]{1,5}$/.test(t) && !peers.includes(t)) peers.push(t);
+          }
+        }
+      }
+      if (peers.length >= limit) break;
+    }
+    return peers.slice(0, limit);
+  } catch (err) {
+    logger.warn({ err, symbol: sym }, "FMP stock-peers fetch failed");
+    return [];
+  }
+}

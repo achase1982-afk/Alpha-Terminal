@@ -118,11 +118,5 @@ export function sanitizeFullReportForDisplay(report: StrategistFullReport): Stra
           body: body(report.riskManagement.body) ?? report.riskManagement.body,
         }
       : report.riskManagement,
-    dataAssumptions: report.dataAssumptions
-      ? {
-          sources: report.dataAssumptions.sources.map((s) => sanitizeReportDisplayText(s)),
-          modeledFields: report.dataAssumptions.modeledFields.map((s) => sanitizeReportDisplayText(s)),
-        }
-      : report.dataAssumptions,
   };
 }

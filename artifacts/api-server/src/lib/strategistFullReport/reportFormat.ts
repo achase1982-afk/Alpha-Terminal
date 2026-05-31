@@ -23,6 +23,15 @@ export function fmtPct(n: number | null | undefined): string {
   return `${n}%`;
 }
 
+/** Remove parenthetical asides from report display copy. */
+export function stripReportParentheses(text: string): string {
+  return text
+    .replace(/\s*\([^)]*\)/g, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.;])/g, "$1")
+    .trim();
+}
+
 /** maxLoss from strategist economics is per-share option premium at risk × 100 (cents field). */
 export function fmtMaxLossLabel(maxLossField: number): string {
   if (!Number.isFinite(maxLossField) || maxLossField <= 0) return NA;

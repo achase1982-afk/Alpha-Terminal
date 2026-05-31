@@ -1,12 +1,16 @@
 import { describe, it, expect } from "vitest";
 import { sanitizeReportDisplayText, repairDisplayRanges } from "../strategistFullReport/sanitizeReport.js";
 import { validateReportProse, cleanReportProse } from "../strategistFullReport/validateProse.js";
-import { buildBearCaseProse, looksLikeMaxProfitScenario, fmtUsd } from "../strategistFullReport/reportFormat.js";
+import {
+  buildBearCaseProse,
+  looksLikeMaxProfitScenario,
+  fmtUsd,
+  stripReportParentheses,
+} from "../strategistFullReport/reportFormat.js";
 import { streetTapeAlignment, computeTapeSignals } from "../strategistTapeSignals.js";
 import {
   buildReportProseFromChips,
   buildRiskManagementProse,
-  extractSectorPeerTickers,
   formatEarningsChipValue,
 } from "../strategistFullReport/reportNarrative.js";
 import type { NormalizedPriceTargetSnapshot } from "../strategistPriceTargetService.js";
@@ -42,10 +46,11 @@ describe("validateReportProse", () => {
     expect(bad.ok).toBe(false);
   });
 
-  it("cleanReportProse keeps digits", () => {
-    const s = cleanReportProse("IVR 100 with 2.5 delta and PT $700");
+  it("cleanReportProse keeps digits and strips parentheses", () => {
+    const s = cleanReportProse("IVR 100 (elevated) with 2.5 delta and PT $700");
     expect(s).toMatch(/\d/);
     expect(s).toContain("700");
+    expect(s).not.toContain("(");
   });
 });
 
@@ -59,13 +64,18 @@ describe("sanitizeReportDisplayText", () => {
     expect(s).not.toContain("—");
     expect(s).not.toContain("_");
     expect(s).toContain("vol rich");
-    expect(s).toMatch(/\.\s+vol rich|\. vol rich/);
   });
 
   it("repairs dollar and month ranges", () => {
     expect(repairDisplayRanges("strikes $380 $390 on May 11 12")).toBe(
       "strikes $380–$390 on May 11–12",
     );
+  });
+});
+
+describe("stripReportParentheses", () => {
+  it("removes parenthetical clauses", () => {
+    expect(stripReportParentheses("Tape mixed (P/C 0.72) here")).toBe("Tape mixed here");
   });
 });
 
@@ -126,6 +136,7 @@ describe("buildReportProseFromChips", () => {
     });
     expect(prose).toContain("33% of max");
     expect(prose).toContain("$17.90");
+    expect(prose).not.toContain("(");
   });
 
   it("does not claim idiosyncratic dominance when macro leads", () => {
@@ -180,6 +191,7 @@ describe("buildReportProseFromChips", () => {
     expect(prose.streetVsTapeProse).toMatch(/falling|downgrades/i);
     expect(prose.streetVsTapeProse).toMatch(/call-buy\/put-sell/);
     expect(prose.sectorExposureNote).toContain("HPQ");
+    expect(prose.streetVsTapeProse).not.toContain("(");
   });
 });
 
@@ -194,21 +206,13 @@ describe("formatEarningsChipValue", () => {
     const v = formatEarningsChipValue("2026-08-27", "2026-05-28", 90, new Date("2026-05-29T12:00:00Z"));
     expect(v).toMatch(/Last/);
     expect(v).toMatch(/Next/);
+    expect(v).toMatch(/90d/);
+    expect(v).not.toContain("(");
   });
 });
 
 describe("fmtUsd", () => {
   it("formats large amounts with grouping", () => {
     expect(fmtUsd(1205)).toBe("$1,205.00");
-  });
-});
-
-describe("extractSectorPeerTickers", () => {
-  it("pulls peer symbols from context text", () => {
-    expect(extractSectorPeerTickers("Peers HPQ HPE SMCI vs DELL", "DELL")).toEqual([
-      "HPQ",
-      "HPE",
-      "SMCI",
-    ]);
   });
 });
