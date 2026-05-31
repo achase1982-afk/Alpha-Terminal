@@ -11,6 +11,7 @@ You MUST populate **whyBullets** and **whatKillsBullets** using web search, cite
 **whatKillsBullets** (max ${CARD_BULLET_MAX_COUNT}): What invalidates the trade — precise failure modes (levels, events, vol regime, macro, earnings, news that flips the thesis).
 
 Rules for EVERY bullet:
+- **Exactly one sentence** — one claim or condition, then stop (at most one sentence-ending period, exclamation, or question mark); never put two sentences in one bullet
 - ${CARD_BULLET_MAX_CHARS} characters maximum including spaces — one line on a phone (no separate word limit)
 - Complete thought; no fragment that continues on the next line
 - No filler ("while", "the", "highly elevated", "it is worth noting")
@@ -25,6 +26,7 @@ Rules for EVERY bullet:
 Bad: "While front-month implied volatility is highly elevated with an IVR"
 Bad: "Rich premium + firm tape" (two ideas joined)
 Bad: "Vol regime, macro risk" (comma-spliced pair)
+Bad: "Drift supports hold. Vol is still rich." (two sentences)
 Bad: "Tape risk" (vague label with no fact)
 Good: "DELL IVR 72 — rich premium to sell"
 Good: "May 28 earnings drift supports hold"
