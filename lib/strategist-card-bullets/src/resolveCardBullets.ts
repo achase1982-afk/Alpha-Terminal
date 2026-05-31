@@ -2,7 +2,6 @@ import type { TradeDirection } from "./tradeDirection.js";
 import {
   CARD_BULLET_MAX_CHARS,
   CARD_BULLET_MAX_COUNT,
-  CARD_BULLET_MAX_WORDS,
   cardBulletHasJoinedIdeas,
   cardBulletHasPlaceholder,
   enforceCardBullets,
@@ -115,12 +114,12 @@ export function validateCardFaceBulletsFromAi(
 
   if (why.length < MIN_BULLETS) {
     issues.push(
-      `whyBullets: need at least ${MIN_BULLETS} valid bullets (${CARD_BULLET_MAX_WORDS} words / ${CARD_BULLET_MAX_CHARS} chars each)`,
+      `whyBullets: need at least ${MIN_BULLETS} valid bullets (max ${CARD_BULLET_MAX_CHARS} characters each)`,
     );
   }
   if (kill.length < MIN_BULLETS) {
     issues.push(
-      `whatKillsBullets: need at least ${MIN_BULLETS} valid bullets (${CARD_BULLET_MAX_WORDS} words / ${CARD_BULLET_MAX_CHARS} chars each)`,
+      `whatKillsBullets: need at least ${MIN_BULLETS} valid bullets (max ${CARD_BULLET_MAX_CHARS} characters each)`,
     );
   }
 

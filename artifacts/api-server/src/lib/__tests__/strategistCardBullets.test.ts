@@ -3,7 +3,6 @@ import { scrubAll } from "../narrativeScrubbers.js";
 import {
   CARD_BULLET_MAX_CHARS,
   CARD_BULLET_MAX_COUNT,
-  CARD_BULLET_MAX_WORDS,
   cardBulletSchema,
   compressCardBullet,
   enforceCardBullets,
@@ -26,17 +25,16 @@ describe("validateCardBullet", () => {
     expect(validateCardBullet("Vol regime, macro gap").ok).toBe(false);
   });
 
-  it("tightens wrap-prone prose to max words and chars", () => {
+  it("tightens wrap-prone prose to max 50 characters including spaces", () => {
     const tightened = tightenCardBullet(
       "While front-month implied volatility is highly elevated with an IVR",
     );
     expect(tightened).not.toBeNull();
     if (tightened) {
       expect(tightened.length).toBeLessThanOrEqual(CARD_BULLET_MAX_CHARS);
-      expect(tightened.split(/\s+/).length).toBeLessThanOrEqual(CARD_BULLET_MAX_WORDS);
     }
-    const words = Array.from({ length: 12 }, (_, i) => `token${i}`).join(" ");
-    expect(tightenCardBullet(words)?.split(/\s+/).length ?? 0).toBeLessThanOrEqual(CARD_BULLET_MAX_WORDS);
+    const long = "x".repeat(60);
+    expect(tightenCardBullet(long)?.length).toBe(CARD_BULLET_MAX_CHARS);
   });
 });
 
@@ -48,7 +46,6 @@ describe("compressCardBullet", () => {
     expect(out).not.toBeNull();
     if (out) {
       expect(out.length).toBeLessThanOrEqual(CARD_BULLET_MAX_CHARS);
-      expect(out.split(/\s+/).length).toBeLessThanOrEqual(CARD_BULLET_MAX_WORDS);
     }
   });
 });

@@ -50,10 +50,10 @@ function gradeActionKind(action: string): "raise" | "cut" | "other" {
 
 function mapRecent(grades: AnalystGradeDbRow[]): NormalizedPriceTargetSnapshot["recent"] {
   return grades.slice(0, 6).map((g) => ({
-    firm: g.gradingCompany?.trim() || "—",
+    firm: g.gradingCompany?.trim() || "n/a",
     action: g.action,
-    from: g.previousGrade?.trim() || "—",
-    to: g.newGrade?.trim() || "—",
+    from: g.previousGrade?.trim() || "n/a",
+    to: g.newGrade?.trim() || "n/a",
     date: g.actionDate,
   }));
 }

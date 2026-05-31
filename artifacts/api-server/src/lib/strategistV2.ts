@@ -4136,7 +4136,7 @@ Run web search if you need a fresher headline or catalyst date. Respond with ONL
   "whatKillsBullets": ["...", "..."]
 }
 
-Follow CARD-FACE BULLETS rules from your system prompt: pointed, ticker-specific, max 7 words and 50 characters per bullet, at least 2 and at most 4 per array, one idea per bullet (no "+" or comma joining), numeric IVR from data (no {{IVR}} placeholders).`;
+Follow CARD-FACE BULLETS rules from your system prompt: pointed, ticker-specific, max 50 characters per bullet (including spaces), at least 2 and at most 4 per array, one idea per bullet (no "+" or comma joining), numeric IVR from data (no {{IVR}} placeholders).`;
 }
 
 async function ensureCardFaceBullets(args: {

@@ -1,8 +1,4 @@
-import {
-  CARD_BULLET_MAX_CHARS,
-  CARD_BULLET_MAX_COUNT,
-  CARD_BULLET_MAX_WORDS,
-} from "./cardBulletCore.js";
+import { CARD_BULLET_MAX_CHARS, CARD_BULLET_MAX_COUNT } from "./cardBulletCore.js";
 
 /** Shared instruction block for Strategist trade JSON (solo + debate PM). */
 export const CARD_FACE_BULLET_PROMPT = `
@@ -15,7 +11,7 @@ You MUST populate **whyBullets** and **whatKillsBullets** using web search, cite
 **whatKillsBullets** (max ${CARD_BULLET_MAX_COUNT}): What invalidates the trade — precise failure modes (levels, events, vol regime, macro, earnings, news that flips the thesis).
 
 Rules for EVERY bullet:
-- ${CARD_BULLET_MAX_WORDS} words maximum, ${CARD_BULLET_MAX_CHARS} characters maximum — one line on a phone
+- ${CARD_BULLET_MAX_CHARS} characters maximum including spaces — one line on a phone (no separate word limit)
 - Complete thought; no fragment that continues on the next line
 - No filler ("while", "the", "highly elevated", "it is worth noting")
 - Do not pad to reach the count — use 2–${CARD_BULLET_MAX_COUNT} bullets only when you have real points; never add weak bullets to fill the array

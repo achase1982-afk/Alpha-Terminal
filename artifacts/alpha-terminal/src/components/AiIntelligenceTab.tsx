@@ -1175,9 +1175,9 @@ function StrategistCommandBar({ onRun, disabled, blockedTicker, lastRunSymbol, l
               className="min-h-[44px] min-w-[44px] shrink-0 rounded-lg font-mono text-[13px] font-bold tracking-widest uppercase px-3
                 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB800] focus-visible:ring-offset-2 focus-visible:ring-offset-[#111113]"
               style={{
-                background: "#2a1818",
-                color: "#f87171",
-                border: "1px solid rgba(248,113,113,0.45)",
+                background: "#18181b",
+                color: "#FFB800",
+                border: "none",
               }}
             >
               Cancel

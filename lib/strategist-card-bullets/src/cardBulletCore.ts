@@ -50,15 +50,10 @@ export function tightenCardBullet(raw: string): string | null {
 
   let words = s.split(" ").filter((w) => w.length > 0 && !FILLER.has(w.toLowerCase()));
   if (words.length === 0) return null;
-  if (words.length > CARD_BULLET_MAX_WORDS) {
-    words = words.slice(0, CARD_BULLET_MAX_WORDS);
-  }
   s = words.join(" ");
 
   if (s.length > CARD_BULLET_MAX_CHARS) {
-    s = s.slice(0, CARD_BULLET_MAX_CHARS).trimEnd();
-    const sp = s.lastIndexOf(" ");
-    if (sp >= CARD_BULLET_MIN_CHARS) s = s.slice(0, sp);
+    s = s.slice(0, CARD_BULLET_MAX_CHARS);
   }
 
   if (s.length < CARD_BULLET_MIN_CHARS) return null;
@@ -83,10 +78,7 @@ export const cardBulletSchema = z
   .max(CARD_BULLET_MAX_CHARS)
   .refine((s) => !/[\r\n]/.test(s), { message: "card bullet must be a single line" })
   .refine((s) => !cardBulletHasPlaceholder(s), { message: "card bullet must not contain placeholders" })
-  .refine((s) => !cardBulletHasJoinedIdeas(s), { message: "card bullet must be one idea" })
-  .refine((s) => cardBulletWordCount(s) <= CARD_BULLET_MAX_WORDS, {
-    message: `card bullet must be at most ${CARD_BULLET_MAX_WORDS} words`,
-  });
+  .refine((s) => !cardBulletHasJoinedIdeas(s), { message: "card bullet must be one idea" });
 
 export const cardBulletsSchema = z.array(cardBulletSchema).max(CARD_BULLET_MAX_COUNT);
 
