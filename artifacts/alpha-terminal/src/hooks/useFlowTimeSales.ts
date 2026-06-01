@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from "react";
-import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { buildAuthenticatedEventSourceUrl, fetchWithAuth } from "@/lib/fetchWithAuth";
 
 // ── Live time-and-sales hook for a single OPRA contract ──────────────
 //
@@ -121,7 +121,9 @@ export function useFlowTimeSales(contract: string | null | undefined): {
       }
 
       // SSE live stream — only opened when the server reports WS enabled.
-      const url = `${API_BASE}/flow/timesales/${encodeURIComponent(contract)}/stream`;
+      const url = await buildAuthenticatedEventSourceUrl(
+        `${API_BASE}/flow/timesales/${encodeURIComponent(contract)}/stream`,
+      );
       es = new EventSource(url);
       esRef.current = es;
       attachSseListeners(es);

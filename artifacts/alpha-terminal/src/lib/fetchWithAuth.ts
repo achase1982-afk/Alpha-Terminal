@@ -147,6 +147,20 @@ export async function getClerkToken(opts?: ClerkGetTokenOptions): Promise<string
   return resolveClerkToken(opts);
 }
 
+/**
+ * EventSource cannot set Authorization headers. Append `clerk_token` so the
+ * API server's clerkAuthBridge can authenticate SSE the same way as WebSocket.
+ */
+export async function buildAuthenticatedEventSourceUrl(
+  path: string,
+  opts?: ClerkGetTokenOptions,
+): Promise<string> {
+  const token = await getClerkToken(opts);
+  if (!token) return path;
+  const sep = path.includes("?") ? "&" : "?";
+  return `${path}${sep}clerk_token=${encodeURIComponent(token)}`;
+}
+
 const MAX_ERROR_BODY_CHARS = 500;
 
 /**
