@@ -4,7 +4,11 @@ import { useOptionsStreamStore, type OptionTick } from "@/lib/options-stream-sto
 import { useDepthStore, type DepthBook } from "@/lib/depth-store";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { useOrderAlertStore, type OrderAlert } from "@/stores/orderAlertStore";
-import { fetchWithAuth, getClerkToken } from "@/lib/fetchWithAuth";
+import {
+  buildAuthenticatedEventSourceUrl,
+  fetchWithAuth,
+  getClerkToken,
+} from "@/lib/fetchWithAuth";
 import { signalSchwabAuthLost } from "@/lib/authNoticeStore";
 import { refreshSchwabViaServer, syncSchwabTokensFromServer } from "@/lib/schwabTokenSync";
 import type { LiveQuote, LiveNewsItem } from "@/lib/store";
@@ -78,6 +82,7 @@ interface StreamPortfolioStatus {
 }
 
 const API_BASE = "/api";
+const DEV_BYPASS_AUTH = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
 const WS_RECONNECT_BASE = 1_000;
 const WS_RECONNECT_MAX = 30_000;
 const REJECTED_RETRY_DELAY = 3_000;
@@ -312,10 +317,11 @@ export function useMarketStream() {
     setStreamStatus,
   ]);
 
-  const startSseStream = useCallback(() => {
+  const startSseStream = useCallback(async () => {
     if (!mountedRef.current || esRef.current) return;
 
-    const es = new EventSource(`${API_BASE}/stream/quotes`);
+    const sseUrl = await buildAuthenticatedEventSourceUrl(`${API_BASE}/stream/quotes`);
+    const es = new EventSource(sseUrl);
     esRef.current = es;
 
     const parseEvent = (event: string) => (e: Event) => {
@@ -340,7 +346,7 @@ export function useMarketStream() {
     sseFallbackTimerRef.current = setTimeout(() => {
       sseFallbackTimerRef.current = null;
       if (wsRef.current?.readyState === WebSocket.OPEN) return;
-      startSseStream();
+      void startSseStream();
     }, SSE_FALLBACK_DELAY);
   }, [startSseStream]);
 
@@ -349,6 +355,12 @@ export function useMarketStream() {
     if (!mountedRef.current) return;
 
     const clerkToken = await getClerkToken();
+    if (!clerkToken && !DEV_BYPASS_AUTH) {
+      setStreamStatus("connecting");
+      scheduleReconnect();
+      return;
+    }
+
     const url = buildWsUrl(clerkToken);
     setStreamStatus("connecting");
 

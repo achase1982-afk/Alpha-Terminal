@@ -17,7 +17,7 @@
 
 import { useEffect, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
-import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { buildAuthenticatedEventSourceUrl, fetchWithAuth } from "@/lib/fetchWithAuth";
 import type { LiveQuote } from "@/lib/store";
 
 const API_BASE = "/api";
@@ -70,11 +70,12 @@ export function useStreamingQuotes() {
   }
 
   // ── Open (or reopen) the SSE connection ──────────────────────────────────
-  function openEventSource() {
+  async function openEventSource() {
     esRef.current?.close();
     esRef.current = null;
 
-    const es = new EventSource(`${API_BASE}/stream/quotes`);
+    const sseUrl = await buildAuthenticatedEventSourceUrl(`${API_BASE}/stream/quotes`);
+    const es = new EventSource(sseUrl);
     esRef.current = es;
 
     es.addEventListener("quote", (e) => {
@@ -120,7 +121,7 @@ export function useStreamingQuotes() {
     const isNewToken = accessToken !== tokenRef.current;
     tokenRef.current = accessToken;
 
-    openEventSource();
+    void openEventSource();
 
     if (isNewToken) {
       void startServerStream(accessToken);
@@ -149,7 +150,7 @@ export function useStreamingQuotes() {
         esRef.current = null;
         setStreamConnected(false);
       } else if (!esRef.current) {
-        openEventSource();
+        void openEventSource();
         void startServerStream(accessToken);
       }
     }
