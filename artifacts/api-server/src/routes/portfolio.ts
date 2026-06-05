@@ -4,6 +4,17 @@ import { logger } from "../lib/logger.js";
 import { broadcastToClients } from "../lib/wsServer.js";
 import { sendPushToAll } from "../lib/pushService.js";
 import { markAlertSeen } from "../lib/schwabStreamer.js";
+import {
+  fetchMappedSchwabAccounts,
+  fetchAccountNumberRows,
+  resolveAccountHash,
+  schwabTraderGet,
+} from "../lib/schwabPortfolioAccounts.js";
+import {
+  getPortfolioPrefs,
+  savePortfolioPrefs,
+  portfolioPrefsUserId,
+} from "../lib/portfolioPreferences.js";
 import { db } from "@workspace/db";
 import { tradeJournalTable } from "@workspace/db/schema";
 
@@ -56,23 +67,6 @@ function getTraderToken(): string | null {
   return trader?.accessToken ?? null;
 }
 
-async function schwabGet(path: string, token: string, retries = 1): Promise<any> {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const res = await fetch(`${SCHWAB_TRADER_BASE}${path}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) return res.json();
-    const body = await res.text().catch(() => "");
-    if (res.status >= 500 && attempt < retries) {
-      logger.warn({ path, status: res.status, attempt }, "Schwab 5xx, retrying...");
-      await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
-      continue;
-    }
-    throw new Error(`Schwab ${path} returned ${res.status}: ${body.slice(0, 300)}`);
-  }
-  throw new Error(`Schwab ${path} exhausted retries`);
-}
-
 router.get("/accounts", async (_req, res) => {
   const token = getTraderToken();
   if (!token) return res.status(401).json({ error: "no_trader_token" });
@@ -82,112 +76,7 @@ router.get("/accounts", async (_req, res) => {
   }
 
   try {
-    const accounts = await schwabGet("/accounts?fields=positions", token, 2);
-    const mapped = accounts.map((acct: any) => {
-      const sa = acct.securitiesAccount;
-      const proj = sa.projectedBalances ?? {};
-      const cur = sa.currentBalances ?? {};
-      const bal = {
-        ...cur,
-        liquidationValue: proj.liquidationValue ?? cur.liquidationValue ?? 0,
-        availableFunds: proj.availableFunds ?? cur.availableFunds ?? 0,
-        buyingPower: proj.buyingPower ?? cur.buyingPower ?? 0,
-        dayTradingBuyingPower: proj.dayTradingBuyingPower ?? cur.dayTradingBuyingPower ?? 0,
-        cashBalance: proj.cashBalance ?? cur.cashBalance ?? 0,
-        equity: proj.equity ?? cur.equity ?? 0,
-      };
-      const initBal = sa.initialBalances ?? {};
-
-      const curLiq = proj.liquidationValue ?? cur.liquidationValue ?? 0;
-      const initLiq = initBal.liquidationValue ?? initBal.accountValue ?? 0;
-      const dayPL = curLiq - initLiq;
-      const totalPL = (sa.positions ?? []).reduce(
-        (sum: number, p: any) => sum + (p.longOpenProfitLoss ?? 0),
-        0
-      );
-
-      // TEMP DEBUG: log raw Schwab fields for USB option legs so we can
-      // diagnose why short-leg P/L % collapses to 0%. Remove after fix.
-      const usbDebug = (sa.positions ?? []).filter((p: any) => {
-        const inst = p.instrument ?? {};
-        const isOpt = inst.assetType === "OPTION" || inst.assetType === "INDEX_OPTION" || inst.assetType === "FUTURE_OPTION";
-        const ul = (inst.underlyingSymbol || inst.symbol || "").toUpperCase();
-        return isOpt && ul === "USB";
-      }).map((p: any) => ({
-        symbol: p.instrument?.symbol,
-        putCall: p.instrument?.putCall,
-        averagePrice: p.averagePrice,
-        longQuantity: p.longQuantity,
-        shortQuantity: p.shortQuantity,
-        marketValue: p.marketValue,
-        longOpenProfitLoss: p.longOpenProfitLoss,
-        currentDayProfitLoss: p.currentDayProfitLoss,
-      }));
-      if (usbDebug.length > 0) {
-        logger.info({ usbDebug }, "PORTFOLIO_DEBUG: raw Schwab USB option fields");
-      }
-
-      const positions = (sa.positions ?? []).map((p: any) => {
-        const inst = p.instrument ?? {};
-        return {
-          symbol: inst.symbol,
-          underlyingSymbol: inst.underlyingSymbol ?? inst.symbol,
-          description: inst.description ?? inst.symbol,
-          assetType: inst.assetType,
-          putCall: inst.putCall ?? null,
-          cusip: inst.cusip,
-          longQuantity: p.longQuantity ?? 0,
-          shortQuantity: p.shortQuantity ?? 0,
-          averagePrice: p.averagePrice ?? 0,
-          marketValue: p.marketValue ?? 0,
-          currentDayProfitLoss: p.currentDayProfitLoss ?? 0,
-          currentDayProfitLossPercentage: p.currentDayProfitLossPercentage ?? 0,
-          longOpenProfitLoss: p.longOpenProfitLoss ?? 0,
-          maintenanceRequirement: p.maintenanceRequirement ?? 0,
-          settledLongQuantity: p.settledLongQuantity ?? 0,
-          settledShortQuantity: p.settledShortQuantity ?? 0,
-          previousSessionLongQuantity: p.previousSessionLongQuantity ?? 0,
-          closePrice: p.closePrice ?? null,
-          currentDayCost: p.currentDayCost ?? null,
-        };
-      });
-
-      const acctNum = String(sa.accountNumber ?? "");
-      return {
-        accountNumber: acctNum.length > 4 ? `****${acctNum.slice(-4)}` : acctNum,
-        type: sa.type,
-        isDayTrader: sa.isDayTrader ?? false,
-        roundTrips: sa.roundTrips ?? 0,
-        balances: {
-          liquidationValue: bal.liquidationValue ?? 0,
-          equity: bal.equity ?? 0,
-          buyingPower: bal.buyingPower ?? 0,
-          dayTradingBuyingPower: bal.dayTradingBuyingPower ?? 0,
-          cashBalance: bal.cashBalance ?? 0,
-          availableFunds: bal.availableFunds ?? 0,
-          marginBalance: bal.marginBalance ?? 0,
-          maintenanceRequirement: bal.maintenanceRequirement ?? 0,
-          longMarketValue: bal.longMarketValue ?? 0,
-          shortMarketValue: bal.shortMarketValue ?? 0,
-          longOptionMarketValue: bal.longOptionMarketValue ?? 0,
-          shortOptionMarketValue: bal.shortOptionMarketValue ?? 0,
-          moneyMarketFund: bal.moneyMarketFund ?? 0,
-          mutualFundValue: bal.mutualFundValue ?? 0,
-          bondValue: bal.bondValue ?? 0,
-          pendingDeposits: bal.pendingDeposits ?? 0,
-          sma: bal.sma ?? 0,
-        },
-        initialBalances: {
-          accountValue: initBal.accountValue ?? initBal.liquidationValue ?? 0,
-          equity: initBal.equity ?? 0,
-          liquidationValue: initBal.liquidationValue ?? 0,
-        },
-        dayPL,
-        totalPL,
-        positions,
-      };
-    });
-
+    const mapped = await fetchMappedSchwabAccounts(token);
     accountsCache = { data: mapped, fetchedAt: Date.now() };
     return res.json(mapped);
   } catch (err) {
@@ -197,12 +86,41 @@ router.get("/accounts", async (_req, res) => {
   }
 });
 
+router.get("/account-numbers", async (_req, res) => {
+  const token = getTraderToken();
+  if (!token) return res.status(401).json({ error: "no_trader_token" });
+  try {
+    const rows = await fetchAccountNumberRows(token);
+    return res.json(rows);
+  } catch (err) {
+    logger.error({ err }, "Account numbers fetch failed");
+    return res.status(502).json({ error: "schwab_api_error" });
+  }
+});
+
+router.get("/preferences", async (req, res) => {
+  const userId = portfolioPrefsUserId(req);
+  const prefs = await getPortfolioPrefs(userId);
+  return res.json(prefs);
+});
+
+router.put("/preferences", async (req, res) => {
+  const userId = portfolioPrefsUserId(req);
+  const body = req.body as {
+    viewSelection?: string;
+    defaultTradingAccountHash?: string | null;
+    hideBalances?: boolean;
+  };
+  const prefs = await savePortfolioPrefs(userId, body);
+  return res.json(prefs);
+});
+
 router.get("/accounts/raw-balances", async (_req, res) => {
   const token = getTraderToken();
   if (!token) return res.status(401).json({ error: "no_trader_token" });
 
   try {
-    const accounts = await schwabGet("/accounts?fields=positions", token, 2);
+    const accounts = await schwabTraderGet("/accounts?fields=positions", token, 2);
     const raw = accounts.map((acct: any) => {
       const sa = acct.securitiesAccount;
       return {
@@ -223,16 +141,23 @@ router.get("/orders", async (req, res) => {
   if (!token) return res.status(401).json({ error: "no_trader_token" });
 
   try {
-    const nums = await schwabGet("/accounts/accountNumbers", token);
-    if (!nums.length) return res.json([]);
-    const hash = nums[0].hashValue;
+    const userId = portfolioPrefsUserId(req);
+    const prefs = await getPortfolioPrefs(userId);
+    const requested =
+      typeof req.query.accountHash === "string"
+        ? req.query.accountHash
+        : prefs.viewSelection !== "all"
+          ? prefs.viewSelection
+          : prefs.defaultTradingAccountHash;
+    const hash = await resolveAccountHash(token, requested);
+    if (!hash) return res.json([]);
 
     const days = parseInt(req.query.days as string) || 30;
     const end = new Date();
     const start = new Date();
     start.setDate(start.getDate() - Math.min(days, 60));
 
-    const orders = await schwabGet(
+    const orders = await schwabTraderGet(
       `/accounts/${hash}/orders?fromEnteredTime=${start.toISOString()}&toEnteredTime=${end.toISOString()}`,
       token
     );
@@ -292,16 +217,17 @@ router.get("/transactions", async (req, res) => {
   if (!token) return res.status(401).json({ error: "no_trader_token" });
 
   try {
-    const nums = await schwabGet("/accounts/accountNumbers", token);
-    if (!nums.length) return res.json([]);
-    const hash = nums[0].hashValue;
+    const requested =
+      typeof req.query.accountHash === "string" ? req.query.accountHash : null;
+    const hash = await resolveAccountHash(token, requested);
+    if (!hash) return res.json([]);
 
     const days = parseInt(req.query.days as string) || 30;
     const end = new Date();
     const start = new Date();
     start.setDate(start.getDate() - Math.min(days, 365));
 
-    const txns = await schwabGet(
+    const txns = await schwabTraderGet(
       `/accounts/${hash}/transactions?startDate=${start.toISOString()}&endDate=${end.toISOString()}&types=TRADE`,
       token
     );
@@ -333,14 +259,16 @@ router.get("/transactions", async (req, res) => {
   }
 });
 
-router.get("/account-hash", async (_req, res) => {
+router.get("/account-hash", async (req, res) => {
   const token = getTraderToken();
   if (!token) return res.status(401).json({ error: "no_trader_token" });
 
   try {
-    const nums = await schwabGet("/accounts/accountNumbers", token);
-    if (!nums.length) return res.status(404).json({ error: "no_accounts" });
-    return res.json({ hashValue: nums[0].hashValue });
+    const requested =
+      typeof req.query.accountHash === "string" ? req.query.accountHash : null;
+    const hash = await resolveAccountHash(token, requested);
+    if (!hash) return res.status(404).json({ error: "no_accounts" });
+    return res.json({ hashValue: hash });
   } catch (err) {
     logger.error({ err }, "Account hash fetch failed");
     return res.status(502).json({ error: "schwab_api_error" });

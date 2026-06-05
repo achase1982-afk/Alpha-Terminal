@@ -3,6 +3,7 @@ import { useTerminalStore } from "@/lib/store";
 import { useQuote, type QuoteData } from "@/hooks/useQuote";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
+import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { startStrategistPolling } from "@/lib/strategistPoller";
 import { useOptionsStreamStore } from "@/lib/options-stream-store";
 import {
@@ -488,7 +489,7 @@ export function StrategyBuilder({
   const [extendedHours, setExtendedHours] = useState(false);
   const [timeInForce, setTimeInForce] = useState<"DAY" | "GTC">("DAY");
   const [stage, setStage] = useState<Stage>("form");
-  const [accountHash, setAccountHash] = useState<string | null>(null);
+  const accountHash = useSchwabAccountStore((s) => s.tradingAccountHash());
   const [orderId, setOrderId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [priceError, setPriceError] = useState("");
@@ -535,13 +536,6 @@ export function StrategyBuilder({
     }
   }, [isOpen, initialLegs]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    fetchWithAuth("/api/portfolio/account-hash")
-      .then(r => r.json())
-      .then(d => { if (d.hashValue) setAccountHash(d.hashValue); })
-      .catch(() => {});
-  }, [isOpen]);
 
   const lastPrice = quote?.last ?? 0;
   const defaultExp = availableExpirations.length > 0 ? availableExpirations[0].value : "";

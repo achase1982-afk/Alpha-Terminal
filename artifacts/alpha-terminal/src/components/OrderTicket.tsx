@@ -4,6 +4,8 @@ import { useQuote } from "@/hooks/useQuote";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
+import { useSchwabAccountStore } from "@/lib/schwab-account-store";
+import { formatSchwabAccountType } from "@/lib/schwabAccountAggregate";
 import { startStrategistPolling } from "@/lib/strategistPoller";
 import { computeStrategyEconomics } from "@/lib/strategyCalculator";
 import { useGetOptionChain } from "@workspace/api-client-react";
@@ -365,7 +367,11 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const [stage, setStage] = useState<ConfirmStage>("form");
   const [orderId, setOrderId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
-  const [accountHash, setAccountHash] = useState<string | null>(null);
+  const schwabAccounts = useSchwabAccountStore((s) => s.accounts);
+  const orderTicketHash = useSchwabAccountStore((s) => s.orderTicketAccountHash);
+  const setOrderTicketHash = useSchwabAccountStore((s) => s.setOrderTicketAccountHash);
+  const tradingHash = useSchwabAccountStore((s) => s.tradingAccountHash());
+  const accountHash = orderTicketHash ?? tradingHash;
   const [showOrderType, setShowOrderType] = useState(false);
   const [showTifDropdown, setShowTifDropdown] = useState(false);
   const [priceLocked, setPriceLocked] = useState(false);
@@ -452,28 +458,24 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
 
   useEffect(() => {
     if (!isOpen) return;
-    fetchWithAuth("/api/portfolio/account-hash")
-      .then((r) => r.json())
-      .then((d) => { if (d.hashValue) setAccountHash(d.hashValue); })
-      .catch(() => {});
-  }, [isOpen]);
+    const h = useSchwabAccountStore.getState().tradingAccountHash();
+    setOrderTicketHash(h);
+  }, [isOpen, setOrderTicketHash]);
 
   useEffect(() => {
     if (!isOpen || !accountHash) return;
-    fetchWithAuth("/api/portfolio/accounts")
-      .then(r => r.json())
-      .then((accts: any[]) => {
-        if (Array.isArray(accts) && accts.length > 0) {
-          const bal = accts[0]?.balances ?? {};
-          setBalances({
-            buyingPower: bal.buyingPower ?? null,
-            cashBalance: bal.cashBalance ?? null,
-            liquidationValue: bal.liquidationValue ?? null,
-          });
-        }
-      })
-      .catch(() => {});
-  }, [isOpen, accountHash]);
+    const acct = schwabAccounts.find((a) => a.hashValue === accountHash);
+    if (acct?.balances) {
+      const bal = acct.balances;
+      setBalances({
+        buyingPower: bal.buyingPower ?? null,
+        cashBalance: bal.cashBalance ?? null,
+        liquidationValue: bal.liquidationValue ?? null,
+      });
+      return;
+    }
+    void useSchwabAccountStore.getState().refreshAccounts();
+  }, [isOpen, accountHash, schwabAccounts]);
 
   useEffect(() => {
     if (!isOpen || priceLocked || limitPrice) return;
@@ -1096,6 +1098,34 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
           </button>
         </div>
       </header>
+
+      {schwabAccounts.length > 1 && stage !== "success" && (
+        <div
+          className="shrink-0 px-3 py-2 flex items-center gap-2"
+          style={{ borderBottom: `1px solid ${BORDER}`, background: "rgba(0,0,0,0.2)" }}
+        >
+          <span style={{ fontSize: S.label, color: MUTED, flexShrink: 0 }}>Account</span>
+          <select
+            value={accountHash ?? ""}
+            onChange={(e) => setOrderTicketHash(e.target.value || null)}
+            className="flex-1 min-w-0 px-2 py-1 rounded-md"
+            style={{
+              fontSize: S.label,
+              color: WHITE,
+              background: FIELD,
+              border: `1px solid ${BORDER}`,
+            }}
+          >
+            {schwabAccounts.map((a) =>
+              a.hashValue ? (
+                <option key={a.hashValue} value={a.hashValue}>
+                  {a.accountNumber} · {formatSchwabAccountType(a.type)}
+                </option>
+              ) : null,
+            )}
+          </select>
+        </div>
+      )}
 
       {isCloseOrder && (
         <div className="flex items-center gap-2 px-3 py-1.5 shrink-0" style={{ background: `${DOWN}08`, borderBottom: `1px solid ${DOWN}20` }}>

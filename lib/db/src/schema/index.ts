@@ -1023,6 +1023,17 @@ export const terminalWatchlistsTable = pgTable("terminal_watchlists", {
 
 export type TerminalWatchlist = typeof terminalWatchlistsTable.$inferSelect;
 
+export const terminalPortfolioPrefsTable = pgTable("terminal_portfolio_prefs", {
+  userId: text("user_id").primaryKey(),
+  /** `all` or a Schwab account hashValue */
+  viewSelection: text("view_selection").notNull().default("all"),
+  defaultTradingAccountHash: text("default_trading_account_hash"),
+  hideBalances: boolean("hide_balances").notNull().default(false),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type TerminalPortfolioPrefs = typeof terminalPortfolioPrefsTable.$inferSelect;
+
 /** Precomputed scanner signals (LC130 refresh worker + sync GET /api/v2/scan). */
 export const tickerSignalSnapshotTable = pgTable("ticker_signal_snapshot", {
   ticker: text("ticker").primaryKey(),
