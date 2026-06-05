@@ -9,6 +9,7 @@ import {
   useGetQuote, useGetPriceHistory, useGetOptionChain,
 } from "@workspace/api-client-react";
 import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
+import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 // Strategist V2: polling lives in `strategistPoller` (survives tab background via sync + `/job/:id/final`).
 import {
   startStrategistPolling,
@@ -450,17 +451,11 @@ function OrderReviewPanel({ strategy, symbol, onClose }: { strategy: StrategyPay
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [accountHash, setAccountHash] = useState<string | null>(null);
+  const accountHash = useSchwabAccountStore((s) => s.tradingAccountHash());
 
   const isCredit = strategy.net_credit > 0;
   const stratType = strategy.strategy_type.toLowerCase().replace(/\s+/g, "_").toUpperCase();
 
-  useEffect(() => {
-    fetchWithAuth("/api/portfolio/account-hash")
-      .then(r => r.json())
-      .then(d => { if (d.hashValue) setAccountHash(d.hashValue); })
-      .catch(() => {});
-  }, []);
 
   const allLegs = [
     { leg: strategy.short_leg, label: "Short" },

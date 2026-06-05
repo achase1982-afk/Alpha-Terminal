@@ -17,6 +17,9 @@ import { ChartControls, chartParamsFromStore, isIntradayInterval } from "@/compo
 import { useAutoRefreshToken } from "@/hooks/useAutoRefreshToken";
 import { useMarketStream } from "@/hooks/useMarketStream";
 import { useSchwabSessionReconciliation } from "@/hooks/useSchwabSessionReconciliation";
+import { useSchwabAccountsBootstrap } from "@/hooks/useSchwabAccountsBootstrap";
+import { SchwabAccountHeader } from "@/components/SchwabAccountHeader";
+import { SchwabAccountPickerSheet } from "@/components/SchwabAccountPickerSheet";
 import { useViewportShell } from "@/hooks/useViewportShell";
 
 import { InAppBrowser } from "@/components/InAppBrowser";
@@ -125,7 +128,9 @@ function PulseHeader({ pulseData, onRefresh }: { pulseData: any; onRefresh: () =
 }
 
 export default function TerminalPage() {
-  const { symbol, accessToken, chartPeriod, chartInterval, streamStatus } = useTerminalStore();
+  const { symbol, accessToken, traderAccessToken, chartPeriod, chartInterval, streamStatus } = useTerminalStore();
+  const schwabLinked = !!(accessToken || traderAccessToken);
+  useSchwabAccountsBootstrap(schwabLinked);
   const strategistJobsForBadge = useTerminalStore((s) => s.strategistJobs);
   const strategistRunningCount = Object.values(strategistJobsForBadge).filter(j => j.status === 'running').length;
   const strategistUnviewedCount = Object.values(strategistJobsForBadge).filter(j => (j.status === 'done' || j.status === 'error') && !j.viewed).length;
@@ -667,6 +672,7 @@ export default function TerminalPage() {
               <div className="flex flex-1 min-h-0 flex-col">
                 {showMiniCards && !isCompact && <MacroBar />}
                 <div ref={stickyWrapRef} className="sticky top-0 z-40 bg-background shrink-0">
+                  {schwabLinked && <SchwabAccountHeader compact />}
                   <MetricsBar compact={isScrolled} onTrade={openOrder} />
                   <VolumeBar />
                   <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
@@ -927,6 +933,7 @@ export default function TerminalPage() {
           closeOrderTicket();
         }}
       />
+      {schwabLinked && <SchwabAccountPickerSheet />}
     </div>
   );
 }

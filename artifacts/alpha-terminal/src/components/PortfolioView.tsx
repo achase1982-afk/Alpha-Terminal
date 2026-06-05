@@ -21,6 +21,8 @@ import {
 } from "lucide-react";
 import { JournalTab } from "./JournalTab";
 import type { OrderLeg } from "./OrderTicket";
+import { SchwabAccountHeader } from "./SchwabAccountHeader";
+import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 
 const C = {
   bg: "#0c0c0c",
@@ -1207,10 +1209,18 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
   const portfolioStatus = usePortfolioStreamStore((s) => s.portfolioStatus);
 
   const [subTab, setSubTab] = useState<SubTab>("positions");
-  const [account, setAccount] = useState<Account | null>(() => {
+  const schwabAccounts = useSchwabAccountStore((s) => s.accounts);
+  const viewSelection = useSchwabAccountStore((s) => s.viewSelection);
+  const ordersHash = useSchwabAccountStore((s) => s.ordersAccountHash());
+  const tradingHash = useSchwabAccountStore((s) => s.tradingAccountHash());
+  const hideBalances = useSchwabAccountStore((s) => s.hideBalances);
+
+  const account = useMemo((): Account | null => {
+    const displayed = useSchwabAccountStore.getState().displayAccount();
+    if (displayed) return displayed as Account;
     const a = usePortfolioStreamStore.getState().account;
     return isPortfolioAccountPayload(a) ? a : null;
-  });
+  }, [schwabAccounts, viewSelection]);
   const [orders, setOrders] = useState<Order[]>(() => usePortfolioStreamStore.getState().orders as Order[]);
   const [loading, setLoading] = useState(() => !usePortfolioStreamStore.getState().account);
   const [ordersLoading, setOrdersLoading] = useState(false);
@@ -1219,7 +1229,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
   const [orderFilter, setOrderFilter] = useState<OrderFilter>("ALL");
   const [orderSearch, setOrderSearch] = useState("");
   const [cancellingId, setCancellingId] = useState<number | null>(null);
-  const [accountHash, setAccountHash] = useState<string | null>(null);
+  const accountHash = tradingHash ?? ordersHash;
   const [ordersError, setOrdersError] = useState(false);
   const wsSubSentRef = useRef(false);
   const [upcomingEarnings, setUpcomingEarnings] = useState<Map<string, { date: string; time: string }>>(new Map());
@@ -1304,8 +1314,18 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
 
 
   useEffect(() => {
-    if (wsAccount && isPortfolioAccountPayload(wsAccount)) { setAccount(wsAccount); setLastRefresh(wsLastUpdate); setLoading(false); setError(null); }
-  }, [wsAccount, wsLastUpdate]);
+    if (schwabAccounts.length > 0) {
+      setLastRefresh(new Date());
+      setLoading(false);
+      setError(null);
+      return;
+    }
+    if (wsAccount && isPortfolioAccountPayload(wsAccount)) {
+      setLastRefresh(wsLastUpdate);
+      setLoading(false);
+      setError(null);
+    }
+  }, [wsAccount, wsLastUpdate, schwabAccounts.length]);
 
   useEffect(() => {
     if (wsOrders && wsOrders.length > 0) { setOrders(wsOrders as Order[]); setOrdersLoading(false); setOrdersError(false); }
@@ -1323,25 +1343,8 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
       const timeout = setTimeout(() => clearInterval(retry), 10_000);
       var cleanup = () => { clearInterval(retry); clearTimeout(timeout); };
     }
-    const fetchAccountsWithRetry = async (attempts = 3) => {
-      for (let i = 0; i < attempts; i++) {
-        try {
-          const r = await fetchWithAuth("/api/portfolio/accounts");
-          if (!r.ok) throw new Error();
-          const data = await r.json();
-          if (data.length > 0) { setAccount(data[0]); setLastRefresh(new Date()); }
-          setLoading(false);
-          return;
-        } catch {
-          if (i < attempts - 1) await new Promise(r => setTimeout(r, 2000 * (i + 1)));
-        }
-      }
-      if (!usePortfolioStreamStore.getState().account) setError("Failed to load portfolio data");
-      setLoading(false);
-    };
-    fetchAccountsWithRetry();
-    fetchWithAuth("/api/portfolio/orders?days=30").then(r => r.ok ? r.json() : Promise.reject()).then(data => { setOrders(data); }).catch(() => {});
-    fetchWithAuth("/api/portfolio/account-hash").then(r => r.json()).then(d => { if (d.hashValue) setAccountHash(d.hashValue); }).catch(() => {});
+    void useSchwabAccountStore.getState().refreshAccounts();
+    setLoading(false);
     return () => {
       cleanup?.();
       const ws = window.__alphaWs;
@@ -1354,24 +1357,41 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const res = await fetchWithAuth("/api/portfolio/accounts");
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      if (data.length > 0) setAccount(data[0]);
+      await useSchwabAccountStore.getState().refreshAccounts();
+      if (!useSchwabAccountStore.getState().displayAccount()) throw new Error();
       setLastRefresh(new Date());
-    } catch { if (!silent) setError("Failed to load portfolio data"); }
-    finally { if (!silent) setLoading(false); }
+    } catch {
+      if (!silent) setError("Failed to load portfolio data");
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, []);
 
   const fetchOrders = useCallback(async () => {
-    setOrdersLoading(true); setOrdersError(false);
+    const hash = useSchwabAccountStore.getState().ordersAccountHash();
+    if (!hash) {
+      setOrders([]);
+      return;
+    }
+    setOrdersLoading(true);
+    setOrdersError(false);
     try {
-      const res = await fetchWithAuth("/api/portfolio/orders?days=30");
+      const res = await fetchWithAuth(
+        `/api/portfolio/orders?days=30&accountHash=${encodeURIComponent(hash)}`,
+      );
       if (!res.ok) throw new Error();
       setOrders(await res.json());
-    } catch { setOrdersError(true); }
-    finally { setOrdersLoading(false); }
+    } catch {
+      setOrdersError(true);
+    } finally {
+      setOrdersLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    if (!accessToken || !ordersHash) return;
+    fetchOrders();
+  }, [accessToken, ordersHash, fetchOrders]);
 
   const handleSelectSymbol = useCallback((sym: string) => { setSymbol(sym); onNavigateToSymbol?.(sym); }, [setSymbol, onNavigateToSymbol]);
 
@@ -1796,23 +1816,24 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
           borderBottom: `1px solid ${C.borderHi}`,
         }}
       >
+        <SchwabAccountHeader />
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", padding: "8px 12px 10px", gap: 4 }}>
           <div>
             <div style={{ fontSize: 11, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Net Liq Value</div>
             <div style={{ fontSize: 20, fontWeight: 700, color: C.text, fontVariantNumeric: "tabular-nums", letterSpacing: -0.5 }}>
-              {fmtCurrency(bal?.liquidationValue ?? 0)}
+              {hideBalances ? "••••••" : fmtCurrency(bal?.liquidationValue ?? 0)}
             </div>
           </div>
           <div>
             <div style={{ fontSize: 11, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Available $</div>
             <div style={{ fontSize: 16, fontWeight: 600, color: (bal?.availableFunds ?? 0) < 0 ? C.red : C.text, fontVariantNumeric: "tabular-nums" }}>
-              {fmtCurrency(bal?.availableFunds ?? 0)}
+              {hideBalances ? "••••••" : fmtCurrency(bal?.availableFunds ?? 0)}
             </div>
           </div>
           <div>
             <div style={{ fontSize: 11, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Buying Power</div>
             <div style={{ fontSize: 16, fontWeight: 600, color: (bal?.buyingPower ?? 0) < 0 ? C.red : C.text, fontVariantNumeric: "tabular-nums" }}>
-              {fmtCurrency(bal?.buyingPower ?? 0)}
+              {hideBalances ? "••••••" : fmtCurrency(bal?.buyingPower ?? 0)}
             </div>
           </div>
         </div>
