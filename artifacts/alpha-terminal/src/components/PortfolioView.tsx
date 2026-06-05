@@ -1209,18 +1209,19 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
   const portfolioStatus = usePortfolioStreamStore((s) => s.portfolioStatus);
 
   const [subTab, setSubTab] = useState<SubTab>("positions");
-  const schwabAccounts = useSchwabAccountStore((s) => s.accounts);
+  const accountsRevision = useSchwabAccountStore((s) => s.accountsRevision);
   const viewSelection = useSchwabAccountStore((s) => s.viewSelection);
   const ordersHash = useSchwabAccountStore((s) => s.ordersAccountHash());
   const tradingHash = useSchwabAccountStore((s) => s.tradingAccountHash());
   const hideBalances = useSchwabAccountStore((s) => s.hideBalances);
+  const hasSchwabAccounts = useSchwabAccountStore((s) => s.accounts.length > 0);
 
   const account = useMemo((): Account | null => {
     const displayed = useSchwabAccountStore.getState().displayAccount();
     if (displayed) return displayed as Account;
     const a = usePortfolioStreamStore.getState().account;
     return isPortfolioAccountPayload(a) ? a : null;
-  }, [schwabAccounts, viewSelection]);
+  }, [accountsRevision, viewSelection]);
   const [orders, setOrders] = useState<Order[]>(() => usePortfolioStreamStore.getState().orders as Order[]);
   const [loading, setLoading] = useState(() => !usePortfolioStreamStore.getState().account);
   const [ordersLoading, setOrdersLoading] = useState(false);
@@ -1314,7 +1315,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
 
 
   useEffect(() => {
-    if (schwabAccounts.length > 0) {
+    if (hasSchwabAccounts) {
       setLastRefresh(new Date());
       setLoading(false);
       setError(null);
@@ -1325,7 +1326,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
       setLoading(false);
       setError(null);
     }
-  }, [wsAccount, wsLastUpdate, schwabAccounts.length]);
+  }, [wsAccount, wsLastUpdate, hasSchwabAccounts, accountsRevision]);
 
   useEffect(() => {
     if (wsOrders && wsOrders.length > 0) { setOrders(wsOrders as Order[]); setOrdersLoading(false); setOrdersError(false); }
@@ -1699,6 +1700,9 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
   }, [selectedKeys, symbolGroups, onTrade, onRoll]);
 
   const portfolioRootRef = useRef<HTMLDivElement>(null);
+  const positionsHScrollRef = useRef<HTMLDivElement>(null);
+  const positionsScrollLeftRef = useRef(0);
+
   useEffect(() => {
     const el = portfolioRootRef.current;
     if (!el) return;
@@ -1707,6 +1711,8 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
     let startY = 0;
     const onTouchStart = (e: TouchEvent) => { startY = e.touches[0].clientY; };
     const onTouchMove = (e: TouchEvent) => {
+      const target = e.target;
+      if (target instanceof Element && target.closest(".pf-hscroll")) return;
       const dy = e.touches[0].clientY - startY;
       const atTop = scrollParent.scrollTop <= 0;
       const atBottom = scrollParent.scrollTop + scrollParent.clientHeight >= scrollParent.scrollHeight - 1;
@@ -1721,6 +1727,12 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
       scrollParent.removeEventListener("touchmove", onTouchMove);
     };
   }, []);
+
+  useEffect(() => {
+    const hscroll = positionsHScrollRef.current;
+    if (!hscroll || positionsScrollLeftRef.current <= 0) return;
+    hscroll.scrollLeft = positionsScrollLeftRef.current;
+  }, [accountsRevision, viewSelection]);
 
   if (!accessToken) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: f }}>
@@ -1897,7 +1909,14 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
                 <span style={{ fontSize: 10, color: C.dim }}>— open options positions with earnings this week. Review your positions.</span>
               </div>
             )}
-            <div className="pf-hscroll" style={{ overflowX: "auto", width: "100%", overscrollBehaviorX: "none", touchAction: "pan-x pan-y" }}>
+            <div
+              ref={positionsHScrollRef}
+              className="pf-hscroll"
+              onScroll={(e) => {
+                positionsScrollLeftRef.current = e.currentTarget.scrollLeft;
+              }}
+              style={{ overflowX: "auto", width: "100%", overscrollBehaviorX: "contain", touchAction: "pan-x pan-y", WebkitOverflowScrolling: "touch" }}
+            >
               <style>{`.pf-hscroll::-webkit-scrollbar{display:none}.pf-hscroll{scrollbar-width:none;-ms-overflow-style:none;overscroll-behavior-x:none;touch-action:pan-x pan-y}.pf-hscroll table{border-collapse:separate;border-spacing:0}.pf-sticky-col{position:-webkit-sticky;position:sticky;left:0;z-index:2}.pf-hscroll tbody td,.pf-hscroll tbody th,.pf-hscroll thead th{border-bottom:1px solid ${C.border}}`}</style>
 
               {showColumnSettings && ReactDOM.createPortal(

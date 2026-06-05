@@ -7,11 +7,15 @@ import type {
   SchwabViewSelection,
 } from "./schwab-account-types";
 import { aggregateSchwabAccounts } from "./schwabAccountAggregate";
+import { schwabAccountsFingerprint } from "./schwabAccountFingerprint";
 
 const LOCAL_KEY = "schwab-account-store";
 
 interface SchwabAccountState {
   accounts: SchwabAccountSummary[];
+  /** Bumped only when account payloads meaningfully change (avoids portfolio table re-renders). */
+  accountsRevision: number;
+  accountsFingerprint: string;
   accountsLoadedAt: number | null;
   viewSelection: SchwabViewSelection;
   defaultTradingAccountHash: string | null;
@@ -43,6 +47,8 @@ export const useSchwabAccountStore = create<SchwabAccountState>()(
   persist(
     (set, get) => ({
       accounts: [],
+      accountsRevision: 0,
+      accountsFingerprint: "",
       accountsLoadedAt: null,
       viewSelection: "all",
       defaultTradingAccountHash: null,
@@ -71,19 +77,22 @@ export const useSchwabAccountStore = create<SchwabAccountState>()(
           if (!res.ok) return;
           const data = (await res.json()) as SchwabAccountSummary[];
           if (!Array.isArray(data)) return;
+          const fingerprint = schwabAccountsFingerprint(data);
           set((s) => {
             const defaultTradingAccountHash = pickDefaultHash(data, s.defaultTradingAccountHash);
             const viewStillValid =
               s.viewSelection === "all" ||
               data.some((a) => a.hashValue === s.viewSelection);
+            const unchanged = fingerprint === s.accountsFingerprint;
             return {
               accounts: data,
+              accountsFingerprint: fingerprint,
+              accountsRevision: unchanged ? s.accountsRevision : s.accountsRevision + 1,
               accountsLoadedAt: Date.now(),
               defaultTradingAccountHash,
               viewSelection: viewStillValid ? s.viewSelection : "all",
             };
           });
-          void get().persistPreferences();
         } catch {
           /* ignore */
         }

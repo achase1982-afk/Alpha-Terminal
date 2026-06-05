@@ -9,7 +9,11 @@ export function useSchwabAccountsBootstrap(enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
     void loadPrefs().then(() => refresh());
-    const id = window.setInterval(() => void refresh(), 2000);
+    // Slow background refresh — fast polling re-rendered the portfolio table and broke horizontal swipe.
+    const id = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      void refresh();
+    }, 15_000);
     return () => window.clearInterval(id);
   }, [enabled, refresh, loadPrefs]);
 }
