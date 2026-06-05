@@ -1,4 +1,7 @@
 import type { SchwabAccountSummary, SchwabBalances, SchwabPosition } from "./schwab-account-types";
+import { schwabAccountsFingerprint } from "./schwabAccountFingerprint";
+
+let aggregatedCache: { fingerprint: string; result: SchwabAccountSummary } | null = null;
 
 function emptyBalances(): SchwabBalances {
   return {
@@ -54,6 +57,9 @@ export function aggregateSchwabAccounts(accounts: SchwabAccountSummary[]): Schwa
   if (!accounts.length) return null;
   if (accounts.length === 1) return accounts[0]!;
 
+  const fingerprint = schwabAccountsFingerprint(accounts);
+  if (aggregatedCache?.fingerprint === fingerprint) return aggregatedCache.result;
+
   const balances = emptyBalances();
   const initial = { accountValue: 0, equity: 0, liquidationValue: 0 };
   let dayPL = 0;
@@ -99,7 +105,7 @@ export function aggregateSchwabAccounts(accounts: SchwabAccountSummary[]): Schwa
     }
   }
 
-  return {
+  const result: SchwabAccountSummary = {
     accountNumber: "ALL",
     accountNumberRaw: "ALL",
     hashValue: null,
@@ -112,6 +118,8 @@ export function aggregateSchwabAccounts(accounts: SchwabAccountSummary[]): Schwa
     totalPL,
     positions: Array.from(positionMap.values()),
   };
+  aggregatedCache = { fingerprint, result };
+  return result;
 }
 
 export function formatSchwabAccountType(type: string): string {

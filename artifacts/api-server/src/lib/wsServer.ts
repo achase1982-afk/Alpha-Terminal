@@ -7,6 +7,7 @@ import { logger } from "./logger.js";
 import { getSnapshot, getStreamerStatus, registerWsBroadcast, addSymbols, addOptionSymbols, addFuturesSymbols, addFuturesOptionSymbols } from "./schwabStreamer.js";
 import { getTokens } from "./tokenStore.js";
 import { registerPortfolioErrorBroadcast } from "./portfolioWsErrorHub.js";
+import { fetchMappedSchwabAccounts } from "./schwabPortfolioAccounts.js";
 
 const WS_PATH = "/api/ws/prices";
 const HEARTBEAT_MS = 25_000;
@@ -314,6 +315,40 @@ function mapOrders(orders: any[]) {
 
 let lastPortfolioAuthWarn = 0;
 
+function subscribeStreamerForPortfolioAccounts(
+  mapped: Array<{ positions?: Array<{ symbol?: string; underlyingSymbol?: string; assetType?: string }> }>,
+) {
+  const equityUnderlyings = new Set<string>();
+  const optionSymbols = new Set<string>();
+  const futuresSymbols = new Set<string>();
+  const futuresOptionSymbols = new Set<string>();
+  for (const acct of mapped) {
+    for (const p of acct.positions ?? []) {
+      if (!p.symbol) continue;
+      if (p.assetType === "OPTION" || p.assetType === "INDEX_OPTION") {
+        optionSymbols.add(p.symbol);
+        if (p.underlyingSymbol) equityUnderlyings.add(p.underlyingSymbol);
+      } else if (p.assetType === "FUTURE_OPTION") {
+        futuresOptionSymbols.add(p.symbol);
+        if (p.underlyingSymbol) futuresSymbols.add(p.underlyingSymbol);
+      } else if (p.assetType === "FUTURE") {
+        futuresSymbols.add(p.symbol);
+      } else if (
+        p.assetType === "EQUITY" ||
+        p.assetType === "ETF" ||
+        p.assetType === "COLLECTIVE_INVESTMENT" ||
+        p.assetType === "INDEX"
+      ) {
+        equityUnderlyings.add(p.symbol);
+      }
+    }
+  }
+  if (equityUnderlyings.size > 0) addSymbols([...equityUnderlyings]);
+  if (optionSymbols.size > 0) addOptionSymbols([...optionSymbols]);
+  if (futuresSymbols.size > 0) addFuturesSymbols([...futuresSymbols]);
+  if (futuresOptionSymbols.size > 0) addFuturesOptionSymbols([...futuresOptionSymbols]);
+}
+
 async function fetchAndPushPortfolio(ws: WebSocket) {
   if (ws.readyState !== WebSocket.OPEN) return;
 
@@ -330,68 +365,26 @@ async function fetchAndPushPortfolio(ws: WebSocket) {
   }
 
   try {
-    const acctRes = await schwabTraderFetch("/accounts?fields=positions", token);
+    const mapped = await fetchMappedSchwabAccounts(token);
     logger.info(
-      { ts: Date.now(), path: "/accounts?fields=positions", status: acctRes.status },
-      `[PORTFOLIO_POLL] GET /accounts?fields=positions HTTP ${acctRes.status}`,
+      { ts: Date.now(), accountCount: mapped.length },
+      `[PORTFOLIO_POLL] GET /accounts?fields=positions OK (${mapped.length} accounts)`,
     );
-    if (!acctRes.ok) {
-      logger.error(
-        { ts: Date.now(), status: acctRes.status, body: acctRes.bodyText.slice(0, 2000) },
-        `[PORTFOLIO_POLL] GET /accounts?fields=positions non-2xx body`,
-      );
-      ws.send(
-        JSON.stringify({
-          event: "portfolio_error",
-          data: { code: "SCHWAB_HTTP", httpStatus: acctRes.status, path: "/accounts?fields=positions" },
-        }),
-      );
-    } else {
-      const accounts = Array.isArray(acctRes.json) ? acctRes.json : [];
-      if (accounts.length > 0) {
-        const sa = (accounts[0] as { securitiesAccount?: { positions?: unknown[] } })?.securitiesAccount;
-        maybeLogPlCalcForRawPositions(ws, sa?.positions ?? []);
-      }
-    }
-    if (acctRes.ok && Array.isArray(acctRes.json) && acctRes.json.length > 0) {
-      const accounts = acctRes.json;
-      const mapped = mapAccount(accounts[0]);
-      ws.send(JSON.stringify({ event: "portfolioAccount", data: mapped }));
-
-      // Subscribe every portfolio symbol to the live streamer so the LAST
-      // column populates for ALL holdings (not just whichever ticker the
-      // user happens to have selected/charted). Equity underlyings go to
-      // LEVELONE_EQUITIES, options go to LEVELONE_OPTIONS.
+    if (mapped.length > 0) {
+      ws.send(JSON.stringify({ event: "portfolioAccounts", data: mapped }));
+      ws.send(JSON.stringify({ event: "portfolioAccount", data: mapped[0] }));
       try {
-        const equityUnderlyings = new Set<string>();
-        const optionSymbols = new Set<string>();
-        const futuresSymbols = new Set<string>();
-        const futuresOptionSymbols = new Set<string>();
-        for (const p of mapped.positions ?? []) {
-          if (!p.symbol) continue;
-          if (p.assetType === "OPTION" || p.assetType === "INDEX_OPTION") {
-            optionSymbols.add(p.symbol);
-            if (p.underlyingSymbol) equityUnderlyings.add(p.underlyingSymbol);
-          } else if (p.assetType === "FUTURE_OPTION") {
-            futuresOptionSymbols.add(p.symbol);
-            if (p.underlyingSymbol) futuresSymbols.add(p.underlyingSymbol);
-          } else if (p.assetType === "FUTURE") {
-            futuresSymbols.add(p.symbol);
-          } else if (p.assetType === "EQUITY" || p.assetType === "ETF" || p.assetType === "COLLECTIVE_INVESTMENT" || p.assetType === "INDEX") {
-            equityUnderlyings.add(p.symbol);
-          }
-        }
-        if (equityUnderlyings.size > 0) addSymbols([...equityUnderlyings]);
-        if (optionSymbols.size > 0) addOptionSymbols([...optionSymbols]);
-        if (futuresSymbols.size > 0) addFuturesSymbols([...futuresSymbols]);
-        if (futuresOptionSymbols.size > 0) addFuturesOptionSymbols([...futuresOptionSymbols]);
-        logger.debug({ count: (mapped.positions ?? []).length }, "Portfolio positions assetType breakdown");
+        subscribeStreamerForPortfolioAccounts(mapped);
+        logger.debug(
+          { accounts: mapped.length, positions: mapped.reduce((n, a) => n + (a.positions?.length ?? 0), 0) },
+          "Portfolio streamer subscriptions updated",
+        );
       } catch (subErr) {
         logger.debug({ err: subErr }, "Portfolio streamer subscription failed");
       }
     }
   } catch (err) {
-    logger.debug({ err }, "Portfolio WS account poll failed");
+    logger.debug({ err }, "Portfolio account poll failed");
     ws.send(JSON.stringify({ event: "portfolioStatus", data: { status: "error", message: "Failed to fetch account data" } }));
   }
 

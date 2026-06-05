@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import type { SchwabAccountSummary } from "./schwab-account-types";
+import { schwabAccountsFingerprint } from "./schwabAccountFingerprint";
 
 interface PortfolioAccount {
   accountNumber: string;
@@ -10,6 +12,8 @@ interface PortfolioAccount {
   dayPL: number;
   totalPL: number;
   positions: any[];
+  hashValue?: string | null;
+  accountNumberRaw?: string;
 }
 
 interface PortfolioOrder {
@@ -35,20 +39,40 @@ export interface PortfolioStatus {
 }
 
 interface PortfolioStreamState {
+  /** All Schwab sub-accounts (1 Hz poll via subscribePortfolio). */
+  accounts: SchwabAccountSummary[];
+  accountsFingerprint: string;
   account: PortfolioAccount | null;
   orders: PortfolioOrder[];
   lastUpdate: Date | null;
   portfolioStatus: PortfolioStatus;
+  setAccounts: (accounts: SchwabAccountSummary[]) => void;
   setAccount: (account: PortfolioAccount) => void;
   setOrders: (orders: PortfolioOrder[]) => void;
   setPortfolioStatus: (status: PortfolioStatus) => void;
 }
 
-export const usePortfolioStreamStore = create<PortfolioStreamState>((set) => ({
+export const usePortfolioStreamStore = create<PortfolioStreamState>((set, get) => ({
+  accounts: [],
+  accountsFingerprint: "",
   account: null,
   orders: [],
   lastUpdate: null,
   portfolioStatus: { status: "ok" },
+  setAccounts: (accounts) => {
+    const fingerprint = schwabAccountsFingerprint(accounts);
+    if (fingerprint === get().accountsFingerprint) {
+      set({ lastUpdate: new Date(), portfolioStatus: { status: "ok" } });
+      return;
+    }
+    set({
+      accounts,
+      accountsFingerprint: fingerprint,
+      account: accounts[0] ? ({ ...accounts[0], balances: { ...accounts[0].balances } } as PortfolioAccount) : null,
+      lastUpdate: new Date(),
+      portfolioStatus: { status: "ok" },
+    });
+  },
   setAccount: (account) => set({ account, lastUpdate: new Date(), portfolioStatus: { status: "ok" } }),
   setOrders: (orders) => set({ orders, lastUpdate: new Date() }),
   setPortfolioStatus: (status) => set({ portfolioStatus: status }),
