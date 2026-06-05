@@ -23,6 +23,7 @@ import { JournalTab } from "./JournalTab";
 import type { OrderLeg } from "./OrderTicket";
 import { SchwabAccountHeader } from "./SchwabAccountHeader";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
+import { resolvePortfolioDisplayAccount } from "@/lib/portfolioDisplayAccount";
 
 const C = {
   bg: "#0c0c0c",
@@ -1209,18 +1210,23 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
   const portfolioStatus = usePortfolioStreamStore((s) => s.portfolioStatus);
 
   const [subTab, setSubTab] = useState<SubTab>("positions");
-  const schwabAccounts = useSchwabAccountStore((s) => s.accounts);
+  const accountsFingerprint = usePortfolioStreamStore((s) => s.accountsFingerprint);
+  const pickerAccountCount = useSchwabAccountStore((s) => s.accounts.length);
   const viewSelection = useSchwabAccountStore((s) => s.viewSelection);
   const ordersHash = useSchwabAccountStore((s) => s.ordersAccountHash());
   const tradingHash = useSchwabAccountStore((s) => s.tradingAccountHash());
   const hideBalances = useSchwabAccountStore((s) => s.hideBalances);
+  const multiAccount = pickerAccountCount > 1;
 
   const account = useMemo((): Account | null => {
-    const displayed = useSchwabAccountStore.getState().displayAccount();
-    if (displayed) return displayed as Account;
+    const streamAccounts = usePortfolioStreamStore.getState().accounts;
+    if (streamAccounts.length > 0) {
+      const displayed = resolvePortfolioDisplayAccount(streamAccounts, viewSelection);
+      if (displayed) return displayed as Account;
+    }
     const a = usePortfolioStreamStore.getState().account;
     return isPortfolioAccountPayload(a) ? a : null;
-  }, [schwabAccounts, viewSelection]);
+  }, [accountsFingerprint, viewSelection]);
   const [orders, setOrders] = useState<Order[]>(() => usePortfolioStreamStore.getState().orders as Order[]);
   const [loading, setLoading] = useState(() => !usePortfolioStreamStore.getState().account);
   const [ordersLoading, setOrdersLoading] = useState(false);
@@ -1314,7 +1320,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
 
 
   useEffect(() => {
-    if (schwabAccounts.length > 0) {
+    if (accountsFingerprint) {
       setLastRefresh(new Date());
       setLoading(false);
       setError(null);
@@ -1325,11 +1331,16 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
       setLoading(false);
       setError(null);
     }
-  }, [wsAccount, wsLastUpdate, schwabAccounts.length]);
+  }, [wsAccount, wsLastUpdate, accountsFingerprint]);
 
   useEffect(() => {
-    if (wsOrders && wsOrders.length > 0) { setOrders(wsOrders as Order[]); setOrdersLoading(false); setOrdersError(false); }
-  }, [wsOrders]);
+    if (multiAccount) return;
+    if (wsOrders && wsOrders.length > 0) {
+      setOrders(wsOrders as Order[]);
+      setOrdersLoading(false);
+      setOrdersError(false);
+    }
+  }, [wsOrders, multiAccount]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -1343,7 +1354,6 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
       const timeout = setTimeout(() => clearInterval(retry), 10_000);
       var cleanup = () => { clearInterval(retry); clearTimeout(timeout); };
     }
-    void useSchwabAccountStore.getState().refreshAccounts();
     setLoading(false);
     return () => {
       cleanup?.();
@@ -1358,14 +1368,21 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
     setError(null);
     try {
       await useSchwabAccountStore.getState().refreshAccounts();
-      if (!useSchwabAccountStore.getState().displayAccount()) throw new Error();
+      const streamAccounts = usePortfolioStreamStore.getState().accounts;
+      const displayed =
+        streamAccounts.length > 0
+          ? resolvePortfolioDisplayAccount(streamAccounts, viewSelection)
+          : null;
+      if (!displayed && !isPortfolioAccountPayload(usePortfolioStreamStore.getState().account)) {
+        throw new Error();
+      }
       setLastRefresh(new Date());
     } catch {
       if (!silent) setError("Failed to load portfolio data");
     } finally {
       if (!silent) setLoading(false);
     }
-  }, []);
+  }, [viewSelection]);
 
   const fetchOrders = useCallback(async () => {
     const hash = useSchwabAccountStore.getState().ordersAccountHash();
@@ -1699,6 +1716,10 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
   }, [selectedKeys, symbolGroups, onTrade, onRoll]);
 
   const portfolioRootRef = useRef<HTMLDivElement>(null);
+  const positionsHScrollRef = useRef<HTMLDivElement>(null);
+  const positionsScrollLeftRef = useRef(0);
+  const positionsTouchingRef = useRef(false);
+
   useEffect(() => {
     const el = portfolioRootRef.current;
     if (!el) return;
@@ -1707,6 +1728,8 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
     let startY = 0;
     const onTouchStart = (e: TouchEvent) => { startY = e.touches[0].clientY; };
     const onTouchMove = (e: TouchEvent) => {
+      const target = e.target;
+      if (target instanceof Element && target.closest(".pf-hscroll")) return;
       const dy = e.touches[0].clientY - startY;
       const atTop = scrollParent.scrollTop <= 0;
       const atBottom = scrollParent.scrollTop + scrollParent.clientHeight >= scrollParent.scrollHeight - 1;
@@ -1721,6 +1744,13 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
       scrollParent.removeEventListener("touchmove", onTouchMove);
     };
   }, []);
+
+  useEffect(() => {
+    if (positionsTouchingRef.current) return;
+    const hscroll = positionsHScrollRef.current;
+    if (!hscroll || positionsScrollLeftRef.current <= 0) return;
+    hscroll.scrollLeft = positionsScrollLeftRef.current;
+  }, [accountsFingerprint, viewSelection]);
 
   if (!accessToken) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: f }}>
@@ -1897,7 +1927,23 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
                 <span style={{ fontSize: 10, color: C.dim }}>— open options positions with earnings this week. Review your positions.</span>
               </div>
             )}
-            <div className="pf-hscroll" style={{ overflowX: "auto", width: "100%", overscrollBehaviorX: "none", touchAction: "pan-x pan-y" }}>
+            <div
+              ref={positionsHScrollRef}
+              className="pf-hscroll"
+              onTouchStart={() => { positionsTouchingRef.current = true; }}
+              onTouchEnd={() => { positionsTouchingRef.current = false; }}
+              onTouchCancel={() => { positionsTouchingRef.current = false; }}
+              onScroll={(e) => {
+                positionsScrollLeftRef.current = e.currentTarget.scrollLeft;
+              }}
+              style={{
+                overflowX: "auto",
+                width: "100%",
+                overscrollBehaviorX: "contain",
+                touchAction: "pan-x pan-y",
+                WebkitOverflowScrolling: "touch",
+              }}
+            >
               <style>{`.pf-hscroll::-webkit-scrollbar{display:none}.pf-hscroll{scrollbar-width:none;-ms-overflow-style:none;overscroll-behavior-x:none;touch-action:pan-x pan-y}.pf-hscroll table{border-collapse:separate;border-spacing:0}.pf-sticky-col{position:-webkit-sticky;position:sticky;left:0;z-index:2}.pf-hscroll tbody td,.pf-hscroll tbody th,.pf-hscroll thead th{border-bottom:1px solid ${C.border}}`}</style>
 
               {showColumnSettings && ReactDOM.createPortal(

@@ -1,15 +1,17 @@
 import { useEffect } from "react";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 
-/** Load Schwab accounts + server prefs when brokerage session is active. */
+/**
+ * Load Schwab account preferences once. Portfolio holdings refresh at 1 Hz via
+ * subscribePortfolio (same path as before multi-account) — no separate REST poll.
+ */
 export function useSchwabAccountsBootstrap(enabled: boolean) {
-  const refresh = useSchwabAccountStore((s) => s.refreshAccounts);
   const loadPrefs = useSchwabAccountStore((s) => s.loadPreferencesFromServer);
+  const refreshAccounts = useSchwabAccountStore((s) => s.refreshAccounts);
 
   useEffect(() => {
     if (!enabled) return;
-    void loadPrefs().then(() => refresh());
-    const id = window.setInterval(() => void refresh(), 2000);
-    return () => window.clearInterval(id);
-  }, [enabled, refresh, loadPrefs]);
+    void loadPrefs();
+    void refreshAccounts();
+  }, [enabled, loadPrefs, refreshAccounts]);
 }

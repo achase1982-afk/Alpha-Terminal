@@ -6,17 +6,18 @@ import type {
   SchwabPortfolioPrefs,
   SchwabViewSelection,
 } from "./schwab-account-types";
-import { aggregateSchwabAccounts } from "./schwabAccountAggregate";
+import { schwabAccountsFingerprint } from "./schwabAccountFingerprint";
 
 const LOCAL_KEY = "schwab-account-store";
 
 interface SchwabAccountState {
+  /** Account list for picker / order ticket (synced from 1 Hz portfolio poll). */
   accounts: SchwabAccountSummary[];
+  accountsFingerprint: string;
   accountsLoadedAt: number | null;
   viewSelection: SchwabViewSelection;
   defaultTradingAccountHash: string | null;
   hideBalances: boolean;
-  /** Order ticket override (hash); null = use trading hash from prefs/view */
   orderTicketAccountHash: string | null;
   pickerOpen: boolean;
 
@@ -25,12 +26,14 @@ interface SchwabAccountState {
   setDefaultTradingAccountHash: (hash: string | null) => void;
   setHideBalances: (hide: boolean) => void;
   setOrderTicketAccountHash: (hash: string | null) => void;
+  /** Apply accounts from the portfolio poll without redundant store updates. */
+  syncAccountsFromStream: (accounts: SchwabAccountSummary[]) => void;
+  /** One-shot REST load (picker fallback before first portfolio poll). */
   refreshAccounts: () => Promise<void>;
   loadPreferencesFromServer: () => Promise<void>;
   persistPreferences: () => Promise<void>;
   tradingAccountHash: () => string | null;
   ordersAccountHash: () => string | null;
-  displayAccount: () => SchwabAccountSummary | null;
   headerLabel: () => string;
 }
 
@@ -39,10 +42,31 @@ function pickDefaultHash(accounts: SchwabAccountSummary[], current: string | nul
   return accounts.find((a) => a.hashValue)?.hashValue ?? null;
 }
 
+function applyAccountsList(
+  data: SchwabAccountSummary[],
+  prev: Pick<SchwabAccountState, "accountsFingerprint" | "defaultTradingAccountHash" | "viewSelection">,
+): Partial<SchwabAccountState> | null {
+  const fingerprint = schwabAccountsFingerprint(data);
+  if (fingerprint === prev.accountsFingerprint) {
+    return { accountsLoadedAt: Date.now() };
+  }
+  const defaultTradingAccountHash = pickDefaultHash(data, prev.defaultTradingAccountHash);
+  const viewStillValid =
+    prev.viewSelection === "all" || data.some((a) => a.hashValue === prev.viewSelection);
+  return {
+    accounts: data,
+    accountsFingerprint: fingerprint,
+    accountsLoadedAt: Date.now(),
+    defaultTradingAccountHash,
+    viewSelection: viewStillValid ? prev.viewSelection : "all",
+  };
+}
+
 export const useSchwabAccountStore = create<SchwabAccountState>()(
   persist(
     (set, get) => ({
       accounts: [],
+      accountsFingerprint: "",
       accountsLoadedAt: null,
       viewSelection: "all",
       defaultTradingAccountHash: null,
@@ -65,25 +89,18 @@ export const useSchwabAccountStore = create<SchwabAccountState>()(
       },
       setOrderTicketAccountHash: (hash) => set({ orderTicketAccountHash: hash }),
 
+      syncAccountsFromStream: (accounts) => {
+        if (!Array.isArray(accounts) || !accounts.length) return;
+        set((s) => applyAccountsList(accounts, s) ?? {});
+      },
+
       refreshAccounts: async () => {
         try {
           const res = await fetchWithAuth("/api/portfolio/accounts");
           if (!res.ok) return;
           const data = (await res.json()) as SchwabAccountSummary[];
           if (!Array.isArray(data)) return;
-          set((s) => {
-            const defaultTradingAccountHash = pickDefaultHash(data, s.defaultTradingAccountHash);
-            const viewStillValid =
-              s.viewSelection === "all" ||
-              data.some((a) => a.hashValue === s.viewSelection);
-            return {
-              accounts: data,
-              accountsLoadedAt: Date.now(),
-              defaultTradingAccountHash,
-              viewSelection: viewStillValid ? s.viewSelection : "all",
-            };
-          });
-          void get().persistPreferences();
+          set((s) => applyAccountsList(data, s) ?? {});
         } catch {
           /* ignore */
         }
@@ -132,13 +149,6 @@ export const useSchwabAccountStore = create<SchwabAccountState>()(
         const s = get();
         if (s.viewSelection !== "all") return s.viewSelection;
         return s.defaultTradingAccountHash;
-      },
-
-      displayAccount: () => {
-        const { accounts, viewSelection } = get();
-        if (!accounts.length) return null;
-        if (viewSelection === "all") return aggregateSchwabAccounts(accounts);
-        return accounts.find((a) => a.hashValue === viewSelection) ?? accounts[0] ?? null;
       },
 
       headerLabel: () => {

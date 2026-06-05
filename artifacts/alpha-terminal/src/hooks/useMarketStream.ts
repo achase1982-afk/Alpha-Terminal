@@ -3,6 +3,8 @@ import { useTerminalStore } from "@/lib/store";
 import { useOptionsStreamStore, type OptionTick } from "@/lib/options-stream-store";
 import { useDepthStore, type DepthBook } from "@/lib/depth-store";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
+import { useSchwabAccountStore } from "@/lib/schwab-account-store";
+import type { SchwabAccountSummary } from "@/lib/schwab-account-types";
 import { useOrderAlertStore, type OrderAlert } from "@/stores/orderAlertStore";
 import {
   buildAuthenticatedEventSourceUrl,
@@ -155,6 +157,7 @@ export function useMarketStream() {
   const setDepthBook = useDepthStore((s) => s.setBook);
   const setDepthBooks = useDepthStore((s) => s.setBooks);
   const setPortfolioAccount = usePortfolioStreamStore((s) => s.setAccount);
+  const setPortfolioAccounts = usePortfolioStreamStore((s) => s.setAccounts);
   const setPortfolioOrders = usePortfolioStreamStore((s) => s.setOrders);
   const setPortfolioStatus = usePortfolioStreamStore((s) => s.setPortfolioStatus);
   const rejectedRetries = useRef(0);
@@ -265,6 +268,12 @@ export function useMarketStream() {
       setDepthBooks(data as DepthBook[]);
     } else if (event === "ibNews") {
       addLiveNews(data as LiveNewsItem);
+    } else if (event === "portfolioAccounts") {
+      const accounts = data as SchwabAccountSummary[];
+      if (Array.isArray(accounts) && accounts.length > 0) {
+        setPortfolioAccounts(accounts);
+        useSchwabAccountStore.getState().syncAccountsFromStream(accounts);
+      }
     } else if (event === "portfolioAccount") {
       console.log("[WS_RECV] portfolio_update", { kind: "account", ts: Date.now(), data });
       setPortfolioAccount(data as StreamPortfolioAccount);
@@ -310,6 +319,7 @@ export function useMarketStream() {
     setDepthBook,
     setDepthBooks,
     setPortfolioAccount,
+    setPortfolioAccounts,
     setPortfolioOrders,
     setPortfolioStatus,
     setStreamQuote,
