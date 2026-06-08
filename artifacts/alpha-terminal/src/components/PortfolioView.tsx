@@ -1786,7 +1786,6 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
   const marginDeficiency = Math.max(0, marginUsed - marginTotal);
   const prevDayValue = (bal?.liquidationValue ?? 0) - dayPL;
   const dayReturnPct = prevDayValue > 0 ? (dayPL / prevDayValue) * 100 : 0;
-  const dayTradesLeft = account ? (account.isDayTrader ? null : Math.max(0, 3 - account.roundTrips)) : null;
 
   const metricValues: Record<MetricKey, { label: string; value: string; color: string }> = {
     plOpen: { label: "P/L Open", value: fmtCurrency(totalPL), color: plColor(totalPL) },
@@ -2062,7 +2061,6 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
                   { label: "Net Liq:", value: fmtCurrency(bal?.liquidationValue ?? 0), color: C.text },
                   { label: "Available $:", value: fmtCurrency(bal?.availableFunds ?? 0), color: (bal?.availableFunds ?? 0) < 0 ? C.red : C.text },
                   { label: "Position Equity:", value: fmtCurrency(bal?.equity ?? 0), color: C.text },
-                  ...(dayTradesLeft !== null ? [{ label: "Day Trades Left:", value: String(dayTradesLeft), color: dayTradesLeft === 0 ? C.red : dayTradesLeft === 1 ? C.gold : C.text }] : []),
                 ].map(row => (
                   <div key={row.label} style={{ display: "flex", justifyContent: "space-between", padding: "5px 12px" }}>
                     <span style={{ fontSize: 14, color: C.textMuted }}>{row.label}</span>
@@ -2132,7 +2130,6 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
             </div>
             {[
               ["Net Liquidating Value", fmtCurrency(bal.liquidationValue), C.text],
-              ...(dayTradesLeft !== null ? [["Day Trades Left", String(dayTradesLeft), dayTradesLeft === 0 ? C.red : C.text]] : []),
               ["Stock Buying Power", fmtCurrency(bal.buyingPower), bal.buyingPower < 0 ? C.red : C.text],
               ["Option Buying Power", fmtCurrency(bal.availableFunds), bal.availableFunds < 0 ? C.red : C.text],
               ["Available Funds For Trading", fmtCurrency(bal.availableFunds), bal.availableFunds < 0 ? C.red : C.text],
