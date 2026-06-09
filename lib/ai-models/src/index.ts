@@ -11,6 +11,7 @@ export type StrategistModelProvider = AiModelProvider | "xai";
 export type AiModelId =
   | "gemini-3.5-flash"
   | "gemini-3.1-pro-preview"
+  | "claude-fable-5"
   | "claude-opus-4-8"
   | "claude-sonnet-4-6"
   | "gpt-5.5"
@@ -31,6 +32,7 @@ export interface AiModelCatalogEntry {
 export const AI_MODEL_CATALOG: readonly AiModelCatalogEntry[] = [
   { id: "gemini-3.5-flash", provider: "google", label: "Gemini 3.5 Flash + thinking" },
   { id: "gemini-3.1-pro-preview", provider: "google", label: "Gemini 3.1 Pro + thinking" },
+  { id: "claude-fable-5", provider: "anthropic", label: "Claude Fable 5 + adaptive thinking" },
   { id: "claude-opus-4-8", provider: "anthropic", label: "Claude Opus 4.8 + adaptive thinking" },
   { id: "claude-sonnet-4-6", provider: "anthropic", label: "Claude Sonnet 4.6 + thinking" },
   { id: "gpt-5.5", provider: "openai", label: "GPT-5.5 + thinking (high)" },
@@ -63,7 +65,7 @@ export function aiModelSelectLabel(id: string): string {
 }
 
 export const MODELS_BY_PROVIDER: Record<AiModelProvider, readonly AiModelId[]> = {
-  anthropic: ["claude-opus-4-8", "claude-sonnet-4-6"],
+  anthropic: ["claude-fable-5", "claude-opus-4-8", "claude-sonnet-4-6"],
   google: ["gemini-3.5-flash", "gemini-3.1-pro-preview"],
   openai: ["gpt-5.5", "gpt-5.4-mini"],
 };
@@ -88,7 +90,7 @@ export const STRATEGIST_MODEL_OPTIONS: readonly StrategistModelOption[] = AI_MOD
   label: e.label,
 }));
 
-export const STRATEGIST_MODEL_CATALOG_VERSION = 6;
+export const STRATEGIST_MODEL_CATALOG_VERSION = 7;
 
 /** Remap v5 strategist catalog indices (8 models) → v6 (6 models). */
 export const STRATEGIST_CATALOG_V5_TO_V6_INDEX: readonly number[] = [
@@ -136,7 +138,19 @@ export function migrateLegacyModelIdToCatalog(value: string | undefined | null):
   return LEGACY_MODEL_TO_CATALOG[value] ?? DEFAULT_AI_MODEL_ID;
 }
 
-/** Anthropic Messages API `output_config.effort` for Claude Opus 4.7+ (4.8 recommended). */
+/** v7 appends Claude Fable 5 at index 6; indices 0–5 unchanged from v6. */
+export const STRATEGIST_CATALOG_V6_TO_V7_INDEX: readonly number[] = [0, 1, 2, 3, 4, 5];
+
+export function remapStrategistCatalogIndexV6ToV7(idx: number): number {
+  if (!Number.isFinite(idx) || idx < 0) return 0;
+  const i = Math.floor(idx);
+  if (i < STRATEGIST_CATALOG_V6_TO_V7_INDEX.length) {
+    return STRATEGIST_CATALOG_V6_TO_V7_INDEX[i]!;
+  }
+  return 0;
+}
+
+/** Anthropic Messages API `output_config.effort` for Claude Opus 4.7+, Fable 5, etc. */
 export const ANTHROPIC_OPUS_EFFORT_LEVELS = [
   "low",
   "medium",
@@ -160,12 +174,34 @@ export const ANTHROPIC_OPUS_EFFORT_LABELS: Record<AnthropicOpusEffort, string> =
   max: "Max",
 };
 
-/** True when the model resolves to catalog Opus 4.7+ (effort + fast mode supported). */
+export function isAnthropicFableModel(model: string): boolean {
+  if (!model?.trim()) return false;
+  const trimmed = model.trim();
+  if (migrateLegacyModelIdToCatalog(trimmed) === "claude-fable-5") return true;
+  return /^claude-fable-\d+(?:[-._]|$)/.test(trimmed);
+}
+
+/** True when the model supports API `output_config.effort` (Opus 4.7+, Fable 5). */
 export function isAnthropicOpusEffortModel(model: string): boolean {
   if (!model?.trim()) return false;
   const trimmed = model.trim();
+  if (isAnthropicFableModel(trimmed)) return true;
   if (migrateLegacyModelIdToCatalog(trimmed) === "claude-opus-4-8") return true;
   return /^claude-opus-4-([7-9]|\d{2,})(?:[-._]|$)/.test(trimmed);
+}
+
+/** Opus-only fast mode (`speed: "fast"`). Fable 5 does not support fast mode. */
+export function isAnthropicOpusSpeedModel(model: string): boolean {
+  return isAnthropicOpusEffortModel(model) && !isAnthropicFableModel(model);
+}
+
+/** Custom temperature/top_p/top_k are rejected on adaptive-thinking Anthropic models. */
+export function isAnthropicTemperatureConfigurable(model: string): boolean {
+  if (!/^claude-/i.test(model?.trim() ?? "")) return true;
+  if (isAnthropicOpusEffortModel(model)) return false;
+  if (/^claude-3-/i.test(model)) return true;
+  if (/haiku/i.test(model)) return true;
+  return !/^claude-(opus|sonnet)-4-([7-9]|\d{2,})(?:[-._]|$)/i.test(model.trim());
 }
 
 export function normalizeAnthropicOpusEffort(value: unknown): AnthropicOpusEffort {

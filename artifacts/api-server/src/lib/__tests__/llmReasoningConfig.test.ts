@@ -56,6 +56,19 @@ describe("anthropicProviderOptionsForAiSdk", () => {
     expect(extras.speed).toBe("fast");
     expect(extras.output_config?.effort).toBe("high");
   });
+
+  it("includes adaptive thinking and effort for claude-fable-5", () => {
+    const opts = anthropicProviderOptionsForAiSdk("claude-fable-5", { effort: "max" });
+    expect(opts?.providerOptions.anthropic.thinking).toEqual({ type: "adaptive" });
+    expect(opts?.providerOptions.anthropic.effort).toBe("max");
+    expect(opts?.providerOptions.anthropic.speed).toBeUndefined();
+  });
+
+  it("ignores fast speed for claude-fable-5", () => {
+    const opts = anthropicProviderOptionsForAiSdk("claude-fable-5", { speed: "fast" });
+    expect(opts?.providerOptions.anthropic.speed).toBeUndefined();
+    expect(anthropicOpusMessageExtras("claude-fable-5", { speed: "fast" }).speed).toBeUndefined();
+  });
 });
 
 describe("googleThinkingProviderOptionsForAiSdk", () => {

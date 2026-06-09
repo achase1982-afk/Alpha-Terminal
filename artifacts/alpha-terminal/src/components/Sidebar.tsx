@@ -16,6 +16,7 @@ import {
   aiModelSelectLabel,
   DEFAULT_AI_MODEL_ID,
   modelsForProvider,
+  isAnthropicTemperatureConfigurable,
   migrateLegacyModelIdToCatalog,
   type AiModelId,
 } from "@workspace/ai-models";
@@ -555,6 +556,7 @@ function AiFeatureControl({ featureKey, label, icon }: {
   const { aiFeatureSettings, setAiFeatureSetting } = useTerminalStore();
   const settings = aiFeatureSettings[featureKey];
   const [expanded, setExpanded] = useState(false);
+  const temperatureConfigurable = isAnthropicTemperatureConfigurable(settings.model);
 
   return (
     <div className="border border-card-border rounded-lg overflow-hidden">
@@ -600,23 +602,29 @@ function AiFeatureControl({ featureKey, label, icon }: {
             onSpeedChange={(speed) => setAiFeatureSetting(featureKey, 'anthropicOpusSpeed', speed)}
           />
 
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Temperature</span>
-              <span className="font-mono text-[10px] text-primary tabular-nums">{settings.temperature.toFixed(1)}</span>
+          {temperatureConfigurable ? (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Temperature</span>
+                <span className="font-mono text-[10px] text-primary tabular-nums">{settings.temperature.toFixed(1)}</span>
+              </div>
+              <Slider
+                value={[settings.temperature]}
+                onValueChange={(v) => setAiFeatureSetting(featureKey, 'temperature', v[0])}
+                max={2}
+                step={0.1}
+                className="py-1"
+              />
+              <div className="flex justify-between">
+                <span className="font-mono text-[8px] text-zinc-600">Precise</span>
+                <span className="font-mono text-[8px] text-zinc-600">Creative</span>
+              </div>
             </div>
-            <Slider
-              value={[settings.temperature]}
-              onValueChange={(v) => setAiFeatureSetting(featureKey, 'temperature', v[0])}
-              max={2}
-              step={0.1}
-              className="py-1"
-            />
-            <div className="flex justify-between">
-              <span className="font-mono text-[8px] text-zinc-600">Precise</span>
-              <span className="font-mono text-[8px] text-zinc-600">Creative</span>
-            </div>
-          </div>
+          ) : (
+            <p className="font-mono text-[8px] text-zinc-600 leading-tight">
+              Temperature is fixed for this model (adaptive thinking). Use effort to tune reasoning depth.
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -664,6 +672,8 @@ function AiLabStrategistControl() {
 
   const analystModels = modelsForProvider(aiLabStrategistConfig.analystModelProvider);
   const skepticModels = modelsForProvider(aiLabStrategistConfig.skepticModelProvider);
+  const analystTempConfigurable = isAnthropicTemperatureConfigurable(aiLabStrategistConfig.analystModelName);
+  const skepticTempConfigurable = isAnthropicTemperatureConfigurable(aiLabStrategistConfig.skepticModelName);
 
   const selectStyle = {
     backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
@@ -742,23 +752,29 @@ function AiLabStrategistControl() {
               onSpeedChange={(speed) => setAiFeatureSetting('strategist', 'anthropicOpusSpeed', speed)}
             />
 
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Temperature</span>
-                <span className="font-mono text-[10px] text-primary tabular-nums">{aiLabStrategistConfig.analystTemperature.toFixed(1)}</span>
+            {analystTempConfigurable ? (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Temperature</span>
+                  <span className="font-mono text-[10px] text-primary tabular-nums">{aiLabStrategistConfig.analystTemperature.toFixed(1)}</span>
+                </div>
+                <Slider
+                  value={[aiLabStrategistConfig.analystTemperature]}
+                  onValueChange={(v) => update('analystTemperature', v[0])}
+                  max={1}
+                  step={0.1}
+                  className="py-1"
+                />
+                <div className="flex justify-between">
+                  <span className="font-mono text-[8px] text-zinc-600">Precise</span>
+                  <span className="font-mono text-[8px] text-zinc-600">Creative</span>
+                </div>
               </div>
-              <Slider
-                value={[aiLabStrategistConfig.analystTemperature]}
-                onValueChange={(v) => update('analystTemperature', v[0])}
-                max={1}
-                step={0.1}
-                className="py-1"
-              />
-              <div className="flex justify-between">
-                <span className="font-mono text-[8px] text-zinc-600">Precise</span>
-                <span className="font-mono text-[8px] text-zinc-600">Creative</span>
-              </div>
-            </div>
+            ) : (
+              <p className="font-mono text-[8px] text-zinc-600 leading-tight">
+                Temperature is fixed for this model. Use effort to tune reasoning depth.
+              </p>
+            )}
           </div>
 
           <div className="h-px bg-zinc-800" />
@@ -804,23 +820,29 @@ function AiLabStrategistControl() {
               onSpeedChange={(speed) => setAiFeatureSetting('strategist', 'anthropicOpusSpeed', speed)}
             />
 
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Temperature</span>
-                <span className="font-mono text-[10px] text-primary tabular-nums">{aiLabStrategistConfig.skepticTemperature.toFixed(1)}</span>
+            {skepticTempConfigurable ? (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Temperature</span>
+                  <span className="font-mono text-[10px] text-primary tabular-nums">{aiLabStrategistConfig.skepticTemperature.toFixed(1)}</span>
+                </div>
+                <Slider
+                  value={[aiLabStrategistConfig.skepticTemperature]}
+                  onValueChange={(v) => update('skepticTemperature', v[0])}
+                  max={1}
+                  step={0.1}
+                  className="py-1"
+                />
+                <div className="flex justify-between">
+                  <span className="font-mono text-[8px] text-zinc-600">Precise</span>
+                  <span className="font-mono text-[8px] text-zinc-600">Creative</span>
+                </div>
               </div>
-              <Slider
-                value={[aiLabStrategistConfig.skepticTemperature]}
-                onValueChange={(v) => update('skepticTemperature', v[0])}
-                max={1}
-                step={0.1}
-                className="py-1"
-              />
-              <div className="flex justify-between">
-                <span className="font-mono text-[8px] text-zinc-600">Precise</span>
-                <span className="font-mono text-[8px] text-zinc-600">Creative</span>
-              </div>
-            </div>
+            ) : (
+              <p className="font-mono text-[8px] text-zinc-600 leading-tight">
+                Temperature is fixed for this model. Use effort to tune reasoning depth.
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -984,6 +1006,7 @@ function MoversAiControl() {
       ? aiLabStrategistConfig.moversModelProvider
       : "anthropic";
   const moversModels = modelsForProvider(moversProvider);
+  const moversTempConfigurable = isAnthropicTemperatureConfigurable(aiLabStrategistConfig.moversModelName);
 
   const selectStyle = {
     backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
@@ -1056,25 +1079,31 @@ function MoversAiControl() {
               onSpeedChange={(speed) => setAiFeatureSetting('strategist', 'anthropicOpusSpeed', speed)}
             />
 
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[8px] text-white uppercase tracking-widest">Temperature</span>
-                <span className="font-mono text-[10px] text-primary tabular-nums">
-                  {aiLabStrategistConfig.moversTemperature.toFixed(1)}
-                </span>
+            {moversTempConfigurable ? (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[8px] text-white uppercase tracking-widest">Temperature</span>
+                  <span className="font-mono text-[10px] text-primary tabular-nums">
+                    {aiLabStrategistConfig.moversTemperature.toFixed(1)}
+                  </span>
+                </div>
+                <Slider
+                  value={[aiLabStrategistConfig.moversTemperature]}
+                  onValueChange={(v) => update("moversTemperature", v[0])}
+                  max={1}
+                  step={0.1}
+                  className="py-1"
+                />
+                <div className="flex justify-between">
+                  <span className="font-mono text-[8px] text-white">Precise</span>
+                  <span className="font-mono text-[8px] text-white">Creative</span>
+                </div>
               </div>
-              <Slider
-                value={[aiLabStrategistConfig.moversTemperature]}
-                onValueChange={(v) => update("moversTemperature", v[0])}
-                max={1}
-                step={0.1}
-                className="py-1"
-              />
-              <div className="flex justify-between">
-                <span className="font-mono text-[8px] text-white">Precise</span>
-                <span className="font-mono text-[8px] text-white">Creative</span>
-              </div>
-            </div>
+            ) : (
+              <p className="font-mono text-[8px] text-white/70 leading-tight">
+                Temperature is fixed for this model. Use effort to tune reasoning depth.
+              </p>
+            )}
           </div>
         </div>
       )}

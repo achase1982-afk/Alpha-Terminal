@@ -5,7 +5,9 @@ import {
   type AnthropicOpusSpeed,
   DEFAULT_ANTHROPIC_OPUS_EFFORT,
   DEFAULT_ANTHROPIC_OPUS_SPEED,
+  isAnthropicFableModel,
   isAnthropicOpusEffortModel,
+  isAnthropicOpusSpeedModel,
   normalizeAnthropicOpusEffort,
   normalizeAnthropicOpusSpeed,
 } from "@workspace/ai-models";
@@ -26,10 +28,11 @@ function anthropicSdkOutputConfig(effort: AnthropicOpusEffort): Anthropic.Output
 export const ANTHROPIC_EXTENDED_THINKING_BUDGET = 4096;
 
 /**
- * Claude Opus/Sonnet 4.7+ use adaptive thinking in the Messages API.
- * Matches ids like `claude-opus-4-8`, `claude-opus-4-7`, `claude-sonnet-4-7-20250514`, etc.
+ * Claude Opus/Sonnet 4.7+ and Fable 5 use adaptive thinking in the Messages API.
+ * Matches ids like `claude-opus-4-8`, `claude-fable-5`, `claude-sonnet-4-7-20250514`, etc.
  */
 export function isAnthropicAdaptiveThinkingModel(model: string): boolean {
+  if (isAnthropicFableModel(model)) return true;
   return /^claude-(opus|sonnet)-4-([7-9]|\d{2,})(?:[-._]|$)/.test(model);
 }
 
@@ -115,7 +118,7 @@ export function anthropicProviderOptionsForAiSdk(
   if (resolvedEffort) {
     anthropic.effort = resolvedEffort as Anthropic.OutputConfig["effort"];
   }
-  if (resolvedSpeed === "fast") {
+  if (resolvedSpeed === "fast" && isAnthropicOpusSpeedModel(model)) {
     anthropic.speed = "fast";
   }
 
@@ -135,7 +138,7 @@ export function anthropicOpusMessageExtras(
     ...(resolvedEffort
       ? { output_config: anthropicSdkOutputConfig(resolvedEffort) }
       : {}),
-    ...(resolvedSpeed === "fast" ? { speed: "fast" as const } : {}),
+    ...(resolvedSpeed === "fast" && isAnthropicOpusSpeedModel(model) ? { speed: "fast" as const } : {}),
   };
 }
 

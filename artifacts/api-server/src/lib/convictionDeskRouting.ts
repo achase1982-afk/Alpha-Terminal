@@ -7,6 +7,7 @@ import {
 
 /** Short-cut tokens for common Conviction Desk A/B configs (POST /analyze body). */
 export const CONVICTION_DESK_ROUTING_KEYS = [
+  "anthropic-fable-5",
   "anthropic-opus-4-8",
   /** @deprecated use anthropic-opus-4-8 */
   "anthropic-opus-4-7",
@@ -68,6 +69,9 @@ const ROUTING_TABLE: Record<
   ConvictionDeskRoutingKey,
   { model: StrategistModelOption; anthropicThinkingBudgetOverride?: number }
 > = {
+  "anthropic-fable-5": {
+    model: { provider: "anthropic", model: "claude-fable-5", label: "Claude Fable 5 + adaptive thinking" },
+  },
   "anthropic-opus-4-8": {
     model: { provider: "anthropic", model: "claude-opus-4-8", label: "Claude Opus 4.8 + adaptive thinking" },
   },

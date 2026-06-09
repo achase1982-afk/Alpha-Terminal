@@ -317,6 +317,23 @@ async function migrateStrategistModelCatalogV4ToV5IfNeeded(merged: StrategistCon
   return true;
 }
 
+/** v7: seven-model catalog (appends Claude Fable 5 at index 6); indices 0–5 unchanged. */
+async function migrateStrategistModelCatalogV6ToV7IfNeeded(merged: StrategistConfig): Promise<boolean> {
+  if (merged.strategistModelCatalogVersion !== 6) {
+    return false;
+  }
+  const now = new Date();
+  await db
+    .insert(strategistSettingsTable)
+    .values({ key: "strategistModelCatalogVersion", value: STRATEGIST_MODEL_CATALOG_VERSION, updatedAt: now })
+    .onConflictDoUpdate({
+      target: strategistSettingsTable.key,
+      set: { value: STRATEGIST_MODEL_CATALOG_VERSION, updatedAt: now },
+    });
+  logger.info({ from: 6, to: STRATEGIST_MODEL_CATALOG_VERSION }, "Strategist settings: catalog version bump (v6 → v7, Fable 5)");
+  return true;
+}
+
 /** v6: six-model catalog (Gemini 3.5 + thinking, 3.1 Pro, Opus/Sonnet, GPT-5.5/Mini); remap indices. */
 async function migrateStrategistModelCatalogV5ToV6IfNeeded(merged: StrategistConfig): Promise<boolean> {
   if (merged.strategistModelCatalogVersion !== 5) {
@@ -426,11 +443,18 @@ export async function getSettings(): Promise<StrategistConfig> {
       const bumpedV6 = await migrateStrategistModelCatalogV5ToV6IfNeeded(mergedAfter);
       const bumpV6Ms = Math.round(performance.now() - tBumpV6);
       if (bumpedV6) {
+        mergedAfter.strategistModelCatalogVersion = 6;
+      }
+
+      const tBumpV7 = performance.now();
+      const bumpedV7 = await migrateStrategistModelCatalogV6ToV7IfNeeded(mergedAfter);
+      const bumpV7Ms = Math.round(performance.now() - tBumpV7);
+      if (bumpedV7) {
         mergedAfter.strategistModelCatalogVersion = STRATEGIST_MODEL_CATALOG_VERSION;
       }
 
       const rowsFinal =
-        bumpedV4 || bumpedV5 || bumpedV6 ? await db.select().from(strategistSettingsTable) : rowsAfter;
+        bumpedV4 || bumpedV5 || bumpedV6 || bumpedV7 ? await db.select().from(strategistSettingsTable) : rowsAfter;
 
       const finalMerged: StrategistConfig = { ...DEFAULTS };
       for (const row of rowsFinal) {
