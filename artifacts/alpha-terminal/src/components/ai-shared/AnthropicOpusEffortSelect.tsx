@@ -6,6 +6,7 @@ import {
   DEFAULT_ANTHROPIC_OPUS_EFFORT,
   DEFAULT_ANTHROPIC_OPUS_SPEED,
   isAnthropicOpusEffortModel,
+  isAnthropicOpusSpeedModel,
   migrateLegacyModelIdToCatalog,
   normalizeAnthropicOpusEffort,
   normalizeAnthropicOpusSpeed,
@@ -48,6 +49,7 @@ export function AnthropicOpusEffortSelect({
   const effectiveModelId = migrateLegacyModelIdToCatalog(modelId);
   if (!isAnthropicOpusEffortModel(effectiveModelId)) return null;
 
+  const showSpeed = isAnthropicOpusSpeedModel(effectiveModelId);
   const effort = normalizeAnthropicOpusEffort(effortProp ?? DEFAULT_ANTHROPIC_OPUS_EFFORT);
   const speed = normalizeAnthropicOpusSpeed(speedProp ?? DEFAULT_ANTHROPIC_OPUS_SPEED);
   const compact = variant === "compact";
@@ -55,7 +57,7 @@ export function AnthropicOpusEffortSelect({
 
   if (compact) {
     return (
-      <div className={className ?? "grid grid-cols-2 gap-2"}>
+      <div className={className ?? (showSpeed ? "grid grid-cols-2 gap-2" : "space-y-2")}>
         <label className="flex flex-col gap-0.5 min-w-0">
           <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Effort</span>
           <select
@@ -63,7 +65,7 @@ export function AnthropicOpusEffortSelect({
             onChange={(e) => onEffortChange(normalizeAnthropicOpusEffort(e.target.value))}
             className={fieldSelectClass}
             style={selectStyle}
-            aria-label="Opus effort"
+            aria-label="Anthropic effort"
           >
             {ANTHROPIC_OPUS_EFFORT_LEVELS.map((level) => (
               <option key={level} value={level}>
@@ -72,8 +74,53 @@ export function AnthropicOpusEffortSelect({
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-0.5 min-w-0">
-          <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Speed</span>
+        {showSpeed ? (
+          <label className="flex flex-col gap-0.5 min-w-0">
+            <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Speed</span>
+            <select
+              value={speed}
+              onChange={(e) => onSpeedChange(normalizeAnthropicOpusSpeed(e.target.value))}
+              className={fieldSelectClass}
+              style={selectStyle}
+              aria-label="Opus speed"
+            >
+              {ANTHROPIC_OPUS_SPEED_LEVELS.map((level) => (
+                <option key={level} value={level}>
+                  {ANTHROPIC_OPUS_SPEED_LABELS[level]}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className={className ?? 'space-y-3'}>
+      <div className="space-y-1.5">
+        <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Effort</span>
+        <select
+          value={effort}
+          onChange={(e) => onEffortChange(normalizeAnthropicOpusEffort(e.target.value))}
+          className={fieldSelectClass}
+          style={selectStyle}
+          aria-label="Anthropic effort"
+        >
+          {ANTHROPIC_OPUS_EFFORT_LEVELS.map((level) => (
+            <option key={level} value={level}>
+              {ANTHROPIC_OPUS_EFFORT_LABELS[level]}
+            </option>
+          ))}
+        </select>
+        <p className="font-mono text-[8px] text-zinc-600 leading-tight">
+          Anthropic reasoning depth (API effort). Higher levels use more tokens and latency.
+        </p>
+      </div>
+
+      {showSpeed ? (
+        <div className="space-y-1.5">
+          <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Opus speed</span>
           <select
             value={speed}
             onChange={(e) => onSpeedChange(normalizeAnthropicOpusSpeed(e.target.value))}
@@ -87,52 +134,11 @@ export function AnthropicOpusEffortSelect({
               </option>
             ))}
           </select>
-        </label>
-      </div>
-    );
-  }
-
-  return (
-    <div className={className ?? 'space-y-3'}>
-      <div className="space-y-1.5">
-        <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Opus effort</span>
-        <select
-          value={effort}
-          onChange={(e) => onEffortChange(normalizeAnthropicOpusEffort(e.target.value))}
-          className={fieldSelectClass}
-          style={selectStyle}
-          aria-label="Opus effort"
-        >
-          {ANTHROPIC_OPUS_EFFORT_LEVELS.map((level) => (
-            <option key={level} value={level}>
-              {ANTHROPIC_OPUS_EFFORT_LABELS[level]}
-            </option>
-          ))}
-        </select>
-        <p className="font-mono text-[8px] text-zinc-600 leading-tight">
-          Anthropic reasoning depth (API effort). Higher levels use more tokens and latency.
-        </p>
-      </div>
-
-      <div className="space-y-1.5">
-        <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Opus speed</span>
-        <select
-          value={speed}
-          onChange={(e) => onSpeedChange(normalizeAnthropicOpusSpeed(e.target.value))}
-          className={fieldSelectClass}
-          style={selectStyle}
-          aria-label="Opus speed"
-        >
-          {ANTHROPIC_OPUS_SPEED_LEVELS.map((level) => (
-            <option key={level} value={level}>
-              {ANTHROPIC_OPUS_SPEED_LABELS[level]}
-            </option>
-          ))}
-        </select>
-        <p className="font-mono text-[8px] text-zinc-600 leading-tight">
-          Fast mode increases output token speed (~2.5×) with premium Opus pricing.
-        </p>
-      </div>
+          <p className="font-mono text-[8px] text-zinc-600 leading-tight">
+            Fast mode increases output token speed (~2.5×) with premium Opus pricing.
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }

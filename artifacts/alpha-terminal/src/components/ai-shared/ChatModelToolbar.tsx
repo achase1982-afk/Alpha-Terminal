@@ -4,6 +4,7 @@ import {
   ANTHROPIC_OPUS_SPEED_LABELS,
   aiModelSelectLabel,
   isAnthropicOpusEffortModel,
+  isAnthropicOpusSpeedModel,
   migrateLegacyModelIdToCatalog,
   normalizeAnthropicOpusEffort,
   normalizeAnthropicOpusSpeed,
@@ -54,7 +55,11 @@ export function ChatModelToolbar({
   const opusEffort = normalizeAnthropicOpusEffort(effort);
   const opusSpeed = normalizeAnthropicOpusSpeed(speed);
   const opusSummary = showOpusMenu
-    ? `${ANTHROPIC_OPUS_EFFORT_LABELS[opusEffort]} · ${opusSpeed === "fast" ? "Fast" : "Standard"}`
+    ? `${ANTHROPIC_OPUS_EFFORT_LABELS[opusEffort]}${
+        isAnthropicOpusSpeedModel(effectiveModel)
+          ? ` · ${opusSpeed === "fast" ? "Fast" : "Standard"}`
+          : ""
+      }`
     : "";
 
   useEffect(() => {

@@ -2,6 +2,7 @@ import {
   ANTHROPIC_OPUS_EFFORT_LABELS,
   aiModelSelectLabel,
   isAnthropicOpusEffortModel,
+  isAnthropicOpusSpeedModel,
   migrateLegacyModelIdToCatalog,
   normalizeAnthropicOpusEffort,
   type AnthropicOpusEffort,
@@ -49,7 +50,7 @@ export function chatComposerPillLabel(args: {
   if (isAnthropicOpusEffortModel(model)) {
     const effort = normalizeAnthropicOpusEffort(args.effort);
     const effortShort = ANTHROPIC_OPUS_EFFORT_LABELS[effort].split(" ")[0] ?? effort;
-    const speedBit = args.speed === "fast" ? " · Fast" : "";
+    const speedBit = isAnthropicOpusSpeedModel(model) && args.speed === "fast" ? " · Fast" : "";
     const thinkBit = args.extendedThinking ? "" : " · No think";
     return `${short} · ${effortShort}${speedBit}${thinkBit}`;
   }

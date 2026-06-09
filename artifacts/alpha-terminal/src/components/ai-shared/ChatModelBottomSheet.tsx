@@ -8,6 +8,7 @@ import {
   ANTHROPIC_OPUS_SPEED_LEVELS,
   aiModelSelectLabel,
   isAnthropicOpusEffortModel,
+  isAnthropicOpusSpeedModel,
   migrateLegacyModelIdToCatalog,
   normalizeAnthropicOpusEffort,
   normalizeAnthropicOpusSpeed,
@@ -49,8 +50,10 @@ type Props = {
 
 function modelSubtitle(id: AiModelId): string {
   switch (id) {
+    case "claude-fable-5":
+      return "Anthropic's most capable model for demanding agentic work.";
     case "claude-opus-4-8":
-      return "Most capable for ambitious work.";
+      return "Most capable Opus-tier model for ambitious work.";
     case "claude-sonnet-4-6":
       return "Efficient for everyday tasks.";
     case "gemini-3.5-flash":
@@ -95,6 +98,7 @@ export function ChatModelBottomSheet({
 }: Props) {
   const effectiveModel = migrateLegacyModelIdToCatalog(modelId);
   const opus = isAnthropicOpusEffortModel(effectiveModel);
+  const showOpusSpeed = isAnthropicOpusSpeedModel(effectiveModel);
   const effortNorm = normalizeAnthropicOpusEffort(effort);
   const speedNorm = normalizeAnthropicOpusSpeed(speed);
 
@@ -279,24 +283,26 @@ export function ChatModelBottomSheet({
                   <ChevronRight className="h-4 w-4 text-white/35" aria-hidden />
                 </span>
               </label>
-              <label className="flex items-center justify-between px-4 py-3 gap-3">
-                <span className="font-mono text-[13px] text-white/90">Speed</span>
-                <span className="flex items-center gap-1 font-mono text-[13px] text-white/70 min-w-0">
-                  <select
-                    value={speedNorm}
-                    onChange={(e) => onSpeedChange(normalizeAnthropicOpusSpeed(e.target.value))}
-                    className="bg-transparent text-right text-white appearance-none pr-1 max-w-[min(200px,42vw)] truncate"
-                    aria-label="Opus speed"
-                  >
-                    {ANTHROPIC_OPUS_SPEED_LEVELS.map((level) => (
-                      <option key={level} value={level} className="bg-[#2b2b2b]">
-                        {ANTHROPIC_OPUS_SPEED_LABELS[level]}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronRight className="h-4 w-4 text-white/35 shrink-0" aria-hidden />
-                </span>
-              </label>
+              {showOpusSpeed ? (
+                <label className="flex items-center justify-between px-4 py-3 gap-3">
+                  <span className="font-mono text-[13px] text-white/90">Speed</span>
+                  <span className="flex items-center gap-1 font-mono text-[13px] text-white/70 min-w-0">
+                    <select
+                      value={speedNorm}
+                      onChange={(e) => onSpeedChange(normalizeAnthropicOpusSpeed(e.target.value))}
+                      className="bg-transparent text-right text-white appearance-none pr-1 max-w-[min(200px,42vw)] truncate"
+                      aria-label="Opus speed"
+                    >
+                      {ANTHROPIC_OPUS_SPEED_LEVELS.map((level) => (
+                        <option key={level} value={level} className="bg-[#2b2b2b]">
+                          {ANTHROPIC_OPUS_SPEED_LABELS[level]}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronRight className="h-4 w-4 text-white/35 shrink-0" aria-hidden />
+                  </span>
+                </label>
+              ) : null}
             </div>
           )}
         </div>
