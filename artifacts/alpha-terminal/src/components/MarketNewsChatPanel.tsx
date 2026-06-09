@@ -896,6 +896,7 @@ export function MarketNewsChatPanel({
           ))}
           {showThinkingLabel && (
             <ChatThinkingIndicator
+              modelId={modelSend}
               activityNote={activityNote}
               toolPills={toolPills}
               startedAtMs={streamStartedAtRef.current ?? undefined}

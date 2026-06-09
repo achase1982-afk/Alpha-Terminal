@@ -1,16 +1,28 @@
 import { useEffect, useState } from "react";
 import { chatToolActivityLabel } from "@/lib/chatStreamStore";
+import { chatModelShortLabel } from "./chatModelUi";
 
 type ToolPill = { toolName: string; status: string };
 
 type Props = {
   multiAgent?: boolean;
   multiAgentCount?: number;
+  /** Active chat model id (single-model turns). Used for long-wait copy. */
+  modelId?: string;
   activityNote?: string;
   toolPills?: ToolPill[];
   orbit?: React.ReactNode;
   startedAtMs?: number;
 };
+
+function longWaitMessage(elapsedSec: number, modelId: string | undefined, multiAgent: boolean): string {
+  const prefix = `Still running (${elapsedSec}s) —`;
+  if (multiAgent) {
+    return `${prefix} Multi-model research can take a minute on complex questions. You can stop and retry, or switch to a faster setup.`;
+  }
+  const short = modelId?.trim() ? chatModelShortLabel(modelId) : "This model";
+  return `${prefix} ${short} can take a minute on complex questions. You can stop and retry, or switch to a faster model.`;
+}
 
 function humanizeActivityNote(note: string | undefined): string {
   const raw = note?.trim() ?? "";
@@ -33,6 +45,7 @@ function defaultSubtext(multiAgent: boolean, multiAgentCount: number): string {
 export function ChatThinkingIndicator({
   multiAgent = false,
   multiAgentCount = 0,
+  modelId,
   activityNote,
   toolPills = [],
   orbit,
@@ -80,8 +93,7 @@ export function ChatThinkingIndicator({
         ) : null}
         {longWait ? (
           <span className="font-mono text-[10px] text-white/40 leading-snug">
-            Still running ({elapsedSec}s) — Opus can take a minute on complex questions. You can stop
-            and retry, or switch to a faster model.
+            {longWaitMessage(elapsedSec, modelId, multiAgent)}
           </span>
         ) : null}
       </div>
