@@ -30,8 +30,35 @@ export function chatModelShortLabel(modelId: string): string {
   return label
     .replace(/^Claude /, "")
     .replace(/^Gemini /, "Gemini ")
+    .replace(/^GPT-/, "ChatGPT ")
     .replace(/ \+ .+$/, "")
     .trim();
+}
+
+/** Join short model names for multi-model status copy, e.g. "Fable 5, Gemini 3.5 Flash, and ChatGPT 5.5". */
+export function formatChatModelListShort(modelIds: readonly string[]): string {
+  const names = modelIds.map((id) => chatModelShortLabel(id)).filter(Boolean);
+  if (names.length === 0) return "These models";
+  if (names.length === 1) return names[0]!;
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+}
+
+/** Long-wait hint under the chat thinking indicator — always names the active model(s). */
+export function chatLongWaitHint(args: {
+  elapsedSec: number;
+  modelId?: string;
+  multiAgentModels?: readonly string[];
+}): string {
+  const prefix = `Still running (${args.elapsedSec}s) —`;
+  const models = args.multiAgentModels?.map((id) => id.trim()).filter(Boolean) ?? [];
+  const label =
+    models.length > 1
+      ? formatChatModelListShort(models)
+      : args.modelId?.trim()
+        ? chatModelShortLabel(args.modelId)
+        : "This model";
+  return `${prefix} ${label} can take a minute on complex questions. You can stop and retry, or switch to a faster model.`;
 }
 
 export function chatComposerPillLabel(args: {

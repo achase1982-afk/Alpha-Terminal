@@ -737,6 +737,10 @@ export function MarketNewsChatPanel({
   const showThinkingLabel = waitingForAssistantText && activeMultiAgentCount <= 1;
   const showMultiAgentThinking =
     waitingForAssistantText && activeMultiAgentCount > 1;
+  const thinkingModelId =
+    useMultiAgent && synthesizerModel.trim()
+      ? migrateLegacyModelIdToCatalog(synthesizerModel)
+      : modelSend;
 
   return (
     <div className="relative flex flex-col flex-1 min-h-0 w-full max-md:max-h-none md:max-h-none md:min-h-[280px] bg-[#0a0a0a] border-t border-card-border/40">
@@ -896,7 +900,7 @@ export function MarketNewsChatPanel({
           ))}
           {showThinkingLabel && (
             <ChatThinkingIndicator
-              modelId={modelSend}
+              modelId={thinkingModelId}
               activityNote={activityNote}
               toolPills={toolPills}
               startedAtMs={streamStartedAtRef.current ?? undefined}
@@ -906,6 +910,7 @@ export function MarketNewsChatPanel({
             <ChatThinkingIndicator
               multiAgent
               multiAgentCount={activeMultiAgentCount}
+              multiAgentModels={multiAgentModels}
               activityNote={activityNote}
               toolPills={toolPills}
               orbit={<MultiAgentOrbit count={activeMultiAgentCount} />}
