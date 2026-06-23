@@ -1467,9 +1467,25 @@ export const autoTradeDecisionsTable = pgTable(
     placed: boolean("placed").default(false).notNull(),
     error: text("error"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    // Outcome tracking — populated when the matching SELL fires
+    exitPrice: real("exit_price"),
+    exitAt: timestamp("exit_at"),
+    pnl: real("pnl"),
+    holdMinutes: integer("hold_minutes"),
+    outcome: text("outcome"), // 'WIN' | 'LOSS' | 'BREAKEVEN'
   },
   (t) => [index("auto_trade_decisions_user_created_idx").on(t.userId, desc(t.createdAt))],
 );
 
 export type AutoTradeDecisionRow = typeof autoTradeDecisionsTable.$inferSelect;
 export type AutoTradeDecisionInsert = typeof autoTradeDecisionsTable.$inferInsert;
+
+/** Per-user LLM trading pattern playbook (generated nightly, injected into every decision call). */
+export const autoTradePlaybookTable = pgTable("auto_trade_playbook", {
+  userId: text("user_id").primaryKey(),
+  content: text("content").default("").notNull(),
+  generatedAt: timestamp("generated_at").defaultNow().notNull(),
+  tradeCount: integer("trade_count").default(0).notNull(),
+});
+
+export type AutoTradePlaybookRow = typeof autoTradePlaybookTable.$inferSelect;

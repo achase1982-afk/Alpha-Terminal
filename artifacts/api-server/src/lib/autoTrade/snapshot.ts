@@ -54,13 +54,13 @@ function formatRecentBars(bars: SchwabChartEquityBarPoint[], count: number): str
 }
 
 /**
- * SPY regime block injected into every ticker snapshot so the LLM knows the
- * macro environment before evaluating the individual stock.
+ * SPY macro backdrop appended to every ticker snapshot as secondary context.
+ * Kept factual — interpretation belongs in the decision prompt, not the data.
  */
-function buildMarketRegimeContext(): string {
+function buildMacroBackdropContext(): string {
   const spyQuote = getQuoteBySymbol("SPY");
   const spyBars = getStrategistChartEquityBars("SPY");
-  if (!spyBars.length) return "MARKET REGIME: SPY data unavailable — treat as neutral.";
+  if (!spyBars.length) return "MACRO BACKDROP — SPY: data unavailable.";
 
   const spyCandles = barsToCandles(spyBars);
   const spyTa = computeIndicators(spyCandles);
@@ -70,7 +70,7 @@ function buildMarketRegimeContext(): string {
   const { ema200, ema200Series } = spyTa;
 
   if (spyLast == null || ema200 == null) {
-    return "MARKET REGIME: SPY data unavailable — treat as neutral.";
+    return "MACRO BACKDROP — SPY: data unavailable.";
   }
 
   const ema200Prev = ema200Series.length >= 2 ? ema200Series[ema200Series.length - 2] : null;
@@ -85,20 +85,8 @@ function buildMarketRegimeContext(): string {
     ? ` | Day: ${spyChangePct >= 0 ? "+" : ""}${spyChangePct.toFixed(2)}%`
     : "";
 
-  let guidance = "";
-  if (regime === "BEAR" && slope !== "RISING") {
-    guidance =
-      "\n  ⚠ BEAR REGIME: Default bias is DOWN. Do not buy dips. Longs require price reclaiming VWAP + EMA50 with strong volume.";
-  } else if (regime === "BULL" && slope === "RISING") {
-    guidance =
-      "\n  ✓ BULL REGIME: Long momentum entries valid. RSI 50–70 above VWAP = act, do not hesitate.";
-  } else {
-    guidance =
-      "\n  ⚡ MIXED REGIME: SPY above EMA200 but slope deteriorating — require strong confirmation before buying.";
-  }
-
-  return `MARKET REGIME (SPY ${regime}):
-  SPY $${spyLast.toFixed(2)} vs EMA200 $${ema200.toFixed(2)} — ${regime === "BULL" ? "ABOVE" : "BELOW"} | EMA200 slope: ${slope}${changeLine}${guidance}`;
+  return `MACRO BACKDROP — SPY (secondary context):
+  ${regime} | $${spyLast.toFixed(2)} vs own EMA200 $${ema200.toFixed(2)} (${regime === "BULL" ? "ABOVE" : "BELOW"}) | EMA200 slope: ${slope}${changeLine}`;
 }
 
 /**
@@ -127,18 +115,19 @@ export function buildAutoTradeSnapshot(symbol: string): AutoTradeSnapshot {
     ? `Bid ${quote.bid ?? "—"} x Ask ${quote.ask ?? "—"} | Last $${quote.last ?? "—"} | Day H ${quote.high ?? "—"} / L ${quote.low ?? "—"} | Vol ${quote.volume ?? "—"} | Chg ${quote.changePct?.toFixed(2) ?? "—"}%`
     : "No live quote available.";
 
-  const regimeContext = buildMarketRegimeContext();
+  const macroBackdrop = buildMacroBackdropContext();
 
-  const context = `${regimeContext}
-
-═══ LIVE SNAPSHOT — ${sym} ═══
+  // Individual stock data first — LLM reads the ticker's own setup before macro context.
+  const context = `═══ LIVE SNAPSHOT — ${sym} ═══
 ${quoteLine}
 ${vwapLine}
 
 RECENT 1-MIN BARS (most recent last):
 ${formatRecentBars(bars, 10)}
 
-${formatTAContext(sym, ta)}`;
+${formatTAContext(sym, ta)}
+
+${macroBackdrop}`;
 
   return { symbol: sym, last, changePct, context, tradeable };
 }
