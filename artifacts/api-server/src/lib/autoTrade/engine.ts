@@ -6,7 +6,8 @@ import { getAutoTradeConfig, setAutoTradeRunning, type AutoTradeConfig } from ".
 import { buildAutoTradeSnapshot } from "./snapshot.js";
 import { decideAutoTrade } from "./decision.js";
 import { placeAutoEquityOrder, logAutoTradeDecision, journalAutoEntry } from "./execute.js";
-import { recordTradeExit, generateAndStorePlaybook, getStoredPlaybook } from "./outcomes.js";
+import { recordTradeExit, generateAndStorePlaybook, getStoredPlaybook, getAutoTradeRealizedPnlToday } from "./outcomes.js";
+import { addSymbols, addChartEquitySymbols } from "../schwabStreamer.js";
 
 interface RunnerState {
   busy: boolean;
@@ -100,20 +101,22 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
       return;
     }
 
-    // Daily max-loss guard: halt the whole loop for the day if breached.
-    if (account.dayPL <= -Math.abs(config.dailyMaxLoss)) {
+    // Daily max-loss guard: only count P&L from trades the auto-trader placed —
+    // never the user's manual account P&L.
+    const autoTradePnlToday = await getAutoTradeRealizedPnlToday(userId);
+    if (autoTradePnlToday <= -Math.abs(config.dailyMaxLoss)) {
       logger.warn(
-        { userId, dayPL: account.dayPL, limit: config.dailyMaxLoss },
+        { userId, autoTradePnlToday, limit: config.dailyMaxLoss },
         "autoTrade: daily max loss hit — halting",
       );
       await logAutoTradeDecision({
         userId,
         ticker: "—",
         decision: "HALT_DAILY_LOSS",
-        reasoning: `Day P/L ${account.dayPL.toFixed(2)} breached limit -${config.dailyMaxLoss}.`,
+        reasoning: `Auto-trade realized P/L today: $${autoTradePnlToday.toFixed(2)} — breached limit -$${config.dailyMaxLoss}.`,
         placed: false,
       });
-      broadcastToClients("autoTradeStatus", { userId, halted: "daily_loss", dayPL: account.dayPL });
+      broadcastToClients("autoTradeStatus", { userId, halted: "daily_loss", autoTradePnlToday });
       await stopAutoTrade(userId);
       return;
     }
@@ -263,7 +266,14 @@ export async function startAutoTrade(userId: string): Promise<void> {
   state.timer = setInterval(() => void runCycle(userId, state), intervalMs);
   runners.set(userId, state);
 
-  logger.info({ userId, intervalMs }, "autoTrade started");
+  // Ensure configured tickers receive Level 1 quotes + 1-min bars from the streamer.
+  // addSymbols / addChartEquitySymbols are idempotent — safe to call every start.
+  if (config.tickers.length > 0) {
+    addSymbols(config.tickers);
+    addChartEquitySymbols(config.tickers);
+  }
+
+  logger.info({ userId, intervalMs, tickers: config.tickers }, "autoTrade started");
   broadcastToClients("autoTradeStatus", { userId, running: true });
 
   // Kick an immediate first cycle rather than waiting a full interval.
