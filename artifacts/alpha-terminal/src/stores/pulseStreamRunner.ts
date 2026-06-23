@@ -96,6 +96,7 @@ function startResultPolling(epoch: number) {
   const poll = async () => {
     if (epoch !== runEpoch) {
       console.log("[pulse] Polling cancelled — epoch mismatch");
+      pollTimer = null;
       return;
     }
 

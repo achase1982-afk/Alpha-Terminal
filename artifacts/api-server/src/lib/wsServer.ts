@@ -349,7 +349,11 @@ function subscribeStreamerForPortfolioAccounts(
   if (futuresOptionSymbols.size > 0) addFuturesOptionSymbols([...futuresOptionSymbols]);
 }
 
-async function fetchAndPushPortfolio(ws: WebSocket) {
+function safeSend(ws: WebSocket, data: string) {
+  if (ws.readyState === WebSocket.OPEN) ws.send(data);
+}
+
+async function fetchAndPushPortfolio(ws: WebSocket, isClosed: () => boolean) {
   if (ws.readyState !== WebSocket.OPEN) return;
 
   const trader = getTokens("trader");
@@ -360,19 +364,20 @@ async function fetchAndPushPortfolio(ws: WebSocket) {
       lastPortfolioAuthWarn = now;
       logger.warn("Portfolio poll: no Schwab trader token available — portfolio cannot update");
     }
-    ws.send(JSON.stringify({ event: "portfolioStatus", data: { status: "no_token", message: "Schwab authentication required" } }));
+    safeSend(ws, JSON.stringify({ event: "portfolioStatus", data: { status: "no_token", message: "Schwab authentication required" } }));
     return;
   }
 
   try {
     const mapped = await fetchMappedSchwabAccounts(token);
+    if (isClosed()) return;
     logger.info(
       { ts: Date.now(), accountCount: mapped.length },
       `[PORTFOLIO_POLL] GET /accounts?fields=positions OK (${mapped.length} accounts)`,
     );
     if (mapped.length > 0) {
-      ws.send(JSON.stringify({ event: "portfolioAccounts", data: mapped }));
-      ws.send(JSON.stringify({ event: "portfolioAccount", data: mapped[0] }));
+      safeSend(ws, JSON.stringify({ event: "portfolioAccounts", data: mapped }));
+      safeSend(ws, JSON.stringify({ event: "portfolioAccount", data: mapped[0] }));
       try {
         subscribeStreamerForPortfolioAccounts(mapped);
         logger.debug(
@@ -385,12 +390,14 @@ async function fetchAndPushPortfolio(ws: WebSocket) {
     }
   } catch (err) {
     logger.debug({ err }, "Portfolio account poll failed");
-    ws.send(JSON.stringify({ event: "portfolioStatus", data: { status: "error", message: "Failed to fetch account data" } }));
+    if (!isClosed()) safeSend(ws, JSON.stringify({ event: "portfolioStatus", data: { status: "error", message: "Failed to fetch account data" } }));
   }
+
+  if (isClosed()) return;
 
   try {
     const hash = await getAccountHash(token);
-    if (!hash) return;
+    if (!hash || isClosed()) return;
     const end = new Date();
     const start = new Date();
     start.setDate(start.getDate() - 30);
@@ -398,20 +405,21 @@ async function fetchAndPushPortfolio(ws: WebSocket) {
       `/accounts/${hash}/orders?fromEnteredTime=${start.toISOString()}&toEnteredTime=${end.toISOString()}`,
       token
     );
+    if (isClosed()) return;
     const mapped = mapOrders(Array.isArray(orders) ? orders : []);
-    ws.send(JSON.stringify({ event: "portfolioOrders", data: mapped }));
+    safeSend(ws, JSON.stringify({ event: "portfolioOrders", data: mapped }));
   } catch (err) {
     logger.debug({ err }, "Portfolio WS orders poll failed");
   }
 }
 
-function startPortfolioPoll(ws: WebSocket) {
+function startPortfolioPoll(ws: WebSocket, isClosed: () => boolean) {
   if (portfolioSubs.has(ws)) return;
 
   plCalcLogState.set(ws, { firstFullDone: false, lastPlPctByKey: new Map() });
-  fetchAndPushPortfolio(ws);
+  void fetchAndPushPortfolio(ws, isClosed);
 
-  const interval = setInterval(() => fetchAndPushPortfolio(ws), PORTFOLIO_POLL_MS);
+  const interval = setInterval(() => void fetchAndPushPortfolio(ws, isClosed), PORTFOLIO_POLL_MS);
   portfolioSubs.set(ws, interval);
   logger.info({ subs: portfolioSubs.size }, "Portfolio WS polling started");
 }
@@ -481,13 +489,16 @@ export function initWsServer(httpServer: HttpServer) {
     clients.add(ws);
     logger.info({ total: clients.size }, "WS price client connected");
 
+    let closed = false;
+    const isClosed = () => closed;
+
     const snapshot = getSnapshot();
     const status = getStreamerStatus();
 
     if (status) {
       ws.send(JSON.stringify({ event: "streamerStatus", data: { status } }));
     }
-    if (snapshot && Object.keys(snapshot).length > 0) {
+    if (snapshot && snapshot.length > 0) {
       ws.send(JSON.stringify({ event: "snapshot", data: snapshot }));
     }
 
@@ -499,7 +510,7 @@ export function initWsServer(httpServer: HttpServer) {
       try {
         const msg = JSON.parse(String(raw));
         if (msg.action === "subscribePortfolio") {
-          startPortfolioPoll(ws);
+          startPortfolioPoll(ws, isClosed);
         } else if (msg.action === "unsubscribePortfolio") {
           stopPortfolioPoll(ws);
         }
@@ -507,6 +518,7 @@ export function initWsServer(httpServer: HttpServer) {
     });
 
     ws.on("close", () => {
+      closed = true;
       clearInterval(hb);
       stopPortfolioPoll(ws);
       clients.delete(ws);
@@ -514,6 +526,7 @@ export function initWsServer(httpServer: HttpServer) {
     });
 
     ws.on("error", (err) => {
+      closed = true;
       clearInterval(hb);
       stopPortfolioPoll(ws);
       clients.delete(ws);

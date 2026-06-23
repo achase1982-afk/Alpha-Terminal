@@ -142,6 +142,7 @@ async function withLock<T>(key: string, fn: () => Promise<T>): Promise<T | null>
 }
 
 let orchestratorInitialized = false;
+const catchUpTimers: ReturnType<typeof setTimeout>[] = [];
 
 // ─── TELEMETRY HELPER ────────────────────────────────────────────────────────
 
@@ -1141,14 +1142,24 @@ async function waitForEquityDataThenCatchUp(missedJobs: ScheduledJob[]): Promise
 
   let delay = 2_000;
   for (const job of missedJobs) {
-    setTimeout(() => {
+    catchUpTimers.push(setTimeout(() => {
       logger.info({ passName: job.passName }, `AI Lab: running missed pass ${job.passName}`);
       void job.handler().catch((err) => {
         logger.error({ err, passName: job.passName }, `AI Lab: missed ${job.passName} failed`);
       });
-    }, delay);
+    }, delay));
     delay += 15_000;
   }
+}
+
+export function stopAiLabOrchestrator(): void {
+  for (const t of catchUpTimers) clearTimeout(t);
+  catchUpTimers.length = 0;
+  for (const job of SCHEDULE) {
+    if (job.timerId) { clearTimeout(job.timerId); job.timerId = undefined; }
+    if (job.intervalId) { clearInterval(job.intervalId); job.intervalId = undefined; }
+  }
+  orchestratorInitialized = false;
 }
 
 export {

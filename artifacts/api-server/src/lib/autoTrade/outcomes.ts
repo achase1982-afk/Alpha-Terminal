@@ -1,4 +1,4 @@
-import { db, eq, and, isNull, isNotNull, desc } from "@workspace/db";
+import { db, eq, and, isNull, isNotNull, desc, gte } from "@workspace/db";
 import { autoTradeDecisionsTable, autoTradePlaybookTable } from "@workspace/db/schema";
 import { logger } from "../logger.js";
 
@@ -102,6 +102,42 @@ export async function getStoredPlaybook(userId: string): Promise<string | null> 
     return row?.content ?? null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Sum of realized P&L from auto-trader-placed trades that were CLOSED today (ET).
+ * Used exclusively for the daily max-loss guard so manual account trades don't
+ * trigger a halt on the auto-trader.
+ */
+export async function getAutoTradeRealizedPnlToday(userId: string): Promise<number> {
+  try {
+    // Compute today's midnight in ET, then express as UTC for DB comparison.
+    const nowEt = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+    const todayEtMidnight = new Date(nowEt);
+    todayEtMidnight.setHours(0, 0, 0, 0);
+    // Offset from ET to UTC (ET is UTC-4 or UTC-5; use the actual difference).
+    const offsetMs = new Date().getTime() - new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" })).getTime();
+    const todayStartUtc = new Date(todayEtMidnight.getTime() + offsetMs);
+
+    const rows = await db
+      .select({ pnl: autoTradeDecisionsTable.pnl })
+      .from(autoTradeDecisionsTable)
+      .where(
+        and(
+          eq(autoTradeDecisionsTable.userId, userId),
+          eq(autoTradeDecisionsTable.decision, "BUY_STOCK"),
+          eq(autoTradeDecisionsTable.placed, true),
+          isNotNull(autoTradeDecisionsTable.outcome),
+          isNotNull(autoTradeDecisionsTable.exitAt),
+          gte(autoTradeDecisionsTable.exitAt, todayStartUtc),
+        ),
+      );
+
+    return rows.reduce((sum, r) => sum + (r.pnl ?? 0), 0);
+  } catch (err) {
+    logger.warn({ err, userId }, "autoTrade: getAutoTradeRealizedPnlToday failed — defaulting to 0");
+    return 0;
   }
 }
 

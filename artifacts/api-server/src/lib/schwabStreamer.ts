@@ -93,11 +93,16 @@ const futuresKeyToDisplay = new Map<string, string>();
 
 const alertSeenSet = new Map<string, number>();
 const ALERT_DEDUP_TTL_MS = 60_000;
+let alertSeenSweepTimer: ReturnType<typeof setInterval> | null = setInterval(() => {
+  const cutoff = Date.now() - ALERT_DEDUP_TTL_MS;
+  for (const [k, ts] of alertSeenSet) {
+    if (ts < cutoff) alertSeenSet.delete(k);
+  }
+}, ALERT_DEDUP_TTL_MS);
 
 export function markAlertSeen(orderId: string, eventType: string): void {
   const key = `${orderId}:${eventType}`;
   alertSeenSet.set(key, Date.now());
-  setTimeout(() => alertSeenSet.delete(key), ALERT_DEDUP_TTL_MS);
 }
 
 function isAlertSeen(orderId: string | null, eventType: string | null): boolean {
@@ -1810,7 +1815,7 @@ export async function startStreamer(_token?: string, symbols?: string[]): Promis
   await connectSchwabStreamer();
 }
 
-setInterval(() => {
+let quoteSummaryTimer: ReturnType<typeof setInterval> | null = setInterval(() => {
   if (connectionState !== "connected") return;
   const equityKeys: string[] = [];
   const futuresKeys: string[] = [];
@@ -1836,6 +1841,15 @@ export function stopStreamer() {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
+  if (quoteSummaryTimer) {
+    clearInterval(quoteSummaryTimer);
+    quoteSummaryTimer = null;
+  }
+  if (alertSeenSweepTimer) {
+    clearInterval(alertSeenSweepTimer);
+    alertSeenSweepTimer = null;
+  }
+  alertSeenSet.clear();
   if (schwabWs) {
     try { schwabWs.close(); } catch {}
     schwabWs = null;
