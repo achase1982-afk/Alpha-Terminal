@@ -3,8 +3,8 @@ import { logger } from "../logger.js";
 import { broadcastToClients } from "../wsServer.js";
 import { fetchMappedSchwabAccounts } from "../schwabPortfolioAccounts.js";
 import { getAutoTradeConfig, setAutoTradeRunning, type AutoTradeConfig } from "./config.js";
-import { buildAutoTradeSnapshot } from "./snapshot.js";
-import { decideAutoTrade } from "./decision.js";
+import { buildAutoTradeSnapshot, type AutoTradeSnapshot } from "./snapshot.js";
+import { decideAutoTrade, type AutoTradeDecision } from "./decision.js";
 import { placeAutoEquityOrder, placeAutoEquityOrderWithTrailingStop, logAutoTradeDecision, journalAutoEntry } from "./execute.js";
 import { recordTradeExit, generateAndStorePlaybook, getStoredPlaybook, getAutoTradeRealizedPnlToday } from "./outcomes.js";
 import { addSymbols, addChartEquitySymbols } from "../schwabStreamer.js";
@@ -79,6 +79,12 @@ function longSharesFor(account: AccountView, symbol: string): number {
   return qty;
 }
 
+type TickerResult =
+  | { kind: "skip" }
+  | { kind: "trailing_stop_hit"; ticker: string; snapshot: AutoTradeSnapshot; pos: TrailingStopPosition }
+  | { kind: "trailing_active" }
+  | { kind: "decision"; ticker: string; snapshot: AutoTradeSnapshot; heldShares: number; decision: AutoTradeDecision };
+
 async function runCycle(userId: string, state: RunnerState): Promise<void> {
   if (state.busy || state.stopRequested) return;
   state.busy = true;
@@ -96,7 +102,6 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
     if (dk !== state.dayKey) {
       state.dayKey = dk;
       state.deployedToday = 0;
-      // Rebuild the pattern memory playbook before the new trading day starts.
       void generateAndStorePlaybook(userId);
     }
 
@@ -108,8 +113,7 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
       return;
     }
 
-    // Daily max-loss guard: only count P&L from trades the auto-trader placed —
-    // never the user's manual account P&L.
+    // Daily max-loss guard: only count P&L from trades the auto-trader placed.
     const autoTradePnlToday = await getAutoTradeRealizedPnlToday(userId);
     if (autoTradePnlToday <= -Math.abs(config.dailyMaxLoss)) {
       logger.warn(
@@ -131,31 +135,63 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
     const accountHash = config.accountHash ?? account.hashValue;
     if (!accountHash) return;
 
-    // Fetch pattern memory once per cycle — fast DB read, cached from nightly generation.
     const playbook = await getStoredPlaybook(userId);
 
-    for (const ticker of config.tickers) {
-      if (state.stopRequested) break;
-      const budgetRemaining = Math.max(0, config.totalBudget - state.deployedToday);
-      const snapshot = buildAutoTradeSnapshot(ticker);
-      if (!snapshot.tradeable || snapshot.last == null) continue;
+    // Snapshot budget once — each ticker's LLM call sees the same value.
+    // Budget is re-checked against the live state.deployedToday in Phase 3 before execution.
+    const budgetAtCycleStart = Math.max(0, config.totalBudget - state.deployedToday);
 
-      const heldShares = longSharesFor(account, ticker);
-      const hasPosition = heldShares > 0;
-      const trailingStopPos = state.activeTrailingStops.get(ticker);
+    // ── Phase 1: Build snapshots (synchronous, no I/O) ──────────────────────────
+    const tickersToEval = state.stopRequested ? [] : config.tickers;
 
-      // Trailing stop hit: position gone but we expected one — record the exit.
-      if (trailingStopPos && !hasPosition) {
-        state.activeTrailingStops.delete(ticker);
-        if (snapshot.last != null) {
-          void recordTradeExit(userId, ticker, snapshot.last, trailingStopPos.shares);
+    // ── Phase 2: Fire ALL LLM decisions in parallel ──────────────────────────────
+    const results = await Promise.all(
+      tickersToEval.map(async (ticker): Promise<TickerResult> => {
+        const snapshot = buildAutoTradeSnapshot(ticker);
+        if (!snapshot.tradeable || snapshot.last == null) return { kind: "skip" };
+
+        const heldShares = longSharesFor(account, ticker);
+        const hasPosition = heldShares > 0;
+        const trailingStopPos = state.activeTrailingStops.get(ticker);
+
+        if (trailingStopPos && !hasPosition) {
+          return { kind: "trailing_stop_hit", ticker, snapshot, pos: trailingStopPos };
         }
+        if (trailingStopPos && hasPosition) {
+          return { kind: "trailing_active" };
+        }
+
+        const decision = await decideAutoTrade({
+          snapshot,
+          modelId: config.modelId,
+          instrumentMode: config.instrumentMode,
+          maxPerTrade: config.maxPerTrade,
+          budgetRemaining: budgetAtCycleStart,
+          hasPosition,
+          positionSummary: hasPosition ? `Long ${heldShares} shares` : "None",
+          playbook,
+        });
+
+        return { kind: "decision", ticker, snapshot, heldShares, decision };
+      }),
+    );
+
+    // ── Phase 3: Execute sequentially — budget updates stay accurate ─────────────
+    for (const result of results) {
+      if (state.stopRequested) break;
+
+      if (result.kind === "skip" || result.kind === "trailing_active") continue;
+
+      if (result.kind === "trailing_stop_hit") {
+        const { ticker, snapshot, pos } = result;
+        state.activeTrailingStops.delete(ticker);
+        if (snapshot.last != null) void recordTradeExit(userId, ticker, snapshot.last, pos.shares);
         await logAutoTradeDecision({
           userId,
           ticker,
           decision: "TRAILING_STOP_HIT",
           instrument: "stock",
-          quantity: trailingStopPos.shares,
+          quantity: pos.shares,
           reasoning: `Trailing stop triggered — position closed near $${snapshot.last?.toFixed(2) ?? "?"}`,
           modelId: config.modelId,
           placed: false,
@@ -163,120 +199,76 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
         continue;
       }
 
-      // Trailing stop is live and managing this position — skip all LLM decisions.
-      if (trailingStopPos && hasPosition) {
-        continue;
-      }
-
-      const decision = await decideAutoTrade({
-        snapshot,
-        modelId: config.modelId,
-        instrumentMode: config.instrumentMode,
-        maxPerTrade: config.maxPerTrade,
-        budgetRemaining,
-        hasPosition,
-        positionSummary: hasPosition ? `Long ${heldShares} shares` : "None",
-        playbook,
-      });
+      const { ticker, snapshot, heldShares, decision } = result;
+      const hasPosition = heldShares > 0;
 
       if (decision.action === "HOLD") {
         await logAutoTradeDecision({
-          userId,
-          ticker,
-          decision: "HOLD",
-          reasoning: decision.reasoning,
-          modelId: config.modelId,
-          placed: false,
+          userId, ticker, decision: "HOLD",
+          reasoning: decision.reasoning, modelId: config.modelId, placed: false,
         });
         continue;
       }
 
       if (decision.action === "SELL") {
         if (!hasPosition) continue;
-        const result = await placeAutoEquityOrder(accountHash, ticker, "SELL", heldShares);
+        const orderResult = await placeAutoEquityOrder(accountHash, ticker, "SELL", heldShares);
         await logAutoTradeDecision({
-          userId,
-          ticker,
-          decision: "SELL",
-          instrument: "stock",
-          quantity: heldShares,
-          reasoning: decision.reasoning,
-          modelId: config.modelId,
-          schwabOrderId: result.orderId,
-          placed: result.ok,
-          error: result.error ?? null,
+          userId, ticker, decision: "SELL", instrument: "stock", quantity: heldShares,
+          reasoning: decision.reasoning, modelId: config.modelId,
+          schwabOrderId: orderResult.orderId, placed: orderResult.ok, error: orderResult.error ?? null,
         });
-        if (result.ok && snapshot.last != null) {
-          void recordTradeExit(userId, ticker, snapshot.last, heldShares);
-        }
+        if (orderResult.ok && snapshot.last != null) void recordTradeExit(userId, ticker, snapshot.last, heldShares);
         continue;
       }
 
       if (decision.action === "BUY_STOCK") {
+        // Re-check live budget — parallel decisions may have caused another ticker to buy first.
+        const budgetNow = Math.max(0, config.totalBudget - state.deployedToday);
         const shares = Math.floor(decision.notional / snapshot.last);
-        if (shares < 1 || budgetRemaining < snapshot.last) {
+        if (shares < 1 || budgetNow < snapshot.last) {
           await logAutoTradeDecision({
-            userId,
-            ticker,
-            decision: "BUY_STOCK",
-            instrument: "stock",
-            notional: decision.notional,
+            userId, ticker, decision: "BUY_STOCK", instrument: "stock", notional: decision.notional,
             reasoning: `${decision.reasoning} (skipped: budget/share too small)`,
-            modelId: config.modelId,
-            placed: false,
+            modelId: config.modelId, placed: false,
           });
           continue;
         }
 
-        // Compute ATR-based trailing stop: (ATR14 / price) × 100 × 1.5 — self-scales to each stock's volatility.
         const rawTrail =
           snapshot.atr14 != null && snapshot.last > 0
             ? (snapshot.atr14 / snapshot.last) * 100 * 1.5
-            : 0.75; // fallback when ATR not yet available
+            : 0.75;
         const trailPercent = Math.max(0.25, Math.min(5, rawTrail));
 
-        const result = await placeAutoEquityOrderWithTrailingStop(accountHash, ticker, shares, trailPercent);
-        if (result.ok) {
+        const orderResult = await placeAutoEquityOrderWithTrailingStop(accountHash, ticker, shares, trailPercent);
+        if (orderResult.ok) {
           state.deployedToday += shares * snapshot.last;
           state.activeTrailingStops.set(ticker, { shares, entryPrice: snapshot.last });
         }
         await logAutoTradeDecision({
-          userId,
-          ticker,
-          decision: "BUY_STOCK",
-          instrument: "stock",
-          quantity: shares,
-          notional: shares * snapshot.last,
+          userId, ticker, decision: "BUY_STOCK", instrument: "stock",
+          quantity: shares, notional: shares * snapshot.last,
           reasoning: `${decision.reasoning} | Trail stop: ${trailPercent.toFixed(2)}% (ATR14=${snapshot.atr14?.toFixed(4) ?? "N/A"})`,
-          modelId: config.modelId,
-          schwabOrderId: result.orderId,
-          placed: result.ok,
-          error: result.error ?? null,
+          modelId: config.modelId, schwabOrderId: orderResult.orderId,
+          placed: orderResult.ok, error: orderResult.error ?? null,
         });
-        if (result.ok && result.orderId) {
+        if (orderResult.ok && orderResult.orderId) {
           await journalAutoEntry({
-            orderId: result.orderId,
-            symbol: ticker,
-            direction: "BUY",
-            entryPrice: snapshot.last,
-            quantity: shares,
-            thesis: decision.reasoning,
-            accountHash,
+            orderId: orderResult.orderId, symbol: ticker, direction: "BUY",
+            entryPrice: snapshot.last, quantity: shares, thesis: decision.reasoning, accountHash,
           });
         }
         continue;
       }
 
-      // BUY_CALL / BUY_PUT — decision captured; options execution not yet wired.
+      // BUY_CALL / BUY_PUT — logged only.
       await logAutoTradeDecision({
-        userId,
-        ticker,
-        decision: decision.action,
+        userId, ticker, decision: decision.action,
         instrument: decision.action === "BUY_CALL" ? "call" : "put",
         notional: decision.notional,
         reasoning: `${decision.reasoning} (options execution pending — logged only)`,
-        modelId: config.modelId,
-        placed: false,
+        modelId: config.modelId, placed: false,
       });
     }
   } catch (err) {
