@@ -1426,3 +1426,50 @@ export const moversTier2CacheTable = pgTable(
 
 export type MoversTier2CacheRow = typeof moversTier2CacheTable.$inferSelect;
 export type MoversTier2CacheInsert = typeof moversTier2CacheTable.$inferInsert;
+
+/**
+ * Auto Trader per-user config. One row per user. `tickers` is the universe the
+ * LLM may trade; `instrumentMode` is "stock" | "options" | "both". Budget and
+ * dailyMaxLoss are USD guardrails enforced before any order is placed.
+ */
+export const autoTradeConfigTable = pgTable("auto_trade_config", {
+  userId: text("user_id").primaryKey(),
+  enabled: boolean("enabled").default(false).notNull(),
+  running: boolean("running").default(false).notNull(),
+  accountHash: text("account_hash"),
+  modelId: text("model_id").default("claude-opus-4-8").notNull(),
+  tickers: jsonb("tickers").$type<string[]>().default([]).notNull(),
+  instrumentMode: text("instrument_mode").default("both").notNull(),
+  totalBudget: real("total_budget").default(500).notNull(),
+  maxPerTrade: real("max_per_trade").default(100).notNull(),
+  dailyMaxLoss: real("daily_max_loss").default(150).notNull(),
+  pollIntervalSec: integer("poll_interval_sec").default(60).notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type AutoTradeConfigRow = typeof autoTradeConfigTable.$inferSelect;
+export type AutoTradeConfigInsert = typeof autoTradeConfigTable.$inferInsert;
+
+/** Audit log of every auto-trader decision (placed or skipped) for transparency. */
+export const autoTradeDecisionsTable = pgTable(
+  "auto_trade_decisions",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    ticker: text("ticker").notNull(),
+    decision: text("decision").notNull(),
+    instrument: text("instrument"),
+    quantity: integer("quantity"),
+    notional: real("notional"),
+    reasoning: text("reasoning"),
+    modelId: text("model_id"),
+    schwabOrderId: text("schwab_order_id"),
+    placed: boolean("placed").default(false).notNull(),
+    error: text("error"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [index("auto_trade_decisions_user_created_idx").on(t.userId, desc(t.createdAt))],
+);
+
+export type AutoTradeDecisionRow = typeof autoTradeDecisionsTable.$inferSelect;
+export type AutoTradeDecisionInsert = typeof autoTradeDecisionsTable.$inferInsert;

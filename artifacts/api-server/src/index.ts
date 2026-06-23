@@ -77,6 +77,7 @@ async function boot() {
   await ensureCatalystEarningsDatesTable();
   await ensureMoversCatalystCacheTable();
   await ensureMoversTier2CacheTable();
+  await (await import("./lib/autoTrade/engine.js")).reconcileAutoTradeOnBoot();
   registerTuningUniverseOnBoot();
   startSnapshotRefreshWorker();
   startMoversPollWorker();
