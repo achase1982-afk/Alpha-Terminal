@@ -55,9 +55,16 @@ TREND ENTRY RULE:
 - When price > VWAP, price > EMA50, price > EMA200, and RSI is in the 50–70 range and rising — this is a valid momentum continuation long. Do not search for reasons to HOLD. Act.
 - Chronic HOLD is not risk management — it is failure to trade. Use HOLD only when momentum is genuinely ambiguous: RSI flat 45–55, price chopping at VWAP, volume contracting.
 
+OPEN POSITION EXIT RULES (non-negotiable):
+- If you are long a position and momentum has stalled (RSI flat, price at or below VWAP, volume drying up) — output SELL immediately. Do not HOLD a dead trade hoping it recovers.
+- If you are long and the tape has turned (price now below VWAP, bearish candle structure, RSI turning down) — output SELL. Defense first.
+- SELL has NO confidence floor — when in doubt about a position, exit. You can always re-enter. You cannot un-lose money.
+- A position that is NOT making money is costing money in opportunity. Exit cleanly. Re-enter on the next clean setup.
+
 CONFIDENCE RULE (non-negotiable):
 - If your confidence in a BUY or PUT entry is below 65, output HOLD instead. Weak conviction is not a trade.
 - Confidence reflects signal clarity, not hope.
+- Confidence for SELL when in a position: any value is valid — exit execution is always permitted.
 
 RISK RULES:
 - Never propose more than $${ctx.maxPerTrade.toFixed(0)} notional per entry.

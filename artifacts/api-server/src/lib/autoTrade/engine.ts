@@ -14,6 +14,16 @@ interface TrailingStopPosition {
   entryPrice: number;
 }
 
+interface OpenPosition {
+  shares: number;
+  entryPrice: number;
+  entryTime: number;
+}
+
+// Hard rule-based exit constants — no LLM involved.
+const STOP_LOSS_PCT = 0.0075;    // 0.75% below entry → immediate SELL
+const TIME_STOP_MS = 5 * 60_000; // 5 min held with no profit → exit
+
 interface RunnerState {
   busy: boolean;
   stopRequested: boolean;
@@ -28,6 +38,8 @@ interface RunnerState {
   lastCycleAt: number;
   /** Tickers currently managed by a trailing stop order — LLM decisions are skipped for these. */
   activeTrailingStops: Map<string, TrailingStopPosition>;
+  /** In-memory position book — entry price + time for rule-based stop loss and time stop. */
+  openPositions: Map<string, OpenPosition>;
 }
 
 const runners = new Map<string, RunnerState>();
@@ -88,6 +100,7 @@ type TickerResult =
   | { kind: "skip" }
   | { kind: "trailing_stop_hit"; ticker: string; snapshot: AutoTradeSnapshot; pos: TrailingStopPosition }
   | { kind: "trailing_active" }
+  | { kind: "rule_exit"; ticker: string; last: number; heldShares: number; reason: string }
   | { kind: "decision"; ticker: string; snapshot: AutoTradeSnapshot; last: number; heldShares: number; decision: AutoTradeDecision };
 
 async function runCycle(userId: string, state: RunnerState): Promise<void> {
@@ -155,6 +168,7 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
         const snapshot = buildAutoTradeSnapshot(ticker);
         if (!snapshot.tradeable || snapshot.last == null) return { kind: "skip" };
 
+        const last = snapshot.last;
         const heldShares = longSharesFor(account, ticker);
         const hasPosition = heldShares > 0;
         const trailingStopPos = state.activeTrailingStops.get(ticker);
@@ -166,6 +180,29 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
           return { kind: "trailing_active" };
         }
 
+        // Rule-based exits — bypass LLM entirely. Faster and more reliable than asking the model.
+        const openPos = state.openPositions.get(ticker);
+        if (openPos && hasPosition) {
+          const pnlPct = (last - openPos.entryPrice) / openPos.entryPrice;
+          const heldMs = Date.now() - openPos.entryTime;
+          if (pnlPct <= -STOP_LOSS_PCT) {
+            return { kind: "rule_exit", ticker, last, heldShares, reason: "stop_loss" };
+          }
+          if (heldMs >= TIME_STOP_MS && pnlPct <= 0) {
+            return { kind: "rule_exit", ticker, last, heldShares, reason: "time_stop" };
+          }
+        }
+
+        let positionSummary = "None";
+        if (hasPosition) {
+          positionSummary = `Long ${heldShares} shares`;
+          if (openPos) {
+            const pnlPct = ((last - openPos.entryPrice) / openPos.entryPrice) * 100;
+            const heldMin = Math.round((Date.now() - openPos.entryTime) / 60_000);
+            positionSummary = `Long ${heldShares} sh @ $${openPos.entryPrice.toFixed(2)} | P&L ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}% | held ${heldMin}m`;
+          }
+        }
+
         const decision = await decideAutoTrade({
           snapshot,
           modelId: config.modelId,
@@ -173,11 +210,11 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
           maxPerTrade: config.maxPerTrade,
           budgetRemaining: budgetAtCycleStart,
           hasPosition,
-          positionSummary: hasPosition ? `Long ${heldShares} shares` : "None",
+          positionSummary,
           playbook,
         });
 
-        return { kind: "decision", ticker, snapshot, last: snapshot.last, heldShares, decision };
+        return { kind: "decision", ticker, snapshot, last, heldShares, decision };
       }),
     );
 
@@ -190,6 +227,7 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
       if (result.kind === "trailing_stop_hit") {
         const { ticker, snapshot, pos } = result;
         state.activeTrailingStops.delete(ticker);
+        state.openPositions.delete(ticker);
         // Free up the exposure so the budget can be redeployed into the next entry.
         state.deployedToday = Math.max(0, state.deployedToday - pos.shares * pos.entryPrice);
         if (snapshot.last != null) void recordTradeExit(userId, ticker, snapshot.last, pos.shares);
@@ -202,6 +240,31 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
           reasoning: `Trailing stop triggered — position closed near $${snapshot.last?.toFixed(2) ?? "?"}`,
           modelId: config.modelId,
           placed: false,
+        });
+        continue;
+      }
+
+      if (result.kind === "rule_exit") {
+        const { ticker, last, heldShares, reason } = result;
+        const orderResult = await placeAutoEquityOrder(accountHash, ticker, "SELL", heldShares);
+        if (orderResult.ok) {
+          state.deployedToday = Math.max(0, state.deployedToday - heldShares * last);
+          state.openPositions.delete(ticker);
+          void recordTradeExit(userId, ticker, last, heldShares);
+        }
+        await logAutoTradeDecision({
+          userId,
+          ticker,
+          decision: reason === "stop_loss" ? "RULE_STOP_LOSS" : "RULE_TIME_STOP",
+          instrument: "stock",
+          quantity: heldShares,
+          reasoning: reason === "stop_loss"
+            ? `Rule stop-loss: price dropped ≥0.75% from entry ($${last.toFixed(2)}) — exiting without LLM.`
+            : `Rule time-stop: held >5 min with no profit ($${last.toFixed(2)}) — exiting without LLM.`,
+          modelId: config.modelId,
+          schwabOrderId: orderResult.orderId,
+          placed: orderResult.ok,
+          error: orderResult.error ?? null,
         });
         continue;
       }
@@ -228,6 +291,7 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
         if (orderResult.ok) {
           // Free up the exposure so the budget can be redeployed.
           state.deployedToday = Math.max(0, state.deployedToday - heldShares * last);
+          state.openPositions.delete(ticker);
           void recordTradeExit(userId, ticker, last, heldShares);
         }
         continue;
@@ -246,29 +310,15 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
           continue;
         }
 
-        const rawTrail =
-          snapshot.atr14 != null && last > 0
-            ? (snapshot.atr14 / last) * 100 * 1.5
-            : 0.75;
-        const trailPercent = Math.max(0.25, Math.min(5, rawTrail));
-
-        const orderResult = await placeAutoEquityOrderWithTrailingStop(accountHash, ticker, shares, trailPercent);
+        const orderResult = await placeAutoEquityOrder(accountHash, ticker, "BUY", shares);
         if (orderResult.ok) {
           state.deployedToday += shares * last;
-          // Only skip LLM decisions if the trailing stop was actually placed.
-          // If Schwab rejected the TRIGGER and we fell back to a plain BUY,
-          // the LLM still needs to handle the exit via SELL signal.
-          if (orderResult.trailingStopPlaced) {
-            state.activeTrailingStops.set(ticker, { shares, entryPrice: last });
-          }
+          state.openPositions.set(ticker, { shares, entryPrice: last, entryTime: Date.now() });
         }
-        const trailNote = orderResult.trailingStopPlaced
-          ? `Trail stop: ${trailPercent.toFixed(2)}% (ATR14=${snapshot.atr14?.toFixed(4) ?? "N/A"})`
-          : `Trail stop REJECTED by broker — plain market order placed; LLM managing exit`;
         await logAutoTradeDecision({
           userId, ticker, decision: "BUY_STOCK", instrument: "stock",
           quantity: shares, notional: shares * last,
-          reasoning: `${decision.reasoning} | ${trailNote}`,
+          reasoning: decision.reasoning,
           modelId: config.modelId, schwabOrderId: orderResult.orderId,
           placed: orderResult.ok, error: orderResult.error ?? null,
         });
@@ -313,6 +363,7 @@ export async function startAutoTrade(userId: string): Promise<void> {
     timer: null,
     lastCycleAt: 0,
     activeTrailingStops: new Map(),
+    openPositions: new Map(),
   };
   state.stopRequested = false;
   state.busy = false;
