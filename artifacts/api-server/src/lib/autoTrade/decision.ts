@@ -55,9 +55,16 @@ TREND ENTRY RULE:
 - When price > VWAP, price > EMA50, price > EMA200, and RSI is in the 50–70 range and rising — this is a valid momentum continuation long. Do not search for reasons to HOLD. Act.
 - Chronic HOLD is not risk management — it is failure to trade. Use HOLD only when momentum is genuinely ambiguous: RSI flat 45–55, price chopping at VWAP, volume contracting.
 
+OPEN POSITION EXIT RULES (non-negotiable):
+- If you are long a position and momentum has stalled (RSI flat, price at or below VWAP, volume drying up) — output SELL immediately. Do not HOLD a dead trade hoping it recovers.
+- If you are long and the tape has turned (price now below VWAP, bearish candle structure, RSI turning down) — output SELL. Defense first.
+- SELL has NO confidence floor — when in doubt about a position, exit. You can always re-enter. You cannot un-lose money.
+- A position that is NOT making money is costing money in opportunity. Exit cleanly. Re-enter on the next clean setup.
+
 CONFIDENCE RULE (non-negotiable):
 - If your confidence in a BUY or PUT entry is below 65, output HOLD instead. Weak conviction is not a trade.
 - Confidence reflects signal clarity, not hope.
+- Confidence for SELL when in a position: any value is valid — exit execution is always permitted.
 
 RISK RULES:
 - Never propose more than $${ctx.maxPerTrade.toFixed(0)} notional per entry.
@@ -68,6 +75,15 @@ Respond with ONLY a JSON object — no prose, no markdown fences:
 {"action":"<one of ${actions.join("|")}>","notional":<usd amount, 0 for HOLD/SELL>,"confidence":<0-100>,"reasoning":"<one concise sentence naming the specific signal>"}`;
 }
 
+function currentSessionLabel(): string {
+  const et = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+  const min = et.getHours() * 60 + et.getMinutes();
+  if (min >= 7 * 60 && min < 9 * 60 + 30)  return "PRE-MARKET (7–9:30 AM ET) — thin liquidity, wide spreads. Raise conviction bar for entries. Exits still execute.";
+  if (min >= 9 * 60 + 30 && min < 16 * 60) return "REGULAR HOURS (9:30 AM–4 PM ET) — full liquidity.";
+  if (min >= 16 * 60 && min < 20 * 60)     return "AFTER-HOURS (4–8 PM ET) — thin liquidity, wide spreads, no market makers. Raise conviction bar for entries. Exits still execute.";
+  return "OUTSIDE TRADING HOURS";
+}
+
 function buildUserPrompt(ctx: DecisionContext): string {
   const playbookSection = ctx.playbook ? `${ctx.playbook}\n\n` : "";
   return `${playbookSection}${ctx.snapshot.context}
@@ -75,6 +91,7 @@ function buildUserPrompt(ctx: DecisionContext): string {
 CURRENT POSITION: ${ctx.hasPosition ? ctx.positionSummary : "None"}
 BUDGET REMAINING TODAY: $${ctx.budgetRemaining.toFixed(0)}
 MAX PER TRADE: $${ctx.maxPerTrade.toFixed(0)}
+SESSION: ${currentSessionLabel()}
 
 Decide now.`;
 }

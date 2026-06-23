@@ -10,22 +10,53 @@ const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
 
 export type EquityInstruction = "BUY" | "SELL";
 
+/** Schwab order session strings. NORMAL = regular hours; AM = pre-market; PM = after-hours. */
+export type SchwabSession = "NORMAL" | "AM" | "PM";
+
+/**
+ * Determine the correct Schwab order session for the current ET wall-clock time.
+ * - Pre-market  7:00 AM – 9:30 AM ET  → "AM"
+ * - Regular     9:30 AM – 4:00 PM ET  → "NORMAL"
+ * - After-hours 4:00 PM – 8:00 PM ET  → "PM"
+ * - Outside all windows                → "NORMAL" (engine guards against placing orders when closed)
+ */
+export function currentSchwabSession(): SchwabSession {
+  const et = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+  const day = et.getDay();
+  if (day === 0 || day === 6) return "NORMAL"; // weekend — market guard handles the skip
+  const minutes = et.getHours() * 60 + et.getMinutes();
+  if (minutes >= 7 * 60 && minutes < 9 * 60 + 30) return "AM";
+  if (minutes >= 16 * 60 && minutes < 20 * 60) return "PM";
+  return "NORMAL";
+}
+
 export interface PlaceEquityResult {
   ok: boolean;
   orderId: string | null;
   error?: string;
+  /** True only when a TRIGGER+trailing-stop child was successfully placed. False means a plain MARKET order was used (fallback or explicit SELL). */
+  trailingStopPlaced?: boolean;
 }
 
 /**
- * Place a single-leg equity MARKET order via the Schwab Trader API. Mirrors the
- * manual /portfolio/place-order path but is self-contained so the autonomous
- * engine never depends on the HTTP request lifecycle.
+ * Place a single-leg equity order via the Schwab Trader API.
+ *
+ * Session is auto-detected from the current ET wall-clock time:
+ * - Regular hours  → MARKET order, session NORMAL
+ * - Pre/after-hours → LIMIT order, session AM/PM
+ *
+ * Extended-hours LIMIT price: BUY at +1% above last, SELL at -1% below last.
+ * This produces a "marketable limit" that fills immediately at the current price
+ * while satisfying Schwab's requirement that extended-hours orders be LIMIT type.
+ * lastPrice is required for extended-hours orders; if omitted the order falls
+ * back to MARKET/NORMAL (which Schwab will reject if the market is closed).
  */
 export async function placeAutoEquityOrder(
   accountHash: string,
   symbol: string,
   instruction: EquityInstruction,
   quantity: number,
+  lastPrice?: number,
 ): Promise<PlaceEquityResult> {
   const token = getTokens("trader")?.accessToken;
   if (!token) return { ok: false, orderId: null, error: "no_trader_token" };
@@ -34,11 +65,28 @@ export async function placeAutoEquityOrder(
     return { ok: false, orderId: null, error: "invalid_quantity" };
   }
 
-  const order = {
-    orderType: "MARKET",
-    session: "NORMAL",
+  const schwabSession = currentSchwabSession();
+  const isExtended = schwabSession !== "NORMAL";
+
+  // Schwab requires LIMIT orders for extended-hours sessions (AM/PM).
+  // A marketable limit (1% buffer) behaves like a market order but satisfies the requirement.
+  let orderType: string;
+  let limitPrice: number | undefined;
+  if (isExtended && lastPrice && Number.isFinite(lastPrice) && lastPrice > 0) {
+    orderType = "LIMIT";
+    limitPrice = instruction === "BUY"
+      ? Math.round(lastPrice * 1.01 * 100) / 100  // 1% above last — ensures fill
+      : Math.round(lastPrice * 0.99 * 100) / 100; // 1% below last — ensures fill
+  } else {
+    orderType = "MARKET";
+  }
+
+  const order: Record<string, unknown> = {
+    orderType,
+    session: schwabSession,
     duration: "DAY",
     orderStrategyType: "SINGLE",
+    ...(limitPrice !== undefined && { price: limitPrice }),
     orderLegCollection: [
       {
         instruction,
@@ -79,13 +127,15 @@ export async function placeAutoEquityOrder(
       quantity: String(quantity),
       orderId,
       status: "CREATED",
+      session: schwabSession,
       timestamp: Date.now(),
       raw: "auto-trader",
     });
 
+    const sessionLabel = schwabSession === "AM" ? " (pre-market)" : schwabSession === "PM" ? " (after-hours)" : "";
     void sendPushToAll({
       title: "ALPHA AUTO-TRADER",
-      body: `${instruction} ${quantity} ${symbol.toUpperCase()} placed`,
+      body: `${instruction} ${quantity} ${symbol.toUpperCase()}${sessionLabel} placed`,
       tag: "OrderCreated",
       data: { orderId, symbol: symbol.toUpperCase() },
     });
@@ -164,11 +214,15 @@ export async function placeAutoEquityOrderWithTrailingStop(
 
     if (!schwabRes.ok) {
       const body = await schwabRes.text().catch(() => "");
-      logger.error(
+      logger.warn(
         { status: schwabRes.status, body: body.slice(0, 300), symbol: sym, trailPercent: roundedTrail },
-        "autoTrade trailing-stop trigger order rejected",
+        "autoTrade TRIGGER order rejected — falling back to plain MARKET BUY",
       );
-      return { ok: false, orderId: null, error: body.slice(0, 200) || `http_${schwabRes.status}` };
+      // Schwab rejected the TRIGGER (account permissions or symbol restriction).
+      // Fall back to a plain MARKET BUY so the position still opens. The LLM
+      // will handle the exit via SELL signal on the next cycle.
+      const fallback = await placeAutoEquityOrder(accountHash, sym, "BUY", quantity);
+      return { ...fallback, trailingStopPlaced: false };
     }
 
     const location = schwabRes.headers.get("location") ?? "";
@@ -198,7 +252,7 @@ export async function placeAutoEquityOrderWithTrailingStop(
       data: { orderId, symbol: sym },
     });
 
-    return { ok: true, orderId };
+    return { ok: true, orderId, trailingStopPlaced: true };
   } catch (err) {
     logger.error({ err, symbol: sym }, "autoTrade trailing-stop order error");
     return { ok: false, orderId: null, error: "schwab_api_error" };
