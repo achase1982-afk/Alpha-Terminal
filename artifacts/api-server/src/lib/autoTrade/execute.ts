@@ -14,6 +14,8 @@ export interface PlaceEquityResult {
   ok: boolean;
   orderId: string | null;
   error?: string;
+  /** True only when a TRIGGER+trailing-stop child was successfully placed. False means a plain MARKET order was used (fallback or explicit SELL). */
+  trailingStopPlaced?: boolean;
 }
 
 /**
@@ -164,11 +166,15 @@ export async function placeAutoEquityOrderWithTrailingStop(
 
     if (!schwabRes.ok) {
       const body = await schwabRes.text().catch(() => "");
-      logger.error(
+      logger.warn(
         { status: schwabRes.status, body: body.slice(0, 300), symbol: sym, trailPercent: roundedTrail },
-        "autoTrade trailing-stop trigger order rejected",
+        "autoTrade TRIGGER order rejected — falling back to plain MARKET BUY",
       );
-      return { ok: false, orderId: null, error: body.slice(0, 200) || `http_${schwabRes.status}` };
+      // Schwab rejected the TRIGGER (account permissions or symbol restriction).
+      // Fall back to a plain MARKET BUY so the position still opens. The LLM
+      // will handle the exit via SELL signal on the next cycle.
+      const fallback = await placeAutoEquityOrder(accountHash, sym, "BUY", quantity);
+      return { ...fallback, trailingStopPlaced: false };
     }
 
     const location = schwabRes.headers.get("location") ?? "";
@@ -198,7 +204,7 @@ export async function placeAutoEquityOrderWithTrailingStop(
       data: { orderId, symbol: sym },
     });
 
-    return { ok: true, orderId };
+    return { ok: true, orderId, trailingStopPlaced: true };
   } catch (err) {
     logger.error({ err, symbol: sym }, "autoTrade trailing-stop order error");
     return { ok: false, orderId: null, error: "schwab_api_error" };

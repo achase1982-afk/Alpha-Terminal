@@ -255,12 +255,20 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
         const orderResult = await placeAutoEquityOrderWithTrailingStop(accountHash, ticker, shares, trailPercent);
         if (orderResult.ok) {
           state.deployedToday += shares * last;
-          state.activeTrailingStops.set(ticker, { shares, entryPrice: last });
+          // Only skip LLM decisions if the trailing stop was actually placed.
+          // If Schwab rejected the TRIGGER and we fell back to a plain BUY,
+          // the LLM still needs to handle the exit via SELL signal.
+          if (orderResult.trailingStopPlaced) {
+            state.activeTrailingStops.set(ticker, { shares, entryPrice: last });
+          }
         }
+        const trailNote = orderResult.trailingStopPlaced
+          ? `Trail stop: ${trailPercent.toFixed(2)}% (ATR14=${snapshot.atr14?.toFixed(4) ?? "N/A"})`
+          : `Trail stop REJECTED by broker — plain market order placed; LLM managing exit`;
         await logAutoTradeDecision({
           userId, ticker, decision: "BUY_STOCK", instrument: "stock",
           quantity: shares, notional: shares * last,
-          reasoning: `${decision.reasoning} | Trail stop: ${trailPercent.toFixed(2)}% (ATR14=${snapshot.atr14?.toFixed(4) ?? "N/A"})`,
+          reasoning: `${decision.reasoning} | ${trailNote}`,
           modelId: config.modelId, schwabOrderId: orderResult.orderId,
           placed: orderResult.ok, error: orderResult.error ?? null,
         });
