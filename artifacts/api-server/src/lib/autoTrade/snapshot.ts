@@ -54,9 +54,57 @@ function formatRecentBars(bars: SchwabChartEquityBarPoint[], count: number): str
 }
 
 /**
+ * SPY regime block injected into every ticker snapshot so the LLM knows the
+ * macro environment before evaluating the individual stock.
+ */
+function buildMarketRegimeContext(): string {
+  const spyQuote = getQuoteBySymbol("SPY");
+  const spyBars = getStrategistChartEquityBars("SPY");
+  if (!spyBars.length) return "MARKET REGIME: SPY data unavailable — treat as neutral.";
+
+  const spyCandles = barsToCandles(spyBars);
+  const spyTa = computeIndicators(spyCandles);
+
+  const spyLast = spyQuote?.last ?? spyTa.lastClose ?? null;
+  const spyChangePct = spyQuote?.changePct ?? null;
+  const { ema200, ema200Series } = spyTa;
+
+  if (spyLast == null || ema200 == null) {
+    return "MARKET REGIME: SPY data unavailable — treat as neutral.";
+  }
+
+  const ema200Prev = ema200Series.length >= 2 ? ema200Series[ema200Series.length - 2] : null;
+  const slope =
+    ema200Prev == null ? "UNKNOWN"
+    : ema200 > ema200Prev + 0.01 ? "RISING"
+    : ema200 < ema200Prev - 0.01 ? "FALLING"
+    : "FLAT";
+
+  const regime = spyLast >= ema200 ? "BULL" : "BEAR";
+  const changeLine = spyChangePct != null
+    ? ` | Day: ${spyChangePct >= 0 ? "+" : ""}${spyChangePct.toFixed(2)}%`
+    : "";
+
+  let guidance = "";
+  if (regime === "BEAR" && slope !== "RISING") {
+    guidance =
+      "\n  ⚠ BEAR REGIME: Default bias is DOWN. Do not buy dips. Longs require price reclaiming VWAP + EMA50 with strong volume.";
+  } else if (regime === "BULL" && slope === "RISING") {
+    guidance =
+      "\n  ✓ BULL REGIME: Long momentum entries valid. RSI 50–70 above VWAP = act, do not hesitate.";
+  } else {
+    guidance =
+      "\n  ⚡ MIXED REGIME: SPY above EMA200 but slope deteriorating — require strong confirmation before buying.";
+  }
+
+  return `MARKET REGIME (SPY ${regime}):
+  SPY $${spyLast.toFixed(2)} vs EMA200 $${ema200.toFixed(2)} — ${regime === "BULL" ? "ABOVE" : "BELOW"} | EMA200 slope: ${slope}${changeLine}${guidance}`;
+}
+
+/**
  * Build a compact, real-time market snapshot for a single symbol that the LLM
  * reads to decide BUY/SELL/HOLD. Combines the live Level 1 quote, intraday
- * 1-minute price action, VWAP, and RSI/EMA momentum indicators.
+ * 1-minute price action, VWAP, RSI/EMA momentum indicators, and SPY regime.
  */
 export function buildAutoTradeSnapshot(symbol: string): AutoTradeSnapshot {
   const sym = symbol.toUpperCase();
@@ -79,7 +127,11 @@ export function buildAutoTradeSnapshot(symbol: string): AutoTradeSnapshot {
     ? `Bid ${quote.bid ?? "—"} x Ask ${quote.ask ?? "—"} | Last $${quote.last ?? "—"} | Day H ${quote.high ?? "—"} / L ${quote.low ?? "—"} | Vol ${quote.volume ?? "—"} | Chg ${quote.changePct?.toFixed(2) ?? "—"}%`
     : "No live quote available.";
 
-  const context = `═══ LIVE SNAPSHOT — ${sym} ═══
+  const regimeContext = buildMarketRegimeContext();
+
+  const context = `${regimeContext}
+
+═══ LIVE SNAPSHOT — ${sym} ═══
 ${quoteLine}
 ${vwapLine}
 
