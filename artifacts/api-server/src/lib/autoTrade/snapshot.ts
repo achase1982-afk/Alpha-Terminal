@@ -10,6 +10,8 @@ export interface AutoTradeSnapshot {
   last: number | null;
   changePct: number | null;
   context: string;
+  /** ATR(14) from 1-min bars — used to compute ATR-based trailing stop percentage. */
+  atr14: number | null;
   /** false when we have no live quote — engine should skip the ticker. */
   tradeable: boolean;
 }
@@ -129,5 +131,5 @@ ${formatTAContext(sym, ta)}
 
 ${macroBackdrop}`;
 
-  return { symbol: sym, last, changePct, context, tradeable };
+  return { symbol: sym, last, changePct, context, atr14: ta.atr14, tradeable };
 }
