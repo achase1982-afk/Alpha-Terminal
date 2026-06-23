@@ -287,7 +287,7 @@ export function AutoTraderSettingsPage() {
 
       {/* Ticker universe */}
       <div className="border border-zinc-800 rounded-lg p-4 space-y-3 bg-zinc-900/30">
-        <Field label="Ticker Universe" hint="Symbols the LLM is allowed to trade. e.g. SPY, TSLA, NVDA, MU." >
+        <Field label="Ticker Universe" hint="Symbols the LLM is allowed to trade. Changes take effect on the next cycle." >
           <div className="flex gap-2">
             <input
               className={inputCls}
@@ -300,11 +300,9 @@ export function AutoTraderSettingsPage() {
                 }
               }}
               placeholder="ADD SYMBOL"
-              disabled={running}
             />
             <button
               onClick={addTicker}
-              disabled={running}
               className="flex items-center gap-1 px-3 rounded-lg border border-zinc-700 text-zinc-300 hover:border-[#f5a623] hover:text-white transition-colors disabled:opacity-50"
             >
               <Plus className="w-4 h-4" />
@@ -321,11 +319,9 @@ export function AutoTraderSettingsPage() {
               className="flex items-center gap-1 px-2 py-1 rounded-md bg-[#0c0c0c] border border-zinc-700 font-mono text-[11px] text-[#FFB800]"
             >
               {sym}
-              {!running && (
-                <button onClick={() => removeTicker(sym)} className="text-zinc-500 hover:text-[#f23645]">
-                  <X className="w-3 h-3" />
-                </button>
-              )}
+              <button onClick={() => removeTicker(sym)} className="text-zinc-500 hover:text-[#f23645]">
+                <X className="w-3 h-3" />
+              </button>
             </span>
           ))}
         </div>

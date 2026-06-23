@@ -13,8 +13,10 @@ import {
 import {
   startAutoTrade,
   stopAutoTrade,
+  isAutoTradeRunning,
   autoTradeRunnerInfo,
 } from "../lib/autoTrade/engine.js";
+import { addSymbols, addChartEquitySymbols } from "../lib/schwabStreamer.js";
 
 const router: IRouter = Router();
 const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
@@ -34,6 +36,11 @@ router.put("/config", async (req, res) => {
   }
   try {
     const config = await saveAutoTradeConfig(userId, body);
+    // If tickers were updated while the runner is live, subscribe new ones immediately.
+    if (body.tickers && isAutoTradeRunning(userId) && config.tickers.length > 0) {
+      addSymbols(config.tickers);
+      addChartEquitySymbols(config.tickers);
+    }
     return res.json({ config });
   } catch (err) {
     logger.error({ err, userId }, "autoTrade saveConfig failed");
