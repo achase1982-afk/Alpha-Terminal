@@ -9,6 +9,20 @@ import { placeAutoEquityOrder, placeAutoEquityOrderWithTrailingStop, logAutoTrad
 import { recordTradeExit, generateAndStorePlaybook, getStoredPlaybook, getAutoTradeRealizedPnlToday } from "./outcomes.js";
 import { addSymbols, addChartEquitySymbols } from "../schwabStreamer.js";
 
+// ── Exit rule constants ─────────────────────────────────────────────────────
+// Research basis: for high-beta volatile stocks (MARA, TQQQ, SQQQ, RIVN),
+// normal intraday noise exceeds 0.75%. ATR-based stops at 2x ATR typically
+// land 2–5% from entry — wide enough to survive noise, tight enough to matter.
+const TRAIL_ATR_MULTIPLIER = 2.0; // 2x the 5-min ATR14 → stop distance
+const MIN_STOP_PCT = 0.01;        // 1% floor — even calm stocks need some room
+const MAX_STOP_PCT = 0.05;        // 5% ceiling — cap drawdown per trade
+const TIME_STOP_MS = 5 * 60_000; // 5 min held with no profit → exit (matches 1-min chart cadence)
+
+// Fast position monitor — software trailing stop replaces the Schwab TRIGGER order
+// (which is rejected on this account type). Runs every 5 sec, fully independent
+// of the 60-second LLM cycle. No LLM call — pure math.
+const POSITION_MONITOR_INTERVAL_MS = 5_000;
+
 interface TrailingStopPosition {
   shares: number;
   entryPrice: number;
@@ -18,11 +32,13 @@ interface OpenPosition {
   shares: number;
   entryPrice: number;
   entryTime: number;
+  /** ATR-derived stop distance, locked at entry: 2× (ATR14/price), clamped 1–5%. */
+  stopPct: number;
+  /** High-water mark — ratchets up only, never down. Software trailing stop reference. */
+  hwm: number;
+  /** Guards against double-sell when the monitor and the LLM cycle fire simultaneously. */
+  exitPending: boolean;
 }
-
-// Hard rule-based exit constants — no LLM involved.
-const STOP_LOSS_PCT = 0.0075;    // 0.75% below entry → immediate SELL
-const TIME_STOP_MS = 5 * 60_000; // 5 min held with no profit → exit
 
 interface RunnerState {
   busy: boolean;
@@ -35,11 +51,16 @@ interface RunnerState {
   deployedToday: number;
   dayKey: string;
   timer: NodeJS.Timeout | null;
+  /** Fast position monitor timer — runs every 5 s, independent of the LLM cycle. */
+  monitorTimer: NodeJS.Timeout | null;
   lastCycleAt: number;
   /** Tickers currently managed by a trailing stop order — LLM decisions are skipped for these. */
   activeTrailingStops: Map<string, TrailingStopPosition>;
-  /** In-memory position book — entry price + time for rule-based stop loss and time stop. */
+  /** In-memory position book — entry price, time, ATR stop, and HWM for each open trade. */
   openPositions: Map<string, OpenPosition>;
+  /** Stored from the last successful cycle — lets the monitor place orders without a config round-trip. */
+  lastAccountHash: string | null;
+  lastModelId: string;
 }
 
 const runners = new Map<string, RunnerState>();
@@ -48,13 +69,24 @@ function todayKey(): string {
   return new Date().toLocaleDateString("en-US", { timeZone: "America/New_York" });
 }
 
-function isRegularMarketHours(): boolean {
-  const now = new Date();
-  const et = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
+/**
+ * Returns true during any Schwab-supported trading window on weekdays:
+ * - Pre-market:  7:00 AM – 9:30 AM ET
+ * - Regular:     9:30 AM – 4:00 PM ET
+ * - After-hours: 4:00 PM – 8:00 PM ET
+ *
+ * IMPORTANT: Orders placed outside 9:30–4:00 ET use extended-hours LIMIT orders
+ * (session "AM" or "PM"). Schwab rejects MARKET orders in extended sessions.
+ * The execute layer handles this automatically via currentSchwabSession().
+ * Liquidity is significantly lower in extended hours — the LLM is informed of
+ * this context so it can raise its conviction bar for new entries.
+ */
+function isTradingHours(): boolean {
+  const et = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
   const day = et.getDay();
   if (day === 0 || day === 6) return false;
   const minutes = et.getHours() * 60 + et.getMinutes();
-  return minutes >= 9 * 60 + 30 && minutes < 16 * 60;
+  return minutes >= 7 * 60 && minutes < 20 * 60; // 7 AM – 8 PM ET
 }
 
 interface AccountView {
@@ -96,12 +128,95 @@ function longSharesFor(account: AccountView, symbol: string): number {
   return qty;
 }
 
+/** Compute ATR-based stop % for a new position, locked at entry time. */
+function computeStopPct(atr14: number | null, price: number): number {
+  if (!atr14 || atr14 <= 0 || price <= 0) return 0.02; // 2% fallback if no ATR yet
+  const raw = (atr14 / price) * TRAIL_ATR_MULTIPLIER;
+  return Math.min(MAX_STOP_PCT, Math.max(MIN_STOP_PCT, raw));
+}
+
 type TickerResult =
   | { kind: "skip" }
   | { kind: "trailing_stop_hit"; ticker: string; snapshot: AutoTradeSnapshot; pos: TrailingStopPosition }
   | { kind: "trailing_active" }
-  | { kind: "rule_exit"; ticker: string; last: number; heldShares: number; reason: string }
+  | { kind: "rule_exit"; ticker: string; last: number; heldShares: number; reason: "stop_loss" | "trailing_stop" | "time_stop" }
   | { kind: "decision"; ticker: string; snapshot: AutoTradeSnapshot; last: number; heldShares: number; decision: AutoTradeDecision };
+
+/**
+ * Fast position monitor — runs every 5 seconds, completely independent of the
+ * 60-second LLM cycle. Replicates the Schwab TRIGGER+TRAILING_STOP order in
+ * software since that order type is rejected on this account.
+ *
+ * Algorithm: track a high-water mark (HWM) since entry. The HWM only ever
+ * ratchets upward. When price drops stopPct% below the HWM (or below entry if
+ * the trade never moved up), fire a market SELL immediately.
+ */
+async function runPositionMonitor(userId: string, state: RunnerState): Promise<void> {
+  if (state.openPositions.size === 0) return;
+  if (state.stopRequested) return;
+  const accountHash = state.lastAccountHash;
+  if (!accountHash) return;
+
+  for (const [ticker, pos] of state.openPositions) {
+    if (pos.exitPending) continue;
+
+    const snapshot = buildAutoTradeSnapshot(ticker);
+    if (!snapshot.tradeable || snapshot.last == null) continue;
+
+    const last = snapshot.last;
+
+    // Ratchet HWM — only moves up, captures the highest price seen since entry.
+    if (last > pos.hwm) pos.hwm = last;
+
+    // Two-layer stop — higher price wins (more protective once in profit):
+    // - Trailing: follow the HWM down by stopPct (locks in gains)
+    // - Hard:     fixed floor at entry - stopPct (prevents blow-up on immediate reversal)
+    const trailStopPrice = pos.hwm * (1 - pos.stopPct);
+    const hardStopPrice  = pos.entryPrice * (1 - pos.stopPct);
+    const stopPrice = Math.max(trailStopPrice, hardStopPrice);
+
+    if (last <= stopPrice) {
+      pos.exitPending = true;
+      const reason = last <= hardStopPrice ? "stop_loss" : "trailing_stop";
+      const orderResult = await placeAutoEquityOrder(accountHash, ticker, "SELL", pos.shares, last);
+      if (orderResult.ok) {
+        state.deployedToday = Math.max(0, state.deployedToday - pos.shares * last);
+        state.openPositions.delete(ticker);
+        void recordTradeExit(userId, ticker, last, pos.shares);
+      } else {
+        pos.exitPending = false; // allow retry on the next 5-second tick
+      }
+      void logAutoTradeDecision({
+        userId,
+        ticker,
+        decision: reason === "stop_loss" ? "RULE_STOP_LOSS" : "RULE_TRAILING_STOP",
+        instrument: "stock",
+        quantity: pos.shares,
+        reasoning: reason === "stop_loss"
+          ? `Hard stop (${(pos.stopPct * 100).toFixed(1)}% ATR): $${last.toFixed(2)} below entry floor $${hardStopPrice.toFixed(2)}`
+          : `Trailing stop (${(pos.stopPct * 100).toFixed(1)}% ATR): $${last.toFixed(2)} below HWM floor $${trailStopPrice.toFixed(2)} (HWM was $${pos.hwm.toFixed(2)})`,
+        modelId: state.lastModelId,
+        schwabOrderId: orderResult.orderId,
+        placed: orderResult.ok,
+        error: orderResult.error ?? null,
+      });
+      broadcastToClients("orderAlert", {
+        type: reason === "stop_loss" ? "RULE_STOP_LOSS" : "RULE_TRAILING_STOP",
+        symbol: ticker,
+        side: "SELL",
+        quantity: String(pos.shares),
+        orderId: orderResult.orderId,
+        status: orderResult.ok ? "PLACED" : "FAILED",
+        timestamp: Date.now(),
+        raw: "position-monitor",
+      });
+      logger.info(
+        { userId, ticker, last, stopPrice, reason, shares: pos.shares, placed: orderResult.ok },
+        "autoTrade monitor: stop triggered",
+      );
+    }
+  }
+}
 
 async function runCycle(userId: string, state: RunnerState): Promise<void> {
   if (state.busy || state.stopRequested) return;
@@ -123,7 +238,7 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
       void generateAndStorePlaybook(userId);
     }
 
-    if (!isRegularMarketHours()) return;
+    if (!isTradingHours()) return;
 
     const account = await loadAccount(config);
     if (!account) {
@@ -153,13 +268,16 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
     const accountHash = config.accountHash ?? account.hashValue;
     if (!accountHash) return;
 
+    // Persist for the position monitor (runs between LLM cycles without a config load).
+    state.lastAccountHash = accountHash;
+    state.lastModelId = config.modelId;
+
     const playbook = await getStoredPlaybook(userId);
 
     // Snapshot budget once — each ticker's LLM call sees the same value.
-    // Budget is re-checked against the live state.deployedToday in Phase 3 before execution.
+    // Budget is re-checked against live state.deployedToday in Phase 3 before execution.
     const budgetAtCycleStart = Math.max(0, config.totalBudget - state.deployedToday);
 
-    // ── Phase 1: Build snapshots (synchronous, no I/O) ──────────────────────────
     const tickersToEval = state.stopRequested ? [] : config.tickers;
 
     // ── Phase 2: Fire ALL LLM decisions in parallel ──────────────────────────────
@@ -180,26 +298,43 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
           return { kind: "trailing_active" };
         }
 
-        // Rule-based exits — bypass LLM entirely. Faster and more reliable than asking the model.
+        // Backup rule-based exit check — the 5-sec monitor handles stops continuously,
+        // but this catches anything that slipped through before we call the LLM.
         const openPos = state.openPositions.get(ticker);
-        if (openPos && hasPosition) {
-          const pnlPct = (last - openPos.entryPrice) / openPos.entryPrice;
-          const heldMs = Date.now() - openPos.entryTime;
-          if (pnlPct <= -STOP_LOSS_PCT) {
-            return { kind: "rule_exit", ticker, last, heldShares, reason: "stop_loss" };
+        if (openPos && hasPosition && !openPos.exitPending) {
+          if (last > openPos.hwm) openPos.hwm = last; // keep HWM in sync
+
+          const trailStopPrice = openPos.hwm * (1 - openPos.stopPct);
+          const hardStopPrice  = openPos.entryPrice * (1 - openPos.stopPct);
+          const stopPrice = Math.max(trailStopPrice, hardStopPrice);
+
+          if (last <= stopPrice) {
+            return {
+              kind: "rule_exit",
+              ticker, last, heldShares,
+              reason: last <= hardStopPrice ? "stop_loss" : "trailing_stop",
+            };
           }
-          if (heldMs >= TIME_STOP_MS && pnlPct <= 0) {
+          if ((Date.now() - openPos.entryTime) >= TIME_STOP_MS && last <= openPos.entryPrice) {
             return { kind: "rule_exit", ticker, last, heldShares, reason: "time_stop" };
           }
         }
 
+        // Build enriched position context for the LLM.
         let positionSummary = "None";
         if (hasPosition) {
           positionSummary = `Long ${heldShares} shares`;
           if (openPos) {
             const pnlPct = ((last - openPos.entryPrice) / openPos.entryPrice) * 100;
             const heldMin = Math.round((Date.now() - openPos.entryTime) / 60_000);
-            positionSummary = `Long ${heldShares} sh @ $${openPos.entryPrice.toFixed(2)} | P&L ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}% | held ${heldMin}m`;
+            const stopPrice = Math.max(
+              openPos.hwm * (1 - openPos.stopPct),
+              openPos.entryPrice * (1 - openPos.stopPct),
+            );
+            positionSummary =
+              `Long ${heldShares} sh @ $${openPos.entryPrice.toFixed(2)} | ` +
+              `P&L ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}% | ` +
+              `HWM $${openPos.hwm.toFixed(2)} | stop $${stopPrice.toFixed(2)} | held ${heldMin}m`;
           }
         }
 
@@ -228,7 +363,6 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
         const { ticker, snapshot, pos } = result;
         state.activeTrailingStops.delete(ticker);
         state.openPositions.delete(ticker);
-        // Free up the exposure so the budget can be redeployed into the next entry.
         state.deployedToday = Math.max(0, state.deployedToday - pos.shares * pos.entryPrice);
         if (snapshot.last != null) void recordTradeExit(userId, ticker, snapshot.last, pos.shares);
         await logAutoTradeDecision({
@@ -246,21 +380,30 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
 
       if (result.kind === "rule_exit") {
         const { ticker, last, heldShares, reason } = result;
-        const orderResult = await placeAutoEquityOrder(accountHash, ticker, "SELL", heldShares);
+        const pos = state.openPositions.get(ticker);
+        if (pos) pos.exitPending = true;
+
+        const orderResult = await placeAutoEquityOrder(accountHash, ticker, "SELL", heldShares, last);
         if (orderResult.ok) {
           state.deployedToday = Math.max(0, state.deployedToday - heldShares * last);
           state.openPositions.delete(ticker);
           void recordTradeExit(userId, ticker, last, heldShares);
+        } else if (pos) {
+          pos.exitPending = false; // allow retry
         }
         await logAutoTradeDecision({
           userId,
           ticker,
-          decision: reason === "stop_loss" ? "RULE_STOP_LOSS" : "RULE_TIME_STOP",
+          decision: reason === "stop_loss" ? "RULE_STOP_LOSS"
+                  : reason === "trailing_stop" ? "RULE_TRAILING_STOP"
+                  : "RULE_TIME_STOP",
           instrument: "stock",
           quantity: heldShares,
           reasoning: reason === "stop_loss"
-            ? `Rule stop-loss: price dropped ≥0.75% from entry ($${last.toFixed(2)}) — exiting without LLM.`
-            : `Rule time-stop: held >5 min with no profit ($${last.toFixed(2)}) — exiting without LLM.`,
+            ? `Rule hard stop (${(pos?.stopPct ? (pos.stopPct * 100).toFixed(1) : "2.0")}% ATR): $${last.toFixed(2)} — exit without LLM.`
+            : reason === "trailing_stop"
+            ? `Rule trailing stop: $${last.toFixed(2)} crossed below HWM floor — exit without LLM.`
+            : `Rule time-stop: held >5 min with no profit ($${last.toFixed(2)}) — exit without LLM.`,
           modelId: config.modelId,
           schwabOrderId: orderResult.orderId,
           placed: orderResult.ok,
@@ -282,17 +425,22 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
 
       if (decision.action === "SELL") {
         if (!hasPosition) continue;
-        const orderResult = await placeAutoEquityOrder(accountHash, ticker, "SELL", heldShares);
+        const pos = state.openPositions.get(ticker);
+        if (pos?.exitPending) continue; // monitor is already handling this exit
+        if (pos) pos.exitPending = true;
+
+        const orderResult = await placeAutoEquityOrder(accountHash, ticker, "SELL", heldShares, last);
         await logAutoTradeDecision({
           userId, ticker, decision: "SELL", instrument: "stock", quantity: heldShares,
           reasoning: decision.reasoning, modelId: config.modelId,
           schwabOrderId: orderResult.orderId, placed: orderResult.ok, error: orderResult.error ?? null,
         });
         if (orderResult.ok) {
-          // Free up the exposure so the budget can be redeployed.
           state.deployedToday = Math.max(0, state.deployedToday - heldShares * last);
           state.openPositions.delete(ticker);
           void recordTradeExit(userId, ticker, last, heldShares);
+        } else if (pos) {
+          pos.exitPending = false; // allow retry
         }
         continue;
       }
@@ -310,10 +458,22 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
           continue;
         }
 
-        const orderResult = await placeAutoEquityOrder(accountHash, ticker, "BUY", shares);
+        const orderResult = await placeAutoEquityOrder(accountHash, ticker, "BUY", shares, last);
         if (orderResult.ok) {
           state.deployedToday += shares * last;
-          state.openPositions.set(ticker, { shares, entryPrice: last, entryTime: Date.now() });
+          const stopPct = computeStopPct(snapshot.atr14, last);
+          state.openPositions.set(ticker, {
+            shares,
+            entryPrice: last,
+            entryTime: Date.now(),
+            stopPct,
+            hwm: last,
+            exitPending: false,
+          });
+          logger.info(
+            { userId, ticker, last, shares, stopPct: `${(stopPct * 100).toFixed(2)}%` },
+            "autoTrade BUY: position opened with ATR stop",
+          );
         }
         await logAutoTradeDecision({
           userId, ticker, decision: "BUY_STOCK", instrument: "stock",
@@ -354,6 +514,7 @@ export async function startAutoTrade(userId: string): Promise<void> {
 
   const existing = runners.get(userId);
   if (existing?.timer) clearInterval(existing.timer);
+  if (existing?.monitorTimer) clearInterval(existing.monitorTimer);
 
   const state: RunnerState = existing ?? {
     busy: false,
@@ -361,19 +522,23 @@ export async function startAutoTrade(userId: string): Promise<void> {
     deployedToday: 0,
     dayKey: todayKey(),
     timer: null,
+    monitorTimer: null,
     lastCycleAt: 0,
     activeTrailingStops: new Map(),
     openPositions: new Map(),
+    lastAccountHash: null,
+    lastModelId: config.modelId,
   };
   state.stopRequested = false;
   state.busy = false;
 
   const intervalMs = Math.max(15, config.pollIntervalSec) * 1000;
   state.timer = setInterval(() => void runCycle(userId, state), intervalMs);
+  // Fast monitor runs independently — stops fire within 5 s of the price crossing the floor,
+  // not on the next 60-second LLM cycle.
+  state.monitorTimer = setInterval(() => void runPositionMonitor(userId, state), POSITION_MONITOR_INTERVAL_MS);
   runners.set(userId, state);
 
-  // Ensure configured tickers receive Level 1 quotes + 1-min bars from the streamer.
-  // addSymbols / addChartEquitySymbols are idempotent — safe to call every start.
   if (config.tickers.length > 0) {
     addSymbols(config.tickers);
     addChartEquitySymbols(config.tickers);
@@ -392,7 +557,9 @@ export async function stopAutoTrade(userId: string): Promise<void> {
   if (state) {
     state.stopRequested = true;
     if (state.timer) clearInterval(state.timer);
+    if (state.monitorTimer) clearInterval(state.monitorTimer);
     state.timer = null;
+    state.monitorTimer = null;
   }
   runners.delete(userId);
   try {
