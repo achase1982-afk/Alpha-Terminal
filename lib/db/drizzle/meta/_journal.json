@@ -260,6 +260,13 @@
       "when": 1779700000000,
       "tag": "0044_auto_trader",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1779800000000,
+      "tag": "0045_auto_trade_memory",
+      "breakpoints": true
     }
   ]
 }

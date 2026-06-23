@@ -21,6 +21,8 @@ export interface DecisionContext {
   budgetRemaining: number;
   hasPosition: boolean;
   positionSummary: string;
+  /** Pre-computed pattern memory playbook injected before the live snapshot. */
+  playbook?: string | null;
 }
 
 function allowedActions(mode: InstrumentMode, hasPosition: boolean): AutoTradeAction[] {
@@ -63,7 +65,8 @@ Respond with ONLY a JSON object — no prose, no markdown fences:
 }
 
 function buildUserPrompt(ctx: DecisionContext): string {
-  return `${ctx.snapshot.context}
+  const playbookSection = ctx.playbook ? `${ctx.playbook}\n\n` : "";
+  return `${playbookSection}${ctx.snapshot.context}
 
 CURRENT POSITION: ${ctx.hasPosition ? ctx.positionSummary : "None"}
 BUDGET REMAINING TODAY: $${ctx.budgetRemaining.toFixed(0)}

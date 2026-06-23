@@ -6,6 +6,7 @@ import { getAutoTradeConfig, setAutoTradeRunning, type AutoTradeConfig } from ".
 import { buildAutoTradeSnapshot } from "./snapshot.js";
 import { decideAutoTrade } from "./decision.js";
 import { placeAutoEquityOrder, logAutoTradeDecision, journalAutoEntry } from "./execute.js";
+import { recordTradeExit, generateAndStorePlaybook, getStoredPlaybook } from "./outcomes.js";
 
 interface RunnerState {
   busy: boolean;
@@ -87,6 +88,8 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
     if (dk !== state.dayKey) {
       state.dayKey = dk;
       state.deployedToday = 0;
+      // Rebuild the pattern memory playbook before the new trading day starts.
+      void generateAndStorePlaybook(userId);
     }
 
     if (!isRegularMarketHours()) return;
@@ -118,6 +121,9 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
     const accountHash = config.accountHash ?? account.hashValue;
     if (!accountHash) return;
 
+    // Fetch pattern memory once per cycle — fast DB read, cached from nightly generation.
+    const playbook = await getStoredPlaybook(userId);
+
     for (const ticker of config.tickers) {
       if (state.stopRequested) break;
       const budgetRemaining = Math.max(0, config.totalBudget - state.deployedToday);
@@ -135,6 +141,7 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
         budgetRemaining,
         hasPosition,
         positionSummary: hasPosition ? `Long ${heldShares} shares` : "None",
+        playbook,
       });
 
       if (decision.action === "HOLD") {
@@ -164,6 +171,9 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
           placed: result.ok,
           error: result.error ?? null,
         });
+        if (result.ok && snapshot.last != null) {
+          void recordTradeExit(userId, ticker, snapshot.last, heldShares);
+        }
         continue;
       }
 
