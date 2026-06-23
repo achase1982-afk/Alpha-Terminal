@@ -95,10 +95,14 @@ function installSignalHandlers(): void {
 }
 
 /** In-process background task: poll Postgres and run claimed strategist jobs. */
-export function startStrategistWorker(): void {
+export async function startStrategistWorker(): Promise<void> {
   installSignalHandlers();
   logger.info({ workerId: WORKER_ID, concurrency: WORKER_CONCURRENCY }, "StrategistWorker: claim loop starting");
-  void claimLoop();
+  await claimLoop();
+  if (inflight.size > 0) {
+    logger.info({ count: inflight.size, workerId: WORKER_ID }, "StrategistWorker: draining in-flight jobs before exit");
+    await Promise.allSettled([...inflight]);
+  }
 }
 
 /** In-process background task: requeue or fail jobs with stale heartbeats. */
