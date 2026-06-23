@@ -38,9 +38,11 @@ import {
   Stethoscope, Layers, Coins, ShieldAlert, User as UserIcon, Sparkles,
   RefreshCw,
   Flame,
+  Bot,
 } from "lucide-react";
 import { MarketCalendar } from "@/components/MarketCalendar";
 import { CatalystGatesSettingsPage } from "@/components/CatalystGatesSettingsPage";
+import { AutoTraderSettingsPage } from "@/components/AutoTraderSettingsPage";
 import { TelemetryPage, useTelemetryCount } from "@/components/TelemetryPage";
 import { TelemetryLogsPanel } from "@/components/TelemetryLogsPanel";
 import { SecurityPrivacyPage } from "@/components/SecurityPrivacyPage";
@@ -63,6 +65,7 @@ type SidebarPage =
   | "Linked Brokerage"
   // ── Settings hub + nested sub-pages (CHANGE 1) ──────────────────────
   | "Settings"
+  | "Auto Trader"
   | "Allowed Strategies"
   | "Risk Defaults"
   | "Market Pulse Display"
@@ -83,6 +86,7 @@ type SidebarPage =
 // overlay header shows a back-arrow that returns to "Settings" instead of
 // closing the entire overlay.
 const SETTINGS_SUBPAGES: ReadonlySet<SidebarPage> = new Set<SidebarPage>([
+  "Auto Trader",
   "Allowed Strategies",
   "Risk Defaults",
   "Market Pulse Display",
@@ -104,6 +108,7 @@ export interface SidebarHandle {
   clearActivePage: () => void;
   getActivePage: () => SidebarPage;
   openSettingsSubpage: (page:
+    | "Auto Trader"
     | "Allowed Strategies"
     | "Risk Defaults"
     | "Market Pulse Display"
@@ -230,6 +235,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
                 telemetryCount={telemetryCount}
               />
             )}
+            {activePage === "Auto Trader" && <AutoTraderSettingsPage />}
             {activePage === "Allowed Strategies" && <AllowedStrategiesPage />}
             {activePage === "Risk Defaults" && <RiskDefaultsPage />}
             {activePage === "Market Pulse Display" && <MarketPulseDisplayPage />}
@@ -1542,6 +1548,7 @@ function SettingsHubPage({
   return (
     <div className="max-w-xl mx-auto space-y-5 pb-6">
       <SettingsHubSection title="Trading">
+        <SettingsHubRow icon={<Bot />} label="Auto Trader" subtitle="Autonomous LLM trading — pick account, model, tickers, risk guards" onClick={() => onSelect("Auto Trader")} />
         <SettingsHubRow icon={<Layers />} label="Allowed Strategies" subtitle="Which option structures the strategist may propose" onClick={() => onSelect("Allowed Strategies")} />
         <SettingsHubRow icon={<Coins />} label="Risk Defaults" subtitle="Spread width, account size tier, max risk per trade" onClick={() => onSelect("Risk Defaults")} />
         <SettingsHubRow icon={<Zap />} label="Market Pulse Display" subtitle="Bias strip, auto-refresh, cluster details" onClick={() => onSelect("Market Pulse Display")} />
