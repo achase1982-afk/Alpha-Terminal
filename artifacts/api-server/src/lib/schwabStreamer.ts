@@ -1002,7 +1002,8 @@ function processAcctActivity(content: Record<string, unknown>[]) {
         pushTag = "CancelRejected";
         break;
       case "OrderRejected":
-        pushBody = `${sym} order REJECTED`.trim();
+        // No push notification — broker rejections are visible in the Orders tab.
+        // A bell for every rejection creates noise, especially during reconnects.
         pushTag = "OrderRejected";
         break;
       case "OrderExpired":
