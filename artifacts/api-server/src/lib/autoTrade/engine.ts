@@ -17,6 +17,11 @@ interface TrailingStopPosition {
 interface RunnerState {
   busy: boolean;
   stopRequested: boolean;
+  /**
+   * Current open exposure in dollars — increments on BUY, decrements on exit.
+   * Compared against config.totalBudget to gate new entries.
+   * Resets to 0 at the ET day boundary (no overnight positions in a scalper).
+   */
   deployedToday: number;
   dayKey: string;
   timer: NodeJS.Timeout | null;
@@ -185,6 +190,8 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
       if (result.kind === "trailing_stop_hit") {
         const { ticker, snapshot, pos } = result;
         state.activeTrailingStops.delete(ticker);
+        // Free up the exposure so the budget can be redeployed into the next entry.
+        state.deployedToday = Math.max(0, state.deployedToday - pos.shares * pos.entryPrice);
         if (snapshot.last != null) void recordTradeExit(userId, ticker, snapshot.last, pos.shares);
         await logAutoTradeDecision({
           userId,
@@ -218,7 +225,11 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
           reasoning: decision.reasoning, modelId: config.modelId,
           schwabOrderId: orderResult.orderId, placed: orderResult.ok, error: orderResult.error ?? null,
         });
-        if (orderResult.ok) void recordTradeExit(userId, ticker, last, heldShares);
+        if (orderResult.ok) {
+          // Free up the exposure so the budget can be redeployed.
+          state.deployedToday = Math.max(0, state.deployedToday - heldShares * last);
+          void recordTradeExit(userId, ticker, last, heldShares);
+        }
         continue;
       }
 
