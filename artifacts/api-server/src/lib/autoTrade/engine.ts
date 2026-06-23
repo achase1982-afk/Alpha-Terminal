@@ -83,7 +83,7 @@ type TickerResult =
   | { kind: "skip" }
   | { kind: "trailing_stop_hit"; ticker: string; snapshot: AutoTradeSnapshot; pos: TrailingStopPosition }
   | { kind: "trailing_active" }
-  | { kind: "decision"; ticker: string; snapshot: AutoTradeSnapshot; heldShares: number; decision: AutoTradeDecision };
+  | { kind: "decision"; ticker: string; snapshot: AutoTradeSnapshot; last: number; heldShares: number; decision: AutoTradeDecision };
 
 async function runCycle(userId: string, state: RunnerState): Promise<void> {
   if (state.busy || state.stopRequested) return;
@@ -172,7 +172,7 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
           playbook,
         });
 
-        return { kind: "decision", ticker, snapshot, heldShares, decision };
+        return { kind: "decision", ticker, snapshot, last: snapshot.last, heldShares, decision };
       }),
     );
 
@@ -199,7 +199,7 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
         continue;
       }
 
-      const { ticker, snapshot, heldShares, decision } = result;
+      const { ticker, snapshot, last, heldShares, decision } = result;
       const hasPosition = heldShares > 0;
 
       if (decision.action === "HOLD") {
@@ -218,15 +218,15 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
           reasoning: decision.reasoning, modelId: config.modelId,
           schwabOrderId: orderResult.orderId, placed: orderResult.ok, error: orderResult.error ?? null,
         });
-        if (orderResult.ok && snapshot.last != null) void recordTradeExit(userId, ticker, snapshot.last, heldShares);
+        if (orderResult.ok) void recordTradeExit(userId, ticker, last, heldShares);
         continue;
       }
 
       if (decision.action === "BUY_STOCK") {
         // Re-check live budget — parallel decisions may have caused another ticker to buy first.
         const budgetNow = Math.max(0, config.totalBudget - state.deployedToday);
-        const shares = Math.floor(decision.notional / snapshot.last);
-        if (shares < 1 || budgetNow < snapshot.last) {
+        const shares = Math.floor(decision.notional / last);
+        if (shares < 1 || budgetNow < last) {
           await logAutoTradeDecision({
             userId, ticker, decision: "BUY_STOCK", instrument: "stock", notional: decision.notional,
             reasoning: `${decision.reasoning} (skipped: budget/share too small)`,
@@ -236,19 +236,19 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
         }
 
         const rawTrail =
-          snapshot.atr14 != null && snapshot.last > 0
-            ? (snapshot.atr14 / snapshot.last) * 100 * 1.5
+          snapshot.atr14 != null && last > 0
+            ? (snapshot.atr14 / last) * 100 * 1.5
             : 0.75;
         const trailPercent = Math.max(0.25, Math.min(5, rawTrail));
 
         const orderResult = await placeAutoEquityOrderWithTrailingStop(accountHash, ticker, shares, trailPercent);
         if (orderResult.ok) {
-          state.deployedToday += shares * snapshot.last;
-          state.activeTrailingStops.set(ticker, { shares, entryPrice: snapshot.last });
+          state.deployedToday += shares * last;
+          state.activeTrailingStops.set(ticker, { shares, entryPrice: last });
         }
         await logAutoTradeDecision({
           userId, ticker, decision: "BUY_STOCK", instrument: "stock",
-          quantity: shares, notional: shares * snapshot.last,
+          quantity: shares, notional: shares * last,
           reasoning: `${decision.reasoning} | Trail stop: ${trailPercent.toFixed(2)}% (ATR14=${snapshot.atr14?.toFixed(4) ?? "N/A"})`,
           modelId: config.modelId, schwabOrderId: orderResult.orderId,
           placed: orderResult.ok, error: orderResult.error ?? null,
@@ -256,7 +256,7 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
         if (orderResult.ok && orderResult.orderId) {
           await journalAutoEntry({
             orderId: orderResult.orderId, symbol: ticker, direction: "BUY",
-            entryPrice: snapshot.last, quantity: shares, thesis: decision.reasoning, accountHash,
+            entryPrice: last, quantity: shares, thesis: decision.reasoning, accountHash,
           });
         }
         continue;
