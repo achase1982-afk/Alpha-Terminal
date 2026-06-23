@@ -5,9 +5,14 @@ import { fetchMappedSchwabAccounts } from "../schwabPortfolioAccounts.js";
 import { getAutoTradeConfig, setAutoTradeRunning, type AutoTradeConfig } from "./config.js";
 import { buildAutoTradeSnapshot } from "./snapshot.js";
 import { decideAutoTrade } from "./decision.js";
-import { placeAutoEquityOrder, logAutoTradeDecision, journalAutoEntry } from "./execute.js";
+import { placeAutoEquityOrder, placeAutoEquityOrderWithTrailingStop, logAutoTradeDecision, journalAutoEntry } from "./execute.js";
 import { recordTradeExit, generateAndStorePlaybook, getStoredPlaybook, getAutoTradeRealizedPnlToday } from "./outcomes.js";
 import { addSymbols, addChartEquitySymbols } from "../schwabStreamer.js";
+
+interface TrailingStopPosition {
+  shares: number;
+  entryPrice: number;
+}
 
 interface RunnerState {
   busy: boolean;
@@ -16,6 +21,8 @@ interface RunnerState {
   dayKey: string;
   timer: NodeJS.Timeout | null;
   lastCycleAt: number;
+  /** Tickers currently managed by a trailing stop order — LLM decisions are skipped for these. */
+  activeTrailingStops: Map<string, TrailingStopPosition>;
 }
 
 const runners = new Map<string, RunnerState>();
@@ -135,6 +142,31 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
 
       const heldShares = longSharesFor(account, ticker);
       const hasPosition = heldShares > 0;
+      const trailingStopPos = state.activeTrailingStops.get(ticker);
+
+      // Trailing stop hit: position gone but we expected one — record the exit.
+      if (trailingStopPos && !hasPosition) {
+        state.activeTrailingStops.delete(ticker);
+        if (snapshot.last != null) {
+          void recordTradeExit(userId, ticker, snapshot.last, trailingStopPos.shares);
+        }
+        await logAutoTradeDecision({
+          userId,
+          ticker,
+          decision: "TRAILING_STOP_HIT",
+          instrument: "stock",
+          quantity: trailingStopPos.shares,
+          reasoning: `Trailing stop triggered — position closed near $${snapshot.last?.toFixed(2) ?? "?"}`,
+          modelId: config.modelId,
+          placed: false,
+        });
+        continue;
+      }
+
+      // Trailing stop is live and managing this position — skip all LLM decisions.
+      if (trailingStopPos && hasPosition) {
+        continue;
+      }
 
       const decision = await decideAutoTrade({
         snapshot,
@@ -195,8 +227,19 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
           });
           continue;
         }
-        const result = await placeAutoEquityOrder(accountHash, ticker, "BUY", shares);
-        if (result.ok) state.deployedToday += shares * snapshot.last;
+
+        // Compute ATR-based trailing stop: (ATR14 / price) × 100 × 1.5 — self-scales to each stock's volatility.
+        const rawTrail =
+          snapshot.atr14 != null && snapshot.last > 0
+            ? (snapshot.atr14 / snapshot.last) * 100 * 1.5
+            : 0.75; // fallback when ATR not yet available
+        const trailPercent = Math.max(0.25, Math.min(5, rawTrail));
+
+        const result = await placeAutoEquityOrderWithTrailingStop(accountHash, ticker, shares, trailPercent);
+        if (result.ok) {
+          state.deployedToday += shares * snapshot.last;
+          state.activeTrailingStops.set(ticker, { shares, entryPrice: snapshot.last });
+        }
         await logAutoTradeDecision({
           userId,
           ticker,
@@ -204,7 +247,7 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
           instrument: "stock",
           quantity: shares,
           notional: shares * snapshot.last,
-          reasoning: decision.reasoning,
+          reasoning: `${decision.reasoning} | Trail stop: ${trailPercent.toFixed(2)}% (ATR14=${snapshot.atr14?.toFixed(4) ?? "N/A"})`,
           modelId: config.modelId,
           schwabOrderId: result.orderId,
           placed: result.ok,
@@ -258,6 +301,7 @@ export async function startAutoTrade(userId: string): Promise<void> {
     dayKey: todayKey(),
     timer: null,
     lastCycleAt: 0,
+    activeTrailingStops: new Map(),
   };
   state.stopRequested = false;
   state.busy = false;

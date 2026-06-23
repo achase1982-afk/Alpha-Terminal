@@ -1,4 +1,4 @@
-import { RSI, EMA } from "technicalindicators";
+import { RSI, EMA, ATR } from "technicalindicators";
 
 export interface Candle {
   datetime: string;
@@ -13,6 +13,7 @@ export interface TAResult {
   rsi14: number | null;
   ema50: number | null;
   ema200: number | null;
+  atr14: number | null;
   rsiSeries: number[];
   ema50Series: number[];
   ema200Series: number[];
@@ -24,17 +25,20 @@ export interface TAResult {
 export function computeIndicators(candles: Candle[]): TAResult {
   if (!candles.length) {
     return {
-      rsi14: null, ema50: null, ema200: null,
+      rsi14: null, ema50: null, ema200: null, atr14: null,
       rsiSeries: [], ema50Series: [], ema200Series: [],
       lastClose: null, dataPoints: 0, latestTimestamp: null,
     };
   }
 
   const closes = candles.map(c => c.close);
+  const highs = candles.map(c => c.high);
+  const lows = candles.map(c => c.low);
 
   const rsiSeries = RSI.calculate({ values: closes, period: 14 });
   const ema50Series = EMA.calculate({ values: closes, period: 50 });
   const ema200Series = EMA.calculate({ values: closes, period: 200 });
+  const atrSeries = ATR.calculate({ high: highs, low: lows, close: closes, period: 14 });
 
   const last = (arr: number[]) => arr.length > 0 ? arr[arr.length - 1] : null;
 
@@ -42,6 +46,7 @@ export function computeIndicators(candles: Candle[]): TAResult {
     rsi14: last(rsiSeries),
     ema50: last(ema50Series),
     ema200: last(ema200Series),
+    atr14: last(atrSeries),
     rsiSeries,
     ema50Series,
     ema200Series,
