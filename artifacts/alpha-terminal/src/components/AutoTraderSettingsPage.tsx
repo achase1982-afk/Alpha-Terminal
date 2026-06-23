@@ -329,7 +329,7 @@ export function AutoTraderSettingsPage() {
 
       {/* Risk guards */}
       <div className="border border-zinc-800 rounded-lg p-4 grid grid-cols-2 gap-4 bg-zinc-900/30">
-        <Field label="Total Budget ($)" hint="Max deployed per day.">
+        <Field label="Total Budget ($)" hint="Max open exposure at any one time across all auto-trader positions. Resets when positions close — not a daily spend cap.">
           <input
             type="number"
             className={inputCls}
@@ -338,7 +338,7 @@ export function AutoTraderSettingsPage() {
             disabled={running}
           />
         </Field>
-        <Field label="Max / Trade ($)" hint="Cap per single entry.">
+        <Field label="Max / Trade ($)" hint="Cap per single entry. Set lower than Total Budget to allow multiple concurrent positions.">
           <input
             type="number"
             className={inputCls}
@@ -347,7 +347,7 @@ export function AutoTraderSettingsPage() {
             disabled={running}
           />
         </Field>
-        <Field label="Daily Max Loss ($)" hint="Halts the loop if day P/L drops below this.">
+        <Field label="Daily Max Loss ($)" hint="Halts the bot for the day if auto-trader realized P/L drops below this (manual trades excluded).">
           <input
             type="number"
             className={inputCls}
