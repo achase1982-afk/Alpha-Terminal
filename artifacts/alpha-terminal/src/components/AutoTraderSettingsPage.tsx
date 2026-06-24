@@ -64,7 +64,14 @@ export function AutoTraderSettingsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tickerInput, setTickerInput] = useState("");
+  const [localNums, setLocalNums] = useState<{
+    totalBudget: string;
+    maxPerTrade: string;
+    dailyMaxLoss: string;
+    pollIntervalSec: string;
+  } | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingPatch = useRef<Partial<AutoTradeConfig> | null>(null);
 
   const loadConfig = useCallback(async () => {
     try {
@@ -72,6 +79,12 @@ export function AutoTraderSettingsPage() {
       if (res.ok) {
         const data = (await res.json()) as { config: AutoTradeConfig };
         setConfig(data.config);
+        setLocalNums({
+          totalBudget: String(data.config.totalBudget),
+          maxPerTrade: String(data.config.maxPerTrade),
+          dailyMaxLoss: String(data.config.dailyMaxLoss),
+          pollIntervalSec: String(data.config.pollIntervalSec),
+        });
       }
     } catch {
       setError("Failed to load config.");
@@ -105,14 +118,19 @@ export function AutoTraderSettingsPage() {
   }, [config?.running, loadConfig, loadDecisions]);
 
   const persist = useCallback((patch: Partial<AutoTradeConfig>) => {
+    setError(null);
     setConfig((prev) => (prev ? { ...prev, ...patch } : prev));
+    pendingPatch.current = { ...pendingPatch.current, ...patch };
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
+      const toSave = pendingPatch.current;
+      pendingPatch.current = null;
+      if (!toSave) return;
       try {
         await fetchWithAuth("/api/auto-trade/config", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(patch),
+          body: JSON.stringify(toSave),
         });
       } catch {
         setError("Save failed.");
@@ -143,6 +161,20 @@ export function AutoTraderSettingsPage() {
     setBusy(true);
     setError(null);
     try {
+      // Flush any pending debounced save so the server reads the latest config.
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+        const toSave = pendingPatch.current;
+        pendingPatch.current = null;
+        if (toSave) {
+          await fetchWithAuth("/api/auto-trade/config", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(toSave),
+          });
+        }
+      }
       const res = await fetchWithAuth("/api/auto-trade/start", { method: "POST" });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -335,8 +367,15 @@ export function AutoTraderSettingsPage() {
           <input
             type="number"
             className={inputCls}
-            value={config.totalBudget}
-            onChange={(e) => persist({ totalBudget: Number(e.target.value) })}
+            value={localNums?.totalBudget ?? config.totalBudget}
+            onChange={(e) => {
+              setLocalNums((prev) => (prev ? { ...prev, totalBudget: e.target.value } : null));
+              if (e.target.value !== "") persist({ totalBudget: Number(e.target.value) });
+            }}
+            onBlur={(e) => {
+              if (!e.target.value)
+                setLocalNums((prev) => (prev ? { ...prev, totalBudget: String(config.totalBudget) } : null));
+            }}
             disabled={running}
           />
         </Field>
@@ -344,8 +383,15 @@ export function AutoTraderSettingsPage() {
           <input
             type="number"
             className={inputCls}
-            value={config.maxPerTrade}
-            onChange={(e) => persist({ maxPerTrade: Number(e.target.value) })}
+            value={localNums?.maxPerTrade ?? config.maxPerTrade}
+            onChange={(e) => {
+              setLocalNums((prev) => (prev ? { ...prev, maxPerTrade: e.target.value } : null));
+              if (e.target.value !== "") persist({ maxPerTrade: Number(e.target.value) });
+            }}
+            onBlur={(e) => {
+              if (!e.target.value)
+                setLocalNums((prev) => (prev ? { ...prev, maxPerTrade: String(config.maxPerTrade) } : null));
+            }}
             disabled={running}
           />
         </Field>
@@ -353,8 +399,15 @@ export function AutoTraderSettingsPage() {
           <input
             type="number"
             className={inputCls}
-            value={config.dailyMaxLoss}
-            onChange={(e) => persist({ dailyMaxLoss: Number(e.target.value) })}
+            value={localNums?.dailyMaxLoss ?? config.dailyMaxLoss}
+            onChange={(e) => {
+              setLocalNums((prev) => (prev ? { ...prev, dailyMaxLoss: e.target.value } : null));
+              if (e.target.value !== "") persist({ dailyMaxLoss: Number(e.target.value) });
+            }}
+            onBlur={(e) => {
+              if (!e.target.value)
+                setLocalNums((prev) => (prev ? { ...prev, dailyMaxLoss: String(config.dailyMaxLoss) } : null));
+            }}
             disabled={running}
           />
         </Field>
@@ -362,8 +415,15 @@ export function AutoTraderSettingsPage() {
           <input
             type="number"
             className={inputCls}
-            value={config.pollIntervalSec}
-            onChange={(e) => persist({ pollIntervalSec: Number(e.target.value) })}
+            value={localNums?.pollIntervalSec ?? config.pollIntervalSec}
+            onChange={(e) => {
+              setLocalNums((prev) => (prev ? { ...prev, pollIntervalSec: e.target.value } : null));
+              if (e.target.value !== "") persist({ pollIntervalSec: Number(e.target.value) });
+            }}
+            onBlur={(e) => {
+              if (!e.target.value)
+                setLocalNums((prev) => (prev ? { ...prev, pollIntervalSec: String(config.pollIntervalSec) } : null));
+            }}
             disabled={running}
           />
         </Field>
