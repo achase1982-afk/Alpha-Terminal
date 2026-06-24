@@ -201,8 +201,8 @@ export function AutoTraderSettingsPage() {
     try {
       const res = await fetchWithAuth("/api/auto-trade/start", { method: "POST" });
       if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        setError(startErrorLabel(body.error));
+        const body = (await res.json().catch(() => ({}))) as { error?: string; detail?: string };
+        setError(startErrorLabel(body.error, body.detail));
       } else {
         await refreshConfig();
       }
@@ -530,11 +530,12 @@ function decisionColor(decision: string, placed: boolean): string {
   return "#71717a";
 }
 
-function startErrorLabel(code: string | undefined): string {
+function startErrorLabel(code: string | undefined, detail?: string): string {
   switch (code) {
     case "no_account_selected": return "No Schwab account found — reconnect in Linked Brokerage.";
     case "no_tickers": return "Add at least one ticker before starting.";
     case "no_trader_token": return "Brokerage not connected — link Schwab in Linked Brokerage.";
-    default: return "Failed to start.";
+    case "start_failed": return `Start failed: ${detail ?? "unknown error"}`;
+    default: return detail ? `Failed to start: ${detail}` : "Failed to start.";
   }
 }
