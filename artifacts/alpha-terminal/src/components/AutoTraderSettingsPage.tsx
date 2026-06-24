@@ -58,6 +58,7 @@ const selectCls =
 
 export function AutoTraderSettingsPage() {
   const accounts = useSchwabAccountStore((s) => s.accounts);
+  const defaultTradingAccountHash = useSchwabAccountStore((s) => s.defaultTradingAccountHash);
   const [config, setConfig] = useState<AutoTradeConfig | null>(null);
   const [decisions, setDecisions] = useState<DecisionRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -137,6 +138,13 @@ export function AutoTraderSettingsPage() {
       }
     }, 500);
   }, []);
+
+  // Auto-populate accountHash from the store when it's missing in the DB config.
+  useEffect(() => {
+    if (config !== null && config.accountHash === null && defaultTradingAccountHash) {
+      persist({ accountHash: defaultTradingAccountHash });
+    }
+  }, [config, defaultTradingAccountHash, persist]);
 
   const addTicker = useCallback(() => {
     const sym = tickerInput.trim().toUpperCase();
@@ -280,8 +288,8 @@ export function AutoTraderSettingsPage() {
             disabled={running}
           >
             <option value="">Select an account…</option>
-            {accounts.map((a) => (
-              <option key={a.hashValue ?? a.accountNumber} value={a.hashValue ?? ""}>
+            {accounts.filter((a) => a.hashValue).map((a) => (
+              <option key={a.hashValue!} value={a.hashValue!}>
                 {a.accountNumber} · {a.type}
               </option>
             ))}
