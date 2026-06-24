@@ -8,7 +8,8 @@
       "os": ["current", "linux"],
       "cpu": ["current", "x64", "arm64"],
       "libc": ["current", "glibc", "musl"]
-    }
+    },
+    "onlyBuiltDependencies": ["better-sqlite3"]
   },
   "scripts": {
     "prepare": "command -v bash >/dev/null 2>&1 && bash scripts/install-git-hooks.sh || true",

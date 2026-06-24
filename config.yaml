@@ -1,0 +1,37 @@
+# ── ORB Engine Configuration ──────────────────────────────────────────────────
+# This file is the single source of truth for the TypeScript ORB engine.
+# No code changes needed to tune the strategy — edit here and restart.
+
+# ── Symbol & Account ─────────────────────────────────────────────────────────
+symbol: ""           # Set your ticker (e.g. AAPL). Symbol selection lives here.
+accountHash: ""      # Schwab account hash — required for live mode. Never auto-resolved.
+
+# ── Opening Range ─────────────────────────────────────────────────────────────
+orWindowMinutes: 15  # Opening range = first 15 one-minute bars (9:30–9:44:59 ET)
+
+# ── Entry Filters ─────────────────────────────────────────────────────────────
+rvolThreshold: 1.5          # Min relative volume vs expected at current time
+stopMode: "or_low"          # "or_low" | "atr"  — reference for stop placement
+atrK: 1.0                   # ATR multiplier (only used when stopMode = "atr")
+rTarget: 1.5                # Target = entry + rTarget × risk
+minTargetOverSpread: 3      # Target must be ≥ N × spread to be worth placing
+
+# ── Position Sizing ───────────────────────────────────────────────────────────
+startingEquity: 1000        # Starting equity used for % sizing calculations
+riskPerTradePct: 0.01       # Max risk per trade as % of startingEquity (1 % = $10)
+maxPositionSizePct: 0.20    # Max position size as % of startingEquity (20 % = $200)
+
+# ── Risk Management ───────────────────────────────────────────────────────────
+dailyLossHaltPct: 0.03      # Halt if day P&L ≤ −3 % of startingEquity
+lossStreakLimit: 3           # Halt after N consecutive losses
+cooldownMinutes: 60          # Cooldown after a loss streak
+tradesPerDay: 3              # Max day trades (PDT rule for < $25k accounts)
+enableShorts: false          # Short selling — requires margin account
+
+# ── Execution ─────────────────────────────────────────────────────────────────
+runMode: "shadow"            # "shadow" = log only, no orders | "live" = real orders
+cancelTimeoutSeconds: 30     # Cancel unfilled entry limit after this many seconds
+timeStop: "15:55"            # Flatten all positions at this ET time
+
+# ── Storage ───────────────────────────────────────────────────────────────────
+logDb: "autotrader/engine.db"   # SQLite file for signals/fills/exits

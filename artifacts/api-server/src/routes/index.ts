@@ -30,6 +30,7 @@ import adminRouter from "./admin";
 import moversRouter from "./movers";
 import catalystsRouter from "./catalysts";
 import autoTradeRouter from "./autoTrade";
+import engineRouter from "./engine";
 const router: IRouter = Router();
 
 router.use("/auth", authRouter);
@@ -63,5 +64,6 @@ router.use("/admin", adminRouter);
 router.use("/movers", moversRouter);
 router.use("/catalysts", catalystsRouter);
 router.use("/auto-trade", autoTradeRouter);
+router.use("/engine", engineRouter);
 
 export default router;
