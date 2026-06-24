@@ -17,6 +17,8 @@ interface AutoTradeConfig {
   maxPerTrade: number;
   dailyMaxLoss: number;
   pollIntervalSec: number;
+  enableExtendedHours: boolean;
+  flattenAtClose: boolean;
 }
 
 interface DecisionRow {
@@ -365,6 +367,45 @@ export function AutoTraderSettingsPage() {
             disabled={running}
           />
         </Field>
+      </div>
+
+      {/* Session toggles */}
+      <div className="border border-zinc-800 rounded-lg p-4 space-y-3 bg-zinc-900/30">
+        <p className="text-xs font-medium text-zinc-300">Session Controls</p>
+        <label className="flex items-center justify-between gap-3 cursor-pointer select-none">
+          <div>
+            <div className="text-xs font-mono text-white">Extended Hours</div>
+            <div className="text-[10px] font-mono text-zinc-500">Trade 7 AM – 8 PM ET (pre-market + after-hours). Schwab LIMIT orders are used automatically.</div>
+          </div>
+          <button
+            role="switch"
+            aria-checked={config.enableExtendedHours}
+            onClick={() => persist({ enableExtendedHours: !config.enableExtendedHours })}
+            disabled={running}
+            className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${config.enableExtendedHours ? "bg-[#f5a623]" : "bg-zinc-700"}`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${config.enableExtendedHours ? "translate-x-5" : "translate-x-0"}`}
+            />
+          </button>
+        </label>
+        <label className="flex items-center justify-between gap-3 cursor-pointer select-none">
+          <div>
+            <div className="text-xs font-mono text-white">Flatten at Close</div>
+            <div className="text-[10px] font-mono text-zinc-500">Force-close all open positions at 3:50 PM ET. Prevents overnight exposure. Recommended.</div>
+          </div>
+          <button
+            role="switch"
+            aria-checked={config.flattenAtClose}
+            onClick={() => persist({ flattenAtClose: !config.flattenAtClose })}
+            disabled={running}
+            className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${config.flattenAtClose ? "bg-[#f5a623]" : "bg-zinc-700"}`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${config.flattenAtClose ? "translate-x-5" : "translate-x-0"}`}
+            />
+          </button>
+        </label>
       </div>
 
       {/* Recent decisions */}

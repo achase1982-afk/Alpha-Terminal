@@ -16,6 +16,8 @@ export interface AutoTradeConfig {
   maxPerTrade: number;
   dailyMaxLoss: number;
   pollIntervalSec: number;
+  enableExtendedHours: boolean;
+  flattenAtClose: boolean;
 }
 
 export const DEFAULT_AUTO_TRADE_CONFIG: AutoTradeConfig = {
@@ -29,6 +31,8 @@ export const DEFAULT_AUTO_TRADE_CONFIG: AutoTradeConfig = {
   maxPerTrade: 100,
   dailyMaxLoss: 150,
   pollIntervalSec: 60,
+  enableExtendedHours: false,
+  flattenAtClose: true,
 };
 
 const POLL_MIN_SEC = 15;
@@ -70,6 +74,8 @@ function rowToConfig(row: AutoTradeConfigRow): AutoTradeConfig {
     maxPerTrade: row.maxPerTrade,
     dailyMaxLoss: row.dailyMaxLoss,
     pollIntervalSec: row.pollIntervalSec,
+    enableExtendedHours: row.enableExtendedHours,
+    flattenAtClose: row.flattenAtClose,
   };
 }
 
@@ -121,6 +127,8 @@ export async function saveAutoTradeConfig(
       patch.pollIntervalSec !== undefined
         ? Math.round(clampNumber(patch.pollIntervalSec, current.pollIntervalSec, POLL_MIN_SEC, POLL_MAX_SEC))
         : current.pollIntervalSec,
+    enableExtendedHours: typeof patch.enableExtendedHours === "boolean" ? patch.enableExtendedHours : current.enableExtendedHours,
+    flattenAtClose: typeof patch.flattenAtClose === "boolean" ? patch.flattenAtClose : current.flattenAtClose,
   };
 
   await db
@@ -137,6 +145,8 @@ export async function saveAutoTradeConfig(
       maxPerTrade: next.maxPerTrade,
       dailyMaxLoss: next.dailyMaxLoss,
       pollIntervalSec: next.pollIntervalSec,
+      enableExtendedHours: next.enableExtendedHours,
+      flattenAtClose: next.flattenAtClose,
       updatedAt: new Date(),
     })
     .onConflictDoUpdate({
@@ -152,6 +162,8 @@ export async function saveAutoTradeConfig(
         maxPerTrade: next.maxPerTrade,
         dailyMaxLoss: next.dailyMaxLoss,
         pollIntervalSec: next.pollIntervalSec,
+        enableExtendedHours: next.enableExtendedHours,
+        flattenAtClose: next.flattenAtClose,
         updatedAt: new Date(),
       },
     });
