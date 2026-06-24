@@ -1,0 +1,40 @@
+# ── ORB AutoTrader Configuration ──────────────────────────────────────────────
+# All runtime params live here. No code changes needed to tune the strategy.
+
+# ── Symbol & Account ──────────────────────────────────────────────────────────
+symbol: ""   # Set your ticker here before running
+account_hash: ""   # REQUIRED for live mode — set this explicitly, never auto-resolved
+
+# ── Opening Range Breakout ─────────────────────────────────────────────────────
+orb:
+  or_minutes: 15         # Opening range = first 15 bars (9:30–9:44:59 ET)
+  entry_after: "09:45"   # Only evaluate breakouts at or after this time (ET)
+  time_stop: "15:55"     # Flatten all positions and stop trading at this time (ET)
+
+# ── Entry Conditions ──────────────────────────────────────────────────────────
+entry:
+  min_rvol: 1.5            # Minimum relative volume vs expected at current time
+  r_target: 1.5            # Risk:reward — target = entry + r_target × (entry − stop)
+  use_or_low_stop: true    # true: stop = OR_low | false: stop = entry − atr_k × ATR
+  atr_k: 1.0               # ATR multiplier for stop distance (only when use_or_low_stop=false)
+  limit_buffer_pct: 0.001  # Entry limit = breakout_close × (1 + limit_buffer_pct)
+
+# ── Position Sizing ────────────────────────────────────────────────────────────
+position:
+  max_dollars: 500   # Maximum dollars allocated per position
+
+# ── Risk Management ───────────────────────────────────────────────────────────
+risk:
+  daily_max_loss: 100             # Halt if realized P&L today <= −daily_max_loss
+  loss_streak_halt: 3             # Halt after N consecutive losing trades
+  loss_streak_cooldown_min: 60    # Cooldown duration in minutes after a loss streak
+  pdt_limit: 3                    # Max day trades per rolling 5-day period (PDT rule)
+
+# ── Engine Settings ────────────────────────────────────────────────────────────
+poll_interval_sec: 60   # How often to check for signals
+shadow_mode: true       # ALWAYS start here — true = log only, no orders submitted
+
+# ── Paths ─────────────────────────────────────────────────────────────────────
+log_file: "autotrader/trades.jsonl"
+# Token file path relative to project root (fallback to DATABASE_URL env if missing)
+token_file: "artifacts/api-server/.data/schwab-tokens.json"

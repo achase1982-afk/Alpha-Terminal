@@ -50,3 +50,4 @@ Thumbs.db
 
 # Server-side token storage
 .data/
+autotrader/src/__pycache__/
