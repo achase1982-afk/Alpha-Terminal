@@ -76,9 +76,15 @@ router.post("/start", async (req, res) => {
   if (!config.tickers.length) {
     return res.status(400).json({ error: "no_tickers" });
   }
-  await saveAutoTradeConfig(userId, { enabled: true });
-  await startAutoTrade(userId);
-  return res.json({ ok: true, runner: autoTradeRunnerInfo(userId) });
+  try {
+    await saveAutoTradeConfig(userId, { enabled: true });
+    await startAutoTrade(userId);
+    return res.json({ ok: true, runner: autoTradeRunnerInfo(userId) });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ err, userId }, "autoTrade start failed");
+    return res.status(500).json({ error: "start_failed", detail: msg });
+  }
 });
 
 /** Hard kill switch: stop the loop, disable, and cancel any working orders. */
