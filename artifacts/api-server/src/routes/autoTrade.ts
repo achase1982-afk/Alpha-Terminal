@@ -10,14 +10,9 @@ import {
   saveAutoTradeConfig,
   type AutoTradeConfig,
 } from "../lib/autoTrade/config.js";
-import {
-  startAutoTrade,
-  stopAutoTrade,
-  isAutoTradeRunning,
-  autoTradeRunnerInfo,
-} from "../lib/autoTrade/engine.js";
 import { addSymbols, addChartEquitySymbols } from "../lib/schwabStreamer.js";
-import { resolveAccountHash } from "../lib/schwabPortfolioAccounts.js";
+import { startEngine, stopEngine, engineStatus } from "../engine/index.js";
+import { writeConfigPatch } from "../engine/config.js";
 
 const router: IRouter = Router();
 const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
@@ -25,8 +20,7 @@ const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
 router.get("/config", async (req, res) => {
   const userId = portfolioPrefsUserId(req);
   const config = await getAutoTradeConfig(userId);
-  const runner = autoTradeRunnerInfo(userId);
-  res.json({ config, runner });
+  res.json({ config, engine: engineStatus() });
 });
 
 router.put("/config", async (req, res) => {
@@ -37,8 +31,8 @@ router.put("/config", async (req, res) => {
   }
   try {
     const config = await saveAutoTradeConfig(userId, body);
-    // If tickers were updated while the runner is live, subscribe new ones immediately.
-    if (body.tickers && isAutoTradeRunning(userId) && config.tickers.length > 0) {
+    // If tickers were updated while the engine is running, subscribe new ones immediately.
+    if (body.tickers && engineStatus().running && config.tickers.length > 0) {
       addSymbols(config.tickers);
       addChartEquitySymbols(config.tickers);
     }
@@ -64,8 +58,10 @@ router.post("/start", async (req, res) => {
   }
   try {
     await saveAutoTradeConfig(userId, { enabled: true });
-    await startAutoTrade(userId);
-    return res.json({ ok: true, runner: autoTradeRunnerInfo(userId) });
+    // Bridge DB config into config.yaml so the deterministic engine picks it up
+    writeConfigPatch({ symbol: config.tickers[0], accountHash: config.accountHash });
+    startEngine();
+    return res.json({ ok: true, engine: engineStatus() });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error({ err, userId }, "autoTrade start failed");
@@ -73,10 +69,10 @@ router.post("/start", async (req, res) => {
   }
 });
 
-/** Hard kill switch: stop the loop, disable, and cancel any working orders. */
+/** Hard kill switch: stop the engine, disable, and cancel any working orders. */
 router.post("/stop", async (req, res) => {
   const userId = portfolioPrefsUserId(req);
-  await stopAutoTrade(userId);
+  stopEngine();
   await saveAutoTradeConfig(userId, { enabled: false });
 
   let cancelled = 0;
@@ -96,7 +92,7 @@ router.post("/stop", async (req, res) => {
 router.get("/status", async (req, res) => {
   const userId = portfolioPrefsUserId(req);
   const config = await getAutoTradeConfig(userId);
-  res.json({ config, runner: autoTradeRunnerInfo(userId) });
+  res.json({ config, engine: engineStatus() });
 });
 
 router.get("/decisions", async (req, res) => {
