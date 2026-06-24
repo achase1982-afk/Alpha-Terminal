@@ -2,7 +2,7 @@
 # All runtime params live here. No code changes needed to tune the strategy.
 
 # ── Symbol & Account ──────────────────────────────────────────────────────────
-symbol: AVGO
+symbol: ""   # Set your ticker here before running
 account_hash: ""   # REQUIRED for live mode — set this explicitly, never auto-resolved
 
 # ── Opening Range Breakout ─────────────────────────────────────────────────────
