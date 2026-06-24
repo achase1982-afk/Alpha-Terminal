@@ -24,22 +24,8 @@ const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
 
 router.get("/config", async (req, res) => {
   const userId = portfolioPrefsUserId(req);
-  let config = await getAutoTradeConfig(userId);
+  const config = await getAutoTradeConfig(userId);
   const runner = autoTradeRunnerInfo(userId);
-
-  // If accountHash is missing, resolve it from Schwab so the UI shows the right
-  // account pre-selected — the user can change it before hitting START.
-  if (!config.accountHash) {
-    const token = getTokens("trader")?.accessToken;
-    if (token) {
-      const resolved = await resolveAccountHash(token, null).catch(() => null);
-      if (resolved) {
-        config = await saveAutoTradeConfig(userId, { accountHash: resolved });
-        logger.info({ userId, accountHash: resolved }, "autoTrade config: pre-populated accountHash");
-      }
-    }
-  }
-
   res.json({ config, runner });
 });
 
