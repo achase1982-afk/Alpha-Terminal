@@ -34,6 +34,8 @@ interface OpenPosition {
   entryTime: number;
   /** ATR-derived stop distance, locked at entry: 2× (ATR14/price), clamped 1–5%. */
   stopPct: number;
+  /** Take-profit target locked at entry: 1.5× stopPct. Positive R:R scalping exit. */
+  profitTargetPct: number;
   /** High-water mark — ratchets up only, never down. Software trailing stop reference. */
   hwm: number;
   /** Guards against double-sell when the monitor and the LLM cycle fire simultaneously. */
@@ -70,23 +72,23 @@ function todayKey(): string {
 }
 
 /**
- * Returns true during any Schwab-supported trading window on weekdays:
- * - Pre-market:  7:00 AM – 9:30 AM ET
- * - Regular:     9:30 AM – 4:00 PM ET
- * - After-hours: 4:00 PM – 8:00 PM ET
+ * Returns true when trading is permitted for the current session.
+ * - enableExtendedHours = true:  7:00 AM – 8:00 PM ET (pre-market + regular + after-hours)
+ * - enableExtendedHours = false: 9:30 AM – 4:00 PM ET (regular hours only, default)
  *
- * IMPORTANT: Orders placed outside 9:30–4:00 ET use extended-hours LIMIT orders
- * (session "AM" or "PM"). Schwab rejects MARKET orders in extended sessions.
- * The execute layer handles this automatically via currentSchwabSession().
- * Liquidity is significantly lower in extended hours — the LLM is informed of
- * this context so it can raise its conviction bar for new entries.
+ * Extended-hours orders automatically use Schwab LIMIT session "AM"/"PM" via
+ * currentSchwabSession() in the execute layer. Liquidity is lower in extended
+ * hours; the LLM prompt raises the conviction bar for entries during those windows.
  */
-function isTradingHours(): boolean {
+function isTradingHours(config: AutoTradeConfig): boolean {
   const et = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
   const day = et.getDay();
   if (day === 0 || day === 6) return false;
   const minutes = et.getHours() * 60 + et.getMinutes();
-  return minutes >= 7 * 60 && minutes < 20 * 60; // 7 AM – 8 PM ET
+  if (config.enableExtendedHours) {
+    return minutes >= 7 * 60 && minutes < 20 * 60; // 7 AM – 8 PM ET
+  }
+  return minutes >= 9 * 60 + 30 && minutes < 16 * 60; // 9:30 AM – 4:00 PM ET only
 }
 
 interface AccountView {
@@ -139,7 +141,7 @@ type TickerResult =
   | { kind: "skip" }
   | { kind: "trailing_stop_hit"; ticker: string; snapshot: AutoTradeSnapshot; pos: TrailingStopPosition }
   | { kind: "trailing_active" }
-  | { kind: "rule_exit"; ticker: string; last: number; heldShares: number; reason: "stop_loss" | "trailing_stop" | "time_stop" }
+  | { kind: "rule_exit"; ticker: string; last: number; heldShares: number; reason: "stop_loss" | "trailing_stop" | "time_stop" | "profit_target" }
   | { kind: "decision"; ticker: string; snapshot: AutoTradeSnapshot; last: number; heldShares: number; decision: AutoTradeDecision };
 
 /**
@@ -167,6 +169,48 @@ async function runPositionMonitor(userId: string, state: RunnerState): Promise<v
 
     // Ratchet HWM — only moves up, captures the highest price seen since entry.
     if (last > pos.hwm) pos.hwm = last;
+
+    // Profit target — exit when price reaches entry × (1 + profitTargetPct).
+    const profitTargetPct = pos.profitTargetPct ?? pos.stopPct * 1.5;
+    const profitPrice = pos.entryPrice * (1 + profitTargetPct);
+    if (last >= profitPrice) {
+      pos.exitPending = true;
+      const orderResult = await placeAutoEquityOrder(accountHash, ticker, "SELL", pos.shares, last);
+      if (orderResult.ok) {
+        state.deployedToday = Math.max(0, state.deployedToday - pos.shares * last);
+        state.openPositions.delete(ticker);
+        void recordTradeExit(userId, ticker, last, pos.shares);
+      } else {
+        pos.exitPending = false;
+      }
+      void logAutoTradeDecision({
+        userId,
+        ticker,
+        decision: "RULE_PROFIT_TARGET",
+        instrument: "stock",
+        quantity: pos.shares,
+        reasoning: `Profit target (${(profitTargetPct * 100).toFixed(1)}%): $${last.toFixed(2)} reached target $${profitPrice.toFixed(2)} (entry $${pos.entryPrice.toFixed(2)})`,
+        modelId: state.lastModelId,
+        schwabOrderId: orderResult.orderId,
+        placed: orderResult.ok,
+        error: orderResult.error ?? null,
+      });
+      broadcastToClients("orderAlert", {
+        type: "RULE_PROFIT_TARGET",
+        symbol: ticker,
+        side: "SELL",
+        quantity: String(pos.shares),
+        orderId: orderResult.orderId,
+        status: orderResult.ok ? "PLACED" : "FAILED",
+        timestamp: Date.now(),
+        raw: "position-monitor",
+      });
+      logger.info(
+        { userId, ticker, last, profitPrice, shares: pos.shares, placed: orderResult.ok },
+        "autoTrade monitor: profit target triggered",
+      );
+      continue;
+    }
 
     // Two-layer stop — higher price wins (more protective once in profit):
     // - Trailing: follow the HWM down by stopPct (locks in gains)
@@ -238,7 +282,7 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
       void generateAndStorePlaybook(userId);
     }
 
-    if (!isTradingHours()) return;
+    if (!isTradingHours(config)) return;
 
     const account = await loadAccount(config);
     if (!account) {
@@ -272,7 +316,54 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
     state.lastAccountHash = accountHash;
     state.lastModelId = config.modelId;
 
+    // EOD flatten — force-close all open positions in the 3:50–3:59 PM ET window.
+    // Prevents overnight exposure when extended hours is disabled or flattenAtClose is on.
+    if (config.flattenAtClose) {
+      const etNow = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+      const minsNow = etNow.getHours() * 60 + etNow.getMinutes();
+      if (minsNow >= 15 * 60 + 50 && minsNow < 16 * 60) {
+        for (const [flatTicker, flatPos] of state.openPositions) {
+          if (flatPos.exitPending) continue;
+          flatPos.exitPending = true;
+          const flatSnap = buildAutoTradeSnapshot(flatTicker);
+          const flatLast = flatSnap.last ?? flatPos.hwm;
+          const flatResult = await placeAutoEquityOrder(accountHash, flatTicker, "SELL", flatPos.shares, flatLast);
+          if (flatResult.ok) {
+            state.deployedToday = Math.max(0, state.deployedToday - flatPos.shares * flatLast);
+            state.openPositions.delete(flatTicker);
+            void recordTradeExit(userId, flatTicker, flatLast, flatPos.shares);
+          } else {
+            flatPos.exitPending = false;
+          }
+          await logAutoTradeDecision({
+            userId, ticker: flatTicker, decision: "RULE_EOD_FLATTEN",
+            instrument: "stock", quantity: flatPos.shares,
+            reasoning: `EOD flatten: closing position before 4 PM market close`,
+            modelId: config.modelId, schwabOrderId: flatResult.orderId,
+            placed: flatResult.ok, error: flatResult.error ?? null,
+          });
+        }
+        return; // skip LLM evaluation during the close window
+      }
+    }
+
     const playbook = await getStoredPlaybook(userId);
+
+    // Resync deployedToday from account reality — guards against restart drift.
+    // If the server restarted mid-trade, state.deployedToday resets to 0 while
+    // the account still has open positions. Take the max of tracked vs live exposure.
+    let liveExposure = 0;
+    for (const ticker of config.tickers) {
+      const shares = longSharesFor(account, ticker);
+      if (shares > 0) {
+        const snap = buildAutoTradeSnapshot(ticker);
+        if (snap.last != null) liveExposure += shares * snap.last;
+      }
+    }
+    if (liveExposure > state.deployedToday) {
+      logger.info({ userId, liveExposure, was: state.deployedToday }, "autoTrade: resynced deployedToday from account");
+      state.deployedToday = liveExposure;
+    }
 
     // Snapshot budget once — each ticker's LLM call sees the same value.
     // Budget is re-checked against live state.deployedToday in Phase 3 before execution.
@@ -308,6 +399,10 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
           const hardStopPrice  = openPos.entryPrice * (1 - openPos.stopPct);
           const stopPrice = Math.max(trailStopPrice, hardStopPrice);
 
+          const profitTargetPct = openPos.profitTargetPct ?? openPos.stopPct * 1.5;
+          if (last >= openPos.entryPrice * (1 + profitTargetPct)) {
+            return { kind: "rule_exit", ticker, last, heldShares, reason: "profit_target" };
+          }
           if (last <= stopPrice) {
             return {
               kind: "rule_exit",
@@ -396,6 +491,7 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
           ticker,
           decision: reason === "stop_loss" ? "RULE_STOP_LOSS"
                   : reason === "trailing_stop" ? "RULE_TRAILING_STOP"
+                  : reason === "profit_target" ? "RULE_PROFIT_TARGET"
                   : "RULE_TIME_STOP",
           instrument: "stock",
           quantity: heldShares,
@@ -403,6 +499,8 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
             ? `Rule hard stop (${(pos?.stopPct ? (pos.stopPct * 100).toFixed(1) : "2.0")}% ATR): $${last.toFixed(2)} — exit without LLM.`
             : reason === "trailing_stop"
             ? `Rule trailing stop: $${last.toFixed(2)} crossed below HWM floor — exit without LLM.`
+            : reason === "profit_target"
+            ? `Rule profit target (${(pos?.profitTargetPct ? (pos.profitTargetPct * 100).toFixed(1) : "3.0")}%): $${last.toFixed(2)} — scalp target reached.`
             : `Rule time-stop: held >5 min with no profit ($${last.toFixed(2)}) — exit without LLM.`,
           modelId: config.modelId,
           schwabOrderId: orderResult.orderId,
@@ -467,6 +565,7 @@ async function runCycle(userId: string, state: RunnerState): Promise<void> {
             entryPrice: last,
             entryTime: Date.now(),
             stopPct,
+            profitTargetPct: stopPct * 1.5,
             hwm: last,
             exitPending: false,
           });

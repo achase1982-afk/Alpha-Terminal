@@ -1444,6 +1444,8 @@ export const autoTradeConfigTable = pgTable("auto_trade_config", {
   maxPerTrade: real("max_per_trade").default(100).notNull(),
   dailyMaxLoss: real("daily_max_loss").default(150).notNull(),
   pollIntervalSec: integer("poll_interval_sec").default(60).notNull(),
+  enableExtendedHours: boolean("enable_extended_hours").default(false).notNull(),
+  flattenAtClose: boolean("flatten_at_close").default(true).notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 

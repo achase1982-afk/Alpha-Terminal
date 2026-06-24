@@ -28,7 +28,7 @@ export interface DecisionContext {
 function allowedActions(mode: InstrumentMode, hasPosition: boolean): AutoTradeAction[] {
   const actions: AutoTradeAction[] = ["HOLD"];
   if (hasPosition) actions.push("SELL");
-  if (mode === "stock" || mode === "both") actions.push("BUY_STOCK");
+  if (!hasPosition && (mode === "stock" || mode === "both")) actions.push("BUY_STOCK");
   if (mode === "options" || mode === "both") actions.push("BUY_CALL", "BUY_PUT");
   return actions;
 }
