@@ -17,6 +17,7 @@ import {
   autoTradeRunnerInfo,
 } from "../lib/autoTrade/engine.js";
 import { addSymbols, addChartEquitySymbols } from "../lib/schwabStreamer.js";
+import { resolveAccountHash } from "../lib/schwabPortfolioAccounts.js";
 
 const router: IRouter = Router();
 const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
@@ -50,15 +51,26 @@ router.put("/config", async (req, res) => {
 
 router.post("/start", async (req, res) => {
   const userId = portfolioPrefsUserId(req);
-  const config = await getAutoTradeConfig(userId);
+  const token = getTokens("trader")?.accessToken;
+  if (!token) {
+    return res.status(401).json({ error: "no_trader_token" });
+  }
+  let config = await getAutoTradeConfig(userId);
+
+  // Auto-resolve account hash from Schwab if not set — never block on UI state.
+  if (!config.accountHash) {
+    const resolved = await resolveAccountHash(token, null).catch(() => null);
+    if (resolved) {
+      config = await saveAutoTradeConfig(userId, { accountHash: resolved });
+      logger.info({ userId, accountHash: resolved }, "autoTrade start: auto-resolved accountHash");
+    }
+  }
+
   if (!config.accountHash) {
     return res.status(400).json({ error: "no_account_selected" });
   }
   if (!config.tickers.length) {
     return res.status(400).json({ error: "no_tickers" });
-  }
-  if (!getTokens("trader")?.accessToken) {
-    return res.status(401).json({ error: "no_trader_token" });
   }
   await saveAutoTradeConfig(userId, { enabled: true });
   await startAutoTrade(userId);
