@@ -1,30 +1,28 @@
 /**
- * ORB Engine — hot loop.
+ * Swing Engine — continuous intraday hot loop.
  *
- * Runs on a setInterval tick (default 60 s). Each tick:
- *  1. Convert in-memory Schwab bars → engine Bar[]
- *  2. Update features (OR, RVOL, ATR, VWAP, spread)
- *  3. Check strategy signal (setups/orb.ts)
- *  4. Run risk guards
- *  5. Place bracket order (shadow or live)
- *  6. Broadcast status to React dashboard via WS
+ * Runs on a setInterval tick (default 60 s). Each tick, for EVERY configured
+ * symbol independently:
+ *  1. Convert in-memory Schwab bars → engine Bar[] (cumulative VWAP baked in)
+ *  2. Recompute the full feature set (bar shape, VWAP rails, RVOL vs the
+ *     historical volume profile, RSI/EMA/ATR, day-range position, spread)
+ *  3. Cancel-timeout: drop an unfilled entry limit and roll back its position
+ *  4. Manage the open position: detect target/stop touches → exit + log P&L
+ *  5. If flat: evaluate the active setup (swing by default) → risk guards →
+ *     place a bracket order (paper/shadow or live)
+ *  6. Log the evaluation and broadcast status to the React dashboard via WS
  *
- * Time-stop checker runs on its own 10-second interval.
- * Day-boundary reset happens at the first tick of a new ET calendar date.
+ * Holds at most one position per symbol at a time; re-enters continuously
+ * through the session. Time-stop flattens everything near the close.
  */
 import { getConfig, loadConfig, configExists } from "./config.js";
-import { state, etDayKey, toEngineStatus } from "./state.js";
-import {
-  initFeatures,
-  updateSession,
-  updateOpeningRange,
-  updateATR,
-  setRvolFromAvgVolume,
-} from "./features.js";
+import { state, etDayKey, toEngineStatus, newSymbolState, type SymbolState } from "./state.js";
+import { initFeatures, computeFeatures } from "./features.js";
 import { checkSetup } from "./setups/orb.js";
+import { checkSwingSetup } from "./setups/swing.js";
 import { canEnter, recordTrade, resetDailyRisk } from "./risk.js";
-import { placeBracket, flattenPosition } from "./execution.js";
-import { initLogger, logSignal, getTodayPnl, getLossStreak } from "./logger.js";
+import { placeBracket, flattenPosition, cancelOrder } from "./execution.js";
+import { initLogger, logSignal, logExit, logEvaluation, getTodayPnl, getLossStreak } from "./logger.js";
 import { logger } from "../lib/logger.js";
 import { broadcastToClients } from "../lib/wsServer.js";
 import {
@@ -33,54 +31,42 @@ import {
   addChartEquitySymbols,
   type SchwabChartEquityBarPoint,
 } from "../lib/schwabStreamer.js";
-import type { Bar } from "./types.js";
+import { buildVolumeProfile } from "./volumeProfile.js";
+import { reconcileAccount } from "./reconcile.js";
+import type { Bar, Signal, Config, ExitReason } from "./types.js";
 
 // ── Module-private timers ────────────────────────────────────────────────────
 let _barTimer: ReturnType<typeof setInterval> | null = null;
 let _timeStopTimer: ReturnType<typeof setInterval> | null = null;
+let _reconcileTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Broker reconciliation cadence (live mode only). */
+const RECONCILE_INTERVAL_MS = 15_000;
 
 // ── Bar conversion ────────────────────────────────────────────────────────────
 
 function toBar(point: SchwabChartEquityBarPoint, vwap: number): Bar {
   return {
     timestamp: new Date(point.chartTimeMs),
-    open:   point.open,
-    high:   point.high,
-    low:    point.low,
-    close:  point.close,
+    open: point.open,
+    high: point.high,
+    low: point.low,
+    close: point.close,
     volume: point.volume,
     vwap,
   };
 }
 
-/** Compute cumulative VWAP from raw bar points (pure, no side-effects). */
+/** Cumulative VWAP from raw bar points (pure). */
 function computeVwap(points: SchwabChartEquityBarPoint[]): number[] {
   let pv = 0;
   let vol = 0;
   return points.map((p) => {
     const typical = (p.high + p.low + p.close) / 3;
-    pv  += typical * p.volume;
+    pv += typical * p.volume;
     vol += p.volume;
     return vol > 0 ? pv / vol : p.close;
   });
-}
-
-// ── Day boundary reset ────────────────────────────────────────────────────────
-
-function maybeResetDay(): void {
-  const today = etDayKey();
-  if (state.dayKey === today) return;
-
-  logger.info({ was: state.dayKey, now: today }, "[engine] day boundary — resetting state");
-  state.dayKey        = today;
-  state.sessionBars   = [];
-  state.vwapAccum     = { pv: 0, vol: 0 };
-  state.features      = initFeatures();
-  state.position      = null;
-  state.enteredToday  = false;
-  state.pendingEntryOrderId = null;
-  state.pendingEntryAt      = null;
-  resetDailyRisk(state.riskState);
 }
 
 // ── ET time helpers ───────────────────────────────────────────────────────────
@@ -98,7 +84,7 @@ function isWeekend(): boolean {
 function isPastTimeStop(timeStop: string): boolean {
   const [sh, sm] = timeStop.split(":").map(Number);
   const { h, m } = etHHMM();
-  return h * 60 + m >= sh * 60 + sm;
+  return h * 60 + m >= (sh ?? 16) * 60 + (sm ?? 0);
 }
 
 function isMarketOpen(): boolean {
@@ -107,51 +93,225 @@ function isMarketOpen(): boolean {
   return !isWeekend() && mins >= 9 * 60 + 30 && mins < 16 * 60;
 }
 
-// ── Cancel-timeout: cancel entry limit if unfilled after N seconds ────────────
+// ── Day boundary reset ──────────────────────────────────────────────────────
 
-async function checkCancelTimeout(): Promise<void> {
-  const cfg = getConfig();
-  if (!state.pendingEntryOrderId || !state.pendingEntryAt) return;
-  const elapsed = (Date.now() - state.pendingEntryAt) / 1000;
-  if (elapsed < cfg.cancelTimeoutSeconds) return;
+function maybeResetDay(): void {
+  const today = etDayKey();
+  if (state.dayKey === today) return;
 
-  logger.info(
-    { orderId: state.pendingEntryOrderId, elapsed },
-    "[engine] entry order timeout — cancelling",
-  );
-  const { cancelOrder } = await import("./execution.js");
-  await cancelOrder(state.pendingEntryOrderId, cfg);
-  state.pendingEntryOrderId = null;
-  state.pendingEntryAt      = null;
-  broadcastEngine();
+  logger.info({ was: state.dayKey, now: today }, "[engine] day boundary — resetting state");
+  state.dayKey = today;
+  for (const s of state.symbols.values()) {
+    s.sessionBars = [];
+    s.features = initFeatures();
+    s.position = null;
+    s.pendingEntryOrderId = null;
+    s.pendingEntryAt = null;
+    s.pendingSignal = null;
+  }
+  resetDailyRisk(state.riskState);
 }
 
-// ── Time-stop: flatten at 15:55 ET ───────────────────────────────────────────
+// ── Cancel-timeout: drop an unfilled entry limit and roll back its position ───
+
+async function checkCancelTimeout(s: SymbolState, cfg: Config): Promise<void> {
+  if (!s.pendingEntryOrderId || !s.pendingEntryAt) return;
+  const elapsed = (Date.now() - s.pendingEntryAt) / 1000;
+  if (elapsed < cfg.cancelTimeoutSeconds) return;
+
+  logger.info({ symbol: s.symbol, orderId: s.pendingEntryOrderId, elapsed }, "[engine] entry timeout — cancelling");
+  await cancelOrder(s.pendingEntryOrderId, cfg);
+  s.pendingEntryOrderId = null;
+  s.pendingEntryAt = null;
+  s.pendingSignal = null;
+  // The entry never filled — clear the optimistic position so it isn't flattened
+  // later and so the strategy can re-arm for the next signal.
+  s.position = null;
+}
+
+// ── Exit management: detect target/stop touches, record the exit + P&L ────────
+
+function recordExit(s: SymbolState, exitPrice: number, reason: ExitReason, cfg: Config): void {
+  const pos = s.position;
+  if (!pos) return;
+  const pnl = (exitPrice - pos.avgPrice) * pos.quantity; // long-only
+
+  try {
+    logExit({
+      entryOrderId: s.pendingEntryOrderId ?? "shadow",
+      exitOrderId: reason === "TIME_STOP" ? "time-stop" : "bracket-oco",
+      symbol: pos.symbol,
+      entryPrice: pos.avgPrice,
+      exitPrice,
+      quantity: pos.quantity,
+      pnl,
+      exitReason: reason,
+      exitAt: new Date(),
+    });
+  } catch (err) {
+    logger.warn({ err, symbol: s.symbol }, "[engine] logExit failed");
+  }
+
+  recordTrade(state.riskState, pos.symbol, pnl, cfg);
+  logger.info({ symbol: pos.symbol, exitPrice, pnl: pnl.toFixed(2), reason }, "[engine] position closed");
+
+  s.position = null;
+  s.pendingEntryOrderId = null;
+  s.pendingEntryAt = null;
+  s.pendingSignal = null;
+}
+
+/**
+ * Detect whether the latest bar touched the stop or target. In shadow this IS
+ * the exit; in live the broker's OCO does the real exit and we mirror it locally
+ * so the symbol re-arms. Stop is checked first (conservative on an inside bar).
+ */
+function manageOpenPosition(s: SymbolState, latest: Bar, cfg: Config): boolean {
+  const pos = s.position;
+  if (!pos || pos.isFlat) return false;
+  if (latest.low <= pos.stopPrice) {
+    recordExit(s, pos.stopPrice, "STOP_HIT", cfg);
+    return true;
+  }
+  if (latest.high >= pos.targetPrice) {
+    recordExit(s, pos.targetPrice, "TARGET_HIT", cfg);
+    return true;
+  }
+  return false;
+}
+
+// ── Time-stop: flatten everything at/after cfg.timeStop ───────────────────────
 
 async function checkTimeStop(): Promise<void> {
-  const cfg = getConfig();
+  if (!state.running) return;
+  let cfg: Config;
+  try {
+    cfg = getConfig();
+  } catch {
+    return;
+  }
   if (!isPastTimeStop(cfg.timeStop)) return;
-  if (!state.position || state.position.isFlat) return;
 
-  logger.warn({ symbol: state.symbol }, "[engine] time stop — flattening position");
-  await flattenPosition(state.position.symbol, state.position.quantity, cfg);
-  state.position = { ...state.position, isFlat: true };
+  for (const s of state.symbols.values()) {
+    if (!s.position || s.position.isFlat) continue;
+    logger.warn({ symbol: s.symbol }, "[engine] time stop — flattening");
+    await flattenPosition(s.position.symbol, s.position.quantity, cfg);
+    const exitPrice = s.features.last || s.position.avgPrice;
+    recordExit(s, exitPrice, "TIME_STOP", cfg);
+  }
   broadcastEngine();
 }
 
 // ── Broadcast ─────────────────────────────────────────────────────────────────
 
 function broadcastEngine(): void {
-  const status = toEngineStatus();
-  const payload = { ...status, runMode: getConfig().runMode };
-  broadcastToClients("engineStatus", payload);
+  let setup: Config["setup"] = "swing";
+  let runMode = state.runMode;
+  try {
+    const cfg = getConfig();
+    setup = cfg.setup;
+    runMode = cfg.runMode;
+  } catch {
+    /* config not loaded yet */
+  }
+  broadcastToClients("engineStatus", { ...toEngineStatus(), setup, runMode });
 }
 
-// ── Main bar tick ─────────────────────────────────────────────────────────────
+// ── Per-symbol processing ─────────────────────────────────────────────────────
+
+async function processSymbol(s: SymbolState, cfg: Config): Promise<void> {
+  // 1. Cancel-timeout on any unfilled live entry.
+  await checkCancelTimeout(s, cfg);
+
+  // 2. Bars from the in-memory streamer.
+  const rawPoints = getStrategistChartEquityBars(s.symbol);
+  if (!rawPoints.length) return;
+
+  const vwaps = computeVwap(rawPoints);
+  const bars: Bar[] = rawPoints.map((p, i) => toBar(p, vwaps[i]!));
+  s.sessionBars = bars;
+  const latest = bars[bars.length - 1]!;
+  s.lastBarAt = latest.timestamp;
+
+  // 3. Features.
+  const q = getQuoteBySymbol(s.symbol);
+  computeFeatures(
+    bars,
+    s.features,
+    cfg,
+    q ? { bid: q.bid, ask: q.ask, last: q.last, high: q.high, low: q.low } : null,
+    s.volumeProfile,
+  );
+  const f = s.features;
+
+  // 4. Manage an open position.
+  //    Shadow (paper): infer exits from bar touches — there is no broker.
+  //    Live: the bracket OCO exits at the broker and reconcileAccount() is the
+  //    source of truth, so we do NOT guess exits from bars here.
+  if (cfg.runMode !== "live" && manageOpenPosition(s, latest, cfg)) {
+    broadcastEngine();
+    return; // exited this tick — re-arm next tick
+  }
+  if (s.position && !s.position.isFlat) {
+    // Still holding — nothing to do until an exit or the time-stop.
+    logEvaluation({ symbol: s.symbol, action: "HOLD", reason: "position open", last: f.last, vwap: f.vwap, lowerRail: f.lowerRail, rsi: f.rsi, volRatio: f.volRatio });
+    return;
+  }
+  if (s.pendingEntryOrderId) return; // awaiting fill / cancel-timeout
+
+  // 5. Evaluate the active setup.
+  const signal: Signal | null =
+    cfg.setup === "orb"
+      ? checkSetup(latest, f, cfg, s.symbol)
+      : checkSwingSetup(latest, f, cfg, s.symbol, bars.length);
+
+  if (!signal) {
+    logEvaluation({ symbol: s.symbol, action: "FLAT", reason: "no setup", last: f.last, vwap: f.vwap, lowerRail: f.lowerRail, rsi: f.rsi, volRatio: f.volRatio });
+    return;
+  }
+
+  const [ok, reason] = canEnter(signal, state.riskState, state.account, s.position, cfg);
+  logEvaluation({ symbol: s.symbol, action: ok ? "ENTER" : "BLOCK", reason: ok ? signal.reason : reason, last: f.last, vwap: f.vwap, lowerRail: f.lowerRail, rsi: f.rsi, volRatio: f.volRatio });
+
+  if (!ok) {
+    broadcastToClients("engineSignal", { signal, blocked: true, blockReason: reason });
+    return;
+  }
+
+  logger.info(
+    { symbol: signal.symbol, entry: signal.entryPrice, stop: signal.stopPrice, target: signal.targetPrice, size: signal.size },
+    `[engine:${cfg.runMode}] signal — placing bracket`,
+  );
+  logSignal(signal);
+
+  const result = await placeBracket(signal, cfg);
+  if (result.ok) {
+    s.position = {
+      symbol: signal.symbol,
+      quantity: signal.size,
+      avgPrice: signal.entryPrice,
+      stopPrice: signal.stopPrice,
+      targetPrice: signal.targetPrice,
+      isFlat: false,
+    };
+    s.pendingSignal = signal;
+    if (result.entryOrderId) {
+      s.pendingEntryOrderId = result.entryOrderId;
+      s.pendingEntryAt = Date.now();
+      // Reconcile shortly after placing a live order so a quick reject/fill is
+      // caught against the broker rather than assumed (on-order-event trigger).
+      void reconcileAccount(cfg);
+    }
+  } else {
+    logger.error({ error: result.error, symbol: signal.symbol }, "[engine] bracket placement failed");
+  }
+  broadcastToClients("engineSignal", { signal, blocked: false, blockReason: "" });
+}
+
+// ── Main tick ─────────────────────────────────────────────────────────────────
 
 async function onTick(): Promise<void> {
   if (!state.running) return;
-
   maybeResetDay();
 
   const cfg = getConfig();
@@ -161,90 +321,19 @@ async function onTick(): Promise<void> {
     return;
   }
 
-  await checkCancelTimeout();
-
-  // ── 1. Fetch bars from in-memory streamer ────────────────────────────────
-  const rawPoints = getStrategistChartEquityBars(state.symbol);
-  if (!rawPoints.length) {
-    logger.debug({ symbol: state.symbol }, "[engine] no bars yet");
-    return;
-  }
-
-  const vwaps = computeVwap(rawPoints);
-  const bars: Bar[] = rawPoints.map((p, i) => toBar(p, vwaps[i]!));
-
-  // Update session bar list (replace fully — streamer already dedupes)
-  state.sessionBars = bars;
-  state.lastBarAt   = bars[bars.length - 1]!.timestamp;
-
-  // ── 2. Update features ───────────────────────────────────────────────────
-  const quote = getQuoteBySymbol(state.symbol);
-  const bid   = quote?.bid   ?? null;
-  const ask   = quote?.ask   ?? null;
-  const last  = quote?.last  ?? bars[bars.length - 1]!.close;
-
-  updateSession(bars[bars.length - 1]!, state.features, bid, ask);
-  updateOpeningRange(bars, state.features, cfg);
-  updateATR(bars, state.features);
-
-  // RVOL: use a rough avg from the quote's volume × session fraction
-  // (A precise per-minute volume profile requires historical DB queries — see buildVolumeProfile())
-  const sessionVol = bars.reduce((s, b) => s + b.volume, 0);
-  const elapsed    = Math.max(1, bars.length);
-  // Approximate avg daily volume from today's pace (only useful after 30+ min)
-  if (elapsed >= 30) {
-    const impliedDaily = (sessionVol / elapsed) * 390;
-    setRvolFromAvgVolume(bars, state.features, impliedDaily);
-  }
-
-  // ── 3. Daily loss guard ──────────────────────────────────────────────────
+  // Account-wide daily-loss halt, refreshed each tick.
   const todayPnl = getTodayPnl();
-  const haltThresh = -(cfg.startingEquity * cfg.dailyLossHaltPct);
-  state.riskState.dailyLossHalt = todayPnl <= haltThresh;
-  state.riskState.lossStreak    = getLossStreak();
-  state.riskState.tradesToday   = 0; // recounted from DB below if needed
+  state.riskState.dailyLossHalt = todayPnl <= -(cfg.startingEquity * cfg.dailyLossHaltPct);
+  state.riskState.lossStreak = getLossStreak();
 
-  // ── 4. Check signal ──────────────────────────────────────────────────────
-  if (!state.enteredToday && state.features.orComplete) {
-    const latestBar = bars[bars.length - 1]!;
-    const signal = checkSetup(latestBar, state.features, cfg);
-
-    if (signal) {
-      const [ok, reason] = canEnter(signal, state.riskState, state.account, state.position, cfg);
-
-      if (ok) {
-        logger.info(
-          { symbol: signal.symbol, entry: signal.entryPrice, stop: signal.stopPrice, target: signal.targetPrice, size: signal.size, rvol: state.features.rvol },
-          `[engine:${cfg.runMode}] signal — placing bracket`,
-        );
-        logSignal(signal);
-
-        const result = await placeBracket(signal, cfg);
-        if (result.ok) {
-          state.enteredToday = true;
-          state.position = {
-            symbol:      signal.symbol,
-            quantity:    signal.size,
-            avgPrice:    signal.entryPrice,
-            stopPrice:   signal.stopPrice,
-            targetPrice: signal.targetPrice,
-            isFlat:      false,
-          };
-          if (result.entryOrderId) {
-            state.pendingEntryOrderId = result.entryOrderId;
-            state.pendingEntryAt      = Date.now();
-          }
-        } else {
-          logger.error({ error: result.error }, "[engine] bracket placement failed");
-        }
-      } else {
-        logger.info({ reason, symbol: signal.symbol }, "[engine] signal blocked by risk");
-      }
-      broadcastToClients("engineSignal", { signal, blocked: !ok, blockReason: "" });
+  for (const s of state.symbols.values()) {
+    try {
+      await processSymbol(s, cfg);
+    } catch (err) {
+      logger.error({ err, symbol: s.symbol }, "[engine] processSymbol failed");
     }
   }
 
-  state.features.vwap = last; // keep dashboard VWAP current
   broadcastEngine();
 }
 
@@ -262,44 +351,75 @@ export function startEngine(): void {
   const cfg = loadConfig();
   initLogger(cfg.logDb);
 
-  if (!cfg.symbol) {
-    throw new Error("config.yaml: symbol is required before starting the engine");
+  if (!cfg.symbols.length) {
+    throw new Error("config.yaml: at least one symbol is required before starting the engine");
   }
 
-  state.symbol    = cfg.symbol;
-  state.running   = true;
+  // Build per-symbol state.
+  state.symbols.clear();
+  for (const sym of cfg.symbols) state.symbols.set(sym, newSymbolState(sym));
+
+  state.running = true;
+  state.runMode = cfg.runMode;
   state.startedAt = new Date();
-  state.dayKey    = etDayKey();
+  state.dayKey = etDayKey();
 
-  // Subscribe the Schwab streamer to this symbol
-  addChartEquitySymbols([cfg.symbol]);
+  // Subscribe the Schwab streamer to every symbol.
+  addChartEquitySymbols(cfg.symbols);
 
-  logger.info({ symbol: cfg.symbol, runMode: cfg.runMode }, "[engine] started");
+  // Build historical volume profiles in the background (non-blocking).
+  for (const sym of cfg.symbols) {
+    void buildVolumeProfile(sym, cfg.volumeProfileLookbackDays).then((profile) => {
+      const s = state.symbols.get(sym);
+      if (s) s.volumeProfile = profile;
+    });
+  }
 
-  _barTimer      = setInterval(() => void onTick(), 60_000);
+  logger.info({ symbols: cfg.symbols, setup: cfg.setup, runMode: cfg.runMode }, "[engine] started");
+
+  _barTimer = setInterval(() => void onTick(), 60_000);
   _timeStopTimer = setInterval(() => void checkTimeStop(), 10_000);
 
-  // Fire immediately so the dashboard shows state right away
+  // Live mode: keep engine state pinned to broker truth on a short interval.
+  if (cfg.runMode === "live") {
+    _reconcileTimer = setInterval(() => {
+      try {
+        void reconcileAccount(getConfig());
+      } catch {
+        /* config not loaded — skip this cycle */
+      }
+    }, RECONCILE_INTERVAL_MS);
+  }
+
+  // Fire immediately so the dashboard shows state right away.
   void onTick();
 
-  broadcastToClients("engineStatus", { running: true, symbol: cfg.symbol, runMode: cfg.runMode });
+  broadcastEngine();
 }
 
 export function stopEngine(): void {
-  if (_barTimer)      { clearInterval(_barTimer);      _barTimer      = null; }
+  if (_barTimer) { clearInterval(_barTimer); _barTimer = null; }
   if (_timeStopTimer) { clearInterval(_timeStopTimer); _timeStopTimer = null; }
+  if (_reconcileTimer) { clearInterval(_reconcileTimer); _reconcileTimer = null; }
   state.running = false;
   logger.info("[engine] stopped");
-  broadcastToClients("engineStatus", { running: false });
+  broadcastEngine();
 }
 
 export function engineStatus() {
-  const status = toEngineStatus();
-  let runMode = "shadow";
+  let setup: Config["setup"] = "swing";
+  let runMode = state.runMode;
   try {
-    if (configExists()) runMode = getConfig().runMode;
+    if (configExists()) {
+      const cfg = getConfig();
+      setup = cfg.setup;
+      runMode = cfg.runMode;
+    }
   } catch {
-    // config.yaml exists but loadConfig() not yet called — defaults to shadow
+    /* config.yaml exists but loadConfig() not yet called */
   }
-  return { ...status, runMode };
+  return { ...toEngineStatus(), setup, runMode };
 }
+
+// Exported for tests.
+export { checkCancelTimeout, manageOpenPosition, processSymbol };

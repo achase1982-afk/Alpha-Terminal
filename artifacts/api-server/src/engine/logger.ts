@@ -56,7 +56,37 @@ export function initLogger(dbPath: string): void {
       exit_reason     TEXT NOT NULL,
       exit_at         TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS evaluations (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts         TEXT NOT NULL,
+      symbol     TEXT NOT NULL,
+      action     TEXT NOT NULL,
+      reason     TEXT NOT NULL,
+      last       REAL,
+      vwap       REAL,
+      lower_rail REAL,
+      rsi        REAL,
+      vol_ratio  REAL
+    );
   `);
+}
+
+/** One evaluation row per symbol per tick — the engine's continuous decision trail. */
+export function logEvaluation(e: {
+  symbol: string;
+  action: string;
+  reason: string;
+  last: number;
+  vwap: number;
+  lowerRail: number;
+  rsi: number;
+  volRatio: number;
+}): void {
+  if (!_db) return; // logging is best-effort; never block the hot loop
+  db().prepare(`
+    INSERT INTO evaluations (ts, symbol, action, reason, last, vwap, lower_rail, rsi, vol_ratio)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(new Date().toISOString(), e.symbol, e.action, e.reason, e.last, e.vwap, e.lowerRail, e.rsi, e.volRatio);
 }
 
 export function logSignal(s: Signal): void {

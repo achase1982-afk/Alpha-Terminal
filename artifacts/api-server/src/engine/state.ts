@@ -1,43 +1,68 @@
 /** Runtime singleton — one mutable object shared by all engine modules. */
 import { initFeatures } from "./features.js";
-import type { Bar, Position, RiskState, AccountState, EngineStatus, Features } from "./types.js";
+import type {
+  Bar,
+  Position,
+  Signal,
+  RiskState,
+  AccountState,
+  EngineStatus,
+  SymbolStatus,
+  Features,
+  RunMode,
+} from "./types.js";
+
+/** Per-symbol live state. The engine runs one of these for each configured symbol. */
+export interface SymbolState {
+  symbol: string;
+  sessionBars: Bar[];
+  features: Features;
+  position: Position | null;
+  /** Historical per-minute volume profile (built once at start). */
+  volumeProfile: Map<number, number>;
+  /** Active entry order id + signal (cancel-timeout + fill simulation). */
+  pendingEntryOrderId: string | null;
+  pendingEntryAt: number | null;
+  pendingSignal: Signal | null;
+  lastBarAt: Date | null;
+}
 
 export interface EngineState {
   running: boolean;
   startedAt: Date | null;
-  lastBarAt: Date | null;
-  symbol: string;
-
-  sessionBars: Bar[];
-  volumeProfile: Map<number, number>; // minute index → avg daily volume at that minute
-  vwapAccum: { pv: number; vol: number }; // running VWAP accumulators
-
-  features: Features;
-  position: Position | null;
-  riskState: RiskState;
-  account: AccountState;
-
-  // Used to detect whether we've already entered today
-  enteredToday: boolean;
+  runMode: RunMode;
   dayKey: string; // "YYYY-MM-DD" in ET — reset triggers at day boundary
 
-  // Active entry order ID (for cancel-timeout tracking)
-  pendingEntryOrderId: string | null;
-  pendingEntryAt: number | null; // Date.now() when order was placed
+  /** symbol → per-symbol state */
+  symbols: Map<string, SymbolState>;
+
+  // Account-wide risk (shared across all symbols).
+  riskState: RiskState;
+  account: AccountState;
+}
+
+export function newSymbolState(symbol: string): SymbolState {
+  return {
+    symbol,
+    sessionBars: [],
+    features: initFeatures(),
+    position: null,
+    volumeProfile: new Map(),
+    pendingEntryOrderId: null,
+    pendingEntryAt: null,
+    pendingSignal: null,
+    lastBarAt: null,
+  };
 }
 
 export const state: EngineState = {
   running: false,
   startedAt: null,
-  lastBarAt: null,
-  symbol: "",
+  runMode: "shadow",
+  dayKey: "",
 
-  sessionBars: [],
-  volumeProfile: new Map(),
-  vwapAccum: { pv: 0, vol: 0 },
+  symbols: new Map(),
 
-  features: initFeatures(),
-  position: null,
   riskState: {
     halted: false,
     dailyLossHalt: false,
@@ -50,27 +75,35 @@ export const state: EngineState = {
     dailyPnlPct: 0,
     dayTradesRemaining: 3,
   },
-
-  enteredToday: false,
-  dayKey: "",
-  pendingEntryOrderId: null,
-  pendingEntryAt: null,
 };
 
 export function etDayKey(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
 }
 
-export function toEngineStatus(): EngineStatus {
-  const { running, startedAt, lastBarAt, symbol, features, position, riskState } = state;
+function toSymbolStatus(s: SymbolState): SymbolStatus {
   return {
-    running,
-    startedAt,
-    lastBarAt,
-    symbol,
-    features: { ...features },
-    position: position ? { ...position } : null,
-    riskState: { ...riskState },
-    runMode: "shadow", // filled in by index.ts with cfg.runMode
+    symbol: s.symbol,
+    position: s.position ? { ...s.position } : null,
+    features: { ...s.features },
+    lastBarAt: s.lastBarAt,
+  };
+}
+
+export function toEngineStatus(): EngineStatus {
+  const symbols = [...state.symbols.values()].map(toSymbolStatus);
+  const first = symbols[0];
+  return {
+    running: state.running,
+    runMode: state.runMode,
+    setup: "swing", // overwritten by index.ts with cfg.setup
+    symbols,
+    riskState: { ...state.riskState },
+    startedAt: state.startedAt,
+    // Backward-compatible scalars mirror the first symbol.
+    symbol: first?.symbol ?? "",
+    position: first?.position ?? null,
+    features: first?.features ?? initFeatures(),
+    lastBarAt: first?.lastBarAt ?? null,
   };
 }

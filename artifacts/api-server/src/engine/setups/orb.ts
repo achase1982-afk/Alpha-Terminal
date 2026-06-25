@@ -9,7 +9,7 @@
  */
 import type { Bar, Features, Config, Signal } from "../types.js";
 
-export function checkSetup(bar: Bar, f: Features, cfg: Config): Signal | null {
+export function checkSetup(bar: Bar, f: Features, cfg: Config, symbol: string): Signal | null {
   if (!f.orComplete) return null;
   if (bar.close <= f.orHigh) return null;       // no confirmed breakout
   if (f.rvol < cfg.rvolThreshold) return null;  // volume not expanding
@@ -40,7 +40,7 @@ export function checkSetup(bar: Bar, f: Features, cfg: Config): Signal | null {
 
   return {
     timestamp:  bar.timestamp,
-    symbol:     cfg.symbol,
+    symbol,
     action:     "BUY",
     entryPrice: entry,
     stopPrice:  stop,
