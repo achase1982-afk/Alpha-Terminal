@@ -237,7 +237,7 @@ async function processSymbol(s: SymbolState, cfg: Config): Promise<void> {
   const signal: Signal | null =
     cfg.setup === "orb"
       ? checkSetup(latest, f, cfg, s.symbol)
-      : checkSwingSetup(latest, f, cfg, s.symbol, bars.length);
+      : checkSwingSetup(latest, f, cfg, s.symbol, bars);
 
   if (!signal) {
     logEvaluation({ symbol: s.symbol, action: "FLAT", reason: "no setup", last: f.last, vwap: f.vwap, lowerRail: f.lowerRail, rsi: f.rsi, volRatio: f.volRatio });

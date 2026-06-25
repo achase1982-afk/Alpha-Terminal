@@ -27,6 +27,7 @@ const TEST_CONFIG: Config = {
   vwapBandAtrMult: 2.0,
   belowVwapStretchThreshold: 0.6,
   volDryingThreshold: 1.0,
+  reversalVolRatioMin: 1.2,
   rsiEntryMin: 25,
   rsiEntryMax: 55,
   swingTargetRail: "vwap",

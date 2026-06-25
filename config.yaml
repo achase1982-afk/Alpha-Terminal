@@ -15,11 +15,12 @@ volAvgWindow: 20             # Trailing window for volume averaging (bars).
 directionLookback: 5         # Bars used for the short-term direction read.
 vwapBandAtrMult: 2.0         # Range rails = VWAP ± (this × ATR).
 belowVwapStretchThreshold: 0.6  # 0–1: how far toward the lower rail price must stretch to qualify.
-volDryingThreshold: 1.0      # Entry needs latest bar volume ≤ this × its average (volume drying).
+volDryingThreshold: 1.0      # Legacy — unused by the confirmation entry (kept for back-compat).
+reversalVolRatioMin: 1.2     # Turn-bar must trade ≥ this × its avg volume — confirms real demand, not a fake bounce.
 rsiEntryMin: 25              # Entry RSI lower gate.
 rsiEntryMax: 55              # Entry RSI upper gate.
 swingTargetRail: "vwap"      # Take profit toward "vwap" or the "upper" rail.
-stopBelowRailAtrMult: 0.5    # Hard stop = lower rail − (this × ATR).
+stopBelowRailAtrMult: 0.5    # Hard stop = reversal-bar low − (this × ATR).
 volumeProfileLookbackDays: 20  # Sessions of history used for the RVOL baseline.
 
 # ── Opening range (legacy ORB setup only) ─────────────────────────────────────

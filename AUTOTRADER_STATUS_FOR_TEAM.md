@@ -1,6 +1,44 @@
-# Auto-Trader Status — Paper Mode Removed, Engine Is Now Always Live
+# Auto-Trader Status
 
 **Date:** 2026-06-25
+
+## UPDATE — Entry logic fixed: confirm the reversal, don't predict the bottom
+
+**Why it kept buying and selling at a loss:** the swing entry was *predicting*
+the bottom instead of *confirming* the turn. The old rules required volume
+**drying up** and bodies **shrinking** — i.e. it bought quiet, slowing dips
+**while price was still falling**, with a stop just below the rail. In any
+real down-move that stop got run immediately → buy, stop out, re-arm, repeat.
+Critically, `recentDirection` (the engine's short-term momentum read) was
+computed but **never used** by the entry.
+
+**The fix (`setups/swing.ts`):** an entry now requires the reversal to have
+actually started, on real volume:
+- The latest bar must be an **up bar that closed above the prior bar** (price
+  turning up — not still falling).
+- **Lower-wick rejection** of the lows (buyers defended), as before.
+- **Expanding volume on the turn** (`volRatio ≥ reversalVolRatioMin`, default
+  1.2) — the real-vs-fake-reversal tell, the opposite of the old "volume
+  drying" rule.
+- Still only in an oversold/stretched location below VWAP, RSI in band, and
+  not in a clean downtrend.
+- The **stop now sits just below the reversal bar's low** — if that low breaks,
+  the reversal failed and you're out small.
+
+This makes it wait for the bounce to prove itself before buying, which is what
+it should have been doing all along.
+
+**Still open (recommended next):** the *exit* is still the static broker OCO
+(target = VWAP, stop = below the turn-bar low). An active "exit when momentum
+rolls back over" requires cancelling the live OCO before market-selling, which
+is fiddly with real orders — phased as a follow-up rather than rushed in live.
+
+**Note:** there is no paper mode anymore (removed below), so this strategy
+change goes straight to live. Stop the engine, deploy, then restart.
+
+---
+
+## Background — Paper Mode Removed, Engine Is Now Always Live
 
 ## TL;DR
 

@@ -129,11 +129,12 @@ export interface Config {
   directionLookback: number;        // K bars for short-term direction read
   vwapBandAtrMult: number;          // rail = VWAP ± (this × ATR)
   belowVwapStretchThreshold: number; // 0–1: how far toward the lower rail price must stretch
-  volDryingThreshold: number;       // entry needs latest volRatio ≤ this (volume drying)
+  volDryingThreshold: number;       // legacy (unused by the confirmation entry)
+  reversalVolRatioMin: number;      // turn-bar must trade ≥ this × its avg volume (real demand)
   rsiEntryMin: number;              // entry RSI lower gate
   rsiEntryMax: number;              // entry RSI upper gate
   swingTargetRail: "vwap" | "upper"; // take profit back to VWAP or the upper rail
-  stopBelowRailAtrMult: number;     // hard stop = lower rail − (this × ATR)
+  stopBelowRailAtrMult: number;     // hard stop = reversal-bar low − (this × ATR)
   volumeProfileLookbackDays: number; // sessions of history for the RVOL baseline
 
   // ── Risk / sizing ──
