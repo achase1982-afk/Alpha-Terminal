@@ -3,8 +3,7 @@ import type { Config } from "../types.js";
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
 // Mock the engine's heavy / side-effectful dependencies so importing index.ts
-// stays cheap and deterministic. The real `state` singleton (state.js) is left
-// unmocked so we can mutate it and assert on it directly.
+// stays cheap and deterministic.
 
 const mocks = vi.hoisted(() => ({
   cancelOrder: vi.fn(async () => true),
@@ -13,19 +12,32 @@ const mocks = vi.hoisted(() => ({
 
 const TEST_CONFIG: Config = {
   symbol: "AAPL",
+  symbols: ["AAPL"],
   accountHash: "HASH",
+  setup: "swing",
   orWindowMinutes: 15,
   rvolThreshold: 1.5,
   stopMode: "or_low",
   atrK: 1.0,
   rTarget: 1.5,
   minTargetOverSpread: 3,
+  bodyAvgWindow: 10,
+  volAvgWindow: 20,
+  directionLookback: 5,
+  vwapBandAtrMult: 2.0,
+  belowVwapStretchThreshold: 0.6,
+  volDryingThreshold: 1.0,
+  rsiEntryMin: 25,
+  rsiEntryMax: 55,
+  swingTargetRail: "vwap",
+  stopBelowRailAtrMult: 0.5,
+  volumeProfileLookbackDays: 20,
   dailyLossHaltPct: 0.03,
   riskPerTradePct: 0.01,
   maxPositionSizePct: 0.2,
   lossStreakLimit: 3,
   cooldownMinutes: 60,
-  tradesPerDay: 3,
+  tradesPerDay: 40,
   enableShorts: false,
   runMode: "shadow",
   cancelTimeoutSeconds: 30,
@@ -49,8 +61,14 @@ vi.mock("../execution.js", () => ({
 vi.mock("../logger.js", () => ({
   initLogger: vi.fn(),
   logSignal: vi.fn(),
+  logExit: vi.fn(),
+  logEvaluation: vi.fn(),
   getTodayPnl: vi.fn(() => 0),
   getLossStreak: vi.fn(() => 0),
+}));
+
+vi.mock("../volumeProfile.js", () => ({
+  buildVolumeProfile: vi.fn(async () => new Map()),
 }));
 
 vi.mock("../../lib/logger.js", () => ({
@@ -68,18 +86,19 @@ vi.mock("../../lib/schwabStreamer.js", () => ({
 }));
 
 import { checkCancelTimeout } from "../index.js";
-import { state } from "../state.js";
+import { newSymbolState, type SymbolState } from "../state.js";
 
 describe("checkCancelTimeout", () => {
+  let s: SymbolState;
+
   beforeEach(() => {
     vi.clearAllMocks();
-    // Simulate the optimistic state set right after a bracket order is placed:
-    // position recorded as open and the day marked as "entered", with a
-    // pending entry limit that was placed longer ago than the timeout window.
-    state.pendingEntryOrderId = "12345";
-    state.pendingEntryAt = Date.now() - 60_000; // 60s ago > 30s timeout
-    state.enteredToday = true;
-    state.position = {
+    // Optimistic state set right after a bracket order is placed: position
+    // recorded as open, with a pending entry limit placed past the timeout.
+    s = newSymbolState("AAPL");
+    s.pendingEntryOrderId = "12345";
+    s.pendingEntryAt = Date.now() - 60_000; // 60s ago > 30s timeout
+    s.position = {
       symbol: "AAPL",
       quantity: 10,
       avgPrice: 100,
@@ -89,35 +108,33 @@ describe("checkCancelTimeout", () => {
     };
   });
 
-  it("rolls back the optimistic position and re-arms the strategy when the entry order is cancelled", async () => {
-    await checkCancelTimeout();
+  it("rolls back the optimistic position when the unfilled entry is cancelled", async () => {
+    await checkCancelTimeout(s, TEST_CONFIG);
 
     expect(mocks.cancelOrder).toHaveBeenCalledWith("12345", expect.anything());
     // The entry never filled, so the phantom position must be cleared — this is
-    // what prevents the 15:55 time-stop from flattening shares never bought.
-    expect(state.position).toBeNull();
-    // And the strategy must re-arm so it can take the next valid signal.
-    expect(state.enteredToday).toBe(false);
-    expect(state.pendingEntryOrderId).toBeNull();
-    expect(state.pendingEntryAt).toBeNull();
+    // what prevents the time-stop from flattening shares never bought.
+    expect(s.position).toBeNull();
+    expect(s.pendingEntryOrderId).toBeNull();
+    expect(s.pendingEntryAt).toBeNull();
+    expect(s.pendingSignal).toBeNull();
   });
 
   it("does nothing while the entry is still within the timeout window", async () => {
-    state.pendingEntryAt = Date.now(); // just placed
+    s.pendingEntryAt = Date.now(); // just placed
 
-    await checkCancelTimeout();
+    await checkCancelTimeout(s, TEST_CONFIG);
 
     expect(mocks.cancelOrder).not.toHaveBeenCalled();
-    expect(state.position).not.toBeNull();
-    expect(state.enteredToday).toBe(true);
-    expect(state.pendingEntryOrderId).toBe("12345");
+    expect(s.position).not.toBeNull();
+    expect(s.pendingEntryOrderId).toBe("12345");
   });
 
   it("does nothing when there is no pending entry order", async () => {
-    state.pendingEntryOrderId = null;
-    state.pendingEntryAt = null;
+    s.pendingEntryOrderId = null;
+    s.pendingEntryAt = null;
 
-    await checkCancelTimeout();
+    await checkCancelTimeout(s, TEST_CONFIG);
 
     expect(mocks.cancelOrder).not.toHaveBeenCalled();
   });

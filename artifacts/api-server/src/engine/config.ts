@@ -8,20 +8,41 @@ const CONFIG_PATH = path.resolve(process.cwd(), "config.yaml");
 // Canonical defaults — all strategy params live here
 const DEFAULTS: Config = {
   symbol: "",
+  symbols: [],
   accountHash: "",
+  setup: "swing",
+
+  // Opening range (legacy ORB)
   orWindowMinutes: 15,
   rvolThreshold: 1.5,
   stopMode: "or_low",
   atrK: 1.0,
   rTarget: 1.5,
   minTargetOverSpread: 3,
+
+  // Swing setup
+  bodyAvgWindow: 10,
+  volAvgWindow: 20,
+  directionLookback: 5,
+  vwapBandAtrMult: 2.0,
+  belowVwapStretchThreshold: 0.6,
+  volDryingThreshold: 1.0,
+  rsiEntryMin: 25,
+  rsiEntryMax: 55,
+  swingTargetRail: "vwap",
+  stopBelowRailAtrMult: 0.5,
+  volumeProfileLookbackDays: 20,
+
+  // Risk / sizing
   dailyLossHaltPct: 0.03,
   riskPerTradePct: 0.01,
   maxPositionSizePct: 0.20,
   lossStreakLimit: 3,
   cooldownMinutes: 60,
-  tradesPerDay: 3,
+  tradesPerDay: 40,
   enableShorts: false,
+
+  // Execution
   runMode: "shadow",
   cancelTimeoutSeconds: 30,
   timeStop: "15:55",
@@ -31,10 +52,28 @@ const DEFAULTS: Config = {
 
 let _cfg: Config | null = null;
 
+/** Normalize, dedupe and upper-case a symbol list. */
+function normalizeSymbols(value: unknown, legacySymbol: string): string[] {
+  const list = Array.isArray(value) ? value : [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of [...list, legacySymbol]) {
+    if (typeof raw !== "string") continue;
+    const sym = raw.trim().toUpperCase();
+    if (!sym || seen.has(sym) || !/^[A-Z.\-]{1,12}$/.test(sym)) continue;
+    seen.add(sym);
+    out.push(sym);
+  }
+  return out.slice(0, 50);
+}
+
 function validate(cfg: Config): void {
-  if (!cfg.symbol) throw new Error("config.yaml: symbol is required");
+  if (!cfg.symbols.length) throw new Error("config.yaml: at least one symbol is required");
   if (cfg.runMode === "live" && !cfg.accountHash) {
     throw new Error("config.yaml: accountHash is required for live mode");
+  }
+  if (cfg.setup !== "orb" && cfg.setup !== "swing") {
+    throw new Error('config.yaml: setup must be "orb" or "swing"');
   }
   if (cfg.rTarget <= 0) throw new Error("config.yaml: rTarget must be > 0");
   if (cfg.orWindowMinutes < 1 || cfg.orWindowMinutes > 60) {
@@ -46,6 +85,10 @@ function validate(cfg: Config): void {
   if (cfg.runMode !== "shadow" && cfg.runMode !== "live") {
     throw new Error('config.yaml: runMode must be "shadow" or "live"');
   }
+  if (cfg.vwapBandAtrMult <= 0) throw new Error("config.yaml: vwapBandAtrMult must be > 0");
+  if (cfg.swingTargetRail !== "vwap" && cfg.swingTargetRail !== "upper") {
+    throw new Error('config.yaml: swingTargetRail must be "vwap" or "upper"');
+  }
 }
 
 export function loadConfig(): Config {
@@ -53,6 +96,9 @@ export function loadConfig(): Config {
   const parsed = parseYaml(raw) as Partial<Config>;
   const cfg: Config = { ...DEFAULTS, ...parsed };
   cfg.symbol = (cfg.symbol ?? "").toUpperCase();
+  cfg.symbols = normalizeSymbols(parsed.symbols, cfg.symbol);
+  // Keep the legacy scalar in sync so downstream code that still reads it works.
+  cfg.symbol = cfg.symbols[0] ?? "";
   validate(cfg);
   _cfg = cfg;
   return cfg;

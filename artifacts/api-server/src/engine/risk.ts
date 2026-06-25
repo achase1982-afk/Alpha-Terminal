@@ -17,8 +17,9 @@ export function canEnter(
     return [false, `cooldown until ${risk.cooldownUntil.toLocaleTimeString("en-US", { timeZone: "America/New_York" })} ET`];
   if (risk.tradesToday >= cfg.tradesPerDay)
     return [false, `max ${cfg.tradesPerDay} trades/day reached`];
-  if (risk.symbolsTradedToday.includes(signal.symbol))
-    return [false, `${signal.symbol} already traded today`];
+  // Note: no "already traded this symbol today" guard — the swing engine is
+  // continuous and re-enters the same symbol many times. The open-position
+  // check below enforces at most one position per symbol at a time.
   if (risk.lossStreak >= cfg.lossStreakLimit)
     return [false, `loss streak ${risk.lossStreak}/${cfg.lossStreakLimit}`];
   if (pos && !pos.isFlat)

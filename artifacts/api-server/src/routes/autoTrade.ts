@@ -58,8 +58,13 @@ router.post("/start", async (req, res) => {
       return res.status(400).json({ error: "no_tickers" });
     }
     await saveAutoTradeConfig(userId, { enabled: true });
-    // Bridge DB config into config.yaml so the deterministic engine picks it up
-    writeConfigPatch({ symbol: config.tickers[0], accountHash: config.accountHash });
+    // Bridge DB config into config.yaml so the deterministic engine picks it up.
+    // Forward the FULL ticker list — the swing engine runs each symbol independently.
+    writeConfigPatch({
+      symbol: config.tickers[0],
+      symbols: config.tickers,
+      accountHash: config.accountHash,
+    });
     startEngine();
     return res.json({ ok: true, engine: engineStatus() });
   } catch (err) {
