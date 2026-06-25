@@ -44,19 +44,19 @@ router.put("/config", async (req, res) => {
 });
 
 router.post("/start", async (req, res) => {
-  const userId = portfolioPrefsUserId(req);
-  const token = getTokens("trader")?.accessToken;
-  if (!token) {
-    return res.status(401).json({ error: "no_trader_token" });
-  }
-  const config = await getAutoTradeConfig(userId);
-  if (!config.accountHash) {
-    return res.status(400).json({ error: "no_account_selected" });
-  }
-  if (!config.tickers.length) {
-    return res.status(400).json({ error: "no_tickers" });
-  }
   try {
+    const userId = portfolioPrefsUserId(req);
+    const token = getTokens("trader")?.accessToken;
+    if (!token) {
+      return res.status(401).json({ error: "no_trader_token" });
+    }
+    const config = await getAutoTradeConfig(userId);
+    if (!config.accountHash) {
+      return res.status(400).json({ error: "no_account_selected" });
+    }
+    if (!config.tickers.length) {
+      return res.status(400).json({ error: "no_tickers" });
+    }
     await saveAutoTradeConfig(userId, { enabled: true });
     // Bridge DB config into config.yaml so the deterministic engine picks it up
     writeConfigPatch({ symbol: config.tickers[0], accountHash: config.accountHash });
@@ -64,7 +64,7 @@ router.post("/start", async (req, res) => {
     return res.json({ ok: true, engine: engineStatus() });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    logger.error({ err, userId }, "autoTrade start failed");
+    logger.error({ err }, "autoTrade start failed");
     return res.status(500).json({ error: "start_failed", detail: msg });
   }
 });
