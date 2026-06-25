@@ -123,6 +123,15 @@ async function checkCancelTimeout(): Promise<void> {
   await cancelOrder(state.pendingEntryOrderId, cfg);
   state.pendingEntryOrderId = null;
   state.pendingEntryAt      = null;
+
+  // The entry limit never filled, so the position we optimistically recorded
+  // when placing the bracket never actually opened. Roll that state back:
+  //  - clear the phantom position so the 15:55 time-stop doesn't fire a SELL
+  //    MARKET for shares we never bought (an accidental short in live mode);
+  //  - re-arm the strategy so it can take the next valid signal — no trade
+  //    occurred, so this entry should not lock out the rest of the day.
+  state.position     = null;
+  state.enteredToday = false;
   broadcastEngine();
 }
 
