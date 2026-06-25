@@ -109,7 +109,8 @@ function isMarketOpen(): boolean {
 
 // ── Cancel-timeout: cancel entry limit if unfilled after N seconds ────────────
 
-async function checkCancelTimeout(): Promise<void> {
+/** Exported for tests. */
+export async function checkCancelTimeout(): Promise<void> {
   const cfg = getConfig();
   if (!state.pendingEntryOrderId || !state.pendingEntryAt) return;
   const elapsed = (Date.now() - state.pendingEntryAt) / 1000;
