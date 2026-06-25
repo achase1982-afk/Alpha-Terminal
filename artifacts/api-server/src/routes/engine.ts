@@ -49,10 +49,10 @@ router.get("/signals", (_req, res) => {
 
 /**
  * POST /engine/control
- * Body: { action: "start" | "stop" | "kill" | "setMode", mode?: "shadow" | "live" }
+ * Body: { action: "start" | "stop" | "kill" }
  */
 router.post("/control", async (req, res) => {
-  const { action, mode } = req.body as { action?: string; mode?: string };
+  const { action } = req.body as { action?: string };
 
   try {
     switch (action) {
@@ -67,13 +67,6 @@ router.post("/control", async (req, res) => {
       case "kill":
         stopEngine();
         return res.json({ ok: true, killed: true });
-
-      case "setMode":
-        if (mode !== "shadow" && mode !== "live") {
-          return res.status(400).json({ error: "mode must be shadow or live" });
-        }
-        writeConfigPatch({ runMode: mode });
-        return res.json({ ok: true, runMode: mode });
 
       default:
         return res.status(400).json({ error: `unknown action: ${action}` });

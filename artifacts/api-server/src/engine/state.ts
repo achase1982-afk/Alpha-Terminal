@@ -9,7 +9,6 @@ import type {
   EngineStatus,
   SymbolStatus,
   Features,
-  RunMode,
 } from "./types.js";
 
 /** Per-symbol live state. The engine runs one of these for each configured symbol. */
@@ -30,7 +29,6 @@ export interface SymbolState {
 export interface EngineState {
   running: boolean;
   startedAt: Date | null;
-  runMode: RunMode;
   dayKey: string; // "YYYY-MM-DD" in ET — reset triggers at day boundary
 
   /** symbol → per-symbol state */
@@ -58,7 +56,6 @@ export function newSymbolState(symbol: string): SymbolState {
 export const state: EngineState = {
   running: false,
   startedAt: null,
-  runMode: "shadow",
   dayKey: "",
 
   symbols: new Map(),
@@ -95,7 +92,6 @@ export function toEngineStatus(): EngineStatus {
   const first = symbols[0];
   return {
     running: state.running,
-    runMode: state.runMode,
     setup: "swing", // overwritten by index.ts with cfg.setup
     symbols,
     riskState: { ...state.riskState },

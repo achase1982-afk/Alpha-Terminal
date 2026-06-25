@@ -13,7 +13,7 @@ vi.mock("../../lib/tokenStore.js", () => ({ getTokens: vi.fn(() => null) }));
 import { applyReconciliation, type BrokerPosition, type BrokerOrder } from "../reconcile.js";
 import { state, newSymbolState } from "../state.js";
 
-const CFG = { runMode: "live", accountHash: "H", lossStreakLimit: 3, cooldownMinutes: 60, tradesPerDay: 40 } as unknown as Config;
+const CFG = { accountHash: "H", lossStreakLimit: 3, cooldownMinutes: 60, tradesPerDay: 40 } as unknown as Config;
 
 function seedSymbol(sym: string) {
   const s = newSymbolState(sym);

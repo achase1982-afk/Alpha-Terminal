@@ -39,7 +39,6 @@ const TEST_CONFIG: Config = {
   cooldownMinutes: 60,
   tradesPerDay: 40,
   enableShorts: false,
-  runMode: "shadow",
   cancelTimeoutSeconds: 30,
   timeStop: "15:55",
   startingEquity: 1000,
