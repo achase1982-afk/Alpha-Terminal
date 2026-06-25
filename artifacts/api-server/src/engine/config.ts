@@ -43,7 +43,6 @@ const DEFAULTS: Config = {
   enableShorts: false,
 
   // Execution
-  runMode: "shadow",
   cancelTimeoutSeconds: 30,
   timeStop: "15:55",
   startingEquity: 1000,
@@ -69,8 +68,8 @@ function normalizeSymbols(value: unknown, legacySymbol: string): string[] {
 
 function validate(cfg: Config): void {
   if (!cfg.symbols.length) throw new Error("config.yaml: at least one symbol is required");
-  if (cfg.runMode === "live" && !cfg.accountHash) {
-    throw new Error("config.yaml: accountHash is required for live mode");
+  if (!cfg.accountHash) {
+    throw new Error("config.yaml: accountHash is required (the engine places real orders)");
   }
   if (cfg.setup !== "orb" && cfg.setup !== "swing") {
     throw new Error('config.yaml: setup must be "orb" or "swing"');
@@ -81,9 +80,6 @@ function validate(cfg: Config): void {
   }
   if (cfg.stopMode !== "or_low" && cfg.stopMode !== "atr") {
     throw new Error('config.yaml: stopMode must be "or_low" or "atr"');
-  }
-  if (cfg.runMode !== "shadow" && cfg.runMode !== "live") {
-    throw new Error('config.yaml: runMode must be "shadow" or "live"');
   }
   if (cfg.vwapBandAtrMult <= 0) throw new Error("config.yaml: vwapBandAtrMult must be > 0");
   if (cfg.swingTargetRail !== "vwap" && cfg.swingTargetRail !== "upper") {

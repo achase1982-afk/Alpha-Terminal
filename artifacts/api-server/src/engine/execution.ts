@@ -1,7 +1,6 @@
 /**
  * Schwab bracket / OCO order execution.
- * Shadow mode: logs everything, places nothing.
- * Live mode:   POST TRIGGER + OCO to Schwab Trader API.
+ * Always live: POST TRIGGER + OCO to the Schwab Trader API.
  */
 import { getTokens } from "../lib/tokenStore.js";
 import { logger } from "../lib/logger.js";
@@ -13,7 +12,6 @@ export interface BracketResult {
   ok: boolean;
   entryOrderId: string | null;
   error?: string;
-  shadow: boolean;
 }
 
 function buildBracketOrder(signal: Signal, qty: number): Record<string, unknown> {
@@ -57,17 +55,9 @@ function buildBracketOrder(signal: Signal, qty: number): Record<string, unknown>
 export async function placeBracket(signal: Signal, cfg: Config): Promise<BracketResult> {
   const order = buildBracketOrder(signal, signal.size);
 
-  if (cfg.runMode !== "live") {
-    logger.info(
-      { symbol: signal.symbol, entry: signal.entryPrice, stop: signal.stopPrice, target: signal.targetPrice, size: signal.size },
-      "[engine:shadow] bracket order NOT placed",
-    );
-    return { ok: true, entryOrderId: null, shadow: true };
-  }
-
   const token = getTokens("trader")?.accessToken;
-  if (!token)   return { ok: false, entryOrderId: null, error: "no_trader_token", shadow: false };
-  if (!cfg.accountHash) return { ok: false, entryOrderId: null, error: "no_account_hash", shadow: false };
+  if (!token)   return { ok: false, entryOrderId: null, error: "no_trader_token" };
+  if (!cfg.accountHash) return { ok: false, entryOrderId: null, error: "no_account_hash" };
 
   try {
     const res = await fetch(`${SCHWAB_TRADER_BASE}/accounts/${cfg.accountHash}/orders`, {
@@ -79,7 +69,7 @@ export async function placeBracket(signal: Signal, cfg: Config): Promise<Bracket
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       logger.error({ status: res.status, body: body.slice(0, 300), symbol: signal.symbol }, "[engine] bracket order rejected");
-      return { ok: false, entryOrderId: null, error: body.slice(0, 200) || `http_${res.status}`, shadow: false };
+      return { ok: false, entryOrderId: null, error: body.slice(0, 200) || `http_${res.status}` };
     }
 
     const location = res.headers.get("location") ?? "";
@@ -90,15 +80,14 @@ export async function placeBracket(signal: Signal, cfg: Config): Promise<Bracket
       { symbol: signal.symbol, entryOrderId, entry: signal.entryPrice, stop: signal.stopPrice, target: signal.targetPrice },
       "[engine:live] bracket order placed",
     );
-    return { ok: true, entryOrderId, shadow: false };
+    return { ok: true, entryOrderId };
   } catch (err) {
     logger.error({ err, symbol: signal.symbol }, "[engine] bracket order error");
-    return { ok: false, entryOrderId: null, error: "network_error", shadow: false };
+    return { ok: false, entryOrderId: null, error: "network_error" };
   }
 }
 
 export async function cancelOrder(orderId: string, cfg: Config): Promise<boolean> {
-  if (cfg.runMode !== "live") return true;
   const token = getTokens("trader")?.accessToken;
   if (!token || !cfg.accountHash) return false;
   try {
@@ -113,10 +102,6 @@ export async function cancelOrder(orderId: string, cfg: Config): Promise<boolean
 }
 
 export async function flattenPosition(symbol: string, qty: number, cfg: Config): Promise<boolean> {
-  if (cfg.runMode !== "live") {
-    logger.info({ symbol, qty }, "[engine:shadow] flatten NOT placed");
-    return true;
-  }
   const token = getTokens("trader")?.accessToken;
   if (!token || !cfg.accountHash) return false;
   try {

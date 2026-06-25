@@ -7,9 +7,10 @@
  *  2. Recompute the full feature set (bar shape, VWAP rails, RVOL vs the
  *     historical volume profile, RSI/EMA/ATR, day-range position, spread)
  *  3. Cancel-timeout: drop an unfilled entry limit and roll back its position
- *  4. Manage the open position: detect target/stop touches → exit + log P&L
+ *  4. Manage the open position: the broker's OCO bracket exits for real and
+ *     reconcileAccount() syncs engine state to broker truth
  *  5. If flat: evaluate the active setup (swing by default) → risk guards →
- *     place a bracket order (paper/shadow or live)
+ *     place a live Schwab bracket order
  *  6. Log the evaluation and broadcast status to the React dashboard via WS
  *
  * Holds at most one position per symbol at a time; re-enters continuously
@@ -40,7 +41,7 @@ let _barTimer: ReturnType<typeof setInterval> | null = null;
 let _timeStopTimer: ReturnType<typeof setInterval> | null = null;
 let _reconcileTimer: ReturnType<typeof setInterval> | null = null;
 
-/** Broker reconciliation cadence (live mode only). */
+/** Broker reconciliation cadence. */
 const RECONCILE_INTERVAL_MS = 15_000;
 
 // ── Bar conversion ────────────────────────────────────────────────────────────
@@ -138,7 +139,7 @@ function recordExit(s: SymbolState, exitPrice: number, reason: ExitReason, cfg: 
 
   try {
     logExit({
-      entryOrderId: s.pendingEntryOrderId ?? "shadow",
+      entryOrderId: s.pendingEntryOrderId ?? "unknown",
       exitOrderId: reason === "TIME_STOP" ? "time-stop" : "bracket-oco",
       symbol: pos.symbol,
       entryPrice: pos.avgPrice,
@@ -159,25 +160,6 @@ function recordExit(s: SymbolState, exitPrice: number, reason: ExitReason, cfg: 
   s.pendingEntryOrderId = null;
   s.pendingEntryAt = null;
   s.pendingSignal = null;
-}
-
-/**
- * Detect whether the latest bar touched the stop or target. In shadow this IS
- * the exit; in live the broker's OCO does the real exit and we mirror it locally
- * so the symbol re-arms. Stop is checked first (conservative on an inside bar).
- */
-function manageOpenPosition(s: SymbolState, latest: Bar, cfg: Config): boolean {
-  const pos = s.position;
-  if (!pos || pos.isFlat) return false;
-  if (latest.low <= pos.stopPrice) {
-    recordExit(s, pos.stopPrice, "STOP_HIT", cfg);
-    return true;
-  }
-  if (latest.high >= pos.targetPrice) {
-    recordExit(s, pos.targetPrice, "TARGET_HIT", cfg);
-    return true;
-  }
-  return false;
 }
 
 // ── Time-stop: flatten everything at/after cfg.timeStop ───────────────────────
@@ -206,15 +188,12 @@ async function checkTimeStop(): Promise<void> {
 
 function broadcastEngine(): void {
   let setup: Config["setup"] = "swing";
-  let runMode = state.runMode;
   try {
-    const cfg = getConfig();
-    setup = cfg.setup;
-    runMode = cfg.runMode;
+    setup = getConfig().setup;
   } catch {
     /* config not loaded yet */
   }
-  broadcastToClients("engineStatus", { ...toEngineStatus(), setup, runMode });
+  broadcastToClients("engineStatus", { ...toEngineStatus(), setup });
 }
 
 // ── Per-symbol processing ─────────────────────────────────────────────────────
@@ -244,14 +223,9 @@ async function processSymbol(s: SymbolState, cfg: Config): Promise<void> {
   );
   const f = s.features;
 
-  // 4. Manage an open position.
-  //    Shadow (paper): infer exits from bar touches — there is no broker.
-  //    Live: the bracket OCO exits at the broker and reconcileAccount() is the
-  //    source of truth, so we do NOT guess exits from bars here.
-  if (cfg.runMode !== "live" && manageOpenPosition(s, latest, cfg)) {
-    broadcastEngine();
-    return; // exited this tick — re-arm next tick
-  }
+  // 4. Manage an open position. The bracket OCO exits at the broker and
+  //    reconcileAccount() is the source of truth, so we do NOT guess exits
+  //    from bars here.
   if (s.position && !s.position.isFlat) {
     // Still holding — nothing to do until an exit or the time-stop.
     logEvaluation({ symbol: s.symbol, action: "HOLD", reason: "position open", last: f.last, vwap: f.vwap, lowerRail: f.lowerRail, rsi: f.rsi, volRatio: f.volRatio });
@@ -280,7 +254,7 @@ async function processSymbol(s: SymbolState, cfg: Config): Promise<void> {
 
   logger.info(
     { symbol: signal.symbol, entry: signal.entryPrice, stop: signal.stopPrice, target: signal.targetPrice, size: signal.size },
-    `[engine:${cfg.runMode}] signal — placing bracket`,
+    "[engine:live] signal — placing bracket",
   );
   logSignal(signal);
 
@@ -360,7 +334,6 @@ export function startEngine(): void {
   for (const sym of cfg.symbols) state.symbols.set(sym, newSymbolState(sym));
 
   state.running = true;
-  state.runMode = cfg.runMode;
   state.startedAt = new Date();
   state.dayKey = etDayKey();
 
@@ -375,21 +348,19 @@ export function startEngine(): void {
     });
   }
 
-  logger.info({ symbols: cfg.symbols, setup: cfg.setup, runMode: cfg.runMode }, "[engine] started");
+  logger.info({ symbols: cfg.symbols, setup: cfg.setup }, "[engine] started (live)");
 
   _barTimer = setInterval(() => void onTick(), 60_000);
   _timeStopTimer = setInterval(() => void checkTimeStop(), 10_000);
 
-  // Live mode: keep engine state pinned to broker truth on a short interval.
-  if (cfg.runMode === "live") {
-    _reconcileTimer = setInterval(() => {
-      try {
-        void reconcileAccount(getConfig());
-      } catch {
-        /* config not loaded — skip this cycle */
-      }
-    }, RECONCILE_INTERVAL_MS);
-  }
+  // Keep engine state pinned to broker truth on a short interval.
+  _reconcileTimer = setInterval(() => {
+    try {
+      void reconcileAccount(getConfig());
+    } catch {
+      /* config not loaded — skip this cycle */
+    }
+  }, RECONCILE_INTERVAL_MS);
 
   // Fire immediately so the dashboard shows state right away.
   void onTick();
@@ -408,18 +379,13 @@ export function stopEngine(): void {
 
 export function engineStatus() {
   let setup: Config["setup"] = "swing";
-  let runMode = state.runMode;
   try {
-    if (configExists()) {
-      const cfg = getConfig();
-      setup = cfg.setup;
-      runMode = cfg.runMode;
-    }
+    if (configExists()) setup = getConfig().setup;
   } catch {
     /* config.yaml exists but loadConfig() not yet called */
   }
-  return { ...toEngineStatus(), setup, runMode };
+  return { ...toEngineStatus(), setup };
 }
 
 // Exported for tests.
-export { checkCancelTimeout, manageOpenPosition, processSymbol };
+export { checkCancelTimeout, processSymbol };

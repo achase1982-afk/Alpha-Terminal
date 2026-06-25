@@ -1,10 +1,10 @@
 /**
  * Broker reconciliation — makes Schwab the source of truth for engine state.
  *
- * The engine optimistically records a position the moment it places a bracket,
- * and (in shadow) infers exits from bar touches. In LIVE mode that picture is a
- * guess until it's confirmed against the broker. This pass pulls real open
- * positions and recent orders from Schwab and forces the engine's per-symbol
+ * The engine optimistically records a position the moment it places a bracket.
+ * That picture is a guess until it's confirmed against the broker. This pass
+ * pulls real open positions and recent orders from Schwab and forces the
+ * engine's per-symbol
  * state to match reality — true entry price, true open quantity, and whether an
  * exit or a pending entry actually happened.
  *
@@ -208,12 +208,10 @@ async function fetchRecentOrders(accountHash: string, token: string): Promise<Ma
 let _reconciling = false;
 
 /**
- * Fetch broker truth and reconcile engine state. Live-mode only — in shadow
- * there is no broker, so the engine's simulated state stands. Best-effort:
+ * Fetch broker truth and reconcile engine state. Best-effort:
  * never throws into the hot loop.
  */
 export async function reconcileAccount(cfg: Config): Promise<void> {
-  if (cfg.runMode !== "live") return;
   if (_reconciling) return; // never overlap a reconcile with itself
   if (!cfg.accountHash) return;
   const token = getTokens("trader")?.accessToken;

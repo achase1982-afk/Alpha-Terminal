@@ -1,6 +1,5 @@
 /** Shared contracts that cross every engine module boundary. */
 
-export type RunMode = "shadow" | "live";
 export type Action = "BUY" | "SELL";
 export type ExitReason =
   | "TARGET_HIT"
@@ -146,8 +145,7 @@ export interface Config {
   tradesPerDay: number;
   enableShorts: boolean;
 
-  // ── Execution ──
-  runMode: RunMode;        // "shadow" = paper (default) | "live" = real orders
+  // ── Execution ── (always live — real Schwab orders)
   cancelTimeoutSeconds: number;
   timeStop: string;        // ET HH:MM — flatten all positions at/after this time
   startingEquity: number;  // account equity used for % sizing
@@ -184,7 +182,6 @@ export interface SymbolStatus {
 
 export interface EngineStatus {
   running: boolean;
-  runMode: RunMode;
   setup: SetupName;
   /** Per-symbol live state — the engine watches every configured symbol. */
   symbols: SymbolStatus[];

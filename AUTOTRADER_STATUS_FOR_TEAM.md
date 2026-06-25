@@ -1,71 +1,59 @@
-# Auto-Trader Status — Why No Trades Are Being Placed
+# Auto-Trader Status — Paper Mode Removed, Engine Is Now Always Live
 
 **Date:** 2026-06-25
 
 ## TL;DR
 
-The auto-trader is **running and evaluating symbols, but it is in paper (shadow)
-mode by design and is deliberately placing zero real orders.** Nothing has been
-wired up to go live yet. This is a configuration gate, not a crash or a bug.
+The TypeScript deterministic engine no longer has a paper/shadow mode. It has
+been **ripped out entirely** — every signal now places a real Schwab bracket
+order. There is no longer any switch, flag, or config that makes the engine
+"log only." If the engine is running and a setup fires, it trades for real.
 
-If the team was under the impression that everything was already wired up to
-trade live, that impression is wrong — and that's on me to make clear. The
-engine works; the "make it actually place real orders" switch was never
-connected.
+Previously the engine was gated by `runMode: "shadow"`, which made it evaluate
+symbols but never place orders. That gate is gone.
 
-## What's actually happening
+## What changed
 
-- `config.yaml` has `runMode: "shadow"`.
-- The "Start" button in the UI turns the engine **on**, but it never changes
-  `runMode`. There is no paper/live toggle exposed anywhere in the UI.
-- In shadow mode, the engine runs the full loop — it pulls data, evaluates
-  MARA / SOFI, and finds (or rejects) setups — but the order-placement code
-  intentionally short-circuits and returns without sending anything to Schwab.
-- Therefore: real trades will **not** be placed until `runMode` is set to
-  `"live"`. No amount of clicking "Start" changes that.
+- Removed the `runMode` / `RunMode` concept from the engine entirely
+  (`types.ts`, `state.ts`, `config.ts`, `index.ts`, `execution.ts`,
+  `reconcile.ts`, `routes/engine.ts`).
+- `execution.ts` no longer short-circuits — `placeBracket`, `cancelOrder`, and
+  `flattenPosition` always hit the Schwab Trader API.
+- Removed the bar-touch "simulated exit" path (`manageOpenPosition`). In live
+  trading the broker's OCO bracket performs the real exit and the 15s broker
+  reconciliation (`reconcile.ts`) syncs engine state to broker truth.
+- Broker reconciliation now runs unconditionally (it was previously live-only).
+- Removed the `setMode` control endpoint.
+- Removed `runMode` from `config.yaml`.
 
-## What got delivered (PR #593, merged)
+## One requirement to actually trade
 
-For context, the recent work did ship real functionality to the deterministic
-engine — it just stopped short of being live-capable from the UI:
+`accountHash` **must be set** in `config.yaml`. Config validation now fails fast
+on startup if it's missing — because there's no paper fallback anymore, a missing
+account hash is a hard error rather than a silent "log only."
 
-1. **Cancel-timeout fix** — prevented a phantom-position bug that could cause an
-   accidental short at the 15:55 flatten and lock the strategy out for the day.
-2. **Swing engine conversion** — converted the old ORB logic into a continuous
-   multi-symbol swing engine with real features (bar shape, volume ratio, VWAP
-   distance, RSI/EMA/trend, etc.).
-3. **Real RVOL baseline** — fixed the RVOL-pinned-at-1.0 bug that was silently
-   blocking all entries.
-4. **Broker reconciliation** — makes Schwab the source of truth in live mode
-   (partial fills, bracket exits, rejected/adopted positions).
+A valid Schwab trader token must also be present (same as before).
 
-All of that is real and tested. The missing piece is purely the live/paper
-switch and the ability to control it.
+## Safety guards still in place
 
-## Options to actually go live
+Removing paper mode did **not** remove the risk controls. These still apply:
 
-Pick one:
+- Daily loss halt (`dailyLossHaltPct`, default 3% of equity).
+- Loss-streak halt + cooldown (`lossStreakLimit`, `cooldownMinutes`).
+- Max trades per day (`tradesPerDay`).
+- Per-trade and max position sizing (`riskPerTradePct`, `maxPositionSizePct`).
+- Cancel-timeout on unfilled entries, with position rollback.
+- Time-stop flatten (`timeStop`, default 15:55 ET).
 
-1. **(Recommended) Wire a paper/live toggle into the auto-trade config + UI.**
-   So "turn on the trader" can actually go live, with the current mode shown on
-   the dashboard. Right now you cannot go live from the UI at all.
+## Verification
 
-2. **Flip `config.yaml` to `live` and redeploy.**
-   Fastest path, but there are no guardrails, and it puts real money on the very
-   first trades. Note exit fill prices are still approximated (last known price,
-   not parsed execution legs).
+- `tsc --noEmit` clean.
+- All 18 engine tests pass (swing setup, cancel-timeout, reconciliation).
 
-3. **Add a `/auto-trade/evaluations` readout first.**
-   So you can watch the per-symbol decision reasons (`"no setup"`,
-   `"position open"`, `"BLOCK …"`) and confirm the engine is evaluating and
-   finding setups *before* you risk anything.
+## Note on the legacy Python auto-trader
 
-**My honest recommendation:** do #1, and ideally #3 alongside it, so you can
-verify it's finding setups in paper mode before going live. #2 works but is the
-riskiest.
-
-## Known follow-ups / caveats
-
-- `runMode` defaults to `shadow` and is not controllable from the UI.
-- Reconciled/bracket exits approximate the exit fill price rather than parsing
-  execution legs.
+There is a separate, older Python system under `autotrader/` (`run.py`, `src/`)
+that still has its own `shadow_mode` and an interactive "type 'go live'"
+confirmation. It is **not** the system that places (or placed) orders for the
+live engine and was left structurally intact. If we want that one stripped to
+live-only as well, that's a separate change — say the word.

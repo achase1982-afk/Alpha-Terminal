@@ -6,7 +6,7 @@
 symbol: ""           # Legacy single-symbol field (kept = symbols[0]); optional.
 symbols: []          # Watch list — the engine runs each symbol independently.
                      #   e.g.  symbols: ["AAPL", "MSFT", "NVDA"]
-accountHash: ""      # Schwab account hash — required for live mode. Never auto-resolved.
+accountHash: ""      # Schwab account hash — REQUIRED. The engine places real orders. Never auto-resolved.
 setup: "swing"       # Active strategy: "swing" (continuous) | "orb" (legacy breakout).
 
 # ── Swing setup ───────────────────────────────────────────────────────────────
@@ -43,7 +43,7 @@ tradesPerDay: 40             # Max trades/day across all symbols (continuous swi
 enableShorts: false          # Short selling — not yet implemented (long-only).
 
 # ── Execution ─────────────────────────────────────────────────────────────────
-runMode: "shadow"            # "shadow" = paper (log only, no orders) | "live" = real orders.
+# The engine is always live — every signal places a real Schwab bracket order.
 cancelTimeoutSeconds: 30     # Cancel an unfilled entry limit after this many seconds.
 timeStop: "15:55"            # Flatten all positions at/after this ET time.
 
