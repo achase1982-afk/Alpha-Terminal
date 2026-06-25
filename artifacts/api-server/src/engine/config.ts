@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { Config } from "./types.js";
 
 const CONFIG_PATH = path.resolve(process.cwd(), "config.yaml");
@@ -84,7 +84,6 @@ export function readRawConfig(): Record<string, unknown> {
 export function writeConfigPatch(patch: Record<string, unknown>): void {
   const existing = readRawConfig();
   const updated = { ...existing, ...patch };
-  const { stringify } = require("yaml") as typeof import("yaml");
-  fs.writeFileSync(CONFIG_PATH, stringify(updated), "utf8");
+  fs.writeFileSync(CONFIG_PATH, stringifyYaml(updated), "utf8");
   _cfg = null; // force reload on next getConfig()
 }
