@@ -99,6 +99,7 @@ export function AutoTraderSettingsPage() {
   const defaultTradingAccountHash = useSchwabAccountStore((s) => s.defaultTradingAccountHash);
 
   const [config, setConfig] = useState<AutoTradeConfig | null>(null);
+  const [engineRunning, setEngineRunning] = useState(false);
   const [decisions, setDecisions] = useState<DecisionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -114,8 +115,9 @@ export function AutoTraderSettingsPage() {
     try {
       const res = await fetchWithAuth("/api/auto-trade/config");
       if (res.ok) {
-        const data = (await res.json()) as { config: AutoTradeConfig };
+        const data = (await res.json()) as { config: AutoTradeConfig; engine?: { running?: boolean } };
         setConfig(data.config);
+        setEngineRunning(data.engine?.running ?? false);
         setNums({
           totalBudget: String(data.config.totalBudget),
           maxPerTrade: String(data.config.maxPerTrade),
@@ -153,13 +155,13 @@ export function AutoTraderSettingsPage() {
 
   // Poll while running.
   useEffect(() => {
-    if (!config?.running) return;
+    if (!engineRunning) return;
     const id = setInterval(() => {
       void refreshConfig();
       void refreshDecisions();
     }, 10_000);
     return () => clearInterval(id);
-  }, [config?.running, refreshConfig, refreshDecisions]);
+  }, [engineRunning, refreshConfig, refreshDecisions]);
 
   // Debounced save for number inputs.
   const debouncedSave = useCallback((patch: Partial<AutoTradeConfig>) => {
@@ -238,7 +240,7 @@ export function AutoTraderSettingsPage() {
     );
   }
 
-  const running = config.running;
+  const running = engineRunning;
   const placedToday = decisions.filter((d) => d.placed).length;
   const validAccounts = accounts.filter((a) => a.hashValue);
 
