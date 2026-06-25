@@ -32,11 +32,16 @@ import {
   type SchwabChartEquityBarPoint,
 } from "../lib/schwabStreamer.js";
 import { buildVolumeProfile } from "./volumeProfile.js";
+import { reconcileAccount } from "./reconcile.js";
 import type { Bar, Signal, Config, ExitReason } from "./types.js";
 
 // ── Module-private timers ────────────────────────────────────────────────────
 let _barTimer: ReturnType<typeof setInterval> | null = null;
 let _timeStopTimer: ReturnType<typeof setInterval> | null = null;
+let _reconcileTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Broker reconciliation cadence (live mode only). */
+const RECONCILE_INTERVAL_MS = 15_000;
 
 // ── Bar conversion ────────────────────────────────────────────────────────────
 
@@ -239,8 +244,11 @@ async function processSymbol(s: SymbolState, cfg: Config): Promise<void> {
   );
   const f = s.features;
 
-  // 4. Manage an open position (exit on target/stop touch).
-  if (manageOpenPosition(s, latest, cfg)) {
+  // 4. Manage an open position.
+  //    Shadow (paper): infer exits from bar touches — there is no broker.
+  //    Live: the bracket OCO exits at the broker and reconcileAccount() is the
+  //    source of truth, so we do NOT guess exits from bars here.
+  if (cfg.runMode !== "live" && manageOpenPosition(s, latest, cfg)) {
     broadcastEngine();
     return; // exited this tick — re-arm next tick
   }
@@ -290,6 +298,9 @@ async function processSymbol(s: SymbolState, cfg: Config): Promise<void> {
     if (result.entryOrderId) {
       s.pendingEntryOrderId = result.entryOrderId;
       s.pendingEntryAt = Date.now();
+      // Reconcile shortly after placing a live order so a quick reject/fill is
+      // caught against the broker rather than assumed (on-order-event trigger).
+      void reconcileAccount(cfg);
     }
   } else {
     logger.error({ error: result.error, symbol: signal.symbol }, "[engine] bracket placement failed");
@@ -369,6 +380,17 @@ export function startEngine(): void {
   _barTimer = setInterval(() => void onTick(), 60_000);
   _timeStopTimer = setInterval(() => void checkTimeStop(), 10_000);
 
+  // Live mode: keep engine state pinned to broker truth on a short interval.
+  if (cfg.runMode === "live") {
+    _reconcileTimer = setInterval(() => {
+      try {
+        void reconcileAccount(getConfig());
+      } catch {
+        /* config not loaded — skip this cycle */
+      }
+    }, RECONCILE_INTERVAL_MS);
+  }
+
   // Fire immediately so the dashboard shows state right away.
   void onTick();
 
@@ -378,6 +400,7 @@ export function startEngine(): void {
 export function stopEngine(): void {
   if (_barTimer) { clearInterval(_barTimer); _barTimer = null; }
   if (_timeStopTimer) { clearInterval(_timeStopTimer); _timeStopTimer = null; }
+  if (_reconcileTimer) { clearInterval(_reconcileTimer); _reconcileTimer = null; }
   state.running = false;
   logger.info("[engine] stopped");
   broadcastEngine();

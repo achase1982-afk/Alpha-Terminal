@@ -7,7 +7,8 @@ export type ExitReason =
   | "STOP_HIT"
   | "TIME_STOP"
   | "RISK_HALT"
-  | "KILL_SWITCH";
+  | "KILL_SWITCH"
+  | "RECONCILED"; // broker showed the position closed; engine corrected to match
 
 export interface Bar {
   timestamp: Date;

@@ -71,6 +71,10 @@ vi.mock("../volumeProfile.js", () => ({
   buildVolumeProfile: vi.fn(async () => new Map()),
 }));
 
+vi.mock("../reconcile.js", () => ({
+  reconcileAccount: vi.fn(async () => {}),
+}));
+
 vi.mock("../../lib/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
