@@ -295,5 +295,11 @@ export function stopEngine(): void {
 
 export function engineStatus() {
   const status = toEngineStatus();
-  return { ...status, runMode: configExists() ? getConfig().runMode : "shadow" };
+  let runMode = "shadow";
+  try {
+    if (configExists()) runMode = getConfig().runMode;
+  } catch {
+    // config.yaml exists but loadConfig() not yet called — defaults to shadow
+  }
+  return { ...status, runMode };
 }
