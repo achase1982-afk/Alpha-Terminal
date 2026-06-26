@@ -86,8 +86,13 @@ export interface Position {
   quantity: number;
   avgPrice: number;
   stopPrice: number;
-  targetPrice: number;
+  targetPrice: number;       // 0 = no fixed target (momentum uses a trailing stop)
   isFlat: boolean;
+  // ── Trailing-stop / management state ──
+  highWaterMark?: number;    // highest high seen since entry (drives the trail)
+  entryAt?: number;          // epoch ms of entry (for minutes-held)
+  stopOrderId?: string | null; // broker order id of the resting protective stop
+  thesis?: string;           // entry rationale (LLM thesis / momentum reason)
 }
 
 export interface AccountState {
@@ -108,12 +113,19 @@ export interface RiskState {
 
 export type SetupName = "orb" | "swing";
 
+/** Which auto-trader engine START launches. */
+export type EngineKind = "deterministic" | "llm";
+
 export interface Config {
   // ── Symbols & account ──
   symbol: string;          // legacy single-symbol field (kept = symbols[0])
   symbols: string[];       // full watch list — the engine runs each independently
   accountHash: string;
   setup: SetupName;        // active strategy ("swing" by default)
+
+  // ── Engine selection ──
+  engine: EngineKind;      // "deterministic" (momentum) | "llm"
+  modelId: string;         // model used when engine === "llm"
 
   // ── Opening range (legacy ORB setup) ──
   orWindowMinutes: number;
@@ -123,33 +135,46 @@ export interface Config {
   rTarget: number;
   minTargetOverSpread: number;
 
-  // ── Swing setup ──
-  bodyAvgWindow: number;            // rolling window for body averaging
-  volAvgWindow: number;             // trailing N-bar window for volume averaging
-  directionLookback: number;        // K bars for short-term direction read
-  vwapBandAtrMult: number;          // rail = VWAP ± (this × ATR)
-  belowVwapStretchThreshold: number; // 0–1: how far toward the lower rail price must stretch
-  volDryingThreshold: number;       // legacy (unused by the confirmation entry)
-  reversalVolRatioMin: number;      // turn-bar must trade ≥ this × its avg volume (real demand)
-  rsiEntryMin: number;              // entry RSI lower gate
-  rsiEntryMax: number;              // entry RSI upper gate
-  swingTargetRail: "vwap" | "upper"; // take profit back to VWAP or the upper rail
-  stopBelowRailAtrMult: number;     // hard stop = reversal-bar low − (this × ATR)
+  // ── Momentum setup (active "swing" strategy) ──
+  breakoutLookback: number;         // N-bar high that price must break above to enter
+  momVolRatioMin: number;           // entry bar volume ≥ this × trailing avg
+  momRvolMin: number;               // cumulative RVOL ≥ this
+  momRsiMin: number;                // entry RSI lower gate (strength band)
+  momRsiMax: number;                // entry RSI upper gate (avoid blow-off top)
+  momStopAtrMult: number;           // stop floor = entry − (this × ATR)
+  momTrailAtrMult: number;          // trail = price − (this × ATR) on each new high
   volumeProfileLookbackDays: number; // sessions of history for the RVOL baseline
 
-  // ── Risk / sizing ──
-  dailyLossHaltPct: number;
-  riskPerTradePct: number;
-  maxPositionSizePct: number;
+  // ── Legacy swing knobs (unused by momentum; kept for the ORB setup / back-compat) ──
+  bodyAvgWindow: number;
+  volAvgWindow: number;
+  directionLookback: number;
+  vwapBandAtrMult: number;
+  belowVwapStretchThreshold: number;
+  volDryingThreshold: number;
+  reversalVolRatioMin: number;
+  rsiEntryMin: number;
+  rsiEntryMax: number;
+  swingTargetRail: "vwap" | "upper";
+  stopBelowRailAtrMult: number;
+
+  // ── Dollar risk (operative controls for both engines) ──
+  totalBudget: number;     // hard ceiling on total open exposure across all positions
+  maxPerTrade: number;     // max notional per single entry
+  dailyMaxLoss: number;    // halt the session when realized P/L drops by this many $
+  pollIntervalSec: number; // per-symbol evaluation cadence
   lossStreakLimit: number;
   cooldownMinutes: number;
   tradesPerDay: number;
   enableShorts: boolean;
 
+  // ── Session controls ──
+  enableExtendedHours: boolean; // 7AM–8PM ET via LIMIT orders
+  flattenAtClose: boolean;      // market-close all open positions at 3:50 PM ET
+
   // ── Execution ── (always live — real Schwab orders)
   cancelTimeoutSeconds: number;
   timeStop: string;        // ET HH:MM — flatten all positions at/after this time
-  startingEquity: number;  // account equity used for % sizing
   logDb: string;
 }
 
@@ -184,6 +209,8 @@ export interface SymbolStatus {
 export interface EngineStatus {
   running: boolean;
   setup: SetupName;
+  /** Which engine is currently active (null when idle). */
+  activeEngine: EngineKind | null;
   /** Per-symbol live state — the engine watches every configured symbol. */
   symbols: SymbolStatus[];
   riskState: RiskState;

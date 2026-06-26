@@ -1,27 +1,41 @@
-# ── Swing Engine Configuration ────────────────────────────────────────────────
-# Single source of truth for the deterministic TypeScript trading engine.
-# No code changes needed to tune the strategy — edit here and restart.
+# ── Auto-Trader Engine Configuration ──────────────────────────────────────────
+# Single source of truth for the live TypeScript trading engine.
+# Most of these are bridged from the Auto Trader UI on START (hot-reloaded).
 
 # ── Symbols & account ─────────────────────────────────────────────────────────
 symbol: ""           # Legacy single-symbol field (kept = symbols[0]); optional.
 symbols: []          # Watch list — the engine runs each symbol independently.
                      #   e.g.  symbols: ["AAPL", "MSFT", "NVDA"]
 accountHash: ""      # Schwab account hash — REQUIRED. The engine places real orders. Never auto-resolved.
-setup: "swing"       # Active strategy: "swing" (continuous) | "orb" (legacy breakout).
+setup: "swing"       # Deterministic strategy family: "swing" (momentum) | "orb" (legacy breakout).
 
-# ── Swing setup ───────────────────────────────────────────────────────────────
-bodyAvgWindow: 10            # Rolling window for body averaging (bars).
-volAvgWindow: 20             # Trailing window for volume averaging (bars).
-directionLookback: 5         # Bars used for the short-term direction read.
-vwapBandAtrMult: 2.0         # Range rails = VWAP ± (this × ATR).
-belowVwapStretchThreshold: 0.6  # 0–1: how far toward the lower rail price must stretch to qualify.
-volDryingThreshold: 1.0      # Legacy — unused by the confirmation entry (kept for back-compat).
-reversalVolRatioMin: 1.2     # Turn-bar must trade ≥ this × its avg volume — confirms real demand, not a fake bounce.
-rsiEntryMin: 25              # Entry RSI lower gate.
-rsiEntryMax: 55              # Entry RSI upper gate.
-swingTargetRail: "vwap"      # Take profit toward "vwap" or the "upper" rail.
-stopBelowRailAtrMult: 0.5    # Hard stop = reversal-bar low − (this × ATR).
+# ── Engine selection ──────────────────────────────────────────────────────────
+engine: "deterministic"   # "deterministic" (rule-based momentum) | "llm" (model-driven)
+modelId: "claude-opus-4-8" # Model used when engine == "llm".
+
+# ── Momentum setup (active deterministic strategy) ────────────────────────────
+breakoutLookback: 10         # Enter on a break above the high of the last N bars.
+momVolRatioMin: 1.5          # Entry bar volume ≥ this × its trailing average (participation).
+momRvolMin: 1.0              # Cumulative RVOL ≥ this (real session volume vs historical baseline).
+momRsiMin: 55                # Entry RSI lower gate (strength band).
+momRsiMax: 70                # Entry RSI upper gate (avoid buying a blow-off top).
+momStopAtrMult: 1.5          # Stop floor = entry − (this × ATR). Wide enough to survive noise.
+momTrailAtrMult: 1.0         # On each new higher high, trail the stop to price − (this × ATR).
 volumeProfileLookbackDays: 20  # Sessions of history used for the RVOL baseline.
+
+# ── Dollar risk (operative controls for both engines) ─────────────────────────
+totalBudget: 1000            # Hard ceiling on total open exposure across ALL positions.
+maxPerTrade: 300             # Max notional per single entry.
+dailyMaxLoss: 100            # Halt the session when realized P/L drops by this many $. ONLY daily halt.
+pollIntervalSec: 60          # Per-symbol evaluation cadence (both engines).
+lossStreakLimit: 3           # Halt after N consecutive losses.
+cooldownMinutes: 60          # Cooldown after a loss streak.
+tradesPerDay: 40             # Max trades/day across all symbols.
+enableShorts: false          # Short selling — not implemented (long stock only).
+
+# ── Session controls ──────────────────────────────────────────────────────────
+enableExtendedHours: false   # Trade 7AM–8PM ET via LIMIT (marketable) orders.
+flattenAtClose: true         # Market-close all open positions at 3:50 PM ET.
 
 # ── Opening range (legacy ORB setup only) ─────────────────────────────────────
 orWindowMinutes: 15
@@ -31,20 +45,21 @@ atrK: 1.0
 rTarget: 1.5
 minTargetOverSpread: 3       # Target must be ≥ N × spread to be worth placing.
 
-# ── Position sizing ───────────────────────────────────────────────────────────
-startingEquity: 1000         # Account equity used for % sizing. Set to your real allocation.
-riskPerTradePct: 0.01        # Max risk per trade as % of equity (1% of $1,000 = $10).
-maxPositionSizePct: 0.20     # Max position size as % of equity (20% = $200).
-
-# ── Risk management ───────────────────────────────────────────────────────────
-dailyLossHaltPct: 0.03       # Halt if day P&L ≤ −3% of equity.
-lossStreakLimit: 3           # Halt after N consecutive losses.
-cooldownMinutes: 60          # Cooldown after a loss streak.
-tradesPerDay: 40             # Max trades/day across all symbols (continuous swing needs headroom).
-enableShorts: false          # Short selling — not yet implemented (long-only).
+# ── Legacy swing knobs (unused by momentum; kept for ORB / back-compat) ───────
+bodyAvgWindow: 10
+volAvgWindow: 20
+directionLookback: 5
+vwapBandAtrMult: 2.0
+belowVwapStretchThreshold: 0.6
+volDryingThreshold: 1.0
+reversalVolRatioMin: 1.2
+rsiEntryMin: 25
+rsiEntryMax: 55
+swingTargetRail: "vwap"
+stopBelowRailAtrMult: 0.5
 
 # ── Execution ─────────────────────────────────────────────────────────────────
-# The engine is always live — every signal places a real Schwab bracket order.
+# The engine is always live — every signal places a real Schwab order.
 cancelTimeoutSeconds: 30     # Cancel an unfilled entry limit after this many seconds.
 timeStop: "15:55"            # Flatten all positions at/after this ET time.
 

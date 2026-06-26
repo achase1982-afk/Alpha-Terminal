@@ -17,12 +17,12 @@
  * through the session. Time-stop flattens everything near the close.
  */
 import { getConfig, loadConfig, configExists } from "./config.js";
-import { state, etDayKey, toEngineStatus, newSymbolState, type SymbolState } from "./state.js";
+import { state, etDayKey, toEngineStatus, newSymbolState, openExposure, type SymbolState } from "./state.js";
 import { initFeatures, computeFeatures } from "./features.js";
 import { checkSetup } from "./setups/orb.js";
 import { checkSwingSetup } from "./setups/swing.js";
-import { canEnter, recordTrade, resetDailyRisk } from "./risk.js";
-import { placeBracket, flattenPosition, cancelOrder } from "./execution.js";
+import { canEnter, recordTrade, resetDailyRisk, sizeByDollars } from "./risk.js";
+import { placeBracket, placeEntryWithStop, replaceTrailStop, flattenPosition, cancelOrder } from "./execution.js";
 import { initLogger, logSignal, logExit, logEvaluation, getTodayPnl, getLossStreak } from "./logger.js";
 import { logger } from "../lib/logger.js";
 import { broadcastToClients } from "../lib/wsServer.js";
@@ -43,6 +43,8 @@ let _reconcileTimer: ReturnType<typeof setInterval> | null = null;
 
 /** Broker reconciliation cadence. */
 const RECONCILE_INTERVAL_MS = 15_000;
+/** Flatten-at-close time when the toggle is on (10 min before the 16:00 close). */
+const FLATTEN_AT_CLOSE_ET = "15:50";
 
 // ── Bar conversion ────────────────────────────────────────────────────────────
 
@@ -88,10 +90,16 @@ function isPastTimeStop(timeStop: string): boolean {
   return h * 60 + m >= (sh ?? 16) * 60 + (sm ?? 0);
 }
 
-function isMarketOpen(): boolean {
+/**
+ * Whether the engine should evaluate now. Regular hours 9:30–16:00 ET, or
+ * 7:00–20:00 ET when extended hours is enabled. Replaces the old fixed-RTH check.
+ */
+function isTradeWindowOpen(cfg: Config): boolean {
+  if (isWeekend()) return false;
   const { h, m } = etHHMM();
   const mins = h * 60 + m;
-  return !isWeekend() && mins >= 9 * 60 + 30 && mins < 16 * 60;
+  if (cfg.enableExtendedHours) return mins >= 7 * 60 && mins < 20 * 60;
+  return mins >= 9 * 60 + 30 && mins < 16 * 60;
 }
 
 // ── Day boundary reset ──────────────────────────────────────────────────────
@@ -172,7 +180,9 @@ async function checkTimeStop(): Promise<void> {
   } catch {
     return;
   }
-  if (!isPastTimeStop(cfg.timeStop)) return;
+  // Flatten at 15:50 ET when "Flatten at Close" is on; otherwise at cfg.timeStop.
+  const flattenAt = cfg.flattenAtClose ? FLATTEN_AT_CLOSE_ET : cfg.timeStop;
+  if (!isPastTimeStop(flattenAt)) return;
 
   for (const s of state.symbols.values()) {
     if (!s.position || s.position.isFlat) continue;
@@ -223,11 +233,12 @@ async function processSymbol(s: SymbolState, cfg: Config): Promise<void> {
   );
   const f = s.features;
 
-  // 4. Manage an open position. The bracket OCO exits at the broker and
-  //    reconcileAccount() is the source of truth, so we do NOT guess exits
-  //    from bars here.
+  // 4. Manage an open position.
   if (s.position && !s.position.isFlat) {
-    // Still holding — nothing to do until an exit or the time-stop.
+    // Momentum: trail the protective stop upward each tick (raise-only). The
+    // resting broker STOP is the executor; reconcile records the exit on fill.
+    // ORB: the OCO bracket manages the exit at the broker.
+    if (cfg.setup === "swing") await manageTrailingStop(s, latest, bars, cfg);
     logEvaluation({ symbol: s.symbol, action: "HOLD", reason: "position open", last: f.last, vwap: f.vwap, lowerRail: f.lowerRail, rsi: f.rsi, volRatio: f.volRatio });
     return;
   }
@@ -244,7 +255,10 @@ async function processSymbol(s: SymbolState, cfg: Config): Promise<void> {
     return;
   }
 
-  const [ok, reason] = canEnter(signal, state.riskState, state.account, s.position, cfg);
+  // Authoritative dollar sizing against live open exposure (Max/Trade + Budget).
+  signal.size = sizeByDollars(signal.entryPrice, cfg, openExposure());
+
+  const [ok, reason] = canEnter(signal, state.riskState, state.account, s.position, cfg, openExposure());
   logEvaluation({ symbol: s.symbol, action: ok ? "ENTER" : "BLOCK", reason: ok ? signal.reason : reason, last: f.last, vwap: f.vwap, lowerRail: f.lowerRail, rsi: f.rsi, volRatio: f.volRatio });
 
   if (!ok) {
@@ -253,12 +267,18 @@ async function processSymbol(s: SymbolState, cfg: Config): Promise<void> {
   }
 
   logger.info(
-    { symbol: signal.symbol, entry: signal.entryPrice, stop: signal.stopPrice, target: signal.targetPrice, size: signal.size },
-    "[engine:live] signal — placing bracket",
+    { symbol: signal.symbol, entry: signal.entryPrice, stop: signal.stopPrice, size: signal.size, setup: cfg.setup },
+    "[engine:live] signal — placing entry",
   );
   logSignal(signal);
 
-  const result = await placeBracket(signal, cfg);
+  // Momentum (swing): entry + resting protective STOP, trailed each tick.
+  // ORB (legacy): entry + OCO (target + stop).
+  const result =
+    cfg.setup === "orb"
+      ? await placeBracket(signal, cfg)
+      : await placeEntryWithStop(signal.symbol, signal.size, signal.entryPrice, signal.stopPrice, cfg);
+
   if (result.ok) {
     s.position = {
       symbol: signal.symbol,
@@ -267,6 +287,10 @@ async function processSymbol(s: SymbolState, cfg: Config): Promise<void> {
       stopPrice: signal.stopPrice,
       targetPrice: signal.targetPrice,
       isFlat: false,
+      highWaterMark: latest.high,
+      entryAt: Date.now(),
+      stopOrderId: null,
+      thesis: signal.reason,
     };
     s.pendingSignal = signal;
     if (result.entryOrderId) {
@@ -277,9 +301,37 @@ async function processSymbol(s: SymbolState, cfg: Config): Promise<void> {
       void reconcileAccount(cfg);
     }
   } else {
-    logger.error({ error: result.error, symbol: signal.symbol }, "[engine] bracket placement failed");
+    logger.error({ error: result.error, symbol: signal.symbol }, "[engine] entry placement failed");
   }
   broadcastToClients("engineSignal", { signal, blocked: false, blockReason: "" });
+}
+
+/**
+ * Trailing-stop management (momentum). On each new higher high, raise the stop
+ * to trail behind price — the higher of a recent swing low and (high − trail×ATR)
+ * — and never lower it. The resting broker STOP is replaced to the new level.
+ */
+async function manageTrailingStop(s: SymbolState, latest: Bar, bars: Bar[], cfg: Config): Promise<void> {
+  const pos = s.position;
+  if (!pos || pos.isFlat || pos.quantity < 1) return;
+  if (!(latest.high > 0) || !(s.features.atr > 0)) return;
+
+  const prevHwm = pos.highWaterMark ?? pos.avgPrice;
+  // Only trail when price prints a new higher high.
+  if (latest.high <= prevHwm) return;
+  pos.highWaterMark = latest.high;
+
+  const recentLow = Math.min(...bars.slice(-3).map((b) => b.low)); // most-recent higher-low proxy
+  const atrTrail = pos.highWaterMark - cfg.momTrailAtrMult * s.features.atr;
+  const candidate = Math.max(recentLow, atrTrail);
+
+  const last = s.features.last || latest.close;
+  // Raise-only, and keep the stop below the current price.
+  if (candidate <= pos.stopPrice || candidate >= last) return;
+
+  const newStopOrderId = await replaceTrailStop(pos.symbol, pos.quantity, candidate, pos.stopOrderId ?? null, cfg);
+  pos.stopPrice = candidate;
+  pos.stopOrderId = newStopOrderId;
 }
 
 // ── Main tick ─────────────────────────────────────────────────────────────────
@@ -290,14 +342,14 @@ async function onTick(): Promise<void> {
 
   const cfg = getConfig();
 
-  if (isWeekend() || !isMarketOpen()) {
+  if (!isTradeWindowOpen(cfg)) {
     broadcastEngine();
     return;
   }
 
-  // Account-wide daily-loss halt, refreshed each tick.
+  // Account-wide daily-loss halt (dollar-based), refreshed each tick.
   const todayPnl = getTodayPnl();
-  state.riskState.dailyLossHalt = todayPnl <= -(cfg.startingEquity * cfg.dailyLossHaltPct);
+  state.riskState.dailyLossHalt = todayPnl <= -cfg.dailyMaxLoss;
   state.riskState.lossStreak = getLossStreak();
 
   for (const s of state.symbols.values()) {
@@ -334,6 +386,7 @@ export function startEngine(): void {
   for (const sym of cfg.symbols) state.symbols.set(sym, newSymbolState(sym));
 
   state.running = true;
+  state.activeEngine = "deterministic";
   state.startedAt = new Date();
   state.dayKey = etDayKey();
 
@@ -348,9 +401,9 @@ export function startEngine(): void {
     });
   }
 
-  logger.info({ symbols: cfg.symbols, setup: cfg.setup }, "[engine] started (live)");
+  logger.info({ symbols: cfg.symbols, setup: cfg.setup, pollSec: cfg.pollIntervalSec }, "[engine] started (live, deterministic momentum)");
 
-  _barTimer = setInterval(() => void onTick(), 60_000);
+  _barTimer = setInterval(() => void onTick(), Math.max(5, cfg.pollIntervalSec) * 1000);
   _timeStopTimer = setInterval(() => void checkTimeStop(), 10_000);
 
   // Keep engine state pinned to broker truth on a short interval.
@@ -373,6 +426,7 @@ export function stopEngine(): void {
   if (_timeStopTimer) { clearInterval(_timeStopTimer); _timeStopTimer = null; }
   if (_reconcileTimer) { clearInterval(_reconcileTimer); _reconcileTimer = null; }
   state.running = false;
+  if (state.activeEngine === "deterministic") state.activeEngine = null;
   logger.info("[engine] stopped");
   broadcastEngine();
 }
