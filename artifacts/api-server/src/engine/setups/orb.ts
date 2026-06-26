@@ -8,6 +8,7 @@
  * Target: entry + rTarget × risk
  */
 import type { Bar, Features, Config, Signal } from "../types.js";
+import { sizeByDollars } from "../risk.js";
 
 export function checkSetup(bar: Bar, f: Features, cfg: Config, symbol: string): Signal | null {
   if (!f.orComplete) return null;
@@ -29,13 +30,8 @@ export function checkSetup(bar: Bar, f: Features, cfg: Config, symbol: string): 
   // Reject if the target is too close to the spread to be worth trading
   if (f.spread > 0 && target - entry < f.spread * cfg.minTargetOverSpread) return null;
 
-  // Size by risk: floor(equity × riskPerTradePct / riskPerShare)
-  const riskDollars = cfg.startingEquity * cfg.riskPerTradePct;
-  const maxDollars  = cfg.startingEquity * cfg.maxPositionSizePct;
-  const sizeByRisk  = Math.floor(riskDollars / risk);
-  const sizeByMax   = Math.floor(maxDollars / entry);
-  const size = Math.min(sizeByRisk, sizeByMax);
-
+  // Dollar-based size (Max/Trade vs Total Budget); finalized in index.ts.
+  const size = sizeByDollars(entry, cfg, 0);
   if (size <= 0) return null;
 
   return {

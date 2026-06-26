@@ -8,12 +8,21 @@ const CFG: Config = {
   symbols: ["AAPL"],
   accountHash: "",
   setup: "swing",
+  engine: "deterministic",
+  modelId: "claude-opus-4-8",
   orWindowMinutes: 15,
   rvolThreshold: 1.5,
   stopMode: "or_low",
   atrK: 1.0,
   rTarget: 1.5,
   minTargetOverSpread: 3,
+  breakoutLookback: 10,
+  momVolRatioMin: 1.5,
+  momRvolMin: 1.0,
+  momRsiMin: 55,
+  momRsiMax: 70,
+  momStopAtrMult: 1.5,
+  momTrailAtrMult: 1.0,
   bodyAvgWindow: 10,
   volAvgWindow: 20,
   directionLookback: 5,
@@ -26,123 +35,104 @@ const CFG: Config = {
   swingTargetRail: "vwap",
   stopBelowRailAtrMult: 0.5,
   volumeProfileLookbackDays: 20,
-  dailyLossHaltPct: 0.03,
-  riskPerTradePct: 0.01,
-  maxPositionSizePct: 0.2,
+  totalBudget: 1000,
+  maxPerTrade: 300,
+  dailyMaxLoss: 100,
+  pollIntervalSec: 60,
   lossStreakLimit: 3,
   cooldownMinutes: 60,
   tradesPerDay: 40,
   enableShorts: false,
+  enableExtendedHours: false,
+  flattenAtClose: true,
   cancelTimeoutSeconds: 30,
   timeStop: "15:55",
-  startingEquity: 1000,
   logDb: ":memory:",
 };
 
-/** The confirmation (turn) bar: an up-bar that closed above the prior bar,
- *  with a long lower wick and a low of 98.3. */
-const TURN_BAR: Bar = {
+/** The breakout bar: pushes to a new high at 101.0 above VWAP (100). */
+const BREAKOUT_BAR: Bar = {
   timestamp: new Date("2026-06-25T14:00:00Z"),
-  open: 98.4, high: 98.7, low: 98.3, close: 98.6, volume: 1500, vwap: 100,
+  open: 100.3, high: 101.05, low: 100.2, close: 101.0, volume: 2000, vwap: 100,
 };
 
-/** A 50-bar history whose last bar closed at `prevClose` (the bar before the
- *  turn). Only length and the last element are read by the setup. */
-function barsEndingBefore(prevClose: number): Bar[] {
+/** 30 bars all capped at `priorHigh` so the current bar's 101.0 is a clean break. */
+function barsWithPriorHigh(priorHigh: number): Bar[] {
   const bars: Bar[] = [];
-  for (let i = 0; i < 50; i++) {
-    bars.push({ ...TURN_BAR, close: prevClose, open: prevClose, high: prevClose, low: prevClose });
+  for (let i = 0; i < 30; i++) {
+    bars.push({ ...BREAKOUT_BAR, open: priorHigh - 0.5, high: priorHigh, low: priorHigh - 0.6, close: priorHigh - 0.2 });
   }
+  bars.push(BREAKOUT_BAR); // current bar
   return bars;
 }
 
-/** A feature set that satisfies every long-entry condition. VWAP 100, ATR 1.0,
- *  band 2.0 → lower rail 98 / upper 102. Price 98.6 = 70% stretch to the rail.
- *  Up bar (body > 0), lower-wick rejection, expanding volume. */
+/** Feature set that satisfies every momentum-entry condition. ATR 0.5, VWAP 100. */
 function qualifyingFeatures(): Features {
   const f = initFeatures();
-  f.atr = 1.0;
+  f.atr = 0.5;
   f.vwap = 100;
-  f.last = 98.6;
-  f.lowerRail = 98;
-  f.upperRail = 102;
+  f.last = 101.0;       // at/above VWAP and the breakout level
   f.volAvg = 1000;
-  f.volRatio = 1.5;     // expanding ≥ reversalVolRatioMin (1.2)
-  f.body = 0.2;         // up bar (close > open)
-  f.lowerWick = 0.3;    // wick > |body| → rejection of the lows
-  f.upperWick = 0.05;
-  f.rsi = 40;           // within 25–55
-  f.trend = "PULLBACK"; // not BEARISH
+  f.volRatio = 2.0;     // ≥ momVolRatioMin (1.5)
+  f.rvol = 1.5;         // ≥ momRvolMin (1.0)
+  f.rsi = 62;           // within [55, 70]
+  f.trend = "BULLISH";  // not BEARISH
   f.spread = 0;
   return f;
 }
 
-/** Prior bar closed at 98.4, below the turn bar's 98.6 → confirms the turn up. */
-const PRIOR = barsEndingBefore(98.4);
+const BARS = barsWithPriorHigh(100.5); // prior 10-bar high = 100.5; current 101.0 breaks it
 
-describe("checkSwingSetup", () => {
-  it("returns a long bracket when a confirmed reversal forms", () => {
-    const sig = checkSwingSetup(TURN_BAR, qualifyingFeatures(), CFG, "AAPL", PRIOR);
+describe("checkSwingSetup (momentum)", () => {
+  it("returns a long breakout signal when all momentum conditions hold", () => {
+    const sig = checkSwingSetup(BREAKOUT_BAR, qualifyingFeatures(), CFG, "AAPL", BARS);
     expect(sig).not.toBeNull();
     expect(sig!.action).toBe("BUY");
-    expect(sig!.symbol).toBe("AAPL");
-    expect(sig!.entryPrice).toBeCloseTo(98.6, 5);
-    // stop = turn-bar low (98.3) − 0.5 × ATR (1.0) = 97.8
-    expect(sig!.stopPrice).toBeCloseTo(97.8, 5);
-    // target = VWAP (swingTargetRail "vwap")
-    expect(sig!.targetPrice).toBeCloseTo(100, 5);
-    expect(sig!.size).toBeGreaterThan(0);
+    expect(sig!.entryPrice).toBeCloseTo(101.0, 5);
+    // No fixed target on momentum — trailing stop manages the exit.
+    expect(sig!.targetPrice).toBe(0);
+    // Stop is at least momStopAtrMult×ATR below entry (101 − 1.5×0.5 = 100.25), or lower.
+    expect(sig!.stopPrice).toBeLessThanOrEqual(100.25 + 1e-9);
     expect(sig!.stopPrice).toBeLessThan(sig!.entryPrice);
-    expect(sig!.targetPrice).toBeGreaterThan(sig!.entryPrice);
+    expect(sig!.size).toBeGreaterThan(0);
   });
 
-  it("targets the upper rail when configured", () => {
-    const sig = checkSwingSetup(TURN_BAR, qualifyingFeatures(), { ...CFG, swingTargetRail: "upper" }, "AAPL", PRIOR);
-    expect(sig!.targetPrice).toBeCloseTo(102, 5);
+  it("rejects when price is below VWAP (not holding above it)", () => {
+    const f = qualifyingFeatures();
+    f.last = 99.5; // below VWAP 100
+    expect(checkSwingSetup(BREAKOUT_BAR, f, CFG, "AAPL", BARS)).toBeNull();
+  });
+
+  it("rejects when price has not broken the prior N-bar high", () => {
+    // Prior high 101.5 > current 101.0 → no breakout.
+    expect(checkSwingSetup(BREAKOUT_BAR, qualifyingFeatures(), CFG, "AAPL", barsWithPriorHigh(101.5))).toBeNull();
+  });
+
+  it("rejects when volume is not participating", () => {
+    const f = qualifyingFeatures();
+    f.volRatio = 1.0; // < momVolRatioMin
+    expect(checkSwingSetup(BREAKOUT_BAR, f, CFG, "AAPL", BARS)).toBeNull();
+  });
+
+  it("rejects when RVOL is below the floor (baseline available)", () => {
+    const f = qualifyingFeatures();
+    f.rvol = 0.5; // > 0 but < momRvolMin
+    expect(checkSwingSetup(BREAKOUT_BAR, f, CFG, "AAPL", BARS)).toBeNull();
+  });
+
+  it("rejects when RSI is outside the strength band", () => {
+    const f = qualifyingFeatures();
+    f.rsi = 45; // < momRsiMin
+    expect(checkSwingSetup(BREAKOUT_BAR, f, CFG, "AAPL", BARS)).toBeNull();
+  });
+
+  it("rejects a bearish trend", () => {
+    const f = qualifyingFeatures();
+    f.trend = "BEARISH";
+    expect(checkSwingSetup(BREAKOUT_BAR, f, CFG, "AAPL", BARS)).toBeNull();
   });
 
   it("rejects when there aren't enough bars yet", () => {
-    expect(checkSwingSetup(TURN_BAR, qualifyingFeatures(), CFG, "AAPL", PRIOR.slice(0, 10))).toBeNull();
-  });
-
-  it("rejects when price hasn't stretched far enough toward the lower rail", () => {
-    const f = qualifyingFeatures();
-    f.last = 99.8; // stretch (100−99.8)/2 = 0.1 < 0.6
-    expect(checkSwingSetup(TURN_BAR, f, CFG, "AAPL", PRIOR)).toBeNull();
-  });
-
-  it("rejects when the bar is still falling (not an up-bar)", () => {
-    const f = qualifyingFeatures();
-    f.body = -0.1; // down bar — the turn hasn't started
-    expect(checkSwingSetup(TURN_BAR, f, CFG, "AAPL", PRIOR)).toBeNull();
-  });
-
-  it("rejects when the bar did not close above the prior bar", () => {
-    // Prior bar closed at 98.9, above the turn bar's 98.6 → no higher close.
-    expect(checkSwingSetup(TURN_BAR, qualifyingFeatures(), CFG, "AAPL", barsEndingBefore(98.9))).toBeNull();
-  });
-
-  it("rejects when volume is not expanding on the turn (fake bounce)", () => {
-    const f = qualifyingFeatures();
-    f.volRatio = 0.8; // < reversalVolRatioMin — quiet drift, not real demand
-    expect(checkSwingSetup(TURN_BAR, f, CFG, "AAPL", PRIOR)).toBeNull();
-  });
-
-  it("rejects when there is no lower-wick rejection", () => {
-    const f = qualifyingFeatures();
-    f.lowerWick = 0.01; // ≤ |body| (0.2)
-    expect(checkSwingSetup(TURN_BAR, f, CFG, "AAPL", PRIOR)).toBeNull();
-  });
-
-  it("rejects a clean bearish downtrend (falling-knife guard)", () => {
-    const f = qualifyingFeatures();
-    f.trend = "BEARISH";
-    expect(checkSwingSetup(TURN_BAR, f, CFG, "AAPL", PRIOR)).toBeNull();
-  });
-
-  it("rejects when RSI is outside the entry band", () => {
-    const f = qualifyingFeatures();
-    f.rsi = 72;
-    expect(checkSwingSetup(TURN_BAR, f, CFG, "AAPL", PRIOR)).toBeNull();
+    expect(checkSwingSetup(BREAKOUT_BAR, qualifyingFeatures(), CFG, "AAPL", BARS.slice(0, 5))).toBeNull();
   });
 });

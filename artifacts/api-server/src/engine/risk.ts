@@ -1,8 +1,28 @@
 /**
- * Pure risk guards — zero I/O, zero side effects.
+ * Pure risk guards & dollar sizing — zero I/O, zero side effects.
  * Every check returns [allowed: boolean, reason: string].
+ *
+ * Sizing and limits are dollar-based (Total Budget / Max-per-Trade / Daily Max
+ * Loss from the Auto Trader UI). There is no percentage-based sizing or halt.
  */
 import type { Signal, RiskState, AccountState, Position, Config } from "./types.js";
+
+/**
+ * Share count for a dollar-budgeted entry:
+ *   floor( min(MaxPerTrade, TotalBudget − currentOpenExposure) / entryPrice )
+ * The protective stop does NOT change the share count.
+ */
+export function sizeByDollars(
+  entryPrice: number,
+  cfg: Config,
+  openExposure: number,
+): number {
+  if (!(entryPrice > 0)) return 0;
+  const budgetRoom = Math.max(0, cfg.totalBudget - openExposure);
+  const notional = Math.min(cfg.maxPerTrade, budgetRoom);
+  if (notional <= 0) return 0;
+  return Math.floor(notional / entryPrice);
+}
 
 export function canEnter(
   signal: Signal,
@@ -10,14 +30,15 @@ export function canEnter(
   acct: AccountState,
   pos: Position | null,
   cfg: Config,
+  openExposure: number,
 ): [boolean, string] {
   if (risk.halted)         return [false, risk.haltReason ?? "halted"];
-  if (risk.dailyLossHalt)  return [false, "daily loss halt"];
+  if (risk.dailyLossHalt)  return [false, "daily max loss halt"];
   if (risk.cooldownUntil && new Date() < risk.cooldownUntil)
     return [false, `cooldown until ${risk.cooldownUntil.toLocaleTimeString("en-US", { timeZone: "America/New_York" })} ET`];
   if (risk.tradesToday >= cfg.tradesPerDay)
     return [false, `max ${cfg.tradesPerDay} trades/day reached`];
-  // Note: no "already traded this symbol today" guard — the swing engine is
+  // Note: no "already traded this symbol today" guard — the engine is
   // continuous and re-enters the same symbol many times. The open-position
   // check below enforces at most one position per symbol at a time.
   if (risk.lossStreak >= cfg.lossStreakLimit)
@@ -25,21 +46,20 @@ export function canEnter(
   if (pos && !pos.isFlat)
     return [false, `position open in ${pos.symbol}`];
 
-  // Price sanity
-  if (signal.entryPrice <= 0 || signal.stopPrice <= 0 || signal.targetPrice <= 0)
+  // Price sanity (long only)
+  if (signal.entryPrice <= 0 || signal.stopPrice <= 0)
     return [false, "invalid prices"];
   if (signal.stopPrice >= signal.entryPrice)
     return [false, "stop >= entry"];
-  if (signal.targetPrice <= signal.entryPrice)
-    return [false, "target <= entry"];
   if (signal.size < 1)
     return [false, "size < 1 share"];
 
-  // Risk dollar cap
-  const riskDollars = (signal.entryPrice - signal.stopPrice) * signal.size;
-  const maxRisk     = cfg.startingEquity * cfg.riskPerTradePct;
-  if (riskDollars > maxRisk * 1.05) // 5% tolerance for rounding
-    return [false, `risk $${riskDollars.toFixed(2)} exceeds limit $${maxRisk.toFixed(2)}`];
+  // Dollar budget: this entry's notional must fit under the open-exposure ceiling.
+  const entryNotional = signal.entryPrice * signal.size;
+  if (entryNotional > cfg.maxPerTrade * 1.05) // 5% tolerance for rounding
+    return [false, `entry $${entryNotional.toFixed(0)} exceeds max/trade $${cfg.maxPerTrade.toFixed(0)}`];
+  if (openExposure + entryNotional > cfg.totalBudget * 1.05)
+    return [false, `would exceed total budget $${cfg.totalBudget.toFixed(0)} (open $${openExposure.toFixed(0)})`];
 
   return [true, "ok"];
 }

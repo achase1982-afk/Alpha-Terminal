@@ -12,31 +12,47 @@ import {
 } from "../lib/autoTrade/config.js";
 import { addSymbols, addChartEquitySymbols } from "../lib/schwabStreamer.js";
 import { startEngine, stopEngine, engineStatus } from "../engine/index.js";
-import { writeConfigPatch } from "../engine/config.js";
+import { startLlmEngine, stopLlmEngine } from "../engine/llmEngine.js";
+import { writeConfigPatch, readRawConfig } from "../engine/config.js";
 
 const router: IRouter = Router();
 const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
 
+type EngineKind = "deterministic" | "llm";
+
+/** Selected engine — persisted in config.yaml (no DB column needed). */
+function readEngineKind(): EngineKind {
+  return (readRawConfig().engine as string) === "llm" ? "llm" : "deterministic";
+}
+
 router.get("/config", async (req, res) => {
   const userId = portfolioPrefsUserId(req);
   const config = await getAutoTradeConfig(userId);
-  res.json({ config, engine: engineStatus() });
+  res.json({ config: { ...config, engine: readEngineKind() }, engine: engineStatus() });
 });
 
 router.put("/config", async (req, res) => {
   const userId = portfolioPrefsUserId(req);
   const body = req.body as Partial<AutoTradeConfig>;
+  const engineSel = (req.body as { engine?: string }).engine;
   if (body.modelId !== undefined && typeof body.modelId === "string" && !isAiModelId(body.modelId)) {
     return res.status(400).json({ error: "invalid_model_id" });
   }
+  if (engineSel !== undefined && engineSel !== "deterministic" && engineSel !== "llm") {
+    return res.status(400).json({ error: "invalid_engine" });
+  }
   try {
     const config = await saveAutoTradeConfig(userId, body);
+    // Engine selection persists to config.yaml (hot-reloaded on START).
+    if (engineSel === "deterministic" || engineSel === "llm") {
+      writeConfigPatch({ engine: engineSel });
+    }
     // If tickers were updated while the engine is running, subscribe new ones immediately.
     if (body.tickers && engineStatus().running && config.tickers.length > 0) {
       addSymbols(config.tickers);
       addChartEquitySymbols(config.tickers);
     }
-    return res.json({ config });
+    return res.json({ config: { ...config, engine: readEngineKind() } });
   } catch (err) {
     logger.error({ err, userId }, "autoTrade saveConfig failed");
     return res.status(500).json({ error: "save_failed" });
@@ -58,14 +74,25 @@ router.post("/start", async (req, res) => {
       return res.status(400).json({ error: "no_tickers" });
     }
     await saveAutoTradeConfig(userId, { enabled: true });
-    // Bridge DB config into config.yaml so the deterministic engine picks it up.
-    // Forward the FULL ticker list — the swing engine runs each symbol independently.
+    const engineKind = readEngineKind();
+    // Bridge ALL operative UI settings into config.yaml so the selected engine
+    // picks them up (hot-reload). Full ticker list — each symbol runs independently.
     writeConfigPatch({
       symbol: config.tickers[0],
       symbols: config.tickers,
       accountHash: config.accountHash,
+      engine: engineKind,
+      modelId: config.modelId,
+      totalBudget: config.totalBudget,
+      maxPerTrade: config.maxPerTrade,
+      dailyMaxLoss: config.dailyMaxLoss,
+      pollIntervalSec: config.pollIntervalSec,
+      enableExtendedHours: config.enableExtendedHours,
+      flattenAtClose: config.flattenAtClose,
     });
-    startEngine();
+    // START launches the engine the user selected.
+    if (engineKind === "llm") startLlmEngine(userId);
+    else startEngine();
     return res.json({ ok: true, engine: engineStatus() });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -77,7 +104,9 @@ router.post("/start", async (req, res) => {
 /** Hard kill switch: stop the engine, disable, and cancel any working orders. */
 router.post("/stop", async (req, res) => {
   const userId = portfolioPrefsUserId(req);
+  // Stop whichever engine is running (both are no-ops if not active).
   stopEngine();
+  stopLlmEngine();
   await saveAutoTradeConfig(userId, { enabled: false });
 
   let cancelled = 0;

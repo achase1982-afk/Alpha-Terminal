@@ -5,11 +5,13 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 
 type InstrumentMode = "stock" | "options" | "both";
+type EngineKind = "deterministic" | "llm";
 
 interface AutoTradeConfig {
   enabled: boolean;
   running: boolean;
   accountHash: string | null;
+  engine: EngineKind;
   modelId: string;
   tickers: string[];
   instrumentMode: InstrumentMode;
@@ -20,6 +22,11 @@ interface AutoTradeConfig {
   enableExtendedHours: boolean;
   flattenAtClose: boolean;
 }
+
+const ENGINE_OPTIONS: { value: EngineKind; label: string }[] = [
+  { value: "deterministic", label: "Deterministic — rule-based momentum" },
+  { value: "llm", label: "LLM — model-driven" },
+];
 
 interface DecisionRow {
   id: number;
@@ -319,12 +326,35 @@ export function AutoTraderSettingsPage() {
           )}
         </Field>
 
-        <Field label="LLM Model" hint="Model that reads price action and makes trading decisions.">
+        <Field label="Engine" hint="Deterministic = rule-based momentum. LLM = the selected model decides each tick.">
           <select
+            aria-label="Trading engine"
+            className={selectCls}
+            value={config.engine}
+            onChange={(e) => void immediateSave({ engine: e.target.value as EngineKind })}
+            disabled={running}
+          >
+            {ENGINE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </Field>
+
+        <Field
+          label={config.engine === "deterministic" ? "LLM Model — disabled (deterministic engine)" : "LLM Model"}
+          hint={
+            config.engine === "deterministic"
+              ? "Only used by the LLM engine. Switch Engine to LLM to enable."
+              : "Model that reads price action and makes trading decisions."
+          }
+        >
+          <select
+            aria-label="LLM model"
+            aria-disabled={config.engine === "deterministic" || running}
             className={selectCls}
             value={config.modelId}
             onChange={(e) => void immediateSave({ modelId: e.target.value })}
-            disabled={running}
+            disabled={config.engine === "deterministic" || running}
           >
             {AI_MODEL_CATALOG.map((m) => (
               <option key={m.id} value={m.id}>{m.label}</option>

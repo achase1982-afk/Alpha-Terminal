@@ -28,6 +28,7 @@ export interface SymbolState {
 
 export interface EngineState {
   running: boolean;
+  activeEngine: import("./types.js").EngineKind | null;
   startedAt: Date | null;
   dayKey: string; // "YYYY-MM-DD" in ET — reset triggers at day boundary
 
@@ -55,6 +56,7 @@ export function newSymbolState(symbol: string): SymbolState {
 
 export const state: EngineState = {
   running: false,
+  activeEngine: null,
   startedAt: null,
   dayKey: "",
 
@@ -87,11 +89,22 @@ function toSymbolStatus(s: SymbolState): SymbolStatus {
   };
 }
 
+/** Total open exposure ($) across all non-flat positions = Σ quantity × avgPrice. */
+export function openExposure(): number {
+  let sum = 0;
+  for (const s of state.symbols.values()) {
+    const p = s.position;
+    if (p && !p.isFlat) sum += p.quantity * p.avgPrice;
+  }
+  return sum;
+}
+
 export function toEngineStatus(): EngineStatus {
   const symbols = [...state.symbols.values()].map(toSymbolStatus);
   const first = symbols[0];
   return {
     running: state.running,
+    activeEngine: state.activeEngine,
     setup: "swing", // overwritten by index.ts with cfg.setup
     symbols,
     riskState: { ...state.riskState },

@@ -12,6 +12,10 @@ const DEFAULTS: Config = {
   accountHash: "",
   setup: "swing",
 
+  // Engine selection
+  engine: "deterministic",
+  modelId: "claude-opus-4-8",
+
   // Opening range (legacy ORB)
   orWindowMinutes: 15,
   rvolThreshold: 1.5,
@@ -20,7 +24,17 @@ const DEFAULTS: Config = {
   rTarget: 1.5,
   minTargetOverSpread: 3,
 
-  // Swing setup
+  // Momentum setup (active "swing" strategy)
+  breakoutLookback: 10,
+  momVolRatioMin: 1.5,
+  momRvolMin: 1.0,
+  momRsiMin: 55,
+  momRsiMax: 70,
+  momStopAtrMult: 1.5,
+  momTrailAtrMult: 1.0,
+  volumeProfileLookbackDays: 20,
+
+  // Legacy swing knobs (unused by momentum; kept for ORB / back-compat)
   bodyAvgWindow: 10,
   volAvgWindow: 20,
   directionLookback: 5,
@@ -32,21 +46,24 @@ const DEFAULTS: Config = {
   rsiEntryMax: 55,
   swingTargetRail: "vwap",
   stopBelowRailAtrMult: 0.5,
-  volumeProfileLookbackDays: 20,
 
-  // Risk / sizing
-  dailyLossHaltPct: 0.03,
-  riskPerTradePct: 0.01,
-  maxPositionSizePct: 0.20,
+  // Dollar risk (operative controls for both engines)
+  totalBudget: 1000,
+  maxPerTrade: 300,
+  dailyMaxLoss: 100,
+  pollIntervalSec: 60,
   lossStreakLimit: 3,
   cooldownMinutes: 60,
   tradesPerDay: 40,
   enableShorts: false,
 
+  // Session controls
+  enableExtendedHours: false,
+  flattenAtClose: true,
+
   // Execution
   cancelTimeoutSeconds: 30,
   timeStop: "15:55",
-  startingEquity: 1000,
   logDb: "autotrader/engine.db",
 };
 
@@ -75,6 +92,13 @@ function validate(cfg: Config): void {
   if (cfg.setup !== "orb" && cfg.setup !== "swing") {
     throw new Error('config.yaml: setup must be "orb" or "swing"');
   }
+  if (cfg.engine !== "deterministic" && cfg.engine !== "llm") {
+    throw new Error('config.yaml: engine must be "deterministic" or "llm"');
+  }
+  if (cfg.maxPerTrade <= 0) throw new Error("config.yaml: maxPerTrade must be > 0");
+  if (cfg.totalBudget <= 0) throw new Error("config.yaml: totalBudget must be > 0");
+  if (cfg.dailyMaxLoss <= 0) throw new Error("config.yaml: dailyMaxLoss must be > 0");
+  if (cfg.pollIntervalSec < 5) throw new Error("config.yaml: pollIntervalSec must be ≥ 5");
   if (cfg.rTarget <= 0) throw new Error("config.yaml: rTarget must be > 0");
   if (cfg.orWindowMinutes < 1 || cfg.orWindowMinutes > 60) {
     throw new Error("config.yaml: orWindowMinutes must be 1–60");
