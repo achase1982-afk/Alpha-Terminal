@@ -176,6 +176,59 @@ export async function placeEntryWithStop(
   }
 }
 
+/**
+ * Place an entry-only BUY (no protective stop). Used by the LLM engine, which
+ * has no broker-side stop — a resting stop would reserve the shares and cause
+ * the later market-sell exit to be rejected. Session-aware: marketable LIMIT in
+ * extended hours, MARKET in regular hours.
+ */
+export async function placeEntry(
+  symbol: string,
+  qty: number,
+  entryPrice: number,
+  cfg: Config,
+): Promise<EntryWithStopResult> {
+  const token = getTokens("trader")?.accessToken;
+  if (!token) return { ok: false, entryOrderId: null, error: "no_trader_token" };
+  if (!cfg.accountHash) return { ok: false, entryOrderId: null, error: "no_account_hash" };
+  if (!(qty >= 1)) return { ok: false, entryOrderId: null, error: "invalid_quantity" };
+
+  const sym = symbol.toUpperCase();
+  const { session, isExtended } = currentSession(cfg);
+  const entryLeg: Record<string, unknown> =
+    isExtended && entryPrice > 0
+      ? { orderType: "LIMIT", price: (Math.round(entryPrice * 1.01 * 100) / 100).toFixed(2), session }
+      : { orderType: "MARKET", session: "NORMAL" };
+
+  const order = {
+    orderStrategyType: "SINGLE",
+    duration: "DAY",
+    ...entryLeg,
+    orderLegCollection: [
+      { instruction: "BUY", quantity: qty, instrument: { symbol: sym, assetType: "EQUITY" } },
+    ],
+  };
+
+  try {
+    const res = await fetch(`${SCHWAB_TRADER_BASE}/accounts/${cfg.accountHash}/orders`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(order),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      logger.error({ status: res.status, body: body.slice(0, 300), symbol: sym }, "[llm] entry rejected");
+      return { ok: false, entryOrderId: null, error: body.slice(0, 200) || `http_${res.status}` };
+    }
+    const entryOrderId = (res.headers.get("location") ?? "").match(/orders\/(\d+)/)?.[1] ?? null;
+    logger.info({ symbol: sym, entryOrderId, entryPrice, session }, "[llm:live] entry placed (no stop)");
+    return { ok: true, entryOrderId };
+  } catch (err) {
+    logger.error({ err, symbol: sym }, "[llm] entry error");
+    return { ok: false, entryOrderId: null, error: "network_error" };
+  }
+}
+
 /** Place a standalone protective STOP sell (used to raise the trailing stop). */
 export async function placeStopSell(
   symbol: string,
