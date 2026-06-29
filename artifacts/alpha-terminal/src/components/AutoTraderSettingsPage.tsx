@@ -579,8 +579,8 @@ export function AutoTraderSettingsPage() {
 
 function decisionColor(decision: string, placed: boolean): string {
   if (decision === "ENTER" || decision.startsWith("BUY")) return placed ? "#2ecc71" : "#f5a623";
-  if (decision === "TAKE_PROFIT") return "#2ecc71";
-  if (decision === "SELL" || decision === "FLATTEN_CLOSE" || decision === "EXIT" || decision === "STOP_EXIT") return "#f23645";
+  if (decision === "TAKE_PROFIT" || decision === "PROFIT_LOCK") return "#2ecc71";
+  if (decision === "SELL" || decision === "FLATTEN_CLOSE" || decision === "EXIT" || decision === "STOP_EXIT" || decision === "STOP_LOSS") return "#f23645";
   if (decision.startsWith("HALT")) return "#f23645";
   return "#71717a";
 }

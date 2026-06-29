@@ -22,6 +22,7 @@
  * reconcile, and open-exposure work uniformly with the deterministic engine.
  */
 import { generateText } from "ai";
+import { RSI } from "technicalindicators";
 import { resolveChatLanguageModel } from "../lib/chatModel.js";
 import { logger } from "../lib/logger.js";
 import { broadcastToClients } from "../lib/wsServer.js";
@@ -41,30 +42,36 @@ import { placeEntry, flattenPosition } from "./execution.js";
 import { buildVolumeProfile } from "./volumeProfile.js";
 import { reconcileAccount } from "./reconcile.js";
 import { initLogger, logExit, getTodayPnl, getLossStreak } from "./logger.js";
-import type { Bar, Config, Features } from "./types.js";
+import type { Bar, Config, Features, ExitReason } from "./types.js";
 
-/** Verbatim system message (long-only, never-sell-below-entry, never-trade-blind). */
-const SYSTEM_PROMPT = `You are an intraday equity trader running a live account. You trade long stock only. You are NOT a short seller — you never sell to open, you only sell to close a long you already hold. Your objective is to capture upward price moves, realize the gain, and redeploy into the next opportunity. You manage one long position per symbol at a time.
+/**
+ * System prompt — REVERSAL / DIVERGENCE long-only. You buy the turn UP off a
+ * down-move (never short, never chase strength), and you bank the bounce into
+ * stalling. Hard exits (disaster stop, profit-lock) are enforced in code; the
+ * model never needs to — and is told not to — sell below entry.
+ */
+const SYSTEM_PROMPT = `You are an intraday equity trader and a master of chart reading — specifically of spotting REVERSALS and DIVERGENCE. You trade long stock only. You are NOT a short seller — you never sell to open, you only sell to close a long you already hold. You do not chase strength and you do not buy breakouts; your entire edge is buying the moment a down-move is exhausting and turning back UP, then selling the bounce into resistance. One long position per symbol at a time.
 
-ABSOLUTE RULES — these are not judgment calls:
-1. You must know the price to act. Every decision requires the current price (last) and, when you hold a position, your entry price. If either is missing from the data you were given, your only allowed action is "wait" (when flat) or "hold" (when in a position). Never place or exit a trade without knowing price. If you cannot see price, you do not trade.
-2. You never sell below your entry price. If you hold a position and the current price is at or below your entry, your only allowed action is "hold." You do not panic-sell a position that is underwater. A pullback is not a reason to exit. You exit a winner, never bail a loser — the position is closed at end of day if it never recovers, but you do not sell it at a loss intraday.
-3. You only take profit above entry. "take_profit" is permitted only when current price is above your entry price AND the upward move looks exhausted or stalling. Capture the gain then.
+ABSOLUTE RULES — not judgment calls:
+1. You must know the price to act. Every decision requires the current price (last), and when holding, your entry price. If either is missing from the data, your only allowed action is "wait" (flat) or "hold" (in a position). Never trade blind.
+2. You never sell below your entry. If you hold and price is at or below entry, your ONLY action is "hold." You never panic-sell a red position — a separate risk system in code handles the worst-case stop, not you. Your job is to exit winners, not bail losers.
+3. You only take profit ABOVE entry, when the bounce you bought is stalling or hitting resistance (VWAP from below, the upper rail, the prior swing high, RSI pushing back toward overbought). Capture it then — do not round-trip a green trade back to flat waiting for more.
 
-How to read the data you are given each tick:
-- entryPrice is what you paid; compare current last to it constantly. unrealizedPnlPct tells you if you are green or red right now.
-- Use vwap, rsi, ema50/ema200, trend, rvol, volRatio, atr to judge momentum and exhaustion. Strength with participation (rising price, volume confirming, price holding above vwap) means hold a winner. Momentum rolling over while you are green means take profit.
-- Use the ET time and minutesSinceOpen for context; the open is noisy.
-
-Entering (when flat):
-- Enter only on a real upward directional edge: momentum with volume participation (rvol and volRatio elevated), price pushing up and holding above vwap, a clean move you can name. "Slightly up on slightly more volume" is not an edge — wait.
-- Do not fade. Do not buy a falling knife hoping it bounces. You buy strength, not weakness.
+How to spot the REVERSAL you are buying (when flat):
+- The setup is a stock that has SOLD OFF and is now turning up — not one making new highs. Look in the data for:
+  • Price stretched below VWAP / near or below the lower rail (vwapDist negative, rangePos low) — it is beaten down, the discount zone.
+  • Bullish RSI divergence: in recentBars price prints a LOWER low while rsiTrail prints a HIGHER low — selling is losing force even as price drops. This is your highest-quality signal.
+  • RSI turning up out of oversold (rsiTrail rising off a low), not still falling.
+  • A higher low forming in recentBars (the last low is above the prior low) — the down-move structure is breaking.
+  • Volume drying up on the down-bars then picking up on the turn-up bar.
+- Do NOT buy while it is still falling with no turn (lower lows AND falling RSI AND rising down-volume is CONTINUATION DOWN — wait). "Oversold" alone is not a trade; you need the actual turn or the divergence.
+- Do NOT buy strength/new highs — that is not your strategy.
 
 Managing a position:
-- hold: default. Hold through minor pullbacks. Hold whenever price is at or below entry. Hold while the move is still progressing.
-- take_profit: only when price is above entry and the move is exhausted/stalling.
+- hold: the bounce is intact / still working, OR price is at/below entry (always hold underwater).
+- take_profit: price is above entry AND the bounce is stalling or into resistance. Bank it.
 
-You are judged on realized P&L — capturing real upward moves and recycling capital. You are not judged on trade count. Do not behave like a nervous retail trader who buys and then sells the moment it ticks down. That behavior is forbidden by the rules above.
+You are judged on realized P&L from catching reversals and recycling capital — not trade count. Be surgical: wait for the turn to prove itself, buy it, sell the bounce into resistance.
 
 Respond ONLY with strict JSON, no other text.
 When flat: {"action":"enter"|"wait","thesis":<string if enter>,"reason":<string>}
@@ -154,6 +161,13 @@ function buildDecisionPayload(s: SymbolState, latest: Bar, bars: Bar[], cfg: Con
   const sessionChangePct = quote.changePct ?? (priorClose ? ((last - priorClose) / priorClose) * 100 : 0);
   const { label: etTime } = etNow();
 
+  // Recent structure for reversal/divergence reads: last 10 bars + an RSI trail.
+  // Price lower-low while RSI higher-low = bullish divergence.
+  const closes = bars.map((b) => b.close);
+  const rsiSeries = closes.length >= 15 ? RSI.calculate({ values: closes, period: 14 }) : [];
+  const rsiTrail = rsiSeries.slice(-6).map((v) => Math.round(v * 10) / 10);
+  const recentBars = bars.slice(-10).map((b) => ({ c: round(b.close), l: round(b.low), h: round(b.high) }));
+
   const pos = s.position && !s.position.isFlat ? s.position : null;
   let position: Record<string, unknown> | "FLAT" = "FLAT";
   if (pos) {
@@ -185,6 +199,8 @@ function buildDecisionPayload(s: SymbolState, latest: Bar, bars: Bar[], cfg: Con
     },
     position,
     budget: { remaining: round(Math.max(0, cfg.totalBudget - openExposure())), maxPerTrade: cfg.maxPerTrade },
+    recentBars,   // oldest → newest; read for lower-low / higher-low structure
+    rsiTrail,     // oldest → newest RSI(14); compare its lows to price lows for divergence
   };
   return { json: JSON.stringify(payload), last };
 }
@@ -246,6 +262,11 @@ async function processSymbolLlm(s: SymbolState, cfg: Config): Promise<void> {
   if (!built) { logger.warn({ symbol: s.symbol }, "[llm] skipped: incomplete data (missing price field)"); return; }
   const last = built.last;
   const hasPosition = !!(s.position && !s.position.isFlat);
+
+  // Code-enforced exits run BEFORE the model and take priority: a winner is
+  // locked on give-back and a loser is cut at the disaster floor, regardless of
+  // what the model would say. Prevents green round-tripping to red.
+  if (hasPosition && (await maybeMechanicalExit(s, last, cfg))) return;
 
   let decision: LlmDecision;
   try {
@@ -327,7 +348,52 @@ function entryBlockReason(cfg: Config): string | null {
   return null;
 }
 
-function recordExit(s: SymbolState, entryPrice: number, qty: number, exitPrice: number, reason: "TARGET_HIT" | "TIME_STOP", cfg: Config): void {
+/**
+ * Code-enforced exits, evaluated each tick while holding (before the model):
+ *  - Disaster stop: cut at −disasterStopPct from entry (overrides never-below-entry).
+ *  - Profit-lock: once peak gain ≥ profitLockArmPct, exit if price gives back
+ *    profitLockGiveBackPct of the peak gain — while still above entry.
+ * Returns true if it exited (caller then skips the model for this tick).
+ */
+async function maybeMechanicalExit(s: SymbolState, last: number, cfg: Config): Promise<boolean> {
+  const pos = s.position;
+  if (!pos || pos.isFlat || pos.quantity < 1) return false;
+  const entry = pos.avgPrice;
+  if (!(entry > 0) || !(last > 0)) return false;
+
+  pos.highWaterMark = Math.max(pos.highWaterMark ?? entry, last);
+  const gainPct = (last - entry) / entry;
+
+  // 1) Disaster stop — hard floor.
+  if (gainPct <= -cfg.disasterStopPct) {
+    const qty = pos.quantity;
+    const ok = await flattenPosition(pos.symbol, qty, cfg);
+    if (ok) recordExit(s, entry, qty, last, "STOP_HIT", cfg);
+    await persist(s.symbol, "STOP_LOSS",
+      `disaster stop: ${(gainPct * 100).toFixed(2)}% ≤ −${(cfg.disasterStopPct * 100).toFixed(2)}%`,
+      null, ok, cfg, { quantity: qty, exitPrice: round(last), pnl: round((last - entry) * qty) });
+    return true;
+  }
+
+  // 2) Profit-lock — armed by peak gain, exits on give-back (still green).
+  const peak = pos.highWaterMark;
+  const peakGainPct = (peak - entry) / entry;
+  if (peakGainPct >= cfg.profitLockArmPct) {
+    const lockLevel = entry + (1 - cfg.profitLockGiveBackPct) * (peak - entry);
+    if (last > entry && last <= lockLevel) {
+      const qty = pos.quantity;
+      const ok = await flattenPosition(pos.symbol, qty, cfg);
+      if (ok) recordExit(s, entry, qty, last, "TARGET_HIT", cfg);
+      await persist(s.symbol, "PROFIT_LOCK",
+        `locked gain: pulled back to ${last.toFixed(2)} from peak ${peak.toFixed(2)} (entry ${entry.toFixed(2)})`,
+        null, ok, cfg, { quantity: qty, exitPrice: round(last), pnl: round((last - entry) * qty) });
+      return true;
+    }
+  }
+  return false;
+}
+
+function recordExit(s: SymbolState, entryPrice: number, qty: number, exitPrice: number, reason: ExitReason, cfg: Config): void {
   const pnl = (exitPrice - entryPrice) * qty;
   try {
     logExit({

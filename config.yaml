@@ -28,6 +28,12 @@ totalBudget: 1000            # Hard ceiling on total open exposure across ALL po
 maxPerTrade: 300             # Max notional per single entry.
 dailyMaxLoss: 100            # Halt the session when realized P/L drops by this many $. ONLY daily halt.
 pollIntervalSec: 60          # Per-symbol evaluation cadence (both engines).
+
+# ── LLM exit protection (code-enforced — the LLM engine has no broker stop) ──
+profitLockArmPct: 0.005      # Arm the profit-lock once a position is up ≥ this (0.5%).
+profitLockGiveBackPct: 0.4   # Once armed, auto-exit if it gives back this much of the PEAK gain (40%). Still above entry.
+disasterStopPct: 0.02        # Hard floor: cut a position down ≥ this from entry (−2%). Overrides never-below-entry.
+
 lossStreakLimit: 3           # Halt after N consecutive losses.
 cooldownMinutes: 60          # Cooldown after a loss streak.
 tradesPerDay: 40             # Max trades/day across all symbols.

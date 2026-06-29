@@ -163,6 +163,11 @@ export interface Config {
   maxPerTrade: number;     // max notional per single entry
   dailyMaxLoss: number;    // halt the session when realized P/L drops by this many $
   pollIntervalSec: number; // per-symbol evaluation cadence
+
+  // ── LLM exit protection (code-enforced; the LLM has no broker stop) ──
+  profitLockArmPct: number;      // arm the profit-lock once a position is up ≥ this (0.005 = +0.5%)
+  profitLockGiveBackPct: number; // once armed, exit if it gives back this fraction of the peak gain (0.4 = 40%)
+  disasterStopPct: number;       // hard floor: cut a position down ≥ this from entry (0.02 = −2%)
   lossStreakLimit: number;
   cooldownMinutes: number;
   tradesPerDay: number;
