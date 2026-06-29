@@ -271,6 +271,10 @@ export interface DecisionLogInput {
   schwabOrderId?: string | null;
   placed: boolean;
   error?: string | null;
+  /** Exit fill price for exit rows (TAKE_PROFIT / FLATTEN_CLOSE). */
+  exitPrice?: number | null;
+  /** Realized P&L for exit rows. */
+  pnl?: number | null;
 }
 
 /** Append a row to the auto_trade_decisions audit log (best-effort, non-throwing). */
@@ -288,6 +292,8 @@ export async function logAutoTradeDecision(input: DecisionLogInput): Promise<voi
       schwabOrderId: input.schwabOrderId ?? null,
       placed: input.placed,
       error: input.error ?? null,
+      exitPrice: input.exitPrice ?? null,
+      pnl: input.pnl ?? null,
     });
   } catch (err) {
     logger.warn({ err, ticker: input.ticker }, "logAutoTradeDecision failed");
