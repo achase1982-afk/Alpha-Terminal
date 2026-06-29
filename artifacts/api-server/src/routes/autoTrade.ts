@@ -92,7 +92,7 @@ router.post("/start", async (req, res) => {
     });
     // START launches the engine the user selected.
     if (engineKind === "llm") startLlmEngine(userId);
-    else startEngine();
+    else startEngine(userId);
     return res.json({ ok: true, engine: engineStatus() });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

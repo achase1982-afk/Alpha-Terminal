@@ -39,6 +39,21 @@ interface DecisionRow {
   placed: boolean;
   error: string | null;
   createdAt: string;
+  exitPrice: number | null;
+  pnl: number | null;
+}
+
+/** Entry/exit price + P&L line for a decision row (null when not a fill). */
+function priceLabel(d: DecisionRow): string | null {
+  const isEntry = d.decision === "ENTER" || d.decision.startsWith("BUY");
+  if (isEntry && d.notional != null && d.quantity) {
+    return `entry @ ${(d.notional / d.quantity).toFixed(2)} · ${d.quantity} sh`;
+  }
+  if (d.exitPrice != null) {
+    const pnl = d.pnl != null ? ` · ${d.pnl >= 0 ? "+" : "−"}$${Math.abs(d.pnl).toFixed(2)}` : "";
+    return `exit @ ${d.exitPrice.toFixed(2)}${pnl}`;
+  }
+  return null;
 }
 
 const INSTRUMENT_OPTIONS: { value: InstrumentMode; label: string }[] = [
@@ -537,9 +552,16 @@ export function AutoTraderSettingsPage() {
               <div className="flex-1 min-w-0">
                 <div className="font-mono text-[11px] text-white">
                   {d.ticker}
-                  {d.quantity ? ` · ${d.quantity}` : ""}
                   {d.placed ? " · ✓ placed" : d.error ? " · ✗ " + d.error : ""}
                 </div>
+                {priceLabel(d) && (
+                  <div
+                    className="font-mono text-[10px] font-semibold tabular-nums"
+                    style={{ color: d.pnl != null ? (d.pnl >= 0 ? "#2ecc71" : "#f23645") : "#f5a623" }}
+                  >
+                    {priceLabel(d)}
+                  </div>
+                )}
                 {d.reasoning && (
                   <div className="font-mono text-[10px] text-zinc-500 leading-relaxed break-words">{d.reasoning}</div>
                 )}
@@ -556,8 +578,9 @@ export function AutoTraderSettingsPage() {
 }
 
 function decisionColor(decision: string, placed: boolean): string {
-  if (decision.startsWith("BUY")) return placed ? "#2ecc71" : "#f5a623";
-  if (decision === "SELL") return "#f23645";
+  if (decision === "ENTER" || decision.startsWith("BUY")) return placed ? "#2ecc71" : "#f5a623";
+  if (decision === "TAKE_PROFIT") return "#2ecc71";
+  if (decision === "SELL" || decision === "FLATTEN_CLOSE" || decision === "EXIT" || decision === "STOP_EXIT") return "#f23645";
   if (decision.startsWith("HALT")) return "#f23645";
   return "#71717a";
 }

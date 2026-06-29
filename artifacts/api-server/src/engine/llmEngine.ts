@@ -278,7 +278,9 @@ async function processSymbolLlm(s: SymbolState, cfg: Config): Promise<void> {
     }
     const ok = await flattenPosition(p2.symbol, p2.quantity, cfg);
     if (ok) recordExit(s, p2.avgPrice, p2.quantity, last, "TARGET_HIT", cfg);
-    await persist(s.symbol, "TAKE_PROFIT", decision.reason, null, ok, cfg);
+    await persist(s.symbol, "TAKE_PROFIT", decision.reason, null, ok, cfg, {
+      quantity: p2.quantity, exitPrice: round(last), pnl: round((last - p2.avgPrice) * p2.quantity),
+    });
     return;
   }
 
@@ -309,7 +311,9 @@ async function processSymbolLlm(s: SymbolState, cfg: Config): Promise<void> {
       void reconcileAccount(cfg); // pull the actual average fill into pos.avgPrice
     }
   }
-  await persist(s.symbol, "ENTER", decision.thesis || decision.reason, result.entryOrderId, result.ok, cfg, result.error);
+  await persist(s.symbol, "ENTER", decision.thesis || decision.reason, result.entryOrderId, result.ok, cfg, {
+    error: result.error, quantity: size, notional: round(entry * size),
+  });
 }
 
 /** Non-stop entry guards (halts, cooldown, trade cap, daily loss). */
@@ -346,14 +350,25 @@ async function flattenAllAtClose(cfg: Config): Promise<void> {
     const ok = await flattenPosition(pos.symbol, pos.quantity, cfg);
     const last = s.features.last || pos.avgPrice;
     if (ok) {
-      recordExit(s, pos.avgPrice, pos.quantity, last, "TIME_STOP", cfg);
-      await persist(s.symbol, "FLATTEN_CLOSE", "3:50 PM ET flatten-at-close", null, true, cfg);
+      const exitQty = pos.quantity, entryAvg = pos.avgPrice;
+      recordExit(s, entryAvg, exitQty, last, "TIME_STOP", cfg);
+      await persist(s.symbol, "FLATTEN_CLOSE", "3:50 PM ET flatten-at-close", null, true, cfg, {
+        quantity: exitQty, exitPrice: round(last), pnl: round((last - entryAvg) * exitQty),
+      });
     }
   }
 }
 
-async function persist(ticker: string, decision: string, reasoning: string, orderId: string | null, placed: boolean, cfg: Config, error?: string): Promise<void> {
-  await logAutoTradeDecision({ userId: _userId, ticker, decision, reasoning, modelId: cfg.modelId, schwabOrderId: orderId, placed, error: error ?? null });
+interface PersistExtra { error?: string | null; quantity?: number; notional?: number; exitPrice?: number; pnl?: number }
+async function persist(ticker: string, decision: string, reasoning: string, orderId: string | null, placed: boolean, cfg: Config, extra?: PersistExtra): Promise<void> {
+  await logAutoTradeDecision({
+    userId: _userId, ticker, decision, reasoning, modelId: cfg.modelId, schwabOrderId: orderId, placed,
+    error: extra?.error ?? null,
+    quantity: extra?.quantity ?? null,
+    notional: extra?.notional ?? null,
+    exitPrice: extra?.exitPrice ?? null,
+    pnl: extra?.pnl ?? null,
+  });
 }
 
 function broadcast(): void {

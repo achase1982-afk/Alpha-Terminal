@@ -34,6 +34,7 @@ import {
 } from "../lib/schwabStreamer.js";
 import { buildVolumeProfile } from "./volumeProfile.js";
 import { reconcileAccount } from "./reconcile.js";
+import { logEngineDecision } from "./decisionLog.js";
 import type { Bar, Signal, Config, ExitReason } from "./types.js";
 
 // ── Module-private timers ────────────────────────────────────────────────────
@@ -164,6 +165,15 @@ function recordExit(s: SymbolState, exitPrice: number, reason: ExitReason, cfg: 
   recordTrade(state.riskState, pos.symbol, pnl, cfg);
   logger.info({ symbol: pos.symbol, exitPrice, pnl: pnl.toFixed(2), reason }, "[engine] position closed");
 
+  logEngineDecision({
+    ticker: pos.symbol,
+    decision: reason === "TIME_STOP" ? "FLATTEN_CLOSE" : "EXIT",
+    reasoning: reason === "TIME_STOP" ? "3:55 PM ET time-stop flatten" : `exit (${reason})`,
+    quantity: pos.quantity,
+    exitPrice: Math.round(exitPrice * 1e4) / 1e4,
+    pnl: Math.round(pnl * 1e4) / 1e4,
+  });
+
   s.position = null;
   s.pendingEntryOrderId = null;
   s.pendingEntryAt = null;
@@ -293,6 +303,15 @@ async function processSymbol(s: SymbolState, cfg: Config): Promise<void> {
       thesis: signal.reason,
     };
     s.pendingSignal = signal;
+    logEngineDecision({
+      ticker: signal.symbol,
+      decision: "ENTER",
+      reasoning: signal.reason,
+      quantity: signal.size,
+      notional: Math.round(signal.entryPrice * signal.size * 1e4) / 1e4,
+      orderId: result.entryOrderId,
+      placed: true,
+    });
     if (result.entryOrderId) {
       s.pendingEntryOrderId = result.entryOrderId;
       s.pendingEntryAt = Date.now();
@@ -365,7 +384,7 @@ async function onTick(): Promise<void> {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export function startEngine(): void {
+export function startEngine(userId = ""): void {
   if (state.running) {
     logger.warn("[engine] already running");
     return;
@@ -387,6 +406,7 @@ export function startEngine(): void {
 
   state.running = true;
   state.activeEngine = "deterministic";
+  state.userId = userId;
   state.startedAt = new Date();
   state.dayKey = etDayKey();
 
