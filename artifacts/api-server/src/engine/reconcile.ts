@@ -25,6 +25,7 @@ import { logger } from "../lib/logger.js";
 import { fetchMappedSchwabAccounts } from "../lib/schwabPortfolioAccounts.js";
 import { recordTrade } from "./risk.js";
 import { logExit } from "./logger.js";
+import { logEngineDecision } from "./decisionLog.js";
 import { state, type SymbolState } from "./state.js";
 import type { Config } from "./types.js";
 
@@ -68,6 +69,18 @@ function recordReconciledExit(s: SymbolState, exitPrice: number, cfg: Config): n
     logger.warn({ err, symbol: s.symbol }, "[reconcile] logExit failed");
   }
   recordTrade(state.riskState, pos.symbol, pnl, cfg);
+  // Surface broker-detected exits (stop/target fill) in the deterministic
+  // engine's Recent Decisions. The LLM engine logs its own exits, so skip it here.
+  if (state.activeEngine === "deterministic") {
+    logEngineDecision({
+      ticker: pos.symbol,
+      decision: "STOP_EXIT",
+      reasoning: "broker exit filled (stop/target hit)",
+      quantity: pos.quantity,
+      exitPrice: Math.round(exitPrice * 1e4) / 1e4,
+      pnl: Math.round(pnl * 1e4) / 1e4,
+    });
+  }
   s.position = null;
   s.pendingEntryOrderId = null;
   s.pendingEntryAt = null;

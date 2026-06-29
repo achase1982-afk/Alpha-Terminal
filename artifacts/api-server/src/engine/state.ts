@@ -29,6 +29,8 @@ export interface SymbolState {
 export interface EngineState {
   running: boolean;
   activeEngine: import("./types.js").EngineKind | null;
+  /** User who started the engine — used to scope decision-log rows. */
+  userId: string;
   startedAt: Date | null;
   dayKey: string; // "YYYY-MM-DD" in ET — reset triggers at day boundary
 
@@ -57,6 +59,7 @@ export function newSymbolState(symbol: string): SymbolState {
 export const state: EngineState = {
   running: false,
   activeEngine: null,
+  userId: "",
   startedAt: null,
   dayKey: "",
 
