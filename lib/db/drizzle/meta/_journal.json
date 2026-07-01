@@ -274,6 +274,13 @@
       "when": 1779900000000,
       "tag": "0046_auto_trade_session_config",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1780000000000,
+      "tag": "0047_dashboard_layouts",
+      "breakpoints": true
     }
   ]
 }

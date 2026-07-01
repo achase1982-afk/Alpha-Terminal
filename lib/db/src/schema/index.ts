@@ -1034,6 +1034,26 @@ export const terminalPortfolioPrefsTable = pgTable("terminal_portfolio_prefs", {
 
 export type TerminalPortfolioPrefs = typeof terminalPortfolioPrefsTable.$inferSelect;
 
+export interface DashboardLayoutItem {
+  i: string;
+  widgetId: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Desktop dashboard grid layout, one row per user (client: dashboardStore). */
+export const terminalDashboardLayoutsTable = pgTable("terminal_dashboard_layouts", {
+  userId: text("user_id").primaryKey(),
+  items: jsonb("items").$type<DashboardLayoutItem[]>().notNull().default([]),
+  /** Preset id the layout came from; null once customized. */
+  activePreset: text("active_preset"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type TerminalDashboardLayout = typeof terminalDashboardLayoutsTable.$inferSelect;
+
 /** Precomputed scanner signals (LC130 refresh worker + sync GET /api/v2/scan). */
 export const tickerSignalSnapshotTable = pgTable("ticker_signal_snapshot", {
   ticker: text("ticker").primaryKey(),

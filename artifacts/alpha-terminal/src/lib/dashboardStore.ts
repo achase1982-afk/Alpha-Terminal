@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { fetchWithAuth } from "./fetchWithAuth";
 
 /** Widgets available in the desktop dashboard catalog. */
 export type DashboardWidgetId =
@@ -133,3 +134,87 @@ export const useDashboardStore = create<DashboardState>()(
     },
   ),
 );
+
+// ── Server sync ──────────────────────────────────────────────────────────────
+// Same model as watchlists: localStorage is the fast path, the server copy
+// follows the login across devices. Mutations schedule a debounced PUT; on
+// boot the server copy wins (or, if the server is empty, the local layout is
+// uploaded so it persists).
+
+let _syncTimer: ReturnType<typeof setTimeout> | null = null;
+let _applyingServerState = false;
+
+async function pushDashboardLayoutToServer(
+  items: DashboardItem[],
+  activePreset: DashboardPresetId | null,
+): Promise<void> {
+  try {
+    await fetchWithAuth("/api/dashboard-layout", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items, activePreset }),
+    });
+  } catch {
+    // Non-fatal: local state is source of truth when offline.
+  }
+}
+
+function scheduleDashboardSync() {
+  if (_syncTimer) clearTimeout(_syncTimer);
+  _syncTimer = setTimeout(() => {
+    const { items, activePreset } = useDashboardStore.getState();
+    void pushDashboardLayoutToServer(items, activePreset);
+  }, 1500);
+}
+
+// Any layout mutation (drag, resize, add, remove, swap, preset) syncs.
+useDashboardStore.subscribe((state, prev) => {
+  if (_applyingServerState) return;
+  if (state.items !== prev.items || state.activePreset !== prev.activePreset) {
+    scheduleDashboardSync();
+  }
+});
+
+function isValidPreset(p: unknown): p is DashboardPresetId {
+  return p === "overview" || p === "trading" || p === "research";
+}
+
+export async function loadDashboardLayoutFromServer(): Promise<void> {
+  try {
+    const res = await fetchWithAuth("/api/dashboard-layout");
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      items: Array<Partial<DashboardItem>> | null;
+      activePreset: string | null;
+    };
+    if (!data.items || data.items.length === 0) {
+      // No server copy yet — upload the local layout so it persists.
+      scheduleDashboardSync();
+      return;
+    }
+    // Drop entries whose widget no longer exists in this build.
+    const items = data.items.filter(
+      (it): it is DashboardItem =>
+        !!it &&
+        typeof it.i === "string" &&
+        typeof it.widgetId === "string" &&
+        it.widgetId in WIDGET_DEFAULT_SIZE &&
+        [it.x, it.y, it.w, it.h].every((n) => typeof n === "number" && Number.isFinite(n)),
+    );
+    if (items.length === 0) {
+      scheduleDashboardSync();
+      return;
+    }
+    _applyingServerState = true;
+    try {
+      useDashboardStore.setState({
+        items,
+        activePreset: isValidPreset(data.activePreset) ? data.activePreset : null,
+      });
+    } finally {
+      _applyingServerState = false;
+    }
+  } catch {
+    // Offline or API error — keep local state.
+  }
+}
