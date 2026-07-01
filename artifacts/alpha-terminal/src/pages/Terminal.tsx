@@ -45,6 +45,7 @@ import { peekPendingStrategistPushJobId, setPendingStrategistPushJobId } from "@
 import { readStashedStrategistPushJob } from "@/lib/strategistPushCache";
 import { openStrategistJobFromNotification, resumeAllRunningPollers } from "@/lib/strategistPoller";
 import { DashboardWorkspace } from "@/components/dashboard/DashboardWorkspace";
+import { loadDashboardLayoutFromServer } from "@/lib/dashboardStore";
 import type { DashboardWidgetHandlers } from "@/components/dashboard/widgetRegistry";
 import {
   Menu,
@@ -498,7 +499,10 @@ export default function TerminalPage() {
   const isThreePanel = useIsDesktop();
 
   // Load watchlists from server on mount so they're shared across devices.
-  useEffect(() => { void loadWatchlistsFromServer(); }, []);
+  useEffect(() => {
+    void loadWatchlistsFromServer();
+    void loadDashboardLayoutFromServer();
+  }, []);
 
   useEffect(() => {
     if (isWide && activeBottom === "watchlist") {
