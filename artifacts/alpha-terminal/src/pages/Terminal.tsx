@@ -48,6 +48,7 @@ import {
   Menu,
   RefreshCw,
   Clock,
+  Search,
 } from "lucide-react";
 import { useIsTablet, useIsDesktop } from "@/hooks/useMediaQuery";
 
@@ -77,7 +78,7 @@ function DesktopContextTabs({ activeTab, setActiveTab }: { activeTab: MarketData
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className="flex-1 min-w-[76px] py-2 font-mono text-[10px] sm:text-[11px] font-bold tracking-wider transition-colors border-b-2"
+            className="flex-1 min-w-[76px] py-2.5 font-mono text-xs font-bold tracking-wider transition-colors border-b-2"
             style={{
               color: isActive ? "#FFB800" : "#71717a",
               borderColor: isActive ? "#FFB800" : "transparent",
@@ -88,6 +89,78 @@ function DesktopContextTabs({ activeTab, setActiveTab }: { activeTab: MarketData
           </button>
         );
       })}
+    </div>
+  );
+}
+
+const DESKTOP_NAV_TABS: { id: BottomTab; label: string }[] = [
+  { id: "markets", label: "Markets" },
+  { id: "portfolio", label: "Portfolio" },
+  { id: "ai", label: "AI" },
+];
+
+const isMacLike = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+
+/**
+ * Desktop-only primary navigation: real tabs in the header plus a visible
+ * search field, replacing the phone-style bottom bar which was nearly
+ * invisible on monitors (36px strip, 10px type).
+ */
+function DesktopTopNav({
+  activeTab,
+  onTabChange,
+  onOpenSearch,
+  strategistRunningCount,
+  strategistUnviewedCount,
+}: {
+  activeTab: BottomTab;
+  onTabChange: (tab: BottomTab) => void;
+  onOpenSearch: () => void;
+  strategistRunningCount: number;
+  strategistUnviewedCount: number;
+}) {
+  return (
+    <div className="flex flex-1 items-center gap-1 min-w-0">
+      <nav className="flex items-center gap-1 ml-6" aria-label="Primary">
+        {DESKTOP_NAV_TABS.map((tab) => {
+          const isActive = activeTab === tab.id;
+          const showAiDot = tab.id === "ai" && (strategistRunningCount > 0 || strategistUnviewedCount > 0);
+          return (
+            <button
+              key={tab.id}
+              onClick={() => onTabChange(tab.id)}
+              className="relative px-4 py-1.5 rounded-md font-mono text-xs font-bold tracking-wider transition-colors"
+              style={{
+                color: isActive ? "#FFB800" : "#a1a1aa",
+                background: isActive ? "rgba(255,184,0,0.08)" : "transparent",
+              }}
+            >
+              {tab.label.toUpperCase()}
+              {showAiDot && (
+                <span
+                  aria-label={strategistRunningCount > 0 ? "Strategist running" : "New strategist result"}
+                  className={`absolute top-1 right-1.5 inline-block w-1.5 h-1.5 rounded-full ${strategistRunningCount > 0 ? "animate-pulse" : ""}`}
+                  style={{
+                    background: strategistRunningCount > 0 ? "#FFB800" : "#00d166",
+                    boxShadow: strategistRunningCount > 0 ? "0 0 6px #FFB800" : "0 0 6px #00d166",
+                  }}
+                />
+              )}
+            </button>
+          );
+        })}
+      </nav>
+      <button
+        onClick={onOpenSearch}
+        className="ml-auto mr-4 flex w-56 xl:w-72 items-center gap-2 rounded-md border border-zinc-700/70 bg-zinc-900/80 px-3 py-1.5 text-left transition-colors hover:border-zinc-500"
+        aria-label="Search symbols"
+      >
+        <Search className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+        <span className="flex-1 truncate font-mono text-xs text-zinc-500">Search symbols…</span>
+        <kbd className="shrink-0 rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-zinc-400">
+          {isMacLike ? "⌘K" : "Ctrl K"}
+        </kbd>
+      </button>
     </div>
   );
 }
@@ -425,6 +498,20 @@ export default function TerminalPage() {
     }
   }, [isWide, activeBottom]);
 
+  // Desktop: Cmd/Ctrl+K opens symbol search from anywhere (mirrors the
+  // visible shortcut hint in the top-nav search field).
+  useEffect(() => {
+    if (!isWide) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isWide]);
+
   useEffect(() => {
     try { sessionStorage.setItem("alpha_session_tab", activeBottom); } catch {}
   }, [activeBottom]);
@@ -564,10 +651,24 @@ export default function TerminalPage() {
           >
             <Menu className="w-5 h-5" />
           </button>
-          <div className="flex flex-col leading-none mr-auto">
+          <div className={`flex flex-col leading-none ${isWide ? "" : "mr-auto"}`}>
             <span className="font-sans font-black text-base tracking-wider text-foreground">ALPHA</span>
             <span className="font-sans font-semibold text-[10px] tracking-[0.25em] text-primary">TERMINAL</span>
           </div>
+          {isWide && (
+            <DesktopTopNav
+              activeTab={activeBottom}
+              onTabChange={(tab) => {
+                sidebarRef.current?.clearActivePage();
+                setSidebarOpen(false);
+                if (tab === "ai") setAiSubTab("pulse");
+                setActiveBottom(tab);
+              }}
+              onOpenSearch={() => setSearchOpen(true)}
+              strategistRunningCount={strategistRunningCount}
+              strategistUnviewedCount={strategistUnviewedCount}
+            />
+          )}
           <MarketSessionClock />
           <div
             className="ml-3 w-2.5 h-2.5 rounded-full shrink-0"
@@ -650,7 +751,7 @@ export default function TerminalPage() {
         />
 
         {isWide && (
-          <aside className="hidden md:flex flex-col border-r border-card-border shrink-0 overflow-y-auto" style={{ width: 280, background: "#000000" }}>
+          <aside className="hidden md:flex w-[280px] xl:w-[320px] flex-col border-r border-card-border shrink-0 overflow-y-auto" style={{ background: "#000000" }}>
             <WatchlistView onNavigateToSymbol={() => setActiveBottom("markets")} />
           </aside>
         )}
@@ -743,7 +844,7 @@ export default function TerminalPage() {
                   </div>
                 </div>
 
-                <div className="flex min-h-0 w-[360px] shrink-0 flex-col overflow-hidden border-l border-zinc-800/60" style={{ background: "#0c0c0c" }}>
+                <div className="flex min-h-0 w-[360px] xl:w-[420px] 2xl:w-[480px] shrink-0 flex-col overflow-hidden border-l border-zinc-800/60" style={{ background: "#0c0c0c" }}>
                   <div className="shrink-0">
                     <DesktopContextTabs activeTab={contextTab} setActiveTab={setContextTab} />
                     {contextTab === "company" && (
@@ -867,32 +968,6 @@ export default function TerminalPage() {
             setActiveBottom(tab);
           }
         }} />
-      )}
-
-      {isWide && (
-        <nav className="hidden md:flex shrink-0 h-9 bg-[#080808] border-t border-zinc-800/40 items-center justify-center gap-0 px-2 z-50">
-          {(["portfolio", "markets", "ai", "search"] as BottomTab[]).map((tab) => {
-            const labels: Record<string, string> = { portfolio: "Portfolio", markets: "Markets", ai: "AI", search: "Search" };
-            const isActive = activeBottom === tab || (tab === "search" && searchOpen);
-            return (
-              <button
-                key={tab}
-                onClick={() => {
-                  sidebarRef.current?.clearActivePage();
-                  setSidebarOpen(false);
-                  if (tab === "search") { setSearchOpen(true); } else { if (tab === "ai") setAiSubTab("pulse"); setActiveBottom(tab); }
-                }}
-                className="font-mono text-[10px] font-semibold tracking-wider px-3 py-1.5 rounded transition-colors"
-                style={{
-                  color: isActive ? "#FFB800" : "#52525b",
-                  background: isActive ? "rgba(255,184,0,0.06)" : "transparent",
-                }}
-              >
-                {labels[tab]}
-              </button>
-            );
-          })}
-        </nav>
       )}
 
       <SearchOverlay
