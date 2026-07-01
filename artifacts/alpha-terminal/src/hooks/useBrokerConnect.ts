@@ -4,6 +4,11 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 
 const NAVIGATION_TIMEOUT_MS = 90_000;
 const RETURN_RESET_DELAY_MS = 4_000;
+// The OAuth URL embeds a server-signed state with a TTL. Refetch well inside
+// that TTL so a banner/button that has been on screen for a while never sends
+// the user to Schwab with an already-expired state (which bounces the
+// callback with "OAuth state validation failed").
+const URL_REFRESH_INTERVAL_MS = 4 * 60 * 1000;
 
 /**
  * Pre-fetches the Schwab OAuth URL so the connect button can be rendered as a
@@ -56,6 +61,16 @@ export function useBrokerConnect() {
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [refreshUrl]);
+
+  // Also refresh on an interval while the app stays foregrounded — the
+  // visibilitychange handler never fires in that case, so a long-lived
+  // session would otherwise hold a stale signed state.
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (!document.hidden) refreshUrl();
+    }, URL_REFRESH_INTERVAL_MS);
+    return () => window.clearInterval(id);
   }, [refreshUrl]);
 
   /** Call from the anchor's onClick to flip the loading state. Do NOT

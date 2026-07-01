@@ -7,6 +7,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useTerminalStore } from "@/lib/store";
 import { fetchWithAuth, setClerkTokenGetter } from "@/lib/fetchWithAuth";
+import { clearSchwabAuthNotice } from "@/lib/authNoticeStore";
 import { useAutoLock, AutoLockProvider } from "@/hooks/useAutoLock";
 import TerminalPage from "@/pages/Terminal";
 import NotFound from "@/pages/not-found";
@@ -58,6 +59,8 @@ function PendingSessionLoader() {
         if (!cancelled && tok?.accessToken) {
           setTokens(tok.accessToken, tok.refreshToken || "");
           setTraderTokens(tok.accessToken, tok.refreshToken || "");
+          // Session restored — drop any stale "reconnect Schwab" banner.
+          clearSchwabAuthNotice();
         }
       } catch {}
     };
@@ -70,6 +73,7 @@ function PendingSessionLoader() {
         if (data.found && data.accessToken) {
           setTokens(data.accessToken, data.refreshToken || "");
           setTraderTokens(data.accessToken, data.refreshToken || "");
+          clearSchwabAuthNotice();
         }
       } catch {}
     };
@@ -82,6 +86,7 @@ function PendingSessionLoader() {
         if (data.found && data.accessToken) {
           setTraderTokens(data.accessToken, data.refreshToken || "");
           setTokens(data.accessToken, data.refreshToken || "");
+          clearSchwabAuthNotice();
         }
       } catch {}
     };
