@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import GridLayout, { type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
+import "./dashboard.css";
 import { Plus } from "lucide-react";
 import {
   useDashboardStore,
@@ -114,6 +115,7 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
           </div>
         ) : (
           <GridLayout
+            className="dashboard-grid"
             layout={layout}
             width={width}
             gridConfig={{
@@ -123,6 +125,7 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
               containerPadding: [0, 0],
             }}
             dragConfig={{ handle: ".widget-drag-handle", cancel: ".widget-no-drag" }}
+            resizeConfig={{ handles: ["s", "e", "se"] }}
             onLayoutChange={(next) => updateLayout(next)}
           >
             {items.map((it) => {
