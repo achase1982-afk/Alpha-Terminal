@@ -44,6 +44,8 @@ import { WatchlistView } from "@/components/WatchlistView";
 import { peekPendingStrategistPushJobId, setPendingStrategistPushJobId } from "@/lib/strategistPushNav";
 import { readStashedStrategistPushJob } from "@/lib/strategistPushCache";
 import { openStrategistJobFromNotification, resumeAllRunningPollers } from "@/lib/strategistPoller";
+import { DashboardWorkspace } from "@/components/dashboard/DashboardWorkspace";
+import type { DashboardWidgetHandlers } from "@/components/dashboard/widgetRegistry";
 import {
   Menu,
   RefreshCw,
@@ -52,7 +54,7 @@ import {
 } from "lucide-react";
 import { useIsTablet, useIsDesktop } from "@/hooks/useMediaQuery";
 
-type BottomTab = "scanner" | "markets" | "ai" | "search" | "portfolio" | "watchlist";
+type BottomTab = "scanner" | "markets" | "ai" | "search" | "portfolio" | "watchlist" | "dashboard";
 type ContextTab = MarketDataTab;
 
 function optionTradeStreamKey(contract: OptionsContract): string {
@@ -94,6 +96,7 @@ function DesktopContextTabs({ activeTab, setActiveTab }: { activeTab: MarketData
 }
 
 const DESKTOP_NAV_TABS: { id: BottomTab; label: string }[] = [
+  { id: "dashboard", label: "Dashboard" },
   { id: "markets", label: "Markets" },
   { id: "portfolio", label: "Portfolio" },
   { id: "ai", label: "AI" },
@@ -219,11 +222,16 @@ export default function TerminalPage() {
   const isCompact = headerMode === "collapsed";
   const isScrolled = isCompact ? true : headerMode === "expanded" ? false : isScrolledRaw;
   const [activeBottom, setActiveBottom] = useState<BottomTab>(() => {
+    // Desktop lands on the customizable dashboard; phone keeps Markets.
+    const fallback: BottomTab =
+      typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches
+        ? "dashboard"
+        : "markets";
     try {
       const saved = sessionStorage.getItem("alpha_session_tab") as BottomTab | null;
-      const valid: BottomTab[] = ["portfolio", "markets", "ai", "search", "watchlist"];
-      return saved && valid.includes(saved) ? saved : "markets";
-    } catch { return "markets"; }
+      const valid: BottomTab[] = ["portfolio", "markets", "ai", "search", "watchlist", "dashboard"];
+      return saved && valid.includes(saved) ? saved : fallback;
+    } catch { return fallback; }
   });
   const [contextTab, setContextTab] = useState<ContextTab>("news");
   const [aiSubTab, setAiSubTab] = useState<AiSubTab>(() => {
@@ -496,6 +504,10 @@ export default function TerminalPage() {
     if (isWide && activeBottom === "watchlist") {
       setActiveBottom("markets");
     }
+    // Dashboard is desktop-only; fall back if the viewport shrinks to phone.
+    if (!isWide && activeBottom === "dashboard") {
+      setActiveBottom("markets");
+    }
   }, [isWide, activeBottom]);
 
   // Desktop: Cmd/Ctrl+K opens symbol search from anywhere (mirrors the
@@ -639,6 +651,20 @@ export default function TerminalPage() {
     return () => clearTimeout(timer);
   }, [symbol, accessToken]);
 
+  const dashboardHandlers: DashboardWidgetHandlers = {
+    onNavigateToSymbol: (sym) => {
+      if (sym) useTerminalStore.getState().setSymbol(sym);
+      setActiveBottom("markets");
+    },
+    onTrade: openOrderForSymbol,
+    onRoll: (sym) => {
+      useTerminalStore.getState().setSymbol(sym);
+      setActiveBottom("markets");
+      setContextTab("options");
+    },
+    subscribeEquitySymbols,
+  };
+
   return (
     <div className="app-shell bg-background h-[100dvh] flex flex-col overflow-hidden selection:bg-primary/30 selection:text-white">
 
@@ -750,7 +776,8 @@ export default function TerminalPage() {
           }}
         />
 
-        {isWide && (
+        {/* Dashboard brings its own watchlist widget — skip the fixed rail there. */}
+        {isWide && activeBottom !== "dashboard" && (
           <aside className="hidden md:flex w-[280px] xl:w-[320px] flex-col border-r border-card-border shrink-0 overflow-y-auto" style={{ background: "#000000" }}>
             <WatchlistView onNavigateToSymbol={() => setActiveBottom("markets")} />
           </aside>
@@ -877,6 +904,7 @@ export default function TerminalPage() {
               </>
             ) : (
               <main ref={scrollRef} onScroll={handleScroll} className="flex-1 min-w-0 app-content pb-4 overflow-y-auto" style={activeBottom === "portfolio" ? { overscrollBehaviorY: "none" } : undefined}>
+                {activeBottom === "dashboard" && <DashboardWorkspace handlers={dashboardHandlers} />}
                 {activeBottom === "ai" && (
                   <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} onReopenValidatedOrder={reopenValidatedOrder} strategistDeepLinkJobId={strategistDeepLinkJobId} onStrategistDeepLinkHandled={() => setStrategistDeepLinkJobId(null)} />
                 )}
@@ -895,6 +923,7 @@ export default function TerminalPage() {
             }`}
             style={activeBottom === "portfolio" ? { overscrollBehaviorY: "none" } : undefined}
           >
+            {activeBottom === "dashboard" && <DashboardWorkspace handlers={dashboardHandlers} />}
             {activeBottom === "markets" && (
               <div className="flex min-h-0 flex-1 flex-col">
                 <div className="shrink-0 border-b border-zinc-800/60" style={{ background: "#0a0a0a" }}>
@@ -955,7 +984,7 @@ export default function TerminalPage() {
 
       {!isWide && (
         <BottomNav
-          activeTab={activeBottom}
+          activeTab={activeBottom === "dashboard" ? "markets" : activeBottom}
           strategistRunningCount={strategistRunningCount}
           strategistUnviewedCount={strategistUnviewedCount}
           onTabChange={(tab) => {
