@@ -1,5 +1,6 @@
 import { fetchWithAuth } from "./fetchWithAuth";
 import { useTerminalStore } from "./store";
+import { clearSchwabAuthNotice } from "./authNoticeStore";
 
 type ServerTokenPayload = {
   accessToken: string;
@@ -15,6 +16,12 @@ function applyServerTokens(tok: ServerTokenPayload) {
   const { setTokens, setTraderTokens } = useTerminalStore.getState();
   setTokens(tok.accessToken, tok.refreshToken || "");
   setTraderTokens(tok.accessToken, tok.refreshToken || "");
+  // Fresh tokens mean the Schwab session is alive again — any "session
+  // expired / reconnect Schwab" banner still on screen is stale. Clearing
+  // here (the single choke point for token arrival) fixes the banner
+  // surviving a successful reconnect when the WS portfolio stream is down
+  // or slow to report status "ok".
+  clearSchwabAuthNotice();
 }
 
 /** Pull canonical Schwab tokens from the API server without consuming a refresh grant. */
@@ -32,17 +39,25 @@ export async function syncSchwabTokensFromServer(): Promise<boolean> {
   }
 }
 
-/** Ask the server to refresh Schwab using its persisted refresh token (not the client copy). */
+/**
+ * Ask the server to refresh Schwab. The server prefers its own persisted
+ * refresh token, but we include the client's persisted copy as a fallback:
+ * if the server lost its token store (redeploy without the DB store, wiped
+ * .data volume) it would otherwise answer "No Schwab session on server"
+ * forever even though this device still holds a perfectly valid grant.
+ */
 export async function refreshSchwabViaServer(): Promise<{
   ok: boolean;
   status: number;
   bodyText: string;
 }> {
+  const { refreshToken, traderRefreshToken } = useTerminalStore.getState();
+  const clientRefreshToken = traderRefreshToken || refreshToken;
   try {
     const res = await fetchWithAuth("/api/auth/refresh", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify(clientRefreshToken ? { refreshToken: clientRefreshToken } : {}),
     });
     const bodyText = await res.text().catch(() => "");
     if (!res.ok) {

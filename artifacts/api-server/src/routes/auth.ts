@@ -55,7 +55,11 @@ function schwabOAuthErrorDetail(responseText: string): string | undefined {
 }
 
 const pendingTokens = new Map<string, { accessToken: string; refreshToken: string; ts: number }>();
-const STATE_TTL_MS = 10 * 60 * 1000;
+// The state clock starts when the OAuth URL is minted (prefetched by the
+// client), not when the user taps Connect — so the TTL must absorb prefetch
+// age plus a full Schwab login with MFA. 10 minutes proved too tight and
+// bounced real logins with "OAuth state validation failed".
+const STATE_TTL_MS = 30 * 60 * 1000;
 const TOKEN_TTL_MS = 5 * 60 * 1000;
 
 function cleanExpired() {

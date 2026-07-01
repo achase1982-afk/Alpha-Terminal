@@ -375,6 +375,10 @@ async function fetchAndPushPortfolio(ws: WebSocket, isClosed: () => boolean) {
       { ts: Date.now(), accountCount: mapped.length },
       `[PORTFOLIO_POLL] GET /accounts?fields=positions OK (${mapped.length} accounts)`,
     );
+    // Explicit healthy signal: clients infer "ok" from account payloads, but
+    // an account list of zero would otherwise leave them stuck on a stale
+    // no_token/error status (and a "reconnect Schwab" banner) forever.
+    safeSend(ws, JSON.stringify({ event: "portfolioStatus", data: { status: "ok" } }));
     if (mapped.length > 0) {
       safeSend(ws, JSON.stringify({ event: "portfolioAccounts", data: mapped }));
       safeSend(ws, JSON.stringify({ event: "portfolioAccount", data: mapped[0] }));
