@@ -1,17 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import GridLayout, { type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "./dashboard.css";
-import { Plus } from "lucide-react";
+import { Lock, LockOpen, Plus } from "lucide-react";
 import {
   useDashboardStore,
   DASHBOARD_COLS,
   DASHBOARD_ROW_HEIGHT,
   WIDGET_DEFAULT_SIZE,
+  type DashboardItem,
   type DashboardPresetId,
 } from "@/lib/dashboardStore";
 import { WIDGET_REGISTRY, WIDGET_CATALOG, type DashboardWidgetHandlers } from "./widgetRegistry";
-import { WidgetSymbolContext } from "./widgetSymbolContext";
+import { WidgetSymbolContext, WidgetChartSettingsContext } from "./widgetSymbolContext";
 import { WidgetFrame } from "./WidgetFrame";
 import {
   DropdownMenu,
@@ -26,10 +27,38 @@ const PRESETS: { id: DashboardPresetId; label: string }[] = [
   { id: "research", label: "Research" },
 ];
 
+/** One widget with its per-instance contexts (symbol pin, chart timeframe). */
+function WidgetBody({
+  item,
+  handlers,
+}: {
+  item: DashboardItem;
+  handlers: DashboardWidgetHandlers;
+}) {
+  const setWidgetChartTimeframe = useDashboardStore((s) => s.setWidgetChartTimeframe);
+  const chartSettings = useMemo(
+    () => ({
+      period: item.chartPeriod ?? null,
+      interval: item.chartInterval ?? null,
+      setTimeframe: (period: string, interval: string) =>
+        setWidgetChartTimeframe(item.i, period, interval),
+    }),
+    [item.chartPeriod, item.chartInterval, item.i, setWidgetChartTimeframe],
+  );
+  const def = WIDGET_REGISTRY[item.widgetId];
+  return (
+    <WidgetSymbolContext.Provider value={item.pinnedSymbol ?? null}>
+      <WidgetChartSettingsContext.Provider value={chartSettings}>
+        {def.render(handlers)}
+      </WidgetChartSettingsContext.Provider>
+    </WidgetSymbolContext.Provider>
+  );
+}
+
 /**
  * Desktop dashboard: a free-form 12-column grid of widgets. Drag by the
- * widget title bar, resize from the bottom-right corner, swap or remove from
- * the title bar, add from the catalog. Layout persists locally.
+ * widget title bar, resize from any edge or corner, swap/pin/remove from the
+ * title bar, add from the catalog. Layout persists locally and to the server.
  */
 export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHandlers }) {
   const items = useDashboardStore((s) => s.items);
@@ -40,9 +69,12 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
   const removeWidget = useDashboardStore((s) => s.removeWidget);
   const swapWidget = useDashboardStore((s) => s.swapWidget);
   const pinWidget = useDashboardStore((s) => s.pinWidget);
+  const locked = useDashboardStore((s) => s.locked);
+  const setLocked = useDashboardStore((s) => s.setLocked);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1200);
+  const [maximizedId, setMaximizedId] = useState<string | null>(null);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -54,6 +86,18 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
     setWidth(el.getBoundingClientRect().width);
     return () => ro.disconnect();
   }, []);
+
+  const maximizedItem = maximizedId ? (items.find((it) => it.i === maximizedId) ?? null) : null;
+
+  // Esc restores a maximized widget.
+  useEffect(() => {
+    if (!maximizedItem) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMaximizedId(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [maximizedItem]);
 
   const layout: LayoutItem[] = items.map((it) => {
     const size = WIDGET_DEFAULT_SIZE[it.widgetId];
@@ -81,7 +125,25 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
         {activePreset === null && (
           <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">Custom</span>
         )}
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setLocked(!locked)}
+            title={
+              locked
+                ? "Layout locked — click to allow moving and resizing"
+                : "Lock layout — prevents accidental moves and resizes"
+            }
+            className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 font-mono text-[11px] font-bold tracking-wider transition-colors"
+            style={{
+              color: locked ? "#FFB800" : "#a1a1aa",
+              borderColor: locked ? "rgba(255,184,0,0.4)" : "rgba(63,63,70,0.7)",
+              background: locked ? "rgba(255,184,0,0.08)" : "rgba(24,24,27,0.8)",
+            }}
+          >
+            {locked ? <Lock className="h-3.5 w-3.5" /> : <LockOpen className="h-3.5 w-3.5" />}
+            {locked ? "LOCKED" : "LOCK"}
+          </button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -126,12 +188,13 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
               margin: [8, 8],
               containerPadding: [0, 0],
             }}
-            dragConfig={{ handle: ".widget-drag-handle", cancel: ".widget-no-drag" }}
-            resizeConfig={{ handles: ["n", "s", "e", "w", "ne", "nw", "se", "sw"] }}
+            dragConfig={{ enabled: !locked, handle: ".widget-drag-handle", cancel: ".widget-no-drag" }}
+            resizeConfig={{ enabled: !locked, handles: ["n", "s", "e", "w", "ne", "nw", "se", "sw"] }}
             onLayoutChange={(next) => updateLayout(next)}
           >
             {items.map((it) => {
               const def = WIDGET_REGISTRY[it.widgetId];
+              const isMaximized = maximizedId === it.i;
               return (
                 <div key={it.i}>
                   <WidgetFrame
@@ -142,10 +205,18 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
                     pinnable={!!def.symbolAware}
                     pinnedSymbol={it.pinnedSymbol ?? null}
                     onPin={(symbol) => pinWidget(it.i, symbol)}
+                    isMaximized={false}
+                    onToggleMaximize={() => setMaximizedId(it.i)}
                   >
-                    <WidgetSymbolContext.Provider value={it.pinnedSymbol ?? null}>
-                      {def.render(handlers)}
-                    </WidgetSymbolContext.Provider>
+                    {/* While maximized the content lives in the overlay below —
+                        don't run two live copies of the same widget. */}
+                    {isMaximized ? (
+                      <div className="flex h-full items-center justify-center">
+                        <p className="font-mono text-xs tracking-wider text-zinc-600">MAXIMIZED</p>
+                      </div>
+                    ) : (
+                      <WidgetBody item={it} handlers={handlers} />
+                    )}
                   </WidgetFrame>
                 </div>
               );
@@ -153,6 +224,32 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
           </GridLayout>
         )}
       </div>
+
+      {maximizedItem && (
+        <div
+          className="fixed inset-0 z-[120] flex flex-col bg-black/70 p-3 backdrop-blur-sm md:p-6"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setMaximizedId(null);
+          }}
+        >
+          <WidgetFrame
+            title={WIDGET_REGISTRY[maximizedItem.widgetId].title}
+            swapOptions={WIDGET_CATALOG.filter((w) => w.id !== maximizedItem.widgetId)}
+            onSwap={(widgetId) => swapWidget(maximizedItem.i, widgetId as typeof maximizedItem.widgetId)}
+            onRemove={() => {
+              setMaximizedId(null);
+              removeWidget(maximizedItem.i);
+            }}
+            pinnable={!!WIDGET_REGISTRY[maximizedItem.widgetId].symbolAware}
+            pinnedSymbol={maximizedItem.pinnedSymbol ?? null}
+            onPin={(symbol) => pinWidget(maximizedItem.i, symbol)}
+            isMaximized
+            onToggleMaximize={() => setMaximizedId(null)}
+          >
+            <WidgetBody item={maximizedItem} handlers={handlers} />
+          </WidgetFrame>
+        </div>
+      )}
     </div>
   );
 }

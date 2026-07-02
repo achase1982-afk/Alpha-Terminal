@@ -1,5 +1,5 @@
 import { useTerminalStore } from "@/lib/store";
-import { useActiveSymbol } from "./widgetSymbolContext";
+import { useActiveSymbol, useActiveChartSettings } from "./widgetSymbolContext";
 import { useGetPriceHistory } from "@workspace/api-client-react";
 import type { PriceHistoryResponse } from "@workspace/api-client-react";
 import { ChartControls, chartParamsFromStore, isIntradayInterval } from "@/components/ChartControls";
@@ -11,8 +11,9 @@ import { TradingChart } from "@/components/TradingChart";
  * the history request against the Markets tab when both are mounted.
  */
 export function ChartWidget() {
-  const { accessToken, chartPeriod, chartInterval } = useTerminalStore();
+  const { accessToken } = useTerminalStore();
   const symbol = useActiveSymbol();
+  const { chartPeriod, chartInterval } = useActiveChartSettings();
   const chartParams = chartParamsFromStore(chartPeriod, chartInterval);
   const { data: historyData, isLoading: historyLoading } = useGetPriceHistory<PriceHistoryResponse>(
     {

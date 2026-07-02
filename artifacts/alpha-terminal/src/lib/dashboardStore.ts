@@ -26,6 +26,9 @@ export interface DashboardItem {
   h: number;
   /** Lock this widget to a symbol; undefined/null = follow the app symbol. */
   pinnedSymbol?: string | null;
+  /** Chart widgets: per-widget timeframe; undefined = follow the app chart settings. */
+  chartPeriod?: string | null;
+  chartInterval?: string | null;
 }
 
 export type DashboardPresetId = "overview" | "trading" | "research";
@@ -93,6 +96,11 @@ interface DashboardState {
   swapWidget: (i: string, widgetId: DashboardWidgetId) => void;
   /** Pin a widget instance to a symbol, or null to follow the app again. */
   pinWidget: (i: string, symbol: string | null) => void;
+  /** Chart widgets: set a per-widget timeframe (decouples from the app chart). */
+  setWidgetChartTimeframe: (i: string, period: string, interval: string) => void;
+  /** Freeze drag/resize so the layout can't be disturbed accidentally. */
+  locked: boolean;
+  setLocked: (locked: boolean) => void;
 }
 
 function nextInstanceKey(items: DashboardItem[], widgetId: DashboardWidgetId): string {
@@ -149,6 +157,15 @@ export const useDashboardStore = create<DashboardState>()(
           ),
           activePreset: state.activePreset,
         })),
+      setWidgetChartTimeframe: (i, period, interval) =>
+        set((state) => ({
+          items: state.items.map((it) =>
+            it.i === i ? { ...it, chartPeriod: period, chartInterval: interval } : it,
+          ),
+          activePreset: state.activePreset,
+        })),
+      locked: false,
+      setLocked: (locked) => set({ locked }),
     }),
     {
       name: "alpha-dashboard-layout",
@@ -228,6 +245,8 @@ export async function loadDashboardLayoutFromServer(): Promise<void> {
       .map((it) => ({
         ...it,
         pinnedSymbol: typeof it.pinnedSymbol === "string" && it.pinnedSymbol ? it.pinnedSymbol : null,
+        chartPeriod: typeof it.chartPeriod === "string" && it.chartPeriod ? it.chartPeriod : null,
+        chartInterval: typeof it.chartInterval === "string" && it.chartInterval ? it.chartInterval : null,
       }));
     if (items.length === 0) {
       scheduleDashboardSync();

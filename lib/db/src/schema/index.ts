@@ -1042,6 +1042,8 @@ export interface DashboardLayoutItem {
   w: number;
   h: number;
   pinnedSymbol?: string | null;
+  chartPeriod?: string | null;
+  chartInterval?: string | null;
 }
 
 /** Desktop dashboard grid layout, one row per user (client: dashboardStore). */

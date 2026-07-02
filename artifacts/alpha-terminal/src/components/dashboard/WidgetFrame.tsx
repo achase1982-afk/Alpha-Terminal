@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { GripVertical, Pin, PinOff, Repeat2, X } from "lucide-react";
+import { GripVertical, Maximize2, Minimize2, Pin, PinOff, Repeat2, X } from "lucide-react";
 import { useTerminalStore } from "@/lib/store";
 import {
   DropdownMenu,
@@ -21,6 +21,8 @@ export function WidgetFrame({
   pinnable = false,
   pinnedSymbol = null,
   onPin,
+  isMaximized = false,
+  onToggleMaximize,
   children,
 }: {
   title: string;
@@ -31,6 +33,8 @@ export function WidgetFrame({
   pinnable?: boolean;
   pinnedSymbol?: string | null;
   onPin?: (symbol: string | null) => void;
+  isMaximized?: boolean;
+  onToggleMaximize?: () => void;
   children: ReactNode;
 }) {
   const globalSymbol = useTerminalStore((s) => s.symbol);
@@ -75,6 +79,17 @@ export function WidgetFrame({
                 <Pin className="h-3.5 w-3.5" />
               </button>
             ))}
+          {onToggleMaximize && (
+            <button
+              type="button"
+              aria-label={isMaximized ? `Restore ${title}` : `Maximize ${title}`}
+              title={isMaximized ? "Restore (Esc)" : "Maximize"}
+              onClick={onToggleMaximize}
+              className="rounded p-1 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+            >
+              {isMaximized ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+            </button>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button

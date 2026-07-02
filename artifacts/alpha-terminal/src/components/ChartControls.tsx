@@ -1,4 +1,4 @@
-import { useTerminalStore } from "@/lib/store";
+import { useActiveChartSettings } from "@/components/dashboard/widgetSymbolContext";
 
 const TIMEFRAMES = [
   { label: "1D", period: "1D", interval: "5m" },
@@ -40,14 +40,14 @@ export function isIntradayInterval(interval: string) {
 }
 
 export function ChartControls() {
-  const { chartPeriod, setChartPeriod, chartInterval, setChartInterval } = useTerminalStore();
+  // Widget-local timeframe inside the dashboard; global chart settings elsewhere.
+  const { chartPeriod, chartInterval, setTimeframe } = useActiveChartSettings();
 
   const activeTf = TIMEFRAMES.find(t => t.period === chartPeriod && t.interval === chartInterval)
     ?? TIMEFRAMES.find(t => t.period === chartPeriod);
 
   const handleSelect = (tf: typeof TIMEFRAMES[number]) => {
-    setChartPeriod(tf.period);
-    setChartInterval(tf.interval);
+    setTimeframe(tf.period, tf.interval);
   };
 
   return (
