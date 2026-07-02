@@ -1006,7 +1006,12 @@ export default function TerminalPage() {
       <SearchOverlay
         isOpen={searchOpen}
         onClose={() => setSearchOpen(false)}
-        onSelectSymbol={() => { setSearchOpen(false); setActiveBottom("markets"); }}
+        onSelectSymbol={() => {
+          setSearchOpen(false);
+          // On the dashboard, unpinned widgets follow the new symbol in place —
+          // don't yank the user over to the Markets tab.
+          if (activeBottom !== "dashboard") setActiveBottom("markets");
+        }}
       />
       <InAppBrowser />
       <StrategyBuilder

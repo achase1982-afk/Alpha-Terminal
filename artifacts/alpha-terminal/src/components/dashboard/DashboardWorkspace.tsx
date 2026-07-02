@@ -11,6 +11,7 @@ import {
   type DashboardPresetId,
 } from "@/lib/dashboardStore";
 import { WIDGET_REGISTRY, WIDGET_CATALOG, type DashboardWidgetHandlers } from "./widgetRegistry";
+import { WidgetSymbolContext } from "./widgetSymbolContext";
 import { WidgetFrame } from "./WidgetFrame";
 import {
   DropdownMenu,
@@ -38,6 +39,7 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
   const addWidget = useDashboardStore((s) => s.addWidget);
   const removeWidget = useDashboardStore((s) => s.removeWidget);
   const swapWidget = useDashboardStore((s) => s.swapWidget);
+  const pinWidget = useDashboardStore((s) => s.pinWidget);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1200);
@@ -137,8 +139,13 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
                     swapOptions={WIDGET_CATALOG.filter((w) => w.id !== it.widgetId)}
                     onSwap={(widgetId) => swapWidget(it.i, widgetId as typeof it.widgetId)}
                     onRemove={() => removeWidget(it.i)}
+                    pinnable={!!def.symbolAware}
+                    pinnedSymbol={it.pinnedSymbol ?? null}
+                    onPin={(symbol) => pinWidget(it.i, symbol)}
                   >
-                    {def.render(handlers)}
+                    <WidgetSymbolContext.Provider value={it.pinnedSymbol ?? null}>
+                      {def.render(handlers)}
+                    </WidgetSymbolContext.Provider>
                   </WidgetFrame>
                 </div>
               );

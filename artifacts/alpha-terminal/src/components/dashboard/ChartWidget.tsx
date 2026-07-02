@@ -1,16 +1,18 @@
 import { useTerminalStore } from "@/lib/store";
+import { useActiveSymbol } from "./widgetSymbolContext";
 import { useGetPriceHistory } from "@workspace/api-client-react";
 import type { PriceHistoryResponse } from "@workspace/api-client-react";
 import { ChartControls, chartParamsFromStore, isIntradayInterval } from "@/components/ChartControls";
 import { TradingChart } from "@/components/TradingChart";
 
 /**
- * Self-contained chart widget for the dashboard grid. Follows the global
- * active symbol and chart settings; react-query dedupes the history request
- * against the Markets tab when both are mounted.
+ * Self-contained chart widget for the dashboard grid. Follows the widget's
+ * pinned symbol when set, else the global active symbol; react-query dedupes
+ * the history request against the Markets tab when both are mounted.
  */
 export function ChartWidget() {
-  const { symbol, accessToken, chartPeriod, chartInterval } = useTerminalStore();
+  const { accessToken, chartPeriod, chartInterval } = useTerminalStore();
+  const symbol = useActiveSymbol();
   const chartParams = chartParamsFromStore(chartPeriod, chartInterval);
   const { data: historyData, isLoading: historyLoading } = useGetPriceHistory<PriceHistoryResponse>(
     {
