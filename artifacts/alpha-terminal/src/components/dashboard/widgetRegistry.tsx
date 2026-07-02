@@ -6,7 +6,11 @@ import { PortfolioView } from "@/components/PortfolioView";
 import { MoversFeed } from "@/components/MoversFeed";
 import { CatalystsFeed } from "@/components/CatalystsFeed";
 import { MarketNewsChatPanel } from "@/components/MarketNewsChatPanel";
+import { OptionsTab } from "@/components/OptionsTab";
+import { MetricsBar } from "@/components/MetricsBar";
+import { MarketPulseDashboard } from "@/components/market-pulse/MarketPulseDashboard";
 import { ChartWidget } from "./ChartWidget";
+import { AccountSummaryWidget } from "./AccountSummaryWidget";
 
 /** Callbacks the host page (Terminal) provides to dashboard widgets. */
 export interface DashboardWidgetHandlers {
@@ -14,6 +18,12 @@ export interface DashboardWidgetHandlers {
   onTrade: NonNullable<ComponentProps<typeof PortfolioView>["onTrade"]>;
   onRoll: (sym: string) => void;
   subscribeEquitySymbols?: (syms: string[]) => void;
+  /** Options chain: register option symbols with the market stream. */
+  subscribeOptionSymbols?: (symbols: string[]) => Promise<void>;
+  onTradeSingle?: ComponentProps<typeof OptionsTab>["onTradeSingle"];
+  onOpenStrategyBuilder?: ComponentProps<typeof OptionsTab>["onOpenStrategyBuilder"];
+  /** Open the stock order ticket for the active symbol. */
+  openOrder?: (side: "BUY" | "SELL") => void;
 }
 
 interface WidgetDef {
@@ -61,6 +71,31 @@ export const WIDGET_REGISTRY: Record<DashboardWidgetId, WidgetDef> = {
     title: "Market Chat",
     symbolAware: true,
     render: () => <MarketNewsChatPanel />,
+  },
+  options: {
+    title: "Options Chain",
+    symbolAware: true,
+    render: (h) => (
+      <OptionsTab
+        subscribeOptionSymbols={h.subscribeOptionSymbols}
+        stickyOffset={0}
+        onTradeSingle={h.onTradeSingle}
+        onOpenStrategyBuilder={h.onOpenStrategyBuilder}
+      />
+    ),
+  },
+  trade: {
+    title: "Quote & Trade",
+    symbolAware: true,
+    render: (h) => <MetricsBar onTrade={h.openOrder} />,
+  },
+  pulse: {
+    title: "AI Pulse",
+    render: () => <MarketPulseDashboard />,
+  },
+  account: {
+    title: "Account Summary",
+    render: () => <AccountSummaryWidget />,
   },
 };
 

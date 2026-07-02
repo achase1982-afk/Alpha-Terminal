@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback, memo } from "react";
 import { useTerminalStore } from "@/lib/store";
+import { useActiveSymbol } from "@/components/dashboard/widgetSymbolContext";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import { useOptionsSettingsStore } from "@/lib/options-store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
@@ -1230,7 +1231,9 @@ interface OptionsTabProps {
 export type { Contract as OptionsContract };
 
 export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSingle, onOpenStrategyBuilder }: OptionsTabProps) {
-  const { symbol, accessToken } = useTerminalStore();
+  const { accessToken } = useTerminalStore();
+  // Widget pin wins inside the dashboard; global symbol everywhere else.
+  const symbol = useActiveSymbol();
   const { contractType, strikeCount, setCustomStrikeInput } = useOptionsSettingsStore();
   const setStrikeCount = useOptionsSettingsStore(s => s.setStrikeCount);
   const { activeColumnIds } = useOptionsColumnsStore();
