@@ -25,6 +25,8 @@ interface LayoutItemBody {
   w: number;
   h: number;
   pinnedSymbol?: string | null;
+  chartPeriod?: string | null;
+  chartInterval?: string | null;
 }
 
 function sanitizeItems(raw: unknown): LayoutItemBody[] | null {
@@ -32,7 +34,10 @@ function sanitizeItems(raw: unknown): LayoutItemBody[] | null {
   const items: LayoutItemBody[] = [];
   for (const it of raw) {
     if (!it || typeof it !== "object") return null;
-    const { i, widgetId, x, y, w, h, pinnedSymbol } = it as Record<string, unknown>;
+    const { i, widgetId, x, y, w, h, pinnedSymbol, chartPeriod, chartInterval } = it as Record<
+      string,
+      unknown
+    >;
     if (typeof i !== "string" || typeof widgetId !== "string") return null;
     if (![x, y, w, h].every((n) => typeof n === "number" && Number.isFinite(n))) return null;
     items.push({
@@ -45,6 +50,14 @@ function sanitizeItems(raw: unknown): LayoutItemBody[] | null {
       pinnedSymbol:
         typeof pinnedSymbol === "string" && pinnedSymbol.length > 0 && pinnedSymbol.length <= 24
           ? pinnedSymbol
+          : null,
+      chartPeriod:
+        typeof chartPeriod === "string" && chartPeriod.length > 0 && chartPeriod.length <= 8
+          ? chartPeriod
+          : null,
+      chartInterval:
+        typeof chartInterval === "string" && chartInterval.length > 0 && chartInterval.length <= 8
+          ? chartInterval
           : null,
     });
   }
