@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { useTerminalStore } from "@/lib/store";
+import { useActiveSymbol } from "@/components/dashboard/widgetSymbolContext";
 import { resolveActiveChatThreadId } from "@/lib/chatPersistence";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
@@ -110,7 +111,8 @@ export interface MarketNewsChatPanelProps {
 export function MarketNewsChatPanel({
   hideMobileComposerDock = false,
 }: MarketNewsChatPanelProps = {}) {
-  const symbol = useTerminalStore((s) => s.symbol);
+  // Widget pin wins inside the dashboard; global symbol everywhere else.
+  const symbol = useActiveSymbol();
   const aiModel = useTerminalStore((s) => s.aiFeatureSettings.chat.model);
   const anthropicOpusEffort = useTerminalStore((s) => s.aiFeatureSettings.chat.anthropicOpusEffort);
   const anthropicOpusSpeed = useTerminalStore((s) => s.aiFeatureSettings.chat.anthropicOpusSpeed);

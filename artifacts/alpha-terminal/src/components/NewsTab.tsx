@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useTerminalStore } from "@/lib/store";
+import { useActiveSymbol } from "@/components/dashboard/widgetSymbolContext";
 import type { LiveNewsItem } from "@/lib/store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Loader2, Newspaper, Zap, FileText } from "lucide-react";
@@ -191,7 +192,9 @@ function dedup(items: UnifiedItem[]): UnifiedItem[] {
 }
 
 export function NewsTab() {
-  const { symbol, openBrowser } = useTerminalStore();
+  const { openBrowser } = useTerminalStore();
+  // Widget pin wins inside the dashboard; global symbol everywhere else.
+  const symbol = useActiveSymbol();
   const liveNews = useTerminalStore((s) => s.liveNews);
 
   const { data: ibData } = useQuery<IBNewsResponse>({

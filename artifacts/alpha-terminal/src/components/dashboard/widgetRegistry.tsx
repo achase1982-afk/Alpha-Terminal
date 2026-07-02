@@ -18,12 +18,15 @@ export interface DashboardWidgetHandlers {
 
 interface WidgetDef {
   title: string;
+  /** Widget follows the active symbol and therefore supports pinning. */
+  symbolAware?: boolean;
   render: (h: DashboardWidgetHandlers) => ReactNode;
 }
 
 export const WIDGET_REGISTRY: Record<DashboardWidgetId, WidgetDef> = {
   chart: {
     title: "Chart",
+    symbolAware: true,
     render: () => <ChartWidget />,
   },
   watchlist: {
@@ -32,6 +35,7 @@ export const WIDGET_REGISTRY: Record<DashboardWidgetId, WidgetDef> = {
   },
   news: {
     title: "News",
+    symbolAware: true,
     render: () => <NewsTab />,
   },
   positions: {
@@ -55,6 +59,7 @@ export const WIDGET_REGISTRY: Record<DashboardWidgetId, WidgetDef> = {
   },
   chat: {
     title: "Market Chat",
+    symbolAware: true,
     render: () => <MarketNewsChatPanel />,
   },
 };

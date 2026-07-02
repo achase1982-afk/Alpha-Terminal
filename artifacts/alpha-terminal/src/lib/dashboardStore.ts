@@ -20,6 +20,8 @@ export interface DashboardItem {
   y: number;
   w: number;
   h: number;
+  /** Lock this widget to a symbol; undefined/null = follow the app symbol. */
+  pinnedSymbol?: string | null;
 }
 
 export type DashboardPresetId = "overview" | "trading" | "research";
@@ -77,6 +79,8 @@ interface DashboardState {
   addWidget: (widgetId: DashboardWidgetId) => void;
   removeWidget: (i: string) => void;
   swapWidget: (i: string, widgetId: DashboardWidgetId) => void;
+  /** Pin a widget instance to a symbol, or null to follow the app again. */
+  pinWidget: (i: string, symbol: string | null) => void;
 }
 
 function nextInstanceKey(items: DashboardItem[], widgetId: DashboardWidgetId): string {
@@ -125,6 +129,13 @@ export const useDashboardStore = create<DashboardState>()(
         set((state) => ({
           items: state.items.map((it) => (it.i === i ? { ...it, widgetId } : it)),
           activePreset: null,
+        })),
+      pinWidget: (i, symbol) =>
+        set((state) => ({
+          items: state.items.map((it) =>
+            it.i === i ? { ...it, pinnedSymbol: symbol ?? null } : it,
+          ),
+          activePreset: state.activePreset,
         })),
     }),
     {
@@ -193,14 +204,19 @@ export async function loadDashboardLayoutFromServer(): Promise<void> {
       return;
     }
     // Drop entries whose widget no longer exists in this build.
-    const items = data.items.filter(
-      (it): it is DashboardItem =>
-        !!it &&
-        typeof it.i === "string" &&
-        typeof it.widgetId === "string" &&
-        it.widgetId in WIDGET_DEFAULT_SIZE &&
-        [it.x, it.y, it.w, it.h].every((n) => typeof n === "number" && Number.isFinite(n)),
-    );
+    const items = data.items
+      .filter(
+        (it): it is DashboardItem =>
+          !!it &&
+          typeof it.i === "string" &&
+          typeof it.widgetId === "string" &&
+          it.widgetId in WIDGET_DEFAULT_SIZE &&
+          [it.x, it.y, it.w, it.h].every((n) => typeof n === "number" && Number.isFinite(n)),
+      )
+      .map((it) => ({
+        ...it,
+        pinnedSymbol: typeof it.pinnedSymbol === "string" && it.pinnedSymbol ? it.pinnedSymbol : null,
+      }));
     if (items.length === 0) {
       scheduleDashboardSync();
       return;

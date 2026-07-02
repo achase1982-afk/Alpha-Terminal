@@ -1041,6 +1041,7 @@ export interface DashboardLayoutItem {
   y: number;
   w: number;
   h: number;
+  pinnedSymbol?: string | null;
 }
 
 /** Desktop dashboard grid layout, one row per user (client: dashboardStore). */

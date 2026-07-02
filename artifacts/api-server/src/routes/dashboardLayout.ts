@@ -24,6 +24,7 @@ interface LayoutItemBody {
   y: number;
   w: number;
   h: number;
+  pinnedSymbol?: string | null;
 }
 
 function sanitizeItems(raw: unknown): LayoutItemBody[] | null {
@@ -31,10 +32,21 @@ function sanitizeItems(raw: unknown): LayoutItemBody[] | null {
   const items: LayoutItemBody[] = [];
   for (const it of raw) {
     if (!it || typeof it !== "object") return null;
-    const { i, widgetId, x, y, w, h } = it as Record<string, unknown>;
+    const { i, widgetId, x, y, w, h, pinnedSymbol } = it as Record<string, unknown>;
     if (typeof i !== "string" || typeof widgetId !== "string") return null;
     if (![x, y, w, h].every((n) => typeof n === "number" && Number.isFinite(n))) return null;
-    items.push({ i, widgetId, x: x as number, y: y as number, w: w as number, h: h as number });
+    items.push({
+      i,
+      widgetId,
+      x: x as number,
+      y: y as number,
+      w: w as number,
+      h: h as number,
+      pinnedSymbol:
+        typeof pinnedSymbol === "string" && pinnedSymbol.length > 0 && pinnedSymbol.length <= 24
+          ? pinnedSymbol
+          : null,
+    });
   }
   return items;
 }
