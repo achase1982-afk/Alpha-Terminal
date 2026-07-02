@@ -1,4 +1,5 @@
 import { useTerminalStore, useActiveWatchlist } from "@/lib/store";
+import { useActiveSymbol } from "@/components/dashboard/widgetSymbolContext";
 import { useQuote }         from "@/hooks/useQuote";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
 import { useTickColor }     from "@/hooks/useTickColor";
@@ -193,7 +194,8 @@ function HeaderSkeleton() {
 }
 
 export function VolumeBar() {
-  const { symbol, streamPrices } = useTerminalStore();
+  const { streamPrices } = useTerminalStore();
+  const symbol = useActiveSymbol();
   const { data: quote } = useQuote(symbol);
   const vol = streamPrices[symbol]?.volume ?? quote?.volume ?? null;
   const dayHigh = streamPrices[symbol]?.high ?? quote?.high ?? null;
@@ -229,7 +231,9 @@ export function VolumeBar() {
 }
 
 export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: MetricsBarProps) {
-  const { symbol, accessToken, streamPrices } = useTerminalStore();
+  const { accessToken, streamPrices } = useTerminalStore();
+  // Widget pin wins inside the dashboard; global symbol everywhere else.
+  const symbol = useActiveSymbol();
   const { data: quote, isLoading, source } = useQuote(symbol);
   const tickColor = useTickColor(symbol, quote?.last ?? null);
   const bidTickColor = useTickColor(`${symbol}__bid`, quote?.bid ?? null);

@@ -667,6 +667,10 @@ export default function TerminalPage() {
       setContextTab("options");
     },
     subscribeEquitySymbols,
+    subscribeOptionSymbols,
+    onTradeSingle: handleOptionTradeSingle,
+    onOpenStrategyBuilder: handleOpenStrategyBuilder,
+    openOrder,
   };
 
   return (

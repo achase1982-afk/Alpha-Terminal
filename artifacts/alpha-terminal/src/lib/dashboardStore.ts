@@ -10,7 +10,11 @@ export type DashboardWidgetId =
   | "positions"
   | "movers"
   | "catalysts"
-  | "chat";
+  | "chat"
+  | "options"
+  | "trade"
+  | "pulse"
+  | "account";
 
 export interface DashboardItem {
   /** Unique instance key — allows the same widget twice (e.g. two charts later). */
@@ -38,33 +42,41 @@ export const WIDGET_DEFAULT_SIZE: Record<DashboardWidgetId, { w: number; h: numb
   movers: { w: 4, h: 7, minW: 3, minH: 4 },
   catalysts: { w: 5, h: 7, minW: 3, minH: 4 },
   chat: { w: 4, h: 8, minW: 3, minH: 5 },
+  options: { w: 8, h: 8, minW: 4, minH: 4 },
+  trade: { w: 8, h: 3, minW: 4, minH: 2 },
+  pulse: { w: 6, h: 8, minW: 4, minH: 4 },
+  account: { w: 12, h: 2, minW: 4, minH: 2 },
 };
 
 function preset(id: DashboardPresetId): DashboardItem[] {
   switch (id) {
     case "overview":
-      // Account-first landing: positions and market breadth, no dominant chart.
+      // Account-first landing: totals strip, positions and market breadth,
+      // no dominant chart.
       return [
-        { i: "positions-1", widgetId: "positions", x: 0, y: 0, w: 5, h: 8 },
-        { i: "movers-1", widgetId: "movers", x: 5, y: 0, w: 4, h: 8 },
-        { i: "watchlist-1", widgetId: "watchlist", x: 9, y: 0, w: 3, h: 8 },
-        { i: "news-1", widgetId: "news", x: 0, y: 8, w: 7, h: 6 },
-        { i: "catalysts-1", widgetId: "catalysts", x: 7, y: 8, w: 5, h: 6 },
+        { i: "account-1", widgetId: "account", x: 0, y: 0, w: 12, h: 2 },
+        { i: "positions-1", widgetId: "positions", x: 0, y: 2, w: 5, h: 8 },
+        { i: "movers-1", widgetId: "movers", x: 5, y: 2, w: 4, h: 8 },
+        { i: "watchlist-1", widgetId: "watchlist", x: 9, y: 2, w: 3, h: 8 },
+        { i: "news-1", widgetId: "news", x: 0, y: 10, w: 7, h: 6 },
+        { i: "catalysts-1", widgetId: "catalysts", x: 7, y: 10, w: 5, h: 6 },
       ];
     case "trading":
       return [
-        { i: "chart-1", widgetId: "chart", x: 0, y: 0, w: 8, h: 8 },
-        { i: "watchlist-1", widgetId: "watchlist", x: 8, y: 0, w: 4, h: 4 },
-        { i: "news-1", widgetId: "news", x: 8, y: 4, w: 4, h: 4 },
-        { i: "positions-1", widgetId: "positions", x: 0, y: 8, w: 8, h: 5 },
-        { i: "chat-1", widgetId: "chat", x: 8, y: 8, w: 4, h: 5 },
+        { i: "trade-1", widgetId: "trade", x: 0, y: 0, w: 8, h: 3 },
+        { i: "chart-1", widgetId: "chart", x: 0, y: 3, w: 8, h: 7 },
+        { i: "options-1", widgetId: "options", x: 0, y: 10, w: 8, h: 7 },
+        { i: "watchlist-1", widgetId: "watchlist", x: 8, y: 0, w: 4, h: 5 },
+        { i: "news-1", widgetId: "news", x: 8, y: 5, w: 4, h: 5 },
+        { i: "chat-1", widgetId: "chat", x: 8, y: 10, w: 4, h: 7 },
       ];
     case "research":
       return [
-        { i: "catalysts-1", widgetId: "catalysts", x: 0, y: 0, w: 6, h: 7 },
-        { i: "movers-1", widgetId: "movers", x: 6, y: 0, w: 6, h: 7 },
-        { i: "news-1", widgetId: "news", x: 0, y: 7, w: 6, h: 7 },
-        { i: "chat-1", widgetId: "chat", x: 6, y: 7, w: 6, h: 7 },
+        { i: "pulse-1", widgetId: "pulse", x: 0, y: 0, w: 6, h: 8 },
+        { i: "catalysts-1", widgetId: "catalysts", x: 6, y: 0, w: 6, h: 8 },
+        { i: "movers-1", widgetId: "movers", x: 0, y: 8, w: 4, h: 7 },
+        { i: "news-1", widgetId: "news", x: 4, y: 8, w: 4, h: 7 },
+        { i: "chat-1", widgetId: "chat", x: 8, y: 8, w: 4, h: 7 },
       ];
   }
 }
