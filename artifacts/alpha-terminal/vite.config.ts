@@ -35,6 +35,10 @@ export default defineConfig({
     "import.meta.env.VITE_ADMIN_API_KEY": JSON.stringify(
       process.env.VITE_ADMIN_API_KEY ?? "",
     ),
+    // react-draggable (via react-grid-layout) gates its debug logger on
+    // process.env.DRAGGABLE_DEBUG; without this define the bare `process`
+    // reference throws in the browser and aborts every grid resize/drag start.
+    "process.env.DRAGGABLE_DEBUG": "false",
   },
   plugins: [
     react(),
