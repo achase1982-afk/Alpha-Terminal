@@ -125,7 +125,7 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
               containerPadding: [0, 0],
             }}
             dragConfig={{ handle: ".widget-drag-handle", cancel: ".widget-no-drag" }}
-            resizeConfig={{ handles: ["s", "e", "se"] }}
+            resizeConfig={{ handles: ["n", "s", "e", "w", "ne", "nw", "se", "sw"] }}
             onLayoutChange={(next) => updateLayout(next)}
           >
             {items.map((it) => {

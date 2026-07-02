@@ -1,7 +1,8 @@
 /*
  * Dashboard grid resize affordances. The library default is a 5px black
  * corner mark shown only on hover — invisible on this dark theme, which
- * made widgets look non-resizable. Scoped under .dashboard-grid.
+ * made widgets look non-resizable. Widgets resize from all four corners
+ * and all four edges. Scoped under .dashboard-grid.
  */
 
 .dashboard-grid .react-grid-item > .react-resizable-handle {
@@ -13,12 +14,20 @@
   opacity: 1;
 }
 
-/* Corner grip (se): larger hit area, visible zinc mark, amber on hover. */
-.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-se {
+/* Corner grips: larger hit area, visible zinc mark, amber on hover.
+   The library rotates the sw/nw/ne handle boxes, so styling the se-style
+   ::after mark once orients correctly on every corner. */
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-se,
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-sw,
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-ne,
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-nw {
   width: 22px;
   height: 22px;
 }
-.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-se::after {
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-se::after,
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-sw::after,
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-ne::after,
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-nw::after {
   right: 4px;
   bottom: 4px;
   width: 9px;
@@ -27,20 +36,31 @@
   border-bottom: 2px solid #a1a1aa;
   border-radius: 1px;
 }
-.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-se:hover::after {
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-se:hover::after,
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-sw:hover::after,
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-ne:hover::after,
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-nw:hover::after {
   border-color: #ffb800;
 }
 
-/* Right edge: full-height strip instead of the library's 20px center nub. */
-.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-e {
+/* Right/left edges: full-height strips instead of the library's 20px nub. */
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-e,
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-w {
   top: 0;
   bottom: 0;
-  right: -4px;
   width: 12px;
   height: auto;
   margin-top: 0;
   transform: none;
   cursor: ew-resize;
+}
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-e {
+  right: -4px;
+  left: auto;
+}
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-w {
+  left: -4px;
+  right: auto;
 }
 
 /* Bottom edge: full-width strip. */
@@ -48,7 +68,22 @@
   left: 0;
   right: 0;
   bottom: -4px;
+  top: auto;
   height: 12px;
+  width: auto;
+  margin-left: 0;
+  transform: none;
+  cursor: ns-resize;
+}
+
+/* Top edge: slimmer strip so the widget title bar underneath stays easy to
+   grab for drag-to-move. */
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-n {
+  left: 0;
+  right: 0;
+  top: -4px;
+  bottom: auto;
+  height: 9px;
   width: auto;
   margin-left: 0;
   transform: none;
@@ -57,7 +92,9 @@
 
 /* Amber pill in the middle of each edge strip on hover. */
 .dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-e::after,
-.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-s::after {
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-w::after,
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-s::after,
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-n::after {
   content: "";
   position: absolute;
   border: none;
@@ -69,6 +106,15 @@
 .dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-e::after {
   top: 50%;
   right: 5px;
+  left: auto;
+  width: 3px;
+  height: 36px;
+  margin-top: -18px;
+}
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-w::after {
+  top: 50%;
+  left: 5px;
+  right: auto;
   width: 3px;
   height: 36px;
   margin-top: -18px;
@@ -76,12 +122,23 @@
 .dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-s::after {
   left: 50%;
   bottom: 5px;
+  top: auto;
+  height: 3px;
+  width: 36px;
+  margin-left: -18px;
+}
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-n::after {
+  left: 50%;
+  top: 3px;
+  bottom: auto;
   height: 3px;
   width: 36px;
   margin-left: -18px;
 }
 .dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-e:hover::after,
-.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-s:hover::after {
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-w:hover::after,
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-s:hover::after,
+.dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-n:hover::after {
   opacity: 1;
 }
 
