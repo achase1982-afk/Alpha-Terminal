@@ -178,6 +178,21 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
     }
   }, [isOpen]);
 
+  // Esc closes the overlay (it opens via Cmd/Ctrl+K on desktop, so it must
+  // also close from the keyboard — otherwise the full-screen sheet keeps
+  // swallowing every click with no obvious way out).
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen, onClose]);
+
   useEffect(() => {
     const trimmed = inputVal.trim().toUpperCase();
     if (!trimmed) {
@@ -226,6 +241,9 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
           top: 0,
           transform: isOpen ? "translateY(0)" : "translateY(100%)",
           background: "#0c0c0c",
+          // Belt and braces: while closed (or mid-close animation) the sheet
+          // must never intercept taps meant for the app underneath.
+          pointerEvents: isOpen ? "auto" : "none",
         }}
       >
         <div

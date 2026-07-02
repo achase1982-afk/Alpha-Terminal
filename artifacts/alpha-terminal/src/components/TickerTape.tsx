@@ -22,7 +22,7 @@ const TapeItem = memo(function TapeItem({ symbol }: { symbol: string }) {
   return (
     <button
       onClick={() => setSymbol(symbol)}
-      className="inline-flex items-center gap-1.5 px-4 whitespace-nowrap cursor-pointer
+      className="inline-flex items-center gap-1.5 px-4 py-2.5 whitespace-nowrap cursor-pointer
         hover:brightness-125 transition-all duration-150 group"
       style={{ fontSize: "13px" }}
     >
