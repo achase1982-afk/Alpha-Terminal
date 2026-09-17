@@ -7,6 +7,7 @@ import {
   DollarSign, BarChart3, Users, Landmark, ShieldCheck,
   Loader2, ArrowUpRight, ArrowDownRight, Minus,
 } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 
 const API_BASE = "/api";
 
@@ -57,7 +58,7 @@ interface TearSheetData {
 }
 
 function useTearSheet(symbol: string) {
-  const { accessToken } = useTerminalStore();
+  const { accessToken } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken })));
   const { data: quote, isLoading: quoteLoading } = useQuote(symbol);
 
   const [fundamentals, setFundamentals] = useState<FundamentalData | null>(null);
@@ -450,7 +451,7 @@ interface InstitutionalTearSheetProps {
 }
 
 export function InstitutionalTearSheet({ isOpen, onClose }: InstitutionalTearSheetProps) {
-  const { symbol } = useTerminalStore();
+  const { symbol } = useTerminalStore(useShallow((s) => ({ symbol: s.symbol })));
   const { data, isLoading, fundError } = useTearSheet(symbol);
 
   if (!isOpen) return null;

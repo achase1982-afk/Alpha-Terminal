@@ -40,6 +40,7 @@ import type { ScannerV3WireCard } from "@/hooks/useUnifiedScan";
 import type { ScannerCardAction } from "@/components/scanner/scannerCard.types";
 import { isUsEquitiesMarketHoursEt } from "@/lib/usMarketHours";
 import { cn } from "@/lib/utils";
+import { useShallow } from "zustand/react/shallow";
 
 function UniverseDropdown({ value, onChange, presets, tuningEntries, watchlists, screens, onCreateScreen, onEditScreen, onDeleteScreen, onRefreshScreen, refreshingScreenId, onCreateWatchlist, onEditWatchlist, onDeleteWatchlist, chromeTrigger }: {
   value: string;
@@ -457,7 +458,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   onNavigateToSymbol?: (sym: string) => void;
   onSendToStrategist?: SendToStrategistFn;
 }) {
-  const { accessToken } = useTerminalStore();
+  const { accessToken } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken })));
   const { pulseData } = useMarketPulseStore();
   const shockActive = pulseData?.shockState === "ACTIVE";
   const universeData = useScannerUniverses();

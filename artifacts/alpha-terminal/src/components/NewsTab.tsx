@@ -4,6 +4,7 @@ import { useActiveSymbol } from "@/components/dashboard/widgetSymbolContext";
 import type { LiveNewsItem } from "@/lib/store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Loader2, Newspaper, Zap, FileText } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 
 interface NewsArticle {
   id: number;
@@ -192,7 +193,7 @@ function dedup(items: UnifiedItem[]): UnifiedItem[] {
 }
 
 export function NewsTab() {
-  const { openBrowser } = useTerminalStore();
+  const { openBrowser } = useTerminalStore(useShallow((s) => ({ openBrowser: s.openBrowser })));
   // Widget pin wins inside the dashboard; global symbol everywhere else.
   const symbol = useActiveSymbol();
   const liveNews = useTerminalStore((s) => s.liveNews);

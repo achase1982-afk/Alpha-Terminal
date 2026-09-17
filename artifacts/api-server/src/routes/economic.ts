@@ -32,10 +32,18 @@ function loadDiskCache(key: string): any | null {
   return null;
 }
 
+/**
+ * Persist a cache entry off the request path. The write is fire-and-forget: a
+ * failed write only costs a refetch after restart, and a synchronous write of a
+ * multi-hundred-KB payload would block the event loop for every other request.
+ */
 function saveDiskCache(key: string, data: any): void {
   try {
     const fp = path.join(CACHE_DIR, `${key}.json`);
-    fs.writeFileSync(fp, JSON.stringify(data));
+    const body = JSON.stringify(data);
+    void fs.promises.writeFile(fp, body).catch((err) => {
+      logger.warn({ err, key }, "economic: disk cache write failed");
+    });
   } catch {}
 }
 

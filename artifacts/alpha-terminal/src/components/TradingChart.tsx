@@ -13,6 +13,7 @@ import {
 import type { Candle } from "@workspace/api-client-react";
 import { useTerminalStore } from '@/lib/store';
 import { calculateSMA, calculateBollingerBands } from '@/lib/chart-utils';
+import { useShallow } from "zustand/react/shallow";
 
 interface TradingChartProps {
   symbol?: string;
@@ -39,7 +40,7 @@ export function TradingChart({ symbol, data, isLoading, error, timedOut, tokenEx
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const lastCandleTimeRef = useRef<number>(0);
-  const { overlays } = useTerminalStore();
+  const { overlays } = useTerminalStore(useShallow((s) => ({ overlays: s.overlays })));
 
   useEffect(() => {
     if (!chartContainerRef.current || !data || data.length === 0) return;

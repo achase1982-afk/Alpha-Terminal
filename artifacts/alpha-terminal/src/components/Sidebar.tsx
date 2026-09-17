@@ -48,6 +48,7 @@ import { TelemetryLogsPanel } from "@/components/TelemetryLogsPanel";
 import { SecurityPrivacyPage } from "@/components/SecurityPrivacyPage";
 import { useAuth } from "@clerk/clerk-react";
 import { signOutWithFullNavigation } from "@/lib/clerkSignOut";
+import { useShallow } from "zustand/react/shallow";
 
 const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
 
@@ -338,7 +339,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
 });
 
 function WatchlistPage({ onClose }: { onClose: () => void }) {
-  const { removeFromWatchlist, setSymbol, streamPrices } = useTerminalStore();
+  const { removeFromWatchlist, setSymbol, streamPrices } = useTerminalStore(useShallow((s) => ({ removeFromWatchlist: s.removeFromWatchlist, setSymbol: s.setSymbol, streamPrices: s.streamPrices })));
   const watchlist = useActiveWatchlist();
 
   return (
@@ -405,7 +406,7 @@ function StrategistTuningPage() {
 }
 
 function ChartOptionsPage() {
-  const { overlays, toggleOverlay } = useTerminalStore();
+  const { overlays, toggleOverlay } = useTerminalStore(useShallow((s) => ({ overlays: s.overlays, toggleOverlay: s.toggleOverlay })));
   const { contractType, setContractType, maxDte, setMaxDte } = useOptionsSettingsStore();
 
   const OVERLAY_LABELS: Record<string, string> = { sma20: "SMA 20", sma50: "SMA 50", bb: "BB", rsi: "RSI", volume: "VOL" };
@@ -461,7 +462,7 @@ function ChartOptionsPage() {
 }
 
 function DisplayMarqueePage() {
-  const { macroSymbols, setMacroSymbols, tickerTapeSymbols, setTickerTapeSymbols, tapeSpeed, setTapeSpeed } = useTerminalStore();
+  const { macroSymbols, setMacroSymbols, tickerTapeSymbols, setTickerTapeSymbols, tapeSpeed, setTapeSpeed } = useTerminalStore(useShallow((s) => ({ macroSymbols: s.macroSymbols, setMacroSymbols: s.setMacroSymbols, tickerTapeSymbols: s.tickerTapeSymbols, setTickerTapeSymbols: s.setTickerTapeSymbols, tapeSpeed: s.tapeSpeed, setTapeSpeed: s.setTapeSpeed })));
   const [macroInputs, setMacroInputs] = useState<string[]>(macroSymbols);
   const [tapeInput, setTapeInput] = useState(tickerTapeSymbols.join(", "));
   const [saved, setSaved] = useState(false);
@@ -559,7 +560,7 @@ function AiFeatureControl({ featureKey, label, icon }: {
   label: string;
   icon: string;
 }) {
-  const { aiFeatureSettings, setAiFeatureSetting } = useTerminalStore();
+  const { aiFeatureSettings, setAiFeatureSetting } = useTerminalStore(useShallow((s) => ({ aiFeatureSettings: s.aiFeatureSettings, setAiFeatureSetting: s.setAiFeatureSetting })));
   const settings = aiFeatureSettings[featureKey];
   const [expanded, setExpanded] = useState(false);
   const temperatureConfigurable = isAnthropicTemperatureConfigurable(settings.model);
@@ -638,7 +639,7 @@ function AiFeatureControl({ featureKey, label, icon }: {
 }
 
 function AiLabStrategistControl() {
-  const { aiLabStrategistConfig, setAiLabStrategistConfig, aiFeatureSettings, setAiFeatureSetting } = useTerminalStore();
+  const { aiLabStrategistConfig, setAiLabStrategistConfig, aiFeatureSettings, setAiFeatureSetting } = useTerminalStore(useShallow((s) => ({ aiLabStrategistConfig: s.aiLabStrategistConfig, setAiLabStrategistConfig: s.setAiLabStrategistConfig, aiFeatureSettings: s.aiFeatureSettings, setAiFeatureSetting: s.setAiFeatureSetting })));
   const labOpus = aiFeatureSettings.strategist;
   const [expanded, setExpanded] = useState(false);
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -857,7 +858,7 @@ function AiLabStrategistControl() {
 }
 
 function AiParametersPage() {
-  const { aiFeatureSettings, setAiFeatureSetting } = useTerminalStore();
+  const { aiFeatureSettings, setAiFeatureSetting } = useTerminalStore(useShallow((s) => ({ aiFeatureSettings: s.aiFeatureSettings, setAiFeatureSetting: s.setAiFeatureSetting })));
 
   const [globalTemp, setGlobalTemp] = useState(0);
   const [setAllModel, setSetAllModel] = useState("");
@@ -952,7 +953,7 @@ function AiParametersPage() {
 }
 
 function MoversAiControl() {
-  const { aiLabStrategistConfig, setAiLabStrategistConfig, aiFeatureSettings, setAiFeatureSetting } = useTerminalStore();
+  const { aiLabStrategistConfig, setAiLabStrategistConfig, aiFeatureSettings, setAiFeatureSetting } = useTerminalStore(useShallow((s) => ({ aiLabStrategistConfig: s.aiLabStrategistConfig, setAiLabStrategistConfig: s.setAiLabStrategistConfig, aiFeatureSettings: s.aiFeatureSettings, setAiFeatureSetting: s.setAiFeatureSetting })));
   const labOpus = aiFeatureSettings.strategist;
   const [expanded, setExpanded] = useState(false);
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1343,7 +1344,7 @@ const NOTIFICATION_EVENTS: { key: NotificationEventType; label: string; descript
 ];
 
 function NotificationsPage() {
-  const { notificationPrefs, setNotificationPref, setNotificationChannelPref, setAllNotificationPrefs } = useTerminalStore();
+  const { notificationPrefs, setNotificationPref, setNotificationChannelPref, setAllNotificationPrefs } = useTerminalStore(useShallow((s) => ({ notificationPrefs: s.notificationPrefs, setNotificationPref: s.setNotificationPref, setNotificationChannelPref: s.setNotificationChannelPref, setAllNotificationPrefs: s.setAllNotificationPrefs })));
   const allInApp = Object.values(notificationPrefs.inApp).every(Boolean);
   const noneInApp = Object.values(notificationPrefs.inApp).every(v => !v);
   const allPush = Object.values(notificationPrefs.push).every(Boolean);
@@ -1752,7 +1753,7 @@ function MarketPulseDisplayPage() {
 // ─── Carved-out Intelligence sub-pages from former ChartOptionsPage ────
 
 function ChartOverlaysPage() {
-  const { overlays, toggleOverlay } = useTerminalStore();
+  const { overlays, toggleOverlay } = useTerminalStore(useShallow((s) => ({ overlays: s.overlays, toggleOverlay: s.toggleOverlay })));
   const OVERLAY_LABELS: Record<string, string> = { sma20: "SMA 20", sma50: "SMA 50", bb: "BB", rsi: "RSI", volume: "VOL" };
   return (
     <div className="space-y-3 max-w-xl mx-auto">

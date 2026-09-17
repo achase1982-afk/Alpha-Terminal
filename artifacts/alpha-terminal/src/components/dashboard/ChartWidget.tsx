@@ -4,6 +4,7 @@ import { useGetPriceHistory } from "@workspace/api-client-react";
 import type { PriceHistoryResponse } from "@workspace/api-client-react";
 import { ChartControls, chartParamsFromStore, isIntradayInterval } from "@/components/ChartControls";
 import { TradingChart } from "@/components/TradingChart";
+import { useShallow } from "zustand/react/shallow";
 
 /**
  * Self-contained chart widget for the dashboard grid. Follows the widget's
@@ -11,7 +12,7 @@ import { TradingChart } from "@/components/TradingChart";
  * the history request against the Markets tab when both are mounted.
  */
 export function ChartWidget() {
-  const { accessToken } = useTerminalStore();
+  const { accessToken } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken })));
   const symbol = useActiveSymbol();
   const { chartPeriod, chartInterval } = useActiveChartSettings();
   const chartParams = chartParamsFromStore(chartPeriod, chartInterval);

@@ -100,13 +100,13 @@ describe("filterContaminatedIvs", () => {
   });
 
   it("relaxes spreadExceedsMid in mid-wing band (5–15% from spot)", () => {
-    const c = baseContract({
-      strike: 110,
-      bid: 0.01,
-      ask: 0.16,
-      mid: 0.085,
-      impliedVolatility: 0.4,
-    });
+    // 10% OTM: spread 0.11 vs mid 0.105 fails the 1× ATM rule but passes the 1.5× mid-wing tier.
+    const quote = { bid: 0.05, ask: 0.16, mid: 0.105, impliedVolatility: 0.4 };
+    const atm = baseContract({ strike: 100, ...quote });
+    filterContaminatedIvs([atm], 100, "open");
+    expect(atm.impliedVolatility).toBeNull();
+
+    const c = baseContract({ strike: 110, ...quote });
     const { stats } = filterContaminatedIvs([c], 100, "open");
     expect(c.impliedVolatility).toBe(0.4);
     expect(stats.ivClampedReasons.spreadExceedsMid).toBe(0);

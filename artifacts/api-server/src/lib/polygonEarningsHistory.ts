@@ -8,6 +8,7 @@ import { db, analystEstimatesTable, corporateEventsTable, equityDailyTable } fro
 import { polygonKey } from "./polygonAnalystData.js";
 import { appendPolygonApiTraceRecord } from "./polygonApiTrace.js";
 import { fetchRescForwardEstimates } from "./ibkrResc.js";
+import { setBounded } from "./boundedCache.js";
 
 const POLYGON_BASE = "https://api.polygon.io";
 const CACHE_TTL_MS = 4 * 60 * 60 * 1000;
@@ -417,7 +418,7 @@ export async function fetchEarningsHistoryAndForward(ticker: string): Promise<Fe
         quarters_usable_price_reaction: 0,
       },
     };
-    cache.set(cacheKey, { ts: Date.now(), value: empty });
+    setBounded(cache, cacheKey, { ts: Date.now(), value: empty }, 500);
     return empty;
   }
 
@@ -459,7 +460,7 @@ export async function fetchEarningsHistoryAndForward(ticker: string): Promise<Fe
           quarters_usable_price_reaction: 0,
         },
       };
-      cache.set(cacheKey, { ts: Date.now(), value: bundle });
+      setBounded(cache, cacheKey, { ts: Date.now(), value: bundle }, 500);
       return bundle;
     }
     const json = (await res.json()) as { results?: PolygonEarningsApiRow[] };
@@ -486,7 +487,7 @@ export async function fetchEarningsHistoryAndForward(ticker: string): Promise<Fe
         quarters_usable_price_reaction: 0,
       },
     };
-    cache.set(cacheKey, { ts: Date.now(), value: bundle });
+    setBounded(cache, cacheKey, { ts: Date.now(), value: bundle }, 500);
     return bundle;
   }
 
@@ -502,7 +503,7 @@ export async function fetchEarningsHistoryAndForward(ticker: string): Promise<Fe
         quarters_usable_price_reaction: 0,
       },
     };
-    cache.set(cacheKey, { ts: Date.now(), value: bundle });
+    setBounded(cache, cacheKey, { ts: Date.now(), value: bundle }, 500);
     return bundle;
   }
 
@@ -588,6 +589,6 @@ export async function fetchEarningsHistoryAndForward(ticker: string): Promise<Fe
     data_source_gaps: gaps,
     earnings_reaction_summary,
   };
-  cache.set(cacheKey, { ts: Date.now(), value: bundle });
+  setBounded(cache, cacheKey, { ts: Date.now(), value: bundle }, 500);
   return bundle;
 }

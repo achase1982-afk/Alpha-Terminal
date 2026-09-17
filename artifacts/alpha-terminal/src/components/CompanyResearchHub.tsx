@@ -15,6 +15,7 @@ import {
   LineChart, Line, BarChart, Bar, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
+import { useShallow } from "zustand/react/shallow";
 
 const API_BASE = "/api";
 
@@ -953,7 +954,7 @@ interface SecFilingsResponse {
 }
 
 const SubSEC = memo(function SubSEC({ ticker }: { ticker: string }) {
-  const { openBrowser } = useTerminalStore();
+  const { openBrowser } = useTerminalStore(useShallow((s) => ({ openBrowser: s.openBrowser })));
   const [filter, setFilter] = useState("ALL");
   const [data, setData] = useState<SecFilingsResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1144,7 +1145,7 @@ interface InstHolder {
 }
 
 const SubOwnership = memo(function SubOwnership({ ticker }: { ticker: string }) {
-  const { openBrowser } = useTerminalStore();
+  const { openBrowser } = useTerminalStore(useShallow((s) => ({ openBrowser: s.openBrowser })));
   const [insiders, setInsiders] = useState<InsiderTxn[]>([]);
   const [holders, setHolders] = useState<InstHolder[]>([]);
   const [loading, setLoading] = useState(false);
@@ -2124,7 +2125,7 @@ export function CompanyResearchHub({
   sectionTabsInHeader = false,
   companyTabsId: companyTabsIdProp,
 }: CompanyResearchHubProps) {
-  const { symbol, accessToken, aiFeatureSettings, analysisResult, setAnalysisResult } = useTerminalStore();
+  const { symbol, accessToken, aiFeatureSettings, analysisResult, setAnalysisResult } = useTerminalStore(useShallow((s) => ({ symbol: s.symbol, accessToken: s.accessToken, aiFeatureSettings: s.aiFeatureSettings, analysisResult: s.analysisResult, setAnalysisResult: s.setAnalysisResult })));
   const aiModel = aiFeatureSettings.technicals.model;
   const aiTemp = aiFeatureSettings.technicals.temperature;
   const { data: quoteData } = useQuote(symbol);

@@ -1,4 +1,5 @@
 import { logger } from "./logger";
+import { setBounded } from "./boundedCache.js";
 
 const POLYGON_API = "https://api.polygon.io";
 export const REFERENCE_CONTRACT_CACHE_MS = 4 * 60 * 60 * 1000;
@@ -69,11 +70,11 @@ export async function fetchPolygonReferenceStats(symbol: string, apiKey: string)
     contractCount: total,
     distinctExpirationCount: expirations.size,
   };
-  referenceContractStatsCache.set(upper, {
+  setBounded(referenceContractStatsCache, upper, {
     fetchedAt: Date.now(),
     contractCount: stats.contractCount,
     distinctExpirationCount: stats.distinctExpirationCount,
-  });
+  }, 500);
   return stats;
 }
 

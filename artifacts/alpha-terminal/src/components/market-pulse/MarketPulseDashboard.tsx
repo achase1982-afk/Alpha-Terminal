@@ -12,6 +12,7 @@ import { EngineAuditPanel } from "./EngineAuditPanel";
 import { ALL_PULSE_INDICATORS } from "@/types/marketPulse";
 import { runPulseStream, isPulseStreamActive } from "../../stores/pulseStreamRunner";
 import { useGetAuthUrl } from "@workspace/api-client-react";
+import { useShallow } from "zustand/react/shallow";
 
 const CLUSTER_ORDER: ClusterKey[] = ["rates", "credit", "volLevel", "volTerm", "breadth", "riskAppetite", "macro"];
 
@@ -258,7 +259,7 @@ export interface MarketPulseDashboardHandle {
 }
 
 export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, object>(function MarketPulseDashboard(_props, ref) {
-  const { accessToken, aiFeatureSettings } = useTerminalStore();
+  const { accessToken, aiFeatureSettings } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken, aiFeatureSettings: s.aiFeatureSettings })));
   const { model: aiModel, temperature: aiTemp, anthropicOpusEffort, anthropicOpusSpeed } = aiFeatureSettings.marketPulse;
   const {
     pulseData,

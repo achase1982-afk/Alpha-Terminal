@@ -19,6 +19,7 @@ import {
   Layers, TrendingUp, Plus, BarChart3,
 } from "lucide-react";
 import { Reorder } from "framer-motion";
+import { useShallow } from "zustand/react/shallow";
 
 const EPS = 0.0001;
 const COL_W = 74;
@@ -1231,7 +1232,7 @@ interface OptionsTabProps {
 export type { Contract as OptionsContract };
 
 export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSingle, onOpenStrategyBuilder }: OptionsTabProps) {
-  const { accessToken } = useTerminalStore();
+  const { accessToken } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken })));
   // Widget pin wins inside the dashboard; global symbol everywhere else.
   const symbol = useActiveSymbol();
   const { contractType, strikeCount, setCustomStrikeInput } = useOptionsSettingsStore();

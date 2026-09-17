@@ -6,6 +6,7 @@ import {
   Loader2, ChevronRight
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { useShallow } from "zustand/react/shallow";
 
 const API_BASE = "/api";
 
@@ -40,7 +41,7 @@ function fmtNum(n: number | null, decimals = 2): string {
 }
 
 export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
-  const { symbol, accessToken, aiFeatureSettings } = useTerminalStore();
+  const { symbol, accessToken, aiFeatureSettings } = useTerminalStore(useShallow((s) => ({ symbol: s.symbol, accessToken: s.accessToken, aiFeatureSettings: s.aiFeatureSettings })));
   const aiModel = aiFeatureSettings.technicals.model;
   const aiTemp = aiFeatureSettings.technicals.temperature;
   const anthropicOpusEffort = aiFeatureSettings.technicals.anthropicOpusEffort;

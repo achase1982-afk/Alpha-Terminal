@@ -2,6 +2,7 @@ import { useTerminalStore } from "@/lib/store";
 import { useQuote }         from "@/hooks/useQuote";
 import { useTickColor }     from "@/hooks/useTickColor";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 
 const FEAR_SYMBOLS = new Set(["VIX", "$VIX", "VXN", "$VXN"]);
 const INDEX_SYMS   = new Set(["VIX", "$VIX", "SPX", "$SPX", "NDX", "$NDX", "RUT", "$RUT", "DJI", "$DJI", "COMP", "$COMP", "DXY", "$DXY", "TNX", "$TNX"]);
@@ -17,7 +18,7 @@ function formatPct(pct: number | null | undefined, isUp: boolean): string {
 }
 
 function MacroCard({ symbol }: { symbol: string }) {
-  const { symbol: activeSymbol, setSymbol } = useTerminalStore();
+  const { symbol: activeSymbol, setSymbol } = useTerminalStore(useShallow((s) => ({ symbol: s.symbol, setSymbol: s.setSymbol })));
   const { data, isLoading } = useQuote(symbol);
   const tickColor = useTickColor(symbol, data?.last ?? null);
 
@@ -103,7 +104,7 @@ function MacroCard({ symbol }: { symbol: string }) {
 }
 
 export function MacroBar() {
-  const { macroSymbols } = useTerminalStore();
+  const { macroSymbols } = useTerminalStore(useShallow((s) => ({ macroSymbols: s.macroSymbols })));
   return (
     <div className="flex items-stretch gap-2 px-3 py-2 border-b border-card-border bg-[#0c0c0c]/90 shrink-0">
       {macroSymbols.slice(0, 6).map(sym => (

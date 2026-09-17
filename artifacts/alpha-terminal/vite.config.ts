@@ -68,6 +68,21 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // Keep large, rarely-changing vendor code in its own long-cached chunks
+        // instead of re-downloading it with every app deploy.
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return "vendor-react";
+          if (id.includes("lightweight-charts")) return "vendor-charts";
+          if (/react-grid-layout|react-draggable|react-resizable/.test(id)) return "vendor-grid";
+          if (id.includes("@clerk")) return "vendor-clerk";
+          if (/react-markdown|remark-|rehype-|micromark|mdast-|unified|unist-|hast-|vfile/.test(id)) return "vendor-markdown";
+          return undefined;
+        },
+      },
+    },
   },
   server: {
     port,

@@ -2,7 +2,7 @@
  * Deterministic US equity session clock — models must not infer time or session state.
  */
 import { NYSE_EARLY_CLOSE_2026, NYSE_HOLIDAYS_2026 } from "./nyseCalendar2026.js";
-import { lastNyTradingSessionYmds, nyCalendarYmd, nyOffsetForYmd } from "./usEquityMarketCalendar.js";
+import { addCalendarDaysNy, isNyTradingSessionDateSync, nyCalendarYmd, nyOffsetForYmd } from "./usEquityMarketCalendar.js";
 
 export type MarketSessionLabel = "PREMARKET" | "OPEN" | "AFTERHOURS" | "CLOSED";
 
@@ -85,13 +85,22 @@ export function marketTradingDateNy(instant: Date = new Date()): string {
   return nyCalendarYmd(instant);
 }
 
-/** Prior completed NY equity session date relative to `tradingDate`. */
+/**
+ * Prior completed NY equity session date relative to `tradingDate`.
+ *
+ * Walks the calendar back from `tradingDate` itself. The previous version looked
+ * `tradingDate` up in the last 12 sessions ending *today*, so any context whose
+ * trading date was not in that window (historical replays, tests, a long-lived
+ * cached context) got `null` and `classifyOrigin` could never return STALE.
+ */
 export function priorNyTradingSessionYmd(tradingDate: string): string | null {
-  const sessions = lastNyTradingSessionYmds(12);
-  const idx = sessions.indexOf(tradingDate);
-  if (idx >= 0 && idx + 1 < sessions.length) return sessions[idx + 1] ?? null;
-  const older = sessions.filter((d) => d < tradingDate);
-  return older[0] ?? null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(tradingDate)) return null;
+  let ymd = addCalendarDaysNy(tradingDate, -1);
+  for (let guard = 0; guard < 30; guard++) {
+    if (isNyTradingSessionDateSync(ymd)) return ymd;
+    ymd = addCalendarDaysNy(ymd, -1);
+  }
+  return null;
 }
 
 export function rthOpenMsForTradingDate(tradingDate: string): number {

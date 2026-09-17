@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { Search, Plus } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 
 interface TickerSearchProps {
   onNavigateToMarkets?: () => void;
 }
 
 export function TickerSearch({ onNavigateToMarkets }: TickerSearchProps = {}) {
-  const { symbol, setSymbol, recentSymbols, addToWatchlist } = useTerminalStore();
+  const { symbol, setSymbol, recentSymbols, addToWatchlist } = useTerminalStore(useShallow((s) => ({ symbol: s.symbol, setSymbol: s.setSymbol, recentSymbols: s.recentSymbols, addToWatchlist: s.addToWatchlist })));
   const [inputVal, setInputVal] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
