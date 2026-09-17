@@ -5,13 +5,18 @@ import {
   type AnthropicOpusSpeed,
   DEFAULT_ANTHROPIC_OPUS_EFFORT,
   DEFAULT_ANTHROPIC_OPUS_SPEED,
-  isAnthropicFableModel,
+  isAnthropicAdaptiveThinkingModel,
   isAnthropicOpusEffortModel,
   isAnthropicOpusSpeedModel,
+  isOpenAiReasoningModel,
   normalizeAnthropicOpusEffort,
   normalizeAnthropicOpusSpeed,
+  openAiReasoningEffortForModel,
+  type OpenAiReasoningEffort,
 } from "@workspace/ai-models";
-import { geminiThinkingConfigForModel } from "./geminiThinkingConfig.js";
+import { geminiThinkingConfigForModel, type GeminiThinkingLevel } from "./geminiThinkingConfig.js";
+
+export { isAnthropicAdaptiveThinkingModel, isOpenAiReasoningModel, openAiReasoningEffortForModel };
 
 /** SDK types may lag API (`xhigh`); runtime accepts all catalog effort levels. */
 function anthropicSdkOutputConfig(effort: AnthropicOpusEffort): Anthropic.OutputConfig {
@@ -28,13 +33,10 @@ function anthropicSdkOutputConfig(effort: AnthropicOpusEffort): Anthropic.Output
 export const ANTHROPIC_EXTENDED_THINKING_BUDGET = 4096;
 
 /**
- * Claude Opus/Sonnet 4.7+ and Fable 5 use adaptive thinking in the Messages API.
- * Matches ids like `claude-opus-4-8`, `claude-fable-5`, `claude-sonnet-4-7-20250514`, etc.
+ * Adaptive-thinking gate lives in `@workspace/ai-models` (`isAnthropicAdaptiveThinkingModel`):
+ * Opus 5, Sonnet 5, Fable 5.x and Opus/Sonnet 4.7+ use `thinking: { type: "adaptive" }`;
+ * `budget_tokens` returns 400 on those models.
  */
-export function isAnthropicAdaptiveThinkingModel(model: string): boolean {
-  if (isAnthropicFableModel(model)) return true;
-  return /^claude-(opus|sonnet)-4-([7-9]|\d{2,})(?:[-._]|$)/.test(model);
-}
 
 /** @deprecated Prefer isAnthropicAdaptiveThinkingModel — kept for existing call sites. */
 export const isClaude47OrNewer = isAnthropicAdaptiveThinkingModel;
@@ -70,7 +72,7 @@ type AnthropicAiSdkProviderOptions = {
   };
 };
 
-/** Native Messages API extras for Opus (`output_config.effort`, top-level `speed`). */
+/** Native Messages API extras for effort-capable Claude models (`output_config.effort`; top-level `speed` on Opus). */
 export type AnthropicOpusMessageExtras = {
   output_config?: Anthropic.OutputConfig;
   speed?: "fast";
@@ -91,7 +93,7 @@ function resolveAnthropicOpusCallOptions(
 
 /**
  * Vercel AI SDK `@ai-sdk/anthropic`: spread into `streamText` / `generateText`.
- * Pass Opus options for `output_config.effort` and `speed: "fast"`.
+ * Pass effort/speed options for `output_config.effort` (Opus 5, Sonnet 5, Fable) and `speed: "fast"` (Opus).
  */
 export type ChatExtendedThinkingOptions = {
   /** When false, omit provider-native reasoning/thinking for chat turns. Default true. */
@@ -125,7 +127,7 @@ export function anthropicProviderOptionsForAiSdk(
   return { providerOptions: { anthropic } };
 }
 
-/** Native `@anthropic-ai/sdk` Messages API extras for Opus effort + fast mode. */
+/** Native `@anthropic-ai/sdk` Messages API extras for effort (Opus 5 / Sonnet 5 / Fable) + Opus fast mode. */
 export function anthropicOpusMessageExtras(
   model: string,
   opus?: AnthropicOpusCallOptions | null,
@@ -190,23 +192,34 @@ export function xaiReasoningProviderOptionsForChat(
 }
 
 export type OpenAiChatReasoningProviderOptions = {
-  openai: { reasoningEffort: "minimal" | "low" | "medium" | "high" };
+  openai: {
+    /**
+     * `@ai-sdk/openai` only auto-detects `gpt-5*` / o-series as reasoning models; GPT-6.x would
+     * otherwise be sent `temperature` (rejected) and `max_tokens` instead of `max_completion_tokens`.
+     */
+    forceReasoning: true;
+    reasoningEffort?: OpenAiReasoningEffort;
+  };
 };
 
-/** GPT-5.x chat/reasoning via AI SDK `providerOptions.openai.reasoningEffort`. */
+/**
+ * OpenAI reasoning models (GPT-6.x / GPT-5.x / o-series) via AI SDK `providerOptions.openai`.
+ * Returns undefined for non-reasoning models. With thinking disabled the explicit effort is
+ * dropped (model default) but `forceReasoning` stays on so unsupported sampling params are stripped.
+ */
 export function openAiReasoningProviderOptionsForChat(
   model: string,
   thinking?: ChatExtendedThinkingOptions | null,
 ): OpenAiChatReasoningProviderOptions | undefined {
-  if (thinking?.enabled === false) return undefined;
-  if (!/^gpt-5/.test(model) && !/^o\d/.test(model)) return undefined;
-  const effort = /^gpt-5\.5/.test(model) ? "high" : "medium";
-  return { openai: { reasoningEffort: effort } };
+  if (!isOpenAiReasoningModel(model)) return undefined;
+  if (thinking?.enabled === false) return { openai: { forceReasoning: true } };
+  return { openai: { forceReasoning: true, reasoningEffort: openAiReasoningEffortForModel(model) } };
 }
 
 export type GoogleThinkingProviderOptions = {
   google: {
     thinkingConfig: {
+      thinkingLevel?: GeminiThinkingLevel;
       thinkingBudget?: number;
       includeThoughts?: boolean;
     };
@@ -224,7 +237,8 @@ export function googleThinkingProviderOptionsForAiSdk(
   return {
     google: {
       thinkingConfig: {
-        thinkingBudget: cfg.thinkingBudget,
+        ...(cfg.thinkingLevel != null ? { thinkingLevel: cfg.thinkingLevel } : {}),
+        ...(cfg.thinkingBudget != null ? { thinkingBudget: cfg.thinkingBudget } : {}),
         includeThoughts: cfg.includeThoughts,
       },
     },

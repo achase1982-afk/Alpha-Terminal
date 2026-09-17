@@ -11,7 +11,7 @@ setup: "swing"       # Deterministic strategy family: "swing" (momentum) | "orb"
 
 # ── Engine selection ──────────────────────────────────────────────────────────
 engine: "deterministic"   # "deterministic" (rule-based momentum) | "llm" (model-driven)
-modelId: "claude-opus-4-8" # Model used when engine == "llm".
+modelId: "claude-opus-5" # Model used when engine == "llm".
 
 # ── Momentum setup (active deterministic strategy) ────────────────────────────
 breakoutLookback: 10         # Enter on a break above the high of the last N bars.

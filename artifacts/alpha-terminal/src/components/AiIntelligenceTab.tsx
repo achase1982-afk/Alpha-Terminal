@@ -2633,7 +2633,7 @@ function AiIntelligenceTabInner({
   const strategistAi = useMemo(() => {
     const s = aiFeatureSettings?.strategist;
     if (s && typeof s.model === "string" && typeof s.temperature === "number") return s;
-    return { model: "claude-sonnet-4-6", temperature: 0 };
+    return { model: "claude-sonnet-5", temperature: 0 };
   }, [aiFeatureSettings]);
   const aiModel = strategistAi.model;
   const aiTemp = strategistAi.temperature;

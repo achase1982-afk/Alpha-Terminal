@@ -24,7 +24,7 @@ export const DEFAULT_AUTO_TRADE_CONFIG: AutoTradeConfig = {
   enabled: false,
   running: false,
   accountHash: null,
-  modelId: "claude-opus-4-8",
+  modelId: "claude-opus-5",
   tickers: [],
   // Stock-only by default: options legs are logged but not yet executed, so a
   // "both" default would silently no-op call/put decisions.

@@ -10,7 +10,7 @@ type Props = {
   className?: string;
 };
 
-/** Opus effort + speed directly under an LLM model selector (hidden for non-Opus models). */
+/** Anthropic effort (Opus 5 / Sonnet 5 / Fable) + Opus fast mode under an LLM model selector; hidden for other models. */
 export function LlmOpusOptionsFields({
   modelId,
   effort,

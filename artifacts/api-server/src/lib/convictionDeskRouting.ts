@@ -7,15 +7,27 @@ import {
 
 /** Short-cut tokens for common Conviction Desk A/B configs (POST /analyze body). */
 export const CONVICTION_DESK_ROUTING_KEYS = [
-  "anthropic-fable-5",
-  "anthropic-opus-4-8",
-  /** @deprecated use anthropic-opus-4-8 */
-  "anthropic-opus-4-7",
-  "anthropic-sonnet-4-6",
-  "openai-gpt-5-5-thinking",
-  "openai-gpt-5-4-mini",
-  "gemini-3-5-flash",
+  "anthropic-fable-5-1",
+  "anthropic-opus-5",
+  "anthropic-sonnet-5",
+  "openai-gpt-6-astra",
+  "openai-gpt-5-6-terra",
+  "gemini-3-8-flash",
   "gemini-3-1-pro",
+  /** @deprecated use anthropic-fable-5-1 */
+  "anthropic-fable-5",
+  /** @deprecated use anthropic-opus-5 */
+  "anthropic-opus-4-8",
+  /** @deprecated use anthropic-opus-5 */
+  "anthropic-opus-4-7",
+  /** @deprecated use anthropic-sonnet-5 */
+  "anthropic-sonnet-4-6",
+  /** @deprecated use openai-gpt-6-astra */
+  "openai-gpt-5-5-thinking",
+  /** @deprecated use openai-gpt-5-6-terra */
+  "openai-gpt-5-4-mini",
+  /** @deprecated use gemini-3-8-flash */
+  "gemini-3-5-flash",
   /** @deprecated */
   "anthropic-haiku-4-5",
   /** @deprecated */
@@ -31,8 +43,8 @@ export function isConvictionDeskRoutingKey(v: unknown): v is ConvictionDeskRouti
 /**
  * Normalizes POST /analyze `convictionDeskProvider` for Conviction Desk (mode 5).
  * Accepts legacy short-cut strings, or `provider:model` for any catalog / API model id, e.g.:
- * `openai:gpt-5.4-mini`, `openai:gpt-5.1`, `google:gemini-3-flash-preview`, `gemini:gemini-3.1-pro-preview`,
- * `anthropic:claude-sonnet-4-6`. Alias `gemini:` → Google provider.
+ * `openai:gpt-5.6-terra`, `openai:gpt-5.5`, `google:gemini-3.8-flash`, `gemini:gemini-3.1-pro-preview`,
+ * `anthropic:claude-sonnet-5`. Alias `gemini:` → Google provider.
  * Invalid or empty values return undefined (falls back to strategist conviction model index).
  */
 export function normalizeConvictionDeskProviderBody(raw: unknown): string | undefined {
@@ -69,38 +81,62 @@ const ROUTING_TABLE: Record<
   ConvictionDeskRoutingKey,
   { model: StrategistModelOption; anthropicThinkingBudgetOverride?: number }
 > = {
-  "anthropic-fable-5": {
-    model: { provider: "anthropic", model: "claude-fable-5", label: "Claude Fable 5 + adaptive thinking" },
+  "anthropic-fable-5-1": {
+    model: { provider: "anthropic", model: "claude-fable-5-1", label: "Claude Fable 5.1 + adaptive thinking" },
   },
-  "anthropic-opus-4-8": {
-    model: { provider: "anthropic", model: "claude-opus-4-8", label: "Claude Opus 4.8 + adaptive thinking" },
+  "anthropic-opus-5": {
+    model: { provider: "anthropic", model: "claude-opus-5", label: "Claude Opus 5 + adaptive thinking" },
   },
-  /** @deprecated legacy routing key — maps to Opus 4.8 */
-  "anthropic-opus-4-7": {
-    model: { provider: "anthropic", model: "claude-opus-4-8", label: "Claude Opus 4.8 + adaptive thinking" },
+  "anthropic-sonnet-5": {
+    model: { provider: "anthropic", model: "claude-sonnet-5", label: "Claude Sonnet 5 + adaptive thinking" },
   },
-  "anthropic-sonnet-4-6": {
-    model: { provider: "anthropic", model: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 + thinking" },
+  "openai-gpt-6-astra": {
+    model: { provider: "openai", model: "gpt-6-astra", label: "GPT-6 Astra + thinking" },
   },
-  "openai-gpt-5-5-thinking": {
-    model: { provider: "openai", model: "gpt-5.5", label: "GPT-5.5 + thinking" },
+  "openai-gpt-5-6-terra": {
+    model: { provider: "openai", model: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
   },
-  "openai-gpt-5-4-mini": {
-    model: { provider: "openai", model: "gpt-5.4-mini", label: "GPT-5.4 Mini" },
-  },
-  "gemini-3-5-flash": {
-    model: { provider: "google", model: "gemini-3.5-flash", label: "Gemini 3.5 + thinking" },
+  "gemini-3-8-flash": {
+    model: { provider: "google", model: "gemini-3.8-flash", label: "Gemini 3.8 Flash + thinking" },
   },
   "gemini-3-1-pro": {
     model: { provider: "google", model: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro" },
   },
-  /** @deprecated legacy routing key — maps to Gemini 3.5 + thinking */
-  "anthropic-haiku-4-5": {
-    model: { provider: "anthropic", model: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 + thinking" },
+  /** @deprecated legacy routing key — maps to Fable 5.1 */
+  "anthropic-fable-5": {
+    model: { provider: "anthropic", model: "claude-fable-5-1", label: "Claude Fable 5.1 + adaptive thinking" },
   },
-  /** @deprecated legacy routing key — maps to Gemini 3.5 + thinking */
+  /** @deprecated legacy routing key — maps to Opus 5 */
+  "anthropic-opus-4-8": {
+    model: { provider: "anthropic", model: "claude-opus-5", label: "Claude Opus 5 + adaptive thinking" },
+  },
+  /** @deprecated legacy routing key — maps to Opus 5 */
+  "anthropic-opus-4-7": {
+    model: { provider: "anthropic", model: "claude-opus-5", label: "Claude Opus 5 + adaptive thinking" },
+  },
+  /** @deprecated legacy routing key — maps to Sonnet 5 */
+  "anthropic-sonnet-4-6": {
+    model: { provider: "anthropic", model: "claude-sonnet-5", label: "Claude Sonnet 5 + adaptive thinking" },
+  },
+  /** @deprecated legacy routing key — maps to GPT-6 Astra */
+  "openai-gpt-5-5-thinking": {
+    model: { provider: "openai", model: "gpt-6-astra", label: "GPT-6 Astra + thinking" },
+  },
+  /** @deprecated legacy routing key — maps to GPT-5.6 Terra */
+  "openai-gpt-5-4-mini": {
+    model: { provider: "openai", model: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
+  },
+  /** @deprecated legacy routing key — maps to Gemini 3.8 Flash + thinking */
+  "gemini-3-5-flash": {
+    model: { provider: "google", model: "gemini-3.8-flash", label: "Gemini 3.8 Flash + thinking" },
+  },
+  /** @deprecated legacy routing key — maps to Sonnet 5 */
+  "anthropic-haiku-4-5": {
+    model: { provider: "anthropic", model: "claude-sonnet-5", label: "Claude Sonnet 5 + adaptive thinking" },
+  },
+  /** @deprecated legacy routing key — maps to Gemini 3.8 Flash + thinking */
   "gemini-2-5-pro": {
-    model: { provider: "google", model: "gemini-3.5-flash", label: "Gemini 3.5 + thinking" },
+    model: { provider: "google", model: "gemini-3.8-flash", label: "Gemini 3.8 Flash + thinking" },
   },
 };
 

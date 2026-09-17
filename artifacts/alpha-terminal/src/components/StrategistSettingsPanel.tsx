@@ -20,7 +20,7 @@ const STRATEGIST_OPUS_SETTING_KEYS = new Set([
 
 function strategistModelIdFromIdx(idx: number): string {
   if (!Number.isFinite(idx) || idx < 0 || idx >= STRATEGIST_MODEL_OPTIONS.length) {
-    return STRATEGIST_MODEL_OPTIONS[0]?.model ?? "claude-opus-4-8";
+    return STRATEGIST_MODEL_OPTIONS[0]?.model ?? "claude-opus-5";
   }
   return STRATEGIST_MODEL_OPTIONS[Math.floor(idx)]!.model;
 }
@@ -261,10 +261,10 @@ export function StrategistSettingsPanel() {
           <span className="font-mono text-[11px] text-zinc-300 leading-relaxed block">
             <span className="text-zinc-500 uppercase tracking-wide">Conviction Desk — LLM swap</span>
             {" "}Use <strong className="text-zinc-100">Conviction Desk model</strong> below. Primary presets: index{" "}
-            <strong className="text-zinc-100">0</strong> Gemini 3.5 + thinking,{" "}
+            <strong className="text-zinc-100">0</strong> Gemini 3.8 Flash + thinking,{" "}
             <strong className="text-zinc-100">1</strong> Gemini 3.1 Pro,{" "}
-            <strong className="text-zinc-100">2</strong> Claude Opus 4.8 + adaptive thinking,{" "}
-            <strong className="text-zinc-100">4</strong> GPT-5.5 + thinking. Same data package; providers differ in tone and structure discipline.
+            <strong className="text-zinc-100">3</strong> Claude Opus 5 + adaptive thinking,{" "}
+            <strong className="text-zinc-100">5</strong> GPT-6 Astra + thinking. Same data package; providers differ in tone and structure discipline.
           </span>
         </div>
       )}

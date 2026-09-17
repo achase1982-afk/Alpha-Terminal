@@ -14,7 +14,7 @@ const DEFAULTS: Config = {
 
   // Engine selection
   engine: "deterministic",
-  modelId: "claude-opus-4-8",
+  modelId: "claude-opus-5",
 
   // Opening range (legacy ORB)
   orWindowMinutes: 15,

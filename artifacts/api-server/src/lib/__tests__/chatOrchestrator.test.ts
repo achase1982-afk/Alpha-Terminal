@@ -152,7 +152,7 @@ describe("buildModelMessagesFromHistory", () => {
 
 describe("createChatTools", () => {
   it("exposes expected tool names", () => {
-    const tools = createChatTools({ userId: "u1", activeModel: "claude-opus-4-8" });
+    const tools = createChatTools({ userId: "u1", activeModel: "claude-opus-5" });
     expect(Object.keys(tools).sort()).toEqual(
       [
         "get_analyst_ratings",

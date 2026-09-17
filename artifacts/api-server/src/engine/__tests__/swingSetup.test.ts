@@ -9,7 +9,7 @@ const CFG: Config = {
   accountHash: "",
   setup: "swing",
   engine: "deterministic",
-  modelId: "claude-opus-4-8",
+  modelId: "claude-opus-5",
   orWindowMinutes: 15,
   rvolThreshold: 1.5,
   stopMode: "or_low",

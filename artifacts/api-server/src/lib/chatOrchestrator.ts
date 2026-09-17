@@ -265,7 +265,7 @@ export type RunChatTurnArgs = {
   attachments?: ChatAttachmentStored[];
   truncateFromMessageId?: string | null;
   model: string;
-  /** Anthropic Opus 4.7+ effort and fast mode (ignored for non-Opus models). */
+  /** Anthropic Opus 5 / Opus 4.7+ / Fable effort and fast mode (ignored for other models). */
   anthropicOpusOptions?: AnthropicOpusCallOptions | null;
   /** Provider extended thinking / reasoning (default on). */
   extendedThinkingEnabled?: boolean;

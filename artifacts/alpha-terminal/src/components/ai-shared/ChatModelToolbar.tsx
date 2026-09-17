@@ -36,7 +36,7 @@ type Props = {
   extraAfterModel?: React.ReactNode;
 };
 
-/** Single-row chat model control; Opus effort/speed open in a popover from the same bar. */
+/** Single-row chat model control; Anthropic effort (and Opus fast mode) open in a popover from the same bar. */
 export function ChatModelToolbar({
   modelValue,
   modelOptions,
@@ -107,13 +107,13 @@ export function ChatModelToolbar({
             "flex items-center gap-0.5 px-2 shrink-0",
             opusOpen ? "border-white/35 bg-white/10" : "",
           ].join(" ")}
-          aria-label="Opus effort and speed"
+          aria-label="Anthropic effort and speed"
           aria-expanded={opusOpen}
         >
           <span className="text-[10px] text-white/80 max-w-[100px] truncate hidden sm:inline">
             {opusSummary}
           </span>
-          <span className="text-[10px] text-white/70 sm:hidden">Opus</span>
+          <span className="text-[10px] text-white/70 sm:hidden">Effort</span>
           <ChevronDown className={`w-3 h-3 shrink-0 transition-transform ${opusOpen ? "rotate-180" : ""}`} />
         </button>
       )}
@@ -124,7 +124,7 @@ export function ChatModelToolbar({
         <div
           className="absolute right-0 top-[calc(100%+4px)] z-[10120] w-[min(280px,calc(100vw-1.5rem))] rounded-md border border-card-border bg-[#0b0b0b] p-2.5 shadow-xl"
           role="dialog"
-          aria-label="Opus model options"
+          aria-label="Anthropic model options"
         >
           <AnthropicOpusEffortSelect
             variant="compact"

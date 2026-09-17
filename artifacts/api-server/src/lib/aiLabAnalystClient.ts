@@ -23,6 +23,7 @@ import type {
   UniverseScreenResponse,
 } from "./aiLabLlmTypes.js";
 import type { AnthropicOpusCallOptions } from "@workspace/ai-models";
+import { isOpenAiReasoningModel, openAiReasoningEffortForModel } from "@workspace/ai-models";
 import { type AiLabModelProvider, getActivePrompt } from "./aiLabConfig.js";
 import type { ConvictionDeskTelemetryProvider } from "./convictionDeskRouting.js";
 import { isDedicatedWebSearchApiEnabled } from "./webSearchApiClient.js";
@@ -31,7 +32,7 @@ import {
   streamCallViaDedicatedWebSearchApi,
 } from "./webSearchDedicatedPath.js";
 
-const DEFAULT_ANALYST_MODEL = "claude-opus-4-8";
+const DEFAULT_ANALYST_MODEL = "claude-opus-5";
 const GEMINI_WEB_SEARCH_MAX_ATTEMPTS = 4;
 
 function sleep(ms: number): Promise<void> {
@@ -579,9 +580,9 @@ export async function callOpenAIWithSystem(
   }
   const client = new OpenAI({ apiKey, baseURL, timeout: 20 * 60 * 1000 });
 
-  // gpt-5.x and o-series require max_completion_tokens (not max_tokens),
-  // ignore custom temperature, and use reasoning_effort for "thinking".
-  const thinking = /^gpt-5/.test(model) || /^o\d/.test(model);
+  // GPT-6.x / GPT-5.x and o-series require max_completion_tokens (not max_tokens),
+  // reject custom temperature, and use reasoning_effort for "thinking".
+  const thinking = isOpenAiReasoningModel(model);
   const params: Record<string, unknown> = {
     model,
     messages: [
@@ -592,7 +593,7 @@ export async function callOpenAIWithSystem(
     max_completion_tokens: 8192,
   };
   if (thinking) {
-    params.reasoning_effort = /^gpt-5\.5/.test(model) ? "high" : "medium";
+    params.reasoning_effort = openAiReasoningEffortForModel(model);
   } else {
     params.temperature = temperature;
   }
@@ -1222,7 +1223,7 @@ export async function streamCallAnthropicWithSystemAndWebSearch(
   }
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
-  // Opus 4.8 with adaptive thinking + web search can run 4-8 minutes per turn;
+  // Opus 5 with adaptive thinking + web search can run 4-8 minutes per turn;
   // a Debate (6 turns + arbitration) easily exceeds the SDK's default 10-minute
   // socket timeout. Bump to 20 minutes per call so debates complete instead of
   // failing mid-stream with an opaque "request timed out".
@@ -1380,7 +1381,7 @@ function countAnthropicWebSearchServerToolUses(content: unknown): number {
 }
 
 /** Default Anthropic model id for Conviction Desk when settings route to Opus. */
-export const CONVICTION_DESK_ANTHROPIC_MODEL = "claude-opus-4-8";
+export const CONVICTION_DESK_ANTHROPIC_MODEL = "claude-opus-5";
 
 function extractOpenAIOutputArray(response: unknown): Array<Record<string, unknown>> {
   if (!response || typeof response !== "object") return [];
@@ -2094,17 +2095,17 @@ export async function streamCallGeminiDeskJson(
 
 // =====================================================================
 // OpenAI (ChatGPT) — uses Responses API with web_search_preview tool for
-// parity with Anthropic/Gemini web-search behavior. GPT-5 / o-series
-// "thinking" models use the `reasoning` parameter and cannot accept a
-// custom temperature (must be 1).
+// parity with Anthropic/Gemini web-search behavior. GPT-6 / GPT-5 / o-series
+// "thinking" models use the `reasoning` parameter and reject a custom
+// temperature.
 // =====================================================================
 
 const OPENAI_MAX_OUTPUT_TOKENS = 16384;
 
 function isOpenAIThinkingModel(model: string): boolean {
-  // gpt-5.x and OpenAI o-series (o1, o3, o4, …) use the Responses API `reasoning`
-  // parameter and ignore custom temperature.
-  return /^gpt-5/.test(model) || /^o\d/.test(model);
+  // GPT-6.x / GPT-5.x and OpenAI o-series (o1, o3, o4, …) use the Responses API
+  // `reasoning` parameter and reject custom temperature.
+  return isOpenAiReasoningModel(model);
 }
 
 function makeOpenAIClient(): OpenAI {
@@ -2137,10 +2138,10 @@ function buildOpenAIResponseParams(
     params.tools = [{ type: "web_search_preview" }];
   }
   if (isOpenAIThinkingModel(model)) {
-    // gpt-5.5 with thinking → high reasoning effort; others → medium for
-    // balanced cost/quality. Summary "auto" surfaces reasoning summaries
+    // Flagship (GPT-6 Astra / GPT-5.5) → high reasoning effort; others → medium
+    // for balanced cost/quality. Summary "auto" surfaces reasoning summaries
     // when the model emits them.
-    const effort = /^gpt-5\.5/.test(model) ? "high" : "medium";
+    const effort = openAiReasoningEffortForModel(model);
     params.reasoning = { effort, summary: "auto" };
   } else {
     params.temperature = temperature;
@@ -2349,7 +2350,7 @@ export async function streamCallOpenAIWithSystemAndWebSearch(
       toolsAttached: jsonCloneForDiagnostics((params as Record<string, unknown>).tools ?? []),
       thinkingConfig: jsonCloneForDiagnostics(
         isOpenAIThinkingModel(model)
-          ? { reasoning: { effort: /^gpt-5\.5/.test(model) ? "high" : "medium", summary: "auto" } }
+          ? { reasoning: { effort: openAiReasoningEffortForModel(model), summary: "auto" } }
           : { temperature },
       ),
       modelName: model,

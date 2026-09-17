@@ -9,7 +9,7 @@ export type ChatToolContext = {
   clientTimeZone?: string | null;
   /** Chat model id for this turn — `web_search` uses TAVILY_API_KEY / SERPER_API_KEY when set, else provider-native search. */
   activeModel: string;
-  /** Opus 4.7+ effort and fast mode for native Anthropic web search tool calls. */
+  /** Opus 5 / Opus 4.7+ / Fable effort and fast mode for native Anthropic web search tool calls. */
   anthropicOpusOptions?: AnthropicOpusCallOptions | null;
   /** Provider extended thinking / reasoning for this turn (default on). */
   extendedThinkingEnabled?: boolean;
