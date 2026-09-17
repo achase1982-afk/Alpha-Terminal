@@ -11,7 +11,7 @@ import * as aiLabAnalystClient from "../../aiLabAnalystClient.js";
 vi.mock("../../aiLabConfig.js", () => ({
   getMoversAiConfig: () => ({
     provider: "anthropic",
-    modelName: "claude-sonnet-4-6",
+    modelName: "claude-sonnet-5",
     temperature: 0,
   }),
 }));

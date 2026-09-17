@@ -1,4 +1,4 @@
-import type { AnthropicOpusCallOptions } from "@workspace/ai-models";
+import { DEFAULT_AI_MODEL_ID, type AnthropicOpusCallOptions } from "@workspace/ai-models";
 import {
   callAnthropicWithSystemAndWebSearch,
   callGeminiWithSystemAndWebSearch,
@@ -67,7 +67,7 @@ export async function runChatNativeWebSearch(
   query: string,
   opus?: AnthropicOpusCallOptions | null,
 ): Promise<ChatWebSearchResult | { error: string }> {
-  const model = activeModel.trim() || "claude-opus-4-8";
+  const model = activeModel.trim() || DEFAULT_AI_MODEL_ID;
   const signal = AbortSignal.timeout(24_000);
 
   if (isDedicatedWebSearchApiEnabled()) {

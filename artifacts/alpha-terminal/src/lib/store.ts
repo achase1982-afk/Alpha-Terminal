@@ -625,14 +625,14 @@ export const useTerminalStore = create<TerminalState>()(
 
       aiLabStrategistConfig: {
         analystModelProvider: 'anthropic',
-        analystModelName: 'claude-opus-4-8',
+        analystModelName: 'claude-opus-5',
         analystTemperature: 0,
         skepticModelProvider: 'google',
         skepticModelName: 'gemini-3.1-pro-preview',
         skepticTemperature: 0,
         enabled: true,
         moversModelProvider: 'anthropic',
-        moversModelName: 'claude-sonnet-4-6',
+        moversModelName: 'claude-sonnet-5',
         moversTemperature: 0,
       },
       setAiLabStrategistConfig: (key, value) =>
@@ -994,7 +994,7 @@ export const useTerminalStore = create<TerminalState>()(
     }),
     {
       name: 'alpha-terminal-storage',
-      version: 34,
+      version: 35,
       storage: createJSONStorage(() => quotaSafeLocalStorage),
       migrate: (persistedState: unknown, version: number) => {
         const s = persistedState as Record<string, unknown>;
@@ -1369,6 +1369,30 @@ export const useTerminalStore = create<TerminalState>()(
           const chat = (s["aiFeatureSettings"] as Record<string, Record<string, unknown>> | undefined)?.chat;
           if (chat && typeof chat === "object" && typeof chat.extendedThinking !== "boolean") {
             chat.extendedThinking = true;
+          }
+        }
+        if (version < 35) {
+          // 2026-09 LLM catalog refresh: Opus 4.8 → Opus 5, Sonnet 4.6 → Sonnet 5,
+          // Fable 5 → Fable 5.1, Gemini 3.5 Flash → 3.8 Flash, GPT-5.5 → GPT-6 Astra,
+          // GPT-5.4 Mini → GPT-5.6 Terra. Remap every persisted model id onto the catalog.
+          if (typeof s["aiModel"] === "string") {
+            s["aiModel"] = migrateLegacyModelIdToCatalog(s["aiModel"]);
+          }
+          const features = s["aiFeatureSettings"] as Record<string, { model?: string; councilChairModel?: string }> | undefined;
+          if (features) {
+            for (const key of Object.keys(features)) {
+              const row = features[key];
+              if (row?.model) row.model = migrateLegacyModelIdToCatalog(row.model);
+              if (row?.councilChairModel) {
+                row.councilChairModel = migrateLegacyModelIdToCatalog(row.councilChairModel);
+              }
+            }
+          }
+          const cfg = s["aiLabStrategistConfig"] as Record<string, unknown> | undefined;
+          if (cfg && typeof cfg === "object") {
+            for (const k of ["analystModelName", "skepticModelName", "moversModelName"] as const) {
+              if (typeof cfg[k] === "string") cfg[k] = migrateLegacyModelIdToCatalog(cfg[k] as string);
+            }
           }
         }
         return s;

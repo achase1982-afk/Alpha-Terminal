@@ -8,7 +8,7 @@ import {
 import { attachmentSummaryForTitle, sanitizeChatAttachments } from "./chatAttachments.js";
 import { runChatTurn, runMultiAgentChatTurn, type ChatStreamEvent } from "./chatOrchestrator.js";
 import { isGrokModel, XAI_CHAT_TOOLS_NOTE } from "./chatModel.js";
-import { parseAnthropicOpusCallOptionsBody } from "@workspace/ai-models";
+import { DEFAULT_AI_MODEL_ID, parseAnthropicOpusCallOptionsBody } from "@workspace/ai-models";
 import { readClientTimeZone } from "./marketClientTimeZone.js";
 import { createChatTelemetryBatch, emitChatTelemetry } from "./chatTelemetry.js";
 
@@ -73,7 +73,7 @@ export async function handleChatMessageSse(req: Request, res: Response): Promise
       ? multiAgentRaw.synthesizer_model.trim()
       : "";
   const useMultiAgent = multiAgentModels.length >= 2 && synthesizerModel.length > 0;
-  const model = (useMultiAgent ? synthesizerModel : (body.model ?? "claude-opus-4-8")).trim();
+  const model = (useMultiAgent ? synthesizerModel : (body.model ?? DEFAULT_AI_MODEL_ID)).trim();
   const anthropicOpusOptions = parseAnthropicOpusCallOptionsBody(body);
   const extendedThinkingEnabled = body.extended_thinking !== false;
 

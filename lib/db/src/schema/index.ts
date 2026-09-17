@@ -1460,7 +1460,7 @@ export const autoTradeConfigTable = pgTable("auto_trade_config", {
   enabled: boolean("enabled").default(false).notNull(),
   running: boolean("running").default(false).notNull(),
   accountHash: text("account_hash"),
-  modelId: text("model_id").default("claude-opus-4-8").notNull(),
+  modelId: text("model_id").default("claude-opus-5").notNull(),
   tickers: jsonb("tickers").$type<string[]>().default([]).notNull(),
   instrumentMode: text("instrument_mode").default("stock").notNull(),
   totalBudget: real("total_budget").default(1000).notNull(),

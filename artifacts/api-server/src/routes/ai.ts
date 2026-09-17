@@ -53,6 +53,7 @@ import {
   ANTHROPIC_EXTENDED_THINKING_BUDGET,
   anthropicProviderOptionsForAiSdk,
   isAnthropicAdaptiveThinkingModel,
+  openAiReasoningProviderOptionsForChat,
   xaiReasoningProviderOptionsForChat,
 } from "../lib/llmReasoningConfig.js";
 import { handleChatMessageSse } from "../lib/chatRouteHandler.js";
@@ -418,7 +419,7 @@ async function nativeStreamOpenAi(opts: NativeStreamOptions): Promise<string> {
   const {
     prompt,
     systemPrompt,
-    modelName = "gpt-5.5",
+    modelName = "gpt-6-astra",
     temperature = 0,
     onText,
   } = opts;
@@ -428,11 +429,13 @@ async function nativeStreamOpenAi(opts: NativeStreamOptions): Promise<string> {
   if (!openAiApiKey) throw new Error("OpenAI API key not configured (set OPENAI_API_KEY)");
 
   const openai = createOpenAI({ apiKey: openAiApiKey });
+  // Reasoning models (GPT-6.x / GPT-5.x / o-series) reject custom temperature.
+  const reasoning = openAiReasoningProviderOptionsForChat(modelName);
   const result = streamText({
     model: openai(modelName),
     system: systemPrompt,
-    temperature,
     prompt,
+    ...(reasoning ? { providerOptions: reasoning } : { temperature }),
   });
 
   let fullText = "";
@@ -521,17 +524,19 @@ async function callGeminiDirect(
 
 async function callOpenAiDirect(
   prompt: string,
-  modelName: string = "gpt-5.5",
+  modelName: string = "gpt-6-astra",
   temperature: number = 0
 ): Promise<string> {
   const openAiApiKey = process.env.OPENAI_API_KEY;
   if (!openAiApiKey) return "Error: OPENAI_API_KEY not configured.";
 
   const openai = createOpenAI({ apiKey: openAiApiKey });
+  // Reasoning models (GPT-6.x / GPT-5.x / o-series) reject custom temperature.
+  const reasoning = openAiReasoningProviderOptionsForChat(modelName);
   const { text } = await generateText({
     model: openai(modelName),
-    temperature,
     prompt,
+    ...(reasoning ? { providerOptions: reasoning } : { temperature }),
   });
   return text.trim() || "No response";
 }

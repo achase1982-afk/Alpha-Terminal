@@ -50,19 +50,19 @@ type Props = {
 
 function modelSubtitle(id: AiModelId): string {
   switch (id) {
-    case "claude-fable-5":
+    case "claude-fable-5-1":
       return "Anthropic's most capable model for demanding agentic work.";
-    case "claude-opus-4-8":
+    case "claude-opus-5":
       return "Most capable Opus-tier model for ambitious work.";
-    case "claude-sonnet-4-6":
-      return "Efficient for everyday tasks.";
-    case "gemini-3.5-flash":
-      return "Fast Google model with optional thinking.";
+    case "claude-sonnet-5":
+      return "Near-Opus quality at Sonnet cost; efficient for everyday tasks.";
+    case "gemini-3.8-flash":
+      return "Fast Google model with thinking.";
     case "gemini-3.1-pro-preview":
       return "Deeper Google reasoning.";
-    case "gpt-5.5":
+    case "gpt-6-astra":
       return "OpenAI flagship reasoning.";
-    case "gpt-5.4-mini":
+    case "gpt-5.6-terra":
       return "Faster OpenAI with medium reasoning.";
     default:
       return "";
