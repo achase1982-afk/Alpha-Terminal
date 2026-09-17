@@ -1,6 +1,7 @@
 import { useTerminalStore } from "@/lib/store";
 import { X, ExternalLink, Globe, RefreshCw, Shield, ChevronLeft } from "lucide-react";
 import { useRef, useEffect, useState, useCallback } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
@@ -30,7 +31,7 @@ function proxyUrl(url: string, title?: string | null, source?: string | null, su
 }
 
 export function InAppBrowser() {
-  const { browserUrl, browserTitle, browserSource, browserSummary, closeBrowser } = useTerminalStore();
+  const { browserUrl, browserTitle, browserSource, browserSummary, closeBrowser } = useTerminalStore(useShallow((s) => ({ browserUrl: s.browserUrl, browserTitle: s.browserTitle, browserSource: s.browserSource, browserSummary: s.browserSummary, closeBrowser: s.closeBrowser })));
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);

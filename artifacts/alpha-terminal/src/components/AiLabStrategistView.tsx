@@ -4,6 +4,7 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
   TrendingUp, TrendingDown, Clock, Shield, ChevronDown, ChevronUp, Beaker, XCircle, RefreshCw, Play,
 } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 
 const API_BASE = "/api";
 
@@ -505,7 +506,7 @@ function DeliberationCard({ deliberation }: { deliberation: AiLabDeliberation })
 }
 
 export function AiLabStrategistView() {
-  const { aiLabStrategistConfig, setAiLabStrategistConfig } = useTerminalStore();
+  const { aiLabStrategistConfig, setAiLabStrategistConfig } = useTerminalStore(useShallow((s) => ({ aiLabStrategistConfig: s.aiLabStrategistConfig, setAiLabStrategistConfig: s.setAiLabStrategistConfig })));
   const [ideas, setIdeas] = useState<AiLabIdea[]>([]);
   const [deliberations, setDeliberations] = useState<AiLabDeliberation[]>([]);
   const [loading, setLoading] = useState(false);

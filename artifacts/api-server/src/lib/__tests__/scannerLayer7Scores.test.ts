@@ -56,15 +56,16 @@ describe("scannerLayer7Scores", () => {
   });
 
   it("scoreTechnical is directional around 50", () => {
+    // Moderately bullish tape: ~+6% vs the MA stack, +3% 5d, +2% 30d, 2% off the high.
     const bull: ScannerTechnicalLayer6Wire = {
       fifty_two_week_low: 100,
       fifty_two_week_high: 200,
       off_fifty_two_week_high_pct: -2,
-      vs_twenty_ma_pct: 4,
-      vs_fifty_ma_pct: 3,
-      vs_two_hundred_ma_pct: 5,
-      five_day_return_pct: 2,
-      thirty_day_return_pct: 1,
+      vs_twenty_ma_pct: 6,
+      vs_fifty_ma_pct: 5,
+      vs_two_hundred_ma_pct: 7,
+      five_day_return_pct: 3,
+      thirty_day_return_pct: 2,
     };
     const bear: ScannerTechnicalLayer6Wire = {
       ...bull,
@@ -77,6 +78,7 @@ describe("scannerLayer7Scores", () => {
     };
     expect(scoreTechnical(bull)!).toBeGreaterThan(55);
     expect(scoreTechnical(bear)!).toBeLessThan(45);
+    expect(scoreTechnical(bull)!).toBeGreaterThan(scoreTechnical(bear)!);
   });
 
   it("computeWeightedComposite renormalizes when legs are null", () => {

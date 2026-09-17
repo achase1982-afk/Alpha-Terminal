@@ -24,6 +24,7 @@ import type { OrderLeg } from "./OrderTicket";
 import { SchwabAccountHeader } from "./SchwabAccountHeader";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { resolvePortfolioDisplayAccount } from "@/lib/portfolioDisplayAccount";
+import { useShallow } from "zustand/react/shallow";
 
 const C = {
   bg: "#0c0c0c",
@@ -1203,7 +1204,7 @@ function ColumnSettingsPanel({
 }
 
 export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: PortfolioViewProps) {
-  const { accessToken, setSymbol } = useTerminalStore();
+  const { accessToken, setSymbol } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken, setSymbol: s.setSymbol })));
   const wsAccount = usePortfolioStreamStore((s) => s.account);
   const wsOrders = usePortfolioStreamStore((s) => s.orders);
   const wsLastUpdate = usePortfolioStreamStore((s) => s.lastUpdate);

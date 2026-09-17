@@ -19,6 +19,7 @@ import { useEffect, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { buildAuthenticatedEventSourceUrl, fetchWithAuth } from "@/lib/fetchWithAuth";
 import type { LiveQuote } from "@/lib/store";
+import { useShallow } from "zustand/react/shallow";
 
 const API_BASE = "/api";
 
@@ -30,7 +31,16 @@ export function useStreamingQuotes() {
     macroSymbols,
     setStreamQuote,
     setStreamConnected,
-  } = useTerminalStore();
+  } = useTerminalStore(
+    useShallow((s) => ({
+      accessToken: s.accessToken,
+      symbol: s.symbol,
+      tickerTapeSymbols: s.tickerTapeSymbols,
+      macroSymbols: s.macroSymbols,
+      setStreamQuote: s.setStreamQuote,
+      setStreamConnected: s.setStreamConnected,
+    })),
+  );
 
   const esRef    = useRef<EventSource | null>(null);
   const tokenRef = useRef<string | null>(null);

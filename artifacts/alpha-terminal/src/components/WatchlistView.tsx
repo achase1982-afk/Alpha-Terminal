@@ -21,6 +21,7 @@ import {
   Crosshair,
   RefreshCw,
 } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 
 type IndicatorKey =
   | "mark" | "markChg" | "volume" | "rsi" | "pcRatio" | "beta"
@@ -384,7 +385,7 @@ let _scannerWlCache: ScannerWatchlist[] | null = null;
 let _scannerWlFetchTs = 0;
 
 function WatchlistDropdown({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { watchlists, activeWatchlistId, setActiveWatchlist, createWatchlist, deleteWatchlist, renameWatchlist } = useTerminalStore();
+  const { watchlists, activeWatchlistId, setActiveWatchlist, createWatchlist, deleteWatchlist, renameWatchlist } = useTerminalStore(useShallow((s) => ({ watchlists: s.watchlists, activeWatchlistId: s.activeWatchlistId, setActiveWatchlist: s.setActiveWatchlist, createWatchlist: s.createWatchlist, deleteWatchlist: s.deleteWatchlist, renameWatchlist: s.renameWatchlist })));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [showNew, setShowNew] = useState(false);
@@ -643,7 +644,7 @@ function WatchlistDropdown({ open, onClose }: { open: boolean; onClose: () => vo
 }
 
 function WatchlistSwitcherButton({ open, onToggle }: { open: boolean; onToggle: () => void }) {
-  const { watchlists, activeWatchlistId } = useTerminalStore();
+  const { watchlists, activeWatchlistId } = useTerminalStore(useShallow((s) => ({ watchlists: s.watchlists, activeWatchlistId: s.activeWatchlistId })));
   const activeList = watchlists[activeWatchlistId];
 
   return (
@@ -684,7 +685,7 @@ function ColumnHeader({
 }
 
 export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sym: string) => void }) {
-  const { removeFromWatchlist, setSymbol, accessToken } = useTerminalStore();
+  const { removeFromWatchlist, setSymbol, accessToken } = useTerminalStore(useShallow((s) => ({ removeFromWatchlist: s.removeFromWatchlist, setSymbol: s.setSymbol, accessToken: s.accessToken })));
   const streamPrices = useTerminalStore((s) => s.streamPrices);
   const watchlist = useActiveWatchlist();
   const [sortKey, setSortKey] = useState<SortKey | null>(null);

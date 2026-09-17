@@ -1,12 +1,9 @@
-import { useState, useEffect, useRef, useCallback, useId } from "react";
+import { lazy, Suspense, useState, useEffect, useRef, useCallback, useId, type ComponentProps } from "react";
 import { Sidebar, type SidebarHandle } from "@/components/Sidebar";
 import { MetricsBar, VolumeBar } from "@/components/MetricsBar";
 import { TradingChart } from "@/components/TradingChart";
-import { OptionsTab } from "@/components/OptionsTab";
-import { AiIntelligenceTab } from "@/components/AiIntelligenceTab";
 import { MacroBar } from "@/components/MacroBar";
 import { TickerTape } from "@/components/TickerTape";
-import { SearchOverlay } from "@/components/SearchOverlay";
 import { MarketDataTabs, type MarketDataTab } from "@/components/MarketDataTabs";
 import { useTerminalStore, loadWatchlistsFromServer } from "@/lib/store";
 import { useUICustomizationStore } from "@/lib/ui-customization-store";
@@ -22,21 +19,15 @@ import { SchwabAccountHeader } from "@/components/SchwabAccountHeader";
 import { SchwabAccountPickerSheet } from "@/components/SchwabAccountPickerSheet";
 import { useViewportShell } from "@/hooks/useViewportShell";
 
-import { InAppBrowser } from "@/components/InAppBrowser";
-import { OrderTicket, type OrderLeg } from "@/components/OrderTicket";
+import type { OrderLeg } from "@/components/OrderTicket";
 import type { StrategistValidationMeta } from "@/lib/store";
 import type { StrategistSendToOrderPayload } from "@/components/StrategistV2Card";
-import { StrategyBuilder, type StrategyLeg } from "@/components/StrategyBuilder";
+import type { StrategyLeg } from "@/components/StrategyBuilder";
 import type { OptionsContract } from "@/components/OptionsTab";
 import { MarketSessionClock } from "@/components/MarketSessionClock";
-import { NewsTab } from "@/components/NewsTab";
-import { MarketNewsChatPanel } from "@/components/MarketNewsChatPanel";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
 import { BottomNav } from "@/components/BottomNav";
 import StrategistStatusBar from "@/components/StrategistStatusBar";
-import { PortfolioView } from "@/components/PortfolioView";
-import { CompanySwipablePages } from "@/components/CompanySwipablePages";
-import { CompanySectionTabBar } from "@/components/CompanyResearchHub";
 import { AiSubTabs, type AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import type { MarketPulseDashboardHandle } from "@/components/market-pulse/MarketPulseDashboard";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
@@ -44,7 +35,6 @@ import { WatchlistView } from "@/components/WatchlistView";
 import { peekPendingStrategistPushJobId, setPendingStrategistPushJobId } from "@/lib/strategistPushNav";
 import { readStashedStrategistPushJob } from "@/lib/strategistPushCache";
 import { openStrategistJobFromNotification, resumeAllRunningPollers } from "@/lib/strategistPoller";
-import { DashboardWorkspace } from "@/components/dashboard/DashboardWorkspace";
 import { loadDashboardLayoutFromServer } from "@/lib/dashboardStore";
 import type { DashboardWidgetHandlers } from "@/components/dashboard/widgetRegistry";
 import {
@@ -54,6 +44,119 @@ import {
   Search,
 } from "lucide-react";
 import { useIsTablet, useIsDesktop } from "@/hooks/useMediaQuery";
+import { useShallow } from "zustand/react/shallow";
+
+// ---------------------------------------------------------------------------
+// Code splitting. The terminal shipped as a single ~2.6 MB chunk; the views
+// below are not part of the first paint (bottom tabs, modals, the dashboard
+// grid, company research, chat) and load on demand. Each wrapper keeps the
+// original component name so the render sites further down are unchanged.
+// Always-mounted overlays use a null fallback so nothing flashes at startup.
+// ---------------------------------------------------------------------------
+function LazyViewFallback() {
+  return <div className="flex-1 min-h-[160px] animate-pulse rounded-md bg-card/40" aria-busy="true" />;
+}
+function LazyStripFallback() {
+  return <div className="h-9 animate-pulse bg-card/40" aria-busy="true" />;
+}
+
+const OptionsTabLazy = lazy(() => import("@/components/OptionsTab").then((m) => ({ default: m.OptionsTab })));
+function OptionsTab(props: ComponentProps<typeof OptionsTabLazy>) {
+  return (
+    <Suspense fallback={<LazyViewFallback />}>
+      <OptionsTabLazy {...props} />
+    </Suspense>
+  );
+}
+const AiIntelligenceTabLazy = lazy(() => import("@/components/AiIntelligenceTab").then((m) => ({ default: m.AiIntelligenceTab })));
+function AiIntelligenceTab(props: ComponentProps<typeof AiIntelligenceTabLazy>) {
+  return (
+    <Suspense fallback={<LazyViewFallback />}>
+      <AiIntelligenceTabLazy {...props} />
+    </Suspense>
+  );
+}
+const NewsTabLazy = lazy(() => import("@/components/NewsTab").then((m) => ({ default: m.NewsTab })));
+function NewsTab() {
+  return (
+    <Suspense fallback={<LazyViewFallback />}>
+      <NewsTabLazy />
+    </Suspense>
+  );
+}
+const PortfolioViewLazy = lazy(() => import("@/components/PortfolioView").then((m) => ({ default: m.PortfolioView })));
+function PortfolioView(props: ComponentProps<typeof PortfolioViewLazy>) {
+  return (
+    <Suspense fallback={<LazyViewFallback />}>
+      <PortfolioViewLazy {...props} />
+    </Suspense>
+  );
+}
+const DashboardWorkspaceLazy = lazy(() => import("@/components/dashboard/DashboardWorkspace").then((m) => ({ default: m.DashboardWorkspace })));
+function DashboardWorkspace(props: ComponentProps<typeof DashboardWorkspaceLazy>) {
+  return (
+    <Suspense fallback={<LazyViewFallback />}>
+      <DashboardWorkspaceLazy {...props} />
+    </Suspense>
+  );
+}
+const CompanySwipablePagesLazy = lazy(() => import("@/components/CompanySwipablePages").then((m) => ({ default: m.CompanySwipablePages })));
+function CompanySwipablePages(props: ComponentProps<typeof CompanySwipablePagesLazy>) {
+  return (
+    <Suspense fallback={<LazyViewFallback />}>
+      <CompanySwipablePagesLazy {...props} />
+    </Suspense>
+  );
+}
+const MarketNewsChatPanelLazy = lazy(() => import("@/components/MarketNewsChatPanel").then((m) => ({ default: m.MarketNewsChatPanel })));
+function MarketNewsChatPanel(props: ComponentProps<typeof MarketNewsChatPanelLazy>) {
+  return (
+    <Suspense fallback={<LazyViewFallback />}>
+      <MarketNewsChatPanelLazy {...props} />
+    </Suspense>
+  );
+}
+const CompanySectionTabBarLazy = lazy(() => import("@/components/CompanyResearchHub").then((m) => ({ default: m.CompanySectionTabBar })));
+function CompanySectionTabBar(props: ComponentProps<typeof CompanySectionTabBarLazy>) {
+  return (
+    <Suspense fallback={<LazyStripFallback />}>
+      <CompanySectionTabBarLazy {...props} />
+    </Suspense>
+  );
+}
+const StrategyBuilderLazy = lazy(() => import("@/components/StrategyBuilder").then((m) => ({ default: m.StrategyBuilder })));
+function StrategyBuilder(props: ComponentProps<typeof StrategyBuilderLazy>) {
+  return (
+    <Suspense fallback={null}>
+      <StrategyBuilderLazy {...props} />
+    </Suspense>
+  );
+}
+const OrderTicketLazy = lazy(() => import("@/components/OrderTicket").then((m) => ({ default: m.OrderTicket })));
+function OrderTicket(props: ComponentProps<typeof OrderTicketLazy>) {
+  return (
+    <Suspense fallback={null}>
+      <OrderTicketLazy {...props} />
+    </Suspense>
+  );
+}
+const InAppBrowserLazy = lazy(() => import("@/components/InAppBrowser").then((m) => ({ default: m.InAppBrowser })));
+function InAppBrowser() {
+  return (
+    <Suspense fallback={null}>
+      <InAppBrowserLazy />
+    </Suspense>
+  );
+}
+const SearchOverlayLazy = lazy(() => import("@/components/SearchOverlay").then((m) => ({ default: m.SearchOverlay })));
+function SearchOverlay(props: ComponentProps<typeof SearchOverlayLazy>) {
+  return (
+    <Suspense fallback={null}>
+      <SearchOverlayLazy {...props} />
+    </Suspense>
+  );
+}
+
 
 type BottomTab = "scanner" | "markets" | "ai" | "search" | "portfolio" | "watchlist" | "dashboard";
 type ContextTab = MarketDataTab;
@@ -205,7 +308,7 @@ function PulseHeader({ pulseData, onRefresh }: { pulseData: any; onRefresh: () =
 }
 
 export default function TerminalPage() {
-  const { symbol, accessToken, traderAccessToken, chartPeriod, chartInterval, streamStatus } = useTerminalStore();
+  const { symbol, accessToken, traderAccessToken, chartPeriod, chartInterval, streamStatus } = useTerminalStore(useShallow((s) => ({ symbol: s.symbol, accessToken: s.accessToken, traderAccessToken: s.traderAccessToken, chartPeriod: s.chartPeriod, chartInterval: s.chartInterval, streamStatus: s.streamStatus })));
   const schwabLinked = !!(accessToken || traderAccessToken);
   useSchwabAccountsBootstrap(schwabLinked);
   const strategistJobsForBadge = useTerminalStore((s) => s.strategistJobs);

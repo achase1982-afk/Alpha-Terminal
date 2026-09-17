@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useTerminalStore, useActiveWatchlist } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
 import { Search, FileText, PlusCircle, MinusCircle } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 
 function fmtPrice(v: number | null): string {
   if (v == null) return "—";
@@ -52,7 +53,7 @@ function WatchlistIcon({ isInWatchlist, flash }: { isInWatchlist: boolean; flash
 
 function SymbolLivePreview({ sym, onNavigate }: { sym: string; onNavigate: () => void }) {
   const { data } = useQuote(sym);
-  const { addToWatchlist, removeFromWatchlist } = useTerminalStore();
+  const { addToWatchlist, removeFromWatchlist } = useTerminalStore(useShallow((s) => ({ addToWatchlist: s.addToWatchlist, removeFromWatchlist: s.removeFromWatchlist })));
   const watchlistSymbols = useActiveWatchlist();
   const isInWatchlist = watchlistSymbols.includes(sym.toUpperCase());
   const [flash, setFlash] = useState(false);
@@ -106,7 +107,7 @@ function RecentRow({
   onTap: () => void;
 }) {
   const { data: quoteData } = useQuote(sym);
-  const { addToWatchlist, removeFromWatchlist } = useTerminalStore();
+  const { addToWatchlist, removeFromWatchlist } = useTerminalStore(useShallow((s) => ({ addToWatchlist: s.addToWatchlist, removeFromWatchlist: s.removeFromWatchlist })));
   const watchlistSymbols = useActiveWatchlist();
   const isInWatchlist = watchlistSymbols.includes(sym.toUpperCase());
   const [flash, setFlash] = useState(false);
@@ -165,7 +166,7 @@ interface SearchOverlayProps {
 }
 
 export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlayProps) {
-  const { symbol, setSymbol, recentSymbols } = useTerminalStore();
+  const { symbol, setSymbol, recentSymbols } = useTerminalStore(useShallow((s) => ({ symbol: s.symbol, setSymbol: s.setSymbol, recentSymbols: s.recentSymbols })));
   const [inputVal, setInputVal] = useState("");
   const [debouncedVal, setDebouncedVal] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);

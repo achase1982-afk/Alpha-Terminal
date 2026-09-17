@@ -41,6 +41,7 @@ import { AiLabStrategistView } from "@/components/AiLabStrategistView";
 import { StrategistV2RecommendationCard, StrategistV2BlockCard, type StrategistV2Result as StrategistV2ResultType, type StrategistSendToOrderPayload, type BlockReason } from "@/components/StrategistV2Card";
 import { StrategistDeskCard, type DeskResult } from "@/components/StrategistDeskCard";
 import { StrategistHistoryList } from "@/components/StrategistHistoryList";
+import { useShallow } from "zustand/react/shallow";
 
 const API_BASE = "/api";
 
@@ -926,7 +927,7 @@ function StrategistCommandBar({ onRun, disabled, blockedTicker, lastRunSymbol, l
   lastRunSymbol?: string | null; lastRunTime?: number | null;
   onCancelClick?: () => void;
 }) {
-  const { symbol, streamPrices, accessToken } = useTerminalStore();
+  const { symbol, streamPrices, accessToken } = useTerminalStore(useShallow((s) => ({ symbol: s.symbol, streamPrices: s.streamPrices, accessToken: s.accessToken })));
   const [inputVal, setInputVal] = useState("");
   const [isFocused, setIsFocused] = useState(false);
   const [previewTicker, setPreviewTicker] = useState("");
@@ -2366,7 +2367,36 @@ export function StrategySettings() {
     preTradeMaxPositionPct, setPreTradeMaxPositionPct,
     preTradeMinDTE, setPreTradeMinDTE,
     accountSize, setAccountSize,
-  } = useTerminalStore();
+  } = useTerminalStore(
+    useShallow((s) => ({
+      stratAutopilot: s.stratAutopilot,
+      setStratAutopilot: s.setStratAutopilot,
+      stratMaxRisk: s.stratMaxRisk,
+      setStratMaxRisk: s.setStratMaxRisk,
+      stratMinPoP: s.stratMinPoP,
+      setStratMinPoP: s.setStratMinPoP,
+      stratMinRR: s.stratMinRR,
+      setStratMinRR: s.setStratMinRR,
+      stratBias: s.stratBias,
+      setStratBias: s.setStratBias,
+      stratPremium: s.stratPremium,
+      setStratPremium: s.setStratPremium,
+      stratAvoidEarnings: s.stratAvoidEarnings,
+      setStratAvoidEarnings: s.setStratAvoidEarnings,
+      preTradeEnabled: s.preTradeEnabled,
+      setPreTradeEnabled: s.setPreTradeEnabled,
+      preTradeBlockOnRed: s.preTradeBlockOnRed,
+      setPreTradeBlockOnRed: s.setPreTradeBlockOnRed,
+      preTradeMinRR: s.preTradeMinRR,
+      setPreTradeMinRR: s.setPreTradeMinRR,
+      preTradeMaxPositionPct: s.preTradeMaxPositionPct,
+      setPreTradeMaxPositionPct: s.setPreTradeMaxPositionPct,
+      preTradeMinDTE: s.preTradeMinDTE,
+      setPreTradeMinDTE: s.setPreTradeMinDTE,
+      accountSize: s.accountSize,
+      setAccountSize: s.setAccountSize,
+    })),
+  );
 
   const locked = stratAutopilot;
 
@@ -2629,7 +2659,29 @@ function AiIntelligenceTabInner({
     stratBias, stratPremium, stratAvoidEarnings,
     preTradeEnabled, preTradeBlockOnRed, preTradeMinRR,
     preTradeMaxPositionPct, preTradeMinDTE, accountSize,
-  } = useTerminalStore();
+  } = useTerminalStore(
+    useShallow((s) => ({
+      symbol: s.symbol,
+      setSymbol: s.setSymbol,
+      accessToken: s.accessToken,
+      aiFeatureSettings: s.aiFeatureSettings,
+      strategistResult: s.strategistResult,
+      setStrategistResult: s.setStrategistResult,
+      stratAutopilot: s.stratAutopilot,
+      stratMaxRisk: s.stratMaxRisk,
+      stratMinPoP: s.stratMinPoP,
+      stratMinRR: s.stratMinRR,
+      stratBias: s.stratBias,
+      stratPremium: s.stratPremium,
+      stratAvoidEarnings: s.stratAvoidEarnings,
+      preTradeEnabled: s.preTradeEnabled,
+      preTradeBlockOnRed: s.preTradeBlockOnRed,
+      preTradeMinRR: s.preTradeMinRR,
+      preTradeMaxPositionPct: s.preTradeMaxPositionPct,
+      preTradeMinDTE: s.preTradeMinDTE,
+      accountSize: s.accountSize,
+    })),
+  );
   const strategistAi = useMemo(() => {
     const s = aiFeatureSettings?.strategist;
     if (s && typeof s.model === "string" && typeof s.temperature === "number") return s;

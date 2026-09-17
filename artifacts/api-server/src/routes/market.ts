@@ -16,6 +16,7 @@ import { type OptionContract } from "../lib/optionsStrategist.js";
 import { getStoredIVR } from "../lib/ivNormalize.js";
 import { fetchPolygonChain } from "../lib/polygonChain.js";
 import type { Readability as ReadabilityCtor } from "@mozilla/readability";
+import { setBounded } from "../lib/boundedCache.js";
 
 const router: IRouter = Router();
 
@@ -909,7 +910,7 @@ async function fetchIndexChainStructure(
     fetchedAt: Date.now(),
     underlyingPrice,
   };
-  indexChainStructureCache.set(displaySymbol, entry);
+  setBounded(indexChainStructureCache, displaySymbol, entry, 50);
   return entry;
 }
 

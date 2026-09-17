@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { logFailure } from "../lib/telemetry.js";
+import { setBounded } from "../lib/boundedCache.js";
 
 const router: IRouter = Router();
 
@@ -168,7 +169,7 @@ export async function fetchEdgarFilings(
     });
   }
 
-  filingsCache.set(tickerUpper, { filings, ts: Date.now() });
+  setBounded(filingsCache, tickerUpper, { filings, ts: Date.now() }, 300);
   return filings;
 }
 
@@ -496,7 +497,7 @@ router.get("/insider-transactions", async (req, res) => {
 
     allTransactions.sort((a, b) => b.transactionDate.localeCompare(a.transactionDate));
 
-    insiderCache.set(symbol, { transactions: allTransactions, ts: Date.now(), version: INSIDER_PARSE_VERSION });
+    setBounded(insiderCache, symbol, { transactions: allTransactions, ts: Date.now(), version: INSIDER_PARSE_VERSION }, 300);
     return res.json({ transactions: allTransactions, symbol });
   } catch (err: any) {
     req.log?.error({ err }, "Insider transactions endpoint error");
@@ -615,7 +616,7 @@ router.get("/institutional-holders", async (req, res) => {
     holders.sort((a, b) => b.percentOfClass - a.percentOfClass);
 
     const holdersOut = filterInstitutionalHoldersForDisplay(holders);
-    holdersCache.set(symbol, { holders, ts: Date.now() });
+    setBounded(holdersCache, symbol, { holders, ts: Date.now() }, 300);
     return res.json({ holders: holdersOut, symbol });
   } catch (err: any) {
     req.log?.error({ err }, "Institutional holders endpoint error");
@@ -864,7 +865,7 @@ export async function fetchCompanyFinancialsForSymbol(symbol: string): Promise<C
     debtCurrent: lastNFiscalYears(dedupeByFyLatestFiled(extractFacts10KFY(facts, "DebtCurrent")), 5),
     totalDebt: totalDebtSeries(facts),
   };
-  financialsCache.set(sym, { data: financials, ts: Date.now() });
+  setBounded(financialsCache, sym, { data: financials, ts: Date.now() }, 300);
   return financials;
 }
 

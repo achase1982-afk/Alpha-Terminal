@@ -6,6 +6,7 @@ import { useTickColor }     from "@/hooks/useTickColor";
 import { RefreshCw, SearchX, Plus, Minus } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRef, useEffect, useState, useLayoutEffect, useCallback } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 const UP_COLOR   = "#00d166";
 const DOWN_COLOR = "#f23645";
@@ -194,7 +195,7 @@ function HeaderSkeleton() {
 }
 
 export function VolumeBar() {
-  const { streamPrices } = useTerminalStore();
+  const { streamPrices } = useTerminalStore(useShallow((s) => ({ streamPrices: s.streamPrices })));
   const symbol = useActiveSymbol();
   const { data: quote } = useQuote(symbol);
   const vol = streamPrices[symbol]?.volume ?? quote?.volume ?? null;
@@ -231,7 +232,7 @@ export function VolumeBar() {
 }
 
 export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: MetricsBarProps) {
-  const { accessToken, streamPrices } = useTerminalStore();
+  const { accessToken, streamPrices } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken, streamPrices: s.streamPrices })));
   // Widget pin wins inside the dashboard; global symbol everywhere else.
   const symbol = useActiveSymbol();
   const { data: quote, isLoading, source } = useQuote(symbol);

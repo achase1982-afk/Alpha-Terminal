@@ -48,7 +48,7 @@ describe("computeRiskFirstReward", () => {
 
   it("open-ended when max profit unbounded", () => {
     const r = computeRiskFirstReward(99999, 500);
-    expect(r.display).toBe("open-ended");
+    expect(r.display).toBe("OPEN-ENDED");
   });
 });
 

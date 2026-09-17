@@ -18,6 +18,7 @@ import OrderAlertWatcher from "@/components/OrderAlertWatcher";
 import SchwabSessionExpiredDialog from "@/components/SchwabSessionExpiredDialog";
 import StrategistJobBackgroundSync from "@/components/StrategistJobBackgroundSync";
 import { installBrowserTelemetryCapture } from "@/lib/browserTelemetry";
+import { useShallow } from "zustand/react/shallow";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -37,8 +38,8 @@ export const queryClient = new QueryClient({
 const VISIBILITY_DEBOUNCE_MS = 1_500;
 
 function PendingSessionLoader() {
-  const { accessToken, setTokens } = useTerminalStore();
-  const { traderAccessToken, setTraderTokens } = useTerminalStore();
+  const { accessToken, setTokens } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken, setTokens: s.setTokens })));
+  const { traderAccessToken, setTraderTokens } = useTerminalStore(useShallow((s) => ({ traderAccessToken: s.traderAccessToken, setTraderTokens: s.setTraderTokens })));
   const lastCheckRef = useRef(0);
 
   useEffect(() => {

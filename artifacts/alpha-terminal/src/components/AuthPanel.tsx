@@ -5,9 +5,10 @@ import { queryClient } from "@/App";
 import { ExternalLink, CheckCircle2, Loader2, XCircle, AlertTriangle } from "lucide-react";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { useBrokerConnect } from "@/hooks/useBrokerConnect";
+import { useShallow } from "zustand/react/shallow";
 
 export function AuthPanel() {
-  const { accessToken, traderAccessToken, clearTokens, clearTraderTokens } = useTerminalStore();
+  const { accessToken, traderAccessToken, clearTokens, clearTraderTokens } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken, traderAccessToken: s.traderAccessToken, clearTokens: s.clearTokens, clearTraderTokens: s.clearTraderTokens })));
   const portfolioStatus = usePortfolioStreamStore((s) => s.portfolioStatus);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const { oauthUrl, isNavigating, onClick } = useBrokerConnect();

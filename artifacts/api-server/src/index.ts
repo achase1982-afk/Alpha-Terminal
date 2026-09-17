@@ -70,6 +70,19 @@ if (Number.isNaN(port) || port <= 0) {
 
 getFmpApiKeyOrThrow();
 
+// Without these, Node's default for an unhandled rejection is to crash the
+// process, dropping every SSE/WebSocket client and in-flight strategist job
+// because one background promise (a vendor fetch, a cache warm) failed. Log
+// rejections and keep serving; an uncaught synchronous exception still exits
+// since the process state is undefined at that point.
+process.on("unhandledRejection", (reason) => {
+  logger.error({ err: reason }, "Unhandled promise rejection (process kept alive)");
+});
+process.on("uncaughtException", (err) => {
+  logger.error({ err }, "Uncaught exception — exiting");
+  process.exit(1);
+});
+
 async function boot() {
   await ensureTelemetryEventsServiceColumn();
   await ensureMoversFeedTable();

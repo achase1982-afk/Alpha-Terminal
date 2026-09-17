@@ -14,6 +14,7 @@ import {
 import { signalSchwabAuthLost } from "@/lib/authNoticeStore";
 import { refreshSchwabViaServer, syncSchwabTokensFromServer } from "@/lib/schwabTokenSync";
 import type { LiveQuote, LiveNewsItem } from "@/lib/store";
+import { useShallow } from "zustand/react/shallow";
 
 declare global {
   interface Window {
@@ -91,6 +92,12 @@ const REJECTED_RETRY_DELAY = 3_000;
 const MAX_REJECTED_RETRIES = 3;
 const REST_POLL_INTERVAL = 5000;
 const SSE_FALLBACK_DELAY = 2_500;
+/**
+ * Per-tick quote events are coalesced into one store write per window. Every
+ * store write runs every subscriber's selector, and a 20-symbol tape at Schwab
+ * tick rates produced hundreds of writes per second.
+ */
+const QUOTE_COALESCE_MS = 50;
 
 
 async function refreshAndRetry(retryCount: number): Promise<boolean> {
@@ -150,7 +157,19 @@ export function useMarketStream() {
     setStreamQuotes,
     setStreamStatus,
     addLiveNews,
-  } = useTerminalStore();
+  } = useTerminalStore(
+    useShallow((s) => ({
+      accessToken: s.accessToken,
+      traderAccessToken: s.traderAccessToken,
+      symbol: s.symbol,
+      tickerTapeSymbols: s.tickerTapeSymbols,
+      macroSymbols: s.macroSymbols,
+      setStreamQuote: s.setStreamQuote,
+      setStreamQuotes: s.setStreamQuotes,
+      setStreamStatus: s.setStreamStatus,
+      addLiveNews: s.addLiveNews,
+    })),
+  );
 
   const mergeTick = useOptionsStreamStore((s) => s.mergeTick);
   const clearOptionTicks = useOptionsStreamStore((s) => s.clearTicks);
@@ -236,6 +255,26 @@ export function useMarketStream() {
     }
   }, []);
 
+  const pendingQuotesRef = useRef<Map<string, LiveQuote>>(new Map());
+  const quoteFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushQueuedQuotes = useCallback(() => {
+    quoteFlushTimerRef.current = null;
+    const pending = pendingQuotesRef.current;
+    if (pending.size === 0) return;
+    const quotes = Array.from(pending.values());
+    pending.clear();
+    if (quotes.length === 1) setStreamQuote(quotes[0]);
+    else setStreamQuotes(quotes);
+  }, [setStreamQuote, setStreamQuotes]);
+
+  const queueStreamQuote = useCallback((q: LiveQuote) => {
+    pendingQuotesRef.current.set(q.symbol, q);
+    if (quoteFlushTimerRef.current == null) {
+      quoteFlushTimerRef.current = setTimeout(flushQueuedQuotes, QUOTE_COALESCE_MS);
+    }
+  }, [flushQueuedQuotes]);
+
   const handleStreamEvent = useCallback((event: string, data: unknown) => {
     if (event === "snapshot") {
       const { quotes, status } = snapshotQuotesFromData(data);
@@ -257,9 +296,11 @@ export function useMarketStream() {
         setStreamStatus("offline");
       }
     } else if (event === "quote") {
-      setStreamStatus("live");
+      // setStreamStatus always produces a new store state even when the value is
+      // unchanged, so only touch it on an actual transition.
+      if (useTerminalStore.getState().streamStatus !== "live") setStreamStatus("live");
       rejectedRetries.current = 0;
-      setStreamQuote(data as LiveQuote);
+      queueStreamQuote(data as LiveQuote);
     } else if (event === "optionQuote") {
       mergeTick(data as OptionTick);
     } else if (event === "depth") {
@@ -322,6 +363,7 @@ export function useMarketStream() {
     setPortfolioAccounts,
     setPortfolioOrders,
     setPortfolioStatus,
+    queueStreamQuote,
     setStreamQuote,
     setStreamQuotes,
     setStreamStatus,
@@ -469,6 +511,11 @@ export function useMarketStream() {
 
     return () => {
       mountedRef.current = false;
+      if (quoteFlushTimerRef.current) {
+        clearTimeout(quoteFlushTimerRef.current);
+        quoteFlushTimerRef.current = null;
+      }
+      pendingQuotesRef.current.clear();
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;

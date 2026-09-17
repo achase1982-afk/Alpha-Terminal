@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@workspace/db", () => {
+vi.mock("@workspace/db", async () => {
+  // ivNormalize imports `and` / `desc` / `eq` / `sql` via @workspace/db; forward the real builders.
+  const { and, desc, eq, sql } = await vi.importActual<typeof import("drizzle-orm")>("drizzle-orm");
   const equityDailyTable = {
     symbol: "symbol",
     date: "date",
@@ -45,7 +47,7 @@ vi.mock("@workspace/db", () => {
     },
   };
 
-  return { db, equityDailyTable, optionsChainDailyTable: {}, optionsFlowPerStrikeTable: {} };
+  return { db, equityDailyTable, optionsChainDailyTable: {}, optionsFlowPerStrikeTable: {}, and, desc, eq, sql };
 });
 
 import { db } from "@workspace/db";
