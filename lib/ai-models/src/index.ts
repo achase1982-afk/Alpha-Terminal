@@ -253,22 +253,34 @@ export function isAnthropicAdaptiveThinkingModel(model: string): boolean {
   return isClaude47OrNewerVersion(v);
 }
 
-/** True when the model supports API `output_config.effort` (Opus 4.7+, Opus 5, Fable 5.x). */
+/**
+ * True when the model supports API `output_config.effort`: Opus 4.7+, Opus 5, Sonnet 5, Fable 5.x.
+ * (Name kept for existing call sites; the effort selector is the replacement for the temperature
+ * slider on every adaptive-thinking model, not just Opus.)
+ */
 export function isAnthropicOpusEffortModel(model: string): boolean {
   if (!model?.trim()) return false;
   const trimmed = model.trim();
   if (isAnthropicFableModel(trimmed)) return true;
+  // Legacy Opus ids (4.6, date-stamped 4.0, retired xAI slots) remap to Opus 5 and keep effort.
+  // Sonnet is version-gated only: Haiku 4.5 / Sonnet 4.6 also remap to Sonnet 5 but reject effort.
   if (migrateLegacyModelIdToCatalog(trimmed) === "claude-opus-5") return true;
   const v = parseClaudeModelVersion(trimmed);
-  return v?.family === "opus" && isClaude47OrNewerVersion(v);
+  if (!v) return false;
+  if (v.family === "opus") return isClaude47OrNewerVersion(v);
+  if (v.family === "sonnet") return v.major >= 5;
+  return false;
 }
 
-/** Opus-only fast mode (`speed: "fast"`; Opus 5 / Opus 4.8). Fable models do not support fast mode. */
+/** Opus-only fast mode (`speed: "fast"`; Opus 5 / Opus 4.8). Sonnet and Fable do not support fast mode. */
 export function isAnthropicOpusSpeedModel(model: string): boolean {
-  return isAnthropicOpusEffortModel(model) && !isAnthropicFableModel(model);
+  if (!isAnthropicOpusEffortModel(model) || isAnthropicFableModel(model)) return false;
+  const trimmed = model.trim();
+  if (migrateLegacyModelIdToCatalog(trimmed) === "claude-opus-5") return true;
+  return parseClaudeModelVersion(trimmed)?.family === "opus";
 }
 
-/** Custom temperature/top_p/top_k are rejected on adaptive-thinking Anthropic models (Opus/Sonnet 4.7+, 5.x, Fable). */
+/** Custom temperature/top_p/top_k are rejected on adaptive-thinking Anthropic models (Opus/Sonnet 4.7+, 5.x, Fable); effort replaces it. */
 export function isAnthropicTemperatureConfigurable(model: string): boolean {
   if (!/^claude-/i.test(model?.trim() ?? "")) return true;
   if (isAnthropicOpusEffortModel(model)) return false;

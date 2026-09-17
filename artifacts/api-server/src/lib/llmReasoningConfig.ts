@@ -72,7 +72,7 @@ type AnthropicAiSdkProviderOptions = {
   };
 };
 
-/** Native Messages API extras for Opus (`output_config.effort`, top-level `speed`). */
+/** Native Messages API extras for effort-capable Claude models (`output_config.effort`; top-level `speed` on Opus). */
 export type AnthropicOpusMessageExtras = {
   output_config?: Anthropic.OutputConfig;
   speed?: "fast";
@@ -93,7 +93,7 @@ function resolveAnthropicOpusCallOptions(
 
 /**
  * Vercel AI SDK `@ai-sdk/anthropic`: spread into `streamText` / `generateText`.
- * Pass Opus options for `output_config.effort` and `speed: "fast"`.
+ * Pass effort/speed options for `output_config.effort` (Opus 5, Sonnet 5, Fable) and `speed: "fast"` (Opus).
  */
 export type ChatExtendedThinkingOptions = {
   /** When false, omit provider-native reasoning/thinking for chat turns. Default true. */
@@ -127,7 +127,7 @@ export function anthropicProviderOptionsForAiSdk(
   return { providerOptions: { anthropic } };
 }
 
-/** Native `@anthropic-ai/sdk` Messages API extras for Opus effort + fast mode. */
+/** Native `@anthropic-ai/sdk` Messages API extras for effort (Opus 5 / Sonnet 5 / Fable) + Opus fast mode. */
 export function anthropicOpusMessageExtras(
   model: string,
   opus?: AnthropicOpusCallOptions | null,

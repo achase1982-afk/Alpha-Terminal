@@ -272,7 +272,7 @@ export function ChatModelBottomSheet({
                     value={effortNorm}
                     onChange={(e) => onEffortChange(normalizeAnthropicOpusEffort(e.target.value))}
                     className="bg-transparent text-right text-white appearance-none pr-1 max-w-[160px]"
-                    aria-label="Opus effort"
+                    aria-label="Anthropic effort"
                   >
                     {ANTHROPIC_OPUS_EFFORT_LEVELS.map((level) => (
                       <option key={level} value={level} className="bg-[#2b2b2b]">

@@ -104,11 +104,15 @@ describe("Anthropic model gating", () => {
     expect(anthropicThinkingForMessagesApi("claude-haiku-4-5")).toBeUndefined();
   });
 
-  it("supports effort on Opus 5 / Fable 5.1 but not Sonnet 5; fast mode only on Opus", () => {
+  it("supports effort on Opus 5 / Sonnet 5 / Fable 5.1 (effort replaces temperature); fast mode only on Opus", () => {
     expect(isAnthropicOpusEffortModel("claude-opus-5")).toBe(true);
+    expect(isAnthropicOpusEffortModel("claude-sonnet-5")).toBe(true);
     expect(isAnthropicOpusEffortModel("claude-fable-5-1")).toBe(true);
-    expect(isAnthropicOpusEffortModel("claude-sonnet-5")).toBe(false);
+    expect(isAnthropicOpusEffortModel("claude-sonnet-4-6")).toBe(false);
+    expect(isAnthropicOpusEffortModel("claude-haiku-4-5")).toBe(false);
     expect(isAnthropicOpusSpeedModel("claude-opus-5")).toBe(true);
+    expect(isAnthropicOpusSpeedModel("claude-opus-4-8")).toBe(true);
+    expect(isAnthropicOpusSpeedModel("claude-sonnet-5")).toBe(false);
     expect(isAnthropicOpusSpeedModel("claude-fable-5-1")).toBe(false);
   });
 
@@ -151,11 +155,19 @@ describe("anthropicProviderOptionsForAiSdk", () => {
     expect(opts?.providerOptions.anthropic.speed).toBe("fast");
   });
 
-  it("uses adaptive thinking without opus extras for claude-sonnet-5", () => {
-    const opts = anthropicProviderOptionsForAiSdk("claude-sonnet-5", { effort: "max" });
+  it("sends effort (but never fast mode) for claude-sonnet-5", () => {
+    const opts = anthropicProviderOptionsForAiSdk("claude-sonnet-5", { effort: "max", speed: "fast" });
     expect(opts?.providerOptions.anthropic.thinking).toEqual({ type: "adaptive" });
-    expect(opts?.providerOptions.anthropic.effort).toBeUndefined();
-    expect(anthropicOpusMessageExtras("claude-sonnet-5", { effort: "max" })).toEqual({});
+    expect(opts?.providerOptions.anthropic.effort).toBe("max");
+    expect(opts?.providerOptions.anthropic.speed).toBeUndefined();
+    const extras = anthropicOpusMessageExtras("claude-sonnet-5", { effort: "low", speed: "fast" });
+    expect(extras.output_config?.effort).toBe("low");
+    expect(extras.speed).toBeUndefined();
+  });
+
+  it("omits effort extras for models without effort support", () => {
+    expect(anthropicOpusMessageExtras("claude-haiku-4-5", { effort: "max" })).toEqual({});
+    expect(anthropicOpusMessageExtras("claude-sonnet-4-6", { effort: "max" })).toEqual({});
   });
 
   it("sets output_config.effort for Opus", () => {

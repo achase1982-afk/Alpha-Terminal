@@ -18,7 +18,7 @@ type Props = {
   onSpeedIdxChange: (idx: number) => void;
 };
 
-/** Opus effort/speed under a strategist model slot (maps to DB strategist settings indices). */
+/** Anthropic effort (+ Opus fast mode) under a strategist model slot (maps to DB strategist settings indices). */
 export function StrategistSlotOpusOptions({
   slotModelId,
   effortIdx,

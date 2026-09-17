@@ -585,14 +585,14 @@ export function getSettingMeta(): SettingMetaEntry[] {
     { key: "strategistTieBand", label: "Debate Tie Band (confidence pts)", group: "Strategist", default: 10, min: 1, max: 30, step: 1, description: "How close the Bull and Bear confidences must be (in points) for the verdict to land on SIDEWAYS / vol-neutral. Not used in Desk or Solo Desk mode." },
     {
       key: "strategistAnthropicOpusEffortIdx",
-      label: "Opus effort (Anthropic)",
+      label: "Effort (Anthropic)",
       group: "Strategist",
       default: 2,
       min: 0,
       max: 4,
       step: 1,
       description:
-        "Anthropic Messages API effort when a strategist slot uses Claude Opus 5, Fable 5.1 (or Opus 4.7/4.8). Low/Medium save tokens; High is default; Extra (xhigh) for long agentic coding; Max for hardest tasks.",
+        "Anthropic Messages API effort when a strategist slot uses Claude Opus 5, Sonnet 5 or Fable 5.1 (or Opus 4.7/4.8). Replaces temperature on these models. Low/Medium save tokens; High is default; Extra (xhigh) for long agentic coding; Max for hardest tasks.",
       options: [
         { value: 0, label: "Low" },
         { value: 1, label: "Medium" },
