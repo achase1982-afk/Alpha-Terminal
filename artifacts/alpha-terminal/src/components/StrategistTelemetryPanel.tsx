@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { StrategistScoreboardPanel } from "./StrategistScoreboardPanel";
 import { ChevronDown, ChevronUp, Activity, Search as SearchIcon, Copy } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -501,6 +502,8 @@ export function StrategistTelemetryPanel() {
 
   return (
     <div className="space-y-4">
+      <StrategistScoreboardPanel />
+      <div className="border-t border-[#2A2A2C]" />
       {ibkrTickLine && (
         <p className="font-mono text-[10px] text-zinc-500 border border-[#2A2A2C] rounded-md px-2 py-1.5 bg-[#0c0c0c]" role="status">
           {ibkrTickLine}
