@@ -3,6 +3,7 @@ import { desc, eq, inArray, sql, gte } from "@workspace/db";
 import { logger } from "./logger.js";
 import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
 import type { EngineOutput, ClusterName } from "./marketPulseEngine.js";
+import { clusterWeightCoverage } from "./marketPulseEngine.js";
 import { getSettings } from "./strategistSettings.js";
 
 export type DirectionalConviction =
@@ -23,6 +24,12 @@ export interface StructuredRegime {
   compositeScore: number;
   idioOpportunityFlag: boolean;
   updatedAt: string;
+  /** Share of cluster weight backed by live data, 0 to 1. */
+  dataCoverage: number;
+  /** True when enough of the pulse is dark that the reading should be discounted. */
+  degraded: boolean;
+  /** SPY/QQQ daily trend term, -2 to +2, or null when bars are short. */
+  indexTrendScore: number | null;
 }
 
 let cachedRegime: StructuredRegime | null = null;
@@ -37,22 +44,125 @@ export function isRegimeStale(): boolean {
   return !cachedRegime || Date.now() - lastUpdateMs > updateIntervalMs * 2;
 }
 
-export function deriveDirectionalConviction(pulse: EngineOutput): DirectionalConviction {
-  const breadth = pulse.clusters.breadth?.score ?? 0;
-  const rates = pulse.clusters.rates?.score ?? 0;
-  const riskApp = pulse.clusters.riskAppetite?.score ?? 0;
-  const macro = pulse.clusters.macro?.score ?? 0;
+/** Directional weights over the four clusters that carry direction. */
+const DIRECTIONAL_WEIGHTS: ReadonlyArray<{ cluster: ClusterName; weight: number }> = [
+  { cluster: "breadth", weight: 0.30 },
+  { cluster: "riskAppetite", weight: 0.30 },
+  { cluster: "rates", weight: 0.20 },
+  { cluster: "macro", weight: 0.20 },
+];
 
-  const dirScore = breadth * 0.30 + riskApp * 0.30 + rates * 0.20 + macro * 0.20;
+/**
+ * Weighted directional score over the clusters that have data, plus an index
+ * trend term when one is available.
+ *
+ * The old version read every cluster with `?? 0`, so a dark feed voted "flat"
+ * at full weight. Once IBKR stopped paying for breadth that was 30% of the
+ * directional score pinned to zero on every run, and the result was a standing
+ * NEUTRAL that the strategist reads as "no edge". Renormalizing means a missing
+ * cluster removes itself from the vote rather than outvoting the live ones.
+ *
+ * `trendScore` is a [-2, 2] reading of SPY and QQQ against their own 20-day
+ * trend, derived from daily bars rather than any live index feed. It enters at
+ * a fixed 0.25 weight alongside the renormalized clusters, so price action
+ * still speaks when the internals are thin.
+ */
+export function deriveDirectionalConviction(pulse: EngineOutput, trendScore: number | null = null): DirectionalConviction {
+  let weighted = 0;
+  let weightPresent = 0;
+  for (const { cluster, weight } of DIRECTIONAL_WEIGHTS) {
+    const c = pulse.clusters[cluster];
+    if (!c || c.dataQuality === "MISSING") continue;
+    weighted += c.score * weight;
+    weightPresent += weight;
+  }
+
+  if (trendScore !== null && Number.isFinite(trendScore)) {
+    weighted += trendScore * 0.25;
+    weightPresent += 0.25;
+  }
 
   const regime = pulse.structuralRegime;
   if (regime === "TRANSITION") return "TRANSITION";
+
+  // No directional input at all. NEUTRAL here means blind, not flat; callers
+  // read `dataCoverage` on the regime to tell the two apart.
+  if (weightPresent <= 0) return "NEUTRAL";
+
+  const dirScore = weighted / weightPresent;
 
   if (dirScore >= 1.2) return "BULLISH";
   if (dirScore >= 0.4) return "MODERATELY_BULLISH";
   if (dirScore <= -1.2) return "BEARISH";
   if (dirScore <= -0.4) return "MODERATELY_BEARISH";
   return "NEUTRAL";
+}
+
+/** Bars needed before the trend term is trusted. */
+const TREND_MIN_BARS = 21;
+
+/** Scores one symbol's closes: position against its 20-day mean plus 5- and 10-day drift. */
+export function scoreCloseSeriesTrend(closes: readonly number[]): number | null {
+  if (closes.length < TREND_MIN_BARS) return null;
+  const recent = closes.slice(-TREND_MIN_BARS);
+  const last = recent[recent.length - 1];
+  if (!Number.isFinite(last) || last <= 0) return null;
+
+  const sma20 = recent.slice(-20).reduce((a, b) => a + b, 0) / 20;
+  const distPct = ((last - sma20) / sma20) * 100;
+  const chg5 = ((last - recent[recent.length - 6]) / recent[recent.length - 6]) * 100;
+  const chg10 = ((last - recent[recent.length - 11]) / recent[recent.length - 11]) * 100;
+
+  const band = (v: number, edges: readonly [number, number, number]): number => {
+    if (v >= edges[2]) return 2;
+    if (v >= edges[1]) return 1;
+    if (v >= edges[0]) return 0.5;
+    if (v > -edges[0]) return 0;
+    if (v > -edges[1]) return -0.5;
+    if (v > -edges[2]) return -1;
+    return -2;
+  };
+
+  const parts = [band(distPct, [0.5, 1.5, 3.0]), band(chg5, [0.5, 2.0, 4.0]), band(chg10, [1.0, 3.0, 6.0])];
+  const avg = parts.reduce((a, b) => a + b, 0) / parts.length;
+  return Math.max(-2, Math.min(2, Math.round(avg * 1000) / 1000));
+}
+
+/**
+ * Index trend from daily bars for SPY and QQQ. Uses `equity_daily`, which is
+ * backfilled from Polygon, so it needs no live index feed and keeps working
+ * when the streamers are down.
+ */
+export async function computeIndexTrendScore(): Promise<number | null> {
+  try {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 70);
+    const rows = await db
+      .select({ symbol: equityDailyTable.symbol, date: equityDailyTable.date, close: equityDailyTable.close })
+      .from(equityDailyTable)
+      .where(
+        sql`${equityDailyTable.symbol} IN ('SPY','QQQ') AND ${equityDailyTable.date} >= ${cutoff.toISOString().slice(0, 10)}`,
+      )
+      .orderBy(equityDailyTable.symbol, equityDailyTable.date);
+
+    const bySymbol = new Map<string, number[]>();
+    for (const r of rows) {
+      const arr = bySymbol.get(r.symbol) ?? [];
+      arr.push(r.close);
+      bySymbol.set(r.symbol, arr);
+    }
+
+    const scores: number[] = [];
+    for (const sym of ["SPY", "QQQ"]) {
+      const s = scoreCloseSeriesTrend(bySymbol.get(sym) ?? []);
+      if (s !== null) scores.push(s);
+    }
+    if (scores.length === 0) return null;
+    return Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 1000) / 1000;
+  } catch (err) {
+    logger.warn({ err }, "Index trend score unavailable");
+    return null;
+  }
 }
 
 export function deriveSystemicRiskLevel(pulse: EngineOutput): SystemicRiskLevel {
@@ -157,10 +267,13 @@ function pearsonCorrelation(pairs: [number, number][]): number {
 export async function updateRegimeFromPulse(pulse: EngineOutput): Promise<StructuredRegime> {
   const cfg = await getSettings();
   updateIntervalMs = (cfg.regimeUpdateFrequencyMin ?? 5) * 60 * 1000;
-  const directionalConviction = deriveDirectionalConviction(pulse);
+  const indexTrendScore = await computeIndexTrendScore();
+  const directionalConviction = deriveDirectionalConviction(pulse, indexTrendScore);
   const systemicRiskLevel = deriveSystemicRiskLevel(pulse);
   const correlationRegime = await computeCorrelationRegime(cfg);
   const compositeScore = Math.round(((pulse.compositeScore + 2) / 4) * 100);
+  const dataCoverage = clusterWeightCoverage(pulse.clusters);
+  const degraded = dataCoverage < DEGRADED_COVERAGE_FLOOR;
 
   const idioOpportunityFlag =
     (directionalConviction === "NEUTRAL" || directionalConviction === "TRANSITION") &&
@@ -173,12 +286,18 @@ export async function updateRegimeFromPulse(pulse: EngineOutput): Promise<Struct
     compositeScore: Math.max(0, Math.min(100, compositeScore)),
     idioOpportunityFlag,
     updatedAt: new Date().toISOString(),
+    dataCoverage,
+    degraded,
+    indexTrendScore,
   };
   lastUpdateMs = Date.now();
 
   logger.info({ regime: cachedRegime }, "Regime post-processor updated");
   return cachedRegime;
 }
+
+/** Below this share of live cluster weight the pulse reading is called degraded. */
+export const DEGRADED_COVERAGE_FLOOR = 0.6;
 
 export function buildFallbackRegime(): StructuredRegime {
   return {
@@ -188,5 +307,8 @@ export function buildFallbackRegime(): StructuredRegime {
     compositeScore: 50,
     idioOpportunityFlag: true,
     updatedAt: new Date().toISOString(),
+    dataCoverage: 0,
+    degraded: true,
+    indexTrendScore: null,
   };
 }

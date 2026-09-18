@@ -1064,13 +1064,40 @@ function scoreMacro(data: MarketIndicators): ClusterResult {
 
 // ---------- COMPOSITE SCORE ----------
 
+/**
+ * Weighted average over the clusters that actually have data.
+ *
+ * A MISSING cluster used to contribute score 0 at full weight, which is not a
+ * neutral reading — it is a vote for "flat" cast by a feed that is switched off.
+ * With breadth dark that alone pulled 18% of the composite to zero every run.
+ * Renormalizing over the present clusters makes a missing feed reduce confidence
+ * instead of manufacturing neutrality.
+ */
 function calculateComposite(clusters: Record<ClusterName, ClusterResult>): number {
-  let composite = 0;
+  let weighted = 0;
+  let weightPresent = 0;
+  for (const [name, cluster] of Object.entries(clusters) as [ClusterName, ClusterResult][]) {
+    if (cluster.dataQuality === 'MISSING') continue;
+    const weight = CLUSTER_WEIGHTS[name] / 100;
+    weighted += cluster.score * weight;
+    weightPresent += weight;
+  }
+  if (weightPresent <= 0) return 0;
+  const composite = weighted / weightPresent;
+  return Math.round(composite * 10000) / 10000;
+}
+
+/** Share of total cluster weight backed by data this run, in [0, 1]. */
+export function clusterWeightCoverage(clusters: Record<ClusterName, ClusterResult>): number {
+  let present = 0;
+  let total = 0;
   for (const [name, cluster] of Object.entries(clusters) as [ClusterName, ClusterResult][]) {
     const weight = CLUSTER_WEIGHTS[name] / 100;
-    composite += cluster.score * weight;
+    total += weight;
+    if (cluster.dataQuality !== 'MISSING') present += weight;
   }
-  return Math.round(composite * 10000) / 10000;
+  if (total <= 0) return 0;
+  return Math.round((present / total) * 1000) / 1000;
 }
 
 // ---------- CONFIDENCE ----------

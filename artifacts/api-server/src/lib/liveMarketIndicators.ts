@@ -5,6 +5,8 @@
 import { type MarketIndicators } from "./marketPulseEngine.js";
 import { getSnapshot, addSymbols as addSchwabSymbols, addFuturesSymbols as addSchwabFuturesSymbols, type LiveQuote } from "./schwabStreamer.js";
 import { getIBSnapshot, getIBCachedQuote, registerPermanentSymbols } from "./ibStreamer.js";
+import { getSchwabIndexQuote, registerSchwabIndexSymbols } from "./schwabIndexQuotes.js";
+import { getSyntheticBreadth } from "./syntheticBreadth.js";
 import { getSyntheticDxyPrevClose } from "./syntheticDxy.js";
 import { getEquityPCRatio, getIndexPCRatio } from "./polygonPutCallRatio.js";
 
@@ -29,6 +31,7 @@ export const PULSE_SYMBOLS: PulseSymbol[] = [
   { display: "$RVX", api: "$RVX", category: "vol", description: "CBOE Russell 2000 VIX — small-cap implied vol" },
   { display: "$OVX", api: "$OVX", category: "vol", description: "CBOE Oil VIX — crude oil implied vol" },
   { display: "$GVZ", api: "$GVZ", category: "vol", description: "CBOE Gold VIX — gold implied vol" },
+  { display: "/VX", api: "/VX", category: "vol", description: "CBOE VIX front-month future — term-structure anchor vs $VIX" },
 
   { display: "$PCUSEQTR", api: "$PCUSEQTR", category: "vol", description: "CBOE Equity Put/Call Ratio (Polygon SPY options)" },
   { display: "$PCUSINXR", api: "$PCUSINXR", category: "vol", description: "CBOE Index Put/Call Ratio (Polygon SPX options)" },
@@ -124,9 +127,21 @@ export function symbolToSchwabApi(userSymbol: string): string {
   return INDEX_TO_SCHWAB[upper] ?? upper;
 }
 
+/** Symbols that only ever arrived over the IBKR stream; Schwab REST is the source now. */
+export const INDEX_ONLY_PULSE_SYMBOLS: readonly string[] = PULSE_SYMBOLS.filter(
+  (s) =>
+    s.display.startsWith("$") &&
+    s.display !== "$DXY" &&
+    s.display !== "$PCUSEQTR" &&
+    s.display !== "$PCUSINXR",
+).map((s) => s.display);
+
+// IBKR keeps these registered when a gateway happens to be connected, but it is
+// no longer required: the Schwab REST poller below is the primary source.
 registerPermanentSymbols(
   PULSE_SYMBOLS.filter((s) => s.category === "breadth" || (s.category === "vol" && s.display.startsWith("$"))).map((s) => s.display),
 );
+registerSchwabIndexSymbols(INDEX_ONLY_PULSE_SYMBOLS);
 
 export function ensurePulseSubscriptions(): void {
   const equitySyms: string[] = [];
@@ -178,14 +193,37 @@ export function readFromWebSocketCache(userSymbols?: string[]): {
   for (const pair of pairs) {
     let q: LiveQuote | null | undefined = null;
 
-    const pulseDef = PULSE_SYMBOLS.find((s) => s.display === pair.display);
-    const isIBSymbol =
-      pulseDef && (pulseDef.category === "breadth" || (pulseDef.category === "vol" && pulseDef.display.startsWith("$")));
+    // Schwab stream first, then the Schwab REST index cache, and only then
+    // IBKR. IBKR used to be mandatory for the `$` symbols; it is now an
+    // opportunistic extra, so the pulse survives with no gateway at all.
+    q = schwabCacheBySymbol.get(pair.display) ?? schwabCacheBySymbol.get(pair.api);
 
-    if (isIBSymbol) {
+    if (!q || q.last === null) {
+      const idx = getSchwabIndexQuote(pair.display);
+      if (idx) {
+        q = {
+          symbol: pair.display,
+          last: idx.last,
+          regularLast: idx.last,
+          extendedLast: null,
+          bid: null,
+          ask: null,
+          bidSize: null,
+          askSize: null,
+          change: idx.change,
+          changePct: idx.changePct,
+          volume: idx.volume,
+          high: idx.high,
+          low: idx.low,
+          close: idx.close,
+          ts: idx.ts,
+          quoteSource: "SCHWAB",
+        };
+      }
+    }
+
+    if (!q || q.last === null) {
       q = ibCacheBySymbol.get(pair.display) ?? getIBCachedQuote(pair.display);
-    } else {
-      q = schwabCacheBySymbol.get(pair.display) ?? schwabCacheBySymbol.get(pair.api);
     }
 
     if (q && q.last !== null) {
@@ -260,6 +298,55 @@ export function readFromWebSocketCache(userSymbols?: string[]): {
       callVolume: idxPC.callVolume,
       source: "polygon",
     });
+  }
+
+  // Breadth fallback. These indices reached this process only over IBKR; when
+  // they are absent the Liquid Core proxy fills the ratio slots the pulse engine
+  // actually scores. Anything Schwab does serve above wins and is left alone.
+  const breadthProxy = getSyntheticBreadth();
+  if (breadthProxy) {
+    const setIfMissing = (sym: string, value: number | null) => {
+      if (value === null) return;
+      const existing = dataMap.get(sym);
+      if (existing && typeof existing["lastPrice"] === "number") return;
+      dataMap.set(sym, {
+        lastPrice: value,
+        mark: value,
+        closePrice: null,
+        close: null,
+        netChange: null,
+        markChange: null,
+        netPercentChange: null,
+        markPercentChange: null,
+        highPrice: null,
+        high: null,
+        lowPrice: null,
+        low: null,
+        totalVolume: null,
+        volume: null,
+        bidPrice: null,
+        askPrice: null,
+        synthetic: true,
+        derivedFrom: breadthProxy.source,
+      });
+      hitCount++;
+    };
+    if (breadthProxy.nyse) {
+      setIfMissing("$ADVN", breadthProxy.nyse.advn);
+      setIfMissing("$DECN", breadthProxy.nyse.decn);
+      setIfMissing("$UVOL", breadthProxy.nyse.uvol);
+      setIfMissing("$DVOL", breadthProxy.nyse.dvol);
+      setIfMissing("$ADD", breadthProxy.nyse.add);
+      setIfMissing("$TRIN", breadthProxy.nyse.trin);
+    }
+    if (breadthProxy.nasdaq) {
+      setIfMissing("$ADVNQ", breadthProxy.nasdaq.advn);
+      setIfMissing("$DECNQ", breadthProxy.nasdaq.decn);
+      setIfMissing("$UVOLQ", breadthProxy.nasdaq.uvol);
+      setIfMissing("$DVOLQ", breadthProxy.nasdaq.dvol);
+      setIfMissing("$ADDQ", breadthProxy.nasdaq.add);
+      setIfMissing("$TRINQ", breadthProxy.nasdaq.trin);
+    }
   }
 
   if (!dataMap.has("$DXY") || !dataMap.get("$DXY")?.["lastPrice"]) {
@@ -350,8 +437,10 @@ export function extractMarketIndicators(dataMap: Map<string, Record<string, unkn
     ovxChange: pctChange("$OVX"),
     gvz: lastOrMark("$GVZ"),
     gvzChange: pctChange("$GVZ"),
-    vixFut: lastOrMark("$VIX"),
-    vixFutChange: pctChange("$VIX"),
+    // /VX is the front-month VIX future. This used to read $VIX, which made the
+    // term-structure component compare the index to itself and always score 0.
+    vixFut: lastOrMark("/VX"),
+    vixFutChange: pctChange("/VX"),
 
     tnx: yieldIndex("$TNX"),
     tnxChange: pctChange("$TNX"),
@@ -439,5 +528,44 @@ export function getLiveMarketIndicatorsForPulse(): {
     indicators: extractMarketIndicators(dataMap),
     hitCount,
     dataMap,
+  };
+}
+
+export interface RegimeInputDegradation {
+  /** Pulse symbols with no usable value from any source this read. */
+  missingSymbols: string[];
+  /** Slots filled by the Liquid Core breadth proxy rather than an exchange feed. */
+  syntheticSymbols: string[];
+  /** True when breadth came from the proxy rather than the exchange indices. */
+  breadthIsProxy: boolean;
+  /** True when the term-structure anchor /VX is absent. */
+  vixFutureMissing: boolean;
+}
+
+/**
+ * What the regime is currently missing and what is standing in for it. Surfaced
+ * to the strategist so a thin data read is never mistaken for a flat market.
+ */
+export function describeRegimeInputDegradation(
+  dataMap: Map<string, Record<string, unknown>>,
+): RegimeInputDegradation {
+  const missingSymbols: string[] = [];
+  const syntheticSymbols: string[] = [];
+
+  for (const def of PULSE_SYMBOLS) {
+    const entry = dataMap.get(def.display);
+    const priced = entry && typeof entry["lastPrice"] === "number";
+    if (!priced) {
+      missingSymbols.push(def.display);
+      continue;
+    }
+    if (entry?.["synthetic"] === true) syntheticSymbols.push(def.display);
+  }
+
+  return {
+    missingSymbols,
+    syntheticSymbols,
+    breadthIsProxy: syntheticSymbols.some((s) => s.startsWith("$ADVN") || s.startsWith("$DECN") || s.startsWith("$UVOL")),
+    vixFutureMissing: !dataMap.get("/VX"),
   };
 }
