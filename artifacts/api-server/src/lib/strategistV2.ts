@@ -36,6 +36,7 @@ import {
 import { getRecentNewsForTicker } from "./strategistRecentNews.js";
 import { runWithPolygonApiTraceAsync, takePolygonApiTrace } from "./polygonApiTrace.js";
 import { runInStrategistRunContext, getStrategistRunContext, mergeStrategistDiag } from "./strategistRunContext.js";
+import { getTrackRecordForPrompt } from "./strategistOutcomeScoreboard.js";
 import { getMarketContext } from "./getMarketContext.js";
 import {
   buildDatasetFreshnessMeta,
@@ -3690,6 +3691,9 @@ async function buildDataPackage(
   const optionsFlowDatasetTag = datasetFreshness.optionsFlowRollup
     ? formatDatasetInlineTag("OPTIONS FLOW", datasetFreshness.optionsFlowRollup)
     : null;
+  // Realized outcomes of this desk's own prior cards. Null until enough cards
+  // have been marked; never blocks the run if the scoreboard is unavailable.
+  const trackRecordBlock = await getTrackRecordForPrompt(getStrategistRunContext()?.userId ?? null);
   const pkg: Record<string, unknown> = {
     schemaVersion: 1,
     dataQualitySummary,
@@ -3818,6 +3822,7 @@ async function buildDataPackage(
       systemicRiskLevel: regime.systemicRiskLevel,
       correlationRegime: regime.correlationRegime,
     },
+    ...(trackRecordBlock ? { trackRecord: trackRecordBlock } : {}),
     userPreferences: {
       preferredDteMin: settings.preferredDteMin,
       preferredDteMax: settings.preferredDteMax,
