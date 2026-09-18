@@ -16,6 +16,8 @@ import { initAiLabOrchestrator } from "./lib/aiLabOrchestrator";
 import { startUniverseRebuildSchedule } from "./lib/universeBuilder";
 import { runFullSnapshot, sweepStaleSnapshots } from "./lib/dailySnapshot";
 import { accumulateCanonicalIvForDate } from "./lib/canonicalIvAccumulator";
+import { startSchwabIndexQuotePolling } from "./lib/schwabIndexQuotes";
+import { startSyntheticBreadthPolling } from "./lib/syntheticBreadth";
 import { runOutcomeScoreboardCycle } from "./lib/strategistOutcomeScoreboard";
 import {
   backfillAnalystEstimates,
@@ -102,6 +104,12 @@ async function boot() {
   void refreshMacroCalendarCacheFromDb().catch((e) => {
     logger.warn({ err: e }, "FMP macro calendar cache warm failed");
   });
+  // Regime inputs that used to come off the IBKR stream. The index poller
+  // covers the `$` symbols Schwab serves; the breadth proxy covers the ones it
+  // does not. Both are cheap batched REST reads and neither blocks boot.
+  startSchwabIndexQuotePolling();
+  startSyntheticBreadthPolling();
+
   // Catch-up pass ~90s after boot so a restart does not wait for 22:00 UTC.
   setTimeout(() => {
     void runOutcomeScoreboardCycle().catch((err) => {

@@ -3821,6 +3821,12 @@ async function buildDataPackage(
       directionalConviction: regime.directionalConviction,
       systemicRiskLevel: regime.systemicRiskLevel,
       correlationRegime: regime.correlationRegime,
+      indexTrendScore: regime.indexTrendScore,
+      dataCoverage: regime.dataCoverage,
+      degraded: regime.degraded,
+      readingNote: regime.degraded
+        ? `Regime read is thin: only ${Math.round((regime.dataCoverage ?? 0) * 100)}% of the market-pulse clusters had live data. A NEUTRAL conviction here means the macro read is incomplete, not that the market is flat. Weight the single-name evidence accordingly rather than treating the regime as a reason to stand down.`
+        : `Regime read is complete (${Math.round((regime.dataCoverage ?? 0) * 100)}% of pulse clusters live).`,
     },
     ...(trackRecordBlock ? { trackRecord: trackRecordBlock } : {}),
     userPreferences: {
