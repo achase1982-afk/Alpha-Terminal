@@ -19,6 +19,8 @@ export function strategistModeLabel(mode: number): string {
       return "solo_desk";
     case 5:
       return "conviction_desk";
+    case 6:
+      return "consensus";
     default:
       return `mode_${mode}`;
   }

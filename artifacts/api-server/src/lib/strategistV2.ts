@@ -36,6 +36,7 @@ import {
 import { getRecentNewsForTicker } from "./strategistRecentNews.js";
 import { runWithPolygonApiTraceAsync, takePolygonApiTrace } from "./polygonApiTrace.js";
 import { runInStrategistRunContext, getStrategistRunContext, mergeStrategistDiag } from "./strategistRunContext.js";
+import { evaluateConsensus, type ConsensusMemberInput } from "./strategistConsensus.js";
 import { getMarketContext } from "./getMarketContext.js";
 import {
   buildDatasetFreshnessMeta,
@@ -1612,6 +1613,7 @@ async function analyzeTickerV2Inner(
     }
   }
 
+  const isConsensusMode = settings.strategistMode === 6;
   const isDebateMode = settings.strategistMode === 2;
   const debateScrubCanonical: ScrubCanonical = {
     ivr: tickerData.ivr,
@@ -1649,15 +1651,85 @@ async function analyzeTickerV2Inner(
     });
   }
 
-  status(isDebateMode ? "Starting strategist debate…" : "Calling AI for trade recommendation…");
+  status(
+    isDebateMode
+      ? "Starting strategist debate…"
+      : isConsensusMode
+        ? "Running blind consensus across models…"
+        : "Calling AI for trade recommendation…",
+  );
   let aiResponse: AiTradeResponse;
   let webTrace: WebSearchTrace;
   let rawAiResponseText: string;
   let debateVerdictFromRun: DebateVerdict | null = null;
   // Solo-mode override: pick the user-selected solo model, not aiLab default.
-  const soloModel = !isDebateMode ? getStrategistModel(settings.strategistSoloModelIdx) : undefined;
+  const soloModel = !isDebateMode && !isConsensusMode ? getStrategistModel(settings.strategistSoloModelIdx) : undefined;
+  let consensusNote: string | null = null;
   try {
-    if (isDebateMode) {
+    if (isConsensusMode) {
+      progress?.workerControl?.onPipelinePhase?.("debating");
+      // Blind and parallel: no member sees another's output, so nothing here
+      // can herd onto whoever argued most confidently.
+      const memberCount = Math.min(Math.max(settings.strategistConsensusMembers ?? 3, 2), 3);
+      const slots = [
+        settings.strategistSoloModelIdx,
+        settings.strategistDebateAModelIdx,
+        settings.strategistDebateBModelIdx,
+      ].slice(0, memberCount);
+      const models = slots.map((idx) => getStrategistModel(idx));
+
+      const settled = await Promise.allSettled(
+        models.map((m) => callAiForTrade(dataPackage, undefined, undefined, m)),
+      );
+
+      const ok: Array<{ label: string; r: { response: AiTradeResponse; trace: WebSearchTrace; rawText: string } }> = [];
+      settled.forEach((res, i) => {
+        if (res.status === "fulfilled") {
+          ok.push({ label: models[i].label, r: res.value });
+        } else {
+          logger.warn({ ticker, model: models[i].label, err: res.reason }, "StrategistV2: consensus member failed");
+        }
+      });
+
+      if (ok.length === 0) throw new Error("every consensus member failed");
+
+      const inputs: ConsensusMemberInput[] = ok.map(({ label, r }) => ({
+        label,
+        legs: r.response.legs ?? [],
+        strategy: r.response.strategy ?? "",
+        confidence: Number.isFinite(r.response.confidence) ? r.response.confidence : 0,
+      }));
+      const verdict = evaluateConsensus(inputs);
+      mergeStrategistDiag({
+        consensus: {
+          requested: models.length,
+          returned: ok.length,
+          agreed: verdict.agreed,
+          direction: verdict.direction,
+          family: verdict.family,
+          meanConfidence: verdict.meanConfidence,
+          members: verdict.members.map((m) => ({ label: m.label, direction: m.direction, family: m.family, confidence: m.confidence })),
+        },
+      });
+
+      if (!verdict.agreed) {
+        return noViable(ticker, regime, settings, toxicCheck, tickerData,
+          {
+            category: "NO_TRADE",
+            detail: verdict.note,
+            suggestedAction: "A split desk is a signal, not a delay. Wait for the read to firm up, or switch to Solo to see one model's card.",
+          },
+          ioScore, { dataSource, dataPackage, confidenceBase: verdict.meanConfidence, confidenceFinal: verdict.meanConfidence });
+      }
+
+      const winner = ok[verdict.winnerIndex];
+      aiResponse = winner.r.response;
+      webTrace = winner.r.trace;
+      rawAiResponseText = winner.r.rawText;
+      // The group mean governs, so one optimistic member cannot lift the number.
+      aiResponse.confidence = verdict.meanConfidence;
+      consensusNote = verdict.note;
+    } else if (isDebateMode) {
       progress?.workerControl?.onPipelinePhase?.("debating");
       const r = await callAiForTradeViaDebate(dataPackage, settings, progress, debateScrubCanonical);
       aiResponse = r.response;
@@ -1675,6 +1747,10 @@ async function analyzeTickerV2Inner(
     return noViable(ticker, regime, settings, toxicCheck, tickerData,
       { category: "ANALYSIS_INCOMPLETE", detail: `AI analysis failed: ${err instanceof Error ? err.message : String(err)}`, suggestedAction: "Retry the analysis. If it persists, check AI provider credentials and rate limits." },
       ioScore, { dataSource, dataPackage });
+  }
+
+  if (consensusNote) {
+    aiResponse.thesis = `${aiResponse.thesis} ${consensusNote}`.trim();
   }
 
   return buildRecommendationFromAiState({
