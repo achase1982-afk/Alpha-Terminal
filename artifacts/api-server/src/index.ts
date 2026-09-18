@@ -18,6 +18,7 @@ import { runFullSnapshot, sweepStaleSnapshots } from "./lib/dailySnapshot";
 import { accumulateCanonicalIvForDate } from "./lib/canonicalIvAccumulator";
 import { startSchwabIndexQuotePolling } from "./lib/schwabIndexQuotes";
 import { startSyntheticBreadthPolling } from "./lib/syntheticBreadth";
+import { runOutcomeScoreboardCycle } from "./lib/strategistOutcomeScoreboard";
 import {
   backfillAnalystEstimates,
   backfillAnalystGrades,
@@ -109,6 +110,13 @@ async function boot() {
   startSchwabIndexQuotePolling();
   startSyntheticBreadthPolling();
 
+  // Catch-up pass ~90s after boot so a restart does not wait for 22:00 UTC.
+  setTimeout(() => {
+    void runOutcomeScoreboardCycle().catch((err) => {
+      logger.warn({ err }, "Strategist outcome scoreboard: boot catch-up failed");
+    });
+  }, 90_000).unref?.();
+
   function scheduleCanonicalIvAccumulator() {
     function nextRunMs() {
       const now = new Date();
@@ -138,6 +146,12 @@ async function boot() {
           logger.info(macroReport, "FMP macro calendar backfill: scheduled run complete");
         } catch (err) {
           logger.error({ err }, "FMP macro calendar backfill: scheduled run failed");
+        }
+        try {
+          const scoreboardReport = await runOutcomeScoreboardCycle();
+          logger.info(scoreboardReport, "Strategist outcome scoreboard: scheduled run complete");
+        } catch (err) {
+          logger.error({ err }, "Strategist outcome scoreboard: scheduled run failed");
         }
         scheduleNext();
       }, ms);

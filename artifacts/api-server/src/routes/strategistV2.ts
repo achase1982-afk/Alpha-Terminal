@@ -13,6 +13,10 @@ import {
 } from "../lib/strategistTelemetryErrors.js";
 import { requireStrategistUserId } from "../lib/strategistAuth.js";
 import {
+  getScoreboard,
+  runOutcomeScoreboardCycle,
+} from "../lib/strategistOutcomeScoreboard.js";
+import {
   selectStrategistTelemetryRows,
   selectStrategistTelemetryRowById,
   selectStrategistTelemetryRowByRequestId,
@@ -309,6 +313,37 @@ router.delete("/telemetry/cleanup", async (_req, res) => {
   } catch (err) {
     logger.error({ err }, "StrategistV2: telemetry cleanup failed");
     res.status(500).json({ error: "Cleanup failed" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Outcome scoreboard — realized results of this desk's own recommendations.
+// ---------------------------------------------------------------------------
+
+/** Aggregated hit rate / expectancy for the caller's scored recommendations. */
+router.get("/scoreboard", async (req, res) => {
+  try {
+    const userId = requireStrategistUserId(req);
+    const days = Math.min(Math.max(Number(req.query.days) || 90, 7), 730);
+    const board = await getScoreboard(userId, days);
+    res.json(board);
+  } catch (err) {
+    logger.error({ err }, "StrategistV2: scoreboard fetch failed");
+    res.status(500).json({ error: "Failed to build scoreboard" });
+  }
+});
+
+/** Enroll any un-tracked cards and mark everything that is due, on demand. */
+router.post("/scoreboard/score-now", async (req, res) => {
+  try {
+    const userId = requireStrategistUserId(req);
+    const cycle = await runOutcomeScoreboardCycle();
+    const days = Math.min(Math.max(Number(req.query.days) || 90, 7), 730);
+    const board = await getScoreboard(userId, days);
+    res.json({ cycle, board });
+  } catch (err) {
+    logger.error({ err }, "StrategistV2: scoreboard score-now failed");
+    res.status(500).json({ error: "Scoreboard run failed" });
   }
 });
 
