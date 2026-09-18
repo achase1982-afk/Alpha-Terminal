@@ -54,6 +54,13 @@ const DEFAULTS: Config = {
   pollIntervalSec: 60,
   lossStreakLimit: 3,
   cooldownMinutes: 60,
+
+  // LLM engine risk management
+  llmStopEnabled: true,
+  llmMinStopPct: 0.005,
+  llmMaxStopPct: 0.03,
+  llmMinHoldSeconds: 120,
+  llmReentryCooldownSeconds: 300,
   tradesPerDay: 40,
   enableShorts: false,
 
