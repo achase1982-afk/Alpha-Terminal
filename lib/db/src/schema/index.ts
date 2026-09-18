@@ -890,6 +890,64 @@ export const strategistHistoryTable = pgTable("strategist_history", {
 
 export type StrategistHistory = typeof strategistHistoryTable.$inferSelect;
 
+/**
+ * Realized outcome per strategist recommendation, scored at the card's time stop or at
+ * expiration (see api-server `lib/strategistOutcomeScoreboard.ts`). One row per
+ * `strategist_history` card that carried a priced structure. Entry and mark values are
+ * per-share structure values: positive = net debit paid, negative = net credit received,
+ * so `pnl_per_share = mark_value - entry_value` for every structure.
+ */
+export const strategistOutcomesTable = pgTable(
+  "strategist_outcomes",
+  {
+    id: serial("id").primaryKey(),
+    historyId: integer("history_id").notNull(),
+    jobId: text("job_id").notNull(),
+    userId: text("user_id"),
+    ticker: text("ticker").notNull(),
+    signalAt: timestamp("signal_at").notNull(),
+    /** solo | debate | desk | conviction | consensus | unknown */
+    mode: text("mode"),
+    provider: text("provider"),
+    modelName: text("model_name"),
+    strategyType: text("strategy_type"),
+    /** credit | debit */
+    family: text("family"),
+    direction: text("direction"),
+    confidence: real("confidence"),
+    legs: jsonb("legs").notNull(),
+    entryValue: real("entry_value").notNull(),
+    maxRisk: real("max_risk"),
+    maxProfit: real("max_profit"),
+    expiration: date("expiration").notNull(),
+    timeStop: date("time_stop"),
+    /** Earliest date the card should be marked: time stop when present, else expiration. */
+    markDue: date("mark_due").notNull(),
+    /** pending | scored | unscorable */
+    status: text("status").notNull().default("pending"),
+    markDate: date("mark_date"),
+    /** chain_daily | schwab_quote | intrinsic_expiry */
+    markSource: text("mark_source"),
+    markValue: real("mark_value"),
+    underlyingAtMark: real("underlying_at_mark"),
+    pnlPerShare: real("pnl_per_share"),
+    pnlPctOfRisk: real("pnl_pct_of_risk"),
+    /** WIN | LOSS | FLAT */
+    outcome: text("outcome"),
+    scoredAt: timestamp("scored_at"),
+    unscorableReason: text("unscorable_reason"),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("strategist_outcomes_history_uq").on(t.historyId),
+    index("strategist_outcomes_status_due_idx").on(t.status, t.markDue),
+    index("strategist_outcomes_user_signal_idx").on(t.userId, t.signalAt),
+  ],
+);
+
+export type StrategistOutcome = typeof strategistOutcomesTable.$inferSelect;
+
 /** Strategist V3 durable job queue (see docs/strategist-v3-architecture.md). */
 export const strategistJobStatusEnum = pgEnum("strategist_job_status", [
   "queued",
