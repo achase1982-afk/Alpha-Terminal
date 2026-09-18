@@ -2649,7 +2649,7 @@ function AiIntelligenceTabInner({
   onStrategistDeepLinkHandled,
 }: AiIntelligenceTabProps) {
   const [strategistMode, setStrategistMode] = useState<StrategistMode>("options");
-  /** Server `strategistMode` (1–5); drives AI-brain chrome independently of stale transcript rows. */
+  /** Server `strategistMode` (1–6); drives AI-brain chrome independently of stale transcript rows. */
   const [strategistTuningMode, setStrategistTuningMode] = useState<number | null>(null);
   const {
     symbol, setSymbol, accessToken,
@@ -2844,7 +2844,7 @@ function AiIntelligenceTabInner({
       if (!res.ok) return;
       const json = (await res.json()) as { current?: Record<string, number> };
       const m = json.current?.strategistMode;
-      if (typeof m === "number" && m >= 1 && m <= 5) setStrategistTuningMode(m);
+      if (typeof m === "number" && m >= 1 && m <= 6) setStrategistTuningMode(m);
     } catch {
       /* best-effort */
     }
@@ -2914,7 +2914,7 @@ function AiIntelligenceTabInner({
     if (subTab !== "strategist") return;
     const onTuningModeChanged = (ev: Event) => {
       const m = (ev as CustomEvent<{ mode?: number }>).detail?.mode;
-      if (typeof m === "number" && m >= 1 && m <= 5) setStrategistTuningMode(m);
+      if (typeof m === "number" && m >= 1 && m <= 6) setStrategistTuningMode(m);
       else void refreshStrategistTuningMode();
     };
     window.addEventListener("strategistTuningModeChanged", onTuningModeChanged as EventListener);

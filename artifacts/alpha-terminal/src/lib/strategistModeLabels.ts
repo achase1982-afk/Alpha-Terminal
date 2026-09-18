@@ -1,4 +1,4 @@
-/** Server `strategistMode` (1–5) → short uppercase label for live Strategist UI chrome. */
+/** Server `strategistMode` (1–6) → short uppercase label for live Strategist UI chrome. */
 export function strategistTuningModeHeaderLabel(mode: number): string {
   switch (mode) {
     case 1:
@@ -11,6 +11,8 @@ export function strategistTuningModeHeaderLabel(mode: number): string {
       return "SOLO DESK MODE";
     case 5:
       return "CONVICTION DESK MODE";
+    case 6:
+      return "CONSENSUS MODE";
     default:
       return "STRATEGIST";
   }

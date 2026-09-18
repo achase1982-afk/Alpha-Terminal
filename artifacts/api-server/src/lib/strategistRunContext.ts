@@ -28,6 +28,16 @@ export type StrategistDiagScratch = {
   cboeOneWasColdStart?: boolean;
   /** JSON-safe snapshots of provider SDK request payloads for strategist LLM calls (same order as turns). */
   modelSdkInputs?: unknown[];
+  /** Consensus mode: what each blind member returned and whether the desk agreed. */
+  consensus?: {
+    requested: number;
+    returned: number;
+    agreed: boolean;
+    direction: string | null;
+    family: string | null;
+    meanConfidence: number;
+    members: Array<{ label: string; direction: string; family: string; confidence: number }>;
+  };
   /** Conviction Desk per-attempt usage + web search counts (mirrors fullDiagnostic). */
   convictionDeskProviderTelemetry?: Array<Record<string, unknown>>;
   /** Deterministic session clock for this analyze run. */

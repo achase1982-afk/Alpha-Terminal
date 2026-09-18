@@ -53,7 +53,8 @@ export interface StrategistConfig {
   toxicPathBEnabled: number;
   regimeUpdateFrequencyMin: number;
   // Strategist mode + model selection
-  strategistMode: number; // 1 = Solo, 2 = Debate, 3 = Desk, 4 = Solo Desk, 5 = Conviction Desk
+  strategistMode: number; // 1 = Solo, 2 = Debate, 3 = Desk, 4 = Solo Desk, 5 = Conviction Desk, 6 = Consensus
+  strategistConsensusMembers: number;
   strategistConvergence: number; // 1 = highest_confidence, 2 = synthesis, 3 = hybrid
   /** Confidence-point gap (Bull − Bear) below which the verdict is SIDEWAYS.
    *  Smaller = more directional verdicts; larger = more SIDEWAYS / vol-neutral. */
@@ -165,6 +166,7 @@ const DEFAULTS = {
   toxicPathBEnabled: 1,
   regimeUpdateFrequencyMin: 5,
   strategistMode: 1,
+  strategistConsensusMembers: 3,
   strategistConvergence: 3,
   strategistTieBand: 10,
   strategistSoloModelIdx: 2,
@@ -567,13 +569,15 @@ export interface SettingMetaEntry {
 export function getSettingMeta(): SettingMetaEntry[] {
   const modelOptions = STRATEGIST_MODEL_OPTIONS.map((m, i) => ({ value: i, label: m.label }));
   return [
-    { key: "strategistMode", label: "Strategist Mode", group: "Strategist", default: 1, min: 1, max: 5, step: 1, description: "Solo = one strategist runs the analysis. Debate = two strategists go back-and-forth across three rounds and converge on a single trade. Desk = four topic sections (Volatility, Flow, Catalyst, Decision) in one report; model slots map to each topic plus the concluding Decision section. Solo Desk = one model produces the full four-section report in a single pass (same data and schema as Desk; uses the Solo model slot). Conviction Desk = one model produces a trade memo JSON (same data package as Solo Desk; separate Conviction model slot).", options: [
+    { key: "strategistMode", label: "Strategist Mode", group: "Strategist", default: 1, min: 1, max: 6, step: 1, description: "Solo = one strategist runs the analysis. Debate = two strategists go back-and-forth across three rounds and converge on a single trade. Consensus = two or three strategists analyze the same data blind, never seeing each other, and a card ships only where they independently agree on direction and structure family. Desk = four topic sections (Volatility, Flow, Catalyst, Decision) in one report; model slots map to each topic plus the concluding Decision section. Solo Desk = one model produces the full four-section report in a single pass (same data and schema as Desk; uses the Solo model slot). Conviction Desk = one model produces a trade memo JSON (same data package as Solo Desk; separate Conviction model slot).", options: [
       { value: 1, label: "Solo (1 strategist)" },
       { value: 2, label: "Debate (2 strategists)" },
       { value: 3, label: "Desk (four topic sections)" },
       { value: 4, label: "Solo Desk (1 pass, Desk schema)" },
       { value: 5, label: "Conviction Desk (memo JSON)" },
+      { value: 6, label: "Consensus (blind parallel, trade only on agreement)" },
     ] },
+    { key: "strategistConsensusMembers", label: "Consensus Members", group: "Strategist", default: 3, min: 2, max: 3, step: 1, description: "How many models run blind in Consensus mode. They use the Solo, Debate A, and Debate B model slots in that order. A card ships only when every member independently lands on the same direction and the same structure family; otherwise the run returns no-viable-setup naming the disagreement." },
     { key: "strategistSoloModelIdx", label: "Solo Model", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used in Solo mode and Solo Desk mode (one consolidated Desk-shaped pass). In Desk mode this slot is used for the Volatility section.", options: modelOptions },
     { key: "strategistConvictionModelIdx", label: "Conviction Desk", group: "Strategist", default: 2, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Single-pass trade memo JSON for Conviction Desk. Catalog: 0 = Gemini 3.8 Flash + thinking, 1 = Gemini 3.1 Pro, 2 = Claude Fable 5.1 + adaptive thinking, 3 = Claude Opus 5 + adaptive thinking, 4 = Claude Sonnet 5 + adaptive thinking, 5 = GPT-6 Astra + thinking, 6 = GPT-5.6 Terra.", options: modelOptions },
     { key: "strategistDebateAModelIdx", label: "Debate — Bull Model", group: "Strategist", default: 0, min: 0, max: STRATEGIST_MODEL_OPTIONS.length - 1, step: 1, description: "Model used to argue the Bull side in Debate mode. In Desk mode this slot is used for the Flow section. Unused in Solo Desk mode (Solo model slot runs the full report).", options: modelOptions },
