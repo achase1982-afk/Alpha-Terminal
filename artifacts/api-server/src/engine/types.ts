@@ -4,6 +4,8 @@ export type Action = "BUY" | "SELL";
 export type ExitReason =
   | "TARGET_HIT"
   | "STOP_HIT"
+  | "TRAILING_STOP"  // software trail ratcheted behind the high-water mark
+  | "THESIS_EXIT"    // model closed the position because the reason to hold it was gone
   | "TIME_STOP"
   | "RISK_HALT"
   | "KILL_SWITCH"
@@ -165,6 +167,18 @@ export interface Config {
   pollIntervalSec: number; // per-symbol evaluation cadence
   lossStreakLimit: number;
   cooldownMinutes: number;
+
+  // ── LLM engine risk management ──
+  /** Code-enforced protective stop for the LLM engine. Off restores the old hold-to-close behavior. */
+  llmStopEnabled: boolean;
+  /** Stop can never sit closer than this fraction of entry (keeps spread noise from stopping a quiet name). */
+  llmMinStopPct: number;
+  /** Stop can never sit further than this fraction of entry (caps loss on a high-ATR name). */
+  llmMaxStopPct: number;
+  /** The model may not close a position before this many seconds. The stop is exempt. */
+  llmMinHoldSeconds: number;
+  /** After any exit, that symbol cannot be re-entered for this many seconds. */
+  llmReentryCooldownSeconds: number;
   tradesPerDay: number;
   enableShorts: boolean;
 
