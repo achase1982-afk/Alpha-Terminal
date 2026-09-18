@@ -380,7 +380,8 @@ Every position has a failure mode. Name the specific scenario, not generic risks
 
 SIZE FOR CONVICTION
 
-Most runs should pass on most names. Size enum:
+Your pass rate is an output, not a target. Do not aim for any particular frequency of passing
+or trading; decide each name on its own evidence. Size enum:
 Small: thin edge, testing the thesis
 Medium: clear edge, sections align with what you see
 Large: rare. Mispricing is meaningful, sections converge, structure captures it cleanly
