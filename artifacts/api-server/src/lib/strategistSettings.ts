@@ -45,6 +45,7 @@ export interface StrategistConfig {
   earningsSuppressDays: number;
   earningsInsideExpiryBehavior: number;
   noEdgeGateBehavior: number;
+  strategistMinConfidence: number;
   correlationLowCeiling: number;
   correlationHighFloor: number;
   toxicGateEnabled: number;
@@ -156,6 +157,7 @@ const DEFAULTS = {
   earningsSuppressDays: 14,
   earningsInsideExpiryBehavior: 2,
   noEdgeGateBehavior: 2,
+  strategistMinConfidence: 20,
   correlationLowCeiling: 0.40,
   correlationHighFloor: 0.75,
   toxicGateEnabled: 1,
@@ -654,6 +656,7 @@ export function getSettingMeta(): SettingMetaEntry[] {
       { value: 2, label: "WARN — ship trade with banner" },
       { value: 3, label: "IGNORE — silent" },
     ] },
+    { key: "strategistMinConfidence", label: "Minimum Confidence to Ship", group: "Strategy", default: 20, min: 0, max: 60, step: 5, description: "A recommendation below this stated confidence is returned as no-viable-setup instead of a card. This is the desk's selectivity dial: raise it to ship fewer, higher-conviction cards, lower it to see more of what the model found. It does not change how any single trade is analyzed — only which ones reach you. Pair it with the outcome scoreboard: if cards in a confidence bucket are not paying, raise the floor above that bucket." },
     { key: "correlationLowCeiling", label: "Correlation LOW Ceiling", group: "Correlation", default: 0.40, min: 0.20, max: 0.50, step: 0.05, description: "Below this average correlation = LOW regime." },
     { key: "correlationHighFloor", label: "Correlation HIGH Floor", group: "Correlation", default: 0.75, min: 0.60, max: 0.90, step: 0.05, description: "Above this average correlation = HIGH regime." },
     { key: "toxicGateEnabled", label: "Toxic Gate Enabled", group: "Toxic Gate", default: 1, min: 0, max: 1, step: 1, description: "Master switch for the toxic day gate." },
