@@ -56,33 +56,18 @@ function WidgetBody({
 }
 
 /**
- * Width-adaptive grid: the stored layout model stays in 12-column space, but
- * the rendered grid gains columns on wide screens so widgets keep usable
- * proportions instead of stretching. Layouts are scaled 12 -> N on render
- * and normalized back to 12 on save.
+ * Row height follows the window's height, not its width: monitors get much
+ * wider than they get taller, so width-based scaling pushed layouts off a
+ * 1080p screen. Laptops and 1080p keep the 56px rows the widget minimums
+ * were tuned for; taller screens (1440p+) get proportionally taller rows, so
+ * a layout fills the same share of the screen in both directions.
  */
-const BREAKPOINT_COLS: Array<{ minWidth: number; cols: number }> = [
-  { minWidth: 2560, cols: 24 },
-  { minWidth: 1920, cols: 16 },
-  { minWidth: 0, cols: 12 },
-];
+const ROW_HEIGHT_REFERENCE_VIEWPORT = 960; // ~innerHeight of a 1080p browser window
+const MAX_ROW_HEIGHT = 96;
 
-function colsForWidth(width: number): number {
-  for (const bp of BREAKPOINT_COLS) {
-    if (width >= bp.minWidth) return bp.cols;
-  }
-  return DASHBOARD_COLS;
-}
-
-/**
- * Preserve the designed cell aspect ratio (tuned at 1200px / 12 cols:
- * ~93px columns, 56px rows) so widgets don't go wide-and-short on large
- * monitors. Clamped to sane bounds.
- */
-function rowHeightForWidth(width: number, cols: number): number {
-  const colWidth = (width - 8 * (cols - 1)) / cols;
-  const scaled = (colWidth / 93) * DASHBOARD_ROW_HEIGHT;
-  return Math.max(40, Math.min(220, Math.round(scaled)));
+function rowHeightForViewport(viewportHeight: number): number {
+  const scaled = Math.round((viewportHeight / ROW_HEIGHT_REFERENCE_VIEWPORT) * DASHBOARD_ROW_HEIGHT);
+  return Math.max(DASHBOARD_ROW_HEIGHT, Math.min(MAX_ROW_HEIGHT, scaled));
 }
 
 /**
@@ -104,6 +89,7 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1200);
+  const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight);
   const [maximizedId, setMaximizedId] = useState<string | null>(null);
 
   // useLayoutEffect: measure before paint so the first frame already uses the
@@ -119,6 +105,12 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
     return () => ro.disconnect();
   }, []);
 
+  useEffect(() => {
+    const onResize = () => setViewportHeight(window.innerHeight);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   const maximizedItem = maximizedId ? (items.find((it) => it.i === maximizedId) ?? null) : null;
 
   // Esc restores a maximized widget.
@@ -131,36 +123,11 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
     return () => window.removeEventListener("keydown", onKey);
   }, [maximizedItem]);
 
-  const cols = colsForWidth(width);
-  const rowHeight = rowHeightForWidth(width, cols);
-  // Render scale: stored model is always 12-col; scale x/w (and minW) to the
-  // active column count. y/h are row-based and unaffected.
-  const renderScale = cols / DASHBOARD_COLS;
+  const rowHeight = rowHeightForViewport(viewportHeight);
   const layout: LayoutItem[] = items.map((it) => {
     const size = WIDGET_DEFAULT_SIZE[it.widgetId];
-    return {
-      i: it.i,
-      x: Math.round(it.x * renderScale),
-      y: it.y,
-      w: Math.max(1, Math.round(it.w * renderScale)),
-      h: it.h,
-      minW: Math.max(1, Math.round(size.minW * renderScale)),
-      minH: size.minH,
-    };
+    return { i: it.i, x: it.x, y: it.y, w: it.w, h: it.h, minW: size.minW, minH: size.minH };
   });
-
-  // Normalize back to 12-col storage space before persisting.
-  const handleLayoutChange = (next: LayoutItem[]) => {
-    updateLayout(
-      next.map((l) => ({
-        i: String(l.i),
-        x: Math.max(0, Math.round(l.x / renderScale)),
-        y: l.y,
-        w: Math.max(1, Math.round(l.w / renderScale)),
-        h: l.h,
-      })),
-    );
-  };
 
   return (
     <div className="flex min-h-full flex-col" style={{ background: "#050505" }}>
@@ -241,14 +208,14 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
             layout={layout}
             width={width}
             gridConfig={{
-              cols,
+              cols: DASHBOARD_COLS,
               rowHeight,
               margin: [8, 8],
               containerPadding: [0, 0],
             }}
             dragConfig={{ enabled: !locked, handle: ".widget-drag-handle", cancel: ".widget-no-drag" }}
             resizeConfig={{ enabled: !locked, handles: ["n", "s", "e", "w", "ne", "nw", "se", "sw"] }}
-            onLayoutChange={handleLayoutChange}
+            onLayoutChange={(next) => updateLayout(next)}
           >
             {items.map((it) => {
               const def = WIDGET_REGISTRY[it.widgetId];
