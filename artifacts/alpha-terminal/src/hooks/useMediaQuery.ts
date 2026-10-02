@@ -24,13 +24,3 @@ export function useIsTablet(): boolean {
 export function useIsDesktop(): boolean {
   return useMediaQuery("(min-width: 1024px)");
 }
-
-/** Large desktop: 1536px+ (Tailwind 2xl). Use for denser grids and wider panels. */
-export function useIsWide(): boolean {
-  return useMediaQuery("(min-width: 1536px)");
-}
-
-/** Ultrawide: 1920px+. Use for extra rails/columns that only make sense on very large monitors. */
-export function useIsUltrawide(): boolean {
-  return useMediaQuery("(min-width: 1920px)");
-}

@@ -385,7 +385,7 @@ function InstitutionalOwnershipCard() {
 function TradingMetricsGrid({ data }: { data: TearSheetData | null }) {
   if (!data) {
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
         {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-3.5">
             <SkeletonBlock className="h-3 w-16 mb-2" />
@@ -397,7 +397,7 @@ function TradingMetricsGrid({ data }: { data: TearSheetData | null }) {
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2.5">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
       <StatCard
         icon={<DollarSign className="w-3 h-3 text-primary" />}
         label="Market Cap"
