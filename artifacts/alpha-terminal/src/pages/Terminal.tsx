@@ -889,7 +889,7 @@ export default function TerminalPage() {
 
         {/* Dashboard brings its own watchlist widget — skip the fixed rail there. */}
         {isWide && activeBottom !== "dashboard" && (
-          <aside className="hidden md:flex w-[280px] xl:w-[320px] flex-col border-r border-card-border shrink-0 overflow-y-auto" style={{ background: "#000000" }}>
+          <aside className="hidden md:flex w-[280px] xl:w-[320px] min-[1920px]:w-[360px] flex-col border-r border-card-border shrink-0 overflow-y-auto" style={{ background: "#000000" }}>
             <WatchlistView onNavigateToSymbol={() => setActiveBottom("markets")} />
           </aside>
         )}
@@ -982,7 +982,7 @@ export default function TerminalPage() {
                   </div>
                 </div>
 
-                <div className="flex min-h-0 w-[360px] xl:w-[420px] 2xl:w-[480px] shrink-0 flex-col overflow-hidden border-l border-zinc-800/60" style={{ background: "#0c0c0c" }}>
+                <div className="flex min-h-0 w-[360px] xl:w-[420px] 2xl:w-[480px] min-[1920px]:w-[560px] shrink-0 flex-col overflow-hidden border-l border-zinc-800/60" style={{ background: "#0c0c0c" }}>
                   <div className="shrink-0">
                     <DesktopContextTabs activeTab={contextTab} setActiveTab={setContextTab} />
                     {contextTab === "company" && (
