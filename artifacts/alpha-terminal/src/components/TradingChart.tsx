@@ -39,16 +39,25 @@ export function TradingChart({ symbol, data, isLoading, error, timedOut, tokenEx
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const sma20SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const sma50SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const bbUpperSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const bbLowerSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const lastCandleTimeRef = useRef<number>(0);
+  const prevSymbolRef = useRef<string | undefined>(undefined);
+  const fitDoneRef = useRef(false);
   const { overlays } = useTerminalStore(useShallow((s) => ({ overlays: s.overlays })));
 
+  const toTime = (d: string | number) => (new Date(d).getTime() / 1000) as Time;
+
+  // Create the chart and every series exactly once. Data pushes and overlay
+  // toggles below update the live series in place — no teardown, no flicker,
+  // and the user's zoom/scroll position survives updates.
   useEffect(() => {
-    if (!chartContainerRef.current || !data || data.length === 0) return;
+    if (!chartContainerRef.current) return;
 
-    const container = chartContainerRef.current;
-    let removed = false;
-
-    const chart = createChart(container, {
+    const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
         textColor: '#808080',
@@ -79,113 +88,143 @@ export function TradingChart({ symbol, data, isLoading, error, timedOut, tokenEx
       handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
       autoSize: true,
     });
-    chartRef.current = chart;
 
-    const sortedData = [...data].sort(
-      (a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime()
-    );
-
-    const formattedData = sortedData.map(c => ({
-      time: (new Date(c.datetime).getTime() / 1000) as Time,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-    }));
-
-    const mainSeries = chart.addSeries(CandlestickSeries, {
+    candleSeriesRef.current = chart.addSeries(CandlestickSeries, {
       upColor: '#00d166',
       downColor: '#f23645',
       borderVisible: false,
       wickUpColor: '#00d166',
       wickDownColor: '#f23645',
     });
-    mainSeries.setData(formattedData);
-    candleSeriesRef.current = mainSeries;
-    if (formattedData.length > 0) {
-      lastCandleTimeRef.current = formattedData[formattedData.length - 1].time as number;
-    }
 
-    if (overlays.volume) {
-      const volumeSeries = chart.addSeries(HistogramSeries, {
-        color: '#00d166',
-        priceFormat: { type: 'volume' },
-        priceScaleId: 'volume',
-        lastValueVisible: false,
-        priceLineVisible: false,
-      });
-      chart.priceScale('volume').applyOptions({
-        scaleMargins: { top: 0.8, bottom: 0 },
-      });
-      volumeSeries.setData(
-        sortedData.map(c => ({
-          time: (new Date(c.datetime).getTime() / 1000) as Time,
-          value: c.volume,
-          color: c.close >= c.open ? 'rgba(0, 212, 170, 0.3)' : 'rgba(255, 77, 77, 0.3)',
-        }))
-      );
-    }
+    volumeSeriesRef.current = chart.addSeries(HistogramSeries, {
+      color: '#00d166',
+      priceFormat: { type: 'volume' },
+      priceScaleId: 'volume',
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+    chart.priceScale('volume').applyOptions({
+      scaleMargins: { top: 0.8, bottom: 0 },
+    });
 
-    if (overlays.sma20) {
-      const sma20Data = calculateSMA(sortedData, 20)
-        .filter(d => d.value !== null)
-        .map(d => ({ time: (new Date(d.time).getTime() / 1000) as Time, value: d.value as number }));
-      const sma20Series = chart.addSeries(LineSeries, {
-        color: '#ffb800',
-        lineWidth: 2,
-        lastValueVisible: false,
-        priceLineVisible: false,
-      });
-      sma20Series.setData(sma20Data);
-    }
+    sma20SeriesRef.current = chart.addSeries(LineSeries, {
+      color: '#ffb800',
+      lineWidth: 2,
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+    sma50SeriesRef.current = chart.addSeries(LineSeries, {
+      color: '#ffffff',
+      lineWidth: 2,
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+    bbUpperSeriesRef.current = chart.addSeries(LineSeries, {
+      color: 'rgba(187, 134, 252, 0.5)',
+      lineWidth: 1,
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+    bbLowerSeriesRef.current = chart.addSeries(LineSeries, {
+      color: 'rgba(187, 134, 252, 0.5)',
+      lineWidth: 1,
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
 
-    if (overlays.sma50) {
-      const sma50Data = calculateSMA(sortedData, 50)
-        .filter(d => d.value !== null)
-        .map(d => ({ time: (new Date(d.time).getTime() / 1000) as Time, value: d.value as number }));
-      const sma50Series = chart.addSeries(LineSeries, {
-        color: '#ffffff',
-        lineWidth: 2,
-        lastValueVisible: false,
-        priceLineVisible: false,
-      });
-      sma50Series.setData(sma50Data);
-    }
-
-    if (overlays.bb) {
-      const bb = calculateBollingerBands(sortedData, 20, 2);
-      const upperData = bb.upper
-        .filter(d => d.value !== null)
-        .map(d => ({ time: (new Date(d.time).getTime() / 1000) as Time, value: d.value as number }));
-      const lowerData = bb.lower
-        .filter(d => d.value !== null)
-        .map(d => ({ time: (new Date(d.time).getTime() / 1000) as Time, value: d.value as number }));
-      const bbUpper = chart.addSeries(LineSeries, {
-        color: 'rgba(187, 134, 252, 0.5)',
-        lineWidth: 1,
-        lastValueVisible: false,
-        priceLineVisible: false,
-      });
-      bbUpper.setData(upperData);
-      const bbLower = chart.addSeries(LineSeries, {
-        color: 'rgba(187, 134, 252, 0.5)',
-        lineWidth: 1,
-        lastValueVisible: false,
-        priceLineVisible: false,
-      });
-      bbLower.setData(lowerData);
-    }
-
-    chart.timeScale().fitContent();
     chartRef.current = chart;
-
     return () => {
-      removed = true;
       chartRef.current = null;
       candleSeriesRef.current = null;
+      volumeSeriesRef.current = null;
+      sma20SeriesRef.current = null;
+      sma50SeriesRef.current = null;
+      bbUpperSeriesRef.current = null;
+      bbLowerSeriesRef.current = null;
       try { chart.remove(); } catch { /* already disposed */ }
     };
-  }, [data, overlays, intraday]);
+  }, []);
+
+  // Intraday toggle only flips a time-scale option — no rebuild.
+  useEffect(() => {
+    chartRef.current?.timeScale().applyOptions({ timeVisible: !!intraday });
+  }, [intraday]);
+
+  // Overlay toggles flip series visibility in place — zoom/scroll preserved.
+  useEffect(() => {
+    volumeSeriesRef.current?.applyOptions({ visible: !!overlays.volume });
+    sma20SeriesRef.current?.applyOptions({ visible: !!overlays.sma20 });
+    sma50SeriesRef.current?.applyOptions({ visible: !!overlays.sma50 });
+    bbUpperSeriesRef.current?.applyOptions({ visible: !!overlays.bb });
+    bbLowerSeriesRef.current?.applyOptions({ visible: !!overlays.bb });
+  }, [overlays]);
+
+  // Push fresh data into the existing series. fitContent runs only on symbol
+  // change (or first load) so streaming updates never yank the user's view.
+  useEffect(() => {
+    const mainSeries = candleSeriesRef.current;
+    if (!mainSeries) return;
+
+    if (!data || data.length === 0) {
+      for (const s of [mainSeries, volumeSeriesRef.current, sma20SeriesRef.current, sma50SeriesRef.current, bbUpperSeriesRef.current, bbLowerSeriesRef.current]) {
+        s?.setData([]);
+      }
+      lastCandleTimeRef.current = 0;
+      fitDoneRef.current = false;
+      return;
+    }
+
+    const sortedData = [...data].sort(
+      (a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime()
+    );
+
+    mainSeries.setData(sortedData.map(c => ({
+      time: toTime(c.datetime),
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+    })));
+
+    volumeSeriesRef.current?.setData(
+      sortedData.map(c => ({
+        time: toTime(c.datetime),
+        value: c.volume,
+        color: c.close >= c.open ? 'rgba(0, 212, 170, 0.3)' : 'rgba(255, 77, 77, 0.3)',
+      }))
+    );
+
+    sma20SeriesRef.current?.setData(
+      calculateSMA(sortedData, 20)
+        .filter(d => d.value !== null)
+        .map(d => ({ time: toTime(d.time), value: d.value as number }))
+    );
+    sma50SeriesRef.current?.setData(
+      calculateSMA(sortedData, 50)
+        .filter(d => d.value !== null)
+        .map(d => ({ time: toTime(d.time), value: d.value as number }))
+    );
+
+    const bb = calculateBollingerBands(sortedData, 20, 2);
+    bbUpperSeriesRef.current?.setData(
+      bb.upper
+        .filter(d => d.value !== null)
+        .map(d => ({ time: toTime(d.time), value: d.value as number }))
+    );
+    bbLowerSeriesRef.current?.setData(
+      bb.lower
+        .filter(d => d.value !== null)
+        .map(d => ({ time: toTime(d.time), value: d.value as number }))
+    );
+
+    lastCandleTimeRef.current = toTime(sortedData[sortedData.length - 1].datetime) as number;
+    if (!fitDoneRef.current || prevSymbolRef.current !== symbol) {
+      prevSymbolRef.current = symbol;
+      fitDoneRef.current = true;
+      chartRef.current?.timeScale().fitContent();
+    }
+  }, [data, symbol]);
 
   const liveCandleRef = useRef<{ open: number; high: number; low: number; close: number } | null>(null);
 
