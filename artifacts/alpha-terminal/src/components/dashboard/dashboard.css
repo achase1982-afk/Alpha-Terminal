@@ -148,3 +148,17 @@
   opacity: 0.12;
   border-radius: 8px;
 }
+
+/* Touch devices have no hover: keep resize handles subtly visible so iPad
+   users can discover that widgets are resizable. */
+@media (hover: none) {
+  .dashboard-grid .react-grid-item > .react-resizable-handle {
+    opacity: 0.6;
+  }
+  .dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-e::after,
+  .dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-w::after,
+  .dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-s::after,
+  .dashboard-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-n::after {
+    opacity: 0.6;
+  }
+}
