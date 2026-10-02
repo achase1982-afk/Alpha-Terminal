@@ -23,6 +23,9 @@ interface TradingChartProps {
   timedOut?: boolean;
   tokenExpired?: boolean;
   intraday?: boolean;
+  /** Current period/interval. A change refits the view; refetches under the
+   *  same timeframe keep the user's zoom. */
+  timeframe?: string;
 }
 
 function isNotFoundError(error?: string): boolean {
@@ -35,7 +38,7 @@ function isNotFoundError(error?: string): boolean {
   );
 }
 
-export function TradingChart({ symbol, data, isLoading, error, timedOut, tokenExpired, intraday }: TradingChartProps) {
+export function TradingChart({ symbol, data, isLoading, error, timedOut, tokenExpired, intraday, timeframe }: TradingChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -45,7 +48,7 @@ export function TradingChart({ symbol, data, isLoading, error, timedOut, tokenEx
   const bbUpperSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const bbLowerSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const lastCandleTimeRef = useRef<number>(0);
-  const prevSymbolRef = useRef<string | undefined>(undefined);
+  const fitKeyRef = useRef<string | undefined>(undefined);
   const fitDoneRef = useRef(false);
   const { overlays } = useTerminalStore(useShallow((s) => ({ overlays: s.overlays })));
 
@@ -134,6 +137,10 @@ export function TradingChart({ symbol, data, isLoading, error, timedOut, tokenEx
     });
 
     chartRef.current = chart;
+    // A fresh chart has nothing drawn or fitted yet (also covers StrictMode's
+    // dev-only remount, which would otherwise skip the first fit).
+    lastCandleTimeRef.current = 0;
+    fitDoneRef.current = false;
     return () => {
       chartRef.current = null;
       candleSeriesRef.current = null;
@@ -160,13 +167,15 @@ export function TradingChart({ symbol, data, isLoading, error, timedOut, tokenEx
     bbLowerSeriesRef.current?.applyOptions({ visible: !!overlays.bb });
   }, [overlays]);
 
-  // Push fresh data into the existing series. fitContent runs only on symbol
-  // change (or first load) so streaming updates never yank the user's view.
+  // Push fresh data into the existing series. fitContent runs only on first
+  // load or a symbol/timeframe change, so refetches never yank the user's view.
   useEffect(() => {
     const mainSeries = candleSeriesRef.current;
     if (!mainSeries) return;
 
     if (!data || data.length === 0) {
+      // Already empty — callers pass a fresh [] on every render while loading.
+      if (lastCandleTimeRef.current === 0 && !fitDoneRef.current) return;
       for (const s of [mainSeries, volumeSeriesRef.current, sma20SeriesRef.current, sma50SeriesRef.current, bbUpperSeriesRef.current, bbLowerSeriesRef.current]) {
         s?.setData([]);
       }
@@ -219,12 +228,13 @@ export function TradingChart({ symbol, data, isLoading, error, timedOut, tokenEx
     );
 
     lastCandleTimeRef.current = toTime(sortedData[sortedData.length - 1].datetime) as number;
-    if (!fitDoneRef.current || prevSymbolRef.current !== symbol) {
-      prevSymbolRef.current = symbol;
+    const fitKey = `${symbol ?? ""}|${timeframe ?? ""}`;
+    if (!fitDoneRef.current || fitKeyRef.current !== fitKey) {
+      fitKeyRef.current = fitKey;
       fitDoneRef.current = true;
       chartRef.current?.timeScale().fitContent();
     }
-  }, [data, symbol]);
+  }, [data, symbol, timeframe]);
 
   const liveCandleRef = useRef<{ open: number; high: number; low: number; close: number } | null>(null);
 
