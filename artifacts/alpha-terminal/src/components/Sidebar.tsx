@@ -343,7 +343,7 @@ function WatchlistPage({ onClose }: { onClose: () => void }) {
   const watchlist = useActiveWatchlist();
 
   return (
-    <div className="space-y-3 max-w-xl mx-auto">
+    <div className="space-y-3 max-w-xl lg:max-w-2xl mx-auto">
       <h3 className="text-xs font-bold text-primary uppercase tracking-widest">Saved Symbols</h3>
       {watchlist.length === 0 ? (
         <p className="font-mono text-[10px] text-muted-foreground/60 text-center leading-relaxed py-6">
@@ -386,7 +386,7 @@ function WatchlistPage({ onClose }: { onClose: () => void }) {
 
 function LinkedBrokeragePage() {
   return (
-    <div className="max-w-xl mx-auto">
+    <div className="max-w-xl lg:max-w-2xl mx-auto">
       <div className="rounded-lg border border-zinc-800/50 bg-[#0c0c0c] p-4">
         <AuthPanel />
       </div>
@@ -399,7 +399,7 @@ function LinkedBrokeragePage() {
 // this page now only renders settings that are wired into the backend strategist.
 function StrategistTuningPage() {
   return (
-    <div className="space-y-8 max-w-xl mx-auto w-full min-w-0">
+    <div className="space-y-8 max-w-xl lg:max-w-2xl mx-auto w-full min-w-0">
       <StrategistSettingsPanel />
     </div>
   );
@@ -412,7 +412,7 @@ function ChartOptionsPage() {
   const OVERLAY_LABELS: Record<string, string> = { sma20: "SMA 20", sma50: "SMA 50", bb: "BB", rsi: "RSI", volume: "VOL" };
 
   return (
-    <div className="space-y-6 max-w-xl mx-auto">
+    <div className="space-y-6 max-w-xl lg:max-w-2xl mx-auto">
       <div className="space-y-3">
         <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
           <SlidersHorizontal className="w-3 h-3" /> Chart Overlays
@@ -477,7 +477,7 @@ function DisplayMarqueePage() {
   };
 
   return (
-    <div className="space-y-6 max-w-xl mx-auto">
+    <div className="space-y-6 max-w-xl lg:max-w-2xl mx-auto">
       <div className="space-y-2">
         <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
           <LayoutDashboard className="w-3 h-3" /> Macro Tickers
@@ -889,7 +889,7 @@ function AiParametersPage() {
   };
 
   return (
-    <div className="space-y-4 max-w-xl mx-auto">
+    <div className="space-y-4 max-w-xl lg:max-w-2xl mx-auto">
       <div className="space-y-1.5">
         <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
           <BrainCircuit className="w-3 h-3" /> Set All Models
@@ -1547,7 +1547,7 @@ function SettingsHubPage({
   telemetryCount: number;
 }) {
   return (
-    <div className="max-w-xl mx-auto space-y-5 pb-6">
+    <div className="max-w-xl lg:max-w-2xl mx-auto space-y-5 pb-6">
       <SettingsHubSection title="Trading">
         <SettingsHubRow icon={<Bot />} label="Auto Trader" subtitle="Autonomous LLM trading — pick account, model, tickers, risk guards" onClick={() => onSelect("Auto Trader")} />
         <SettingsHubRow icon={<Layers />} label="Allowed Strategies" subtitle="Which option structures the strategist may propose" onClick={() => onSelect("Allowed Strategies")} />
@@ -1587,7 +1587,7 @@ function SettingsHubPage({
 function AllowedStrategiesPage() {
   const { settings, toggleStrategy } = useMarketPulseStore();
   return (
-    <div className="space-y-3 max-w-xl mx-auto">
+    <div className="space-y-3 max-w-xl lg:max-w-2xl mx-auto">
       <p className="font-mono text-[10px] text-muted-foreground/70 leading-relaxed">
         Toggle which option structures the strategist is allowed to propose.
       </p>
@@ -1613,7 +1613,7 @@ function AllowedStrategiesPage() {
 function RiskDefaultsPage() {
   const { settings, updateSetting } = useMarketPulseStore();
   return (
-    <div className="space-y-4 max-w-xl mx-auto">
+    <div className="space-y-4 max-w-xl lg:max-w-2xl mx-auto">
       <p className="font-mono text-[10px] text-muted-foreground/70 leading-relaxed">
         Defaults applied to new strategist runs. Existing recommendations are not retroactively re-sized.
       </p>
@@ -1654,7 +1654,7 @@ function MarketPulseDisplayPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-xl mx-auto">
+    <div className="space-y-6 max-w-xl lg:max-w-2xl mx-auto">
       <div className="space-y-3">
         <SidebarToggle label="Show Bias Strip" icon={<Zap className="w-3 h-3" />} checked={settings.showBiasStrip} onChange={() => updateSetting("showBiasStrip", !settings.showBiasStrip)} />
         <SidebarToggle label="Auto-Refresh" checked={settings.autoRefresh} onChange={() => updateSetting("autoRefresh", !settings.autoRefresh)} />
@@ -1756,7 +1756,7 @@ function ChartOverlaysPage() {
   const { overlays, toggleOverlay } = useTerminalStore(useShallow((s) => ({ overlays: s.overlays, toggleOverlay: s.toggleOverlay })));
   const OVERLAY_LABELS: Record<string, string> = { sma20: "SMA 20", sma50: "SMA 50", bb: "BB", rsi: "RSI", volume: "VOL" };
   return (
-    <div className="space-y-3 max-w-xl mx-auto">
+    <div className="space-y-3 max-w-xl lg:max-w-2xl mx-auto">
       <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
         <SlidersHorizontal className="w-3 h-3" /> Active Overlays
       </Label>
@@ -1778,7 +1778,7 @@ function ChartOverlaysPage() {
 function OptionsChainDefaultsPage() {
   const { contractType, setContractType, maxDte, setMaxDte } = useOptionsSettingsStore();
   return (
-    <div className="space-y-4 max-w-xl mx-auto">
+    <div className="space-y-4 max-w-xl lg:max-w-2xl mx-auto">
       <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
         <BarChart2 className="w-3 h-3" /> Defaults
       </Label>
@@ -1867,7 +1867,7 @@ function DiagnosticsPage() {
   const streamColor = streamStatus === "live" ? "#2ecc71" : streamStatus === "connecting" ? "#f59e0b" : "#71717a";
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
+    <div className="space-y-6 max-w-3xl lg:max-w-5xl mx-auto">
       <IbkrTickDiagnosticsPanel />
 
       <div className="space-y-4">

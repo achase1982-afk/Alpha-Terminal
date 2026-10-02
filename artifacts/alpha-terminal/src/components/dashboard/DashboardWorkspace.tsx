@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import GridLayout, { type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "./dashboard.css";
@@ -56,6 +56,21 @@ function WidgetBody({
 }
 
 /**
+ * Row height follows the window's height, not its width: monitors get much
+ * wider than they get taller, so width-based scaling pushed layouts off a
+ * 1080p screen. Laptops and 1080p keep the 56px rows the widget minimums
+ * were tuned for; taller screens (1440p+) get proportionally taller rows, so
+ * a layout fills the same share of the screen in both directions.
+ */
+const ROW_HEIGHT_REFERENCE_VIEWPORT = 960; // ~innerHeight of a 1080p browser window
+const MAX_ROW_HEIGHT = 96;
+
+function rowHeightForViewport(viewportHeight: number): number {
+  const scaled = Math.round((viewportHeight / ROW_HEIGHT_REFERENCE_VIEWPORT) * DASHBOARD_ROW_HEIGHT);
+  return Math.max(DASHBOARD_ROW_HEIGHT, Math.min(MAX_ROW_HEIGHT, scaled));
+}
+
+/**
  * Desktop dashboard: a free-form 12-column grid of widgets. Drag by the
  * widget title bar, resize from any edge or corner, swap/pin/remove from the
  * title bar, add from the catalog. Layout persists locally and to the server.
@@ -74,9 +89,12 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1200);
+  const [viewportHeight, setViewportHeight] = useState(() => window.innerHeight);
   const [maximizedId, setMaximizedId] = useState<string | null>(null);
 
-  useEffect(() => {
+  // useLayoutEffect: measure before paint so the first frame already uses the
+  // real container width instead of the 1200px placeholder (avoids a visible snap).
+  useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
@@ -85,6 +103,12 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
     ro.observe(el);
     setWidth(el.getBoundingClientRect().width);
     return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const onResize = () => setViewportHeight(window.innerHeight);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
   }, []);
 
   const maximizedItem = maximizedId ? (items.find((it) => it.i === maximizedId) ?? null) : null;
@@ -99,6 +123,7 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
     return () => window.removeEventListener("keydown", onKey);
   }, [maximizedItem]);
 
+  const rowHeight = rowHeightForViewport(viewportHeight);
   const layout: LayoutItem[] = items.map((it) => {
     const size = WIDGET_DEFAULT_SIZE[it.widgetId];
     return { i: it.i, x: it.x, y: it.y, w: it.w, h: it.h, minW: size.minW, minH: size.minH };
@@ -184,7 +209,7 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
             width={width}
             gridConfig={{
               cols: DASHBOARD_COLS,
-              rowHeight: DASHBOARD_ROW_HEIGHT,
+              rowHeight,
               margin: [8, 8],
               containerPadding: [0, 0],
             }}

@@ -41,6 +41,7 @@ export function ChartWidget() {
           timedOut={false}
           tokenExpired={historyData?.error === "unauthorized"}
           intraday={isIntradayInterval(chartInterval)}
+          timeframe={`${chartPeriod}/${chartInterval}`}
         />
       </div>
     </div>

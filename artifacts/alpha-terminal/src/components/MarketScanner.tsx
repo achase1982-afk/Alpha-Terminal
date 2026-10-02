@@ -662,7 +662,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   );
 
   return (
-    <div className="flex flex-col gap-4 max-w-4xl mx-auto pb-6">
+    <div className="flex flex-col gap-4 w-full max-w-4xl xl:max-w-6xl 2xl:max-w-7xl mx-auto px-4 pb-6">
       {shockActive && (
         <div className="flex items-center gap-3 px-4 py-3 rounded-lg border bg-red-500/10 border-red-500/30">
           <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />

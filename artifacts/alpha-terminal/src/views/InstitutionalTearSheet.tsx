@@ -478,7 +478,7 @@ export function InstitutionalTearSheet({ isOpen, onClose }: InstitutionalTearShe
       </div>
 
       <div className="flex-1 overflow-y-auto scrollbar-hide">
-        <div className="max-w-4xl mx-auto w-full">
+        <div className="max-w-4xl xl:max-w-6xl mx-auto w-full">
           <HeroHeader symbol={symbol} data={data} />
 
           <div className="px-4 sm:px-6 pb-8 space-y-4">
