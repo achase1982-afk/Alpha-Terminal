@@ -3238,7 +3238,7 @@ function AiIntelligenceTabInner({
 
   return (
     <div
-      className="flex flex-col gap-0 w-full max-w-5xl mx-auto pb-6 flex-1"
+      className="flex flex-col gap-0 w-full max-w-5xl xl:max-w-7xl mx-auto pb-6 flex-1"
       style={{ minHeight: "calc(var(--vvh, 100vh) - 200px)", overflow: "hidden" }}
     >
       {subTab === "pulse" && (
