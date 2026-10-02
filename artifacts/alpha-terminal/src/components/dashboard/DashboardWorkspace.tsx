@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import GridLayout, { type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "./dashboard.css";
@@ -56,6 +56,36 @@ function WidgetBody({
 }
 
 /**
+ * Width-adaptive grid: the stored layout model stays in 12-column space, but
+ * the rendered grid gains columns on wide screens so widgets keep usable
+ * proportions instead of stretching. Layouts are scaled 12 -> N on render
+ * and normalized back to 12 on save.
+ */
+const BREAKPOINT_COLS: Array<{ minWidth: number; cols: number }> = [
+  { minWidth: 2560, cols: 24 },
+  { minWidth: 1920, cols: 16 },
+  { minWidth: 0, cols: 12 },
+];
+
+function colsForWidth(width: number): number {
+  for (const bp of BREAKPOINT_COLS) {
+    if (width >= bp.minWidth) return bp.cols;
+  }
+  return DASHBOARD_COLS;
+}
+
+/**
+ * Preserve the designed cell aspect ratio (tuned at 1200px / 12 cols:
+ * ~93px columns, 56px rows) so widgets don't go wide-and-short on large
+ * monitors. Clamped to sane bounds.
+ */
+function rowHeightForWidth(width: number, cols: number): number {
+  const colWidth = (width - 8 * (cols - 1)) / cols;
+  const scaled = (colWidth / 93) * DASHBOARD_ROW_HEIGHT;
+  return Math.max(40, Math.min(220, Math.round(scaled)));
+}
+
+/**
  * Desktop dashboard: a free-form 12-column grid of widgets. Drag by the
  * widget title bar, resize from any edge or corner, swap/pin/remove from the
  * title bar, add from the catalog. Layout persists locally and to the server.
@@ -76,7 +106,9 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
   const [width, setWidth] = useState(1200);
   const [maximizedId, setMaximizedId] = useState<string | null>(null);
 
-  useEffect(() => {
+  // useLayoutEffect: measure before paint so the first frame already uses the
+  // real container width instead of the 1200px placeholder (avoids a visible snap).
+  useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
@@ -99,10 +131,36 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
     return () => window.removeEventListener("keydown", onKey);
   }, [maximizedItem]);
 
+  const cols = colsForWidth(width);
+  const rowHeight = rowHeightForWidth(width, cols);
+  // Render scale: stored model is always 12-col; scale x/w (and minW) to the
+  // active column count. y/h are row-based and unaffected.
+  const renderScale = cols / DASHBOARD_COLS;
   const layout: LayoutItem[] = items.map((it) => {
     const size = WIDGET_DEFAULT_SIZE[it.widgetId];
-    return { i: it.i, x: it.x, y: it.y, w: it.w, h: it.h, minW: size.minW, minH: size.minH };
+    return {
+      i: it.i,
+      x: Math.round(it.x * renderScale),
+      y: it.y,
+      w: Math.max(1, Math.round(it.w * renderScale)),
+      h: it.h,
+      minW: Math.max(1, Math.round(size.minW * renderScale)),
+      minH: size.minH,
+    };
   });
+
+  // Normalize back to 12-col storage space before persisting.
+  const handleLayoutChange = (next: LayoutItem[]) => {
+    updateLayout(
+      next.map((l) => ({
+        i: String(l.i),
+        x: Math.max(0, Math.round(l.x / renderScale)),
+        y: l.y,
+        w: Math.max(1, Math.round(l.w / renderScale)),
+        h: l.h,
+      })),
+    );
+  };
 
   return (
     <div className="flex min-h-full flex-col" style={{ background: "#050505" }}>
@@ -183,14 +241,14 @@ export function DashboardWorkspace({ handlers }: { handlers: DashboardWidgetHand
             layout={layout}
             width={width}
             gridConfig={{
-              cols: DASHBOARD_COLS,
-              rowHeight: DASHBOARD_ROW_HEIGHT,
+              cols,
+              rowHeight,
               margin: [8, 8],
               containerPadding: [0, 0],
             }}
             dragConfig={{ enabled: !locked, handle: ".widget-drag-handle", cancel: ".widget-no-drag" }}
             resizeConfig={{ enabled: !locked, handles: ["n", "s", "e", "w", "ne", "nw", "se", "sw"] }}
-            onLayoutChange={(next) => updateLayout(next)}
+            onLayoutChange={handleLayoutChange}
           >
             {items.map((it) => {
               const def = WIDGET_REGISTRY[it.widgetId];
