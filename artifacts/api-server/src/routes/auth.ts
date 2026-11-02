@@ -284,8 +284,8 @@ router.get("/callback", async (req, res) => {
     const rfTok = typeof refreshToken === "string" ? refreshToken : "";
     const expiresIn = typeof tokenData["expires_in"] === "number" ? tokenData["expires_in"] : 1800;
 
-    storeTokens("market", accessToken, rfTok, expiresIn);
-    storeTokens("trader", accessToken, rfTok, expiresIn);
+    storeTokens("market", accessToken, rfTok, expiresIn, { newGrant: true });
+    storeTokens("trader", accessToken, rfTok, expiresIn, { newGrant: true });
     pendingTokens.set("latest", { accessToken, refreshToken: rfTok, ts: Date.now() });
     pendingTokens.set("trader_latest", { accessToken, refreshToken: rfTok, ts: Date.now() });
 
@@ -368,7 +368,7 @@ router.post("/callback", async (req, res) => {
     const at = tokenData["access_token"] as string;
     const rt = (tokenData["refresh_token"] as string) ?? "";
     const ei = (tokenData["expires_in"] as number) ?? 1800;
-    storeTokens("market", at, rt, ei);
+    storeTokens("market", at, rt, ei, { newGrant: true });
     return res.json(ExchangeCodeResponse.parse({
       accessToken: at,
       refreshToken: rt,
@@ -627,8 +627,8 @@ router.get("/trader-callback", async (req, res) => {
     const trRfTok = typeof refreshToken === "string" ? refreshToken : "";
     const trExpiresIn = typeof tokenData["expires_in"] === "number" ? tokenData["expires_in"] : 1800;
 
-    storeTokens("trader", accessToken, trRfTok, trExpiresIn);
-    storeTokens("market", accessToken, trRfTok, trExpiresIn);
+    storeTokens("trader", accessToken, trRfTok, trExpiresIn, { newGrant: true });
+    storeTokens("market", accessToken, trRfTok, trExpiresIn, { newGrant: true });
     pendingTokens.set("trader_latest", { accessToken, refreshToken: trRfTok, ts: Date.now() });
     pendingTokens.set("latest", { accessToken, refreshToken: trRfTok, ts: Date.now() });
 
@@ -676,9 +676,14 @@ router.post("/disconnect", (_req, res) => {
 router.get("/server-tokens", (_req, res) => {
   const mkt = hasValidTokens("market") ? getTokens("market") : undefined;
   const trd = hasValidTokens("trader") ? getTokens("trader") : undefined;
+  const anchor = trd ?? mkt;
   res.json({
     market: mkt ? { accessToken: mkt.accessToken, refreshToken: mkt.refreshToken, expiresAt: mkt.expiresAt } : null,
     trader: trd ? { accessToken: trd.accessToken, refreshToken: trd.refreshToken, expiresAt: trd.expiresAt } : null,
+    // Schwab refresh-token 7-day clock (set only by an authorization_code
+    // grant; null until the first browser sign-in after this deploy).
+    refresh_token_issued_at: anchor?.refreshIssuedAt ?? null,
+    refresh_token_expires_at: anchor?.refreshExpiresAt ?? null,
   });
 });
 

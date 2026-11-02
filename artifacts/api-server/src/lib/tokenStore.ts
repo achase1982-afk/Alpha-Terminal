@@ -7,6 +7,7 @@ import { emitPortfolioError } from "./portfolioWsErrorHub.js";
 const TOKEN_FILE = path.join(process.cwd(), ".data", "schwab-tokens.json");
 const SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token";
 const REFRESH_BUFFER_MS = 5 * 60 * 1000;
+const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const RETRY_DELAY_MS = 30_000;
 const MAX_RETRIES = 3;
 
@@ -15,6 +16,10 @@ interface StoredTokenSet {
   refreshToken: string;
   expiresAt: number;
   generation: number;
+  /** Epoch ms when the current refresh token was issued (authorization_code grant only). */
+  refreshIssuedAt?: number;
+  /** Epoch ms when the current refresh token expires: refreshIssuedAt + 7 days. */
+  refreshExpiresAt?: number;
 }
 
 interface TokenFile {
@@ -87,6 +92,12 @@ async function ensureDbStore() {
         updated_at timestamp not null default now()
       )
     `);
+    await db.execute(sql`
+      alter table schwab_tokens add column if not exists refresh_issued_at bigint
+    `);
+    await db.execute(sql`
+      alter table schwab_tokens add column if not exists refresh_expires_at bigint
+    `);
     dbStoreReady = true;
     return true;
   } catch (err) {
@@ -100,7 +111,7 @@ async function loadFromDb(): Promise<TokenFile> {
   try {
     const { db, sql } = await import("@workspace/db");
     const result = await db.execute(sql`
-      select kind, access_token, refresh_token, expires_at, generation
+      select kind, access_token, refresh_token, expires_at, generation, refresh_issued_at, refresh_expires_at
       from schwab_tokens
       where kind in ('market', 'trader')
     `);
@@ -113,7 +124,14 @@ async function loadFromDb(): Promise<TokenFile> {
       const expiresAt = Number(row.expires_at);
       const generation = Number(row.generation ?? 0);
       if (!kind || !accessToken || !refreshToken || !Number.isFinite(expiresAt)) continue;
-      next[kind] = { accessToken, refreshToken, expiresAt, generation };
+      next[kind] = {
+        accessToken,
+        refreshToken,
+        expiresAt,
+        generation,
+        ...(Number(row.refresh_issued_at) > 0 ? { refreshIssuedAt: Number(row.refresh_issued_at) } : {}),
+        ...(Number(row.refresh_expires_at) > 0 ? { refreshExpiresAt: Number(row.refresh_expires_at) } : {}),
+      };
     }
     return next;
   } catch (err) {
@@ -132,13 +150,15 @@ async function persistKindToDb(kind: "market" | "trader") {
       return;
     }
     await db.execute(sql`
-      insert into schwab_tokens (kind, access_token, refresh_token, expires_at, generation, updated_at)
-      values (${kind}, ${tokenSet.accessToken}, ${tokenSet.refreshToken}, ${tokenSet.expiresAt}, ${tokenSet.generation}, now())
+      insert into schwab_tokens (kind, access_token, refresh_token, expires_at, generation, refresh_issued_at, refresh_expires_at, updated_at)
+      values (${kind}, ${tokenSet.accessToken}, ${tokenSet.refreshToken}, ${tokenSet.expiresAt}, ${tokenSet.generation}, ${tokenSet.refreshIssuedAt ?? null}, ${tokenSet.refreshExpiresAt ?? null}, now())
       on conflict (kind) do update set
         access_token = excluded.access_token,
         refresh_token = excluded.refresh_token,
         expires_at = excluded.expires_at,
         generation = excluded.generation,
+        refresh_issued_at = excluded.refresh_issued_at,
+        refresh_expires_at = excluded.refresh_expires_at,
         updated_at = now()
     `);
   } catch (err) {
@@ -299,6 +319,9 @@ async function doRefresh(
       refreshToken: newRefresh,
       expiresAt: Date.now() + expiresIn * 1000,
       generation: generationBefore + 1,
+      // 30-min refresh: the 7-day refresh-token clock is NEVER reset here.
+      refreshIssuedAt: tokenSet.refreshIssuedAt,
+      refreshExpiresAt: tokenSet.refreshExpiresAt,
     };
     store[kind] = updated;
     persistKind(kind);
@@ -420,14 +443,21 @@ export function storeTokens(
   kind: "market" | "trader",
   accessToken: string,
   refreshToken: string,
-  expiresIn: number = 1800
+  expiresIn: number = 1800,
+  opts?: { newGrant?: boolean }
 ) {
-  const prevGen = store[kind]?.generation ?? 0;
+  const prev = store[kind];
+  const prevGen = prev?.generation ?? 0;
+  const now = Date.now();
   store[kind] = {
     accessToken,
     refreshToken,
-    expiresAt: Date.now() + expiresIn * 1000,
+    expiresAt: now + expiresIn * 1000,
     generation: prevGen + 1,
+    // Only an authorization_code grant (browser sign-in) starts the 7-day
+    // refresh-token clock. Refresh-path stores preserve the anchor untouched.
+    refreshIssuedAt: opts?.newGrant ? now : prev?.refreshIssuedAt,
+    refreshExpiresAt: opts?.newGrant ? now + REFRESH_TOKEN_TTL_MS : prev?.refreshExpiresAt,
   };
   persistKind(kind);
   scheduleRefresh(kind);
