@@ -1,7 +1,7 @@
 import { memo, useMemo, type ReactNode } from "react";
 import type { OptionsContract } from "@/components/OptionsTab";
 import {
-  STRIKE_W, BORDER_ROW, BORDER, UP, DOWN, GRAY, WHITE,
+  STRIKE_W, BORDER_ROW, BORDER, UP, DOWN, GRAY, WHITE, DIM,
   BG, MONO, FW_LIGHT, FW_PREMIUM, GAMMA_SCENARIO, ITM_OCEAN,
 } from "@/components/options/optionsTheme";
 import { useOptionTick } from "@/lib/options-stream-store";
@@ -56,30 +56,32 @@ function FlowBarCell({
   const badge = flowBadgeFromCounts(flow);
   const color = side === "put" ? DOWN : UP;
   const align = side === "put" ? "left" : "right";
-  const pct = maxFlow > 0 ? Math.min(100, Math.max(vol > 0 ? 10 : 0, Math.round((vol / maxFlow) * 100))) : 0;
+  const pct = maxFlow > 0 ? Math.min(100, Math.max(vol > 0 ? 12 : 0, Math.round((vol / maxFlow) * 100))) : 0;
+  const volLabel = vol >= 1000 ? `${(vol / 1000).toFixed(1)}k` : vol >= 100 ? String(vol) : "";
   const tip = `Flow ${vol} · B:${flow.buy} S:${flow.sell}${badge ? ` · ${badge}` : ""}`;
   return (
     <div
-      className="flex items-center h-full px-0.5"
+      className="flex items-center h-full w-full min-w-0 gap-0.5 px-0.5"
       title={tip}
-      style={{ justifyContent: align === "right" ? "flex-end" : "flex-start" }}
+      style={{ flexDirection: align === "right" ? "row-reverse" : "row" }}
     >
-      <div className="w-full max-w-[52px] h-[6px] rounded-sm overflow-hidden" style={{ background: "rgba(255,255,255,0.04)" }}>
+      <div className="flex-1 min-w-[14px] h-[6px] rounded-sm overflow-hidden" style={{ background: "rgba(255,255,255,0.04)" }}>
         {vol > 0 && (
           <div
-            className="h-full rounded-sm flex items-center justify-end pr-0.5"
+            className="h-full rounded-sm"
             style={{
               width: `${pct}%`,
               marginLeft: align === "right" ? "auto" : 0,
               background: `linear-gradient(${align === "right" ? "90deg" : "270deg"}, ${color}cc, ${color}22)`,
             }}
-          >
-            {vol >= 100 && (
-              <span style={{ fontSize: 7, color: WHITE, opacity: 0.85 }}>{vol >= 1000 ? `${Math.round(vol / 100) / 10}k` : vol}</span>
-            )}
-          </div>
+          />
         )}
       </div>
+      {volLabel ? (
+        <span className="shrink-0 tabular-nums whitespace-nowrap" style={{ fontSize: 7, color: GRAY, lineHeight: 1 }}>
+          {volLabel}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -142,6 +144,7 @@ type LadderRowViewProps = {
   underlyingPrice: number | null;
   symbolLabel: string;
   spotBetweenRows: boolean;
+  spotFrac: number;
   flipBetweenRows: boolean;
 };
 
@@ -163,6 +166,7 @@ const LadderRowView = memo(function LadderRowView({
   underlyingPrice,
   symbolLabel,
   spotBetweenRows,
+  spotFrac,
   flipBetweenRows,
 }: LadderRowViewProps) {
   const callTick = useOptionTick(row.call?.streamKey);
@@ -215,14 +219,27 @@ const LadderRowView = memo(function LadderRowView({
 
   return (
     <>
-      {spotBetweenRows && (
-        <div className="relative w-full grid" style={{ gridTemplateColumns: AT_LADDER_GRID, height: 6 }}>
-          <div style={{ gridColumn: "1 / -1" }} />
+      {spotBetweenRows && underlyingPrice != null && (
+        <div className="relative w-full grid" style={{ gridTemplateColumns: AT_LADDER_GRID, height: 10 }}>
           <div
-            className="flex items-center justify-center col-start-4"
-            style={{ borderTop: `1px dashed ${accentHex}99` }}
+            className="col-span-full relative"
+            style={{ gridColumn: "1 / -1", height: 10 }}
           >
-            <span style={{ fontSize: 7, color: accentHex, background: BG, padding: "0 4px", marginTop: -5 }}>SPX {underlyingPrice?.toFixed(0)}</span>
+            <div
+              className="absolute left-0 right-0"
+              style={{
+                top: Math.min(8, Math.max(0, spotFrac * 8)),
+                borderTop: `1px dashed ${accentHex}99`,
+              }}
+            />
+          </div>
+          <div
+            className="flex items-center justify-center col-start-4 z-[1]"
+            style={{ marginTop: Math.min(4, Math.max(-4, spotFrac * 8 - 4)) }}
+          >
+            <span style={{ fontSize: 7, color: accentHex, background: BG, padding: "0 4px" }}>
+              SPX {underlyingPrice.toFixed(underlyingPrice % 1 === 0 ? 0 : 2)}
+            </span>
           </div>
         </div>
       )}
@@ -297,30 +314,56 @@ const LadderRowView = memo(function LadderRowView({
         />
         <FlowBarCell flow={callFlow} laneFilters={laneFilters} side="call" maxFlow={maxFlow} />
       </div>
-      {showTradeStrip && tradeContext && (
-        <div
-          className="grid grid-cols-3 items-center px-2"
-          style={{
-            height: AT_LADDER_ROW_H,
-            borderBottom: `1px solid ${BORDER_ROW}`,
-            background: "linear-gradient(180deg, rgba(10,10,10,1), rgba(0,0,0,1))",
-            borderTop: `1px solid ${accentHex}30`,
-            fontFamily: MONO,
-            fontSize: 12,
-          }}
-          data-at-trade-strip
-        >
-          <button type="button" style={{ color: DOWN, textAlign: "left" }} onClick={() => onTradeStripSell(tradeContext.contract, tradeContext.type)}>
-            SELL {fmtPx((tradeContext.type === "PUT" ? putTick : callTick)?.bid)}
-          </button>
-          <button type="button" style={{ color: GRAY, textAlign: "center" }} onClick={() => onAddLeg(tradeContext.contract, tradeContext.type)}>
-            + Leg
-          </button>
-          <button type="button" style={{ color: UP, textAlign: "right" }} onClick={() => onTradeStripBuy(tradeContext.contract, tradeContext.type)}>
-            BUY {fmtPx((tradeContext.type === "PUT" ? putTick : callTick)?.ask)}
-          </button>
-        </div>
-      )}
+      {showTradeStrip && tradeContext && (() => {
+        const tick = tradeContext.type === "PUT" ? putTick : callTick;
+        const bid = fmtPx(tick?.bid);
+        const ask = fmtPx(tick?.ask);
+        const legColor = tradeContext.type === "CALL" ? UP : DOWN;
+        const key = tradeContext.contract.streamKey ?? "";
+        const pos = key ? positionQtyByKey.get(key) : undefined;
+        const posStr =
+          pos != null && pos !== 0
+            ? ` · ${pos > 0 ? "+" : "−"}${Math.abs(pos)}`
+            : "";
+        return (
+          <div
+            className="px-2 py-1"
+            style={{
+              minHeight: AT_LADDER_ROW_H + 8,
+              borderBottom: `1px solid ${BORDER_ROW}`,
+              background: "linear-gradient(180deg, rgba(10,10,10,1), rgba(0,0,0,1))",
+              borderTop: `1px solid ${accentHex}30`,
+              fontFamily: MONO,
+            }}
+            data-at-trade-strip
+          >
+            <div
+              className="leading-snug mb-1 truncate"
+              style={{ fontSize: 10, color: GRAY, fontVariantNumeric: "tabular-nums" }}
+            >
+              <span style={{ color: legColor, fontWeight: FW_PREMIUM }}>
+                {row.strike} {tradeContext.type}
+              </span>
+              <span style={{ color: DIM }}>
+                {" "}
+                · SELL {bid} at bid / BUY {ask} at ask
+              </span>
+              {posStr ? <span style={{ color: pos! > 0 ? UP : DOWN }}>{posStr}</span> : null}
+            </div>
+            <div className="grid grid-cols-3 items-center gap-1" style={{ fontSize: 12 }}>
+              <button type="button" style={{ color: DOWN, textAlign: "left" }} onClick={() => onTradeStripSell(tradeContext.contract, tradeContext.type)}>
+                SELL {bid}
+              </button>
+              <button type="button" style={{ color: GRAY, textAlign: "center" }} onClick={() => onAddLeg(tradeContext.contract, tradeContext.type)}>
+                + Leg
+              </button>
+              <button type="button" style={{ color: UP, textAlign: "right" }} onClick={() => onTradeStripBuy(tradeContext.contract, tradeContext.type)}>
+                BUY {ask}
+              </button>
+            </div>
+          </div>
+        );
+      })()}
     </>
   );
 });
@@ -364,8 +407,12 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
         const spotBetween =
           props.underlyingPrice != null &&
           next != null &&
-          row.strike > props.underlyingPrice &&
-          next.strike <= props.underlyingPrice;
+          row.strike >= props.underlyingPrice &&
+          next.strike < props.underlyingPrice;
+        const spotFrac =
+          spotBetween && props.underlyingPrice != null
+            ? (row.strike - props.underlyingPrice) / (row.strike - next!.strike)
+            : 0;
         const flipBetween =
           props.zones.flip != null &&
           next != null &&
@@ -383,6 +430,7 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
             underlyingPrice={props.underlyingPrice}
             symbolLabel={props.symbolLabel}
             spotBetweenRows={spotBetween}
+            spotFrac={spotFrac}
             flipBetweenRows={flipBetween}
             onQuoteTap={props.onQuoteTap}
             onTradeStripSell={props.onTradeStripSell}

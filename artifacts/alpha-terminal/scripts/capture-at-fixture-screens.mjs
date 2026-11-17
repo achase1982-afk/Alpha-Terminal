@@ -8,7 +8,6 @@ const MOCKUP = "/home/ubuntu/.cursor/projects/agent-repos-Alpha-Terminal/assets/
 
 const scenes = [
   { name: "at-01-default-440x956.png", url: `${BASE}?scene=default`, waitSelector: "[data-at-key-levels]" },
-  { name: "at-01-focus-off-440x956.png", url: `${BASE}?scene=focus-off`, waitSelector: "[data-at-key-levels]" },
   { name: "at-01-settings-expanded-440x956.png", url: `${BASE}?scene=settings-expanded`, waitSelector: "[data-at-key-levels]" },
   {
     name: "at-02-trade-strip-440x956.png",
@@ -16,7 +15,6 @@ const scenes = [
     waitSelector: "[data-at-trade-strip]",
   },
   { name: "at-03-confirm-disabled-440x956.png", url: `${BASE}?scene=confirm`, waitText: "Trigger order summary" },
-  { name: "at-04-chain-unchanged-440x956.png", url: `${BASE}?scene=chain`, waitText: "CALLS" },
 ];
 
 await mkdir(OUT, { recursive: true });
@@ -50,7 +48,14 @@ for (const scene of scenes) {
   await page.waitForTimeout(delay);
   if (scene.name.includes("01-default")) {
     const rowCount = await page.locator("[data-at-strike]").count();
-    console.log(`Ladder strike rows in DOM: ${rowCount}`);
+    const vis = await page.evaluate(() => {
+      const vh = window.innerHeight;
+      return [...document.querySelectorAll("[data-at-strike]")].filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.top >= 0 && r.bottom <= vh;
+      }).length;
+    });
+    console.log(`Ladder rows: DOM=${rowCount} visibleInViewport=${vis}`);
   }
   await page.screenshot({ path: path.join(OUT, scene.name), fullPage: false });
 }
@@ -70,47 +75,6 @@ try {
   );
 } catch {
   execSync(`cp "${actualPath}" "${comparePath}"`);
-}
-
-await page.goto(`${BASE}?scene=chain`, { waitUntil: "networkidle" });
-await page.waitForTimeout(800);
-const chainClip = await page.locator('[data-ui-audit="chain-strike-cell"]').first().boundingBox();
-if (chainClip) {
-  await page.screenshot({
-    path: path.join(OUT, "at-font-compare-chain-crop.png"),
-    clip: {
-      x: Math.max(0, chainClip.x - 120),
-      y: Math.max(0, chainClip.y - 40),
-      width: 280,
-      height: 120,
-    },
-  });
-}
-
-await page.goto(`${BASE}?scene=default`, { waitUntil: "networkidle" });
-await page.waitForTimeout(800);
-const atStrike = await page.locator('[data-at-strike="7540"]').boundingBox();
-if (atStrike) {
-  await page.screenshot({
-    path: path.join(OUT, "at-font-compare-at-crop.png"),
-    clip: {
-      x: Math.max(0, atStrike.x - 120),
-      y: Math.max(0, atStrike.y - 40),
-      width: 280,
-      height: 120,
-    },
-  });
-}
-
-try {
-  execSync(
-    `convert +append -bordercolor black -border 4 ` +
-      `"${OUT}/at-font-compare-chain-crop.png" "${OUT}/at-font-compare-at-crop.png" ` +
-      `"${OUT}/at-font-compare-side-by-side.png"`,
-    { stdio: "inherit" },
-  );
-} catch {
-  /* ignore if convert missing */
 }
 
 await browser.close();

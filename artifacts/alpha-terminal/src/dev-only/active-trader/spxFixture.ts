@@ -9,12 +9,27 @@ import type { OptionTick } from "@/lib/options-stream-store";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
 import { buildSchwabOptionKey } from "@/lib/optionsSchwabKey";
 import { seedFlowCountsForKey, type FlowLaneCounts } from "@/lib/active-trader/flowClassifier";
+import {
+  FIXTURE_BS,
+  blackScholes,
+  normCdf,
+  spxQuoteFromTheoretical,
+} from "./spxFixturePricing";
 
 export const FIXTURE_SPX_SPOT = 7540;
 export const FIXTURE_MARKER = "AT_FIXTURE_SPX_0DTE_DEV_ONLY";
 
 const EXPIRY = "2026-11-17";
 const ROOT = "SPX";
+
+function bsDelta(strike: number, isCall: boolean): number {
+  const { spot: S, T, r, sigma } = FIXTURE_BS;
+  if (T <= 1e-9) return isCall ? (S > strike ? 1 : 0) : S < strike ? -1 : 0;
+  const sqrtT = Math.sqrt(T);
+  const d1 = (Math.log(S / strike) + (r + 0.5 * sigma * sigma) * T) / (sigma * sqrtT);
+  const d = isCall ? normCdf(d1) : normCdf(d1) - 1;
+  return Math.round(d * 1000) / 1000;
+}
 
 function strikeRow(strike: number, callOi: number, putOi: number): {
   strike: number;
@@ -24,6 +39,24 @@ function strikeRow(strike: number, callOi: number, putOi: number): {
   const exp = EXPIRY;
   const callKey = buildSchwabOptionKey(ROOT, exp, strike, "C");
   const putKey = buildSchwabOptionKey(ROOT, exp, strike, "P");
+  const callMid = blackScholes(
+    FIXTURE_BS.spot,
+    strike,
+    FIXTURE_BS.T,
+    FIXTURE_BS.r,
+    FIXTURE_BS.sigma,
+    true,
+  );
+  const putMid = blackScholes(
+    FIXTURE_BS.spot,
+    strike,
+    FIXTURE_BS.T,
+    FIXTURE_BS.r,
+    FIXTURE_BS.sigma,
+    false,
+  );
+  const callQ = spxQuoteFromTheoretical(callMid);
+  const putQ = spxQuoteFromTheoretical(putMid);
   return {
     strike,
     call: {
@@ -33,9 +66,9 @@ function strikeRow(strike: number, callOi: number, putOi: number): {
       streamKey: callKey,
       openInterest: callOi,
       gamma: 0.008 + (strike === 7550 ? 0.04 : 0.002),
-      delta: strike >= FIXTURE_SPX_SPOT ? 0.45 : 0.55,
-      bid: 3.5,
-      ask: 3.7,
+      delta: bsDelta(strike, true),
+      bid: callQ.bid,
+      ask: callQ.ask,
       volume: 1200,
     },
     put: {
@@ -45,9 +78,9 @@ function strikeRow(strike: number, callOi: number, putOi: number): {
       streamKey: putKey,
       openInterest: putOi,
       gamma: 0.008 + (strike === 7530 ? 0.04 : 0.002),
-      delta: strike <= FIXTURE_SPX_SPOT ? -0.45 : -0.35,
-      bid: 3.2,
-      ask: 3.4,
+      delta: bsDelta(strike, false),
+      bid: putQ.bid,
+      ask: putQ.ask,
       volume: 1100,
     },
   };
@@ -78,25 +111,32 @@ export function buildSpxFixtureTicks(): OptionTick[] {
   for (const row of groups[0].rows) {
     for (const side of [row.call, row.put]) {
       if (!side?.streamKey) continue;
-      const mid = 3.6;
-      const bid = mid - 0.05;
-      const ask = mid + 0.05;
+      const isCall = side === row.call;
+      const mid = blackScholes(
+        FIXTURE_BS.spot,
+        row.strike,
+        FIXTURE_BS.T,
+        FIXTURE_BS.r,
+        FIXTURE_BS.sigma,
+        isCall,
+      );
+      const q = spxQuoteFromTheoretical(mid);
       const vol = side === row.call ? 3200 + row.strike % 100 : 2260 + row.strike % 80;
       ticks.push({
         key: side.streamKey,
-        bid,
-        ask,
-        last: ask - 0.02,
+        bid: q.bid,
+        ask: q.ask,
+        last: q.mark,
         bidSize: 12,
         askSize: 10,
         volume: vol,
         openInterest: side.openInterest ?? null,
-        iv: 0.14,
+        iv: FIXTURE_BS.sigma,
         delta: side.delta ?? null,
         gamma: side.gamma ?? null,
         theta: -0.08,
         vega: 0.12,
-        mark: mid,
+        mark: q.mark,
         change: 0.1,
         lastSize: 12,
         underlyingPrice: FIXTURE_SPX_SPOT,

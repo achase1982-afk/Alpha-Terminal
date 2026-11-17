@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { OptionsContract } from "@/components/OptionsTab";
 import {
-  TOOLBAR_H, SUB_HEADER_H, BG, BG_EXP_BAR, BG_HEADER, BORDER, DIM, GRAY, WHITE, MONO, FW_LIGHT, noScrollbar,
+  TOOLBAR_H, SUB_HEADER_H, BG, BG_EXP_BAR, BG_HEADER, BORDER, BORDER_ROW, DIM, GRAY, WHITE, MONO, FW_LIGHT, UP, DOWN, noScrollbar,
 } from "@/components/options/optionsTheme";
 import { buildAtHoldSignature } from "@/lib/active-trader/atHoldSig";
 import {
@@ -42,8 +42,7 @@ import {
 import { LadderBody, type LadderRowModel } from "./LadderBody";
 import { AtLadderSkeleton } from "./AtLadderSkeleton";
 import { AtKeyLevelsStrip } from "./AtKeyLevelsStrip";
-import { AT_LADDER_GRID, AT_LADDER_ROW_H } from "@/lib/active-trader/atLadderLayout";
-import { Maximize2 } from "lucide-react";
+import { AT_LADDER_GRID, AT_LADDER_GROUP_HDR_H, AT_LADDER_ROW_H } from "@/lib/active-trader/atLadderLayout";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { useUICustomizationStore } from "@/lib/ui-customization-store";
 
@@ -413,8 +412,9 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   const keyLevelsTop = stickyOffset + chromeHeight;
   const ladderHeaderTop = keyLevelsTop + 28;
+  const ladderHdrStack = AT_LADDER_GROUP_HDR_H + AT_LADDER_ROW_H;
   const ladderReserve = atHeaderCompact ? 52 : 88;
-  const ladderMaxHeight = `max(320px, calc(100dvh - ${ladderHeaderTop + AT_LADDER_ROW_H + ladderReserve}px))`;
+  const ladderMaxHeight = `max(320px, calc(100dvh - ${ladderHeaderTop + ladderHdrStack + ladderReserve}px))`;
 
   const expiryLabel = primary?.dateLabel ?? "\u2014";
   const dteLabel = primary ? (primary.dte === 0 ? "0DTE" : `${primary.dte}D`) : "0DTE";
@@ -456,54 +456,58 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           zones={zones}
           regimeLabel={presentation?.regimeLabel ?? regimeLabel}
           regimeDegraded={presentation?.regimeDegraded ?? regimeDegraded}
+          headerCompact={atHeaderCompact}
+          onExpandHeader={restoreSavedHeaderMode}
+          onCompactHeader={reapplyAtCompactHeader}
         />
-        {!atHeaderCompact ? (
-          <button
-            type="button"
-            className="w-full text-center py-0.5"
-            style={{ fontSize: 9, color: DIM, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
-            onClick={() => reapplyAtCompactHeader()}
-          >
-            <Maximize2 className="inline w-2.5 h-2.5 mr-1 opacity-60" style={{ verticalAlign: "middle" }} />
-            Compact header
-          </button>
-        ) : (
-          <button
-            type="button"
-            data-at-expand-header
-            className="w-full text-center py-0.5"
-            style={{ fontSize: 9, color: DIM, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
-            onClick={() => restoreSavedHeaderMode()}
-          >
-            <Maximize2 className="inline w-2.5 h-2.5 mr-1" style={{ verticalAlign: "middle" }} />
-            Full header
-          </button>
-        )}
       </div>
 
-      <div
-        className="sticky z-[36] grid items-center px-0.5"
-        style={{
-          top: ladderHeaderTop,
-          height: AT_LADDER_ROW_H,
-          gridTemplateColumns: AT_LADDER_GRID,
-          background: BG_HEADER,
-          borderBottom: `1px solid ${BORDER}`,
-          fontFamily: MONO,
-          fontSize: 9,
-          color: DIM,
-          fontWeight: FW_LIGHT,
-          letterSpacing: "0.06em",
-          textTransform: "uppercase",
-        }}
-      >
-        <span />
-        <span className="text-right pr-1" data-ui-audit="at-puts-hdr">Bid</span>
-        <span className="text-right pr-1">Ask</span>
-        <span className="text-center" style={{ color: WHITE, fontWeight: 600 }}>Strike</span>
-        <span className="text-right pr-1">Bid</span>
-        <span className="text-right pr-1">Ask</span>
-        <span />
+      <div className="sticky z-[36]" style={{ top: ladderHeaderTop, background: BG_HEADER, borderBottom: `1px solid ${BORDER}` }}>
+        <div
+          className="grid items-center px-0.5"
+          style={{
+            height: AT_LADDER_GROUP_HDR_H,
+            gridTemplateColumns: AT_LADDER_GRID,
+            fontFamily: MONO,
+            fontSize: 8,
+            color: DIM,
+            fontWeight: FW_LIGHT,
+            letterSpacing: "0.05em",
+            textTransform: "uppercase",
+          }}
+        >
+          <span className="text-center leading-none">Put flow</span>
+          <span className="text-center col-span-2" style={{ color: DOWN }} data-ui-audit="at-puts-hdr">
+            Puts
+          </span>
+          <span />
+          <span className="text-center col-span-2" style={{ color: UP }}>
+            Calls
+          </span>
+          <span className="text-center leading-none">Call flow</span>
+        </div>
+        <div
+          className="grid items-center px-0.5"
+          style={{
+            height: AT_LADDER_ROW_H,
+            gridTemplateColumns: AT_LADDER_GRID,
+            fontFamily: MONO,
+            fontSize: 9,
+            color: DIM,
+            fontWeight: FW_LIGHT,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            borderTop: `1px solid ${BORDER_ROW}`,
+          }}
+        >
+          <span />
+          <span className="text-right pr-1">Bid</span>
+          <span className="text-right pr-1">Ask</span>
+          <span className="text-center" style={{ color: WHITE, fontWeight: 600 }}>Strike</span>
+          <span className="text-right pr-1">Bid</span>
+          <span className="text-right pr-1">Ask</span>
+          <span />
+        </div>
       </div>
 
       <div style={{ ...noScrollbar, maxHeight: ladderMaxHeight, overflowY: "auto" }}>

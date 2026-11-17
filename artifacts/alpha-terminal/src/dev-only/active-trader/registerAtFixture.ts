@@ -6,6 +6,8 @@ import {
 import { useTerminalStore } from "@/lib/store";
 import { useOptionsStreamStore } from "@/lib/options-stream-store";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
+import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
+import { buildSchwabOptionKey } from "@/lib/optionsSchwabKey";
 import { useOptionsSettingsStore } from "@/lib/options-store";
 import { saveAtSettingsPanelOpen } from "@/lib/active-trader/atSettingsPanelState";
 import { loadActiveTraderPrefs, saveActiveTraderPrefs } from "@/lib/active-trader/activeTraderPrefs";
@@ -132,6 +134,18 @@ export function registerAtFixtureFromLocation(): void {
     pendingDeposits: 0,
     sma: 0,
   };
+  const demoCallKey = buildSchwabOptionKey("SPX", "2026-11-17", 7545, "C");
+  const fixturePositions = [
+    {
+      symbol: demoCallKey,
+      instrument: { symbol: demoCallKey },
+      longQuantity: 2,
+      shortQuantity: 0,
+      quantity: 2,
+      averagePrice: 3.55,
+      marketValue: 710,
+    },
+  ];
   useSchwabAccountStore.setState({
     accounts: [
       {
@@ -144,11 +158,24 @@ export function registerAtFixtureFromLocation(): void {
         initialBalances: { accountValue: 210_000, equity: 210_000, liquidationValue: 210_000 },
         dayPL: 0,
         totalPL: 0,
-        positions: [],
+        positions: fixturePositions as never[],
       },
     ],
     accountsFingerprint: "at-fixture",
     defaultTradingAccountHash: "at-fixture-hash",
+  });
+
+  usePortfolioStreamStore.getState().setAccount({
+    accountNumber: "88110495",
+    hashValue: "at-fixture-hash",
+    type: "MARGIN",
+    isDayTrader: false,
+    roundTrips: 0,
+    balances: zeroBal,
+    initialBalances: { accountValue: 210_000, equity: 210_000, liquidationValue: 210_000 },
+    dayPL: 0,
+    totalPL: 0,
+    positions: fixturePositions,
   });
 
   saveAtSettingsPanelOpen(settingsPanelOpen);

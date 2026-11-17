@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { Maximize2, Minimize2 } from "lucide-react";
 import {
   BG_EXP_BAR, BORDER, DIM, DOWN, GAMMA_SCENARIO, GRAY, MONO, UP, WHITE, FW_LIGHT, FW_NORMAL,
 } from "@/components/options/optionsTheme";
@@ -10,6 +11,9 @@ interface AtKeyLevelsStripProps {
   zones: ZoneModel;
   regimeLabel: string | null;
   regimeDegraded: boolean;
+  headerCompact?: boolean;
+  onExpandHeader?: () => void;
+  onCompactHeader?: () => void;
 }
 
 export const AtKeyLevelsStrip = memo(function AtKeyLevelsStrip({
@@ -17,6 +21,9 @@ export const AtKeyLevelsStrip = memo(function AtKeyLevelsStrip({
   zones,
   regimeLabel,
   regimeDegraded,
+  headerCompact,
+  onExpandHeader,
+  onCompactHeader,
 }: AtKeyLevelsStripProps) {
   const regimeWord = (regimeLabel ?? "—").split(/\s+/)[0] ?? "—";
   const env =
@@ -47,7 +54,32 @@ export const AtKeyLevelsStrip = memo(function AtKeyLevelsStrip({
           GEX <span style={{ color: WHITE, fontWeight: FW_NORMAL }}>{formatGexUsd(zones.netGexUsdPer1Pct)}</span>
           {env && <span style={{ color: GAMMA_SCENARIO, marginLeft: 4 }}>· {env}</span>}
         </span>
-        <span className="ml-auto flex items-center gap-1 shrink-0" style={{ fontSize: 10 }}>
+        <span className="ml-auto flex items-center gap-1.5 shrink-0" style={{ fontSize: 10 }}>
+          {headerCompact && onExpandHeader && (
+            <button
+              type="button"
+              data-at-expand-header
+              aria-label="Full header"
+              title="Full header"
+              className="p-0.5 rounded border"
+              style={{ borderColor: BORDER, background: "transparent", color: DIM }}
+              onClick={onExpandHeader}
+            >
+              <Maximize2 className="w-3 h-3" />
+            </button>
+          )}
+          {!headerCompact && onCompactHeader && (
+            <button
+              type="button"
+              aria-label="Compact header"
+              title="Compact header"
+              className="p-0.5 rounded border"
+              style={{ borderColor: BORDER, background: "transparent", color: DIM }}
+              onClick={onCompactHeader}
+            >
+              <Minimize2 className="w-3 h-3 opacity-60" />
+            </button>
+          )}
           <span
             className="w-1.5 h-1.5 rounded-full"
             style={{ background: regimeDegraded ? GRAY : UP }}
