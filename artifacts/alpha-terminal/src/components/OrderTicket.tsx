@@ -15,6 +15,7 @@ import {
   displaySubmittedLimit,
   evaluateTicketPreTradeGate,
   formatLimitPriceDisplay,
+  formatOptionExpirationHuman,
   midpointFromBidAsk,
   optionMidLimit,
   parseCanonicalLimit,
@@ -1301,9 +1302,22 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     }
   }, [ticketMode, onSwitchToStock, onSwitchToOptions]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const isBuy = side === "BUY";
+  const failBadgeLabel =
+    overallRisk === "GREEN"
+      ? "PASS"
+      : overallRisk === "YELLOW"
+        ? "WARN"
+        : "FAIL · blocks order";
   const sideColor = isBuy ? UP : DOWN;
   const changePct = quote?.changePct;
   const changeColor = (changePct ?? 0) >= 0 ? UP : DOWN;
@@ -1322,7 +1336,18 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   };
 
   return (
-    <div className="fixed inset-0 z-[210] flex flex-col" style={{ background: `radial-gradient(circle at top, #141821 0%, ${BG} 55%)`, fontFamily: SYS_FONT, fontWeight: 300 }}>
+    <div
+      className="fixed inset-0 z-[210] flex flex-col max-h-[100dvh]"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Order ticket"
+      style={{
+        background: `radial-gradient(circle at top, #141821 0%, ${BG} 55%)`,
+        fontFamily: SYS_FONT,
+        fontWeight: 300,
+        paddingTop: "env(safe-area-inset-top, 0px)",
+      }}
+    >
 
       <header className="shrink-0 flex items-center justify-between px-3 py-1.5" style={{ borderBottom: `1px solid ${BORDER}` }}>
         <div className="flex items-center gap-2">
@@ -2405,13 +2430,13 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                   : null;
                 return popPct != null ? `${popPct}%` : "—";
               })()}</span>
-              {preTradeEnabled && <span style={{ color: levelColor(overallRisk) }}>{overallRisk === "GREEN" ? "PASS" : overallRisk === "YELLOW" ? "WARN" : "FAIL"}</span>}
+              {preTradeEnabled && <span style={{ color: levelColor(overallRisk) }}>{failBadgeLabel}</span>}
             </div>
           ) : (
             <div className="flex justify-between flex-wrap gap-1 mb-1" style={{ fontSize: S.label, color: TEXT }}>
               <span>{isBuy ? "Buy" : "Sell"} {quantity} {isOption ? "contract" : "share"}{quantity > 1 ? "s" : ""} · {needsLimit ? `Limit ${submittedLimitDisplay || "—"}` : ORDER_TYPES.find(t => t.value === orderType)?.label}</span>
               {estimatedCost != null && <span>Notional {fmtCurrency(Math.abs(estimatedCost))}</span>}
-              {preTradeEnabled && <span>Risk: {overallRisk === "GREEN" ? "PASS" : overallRisk === "YELLOW" ? "WARN" : "FAIL"}</span>}
+              {preTradeEnabled && <span>Risk: {failBadgeLabel}</span>}
             </div>
           )}
           <div className="flex gap-2">

@@ -1129,7 +1129,7 @@ export default function TerminalPage() {
       )}
 
       <SearchOverlay
-        isOpen={searchOpen}
+        isOpen={searchOpen && !orderOpen}
         onClose={() => setSearchOpen(false)}
         onSelectSymbol={() => {
           setSearchOpen(false);

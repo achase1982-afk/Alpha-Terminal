@@ -9,7 +9,8 @@
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "pretypecheck": "pnpm exec tsc --build --force ../../lib/chat-types ../../lib/movers-types ../../lib/catalysts-types ../../lib/order-ticket-math && pnpm --filter @workspace/api-client-react exec -- sh -c 'rm -f tsconfig.tsbuildinfo && tsc -p tsconfig.json'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e:qa-screenshots": "playwright test e2e/qa-pr-b-screenshots.spec.ts"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -81,6 +82,7 @@
     "vaul": "^1.1.2",
     "vite": "catalog:",
     "vitest": "^2.1.9",
+    "@playwright/test": "^1.55.0",
     "wouter": "^3.3.5",
     "zod": "catalog:"
   },

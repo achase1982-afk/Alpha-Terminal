@@ -16,11 +16,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table2, ChevronDown, ChevronRight, X, Settings, GripVertical,
-  Layers, TrendingUp, Plus, BarChart3,
+  Layers, TrendingUp, Plus, BarChart3, Loader2,
 } from "lucide-react";
 import { Reorder } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
-import { resolveAtmStrike } from "@workspace/order-ticket-math";
+import { isAtmStrike, quoteSideState, resolveAtmStrike, resolvePairedBidAsk } from "@workspace/order-ticket-math";
 
 const EPS = 0.0001;
 const COL_W = 74;
@@ -337,9 +337,14 @@ function makeLegKey(contract: Contract, type: "CALL" | "PUT"): string {
 
 type Moneyness = "itm" | "otm" | "atm" | "none";
 
-function classifyMoneyness(strike: number, underlyingPrice: number | null, isCallSide: boolean): Moneyness {
+function classifyMoneyness(
+  strike: number,
+  underlyingPrice: number | null,
+  isCallSide: boolean,
+  atmStrike: number | null,
+): Moneyness {
   if (underlyingPrice == null) return "none";
-  if (Math.abs(strike - underlyingPrice) < underlyingPrice * 0.003) return "atm";
+  if (isAtmStrike(strike, atmStrike)) return "atm";
   if (isCallSide) return strike < underlyingPrice - EPS ? "itm" : "otm";
   return strike > underlyingPrice + EPS ? "itm" : "otm";
 }
@@ -403,6 +408,11 @@ const DataCell = memo(function DataCell({
   const isGreek = col.group === "Greeks";
   const isIV = col.id === "iv";
   const isPrice = isBid || isAsk;
+  const liveBid = paired?.bid;
+  const liveAsk = paired?.ask;
+  const quoteState = isPrice
+    ? (paired?.crossed ? "crossed" : quoteSideState(liveBid, liveAsk))
+    : "ok";
   const isShaded = moneyness === "itm" || moneyness === "otm";
 
   const deltaVal = isPrice && showInlineGreeks
@@ -461,7 +471,8 @@ const DataCell = memo(function DataCell({
   }, []);
 
   let textColor: string;
-  if (topStr === "\u2014") textColor = MUTED;
+  if (quoteState === "crossed") textColor = GOLD_DIM;
+  else if (topStr === "\u2014") textColor = MUTED;
   else if (isBid) textColor = "#f23645";
   else textColor = WHITE;
 
@@ -482,7 +493,14 @@ const DataCell = memo(function DataCell({
       >
         {isVol || isOI ? fmtCompact(topVal) : topStr}
         {isIV && topStr !== "\u2014" ? "%" : ""}
+        {quoteState === "crossed" && isPrice ? " ×" : ""}
       </span>
+      {quoteState === "crossed" && isPrice && (
+        <span className="text-[9px] leading-none" style={{ color: GOLD, fontFamily: MONO }}>Crossed</span>
+      )}
+      {quoteState === "incomplete" && isPrice && topStr !== "\u2014" && (
+        <span className="text-[9px] leading-none" style={{ color: DIM, fontFamily: MONO }}>Stale</span>
+      )}
 
       {isVol && oiVal != null && (
         <span className="leading-none mt-0.5" style={{ fontSize: 10, color: WHITE, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}>
@@ -805,9 +823,7 @@ function MetricsStrip({ groups, lastPrice, earningsInfo, isFetching, hasData }: 
 }
 
 
-function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPrice: number | null }) {
-  const isATM = underlyingPrice != null && Math.abs(strike - underlyingPrice) < (underlyingPrice * 0.003);
-
+function StrikeCell({ strike, underlyingPrice, atmStrike }: { strike: number; underlyingPrice: number | null; atmStrike: number | null }) {
   let moneynessLabel: string | null = null;
 
   if (underlyingPrice != null) {
@@ -815,7 +831,7 @@ function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPri
     const pct = (diff / underlyingPrice) * 100;
     const absPct = Math.abs(pct);
 
-    if (absPct < 0.3) {
+    if (isAtmStrike(strike, atmStrike)) {
       moneynessLabel = "ATM";
     } else if (absPct < 10) {
       moneynessLabel = `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`;
@@ -868,6 +884,10 @@ function OptionsGrid({
   accentHex: string;
 }) {
   const sortedRows = useMemo(() => [...rows].sort((a, b) => a.strike - b.strike), [rows]);
+  const atmStrike = useMemo(
+    () => (underlyingPrice != null ? resolveAtmStrike(sortedRows.map((r) => r.strike), underlyingPrice) : null),
+    [sortedRows, underlyingPrice],
+  );
 
   const transitionIdx = useMemo(() => {
     if (underlyingPrice == null) return -1;
@@ -918,7 +938,7 @@ function OptionsGrid({
                 const callKey = row.call ? makeLegKey(row.call, "CALL") : "";
                 const callLeg = callKey ? selectedLegs.get(callKey) : undefined;
                 const isCallSelected = !!callLeg;
-                const moneyness = classifyMoneyness(row.strike, underlyingPrice, true);
+                const moneyness = classifyMoneyness(row.strike, underlyingPrice, true, atmStrike);
                 const bg = getRowBg(row.strike, underlyingPrice, true);
                 return (
                   <div
@@ -958,7 +978,7 @@ function OptionsGrid({
 
         <div className="flex-none" style={{ width: STRIKE_W, background: accentHex, borderLeft: `1px solid ${accentHex}`, borderRight: `1px solid ${accentHex}`, zIndex: 10, position: "relative" }}>
           {sortedRows.map((row) => (
-            <StrikeCell key={row.strike} strike={row.strike} underlyingPrice={underlyingPrice} />
+            <StrikeCell key={row.strike} strike={row.strike} underlyingPrice={underlyingPrice} atmStrike={atmStrike} />
           ))}
         </div>
 
@@ -972,7 +992,7 @@ function OptionsGrid({
                 const putKey = row.put ? makeLegKey(row.put, "PUT") : "";
                 const putLeg = putKey ? selectedLegs.get(putKey) : undefined;
                 const isPutSelected = !!putLeg;
-                const moneyness = classifyMoneyness(row.strike, underlyingPrice, false);
+                const moneyness = classifyMoneyness(row.strike, underlyingPrice, false, atmStrike);
                 const bg = getRowBg(row.strike, underlyingPrice, false);
                 return (
                   <div
@@ -1530,10 +1550,9 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
 
       <div className="relative" style={{ background: BG, paddingBottom: selCount > 0 ? 52 : 0 }}>
         {isLoading && !data && (
-          <div className="p-4 space-y-1">
-            {Array.from({ length: strikeCount }).map((_, i) => (
-              <Skeleton key={i} className="h-4 w-full rounded" style={{ background: "#0a0a0a" }} />
-            ))}
+          <div className="flex flex-col items-center justify-center py-16 gap-3" role="status" aria-live="polite">
+            <Loader2 className="w-8 h-8 animate-spin" style={{ color: GOLD }} />
+            <span className="text-[11px] tracking-widest font-mono" style={{ color: MUTED }}>LOADING CHAIN</span>
           </div>
         )}
 
