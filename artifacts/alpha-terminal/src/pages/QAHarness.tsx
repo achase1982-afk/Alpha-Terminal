@@ -3,12 +3,34 @@ import { useTerminalStore } from "@/lib/store";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { OptionsTab } from "@/components/OptionsTab";
 import { OrderTicket } from "@/components/OrderTicket";
+import { StrategyBuilder, type StrategyLeg } from "@/components/StrategyBuilder";
 import { useOptionsStreamStore } from "@/lib/options-stream-store";
 
 /** Schwab OSI key for 0DTE 5900C (must match e2e `spxChain` fixture). */
 const SPX_ATM_CALL_SYMBOL = "SPX   261118C05900000";
 
 const SPX_5910_CALL = "SPX   261118C05910000";
+
+const DEBIT_VERTICAL_LEGS: StrategyLeg[] = [
+  {
+    id: "qa-buy",
+    optionType: "CALL",
+    direction: "BUY_TO_OPEN",
+    strike: 5900,
+    expiration: "2026-11-18",
+    quantity: 1,
+    schwabSymbol: SPX_ATM_CALL_SYMBOL,
+  },
+  {
+    id: "qa-sell",
+    optionType: "CALL",
+    direction: "SELL_TO_OPEN",
+    strike: 5910,
+    expiration: "2026-11-18",
+    quantity: 1,
+    schwabSymbol: SPX_5910_CALL,
+  },
+];
 
 type QaScreen =
   | "chain"
@@ -89,30 +111,6 @@ export default function QAHarness() {
         isCloseOrder: false,
       };
     }
-    if (screen === "debit-vertical") {
-      return {
-        strategyLegs: [
-          {
-            schwabSymbol: SPX_ATM_CALL_SYMBOL,
-            instruction: "BUY_TO_OPEN",
-            quantity: 1,
-            optionType: "CALL",
-            strike: 5900,
-            expiration: "2026-11-18",
-          },
-          {
-            schwabSymbol: SPX_5910_CALL,
-            instruction: "SELL_TO_OPEN",
-            quantity: 1,
-            optionType: "CALL",
-            strike: 5910,
-            expiration: "2026-11-18",
-          },
-        ],
-        strategyIsCredit: false,
-        isCloseOrder: false,
-      };
-    }
     return undefined;
   }, [screen]);
 
@@ -121,7 +119,9 @@ export default function QAHarness() {
       ? "SPX options chain (crossed ATM)"
       : screen === "stock"
         ? "AAPL stock ticket"
-        : `Order ticket · ${screen}`;
+        : screen === "debit-vertical" || screen === "review"
+          ? "Strategy builder · debit vertical"
+          : `Order ticket · ${screen}`;
 
   return (
     <div style={{ minHeight: "100vh", background: "#000000" }}>
@@ -140,6 +140,13 @@ export default function QAHarness() {
       </div>
       {screen === "chain" ? (
         <OptionsTab subscribeOptionSymbols={async () => {}} />
+      ) : screen === "debit-vertical" || screen === "review" ? (
+        <StrategyBuilder
+          isOpen
+          onClose={() => {}}
+          initialLegs={DEBIT_VERTICAL_LEGS}
+          subscribeOptionSymbols={async () => {}}
+        />
       ) : screen === "stock" ? (
         <OrderTicket isOpen onClose={() => {}} subscribeOptionSymbols={async () => {}} />
       ) : ticketProps ? (
