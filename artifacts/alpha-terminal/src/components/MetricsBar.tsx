@@ -83,7 +83,7 @@ const COMPANY_FONT_LG = 15;
 const COMPANY_FONT_SM = 11;
 const COMPANY_BOX_H = 34;
 
-function WatchlistToggle({ symbol }: { symbol: string }) {
+export function WatchlistToggle({ symbol }: { symbol: string }) {
   const watchlistSymbols = useActiveWatchlist();
   const addToWatchlist = useTerminalStore((s) => s.addToWatchlist);
   const removeFromWatchlist = useTerminalStore((s) => s.removeFromWatchlist);

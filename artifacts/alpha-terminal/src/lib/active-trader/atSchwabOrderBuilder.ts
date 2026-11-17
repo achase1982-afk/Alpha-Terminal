@@ -119,7 +119,37 @@ export function canonicalAtEntryLimit(input: AtOrderBuildInput): number {
   return roundAtPremium(input.limitPrice, bracketRoundInput(input, input.limitPrice));
 }
 
-function resolveBracketPrices(
+/** Tick-rounded prices for UI previews — matches `buildAtSchwabOrderJson` / `planAtOrderLegs`. */
+export function atBracketPreviewPrices(input: AtOrderBuildInput): {
+  entryLimit: number;
+  takeProfit: number | null;
+  stopLoss: number | null;
+} {
+  const entryLimit = canonicalAtEntryLimit(input);
+  const { tp, sl } = resolveBracketPrices(input, entryLimit);
+  return { entryLimit, takeProfit: tp, stopLoss: sl };
+}
+
+/**
+ * One bracket leg's @ preview with the other leg disabled (settings TP / SL rows).
+ * Uses the same rounded entry base as the Schwab builder.
+ */
+export function atBracketLegPreviewPrice(
+  input: AtOrderBuildInput,
+  leg: "takeProfit" | "stopLoss",
+): number | null {
+  const entryLimit = canonicalAtEntryLimit(input);
+  const disabled: BracketLegPrefs = { enabled: false, mode: "percent", offset: leg === "takeProfit" ? 10 : -10 };
+  const patched: AtOrderBuildInput = {
+    ...input,
+    takeProfit: leg === "takeProfit" ? input.takeProfit : disabled,
+    stopLoss: leg === "stopLoss" ? input.stopLoss : disabled,
+  };
+  const { tp, sl } = resolveBracketPrices(patched, entryLimit);
+  return leg === "takeProfit" ? tp : sl;
+}
+
+export function resolveBracketPrices(
   input: AtOrderBuildInput,
   entryBase: number,
 ): { tp: number | null; sl: number | null } {

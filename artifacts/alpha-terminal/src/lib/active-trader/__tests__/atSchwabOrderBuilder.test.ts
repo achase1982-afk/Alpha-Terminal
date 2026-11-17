@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { buildAtSettingsSummary } from "../atSummaryFormat";
+import type { ActiveTraderTemplatePrefs } from "../activeTraderPrefs";
 import {
+  atBracketLegPreviewPrice,
+  atBracketPreviewPrices,
   buildAtSchwabOrderJson,
   closingInstructionForOpen,
   planAtOrderLegs,
@@ -173,6 +177,72 @@ describe("buildAtSchwabOrderJson", () => {
     expect(legs[1].price).toBe(17.6);
     const json = buildAtSchwabOrderJson(input);
     const child = (json.childOrderStrategies as Record<string, unknown>[])[0] as Record<string, unknown>;
+    expect(child.price).toBe(legs[1].price);
+  });
+
+  it("SPX mid 15.95: bracket @ preview, summary, leg plan, and JSON agree (16.00 / 17.60)", () => {
+    /** Bid 15.80 / ask 16.10 mid — use sum/2 so float noise does not tick to 15.90. */
+    const limitMid = (15.8 + 16.1) / 2;
+    const input = {
+      ...base,
+      template: "TRG w/ bracket" as const,
+      limitPrice: limitMid,
+      takeProfit: { enabled: true, mode: "percent" as const, offset: 10 },
+      stopLoss: { enabled: false, mode: "percent" as const, offset: -10 },
+    };
+    const { legs } = planAtOrderLegs(input);
+    const built = buildAtSchwabOrderJson(input);
+    const child = built.childOrderStrategies as Record<string, unknown>[];
+    const tpJson = (child[0] as Record<string, unknown>).price as number;
+
+    const tpBracket = atBracketLegPreviewPrice(input, "takeProfit");
+    const preview = atBracketPreviewPrices(input);
+
+    const prefs: ActiveTraderTemplatePrefs = {
+      template: "TRG w/ bracket",
+      qty: 1,
+      orderType: "LIMIT",
+      limitAnchor: "Mid",
+      takeProfit: input.takeProfit,
+      stopLoss: input.stopLoss,
+      autoSend: { enabled: false, armed: false },
+      ladderMode: "single",
+      verticalWidth: 5,
+      exitDuration: "GOOD_TILL_CANCEL",
+      stopLossOrderType: "STOP",
+      stopLimitOffset: 0.05,
+    };
+    const summary = buildAtSettingsSummary(prefs, limitMid, "BUY_TO_OPEN", undefined, "SPX");
+
+    expect(legs[0].price).toBe(16);
+    expect(legs[1].price).toBe(17.6);
+    expect(tpJson).toBe(17.6);
+    expect(tpBracket).toBe(17.6);
+    expect(preview.entryLimit).toBe(16);
+    expect(preview.takeProfit).toBe(17.6);
+    expect(summary).toContain("TP 17.60");
+    expect(summary).not.toMatch(/TP 17\.5[^0]/);
+  });
+
+  it("SPY penny tick: preview and JSON keep 0.01 increments", () => {
+    const input = {
+      assetType: "OPTION" as const,
+      symbol: "SPY   261117C00450000",
+      underlyingSymbol: "SPY",
+      primaryInstruction: "BUY_TO_OPEN" as const,
+      quantity: 1,
+      limitPrice: 1.054,
+      template: "TRG w/ bracket" as const,
+      takeProfit: { enabled: true, mode: "percent" as const, offset: 10 },
+      stopLoss: { enabled: false, mode: "percent" as const, offset: -10 },
+    };
+    const { legs } = planAtOrderLegs(input);
+    const tpBracket = atBracketLegPreviewPrice(input, "takeProfit");
+    const built = buildAtSchwabOrderJson(input);
+    const child = (built.childOrderStrategies as Record<string, unknown>[])[0] as Record<string, unknown>;
+    expect(legs[0].price).toBe(1.05);
+    expect(legs[1].price).toBe(1.16);
+    expect(tpBracket).toBe(legs[1].price);
     expect(child.price).toBe(legs[1].price);
   });
 

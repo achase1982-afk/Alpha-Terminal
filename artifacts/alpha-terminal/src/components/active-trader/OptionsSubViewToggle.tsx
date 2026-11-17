@@ -14,7 +14,8 @@ export const OptionsSubViewToggle = memo(function OptionsSubViewToggle({
   onChange,
   accentHex,
 }: OptionsSubViewToggleProps) {
-  const pill = "px-4 py-1 text-center rounded-full border text-[10px] font-medium tracking-widest uppercase transition-colors whitespace-nowrap";
+  const pill =
+    "px-4 py-1 text-center rounded-full border text-[10px] font-medium tracking-wide transition-colors whitespace-nowrap";
   return (
     <div className="flex justify-center px-3 mt-2 mb-1">
       <div

@@ -1,6 +1,7 @@
 import { memo, useMemo } from "react";
 import { ChevronDown } from "lucide-react";
 import { useActiveSymbol } from "@/components/dashboard/widgetSymbolContext";
+import { WatchlistToggle } from "@/components/MetricsBar";
 import { useQuote } from "@/hooks/useQuote";
 import { useTickColor } from "@/hooks/useTickColor";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
@@ -16,6 +17,7 @@ const HEADER_BG = "#0a0a0a";
 const UP_COLOR = "#00d166";
 const DOWN_COLOR = "#f23645";
 const FLAT_COLOR = "#9CA3AF";
+const SUBTITLE_GOLD = "#FFB800";
 
 function fmtPrice(n: number | null, digits = 2): string {
   if (n == null || Number.isNaN(n)) return "\u2014";
@@ -42,7 +44,6 @@ export const AtSymbolHeader = memo(function AtSymbolHeader() {
   const isDown = rawChange !== null && rawChange < 0;
   const priceColor = isDown ? DOWN_COLOR : isUp ? UP_COLOR : FLAT_COLOR;
 
-  const symU = symbol.toUpperCase();
   const streamLive = quote?.last ?? quote?.regularLast ?? quote?.extendedLast ?? null;
   const lastStr = streamLive != null ? `$${fmtPrice(streamLive)}` : "\u2014";
   const changeStr =
@@ -57,7 +58,7 @@ export const AtSymbolHeader = memo(function AtSymbolHeader() {
     rawPct != null ? `(${isUp ? "+" : isDown ? "\u2212" : ""}${fmtPrice(Math.abs(rawPct))}%)` : "(—%)";
 
   const displaySym = quote?.symbol ?? symbol.replace(/^\$/, "");
-  const name = quote?.description?.split(",")[0] ?? quote?.description ?? "";
+  const subtitle = quote?.description?.split(",")[0]?.trim() ?? quote?.description?.trim() ?? "";
 
   return (
     <div
@@ -66,13 +67,19 @@ export const AtSymbolHeader = memo(function AtSymbolHeader() {
       style={{ background: HEADER_BG }}
     >
       <div className="grid items-center gap-2" style={{ gridTemplateColumns: "minmax(0,1fr) auto minmax(0,1fr)" }}>
-        <div className="min-w-0">
-          <div className="flex items-baseline gap-1.5 min-w-0">
-            <span className="text-sm font-semibold text-white tracking-wide shrink-0">{displaySym}</span>
-            {name ? (
-              <span className="text-[10px] text-zinc-500 truncate font-normal">{name}</span>
-            ) : null}
-          </div>
+        <div className="min-w-0 flex flex-col gap-0.5">
+          <span className="inline-flex items-center gap-0.5 leading-none">
+            <span className="text-sm font-semibold text-white tracking-tight shrink-0">{displaySym}</span>
+            {displaySym ? <WatchlistToggle symbol={displaySym} /> : null}
+          </span>
+          {subtitle ? (
+            <span
+              className="text-[10px] font-medium tracking-wide uppercase leading-snug truncate"
+              style={{ color: SUBTITLE_GOLD }}
+            >
+              {subtitle}
+            </span>
+          ) : null}
         </div>
         <div className="flex flex-col items-center justify-center min-w-0">
           <span

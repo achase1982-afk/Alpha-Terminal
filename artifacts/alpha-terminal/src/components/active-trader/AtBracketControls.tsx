@@ -15,12 +15,12 @@ import type {
   AtStopLossOrderType,
   BracketLegPrefs,
 } from "@/lib/active-trader/activeTraderPrefs";
+import { formatSignedOffset, type BracketOffsetMode } from "@/lib/active-trader/atBracketMath";
 import {
-  computeBracketPrices,
-  formatSignedOffset,
-  type BracketOffsetMode,
-} from "@/lib/active-trader/atBracketMath";
-import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
+  atBracketLegPreviewPrice,
+  type AtOrderBuildInput,
+  type SchwabInstruction,
+} from "@/lib/active-trader/atSchwabOrderBuilder";
 
 const POINT_PRESETS = [0.5, 1, 2] as const;
 
@@ -29,6 +29,7 @@ interface AtBracketControlsProps {
   onPrefsChange: (p: ActiveTraderTemplatePrefs) => void;
   primaryInstruction: SchwabInstruction;
   entryPrice: number | null;
+  underlyingSymbol: string;
 }
 
 function LegEditor({
@@ -40,6 +41,8 @@ function LegEditor({
   entryPrice,
   quantity,
   primaryInstruction,
+  underlyingSymbol,
+  template,
 }: {
   title: string;
   legKey: "takeProfit" | "stopLoss";
@@ -49,18 +52,27 @@ function LegEditor({
   entryPrice: number | null;
   quantity: number;
   primaryInstruction: SchwabInstruction;
+  underlyingSymbol: string;
+  template: ActiveTraderTemplatePrefs["template"];
 }) {
-  const computed =
-    entryPrice != null && leg.enabled
-      ? computeBracketPrices({
-          entryPrice,
-          quantity,
-          primaryInstruction,
-          tp: legKey === "takeProfit" ? leg : { enabled: false, mode: "percent", offset: 10 },
-          sl: legKey === "stopLoss" ? leg : { enabled: false, mode: "percent", offset: -10 },
-        })
+  const legOff: BracketLegPrefs = { enabled: false, mode: "percent", offset: legKey === "takeProfit" ? 10 : -10 };
+  const legPrice =
+    entryPrice != null && entryPrice > 0 && leg.enabled
+      ? atBracketLegPreviewPrice(
+          {
+            template,
+            assetType: "OPTION",
+            symbol: "",
+            underlyingSymbol,
+            primaryInstruction,
+            quantity,
+            limitPrice: entryPrice,
+            takeProfit: legKey === "takeProfit" ? leg : legOff,
+            stopLoss: legKey === "stopLoss" ? leg : legOff,
+          } satisfies AtOrderBuildInput,
+          legKey,
+        )
       : null;
-  const legPrice = legKey === "takeProfit" ? computed?.takeProfit : computed?.stopLoss;
 
   return (
     <div className="space-y-1.5 py-2 border-t" style={{ borderColor: BORDER }}>
@@ -135,6 +147,7 @@ export const AtBracketControls = memo(function AtBracketControls({
   onPrefsChange,
   primaryInstruction,
   entryPrice,
+  underlyingSymbol,
 }: AtBracketControlsProps) {
   const patch = (partial: Partial<ActiveTraderTemplatePrefs>) =>
     onPrefsChange({ ...prefs, ...partial });
@@ -152,6 +165,8 @@ export const AtBracketControls = memo(function AtBracketControls({
         entryPrice={entryPrice}
         quantity={prefs.qty}
         primaryInstruction={primaryInstruction}
+        underlyingSymbol={underlyingSymbol}
+        template={prefs.template}
         onChange={(takeProfit) => patch({ takeProfit })}
       />
       <LegEditor
@@ -162,6 +177,8 @@ export const AtBracketControls = memo(function AtBracketControls({
         entryPrice={entryPrice}
         quantity={prefs.qty}
         primaryInstruction={primaryInstruction}
+        underlyingSymbol={underlyingSymbol}
+        template={prefs.template}
         onChange={(stopLoss) => patch({ stopLoss })}
       />
       <div className="flex flex-wrap items-end gap-3 py-2 border-t" style={{ borderColor: BORDER }}>

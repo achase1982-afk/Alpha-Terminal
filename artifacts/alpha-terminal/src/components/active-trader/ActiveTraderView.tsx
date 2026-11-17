@@ -475,6 +475,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const ladderMaxHeight = `max(360px, calc(100dvh - ${ladderHeaderTop + ladderHdrStack + ladderReserve}px))`;
 
   const expiryLabel = primary?.dateLabel ?? "\u2014";
+  const underlyingSymbol = symbol.replace(/^\$/, "").toUpperCase();
   const pressureHeadline = presentation?.headline?.trim() ? presentation.headline : "";
 
   return (
@@ -514,6 +515,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             primaryInstruction={templatePrimaryInstruction}
             limitMid={templateLimitMid}
             autoSendArmBlock={autoSendArmBlock}
+            underlyingSymbol={underlyingSymbol}
             windowSec={windowSec}
             onWindowSecChange={setWindowSec}
           />
@@ -529,7 +531,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           primaryInstruction={templatePrimaryInstruction}
           limitMid={templateLimitMid}
           expiryLabel={expiryLabel}
-          instrumentLabel={instrumentLabel}
+          underlyingSymbol={underlyingSymbol}
         />
         <div
           className="grid items-center px-0.5"

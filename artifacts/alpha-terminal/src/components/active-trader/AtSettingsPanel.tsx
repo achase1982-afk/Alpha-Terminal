@@ -25,7 +25,7 @@ interface AtSettingsSummaryProps {
   primaryInstruction: SchwabInstruction;
   limitMid: number | null;
   expiryLabel: string;
-  instrumentLabel: string;
+  underlyingSymbol: string;
   slim?: boolean;
 }
 
@@ -36,10 +36,16 @@ export const AtSettingsSummary = memo(function AtSettingsSummary({
   primaryInstruction,
   limitMid,
   expiryLabel,
-  instrumentLabel,
+  underlyingSymbol,
   slim = false,
 }: AtSettingsSummaryProps) {
-  const summary = buildAtSettingsSummary(prefs, limitMid, primaryInstruction, expiryLabel, instrumentLabel);
+  const summary = buildAtSettingsSummary(
+    prefs,
+    limitMid,
+    primaryInstruction,
+    expiryLabel,
+    underlyingSymbol,
+  );
 
   const handleSummaryKey = useCallback(
     (e: React.KeyboardEvent) => {
@@ -104,6 +110,7 @@ interface AtSettingsExpandedProps {
   primaryInstruction: SchwabInstruction;
   limitMid: number | null;
   autoSendArmBlock?: string | null;
+  underlyingSymbol: string;
   windowSec: 30 | 60 | 300;
   onWindowSecChange: (v: 30 | 60 | 300) => void;
 }
@@ -121,6 +128,7 @@ export const AtSettingsExpanded = memo(function AtSettingsExpanded({
   primaryInstruction,
   limitMid,
   autoSendArmBlock,
+  underlyingSymbol,
   windowSec,
   onWindowSecChange,
 }: AtSettingsExpandedProps) {
@@ -167,6 +175,7 @@ export const AtSettingsExpanded = memo(function AtSettingsExpanded({
         onPrefsChange={onPrefsChange}
         primaryInstruction={primaryInstruction}
         entryPrice={limitMid}
+        underlyingSymbol={underlyingSymbol}
       />
       <div
         className="px-3 py-2 grid grid-cols-2 gap-2 items-end"
@@ -231,7 +240,7 @@ export const AtSettingsExpanded = memo(function AtSettingsExpanded({
         prefs={prefs}
         primaryInstruction={primaryInstruction}
         limitPrice={limitMid}
-        underlyingSymbol={instrumentLabel}
+        underlyingSymbol={underlyingSymbol}
       />
     </div>
   );

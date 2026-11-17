@@ -108,6 +108,7 @@ export function registerAtFixtureFromLocation(): void {
       ...s.streamPrices,
       SPX: {
         symbol: "SPX",
+        description: "S&P 500 INDEX",
         last: FIXTURE_SPX_SPOT,
         regularLast: FIXTURE_SPX_SPOT,
         extendedLast: null,
