@@ -13,7 +13,7 @@ export default defineConfig({
     trace: "off",
   },
   webServer: {
-    command: `VITE_QA_HARNESS=true pnpm exec vite --host 127.0.0.1 --port ${port}`,
+    command: `VITE_QA_HARNESS=true VITE_DEV_BYPASS_AUTH=true pnpm exec vite --host 127.0.0.1 --port ${port}`,
     url: `http://127.0.0.1:${port}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

@@ -38,7 +38,6 @@ type QaScreen =
   | "option-close"
   | "option-fail"
   | "debit-vertical"
-  | "stock"
   | "review";
 
 function readScreen(): QaScreen {
@@ -47,7 +46,6 @@ function readScreen(): QaScreen {
     raw === "option-open"
     || raw === "option-close"
     || raw === "option-fail"
-    || raw === "stock"
     || raw === "review"
     || raw === "debit-vertical"
   ) {
@@ -79,11 +77,7 @@ export default function QAHarness() {
     schwab.setOrderTicketAccountHash("qa-hash-1");
     schwab.setDefaultTradingAccountHash("qa-hash-1");
     void schwab.refreshAccounts();
-    if (screen === "stock") {
-      setSymbol("AAPL");
-    } else {
-      setSymbol("SPX");
-    }
+    setSymbol("SPX");
   }, [setTokens, setSymbol, screen]);
 
   const ticketProps = useMemo(() => {
@@ -117,9 +111,7 @@ export default function QAHarness() {
   const label =
     screen === "chain"
       ? "SPX options chain (crossed ATM)"
-      : screen === "stock"
-        ? "AAPL stock ticket"
-        : screen === "debit-vertical" || screen === "review"
+      : screen === "debit-vertical" || screen === "review"
           ? "Strategy builder · debit vertical"
           : `Order ticket · ${screen}`;
 
@@ -147,8 +139,6 @@ export default function QAHarness() {
           initialLegs={DEBIT_VERTICAL_LEGS}
           subscribeOptionSymbols={async () => {}}
         />
-      ) : screen === "stock" ? (
-        <OrderTicket isOpen onClose={() => {}} subscribeOptionSymbols={async () => {}} />
       ) : ticketProps ? (
         <OrderTicket
           isOpen

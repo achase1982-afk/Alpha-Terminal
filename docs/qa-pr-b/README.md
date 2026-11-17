@@ -14,8 +14,7 @@ Harness **debit-vertical** and **review** use Strategy Builder (before script sw
 | Pair prefix | Proves (after vs before) |
 |-------------|---------------------------|
 | `option-open` | Stream bid/ask on ticket; SPX **$0.10** tick snap on Mid (**3.78 → 3.80**). |
-| `debit-vertical` | **Positive** multi-leg spread NBBO (2.45 / mid / 2.60) after NBBO direction fix. |
-| `stock` | Equity limit **cent** formatting: live **187.41 / 187.43** stream vs mid rounded to **187.42**. |
+| `debit-vertical` | **Positive** multi-leg spread NBBO (2.45 / mid / 2.60) and max risk from **snapped** limit ($255 at 2.55). |
 | `review` | Real **Order Confirmation** with enabled Review + snapped limit (not disabled form). |
 | `option-fail-review` | **FAIL** liquidity with entered limit **3.50** visible; Review stays disabled. |
 

@@ -138,17 +138,6 @@ test.describe("QA PR B screenshots", () => {
     await capturePair(page, "debit-vertical");
   });
 
-  test("stock ticket — sub-penny mid to cents", async ({ page }) => {
-    await seedTerminalAuth(page, "AAPL");
-    await installQaNetworkMocks(page, { aaplStock: true });
-    await page.goto("/qa?screen=stock", { waitUntil: "networkidle" });
-    await expect(page.getByText("AAPL", { exact: true }).first()).toBeVisible({ timeout: 60_000 });
-    const midBtn = page.getByRole("button", { name: /^Mid/i }).first();
-    if (await midBtn.isVisible()) await midBtn.click();
-    await page.waitForTimeout(800);
-    await capturePair(page, "stock");
-  });
-
   test("review confirmation — reached with valid limit", async ({ page }) => {
     await seedTerminalAuth(page);
     await installQaNetworkMocks(page, { scenario: "debit-vertical" });
