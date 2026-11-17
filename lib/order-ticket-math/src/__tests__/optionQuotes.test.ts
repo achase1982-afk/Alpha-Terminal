@@ -12,6 +12,14 @@ describe("optionQuotes", () => {
     expect(midpointFromBidAsk(null, 1)).toBeNull();
   });
 
+  it("returns null mid when any leg quote is missing", () => {
+    const agg = aggregateSpreadNBBO([
+      { instruction: "BUY_TO_OPEN", bid: 3.7, ask: 3.8 },
+      { instruction: "SELL_TO_OPEN", bid: null, ask: 1.25 },
+    ]);
+    expect(agg?.mid).toBeNull();
+  });
+
   it("flags crossed aggregated spreads without swapping", () => {
     const agg = aggregateSpreadNBBO([
       { instruction: "BUY_TO_OPEN", bid: 3.7, ask: 3.8 },

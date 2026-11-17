@@ -294,11 +294,16 @@ router.post("/place-order", async (req, res) => {
   if (preTradeGate != null && !gatePayload) {
     return res.status(400).json({ error: "invalid_pre_trade_gate" });
   }
-  if (serverShouldRejectOrder(gatePayload ?? undefined)) {
+  if (gatePayload?.enabled !== false && (gatePayload == null || serverShouldRejectOrder(gatePayload))) {
+    const blocking =
+      gatePayload?.checks.filter((c) => c.level === "RED" || c.level === "YELLOW").map((c) => c.id) ?? [];
     return res.status(403).json({
       error: "pre_trade_blocked",
-      message: "Order blocked by pre-trade risk gate",
-      blockingCheckIds: gatePayload?.checks.filter((c) => c.level === "RED").map((c) => c.id) ?? [],
+      message:
+        gatePayload == null
+          ? "Pre-trade checks are required before sending this order."
+          : "Order blocked by pre-trade risk checks. Review the ticket or adjust your limits.",
+      blockingCheckIds: blocking,
     });
   }
 

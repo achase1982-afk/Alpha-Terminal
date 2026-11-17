@@ -18,6 +18,58 @@ export function midpointFromBidAsk(bid: number | null | undefined, ask: number |
   return (bid! + ask!) / 2;
 }
 
+export interface PairedBidAsk {
+  bid: number;
+  ask: number;
+  source: "stream" | "contract";
+  crossed: boolean;
+}
+
+export interface PairedQuoteSource {
+  streamBid?: number;
+  streamAsk?: number;
+  streamTs?: number;
+  contractBid?: number;
+  contractAsk?: number;
+}
+
+function pairComplete(bid?: number, ask?: number): bid is number {
+  return (
+    bid != null &&
+    ask != null &&
+    Number.isFinite(bid) &&
+    Number.isFinite(ask) &&
+    bid > 0 &&
+    ask > 0
+  );
+}
+
+/**
+ * Bid and ask from the same source — never mix streamed and stored legs field-by-field.
+ * Prefers the stream when it has a complete pair (assumed fresher when `streamTs` is set).
+ */
+export function resolvePairedBidAsk(source: PairedQuoteSource): PairedBidAsk | null {
+  const streamOk = pairComplete(source.streamBid, source.streamAsk);
+  const contractOk = pairComplete(source.contractBid, source.contractAsk);
+
+  const pick = (bid: number, ask: number, from: "stream" | "contract"): PairedBidAsk => ({
+    bid,
+    ask,
+    source: from,
+    crossed: bid > ask,
+  });
+
+  if (streamOk && contractOk) {
+    if (source.streamTs != null && source.streamTs > 0) {
+      return pick(source.streamBid!, source.streamAsk!, "stream");
+    }
+    return pick(source.streamBid!, source.streamAsk!, "stream");
+  }
+  if (streamOk) return pick(source.streamBid!, source.streamAsk!, "stream");
+  if (contractOk) return pick(source.contractBid!, source.contractAsk!, "contract");
+  return null;
+}
+
 export interface SpreadNBBO {
   bid: number;
   ask: number;
@@ -28,6 +80,7 @@ export interface SpreadNBBO {
 /**
  * Net spread bid/ask from leg quotes (SELL legs add bid/ask; BUY legs subtract opposite side).
  * Normalizes net-debit (negative raw) and net-credit (positive raw) into a non-crossed pair when valid.
+ * Missing any leg quote makes spread mid unavailable.
  */
 export function aggregateSpreadNBBO(
   legs: Array<{ instruction: string; bid?: number | null; ask?: number | null }>,
@@ -35,10 +88,15 @@ export function aggregateSpreadNBBO(
   if (legs.length === 0) return null;
   let rawBid = 0;
   let rawAsk = 0;
+  let haveAllLegs = true;
   for (const leg of legs) {
+    if (quoteSideState(leg.bid, leg.ask) !== "ok") {
+      haveAllLegs = false;
+      break;
+    }
     const isSell = leg.instruction.startsWith("SELL");
-    const bid = leg.bid ?? 0;
-    const ask = leg.ask ?? 0;
+    const bid = leg.bid!;
+    const ask = leg.ask!;
     if (isSell) {
       rawBid += bid;
       rawAsk += ask;
@@ -46,6 +104,10 @@ export function aggregateSpreadNBBO(
       rawBid -= ask;
       rawAsk -= bid;
     }
+  }
+
+  if (!haveAllLegs) {
+    return { bid: 0, ask: 0, mid: null, crossed: false };
   }
 
   let spreadBid: number;

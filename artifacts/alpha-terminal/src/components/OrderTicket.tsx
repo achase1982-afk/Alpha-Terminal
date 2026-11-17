@@ -7,13 +7,18 @@ import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { formatSchwabAccountType } from "@/lib/schwabAccountAggregate";
 import { startStrategistPolling } from "@/lib/strategistPoller";
-import { computeStrategyEconomics } from "@/lib/strategyCalculator";
 import {
   aggregateSpreadNBBO,
   computeOrderEconomics,
+  displaySubmittedLimit,
   evaluateTicketPreTradeGate,
+  formatLimitPriceDisplay,
   midpointFromBidAsk,
-  parseTickRoundedLimit,
+  optionMidLimit,
+  parseCanonicalLimit,
+  resolveSubmittedLimit,
+  schwabPriceFromTicket,
+  stockMidLimit,
 } from "@workspace/order-ticket-math";
 import { useGetOptionChain } from "@workspace/api-client-react";
 import {
@@ -413,14 +418,22 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const ORDER_TYPES = isOption ? OPTION_ORDER_TYPES : STOCK_ORDER_TYPES;
   const DURATIONS = isOption ? OPTION_DURATIONS : STOCK_DURATIONS;
 
+  const limitTickCtx = useMemo(
+    () => ({ underlyingSymbol: symbol, isOption: !!isOption }),
+    [symbol, isOption],
+  );
+
   const spreadPrices = useMemo(() => {
     if (!isMultiLeg || !strategyLegs || strategyLegs.length === 0) return null;
     const agg = aggregateSpreadNBBO(strategyLegs);
     if (!agg) return null;
-    const spreadMid = agg.mid ?? parseTickRoundedLimit(limitPrice, strategyNetPrice) ?? 0.01;
-    if (spreadMid <= 0) return { spreadBid: 0.01, spreadMid: 0.01, spreadAsk: 0.01, crossed: agg.crossed };
-    return { spreadBid: agg.bid, spreadMid, spreadAsk: agg.ask, crossed: agg.crossed };
-  }, [isMultiLeg, strategyLegs, strategyNetPrice, limitPrice]);
+    const roundedMid =
+      agg.mid != null
+        ? parseCanonicalLimit(agg.mid, limitTickCtx)
+        : parseCanonicalLimit(limitPrice, limitTickCtx, strategyNetPrice ?? null);
+    const spreadMid = roundedMid ?? null;
+    return { spreadBid: agg.bid, spreadMid, spreadAsk: agg.ask, crossed: agg.crossed || spreadMid == null };
+  }, [isMultiLeg, strategyLegs, strategyNetPrice, limitPrice, limitTickCtx]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -532,6 +545,28 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const needsStop = orderType === "STOP" || orderType === "STOP_LIMIT" || orderType === "TRAILING_STOP_LIMIT";
   const needsTrail = orderType === "TRAILING_STOP" || orderType === "TRAILING_STOP_LIMIT";
 
+  const submittedLimit = useMemo(
+    () =>
+      resolveSubmittedLimit(
+        limitTickCtx,
+        needsLimit || isMultiLeg ? limitPrice : undefined,
+        isMultiLeg
+          ? strategyNetPrice
+          : orderType === "MARKET"
+            ? (side === "BUY" ? quote?.ask : quote?.bid) ?? quote?.last ?? null
+            : quote?.last ?? null,
+      ),
+    [
+      limitTickCtx, limitPrice, needsLimit, isMultiLeg, strategyNetPrice, orderType, side,
+      quote?.ask, quote?.bid, quote?.last,
+    ],
+  );
+
+  const submittedLimitDisplay = useMemo(
+    () => displaySubmittedLimit(limitTickCtx, submittedLimit),
+    [limitTickCtx, submittedLimit],
+  );
+
   const ticketEconomics = useMemo(() => {
     const econLegs = isMultiLeg && strategyLegs
       ? strategyLegs.map((l) => ({
@@ -558,13 +593,14 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       quantity,
       isCredit: strategyIsCredit,
       isOption,
+      underlyingSymbol: symbol,
       contractCount: isMultiLeg && strategyLegs
         ? strategyLegs.reduce((s, l) => s + l.quantity, 0) * quantity
         : quantity,
     });
   }, [
     isMultiLeg, strategyLegs, isOption, side, orderType, quote?.ask, quote?.bid, quote?.last,
-    limitPrice, needsLimit, strategyNetPrice, quantity, strategyIsCredit,
+    limitPrice, needsLimit, strategyNetPrice, quantity, strategyIsCredit, symbol,
   ]);
 
   const estimatedCost = useMemo(() => ticketEconomics?.grossNotional ?? null, [ticketEconomics]);
@@ -594,7 +630,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     const spreadMaxRisk = ticketEconomics ? ticketEconomics.maxRisk / Math.max(1, quantity) : null;
     const allChecks = runPreTradeChecks({
       side, quantity,
-      limitPrice: parseFloat(limitPrice) || null,
+      limitPrice: submittedLimit,
       bid: isMultiLeg && spreadPrices ? spreadPrices.spreadBid : (effectiveBid ?? null),
       ask: isMultiLeg && spreadPrices ? spreadPrices.spreadAsk : (effectiveAsk ?? null),
       last: quote?.last ?? null,
@@ -607,7 +643,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       return allChecks.filter(c => !["pulse", "rr", "size"].includes(c.id));
     }
     return allChecks;
-  }, [side, quantity, limitPrice, effectiveBid, effectiveAsk, quote?.last, pulseData, preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, accountSize, stratMinPoP, isOption, preTradeEnabled, isMultiLeg, strategyLegs, strategyNetPrice, spreadPrices, isCloseOrder, ticketEconomics]);
+  }, [side, quantity, submittedLimit, effectiveBid, effectiveAsk, quote?.last, pulseData, preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, accountSize, stratMinPoP, isOption, preTradeEnabled, isMultiLeg, strategyLegs, strategyNetPrice, spreadPrices, isCloseOrder, ticketEconomics]);
 
   const overallRisk = useMemo(() => getOverallLevel(riskChecks), [riskChecks]);
 
@@ -623,32 +659,36 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     if (preTradeGate.shouldBlockSubmit) return false;
     if (quantity <= 0) return false;
     if (!accountHash) return false;
-    if (isMultiLeg && orderType !== "MARKET") return !!limitPrice && parseFloat(limitPrice) > 0;
+    if (isMultiLeg && orderType !== "MARKET") return submittedLimit != null && submittedLimit > 0;
     if (isMultiLeg && orderType === "MARKET") return true;
-    if (needsLimit && (!limitPrice || parseFloat(limitPrice) <= 0)) return false;
+    if (needsLimit && (submittedLimit == null || submittedLimit <= 0)) return false;
     if (needsStop && (!stopPrice || parseFloat(stopPrice) <= 0)) return false;
     if (needsTrail && (!trailOffset || parseFloat(trailOffset) <= 0)) return false;
     return true;
-  }, [quantity, needsLimit, limitPrice, needsStop, stopPrice, needsTrail, trailOffset, accountHash, isMultiLeg, preTradeGate.shouldBlockSubmit]);
+  }, [quantity, needsLimit, submittedLimit, needsStop, stopPrice, needsTrail, trailOffset, accountHash, isMultiLeg, preTradeGate.shouldBlockSubmit]);
 
   const buildSchwabOrder = useCallback(() => {
     const isSeamless = extendedHours || duration === "SEAMLESS" || duration === "GOOD_TILL_CANCEL_EXT";
     const session = isSeamless ? "SEAMLESS" : "NORMAL";
 
     if (isMultiLeg && strategyLegs) {
-      const parsed = parseFloat(limitPrice || "0");
+      const parsed = schwabPriceFromTicket(limitTickCtx, limitPrice, strategyNetPrice ?? null);
       const isTrueMultiLeg = strategyLegs.length >= 2;
       if (isTrueMultiLeg) {
         // SEAMLESS session does not allow MARKET orders — force a limit price using spread mid if needed
-        const seamlessFallbackPrice = isSeamless && parsed <= 0 && spreadPrices ? spreadPrices.spreadMid : null;
+        const seamlessFallbackPrice =
+          isSeamless && parsed <= 0 && spreadPrices?.spreadMid != null ? spreadPrices.spreadMid : null;
         const resolvedPrice = parsed > 0 ? parsed : (seamlessFallbackPrice ?? 0);
         const useMarket = !isSeamless && (orderType === "MARKET" || resolvedPrice <= 0);
-        // Determine net direction from actual current leg prices (sell legs contribute positive, buy legs negative)
-        const netDirection = strategyLegs.reduce((acc, leg) => {
+        let netDirection = strategyLegs.reduce((acc, leg) => {
           const isSell = leg.instruction.startsWith("SELL");
-          const mid = midpointFromBidAsk(leg.bid, leg.ask) ?? 0;
+          const mid = midpointFromBidAsk(leg.bid, leg.ask);
+          if (mid == null) return acc;
           return acc + (isSell ? mid : -mid);
         }, 0);
+        if (netDirection === 0 && strategyIsCredit != null) {
+          netDirection = strategyIsCredit ? 1 : -1;
+        }
         // Schwab multi-leg orderType: NET_CREDIT when net is positive, NET_DEBIT when negative
         const spreadOrderType = useMarket ? "MARKET" : (netDirection >= 0 ? "NET_CREDIT" : "NET_DEBIT");
         // Auto-detect complexOrderStrategyType from leg symbols
@@ -680,7 +720,8 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
         return o;
       }
       const singleLeg = strategyLegs[0];
-      const seamlessFallbackPriceSingle = isSeamless && parsed <= 0 && spreadPrices ? spreadPrices.spreadMid : null;
+      const seamlessFallbackPriceSingle =
+        isSeamless && parsed <= 0 && spreadPrices?.spreadMid != null ? spreadPrices.spreadMid : null;
       const resolvedSinglePrice = parsed > 0 ? parsed : (seamlessFallbackPriceSingle ?? 0);
       const singleUseMarket = !isSeamless && (orderType === "MARKET" || resolvedSinglePrice <= 0);
       const o: Record<string, unknown> = {
@@ -701,9 +742,10 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     // Single-leg: SEAMLESS session requires LIMIT — fall back to mid price if MARKET selected
     const singleMid = midpointFromBidAsk(quote?.bid, quote?.ask) ?? quote?.ask ?? quote?.last ?? 0;
     const resolvedOrderType = isSeamless && orderType === "MARKET" ? "LIMIT" : orderType;
-    const resolvedLimitPrice = isSeamless && orderType === "MARKET" && !limitPrice
-      ? singleMid.toFixed(2)
-      : limitPrice;
+    const resolvedLimitPrice =
+      isSeamless && orderType === "MARKET" && !limitPrice
+        ? formatLimitPriceDisplay(singleMid, limitTickCtx)
+        : submittedLimitDisplay || limitPrice;
     const resolvedNeedsLimit = resolvedOrderType === "LIMIT" || resolvedOrderType === "WALK_LIMIT" || needsLimit;
 
     const order: Record<string, unknown> = {
@@ -717,7 +759,9 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
         instrument: { symbol: optionSymbol ?? symbol, assetType: isOption ? "OPTION" : "EQUITY" },
       }],
     };
-    if (resolvedNeedsLimit) order.price = parseFloat(resolvedLimitPrice || "0");
+    if (resolvedNeedsLimit) {
+      order.price = schwabPriceFromTicket(limitTickCtx, resolvedLimitPrice, submittedLimit ?? singleMid);
+    }
     if (needsStop) order.stopPrice = parseFloat(stopPrice || "0");
     if (needsTrail) {
       order.stopPriceLinkBasis = "LAST";
@@ -728,7 +772,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     if (exchange !== "BEST") order.requestedDestination = exchange;
     if (taxLotMethod !== "DEFAULT") order.taxLotMethod = taxLotMethod;
     return order;
-  }, [orderType, extendedHours, duration, side, quantity, symbol, optionSymbol, isOption, isMultiLeg, strategyLegs, strategyIsCredit, isCloseOrder, optionInstruction, needsLimit, limitPrice, needsStop, stopPrice, needsTrail, trailOffset, instruction, exchange, taxLotMethod, spreadPrices, quote]);
+  }, [orderType, extendedHours, duration, side, quantity, symbol, optionSymbol, isOption, isMultiLeg, strategyLegs, strategyIsCredit, isCloseOrder, optionInstruction, needsLimit, limitPrice, needsStop, stopPrice, needsTrail, trailOffset, instruction, exchange, taxLotMethod, spreadPrices, quote, limitTickCtx, submittedLimit, submittedLimitDisplay, strategyNetPrice]);
 
   const handleSubmit = useCallback(async () => {
     if (!accountHash || preTradeGate.shouldBlockSubmit) return;
@@ -754,20 +798,10 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
         tradingModeLabel: strategistParsed?.modeReason ?? null,
         eventConflicts: strategistParsed?.criteria?.eventConflicts ?? null,
         ivr: strategistParsed?.tickerData?.ivr ?? null,
-        entryPrice: parseFloat(limitPrice) || null,
+        entryPrice: submittedLimit,
         isCredit: isMultiLeg ? (strategyIsCredit ?? false) : false,
-        maxLoss: (() => {
-          if (!isMultiLeg || !strategyLegs || strategyLegs.length < 2) return null;
-          const credit = parseFloat(limitPrice) || 0;
-          const qty = parseInt(String(quantity)) || 1;
-          return computeStrategyEconomics({ legs: strategyLegs, netPrice: credit, quantity: qty, isCredit: strategyIsCredit }).maxRisk;
-        })(),
-        maxGain: (() => {
-          if (!isMultiLeg || !strategyLegs || strategyLegs.length < 2) return null;
-          const credit = parseFloat(limitPrice) || 0;
-          const qty = parseInt(String(quantity)) || 1;
-          return computeStrategyEconomics({ legs: strategyLegs, netPrice: credit, quantity: qty, isCredit: strategyIsCredit }).maxProfit;
-        })(),
+        maxLoss: isMultiLeg && ticketEconomics ? ticketEconomics.maxRisk : null,
+        maxGain: isMultiLeg && ticketEconomics ? ticketEconomics.maxProfit : null,
         thesis: strategistParsed?.narrative ?? null,
         legs: strategyLegs ? strategyLegs.map(l => ({
           symbol: l.schwabSymbol,
@@ -788,18 +822,17 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
           accountHash,
           order,
           journalContext,
-          preTradeGate: preTradeEnabled
-            ? {
-                blockOnRed: preTradeBlockOnRed,
-                overall: overallRisk,
-                checks: riskChecks.map((c) => ({ id: c.id, level: c.level })),
-              }
-            : undefined,
+          preTradeGate: {
+            enabled: preTradeEnabled,
+            blockOnRed: preTradeBlockOnRed,
+            overall: preTradeEnabled ? overallRisk : "GREEN",
+            checks: preTradeEnabled ? riskChecks.map((c) => ({ id: c.id, level: c.level })) : [],
+          },
         }),
       });
       const data = await res.json();
       if (!res.ok || data.error) {
-        setErrorMsg(data.message || data.error || "Order rejected");
+        setErrorMsg(humanizeFailedApiBody(res.status, JSON.stringify(data)));
         setStage("error");
         return;
       }
@@ -810,9 +843,9 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       setStage("error");
     }
   }, [
-    accountHash, buildSchwabOrder, symbol, side, pulseData, limitPrice, isMultiLeg, strategyIsCredit,
+    accountHash, buildSchwabOrder, symbol, side, pulseData, submittedLimit, isMultiLeg, strategyIsCredit,
     strategyLegs, quantity, isOption, preTradeGate.shouldBlockSubmit, preTradeEnabled, preTradeBlockOnRed,
-    overallRisk, riskChecks,
+    overallRisk, riskChecks, ticketEconomics,
   ]);
 
   // ── Send-to-Strategist (trade validation) ────────────────────────────────
@@ -846,14 +879,12 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     let estMaxRisk: number | null = null;
     let estMaxProfit: number | null = null;
     let breakeven: number | null = null;
-    if (isMultiLeg && strategyLegs && strategyLegs.length >= 2) {
-      const px = parseFloat(limitPrice) || 0;
-      const econ = computeStrategyEconomics({ legs: strategyLegs, netPrice: px, quantity, isCredit: strategyIsCredit });
-      estMaxRisk = econ.maxRisk;
-      estMaxProfit = econ.maxProfit;
-      if (econ.breakevens.length === 1) breakeven = econ.breakevens[0];
+    if (ticketEconomics && isMultiLeg && strategyLegs && strategyLegs.length >= 2) {
+      estMaxRisk = ticketEconomics.maxRisk;
+      estMaxProfit = ticketEconomics.maxProfit;
+      if (ticketEconomics.breakevens.length === 1) breakeven = ticketEconomics.breakevens[0];
     } else if (!isOption) {
-      const px = parseFloat(limitPrice) || quote?.last || 0;
+      const px = submittedLimit ?? quote?.last ?? 0;
       estMaxRisk = px * quantity;
     }
 
@@ -1024,25 +1055,35 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   ]);
 
   const setMidPrice = useCallback(() => {
-    if (isMultiLeg && spreadPrices) {
-      setLimitPrice(spreadPrices.spreadMid.toFixed(2));
+    if (isMultiLeg && spreadPrices?.spreadMid != null) {
+      setLimitPrice(displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid));
       return;
     }
-    const mid = midpointFromBidAsk(quote?.bid, quote?.ask);
-    if (mid != null) {
-      const rounded = parseTickRoundedLimit(mid);
-      if (rounded != null) setLimitPrice(rounded.toFixed(2));
+    if (isOption) {
+      const s = optionMidLimit(limitTickCtx, quote?.bid, quote?.ask);
+      if (s) setLimitPrice(s);
+      return;
     }
-  }, [quote?.bid, quote?.ask, isMultiLeg, spreadPrices]);
+    const s = stockMidLimit(quote?.bid, quote?.ask);
+    if (s) setLimitPrice(s);
+  }, [quote?.bid, quote?.ask, isMultiLeg, spreadPrices, limitTickCtx, isOption]);
 
   const setNatPrice = useCallback(() => {
     if (isMultiLeg && spreadPrices) {
-      setLimitPrice(strategyIsCredit ? spreadPrices.spreadBid.toFixed(2) : spreadPrices.spreadAsk.toFixed(2));
+      const raw = strategyIsCredit ? spreadPrices.spreadBid : spreadPrices.spreadAsk;
+      const px = parseCanonicalLimit(raw, limitTickCtx);
+      if (px != null) setLimitPrice(displaySubmittedLimit(limitTickCtx, px));
       return;
     }
-    if (side === "BUY" && quote?.ask != null) setLimitPrice(quote.ask.toFixed(2));
-    else if (side === "SELL" && quote?.bid != null) setLimitPrice(quote.bid.toFixed(2));
-  }, [side, quote?.ask, quote?.bid, isMultiLeg, spreadPrices, strategyIsCredit]);
+    const raw = side === "BUY" ? quote?.ask : quote?.bid;
+    if (raw == null) return;
+    if (isOption) {
+      const px = parseCanonicalLimit(raw, limitTickCtx);
+      if (px != null) setLimitPrice(displaySubmittedLimit(limitTickCtx, px));
+    } else {
+      setLimitPrice(String(raw));
+    }
+  }, [side, quote?.ask, quote?.bid, isMultiLeg, spreadPrices, strategyIsCredit, limitTickCtx, isOption]);
 
   const sliderValue = useMemo(() => {
     if (effectiveBid == null || effectiveAsk == null) return 50;
@@ -1307,8 +1348,9 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               <>
                 {/* STRATEGY METRICS — 4-col grid matching StrategyBuilder */}
                 {(() => {
-                  const netPrice = parseFloat(limitPrice) || strategyNetPrice || 0;
-                  const econ = computeStrategyEconomics({ legs: strategyLegs, netPrice, quantity, isCredit: strategyIsCredit });
+                  const econ = ticketEconomics;
+                  if (!econ) return null;
+                  const netPrice = econ.netPricePerShare;
                   const netAmt = netPrice * 100 * quantity;
                   const maxRisk = econ.maxRisk;
                   const maxGain = econ.maxProfit;
@@ -1522,11 +1564,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
 
                   <div className="mt-1 flex flex-wrap items-center justify-between gap-1 pt-1 text-[11px]" style={{ borderTop: `1px dashed ${DIVIDER}`, color: MUTED }}>
                     <span>Total {strategyIsCredit ? "credit" : "cost"} {estimatedCost != null ? fmtCurrency(Math.abs(estimatedCost)) : "—"}</span>
-                    <span>Max risk {(() => {
-                      const netP = parseFloat(limitPrice) || strategyNetPrice || 0;
-                      const econ = computeStrategyEconomics({ legs: strategyLegs, netPrice: netP, quantity, isCredit: strategyIsCredit });
-                      return fmtCurrency(econ.maxRisk);
-                    })()}</span>
+                    <span>Max risk {ticketEconomics ? fmtCurrency(ticketEconomics.maxRisk) : "—"}</span>
                     <span>Fees $0.65/ct</span>
                   </div>
                 </div>
@@ -1942,9 +1980,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                   <div className="flex items-center gap-2">
                     <span className="text-[11px]" style={{ color: MUTED }}>
                       {(() => {
-                        const netP = parseFloat(limitPrice) || strategyNetPrice || 0;
-                        const econ = computeStrategyEconomics({ legs: strategyLegs, netPrice: netP, quantity, isCredit: strategyIsCredit });
-                        const mr = econ.maxRisk;
+                        const mr = ticketEconomics?.maxRisk ?? 0;
                         const popLeg = strategyIsCredit
                           ? strategyLegs.find(l => l.instruction.startsWith("SELL"))
                           : strategyLegs.find(l => l.instruction.startsWith("BUY"));
@@ -1971,13 +2007,13 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 {!riskCollapsed && (
                   <div className="mt-1.5 space-y-1.5">
                     {(() => {
-                      const netP = parseFloat(limitPrice) || strategyNetPrice || 0;
+                      const netP = ticketEconomics?.netPricePerShare ?? strategyNetPrice ?? 0;
                       const stks = strategyLegs.map(l => l.strike).sort((a, b) => a - b);
                       const w = stks.length >= 2 ? stks[stks.length - 1] - stks[0] : 0;
-                      const econ = computeStrategyEconomics({ legs: strategyLegs, netPrice: netP, quantity, isCredit: strategyIsCredit });
-                      const mr = econ.maxRisk;
-                      const maxProfit = econ.maxProfit;
-                      const bePrice = econ.breakevens[0] ?? (strategyIsCredit
+                      const econ = ticketEconomics;
+                      const mr = econ?.maxRisk ?? 0;
+                      const maxProfit = econ?.maxProfit ?? 0;
+                      const bePrice = econ?.breakevens[0] ?? (strategyIsCredit
                         ? (strategyLegs[0]?.optionType === "PUT" ? stks[stks.length - 1] - netP : stks[0] + netP)
                         : (strategyLegs[0]?.optionType === "CALL" ? stks[0] + netP : stks[stks.length - 1] - netP));
 
@@ -2129,11 +2165,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
           {isMultiLeg && strategyLegs ? (
             <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-[12px]" style={{ color: TEXT }}>
               <span>{quantity} spread{quantity !== 1 ? "s" : ""} · {strategyIsCredit ? "Credit" : "Cost"} {estimatedCost != null ? fmtCurrency(Math.abs(estimatedCost)) : "—"}</span>
-              <span>Risk {(() => {
-                const netP = parseFloat(limitPrice) || strategyNetPrice || 0;
-                const econ = computeStrategyEconomics({ legs: strategyLegs, netPrice: netP, quantity, isCredit: strategyIsCredit });
-                return fmtCurrency(econ.maxRisk);
-              })()}</span>
+              <span>Risk {ticketEconomics ? fmtCurrency(ticketEconomics.maxRisk) : "—"}</span>
               <span>POP {(() => {
                 const popLeg = strategyIsCredit
                   ? strategyLegs.find(l => l.instruction.startsWith("SELL"))
@@ -2147,7 +2179,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
             </div>
           ) : (
             <div className="flex justify-between flex-wrap gap-1 mb-1" style={{ fontSize: S.label, color: TEXT }}>
-              <span>{isBuy ? "Buy" : "Sell"} {quantity} {isOption ? "contract" : "share"}{quantity > 1 ? "s" : ""} · {needsLimit ? `Limit ${limitPrice || "—"}` : ORDER_TYPES.find(t => t.value === orderType)?.label}</span>
+              <span>{isBuy ? "Buy" : "Sell"} {quantity} {isOption ? "contract" : "share"}{quantity > 1 ? "s" : ""} · {needsLimit ? `Limit ${submittedLimitDisplay || "—"}` : ORDER_TYPES.find(t => t.value === orderType)?.label}</span>
               {estimatedCost != null && <span>Notional {fmtCurrency(Math.abs(estimatedCost))}</span>}
               {preTradeEnabled && <span>Risk: {overallRisk === "GREEN" ? "PASS" : overallRisk === "YELLOW" ? "WARN" : "FAIL"}</span>}
             </div>
@@ -2175,8 +2207,11 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 if (sendMode === "strategist") void handleSendToStrategist();
                 else setStage("review");
               }}
-              disabled={sendMode === "strategist" && strategistDispatchInFlight}
-              className="tracking-[0.04em] transition-all duration-150 active:scale-[0.98] disabled:opacity-60"
+              disabled={
+                (sendMode === "strategist" && strategistDispatchInFlight)
+                || (sendMode !== "strategist" && (preTradeGate.shouldBlockReview || !isValid))
+              }
+              className="tracking-[0.04em] transition-all duration-150 active:scale-[0.98]"
               style={{
                 flex: 2,
                 fontSize: isMultiLeg ? 16 : 17,
@@ -2241,7 +2276,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                   })}
                   <div className="flex justify-between mt-1 pt-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
                     <span style={{ fontSize: S.label, color: MUTED }}>Net price</span>
-                    <span style={{ fontSize: S.heading, color: WHITE }}>${limitPrice}</span>
+                    <span style={{ fontSize: S.heading, color: WHITE }}>${submittedLimitDisplay || "—"}</span>
                   </div>
                 </>
               ) : (
@@ -2260,7 +2295,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                   {needsLimit && (
                     <div className="flex justify-between" style={{ fontSize: S.body }}>
                       <span style={{ color: MUTED }}>Limit price</span>
-                      <span style={{ color: WHITE }}>${limitPrice}</span>
+                      <span style={{ color: WHITE }}>${submittedLimitDisplay || "—"}</span>
                     </div>
                   )}
                   {needsStop && (
@@ -2281,92 +2316,60 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 <span style={{ color: MUTED }}>Duration</span>
                 <span style={{ color: WHITE }}>{DURATIONS.find((d) => d.value === duration)?.label}{extendedHours ? " + Ext" : ""}</span>
               </div>
-              {(() => {
-                const totalContracts = isOption
-                  ? (isMultiLeg && strategyLegs
-                      ? strategyLegs.reduce((sum, l) => sum + l.quantity, 0) * quantity
-                      : quantity)
-                  : 0;
-                const commissionPerContract = 0.65;
-                const totalCommission = totalContracts * commissionPerContract;
-                const netPrice = parseFloat(limitPrice) || strategyNetPrice || 0;
-                const grossCost = estimatedCost != null ? Math.abs(estimatedCost) : 0;
-                const totalCost = grossCost + totalCommission;
-                const econMulti = isMultiLeg && strategyLegs
-                  ? computeStrategyEconomics({ legs: strategyLegs, netPrice, quantity, isCredit: strategyIsCredit })
-                  : null;
-                const bpEffect = econMulti
-                  ? -(econMulti.maxRisk + totalCommission)
-                  : (side === "BUY" ? -(grossCost + totalCommission) : grossCost - totalCommission);
-                const breakevens: number[] = econMulti ? econMulti.breakevens : [];
-                let maxProfit: number | null = null;
-                let maxLoss: number | null = null;
-                if (econMulti && strategyLegs) {
-                  const strikes = strategyLegs.map(l => l.strike).sort((a, b) => a - b);
-                  const width = strikes.length >= 2 ? strikes[strikes.length - 1] - strikes[0] : 0;
-                  if (econMulti.isIronCondor || width > 0) {
-                    maxProfit = econMulti.maxProfit;
-                    maxLoss = econMulti.maxRisk;
-                  } else {
-                    maxProfit = strategyIsCredit ? netPrice * 100 * quantity : null;
-                    maxLoss = strategyIsCredit ? null : netPrice * 100 * quantity;
-                  }
-                }
-                return (
-                  <>
-                    <div className="pt-1 mt-1 space-y-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
-                      <div className="flex justify-between" style={{ fontSize: S.body }}>
-                        <span style={{ color: MUTED }}>Net {strategyIsCredit ? "credit" : "debit"}</span>
-                        <span style={{ color: WHITE }}>{fmtCurrency(grossCost)}</span>
-                      </div>
-                      {totalContracts > 0 && (
-                        <div className="flex justify-between" style={{ fontSize: S.body }}>
-                          <span style={{ color: MUTED }}>Commissions ({totalContracts} × $0.65)</span>
-                          <span style={{ color: WHITE }}>{fmtCurrency(totalCommission)}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between pt-1" style={{ fontSize: S.body, borderTop: `1px dashed ${DIVIDER}` }}>
-                        <span style={{ color: TEXT, fontWeight: 500 }}>Total {strategyIsCredit ? "credit" : "cost"}</span>
-                        <span style={{ color: WHITE, fontWeight: 600, fontSize: S.price }}>
-                          {fmtCurrency(strategyIsCredit ? grossCost - totalCommission : totalCost)}
-                        </span>
-                      </div>
+              {ticketEconomics && (
+                <>
+                  <div className="pt-1 mt-1 space-y-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
+                    <div className="flex justify-between" style={{ fontSize: S.body }}>
+                      <span style={{ color: MUTED }}>Net {strategyIsCredit ? "credit" : "debit"}</span>
+                      <span style={{ color: WHITE }}>{fmtCurrency(Math.abs(ticketEconomics.grossNotional))}</span>
                     </div>
-
-                    {(breakevens.length > 0 || maxProfit != null || maxLoss != null) && (
-                      <div className="pt-1 mt-1 space-y-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
-                        {breakevens.length > 0 && (
-                          <div className="flex justify-between" style={{ fontSize: S.body }}>
-                            <span style={{ color: MUTED }}>Breakeven{breakevens.length > 1 ? "s" : ""}</span>
-                            <span style={{ color: WHITE }}>{breakevens.map(b => `$${b.toFixed(2)}`).join(" / ")}</span>
-                          </div>
-                        )}
-                        {maxProfit != null && (
-                          <div className="flex justify-between" style={{ fontSize: S.body }}>
-                            <span style={{ color: MUTED }}>Max profit</span>
-                            <span style={{ color: UP }}>{fmtCurrency(maxProfit)}</span>
-                          </div>
-                        )}
-                        {maxLoss != null && (
-                          <div className="flex justify-between" style={{ fontSize: S.body }}>
-                            <span style={{ color: MUTED }}>Max loss</span>
-                            <span style={{ color: DOWN }}>{fmtCurrency(maxLoss)}</span>
-                          </div>
-                        )}
+                    {ticketEconomics.commissionTotal > 0 && (
+                      <div className="flex justify-between" style={{ fontSize: S.body }}>
+                        <span style={{ color: MUTED }}>Commissions</span>
+                        <span style={{ color: WHITE }}>{fmtCurrency(ticketEconomics.commissionTotal)}</span>
                       </div>
                     )}
-
-                    <div className="pt-1 mt-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
-                      <div className="flex justify-between" style={{ fontSize: S.body }}>
-                        <span style={{ color: MUTED }}>Buying power effect</span>
-                        <span style={{ color: bpEffect >= 0 ? UP : DOWN }}>
-                          {bpEffect >= 0 ? "+" : "−"}{fmtCurrency(Math.abs(bpEffect))}
-                        </span>
-                      </div>
+                    <div className="flex justify-between pt-1" style={{ fontSize: S.body, borderTop: `1px dashed ${DIVIDER}` }}>
+                      <span style={{ color: TEXT, fontWeight: 500 }}>Total {strategyIsCredit ? "credit" : "cost"}</span>
+                      <span style={{ color: WHITE, fontWeight: 600, fontSize: S.price }}>
+                        {fmtCurrency(strategyIsCredit ? ticketEconomics.totalCreditAfterFees : ticketEconomics.totalCostInclFees)}
+                      </span>
                     </div>
-                  </>
-                );
-              })()}
+                  </div>
+
+                  {(ticketEconomics.breakevens.length > 0 || ticketEconomics.maxProfit > 0 || ticketEconomics.maxRisk > 0) && (
+                    <div className="pt-1 mt-1 space-y-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
+                      {ticketEconomics.breakevens.length > 0 && (
+                        <div className="flex justify-between" style={{ fontSize: S.body }}>
+                          <span style={{ color: MUTED }}>Breakeven{ticketEconomics.breakevens.length > 1 ? "s" : ""}</span>
+                          <span style={{ color: WHITE }}>{ticketEconomics.breakevens.map((b) => `$${b.toFixed(2)}`).join(" / ")}</span>
+                        </div>
+                      )}
+                      {ticketEconomics.maxProfit > 0 && (
+                        <div className="flex justify-between" style={{ fontSize: S.body }}>
+                          <span style={{ color: MUTED }}>Max profit</span>
+                          <span style={{ color: UP }}>{fmtCurrency(ticketEconomics.maxProfit)}</span>
+                        </div>
+                      )}
+                      {ticketEconomics.maxRisk > 0 && (
+                        <div className="flex justify-between" style={{ fontSize: S.body }}>
+                          <span style={{ color: MUTED }}>Max loss</span>
+                          <span style={{ color: DOWN }}>{fmtCurrency(ticketEconomics.maxRisk)}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="pt-1 mt-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
+                    <div className="flex justify-between" style={{ fontSize: S.body }}>
+                      <span style={{ color: MUTED }}>Buying power effect</span>
+                      <span style={{ color: ticketEconomics.buyingPowerEffect >= 0 ? UP : DOWN }}>
+                        {ticketEconomics.buyingPowerEffect >= 0 ? "+" : "−"}{fmtCurrency(Math.abs(ticketEconomics.buyingPowerEffect))}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="px-3 py-1.5 flex items-start gap-2" style={{ background: `${GOLD}08`, borderRadius: 10, border: `1px solid ${GOLD}1a` }}>
@@ -2381,7 +2384,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               <button
                 onClick={handleSubmit}
                 disabled={preTradeGate.shouldBlockSubmit || !isValid}
-                className="flex-[2] tracking-[0.04em] active:scale-[0.98] transition-transform disabled:opacity-50"
+                className="flex-[2] tracking-[0.04em] active:scale-[0.98] transition-transform"
                 style={{
                   fontSize: 16,
                   height: 42,

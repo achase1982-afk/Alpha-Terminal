@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { computeOrderEconomics } from "../orderEconomics.js";
 
+const spx = { underlyingSymbol: "SPX", isOption: true as const };
+
 describe("computeOrderEconomics", () => {
   it("uses tick-rounded limit for single-leg debit (3.78 → $378 max risk)", () => {
     const econ = computeOrderEconomics({
+      ...spx,
       legs: [{ strike: 350, optionType: "CALL", instruction: "BUY_TO_OPEN" }],
       limitPrice: "3.78",
       fallbackNetPrice: 3.775,
       quantity: 1,
       isCredit: false,
-      isOption: true,
     });
     expect(econ).not.toBeNull();
     expect(econ!.netPricePerShare).toBe(3.8);
@@ -19,11 +21,11 @@ describe("computeOrderEconomics", () => {
 
   it("matches gross and max risk after user edit to odd-cent limit", () => {
     const econ = computeOrderEconomics({
+      ...spx,
       legs: [{ strike: 350, optionType: "CALL", instruction: "BUY_TO_OPEN" }],
       limitPrice: "3.80",
       quantity: 2,
       isCredit: false,
-      isOption: true,
     });
     expect(econ!.grossNotional).toBe(760);
     expect(econ!.maxRisk).toBe(760);
@@ -33,6 +35,7 @@ describe("computeOrderEconomics", () => {
 
   it("net debit vertical uses width minus tick-rounded net", () => {
     const econ = computeOrderEconomics({
+      ...spx,
       legs: [
         { strike: 350, optionType: "CALL", instruction: "BUY_TO_OPEN" },
         { strike: 355, optionType: "CALL", instruction: "SELL_TO_OPEN" },
@@ -40,7 +43,6 @@ describe("computeOrderEconomics", () => {
       limitPrice: "1.23",
       quantity: 1,
       isCredit: false,
-      isOption: true,
     });
     expect(econ!.netPricePerShare).toBe(1.25);
     expect(econ!.maxRisk).toBe(125);
@@ -49,6 +51,7 @@ describe("computeOrderEconomics", () => {
 
   it("labels pre-fee vs post-fee totals for credits", () => {
     const econ = computeOrderEconomics({
+      ...spx,
       legs: [
         { strike: 350, optionType: "CALL", instruction: "SELL_TO_OPEN" },
         { strike: 355, optionType: "CALL", instruction: "BUY_TO_OPEN" },
@@ -56,10 +59,20 @@ describe("computeOrderEconomics", () => {
       limitPrice: "1.05",
       quantity: 1,
       isCredit: true,
-      isOption: true,
       contractCount: 2,
     });
     expect(econ!.grossNotional).toBe(105);
     expect(econ!.totalCreditAfterFees).toBe(103.7);
+  });
+
+  it("charges no commission on stock tickets", () => {
+    const econ = computeOrderEconomics({
+      underlyingSymbol: "AAPL",
+      isOption: false,
+      limitPrice: "100",
+      quantity: 10,
+      isCredit: false,
+    });
+    expect(econ!.commissionTotal).toBe(0);
   });
 });

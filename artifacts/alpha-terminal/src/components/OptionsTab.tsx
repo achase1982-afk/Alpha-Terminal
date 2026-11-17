@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { Reorder } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
-import { resolveAtmStrike } from "@workspace/order-ticket-math";
+import { resolveAtmStrike, resolvePairedBidAsk } from "@workspace/order-ticket-math";
 
 const EPS = 0.0001;
 const COL_W = 74;
@@ -390,14 +390,30 @@ const DataCell = memo(function DataCell({
   const startPos = useRef<{ x: number; y: number } | null>(null);
   const SWIPE_THRESHOLD = 10;
 
-  const topVal = getStreamVal(tick, col.topKey) ?? getContractVal(contract, col.topKey);
+  const isBid = col.id === "bid";
+  const isAsk = col.id === "ask";
+
+  const paired = useMemo(
+    () =>
+      resolvePairedBidAsk({
+        streamBid: getStreamVal(tick, "bid"),
+        streamAsk: getStreamVal(tick, "ask"),
+        streamTs: tick?.ts,
+        contractBid: getContractVal(contract, "bid"),
+        contractAsk: getContractVal(contract, "ask"),
+      }),
+    [tick, contract],
+  );
+
+  const topVal = isBid
+    ? (paired?.crossed ? undefined : paired?.bid)
+    : isAsk
+      ? (paired?.crossed ? undefined : paired?.ask)
+      : (getStreamVal(tick, col.topKey) ?? getContractVal(contract, col.topKey));
   const bottomVal = col.bottomKey
     ? (getStreamVal(tick, col.bottomKey) ?? getContractVal(contract, col.bottomKey))
     : undefined;
   const topStr = fmtNum(topVal, col.topDecimals);
-
-  const isBid = col.id === "bid";
-  const isAsk = col.id === "ask";
   const isOI = col.id === "oi";
   const isVol = col.id === "vol";
   const oiVal = isVol ? getContractVal(contract, "openInterest") : undefined;

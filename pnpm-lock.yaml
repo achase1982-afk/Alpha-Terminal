@@ -39,9 +39,6 @@ catalogs:
     clsx:
       specifier: 2.1.1
       version: 2.1.1
-    drizzle-orm:
-      specifier: ^0.45.2
-      version: 0.45.2
     framer-motion:
       specifier: ^12.23.24
       version: 12.35.1
@@ -60,9 +57,6 @@ catalogs:
     tailwindcss:
       specifier: ^4.1.14
       version: 4.2.1
-    tsx:
-      specifier: ^4.21.0
-      version: 4.21.0
     vite:
       specifier: ^7.3.2
       version: 7.3.2
@@ -305,7 +299,7 @@ importers:
         version: 0.5.19(tailwindcss@4.2.1)
       '@tailwindcss/vite':
         specifier: 'catalog:'
-        version: 4.2.1(vite@7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.9.0))
+        version: 4.2.1(vite@7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1))
       '@tanstack/react-query':
         specifier: 'catalog:'
         version: 5.90.21(react@19.1.0)
@@ -323,7 +317,7 @@ importers:
         version: 19.2.3(@types/react@19.2.14)
       '@vitejs/plugin-react':
         specifier: 'catalog:'
-        version: 5.1.4(vite@7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.9.0))
+        version: 5.1.4(vite@7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1))
       '@workspace/api-client-react':
         specifier: workspace:*
         version: link:../../lib/api-client-react
@@ -333,9 +327,6 @@ importers:
       '@workspace/movers-types':
         specifier: workspace:*
         version: link:../../lib/movers-types
-      '@workspace/order-ticket-math':
-        specifier: workspace:*
-        version: link:../../lib/order-ticket-math
       class-variance-authority:
         specifier: 'catalog:'
         version: 0.7.1
@@ -401,7 +392,7 @@ importers:
         version: 1.1.2(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       vite:
         specifier: 'catalog:'
-        version: 7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.9.0)
+        version: 7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)
       vitest:
         specifier: ^2.1.9
         version: 2.1.9(@types/node@25.3.5)(lightningcss@1.31.1)
@@ -471,9 +462,6 @@ importers:
       '@workspace/movers-types':
         specifier: workspace:*
         version: link:../../lib/movers-types
-      '@workspace/order-ticket-math':
-        specifier: workspace:*
-        version: link:../../lib/order-ticket-math
       '@workspace/strategist-card-bullets':
         specifier: workspace:*
         version: link:../../lib/strategist-card-bullets
@@ -849,18 +837,6 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 25.3.5
-
-  lib/order-ticket-math:
-    devDependencies:
-      '@types/node':
-        specifier: 'catalog:'
-        version: 25.3.5
-      typescript:
-        specifier: ~5.9.2
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.9
-        version: 2.1.9(@types/node@25.3.5)(lightningcss@1.31.1)
 
   lib/strategist-card-bullets:
     dependencies:
@@ -7104,6 +7080,13 @@ snapshots:
       tailwindcss: 4.2.1
       vite: 7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.9.0)
 
+  '@tailwindcss/vite@4.2.1(vite@7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1))':
+    dependencies:
+      '@tailwindcss/node': 4.2.1
+      '@tailwindcss/oxide': 4.2.1
+      tailwindcss: 4.2.1
+      vite: 7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)
+
   '@tanstack/query-core@5.90.16': {}
 
   '@tanstack/query-core@5.90.20': {}
@@ -7302,6 +7285,18 @@ snapshots:
       '@types/babel__core': 7.20.5
       react-refresh: 0.18.0
       vite: 7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.9.0)
+    transitivePeerDependencies:
+      - supports-color
+
+  '@vitejs/plugin-react@5.1.4(vite@7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1))':
+    dependencies:
+      '@babel/core': 7.29.0
+      '@babel/plugin-transform-react-jsx-self': 7.27.1(@babel/core@7.29.0)
+      '@babel/plugin-transform-react-jsx-source': 7.27.1(@babel/core@7.29.0)
+      '@rolldown/pluginutils': 1.0.0-rc.3
+      '@types/babel__core': 7.20.5
+      react-refresh: 0.18.0
+      vite: 7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -9648,6 +9643,20 @@ snapshots:
     optionalDependencies:
       '@types/node': 25.3.5
       fsevents: 2.3.3
+      lightningcss: 1.31.1
+
+  vite@7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1):
+    dependencies:
+      esbuild: 0.27.3
+      fdir: 6.5.0(picomatch@4.0.4)
+      picomatch: 4.0.4
+      postcss: 8.5.8
+      rollup: 4.59.0
+      tinyglobby: 0.2.15
+    optionalDependencies:
+      '@types/node': 25.3.5
+      fsevents: 2.3.3
+      jiti: 2.6.1
       lightningcss: 1.31.1
 
   vite@7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.9.0):
