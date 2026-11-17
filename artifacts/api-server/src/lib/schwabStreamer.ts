@@ -1251,8 +1251,6 @@ export function deskStreamerAfterLoginAppSubsThenDeskReplay(): void {
   }
   if (subscribedOptionSymbols.size > 0) {
     sendOptionSubscription([...subscribedOptionSymbols], { replayDesk: false });
-  } else if (deskAddedOptionSymbols.size > 0) {
-    deskStreamerReplayDeskAfterAppLevelOneSub();
   }
   if (subscribedFuturesOptionSymbols.size > 0) {
     sendFuturesOptionSubscription([...subscribedFuturesOptionSymbols]);
@@ -1796,6 +1794,33 @@ function processOptionsBook(content: Record<string, unknown>[]) {
   }
 }
 
+function applyLevelOneOptionsCapRejection(msgText: string | undefined): void {
+  const parsed = streamerSubParseRejection(msgText);
+  if (parsed.kind !== "cap" || parsed.discarded <= 0 || parsed.service !== "LEVELONE_OPTIONS") return;
+  streamerSubRecordRejection(
+    parsed.service,
+    `cap_discard_${parsed.discarded}`,
+    "cap_discard",
+  );
+  const before = streamerWireSimulatorAllLevelOneKeysOnWire().size;
+  const order = streamerSubLowestPriorityWireDropOrder();
+  streamerWireSimulatorDropLevelOneByPriority(order, parsed.discarded);
+  const after = streamerWireSimulatorAllLevelOneKeysOnWire().size;
+  const dropped = before - after;
+  if (dropped < parsed.discarded) {
+    streamerSubRecordRejection(
+      "LEVELONE_OPTIONS",
+      `cap_discard_unattributed_${parsed.discarded - dropped}`,
+      "cap_discard_unattributed",
+    );
+  }
+}
+
+/** Vitest: Schwab LEVELONE_OPTIONS ADD cap rejection (health + simulator). */
+export function __schwabStreamerApplyLevelOneOptionsCapRejectionForTests(msgText: string): void {
+  applyLevelOneOptionsCapRejection(msgText);
+}
+
 function handleMessage(raw: string) {
   onSchwabInboundFrame(raw);
   let msg: Record<string, unknown>;
@@ -1835,24 +1860,14 @@ function handleMessage(raw: string) {
         if (service === "LEVELONE_OPTIONS" || service === "OPTIONS_BOOK") {
           const parsed = streamerSubParseRejection(msgText);
           if (parsed.kind === "cap" && parsed.discarded > 0) {
-            streamerSubRecordRejection(
-              parsed.service,
-              `cap_discard_${parsed.discarded}`,
-              "cap_discard",
-            );
             if (parsed.service === "LEVELONE_OPTIONS") {
-              const before = streamerWireSimulatorAllLevelOneKeysOnWire().size;
-              const order = streamerSubLowestPriorityWireDropOrder();
-              streamerWireSimulatorDropLevelOneByPriority(order, parsed.discarded);
-              const after = streamerWireSimulatorAllLevelOneKeysOnWire().size;
-              const dropped = before - after;
-              if (dropped < parsed.discarded) {
-                streamerSubRecordRejection(
-                  "LEVELONE_OPTIONS",
-                  `cap_discard_unattributed_${parsed.discarded - dropped}`,
-                  "cap_discard_unattributed",
-                );
-              }
+              applyLevelOneOptionsCapRejection(msgText);
+            } else {
+              streamerSubRecordRejection(
+                parsed.service,
+                `cap_discard_${parsed.discarded}`,
+                "cap_discard",
+              );
             }
           } else if (parsed.kind === "symbol") {
             streamerSubRecordRejection(
