@@ -24,6 +24,8 @@ export interface AtFixtureOverride {
   tapStrike?: number;
   openReviewOnMount?: boolean;
   settingsPanelOpen?: boolean;
+  /** Dev: open trade strip for a vertical tap on mount */
+  verticalStripOnMount?: boolean;
 }
 
 let fixtureOverride: AtFixtureOverride | null = null;

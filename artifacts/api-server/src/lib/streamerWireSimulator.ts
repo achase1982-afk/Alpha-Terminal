@@ -11,6 +11,8 @@ type WireReq = {
 
 const liveAppL1Options = new Set<string>();
 const liveDeskL1Options = new Set<string>();
+/** Schwab counts every key in each ADD toward the cap, including duplicate ADD of keys already live. */
+let levelOneOptionsAddPressure = 0;
 const liveAppOptionsBook = new Set<string>();
 const liveDeskOptionsBook = new Set<string>();
 
@@ -26,6 +28,7 @@ function applyLevelOneOptions(req: WireReq): void {
     liveAppL1Options.clear();
     for (const k of keys) liveAppL1Options.add(k);
     liveDeskL1Options.clear();
+    levelOneOptionsAddPressure = keys.length;
     return;
   }
   if (cmd === "UNSUBS") {
@@ -36,6 +39,7 @@ function applyLevelOneOptions(req: WireReq): void {
     return;
   }
   if (cmd === "ADD") {
+    levelOneOptionsAddPressure += keys.length;
     for (const k of keys) liveDeskL1Options.add(k);
   }
 }
@@ -104,6 +108,12 @@ export function streamerWireSimulatorResetForTests(): void {
   liveDeskL1Options.clear();
   liveAppOptionsBook.clear();
   liveDeskOptionsBook.clear();
+  levelOneOptionsAddPressure = 0;
+}
+
+/** Keys accounted toward Schwab LEVELONE_OPTIONS cap (duplicate ADD batches count again). */
+export function streamerWireSimulatorLevelOneAddPressure(): number {
+  return levelOneOptionsAddPressure;
 }
 
 /** Schwab ADD/SUBS rejections drop keys from the broker-side list model. */

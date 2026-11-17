@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach } from "vitest";
 import {
   streamerWireSimulatorApplyPayload,
   streamerWireSimulatorDeskLevelOneKeysOnWire,
+  streamerWireSimulatorLevelOneAddPressure,
   streamerWireSimulatorLiveLevelOneOptionsCount,
   streamerWireSimulatorRemoveLevelOneOptions,
   streamerWireSimulatorResetForTests,
@@ -25,6 +26,21 @@ describe("streamerWireSimulator", () => {
     });
     expect(streamerWireSimulatorLiveLevelOneOptionsCount()).toBe(4);
     expect(streamerWireSimulatorDeskLevelOneKeysOnWire().has("D1")).toBe(true);
+  });
+
+  it("counts duplicate ADD batches toward cap pressure while unique live keys stay deduped", () => {
+    const keys = Array.from({ length: 100 }, (_, i) => `DUP-${i}`);
+    const batch = keys.join(",");
+    streamerWireSimulatorApplyPayload({
+      requests: [{ service: "LEVELONE_OPTIONS", command: "ADD", parameters: { keys: batch } }],
+    });
+    expect(streamerWireSimulatorLiveLevelOneOptionsCount()).toBe(100);
+    expect(streamerWireSimulatorLevelOneAddPressure()).toBe(100);
+    streamerWireSimulatorApplyPayload({
+      requests: [{ service: "LEVELONE_OPTIONS", command: "ADD", parameters: { keys: batch } }],
+    });
+    expect(streamerWireSimulatorLiveLevelOneOptionsCount()).toBe(100);
+    expect(streamerWireSimulatorLevelOneAddPressure()).toBe(200);
   });
 
   it("removes rejected keys from live set", () => {

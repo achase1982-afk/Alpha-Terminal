@@ -46,7 +46,12 @@ export function registerAtFixtureFromLocation(): void {
   const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
   const sceneParam = params.get("scene") ?? "default";
   const scene = (
-    sceneParam === "settings-expanded" || sceneParam === "focus-off" ? "default" : sceneParam
+    sceneParam === "settings-expanded" ||
+    sceneParam === "focus-off" ||
+    sceneParam === "vertical" ||
+    sceneParam === "strip-vertical"
+      ? "default"
+      : sceneParam
   ) as AtFixtureOverride["scene"];
   const settingsPanelOpen = sceneParam === "settings-expanded" || params.get("panel") === "open";
   const focusOff = sceneParam === "focus-off" || params.get("focus") === "off";
@@ -72,9 +77,11 @@ export function registerAtFixtureFromLocation(): void {
     initialSubView,
     chain: buildFixtureChainResponse(),
     underlyingPrice: FIXTURE_SPX_SPOT,
-    tapStrike: scene === "strip" || scene === "confirm" ? 7545 : undefined,
+    tapStrike:
+      sceneParam === "strip" || sceneParam === "strip-vertical" || scene === "confirm" ? 7545 : undefined,
     openReviewOnMount: scene === "confirm",
     settingsPanelOpen,
+    verticalStripOnMount: sceneParam === "strip-vertical",
     presentation: {
       regimeLabel: FIXTURE_REGIME.label,
       regimeDegraded: FIXTURE_REGIME.degraded,
@@ -185,6 +192,11 @@ export function registerAtFixtureFromLocation(): void {
     takeProfit: { enabled: true, mode: "percent" as const, offset: 10 },
     stopLoss: { enabled: false, mode: "percent" as const, offset: -10 },
     autoSend: { enabled: false, armed: false },
+    ladderMode:
+      sceneParam === "vertical" || sceneParam === "strip-vertical"
+        ? ("vertical" as const)
+        : ("single" as const),
+    verticalWidth: 5 as const,
   };
   saveActiveTraderPrefs("index", atPrefs);
 

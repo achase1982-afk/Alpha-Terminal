@@ -5,6 +5,8 @@ export type AtTemplateKind = "Single" | "OCO" | "TRG w/ bracket";
 export type AtOrderType = "LIMIT" | "MKT";
 export type AtLimitAnchor = "Mid" | "Bid" | "Ask";
 export type BracketOffsetMode = "percent" | "points" | "dollars";
+export type AtLadderMode = "single" | "vertical";
+export type AtVerticalWidth = 5 | 10 | 25;
 
 export interface BracketLegPrefs {
   enabled: boolean;
@@ -20,9 +22,11 @@ export interface ActiveTraderTemplatePrefs {
   takeProfit: BracketLegPrefs;
   stopLoss: BracketLegPrefs;
   autoSend: AtAutoSendPrefs;
+  ladderMode: AtLadderMode;
+  verticalWidth: AtVerticalWidth;
 }
 
-const STORAGE_KEY = "activeTraderPrefs:v4";
+const STORAGE_KEY = "activeTraderPrefs:v5";
 
 const DEFAULTS: ActiveTraderTemplatePrefs = {
   template: "TRG w/ bracket",
@@ -32,6 +36,8 @@ const DEFAULTS: ActiveTraderTemplatePrefs = {
   takeProfit: { enabled: true, mode: "percent", offset: 10 },
   stopLoss: { enabled: false, mode: "percent", offset: -10 },
   autoSend: { enabled: false, armed: false },
+  ladderMode: "single",
+  verticalWidth: 5,
 };
 
 export function loadActiveTraderPrefs(symbolClass: "index" | "equity"): ActiveTraderTemplatePrefs {

@@ -4,12 +4,12 @@ import {
   TOOLBAR_H, SUB_HEADER_H, BG, BG_EXP_BAR, BG_HEADER, BORDER, BORDER_ROW, DIM, GRAY, WHITE, MONO, FW_LIGHT, UP, DOWN, noScrollbar,
 } from "@/components/options/optionsTheme";
 import { buildAtHoldSignature } from "@/lib/active-trader/atHoldSig";
+import type { ZoneModel } from "@/lib/active-trader/zonesModel";
 import {
   loadActiveTraderPrefs,
   saveActiveTraderPrefs,
   type ActiveTraderTemplatePrefs,
 } from "@/lib/active-trader/activeTraderPrefs";
-import { computeZoneModel, type ChainRowForZones, type ZoneModel } from "@/lib/active-trader/zonesModel";
 import { useFlowByKey } from "@/lib/active-trader/useFlowByKey";
 import { findAtmStrikeIndex } from "@/lib/optionsSchwabKey";
 import { useChainOptionHold } from "@/hooks/useChainOptionHold";
@@ -33,13 +33,17 @@ import {
   submitAtSchwabOrder,
 } from "@/lib/active-trader/atPlaceOrder";
 import { planAtOrderLegs } from "@/lib/active-trader/atSchwabOrderBuilder";
+import { AT_VERTICAL_LADDER_ENABLED } from "@/lib/active-trader/atOrderSend";
 import { toast } from "@/hooks/use-toast";
 import { AtSettingsPanel } from "./AtSettingsPanel";
 import {
   loadAtSettingsPanelOpen,
   saveAtSettingsPanelOpen,
 } from "@/lib/active-trader/atSettingsPanelState";
-import { LadderBody, type LadderRowModel } from "./LadderBody";
+import { LadderBody, type AtTradeContext, type LadderRowModel } from "./LadderBody";
+import { useAtLiveZones } from "@/lib/active-trader/useAtLiveZones";
+import type { AtVerticalWidth } from "@/lib/active-trader/activeTraderPrefs";
+import { AT_LADDER_PANEL_BG } from "@/lib/active-trader/atLadderLayout";
 import { AtLadderSkeleton } from "./AtLadderSkeleton";
 import { AtKeyLevelsStrip } from "./AtKeyLevelsStrip";
 import { AT_LADDER_GRID, AT_LADDER_GROUP_HDR_H, AT_LADDER_ROW_H } from "@/lib/active-trader/atLadderLayout";
@@ -101,13 +105,14 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     put_sell: true,
   });
   const [tradeStripStrike, setTradeStripStrike] = useState<number | null>(null);
-  const [tradeContext, setTradeContext] = useState<{ contract: OptionsContract; type: "CALL" | "PUT" } | null>(null);
+  const [tradeContext, setTradeContext] = useState<AtTradeContext | null>(null);
   const [selected, setSelected] = useState<{ contract: OptionsContract; type: "CALL" | "PUT" } | null>(null);
   const [regimeLabel, setRegimeLabel] = useState<string | null>(null);
   const [regimeDegraded, setRegimeDegraded] = useState(false);
 
   const symbolClass = symbol.toUpperCase().includes("SPX") || symbol.startsWith("$") ? "index" : "equity";
   const [prefs, setPrefs] = useState<ActiveTraderTemplatePrefs>(() => loadActiveTraderPrefs(symbolClass));
+  const ladderMode = AT_VERTICAL_LADDER_ENABLED ? prefs.ladderMode : "single";
   const [settingsOpen, setSettingsOpen] = useState(
     () => settingsPanelInitiallyOpen ?? loadAtSettingsPanelOpen(),
   );
@@ -145,7 +150,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       initialTradeSelection.type === "CALL" ? row?.call : row?.put;
     if (!contract) return;
     setSelected({ contract, type: initialTradeSelection.type });
-    setTradeContext({ contract, type: initialTradeSelection.type });
+    setTradeContext({ mode: "single", contract, type: initialTradeSelection.type });
     setTradeStripStrike(contract.strike);
   }, [initialTradeSelection, primary]);
 
@@ -185,18 +190,15 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   const flowByKey = useFlowByKey(streamKeys, windowSec * 1000);
 
-  const zones = useMemo(() => {
-    if (presentation?.zones) return presentation.zones;
-    if (!primary) return computeZoneModel([], underlyingPrice);
-    const rows: ChainRowForZones[] = primary.rows.map((r) => ({
-      strike: r.strike,
-      callOi: r.call?.openInterest ?? 0,
-      putOi: r.put?.openInterest ?? 0,
-      callGamma: r.call?.gamma ?? null,
-      putGamma: r.put?.gamma ?? null,
-    }));
-    return computeZoneModel(rows, underlyingPrice);
-  }, [primary, underlyingPrice, presentation?.zones]);
+  const zones = useAtLiveZones(primary?.rows, underlyingPrice, presentation?.zones);
+
+  const rowByStrike = useMemo(() => {
+    const m = new Map<number, LadderRowModel>();
+    for (const r of primary?.rows ?? []) {
+      m.set(r.strike, { strike: r.strike, call: r.call, put: r.put });
+    }
+    return m;
+  }, [primary]);
 
   const classifiedPct = useMemo(() => {
     if (presentation?.classifiedPct != null) return presentation.classifiedPct;
@@ -380,18 +382,50 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   const handleQuoteTap = useCallback((contract: OptionsContract, type: "CALL" | "PUT", _side: "BUY" | "SELL") => {
     setSelected({ contract, type });
-    setTradeContext({ contract, type });
+    setTradeContext({ mode: "single", contract, type });
     setTradeStripStrike(contract.strike);
   }, []);
 
+  const handleVerticalTap = useCallback(
+    (payload: {
+      anchorStrike: number;
+      farStrike: number;
+      type: "CALL" | "PUT";
+      side: "BUY" | "SELL";
+      nearContract: OptionsContract;
+    }) => {
+      setSelected({ contract: payload.nearContract, type: payload.type });
+      setTradeContext({
+        mode: "vertical",
+        type: payload.type,
+        anchorStrike: payload.anchorStrike,
+        farStrike: payload.farStrike,
+        width: prefs.verticalWidth,
+        nearContract: payload.nearContract,
+      });
+      setTradeStripStrike(payload.anchorStrike);
+    },
+    [prefs.verticalWidth],
+  );
+
   useEffect(() => {
     const fx = getAtFixtureOverride();
-    if (!fx || fx.scene !== "strip" || !primary) return;
-    const row = primary.rows.find((r) => r.strike === (fx.tapStrike ?? 7545));
-    const contract = row?.call;
-    if (!contract) return;
-    handleQuoteTap(contract, "CALL", "BUY");
-  }, [primary, handleQuoteTap]);
+    if (!fx || !primary) return;
+    const strike = fx.tapStrike ?? 7545;
+    const row = primary.rows.find((r) => r.strike === strike);
+    if (fx.verticalStripOnMount && row?.call) {
+      handleVerticalTap({
+        anchorStrike: strike,
+        farStrike: strike + prefs.verticalWidth,
+        type: "CALL",
+        side: "BUY",
+        nearContract: row.call,
+      });
+      return;
+    }
+    if (fx.scene !== "strip" || !row?.call) return;
+    handleQuoteTap(row.call, "CALL", "BUY");
+  }, [primary, handleQuoteTap, handleVerticalTap, prefs.verticalWidth]);
 
   const instrumentLabel = useMemo(() => {
     if (selected) {
@@ -411,10 +445,10 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   }, []);
 
   const keyLevelsTop = stickyOffset + chromeHeight;
-  const ladderHeaderTop = keyLevelsTop + 28;
+  const ladderHeaderTop = keyLevelsTop + 68;
   const ladderHdrStack = AT_LADDER_GROUP_HDR_H + AT_LADDER_ROW_H;
-  const ladderReserve = atHeaderCompact ? 52 : 88;
-  const ladderMaxHeight = `max(320px, calc(100dvh - ${ladderHeaderTop + ladderHdrStack + ladderReserve}px))`;
+  const ladderReserve = atHeaderCompact ? 44 : 80;
+  const ladderMaxHeight = `max(360px, calc(100dvh - ${ladderHeaderTop + ladderHdrStack + ladderReserve}px))`;
 
   const expiryLabel = primary?.dateLabel ?? "\u2014";
   const dteLabel = primary ? (primary.dte === 0 ? "0DTE" : `${primary.dte}D`) : "0DTE";
@@ -456,6 +490,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           zones={zones}
           regimeLabel={presentation?.regimeLabel ?? regimeLabel}
           regimeDegraded={presentation?.regimeDegraded ?? regimeDegraded}
+          spot={underlyingPrice}
           headerCompact={atHeaderCompact}
           onExpandHeader={restoreSavedHeaderMode}
           onCompactHeader={reapplyAtCompactHeader}
@@ -476,15 +511,19 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             textTransform: "uppercase",
           }}
         >
-          <span className="text-center leading-none">Put flow</span>
-          <span className="text-center col-span-2" style={{ color: DOWN }} data-ui-audit="at-puts-hdr">
+          <span className="text-center leading-none font-semibold" style={{ color: DOWN, fontSize: 9 }}>
+            Put flow
+          </span>
+          <span className="text-center col-span-2 font-bold" style={{ color: DOWN, fontSize: 10 }} data-ui-audit="at-puts-hdr">
             Puts
           </span>
           <span />
-          <span className="text-center col-span-2" style={{ color: UP }}>
+          <span className="text-center col-span-2 font-bold" style={{ color: UP, fontSize: 10 }}>
             Calls
           </span>
-          <span className="text-center leading-none">Call flow</span>
+          <span className="text-center leading-none font-semibold" style={{ color: UP, fontSize: 9 }}>
+            Call flow
+          </span>
         </div>
         <div
           className="grid items-center px-0.5"
@@ -510,7 +549,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         </div>
       </div>
 
-      <div style={{ ...noScrollbar, maxHeight: ladderMaxHeight, overflowY: "auto" }}>
+      <div style={{ ...noScrollbar, maxHeight: ladderMaxHeight, overflowY: "auto", background: AT_LADDER_PANEL_BG }}>
         {ladderDataReady ? (
         <LadderBody
           rows={ladderRows}
@@ -520,6 +559,10 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           laneFilters={laneFilters}
           tradeStripStrike={tradeStripStrike}
           tradeContext={tradeContext}
+          ladderMode={ladderMode}
+          verticalWidth={prefs.verticalWidth}
+          rowByStrike={rowByStrike}
+          onVerticalTap={handleVerticalTap}
           onQuoteTap={handleQuoteTap}
           onTradeStripSell={(c, t) => handleTradeIntent(c, "SELL", t)}
           onTradeStripBuy={(c, t) => handleTradeIntent(c, "BUY", t)}
@@ -529,7 +572,14 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           symbolLabel={symbol.replace(/^\$/, "").slice(0, 3).toUpperCase()}
         />
         ) : (
-          <AtLadderSkeleton accentHex={accentHex} />
+          <>
+            {!presentation?.skipNetwork && (
+              <p className="px-3 py-2 text-center" style={{ fontSize: 11, color: DIM, fontFamily: MONO }}>
+                Waiting for live chain and stream quotes…
+              </p>
+            )}
+            <AtLadderSkeleton accentHex={accentHex} />
+          </>
         )}
       </div>
     </div>

@@ -8,10 +8,16 @@ const MOCKUP = "/home/ubuntu/.cursor/projects/agent-repos-Alpha-Terminal/assets/
 
 const scenes = [
   { name: "at-01-default-440x956.png", url: `${BASE}?scene=default`, waitSelector: "[data-at-key-levels]" },
-  { name: "at-01-settings-expanded-440x956.png", url: `${BASE}?scene=settings-expanded`, waitSelector: "[data-at-key-levels]" },
+  { name: "at-05-vertical-440x956.png", url: `${BASE}?scene=vertical`, waitSelector: "[data-at-key-levels]" },
+  { name: "at-01-settings-expanded-440x956.png", url: `${BASE}?scene=settings-expanded`, waitSelector: "[data-at-ladder-mode]" },
   {
     name: "at-02-trade-strip-440x956.png",
     url: `${BASE}?scene=strip`,
+    waitSelector: "[data-at-trade-strip]",
+  },
+  {
+    name: "at-06-vertical-strip-440x956.png",
+    url: `${BASE}?scene=strip-vertical`,
     waitSelector: "[data-at-trade-strip]",
   },
   { name: "at-03-confirm-disabled-440x956.png", url: `${BASE}?scene=confirm`, waitText: "Trigger order summary" },
@@ -39,12 +45,12 @@ for (const scene of scenes) {
       .catch(() => undefined);
   }
   const delay = scene.name.includes("strip")
-    ? 1500
+    ? 1600
     : scene.name.includes("confirm")
       ? 2200
       : scene.name.includes("expanded")
         ? 1500
-        : 1200;
+        : 1300;
   await page.waitForTimeout(delay);
   if (scene.name.includes("01-default")) {
     const rowCount = await page.locator("[data-at-strike]").count();
@@ -58,6 +64,22 @@ for (const scene of scenes) {
     console.log(`Ladder rows: DOM=${rowCount} visibleInViewport=${vis}`);
   }
   await page.screenshot({ path: path.join(OUT, scene.name), fullPage: false });
+}
+
+await page.goto(`${BASE}?scene=default`, { waitUntil: "domcontentloaded" });
+await page.waitForSelector("[data-at-key-levels]", { timeout: 45_000 }).catch(() => undefined);
+await page.waitForTimeout(1200);
+const box = await page.locator("[data-at-key-levels]").first().boundingBox();
+if (box) {
+  await page.screenshot({
+    path: path.join(OUT, "at-key-levels-zoom-440x956.png"),
+    clip: {
+      x: Math.max(0, box.x - 4),
+      y: Math.max(0, box.y - 4),
+      width: Math.min(440, box.width + 8),
+      height: Math.min(130, box.height + 8),
+    },
+  });
 }
 
 await page.goto(`${BASE}?scene=default`, { waitUntil: "networkidle" });

@@ -24,6 +24,9 @@
     },
     {
       "path": "../../lib/catalysts-types"
+    },
+    {
+      "path": "../../lib/order-ticket-math"
     }
   ]
 }

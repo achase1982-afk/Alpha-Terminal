@@ -1,4 +1,5 @@
 import type { ActiveTraderTemplatePrefs } from "./activeTraderPrefs";
+import { atOrderSendAllowed } from "./atOrderSend";
 
 export interface AtAutoSendPrefs {
   /** User opted in via Auto send checkbox (default off). */
@@ -30,6 +31,7 @@ export function canArmAutoSend(ctx: Pick<AtAutoSendContext, "accountHash" | "blo
 }
 
 export function isAutoSendLiveReady(prefs: ActiveTraderTemplatePrefs, ctx: AtAutoSendContext): boolean {
+  if (!atOrderSendAllowed()) return false;
   if (!prefs.autoSend.enabled || !prefs.autoSend.armed) return false;
   if (ctx.blockLiveSend) return false;
   if (!ctx.accountHash) return false;

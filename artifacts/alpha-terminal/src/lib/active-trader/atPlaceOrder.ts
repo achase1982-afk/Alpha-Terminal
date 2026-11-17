@@ -1,6 +1,7 @@
 import type { OptionsContract } from "@/components/OptionsTab";
 import type { OptionTick } from "@/lib/options-stream-store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { enqueueBrowserTelemetry } from "@/lib/browserTelemetry";
 import type { ActiveTraderTemplatePrefs } from "./activeTraderPrefs";
 import {
   buildAtSchwabOrderJson,
@@ -108,11 +109,22 @@ export async function submitAtSchwabOrder(params: {
     });
     const data = (await res.json()) as { error?: string; message?: string; orderId?: string };
     if (!res.ok || data.error) {
-      return { ok: false, message: data.message || data.error || "Order rejected" };
+      const message = data.message || data.error || "Order rejected";
+      enqueueBrowserTelemetry({
+        level: "ERROR",
+        message: "active_trader_place_order_failed",
+        details: { status: res.status, body: data, symbol: params.symbol },
+      });
+      return { ok: false, message };
     }
     return { ok: true, orderId: data.orderId ?? "—" };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Network error";
+    enqueueBrowserTelemetry({
+      level: "ERROR",
+      message: "active_trader_place_order_network",
+      details: { symbol: params.symbol, error: message },
+    });
     return { ok: false, message };
   }
 }

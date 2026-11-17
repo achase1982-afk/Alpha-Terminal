@@ -3,13 +3,14 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import {
   BG_EXP_BAR, BORDER, DIM, GRAY, WHITE, MONO, FW_LIGHT, FW_NORMAL, TOOLBAR_H,
 } from "@/components/options/optionsTheme";
-import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
+import type { ActiveTraderTemplatePrefs, AtLadderMode, AtVerticalWidth } from "@/lib/active-trader/activeTraderPrefs";
 import { buildAtSettingsSummary } from "@/lib/active-trader/atSummaryFormat";
 import { AtBracketControls } from "./AtBracketControls";
 import { TemplateBar } from "./TemplateBar";
 import { FilterStrip, type LaneFilterKey } from "./FilterStrip";
 import { AtTemplateLegPlan } from "./AtTemplateLegPlan";
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
+import { AT_VERTICAL_LADDER_ENABLED } from "@/lib/active-trader/atOrderSend";
 import {
   Select,
   SelectContent,
@@ -160,6 +161,67 @@ export const AtSettingsPanel = memo(function AtSettingsPanel({
             primaryInstruction={primaryInstruction}
             entryPrice={limitMid}
           />
+          <div
+            className="px-3 py-2 grid grid-cols-2 gap-2 items-end"
+            style={{ borderBottom: `1px solid ${BORDER}` }}
+            data-at-ladder-mode
+          >
+            <div>
+              <span style={{ fontSize: 9, color: DIM, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                Ladder mode
+              </span>
+              <div className="flex gap-1 mt-1">
+                {(["single", "vertical"] as AtLadderMode[]).map((mode) => {
+                  const verticalDisabled = mode === "vertical" && !AT_VERTICAL_LADDER_ENABLED;
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      disabled={verticalDisabled}
+                      onClick={() => {
+                        if (verticalDisabled) return;
+                        onPrefsChange({ ...prefs, ladderMode: mode });
+                      }}
+                      className="flex-1 py-1 rounded border disabled:opacity-40"
+                      style={{
+                        fontSize: 11,
+                        fontFamily: MONO,
+                        borderColor: prefs.ladderMode === mode ? accentHex : BORDER,
+                        background: prefs.ladderMode === mode ? `${accentHex}18` : "#111",
+                        color: prefs.ladderMode === mode ? WHITE : GRAY,
+                      }}
+                    >
+                      {mode === "single" ? "Single" : "Vertical (soon)"}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div>
+              <span style={{ fontSize: 9, color: DIM, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                Spread width
+              </span>
+              <Select
+                disabled={prefs.ladderMode !== "vertical"}
+                value={String(prefs.verticalWidth)}
+                onValueChange={(v) =>
+                  onPrefsChange({ ...prefs, verticalWidth: Number(v) as AtVerticalWidth })
+                }
+              >
+                <SelectTrigger
+                  className="h-7 mt-1 border rounded text-white"
+                  style={{ fontSize: 12, background: "#111", borderColor: BORDER, fontFamily: MONO }}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="5">5 pts</SelectItem>
+                  <SelectItem value="10">10 pts</SelectItem>
+                  <SelectItem value="25">25 pts</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
           <FilterStrip
             embedded
             accentHex={accentHex}
