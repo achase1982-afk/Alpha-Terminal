@@ -425,7 +425,10 @@ interface StrategyBuilderProps {
   availableStrikes?: number[];
   availableExpirations?: { label: string; value: string }[];
   chainData?: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>;
-  subscribeOptionSymbols?: (symbols: string[]) => void | Promise<void>;
+  subscribeOptionSymbols?: (
+    symbols: string[],
+    opts?: import("@/lib/optionHoldClient").OptionHoldPostOpts,
+  ) => Promise<string | undefined>;
 }
 
 export function StrategyBuilder({

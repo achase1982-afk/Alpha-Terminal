@@ -84,6 +84,12 @@ export const GetQuoteResponse = zod.object({
   fiftyTwoWeekHigh: zod.number().optional(),
   fiftyTwoWeekLow: zod.number().optional(),
   peRatio: zod.number().optional(),
+  not_streaming: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when price fields are from REST rather than the live Schwab streamer.",
+    ),
   nextEarningsDate: zod.string().optional(),
   error: zod.string().optional(),
 });
@@ -210,6 +216,12 @@ export const RunTechnicalAnalysisBody = zod.object({
     fiftyTwoWeekHigh: zod.number().optional(),
     fiftyTwoWeekLow: zod.number().optional(),
     peRatio: zod.number().optional(),
+    not_streaming: zod
+      .boolean()
+      .optional()
+      .describe(
+        "True when price fields are from REST rather than the live Schwab streamer.",
+      ),
     nextEarningsDate: zod.string().optional(),
     error: zod.string().optional(),
   }),
@@ -264,6 +276,12 @@ export const RunOptionsAnalysisBody = zod.object({
     fiftyTwoWeekHigh: zod.number().optional(),
     fiftyTwoWeekLow: zod.number().optional(),
     peRatio: zod.number().optional(),
+    not_streaming: zod
+      .boolean()
+      .optional()
+      .describe(
+        "True when price fields are from REST rather than the live Schwab streamer.",
+      ),
     nextEarningsDate: zod.string().optional(),
     error: zod.string().optional(),
   }),

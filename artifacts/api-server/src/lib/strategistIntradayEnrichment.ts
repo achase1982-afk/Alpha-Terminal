@@ -49,7 +49,7 @@ export function ensureStrategistSchwabSubscriptions(ticker: string, venue: Strat
     addSymbols([u]);
     addTimesaleEquitySymbols([u]);
     addChartEquitySymbols([u]);
-    addOptionSymbols([u]);
+    addOptionSymbols([u], "strategist:underlyings");
     if (venue === "NASDAQ") addNasdaqBookSymbols([u]);
     else if (venue === "NYSE") addNyseBookSymbols([u]);
     else {

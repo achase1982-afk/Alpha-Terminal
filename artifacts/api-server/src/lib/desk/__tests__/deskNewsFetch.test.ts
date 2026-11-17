@@ -3,6 +3,7 @@ import {
   buildDeskHealthFeeds,
   deskResetFeedFreshnessForTests,
 } from "../deskFeedFreshness.js";
+import { deskResetFinnhubPollFailureStreakForTests } from "../deskNews.js";
 import { DESK_NEWS_POLL_MS } from "../deskPollCadence.js";
 
 const loadMock = vi.fn();
@@ -14,8 +15,25 @@ vi.mock("../deskFinnhubDeskNews.js", () => ({
 describe("deskFetchNews Finnhub health", () => {
   beforeEach(() => {
     deskResetFeedFreshnessForTests();
+    deskResetFinnhubPollFailureStreakForTests();
     loadMock.mockReset();
     process.env.FINNHUB_API_KEY = "test-key";
+  });
+
+  it("returns as_of from last successful poll, not newest article time", async () => {
+    vi.useFakeTimers();
+    const pollMs = Date.parse("2026-06-02T14:00:00.000Z");
+    vi.setSystemTime(pollMs);
+    const articleMs = pollMs - 4 * 60 * 60 * 1000;
+    loadMock.mockResolvedValue({
+      articles: [{ datetime: Math.floor(articleMs / 1000), headline: "old" }],
+      hadHttp2xx: true,
+    });
+    const { deskFetchNews } = await import("../deskNews.js");
+    const r = await deskFetchNews(["SPY"]);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.asOfMs).toBe(pollMs);
+    vi.useRealTimers();
   });
 
   it("successful poll with 4h-old articles yields ok_no_new_articles", async () => {
@@ -51,6 +69,71 @@ describe("deskFetchNews Finnhub health", () => {
     const row = buildDeskHealthFeeds().find((f) => f.feed === "news");
     expect(row?.status).toBe("rate_limited");
     expect(row?.source).toBe("finnhub");
+  });
+
+  it("single failed cycle with transport errors does not mark feed error", async () => {
+    loadMock.mockResolvedValue({
+      articles: [],
+      hadHttp2xx: false,
+      lastErrorStatus: 0,
+    });
+    const { deskFetchNews } = await import("../deskNews.js");
+    await deskFetchNews(["SPY"]);
+    const row = buildDeskHealthFeeds().find((f) => f.feed === "news");
+    expect(row?.status).not.toBe("error");
+  });
+
+  it("two consecutive failed cycles mark feed error", async () => {
+    loadMock.mockResolvedValue({
+      articles: [],
+      hadHttp2xx: false,
+      lastErrorStatus: 0,
+    });
+    const { deskFetchNews } = await import("../deskNews.js");
+    await deskFetchNews(["SPY"]);
+    let row = buildDeskHealthFeeds().find((f) => f.feed === "news");
+    expect(row?.status).not.toBe("error");
+    await deskFetchNews(["SPY"]);
+    row = buildDeskHealthFeeds().find((f) => f.feed === "news");
+    expect(row?.status).toBe("error");
+    expect(row?.error).toBe("finnhub_fetch_error");
+  });
+
+  it("fail then success then fail does not mark feed error", async () => {
+    loadMock
+      .mockResolvedValueOnce({
+        articles: [],
+        hadHttp2xx: false,
+        lastErrorStatus: 0,
+      })
+      .mockResolvedValueOnce({
+        articles: [{ datetime: Math.floor(Date.now() / 1000), headline: "ok" }],
+        hadHttp2xx: true,
+      })
+      .mockResolvedValueOnce({
+        articles: [],
+        hadHttp2xx: false,
+        lastErrorStatus: 0,
+      });
+    const { deskFetchNews } = await import("../deskNews.js");
+    await deskFetchNews(["SPY"]);
+    await deskFetchNews(["SPY"]);
+    await deskFetchNews(["SPY"]);
+    const row = buildDeskHealthFeeds().find((f) => f.feed === "news");
+    expect(row?.status).not.toBe("error");
+  });
+
+  it("neutral rate-skip background cycle does not increment failure streak", async () => {
+    loadMock.mockResolvedValue({
+      articles: [],
+      hadHttp2xx: false,
+      skippedRateCap: true,
+    });
+    const { deskFetchNews } = await import("../deskNews.js");
+    await deskFetchNews(["SPY"], { mode: "background" });
+    await deskFetchNews(["SPY"], { mode: "background" });
+    const row = buildDeskHealthFeeds().find((f) => f.feed === "news");
+    expect(row?.status).not.toBe("error");
   });
 
   it("401 poll yields auth_error", async () => {

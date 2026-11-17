@@ -23,7 +23,13 @@ vi.mock("../tokenStore.js", () => ({ getBestAccessToken: vi.fn(() => "tok") }));
 import { deriveDirectionalConviction, scoreCloseSeriesTrend } from "../regimePostProcessor.js";
 import { clusterWeightCoverage, type ClusterResult, type ClusterName, type EngineOutput } from "../marketPulseEngine.js";
 import { tallyExchange, ADD_SCALE_ISSUES, MIN_SAMPLE_PER_EXCHANGE } from "../syntheticBreadth.js";
-import { parseIndexQuoteEntry, registerSchwabIndexSymbols, selectPollSymbols, __resetSchwabIndexQuotes } from "../schwabIndexQuotes.js";
+import {
+  parseIndexQuoteEntry,
+  registerSchwabIndexSymbols,
+  selectPollSymbols,
+  setSchwabIndexStreamFreshCheck,
+  __resetSchwabIndexQuotes,
+} from "../schwabIndexQuotes.js";
 
 function cluster(score: number, dataQuality: ClusterResult["dataQuality"] = "FRESH"): ClusterResult {
   return { score, raw: score, dataQuality, direction: "FLAT", headline: "", keyDataPoints: [], rulesApplied: [] };
@@ -186,8 +192,12 @@ describe("Schwab index quotes", () => {
     expect(parseIndexQuoteEntry("$TICK", undefined)).toBeNull();
   });
 
-  it("polls every registered symbol until one is parked", () => {
+  it("polls registered symbols except L1-streamed vol indices when stream is fresh", () => {
+    setSchwabIndexStreamFreshCheck((sym) => ({
+      fresh: sym === "$VIX" || sym === "$VIX9D",
+      lastStreamMs: Date.now(),
+    }));
     registerSchwabIndexSymbols(["$VIX", "$vix", "  $TICK  "]);
-    expect(selectPollSymbols().sort()).toEqual(["$TICK", "$VIX"]);
+    expect(selectPollSymbols().sort()).toEqual(["$TICK"]);
   });
 });

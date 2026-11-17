@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { Reorder } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
+import { buildChainHoldSignature } from "@/lib/streamHoldSig";
+import { useChainOptionHold } from "@/hooks/useChainOptionHold";
 import { resolveAtmStrike } from "@workspace/order-ticket-math";
 
 const EPS = 0.0001;
@@ -1222,7 +1224,17 @@ function buildSchwabOptionKey(underlying: string, expiration: string, strike: nu
 }
 
 interface OptionsTabProps {
-  subscribeOptionSymbols?: (symbols: string[]) => Promise<void>;
+  subscribeOptionSymbols?: (
+    symbols: string[],
+    opts?: {
+      purpose?: string;
+      viewId?: string;
+      holderId?: string;
+      underlyingPrice?: number;
+      isAborted?: () => boolean;
+    },
+  ) => Promise<string | void>;
+  releaseOptionHold?: (holderId: string) => Promise<void>;
   stickyOffset?: number;
   onTradeSingle?: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
   onOpenStrategyBuilder?: (strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>, preSelectedLegs?: { contract: Contract; type: "CALL" | "PUT"; side?: "bid" | "ask" }[]) => void;
@@ -1230,7 +1242,13 @@ interface OptionsTabProps {
 
 export type { Contract as OptionsContract };
 
-export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSingle, onOpenStrategyBuilder }: OptionsTabProps) {
+export function OptionsTab({
+  subscribeOptionSymbols,
+  releaseOptionHold,
+  stickyOffset = 0,
+  onTradeSingle,
+  onOpenStrategyBuilder,
+}: OptionsTabProps) {
   const { accessToken } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken })));
   // Widget pin wins inside the dashboard; global symbol everywhere else.
   const symbol = useActiveSymbol();
@@ -1323,6 +1341,24 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
     data?.underlyingPrice ??
     null;
 
+  const chainHoldSig = useMemo(() => {
+    if (!data) return null;
+    const calls = (data.calls ?? []) as Contract[];
+    const puts = (data.puts ?? []) as Contract[];
+    const streamKeys: string[] = [];
+    const expirations: string[] = [];
+    for (const c of calls) {
+      expirations.push(c.expiration);
+      streamKeys.push(c.schwabSymbol || buildSchwabOptionKey(symbol, c.expiration, c.strike, "C"));
+    }
+    for (const p of puts) {
+      expirations.push(p.expiration);
+      streamKeys.push(p.schwabSymbol || buildSchwabOptionKey(symbol, p.expiration, p.strike, "P"));
+    }
+    if (streamKeys.length === 0) return null;
+    return buildChainHoldSignature(symbol, expirations, streamKeys);
+  }, [data, symbol]);
+
   const groups = useMemo(() => {
     if (!data) return [];
     const calls = (data.calls ?? []) as Contract[];
@@ -1332,17 +1368,13 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
     return buildExpirationGroups(calls, puts, underlyingPrice);
   }, [data, underlyingPrice, symbol]);
 
-  useEffect(() => {
-    if (!subscribeOptionSymbols || groups.length === 0) return;
-    const keys: string[] = [];
-    for (const g of groups) {
-      for (const row of g.rows) {
-        if (row.call?.streamKey) keys.push(row.call.streamKey);
-        if (row.put?.streamKey) keys.push(row.put.streamKey);
-      }
-    }
-    if (keys.length > 0) void subscribeOptionSymbols(keys);
-  }, [groups, subscribeOptionSymbols]);
+  useChainOptionHold(
+    chainHoldSig?.holdSig,
+    chainHoldSig?.keys ?? [],
+    chainHoldSig?.viewId,
+    { subscribeOptionSymbols, releaseOptionHold },
+    underlyingPrice ?? data?.underlyingPrice ?? null,
+  );
 
   useEffect(() => { setExpandedExps(new Set()); setSelectedLegs(new Map()); }, [symbol]);
 

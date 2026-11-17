@@ -5,7 +5,14 @@ import {
   GetOptionChainResponse,
 } from "@workspace/api-zod";
 import { getAccessToken, getBestAccessToken } from "../lib/tokenStore.js";
-import { getQuoteBySymbol, addOptionSymbols, getAllOptionTicks, type OptionTick } from "../lib/schwabStreamer.js";
+import {
+  getQuoteBySymbol,
+  addOptionSymbols,
+  getAllOptionTicks,
+  schwabSymbolHasStreamingMark,
+  type OptionTick,
+} from "../lib/schwabStreamer.js";
+import { streamerSubHold, streamerSubRelease, streamerSubTouch } from "../lib/streamerSubscriptionManager.js";
 import { getIBCachedQuote, subscribeQuoteForSymbol, isIBConnected } from "../lib/ibStreamer.js";
 import { getNextEarningsDate } from "../lib/earningsService.js";
 import { emitTelemetry } from "../lib/telemetryStore.js";
@@ -225,6 +232,7 @@ router.get("/quote", async (req, res) => {
     );
     const data = GetQuoteResponse.parse({
       symbol: displaySymbol,
+      not_streaming: false,
       description: cachedDesc,
       last: schwabCached.last ?? undefined,
       bid: schwabCached.bid ?? undefined,
@@ -382,6 +390,7 @@ router.get("/quote", async (req, res) => {
 
     const data = GetQuoteResponse.parse({
       symbol: displaySymbol,
+      not_streaming: !schwabSymbolHasStreamingMark(apiSymbol),
       description,
       last,
       bid:   pickNum("bidPrice", "bid"),
@@ -900,7 +909,13 @@ async function fetchIndexChainStructure(
     }
   }
 
-  addOptionSymbols(schwabKeys);
+  const holderId = `chain:index:${displaySymbol}`;
+  streamerSubHold(holderId, "user_visible", "LEVELONE_OPTIONS", schwabKeys);
+  streamerSubTouch(holderId);
+  const { streamerSubApplyManagedOptionsSubscriptions } = await import(
+    "../lib/streamerSubscriptionManager.js"
+  );
+  await streamerSubApplyManagedOptionsSubscriptions();
   log.info({ symbol: displaySymbol, calls: parsedCalls.length, puts: parsedPuts.length, schwabKeys: schwabKeys.length, underlyingPrice }, "Index chain: Schwab REST structure fetched, subscribed to streamer");
 
   const entry: IndexChainCache = {
@@ -910,7 +925,9 @@ async function fetchIndexChainStructure(
     fetchedAt: Date.now(),
     underlyingPrice,
   };
-  setBounded(indexChainStructureCache, displaySymbol, entry, 50);
+  setBounded(indexChainStructureCache, displaySymbol, entry, 50, (evictedKey) => {
+    void streamerSubRelease(`chain:index:${String(evictedKey)}`);
+  });
   return entry;
 }
 

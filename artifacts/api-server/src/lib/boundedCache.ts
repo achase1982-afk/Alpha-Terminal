@@ -7,14 +7,22 @@
  * `setBounded` refreshes insertion order on write and drops the oldest entries
  * once the map exceeds `max`, keeping memory proportional to recent activity.
  */
-export function setBounded<K, V>(map: Map<K, V>, key: K, value: V, max = 500): void {
+export function setBounded<K, V>(
+  map: Map<K, V>,
+  key: K,
+  value: V,
+  max = 500,
+  onEvict?: (evictedKey: K, evictedValue: V) => void,
+): void {
   if (map.has(key)) map.delete(key);
   map.set(key, value);
   if (map.size <= max) return;
   const excess = map.size - max;
   let removed = 0;
   for (const k of map.keys()) {
+    const v = map.get(k);
     map.delete(k);
+    if (v !== undefined && onEvict) onEvict(k, v);
     removed += 1;
     if (removed >= excess) break;
   }

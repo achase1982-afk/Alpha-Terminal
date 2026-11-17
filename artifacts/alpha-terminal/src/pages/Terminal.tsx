@@ -747,7 +747,7 @@ export default function TerminalPage() {
     scrollRef.current?.scrollTo({ top: 0 });
   }, [aiSubTab]);
 
-  const { subscribeOptionSymbols, subscribeEquitySymbols } = useMarketStream();
+  const { subscribeOptionSymbols, subscribeEquitySymbols, releaseOptionHold } = useMarketStream();
 
   const chartParams = chartParamsFromStore(chartPeriod, chartInterval);
   const { data: historyData, isLoading: historyLoading } = useGetPriceHistory<PriceHistoryResponse>(
@@ -943,7 +943,7 @@ export default function TerminalPage() {
                   }
                 >
                   {contextTab === "news" && <NewsTab />}
-                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
+                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                   {contextTab === "company" && (
                     <CompanySwipablePages
                       candles={historyData?.candles}
@@ -1013,7 +1013,7 @@ export default function TerminalPage() {
                     }
                   >
                     {contextTab === "news" && <NewsTab />}
-                    {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
+                    {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                     {contextTab === "company" && (
                       <CompanySwipablePages
                         candles={historyData?.candles}
@@ -1071,7 +1071,7 @@ export default function TerminalPage() {
                   }
                 >
                   {contextTab === "news" && <NewsTab />}
-                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
+                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                   {contextTab === "company" && (
                     <CompanySwipablePages
                       candles={historyData?.candles}
@@ -1163,6 +1163,7 @@ export default function TerminalPage() {
         onSwitchToStock={handleSwitchToStock}
         onSwitchToOptions={handleSwitchToOptions}
         subscribeOptionSymbols={subscribeOptionSymbols}
+        releaseOptionHold={releaseOptionHold}
         onSendToStrategist={(ticker) => {
           // Strategist tab pulls results for the active symbol — switch to
           // the validated ticket's ticker so the live debate + verdict card

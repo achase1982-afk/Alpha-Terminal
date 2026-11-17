@@ -81,6 +81,9 @@
     "vaul": "^1.1.2",
     "vite": "catalog:",
     "vitest": "^2.1.9",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/dom": "^10.4.0",
+    "jsdom": "^25.0.1",
     "wouter": "^3.3.5",
     "zod": "catalog:"
   },
