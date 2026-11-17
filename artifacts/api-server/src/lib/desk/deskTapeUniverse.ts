@@ -5,14 +5,26 @@ import { logger } from "../logger.js";
 import { deskResolveSpxSpot } from "./deskSpxSpot.js";
 import {
   deskTapeOptionsExpiries,
-  deskTapeOptionsMax,
   deskLoadExplicitOptionSymbols,
 } from "./deskTapeOptionsConfig.js";
-import { isDeskAllowedOptionKey } from "./deskTapeFrameFilter.js";
 import {
+  deskStrikeWindowForExpiry,
+  filterDeskChainByStrikeWindow,
+  trimDeskOptionsToBudget,
+  type DeskOptionPick,
+} from "./deskTapeStrikeWindows.js";
+import {
+  deskComputeDeskLevelOneOptionsBudget,
+  deskComputeDeskOptionsBookBudget,
+  deskGetSchwabStreamerLimits,
+} from "./deskStreamerBudget.js";
+import {
+  getAppLevelOneOptionSymbols,
+  getAppLevelOneOptionsCount,
+  getAppOptionsBookCount,
   deskStreamerAddEquity,
-  deskStreamerAddOptions,
-  deskStreamerAddOptionsBook,
+  deskStreamerSetDeskOptions,
+  deskStreamerSetDeskOptionsBook,
   deskStreamerReplayDeskAdds,
   getDeskStreamerAddCounts,
 } from "../schwabStreamer.js";
@@ -57,11 +69,15 @@ export function getDeskTapeUniverseHealth(): {
   target_expiries: string[];
   options_by_expiry: Record<string, number>;
   streamer_add_rejections: string[];
+  streamer_limits: ReturnType<typeof deskGetSchwabStreamerLimits>;
+  app_levelone_options: number;
+  desk_levelone_options_budget: number;
+  app_option_symbols_sample: string[];
   last_refresh_ms: number | null;
-  max_options: number;
   error?: string;
 } {
   const counts = getDeskStreamerAddCounts();
+  const appCount = getAppLevelOneOptionsCount();
   return {
     enabled: universeEnabled,
     levelone_equities: counts.levelone_equities,
@@ -74,8 +90,11 @@ export function getDeskTapeUniverseHealth(): {
     target_expiries: deskTapeOptionsExpiries(),
     options_by_expiry: { ...optionsByExpiry },
     streamer_add_rejections: [...streamerRejections],
+    streamer_limits: deskGetSchwabStreamerLimits(),
+    app_levelone_options: appCount,
+    desk_levelone_options_budget: deskComputeDeskLevelOneOptionsBudget(appCount),
+    app_option_symbols_sample: getAppLevelOneOptionSymbols().slice(0, 8),
     last_refresh_ms: lastRefreshMs > 0 ? lastRefreshMs : null,
-    max_options: deskTapeOptionsMax(),
     ...(lastError ? { error: lastError } : {}),
   };
 }
@@ -93,18 +112,6 @@ function pickBySpot(contracts: DeskChainNormalized[], spot: number, limit: numbe
   return keys;
 }
 
-function uniqueOptionSymbols(contracts: DeskChainNormalized[]): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const c of contracts) {
-    if (!c.symbol || !isDeskAllowedOptionKey(c.symbol)) continue;
-    if (seen.has(c.symbol)) continue;
-    seen.add(c.symbol);
-    out.push(c.symbol);
-  }
-  return out;
-}
-
 function spotMovedEnough(prev: number | null, next: number): boolean {
   if (prev == null || !Number.isFinite(prev)) return true;
   if (Math.abs(next - prev) >= SPOT_REFRESH_POINTS) return true;
@@ -116,45 +123,52 @@ async function buildUniverseKeys(
   expiries: string[],
   spot: number,
 ): Promise<{ levelone: string[]; book: string[] }> {
-  const maxKeys = deskTapeOptionsMax();
+  const sessionToday = deskSessionDateEt();
   const explicit = await deskLoadExplicitOptionSymbols().catch(() => [] as string[]);
 
   if (explicit.length > 0) {
-    const levelone = explicit.slice(0, maxKeys);
-    cappedLevelone = explicit.length > maxKeys;
-    leveloneCapReason = cappedLevelone ? `desk_cap_${maxKeys}_explicit_symbols` : null;
+    const budget = deskComputeDeskLevelOneOptionsBudget(getAppLevelOneOptionsCount());
+    const levelone = explicit.slice(0, budget);
+    cappedLevelone = explicit.length > budget;
+    leveloneCapReason = cappedLevelone ? `schwab_levelone_options_budget_${budget}` : null;
     for (const exp of expiries) optionsByExpiry[exp] = 0;
-    optionsByExpiry["explicit"] = levelone.length;
+    optionsByExpiry.explicit = levelone.length;
     const book = pickBySpot([], spot, TARGET_OPTIONS_BOOK);
     cappedBook = false;
     return { levelone, book };
   }
 
-  const allContracts: DeskChainNormalized[] = [];
+  const picks: DeskOptionPick[] = [];
   Object.keys(optionsByExpiry).forEach((k) => delete optionsByExpiry[k]);
 
   for (const expiry of expiries) {
     const chain = await deskFetchSchwabChain("SPX", expiry);
-    const spxOnly = chain.normalized.filter(
-      (c) => c.symbol && isDeskAllowedOptionKey(c.symbol),
-    );
-    const expirySymbols = uniqueOptionSymbols(spxOnly);
-    optionsByExpiry[expiry] = expirySymbols.length;
-    for (const c of spxOnly) {
-      allContracts.push(c);
+    const window = deskStrikeWindowForExpiry(expiry, chain.normalized, sessionToday);
+    const filtered = filterDeskChainByStrikeWindow(chain.normalized, window);
+    for (const c of filtered) {
+      if (!c.symbol) continue;
+      picks.push({ expiry, symbol: c.symbol, strike: c.strike });
     }
   }
 
-  const deduped = uniqueOptionSymbols(allContracts);
-  const levelone = deduped.slice(0, maxKeys);
-  const totalContracts = deduped.length;
-  cappedLevelone = totalContracts > maxKeys;
-  leveloneCapReason = cappedLevelone ? `desk_cap_${maxKeys}_option_keys` : null;
+  const budget = deskComputeDeskLevelOneOptionsBudget(getAppLevelOneOptionsCount());
+  const trimmed = trimDeskOptionsToBudget(picks, budget, spot);
+  Object.assign(optionsByExpiry, trimmed.perExpiry);
+  cappedLevelone = trimmed.capReason != null;
+  leveloneCapReason = trimmed.capReason;
 
-  const book = pickBySpot(allContracts, spot, TARGET_OPTIONS_BOOK);
-  cappedBook = allContracts.length > book.length;
+  const allForBook: DeskChainNormalized[] = [];
+  for (const expiry of expiries) {
+    const chain = await deskFetchSchwabChain("SPX", expiry);
+    const window = deskStrikeWindowForExpiry(expiry, chain.normalized, sessionToday);
+    allForBook.push(...filterDeskChainByStrikeWindow(chain.normalized, window));
+  }
+  const bookBudget = deskComputeDeskOptionsBookBudget(getAppOptionsBookCount());
+  const bookLimit = Math.min(TARGET_OPTIONS_BOOK, bookBudget);
+  const book = pickBySpot(allForBook, spot, bookLimit);
+  cappedBook = allForBook.length > book.length;
 
-  return { levelone, book };
+  return { levelone: trimmed.symbols, book };
 }
 
 export async function deskTapeUniverseRefresh(force = false): Promise<void> {
@@ -183,13 +197,14 @@ export async function deskTapeUniverseRefresh(force = false): Promise<void> {
       const needsOptions = counts.levelone_options === 0;
       if (!force && !expiryChanged && !spotMoved && !needsOptions && lastRefreshMs > 0) return;
       const { levelone, book } = await buildUniverseKeys(expiries, spot);
-      deskStreamerAddOptions(levelone);
-      if (book.length) deskStreamerAddOptionsBook(book);
+      deskStreamerSetDeskOptions(levelone);
+      if (book.length) deskStreamerSetDeskOptionsBook(book);
 
       lastSpot = spot;
       lastExpiryKey = expiryKey;
       lastRefreshMs = Date.now();
       lastError = undefined;
+      streamerRejections.length = 0;
       logger.info(
         {
           spot,
@@ -200,6 +215,8 @@ export async function deskTapeUniverseRefresh(force = false): Promise<void> {
           cappedBook,
           leveloneCapReason,
           optionsByExpiry,
+          appOptions: getAppLevelOneOptionsCount(),
+          deskBudget: deskComputeDeskLevelOneOptionsBudget(getAppLevelOneOptionsCount()),
         },
         "Desk tape universe refreshed",
       );
@@ -212,6 +229,11 @@ export async function deskTapeUniverseRefresh(force = false): Promise<void> {
   });
 
   await refreshInFlight;
+}
+
+export function deskTapeUniverseOnAppSubscriptionsChanged(): void {
+  if (!deskTapeUniverseEnabled()) return;
+  void deskTapeUniverseRefresh(true);
 }
 
 export function deskTapeUniverseOnStreamerLogin(): void {

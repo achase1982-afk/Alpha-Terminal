@@ -13,6 +13,10 @@ import {
   onSchwabInboundFrame,
   onSchwabOutboundFrame,
 } from "./desk/deskStreamerTap.js";
+import {
+  deskComputeDeskLevelOneOptionsBudget,
+  deskComputeDeskOptionsBookBudget,
+} from "./desk/deskStreamerBudget.js";
 import { registerDeskStreamerHealthReaders } from "./desk/deskSchwabStreamerBridge.js";
 
 export interface LiveQuote {
@@ -174,6 +178,26 @@ const deskAddedOptionsBookSymbols = new Set<string>();
 const DESK_EQ_FIELDS = Array.from({ length: 52 }, (_, i) => i).join(",");
 const DESK_OPT_FIELDS = Array.from({ length: 56 }, (_, i) => i).join(",");
 const DESK_ADD_BATCH = 500;
+
+function notifyDeskAppSubscriptionsChanged(): void {
+  void import("./desk/deskTapeUniverse.js").then((m) => m.deskTapeUniverseOnAppSubscriptionsChanged());
+}
+
+export function getAppLevelOneOptionsCount(): number {
+  return subscribedOptionSymbols.size;
+}
+
+export function getAppLevelOneOptionSymbols(): string[] {
+  return [...subscribedOptionSymbols].sort();
+}
+
+export function getAppOptionsBookCount(): number {
+  return subscribedOptionsBookSymbols.size;
+}
+
+export function getAppLevelOneEquitiesCount(): number {
+  return subscribedSymbols.size;
+}
 
 /** Level 2 book — field IDs align with schwab-py `BookFields` (SYMBOL, BOOK_TIME, BIDS, ASKS). */
 const NYSE_NASDAQ_OPTIONS_BOOK_FIELDS = "0,1,2,3";
@@ -975,11 +999,27 @@ export function deskStreamerAddEquity(symbols: string[]): number {
   return added.length;
 }
 
-export function deskStreamerAddOptions(symbols: string[]): number {
+export function deskStreamerSetDeskOptions(symbols: string[]): number {
+  const budget = deskComputeDeskLevelOneOptionsBudget(subscribedOptionSymbols.size);
+  const allowed = new Set(
+    symbols
+      .map((s) => s.trim())
+      .filter((k) => k && !subscribedOptionSymbols.has(k)),
+  );
+
+  for (const s of [...deskAddedOptionSymbols]) {
+    if (!allowed.has(s)) deskAddedOptionSymbols.delete(s);
+  }
+
+  let ordered = [...allowed];
+  if (ordered.length > budget) {
+    ordered = ordered.slice(0, budget);
+  }
+
   const added: string[] = [];
-  for (const s of symbols) {
-    const k = s.trim();
-    if (!k || deskAddedOptionSymbols.has(k)) continue;
+  for (const k of ordered) {
+    if (deskAddedOptionSymbols.has(k)) continue;
+    if (deskAddedOptionSymbols.size >= budget) break;
     deskAddedOptionSymbols.add(k);
     added.push(k);
   }
@@ -989,11 +1029,28 @@ export function deskStreamerAddOptions(symbols: string[]): number {
   return added.length;
 }
 
-export function deskStreamerAddOptionsBook(symbols: string[]): number {
+/** @deprecated use deskStreamerSetDeskOptions with pre-trimmed list */
+export function deskStreamerAddOptions(symbols: string[]): number {
+  return deskStreamerSetDeskOptions(symbols);
+}
+
+export function deskStreamerSetDeskOptionsBook(symbols: string[]): number {
+  const budget = deskComputeDeskOptionsBookBudget(subscribedOptionsBookSymbols.size);
+  const allowed = new Set(
+    symbols
+      .map((s) => s.trim())
+      .filter((k) => k && !subscribedOptionsBookSymbols.has(k)),
+  );
+  for (const s of [...deskAddedOptionsBookSymbols]) {
+    if (!allowed.has(s)) deskAddedOptionsBookSymbols.delete(s);
+  }
+  let ordered = [...allowed];
+  if (ordered.length > budget) ordered = ordered.slice(0, budget);
+
   const added: string[] = [];
-  for (const s of symbols) {
-    const k = s.trim();
-    if (!k || deskAddedOptionsBookSymbols.has(k)) continue;
+  for (const k of ordered) {
+    if (deskAddedOptionsBookSymbols.has(k)) continue;
+    if (deskAddedOptionsBookSymbols.size >= budget) break;
     deskAddedOptionsBookSymbols.add(k);
     added.push(k);
   }
@@ -1001,6 +1058,10 @@ export function deskStreamerAddOptionsBook(symbols: string[]): number {
     batchDeskAdd(sendDeskOptionsBookAdd, added);
   }
   return added.length;
+}
+
+export function deskStreamerAddOptionsBook(symbols: string[]): number {
+  return deskStreamerSetDeskOptionsBook(symbols);
 }
 
 export function deskStreamerReplayDeskAdds(): void {
@@ -1557,6 +1618,9 @@ function handleMessage(raw: string) {
       if (service !== "ADMIN") {
         logger.info({ service, command, code, msg: msgText }, "Schwab streamer: subscription response");
       }
+      if (command === "ADD" && code !== 0 && code !== 12 && msgText) {
+        void import("./desk/deskStreamerBudget.js").then((m) => m.deskParseSchwabStreamerLimitMessage(msgText));
+      }
       if (
         command === "ADD" &&
         code !== 0 &&
@@ -2087,8 +2151,11 @@ export function addOptionSymbols(symbols: string[]) {
     }
   }
 
-  if (newSyms.length > 0 && connectionState === "connected") {
-    sendOptionSubscription([...subscribedOptionSymbols]);
+  if (newSyms.length > 0) {
+    if (connectionState === "connected") {
+      sendOptionSubscription([...subscribedOptionSymbols]);
+    }
+    notifyDeskAppSubscriptionsChanged();
   }
 }
 
@@ -2108,6 +2175,7 @@ export function setTuningWatchlistOptionUnderlyings(symbols: string[]): void {
   }
   if (connectionState === "connected") {
     sendOptionSubscription([...subscribedOptionSymbols]);
+    notifyDeskAppSubscriptionsChanged();
     logger.info(
       { count: next.length, sample: next.slice(0, 8).join(",") },
       "Schwab streamer: tuning watchlist LEVELONE_OPTIONS refresh",

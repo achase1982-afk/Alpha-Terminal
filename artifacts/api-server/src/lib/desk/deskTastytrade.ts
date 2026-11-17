@@ -33,44 +33,62 @@ export async function deskTastytradeAccessToken(): Promise<string | null> {
 
   const clientSecret = deskEnv("TASTYTRADE_CLIENT_SECRET");
   const refreshToken = deskEnv("TASTYTRADE_REFRESH_TOKEN");
+  const clientId = deskEnv("TASTYTRADE_CLIENT_ID");
 
   tokenRefreshInFlight = (async () => {
     try {
+      const form = new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_secret: clientSecret,
+      });
+      if (clientId) form.set("client_id", clientId);
+
       const res = await fetch(OAUTH_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({
-          grant_type: "refresh_token",
-          refresh_token: refreshToken,
-          client_secret: clientSecret,
-        }),
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+        body: form.toString(),
         signal: AbortSignal.timeout(15_000),
       });
+      const raw = await res.text();
+      let json: Record<string, unknown> = {};
+      try {
+        json = JSON.parse(raw) as Record<string, unknown>;
+      } catch {
+        json = { raw };
+      }
       if (res.status === 401 || res.status === 403) {
-        deskMarkFeedAuthError("tastytrade", `tastytrade_oauth_${res.status}`, SOURCE);
+        const detail = String(json.error ?? json.message ?? raw).slice(0, 200);
+        deskMarkFeedAuthError("tastytrade", `tastytrade_oauth_${res.status}:${detail}`, SOURCE);
         tokenCache = null;
         return null;
       }
       if (!res.ok) {
-        deskMarkFeedError("tastytrade", `tastytrade_oauth_${res.status}`, SOURCE);
+        const detail = String(json.error ?? json.message ?? raw).slice(0, 200);
+        deskMarkFeedError("tastytrade", `tastytrade_oauth_${res.status}:${detail}`, SOURCE);
         return null;
       }
-      const json = (await res.json()) as {
-        access_token?: string;
-        expires_in?: number;
-        "data"?: { "access-token"?: string; "expires-in"?: number };
-      };
+      const data = json.data as Record<string, unknown> | undefined;
       const access =
-        json.access_token ?? json.data?.["access-token"] ?? "";
-      const expiresIn = json.expires_in ?? json.data?.["expires-in"] ?? 3600;
+        (json.access_token as string) ??
+        (data?.["access-token"] as string) ??
+        (data?.access_token as string) ??
+        "";
+      const expiresIn =
+        (json.expires_in as number) ??
+        (data?.["expires-in"] as number) ??
+        (data?.expires_in as number) ??
+        3600;
       if (!access) {
         deskMarkFeedError("tastytrade", "tastytrade_oauth_empty", SOURCE);
         return null;
       }
       tokenCache = { accessToken: access, expiresAtMs: now + expiresIn * 1000 };
+      deskTouchFeed("tastytrade", now, SOURCE);
       return access;
     } catch (err) {
-      deskMarkFeedError("tastytrade", "tastytrade_oauth_error", SOURCE);
+      const msg = err instanceof Error ? err.message : "tastytrade_oauth_error";
+      deskMarkFeedError("tastytrade", msg, SOURCE);
       logger.warn({ err }, "Desk Tastytrade OAuth failed");
       return null;
     } finally {
