@@ -7,6 +7,8 @@ export type AtLimitAnchor = "Mid" | "Bid" | "Ask";
 export type BracketOffsetMode = "percent" | "points" | "dollars";
 export type AtLadderMode = "single" | "vertical";
 export type AtVerticalWidth = 5 | 10 | 25;
+export type AtExitDuration = "DAY" | "GOOD_TILL_CANCEL";
+export type AtStopLossOrderType = "STOP" | "STOP_LIMIT";
 
 export interface BracketLegPrefs {
   enabled: boolean;
@@ -24,9 +26,14 @@ export interface ActiveTraderTemplatePrefs {
   autoSend: AtAutoSendPrefs;
   ladderMode: AtLadderMode;
   verticalWidth: AtVerticalWidth;
+  /** TIF for OCO / trigger children (Schwab 1st-trigger sample uses GTC). */
+  exitDuration: AtExitDuration;
+  stopLossOrderType: AtStopLossOrderType;
+  /** Limit offset from stop trigger (STOP_LIMIT only), in premium dollars. */
+  stopLimitOffset: number;
 }
 
-const STORAGE_KEY = "activeTraderPrefs:v5";
+const STORAGE_KEY = "activeTraderPrefs:v6";
 
 const DEFAULTS: ActiveTraderTemplatePrefs = {
   template: "TRG w/ bracket",
@@ -38,6 +45,9 @@ const DEFAULTS: ActiveTraderTemplatePrefs = {
   autoSend: { enabled: false, armed: false },
   ladderMode: "single",
   verticalWidth: 5,
+  exitDuration: "GOOD_TILL_CANCEL",
+  stopLossOrderType: "STOP",
+  stopLimitOffset: 0.05,
 };
 
 export function loadActiveTraderPrefs(symbolClass: "index" | "equity"): ActiveTraderTemplatePrefs {

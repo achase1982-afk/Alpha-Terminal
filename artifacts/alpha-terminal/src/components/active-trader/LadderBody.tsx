@@ -257,23 +257,18 @@ const LadderRowView = memo(function LadderRowView({
   const isCallWall = zones.callWall != null && Math.abs(row.strike - zones.callWall) < 0.001;
   const isPutWall = zones.putWall != null && Math.abs(row.strike - zones.putWall) < 0.001;
 
+  const strikePositionQty = (() => {
+    const keys = [row.call?.streamKey, row.put?.streamKey].filter(Boolean) as string[];
+    for (const key of keys) {
+      const q = positionQtyByKey.get(key);
+      if (q != null && q !== 0) return q;
+    }
+    return null;
+  })();
+
   const renderBadges = (key: string | undefined) => {
     if (!key) return null;
     const chips: ReactNode[] = [];
-    const q = positionQtyByKey.get(key);
-    if (q != null && q !== 0) {
-      const sign = q > 0 ? "+" : "−";
-      chips.push(
-        <span
-          key="pos"
-          className="px-0.5 rounded"
-          style={{ fontSize: 8, fontWeight: FW_PREMIUM, color: q > 0 ? UP : DOWN, background: q > 0 ? `${UP}22` : `${DOWN}22` }}
-        >
-          {sign}
-          {Math.abs(q)}
-        </span>,
-      );
-    }
     const work = workingOrderChips?.get(key);
     if (work) {
       chips.push(
@@ -400,8 +395,24 @@ const LadderRowView = memo(function LadderRowView({
           }}
           data-at-strike={row.strike}
         >
+          {strikePositionQty != null && (
+            <span
+              data-at-position-badge
+              className="absolute left-0.5 top-0.5 px-0.5 rounded leading-none"
+              style={{
+                fontSize: 7,
+                fontWeight: FW_PREMIUM,
+                color: strikePositionQty > 0 ? UP : DOWN,
+                background: strikePositionQty > 0 ? `${UP}28` : `${DOWN}28`,
+                border: `1px solid ${strikePositionQty > 0 ? `${UP}55` : `${DOWN}55`}`,
+              }}
+            >
+              {strikePositionQty > 0 ? "+" : "−"}
+              {Math.abs(strikePositionQty)}
+            </span>
+          )}
           {renderBadges(row.call?.streamKey ?? row.put?.streamKey)}
-          <span>{row.strike % 1 === 0 ? row.strike : row.strike.toFixed(1)}</span>
+          <span className="leading-tight">{row.strike % 1 === 0 ? row.strike : row.strike.toFixed(1)}</span>
           {isCallWall && <span style={{ fontSize: 7, opacity: 0.65 }}>CALL WALL</span>}
           {isPutWall && <span style={{ fontSize: 7, opacity: 0.65 }}>PUT WALL</span>}
           {spotRow && !isCallWall && !isPutWall && <span style={{ fontSize: 7, opacity: 0.65 }}>{symbolLabel}</span>}

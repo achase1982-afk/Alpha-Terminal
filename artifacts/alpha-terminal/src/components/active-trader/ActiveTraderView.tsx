@@ -287,12 +287,16 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       template: prefs.template,
       assetType: "OPTION",
       symbol: "",
+      underlyingSymbol: symbol.replace(/^\$/, ""),
       primaryInstruction: templatePrimaryInstruction,
       quantity: prefs.qty,
       limitPrice: templateLimitMid,
       takeProfit: prefs.takeProfit,
       stopLoss: prefs.stopLoss,
       entryOrderType: prefs.orderType,
+      exitDuration: prefs.exitDuration,
+      stopLossOrderType: prefs.stopLossOrderType,
+      stopLimitOffset: prefs.stopLimitOffset,
     }).validationError;
   }, [prefs, selected, templateLimitMid, templatePrimaryInstruction]);
 
@@ -327,12 +331,16 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             template: prefs.template,
             assetType: "OPTION",
             symbol: contract.streamKey ?? "",
+            underlyingSymbol: symbol.replace(/^\$/, ""),
             primaryInstruction,
             quantity: prefs.qty,
             limitPrice: entry,
             takeProfit: prefs.takeProfit,
             stopLoss: prefs.stopLoss,
             entryOrderType: prefs.orderType,
+            exitDuration: prefs.exitDuration,
+            stopLossOrderType: prefs.stopLossOrderType,
+            stopLimitOffset: prefs.stopLimitOffset,
           }).validationError
         : "Missing quote";
 
@@ -351,7 +359,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       if (autoSendBusyRef.current) return;
       autoSendBusyRef.current = true;
       try {
-        const order = buildAtOrderPayload(contract, side, prefs, entry!);
+        const order = buildAtOrderPayload(contract, side, prefs, entry!, symbol.replace(/^\$/, ""), "DAY");
         const result = await submitAtSchwabOrder({
           accountHash: tradingHash!,
           order,

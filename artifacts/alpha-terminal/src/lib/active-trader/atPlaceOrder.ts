@@ -47,32 +47,30 @@ export function buildAtOrderPayload(
   side: "BUY" | "SELL",
   prefs: ActiveTraderTemplatePrefs,
   limitPrice: number,
+  underlyingSymbol: string,
+  entryDuration = "DAY",
 ): Record<string, unknown> {
   const primaryInstruction = atPrimaryInstruction(side);
   const symbol = atOptionSchwabSymbol(contract);
-  const { validationError } = planAtOrderLegs({
+  const shared = {
     template: prefs.template,
-    assetType: "OPTION",
+    assetType: "OPTION" as const,
     symbol,
+    underlyingSymbol,
     primaryInstruction,
     quantity: prefs.qty,
     limitPrice,
     takeProfit: prefs.takeProfit,
     stopLoss: prefs.stopLoss,
     entryOrderType: prefs.orderType,
-  });
+    entryDuration,
+    exitDuration: prefs.exitDuration,
+    stopLossOrderType: prefs.stopLossOrderType,
+    stopLimitOffset: prefs.stopLimitOffset,
+  };
+  const { validationError } = planAtOrderLegs(shared);
   if (validationError) return { error: validationError };
-  return buildAtSchwabOrderJson({
-    template: prefs.template,
-    assetType: "OPTION",
-    symbol,
-    primaryInstruction,
-    quantity: prefs.qty,
-    limitPrice,
-    takeProfit: prefs.takeProfit,
-    stopLoss: prefs.stopLoss,
-    entryOrderType: prefs.orderType,
-  });
+  return buildAtSchwabOrderJson(shared);
 }
 
 export type AtPlaceOrderResult =

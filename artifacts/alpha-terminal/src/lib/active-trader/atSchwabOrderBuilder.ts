@@ -1,5 +1,11 @@
-import type { AtOrderType, AtTemplateKind, BracketLegPrefs } from "./activeTraderPrefs";
-import { computeBracketPrices } from "./atBracketMath";
+import type {
+  AtExitDuration,
+  AtOrderType,
+  AtStopLossOrderType,
+  AtTemplateKind,
+  BracketLegPrefs,
+} from "./activeTraderPrefs";
+import { computeBracketPrices, isLongEntry, roundAtPremium, stopLimitPriceFromStop } from "./atBracketMath";
 
 export type SchwabOptionInstruction =
   | "BUY_TO_OPEN"
@@ -58,12 +64,14 @@ export interface AtPlannedLeg {
   label: string;
   orderType?: string;
   price?: number;
+  stopPrice?: number;
 }
 
 export interface AtOrderBuildInput {
   template: AtTemplateKind;
   assetType: "OPTION" | "EQUITY";
   symbol: string;
+  underlyingSymbol?: string;
   primaryInstruction: SchwabInstruction;
   quantity: number;
   limitPrice: number;
@@ -73,11 +81,26 @@ export interface AtOrderBuildInput {
   stopPrice?: number;
   entryOrderType?: AtOrderType;
   session?: string;
+  /** Entry parent TIF (from ticket). */
   duration?: string;
+  entryDuration?: string;
+  /** OCO children TIF — Schwab sample defaults to GTC. */
+  exitDuration?: AtExitDuration;
+  stopLossOrderType?: AtStopLossOrderType;
+  stopLimitOffset?: number;
+  /** Vertical / multi-leg — STOP children are rejected by Schwab. */
+  isSpread?: boolean;
 }
 
 function primarySchwabOrderType(entryOrderType: AtOrderType | undefined): "LIMIT" | "MARKET" {
   return entryOrderType === "MKT" ? "MARKET" : "LIMIT";
+}
+
+function bracketCtx(input: AtOrderBuildInput) {
+  return {
+    underlyingSymbol: input.underlyingSymbol,
+    assetType: input.assetType,
+  };
 }
 
 function resolveBracketPrices(input: AtOrderBuildInput): { tp: number | null; sl: number | null } {
@@ -89,10 +112,24 @@ function resolveBracketPrices(input: AtOrderBuildInput): { tp: number | null; sl
     primaryInstruction: input.primaryInstruction,
     tp,
     sl,
+    underlyingSymbol: input.underlyingSymbol,
+    assetType: input.assetType,
   });
+  const roundInput = {
+    entryPrice: input.limitPrice,
+    quantity: input.quantity,
+    primaryInstruction: input.primaryInstruction,
+    tp,
+    sl,
+    ...bracketCtx(input),
+  };
   return {
-    tp: input.targetPrice ?? fromPrefs.takeProfit,
-    sl: input.stopPrice ?? fromPrefs.stopLoss,
+    tp:
+      input.targetPrice != null
+        ? roundAtPremium(input.targetPrice, roundInput)
+        : fromPrefs.takeProfit,
+    sl:
+      input.stopPrice != null ? roundAtPremium(input.stopPrice, roundInput) : fromPrefs.stopLoss,
   };
 }
 
@@ -115,13 +152,23 @@ export function validateAtChildLegs(
   return null;
 }
 
+function templateRequiresBracket(template: AtTemplateKind): boolean {
+  return template === "TRG w/ bracket" || template === "OCO";
+}
+
 export function planAtOrderLegs(input: AtOrderBuildInput): {
   legs: AtPlannedLeg[];
   validationError: string | null;
 } {
   const close = closingInstructionForOpen(input.primaryInstruction);
-  const { tp, sl } = resolveBracketPrices(input);
-  const bracket = usesBracketExit(input);
+  const entryLimit = roundAtPremium(input.limitPrice, {
+    entryPrice: input.limitPrice,
+    quantity: input.quantity,
+    primaryInstruction: input.primaryInstruction,
+    tp: input.takeProfit ?? { enabled: false, mode: "percent", offset: 0 },
+    sl: input.stopLoss ?? { enabled: false, mode: "percent", offset: 0 },
+    ...bracketCtx(input),
+  });
 
   const legs: AtPlannedLeg[] = [
     {
@@ -129,10 +176,28 @@ export function planAtOrderLegs(input: AtOrderBuildInput): {
       instruction: input.primaryInstruction,
       label: humanInstruction(input.primaryInstruction),
       orderType: "LIMIT",
-      price: input.limitPrice,
+      price: entryLimit,
     },
   ];
 
+  if (templateRequiresBracket(input.template) && !usesBracketExit(input)) {
+    return {
+      legs,
+      validationError: "Enable take profit or stop loss — bracket template requires at least one exit leg.",
+    };
+  }
+
+  if (input.isSpread && input.stopLoss?.enabled) {
+    return {
+      legs,
+      validationError:
+        "Stop loss is not supported on multi-leg spreads. Schwab rejects STOP on complex orders — use take profit (NET credit/debit) only.",
+    };
+  }
+
+  const { tp, sl } = resolveBracketPrices(input);
+  const bracket = usesBracketExit(input);
+  const slType = input.stopLossOrderType ?? "STOP";
   const children: SchwabInstruction[] = [];
 
   if (bracket && tp != null) {
@@ -145,33 +210,26 @@ export function planAtOrderLegs(input: AtOrderBuildInput): {
       price: tp,
     });
   }
-  if (bracket && sl != null) {
+  if (bracket && sl != null && !input.isSpread) {
     children.push(close);
-    legs.push({
+    const stopLeg: AtPlannedLeg = {
       role: children.length > 1 ? "3rd" : "2nd",
       instruction: close,
       label: humanInstruction(close),
-      orderType: "STOP",
-      price: sl,
-    });
-  }
-
-  if (!bracket && input.template === "OCO" && tp == null) {
-    const target = input.limitPrice * 1.25;
-    children.push(close);
-    legs.push({
-      role: "2nd",
-      instruction: close,
-      label: humanInstruction(close),
-      orderType: "LIMIT",
-      price: target,
-    });
+      orderType: slType === "STOP_LIMIT" ? "STOP_LIMIT" : "STOP",
+      stopPrice: sl,
+    };
+    if (slType === "STOP_LIMIT") {
+      const off = input.stopLimitOffset ?? 0.05;
+      stopLeg.price = stopLimitPriceFromStop(sl, input.primaryInstruction, off, bracketCtx(input));
+    } else {
+      stopLeg.price = sl;
+    }
+    legs.push(stopLeg);
   }
 
   const validationError =
-    children.length > 0
-      ? validateAtChildLegs("TRG w/ bracket", input.primaryInstruction, children)
-      : null;
+    children.length > 0 ? validateAtChildLegs(input.template, input.primaryInstruction, children) : null;
   return { legs, validationError };
 }
 
@@ -183,7 +241,25 @@ function mkLeg(instr: SchwabInstruction, qty: number, symbol: string, assetType:
   };
 }
 
-/** Build Schwab order JSON for Active Trader templates (phase 1 — preview / tests only). */
+function singleOptionPayload(
+  session: string,
+  duration: string,
+  orderType: "LIMIT" | "MARKET",
+  priceFields: Record<string, unknown>,
+  leg: ReturnType<typeof mkLeg>,
+): Record<string, unknown> {
+  return {
+    orderStrategyType: "SINGLE",
+    complexOrderStrategyType: "NONE",
+    session,
+    duration,
+    orderType,
+    ...priceFields,
+    orderLegCollection: [leg],
+  };
+}
+
+/** Build Schwab order JSON for Active Trader templates. */
 export function buildAtSchwabOrderJson(input: AtOrderBuildInput): Record<string, unknown> {
   const { validationError } = planAtOrderLegs(input);
   if (validationError) {
@@ -191,60 +267,75 @@ export function buildAtSchwabOrderJson(input: AtOrderBuildInput): Record<string,
   }
 
   const session = input.session ?? "NORMAL";
-  const duration = input.duration ?? "DAY";
+  const entryDuration = input.entryDuration ?? input.duration ?? "DAY";
+  const exitDuration = input.exitDuration ?? "GOOD_TILL_CANCEL";
   const qty = input.quantity;
   const sym = input.symbol;
   const asset = input.assetType;
   const close = closingInstructionForOpen(input.primaryInstruction);
 
+  const entryLimit = roundAtPremium(input.limitPrice, {
+    entryPrice: input.limitPrice,
+    quantity: qty,
+    primaryInstruction: input.primaryInstruction,
+    tp: input.takeProfit ?? { enabled: false, mode: "percent", offset: 0 },
+    sl: input.stopLoss ?? { enabled: false, mode: "percent", offset: 0 },
+    ...bracketCtx(input),
+  });
+
   const { tp, sl } = resolveBracketPrices(input);
   const bracket = usesBracketExit(input);
   const entryType = primarySchwabOrderType(input.entryOrderType);
   const entryPriceFields =
-    entryType === "LIMIT" ? { price: input.limitPrice } : ({} as Record<string, unknown>);
-
-  if (!bracket && input.template === "Single") {
-    return {
-      orderStrategyType: "SINGLE",
-      session,
-      duration,
-      orderType: entryType,
-      ...entryPriceFields,
-      orderLegCollection: [mkLeg(input.primaryInstruction, qty, sym, asset)],
-    };
-  }
+    entryType === "LIMIT" ? { price: entryLimit } : ({} as Record<string, unknown>);
 
   if (!bracket) {
+    const leg = mkLeg(input.primaryInstruction, qty, sym, asset);
+    if (asset === "OPTION") {
+      return singleOptionPayload(session, entryDuration, entryType, entryPriceFields, leg);
+    }
     return {
       orderStrategyType: "SINGLE",
       session,
-      duration,
+      duration: entryDuration,
       orderType: entryType,
       ...entryPriceFields,
-      orderLegCollection: [mkLeg(input.primaryInstruction, qty, sym, asset)],
+      orderLegCollection: [leg],
     };
   }
 
   const exitChildren: Record<string, unknown>[] = [];
   if (tp != null) {
-    exitChildren.push({
-      orderStrategyType: "SINGLE",
-      session,
-      duration,
-      orderType: "LIMIT",
-      price: tp,
-      orderLegCollection: [mkLeg(close, qty, sym, asset)],
-    });
+    exitChildren.push(
+      singleOptionPayload(session, exitDuration, "LIMIT", { price: tp }, mkLeg(close, qty, sym, asset)),
+    );
   }
-  if (sl != null) {
-    exitChildren.push({
-      orderStrategyType: "SINGLE",
-      session,
-      duration,
-      orderType: "STOP",
-      stopPrice: sl,
-      orderLegCollection: [mkLeg(close, qty, sym, asset)],
-    });
+  if (sl != null && !input.isSpread) {
+    const slType = input.stopLossOrderType ?? "STOP";
+    if (slType === "STOP_LIMIT") {
+      const off = input.stopLimitOffset ?? 0.05;
+      const limitPx = stopLimitPriceFromStop(sl, input.primaryInstruction, off, bracketCtx(input));
+      exitChildren.push({
+        orderStrategyType: "SINGLE",
+        complexOrderStrategyType: "NONE",
+        session,
+        duration: exitDuration,
+        orderType: "STOP_LIMIT",
+        stopPrice: sl,
+        price: limitPx,
+        orderLegCollection: [mkLeg(close, qty, sym, asset)],
+      });
+    } else {
+      exitChildren.push({
+        orderStrategyType: "SINGLE",
+        complexOrderStrategyType: "NONE",
+        session,
+        duration: exitDuration,
+        orderType: "STOP",
+        stopPrice: sl,
+        orderLegCollection: [mkLeg(close, qty, sym, asset)],
+      });
+    }
   }
 
   const childPayload =
@@ -255,7 +346,7 @@ export function buildAtSchwabOrderJson(input: AtOrderBuildInput): Record<string,
   return {
     orderStrategyType: "TRIGGER",
     session,
-    duration,
+    duration: entryDuration,
     orderType: entryType,
     ...entryPriceFields,
     orderLegCollection: [mkLeg(input.primaryInstruction, qty, sym, asset)],

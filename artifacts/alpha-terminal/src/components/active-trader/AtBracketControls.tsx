@@ -9,7 +9,12 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { BORDER, DIM, GRAY, MONO, FW_LIGHT, WHITE, UP, DOWN } from "@/components/options/optionsTheme";
-import type { ActiveTraderTemplatePrefs, BracketLegPrefs } from "@/lib/active-trader/activeTraderPrefs";
+import type {
+  ActiveTraderTemplatePrefs,
+  AtExitDuration,
+  AtStopLossOrderType,
+  BracketLegPrefs,
+} from "@/lib/active-trader/activeTraderPrefs";
 import {
   computeBracketPrices,
   formatSignedOffset,
@@ -159,6 +164,58 @@ export const AtBracketControls = memo(function AtBracketControls({
         primaryInstruction={primaryInstruction}
         onChange={(stopLoss) => patch({ stopLoss })}
       />
+      <div className="flex flex-wrap items-end gap-3 py-2 border-t" style={{ borderColor: BORDER }}>
+        <div>
+          <span style={{ fontSize: 9, color: DIM, display: "block", marginBottom: 4 }}>Exit TIF</span>
+          <Select
+            value={prefs.exitDuration}
+            onValueChange={(v) => patch({ exitDuration: v as AtExitDuration })}
+          >
+            <SelectTrigger
+              className="h-6 w-[72px] px-1.5 border rounded text-white"
+              style={{ fontSize: 12, background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="DAY">Day</SelectItem>
+              <SelectItem value="GOOD_TILL_CANCEL">GTC</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <span style={{ fontSize: 9, color: DIM, display: "block", marginBottom: 4 }}>Stop type</span>
+          <Select
+            value={prefs.stopLossOrderType}
+            onValueChange={(v) => patch({ stopLossOrderType: v as AtStopLossOrderType })}
+          >
+            <SelectTrigger
+              className="h-6 w-[92px] px-1.5 border rounded text-white"
+              style={{ fontSize: 12, background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="STOP">Stop</SelectItem>
+              <SelectItem value="STOP_LIMIT">Stop limit</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {prefs.stopLossOrderType === "STOP_LIMIT" && (
+          <div>
+            <span style={{ fontSize: 9, color: DIM, display: "block", marginBottom: 4 }}>Lmt offset</span>
+            <Input
+              type="number"
+              step={0.01}
+              min={0.01}
+              value={prefs.stopLimitOffset}
+              onChange={(e) => patch({ stopLimitOffset: parseFloat(e.target.value) || 0.05 })}
+              className="h-6 w-16 px-1.5 font-mono"
+              style={{ fontSize: 12, background: "#111", borderColor: BORDER, color: WHITE }}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 });

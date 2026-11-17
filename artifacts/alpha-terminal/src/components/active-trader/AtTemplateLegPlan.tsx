@@ -28,11 +28,15 @@ export const AtTemplateLegPlan = memo(function AtTemplateLegPlan({
       template: prefs.template,
       assetType: "OPTION",
       symbol: "",
+      underlyingSymbol: "SPX",
       primaryInstruction,
       quantity: prefs.qty,
       limitPrice,
       takeProfit: prefs.takeProfit,
       stopLoss: prefs.stopLoss,
+      exitDuration: prefs.exitDuration,
+      stopLossOrderType: prefs.stopLossOrderType,
+      stopLimitOffset: prefs.stopLimitOffset,
     });
   }, [prefs, primaryInstruction, limitPrice]);
 
@@ -59,7 +63,7 @@ export const AtTemplateLegPlan = memo(function AtTemplateLegPlan({
           </span>
           {leg.price != null && (
             <span style={{ fontWeight: FW_NORMAL, fontVariantNumeric: "tabular-nums" }}>
-              {leg.orderType === "STOP" ? "Stop " : "LMT "}
+              {leg.orderType === "STOP_LIMIT" ? "STP LMT " : leg.orderType === "STOP" ? "Stop " : "LMT "}
               {leg.price.toFixed(2)}
             </span>
           )}

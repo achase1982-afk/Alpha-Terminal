@@ -6,7 +6,7 @@ import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
 import { enqueueBrowserTelemetry } from "@/lib/browserTelemetry";
-import { estimateSchwabOptionFees } from "@/lib/orders/schwabOrderFees";
+import { estimateSchwabOptionFees, roundMoney } from "@/lib/orders/schwabOrderFees";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { formatSchwabAccountType } from "@/lib/schwabAccountAggregate";
 import { startStrategistPolling } from "@/lib/strategistPoller";
@@ -499,6 +499,8 @@ export function OrderTicket({
   const [duration, setDuration] = useState<Duration>("DAY");
   const [extendedHours, setExtendedHours] = useState(false);
   const [stage, setStage] = useState<ConfirmStage>("form");
+  const submitInFlightRef = useRef(false);
+  const [submitInFlight, setSubmitInFlight] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const schwabAccounts = useSchwabAccountStore((s) => s.accounts);
@@ -627,6 +629,8 @@ export function OrderTicket({
     setDuration("DAY");
     setExtendedHours(false);
     setStage(initialStage ?? "form");
+    submitInFlightRef.current = false;
+    setSubmitInFlight(false);
     setOrderId(null);
     setErrorMsg("");
     setShowOrderType(false);
@@ -780,12 +784,16 @@ export function OrderTicket({
       template: atTemplatePrefs.template,
       assetType: "OPTION",
       symbol: optionSymbol,
+      underlyingSymbol: symbol.replace(/^\$/, ""),
       primaryInstruction: primary,
       quantity: atTemplatePrefs.qty,
       limitPrice: px,
       takeProfit: atTemplatePrefs.takeProfit,
       stopLoss: atTemplatePrefs.stopLoss,
       entryOrderType: atTemplatePrefs.orderType,
+      exitDuration: atTemplatePrefs.exitDuration,
+      stopLossOrderType: atTemplatePrefs.stopLossOrderType,
+      stopLimitOffset: atTemplatePrefs.stopLimitOffset,
     });
   }, [
     atTemplatePrefs,
@@ -1019,24 +1027,34 @@ export function OrderTicket({
           template: atTemplatePrefs.template,
           assetType: "OPTION",
           symbol: optionSymbol,
+          underlyingSymbol: symbol.replace(/^\$/, ""),
           primaryInstruction: primary,
           quantity: atTemplatePrefs.qty,
           limitPrice: 0.01,
           takeProfit: atTemplatePrefs.takeProfit,
           stopLoss: atTemplatePrefs.stopLoss,
           entryOrderType: atTemplatePrefs.orderType,
+          entryDuration: duration,
+          exitDuration: atTemplatePrefs.exitDuration,
+          stopLossOrderType: atTemplatePrefs.stopLossOrderType,
+          stopLimitOffset: atTemplatePrefs.stopLimitOffset,
         });
       }
       return buildAtSchwabOrderJson({
         template: atTemplatePrefs.template,
         assetType: "OPTION",
         symbol: optionSymbol,
+        underlyingSymbol: symbol.replace(/^\$/, ""),
         primaryInstruction: primary,
         quantity: atTemplatePrefs.qty,
         limitPrice: px,
         takeProfit: atTemplatePrefs.takeProfit,
         stopLoss: atTemplatePrefs.stopLoss,
         entryOrderType: atTemplatePrefs.orderType,
+        entryDuration: duration,
+        exitDuration: atTemplatePrefs.exitDuration,
+        stopLossOrderType: atTemplatePrefs.stopLossOrderType,
+        stopLimitOffset: atTemplatePrefs.stopLimitOffset,
       });
     }
 
@@ -1144,10 +1162,12 @@ export function OrderTicket({
   }, [orderType, extendedHours, duration, side, quantity, symbol, optionSymbol, isOption, isMultiLeg, liveStrategyLegs, strategyLegs, strategyIsCredit, isCloseOrder, optionInstruction, needsLimit, limitPrice, needsStop, stopPrice, needsTrail, trailOffset, instruction, exchange, taxLotMethod, spreadPrices, ticketPxBid, ticketPxAsk, ticketPxLast, limitTickCtx, submittedLimit, submittedLimitDisplay, strategyNetPrice, atTemplatePrefs]);
 
   const handleSubmit = useCallback(async () => {
-    if (stage === "submitting") return;
+    if (submitInFlightRef.current || stage === "submitting") return;
     if (!accountHash || !isValid) return;
     if (!isCloseOrder && preTradeGate.shouldBlockSubmit) return;
     if (atTemplatePlan?.validationError) return;
+    submitInFlightRef.current = true;
+    setSubmitInFlight(true);
     setStage("submitting");
     try {
       const order = buildSchwabOrder();
@@ -1227,6 +1247,9 @@ export function OrderTicket({
       });
       setErrorMsg(err.message || "Network error");
       setStage("error");
+    } finally {
+      submitInFlightRef.current = false;
+      setSubmitInFlight(false);
     }
   }, [
     accountHash, buildSchwabOrder, symbol, side, pulseData, submittedLimit, isMultiLeg, strategyIsCredit,
@@ -2797,13 +2820,9 @@ export function OrderTicket({
                 const totalRegulatory = feeEst.regulatoryEst;
                 const netPrice = submittedLimit ?? strategyNetPrice ?? 0;
                 const grossCost = estimatedCost != null ? Math.abs(estimatedCost) : 0;
-                const triggerEntryNet = atTriggerConfirm?.orders[0]?.cashFlow;
-                const totalCost =
-                  triggerEntryNet && !triggerEntryNet.isCredit
-                    ? triggerEntryNet.net
-                    : strategyIsCredit
-                      ? grossCost - feeEst.totalEst
-                      : grossCost + feeEst.totalEst;
+                const totalCost = strategyIsCredit
+                  ? roundMoney(grossCost - feeEst.totalEst)
+                  : roundMoney(grossCost + feeEst.totalEst);
                 const econMulti =
                   isMultiLeg && strategyLegs && netPrice > 0
                     ? computeOrderEconomics({
@@ -2907,6 +2926,7 @@ export function OrderTicket({
                 onClick={confirmDisabled ? undefined : handleSubmit}
                 disabled={
                   !!confirmDisabled
+                  || submitInFlight
                   || !isValid
                   || (!isCloseOrder && preTradeGate.shouldBlockSubmit)
                   || !!atTemplatePlan?.validationError

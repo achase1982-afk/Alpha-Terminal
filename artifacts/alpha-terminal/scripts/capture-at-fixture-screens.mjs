@@ -11,7 +11,7 @@ const BASE = "http://127.0.0.1:3000/dev/active-trader";
 const MOCKUP = "/home/ubuntu/.cursor/projects/agent-repos-Alpha-Terminal/assets/mockup_20261117.png";
 const MIN_LADDER_ROWS = 15;
 
-const scenes = [
+const allScenes = [
   {
     name: "at-01-default-440x956.png",
     url: `${BASE}?scene=default`,
@@ -35,11 +35,11 @@ const scenes = [
   {
     name: "at-position-plus2-440x956.png",
     url: `${BASE}?scene=position`,
-    waitSelector: "[data-at-strike='7545']",
+    waitSelector: "[data-at-position-badge]",
     minRows: 8,
+    scrollAtm: true,
     clipStrike: 7545,
   },
-  { name: "at-05-vertical-440x956.png", url: `${BASE}?scene=vertical`, waitSelector: "[data-at-key-levels]", minRows: 10 },
   {
     name: "at-02-trade-strip-440x956.png",
     url: `${BASE}?scene=strip`,
@@ -47,18 +47,22 @@ const scenes = [
     minRows: 0,
   },
   {
-    name: "at-06-vertical-strip-440x956.png",
-    url: `${BASE}?scene=strip-vertical`,
-    waitSelector: "[data-at-trade-strip]",
-    minRows: 0,
-  },
-  {
     name: "at-03-confirm-review-440x956.png",
     url: `${BASE}?scene=confirm`,
     waitText: "Trigger order summary",
+    waitSelector: "[data-at-trigger-confirm]",
     minRows: 0,
   },
 ];
+
+const sceneArg = process.argv[2];
+const scenes = sceneArg
+  ? allScenes.filter((s) => s.name === sceneArg || s.name.includes(sceneArg))
+  : allScenes;
+if (scenes.length === 0) {
+  console.error("No scenes match", sceneArg);
+  process.exit(1);
+}
 
 async function waitForServer(ms = 90_000) {
   const deadline = Date.now() + ms;
@@ -169,7 +173,7 @@ for (const scene of scenes) {
       }
     }
   }
-  if (scene.scrollAtm) await scrollAtmIntoView(page);
+  if (scene.scrollAtm || scene.clipStrike === 7545) await scrollAtmIntoView(page);
   const delay = scene.name.includes("strip") ? 1800 : scene.name.includes("confirm") ? 2400 : 1200;
   await page.waitForTimeout(delay);
 

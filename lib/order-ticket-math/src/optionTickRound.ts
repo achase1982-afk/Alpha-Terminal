@@ -13,6 +13,7 @@ const ALL_PENNY_OPTION_UNDERLYINGS = new Set([
   "SPY",
   "QQQ",
   "IWM",
+  "XSP",
   "DIA",
   "GLD",
   "SLV",
@@ -47,7 +48,6 @@ const PENNY_PILOT_UNDERLYINGS = new Set([...ALL_PENNY_OPTION_UNDERLYINGS, ...PEN
 const INDEX_OPTION_UNDERLYINGS = new Set([
   "SPX",
   "SPXW",
-  "XSP",
   "RUT",
   "RUTW",
   "NDX",
@@ -78,7 +78,8 @@ export function optionPremiumTickForSymbol(underlyingSymbol: string, price: numb
     return 0.01;
   }
   if (mode === "index") return Math.abs(price) < 3 ? 0.05 : 0.1;
-  return null;
+  /** Non–penny-pilot / unknown names: $0.01 under $3, $0.05 at/above (Schwab penny program). */
+  return Math.abs(price) < 3 ? 0.01 : 0.05;
 }
 
 /** @deprecated Use optionPremiumTickForSymbol — generic index-style tick for unknown contexts. */

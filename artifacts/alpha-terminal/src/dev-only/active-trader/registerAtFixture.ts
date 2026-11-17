@@ -194,7 +194,11 @@ export function registerAtFixtureFromLocation(): void {
   const atPrefs = {
     ...loadActiveTraderPrefs("index"),
     takeProfit: { enabled: true, mode: "percent" as const, offset: 10 },
-    stopLoss: { enabled: false, mode: "percent" as const, offset: -10 },
+    stopLoss: {
+      enabled: sceneParam === "confirm",
+      mode: "percent" as const,
+      offset: -10,
+    },
     autoSend: { enabled: false, armed: false },
     ladderMode:
       sceneParam === "vertical" || sceneParam === "strip-vertical"
