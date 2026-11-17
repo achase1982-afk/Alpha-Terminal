@@ -1,4 +1,6 @@
 import { useEffect, useRef } from "react";
+import { resolveOptionStreamHolderId } from "@/lib/optionHoldClient";
+import { getStreamClientId } from "@/lib/streamClientId";
 import type { ChainHoldSubscribers } from "./useChainOptionHold";
 
 /** Ticket option hold: depends on isOpen + holdSig (re-post on reopen). */
@@ -11,12 +13,8 @@ export function useTicketOptionHold(
 ): void {
   const keysRef = useRef(keys);
   const viewIdRef = useRef(viewId);
-  const latestViewIdRef = useRef(viewId);
-  const isOpenRef = useRef(isOpen);
   keysRef.current = keys;
   viewIdRef.current = viewId;
-  latestViewIdRef.current = viewId;
-  isOpenRef.current = isOpen;
   const { subscribeOptionSymbols, releaseOptionHold } = subs;
 
   useEffect(() => {
@@ -25,18 +23,17 @@ export function useTicketOptionHold(
     if (!isOpen || !holdSig || !subscribeOptionSymbols || !v || k.length === 0) return;
     const viewAtMount = v;
     let aborted = false;
-    const inFlight = subscribeOptionSymbols(k, {
+    void subscribeOptionSymbols(k, {
       purpose: "ticket",
       viewId: v,
       isAborted: () => aborted,
-    }).then((next) => next);
+    });
     return () => {
       aborted = true;
-      const stillSameView = latestViewIdRef.current === viewAtMount;
-      const closing = !isOpenRef.current;
-      void inFlight.then((holderId) => {
-        if (holderId && releaseOptionHold && (closing || !stillSameView)) void releaseOptionHold(holderId);
-      });
+      if (releaseOptionHold) {
+        const holderId = resolveOptionStreamHolderId(getStreamClientId(), "ticket", viewAtMount);
+        void releaseOptionHold(holderId);
+      }
     };
   }, [isOpen, holdSig, subscribeOptionSymbols, releaseOptionHold]);
 }

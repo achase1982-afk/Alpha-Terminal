@@ -4,70 +4,75 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { useChainOptionHold } from "../useChainOptionHold";
+import { createOptionHoldTestHarness, HOLD_TEST_CLIENT_ID } from "./optionHoldTestHarness";
+import * as streamClientId from "@/lib/streamClientId";
 
 describe("useChainOptionHold", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(streamClientId, "getStreamClientId").mockReturnValue(HOLD_TEST_CLIENT_ID);
   });
 
   it("does not re-subscribe when only underlying spot ticks", async () => {
-    const subscribe = vi.fn().mockResolvedValue("holder-1");
-    const release = vi.fn().mockResolvedValue(undefined);
+    const harness = createOptionHoldTestHarness();
     const holdSig = "chain:SPY:abc123\nSPY   251121C00600000";
     const keys = ["SPY   251121C00600000"];
     const viewId = "chain:SPY:abc123";
 
     const { rerender } = renderHook(
       ({ spot }) =>
-        useChainOptionHold(holdSig, keys, viewId, { subscribeOptionSymbols: subscribe, releaseOptionHold: release }, spot),
+        useChainOptionHold(holdSig, keys, viewId, harness, spot),
       { initialProps: { spot: 600 as number | null } },
     );
 
-    await waitFor(() => expect(subscribe).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(harness.server.size).toBe(1));
     for (let i = 0; i < 30; i++) {
       rerender({ spot: 600 + i * 0.1 });
     }
-    expect(subscribe).toHaveBeenCalledTimes(1);
-    expect(release).not.toHaveBeenCalled();
+    expect(harness.server.size).toBe(1);
   });
 
-  it("holdSig A to B with same viewId does not release (replace only)", async () => {
-    const subscribe = vi.fn().mockResolvedValue("holder-same");
-    const release = vi.fn().mockResolvedValue(undefined);
+  it("holdSig A to B with same viewId keeps hold with B keys", async () => {
+    const harness = createOptionHoldTestHarness();
     const viewId = "chain:SPY:fixed";
+    const id = harness.holderId("chain", viewId);
 
     const { rerender } = renderHook(
-      ({ sig, keys }) =>
-        useChainOptionHold(sig, keys, viewId, { subscribeOptionSymbols: subscribe, releaseOptionHold: release }, 600),
-      {
-        initialProps: { sig: "chain:SPY:fixed\nK-A", keys: ["K-A"] },
-      },
+      ({ sig, keys }) => useChainOptionHold(sig, keys, viewId, harness, 600),
+      { initialProps: { sig: "chain:SPY:fixed\nK-A", keys: ["K-A"] } },
     );
 
-    await waitFor(() => expect(subscribe).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(harness.server.get(id)).toEqual(["K-A"]));
     rerender({ sig: "chain:SPY:fixed\nK-B", keys: ["K-B"] });
-    await waitFor(() => expect(subscribe).toHaveBeenCalledTimes(2));
-    expect(release).not.toHaveBeenCalled();
-    expect(subscribe.mock.calls[1]?.[0]).toEqual(["K-B"]);
+    await harness.drain();
+    expect(harness.server.size).toBe(1);
+    expect(harness.server.get(id)).toEqual(["K-B"]);
   });
 
-  it("re-subscribes once when holdSig changes", async () => {
-    const subscribe = vi.fn().mockResolvedValue("holder-2");
-    const release = vi.fn().mockResolvedValue(undefined);
+  it("final unmount after POST resolves leaves server empty", async () => {
+    const harness = createOptionHoldTestHarness();
+    const viewId = "chain:SPY:unmount1";
 
-    const { rerender } = renderHook(
-      ({ sig, keys }) =>
-        useChainOptionHold(sig, keys, "chain:SPY:a", { subscribeOptionSymbols: subscribe, releaseOptionHold: release }, 600),
-      {
-        initialProps: {
-          sig: "chain:SPY:a\nK1",
-          keys: ["K1"],
-        },
-      },
+    const { unmount } = renderHook(() =>
+      useChainOptionHold("chain:SPY:unmount1\nK1", ["K1"], viewId, harness, 600),
     );
 
-    await waitFor(() => expect(subscribe).toHaveBeenCalledTimes(1));
-    rerender({ sig: "chain:SPY:a\nK2", keys: ["K2"] });
-    await waitFor(() => expect(subscribe).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(harness.server.size).toBe(1));
+    unmount();
+    await harness.drain();
+    expect(harness.server.size).toBe(0);
+  });
+
+  it("unmount before POST resolves leaves server empty", async () => {
+    const harness = createOptionHoldTestHarness({ postDelayMs: 50 });
+    const viewId = "chain:SPY:unmount2";
+
+    const { unmount } = renderHook(() =>
+      useChainOptionHold("chain:SPY:unmount2\nK1", ["K1"], viewId, harness, 600),
+    );
+
+    unmount();
+    await harness.drain();
+    expect(harness.server.size).toBe(0);
   });
 });

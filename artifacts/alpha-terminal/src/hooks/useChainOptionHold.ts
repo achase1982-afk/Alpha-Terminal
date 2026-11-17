@@ -1,4 +1,6 @@
 import { useEffect, useRef } from "react";
+import { resolveOptionStreamHolderId } from "@/lib/optionHoldClient";
+import { getStreamClientId } from "@/lib/streamClientId";
 
 export type ChainHoldSubscribers = {
   subscribeOptionSymbols?: (
@@ -24,11 +26,9 @@ export function useChainOptionHold(
   const spotRef = useRef(underlyingPrice);
   const keysRef = useRef(keys);
   const viewIdRef = useRef(viewId);
-  const latestViewIdRef = useRef(viewId);
   spotRef.current = underlyingPrice;
   keysRef.current = keys;
   viewIdRef.current = viewId;
-  latestViewIdRef.current = viewId;
 
   const { subscribeOptionSymbols, releaseOptionHold } = subs;
 
@@ -38,18 +38,18 @@ export function useChainOptionHold(
     if (!holdSig || !subscribeOptionSymbols || !v || k.length === 0) return;
     const viewAtMount = v;
     let aborted = false;
-    const inFlight = subscribeOptionSymbols(k, {
+    void subscribeOptionSymbols(k, {
       purpose: "chain",
       viewId: v,
       underlyingPrice: spotRef.current ?? undefined,
       isAborted: () => aborted,
-    }).then((next) => next);
+    });
     return () => {
       aborted = true;
-      const stillSameView = latestViewIdRef.current === viewAtMount;
-      void inFlight.then((holderId) => {
-        if (holderId && releaseOptionHold && !stillSameView) void releaseOptionHold(holderId);
-      });
+      if (releaseOptionHold) {
+        const holderId = resolveOptionStreamHolderId(getStreamClientId(), "chain", viewAtMount);
+        void releaseOptionHold(holderId);
+      }
     };
   }, [holdSig, subscribeOptionSymbols, releaseOptionHold]);
 }
