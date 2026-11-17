@@ -11,6 +11,7 @@ import {
   schwabPriceFromTicket,
   inferNetCreditFromLegStructure,
   inferSchwabComplexOrderStrategyType,
+  midpointFromBidAsk,
   type LimitTickContext,
 } from "@workspace/order-ticket-math";
 import {
@@ -169,7 +170,7 @@ export function OptionsChainOrderSheet({
     let netMid = 0;
     let complete = true;
     for (const leg of pricedLegs) {
-      const mid = leg.bid != null && leg.ask != null ? (leg.bid + leg.ask) / 2 : null;
+      const mid = midpointFromBidAsk(leg.bid, leg.ask);
       if (mid == null) {
         complete = false;
         break;
@@ -206,14 +207,18 @@ export function OptionsChainOrderSheet({
     [pricedLegs, symbol, submittedLimit, spreadPrices, quantity, isCredit, underlyingSpot],
   );
 
-  const buyingPowerDisplay = useMemo(() => {
-    if (summary?.grossNotional == null) return summary?.buyingPowerEffect ?? null;
-    const gross = Math.abs(summary.grossNotional);
+  const buyingPowerDisplay = useMemo(
+    () => summary?.buyingPowerEffect ?? null,
+    [summary?.buyingPowerEffect],
+  );
+
+  const feeAdjustedNetCash = useMemo(() => {
+    if (summary?.grossNotional == null) return null;
     const totalContracts = legs.reduce((s, l) => s + l.quantity, 0) * quantity;
     const fees = estimateSchwabOptionFees(totalContracts);
-    const cash = computeOrderNetCash(gross, isCredit, totalContracts, fees);
+    const cash = computeOrderNetCash(Math.abs(summary.grossNotional), isCredit, totalContracts, fees);
     return isCredit ? cash.net : -cash.net;
-  }, [summary?.grossNotional, summary?.buyingPowerEffect, legs, quantity, isCredit]);
+  }, [summary?.grossNotional, legs, quantity, isCredit]);
 
   const netDebitForName = summary?.grossNotional != null ? (isCredit ? -summary.grossNotional : summary.grossNotional) : 0;
   const strategyId = useMemo(() => detectStrategyType(legs, netDebitForName), [legs, netDebitForName]);
@@ -286,6 +291,8 @@ export function OptionsChainOrderSheet({
   }, [snapLimitForSubmit]);
 
   const openReviewRef = useRef(false);
+  const placeOrderInFlightRef = useRef(false);
+  const [sendLocked, setSendLocked] = useState(false);
   useEffect(() => {
     if (!openReviewOnMount || openReviewRef.current || legs.length === 0) return;
     const px = submittedLimit ?? spreadPrices?.spreadMid;
@@ -296,8 +303,11 @@ export function OptionsChainOrderSheet({
   }, [openReviewOnMount, legs.length, submittedLimit, spreadPrices?.spreadMid, validateAndReview]);
 
   const handleSubmit = useCallback(async () => {
+    if (placeOrderInFlightRef.current || stage === "submitting") return;
     if (!demoFixture && !accountHash) return;
     if (demoFixture) {
+      placeOrderInFlightRef.current = true;
+      setSendLocked(true);
       setOrderId("SCREENSHOT-DEMO");
       setStage("success");
       return;
@@ -308,6 +318,8 @@ export function OptionsChainOrderSheet({
       setStage("form");
       return;
     }
+    placeOrderInFlightRef.current = true;
+    setSendLocked(true);
     setReviewLimitSnapped(px);
     setStage("submitting");
     try {
@@ -319,6 +331,8 @@ export function OptionsChainOrderSheet({
       });
       const data = await res.json();
       if (!res.ok || data.error) {
+        placeOrderInFlightRef.current = false;
+        setSendLocked(false);
         setErrorMsg(data.message || data.error || "Order rejected");
         setStage("error");
         return;
@@ -326,10 +340,12 @@ export function OptionsChainOrderSheet({
       setOrderId(data.orderId ?? "—");
       setStage("success");
     } catch (err: unknown) {
+      placeOrderInFlightRef.current = false;
+      setSendLocked(false);
       setErrorMsg(err instanceof Error ? err.message : "Network error");
       setStage("error");
     }
-  }, [accountHash, buildSchwabOrder, snapLimitForSubmit, demoFixture]);
+  }, [accountHash, buildSchwabOrder, snapLimitForSubmit, demoFixture, stage]);
 
   const isValid =
     legs.length > 0 &&
@@ -455,15 +471,16 @@ export function OptionsChainOrderSheet({
                   <span style={VALUE_STYLE}>POP {summary.pop.toFixed(0)}%</span>
                 )}
                 {buyingPowerDisplay != null && (
-                  <span style={VALUE_STYLE}>BP {fmtCurrency(buyingPowerDisplay)}</span>
+                  <span style={VALUE_STYLE}>
+                    BP est {fmtCurrency(Math.abs(buyingPowerDisplay))}
+                  </span>
                 )}
               </div>
 
               <div className="mt-2 space-y-1.5">
                 {pricedLegs.map((leg) => {
                   const isBuy = leg.direction.startsWith("BUY");
-                  const mid =
-                    leg.bid != null && leg.ask != null ? (leg.bid + leg.ask) / 2 : null;
+                  const mid = midpointFromBidAsk(leg.bid, leg.ask);
                   const typeLabel = leg.optionType === "CALL" ? "Call" : "Put";
                   return (
                     <div
@@ -631,8 +648,14 @@ export function OptionsChainOrderSheet({
           reviewLimitSnapped={reviewLimitSnapped}
           submittedLimit={submittedLimit}
           summary={summary}
-          onBack={() => setStage("form")}
+          feeAdjustedNetCash={feeAdjustedNetCash}
+          onBack={() => {
+            placeOrderInFlightRef.current = false;
+            setSendLocked(false);
+            setStage("form");
+          }}
           onSend={() => void handleSubmit()}
+          sendDisabled={sendLocked}
         />
       )}
     </div>
@@ -680,8 +703,10 @@ function ConfirmPanel({
   reviewLimitSnapped,
   submittedLimit,
   summary,
+  feeAdjustedNetCash,
   onBack,
   onSend,
+  sendDisabled,
 }: {
   strategyName: string;
   strategyColor: string;
@@ -694,8 +719,10 @@ function ConfirmPanel({
   reviewLimitSnapped: number | null;
   submittedLimit: number | null;
   summary: ReturnType<typeof computeChainTicketSummary> | null;
+  feeAdjustedNetCash: number | null;
   onBack: () => void;
   onSend: () => void;
+  sendDisabled?: boolean;
 }) {
   const px = reviewLimitSnapped ?? submittedLimit ?? 0;
   const totalContracts = legs.reduce((s, l) => s + l.quantity, 0) * quantity;
@@ -705,6 +732,7 @@ function ConfirmPanel({
       ? Math.abs(summary.grossNotional)
       : Math.abs(px) * quantity * 100;
   const cash = computeOrderNetCash(gross, isCredit, totalContracts, fees);
+  const netCashAfterFees = feeAdjustedNetCash ?? (isCredit ? cash.net : -cash.net);
   const reviewEcon = computeOrderEconomics({
     underlyingSymbol: symbol,
     isOption: true,
@@ -721,7 +749,8 @@ function ConfirmPanel({
     contractCount: totalContracts,
   });
   const maxLoss = reviewEcon?.maxRisk ?? summary?.maxLoss ?? null;
-  const bpEffect = isCredit ? cash.net : -cash.net;
+  const bpEffect = summary?.buyingPowerEffect ?? reviewEcon?.buyingPowerEffect ?? null;
+  const bpKind = summary?.buyingPowerEffectKind ?? reviewEcon?.buyingPowerEffectKind ?? "estimated";
 
   return (
     <div
@@ -759,8 +788,9 @@ function ConfirmPanel({
           />
           <ButtonRow label="Est. regulatory fees" value={fmtCurrency(fees.regulatoryEst)} />
           <ButtonRow
-            label={`Total est. ${isCredit ? "credit" : "debit"}`}
-            value={fmtCurrency(cash.net)}
+            label={isCredit ? "Net credit (after est. fees)" : "Net debit (after est. fees)"}
+            value={`${netCashAfterFees >= 0 ? "+" : "−"}${fmtCurrency(Math.abs(netCashAfterFees))}`}
+            valueColor={netCashAfterFees >= 0 ? UP : DOWN}
             emphasize
           />
           <ButtonRow label="Time in force" value={timeInForce} />
@@ -771,11 +801,20 @@ function ConfirmPanel({
           {maxLoss != null && (
             <ButtonRow label="Max loss" value={fmtCurrency(maxLoss)} valueColor={DOWN} />
           )}
-          <ButtonRow
-            label={isCredit ? "Buying power effect (est. credit)" : "Buying power effect (total est. debit)"}
-            value={`${bpEffect >= 0 ? "+" : "−"}${fmtCurrency(Math.abs(bpEffect))}`}
-            valueColor={bpEffect >= 0 ? UP : DOWN}
-          />
+          {bpEffect != null && (
+            <ButtonRow
+              label={
+                bpKind === "cash_secured"
+                  ? "Cash-secured collateral (est.)"
+                  : "Buying power (est.)"
+              }
+              value={`−${fmtCurrency(Math.abs(bpEffect))}`}
+              valueColor={DOWN}
+            />
+          )}
+          {bpEffect == null && bpKind === "not_estimated" && (
+            <ButtonRow label="Buying power" value="Not estimated" />
+          )}
         </div>
         <div
           className="px-2 py-1.5 flex items-center gap-1.5"
@@ -798,7 +837,8 @@ function ConfirmPanel({
           <button
             type="button"
             onClick={onSend}
-            className="flex-[2] py-2.5 text-[13px] font-bold"
+            disabled={sendDisabled}
+            className="flex-[2] py-2.5 text-[13px] font-bold disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ background: GOLD, color: "#000", borderRadius: 8 }}
             data-testid="chain-sheet-send"
           >

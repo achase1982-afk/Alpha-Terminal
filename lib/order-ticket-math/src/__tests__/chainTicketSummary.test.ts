@@ -30,6 +30,30 @@ function summaryMid(
 }
 
 describe("chain ticket summary vs brute-force payoff", () => {
+  it("put credit vertical: buying power is negative max loss", () => {
+    const legs = [
+      {
+        strike: 5895,
+        optionType: "PUT" as const,
+        instruction: "SELL_TO_OPEN",
+        quantity: 1,
+        bid: 2.5,
+        ask: 2.55,
+      },
+      {
+        strike: 5890,
+        optionType: "PUT" as const,
+        instruction: "BUY_TO_OPEN",
+        quantity: 1,
+        bid: 1.45,
+        ask: 1.5,
+      },
+    ];
+    const s = summaryMid(legs, 1.0, 1, true);
+    expect(s?.buyingPowerEffect).toBe(-400);
+    expect(s?.buyingPowerEffectIsEstimate).toBe(true);
+  });
+
   it("put credit vertical: max loss/profit match payoff engine", () => {
     const legs = [
       {

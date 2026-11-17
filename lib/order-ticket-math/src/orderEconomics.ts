@@ -1,4 +1,6 @@
+import { resolveBuyingPowerEffect, type BuyingPowerEffectKind } from "./buyingPowerEffect.js";
 import { analyzeExpirationPayoff, type PayoffLeg } from "./expirationPayoff.js";
+import { isSingleExpiryStrategy } from "./expiryGate.js";
 import { parseCanonicalLimit, type LimitTickContext } from "./optionTickRound.js";
 
 export type OptionRight = "CALL" | "PUT" | string;
@@ -21,20 +23,33 @@ export interface OrderEconomicsInput {
   isOption?: boolean;
   underlyingSymbol?: string;
   commissionPerContract?: number;
+  regulatoryPerContract?: number;
   contractCount?: number;
+  /** Close / sell-to-close: cash proceeds only, no BP reserve estimate. */
+  closesPosition?: boolean;
 }
 
 export interface OrderEconomicsResult {
   netPricePerShare: number;
   grossNotional: number;
   maxRisk: number | null;
-  maxProfit: number;
+  /** Null when payoff is not modeled (e.g. multi-expiry calendar). */
+  maxProfit: number | null;
   commissionTotal: number;
+  regulatoryTotal: number;
   totalCostInclFees: number;
   totalCreditAfterFees: number;
-  buyingPowerEffect: number;
+  /** Signed cash after fees: positive = credit received, negative = debit paid. */
+  netCashFlow: number;
+  /** Collateral / BP reserved (≤ 0 when set). Never premium credit. */
+  buyingPowerEffect: number | null;
+  buyingPowerEffectKind: BuyingPowerEffectKind;
+  /** True unless broker-reported BP is wired in. */
+  buyingPowerEffectIsEstimate: boolean;
   breakevens: number[];
   isIronCondor: boolean;
+  /** False for multi-expiry structures where expiration payoff is not run. */
+  expirationPayoffModeled: boolean;
 }
 
 function tickContext(input: OrderEconomicsInput): LimitTickContext {
@@ -103,33 +118,63 @@ export function computeOrderEconomics(input: OrderEconomicsInput): OrderEconomic
       ? stockPayoffLegs(qty, isCredit)
       : legs.map((l) => ({ ...l }));
 
-  const payoff = analyzeExpirationPayoff({
-    legs: payoffLegs,
-    netPerShare: net,
-    spreadUnits: qty,
+  const expirationPayoffModeled =
+    isOptionOrder && legs.length > 0 ? isSingleExpiryStrategy(legs) : true;
+
+  const payoff = expirationPayoffModeled
+    ? analyzeExpirationPayoff({
+        legs: payoffLegs,
+        netPerShare: net,
+        spreadUnits: qty,
+        isCredit,
+        isOption: isOptionOrder,
+      })
+    : { maxLoss: null, maxProfit: null as number | null, breakevens: [] as number[] };
+
+  const maxRisk = expirationPayoffModeled ? payoff.maxLoss : null;
+  const maxProfit = expirationPayoffModeled
+    ? Number.isFinite(payoff.maxProfit)
+      ? payoff.maxProfit
+      : null
+    : null;
+
+  const regulatoryPer = input.regulatoryPerContract ?? 0.02;
+  const commissionTotal = isOptionOrder ? contracts * commissionPer : 0;
+  const regulatoryTotal = isOptionOrder ? contracts * regulatoryPer : 0;
+  const feeTotal = commissionTotal + regulatoryTotal;
+  const totalCostInclFees = grossNotional + feeTotal;
+  const totalCreditAfterFees = Math.max(0, grossNotional - feeTotal);
+  const netCashFlow = isCredit ? totalCreditAfterFees : -totalCostInclFees;
+
+  const bp = resolveBuyingPowerEffect({
+    legs,
     isCredit,
     isOption: isOptionOrder,
+    maxRisk,
+    grossNotional,
+    commissionTotal: feeTotal,
+    netPerShare: net,
+    spreadUnits: qty,
+    closesPosition: input.closesPosition === true,
   });
-
-  const maxRisk = payoff.maxLoss;
-  const maxProfit = payoff.maxProfit;
-
-  const commissionTotal = isOptionOrder ? contracts * commissionPer : 0;
-  const totalCostInclFees = grossNotional + commissionTotal;
-  const totalCreditAfterFees = Math.max(0, grossNotional - commissionTotal);
-  const riskForBp = maxRisk ?? grossNotional;
-  const buyingPowerEffect = isCredit ? totalCreditAfterFees : -(riskForBp + commissionTotal);
 
   return {
     netPricePerShare: net,
     grossNotional: Number(grossNotional.toFixed(2)),
     maxRisk: maxRisk != null ? Number(maxRisk.toFixed(2)) : null,
-    maxProfit: Number.isFinite(maxProfit) ? Number(maxProfit.toFixed(2)) : maxProfit,
+    maxProfit:
+      maxProfit != null && Number.isFinite(maxProfit) ? Number(maxProfit.toFixed(2)) : null,
     commissionTotal: Number(commissionTotal.toFixed(2)),
+    regulatoryTotal: Number(regulatoryTotal.toFixed(2)),
     totalCostInclFees: Number(totalCostInclFees.toFixed(2)),
     totalCreditAfterFees: Number(totalCreditAfterFees.toFixed(2)),
-    buyingPowerEffect: Number(buyingPowerEffect.toFixed(2)),
-    breakevens: payoff.breakevens,
+    netCashFlow: Number(netCashFlow.toFixed(2)),
+    buyingPowerEffect:
+      bp.buyingPowerEffect != null ? Number(bp.buyingPowerEffect.toFixed(2)) : null,
+    buyingPowerEffectKind: bp.buyingPowerEffectKind,
+    buyingPowerEffectIsEstimate: bp.buyingPowerEffectIsEstimate,
+    breakevens: expirationPayoffModeled ? payoff.breakevens : [],
     isIronCondor: detectIronCondor(legs, isCredit),
+    expirationPayoffModeled,
   };
 }

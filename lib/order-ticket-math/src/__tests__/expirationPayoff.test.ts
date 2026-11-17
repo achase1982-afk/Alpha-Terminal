@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { computeOrderEconomics } from "../orderEconomics.js";
 import {
   analyzeExpirationPayoff,
+  dollarRightTailSlope,
   payoffDollarsAtS,
   type ExpirationPayoffInput,
   type PayoffLeg,
@@ -13,17 +14,6 @@ import { schwabOrderMaxRisk } from "../schwabOrderRisk.js";
 import { evaluateServerPlaceOrderGate } from "../serverPlaceOrderGate.js";
 
 const __dir = path.dirname(fileURLToPath(import.meta.url));
-
-function rightTailSlopePerShare(legs: PayoffLeg[]): number {
-  let slope = 0;
-  for (const leg of legs) {
-    if (leg.optionType === "CALL") {
-      const q = leg.quantity ?? 1;
-      slope += leg.instruction.startsWith("BUY") ? q : -q;
-    }
-  }
-  return slope;
-}
 
 /** Dense scan + tail slope — reference brute-force max P/L (test-only). */
 function referenceBruteForcePayoff(input: ExpirationPayoffInput): {
@@ -41,8 +31,7 @@ function referenceBruteForcePayoff(input: ExpirationPayoffInput): {
     if (p < minP) minP = p;
     if (p > maxP) maxP = p;
   }
-  const unitRight = rightTailSlopePerShare(input.legs);
-  const dollarRight = unitRight * 100 * input.spreadUnits;
+  const dollarRight = dollarRightTailSlope(input.legs, input.spreadUnits);
   const unboundedLoss = dollarRight < 0;
   const maxLoss = unboundedLoss ? null : Math.max(0, -minP);
   const maxProfit = dollarRight > 0 ? Number.POSITIVE_INFINITY : Math.max(0, maxP);
