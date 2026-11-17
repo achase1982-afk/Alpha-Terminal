@@ -1,4 +1,4 @@
-import { getUwApiKey } from "./deskUnusualWhales.js";
+import { getUwApiKey, startDeskUwPoller, deskUwAddonEnabled } from "./addons/unusualWhales/index.js";
 import { getTradierToken } from "./deskTradier.js";
 import { getAlpacaKeys } from "./deskAlpaca.js";
 import { deskProbeAlpacaNews } from "./deskAlpacaNews.js";
@@ -33,11 +33,13 @@ export function initDeskMarketFeeds(): void {
   const deskStreamer = process.env.DESK_STREAMER_ENABLED === "true";
   deskSetStreamerDisabled(streamerOff && !deskStreamer);
 
-  if (!getUwApiKey()) {
+  if (!deskUwAddonEnabled() || !getUwApiKey()) {
     deskMarkFeedNotConfigured("uw_flow", "unusual_whales");
     deskMarkFeedNotConfigured("live_gamma_0dte", "unusual_whales");
     deskMarkFeedNotConfigured("live_gamma", "unusual_whales");
     deskMarkFeedNotConfigured("live_net_prem", "unusual_whales");
+  } else {
+    startDeskUwPoller();
   }
   if (!getTradierToken()) deskMarkFeedNotConfigured("tradier");
   const { keyId, secret } = getAlpacaKeys();

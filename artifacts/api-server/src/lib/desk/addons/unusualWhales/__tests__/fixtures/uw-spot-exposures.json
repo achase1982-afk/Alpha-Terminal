@@ -1,0 +1,11 @@
+{
+  "data": [
+    {
+      "charm_per_one_percent_move_dir": "654769081.21",
+      "gamma_per_one_percent_move_oi": "65476967081.41",
+      "price": "4650",
+      "time": "2023-12-13T05:00:41.481000Z",
+      "vanna_per_one_percent_move_dir": "-342349081.21"
+    }
+  ]
+}

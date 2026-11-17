@@ -5,7 +5,6 @@ import { deskEnvelope } from "../lib/desk/deskEnvelope.js";
 import { deskFetchSchwabQuotes } from "../lib/desk/deskSchwabQuotes.js";
 import { deskFetchSchwabChain } from "../lib/desk/deskSchwabChains.js";
 import { deskFetchSchwabBars } from "../lib/desk/deskSchwabBars.js";
-import { deskFetchUwFlow } from "../lib/desk/deskUnusualWhales.js";
 import { deskTradierQuotes, getTradierToken } from "../lib/desk/deskTradier.js";
 import { deskFetchNews } from "../lib/desk/deskNews.js";
 import { deskFetchAlpacaNews } from "../lib/desk/deskAlpacaNews.js";
@@ -19,7 +18,17 @@ import { deskFetchStocknews } from "../lib/desk/deskStocknews.js";
 import { getDeskTapeSince, registerDeskSpxSse } from "../lib/desk/deskSpxTape.js";
 import { deskPersistSnapshot } from "../lib/desk/deskSnapshotStore.js";
 import { deskAsofEtIso, deskSessionDateEt } from "../lib/desk/deskEt.js";
-import { getDeskUwFeedSnapshot, refreshDeskUwLiveFeeds } from "../lib/desk/deskUwLiveFeeds.js";
+import {
+  deskGetCachedLiveGamma,
+  deskGetCachedLiveGamma0dte,
+  deskGetCachedNetPremTicks,
+  deskGetCachedUwFlow,
+  deskParseSinceMs,
+  deskValidateMarketDate,
+  deskValidateUwTicker,
+  deskUwRouteErrorForFeed,
+  deskUwLastHttpStatus,
+} from "../lib/desk/addons/unusualWhales/index.js";
 import { getDeskRawTapeHealth, streamDeskRawTapeNdjson } from "../lib/desk/deskSpxTapeRaw.js";
 import { getDeskTapeUniverseHealth } from "../lib/desk/deskTapeUniverse.js";
 import { getDeskEquityFieldsSeen } from "../lib/desk/deskStreamerTap.js";
@@ -32,8 +41,7 @@ const router: IRouter = Router();
 
 router.use(deskBearerAuth);
 
-router.get("/health", async (_req, res) => {
-  await refreshDeskUwLiveFeeds().catch(() => undefined);
+router.get("/health", (_req, res) => {
   const now = Date.now();
   const feeds = buildDeskHealthFeeds(now);
   const feeds_summary = deskSummarizeFeedsHealth(feeds);
@@ -248,18 +256,19 @@ router.get("/flow", async (req, res) => {
   }
 
   const symbol = req.query["symbol"] as string | undefined;
-  const result = await deskFetchUwFlow({ symbol });
-  const session_date = deskSessionDateEt(new Date(result.asOfMs));
-
-  if (!result.ok) {
-    const status = result.error === "not_configured" ? 503 : result.status && result.status >= 400 ? result.status : 502;
-    res.status(status).json({
-      error: result.error ?? "uw_flow_fetch_failed",
+  const result = deskGetCachedUwFlow(symbol);
+  if (!result) {
+    const body: Record<string, unknown> = {
+      error: deskUwRouteErrorForFeed("uw_flow", "uw_flow_snapshot_unavailable"),
       source: "unusual_whales",
-    });
+    };
+    const lastUwStatus = deskUwLastHttpStatus();
+    if (lastUwStatus != null) body.lastUwStatus = lastUwStatus;
+    res.status(503).json(body);
     return;
   }
 
+  const session_date = deskSessionDateEt(new Date(result.asOfMs));
   res.json(
     deskEnvelope(
       { alerts: result.alerts, symbol: result.symbol ?? symbol ?? null, session_date },
@@ -484,16 +493,39 @@ const gammaHandler =
       res.status(400).json({ error: resolved.error, source: resolved.source, allowed: resolved.allowed });
       return;
     }
-    await refreshDeskUwLiveFeeds().catch(() => undefined);
-    const snap = getDeskUwFeedSnapshot(feed);
+    const defaultDate = deskSessionDateEt();
+    const marketDate = deskValidateMarketDate(req.query["expiry"] as string | undefined, defaultDate);
+    if (!marketDate) {
+      res.status(400).json({ error: "invalid_expiry", source: "unusual_whales", feed });
+      return;
+    }
+    const ticker = deskValidateUwTicker(req.query["ticker"] as string | undefined);
+    if (!ticker) {
+      res.status(400).json({ error: "invalid_ticker", source: "unusual_whales", feed });
+      return;
+    }
+    const snap =
+      feed === "live_gamma_0dte"
+        ? deskGetCachedLiveGamma0dte(marketDate, ticker)
+        : deskGetCachedLiveGamma(marketDate, ticker);
     if (!snap) {
-      res.status(503).json({ error: "gamma_snapshot_unavailable", source: "unusual_whales", feed });
+      const body: Record<string, unknown> = {
+        error: deskUwRouteErrorForFeed(feed, "gamma_snapshot_unavailable"),
+        source: "unusual_whales",
+        feed,
+      };
+      const lastUwStatus = deskUwLastHttpStatus();
+      if (lastUwStatus != null) body.lastUwStatus = lastUwStatus;
+      res.status(503).json(body);
       return;
     }
     res.json(
       deskEnvelope(
         {
           feed,
+          date: snap.date,
+          ...(snap.expiry ? { expiry: snap.expiry } : {}),
+          ticker: snap.ticker,
           row_count: snap.row_count,
           data: snap.data,
           session_date: deskSessionDateEt(new Date(snap.asOfMs)),
@@ -507,5 +539,54 @@ const gammaHandler =
 
 router.get("/gamma/live_gamma_0dte", gammaHandler("live_gamma_0dte"));
 router.get("/gamma/live_gamma", gammaHandler("live_gamma"));
+
+router.get("/net_prem/ticks", async (req, res) => {
+  const rawSource = req.query["source"] as string | undefined;
+  const resolved =
+    rawSource == null || String(rawSource).trim() === ""
+      ? { source: "unusual_whales" as const }
+      : deskResolveSource(rawSource, ["unusual_whales"] as const);
+  if ("error" in resolved) {
+    res.status(400).json({ error: resolved.error, source: resolved.source, allowed: resolved.allowed });
+    return;
+  }
+  const ticker = deskValidateUwTicker(req.query["ticker"] as string | undefined);
+  if (!ticker) {
+    res.status(400).json({ error: "invalid_ticker", source: "unusual_whales" });
+    return;
+  }
+  const sinceParsed = deskParseSinceMs(req.query["since"] as string | undefined);
+  if (!sinceParsed.ok) {
+    res.status(400).json({ error: sinceParsed.error, source: "unusual_whales" });
+    return;
+  }
+  const marketDate = deskSessionDateEt();
+  const cached = deskGetCachedNetPremTicks(ticker, marketDate, sinceParsed.ms);
+  if (!cached) {
+    const body: Record<string, unknown> = {
+      error: deskUwRouteErrorForFeed("live_net_prem", "net_prem_snapshot_unavailable"),
+      source: "unusual_whales",
+    };
+    const lastUwStatus = deskUwLastHttpStatus();
+    if (lastUwStatus != null) body.lastUwStatus = lastUwStatus;
+    res.status(503).json(body);
+    return;
+  }
+  res.json(
+    deskEnvelope(
+      {
+        ticker: cached.ticker,
+        ticks: cached.ticks,
+        since_ms: sinceParsed.ms,
+        date: marketDate,
+        row_count: cached.ticks.length,
+        session_date: deskSessionDateEt(new Date(cached.asOfMs)),
+      },
+      "unusual_whales",
+      cached.asOfMs,
+      "live_net_prem",
+    ),
+  );
+});
 
 export default router;

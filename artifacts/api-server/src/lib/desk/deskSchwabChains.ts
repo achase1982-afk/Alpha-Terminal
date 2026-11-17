@@ -4,7 +4,6 @@ import {
   type DeskSchwabRestApp,
   type DeskSchwabRestFetchResult,
   type DeskSchwabRestResolution,
-  deskSchwabChainsFeed,
   deskSchwabMarkApp2AuthFailure,
   deskSchwabRestFetchWithResolution,
   deskSchwabRestResolve,
@@ -14,6 +13,14 @@ import { logger } from "../logger.js";
 
 const SCHWAB_API_BASE = "https://api.schwabapi.com/marketdata/v1";
 const CACHE_TTL_MS = 30_000;
+
+function deskSchwabChainHealthSource(app: DeskSchwabRestApp): string {
+  return app === "app2" ? "schwab_rest_2" : "schwab";
+}
+
+function deskTouchSchwabChainsFromApp(app: DeskSchwabRestApp, ts: number): void {
+  deskTouchFeed("schwab_chains", ts, deskSchwabChainHealthSource(app));
+}
 
 const VALID_RANGES = new Set(["ALL", "ITM", "NTM", "OTM"]);
 
@@ -174,8 +181,7 @@ async function fetchChainUrlResolved(
     return { json: null, app };
   }
   if (!res.ok) {
-    const feed = deskSchwabChainsFeed(app);
-    deskMarkFeedError(feed, `chain_http_${res.status}`, app === "app2" ? "schwab_rest_2" : undefined);
+    deskMarkFeedError("schwab_chains", `chain_http_${res.status}`, deskSchwabChainHealthSource(app));
     logger.debug({ status: res.status, app }, "Desk Schwab chain HTTP failed");
     return { json: null, app };
   }
@@ -267,8 +273,7 @@ export async function deskFetchSchwabChain(
   const key = cacheKey(sym, exp, opts);
   const hit = cache.get(key);
   if (hit && Date.now() - hit.fetchedAt < CACHE_TTL_MS) {
-    const feed = deskSchwabChainsFeed(hit.app);
-    deskTouchFeed(feed, hit.fetchedAt, hit.app === "app2" ? "schwab_rest_2" : undefined);
+    deskTouchSchwabChainsFromApp(hit.app, hit.fetchedAt);
     return {
       underlyingPrice: hit.underlyingPrice,
       raw: hit.raw,
@@ -299,12 +304,7 @@ export async function deskFetchSchwabChain(
         fellBack: resolved.fellBack,
       };
     }
-    const feed = deskSchwabChainsFeed(usedApp);
-    deskMarkFeedError(
-      feed,
-      "schwab_chain_fetch_failed",
-      usedApp === "app2" ? "schwab_rest_2" : undefined,
-    );
+    deskMarkFeedError("schwab_chains", "schwab_chain_fetch_failed", deskSchwabChainHealthSource(usedApp));
     return {
       underlyingPrice: null,
       raw: [],
@@ -319,10 +319,9 @@ export async function deskFetchSchwabChain(
   }
 
   const app = entry.app;
-  const feed = deskSchwabChainsFeed(app);
   const fellBack = app !== preferred;
   cache.set(key, entry);
-  deskTouchFeed(feed, entry.fetchedAt, app === "app2" ? "schwab_rest_2" : undefined);
+  deskTouchSchwabChainsFromApp(app, entry.fetchedAt);
   return {
     underlyingPrice: entry.underlyingPrice,
     raw: entry.raw,

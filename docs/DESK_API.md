@@ -30,7 +30,9 @@ Each item:
 
 Top-level `feeds_summary` aggregates `any_stale` / `any_failure` **excluding** feeds with `excluded_from_health_gate` (StockNews is optional when `STOCKNEWS_API_KEY` is unset).
 
-**Status:** `OK`, `streaming`, `stale`, `stopped`, `evicted_yielded`, `AUTH_FAIL`, `auth_error`, `not_authorized`, `configured`, `session_closed`, `error`, `reconnecting`, `not_configured`.
+**Status:** `OK`, `streaming`, `stale`, `stopped`, `evicted_yielded`, `AUTH_FAIL`, `auth_error`, `not_authorized`, `configured`, `session_closed`, `error`, `reconnecting`, `not_configured`, `rate_limited`, `expired_or_unpaid`, `ok_no_new_articles`.
+
+`rate_limited` (e.g. Alpha Vantage daily cap) is **not** counted as stale. `ok_no_new_articles` means the poll succeeded but no newer articles arrived (Finnhub); `last_update_ts` remains the newest article publish time and `stale=false`.
 
 Outside a feed’s ET session window → `session_closed` and `stale=false`.
 
@@ -52,15 +54,16 @@ Outside a feed’s ET session window → `session_closed` and `stale=false`.
 
 | Method | Path | Notes |
 |--------|------|--------|
-| GET | `/health` | Feed freshness matrix + `schwab_oauth.app1` / `schwab_oauth.app2` token expiry metadata |
+| GET | `/health` | Feed freshness matrix + `schwab_oauth.app1` / `schwab_oauth.app2` token expiry metadata. **Does not** call UW live refresh (UW poller is background-only). UW feeds in `not_configured`, `rate_limited`, `auth_error`, or `expired_or_unpaid` are **excluded** from the `any_failure` gate. |
 | GET | `/quotes?symbols=&source=` | **Required** `source`: `schwab2` (app 2 first, fallback app 1), `schwab` (app 1 first, fallback app 2); envelope labels reflect the app used. Also `tradier`, `alpaca_paper`, `tastytrade` |
 | GET | `/tape/spx/stream` | SSE Schwab streamer frames `{rx_ns,c,dir?,m,session_date,rx_utc_ms}` |
 | GET | `/tape/spx/raw?session_date=&since_ns=` | Filtered desk-only streamer NDJSON (`{c,rx_ns,m}`); `rx_ns` is a JSON integer; `since_ns` remains a nanosecond string for pagination |
-| GET | `/gamma/live_gamma_0dte?source=unusual_whales` | Paginated UW expiry×strike gamma snapshot |
-| GET | `/gamma/live_gamma?source=unusual_whales` | Paginated UW strike gamma snapshot |
+| GET | `/gamma/live_gamma_0dte?source=unusual_whales&expiry=&ticker=` | **Cache-only** (desk UW poller). Poller fills **today's `SPX` 0DTE only**; other `ticker` or `expiry` → **503** (empty cache). Short TTL. UW `expirations[]=<expiry>` + `date` on `/spot-exposures/expiry-strike` (`limit=500`, zero-based `page`; 503 honors `Retry-After` once per page). |
+| GET | `/gamma/live_gamma?source=unusual_whales&expiry=&ticker=` | **Cache-only**; poller keeps **SPX / today ET** only — other ticker or expiry → **503**. UW `/spot-exposures?date=` — per-minute GEX rows. Query `expiry` is the UW **market date** (default today ET). |
+| GET | `/net_prem/ticks?source=unusual_whales&ticker=&since=` | **Cache-only**; poller snapshot is **SPX / today** — other tickers → **503**. `since` filters `tape_time` locally. |
 | GET | `/tape/spx?since=` | Normalized in-memory ticks |
 | GET | `/chains?symbol=&expiration=&source=` | Full Schwab chain (`source=schwab2` default, `source=schwab` uses app 1). **`source` required.** |
-| GET | `/flow?symbol=&source=unusual_whales` | UW flow; **`source` required** |
+| GET | `/flow?symbol=&source=unusual_whales` | **Cache-only** UW option flow (`__all__` poller bucket, filtered by `symbol`); **`source` required**. 503 bodies include `error` from UW feed health (`rate_limited`, `auth_error`, `expired_or_unpaid`, `not_configured`). |
 | GET | `/bars?symbol=&source=` | **Required** `source`: `schwab2`, `schwab`, `eodhd`, `alpaca_paper` |
 | GET | `/fundamentals?symbol=&source=alphavantage` | Alpha Vantage company overview (daily call budget ~25) |
 | GET | `/news?symbols=&source=` | **Required** `source`: `finnhub`, `alpaca_news`, `alphavantage`, `marketaux`, `stocknews` |
@@ -102,7 +105,8 @@ Universe refreshes on spot moves and expiry window changes. Desk `LEVELONE_OPTIO
 | `DESK_API_KEY` | Bearer secret (**required**) |
 | `DESK_STREAMER_ENABLED` | Optional desk-only streamer flag (default off) |
 | `DESK_TAPE_UNIVERSE_ENABLED` | Desk ADD tape universe on shared streamer (default on) |
-| `UW_API_KEY_NEW` / `UW_API_KEY` | Unusual Whales |
+| `DESK_UW_ENABLED` / `UW_ENABLED` | Unusual Whales addon (`0`/`false` off; `1`/`true` on; default on when a UW key is set) |
+| `UW_API_KEY_NEW` / `UW_API_KEY` / `DESK_UW_API_KEY_NEW` / `DESK_UW_API_KEY` | Unusual Whales (optional addon under `lib/desk/addons/unusualWhales/`) |
 | `TRADIER_API_KEY` / `TRADIER_TOKEN` | Tradier fallback quotes |
 | `ALPACA_API_KEY_ID` + `ALPACA_API_SECRET_KEY` (or `APCA_*`) | Alpaca **news** path only |
 | `ALPACA_PAPER_API_KEY_ID` + `ALPACA_PAPER_API_SECRET_KEY` | Alpaca **paper** market data (quotes/bars); no trading endpoints |

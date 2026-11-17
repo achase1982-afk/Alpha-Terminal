@@ -1,26 +1,34 @@
-import { fetchSymbolNews } from "../symbolNewsProvider.js";
-import { logger } from "../logger.js";
-import { deskMarkFeedError, deskTouchFeedArticleAge } from "./deskFeedFreshness.js";
+import {
+  deskMarkFeedAuthError,
+  deskMarkFeedError,
+  deskMarkFeedRateLimited,
+  deskTouchFeedArticleAge,
+  deskTouchFeedPollOk,
+} from "./deskFeedFreshness.js";
 import { deskMaxArticlePublishedMs } from "./deskNewsArticleAge.js";
+import { deskLoadFinnhubDeskArticles } from "./deskFinnhubDeskNews.js";
 
+const FINNHUB_SOURCE = "finnhub";
+
+/** Desk poller + `/news?source=finnhub`: general market + desk symbols. */
 export async function deskFetchNews(symbols: string[]): Promise<{ articles: unknown[]; asOfMs: number }> {
-  const uniq = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
-  const all: unknown[] = [];
-  let hadSuccess = false;
-  for (const sym of uniq) {
-    try {
-      const rows = await fetchSymbolNews(sym, logger);
-      hadSuccess = true;
-      for (const a of rows) all.push(a);
-    } catch (err) {
-      deskMarkFeedError("news", "finnhub_fetch_error");
-      logger.warn({ err, sym }, "Desk news fetch failed");
+  const pollMs = Date.now();
+  const { articles: all, hadHttp2xx, lastErrorStatus } = await deskLoadFinnhubDeskArticles(symbols);
+  if (!hadHttp2xx) {
+    if (lastErrorStatus === 401 || lastErrorStatus === 403) {
+      deskMarkFeedAuthError("news", `finnhub_http_${lastErrorStatus}`, FINNHUB_SOURCE);
+    } else if (lastErrorStatus === 429) {
+      deskMarkFeedRateLimited("news", `finnhub_http_${lastErrorStatus}`, FINNHUB_SOURCE);
+    } else if (lastErrorStatus && lastErrorStatus > 0) {
+      deskMarkFeedError("news", `finnhub_poll_failed_${lastErrorStatus}`, FINNHUB_SOURCE);
+    } else {
+      deskMarkFeedError("news", "finnhub_fetch_error", FINNHUB_SOURCE);
     }
+    return { articles: all, asOfMs: pollMs };
   }
 
+  deskTouchFeedPollOk("news", pollMs, FINNHUB_SOURCE);
   const articleMaxMs = deskMaxArticlePublishedMs(all);
-  if (hadSuccess) {
-    deskTouchFeedArticleAge("news", articleMaxMs, "finnhub");
-  }
-  return { articles: all, asOfMs: articleMaxMs ?? Date.now() };
+  deskTouchFeedArticleAge("news", articleMaxMs, FINNHUB_SOURCE);
+  return { articles: all, asOfMs: articleMaxMs ?? pollMs };
 }

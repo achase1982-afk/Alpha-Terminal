@@ -1,4 +1,3 @@
-import { fetchAlpacaNews } from "../symbolNewsProvider.js";
 import { getAlpacaKeys } from "./deskAlpaca.js";
 import { getAlpacaPaperKeys } from "./deskAlpacaPaper.js";
 import {
@@ -6,7 +5,6 @@ import {
   deskMarkFeedError,
   deskMarkFeedNotConfigured,
   deskTouchFeedArticleAge,
-  deskTouchFeed,
 } from "./deskFeedFreshness.js";
 import { deskMaxArticlePublishedMs } from "./deskNewsArticleAge.js";
 import { logger } from "../logger.js";
@@ -23,7 +21,7 @@ function alpacaNewsCredentials(): { keyId: string; secret: string } {
   return { keyId: paper.keyId.trim(), secret: paper.secret.trim() };
 }
 
-function parseAlpacaNewsPayload(json: unknown): unknown[] {
+export function parseAlpacaNewsPayload(json: unknown): unknown[] {
   if (Array.isArray(json)) return json;
   if (json && typeof json === "object") {
     const o = json as { news?: unknown[]; articles?: unknown[] };
@@ -33,15 +31,40 @@ function parseAlpacaNewsPayload(json: unknown): unknown[] {
   return [];
 }
 
-function newsUrl(sym: string, limit: number): string {
-  const start = new Date(Date.now() - 7 * 86_400_000).toISOString();
+export function newsUrl(symbols: string[], limit: number, windowMs: number): string {
+  const start = new Date(Date.now() - windowMs).toISOString();
   const params = new URLSearchParams({
-    symbols: sym,
+    symbols: symbols.join(","),
     limit: String(limit),
     sort: "desc",
     start,
   });
   return `${ALPACA_NEWS_URL}?${params.toString()}`;
+}
+
+const MS_24H = 24 * 60 * 60 * 1000;
+const MS_7D = 7 * MS_24H;
+
+async function fetchAlpacaNewsWindow(
+  keyId: string,
+  secret: string,
+  syms: string[],
+  limit: number,
+  windowMs: number,
+): Promise<{ ok: boolean; articles: unknown[]; status: number }> {
+  const res = await fetch(newsUrl(syms, limit, windowMs), {
+    headers: {
+      "APCA-API-KEY-ID": keyId,
+      "APCA-API-SECRET-KEY": secret,
+      Accept: "application/json",
+    },
+    signal: AbortSignal.timeout(12_000),
+  });
+  if (!res.ok) {
+    return { ok: false, articles: [], status: res.status };
+  }
+  const json = await res.json();
+  return { ok: true, articles: parseAlpacaNewsPayload(json), status: res.status };
 }
 
 export async function deskFetchAlpacaNews(
@@ -55,67 +78,54 @@ export async function deskFetchAlpacaNews(
 
   const uniq = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
   const syms = uniq.length ? uniq : ["SPY"];
-  const all: unknown[] = [];
 
-  for (const sym of syms) {
-    const res = await fetch(newsUrl(sym, 50), {
-      headers: {
-        "APCA-API-KEY-ID": keyId,
-        "APCA-API-SECRET-KEY": secret,
-        Accept: "application/json",
-      },
-      signal: AbortSignal.timeout(12_000),
-    });
-    if (res.status === 401 || res.status === 403) {
-      const err = `alpaca_news_http_${res.status}`;
-      deskMarkFeedAuthError("alpaca", err, ALPACA_SOURCE);
-      logger.warn({ status: res.status, symbol: sym }, "Desk Alpaca news auth failed");
-      return { ok: false, articles: [], asOfMs: Date.now(), status: res.status, error: err };
+  let r: { ok: boolean; articles: unknown[]; status: number };
+  try {
+    r = await fetchAlpacaNewsWindow(keyId, secret, syms, 50, MS_24H);
+    if (r.ok && r.articles.length === 0) {
+      r = await fetchAlpacaNewsWindow(keyId, secret, syms, 50, MS_7D);
     }
-    if (!res.ok) {
-      const err = `alpaca_news_http_${res.status}`;
-      deskMarkFeedError("alpaca", err, ALPACA_SOURCE);
-      logger.warn({ status: res.status, symbol: sym }, "Desk Alpaca news HTTP failed");
-      return { ok: false, articles: [], asOfMs: Date.now(), status: res.status, error: err };
-    }
-    const json = await res.json();
-    const rows = parseAlpacaNewsPayload(json);
-    if (rows.length) {
-      for (const a of rows) all.push(a);
-    } else {
-      const normalized = await fetchAlpacaNews(sym, keyId, secret, logger);
-      for (const a of normalized) all.push(a);
-    }
+  } catch (err) {
+    logger.warn({ err }, "Desk Alpaca news fetch error");
+    deskMarkFeedError("alpaca", "alpaca_news_fetch_error", ALPACA_SOURCE);
+    return { ok: false, articles: [], asOfMs: Date.now(), status: 503, error: "alpaca_news_fetch_error" };
   }
 
-  const asOfMs = deskMaxArticlePublishedMs(all);
+  if (r.status === 401 || r.status === 403) {
+    const err = `alpaca_news_http_${r.status}`;
+    deskMarkFeedAuthError("alpaca", err, ALPACA_SOURCE);
+    logger.warn({ status: r.status }, "Desk Alpaca news auth failed");
+    return { ok: false, articles: [], asOfMs: Date.now(), status: r.status, error: err };
+  }
+  if (!r.ok) {
+    const err = `alpaca_news_http_${r.status}`;
+    deskMarkFeedError("alpaca", err, ALPACA_SOURCE);
+    logger.warn({ status: r.status }, "Desk Alpaca news HTTP failed");
+    return { ok: false, articles: [], asOfMs: Date.now(), status: r.status, error: err };
+  }
+
+  const asOfMs = deskMaxArticlePublishedMs(r.articles);
   deskTouchFeedArticleAge("alpaca", asOfMs, ALPACA_SOURCE);
-  return { ok: true, articles: all, asOfMs: asOfMs ?? Date.now(), status: 200 };
+  return { ok: true, articles: r.articles, asOfMs: asOfMs ?? Date.now(), status: 200 };
 }
 
 export async function deskProbeAlpacaNews(): Promise<void> {
   const { keyId, secret } = alpacaNewsCredentials();
   if (!keyId || !secret) return;
   try {
-    const res = await fetch(newsUrl("SPY", 1), {
-      headers: {
-        "APCA-API-KEY-ID": keyId,
-        "APCA-API-SECRET-KEY": secret,
-        Accept: "application/json",
-      },
-      signal: AbortSignal.timeout(12_000),
-    });
-    if (res.status === 401 || res.status === 403) {
-      deskMarkFeedAuthError("alpaca", `alpaca_news_http_${res.status}`, ALPACA_SOURCE);
+    let r = await fetchAlpacaNewsWindow(keyId, secret, ["SPY"], 5, MS_24H);
+    if (r.ok && r.articles.length === 0) {
+      r = await fetchAlpacaNewsWindow(keyId, secret, ["SPY"], 5, MS_7D);
+    }
+    if (r.status === 401 || r.status === 403) {
+      deskMarkFeedAuthError("alpaca", `alpaca_news_http_${r.status}`, ALPACA_SOURCE);
       return;
     }
-    if (!res.ok) {
-      deskMarkFeedError("alpaca", `alpaca_news_http_${res.status}`, ALPACA_SOURCE);
+    if (!r.ok) {
+      deskMarkFeedError("alpaca", `alpaca_news_http_${r.status}`, ALPACA_SOURCE);
       return;
     }
-    const json = await res.json();
-    const rows = parseAlpacaNewsPayload(json);
-    const asOfMs = deskMaxArticlePublishedMs(rows);
+    const asOfMs = deskMaxArticlePublishedMs(r.articles);
     deskTouchFeedArticleAge("alpaca", asOfMs, ALPACA_SOURCE);
   } catch (err) {
     deskMarkFeedError("alpaca", "alpaca_news_fetch_error", ALPACA_SOURCE);
