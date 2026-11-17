@@ -44,7 +44,7 @@ function FlowBar({ value, max, color, align }: { value: number; max: number; col
   if (value <= 0 || max <= 0) return <div className="w-full" />;
   const pct = Math.min(100, (value / max) * 100);
   return (
-    <div className="w-full h-1 rounded-full overflow-hidden" style={{ background: "transparent" }}>
+    <div className="w-full h-[4px] rounded-full overflow-hidden" style={{ background: "transparent" }}>
       <div
         className="h-full rounded-full"
         style={{
@@ -174,10 +174,10 @@ const LadderRowView = memo(function LadderRowView({
           style={{ fontSize: 12, color: WHITE, fontWeight: FW_LIGHT, background: "transparent" }}
           onClick={() => row.put && onCellTap(row.put, "PUT")}
         >
-          <Badge b={putBadge} />
           <span style={{ fontVariantNumeric: "tabular-nums" }}>
             {formatCompactQty(classifiedVol(putFlow) || putTick?.volume)}
           </span>
+          <Badge b={putBadge} />
           {renderPosition(row.put?.streamKey)}
         </button>
         <div
@@ -201,10 +201,10 @@ const LadderRowView = memo(function LadderRowView({
           style={{ fontSize: 12, color: WHITE, fontWeight: FW_LIGHT, background: "transparent" }}
           onClick={() => row.call && onCellTap(row.call, "CALL")}
         >
-          <Badge b={callBadge} />
           <span style={{ fontVariantNumeric: "tabular-nums" }}>
             {formatCompactQty(classifiedVol(callFlow) || callTick?.volume)}
           </span>
+          <Badge b={callBadge} />
           {renderPosition(row.call?.streamKey)}
         </button>
         <FlowBar value={callFlowNet} max={maxFlow} color={UP} align="right" />
