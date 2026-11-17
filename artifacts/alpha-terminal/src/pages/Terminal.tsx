@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect, useRef, useCallback, useId, type ComponentProps } from "react";
+import { lazy, Suspense, useState, useEffect, useLayoutEffect, useRef, useCallback, useId, type ComponentProps } from "react";
 import { Sidebar, type SidebarHandle } from "@/components/Sidebar";
 import { MetricsBar, VolumeBar } from "@/components/MetricsBar";
 import { TradingChart } from "@/components/TradingChart";
@@ -48,6 +48,7 @@ import {
 import { useIsTablet, useIsDesktop } from "@/hooks/useMediaQuery";
 import { useShallow } from "zustand/react/shallow";
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
+import { getChainOrderFixtureOverride } from "@/lib/dev-only/chainOrderFixtureBridge";
 
 // ---------------------------------------------------------------------------
 // Code splitting. The terminal shipped as a single ~2.6 MB chunk; the views
@@ -357,17 +358,23 @@ export default function TerminalPage() {
       return saved && valid.includes(saved) ? saved : fallback;
     } catch { return fallback; }
   });
-
-  useEffect(() => {
-    const fx = import.meta.env.DEV ? getAtFixtureOverride() : null;
-    if (!fx?.enabled) return;
-    setActiveBottom("markets");
-    setContextTab("options");
-  }, []);
   const [contextTab, setContextTab] = useState<ContextTab>(() => {
-    const fx = import.meta.env.DEV ? getAtFixtureOverride() : null;
-    return fx?.enabled ? "options" : "news";
+    if (import.meta.env.DEV) {
+      if (getAtFixtureOverride()?.enabled) return "options";
+      if (getChainOrderFixtureOverride()) return "options";
+    }
+    return "news";
   });
+
+  useLayoutEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const atFx = getAtFixtureOverride();
+    const chainFx = getChainOrderFixtureOverride();
+    if (atFx?.enabled || chainFx) {
+      setActiveBottom("markets");
+      setContextTab("options");
+    }
+  }, []);
   const [aiSubTab, setAiSubTab] = useState<AiSubTab>(() => {
     try {
       const savedRaw = sessionStorage.getItem("alpha_session_ai_tab");

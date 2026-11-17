@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, lazy, Suspense, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@clerk/clerk-react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -214,9 +214,21 @@ function DevAtFixtureRoute() {
   return <Route path="/dev/active-trader" component={Wrapped} />;
 }
 
+const ChainOrderFixtureDevPage = import.meta.env.DEV
+  ? lazy(() => import("@/dev-only/ChainOrderFixtureDevPage"))
+  : null;
 function Router() {
   return (
     <Switch>
+      {ChainOrderFixtureDevPage ? (
+        <Route path="/dev/chain-order-sheet">
+          {() => (
+            <Suspense fallback={null}>
+              <ChainOrderFixtureDevPage />
+            </Suspense>
+          )}
+        </Route>
+      ) : null}
       <Route path="/" component={TerminalPage} />
       <DevAtFixtureRoute />
       <Route component={NotFound} />

@@ -47,13 +47,16 @@ export function registerAtFixtureFromLocation(): void {
   const sceneParam = params.get("scene") ?? "default";
   const scene = (
     sceneParam === "settings-expanded" ||
+    sceneParam === "settings-collapsed" ||
+    sceneParam === "position" ||
     sceneParam === "focus-off" ||
     sceneParam === "vertical" ||
     sceneParam === "strip-vertical"
       ? "default"
       : sceneParam
   ) as AtFixtureOverride["scene"];
-  const settingsPanelOpen = sceneParam === "settings-expanded" || params.get("panel") === "open";
+  const settingsPanelOpen =
+    sceneParam === "settings-expanded" || (sceneParam !== "settings-collapsed" && params.get("panel") === "open");
   const focusOff = sceneParam === "focus-off" || params.get("focus") === "off";
   const initialSubView = scene === "chain" ? "chain" : "at";
 

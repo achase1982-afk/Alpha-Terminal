@@ -6,6 +6,7 @@ import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
 import { enqueueBrowserTelemetry } from "@/lib/browserTelemetry";
+import { estimateSchwabOptionFees } from "@/lib/orders/schwabOrderFees";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { formatSchwabAccountType } from "@/lib/schwabAccountAggregate";
 import { startStrategistPolling } from "@/lib/strategistPoller";
@@ -2786,16 +2787,23 @@ export function OrderTicket({
                 <span style={{ color: WHITE }}>{DURATIONS.find((d) => d.value === duration)?.label}{extendedHours ? " + Ext" : ""}</span>
               </div>
               {(() => {
-                const totalContracts = isOption
-                  ? (isMultiLeg && strategyLegs
-                      ? strategyLegs.reduce((sum, l) => sum + l.quantity, 0) * quantity
-                      : quantity)
+                const contractQty = isOption
+                  ? isMultiLeg && strategyLegs
+                    ? strategyLegs.reduce((sum, l) => sum + l.quantity, 0) * quantity
+                    : atTemplatePrefs?.qty ?? quantity
                   : 0;
-                const commissionPerContract = 0.65;
-                const totalCommission = totalContracts * commissionPerContract;
+                const feeEst = estimateSchwabOptionFees(contractQty);
+                const totalCommission = feeEst.commission;
+                const totalRegulatory = feeEst.regulatoryEst;
                 const netPrice = submittedLimit ?? strategyNetPrice ?? 0;
                 const grossCost = estimatedCost != null ? Math.abs(estimatedCost) : 0;
-                const totalCost = grossCost + totalCommission;
+                const triggerEntryNet = atTriggerConfirm?.orders[0]?.cashFlow;
+                const totalCost =
+                  triggerEntryNet && !triggerEntryNet.isCredit
+                    ? triggerEntryNet.net
+                    : strategyIsCredit
+                      ? grossCost - feeEst.totalEst
+                      : grossCost + feeEst.totalEst;
                 const econMulti =
                   isMultiLeg && strategyLegs && netPrice > 0
                     ? computeOrderEconomics({
@@ -2816,7 +2824,9 @@ export function OrderTicket({
                     : null;
                 const bpEffect = econMulti
                   ? econMulti.buyingPowerEffect
-                  : (side === "BUY" ? -(grossCost + totalCommission) : grossCost - totalCommission);
+                  : side === "BUY"
+                    ? -totalCost
+                    : totalCost;
                 const breakevens: number[] = econMulti?.breakevens ?? [];
                 const maxProfit =
                   econMulti && Number.isFinite(econMulti.maxProfit) ? econMulti.maxProfit : null;
@@ -2828,16 +2838,22 @@ export function OrderTicket({
                         <span style={{ color: MUTED }}>Net {strategyIsCredit ? "credit" : "debit"}</span>
                         <span style={{ color: WHITE }}>{fmtCurrency(grossCost)}</span>
                       </div>
-                      {totalContracts > 0 && (
-                        <div className="flex justify-between" style={{ fontSize: S.body }}>
-                          <span style={{ color: MUTED }}>Commissions ({totalContracts} × $0.65)</span>
-                          <span style={{ color: WHITE }}>{fmtCurrency(totalCommission)}</span>
-                        </div>
+                      {contractQty > 0 && (
+                        <>
+                          <div className="flex justify-between" style={{ fontSize: S.body }}>
+                            <span style={{ color: MUTED }}>Commissions ({contractQty} × $0.65)</span>
+                            <span style={{ color: WHITE }}>{fmtCurrency(totalCommission)}</span>
+                          </div>
+                          <div className="flex justify-between" style={{ fontSize: S.body }}>
+                            <span style={{ color: MUTED }}>Est. regulatory ({contractQty} × $0.02)</span>
+                            <span style={{ color: WHITE }}>{fmtCurrency(totalRegulatory)}</span>
+                          </div>
+                        </>
                       )}
                       <div className="flex justify-between pt-1" style={{ fontSize: S.body, borderTop: `1px dashed ${DIVIDER}` }}>
                         <span style={{ color: TEXT, fontWeight: 500 }}>Total {strategyIsCredit ? "credit" : "cost"}</span>
                         <span style={{ color: WHITE, fontWeight: 600, fontSize: S.price }}>
-                          {fmtCurrency(strategyIsCredit ? grossCost - totalCommission : totalCost)}
+                          {fmtCurrency(Math.abs(totalCost))}
                         </span>
                       </div>
                     </div>

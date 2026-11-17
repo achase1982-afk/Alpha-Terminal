@@ -73,3 +73,9 @@ jobs:
 
       - name: Typecheck alpha-terminal
         run: pnpm --filter @workspace/alpha-terminal typecheck
+
+      - name: Test alpha-terminal
+        run: pnpm --filter @workspace/alpha-terminal test
+
+      - name: Verify chain order dev fixture absent from prod build
+        run: pnpm --filter @workspace/alpha-terminal run verify-chain-order-fixture-prod
