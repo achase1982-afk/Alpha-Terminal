@@ -154,7 +154,7 @@ interface StrategyIdentity {
   warning?: string;
 }
 
-function detectStrategyType(legs: StrategyLeg[], netDebit: number): StrategyIdentity {
+export function detectStrategyType(legs: StrategyLeg[], netDebit: number): StrategyIdentity {
   if (legs.length === 0) return { name: "No Legs", color: MUTED };
 
   const calls = legs.filter(l => l.optionType === "CALL");
@@ -233,7 +233,7 @@ function detectStrategyType(legs: StrategyLeg[], netDebit: number): StrategyIden
   return { name: `Custom ${legs.length}-Leg (${creditOrDebit})`, color: TEXT };
 }
 
-function computeStrategyMetrics(legs: StrategyLeg[]) {
+export function computeStrategyMetrics(legs: StrategyLeg[]) {
   let netDebit = 0;
   let totalDelta = 0, totalGamma = 0, totalTheta = 0, totalVega = 0;
   let hasPrices = true;

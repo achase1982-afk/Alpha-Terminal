@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect, useRef, useCallback, useId, type ComponentProps } from "react";
+import { lazy, Suspense, useState, useEffect, useLayoutEffect, useRef, useCallback, useId, type ComponentProps } from "react";
 import { Sidebar, type SidebarHandle } from "@/components/Sidebar";
 import { MetricsBar, VolumeBar } from "@/components/MetricsBar";
 import { TradingChart } from "@/components/TradingChart";
@@ -46,6 +46,7 @@ import {
 } from "lucide-react";
 import { useIsTablet, useIsDesktop } from "@/hooks/useMediaQuery";
 import { useShallow } from "zustand/react/shallow";
+import { getChainOrderFixtureOverride } from "@/lib/dev-only/chainOrderFixtureBridge";
 
 // ---------------------------------------------------------------------------
 // Code splitting. The terminal shipped as a single ~2.6 MB chunk; the views
@@ -354,6 +355,13 @@ export default function TerminalPage() {
     } catch { return fallback; }
   });
   const [contextTab, setContextTab] = useState<ContextTab>("news");
+
+  useLayoutEffect(() => {
+    if (import.meta.env.DEV && getChainOrderFixtureOverride()) {
+      setActiveBottom("markets");
+      setContextTab("options");
+    }
+  }, []);
   const [aiSubTab, setAiSubTab] = useState<AiSubTab>(() => {
     try {
       const savedRaw = sessionStorage.getItem("alpha_session_ai_tab");
