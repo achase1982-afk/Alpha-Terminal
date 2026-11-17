@@ -26,7 +26,9 @@ JSON responses include:
 
 Each item:
 
-`feed`, `source`, `last_update_ts` (UTC **ms** of last data), `age_ms`, `stale`, `stale_after_ms`, `status`, `session_date`, `asof_et`.
+`feed`, `source`, `last_update_ts` (UTC **ms** of last data), `age_ms`, `stale`, `stale_after_ms`, `status`, `session_date`, `asof_et`. Optional `excluded_from_health_gate` (e.g. unset `stocknews`).
+
+Top-level `feeds_summary` aggregates `any_stale` / `any_failure` **excluding** feeds with `excluded_from_health_gate` (StockNews is optional when `STOCKNEWS_API_KEY` is unset).
 
 **Status:** `OK`, `streaming`, `stale`, `stopped`, `evicted_yielded`, `AUTH_FAIL`, `auth_error`, `not_authorized`, `configured`, `session_closed`, `error`, `reconnecting`, `not_configured`.
 
@@ -91,7 +93,7 @@ Desk **ADD** batches up to **500** symbols per request on the single streamer (n
 | `DESK_TAPE_OPTIONS_MAX` | `15000` |
 | `DESK_TAPE_OPTIONS_SYMBOLS` / `DESK_TAPE_OPTIONS_SYMBOLS_URL` | optional explicit symbol list |
 
-Universe refreshes on spot moves and expiry window changes; `/health` → `desk_tape_universe` includes `options_by_expiry` and `streamer_add_rejections`.
+Universe refreshes on spot moves and expiry window changes. Desk `LEVELONE_OPTIONS` uses the shared Schwab cap (`3000` minus app SUBS count minus `150` headroom) with feed-handler strike windows per expiry. `/health` → `desk_tape_universe` includes `options_by_expiry`, `desk_levelone_options_budget`, `app_levelone_options`, `app_option_symbols_sample`, and `streamer_add_rejections`.
 
 ## Environment
 

@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Response } from "express";
 import { deskBearerAuth } from "../middleware/deskBearerAuth.js";
-import { buildDeskHealthFeeds } from "../lib/desk/deskFeedFreshness.js";
+import { buildDeskHealthFeeds, deskSummarizeFeedsHealth } from "../lib/desk/deskFeedFreshness.js";
 import { deskEnvelope } from "../lib/desk/deskEnvelope.js";
 import { deskFetchSchwabQuotes } from "../lib/desk/deskSchwabQuotes.js";
 import { deskFetchSchwabChain } from "../lib/desk/deskSchwabChains.js";
@@ -34,9 +34,11 @@ router.get("/health", async (_req, res) => {
   await refreshDeskUwLiveFeeds().catch(() => undefined);
   const now = Date.now();
   const feeds = buildDeskHealthFeeds(now);
+  const feeds_summary = deskSummarizeFeedsHealth(feeds);
   const tape = getDeskRawTapeHealth();
   const body = {
     feeds,
+    feeds_summary,
     schwab_streamer: {
       frames: tape.frames,
       bytes: tape.bytes,

@@ -6,6 +6,10 @@ import {
 } from "./deskFeedSessions.js";
 import { deskReadStreamerConnected, deskReadStreamerStatus } from "./deskSchwabStreamerBridge.js";
 import { deskCoercePollReceiptTs } from "./deskFeedTimestamp.js";
+import {
+  deskFeedIntentionallyUnconfigured,
+  deskFeedExcludedFromHealthGate,
+} from "./deskFeedHealthGate.js";
 
 export type DeskFeedId =
   | "schwab_streamer"
@@ -54,6 +58,8 @@ export type DeskFeedStatus = {
   session_date: string;
   asof_et: string;
   error?: string;
+  /** When true, this row is omitted from `/health` `feeds_summary` stale/failure gates. */
+  excluded_from_health_gate?: boolean;
 };
 
 type FeedRecord = {
@@ -304,7 +310,15 @@ export function buildDeskHealthFeeds(now = Date.now()): DeskFeedStatus[] {
   ];
 
   return ids.map((feed) => {
-    const rec = records.get(feed) ?? { source: FEED_SOURCES[feed], lastDataMs: null };
+    let rec = records.get(feed) ?? { source: FEED_SOURCES[feed], lastDataMs: null };
+    if (deskFeedIntentionallyUnconfigured(feed)) {
+      rec = {
+        source: FEED_SOURCES[feed],
+        lastDataMs: null,
+        notConfigured: true,
+        forcedStatus: "not_configured",
+      };
+    }
     const lastMs = rec.lastDataMs;
     const age_ms = lastMs != null ? now - lastMs : null;
     const at = new Date(now);
@@ -337,9 +351,15 @@ export function buildDeskHealthFeeds(now = Date.now()): DeskFeedStatus[] {
       asof_et,
     };
     if (rec.error) row.error = rec.error;
+    if (deskFeedExcludedFromHealthGate(row)) {
+      row.excluded_from_health_gate = true;
+      row.stale = false;
+    }
     return row;
   });
 }
+
+export { deskSummarizeFeedsHealth } from "./deskFeedHealthGate.js";
 
 export function deskResetFeedFreshnessForTests(): void {
   records.clear();
