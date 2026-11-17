@@ -24,4 +24,24 @@ describe("LIMIT multi-leg credit inference", () => {
     });
     expect(gate.checks.find((c) => c.id === "size")?.level).toBe("RED");
   });
+
+  it("scores iron condor max loss when sent as LIMIT", () => {
+    const P5900 = "SPXW  261118P05900000";
+    const P5895 = "SPXW  261118P05895000";
+    const C5950S = "SPXW  261118C05950000";
+    const C5955 = "SPXW  261118C05955000";
+    const order = {
+      orderType: "LIMIT",
+      price: 1,
+      orderLegCollection: [
+        { instruction: "SELL_TO_OPEN", quantity: 1, instrument: { assetType: "OPTION", symbol: P5900 } },
+        { instruction: "BUY_TO_OPEN", quantity: 1, instrument: { assetType: "OPTION", symbol: P5895 } },
+        { instruction: "SELL_TO_OPEN", quantity: 1, instrument: { assetType: "OPTION", symbol: C5950S } },
+        { instruction: "BUY_TO_OPEN", quantity: 1, instrument: { assetType: "OPTION", symbol: C5955 } },
+      ],
+    };
+    const risk = schwabOrderMaxRisk(order);
+    expect(risk.kind).toBe("known");
+    if (risk.kind === "known") expect(risk.maxRisk).toBe(400);
+  });
 });

@@ -57,8 +57,18 @@ function isOptionAsset(asset?: string): boolean {
   return a === "OPTION" || a === "COLLECTIVE_INVESTMENT";
 }
 
-/** Infer credit vs debit for a 2-leg vertical from short/long strikes (same option type). */
+/** Infer credit vs debit for verticals, iron condors, and butterflies (LIMIT with no NET type). */
 export function inferNetCreditFromLegStructure(legs: EconomicsLeg[]): boolean | null {
+  if (legs.length === 4) {
+    const sells = legs.filter((l) => l.instruction.startsWith("SELL"));
+    const buys = legs.filter((l) => l.instruction.startsWith("BUY"));
+    if (sells.length !== 2 || buys.length !== 2) return null;
+    const puts = legs.filter((l) => l.optionType === "PUT");
+    const calls = legs.filter((l) => l.optionType === "CALL");
+    if (puts.length === 2 && calls.length === 2) return true;
+    if (puts.length === 4 || calls.length === 4) return true;
+    return null;
+  }
   if (legs.length !== 2) return null;
   const allCalls = legs.every((l) => l.optionType === "CALL");
   const allPuts = legs.every((l) => l.optionType === "PUT");

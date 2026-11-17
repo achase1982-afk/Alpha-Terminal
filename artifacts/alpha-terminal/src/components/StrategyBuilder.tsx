@@ -10,6 +10,8 @@ import {
   parseCanonicalLimit,
   resolveSubmittedLimit,
   schwabPriceFromTicket,
+  executableMid,
+  midpointFromBidAsk,
 } from "@workspace/order-ticket-math";
 import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
@@ -509,6 +511,7 @@ export function StrategyBuilder({
   const [thesisText, setThesisText] = useState("");
   const [rollingShort, setRollingShort] = useState(false);
   const [strategistDispatchInFlight, setStrategistDispatchInFlight] = useState(false);
+  const [reviewLimitSnapped, setReviewLimitSnapped] = useState<number | null>(null);
 
   const optionTicks = useOptionsStreamStore((s) => s.ticks);
 
@@ -700,6 +703,13 @@ export function StrategyBuilder({
     [symbol],
   );
 
+  const snapLimitForSubmit = useCallback((): number | null => {
+    const snapped = resolveSubmittedLimit(limitTickCtx, limitPrice);
+    if (snapped == null) return null;
+    setLimitPrice(displaySubmittedLimit(limitTickCtx, snapped));
+    return snapped;
+  }, [limitTickCtx, limitPrice]);
+
   const spreadPrices = useMemo(() => {
     if (pricedLegs.length === 0) return null;
     const agg = aggregateSpreadNBBO(
@@ -763,8 +773,8 @@ export function StrategyBuilder({
     if (snapped != null) setLimitPrice(displaySubmittedLimit(limitTickCtx, snapped));
   }, [limitTickCtx, limitPrice]);
 
-  const buildSchwabOrder = useCallback(() => {
-    const parsed = schwabPriceFromTicket(limitTickCtx, limitPrice);
+  const buildSchwabOrder = useCallback((priceOverride?: number) => {
+    const parsed = priceOverride ?? schwabPriceFromTicket(limitTickCtx, limitPrice);
     const getSymParts = (sym: string) => ({ date: sym.substring(6, 12), cp: sym.charAt(12) });
     let complexType = "CUSTOM";
     if (legs.length === 1) {
@@ -796,24 +806,28 @@ export function StrategyBuilder({
   }, [isCredit, extendedHours, legs, quantity, limitPrice, limitTickCtx]);
 
   const validateAndReview = useCallback(() => {
-    if (submittedLimit == null || submittedLimit <= 0) {
+    const px = snapLimitForSubmit();
+    if (px == null || px <= 0) {
       setPriceError("A limit price is required. Set a price using BID / MID / NAT or enter manually.");
       return;
     }
+    setReviewLimitSnapped(px);
     setPriceError("");
     setStage("review");
-  }, [submittedLimit]);
+  }, [snapLimitForSubmit]);
 
   const handleSubmit = useCallback(async () => {
     if (!accountHash) return;
-  if (submittedLimit == null || submittedLimit <= 0) {
+    const px = snapLimitForSubmit();
+    if (px == null || px <= 0) {
       setPriceError("A limit price is required.");
       setStage("form");
       return;
     }
+    setReviewLimitSnapped(px);
     setStage("submitting");
     try {
-      const order = buildSchwabOrder();
+      const order = buildSchwabOrder(px);
       const res = await fetchWithAuth("/api/portfolio/place-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -831,7 +845,7 @@ export function StrategyBuilder({
       setErrorMsg(err.message || "Network error");
       setStage("error");
     }
-  }, [accountHash, buildSchwabOrder]);
+  }, [accountHash, buildSchwabOrder, snapLimitForSubmit]);
 
   const isRollingShortEligible = useMemo(() => {
     if (legs.length < 2) return false;
@@ -853,7 +867,7 @@ export function StrategyBuilder({
 
     const strikes = legs.map(l => l.strike).sort((a, b) => a - b);
     const width = strikes.length >= 2 ? strikes[strikes.length - 1] - strikes[0] : 0;
-    const px = parseFloat(limitPrice) || 0;
+    const px = snapLimitForSubmit() ?? submittedLimit ?? 0;
     const estMaxRisk = isCredit ? (width - px) * 100 * quantity : px * 100 * quantity;
     const estMaxProfit = isCredit ? px * 100 * quantity : (width - px) * 100 * quantity;
 
@@ -1248,7 +1262,13 @@ export function StrategyBuilder({
                         const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
                         return `${months[d.getMonth()]} ${d.getFullYear()}`;
                       })();
-                      const mid = (priced.bid != null && priced.ask != null) ? (priced.bid + priced.ask) / 2 : null;
+                      const streamQ = pairedQuoteFromStreamTick(optionTicks[leg.schwabSymbol]);
+                      const mid =
+                        executableMid(streamQ)
+                        ?? midpointFromBidAsk(priced.bid, priced.ask)
+                        ?? midpointFromBidAsk(streamQ.bid, streamQ.ask);
+                      const bidLeg = streamQ.bid ?? priced.bid;
+                      const askLeg = streamQ.ask ?? priced.ask;
                       return (
                         <div key={leg.id}>
                           <div
@@ -1264,7 +1284,7 @@ export function StrategyBuilder({
                               <div className="text-[10px]" style={{ color: TEXT }}>{isBuy ? "Buy" : "Sell"} · {mid != null ? `Mark ${mid.toFixed(2)}` : "No data"}</div>
                             </div>
                             <div className="flex items-center gap-2 text-[10px]" style={{ color: TEXT }}>
-                              <span>B {fmt(priced.bid)} / A {fmt(priced.ask)}</span>
+                              <span>B {fmt(bidLeg)} / A {fmt(askLeg)}</span>
                               <button onClick={(e) => { e.stopPropagation(); setExpandedLeg(expandedLeg === leg.id ? null : leg.id); }} className="text-[10px]" style={{ color: GOLD, background: "none", border: "none", cursor: "pointer" }}>Edit</button>
                               <button onClick={(e) => { e.stopPropagation(); removeLeg(leg.id); }} style={{ color: MUTED, background: "none", border: "none", cursor: "pointer" }} aria-label="Remove leg">
                                 <Trash2 className="w-2.5 h-2.5" />
@@ -1744,7 +1764,7 @@ export function StrategyBuilder({
                   })}
                   <div className="flex justify-between pt-1 text-[12px]" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
                     <span style={{ color: MUTED }}>Net price</span>
-                    <span style={{ color: WHITE }}>${limitPrice}</span>
+                    <span style={{ color: WHITE }}>${displaySubmittedLimit(limitTickCtx, reviewLimitSnapped ?? submittedLimit)}</span>
                   </div>
                   <div className="flex justify-between text-[12px]">
                     <span style={{ color: MUTED }}>Duration</span>
@@ -1753,7 +1773,7 @@ export function StrategyBuilder({
                   {(() => {
                     const totalContracts = legs.reduce((sum, l) => sum + l.quantity, 0) * quantity;
                     const totalCommission = totalContracts * 0.65;
-                    const px = parseFloat(limitPrice) || 0;
+                    const px = reviewLimitSnapped ?? submittedLimit ?? 0;
                     const grossCost = estimatedCost != null ? Math.abs(estimatedCost) : 0;
                     const strikes = legs.map(l => l.strike).sort((a, b) => a - b);
                     const width = strikes.length >= 2 ? strikes[strikes.length - 1] - strikes[0] : 0;

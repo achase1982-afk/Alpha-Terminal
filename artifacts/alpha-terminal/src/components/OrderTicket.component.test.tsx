@@ -103,6 +103,23 @@ describe("OrderTicket component", () => {
     });
   });
 
+  it("keeps Review disabled with empty limit when bid/ask are missing (no last fallback)", async () => {
+    mockTicks[OPT] = { last: 2.6, ts: 1, delta: 0.4 } as (typeof mockTicks)[string];
+    render(
+      <OrderTicket
+        isOpen
+        onClose={() => {}}
+        optionSymbol={OPT}
+        subscribeOptionSymbols={vi.fn()}
+      />,
+    );
+    const limitInput = await screen.findByPlaceholderText("0.00") as HTMLInputElement;
+    expect(limitInput.value).toBe("");
+    const review = await screen.findByRole("button", { name: "Review" });
+    expect((review as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByText(/Limit 2\.60/i)).toBeNull();
+  });
+
   it("uses option stream bid/ask instead of underlying for single option", async () => {
     render(
       <OrderTicket

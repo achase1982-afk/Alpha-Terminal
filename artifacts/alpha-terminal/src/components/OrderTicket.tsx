@@ -683,7 +683,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
           ? strategyNetPrice
           : orderType === "MARKET"
             ? (side === "BUY" ? ticketPxAsk : ticketPxBid) ?? ticketPxLast ?? null
-            : ticketPxLast ?? null,
+            : null,
       ),
     [
       limitTickCtx, limitPrice, needsLimit, isMultiLeg, strategyNetPrice, orderType, side,
