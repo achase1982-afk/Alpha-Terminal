@@ -49,9 +49,9 @@ const allScenes = [
   {
     name: "at-03-confirm-review-440x956.png",
     url: `${BASE}?scene=confirm`,
-    waitText: "Trigger order summary",
-    waitSelector: "[data-at-trigger-confirm]",
+    waitText: "Order Confirmation",
     minRows: 0,
+    confirmDelay: 4500,
   },
 ];
 
@@ -174,7 +174,7 @@ for (const scene of scenes) {
     }
   }
   if (scene.scrollAtm || scene.clipStrike === 7545) await scrollAtmIntoView(page);
-  const delay = scene.name.includes("strip") ? 1800 : scene.name.includes("confirm") ? 2400 : 1200;
+  const delay = scene.confirmDelay ?? (scene.name.includes("strip") ? 1800 : scene.name.includes("confirm") ? 3500 : 1200);
   await page.waitForTimeout(delay);
 
   if (scene.name.includes("01-default")) {
