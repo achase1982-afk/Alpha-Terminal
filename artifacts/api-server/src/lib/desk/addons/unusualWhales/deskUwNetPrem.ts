@@ -1,9 +1,9 @@
-import { deskSessionDateEt } from "./deskEt.js";
+import { deskSessionDateEt } from "../../deskEt.js";
 import { deskUwExtractRows, DESK_UW_SNAPSHOT_TTL_MS } from "./deskUwGamma.js";
 import { deskUwGet } from "./deskUwHttp.js";
-import { deskTouchFeed } from "./deskFeedFreshness.js";
+import { deskTouchFeed } from "../../deskFeedFreshness.js";
 import { getUwApiKey } from "./deskUnusualWhales.js";
-import { logger } from "../logger.js";
+import { logger } from "../../../logger.js";
 import { deskApplyUwHttpFeedStatus, deskUwMarkNotConfigured } from "./deskUwStatus.js";
 
 const UW_SOURCE = "unusual_whales";
@@ -55,7 +55,7 @@ export async function deskRefreshNetPremTicks(ticker = "SPX", marketDate?: strin
     const path = `/api/stock/${encodeURIComponent(sym)}/net-prem-ticks?date=${encodeURIComponent(date)}`;
     const res = await deskUwGet(path);
     if (!res.ok) {
-      deskApplyUwHttpFeedStatus("live_net_prem", res.status);
+      deskApplyUwHttpFeedStatus("live_net_prem", res.status, "unusual_whales", res.retryAfterSec);
       return null;
     }
     const rows = deskUwExtractRows(res.json);

@@ -1,5 +1,4 @@
 import { deskFetchSchwabChain } from "./deskSchwabChains.js";
-import { deskFetchUwFlow } from "./deskUnusualWhales.js";
 import { deskTradierQuotes, getTradierToken } from "./deskTradier.js";
 import { deskProbeAlpacaNews } from "./deskAlpacaNews.js";
 import { deskFetchNews } from "./deskNews.js";
@@ -11,10 +10,8 @@ import { getStocknewsKey } from "./deskStocknews.js";
 import { getEodhdKey } from "./deskEodhd.js";
 import { tastytradeConfigured, deskProbeTastytrade } from "./deskTastytrade.js";
 import { getAlpacaPaperKeys, deskProbeAlpacaPaper } from "./deskAlpacaPaper.js";
-import { refreshDeskUwLiveFeeds } from "./deskUwLiveFeeds.js";
 import { deskSessionDateEt } from "./deskEt.js";
 import { logger } from "../logger.js";
-
 import { DESK_NEWS_POLL_MS } from "./deskPollCadence.js";
 
 const POLL_MS = DESK_NEWS_POLL_MS;
@@ -50,20 +47,6 @@ async function pollVendorSlow(): Promise<void> {
   if (getEodhdKey()) await deskProbeEodhd();
 }
 
-async function pollUwFeedsSafe(): Promise<void> {
-  try {
-    await refreshDeskUwLiveFeeds(true);
-  } catch (err) {
-    logger.debug({ err }, "Desk UW live feed refresh error");
-  }
-  try {
-    await deskFetchUwFlow();
-  } catch (err) {
-    logger.debug({ err }, "Desk UW flow refresh error");
-  }
-}
-
-/** UW runs last so timeouts never skip Tradier / news pollers. */
 export async function runDeskBackgroundPollCycle(): Promise<void> {
   if (pollInFlight) {
     await pollInFlight;
@@ -76,7 +59,6 @@ export async function runDeskBackgroundPollCycle(): Promise<void> {
       await pollTradier();
       await pollAlpacaNews();
       await pollNews();
-      await pollUwFeedsSafe();
     } catch (err) {
       logger.debug({ err }, "Desk background poll cycle error");
     }

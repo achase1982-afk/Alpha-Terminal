@@ -1,4 +1,4 @@
-import { deskSessionDateEt } from "./deskEt.js";
+import { deskSessionDateEt } from "../../deskEt.js";
 import {
   deskGetCachedLiveGamma,
   deskGetCachedLiveGamma0dte,
@@ -7,11 +7,11 @@ import {
   deskUwGammaAsFeedSnapshot,
 } from "./deskUwGamma.js";
 import { deskGetCachedNetPremTicks, deskRefreshNetPremTicks } from "./deskUwNetPrem.js";
-import { deskMarkFeedNotConfigured, type DeskFeedId } from "./deskFeedFreshness.js";
+import { deskMarkFeedNotConfigured, type DeskFeedId } from "../../deskFeedFreshness.js";
 import { getUwApiKey } from "./deskUnusualWhales.js";
-import { logger } from "../logger.js";
-
-const REFRESH_MS = 90_000;
+import { logger } from "../../../logger.js";
+import { deskUwAddonEnabled } from "./deskUwEnabled.js";
+import { deskUwPollPaused } from "./deskUwPollControl.js";
 
 let refreshInFlight: Promise<void> | null = null;
 let lastRefreshMs = 0;
@@ -74,6 +74,7 @@ function dateOfRefresh(): string {
 }
 
 export async function refreshDeskUwLiveFeeds(force = false): Promise<void> {
+  if (!deskUwAddonEnabled() || deskUwPollPaused()) return;
   const key = getUwApiKey();
   if (!key) {
     markUwGammaNotConfigured();
@@ -81,7 +82,7 @@ export async function refreshDeskUwLiveFeeds(force = false): Promise<void> {
   }
 
   const now = Date.now();
-  if (!force && now - lastRefreshMs < REFRESH_MS) return;
+  if (!force && now - lastRefreshMs < 90_000) return;
 
   if (refreshInFlight) {
     await refreshInFlight;

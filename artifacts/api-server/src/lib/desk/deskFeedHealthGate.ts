@@ -2,6 +2,14 @@ import { getStocknewsKey } from "./deskStocknews.js";
 
 type FeedRow = { feed: string; status: string; stale: boolean };
 
+const UW_FEEDS = new Set(["live_gamma_0dte", "live_gamma", "live_net_prem", "uw_flow"]);
+const UW_OPTIONAL_STATUSES = new Set([
+  "not_configured",
+  "rate_limited",
+  "auth_error",
+  "expired_or_unpaid",
+]);
+
 /** Feeds intentionally left unconfigured must not affect aggregate desk health. */
 export function deskFeedIntentionallyUnconfigured(feed: string): boolean {
   if (feed === "stocknews") return !getStocknewsKey();
@@ -9,7 +17,9 @@ export function deskFeedIntentionallyUnconfigured(feed: string): boolean {
 }
 
 export function deskFeedExcludedFromHealthGate(row: FeedRow): boolean {
-  return row.feed === "stocknews" && row.status === "not_configured";
+  if (row.feed === "stocknews" && row.status === "not_configured") return true;
+  if (UW_FEEDS.has(row.feed) && UW_OPTIONAL_STATUSES.has(row.status)) return true;
+  return false;
 }
 
 const FAILURE_STATUSES = new Set([

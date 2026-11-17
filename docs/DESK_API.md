@@ -105,7 +105,8 @@ Universe refreshes on spot moves and expiry window changes. Desk `LEVELONE_OPTIO
 | `DESK_API_KEY` | Bearer secret (**required**) |
 | `DESK_STREAMER_ENABLED` | Optional desk-only streamer flag (default off) |
 | `DESK_TAPE_UNIVERSE_ENABLED` | Desk ADD tape universe on shared streamer (default on) |
-| `UW_API_KEY_NEW` / `UW_API_KEY` | Unusual Whales |
+| `DESK_UW_ENABLED` | Unusual Whales addon (`0`/`false` off; `1`/`true` on; default on when a UW key is set) |
+| `UW_API_KEY_NEW` / `UW_API_KEY` / `DESK_UW_API_KEY_NEW` / `DESK_UW_API_KEY` | Unusual Whales (optional addon under `lib/desk/addons/unusualWhales/`) |
 | `TRADIER_API_KEY` / `TRADIER_TOKEN` | Tradier fallback quotes |
 | `ALPACA_API_KEY_ID` + `ALPACA_API_SECRET_KEY` (or `APCA_*`) | Alpaca **news** path only |
 | `ALPACA_PAPER_API_KEY_ID` + `ALPACA_PAPER_API_SECRET_KEY` | Alpaca **paper** market data (quotes/bars); no trading endpoints |

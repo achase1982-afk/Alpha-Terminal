@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   buildDeskHealthFeeds,
   deskResetFeedFreshnessForTests,
-} from "../deskFeedFreshness.js";
+} from "../../../deskFeedFreshness.js";
 import { deskApplyUwHttpFeedStatus, deskUwRouteHttpFromStatus } from "../deskUwStatus.js";
 
 describe("deskUwStatus", () => {

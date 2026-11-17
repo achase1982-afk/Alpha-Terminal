@@ -1,17 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../deskUwLiveFeeds.js", () => ({
-  refreshDeskUwLiveFeeds: vi.fn(async () => {
-    throw new Error("UW timeout");
-  }),
-}));
-
-vi.mock("../deskUnusualWhales.js", () => ({
-  deskFetchUwFlow: vi.fn(async () => {
-    throw new Error("UW flow timeout");
-  }),
-}));
-
 const pollTradier = vi.fn();
 const pollAlpaca = vi.fn();
 const pollNews = vi.fn();
@@ -40,7 +28,7 @@ describe("runDeskBackgroundPollCycle", () => {
     pollNews.mockClear();
   });
 
-  it("still runs Tradier and news when UW refresh throws", async () => {
+  it("runs Tradier and news without UW in the same cycle", async () => {
     const { runDeskBackgroundPollCycle } = await import("../deskBackgroundPollers.js");
     await runDeskBackgroundPollCycle();
     expect(pollTradier).toHaveBeenCalled();

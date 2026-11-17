@@ -9,12 +9,13 @@ import { deskFetchSchwabChain } from "../deskSchwabChains.js";
 
 const tokenStore = vi.hoisted(() => ({
   getBestAccessToken: vi.fn((): string | null => null),
+  getSchwab2Token: vi.fn(async (): Promise<string | null> => null),
 }));
 
 vi.mock("../deskSchwab2TokenStore.js", () => ({
   isSchwab2TokenStoreDead: () => false,
-  hasSchwab2Tokens: () => false,
-  getSchwab2ValidAccessToken: async () => null,
+  hasSchwab2Tokens: () => Boolean(tokenStore.getSchwab2Token()),
+  getSchwab2ValidAccessToken: () => tokenStore.getSchwab2Token(),
   deskSchwab2Configured: () => true,
 }));
 
@@ -27,6 +28,8 @@ describe("desk Schwab REST health labels", () => {
     deskResetFeedFreshnessForTests();
     tokenStore.getBestAccessToken.mockReset();
     tokenStore.getBestAccessToken.mockReturnValue(null);
+    tokenStore.getSchwab2Token.mockReset();
+    tokenStore.getSchwab2Token.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -46,6 +49,25 @@ describe("desk Schwab REST health labels", () => {
     ).toBe(false);
   });
 
+  it("successful chain on app2 credits schwab_chains with schwab_rest_2 source", async () => {
+    tokenStore.getSchwab2Token.mockResolvedValue("app2-token");
+    const chainPayload = {
+      callExpDateMap: { "2099-12-19": { "4000.0": [{ putCall: "CALL", symbol: "QQQ" }] } },
+      putExpDateMap: {},
+      underlyingPrice: 400,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify(chainPayload), { status: 200 })),
+    );
+    await deskFetchSchwabChain("QQQ", "2099-12-19", {}, "app2");
+    const feeds = buildDeskHealthFeeds();
+    const chains = feeds.find((f) => f.feed === "schwab_chains");
+    expect(chains?.status).toBe("OK");
+    expect(chains?.source).toBe("schwab_rest_2");
+    expect(chains?.last_update_ts).not.toBeNull();
+  });
+
   it("chain fetch failure on key-1 marks schwab_chains, not schwab2_rest", async () => {
     tokenStore.getBestAccessToken.mockReturnValue("app1-token");
     vi.stubGlobal(
@@ -53,7 +75,7 @@ describe("desk Schwab REST health labels", () => {
       vi.fn(async () => new Response("{}", { status: 500, statusText: "Server Error" })),
     );
     await deskSchwabRestResolve("app2");
-    await deskFetchSchwabChain("QQQ", "2099-12-19", {}, "app2");
+    await deskFetchSchwabChain("QQQ", "2099-12-20", {}, "app2");
     const feeds = buildDeskHealthFeeds();
     expect(feeds.find((f) => f.feed === "schwab2_rest")?.status).toBe("not_authorized");
     const chains = feeds.find((f) => f.feed === "schwab_chains");

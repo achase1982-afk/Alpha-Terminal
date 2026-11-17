@@ -1,8 +1,10 @@
-import { deskEnv } from "./deskEnv.js";
-import { deskTouchFeed, deskMarkFeedNotConfigured } from "./deskFeedFreshness.js";
+import { deskEnv } from "../../deskEnv.js";
+import { deskTouchFeed, deskMarkFeedNotConfigured } from "../../deskFeedFreshness.js";
 import { deskApplyUwHttpFeedStatus } from "./deskUwStatus.js";
 import { deskFilterUwFlowAlerts, deskUwFlowTickerQuery } from "./deskUwFlow.js";
-import { logger } from "../logger.js";
+import { logger } from "../../../logger.js";
+import { deskUwAddonEnabled } from "./deskUwEnabled.js";
+import { deskUwPollPaused } from "./deskUwPollControl.js";
 
 const UW_BASE = "https://api.unusualwhales.com";
 const CACHE_TTL_MS = 60_000;
@@ -56,27 +58,31 @@ export type DeskUwFlowResult = {
   symbol?: string;
 };
 
-export async function deskFetchUwFlow(opts?: {
-  symbol?: string;
-}): Promise<DeskUwFlowResult> {
+function flowCacheKey(symbol?: string): string {
+  const s = symbol?.trim();
+  return s ? s.toUpperCase() : "__all__";
+}
+
+export function deskGetCachedUwFlow(symbol?: string): DeskUwFlowResult | null {
+  const cacheKey = flowCacheKey(symbol);
+  const hit = cacheBody.get(cacheKey);
+  const hitAt = cacheAt.get(cacheKey);
+  if (!hit || hitAt == null || Date.now() - hitAt > CACHE_TTL_MS) return null;
+  const filtered = deskFilterUwFlowAlerts(hit, symbol);
+  return { ok: true, alerts: filtered, asOfMs: hitAt, symbol: symbol?.trim().toUpperCase() };
+}
+
+/** Poller-only: fetches flow from UW when addon enabled and not backed off. */
+export async function deskRefreshUwFlow(symbol?: string): Promise<void> {
+  if (!deskUwAddonEnabled() || deskUwPollPaused()) return;
   const key = getUwApiKey();
   if (!key) {
-    deskMarkFeedNotConfigured("uw_flow");
-    return { ok: false, alerts: [], asOfMs: Date.now(), error: "not_configured" };
-  }
-
-  const symbol = opts?.symbol?.trim();
-  const cacheKey = symbol ? symbol.toUpperCase() : "__all__";
-  const hit = cacheBody.get(cacheKey);
-  const hitAt = cacheAt.get(cacheKey) ?? 0;
-  if (hit && Date.now() - hitAt < CACHE_TTL_MS) {
-    const filtered = deskFilterUwFlowAlerts(hit, symbol);
-    deskTouchFeed("uw_flow", hitAt, "unusual_whales");
-    return { ok: true, alerts: filtered, asOfMs: hitAt, symbol };
+    deskMarkFeedNotConfigured("uw_flow", "unusual_whales");
+    return;
   }
 
   try {
-    return await withUwConcurrencySlot(async () => {
+    await withUwConcurrencySlot(async () => {
       const params = new URLSearchParams({ limit: "100" });
       const tickers = deskUwFlowTickerQuery(symbol);
       if (tickers) params.set("ticker_symbol", tickers);
@@ -90,18 +96,11 @@ export async function deskFetchUwFlow(opts?: {
         },
         signal: AbortSignal.timeout(20_000),
       });
+      const retryAfterSec = Number(res.headers.get("Retry-After")) || undefined;
       if (!res.ok) {
-        const msg = `uw_flow_http_${res.status}`;
-        deskApplyUwHttpFeedStatus("uw_flow", res.status);
+        deskApplyUwHttpFeedStatus("uw_flow", res.status, "unusual_whales", retryAfterSec);
         logger.warn({ status: res.status, symbol }, "Desk UW flow fetch failed");
-        return {
-          ok: false,
-          alerts: deskFilterUwFlowAlerts(hit ?? [], symbol),
-          asOfMs: hitAt || Date.now(),
-          status: res.status,
-          error: msg,
-          symbol,
-        };
+        return;
       }
       const json = (await res.json()) as { data?: unknown[] } | unknown[];
       const raw = Array.isArray(json)
@@ -109,16 +108,19 @@ export async function deskFetchUwFlow(opts?: {
         : Array.isArray((json as { data?: unknown[] }).data)
           ? (json as { data: unknown[] }).data
           : [];
-      const filtered = deskFilterUwFlowAlerts(raw, symbol);
+      const cacheKey = flowCacheKey(symbol);
       cacheBody.set(cacheKey, raw);
       const at = Date.now();
       cacheAt.set(cacheKey, at);
       deskTouchFeed("uw_flow", at, "unusual_whales");
-      return { ok: true, alerts: filtered, asOfMs: at, status: res.status, symbol };
     });
   } catch (err) {
     deskApplyUwHttpFeedStatus("uw_flow", 0);
     logger.warn({ err, symbol }, "Desk UW flow error");
-    return { ok: false, alerts: [], asOfMs: Date.now(), error: "uw_flow_fetch_error", symbol };
   }
+}
+
+export function deskResetUwFlowCacheForTests(): void {
+  cacheBody.clear();
+  cacheAt.clear();
 }

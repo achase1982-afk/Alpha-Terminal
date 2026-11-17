@@ -5,7 +5,6 @@ import { deskEnvelope } from "../lib/desk/deskEnvelope.js";
 import { deskFetchSchwabQuotes } from "../lib/desk/deskSchwabQuotes.js";
 import { deskFetchSchwabChain } from "../lib/desk/deskSchwabChains.js";
 import { deskFetchSchwabBars } from "../lib/desk/deskSchwabBars.js";
-import { deskFetchUwFlow } from "../lib/desk/deskUnusualWhales.js";
 import { deskTradierQuotes, getTradierToken } from "../lib/desk/deskTradier.js";
 import { deskFetchNews } from "../lib/desk/deskNews.js";
 import { deskFetchAlpacaNews } from "../lib/desk/deskAlpacaNews.js";
@@ -19,14 +18,16 @@ import { deskFetchStocknews } from "../lib/desk/deskStocknews.js";
 import { getDeskTapeSince, registerDeskSpxSse } from "../lib/desk/deskSpxTape.js";
 import { deskPersistSnapshot } from "../lib/desk/deskSnapshotStore.js";
 import { deskAsofEtIso, deskSessionDateEt } from "../lib/desk/deskEt.js";
-import { refreshDeskUwLiveFeeds } from "../lib/desk/deskUwLiveFeeds.js";
 import {
   deskGetCachedLiveGamma,
   deskGetCachedLiveGamma0dte,
-} from "../lib/desk/deskUwGamma.js";
-import { deskGetCachedNetPremTicks } from "../lib/desk/deskUwNetPrem.js";
-import { deskParseSinceMs, deskValidateMarketDate, deskValidateUwTicker } from "../lib/desk/deskUwInput.js";
-import { deskUwRouteHttpFromStatus } from "../lib/desk/deskUwStatus.js";
+  deskGetCachedNetPremTicks,
+  deskGetCachedUwFlow,
+  deskParseSinceMs,
+  deskValidateMarketDate,
+  deskValidateUwTicker,
+  deskUwRouteHttpFromStatus,
+} from "../lib/desk/addons/unusualWhales/index.js";
 import { getDeskRawTapeHealth, streamDeskRawTapeNdjson } from "../lib/desk/deskSpxTapeRaw.js";
 import { getDeskTapeUniverseHealth } from "../lib/desk/deskTapeUniverse.js";
 import { getDeskEquityFieldsSeen } from "../lib/desk/deskStreamerTap.js";
@@ -39,8 +40,7 @@ const router: IRouter = Router();
 
 router.use(deskBearerAuth);
 
-router.get("/health", async (_req, res) => {
-  await refreshDeskUwLiveFeeds().catch(() => undefined);
+router.get("/health", (_req, res) => {
   const now = Date.now();
   const feeds = buildDeskHealthFeeds(now);
   const feeds_summary = deskSummarizeFeedsHealth(feeds);
@@ -255,18 +255,17 @@ router.get("/flow", async (req, res) => {
   }
 
   const symbol = req.query["symbol"] as string | undefined;
-  const result = await deskFetchUwFlow({ symbol });
-  const session_date = deskSessionDateEt(new Date(result.asOfMs));
-
-  if (!result.ok) {
-    const status = result.error === "not_configured" ? 503 : result.status && result.status >= 400 ? result.status : 502;
-    res.status(status).json({
-      error: result.error ?? "uw_flow_fetch_failed",
+  const result = deskGetCachedUwFlow(symbol);
+  if (!result) {
+    const route = deskUwRouteHttpFromStatus(undefined, "uw_flow_snapshot_unavailable");
+    res.status(route.httpStatus).json({
+      error: route.error,
       source: "unusual_whales",
     });
     return;
   }
 
+  const session_date = deskSessionDateEt(new Date(result.asOfMs));
   res.json(
     deskEnvelope(
       { alerts: result.alerts, symbol: result.symbol ?? symbol ?? null, session_date },

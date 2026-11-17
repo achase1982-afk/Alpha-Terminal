@@ -1,8 +1,8 @@
-import { deskSessionDateEt } from "./deskEt.js";
+import { deskSessionDateEt } from "../../deskEt.js";
 import { deskUwGet } from "./deskUwHttp.js";
-import { deskTouchFeed, type DeskFeedId } from "./deskFeedFreshness.js";
+import { deskTouchFeed, type DeskFeedId } from "../../deskFeedFreshness.js";
 import { getUwApiKey } from "./deskUnusualWhales.js";
-import { logger } from "../logger.js";
+import { logger } from "../../../logger.js";
 import { deskApplyUwHttpFeedStatus, deskUwMarkNotConfigured } from "./deskUwStatus.js";
 
 const UW_SOURCE = "unusual_whales";
@@ -137,7 +137,7 @@ export async function deskRefreshLiveGamma(marketDate: string, ticker = "SPX"): 
     const path = `/api/stock/${encodeURIComponent(sym)}/spot-exposures?date=${encodeURIComponent(marketDate)}`;
     const res = await deskUwGet(path);
     if (!res.ok) {
-      deskApplyUwHttpFeedStatus("live_gamma", res.status);
+      deskApplyUwHttpFeedStatus("live_gamma", res.status, "unusual_whales", res.retryAfterSec);
       logger.debug({ status: res.status }, "Desk UW live_gamma fetch failed");
       return null;
     }

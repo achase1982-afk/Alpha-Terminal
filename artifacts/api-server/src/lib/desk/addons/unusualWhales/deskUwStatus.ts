@@ -5,7 +5,8 @@ import {
   deskMarkFeedNotConfigured,
   deskMarkFeedRateLimited,
   type DeskFeedId,
-} from "./deskFeedFreshness.js";
+} from "../../deskFeedFreshness.js";
+import { deskUwRecordHttpStatus } from "./deskUwPollControl.js";
 
 const UW_SOURCE = "unusual_whales";
 
@@ -13,7 +14,11 @@ export function deskApplyUwHttpFeedStatus(
   feed: DeskFeedId,
   status: number,
   source = UW_SOURCE,
+  retryAfterSec?: number,
 ): void {
+  if (status === 401 || status === 402 || status === 403 || status === 429) {
+    deskUwRecordHttpStatus(status, retryAfterSec);
+  }
   if (status === 0) {
     deskMarkFeedError(feed, "uw_network_error", source);
     return;
