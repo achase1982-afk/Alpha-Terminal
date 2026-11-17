@@ -38,7 +38,6 @@ export interface OrderNetCashFlow {
   netIsCredit: boolean;
 }
 
-/** Net cash after est. commission + regulatory fees. */
 export function computeOrderNetCash(
   gross: number,
   isCredit: boolean,
