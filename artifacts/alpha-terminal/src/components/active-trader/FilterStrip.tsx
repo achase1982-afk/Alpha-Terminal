@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { BG_EXP_BAR, BORDER, DIM, GRAY, MONO, FW_LIGHT, UP, DOWN } from "@/components/options/optionsTheme";
+import { BG_EXP_BAR, BORDER, DIM, GRAY, MONO, FW_LIGHT, UP, DOWN, WHITE } from "@/components/options/optionsTheme";
 
 export type LaneFilterKey = "call_buy" | "call_sell" | "put_buy" | "put_sell";
 
@@ -32,7 +32,6 @@ function LegendBadge({ children, color }: { children: string; color: string }) {
 }
 
 export const FilterStrip = memo(function FilterStrip({
-  accentHex,
   filters,
   onToggle,
   classifiedPct,
@@ -42,7 +41,8 @@ export const FilterStrip = memo(function FilterStrip({
 }: FilterStripProps) {
   return (
     <div
-      className={embedded ? "px-3 py-2 space-y-2" : "sticky z-[37] px-3 py-2 space-y-2"}
+      data-at-filter-strip
+      className={embedded ? "px-3 py-1.5 space-y-1" : "sticky z-[37] px-3 py-1.5 space-y-1"}
       style={{
         ...(embedded ? {} : { top: stickyTop }),
         background: BG_EXP_BAR,
@@ -50,20 +50,21 @@ export const FilterStrip = memo(function FilterStrip({
         fontFamily: MONO,
       }}
     >
-      <div className="flex gap-1.5 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+      <div
+        className="flex flex-wrap items-center gap-x-3 gap-y-1"
+        style={{ fontSize: 11, fontWeight: FW_LIGHT }}
+      >
         {CHIPS.map((c) => {
           const on = filters[c.key];
           return (
             <button
               key={c.key}
               type="button"
-              className="shrink-0 px-2 py-1 rounded border"
+              className="shrink-0 bg-transparent border-0 p-0 cursor-pointer"
               style={{
-                fontSize: 10,
-                fontWeight: FW_LIGHT,
-                borderColor: on ? accentHex : BORDER,
-                color: on ? accentHex : GRAY,
-                background: "transparent",
+                color: on ? WHITE : "#52525b",
+                textDecoration: on ? "none" : "none",
+                opacity: on ? 1 : 0.55,
               }}
               onClick={() => onToggle(c.key)}
             >
@@ -72,15 +73,21 @@ export const FilterStrip = memo(function FilterStrip({
           );
         })}
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-2" style={{ fontSize: 9, color: DIM }}>
+      <div className="flex flex-wrap items-center justify-between gap-2" style={{ fontSize: 10, color: DIM }}>
         <span>
           Classified contracts · {windowLabel}
           {classifiedPct != null ? ` · ${Math.round(classifiedPct * 100)}% classified (L1 inference)` : ""}
         </span>
         <div className="flex items-center gap-2">
-          <span className="flex items-center"><LegendBadge color={UP}>B</LegendBadge> buy-led</span>
-          <span className="flex items-center"><LegendBadge color={DOWN}>S</LegendBadge> sell-led</span>
-          <span className="flex items-center"><LegendBadge color={GRAY}>=</LegendBadge> even</span>
+          <span className="flex items-center">
+            <LegendBadge color={UP}>B</LegendBadge> buy-led
+          </span>
+          <span className="flex items-center">
+            <LegendBadge color={DOWN}>S</LegendBadge> sell-led
+          </span>
+          <span className="flex items-center">
+            <LegendBadge color={GRAY}>=</LegendBadge> even
+          </span>
         </div>
       </div>
     </div>

@@ -348,6 +348,48 @@ describe("OrderTicket component", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("after Active Trader close, chain ticket submits plain SINGLE (no bracket prefs)", async () => {
+    const fetchMock = vi.mocked(fetchWithAuth);
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ orderId: "chain-1" }), { status: 200 }));
+
+    const { rerender } = render(
+      <OrderTicket
+        isOpen
+        onClose={() => {}}
+        initialStage="review"
+        atTemplatePrefs={atBracketPrefs}
+        optionSymbol={OPT}
+        subscribeOptionSymbols={vi.fn()}
+      />,
+    );
+    await screen.findByText(/Trigger order summary/i);
+
+    rerender(
+      <OrderTicket
+        isOpen
+        onClose={() => {}}
+        optionSymbol={OPT}
+        subscribeOptionSymbols={vi.fn()}
+      />,
+    );
+    const limitInput = await screen.findByPlaceholderText("0.00");
+    fireEvent.change(limitInput, { target: { value: "2.60" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    await screen.findByText("Order Confirmation");
+    const send = await screen.findByRole("button", { name: /send to schwab/i });
+    await waitFor(() => expect((send as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(send);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    const payload = JSON.parse(String(init?.body ?? "{}")) as {
+      order?: Record<string, unknown>;
+    };
+    const order = payload.order ?? {};
+    expect(order.orderStrategyType).toBe("SINGLE");
+    expect(order.orderStrategyType).not.toBe("TRIGGER");
+    expect(order.childOrderStrategies).toBeUndefined();
+  });
+
   it("double-tap Send calls place-order exactly once (Active Trader bracket)", async () => {
     const fetchMock = vi.mocked(fetchWithAuth);
     fetchMock.mockImplementation(

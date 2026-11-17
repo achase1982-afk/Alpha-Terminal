@@ -104,7 +104,7 @@ export function roundToTick(
   let rounded: number;
   if (mode === "down") rounded = Math.floor(units + 1e-9) * tick;
   else if (mode === "up") rounded = Math.ceil(units - 1e-9) * tick;
-  else rounded = Math.round(units) * tick;
+  else rounded = Math.round(units + 1e-9) * tick;
   const decimals = tick >= 0.1 ? 2 : tick >= 0.05 ? 2 : 2;
   return clampToMinTick(Number(rounded.toFixed(decimals)), tick);
 }

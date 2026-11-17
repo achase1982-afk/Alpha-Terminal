@@ -1,8 +1,7 @@
 import { memo, type CSSProperties } from "react";
-import { Maximize2, Minimize2 } from "lucide-react";
 import {
-  BG_EXP_BAR, BORDER, BORDER_ROW, DIM, WHITE, GRAY, UP, DOWN, GAMMA_SCENARIO,
-  MONO, FW_LIGHT, FW_NORMAL,
+  BG_EXP_BAR, BORDER_ROW, DIM, WHITE, GRAY, UP, GAMMA_SCENARIO,
+  MONO, FW_LIGHT, GOLD,
 } from "@/components/options/optionsTheme";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
 import { formatGexUsd } from "@/lib/active-trader/zonesModel";
@@ -11,6 +10,8 @@ import { formatStrikeLevel } from "@/lib/active-trader/atExpiryPill";
 import { useFlashOnChange } from "@/hooks/useFlashOnChange";
 
 const AMBER = "#FFB800";
+const PUT_TEAL = "#14b8a6";
+const ROW_PX = 11;
 
 interface RegimeStripProps {
   accentHex: string;
@@ -21,9 +22,36 @@ interface RegimeStripProps {
   sessionLabel?: string;
   embedded?: boolean;
   headline?: string;
-  headerCompact?: boolean;
-  onExpandHeader?: () => void;
-  onCompactHeader?: () => void;
+}
+
+function InlineLevel({
+  label,
+  value,
+  color,
+  flash,
+  align = "left",
+}: {
+  label: string;
+  value: string;
+  color: string;
+  flash: boolean;
+  align?: "left" | "right";
+}) {
+  const base: CSSProperties = {
+    fontSize: ROW_PX,
+    fontWeight: 500,
+    fontVariantNumeric: "tabular-nums",
+    lineHeight: 1.25,
+    opacity: flash ? 0.88 : 1,
+    transition: "opacity 0.35s ease",
+    textAlign: align,
+  };
+  return (
+    <span className="block truncate" style={base}>
+      <span style={{ color: DIM, fontWeight: FW_LIGHT, letterSpacing: "0.04em" }}>{label} </span>
+      <span style={{ color }}>{value}</span>
+    </span>
+  );
 }
 
 export const RegimeStrip = memo(function RegimeStrip({
@@ -34,13 +62,10 @@ export const RegimeStrip = memo(function RegimeStrip({
   sessionLabel,
   embedded,
   headline,
-  headerCompact,
-  onExpandHeader,
-  onCompactHeader,
 }: RegimeStripProps) {
   const session = sessionLabel ?? (isUsEquitiesMarketHoursEt() ? "Cash session" : "Extended");
   const envLabel =
-    zones.env === "damping" ? "Damping" : zones.env === "amplifying" ? "Amplifying" : zones.env === "near_flip" ? "Near flip" : "\u2014";
+    zones.env === "damping" ? "Damping" : zones.env === "amplifying" ? "Amplifying" : zones.env === "near_flip" ? "Near flip" : "";
   const dotColor = regimeDegraded ? GRAY : UP;
 
   const flashCw = useFlashOnChange(zones.callWall);
@@ -50,100 +75,80 @@ export const RegimeStrip = memo(function RegimeStrip({
     zones.netGexUsdPer1Pct != null ? Math.round(zones.netGexUsdPer1Pct / 1e6) : null,
   );
 
-  const levelStyle = (flash: boolean): CSSProperties => ({
-    fontSize: 16,
-    fontWeight: 700,
-    fontVariantNumeric: "tabular-nums",
-    transition: "opacity 0.35s ease",
-    opacity: flash ? 0.85 : 1,
-  });
+  const cw = zones.callWall != null ? formatStrikeLevel(zones.callWall) : "\u2014";
+  const pw = zones.putWall != null ? formatStrikeLevel(zones.putWall) : "\u2014";
+  const flip = zones.flip != null ? formatStrikeLevel(Math.round(zones.flip)) : "\u2014";
+  const gexVal = formatGexUsd(zones.netGexUsdPer1Pct);
 
   return (
     <div
       data-at-key-levels
-      className={embedded ? "px-3 pt-2 pb-1 space-y-1.5" : "sticky z-[38] px-3 pt-2 pb-1.5 space-y-1.5"}
+      className={embedded ? "px-3 pt-1.5 pb-1 space-y-1" : "sticky z-[38] px-3 pt-1.5 pb-1 space-y-1"}
       style={{
         ...(embedded ? {} : { top: stickyTop }),
         background: BG_EXP_BAR,
-        borderBottom: embedded ? undefined : `1px solid ${BORDER}`,
+        borderBottom: embedded ? undefined : `1px solid ${BORDER_ROW}`,
         fontFamily: MONO,
       }}
     >
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          <span style={{ fontSize: 10, color: DIM, fontWeight: FW_LIGHT, letterSpacing: "0.08em" }}>SESSION REGIME</span>
-          <span className="text-zinc-600" style={{ fontSize: 10 }}>•</span>
-          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} />
+      <div className="flex items-center justify-between gap-2 min-h-[18px]">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span
+            className="uppercase shrink-0"
+            style={{ fontSize: 10, color: DIM, fontWeight: FW_LIGHT, letterSpacing: "0.08em" }}
+          >
+            SESSION REGIME
+          </span>
+          <span className="w-1 h-1 rounded-full shrink-0" style={{ background: dotColor }} />
           <span
             className="truncate capitalize"
-            style={{ fontSize: 12, color: regimeDegraded ? GRAY : WHITE, fontWeight: FW_NORMAL }}
+            style={{ fontSize: 11, color: regimeDegraded ? GRAY : WHITE, fontWeight: 500 }}
           >
             {regimeLabel ?? "\u2014"}
           </span>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <span style={{ fontSize: 10, color: DIM, fontWeight: FW_LIGHT }}>{session}</span>
-          <AtHeaderModeIcons
-            headerCompact={headerCompact}
-            onExpandHeader={onExpandHeader}
-            onCompactHeader={onCompactHeader}
-          />
-        </div>
+        <span className="shrink-0" style={{ fontSize: 10, color: DIM, fontWeight: FW_LIGHT }}>
+          {session}
+        </span>
       </div>
 
-      <div style={{ borderTop: `1px solid ${BORDER_ROW}`, paddingTop: 6 }}>
-        <div
-          className="grid gap-x-3 gap-y-1"
-          style={{ gridTemplateColumns: "1fr 1fr", fontSize: 10, fontWeight: FW_LIGHT, color: DIM, letterSpacing: "0.06em" }}
-        >
-          <div className="flex items-baseline gap-1 min-w-0">
-            <span className="shrink-0">CALL WALL</span>
-            <span style={{ ...levelStyle(flashCw), color: UP, marginLeft: "auto" }}>{formatStrikeLevel(zones.callWall)}</span>
-          </div>
-          <div className="flex items-baseline gap-1 min-w-0" style={{ borderLeft: `1px solid ${BORDER_ROW}`, paddingLeft: 8 }}>
-            <span className="shrink-0">PUT WALL</span>
-            <span style={{ ...levelStyle(flashPw), color: DOWN, marginLeft: "auto" }}>{formatStrikeLevel(zones.putWall)}</span>
-          </div>
+      <div
+        className="grid grid-cols-2 gap-x-2 gap-y-1 py-1"
+        style={{ borderTop: `1px solid ${BORDER_ROW}`, borderBottom: `1px solid ${BORDER_ROW}` }}
+      >
+        <div className="pr-1" style={{ borderRight: `1px solid ${BORDER_ROW}` }}>
+          <InlineLevel label="CALL WALL" value={cw} color={GOLD} flash={flashCw} />
         </div>
-        <div
-          className="grid gap-x-3 gap-y-1 mt-1.5"
-          style={{
-            gridTemplateColumns: "1fr 1fr",
-            fontSize: 10,
-            fontWeight: FW_LIGHT,
-            color: DIM,
-            borderTop: `1px solid ${BORDER_ROW}`,
-            paddingTop: 6,
-          }}
-        >
-          <div className="flex items-baseline gap-1 min-w-0">
-            <span className="shrink-0">FLIP</span>
-            <span style={{ ...levelStyle(flashFlip), color: GAMMA_SCENARIO, marginLeft: "auto" }}>
-              {zones.flip != null ? formatStrikeLevel(Math.round(zones.flip)) : "\u2014"}
-            </span>
-          </div>
-          <div
-            className="flex items-baseline gap-1 min-w-0 flex-wrap justify-end"
-            style={{ borderLeft: `1px solid ${BORDER_ROW}`, paddingLeft: 8 }}
-          >
-            <span className="shrink-0">GEX</span>
-            <span style={{ ...levelStyle(flashGex), color: WHITE }}>{formatGexUsd(zones.netGexUsdPer1Pct)}</span>
-            {envLabel !== "\u2014" && (
-              <span style={{ color: GAMMA_SCENARIO, fontSize: 11, fontWeight: FW_NORMAL }}>· {envLabel}</span>
-            )}
-          </div>
+        <div className="pl-1.5">
+          <InlineLevel label="PUT WALL" value={pw} color={PUT_TEAL} flash={flashPw} />
         </div>
+        <div className="pr-1 pt-0.5" style={{ borderRight: `1px solid ${BORDER_ROW}` }}>
+          <InlineLevel label="FLIP" value={flip} color={GAMMA_SCENARIO} flash={flashFlip} />
+        </div>
+        <p className="pl-1.5 pt-0.5 truncate" style={{ fontSize: ROW_PX, fontVariantNumeric: "tabular-nums", lineHeight: 1.25 }}>
+          <span style={{ color: DIM, fontWeight: FW_LIGHT, letterSpacing: "0.04em" }}>GEX </span>
+          <span style={{ color: WHITE, fontWeight: 500, opacity: flashGex ? 0.88 : 1 }}>{gexVal}</span>
+          {envLabel ? (
+            <span style={{ color: GRAY, fontWeight: FW_LIGHT, fontSize: 10 }}> · {envLabel}</span>
+          ) : null}
+        </p>
       </div>
 
-      <div className="text-center pt-0.5" style={{ fontSize: 9, color: GRAY, letterSpacing: "0.04em" }}>
+      <div className="text-center leading-tight" style={{ fontSize: 10, color: GRAY, letterSpacing: "0.03em" }}>
         Modeled · OI convention · 0DTE
       </div>
 
       {headline?.trim() ? (
         <div
-          className="text-center py-0.5"
+          className="text-center leading-tight pt-0.5"
           data-at-pressure-line
-          style={{ fontSize: 10, color: AMBER, fontWeight: FW_NORMAL, letterSpacing: "0.02em" }}
+          style={{
+            fontSize: 11,
+            color: AMBER,
+            fontWeight: 500,
+            borderTop: `1px solid ${BORDER_ROW}`,
+            paddingTop: 4,
+          }}
         >
           {headline.trim()}
         </div>
@@ -151,42 +156,3 @@ export const RegimeStrip = memo(function RegimeStrip({
     </div>
   );
 });
-
-function AtHeaderModeIcons({
-  headerCompact,
-  onExpandHeader,
-  onCompactHeader,
-}: {
-  headerCompact?: boolean;
-  onExpandHeader?: () => void;
-  onCompactHeader?: () => void;
-}) {
-  if (headerCompact && onExpandHeader) {
-    return (
-      <button
-        type="button"
-        data-at-expand-header
-        aria-label="Full header"
-        className="p-0.5 rounded border ml-0.5"
-        style={{ borderColor: BORDER, color: GRAY, background: "transparent" }}
-        onClick={onExpandHeader}
-      >
-        <Maximize2 className="w-3 h-3" />
-      </button>
-    );
-  }
-  if (!headerCompact && onCompactHeader) {
-    return (
-      <button
-        type="button"
-        aria-label="Compact header"
-        className="p-0.5 rounded border ml-0.5"
-        style={{ borderColor: BORDER, color: GRAY, background: "transparent" }}
-        onClick={onCompactHeader}
-      >
-        <Minimize2 className="w-3 h-3 opacity-70" />
-      </button>
-    );
-  }
-  return null;
-}

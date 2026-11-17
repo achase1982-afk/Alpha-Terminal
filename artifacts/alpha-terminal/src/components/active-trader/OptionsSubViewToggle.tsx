@@ -1,5 +1,7 @@
 import { memo } from "react";
-import { BG_EXP_BAR, BORDER, GRAY, MONO, FW_NORMAL } from "@/components/options/optionsTheme";
+import { BG_EXP_BAR, GRAY, MONO, FW_NORMAL } from "@/components/options/optionsTheme";
+
+const GOLD = "#FFB800";
 
 export type OptionsSubView = "chain" | "at";
 
@@ -12,41 +14,45 @@ interface OptionsSubViewToggleProps {
 export const OptionsSubViewToggle = memo(function OptionsSubViewToggle({
   view,
   onChange,
-  accentHex,
 }: OptionsSubViewToggleProps) {
-  const pill =
-    "px-4 py-1 text-center rounded-full border text-[10px] font-medium tracking-wide transition-colors whitespace-nowrap";
+  const seg =
+    "px-4 py-1 text-center rounded-full border text-[11px] tracking-wide transition-colors whitespace-nowrap font-normal";
   return (
-    <div className="flex justify-center px-3 mt-2 mb-1">
+    <div className="flex justify-center px-3 mt-1.5 mb-0.5">
       <div
-        className="inline-flex gap-0.5 p-0.5 rounded-full border"
+        className="inline-flex gap-1 p-0.5 rounded-full"
         data-at-subview-toggle
-        style={{ background: BG_EXP_BAR, borderColor: BORDER, fontFamily: MONO, fontWeight: FW_NORMAL }}
-      >
-      <button
-        type="button"
-        className={pill}
         style={{
-          borderColor: view === "chain" ? accentHex : "transparent",
-          color: view === "chain" ? accentHex : GRAY,
-          background: view === "chain" ? "rgba(255,255,255,0.04)" : "transparent",
+          background: "#0c0c0c",
+          border: `1px solid ${BG_EXP_BAR}`,
+          fontFamily: MONO,
+          fontWeight: FW_NORMAL,
         }}
-        onClick={() => onChange("chain")}
       >
-        Chain
-      </button>
-      <button
-        type="button"
-        className={pill}
-        style={{
-          borderColor: view === "at" ? accentHex : "transparent",
-          color: view === "at" ? accentHex : GRAY,
-          background: view === "at" ? "rgba(255,255,255,0.04)" : "transparent",
-        }}
-        onClick={() => onChange("at")}
-      >
-        Active Trader
-      </button>
+        <button
+          type="button"
+          className={seg}
+          style={{
+            borderColor: "transparent",
+            color: view === "chain" ? GRAY : "#52525b",
+            background: "transparent",
+          }}
+          onClick={() => onChange("chain")}
+        >
+          Chain
+        </button>
+        <button
+          type="button"
+          className={seg}
+          style={{
+            borderColor: view === "at" ? GOLD : "transparent",
+            color: view === "at" ? GOLD : GRAY,
+            background: "transparent",
+          }}
+          onClick={() => onChange("at")}
+        >
+          Active Trader
+        </button>
       </div>
     </div>
   );

@@ -269,8 +269,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   );
 
   const headerMode = useUICustomizationStore((s) => s.headerMode);
-  const restoreSavedHeaderMode = useAtChromeStore((s) => s.restoreSavedHeaderMode);
-  const reapplyAtCompactHeader = useAtChromeStore((s) => s.reapplyAtCompactHeader);
   const atHeaderCompact = headerMode === "collapsed";
 
   const selectedTick = useOptionTick(selected?.contract.streamKey);
@@ -490,9 +488,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             regimeDegraded={presentation?.regimeDegraded ?? regimeDegraded}
             sessionLabel={presentation?.sessionLabel}
             headline={pressureHeadline}
-            headerCompact={atHeaderCompact}
-            onExpandHeader={restoreSavedHeaderMode}
-            onCompactHeader={reapplyAtCompactHeader}
           />
           <FilterStrip
             embedded

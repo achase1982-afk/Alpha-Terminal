@@ -413,6 +413,7 @@ export default function TerminalPage() {
   const [strategyChainData, setStrategyChainData] = useState<Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>>(new Map());
 
   const openOrder = useCallback((side: "BUY" | "SELL") => {
+    setOrderAtPrefs(null);
     setOrderOptionSymbol(undefined);
     setOrderOptionInstruction(undefined);
     setOrderStrategyLegs(undefined);
@@ -426,6 +427,7 @@ export default function TerminalPage() {
   // on the same trade they sent for review.
   const reopenValidatedOrder = useCallback((meta: StrategistValidationMeta) => {
     const t = meta.ticket;
+    setOrderAtPrefs(null);
     useTerminalStore.getState().setSymbol(t.ticker);
     setOrderSide(t.side ?? "BUY");
     setOrderIsClose(meta.mode === "closing");
@@ -473,6 +475,7 @@ export default function TerminalPage() {
     strategyIsCredit?: boolean,
     isClose?: boolean,
   ) => {
+    setOrderAtPrefs(null);
     useTerminalStore.getState().setSymbol(sym);
     setOrderSide(side);
     setOrderOptionSymbol(optionSymbol);
@@ -485,6 +488,7 @@ export default function TerminalPage() {
   }, []);
 
   const closeOrderTicket = useCallback(() => {
+    setOrderAtPrefs(null);
     setOrderOpen(false);
     setOrderStrategyLegs(undefined);
     setOrderStrategyNetPrice(undefined);
@@ -527,6 +531,7 @@ export default function TerminalPage() {
   }, []);
 
   const handleOptionTradeSingle = useCallback((contract: OptionsContract, side: "BUY" | "SELL", type: "CALL" | "PUT") => {
+    setOrderAtPrefs(null);
     const schwabSym = optionTradeStreamKey(contract);
     const instruction = side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN";
     setOrderSide(side);
@@ -636,6 +641,7 @@ export default function TerminalPage() {
   }, []);
 
   const handleStrategistSendToOrder = useCallback((payload: StrategistSendToOrderPayload) => {
+    setOrderAtPrefs(null);
     useTerminalStore.getState().setSymbol(payload.ticker);
     const orderLegs: OrderLeg[] = payload.legs.map(leg => ({
       schwabSymbol: leg.schwabSymbol,

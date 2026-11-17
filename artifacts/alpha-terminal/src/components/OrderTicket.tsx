@@ -14,7 +14,7 @@ import { hash8 } from "@/lib/streamClientId";
 import type { OptionHoldPostOpts } from "@/lib/optionHoldClient";
 import { useTicketOptionHold } from "@/hooks/useTicketOptionHold";
 import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
-import { computeBracketPrices } from "@/lib/active-trader/atBracketMath";
+import { atBracketPreviewPrices } from "@/lib/active-trader/atSchwabOrderBuilder";
 import {
   buildAtSchwabOrderJson,
   planAtOrderLegs,
@@ -808,7 +808,7 @@ export function OrderTicket({
   ]);
 
   const atBracketSummary = useMemo(() => {
-    if (!atTemplatePrefs || !isOption || isMultiLeg) return null;
+    if (!atTemplatePrefs || !isOption || isMultiLeg || !optionSymbol) return null;
     const primary = (optionInstruction ?? (side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN")) as SchwabInstruction;
     const mid =
       optionTick?.bid != null && optionTick?.ask != null
@@ -816,14 +816,24 @@ export function OrderTicket({
         : optionTick?.mark ?? optionTick?.last ?? null;
     const px = parseFloat(limitPrice) || mid || 0;
     if (px <= 0) return null;
-    return computeBracketPrices({
-      entryPrice: px,
-      quantity: atTemplatePrefs.qty,
+    const underlyingSymbol = optionRootFromOcc(optionSymbol);
+    const { takeProfit, stopLoss } = atBracketPreviewPrices({
+      template: atTemplatePrefs.template,
+      assetType: "OPTION",
+      symbol: optionSymbol,
+      underlyingSymbol,
       primaryInstruction: primary,
-      tp: atTemplatePrefs.takeProfit,
-      sl: atTemplatePrefs.stopLoss,
+      quantity: atTemplatePrefs.qty,
+      limitPrice: px,
+      takeProfit: atTemplatePrefs.takeProfit,
+      stopLoss: atTemplatePrefs.stopLoss,
+      entryOrderType: atTemplatePrefs.orderType,
+      exitDuration: atTemplatePrefs.exitDuration,
+      stopLossOrderType: atTemplatePrefs.stopLossOrderType,
+      stopLimitOffset: atTemplatePrefs.stopLimitOffset,
     });
-  }, [atTemplatePrefs, isOption, isMultiLeg, optionInstruction, side, limitPrice, optionTick]);
+    return { takeProfit, stopLoss };
+  }, [atTemplatePrefs, isOption, isMultiLeg, optionInstruction, side, limitPrice, optionTick, optionSymbol]);
 
   const atTriggerConfirm = useMemo(() => {
     if (!atTemplatePlan || atTemplatePlan.legs.length < 2 || !optionSymbol) return null;

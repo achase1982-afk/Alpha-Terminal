@@ -8,7 +8,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, "..");
 const OUT = "/opt/cursor/artifacts";
 const BASE = "http://127.0.0.1:3000/dev/active-trader";
-const MOCKUP = "/home/ubuntu/.cursor/projects/agent-repos-Alpha-Terminal/assets/mockup_20261117.png";
+const MOCKUP =
+  "/workspace/desk-handoffs/active_trader/top_owner_pref_20261117.jpg";
+const MOCKUP_FALLBACK =
+  "/home/ubuntu/.cursor/projects/agent-repos-Alpha-Terminal/assets/mockup_20261117.png";
 const MIN_LADDER_ROWS = 15;
 
 const allScenes = [
@@ -250,10 +253,22 @@ await page.waitForTimeout(500);
 const actualPath = path.join(OUT, "at-01-default-440x956.png");
 const comparePath = path.join(OUT, "at-compare-mockup-440x956.png");
 
+const header = await page.locator("[data-at-symbol-header]").first().boundingBox();
+const filter = await page.locator("[data-at-filter-strip]").first().boundingBox();
+if (header && filter) {
+  const topY = Math.max(0, header.y - 2);
+  const topH = Math.min(956 - topY, filter.y + filter.height - topY + 8);
+  await page.screenshot({
+    path: path.join(OUT, "at-top-crop-440x956.png"),
+    clip: { x: 0, y: topY, width: 440, height: topH },
+  });
+}
+
 const { execSync } = await import("node:child_process");
+const mockupSrc = (await import("node:fs/promises").then((fs) => fs.stat(MOCKUP).then(() => MOCKUP).catch(() => MOCKUP_FALLBACK)));
 try {
   execSync(
-    `convert "${MOCKUP}" -resize 440x956! "${OUT}/mockup-resized.png" && ` +
+    `convert "${mockupSrc}" -resize 440x956! "${OUT}/mockup-resized.png" && ` +
       `convert +append -bordercolor black -border 4 ` +
       `"${OUT}/mockup-resized.png" "${actualPath}" "${comparePath}"`,
     { stdio: "inherit" },

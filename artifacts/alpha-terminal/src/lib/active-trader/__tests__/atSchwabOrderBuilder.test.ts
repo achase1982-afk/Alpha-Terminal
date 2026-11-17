@@ -181,8 +181,7 @@ describe("buildAtSchwabOrderJson", () => {
   });
 
   it("SPX mid 15.95: bracket @ preview, summary, leg plan, and JSON agree (16.00 / 17.60)", () => {
-    /** Bid 15.80 / ask 16.10 mid — use sum/2 so float noise does not tick to 15.90. */
-    const limitMid = (15.8 + 16.1) / 2;
+    const limitMid = 15.95;
     const input = {
       ...base,
       template: "TRG w/ bracket" as const,
@@ -222,6 +221,25 @@ describe("buildAtSchwabOrderJson", () => {
     expect(preview.takeProfit).toBe(17.6);
     expect(summary).toContain("TP 17.60");
     expect(summary).not.toMatch(/TP 17\.5[^0]/);
+  });
+
+  it("confirm-style preview prices match built JSON child limits", () => {
+    const input = {
+      ...base,
+      template: "TRG w/ bracket" as const,
+      limitPrice: 15.95,
+      takeProfit: { enabled: true, mode: "percent" as const, offset: 10 },
+      stopLoss: { enabled: true, mode: "percent" as const, offset: -10 },
+    };
+    const preview = atBracketPreviewPrices(input);
+    const built = buildAtSchwabOrderJson(input);
+    const oco = (built.childOrderStrategies as Record<string, unknown>[])[0];
+    const singles = oco.childOrderStrategies as Record<string, unknown>[];
+    const tpChild = singles.find((s) => s.orderType === "LIMIT")!;
+    const slChild = singles.find((s) => s.orderType === "STOP" || s.orderType === "STOP_LIMIT")!;
+    expect(preview.takeProfit).toBe(tpChild.price);
+    expect(preview.stopLoss).toBe(slChild.stopPrice ?? slChild.price);
+    expect(preview.entryLimit).toBe((built as { price: number }).price);
   });
 
   it("SPY penny tick: preview and JSON keep 0.01 increments", () => {
