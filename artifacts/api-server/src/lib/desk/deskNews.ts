@@ -30,5 +30,5 @@ export async function deskFetchNews(symbols: string[]): Promise<{ articles: unkn
   deskTouchFeedPollOk("news", pollMs, FINNHUB_SOURCE);
   const articleMaxMs = deskMaxArticlePublishedMs(all);
   deskTouchFeedArticleAge("news", articleMaxMs, FINNHUB_SOURCE);
-  return { articles: all, asOfMs: articleMaxMs ?? pollMs };
+  return { articles: all, asOfMs: pollMs };
 }

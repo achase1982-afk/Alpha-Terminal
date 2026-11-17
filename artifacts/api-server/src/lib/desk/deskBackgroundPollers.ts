@@ -2,6 +2,7 @@ import { deskFetchSchwabChain } from "./deskSchwabChains.js";
 import { deskTradierQuotes, getTradierToken } from "./deskTradier.js";
 import { deskProbeAlpacaNews } from "./deskAlpacaNews.js";
 import { deskFetchNews } from "./deskNews.js";
+import { DESK_DEFAULT_NEWS_SYMBOLS } from "./deskDefaultNewsSymbols.js";
 import { deskProbeMarketaux } from "./deskMarketaux.js";
 import { deskProbeStocknews } from "./deskStocknews.js";
 import { deskProbeEodhd } from "./deskEodhd.js";
@@ -35,7 +36,7 @@ async function pollAlpacaNews(): Promise<void> {
 }
 
 async function pollNews(): Promise<void> {
-  await deskFetchNews(["SPY", "QQQ"]);
+  await deskFetchNews([...DESK_DEFAULT_NEWS_SYMBOLS]);
 }
 
 async function pollVendorSlow(): Promise<void> {
