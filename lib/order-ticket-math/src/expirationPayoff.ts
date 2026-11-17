@@ -67,30 +67,6 @@ function sortedBreakpoints(legs: PayoffLeg[]): number[] {
   return [0, ...strikes];
 }
 
-/** Bear-put debit + bear-call debit wings, equal width, short strikes bracket the body (opening long iron condor). */
-function isSymmetricLongIronCondorDebit(legs: PayoffLeg[]): boolean {
-  if (legs.length !== 4) return false;
-  const puts = legs.filter((l) => l.optionType === "PUT" && !isEquityLeg(l));
-  const calls = legs.filter((l) => l.optionType === "CALL");
-  if (puts.length !== 2 || calls.length !== 2) return false;
-  const putBuy = puts.find((l) => l.instruction.startsWith("BUY"));
-  const putSell = puts.find((l) => l.instruction.startsWith("SELL"));
-  const callBuy = calls.find((l) => l.instruction.startsWith("BUY"));
-  const callSell = calls.find((l) => l.instruction.startsWith("SELL"));
-  if (!putBuy || !putSell || !callBuy || !callSell) return false;
-  if (!(putBuy.strike > putSell.strike && callBuy.strike > callSell.strike)) return false;
-  if (!(putSell.strike < callSell.strike)) return false;
-  const putW = putBuy.strike - putSell.strike;
-  const callW = callBuy.strike - callSell.strike;
-  if (putW !== callW || putW <= 0) return false;
-  const unit = (l: PayoffLeg) => l.quantity ?? 1;
-  return (
-    unit(putBuy) === unit(putSell) &&
-    unit(callBuy) === unit(callSell) &&
-    unit(putBuy) === unit(callBuy)
-  );
-}
-
 function rootsOnSegment(s0: number, p0: number, s1: number, p1: number): number[] {
   if (s1 === s0) return p0 === 0 ? [s0] : [];
   if (p0 === 0) return [s0];
@@ -117,21 +93,7 @@ export function analyzeExpirationPayoff(input: ExpirationPayoffInput): Expiratio
     if (p > maxP) maxP = p;
   }
 
-  const premiumDollars = input.netPerShare * (isOption ? 100 : 1) * spreadUnits;
   let maxLoss = unboundedLoss ? null : Math.max(0, -minP);
-  if (
-    maxLoss != null &&
-    !input.isCredit &&
-    isSymmetricLongIronCondorDebit(legs)
-  ) {
-    const puts = legs.filter((l) => l.optionType === "PUT");
-    const putBuy = puts.find((l) => l.instruction.startsWith("BUY"))!;
-    const putSell = puts.find((l) => l.instruction.startsWith("SELL"))!;
-    const wingPerShare = putBuy.strike - putSell.strike;
-    if (input.netPerShare >= wingPerShare - 1) {
-      maxLoss = premiumDollars;
-    }
-  }
   const maxProfit = dollarRight > 0 ? Number.POSITIVE_INFINITY : Math.max(0, maxP);
 
   const breakevens: number[] = [];
@@ -153,4 +115,3 @@ export function analyzeExpirationPayoff(input: ExpirationPayoffInput): Expiratio
 
   return { maxLoss, maxProfit, breakevens: uniq };
 }
-

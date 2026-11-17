@@ -70,13 +70,13 @@ describe("LIMIT credit/debit inference", () => {
     expect(r.kind === "known" ? r.maxRisk : 0).toBe(200);
   });
 
-  it("long IC debit at 4.00 maxLoss 400", () => {
+  it("reverse IC debit at 4.00 maxLoss 400", () => {
     const o = limitOrder(
       [
         { ins: "BUY_TO_OPEN", qty: 1, sym: sym("P", 5900) },
         { ins: "SELL_TO_OPEN", qty: 1, sym: sym("P", 5895) },
-        { ins: "BUY_TO_OPEN", qty: 1, sym: sym("C", 5955) },
-        { ins: "SELL_TO_OPEN", qty: 1, sym: sym("C", 5950) },
+        { ins: "BUY_TO_OPEN", qty: 1, sym: sym("C", 5950) },
+        { ins: "SELL_TO_OPEN", qty: 1, sym: sym("C", 5955) },
       ],
       4,
     );
@@ -115,13 +115,13 @@ describe("LIMIT credit/debit inference", () => {
     expect(r.kind === "known" ? r.maxRisk : 0).toBe(100);
   });
 
-  it("50-lot long IC maxLoss 20000 and RED on 30k", () => {
+  it("50-lot reverse IC maxLoss 20000 and RED on 30k", () => {
     const o = limitOrder(
       [
         { ins: "BUY_TO_OPEN", qty: 50, sym: sym("P", 5900) },
         { ins: "SELL_TO_OPEN", qty: 50, sym: sym("P", 5895) },
-        { ins: "BUY_TO_OPEN", qty: 50, sym: sym("C", 5955) },
-        { ins: "SELL_TO_OPEN", qty: 50, sym: sym("C", 5950) },
+        { ins: "BUY_TO_OPEN", qty: 50, sym: sym("C", 5950) },
+        { ins: "SELL_TO_OPEN", qty: 50, sym: sym("C", 5955) },
       ],
       4,
     );
@@ -192,6 +192,36 @@ describe("no debit premium cap understates", () => {
     const r = schwabOrderMaxRisk(o);
     expect(r.kind).toBe("known");
     expect(r.kind === "known" ? r.maxRisk : 0).toBe(600);
+  });
+
+  it("mixed legs BUY P5900/SELL P5895/BUY C5955/SELL C5950 at 4.00 maxLoss 900", () => {
+    const o = limitOrder(
+      [
+        { ins: "BUY_TO_OPEN", qty: 1, sym: sym("P", 5900) },
+        { ins: "SELL_TO_OPEN", qty: 1, sym: sym("P", 5895) },
+        { ins: "BUY_TO_OPEN", qty: 1, sym: sym("C", 5955) },
+        { ins: "SELL_TO_OPEN", qty: 1, sym: sym("C", 5950) },
+      ],
+      4,
+    );
+    const r = schwabOrderMaxRisk(o);
+    expect(r.kind).toBe("known");
+    expect(r.kind === "known" ? r.maxRisk : 0).toBe(900);
+  });
+
+  it("50-lot mixed debit wings maxLoss 45000", () => {
+    const o = limitOrder(
+      [
+        { ins: "BUY_TO_OPEN", qty: 50, sym: sym("P", 5900) },
+        { ins: "SELL_TO_OPEN", qty: 50, sym: sym("P", 5895) },
+        { ins: "BUY_TO_OPEN", qty: 50, sym: sym("C", 5955) },
+        { ins: "SELL_TO_OPEN", qty: 50, sym: sym("C", 5950) },
+      ],
+      4,
+    );
+    const r = schwabOrderMaxRisk(o);
+    expect(r.kind).toBe("known");
+    expect(r.kind === "known" ? r.maxRisk : 0).toBe(45_000);
   });
 });
 
