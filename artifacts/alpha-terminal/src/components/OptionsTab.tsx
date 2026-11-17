@@ -22,6 +22,17 @@ import { Reorder } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
 import { buildChainHoldSignature } from "@/lib/streamHoldSig";
 import { useChainOptionHold } from "@/hooks/useChainOptionHold";
+import {
+  COL_W, STRIKE_W, ROW_H, TOOLBAR_H, HEADER_H, SUB_HEADER_H,
+  BG, BG_HEADER, BG_EXP_BAR, BORDER, BORDER_ROW, GOLD, GOLD_DIM,
+  UP, DOWN, WHITE, GRAY, DIM, MUTED, ITM_OCEAN, OTM_PURPLE, SEL_BORDER_COLOR,
+  MONO, FW_LIGHT, FW_NORMAL, FW_PREMIUM, noScrollbar,
+} from "@/components/options/optionsTheme";
+import { ActiveTraderView } from "@/components/active-trader/ActiveTraderView";
+import { OptionsSubViewToggle, type OptionsSubView } from "@/components/active-trader/OptionsSubViewToggle";
+import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
+import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
+import { formatAtExpiryPill } from "@/lib/active-trader/atExpiryPill";
 import { resolveAtmStrike } from "@workspace/order-ticket-math";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import {
@@ -33,35 +44,6 @@ import { optionChainMatchesActiveSymbol } from "@/lib/optionChainStaleGuard";
 import { mergeChainContractWithStream } from "@/lib/chainContractQuoteMerge";
 
 const EPS = 0.0001;
-const COL_W = 74;
-const STRIKE_W = 44;
-const ROW_H = 40;
-const TOOLBAR_H = 32;
-const HEADER_H = 32;
-const SUB_HEADER_H = 20;
-
-const BG = "#000000";
-const BG_HEADER = "#060606";
-const BG_EXP_BAR = "#070707";
-const BORDER = "#1a1a1a";
-const BORDER_ROW = "#0c0c0c";
-const GOLD = "#fbbf24";
-const GOLD_DIM = "#b8941c";
-const UP = "#00d166";
-const DOWN = "#f23645";
-const WHITE = "#f0f0f0";
-const GRAY = "#a1a1aa";
-const DIM = "#52525b";
-const MUTED = "#3f3f46";
-
-const ITM_OCEAN = "rgba(180,140,50,0.22)";
-const OTM_PURPLE = "rgba(168,130,255,0.04)";
-const SEL_BORDER_COLOR = "#fbbf2480";
-
-const MONO = "'SFMono-Regular', 'SF Mono', ui-monospace, 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace";
-const FW_LIGHT = 400;
-const FW_NORMAL = 450;
-const FW_PREMIUM = 600;
 
 interface Contract {
   strike: number;
@@ -319,12 +301,6 @@ function fmtCompact(val: number | undefined): string {
   return String(Math.round(val));
 }
 
-const noScrollbar: React.CSSProperties = {
-  scrollbarWidth: "none",
-  msOverflowStyle: "none",
-  scrollSnapType: "none",
-};
-
 const STREAM_KEY_MAP: Record<string, string> = {
   bid: "bid", ask: "ask", last: "last",
   bidSize: "bidSize", askSize: "askSize",
@@ -481,6 +457,7 @@ const DataCell = memo(function DataCell({
     <div className="flex flex-col justify-center" style={{ height: ROW_H, minHeight: ROW_H, padding: isBid ? "0 2px 0 8px" : "0 2px" }}>
       <span
         className="leading-none"
+        data-ui-audit={isPrice ? "chain-bid-cell" : undefined}
         style={{
           fontSize: isPrice ? 14 : 12,
           fontWeight: FW_LIGHT,
@@ -840,7 +817,7 @@ function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPri
         borderBottom: `1px solid rgba(0,0,0,0.25)`,
       }}
     >
-      <span style={{ fontSize: 12, fontWeight: FW_LIGHT, color: "#000", fontVariantNumeric: "tabular-nums", fontFamily: MONO, lineHeight: 1 }}>
+      <span data-ui-audit="chain-strike-cell" style={{ fontSize: 12, fontWeight: FW_LIGHT, color: "#000", fontVariantNumeric: "tabular-nums", fontFamily: MONO, lineHeight: 1 }}>
         {strike % 1 === 0 ? strike : strike.toFixed(1)}
       </span>
       {moneynessLabel && (
@@ -1050,6 +1027,7 @@ function ExpirationSection({
     <div>
       <button
         type="button"
+        data-ui-audit="chain-exp-btn"
         onClick={onToggle}
         aria-expanded={isOpen}
         aria-controls={panelId}
@@ -1149,7 +1127,7 @@ function OptionsChainHeader({
       >
         {showCalls && (
           <div style={{ flex: 1, textAlign: "center" }}>
-            <span style={{ fontSize: 12, letterSpacing: "0.08em", color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>CALLS</span>
+            <span data-ui-audit="chain-calls-hdr" style={{ fontSize: 12, letterSpacing: "0.08em", color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>CALLS</span>
           </div>
         )}
         <div style={{ width: STRIKE_W, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}>
@@ -1202,7 +1180,7 @@ function OptionsChainHeader({
           </div>
         )}
         <div style={{ width: STRIKE_W, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}`, background: "#111111" }}>
-          <span style={{ fontSize: 9, color: WHITE, fontFamily: MONO, fontWeight: FW_PREMIUM, letterSpacing: "0.08em" }}>STRIKE</span>
+          <span data-ui-audit="chain-strike-hdr" style={{ fontSize: 9, color: WHITE, fontFamily: MONO, fontWeight: FW_PREMIUM, letterSpacing: "0.08em" }}>STRIKE</span>
         </div>
         {showPuts && (
           <div style={{ flex: 1, overflow: "hidden", height: SUB_HEADER_H }}>
@@ -1246,6 +1224,7 @@ interface OptionsTabProps {
   stickyOffset?: number;
   onTradeSingle?: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
   onOpenStrategyBuilder?: (strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>, preSelectedLegs?: { contract: Contract; type: "CALL" | "PUT"; side?: "bid" | "ask" }[]) => void;
+  onActiveTraderReview?: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
 }
 
 export type { Contract as OptionsContract };
@@ -1256,7 +1235,27 @@ export function OptionsTab({
   stickyOffset = 0,
   onTradeSingle,
   onOpenStrategyBuilder,
+  onActiveTraderReview,
 }: OptionsTabProps) {
+  const atFixtureOverride = import.meta.env.DEV ? getAtFixtureOverride() : null;
+  const chainFixtureOverride = import.meta.env.DEV ? getChainOrderFixtureOverride() : null;
+  const fixtureChain = atFixtureOverride ?? chainFixtureOverride;
+  const [optionsSubView, setOptionsSubView] = useState<OptionsSubView>(
+    () => atFixtureOverride?.initialSubView ?? "chain",
+  );
+  const enterActiveTrader = useAtChromeStore((s) => s.enterActiveTrader);
+  const leaveActiveTrader = useAtChromeStore((s) => s.leaveActiveTrader);
+  const setAtExpiryChrome = useAtChromeStore((s) => s.setAtExpiryChrome);
+  const clearAtExpiryChrome = useAtChromeStore((s) => s.clearAtExpiryChrome);
+  const [atExpiration, setAtExpiration] = useState<string | null>(null);
+  useEffect(() => {
+    if (optionsSubView === "at") {
+      enterActiveTrader();
+    } else {
+      leaveActiveTrader();
+    }
+    return () => leaveActiveTrader();
+  }, [optionsSubView, enterActiveTrader, leaveActiveTrader]);
   const { accessToken } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken })));
   // Widget pin wins inside the dashboard; global symbol everywhere else.
   const symbol = useActiveSymbol();
@@ -1276,8 +1275,6 @@ export function OptionsTab({
   const accounts = useSchwabAccountStore((s) => s.accounts);
   const tradingAccountHash = useSchwabAccountStore((s) => s.tradingAccountHash());
   const MAX_OPTION_LEGS = 4;
-  const fixtureOverride = import.meta.env.DEV ? getChainOrderFixtureOverride() : null;
-
   const activeColumns = useMemo(
     () => activeColumnIds.map(id => COLUMN_REGISTRY.find(c => c.id === id)).filter(Boolean) as ColumnDef[],
     [activeColumnIds]
@@ -1294,16 +1291,16 @@ export function OptionsTab({
 
   const { data: rawData, isLoading, error, isFetching, dataUpdatedAt } = useGetOptionChain<OptionChainResponse>(
     { symbol, contractType: "ALL", strikeCount },
-    { query: { enabled: !!accessToken && !!symbol && !fixtureOverride, staleTime: 30_000, gcTime: 5 * 60_000, retry: 2 } }
+    { query: { enabled: !!accessToken && !!symbol && !fixtureChain, staleTime: 30_000, gcTime: 5 * 60_000, retry: 2 } }
   );
 
   const data = useMemo(() => {
-    if (fixtureOverride) {
-      let calls = (fixtureOverride.chain.calls ?? []) as Contract[];
-      let puts = (fixtureOverride.chain.puts ?? []) as Contract[];
+    if (fixtureChain) {
+      let calls = (fixtureChain.chain.calls ?? []) as Contract[];
+      let puts = (fixtureChain.chain.puts ?? []) as Contract[];
       if (contractType === "CALL") puts = [];
       else if (contractType === "PUT") calls = [];
-      return { ...fixtureOverride.chain, calls, puts, underlyingPrice: fixtureOverride.underlyingPrice };
+      return { ...fixtureChain.chain, calls, puts, underlyingPrice: fixtureChain.underlyingPrice };
     }
     if (!rawData) return rawData;
     if (!optionChainMatchesActiveSymbol(rawData.symbol, symbol)) {
@@ -1314,9 +1311,9 @@ export function OptionsTab({
     if (contractType === "CALL") puts = [];
     else if (contractType === "PUT") calls = [];
     return { ...rawData, calls, puts };
-  }, [rawData, contractType, fixtureOverride, symbol]);
+  }, [rawData, contractType, fixtureChain, symbol]);
 
-  const isLoadingEffective = fixtureOverride ? false : isLoading;
+  const isLoadingEffective = fixtureChain ? false : isLoading;
 
   const streamQuote = useTerminalStore((s) => {
     const u = symbol.toUpperCase();
@@ -1385,10 +1382,33 @@ export function OptionsTab({
     return buildExpirationGroups(calls, puts, underlyingPrice);
   }, [data, underlyingPrice, symbol]);
 
+  useEffect(() => {
+    if (!groups.length) return;
+    setAtExpiration((prev) => {
+      if (prev && groups.some((g) => g.expiration === prev)) return prev;
+      return groups[0].expiration;
+    });
+  }, [groups]);
+
+  useEffect(() => {
+    if (optionsSubView !== "at" || !groups.length || !atExpiration) {
+      if (optionsSubView !== "at") clearAtExpiryChrome();
+      return;
+    }
+    setAtExpiryChrome({
+      options: groups.map((g) => ({
+        expiration: g.expiration,
+        pillLabel: formatAtExpiryPill(g.expiration, g.dte, symbol),
+      })),
+      selectedExpiration: atExpiration,
+      onSelect: setAtExpiration,
+    });
+  }, [optionsSubView, groups, atExpiration, symbol, setAtExpiryChrome, clearAtExpiryChrome]);
+
   useChainOptionHold(
-    chainHoldSig?.holdSig,
-    chainHoldSig?.keys ?? [],
-    chainHoldSig?.viewId,
+    optionsSubView === "chain" ? chainHoldSig?.holdSig : undefined,
+    optionsSubView === "chain" ? chainHoldSig?.keys ?? [] : [],
+    optionsSubView === "chain" ? chainHoldSig?.viewId : undefined,
     { subscribeOptionSymbols, releaseOptionHold },
     underlyingPrice ?? data?.underlyingPrice ?? null,
   );
@@ -1406,12 +1426,12 @@ export function OptionsTab({
 
   const fixtureLegsAppliedRef = useRef(false);
   useEffect(() => {
-    if (!fixtureOverride || groups.length === 0 || fixtureLegsAppliedRef.current) return;
+    if (!chainFixtureOverride || groups.length === 0 || fixtureLegsAppliedRef.current) return;
     fixtureLegsAppliedRef.current = true;
     const group = groups[0];
     setExpandedExps(new Set([group.expiration]));
     const next = new Map<string, SelectedLeg>();
-    for (const pick of fixtureOverride.selectedLegs) {
+    for (const pick of chainFixtureOverride.selectedLegs) {
       const row = group.rows.find((r) => r.strike === pick.strike);
       const contract = pick.type === "CALL" ? row?.call : row?.put;
       if (!contract) continue;
@@ -1423,8 +1443,25 @@ export function OptionsTab({
       });
     }
     setSelectedLegs(next);
-    if (fixtureOverride.sheetCollapsed === false) setSheetCollapsed(false);
-  }, [fixtureOverride, groups]);
+    if (chainFixtureOverride.sheetCollapsed === false) setSheetCollapsed(false);
+  }, [chainFixtureOverride, groups]);
+
+  useEffect(() => {
+    if (!fixtureChain || groups.length === 0) return;
+    setExpandedExps(new Set([groups[0].expiration]));
+  }, [fixtureChain, groups]);
+
+  const fixtureReviewRef = useRef(false);
+  useEffect(() => {
+    if (fixtureReviewRef.current) return;
+    if (!atFixtureOverride || !onActiveTraderReview || !atFixtureOverride.openReviewOnMount) return;
+    const strike = atFixtureOverride.tapStrike ?? 7545;
+    const row = groups[0]?.rows.find((r) => r.strike === strike);
+    const contract = row?.call;
+    if (!contract) return;
+    fixtureReviewRef.current = true;
+    onActiveTraderReview(contract, "BUY", "CALL");
+  }, [atFixtureOverride, groups, onActiveTraderReview]);
 
   useEffect(() => {}, [groups.length]);
 
@@ -1627,14 +1664,54 @@ export function OptionsTab({
 
   const selCount = selectedLegs.size;
 
+  const atGroups = useMemo(
+    () =>
+      groups.map((g) => ({
+        expiration: g.expiration,
+        dte: g.dte,
+        dateLabel: g.dateLabel,
+        rows: g.rows,
+      })),
+    [groups],
+  );
+
   return (
     <div style={{ background: BG }} className="relative">
+      <OptionsSubViewToggle view={optionsSubView} onChange={setOptionsSubView} accentHex={accentHex} />
+      {optionsSubView === "at" && (
+        <ActiveTraderView
+          symbol={symbol}
+          groups={atGroups}
+          activeExpiration={atExpiration ?? undefined}
+          underlyingPrice={underlyingPrice}
+          stickyOffset={stickyOffset + 36}
+          accentHex={accentHex}
+          holdSubs={{ subscribeOptionSymbols, releaseOptionHold }}
+          onAddLeg={(contract, type) => handleToggleLeg(contract, type, "ask")}
+          onOpenReview={
+            onActiveTraderReview ??
+            ((contract, side, type) => {
+              if (onTradeSingle) onTradeSingle(contract, side, type);
+            })
+          }
+          presentation={atFixtureOverride?.presentation}
+          settingsPanelInitiallyOpen={atFixtureOverride?.settingsPanelOpen}
+          initialTradeSelection={
+            atFixtureOverride?.tapStrike != null &&
+            (atFixtureOverride.scene === "strip" || atFixtureOverride.scene === "confirm")
+              ? { strike: atFixtureOverride.tapStrike, type: "CALL" as const }
+              : undefined
+          }
+        />
+      )}
+      {optionsSubView === "chain" && (
+      <>
       <div
         className="flex items-center justify-between w-full px-3 shrink-0 sticky z-40"
         style={{ top: stickyOffset, height: TOOLBAR_H, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
       >
         <div className="flex items-center gap-1.5">
-          <span style={{ fontSize: 14, color: DIM, fontWeight: FW_NORMAL, fontFamily: MONO }}>Strike</span>
+          <span data-ui-audit="chain-strike-label" style={{ fontSize: 14, color: DIM, fontWeight: FW_NORMAL, fontFamily: MONO }}>Strike</span>
           {isCustomMode ? (
             <div className="flex items-center gap-1">
               <Input
@@ -1768,6 +1845,8 @@ export function OptionsTab({
           </div>
         )}
       </div>
+      </>
+      )}
 
       {legLimitShake && (
         <div
@@ -1787,8 +1866,8 @@ export function OptionsTab({
           onLegQuantityChange={handleSheetLegQty}
           onRemoveLeg={handleSheetRemoveLeg}
           subscribeOptionSymbols={subscribeOptionSymbols}
-          openReviewOnMount={fixtureOverride?.openReviewOnMount}
-          demoFixture={!!fixtureOverride}
+          openReviewOnMount={chainFixtureOverride?.openReviewOnMount}
+          demoFixture={!!chainFixtureOverride}
         />
       )}
 

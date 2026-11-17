@@ -72,3 +72,12 @@ export function formatMoneySigned(amount: number, isCredit: boolean): string {
   const label = isCredit ? "credit" : "debit";
   return `${label} $${amount.toFixed(2)}`;
 }
+
+export function formatCostBreakdownLine(flow: OrderNetCashFlow): string {
+  const gross = formatMoneySigned(flow.gross, flow.isCredit);
+  const net = formatMoneySigned(flow.net, flow.netIsCredit);
+  if (flow.isCredit) {
+    return `Cost of order including est. commissions and fees: ${gross} − $${flow.commission.toFixed(2)} est. comm − $${flow.regulatoryEst.toFixed(2)} est. reg = ${net}`;
+  }
+  return `Cost of order including est. commissions and fees: ${gross} + $${flow.commission.toFixed(2)} est. comm + $${flow.regulatoryEst.toFixed(2)} est. reg = ${net}`;
+}

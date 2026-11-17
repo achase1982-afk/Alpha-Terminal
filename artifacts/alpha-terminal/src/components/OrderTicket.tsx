@@ -5,16 +5,29 @@ import { useOptionTick, useOptionsStreamStore } from "@/lib/options-stream-store
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
+import { enqueueBrowserTelemetry } from "@/lib/browserTelemetry";
+import {
+  estimateSchwabOptionFees,
+  roundMoney,
+  SCHWAB_OPTION_COMMISSION_PER_CONTRACT,
+} from "@/lib/orders/schwabOrderFees";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { formatSchwabAccountType } from "@/lib/schwabAccountAggregate";
 import { startStrategistPolling } from "@/lib/strategistPoller";
 import { hash8 } from "@/lib/streamClientId";
 import type { OptionHoldPostOpts } from "@/lib/optionHoldClient";
 import { useTicketOptionHold } from "@/hooks/useTicketOptionHold";
+import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
+import { atBracketPreviewPrices } from "@/lib/active-trader/atSchwabOrderBuilder";
 import {
-  estimateSchwabOptionFees,
-  SCHWAB_OPTION_COMMISSION_PER_CONTRACT,
-} from "@/lib/orders/schwabOrderFees";
+  buildAtSchwabOrderJson,
+  planAtOrderLegs,
+  usesBracketExit,
+  type SchwabInstruction,
+} from "@/lib/active-trader/atSchwabOrderBuilder";
+import { buildAtTriggerConfirmSummary } from "@/lib/active-trader/atTriggerConfirmSummary";
+import { formatAtExitDuration } from "@/lib/active-trader/atSummaryFormat";
+import { TriggerOrderConfirmSummary } from "@/components/orders/TriggerOrderConfirmSummary";
 import {
   aggregateSpreadNBBO,
   computeOrderEconomics,
@@ -47,6 +60,22 @@ type ConfirmStage = "form" | "review" | "submitting" | "success" | "error";
 type RiskLevel = "GREEN" | "YELLOW" | "RED";
 type PositionEffect = "OPENING" | "CLOSING" | "AUTO";
 type TicketMode = "options" | "stock";
+
+function optionRootFromOcc(sym: string): string {
+  const root = sym.trim().slice(0, 6).trim();
+  return root || sym;
+}
+
+function humanOptionInstruction(instr: string | undefined): string {
+  if (!instr) return "—";
+  const map: Record<string, string> = {
+    BUY_TO_OPEN: "Buy to open",
+    SELL_TO_OPEN: "Sell to open",
+    BUY_TO_CLOSE: "Buy to close",
+    SELL_TO_CLOSE: "Sell to close",
+  };
+  return map[instr] ?? instr.replace(/_/g, " ").toLowerCase();
+}
 
 // An option leg added on top of an equity (stock) ticket.
 type MixedOptionLeg = {
@@ -341,6 +370,12 @@ interface OrderTicketProps {
     opts?: OptionHoldPostOpts,
   ) => Promise<string | undefined>;
   releaseOptionHold?: (holderId: string) => Promise<void>;
+  /** Open directly on review (Active Trader confirmation sheet). */
+  initialStage?: ConfirmStage;
+  /** When true, hides Schwab submit (legacy kill-switch; normally false). */
+  confirmDisabled?: boolean;
+  /** Active Trader template prefs for confirmation leg plan / bracket prices. */
+  atTemplatePrefs?: ActiveTraderTemplatePrefs;
 }
 
 function AiCoPilotPanel({ side, symbol, limitPrice, bid, ask, quantity, isOption }: {
@@ -420,6 +455,9 @@ export function OrderTicket({
   onSendToStrategist,
   subscribeOptionSymbols,
   releaseOptionHold,
+  initialStage,
+  confirmDisabled,
+  atTemplatePrefs,
 }: OrderTicketProps) {
   const symbol = useTerminalStore((s) => s.symbol);
   const { data: quote } = useQuote(symbol);
@@ -467,6 +505,8 @@ export function OrderTicket({
   const [duration, setDuration] = useState<Duration>("DAY");
   const [extendedHours, setExtendedHours] = useState(false);
   const [stage, setStage] = useState<ConfirmStage>("form");
+  const submitInFlightRef = useRef(false);
+  const [submitInFlight, setSubmitInFlight] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const schwabAccounts = useSchwabAccountStore((s) => s.accounts);
@@ -498,6 +538,7 @@ export function OrderTicket({
 
   const isOption = !!optionSymbol || isMultiLeg;
   const displaySymbol = isMultiLeg ? `${symbol} Strategy (${strategyLegs!.length} legs)` : optionSymbol ?? symbol;
+  const ticketHeaderSymbol = isOption && optionSymbol ? optionRootFromOcc(optionSymbol) : symbol;
 
   const ticketStreamKeys = useMemo(() => {
     if (!isOpen) return [] as string[];
@@ -593,7 +634,9 @@ export function OrderTicket({
     setTrailOffset("");
     setDuration("DAY");
     setExtendedHours(false);
-    setStage("form");
+    setStage(initialStage ?? "form");
+    submitInFlightRef.current = false;
+    setSubmitInFlight(false);
     setOrderId(null);
     setErrorMsg("");
     setShowOrderType(false);
@@ -607,7 +650,7 @@ export function OrderTicket({
     setExtraOptionLegs([]);
     setChainFetchEnabled(false);
     setQtyDisplay("1");
-  }, [isOpen, initialSide, isMultiLeg, strategyNetPrice]);
+  }, [isOpen, initialSide, initialStage, isMultiLeg, strategyNetPrice]);
 
   const [balances, setBalances] = useState<{ buyingPower: number | null; cashBalance: number | null; liquidationValue: number | null }>({ buyingPower: null, cashBalance: null, liquidationValue: null });
 
@@ -721,6 +764,93 @@ export function OrderTicket({
   const needsStop = orderType === "STOP" || orderType === "STOP_LIMIT" || orderType === "TRAILING_STOP_LIMIT";
   const needsTrail = orderType === "TRAILING_STOP" || orderType === "TRAILING_STOP_LIMIT";
 
+  const atTemplatePlan = useMemo(() => {
+    if (!atTemplatePrefs || !isOption || isMultiLeg || !optionSymbol) {
+      return null;
+    }
+    const primary = (optionInstruction ?? (side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN")) as SchwabInstruction;
+    const mid =
+      optionTick?.bid != null && optionTick?.ask != null
+        ? (optionTick.bid + optionTick.ask) / 2
+        : optionTick?.mark ?? optionTick?.last ?? null;
+    const px = parseFloat(limitPrice) || mid || 0;
+    if (px <= 0) return null;
+    const bracket = usesBracketExit({
+      template: atTemplatePrefs.template,
+      assetType: "OPTION",
+      symbol: optionSymbol,
+      primaryInstruction: primary,
+      quantity: atTemplatePrefs.qty,
+      limitPrice: px,
+      takeProfit: atTemplatePrefs.takeProfit,
+      stopLoss: atTemplatePrefs.stopLoss,
+    });
+    if (!bracket && atTemplatePrefs.template === "Single") return null;
+    return planAtOrderLegs({
+      template: atTemplatePrefs.template,
+      assetType: "OPTION",
+      symbol: optionSymbol,
+      underlyingSymbol: symbol.replace(/^\$/, ""),
+      primaryInstruction: primary,
+      quantity: atTemplatePrefs.qty,
+      limitPrice: px,
+      takeProfit: atTemplatePrefs.takeProfit,
+      stopLoss: atTemplatePrefs.stopLoss,
+      entryOrderType: atTemplatePrefs.orderType,
+      exitDuration: atTemplatePrefs.exitDuration,
+      stopLossOrderType: atTemplatePrefs.stopLossOrderType,
+      stopLimitOffset: atTemplatePrefs.stopLimitOffset,
+    });
+  }, [
+    atTemplatePrefs,
+    isOption,
+    isMultiLeg,
+    optionSymbol,
+    optionInstruction,
+    side,
+    limitPrice,
+    optionTick,
+  ]);
+
+  const atBracketSummary = useMemo(() => {
+    if (!atTemplatePrefs || !isOption || isMultiLeg || !optionSymbol) return null;
+    const primary = (optionInstruction ?? (side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN")) as SchwabInstruction;
+    const mid =
+      optionTick?.bid != null && optionTick?.ask != null
+        ? (optionTick.bid + optionTick.ask) / 2
+        : optionTick?.mark ?? optionTick?.last ?? null;
+    const px = parseFloat(limitPrice) || mid || 0;
+    if (px <= 0) return null;
+    const underlyingSymbol = optionRootFromOcc(optionSymbol);
+    const { takeProfit, stopLoss } = atBracketPreviewPrices({
+      template: atTemplatePrefs.template,
+      assetType: "OPTION",
+      symbol: optionSymbol,
+      underlyingSymbol,
+      primaryInstruction: primary,
+      quantity: atTemplatePrefs.qty,
+      limitPrice: px,
+      takeProfit: atTemplatePrefs.takeProfit,
+      stopLoss: atTemplatePrefs.stopLoss,
+      entryOrderType: atTemplatePrefs.orderType,
+      exitDuration: atTemplatePrefs.exitDuration,
+      stopLossOrderType: atTemplatePrefs.stopLossOrderType,
+      stopLimitOffset: atTemplatePrefs.stopLimitOffset,
+    });
+    return { takeProfit, stopLoss };
+  }, [atTemplatePrefs, isOption, isMultiLeg, optionInstruction, side, limitPrice, optionTick, optionSymbol]);
+
+  const atTriggerConfirm = useMemo(() => {
+    if (!atTemplatePlan || atTemplatePlan.legs.length < 2 || !optionSymbol) return null;
+    if (atTemplatePlan.validationError) return null;
+    return buildAtTriggerConfirmSummary({
+      legs: atTemplatePlan.legs,
+      quantity: atTemplatePrefs?.qty ?? quantity,
+      optionSymbol,
+      underlyingSymbol: optionRootFromOcc(optionSymbol),
+    });
+  }, [atTemplatePlan, optionSymbol, atTemplatePrefs?.qty, quantity]);
+
   const ticketPxBid = !isMultiLeg ? execPriceQuote?.bid ?? null : null;
   const ticketPxAsk = !isMultiLeg ? execPriceQuote?.ask ?? null : null;
   const ticketPxLast = !isMultiLeg
@@ -787,23 +917,24 @@ export function OrderTicket({
           : needsLimit
             ? null
             : ticketPxLast ?? null;
+    const ticketQty = atTemplatePrefs?.qty ?? quantity;
     return computeOrderEconomics({
       legs: econLegs,
       limitPrice: needsLimit || isMultiLeg ? limitPrice : undefined,
       fallbackNetPrice: fallback ?? undefined,
-      quantity,
+      quantity: isMultiLeg ? quantity : ticketQty,
       isCredit: ticketIsCredit,
       isOption,
       underlyingSymbol: symbol,
       closesPosition: isCloseOrder === true,
       contractCount: isMultiLeg && strategyLegs
         ? strategyLegs.reduce((s, l) => s + l.quantity, 0) * quantity
-        : quantity,
+        : ticketQty,
     });
   }, [
     isMultiLeg, liveStrategyLegs, isOption, side, orderType, ticketPxAsk, ticketPxBid, ticketPxLast,
     limitPrice, needsLimit, strategyNetPrice, quantity, ticketIsCredit, symbol, isCloseOrder, optionInstruction,
-    optionSymbol,
+    optionSymbol, atTemplatePrefs?.qty,
   ]);
 
   const estimatedCost = useMemo(() => ticketEconomics?.grossNotional ?? null, [ticketEconomics]);
@@ -925,6 +1056,45 @@ export function OrderTicket({
     const isSeamless = extendedHours || duration === "SEAMLESS" || duration === "GOOD_TILL_CANCEL_EXT";
     const session = isSeamless ? "SEAMLESS" : "NORMAL";
 
+    if (atTemplatePrefs && isOption && !isMultiLeg && optionSymbol) {
+      const primary = (optionInstruction ?? (side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN")) as SchwabInstruction;
+      const px = submittedLimit ?? (parseFloat(limitPrice) || 0);
+      if (px <= 0) {
+        return buildAtSchwabOrderJson({
+          template: atTemplatePrefs.template,
+          assetType: "OPTION",
+          symbol: optionSymbol,
+          underlyingSymbol: symbol.replace(/^\$/, ""),
+          primaryInstruction: primary,
+          quantity: atTemplatePrefs.qty,
+          limitPrice: 0.01,
+          takeProfit: atTemplatePrefs.takeProfit,
+          stopLoss: atTemplatePrefs.stopLoss,
+          entryOrderType: atTemplatePrefs.orderType,
+          entryDuration: duration,
+          exitDuration: atTemplatePrefs.exitDuration,
+          stopLossOrderType: atTemplatePrefs.stopLossOrderType,
+          stopLimitOffset: atTemplatePrefs.stopLimitOffset,
+        });
+      }
+      return buildAtSchwabOrderJson({
+        template: atTemplatePrefs.template,
+        assetType: "OPTION",
+        symbol: optionSymbol,
+        underlyingSymbol: symbol.replace(/^\$/, ""),
+        primaryInstruction: primary,
+        quantity: atTemplatePrefs.qty,
+        limitPrice: px,
+        takeProfit: atTemplatePrefs.takeProfit,
+        stopLoss: atTemplatePrefs.stopLoss,
+        entryOrderType: atTemplatePrefs.orderType,
+        entryDuration: duration,
+        exitDuration: atTemplatePrefs.exitDuration,
+        stopLossOrderType: atTemplatePrefs.stopLossOrderType,
+        stopLimitOffset: atTemplatePrefs.stopLimitOffset,
+      });
+    }
+
     if (isMultiLeg && liveStrategyLegs) {
       const parsed = schwabPriceFromTicket(limitTickCtx, limitPrice, strategyNetPrice ?? null);
       const isTrueMultiLeg = liveStrategyLegs.length >= 2;
@@ -1026,11 +1196,15 @@ export function OrderTicket({
     if (exchange !== "BEST") order.requestedDestination = exchange;
     if (taxLotMethod !== "DEFAULT") order.taxLotMethod = taxLotMethod;
     return order;
-  }, [orderType, extendedHours, duration, side, quantity, symbol, optionSymbol, isOption, isMultiLeg, liveStrategyLegs, strategyLegs, strategyIsCredit, isCloseOrder, optionInstruction, needsLimit, limitPrice, needsStop, stopPrice, needsTrail, trailOffset, instruction, exchange, taxLotMethod, spreadPrices, ticketPxBid, ticketPxAsk, ticketPxLast, limitTickCtx, submittedLimit, submittedLimitDisplay, strategyNetPrice]);
+  }, [orderType, extendedHours, duration, side, quantity, symbol, optionSymbol, isOption, isMultiLeg, liveStrategyLegs, strategyLegs, strategyIsCredit, isCloseOrder, optionInstruction, needsLimit, limitPrice, needsStop, stopPrice, needsTrail, trailOffset, instruction, exchange, taxLotMethod, spreadPrices, ticketPxBid, ticketPxAsk, ticketPxLast, limitTickCtx, submittedLimit, submittedLimitDisplay, strategyNetPrice, atTemplatePrefs]);
 
   const handleSubmit = useCallback(async () => {
+    if (submitInFlightRef.current || stage === "submitting") return;
     if (!accountHash || !isValid) return;
     if (!isCloseOrder && preTradeGate.shouldBlockSubmit) return;
+    if (atTemplatePlan?.validationError) return;
+    submitInFlightRef.current = true;
+    setSubmitInFlight(true);
     setStage("submitting");
     try {
       const order = buildSchwabOrder();
@@ -1090,20 +1264,34 @@ export function OrderTicket({
       });
       const data = await res.json();
       if (!res.ok || data.error) {
-        setErrorMsg(humanizeFailedApiBody(res.status, JSON.stringify(data)));
+        const msg = humanizeFailedApiBody(res.status, JSON.stringify(data));
+        enqueueBrowserTelemetry({
+          level: "ERROR",
+          message: "order_ticket_place_order_failed",
+          details: { status: res.status, symbol, atActiveTrader: !!atTemplatePrefs },
+        });
+        setErrorMsg(msg);
         setStage("error");
         return;
       }
       setOrderId(data.orderId ?? "—");
       setStage("success");
     } catch (err: any) {
+      enqueueBrowserTelemetry({
+        level: "ERROR",
+        message: "order_ticket_place_order_network",
+        details: { symbol, atActiveTrader: !!atTemplatePrefs, error: err?.message },
+      });
       setErrorMsg(err.message || "Network error");
       setStage("error");
+    } finally {
+      submitInFlightRef.current = false;
+      setSubmitInFlight(false);
     }
   }, [
     accountHash, buildSchwabOrder, symbol, side, pulseData, submittedLimit, isMultiLeg, strategyIsCredit,
     strategyLegs, quantity, isOption, isCloseOrder, preTradeGate.shouldBlockSubmit, preTradeEnabled, preTradeBlockOnRed,
-    overallRisk, riskChecks, ticketEconomics,
+    overallRisk, riskChecks, ticketEconomics, stage, atTemplatePlan?.validationError, atTemplatePrefs, isValid,
   ]);
 
   // ── Send-to-Strategist (trade validation) ────────────────────────────────
@@ -1516,8 +1704,10 @@ export function OrderTicket({
               <div style={{ background: CARD_GRAD, borderRadius: R_CARD, border: `1px solid ${BORDER}`, padding: "8px 10px" }}>
                 <div className="flex justify-between items-center">
                   <div>
-                    <span className="tracking-[0.08em] font-semibold" style={{ fontSize: 18, color: GOLD }}>{symbol}</span>
-                    {displaySymbol !== symbol && <div style={{ fontSize: S.label, color: MUTED }}>{displaySymbol}</div>}
+                    <span className="tracking-[0.08em] font-semibold" style={{ fontSize: 18, color: GOLD }}>{ticketHeaderSymbol}</span>
+                    {isOption && optionSymbol && (
+                      <div style={{ fontSize: S.label, color: MUTED }}>{displaySymbol}</div>
+                    )}
                   </div>
                   <div className="text-right">
                     <div style={{ fontSize: 18, color: WHITE, fontWeight: 500 }}>{fmt(headerLastPx)}</div>
@@ -2590,11 +2780,62 @@ export function OrderTicket({
                 </>
               ) : (
                 <>
+                  {atTriggerConfirm && (
+                    <TriggerOrderConfirmSummary
+                      summary={atTriggerConfirm}
+                      ocoPairNote={
+                        atTriggerConfirm.orders.length >= 3
+                          ? "Orders #2 and #3: one cancels other (OCO)."
+                          : undefined
+                      }
+                      exitDurationLabel={
+                        atTemplatePrefs
+                          ? formatAtExitDuration(atTemplatePrefs.exitDuration)
+                          : undefined
+                      }
+                    />
+                  )}
+                  {!atTriggerConfirm && atTemplatePlan && atTemplatePlan.legs.length > 1 && (
+                    <div className="space-y-1 pb-2 mb-1" style={{ borderBottom: `1px dashed ${DIVIDER}` }}>
+                      {atTemplatePlan.legs.map((leg) => (
+                        <div key={leg.role} className="flex justify-between" style={{ fontSize: S.body }}>
+                          <span style={{ color: MUTED }}>{leg.role}</span>
+                          <span style={{ color: TEXT }}>
+                            {leg.label}
+                            {leg.price != null
+                              ? ` · ${leg.orderType === "STOP" ? "Stop" : "LMT"} ${leg.price.toFixed(2)}`
+                              : ""}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {atTemplatePlan?.validationError && (
+                    <p style={{ fontSize: S.label, color: DOWN, marginTop: 4 }}>{atTemplatePlan.validationError}</p>
+                  )}
                   {[
-                    { label: "Action", value: isOption ? (optionInstruction ?? (side === "BUY" ? "BUY TO OPEN" : "SELL TO CLOSE")) : side, color: sideColor },
+                    {
+                      label: "Action",
+                      value: isOption
+                        ? humanOptionInstruction(optionInstruction ?? (side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_CLOSE"))
+                        : side,
+                      color: sideColor,
+                    },
                     { label: "Symbol", value: displaySymbol },
                     { label: "Quantity", value: String(quantity) },
                     { label: "Order type", value: ORDER_TYPES.find((t) => t.value === orderType)?.label },
+                    ...(atTemplatePrefs &&
+                    (atTemplatePrefs.template !== "Single" ||
+                      atTemplatePrefs.takeProfit.enabled ||
+                      atTemplatePrefs.stopLoss.enabled)
+                      ? [{ label: "Template", value: atTemplatePrefs.template, color: sideColor }]
+                      : []),
+                    ...(atBracketSummary?.takeProfit != null
+                      ? [{ label: "Take profit", value: `$${atBracketSummary.takeProfit.toFixed(2)}`, color: UP }]
+                      : []),
+                    ...(atBracketSummary?.stopLoss != null
+                      ? [{ label: "Stop loss", value: `$${atBracketSummary.stopLoss.toFixed(2)}`, color: DOWN }]
+                      : []),
                   ].map((row, i) => (
                     <div key={i} className="flex justify-between" style={{ fontSize: S.body }}>
                       <span style={{ color: MUTED }}>{row.label}</span>
@@ -2622,15 +2863,22 @@ export function OrderTicket({
                 </>
               )}
               <div className="flex justify-between" style={{ fontSize: S.body }}>
-                <span style={{ color: MUTED }}>Duration</span>
+                <span style={{ color: MUTED }}>Entry duration</span>
                 <span style={{ color: WHITE }}>{DURATIONS.find((d) => d.value === duration)?.label}{extendedHours ? " + Ext" : ""}</span>
               </div>
+              {atTemplatePrefs && atTriggerConfirm && atTriggerConfirm.orders.length >= 2 && (
+                <div className="flex justify-between" style={{ fontSize: S.body }}>
+                  <span style={{ color: MUTED }}>Exit duration</span>
+                  <span style={{ color: WHITE }}>{formatAtExitDuration(atTemplatePrefs.exitDuration)}</span>
+                </div>
+              )}
               {(() => {
+                const ticketQty = atTemplatePrefs?.qty ?? quantity;
                 const econ = ticketEconomics;
                 const totalContracts = isOption
                   ? isMultiLeg && strategyLegs
                     ? strategyLegs.reduce((sum, l) => sum + l.quantity, 0) * quantity
-                    : quantity
+                    : ticketQty
                   : 0;
                 const grossCost =
                   econ?.grossNotional != null
@@ -2772,9 +3020,15 @@ export function OrderTicket({
             <div className="flex gap-2 pt-1 pb-4">
               <button onClick={() => setStage("form")} className="flex-1" style={{ fontSize: S.heading, height: 40, background: "transparent", color: TEXT, border: `1px solid ${BORDER}`, borderRadius: 999 }}>Back</button>
               <button
-                onClick={handleSubmit}
-                disabled={!isValid || (!isCloseOrder && preTradeGate.shouldBlockSubmit)}
-                className="flex-[2] tracking-[0.04em] active:scale-[0.98] transition-transform"
+                onClick={confirmDisabled ? undefined : handleSubmit}
+                disabled={
+                  !!confirmDisabled
+                  || submitInFlight
+                  || !isValid
+                  || (!isCloseOrder && preTradeGate.shouldBlockSubmit)
+                  || !!atTemplatePlan?.validationError
+                }
+                className="flex-[2] tracking-[0.04em] active:scale-[0.98] transition-transform disabled:opacity-40"
                 style={{
                   fontSize: 16,
                   height: 42,

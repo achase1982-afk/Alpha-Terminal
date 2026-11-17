@@ -16,14 +16,49 @@ export interface OptionTick {
   vega: number | null;
   mark: number | null;
   change: number | null;
+  lastSize: number | null;
+  underlyingPrice: number | null;
+  quoteTime: number | null;
+  tradeTime: number | null;
   ts: number;
 }
 
 const TICK_FIELDS: (keyof OptionTick)[] = [
   "bid", "ask", "last", "bidSize", "askSize",
   "volume", "openInterest", "iv", "delta", "gamma",
-  "theta", "vega", "mark", "change",
+  "theta", "vega", "mark", "change", "lastSize", "underlyingPrice",
+  "quoteTime", "tradeTime",
 ];
+
+function mergeOptionTicks(existing: OptionTick, incoming: OptionTick): OptionTick {
+  const next: OptionTick = { ...existing, key: incoming.key, ts: incoming.ts };
+  for (const f of TICK_FIELDS) {
+    const v = incoming[f] as number | null;
+    if (v == null || Number.isNaN(v)) continue;
+    switch (f) {
+      case "bid": next.bid = v; break;
+      case "ask": next.ask = v; break;
+      case "last": next.last = v; break;
+      case "bidSize": next.bidSize = v; break;
+      case "askSize": next.askSize = v; break;
+      case "volume": next.volume = v; break;
+      case "openInterest": next.openInterest = v; break;
+      case "iv": next.iv = v; break;
+      case "delta": next.delta = v; break;
+      case "gamma": next.gamma = v; break;
+      case "theta": next.theta = v; break;
+      case "vega": next.vega = v; break;
+      case "mark": next.mark = v; break;
+      case "change": next.change = v; break;
+      case "lastSize": next.lastSize = v; break;
+      case "underlyingPrice": next.underlyingPrice = v; break;
+      case "quoteTime": next.quoteTime = v; break;
+      case "tradeTime": next.tradeTime = v; break;
+    }
+  }
+  if (incoming.iv != null && incoming.iv <= -999) next.iv = existing.iv;
+  return next;
+}
 
 interface OptionsStreamState {
   ticks: Record<string, OptionTick>;
@@ -35,16 +70,19 @@ export const useOptionsStreamStore = create<OptionsStreamState>()((set) => ({
   ticks: {},
   mergeTick: (tick) =>
     set((state) => {
-      if (tick.iv != null && tick.iv <= -999) tick.iv = null;
+      const cleaned = { ...tick };
+      if (cleaned.iv != null && cleaned.iv <= -999) cleaned.iv = null;
       const existing = state.ticks[tick.key];
+      const merged = existing ? mergeOptionTicks(existing, cleaned) : cleaned;
       if (existing) {
         let changed = false;
         for (const f of TICK_FIELDS) {
-          if (tick[f] !== existing[f]) { changed = true; break; }
+          if (merged[f] !== existing[f]) { changed = true; break; }
         }
+        if (merged.ts !== existing.ts) changed = true;
         if (!changed) return state;
       }
-      return { ticks: { ...state.ticks, [tick.key]: tick } };
+      return { ticks: { ...state.ticks, [tick.key]: merged } };
     }),
   clearTicks: () => set({ ticks: {} }),
 }));

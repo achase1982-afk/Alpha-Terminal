@@ -150,6 +150,10 @@ export function buildSpxChainOrderFixtureTicks(): OptionTick[] {
       vega: c.vega ?? null,
       mark: mid,
       change: null,
+      lastSize: null,
+      underlyingPrice: FIXTURE_SPX_SPOT,
+      quoteTime: now,
+      tradeTime: now,
       ts: now,
     });
   }

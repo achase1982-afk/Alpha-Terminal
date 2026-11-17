@@ -199,10 +199,24 @@ function BrowserTelemetryInstaller() {
   return null;
 }
 
+const DevAtFixturePage = import.meta.env.DEV
+  ? lazy(() => import("./dev-only/ActiveTraderFixtureDevPage"))
+  : null;
+
+function DevAtFixtureRoute() {
+  if (!import.meta.env.DEV || !DevAtFixturePage) return null;
+  const Page = DevAtFixturePage;
+  const Wrapped = () => (
+    <Suspense fallback={<div className="min-h-screen" style={{ background: "#000" }} />}>
+      <Page />
+    </Suspense>
+  );
+  return <Route path="/dev/active-trader" component={Wrapped} />;
+}
+
 const ChainOrderFixtureDevPage = import.meta.env.DEV
   ? lazy(() => import("@/dev-only/ChainOrderFixtureDevPage"))
   : null;
-
 function Router() {
   return (
     <Switch>
@@ -216,6 +230,7 @@ function Router() {
         </Route>
       ) : null}
       <Route path="/" component={TerminalPage} />
+      <DevAtFixtureRoute />
       <Route component={NotFound} />
     </Switch>
   );

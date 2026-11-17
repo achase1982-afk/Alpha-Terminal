@@ -83,7 +83,7 @@ const COMPANY_FONT_LG = 15;
 const COMPANY_FONT_SM = 11;
 const COMPANY_BOX_H = 34;
 
-function WatchlistToggle({ symbol }: { symbol: string }) {
+export function WatchlistToggle({ symbol }: { symbol: string }) {
   const watchlistSymbols = useActiveWatchlist();
   const addToWatchlist = useTerminalStore((s) => s.addToWatchlist);
   const removeFromWatchlist = useTerminalStore((s) => s.removeFromWatchlist);
@@ -381,7 +381,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: Metric
               <button onClick={onOpenTearSheet} className="font-semibold text-white text-sm tracking-wide shrink-0 hover:text-primary transition-colors cursor-pointer">
                 {quote.symbol}
               </button>
-              <span className="tabular-nums shrink-0" style={{ fontSize: '0.95rem', fontWeight: 300, color: tickColor }}>
+              <span data-ui-audit="metrics-last" className="tabular-nums shrink-0" style={{ fontSize: '0.95rem', fontWeight: 300, color: tickColor }}>
                 {lastStr}
               </span>
               <span className="tabular-nums shrink-0 whitespace-nowrap" style={{ fontSize: '0.75rem', fontWeight: 300, color: priceColor }}>

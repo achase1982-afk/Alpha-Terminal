@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyOptionTickMode,
   parseCanonicalLimit,
+  roundOptionPriceToTick,
   roundToTick,
 } from "../optionTickRound.js";
 
@@ -36,9 +37,18 @@ describe("optionTickRound symbol-aware", () => {
     expect(n).toBeCloseTo(3.0, 5);
   });
 
-  it("does not round unknown option underlyings", () => {
+  it("applies Schwab penny-program ticks for unknown option underlyings (display + limits)", () => {
     const n = parseCanonicalLimit(1.234567, { underlyingSymbol: "ZZZZ", isOption: true });
-    expect(n).toBeCloseTo(1.234567, 6);
+    expect(n).toBeCloseTo(1.23, 5);
+    const nickel = parseCanonicalLimit(3.234567, { underlyingSymbol: "ZZZZ", isOption: true });
+    expect(nickel).toBeCloseTo(3.25, 5);
+  });
+
+  it("rounds SPX mids to dime tick without float drift (15.95 → 16.00)", () => {
+    const ctx = { underlyingSymbol: "SPX", isOption: true };
+    expect(roundOptionPriceToTick(15.95, ctx)).toBe(16);
+    expect(roundOptionPriceToTick((15.9 + 16.0) / 2, ctx)).toBe(16);
+    expect(roundOptionPriceToTick((15.7 + 16.2) / 2, ctx)).toBe(16);
   });
 
   it("never rounds positive price to zero", () => {

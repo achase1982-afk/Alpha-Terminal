@@ -1,6 +1,8 @@
 import { lazy, Suspense, useState, useEffect, useLayoutEffect, useRef, useCallback, useId, type ComponentProps } from "react";
 import { Sidebar, type SidebarHandle } from "@/components/Sidebar";
 import { MetricsBar, VolumeBar } from "@/components/MetricsBar";
+import { AtSymbolHeader } from "@/components/active-trader/AtSymbolHeader";
+import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { TradingChart } from "@/components/TradingChart";
 import { MacroBar } from "@/components/MacroBar";
 import { TickerTape } from "@/components/TickerTape";
@@ -24,6 +26,7 @@ import type { StrategistValidationMeta } from "@/lib/store";
 import type { StrategistSendToOrderPayload } from "@/components/StrategistV2Card";
 import type { StrategyLeg } from "@/components/StrategyBuilder";
 import type { OptionsContract } from "@/components/OptionsTab";
+import { loadActiveTraderPrefs, type ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
 import { MarketSessionClock } from "@/components/MarketSessionClock";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
 import { BottomNav } from "@/components/BottomNav";
@@ -46,6 +49,7 @@ import {
 } from "lucide-react";
 import { useIsTablet, useIsDesktop } from "@/hooks/useMediaQuery";
 import { useShallow } from "zustand/react/shallow";
+import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 import { getChainOrderFixtureOverride } from "@/lib/dev-only/chainOrderFixtureBridge";
 
 // ---------------------------------------------------------------------------
@@ -343,6 +347,8 @@ export default function TerminalPage() {
   const isCompact = headerMode === "collapsed";
   const isScrolled = isCompact ? true : headerMode === "expanded" ? false : isScrolledRaw;
   const [activeBottom, setActiveBottom] = useState<BottomTab>(() => {
+    const fx = import.meta.env.DEV ? getAtFixtureOverride() : null;
+    if (fx?.enabled) return "markets";
     // Desktop lands on the customizable dashboard; phone keeps Markets.
     const fallback: BottomTab =
       typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches
@@ -354,10 +360,21 @@ export default function TerminalPage() {
       return saved && valid.includes(saved) ? saved : fallback;
     } catch { return fallback; }
   });
-  const [contextTab, setContextTab] = useState<ContextTab>("news");
+  const [contextTab, setContextTab] = useState<ContextTab>(() => {
+    if (import.meta.env.DEV) {
+      if (getAtFixtureOverride()?.enabled) return "options";
+      if (getChainOrderFixtureOverride()) return "options";
+    }
+    return "news";
+  });
+  const atSubViewActive = useAtChromeStore((s) => s.subViewIsAt);
+  const atOptionsChrome = activeBottom === "markets" && contextTab === "options" && atSubViewActive;
 
   useLayoutEffect(() => {
-    if (import.meta.env.DEV && getChainOrderFixtureOverride()) {
+    if (!import.meta.env.DEV) return;
+    const atFx = getAtFixtureOverride();
+    const chainFx = getChainOrderFixtureOverride();
+    if (atFx?.enabled || chainFx) {
       setActiveBottom("markets");
       setContextTab("options");
     }
@@ -379,6 +396,9 @@ export default function TerminalPage() {
   const [orderStrategyNetPrice, setOrderStrategyNetPrice] = useState<number | undefined>();
   const [orderStrategyIsCredit, setOrderStrategyIsCredit] = useState(false);
   const [orderIsClose, setOrderIsClose] = useState(false);
+  const [orderInitialStage, setOrderInitialStage] = useState<"form" | "review">("form");
+  const [orderConfirmDisabled, setOrderConfirmDisabled] = useState(false);
+  const [orderAtPrefs, setOrderAtPrefs] = useState<ActiveTraderTemplatePrefs | null>(null);
   const savedOptionsCtxRef = useRef<{
     legs?: OrderLeg[];
     netPrice?: number;
@@ -393,6 +413,7 @@ export default function TerminalPage() {
   const [strategyChainData, setStrategyChainData] = useState<Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>>(new Map());
 
   const openOrder = useCallback((side: "BUY" | "SELL") => {
+    setOrderAtPrefs(null);
     setOrderOptionSymbol(undefined);
     setOrderOptionInstruction(undefined);
     setOrderStrategyLegs(undefined);
@@ -406,6 +427,7 @@ export default function TerminalPage() {
   // on the same trade they sent for review.
   const reopenValidatedOrder = useCallback((meta: StrategistValidationMeta) => {
     const t = meta.ticket;
+    setOrderAtPrefs(null);
     useTerminalStore.getState().setSymbol(t.ticker);
     setOrderSide(t.side ?? "BUY");
     setOrderIsClose(meta.mode === "closing");
@@ -453,6 +475,7 @@ export default function TerminalPage() {
     strategyIsCredit?: boolean,
     isClose?: boolean,
   ) => {
+    setOrderAtPrefs(null);
     useTerminalStore.getState().setSymbol(sym);
     setOrderSide(side);
     setOrderOptionSymbol(optionSymbol);
@@ -465,6 +488,7 @@ export default function TerminalPage() {
   }, []);
 
   const closeOrderTicket = useCallback(() => {
+    setOrderAtPrefs(null);
     setOrderOpen(false);
     setOrderStrategyLegs(undefined);
     setOrderStrategyNetPrice(undefined);
@@ -472,6 +496,8 @@ export default function TerminalPage() {
     setOrderOptionSymbol(undefined);
     setOrderOptionInstruction(undefined);
     setOrderIsClose(false);
+    setOrderInitialStage("form");
+    setOrderConfirmDisabled(false);
   }, []);
 
   const handleSwitchToStock = useCallback(() => {
@@ -505,6 +531,7 @@ export default function TerminalPage() {
   }, []);
 
   const handleOptionTradeSingle = useCallback((contract: OptionsContract, side: "BUY" | "SELL", type: "CALL" | "PUT") => {
+    setOrderAtPrefs(null);
     const schwabSym = optionTradeStreamKey(contract);
     const instruction = side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN";
     setOrderSide(side);
@@ -512,6 +539,32 @@ export default function TerminalPage() {
     setOrderOptionInstruction(instruction);
     setOrderStrategyLegs(undefined);
     setOrderStrategyNetPrice(undefined);
+    setOrderInitialStage("form");
+    setOrderConfirmDisabled(false);
+    setOrderOpen(true);
+  }, []);
+
+  const handleActiveTraderReview = useCallback((contract: OptionsContract, side: "BUY" | "SELL", type: "CALL" | "PUT") => {
+    const sym = useTerminalStore.getState().symbol;
+    const symClass = sym.toUpperCase().includes("SPX") || sym.startsWith("$") ? "index" : "equity";
+    setOrderAtPrefs(loadActiveTraderPrefs(symClass));
+    const schwabSym = optionTradeStreamKey(contract);
+    const instruction =
+      side === "BUY"
+        ? type === "CALL"
+          ? "BUY_TO_OPEN"
+          : "BUY_TO_OPEN"
+        : type === "CALL"
+          ? "SELL_TO_OPEN"
+          : "SELL_TO_OPEN";
+    setOrderSide(side);
+    setOrderOptionSymbol(schwabSym);
+    setOrderOptionInstruction(instruction);
+    setOrderStrategyLegs(undefined);
+    setOrderStrategyNetPrice(undefined);
+    setOrderIsClose(false);
+    setOrderInitialStage("review");
+    setOrderConfirmDisabled(false);
     setOrderOpen(true);
   }, []);
 
@@ -588,6 +641,7 @@ export default function TerminalPage() {
   }, []);
 
   const handleStrategistSendToOrder = useCallback((payload: StrategistSendToOrderPayload) => {
+    setOrderAtPrefs(null);
     useTerminalStore.getState().setSymbol(payload.ticker);
     const orderLegs: OrderLeg[] = payload.legs.map(leg => ({
       schwabSymbol: leg.schwabSymbol,
@@ -936,8 +990,14 @@ export default function TerminalPage() {
                 {showMiniCards && !isCompact && <MacroBar />}
                 <div ref={stickyWrapRef} className="sticky top-0 z-40 bg-background shrink-0">
                   {schwabLinked && <SchwabAccountHeader compact />}
-                  <MetricsBar compact={isScrolled} onTrade={openOrder} />
-                  <VolumeBar />
+                  {atOptionsChrome ? (
+                    <AtSymbolHeader />
+                  ) : (
+                    <>
+                      <MetricsBar compact={isScrolled} onTrade={openOrder} />
+                      <VolumeBar />
+                    </>
+                  )}
                   <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
                   {contextTab === "company" && (
                     <CompanySectionTabBar page={companyPage} onPageChange={setCompanyPage} companyTabsId={companyTabsId} />
@@ -951,7 +1011,7 @@ export default function TerminalPage() {
                   }
                 >
                   {contextTab === "news" && <NewsTab />}
-                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
+                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} onActiveTraderReview={handleActiveTraderReview} />}
                   {contextTab === "company" && (
                     <CompanySwipablePages
                       candles={historyData?.candles}
@@ -1021,7 +1081,8 @@ export default function TerminalPage() {
                     }
                   >
                     {contextTab === "news" && <NewsTab />}
-                    {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
+                    {contextTab === "options" && atSubViewActive ? <AtSymbolHeader /> : null}
+                    {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} onActiveTraderReview={handleActiveTraderReview} />}
                     {contextTab === "company" && (
                       <CompanySwipablePages
                         candles={historyData?.candles}
@@ -1062,8 +1123,14 @@ export default function TerminalPage() {
             {activeBottom === "markets" && (
               <div className="flex min-h-0 flex-1 flex-col">
                 <div className="shrink-0 border-b border-zinc-800/60" style={{ background: "#0a0a0a" }}>
-                  <MetricsBar compact={isScrolled} onTrade={openOrder} />
-                  <VolumeBar />
+                  {atOptionsChrome ? (
+                    <AtSymbolHeader />
+                  ) : (
+                    <>
+                      <MetricsBar compact={isScrolled} onTrade={openOrder} />
+                      <VolumeBar />
+                    </>
+                  )}
                 </div>
                 <div ref={stickyWrapRef} className="sticky top-0 z-40 shrink-0 bg-background">
                   <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
@@ -1079,7 +1146,7 @@ export default function TerminalPage() {
                   }
                 >
                   {contextTab === "news" && <NewsTab />}
-                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
+                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} onActiveTraderReview={handleActiveTraderReview} />}
                   {contextTab === "company" && (
                     <CompanySwipablePages
                       candles={historyData?.candles}
@@ -1172,6 +1239,9 @@ export default function TerminalPage() {
         onSwitchToOptions={handleSwitchToOptions}
         subscribeOptionSymbols={subscribeOptionSymbols}
         releaseOptionHold={releaseOptionHold}
+        initialStage={orderInitialStage}
+        confirmDisabled={orderConfirmDisabled}
+        atTemplatePrefs={orderAtPrefs ?? undefined}
         onSendToStrategist={(ticker) => {
           // Strategist tab pulls results for the active symbol — switch to
           // the validated ticket's ticker so the live debate + verdict card
