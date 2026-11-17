@@ -1234,9 +1234,11 @@ export function OptionsTab({
   onOpenStrategyBuilder,
   onActiveTraderReview,
 }: OptionsTabProps) {
-  const fixtureOverride = import.meta.env.DEV ? getAtFixtureOverride() : null;
+  const atFixtureOverride = import.meta.env.DEV ? getAtFixtureOverride() : null;
+  const chainFixtureOverride = import.meta.env.DEV ? getChainOrderFixtureOverride() : null;
+  const fixtureChain = atFixtureOverride ?? chainFixtureOverride;
   const [optionsSubView, setOptionsSubView] = useState<OptionsSubView>(
-    () => fixtureOverride?.initialSubView ?? "chain",
+    () => atFixtureOverride?.initialSubView ?? "chain",
   );
   const enterActiveTrader = useAtChromeStore((s) => s.enterActiveTrader);
   const leaveActiveTrader = useAtChromeStore((s) => s.leaveActiveTrader);
@@ -1267,8 +1269,6 @@ export function OptionsTab({
   const accounts = useSchwabAccountStore((s) => s.accounts);
   const tradingAccountHash = useSchwabAccountStore((s) => s.tradingAccountHash());
   const MAX_OPTION_LEGS = 4;
-  const fixtureOverride = import.meta.env.DEV ? getChainOrderFixtureOverride() : null;
-
   const activeColumns = useMemo(
     () => activeColumnIds.map(id => COLUMN_REGISTRY.find(c => c.id === id)).filter(Boolean) as ColumnDef[],
     [activeColumnIds]
@@ -1290,16 +1290,16 @@ export function OptionsTab({
 
   const { data: rawData, isLoading, error, isFetching, dataUpdatedAt } = useGetOptionChain<OptionChainResponse>(
     { symbol, contractType: "ALL", strikeCount },
-    { query: { enabled: !!accessToken && !!symbol && !fixtureOverride, staleTime: 30_000, gcTime: 5 * 60_000, retry: 2 } }
+    { query: { enabled: !!accessToken && !!symbol && !fixtureChain, staleTime: 30_000, gcTime: 5 * 60_000, retry: 2 } }
   );
 
   const data = useMemo(() => {
-    if (fixtureOverride) {
-      let calls = (fixtureOverride.chain.calls ?? []) as Contract[];
-      let puts = (fixtureOverride.chain.puts ?? []) as Contract[];
+    if (fixtureChain) {
+      let calls = (fixtureChain.chain.calls ?? []) as Contract[];
+      let puts = (fixtureChain.chain.puts ?? []) as Contract[];
       if (contractType === "CALL") puts = [];
       else if (contractType === "PUT") calls = [];
-      return { ...fixtureOverride.chain, calls, puts, underlyingPrice: fixtureOverride.underlyingPrice };
+      return { ...fixtureChain.chain, calls, puts, underlyingPrice: fixtureChain.underlyingPrice };
     }
     if (!rawData) return rawData;
     if (rawData.symbol && rawData.symbol.toUpperCase() !== chainSymbolRef.current.toUpperCase()) {
@@ -1310,9 +1310,9 @@ export function OptionsTab({
     if (contractType === "CALL") puts = [];
     else if (contractType === "PUT") calls = [];
     return { ...rawData, calls, puts };
-  }, [rawData, contractType, fixtureOverride]);
+  }, [rawData, contractType, fixtureChain]);
 
-  const isLoadingEffective = fixtureOverride ? false : isLoading;
+  const isLoadingEffective = fixtureChain ? false : isLoading;
 
   const streamQuote = useTerminalStore((s) => {
     const u = symbol.toUpperCase();
@@ -1402,12 +1402,12 @@ export function OptionsTab({
 
   const fixtureLegsAppliedRef = useRef(false);
   useEffect(() => {
-    if (!fixtureOverride || groups.length === 0 || fixtureLegsAppliedRef.current) return;
+    if (!chainFixtureOverride || groups.length === 0 || fixtureLegsAppliedRef.current) return;
     fixtureLegsAppliedRef.current = true;
     const group = groups[0];
     setExpandedExps(new Set([group.expiration]));
     const next = new Map<string, SelectedLeg>();
-    for (const pick of fixtureOverride.selectedLegs) {
+    for (const pick of chainFixtureOverride.selectedLegs) {
       const row = group.rows.find((r) => r.strike === pick.strike);
       const contract = pick.type === "CALL" ? row?.call : row?.put;
       if (!contract) continue;
@@ -1419,25 +1419,25 @@ export function OptionsTab({
       });
     }
     setSelectedLegs(next);
-    if (fixtureOverride.sheetCollapsed === false) setSheetCollapsed(false);
-  }, [fixtureOverride, groups]);
+    if (chainFixtureOverride.sheetCollapsed === false) setSheetCollapsed(false);
+  }, [chainFixtureOverride, groups]);
 
   useEffect(() => {
-    if (!fixtureOverride || groups.length === 0) return;
+    if (!fixtureChain || groups.length === 0) return;
     setExpandedExps(new Set([groups[0].expiration]));
-  }, [fixtureOverride, groups]);
+  }, [fixtureChain, groups]);
 
   const fixtureReviewRef = useRef(false);
   useEffect(() => {
     if (fixtureReviewRef.current) return;
-    if (!fixtureOverride || !onActiveTraderReview || !fixtureOverride.openReviewOnMount) return;
-    const strike = fixtureOverride.tapStrike ?? 7545;
+    if (!atFixtureOverride || !onActiveTraderReview || !atFixtureOverride.openReviewOnMount) return;
+    const strike = atFixtureOverride.tapStrike ?? 7545;
     const row = groups[0]?.rows.find((r) => r.strike === strike);
     const contract = row?.call;
     if (!contract) return;
     fixtureReviewRef.current = true;
     onActiveTraderReview(contract, "BUY", "CALL");
-  }, [fixtureOverride, groups, onActiveTraderReview]);
+  }, [atFixtureOverride, groups, onActiveTraderReview]);
 
   useEffect(() => {}, [groups.length]);
 
@@ -1673,12 +1673,12 @@ export function OptionsTab({
               if (onTradeSingle) onTradeSingle(contract, side, type);
             })
           }
-          presentation={fixtureOverride?.presentation}
-          settingsPanelInitiallyOpen={fixtureOverride?.settingsPanelOpen}
+          presentation={atFixtureOverride?.presentation}
+          settingsPanelInitiallyOpen={atFixtureOverride?.settingsPanelOpen}
           initialTradeSelection={
-            fixtureOverride?.tapStrike != null &&
-            (fixtureOverride.scene === "strip" || fixtureOverride.scene === "confirm")
-              ? { strike: fixtureOverride.tapStrike, type: "CALL" as const }
+            atFixtureOverride?.tapStrike != null &&
+            (atFixtureOverride.scene === "strip" || atFixtureOverride.scene === "confirm")
+              ? { strike: atFixtureOverride.tapStrike, type: "CALL" as const }
               : undefined
           }
         />
@@ -1845,8 +1845,8 @@ export function OptionsTab({
           onLegQuantityChange={handleSheetLegQty}
           onRemoveLeg={handleSheetRemoveLeg}
           subscribeOptionSymbols={subscribeOptionSymbols}
-          openReviewOnMount={fixtureOverride?.openReviewOnMount}
-          demoFixture={!!fixtureOverride}
+          openReviewOnMount={chainFixtureOverride?.openReviewOnMount}
+          demoFixture={!!chainFixtureOverride}
         />
       )}
 

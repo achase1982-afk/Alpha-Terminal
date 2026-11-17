@@ -2819,7 +2819,7 @@ export function OrderTicket({
                         limitPrice: netPrice,
                         quantity,
                         isCredit: strategyIsCredit ?? false,
-                        contractCount: totalContracts,
+                        contractCount: contractQty,
                       })
                     : null;
                 const bpEffect = econMulti

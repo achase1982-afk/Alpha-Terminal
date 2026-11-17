@@ -57,6 +57,7 @@ export function registerAtFixtureFromLocation(): void {
   ) as AtFixtureOverride["scene"];
   const settingsPanelOpen =
     sceneParam === "settings-expanded" || (sceneParam !== "settings-collapsed" && params.get("panel") === "open");
+  const panelOpen = sceneParam === "settings-collapsed" ? false : settingsPanelOpen;
   const focusOff = sceneParam === "focus-off" || params.get("focus") === "off";
   const initialSubView = scene === "chain" ? "chain" : "at";
 
@@ -83,7 +84,7 @@ export function registerAtFixtureFromLocation(): void {
     tapStrike:
       sceneParam === "strip" || sceneParam === "strip-vertical" || scene === "confirm" ? 7545 : undefined,
     openReviewOnMount: scene === "confirm",
-    settingsPanelOpen,
+    settingsPanelOpen: panelOpen,
     verticalStripOnMount: sceneParam === "strip-vertical",
     presentation: {
       regimeLabel: FIXTURE_REGIME.label,
@@ -188,7 +189,7 @@ export function registerAtFixtureFromLocation(): void {
     positions: fixturePositions,
   });
 
-  saveAtSettingsPanelOpen(settingsPanelOpen);
+  saveAtSettingsPanelOpen(panelOpen);
 
   const atPrefs = {
     ...loadActiveTraderPrefs("index"),

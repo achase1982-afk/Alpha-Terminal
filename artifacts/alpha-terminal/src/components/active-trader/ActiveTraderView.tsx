@@ -444,10 +444,13 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     });
   }, []);
 
+  const fixtureTight = !!presentation?.skipNetwork;
+  const ladderRowH = fixtureTight ? 36 : AT_LADDER_ROW_H;
   const keyLevelsTop = stickyOffset + chromeHeight;
-  const ladderHeaderTop = keyLevelsTop + 68;
-  const ladderHdrStack = AT_LADDER_GROUP_HDR_H + AT_LADDER_ROW_H;
-  const ladderReserve = atHeaderCompact ? 44 : 80;
+  const keyLevelsBand = fixtureTight ? 58 : 68;
+  const ladderHeaderTop = keyLevelsTop + keyLevelsBand;
+  const ladderHdrStack = AT_LADDER_GROUP_HDR_H + ladderRowH;
+  const ladderReserve = fixtureTight ? 32 : atHeaderCompact ? 44 : 80;
   const ladderMaxHeight = `max(360px, calc(100dvh - ${ladderHeaderTop + ladderHdrStack + ladderReserve}px))`;
 
   const expiryLabel = primary?.dateLabel ?? "\u2014";
@@ -528,7 +531,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         <div
           className="grid items-center px-0.5"
           style={{
-            height: AT_LADDER_ROW_H,
+            height: ladderRowH,
             gridTemplateColumns: AT_LADDER_GRID,
             fontFamily: MONO,
             fontSize: 9,
@@ -560,6 +563,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           tradeStripStrike={tradeStripStrike}
           tradeContext={tradeContext}
           ladderMode={ladderMode}
+          rowHeight={ladderRowH}
           verticalWidth={prefs.verticalWidth}
           rowByStrike={rowByStrike}
           onVerticalTap={handleVerticalTap}

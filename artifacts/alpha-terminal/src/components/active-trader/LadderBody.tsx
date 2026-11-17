@@ -41,6 +41,7 @@ interface LadderBodyProps {
   ladderMode: AtLadderMode;
   verticalWidth: AtVerticalWidth;
   rowByStrike: Map<number, LadderRowModel>;
+  rowHeight?: number;
   onVerticalTap: (payload: {
     anchorStrike: number;
     farStrike: number;
@@ -188,6 +189,7 @@ type LadderRowViewProps = {
   ladderMode: AtLadderMode;
   verticalWidth: AtVerticalWidth;
   rowByStrike: Map<number, LadderRowModel>;
+  rowHeight: number;
   onVerticalTap: LadderBodyProps["onVerticalTap"];
 };
 
@@ -214,6 +216,7 @@ const LadderRowView = memo(function LadderRowView({
   ladderMode,
   verticalWidth,
   rowByStrike,
+  rowHeight,
   onVerticalTap,
 }: LadderRowViewProps) {
   const callTick = useOptionTick(row.call?.streamKey);
@@ -284,7 +287,7 @@ const LadderRowView = memo(function LadderRowView({
 
   const rowStyle: React.CSSProperties = {
     gridTemplateColumns: AT_LADDER_GRID,
-    height: AT_LADDER_ROW_H,
+    height: rowHeight,
     borderBottom: `1px solid ${BORDER_ROW}`,
     fontFamily: MONO,
     position: "relative",
@@ -478,7 +481,7 @@ const LadderRowView = memo(function LadderRowView({
           <div
             className="px-2 py-1"
             style={{
-              minHeight: AT_LADDER_ROW_H + 8,
+              minHeight: rowHeight + 8,
               borderBottom: `1px solid ${BORDER_ROW}`,
               background: "linear-gradient(180deg, rgba(10,10,10,1), rgba(0,0,0,1))",
               borderTop: `1px solid ${accentHex}30`,
@@ -559,6 +562,7 @@ function FlipPill({ flip }: { flip: number }) {
 }
 
 export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
+  const rowHeight = props.rowHeight ?? AT_LADDER_ROW_H;
   const maxFlow = useMemo(() => {
     let m = 1;
     for (const row of props.rows) {
@@ -606,6 +610,7 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
             ladderMode={props.ladderMode}
             verticalWidth={props.verticalWidth}
             rowByStrike={props.rowByStrike}
+            rowHeight={rowHeight}
             onVerticalTap={props.onVerticalTap}
             onQuoteTap={props.onQuoteTap}
             onTradeStripSell={props.onTradeStripSell}
