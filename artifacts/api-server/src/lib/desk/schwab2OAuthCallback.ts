@@ -3,10 +3,15 @@ import {
   deskSchwab2AppKey,
   deskSchwab2AppSecret,
   getSchwab2RedirectUri,
+  schwab2StateAfterBrokerage,
   verifySchwab2State,
 } from "./deskSchwab2OAuth.js";
 import { storeSchwab2Tokens } from "./deskSchwab2TokenStore.js";
-import { schwabOAuthErrorHtml, schwabOAuthSuccessHtml } from "./schwabOAuthPages.js";
+import {
+  errorPage,
+  schwab2StandaloneSuccessPage,
+  traderSuccessPage,
+} from "./schwabOAuthPages.js";
 
 const SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token";
 
@@ -31,7 +36,7 @@ export async function handleSchwab2OAuthCallback(
   const redirectUri = getSchwab2RedirectUri();
 
   if (!appKey || !appSecret || !redirectUri) {
-    res.status(400).send(schwabOAuthErrorHtml("Not Configured", "Schwab market-data app credentials are not configured."));
+    res.status(400).send(errorPage("Not Configured", "Schwab market-data app credentials are not configured."));
     return true;
   }
 
@@ -53,7 +58,7 @@ export async function handleSchwab2OAuthCallback(
 
     if (!response.ok) {
       req.log.error({ status: response.status, body: responseText.slice(0, 300) }, "Schwab app2 token exchange failed");
-      res.status(400).send(schwabOAuthErrorHtml("Authentication Failed", "Schwab market-data authorization failed."));
+      res.status(400).send(errorPage("Authentication Failed", "Schwab market-data authorization failed."));
       return true;
     }
 
@@ -61,7 +66,7 @@ export async function handleSchwab2OAuthCallback(
     const accessToken = tokenData["access_token"];
     const refreshToken = tokenData["refresh_token"];
     if (typeof accessToken !== "string" || !accessToken) {
-      res.status(502).send(schwabOAuthErrorHtml("Invalid Token", "Schwab did not return a valid access token."));
+      res.status(502).send(errorPage("Invalid Token", "Schwab did not return a valid access token."));
       return true;
     }
 
@@ -69,17 +74,15 @@ export async function handleSchwab2OAuthCallback(
     const expiresIn = typeof tokenData["expires_in"] === "number" ? tokenData["expires_in"] : 1800;
     await storeSchwab2Tokens(accessToken, rfTok, expiresIn, { newGrant: true });
     req.log.info("Schwab app 2 OAuth callback succeeded");
-    res.send(
-      schwabOAuthSuccessHtml({
-        headline: "Schwab market data connected",
-        lead: "Your Schwab market-data app (app 2) is linked for desk quotes, chains, and bars.",
-        hint: "Tap the <strong style=\"color:#fff\">X</strong> in the top corner to return to Alpha Terminal.",
-      }),
-    );
+    if (schwab2StateAfterBrokerage(state)) {
+      res.send(traderSuccessPage({ marketDataAlsoConnected: true }));
+    } else {
+      res.send(schwab2StandaloneSuccessPage());
+    }
     return true;
   } catch (err) {
     req.log.error({ err }, "Schwab app 2 OAuth network error");
-    res.status(500).send(schwabOAuthErrorHtml("Connection Error", "Could not reach Schwab API."));
+    res.status(500).send(errorPage("Connection Error", "Could not reach Schwab API."));
     return true;
   }
 }

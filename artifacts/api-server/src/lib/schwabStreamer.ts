@@ -17,7 +17,7 @@ import {
   deskComputeDeskLevelOneOptionsBudget,
   deskComputeDeskOptionsBookBudget,
 } from "./desk/deskStreamerBudget.js";
-import { deskStreamerDeskSymbolPlan } from "./desk/deskStreamerDeskSubs.js";
+import { deskStreamerSyncDeskSymbols } from "./desk/deskStreamerDeskSync.js";
 import { registerDeskStreamerHealthReaders } from "./desk/deskSchwabStreamerBridge.js";
 
 export interface LiveQuote {
@@ -856,6 +856,7 @@ function sendOptionSubscription(symbols: string[]) {
   if (req) {
     sendStreamerJson({ requests: [req] });
     logger.info({ count: symbols.length }, "Schwab streamer: LEVELONE_OPTIONS SUBS sent");
+    deskStreamerReplayDeskAdds();
   }
 }
 
@@ -940,6 +941,7 @@ function sendOptionsBookSubscription(symbols: string[]) {
   if (req) {
     sendStreamerJson({ requests: [req] });
     logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: OPTIONS_BOOK SUBS sent");
+    deskStreamerReplayDeskAdds();
   }
 }
 
@@ -1024,22 +1026,27 @@ export function deskStreamerAddEquity(symbols: string[]): number {
 
 export function deskStreamerSetDeskOptions(symbols: string[]): number {
   const budget = deskComputeDeskLevelOneOptionsBudget(subscribedOptionSymbols.size);
-  const plan = deskStreamerDeskSymbolPlan(deskAddedOptionSymbols, symbols, budget);
+  const sync = deskStreamerSyncDeskSymbols(
+    deskAddedOptionSymbols,
+    symbols,
+    budget,
+    subscribedOptionSymbols,
+  );
 
-  if (plan.remove.length > 0) {
-    for (const s of plan.remove) deskAddedOptionSymbols.delete(s);
-    if (connectionState === "connected") {
-      batchDeskAdd(sendDeskOptionUnsubs, plan.remove);
-    }
+  for (const s of sync.yieldToApp) deskAddedOptionSymbols.delete(s);
+
+  if (sync.unsub.length > 0 && connectionState === "connected") {
+    for (const s of sync.unsub) deskAddedOptionSymbols.delete(s);
+    batchDeskAdd(sendDeskOptionUnsubs, sync.unsub);
   }
 
   deskAddedOptionSymbols.clear();
-  for (const k of plan.next) deskAddedOptionSymbols.add(k);
+  for (const k of sync.next) deskAddedOptionSymbols.add(k);
 
-  if (plan.add.length > 0 && connectionState === "connected") {
-    batchDeskAdd(sendDeskOptionAdd, plan.add);
+  if (sync.add.length > 0 && connectionState === "connected") {
+    batchDeskAdd(sendDeskOptionAdd, sync.add);
   }
-  return plan.add.length;
+  return sync.add.length;
 }
 
 /** @deprecated use deskStreamerSetDeskOptions with pre-trimmed list */
@@ -1049,22 +1056,27 @@ export function deskStreamerAddOptions(symbols: string[]): number {
 
 export function deskStreamerSetDeskOptionsBook(symbols: string[]): number {
   const budget = deskComputeDeskOptionsBookBudget(subscribedOptionsBookSymbols.size);
-  const plan = deskStreamerDeskSymbolPlan(deskAddedOptionsBookSymbols, symbols, budget);
+  const sync = deskStreamerSyncDeskSymbols(
+    deskAddedOptionsBookSymbols,
+    symbols,
+    budget,
+    subscribedOptionsBookSymbols,
+  );
 
-  if (plan.remove.length > 0) {
-    for (const s of plan.remove) deskAddedOptionsBookSymbols.delete(s);
-    if (connectionState === "connected") {
-      batchDeskAdd(sendDeskOptionsBookUnsubs, plan.remove);
-    }
+  for (const s of sync.yieldToApp) deskAddedOptionsBookSymbols.delete(s);
+
+  if (sync.unsub.length > 0 && connectionState === "connected") {
+    for (const s of sync.unsub) deskAddedOptionsBookSymbols.delete(s);
+    batchDeskAdd(sendDeskOptionsBookUnsubs, sync.unsub);
   }
 
   deskAddedOptionsBookSymbols.clear();
-  for (const k of plan.next) deskAddedOptionsBookSymbols.add(k);
+  for (const k of sync.next) deskAddedOptionsBookSymbols.add(k);
 
-  if (plan.add.length > 0 && connectionState === "connected") {
-    batchDeskAdd(sendDeskOptionsBookAdd, plan.add);
+  if (sync.add.length > 0 && connectionState === "connected") {
+    batchDeskAdd(sendDeskOptionsBookAdd, sync.add);
   }
-  return plan.add.length;
+  return sync.add.length;
 }
 
 export function deskStreamerAddOptionsBook(symbols: string[]): number {
@@ -2274,6 +2286,7 @@ export function addOptionsBookSymbols(symbols: string[]) {
   }
   if (newSyms.length > 0 && connectionState === "connected") {
     sendOptionsBookSubscription([...subscribedOptionsBookSymbols]);
+    notifyDeskAppSubscriptionsChanged();
   }
 }
 

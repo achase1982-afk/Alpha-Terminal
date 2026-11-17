@@ -2,10 +2,9 @@ import { deskFormatSchwabSymbol, deskIsIndex } from "./deskSchwabSymbol.js";
 import { deskTouchFeed, deskMarkFeedError, deskMarkAuthFail } from "./deskFeedFreshness.js";
 import {
   type DeskSchwabRestApp,
-  deskSchwab2MarketFetch,
   deskSchwabChainsFeed,
   deskSchwabMarkApp2AuthFailure,
-  deskSchwabRestResolve,
+  deskSchwabRestFetch,
 } from "./deskSchwabRestCredential.js";
 import { deskSessionDateEt } from "./deskEt.js";
 import { logger } from "../logger.js";
@@ -154,40 +153,27 @@ function chainParams(
 
 async function fetchChainUrl(
   url: string,
-  token: string,
-  app: DeskSchwabRestApp,
-): Promise<Record<string, unknown> | null> {
-  const fetchFn = app === "app2" ? deskSchwab2MarketFetch : fetch;
-  const res =
-    app === "app2"
-      ? await deskSchwab2MarketFetch(
-          url,
-          { headers: { Authorization: `Bearer ${token}` } },
-          45_000,
-        )
-      : await fetchFn(url, {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: AbortSignal.timeout(45_000),
-        });
+  preferred: DeskSchwabRestApp,
+): Promise<{ json: Record<string, unknown> | null; app: DeskSchwabRestApp }> {
+  const { res, app } = await deskSchwabRestFetch(preferred, url, { headers: { Accept: "application/json" } }, 45_000);
   if (res.status === 401) {
     if (app === "app1") deskMarkAuthFail("schwab_chains");
     else deskSchwabMarkApp2AuthFailure(res.status);
-    return null;
+    return { json: null, app };
   }
   if (!res.ok) {
     const feed = deskSchwabChainsFeed(app);
     deskMarkFeedError(feed, `chain_http_${res.status}`, app === "app2" ? "schwab_rest_2" : undefined);
     logger.debug({ status: res.status, app }, "Desk Schwab chain HTTP failed");
-    return null;
+    return { json: null, app };
   }
-  return (await res.json()) as Record<string, unknown>;
+  return { json: (await res.json()) as Record<string, unknown>, app };
 }
 
 async function fetchChainsFromSchwab(
   displaySymbol: string,
   expiration: string,
-  token: string,
-  app: DeskSchwabRestApp,
+  preferred: DeskSchwabRestApp,
   opts?: DeskChainQueryOpts,
 ): Promise<CacheEntry | null> {
   const chainSymbol = deskIsIndex(displaySymbol)
@@ -203,25 +189,29 @@ async function fetchChainsFromSchwab(
   let json: Record<string, unknown> | null = null;
   let raw: Record<string, unknown>[] = [];
   let underlyingPrice: number | null = null;
+  let usedApp: DeskSchwabRestApp = preferred;
 
   if (useSplit) {
     const callParams = chainParams(chainSymbol, expiration, "CALL", opts);
     const putParams = chainParams(chainSymbol, expiration, "PUT", opts);
-    const [callJson, putJson] = await Promise.all([
-      fetchChainUrl(`${SCHWAB_API_BASE}/chains?${callParams}`, token, app),
-      fetchChainUrl(`${SCHWAB_API_BASE}/chains?${putParams}`, token, app),
+    const [callR, putR] = await Promise.all([
+      fetchChainUrl(`${SCHWAB_API_BASE}/chains?${callParams}`, preferred),
+      fetchChainUrl(`${SCHWAB_API_BASE}/chains?${putParams}`, preferred),
     ]);
-    if (!callJson && !putJson) return null;
-    const callRaw = collectRawContracts(callJson ?? {}, expiration);
-    const putRaw = collectRawContracts(putJson ?? {}, expiration);
+    usedApp = putR.app;
+    if (!callR.json && !putR.json) return null;
+    const callRaw = collectRawContracts(callR.json ?? {}, expiration);
+    const putRaw = collectRawContracts(putR.json ?? {}, expiration);
     raw = [...callRaw, ...putRaw];
     underlyingPrice =
-      num(callJson?.["underlyingPrice"]) ?? num(putJson?.["underlyingPrice"]);
-    json = callJson ?? putJson;
+      num(callR.json?.["underlyingPrice"]) ?? num(putR.json?.["underlyingPrice"]);
+    json = callR.json ?? putR.json;
   } else {
     const params = chainParams(chainSymbol, expiration, "ALL", opts);
-    json = await fetchChainUrl(`${SCHWAB_API_BASE}/chains?${params}`, token, app);
-    if (!json) return null;
+    const one = await fetchChainUrl(`${SCHWAB_API_BASE}/chains?${params}`, preferred);
+    usedApp = one.app;
+    if (!one.json) return null;
+    json = one.json;
     raw = collectRawContracts(json, expiration);
     underlyingPrice = num(json["underlyingPrice"]);
   }
@@ -235,7 +225,7 @@ async function fetchChainsFromSchwab(
     fetchedAt: Date.now(),
     truncated: clientLimited,
     contract_count: raw.length,
-    app,
+    app: usedApp,
   };
 }
 
@@ -276,27 +266,11 @@ export async function deskFetchSchwabChain(
     };
   }
 
-  const { token, app, fellBack } = await deskSchwabRestResolve(preferred);
-  const feed = deskSchwabChainsFeed(app);
-  if (!token) {
-    if (app === "app1") deskMarkAuthFail("schwab_chains");
-    else deskMarkFeedError("schwab2_rest", "schwab2_oauth_required", "schwab_rest_2");
-    return {
-      underlyingPrice: null,
-      raw: [],
-      normalized: [],
-      asOfMs: Date.now(),
-      session_date,
-      truncated: false,
-      contract_count: 0,
-      app,
-      fellBack,
-    };
-  }
-
-  const entry = await fetchChainsFromSchwab(sym, exp, token, app, opts);
+  const entry = await fetchChainsFromSchwab(sym, exp, preferred, opts);
   if (!entry) {
-    deskMarkFeedError(feed, "schwab_chain_fetch_failed", app === "app2" ? "schwab_rest_2" : undefined);
+    const guess = preferred;
+    const feed = deskSchwabChainsFeed(guess);
+    deskMarkFeedError(feed, "schwab_chain_fetch_failed", guess === "app2" ? "schwab_rest_2" : undefined);
     return {
       underlyingPrice: null,
       raw: [],
@@ -305,11 +279,14 @@ export async function deskFetchSchwabChain(
       session_date,
       truncated: false,
       contract_count: 0,
-      app,
-      fellBack,
+      app: guess,
+      fellBack: false,
     };
   }
 
+  const app = entry.app;
+  const feed = deskSchwabChainsFeed(app);
+  const fellBack = app !== preferred;
   cache.set(key, entry);
   deskTouchFeed(feed, entry.fetchedAt, app === "app2" ? "schwab_rest_2" : undefined);
   return {

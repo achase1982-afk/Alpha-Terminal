@@ -30,10 +30,13 @@ function stateSecret(): string {
 
 const STATE_TTL_MS = 30 * 60 * 1000;
 
-export function signSchwab2State(): string {
+export type Schwab2OAuthStateKind = "standalone" | "after_brokerage";
+
+export function signSchwab2State(kind: Schwab2OAuthStateKind = "standalone"): string {
   const nonce = crypto.randomBytes(16).toString("hex");
   const ts = Date.now().toString(36);
-  const payload = `schwab2_${nonce}.${ts}`;
+  const prefix = kind === "after_brokerage" ? "schwab2b_" : "schwab2_";
+  const payload = `${prefix}${nonce}.${ts}`;
   const mac = crypto.createHmac("sha256", stateSecret()).update(payload).digest("hex").slice(0, 32);
   return `${payload}.${mac}`;
 }
@@ -43,7 +46,7 @@ export function verifySchwab2State(state: string | undefined): boolean {
   const parts = state.split(".");
   if (parts.length !== 3) return false;
   const [noncePart, ts, mac] = parts;
-  if (!noncePart?.startsWith("schwab2_") || !ts || !mac) return false;
+  if ((!noncePart?.startsWith("schwab2_") && !noncePart?.startsWith("schwab2b_")) || !ts || !mac) return false;
   const payload = `${noncePart}.${ts}`;
   const expected = crypto.createHmac("sha256", stateSecret()).update(payload).digest("hex").slice(0, 32);
   let macBuf: Buffer;
@@ -60,11 +63,18 @@ export function verifySchwab2State(state: string | undefined): boolean {
   return true;
 }
 
-export function buildSchwab2AuthorizeUrl(): { url: string; redirectUri: string } | null {
+export function schwab2StateAfterBrokerage(state: string | undefined): boolean {
+  if (!state) return false;
+  return state.split(".")[0]?.startsWith("schwab2b_") ?? false;
+}
+
+export function buildSchwab2AuthorizeUrl(
+  kind: Schwab2OAuthStateKind = "standalone",
+): { url: string; redirectUri: string } | null {
   const appKey = deskSchwab2AppKey();
   const redirectUri = getSchwab2RedirectUri();
   if (!appKey || !redirectUri) return null;
-  const state = signSchwab2State();
+  const state = signSchwab2State(kind);
   const params = new URLSearchParams({
     response_type: "code",
     client_id: appKey,

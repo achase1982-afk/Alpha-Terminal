@@ -90,21 +90,8 @@ export async function deskFetchAlpacaNews(
     }
   }
 
-  const pollMs = Date.now();
-  let contentLatest = pollMs;
-  for (const a of all) {
-    const row = a as { created_at?: string; updated_at?: string };
-    const ts =
-      row.updated_at != null
-        ? Date.parse(row.updated_at)
-        : row.created_at != null
-          ? Date.parse(row.created_at)
-          : NaN;
-    if (Number.isFinite(ts)) contentLatest = Math.max(contentLatest, ts);
-  }
-  const touchMs = Math.max(contentLatest, pollMs - 30_000);
-  deskTouchFeed("alpaca", touchMs, ALPACA_SOURCE);
-  return { ok: true, articles: all, asOfMs: touchMs, status: 200 };
+  deskTouchFeed("alpaca", asOfMs, ALPACA_SOURCE);
+  return { ok: true, articles: all, asOfMs, status: 200 };
 }
 
 export async function deskProbeAlpacaNews(): Promise<void> {

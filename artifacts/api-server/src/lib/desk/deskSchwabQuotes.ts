@@ -3,10 +3,9 @@ import { deskTouchFeed, deskMarkFeedError, deskMarkAuthFail } from "./deskFeedFr
 import { deskSessionDateEt } from "./deskEt.js";
 import {
   type DeskSchwabRestApp,
-  deskSchwab2MarketFetch,
   deskSchwabMarkApp2AuthFailure,
   deskSchwabQuotesFeed,
-  deskSchwabRestResolve,
+  deskSchwabRestFetch,
 } from "./deskSchwabRestCredential.js";
 import { deskMarkFeedNotAuthorized } from "./deskFeedFreshness.js";
 
@@ -51,11 +50,16 @@ export async function deskFetchSchwabQuotes(
   app: DeskSchwabRestApp;
   fellBack: boolean;
 }> {
-  const resolved = await deskSchwabRestResolve(preferred);
-  const { token, app, fellBack } = resolved;
-  const feed = deskSchwabQuotesFeed(app);
   const session_date = deskSessionDateEt();
   const uniq = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
+  const apiSyms = uniq.map(deskFormatSchwabSymbol);
+  const url =
+    `${SCHWAB_API_BASE}/quotes?symbols=${encodeURIComponent(apiSyms.join(","))}` +
+    "&fields=quote,fundamental,reference";
+
+  const fetched = await deskSchwabRestFetch(preferred, url, { headers: { Accept: "application/json" } }, 15_000);
+  const { res, app, fellBack, token } = fetched;
+  const feed = deskSchwabQuotesFeed(app);
   if (!token) {
     if (app === "app1") deskMarkAuthFail("schwab_quotes_rest");
     else deskMarkFeedNotAuthorized("schwab2_rest", "schwab2_oauth_required", "schwab_rest_2");
@@ -79,19 +83,6 @@ export async function deskFetchSchwabQuotes(
       fellBack,
     };
   }
-
-  const apiSyms = uniq.map(deskFormatSchwabSymbol);
-  const url =
-    `${SCHWAB_API_BASE}/quotes?symbols=${encodeURIComponent(apiSyms.join(","))}` +
-    "&fields=quote,fundamental,reference";
-
-  const res =
-    app === "app2"
-      ? await deskSchwab2MarketFetch(url, { headers: { Authorization: `Bearer ${token}` } }, 15_000)
-      : await fetch(url, {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: AbortSignal.timeout(15_000),
-        });
 
   if (res.status === 401) {
     if (app === "app1") deskMarkAuthFail("schwab_quotes_rest");

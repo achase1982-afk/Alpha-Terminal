@@ -190,7 +190,10 @@ async function doRefresh(retryCount: number): Promise<boolean> {
         return false;
       }
       deskMarkFeedAuthError("schwab2_rest", `refresh_http_${res.status}`, "schwab_rest_2");
-      if ((res.status === 400 || res.status === 401) && generationBefore === (tokenSet?.generation ?? 0)) {
+      const retriable =
+        generationBefore === (tokenSet?.generation ?? 0) &&
+        (res.status === 400 || res.status === 401 || res.status >= 500);
+      if (retriable) {
         refreshFailureCount = retryCount + 1;
         const delay = backoffDelayMs(retryCount);
         clearRefreshTimer();

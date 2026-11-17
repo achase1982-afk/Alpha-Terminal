@@ -49,24 +49,36 @@ function tryApp1AccessToken(): string | null {
 }
 
 /**
- * Credential pick: prefer Schwab app 2 when it yields a token, otherwise app 1.
- * Records errors for the app that failed; logs and marks feed when falling back.
+ * Credential pick honors `preferred`: app1-first for `source=schwab`, app2-first otherwise,
+ * with fallback to the other app when the preferred side has no token.
  */
 export async function deskSchwabRestResolve(
   preferred: DeskSchwabRestApp = "app2",
 ): Promise<DeskSchwabRestResolution> {
-  const app2 = await tryApp2AccessToken();
-  if (app2) {
-    return { app: "app2", token: app2, preferred, fellBack: false };
+  const tryPrimary =
+    preferred === "app1"
+      ? (): Promise<string | null> | string | null => tryApp1AccessToken()
+      : (): Promise<string | null> | string | null => tryApp2AccessToken();
+  const trySecondary =
+    preferred === "app1"
+      ? (): Promise<string | null> | string | null => tryApp2AccessToken()
+      : (): Promise<string | null> | string | null => tryApp1AccessToken();
+
+  const primaryToken = await Promise.resolve(tryPrimary());
+  if (primaryToken) {
+    return { app: preferred, token: primaryToken, preferred, fellBack: false };
   }
 
-  const app1 = tryApp1AccessToken();
-  if (app1) {
+  const secondaryApp: DeskSchwabRestApp = preferred === "app1" ? "app2" : "app1";
+  const secondaryToken = await Promise.resolve(trySecondary());
+  if (secondaryToken) {
     if (preferred === "app2") {
       logger.info("Desk Schwab REST: app2 unavailable — using app1");
       deskMarkFeedError("schwab2_rest", "schwab_rest_fallback_to_app1", "schwab_rest_2");
+    } else {
+      logger.info("Desk Schwab REST: app1 unavailable — using app2");
     }
-    return { app: "app1", token: app1, preferred, fellBack: preferred === "app2" };
+    return { app: secondaryApp, token: secondaryToken, preferred, fellBack: true };
   }
 
   return { app: preferred, token: null, preferred, fellBack: false };
@@ -75,6 +87,58 @@ export async function deskSchwabRestResolve(
 export async function deskSchwabRestAccessToken(app: DeskSchwabRestApp = "app2"): Promise<string | null> {
   const r = await deskSchwabRestResolve(app);
   return r.token;
+}
+
+async function rawFetch(
+  app: DeskSchwabRestApp,
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  if (app === "app2") {
+    return deskSchwab2MarketFetch(url, init, timeoutMs);
+  }
+  const signal = init.signal ?? AbortSignal.timeout(timeoutMs);
+  return fetch(url, { ...init, signal });
+}
+
+export type DeskSchwabRestFetchResult = DeskSchwabRestResolution & { res: Response };
+
+/** Run a Schwab REST GET/POST; on app2 401/403 with token, retry once on app1. */
+export async function deskSchwabRestFetch(
+  preferred: DeskSchwabRestApp,
+  url: string,
+  init: RequestInit,
+  timeoutMs = 15_000,
+): Promise<DeskSchwabRestFetchResult> {
+  const first = await deskSchwabRestResolve(preferred);
+  if (!first.token) {
+    const res = new Response(null, { status: 401, statusText: "No Schwab REST token" });
+    return { ...first, res };
+  }
+
+  let res = await rawFetch(first.app, url, { ...init, headers: { ...init.headers, Authorization: `Bearer ${first.token}` } }, timeoutMs);
+  if (
+    first.app === "app2" &&
+    first.token &&
+    (res.status === 401 || res.status === 403)
+  ) {
+    deskSchwabMarkApp2AuthFailure(res.status);
+    const app1 = tryApp1AccessToken();
+    if (app1) {
+      logger.info({ status: res.status }, "Desk Schwab REST: app2 HTTP auth error — retry on app1");
+      deskMarkFeedError("schwab2_rest", "schwab_rest_fallback_to_app1", "schwab_rest_2");
+      res = await rawFetch(
+        "app1",
+        url,
+        { ...init, headers: { ...init.headers, Authorization: `Bearer ${app1}` } },
+        timeoutMs,
+      );
+      return { app: "app1", token: app1, preferred, fellBack: true, res };
+    }
+  }
+
+  return { ...first, res };
 }
 
 export async function deskSchwab2MarketFetch(

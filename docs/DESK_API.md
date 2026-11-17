@@ -53,7 +53,7 @@ Outside a feed’s ET session window → `session_closed` and `stale=false`.
 | Method | Path | Notes |
 |--------|------|--------|
 | GET | `/health` | Feed freshness matrix + `schwab_oauth.app1` / `schwab_oauth.app2` token expiry metadata |
-| GET | `/quotes?symbols=&source=` | **Required** `source`: `schwab2` (prefer app 2 creds, fallback app 1), `schwab` (same credential resolution; labels reflect app used), `tradier`, `alpaca_paper`, `tastytrade` |
+| GET | `/quotes?symbols=&source=` | **Required** `source`: `schwab2` (app 2 first, fallback app 1), `schwab` (app 1 first, fallback app 2); envelope labels reflect the app used. Also `tradier`, `alpaca_paper`, `tastytrade` |
 | GET | `/tape/spx/stream` | SSE Schwab streamer frames `{rx_ns,c,dir?,m,session_date,rx_utc_ms}` |
 | GET | `/tape/spx/raw?session_date=&since_ns=` | Filtered desk-only streamer NDJSON (`{c,rx_ns,m}`); `rx_ns` is a JSON integer; `since_ns` remains a nanosecond string for pagination |
 | GET | `/gamma/live_gamma_0dte?source=unusual_whales` | Paginated UW expiry×strike gamma snapshot |
