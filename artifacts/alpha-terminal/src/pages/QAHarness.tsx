@@ -137,6 +137,7 @@ export default function QAHarness() {
   const setTokens = useTerminalStore((s) => s.setTokens);
 
   useEffect(() => {
+    if (!import.meta.env.DEV || import.meta.env.VITE_QA_HARNESS !== "true") return;
     // Set mock tokens so components think we're authenticated
     setTokens("mock-qa-access-token", "mock-qa-refresh-token");
     
@@ -199,7 +200,7 @@ export default function QAHarness() {
       }}>
         QA HARNESS · SPX Options with Crossed Quotes
       </div>
-      <OptionsTab />
+      <OptionsTab subscribeOptionSymbols={async () => {}} />
     </div>
   );
 }

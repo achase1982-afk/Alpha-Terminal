@@ -1,7 +1,9 @@
 import { test } from "@playwright/test";
 import path from "node:path";
 
-const OUT = process.env.QA_SCREENSHOT_DIR ?? "/opt/cursor/artifacts/qa-pr-b";
+const OUT =
+  process.env.QA_SCREENSHOT_DIR ??
+  path.resolve(import.meta.dirname, "../../../docs/qa-pr-b");
 
 const chainHtml = `
 <body style="margin:0;background:#000;color:#f0f0f0;font-family:monospace;padding:12px">
