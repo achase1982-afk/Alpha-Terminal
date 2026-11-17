@@ -204,6 +204,7 @@ export function useMarketStream() {
     new Map<string, { symbols: string[]; purpose: string; viewId: string }>(),
   );
   const holderOpTailRef = useRef(new Map<string, Promise<unknown>>());
+  const holderPostGenerationRef = useRef(new Map<string, number>());
 
   const watchlist = useTerminalStore((s) => s.watchlists[s.activeWatchlistId]?.symbols ?? []);
 
@@ -641,6 +642,9 @@ export function useMarketStream() {
       const viewId = opts?.viewId ?? "";
       const clientId = streamClientIdRef.current;
       const holderId = resolveOptionStreamHolderId(clientId, purpose, viewId, opts?.holderId);
+      const genAtQueue = holderPostGenerationRef.current.get(holderId) ?? 0;
+      const postGen = genAtQueue + 1;
+      holderPostGenerationRef.current.set(holderId, postGen);
       return runHolderOp(holderId, async () => {
         const prev = optionHoldPayloadsRef.current.get(holderId);
         if (prev && payloadsEqual(prev.symbols, symbols)) return holderId;
@@ -692,7 +696,9 @@ export function useMarketStream() {
   const releaseOptionHold = useCallback(
     async (holderId: string) => {
       if (!holderId) return;
+      const genWhenQueued = holderPostGenerationRef.current.get(holderId) ?? 0;
       return runHolderOp(holderId, async () => {
+        if ((holderPostGenerationRef.current.get(holderId) ?? 0) > genWhenQueued) return;
         try {
           await fetchWithAuth(`${API_BASE}/stream/release-holds`, {
             method: "POST",

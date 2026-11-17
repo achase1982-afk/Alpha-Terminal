@@ -1841,13 +1841,17 @@ function handleMessage(raw: string) {
               "cap_discard",
             );
             if (parsed.service === "LEVELONE_OPTIONS") {
-              const live = streamerWireSimulatorAllLevelOneKeysOnWire();
-              streamerWireSimulatorDropLevelOneByPriority(
-                streamerSubLowestPriorityWireDropOrder(),
-                parsed.discarded,
-              );
-              if (live.size === streamerWireSimulatorAllLevelOneKeysOnWire().size) {
-                streamerWireSimulatorDropLevelOneByPriority([...live], parsed.discarded);
+              const before = streamerWireSimulatorAllLevelOneKeysOnWire().size;
+              const order = streamerSubLowestPriorityWireDropOrder();
+              streamerWireSimulatorDropLevelOneByPriority(order, parsed.discarded);
+              const after = streamerWireSimulatorAllLevelOneKeysOnWire().size;
+              const dropped = before - after;
+              if (dropped < parsed.discarded) {
+                streamerSubRecordRejection(
+                  "LEVELONE_OPTIONS",
+                  `cap_discard_unattributed_${parsed.discarded - dropped}`,
+                  "cap_discard_unattributed",
+                );
               }
             }
           } else if (parsed.kind === "symbol") {

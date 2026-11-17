@@ -24,9 +24,11 @@ export function useChainOptionHold(
   const spotRef = useRef(underlyingPrice);
   const keysRef = useRef(keys);
   const viewIdRef = useRef(viewId);
+  const latestViewIdRef = useRef(viewId);
   spotRef.current = underlyingPrice;
   keysRef.current = keys;
   viewIdRef.current = viewId;
+  latestViewIdRef.current = viewId;
 
   const { subscribeOptionSymbols, releaseOptionHold } = subs;
 
@@ -34,19 +36,19 @@ export function useChainOptionHold(
     const k = keysRef.current;
     const v = viewIdRef.current;
     if (!holdSig || !subscribeOptionSymbols || !v || k.length === 0) return;
+    const viewAtMount = v;
     let aborted = false;
     const inFlight = subscribeOptionSymbols(k, {
       purpose: "chain",
       viewId: v,
       underlyingPrice: spotRef.current ?? undefined,
       isAborted: () => aborted,
-    }).then((next) => {
-      return next;
-    });
+    }).then((next) => next);
     return () => {
       aborted = true;
+      const stillSameView = latestViewIdRef.current === viewAtMount;
       void inFlight.then((holderId) => {
-        if (holderId && releaseOptionHold) void releaseOptionHold(holderId);
+        if (holderId && releaseOptionHold && !stillSameView) void releaseOptionHold(holderId);
       });
     };
   }, [holdSig, subscribeOptionSymbols, releaseOptionHold]);

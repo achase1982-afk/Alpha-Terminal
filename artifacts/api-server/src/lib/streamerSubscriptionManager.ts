@@ -323,8 +323,10 @@ export function streamerSubParseRejection(msgText: string | undefined): Streamer
       discarded: parseInt(bookCap[2]!, 10) || 0,
     };
   }
-  const occ = msgText.match(/\b([A-Z]{1,6}\s+\d{6}[CP]\d{8,})\b/);
-  if (occ?.[1]) return { kind: "symbol", symbol: occ[1] };
+  const occ = msgText.match(/\b([A-Z.$]{1,6}\s*\d{6}[CP]\d{1,8})\b/i);
+  if (occ?.[1]) return { kind: "symbol", symbol: occ[1].trim() };
+  const compact = msgText.match(/\b([A-Z.$]{1,6}\d{6}[CP]\d{1,8})\b/i);
+  if (compact?.[1]) return { kind: "symbol", symbol: compact[1] };
   const keysMatch = msgText.match(/keys=([^,\s]+)/i);
   if (keysMatch?.[1]) return { kind: "symbol", symbol: keysMatch[1].split("|")[0] ?? keysMatch[1] };
   return { kind: "unknown" };
@@ -570,7 +572,9 @@ export function getStreamerSubscriptionHealth(_now = Date.now()) {
       live_total: streamerWireSimulatorLiveLevelOneOptionsCount(),
       planned: Math.min(STREAMER_L1_OPTIONS_CAP, plannedDesk + l1.appSubscribed.length),
       capped: l1.capped,
-      wire_degraded: rejections.some((r) => r.reason === "cap_discard"),
+      wire_degraded: rejections.some(
+        (r) => r.reason === "cap_discard" || r.reason === "cap_discard_unattributed",
+      ),
     },
     options_book: {
       cap: STREAMER_OPTIONS_BOOK_CAP,
