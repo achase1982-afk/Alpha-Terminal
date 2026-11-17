@@ -91,9 +91,9 @@ export async function refreshDeskUwLiveFeeds(force = false): Promise<void> {
 
   const expiry = dateOfRefresh();
   refreshInFlight = (async () => {
-    await refreshGamma0dteSafe(expiry);
-    await refreshLiveGammaSafe(expiry);
-    await refreshNetPremSafe();
+    if (!deskUwPollPaused()) await refreshGamma0dteSafe(expiry);
+    if (!deskUwPollPaused()) await refreshLiveGammaSafe(expiry);
+    if (!deskUwPollPaused()) await refreshNetPremSafe();
     lastRefreshMs = Date.now();
   })().finally(() => {
     refreshInFlight = null;

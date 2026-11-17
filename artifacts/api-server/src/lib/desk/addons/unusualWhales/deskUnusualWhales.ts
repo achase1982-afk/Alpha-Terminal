@@ -58,18 +58,17 @@ export type DeskUwFlowResult = {
   symbol?: string;
 };
 
-function flowCacheKey(symbol?: string): string {
-  const s = symbol?.trim();
-  return s ? s.toUpperCase() : "__all__";
-}
-
 export function deskGetCachedUwFlow(symbol?: string): DeskUwFlowResult | null {
-  const cacheKey = flowCacheKey(symbol);
-  const hit = cacheBody.get(cacheKey);
-  const hitAt = cacheAt.get(cacheKey);
+  const hit = cacheBody.get("__all__");
+  const hitAt = cacheAt.get("__all__");
   if (!hit || hitAt == null || Date.now() - hitAt > CACHE_TTL_MS) return null;
   const filtered = deskFilterUwFlowAlerts(hit, symbol);
   return { ok: true, alerts: filtered, asOfMs: hitAt, symbol: symbol?.trim().toUpperCase() };
+}
+
+export function deskSeedUwFlowCacheForTests(alerts: unknown[]): void {
+  cacheBody.set("__all__", alerts);
+  cacheAt.set("__all__", Date.now());
 }
 
 /** Poller-only: fetches flow from UW when addon enabled and not backed off. */
@@ -108,10 +107,9 @@ export async function deskRefreshUwFlow(symbol?: string): Promise<void> {
         : Array.isArray((json as { data?: unknown[] }).data)
           ? (json as { data: unknown[] }).data
           : [];
-      const cacheKey = flowCacheKey(symbol);
-      cacheBody.set(cacheKey, raw);
+      cacheBody.set("__all__", raw);
       const at = Date.now();
-      cacheAt.set(cacheKey, at);
+      cacheAt.set("__all__", at);
       deskTouchFeed("uw_flow", at, "unusual_whales");
     });
   } catch (err) {

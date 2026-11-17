@@ -10,6 +10,9 @@ import {
   deskFeedIntentionallyUnconfigured,
   deskFeedExcludedFromHealthGate,
 } from "./deskFeedHealthGate.js";
+import { DESK_NEWS_POLL_MS } from "./deskPollCadence.js";
+
+const NEWS_OK_NO_NEW_POLL_MS = DESK_NEWS_POLL_MS * 2 + 5_000;
 
 export type DeskFeedId =
   | "schwab_streamer"
@@ -191,6 +194,7 @@ export function deskMarkFeedError(feed: DeskFeedId, error: string, source?: stri
   records.set(feed, {
     source: source ?? prev?.source ?? FEED_SOURCES[feed],
     lastDataMs: prev?.lastDataMs ?? null,
+    lastPollOkMs: prev?.lastPollOkMs ?? null,
     error,
     forcedStatus: "error",
   });
@@ -226,6 +230,7 @@ export function deskMarkFeedConfiguredKeys(feed: DeskFeedId, source?: string): v
   });
 }
 
+/** @deprecated Finnhub `ok_no_new_articles` is derived in `buildDeskHealthFeeds`, not sticky-forced. */
 export function deskMarkFeedOkNoNewArticles(
   feed: DeskFeedId,
   error: string,
@@ -236,6 +241,7 @@ export function deskMarkFeedOkNoNewArticles(
   records.set(feed, {
     source: source ?? prev?.source ?? FEED_SOURCES[feed],
     lastDataMs: lastDataMs ?? prev?.lastDataMs ?? null,
+    lastPollOkMs: prev?.lastPollOkMs ?? null,
     error,
     forcedStatus: "ok_no_new_articles",
   });
@@ -270,6 +276,8 @@ export function deskTouchFeedPollOk(feed: DeskFeedId, pollMs = Date.now(), sourc
     lastDataMs: prev?.lastDataMs ?? null,
     lastPollOkMs: pollMs,
     notConfigured: false,
+    error: undefined,
+    forcedStatus: undefined,
   });
 }
 
@@ -292,6 +300,7 @@ export function deskMarkFeedAuthError(feed: DeskFeedId, error: string, source?: 
   records.set(feed, {
     source: source ?? prev?.source ?? FEED_SOURCES[feed],
     lastDataMs: prev?.lastDataMs ?? null,
+    lastPollOkMs: prev?.lastPollOkMs ?? null,
     error,
     forcedStatus: "auth_error",
   });
@@ -303,7 +312,10 @@ export function deskTouchFeedArticleAge(feed: DeskFeedId, articleMaxMs: number |
   records.set(feed, {
     source: source ?? prev?.source ?? FEED_SOURCES[feed],
     lastDataMs: articleMaxMs,
+    lastPollOkMs: prev?.lastPollOkMs ?? null,
     notConfigured: false,
+    forcedStatus: prev?.forcedStatus,
+    error: prev?.error,
   });
 }
 
@@ -346,6 +358,19 @@ function resolveStatus(
   now: number,
 ): DeskFeedStatusCode {
   const at = new Date(now);
+  if (feed === "news") {
+    if (rec.notConfigured || rec.forcedStatus === "not_configured") return "not_configured";
+    if (rec.forcedStatus === "auth_error") return "auth_error";
+    if (rec.forcedStatus === "rate_limited") return "rate_limited";
+    if (rec.forcedStatus === "error") return "error";
+    const pollFresh =
+      rec.lastPollOkMs != null && now - rec.lastPollOkMs <= NEWS_OK_NO_NEW_POLL_MS;
+    if (!pollFresh) return "stale";
+    const last = rec.lastDataMs;
+    if (last == null) return "stale";
+    if (deskIsFeedStale("news", last, now)) return "ok_no_new_articles";
+    return "OK";
+  }
   if (rec.notConfigured || rec.forcedStatus === "not_configured") return "not_configured";
   if (rec.forcedStatus === "not_authorized") return "not_authorized";
   if (rec.forcedStatus === "configured") return "configured";
@@ -353,7 +378,6 @@ function resolveStatus(
   if (rec.forcedStatus === "auth_error") return "auth_error";
   if (rec.forcedStatus === "rate_limited") return "rate_limited";
   if (rec.forcedStatus === "expired_or_unpaid") return "expired_or_unpaid";
-  if (rec.forcedStatus === "ok_no_new_articles") return "ok_no_new_articles";
   if (rec.forcedStatus === "error") return "error";
   if (!feedInSession(feed, at)) return "session_closed";
 

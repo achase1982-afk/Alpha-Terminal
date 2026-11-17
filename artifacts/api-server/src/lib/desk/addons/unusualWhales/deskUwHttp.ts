@@ -51,16 +51,14 @@ export async function deskUwGet(
   };
 
   try {
-    return await withUwConcurrencySlot(async () => {
-      let res = await doFetch();
-      const retry = opts?.retry503 !== false;
-      if (retry && res.status === 503) {
-        const waitSec = res.retryAfterSec ?? 1;
-        await sleep(waitSec * 1000);
-        res = await doFetch();
-      }
-      return res;
-    });
+    let res = await withUwConcurrencySlot(() => doFetch());
+    const retry = opts?.retry503 !== false;
+    if (retry && res.status === 503) {
+      const waitSec = res.retryAfterSec ?? 1;
+      await sleep(waitSec * 1000);
+      res = await withUwConcurrencySlot(() => doFetch());
+    }
+    return res;
   } catch {
     return { ok: false, status: 0, json: null, asOfMs: Date.now() };
   }

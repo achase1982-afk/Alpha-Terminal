@@ -4,7 +4,6 @@ import {
   type DeskSchwabRestApp,
   type DeskSchwabRestFetchResult,
   type DeskSchwabRestResolution,
-  deskSchwabChainsFeed,
   deskSchwabMarkApp2AuthFailure,
   deskSchwabRestFetchWithResolution,
   deskSchwabRestResolve,

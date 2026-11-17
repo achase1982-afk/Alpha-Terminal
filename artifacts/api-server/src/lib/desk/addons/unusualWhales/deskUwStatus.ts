@@ -1,4 +1,5 @@
 import {
+  buildDeskHealthFeeds,
   deskMarkFeedAuthError,
   deskMarkFeedError,
   deskMarkFeedExpiredOrUnpaid,
@@ -16,9 +17,7 @@ export function deskApplyUwHttpFeedStatus(
   source = UW_SOURCE,
   retryAfterSec?: number,
 ): void {
-  if (status === 401 || status === 402 || status === 403 || status === 429) {
-    deskUwRecordHttpStatus(status, retryAfterSec);
-  }
+  if (status > 0) deskUwRecordHttpStatus(status, retryAfterSec);
   if (status === 0) {
     deskMarkFeedError(feed, "uw_network_error", source);
     return;
@@ -60,4 +59,25 @@ export function deskUwRouteHttpFromStatus(uwStatus: number | undefined, error?: 
 
 export function deskUwMarkNotConfigured(feed: DeskFeedId): void {
   deskMarkFeedNotConfigured(feed, UW_SOURCE);
+}
+
+/** Stable `error` field for UW route 503 bodies from live feed health rows. */
+export function deskUwRouteErrorForFeed(
+  feed: DeskFeedId,
+  fallback = "snapshot_unavailable",
+): string {
+  const row = buildDeskHealthFeeds().find((f) => f.feed === feed);
+  if (!row) return "not_configured";
+  switch (row.status) {
+    case "not_configured":
+      return "not_configured";
+    case "auth_error":
+      return "auth_error";
+    case "expired_or_unpaid":
+      return "expired_or_unpaid";
+    case "rate_limited":
+      return "rate_limited";
+    default:
+      return fallback;
+  }
 }

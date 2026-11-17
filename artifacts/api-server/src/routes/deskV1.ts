@@ -26,7 +26,8 @@ import {
   deskParseSinceMs,
   deskValidateMarketDate,
   deskValidateUwTicker,
-  deskUwRouteHttpFromStatus,
+  deskUwRouteErrorForFeed,
+  deskUwLastHttpStatus,
 } from "../lib/desk/addons/unusualWhales/index.js";
 import { getDeskRawTapeHealth, streamDeskRawTapeNdjson } from "../lib/desk/deskSpxTapeRaw.js";
 import { getDeskTapeUniverseHealth } from "../lib/desk/deskTapeUniverse.js";
@@ -257,11 +258,13 @@ router.get("/flow", async (req, res) => {
   const symbol = req.query["symbol"] as string | undefined;
   const result = deskGetCachedUwFlow(symbol);
   if (!result) {
-    const route = deskUwRouteHttpFromStatus(undefined, "uw_flow_snapshot_unavailable");
-    res.status(route.httpStatus).json({
-      error: route.error,
+    const body: Record<string, unknown> = {
+      error: deskUwRouteErrorForFeed("uw_flow", "uw_flow_snapshot_unavailable"),
       source: "unusual_whales",
-    });
+    };
+    const lastUwStatus = deskUwLastHttpStatus();
+    if (lastUwStatus != null) body.lastUwStatus = lastUwStatus;
+    res.status(503).json(body);
     return;
   }
 
@@ -506,8 +509,14 @@ const gammaHandler =
         ? deskGetCachedLiveGamma0dte(marketDate, ticker)
         : deskGetCachedLiveGamma(marketDate, ticker);
     if (!snap) {
-      const route = deskUwRouteHttpFromStatus(undefined, "gamma_snapshot_unavailable");
-      res.status(route.httpStatus).json({ error: route.error, source: "unusual_whales", feed });
+      const body: Record<string, unknown> = {
+        error: deskUwRouteErrorForFeed(feed, "gamma_snapshot_unavailable"),
+        source: "unusual_whales",
+        feed,
+      };
+      const lastUwStatus = deskUwLastHttpStatus();
+      if (lastUwStatus != null) body.lastUwStatus = lastUwStatus;
+      res.status(503).json(body);
       return;
     }
     res.json(
@@ -554,7 +563,13 @@ router.get("/net_prem/ticks", async (req, res) => {
   const marketDate = deskSessionDateEt();
   const cached = deskGetCachedNetPremTicks(ticker, marketDate, sinceParsed.ms);
   if (!cached) {
-    res.status(503).json({ error: "net_prem_snapshot_unavailable", source: "unusual_whales" });
+    const body: Record<string, unknown> = {
+      error: deskUwRouteErrorForFeed("live_net_prem", "net_prem_snapshot_unavailable"),
+      source: "unusual_whales",
+    };
+    const lastUwStatus = deskUwLastHttpStatus();
+    if (lastUwStatus != null) body.lastUwStatus = lastUwStatus;
+    res.status(503).json(body);
     return;
   }
   res.json(

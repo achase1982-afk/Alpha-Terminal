@@ -29,12 +29,13 @@ export async function deskUwFetchExpiryStrikePages(
   ticker: string,
   marketDate: string,
   expiry: string,
-): Promise<{ ok: boolean; status: number; rows: unknown[]; asOfMs: number }> {
+): Promise<{ ok: boolean; status: number; rows: unknown[]; asOfMs: number; retryAfterSec?: number }> {
   const rows: unknown[] = [];
   let page = 0;
   let asOfMs = Date.now();
   let ok = true;
   let status = 200;
+  let retryAfterSec: number | undefined;
 
   while (page < 64) {
     const params = new URLSearchParams();
@@ -48,6 +49,7 @@ export async function deskUwFetchExpiryStrikePages(
     if (!res.ok) {
       ok = false;
       status = res.status;
+      retryAfterSec = res.retryAfterSec;
       break;
     }
     const batch = deskUwExtractRows(res.json);
@@ -56,7 +58,7 @@ export async function deskUwFetchExpiryStrikePages(
     if (batch.length < PAGE_LIMIT) break;
     page += 1;
   }
-  return { ok, status, rows, asOfMs };
+  return { ok, status, rows, asOfMs, retryAfterSec };
 }
 
 export type DeskUwGammaSnapshot = {
@@ -102,7 +104,7 @@ export async function deskRefreshLiveGamma0dte(
     const marketDate = deskSessionDateEt(new Date());
     const res = await deskUwFetchExpiryStrikePages(sym, marketDate, exp);
     if (!res.ok) {
-      deskApplyUwHttpFeedStatus("live_gamma_0dte", res.status);
+      deskApplyUwHttpFeedStatus("live_gamma_0dte", res.status, "unusual_whales", res.retryAfterSec);
       logger.debug({ status: res.status }, "Desk UW live_gamma_0dte fetch failed");
       return null;
     }

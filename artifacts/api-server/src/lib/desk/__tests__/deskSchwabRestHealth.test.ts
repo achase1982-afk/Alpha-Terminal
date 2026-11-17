@@ -49,6 +49,25 @@ describe("desk Schwab REST health labels", () => {
     ).toBe(false);
   });
 
+  it("successful chain on app1 credits schwab_chains with schwab source", async () => {
+    tokenStore.getBestAccessToken.mockReturnValue("app1-token");
+    const chainPayload = {
+      callExpDateMap: { "2099-12-21": { "4000.0": [{ putCall: "CALL", symbol: "QQQ" }] } },
+      putExpDateMap: {},
+      underlyingPrice: 400,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify(chainPayload), { status: 200 })),
+    );
+    await deskFetchSchwabChain("QQQ", "2099-12-21", {}, "app1");
+    const feeds = buildDeskHealthFeeds();
+    const chains = feeds.find((f) => f.feed === "schwab_chains");
+    expect(chains?.status).toBe("OK");
+    expect(chains?.source).toBe("schwab");
+    expect(chains?.last_update_ts).not.toBeNull();
+  });
+
   it("successful chain on app2 credits schwab_chains with schwab_rest_2 source", async () => {
     tokenStore.getSchwab2Token.mockResolvedValue("app2-token");
     const chainPayload = {

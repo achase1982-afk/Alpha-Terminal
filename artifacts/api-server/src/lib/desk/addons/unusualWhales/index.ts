@@ -3,6 +3,7 @@ export { startDeskUwPoller, runDeskUwPollCycle } from "./deskUwPoller.js";
 export {
   deskUwPollPaused,
   deskUwRecordHttpStatus,
+  deskUwLastHttpStatus,
   deskUwResetPollControlForTests,
   DESK_UW_AUTH_BACKOFF_MS,
 } from "./deskUwPollControl.js";
@@ -20,4 +21,9 @@ export {
 } from "./deskUwGamma.js";
 export { deskGetCachedNetPremTicks, deskRefreshNetPremTicks } from "./deskUwNetPrem.js";
 export { deskParseSinceMs, deskValidateMarketDate, deskValidateUwTicker } from "./deskUwInput.js";
-export { deskUwRouteHttpFromStatus, deskApplyUwHttpFeedStatus } from "./deskUwStatus.js";
+export {
+  deskUwRouteHttpFromStatus,
+  deskApplyUwHttpFeedStatus,
+  deskUwRouteErrorForFeed,
+} from "./deskUwStatus.js";
+export { deskSeedUwFlowCacheForTests } from "./deskUnusualWhales.js";

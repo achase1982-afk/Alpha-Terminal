@@ -2,6 +2,11 @@
 export const DESK_UW_AUTH_BACKOFF_MS = 30 * 60_000;
 
 let pauseUntilMs = 0;
+let lastUwHttpStatus: number | undefined;
+
+export function deskUwLastHttpStatus(): number | undefined {
+  return lastUwHttpStatus;
+}
 
 export function deskUwPollPaused(now = Date.now()): boolean {
   return now < pauseUntilMs;
@@ -12,6 +17,7 @@ export function deskUwPollResumeAtMs(): number | null {
 }
 
 export function deskUwRecordHttpStatus(status: number, retryAfterSec?: number): void {
+  if (status > 0) lastUwHttpStatus = status;
   if (status === 401 || status === 402 || status === 403) {
     pauseUntilMs = Date.now() + DESK_UW_AUTH_BACKOFF_MS;
     return;
@@ -24,4 +30,5 @@ export function deskUwRecordHttpStatus(status: number, retryAfterSec?: number): 
 
 export function deskUwResetPollControlForTests(): void {
   pauseUntilMs = 0;
+  lastUwHttpStatus = undefined;
 }

@@ -79,9 +79,16 @@ export async function deskFetchAlpacaNews(
   const uniq = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
   const syms = uniq.length ? uniq : ["SPY"];
 
-  let r = await fetchAlpacaNewsWindow(keyId, secret, syms, 50, MS_24H);
-  if (r.ok && r.articles.length === 0) {
-    r = await fetchAlpacaNewsWindow(keyId, secret, syms, 50, MS_7D);
+  let r: { ok: boolean; articles: unknown[]; status: number };
+  try {
+    r = await fetchAlpacaNewsWindow(keyId, secret, syms, 50, MS_24H);
+    if (r.ok && r.articles.length === 0) {
+      r = await fetchAlpacaNewsWindow(keyId, secret, syms, 50, MS_7D);
+    }
+  } catch (err) {
+    logger.warn({ err }, "Desk Alpaca news fetch error");
+    deskMarkFeedError("alpaca", "alpaca_news_fetch_error", ALPACA_SOURCE);
+    return { ok: false, articles: [], asOfMs: Date.now(), status: 503, error: "alpaca_news_fetch_error" };
   }
 
   if (r.status === 401 || r.status === 403) {

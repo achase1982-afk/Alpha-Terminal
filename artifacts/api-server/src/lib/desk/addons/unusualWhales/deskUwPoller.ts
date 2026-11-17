@@ -18,12 +18,12 @@ export async function runDeskUwPollCycle(): Promise<void> {
 
   uwPollInFlight = (async () => {
     try {
-      await refreshDeskUwLiveFeeds(true);
+      if (!deskUwPollPaused()) await refreshDeskUwLiveFeeds(true);
     } catch (err) {
       logger.debug({ err }, "Desk UW live feed refresh error");
     }
     try {
-      await deskRefreshUwFlow();
+      if (!deskUwPollPaused()) await deskRefreshUwFlow();
     } catch (err) {
       logger.debug({ err }, "Desk UW flow refresh error");
     }
