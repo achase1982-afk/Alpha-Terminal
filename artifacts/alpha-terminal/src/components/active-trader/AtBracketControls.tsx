@@ -99,7 +99,7 @@ function LegEditor({
             className="h-6 w-20 px-1.5 font-mono"
             style={{ fontSize: 12, background: "#111", borderColor: BORDER, color: WHITE }}
           />
-          <span style={{ fontSize: 10, color: DIM }}>{formatSignedOffset(leg.offset)}</span>
+          <span style={{ fontSize: 10, color: DIM, marginLeft: 4, minWidth: 44 }}>{formatSignedOffset(leg.offset, leg.mode)}</span>
           {leg.mode === "points" && (
             <div className="flex gap-1">
               {POINT_PRESETS.map((p) => {

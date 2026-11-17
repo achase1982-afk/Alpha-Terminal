@@ -1,48 +1,185 @@
-# Active Trader typography & ladder audit
+# Active Trader typography audit
 
-Measured via Playwright `getComputedStyle` on the dev fixture route (`/dev/active-trader`) in the **real Terminal shell**. Run: `node artifacts/alpha-terminal/scripts/audit-at-typography.mjs` (requires Vite on port 3000).
+Measured via Playwright `getComputedStyle` on the dev fixture route (real Terminal shell).
+Generated: 2026-11-17T21:54:45.311Z
 
-## Canonical styles (Options chain wins over mockup)
+## Reference (Options chain + shell)
 
-| Role | font-family | size | weight | letter-spacing | transform | tabular-nums | row height |
-|------|-------------|------|--------|----------------|-----------|--------------|------------|
-| Chain toolbar “Strike” | SF Mono stack (`optionsTheme.MONO`) | 14px | 450 | normal | none | no | 32px (`TOOLBAR_H`) |
-| Expiration summary row | SF Mono | 13px / 12px label | 450 / 400 | wide on date | none | yes on stats | 32px |
-| CALLS / PUTS header | SF Mono | 12px | 600 | 0.08em | uppercase | no | 32px (`HEADER_H`) |
-| STRIKE subheader | SF Mono | 9px | 600 | 0.08em | uppercase | no | 20px (`SUB_HEADER_H`) |
-| Column labels (Bid, Ask, …) | SF Mono | 10px | 400 | 0.08em | uppercase | no | — |
-| Chain bid/ask/vol cell | SF Mono | 12px (vol) / 14px (price) | 400 | 0.01em | none | yes | 40px (`ROW_H`) |
-| Chain strike pill | SF Mono | 12px | 400 | normal | none | yes | 40px |
+### Chain toolbar Strike label
 
-Active Trader maps 1:1 to the above (no new font families or sizes).
+| Property | Chain / App | Active Trader | Match? |
+| --- | --- | --- | --- |
+| fontFamily | Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif | — | **diff** |
+| fontSize | 14px | — | **diff** |
+| fontWeight | 450 | — | **diff** |
+| letterSpacing | -0.35px | — | **diff** |
+| textTransform | none | — | **diff** |
+| lineHeight | 21px | — | **diff** |
+| color | rgb(82, 82, 91) | — | **diff** |
+| height | 21 | — | **diff** |
+| padding | 0px 0px 0px 0px | — | **diff** |
+### Chain subheader CALLS
 
-## Ladder color research (pro tools → our tokens)
+| Property | Chain / App | Active Trader | Match? |
+| --- | --- | --- | --- |
+| fontFamily | Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif | — | **diff** |
+| fontSize | 12px | — | **diff** |
+| fontWeight | 600 | — | **diff** |
+| letterSpacing | 0.96px | — | **diff** |
+| textTransform | none | — | **diff** |
+| lineHeight | 18px | — | **diff** |
+| color | rgb(161, 161, 170) | — | **diff** |
+| height | 15 | — | **diff** |
+| padding | 0px 0px 0px 0px | — | **diff** |
+### Chain subheader STRIKE
 
-References: **thinkorswim** active trader / option chain, **Interactive Brokers** ladder, **Bloomberg Terminal** color discipline.
+| Property | Chain / App | Active Trader | Match? |
+| --- | --- | --- | --- |
+| fontFamily | Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif | — | **diff** |
+| fontSize | 9px | — | **diff** |
+| fontWeight | 600 | — | **diff** |
+| letterSpacing | 0.72px | — | **diff** |
+| textTransform | none | — | **diff** |
+| lineHeight | 13.5px | — | **diff** |
+| color | rgb(240, 240, 240) | — | **diff** |
+| height | 14 | — | **diff** |
+| padding | 0px 0px 0px 0px | — | **diff** |
+### Chain bid cell (sample)
 
-| Pattern | Industry habit | Alpha Terminal implementation |
-|---------|----------------|-------------------------------|
-| Put-side flow | Often magenta/cyan split; many ladders use **red/coral** for puts | **Put flow** bars use `optionsTheme.DOWN` (`#f23645`), left-aligned gradient, low-opacity track |
-| Call-side flow | **Green** for call activity | **Call flow** bars use `optionsTheme.UP` (`#00d166`), right-aligned |
-| Intensity | Thin gradient bars, not solid blocks | 4px bar inside 6px track, `colorcc → color22` gradient, soft glow |
-| ATM / spot | Distinct strike row (gold band or outline) | ATM row: `ITM_OCEAN` wash + inset gold ring; strike column stays **chain strike pill** (`accentHex`, 12px, tabular) |
-| Bid / ask | Bid red, ask green on depth ladders | Trade strip: **SELL** at bid (`DOWN`), **BUY** at ask (`UP`) |
-| Position | Signed qty chip, color by direction | `+n` on `UP` tint, `−n` on `DOWN` tint, compact pill |
+| Property | Chain / App | Active Trader | Match? |
+| --- | --- | --- | --- |
+| fontFamily | Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif | — | **diff** |
+| fontSize | 14px | — | **diff** |
+| fontWeight | 400 | — | **diff** |
+| letterSpacing | 0.14px | — | **diff** |
+| textTransform | none | — | **diff** |
+| lineHeight | 14px | — | **diff** |
+| color | rgb(242, 54, 69) | — | **diff** |
+| height | 14 | — | **diff** |
+| padding | 0px 0px 0px 0px | — | **diff** |
+### Chain strike cell (sample)
 
-Mockup teal/orange call-put columns were **not** copied — the live app’s **red put / green call** convention is kept for consistency with Options chain quote colors.
+| Property | Chain / App | Active Trader | Match? |
+| --- | --- | --- | --- |
+| fontFamily | Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif | — | **diff** |
+| fontSize | 12px | — | **diff** |
+| fontWeight | 400 | — | **diff** |
+| letterSpacing | -0.35px | — | **diff** |
+| textTransform | none | — | **diff** |
+| lineHeight | 12px | — | **diff** |
+| color | rgb(0, 0, 0) | — | **diff** |
+| height | 12 | — | **diff** |
+| padding | 0px 0px 0px 0px | — | **diff** |
+### Expiration row
 
-## Active Trader layout (Anthony)
+| Property | Chain / App | Active Trader | Match? |
+| --- | --- | --- | --- |
+| fontFamily | Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif | — | **diff** |
+| fontSize | 14px | — | **diff** |
+| fontWeight | 400 | — | **diff** |
+| letterSpacing | -0.35px | — | **diff** |
+| textTransform | none | — | **diff** |
+| lineHeight | 21px | — | **diff** |
+| color | rgb(228, 228, 231) | — | **diff** |
+| height | 29 | — | **diff** |
+| padding | 4px 12px 4px 12px | — | **diff** |
+### MarketData tab OPTIONS
 
-- **Settings collapsible** (default closed): summary row `Single · 1 · LMT mid` with chevron (matches expiration header pattern). Expanded: template, regime, filters, leg plan.
-- Persisted: `localStorage` key `activeTraderSettingsPanelOpen:v1`.
-- **OTO / bracket**: `atSchwabOrderBuilder.ts` — child legs default to closing instructions; validated in `AtTemplateLegPlan` + confirmation sheet (`1st` / `2nd` / `3rd` labels).
+| Property | Chain / App | Active Trader | Match? |
+| --- | --- | --- | --- |
+| fontFamily | Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif | — | **diff** |
+| fontSize | 14px | — | **diff** |
+| fontWeight | 400 | — | **diff** |
+| letterSpacing | -0.35px | — | **diff** |
+| textTransform | none | — | **diff** |
+| lineHeight | 21px | — | **diff** |
+| color | rgb(255, 255, 255) | — | **diff** |
+| height | 38 | — | **diff** |
+| padding | 10px 0px 10px 0px | — | **diff** |
+### Symbol price (main)
 
-## Diff checklist (AT → chain)
+(not found)
 
-| AT element | Chain reference | Status |
-|------------|-----------------|--------|
-| Settings summary row | `ExpirationSection` button | Chevron + 13px white |
-| Ladder volumes | `PriceCell` | 12px, FW_LIGHT, tabular-nums |
-| Strike column | `StrikeCell` | 12px, #000 on accent |
-| Selects | Chain toolbar `SelectTrigger` | 14px, #111 bg |
-| Flow colors | N/A (AT-only) | DOWN/UP tokens only |
+
+## Active Trader elements
+
+### AT settings summary
+
+| Property | Chain / App | Active Trader | Match? |
+| --- | --- | --- | --- |
+| fontFamily | — | Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif | **diff** |
+| fontSize | — | 14px | **diff** |
+| fontWeight | — | 400 | **diff** |
+| letterSpacing | — | -0.35px | **diff** |
+| textTransform | — | none | **diff** |
+| lineHeight | — | 21px | **diff** |
+| color | — | rgb(228, 228, 231) | **diff** |
+| height | — | 32 | **diff** |
+| padding | — | 0px 12px 0px 12px | **diff** |
+### AT ladder Puts header
+
+| Property | Chain / App | Active Trader | Match? |
+| --- | --- | --- | --- |
+| fontFamily | — | Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif | **diff** |
+| fontSize | — | 12px | **diff** |
+| fontWeight | — | 600 | **diff** |
+| letterSpacing | — | 0.96px | **diff** |
+| textTransform | — | uppercase | **diff** |
+| lineHeight | — | 18px | **diff** |
+| color | — | rgb(161, 161, 170) | **diff** |
+| height | — | 19 | **diff** |
+| padding | — | 0px 0px 0px 0px | **diff** |
+### AT ladder strike cell
+
+| Property | Chain / App | Active Trader | Match? |
+| --- | --- | --- | --- |
+| fontFamily | — | Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif | **diff** |
+| fontSize | — | 12px | **diff** |
+| fontWeight | — | 400 | **diff** |
+| letterSpacing | — | 0.12px | **diff** |
+| textTransform | — | none | **diff** |
+| lineHeight | — | 18px | **diff** |
+| color | — | rgb(240, 240, 240) | **diff** |
+| height | — | 39 | **diff** |
+| padding | — | 0px 4px 0px 4px | **diff** |
+### AT puts volume cell
+
+| Property | Chain / App | Active Trader | Match? |
+| --- | --- | --- | --- |
+| fontFamily | — | Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif | **diff** |
+| fontSize | — | 12px | **diff** |
+| fontWeight | — | 400 | **diff** |
+| letterSpacing | — | 0.12px | **diff** |
+| textTransform | — | none | **diff** |
+| lineHeight | — | 18px | **diff** |
+| color | — | rgb(240, 240, 240) | **diff** |
+| height | — | 39 | **diff** |
+| padding | — | 0px 4px 0px 4px | **diff** |
+
+## 1:1 mapping (AT → app source)
+
+| AT surface | Token / component | Chain or app reference |
+| --- | --- | --- |
+| Settings summary | `AtSettingsPanel` summary button | `ExpirationSection` (`chain-exp-btn`) — 13px → 11px multiline, MONO, `FW_NORMAL` |
+| Expiry + flow window | Panel expanded header row | Chain toolbar strike `SelectTrigger` — 14px, `#111` / `#2a2a2a` |
+| Template selects | `TemplateBar` | Chain toolbar `SelectTrigger` |
+| SESSION REGIME label | `RegimeStrip` | Chain column labels — 10px, `0.08em`, uppercase, `DIM` |
+| Regime value | `RegimeStrip` | Chain expiration stats — 12px, `WHITE` / `FW_NORMAL` |
+| Wall / GEX grid | `RegimeStrip` | Chain strike row metadata — 10px labels, 12px values, tabular-nums |
+| Filter chips | `FilterStrip` | Options chain pill chips — 10px, bordered, MONO |
+| Trigger leg plan | `AtTemplateLegPlan` | Order ticket leg rows — 11px MONO |
+| Trigger confirm block | `TriggerOrderConfirmSummary` | Order ticket review — 10/11/12px MONO, `DIM` labels |
+| Ladder PUT/CALL headers | `ActiveTraderView` subheader | `chain-calls-hdr` — 12px, 600, `0.08em` |
+| Ladder volume cells | `LadderBody` | `chain-bid-cell` — 12px, tabular-nums, `FW_LIGHT` |
+| Strike pill | `LadderBody` strike column | `chain-strike-cell` — 12px, `#000` on accent |
+| Flow bars | `LadderBody` `FlowBar` | AT-only; colors `optionsTheme.UP` / `DOWN` |
+
+## Color polish (research summary)
+
+| Pattern | Pro habit | Our token |
+| --- | --- | --- |
+| Put flow | Red/coral activity | `optionsTheme.DOWN` (`#f23645`) |
+| Call flow | Green activity | `optionsTheme.UP` (`#00d166`) |
+| Flow intensity | Thin gradient bars | 4px bar in 6px track, gradient cc→22 |
+| ATM row | Highlight band | `ITM_OCEAN` + inset accent ring |
+| Trade strip bid/ask | Bid red / ask green | `DOWN` SELL, `UP` BUY |

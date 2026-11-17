@@ -325,6 +325,7 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
                 <div className="w-px self-stretch my-1.5 bg-zinc-700/30" />
               )}
               <button
+                data-testid={`market-tab-${tabId}`}
                 ref={(el) => { tabRefs.current[i] = el; }}
                 onClick={() => {
                   if (suppressClick.current) {

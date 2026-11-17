@@ -14,6 +14,8 @@ import { useOptionTick } from "@/lib/options-stream-store";
 import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
 import { computeBracketPrices } from "@/lib/active-trader/atBracketMath";
 import { planAtOrderLegs, usesBracketExit, type SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
+import { buildAtTriggerConfirmSummary } from "@/lib/active-trader/atTriggerConfirmSummary";
+import { TriggerOrderConfirmSummary } from "@/components/orders/TriggerOrderConfirmSummary";
 import { computeStrategyEconomics } from "@/lib/strategyCalculator";
 import { useGetOptionChain } from "@workspace/api-client-react";
 import {
@@ -689,6 +691,17 @@ export function OrderTicket({
       sl: atTemplatePrefs.stopLoss,
     });
   }, [atTemplatePrefs, isOption, isMultiLeg, optionInstruction, side, limitPrice, optionTick]);
+
+  const atTriggerConfirm = useMemo(() => {
+    if (!atTemplatePlan || atTemplatePlan.legs.length < 2 || !optionSymbol) return null;
+    if (atTemplatePlan.validationError) return null;
+    return buildAtTriggerConfirmSummary({
+      legs: atTemplatePlan.legs,
+      quantity: atTemplatePrefs?.qty ?? quantity,
+      optionSymbol,
+      underlyingSymbol: optionRootFromOcc(optionSymbol),
+    });
+  }, [atTemplatePlan, optionSymbol, atTemplatePrefs?.qty, quantity]);
 
   const estimatedCost = useMemo(() => {
     if (isMultiLeg) {
@@ -2382,7 +2395,8 @@ export function OrderTicket({
                 </>
               ) : (
                 <>
-                  {atTemplatePlan && atTemplatePlan.legs.length > 1 && (
+                  {atTriggerConfirm && <TriggerOrderConfirmSummary summary={atTriggerConfirm} />}
+                  {!atTriggerConfirm && atTemplatePlan && atTemplatePlan.legs.length > 1 && (
                     <div className="space-y-1 pb-2 mb-1" style={{ borderBottom: `1px dashed ${DIVIDER}` }}>
                       {atTemplatePlan.legs.map((leg) => (
                         <div key={leg.role} className="flex justify-between" style={{ fontSize: S.body }}>
@@ -2395,10 +2409,10 @@ export function OrderTicket({
                           </span>
                         </div>
                       ))}
-                      {atTemplatePlan.validationError && (
-                        <p style={{ fontSize: S.label, color: DOWN, marginTop: 4 }}>{atTemplatePlan.validationError}</p>
-                      )}
                     </div>
+                  )}
+                  {atTemplatePlan?.validationError && (
+                    <p style={{ fontSize: S.label, color: DOWN, marginTop: 4 }}>{atTemplatePlan.validationError}</p>
                   )}
                   {[
                     {

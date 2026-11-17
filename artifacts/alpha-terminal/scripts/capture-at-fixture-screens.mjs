@@ -10,7 +10,7 @@ const scenes = [
   { name: "at-01-default-440x956.png", url: `${BASE}?scene=default`, wait: "PUT FLOW" },
   { name: "at-01-settings-expanded-440x956.png", url: `${BASE}?scene=settings-expanded`, wait: "SESSION REGIME" },
   { name: "at-02-trade-strip-440x956.png", url: `${BASE}?scene=strip`, wait: "PUT FLOW" },
-  { name: "at-03-confirm-disabled-440x956.png", url: `${BASE}?scene=confirm`, wait: "Order Confirmation" },
+  { name: "at-03-confirm-disabled-440x956.png", url: `${BASE}?scene=confirm`, wait: "Trigger order summary" },
   { name: "at-04-chain-unchanged-440x956.png", url: `${BASE}?scene=chain`, wait: "CALLS" },
 ];
 
@@ -38,6 +38,10 @@ for (const scene of scenes) {
         ? 1500
         : 1200;
   await page.waitForTimeout(delay);
+  if (scene.name.includes("01-default")) {
+    const rowCount = await page.locator("[data-at-call-strike]").count();
+    console.log(`Ladder strike rows visible in DOM: ${rowCount}`);
+  }
   await page.screenshot({ path: path.join(OUT, scene.name), fullPage: false });
 }
 

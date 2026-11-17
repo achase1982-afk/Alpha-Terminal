@@ -74,7 +74,9 @@ export function computeBracketPrices(input: BracketPriceInput): {
   return { takeProfit, stopLoss };
 }
 
-export function formatSignedOffset(offset: number): string {
-  if (offset > 0) return `+${offset}`;
-  return String(offset);
+export function formatSignedOffset(offset: number, mode: BracketOffsetMode = "percent"): string {
+  const sign = offset > 0 ? `+${offset}` : String(offset);
+  if (mode === "percent") return `${sign}%`;
+  if (mode === "dollars") return `${sign} $ P/L`;
+  return `${sign} pts`;
 }

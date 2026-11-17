@@ -8,6 +8,7 @@ import { useOptionsStreamStore } from "@/lib/options-stream-store";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { useOptionsSettingsStore } from "@/lib/options-store";
 import { saveAtSettingsPanelOpen } from "@/lib/active-trader/atSettingsPanelState";
+import { loadActiveTraderPrefs, saveActiveTraderPrefs } from "@/lib/active-trader/activeTraderPrefs";
 import {
   FIXTURE_CLASSIFIED_PCT,
   FIXTURE_HEADLINE,
@@ -133,6 +134,14 @@ export function registerAtFixtureFromLocation(): void {
   });
 
   saveAtSettingsPanelOpen(settingsPanelOpen);
+
+  const atPrefs = {
+    ...loadActiveTraderPrefs("index"),
+    takeProfit: { enabled: true, mode: "percent" as const, offset: 10 },
+    stopLoss: { enabled: false, mode: "percent" as const, offset: -10 },
+    autoSend: { enabled: false, armed: false },
+  };
+  saveActiveTraderPrefs("index", atPrefs);
 
   resetFlowAndTicks();
 }

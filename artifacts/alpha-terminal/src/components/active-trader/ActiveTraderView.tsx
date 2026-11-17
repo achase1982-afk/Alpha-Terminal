@@ -39,13 +39,6 @@ import {
   loadAtSettingsPanelOpen,
   saveAtSettingsPanelOpen,
 } from "@/lib/active-trader/atSettingsPanelState";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { LadderBody, type LadderRowModel } from "./LadderBody";
 import { AtLadderSkeleton } from "./AtLadderSkeleton";
 
@@ -81,15 +74,6 @@ interface ActiveTraderViewProps {
 
 const LADDER_RADIUS = 20;
 
-function buildPressureHeadline(flowTotals: { cb: number; cs: number; pb: number; ps: number }): string {
-  const up = flowTotals.cb + flowTotals.ps;
-  const down = flowTotals.cs + flowTotals.pb;
-  const net = up - down;
-  const pressure =
-    Math.abs(net) < (up + down) * 0.2 ? "Balanced flow" : net > 0 ? "Upward pressure" : "Downward pressure";
-  return `${pressure} · Price stalled`;
-}
-
 export const ActiveTraderView = memo(function ActiveTraderView({
   symbol,
   groups,
@@ -124,7 +108,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     () => settingsPanelInitiallyOpen ?? loadAtSettingsPanelOpen(),
   );
   const chromeRef = useRef<HTMLDivElement>(null);
-  const [chromeHeight, setChromeHeight] = useState(TOOLBAR_H * 2);
+  const [chromeHeight, setChromeHeight] = useState(TOOLBAR_H);
 
   useEffect(() => {
     const node = chromeRef.current;
@@ -224,32 +208,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     }
     return tot > 0 ? cls / tot : null;
   }, [flowByKey, streamKeys, presentation?.classifiedPct]);
-
-  const headline = useMemo(() => {
-    let cb = 0;
-    let cs = 0;
-    let pb = 0;
-    let ps = 0;
-    for (const row of ladderRows) {
-      if (row.call?.streamKey) {
-        const f = flowByKey[row.call.streamKey];
-        if (f) {
-          cb += f.buy;
-          cs += f.sell;
-        }
-      }
-      if (row.put?.streamKey) {
-        const f = flowByKey[row.put.streamKey];
-        if (f) {
-          pb += f.buy;
-          ps += f.sell;
-        }
-      }
-    }
-    return buildPressureHeadline({ cb, cs, pb, ps });
-  }, [ladderRows, flowByKey]);
-
-  const displayHeadline = presentation?.headline ?? headline;
 
   const positions = usePortfolioStreamStore((s) => s.account?.positions);
   const positionQtyByKey = useMemo(() => {
@@ -423,7 +381,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       return `${root} ${selected.contract.strike}${selected.type === "CALL" ? "C" : "P"}`;
     }
     const und = symbol.replace(/^\$/, "").toUpperCase();
-    return `${und} (underlying)`;
+    return `${und} · pick strike`;
   }, [selected, symbol]);
 
   const toggleSettings = useCallback(() => {
@@ -443,33 +401,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   return (
     <div style={{ background: BG }}>
       <div ref={chromeRef}>
-        <div
-          className="flex items-center justify-between px-3 sticky z-40"
-          style={{ top: stickyOffset, height: TOOLBAR_H, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
-        >
-          <span className="tracking-wide" style={{ fontSize: 13, color: WHITE, fontWeight: 450 }}>
-            {expiryLabel}
-          </span>
-          <span style={{ fontSize: 12, color: GRAY, fontWeight: 400, marginLeft: 6 }}>{dteLabel}</span>
-          <Select
-            value={String(windowSec)}
-            onValueChange={(v) => setWindowSec(Number(v) as 30 | 60 | 300)}
-          >
-            <SelectTrigger
-              className="h-6 w-[52px] px-1.5 border rounded text-white ml-auto"
-              style={{ fontSize: 14, background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="30">30s</SelectItem>
-              <SelectItem value="60">1m</SelectItem>
-              <SelectItem value="300">5m</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="sticky z-[39]" style={{ top: stickyOffset + TOOLBAR_H }}>
+        <div className="sticky z-[39]" style={{ top: stickyOffset }}>
           <AtSettingsPanel
             open={settingsOpen}
             onToggle={toggleSettings}
@@ -485,7 +417,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             regimeLabel={presentation?.regimeLabel ?? regimeLabel}
             regimeDegraded={presentation?.regimeDegraded ?? regimeDegraded}
             zones={zones}
-            headline={displayHeadline}
             sessionLabel={presentation?.sessionLabel}
             laneFilters={laneFilters}
             onToggleLane={toggleLane}
@@ -493,6 +424,10 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             windowLabel={`last ${windowSec}s`}
             primaryInstruction={templatePrimaryInstruction}
             limitMid={templateLimitMid}
+            expiryLabel={expiryLabel}
+            dteLabel={dteLabel}
+            windowSec={windowSec}
+            onWindowSecChange={setWindowSec}
           />
         </div>
       </div>

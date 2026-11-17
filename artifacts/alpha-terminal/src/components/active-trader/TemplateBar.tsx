@@ -62,7 +62,7 @@ export const TemplateBar = memo(function TemplateBar({
           onValueChange={(v) => onPrefsChange({ ...prefs, template: v as AtTemplateKind })}
         >
           <SelectTrigger
-            className="h-6 w-[108px] px-1.5 border rounded text-white shrink-0"
+            className="h-6 min-w-[132px] px-1.5 border rounded text-white shrink-0"
             style={{ fontSize: 14, background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}
           >
             <SelectValue />
@@ -132,8 +132,8 @@ export const TemplateBar = memo(function TemplateBar({
       {embedded && (
       <div className="flex items-center gap-2 justify-between flex-nowrap pb-1" style={{ minHeight: TOOLBAR_H }}>
         <span
-          className="truncate shrink min-w-0 max-w-[38%] border rounded px-2 py-1 whitespace-nowrap"
-          style={{ fontSize: 11, borderColor: BORDER, color: GRAY }}
+          className="shrink min-w-0 border rounded px-2 py-1"
+          style={{ fontSize: 11, borderColor: BORDER, color: GRAY, wordBreak: "break-word" }}
         >
           {instrumentLabel}
         </span>

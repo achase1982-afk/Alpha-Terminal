@@ -169,4 +169,4 @@ export const FIXTURE_ZONE_MODEL: ZoneModel = {
 
 export const FIXTURE_REGIME = { label: "Bullish trend", degraded: false };
 export const FIXTURE_CLASSIFIED_PCT = 0.74;
-export const FIXTURE_HEADLINE = "Upward pressure · Price stalled";
+export const FIXTURE_HEADLINE = "";

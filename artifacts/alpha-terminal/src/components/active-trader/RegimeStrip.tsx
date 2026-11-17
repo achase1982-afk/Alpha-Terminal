@@ -1,6 +1,6 @@
 import { memo } from "react";
 import {
-  BG_EXP_BAR, BORDER, DIM, WHITE, GRAY, UP, DOWN, GAMMA_SCENARIO, GOLD_DIM,
+  BG_EXP_BAR, BORDER, DIM, WHITE, GRAY, UP, DOWN, GAMMA_SCENARIO,
   MONO, FW_LIGHT, FW_NORMAL, FW_PREMIUM,
 } from "@/components/options/optionsTheme";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
@@ -12,7 +12,6 @@ interface RegimeStripProps {
   regimeLabel: string | null;
   regimeDegraded: boolean;
   zones: ZoneModel;
-  headline: string;
   stickyTop?: number;
   sessionLabel?: string;
   embedded?: boolean;
@@ -23,7 +22,6 @@ export const RegimeStrip = memo(function RegimeStrip({
   regimeLabel,
   regimeDegraded,
   zones,
-  headline,
   stickyTop,
   sessionLabel,
   embedded,
@@ -47,10 +45,7 @@ export const RegimeStrip = memo(function RegimeStrip({
         <div className="flex items-center gap-2 min-w-0">
           <span style={{ fontSize: 10, color: DIM, fontWeight: FW_LIGHT, letterSpacing: "0.08em" }}>SESSION REGIME</span>
           <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} />
-          <span
-            className="truncate"
-            style={{ fontSize: 12, color: regimeDegraded ? GRAY : WHITE, fontWeight: FW_NORMAL }}
-          >
+          <span style={{ fontSize: 12, color: regimeDegraded ? GRAY : WHITE, fontWeight: FW_NORMAL }}>
             {regimeLabel ?? "\u2014"}
           </span>
         </div>
@@ -86,7 +81,6 @@ export const RegimeStrip = memo(function RegimeStrip({
         Modeled · OI convention · 0DTE
       </div>
 
-      <div style={{ fontSize: 12, color: GOLD_DIM, fontWeight: FW_NORMAL }}>{headline}</div>
     </div>
   );
 });
