@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@clerk/clerk-react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -18,6 +18,9 @@ import SchwabSessionExpiredDialog from "@/components/SchwabSessionExpiredDialog"
 import StrategistJobBackgroundSync from "@/components/StrategistJobBackgroundSync";
 import { installBrowserTelemetryCapture } from "@/lib/browserTelemetry";
 import { useShallow } from "zustand/react/shallow";
+const qaHarnessEnabled =
+  import.meta.env.DEV && import.meta.env.VITE_QA_HARNESS === "true";
+const QAHarness = qaHarnessEnabled ? lazy(() => import("@/pages/QAHarness")) : null;
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -202,6 +205,13 @@ function BrowserTelemetryInstaller() {
 function Router() {
   return (
     <Switch>
+      {QAHarness ? (
+        <Route path="/qa">
+          <Suspense fallback={null}>
+            <QAHarness />
+          </Suspense>
+        </Route>
+      ) : null}
       <Route path="/" component={TerminalPage} />
       <Route component={NotFound} />
     </Switch>

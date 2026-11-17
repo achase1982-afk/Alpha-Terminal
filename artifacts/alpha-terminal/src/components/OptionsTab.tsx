@@ -16,12 +16,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table2, ChevronDown, ChevronRight, X, Settings, GripVertical,
-  Layers, TrendingUp, Plus, BarChart3,
+  Layers, TrendingUp, Plus, BarChart3, Loader2,
 } from "lucide-react";
 import { Reorder } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
 import { buildChainHoldSignature } from "@/lib/streamHoldSig";
 import { useChainOptionHold } from "@/hooks/useChainOptionHold";
+import { isAtmStrike, quoteSideState, resolveAtmStrike, resolvePairedBidAsk } from "@workspace/order-ticket-math";
 
 const EPS = 0.0001;
 const COL_W = 74;
@@ -147,16 +148,9 @@ function getExpType(expStr: string): "Weekly" | "EOM" | "Quarterly" | null {
 
 function findATMIndex(strikes: number[], lastPrice: number): number {
   if (strikes.length === 0) return -1;
-  let best = 0;
-  let bestDiff = Math.abs(strikes[0] - lastPrice);
-  for (let i = 1; i < strikes.length; i++) {
-    const diff = Math.abs(strikes[i] - lastPrice);
-    if (diff < bestDiff || (diff === bestDiff && strikes[i] < strikes[best])) {
-      best = i;
-      bestDiff = diff;
-    }
-  }
-  return best;
+  const atm = resolveAtmStrike(strikes, lastPrice);
+  if (atm == null) return -1;
+  return strikes.findIndex((s) => s === atm);
 }
 
 function normalizeStrike(v: number): number {
@@ -345,9 +339,14 @@ function makeLegKey(contract: Contract, type: "CALL" | "PUT"): string {
 
 type Moneyness = "itm" | "otm" | "atm" | "none";
 
-function classifyMoneyness(strike: number, underlyingPrice: number | null, isCallSide: boolean): Moneyness {
+function classifyMoneyness(
+  strike: number,
+  underlyingPrice: number | null,
+  isCallSide: boolean,
+  atmStrike: number | null,
+): Moneyness {
   if (underlyingPrice == null) return "none";
-  if (Math.abs(strike - underlyingPrice) < underlyingPrice * 0.003) return "atm";
+  if (isAtmStrike(strike, atmStrike)) return "atm";
   if (isCallSide) return strike < underlyingPrice - EPS ? "itm" : "otm";
   return strike > underlyingPrice + EPS ? "itm" : "otm";
 }
@@ -398,20 +397,33 @@ const DataCell = memo(function DataCell({
   const startPos = useRef<{ x: number; y: number } | null>(null);
   const SWIPE_THRESHOLD = 10;
 
-  const topVal = getStreamVal(tick, col.topKey) ?? getContractVal(contract, col.topKey);
+  const isBid = col.id === "bid";
+  const isAsk = col.id === "ask";
+  const paired = resolvePairedBidAsk({
+    streamBid: tick?.bid ?? undefined,
+    streamAsk: tick?.ask ?? undefined,
+    streamTs: tick?.ts,
+    contractBid: contract?.bid,
+    contractAsk: contract?.ask,
+  });
+  const topVal: number | undefined = (isBid || isAsk) && paired
+    ? (paired.crossed ? undefined : (isBid ? paired.bid : paired.ask))
+    : (getStreamVal(tick, col.topKey) ?? getContractVal(contract, col.topKey));
   const bottomVal = col.bottomKey
     ? (getStreamVal(tick, col.bottomKey) ?? getContractVal(contract, col.bottomKey))
     : undefined;
   const topStr = fmtNum(topVal, col.topDecimals);
-
-  const isBid = col.id === "bid";
-  const isAsk = col.id === "ask";
   const isOI = col.id === "oi";
   const isVol = col.id === "vol";
   const oiVal = isVol ? getContractVal(contract, "openInterest") : undefined;
   const isGreek = col.group === "Greeks";
   const isIV = col.id === "iv";
   const isPrice = isBid || isAsk;
+  const liveBid = paired?.crossed ? undefined : paired?.bid;
+  const liveAsk = paired?.crossed ? undefined : paired?.ask;
+  const quoteState = isPrice
+    ? (paired?.crossed ? "crossed" : quoteSideState(liveBid, liveAsk))
+    : "ok";
   const isShaded = moneyness === "itm" || moneyness === "otm";
 
   const deltaVal = isPrice && showInlineGreeks
@@ -470,7 +482,8 @@ const DataCell = memo(function DataCell({
   }, []);
 
   let textColor: string;
-  if (topStr === "\u2014") textColor = MUTED;
+  if (quoteState === "crossed") textColor = GOLD_DIM;
+  else if (topStr === "\u2014") textColor = MUTED;
   else if (isBid) textColor = "#f23645";
   else textColor = WHITE;
 
@@ -491,7 +504,14 @@ const DataCell = memo(function DataCell({
       >
         {isVol || isOI ? fmtCompact(topVal) : topStr}
         {isIV && topStr !== "\u2014" ? "%" : ""}
+        {quoteState === "crossed" && isPrice ? " ×" : ""}
       </span>
+      {quoteState === "crossed" && isPrice && (
+        <span className="text-[9px] leading-none" style={{ color: GOLD, fontFamily: MONO }}>Crossed</span>
+      )}
+      {quoteState === "incomplete" && isPrice && topStr !== "\u2014" && (
+        <span className="text-[9px] leading-none" style={{ color: DIM, fontFamily: MONO }}>Stale</span>
+      )}
 
       {isVol && oiVal != null && (
         <span className="leading-none mt-0.5" style={{ fontSize: 10, color: WHITE, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}>
@@ -814,9 +834,7 @@ function MetricsStrip({ groups, lastPrice, earningsInfo, isFetching, hasData }: 
 }
 
 
-function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPrice: number | null }) {
-  const isATM = underlyingPrice != null && Math.abs(strike - underlyingPrice) < (underlyingPrice * 0.003);
-
+function StrikeCell({ strike, underlyingPrice, atmStrike }: { strike: number; underlyingPrice: number | null; atmStrike: number | null }) {
   let moneynessLabel: string | null = null;
 
   if (underlyingPrice != null) {
@@ -824,7 +842,7 @@ function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPri
     const pct = (diff / underlyingPrice) * 100;
     const absPct = Math.abs(pct);
 
-    if (absPct < 0.3) {
+    if (isAtmStrike(strike, atmStrike)) {
       moneynessLabel = "ATM";
     } else if (absPct < 10) {
       moneynessLabel = `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`;
@@ -877,6 +895,10 @@ function OptionsGrid({
   accentHex: string;
 }) {
   const sortedRows = useMemo(() => [...rows].sort((a, b) => a.strike - b.strike), [rows]);
+  const atmStrike = useMemo(
+    () => (underlyingPrice != null ? resolveAtmStrike(sortedRows.map((r) => r.strike), underlyingPrice) : null),
+    [sortedRows, underlyingPrice],
+  );
 
   const transitionIdx = useMemo(() => {
     if (underlyingPrice == null) return -1;
@@ -927,7 +949,7 @@ function OptionsGrid({
                 const callKey = row.call ? makeLegKey(row.call, "CALL") : "";
                 const callLeg = callKey ? selectedLegs.get(callKey) : undefined;
                 const isCallSelected = !!callLeg;
-                const moneyness = classifyMoneyness(row.strike, underlyingPrice, true);
+                const moneyness = classifyMoneyness(row.strike, underlyingPrice, true, atmStrike);
                 const bg = getRowBg(row.strike, underlyingPrice, true);
                 return (
                   <div
@@ -967,7 +989,7 @@ function OptionsGrid({
 
         <div className="flex-none" style={{ width: STRIKE_W, background: accentHex, borderLeft: `1px solid ${accentHex}`, borderRight: `1px solid ${accentHex}`, zIndex: 10, position: "relative" }}>
           {sortedRows.map((row) => (
-            <StrikeCell key={row.strike} strike={row.strike} underlyingPrice={underlyingPrice} />
+            <StrikeCell key={row.strike} strike={row.strike} underlyingPrice={underlyingPrice} atmStrike={atmStrike} />
           ))}
         </div>
 
@@ -981,7 +1003,7 @@ function OptionsGrid({
                 const putKey = row.put ? makeLegKey(row.put, "PUT") : "";
                 const putLeg = putKey ? selectedLegs.get(putKey) : undefined;
                 const isPutSelected = !!putLeg;
-                const moneyness = classifyMoneyness(row.strike, underlyingPrice, false);
+                const moneyness = classifyMoneyness(row.strike, underlyingPrice, false, atmStrike);
                 const bg = getRowBg(row.strike, underlyingPrice, false);
                 return (
                   <div
@@ -1043,11 +1065,15 @@ function ExpirationSection({
   accentHex: string;
 }) {
   const stats = useStreamingExpirationStats(group.rows, underlyingPrice);
+  const panelId = `options-exp-panel-${group.expiration.replace(/[^a-zA-Z0-9]/g, "-")}`;
 
   return (
     <div>
       <button
+        type="button"
         onClick={onToggle}
+        aria-expanded={isOpen}
+        aria-controls={panelId}
         className="w-full flex items-center justify-between px-3 py-1 transition-colors sticky z-20"
         style={{
           top: stickyTop,
@@ -1091,6 +1117,7 @@ function ExpirationSection({
       </button>
 
       {isOpen && (
+        <div id={panelId}>
         <OptionsGrid
           rows={group.rows}
           underlyingPrice={underlyingPrice}
@@ -1104,6 +1131,7 @@ function ExpirationSection({
           maxOI={stats.maxOI}
           accentHex={accentHex}
         />
+        </div>
       )}
     </div>
   );
@@ -1238,7 +1266,7 @@ interface OptionsTabProps {
   releaseOptionHold?: (holderId: string) => Promise<void>;
   stickyOffset?: number;
   onTradeSingle?: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
-  onOpenStrategyBuilder?: (strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>, preSelectedLegs?: { contract: Contract; type: "CALL" | "PUT"; side?: "bid" | "ask" }[]) => void;
+  onOpenStrategyBuilder?: (strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>, preSelectedLegs?: { contract: Contract; type: "CALL" | "PUT"; side?: "bid" | "ask" }[]) => void;
 }
 
 export type { Contract as OptionsContract };
@@ -1280,13 +1308,21 @@ export function OptionsTab({
   }, [strikeCount]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { data: rawData, isLoading, error, isFetching } = useGetOptionChain<OptionChainResponse>(
+  const chainSymbolRef = useRef(symbol);
+  useEffect(() => {
+    chainSymbolRef.current = symbol;
+  }, [symbol]);
+
+  const { data: rawData, isLoading, error, isFetching, dataUpdatedAt } = useGetOptionChain<OptionChainResponse>(
     { symbol, contractType: "ALL", strikeCount },
     { query: { enabled: !!accessToken && !!symbol, staleTime: 30_000, gcTime: 5 * 60_000, retry: 2 } }
   );
 
   const data = useMemo(() => {
     if (!rawData) return rawData;
+    if (rawData.symbol && rawData.symbol.toUpperCase() !== chainSymbolRef.current.toUpperCase()) {
+      return undefined;
+    }
     let calls = (rawData.calls ?? []) as Contract[];
     let puts = (rawData.puts ?? []) as Contract[];
     if (contractType === "CALL") puts = [];
@@ -1419,7 +1455,8 @@ export function OptionsTab({
     if (!onOpenStrategyBuilder || groups.length === 0) return;
     const allStrikes = new Set<number>();
     const expLabels: { label: string; value: string }[] = [];
-    const cMap = new Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>();
+    const cMap = new Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>();
+    const chainTs = dataUpdatedAt > 0 ? dataUpdatedAt : Date.now();
     const streamTicks = useOptionsStreamStore.getState().ticks;
     for (const g of groups) {
       if (!expLabels.some(e => e.value === g.expiration)) {
@@ -1438,6 +1475,7 @@ export function OptionsTab({
             theta: (tick && tick.theta != null) ? tick.theta : c.theta,
             vega: (tick && tick.vega != null) ? tick.vega : c.vega,
             iv: (tick && tick.iv != null) ? tick.iv : c.iv,
+            contractTs: chainTs,
           });
         };
         mapContract(row.call);
@@ -1462,7 +1500,7 @@ export function OptionsTab({
       : undefined;
     onOpenStrategyBuilder([...allStrikes].sort((a, b) => a - b), expLabels, cMap, preSelected);
     setSelectedLegs(new Map());
-  }, [onOpenStrategyBuilder, groups, selectedLegs]);
+  }, [onOpenStrategyBuilder, groups, selectedLegs, dataUpdatedAt]);
 
   const handleStrikeModeChange = useCallback((val: string) => {
     if (val === "custom") { setLocalCustomValue(String(strikeCount)); setIsCustomMode(true); return; }
@@ -1553,10 +1591,9 @@ export function OptionsTab({
 
       <div className="relative" style={{ background: BG, paddingBottom: selCount > 0 ? 52 : 0 }}>
         {isLoading && !data && (
-          <div className="p-4 space-y-1">
-            {Array.from({ length: strikeCount }).map((_, i) => (
-              <Skeleton key={i} className="h-4 w-full rounded" style={{ background: "#0a0a0a" }} />
-            ))}
+          <div className="flex flex-col items-center justify-center py-16 gap-3" role="status" aria-live="polite">
+            <Loader2 className="w-8 h-8 animate-spin" style={{ color: GOLD }} />
+            <span className="text-[11px] tracking-widest font-mono" style={{ color: MUTED }}>LOADING CHAIN</span>
           </div>
         )}
 

@@ -7,7 +7,7 @@ const UP_COLOR   = "#00d166";
 const DOWN_COLOR = "#f23645";
 const FLAT_COLOR = "#6B7280";
 
-const TapeItem = memo(function TapeItem({ symbol }: { symbol: string }) {
+const TapeItem = memo(function TapeItem({ symbol, decorative }: { symbol: string; decorative?: boolean }) {
   const setSymbol = useTerminalStore(s => s.setSymbol);
   const { data }  = useQuote(symbol);
   const tickColor = useTickColor(symbol, data?.last ?? null);
@@ -21,7 +21,10 @@ const TapeItem = memo(function TapeItem({ symbol }: { symbol: string }) {
 
   return (
     <button
+      type="button"
       onClick={() => setSymbol(symbol)}
+      aria-hidden={decorative ? true : undefined}
+      tabIndex={decorative ? -1 : undefined}
       className="inline-flex items-center gap-1.5 px-4 py-2.5 whitespace-nowrap cursor-pointer
         hover:brightness-125 transition-all duration-150 group"
       style={{ fontSize: "13px" }}
@@ -98,7 +101,7 @@ function TapeTrack({ symbols }: { symbols: string[] }) {
       onMouseLeave={() => { pausedRef.current = false; }}
     >
       {items.map((sym, i) => (
-        <TapeItem key={`${sym}-${i}`} symbol={sym} />
+        <TapeItem key={`${sym}-${i}`} symbol={sym} decorative={i >= symbols.length} />
       ))}
     </div>
   );

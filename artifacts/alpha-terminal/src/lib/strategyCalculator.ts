@@ -1,3 +1,5 @@
+import { computeOrderEconomics, midpointFromBidAsk } from "@workspace/order-ticket-math";
+
 export interface OptionLeg {
   direction: 'STO' | 'BTO';
   quantity: number;
@@ -47,7 +49,8 @@ export function detectIronCondor(
     let shortsMid = 0;
     let longsMid = 0;
     for (const l of legs) {
-      const mid = ((l.bid ?? 0) + (l.ask ?? 0)) / 2;
+      const mid = midpointFromBidAsk(l.bid, l.ask);
+      if (mid == null) return null;
       if (l.instruction.startsWith('SELL')) shortsMid += mid;
       else if (l.instruction.startsWith('BUY')) longsMid += mid;
     }
@@ -72,7 +75,7 @@ export function detectIronCondor(
 }
 
 export interface StrategyEconomics {
-  maxRisk: number;
+  maxRisk: number | null;
   maxProfit: number;
   breakevens: number[];
   isIronCondor: boolean;
@@ -83,45 +86,28 @@ export function computeStrategyEconomics(opts: {
   netPrice: number;
   quantity: number;
   isCredit: boolean | null | undefined;
+  underlyingSymbol?: string;
 }): StrategyEconomics {
-  const { legs, netPrice, quantity, isCredit } = opts;
+  const { legs, quantity, isCredit } = opts;
   if (!legs || legs.length === 0) {
     return { maxRisk: 0, maxProfit: 0, breakevens: [], isIronCondor: false };
   }
-  const ic = detectIronCondor(legs, isCredit);
-  if (ic) {
-    const wing = Math.max(ic.putWing, ic.callWing);
-    return {
-      maxRisk: Math.max(0, (wing - netPrice) * 100 * quantity),
-      maxProfit: Math.max(0, netPrice * 100 * quantity),
-      breakevens: [ic.shortPut.strike - netPrice, ic.shortCall.strike + netPrice],
-      isIronCondor: true,
-    };
-  }
-  const strikes = legs.map(l => l.strike).sort((a, b) => a - b);
-  const width = strikes.length >= 2 ? strikes[strikes.length - 1] - strikes[0] : 0;
-  const allCalls = legs.every(l => l.optionType === 'CALL');
-  const allPuts = legs.every(l => l.optionType === 'PUT');
-  const breakevens: number[] = [];
-  if (legs.length === 2 && width > 0) {
-    const sellLeg = legs.find(l => l.instruction.startsWith('SELL'));
-    if (sellLeg) {
-      if (allPuts) breakevens.push(sellLeg.strike - (isCredit ? netPrice : -netPrice));
-      else if (allCalls) breakevens.push(sellLeg.strike + (isCredit ? netPrice : -netPrice));
-    }
-  } else if (legs.length === 2 && !allCalls && !allPuts) {
-    const callLeg = legs.find(l => l.optionType === 'CALL');
-    const putLeg = legs.find(l => l.optionType === 'PUT');
-    if (callLeg && putLeg) {
-      breakevens.push(putLeg.strike - netPrice);
-      breakevens.push(callLeg.strike + netPrice);
-    }
+  const econ = computeOrderEconomics({
+    legs,
+    limitPrice: opts.netPrice,
+    quantity,
+    isCredit,
+    isOption: true,
+    underlyingSymbol: opts.underlyingSymbol ?? "SPY",
+  });
+  if (!econ) {
+    return { maxRisk: 0, maxProfit: 0, breakevens: [], isIronCondor: false };
   }
   return {
-    maxRisk: Math.max(0, isCredit ? (width - netPrice) * 100 * quantity : netPrice * 100 * quantity),
-    maxProfit: Math.max(0, isCredit ? netPrice * 100 * quantity : (width - netPrice) * 100 * quantity),
-    breakevens,
-    isIronCondor: false,
+    maxRisk: econ.maxRisk,
+    maxProfit: econ.maxProfit,
+    breakevens: econ.breakevens,
+    isIronCondor: econ.isIronCondor,
   };
 }
 

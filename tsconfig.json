@@ -29,6 +29,9 @@
     },
     {
       "path": "./lib/strategist-card-bullets"
+    },
+    {
+      "path": "./lib/order-ticket-math"
     }
   ]
 }
