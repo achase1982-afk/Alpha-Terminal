@@ -226,8 +226,17 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       const signed = p.shortQuantity ? -Math.abs(p.shortQuantity) : qty;
       map.set(sym.trim(), signed);
     }
+    for (const row of primary?.rows ?? []) {
+      for (const leg of [row.call, row.put]) {
+        if (!leg) continue;
+        const stream = leg.streamKey?.trim();
+        const schwab = typeof leg.schwabSymbol === "string" ? leg.schwabSymbol.trim() : "";
+        if (stream && schwab && map.has(schwab)) map.set(stream, map.get(schwab)!);
+        if (schwab && stream && map.has(stream)) map.set(schwab, map.get(stream)!);
+      }
+    }
     return map;
-  }, [positions]);
+  }, [positions, primary?.rows]);
 
   const tradingHash = useSchwabAccountStore((s) => s.tradingAccountHash());
   const blockLiveSend = !!(presentation?.skipNetwork || getAtFixtureOverride());
