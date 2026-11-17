@@ -362,24 +362,31 @@ function resolveStreamerStatus(now: number): DeskFeedStatusCode {
   return "stopped";
 }
 
+function resolveArticlePollFeedStatus(
+  feed: DeskFeedId,
+  rec: FeedRecord,
+  now: number,
+): DeskFeedStatusCode {
+  if (rec.notConfigured || rec.forcedStatus === "not_configured") return "not_configured";
+  if (rec.forcedStatus === "auth_error") return "auth_error";
+  if (rec.forcedStatus === "rate_limited") return "rate_limited";
+  if (rec.forcedStatus === "error") return "error";
+  const pollFresh = rec.lastPollOkMs != null && now - rec.lastPollOkMs <= NEWS_OK_NO_NEW_POLL_MS;
+  if (!pollFresh) return "stale";
+  const last = rec.lastDataMs;
+  if (last == null) return "stale";
+  if (deskIsFeedStale(feed, last, now)) return "ok_no_new_articles";
+  return "OK";
+}
+
 function resolveStatus(
   feed: DeskFeedId,
   rec: FeedRecord,
   now: number,
 ): DeskFeedStatusCode {
   const at = new Date(now);
-  if (feed === "news") {
-    if (rec.notConfigured || rec.forcedStatus === "not_configured") return "not_configured";
-    if (rec.forcedStatus === "auth_error") return "auth_error";
-    if (rec.forcedStatus === "rate_limited") return "rate_limited";
-    if (rec.forcedStatus === "error") return "error";
-    const pollFresh =
-      rec.lastPollOkMs != null && now - rec.lastPollOkMs <= NEWS_OK_NO_NEW_POLL_MS;
-    if (!pollFresh) return "stale";
-    const last = rec.lastDataMs;
-    if (last == null) return "stale";
-    if (deskIsFeedStale("news", last, now)) return "ok_no_new_articles";
-    return "OK";
+  if (feed === "news" || feed === "alpaca") {
+    return resolveArticlePollFeedStatus(feed, rec, now);
   }
   if (rec.notConfigured || rec.forcedStatus === "not_configured") return "not_configured";
   if (rec.forcedStatus === "not_authorized") return "not_authorized";

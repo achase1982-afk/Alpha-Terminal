@@ -80,4 +80,33 @@ describe("deskFetchAlpacaNews", () => {
     expect(parseAlpacaNewsPayload({ items: [] })).toHaveLength(0);
     expect(parseAlpacaNewsPayload(fixture())).not.toHaveLength(0);
   });
+
+  it("fresh poll with 4h-old articles yields ok_no_new_articles", async () => {
+    const now = Date.now();
+    const articleMs = now - 4 * 60 * 60 * 1000;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            news: [
+              {
+                id: 1,
+                headline: "stale headline",
+                created_at: new Date(articleMs).toISOString(),
+                symbols: ["SPY"],
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    deskResetFeedFreshnessForTests();
+    const { deskFetchAlpacaNews } = await import("../deskAlpacaNews.js");
+    await deskFetchAlpacaNews(["SPY"]);
+    const row = buildDeskHealthFeeds(now).find((f) => f.feed === "alpaca");
+    expect(row?.status).toBe("ok_no_new_articles");
+    expect(row?.stale).toBe(false);
+  });
 });

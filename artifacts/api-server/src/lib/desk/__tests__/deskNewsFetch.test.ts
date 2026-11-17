@@ -18,6 +18,21 @@ describe("deskFetchNews Finnhub health", () => {
     process.env.FINNHUB_API_KEY = "test-key";
   });
 
+  it("returns as_of from last successful poll, not newest article time", async () => {
+    vi.useFakeTimers();
+    const pollMs = Date.parse("2026-06-02T14:00:00.000Z");
+    vi.setSystemTime(pollMs);
+    const articleMs = pollMs - 4 * 60 * 60 * 1000;
+    loadMock.mockResolvedValue({
+      articles: [{ datetime: Math.floor(articleMs / 1000), headline: "old" }],
+      hadHttp2xx: true,
+    });
+    const { deskFetchNews } = await import("../deskNews.js");
+    const r = await deskFetchNews(["SPY"]);
+    expect(r.asOfMs).toBe(pollMs);
+    vi.useRealTimers();
+  });
+
   it("successful poll with 4h-old articles yields ok_no_new_articles", async () => {
     const articleMs = Date.now() - 4 * 60 * 60 * 1000;
     loadMock.mockResolvedValue({
