@@ -287,6 +287,10 @@ interface OrderTicketProps {
     opts?: OptionHoldPostOpts,
   ) => Promise<string | undefined>;
   releaseOptionHold?: (holderId: string) => Promise<void>;
+  /** Open directly on review (Active Trader confirmation sheet). */
+  initialStage?: ConfirmStage;
+  /** Disables submit — Active Trader phase 1 (no place-order). */
+  confirmDisabled?: boolean;
 }
 
 function AiCoPilotPanel({ side, symbol, limitPrice, bid, ask, quantity, isOption }: {
@@ -366,6 +370,8 @@ export function OrderTicket({
   onSendToStrategist,
   subscribeOptionSymbols,
   releaseOptionHold,
+  initialStage,
+  confirmDisabled,
 }: OrderTicketProps) {
   const symbol = useTerminalStore((s) => s.symbol);
   const { data: quote } = useQuote(symbol);
@@ -488,7 +494,7 @@ export function OrderTicket({
     setTrailOffset("");
     setDuration("DAY");
     setExtendedHours(false);
-    setStage("form");
+    setStage(initialStage ?? "form");
     setOrderId(null);
     setErrorMsg("");
     setShowOrderType(false);
@@ -502,7 +508,7 @@ export function OrderTicket({
     setExtraOptionLegs([]);
     setChainFetchEnabled(false);
     setQtyDisplay("1");
-  }, [isOpen, initialSide, isMultiLeg, strategyNetPrice]);
+  }, [isOpen, initialSide, initialStage, isMultiLeg, strategyNetPrice]);
 
   const [balances, setBalances] = useState<{ buyingPower: number | null; cashBalance: number | null; liquidationValue: number | null }>({ buyingPower: null, cashBalance: null, liquidationValue: null });
 
@@ -2398,8 +2404,9 @@ export function OrderTicket({
             <div className="flex gap-2 pt-1 pb-4">
               <button onClick={() => setStage("form")} className="flex-1" style={{ fontSize: S.heading, height: 40, background: "transparent", color: TEXT, border: `1px solid ${BORDER}`, borderRadius: 999 }}>Back</button>
               <button
-                onClick={handleSubmit}
-                className="flex-[2] tracking-[0.04em] active:scale-[0.98] transition-transform"
+                onClick={confirmDisabled ? undefined : handleSubmit}
+                disabled={!!confirmDisabled}
+                className="flex-[2] tracking-[0.04em] active:scale-[0.98] transition-transform disabled:opacity-40"
                 style={{
                   fontSize: 16,
                   height: 42,
@@ -2410,7 +2417,7 @@ export function OrderTicket({
                   fontFamily: SYS_FONT,
                 }}
               >
-                Send to Schwab
+                {confirmDisabled ? "Confirm (coming soon)" : "Send to Schwab"}
               </button>
             </div>
           </div>

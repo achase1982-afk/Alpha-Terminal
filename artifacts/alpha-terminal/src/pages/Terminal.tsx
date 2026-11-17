@@ -371,6 +371,8 @@ export default function TerminalPage() {
   const [orderStrategyNetPrice, setOrderStrategyNetPrice] = useState<number | undefined>();
   const [orderStrategyIsCredit, setOrderStrategyIsCredit] = useState(false);
   const [orderIsClose, setOrderIsClose] = useState(false);
+  const [orderInitialStage, setOrderInitialStage] = useState<"form" | "review">("form");
+  const [orderConfirmDisabled, setOrderConfirmDisabled] = useState(false);
   const savedOptionsCtxRef = useRef<{
     legs?: OrderLeg[];
     netPrice?: number;
@@ -464,6 +466,8 @@ export default function TerminalPage() {
     setOrderOptionSymbol(undefined);
     setOrderOptionInstruction(undefined);
     setOrderIsClose(false);
+    setOrderInitialStage("form");
+    setOrderConfirmDisabled(false);
   }, []);
 
   const handleSwitchToStock = useCallback(() => {
@@ -504,6 +508,29 @@ export default function TerminalPage() {
     setOrderOptionInstruction(instruction);
     setOrderStrategyLegs(undefined);
     setOrderStrategyNetPrice(undefined);
+    setOrderInitialStage("form");
+    setOrderConfirmDisabled(false);
+    setOrderOpen(true);
+  }, []);
+
+  const handleActiveTraderReview = useCallback((contract: OptionsContract, side: "BUY" | "SELL", type: "CALL" | "PUT") => {
+    const schwabSym = optionTradeStreamKey(contract);
+    const instruction =
+      side === "BUY"
+        ? type === "CALL"
+          ? "BUY_TO_OPEN"
+          : "BUY_TO_OPEN"
+        : type === "CALL"
+          ? "SELL_TO_OPEN"
+          : "SELL_TO_OPEN";
+    setOrderSide(side);
+    setOrderOptionSymbol(schwabSym);
+    setOrderOptionInstruction(instruction);
+    setOrderStrategyLegs(undefined);
+    setOrderStrategyNetPrice(undefined);
+    setOrderIsClose(false);
+    setOrderInitialStage("review");
+    setOrderConfirmDisabled(true);
     setOrderOpen(true);
   }, []);
 
@@ -943,7 +970,7 @@ export default function TerminalPage() {
                   }
                 >
                   {contextTab === "news" && <NewsTab />}
-                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
+                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} onActiveTraderReview={handleActiveTraderReview} />}
                   {contextTab === "company" && (
                     <CompanySwipablePages
                       candles={historyData?.candles}
@@ -1013,7 +1040,7 @@ export default function TerminalPage() {
                     }
                   >
                     {contextTab === "news" && <NewsTab />}
-                    {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
+                    {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} onActiveTraderReview={handleActiveTraderReview} />}
                     {contextTab === "company" && (
                       <CompanySwipablePages
                         candles={historyData?.candles}
@@ -1071,7 +1098,7 @@ export default function TerminalPage() {
                   }
                 >
                   {contextTab === "news" && <NewsTab />}
-                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
+                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} onActiveTraderReview={handleActiveTraderReview} />}
                   {contextTab === "company" && (
                     <CompanySwipablePages
                       candles={historyData?.candles}
@@ -1163,6 +1190,8 @@ export default function TerminalPage() {
         onSwitchToOptions={handleSwitchToOptions}
         subscribeOptionSymbols={subscribeOptionSymbols}
         releaseOptionHold={releaseOptionHold}
+        initialStage={orderInitialStage}
+        confirmDisabled={orderConfirmDisabled}
         onSendToStrategist={(ticker) => {
           // Strategist tab pulls results for the active symbol — switch to
           // the validated ticket's ticker so the live debate + verdict card

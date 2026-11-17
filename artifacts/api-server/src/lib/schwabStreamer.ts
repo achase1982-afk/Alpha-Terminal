@@ -85,7 +85,46 @@ export interface OptionTick {
   vega:         number | null;
   mark:         number | null;
   change:       number | null;
+  lastSize:     number | null;
+  underlyingPrice: number | null;
+  quoteTime:    number | null;
+  tradeTime:    number | null;
   ts:           number;
+}
+
+/** App LEVELONE_OPTIONS field list (SUBS); partial updates merge into optionCache. */
+export const APP_LEVELONE_OPTIONS_FIELDS =
+  "0,2,3,4,8,9,10,16,17,18,19,28,29,30,31,35,37,38,39";
+
+/** Merge a Schwab partial LEVELONE_OPTIONS row onto a cached tick. */
+export function mergeOptionTickFromSchwab(
+  existing: OptionTick | undefined,
+  item: Record<string, unknown>,
+  key: string,
+  now: number,
+): OptionTick {
+  return {
+    key,
+    bid: numOrNull(item["2"]) ?? existing?.bid ?? null,
+    ask: numOrNull(item["3"]) ?? existing?.ask ?? null,
+    last: numOrNull(item["4"]) ?? existing?.last ?? null,
+    bidSize: numOrNull(item["16"]) ?? existing?.bidSize ?? null,
+    askSize: numOrNull(item["17"]) ?? existing?.askSize ?? null,
+    volume: numOrNull(item["8"]) ?? existing?.volume ?? null,
+    openInterest: numOrNull(item["9"]) ?? existing?.openInterest ?? null,
+    iv: numOrNull(item["10"]) ?? existing?.iv ?? null,
+    delta: numOrNull(item["28"]) ?? existing?.delta ?? null,
+    gamma: numOrNull(item["29"]) ?? existing?.gamma ?? null,
+    theta: numOrNull(item["30"]) ?? existing?.theta ?? null,
+    vega: numOrNull(item["31"]) ?? existing?.vega ?? null,
+    mark: numOrNull(item["37"]) ?? existing?.mark ?? null,
+    change: numOrNull(item["19"]) ?? existing?.change ?? null,
+    lastSize: numOrNull(item["18"]) ?? existing?.lastSize ?? null,
+    underlyingPrice: numOrNull(item["35"]) ?? existing?.underlyingPrice ?? null,
+    quoteTime: numOrNull(item["38"]) ?? existing?.quoteTime ?? null,
+    tradeTime: numOrNull(item["39"]) ?? existing?.tradeTime ?? null,
+    ts: now,
+  };
 }
 
 const EQ_FIELDS = "0,1,2,3,4,5,8,10,11,12,15,28,29";
@@ -901,7 +940,7 @@ function sendOptionSubscription(symbols: string[], opts?: { replayDesk?: boolean
 
   const req = buildRequest("LEVELONE_OPTIONS", "SUBS", {
     keys: symbols.join(","),
-    fields: "0,2,3,4,8,9,10,16,17,19,28,29,30,31,37",
+    fields: APP_LEVELONE_OPTIONS_FIELDS,
   });
 
   if (req) {
@@ -918,7 +957,7 @@ function sendFuturesOptionSubscription(symbols: string[]) {
 
   const req = buildRequest("LEVELONE_FUTURES_OPTIONS", "SUBS", {
     keys: symbols.join(","),
-    fields: "0,2,3,4,8,9,10,16,17,19,28,29,30,31,37",
+    fields: APP_LEVELONE_OPTIONS_FIELDS,
   });
 
   if (req) {
@@ -1544,24 +1583,8 @@ function processOptionTick(content: Record<string, unknown>[]) {
     const key = item["key"] as string;
     if (!key) continue;
 
-    const tick: OptionTick = {
-      key,
-      bid: numOrNull(item["2"]),
-      ask: numOrNull(item["3"]),
-      last: numOrNull(item["4"]),
-      bidSize: numOrNull(item["16"]),
-      askSize: numOrNull(item["17"]),
-      volume: numOrNull(item["8"]),
-      openInterest: numOrNull(item["9"]),
-      iv: numOrNull(item["10"]),
-      delta: numOrNull(item["28"]),
-      gamma: numOrNull(item["29"]),
-      theta: numOrNull(item["30"]),
-      vega: numOrNull(item["31"]),
-      mark: numOrNull(item["37"]),
-      change: numOrNull(item["19"]),
-      ts: now,
-    };
+    const existing = optionCache.get(key);
+    const tick = mergeOptionTickFromSchwab(existing, item, key, now);
 
     optionCache.set(key, tick);
     broadcast("optionQuote", tick);

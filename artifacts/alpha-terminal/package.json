@@ -9,7 +9,8 @@
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "pretypecheck": "pnpm exec tsc --build --force ../../lib/chat-types ../../lib/movers-types ../../lib/catalysts-types && pnpm --filter @workspace/api-client-react exec -- sh -c 'rm -f tsconfig.tsbuildinfo && tsc -p tsconfig.json'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check-at-hex": "sh -c '! rg \"#[0-9a-fA-F]{6}\" src/components/active-trader'"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",

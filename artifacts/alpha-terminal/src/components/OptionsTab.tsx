@@ -22,37 +22,16 @@ import { Reorder } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
 import { buildChainHoldSignature } from "@/lib/streamHoldSig";
 import { useChainOptionHold } from "@/hooks/useChainOptionHold";
+import {
+  COL_W, STRIKE_W, ROW_H, TOOLBAR_H, HEADER_H, SUB_HEADER_H,
+  BG, BG_HEADER, BG_EXP_BAR, BORDER, BORDER_ROW, GOLD, GOLD_DIM,
+  UP, DOWN, WHITE, GRAY, DIM, MUTED, ITM_OCEAN, OTM_PURPLE, SEL_BORDER_COLOR,
+  MONO, FW_LIGHT, FW_NORMAL, FW_PREMIUM, noScrollbar,
+} from "@/components/options/optionsTheme";
+import { ActiveTraderView } from "@/components/active-trader/ActiveTraderView";
+import { OptionsSubViewToggle, type OptionsSubView } from "@/components/active-trader/OptionsSubViewToggle";
 
 const EPS = 0.0001;
-const COL_W = 74;
-const STRIKE_W = 44;
-const ROW_H = 40;
-const TOOLBAR_H = 32;
-const HEADER_H = 32;
-const SUB_HEADER_H = 20;
-
-const BG = "#000000";
-const BG_HEADER = "#060606";
-const BG_EXP_BAR = "#070707";
-const BORDER = "#1a1a1a";
-const BORDER_ROW = "#0c0c0c";
-const GOLD = "#fbbf24";
-const GOLD_DIM = "#b8941c";
-const UP = "#00d166";
-const DOWN = "#f23645";
-const WHITE = "#f0f0f0";
-const GRAY = "#a1a1aa";
-const DIM = "#52525b";
-const MUTED = "#3f3f46";
-
-const ITM_OCEAN = "rgba(180,140,50,0.22)";
-const OTM_PURPLE = "rgba(168,130,255,0.04)";
-const SEL_BORDER_COLOR = "#fbbf2480";
-
-const MONO = "'SFMono-Regular', 'SF Mono', ui-monospace, 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace";
-const FW_LIGHT = 400;
-const FW_NORMAL = 450;
-const FW_PREMIUM = 600;
 
 interface Contract {
   strike: number;
@@ -316,12 +295,6 @@ function fmtCompact(val: number | undefined): string {
   if (val >= 1_000) return (val / 1_000).toFixed(1) + "K";
   return String(Math.round(val));
 }
-
-const noScrollbar: React.CSSProperties = {
-  scrollbarWidth: "none",
-  msOverflowStyle: "none",
-  scrollSnapType: "none",
-};
 
 const STREAM_KEY_MAP: Record<string, string> = {
   bid: "bid", ask: "ask", last: "last",
@@ -1239,6 +1212,7 @@ interface OptionsTabProps {
   stickyOffset?: number;
   onTradeSingle?: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
   onOpenStrategyBuilder?: (strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>, preSelectedLegs?: { contract: Contract; type: "CALL" | "PUT"; side?: "bid" | "ask" }[]) => void;
+  onActiveTraderReview?: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
 }
 
 export type { Contract as OptionsContract };
@@ -1249,7 +1223,9 @@ export function OptionsTab({
   stickyOffset = 0,
   onTradeSingle,
   onOpenStrategyBuilder,
+  onActiveTraderReview,
 }: OptionsTabProps) {
+  const [optionsSubView, setOptionsSubView] = useState<OptionsSubView>("chain");
   const { accessToken } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken })));
   // Widget pin wins inside the dashboard; global symbol everywhere else.
   const symbol = useActiveSymbol();
@@ -1362,9 +1338,9 @@ export function OptionsTab({
   }, [data, underlyingPrice, symbol]);
 
   useChainOptionHold(
-    chainHoldSig?.holdSig,
-    chainHoldSig?.keys ?? [],
-    chainHoldSig?.viewId,
+    optionsSubView === "chain" ? chainHoldSig?.holdSig : undefined,
+    optionsSubView === "chain" ? chainHoldSig?.keys ?? [] : [],
+    optionsSubView === "chain" ? chainHoldSig?.viewId : undefined,
     { subscribeOptionSymbols, releaseOptionHold },
     underlyingPrice ?? data?.underlyingPrice ?? null,
   );
@@ -1497,8 +1473,39 @@ export function OptionsTab({
 
   const selCount = selectedLegs.size;
 
+  const atGroups = useMemo(
+    () =>
+      groups.map((g) => ({
+        expiration: g.expiration,
+        dte: g.dte,
+        dateLabel: g.dateLabel,
+        rows: g.rows,
+      })),
+    [groups],
+  );
+
   return (
     <div style={{ background: BG }} className="relative">
+      <OptionsSubViewToggle view={optionsSubView} onChange={setOptionsSubView} accentHex={accentHex} />
+      {optionsSubView === "at" && hasData && (
+        <ActiveTraderView
+          symbol={symbol}
+          groups={atGroups}
+          underlyingPrice={underlyingPrice}
+          stickyOffset={stickyOffset + 44}
+          accentHex={accentHex}
+          holdSubs={{ subscribeOptionSymbols, releaseOptionHold }}
+          onAddLeg={(contract, type) => handleToggleLeg(contract, type, "ask")}
+          onOpenReview={
+            onActiveTraderReview ??
+            ((contract, side, type) => {
+              if (onTradeSingle) onTradeSingle(contract, side, type);
+            })
+          }
+        />
+      )}
+      {optionsSubView === "chain" && (
+      <>
       <div
         className="flex items-center justify-between w-full px-3 shrink-0 sticky z-40"
         style={{ top: stickyOffset, height: TOOLBAR_H, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
@@ -1634,6 +1641,8 @@ export function OptionsTab({
           </div>
         )}
       </div>
+      </>
+      )}
 
       {selCount > 0 && (
         <div
