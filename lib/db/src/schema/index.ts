@@ -1,5 +1,11 @@
 import { desc, sql } from "drizzle-orm";
-import { pgTable, text, serial, real, integer, boolean, timestamp, jsonb, uniqueIndex, index, date, doublePrecision, bigint, numeric, primaryKey, uuid, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, real, integer, boolean, timestamp, jsonb, uniqueIndex, index, date, doublePrecision, bigint, numeric, primaryKey, uuid, pgEnum, customType } from "drizzle-orm/pg-core";
+
+const pgBytea = customType<{ data: Buffer; driverData: string }>({
+  dataType() {
+    return "bytea";
+  },
+});
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -1611,3 +1617,21 @@ export const deskApiSnapshotsTable = pgTable(
 );
 
 export type DeskApiSnapshotRow = typeof deskApiSnapshotsTable.$inferSelect;
+
+/** Gzip NDJSON chunks of inbound Schwab streamer frames for desk SPX tape. */
+export const deskSpxTapeRawTable = pgTable(
+  "desk_spx_tape_raw",
+  {
+    id: serial("id").primaryKey(),
+    sessionDate: date("session_date").notNull(),
+    chunkStartNs: bigint("chunk_start_ns", { mode: "bigint" }).notNull(),
+    chunkEndNs: bigint("chunk_end_ns", { mode: "bigint" }).notNull(),
+    nFrames: integer("n_frames").notNull(),
+    bytesRaw: integer("bytes_raw").notNull(),
+    data: pgBytea("data").notNull(),
+    insertedAt: timestamp("inserted_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("desk_spx_tape_raw_session_chunk_idx").on(t.sessionDate, t.chunkStartNs)],
+);
+
+export type DeskSpxTapeRawRow = typeof deskSpxTapeRawTable.$inferSelect;
