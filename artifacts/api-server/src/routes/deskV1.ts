@@ -487,12 +487,21 @@ router.get("/news", async (req, res) => {
     return;
   }
 
-  const { articles, asOfMs } = await deskFetchNews(syms);
+  const news = await deskFetchNews(syms);
+  if (!news.ok) {
+    res.setHeader("Retry-After", String(news.retryAfterSec));
+    res.status(429).json({
+      error: "finnhub_client_rate_limited",
+      source: "finnhub",
+      retry_after_sec: news.retryAfterSec,
+    });
+    return;
+  }
   res.json(
     deskEnvelope(
-      { articles, session_date: deskSessionDateEt(new Date(asOfMs)) },
+      { articles: news.articles, session_date: deskSessionDateEt(new Date(news.asOfMs)) },
       "finnhub",
-      asOfMs,
+      news.asOfMs,
       "news",
     ),
   );

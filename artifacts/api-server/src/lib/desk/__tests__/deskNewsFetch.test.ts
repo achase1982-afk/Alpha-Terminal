@@ -31,7 +31,8 @@ describe("deskFetchNews Finnhub health", () => {
     });
     const { deskFetchNews } = await import("../deskNews.js");
     const r = await deskFetchNews(["SPY"]);
-    expect(r.asOfMs).toBe(pollMs);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.asOfMs).toBe(pollMs);
     vi.useRealTimers();
   });
 
@@ -96,6 +97,30 @@ describe("deskFetchNews Finnhub health", () => {
     row = buildDeskHealthFeeds().find((f) => f.feed === "news");
     expect(row?.status).toBe("error");
     expect(row?.error).toBe("finnhub_fetch_error");
+  });
+
+  it("fail then success then fail does not mark feed error", async () => {
+    loadMock
+      .mockResolvedValueOnce({
+        articles: [],
+        hadHttp2xx: false,
+        lastErrorStatus: 0,
+      })
+      .mockResolvedValueOnce({
+        articles: [{ datetime: Math.floor(Date.now() / 1000), headline: "ok" }],
+        hadHttp2xx: true,
+      })
+      .mockResolvedValueOnce({
+        articles: [],
+        hadHttp2xx: false,
+        lastErrorStatus: 0,
+      });
+    const { deskFetchNews } = await import("../deskNews.js");
+    await deskFetchNews(["SPY"]);
+    await deskFetchNews(["SPY"]);
+    await deskFetchNews(["SPY"]);
+    const row = buildDeskHealthFeeds().find((f) => f.feed === "news");
+    expect(row?.status).not.toBe("error");
   });
 
   it("401 poll yields auth_error", async () => {

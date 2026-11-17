@@ -6,7 +6,11 @@ import {
   deskTouchFeedPollOk,
 } from "./deskFeedFreshness.js";
 import { deskMaxArticlePublishedMs } from "./deskNewsArticleAge.js";
-import { deskLoadFinnhubDeskArticles } from "./deskFinnhubDeskNews.js";
+import {
+  DeskFinnhubClientRateLimitError,
+  deskLoadFinnhubDeskArticles,
+  type DeskFinnhubLoadMode,
+} from "./deskFinnhubDeskNews.js";
 
 const FINNHUB_SOURCE = "finnhub";
 
@@ -37,18 +41,43 @@ function deskMarkFinnhubPollFailure(lastErrorStatus?: number): void {
   }
 }
 
+export type DeskFetchNewsResult =
+  | { ok: true; articles: unknown[]; asOfMs: number }
+  | { ok: false; rateLimited: true; retryAfterSec: number };
+
 /** Desk poller + `/news?source=finnhub`: general market + desk symbols. */
-export async function deskFetchNews(symbols: string[]): Promise<{ articles: unknown[]; asOfMs: number }> {
+export async function deskFetchNews(
+  symbols: string[],
+  options?: { mode?: DeskFinnhubLoadMode },
+): Promise<DeskFetchNewsResult> {
   const pollMs = Date.now();
-  const { articles: all, hadHttp2xx, lastErrorStatus } = await deskLoadFinnhubDeskArticles(symbols);
+  const mode = options?.mode ?? "ondemand";
+  let load: Awaited<ReturnType<typeof deskLoadFinnhubDeskArticles>>;
+  try {
+    load = await deskLoadFinnhubDeskArticles(symbols, mode);
+  } catch (err) {
+    if (err instanceof DeskFinnhubClientRateLimitError) {
+      deskMarkFeedRateLimited("news", "finnhub_client_rate_limited", FINNHUB_SOURCE);
+      return { ok: false, rateLimited: true, retryAfterSec: err.retryAfterSec };
+    }
+    throw err;
+  }
+  const { articles: all, hadHttp2xx, lastErrorStatus, skippedRateCap, retryAfterSec } = load;
+  if (skippedRateCap && mode === "ondemand" && lastErrorStatus === 429) {
+    deskMarkFeedRateLimited("news", "finnhub_client_rate_limited", FINNHUB_SOURCE);
+    return { ok: false, rateLimited: true, retryAfterSec: retryAfterSec ?? 1 };
+  }
+  if (skippedRateCap && mode === "background") {
+    return { ok: true, articles: all, asOfMs: pollMs };
+  }
   if (!hadHttp2xx) {
     deskMarkFinnhubPollFailure(lastErrorStatus);
-    return { articles: all, asOfMs: pollMs };
+    return { ok: true, articles: all, asOfMs: pollMs };
   }
 
   finnhubPollFailureStreak = 0;
   deskTouchFeedPollOk("news", pollMs, FINNHUB_SOURCE);
   const articleMaxMs = deskMaxArticlePublishedMs(all);
   deskTouchFeedArticleAge("news", articleMaxMs, FINNHUB_SOURCE);
-  return { articles: all, asOfMs: pollMs };
+  return { ok: true, articles: all, asOfMs: pollMs };
 }

@@ -36,7 +36,7 @@ async function pollAlpacaNews(): Promise<void> {
 }
 
 async function pollNews(): Promise<void> {
-  await deskFetchNews([...DESK_DEFAULT_NEWS_SYMBOLS]);
+  await deskFetchNews([...DESK_DEFAULT_NEWS_SYMBOLS], { mode: "background" });
 }
 
 async function pollVendorSlow(): Promise<void> {
@@ -58,8 +58,8 @@ export async function runDeskBackgroundPollCycle(): Promise<void> {
     try {
       await pollDeskChains();
       await pollTradier();
-      await pollAlpacaNews();
-      await pollNews();
+      void pollAlpacaNews();
+      void pollNews();
     } catch (err) {
       logger.debug({ err }, "Desk background poll cycle error");
     }
