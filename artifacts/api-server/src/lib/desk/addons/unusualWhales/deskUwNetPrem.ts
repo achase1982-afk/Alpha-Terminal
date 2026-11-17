@@ -5,6 +5,7 @@ import { deskTouchFeed } from "../../deskFeedFreshness.js";
 import { getUwApiKey } from "./deskUnusualWhales.js";
 import { logger } from "../../../logger.js";
 import { deskApplyUwHttpFeedStatus, deskUwMarkNotConfigured } from "./deskUwStatus.js";
+import { deskUwClearLastHttpStatus } from "./deskUwPollControl.js";
 
 const UW_SOURCE = "unusual_whales";
 
@@ -67,6 +68,7 @@ export async function deskRefreshNetPremTicks(ticker = "SPX", marketDate?: strin
       date,
     };
     netPremCache.set(netPremKey(sym, date), cached);
+    deskUwClearLastHttpStatus();
     deskTouchFeed("live_net_prem", res.asOfMs, UW_SOURCE);
     return cached;
   } catch (err) {

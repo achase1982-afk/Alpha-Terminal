@@ -40,6 +40,19 @@ describe("deskFetchNews Finnhub health", () => {
     expect(row?.status).toBe("stale");
   });
 
+  it("429 poll yields rate_limited", async () => {
+    loadMock.mockResolvedValue({
+      articles: [],
+      hadHttp2xx: false,
+      lastErrorStatus: 429,
+    });
+    const { deskFetchNews } = await import("../deskNews.js");
+    await deskFetchNews(["SPY"]);
+    const row = buildDeskHealthFeeds().find((f) => f.feed === "news");
+    expect(row?.status).toBe("rate_limited");
+    expect(row?.source).toBe("finnhub");
+  });
+
   it("401 poll yields auth_error", async () => {
     loadMock.mockResolvedValue({
       articles: [],

@@ -1,14 +1,16 @@
 import { deskSessionDateEt } from "../../deskEt.js";
+import { DESK_UW_CACHE_TTL_MS } from "../../deskPollCadence.js";
 import { deskUwGet } from "./deskUwHttp.js";
 import { deskTouchFeed, type DeskFeedId } from "../../deskFeedFreshness.js";
 import { getUwApiKey } from "./deskUnusualWhales.js";
 import { logger } from "../../../logger.js";
 import { deskApplyUwHttpFeedStatus, deskUwMarkNotConfigured } from "./deskUwStatus.js";
+import { deskUwClearLastHttpStatus } from "./deskUwPollControl.js";
 
 const UW_SOURCE = "unusual_whales";
 const PAGE_LIMIT = 500;
 /** Short TTL for route cache serves (poller refreshes on its own cadence). */
-export const DESK_UW_SNAPSHOT_TTL_MS = 120_000;
+export const DESK_UW_SNAPSHOT_TTL_MS = DESK_UW_CACHE_TTL_MS;
 
 export function deskUwNormalizeExpiry(raw: string | undefined): string {
   if (raw?.trim()) return raw.trim().slice(0, 10);
@@ -81,6 +83,7 @@ function cacheKey(ticker: string, dateOrExpiry: string, kind: "0dte" | "live"): 
 }
 
 function touchFeed(feed: DeskFeedId, asOfMs: number): void {
+  deskUwClearLastHttpStatus();
   deskTouchFeed(feed, asOfMs, UW_SOURCE);
 }
 

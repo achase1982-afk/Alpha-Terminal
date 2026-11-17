@@ -1,13 +1,16 @@
+import { DESK_UW_CACHE_TTL_MS } from "../../deskPollCadence.js";
 import { deskEnv } from "../../deskEnv.js";
 import { deskTouchFeed, deskMarkFeedNotConfigured } from "../../deskFeedFreshness.js";
 import { deskApplyUwHttpFeedStatus } from "./deskUwStatus.js";
 import { deskFilterUwFlowAlerts, deskUwFlowTickerQuery } from "./deskUwFlow.js";
 import { logger } from "../../../logger.js";
 import { deskUwAddonEnabled } from "./deskUwEnabled.js";
-import { deskUwPollPaused } from "./deskUwPollControl.js";
+import { deskUwClearLastHttpStatus, deskUwPollPaused } from "./deskUwPollControl.js";
 
 const UW_BASE = "https://api.unusualwhales.com";
-const CACHE_TTL_MS = 60_000;
+
+const FLOW_CACHE_ALL = "__all__";
+const FLOW_CACHE_SPX = "__spx__";
 
 const cacheBody = new Map<string, unknown[]>();
 const cacheAt = new Map<string, number>();
@@ -58,21 +61,84 @@ export type DeskUwFlowResult = {
   symbol?: string;
 };
 
-export function deskGetCachedUwFlow(symbol?: string): DeskUwFlowResult | null {
-  const hit = cacheBody.get("__all__");
-  const hitAt = cacheAt.get("__all__");
-  if (!hit || hitAt == null || Date.now() - hitAt > CACHE_TTL_MS) return null;
+function cacheFresh(cacheKey: string, now = Date.now()): boolean {
+  const hitAt = cacheAt.get(cacheKey);
+  return hitAt != null && now - hitAt <= DESK_UW_CACHE_TTL_MS;
+}
+
+function readFlowCache(cacheKey: string, symbol: string | undefined, now = Date.now()): DeskUwFlowResult | null {
+  const hit = cacheBody.get(cacheKey);
+  const hitAt = cacheAt.get(cacheKey);
+  if (!hit || hitAt == null || now - hitAt > DESK_UW_CACHE_TTL_MS) return null;
   const filtered = deskFilterUwFlowAlerts(hit, symbol);
   return { ok: true, alerts: filtered, asOfMs: hitAt, symbol: symbol?.trim().toUpperCase() };
 }
 
-export function deskSeedUwFlowCacheForTests(alerts: unknown[]): void {
-  cacheBody.set("__all__", alerts);
-  cacheAt.set("__all__", Date.now());
+export function deskGetCachedUwFlow(symbol?: string, now = Date.now()): DeskUwFlowResult | null {
+  const sym = symbol?.trim().toUpperCase();
+  if (sym === "SPX" || sym === "SPXW") {
+    const spx = readFlowCache(FLOW_CACHE_SPX, sym, now);
+    if (spx) return spx;
+  }
+  return readFlowCache(FLOW_CACHE_ALL, symbol, now);
+}
+
+export function deskSeedUwFlowCacheForTests(alerts: unknown[], atMs = Date.now()): void {
+  cacheBody.set(FLOW_CACHE_ALL, alerts);
+  cacheAt.set(FLOW_CACHE_ALL, atMs);
+}
+
+export function deskSeedUwFlowSpxCacheForTests(alerts: unknown[], atMs = Date.now()): void {
+  cacheBody.set(FLOW_CACHE_SPX, alerts);
+  cacheAt.set(FLOW_CACHE_SPX, atMs);
+}
+
+async function deskFetchUwFlowBucket(cacheKey: string, tickerSymbol?: string): Promise<void> {
+  if (deskUwPollPaused()) return;
+  const key = getUwApiKey();
+  if (!key) {
+    deskMarkFeedNotConfigured("uw_flow", "unusual_whales");
+    return;
+  }
+
+  await withUwConcurrencySlot(async () => {
+    const params = new URLSearchParams({ limit: "100" });
+    const tickers = tickerSymbol ? deskUwFlowTickerQuery(tickerSymbol) : undefined;
+    if (tickers) params.set("ticker_symbol", tickers);
+
+    const url = `${UW_BASE}/api/option-trades/flow-alerts?${params}`;
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${key}`,
+        Accept: "application/json",
+        "UW-CLIENT-API-ID": "100001",
+      },
+      signal: AbortSignal.timeout(20_000),
+    });
+    const retryAfterSec = Number(res.headers.get("Retry-After")) || undefined;
+    if (!res.ok) {
+      deskApplyUwHttpFeedStatus("uw_flow", res.status, "unusual_whales", retryAfterSec);
+      logger.warn({ status: res.status, cacheKey, tickerSymbol }, "Desk UW flow fetch failed");
+      return;
+    }
+    const json = (await res.json()) as { data?: unknown[] } | unknown[];
+    const raw = Array.isArray(json)
+      ? json
+      : Array.isArray((json as { data?: unknown[] }).data)
+        ? (json as { data: unknown[] }).data
+        : [];
+    const at = Date.now();
+    cacheBody.set(cacheKey, raw);
+    cacheAt.set(cacheKey, at);
+    deskUwClearLastHttpStatus();
+    if (cacheKey === FLOW_CACHE_ALL) {
+      deskTouchFeed("uw_flow", at, "unusual_whales");
+    }
+  });
 }
 
 /** Poller-only: fetches flow from UW when addon enabled and not backed off. */
-export async function deskRefreshUwFlow(symbol?: string): Promise<void> {
+export async function deskRefreshUwFlow(): Promise<void> {
   if (!deskUwAddonEnabled() || deskUwPollPaused()) return;
   const key = getUwApiKey();
   if (!key) {
@@ -81,40 +147,11 @@ export async function deskRefreshUwFlow(symbol?: string): Promise<void> {
   }
 
   try {
-    await withUwConcurrencySlot(async () => {
-      const params = new URLSearchParams({ limit: "100" });
-      const tickers = deskUwFlowTickerQuery(symbol);
-      if (tickers) params.set("ticker_symbol", tickers);
-
-      const url = `${UW_BASE}/api/option-trades/flow-alerts?${params}`;
-      const res = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${key}`,
-          Accept: "application/json",
-          "UW-CLIENT-API-ID": "100001",
-        },
-        signal: AbortSignal.timeout(20_000),
-      });
-      const retryAfterSec = Number(res.headers.get("Retry-After")) || undefined;
-      if (!res.ok) {
-        deskApplyUwHttpFeedStatus("uw_flow", res.status, "unusual_whales", retryAfterSec);
-        logger.warn({ status: res.status, symbol }, "Desk UW flow fetch failed");
-        return;
-      }
-      const json = (await res.json()) as { data?: unknown[] } | unknown[];
-      const raw = Array.isArray(json)
-        ? json
-        : Array.isArray((json as { data?: unknown[] }).data)
-          ? (json as { data: unknown[] }).data
-          : [];
-      cacheBody.set("__all__", raw);
-      const at = Date.now();
-      cacheAt.set("__all__", at);
-      deskTouchFeed("uw_flow", at, "unusual_whales");
-    });
+    await deskFetchUwFlowBucket(FLOW_CACHE_ALL);
+    if (!deskUwPollPaused()) await deskFetchUwFlowBucket(FLOW_CACHE_SPX, "SPX");
   } catch (err) {
     deskApplyUwHttpFeedStatus("uw_flow", 0);
-    logger.warn({ err, symbol }, "Desk UW flow error");
+    logger.warn({ err }, "Desk UW flow error");
   }
 }
 

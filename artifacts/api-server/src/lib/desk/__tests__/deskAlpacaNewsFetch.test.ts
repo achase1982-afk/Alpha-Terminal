@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { parseAlpacaNewsPayload } from "../deskAlpacaNews.js";
+import { buildDeskHealthFeeds, deskResetFeedFreshnessForTests } from "../deskFeedFreshness.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixture = () =>
@@ -39,6 +40,40 @@ describe("deskFetchAlpacaNews", () => {
     const r = await deskFetchAlpacaNews(["SPY", "SPX"]);
     expect(r.ok).toBe(true);
     expect(r.articles).toHaveLength(1);
+  });
+
+  it("recovers alpaca feed health after HTTP 500 then success", async () => {
+    vi.useFakeTimers();
+    const now = Date.parse("2026-11-17T18:00:00.000Z");
+    vi.setSystemTime(now);
+    deskResetFeedFreshnessForTests();
+    const freshPayload = {
+      news: [
+        {
+          id: 1,
+          headline: "Desk fixture headline",
+          created_at: new Date(now - 60_000).toISOString(),
+          symbols: ["SPY"],
+        },
+      ],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("err", { status: 500 }))
+      .mockImplementation(async (url: string) => {
+        expect(url).toContain("v1beta1/news");
+        return new Response(JSON.stringify(freshPayload), { status: 200 });
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const { deskFetchAlpacaNews } = await import("../deskAlpacaNews.js");
+    await deskFetchAlpacaNews(["SPY"]);
+    const afterFail = buildDeskHealthFeeds(now).find((f) => f.feed === "alpaca");
+    expect(afterFail?.status).toBe("error");
+    await deskFetchAlpacaNews(["SPY"]);
+    const afterOk = buildDeskHealthFeeds(now).find((f) => f.feed === "alpaca");
+    expect(afterOk?.status).toBe("OK");
+    expect(afterOk?.error).toBeUndefined();
+    vi.useRealTimers();
   });
 
   it("parseAlpacaNewsPayload fails shape without news array", () => {

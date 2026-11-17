@@ -4,6 +4,7 @@ export {
   deskUwPollPaused,
   deskUwRecordHttpStatus,
   deskUwLastHttpStatus,
+  deskUwClearLastHttpStatus,
   deskUwResetPollControlForTests,
   DESK_UW_AUTH_BACKOFF_MS,
 } from "./deskUwPollControl.js";
@@ -26,4 +27,8 @@ export {
   deskApplyUwHttpFeedStatus,
   deskUwRouteErrorForFeed,
 } from "./deskUwStatus.js";
-export { deskSeedUwFlowCacheForTests } from "./deskUnusualWhales.js";
+export {
+  deskSeedUwFlowCacheForTests,
+  deskSeedUwFlowSpxCacheForTests,
+  deskResetUwFlowCacheForTests,
+} from "./deskUnusualWhales.js";

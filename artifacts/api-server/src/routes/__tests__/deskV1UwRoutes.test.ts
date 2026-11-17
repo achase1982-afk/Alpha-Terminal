@@ -29,14 +29,12 @@ describe("deskV1 UW routes", () => {
     expect(Date.now() - t0).toBeLessThan(300);
   });
 
-  it("GET /flow?symbol=SPX serves poller __all__ cache filtered", async () => {
-    const { deskSeedUwFlowCacheForTests } = await import(
+  it("GET /flow?symbol=SPX prefers dedicated SPX poll cache over __all__", async () => {
+    const { deskSeedUwFlowCacheForTests, deskSeedUwFlowSpxCacheForTests } = await import(
       "../../lib/desk/addons/unusualWhales/index.js"
     );
-    deskSeedUwFlowCacheForTests([
-      { ticker: "SPX", premium: 1 },
-      { ticker: "QQQ", premium: 2 },
-    ]);
+    deskSeedUwFlowCacheForTests([{ ticker: "QQQ", premium: 2 }]);
+    deskSeedUwFlowSpxCacheForTests([{ ticker: "SPX", premium: 1 }]);
     const deskRouter = (await import("../deskV1.js")).default;
     const app = express();
     app.use("/api/desk/v1", deskRouter);

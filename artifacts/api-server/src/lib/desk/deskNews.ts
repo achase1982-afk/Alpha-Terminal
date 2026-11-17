@@ -1,6 +1,7 @@
 import {
   deskMarkFeedAuthError,
   deskMarkFeedError,
+  deskMarkFeedRateLimited,
   deskTouchFeedArticleAge,
   deskTouchFeedPollOk,
 } from "./deskFeedFreshness.js";
@@ -17,7 +18,7 @@ export async function deskFetchNews(symbols: string[]): Promise<{ articles: unkn
     if (lastErrorStatus === 401 || lastErrorStatus === 403) {
       deskMarkFeedAuthError("news", `finnhub_http_${lastErrorStatus}`, FINNHUB_SOURCE);
     } else if (lastErrorStatus === 429) {
-      deskMarkFeedError("news", `finnhub_http_${lastErrorStatus}`, FINNHUB_SOURCE);
+      deskMarkFeedRateLimited("news", `finnhub_http_${lastErrorStatus}`, FINNHUB_SOURCE);
     } else if (lastErrorStatus && lastErrorStatus > 0) {
       deskMarkFeedError("news", `finnhub_poll_failed_${lastErrorStatus}`, FINNHUB_SOURCE);
     } else {

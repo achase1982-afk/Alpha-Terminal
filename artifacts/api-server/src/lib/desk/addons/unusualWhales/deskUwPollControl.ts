@@ -16,6 +16,10 @@ export function deskUwPollResumeAtMs(): number | null {
   return pauseUntilMs > Date.now() ? pauseUntilMs : null;
 }
 
+export function deskUwClearLastHttpStatus(): void {
+  lastUwHttpStatus = undefined;
+}
+
 export function deskUwRecordHttpStatus(status: number, retryAfterSec?: number): void {
   if (status > 0) lastUwHttpStatus = status;
   if (status === 401 || status === 402 || status === 403) {

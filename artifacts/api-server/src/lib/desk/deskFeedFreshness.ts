@@ -230,23 +230,6 @@ export function deskMarkFeedConfiguredKeys(feed: DeskFeedId, source?: string): v
   });
 }
 
-/** @deprecated Finnhub `ok_no_new_articles` is derived in `buildDeskHealthFeeds`, not sticky-forced. */
-export function deskMarkFeedOkNoNewArticles(
-  feed: DeskFeedId,
-  error: string,
-  source?: string,
-  lastDataMs?: number | null,
-): void {
-  const prev = records.get(feed);
-  records.set(feed, {
-    source: source ?? prev?.source ?? FEED_SOURCES[feed],
-    lastDataMs: lastDataMs ?? prev?.lastDataMs ?? null,
-    lastPollOkMs: prev?.lastPollOkMs ?? null,
-    error,
-    forcedStatus: "ok_no_new_articles",
-  });
-}
-
 export function deskMarkFeedRateLimited(feed: DeskFeedId, error: string, source?: string): void {
   const prev = records.get(feed);
   records.set(feed, {
@@ -314,8 +297,8 @@ export function deskTouchFeedArticleAge(feed: DeskFeedId, articleMaxMs: number |
     lastDataMs: articleMaxMs,
     lastPollOkMs: prev?.lastPollOkMs ?? null,
     notConfigured: false,
-    forcedStatus: prev?.forcedStatus,
-    error: prev?.error,
+    forcedStatus: undefined,
+    error: undefined,
   });
 }
 
