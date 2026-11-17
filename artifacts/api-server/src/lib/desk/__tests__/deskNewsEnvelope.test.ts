@@ -9,6 +9,21 @@ import {
 import { deskEnvelope } from "../deskEnvelope.js";
 import { DESK_NEWS_POLL_MS } from "../deskPollCadence.js";
 
+describe("Alpaca news envelope stale", () => {
+  it("matches health ok_no_new_articles", () => {
+    deskResetFeedFreshnessForTests();
+    const pollMs = Date.now();
+    const articleMs = pollMs - 4 * 60 * 60 * 1000;
+    deskTouchFeedPollOk("alpaca", pollMs, "alpaca_news");
+    deskTouchFeedArticleAge("alpaca", articleMs, "alpaca_news");
+    const row = buildDeskHealthFeeds().find((f) => f.feed === "alpaca");
+    expect(row?.status).toBe("ok_no_new_articles");
+    expect(deskFeedEnvelopeStale("alpaca")).toBe(false);
+    const env = deskEnvelope({ articles: [] }, "alpaca_news", pollMs, "alpaca");
+    expect(env.stale).toBe(false);
+  });
+});
+
 describe("Finnhub news envelope stale", () => {
   it("matches health ok_no_new_articles", () => {
     deskResetFeedFreshnessForTests();

@@ -487,15 +487,25 @@ router.get("/news", async (req, res) => {
     return;
   }
 
-  const { articles, asOfMs } = await deskFetchNews(syms);
-  res.json(
-    deskEnvelope(
-      { articles, session_date: deskSessionDateEt(new Date(asOfMs)) },
-      "finnhub",
-      asOfMs,
-      "news",
-    ),
-  );
+  const news = await deskFetchNews(syms);
+  if (!news.ok) {
+    res.setHeader("Retry-After", String(news.retryAfterSec));
+    res.status(429).json({
+      error: "finnhub_client_rate_limited",
+      source: "finnhub",
+      retry_after_sec: news.retryAfterSec,
+    });
+    return;
+  }
+  const payload: Record<string, unknown> = {
+    articles: news.articles,
+    session_date: deskSessionDateEt(new Date(news.asOfMs)),
+  };
+  if (news.partial) {
+    payload.partial = true;
+    payload.missing_symbols = news.missing_symbols;
+  }
+  res.json(deskEnvelope(payload, "finnhub", news.asOfMs, "news"));
 });
 
 const gammaHandler =
