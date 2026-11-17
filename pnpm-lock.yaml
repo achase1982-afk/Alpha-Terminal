@@ -339,6 +339,9 @@ importers:
       '@workspace/movers-types':
         specifier: workspace:*
         version: link:../../lib/movers-types
+      '@workspace/order-ticket-math':
+        specifier: workspace:*
+        version: link:../../lib/order-ticket-math
       class-variance-authority:
         specifier: 'catalog:'
         version: 0.7.1
@@ -477,6 +480,9 @@ importers:
       '@workspace/movers-types':
         specifier: workspace:*
         version: link:../../lib/movers-types
+      '@workspace/order-ticket-math':
+        specifier: workspace:*
+        version: link:../../lib/order-ticket-math
       '@workspace/strategist-card-bullets':
         specifier: workspace:*
         version: link:../../lib/strategist-card-bullets
@@ -852,6 +858,18 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 25.3.5
+
+  lib/order-ticket-math:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+      typescript:
+        specifier: ~5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@25.3.5)(jsdom@25.0.1)(lightningcss@1.31.1)
 
   lib/strategist-card-bullets:
     dependencies:

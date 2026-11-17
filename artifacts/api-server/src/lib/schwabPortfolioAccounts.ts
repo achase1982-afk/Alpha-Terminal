@@ -142,6 +142,41 @@ export function mapSchwabSecuritiesAccount(acct: any, hashValue: string | null) 
   };
 }
 
+const equityCache = new Map<string, { equity: number | null; fetchedAt: number }>();
+const EQUITY_CACHE_MS = 30_000;
+
+/** Balances for one account hash; 30s in-memory cache. Returns null on 429/5xx (caller treats as unknown equity). */
+export async function fetchCachedAccountEquity(
+  token: string,
+  hashValue: string,
+): Promise<number | null> {
+  const now = Date.now();
+  const hit = equityCache.get(hashValue);
+  if (hit && now - hit.fetchedAt < EQUITY_CACHE_MS) return hit.equity;
+
+  try {
+    const payload = await schwabTraderGet(`/accounts/${encodeURIComponent(hashValue)}`, token, 0);
+    const sa = payload?.securitiesAccount;
+    const proj = sa?.projectedBalances ?? {};
+    const cur = sa?.currentBalances ?? {};
+    const equity =
+      proj.liquidationValue ??
+      cur.liquidationValue ??
+      proj.buyingPower ??
+      cur.buyingPower ??
+      proj.equity ??
+      cur.equity ??
+      null;
+    const normalized = typeof equity === "number" && equity > 0 ? equity : null;
+    equityCache.set(hashValue, { equity: normalized, fetchedAt: now });
+    return normalized;
+  } catch (err) {
+    logger.warn({ err, hashValue }, "Account equity lookup failed; size check will warn only");
+    equityCache.set(hashValue, { equity: null, fetchedAt: now });
+    return null;
+  }
+}
+
 export async function fetchMappedSchwabAccounts(token: string) {
   const [accounts, numberRows] = await Promise.all([
     schwabTraderGet("/accounts?fields=positions", token, 2),

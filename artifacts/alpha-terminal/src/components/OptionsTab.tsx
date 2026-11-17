@@ -22,6 +22,7 @@ import { Reorder } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
 import { buildChainHoldSignature } from "@/lib/streamHoldSig";
 import { useChainOptionHold } from "@/hooks/useChainOptionHold";
+import { resolveAtmStrike } from "@workspace/order-ticket-math";
 
 const EPS = 0.0001;
 const COL_W = 74;
@@ -147,16 +148,9 @@ function getExpType(expStr: string): "Weekly" | "EOM" | "Quarterly" | null {
 
 function findATMIndex(strikes: number[], lastPrice: number): number {
   if (strikes.length === 0) return -1;
-  let best = 0;
-  let bestDiff = Math.abs(strikes[0] - lastPrice);
-  for (let i = 1; i < strikes.length; i++) {
-    const diff = Math.abs(strikes[i] - lastPrice);
-    if (diff < bestDiff || (diff === bestDiff && strikes[i] < strikes[best])) {
-      best = i;
-      bestDiff = diff;
-    }
-  }
-  return best;
+  const atm = resolveAtmStrike(strikes, lastPrice);
+  if (atm == null) return -1;
+  return strikes.findIndex((s) => s === atm);
 }
 
 function normalizeStrike(v: number): number {
@@ -399,13 +393,12 @@ const DataCell = memo(function DataCell({
   const SWIPE_THRESHOLD = 10;
 
   const topVal = getStreamVal(tick, col.topKey) ?? getContractVal(contract, col.topKey);
+  const isBid = col.id === "bid";
+  const isAsk = col.id === "ask";
   const bottomVal = col.bottomKey
     ? (getStreamVal(tick, col.bottomKey) ?? getContractVal(contract, col.bottomKey))
     : undefined;
   const topStr = fmtNum(topVal, col.topDecimals);
-
-  const isBid = col.id === "bid";
-  const isAsk = col.id === "ask";
   const isOI = col.id === "oi";
   const isVol = col.id === "vol";
   const oiVal = isVol ? getContractVal(contract, "openInterest") : undefined;
@@ -1043,11 +1036,15 @@ function ExpirationSection({
   accentHex: string;
 }) {
   const stats = useStreamingExpirationStats(group.rows, underlyingPrice);
+  const panelId = `options-exp-panel-${group.expiration.replace(/[^a-zA-Z0-9]/g, "-")}`;
 
   return (
     <div>
       <button
+        type="button"
         onClick={onToggle}
+        aria-expanded={isOpen}
+        aria-controls={panelId}
         className="w-full flex items-center justify-between px-3 py-1 transition-colors sticky z-20"
         style={{
           top: stickyTop,
@@ -1091,6 +1088,7 @@ function ExpirationSection({
       </button>
 
       {isOpen && (
+        <div id={panelId}>
         <OptionsGrid
           rows={group.rows}
           underlyingPrice={underlyingPrice}
@@ -1104,6 +1102,7 @@ function ExpirationSection({
           maxOI={stats.maxOI}
           accentHex={accentHex}
         />
+        </div>
       )}
     </div>
   );
@@ -1238,7 +1237,7 @@ interface OptionsTabProps {
   releaseOptionHold?: (holderId: string) => Promise<void>;
   stickyOffset?: number;
   onTradeSingle?: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
-  onOpenStrategyBuilder?: (strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>, preSelectedLegs?: { contract: Contract; type: "CALL" | "PUT"; side?: "bid" | "ask" }[]) => void;
+  onOpenStrategyBuilder?: (strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>, preSelectedLegs?: { contract: Contract; type: "CALL" | "PUT"; side?: "bid" | "ask" }[]) => void;
 }
 
 export type { Contract as OptionsContract };
@@ -1280,13 +1279,21 @@ export function OptionsTab({
   }, [strikeCount]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { data: rawData, isLoading, error, isFetching } = useGetOptionChain<OptionChainResponse>(
+  const chainSymbolRef = useRef(symbol);
+  useEffect(() => {
+    chainSymbolRef.current = symbol;
+  }, [symbol]);
+
+  const { data: rawData, isLoading, error, isFetching, dataUpdatedAt } = useGetOptionChain<OptionChainResponse>(
     { symbol, contractType: "ALL", strikeCount },
     { query: { enabled: !!accessToken && !!symbol, staleTime: 30_000, gcTime: 5 * 60_000, retry: 2 } }
   );
 
   const data = useMemo(() => {
     if (!rawData) return rawData;
+    if (rawData.symbol && rawData.symbol.toUpperCase() !== chainSymbolRef.current.toUpperCase()) {
+      return undefined;
+    }
     let calls = (rawData.calls ?? []) as Contract[];
     let puts = (rawData.puts ?? []) as Contract[];
     if (contractType === "CALL") puts = [];
@@ -1419,7 +1426,8 @@ export function OptionsTab({
     if (!onOpenStrategyBuilder || groups.length === 0) return;
     const allStrikes = new Set<number>();
     const expLabels: { label: string; value: string }[] = [];
-    const cMap = new Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>();
+    const cMap = new Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>();
+    const chainTs = dataUpdatedAt > 0 ? dataUpdatedAt : Date.now();
     const streamTicks = useOptionsStreamStore.getState().ticks;
     for (const g of groups) {
       if (!expLabels.some(e => e.value === g.expiration)) {
@@ -1438,6 +1446,7 @@ export function OptionsTab({
             theta: (tick && tick.theta != null) ? tick.theta : c.theta,
             vega: (tick && tick.vega != null) ? tick.vega : c.vega,
             iv: (tick && tick.iv != null) ? tick.iv : c.iv,
+            contractTs: chainTs,
           });
         };
         mapContract(row.call);
@@ -1462,7 +1471,7 @@ export function OptionsTab({
       : undefined;
     onOpenStrategyBuilder([...allStrikes].sort((a, b) => a - b), expLabels, cMap, preSelected);
     setSelectedLegs(new Map());
-  }, [onOpenStrategyBuilder, groups, selectedLegs]);
+  }, [onOpenStrategyBuilder, groups, selectedLegs, dataUpdatedAt]);
 
   const handleStrikeModeChange = useCallback((val: string) => {
     if (val === "custom") { setLocalCustomValue(String(strikeCount)); setIsCustomMode(true); return; }

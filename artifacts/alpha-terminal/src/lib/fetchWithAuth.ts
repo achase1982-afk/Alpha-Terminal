@@ -169,16 +169,24 @@ const MAX_ERROR_BODY_CHARS = 500;
  * auth failures with model token limits or timeouts.
  */
 export function humanizeFailedApiBody(status: number, bodyText: string): string {
-  if (status === 401 || status === 403) {
+  const trimmed = bodyText.trim();
+  if (status === 401) {
     return "Session expired — sign in again and retry.";
   }
-  const trimmed = bodyText.trim();
   if (!trimmed) {
+    if (status === 403) return "This action was blocked.";
     return `Request failed (HTTP ${status})`;
   }
   try {
     const j = JSON.parse(trimmed) as { error?: unknown; message?: unknown; hint?: unknown };
     const err = j.error != null ? String(j.error) : "";
+    if (status === 403 && err === "pre_trade_blocked") {
+      const msg = j.message != null ? String(j.message) : "Order blocked by pre-trade risk checks.";
+      return msg;
+    }
+    if (status === 403) {
+      return "Session expired — sign in again and retry.";
+    }
     const msg = j.message != null ? String(j.message) : "";
     const hintRaw = j.hint != null ? String(j.hint) : "";
     if (/unauthorized|forbidden/i.test(err) || /unauthorized|forbidden/i.test(msg)) {

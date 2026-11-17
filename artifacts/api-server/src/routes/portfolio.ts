@@ -5,6 +5,7 @@ import { broadcastToClients } from "../lib/wsServer.js";
 import { sendPushToAll } from "../lib/pushService.js";
 import { markAlertSeen } from "../lib/schwabStreamer.js";
 import {
+  fetchCachedAccountEquity,
   fetchMappedSchwabAccounts,
   fetchAccountNumberRows,
   resolveAccountHash,
@@ -17,6 +18,12 @@ import {
 } from "../lib/portfolioPreferences.js";
 import { db } from "@workspace/db";
 import { tradeJournalTable } from "@workspace/db/schema";
+import {
+  DEFAULT_SERVER_PRE_TRADE,
+  evaluateServerPlaceOrderGate,
+  isClosingSchwabOrder,
+  validateOrderPreTradeGatePayload,
+} from "@workspace/order-ticket-math";
 
 const router: IRouter = Router();
 
@@ -279,17 +286,38 @@ router.post("/place-order", async (req, res) => {
   const token = getTraderToken();
   if (!token) return res.status(401).json({ error: "no_trader_token" });
 
-  const { accountHash, order, journalContext } = req.body as {
+  const { accountHash, order, journalContext, preTradeGate } = req.body as {
     accountHash: string;
     order: SchwabPlaceOrderBody;
     journalContext?: TradeJournalContextPayload;
+    preTradeGate?: unknown;
   };
+
+  const gatePayload = preTradeGate != null ? validateOrderPreTradeGatePayload(preTradeGate) : null;
+  if (preTradeGate != null && !gatePayload) {
+    return res.status(400).json({ error: "invalid_pre_trade_gate" });
+  }
 
   if (!accountHash || !order) {
     return res.status(400).json({ error: "Missing accountHash or order" });
   }
 
   try {
+    if (!isClosingSchwabOrder(order)) {
+      const accountEquity = await fetchCachedAccountEquity(token, accountHash);
+      const serverGate = evaluateServerPlaceOrderGate({
+        order,
+        accountEquity,
+        settings: DEFAULT_SERVER_PRE_TRADE,
+      });
+      if (serverGate.reject) {
+        return res.status(403).json({
+          error: "pre_trade_blocked",
+          message: "Order blocked by server pre-trade risk checks.",
+          blockingCheckIds: serverGate.checks.filter((c) => c.level === "RED").map((c) => c.id),
+        });
+      }
+    }
     const NO_PRICE_TYPES = new Set(["MARKET", "STOP", "TRAILING_STOP", "MARKET_ON_CLOSE"]);
     if (typeof order.orderType === "string" && NO_PRICE_TYPES.has(order.orderType)) {
       delete order.price;

@@ -331,8 +331,9 @@ export function BottomNav({
                   ? badgeIsRunning
                     ? `AI — ${strategistRunningCount} Strategist ${strategistRunningCount === 1 ? "analysis" : "analyses"} in progress`
                     : `AI — ${strategistUnviewedCount} new Strategist ${strategistUnviewedCount === 1 ? "result" : "results"}`
-                  : undefined
+                  : "AI tab"
               }
+              aria-current={isActive ? "page" : undefined}
             >
               {def.icon("w-6 h-6")}
               {showStrategistBadge && (
@@ -378,6 +379,8 @@ export function BottomNav({
               isBeingDragged ? "bnav-dragging" : "",
             ].join(" ")}
             style={style}
+            aria-label={`${def.label} tab`}
+            aria-current={isActive ? "page" : undefined}
           >
             {def.icon("w-[24px] h-[24px]")}
             <span className="text-[9px] font-mono font-bold tracking-tight">{def.label}</span>
