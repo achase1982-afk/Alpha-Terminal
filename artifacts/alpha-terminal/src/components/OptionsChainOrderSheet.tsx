@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef, type CSSProperties } from "react";
 import {
   aggregateSpreadNBBO,
   computeChainTicketSummary,
@@ -30,18 +30,24 @@ import {
   CheckCircle2,
   AlertTriangle,
 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { computeOrderEconomics } from "@workspace/order-ticket-math";
+import { estimateSchwabOptionFees, computeOrderNetCash } from "@/lib/orders/schwabOrderFees";
 
-const MONO = "'SFMono-Regular', 'SF Mono', ui-monospace, 'Cascadia Code', 'Consolas', monospace";
+const SYS_FONT =
+  'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif';
 const BG = "#000000";
-const BORDER = "#1a1a1a";
+const BORDER = "#2a2a2a";
 const GOLD = "#fbbf24";
 const UP = "#00d166";
 const DOWN = "#f23645";
 const WHITE = "#f0f0f0";
 const GRAY = "#a1a1aa";
-const MUTED = "#52525b";
-const DIM = "#3f3f46";
+const MUTED = "#71717a";
+const DIM = "#52525b";
 const DIVIDER = "#1a1a1a";
+const LABEL_STYLE: CSSProperties = { fontSize: 12, color: GRAY, letterSpacing: "-0.02em" };
+const VALUE_STYLE: CSSProperties = { fontSize: 14, color: WHITE, fontVariantNumeric: "tabular-nums" };
 
 type Stage = "form" | "review" | "submitting" | "success" | "error";
 
@@ -85,6 +91,8 @@ export interface OptionsChainOrderSheetProps {
   ) => Promise<string | void | undefined>;
   /** Fixture / screenshot harness only — never enables real submit bypass in prod. */
   demoFixture?: boolean;
+  /** Dev fixture: open in-sheet confirm on mount (after quotes/limit hydrate). */
+  openReviewOnMount?: boolean;
 }
 
 export function OptionsChainOrderSheet({
@@ -96,6 +104,7 @@ export function OptionsChainOrderSheet({
   onRemoveLeg,
   subscribeOptionSymbols,
   demoFixture,
+  openReviewOnMount,
 }: OptionsChainOrderSheetProps) {
   const symbol = useTerminalStore((s) => s.symbol);
   const accounts = useSchwabAccountStore((s) => s.accounts);
@@ -266,13 +275,23 @@ export function OptionsChainOrderSheet({
   const validateAndReview = useCallback(() => {
     const px = snapLimitForSubmit();
     if (px == null || px <= 0) {
-      setPriceError("Set a valid limit price (Mid / Nat or enter manually).");
+      setPriceError("Set a valid limit price (Mid / Natural or enter manually).");
       return;
     }
     setReviewLimitSnapped(px);
     setPriceError("");
     setStage("review");
   }, [snapLimitForSubmit]);
+
+  const openReviewRef = useRef(false);
+  useEffect(() => {
+    if (!openReviewOnMount || openReviewRef.current || legs.length === 0) return;
+    const px = submittedLimit ?? spreadPrices?.spreadMid;
+    if (px == null || px <= 0) return;
+    openReviewRef.current = true;
+    const t = window.setTimeout(() => validateAndReview(), 500);
+    return () => window.clearTimeout(t);
+  }, [openReviewOnMount, legs.length, submittedLimit, spreadPrices?.spreadMid, validateAndReview]);
 
   const handleSubmit = useCallback(async () => {
     if (!demoFixture && !accountHash) return;
@@ -330,7 +349,7 @@ export function OptionsChainOrderSheet({
         background: `linear-gradient(180deg, #0a0a0a 0%, #000000 100%)`,
         borderTop: `1px solid ${GOLD}30`,
         boxShadow: `0 -8px 32px rgba(0,0,0,0.85)`,
-        fontFamily: MONO,
+        fontFamily: SYS_FONT,
         transition: "height 0.25s ease",
       }}
       data-testid="options-chain-order-sheet"
@@ -393,87 +412,112 @@ export function OptionsChainOrderSheet({
             </div>
           ) : (
             <>
-              <div className="py-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]" style={{ color: GRAY }}>
-                <div>
-                  <span style={{ color: DIM }}>Nat </span>
-                  <span style={{ color: WHITE }}>
-                    {fmt(isCredit ? summary?.spreadBid : summary?.spreadAsk)}
-                  </span>
-                </div>
-                <div>
-                  <span style={{ color: DIM }}>Mid </span>
-                  <span style={{ color: WHITE }}>{fmt(summary?.spreadMid)}</span>
-                </div>
-                <div>
-                  <span style={{ color: DIM }}>Max P </span>
-                  <span style={{ color: UP }}>{summary?.maxProfit != null ? fmtCurrency(summary.maxProfit) : "—"}</span>
-                </div>
-                <div>
-                  <span style={{ color: DIM }}>Max L </span>
-                  <span style={{ color: DOWN }}>{summary?.maxLoss != null ? fmtCurrency(summary.maxLoss) : "∞"}</span>
-                </div>
-                <div className="col-span-2">
-                  <span style={{ color: DIM }}>BE </span>
-                  <span style={{ color: WHITE }}>
-                    {summary?.breakevens.length ? summary.breakevens.map((b) => `$${b.toFixed(2)}`).join(" / ") : "—"}
+              <div
+                className="py-2 grid grid-cols-2 gap-x-4 gap-y-2"
+                style={{ borderBottom: `1px solid ${BORDER}` }}
+              >
+                <StatCell label="Natural" value={fmt(isCredit ? summary?.spreadBid : summary?.spreadAsk)} />
+                <StatCell label="Mid" value={fmt(summary?.spreadMid)} />
+                <StatCell
+                  label="Max profit"
+                  value={summary?.maxProfit != null ? fmtCurrency(summary.maxProfit) : "—"}
+                  valueColor={UP}
+                />
+                <StatCell
+                  label="Max loss"
+                  value={summary?.maxLoss != null ? fmtCurrency(summary.maxLoss) : "—"}
+                  valueColor={DOWN}
+                />
+                <div className="col-span-2 flex items-baseline justify-between gap-2">
+                  <span style={LABEL_STYLE}>Breakeven</span>
+                  <span style={VALUE_STYLE}>
+                    {summary?.breakevens.length
+                      ? summary.breakevens.map((b) => `$${b.toFixed(2)}`).join(" / ")
+                      : "—"}
                   </span>
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2 text-[10px] py-1" style={{ borderTop: `1px dashed ${DIVIDER}`, color: GRAY }}>
-                <span>Δ {fmt(summary?.netDelta, 1)}</span>
-                <span>Γ {fmt(summary?.netGamma, 2)}</span>
-                <span>Θ {fmt(summary?.netTheta, 2)}</span>
-                <span>V {fmt(summary?.netVega, 2)}</span>
-                <span>POP {summary?.pop != null ? `${summary.pop.toFixed(0)}%` : "—"}</span>
-                <span>BP {summary?.buyingPowerEffect != null ? fmtCurrency(summary.buyingPowerEffect) : "—"}</span>
+              <div
+                className="flex flex-wrap gap-x-3 gap-y-1 py-2 text-[13px]"
+                style={{ borderBottom: `1px dashed ${DIVIDER}`, color: GRAY }}
+              >
+                <span style={VALUE_STYLE}>Δ {fmt(summary?.netDelta, 1)}</span>
+                <span style={VALUE_STYLE}>Γ {fmt(summary?.netGamma, 2)}</span>
+                <span style={VALUE_STYLE}>Θ {fmt(summary?.netTheta, 2)}</span>
+                <span style={VALUE_STYLE}>V {fmt(summary?.netVega, 2)}</span>
+                {summary?.pop != null && (
+                  <span style={VALUE_STYLE}>POP {summary.pop.toFixed(0)}%</span>
+                )}
+                {summary?.buyingPowerEffect != null && (
+                  <span style={VALUE_STYLE}>BP {fmtCurrency(summary.buyingPowerEffect)}</span>
+                )}
               </div>
 
-              <div className="mt-2 space-y-1">
+              <div className="mt-2 space-y-1.5">
                 {pricedLegs.map((leg) => {
                   const isBuy = leg.direction.startsWith("BUY");
+                  const mid =
+                    leg.bid != null && leg.ask != null ? (leg.bid + leg.ask) / 2 : null;
+                  const typeLabel = leg.optionType === "CALL" ? "Call" : "Put";
                   return (
-                    <div key={leg.id} className="flex items-center gap-2 text-[10px]" style={{ color: GRAY }}>
-                      <span style={{ color: isBuy ? UP : DOWN, width: 28 }}>{isBuy ? "B" : "S"}</span>
-                      <span className="tabular-nums" style={{ color: WHITE }}>
-                        {leg.strike} {leg.optionType === "CALL" ? "C" : "P"}
+                    <div
+                      key={leg.id}
+                      className="flex items-center gap-2 py-1 px-1.5 rounded-md"
+                      style={{ background: "#111", border: `1px solid ${BORDER}` }}
+                    >
+                      <span className="shrink-0 text-[13px] font-medium" style={{ color: isBuy ? UP : DOWN }}>
+                        {isBuy ? "Buy" : "Sell"}
+                      </span>
+                      <span className="flex-1 min-w-0 text-[13px] tabular-nums truncate" style={{ color: WHITE }}>
+                        {leg.strike} {typeLabel}
+                      </span>
+                      <span className="text-[11px] tabular-nums shrink-0" style={{ color: MUTED }}>
+                        {leg.bid != null ? fmt(leg.bid) : "—"} / {leg.ask != null ? fmt(leg.ask) : "—"}
+                        {mid != null ? ` · ${fmt(mid)}` : ""}
                       </span>
                       <LegQtyStepper
                         qty={leg.quantity}
                         onChange={(q: number) => onLegQuantityChange(leg.id, q)}
                       />
                       <button type="button" onClick={() => onRemoveLeg(leg.id)} aria-label="Remove leg">
-                        <X className="w-3 h-3" style={{ color: MUTED }} />
+                        <X className="w-3.5 h-3.5" style={{ color: MUTED }} />
                       </button>
                     </div>
                   );
                 })}
               </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <label className="text-[9px]" style={{ color: DIM }}>
-                  Order
-                  <select
-                    value="LIMIT"
-                    disabled
-                    className="mt-0.5 w-full text-[11px] px-2 py-1"
-                    style={{ background: "#0a0a0a", border: `1px solid ${BORDER}`, color: WHITE, borderRadius: 6 }}
-                  >
-                    <option value="LIMIT">Limit</option>
-                  </select>
-                </label>
-                <label className="text-[9px]" style={{ color: DIM }}>
-                  TIF
-                  <select
-                    value={timeInForce}
-                    onChange={(e) => setTimeInForce(e.target.value as "DAY" | "GTC")}
-                    className="mt-0.5 w-full text-[11px] px-2 py-1"
-                    style={{ background: "#0a0a0a", border: `1px solid ${BORDER}`, color: WHITE, borderRadius: 6 }}
-                  >
-                    <option value="DAY">DAY</option>
-                    <option value="GTC">GTC</option>
-                  </select>
-                </label>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1">
+                  <span style={LABEL_STYLE}>Order type</span>
+                  <Select value="LIMIT" disabled>
+                    <SelectTrigger
+                      className="h-7 px-2 border rounded-md text-white"
+                      style={{ fontSize: 14, background: "#111", borderColor: BORDER, fontFamily: SYS_FONT }}
+                    >
+                      <SelectValue placeholder="Limit" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="LIMIT">Limit</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span style={LABEL_STYLE}>Time in force</span>
+                  <Select value={timeInForce} onValueChange={(v) => setTimeInForce(v as "DAY" | "GTC")}>
+                    <SelectTrigger
+                      className="h-7 px-2 border rounded-md text-white"
+                      style={{ fontSize: 14, background: "#111", borderColor: BORDER, fontFamily: SYS_FONT }}
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="DAY">DAY</SelectItem>
+                      <SelectItem value="GTC">GTC</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <div className="mt-2">
@@ -522,7 +566,7 @@ export function OptionsChainOrderSheet({
                     }}
                     style={{ color: GRAY }}
                   >
-                    Nat {fmt(isCredit ? spreadPrices?.spreadBid : spreadPrices?.spreadAsk)}
+                    Natural {fmt(isCredit ? spreadPrices?.spreadBid : spreadPrices?.spreadAsk)}
                   </button>
                 </div>
               </div>
@@ -560,61 +604,222 @@ export function OptionsChainOrderSheet({
       )}
 
       {stage === "review" && !collapsed && (
-        <div
-          className="absolute inset-0 flex flex-col justify-end"
-          style={{ background: "rgba(0,0,0,0.55)" }}
-          data-testid="chain-sheet-confirm"
-        >
-          <div
-            className="p-3 space-y-2 animate-in slide-in-from-bottom duration-300"
-            style={{ background: BG, borderTop: `1px solid ${GOLD}40`, borderRadius: "14px 14px 0 0" }}
-          >
-            <div className="flex justify-between items-center">
-              <span className="text-[12px] font-bold" style={{ color: WHITE }}>Order Confirmation</span>
-              <button type="button" onClick={() => setStage("form")} aria-label="Close">
-                <X className="w-4 h-4" style={{ color: MUTED }} />
-              </button>
-            </div>
-            <ButtonRow label="Strategy" value={strategyId.name} />
-            <ButtonRow label="Net" value={`$${displaySubmittedLimit(limitTickCtx, reviewLimitSnapped ?? submittedLimit)}`} />
-            <ButtonRow label="Qty" value={`${quantity} spread${quantity !== 1 ? "s" : ""}`} />
-            <ButtonRow label="TIF" value={timeInForce} />
-            {legs.map((leg, i) => (
-              <div key={i} className="text-[10px]" style={{ color: GRAY }}>
-                {leg.direction.startsWith("BUY") ? "BTO" : "STO"} {leg.quantity * quantity}× {leg.strike} {leg.optionType}
-              </div>
-            ))}
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setStage("form")}
-                className="flex-1 py-2 text-[11px]"
-                style={{ border: `1px solid ${BORDER}`, color: GRAY, borderRadius: 8 }}
-              >
-                Back
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleSubmit()}
-                className="flex-[2] py-2 text-[12px] font-bold"
-                style={{ background: GOLD, color: "#000", borderRadius: 8 }}
-                data-testid="chain-sheet-send"
-              >
-                Send to Schwab
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmPanel
+          strategyName={strategyId.name}
+          strategyColor={strategyId.color}
+          symbol={symbol}
+          legs={legs}
+          quantity={quantity}
+          timeInForce={timeInForce}
+          isCredit={isCredit}
+          limitTickCtx={limitTickCtx}
+          reviewLimitSnapped={reviewLimitSnapped}
+          submittedLimit={submittedLimit}
+          summary={summary}
+          onBack={() => setStage("form")}
+          onSend={() => void handleSubmit()}
+        />
       )}
     </div>
   );
 }
 
-function ButtonRow({ label, value }: { label: string; value: string }) {
+function StatCell({
+  label,
+  value,
+  valueColor = WHITE,
+}: {
+  label: string;
+  value: string;
+  valueColor?: string;
+}) {
   return (
-    <div className="flex justify-between text-[11px]">
+    <div className="flex items-baseline justify-between gap-2">
+      <span style={LABEL_STYLE}>{label}</span>
+      <span style={{ ...VALUE_STYLE, color: valueColor }}>{value}</span>
+    </div>
+  );
+}
+
+function formatLegLine(
+  leg: StrategyLeg,
+  underlying: string,
+  spreadQty: number,
+): string {
+  const verb = leg.direction.startsWith("BUY") ? "Buy" : "Sell";
+  const phase = leg.direction.includes("_TO_OPEN") ? "to open" : "to close";
+  const type = leg.optionType === "CALL" ? "Call" : "Put";
+  const sym = underlying.toUpperCase().replace(/^\$/, "");
+  return `${verb} ${phase} ${leg.quantity * spreadQty} ${sym} ${leg.strike} ${type}`;
+}
+
+function ConfirmPanel({
+  strategyName,
+  strategyColor,
+  symbol,
+  legs,
+  quantity,
+  timeInForce,
+  isCredit,
+  limitTickCtx,
+  reviewLimitSnapped,
+  submittedLimit,
+  summary,
+  onBack,
+  onSend,
+}: {
+  strategyName: string;
+  strategyColor: string;
+  symbol: string;
+  legs: StrategyLeg[];
+  quantity: number;
+  timeInForce: string;
+  isCredit: boolean;
+  limitTickCtx: LimitTickContext;
+  reviewLimitSnapped: number | null;
+  submittedLimit: number | null;
+  summary: ReturnType<typeof computeChainTicketSummary> | null;
+  onBack: () => void;
+  onSend: () => void;
+}) {
+  const px = reviewLimitSnapped ?? submittedLimit ?? 0;
+  const totalContracts = legs.reduce((s, l) => s + l.quantity, 0) * quantity;
+  const fees = estimateSchwabOptionFees(totalContracts);
+  const gross =
+    summary?.grossNotional != null
+      ? Math.abs(summary.grossNotional)
+      : Math.abs(px) * quantity * 100;
+  const cash = computeOrderNetCash(gross, isCredit, totalContracts, fees);
+  const reviewEcon = computeOrderEconomics({
+    underlyingSymbol: symbol,
+    isOption: true,
+    legs: legs.map((l) => ({
+      strike: l.strike,
+      optionType: l.optionType,
+      instruction: l.direction,
+      expiration: l.expiration.split(":")[0].trim(),
+      quantity: l.quantity,
+    })),
+    limitPrice: px,
+    quantity,
+    isCredit,
+    contractCount: totalContracts,
+  });
+  const maxLoss = reviewEcon?.maxRisk ?? summary?.maxLoss ?? null;
+  const bpEffect =
+    reviewEcon?.buyingPowerEffect ?? summary?.buyingPowerEffect ?? (isCredit ? gross : -(gross + fees.totalEst));
+
+  return (
+    <div
+      className="absolute inset-0 flex flex-col justify-end z-10"
+      style={{ background: "rgba(0,0,0,0.55)" }}
+      data-testid="chain-sheet-confirm"
+    >
+      <div
+        className="p-3 space-y-2 animate-in slide-in-from-bottom duration-300 max-h-[85%] overflow-y-auto"
+        style={{ background: BG, borderTop: `1px solid ${GOLD}40`, borderRadius: "14px 14px 0 0" }}
+      >
+        <div className="flex justify-between items-center">
+          <span className="text-[14px] font-semibold" style={{ color: WHITE }}>
+            Order confirmation
+          </span>
+          <button type="button" onClick={onBack} aria-label="Close">
+            <X className="w-4 h-4" style={{ color: MUTED }} />
+          </button>
+        </div>
+        <div className="space-y-1 p-2.5 rounded-lg" style={{ background: "#111", border: `1px solid ${BORDER}` }}>
+          <ButtonRow label="Strategy" value={strategyName} valueColor={strategyColor} />
+          <ButtonRow label="Order type" value="Limit" />
+          {legs.map((leg, i) => (
+            <p key={i} className="text-[13px] leading-snug" style={{ color: WHITE }}>
+              {formatLegLine(leg, symbol, quantity)}
+            </p>
+          ))}
+          <ButtonRow
+            label={`Net ${isCredit ? "credit" : "debit"}`}
+            value={fmtCurrency(gross)}
+          />
+          <ButtonRow
+            label={`Est. commissions (${totalContracts} × $0.65)`}
+            value={fmtCurrency(fees.commission)}
+          />
+          <ButtonRow label="Est. regulatory fees" value={fmtCurrency(fees.regulatoryEst)} />
+          <ButtonRow
+            label={`Total est. ${isCredit ? "credit" : "debit"}`}
+            value={fmtCurrency(cash.net)}
+            emphasize
+          />
+          <ButtonRow label="Time in force" value={timeInForce} />
+          <ButtonRow
+            label="Limit price"
+            value={`$${displaySubmittedLimit(limitTickCtx, px)}`}
+          />
+          {maxLoss != null && (
+            <ButtonRow label="Max loss" value={fmtCurrency(maxLoss)} valueColor={DOWN} />
+          )}
+          <ButtonRow
+            label="Buying power effect"
+            value={`${bpEffect >= 0 ? "+" : "−"}${fmtCurrency(Math.abs(bpEffect))}`}
+            valueColor={bpEffect >= 0 ? UP : DOWN}
+          />
+        </div>
+        <div
+          className="px-2 py-1.5 flex items-center gap-1.5"
+          style={{ background: `${GOLD}08`, borderRadius: 8, border: `1px solid ${GOLD}33` }}
+        >
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: GOLD }} />
+          <p className="text-[12px] leading-tight" style={{ color: `${GOLD}dd` }}>
+            Live order via Schwab. Verify all details.
+          </p>
+        </div>
+        <div className="flex gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex-1 py-2.5 text-[13px]"
+            style={{ border: `1px solid ${BORDER}`, color: GRAY, borderRadius: 8 }}
+          >
+            Back
+          </button>
+          <button
+            type="button"
+            onClick={onSend}
+            className="flex-[2] py-2.5 text-[13px] font-bold"
+            style={{ background: GOLD, color: "#000", borderRadius: 8 }}
+            data-testid="chain-sheet-send"
+          >
+            Send to Schwab
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ButtonRow({
+  label,
+  value,
+  valueColor = WHITE,
+  emphasize,
+}: {
+  label: string;
+  value: string;
+  valueColor?: string;
+  emphasize?: boolean;
+}) {
+  return (
+    <div className="flex justify-between gap-2 text-[13px]">
       <span style={{ color: MUTED }}>{label}</span>
-      <span style={{ color: WHITE }}>{value}</span>
+      <span
+        style={{
+          color: valueColor,
+          fontWeight: emphasize ? 600 : 400,
+          fontSize: emphasize ? 14 : 13,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {value}
+      </span>
     </div>
   );
 }

@@ -62,6 +62,6 @@ describe("OptionsChainOrderSheet", () => {
     await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(review);
     expect(screen.getByTestId("chain-sheet-confirm")).toBeTruthy();
-    expect(screen.getByText("Order Confirmation")).toBeTruthy();
+    expect(screen.getByText(/order confirmation/i)).toBeTruthy();
   });
 });

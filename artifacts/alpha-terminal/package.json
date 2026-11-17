@@ -9,7 +9,8 @@
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "pretypecheck": "pnpm exec tsc --build --force ../../lib/chat-types ../../lib/movers-types ../../lib/catalysts-types ../../lib/order-ticket-math && pnpm --filter @workspace/api-client-react exec -- sh -c 'rm -f tsconfig.tsbuildinfo && tsc -p tsconfig.json'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "verify-chain-order-fixture-prod": "vite build --config vite.config.ts && sh -c '! rg -l \"CHAIN_ORDER_FIXTURE_SPX_DEV_ONLY\" dist/'"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",

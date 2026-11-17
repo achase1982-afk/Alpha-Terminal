@@ -28,6 +28,7 @@ import {
   OptionsChainOrderSheet,
   legsFromChainSelection,
 } from "@/components/OptionsChainOrderSheet";
+import { getChainOrderFixtureOverride } from "@/lib/dev-only/chainOrderFixtureBridge";
 
 const EPS = 0.0001;
 const COL_W = 74;
@@ -1272,6 +1273,7 @@ export function OptionsTab({
   const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const accounts = useSchwabAccountStore((s) => s.accounts);
   const MAX_OPTION_LEGS = 4;
+  const fixtureOverride = import.meta.env.DEV ? getChainOrderFixtureOverride() : null;
 
   const activeColumns = useMemo(
     () => activeColumnIds.map(id => COLUMN_REGISTRY.find(c => c.id === id)).filter(Boolean) as ColumnDef[],
@@ -1294,10 +1296,17 @@ export function OptionsTab({
 
   const { data: rawData, isLoading, error, isFetching, dataUpdatedAt } = useGetOptionChain<OptionChainResponse>(
     { symbol, contractType: "ALL", strikeCount },
-    { query: { enabled: !!accessToken && !!symbol, staleTime: 30_000, gcTime: 5 * 60_000, retry: 2 } }
+    { query: { enabled: !!accessToken && !!symbol && !fixtureOverride, staleTime: 30_000, gcTime: 5 * 60_000, retry: 2 } }
   );
 
   const data = useMemo(() => {
+    if (fixtureOverride) {
+      let calls = (fixtureOverride.chain.calls ?? []) as Contract[];
+      let puts = (fixtureOverride.chain.puts ?? []) as Contract[];
+      if (contractType === "CALL") puts = [];
+      else if (contractType === "PUT") calls = [];
+      return { ...fixtureOverride.chain, calls, puts, underlyingPrice: fixtureOverride.underlyingPrice };
+    }
     if (!rawData) return rawData;
     if (rawData.symbol && rawData.symbol.toUpperCase() !== chainSymbolRef.current.toUpperCase()) {
       return undefined;
@@ -1307,7 +1316,9 @@ export function OptionsTab({
     if (contractType === "CALL") puts = [];
     else if (contractType === "PUT") calls = [];
     return { ...rawData, calls, puts };
-  }, [rawData, contractType]);
+  }, [rawData, contractType, fixtureOverride]);
+
+  const isLoadingEffective = fixtureOverride ? false : isLoading;
 
   const streamQuote = useTerminalStore((s) => {
     const u = symbol.toUpperCase();
@@ -1394,6 +1405,28 @@ export function OptionsTab({
   useEffect(() => {
     if (selectedLegs.size > 0) setSheetCollapsed(false);
   }, [selectedLegs.size]);
+
+  const fixtureLegsAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!fixtureOverride || groups.length === 0 || fixtureLegsAppliedRef.current) return;
+    fixtureLegsAppliedRef.current = true;
+    const group = groups[0];
+    setExpandedExps(new Set([group.expiration]));
+    const next = new Map<string, SelectedLeg>();
+    for (const pick of fixtureOverride.selectedLegs) {
+      const row = group.rows.find((r) => r.strike === pick.strike);
+      const contract = pick.type === "CALL" ? row?.call : row?.put;
+      if (!contract) continue;
+      next.set(makeLegKey(contract, pick.type), {
+        contract,
+        type: pick.type,
+        expiration: contract.expiration,
+        side: pick.side,
+      });
+    }
+    setSelectedLegs(next);
+    if (fixtureOverride.sheetCollapsed === false) setSheetCollapsed(false);
+  }, [fixtureOverride, groups]);
 
   useEffect(() => {}, [groups.length]);
 
@@ -1582,7 +1615,7 @@ export function OptionsTab({
       </div>
 
       <div className="relative" style={{ background: BG, paddingBottom: selCount > 0 ? 52 : 0 }}>
-        {isLoading && !data && (
+        {isLoadingEffective && !data && (
           <div className="p-4 space-y-1">
             {Array.from({ length: strikeCount }).map((_, i) => (
               <Skeleton key={i} className="h-4 w-full rounded" style={{ background: "#0a0a0a" }} />
@@ -1601,7 +1634,7 @@ export function OptionsTab({
           </div>
         )}
 
-        {!hasData && !isLoading && !error && apiError && (
+        {!hasData && !isLoadingEffective && !error && apiError && (
           <div className="p-12 text-center font-mono flex flex-col items-center" style={{ color: GOLD_DIM }}>
             <span className="text-2xl mb-2">{"\u26A0"}</span>
             <span className="text-[10px] tracking-widest" style={{ fontWeight: FW_LIGHT }}>OPTIONS UNAVAILABLE</span>
@@ -1609,14 +1642,14 @@ export function OptionsTab({
           </div>
         )}
 
-        {!isLoading && !error && !data && !accessToken && (
+        {!isLoadingEffective && !error && !data && !accessToken && (
           <div className="p-16 flex flex-col items-center justify-center font-mono">
             <Table2 className="w-7 h-7 mb-2" style={{ color: MUTED }} />
             <ConnectBrokerPrompt label="Connect Brokerage To View Options" compact />
           </div>
         )}
 
-        {!isLoading && !error && !data && accessToken && (
+        {!isLoadingEffective && !error && !data && accessToken && (
           <div className="p-16 flex flex-col items-center justify-center font-mono">
             <Table2 className="w-7 h-7 mb-2 animate-pulse" style={{ color: MUTED }} />
             <span className="text-[10px] tracking-widest" style={{ color: DIM, fontWeight: FW_LIGHT }}>LOADING OPTIONS CHAIN...</span>
@@ -1683,6 +1716,8 @@ export function OptionsTab({
           onLegQuantityChange={handleSheetLegQty}
           onRemoveLeg={handleSheetRemoveLeg}
           subscribeOptionSymbols={subscribeOptionSymbols}
+          openReviewOnMount={fixtureOverride?.openReviewOnMount}
+          demoFixture={!!fixtureOverride}
         />
       )}
 
