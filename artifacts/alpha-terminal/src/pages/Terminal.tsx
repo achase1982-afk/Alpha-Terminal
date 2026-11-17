@@ -27,6 +27,7 @@ import type { OptionsContract } from "@/components/OptionsTab";
 import { MarketSessionClock } from "@/components/MarketSessionClock";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
 import { BottomNav } from "@/components/BottomNav";
+import PushNotificationBanner from "@/components/PushNotificationBanner";
 import StrategistStatusBar from "@/components/StrategistStatusBar";
 import { AiSubTabs, type AiSubTab } from "@/components/ai-tab/AiSubTabs";
 import type { MarketPulseDashboardHandle } from "@/components/market-pulse/MarketPulseDashboard";
@@ -1092,6 +1093,8 @@ export default function TerminalPage() {
       </div>
 
       <StrategistStatusBar />
+
+      <PushNotificationBanner aboveNav={!isWide} />
 
       {!isWide && (
         <BottomNav

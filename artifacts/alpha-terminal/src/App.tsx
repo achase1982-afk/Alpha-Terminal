@@ -11,7 +11,6 @@ import { clearSchwabAuthNotice } from "@/lib/authNoticeStore";
 import { useAutoLock, AutoLockProvider } from "@/hooks/useAutoLock";
 import TerminalPage from "@/pages/Terminal";
 import NotFound from "@/pages/not-found";
-import PushNotificationBanner from "@/components/PushNotificationBanner";
 import AuthSessionBanner from "@/components/AuthSessionBanner";
 import { registerServiceWorker } from "@/lib/pushNotifications";
 import OrderAlertWatcher from "@/components/OrderAlertWatcher";
@@ -228,7 +227,6 @@ function App() {
               <Router />
             </WouterRouter>
             <Toaster />
-            <PushNotificationBanner />
             <OrderAlertWatcher />
             <SchwabSessionExpiredDialog />
           </AuthReadyGate>
