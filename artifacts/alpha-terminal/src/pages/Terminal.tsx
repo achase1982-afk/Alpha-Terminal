@@ -509,6 +509,28 @@ export default function TerminalPage() {
 
   const [strategyInitialLegs, setStrategyInitialLegs] = useState<StrategyLeg[]>([]);
 
+  const handleHandoffActiveTrader = useCallback((handoff: import("@/components/ActiveTraderDrawer").ActiveTraderHandoff) => {
+    if (handoff.legs.some((leg) => !leg.schwabSymbol)) return;
+    openOrderForSymbol(
+      handoff.underlying,
+      handoff.kind === "CREDIT" ? "SELL" : "BUY",
+      handoff.legs.length === 1 ? handoff.legs[0]?.schwabSymbol : undefined,
+      handoff.legs.length === 1 ? handoff.legs[0]?.instruction : undefined,
+      handoff.legs.map((leg) => ({
+        schwabSymbol: leg.schwabSymbol,
+        instruction: leg.instruction,
+        quantity: leg.quantity,
+        optionType: leg.optionType,
+        strike: leg.strike,
+        expiration: leg.expiration,
+        bid: leg.bid,
+        ask: leg.ask,
+      })),
+      Number(handoff.limit),
+      handoff.kind === "CREDIT",
+    );
+  }, [openOrderForSymbol]);
+
   const handleOpenStrategyBuilder = useCallback((strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>, preSelectedLegs?: { contract: OptionsContract; type: "CALL" | "PUT"; side?: "bid" | "ask" }[]) => {
     setStrategyStrikes(strikes);
     setStrategyExpirations(expirations);
@@ -946,7 +968,7 @@ export default function TerminalPage() {
                   }
                 >
                   {contextTab === "news" && <NewsTab />}
-                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
+                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} onHandoffActiveTrader={handleHandoffActiveTrader} />}
                   {contextTab === "company" && (
                     <CompanySwipablePages
                       candles={historyData?.candles}
@@ -1016,7 +1038,7 @@ export default function TerminalPage() {
                     }
                   >
                     {contextTab === "news" && <NewsTab />}
-                    {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
+                    {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} onHandoffActiveTrader={handleHandoffActiveTrader} />}
                     {contextTab === "company" && (
                       <CompanySwipablePages
                         candles={historyData?.candles}
@@ -1074,7 +1096,7 @@ export default function TerminalPage() {
                   }
                 >
                   {contextTab === "news" && <NewsTab />}
-                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
+                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} onHandoffActiveTrader={handleHandoffActiveTrader} />}
                   {contextTab === "company" && (
                     <CompanySwipablePages
                       candles={historyData?.candles}
