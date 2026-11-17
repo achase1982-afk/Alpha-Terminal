@@ -14,6 +14,8 @@ const TAB_DEFS: Record<MarketDataTab, { label: string; icon: React.ReactNode }> 
 const DEFAULT_ORDER: MarketDataTab[] = ["news", "options", "company", "newsChat", "chart"];
 const STORAGE_KEY = "alphaTerminalTabOrder";
 const LONG_PRESS_MS = 450;
+/** iOS reports a few pixels of movement on a stationary tap. Below this, it is still a tap. */
+const TAP_SLOP_PX = 18;
 
 function loadOrder(): MarketDataTab[] {
   try {
@@ -77,6 +79,8 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
   const jigglingRef = useRef(false);
   const blockClicksUntil = useRef(0);
   const scrolling = useRef(false);
+  const gestureTab = useRef<MarketDataTab | null>(null);
+  const suppressClick = useRef(false);
 
   const saveOrder = useCallback((newOrder: MarketDataTab[]) => {
     setOrder(newOrder);
@@ -121,6 +125,7 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
       touchStartY.current = y;
       touchMoved.current = false;
       scrolling.current = false;
+      gestureTab.current = order[idx] ?? null;
 
       if (jiggling) {
         startDrag(idx, x);
@@ -133,7 +138,7 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
         }
       }, LONG_PRESS_MS);
     },
-    [jiggling, startDrag]
+    [jiggling, startDrag, order]
   );
 
   const handleTouchMove = useCallback(
@@ -144,12 +149,8 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
       if (!dragging) {
         const dx = Math.abs(x - touchStartX.current);
         const dy = Math.abs(y - touchStartY.current);
-        if (dy > 5) {
-          scrolling.current = true;
-          cancelLongPress();
-          touchMoved.current = true;
-        }
-        if (dx > 8) {
+        if (dx > TAP_SLOP_PX || dy > TAP_SLOP_PX) {
+          if (dy > dx) scrolling.current = true;
           cancelLongPress();
           touchMoved.current = true;
         }
@@ -183,6 +184,8 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
 
   const handleTouchEnd = useCallback(() => {
     cancelLongPress();
+    const tapped = gestureTab.current;
+    const wasTap = !dragging && !jigglingRef.current && tapped != null && !touchMoved.current;
 
     if (dragging && dragTabId !== null) {
       const fromIdx = order.indexOf(dragTabId);
@@ -203,11 +206,17 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
       }
     }
 
+    if (wasTap && tapped) {
+      setActiveTab(tapped);
+      suppressClick.current = true;
+    }
+    gestureTab.current = null;
+
     jiggleStartedAt.current = Date.now();
     setDragging(false);
     setDragTabId(null);
     setPreviewOrder([]);
-  }, [dragging, dragTabId, order, dragX, cancelLongPress, saveOrder]);
+  }, [dragging, dragTabId, order, dragX, cancelLongPress, saveOrder, setActiveTab]);
 
   const stopJiggle = useCallback(() => {
     jigglingRef.current = false;
@@ -318,6 +327,10 @@ export function MarketDataTabs({ activeTab, setActiveTab }: MarketDataTabsProps)
               <button
                 ref={(el) => { tabRefs.current[i] = el; }}
                 onClick={() => {
+                  if (suppressClick.current) {
+                    suppressClick.current = false;
+                    return;
+                  }
                   if (jiggling) {
                     if (Date.now() - jiggleStartedAt.current > 500) stopJiggle();
                     return;
