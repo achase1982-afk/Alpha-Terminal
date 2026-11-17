@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { evaluateTicketPreTradeGate } from "@workspace/order-ticket-math";
 import { OrderTicket } from "./OrderTicket";
 
@@ -10,10 +10,10 @@ const terminalState = {
   preTradeEnabled: true,
   preTradeBlockOnRed: false,
   preTradeMinRR: 2,
-  preTradeMaxPositionPct: 10,
+  preTradeMaxPositionPct: 3,
   preTradeMinDTE: 1,
   stratMinPoP: 50,
-  accountSize: 25000,
+  accountSize: 30_000,
 };
 
 let mockTicks: Record<string, { bid: number; ask: number; last: number; ts: number; delta: number }> = {
@@ -46,7 +46,7 @@ vi.mock("@/lib/portfolio-stream-store", () => ({
 
 const schwabStoreState = {
   accounts: [] as [],
-  orderTicketAccountHash: null as string | null,
+  orderTicketAccountHash: "hash-1" as string | null,
   setOrderTicketAccountHash: vi.fn(),
   tradingAccountHash: () => "hash-1",
   refreshAccounts: vi.fn(),
@@ -78,12 +78,19 @@ vi.mock("@/lib/strategistPoller", () => ({
   startStrategistPolling: vi.fn(),
 }));
 
+const OPT = "AAPL  250117C00200000";
+
 describe("OrderTicket component", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockTicks = {
-      "AAPL  250117C00200000": { bid: 2.5, ask: 2.7, last: 2.6, ts: 1, delta: 0.4 },
+      [OPT]: { bid: 2.5, ask: 2.7, last: 2.6, ts: 1, delta: 0.4 },
     };
+    schwabStoreState.orderTicketAccountHash = "hash-1";
   });
 
   it("formats stock limit to cents on blur", async () => {
@@ -101,29 +108,74 @@ describe("OrderTicket component", () => {
       <OrderTicket
         isOpen
         onClose={() => {}}
-        optionSymbol="AAPL  250117C00200000"
+        optionSymbol={OPT}
         subscribeOptionSymbols={vi.fn()}
       />,
     );
     await waitFor(() => expect(screen.getByText(/Bid.*2\.50/i)).toBeTruthy());
   });
 
-  it("FAIL disables Review on opening tickets via pre-trade gate", () => {
+  it("FAIL liquidity blocks Review on opening tickets", async () => {
+    mockTicks[OPT] = { bid: 2.9, ask: 2.5, last: 2.6, ts: 2, delta: 0.4 };
+    render(
+      <OrderTicket
+        isOpen
+        onClose={() => {}}
+        optionSymbol={OPT}
+        subscribeOptionSymbols={vi.fn()}
+      />,
+    );
+    const limitInput = await screen.findByPlaceholderText("0.00");
+    fireEvent.change(limitInput, { target: { value: "2.60" } });
+    const review = await screen.findByRole("button", { name: "Review" });
+    expect((review as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("closing tickets skip FAIL submit block but still require limit/qty", async () => {
+    render(
+      <OrderTicket
+        isOpen
+        onClose={() => {}}
+        optionSymbol={OPT}
+        optionInstruction="SELL_TO_CLOSE"
+        isCloseOrder
+        subscribeOptionSymbols={vi.fn()}
+      />,
+    );
+    const limitInput = await screen.findByPlaceholderText("0.00");
+    fireEvent.change(limitInput, { target: { value: "2.60" } });
+    const review = await screen.findByRole("button", { name: "Review" });
+    await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(review);
+    await screen.findByText("Order Confirmation");
+    const send = screen.getByRole("button", { name: /send to schwab/i });
+    expect((send as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("displayed limit on review matches Mid-submitted limit", async () => {
+    render(
+      <OrderTicket
+        isOpen
+        onClose={() => {}}
+        optionSymbol={OPT}
+        subscribeOptionSymbols={vi.fn()}
+      />,
+    );
+    const midBtn = await screen.findByRole("button", { name: /^Mid/i });
+    fireEvent.click(midBtn);
+    const limitInput = await screen.findByPlaceholderText("0.00") as HTMLInputElement;
+    await waitFor(() => expect(limitInput.value).toBe("2.60"));
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    await screen.findByText("Order Confirmation");
+    expect(screen.getByText("$2.60")).toBeTruthy();
+  });
+
+  it("FAIL disables Review and Send via gate helper", () => {
     const gate = evaluateTicketPreTradeGate({
       blockOnRed: false,
       checks: [{ id: "liq", level: "RED" }],
     });
     expect(gate.shouldBlockReview).toBe(true);
     expect(gate.shouldBlockSubmit).toBe(true);
-  });
-
-  it("closing tickets bypass pre-trade submit/review blocks", () => {
-    const gate = evaluateTicketPreTradeGate({
-      blockOnRed: false,
-      checks: [{ id: "liq", level: "RED" }],
-    });
-    const closingGate = { ...gate, shouldBlockSubmit: false, shouldBlockReview: false };
-    expect(closingGate.shouldBlockReview).toBe(false);
-    expect(closingGate.shouldBlockSubmit).toBe(false);
   });
 });

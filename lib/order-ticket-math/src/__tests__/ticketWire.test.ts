@@ -21,7 +21,7 @@ describe("ticketWire", () => {
     expect(displayed).toBe("2.04");
   });
 
-  it("stock Mid is not rounded", () => {
+  it("stock Mid is a cents string", () => {
     const s = stockMidLimit(100.125, 100.375);
     expect(s).toBe("100.25");
     const parsed = resolveSubmittedLimit(stockCtx, s!);

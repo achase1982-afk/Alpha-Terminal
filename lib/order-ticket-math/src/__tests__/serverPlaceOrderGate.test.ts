@@ -1,45 +1,95 @@
 import { describe, expect, it } from "vitest";
-import { evaluateServerPlaceOrderGate, orderHasClosingLeg } from "../serverPlaceOrderGate.js";
+import {
+  evaluateServerPlaceOrderGate,
+  DEFAULT_SERVER_PRE_TRADE,
+  isClosingSchwabOrder,
+} from "../serverPlaceOrderGate.js";
 
-describe("serverPlaceOrderGate", () => {
-  it("never rejects closing legs", () => {
+const EQUITY = 30_000;
+
+describe("isClosingSchwabOrder", () => {
+  it("treats stock SELL as closing", () => {
     expect(
-      orderHasClosingLeg({
-        orderLegCollection: [{ instruction: "SELL_TO_CLOSE", quantity: 1 }],
+      isClosingSchwabOrder({
+        orderLegCollection: [{ instruction: "SELL", quantity: 100, instrument: { assetType: "EQUITY", symbol: "AAPL" } }],
       }),
     ).toBe(true);
+  });
+
+  it("treats BUY_TO_COVER as closing", () => {
+    expect(
+      isClosingSchwabOrder({
+        orderLegCollection: [{ instruction: "BUY_TO_COVER", quantity: 50, instrument: { assetType: "EQUITY", symbol: "AAPL" } }],
+      }),
+    ).toBe(true);
+  });
+
+  it("treats option TO_CLOSE as closing", () => {
+    expect(
+      isClosingSchwabOrder({
+        orderLegCollection: [{ instruction: "SELL_TO_CLOSE", quantity: 1, instrument: { assetType: "OPTION", symbol: "AAPL  250117C00200000" } }],
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("evaluateServerPlaceOrderGate", () => {
+  it("never rejects closing stock SELL even when notional exceeds size cap", () => {
     const r = evaluateServerPlaceOrderGate({
       order: {
-        price: 5,
-        orderLegCollection: [{ instruction: "SELL_TO_CLOSE", quantity: 2, instrument: { assetType: "OPTION" } }],
+        price: 100,
+        orderLegCollection: [{ instruction: "SELL", quantity: 100, instrument: { assetType: "EQUITY", symbol: "AAPL" } }],
       },
-      accountEquity: 10000,
-      settings: { preTradeEnabled: true, blockOnRed: false, preTradeMaxPositionPct: 10 },
+      accountEquity: EQUITY,
+      settings: DEFAULT_SERVER_PRE_TRADE,
     });
     expect(r.reject).toBe(false);
   });
 
-  it("rejects oversized opening option when equity known", () => {
+  it("never rejects BUY_TO_COVER", () => {
     const r = evaluateServerPlaceOrderGate({
       order: {
-        price: 10,
-        orderLegCollection: [{ instruction: "BUY_TO_OPEN", quantity: 10, instrument: { assetType: "OPTION" } }],
+        price: 50,
+        orderLegCollection: [{ instruction: "BUY_TO_COVER", quantity: 200, instrument: { assetType: "EQUITY", symbol: "GME" } }],
       },
-      accountEquity: 10000,
-      settings: { preTradeEnabled: true, blockOnRed: false, preTradeMaxPositionPct: 10 },
+      accountEquity: EQUITY,
+      settings: DEFAULT_SERVER_PRE_TRADE,
+    });
+    expect(r.reject).toBe(false);
+  });
+
+  it("rejects 10-lot 50-wide credit spread at 1.00 vs 30k @ 3% threshold", () => {
+    const r = evaluateServerPlaceOrderGate({
+      order: {
+        price: 1,
+        orderLegCollection: [
+          {
+            instruction: "SELL_TO_OPEN",
+            quantity: 10,
+            instrument: { assetType: "OPTION", symbol: "SPXW  261118C05950000" },
+          },
+          {
+            instruction: "BUY_TO_OPEN",
+            quantity: 10,
+            instrument: { assetType: "OPTION", symbol: "SPXW  261118C05900000" },
+          },
+        ],
+      },
+      accountEquity: EQUITY,
+      settings: DEFAULT_SERVER_PRE_TRADE,
     });
     expect(r.reject).toBe(true);
     expect(r.checks.find((c) => c.id === "size")?.level).toBe("RED");
   });
 
-  it("warns but does not reject when equity unknown", () => {
+  it("warns when equity unknown", () => {
     const r = evaluateServerPlaceOrderGate({
       order: {
-        price: 10,
-        orderLegCollection: [{ instruction: "BUY_TO_OPEN", quantity: 1, instrument: { assetType: "OPTION" } }],
+        price: 2,
+        orderLegCollection: [{ instruction: "BUY_TO_OPEN", quantity: 1, instrument: { assetType: "OPTION", symbol: "AAPL  250117C00200000" } }],
       },
       accountEquity: null,
-      settings: { preTradeEnabled: true, blockOnRed: false, preTradeMaxPositionPct: 10 },
+      settings: DEFAULT_SERVER_PRE_TRADE,
     });
     expect(r.reject).toBe(false);
     expect(r.checks.find((c) => c.id === "size")?.level).toBe("YELLOW");

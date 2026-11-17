@@ -19,7 +19,10 @@ export function displaySubmittedLimit(ctx: LimitTickContext, limit: number | nul
 export function stockMidLimit(bid: number | null | undefined, ask: number | null | undefined): string | null {
   const mid = midpointFromBidAsk(bid, ask);
   if (mid == null) return null;
-  return String(mid);
+  const ctx: LimitTickContext = { underlyingSymbol: "", isOption: false };
+  const rounded = parseCanonicalLimit(mid, ctx);
+  if (rounded == null) return null;
+  return displaySubmittedLimit(ctx, rounded);
 }
 
 export function optionMidLimit(

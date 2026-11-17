@@ -52,6 +52,7 @@ export interface StrategyLeg {
   vega?: number;
   iv?: number;
   schwabSymbol: string;
+  contractTs?: number;
 }
 
 interface StrategyTemplate {
@@ -455,7 +456,7 @@ interface StrategyBuilderProps {
   initialLegs?: StrategyLeg[];
   availableStrikes?: number[];
   availableExpirations?: { label: string; value: string }[];
-  chainData?: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>;
+  chainData?: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>;
   subscribeOptionSymbols?: (symbols: string[]) => void | Promise<void>;
 }
 
@@ -591,6 +592,7 @@ export function StrategyBuilder({
         schwabSymbol,
         bid: cd?.bid,
         ask: cd?.ask,
+        contractTs: cd?.contractTs,
       },
       tick,
     );
@@ -638,7 +640,7 @@ export function StrategyBuilder({
         const cd = chainData?.get(schwabSymbol);
         const tick = useOptionsStreamStore.getState().ticks[schwabSymbol];
         const merged = mergeLegStreamQuotes(
-          { ...updated, schwabSymbol, bid: cd?.bid, ask: cd?.ask },
+          { ...updated, schwabSymbol, bid: cd?.bid, ask: cd?.ask, contractTs: cd?.contractTs },
           tick,
         );
         updated.schwabSymbol = schwabSymbol;
@@ -691,19 +693,20 @@ export function StrategyBuilder({
       pricedLegs.map((l) => ({ instruction: l.direction, bid: l.bid, ask: l.ask })),
     );
     if (!agg) return null;
-    let spreadBid = agg.bid;
-    let spreadAsk = agg.ask;
-    if (spreadBid > spreadAsk) {
-      const tmp = spreadBid;
-      spreadBid = spreadAsk;
-      spreadAsk = tmp;
-    }
+    const spreadBid = agg.bid;
+    const spreadAsk = agg.ask;
     const spreadMid = agg.mid;
     if (spreadMid == null || spreadMid <= 0 || agg.crossed) {
       return { spreadBid, spreadMid: null as number | null, spreadAsk, crossed: true };
     }
     return { spreadBid, spreadMid, spreadAsk, crossed: false };
   }, [pricedLegs]);
+
+  useEffect(() => {
+    if (spreadPrices?.spreadMid != null && spreadPrices.spreadMid > 0 && !limitPrice && !priceLocked) {
+      setLimitPrice(spreadPrices.spreadMid.toFixed(2));
+    }
+  }, [spreadPrices, limitPrice, priceLocked]);
 
   const effectiveBid = spreadPrices?.spreadBid ?? null;
   const effectiveAsk = spreadPrices?.spreadAsk ?? null;

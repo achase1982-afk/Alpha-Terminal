@@ -22,7 +22,7 @@ describe("optionQuotes", () => {
       { instruction: "BUY_TO_OPEN", bid: 3.7, ask: 3.8 },
       { instruction: "SELL_TO_OPEN", bid: null, ask: 1.25 },
     ]);
-    expect(agg?.mid).toBeNull();
+    expect(agg).toBeNull();
   });
 
   it("prefers stream only when newer than stored contract pair", () => {

@@ -5,6 +5,7 @@ import { broadcastToClients } from "../lib/wsServer.js";
 import { sendPushToAll } from "../lib/pushService.js";
 import { markAlertSeen } from "../lib/schwabStreamer.js";
 import {
+  fetchCachedAccountEquity,
   fetchMappedSchwabAccounts,
   fetchAccountNumberRows,
   resolveAccountHash,
@@ -18,7 +19,9 @@ import {
 import { db } from "@workspace/db";
 import { tradeJournalTable } from "@workspace/db/schema";
 import {
+  DEFAULT_SERVER_PRE_TRADE,
   evaluateServerPlaceOrderGate,
+  isClosingSchwabOrder,
   validateOrderPreTradeGatePayload,
 } from "@workspace/order-ticket-math";
 
@@ -300,24 +303,20 @@ router.post("/place-order", async (req, res) => {
   }
 
   try {
-    const mappedAccounts = await fetchMappedSchwabAccounts(token);
-    const acct = mappedAccounts.find((a) => a.hashValue === accountHash);
-    const accountEquity =
-      acct?.balances?.liquidationValue ?? acct?.balances?.buyingPower ?? acct?.balances?.equity ?? null;
-    const serverGate = evaluateServerPlaceOrderGate({
-      order,
-      accountEquity: typeof accountEquity === "number" && accountEquity > 0 ? accountEquity : null,
-      settings: {
-        preTradeEnabled: gatePayload?.enabled !== false,
-        blockOnRed: gatePayload?.blockOnRed ?? false,
-      },
-    });
-    if (serverGate.reject) {
-      return res.status(403).json({
-        error: "pre_trade_blocked",
-        message: "Order blocked by server pre-trade risk checks.",
-        blockingCheckIds: serverGate.checks.filter((c) => c.level === "RED").map((c) => c.id),
+    if (!isClosingSchwabOrder(order)) {
+      const accountEquity = await fetchCachedAccountEquity(token, accountHash);
+      const serverGate = evaluateServerPlaceOrderGate({
+        order,
+        accountEquity,
+        settings: DEFAULT_SERVER_PRE_TRADE,
       });
+      if (serverGate.reject) {
+        return res.status(403).json({
+          error: "pre_trade_blocked",
+          message: "Order blocked by server pre-trade risk checks.",
+          blockingCheckIds: serverGate.checks.filter((c) => c.level === "RED").map((c) => c.id),
+        });
+      }
     }
     const NO_PRICE_TYPES = new Set(["MARKET", "STOP", "TRAILING_STOP", "MARKET_ON_CLOSE"]);
     if (typeof order.orderType === "string" && NO_PRICE_TYPES.has(order.orderType)) {

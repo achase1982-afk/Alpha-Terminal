@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { Reorder } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
-import { resolveAtmStrike, resolvePairedBidAsk } from "@workspace/order-ticket-math";
+import { resolveAtmStrike } from "@workspace/order-ticket-math";
 
 const EPS = 0.0001;
 const COL_W = 74;
@@ -390,26 +390,9 @@ const DataCell = memo(function DataCell({
   const startPos = useRef<{ x: number; y: number } | null>(null);
   const SWIPE_THRESHOLD = 10;
 
+  const topVal = getStreamVal(tick, col.topKey) ?? getContractVal(contract, col.topKey);
   const isBid = col.id === "bid";
   const isAsk = col.id === "ask";
-
-  const paired = useMemo(
-    () =>
-      resolvePairedBidAsk({
-        streamBid: getStreamVal(tick, "bid"),
-        streamAsk: getStreamVal(tick, "ask"),
-        streamTs: tick?.ts,
-        contractBid: getContractVal(contract, "bid"),
-        contractAsk: getContractVal(contract, "ask"),
-      }),
-    [tick, contract],
-  );
-
-  const topVal = isBid
-    ? (paired?.crossed ? undefined : paired?.bid)
-    : isAsk
-      ? (paired?.crossed ? undefined : paired?.ask)
-      : (getStreamVal(tick, col.topKey) ?? getContractVal(contract, col.topKey));
   const bottomVal = col.bottomKey
     ? (getStreamVal(tick, col.bottomKey) ?? getContractVal(contract, col.bottomKey))
     : undefined;
@@ -1242,7 +1225,7 @@ interface OptionsTabProps {
   subscribeOptionSymbols?: (symbols: string[]) => Promise<void>;
   stickyOffset?: number;
   onTradeSingle?: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
-  onOpenStrategyBuilder?: (strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>, preSelectedLegs?: { contract: Contract; type: "CALL" | "PUT"; side?: "bid" | "ask" }[]) => void;
+  onOpenStrategyBuilder?: (strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>, preSelectedLegs?: { contract: Contract; type: "CALL" | "PUT"; side?: "bid" | "ask" }[]) => void;
 }
 
 export type { Contract as OptionsContract };
@@ -1283,7 +1266,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
     chainSymbolRef.current = symbol;
   }, [symbol]);
 
-  const { data: rawData, isLoading, error, isFetching } = useGetOptionChain<OptionChainResponse>(
+  const { data: rawData, isLoading, error, isFetching, dataUpdatedAt } = useGetOptionChain<OptionChainResponse>(
     { symbol, contractType: "ALL", strikeCount },
     { query: { enabled: !!accessToken && !!symbol, staleTime: 30_000, gcTime: 5 * 60_000, retry: 2 } }
   );
@@ -1411,7 +1394,8 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
     if (!onOpenStrategyBuilder || groups.length === 0) return;
     const allStrikes = new Set<number>();
     const expLabels: { label: string; value: string }[] = [];
-    const cMap = new Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>();
+    const cMap = new Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>();
+    const chainTs = dataUpdatedAt > 0 ? dataUpdatedAt : Date.now();
     const streamTicks = useOptionsStreamStore.getState().ticks;
     for (const g of groups) {
       if (!expLabels.some(e => e.value === g.expiration)) {
@@ -1430,6 +1414,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
             theta: (tick && tick.theta != null) ? tick.theta : c.theta,
             vega: (tick && tick.vega != null) ? tick.vega : c.vega,
             iv: (tick && tick.iv != null) ? tick.iv : c.iv,
+            contractTs: chainTs,
           });
         };
         mapContract(row.call);
@@ -1454,7 +1439,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
       : undefined;
     onOpenStrategyBuilder([...allStrikes].sort((a, b) => a - b), expLabels, cMap, preSelected);
     setSelectedLegs(new Map());
-  }, [onOpenStrategyBuilder, groups, selectedLegs]);
+  }, [onOpenStrategyBuilder, groups, selectedLegs, dataUpdatedAt]);
 
   const handleStrikeModeChange = useCallback((val: string) => {
     if (val === "custom") { setLocalCustomValue(String(strikeCount)); setIsCustomMode(true); return; }

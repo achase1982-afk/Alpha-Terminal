@@ -111,7 +111,7 @@ export function aggregateSpreadNBBO(
   }
 
   if (!haveAllLegs) {
-    return { bid: 0, ask: 0, mid: null, crossed: false };
+    return null;
   }
 
   let spreadBid: number;
