@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { ActiveTraderTemplatePrefs, AtTemplateKind, AtOrderType } from "@/lib/active-trader/activeTraderPrefs";
+import { patchAutoSendArmed, patchAutoSendEnabled } from "@/lib/active-trader/atAutoSend";
 
 interface TemplateBarProps {
   accentHex: string;
@@ -24,6 +25,8 @@ interface TemplateBarProps {
   isPaper: boolean;
   /** Inside collapsible settings panel (no sticky). */
   embedded?: boolean;
+  /** Non-null when Arm is blocked (safeguard). */
+  autoSendArmBlock?: string | null;
 }
 
 export const TemplateBar = memo(function TemplateBar({
@@ -37,6 +40,7 @@ export const TemplateBar = memo(function TemplateBar({
   accountLabel,
   isPaper,
   embedded,
+  autoSendArmBlock,
 }: TemplateBarProps) {
   const typeBtn = prefs.orderType === "LIMIT" ? "LMT" : "MKT";
   return (
@@ -151,11 +155,33 @@ export const TemplateBar = memo(function TemplateBar({
             BUY {typeBtn}
           </button>
         </div>
-        <label className="flex items-center gap-1 shrink-0 whitespace-nowrap" style={{ fontSize: 10, color: DIM }}>
-          <Checkbox disabled checked={false} />
-          Auto send
-          <span style={{ fontSize: 9, opacity: 0.65 }}>(soon)</span>
-        </label>
+        <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
+          <label className="flex items-center gap-1" style={{ fontSize: 10, color: DIM }}>
+            <Checkbox
+              checked={prefs.autoSend.enabled}
+              onCheckedChange={(v) => onPrefsChange(patchAutoSendEnabled(prefs, v === true))}
+            />
+            Auto send
+          </label>
+          {prefs.autoSend.enabled && (
+            <button
+              type="button"
+              title={autoSendArmBlock ?? undefined}
+              disabled={!prefs.autoSend.armed && !!autoSendArmBlock}
+              className="h-6 px-1.5 rounded border"
+              style={{
+                fontSize: 9,
+                borderColor: prefs.autoSend.armed ? UP : BORDER,
+                color: prefs.autoSend.armed ? UP : GRAY,
+                background: prefs.autoSend.armed ? `${UP}18` : "transparent",
+                letterSpacing: "0.04em",
+              }}
+              onClick={() => onPrefsChange(patchAutoSendArmed(prefs, !prefs.autoSend.armed))}
+            >
+              {prefs.autoSend.armed ? "ARMED" : "Arm"}
+            </button>
+          )}
+        </div>
         <span
           className="shrink-0 px-2 py-0.5 rounded border whitespace-nowrap"
           style={{

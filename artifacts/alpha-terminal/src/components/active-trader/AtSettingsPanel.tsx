@@ -63,6 +63,7 @@ interface AtSettingsPanelProps {
   windowLabel: string;
   primaryInstruction: SchwabInstruction;
   limitMid: number | null;
+  autoSendArmBlock?: string | null;
 }
 
 export const AtSettingsPanel = memo(function AtSettingsPanel({
@@ -87,6 +88,7 @@ export const AtSettingsPanel = memo(function AtSettingsPanel({
   windowLabel,
   primaryInstruction,
   limitMid,
+  autoSendArmBlock,
 }: AtSettingsPanelProps) {
   const summary = buildSummary(prefs, limitMid, primaryInstruction);
 
@@ -141,6 +143,7 @@ export const AtSettingsPanel = memo(function AtSettingsPanel({
             onBuy={onBuy}
             accountLabel={accountLabel}
             isPaper={isPaper}
+            autoSendArmBlock={autoSendArmBlock}
           />
           <AtBracketControls
             prefs={prefs}

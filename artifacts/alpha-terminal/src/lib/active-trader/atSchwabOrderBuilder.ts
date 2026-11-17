@@ -1,4 +1,4 @@
-import type { AtTemplateKind, BracketLegPrefs } from "./activeTraderPrefs";
+import type { AtOrderType, AtTemplateKind, BracketLegPrefs } from "./activeTraderPrefs";
 import { computeBracketPrices } from "./atBracketMath";
 
 export type SchwabOptionInstruction =
@@ -71,8 +71,13 @@ export interface AtOrderBuildInput {
   stopLoss?: BracketLegPrefs;
   targetPrice?: number;
   stopPrice?: number;
+  entryOrderType?: AtOrderType;
   session?: string;
   duration?: string;
+}
+
+function primarySchwabOrderType(entryOrderType: AtOrderType | undefined): "LIMIT" | "MARKET" {
+  return entryOrderType === "MKT" ? "MARKET" : "LIMIT";
 }
 
 function resolveBracketPrices(input: AtOrderBuildInput): { tp: number | null; sl: number | null } {
@@ -194,14 +199,17 @@ export function buildAtSchwabOrderJson(input: AtOrderBuildInput): Record<string,
 
   const { tp, sl } = resolveBracketPrices(input);
   const bracket = usesBracketExit(input);
+  const entryType = primarySchwabOrderType(input.entryOrderType);
+  const entryPriceFields =
+    entryType === "LIMIT" ? { price: input.limitPrice } : ({} as Record<string, unknown>);
 
   if (!bracket && input.template === "Single") {
     return {
       orderStrategyType: "SINGLE",
       session,
       duration,
-      orderType: "LIMIT",
-      price: input.limitPrice,
+      orderType: entryType,
+      ...entryPriceFields,
       orderLegCollection: [mkLeg(input.primaryInstruction, qty, sym, asset)],
     };
   }
@@ -211,8 +219,8 @@ export function buildAtSchwabOrderJson(input: AtOrderBuildInput): Record<string,
       orderStrategyType: "SINGLE",
       session,
       duration,
-      orderType: "LIMIT",
-      price: input.limitPrice,
+      orderType: entryType,
+      ...entryPriceFields,
       orderLegCollection: [mkLeg(input.primaryInstruction, qty, sym, asset)],
     };
   }
@@ -248,8 +256,8 @@ export function buildAtSchwabOrderJson(input: AtOrderBuildInput): Record<string,
     orderStrategyType: "TRIGGER",
     session,
     duration,
-    orderType: "LIMIT",
-    price: input.limitPrice,
+    orderType: entryType,
+    ...entryPriceFields,
     orderLegCollection: [mkLeg(input.primaryInstruction, qty, sym, asset)],
     childOrderStrategies: [childPayload],
   };

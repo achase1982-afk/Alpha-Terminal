@@ -19,7 +19,21 @@ import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import type { LaneFilterKey } from "./FilterStrip";
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
-import { useOptionTick } from "@/lib/options-stream-store";
+import { useOptionTick, useOptionsStreamStore } from "@/lib/options-stream-store";
+import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
+import {
+  canArmAutoSend,
+  isAutoSendLiveReady,
+  patchAutoSendArmed,
+} from "@/lib/active-trader/atAutoSend";
+import {
+  atPrimaryInstruction,
+  buildAtOrderPayload,
+  resolveAtEntryPrice,
+  submitAtSchwabOrder,
+} from "@/lib/active-trader/atPlaceOrder";
+import { planAtOrderLegs } from "@/lib/active-trader/atSchwabOrderBuilder";
+import { toast } from "@/hooks/use-toast";
 import { AtSettingsPanel } from "./AtSettingsPanel";
 import {
   loadAtSettingsPanelOpen,
@@ -251,6 +265,10 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     return map;
   }, [positions]);
 
+  const tradingHash = useSchwabAccountStore((s) => s.tradingAccountHash());
+  const blockLiveSend = !!(presentation?.skipNetwork || getAtFixtureOverride());
+  const autoSendBusyRef = useRef(false);
+
   const accounts = useSchwabAccountStore((s) => s.accounts);
   const accountLabel =
     accounts.length > 0
@@ -299,6 +317,105 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     if (tick.bid != null && tick.ask != null) return (tick.bid + tick.ask) / 2;
     return tick.mark ?? tick.last ?? null;
   }, [selectedTick, atmTick]);
+
+  const autoSendLegValidation = useMemo(() => {
+    if (templateLimitMid == null || templateLimitMid <= 0 || !selected) return null;
+    return planAtOrderLegs({
+      template: prefs.template,
+      assetType: "OPTION",
+      symbol: "",
+      primaryInstruction: templatePrimaryInstruction,
+      quantity: prefs.qty,
+      limitPrice: templateLimitMid,
+      takeProfit: prefs.takeProfit,
+      stopLoss: prefs.stopLoss,
+      entryOrderType: prefs.orderType,
+    }).validationError;
+  }, [prefs, selected, templateLimitMid, templatePrimaryInstruction]);
+
+  const autoSendArmBlock = useMemo(
+    () =>
+      canArmAutoSend({
+        accountHash: tradingHash,
+        blockLiveSend,
+        orderValidationError: autoSendLegValidation,
+        entryPrice: templateLimitMid,
+      }),
+    [tradingHash, blockLiveSend, autoSendLegValidation, templateLimitMid],
+  );
+
+  useEffect(() => {
+    if (!blockLiveSend && tradingHash) return;
+    setPrefs((p) => {
+      if (!p.autoSend.armed) return p;
+      const next = patchAutoSendArmed(p, false);
+      saveActiveTraderPrefs(symbolClass, next);
+      return next;
+    });
+  }, [blockLiveSend, tradingHash, symbolClass]);
+
+  const handleTradeIntent = useCallback(
+    async (contract: OptionsContract, side: "BUY" | "SELL", type: "CALL" | "PUT") => {
+      const tick = useOptionsStreamStore.getState().ticks[contract.streamKey ?? ""];
+      const entry = resolveAtEntryPrice(tick, prefs, side);
+      const primaryInstruction = atPrimaryInstruction(side);
+      const validationError = entry
+        ? planAtOrderLegs({
+            template: prefs.template,
+            assetType: "OPTION",
+            symbol: contract.streamKey ?? "",
+            primaryInstruction,
+            quantity: prefs.qty,
+            limitPrice: entry,
+            takeProfit: prefs.takeProfit,
+            stopLoss: prefs.stopLoss,
+            entryOrderType: prefs.orderType,
+          }).validationError
+        : "Missing quote";
+
+      const ready = isAutoSendLiveReady(prefs, {
+        accountHash: tradingHash,
+        blockLiveSend,
+        orderValidationError: validationError,
+        entryPrice: entry,
+      });
+
+      if (!ready) {
+        onOpenReview(contract, side, type);
+        return;
+      }
+
+      if (autoSendBusyRef.current) return;
+      autoSendBusyRef.current = true;
+      try {
+        const order = buildAtOrderPayload(contract, side, prefs, entry!);
+        const result = await submitAtSchwabOrder({
+          accountHash: tradingHash!,
+          order,
+          symbol,
+          side,
+          quantity: prefs.qty,
+          limitPrice: entry,
+          dryRun: blockLiveSend,
+        });
+        if (result.ok) {
+          toast({
+            title: "Order sent",
+            description: `Active Trader · ${side} ${prefs.qty} · #${result.orderId}`,
+          });
+        } else {
+          toast({
+            title: "Order failed",
+            description: result.message,
+            variant: "destructive",
+          });
+        }
+      } finally {
+        autoSendBusyRef.current = false;
+      }
+    },
+    [prefs, tradingHash, blockLiveSend, onOpenReview, symbol],
+  );
 
   const instrumentLabel = useMemo(() => {
     if (selected) {
@@ -360,8 +477,9 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             prefs={prefs}
             onPrefsChange={onPrefsChange}
             instrumentLabel={instrumentLabel}
-            onSell={() => selected && onOpenReview(selected.contract, "SELL", selected.type)}
-            onBuy={() => selected && onOpenReview(selected.contract, "BUY", selected.type)}
+            onSell={() => selected && handleTradeIntent(selected.contract, "SELL", selected.type)}
+            onBuy={() => selected && handleTradeIntent(selected.contract, "BUY", selected.type)}
+            autoSendArmBlock={autoSendArmBlock}
             accountLabel={accountLabel}
             isPaper={isPaper}
             regimeLabel={presentation?.regimeLabel ?? regimeLabel}
@@ -415,8 +533,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           tradeStripStrike={tradeStripStrike}
           tradeContext={tradeContext}
           onCellTap={handleCellTap}
-          onTradeStripSell={(c, t) => onOpenReview(c, "SELL", t)}
-          onTradeStripBuy={(c, t) => onOpenReview(c, "BUY", t)}
+          onTradeStripSell={(c, t) => handleTradeIntent(c, "SELL", t)}
+          onTradeStripBuy={(c, t) => handleTradeIntent(c, "BUY", t)}
           onAddLeg={onAddLeg}
           positionQtyByKey={positionQtyByKey}
           flowByKey={flowByKey}

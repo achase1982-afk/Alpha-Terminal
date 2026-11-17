@@ -1,3 +1,6 @@
+import type { AtAutoSendPrefs } from "./atAutoSend";
+
+export type { AtAutoSendPrefs };
 export type AtTemplateKind = "Single" | "OCO" | "TRG w/ bracket";
 export type AtOrderType = "LIMIT" | "MKT";
 export type AtLimitAnchor = "Mid" | "Bid" | "Ask";
@@ -16,9 +19,10 @@ export interface ActiveTraderTemplatePrefs {
   limitAnchor: AtLimitAnchor;
   takeProfit: BracketLegPrefs;
   stopLoss: BracketLegPrefs;
+  autoSend: AtAutoSendPrefs;
 }
 
-const STORAGE_KEY = "activeTraderPrefs:v3";
+const STORAGE_KEY = "activeTraderPrefs:v4";
 
 const DEFAULTS: ActiveTraderTemplatePrefs = {
   template: "TRG w/ bracket",
@@ -27,6 +31,7 @@ const DEFAULTS: ActiveTraderTemplatePrefs = {
   limitAnchor: "Mid",
   takeProfit: { enabled: true, mode: "percent", offset: 10 },
   stopLoss: { enabled: false, mode: "percent", offset: -10 },
+  autoSend: { enabled: false, armed: false },
 };
 
 export function loadActiveTraderPrefs(symbolClass: "index" | "equity"): ActiveTraderTemplatePrefs {
