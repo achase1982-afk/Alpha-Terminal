@@ -31,6 +31,7 @@ import {
 import { ActiveTraderView } from "@/components/active-trader/ActiveTraderView";
 import { OptionsSubViewToggle, type OptionsSubView } from "@/components/active-trader/OptionsSubViewToggle";
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
+import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 
 const EPS = 0.0001;
 
@@ -1232,6 +1233,16 @@ export function OptionsTab({
   const [optionsSubView, setOptionsSubView] = useState<OptionsSubView>(
     () => fixtureOverride?.initialSubView ?? "chain",
   );
+  const enterActiveTrader = useAtChromeStore((s) => s.enterActiveTrader);
+  const leaveActiveTrader = useAtChromeStore((s) => s.leaveActiveTrader);
+  useEffect(() => {
+    if (optionsSubView === "at") {
+      enterActiveTrader();
+    } else {
+      leaveActiveTrader();
+    }
+    return () => leaveActiveTrader();
+  }, [optionsSubView, enterActiveTrader, leaveActiveTrader]);
   const { accessToken } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken })));
   // Widget pin wins inside the dashboard; global symbol everywhere else.
   const symbol = useActiveSymbol();

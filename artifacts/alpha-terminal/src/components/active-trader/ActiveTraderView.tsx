@@ -41,6 +41,11 @@ import {
 } from "@/lib/active-trader/atSettingsPanelState";
 import { LadderBody, type LadderRowModel } from "./LadderBody";
 import { AtLadderSkeleton } from "./AtLadderSkeleton";
+import { AtKeyLevelsStrip } from "./AtKeyLevelsStrip";
+import { AT_LADDER_GRID, AT_LADDER_ROW_H } from "@/lib/active-trader/atLadderLayout";
+import { Maximize2 } from "lucide-react";
+import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
+import { useUICustomizationStore } from "@/lib/ui-customization-store";
 
 export interface AtExpirationGroup {
   expiration: string;
@@ -248,11 +253,10 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     [symbolClass],
   );
 
-  const handleCellTap = useCallback((contract: OptionsContract, type: "CALL" | "PUT") => {
-    setSelected({ contract, type });
-    setTradeContext({ contract, type });
-    setTradeStripStrike(contract.strike);
-  }, []);
+  const headerMode = useUICustomizationStore((s) => s.headerMode);
+  const restoreSavedHeaderMode = useAtChromeStore((s) => s.restoreSavedHeaderMode);
+  const reapplyAtCompactHeader = useAtChromeStore((s) => s.reapplyAtCompactHeader);
+  const atHeaderCompact = headerMode === "collapsed";
 
   const selectedTick = useOptionTick(selected?.contract.streamKey);
   const templatePrimaryInstruction = useMemo((): SchwabInstruction => {
@@ -375,6 +379,21 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     [prefs, tradingHash, blockLiveSend, onOpenReview, symbol],
   );
 
+  const handleQuoteTap = useCallback((contract: OptionsContract, type: "CALL" | "PUT", _side: "BUY" | "SELL") => {
+    setSelected({ contract, type });
+    setTradeContext({ contract, type });
+    setTradeStripStrike(contract.strike);
+  }, []);
+
+  useEffect(() => {
+    const fx = getAtFixtureOverride();
+    if (!fx || fx.scene !== "strip" || !primary) return;
+    const row = primary.rows.find((r) => r.strike === (fx.tapStrike ?? 7545));
+    const contract = row?.call;
+    if (!contract) return;
+    handleQuoteTap(contract, "CALL", "BUY");
+  }, [primary, handleQuoteTap]);
+
   const instrumentLabel = useMemo(() => {
     if (selected) {
       const root = symbol.replace(/^\$/, "").slice(0, 4);
@@ -392,8 +411,10 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     });
   }, []);
 
-  const ladderHeaderTop = stickyOffset + chromeHeight;
-  const ladderMaxHeight = `max(180px, calc(100dvh - ${ladderHeaderTop + SUB_HEADER_H + 88}px))`;
+  const keyLevelsTop = stickyOffset + chromeHeight;
+  const ladderHeaderTop = keyLevelsTop + 28;
+  const ladderReserve = atHeaderCompact ? 52 : 88;
+  const ladderMaxHeight = `max(320px, calc(100dvh - ${ladderHeaderTop + AT_LADDER_ROW_H + ladderReserve}px))`;
 
   const expiryLabel = primary?.dateLabel ?? "\u2014";
   const dteLabel = primary ? (primary.dte === 0 ? "0DTE" : `${primary.dte}D`) : "0DTE";
@@ -414,9 +435,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             autoSendArmBlock={autoSendArmBlock}
             accountLabel={accountLabel}
             isPaper={isPaper}
-            regimeLabel={presentation?.regimeLabel ?? regimeLabel}
-            regimeDegraded={presentation?.regimeDegraded ?? regimeDegraded}
-            zones={zones}
             sessionLabel={presentation?.sessionLabel}
             laneFilters={laneFilters}
             onToggleLane={toggleLane}
@@ -432,27 +450,60 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         </div>
       </div>
 
+      <div style={{ top: keyLevelsTop }} className="sticky z-[38]">
+        <AtKeyLevelsStrip
+          accentHex={accentHex}
+          zones={zones}
+          regimeLabel={presentation?.regimeLabel ?? regimeLabel}
+          regimeDegraded={presentation?.regimeDegraded ?? regimeDegraded}
+        />
+        {!atHeaderCompact ? (
+          <button
+            type="button"
+            className="w-full text-center py-0.5"
+            style={{ fontSize: 9, color: DIM, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
+            onClick={() => reapplyAtCompactHeader()}
+          >
+            <Maximize2 className="inline w-2.5 h-2.5 mr-1 opacity-60" style={{ verticalAlign: "middle" }} />
+            Compact header
+          </button>
+        ) : (
+          <button
+            type="button"
+            data-at-expand-header
+            className="w-full text-center py-0.5"
+            style={{ fontSize: 9, color: DIM, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
+            onClick={() => restoreSavedHeaderMode()}
+          >
+            <Maximize2 className="inline w-2.5 h-2.5 mr-1" style={{ verticalAlign: "middle" }} />
+            Full header
+          </button>
+        )}
+      </div>
+
       <div
-        className="sticky z-[36] grid px-1"
+        className="sticky z-[36] grid items-center px-0.5"
         style={{
           top: ladderHeaderTop,
-          height: SUB_HEADER_H,
-          gridTemplateColumns: "1fr 1.1fr 44px 1.1fr 1fr",
+          height: AT_LADDER_ROW_H,
+          gridTemplateColumns: AT_LADDER_GRID,
           background: BG_HEADER,
           borderBottom: `1px solid ${BORDER}`,
           fontFamily: MONO,
-          fontSize: 10,
+          fontSize: 9,
           color: DIM,
           fontWeight: FW_LIGHT,
-          letterSpacing: "0.08em",
+          letterSpacing: "0.06em",
           textTransform: "uppercase",
         }}
       >
-        <span className="text-center" style={{ letterSpacing: "0.08em" }}>Put flow</span>
-        <span data-ui-audit="at-puts-hdr" className="text-center" style={{ fontSize: 12, letterSpacing: "0.08em", fontWeight: 600, color: GRAY }}>Puts</span>
-        <span className="text-center" style={{ fontSize: 9, color: WHITE, fontWeight: 600, letterSpacing: "0.08em" }}>Strike</span>
-        <span className="text-center" style={{ fontSize: 12, letterSpacing: "0.08em", fontWeight: 600, color: GRAY }}>Calls</span>
-        <span className="text-center" style={{ letterSpacing: "0.08em" }}>Call flow</span>
+        <span />
+        <span className="text-right pr-1" data-ui-audit="at-puts-hdr">Bid</span>
+        <span className="text-right pr-1">Ask</span>
+        <span className="text-center" style={{ color: WHITE, fontWeight: 600 }}>Strike</span>
+        <span className="text-right pr-1">Bid</span>
+        <span className="text-right pr-1">Ask</span>
+        <span />
       </div>
 
       <div style={{ ...noScrollbar, maxHeight: ladderMaxHeight, overflowY: "auto" }}>
@@ -462,12 +513,10 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           accentHex={accentHex}
           underlyingPrice={underlyingPrice}
           zones={zones}
-          maxFlow={1}
           laneFilters={laneFilters}
-          windowMs={windowSec * 1000}
           tradeStripStrike={tradeStripStrike}
           tradeContext={tradeContext}
-          onCellTap={handleCellTap}
+          onQuoteTap={handleQuoteTap}
           onTradeStripSell={(c, t) => handleTradeIntent(c, "SELL", t)}
           onTradeStripBuy={(c, t) => handleTradeIntent(c, "BUY", t)}
           onAddLeg={onAddLeg}

@@ -7,11 +7,16 @@ const BASE = "http://127.0.0.1:3000/dev/active-trader";
 const MOCKUP = "/home/ubuntu/.cursor/projects/agent-repos-Alpha-Terminal/assets/mockup_20261117.png";
 
 const scenes = [
-  { name: "at-01-default-440x956.png", url: `${BASE}?scene=default`, wait: "PUT FLOW" },
-  { name: "at-01-settings-expanded-440x956.png", url: `${BASE}?scene=settings-expanded`, wait: "SESSION REGIME" },
-  { name: "at-02-trade-strip-440x956.png", url: `${BASE}?scene=strip`, wait: "PUT FLOW" },
-  { name: "at-03-confirm-disabled-440x956.png", url: `${BASE}?scene=confirm`, wait: "Trigger order summary" },
-  { name: "at-04-chain-unchanged-440x956.png", url: `${BASE}?scene=chain`, wait: "CALLS" },
+  { name: "at-01-default-440x956.png", url: `${BASE}?scene=default`, waitSelector: "[data-at-key-levels]" },
+  { name: "at-01-focus-off-440x956.png", url: `${BASE}?scene=focus-off`, waitSelector: "[data-at-key-levels]" },
+  { name: "at-01-settings-expanded-440x956.png", url: `${BASE}?scene=settings-expanded`, waitSelector: "[data-at-key-levels]" },
+  {
+    name: "at-02-trade-strip-440x956.png",
+    url: `${BASE}?scene=strip`,
+    waitSelector: "[data-at-trade-strip]",
+  },
+  { name: "at-03-confirm-disabled-440x956.png", url: `${BASE}?scene=confirm`, waitText: "Trigger order summary" },
+  { name: "at-04-chain-unchanged-440x956.png", url: `${BASE}?scene=chain`, waitText: "CALLS" },
 ];
 
 await mkdir(OUT, { recursive: true });
@@ -25,11 +30,16 @@ const page = await context.newPage();
 
 for (const scene of scenes) {
   await page.goto(scene.url, { waitUntil: "domcontentloaded", timeout: 60_000 });
-  await page
-    .waitForFunction((needle) => document.body?.innerText?.includes(needle), scene.wait, {
-      timeout: 45_000,
-    })
-    .catch(() => undefined);
+  if (scene.waitSelector) {
+    await page.waitForSelector(scene.waitSelector, { timeout: 45_000 }).catch(() => undefined);
+  }
+  if (scene.waitText) {
+    await page
+      .waitForFunction((needle) => document.body?.innerText?.includes(needle), scene.waitText, {
+        timeout: 45_000,
+      })
+      .catch(() => undefined);
+  }
   const delay = scene.name.includes("strip")
     ? 1500
     : scene.name.includes("confirm")
@@ -39,8 +49,8 @@ for (const scene of scenes) {
         : 1200;
   await page.waitForTimeout(delay);
   if (scene.name.includes("01-default")) {
-    const rowCount = await page.locator("[data-at-call-strike]").count();
-    console.log(`Ladder strike rows visible in DOM: ${rowCount}`);
+    const rowCount = await page.locator("[data-at-strike]").count();
+    console.log(`Ladder strike rows in DOM: ${rowCount}`);
   }
   await page.screenshot({ path: path.join(OUT, scene.name), fullPage: false });
 }
@@ -79,7 +89,7 @@ if (chainClip) {
 
 await page.goto(`${BASE}?scene=default`, { waitUntil: "networkidle" });
 await page.waitForTimeout(800);
-const atStrike = await page.locator('[data-at-call-strike="7540"]').boundingBox();
+const atStrike = await page.locator('[data-at-strike="7540"]').boundingBox();
 if (atStrike) {
   await page.screenshot({
     path: path.join(OUT, "at-font-compare-at-crop.png"),

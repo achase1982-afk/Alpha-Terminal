@@ -20,6 +20,8 @@ import {
   seedSpxFixtureFlow,
 } from "./spxFixture";
 import type { OptionsContract } from "@/components/OptionsTab";
+import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
+import { useUICustomizationStore } from "@/lib/ui-customization-store";
 
 function buildFixtureChainResponse(): OptionChainResponse {
   const groups = buildSpxFixtureGroups();
@@ -41,9 +43,25 @@ export function registerAtFixtureFromLocation(): void {
 
   const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
   const sceneParam = params.get("scene") ?? "default";
-  const scene = (sceneParam === "settings-expanded" ? "default" : sceneParam) as AtFixtureOverride["scene"];
+  const scene = (
+    sceneParam === "settings-expanded" || sceneParam === "focus-off" ? "default" : sceneParam
+  ) as AtFixtureOverride["scene"];
   const settingsPanelOpen = sceneParam === "settings-expanded" || params.get("panel") === "open";
+  const focusOff = sceneParam === "focus-off" || params.get("focus") === "off";
   const initialSubView = scene === "chain" ? "chain" : "at";
+
+  const headerParam = params.get("header");
+  if (headerParam === "full") {
+    useUICustomizationStore.getState().setHeaderMode("expanded");
+  } else if (headerParam === "compact") {
+    useUICustomizationStore.getState().setHeaderMode("collapsed");
+  }
+  if (initialSubView === "at") {
+    useAtChromeStore.getState().enterActiveTrader();
+    if (focusOff) {
+      useAtChromeStore.getState().restoreSavedHeaderMode();
+    }
+  }
 
   setAtFixtureOverride({
     enabled: true,

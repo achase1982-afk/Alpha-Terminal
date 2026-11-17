@@ -6,9 +6,7 @@ import {
 import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
 import { buildAtSettingsSummary } from "@/lib/active-trader/atSummaryFormat";
 import { AtBracketControls } from "./AtBracketControls";
-import type { ZoneModel } from "@/lib/active-trader/zonesModel";
 import { TemplateBar } from "./TemplateBar";
-import { RegimeStrip } from "./RegimeStrip";
 import { FilterStrip, type LaneFilterKey } from "./FilterStrip";
 import { AtTemplateLegPlan } from "./AtTemplateLegPlan";
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
@@ -31,9 +29,6 @@ interface AtSettingsPanelProps {
   onBuy: () => void;
   accountLabel: string;
   isPaper: boolean;
-  regimeLabel: string | null;
-  regimeDegraded: boolean;
-  zones: ZoneModel;
   sessionLabel?: string;
   laneFilters: Record<LaneFilterKey, boolean>;
   onToggleLane: (key: LaneFilterKey) => void;
@@ -59,9 +54,6 @@ export const AtSettingsPanel = memo(function AtSettingsPanel({
   onBuy,
   accountLabel,
   isPaper,
-  regimeLabel,
-  regimeDegraded,
-  zones,
   sessionLabel,
   laneFilters,
   onToggleLane,
@@ -167,14 +159,6 @@ export const AtSettingsPanel = memo(function AtSettingsPanel({
             onPrefsChange={onPrefsChange}
             primaryInstruction={primaryInstruction}
             entryPrice={limitMid}
-          />
-          <RegimeStrip
-            embedded
-            accentHex={accentHex}
-            regimeLabel={regimeLabel}
-            regimeDegraded={regimeDegraded}
-            zones={zones}
-            sessionLabel={sessionLabel}
           />
           <FilterStrip
             embedded

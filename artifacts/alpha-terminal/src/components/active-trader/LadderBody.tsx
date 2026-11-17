@@ -1,15 +1,13 @@
-import { memo, useMemo } from "react";
+import { memo, useMemo, type ReactNode } from "react";
 import type { OptionsContract } from "@/components/OptionsTab";
 import {
-  ROW_H, STRIKE_W, BORDER_ROW, BORDER, UP, DOWN, DIM, WHITE, GRAY, MUTED,
+  STRIKE_W, BORDER_ROW, BORDER, UP, DOWN, GRAY, WHITE,
   BG, MONO, FW_LIGHT, FW_PREMIUM, GAMMA_SCENARIO, ITM_OCEAN,
 } from "@/components/options/optionsTheme";
 import { useOptionTick } from "@/lib/options-stream-store";
-import {
-  flowBadgeFromCounts, type FlowLaneCounts,
-} from "@/lib/active-trader/flowClassifier";
-import { formatCompactQty } from "@/lib/optionsSchwabKey";
+import { flowBadgeFromCounts, type FlowLaneCounts } from "@/lib/active-trader/flowClassifier";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
+import { AT_LADDER_GRID, AT_LADDER_ROW_H } from "@/lib/active-trader/atLadderLayout";
 
 export interface LadderRowModel {
   strike: number;
@@ -22,56 +20,107 @@ interface LadderBodyProps {
   accentHex: string;
   underlyingPrice: number | null;
   zones: ZoneModel;
-  maxFlow: number;
   laneFilters: Record<"call_buy" | "call_sell" | "put_buy" | "put_sell", boolean>;
-  windowMs: number;
   tradeStripStrike: number | null;
-  onCellTap: (contract: OptionsContract, type: "CALL" | "PUT") => void;
+  onQuoteTap: (contract: OptionsContract, type: "CALL" | "PUT", side: "BUY" | "SELL") => void;
   onTradeStripSell: (contract: OptionsContract, type: "CALL" | "PUT") => void;
   onTradeStripBuy: (contract: OptionsContract, type: "CALL" | "PUT") => void;
   onAddLeg: (contract: OptionsContract, type: "CALL" | "PUT") => void;
   positionQtyByKey: Map<string, number>;
+  workingOrderChips?: Map<string, string>;
   flowByKey: Record<string, FlowLaneCounts>;
   tradeContext: { contract: OptionsContract; type: "CALL" | "PUT" } | null;
   symbolLabel: string;
 }
 
-function classifiedVol(c: FlowLaneCounts): number {
-  return c.buy + c.sell + c.even;
+function fmtPx(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  return n.toFixed(2);
 }
 
-function FlowBar({ value, max, color, align }: { value: number; max: number; color: string; align: "left" | "right" }) {
-  if (value <= 0 || max <= 0) return <div className="w-full h-[6px]" />;
-  const pct = Math.min(100, Math.max(8, Math.round((value / max) * 100)));
+function FlowBarCell({
+  flow,
+  laneFilters,
+  side,
+  maxFlow,
+}: {
+  flow: FlowLaneCounts;
+  laneFilters: LadderBodyProps["laneFilters"];
+  side: "put" | "call";
+  maxFlow: number;
+}) {
+  const vol =
+    (side === "put"
+      ? (laneFilters.put_buy ? flow.buy : 0) + (laneFilters.put_sell ? flow.sell : 0)
+      : (laneFilters.call_buy ? flow.buy : 0) + (laneFilters.call_sell ? flow.sell : 0)) || flow.buy + flow.sell;
+  const badge = flowBadgeFromCounts(flow);
+  const color = side === "put" ? DOWN : UP;
+  const align = side === "put" ? "left" : "right";
+  const pct = maxFlow > 0 ? Math.min(100, Math.max(vol > 0 ? 10 : 0, Math.round((vol / maxFlow) * 100))) : 0;
+  const tip = `Flow ${vol} · B:${flow.buy} S:${flow.sell}${badge ? ` · ${badge}` : ""}`;
   return (
     <div
-      className="w-full h-[6px] rounded-sm overflow-hidden flex items-center px-0.5"
-      style={{ background: "rgba(255,255,255,0.03)" }}
+      className="flex items-center h-full px-0.5"
+      title={tip}
+      style={{ justifyContent: align === "right" ? "flex-end" : "flex-start" }}
     >
-      <div
-        className="h-[4px] rounded-sm"
-        style={{
-          width: `${pct}%`,
-          marginLeft: align === "right" ? "auto" : 0,
-          marginRight: align === "left" ? "auto" : 0,
-          background: `linear-gradient(${align === "right" ? "90deg" : "270deg"}, ${color}cc, ${color}22)`,
-          boxShadow: `0 0 6px ${color}33`,
-        }}
-      />
+      <div className="w-full max-w-[52px] h-[6px] rounded-sm overflow-hidden" style={{ background: "rgba(255,255,255,0.04)" }}>
+        {vol > 0 && (
+          <div
+            className="h-full rounded-sm flex items-center justify-end pr-0.5"
+            style={{
+              width: `${pct}%`,
+              marginLeft: align === "right" ? "auto" : 0,
+              background: `linear-gradient(${align === "right" ? "90deg" : "270deg"}, ${color}cc, ${color}22)`,
+            }}
+          >
+            {vol >= 100 && (
+              <span style={{ fontSize: 7, color: WHITE, opacity: 0.85 }}>{vol >= 1000 ? `${Math.round(vol / 100) / 10}k` : vol}</span>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-function Badge({ b }: { b: "B" | "S" | "=" | null }) {
-  if (!b) return null;
-  const color = b === "B" ? UP : b === "S" ? DOWN : GRAY;
+function QuoteCell({
+  price,
+  tint,
+  strike,
+  leg,
+  type,
+  side,
+  onQuoteTap,
+  dataAttr,
+}: {
+  price: number | null;
+  tint: "bid" | "ask";
+  strike: number;
+  leg: OptionsContract | null;
+  type: "CALL" | "PUT";
+  side: "BUY" | "SELL";
+  onQuoteTap: LadderBodyProps["onQuoteTap"];
+  dataAttr?: string;
+}) {
+  const bg = tint === "bid" ? `${DOWN}14` : `${UP}14`;
   return (
-    <span
-      className="inline-flex items-center justify-center rounded"
-      style={{ width: 14, height: 14, fontSize: 9, color, background: `${color}26`, fontFamily: MONO }}
+    <button
+      type="button"
+      data-at-quote={dataAttr}
+      className="w-full h-full flex items-center justify-end px-1"
+      style={{
+        fontSize: 12,
+        fontWeight: FW_LIGHT,
+        fontVariantNumeric: "tabular-nums",
+        color: WHITE,
+        background: bg,
+        borderRight: tint === "bid" ? `1px solid ${BORDER_ROW}` : undefined,
+      }}
+      onClick={() => leg && onQuoteTap(leg, type, side)}
     >
-      {b}
-    </span>
+      {fmtPx(price)}
+    </button>
   );
 }
 
@@ -80,19 +129,20 @@ type LadderRowViewProps = {
   accentHex: string;
   zones: ZoneModel;
   maxFlow: number;
-  laneFilters: Record<"call_buy" | "call_sell" | "put_buy" | "put_sell", boolean>;
+  laneFilters: LadderBodyProps["laneFilters"];
   showTradeStrip: boolean;
-  onCellTap: LadderBodyProps["onCellTap"];
+  onQuoteTap: LadderBodyProps["onQuoteTap"];
   onTradeStripSell: LadderBodyProps["onTradeStripSell"];
   onTradeStripBuy: LadderBodyProps["onTradeStripBuy"];
   onAddLeg: LadderBodyProps["onAddLeg"];
   positionQtyByKey: Map<string, number>;
+  workingOrderChips?: Map<string, string>;
   flowByKey: Record<string, FlowLaneCounts>;
   tradeContext: { contract: OptionsContract; type: "CALL" | "PUT" } | null;
   underlyingPrice: number | null;
   symbolLabel: string;
-  showFlipPill: boolean;
-  nextStrike: number | null;
+  spotBetweenRows: boolean;
+  flipBetweenRows: boolean;
 };
 
 const LadderRowView = memo(function LadderRowView({
@@ -102,110 +152,113 @@ const LadderRowView = memo(function LadderRowView({
   maxFlow,
   laneFilters,
   showTradeStrip,
-  onCellTap,
+  onQuoteTap,
   onTradeStripSell,
   onTradeStripBuy,
   onAddLeg,
   positionQtyByKey,
+  workingOrderChips,
   flowByKey,
   tradeContext,
   underlyingPrice,
   symbolLabel,
-  showFlipPill,
-  nextStrike,
+  spotBetweenRows,
+  flipBetweenRows,
 }: LadderRowViewProps) {
   const callTick = useOptionTick(row.call?.streamKey);
   const putTick = useOptionTick(row.put?.streamKey);
   const callFlow = row.call?.streamKey ? flowByKey[row.call.streamKey] ?? { buy: 0, sell: 0, even: 0, unknown: 0 } : { buy: 0, sell: 0, even: 0, unknown: 0 };
   const putFlow = row.put?.streamKey ? flowByKey[row.put.streamKey] ?? { buy: 0, sell: 0, even: 0, unknown: 0 } : { buy: 0, sell: 0, even: 0, unknown: 0 };
 
-  const putFlowNet =
-    (laneFilters.put_buy ? putFlow.buy : 0) + (laneFilters.put_sell ? putFlow.sell : 0);
-  const callFlowNet =
-    (laneFilters.call_buy ? callFlow.buy : 0) + (laneFilters.call_sell ? callFlow.sell : 0);
-
-  const putBadge = flowBadgeFromCounts(putFlow);
-  const callBadge = flowBadgeFromCounts(callFlow);
-
   const spotRow =
     underlyingPrice != null && Math.abs(row.strike - underlyingPrice) < Math.max(underlyingPrice * 0.0005, 0.05);
-  const flipBeforeRow =
-    zones.flip != null &&
-    nextStrike != null &&
-    row.strike > zones.flip &&
-    nextStrike <= zones.flip;
   const isCallWall = zones.callWall != null && Math.abs(row.strike - zones.callWall) < 0.001;
   const isPutWall = zones.putWall != null && Math.abs(row.strike - zones.putWall) < 0.001;
 
-  const renderPosition = (key: string | undefined) => {
+  const renderBadges = (key: string | undefined) => {
     if (!key) return null;
+    const chips: ReactNode[] = [];
     const q = positionQtyByKey.get(key);
-    if (q == null || q === 0) return null;
-    const sign = q > 0 ? "+" : "\u2212";
-    return (
-      <span
-        className="px-0.5 rounded"
-        style={{
-          fontSize: 9,
-          fontWeight: FW_PREMIUM,
-          color: q > 0 ? UP : DOWN,
-          background: q > 0 ? `${UP}18` : `${DOWN}18`,
-        }}
-      >
-        {sign}{Math.abs(q)}
-      </span>
-    );
+    if (q != null && q !== 0) {
+      const sign = q > 0 ? "+" : "−";
+      chips.push(
+        <span
+          key="pos"
+          className="px-0.5 rounded"
+          style={{ fontSize: 8, fontWeight: FW_PREMIUM, color: q > 0 ? UP : DOWN, background: q > 0 ? `${UP}22` : `${DOWN}22` }}
+        >
+          {sign}
+          {Math.abs(q)}
+        </span>,
+      );
+    }
+    const work = workingOrderChips?.get(key);
+    if (work) {
+      chips.push(
+        <span key="ord" className="px-0.5 rounded border" style={{ fontSize: 7, color: GRAY, borderColor: BORDER }}>
+          {work}
+        </span>,
+      );
+    }
+    return chips.length ? <div className="absolute top-0.5 right-0.5 flex gap-px">{chips}</div> : null;
+  };
+
+  const rowStyle: React.CSSProperties = {
+    gridTemplateColumns: AT_LADDER_GRID,
+    height: AT_LADDER_ROW_H,
+    borderBottom: `1px solid ${BORDER_ROW}`,
+    fontFamily: MONO,
+    position: "relative",
+    background: spotRow ? ITM_OCEAN : BG,
+    boxShadow: isCallWall ? `inset 3px 0 0 ${accentHex}` : isPutWall ? `inset 3px 0 0 ${DOWN}` : undefined,
   };
 
   return (
     <>
-      {flipBeforeRow && (
-        <div className="relative w-full flex items-center" style={{ height: 8 }}>
-          <div className="absolute inset-x-0 top-1/2" style={{ borderTop: `1px dashed ${GAMMA_SCENARIO}` }} />
-          {showFlipPill && zones.flip != null && (
-            <span
-              className="absolute right-1 px-1.5 py-0.5 rounded-full"
-              style={{ fontSize: 9, color: GAMMA_SCENARIO, border: `1px solid ${GAMMA_SCENARIO}`, background: BG, fontFamily: MONO }}
-            >
-              Flip {zones.flip.toFixed(0)}
-            </span>
-          )}
+      {spotBetweenRows && (
+        <div className="relative w-full grid" style={{ gridTemplateColumns: AT_LADDER_GRID, height: 6 }}>
+          <div style={{ gridColumn: "1 / -1" }} />
+          <div
+            className="flex items-center justify-center col-start-4"
+            style={{ borderTop: `1px dashed ${accentHex}99` }}
+          >
+            <span style={{ fontSize: 7, color: accentHex, background: BG, padding: "0 4px", marginTop: -5 }}>SPX {underlyingPrice?.toFixed(0)}</span>
+          </div>
         </div>
       )}
-      <div
-        className="grid items-center w-full"
-        style={{
-          gridTemplateColumns: "1fr 1.1fr 44px 1.1fr 1fr",
-          height: ROW_H,
-          borderBottom: `1px solid ${BORDER_ROW}`,
-          fontFamily: MONO,
-          background: spotRow ? ITM_OCEAN : undefined,
-          boxShadow: spotRow ? `inset 0 0 0 1px ${accentHex}55` : undefined,
-        }}
-      >
-        <FlowBar value={putFlowNet} max={maxFlow} color={DOWN} align="left" />
-        <button
-          type="button"
-          data-at-put-cell={row.strike}
-          className="flex items-center justify-center gap-1 px-1 h-full"
-          style={{
-            fontSize: 12,
-            color: WHITE,
-            fontWeight: FW_LIGHT,
-            fontVariantNumeric: "tabular-nums",
-            letterSpacing: "0.01em",
-            background: "transparent",
-          }}
-          onClick={() => row.put && onCellTap(row.put, "PUT")}
-        >
-          <span style={{ fontVariantNumeric: "tabular-nums" }}>
-            {formatCompactQty(classifiedVol(putFlow) || putTick?.volume)}
-          </span>
-          <Badge b={putBadge} />
-          {renderPosition(row.put?.streamKey)}
-        </button>
+      {flipBetweenRows && zones.flip != null && (
         <div
-          className="flex flex-col items-center justify-center h-full px-0.5"
+          className="relative w-full grid items-start"
+          style={{ gridTemplateColumns: AT_LADDER_GRID, height: 6, marginTop: -1 }}
+        >
+          <div style={{ gridColumn: "1 / 7", borderTop: `1px dotted ${GAMMA_SCENARIO}`, marginTop: 3 }} />
+          <FlipPill flip={zones.flip} />
+        </div>
+      )}
+      <div className="grid items-stretch w-full" style={rowStyle}>
+        <FlowBarCell flow={putFlow} laneFilters={laneFilters} side="put" maxFlow={maxFlow} />
+        <QuoteCell
+          price={putTick?.bid ?? null}
+          tint="bid"
+          strike={row.strike}
+          leg={row.put}
+          type="PUT"
+          side="SELL"
+          onQuoteTap={onQuoteTap}
+          dataAttr={`put-bid-${row.strike}`}
+        />
+        <QuoteCell
+          price={putTick?.ask ?? null}
+          tint="ask"
+          strike={row.strike}
+          leg={row.put}
+          type="PUT"
+          side="BUY"
+          onQuoteTap={onQuoteTap}
+          dataAttr={`put-ask-${row.strike}`}
+        />
+        <div
+          className="relative flex flex-col items-center justify-center h-full"
           style={{
             width: STRIKE_W,
             background: accentHex,
@@ -213,69 +266,83 @@ const LadderRowView = memo(function LadderRowView({
             fontSize: 12,
             fontWeight: FW_LIGHT,
             fontVariantNumeric: "tabular-nums",
-            lineHeight: 1,
           }}
+          data-at-strike={row.strike}
         >
+          {renderBadges(row.call?.streamKey ?? row.put?.streamKey)}
           <span>{row.strike % 1 === 0 ? row.strike : row.strike.toFixed(1)}</span>
-          {spotRow && <span style={{ fontSize: 8, opacity: 0.7 }}>{symbolLabel}</span>}
-          {isCallWall && !spotRow && <span style={{ fontSize: 7, color: "black", opacity: 0.55 }}>CALL WALL</span>}
-          {isPutWall && !spotRow && <span style={{ fontSize: 7, color: "black", opacity: 0.55 }}>PUT WALL</span>}
+          {isCallWall && <span style={{ fontSize: 7, opacity: 0.65 }}>CALL WALL</span>}
+          {isPutWall && <span style={{ fontSize: 7, opacity: 0.65 }}>PUT WALL</span>}
+          {spotRow && !isCallWall && !isPutWall && <span style={{ fontSize: 7, opacity: 0.65 }}>{symbolLabel}</span>}
         </div>
-        <button
-          type="button"
-          data-at-call-strike={row.strike}
-          className="flex items-center justify-center gap-1 px-1 h-full"
-          style={{
-            fontSize: 12,
-            color: WHITE,
-            fontWeight: FW_LIGHT,
-            fontVariantNumeric: "tabular-nums",
-            letterSpacing: "0.01em",
-            background: "transparent",
-          }}
-          onClick={() => row.call && onCellTap(row.call, "CALL")}
-        >
-          <span style={{ fontVariantNumeric: "tabular-nums" }}>
-            {formatCompactQty(classifiedVol(callFlow) || callTick?.volume)}
-          </span>
-          <Badge b={callBadge} />
-          {renderPosition(row.call?.streamKey)}
-        </button>
-        <FlowBar value={callFlowNet} max={maxFlow} color={UP} align="right" />
+        <QuoteCell
+          price={callTick?.bid ?? null}
+          tint="bid"
+          strike={row.strike}
+          leg={row.call}
+          type="CALL"
+          side="SELL"
+          onQuoteTap={onQuoteTap}
+          dataAttr={`call-bid-${row.strike}`}
+        />
+        <QuoteCell
+          price={callTick?.ask ?? null}
+          tint="ask"
+          strike={row.strike}
+          leg={row.call}
+          type="CALL"
+          side="BUY"
+          onQuoteTap={onQuoteTap}
+          dataAttr={`call-ask-${row.strike}`}
+        />
+        <FlowBarCell flow={callFlow} laneFilters={laneFilters} side="call" maxFlow={maxFlow} />
       </div>
       {showTradeStrip && tradeContext && (
         <div
           className="grid grid-cols-3 items-center px-2"
           style={{
-            height: ROW_H,
+            height: AT_LADDER_ROW_H,
             borderBottom: `1px solid ${BORDER_ROW}`,
             background: "linear-gradient(180deg, rgba(10,10,10,1), rgba(0,0,0,1))",
             borderTop: `1px solid ${accentHex}30`,
             fontFamily: MONO,
             fontSize: 12,
           }}
+          data-at-trade-strip
         >
-          <button
-            type="button"
-            style={{ color: DOWN }}
-            onClick={() => onTradeStripSell(tradeContext.contract, tradeContext.type)}
-          >
-            SELL {(tradeContext.type === "PUT" ? putTick : callTick)?.bid?.toFixed(2) ?? "\u2014"}
+          <button type="button" style={{ color: DOWN, textAlign: "left" }} onClick={() => onTradeStripSell(tradeContext.contract, tradeContext.type)}>
+            SELL {fmtPx((tradeContext.type === "PUT" ? putTick : callTick)?.bid)}
           </button>
-          <button type="button" style={{ color: GRAY }} onClick={() => onAddLeg(tradeContext.contract, tradeContext.type)}>+ Leg</button>
-          <button
-            type="button"
-            className="text-right"
-            style={{ color: UP }}
-            onClick={() => onTradeStripBuy(tradeContext.contract, tradeContext.type)}
-          >
-            BUY {(tradeContext.type === "PUT" ? putTick : callTick)?.ask?.toFixed(2) ?? "\u2014"}
+          <button type="button" style={{ color: GRAY, textAlign: "center" }} onClick={() => onAddLeg(tradeContext.contract, tradeContext.type)}>
+            + Leg
+          </button>
+          <button type="button" style={{ color: UP, textAlign: "right" }} onClick={() => onTradeStripBuy(tradeContext.contract, tradeContext.type)}>
+            BUY {fmtPx((tradeContext.type === "PUT" ? putTick : callTick)?.ask)}
           </button>
         </div>
       )}
     </>
   );
 });
+
+function FlipPill({ flip }: { flip: number }) {
+  return (
+    <span className="flex items-start justify-end pr-0.5 col-start-7" style={{ marginTop: -5 }}>
+      <span
+        className="px-1 rounded-full whitespace-nowrap"
+        style={{
+          fontSize: 8,
+          color: GAMMA_SCENARIO,
+          border: `1px solid ${GAMMA_SCENARIO}`,
+          background: BG,
+          fontFamily: MONO,
+        }}
+      >
+        Flip {flip.toFixed(0)}
+      </span>
+    </span>
+  );
+}
 
 export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
   const maxFlow = useMemo(() => {
@@ -292,30 +359,44 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
 
   return (
     <div>
-      {props.rows.map((row, i) => (
-        <LadderRowView
-          key={row.strike}
-          row={row}
-          nextStrike={props.rows[i + 1]?.strike ?? null}
-          accentHex={props.accentHex}
-          zones={props.zones}
-          maxFlow={maxFlow}
-          laneFilters={props.laneFilters}
-          showTradeStrip={props.tradeStripStrike === row.strike}
-          underlyingPrice={props.underlyingPrice}
-          symbolLabel={props.symbolLabel}
-          showFlipPill
-          onCellTap={props.onCellTap}
-          onTradeStripSell={props.onTradeStripSell}
-          onTradeStripBuy={props.onTradeStripBuy}
-          onAddLeg={props.onAddLeg}
-          positionQtyByKey={props.positionQtyByKey}
-          flowByKey={props.flowByKey}
-          tradeContext={
-            props.tradeStripStrike === row.strike && props.tradeContext ? props.tradeContext : null
-          }
-        />
-      ))}
+      {props.rows.map((row, i) => {
+        const next = props.rows[i + 1];
+        const spotBetween =
+          props.underlyingPrice != null &&
+          next != null &&
+          row.strike > props.underlyingPrice &&
+          next.strike <= props.underlyingPrice;
+        const flipBetween =
+          props.zones.flip != null &&
+          next != null &&
+          row.strike > props.zones.flip &&
+          next.strike <= props.zones.flip;
+        return (
+          <LadderRowView
+            key={row.strike}
+            row={row}
+            accentHex={props.accentHex}
+            zones={props.zones}
+            maxFlow={maxFlow}
+            laneFilters={props.laneFilters}
+            showTradeStrip={props.tradeStripStrike === row.strike}
+            underlyingPrice={props.underlyingPrice}
+            symbolLabel={props.symbolLabel}
+            spotBetweenRows={spotBetween}
+            flipBetweenRows={flipBetween}
+            onQuoteTap={props.onQuoteTap}
+            onTradeStripSell={props.onTradeStripSell}
+            onTradeStripBuy={props.onTradeStripBuy}
+            onAddLeg={props.onAddLeg}
+            positionQtyByKey={props.positionQtyByKey}
+            workingOrderChips={props.workingOrderChips}
+            flowByKey={props.flowByKey}
+            tradeContext={
+              props.tradeStripStrike === row.strike && props.tradeContext ? props.tradeContext : null
+            }
+          />
+        );
+      })}
     </div>
   );
 });
