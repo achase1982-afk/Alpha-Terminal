@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { getAuth } from "@clerk/express";
 import { emitTelemetry } from "../lib/telemetryStore.js";
+import { logger } from "../lib/logger.js";
 
 /**
  * Skip paths where `res.on("finish")` reflects connection lifetime, not handler latency:
@@ -55,21 +56,21 @@ export function httpTimingMiddleware(req: Request, res: Response, next: NextFunc
 
     const status = res.statusCode;
     const level = status >= 500 ? "ERROR" : status >= 400 ? "WARN" : "INFO";
+    const fields = { method: req.method, path: pathPattern, status, duration_ms, user_id };
 
     if (shouldSkipHttpTelemetryEmit(req.path, req.method)) {
       return;
     }
 
+    if (status < 400) {
+      logger.info(fields, "http_request_completed");
+      return;
+    }
+
     try {
-      emitTelemetry(
-        "HTTP",
-        level,
-        "http_request_completed",
-        { method: req.method, path: pathPattern, status, duration_ms, user_id },
-        "HTTP",
-      );
+      emitTelemetry("HTTP", level, "http_request_completed", fields, "HTTP");
     } catch (err) {
-      console.error("[httpTiming] emit failed", err);
+      logger.error({ err }, "[httpTiming] emit failed");
     }
   });
 

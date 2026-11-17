@@ -1,5 +1,6 @@
 import { db, telemetryEventsTable } from "@workspace/db";
 import { logger } from "./logger.js";
+import { redactTelemetryDetails } from "./telemetryRedact.js";
 
 export type TelemetrySystem =
   | "SCHWAB_API"
@@ -19,7 +20,10 @@ export type TelemetrySystem =
   | "POLYGON_API"
   | "DATABASE"
   | "API"
-  | "HTTP";
+  | "HTTP"
+  | "ALPACA"
+  | "FINNHUB"
+  | "UNUSUAL_WHALES";
 
 export type TelemetryFeature =
   | "MARKET_PULSE"
@@ -65,21 +69,28 @@ export function emitTelemetry(
   feature?: TelemetryFeature,
   batchId?: string,
 ): void {
+  const safeDetails = redactTelemetryDetails(details) ?? null;
   const entry: TelemetryEvent = {
     id: nextId++,
     timestamp: new Date().toISOString(),
     system,
     severity,
     message,
-    details: details ?? null,
+    details: safeDetails,
     resolved: false,
     feature: feature ?? inferFeature(system, message),
     batchId: batchId ?? null,
   };
   events.push(entry);
-  unreadCounts[system] = (unreadCounts[system] ?? 0) + 1;
+  if (severity === "WARN" || severity === "ERROR") {
+    unreadCounts[system] = (unreadCounts[system] ?? 0) + 1;
+  }
   if (events.length > MAX_ENTRIES) {
     events.splice(0, events.length - MAX_ENTRIES);
+  }
+
+  if (severity !== "WARN" && severity !== "ERROR") {
+    return;
   }
 
   void db
@@ -90,7 +101,7 @@ export function emitTelemetry(
       level: severity,
       message,
       subsystem: feature ?? null,
-      details: details ?? {},
+      details: safeDetails ?? {},
       requestId: null,
     })
     .catch((err: unknown) => {

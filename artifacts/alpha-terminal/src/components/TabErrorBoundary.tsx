@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { enqueueBrowserTelemetry } from "@/lib/browserTelemetry";
 
 interface Props {
   children: ReactNode;
@@ -23,6 +24,16 @@ export class TabErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error(`[TabErrorBoundary:${this.props.tabName}]`, error, info.componentStack);
+    enqueueBrowserTelemetry({
+      level: "ERROR",
+      message: `TabErrorBoundary: ${this.props.tabName}`,
+      details: {
+        tabName: this.props.tabName,
+        error: error.message,
+        stack: error.stack,
+        componentStack: info.componentStack,
+      },
+    });
   }
 
   handleReload = () => {

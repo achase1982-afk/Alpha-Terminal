@@ -833,6 +833,11 @@ function scheduleReconnect(immediate = false) {
   reconnectAttempt++;
   const delay = immediate ? 0 : reconnectDelay + Math.random() * 1000;
   logger.info({ attempt: reconnectAttempt, delayMs: Math.round(delay), immediate }, "IB: reconnect scheduled");
+  void logFailure("IBKR", "WARN", "IB streamer reconnect scheduled", {
+    attempt: reconnectAttempt,
+    delayMs: Math.round(delay),
+    immediate,
+  });
   if (immediate) {
     reconnectDelay = RECONNECT_INTERVAL_MS;
     void connectIB();
@@ -849,6 +854,7 @@ function handleDisconnectOrError(immediate = false) {
   teardownIB();
   connState = "DISCONNECTED";
   emitStatus("disconnected");
+  void logFailure("IBKR", "WARN", "IB streamer disconnected", { immediate });
   scheduleReconnect(immediate);
 }
 

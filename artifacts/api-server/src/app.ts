@@ -10,6 +10,7 @@ import runFullBackfillRouter from "./routes/runFullBackfill";
 import { logger } from "./lib/logger";
 import { httpTimingMiddleware } from "./middleware/httpTiming";
 import { clerkAuthBridge } from "./middleware/clerkAuthBridge";
+import { httpErrorHandler } from "./middleware/httpErrorHandler";
 
 const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
 
@@ -122,5 +123,7 @@ if (DEV_BYPASS) {
   app.use("/api/admin/run-full-backfill", apiRequireAuth, runFullBackfillRouter);
   app.use("/api", apiRequireAuth, router);
 }
+
+app.use(httpErrorHandler);
 
 export default app;

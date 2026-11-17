@@ -7,6 +7,7 @@ import {
   deskMarkFeedError,
   deskMarkFeedRateLimited,
 } from "./deskFeedFreshness.js";
+import { logUpstreamFailure } from "../upstreamTelemetry.js";
 
 const log = {
   warn: (o: unknown, m?: string) => logger.warn(o, m),
@@ -156,6 +157,7 @@ export async function fetchFinnhubMarketGeneralNews(
     const res = await finnhubDeskHttpGet(url, mode, slotBudgetMs);
     if (!res.ok) {
       log.warn({ status: res.status }, "Finnhub general news HTTP failed");
+      logUpstreamFailure("FINNHUB", "/api/v1/news?category=general", res.status);
       return { ok: false, status: res.status, articles: [] };
     }
     const raw = await res.json();
@@ -166,6 +168,7 @@ export async function fetchFinnhubMarketGeneralNews(
       return { ok: false, status: 0, articles: [], skippedRateCap: true };
     }
     log.warn({ err }, "Finnhub general news fetch failed");
+    logUpstreamFailure("FINNHUB", "/api/v1/news?category=general", 0);
     return { ok: false, status: 0, articles: [] };
   }
 }
@@ -186,6 +189,7 @@ export async function deskFetchFinnhubCompanyNews(
     const res = await finnhubDeskHttpGet(url, mode, slotBudgetMs);
     if (!res.ok) {
       log.warn({ status: res.status, symbol: clean }, "Finnhub company news HTTP failed");
+      logUpstreamFailure("FINNHUB", `/api/v1/company-news?symbol=${clean}`, res.status);
       return { ok: false, status: res.status, articles: [] };
     }
     const raw = (await res.json()) as unknown;
@@ -196,6 +200,7 @@ export async function deskFetchFinnhubCompanyNews(
       return { ok: false, status: 0, articles: [], skippedRateCap: true };
     }
     log.warn({ err, symbol: clean }, "Finnhub company news fetch failed");
+    logUpstreamFailure("FINNHUB", `/api/v1/company-news?symbol=${clean}`, 0);
     return { ok: false, status: 0, articles: [] };
   }
 }

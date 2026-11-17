@@ -1,4 +1,5 @@
 import { resolveDeskAlpacaMarketKeys } from "./deskAlpacaResolve.js";
+import { logUpstreamFailure } from "../upstreamTelemetry.js";
 import {
   deskMarkFeedAuthError,
   deskMarkFeedError,
@@ -40,10 +41,12 @@ export async function deskAlpacaMarketQuotes(
     if (res.status === 401 || res.status === 403) {
       const err = `alpaca_http_${res.status}`;
       deskMarkFeedAuthError(feedId, err, source);
+      logUpstreamFailure("ALPACA", `/v2/stocks/${sym}/quotes/latest`, res.status);
       return { ok: false, quotes: [], asOfMs: Date.now(), status: res.status, error: err, source };
     }
     if (!res.ok) {
       deskMarkFeedError(feedId, `alpaca_http_${res.status}`, source);
+      logUpstreamFailure("ALPACA", `/v2/stocks/${sym}/quotes/latest`, res.status);
       continue;
     }
     const json = (await res.json()) as { quote?: Record<string, unknown> };
@@ -83,10 +86,12 @@ export async function deskAlpacaMarketBars(
   if (res.status === 401 || res.status === 403) {
     const err = `alpaca_http_${res.status}`;
     deskMarkFeedAuthError(feedId, err, source);
+    logUpstreamFailure("ALPACA", `/v2/stocks/${sym}/bars`, res.status);
     return { ok: false, bars: [], asOfMs: Date.now(), status: res.status, error: err, source };
   }
   if (!res.ok) {
     deskMarkFeedError(feedId, `alpaca_http_${res.status}`, source);
+    logUpstreamFailure("ALPACA", `/v2/stocks/${sym}/bars`, res.status);
     return { ok: false, bars: [], asOfMs: Date.now(), status: res.status, error: `alpaca_http_${res.status}`, source };
   }
   const json = (await res.json()) as { bars?: unknown[] };

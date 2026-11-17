@@ -1,5 +1,6 @@
 import { logger } from "./logger.js";
 import { logFailure } from "./telemetry.js";
+import { minimalOAuthStyleErrorFields } from "./safeHttpErrorBody.js";
 import { fetchFmp } from "./fmpPaidPlanGuard.js";
 
 const FMP_BASE = "https://financialmodelingprep.com/api/v3";
@@ -66,8 +67,8 @@ export async function runFmpScreen(filters: ScreenFilters): Promise<{ symbols: s
     const res = await fetchFmp(url, { signal: AbortSignal.timeout(15000) });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      logger.error({ status: res.status, body: text }, "FMP screener error");
-      void logFailure("FMP_SCREENER", "ERROR", `FMP API returned ${res.status}`, { body: text });
+      logger.error({ status: res.status, ...minimalOAuthStyleErrorFields(text, res.status) }, "FMP screener error");
+      void logFailure("FMP_SCREENER", "ERROR", `FMP API returned ${res.status}`, minimalOAuthStyleErrorFields(text, res.status));
       return { symbols: [], error: `FMP API error: ${res.status}` };
     }
 

@@ -1,5 +1,6 @@
 import { getUwApiKey } from "./deskUnusualWhales.js";
 import { withUwConcurrencySlot } from "./deskUnusualWhales.js";
+import { logUpstreamFailure } from "../../../upstreamTelemetry.js";
 
 const UW_BASE = "https://api.unusualwhales.com";
 
@@ -47,7 +48,11 @@ export async function deskUwGet(
     });
     const retryAfterSec = parseRetryAfter(res);
     const json = (await res.json().catch(() => null)) as unknown;
-    return { ok: res.ok, status: res.status, json, asOfMs, retryAfterSec };
+    const result = { ok: res.ok, status: res.status, json, asOfMs, retryAfterSec };
+    if (!res.ok) {
+      logUpstreamFailure("UNUSUAL_WHALES", path.startsWith("/") ? path : `/${path}`, res.status);
+    }
+    return result;
   };
 
   try {
@@ -60,6 +65,7 @@ export async function deskUwGet(
     }
     return res;
   } catch {
+    logUpstreamFailure("UNUSUAL_WHALES", path.startsWith("/") ? path : `/${path}`, 0);
     return { ok: false, status: 0, json: null, asOfMs: Date.now() };
   }
 }
