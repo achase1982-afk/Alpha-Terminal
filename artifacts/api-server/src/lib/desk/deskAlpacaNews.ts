@@ -89,28 +89,22 @@ export async function deskFetchAlpacaNews(
     }
   } catch (err) {
     logger.warn({ err }, "Desk Alpaca news fetch error");
-    deskMarkFeedError("alpaca", "alpaca_news_fetch_error", ALPACA_SOURCE);
     return { ok: false, articles: [], asOfMs: Date.now(), status: 503, error: "alpaca_news_fetch_error" };
   }
 
   if (r.status === 401 || r.status === 403) {
     const err = `alpaca_news_http_${r.status}`;
-    deskMarkFeedAuthError("alpaca", err, ALPACA_SOURCE);
     logger.warn({ status: r.status }, "Desk Alpaca news auth failed");
     return { ok: false, articles: [], asOfMs: Date.now(), status: r.status, error: err };
   }
   if (!r.ok) {
     const err = `alpaca_news_http_${r.status}`;
-    deskMarkFeedError("alpaca", err, ALPACA_SOURCE);
     logger.warn({ status: r.status }, "Desk Alpaca news HTTP failed");
     return { ok: false, articles: [], asOfMs: Date.now(), status: r.status, error: err };
   }
 
   const pollMs = Date.now();
-  const articleMs = deskMaxArticlePublishedMs(r.articles);
-  deskTouchFeedPollOk("alpaca", pollMs, ALPACA_SOURCE);
-  deskTouchFeedArticleAge("alpaca", articleMs, ALPACA_SOURCE);
-  return { ok: true, articles: r.articles, asOfMs: articleMs ?? pollMs, status: 200 };
+  return { ok: true, articles: r.articles, asOfMs: pollMs, status: 200 };
 }
 
 export async function deskProbeAlpacaNews(): Promise<void> {
