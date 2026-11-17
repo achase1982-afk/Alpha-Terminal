@@ -12,6 +12,10 @@ import { hash8 } from "@/lib/streamClientId";
 import type { OptionHoldPostOpts } from "@/lib/optionHoldClient";
 import { useTicketOptionHold } from "@/hooks/useTicketOptionHold";
 import {
+  estimateSchwabOptionFees,
+  SCHWAB_OPTION_COMMISSION_PER_CONTRACT,
+} from "@/lib/orders/schwabOrderFees";
+import {
   aggregateSpreadNBBO,
   computeOrderEconomics,
   displaySubmittedLimit,
@@ -744,6 +748,11 @@ export function OrderTicket({
     [limitTickCtx, submittedLimit],
   );
 
+  const ticketIsCredit = useMemo(
+    () => (isMultiLeg ? strategyIsCredit ?? false : side === "SELL"),
+    [isMultiLeg, strategyIsCredit, side],
+  );
+
   const ticketEconomics = useMemo(() => {
     const econLegs = isMultiLeg && liveStrategyLegs
       ? liveStrategyLegs.map((l) => ({
@@ -754,7 +763,17 @@ export function OrderTicket({
           quantity: l.quantity,
         }))
       : isOption
-        ? [{ strike: 0, optionType: "CALL", instruction: side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN" }]
+        ? [
+            {
+              strike: 0,
+              optionType: (optionSymbol?.includes("P") && optionSymbol.charAt(12) === "P" ? "PUT" : "CALL") as
+                | "CALL"
+                | "PUT",
+              instruction:
+                optionInstruction ??
+                (side === "BUY" ? "BUY_TO_OPEN" : isCloseOrder ? "SELL_TO_CLOSE" : "SELL_TO_OPEN"),
+            },
+          ]
         : null;
     const fallback =
       isMultiLeg
@@ -769,7 +788,7 @@ export function OrderTicket({
       limitPrice: needsLimit || isMultiLeg ? limitPrice : undefined,
       fallbackNetPrice: fallback ?? undefined,
       quantity,
-      isCredit: strategyIsCredit,
+      isCredit: ticketIsCredit,
       isOption,
       underlyingSymbol: symbol,
       closesPosition: isCloseOrder === true,
@@ -779,7 +798,8 @@ export function OrderTicket({
     });
   }, [
     isMultiLeg, liveStrategyLegs, isOption, side, orderType, ticketPxAsk, ticketPxBid, ticketPxLast,
-    limitPrice, needsLimit, strategyNetPrice, quantity, strategyIsCredit, symbol, isCloseOrder,
+    limitPrice, needsLimit, strategyNetPrice, quantity, ticketIsCredit, symbol, isCloseOrder, optionInstruction,
+    optionSymbol,
   ]);
 
   const estimatedCost = useMemo(() => ticketEconomics?.grossNotional ?? null, [ticketEconomics]);
@@ -2614,20 +2634,12 @@ export function OrderTicket({
                     : estimatedCost != null
                       ? Math.abs(estimatedCost)
                       : 0;
-                const isCreditOrder =
-                  econ?.netCashFlow != null ? econ.netCashFlow > 0 : strategyIsCredit ?? side === "SELL";
+                const isCreditOrder = ticketIsCredit;
                 const feeBundle =
                   totalContracts > 0
-                    ? { commission: totalContracts * 0.65, regulatoryEst: totalContracts * 0.02 }
-                    : { commission: 0, regulatoryEst: 0 };
-                const netAfterFees =
-                  econ?.netCashFlow != null
-                    ? isCreditOrder
-                      ? grossCost - feeBundle.commission - feeBundle.regulatoryEst
-                      : econ.netCashFlow - feeBundle.regulatoryEst
-                    : isCreditOrder
-                      ? grossCost - feeBundle.commission - feeBundle.regulatoryEst
-                      : -(grossCost + feeBundle.commission + feeBundle.regulatoryEst);
+                    ? estimateSchwabOptionFees(totalContracts)
+                    : { commission: 0, regulatoryEst: 0, totalEst: 0 };
+                const netAfterFees = econ?.netCashFlow ?? (isCreditOrder ? grossCost - feeBundle.totalEst : -(grossCost + feeBundle.totalEst));
                 const breakevens = econ?.breakevens ?? [];
                 const maxLoss = econ?.maxRisk ?? null;
                 const maxProfit = econ?.maxProfit ?? null;
@@ -2646,7 +2658,9 @@ export function OrderTicket({
                       </div>
                       {totalContracts > 0 && (
                         <div className="flex justify-between" style={{ fontSize: S.body }}>
-                          <span style={{ color: MUTED }}>Commissions ({totalContracts} × $0.65)</span>
+                          <span style={{ color: MUTED }}>
+                            Commissions ({totalContracts} × ${SCHWAB_OPTION_COMMISSION_PER_CONTRACT.toFixed(2)})
+                          </span>
                           <span style={{ color: WHITE }}>{fmtCurrency(totalCommission)}</span>
                         </div>
                       )}
@@ -2715,7 +2729,7 @@ export function OrderTicket({
                         </div>
                       </div>
                     )}
-                    {!showBp && bpKind === "not_estimated" && (
+                    {!showBp && (bpKind === "not_estimated" || bpKind === "none") && (
                       <div className="pt-1 mt-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
                         <div className="flex justify-between" style={{ fontSize: S.body }}>
                           <span style={{ color: MUTED }}>Buying power</span>

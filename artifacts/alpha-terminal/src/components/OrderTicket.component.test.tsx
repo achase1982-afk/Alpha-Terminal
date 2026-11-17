@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { evaluateTicketPreTradeGate } from "@workspace/order-ticket-math";
 import { OrderTicket } from "./OrderTicket";
 
@@ -184,7 +184,92 @@ describe("OrderTicket component", () => {
     await waitFor(() => expect(limitInput.value).toBe("2.60"));
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
     await screen.findByText("Order Confirmation");
-    expect(screen.getAllByText("$2.60").length).toBeGreaterThanOrEqual(1);
+    const confirmation = screen.getByRole("heading", { name: "Order Confirmation" }).parentElement
+      ?.parentElement;
+    expect(confirmation).toBeTruthy();
+    const limitLabel = within(confirmation as HTMLElement).getByText("Limit price");
+    const limitRow = limitLabel.closest("div");
+    expect(within(limitRow as HTMLElement).getByText("$2.60")).toBeTruthy();
+  });
+
+  async function openReviewWithLimit(limit: string) {
+    const limitInput = await screen.findByPlaceholderText("0.00");
+    fireEvent.change(limitInput, { target: { value: limit } });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    await screen.findByText("Order Confirmation");
+  }
+
+  it("STC option shows gross credit, positive net credit, no BP", async () => {
+    render(
+      <OrderTicket
+        isOpen
+        onClose={() => {}}
+        optionSymbol={OPT}
+        optionInstruction="SELL_TO_CLOSE"
+        isCloseOrder
+        initialSide="SELL"
+        subscribeOptionSymbols={vi.fn()}
+      />,
+    );
+    await openReviewWithLimit("3.00");
+    expect(screen.getByText(/Gross credit/i)).toBeTruthy();
+    expect(screen.getByText(/Net credit \(after est\. fees\)/i)).toBeTruthy();
+    expect(screen.getByText(/\+\$299\.33/)).toBeTruthy();
+    expect(screen.getByText("Not estimated")).toBeTruthy();
+    expect(screen.queryByText(/Buying power \(est\.\)/i)).toBeNull();
+  });
+
+  it("sell stock to close shows gross credit and no BP", async () => {
+    render(
+      <OrderTicket
+        isOpen
+        onClose={() => {}}
+        isCloseOrder
+        initialSide="SELL"
+        subscribeOptionSymbols={vi.fn()}
+      />,
+    );
+    const qty = await screen.findByDisplayValue("1");
+    fireEvent.change(qty, { target: { value: "10" } });
+    await openReviewWithLimit("230");
+    expect(screen.getByText(/Gross credit/i)).toBeTruthy();
+    expect(screen.getByText(/\+\$2,300/)).toBeTruthy();
+    expect(screen.queryByText(/Buying power \(est\.\)/i)).toBeNull();
+  });
+
+  it("STO naked call shows credit proceeds but BP not estimated", async () => {
+    render(
+      <OrderTicket
+        isOpen
+        onClose={() => {}}
+        optionSymbol={OPT}
+        optionInstruction="SELL_TO_OPEN"
+        initialSide="SELL"
+        subscribeOptionSymbols={vi.fn()}
+      />,
+    );
+    await openReviewWithLimit("3.00");
+    expect(screen.getByText(/Gross credit/i)).toBeTruthy();
+    expect(screen.getByText("Not estimated")).toBeTruthy();
+    expect(screen.queryByText(/−\$300/)).toBeNull();
+  });
+
+  it("BTO single leg shows gross debit and BP estimate", async () => {
+    render(
+      <OrderTicket
+        isOpen
+        onClose={() => {}}
+        optionSymbol={OPT}
+        optionInstruction="BUY_TO_OPEN"
+        initialSide="BUY"
+        subscribeOptionSymbols={vi.fn()}
+      />,
+    );
+    await openReviewWithLimit("3.00");
+    expect(screen.getByText(/Gross debit/i)).toBeTruthy();
+    expect(screen.getByText(/Buying power \(est\.\)/i)).toBeTruthy();
+    const bpHits = screen.getAllByText(/−\$300\.67/);
+    expect(bpHits.length).toBeGreaterThanOrEqual(1);
   });
 
   it("FAIL disables Review and Send via gate helper", () => {

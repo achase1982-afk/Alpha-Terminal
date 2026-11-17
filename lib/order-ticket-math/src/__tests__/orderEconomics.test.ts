@@ -30,7 +30,7 @@ describe("computeOrderEconomics", () => {
     expect(econ!.grossNotional).toBe(760);
     expect(econ!.maxRisk).toBe(760);
     expect(econ!.commissionTotal).toBe(1.3);
-    expect(econ!.totalCostInclFees).toBe(761.3);
+    expect(econ!.totalCostInclFees).toBe(761.34);
   });
 
   it("net debit vertical uses width minus tick-rounded net", () => {
@@ -62,7 +62,7 @@ describe("computeOrderEconomics", () => {
       contractCount: 2,
     });
     expect(econ!.grossNotional).toBe(105);
-    expect(econ!.totalCreditAfterFees).toBe(103.7);
+    expect(econ!.totalCreditAfterFees).toBe(103.66);
   });
 
   it("scores iron condor max loss from payoff", () => {

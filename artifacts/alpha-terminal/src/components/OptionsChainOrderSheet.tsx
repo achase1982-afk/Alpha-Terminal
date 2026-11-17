@@ -291,6 +291,8 @@ export function OptionsChainOrderSheet({
   }, [snapLimitForSubmit]);
 
   const openReviewRef = useRef(false);
+  const placeOrderInFlightRef = useRef(false);
+  const [sendLocked, setSendLocked] = useState(false);
   useEffect(() => {
     if (!openReviewOnMount || openReviewRef.current || legs.length === 0) return;
     const px = submittedLimit ?? spreadPrices?.spreadMid;
@@ -301,8 +303,11 @@ export function OptionsChainOrderSheet({
   }, [openReviewOnMount, legs.length, submittedLimit, spreadPrices?.spreadMid, validateAndReview]);
 
   const handleSubmit = useCallback(async () => {
+    if (placeOrderInFlightRef.current || stage === "submitting") return;
     if (!demoFixture && !accountHash) return;
     if (demoFixture) {
+      placeOrderInFlightRef.current = true;
+      setSendLocked(true);
       setOrderId("SCREENSHOT-DEMO");
       setStage("success");
       return;
@@ -313,6 +318,8 @@ export function OptionsChainOrderSheet({
       setStage("form");
       return;
     }
+    placeOrderInFlightRef.current = true;
+    setSendLocked(true);
     setReviewLimitSnapped(px);
     setStage("submitting");
     try {
@@ -324,6 +331,8 @@ export function OptionsChainOrderSheet({
       });
       const data = await res.json();
       if (!res.ok || data.error) {
+        placeOrderInFlightRef.current = false;
+        setSendLocked(false);
         setErrorMsg(data.message || data.error || "Order rejected");
         setStage("error");
         return;
@@ -331,10 +340,12 @@ export function OptionsChainOrderSheet({
       setOrderId(data.orderId ?? "—");
       setStage("success");
     } catch (err: unknown) {
+      placeOrderInFlightRef.current = false;
+      setSendLocked(false);
       setErrorMsg(err instanceof Error ? err.message : "Network error");
       setStage("error");
     }
-  }, [accountHash, buildSchwabOrder, snapLimitForSubmit, demoFixture]);
+  }, [accountHash, buildSchwabOrder, snapLimitForSubmit, demoFixture, stage]);
 
   const isValid =
     legs.length > 0 &&
@@ -638,8 +649,13 @@ export function OptionsChainOrderSheet({
           submittedLimit={submittedLimit}
           summary={summary}
           feeAdjustedNetCash={feeAdjustedNetCash}
-          onBack={() => setStage("form")}
+          onBack={() => {
+            placeOrderInFlightRef.current = false;
+            setSendLocked(false);
+            setStage("form");
+          }}
           onSend={() => void handleSubmit()}
+          sendDisabled={sendLocked}
         />
       )}
     </div>
@@ -690,6 +706,7 @@ function ConfirmPanel({
   feeAdjustedNetCash,
   onBack,
   onSend,
+  sendDisabled,
 }: {
   strategyName: string;
   strategyColor: string;
@@ -705,6 +722,7 @@ function ConfirmPanel({
   feeAdjustedNetCash: number | null;
   onBack: () => void;
   onSend: () => void;
+  sendDisabled?: boolean;
 }) {
   const px = reviewLimitSnapped ?? submittedLimit ?? 0;
   const totalContracts = legs.reduce((s, l) => s + l.quantity, 0) * quantity;
@@ -819,7 +837,8 @@ function ConfirmPanel({
           <button
             type="button"
             onClick={onSend}
-            className="flex-[2] py-2.5 text-[13px] font-bold"
+            disabled={sendDisabled}
+            className="flex-[2] py-2.5 text-[13px] font-bold disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ background: GOLD, color: "#000", borderRadius: 8 }}
             data-testid="chain-sheet-send"
           >

@@ -23,6 +23,7 @@ export interface OrderEconomicsInput {
   isOption?: boolean;
   underlyingSymbol?: string;
   commissionPerContract?: number;
+  regulatoryPerContract?: number;
   contractCount?: number;
   /** Close / sell-to-close: cash proceeds only, no BP reserve estimate. */
   closesPosition?: boolean;
@@ -35,6 +36,7 @@ export interface OrderEconomicsResult {
   /** Null when payoff is not modeled (e.g. multi-expiry calendar). */
   maxProfit: number | null;
   commissionTotal: number;
+  regulatoryTotal: number;
   totalCostInclFees: number;
   totalCreditAfterFees: number;
   /** Signed cash after fees: positive = credit received, negative = debit paid. */
@@ -136,12 +138,13 @@ export function computeOrderEconomics(input: OrderEconomicsInput): OrderEconomic
       : null
     : null;
 
+  const regulatoryPer = input.regulatoryPerContract ?? 0.02;
   const commissionTotal = isOptionOrder ? contracts * commissionPer : 0;
-  const totalCostInclFees = grossNotional + commissionTotal;
-  const totalCreditAfterFees = Math.max(0, grossNotional - commissionTotal);
-  const netCashFlow = isCredit
-    ? totalCreditAfterFees
-    : -totalCostInclFees;
+  const regulatoryTotal = isOptionOrder ? contracts * regulatoryPer : 0;
+  const feeTotal = commissionTotal + regulatoryTotal;
+  const totalCostInclFees = grossNotional + feeTotal;
+  const totalCreditAfterFees = Math.max(0, grossNotional - feeTotal);
+  const netCashFlow = isCredit ? totalCreditAfterFees : -totalCostInclFees;
 
   const bp = resolveBuyingPowerEffect({
     legs,
@@ -149,7 +152,7 @@ export function computeOrderEconomics(input: OrderEconomicsInput): OrderEconomic
     isOption: isOptionOrder,
     maxRisk,
     grossNotional,
-    commissionTotal,
+    commissionTotal: feeTotal,
     netPerShare: net,
     spreadUnits: qty,
     closesPosition: input.closesPosition === true,
@@ -162,6 +165,7 @@ export function computeOrderEconomics(input: OrderEconomicsInput): OrderEconomic
     maxProfit:
       maxProfit != null && Number.isFinite(maxProfit) ? Number(maxProfit.toFixed(2)) : null,
     commissionTotal: Number(commissionTotal.toFixed(2)),
+    regulatoryTotal: Number(regulatoryTotal.toFixed(2)),
     totalCostInclFees: Number(totalCostInclFees.toFixed(2)),
     totalCreditAfterFees: Number(totalCreditAfterFees.toFixed(2)),
     netCashFlow: Number(netCashFlow.toFixed(2)),

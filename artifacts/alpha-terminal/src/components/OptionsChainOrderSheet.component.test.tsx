@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { OptionsChainOrderSheet, type OptionsChainOrderSheetProps } from "./OptionsChainOrderSheet";
 import type { StrategyLeg } from "./StrategyBuilder";
 
@@ -64,5 +65,22 @@ describe("OptionsChainOrderSheet", () => {
     fireEvent.click(review);
     expect(screen.getByTestId("chain-sheet-confirm")).toBeTruthy();
     expect(screen.getByText(/order confirmation/i)).toBeTruthy();
+  });
+
+  it("does not place order on Review; Send calls place-order exactly once", async () => {
+    const fetchMock = vi.mocked(fetchWithAuth);
+    fetchMock.mockClear();
+    renderSheet();
+    const review = screen.getByTestId("chain-sheet-review");
+    await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(review);
+    expect(screen.getByTestId("chain-sheet-confirm")).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const send = screen.getByTestId("chain-sheet-send");
+    fireEvent.click(send);
+    fireEvent.click(send);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/portfolio/place-order");
   });
 });
