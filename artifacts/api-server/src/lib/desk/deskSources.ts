@@ -1,12 +1,20 @@
-export type DeskQuotesSource = "schwab" | "tradier";
+export type DeskQuotesSource = "schwab" | "tradier" | "alpaca_paper" | "tastytrade";
 export type DeskChainsSource = "schwab";
-export type DeskNewsSource = "finnhub" | "alpaca_news";
+export type DeskBarsSource = "schwab" | "eodhd" | "alpaca_paper";
+export type DeskNewsSource =
+  | "finnhub"
+  | "alpaca_news"
+  | "alphavantage"
+  | "marketaux"
+  | "stocknews";
+export type DeskFundamentalsSource = "alphavantage";
 export type DeskFlowSource = "unusual_whales";
 
 const ALIASES: Record<string, string> = {
   alpaca: "alpaca_news",
   unusual_whales: "unusual_whales",
   uw: "unusual_whales",
+  tasty: "tastytrade",
 };
 
 export function deskNormalizeSourceParam(raw: string | undefined): string | undefined {
@@ -15,17 +23,24 @@ export function deskNormalizeSourceParam(raw: string | undefined): string | unde
   return ALIASES[v] ?? v;
 }
 
+/** Requires explicit `source=` — no default vendor when the parameter is omitted. */
 export function deskResolveSource<T extends string>(
   raw: string | undefined,
   allowed: readonly T[],
-  defaultSource: T,
 ): { source: T } | { error: string; source: string; allowed: readonly T[] } {
   const norm = deskNormalizeSourceParam(raw);
-  const chosen = (norm ?? defaultSource) as T;
+  if (norm == null || norm === "") {
+    return {
+      error: "source query parameter is required",
+      source: "",
+      allowed,
+    };
+  }
+  const chosen = norm as T;
   if (!allowed.includes(chosen)) {
     return {
-      error: `unsupported source "${norm ?? raw}"`,
-      source: String(norm ?? raw ?? ""),
+      error: `unsupported source "${norm}"`,
+      source: norm,
       allowed,
     };
   }

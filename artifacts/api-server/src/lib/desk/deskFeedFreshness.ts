@@ -16,7 +16,15 @@ export type DeskFeedId =
   | "live_net_prem"
   | "uw_flow"
   | "tradier"
+  | "tradier_sandbox"
   | "alpaca"
+  | "alpaca_paper"
+  | "tastytrade"
+  | "schwab2_rest"
+  | "alphavantage"
+  | "marketaux"
+  | "stocknews"
+  | "eodhd"
   | "news";
 
 export type DeskFeedStatusCode =
@@ -27,6 +35,8 @@ export type DeskFeedStatusCode =
   | "evicted_yielded"
   | "AUTH_FAIL"
   | "auth_error"
+  | "not_authorized"
+  | "configured"
   | "session_closed"
   | "error"
   | "reconnecting"
@@ -68,7 +78,15 @@ const FEED_SOURCES: Record<DeskFeedId, string> = {
   live_net_prem: "unusual_whales",
   uw_flow: "unusual_whales",
   tradier: "tradier",
+  tradier_sandbox: "tradier_sandbox",
   alpaca: "alpaca_news",
+  alpaca_paper: "alpaca_paper",
+  tastytrade: "tastytrade_dxlink",
+  schwab2_rest: "schwab_rest_2",
+  alphavantage: "alphavantage",
+  marketaux: "marketaux",
+  stocknews: "stocknews",
+  eodhd: "eodhd",
   news: "finnhub",
 };
 
@@ -95,8 +113,17 @@ export function deskStaleAfterMs(feed: DeskFeedId, now = Date.now()): number {
     case "tradier":
       return 180_000;
     case "alpaca":
+    case "alpaca_paper":
+    case "tastytrade":
+    case "alphavantage":
+    case "marketaux":
+    case "stocknews":
+    case "eodhd":
     case "news":
       return 15 * 60_000;
+    case "tradier_sandbox":
+    case "schwab2_rest":
+      return 24 * 60 * 60_000;
     default:
       return 180_000;
   }
@@ -168,6 +195,26 @@ export function deskMarkAuthFail(feed: DeskFeedId): void {
   });
 }
 
+export function deskMarkFeedNotAuthorized(feed: DeskFeedId, error: string, source?: string): void {
+  const prev = records.get(feed);
+  records.set(feed, {
+    source: source ?? prev?.source ?? FEED_SOURCES[feed],
+    lastDataMs: prev?.lastDataMs ?? null,
+    notConfigured: false,
+    forcedStatus: "not_authorized",
+    error,
+  });
+}
+
+export function deskMarkFeedConfiguredKeys(feed: DeskFeedId, source?: string): void {
+  records.set(feed, {
+    source: source ?? FEED_SOURCES[feed],
+    lastDataMs: null,
+    notConfigured: false,
+    forcedStatus: "configured",
+  });
+}
+
 export function deskMarkFeedAuthError(feed: DeskFeedId, error: string, source?: string): void {
   const prev = records.get(feed);
   records.set(feed, {
@@ -215,6 +262,8 @@ function resolveStatus(
 ): DeskFeedStatusCode {
   const at = new Date(now);
   if (rec.notConfigured || rec.forcedStatus === "not_configured") return "not_configured";
+  if (rec.forcedStatus === "not_authorized") return "not_authorized";
+  if (rec.forcedStatus === "configured") return "configured";
   if (rec.forcedStatus === "AUTH_FAIL") return "AUTH_FAIL";
   if (rec.forcedStatus === "auth_error") return "auth_error";
   if (rec.forcedStatus === "error") return "error";
@@ -237,12 +286,20 @@ export function buildDeskHealthFeeds(now = Date.now()): DeskFeedStatus[] {
     "schwab_streamer",
     "schwab_quotes_rest",
     "schwab_chains",
+    "schwab2_rest",
     "live_gamma_0dte",
     "live_gamma",
     "live_net_prem",
     "uw_flow",
     "tradier",
+    "tradier_sandbox",
     "alpaca",
+    "alpaca_paper",
+    "tastytrade",
+    "alphavantage",
+    "marketaux",
+    "stocknews",
+    "eodhd",
     "news",
   ];
 
@@ -259,10 +316,13 @@ export function buildDeskHealthFeeds(now = Date.now()): DeskFeedStatus[] {
       status !== "session_closed" &&
       status !== "stopped" &&
       status !== "auth_error" &&
+      status !== "not_authorized" &&
+      status !== "configured" &&
       status !== "AUTH_FAIL" &&
       (status === "stale" || lastMs == null || deskIsFeedStale(feed, lastMs, now));
     if (status === "session_closed") stale = false;
     if (status === "not_configured") stale = false;
+    if (status === "configured" || status === "not_authorized") stale = false;
     if (!inSession && FEED_SESSION[feed]) stale = false;
 
     const row: DeskFeedStatus = {
