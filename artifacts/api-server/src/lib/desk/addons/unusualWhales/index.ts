@@ -1,4 +1,3 @@
-export { deskUwAddonEnabled } from "./deskUwEnabled.js";
 export { startDeskUwPoller, runDeskUwPollCycle } from "./deskUwPoller.js";
 export {
   deskUwPollPaused,
@@ -21,7 +20,13 @@ export {
   deskRefreshLiveGamma0dte,
 } from "./deskUwGamma.js";
 export { deskGetCachedNetPremTicks, deskRefreshNetPremTicks } from "./deskUwNetPrem.js";
-export { deskParseSinceMs, deskValidateMarketDate, deskValidateUwTicker } from "./deskUwInput.js";
+export {
+  deskParseSinceMs,
+  deskParseSinceFromQuery,
+  deskValidateMarketDate,
+  deskValidateUwTicker,
+} from "./deskUwInput.js";
+export { deskUwAddonEnabled } from "./deskUwEnabled.js";
 export {
   deskUwRouteHttpFromStatus,
   deskApplyUwHttpFeedStatus,

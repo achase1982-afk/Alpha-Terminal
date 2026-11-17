@@ -8,7 +8,7 @@ import {
   deskRefreshNetPremTicks,
   deskResetNetPremCacheForTests,
 } from "../deskUwNetPrem.js";
-import { deskParseSinceMs } from "../deskUwInput.js";
+import { deskParseSinceFromQuery, deskParseSinceMs } from "../deskUwInput.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixture = () =>
@@ -34,6 +34,12 @@ describe("deskUwNetPrem", () => {
     expect(deskParseTapeTimeMs("2025-03-21 19:58:00+00:00")).toBe(
       Date.parse("2025-03-21T19:58:00+00:00"),
     );
+  });
+
+  it("deskParseSinceFromQuery prefers since_ms over since", () => {
+    const r = deskParseSinceFromQuery({ since: "1999-01-01", since_ms: "1700000000000" });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.ms).toBe(1_700_000_000_000);
   });
 
   it("deskParseSinceMs rejects garbage and out-of-range values", () => {

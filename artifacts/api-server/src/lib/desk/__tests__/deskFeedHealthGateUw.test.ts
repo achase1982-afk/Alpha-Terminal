@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   buildDeskHealthFeeds,
+  deskMarkFeedError,
   deskMarkFeedOnDemand,
   deskResetFeedFreshnessForTests,
   deskSummarizeFeedsHealth,
@@ -9,6 +10,22 @@ import { deskApplyUwHttpFeedStatus } from "../addons/unusualWhales/deskUwStatus.
 
 describe("deskFeedHealthGate UW optional feeds", () => {
   beforeEach(() => deskResetFeedFreshnessForTests());
+
+  it("UW auth backoff excludes all UW rows from any_failure and any_stale", () => {
+    deskApplyUwHttpFeedStatus("live_gamma", 403);
+    deskMarkFeedError("uw_flow", "uw_flow_test_error", "unusual_whales");
+    const feeds = buildDeskHealthFeeds();
+    const uwIds = new Set(["live_gamma_0dte", "live_gamma", "live_net_prem", "uw_flow"]);
+    const uwRows = feeds.filter((f) => uwIds.has(f.feed));
+    const uwSummary = deskSummarizeFeedsHealth(uwRows);
+    expect(uwSummary.any_failure).toBe(false);
+    expect(uwSummary.any_stale).toBe(false);
+    for (const row of uwRows) {
+      expect(row.excluded_from_health_gate).toBe(true);
+    }
+    expect(feeds.find((f) => f.feed === "live_gamma")?.status).toBe("auth_error");
+    expect(feeds.find((f) => f.feed === "uw_flow")?.status).toBe("error");
+  });
 
   it("UW 402 leaves any_failure false", () => {
     deskApplyUwHttpFeedStatus("live_gamma", 402);

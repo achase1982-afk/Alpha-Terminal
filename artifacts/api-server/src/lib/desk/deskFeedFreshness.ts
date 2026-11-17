@@ -9,6 +9,7 @@ import { deskCoercePollReceiptTs } from "./deskFeedTimestamp.js";
 import {
   deskFeedIntentionallyUnconfigured,
   deskFeedExcludedFromHealthGate,
+  deskUwAuthBackoffActive,
 } from "./deskFeedHealthGate.js";
 import { DESK_NEWS_POLL_MS } from "./deskPollCadence.js";
 
@@ -410,7 +411,7 @@ export function buildDeskHealthFeeds(now = Date.now()): DeskFeedStatus[] {
     "news",
   ];
 
-  return ids.map((feed) => {
+  const rows = ids.map((feed) => {
     let rec = records.get(feed) ?? { source: FEED_SOURCES[feed], lastDataMs: null };
     if (deskFeedIntentionallyUnconfigured(feed)) {
       rec = {
@@ -463,12 +464,16 @@ export function buildDeskHealthFeeds(now = Date.now()): DeskFeedStatus[] {
       asof_et,
     };
     if (rec.error) row.error = rec.error;
-    if (deskFeedExcludedFromHealthGate(row)) {
+    return row;
+  });
+  const uwBackoff = deskUwAuthBackoffActive(rows);
+  for (const row of rows) {
+    if (deskFeedExcludedFromHealthGate(row, { uwAuthBackoff: uwBackoff })) {
       row.excluded_from_health_gate = true;
       row.stale = false;
     }
-    return row;
-  });
+  }
+  return rows;
 }
 
 /** Envelope `stale` matches `/health` feed rows (not raw article age alone). */

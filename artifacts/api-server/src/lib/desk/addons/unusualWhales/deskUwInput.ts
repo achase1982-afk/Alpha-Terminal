@@ -39,3 +39,18 @@ export function deskParseSinceMs(raw: string | undefined): DeskSinceParse {
   }
   return { ok: true, ms };
 }
+
+/** Query `since_ms` wins over `since` when both are present. */
+export function deskParseSinceFromQuery(query: {
+  since?: unknown;
+  since_ms?: unknown;
+}): DeskSinceParse {
+  const sinceMsRaw = query.since_ms;
+  const raw =
+    sinceMsRaw != null && String(sinceMsRaw).trim() !== ""
+      ? String(sinceMsRaw)
+      : query.since != null && String(query.since).trim() !== ""
+        ? String(query.since)
+        : undefined;
+  return deskParseSinceMs(raw);
+}
