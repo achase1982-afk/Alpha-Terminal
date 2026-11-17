@@ -21,6 +21,7 @@ import {
 import { Reorder } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
 import { buildChainHoldSignature } from "@/lib/streamHoldSig";
+import { useChainOptionHold } from "@/hooks/useChainOptionHold";
 
 const EPS = 0.0001;
 const COL_W = 74;
@@ -1249,8 +1250,6 @@ export function OptionsTab({
   onTradeSingle,
   onOpenStrategyBuilder,
 }: OptionsTabProps) {
-  const chainHoldRef = useRef<string | null>(null);
-  const lastChainSigRef = useRef("");
   const { accessToken } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken })));
   // Widget pin wins inside the dashboard; global symbol everywhere else.
   const symbol = useActiveSymbol();
@@ -1353,10 +1352,6 @@ export function OptionsTab({
     return buildChainHoldSignature(symbol, expirations, streamKeys);
   }, [data, symbol]);
 
-  useEffect(() => {
-    lastChainSigRef.current = "";
-  }, [symbol]);
-
   const groups = useMemo(() => {
     if (!data) return [];
     const calls = (data.calls ?? []) as Contract[];
@@ -1366,28 +1361,13 @@ export function OptionsTab({
     return buildExpirationGroups(calls, puts, underlyingPrice);
   }, [data, underlyingPrice, symbol]);
 
-  useEffect(() => {
-    if (!subscribeOptionSymbols || !chainHoldSig) return;
-    if (chainHoldSig.holdSig === lastChainSigRef.current) return;
-    lastChainSigRef.current = chainHoldSig.holdSig;
-    let aborted = false;
-    const inFlight = subscribeOptionSymbols(chainHoldSig.keys, {
-      purpose: "chain",
-      viewId: chainHoldSig.viewId,
-      underlyingPrice: underlyingPrice ?? data?.underlyingPrice ?? undefined,
-      isAborted: () => aborted,
-    }).then((next) => {
-      if (!aborted && next) chainHoldRef.current = next;
-      return next;
-    });
-    return () => {
-      aborted = true;
-      chainHoldRef.current = null;
-      void inFlight.then((holderId) => {
-        if (holderId && releaseOptionHold) void releaseOptionHold(holderId);
-      });
-    };
-  }, [chainHoldSig, subscribeOptionSymbols, releaseOptionHold, underlyingPrice, data?.underlyingPrice]);
+  useChainOptionHold(
+    chainHoldSig?.holdSig,
+    chainHoldSig?.keys ?? [],
+    chainHoldSig?.viewId,
+    { subscribeOptionSymbols, releaseOptionHold },
+    underlyingPrice ?? data?.underlyingPrice ?? null,
+  );
 
   useEffect(() => { setExpandedExps(new Set()); setSelectedLegs(new Map()); }, [symbol]);
 

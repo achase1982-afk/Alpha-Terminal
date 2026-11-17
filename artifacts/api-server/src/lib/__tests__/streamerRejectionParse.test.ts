@@ -35,6 +35,11 @@ describe("streamerSubParseRejection", () => {
     expect(normalizeStreamerOccKey("SPY   251121C00600000")).toBe("SPY251121C00600000");
   });
 
+  it("normalizes compact SPXW OCC to match padded live keys", () => {
+    const live = new Set(["SPXW  261117C05000000"]);
+    expect(streamerSubResolveLiveKey("SPXW261117C05000000", live)).toBe("SPXW  261117C05000000");
+  });
+
   it("cap discard drops from simulator live set", () => {
     streamerWireSimulatorResetForTests();
     streamerWireSimulatorApplyPayload({

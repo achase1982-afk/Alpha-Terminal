@@ -689,24 +689,29 @@ export function useMarketStream() {
     [runHolderOp],
   );
 
-  const releaseOptionHold = useCallback(async (holderId: string) => {
-    if (!holderId) return;
-    try {
-      await fetchWithAuth(`${API_BASE}/stream/release-holds`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-stream-client-id": streamClientIdRef.current,
-        },
-        body: JSON.stringify({
-          clientId: streamClientIdRef.current,
-          holderId,
-        }),
+  const releaseOptionHold = useCallback(
+    async (holderId: string) => {
+      if (!holderId) return;
+      return runHolderOp(holderId, async () => {
+        try {
+          await fetchWithAuth(`${API_BASE}/stream/release-holds`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-stream-client-id": streamClientIdRef.current,
+            },
+            body: JSON.stringify({
+              clientId: streamClientIdRef.current,
+              holderId,
+            }),
+          });
+          activeOptionHoldsRef.current.delete(holderId);
+          optionHoldPayloadsRef.current.delete(holderId);
+        } catch {}
       });
-      activeOptionHoldsRef.current.delete(holderId);
-      optionHoldPayloadsRef.current.delete(holderId);
-    } catch {}
-  }, []);
+    },
+    [runHolderOp],
+  );
 
   const touchOptionHolds = useCallback(async () => {
     const clientId = streamClientIdRef.current;

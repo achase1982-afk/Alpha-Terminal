@@ -282,8 +282,22 @@ export function streamerSubRecordRejection(
   if (rejections.length > 40) rejections.shift();
 }
 
+/** Canonical key for OCC matching (padded root or compact 6+6+CP+strike). */
 export function normalizeStreamerOccKey(key: string): string {
-  return key.replace(/\s+/g, "").toUpperCase();
+  const trimmed = key.trim().toUpperCase();
+  const compact = trimmed.replace(/\s+/g, "");
+  const padded = trimmed.match(/^([A-Z.$]{1,6})\s+(\d{6})([CP])(\d{8,})$/);
+  if (padded) {
+    const root = padded[1]!.replace(/\./g, "").replace(/^\$/, "");
+    return `${root}${padded[2]}${padded[3]}${padded[4]}`;
+  }
+  const tight = compact.match(/^([A-Z.$]{1,6})(\d{6})([CP])(\d+)$/);
+  if (tight) {
+    const root = tight[1]!.replace(/\./g, "").replace(/^\$/, "");
+    const strike = tight[4]!.padStart(8, "0");
+    return `${root}${tight[2]}${tight[3]}${strike}`;
+  }
+  return compact;
 }
 
 export type StreamerRejectionParse =
@@ -336,20 +350,53 @@ export function streamerSubResolveLiveKey(
   return null;
 }
 
+/** Droppable keys only, lowest priority first (never desk core or ticket). */
 export function streamerSubLowestPriorityWireDropOrder(): string[] {
-  const order: string[] = [];
-  for (const k of deskCoreOptionKeys) order.push(k);
-  const bg: string[] = [];
+  const ticketKeys = new Set<string>();
+  const ordered: string[] = [];
+
   for (const h of holds.values()) {
     if (h.service !== "LEVELONE_OPTIONS") continue;
-    if (h.tier !== "background") continue;
-    bg.push(...h.keys);
+    const isTicket =
+      h.holderId.startsWith("ticket:") ||
+      (h.holderId.startsWith("stream:") && streamPurposeFromHolderId(h.holderId) === "ticket");
+    if (isTicket) {
+      for (const k of h.keys) ticketKeys.add(k);
+    }
   }
-  bg.sort();
-  order.push(...bg);
-  const app = getL1PlanCache().appSubscribed;
-  order.push(...[...app].reverse());
-  return [...new Set(order)];
+
+  for (const h of holds.values()) {
+    if (h.service !== "LEVELONE_OPTIONS" || h.tier !== "background") continue;
+    ordered.push(...h.keys);
+  }
+
+  for (const h of holds.values()) {
+    if (h.service !== "LEVELONE_OPTIONS" || h.tier !== "user_visible") continue;
+    const isTicket =
+      h.holderId.startsWith("ticket:") ||
+      (h.holderId.startsWith("stream:") && streamPurposeFromHolderId(h.holderId) === "ticket");
+    if (isTicket) continue;
+    const isChain =
+      h.holderId.startsWith("chain:") ||
+      (h.holderId.startsWith("stream:") && streamPurposeFromHolderId(h.holderId) === "chain");
+    if (isChain) {
+      const spot = spotForChainHolder(h.holderId, h.keys);
+      const ntm = sortChainKeysNearTheMoneyInterleaved(h.keys, spot);
+      const farthestFirst = [...ntm].reverse();
+      ordered.push(...farthestFirst);
+    } else {
+      ordered.push(...h.keys);
+    }
+  }
+
+  const seen = new Set<string>();
+  const droppable: string[] = [];
+  for (const k of ordered) {
+    if (deskCoreOptionKeys.has(k) || ticketKeys.has(k) || seen.has(k)) continue;
+    seen.add(k);
+    droppable.push(k);
+  }
+  return droppable;
 }
 
 function buildTierMaps(

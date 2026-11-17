@@ -132,7 +132,7 @@ export function streamerWireSimulatorDropLevelOneByPriority(priorityOrder: strin
   if (count <= 0) return;
   const toDrop: string[] = [];
   const seen = new Set<string>();
-  for (let i = priorityOrder.length - 1; i >= 0 && toDrop.length < count; i--) {
+  for (let i = 0; i < priorityOrder.length && toDrop.length < count; i++) {
     const k = priorityOrder[i]!;
     if (seen.has(k)) continue;
     seen.add(k);

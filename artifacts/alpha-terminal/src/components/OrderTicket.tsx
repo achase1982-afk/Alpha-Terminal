@@ -9,6 +9,7 @@ import { formatSchwabAccountType } from "@/lib/schwabAccountAggregate";
 import { startStrategistPolling } from "@/lib/strategistPoller";
 import { hash8 } from "@/lib/streamClientId";
 import type { OptionHoldPostOpts } from "@/lib/optionHoldClient";
+import { useTicketOptionHold } from "@/hooks/useTicketOptionHold";
 import { computeStrategyEconomics } from "@/lib/strategyCalculator";
 import { useGetOptionChain } from "@workspace/api-client-react";
 import {
@@ -366,7 +367,6 @@ export function OrderTicket({
   subscribeOptionSymbols,
   releaseOptionHold,
 }: OrderTicketProps) {
-  const ticketHoldRef = useRef<string | null>(null);
   const symbol = useTerminalStore((s) => s.symbol);
   const { data: quote } = useQuote(symbol);
   const pulseData = useMarketPulseStore((s) => s.pulseData);
@@ -440,30 +440,13 @@ export function OrderTicket({
     return { viewId, holdSig };
   }, [isOpen, symbol, ticketStreamKeys]);
 
-  const lastTicketSigRef = useRef("");
-
-  useEffect(() => {
-    if (!subscribeOptionSymbols || !isOpen || !ticketHoldMeta) return;
-    if (ticketHoldMeta.holdSig === lastTicketSigRef.current) return;
-    lastTicketSigRef.current = ticketHoldMeta.holdSig;
-    const viewId = ticketHoldMeta.viewId;
-    let aborted = false;
-    const inFlight = subscribeOptionSymbols(ticketStreamKeys, {
-      purpose: "ticket",
-      viewId,
-      isAborted: () => aborted,
-    }).then((next) => {
-      if (!aborted && next) ticketHoldRef.current = next;
-      return next;
-    });
-    return () => {
-      aborted = true;
-      ticketHoldRef.current = null;
-      void inFlight.then((holderId) => {
-        if (holderId && releaseOptionHold) void releaseOptionHold(holderId);
-      });
-    };
-  }, [isOpen, subscribeOptionSymbols, releaseOptionHold, symbol, ticketHoldMeta, ticketStreamKeys]);
+  useTicketOptionHold(
+    isOpen,
+    ticketHoldMeta?.holdSig,
+    ticketHoldMeta?.viewId,
+    ticketStreamKeys,
+    { subscribeOptionSymbols, releaseOptionHold },
+  );
 
   const ticketMode: TicketMode = isOption ? "options" : "stock";
   const ORDER_TYPES = isOption ? OPTION_ORDER_TYPES : STOCK_ORDER_TYPES;
