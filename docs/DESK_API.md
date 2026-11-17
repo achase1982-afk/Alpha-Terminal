@@ -26,7 +26,9 @@ JSON responses include:
 
 Each item:
 
-`feed`, `source`, `last_update_ts` (UTC **ms** of last data), `age_ms`, `stale`, `stale_after_ms`, `status`, `session_date`, `asof_et`.
+`feed`, `source`, `last_update_ts` (UTC **ms** of last data), `age_ms`, `stale`, `stale_after_ms`, `status`, `session_date`, `asof_et`. Optional `excluded_from_health_gate` (e.g. unset `stocknews`).
+
+Top-level `feeds_summary` aggregates `any_stale` / `any_failure` **excluding** feeds with `excluded_from_health_gate` (StockNews is optional when `STOCKNEWS_API_KEY` is unset).
 
 **Status:** `OK`, `streaming`, `stale`, `stopped`, `evicted_yielded`, `AUTH_FAIL`, `auth_error`, `not_authorized`, `configured`, `session_closed`, `error`, `reconnecting`, `not_configured`.
 

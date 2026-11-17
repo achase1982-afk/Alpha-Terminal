@@ -4,6 +4,7 @@ import {
   deskMarkFeedNotConfigured,
   deskMarkFeedError,
   buildDeskHealthFeeds,
+  deskSummarizeFeedsHealth,
   deskIsFeedStale,
   deskResetFeedFreshnessForTests,
   deskStaleAfterMs,
@@ -98,5 +99,22 @@ describe("deskFeedFreshness", () => {
     const row = feeds.find((f) => f.feed === "uw_flow");
     expect(row?.status).toBe("error");
     expect(row?.error).toBe("uw_down");
+  });
+
+  it("treats unset stocknews as not_configured and excludes it from feeds_summary", () => {
+    const prevDesk = process.env.DESK_STOCKNEWS_API_KEY;
+    const prev = process.env.STOCKNEWS_API_KEY;
+    delete process.env.DESK_STOCKNEWS_API_KEY;
+    delete process.env.STOCKNEWS_API_KEY;
+    deskResetFeedFreshnessForTests();
+    const feeds = buildDeskHealthFeeds();
+    const row = feeds.find((f) => f.feed === "stocknews");
+    expect(row?.status).toBe("not_configured");
+    expect(row?.stale).toBe(false);
+    expect(row?.excluded_from_health_gate).toBe(true);
+    const summary = deskSummarizeFeedsHealth(feeds);
+    expect(summary.gated_feeds).toContain("stocknews");
+    if (prevDesk !== undefined) process.env.DESK_STOCKNEWS_API_KEY = prevDesk;
+    if (prev !== undefined) process.env.STOCKNEWS_API_KEY = prev;
   });
 });
