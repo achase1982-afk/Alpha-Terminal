@@ -19,12 +19,21 @@ import {
   streamerSubApplyManagedOptionsSubscriptions,
   streamerSubHold,
   streamerSubMaxDeskBookKeys,
+  streamerSubGetChainSortSpot,
   streamerSubMaxDeskOptionKeys,
   streamerSubParseRejectionKey,
   streamerSubRecordRejection,
   streamerSubMergeHold,
+  streamerSubNotifyAppPlanWired,
   streamerSubReplaceHold,
 } from "./streamerSubscriptionManager.js";
+import {
+  streamerWireSimulatorApplyPayload,
+  streamerWireSimulatorDeskLevelOneKeysOnWire,
+  streamerWireSimulatorLiveLevelOneOptionsCount,
+  streamerWireSimulatorResetForTests,
+} from "./streamerWireSimulator.js";
+import { trimKeysFurthestFromMoney } from "./streamerSubPlanSort.js";
 import {
   SCHWAB_INDEX_STREAM_FRESH_MS,
   setSchwabIndexStreamFreshCheck,
@@ -571,6 +580,7 @@ export function __deskStreamerSetWireTap(tap: StreamerWireTap | null): void {
 }
 
 function sendStreamerJson(payload: unknown): void {
+  streamerWireSimulatorApplyPayload(payload);
   streamerWireTap?.(payload);
   if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN) return;
   const raw = JSON.stringify(payload);
@@ -985,7 +995,7 @@ function sendOptionsBookSubscription(symbols: string[], opts?: { replayDesk?: bo
   if (req) {
     sendStreamerJson({ requests: [req] });
     logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: OPTIONS_BOOK SUBS sent");
-    if (opts?.replayDesk !== false) {
+    if (opts?.replayDesk === true) {
       deskStreamerReplayDeskOptionsBookAdds();
     }
   }
@@ -1087,7 +1097,11 @@ export function getDeskAddedLevelOneOptionSymbols(): string[] {
 }
 
 export function __streamerWireServerLevelOneOptionsCount(): number {
-  return subscribedOptionSymbols.size + deskAddedOptionSymbols.size;
+  return streamerWireSimulatorLiveLevelOneOptionsCount();
+}
+
+export function __streamerWireDeskKeysOnServer(): Set<string> {
+  return streamerWireSimulatorDeskLevelOneKeysOnWire();
 }
 
 let wirePeakLevelOneOptions = 0;
@@ -1103,6 +1117,7 @@ export function __streamerWirePeakLevelOneOptionsForTests(): number {
 
 export function __streamerWirePeakResetForTests(): void {
   wirePeakLevelOneOptions = 0;
+  streamerWireSimulatorResetForTests();
 }
 
 export function deskStreamerSetDeskOptions(symbols: string[]): number {
@@ -1179,6 +1194,29 @@ export function deskStreamerReplayDeskOptionAdds(): void {
   }
 }
 
+/** After app SUBS (replace-all), re-ADD desk keys up to the dynamic desk budget. */
+export function deskStreamerReplayDeskAfterAppLevelOneSub(): void {
+  if (connectionState !== "connected") return;
+  const maxDesk = streamerSubMaxDeskOptionKeys();
+  const trimmed = trimKeysFurthestFromMoney(
+    [...deskAddedOptionSymbols],
+    maxDesk,
+    streamerSubGetChainSortSpot(),
+  );
+  deskAddedOptionSymbols.clear();
+  for (const k of trimmed) deskAddedOptionSymbols.add(k);
+  if (trimmed.length > 0) batchDeskAdd(sendDeskOptionAdd, trimmed);
+}
+
+export function deskStreamerReplayDeskAfterAppOptionsBookSub(): void {
+  if (connectionState !== "connected") return;
+  const maxDesk = streamerSubMaxDeskBookKeys();
+  const keys = [...deskAddedOptionsBookSymbols].slice(0, maxDesk);
+  deskAddedOptionsBookSymbols.clear();
+  for (const k of keys) deskAddedOptionsBookSymbols.add(k);
+  if (keys.length > 0) batchDeskAdd(sendDeskOptionsBookAdd, keys);
+}
+
 export function deskStreamerReplayDeskOptionsBookAdds(): void {
   if (connectionState !== "connected") return;
   if (deskAddedOptionsBookSymbols.size > 0) {
@@ -1204,6 +1242,8 @@ export function deskStreamerAfterLoginAppSubsThenDeskReplay(): void {
   }
   if (subscribedOptionSymbols.size > 0) {
     sendOptionSubscription([...subscribedOptionSymbols], { replayDesk: false });
+  } else if (deskAddedOptionSymbols.size > 0) {
+    deskStreamerReplayDeskAfterAppLevelOneSub();
   }
   if (subscribedFuturesOptionSymbols.size > 0) {
     sendFuturesOptionSubscription([...subscribedFuturesOptionSymbols]);
@@ -1222,8 +1262,10 @@ export function deskStreamerAfterLoginAppSubsThenDeskReplay(): void {
   }
   if (subscribedOptionsBookSymbols.size > 0) {
     sendOptionsBookSubscription([...subscribedOptionsBookSymbols], { replayDesk: false });
+    deskStreamerReplayDeskAfterAppOptionsBookSub();
   }
-  deskStreamerReplayDeskAdds();
+  deskStreamerReplayDeskAfterAppLevelOneSub();
+  deskStreamerReplayDeskEquityAdds();
 }
 
 export function getDeskStreamerAddCounts(): {
@@ -2313,8 +2355,10 @@ export function replaceManagedLevelOneOptionSubscriptions(plan: string[]): void 
     } else {
       sendOptionSubscription([...next], { replayDesk: false });
     }
+    deskStreamerReplayDeskAfterAppLevelOneSub();
     noteWireLevelOneOptionsPeak();
   }
+  streamerSubNotifyAppPlanWired([...next]);
 }
 
 export function replaceManagedOptionsBookSubscriptions(plan: string[]): void {
@@ -2329,6 +2373,7 @@ export function replaceManagedOptionsBookSubscriptions(plan: string[]): void {
     } else {
       sendOptionsBookSubscription([...next], { replayDesk: false });
     }
+    deskStreamerReplayDeskAfterAppOptionsBookSub();
   }
 }
 
@@ -2341,6 +2386,8 @@ export function removeOptionSymbols(symbols: string[]) {
   }
   if (changed && connectionState === "connected") {
     sendOptionSubscription([...subscribedOptionSymbols], { replayDesk: false });
+    deskStreamerReplayDeskAfterAppLevelOneSub();
+    streamerSubNotifyAppPlanWired([...subscribedOptionSymbols]);
   }
 }
 

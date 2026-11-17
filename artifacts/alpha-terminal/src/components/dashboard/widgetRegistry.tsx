@@ -19,7 +19,10 @@ export interface DashboardWidgetHandlers {
   onRoll: (sym: string) => void;
   subscribeEquitySymbols?: (syms: string[]) => void;
   /** Options chain: register option symbols with the market stream. */
-  subscribeOptionSymbols?: (symbols: string[]) => Promise<void>;
+  subscribeOptionSymbols?: (
+    symbols: string[],
+    opts?: { purpose?: string; viewId?: string; holderId?: string },
+  ) => Promise<void>;
   onTradeSingle?: ComponentProps<typeof OptionsTab>["onTradeSingle"];
   onOpenStrategyBuilder?: ComponentProps<typeof OptionsTab>["onOpenStrategyBuilder"];
   /** Open the stock order ticket for the active symbol. */

@@ -15,6 +15,7 @@ import { signalSchwabAuthLost } from "@/lib/authNoticeStore";
 import { refreshSchwabViaServer, syncSchwabTokensFromServer } from "@/lib/schwabTokenSync";
 import type { LiveQuote, LiveNewsItem } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
+import { getStreamClientId } from "@/lib/streamClientId";
 
 declare global {
   interface Window {
@@ -190,6 +191,9 @@ export function useMarketStream() {
   const sseFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectDelayRef = useRef(WS_RECONNECT_BASE);
   const restPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const streamClientIdRef = useRef(getStreamClientId());
+  const optionHoldTouchRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const activeOptionHoldsRef = useRef<Set<string>>(new Set());
 
   const watchlist = useTerminalStore((s) => s.watchlists[s.activeWatchlistId]?.symbols ?? []);
 
@@ -429,6 +433,12 @@ export function useMarketStream() {
       clearTimeout(openTimeout);
       reconnectDelayRef.current = WS_RECONNECT_BASE;
       window.__alphaWs = socket;
+      socket.send(
+        JSON.stringify({
+          action: "registerStreamClient",
+          clientId: streamClientIdRef.current,
+        }),
+      );
       clearOptionTicks();
       stopSseStream();
       stopRestPolling();
@@ -511,6 +521,9 @@ export function useMarketStream() {
 
     return () => {
       mountedRef.current = false;
+      for (const holderId of activeOptionHoldsRef.current) {
+        void releaseOptionHold(holderId);
+      }
       if (quoteFlushTimerRef.current) {
         clearTimeout(quoteFlushTimerRef.current);
         quoteFlushTimerRef.current = null;
@@ -568,18 +581,75 @@ export function useMarketStream() {
   );
 
   const subscribeOptionSymbols = useCallback(
-    async (symbols: string[]) => {
+    async (
+      symbols: string[],
+      opts?: { purpose?: string; viewId?: string; holderId?: string },
+    ) => {
       if (!symbols.length) return;
+      const purpose = opts?.purpose ?? "watchlist";
+      const viewId = opts?.viewId ?? "";
+      const clientId = streamClientIdRef.current;
+      const holderId =
+        opts?.holderId ?? `stream:${clientId}:${purpose}${viewId ? `:${viewId}` : ""}`;
       try {
-        await fetchWithAuth(`${API_BASE}/stream/option-symbols`, {
+        const res = await fetchWithAuth(`${API_BASE}/stream/option-symbols`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ symbols }),
+          headers: {
+            "Content-Type": "application/json",
+            "x-stream-client-id": clientId,
+          },
+          body: JSON.stringify({ symbols, purpose, viewId, clientId, holderId }),
         });
+        if (res.ok) activeOptionHoldsRef.current.add(holderId);
       } catch {}
     },
-    []
+    [],
   );
+
+  const releaseOptionHold = useCallback(async (holderId: string) => {
+    if (!holderId) return;
+    try {
+      await fetchWithAuth(`${API_BASE}/stream/release-holds`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-stream-client-id": streamClientIdRef.current,
+        },
+        body: JSON.stringify({
+          clientId: streamClientIdRef.current,
+          holderId,
+        }),
+      });
+      activeOptionHoldsRef.current.delete(holderId);
+    } catch {}
+  }, []);
+
+  const touchOptionHolds = useCallback(async () => {
+    const clientId = streamClientIdRef.current;
+    for (const holderId of activeOptionHoldsRef.current) {
+      try {
+        await fetchWithAuth(`${API_BASE}/stream/touch-hold`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-stream-client-id": clientId,
+          },
+          body: JSON.stringify({ clientId, holderId }),
+        });
+      } catch {}
+    }
+  }, []);
+
+  useEffect(() => {
+    if (optionHoldTouchRef.current) clearInterval(optionHoldTouchRef.current);
+    optionHoldTouchRef.current = setInterval(() => {
+      void touchOptionHolds();
+    }, 60_000);
+    optionHoldTouchRef.current.unref?.();
+    return () => {
+      if (optionHoldTouchRef.current) clearInterval(optionHoldTouchRef.current);
+    };
+  }, [touchOptionHolds]);
 
   const sendWsMessage = useCallback((msg: Record<string, unknown>) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -587,5 +657,11 @@ export function useMarketStream() {
     }
   }, []);
 
-  return { subscribeOptionSymbols, subscribeEquitySymbols, sendWsMessage };
+  return {
+    subscribeOptionSymbols,
+    subscribeEquitySymbols,
+    sendWsMessage,
+    releaseOptionHold,
+    streamClientId: streamClientIdRef.current,
+  };
 }

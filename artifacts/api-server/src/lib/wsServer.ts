@@ -34,6 +34,7 @@ const PORTFOLIO_POLL_MS = 1_000;
 const PORTFOLIO_STREAM_MARK_THROTTLE_MS = 250;
 const ACCT_ACTIVITY_DEBOUNCE_MS = 2_000;
 const portfolioHoldByClient = new WeakMap<WebSocket, string>();
+const portfolioSymbolsSigByClient = new WeakMap<WebSocket, string>();
 const wsStreamerSessionByClient = new WeakMap<WebSocket, string>();
 let portfolioHoldSeq = 0;
 
@@ -406,6 +407,7 @@ let lastPortfolioAuthWarn = 0;
 function subscribeStreamerForPortfolioAccounts(
   mapped: Array<{ positions?: Array<{ symbol?: string; underlyingSymbol?: string; assetType?: string }> }>,
   holdId: string,
+  ws?: WebSocket,
 ) {
   const equityUnderlyings = new Set<string>();
   const optionSymbols = new Set<string>();
@@ -431,6 +433,16 @@ function subscribeStreamerForPortfolioAccounts(
         equityUnderlyings.add(p.symbol);
       }
     }
+  }
+  const optSig = [...optionSymbols].sort().join(",");
+  if (ws) {
+    const prev = portfolioSymbolsSigByClient.get(ws);
+    if (prev === optSig) {
+      streamerSubTouch(holdId);
+      if (equityUnderlyings.size > 0) addSymbols([...equityUnderlyings]);
+      return;
+    }
+    portfolioSymbolsSigByClient.set(ws, optSig);
   }
   if (equityUnderlyings.size > 0) addSymbols([...equityUnderlyings]);
   streamerSubHold(holdId, "user_visible", "LEVELONE_OPTIONS", [...optionSymbols]);
@@ -475,7 +487,7 @@ async function fetchAndPushPortfolio(ws: WebSocket, isClosed: () => boolean) {
   if (snap && snap.mapped.length > 0) {
     for (const clientWs of portfolioClients) {
       try {
-        subscribeStreamerForPortfolioAccounts(snap.mapped, portfolioPositionsHoldId(clientWs));
+        subscribeStreamerForPortfolioAccounts(snap.mapped, portfolioPositionsHoldId(clientWs), clientWs);
       } catch (subErr) {
         logger.debug({ err: subErr }, "Portfolio streamer subscription failed");
       }
@@ -587,6 +599,7 @@ function startPortfolioPoll(ws: WebSocket, isClosed: () => boolean) {
       subscribeStreamerForPortfolioAccounts(
         sharedPortfolioSnapshot.mapped,
         portfolioPositionsHoldId(ws),
+        ws,
       );
     } catch (subErr) {
       logger.debug({ err: subErr }, "Portfolio streamer subscription failed");
@@ -674,7 +687,6 @@ export function initWsServer(httpServer: HttpServer) {
 
   wss.on("connection", (ws) => {
     clients.add(ws);
-    wsStreamerSessionByClient.set(ws, randomUUID());
     logger.info({ total: clients.size }, "WS price client connected");
 
     let closed = false;
@@ -701,12 +713,12 @@ export function initWsServer(httpServer: HttpServer) {
           startPortfolioPoll(ws, isClosed);
         } else if (msg.action === "unsubscribePortfolio") {
           stopPortfolioPoll(ws);
+        } else if (msg.action === "registerStreamClient") {
+          const clientId = typeof msg.clientId === "string" ? msg.clientId.trim() : "";
+          if (clientId.length >= 8) wsStreamerSessionByClient.set(ws, clientId);
         } else if (msg.action === "releaseStreamerHolds") {
-          const prefix =
-            typeof msg.holderPrefix === "string"
-              ? msg.holderPrefix
-              : `ws:${wsStreamerSessionByClient.get(ws) ?? "unknown"}:`;
-          void streamerSubReleaseByPrefix(prefix);
+          const clientId = wsStreamerSessionByClient.get(ws);
+          if (clientId) void streamerSubReleaseByPrefix(`stream:${clientId}:`);
         }
       } catch {}
     });
@@ -715,8 +727,8 @@ export function initWsServer(httpServer: HttpServer) {
       closed = true;
       clearInterval(hb);
       stopPortfolioPoll(ws);
-      const sess = wsStreamerSessionByClient.get(ws);
-      if (sess) void streamerSubReleaseByPrefix(`ws:${sess}:`);
+      const clientId = wsStreamerSessionByClient.get(ws);
+      if (clientId) void streamerSubReleaseByPrefix(`stream:${clientId}:`);
       wsStreamerSessionByClient.delete(ws);
       clients.delete(ws);
       logger.info({ total: clients.size }, "WS price client disconnected");

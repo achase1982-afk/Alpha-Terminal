@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   STREAMER_L1_OPTIONS_CAP,
   streamerSubResetForTests,
@@ -6,11 +6,12 @@ import {
   streamerSubHold,
   streamerSubApplyManagedOptionsSubscriptions,
 } from "../streamerSubscriptionManager.js";
-import { deskAppLevelOneOptionsCap, deskComputeDeskLevelOneOptionsBudget } from "../desk/deskStreamerBudget.js";
+import { APP_L1_OPTIONS_MAX, deskAppLevelOneOptionsCap, deskComputeDeskLevelOneOptionsBudget } from "../desk/deskStreamerBudget.js";
 import {
   __deskStreamerSetWireTap,
   __deskStreamerWireTestPrime,
   __deskStreamerWireTestUnprime,
+  __streamerWireDeskKeysOnServer,
   __streamerWirePeakLevelOneOptionsForTests,
   __streamerWirePeakResetForTests,
   __streamerWireServerLevelOneOptionsCount,
@@ -19,6 +20,7 @@ import {
   getAppLevelOneOptionsCount,
   replaceManagedLevelOneOptionSubscriptions,
 } from "../schwabStreamer.js";
+import { streamerWireSimulatorResetForTests } from "../streamerWireSimulator.js";
 
 type WireReq = { service: string; command: string; parameters?: { keys?: string } };
 
@@ -36,6 +38,7 @@ describe("streamer subscription desk interplay", () => {
 
   beforeEach(() => {
     streamerSubResetForTests();
+    streamerWireSimulatorResetForTests();
     outbound.length = 0;
     __deskStreamerWireTestUnprime();
     __deskStreamerWireTestPrime();
@@ -56,20 +59,24 @@ describe("streamer subscription desk interplay", () => {
 
   const gen = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `${prefix}-${i}`);
 
-  it("app SUBS excludes desk core and settles without oscillation", async () => {
+  it("desk keys remain on wire after app SUBS", async () => {
     const desk = gen("DESK", 150);
     const app = gen("APP", 40);
+    deskStreamerSetDeskOptions(desk);
     streamerSubSetDeskCore("LEVELONE_OPTIONS", desk);
     streamerSubHold("chain:test", "user_visible", "LEVELONE_OPTIONS", app);
     await streamerSubApplyManagedOptionsSubscriptions();
     expect(getAppLevelOneOptionsCount()).toBe(40);
+    const wireDesk = __streamerWireDeskKeysOnServer();
+    expect(wireDesk.size).toBe(150);
+    for (const k of desk) expect(wireDesk.has(k)).toBe(true);
     await streamerSubApplyManagedOptionsSubscriptions();
     expect(subsCount()).toBeLessThanOrEqual(2);
     assertCap();
   });
 
-  it("8000-key hold and repeated core refresh keeps desk budget and app cap", async () => {
-    const deskTarget = deskComputeDeskLevelOneOptionsBudget();
+  it("8000-key hold and repeated core refresh keeps desk on wire and app cap", async () => {
+    const deskTarget = deskComputeDeskLevelOneOptionsBudget(0);
     const desk = gen("DESK", deskTarget);
     streamerSubSetDeskCore("LEVELONE_OPTIONS", desk);
     streamerSubHold("chain:8000", "user_visible", "LEVELONE_OPTIONS", gen("H", 8_000));
@@ -78,6 +85,8 @@ describe("streamer subscription desk interplay", () => {
       await streamerSubApplyManagedOptionsSubscriptions();
       deskStreamerSetDeskOptions(desk);
       expect(getAppLevelOneOptionsCount()).toBeLessThanOrEqual(deskAppLevelOneOptionsCap());
+      expect(getAppLevelOneOptionsCount()).toBeLessThanOrEqual(APP_L1_OPTIONS_MAX);
+      expect(__streamerWireDeskKeysOnServer().size).toBeGreaterThan(0);
       assertCap();
     }
   });

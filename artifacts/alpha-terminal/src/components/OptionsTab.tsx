@@ -1223,7 +1223,10 @@ function buildSchwabOptionKey(underlying: string, expiration: string, strike: nu
 }
 
 interface OptionsTabProps {
-  subscribeOptionSymbols?: (symbols: string[]) => Promise<void>;
+  subscribeOptionSymbols?: (
+    symbols: string[],
+    opts?: { purpose?: string; viewId?: string; holderId?: string },
+  ) => Promise<string | void>;
   stickyOffset?: number;
   onTradeSingle?: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
   onOpenStrategyBuilder?: (strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>, preSelectedLegs?: { contract: Contract; type: "CALL" | "PUT"; side?: "bid" | "ask" }[]) => void;
@@ -1334,8 +1337,14 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
         if (row.put?.streamKey) keys.push(row.put.streamKey);
       }
     }
-    if (keys.length > 0) void subscribeOptionSymbols(keys);
-  }, [groups, subscribeOptionSymbols]);
+    if (keys.length > 0) {
+      const exp = groups.map((g) => g.expiration).sort().join(",");
+      void subscribeOptionSymbols(keys, {
+        purpose: "chain",
+        viewId: `${symbol}:${exp}`,
+      });
+    }
+  }, [groups, subscribeOptionSymbols, symbol]);
 
   useEffect(() => { setExpandedExps(new Set()); setSelectedLegs(new Map()); }, [symbol]);
 

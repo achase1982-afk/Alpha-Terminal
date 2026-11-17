@@ -1,10 +1,17 @@
 import {
+  APP_L1_OPTIONS_MAX,
   deskAppLevelOneOptionsCap,
   deskAppOptionsBookCap,
   deskComputeDeskLevelOneOptionsBudget,
   deskComputeDeskOptionsBookBudget,
   deskGetSchwabStreamerLimits,
 } from "./desk/deskStreamerBudget.js";
+import { sortOptionKeysNearTheMoney } from "./streamerSubPlanSort.js";
+import {
+  streamerWireSimulatorLiveAppLevelOneCount,
+  streamerWireSimulatorLiveDeskLevelOneCount,
+  streamerWireSimulatorLiveLevelOneOptionsCount,
+} from "./streamerWireSimulator.js";
 
 export type StreamerSubTier = "desk_core" | "user_visible" | "background";
 export type StreamerSubService = "LEVELONE_OPTIONS" | "OPTIONS_BOOK";
@@ -27,6 +34,22 @@ const rejections: Array<{ atMs: number; service: StreamerSubService; key: string
 
 let deskCoreOptionKeys = new Set<string>();
 let deskCoreBookKeys = new Set<string>();
+let chainSortSpot: number | null = null;
+
+export function streamerSubSetChainSortSpot(spot: number | null): void {
+  chainSortSpot = spot;
+}
+
+export function streamerSubGetChainSortSpot(): number | null {
+  return chainSortSpot;
+}
+
+function holdPriority(holderId: string): number {
+  if (holderId.startsWith("ticket:")) return 0;
+  if (holderId.startsWith("portfolio:positions:")) return 1;
+  if (holderId.startsWith("chain:")) return 2;
+  return 3;
+}
 
 let planGeneration = 0;
 type L1PlanCache = {
@@ -75,6 +98,14 @@ export function streamerSubStartHoldPruner(): void {
   holdPrunerStarted = true;
   const t = setInterval(() => pruneExpiredHolds(), 60_000);
   t.unref?.();
+}
+
+export function streamerSubDeskCoreOptionKeysList(): string[] {
+  return [...deskCoreOptionKeys];
+}
+
+export function streamerSubDeskCoreBookKeysList(): string[] {
+  return [...deskCoreBookKeys];
 }
 
 export function streamerSubSetDeskCore(service: StreamerSubService, keys: Iterable<string>): void {
@@ -198,7 +229,7 @@ function buildTierMaps(
 
 function buildL1Plan(): L1PlanCache {
   const desk = deskCoreOptionKeys;
-  const appCap = deskAppLevelOneOptionsCap();
+  const appCap = Math.min(APP_L1_OPTIONS_MAX, deskAppLevelOneOptionsCap());
   const ordered: string[] = [];
   const inPlan = new Set<string>();
 
@@ -209,73 +240,35 @@ function buildL1Plan(): L1PlanCache {
     if (h.tier === "user_visible") userHolds.push(h);
     else if (h.tier === "background") bgHolds.push(h);
   }
-  userHolds.sort((a, b) => b.lastTouchMs - a.lastTouchMs);
+  userHolds.sort((a, b) => holdPriority(a.holderId) - holdPriority(b.holderId) || b.lastTouchMs - a.lastTouchMs);
   bgHolds.sort((a, b) => a.lastTouchMs - b.lastTouchMs);
 
   let userVisibleCount = 0;
   let backgroundCount = 0;
-  let full = false;
 
-  for (const h of userHolds) {
-    if (full) break;
-    for (const k of h.keys) {
+  const addKeys = (keys: string[], tier: "user_visible" | "background") => {
+    for (const k of keys) {
       if (desk.has(k) || inPlan.has(k)) continue;
-      if (ordered.length >= appCap) {
-        full = true;
-        break;
-      }
+      if (ordered.length >= appCap) return;
       inPlan.add(k);
       ordered.push(k);
-      userVisibleCount += 1;
+      if (tier === "user_visible") userVisibleCount += 1;
+      else backgroundCount += 1;
     }
+  };
+
+  for (const h of userHolds) {
+    if (ordered.length >= appCap) break;
+    const keys =
+      h.holderId.startsWith("chain:")
+        ? sortOptionKeysNearTheMoney(h.keys, chainSortSpot)
+        : h.keys;
+    addKeys(keys, "user_visible");
   }
 
   for (const h of bgHolds) {
-    if (full) break;
-    for (const k of h.keys) {
-      if (desk.has(k) || inPlan.has(k)) continue;
-      if (ordered.length >= appCap) {
-        full = true;
-        break;
-      }
-      inPlan.add(k);
-      ordered.push(k);
-      backgroundCount += 1;
-    }
-  }
-
-  if (ordered.length > appCap) {
-    const lruDropOrder: string[] = [];
-    const seenDrop = new Set<string>();
-    for (const h of bgHolds) {
-      for (const k of h.keys) {
-        if (desk.has(k) || seenDrop.has(k) || !inPlan.has(k)) continue;
-        seenDrop.add(k);
-        lruDropOrder.push(k);
-      }
-    }
-    for (const h of [...userHolds].reverse()) {
-      for (const k of h.keys) {
-        if (desk.has(k) || seenDrop.has(k) || !inPlan.has(k)) continue;
-        seenDrop.add(k);
-        lruDropOrder.push(k);
-      }
-    }
-    const drop = new Set(lruDropOrder.slice(0, ordered.length - appCap));
-    ordered.length = 0;
-    for (const k of inPlan) {
-      if (desk.has(k) || drop.has(k)) continue;
-      ordered.push(k);
-    }
-    const tierMaps = buildTierMaps(userHolds, bgHolds, desk);
-    userVisibleCount = 0;
-    backgroundCount = 0;
-    for (const k of ordered) {
-      if (tierMaps.userKeys.has(k)) userVisibleCount += 1;
-      else if (tierMaps.bgKeys.has(k)) backgroundCount += 1;
-    }
-    inPlan.clear();
-    for (const k of ordered) inPlan.add(k);
+    if (ordered.length >= appCap) break;
+    addKeys(h.keys, "background");
   }
 
   return {
@@ -345,11 +338,11 @@ export function streamerSubPlanOptionsBook(): { subscribed: string[]; budget: nu
 }
 
 export function streamerSubMaxDeskOptionKeys(): number {
-  return deskComputeDeskLevelOneOptionsBudget();
+  return deskComputeDeskLevelOneOptionsBudget(getL1PlanCache().appSubscribed.length);
 }
 
 export function streamerSubMaxDeskBookKeys(): number {
-  return deskComputeDeskOptionsBookBudget();
+  return deskComputeDeskOptionsBookBudget(getBookPlanCache().appSubscribed.length);
 }
 
 export function streamerSubHoldCount(): number {
@@ -369,6 +362,9 @@ export function getStreamerSubscriptionHealth(_now = Date.now()) {
       background: l1.backgroundCount,
       managed_holds: holds.size,
       planned_app: l1.appSubscribed.length,
+      live_app: streamerWireSimulatorLiveAppLevelOneCount(),
+      live_desk: streamerWireSimulatorLiveDeskLevelOneCount(),
+      live_total: streamerWireSimulatorLiveLevelOneOptionsCount(),
       planned: l1.deskCoreCount + l1.appSubscribed.length,
       capped: l1.capped,
     },
@@ -402,6 +398,8 @@ export function streamerSubResetForTests(): void {
   rejections.length = 0;
   deskCoreOptionKeys = new Set();
   deskCoreBookKeys = new Set();
+  chainSortSpot = null;
+  streamerSubResetWiredAppPlanSigForTests();
   bumpPlan();
 }
 
@@ -437,4 +435,25 @@ export function streamerSubBulkSeedHoldsForTests(
 
 export function streamerSubPlanGeneration(): number {
   return planGeneration;
+}
+
+let lastWiredAppPlanSig = "";
+let deskTrimDebounce: ReturnType<typeof setTimeout> | null = null;
+
+export function streamerSubNotifyAppPlanWired(appKeys: string[]): void {
+  const sig = [...appKeys].sort().join("\0");
+  if (sig === lastWiredAppPlanSig) return;
+  lastWiredAppPlanSig = sig;
+  if (deskTrimDebounce) clearTimeout(deskTrimDebounce);
+  deskTrimDebounce = setTimeout(() => {
+    deskTrimDebounce = null;
+    void import("./desk/deskTapeUniverse.js").then((m) => m.deskTapeUniverseAdjustToAppPlan());
+  }, 2_000);
+  deskTrimDebounce.unref?.();
+}
+
+export function streamerSubResetWiredAppPlanSigForTests(): void {
+  lastWiredAppPlanSig = "";
+  if (deskTrimDebounce) clearTimeout(deskTrimDebounce);
+  deskTrimDebounce = null;
 }

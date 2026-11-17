@@ -13,18 +13,18 @@ import {
   trimDeskOptionsToBudget,
   type DeskOptionPick,
 } from "./deskTapeStrikeWindows.js";
-import {
-  deskComputeDeskLevelOneOptionsBudget,
-  deskComputeDeskOptionsBookBudget,
-  deskGetSchwabStreamerLimits,
-} from "./deskStreamerBudget.js";
+import { deskGetSchwabStreamerLimits } from "./deskStreamerBudget.js";
 import {
   streamerSubApplyManagedOptionsBookSubscriptions,
   streamerSubApplyManagedOptionsSubscriptions,
   streamerSubMaxDeskBookKeys,
   streamerSubMaxDeskOptionKeys,
+  streamerSubDeskCoreBookKeysList,
+  streamerSubDeskCoreOptionKeysList,
+  streamerSubSetChainSortSpot,
   streamerSubSetDeskCore,
 } from "../streamerSubscriptionManager.js";
+import { trimKeysFurthestFromMoney } from "../streamerSubPlanSort.js";
 import {
   getAppLevelOneOptionSymbols,
   getAppLevelOneOptionsCount,
@@ -100,7 +100,7 @@ export function getDeskTapeUniverseHealth(): {
     streamer_add_rejections: [...streamerRejections],
     streamer_limits: deskGetSchwabStreamerLimits(),
     app_levelone_options: appCount,
-    desk_levelone_options_budget: deskComputeDeskLevelOneOptionsBudget(),
+    desk_levelone_options_budget: streamerSubMaxDeskOptionKeys(),
     app_option_symbols_sample: getAppLevelOneOptionSymbols().slice(0, 8),
     last_refresh_ms: lastRefreshMs > 0 ? lastRefreshMs : null,
     ...(lastError ? { error: lastError } : {}),
@@ -135,13 +135,13 @@ async function buildUniverseKeys(
   const explicit = await deskLoadExplicitOptionSymbols().catch(() => [] as string[]);
 
   if (explicit.length > 0) {
-    const budget = deskComputeDeskLevelOneOptionsBudget();
+    const budget = streamerSubMaxDeskOptionKeys();
     const levelone = explicit.slice(0, budget);
     cappedLevelone = explicit.length > budget;
     leveloneCapReason = cappedLevelone ? `schwab_levelone_options_budget_${budget}` : null;
     for (const exp of expiries) optionsByExpiry[exp] = 0;
     optionsByExpiry.explicit = levelone.length;
-    const bookBudget = deskComputeDeskOptionsBookBudget();
+    const bookBudget = streamerSubMaxDeskBookKeys();
     const book = pickBySpot([], spot, Math.max(0, bookBudget));
     cappedBook = false;
     return { levelone, book };
@@ -160,7 +160,7 @@ async function buildUniverseKeys(
     }
   }
 
-  const budget = deskComputeDeskLevelOneOptionsBudget();
+  const budget = streamerSubMaxDeskOptionKeys();
   const trimmed = trimDeskOptionsToBudget(picks, budget, spot);
   Object.assign(optionsByExpiry, trimmed.perExpiry);
   cappedLevelone = trimmed.capReason != null;
@@ -172,7 +172,7 @@ async function buildUniverseKeys(
     const window = deskStrikeWindowForExpiry(expiry, chain.normalized, sessionToday);
     allForBook.push(...filterDeskChainByStrikeWindow(chain.normalized, window));
   }
-  const bookBudget = deskComputeDeskOptionsBookBudget();
+  const bookBudget = streamerSubMaxDeskBookKeys();
   const bookLimit = Math.min(TARGET_OPTIONS_BOOK, Math.max(0, bookBudget));
   const book = pickBySpot(allForBook, spot, bookLimit);
   cappedBook = allForBook.length > book.length;
@@ -205,6 +205,7 @@ export async function deskTapeUniverseRefresh(force = false): Promise<void> {
       const counts = getDeskStreamerAddCounts();
       const needsOptions = counts.levelone_options === 0;
       if (!force && !expiryChanged && !spotMoved && !needsOptions && lastRefreshMs > 0) return;
+      streamerSubSetChainSortSpot(spot);
       const { levelone, book } = await buildUniverseKeys(expiries, spot);
       const prevDesk = new Set(getDeskAddedLevelOneOptionSymbols());
       const nextDesk = new Set(levelone);
@@ -249,9 +250,29 @@ export async function deskTapeUniverseRefresh(force = false): Promise<void> {
   await refreshInFlight;
 }
 
+/** Trim desk core to fit room left by the current app SUBS plan (debounced). */
+export async function deskTapeUniverseAdjustToAppPlan(): Promise<void> {
+  if (!deskTapeUniverseEnabled()) return;
+  const budget = streamerSubMaxDeskOptionKeys();
+  const core = streamerSubDeskCoreOptionKeysList();
+  const trimmed = trimKeysFurthestFromMoney(core, budget, lastSpot);
+  streamerSubSetDeskCore("LEVELONE_OPTIONS", trimmed);
+  const bookBudget = streamerSubMaxDeskBookKeys();
+  const bookTrim = streamerSubDeskCoreBookKeysList().slice(0, bookBudget);
+  streamerSubSetDeskCore("OPTIONS_BOOK", bookTrim);
+  const prevDesk = new Set(getDeskAddedLevelOneOptionSymbols());
+  const nextDesk = new Set(trimmed);
+  const deskRemoved = [...prevDesk].filter((k) => !nextDesk.has(k));
+  if (deskRemoved.length > 0) deskStreamerUnsubRemovedDeskOptions(deskRemoved);
+  await streamerSubApplyManagedOptionsSubscriptions();
+  await streamerSubApplyManagedOptionsBookSubscriptions();
+  deskStreamerSetDeskOptions(trimmed);
+  if (bookTrim.length) deskStreamerSetDeskOptionsBook(bookTrim);
+}
+
 export function deskTapeUniverseOnAppSubscriptionsChanged(): void {
   if (!deskTapeUniverseEnabled()) return;
-  void deskTapeUniverseRefresh(true);
+  void deskTapeUniverseAdjustToAppPlan();
 }
 
 export function deskTapeUniverseOnStreamerLogin(): void {

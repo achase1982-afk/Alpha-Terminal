@@ -11,10 +11,7 @@ import {
   streamerSubBulkSeedHoldsForTests,
   streamerSubSetDeskCore,
 } from "../streamerSubscriptionManager.js";
-import {
-  deskAppLevelOneOptionsCap,
-  deskComputeDeskLevelOneOptionsBudget,
-} from "../desk/deskStreamerBudget.js";
+import { APP_L1_OPTIONS_MAX, deskAppLevelOneOptionsCap, deskComputeDeskLevelOneOptionsBudget } from "../desk/deskStreamerBudget.js";
 
 vi.mock("../schwabStreamer.js", () => ({
   replaceManagedLevelOneOptionSubscriptions: vi.fn(),
@@ -36,7 +33,7 @@ describe("streamerSubscriptionManager", () => {
   });
 
   it("caps app holds at fixed slot reservation when desk core is full", () => {
-    const deskKeys = Array.from({ length: deskComputeDeskLevelOneOptionsBudget() }, (_, i) => `D-${i}`);
+    const deskKeys = Array.from({ length: deskComputeDeskLevelOneOptionsBudget(0) }, (_, i) => `D-${i}`);
     streamerSubSetDeskCore("LEVELONE_OPTIONS", deskKeys);
     const bgKeys = Array.from({ length: 8_000 }, (_, i) => `BG-${i}`);
     streamerSubHold("bg", "background", "LEVELONE_OPTIONS", bgKeys);
@@ -49,7 +46,7 @@ describe("streamerSubscriptionManager", () => {
   });
 
   it("desk core size unchanged across repeated plans with huge hold", () => {
-    const deskKeys = Array.from({ length: deskComputeDeskLevelOneOptionsBudget() }, (_, i) => `D-${i}`);
+    const deskKeys = Array.from({ length: deskComputeDeskLevelOneOptionsBudget(0) }, (_, i) => `D-${i}`);
     streamerSubSetDeskCore("LEVELONE_OPTIONS", deskKeys);
     streamerSubHold("chain:8000", "user_visible", "LEVELONE_OPTIONS", Array.from({ length: 8_000 }, (_, i) => `H-${i}`));
     for (let i = 0; i < 10; i++) {
@@ -76,7 +73,7 @@ describe("streamerSubscriptionManager", () => {
   });
 
   it("plans 3000+ keys in under 20ms", () => {
-    const deskKeys = Array.from({ length: deskComputeDeskLevelOneOptionsBudget() }, (_, i) => `D-${i}`);
+    const deskKeys = Array.from({ length: deskComputeDeskLevelOneOptionsBudget(0) }, (_, i) => `D-${i}`);
     streamerSubSetDeskCore("LEVELONE_OPTIONS", deskKeys);
     const bulk: Array<{ holderId: string; tier: StreamerSubTier; keys: string[] }> = Array.from(
       { length: 120 },
