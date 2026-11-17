@@ -283,9 +283,23 @@ export async function deskFetchSchwabChain(
     };
   }
 
+  const resolved = await deskSchwabRestResolve(preferred);
   const entry = await fetchChainsFromSchwab(sym, exp, preferred, opts);
   if (!entry) {
     const guess = preferred;
+    if (!resolved.token) {
+      return {
+        underlyingPrice: null,
+        raw: [],
+        normalized: [],
+        asOfMs: Date.now(),
+        session_date,
+        truncated: false,
+        contract_count: 0,
+        app: guess,
+        fellBack: false,
+      };
+    }
     const feed = deskSchwabChainsFeed(guess);
     deskMarkFeedError(feed, "schwab_chain_fetch_failed", guess === "app2" ? "schwab_rest_2" : undefined);
     return {

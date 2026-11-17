@@ -1112,6 +1112,39 @@ export function deskStreamerReplayDeskAdds(): void {
   }
 }
 
+/** After LOGIN: app full SUBS (no desk replay), then one desk ADD replay — only login path. */
+export function deskStreamerAfterLoginAppSubsThenDeskReplay(): void {
+  if (connectionState !== "connected") return;
+  if (subscribedSymbols.size > 0) {
+    sendEquitySubscription([...subscribedSymbols], { replayDeskEquities: false });
+  }
+  if (subscribedFuturesSymbols.size > 0) {
+    sendFuturesSubscription([...subscribedFuturesSymbols]);
+  }
+  if (subscribedOptionSymbols.size > 0) {
+    sendOptionSubscription([...subscribedOptionSymbols], { replayDesk: false });
+  }
+  if (subscribedFuturesOptionSymbols.size > 0) {
+    sendFuturesOptionSubscription([...subscribedFuturesOptionSymbols]);
+  }
+  if (subscribedTimesaleEquitySymbols.size > 0) {
+    sendTimesaleEquitySubscription([...subscribedTimesaleEquitySymbols]);
+  }
+  if (subscribedChartEquitySymbols.size > 0) {
+    sendChartEquitySubscription([...subscribedChartEquitySymbols]);
+  }
+  if (subscribedNyseBookSymbols.size > 0) {
+    sendNyseBookSubscription([...subscribedNyseBookSymbols]);
+  }
+  if (subscribedNasdaqBookSymbols.size > 0) {
+    sendNasdaqBookSubscription([...subscribedNasdaqBookSymbols]);
+  }
+  if (subscribedOptionsBookSymbols.size > 0) {
+    sendOptionsBookSubscription([...subscribedOptionsBookSymbols], { replayDesk: false });
+  }
+  deskStreamerReplayDeskAdds();
+}
+
 export function getDeskStreamerAddCounts(): {
   levelone_equities: number;
   levelone_options: number;
@@ -1690,34 +1723,7 @@ function handleMessage(raw: string) {
           broadcast("streamerStatus", { status: "connected" });
           reconnectDelay = 2000;
 
-          if (subscribedSymbols.size > 0) {
-            sendEquitySubscription([...subscribedSymbols], { replayDeskEquities: false });
-          }
-          if (subscribedFuturesSymbols.size > 0) {
-            sendFuturesSubscription([...subscribedFuturesSymbols]);
-          }
-          if (subscribedOptionSymbols.size > 0) {
-            sendOptionSubscription([...subscribedOptionSymbols], { replayDesk: false });
-          }
-          if (subscribedFuturesOptionSymbols.size > 0) {
-            sendFuturesOptionSubscription([...subscribedFuturesOptionSymbols]);
-          }
-          if (subscribedTimesaleEquitySymbols.size > 0) {
-            sendTimesaleEquitySubscription([...subscribedTimesaleEquitySymbols]);
-          }
-          if (subscribedChartEquitySymbols.size > 0) {
-            sendChartEquitySubscription([...subscribedChartEquitySymbols]);
-          }
-          if (subscribedNyseBookSymbols.size > 0) {
-            sendNyseBookSubscription([...subscribedNyseBookSymbols]);
-          }
-          if (subscribedNasdaqBookSymbols.size > 0) {
-            sendNasdaqBookSubscription([...subscribedNasdaqBookSymbols]);
-          }
-          if (subscribedOptionsBookSymbols.size > 0) {
-            sendOptionsBookSubscription([...subscribedOptionsBookSymbols], { replayDesk: false });
-          }
-          deskStreamerReplayDeskAdds();
+          deskStreamerAfterLoginAppSubsThenDeskReplay();
           void import("./desk/deskTapeUniverse.js")
             .then((m) => m.deskTapeUniverseOnStreamerLogin())
             .catch(() => undefined);

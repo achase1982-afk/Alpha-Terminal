@@ -195,7 +195,7 @@ async function doRefresh(retryCount: number): Promise<boolean> {
         return false;
       }
       if (res.status >= 500) {
-        deskMarkFeedError("schwab2_rest", `refresh_upstream_${res.status}`, "schwab_rest_2");
+        deskMarkFeedError("schwab2_rest", `upstream_error:${res.status}`, "schwab_rest_2");
       } else {
         deskMarkFeedAuthError("schwab2_rest", `refresh_http_${res.status}`, "schwab_rest_2");
       }

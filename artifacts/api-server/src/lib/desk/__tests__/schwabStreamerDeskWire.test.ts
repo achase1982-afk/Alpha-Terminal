@@ -4,9 +4,9 @@ import {
   __deskStreamerWireTestPrime,
   __deskStreamerWireTestUnprime,
   addOptionSymbols,
-  addOptionsBookSymbols,
   addSymbols,
   deskStreamerAddEquity,
+  deskStreamerAfterLoginAppSubsThenDeskReplay,
   deskStreamerSetDeskOptions,
   deskStreamerSetDeskOptionsBook,
 } from "../../schwabStreamer.js";
@@ -20,6 +20,10 @@ function collectRequests(outbound: unknown[]): WireReq[] {
     if (Array.isArray(body.requests)) reqs.push(...body.requests);
   }
   return reqs;
+}
+
+function countAdds(reqs: WireReq[], service: string): number {
+  return reqs.filter((r) => r.service === service && r.command === "ADD").length;
 }
 
 describe("schwabStreamer desk wire (mocked send)", () => {
@@ -49,14 +53,20 @@ describe("schwabStreamer desk wire (mocked send)", () => {
     expect(reqs.some((r) => r.command === "ADD" && r.parameters?.keys?.includes("DESK_B"))).toBe(true);
   });
 
-  it("deskStreamerSetDeskOptionsBook rolls universe with UNSUBS", () => {
-    addOptionsBookSymbols(["APP_B"]);
+  it("deskStreamerSetDeskOptionsBook rolls universe with UNSUBS of old keys", () => {
     outbound.length = 0;
-    deskStreamerSetDeskOptionsBook(["KEEP", "NEW_B"]);
-    deskStreamerSetDeskOptionsBook(["KEEP", "NEW_B"]);
+    deskStreamerSetDeskOptionsBook(["ROLL_A", "KEEP"]);
+    outbound.length = 0;
+    deskStreamerSetDeskOptionsBook(["KEEP", "ROLL_B"]);
     const reqs = collectRequests(outbound);
-    expect(reqs.filter((r) => r.service === "OPTIONS_BOOK" && r.command === "UNSUBS").length).toBeGreaterThanOrEqual(0);
-    expect(reqs.some((r) => r.service === "OPTIONS_BOOK" && r.command === "ADD")).toBe(true);
+    const unsubs = reqs
+      .filter((r) => r.service === "OPTIONS_BOOK" && r.command === "UNSUBS")
+      .flatMap((r) => (r.parameters?.keys ?? "").split(",").filter(Boolean));
+    expect(unsubs).toContain("ROLL_A");
+    expect(unsubs).not.toContain("KEEP");
+    expect(reqs.some((r) => r.service === "OPTIONS_BOOK" && r.command === "ADD" && r.parameters?.keys?.includes("ROLL_B"))).toBe(
+      true,
+    );
   });
 
   it("app equity SUBS then re-ADDs desk equities", () => {
@@ -68,6 +78,20 @@ describe("schwabStreamer desk wire (mocked send)", () => {
     expect(subs).toBeDefined();
     const adds = reqs.filter((r) => r.service === "LEVELONE_EQUITIES" && r.command === "ADD");
     expect(adds.some((r) => r.parameters?.keys?.includes("$SPX"))).toBe(true);
+  });
+
+  it("login replay: exactly one desk ADD per service after app SUBS", () => {
+    addSymbols(["QQQ"]);
+    addOptionSymbols(["APP_OPT"]);
+    deskStreamerAddEquity(["$SPX"]);
+    deskStreamerSetDeskOptions(["DESK_OPT_1"]);
+    deskStreamerSetDeskOptionsBook(["DESK_BOOK_1"]);
+    outbound.length = 0;
+    deskStreamerAfterLoginAppSubsThenDeskReplay();
+    const reqs = collectRequests(outbound);
+    expect(countAdds(reqs, "LEVELONE_EQUITIES")).toBe(1);
+    expect(countAdds(reqs, "LEVELONE_OPTIONS")).toBe(1);
+    expect(countAdds(reqs, "OPTIONS_BOOK")).toBe(1);
   });
 
   it("app LEVELONE_OPTIONS SUBS re-sends desk ADD batch", () => {
