@@ -1,5 +1,9 @@
-import { getMarketContext } from "../getMarketContext.js";
 import { deskAsofEtIso, deskInEtTimeWindow, deskIsNyWeekday, deskSessionDateEt } from "./deskEt.js";
+import {
+  isEquityQuoteRestSessionActive,
+  isEquityQuoteRthStaleWindow,
+  isSpxDeskProductSessionActive,
+} from "./deskFeedSessions.js";
 import { deskReadStreamerConnected, deskReadStreamerStatus } from "./deskSchwabStreamerBridge.js";
 
 export type DeskFeedId =
@@ -57,9 +61,9 @@ const FEED_SOURCES: Record<DeskFeedId, string> = {
   schwab_streamer: "schwab",
   schwab_quotes_rest: "schwab",
   schwab_chains: "schwab",
-  live_gamma_0dte: "schwab",
-  live_gamma: "schwab",
-  live_net_prem: "schwab",
+  live_gamma_0dte: "unusual_whales",
+  live_gamma: "unusual_whales",
+  live_net_prem: "unusual_whales",
   uw_flow: "unusual_whales",
   tradier: "tradier",
   alpaca: "alpaca_news",
@@ -75,13 +79,11 @@ const FEED_SESSION: Partial<Record<DeskFeedId, SessionWindow>> = {
 };
 
 export function deskStaleAfterMs(feed: DeskFeedId, now = Date.now()): number {
-  const session = getMarketContext(new Date(now)).session;
-  const rth = session === "OPEN";
   switch (feed) {
     case "schwab_streamer":
       return 90_000;
     case "schwab_quotes_rest":
-      return rth ? 15_000 : 300_000;
+      return isEquityQuoteRthStaleWindow(new Date(now)) ? 15_000 : 300_000;
     case "schwab_chains":
     case "live_gamma_0dte":
     case "live_gamma":
@@ -99,6 +101,15 @@ export function deskStaleAfterMs(feed: DeskFeedId, now = Date.now()): number {
 }
 
 function feedInSession(feed: DeskFeedId, now = new Date()): boolean {
+  switch (feed) {
+    case "schwab_streamer":
+    case "schwab_chains":
+      return isSpxDeskProductSessionActive(now);
+    case "schwab_quotes_rest":
+      return isEquityQuoteRestSessionActive(now);
+    default:
+      break;
+  }
   const win = FEED_SESSION[feed];
   if (!win) return true;
   if (!deskIsNyWeekday(now)) return false;
@@ -200,10 +211,7 @@ function resolveStatus(
 
   const last = rec.lastDataMs;
   const stale = deskIsFeedStale(feed, last, now);
-  if (last == null) {
-    if (feed === "live_gamma_0dte" || feed === "live_gamma" || feed === "live_net_prem") return "stopped";
-    return "stale";
-  }
+  if (last == null) return "stale";
   if (stale) return "stale";
   return "OK";
 }

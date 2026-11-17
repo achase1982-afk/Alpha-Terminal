@@ -11,12 +11,14 @@ import { deskFetchNews } from "../lib/desk/deskNews.js";
 import { getDeskTapeSince, registerDeskSpxSse } from "../lib/desk/deskSpxTape.js";
 import { deskPersistSnapshot } from "../lib/desk/deskSnapshotStore.js";
 import { deskAsofEtIso, deskSessionDateEt } from "../lib/desk/deskEt.js";
+import { refreshDeskUwLiveFeeds } from "../lib/desk/deskUwLiveFeeds.js";
 
 const router: IRouter = Router();
 
 router.use(deskBearerAuth);
 
-router.get("/health", (_req, res) => {
+router.get("/health", async (_req, res) => {
+  await refreshDeskUwLiveFeeds().catch(() => undefined);
   const now = Date.now();
   const feeds = buildDeskHealthFeeds(now);
   const body = {
@@ -69,13 +71,25 @@ router.get("/chains", async (req, res) => {
     res.status(400).json({ error: "expiration required (YYYY-MM-DD)" });
     return;
   }
-  const chain = await deskFetchSchwabChain(symbol, expiration);
+  const strikeCountRaw = req.query["strikeCount"] as string | undefined;
+  const strikeCount =
+    strikeCountRaw != null && strikeCountRaw !== ""
+      ? Math.min(parseInt(strikeCountRaw, 10) || 0, 500)
+      : undefined;
+  const range = req.query["range"] as string | undefined;
+  const chainOpts =
+    strikeCount != null || range
+      ? { strikeCount: strikeCount && strikeCount > 0 ? strikeCount : undefined, range }
+      : undefined;
+  const chain = await deskFetchSchwabChain(symbol, expiration, chainOpts);
   const payload = {
     symbol,
     expiration: expiration.slice(0, 10),
     underlyingPrice: chain.underlyingPrice,
     contracts_raw: chain.raw,
     contracts: chain.normalized,
+    truncated: chain.truncated,
+    contract_count: chain.contract_count,
     session_date: chain.session_date,
   };
   void deskPersistSnapshot("chains", payload, symbol);

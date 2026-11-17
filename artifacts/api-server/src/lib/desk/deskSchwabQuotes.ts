@@ -25,6 +25,10 @@ function pickNum(sources: Array<Record<string, unknown> | undefined>, ...keys: s
     for (const k of keys) {
       const v = src[k];
       if (typeof v === "number" && Number.isFinite(v)) return v;
+      if (typeof v === "string" && v.trim() !== "") {
+        const n = Number(v);
+        if (Number.isFinite(n)) return n;
+      }
     }
   }
   return null;
@@ -97,16 +101,27 @@ export async function deskFetchSchwabQuotes(symbols: string[]): Promise<{
     const ts = quoteTs ?? tradeTs ?? Date.now();
     latest = Math.max(latest, ts);
 
+    const change_pct = index
+      ? pickNum(
+          srcs,
+          "netPercentChangeInDouble",
+          "netPercentChange",
+          "regularMarketPercentChangeInDouble",
+          "regularMarketPercentChange",
+          "markPercentChange",
+        )
+      : pickNum(srcs, "netPercentChangeInDouble", "netPercentChange", "markPercentChange");
+
     quotes.push({
       symbol: display,
-      last: pickNum(srcs, "lastPrice", "last", "mark", "markPrice"),
+      last: pickNum(srcs, "lastPrice", "last", "mark", "markPrice", "regularMarketLastPrice"),
       bid: index ? null : pickNum(srcs, "bidPrice", "bid"),
       ask: index ? null : pickNum(srcs, "askPrice", "ask"),
       bid_size: index ? null : pickNum(srcs, "bidSize"),
       ask_size: index ? null : pickNum(srcs, "askSize"),
       volume: pickNum(srcs, "totalVolume", "regularMarketVolume"),
-      change: pickNum(srcs, "netChange", "markChange"),
-      change_pct: pickNum(srcs, "netPercentChangeInDouble", "markPercentChange"),
+      change: pickNum(srcs, "netChange", "regularMarketNetChange", "markChange"),
+      change_pct,
       quote_ts: quoteTs,
       trade_ts: tradeTs,
     });

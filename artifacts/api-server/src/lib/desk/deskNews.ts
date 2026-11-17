@@ -7,9 +7,11 @@ export async function deskFetchNews(symbols: string[]): Promise<{ articles: unkn
   const all: unknown[] = [];
   let latest = Date.now();
 
+  let hadSuccess = false;
   for (const sym of uniq) {
     try {
       const rows = await fetchSymbolNews(sym, logger);
+      hadSuccess = true;
       for (const a of rows) {
         all.push(a);
         if (a.datetime) latest = Math.max(latest, a.datetime * 1000);
@@ -20,6 +22,8 @@ export async function deskFetchNews(symbols: string[]): Promise<{ articles: unkn
     }
   }
 
-  if (all.length) deskTouchFeed("news");
+  if (hadSuccess) {
+    deskTouchFeed("news", latest, "finnhub");
+  }
   return { articles: all, asOfMs: latest };
 }
