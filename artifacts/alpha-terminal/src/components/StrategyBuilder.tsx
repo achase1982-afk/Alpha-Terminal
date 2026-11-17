@@ -1385,7 +1385,12 @@ export function StrategyBuilder({
                     </div>
                     <div className="mt-0.5 flex items-center justify-between text-[11px]" style={{ color: TEXT }}>
                       <button
-                        onClick={() => { if (!priceLocked && effectiveBid != null) setLimitPrice(effectiveBid.toFixed(2)); }}
+                        onClick={() => {
+                          if (!priceLocked && effectiveBid != null) {
+                            const px = parseCanonicalLimit(effectiveBid, limitTickCtx);
+                            if (px != null) setLimitPrice(displaySubmittedLimit(limitTickCtx, px));
+                          }
+                        }}
                         disabled={priceLocked}
                         className="px-1.5 py-px"
                         style={{ borderRadius: 999, border: "1px solid transparent", opacity: priceLocked ? 0.4 : 1 }}
