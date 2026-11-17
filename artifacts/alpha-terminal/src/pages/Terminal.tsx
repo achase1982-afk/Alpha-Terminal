@@ -176,6 +176,20 @@ const DESKTOP_CONTEXT_TABS: { id: MarketDataTab; label: string }[] = [
   { id: "newsChat", label: "Chat" },
 ];
 
+/** Keep the header light green through brief stream flaps. Red/amber only after 8s offline. */
+function useDebouncedStreamLight(status: "offline" | "connecting" | "live") {
+  const [shown, setShown] = useState(status);
+  useEffect(() => {
+    if (status === "live") {
+      setShown("live");
+      return;
+    }
+    const t = window.setTimeout(() => setShown(status), 8_000);
+    return () => window.clearTimeout(t);
+  }, [status]);
+  return shown;
+}
+
 function DesktopContextTabs({ activeTab, setActiveTab }: { activeTab: MarketDataTab; setActiveTab: (t: MarketDataTab) => void }) {
   return (
     <div className="flex items-stretch border-b border-zinc-800/60 overflow-x-auto" style={{ background: "#111" }}>
@@ -310,6 +324,7 @@ function PulseHeader({ pulseData, onRefresh }: { pulseData: any; onRefresh: () =
 
 export default function TerminalPage() {
   const { symbol, accessToken, traderAccessToken, chartPeriod, chartInterval, streamStatus } = useTerminalStore(useShallow((s) => ({ symbol: s.symbol, accessToken: s.accessToken, traderAccessToken: s.traderAccessToken, chartPeriod: s.chartPeriod, chartInterval: s.chartInterval, streamStatus: s.streamStatus })));
+  const streamLight = useDebouncedStreamLight(streamStatus);
   const schwabLinked = !!(accessToken || traderAccessToken);
   useSchwabAccountsBootstrap(schwabLinked);
   const strategistJobsForBadge = useTerminalStore((s) => s.strategistJobs);
@@ -810,10 +825,10 @@ export default function TerminalPage() {
           <MarketSessionClock />
           <div
             className="ml-3 w-2.5 h-2.5 rounded-full shrink-0"
-            title={streamStatus === "live" ? "Live data" : streamStatus === "connecting" ? "Connecting..." : "Offline"}
+            title={streamLight === "live" ? "Live data" : streamLight === "connecting" ? "Connecting..." : "Offline"}
             style={{
-              background: streamStatus === "live" ? "#00d166" : streamStatus === "connecting" ? "#FFB800" : "#f23645",
-              boxShadow: streamStatus === "live" ? "0 0 6px #00d166" : undefined,
+              background: streamLight === "live" ? "#00d166" : streamLight === "connecting" ? "#FFB800" : "#f23645",
+              boxShadow: streamLight === "live" ? "0 0 6px #00d166" : undefined,
             }}
           />
         </div>

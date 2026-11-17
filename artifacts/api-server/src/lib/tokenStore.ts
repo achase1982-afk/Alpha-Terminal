@@ -8,8 +8,10 @@ const TOKEN_FILE = path.join(process.cwd(), ".data", "schwab-tokens.json");
 const SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token";
 const REFRESH_BUFFER_MS = 5 * 60 * 1000;
 const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const RETRY_DELAY_MS = 30_000;
-const MAX_RETRIES = 3;
+/** Renew the 30-minute access token on a server timer, with or without a browser open. */
+const ACCESS_REFRESH_INTERVAL_MS = 25 * 60 * 1000;
+const EXPIRING_SOON_MS = 5 * 60 * 1000;
+const MAX_BACKOFF_MS = 5 * 60 * 1000;
 
 interface StoredTokenSet {
   accessToken: string;
@@ -30,6 +32,7 @@ interface TokenFile {
 let store: TokenFile = {};
 let marketTimer: ReturnType<typeof setTimeout> | null = null;
 let traderTimer: ReturnType<typeof setTimeout> | null = null;
+let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
 let onTokenRefreshed: ((kind: "market" | "trader", accessToken: string) => void) | null = null;
 let dbStoreReady = false;
 
@@ -192,6 +195,11 @@ function mirrorLinkedTokenKind(
   clearTimer(otherKind);
 }
 
+function backoffDelayMs(attempt: number): number {
+  const exp = Math.min(5_000 * 2 ** Math.min(Math.max(attempt, 0), 6), MAX_BACKOFF_MS);
+  return exp + Math.floor(Math.random() * 1_000);
+}
+
 function refreshFlightKey(kind: "market" | "trader"): string {
   const tokenSet = store[kind];
   if (!tokenSet?.refreshToken) return kind;
@@ -273,47 +281,44 @@ async function doRefresh(
 
       const currentGen = store[kind]?.generation ?? 0;
       if (currentGen > generationBefore) {
-        logger.info("TokenStore: %s store was updated by another refresh — skipping clear", kind);
+        logger.info("TokenStore: %s store was updated by another refresh — keeping the stored refresh token", kind);
         logger.info(
-          { ts: Date.now(), kind, attempt: retryCount + 1, outcome: "superseded_by_concurrent_refresh", refreshTokenPersisted: false },
+          { ts: Date.now(), kind, attempt: retryCount + 1, outcome: "superseded_by_concurrent_refresh", refreshTokenPersisted: true },
           "[SCHWAB_TOKEN] refresh outcome",
         );
         return false;
       }
 
-      if (res.status === 401 || res.status === 400) {
-        const errorBody = text.toLowerCase();
-        if (
-          errorBody.includes("expired") ||
-          errorBody.includes("invalid_grant") ||
-          errorBody.includes("revoked") ||
-          errorBody.includes("unsupported_token_type") ||
-          errorBody.includes("refresh_token_authentication_error") ||
-          errorBody.includes("failed refresh token authentication")
-        ) {
-          logger.warn("TokenStore: %s refresh token expired/revoked — clearing", kind);
-          void logFailure("SCHWAB_API", "CRITICAL", `OAuth ${kind} refresh token expired/revoked — clearing`, { kind, errorBody: text.slice(0, 300) });
-          store[kind] = undefined;
-          persistKind(kind);
-          maybeEmitAuthExpired(kind, { reason: "refresh_token_revoked_or_expired" });
-          return false;
-        }
+      // Schwab does not rotate this app's refresh token. A failed access-token
+      // refresh must not delete or replace it — an external desk reads the same
+      // refresh token and would lose the session if we cleared it.
+      if (res.status === 400 || res.status === 401) {
+        logger.warn(
+          { kind, status: res.status },
+          "TokenStore: access-token refresh rejected — refresh token left unchanged",
+        );
       }
 
-      if (retryCount < MAX_RETRIES) {
-        logger.info("TokenStore: will retry %s refresh in %ds", kind, RETRY_DELAY_MS / 1000);
-        scheduleRefreshWithDelay(kind, RETRY_DELAY_MS);
-      }
+      const delay = backoffDelayMs(retryCount);
+      logger.info({ kind, delayMs: delay, attempt: retryCount + 1 }, "TokenStore: scheduling access-token refresh retry");
+      scheduleRefreshWithDelay(kind, delay);
       return false;
     }
 
     const data = JSON.parse(text) as Record<string, unknown>;
     const newAccess = data["access_token"] as string;
-    const newRefresh = (data["refresh_token"] as string) ?? tokenSet.refreshToken;
+    // Never store a different refresh token. This app's Schwab grant does not rotate.
+    const newRefresh = tokenSet.refreshToken;
     const expiresIn = (data["expires_in"] as number) ?? 1800;
 
     const previousRefreshToken = tokenSet.refreshToken;
-    const refreshTokenRotated = newRefresh !== previousRefreshToken;
+    const refreshTokenRotated = false;
+    if (typeof data["refresh_token"] === "string" && data["refresh_token"] !== tokenSet.refreshToken) {
+      logger.info(
+        { kind },
+        "TokenStore: Schwab returned a different refresh token — ignored, stored refresh token unchanged",
+      );
+    }
     const updated: StoredTokenSet = {
       accessToken: newAccess,
       refreshToken: newRefresh,
@@ -365,10 +370,9 @@ async function doRefresh(
     );
     emitPortfolioError({ code: "AUTH_EXPIRED", kind, reason: "network_error" });
     void logFailure("SCHWAB_API", "ERROR", `OAuth ${kind} token refresh network error`, { kind, error: String(err) });
-    if (retryCount < MAX_RETRIES) {
-      logger.info("TokenStore: will retry %s refresh in %ds", kind, RETRY_DELAY_MS / 1000);
-      scheduleRefreshWithDelay(kind, RETRY_DELAY_MS);
-    }
+    const delay = backoffDelayMs(retryCount);
+    logger.info({ kind, delayMs: delay, attempt: retryCount + 1 }, "TokenStore: scheduling access-token refresh retry after network error");
+    scheduleRefreshWithDelay(kind, delay);
     return false;
   }
 }
@@ -523,9 +527,9 @@ export async function initTokenStore() {
   if (store.market?.refreshToken) {
     logger.info("TokenStore: found persisted market tokens");
     markAuthEstablished("market");
-    const isExpired = store.market.expiresAt < Date.now();
-    if (isExpired) {
-      logger.info("TokenStore: market access token expired, refreshing now");
+    const expiring = store.market.expiresAt - Date.now() <= EXPIRING_SOON_MS;
+    if (expiring) {
+      logger.info("TokenStore: market access token expired or expiring, refreshing now");
       await refreshTokenSet("market");
     } else {
       scheduleRefresh("market");
@@ -538,14 +542,51 @@ export async function initTokenStore() {
       store.trader.refreshToken === store.market.refreshToken;
     logger.info("TokenStore: found persisted trader tokens");
     markAuthEstablished("trader");
-    const isExpired = store.trader.expiresAt < Date.now();
-    if (isExpired && !linkedToMarket) {
-      logger.info("TokenStore: trader access token expired, refreshing now");
+    const expiring = store.trader.expiresAt - Date.now() <= EXPIRING_SOON_MS;
+    if (expiring && !linkedToMarket) {
+      logger.info("TokenStore: trader access token expired or expiring, refreshing now");
       await refreshTokenSet("trader");
     } else if (!linkedToMarket) {
       scheduleRefresh("trader");
     }
   }
+
+  startAccessTokenKeepalive();
+}
+
+function accessTokenNeedsRefresh(kind: "market" | "trader"): boolean {
+  const tokenSet = store[kind];
+  if (!tokenSet?.refreshToken) return false;
+  if (kind === "trader") {
+    const market = store.market;
+    if (market?.refreshToken && market.refreshToken === tokenSet.refreshToken) return false;
+  }
+  if (!tokenSet.expiresAt) return true;
+  return tokenSet.expiresAt - Date.now() <= EXPIRING_SOON_MS;
+}
+
+async function refreshExpiringAccessTokens(reason: "startup" | "interval"): Promise<void> {
+  for (const kind of ["market", "trader"] as const) {
+    if (!accessTokenNeedsRefresh(kind)) continue;
+    logger.info(
+      { kind, reason, expiresAt: store[kind]?.expiresAt ?? null },
+      "[SCHWAB_TOKEN] keepalive refresh",
+    );
+    await refreshTokenSet(kind);
+  }
+}
+
+/** Server-side access-token renewal. Independent of any browser client. */
+export function startAccessTokenKeepalive(): void {
+  if (keepaliveTimer) return;
+  keepaliveTimer = setInterval(() => {
+    void refreshExpiringAccessTokens("interval");
+  }, ACCESS_REFRESH_INTERVAL_MS);
+  keepaliveTimer.unref?.();
+  logger.info(
+    { intervalMs: ACCESS_REFRESH_INTERVAL_MS },
+    "TokenStore: access-token keepalive started (browser not required)",
+  );
 }
 
 export async function forceRefresh(kind: "market" | "trader"): Promise<boolean> {
