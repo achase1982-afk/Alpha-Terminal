@@ -1148,6 +1148,7 @@ export default function TerminalPage() {
         availableExpirations={strategyExpirations}
         chainData={strategyChainData}
         initialLegs={strategyInitialLegs}
+        subscribeOptionSymbols={subscribeOptionSymbols}
       />
       <OrderTicket
         isOpen={orderOpen}
@@ -1161,6 +1162,7 @@ export default function TerminalPage() {
         isCloseOrder={orderIsClose}
         onSwitchToStock={handleSwitchToStock}
         onSwitchToOptions={handleSwitchToOptions}
+        subscribeOptionSymbols={subscribeOptionSymbols}
         onSendToStrategist={(ticker) => {
           // Strategist tab pulls results for the active symbol — switch to
           // the validated ticket's ticker so the live debate + verdict card

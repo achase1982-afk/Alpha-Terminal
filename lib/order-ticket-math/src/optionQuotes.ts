@@ -31,6 +31,8 @@ export interface PairedQuoteSource {
   streamTs?: number;
   contractBid?: number;
   contractAsk?: number;
+  /** When REST chain quote was fetched (ms); stream wins only if fresher. */
+  contractTs?: number;
 }
 
 function pairComplete(bid?: number, ask?: number): bid is number {
@@ -60,10 +62,12 @@ export function resolvePairedBidAsk(source: PairedQuoteSource): PairedBidAsk | n
   });
 
   if (streamOk && contractOk) {
-    if (source.streamTs != null && source.streamTs > 0) {
+    const streamTs = source.streamTs ?? 0;
+    const contractTs = source.contractTs ?? 0;
+    if (streamTs > 0 && (contractTs <= 0 || streamTs >= contractTs)) {
       return pick(source.streamBid!, source.streamAsk!, "stream");
     }
-    return pick(source.streamBid!, source.streamAsk!, "stream");
+    return pick(source.contractBid!, source.contractAsk!, "contract");
   }
   if (streamOk) return pick(source.streamBid!, source.streamAsk!, "stream");
   if (contractOk) return pick(source.contractBid!, source.contractAsk!, "contract");

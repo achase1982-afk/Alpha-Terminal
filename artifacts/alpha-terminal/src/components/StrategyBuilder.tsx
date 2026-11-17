@@ -1,7 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useQuote, type QuoteData } from "@/hooks/useQuote";
-import { useMarketStream } from "@/hooks/useMarketStream";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { aggregateSpreadNBBO, mergeLegStreamQuotes, pairedQuoteFromStreamTick } from "@workspace/order-ticket-math";
 import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
@@ -457,6 +456,7 @@ interface StrategyBuilderProps {
   availableStrikes?: number[];
   availableExpirations?: { label: string; value: string }[];
   chainData?: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>;
+  subscribeOptionSymbols?: (symbols: string[]) => void | Promise<void>;
 }
 
 export function StrategyBuilder({
@@ -469,6 +469,7 @@ export function StrategyBuilder({
   availableStrikes = [],
   availableExpirations = [],
   chainData,
+  subscribeOptionSymbols,
 }: StrategyBuilderProps) {
   const symbol = useTerminalStore((s) => s.symbol);
   const { data: quote } = useQuote(symbol);
@@ -501,7 +502,6 @@ export function StrategyBuilder({
   const [strategistDispatchInFlight, setStrategistDispatchInFlight] = useState(false);
 
   const optionTicks = useOptionsStreamStore((s) => s.ticks);
-  const { subscribeOptionSymbols } = useMarketStream();
 
   const pricedLegs = useMemo(
     () => legs.map((leg) => mergeLegStreamQuotes(leg, optionTicks[leg.schwabSymbol])),
@@ -511,7 +511,7 @@ export function StrategyBuilder({
   useEffect(() => {
     if (!isOpen) return;
     const symbols = legs.map((l) => l.schwabSymbol).filter(Boolean);
-    if (symbols.length > 0) {
+    if (symbols.length > 0 && subscribeOptionSymbols) {
       void subscribeOptionSymbols([...new Set(symbols)]);
     }
   }, [isOpen, legs, subscribeOptionSymbols]);
@@ -584,11 +584,18 @@ export function StrategyBuilder({
     const schwabSymbol = buildSchwabSymbol(leg.strike, leg.optionType, leg.expiration);
     const cd = chainData?.get(schwabSymbol);
     const tick = useOptionsStreamStore.getState().ticks[schwabSymbol];
-    const q = pairedQuoteFromStreamTick(tick);
+    const merged = mergeLegStreamQuotes(
+      {
+        ...leg,
+        id: nextLegId(),
+        schwabSymbol,
+        bid: cd?.bid,
+        ask: cd?.ask,
+      },
+      tick,
+    );
     return {
-      ...leg, id: nextLegId(), schwabSymbol,
-      bid: q.bid ?? undefined,
-      ask: q.ask ?? undefined,
+      ...merged,
       delta: (tick && tick.delta != null) ? tick.delta : cd?.delta,
       gamma: (tick && tick.gamma != null) ? tick.gamma : cd?.gamma,
       theta: (tick && tick.theta != null) ? tick.theta : cd?.theta,
@@ -630,10 +637,13 @@ export function StrategyBuilder({
         );
         const cd = chainData?.get(schwabSymbol);
         const tick = useOptionsStreamStore.getState().ticks[schwabSymbol];
-        const q = pairedQuoteFromStreamTick(tick);
+        const merged = mergeLegStreamQuotes(
+          { ...updated, schwabSymbol, bid: cd?.bid, ask: cd?.ask },
+          tick,
+        );
         updated.schwabSymbol = schwabSymbol;
-        updated.bid = q.bid ?? undefined;
-        updated.ask = q.ask ?? undefined;
+        updated.bid = merged.bid ?? undefined;
+        updated.ask = merged.ask ?? undefined;
         updated.delta = (tick && tick.delta != null) ? tick.delta : cd?.delta;
         updated.gamma = (tick && tick.gamma != null) ? tick.gamma : cd?.gamma;
         updated.theta = (tick && tick.theta != null) ? tick.theta : cd?.theta;
@@ -681,22 +691,23 @@ export function StrategyBuilder({
       pricedLegs.map((l) => ({ instruction: l.direction, bid: l.bid, ask: l.ask })),
     );
     if (!agg) return null;
-    const spreadMid = agg.mid ?? (agg.bid + agg.ask) / 2;
-    if (spreadMid <= 0 || agg.crossed) {
-      return { spreadBid: agg.bid > 0 ? agg.bid : 0.01, spreadMid: spreadMid > 0 ? spreadMid : 0.01, spreadAsk: agg.ask > 0 ? agg.ask : 0.01 };
+    let spreadBid = agg.bid;
+    let spreadAsk = agg.ask;
+    if (spreadBid > spreadAsk) {
+      const tmp = spreadBid;
+      spreadBid = spreadAsk;
+      spreadAsk = tmp;
     }
-    return { spreadBid: agg.bid, spreadMid, spreadAsk: agg.ask };
+    const spreadMid = agg.mid;
+    if (spreadMid == null || spreadMid <= 0 || agg.crossed) {
+      return { spreadBid, spreadMid: null as number | null, spreadAsk, crossed: true };
+    }
+    return { spreadBid, spreadMid, spreadAsk, crossed: false };
   }, [pricedLegs]);
-
-  useEffect(() => {
-    if (spreadPrices && !limitPrice && !priceLocked) {
-      setLimitPrice(spreadPrices.spreadMid.toFixed(2));
-    }
-  }, [spreadPrices]);
 
   const effectiveBid = spreadPrices?.spreadBid ?? null;
   const effectiveAsk = spreadPrices?.spreadAsk ?? null;
-  const midPrice = effectiveBid != null && effectiveAsk != null ? (effectiveBid + effectiveAsk) / 2 : null;
+  const midPrice = spreadPrices?.spreadMid ?? null;
 
   const sliderValue = useMemo(() => {
     if (effectiveBid == null || effectiveAsk == null) return 50;
@@ -708,12 +719,16 @@ export function StrategyBuilder({
   }, [effectiveBid, effectiveAsk, limitPrice]);
 
   const setMidPrice = useCallback(() => {
-    if (spreadPrices) setLimitPrice(spreadPrices.spreadMid.toFixed(2));
+    if (spreadPrices?.spreadMid != null) setLimitPrice(spreadPrices.spreadMid.toFixed(2));
   }, [spreadPrices]);
 
   const setNatPrice = useCallback(() => {
     if (!spreadPrices) return;
-    setLimitPrice(isCredit ? spreadPrices.spreadBid.toFixed(2) : spreadPrices.spreadAsk.toFixed(2));
+    if (isCredit) {
+      if (spreadPrices.spreadBid > 0) setLimitPrice(spreadPrices.spreadBid.toFixed(2));
+    } else if (spreadPrices.spreadAsk > 0) {
+      setLimitPrice(spreadPrices.spreadAsk.toFixed(2));
+    }
   }, [spreadPrices, isCredit]);
 
   const estimatedCost = useMemo(() => {
@@ -1567,16 +1582,17 @@ export function StrategyBuilder({
                           {(() => {
                             const tips: { text: string; type: "info" | "warn" | "tip" }[] = [];
                             const lp = parseFloat(limitPrice) || 0;
-                            if (spreadPrices && lp > 0) {
-                              if (!isCredit && lp > spreadPrices.spreadMid * 1.02) {
-                                tips.push({ text: `Lower to mid ${fmt(spreadPrices.spreadMid)} for better fill`, type: "tip" });
-                              } else if (isCredit && lp < spreadPrices.spreadMid * 0.98) {
-                                tips.push({ text: `Raise credit to mid ${fmt(spreadPrices.spreadMid)} for better fill`, type: "tip" });
+                            if (spreadPrices && spreadPrices.spreadMid != null && lp > 0) {
+                              const mid = spreadPrices.spreadMid;
+                              if (!isCredit && lp > mid * 1.02) {
+                                tips.push({ text: `Lower to mid ${fmt(mid)} for better fill`, type: "tip" });
+                              } else if (isCredit && lp < mid * 0.98) {
+                                tips.push({ text: `Raise credit to mid ${fmt(mid)} for better fill`, type: "tip" });
                               }
                               if (effectiveBid != null && effectiveAsk != null) {
                                 const spreadPct = effectiveBid > 0 ? ((effectiveAsk - effectiveBid) / effectiveBid) * 100 : 0;
                                 if (spreadPct > 5) tips.push({ text: `Wide b/a (${spreadPct.toFixed(1)}%) — use limits`, type: "warn" });
-                                const fillProb = lp >= effectiveAsk ? 99 : lp >= spreadPrices.spreadMid ? 78 : lp >= effectiveBid ? 45 : 15;
+                                const fillProb = lp >= effectiveAsk ? 99 : lp >= mid ? 78 : lp >= effectiveBid ? 45 : 15;
                                 tips.push({ text: `Fill prob ~${fillProb}% at $${lp.toFixed(2)}`, type: "info" });
                               }
                             }

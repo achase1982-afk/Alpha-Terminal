@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
-import { useMarketStream } from "@/hooks/useMarketStream";
 import { useOptionTick, useOptionsStreamStore } from "@/lib/options-stream-store";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
@@ -9,6 +8,7 @@ import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { formatSchwabAccountType } from "@/lib/schwabAccountAggregate";
 import { startStrategistPolling } from "@/lib/strategistPoller";
+import { computeStrategyEconomics } from "@/lib/strategyCalculator";
 import {
   aggregateSpreadNBBO,
   computeOrderEconomics,
@@ -189,7 +189,7 @@ function runPreTradeChecks(params: {
     } else if (biasMatch === true) {
       checks.push({ id: "pulse", label: "Pulse Alignment", level: "GREEN", detail: `${side} aligns with ${sessionBias} bias` });
     } else if (biasMatch === false) {
-      checks.push({ id: "pulse", label: "Pulse Alignment", level: "RED", detail: `${side} opposes ${sessionBias} bias` });
+      checks.push({ id: "pulse", label: "Pulse Alignment", level: "YELLOW", detail: `${side} opposes ${sessionBias} bias` });
     } else {
       checks.push({ id: "pulse", label: "Pulse Alignment", level: "YELLOW", detail: `Neutral bias — no directional edge` });
     }
@@ -209,9 +209,6 @@ function runPreTradeChecks(params: {
   }
 
   if (bid != null && ask != null && bid > 0) {
-    if (bid > ask) {
-      checks.push({ id: "liq", label: "Liquidity", level: "RED", detail: "Crossed bid/ask — quote unavailable" });
-    } else {
     const spreadPct = ((ask - bid) / bid) * 100;
     if (spreadPct > 15) {
       checks.push({ id: "liq", label: "Liquidity", level: "RED", detail: `Spread ${spreadPct.toFixed(1)}% > 15% — illiquid` });
@@ -219,7 +216,6 @@ function runPreTradeChecks(params: {
       checks.push({ id: "liq", label: "Liquidity", level: "YELLOW", detail: `Spread ${spreadPct.toFixed(1)}% — moderate` });
     } else {
       checks.push({ id: "liq", label: "Liquidity", level: "GREEN", detail: `Spread ${spreadPct.toFixed(1)}% — tight` });
-    }
     }
   } else {
     checks.push({ id: "liq", label: "Liquidity", level: "YELLOW", detail: "No bid/ask data" });
@@ -238,7 +234,8 @@ function runPreTradeChecks(params: {
     checks.push({ id: "pop", label: "Prob. of Profit", level: "GREEN", detail: "No delta data" });
   }
 
-  const maxRiskAllowed = accountSize * (preTradeMaxPositionPct / 100);
+  const equityKnown = accountSize > 0;
+  const maxRiskAllowed = equityKnown ? accountSize * (preTradeMaxPositionPct / 100) : 0;
   const positionRisk = params.spreadMaxRisk != null
     ? params.spreadMaxRisk * quantity
     : (limitPrice ?? last ?? 0) * quantity * (isOption ? 100 : 1);
@@ -250,6 +247,8 @@ function runPreTradeChecks(params: {
     } else {
       checks.push({ id: "size", label: "Position Size", level: "RED", detail: `${fmtCurrency(positionRisk)} > ${fmtCurrency(maxRiskAllowed)} max` });
     }
+  } else if (positionRisk > 0 && !equityKnown) {
+    checks.push({ id: "size", label: "Position Size", level: "YELLOW", detail: "Account equity unavailable for size check" });
   } else {
     checks.push({ id: "size", label: "Position Size", level: "YELLOW", detail: "Enter price for size check" });
   }
@@ -325,6 +324,7 @@ interface OrderTicketProps {
   // this to navigate to the AI > Strategist sub-tab so the user can watch
   // the live trade-validation debate.
   onSendToStrategist?: (ticker?: string) => void;
+  subscribeOptionSymbols?: (symbols: string[]) => void | Promise<void>;
 }
 
 function AiCoPilotPanel({ side, symbol, limitPrice, bid, ask, quantity, isOption }: {
@@ -389,10 +389,9 @@ function AiCoPilotPanel({ side, symbol, limitPrice, bid, ask, quantity, isOption
   );
 }
 
-export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, optionInstruction, strategyLegs, strategyNetPrice, strategyIsCredit, isCloseOrder, onSwitchToStock, onSwitchToOptions, onSendToStrategist }: OrderTicketProps) {
+export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, optionInstruction, strategyLegs, strategyNetPrice, strategyIsCredit, isCloseOrder, onSwitchToStock, onSwitchToOptions, onSendToStrategist, subscribeOptionSymbols }: OrderTicketProps) {
   const symbol = useTerminalStore((s) => s.symbol);
   const { data: quote } = useQuote(symbol);
-  const { subscribeOptionSymbols } = useMarketStream();
   const isMultiLeg = !!strategyLegs && strategyLegs.length >= 1;
   const isSingleOption = !isMultiLeg && !!optionSymbol;
   const isStockTicket = !isMultiLeg && !optionSymbol;
@@ -423,8 +422,8 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const preTradeMinRR = useTerminalStore((s) => s.preTradeMinRR);
   const preTradeMaxPositionPct = useTerminalStore((s) => s.preTradeMaxPositionPct);
   const preTradeMinDTE = useTerminalStore((s) => s.preTradeMinDTE);
-  const accountSize = useTerminalStore((s) => s.accountSize);
   const stratMinPoP = useTerminalStore((s) => s.stratMinPoP);
+  const portfolioStreamAccounts = usePortfolioStreamStore((s) => s.accounts);
   const accessToken = useTerminalStore((s) => s.accessToken);
 
   const [side, setSide] = useState<OrderSide>(initialSide ?? "BUY");
@@ -490,7 +489,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       const sym = leg.schwabSymbol ?? buildMixedLegSchwabSymbol(symbol, leg);
       if (sym) symbols.push(sym);
     }
-    if (symbols.length > 0) {
+    if (symbols.length > 0 && subscribeOptionSymbols) {
       void subscribeOptionSymbols([...new Set(symbols)]);
     }
   }, [isOpen, optionSymbol, liveStrategyLegs, extraOptionLegs, symbol, subscribeOptionSymbols]);
@@ -499,12 +498,19 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     if (!isMultiLeg || !liveStrategyLegs || liveStrategyLegs.length === 0) return null;
     const agg = aggregateSpreadNBBO(liveStrategyLegs);
     if (!agg) return null;
+    let spreadBid = agg.bid;
+    let spreadAsk = agg.ask;
+    if (spreadBid > spreadAsk) {
+      const tmp = spreadBid;
+      spreadBid = spreadAsk;
+      spreadAsk = tmp;
+    }
     const roundedMid =
       agg.mid != null
         ? parseCanonicalLimit(agg.mid, limitTickCtx)
         : parseCanonicalLimit(limitPrice, limitTickCtx, strategyNetPrice ?? null);
     const spreadMid = roundedMid ?? null;
-    return { spreadBid: agg.bid, spreadMid, spreadAsk: agg.ask, crossed: agg.crossed || spreadMid == null };
+    return { spreadBid, spreadMid, spreadAsk, crossed: agg.crossed || spreadMid == null };
   }, [isMultiLeg, liveStrategyLegs, strategyNetPrice, limitPrice, limitTickCtx]);
 
   useEffect(() => {
@@ -555,6 +561,26 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     }
     void useSchwabAccountStore.getState().refreshAccounts();
   }, [isOpen, accountHash, schwabAccounts]);
+
+  const tradingAccountEquity = useMemo(() => {
+    const fromBalances = (b: { liquidationValue?: number | null; buyingPower?: number | null }) => {
+      const liq = b.liquidationValue;
+      if (liq != null && liq > 0) return liq;
+      const bp = b.buyingPower;
+      if (bp != null && bp > 0) return bp;
+      return null;
+    };
+    const rest = fromBalances(balances);
+    if (rest != null) return rest;
+    const streamAcct = portfolioStreamAccounts.find((a) => a.hashValue === accountHash);
+    if (streamAcct?.balances) {
+      const lv = streamAcct.balances.liquidationValue;
+      if (lv != null && lv > 0) return lv;
+      const bp = streamAcct.balances.buyingPower;
+      if (bp != null && bp > 0) return bp;
+    }
+    return null;
+  }, [balances, portfolioStreamAccounts, accountHash]);
 
   useEffect(() => {
     if (!isOpen || priceLocked || limitPrice) return;
@@ -725,27 +751,35 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       last: ticketPxLast,
       regime: pulseData?.structuralRegime?.label ?? null,
       sessionBias: pulseData?.sessionBias?.label ?? null,
-      preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, accountSize, stratMinPoP, isOption,
+      preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, accountSize: tradingAccountEquity ?? 0, stratMinPoP, isOption,
       spreadMaxRisk,
     });
     if (isCloseOrder) {
       return allChecks.filter(c => !["pulse", "rr", "size"].includes(c.id));
     }
     return allChecks;
-  }, [side, quantity, submittedLimit, effectiveBid, effectiveAsk, ticketPxLast, pulseData, preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, accountSize, stratMinPoP, isOption, preTradeEnabled, isMultiLeg, liveStrategyLegs, strategyNetPrice, spreadPrices, isCloseOrder, ticketEconomics]);
+  }, [side, quantity, submittedLimit, effectiveBid, effectiveAsk, ticketPxLast, pulseData, preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, tradingAccountEquity, stratMinPoP, isOption, preTradeEnabled, isMultiLeg, liveStrategyLegs, strategyNetPrice, spreadPrices, isCloseOrder, ticketEconomics]);
 
   const overallRisk = useMemo(() => getOverallLevel(riskChecks), [riskChecks]);
 
-  const preTradeGate = useMemo(
-    () => evaluateTicketPreTradeGate({
+  const preTradeGate = useMemo(() => {
+    const base = evaluateTicketPreTradeGate({
       blockOnRed: preTradeBlockOnRed,
       checks: riskChecks.map((c) => ({ id: c.id, level: c.level })),
-    }),
-    [preTradeBlockOnRed, riskChecks],
-  );
+    });
+    if (isCloseOrder) {
+      return {
+        ...base,
+        shouldBlockSubmit: false,
+        shouldBlockReview: false,
+        blockingCheckIds: [],
+      };
+    }
+    return base;
+  }, [preTradeBlockOnRed, riskChecks, isCloseOrder]);
 
   const isValid = useMemo(() => {
-    if (preTradeGate.shouldBlockSubmit) return false;
+    if (!isCloseOrder && preTradeGate.shouldBlockSubmit) return false;
     if (quantity <= 0) return false;
     if (!accountHash) return false;
     if (isMultiLeg && orderType !== "MARKET") return submittedLimit != null && submittedLimit > 0;
@@ -754,7 +788,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     if (needsStop && (!stopPrice || parseFloat(stopPrice) <= 0)) return false;
     if (needsTrail && (!trailOffset || parseFloat(trailOffset) <= 0)) return false;
     return true;
-  }, [quantity, needsLimit, submittedLimit, needsStop, stopPrice, needsTrail, trailOffset, accountHash, isMultiLeg, preTradeGate.shouldBlockSubmit]);
+  }, [quantity, needsLimit, submittedLimit, needsStop, stopPrice, needsTrail, trailOffset, accountHash, isMultiLeg, preTradeGate.shouldBlockSubmit, isCloseOrder]);
 
   const buildSchwabOrder = useCallback(() => {
     const isSeamless = extendedHours || duration === "SEAMLESS" || duration === "GOOD_TILL_CANCEL_EXT";
@@ -864,7 +898,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   }, [orderType, extendedHours, duration, side, quantity, symbol, optionSymbol, isOption, isMultiLeg, liveStrategyLegs, strategyLegs, strategyIsCredit, isCloseOrder, optionInstruction, needsLimit, limitPrice, needsStop, stopPrice, needsTrail, trailOffset, instruction, exchange, taxLotMethod, spreadPrices, ticketPxBid, ticketPxAsk, ticketPxLast, limitTickCtx, submittedLimit, submittedLimitDisplay, strategyNetPrice]);
 
   const handleSubmit = useCallback(async () => {
-    if (!accountHash || preTradeGate.shouldBlockSubmit) return;
+    if (!accountHash || (!isCloseOrder && preTradeGate.shouldBlockSubmit)) return;
     setStage("submitting");
     try {
       const order = buildSchwabOrder();
@@ -933,7 +967,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     }
   }, [
     accountHash, buildSchwabOrder, symbol, side, pulseData, submittedLimit, isMultiLeg, strategyIsCredit,
-    strategyLegs, quantity, isOption, preTradeGate.shouldBlockSubmit, preTradeEnabled, preTradeBlockOnRed,
+    strategyLegs, quantity, isOption, isCloseOrder, preTradeGate.shouldBlockSubmit, preTradeEnabled, preTradeBlockOnRed,
     overallRisk, riskChecks, ticketEconomics,
   ]);
 
@@ -1163,6 +1197,12 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       if (s) setLimitPrice(s);
     }
   }, [ticketPxBid, ticketPxAsk, isMultiLeg, spreadPrices, limitTickCtx, isSingleOption, isStockTicket]);
+
+  const snapLimitOnBlur = useCallback(() => {
+    if (!limitPrice.trim()) return;
+    const px = parseCanonicalLimit(limitPrice, limitTickCtx);
+    if (px != null) setLimitPrice(displaySubmittedLimit(limitTickCtx, px));
+  }, [limitPrice, limitTickCtx]);
 
   const setNatPrice = useCallback(() => {
     if (isMultiLeg && spreadPrices) {
@@ -1466,7 +1506,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                   const popPct = (popLeg?.delta != null)
                     ? Math.round((strategyIsCredit ? (1 - Math.abs(popLeg.delta)) : Math.abs(popLeg.delta)) * 100)
                     : null;
-                  const bp = balances.buyingPower ?? accountSize ?? 0;
+                  const bp = balances.buyingPower ?? tradingAccountEquity ?? 0;
                   const bpChange = -econ.maxRisk;
                   return (
                     <div style={{ background: `linear-gradient(145deg, #14161a, #080a0f)`, borderRadius: 10, border: `1px solid ${BORDER}`, padding: "6px 10px" }}>
@@ -1615,7 +1655,9 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                     </div>
                     <div className="flex items-center gap-1" style={{ height: 28, borderRadius: 7, border: `1px solid ${priceLocked ? `${GOLD}4d` : BORDER}`, background: "rgba(0,0,0,0.4)", padding: "0 8px" }}>
                       <input type="number" inputMode="decimal" step="0.01" value={limitPrice}
-                        onChange={(e) => { if (!priceLocked) setLimitPrice(e.target.value); }} placeholder="0.00"
+                        onChange={(e) => { if (!priceLocked) setLimitPrice(e.target.value); }}
+                        onBlur={() => { if (!priceLocked) snapLimitOnBlur(); }}
+                        placeholder="0.00"
                         className="flex-1 text-[13px] bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none text-right"
                         style={{ color: priceLocked ? GOLD : WHITE, border: "none", fontFamily: SYS_FONT }}
                         readOnly={priceLocked}
@@ -1765,7 +1807,9 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                     </div>
                     <div className="flex items-center" style={{ background: "rgba(0,0,0,0.4)", border: `1px solid ${priceLocked ? `${GOLD}4d` : BORDER}`, height: 30, borderRadius: 8, padding: "0 8px" }}>
                       <input type="number" inputMode="decimal" step="0.01" value={limitPrice}
-                        onChange={(e) => { if (!priceLocked) setLimitPrice(e.target.value); }} placeholder="0.00"
+                        onChange={(e) => { if (!priceLocked) setLimitPrice(e.target.value); }}
+                        onBlur={() => { if (!priceLocked) snapLimitOnBlur(); }}
+                        placeholder="0.00"
                         className="flex-1 bg-transparent outline-none text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                         style={{ fontSize: S.price, color: priceLocked ? GOLD : WHITE, border: "none", fontFamily: SYS_FONT }}
                         readOnly={priceLocked}
@@ -1823,7 +1867,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1.5 pt-1.5" style={{ fontSize: S.label, borderTop: `1px dashed ${DIVIDER}`, color: TEXT }}>
                   {estimatedCost != null && <span>Notional {fmtCurrency(Math.abs(estimatedCost))}</span>}
                   <span>Est. fees —</span>
-                  <span>BP after trade {fmtCurrency(Math.max(0, (accountSize || 0) - Math.abs(estimatedCost ?? 0)))}</span>
+                  <span>BP after trade {fmtCurrency(Math.max(0, (tradingAccountEquity ?? 0) - Math.abs(estimatedCost ?? 0)))}</span>
                 </div>
 
                 {/* ── Mixed equity + option legs ──────────────────────────── */}
@@ -1930,7 +1974,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                                       delta: null,
                                       limitPrice: "",
                                     } : l));
-                                    if (schwabSymbol) void subscribeOptionSymbols([schwabSymbol]);
+                                    if (schwabSymbol && subscribeOptionSymbols) void subscribeOptionSymbols([schwabSymbol]);
                                   }}
                                   className="text-left px-2 py-1 rounded"
                                   style={{ fontSize: S.tiny, background: FIELD, border: `1px solid ${BORDER}`, color: TEXT }}>
@@ -1951,8 +1995,8 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                             </div>
                             <div className="flex items-center justify-between gap-2">
                               <div style={{ fontSize: S.tiny, color: MUTED }}>
-                                {mixedQ != null && mixedQ.bid != null && mixedQ.ask != null && (
-                                  <span>Bid {fmt(mixedQ.bid)} · Ask {fmt(mixedQ.ask)}</span>
+                                {leg.bid != null && leg.ask != null && (
+                                  <span>Bid {fmt(leg.bid)} · Ask {fmt(leg.ask)}</span>
                                 )}
                                 {leg.delta != null && <span className="ml-2">Δ {leg.delta.toFixed(2)}</span>}
                               </div>
@@ -2322,7 +2366,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 (sendMode === "strategist" && strategistDispatchInFlight)
                 || (sendMode !== "strategist" && (preTradeGate.shouldBlockReview || !isValid))
               }
-              className="tracking-[0.04em] transition-all duration-150 active:scale-[0.98]"
+              className="tracking-[0.04em] transition-all duration-150 active:scale-[0.98] disabled:opacity-60"
               style={{
                 flex: 2,
                 fontSize: isMultiLeg ? 16 : 17,
@@ -2427,60 +2471,92 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                 <span style={{ color: MUTED }}>Duration</span>
                 <span style={{ color: WHITE }}>{DURATIONS.find((d) => d.value === duration)?.label}{extendedHours ? " + Ext" : ""}</span>
               </div>
-              {ticketEconomics && (
-                <>
-                  <div className="pt-1 mt-1 space-y-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
-                    <div className="flex justify-between" style={{ fontSize: S.body }}>
-                      <span style={{ color: MUTED }}>Net {strategyIsCredit ? "credit" : "debit"}</span>
-                      <span style={{ color: WHITE }}>{fmtCurrency(Math.abs(ticketEconomics.grossNotional))}</span>
-                    </div>
-                    {ticketEconomics.commissionTotal > 0 && (
+              {(() => {
+                const totalContracts = isOption
+                  ? (isMultiLeg && strategyLegs
+                      ? strategyLegs.reduce((sum, l) => sum + l.quantity, 0) * quantity
+                      : quantity)
+                  : 0;
+                const commissionPerContract = 0.65;
+                const totalCommission = totalContracts * commissionPerContract;
+                const netPrice = submittedLimit ?? strategyNetPrice ?? 0;
+                const grossCost = estimatedCost != null ? Math.abs(estimatedCost) : 0;
+                const totalCost = grossCost + totalCommission;
+                const econMulti = isMultiLeg && strategyLegs
+                  ? computeStrategyEconomics({ legs: strategyLegs, netPrice, quantity, isCredit: strategyIsCredit })
+                  : null;
+                const bpEffect = econMulti
+                  ? -(econMulti.maxRisk + totalCommission)
+                  : (side === "BUY" ? -(grossCost + totalCommission) : grossCost - totalCommission);
+                const breakevens: number[] = econMulti ? econMulti.breakevens : [];
+                let maxProfit: number | null = null;
+                let maxLoss: number | null = null;
+                if (econMulti && strategyLegs) {
+                  const strikes = strategyLegs.map(l => l.strike).sort((a, b) => a - b);
+                  const width = strikes.length >= 2 ? strikes[strikes.length - 1] - strikes[0] : 0;
+                  if (econMulti.isIronCondor || width > 0) {
+                    maxProfit = econMulti.maxProfit;
+                    maxLoss = econMulti.maxRisk;
+                  } else {
+                    maxProfit = strategyIsCredit ? netPrice * 100 * quantity : null;
+                    maxLoss = strategyIsCredit ? null : netPrice * 100 * quantity;
+                  }
+                }
+                return (
+                  <>
+                    <div className="pt-1 mt-1 space-y-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
                       <div className="flex justify-between" style={{ fontSize: S.body }}>
-                        <span style={{ color: MUTED }}>Commissions</span>
-                        <span style={{ color: WHITE }}>{fmtCurrency(ticketEconomics.commissionTotal)}</span>
+                        <span style={{ color: MUTED }}>Net {strategyIsCredit ? "credit" : "debit"}</span>
+                        <span style={{ color: WHITE }}>{fmtCurrency(grossCost)}</span>
+                      </div>
+                      {totalContracts > 0 && (
+                        <div className="flex justify-between" style={{ fontSize: S.body }}>
+                          <span style={{ color: MUTED }}>Commissions ({totalContracts} × $0.65)</span>
+                          <span style={{ color: WHITE }}>{fmtCurrency(totalCommission)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between pt-1" style={{ fontSize: S.body, borderTop: `1px dashed ${DIVIDER}` }}>
+                        <span style={{ color: TEXT, fontWeight: 500 }}>Total {strategyIsCredit ? "credit" : "cost"}</span>
+                        <span style={{ color: WHITE, fontWeight: 600, fontSize: S.price }}>
+                          {fmtCurrency(strategyIsCredit ? grossCost - totalCommission : totalCost)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {(breakevens.length > 0 || maxProfit != null || maxLoss != null) && (
+                      <div className="pt-1 mt-1 space-y-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
+                        {breakevens.length > 0 && (
+                          <div className="flex justify-between" style={{ fontSize: S.body }}>
+                            <span style={{ color: MUTED }}>Breakeven{breakevens.length > 1 ? "s" : ""}</span>
+                            <span style={{ color: WHITE }}>{breakevens.map(b => `$${b.toFixed(2)}`).join(" / ")}</span>
+                          </div>
+                        )}
+                        {maxProfit != null && (
+                          <div className="flex justify-between" style={{ fontSize: S.body }}>
+                            <span style={{ color: MUTED }}>Max profit</span>
+                            <span style={{ color: UP }}>{fmtCurrency(maxProfit)}</span>
+                          </div>
+                        )}
+                        {maxLoss != null && (
+                          <div className="flex justify-between" style={{ fontSize: S.body }}>
+                            <span style={{ color: MUTED }}>Max loss</span>
+                            <span style={{ color: DOWN }}>{fmtCurrency(maxLoss)}</span>
+                          </div>
+                        )}
                       </div>
                     )}
-                    <div className="flex justify-between pt-1" style={{ fontSize: S.body, borderTop: `1px dashed ${DIVIDER}` }}>
-                      <span style={{ color: TEXT, fontWeight: 500 }}>Total {strategyIsCredit ? "credit" : "cost"}</span>
-                      <span style={{ color: WHITE, fontWeight: 600, fontSize: S.price }}>
-                        {fmtCurrency(strategyIsCredit ? ticketEconomics.totalCreditAfterFees : ticketEconomics.totalCostInclFees)}
-                      </span>
-                    </div>
-                  </div>
 
-                  {(ticketEconomics.breakevens.length > 0 || ticketEconomics.maxProfit > 0 || ticketEconomics.maxRisk > 0) && (
-                    <div className="pt-1 mt-1 space-y-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
-                      {ticketEconomics.breakevens.length > 0 && (
-                        <div className="flex justify-between" style={{ fontSize: S.body }}>
-                          <span style={{ color: MUTED }}>Breakeven{ticketEconomics.breakevens.length > 1 ? "s" : ""}</span>
-                          <span style={{ color: WHITE }}>{ticketEconomics.breakevens.map((b) => `$${b.toFixed(2)}`).join(" / ")}</span>
-                        </div>
-                      )}
-                      {ticketEconomics.maxProfit > 0 && (
-                        <div className="flex justify-between" style={{ fontSize: S.body }}>
-                          <span style={{ color: MUTED }}>Max profit</span>
-                          <span style={{ color: UP }}>{fmtCurrency(ticketEconomics.maxProfit)}</span>
-                        </div>
-                      )}
-                      {ticketEconomics.maxRisk > 0 && (
-                        <div className="flex justify-between" style={{ fontSize: S.body }}>
-                          <span style={{ color: MUTED }}>Max loss</span>
-                          <span style={{ color: DOWN }}>{fmtCurrency(ticketEconomics.maxRisk)}</span>
-                        </div>
-                      )}
+                    <div className="pt-1 mt-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
+                      <div className="flex justify-between" style={{ fontSize: S.body }}>
+                        <span style={{ color: MUTED }}>Buying power effect</span>
+                        <span style={{ color: bpEffect >= 0 ? UP : DOWN }}>
+                          {bpEffect >= 0 ? "+" : "−"}{fmtCurrency(Math.abs(bpEffect))}
+                        </span>
+                      </div>
                     </div>
-                  )}
-
-                  <div className="pt-1 mt-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
-                    <div className="flex justify-between" style={{ fontSize: S.body }}>
-                      <span style={{ color: MUTED }}>Buying power effect</span>
-                      <span style={{ color: ticketEconomics.buyingPowerEffect >= 0 ? UP : DOWN }}>
-                        {ticketEconomics.buyingPowerEffect >= 0 ? "+" : "−"}{fmtCurrency(Math.abs(ticketEconomics.buyingPowerEffect))}
-                      </span>
-                    </div>
-                  </div>
-                </>
-              )}
+                  </>
+                );
+              })()}
             </div>
 
             <div className="px-3 py-1.5 flex items-start gap-2" style={{ background: `${GOLD}08`, borderRadius: 10, border: `1px solid ${GOLD}1a` }}>
@@ -2494,7 +2570,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               <button onClick={() => setStage("form")} className="flex-1" style={{ fontSize: S.heading, height: 40, background: "transparent", color: TEXT, border: `1px solid ${BORDER}`, borderRadius: 999 }}>Back</button>
               <button
                 onClick={handleSubmit}
-                disabled={preTradeGate.shouldBlockSubmit || !isValid}
+                disabled={!isCloseOrder && (preTradeGate.shouldBlockSubmit || !isValid)}
                 className="flex-[2] tracking-[0.04em] active:scale-[0.98] transition-transform"
                 style={{
                   fontSize: 16,

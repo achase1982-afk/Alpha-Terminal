@@ -18,7 +18,7 @@ import {
 import { db } from "@workspace/db";
 import { tradeJournalTable } from "@workspace/db/schema";
 import {
-  serverShouldRejectOrder,
+  evaluateServerPlaceOrderGate,
   validateOrderPreTradeGatePayload,
 } from "@workspace/order-ticket-math";
 
@@ -294,24 +294,31 @@ router.post("/place-order", async (req, res) => {
   if (preTradeGate != null && !gatePayload) {
     return res.status(400).json({ error: "invalid_pre_trade_gate" });
   }
-  if (gatePayload?.enabled !== false && (gatePayload == null || serverShouldRejectOrder(gatePayload))) {
-    const blocking =
-      gatePayload?.checks.filter((c) => c.level === "RED" || c.level === "YELLOW").map((c) => c.id) ?? [];
-    return res.status(403).json({
-      error: "pre_trade_blocked",
-      message:
-        gatePayload == null
-          ? "Pre-trade checks are required before sending this order."
-          : "Order blocked by pre-trade risk checks. Review the ticket or adjust your limits.",
-      blockingCheckIds: blocking,
-    });
-  }
 
   if (!accountHash || !order) {
     return res.status(400).json({ error: "Missing accountHash or order" });
   }
 
   try {
+    const mappedAccounts = await fetchMappedSchwabAccounts(token);
+    const acct = mappedAccounts.find((a) => a.hashValue === accountHash);
+    const accountEquity =
+      acct?.balances?.liquidationValue ?? acct?.balances?.buyingPower ?? acct?.balances?.equity ?? null;
+    const serverGate = evaluateServerPlaceOrderGate({
+      order,
+      accountEquity: typeof accountEquity === "number" && accountEquity > 0 ? accountEquity : null,
+      settings: {
+        preTradeEnabled: gatePayload?.enabled !== false,
+        blockOnRed: gatePayload?.blockOnRed ?? false,
+      },
+    });
+    if (serverGate.reject) {
+      return res.status(403).json({
+        error: "pre_trade_blocked",
+        message: "Order blocked by server pre-trade risk checks.",
+        blockingCheckIds: serverGate.checks.filter((c) => c.level === "RED").map((c) => c.id),
+      });
+    }
     const NO_PRICE_TYPES = new Set(["MARKET", "STOP", "TRAILING_STOP", "MARKET_ON_CLOSE"]);
     if (typeof order.orderType === "string" && NO_PRICE_TYPES.has(order.orderType)) {
       delete order.price;

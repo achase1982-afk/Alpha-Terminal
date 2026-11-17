@@ -8,8 +8,8 @@ function normalizeUnderlying(symbol: string): string {
   return symbol.replace(/^\$/, "").trim().toUpperCase();
 }
 
-/** ETF/equity names that use $0.01 option increments (penny pilot). */
-const PENNY_PILOT_UNDERLYINGS = new Set([
+/** Index/ETF names with $0.01 option tick at every premium level. */
+const ALL_PENNY_OPTION_UNDERLYINGS = new Set([
   "SPY",
   "QQQ",
   "IWM",
@@ -22,6 +22,10 @@ const PENNY_PILOT_UNDERLYINGS = new Set([
   "XLF",
   "XLE",
   "XLK",
+]);
+
+/** Penny pilot single stocks: $0.01 below $3, $0.05 at $3 and above. */
+const PENNY_PILOT_STOCKS = new Set([
   "AAPL",
   "MSFT",
   "AMZN",
@@ -36,6 +40,8 @@ const PENNY_PILOT_UNDERLYINGS = new Set([
   "F",
   "T",
 ]);
+
+const PENNY_PILOT_UNDERLYINGS = new Set([...ALL_PENNY_OPTION_UNDERLYINGS, ...PENNY_PILOT_STOCKS]);
 
 /** Index options that use nickel/dime ticks (not penny pilot). */
 const INDEX_OPTION_UNDERLYINGS = new Set([
@@ -64,8 +70,13 @@ export function classifyOptionTickMode(underlyingSymbol: string): OptionTickMode
 }
 
 export function optionPremiumTickForSymbol(underlyingSymbol: string, price: number): number | null {
+  const u = normalizeUnderlying(underlyingSymbol);
   const mode = classifyOptionTickMode(underlyingSymbol);
-  if (mode === "penny") return 0.01;
+  if (mode === "penny") {
+    if (ALL_PENNY_OPTION_UNDERLYINGS.has(u)) return 0.01;
+    if (PENNY_PILOT_STOCKS.has(u)) return Math.abs(price) < 3 ? 0.01 : 0.05;
+    return 0.01;
+  }
   if (mode === "index") return Math.abs(price) < 3 ? 0.05 : 0.1;
   return null;
 }
@@ -113,8 +124,8 @@ export function roundOptionPriceToTick(
 export function formatLimitPriceDisplay(price: number | null | undefined, ctx: LimitTickContext): string {
   if (price == null || !Number.isFinite(price) || price <= 0) return "";
   if (!ctx.isOption) {
-    const s = price.toFixed(4).replace(/\.?0+$/, "");
-    return s.includes(".") ? s : `${s}.00`;
+    if (price >= 1) return price.toFixed(2);
+    return price.toFixed(4).replace(/\.?0+$/, "");
   }
   const tick = optionPremiumTickForSymbol(ctx.underlyingSymbol, price);
   const decimals = tick === 0.01 ? 2 : 2;
@@ -137,7 +148,10 @@ export function parseCanonicalLimit(
   }
   if (raw == null && fallback != null && Number.isFinite(fallback) && fallback > 0) raw = fallback;
   if (raw == null) return null;
-  if (!ctx.isOption) return raw;
+  if (!ctx.isOption) {
+    const cents = Math.round(raw * 100) / 100;
+    return cents > 0 ? cents : null;
+  }
   const tick = optionPremiumTickForSymbol(ctx.underlyingSymbol, raw);
   if (tick == null) return raw;
   const rounded = roundToTick(raw, tick);
@@ -145,7 +159,7 @@ export function parseCanonicalLimit(
 }
 
 /** @deprecated Use parseCanonicalLimit with context. */
-export function roundOptionPriceToTickLegacy(price: number, mode: "nearest" | "down" | "up" = "nearest"): number {
+function roundOptionPriceToTickLegacy(price: number, mode: "nearest" | "down" | "up" = "nearest"): number {
   return roundOptionPriceToTick(price, { underlyingSymbol: "SPX", isOption: true }, mode);
 }
 

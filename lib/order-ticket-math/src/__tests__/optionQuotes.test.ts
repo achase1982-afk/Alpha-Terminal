@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { aggregateSpreadNBBO, midpointFromBidAsk, quoteSideState } from "../optionQuotes.js";
+import {
+  aggregateSpreadNBBO,
+  midpointFromBidAsk,
+  quoteSideState,
+  resolvePairedBidAsk,
+} from "../optionQuotes.js";
 
 describe("optionQuotes", () => {
   it("rejects crossed SPX 0DTE books", () => {
@@ -18,6 +23,27 @@ describe("optionQuotes", () => {
       { instruction: "SELL_TO_OPEN", bid: null, ask: 1.25 },
     ]);
     expect(agg?.mid).toBeNull();
+  });
+
+  it("prefers stream only when newer than stored contract pair", () => {
+    const fresh = resolvePairedBidAsk({
+      streamBid: 1.1,
+      streamAsk: 1.2,
+      streamTs: 2000,
+      contractBid: 1.0,
+      contractAsk: 1.05,
+      contractTs: 1000,
+    });
+    expect(fresh?.source).toBe("stream");
+    const stale = resolvePairedBidAsk({
+      streamBid: 1.1,
+      streamAsk: 1.2,
+      streamTs: 500,
+      contractBid: 1.0,
+      contractAsk: 1.05,
+      contractTs: 1000,
+    });
+    expect(stale?.source).toBe("contract");
   });
 
   it("flags crossed aggregated spreads without swapping", () => {

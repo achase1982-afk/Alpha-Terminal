@@ -77,8 +77,9 @@ export function validateOrderPreTradeGatePayload(body: unknown): OrderPreTradeGa
   return { enabled, blockOnRed: o.blockOnRed, overall: o.overall, checks };
 }
 
+/** @deprecated Server computes its own gate; client payload is advisory only. */
 export function serverShouldRejectOrder(gate: OrderPreTradeGatePayload | null | undefined): boolean {
-  if (!gate) return true;
+  if (!gate) return false;
   if (gate.enabled === false) return false;
   const evald = evaluateTicketPreTradeGate({ blockOnRed: gate.blockOnRed, checks: gate.checks });
   return evald.shouldBlockSubmit;

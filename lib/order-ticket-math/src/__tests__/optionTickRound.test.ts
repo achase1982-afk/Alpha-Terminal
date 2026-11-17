@@ -6,9 +6,19 @@ import {
 } from "../optionTickRound.js";
 
 describe("optionTickRound symbol-aware", () => {
-  it("does not round stock limits", () => {
+  it("formats stock limits to cents at $1 and up", () => {
     const n = parseCanonicalLimit("187.4567", { underlyingSymbol: "AAPL", isOption: false });
-    expect(n).toBeCloseTo(187.4567, 6);
+    expect(n).toBeCloseTo(187.46, 5);
+  });
+
+  it("uses penny pilot nickel at $3+ for AAPL options", () => {
+    const n = parseCanonicalLimit(3.04, { underlyingSymbol: "AAPL", isOption: true });
+    expect(n).toBeCloseTo(3.05, 5);
+  });
+
+  it("uses penny pilot penny below $3 for AAPL options", () => {
+    const n = parseCanonicalLimit(2.034, { underlyingSymbol: "AAPL", isOption: true });
+    expect(n).toBeCloseTo(2.03, 5);
   });
 
   it("uses penny tick for SPY", () => {

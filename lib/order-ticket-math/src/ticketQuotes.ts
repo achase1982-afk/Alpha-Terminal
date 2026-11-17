@@ -45,15 +45,29 @@ export function pairedQuoteFromStreamTick(tick: StreamOptionTick | null | undefi
 }
 
 export function mergeLegStreamQuotes<
-  T extends { schwabSymbol: string; bid?: number | null; ask?: number | null; delta?: number | null },
+  T extends {
+    schwabSymbol: string;
+    bid?: number | null;
+    ask?: number | null;
+    delta?: number | null;
+    contractTs?: number;
+  },
 >(leg: T, tick: StreamOptionTick | null | undefined): T {
-  if (!tick || !leg.schwabSymbol) return leg;
-  const q = pairedQuoteFromStreamTick(tick);
+  if (!leg.schwabSymbol) return leg;
+  const pair = resolvePairedBidAsk({
+    streamBid: tick?.bid ?? undefined,
+    streamAsk: tick?.ask ?? undefined,
+    streamTs: tick?.ts,
+    contractBid: leg.bid ?? undefined,
+    contractAsk: leg.ask ?? undefined,
+    contractTs: leg.contractTs,
+  });
+  if (!pair) return leg;
   return {
     ...leg,
-    bid: q.bid ?? leg.bid ?? null,
-    ask: q.ask ?? leg.ask ?? null,
-    delta: tick.delta ?? leg.delta ?? null,
+    bid: pair.crossed ? null : pair.bid,
+    ask: pair.crossed ? null : pair.ask,
+    delta: tick?.delta ?? leg.delta ?? null,
   };
 }
 

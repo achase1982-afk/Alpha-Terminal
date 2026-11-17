@@ -146,6 +146,13 @@ async function fetchRestSnapshot(
   return (await res.json()) as { quotes: LiveQuote[]; status?: string };
 }
 
+let activeMarketStreamHookCount = 0;
+
+/** Dev-only: count mounted `useMarketStream()` instances (expect 1 from Terminal). */
+export function getActiveMarketStreamHookCount(): number {
+  return activeMarketStreamHookCount;
+}
+
 export function useMarketStream() {
   const {
     accessToken,
@@ -505,11 +512,13 @@ export function useMarketStream() {
   }
 
   useEffect(() => {
+    activeMarketStreamHookCount += 1;
     mountedRef.current = true;
 
     void connectWs();
 
     return () => {
+      activeMarketStreamHookCount -= 1;
       mountedRef.current = false;
       if (quoteFlushTimerRef.current) {
         clearTimeout(quoteFlushTimerRef.current);

@@ -23,8 +23,8 @@ describe("ticketPreTradeGate", () => {
   });
 
   it("server rejects missing gate", () => {
-    expect(serverShouldRejectOrder(null)).toBe(true);
-    expect(serverShouldRejectOrder(undefined)).toBe(true);
+    expect(serverShouldRejectOrder(null)).toBe(false);
+    expect(serverShouldRejectOrder(undefined)).toBe(false);
   });
 
   it("server allows disabled gate", () => {
