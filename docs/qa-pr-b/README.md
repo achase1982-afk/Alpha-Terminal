@@ -1,5 +1,7 @@
 # QA PR B Screenshots - Status Report
 
+**2026-11-17:** Branch rebased onto PR A (`18ce204b`, #644). Harness/docs commits moved off `cursor/qa-fixes-logic-a11y-5da6` onto this branch only. Target PNGs under `docs/qa-pr-b/` are still outstanding (needs api-server or Schwab-backed chain data).
+
 ## Task Overview
 Capture real Alpha-Terminal UI screenshots for PR #645 showing:
 1. Options chain with crossed bid>ask quotes
