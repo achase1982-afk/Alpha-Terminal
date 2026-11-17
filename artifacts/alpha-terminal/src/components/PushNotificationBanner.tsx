@@ -16,11 +16,32 @@ const MUTED = "#71717a";
 const WHITE = "#fafafa";
 const GREEN = "#00d166";
 const RED = "#dc2626";
+const DISMISS_KEY = "alpha-terminal:order-alerts-banner-dismissed";
 
-export default function PushNotificationBanner() {
+function readDismissed(): boolean {
+  try {
+    return localStorage.getItem(DISMISS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function rememberDismissed() {
+  try {
+    localStorage.setItem(DISMISS_KEY, "1");
+  } catch {
+    /* private mode */
+  }
+}
+
+/**
+ * In-flow bar. `aboveNav` means the bottom nav sits under this bar, so the
+ * nav owns the home-indicator inset. Otherwise the bar pads for safe-area.
+ */
+export default function PushNotificationBanner({ aboveNav = false }: { aboveNav?: boolean }) {
   const [supported, setSupported] = useState(false);
   const [subscribed, setSubscribed] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissed, setDismissed] = useState(readDismissed);
   const [loading, setLoading] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission>("default");
 
@@ -34,6 +55,11 @@ export default function PushNotificationBanner() {
     }
   }, []);
 
+  const dismiss = () => {
+    rememberDismissed();
+    setDismissed(true);
+  };
+
   if (!supported || dismissed || subscribed) return null;
   if (permission === "denied") return null;
 
@@ -43,26 +69,23 @@ export default function PushNotificationBanner() {
     setSubscribed(ok);
     setLoading(false);
     if (ok) {
-      setTimeout(() => setDismissed(true), 2000);
+      setTimeout(dismiss, 2000);
     }
   };
 
   return (
     <div
+      role="region"
+      aria-label="Enable order alerts"
       style={{
-        position: "fixed",
-        bottom: 16,
-        right: 16,
-        zIndex: 9999,
+        flexShrink: 0,
         background: BG,
-        border: `1px solid ${BORDER}`,
-        borderRadius: 8,
-        padding: "12px 16px",
+        borderTop: `1px solid ${BORDER}`,
+        padding: "10px 12px",
+        paddingBottom: aboveNav ? 10 : "max(10px, env(safe-area-inset-bottom, 0px))",
         display: "flex",
         alignItems: "center",
         gap: 12,
-        maxWidth: 380,
-        boxShadow: "0 4px 24px rgba(0,0,0,0.6)",
       }}
     >
       <Bell size={18} color={GOLD} style={{ flexShrink: 0 }} />
@@ -94,7 +117,8 @@ export default function PushNotificationBanner() {
         {loading ? "..." : "ENABLE"}
       </button>
       <button
-        onClick={() => setDismissed(true)}
+        onClick={dismiss}
+        aria-label="Dismiss order alerts prompt"
         style={{
           background: "none",
           border: "none",
