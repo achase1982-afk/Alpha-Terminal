@@ -9,7 +9,7 @@ import {
   saveActiveTraderPrefs,
   type ActiveTraderTemplatePrefs,
 } from "@/lib/active-trader/activeTraderPrefs";
-import { computeZoneModel, type ChainRowForZones } from "@/lib/active-trader/zonesModel";
+import { computeZoneModel, type ChainRowForZones, type ZoneModel } from "@/lib/active-trader/zonesModel";
 import { useFlowByKey } from "@/lib/active-trader/useFlowByKey";
 import { findAtmStrikeIndex } from "@/lib/optionsSchwabKey";
 import { useChainOptionHold } from "@/hooks/useChainOptionHold";
@@ -21,6 +21,7 @@ import { TemplateBar } from "./TemplateBar";
 import { RegimeStrip } from "./RegimeStrip";
 import { FilterStrip, type LaneFilterKey } from "./FilterStrip";
 import { LadderBody, type LadderRowModel } from "./LadderBody";
+import { AtLadderSkeleton } from "./AtLadderSkeleton";
 
 export interface AtExpirationGroup {
   expiration: string;
@@ -38,6 +39,15 @@ interface ActiveTraderViewProps {
   holdSubs: ChainHoldSubscribers;
   onAddLeg: (contract: OptionsContract, type: "CALL" | "PUT") => void;
   onOpenReview: (contract: OptionsContract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
+  presentation?: {
+    regimeLabel: string | null;
+    regimeDegraded: boolean;
+    zones: ZoneModel;
+    classifiedPct: number | null;
+    headline: string;
+    skipNetwork?: boolean;
+  };
+  initialTradeSelection?: { strike: number; type: "CALL" | "PUT" };
 }
 
 const LADDER_RADIUS = 20;
@@ -60,8 +70,11 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   holdSubs,
   onAddLeg,
   onOpenReview,
+  presentation,
+  initialTradeSelection,
 }: ActiveTraderViewProps) {
   const primary = groups[0];
+  const ladderDataReady = !!(primary && primary.rows.length > 0);
   const [windowSec, setWindowSec] = useState<30 | 60 | 300>(30);
   const [laneFilters, setLaneFilters] = useState<Record<LaneFilterKey, boolean>>({
     call_buy: true,
@@ -79,17 +92,33 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const [prefs, setPrefs] = useState<ActiveTraderTemplatePrefs>(() => loadActiveTraderPrefs(symbolClass));
 
   useEffect(() => {
+    if (presentation?.skipNetwork) {
+      setRegimeLabel(presentation.regimeLabel);
+      setRegimeDegraded(presentation.regimeDegraded);
+      return;
+    }
     void fetchWithAuth("/api/strategist/regime")
       .then((r) => r.json())
       .then((j: { directionalConviction?: string; degraded?: boolean }) => {
         setRegimeLabel(j.directionalConviction?.replace(/_/g, " ") ?? null);
         setRegimeDegraded(!!j.degraded);
       })
-      .catch(() => setRegimeLabel(null));
-  }, []);
+      .catch(() => setRegimeLabel("\u2014"));
+  }, [presentation?.regimeDegraded, presentation?.regimeLabel, presentation?.skipNetwork]);
+
+  useEffect(() => {
+    if (!initialTradeSelection || !primary) return;
+    const row = primary.rows.find((r) => r.strike === initialTradeSelection.strike);
+    const contract =
+      initialTradeSelection.type === "CALL" ? row?.call : row?.put;
+    if (!contract) return;
+    setSelected({ contract, type: initialTradeSelection.type });
+    setTradeContext({ contract, type: initialTradeSelection.type });
+    setTradeStripStrike(contract.strike);
+  }, [initialTradeSelection, primary]);
 
   const ladderRows: LadderRowModel[] = useMemo(() => {
-    if (!primary) return [];
+    if (!primary?.rows?.length) return [];
     const strikes = primary.rows.map((r) => r.strike);
     const atm = findAtmStrikeIndex(strikes, underlyingPrice);
   const start = Math.max(0, atm - LADDER_RADIUS);
@@ -125,6 +154,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const flowByKey = useFlowByKey(streamKeys, windowSec * 1000);
 
   const zones = useMemo(() => {
+    if (presentation?.zones) return presentation.zones;
     if (!primary) return computeZoneModel([], underlyingPrice);
     const rows: ChainRowForZones[] = primary.rows.map((r) => ({
       strike: r.strike,
@@ -134,9 +164,10 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       putGamma: r.put?.gamma ?? null,
     }));
     return computeZoneModel(rows, underlyingPrice);
-  }, [primary, underlyingPrice]);
+  }, [primary, underlyingPrice, presentation?.zones]);
 
   const classifiedPct = useMemo(() => {
+    if (presentation?.classifiedPct != null) return presentation.classifiedPct;
     let cls = 0;
     let tot = 0;
     for (const k of streamKeys) {
@@ -148,7 +179,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       tot += t;
     }
     return tot > 0 ? cls / tot : null;
-  }, [flowByKey, streamKeys]);
+  }, [flowByKey, streamKeys, presentation?.classifiedPct]);
 
   const headline = useMemo(() => {
     let cb = 0;
@@ -174,10 +205,13 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     return buildPressureHeadline({ cb, cs, pb, ps });
   }, [ladderRows, flowByKey]);
 
-  const positions = usePortfolioStreamStore((s) => s.account?.positions ?? []);
+  const displayHeadline = presentation?.headline ?? headline;
+
+  const positions = usePortfolioStreamStore((s) => s.account?.positions);
   const positionQtyByKey = useMemo(() => {
     const map = new Map<string, number>();
-    for (const p of positions) {
+    const list = positions ?? [];
+    for (const p of list) {
       const sym = p.instrument?.symbol ?? p.symbol;
       if (typeof sym !== "string") continue;
       const qty = p.longQuantity ?? p.shortQuantity ?? p.quantity ?? 0;
@@ -223,13 +257,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const filterTop = regimeTop + 120;
   const headerTop = filterTop + 72;
 
-  if (!primary) {
-    return (
-      <div className="p-8 text-center font-mono" style={{ color: DIM, fontSize: 10 }}>
-        No expiry for Active Trader
-      </div>
-    );
-  }
+  const expiryLabel = primary?.dateLabel ?? "\u2014";
+  const dteLabel = primary ? (primary.dte === 0 ? "0DTE" : `${primary.dte}D`) : "0DTE";
 
   return (
     <div style={{ background: BG }}>
@@ -238,7 +267,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         style={{ top: stickyOffset, height: TOOLBAR_H, background: BG, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
       >
         <span style={{ fontSize: 12, color: DIM }}>
-          {primary.dateLabel} · {primary.dte === 0 ? "0DTE" : `${primary.dte}D`} ▾
+          {expiryLabel} · {dteLabel} ▾
         </span>
         <select
           className="h-6 px-1.5 rounded border"
@@ -266,10 +295,10 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
       <RegimeStrip
         accentHex={accentHex}
-        regimeLabel={regimeLabel}
-        regimeDegraded={regimeDegraded}
+        regimeLabel={presentation?.regimeLabel ?? regimeLabel}
+        regimeDegraded={presentation?.regimeDegraded ?? regimeDegraded}
         zones={zones}
-        headline={headline}
+        headline={displayHeadline}
         stickyTop={regimeTop}
       />
 
@@ -306,6 +335,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       </div>
 
       <div style={{ ...noScrollbar, maxHeight: "min(60vh, 520px)", overflowY: "auto" }}>
+        {ladderDataReady ? (
         <LadderBody
           rows={ladderRows}
           accentHex={accentHex}
@@ -324,6 +354,9 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           flowByKey={flowByKey}
           symbolLabel={symbol.replace(/^\$/, "").slice(0, 3).toUpperCase()}
         />
+        ) : (
+          <AtLadderSkeleton accentHex={accentHex} />
+        )}
       </div>
     </div>
   );

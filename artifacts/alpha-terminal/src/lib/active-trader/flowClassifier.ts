@@ -107,3 +107,16 @@ export function getFlowCountsForKey(key: string): FlowLaneCounts {
   if (!st) return { buy: 0, sell: 0, even: 0, unknown: 0 };
   return { buy: st.windowBuy, sell: st.windowSell, even: st.windowEven, unknown: st.windowUnknown };
 }
+
+/** Dev/test harness: pre-seed window counts (does not run in production routes). */
+export function seedFlowCountsForKey(key: string, counts: FlowLaneCounts, prevVolume = 0): void {
+  stateByKey.set(key, {
+    prevBid: 1,
+    prevAsk: 1.05,
+    prevVolume,
+    windowBuy: counts.buy,
+    windowSell: counts.sell,
+    windowEven: counts.even,
+    windowUnknown: counts.unknown,
+  });
+}

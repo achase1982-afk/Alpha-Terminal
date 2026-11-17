@@ -88,6 +88,7 @@ type LadderRowViewProps = {
   underlyingPrice: number | null;
   symbolLabel: string;
   showFlipPill: boolean;
+  nextStrike: number | null;
 };
 
 const LadderRowView = memo(function LadderRowView({
@@ -107,6 +108,7 @@ const LadderRowView = memo(function LadderRowView({
   underlyingPrice,
   symbolLabel,
   showFlipPill,
+  nextStrike,
 }: LadderRowViewProps) {
   const callTick = useOptionTick(row.call?.streamKey);
   const putTick = useOptionTick(row.put?.streamKey);
@@ -125,9 +127,9 @@ const LadderRowView = memo(function LadderRowView({
     underlyingPrice != null && Math.abs(row.strike - underlyingPrice) < Math.max(underlyingPrice * 0.0005, 0.05);
   const flipBeforeRow =
     zones.flip != null &&
-    underlyingPrice != null &&
-    row.strike < zones.flip &&
-    row.strike + 5 >= zones.flip;
+    nextStrike != null &&
+    row.strike > zones.flip &&
+    nextStrike <= zones.flip;
   const isCallWall = zones.callWall != null && Math.abs(row.strike - zones.callWall) < 0.001;
   const isPutWall = zones.putWall != null && Math.abs(row.strike - zones.putWall) < 0.001;
 
@@ -197,6 +199,7 @@ const LadderRowView = memo(function LadderRowView({
         </div>
         <button
           type="button"
+          data-at-call-strike={row.strike}
           className="flex items-center justify-center gap-1 px-1 h-full"
           style={{ fontSize: 12, color: WHITE, fontWeight: FW_LIGHT, background: "transparent" }}
           onClick={() => row.call && onCellTap(row.call, "CALL")}
@@ -258,10 +261,11 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
 
   return (
     <div>
-      {props.rows.map((row) => (
+      {props.rows.map((row, i) => (
         <LadderRowView
           key={row.strike}
           row={row}
+          nextStrike={props.rows[i + 1]?.strike ?? null}
           accentHex={props.accentHex}
           zones={props.zones}
           maxFlow={maxFlow}

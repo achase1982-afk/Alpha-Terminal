@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, lazy, Suspense, type ReactNode } from "react";
 import { useAuth } from "@clerk/clerk-react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -199,10 +199,26 @@ function BrowserTelemetryInstaller() {
   return null;
 }
 
+const DevAtFixturePage = import.meta.env.DEV
+  ? lazy(() => import("./dev-only/ActiveTraderFixtureDevPage"))
+  : null;
+
+function DevAtFixtureRoute() {
+  if (!import.meta.env.DEV || !DevAtFixturePage) return null;
+  const Page = DevAtFixturePage;
+  const Wrapped = () => (
+    <Suspense fallback={<div className="min-h-screen" style={{ background: "#000" }} />}>
+      <Page />
+    </Suspense>
+  );
+  return <Route path="/dev/active-trader" component={Wrapped} />;
+}
+
 function Router() {
   return (
     <Switch>
       <Route path="/" component={TerminalPage} />
+      <DevAtFixtureRoute />
       <Route component={NotFound} />
     </Switch>
   );

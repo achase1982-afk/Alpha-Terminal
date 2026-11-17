@@ -48,6 +48,10 @@ Thumbs.db
 .cache/
 .local/
 
+# Local Vite env (bypass auth for headless AT fixture capture)
+artifacts/alpha-terminal/.env
+artifacts/alpha-terminal/.env.development.local
+
 # Server-side token storage
 .data/
 autotrader/src/__pycache__/

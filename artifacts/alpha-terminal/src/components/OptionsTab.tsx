@@ -1487,7 +1487,7 @@ export function OptionsTab({
   return (
     <div style={{ background: BG }} className="relative">
       <OptionsSubViewToggle view={optionsSubView} onChange={setOptionsSubView} accentHex={accentHex} />
-      {optionsSubView === "at" && hasData && (
+      {optionsSubView === "at" && (
         <ActiveTraderView
           symbol={symbol}
           groups={atGroups}
