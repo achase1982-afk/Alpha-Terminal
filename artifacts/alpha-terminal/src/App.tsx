@@ -203,6 +203,10 @@ const ChainOrderFixtureDevPage = import.meta.env.DEV
   ? lazy(() => import("@/dev-only/ChainOrderFixtureDevPage"))
   : null;
 
+const TicketBaselineDevPage = import.meta.env.DEV
+  ? lazy(() => import("@/dev-only/TicketBaselineDevPage"))
+  : null;
+
 function Router() {
   return (
     <Switch>
@@ -211,6 +215,15 @@ function Router() {
           {() => (
             <Suspense fallback={null}>
               <ChainOrderFixtureDevPage />
+            </Suspense>
+          )}
+        </Route>
+      ) : null}
+      {TicketBaselineDevPage ? (
+        <Route path="/dev/ticket-baseline">
+          {() => (
+            <Suspense fallback={null}>
+              <TicketBaselineDevPage />
             </Suspense>
           )}
         </Route>
