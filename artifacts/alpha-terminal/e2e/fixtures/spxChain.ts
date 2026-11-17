@@ -35,7 +35,7 @@ function leg(
 /** ~40 strikes, 0DTE SPX with ATM crossed and one one-sided call. */
 export function buildSpx0DteChain(): OptionChainResponse {
   const strikes: number[] = [];
-  for (let s = 5880; s <= 5919; s += 1) strikes.push(s);
+  for (let s = 5850; s <= 5949; s += 1) strikes.push(s);
 
   const calls: OptionContract[] = strikes.map((strike) => {
     if (strike === 5900) return leg(strike, "C", 3.8, 3.2);
@@ -59,6 +59,8 @@ export function buildSpx0DteChain(): OptionChainResponse {
 
 /** ATM 0DTE call with crossed REST bid/ask in the fixture. */
 export const SPX_ATM_CALL_SYMBOL = schwabKey("SPX", 5900, "C");
+
+export const SPX_5910_CALL_SYMBOL = schwabKey("SPX", 5910, "C");
 
 export function streamKeysFromChain(chain: OptionChainResponse): string[] {
   const keys = new Set<string>();

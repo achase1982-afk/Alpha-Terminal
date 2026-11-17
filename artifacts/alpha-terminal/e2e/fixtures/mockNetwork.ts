@@ -1,6 +1,11 @@
 import type { Page } from "@playwright/test";
 import type { OptionChainResponse } from "@workspace/api-client-react";
-import { buildSpx0DteChain, SPX_ATM_CALL_SYMBOL, streamKeysFromChain } from "./spxChain.js";
+import {
+  buildSpx0DteChain,
+  SPX_5910_CALL_SYMBOL,
+  SPX_ATM_CALL_SYMBOL,
+  streamKeysFromChain,
+} from "./spxChain.js";
 
 const CHAIN = buildSpx0DteChain();
 const OPTION_KEYS = streamKeysFromChain(CHAIN);
@@ -27,7 +32,7 @@ function json(body: unknown, status = 200) {
   };
 }
 
-export type QaMockScenario = "default" | "fail" | "option-header";
+export type QaMockScenario = "default" | "fail" | "option-header" | "debit-vertical";
 
 export async function installQaNetworkMocks(
   page: Page,
@@ -85,7 +90,7 @@ export async function installQaNetworkMocks(
         json({
           status: "connected",
           quotes: opts?.aaplStock
-            ? [{ symbol: "AAPL", last: 187.42, bid: 187.4, ask: 187.44 }]
+            ? [{ symbol: "AAPL", last: 187.421, bid: 187.405, ask: 187.439 }]
             : [{ symbol: "SPX", last: 5900.5, bid: 5900.25, ask: 5900.75 }],
         }),
       );
@@ -119,7 +124,19 @@ export async function installQaNetworkMocks(
         let ask = call?.ask ?? 1.2;
         let last = bid != null && ask != null ? (bid + ask) / 2 : bid ?? ask;
         if (key === SPX_ATM_CALL_SYMBOL && scenario === "option-header") {
-          last = 15.65;
+          bid = 3.76;
+          ask = 3.8;
+          last = 3.78;
+        }
+        if (key === SPX_ATM_CALL_SYMBOL && scenario === "debit-vertical") {
+          bid = 3.76;
+          ask = 3.8;
+          last = 3.78;
+        }
+        if (key === SPX_5910_CALL_SYMBOL && (scenario === "debit-vertical" || scenario === "option-header")) {
+          bid = 1.2;
+          ask = 1.25;
+          last = 1.22;
         }
         if (key === SPX_ATM_CALL_SYMBOL && scenario === "fail") {
           bid = 3.8;
@@ -153,7 +170,7 @@ export async function installQaNetworkMocks(
           data: {
             status: "connected",
             quotes: opts?.aaplStock
-              ? [{ symbol: "AAPL", last: 187.42, bid: 187.4, ask: 187.44 }]
+              ? [{ symbol: "AAPL", last: 187.421, bid: 187.405, ask: 187.439 }]
               : [{ symbol: "SPX", last: 5900.5, bid: 5900.25, ask: 5900.75 }],
           },
         }),

@@ -8,11 +8,14 @@ import { useOptionsStreamStore } from "@/lib/options-stream-store";
 /** Schwab OSI key for 0DTE 5900C (must match e2e `spxChain` fixture). */
 const SPX_ATM_CALL_SYMBOL = "SPX   261118C05900000";
 
+const SPX_5910_CALL = "SPX   261118C05910000";
+
 type QaScreen =
   | "chain"
   | "option-open"
   | "option-close"
   | "option-fail"
+  | "debit-vertical"
   | "stock"
   | "review";
 
@@ -24,6 +27,7 @@ function readScreen(): QaScreen {
     || raw === "option-fail"
     || raw === "stock"
     || raw === "review"
+    || raw === "debit-vertical"
   ) {
     return raw;
   }
@@ -82,6 +86,30 @@ export default function QAHarness() {
         optionSymbol: SPX_ATM_CALL_SYMBOL,
         optionInstruction: "BUY_TO_OPEN" as const,
         initialSide: "BUY" as const,
+        isCloseOrder: false,
+      };
+    }
+    if (screen === "debit-vertical") {
+      return {
+        strategyLegs: [
+          {
+            schwabSymbol: SPX_ATM_CALL_SYMBOL,
+            instruction: "BUY_TO_OPEN",
+            quantity: 1,
+            optionType: "CALL",
+            strike: 5900,
+            expiration: "2026-11-18",
+          },
+          {
+            schwabSymbol: SPX_5910_CALL,
+            instruction: "SELL_TO_OPEN",
+            quantity: 1,
+            optionType: "CALL",
+            strike: 5910,
+            expiration: "2026-11-18",
+          },
+        ],
+        strategyIsCredit: false,
         isCloseOrder: false,
       };
     }
