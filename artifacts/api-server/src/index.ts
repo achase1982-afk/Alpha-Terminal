@@ -28,6 +28,7 @@ import { runFmpEarningsBackfill } from "./lib/fmpEarningsBackfill.js";
 import { getFmpApiKeyOrThrow } from "./lib/fmpClient.js";
 import { refreshMacroCalendarCacheFromDb } from "./lib/fmpMacroCalendarCache.js";
 import { LIQUID_CORE_SYMBOL_STRINGS } from "./data/liquidCore130";
+import { initDeskMarketFeeds } from "./lib/desk/deskInit.js";
 import { db, eq, snapshotCollectionLogTable, trackedTickersTable } from "@workspace/db";
 import { startPolygonPCRatioPoller } from "./lib/polygonPutCallRatio";
 import { startOptionsWatcher } from "./lib/optionsWatcher";
@@ -660,6 +661,7 @@ async function boot() {
       scheduleNightlyFlowRawMaintenance();
 
       await migrateAiLabSeedData();
+      initDeskMarketFeeds();
       initAiLabOrchestrator();
       startUniverseRebuildSchedule();
       triggerLiquidCoreBackfill();

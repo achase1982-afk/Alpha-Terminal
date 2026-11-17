@@ -1572,3 +1572,23 @@ export const autoTradePlaybookTable = pgTable("auto_trade_playbook", {
 });
 
 export type AutoTradePlaybookRow = typeof autoTradePlaybookTable.$inferSelect;
+
+/** SPX desk tape ticks (external trading desk API). */
+export const deskSpxTapeTable = pgTable(
+  "desk_spx_tape",
+  {
+    id: serial("id").primaryKey(),
+    symbol: text("symbol").notNull(),
+    ts: timestamp("ts", { withTimezone: true }).notNull(),
+    last: doublePrecision("last"),
+    bid: doublePrecision("bid"),
+    ask: doublePrecision("ask"),
+    insertedAt: timestamp("inserted_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("desk_spx_tape_symbol_ts_uidx").on(t.symbol, t.ts),
+    index("desk_spx_tape_ts_idx").on(t.ts),
+  ],
+);
+
+export type DeskSpxTapeRow = typeof deskSpxTapeTable.$inferSelect;

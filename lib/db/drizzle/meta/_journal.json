@@ -295,6 +295,13 @@
       "when": 1780200000000,
       "tag": "0049_strategist_outcomes",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1780300000000,
+      "tag": "0050_desk_spx_tape",
+      "breakpoints": true
     }
   ]
 }

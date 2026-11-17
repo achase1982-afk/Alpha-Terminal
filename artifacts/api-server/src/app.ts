@@ -5,6 +5,7 @@ import { clerkMiddleware, getAuth } from "@clerk/express";
 import type { Request, Response, NextFunction } from "express";
 import router from "./routes";
 import healthRouter from "./routes/health";
+import deskV1Router from "./routes/deskV1";
 import runFullBackfillRouter from "./routes/runFullBackfill";
 import { logger } from "./lib/logger";
 import { httpTimingMiddleware } from "./middleware/httpTiming";
@@ -112,6 +113,7 @@ if (DEV_BYPASS) {
 }
 
 app.use("/api", healthRouter);
+app.use("/api/desk/v1", deskV1Router);
 if (DEV_BYPASS) {
   app.use("/api/admin/run-full-backfill", runFullBackfillRouter);
   app.use("/api", router);
