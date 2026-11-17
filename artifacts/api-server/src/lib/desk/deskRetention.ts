@@ -27,10 +27,25 @@ export async function deskPruneTapeSessions(): Promise<void> {
   }
 }
 
+export async function deskPruneRawTapeSessions(): Promise<void> {
+  const ctx = getMarketContext();
+  const prior = priorNyTradingSessionYmd(ctx.tradingDate);
+  if (!prior) return;
+  try {
+    await db.execute(sql`
+      DELETE FROM desk_spx_tape_raw
+      WHERE session_date < ${prior}::date
+    `);
+  } catch (err) {
+    logger.debug({ err }, "desk raw tape session prune skipped");
+  }
+}
+
 export function startDeskRetentionJobs(): void {
   const run = () => {
     void deskPruneSnapshots();
     void deskPruneTapeSessions();
+    void deskPruneRawTapeSessions();
   };
   run();
   setInterval(run, 6 * 3_600_000);

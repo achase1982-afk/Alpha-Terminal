@@ -2,9 +2,10 @@ import { getUwApiKey } from "./deskUnusualWhales.js";
 import { getTradierToken } from "./deskTradier.js";
 import { getAlpacaKeys } from "./deskAlpaca.js";
 import { deskMarkFeedNotConfigured, deskSetStreamerDisabled } from "./deskFeedFreshness.js";
-import { initDeskStreamerSymbols } from "./deskStreamerTap.js";
 import { startDeskRetentionJobs } from "./deskRetention.js";
 import { startDeskUwLiveFeedRefresh } from "./deskUwLiveFeeds.js";
+import { startDeskRawTapeCapture } from "./deskSpxTapeRaw.js";
+import { startDeskTapeUniverse } from "./deskTapeUniverse.js";
 
 /** Desk feed registry bootstrap (optional providers + streamer symbol subs). */
 export function initDeskMarketFeeds(): void {
@@ -25,6 +26,7 @@ export function initDeskMarketFeeds(): void {
   const { keyId, secret } = getAlpacaKeys();
   if (!keyId || !secret) deskMarkFeedNotConfigured("alpaca");
 
-  initDeskStreamerSymbols();
+  startDeskRawTapeCapture();
+  startDeskTapeUniverse();
   startDeskRetentionJobs();
 }

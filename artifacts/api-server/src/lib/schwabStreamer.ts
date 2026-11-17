@@ -159,6 +159,14 @@ let subscribedNyseBookSymbols = new Set<string>();
 let subscribedNasdaqBookSymbols = new Set<string>();
 let subscribedOptionsBookSymbols = new Set<string>();
 
+/** Desk tape universe — ADD-only keys (never merged into SUBS replacement sets). */
+const deskAddedEquitySymbols = new Set<string>();
+const deskAddedOptionSymbols = new Set<string>();
+const deskAddedOptionsBookSymbols = new Set<string>();
+const DESK_EQ_FIELDS = Array.from({ length: 52 }, (_, i) => i).join(",");
+const DESK_OPT_FIELDS = Array.from({ length: 56 }, (_, i) => i).join(",");
+const DESK_ADD_BATCH = 200;
+
 /** Level 2 book — field IDs align with schwab-py `BookFields` (SYMBOL, BOOK_TIME, BIDS, ASKS). */
 const NYSE_NASDAQ_OPTIONS_BOOK_FIELDS = "0,1,2,3";
 
@@ -899,6 +907,116 @@ function sendOptionsBookSubscription(symbols: string[]) {
   }
 }
 
+function sendDeskEquityAdd(symbols: string[]): void {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
+  const req = buildRequest("LEVELONE_EQUITIES", "ADD", {
+    keys: symbols.join(","),
+    fields: DESK_EQ_FIELDS,
+  });
+  if (req) {
+    sendStreamerJson({ requests: [req] });
+    logger.info({ count: symbols.length }, "Schwab streamer: desk LEVELONE_EQUITIES ADD");
+  }
+}
+
+function sendDeskOptionAdd(symbols: string[]): void {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
+  const req = buildRequest("LEVELONE_OPTIONS", "ADD", {
+    keys: symbols.join(","),
+    fields: DESK_OPT_FIELDS,
+  });
+  if (req) {
+    sendStreamerJson({ requests: [req] });
+    logger.info({ count: symbols.length }, "Schwab streamer: desk LEVELONE_OPTIONS ADD");
+  }
+}
+
+function sendDeskOptionsBookAdd(symbols: string[]): void {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
+  const req = buildRequest("OPTIONS_BOOK", "ADD", {
+    keys: symbols.join(","),
+    fields: NYSE_NASDAQ_OPTIONS_BOOK_FIELDS,
+  });
+  if (req) {
+    sendStreamerJson({ requests: [req] });
+    logger.info({ count: symbols.length }, "Schwab streamer: desk OPTIONS_BOOK ADD");
+  }
+}
+
+function batchDeskAdd(send: (batch: string[]) => void, all: string[]): void {
+  for (let i = 0; i < all.length; i += DESK_ADD_BATCH) {
+    send(all.slice(i, i + DESK_ADD_BATCH));
+  }
+}
+
+export function deskStreamerAddEquity(symbols: string[]): number {
+  const added: string[] = [];
+  for (const s of symbols) {
+    const normalized = normalizeEquityKey(s);
+    if (!deskAddedEquitySymbols.has(normalized)) {
+      deskAddedEquitySymbols.add(normalized);
+      added.push(normalized);
+    }
+  }
+  if (added.length > 0 && connectionState === "connected") {
+    batchDeskAdd(sendDeskEquityAdd, added);
+  }
+  return added.length;
+}
+
+export function deskStreamerAddOptions(symbols: string[]): number {
+  const added: string[] = [];
+  for (const s of symbols) {
+    const k = s.trim();
+    if (!k || deskAddedOptionSymbols.has(k)) continue;
+    deskAddedOptionSymbols.add(k);
+    added.push(k);
+  }
+  if (added.length > 0 && connectionState === "connected") {
+    batchDeskAdd(sendDeskOptionAdd, added);
+  }
+  return added.length;
+}
+
+export function deskStreamerAddOptionsBook(symbols: string[]): number {
+  const added: string[] = [];
+  for (const s of symbols) {
+    const k = s.trim();
+    if (!k || deskAddedOptionsBookSymbols.has(k)) continue;
+    deskAddedOptionsBookSymbols.add(k);
+    added.push(k);
+  }
+  if (added.length > 0 && connectionState === "connected") {
+    batchDeskAdd(sendDeskOptionsBookAdd, added);
+  }
+  return added.length;
+}
+
+export function deskStreamerReplayDeskAdds(): void {
+  if (connectionState !== "connected") return;
+  if (deskAddedEquitySymbols.size > 0) {
+    batchDeskAdd(sendDeskEquityAdd, [...deskAddedEquitySymbols]);
+  }
+  if (deskAddedOptionSymbols.size > 0) {
+    batchDeskAdd(sendDeskOptionAdd, [...deskAddedOptionSymbols]);
+  }
+  if (deskAddedOptionsBookSymbols.size > 0) {
+    batchDeskAdd(sendDeskOptionsBookAdd, [...deskAddedOptionsBookSymbols]);
+  }
+}
+
+export function getDeskStreamerAddCounts(): {
+  levelone_equities: number;
+  levelone_options: number;
+  options_book: number;
+} {
+  return {
+    levelone_equities: deskAddedEquitySymbols.size,
+    levelone_options: deskAddedOptionSymbols.size,
+    options_book: deskAddedOptionsBookSymbols.size,
+  };
+}
+
 function sendAcctActivitySubscription() {
   if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo) return;
   if (acctActivitySubscribed) return;
@@ -1479,6 +1597,10 @@ function handleMessage(raw: string) {
           if (subscribedOptionsBookSymbols.size > 0) {
             sendOptionsBookSubscription([...subscribedOptionsBookSymbols]);
           }
+          deskStreamerReplayDeskAdds();
+          void import("./desk/deskTapeUniverse.js")
+            .then((m) => m.deskTapeUniverseOnStreamerLogin())
+            .catch(() => undefined);
           sendAcctActivitySubscription();
         } else {
           logger.error({ code, msg: msgText }, "Schwab streamer: LOGIN failed");
@@ -1893,6 +2015,9 @@ export function stopStreamer() {
   subscribedNyseBookSymbols.clear();
   subscribedNasdaqBookSymbols.clear();
   subscribedOptionsBookSymbols.clear();
+  deskAddedEquitySymbols.clear();
+  deskAddedOptionSymbols.clear();
+  deskAddedOptionsBookSymbols.clear();
   acctActivitySubscribed = false;
   consecutivePostLoginFlap1006 = 0;
 }

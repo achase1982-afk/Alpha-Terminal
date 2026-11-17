@@ -52,6 +52,7 @@ Outside a feed’s ET session window → `session_closed` and `stale=false`.
 | GET | `/health` | Feed freshness matrix |
 | GET | `/quotes?symbols=` | Schwab REST `/marketdata/v1/quotes`; UTC ms; index bid/ask null |
 | GET | `/tape/spx/stream` | SSE Schwab streamer frames `{rx_ns,c,dir?,m,session_date,rx_utc_ms}` |
+| GET | `/tape/spx/raw?session_date=&since_ns=` | Gzip-backed inbound frame NDJSON (`{c,rx_ns,m}`); `since_ns` is UTC epoch ns string |
 | GET | `/tape/spx?since=` | Normalized in-memory ticks |
 | GET | `/chains?symbol=&expiration=` | Full Schwab chain by default (`range=ALL`, no `strikeCount`). Optional `strikeCount`, `range` (`ITM`/`NTM`/`OTM`/`ALL`). Response includes `truncated`, `contract_count`, normalized `rho`, and raw contracts. |
 | GET | `/flow` | Unusual Whales (max 3 concurrent UW HTTP) |
@@ -68,6 +69,17 @@ Reuses the **single** server Schwab streamer (no second login). Taps inbound/out
 
 - `desk_api_snapshots`: health/quotes/chains payloads, **30 days**
 - `desk_spx_tape`: normalized ticks, **current + prior ET session** only
+- `desk_spx_tape_raw`: 60s gzip NDJSON chunks of every inbound streamer frame, **current + prior ET session**
+
+## Tape universe (shared Schwab streamer)
+
+When `DESK_TAPE_UNIVERSE_ENABLED` is true (default), desk **ADD**s (never SUBS) on the app’s single streamer connection:
+
+- `LEVELONE_EQUITIES` — `$SPX`, `SPY`, `$VIX` (fields 0–51)
+- `LEVELONE_OPTIONS` — SPXW 0DTE ~2000 ATM-centered symbols (fields 0–55)
+- `OPTIONS_BOOK` — ~500 ATM 0DTE (fields 0–3)
+
+Universe refreshes on spot moves and 0DTE roll; symbol caps surface in `/health` → `desk_tape_universe`. Inbound capture counters: `/health` → `schwab_streamer.{frames,bytes,last_frame_ns}`.
 
 ## Environment
 
@@ -75,6 +87,7 @@ Reuses the **single** server Schwab streamer (no second login). Taps inbound/out
 |----------|------|
 | `DESK_API_KEY` | Bearer secret (**required**) |
 | `DESK_STREAMER_ENABLED` | Optional desk-only streamer flag (default off) |
+| `DESK_TAPE_UNIVERSE_ENABLED` | Desk ADD tape universe on shared streamer (default on) |
 | `UW_API_KEY_NEW` / `UW_API_KEY` | Unusual Whales |
 | `TRADIER_API_KEY` / `TRADIER_TOKEN` | Tradier fallback quotes |
 | `ALPACA_API_KEY_ID` + `ALPACA_API_SECRET_KEY` (or `APCA_*`) | Alpaca **news** path only |

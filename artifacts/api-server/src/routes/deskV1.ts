@@ -12,6 +12,8 @@ import { getDeskTapeSince, registerDeskSpxSse } from "../lib/desk/deskSpxTape.js
 import { deskPersistSnapshot } from "../lib/desk/deskSnapshotStore.js";
 import { deskAsofEtIso, deskSessionDateEt } from "../lib/desk/deskEt.js";
 import { refreshDeskUwLiveFeeds } from "../lib/desk/deskUwLiveFeeds.js";
+import { getDeskRawTapeHealth, streamDeskRawTapeNdjson } from "../lib/desk/deskSpxTapeRaw.js";
+import { getDeskTapeUniverseHealth } from "../lib/desk/deskTapeUniverse.js";
 
 const router: IRouter = Router();
 
@@ -21,8 +23,17 @@ router.get("/health", async (_req, res) => {
   await refreshDeskUwLiveFeeds().catch(() => undefined);
   const now = Date.now();
   const feeds = buildDeskHealthFeeds(now);
+  const tape = getDeskRawTapeHealth();
   const body = {
     feeds,
+    schwab_streamer: {
+      frames: tape.frames,
+      bytes: tape.bytes,
+      last_frame_ns: tape.last_frame_ns,
+      last_frame_utc_ms: tape.last_frame_utc_ms,
+      buffer_frames: tape.buffer_frames,
+    },
+    desk_tape_universe: getDeskTapeUniverseHealth(),
     session_date: deskSessionDateEt(new Date(now)),
     asof_et: deskAsofEtIso(new Date(now)),
   };
@@ -48,6 +59,35 @@ router.get("/quotes", async (req, res) => {
 
 router.get("/tape/spx/stream", (_req, res) => {
   registerDeskSpxSse(res as Response);
+});
+
+router.get("/tape/spx/raw", async (req, res) => {
+  const session_date = (req.query["session_date"] as string) ?? deskSessionDateEt();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(session_date)) {
+    res.status(400).json({ error: "session_date required (YYYY-MM-DD)" });
+    return;
+  }
+  const sinceRaw = (req.query["since_ns"] as string) ?? "0";
+  let sinceNs = 0n;
+  try {
+    sinceNs = BigInt(sinceRaw);
+  } catch {
+    res.status(400).json({ error: "since_ns must be an integer nanosecond string" });
+    return;
+  }
+  res.setHeader("Content-Type", "application/x-ndjson");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("X-Session-Date", session_date);
+  try {
+  const n = await streamDeskRawTapeNdjson(session_date, sinceNs, (line) => {
+    res.write(line);
+  });
+  res.setHeader("X-Lines-Emitted", String(n));
+  res.end();
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ error: "raw_tape_stream_failed" });
+    else res.end();
+  }
 });
 
 router.get("/tape/spx", (req, res) => {

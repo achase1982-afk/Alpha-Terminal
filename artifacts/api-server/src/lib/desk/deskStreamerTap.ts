@@ -6,6 +6,7 @@ import {
 } from "./deskFeedFreshness.js";
 import { deskSessionDateEt } from "./deskEt.js";
 import { deskUtcEpochNsJson } from "./deskUtcNs.js";
+import { deskCaptureInboundFrame } from "./deskSpxTapeRaw.js";
 import { logger } from "../logger.js";
 
 export type DeskStreamerFrame = {
@@ -113,6 +114,7 @@ export function onSchwabConnectionOpened(): void {
 
 export function onSchwabInboundFrame(raw: string): void {
   const frame = wrapFrame(raw);
+  deskCaptureInboundFrame({ c: frame.c, rx_ns: frame.rx_ns, m: frame.m });
   broadcastFrame(frame);
   maybeTouchFeedsFromFrame(raw, frame.rx_utc_ms);
 }
@@ -142,19 +144,20 @@ export function getDeskNormalizedTapeSince(sinceMs?: number): typeof normalizedR
   return normalizedRing.filter((t) => t.ts_ms > sinceMs);
 }
 
+/** @deprecated use desk tape universe ADD subscriptions */
 export function initDeskStreamerSymbols(): void {
-  void import("../schwabStreamer.js").then(({ addSymbols, isConnected }) => {
-    if (!isConnected() && process.env.DESK_STREAMER_ENABLED !== "true") return;
-    addSymbols(["$SPX", "SPY", "$VIX"]);
-  });
+  /* desk universe uses ADD on the shared streamer — see startDeskTapeUniverse() */
 }
 
 export function deskSubscribeAtmZeroDteOptionKeys(keys: string[]): void {
   if (!keys.length) return;
-  void import("../schwabStreamer.js").then(({ addOptionSymbols }) => {
-    addOptionSymbols(keys.slice(0, 100));
+  void import("../schwabStreamer.js").then(({ deskStreamerAddOptions, deskStreamerAddOptionsBook }) => {
+    deskStreamerAddOptions(keys.slice(0, TARGET_DESK_OPTION_BATCH));
+    deskStreamerAddOptionsBook(keys.slice(0, 100));
   });
 }
+
+const TARGET_DESK_OPTION_BATCH = 200;
 
 export function getDeskStreamerConnectionNumber(): number {
   return connectionNumber;
