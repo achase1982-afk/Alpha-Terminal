@@ -62,7 +62,7 @@ describe("butterfly and iron fly LIMIT risk", () => {
     if (risk.kind === "known") expect(risk.maxRisk).toBe(600);
   });
 
-  it("put broken-wing butterfly credit 1.00 loses up to $900", () => {
+  it("put broken-wing butterfly credit 1.00 loses up to $400", () => {
     const risk = schwabOrderMaxRisk({
       orderType: "LIMIT",
       price: 1,
@@ -73,7 +73,7 @@ describe("butterfly and iron fly LIMIT risk", () => {
       ],
     });
     expect(risk.kind).toBe("known");
-    if (risk.kind === "known") expect(risk.maxRisk).toBe(900);
+    if (risk.kind === "known") expect(risk.maxRisk).toBe(400);
   });
 
   it("10-lot long call butterfly debit scales to $1,500", () => {

@@ -251,54 +251,11 @@ function computeStrategyMetrics(legs: StrategyLeg[]) {
     if (leg.vega != null) totalVega += leg.vega * leg.quantity * sign;
   }
 
-  const calls = legs.filter(l => l.optionType === "CALL");
-  const puts = legs.filter(l => l.optionType === "PUT");
-  const longCalls = calls.filter(l => l.direction.startsWith("BUY"));
-  const shortCalls = calls.filter(l => l.direction.startsWith("SELL"));
-  const longPuts = puts.filter(l => l.direction.startsWith("BUY"));
-  const shortPuts = puts.filter(l => l.direction.startsWith("SELL"));
-
-  let maxRisk: number | null = null;
-  let maxReward: number | null = null;
-  let breakevens: number[] = [];
   const isDebit = netDebit > 0;
-
-  if (longCalls.length === 1 && shortCalls.length === 1 && puts.length === 0) {
-    const width = Math.abs(shortCalls[0].strike - longCalls[0].strike) * 100;
-    if (isDebit) {
-      maxRisk = netDebit; maxReward = width - netDebit;
-      breakevens = [longCalls[0].strike + netDebit / 100];
-    } else {
-      maxRisk = width + netDebit; maxReward = -netDebit;
-      breakevens = [shortCalls[0].strike + netDebit / 100];
-    }
-  } else if (longPuts.length === 1 && shortPuts.length === 1 && calls.length === 0) {
-    const width = Math.abs(longPuts[0].strike - shortPuts[0].strike) * 100;
-    if (isDebit) {
-      maxRisk = netDebit; maxReward = width - netDebit;
-      breakevens = [longPuts[0].strike - netDebit / 100];
-    } else {
-      maxRisk = width + netDebit; maxReward = -netDebit;
-      breakevens = [shortPuts[0].strike - netDebit / 100];
-    }
-  } else if (longCalls.length === 1 && longPuts.length === 1 && shortCalls.length === 0 && shortPuts.length === 0) {
-    maxRisk = netDebit; maxReward = null;
-    if (hasPrices) {
-      const cost100 = netDebit / 100;
-      breakevens = [longCalls[0].strike + cost100, longPuts[0].strike - cost100];
-    }
-  } else if (longPuts.length === 1 && shortPuts.length === 1 && longCalls.length === 1 && shortCalls.length === 1) {
-    const putWidth = Math.abs(shortPuts[0].strike - longPuts[0].strike) * 100;
-    const callWidth = Math.abs(longCalls[0].strike - shortCalls[0].strike) * 100;
-    const credit = -netDebit;
-    maxReward = credit > 0 ? credit : null;
-    maxRisk = Math.max(putWidth, callWidth) - credit;
-    breakevens = [shortPuts[0].strike - credit / 100, shortCalls[0].strike + credit / 100];
-  } else {
-    if (isDebit) maxRisk = netDebit;
-  }
-
-  const riskReward = (maxRisk != null && maxReward != null && maxRisk > 0) ? maxReward / maxRisk : null;
+  const maxRisk: number | null = null;
+  const maxReward: number | null = null;
+  const breakevens: number[] = [];
+  const riskReward: number | null = null;
   const pop = totalDelta !== 0 ? Math.abs(1 - Math.abs(totalDelta)) * 100 : null;
 
   return {
@@ -756,10 +713,17 @@ export function StrategyBuilder({
       contractCount,
     });
     if (!econ) return base;
+    const maxReward = Number.isFinite(econ.maxProfit) ? econ.maxProfit : null;
+    const riskRewardVal =
+      econ.maxRisk != null && econ.maxRisk > 0 && maxReward != null
+        ? maxReward / econ.maxRisk
+        : null;
     return {
       ...base,
       maxRisk: econ.maxRisk,
-      maxReward: Number.isFinite(econ.maxProfit) ? econ.maxProfit : base.maxReward,
+      maxReward,
+      breakevens: econ.breakevens,
+      riskReward: riskRewardVal,
       netDebit: isCredit ? -econ.grossNotional : econ.grossNotional,
       isDebit: !isCredit,
     };
@@ -1806,34 +1770,28 @@ export function StrategyBuilder({
                     const totalCommission = totalContracts * 0.65;
                     const px = reviewLimitSnapped ?? submittedLimit ?? 0;
                     const grossCost = estimatedCost != null ? Math.abs(estimatedCost) : 0;
-                    const strikes = legs.map(l => l.strike).sort((a, b) => a - b);
-                    const width = strikes.length >= 2 ? strikes[strikes.length - 1] - strikes[0] : 0;
-                    const allCalls = legs.every(l => l.optionType === "CALL");
-                    const allPuts = legs.every(l => l.optionType === "PUT");
-                    const breakevens: number[] = [];
-                    if (legs.length === 2 && width > 0) {
-                      const sellLeg = legs.find(l => l.direction.startsWith("SELL"));
-                      if (sellLeg) {
-                        if (allPuts) breakevens.push(sellLeg.strike - (isCredit ? px : -px));
-                        else if (allCalls) breakevens.push(sellLeg.strike + (isCredit ? px : -px));
-                      }
-                    } else if (legs.length === 2 && !allCalls && !allPuts) {
-                      const callLeg = legs.find(l => l.optionType === "CALL");
-                      const putLeg = legs.find(l => l.optionType === "PUT");
-                      if (callLeg && putLeg) {
-                        breakevens.push(putLeg.strike - px);
-                        breakevens.push(callLeg.strike + px);
-                      }
-                    }
-                    const maxProfit = width > 0
-                      ? (isCredit ? px * 100 * quantity : (width - px) * 100 * quantity)
-                      : (isCredit ? px * 100 * quantity : null);
-                    const maxLoss = width > 0
-                      ? (isCredit ? (width - px) * 100 * quantity : px * 100 * quantity)
-                      : (isCredit ? null : px * 100 * quantity);
-                    const bpEffect = isCredit
-                      ? -((width - px) * 100 * quantity + totalCommission)
-                      : -(px * 100 * quantity + totalCommission);
+                    const reviewEcon = computeOrderEconomics({
+                      underlyingSymbol: symbol,
+                      isOption: true,
+                      legs: legs.map((l) => ({
+                        strike: l.strike,
+                        optionType: l.optionType,
+                        instruction: l.direction,
+                        expiration: l.expiration.split(":")[0].trim(),
+                        quantity: l.quantity,
+                      })),
+                      limitPrice: px,
+                      quantity,
+                      isCredit,
+                      contractCount: totalContracts,
+                    });
+                    const breakevens = reviewEcon?.breakevens ?? [];
+                    const maxProfit =
+                      reviewEcon && Number.isFinite(reviewEcon.maxProfit) ? reviewEcon.maxProfit : null;
+                    const maxLoss = reviewEcon?.maxRisk ?? null;
+                    const bpEffect = reviewEcon
+                      ? reviewEcon.buyingPowerEffect
+                      : -(grossCost + totalCommission);
                     return (
                       <>
                         <div className="pt-1 mt-0.5 space-y-0.5" style={{ borderTop: `1px dashed ${DIVIDER}` }}>

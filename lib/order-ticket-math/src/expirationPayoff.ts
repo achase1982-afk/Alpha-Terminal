@@ -75,41 +75,14 @@ function rootsOnSegment(s0: number, p0: number, s1: number, p1: number): number[
   return [s0 - (p0 * (s1 - s0)) / (p1 - p0)];
 }
 
-/** 1:2:1 fly worst-case vs breakpoint scan (BWB wide-wing margin). */
-function oneTwoOneFlyMaxLossFloor(input: ExpirationPayoffInput): number | null {
-  const { legs, netPerShare, spreadUnits, isCredit, isOption } = input;
-  if (legs.length !== 3) return null;
-  const optLegs = legs.filter((l) => !isEquityLeg(l));
-  if (optLegs.length !== 3) return null;
-  if (!optLegs.every((l) => l.optionType === optLegs[0].optionType)) return null;
-  const sorted = [...optLegs].sort((a, b) => a.strike - b.strike);
-  const q = (l: PayoffLeg) => l.quantity ?? 1;
-  if (!(q(sorted[0]) === 1 && q(sorted[1]) === 2 && q(sorted[2]) === 1)) return null;
-  const wLo = sorted[1].strike - sorted[0].strike;
-  const wHi = sorted[2].strike - sorted[1].strike;
-  if (wLo <= 0 || wHi <= 0) return null;
-  const mult = isOption ? 100 * spreadUnits : spreadUnits;
-  const symmetric = Math.abs(wLo - wHi) < 1e-6;
-  if (symmetric) {
-    return isCredit ? Math.max(0, wLo - netPerShare) * mult : Math.max(0, netPerShare) * mult;
-  }
-  const narrow = Math.min(wLo, wHi);
-  const wide = Math.max(wLo, wHi);
-  return isCredit
-    ? Math.max(0, wide - netPerShare) * mult
-    : Math.max(netPerShare, narrow + netPerShare) * mult;
-}
-
 export function analyzeExpirationPayoff(input: ExpirationPayoffInput): ExpirationPayoffResult {
   const { legs, spreadUnits, isOption } = input;
   const points = sortedBreakpoints(legs);
 
   const unitRight = rightTailSlopePerShare(legs);
   const dollarRight = dollarTailSlope(unitRight, spreadUnits, isOption, legs);
-
-  if (dollarRight < 0) {
-    return { maxLoss: null, maxProfit: Number.POSITIVE_INFINITY, breakevens: [] };
-  }
+  /** Upside beyond strikes: net short calls / stock → loss unbounded. Put shorts cap at S=0. */
+  const unboundedLoss = dollarRight < 0;
 
   const samples = points.map((s) => ({ s, p: payoffDollarsAtS(input, s) }));
 
@@ -120,10 +93,19 @@ export function analyzeExpirationPayoff(input: ExpirationPayoffInput): Expiratio
     if (p > maxP) maxP = p;
   }
 
-  let maxLoss = Math.max(0, -minP);
-  const flyFloor = oneTwoOneFlyMaxLossFloor(input);
-  if (flyFloor != null && input.isCredit) maxLoss = Math.max(maxLoss, flyFloor);
-
+  const premiumDollars =
+    input.netPerShare * (isOption ? 100 : 1) * spreadUnits;
+  let maxLoss = unboundedLoss ? null : Math.max(0, -minP);
+  if (
+    maxLoss != null &&
+    !input.isCredit &&
+    dollarRight === 0 &&
+    unitRight === 0 &&
+    legs.length >= 4 &&
+    maxLoss > premiumDollars
+  ) {
+    maxLoss = premiumDollars;
+  }
   const maxProfit = dollarRight > 0 ? Number.POSITIVE_INFINITY : Math.max(0, maxP);
 
   const breakevens: number[] = [];

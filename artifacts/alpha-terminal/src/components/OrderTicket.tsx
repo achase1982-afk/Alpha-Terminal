@@ -703,6 +703,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
           optionType: l.optionType,
           instruction: l.instruction,
           expiration: l.expiration,
+          quantity: l.quantity,
         }))
       : isOption
         ? [{ strike: 0, optionType: "CALL", instruction: side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN" }]
@@ -982,7 +983,10 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
         entryPrice: submittedLimit,
         isCredit: isMultiLeg ? (strategyIsCredit ?? false) : false,
         maxLoss: isMultiLeg && ticketEconomics ? ticketEconomics.maxRisk : null,
-        maxGain: isMultiLeg && ticketEconomics ? ticketEconomics.maxProfit : null,
+        maxGain:
+          isMultiLeg && ticketEconomics && Number.isFinite(ticketEconomics.maxProfit)
+            ? ticketEconomics.maxProfit
+            : null,
         thesis: strategistParsed?.narrative ?? null,
         legs: strategyLegs ? strategyLegs.map(l => ({
           symbol: l.schwabSymbol,
@@ -1552,9 +1556,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                   const rr =
                     maxRisk != null && maxRisk > 0 && Number.isFinite(maxGain)
                       ? `${(maxGain / maxRisk).toFixed(2)}:1`
-                      : maxGain === Number.POSITIVE_INFINITY
-                        ? "Unlimited"
-                        : "—";
+                      : "—";
                   const allCalls = strategyLegs.every(l => l.optionType === "CALL");
                   const allPuts = strategyLegs.every(l => l.optionType === "PUT");
                   const stratName = econ.isIronCondor

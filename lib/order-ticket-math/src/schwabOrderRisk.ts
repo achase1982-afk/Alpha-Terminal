@@ -99,11 +99,33 @@ export function inferNetCreditFromLegStructure(legs: EconomicsLeg[]): boolean | 
     const calls = legs.filter((l) => l.optionType === "CALL");
     if (puts.length === 2 && calls.length === 2) {
       const shortPut = puts.find((l) => l.instruction.startsWith("SELL"));
+      const longPut = puts.find((l) => l.instruction.startsWith("BUY"));
       const shortCall = calls.find((l) => l.instruction.startsWith("SELL"));
-      if (shortPut && shortCall && shortPut.strike === shortCall.strike) return true;
-      return true;
+      const longCall = calls.find((l) => l.instruction.startsWith("BUY"));
+      if (!shortPut || !longPut || !shortCall || !longCall) return null;
+      if (shortPut.strike === shortCall.strike) {
+        return shortPut.instruction.startsWith("SELL") ? true : false;
+      }
+      if (longPut.strike < shortPut.strike && shortCall.strike < longCall.strike) return true;
+      if (longPut.strike > shortPut.strike && longCall.strike > shortCall.strike) return false;
+      return null;
     }
-    if (puts.length === 4 || calls.length === 4) return true;
+    if (puts.length === 4) {
+      const sorted = [...puts].sort((a, b) => a.strike - b.strike);
+      const [k0, k1, k2, k3] = sorted;
+      const sell = (l: EconomicsLeg) => l.instruction.startsWith("SELL");
+      if (sell(k1) && sell(k2) && !sell(k0) && !sell(k3)) return false;
+      if (sell(k0) && sell(k3) && !sell(k1) && !sell(k2)) return true;
+      return null;
+    }
+    if (calls.length === 4) {
+      const sorted = [...calls].sort((a, b) => a.strike - b.strike);
+      const [k0, k1, k2, k3] = sorted;
+      const s = (l: EconomicsLeg) => l.instruction.startsWith("SELL");
+      if (s(k0) && s(k3) && !s(k1) && !s(k2)) return true;
+      if (s(k1) && s(k2) && !s(k0) && !s(k3)) return false;
+      return null;
+    }
     return null;
   }
   if (legs.length !== 2) return null;
@@ -119,11 +141,49 @@ export function inferNetCreditFromLegStructure(legs: EconomicsLeg[]): boolean | 
   if (!sell || !buy) return null;
   const lowStrike = Math.min(sell.strike, buy.strike);
   const highStrike = Math.max(sell.strike, buy.strike);
-  const lowLeg = legs.find((l) => l.strike === lowStrike);
-  const highLeg = legs.find((l) => l.strike === highStrike);
-  if (!lowLeg || !highLeg) return null;
-  if (lowLeg.instruction.startsWith("SELL") && highLeg.instruction.startsWith("BUY")) return true;
-  if (lowLeg.instruction.startsWith("BUY") && highLeg.instruction.startsWith("SELL")) return false;
+  const lowLeg = legs.find((l) => l.strike === lowStrike)!;
+  const highLeg = legs.find((l) => l.strike === highStrike)!;
+  if (allCalls) {
+    if (lowLeg.instruction.startsWith("SELL") && highLeg.instruction.startsWith("BUY")) return true;
+    if (lowLeg.instruction.startsWith("BUY") && highLeg.instruction.startsWith("SELL")) return false;
+    return null;
+  }
+  if (lowLeg.instruction.startsWith("BUY") && highLeg.instruction.startsWith("SELL")) return true;
+  if (lowLeg.instruction.startsWith("SELL") && highLeg.instruction.startsWith("BUY")) return false;
+  return null;
+}
+
+function maxRiskForInput(input: OrderEconomicsInput): number | null {
+  const econ = computeOrderEconomics(input);
+  return econ?.maxRisk ?? null;
+}
+
+function resolveLimitCreditDebit(
+  order: SchwabOrderLike,
+  econLegs: EconomicsLeg[],
+  price: number,
+  qty: number,
+  contractCount: number,
+): boolean | null {
+  if (schwabOrderIsCredit(order) != null) return schwabOrderIsCredit(order);
+  const fromStructure = inferNetCreditFromLegStructure(econLegs);
+  if (fromStructure != null) return fromStructure;
+  const base = {
+    legs: econLegs,
+    limitPrice: price,
+    quantity: qty,
+    isOption: true as const,
+    contractCount,
+  };
+  const asDebit = maxRiskForInput({ ...base, isCredit: false });
+  const asCredit = maxRiskForInput({ ...base, isCredit: true });
+  if (asDebit == null && asCredit == null) return null;
+  if (asDebit != null && asCredit == null) return false;
+  if (asDebit == null && asCredit != null) return true;
+  if (asDebit != null && asCredit != null) {
+    if (asDebit === 0 && asCredit === 0) return null;
+    return asDebit >= asCredit ? false : true;
+  }
   return null;
 }
 
@@ -217,7 +277,7 @@ export function schwabOrderToEconomicsInput(order: SchwabOrderLike): OrderEconom
       return null;
     }
   } else if (isCredit == null && econLegs.length >= 2) {
-    isCredit = inferNetCreditFromLegStructure(econLegs);
+    isCredit = resolveLimitCreditDebit(order, econLegs, price, qty, legQtys.reduce((s, n) => s + n, 0));
   }
   if (isCredit == null) return null;
 
