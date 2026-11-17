@@ -6,7 +6,7 @@ import { initWsServer } from "./lib/wsServer";
 import { initTokenStore, setTokenRefreshCallback, hasValidTokens } from "./lib/tokenStore";
 import { initSyntheticDxy } from "./lib/syntheticDxy";
 import { startExitMonitor } from "./lib/exitStaging";
-import { startTelemetryCleanup } from "./lib/telemetry";
+import { logFailure, startTelemetryCleanup } from "./lib/telemetry";
 import { startTelemetryRetentionJob } from "./lib/telemetryRetention.js";
 import { initDeltaEngine } from "./lib/deltaEngine";
 import { runDailyScreenRefresh } from "./routes/scanner";
@@ -78,11 +78,17 @@ getFmpApiKeyOrThrow();
 // rejections and keep serving; an uncaught synchronous exception still exits
 // since the process state is undefined at that point.
 process.on("unhandledRejection", (reason) => {
+  const message =
+    reason instanceof Error ? reason.message : typeof reason === "string" ? reason : "Unhandled promise rejection";
+  const stack = reason instanceof Error ? reason.stack : undefined;
+  void logFailure("HTTP", "ERROR", message, { stack, kind: "unhandledRejection" });
   logger.error({ err: reason }, "Unhandled promise rejection (process kept alive)");
 });
 process.on("uncaughtException", (err) => {
   logger.error({ err }, "Uncaught exception — exiting");
-  process.exit(1);
+  void logFailure("HTTP", "ERROR", err.message, { stack: err.stack, kind: "uncaughtException" }).finally(() => {
+    process.exit(1);
+  });
 });
 
 async function boot() {

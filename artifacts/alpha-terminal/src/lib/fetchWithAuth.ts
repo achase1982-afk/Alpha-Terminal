@@ -1,4 +1,5 @@
 import { appendClientTimeZoneToUrl } from "./clientTimeZone.js";
+import { enqueueBrowserTelemetry } from "./browserTelemetry";
 
 /** Mirrors Clerk `getToken` options we care about (long strategist polls + 401 recovery). */
 export type ClerkGetTokenOptions = { skipCache?: boolean };
@@ -139,6 +140,27 @@ export async function fetchWithAuth(
         headers: { "Content-Type": "application/json" },
       });
     }
+    const pathOnly = (() => {
+      try {
+        const u = new URL(urlStr, window.location.origin);
+        return u.pathname;
+      } catch {
+        return urlStr.split("?")[0] ?? urlStr;
+      }
+    })();
+    if (typeof window !== "undefined") {
+      enqueueBrowserTelemetry({
+        level: "ERROR",
+        message: `fetchWithAuth failed: ${pathOnly}`,
+        details: {
+          path: pathOnly,
+          method: fetchInit.method ?? "GET",
+          error: err instanceof Error ? err.message : String(err),
+          elapsedMs,
+        },
+      });
+    }
+
     throw err;
   }
 }

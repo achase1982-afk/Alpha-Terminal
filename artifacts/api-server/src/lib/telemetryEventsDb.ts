@@ -77,6 +77,8 @@ export async function queryTelemetryEvents(opts: {
   systems?: string[];
   /** Filters telemetry_events.service (server | web). */
   services?: string[];
+  /** Filters telemetry_events.level (INFO | WARN | ERROR). */
+  levels?: string[];
   limit: number;
 }): Promise<RuntimeLogRow[]> {
   const lim = Math.min(Math.max(1, opts.limit), RUNTIME_LOG_MAX_LIMIT);
@@ -92,6 +94,10 @@ export async function queryTelemetryEvents(opts: {
 
   if (opts.services?.length) {
     conditions.push(inArray(telemetryEventsTable.service, opts.services));
+  }
+
+  if (opts.levels?.length) {
+    conditions.push(inArray(telemetryEventsTable.level, opts.levels));
   }
 
   const safeQ = (opts.q ?? "").trim().replace(/[%_]/g, "").slice(0, 240);

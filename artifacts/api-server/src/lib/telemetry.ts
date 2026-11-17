@@ -4,6 +4,7 @@ import { lt } from "@workspace/db";
 import { logger } from "./logger.js";
 import { sendPushToAll } from "./pushService.js";
 import { emitTelemetry, type TelemetrySystem as StoreSystem, type TelemetrySeverity as StoreSeverity } from "./telemetryStore.js";
+import { redactTelemetryDetails } from "./telemetryRedact.js";
 
 export type TelemetrySystem =
   | "SCHWAB_API"
@@ -13,6 +14,7 @@ export type TelemetrySystem =
   | "SEC_EDGAR"
   | "SCANNER"
   | "STRATEGIST"
+  | "CHAT"
   | "RISK_GATE"
   | "EXIT_STAGING"
   | "PUSH_NOTIFICATION"
@@ -21,7 +23,13 @@ export type TelemetrySystem =
   | "POLYGON_OPTIONS_WS"
   | "POLYGON_API"
   | "DATABASE"
-  | "HTTP";
+  | "API"
+  | "HTTP"
+  | "ALPACA"
+  | "FINNHUB"
+  | "UNUSUAL_WHALES";
+
+export { logUpstreamFailure } from "./upstreamTelemetry.js";
 
 export type TelemetrySeverity = "INFO" | "WARN" | "ERROR" | "CRITICAL";
 
@@ -56,18 +64,20 @@ export async function logFailure(
   message: string,
   details?: Record<string, unknown>,
 ): Promise<void> {
+  const safeDetails = redactTelemetryDetails(details);
   const pinoLevel = severity === "CRITICAL" ? "error" : severity.toLowerCase() as "info" | "warn" | "error";
-  logger[pinoLevel]({ system, severity, ...details }, `[TELEMETRY] ${message}`);
+  logger[pinoLevel]({ system, severity, ...(safeDetails ?? {}) }, `[TELEMETRY] ${message}`);
 
   const storeSev: StoreSeverity = severity === "CRITICAL" ? "ERROR" : severity as StoreSeverity;
-  emitTelemetry(system as StoreSystem, storeSev, severity === "CRITICAL" ? `[CRITICAL] ${message}` : message, details);
+  const storeMessage = severity === "CRITICAL" ? `[CRITICAL] ${message}` : message;
+  emitTelemetry(system as StoreSystem, storeSev, storeMessage, safeDetails);
 
   try {
     await db.insert(failureLogTable).values({
       system,
       severity,
       message,
-      details: details ?? null,
+      details: safeDetails ?? null,
     });
   } catch (err) {
     logger.error({ err, system, severity, message }, "Failed to write telemetry to DB");

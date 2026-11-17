@@ -18,6 +18,7 @@
 import { useEffect, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { buildAuthenticatedEventSourceUrl, fetchWithAuth } from "@/lib/fetchWithAuth";
+import { enqueueBrowserTelemetry } from "@/lib/browserTelemetry";
 import type { LiveQuote } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
 
@@ -113,6 +114,11 @@ export function useStreamingQuotes() {
     };
 
     es.onerror = () => {
+      enqueueBrowserTelemetry({
+        level: "WARN",
+        message: "streaming quotes SSE error",
+        details: { path: "/api/stream/quotes", transport: "sse" },
+      });
       // SSE dropped — clear live flag so REST resumes for all symbols
       setStreamConnected(false);
     };

@@ -41,10 +41,42 @@ import { deskAlpacaMarketBars, deskAlpacaMarketQuotes } from "../lib/desk/deskAl
 import { deskResolveSource } from "../lib/desk/deskSources.js";
 import { deskSchwabRestAppFromDeskSource } from "../lib/desk/deskSchwabRestCredential.js";
 import { buildDeskSchwabOAuthHealth } from "../lib/desk/deskSchwabOAuthHealth.js";
+import { parseRuntimeLogParams } from "../lib/runtimeLogsQuery.js";
+import {
+  queryTelemetryEvents,
+  RUNTIME_LOG_MAX_LIMIT,
+} from "../lib/telemetryEventsDb.js";
 
 const router: IRouter = Router();
 
 router.use(deskBearerAuth);
+
+router.get("/runtime-logs", async (req, res) => {
+  try {
+    const params = parseRuntimeLogParams(req);
+    if ("error" in params) {
+      res.status(400).json({ error: params.error });
+      return;
+    }
+    const rows = await queryTelemetryEvents({
+      from: params.from,
+      to: params.to,
+      limit: params.limit,
+      q: params.q,
+      systems: params.systems,
+      services: params.services,
+      levels: params.levels,
+    });
+    res.json({
+      entries: rows,
+      truncated: rows.length >= params.limit,
+      maxLimit: RUNTIME_LOG_MAX_LIMIT,
+    });
+  } catch (err: unknown) {
+    req.log?.error({ err }, "desk runtime-logs query failed");
+    res.status(500).json({ error: "Failed to fetch runtime logs" });
+  }
+});
 
 router.get("/health", (_req, res) => {
   const now = Date.now();

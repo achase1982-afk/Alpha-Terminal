@@ -10,14 +10,13 @@ import {
   getTotalCount,
   emitTelemetry,
 } from "../lib/telemetryStore.js";
-import { logFailure } from "../lib/telemetry.js";
 import {
-  parseRangeQuery,
   queryTelemetryEvents,
   rowsToCsv,
   rowsToPlainText,
   RUNTIME_LOG_MAX_LIMIT,
 } from "../lib/telemetryEventsDb.js";
+import { parseRuntimeLogParams } from "../lib/runtimeLogsQuery.js";
 import { db, telemetryEventsTable } from "@workspace/db";
 import { getAuth } from "@clerk/express";
 import { z } from "zod";
@@ -26,8 +25,6 @@ const router: IRouter = Router();
 
 const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
 const DEV_USER_ID = "dev_user_local";
-
-const ALLOWED_SERVICES = new Set(["server", "web"]);
 
 /** Maps DB/schema failures to actionable JSON for the Logs UI (e.g. missing migration). */
 function runtimeLogsFailurePayload(
@@ -76,48 +73,6 @@ const browserEventsBodySchema = z.object({
     .min(1)
     .max(40),
 });
-
-function parseRuntimeLogParams(req: Request): {
-  from: Date;
-  to: Date;
-  limit: number;
-  q?: string;
-  systems?: string[];
-  services?: string[];
-} | { error: string } {
-  const parsed = parseRangeQuery({
-    minutes: typeof req.query.minutes === "string" ? req.query.minutes : undefined,
-    from: typeof req.query.from === "string" ? req.query.from : undefined,
-    to: typeof req.query.to === "string" ? req.query.to : undefined,
-  });
-  if ("error" in parsed) {
-    return { error: parsed.error };
-  }
-  const limitRaw = typeof req.query.limit === "string" ? Number.parseInt(req.query.limit, 10) : 500;
-  const limit = Math.min(
-    RUNTIME_LOG_MAX_LIMIT,
-    Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 500),
-  );
-  const q = typeof req.query.q === "string" ? req.query.q : undefined;
-  const systemsRaw = typeof req.query.systems === "string" ? req.query.systems : "";
-  const systems = systemsRaw
-    .split(",")
-    .map((s) => s.trim().toUpperCase())
-    .filter(Boolean);
-  const servicesRaw = typeof req.query.services === "string" ? req.query.services : "";
-  const services = servicesRaw
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => ALLOWED_SERVICES.has(s));
-  return {
-    from: parsed.from,
-    to: parsed.to,
-    limit,
-    q,
-    systems: systems.length ? systems : undefined,
-    services: services.length ? services : undefined,
-  };
-}
 
 /** Ingests browser-side errors/events into telemetry_events (service alpha-terminal). Clerk session required. */
 router.post("/browser-events", async (req: Request, res: Response): Promise<void> => {
@@ -171,6 +126,7 @@ router.get("/runtime-logs", async (req: Request, res: Response): Promise<void> =
       q: params.q,
       systems: params.systems,
       services: params.services,
+      levels: params.levels,
     });
     res.json({
       entries: rows,
@@ -201,6 +157,7 @@ router.get("/runtime-logs/export", async (req: Request, res: Response): Promise<
       q: params.q,
       systems: params.systems,
       services: params.services,
+      levels: params.levels,
     });
 
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -293,10 +250,13 @@ router.post("/client-event", async (req, res): Promise<void> => {
       return;
     }
 
-    const details: Record<string, unknown> = { ...body, source: "client" };
+    const details: Record<string, unknown> = {
+      stage,
+      source: "client",
+      ...(typeof body.chunkIndex === "number" ? { chunkIndex: body.chunkIndex } : {}),
+      ...(typeof body.sessionId === "string" ? { sessionId: body.sessionId } : {}),
+    };
     emitTelemetry("STRATEGIST", "WARN", `Client telemetry: ${stage}`, details, "STRATEGIST");
-
-    void logFailure("STRATEGIST", "INFO", `Desk audio client event: ${stage}`, details);
 
     res.json({ ok: true });
   } catch (err) {

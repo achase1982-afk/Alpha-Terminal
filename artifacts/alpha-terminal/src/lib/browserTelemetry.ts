@@ -1,4 +1,5 @@
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { browserTelemetryBaseDetails } from "@/lib/browserTelemetryMeta";
 
 type BrowserLevel = "INFO" | "WARN" | "ERROR";
 
@@ -14,6 +15,28 @@ let flushing = false;
 
 const FLUSH_MS = 7000;
 const MAX_BATCH = 35;
+const DEDUPE_MS = 25_000;
+const recentByKey = new Map<string, number>();
+
+function dedupeKey(ev: BrowserTelemetryEvent): string {
+  const path = typeof ev.details?.path === "string" ? ev.details.path : "";
+  return `${ev.level}:${ev.message}:${path}`;
+}
+
+function shouldRecord(ev: BrowserTelemetryEvent): boolean {
+  const key = dedupeKey(ev);
+  const now = Date.now();
+  const prev = recentByKey.get(key);
+  if (prev != null && now - prev < DEDUPE_MS) return false;
+  recentByKey.set(key, now);
+  if (recentByKey.size > 400) {
+    const cutoff = now - DEDUPE_MS * 2;
+    for (const [k, t] of recentByKey) {
+      if (t < cutoff) recentByKey.delete(k);
+    }
+  }
+  return true;
+}
 
 function scheduleFlush(): void {
   if (flushTimer != null) return;
@@ -45,7 +68,12 @@ async function flushQueue(): Promise<void> {
 }
 
 export function enqueueBrowserTelemetry(ev: BrowserTelemetryEvent): void {
-  queue.push(ev);
+  const merged: BrowserTelemetryEvent = {
+    ...ev,
+    details: { ...browserTelemetryBaseDetails(), ...(ev.details ?? {}) },
+  };
+  if (!shouldRecord(merged)) return;
+  queue.push(merged);
   if (queue.length >= 12) void flushQueue();
   else scheduleFlush();
 }

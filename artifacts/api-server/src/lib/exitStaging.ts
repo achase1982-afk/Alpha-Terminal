@@ -6,6 +6,7 @@ import { logger } from "./logger.js";
 import { sendPushToAll } from "./pushService.js";
 import { broadcastToClients } from "./wsServer.js";
 import { logFailure } from "./telemetry.js";
+import { minimalOAuthStyleErrorFields } from "./safeHttpErrorBody.js";
 
 const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
 
@@ -135,7 +136,11 @@ export async function handleFillForExitStaging(params: {
     } else {
       const body = await schwabRes.text().catch(() => "");
       logger.error({ status: schwabRes.status, body: body.slice(0, 300) }, "Exit order placement failed");
-      void logFailure("EXIT_STAGING", "ERROR", `Exit order placement failed: HTTP ${schwabRes.status}`, { schwabOrderId, symbol, status: schwabRes.status, body: body.slice(0, 300) });
+      void logFailure("EXIT_STAGING", "ERROR", `Exit order placement failed: HTTP ${schwabRes.status}`, {
+        schwabOrderId,
+        symbol,
+        ...minimalOAuthStyleErrorFields(body, schwabRes.status),
+      });
     }
 
     const dte = journalEntry.legs ? estimateDTE(legs) : null;

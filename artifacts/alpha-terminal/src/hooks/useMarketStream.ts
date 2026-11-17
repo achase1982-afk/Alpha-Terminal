@@ -12,6 +12,7 @@ import {
   getClerkToken,
 } from "@/lib/fetchWithAuth";
 import { signalSchwabAuthLost } from "@/lib/authNoticeStore";
+import { enqueueBrowserTelemetry } from "@/lib/browserTelemetry";
 import { refreshSchwabViaServer, syncSchwabTokensFromServer } from "@/lib/schwabTokenSync";
 import type { LiveQuote, LiveNewsItem } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
@@ -402,6 +403,11 @@ export function useMarketStream() {
     es.addEventListener("streamerStatus", parseEvent("streamerStatus"));
     es.addEventListener("heartbeat", () => {});
     es.onerror = () => {
+      enqueueBrowserTelemetry({
+        level: "WARN",
+        message: "market stream SSE error",
+        details: { path: "/api/stream/quotes", transport: "sse" },
+      });
       es.close();
       if (esRef.current === es) esRef.current = null;
       if (mountedRef.current) setStreamStatus("connecting");
@@ -496,6 +502,11 @@ export function useMarketStream() {
       clearTimeout(openTimeout);
       wsRef.current = null;
       if (!mountedRef.current) return;
+      enqueueBrowserTelemetry({
+        level: "WARN",
+        message: "market stream WebSocket closed",
+        details: { path: "/api/ws/prices", transport: "ws" },
+      });
       setStreamStatus("connecting");
       scheduleSseFallback();
       scheduleReconnect();
@@ -503,6 +514,11 @@ export function useMarketStream() {
 
     socket.onerror = () => {
       clearTimeout(openTimeout);
+      enqueueBrowserTelemetry({
+        level: "WARN",
+        message: "market stream WebSocket error",
+        details: { path: "/api/ws/prices", transport: "ws" },
+      });
     };
     scheduleSseFallback();
   }, [clearOptionTicks, handleStreamEvent, scheduleSseFallback, setStreamStatus, stopRestPolling, stopSseStream]);

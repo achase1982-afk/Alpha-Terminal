@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { logger } from "./logger.js";
 import { logFailure } from "./telemetry.js";
+import { minimalOAuthStyleErrorFields } from "./safeHttpErrorBody.js";
 import { emitPortfolioError } from "./portfolioWsErrorHub.js";
 
 const TOKEN_FILE = path.join(process.cwd(), ".data", "schwab-tokens.json");
@@ -264,7 +265,11 @@ async function doRefresh(
     const text = await res.text();
 
     if (!res.ok) {
-      logger.error({ status: res.status, body: text.slice(0, 300) }, "TokenStore: %s refresh failed", kind);
+      logger.error(
+        { status: res.status, ...minimalOAuthStyleErrorFields(text, res.status) },
+        "TokenStore: %s refresh failed",
+        kind,
+      );
       logger.info(
         {
           ts: Date.now(),
@@ -277,7 +282,10 @@ async function doRefresh(
         "[SCHWAB_TOKEN] refresh outcome",
       );
       emitPortfolioError({ code: "AUTH_EXPIRED", kind, httpStatus: res.status });
-      void logFailure("SCHWAB_API", "CRITICAL", `OAuth ${kind} token refresh failed (HTTP ${res.status})`, { kind, status: res.status, body: text.slice(0, 300) });
+      void logFailure("SCHWAB_API", "CRITICAL", `OAuth ${kind} token refresh failed (HTTP ${res.status})`, {
+        kind,
+        ...minimalOAuthStyleErrorFields(text, res.status),
+      });
 
       const currentGen = store[kind]?.generation ?? 0;
       if (currentGen > generationBefore) {

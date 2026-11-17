@@ -10,6 +10,7 @@ import {
 import { deskMaxArticlePublishedMs } from "./deskNewsArticleAge.js";
 import { DESK_DEFAULT_NEWS_SYMBOLS } from "./deskDefaultNewsSymbols.js";
 import { logger } from "../logger.js";
+import { logUpstreamFailure } from "../upstreamTelemetry.js";
 
 const ALPACA_NEWS_URL = "https://data.alpaca.markets/v1beta1/news";
 const ALPACA_SOURCE = "alpaca_news";
@@ -63,6 +64,7 @@ async function fetchAlpacaNewsWindow(
     signal: AbortSignal.timeout(12_000),
   });
   if (!res.ok) {
+    logUpstreamFailure("ALPACA", "/v1beta1/news", res.status);
     return { ok: false, articles: [], status: res.status };
   }
   const json = await res.json();
@@ -89,6 +91,7 @@ export async function deskFetchAlpacaNews(
     }
   } catch (err) {
     logger.warn({ err }, "Desk Alpaca news fetch error");
+    logUpstreamFailure("ALPACA", "/v1beta1/news", 0);
     return { ok: false, articles: [], asOfMs: Date.now(), status: 503, error: "alpaca_news_fetch_error" };
   }
 

@@ -1342,7 +1342,6 @@ function processAcctActivity(content: Record<string, unknown>[]) {
 
     if (isAlertSeen(orderId, msgType ?? null)) {
       logger.info({ orderId, msgType }, "Schwab ACCT_ACTIVITY dedup — skipping (already broadcast via REST)");
-      void logFailure("SCHWAB_STREAM", "INFO", `ACCT_ACTIVITY dedup blocked event: ${msgType} for order ${orderId}`, { orderId, msgType });
       return;
     }
 
@@ -1896,6 +1895,7 @@ function handleMessage(raw: string) {
       if (service === "ADMIN" && command === "LOGIN") {
         if (code === 0) {
           logger.info("Schwab streamer: LOGIN successful");
+          emitTelemetry("SCHWAB_STREAM", "INFO", "Schwab streamer LOGIN successful", {}, "STREAMER");
           if (loginTimeoutTimer) { clearTimeout(loginTimeoutTimer); loginTimeoutTimer = null; }
           connectionState = "connected";
           loginRetried = false;
@@ -2025,7 +2025,6 @@ function scheduleReconnect() {
       }
     }
   }
-  void logFailure("SCHWAB_STREAM", "WARN", "Schwab WebSocket reconnect attempt scheduled", { delayMs: reconnectDelay });
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     void connectSchwabStreamer();
@@ -2126,7 +2125,7 @@ async function connectSchwabStreamer() {
     if (!isCurrent()) return;
     onSchwabConnectionOpened();
     logger.info("Schwab streamer: WebSocket connected");
-    emitTelemetry("SCHWAB_STREAM", "INFO", "Schwab WebSocket connected", { url: connectedUrl });
+    emitTelemetry("SCHWAB_STREAM", "INFO", "Schwab WebSocket connected", { path: "/streamer" }, "STREAMER");
     if (connectTimeoutTimer) { clearTimeout(connectTimeoutTimer); connectTimeoutTimer = null; }
 
     // Reset *transport* backoff on handshake success — but only if we're not
