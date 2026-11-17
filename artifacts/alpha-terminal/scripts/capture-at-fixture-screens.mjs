@@ -28,7 +28,8 @@ const scenes = [
   {
     name: "at-01-settings-expanded-440x956.png",
     url: `${BASE}?scene=settings-expanded`,
-    waitSelector: "[data-at-settings-expanded]",
+    waitSelector: "[data-at-settings-summary]",
+    expandSettings: true,
     minRows: 8,
   },
   {
@@ -150,6 +151,13 @@ for (const scene of scenes) {
   }
   if (scene.minRows > 0) {
     await waitForLadderRows(page, scene.minRows);
+  }
+  if (scene.expandSettings) {
+    const expanded = page.locator("[data-at-settings-expanded]");
+    if (!(await expanded.isVisible().catch(() => false))) {
+      await page.locator("[data-at-settings-summary]").click();
+      await expanded.waitFor({ state: "visible", timeout: 15_000 });
+    }
   }
   if (scene.name.includes("settings-collapsed") || scene.name.includes("01-default")) {
     const summary = page.locator("[data-at-settings-summary]");
