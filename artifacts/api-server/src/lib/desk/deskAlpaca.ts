@@ -44,6 +44,6 @@ export async function deskAlpacaQuotes(
     }
   }
 
-  if (out.length) deskTouchFeed("alpaca");
+  if (out.length) deskTouchFeed("alpaca", latest, "alpaca_news");
   return { quotes: out, asOfMs: latest };
 }

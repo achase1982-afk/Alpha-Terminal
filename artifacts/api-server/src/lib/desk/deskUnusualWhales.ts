@@ -53,7 +53,7 @@ export async function deskFetchUwFlow(): Promise<{ alerts: unknown[]; asOfMs: nu
   }
 
   if (cacheBody && Date.now() - cacheAt < CACHE_TTL_MS) {
-    deskTouchFeed("uw_flow");
+    deskTouchFeed("uw_flow", cacheAt, "unusual_whales");
     return { alerts: cacheBody, asOfMs: cacheAt };
   }
 

@@ -74,21 +74,26 @@ export function getDeskRawTapeHealth(): {
   };
 }
 
-async function persistChunk(sessionDate: string, gzipBuf: Buffer): Promise<void> {
-  if (chunkStartNs == null || chunkEndNs == null || buffer.length === 0) return;
-  const nFrames = buffer.length;
-  const bytesRaw = gzipBuf.length;
+async function persistChunk(
+  sessionDate: string,
+  gzipBuf: Buffer,
+  meta: { chunkStartNs: bigint; chunkEndNs: bigint; nFrames: number },
+): Promise<void> {
+  if (meta.nFrames === 0) return;
   try {
     await db.insert(deskSpxTapeRawTable).values({
       sessionDate,
-      chunkStartNs,
-      chunkEndNs,
-      nFrames,
-      bytesRaw,
+      chunkStartNs: meta.chunkStartNs,
+      chunkEndNs: meta.chunkEndNs,
+      nFrames: meta.nFrames,
+      bytesRaw: gzipBuf.length,
       data: gzipBuf,
     });
   } catch (err) {
-    logger.warn({ err, nFrames }, "Desk raw tape chunk insert failed");
+    logger.warn(
+      { err, nFrames: meta.nFrames, hint: "apply migration 0052_desk_spx_tape_raw" },
+      "Desk raw tape chunk insert failed",
+    );
   }
 }
 
@@ -108,10 +113,16 @@ export async function deskFlushRawTapeChunk(reason = "interval"): Promise<void> 
   chunkStartNs = null;
   chunkEndNs = null;
 
+  const meta = {
+    chunkStartNs: startNs ?? 0n,
+    chunkEndNs: endNs ?? 0n,
+    nFrames: lines.length,
+  };
+
   flushInFlight = (async () => {
     const raw = `${lines.join("\n")}\n`;
     const gzipBuf = gzipSync(Buffer.from(raw, "utf8"));
-    await persistChunk(sessionDate, gzipBuf);
+    await persistChunk(sessionDate, gzipBuf, meta);
     logger.debug({ reason, n: lines.length, sessionDate }, "Desk raw tape chunk flushed");
   })().finally(() => {
     flushInFlight = null;
@@ -134,23 +145,46 @@ export function startDeskRawTapeCapture(): void {
   process.once("SIGINT", onTerm);
 }
 
+export function deskEmitBufferedRawTapeSince(sinceNs: bigint, write: (line: string) => void): number {
+  let emitted = 0;
+  for (const line of buffer) {
+    if (!line.trim()) continue;
+    try {
+      const obj = JSON.parse(line) as { rx_ns?: string };
+      const ns = obj.rx_ns != null ? BigInt(obj.rx_ns) : 0n;
+      if (ns > sinceNs) {
+        write(`${line}\n`);
+        emitted += 1;
+      }
+    } catch {
+      /* skip */
+    }
+  }
+  return emitted;
+}
+
 export async function streamDeskRawTapeNdjson(
   sessionDate: string,
   sinceNs: bigint,
   write: (line: string) => void,
 ): Promise<number> {
-  const rows = await db
-    .select()
-    .from(deskSpxTapeRawTable)
-    .where(
-      and(eq(deskSpxTapeRawTable.sessionDate, sessionDate), gte(deskSpxTapeRawTable.chunkEndNs, sinceNs)),
-    )
-    .orderBy(asc(deskSpxTapeRawTable.chunkStartNs));
+  let emitted = deskEmitBufferedRawTapeSince(sinceNs, write);
 
-  let emitted = 0;
-  for (const row of rows) {
-    const emittedFromChunk = await gunzipLines(row.data as Buffer, sinceNs, write);
-    emitted += emittedFromChunk;
+  try {
+    const rows = await db
+      .select()
+      .from(deskSpxTapeRawTable)
+      .where(
+        and(eq(deskSpxTapeRawTable.sessionDate, sessionDate), gte(deskSpxTapeRawTable.chunkEndNs, sinceNs)),
+      )
+      .orderBy(asc(deskSpxTapeRawTable.chunkStartNs));
+
+    for (const row of rows) {
+      const emittedFromChunk = await gunzipLines(row.data as Buffer, sinceNs, write);
+      emitted += emittedFromChunk;
+    }
+  } catch (err) {
+    logger.warn({ err, sessionDate }, "Desk raw tape DB read failed — buffer-only response");
   }
   return emitted;
 }

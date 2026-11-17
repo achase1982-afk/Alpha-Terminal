@@ -21,21 +21,6 @@ function markUwGammaNotConfigured(): void {
   }
 }
 
-function extractAsOfMs(json: unknown, fallbackMs: number): number {
-  if (json && typeof json === "object") {
-    const data = (json as { data?: unknown }).data;
-    if (Array.isArray(data) && data.length > 0) {
-      const row = data[data.length - 1] as Record<string, unknown>;
-      const tape = row["tape_time"] ?? row["timestamp"] ?? row["date"];
-      if (typeof tape === "string") {
-        const t = Date.parse(tape);
-        if (Number.isFinite(t)) return t;
-      }
-    }
-  }
-  return fallbackMs;
-}
-
 export async function refreshDeskUwLiveFeeds(force = false): Promise<void> {
   const key = getUwApiKey();
   if (!key) {
@@ -70,8 +55,7 @@ export async function refreshDeskUwLiveFeeds(force = false): Promise<void> {
           logger.debug({ feed, status: res.status }, "Desk UW live feed fetch failed");
           continue;
         }
-        const asOf = extractAsOfMs(res.json, res.asOfMs);
-        deskTouchFeed(feed, asOf, UW_SOURCE);
+        deskTouchFeed(feed, res.asOfMs, UW_SOURCE);
       } catch (err) {
         deskMarkFeedError(feed, "uw_fetch_error", UW_SOURCE);
         logger.debug({ err, feed }, "Desk UW live feed error");

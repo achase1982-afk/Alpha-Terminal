@@ -3,7 +3,7 @@ import { getTradierToken } from "./deskTradier.js";
 import { getAlpacaKeys } from "./deskAlpaca.js";
 import { deskMarkFeedNotConfigured, deskSetStreamerDisabled } from "./deskFeedFreshness.js";
 import { startDeskRetentionJobs } from "./deskRetention.js";
-import { startDeskUwLiveFeedRefresh } from "./deskUwLiveFeeds.js";
+import { startDeskBackgroundPollers } from "./deskBackgroundPollers.js";
 import { startDeskRawTapeCapture } from "./deskSpxTapeRaw.js";
 import { startDeskTapeUniverse } from "./deskTapeUniverse.js";
 
@@ -19,8 +19,6 @@ export function initDeskMarketFeeds(): void {
     deskMarkFeedNotConfigured("live_gamma_0dte", "unusual_whales");
     deskMarkFeedNotConfigured("live_gamma", "unusual_whales");
     deskMarkFeedNotConfigured("live_net_prem", "unusual_whales");
-  } else {
-    startDeskUwLiveFeedRefresh();
   }
   if (!getTradierToken()) deskMarkFeedNotConfigured("tradier");
   const { keyId, secret } = getAlpacaKeys();
@@ -28,5 +26,6 @@ export function initDeskMarketFeeds(): void {
 
   startDeskRawTapeCapture();
   startDeskTapeUniverse();
+  startDeskBackgroundPollers();
   startDeskRetentionJobs();
 }
