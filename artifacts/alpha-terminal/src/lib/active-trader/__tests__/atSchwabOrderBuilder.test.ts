@@ -160,6 +160,38 @@ describe("buildAtSchwabOrderJson", () => {
     expect(both.legs[1].label).toBe("Sell to close");
   });
 
+  it("preview legs match builder JSON when raw mid rounds to 16 (TP 17.60)", () => {
+    const input = {
+      ...base,
+      template: "TRG w/ bracket" as const,
+      limitPrice: 15.96,
+      takeProfit: { enabled: true, mode: "percent" as const, offset: 10 },
+      stopLoss: { enabled: false, mode: "percent" as const, offset: -10 },
+    };
+    const { legs } = planAtOrderLegs(input);
+    expect(legs[0].price).toBe(16);
+    expect(legs[1].price).toBe(17.6);
+    const json = buildAtSchwabOrderJson(input);
+    const child = (json.childOrderStrategies as Record<string, unknown>[])[0] as Record<string, unknown>;
+    expect(child.price).toBe(legs[1].price);
+  });
+
+  it("canonical entry 16.00 with TP +10% yields 17.60 in plan and JSON", () => {
+    const input = {
+      ...base,
+      template: "TRG w/ bracket" as const,
+      limitPrice: 16,
+      takeProfit: { enabled: true, mode: "percent" as const, offset: 10 },
+      stopLoss: { enabled: false, mode: "percent" as const, offset: -10 },
+    };
+    const planned = planAtOrderLegs(input);
+    expect(planned.legs[1].price).toBe(17.6);
+    const built = buildAtSchwabOrderJson(input);
+    const child = (built.childOrderStrategies as Record<string, unknown>[])[0] as Record<string, unknown>;
+    expect(child.price).toBe(17.6);
+    expect(child.price).toBe(planned.legs[1].price);
+  });
+
   it("short STO bracket uses BTC on child legs", () => {
     const o = buildAtSchwabOrderJson({
       ...base,

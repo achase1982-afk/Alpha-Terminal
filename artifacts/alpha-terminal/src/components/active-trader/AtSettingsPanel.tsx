@@ -68,7 +68,13 @@ export const AtSettingsPanel = memo(function AtSettingsPanel({
   windowSec,
   onWindowSecChange,
 }: AtSettingsPanelProps) {
-  const summary = buildAtSettingsSummary(prefs, limitMid, primaryInstruction, expiryLabel);
+  const summary = buildAtSettingsSummary(
+    prefs,
+    limitMid,
+    primaryInstruction,
+    expiryLabel,
+    instrumentLabel,
+  );
 
   const handleSummaryKey = useCallback(
     (e: React.KeyboardEvent) => {
@@ -234,6 +240,7 @@ export const AtSettingsPanel = memo(function AtSettingsPanel({
             prefs={prefs}
             primaryInstruction={primaryInstruction}
             limitPrice={limitMid}
+            underlyingSymbol={instrumentLabel}
           />
         </div>
       )}

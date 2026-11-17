@@ -22,6 +22,7 @@ import {
   type SchwabInstruction,
 } from "@/lib/active-trader/atSchwabOrderBuilder";
 import { buildAtTriggerConfirmSummary } from "@/lib/active-trader/atTriggerConfirmSummary";
+import { formatAtExitDuration } from "@/lib/active-trader/atSummaryFormat";
 import { TriggerOrderConfirmSummary } from "@/components/orders/TriggerOrderConfirmSummary";
 import {
   aggregateSpreadNBBO,
@@ -2737,7 +2738,21 @@ export function OrderTicket({
                 </>
               ) : (
                 <>
-                  {atTriggerConfirm && <TriggerOrderConfirmSummary summary={atTriggerConfirm} />}
+                  {atTriggerConfirm && (
+                    <TriggerOrderConfirmSummary
+                      summary={atTriggerConfirm}
+                      ocoPairNote={
+                        atTriggerConfirm.orders.length >= 3
+                          ? "Orders #2 and #3: one cancels other (OCO)."
+                          : undefined
+                      }
+                      exitDurationLabel={
+                        atTemplatePrefs
+                          ? formatAtExitDuration(atTemplatePrefs.exitDuration)
+                          : undefined
+                      }
+                    />
+                  )}
                   {!atTriggerConfirm && atTemplatePlan && atTemplatePlan.legs.length > 1 && (
                     <div className="space-y-1 pb-2 mb-1" style={{ borderBottom: `1px dashed ${DIVIDER}` }}>
                       {atTemplatePlan.legs.map((leg) => (
@@ -2806,9 +2821,15 @@ export function OrderTicket({
                 </>
               )}
               <div className="flex justify-between" style={{ fontSize: S.body }}>
-                <span style={{ color: MUTED }}>Duration</span>
+                <span style={{ color: MUTED }}>Entry duration</span>
                 <span style={{ color: WHITE }}>{DURATIONS.find((d) => d.value === duration)?.label}{extendedHours ? " + Ext" : ""}</span>
               </div>
+              {atTemplatePrefs && atTriggerConfirm && atTriggerConfirm.orders.length >= 2 && (
+                <div className="flex justify-between" style={{ fontSize: S.body }}>
+                  <span style={{ color: MUTED }}>Exit duration</span>
+                  <span style={{ color: WHITE }}>{formatAtExitDuration(atTemplatePrefs.exitDuration)}</span>
+                </div>
+              )}
               {(() => {
                 const contractQty = isOption
                   ? isMultiLeg && strategyLegs

@@ -13,12 +13,14 @@ interface AtTemplateLegPlanProps {
   prefs: ActiveTraderTemplatePrefs;
   primaryInstruction: SchwabInstruction;
   limitPrice: number | null;
+  underlyingSymbol?: string;
 }
 
 export const AtTemplateLegPlan = memo(function AtTemplateLegPlan({
   prefs,
   primaryInstruction,
   limitPrice,
+  underlyingSymbol = "SPX",
 }: AtTemplateLegPlanProps) {
   const { legs, validationError } = useMemo(() => {
     if (limitPrice == null || limitPrice <= 0) {
@@ -28,7 +30,7 @@ export const AtTemplateLegPlan = memo(function AtTemplateLegPlan({
       template: prefs.template,
       assetType: "OPTION",
       symbol: "",
-      underlyingSymbol: "SPX",
+      underlyingSymbol: underlyingSymbol.replace(/^\$/, ""),
       primaryInstruction,
       quantity: prefs.qty,
       limitPrice,

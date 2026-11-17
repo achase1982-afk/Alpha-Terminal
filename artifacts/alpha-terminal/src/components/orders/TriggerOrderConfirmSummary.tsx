@@ -11,11 +11,16 @@ const S = {
 interface TriggerOrderConfirmSummaryProps {
   summary: TriggerConfirmSummary;
   className?: string;
+  /** Shown when bracket uses an OCO exit pair. */
+  ocoPairNote?: string;
+  exitDurationLabel?: string;
 }
 
 export const TriggerOrderConfirmSummary = memo(function TriggerOrderConfirmSummary({
   summary,
   className,
+  ocoPairNote,
+  exitDurationLabel,
 }: TriggerOrderConfirmSummaryProps) {
   return (
     <div
@@ -44,6 +49,12 @@ export const TriggerOrderConfirmSummary = memo(function TriggerOrderConfirmSumma
           </div>
         ))}
       </div>
+      {ocoPairNote && (
+        <p style={{ fontSize: S.body, color: GRAY, marginTop: 8, fontWeight: FW_LIGHT }}>{ocoPairNote}</p>
+      )}
+      {exitDurationLabel && (
+        <p style={{ fontSize: S.label, color: DIM, marginTop: 4 }}>Exit duration {exitDurationLabel}</p>
+      )}
       {summary.netIfAllFillLine && (
         <p style={{ fontSize: S.body, color: UP, marginTop: 10, fontWeight: FW_NORMAL }}>{summary.netIfAllFillLine}</p>
       )}

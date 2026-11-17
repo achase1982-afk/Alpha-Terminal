@@ -236,9 +236,9 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const accounts = useSchwabAccountStore((s) => s.accounts);
   const accountLabel =
     accounts.length > 0
-      ? `LIVE ••${String(accounts[0]?.accountNumber ?? "").replace(/\D/g, "").slice(-3)}`
+      ? `Schwab ···${String(accounts[0]?.accountNumber ?? "").slice(-3)}`
       : presentation?.skipNetwork
-        ? "LIVE ••495"
+        ? "Demo acct"
         : "Account";
   const isPaper = false;
 

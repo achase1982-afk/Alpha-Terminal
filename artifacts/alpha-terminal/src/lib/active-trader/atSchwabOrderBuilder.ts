@@ -103,11 +103,30 @@ function bracketCtx(input: AtOrderBuildInput) {
   };
 }
 
-function resolveBracketPrices(input: AtOrderBuildInput): { tp: number | null; sl: number | null } {
+function bracketRoundInput(input: AtOrderBuildInput, entryPrice: number) {
+  return {
+    entryPrice,
+    quantity: input.quantity,
+    primaryInstruction: input.primaryInstruction,
+    tp: input.takeProfit ?? { enabled: false, mode: "percent", offset: 0 },
+    sl: input.stopLoss ?? { enabled: false, mode: "percent", offset: 0 },
+    ...bracketCtx(input),
+  };
+}
+
+/** Rounded entry limit — bracket math uses this, not the raw stream mid. */
+export function canonicalAtEntryLimit(input: AtOrderBuildInput): number {
+  return roundAtPremium(input.limitPrice, bracketRoundInput(input, input.limitPrice));
+}
+
+function resolveBracketPrices(
+  input: AtOrderBuildInput,
+  entryBase: number,
+): { tp: number | null; sl: number | null } {
   const tp = input.takeProfit ?? { enabled: false, mode: "percent", offset: 10 };
   const sl = input.stopLoss ?? { enabled: false, mode: "percent", offset: -10 };
   const fromPrefs = computeBracketPrices({
-    entryPrice: input.limitPrice,
+    entryPrice: entryBase,
     quantity: input.quantity,
     primaryInstruction: input.primaryInstruction,
     tp,
@@ -115,14 +134,7 @@ function resolveBracketPrices(input: AtOrderBuildInput): { tp: number | null; sl
     underlyingSymbol: input.underlyingSymbol,
     assetType: input.assetType,
   });
-  const roundInput = {
-    entryPrice: input.limitPrice,
-    quantity: input.quantity,
-    primaryInstruction: input.primaryInstruction,
-    tp,
-    sl,
-    ...bracketCtx(input),
-  };
+  const roundInput = bracketRoundInput(input, entryBase);
   return {
     tp:
       input.targetPrice != null
@@ -161,14 +173,7 @@ export function planAtOrderLegs(input: AtOrderBuildInput): {
   validationError: string | null;
 } {
   const close = closingInstructionForOpen(input.primaryInstruction);
-  const entryLimit = roundAtPremium(input.limitPrice, {
-    entryPrice: input.limitPrice,
-    quantity: input.quantity,
-    primaryInstruction: input.primaryInstruction,
-    tp: input.takeProfit ?? { enabled: false, mode: "percent", offset: 0 },
-    sl: input.stopLoss ?? { enabled: false, mode: "percent", offset: 0 },
-    ...bracketCtx(input),
-  });
+  const entryLimit = canonicalAtEntryLimit(input);
 
   const legs: AtPlannedLeg[] = [
     {
@@ -195,7 +200,7 @@ export function planAtOrderLegs(input: AtOrderBuildInput): {
     };
   }
 
-  const { tp, sl } = resolveBracketPrices(input);
+  const { tp, sl } = resolveBracketPrices(input, entryLimit);
   const bracket = usesBracketExit(input);
   const slType = input.stopLossOrderType ?? "STOP";
   const children: SchwabInstruction[] = [];
@@ -274,16 +279,9 @@ export function buildAtSchwabOrderJson(input: AtOrderBuildInput): Record<string,
   const asset = input.assetType;
   const close = closingInstructionForOpen(input.primaryInstruction);
 
-  const entryLimit = roundAtPremium(input.limitPrice, {
-    entryPrice: input.limitPrice,
-    quantity: qty,
-    primaryInstruction: input.primaryInstruction,
-    tp: input.takeProfit ?? { enabled: false, mode: "percent", offset: 0 },
-    sl: input.stopLoss ?? { enabled: false, mode: "percent", offset: 0 },
-    ...bracketCtx(input),
-  });
+  const entryLimit = canonicalAtEntryLimit(input);
 
-  const { tp, sl } = resolveBracketPrices(input);
+  const { tp, sl } = resolveBracketPrices(input, entryLimit);
   const bracket = usesBracketExit(input);
   const entryType = primarySchwabOrderType(input.entryOrderType);
   const entryPriceFields =

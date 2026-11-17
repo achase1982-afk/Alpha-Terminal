@@ -395,24 +395,26 @@ const LadderRowView = memo(function LadderRowView({
           }}
           data-at-strike={row.strike}
         >
+          {renderBadges(row.call?.streamKey ?? row.put?.streamKey)}
+          <span className="leading-tight">{row.strike % 1 === 0 ? row.strike : row.strike.toFixed(1)}</span>
           {strikePositionQty != null && (
             <span
               data-at-position-badge
-              className="absolute left-0.5 top-0.5 px-0.5 rounded leading-none"
+              className="leading-none"
               style={{
-                fontSize: 7,
-                fontWeight: FW_PREMIUM,
-                color: strikePositionQty > 0 ? UP : DOWN,
-                background: strikePositionQty > 0 ? `${UP}28` : `${DOWN}28`,
-                border: `1px solid ${strikePositionQty > 0 ? `${UP}55` : `${DOWN}55`}`,
+                fontSize: 11,
+                fontWeight: 700,
+                padding: "2px 6px",
+                borderRadius: 999,
+                color: "#0a0a0a",
+                background: strikePositionQty > 0 ? UP : DOWN,
+                marginTop: 1,
               }}
             >
               {strikePositionQty > 0 ? "+" : "−"}
               {Math.abs(strikePositionQty)}
             </span>
           )}
-          {renderBadges(row.call?.streamKey ?? row.put?.streamKey)}
-          <span className="leading-tight">{row.strike % 1 === 0 ? row.strike : row.strike.toFixed(1)}</span>
           {isCallWall && <span style={{ fontSize: 7, opacity: 0.65 }}>CALL WALL</span>}
           {isPutWall && <span style={{ fontSize: 7, opacity: 0.65 }}>PUT WALL</span>}
           {spotRow && !isCallWall && !isPutWall && <span style={{ fontSize: 7, opacity: 0.65 }}>{symbolLabel}</span>}
