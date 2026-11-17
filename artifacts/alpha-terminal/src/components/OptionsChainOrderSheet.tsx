@@ -48,6 +48,8 @@ const DIM = "#52525b";
 const DIVIDER = "#1a1a1a";
 const LABEL_STYLE: CSSProperties = { fontSize: 12, color: GRAY, letterSpacing: "-0.02em" };
 const VALUE_STYLE: CSSProperties = { fontSize: 14, color: WHITE, fontVariantNumeric: "tabular-nums" };
+/** Clear bottom nav (~76px) + home indicator. */
+const SHEET_BOTTOM_OFFSET = "calc(76px + max(env(safe-area-inset-bottom, 0px), 12px))";
 
 type Stage = "form" | "review" | "submitting" | "success" | "error";
 
@@ -107,6 +109,12 @@ export function OptionsChainOrderSheet({
   openReviewOnMount,
 }: OptionsChainOrderSheetProps) {
   const symbol = useTerminalStore((s) => s.symbol);
+  const underlyingSpot = useTerminalStore((s) => {
+    const u = symbol.toUpperCase();
+    const alt = u.startsWith("$") ? u.slice(1) : `$${u}`;
+    const q = s.streamPrices[u] ?? s.streamPrices[alt];
+    return q?.last ?? q?.regularLast ?? q?.extendedLast ?? null;
+  });
   const accounts = useSchwabAccountStore((s) => s.accounts);
   const accountHash = useSchwabAccountStore((s) => s.tradingAccountHash());
   const optionTicks = useOptionsStreamStore((s) => s.ticks);
@@ -201,13 +209,24 @@ export function OptionsChainOrderSheet({
           gamma: l.gamma,
           theta: l.theta,
           vega: l.vega,
+          iv: l.iv,
         })),
         limitPrice: submittedLimit ?? spreadPrices?.spreadMid ?? null,
         spreadQuantity: quantity,
         isCredit,
+        spotPrice: underlyingSpot,
       }),
-    [pricedLegs, symbol, submittedLimit, spreadPrices, quantity, isCredit],
+    [pricedLegs, symbol, submittedLimit, spreadPrices, quantity, isCredit, underlyingSpot],
   );
+
+  const buyingPowerDisplay = useMemo(() => {
+    if (summary?.grossNotional == null) return summary?.buyingPowerEffect ?? null;
+    const gross = Math.abs(summary.grossNotional);
+    const totalContracts = legs.reduce((s, l) => s + l.quantity, 0) * quantity;
+    const fees = estimateSchwabOptionFees(totalContracts);
+    const cash = computeOrderNetCash(gross, isCredit, totalContracts, fees);
+    return isCredit ? cash.net : -cash.net;
+  }, [summary?.grossNotional, summary?.buyingPowerEffect, legs, quantity, isCredit]);
 
   const netDebitForName = summary?.grossNotional != null ? (isCredit ? -summary.grossNotional : summary.grossNotional) : 0;
   const strategyId = useMemo(() => detectStrategyType(legs, netDebitForName), [legs, netDebitForName]);
@@ -338,13 +357,15 @@ export function OptionsChainOrderSheet({
 
   if (legs.length === 0) return null;
 
-  const sheetHeight = collapsed ? 52 : "min(72vh, 520px)";
+  const sheetHeight = collapsed
+    ? 52
+    : "min(58vh, calc(100dvh - 168px - env(safe-area-inset-bottom, 0px)))";
 
   return (
     <div
       className="fixed left-0 right-0 z-[110] flex flex-col"
       style={{
-        bottom: 64,
+        bottom: SHEET_BOTTOM_OFFSET,
         height: sheetHeight,
         background: `linear-gradient(180deg, #0a0a0a 0%, #000000 100%)`,
         borderTop: `1px solid ${GOLD}30`,
@@ -389,7 +410,8 @@ export function OptionsChainOrderSheet({
       </div>
 
       {!collapsed && (
-        <div className="flex-1 overflow-y-auto overscroll-contain px-3 pb-2">
+        <>
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 pb-2">
           {stage === "success" ? (
             <div className="py-6 flex flex-col items-center gap-2">
               <CheckCircle2 className="w-8 h-8" style={{ color: UP }} />
@@ -449,8 +471,8 @@ export function OptionsChainOrderSheet({
                 {summary?.pop != null && (
                   <span style={VALUE_STYLE}>POP {summary.pop.toFixed(0)}%</span>
                 )}
-                {summary?.buyingPowerEffect != null && (
-                  <span style={VALUE_STYLE}>BP {fmtCurrency(summary.buyingPowerEffect)}</span>
+                {buyingPowerDisplay != null && (
+                  <span style={VALUE_STYLE}>BP {fmtCurrency(buyingPowerDisplay)}</span>
                 )}
               </div>
 
@@ -587,20 +609,30 @@ export function OptionsChainOrderSheet({
               {priceError && (
                 <p className="mt-2 text-[10px]" style={{ color: DOWN }}>{priceError}</p>
               )}
-
-              <button
-                type="button"
-                disabled={!isValid}
-                onClick={validateAndReview}
-                className="mt-3 w-full text-[13px] font-bold tracking-wider py-2.5 disabled:opacity-40"
-                style={{ background: GOLD, color: "#000", borderRadius: 8 }}
-                data-testid="chain-sheet-review"
-              >
-                Review
-              </button>
             </>
           )}
         </div>
+        {stage === "form" && (
+          <div
+            className="shrink-0 px-3 pt-2 border-t"
+            style={{
+              borderColor: BORDER,
+              paddingBottom: "max(12px, env(safe-area-inset-bottom, 0px))",
+            }}
+          >
+            <button
+              type="button"
+              disabled={!isValid}
+              onClick={validateAndReview}
+              className="w-full text-[13px] font-bold tracking-wider py-2.5 disabled:opacity-40"
+              style={{ background: GOLD, color: "#000", borderRadius: 8 }}
+              data-testid="chain-sheet-review"
+            >
+              Review
+            </button>
+          </div>
+        )}
+        </>
       )}
 
       {stage === "review" && !collapsed && (
@@ -706,8 +738,7 @@ function ConfirmPanel({
     contractCount: totalContracts,
   });
   const maxLoss = reviewEcon?.maxRisk ?? summary?.maxLoss ?? null;
-  const bpEffect =
-    reviewEcon?.buyingPowerEffect ?? summary?.buyingPowerEffect ?? (isCredit ? gross : -(gross + fees.totalEst));
+  const bpEffect = isCredit ? cash.net : -cash.net;
 
   return (
     <div
@@ -758,7 +789,7 @@ function ConfirmPanel({
             <ButtonRow label="Max loss" value={fmtCurrency(maxLoss)} valueColor={DOWN} />
           )}
           <ButtonRow
-            label="Buying power effect"
+            label={isCredit ? "Buying power effect (est. credit)" : "Buying power effect (total est. debit)"}
             value={`${bpEffect >= 0 ? "+" : "−"}${fmtCurrency(Math.abs(bpEffect))}`}
             valueColor={bpEffect >= 0 ? UP : DOWN}
           />

@@ -12,7 +12,15 @@ export const FIXTURE_MARKER = "CHAIN_ORDER_FIXTURE_SPX_DEV_ONLY";
 const EXPIRY = "2026-11-17";
 const ROOT = "SPX";
 
-type LegQuote = { bid: number; ask: number; delta: number; gamma: number; theta: number; vega: number };
+type LegQuote = {
+  bid: number;
+  ask: number;
+  delta: number;
+  gamma: number;
+  theta: number;
+  vega: number;
+  iv: number;
+};
 
 function strikeRow(
   strike: number,
@@ -34,6 +42,7 @@ function strikeRow(
       gamma: callQ.gamma,
       theta: callQ.theta,
       vega: callQ.vega,
+      iv: callQ.iv,
       volume: 800,
       openInterest: 4200,
     },
@@ -48,10 +57,15 @@ function strikeRow(
       gamma: putQ.gamma,
       theta: putQ.theta,
       vega: putQ.vega,
+      iv: putQ.iv,
       volume: 750,
       openInterest: 3900,
     },
   };
+}
+
+function withIv(q: Omit<LegQuote, "iv"> & { iv?: number }): LegQuote {
+  return { ...q, iv: q.iv ?? 0.18 };
 }
 
 function buildStrikes(): number[] {
@@ -61,7 +75,7 @@ function buildStrikes(): number[] {
 }
 
 export function buildSpxChainOrderFixtureContracts(): { calls: OptionsContract[]; puts: OptionsContract[] } {
-  const quotes: Record<number, { c: LegQuote; p: LegQuote }> = {
+  const quotes: Record<number, { c: Omit<LegQuote, "iv"> & { iv?: number }; p: Omit<LegQuote, "iv"> & { iv?: number } }> = {
     7520: {
       c: { bid: 4.8, ask: 4.95, delta: 0.62, gamma: 0.018, theta: -0.42, vega: 0.11 },
       p: { bid: 0.88, ask: 0.92, delta: -0.09, gamma: 0.012, theta: -0.28, vega: 0.09 },
@@ -105,7 +119,7 @@ export function buildSpxChainOrderFixtureContracts(): { calls: OptionsContract[]
   for (const strike of buildStrikes()) {
     const q = quotes[strike];
     if (!q) continue;
-    const row = strikeRow(strike, q.c, q.p);
+    const row = strikeRow(strike, withIv(q.c), withIv(q.p));
     if (row.call) calls.push(row.call);
     if (row.put) puts.push(row.put);
   }
@@ -129,7 +143,7 @@ export function buildSpxChainOrderFixtureTicks(): OptionTick[] {
       askSize: null,
       volume: c.volume ?? null,
       openInterest: c.openInterest ?? null,
-      iv: null,
+      iv: c.iv ?? null,
       delta: c.delta ?? null,
       gamma: c.gamma ?? null,
       theta: c.theta ?? null,

@@ -1657,7 +1657,11 @@ export function OptionsTab({
         )}
 
         {hasData && (
-          <div style={{ paddingBottom: selCount > 0 ? (sheetCollapsed ? 120 : 340) : 0 }}>
+          <div
+            style={{
+              paddingBottom: selCount > 0 ? (sheetCollapsed ? 150 : Math.min(480, 360 + selCount * 28)) : 0,
+            }}
+          >
             <OptionsChainHeader
               showCalls={showCalls}
               showPuts={showPuts}

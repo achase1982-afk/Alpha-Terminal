@@ -71,6 +71,29 @@ describe("chain ticket summary vs brute-force payoff", () => {
     expect(engine.breakevens[0]).toBeCloseTo(s?.breakevens[0] ?? 0, 4);
   });
 
+  it("iron condor: POP from lognormal between breakevens (not delta proxy)", () => {
+    const legs = [
+      { strike: 7525, optionType: "PUT" as const, instruction: "BUY_TO_OPEN", quantity: 1, bid: 0.4, ask: 0.45, iv: 0.18, expiration: "2026-11-17" },
+      { strike: 7530, optionType: "PUT" as const, instruction: "SELL_TO_OPEN", quantity: 1, bid: 1.55, ask: 1.62, iv: 0.18, expiration: "2026-11-17" },
+      { strike: 7550, optionType: "CALL" as const, instruction: "SELL_TO_OPEN", quantity: 1, bid: 1.35, ask: 1.42, iv: 0.18, expiration: "2026-11-17" },
+      { strike: 7555, optionType: "CALL" as const, instruction: "BUY_TO_OPEN", quantity: 1, bid: 0.45, ask: 0.5, iv: 0.18, expiration: "2026-11-17" },
+    ];
+    const asOf = Date.UTC(2026, 10, 17, 15, 0, 0);
+    const s = computeChainTicketSummary({
+      underlyingSymbol: SPX,
+      legs,
+      limitPrice: 2.05,
+      spreadQuantity: 1,
+      isCredit: true,
+      spotPrice: 7540,
+      asOfMs: asOf,
+    });
+    expect(s?.pop).not.toBeNull();
+    expect(s!.pop!).toBeGreaterThan(5);
+    expect(s!.pop!).toBeLessThan(45);
+    expect(s!.breakevens).toHaveLength(2);
+  });
+
   it("iron condor: bounded max loss", () => {
     const legs = [
       { strike: 5880, optionType: "PUT" as const, instruction: "BUY_TO_OPEN", quantity: 1, bid: 0.9, ask: 0.95 },

@@ -8,6 +8,11 @@ import {
 } from "./expirationPayoff.js";
 import { inferNetCreditFromLegStructure } from "./schwabOrderRisk.js";
 import { parseCanonicalLimit, type LimitTickContext } from "./optionTickRound.js";
+import {
+  averageLegIv,
+  computeOptionPop,
+  yearsToExpiration,
+} from "./optionPop.js";
 
 export interface ChainTicketLegQuote extends EconomicsLeg {
   bid?: number | null;
@@ -16,6 +21,7 @@ export interface ChainTicketLegQuote extends EconomicsLeg {
   gamma?: number | null;
   theta?: number | null;
   vega?: number | null;
+  iv?: number | null;
 }
 
 export interface ChainTicketSummaryInput {
@@ -26,6 +32,10 @@ export interface ChainTicketSummaryInput {
   underlyingSymbol: string;
   /** When set, skip leg-structure credit/debit inference. */
   isCredit?: boolean | null;
+  /** Spot for lognormal POP (required for reliable POP). */
+  spotPrice?: number | null;
+  /** Reference time for DTE (default `Date.now()`). */
+  asOfMs?: number;
 }
 
 export interface ChainTicketSummary {
@@ -110,7 +120,7 @@ export function computeChainTicketSummary(input: ChainTicketSummaryInput): Chain
       if (leg.theta != null) netTheta += leg.theta * lq * sign;
       if (leg.vega != null) netVega += leg.vega * lq * sign;
     }
-    const pop = netDelta !== 0 ? Math.abs(1 - Math.abs(netDelta)) * 100 : null;
+    const pop: number | null = null;
     return {
       spreadMid: agg?.mid ?? null,
       spreadBid: agg?.bid ?? null,
@@ -153,7 +163,30 @@ export function computeChainTicketSummary(input: ChainTicketSummaryInput): Chain
     if (leg.theta != null) netTheta += leg.theta * lq * sign;
     if (leg.vega != null) netVega += leg.vega * lq * sign;
   }
-  const pop = netDelta !== 0 ? Math.abs(1 - Math.abs(netDelta)) * 100 : null;
+  const exp =
+    input.legs.map((l) => l.expiration).find((e) => e && e.trim().length > 0) ?? "";
+  const tYears = exp ? yearsToExpiration(exp, input.asOfMs ?? Date.now()) : null;
+  const iv = averageLegIv(input.legs);
+  let pop: number | null = null;
+  if (
+    input.spotPrice != null &&
+    input.spotPrice > 0 &&
+    tYears != null &&
+    iv != null &&
+    (econ?.breakevens?.length ?? 0) > 0
+  ) {
+    pop = computeOptionPop({
+      spot: input.spotPrice,
+      breakevens: econ?.breakevens ?? [],
+      isCredit: inferred,
+      iv,
+      tYears,
+      legs: input.legs.map((l) => ({
+        optionType: l.optionType,
+        instruction: l.instruction,
+      })),
+    });
+  }
 
   return {
     spreadMid: agg?.mid ?? null,
