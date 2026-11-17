@@ -59,8 +59,8 @@ export async function installQaNetworkMocks(
           json({
             symbol: "AAPL",
             last: 187.42,
-            bid: 187.4,
-            ask: 187.44,
+            bid: 187.41,
+            ask: 187.43,
             change: 1.2,
             percentChange: 0.65,
           }),
@@ -90,7 +90,7 @@ export async function installQaNetworkMocks(
         json({
           status: "connected",
           quotes: opts?.aaplStock
-            ? [{ symbol: "AAPL", last: 187.421, bid: 187.405, ask: 187.439 }]
+            ? [{ symbol: "AAPL", last: 187.421, bid: 187.41, ask: 187.43 }]
             : [{ symbol: "SPX", last: 5900.5, bid: 5900.25, ask: 5900.75 }],
         }),
       );
@@ -170,7 +170,7 @@ export async function installQaNetworkMocks(
           data: {
             status: "connected",
             quotes: opts?.aaplStock
-              ? [{ symbol: "AAPL", last: 187.421, bid: 187.405, ask: 187.439 }]
+              ? [{ symbol: "AAPL", last: 187.421, bid: 187.41, ask: 187.43 }]
               : [{ symbol: "SPX", last: 5900.5, bid: 5900.25, ask: 5900.75 }],
           },
         }),
