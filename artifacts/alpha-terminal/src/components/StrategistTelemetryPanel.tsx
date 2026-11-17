@@ -420,17 +420,15 @@ export function StrategistTelemetryPanel() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [tickerFilter, setTickerFilter] = useState("");
   const [resultFilter, setResultFilter] = useState<string>("");
-  const [ibkrTickLine, setIbkrTickLine] = useState<string | null>(null);
   const [copyDialogRow, setCopyDialogRow] = useState<TelemetryRow | null>(null);
   const [strategistLoadErr, setStrategistLoadErr] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [sRes, scRes, ibRes] = await Promise.all([
+      const [sRes, scRes] = await Promise.all([
         fetchWithAuth(`/api/strategist/telemetry/strategist?limit=50${tickerFilter ? `&ticker=${tickerFilter}` : ""}`),
         fetchWithAuth("/api/strategist/telemetry/scanner?limit=20"),
-        fetchWithAuth("/api/diagnostics/ibkr-tick-pilot/latest-summary"),
       ]);
       if (sRes.ok) {
         setStrategistLoadErr(null);
@@ -460,31 +458,7 @@ export function StrategistTelemetryPanel() {
         toast.error(`Strategist telemetry failed: ${detail}`);
       }
       if (scRes.ok) setScanRows(await scRes.json());
-      if (ibRes.ok) {
-        const j = await ibRes.json();
-        const latest = j.latest as { runStartedAt?: string; summary?: { nasdaq: string; nyse: string } } | null;
-        if (latest?.summary && latest.runStartedAt) {
-          const d = new Date(latest.runStartedAt);
-          const ts = d.toLocaleString("en-US", {
-            timeZone: "America/New_York",
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-          });
-          const n = latest.summary.nasdaq === "PASS" ? "✓" : latest.summary.nasdaq === "FAIL" ? "✗" : "⚠";
-          const y = latest.summary.nyse === "PASS" ? "✓" : latest.summary.nyse === "FAIL" ? "✗" : "⚠";
-          setIbkrTickLine(`IBKR tick entitlement: NASDAQ ${n} NYSE ${y} — last tested ${ts} ET`);
-        } else {
-          setIbkrTickLine("IBKR tick entitlement: Not tested — run from Settings.");
-        }
-      } else {
-        setIbkrTickLine("IBKR tick entitlement: Not tested — run from Settings.");
-      }
     } catch (e) {
-      setIbkrTickLine("IBKR tick entitlement: Not tested — run from Settings.");
       const msg = e instanceof Error ? e.message : "Network error";
       setStrategistLoadErr(msg);
       setStratRows([]);
@@ -504,11 +478,6 @@ export function StrategistTelemetryPanel() {
     <div className="space-y-4">
       <StrategistScoreboardPanel />
       <div className="border-t border-[#2A2A2C]" />
-      {ibkrTickLine && (
-        <p className="font-mono text-[10px] text-zinc-500 border border-[#2A2A2C] rounded-md px-2 py-1.5 bg-[#0c0c0c]" role="status">
-          {ibkrTickLine}
-        </p>
-      )}
       {strategistLoadErr && (
         <p
           className="font-mono text-[11px] text-red-400 border border-red-900/60 rounded-md px-2 py-1.5 bg-red-950/40"

@@ -10,7 +10,6 @@ import { AuthPanel } from "./AuthPanel";
 import { StrategistSettingsPanel } from "./StrategistSettingsPanel";
 import { StrategistTelemetryPanel } from "./StrategistTelemetryPanel";
 import { SystemSettingsPage } from "./SystemSettingsPage";
-import { IbkrTickDiagnosticsPanel } from "./IbkrTickDiagnosticsPanel";
 import {
   AI_MODEL_IDS,
   aiModelSelectLabel,
@@ -1868,8 +1867,6 @@ function DiagnosticsPage() {
 
   return (
     <div className="space-y-6 max-w-3xl lg:max-w-5xl mx-auto">
-      <IbkrTickDiagnosticsPanel />
-
       <div className="space-y-4">
         <p className="font-mono text-[10px] text-muted-foreground/70 leading-relaxed">
           Live connection state across data and execution surfaces.

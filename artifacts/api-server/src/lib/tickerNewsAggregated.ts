@@ -1,6 +1,6 @@
 /**
- * Shared ticker news fetchers (Polygon reference news, Benzinga vendor primary, Finnhub company news).
- * Used by GET /api/market/news and by strategist snapshot assembly — keep behavior aligned with the NEWS tab.
+ * Shared ticker news shapes and the Finnhub company-news fetcher.
+ * GET /api/market/news goes through symbolNewsProvider (Alpaca, then Finnhub).
  */
 
 export interface NormalizedArticle {
@@ -262,30 +262,12 @@ export async function fetchMergedMarketNewsArticles(
   log: { warn: (o: unknown, m?: string) => void; info: (o: unknown, m?: string) => void },
   signal?: AbortSignal,
 ): Promise<NormalizedArticle[]> {
-  const polygonKey = process.env["POLYGON_API_KEY"];
-  const vendorPrimaryKey = process.env["BENZ" + "INGA_API_KEY"];
-  const finnhubKey = process.env["FINNHUB_API_KEY"];
-
-  const [polygonArticles, vendorPrimaryArticles, finnhubArticles] = await Promise.all([
-    polygonKey ? fetchPolygonNews(symbol, polygonKey, log, signal) : Promise.resolve([]),
-    vendorPrimaryKey ? fetchVendorPrimaryNews(symbol, vendorPrimaryKey, log, signal) : Promise.resolve([]),
-    finnhubKey ? fetchFinnhubNews(symbol, finnhubKey, log, signal) : Promise.resolve([]),
-  ]);
-
-  const seenHeadlines = new Set<string>();
-  const merged: NormalizedArticle[] = [];
-
-  for (const source of [vendorPrimaryArticles, polygonArticles, finnhubArticles]) {
-    for (const a of source) {
-      const key = a.headline.toLowerCase().slice(0, 60);
-      if (!seenHeadlines.has(key)) {
-        seenHeadlines.add(key);
-        merged.push(a);
-      }
-    }
+  try {
+    const { fetchSymbolNews } = await import("./symbolNewsProvider.js");
+    const articles = await fetchSymbolNews(symbol, log, signal);
+    return articles.slice(0, 50);
+  } catch (err) {
+    log.warn({ err, symbol }, "Symbol news provider failed");
+    return [];
   }
-
-  merged.sort((a, b) => b.datetime - a.datetime);
-
-  return merged.slice(0, 50);
 }

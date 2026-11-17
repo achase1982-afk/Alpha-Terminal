@@ -1,7 +1,6 @@
 import { useEffect, useRef, useMemo } from "react";
 import { useDepthStore, type DepthRow } from "@/lib/depth-store";
 import { useTerminalStore } from "@/lib/store";
-import { fetchWithAuth } from "@/lib/fetchWithAuth";
 
 const BG = "#08080a";
 const BORDER = "#1a1a2e";
@@ -68,34 +67,8 @@ export default function DepthLadder({ symbol: propSymbol, className }: DepthLadd
   const isStatic = STATIC_DEPTH_SYMBOLS.includes(sym);
 
   useEffect(() => {
-    if (isStatic) return;
-    if (subscribedRef.current === sym) return;
-
-    if (subscribedRef.current) {
-      fetchWithAuth("/api/ib/depth/unsubscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol: subscribedRef.current }),
-      }).catch(() => {});
-    }
-
-    subscribedRef.current = sym;
-    fetchWithAuth("/api/ib/depth/subscribe", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbol: sym }),
-    }).catch(() => {});
-
-    return () => {
-      if (subscribedRef.current) {
-        fetchWithAuth("/api/ib/depth/unsubscribe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ symbol: subscribedRef.current }),
-        }).catch(() => {});
-        subscribedRef.current = null;
-      }
-    };
+    // Depth comes from the Schwab book stream. The IBKR depth routes are gone.
+    subscribedRef.current = isStatic ? null : sym;
   }, [sym, isStatic]);
 
   const bids = book?.bids ?? [];
