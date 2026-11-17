@@ -133,7 +133,8 @@ async function buildUniverseKeys(
     leveloneCapReason = cappedLevelone ? `schwab_levelone_options_budget_${budget}` : null;
     for (const exp of expiries) optionsByExpiry[exp] = 0;
     optionsByExpiry.explicit = levelone.length;
-    const book = pickBySpot([], spot, TARGET_OPTIONS_BOOK);
+    const bookBudget = deskComputeDeskOptionsBookBudget(getAppOptionsBookCount());
+    const book = pickBySpot([], spot, Math.max(0, bookBudget));
     cappedBook = false;
     return { levelone, book };
   }
@@ -164,7 +165,7 @@ async function buildUniverseKeys(
     allForBook.push(...filterDeskChainByStrikeWindow(chain.normalized, window));
   }
   const bookBudget = deskComputeDeskOptionsBookBudget(getAppOptionsBookCount());
-  const bookLimit = Math.min(TARGET_OPTIONS_BOOK, bookBudget);
+  const bookLimit = Math.min(TARGET_OPTIONS_BOOK, Math.max(0, bookBudget));
   const book = pickBySpot(allForBook, spot, bookLimit);
   cappedBook = allForBook.length > book.length;
 

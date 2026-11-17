@@ -8,12 +8,13 @@ export type SchwabStreamerServiceLimits = {
 const DEFAULT_LIMITS: SchwabStreamerServiceLimits = {
   levelone_options: 3000,
   levelone_equities: 3000,
-  options_book: 500,
+  options_book: 100,
 };
 
 let reportedLimits: SchwabStreamerServiceLimits = { ...DEFAULT_LIMITS };
 
 export const DESK_STREAMER_HEADROOM = 150;
+export const DESK_OPTIONS_BOOK_HEADROOM = 5;
 
 export function deskResetStreamerLimitsForTests(): void {
   reportedLimits = { ...DEFAULT_LIMITS };
@@ -43,7 +44,7 @@ export function deskComputeDeskLevelOneOptionsBudget(appOptionCount: number): nu
 
 export function deskComputeDeskOptionsBookBudget(appBookCount: number): number {
   const cap = reportedLimits.options_book;
-  return Math.max(0, cap - appBookCount - 20);
+  return Math.max(0, cap - appBookCount - DESK_OPTIONS_BOOK_HEADROOM);
 }
 
 export function deskComputeDeskEquitiesBudget(appEquityCount: number): number {

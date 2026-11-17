@@ -17,8 +17,12 @@ import {
   forceRefresh,
 } from "../lib/tokenStore.js";
 import { stopStreamer } from "../lib/schwabStreamer.js";
+import schwab2AuthRouter from "./schwab2Auth.js";
+import { buildSchwab2AuthorizeUrl, deskSchwab2Configured } from "../lib/desk/deskSchwab2OAuth.js";
+import { getSchwab2TokenMeta } from "../lib/desk/deskSchwab2TokenStore.js";
 
 const router: IRouter = Router();
+router.use(schwab2AuthRouter);
 
 const SCHWAB_AUTH_BASE = "https://api.schwabapi.com/v1/oauth/authorize";
 const SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token";
@@ -549,6 +553,14 @@ router.get("/trader-callback", async (req, res) => {
     return res.status(400).send(errorPage("Missing Code", "No authorization code was received from Schwab."));
   }
 
+  const { isSchwab2OAuthState, handleSchwab2OAuthCallback } = await import(
+    "../lib/desk/schwab2OAuthCallback.js"
+  );
+  if (isSchwab2OAuthState(state)) {
+    const handled = await handleSchwab2OAuthCallback(req, res, code, state);
+    if (handled) return;
+  }
+
   if (!verifyState(state, "trader_")) {
     req.log.warn({ state: state?.slice(0, 8) }, "GET /trader-callback — invalid or missing state");
     return res.status(400).send(errorPage("Invalid Request", "OAuth state validation failed. Please try again."));
@@ -633,6 +645,16 @@ router.get("/trader-callback", async (req, res) => {
     pendingTokens.set("latest", { accessToken, refreshToken: trRfTok, ts: Date.now() });
 
     req.log.info("GET /trader-callback — Trader token exchange succeeded (stored as market + trader)");
+
+    const app2 = deskSchwab2Configured() ? buildSchwab2AuthorizeUrl() : null;
+    if (app2?.url) {
+      req.log.info(
+        { redirectUri: app2.redirectUri },
+        "GET /trader-callback — chaining into Schwab app 2 authorize",
+      );
+      return res.redirect(app2.url);
+    }
+
     return res.send(traderSuccessPage());
   } catch (err) {
     req.log.error({ err }, "GET /trader-callback network error");
@@ -677,6 +699,7 @@ router.get("/server-tokens", (_req, res) => {
   const mkt = hasValidTokens("market") ? getTokens("market") : undefined;
   const trd = hasValidTokens("trader") ? getTokens("trader") : undefined;
   const anchor = trd ?? mkt;
+  const schwab2 = getSchwab2TokenMeta();
   res.json({
     market: mkt ? { accessToken: mkt.accessToken, refreshToken: mkt.refreshToken, expiresAt: mkt.expiresAt } : null,
     trader: trd ? { accessToken: trd.accessToken, refreshToken: trd.refreshToken, expiresAt: trd.expiresAt } : null,
@@ -684,6 +707,21 @@ router.get("/server-tokens", (_req, res) => {
     // grant; null until the first browser sign-in after this deploy).
     refresh_token_issued_at: anchor?.refreshIssuedAt ?? null,
     refresh_token_expires_at: anchor?.refreshExpiresAt ?? null,
+    schwab_oauth: {
+      app1: {
+        connected: Boolean(anchor?.refreshToken),
+        access_token_expires_at: anchor?.expiresAt ?? null,
+        refresh_token_issued_at: anchor?.refreshIssuedAt ?? null,
+        refresh_token_expires_at: anchor?.refreshExpiresAt ?? null,
+      },
+      app2: {
+        configured: deskSchwab2Configured(),
+        connected: schwab2.has_tokens,
+        access_token_expires_at: schwab2.access_token_expires_at,
+        refresh_token_issued_at: schwab2.refresh_token_issued_at,
+        refresh_token_expires_at: schwab2.refresh_token_expires_at,
+      },
+    },
   });
 });
 

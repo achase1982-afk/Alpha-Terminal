@@ -11,7 +11,8 @@ import type { MouseEvent } from "react";
 export default function AuthSessionBanner() {
   const notice = useAuthNoticeStore((s) => s.notice);
   const dismiss = useAuthNoticeStore((s) => s.dismiss);
-  const { oauthUrl, isNavigating, onClick } = useBrokerConnect();
+  const schwabFlow = notice?.schwabReconnect ?? "brokerage";
+  const { oauthUrl, isNavigating, onClick } = useBrokerConnect(schwabFlow);
 
   if (!notice) return null;
 

@@ -12,6 +12,7 @@ import { useGetPriceHistory } from "@workspace/api-client-react";
 import type { PriceHistoryResponse } from "@workspace/api-client-react";
 import { ChartControls, chartParamsFromStore, isIntradayInterval } from "@/components/ChartControls";
 import { useAutoRefreshToken } from "@/hooks/useAutoRefreshToken";
+import { useSchwabOAuthExpiryWatch } from "@/hooks/useSchwabOAuthExpiryWatch";
 import { useMarketStream } from "@/hooks/useMarketStream";
 import { useSchwabSessionReconciliation } from "@/hooks/useSchwabSessionReconciliation";
 import { useSchwabAccountsBootstrap } from "@/hooks/useSchwabAccountsBootstrap";
@@ -612,6 +613,7 @@ export default function TerminalPage() {
   useSchwabSessionReconciliation(sidebarRef);
   const { pulseData, isLoading: pulseLoading, isStreaming: pulseStreaming } = useMarketPulseStore();
   const { refresh } = useAutoRefreshToken();
+  useSchwabOAuthExpiryWatch();
   useViewportShell();
   useUIThemeSync();
   const isWide = useIsTablet();

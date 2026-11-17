@@ -1,6 +1,6 @@
-export type DeskQuotesSource = "schwab" | "tradier" | "alpaca_paper" | "alpaca" | "tastytrade";
-export type DeskChainsSource = "schwab";
-export type DeskBarsSource = "schwab" | "eodhd" | "alpaca_paper" | "alpaca";
+export type DeskQuotesSource = "schwab" | "schwab2" | "tradier" | "alpaca_paper" | "alpaca" | "tastytrade";
+export type DeskChainsSource = "schwab" | "schwab2";
+export type DeskBarsSource = "schwab" | "schwab2" | "eodhd" | "alpaca_paper" | "alpaca";
 export type DeskNewsSource =
   | "finnhub"
   | "alpaca_news"

@@ -1,6 +1,11 @@
-import { getBestAccessToken } from "../tokenStore.js";
 import { deskFormatSchwabSymbol } from "./deskSchwabSymbol.js";
-import { deskTouchFeed, deskMarkFeedError } from "./deskFeedFreshness.js";
+import { deskTouchFeed, deskMarkFeedError, deskMarkAuthFail } from "./deskFeedFreshness.js";
+import {
+  type DeskSchwabRestApp,
+  deskSchwab2MarketFetch,
+  deskSchwabMarkApp2AuthFailure,
+  deskSchwabRestAccessToken,
+} from "./deskSchwabRestCredential.js";
 
 const SCHWAB_API_BASE = "https://api.schwabapi.com/marketdata/v1";
 
@@ -35,15 +40,16 @@ export async function deskFetchSchwabBars(
   symbol: string,
   timeframe: string,
   limit: number,
+  app: DeskSchwabRestApp = "app2",
 ): Promise<{ bars: DeskBar[]; asOfMs: number }> {
   const mapped = mapTimeframe(timeframe);
   if (!mapped) {
     return { bars: [], asOfMs: Date.now() };
   }
 
-  const token = getBestAccessToken();
+  const token = await deskSchwabRestAccessToken(app);
   if (!token) {
-    deskMarkFeedError("schwab_quotes_rest", "no_schwab_token");
+    if (app === "app1") deskMarkAuthFail("schwab_quotes_rest");
     return { bars: [], asOfMs: Date.now() };
   }
 
@@ -57,13 +63,22 @@ export async function deskFetchSchwabBars(
     needExtendedHoursData: "false",
   });
 
-  const res = await fetch(`${SCHWAB_API_BASE}/pricehistory?${params.toString()}`, {
+  const url = `${SCHWAB_API_BASE}/pricehistory?${params.toString()}`;
+  const fetchFn = app === "app2" ? deskSchwab2MarketFetch : fetch;
+  const res = await fetchFn(url, {
     headers: { Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(20_000),
   });
 
+  if (res.status === 401) {
+    if (app === "app1") deskMarkAuthFail("schwab_quotes_rest");
+    else deskSchwabMarkApp2AuthFailure(res.status);
+    return { bars: [], asOfMs: Date.now() };
+  }
+
   if (!res.ok) {
-    deskMarkFeedError("schwab_quotes_rest", `pricehistory_${res.status}`);
+    if (app === "app1") deskMarkFeedError("schwab_quotes_rest", `pricehistory_${res.status}`);
+    else deskMarkFeedError("schwab2_rest", `pricehistory_${res.status}`, "schwab_rest_2");
     return { bars: [], asOfMs: Date.now() };
   }
 
@@ -80,6 +95,7 @@ export async function deskFetchSchwabBars(
   }));
 
   const asOfMs = bars.length ? Date.parse(bars[bars.length - 1]!.ts) : Date.now();
-  deskTouchFeed("schwab_quotes_rest", asOfMs);
+  if (app === "app1") deskTouchFeed("schwab_quotes_rest", asOfMs);
+  else deskTouchFeed("schwab2_rest", asOfMs, "schwab_rest_2");
   return { bars, asOfMs };
 }

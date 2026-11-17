@@ -16,7 +16,6 @@ import { initDeskSchwab2RestFeed } from "./deskSchwab2Rest.js";
 import { initDeskTradierSandboxFeed } from "./deskTradierSandbox.js";
 import { deskProbeAlpacaPaper } from "./deskAlpacaPaper.js";
 import { deskProbeTastytrade } from "./deskTastytrade.js";
-import { deskProbeAlphaVantage } from "./deskAlphaVantage.js";
 import { deskProbeMarketaux } from "./deskMarketaux.js";
 import { deskProbeStocknews } from "./deskStocknews.js";
 import { deskProbeEodhd } from "./deskEodhd.js";
@@ -62,7 +61,6 @@ export function initDeskMarketFeeds(): void {
   initDeskTradierSandboxFeed();
 
   if (!getAlphaVantageKey()) deskMarkFeedNotConfigured("alphavantage", "alphavantage");
-  else void deskProbeAlphaVantage();
 
   if (!getMarketauxKey()) deskMarkFeedNotConfigured("marketaux", "marketaux");
   else void deskProbeMarketaux();

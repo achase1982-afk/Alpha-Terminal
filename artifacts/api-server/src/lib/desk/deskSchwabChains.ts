@@ -1,6 +1,11 @@
-import { getBestAccessToken } from "../tokenStore.js";
 import { deskFormatSchwabSymbol, deskIsIndex } from "./deskSchwabSymbol.js";
 import { deskTouchFeed, deskMarkFeedError, deskMarkAuthFail } from "./deskFeedFreshness.js";
+import {
+  type DeskSchwabRestApp,
+  deskSchwab2MarketFetch,
+  deskSchwabMarkApp2AuthFailure,
+  deskSchwabRestAccessToken,
+} from "./deskSchwabRestCredential.js";
 import { deskSessionDateEt } from "./deskEt.js";
 import { logger } from "../logger.js";
 
@@ -148,13 +153,16 @@ function chainParams(
 async function fetchChainUrl(
   url: string,
   token: string,
+  app: DeskSchwabRestApp,
 ): Promise<Record<string, unknown> | null> {
-  const res = await fetch(url, {
+  const fetchFn = app === "app2" ? deskSchwab2MarketFetch : fetch;
+  const res = await fetchFn(url, {
     headers: { Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(45_000),
   });
   if (res.status === 401) {
-    deskMarkAuthFail("schwab_chains");
+    if (app === "app1") deskMarkAuthFail("schwab_chains");
+    else deskSchwabMarkApp2AuthFailure(res.status);
     return null;
   }
   if (!res.ok) {
@@ -168,6 +176,7 @@ async function fetchChainsFromSchwab(
   displaySymbol: string,
   expiration: string,
   token: string,
+  app: DeskSchwabRestApp,
   opts?: DeskChainQueryOpts,
 ): Promise<CacheEntry | null> {
   const chainSymbol = deskIsIndex(displaySymbol)
@@ -188,8 +197,8 @@ async function fetchChainsFromSchwab(
     const callParams = chainParams(chainSymbol, expiration, "CALL", opts);
     const putParams = chainParams(chainSymbol, expiration, "PUT", opts);
     const [callJson, putJson] = await Promise.all([
-      fetchChainUrl(`${SCHWAB_API_BASE}/chains?${callParams}`, token),
-      fetchChainUrl(`${SCHWAB_API_BASE}/chains?${putParams}`, token),
+      fetchChainUrl(`${SCHWAB_API_BASE}/chains?${callParams}`, token, app),
+      fetchChainUrl(`${SCHWAB_API_BASE}/chains?${putParams}`, token, app),
     ]);
     if (!callJson && !putJson) return null;
     const callRaw = collectRawContracts(callJson ?? {}, expiration);
@@ -200,7 +209,7 @@ async function fetchChainsFromSchwab(
     json = callJson ?? putJson;
   } else {
     const params = chainParams(chainSymbol, expiration, "ALL", opts);
-    json = await fetchChainUrl(`${SCHWAB_API_BASE}/chains?${params}`, token);
+    json = await fetchChainUrl(`${SCHWAB_API_BASE}/chains?${params}`, token, app);
     if (!json) return null;
     raw = collectRawContracts(json, expiration);
     underlyingPrice = num(json["underlyingPrice"]);
@@ -222,6 +231,7 @@ export async function deskFetchSchwabChain(
   symbol: string,
   expiration: string,
   opts?: DeskChainQueryOpts,
+  app: DeskSchwabRestApp = "app2",
 ): Promise<{
   underlyingPrice: number | null;
   raw: Record<string, unknown>[];
@@ -237,7 +247,8 @@ export async function deskFetchSchwabChain(
   const key = cacheKey(sym, exp, opts);
   const hit = cache.get(key);
   if (hit && Date.now() - hit.fetchedAt < CACHE_TTL_MS) {
-    deskTouchFeed("schwab_chains", hit.fetchedAt);
+    if (app === "app1") deskTouchFeed("schwab_chains", hit.fetchedAt);
+    else deskTouchFeed("schwab2_rest", hit.fetchedAt, "schwab_rest_2");
     return {
       underlyingPrice: hit.underlyingPrice,
       raw: hit.raw,
@@ -249,9 +260,9 @@ export async function deskFetchSchwabChain(
     };
   }
 
-  const token = getBestAccessToken();
+  const token = await deskSchwabRestAccessToken(app);
   if (!token) {
-    deskMarkAuthFail("schwab_chains");
+    if (app === "app1") deskMarkAuthFail("schwab_chains");
     return {
       underlyingPrice: null,
       raw: [],
@@ -263,9 +274,10 @@ export async function deskFetchSchwabChain(
     };
   }
 
-  const entry = await fetchChainsFromSchwab(sym, exp, token, opts);
+  const entry = await fetchChainsFromSchwab(sym, exp, token, app, opts);
   if (!entry) {
-    deskMarkFeedError("schwab_chains", "schwab_chain_fetch_failed");
+    if (app === "app1") deskMarkFeedError("schwab_chains", "schwab_chain_fetch_failed");
+    else deskMarkFeedError("schwab2_rest", "schwab_chain_fetch_failed", "schwab_rest_2");
     return {
       underlyingPrice: null,
       raw: [],
@@ -278,7 +290,8 @@ export async function deskFetchSchwabChain(
   }
 
   cache.set(key, entry);
-  deskTouchFeed("schwab_chains", entry.fetchedAt);
+  if (app === "app1") deskTouchFeed("schwab_chains", entry.fetchedAt);
+  else deskTouchFeed("schwab2_rest", entry.fetchedAt, "schwab_rest_2");
   return {
     underlyingPrice: entry.underlyingPrice,
     raw: entry.raw,

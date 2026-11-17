@@ -633,6 +633,8 @@ async function boot() {
     void (async () => {
       await loadAiLabConfigFromDb();
       await initTokenStore();
+      const { initSchwab2TokenStore } = await import("./lib/desk/deskSchwab2TokenStore.js");
+      await initSchwab2TokenStore();
       startExitMonitor();
       startTelemetryCleanup();
       startTelemetryRetentionJob();

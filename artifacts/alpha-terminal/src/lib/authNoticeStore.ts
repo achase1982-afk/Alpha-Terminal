@@ -2,10 +2,14 @@ import { create } from "zustand";
 
 export type AuthNoticeKind = "schwab" | "clerk";
 
+/** Which Schwab OAuth URL to open from the reconnect banner. */
+export type SchwabReconnectFlow = "brokerage" | "market_data_app2";
+
 export interface AuthNotice {
   kind: AuthNoticeKind;
   message: string;
   detail?: string;
+  schwabReconnect?: SchwabReconnectFlow;
 }
 
 interface AuthNoticeState {
@@ -50,9 +54,13 @@ export function clearSchwabAuthNotice(): void {
 }
 
 /** Schwab OAuth / refresh-token chain broke — user should reconnect Schwab (Clerk may still be fine). */
-export function signalSchwabAuthLost(message: string, detail?: string): void {
+export function signalSchwabAuthLost(
+  message: string,
+  detail?: string,
+  schwabReconnect: SchwabReconnectFlow = "brokerage",
+): void {
   if (!shouldEmit("schwab")) return;
-  useAuthNoticeStore.getState().setNotice({ kind: "schwab", message, detail });
+  useAuthNoticeStore.getState().setNotice({ kind: "schwab", message, detail, schwabReconnect });
 }
 
 /** Clerk JWT missing or API rejected the session — reload or sign in again. */

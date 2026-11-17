@@ -44,7 +44,8 @@ export type DeskFeedStatusCode =
   | "session_closed"
   | "error"
   | "reconnecting"
-  | "not_configured";
+  | "not_configured"
+  | "rate_limited";
 
 export type DeskFeedStatus = {
   feed: DeskFeedId;
@@ -221,6 +222,16 @@ export function deskMarkFeedConfiguredKeys(feed: DeskFeedId, source?: string): v
   });
 }
 
+export function deskMarkFeedRateLimited(feed: DeskFeedId, error: string, source?: string): void {
+  const prev = records.get(feed);
+  records.set(feed, {
+    source: source ?? prev?.source ?? FEED_SOURCES[feed],
+    lastDataMs: prev?.lastDataMs ?? null,
+    error,
+    forcedStatus: "rate_limited",
+  });
+}
+
 export function deskMarkFeedAuthError(feed: DeskFeedId, error: string, source?: string): void {
   const prev = records.get(feed);
   records.set(feed, {
@@ -272,6 +283,7 @@ function resolveStatus(
   if (rec.forcedStatus === "configured") return "configured";
   if (rec.forcedStatus === "AUTH_FAIL") return "AUTH_FAIL";
   if (rec.forcedStatus === "auth_error") return "auth_error";
+  if (rec.forcedStatus === "rate_limited") return "rate_limited";
   if (rec.forcedStatus === "error") return "error";
   if (!feedInSession(feed, at)) return "session_closed";
 
