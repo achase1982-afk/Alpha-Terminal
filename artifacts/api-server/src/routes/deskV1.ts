@@ -11,12 +11,14 @@ import { deskFetchNews } from "../lib/desk/deskNews.js";
 import { getDeskTapeSince, registerDeskSpxSse } from "../lib/desk/deskSpxTape.js";
 import { deskPersistSnapshot } from "../lib/desk/deskSnapshotStore.js";
 import { deskAsofEtIso, deskSessionDateEt } from "../lib/desk/deskEt.js";
+import { refreshDeskUwLiveFeeds } from "../lib/desk/deskUwLiveFeeds.js";
 
 const router: IRouter = Router();
 
 router.use(deskBearerAuth);
 
-router.get("/health", (_req, res) => {
+router.get("/health", async (_req, res) => {
+  await refreshDeskUwLiveFeeds().catch(() => undefined);
   const now = Date.now();
   const feeds = buildDeskHealthFeeds(now);
   const body = {

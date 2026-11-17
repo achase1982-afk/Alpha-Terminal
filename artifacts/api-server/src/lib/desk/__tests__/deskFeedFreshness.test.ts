@@ -79,6 +79,19 @@ describe("deskFeedFreshness", () => {
     expect(row?.stale).toBe(false);
   });
 
+  it("SPX streamer active during GTH morning", () => {
+    const feeds = buildDeskHealthFeeds(new Date("2026-11-17T08:00:00-05:00").getTime());
+    const row = feeds.find((f) => f.feed === "schwab_streamer");
+    expect(row?.status).not.toBe("session_closed");
+  });
+
+  it("equity quotes session_closed overnight", () => {
+    const feeds = buildDeskHealthFeeds(new Date("2026-11-17T22:00:00-05:00").getTime());
+    const row = feeds.find((f) => f.feed === "schwab_quotes_rest");
+    expect(row?.status).toBe("session_closed");
+    expect(row?.stale).toBe(false);
+  });
+
   it("carries error status on failed feed", () => {
     deskMarkFeedError("uw_flow", "uw_down");
     const feeds = buildDeskHealthFeeds();

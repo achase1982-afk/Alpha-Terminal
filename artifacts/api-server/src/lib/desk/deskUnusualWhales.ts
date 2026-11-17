@@ -32,6 +32,15 @@ class Semaphore {
 
 const uwSemaphore = new Semaphore(3);
 
+export async function withUwConcurrencySlot<T>(fn: () => Promise<T>): Promise<T> {
+  const release = await uwSemaphore.acquire();
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}
+
 export function getUwApiKey(): string {
   return deskEnv("UW_API_KEY_NEW", "UW_API_KEY");
 }
@@ -48,38 +57,37 @@ export async function deskFetchUwFlow(): Promise<{ alerts: unknown[]; asOfMs: nu
     return { alerts: cacheBody, asOfMs: cacheAt };
   }
 
-  const release = await uwSemaphore.acquire();
   try {
-    const url = `${UW_BASE}/api/option-trades/flow-alerts?limit=100`;
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${key}`,
-        Accept: "application/json",
-        "UW-CLIENT-API-ID": "100001",
-      },
-      signal: AbortSignal.timeout(20_000),
+    return await withUwConcurrencySlot(async () => {
+      const url = `${UW_BASE}/api/option-trades/flow-alerts?limit=100`;
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${key}`,
+          Accept: "application/json",
+          "UW-CLIENT-API-ID": "100001",
+        },
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!res.ok) {
+        const msg = `uw_flow_http_${res.status}`;
+        deskMarkFeedError("uw_flow", msg);
+        logger.warn({ status: res.status }, "Desk UW flow fetch failed");
+        return { alerts: cacheBody ?? [], asOfMs: cacheAt || Date.now() };
+      }
+      const json = (await res.json()) as { data?: unknown[] } | unknown[];
+      const alerts = Array.isArray(json)
+        ? json
+        : Array.isArray((json as { data?: unknown[] }).data)
+          ? (json as { data: unknown[] }).data
+          : [];
+      cacheBody = alerts;
+      cacheAt = Date.now();
+      deskTouchFeed("uw_flow", cacheAt, "unusual_whales");
+      return { alerts, asOfMs: cacheAt };
     });
-    if (!res.ok) {
-      const msg = `uw_flow_http_${res.status}`;
-      deskMarkFeedError("uw_flow", msg);
-      logger.warn({ status: res.status }, "Desk UW flow fetch failed");
-      return { alerts: cacheBody ?? [], asOfMs: cacheAt || Date.now() };
-    }
-    const json = (await res.json()) as { data?: unknown[] } | unknown[];
-    const alerts = Array.isArray(json)
-      ? json
-      : Array.isArray((json as { data?: unknown[] }).data)
-        ? (json as { data: unknown[] }).data
-        : [];
-    cacheBody = alerts;
-    cacheAt = Date.now();
-    deskTouchFeed("uw_flow");
-    return { alerts, asOfMs: cacheAt };
   } catch (err) {
     deskMarkFeedError("uw_flow", "uw_flow_fetch_error");
     logger.warn({ err }, "Desk UW flow error");
     return { alerts: cacheBody ?? [], asOfMs: cacheAt || Date.now() };
-  } finally {
-    release();
   }
 }

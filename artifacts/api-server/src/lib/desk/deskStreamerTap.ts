@@ -4,14 +4,15 @@ import {
   deskMarkStreamerEvicted,
   deskTouchFeed,
 } from "./deskFeedFreshness.js";
-import { deskInEtTimeWindow, deskIsNyWeekday, deskSessionDateEt } from "./deskEt.js";
+import { deskSessionDateEt } from "./deskEt.js";
+import { deskUtcEpochNsJson } from "./deskUtcNs.js";
 import { logger } from "../logger.js";
 
 export type DeskStreamerFrame = {
-  rx_ns: number;
+  rx_ns: string;
   c: number;
   dir?: "out";
-  m: string;
+  m: Record<string, unknown> | unknown[] | string | number | boolean | null;
   session_date: string;
   rx_utc_ms: number;
 };
@@ -24,8 +25,12 @@ const normalizedRing: Array<{ symbol: string; last: number | null; bid: number |
 const DESK_EQ_KEYS = new Set(["$SPX", "SPY", "$VIX"]);
 const RING_CAP = 50_000;
 
-function hrtimeNs(): number {
-  return Number(process.hrtime.bigint());
+function parseSchwabFrame(raw: string): DeskStreamerFrame["m"] {
+  try {
+    return JSON.parse(raw) as DeskStreamerFrame["m"];
+  } catch {
+    return { _desk_parse_error: true, _raw: raw };
+  }
 }
 
 function broadcastFrame(frame: DeskStreamerFrame): void {
@@ -47,18 +52,10 @@ function maybeTouchFeedsFromFrame(raw: string, rxMs: number): void {
     return;
   }
 
-  deskTouchFeed("schwab_streamer", rxMs);
+  deskTouchFeed("schwab_streamer", rxMs, "schwab");
 
   const data = msg["data"] as Array<{ service?: string; content?: Record<string, unknown>[] }> | undefined;
   if (!data) return;
-
-  const now = new Date(rxMs);
-  const gamma0 =
-    deskIsNyWeekday(now) && deskInEtTimeWindow("09:29:50", "16:00:50", now);
-  const gamma =
-    deskIsNyWeekday(now) && deskInEtTimeWindow("09:31:20", "16:00:20", now);
-  const netPrem =
-    deskIsNyWeekday(now) && deskInEtTimeWindow("09:31:20", "15:45:20", now);
 
   for (const item of data) {
     const svc = item.service ?? "";
@@ -70,14 +67,9 @@ function maybeTouchFeedsFromFrame(raw: string, rxMs: number): void {
         const bid = num(row["1"]);
         const ask = num(row["2"]);
         const tsMs = num(row["34"]) ?? rxMs;
-        deskTouchFeed("schwab_quotes_rest", tsMs);
+        deskTouchFeed("schwab_quotes_rest", tsMs, "schwab");
         pushNormalized(key.replace(/^\$/, ""), last, bid, ask, tsMs);
       }
-    } else if (svc === "LEVELONE_OPTIONS" && item.content && gamma0) {
-      deskTouchFeed("live_gamma_0dte", rxMs);
-      if (gamma) deskTouchFeed("live_gamma", rxMs);
-    } else if (svc === "OPTIONS_BOOK" && item.content && netPrem) {
-      deskTouchFeed("live_net_prem", rxMs);
     }
   }
 }
@@ -102,35 +94,31 @@ function pushNormalized(
   if (normalizedRing.length > RING_CAP) normalizedRing.splice(0, normalizedRing.length - RING_CAP);
 }
 
+function wrapFrame(raw: string, dir?: "out"): DeskStreamerFrame {
+  const rxMs = Date.now();
+  return {
+    rx_ns: deskUtcEpochNsJson(),
+    c: connectionNumber,
+    ...(dir ? { dir } : {}),
+    m: parseSchwabFrame(raw),
+    session_date: deskSessionDateEt(new Date(rxMs)),
+    rx_utc_ms: rxMs,
+  };
+}
+
 export function onSchwabConnectionOpened(): void {
   connectionNumber += 1;
   deskClearStreamerEvicted();
 }
 
 export function onSchwabInboundFrame(raw: string): void {
-  const rxMs = Date.now();
-  const frame: DeskStreamerFrame = {
-    rx_ns: hrtimeNs(),
-    c: connectionNumber,
-    m: raw,
-    session_date: deskSessionDateEt(new Date(rxMs)),
-    rx_utc_ms: rxMs,
-  };
+  const frame = wrapFrame(raw);
   broadcastFrame(frame);
-  maybeTouchFeedsFromFrame(raw, rxMs);
+  maybeTouchFeedsFromFrame(raw, frame.rx_utc_ms);
 }
 
 export function onSchwabOutboundFrame(raw: string): void {
-  const rxMs = Date.now();
-  const frame: DeskStreamerFrame = {
-    rx_ns: hrtimeNs(),
-    c: connectionNumber,
-    dir: "out",
-    m: raw,
-    session_date: deskSessionDateEt(new Date(rxMs)),
-    rx_utc_ms: rxMs,
-  };
-  broadcastFrame(frame);
+  broadcastFrame(wrapFrame(raw, "out"));
 }
 
 export function onSchwabEvictedYielded(): void {
