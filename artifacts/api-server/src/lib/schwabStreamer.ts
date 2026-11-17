@@ -23,7 +23,6 @@ import {
   streamerSubParseRejection,
   streamerSubRecordRejection,
   streamerSubResolveLiveKey,
-  streamerSubSetChainUnderlyingPrice,
   streamerSubInferHoldTier,
   streamerSubMergeHold,
   streamerSubNotifyAppPlanWired,
