@@ -57,6 +57,9 @@ export function buildSpx0DteChain(): OptionChainResponse {
   };
 }
 
+/** ATM 0DTE call with crossed REST bid/ask in the fixture. */
+export const SPX_ATM_CALL_SYMBOL = schwabKey("SPX", 5900, "C");
+
 export function streamKeysFromChain(chain: OptionChainResponse): string[] {
   const keys = new Set<string>();
   for (const c of chain.calls) {

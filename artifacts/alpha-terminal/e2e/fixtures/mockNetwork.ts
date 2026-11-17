@@ -1,9 +1,23 @@
 import type { Page } from "@playwright/test";
 import type { OptionChainResponse } from "@workspace/api-client-react";
-import { buildSpx0DteChain, streamKeysFromChain } from "./spxChain.js";
+import { buildSpx0DteChain, SPX_ATM_CALL_SYMBOL, streamKeysFromChain } from "./spxChain.js";
 
 const CHAIN = buildSpx0DteChain();
 const OPTION_KEYS = streamKeysFromChain(CHAIN);
+
+export const QA_ACCOUNT_HASH = "qa-hash-1";
+
+const MOCK_ACCOUNT = {
+  hashValue: QA_ACCOUNT_HASH,
+  accountNumber: "···1234",
+  type: "MARGIN",
+  balances: {
+    buyingPower: 12_500,
+    liquidationValue: 30_000,
+    cashBalance: 8_000,
+    equity: 30_000,
+  },
+};
 
 function json(body: unknown, status = 200) {
   return {
@@ -13,8 +27,14 @@ function json(body: unknown, status = 200) {
   };
 }
 
-export async function installQaNetworkMocks(page: Page, opts?: { symbol?: string; aaplStock?: boolean }) {
+export type QaMockScenario = "default" | "fail" | "option-header";
+
+export async function installQaNetworkMocks(
+  page: Page,
+  opts?: { symbol?: string; aaplStock?: boolean; scenario?: QaMockScenario },
+) {
   const symbol = opts?.symbol ?? "SPX";
+  const scenario = opts?.scenario ?? "default";
 
   await page.route("**/*", async (route) => {
     const url = route.request().url();
@@ -23,12 +43,12 @@ export async function installQaNetworkMocks(page: Page, opts?: { symbol?: string
       return;
     }
 
-    if (url.includes("/api/market/options")) {
+    if (url.includes("/api/market/options") || url.includes("optionchain")) {
       await route.fulfill(json({ ...CHAIN, symbol }));
       return;
     }
 
-    if (url.includes("/api/market/quote")) {
+    if (url.includes("/api/market/quote") || url.includes("/quotes")) {
       if (opts?.aaplStock) {
         await route.fulfill(
           json({
@@ -77,8 +97,13 @@ export async function installQaNetworkMocks(page: Page, opts?: { symbol?: string
       return;
     }
 
+    if (url.includes("/api/portfolio/accounts") || url.includes("/portfolio/accounts")) {
+      await route.fulfill(json([MOCK_ACCOUNT]));
+      return;
+    }
+
     if (url.includes("/api/portfolio") || url.includes("/api/schwab")) {
-      await route.fulfill(json([]));
+      await route.fulfill(json([MOCK_ACCOUNT]));
       return;
     }
 
@@ -86,7 +111,41 @@ export async function installQaNetworkMocks(page: Page, opts?: { symbol?: string
   });
 
   await page.routeWebSocket(/\/api\/ws\/prices/, (ws) => {
-    ws.onMessage(() => {});
+    const pushOptionTicks = () => {
+      const now = Date.now();
+      for (const key of OPTION_KEYS) {
+        const call = CHAIN.calls.find((c) => (c as { schwabSymbol?: string }).schwabSymbol === key);
+        let bid = call?.bid ?? 1.1;
+        let ask = call?.ask ?? 1.2;
+        let last = bid != null && ask != null ? (bid + ask) / 2 : bid ?? ask;
+        if (key === SPX_ATM_CALL_SYMBOL && scenario === "option-header") {
+          last = 15.65;
+        }
+        if (key === SPX_ATM_CALL_SYMBOL && scenario === "fail") {
+          bid = 3.8;
+          ask = 3.2;
+          last = 3.5;
+        }
+        ws.send(
+          JSON.stringify({
+            event: "optionQuote",
+            data: {
+              key,
+              bid: bid ?? null,
+              ask: ask ?? null,
+              last,
+              delta: call?.delta ?? 0.5,
+              ts: now,
+            },
+          }),
+        );
+      }
+    };
+
+    ws.onMessage(() => {
+      pushSnapshot();
+      pushOptionTicks();
+    });
     const pushSnapshot = () => {
       ws.send(
         JSON.stringify({
@@ -99,44 +158,19 @@ export async function installQaNetworkMocks(page: Page, opts?: { symbol?: string
           },
         }),
       );
+      const portfolioPayload = {
+        event: "portfolio",
+        data: {
+          accounts: [MOCK_ACCOUNT],
+          orders: [],
+          status: "connected",
+        },
+      };
+      ws.send(JSON.stringify(portfolioPayload));
       ws.send(JSON.stringify({ event: "streamerStatus", data: { status: "connected" } }));
     };
     pushSnapshot();
-
-    const now = Date.now();
-    for (const key of OPTION_KEYS) {
-      const call = CHAIN.calls.find((c) => (c as { schwabSymbol?: string }).schwabSymbol === key);
-      const bid = call?.bid ?? 1.1;
-      const ask = call?.ask ?? 1.2;
-      ws.send(
-        JSON.stringify({
-          event: "optionQuote",
-          data: {
-            key,
-            bid: bid ?? null,
-            ask: ask ?? null,
-            last: bid != null && ask != null ? (bid + ask) / 2 : bid ?? ask,
-            delta: call?.delta ?? 0.5,
-            ts: now,
-          },
-        }),
-      );
-    }
-
-    // Illiquid tick for FAIL banner shots (AAPL option or wide SPX wing).
-    ws.send(
-      JSON.stringify({
-        event: "optionQuote",
-        data: {
-          key: "SPXW  261118C05900000",
-          bid: 0.05,
-          ask: 1.25,
-          last: 0.4,
-          delta: 0.52,
-          ts: now + 1,
-        },
-      }),
-    );
+    pushOptionTicks();
   });
 }
 
