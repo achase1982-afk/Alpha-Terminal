@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback, memo } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback, memo } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useActiveSymbol } from "@/components/dashboard/widgetSymbolContext";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 import { Reorder } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
-import { ActiveTraderDrawer, type ActiveTraderHandoff } from "@/components/ActiveTraderDrawer";
 
 const EPS = 0.0001;
 const COL_W = 74;
@@ -142,30 +141,6 @@ function getExpType(expStr: string): "Weekly" | "EOM" | "Quarterly" | null {
   }
   if (dow === 5 && date >= 15 && date <= 21) return null;
   return "Weekly";
-}
-
-function latchAtmStrike(
-  latch: { key: string; strike: number | null },
-  key: string,
-  price: number | null,
-  strikes: number[],
-): number | null {
-  if (latch.key !== key) {
-    latch.key = key;
-    latch.strike = null;
-  }
-  if (price == null || strikes.length === 0) return latch.strike;
-  const next = strikes[findATMIndex(strikes, price)];
-  const prev = latch.strike;
-  if (prev == null || next === prev) {
-    latch.strike = next;
-    return next;
-  }
-  const gap = Math.abs(next - prev) || 0.01;
-  if (Math.abs(price - next) + gap * 0.25 < Math.abs(price - prev)) {
-    latch.strike = next;
-  }
-  return latch.strike;
 }
 
 function findATMIndex(strikes: number[], lastPrice: number): number {
@@ -837,8 +812,8 @@ function MetricsStrip({ groups, lastPrice, earningsInfo, isFetching, hasData }: 
 }
 
 
-function StrikeCell({ strike, underlyingPrice, atmStrike }: { strike: number; underlyingPrice: number | null; atmStrike: number | null }) {
-  const isATM = atmStrike != null && strike === atmStrike;
+function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPrice: number | null }) {
+  const isATM = underlyingPrice != null && Math.abs(strike - underlyingPrice) < (underlyingPrice * 0.003);
 
   let moneynessLabel: string | null = null;
 
@@ -877,7 +852,6 @@ function StrikeCell({ strike, underlyingPrice, atmStrike }: { strike: number; un
 function OptionsGrid({
   rows,
   underlyingPrice,
-  atmStrike,
   columns,
   showCalls,
   showPuts,
@@ -890,7 +864,6 @@ function OptionsGrid({
 }: {
   rows: NormalizedRow[];
   underlyingPrice: number | null;
-  atmStrike: number | null;
   columns: ColumnDef[];
   showCalls: boolean;
   showPuts: boolean;
@@ -903,22 +876,38 @@ function OptionsGrid({
 }) {
   const sortedRows = useMemo(() => [...rows].sort((a, b) => a.strike - b.strike), [rows]);
 
+  const transitionIdx = useMemo(() => {
+    if (underlyingPrice == null) return -1;
+    return sortedRows.findIndex(r => r.strike > underlyingPrice + EPS);
+  }, [sortedRows, underlyingPrice]);
+
+  const priceAboveAll = useMemo(() => {
+    if (underlyingPrice == null || sortedRows.length === 0) return false;
+    return underlyingPrice > sortedRows[sortedRows.length - 1].strike + EPS;
+  }, [underlyingPrice, sortedRows]);
+
   const wingWidth = columns.length * COL_W;
 
-  const atmLineTop = useMemo(() => {
-    if (atmStrike == null) return -1;
-    const idx = sortedRows.findIndex((r) => r.strike === atmStrike);
-    return idx >= 0 ? idx * ROW_H : -1;
-  }, [atmStrike, sortedRows]);
+  const callWingRef = useRef<HTMLDivElement>(null);
+  const putWingRef = useRef<HTMLDivElement>(null);
 
-  const wingStyle: React.CSSProperties = {
-    width: wingWidth,
-    flex: "0 0 auto",
+  const atmLineTop = useMemo(() => {
+    if (transitionIdx >= 0) return transitionIdx * ROW_H;
+    if (priceAboveAll && sortedRows.length > 0) return sortedRows.length * ROW_H;
+    return -1;
+  }, [transitionIdx, priceAboveAll, sortedRows.length]);
+
+  const wingScrollStyle: React.CSSProperties = {
+    overflowX: "auto",
+    overflowY: "hidden",
+    scrollbarWidth: "none" as React.CSSProperties["scrollbarWidth"],
+    msOverflowStyle: "none",
+    willChange: "transform",
   };
 
   return (
     <div>
-      <div style={{ display: "flex", fontVariantNumeric: "tabular-nums", fontFamily: MONO, position: "relative", width: (showCalls ? wingWidth : 0) + STRIKE_W + (showPuts ? wingWidth : 0) }}>
+      <div style={{ display: "flex", fontVariantNumeric: "tabular-nums", fontFamily: MONO, position: "relative" }}>
         {atmLineTop >= 0 && (
           <div
             className="pointer-events-none"
@@ -927,8 +916,11 @@ function OptionsGrid({
         )}
 
         {showCalls && (
-          <div style={wingStyle}>
-            <div style={{ width: wingWidth }}>
+          <div
+            ref={callWingRef}
+            style={{ ...wingScrollStyle, flex: 1 }}
+          >
+            <div style={{ minWidth: wingWidth }}>
               {sortedRows.map((row) => {
                 const callKey = row.call ? makeLegKey(row.call, "CALL") : "";
                 const callLeg = callKey ? selectedLegs.get(callKey) : undefined;
@@ -938,11 +930,9 @@ function OptionsGrid({
                 return (
                   <div
                     key={row.strike}
-                    data-atm-row={row.strike === atmStrike ? "1" : undefined}
                     className="flex"
                     style={{
                       height: ROW_H,
-                      minHeight: ROW_H,
                       borderBottom: `1px solid ${BORDER_ROW}`,
                       background: bg,
                       boxShadow: isCallSelected ? `inset 2px 0 0 ${SEL_BORDER_COLOR}` : undefined,
@@ -975,13 +965,16 @@ function OptionsGrid({
 
         <div className="flex-none" style={{ width: STRIKE_W, background: accentHex, borderLeft: `1px solid ${accentHex}`, borderRight: `1px solid ${accentHex}`, zIndex: 10, position: "relative" }}>
           {sortedRows.map((row) => (
-            <StrikeCell key={row.strike} strike={row.strike} underlyingPrice={underlyingPrice} atmStrike={atmStrike} />
+            <StrikeCell key={row.strike} strike={row.strike} underlyingPrice={underlyingPrice} />
           ))}
         </div>
 
         {showPuts && (
-          <div style={wingStyle}>
-            <div style={{ width: wingWidth }}>
+          <div
+            ref={putWingRef}
+            style={{ ...wingScrollStyle, flex: 1 }}
+          >
+            <div style={{ minWidth: wingWidth }}>
               {sortedRows.map((row) => {
                 const putKey = row.put ? makeLegKey(row.put, "PUT") : "";
                 const putLeg = putKey ? selectedLegs.get(putKey) : undefined;
@@ -992,10 +985,8 @@ function OptionsGrid({
                   <div
                     key={row.strike}
                     className="flex"
-                    data-atm-row={!showCalls && row.strike === atmStrike ? "1" : undefined}
                     style={{
                       height: ROW_H,
-                      minHeight: ROW_H,
                       borderBottom: `1px solid ${BORDER_ROW}`,
                       background: bg,
                       boxShadow: isPutSelected ? `inset -2px 0 0 ${SEL_BORDER_COLOR}` : undefined,
@@ -1031,7 +1022,7 @@ function OptionsGrid({
 }
 
 function ExpirationSection({
-  group, isOpen, onToggle, stickyTop, underlyingPrice, atmStrike,
+  group, isOpen, onToggle, stickyTop, underlyingPrice,
   activeColumns, showCalls, showPuts, selectedLegs,
   onToggleLeg, onLongPressCell, showInlineGreeks, accentHex,
 }: {
@@ -1040,7 +1031,6 @@ function ExpirationSection({
   onToggle: () => void;
   stickyTop: number;
   underlyingPrice: number | null;
-  atmStrike: number | null;
   activeColumns: ColumnDef[];
   showCalls: boolean;
   showPuts: boolean;
@@ -1102,7 +1092,6 @@ function ExpirationSection({
         <OptionsGrid
           rows={group.rows}
           underlyingPrice={underlyingPrice}
-          atmStrike={atmStrike}
           columns={activeColumns}
           showCalls={showCalls}
           showPuts={showPuts}
@@ -1134,14 +1123,12 @@ function OptionsChainHeader({
   onBuildStrategy?: () => void;
 }) {
   const wingWidth = columns.length * COL_W;
-  const chainWidth = (showCalls ? wingWidth : 0) + STRIKE_W + (showPuts ? wingWidth : 0);
 
   return (
     <>
       <div
         style={{
           display: "flex",
-          width: chainWidth,
           height: HEADER_H,
           background: BG_HEADER,
           borderBottom: `1px solid ${BORDER}`,
@@ -1152,7 +1139,7 @@ function OptionsChainHeader({
         }}
       >
         {showCalls && (
-          <div style={{ width: wingWidth, flex: "0 0 auto", textAlign: "center" }}>
+          <div style={{ flex: 1, textAlign: "center" }}>
             <span style={{ fontSize: 12, letterSpacing: "0.08em", color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>CALLS</span>
           </div>
         )}
@@ -1175,7 +1162,7 @@ function OptionsChainHeader({
           </button>
         </div>
         {showPuts && (
-          <div style={{ width: wingWidth, flex: "0 0 auto", textAlign: "center" }}>
+          <div style={{ flex: 1, textAlign: "center" }}>
             <span style={{ fontSize: 12, letterSpacing: "0.08em", color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>PUTS</span>
           </div>
         )}
@@ -1184,7 +1171,6 @@ function OptionsChainHeader({
       <div
         style={{
           display: "flex",
-          width: chainWidth,
           height: SUB_HEADER_H,
           background: "#111111",
           borderBottom: `1px solid ${BORDER}`,
@@ -1196,8 +1182,8 @@ function OptionsChainHeader({
         }}
       >
         {showCalls && (
-          <div style={{ width: wingWidth, flex: "0 0 auto", height: SUB_HEADER_H }}>
-            <div style={{ display: "flex", alignItems: "center", width: wingWidth, height: SUB_HEADER_H }}>
+          <div style={{ flex: 1, overflow: "hidden", height: SUB_HEADER_H }}>
+            <div style={{ display: "flex", alignItems: "center", minWidth: wingWidth, height: SUB_HEADER_H }}>
               {columns.map(col => (
                 <div key={col.id} style={{ width: COL_W, flexShrink: 0, padding: "0 4px" }}>
                   <span style={{ fontSize: 10, color: DIM, fontFamily: MONO, fontWeight: FW_LIGHT, textTransform: "uppercase", letterSpacing: "0.08em" }}>{col.topLabel}</span>
@@ -1210,8 +1196,8 @@ function OptionsChainHeader({
           <span style={{ fontSize: 9, color: WHITE, fontFamily: MONO, fontWeight: FW_PREMIUM, letterSpacing: "0.08em" }}>STRIKE</span>
         </div>
         {showPuts && (
-          <div style={{ width: wingWidth, flex: "0 0 auto", height: SUB_HEADER_H }}>
-            <div style={{ display: "flex", alignItems: "center", width: wingWidth, height: SUB_HEADER_H }}>
+          <div style={{ flex: 1, overflow: "hidden", height: SUB_HEADER_H }}>
+            <div style={{ display: "flex", alignItems: "center", minWidth: wingWidth, height: SUB_HEADER_H }}>
               {columns.map(col => (
                 <div key={col.id} style={{ width: COL_W, flexShrink: 0, padding: "0 4px" }}>
                   <span style={{ fontSize: 10, color: DIM, fontFamily: MONO, fontWeight: FW_LIGHT, textTransform: "uppercase", letterSpacing: "0.08em" }}>{col.topLabel}</span>
@@ -1241,12 +1227,11 @@ interface OptionsTabProps {
   stickyOffset?: number;
   onTradeSingle?: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
   onOpenStrategyBuilder?: (strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>, preSelectedLegs?: { contract: Contract; type: "CALL" | "PUT"; side?: "bid" | "ask" }[]) => void;
-  onHandoffActiveTrader?: (handoff: ActiveTraderHandoff) => void;
 }
 
 export type { Contract as OptionsContract };
 
-export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSingle, onOpenStrategyBuilder, onHandoffActiveTrader }: OptionsTabProps) {
+export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSingle, onOpenStrategyBuilder }: OptionsTabProps) {
   const { accessToken } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken })));
   // Widget pin wins inside the dashboard; global symbol everywhere else.
   const symbol = useActiveSymbol();
@@ -1466,54 +1451,14 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
   const showCalls = contractType !== "PUT";
   const showPuts = contractType !== "CALL";
   const hasData = data && groups.length > 0;
-  const chainScrollRef = useRef<HTMLDivElement>(null);
-  const centeredKeyRef = useRef<string | null>(null);
-  const atmLatchRef = useRef<{ key: string; strike: number | null }>({ key: "", strike: null });
-  const drawerRef = useRef<HTMLDivElement>(null);
-  const [drawerH, setDrawerH] = useState(0);
-  const frontGroup = groups.find((g) => expandedExps.has(g.expiration)) ?? null;
-  const atmStrike = latchAtmStrike(
-    atmLatchRef.current,
-    `${symbol}|${frontGroup?.expiration ?? ""}`,
-    underlyingPrice,
-    frontGroup?.rows.map((r) => r.strike) ?? [],
-  );
   const apiError = (rawData as Record<string, unknown> | undefined)?.error as string | undefined;
 
   const selCount = selectedLegs.size;
 
-  useLayoutEffect(() => {
-    if (selCount === 0) {
-      setDrawerH(0);
-      return;
-    }
-    const h = drawerRef.current?.offsetHeight ?? 0;
-    setDrawerH(h);
-  }, [selCount, legLimitShake]);
-
-  useEffect(() => {
-    const el = chainScrollRef.current;
-    if (!el || !frontGroup || atmStrike == null) return;
-    const key = `${symbol}|${frontGroup.expiration}|${strikeCount}|${activeColumns.length}|${showCalls ? 1 : 0}${showPuts ? 1 : 0}`;
-    if (centeredKeyRef.current === key) return;
-    const frame = requestAnimationFrame(() => {
-      const node = el.querySelector("[data-atm-row='1']");
-      if (!(node instanceof HTMLElement)) return;
-      const rowRect = node.getBoundingClientRect();
-      const scRect = el.getBoundingClientRect();
-      const delta = rowRect.top - scRect.top - el.clientHeight / 2 + rowRect.height / 2;
-      el.scrollTop += delta;
-      const callsW = showCalls ? activeColumns.length * COL_W : 0;
-      el.scrollLeft = Math.max(0, callsW + STRIKE_W / 2 - el.clientWidth / 2);
-      centeredKeyRef.current = key;
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [frontGroup, atmStrike, symbol, strikeCount, activeColumns.length, showCalls, showPuts]);
-
   return (
-    <div style={{ background: BG, display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }} className="relative">
+    <div style={{ background: BG }} className="relative">
       <div
-        className="flex items-center justify-between w-full px-3 shrink-0 z-40"
+        className="flex items-center justify-between w-full px-3 shrink-0 sticky z-40"
         style={{ top: stickyOffset, height: TOOLBAR_H, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
       >
         <div className="flex items-center gap-1.5">
@@ -1564,20 +1509,7 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
         />
       </div>
 
-      <div
-        ref={chainScrollRef}
-        className="relative"
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflow: "auto",
-          overscrollBehavior: "contain",
-          WebkitOverflowScrolling: "touch",
-          background: BG,
-          paddingBottom: drawerH,
-          touchAction: "pan-x pan-y",
-        }}
-      >
+      <div className="relative" style={{ background: BG, paddingBottom: selCount > 0 ? 52 : 0 }}>
         {isLoading && !data && (
           <div className="p-4 space-y-1">
             {Array.from({ length: strikeCount }).map((_, i) => (
@@ -1620,12 +1552,12 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
         )}
 
         {hasData && (
-          <div style={{ width: "max-content", minWidth: "100%" }}>
+          <div>
             <OptionsChainHeader
               showCalls={showCalls}
               showPuts={showPuts}
               columns={activeColumns}
-              stickyTop={0}
+              stickyTop={stickyOffset + TOOLBAR_H}
               onColumnsEditor={() => setColumnsEditorOpen(true)}
               onBuildStrategy={onOpenStrategyBuilder ? handleBuildStrategy : undefined}
             />
@@ -1637,9 +1569,8 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
                   group={group}
                   isOpen={isOpen}
                   onToggle={() => toggleExp(group.expiration)}
-                  stickyTop={HEADER_H + SUB_HEADER_H}
+                  stickyTop={stickyOffset + TOOLBAR_H + HEADER_H + SUB_HEADER_H}
                   underlyingPrice={underlyingPrice}
-                  atmStrike={group.expiration === frontGroup?.expiration ? atmStrike : null}
                   activeColumns={activeColumns}
                   showCalls={showCalls}
                   showPuts={showPuts}
@@ -1663,30 +1594,40 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
       </div>
 
       {selCount > 0 && (
-        <ActiveTraderDrawer
-          ref={drawerRef}
-          symbol={symbol}
-          limitMessage={legLimitShake ? "Max 4 legs" : null}
-          legs={[...selectedLegs.values()].map((leg) => ({
-            key: makeLegKey(leg.contract, leg.type),
-            right: leg.type,
-            side: leg.side,
-            strike: leg.contract.strike,
-            expiration: leg.contract.expiration,
-            bid: leg.contract.bid,
-            ask: leg.contract.ask,
-            schwabSymbol: leg.contract.schwabSymbol,
-          }))}
-          onClear={handleClearSelection}
-          onRemove={(key) => {
-            setSelectedLegs((prev) => {
-              const next = new Map(prev);
-              next.delete(key);
-              return next;
-            });
+        <div
+          className={`fixed left-0 right-0 z-[100] flex items-center justify-between px-4 py-3${legLimitShake ? " animate-[shake_0.4s_ease-in-out]" : ""}`}
+          style={{
+            bottom: 80,
+            background: legLimitShake ? `linear-gradient(180deg, #1a0505 0%, #000000 100%)` : "linear-gradient(180deg, #0a0a0a 0%, #000000 100%)",
+            borderTop: `1px solid ${legLimitShake ? "#ff4b5c" : GOLD}30`,
+            boxShadow: `0 -4px 24px rgba(0,0,0,0.8), 0 -1px 0 ${GOLD}15`,
+            fontFamily: MONO,
+            transition: "background 0.3s, border-color 0.3s",
           }}
-          onHandoff={(handoff) => onHandoffActiveTrader?.(handoff)}
-        />
+        >
+          <button
+            onClick={handleBuildStrategy}
+            className="font-mono text-sm font-bold tracking-wider px-6 py-2.5 rounded-lg transition-all active:scale-95"
+            style={{
+              background: GOLD,
+              color: "#000",
+              boxShadow: `0 2px 12px ${GOLD}40`,
+            }}
+          >
+            Next
+          </button>
+          {legLimitShake && (
+            <span className="text-[11px] font-mono" style={{ color: "#ff4b5c" }}>Max 4 legs</span>
+          )}
+          <span className="text-[11px] font-mono" style={{ color: selCount >= MAX_OPTION_LEGS ? GOLD : GRAY }}>{selCount}/{MAX_OPTION_LEGS}</span>
+          <button
+            onClick={handleClearSelection}
+            className="px-4 py-3 rounded-lg text-[13px] tracking-wider transition-colors"
+            style={{ color: GRAY, background: "transparent", border: `1px solid ${BORDER}`, fontWeight: FW_LIGHT }}
+          >
+            CLEAR
+          </button>
+        </div>
       )}
 
       {longPressTarget && (
