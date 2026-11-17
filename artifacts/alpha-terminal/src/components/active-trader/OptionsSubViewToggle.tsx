@@ -14,12 +14,14 @@ export const OptionsSubViewToggle = memo(function OptionsSubViewToggle({
   onChange,
   accentHex,
 }: OptionsSubViewToggleProps) {
-  const pill = "flex-1 py-1.5 text-center rounded-full border text-[10px] font-medium tracking-widest uppercase transition-colors";
+  const pill = "px-4 py-1 text-center rounded-full border text-[10px] font-medium tracking-widest uppercase transition-colors whitespace-nowrap";
   return (
-    <div
-      className="flex gap-1 p-1 rounded-full border mx-3 mt-2 mb-1"
-      style={{ background: BG_EXP_BAR, borderColor: BORDER, fontFamily: MONO, fontWeight: FW_NORMAL }}
-    >
+    <div className="flex justify-center px-3 mt-2 mb-1">
+      <div
+        className="inline-flex gap-0.5 p-0.5 rounded-full border"
+        data-at-subview-toggle
+        style={{ background: BG_EXP_BAR, borderColor: BORDER, fontFamily: MONO, fontWeight: FW_NORMAL }}
+      >
       <button
         type="button"
         className={pill}
@@ -44,6 +46,7 @@ export const OptionsSubViewToggle = memo(function OptionsSubViewToggle({
       >
         Active Trader
       </button>
+      </div>
     </div>
   );
 });

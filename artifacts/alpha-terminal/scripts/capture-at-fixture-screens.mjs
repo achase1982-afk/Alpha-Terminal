@@ -22,7 +22,7 @@ const allScenes = [
   {
     name: "at-01-settings-collapsed-440x956.png",
     url: `${BASE}?scene=settings-collapsed`,
-    waitSelector: "[data-at-strike]",
+    waitSelector: "[data-at-key-levels]",
     minRows: 10,
   },
   {
@@ -49,9 +49,9 @@ const allScenes = [
   {
     name: "at-03-confirm-review-440x956.png",
     url: `${BASE}?scene=confirm`,
-    waitText: "Order Confirmation",
     minRows: 0,
-    confirmDelay: 4500,
+    confirmReview: true,
+    confirmDelay: 12000,
   },
 ];
 
@@ -155,6 +155,17 @@ for (const scene of scenes) {
   }
   if (scene.minRows > 0) {
     await waitForLadderRows(page, scene.minRows);
+  }
+  if (scene.confirmReview) {
+    await page.waitForSelector("[data-at-strike]", { timeout: 60_000 }).catch(() => undefined);
+    await page.waitForTimeout(scene.confirmDelay ?? 6000);
+    const trigger = page.locator("[data-at-trigger-confirm]");
+    const sendBtn = page.getByRole("button", { name: /Send to Schwab/i });
+    if (!(await trigger.isVisible().catch(() => false))) {
+      await sendBtn.waitFor({ state: "visible", timeout: 45_000 });
+    } else {
+      await trigger.waitFor({ state: "visible", timeout: 15_000 });
+    }
   }
   if (scene.expandSettings) {
     const expanded = page.locator("[data-at-settings-expanded]");

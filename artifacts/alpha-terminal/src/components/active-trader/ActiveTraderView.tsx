@@ -35,7 +35,9 @@ import {
 import { planAtOrderLegs } from "@/lib/active-trader/atSchwabOrderBuilder";
 import { AT_VERTICAL_LADDER_ENABLED } from "@/lib/active-trader/atOrderSend";
 import { toast } from "@/hooks/use-toast";
-import { AtSettingsPanel } from "./AtSettingsPanel";
+import { AtSettingsExpanded, AtSettingsSummary } from "./AtSettingsPanel";
+import { RegimeStrip } from "./RegimeStrip";
+import { FilterStrip } from "./FilterStrip";
 import {
   loadAtSettingsPanelOpen,
   saveAtSettingsPanelOpen,
@@ -45,7 +47,6 @@ import { useAtLiveZones } from "@/lib/active-trader/useAtLiveZones";
 import type { AtVerticalWidth } from "@/lib/active-trader/activeTraderPrefs";
 import { AT_LADDER_PANEL_BG } from "@/lib/active-trader/atLadderLayout";
 import { AtLadderSkeleton } from "./AtLadderSkeleton";
-import { AtKeyLevelsStrip } from "./AtKeyLevelsStrip";
 import { AT_LADDER_GRID, AT_LADDER_GROUP_HDR_H, AT_LADDER_ROW_H } from "@/lib/active-trader/atLadderLayout";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { useUICustomizationStore } from "@/lib/ui-customization-store";
@@ -60,6 +61,8 @@ export interface AtExpirationGroup {
 interface ActiveTraderViewProps {
   symbol: string;
   groups: AtExpirationGroup[];
+  /** Selected chain expiration (Options tab syncs via `atChromeStore`). */
+  activeExpiration?: string;
   underlyingPrice: number | null;
   stickyOffset: number;
   accentHex: string;
@@ -85,6 +88,7 @@ const LADDER_RADIUS = 20;
 export const ActiveTraderView = memo(function ActiveTraderView({
   symbol,
   groups,
+  activeExpiration,
   underlyingPrice,
   stickyOffset,
   accentHex,
@@ -95,7 +99,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   initialTradeSelection,
   settingsPanelInitiallyOpen,
 }: ActiveTraderViewProps) {
-  const primary = groups[0];
+  const primary =
+    groups.find((g) => g.expiration === activeExpiration) ?? groups[0];
   const ladderDataReady = !!(primary && primary.rows.length > 0);
   const [windowSec, setWindowSec] = useState<30 | 60 | 300>(30);
   const [laneFilters, setLaneFilters] = useState<Record<LaneFilterKey, boolean>>({
@@ -463,61 +468,69 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   const fixtureTight = !!presentation?.skipNetwork;
   const ladderRowH = fixtureTight ? 36 : AT_LADDER_ROW_H;
-  const keyLevelsTop = stickyOffset + chromeHeight;
-  const keyLevelsBand = fixtureTight ? 58 : 68;
-  const ladderHeaderTop = keyLevelsTop + keyLevelsBand;
+  const chromeTop = stickyOffset;
+  const ladderHeaderTop = chromeTop + chromeHeight;
   const ladderHdrStack = AT_LADDER_GROUP_HDR_H + ladderRowH;
   const ladderReserve = fixtureTight ? 32 : atHeaderCompact ? 44 : 80;
   const ladderMaxHeight = `max(360px, calc(100dvh - ${ladderHeaderTop + ladderHdrStack + ladderReserve}px))`;
 
   const expiryLabel = primary?.dateLabel ?? "\u2014";
-  const dteLabel = primary ? (primary.dte === 0 ? "0DTE" : `${primary.dte}D`) : "0DTE";
+  const pressureHeadline = presentation?.headline?.trim() ? presentation.headline : "";
 
   return (
     <div style={{ background: BG }}>
       <div ref={chromeRef}>
-        <div className="sticky z-[39]" style={{ top: stickyOffset }}>
-          <AtSettingsPanel
+        <div className="sticky z-[39]" style={{ top: chromeTop }}>
+          <RegimeStrip
+            embedded
+            accentHex={accentHex}
+            zones={zones}
+            regimeLabel={presentation?.regimeLabel ?? regimeLabel}
+            regimeDegraded={presentation?.regimeDegraded ?? regimeDegraded}
+            sessionLabel={presentation?.sessionLabel}
+            headline={pressureHeadline}
+            headerCompact={atHeaderCompact}
+            onExpandHeader={restoreSavedHeaderMode}
+            onCompactHeader={reapplyAtCompactHeader}
+          />
+          <FilterStrip
+            embedded
+            accentHex={accentHex}
+            filters={laneFilters}
+            onToggle={toggleLane}
+            classifiedPct={classifiedPct}
+            windowLabel={`last ${windowSec}s`}
+          />
+          <AtSettingsExpanded
             open={settingsOpen}
-            onToggle={toggleSettings}
             accentHex={accentHex}
             prefs={prefs}
             onPrefsChange={onPrefsChange}
             instrumentLabel={instrumentLabel}
             onSell={() => selected && handleTradeIntent(selected.contract, "SELL", selected.type)}
             onBuy={() => selected && handleTradeIntent(selected.contract, "BUY", selected.type)}
-            autoSendArmBlock={autoSendArmBlock}
             accountLabel={accountLabel}
             isPaper={isPaper}
-            sessionLabel={presentation?.sessionLabel}
-            laneFilters={laneFilters}
-            onToggleLane={toggleLane}
-            classifiedPct={classifiedPct}
-            windowLabel={`last ${windowSec}s`}
             primaryInstruction={templatePrimaryInstruction}
             limitMid={templateLimitMid}
-            expiryLabel={expiryLabel}
-            dteLabel={dteLabel}
+            autoSendArmBlock={autoSendArmBlock}
             windowSec={windowSec}
             onWindowSecChange={setWindowSec}
           />
         </div>
       </div>
 
-      <div style={{ top: keyLevelsTop }} className="sticky z-[38]">
-        <AtKeyLevelsStrip
-          accentHex={accentHex}
-          zones={zones}
-          regimeLabel={presentation?.regimeLabel ?? regimeLabel}
-          regimeDegraded={presentation?.regimeDegraded ?? regimeDegraded}
-          spot={underlyingPrice}
-          headerCompact={atHeaderCompact}
-          onExpandHeader={restoreSavedHeaderMode}
-          onCompactHeader={reapplyAtCompactHeader}
-        />
-      </div>
-
       <div className="sticky z-[36]" style={{ top: ladderHeaderTop, background: BG_HEADER, borderBottom: `1px solid ${BORDER}` }}>
+        <AtSettingsSummary
+          slim
+          open={settingsOpen}
+          onToggle={toggleSettings}
+          prefs={prefs}
+          primaryInstruction={templatePrimaryInstruction}
+          limitMid={templateLimitMid}
+          expiryLabel={expiryLabel}
+          instrumentLabel={instrumentLabel}
+        />
         <div
           className="grid items-center px-0.5"
           style={{

@@ -1,6 +1,8 @@
 import { lazy, Suspense, useState, useEffect, useLayoutEffect, useRef, useCallback, useId, type ComponentProps } from "react";
 import { Sidebar, type SidebarHandle } from "@/components/Sidebar";
 import { MetricsBar, VolumeBar } from "@/components/MetricsBar";
+import { AtSymbolHeader } from "@/components/active-trader/AtSymbolHeader";
+import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { TradingChart } from "@/components/TradingChart";
 import { MacroBar } from "@/components/MacroBar";
 import { TickerTape } from "@/components/TickerTape";
@@ -365,6 +367,8 @@ export default function TerminalPage() {
     }
     return "news";
   });
+  const atSubViewActive = useAtChromeStore((s) => s.subViewIsAt);
+  const atOptionsChrome = activeBottom === "markets" && contextTab === "options" && atSubViewActive;
 
   useLayoutEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -980,8 +984,14 @@ export default function TerminalPage() {
                 {showMiniCards && !isCompact && <MacroBar />}
                 <div ref={stickyWrapRef} className="sticky top-0 z-40 bg-background shrink-0">
                   {schwabLinked && <SchwabAccountHeader compact />}
-                  <MetricsBar compact={isScrolled} onTrade={openOrder} />
-                  <VolumeBar />
+                  {atOptionsChrome ? (
+                    <AtSymbolHeader />
+                  ) : (
+                    <>
+                      <MetricsBar compact={isScrolled} onTrade={openOrder} />
+                      <VolumeBar />
+                    </>
+                  )}
                   <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
                   {contextTab === "company" && (
                     <CompanySectionTabBar page={companyPage} onPageChange={setCompanyPage} companyTabsId={companyTabsId} />
@@ -1065,6 +1075,7 @@ export default function TerminalPage() {
                     }
                   >
                     {contextTab === "news" && <NewsTab />}
+                    {contextTab === "options" && atSubViewActive ? <AtSymbolHeader /> : null}
                     {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} onActiveTraderReview={handleActiveTraderReview} />}
                     {contextTab === "company" && (
                       <CompanySwipablePages
@@ -1106,8 +1117,14 @@ export default function TerminalPage() {
             {activeBottom === "markets" && (
               <div className="flex min-h-0 flex-1 flex-col">
                 <div className="shrink-0 border-b border-zinc-800/60" style={{ background: "#0a0a0a" }}>
-                  <MetricsBar compact={isScrolled} onTrade={openOrder} />
-                  <VolumeBar />
+                  {atOptionsChrome ? (
+                    <AtSymbolHeader />
+                  ) : (
+                    <>
+                      <MetricsBar compact={isScrolled} onTrade={openOrder} />
+                      <VolumeBar />
+                    </>
+                  )}
                 </div>
                 <div ref={stickyWrapRef} className="sticky top-0 z-40 shrink-0 bg-background">
                   <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />

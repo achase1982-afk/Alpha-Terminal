@@ -1,9 +1,8 @@
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect } from "react";
 import { useLocation } from "wouter";
 import TerminalPage from "@/pages/Terminal";
 import { registerAtFixtureFromLocation } from "./active-trader/registerAtFixture";
 
-/** Must register fixture before Terminal's first paint (OptionsTab reads override in useState). */
 function syncRegisterFromLocation() {
   registerAtFixtureFromLocation();
   try {
@@ -13,17 +12,13 @@ function syncRegisterFromLocation() {
   }
 }
 
+/** Register once when the dev chunk loads — before the first Terminal paint. */
+if (typeof window !== "undefined" && window.location.pathname.includes("/dev/active-trader")) {
+  syncRegisterFromLocation();
+}
+
 export default function ActiveTraderFixtureDevPage() {
   const [location] = useLocation();
-  const lastSearch = useRef("");
-
-  if (typeof window !== "undefined") {
-    const search = window.location.search;
-    if (search !== lastSearch.current) {
-      lastSearch.current = search;
-      syncRegisterFromLocation();
-    }
-  }
 
   useLayoutEffect(() => {
     syncRegisterFromLocation();

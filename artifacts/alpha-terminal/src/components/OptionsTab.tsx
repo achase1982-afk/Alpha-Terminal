@@ -32,6 +32,7 @@ import { ActiveTraderView } from "@/components/active-trader/ActiveTraderView";
 import { OptionsSubViewToggle, type OptionsSubView } from "@/components/active-trader/OptionsSubViewToggle";
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
+import { formatAtExpiryPill } from "@/lib/active-trader/atExpiryPill";
 import { resolveAtmStrike } from "@workspace/order-ticket-math";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import {
@@ -1242,6 +1243,9 @@ export function OptionsTab({
   );
   const enterActiveTrader = useAtChromeStore((s) => s.enterActiveTrader);
   const leaveActiveTrader = useAtChromeStore((s) => s.leaveActiveTrader);
+  const setAtExpiryChrome = useAtChromeStore((s) => s.setAtExpiryChrome);
+  const clearAtExpiryChrome = useAtChromeStore((s) => s.clearAtExpiryChrome);
+  const [atExpiration, setAtExpiration] = useState<string | null>(null);
   useEffect(() => {
     if (optionsSubView === "at") {
       enterActiveTrader();
@@ -1380,6 +1384,29 @@ export function OptionsTab({
     puts.forEach(c => { c.streamKey = c.schwabSymbol || buildSchwabOptionKey(symbol, c.expiration, c.strike, "P"); });
     return buildExpirationGroups(calls, puts, underlyingPrice);
   }, [data, underlyingPrice, symbol]);
+
+  useEffect(() => {
+    if (!groups.length) return;
+    setAtExpiration((prev) => {
+      if (prev && groups.some((g) => g.expiration === prev)) return prev;
+      return groups[0].expiration;
+    });
+  }, [groups]);
+
+  useEffect(() => {
+    if (optionsSubView !== "at" || !groups.length || !atExpiration) {
+      if (optionsSubView !== "at") clearAtExpiryChrome();
+      return;
+    }
+    setAtExpiryChrome({
+      options: groups.map((g) => ({
+        expiration: g.expiration,
+        pillLabel: formatAtExpiryPill(g.expiration, g.dte, symbol),
+      })),
+      selectedExpiration: atExpiration,
+      onSelect: setAtExpiration,
+    });
+  }, [optionsSubView, groups, atExpiration, symbol, setAtExpiryChrome, clearAtExpiryChrome]);
 
   useChainOptionHold(
     optionsSubView === "chain" ? chainHoldSig?.holdSig : undefined,
@@ -1662,8 +1689,9 @@ export function OptionsTab({
         <ActiveTraderView
           symbol={symbol}
           groups={atGroups}
+          activeExpiration={atExpiration ?? undefined}
           underlyingPrice={underlyingPrice}
-          stickyOffset={stickyOffset + 44}
+          stickyOffset={stickyOffset + 36}
           accentHex={accentHex}
           holdSubs={{ subscribeOptionSymbols, releaseOptionHold }}
           onAddLeg={(contract, type) => handleToggleLeg(contract, type, "ask")}
