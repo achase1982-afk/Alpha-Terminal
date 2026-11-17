@@ -18,6 +18,7 @@ import SchwabSessionExpiredDialog from "@/components/SchwabSessionExpiredDialog"
 import StrategistJobBackgroundSync from "@/components/StrategistJobBackgroundSync";
 import { installBrowserTelemetryCapture } from "@/lib/browserTelemetry";
 import { useShallow } from "zustand/react/shallow";
+import QAHarness from "@/pages/QAHarness";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -200,8 +201,11 @@ function BrowserTelemetryInstaller() {
 }
 
 function Router() {
+  const qaHarness = import.meta.env.VITE_QA_HARNESS === "true";
+  
   return (
     <Switch>
+      <Route path="/qa" component={QAHarness} />
       <Route path="/" component={TerminalPage} />
       <Route component={NotFound} />
     </Switch>
