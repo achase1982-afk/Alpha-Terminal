@@ -395,9 +395,18 @@ const DataCell = memo(function DataCell({
   const startPos = useRef<{ x: number; y: number } | null>(null);
   const SWIPE_THRESHOLD = 10;
 
-  const topVal = getStreamVal(tick, col.topKey) ?? getContractVal(contract, col.topKey);
   const isBid = col.id === "bid";
   const isAsk = col.id === "ask";
+  const paired = resolvePairedBidAsk({
+    streamBid: tick?.bid ?? undefined,
+    streamAsk: tick?.ask ?? undefined,
+    streamTs: tick?.ts,
+    contractBid: contract?.bid,
+    contractAsk: contract?.ask,
+  });
+  const topVal: number | undefined = (isBid || isAsk) && paired
+    ? (paired.crossed ? undefined : (isBid ? paired.bid : paired.ask))
+    : (getStreamVal(tick, col.topKey) ?? getContractVal(contract, col.topKey));
   const bottomVal = col.bottomKey
     ? (getStreamVal(tick, col.bottomKey) ?? getContractVal(contract, col.bottomKey))
     : undefined;
@@ -408,8 +417,8 @@ const DataCell = memo(function DataCell({
   const isGreek = col.group === "Greeks";
   const isIV = col.id === "iv";
   const isPrice = isBid || isAsk;
-  const liveBid = paired?.bid;
-  const liveAsk = paired?.ask;
+  const liveBid = paired?.crossed ? undefined : paired?.bid;
+  const liveAsk = paired?.crossed ? undefined : paired?.ask;
   const quoteState = isPrice
     ? (paired?.crossed ? "crossed" : quoteSideState(liveBid, liveAsk))
     : "ok";
