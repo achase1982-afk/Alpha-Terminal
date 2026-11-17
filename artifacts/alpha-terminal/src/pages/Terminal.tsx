@@ -793,10 +793,7 @@ export default function TerminalPage() {
   };
 
   return (
-    <div
-      className="app-shell bg-background h-[100dvh] flex flex-col overflow-hidden selection:bg-primary/30 selection:text-white"
-      style={{ ["--alpha-bottom-chrome" as string]: !isWide ? "calc(76px + env(safe-area-inset-bottom, 0px))" : "env(safe-area-inset-bottom, 0px)" }}
-    >
+    <div className="app-shell bg-background h-[100dvh] flex flex-col overflow-hidden selection:bg-primary/30 selection:text-white">
 
       <header id="terminal-header" className="shrink-0 bg-card z-[105] border-b border-card-border safe-top">
         <div className="flex items-center h-12 px-4 bg-card">
@@ -918,7 +915,7 @@ export default function TerminalPage() {
             ref={scrollRef}
             onScroll={handleScroll}
             className={`app-content flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden ${
-              activeBottom === "markets" && (contextTab === "newsChat" || contextTab === "options")
+              activeBottom === "markets" && contextTab === "newsChat"
                 ? "overflow-hidden"
                 : activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming
                   ? "overflow-hidden"
@@ -940,13 +937,13 @@ export default function TerminalPage() {
                 </div>
                 <div
                   className={
-                    contextTab === "newsChat" || contextTab === "options"
+                    contextTab === "newsChat"
                       ? "flex min-h-0 flex-1 flex-col overflow-hidden"
                       : "flex min-h-0 flex-1 flex-col overflow-visible"
                   }
                 >
                   {contextTab === "news" && <NewsTab />}
-                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
+                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                   {contextTab === "company" && (
                     <CompanySwipablePages
                       candles={historyData?.candles}
@@ -1010,7 +1007,7 @@ export default function TerminalPage() {
                   </div>
                   <div
                     className={
-                      contextTab === "newsChat" || contextTab === "options"
+                      contextTab === "newsChat"
                         ? "flex min-h-0 flex-1 flex-col overflow-hidden"
                         : "flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-visible"
                     }
@@ -1049,7 +1046,7 @@ export default function TerminalPage() {
             ref={scrollRef}
             onScroll={handleScroll}
             className={`app-content flex min-h-0 flex-1 min-w-0 flex-col pb-4 ${
-              activeBottom === "markets" && (contextTab === "newsChat" || contextTab === "options") ? "overflow-hidden" : "overflow-y-auto"
+              activeBottom === "markets" && contextTab === "newsChat" ? "overflow-hidden" : "overflow-y-auto"
             }`}
             style={activeBottom === "portfolio" ? { overscrollBehaviorY: "none" } : undefined}
           >
@@ -1068,13 +1065,13 @@ export default function TerminalPage() {
                 </div>
                 <div
                   className={
-                    contextTab === "newsChat" || contextTab === "options"
+                    contextTab === "newsChat"
                       ? "flex min-h-0 flex-1 flex-col overflow-hidden"
                       : "flex min-h-0 flex-1 flex-col overflow-visible"
                   }
                 >
                   {contextTab === "news" && <NewsTab />}
-                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
+                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} />}
                   {contextTab === "company" && (
                     <CompanySwipablePages
                       candles={historyData?.candles}

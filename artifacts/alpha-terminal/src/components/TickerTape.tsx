@@ -22,25 +22,25 @@ const TapeItem = memo(function TapeItem({ symbol }: { symbol: string }) {
   return (
     <button
       onClick={() => setSymbol(symbol)}
-      className="inline-flex items-center gap-1.5 px-3 py-2.5 whitespace-nowrap cursor-pointer
+      className="inline-flex items-center gap-1.5 px-4 py-2.5 whitespace-nowrap cursor-pointer
         hover:brightness-125 transition-all duration-150 group"
-      style={{ fontSize: "13px", width: 176, flex: "0 0 176px" }}
+      style={{ fontSize: "13px" }}
     >
-      <span className="font-semibold tracking-wider text-gray-300 group-hover:text-white transition-colors" style={{ width: 44 }}>
+      <span className="font-semibold tracking-wider text-gray-300 group-hover:text-white transition-colors">
         {symbol}
       </span>
 
       {data?.last != null ? (
         <>
-          <span className="font-bold tabular-nums text-right" style={{ color: tickColor, width: 64 }}>
+          <span className="font-bold tabular-nums" style={{ color: tickColor }}>
             {data.last.toFixed(2)}
           </span>
-          <span className="font-bold tabular-nums text-right" style={{ color: changeColor, width: 52 }}>
+          <span className="font-bold tabular-nums" style={{ color: changeColor }}>
             {arrow} {pct ?? "—"}
           </span>
         </>
       ) : (
-        <span className="text-gray-700 tabular-nums" style={{ width: 116 }}>—</span>
+        <span className="text-gray-700">—</span>
       )}
 
       <span className="text-gray-800 mx-0.5 select-none">•</span>
