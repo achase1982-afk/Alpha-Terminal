@@ -123,6 +123,19 @@ describe("deskFetchNews Finnhub health", () => {
     expect(row?.status).not.toBe("error");
   });
 
+  it("neutral rate-skip background cycle does not increment failure streak", async () => {
+    loadMock.mockResolvedValue({
+      articles: [],
+      hadHttp2xx: false,
+      skippedRateCap: true,
+    });
+    const { deskFetchNews } = await import("../deskNews.js");
+    await deskFetchNews(["SPY"], { mode: "background" });
+    await deskFetchNews(["SPY"], { mode: "background" });
+    const row = buildDeskHealthFeeds().find((f) => f.feed === "news");
+    expect(row?.status).not.toBe("error");
+  });
+
   it("401 poll yields auth_error", async () => {
     loadMock.mockResolvedValue({
       articles: [],

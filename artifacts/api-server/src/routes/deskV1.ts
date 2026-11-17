@@ -497,14 +497,15 @@ router.get("/news", async (req, res) => {
     });
     return;
   }
-  res.json(
-    deskEnvelope(
-      { articles: news.articles, session_date: deskSessionDateEt(new Date(news.asOfMs)) },
-      "finnhub",
-      news.asOfMs,
-      "news",
-    ),
-  );
+  const payload: Record<string, unknown> = {
+    articles: news.articles,
+    session_date: deskSessionDateEt(new Date(news.asOfMs)),
+  };
+  if (news.partial) {
+    payload.partial = true;
+    payload.missing_symbols = news.missing_symbols;
+  }
+  res.json(deskEnvelope(payload, "finnhub", news.asOfMs, "news"));
 });
 
 const gammaHandler =

@@ -139,6 +139,7 @@ export type DeskFinnhubFetchResult = {
   status: number;
   articles: unknown[];
   skippedRateCap?: boolean;
+  clientRateLimited?: boolean;
 };
 
 export function getFinnhubDeskApiKey(): string {
@@ -223,19 +224,15 @@ export async function deskLoadFinnhubDeskArticles(
   hadHttp2xx: boolean;
   lastErrorStatus?: number;
   skippedRateCap?: boolean;
+  clientRateLimited?: boolean;
   retryAfterSec?: number;
+  missingSymbols?: string[];
 }> {
   const key = getFinnhubDeskApiKey();
   if (!key) return { articles: [], hadHttp2xx: false };
 
-  const slotBudgetMs =
+  const perCallSlotBudgetMs =
     mode === "background" ? FINNHUB_BACKGROUND_SLOT_BUDGET_MS : FINNHUB_ONDEMAND_SLOT_BUDGET_MS;
-  const cycleStartedMs = Date.now();
-
-  const remainingSlotBudget = (): number => {
-    const spent = Date.now() - cycleStartedMs;
-    return Math.max(0, slotBudgetMs - spent);
-  };
 
   const uniq = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
   const deskSyms = uniq.length ? uniq : [...DESK_DEFAULT_NEWS_SYMBOLS];
@@ -243,67 +240,91 @@ export async function deskLoadFinnhubDeskArticles(
   let hadHttp2xx = false;
   let lastErrorStatus: number | undefined;
   let skippedRateCap = false;
+  let clientRateLimited = false;
+  let retryAfterSec: number | undefined;
+  const missingSymbols: string[] = [];
 
   let general: DeskFinnhubFetchResult;
   try {
-    general = await fetchFinnhubMarketGeneralNews(key, mode, remainingSlotBudget());
+    general = await fetchFinnhubMarketGeneralNews(key, mode, perCallSlotBudgetMs);
   } catch (err) {
     if (err instanceof DeskFinnhubClientRateLimitError) {
       return {
         articles: [],
         hadHttp2xx: false,
-        lastErrorStatus: 429,
+        clientRateLimited: true,
         skippedRateCap: true,
         retryAfterSec: err.retryAfterSec,
       };
     }
     throw err;
   }
-  if (general.skippedRateCap) {
-    return { articles: [], hadHttp2xx, skippedRateCap: true };
-  }
-  if (general.ok) {
+  if (general.skippedRateCap || general.clientRateLimited) {
+    skippedRateCap = true;
+    clientRateLimited = Boolean(general.clientRateLimited);
+    if (general.clientRateLimited && mode === "ondemand") {
+      retryAfterSec = retryAfterSec ?? finnhubRetryAfterSec(Date.now(), mode);
+    }
+  } else if (general.ok) {
     hadHttp2xx = true;
     for (const a of general.articles) all.push(a);
-  } else {
+  } else if (general.status > 0) {
     lastErrorStatus = general.status;
   }
 
-  for (const sym of deskSyms) {
-    if (remainingSlotBudget() <= 0) {
+  const companyResults = await Promise.all(
+    deskSyms.map((sym) =>
+      companyFetchLimit(async () => {
+        try {
+          const r = await deskFetchFinnhubCompanyNews(sym, key, mode, perCallSlotBudgetMs);
+          return { sym, r };
+        } catch (err) {
+          if (err instanceof DeskFinnhubClientRateLimitError) {
+            return {
+              sym,
+              r: {
+                ok: false,
+                status: 0,
+                articles: [],
+                skippedRateCap: true,
+                clientRateLimited: true,
+              } satisfies DeskFinnhubFetchResult,
+              retryAfterSec: err.retryAfterSec,
+            };
+          }
+          throw err;
+        }
+      }),
+    ),
+  );
+
+  for (const row of companyResults) {
+    const { sym, r } = row;
+    const slotRetry = "retryAfterSec" in row ? row.retryAfterSec : undefined;
+    if (r.skippedRateCap || r.clientRateLimited) {
       skippedRateCap = true;
-      break;
-    }
-    let r: DeskFinnhubFetchResult;
-    try {
-      r = await companyFetchLimit(() =>
-        deskFetchFinnhubCompanyNews(sym, key, mode, remainingSlotBudget()),
-      );
-    } catch (err) {
-      if (err instanceof DeskFinnhubClientRateLimitError) {
-        return {
-          articles: all,
-          hadHttp2xx,
-          lastErrorStatus: 429,
-          skippedRateCap: true,
-          retryAfterSec: err.retryAfterSec,
-        };
-      }
-      throw err;
-    }
-    if (r.skippedRateCap) {
-      skippedRateCap = true;
-      break;
+      clientRateLimited = clientRateLimited || Boolean(r.clientRateLimited);
+      if (slotRetry != null) retryAfterSec = slotRetry;
+      if (mode === "ondemand") missingSymbols.push(sym);
+      continue;
     }
     if (r.ok) {
       hadHttp2xx = true;
       for (const a of r.articles) all.push(a);
-    } else {
+    } else if (r.status > 0) {
       lastErrorStatus = r.status;
     }
   }
 
-  return { articles: all, hadHttp2xx, lastErrorStatus, skippedRateCap: skippedRateCap || undefined };
+  return {
+    articles: all,
+    hadHttp2xx,
+    lastErrorStatus,
+    skippedRateCap: skippedRateCap || undefined,
+    clientRateLimited: clientRateLimited || undefined,
+    retryAfterSec,
+    missingSymbols: missingSymbols.length ? [...new Set(missingSymbols)] : undefined,
+  };
 }
 
 export function deskResetFinnhubRateLimitForTests(): void {

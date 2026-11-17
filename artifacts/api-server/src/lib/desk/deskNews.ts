@@ -7,7 +7,6 @@ import {
 } from "./deskFeedFreshness.js";
 import { deskMaxArticlePublishedMs } from "./deskNewsArticleAge.js";
 import {
-  DeskFinnhubClientRateLimitError,
   deskLoadFinnhubDeskArticles,
   type DeskFinnhubLoadMode,
 } from "./deskFinnhubDeskNews.js";
@@ -42,7 +41,13 @@ function deskMarkFinnhubPollFailure(lastErrorStatus?: number): void {
 }
 
 export type DeskFetchNewsResult =
-  | { ok: true; articles: unknown[]; asOfMs: number }
+  | {
+      ok: true;
+      articles: unknown[];
+      asOfMs: number;
+      partial?: boolean;
+      missing_symbols?: string[];
+    }
   | { ok: false; rateLimited: true; retryAfterSec: number };
 
 /** Desk poller + `/news?source=finnhub`: general market + desk symbols. */
@@ -52,32 +57,40 @@ export async function deskFetchNews(
 ): Promise<DeskFetchNewsResult> {
   const pollMs = Date.now();
   const mode = options?.mode ?? "ondemand";
-  let load: Awaited<ReturnType<typeof deskLoadFinnhubDeskArticles>>;
-  try {
-    load = await deskLoadFinnhubDeskArticles(symbols, mode);
-  } catch (err) {
-    if (err instanceof DeskFinnhubClientRateLimitError) {
-      deskMarkFeedRateLimited("news", "finnhub_client_rate_limited", FINNHUB_SOURCE);
-      return { ok: false, rateLimited: true, retryAfterSec: err.retryAfterSec };
-    }
-    throw err;
-  }
-  const { articles: all, hadHttp2xx, lastErrorStatus, skippedRateCap, retryAfterSec } = load;
-  if (skippedRateCap && mode === "ondemand" && lastErrorStatus === 429) {
-    deskMarkFeedRateLimited("news", "finnhub_client_rate_limited", FINNHUB_SOURCE);
+  const load = await deskLoadFinnhubDeskArticles(symbols, mode);
+  const {
+    articles: all,
+    hadHttp2xx,
+    lastErrorStatus,
+    skippedRateCap,
+    clientRateLimited,
+    retryAfterSec,
+    missingSymbols,
+  } = load;
+
+  if (mode === "ondemand" && clientRateLimited && !hadHttp2xx) {
     return { ok: false, rateLimited: true, retryAfterSec: retryAfterSec ?? 1 };
   }
-  if (skippedRateCap && mode === "background") {
-    return { ok: true, articles: all, asOfMs: pollMs };
+
+  if (hadHttp2xx) {
+    finnhubPollFailureStreak = 0;
+    deskTouchFeedPollOk("news", pollMs, FINNHUB_SOURCE);
+    const articleMaxMs = deskMaxArticlePublishedMs(all);
+    deskTouchFeedArticleAge("news", articleMaxMs, FINNHUB_SOURCE);
+    const partial = mode === "ondemand" && Boolean(missingSymbols?.length);
+    return {
+      ok: true,
+      articles: all,
+      asOfMs: pollMs,
+      ...(partial ? { partial: true, missing_symbols: missingSymbols } : {}),
+    };
   }
-  if (!hadHttp2xx) {
-    deskMarkFinnhubPollFailure(lastErrorStatus);
+
+  const rateSkipNeutral = Boolean(skippedRateCap) && !hadHttp2xx;
+  if (rateSkipNeutral) {
     return { ok: true, articles: all, asOfMs: pollMs };
   }
 
-  finnhubPollFailureStreak = 0;
-  deskTouchFeedPollOk("news", pollMs, FINNHUB_SOURCE);
-  const articleMaxMs = deskMaxArticlePublishedMs(all);
-  deskTouchFeedArticleAge("news", articleMaxMs, FINNHUB_SOURCE);
+  deskMarkFinnhubPollFailure(lastErrorStatus);
   return { ok: true, articles: all, asOfMs: pollMs };
 }

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const pollTradier = vi.fn();
 const pollAlpaca = vi.fn();
-const pollNews = vi.fn();
+const fetchNews = vi.fn();
 const pollChains = vi.fn();
 
 vi.mock("../deskSchwabChains.js", () => ({
@@ -19,19 +19,22 @@ vi.mock("../deskAlpacaNews.js", () => ({
 }));
 
 vi.mock("../deskNews.js", () => ({
-  deskFetchNews: () => pollNews(),
+  deskFetchNews: (...args: unknown[]) => fetchNews(...args),
 }));
 
 describe("runDeskBackgroundPollCycle", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    vi.resetModules();
     pollTradier.mockReset();
     pollAlpaca.mockReset();
-    pollNews.mockReset();
+    fetchNews.mockReset();
     pollChains.mockReset();
     pollTradier.mockResolvedValue(undefined);
     pollChains.mockResolvedValue(undefined);
     pollAlpaca.mockResolvedValue(undefined);
-    pollNews.mockResolvedValue(undefined);
+    fetchNews.mockResolvedValue({ ok: true, articles: [], asOfMs: Date.now() });
+    const { deskResetBackgroundNewsPollGuardsForTests } = await import("../deskBackgroundPollers.js");
+    deskResetBackgroundNewsPollGuardsForTests();
   });
 
   it("runs Tradier and news without UW in the same cycle", async () => {
@@ -39,11 +42,11 @@ describe("runDeskBackgroundPollCycle", () => {
     await runDeskBackgroundPollCycle();
     expect(pollTradier).toHaveBeenCalled();
     expect(pollAlpaca).toHaveBeenCalled();
-    expect(pollNews).toHaveBeenCalled();
+    expect(fetchNews).toHaveBeenCalled();
   });
 
   it("finishes chains while news poll hangs", async () => {
-    pollNews.mockImplementation(() => new Promise(() => undefined));
+    fetchNews.mockImplementation(() => new Promise(() => undefined));
     pollAlpaca.mockImplementation(() => new Promise(() => undefined));
     let chainsDone = false;
     pollChains.mockImplementation(async () => {
@@ -52,5 +55,15 @@ describe("runDeskBackgroundPollCycle", () => {
     const { runDeskBackgroundPollCycle } = await import("../deskBackgroundPollers.js");
     await runDeskBackgroundPollCycle();
     expect(chainsDone).toBe(true);
+  });
+
+  it("skips a stalled Finnhub news poll when the prior run is still in flight", async () => {
+    fetchNews.mockImplementation(() => new Promise(() => undefined));
+    pollAlpaca.mockResolvedValue(undefined);
+    const { runDeskBackgroundPollCycle } = await import("../deskBackgroundPollers.js");
+    await runDeskBackgroundPollCycle();
+    expect(fetchNews).toHaveBeenCalledTimes(1);
+    await runDeskBackgroundPollCycle();
+    expect(fetchNews).toHaveBeenCalledTimes(1);
   });
 });

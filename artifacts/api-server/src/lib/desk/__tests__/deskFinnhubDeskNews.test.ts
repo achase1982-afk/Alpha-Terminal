@@ -8,6 +8,8 @@ import {
   FINNHUB_ONDEMAND_SLOT_BUDGET_MS,
 } from "../deskFinnhubDeskNews.js";
 
+const FINNHUB_FETCH_LATENCY_MS = 250;
+
 describe("deskLoadFinnhubDeskArticles transport", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -60,11 +62,34 @@ describe("deskLoadFinnhubDeskArticles transport", () => {
     await vi.advanceTimersByTimeAsync(FINNHUB_DESK_CALL_TIMEOUT_MS + 200);
     const r = await loadPromise;
     expect(r.hadHttp2xx).toBe(false);
-    expect(r.lastErrorStatus).toBe(0);
     vi.useRealTimers();
   }, 15_000);
 
-  it("background load returns within budget when rate window is full", async () => {
+  it("background default poll completes all 11 calls with 250ms latency and records health", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const fetchMock = vi.fn(async () => {
+      await new Promise((r) => setTimeout(r, FINNHUB_FETCH_LATENCY_MS));
+      return new Response(JSON.stringify([{ datetime: 1, headline: "x" }]), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { deskResetFeedFreshnessForTests, buildDeskHealthFeeds } = await import("../deskFeedFreshness.js");
+    const { deskResetFinnhubPollFailureStreakForTests, deskFetchNews } = await import("../deskNews.js");
+    const modFinnhub = await import("../deskFinnhubDeskNews.js");
+    modFinnhub.deskResetFinnhubRateLimitForTests();
+    deskResetFeedFreshnessForTests();
+    deskResetFinnhubPollFailureStreakForTests();
+    const pollPromise = deskFetchNews([], { mode: "background" });
+    await vi.runAllTimersAsync();
+    const poll = await pollPromise;
+    expect(fetchMock).toHaveBeenCalledTimes(11);
+    expect(poll.ok).toBe(true);
+    const row = buildDeskHealthFeeds().find((f) => f.feed === "news");
+    expect(row?.stale).toBe(false);
+    expect(row?.status).not.toBe("error");
+    vi.useRealTimers();
+  });
+
+  it("background load returns within per-call slot budget when rate window is full", async () => {
     const now = Date.now();
     vi.stubGlobal(
       "fetch",
@@ -76,12 +101,12 @@ describe("deskLoadFinnhubDeskArticles transport", () => {
     const started = Date.now();
     const r = await mod.deskLoadFinnhubDeskArticles(["SPY"], "background");
     const elapsed = Date.now() - started;
-    expect(elapsed).toBeLessThanOrEqual(FINNHUB_BACKGROUND_SLOT_BUDGET_MS + 200);
+    expect(elapsed).toBeLessThanOrEqual(FINNHUB_BACKGROUND_SLOT_BUDGET_MS * 2 + 200);
     expect(r.skippedRateCap).toBe(true);
     expect(vi.mocked(fetch)).not.toHaveBeenCalled();
   });
 
-  it("on-demand load rate-limits within 2s when cap is full", async () => {
+  it("on-demand load rate-limits within 2s when cap is full without health side effects", async () => {
     const now = Date.now();
     vi.stubGlobal(
       "fetch",
@@ -93,8 +118,17 @@ describe("deskLoadFinnhubDeskArticles transport", () => {
     const r = await mod.deskLoadFinnhubDeskArticles(["SPY"], "ondemand");
     const elapsed = Date.now() - started;
     expect(elapsed).toBeLessThanOrEqual(FINNHUB_ONDEMAND_SLOT_BUDGET_MS + 200);
-    expect(r.lastErrorStatus).toBe(429);
+    expect(r.clientRateLimited).toBe(true);
     expect(r.retryAfterSec).toBeGreaterThanOrEqual(1);
     expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+
+    const { deskResetFeedFreshnessForTests, buildDeskHealthFeeds } = await import("../deskFeedFreshness.js");
+    const { deskResetFinnhubPollFailureStreakForTests, deskFetchNews } = await import("../deskNews.js");
+    deskResetFeedFreshnessForTests();
+    deskResetFinnhubPollFailureStreakForTests();
+    const news = await deskFetchNews(["SPY"]);
+    expect(news.ok).toBe(false);
+    const row = buildDeskHealthFeeds().find((f) => f.feed === "news");
+    expect(row?.status).not.toBe("rate_limited");
   });
 });
