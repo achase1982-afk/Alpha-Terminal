@@ -1,5 +1,7 @@
 const STORAGE_KEY = "alpha-stream-client-id";
 
+let memoryClientId: string | undefined;
+
 function randomId(): string {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -17,7 +19,8 @@ export function getStreamClientId(): string {
     }
     return id;
   } catch {
-    return randomId();
+    if (!memoryClientId) memoryClientId = randomId();
+    return memoryClientId;
   }
 }
 
@@ -39,3 +42,4 @@ export function buildStreamHolderId(
   const v = viewId.trim();
   return v ? `stream:${clientId}:${purpose}:${v}` : `stream:${clientId}:${purpose}`;
 }
+
