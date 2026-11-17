@@ -18,6 +18,8 @@ async function loadMoversFeedForClient(): Promise<Awaited<ReturnType<typeof getL
 router.get("/", async (_req, res) => {
   try {
     const feed = await loadMoversFeedForClient();
+    const { overlayMoversFeedFromStream } = await import("../lib/movers/moversStreamQuoteOverlay.js");
+    overlayMoversFeedFromStream(feed);
     res.json(feed);
   } catch (err) {
     res.status(500).json({ error: "Failed to load movers feed" });

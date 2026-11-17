@@ -33,6 +33,10 @@ import {
 import { getDeskRawTapeHealth, streamDeskRawTapeNdjson } from "../lib/desk/deskSpxTapeRaw.js";
 import { getDeskTapeUniverseHealth } from "../lib/desk/deskTapeUniverse.js";
 import { getDeskEquityFieldsSeen } from "../lib/desk/deskStreamerTap.js";
+import { getStreamerSubscriptionHealth } from "../lib/streamerSubscriptionManager.js";
+import { getSchwabIndexQuotesStreamHealth } from "../lib/schwabIndexQuotes.js";
+import { schwabSymbolHasStreamingMark } from "../lib/schwabStreamer.js";
+import { deskFormatSchwabSymbol } from "../lib/desk/deskSchwabSymbol.js";
 import { deskAlpacaMarketBars, deskAlpacaMarketQuotes } from "../lib/desk/deskAlpacaData.js";
 import { deskResolveSource } from "../lib/desk/deskSources.js";
 import { deskSchwabRestAppFromDeskSource } from "../lib/desk/deskSchwabRestCredential.js";
@@ -58,6 +62,8 @@ router.get("/health", (_req, res) => {
       buffer_frames: tape.buffer_frames,
     },
     desk_tape_universe: getDeskTapeUniverseHealth(),
+    streamer_subscriptions: getStreamerSubscriptionHealth(now),
+    schwab_index_stream: getSchwabIndexQuotesStreamHealth(now),
     desk_equity_fields_seen: getDeskEquityFieldsSeen(),
     schwab_oauth: buildDeskSchwabOAuthHealth(),
     session_date: deskSessionDateEt(new Date(now)),
@@ -141,7 +147,15 @@ router.get("/quotes", async (req, res) => {
 
   const schwabApp = deskSchwabRestAppFromDeskSource(resolved.source);
   const { quotes, asOfMs, app } = await deskFetchSchwabQuotes(symbols, schwabApp);
-  const payload = { quotes, session_date };
+  const quotesWithStream = quotes.map((q) => ({
+    ...q,
+    not_streaming: !schwabSymbolHasStreamingMark(deskFormatSchwabSymbol(q.symbol)),
+  }));
+  const payload = {
+    quotes: quotesWithStream,
+    session_date,
+    not_streaming: quotesWithStream.some((q) => q.not_streaming),
+  };
   void deskPersistSnapshot("quotes", payload);
   const sourceLabel = app === "app2" ? "schwab2" : "schwab";
   const feed = app === "app2" ? "schwab2_rest" : "schwab_quotes_rest";
@@ -242,6 +256,7 @@ router.get("/chains", async (req, res) => {
     truncated: chain.truncated,
     contract_count: chain.contract_count,
     session_date: chain.session_date,
+    not_streaming: !schwabSymbolHasStreamingMark(deskFormatSchwabSymbol(symbol)),
   };
   void deskPersistSnapshot("chains", payload, symbol);
   const sourceLabel = chain.app === "app2" ? "schwab2" : "schwab";

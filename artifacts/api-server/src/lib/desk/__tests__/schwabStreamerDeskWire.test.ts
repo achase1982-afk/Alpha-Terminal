@@ -1,4 +1,11 @@
+process.env.DATABASE_URL =
+  process.env.DATABASE_URL ?? "postgresql://localhost:5432/streamer_test";
+
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  streamerSubApplyManagedOptionsSubscriptions,
+  streamerSubResetForTests,
+} from "../../streamerSubscriptionManager.js";
 import {
   __deskStreamerSetWireTap,
   __deskStreamerWireTestPrime,
@@ -31,6 +38,7 @@ describe("schwabStreamer desk wire (mocked send)", () => {
   const outbound: unknown[] = [];
 
   beforeEach(() => {
+    streamerSubResetForTests();
     outbound.length = 0;
     __deskStreamerWireTestUnprime();
     __deskStreamerWireTestPrime();
@@ -41,8 +49,9 @@ describe("schwabStreamer desk wire (mocked send)", () => {
     __deskStreamerWireTestUnprime();
   });
 
-  it("deskStreamerSetDeskOptions emits ADD/UNSUBS without touching app-held keys", () => {
+  it("deskStreamerSetDeskOptions emits ADD/UNSUBS without touching app-held keys", async () => {
     addOptionSymbols(["APP_ROOT"]);
+    await streamerSubApplyManagedOptionsSubscriptions();
     outbound.length = 0;
     deskStreamerAddEquity(["$SPX"]);
     deskStreamerSetDeskOptions(["APP_ROOT", "DESK_A", "DESK_B"]);
@@ -95,12 +104,13 @@ describe("schwabStreamer desk wire (mocked send)", () => {
     expect(countAdds(reqs, "OPTIONS_BOOK")).toBe(1);
   });
 
-  it("app options SUBS replays only desk options (no book/equity ADD)", () => {
+  it("app options SUBS replays only desk options (no book/equity ADD)", async () => {
     deskStreamerAddEquity(["$SPX"]);
     deskStreamerSetDeskOptions(["DESK_OPT"]);
     deskStreamerSetDeskOptionsBook(["DESK_BOOK"]);
     outbound.length = 0;
     addOptionSymbols(["CLIENT_OPT"]);
+    await streamerSubApplyManagedOptionsSubscriptions();
     const reqs = collectRequests(outbound);
     expect(countAdds(reqs, "LEVELONE_OPTIONS")).toBeGreaterThanOrEqual(1);
     expect(countAdds(reqs, "OPTIONS_BOOK")).toBe(0);
@@ -119,10 +129,11 @@ describe("schwabStreamer desk wire (mocked send)", () => {
     expect(countAdds(reqs, "LEVELONE_EQUITIES")).toBe(0);
   });
 
-  it("app LEVELONE_OPTIONS SUBS re-sends desk ADD batch", () => {
+  it("app LEVELONE_OPTIONS SUBS re-sends desk ADD batch", async () => {
     deskStreamerSetDeskOptions(["DESK_ONLY"]);
     outbound.length = 0;
     addOptionSymbols(["CLIENT_OPT"]);
+    await streamerSubApplyManagedOptionsSubscriptions();
     const reqs = collectRequests(outbound);
     expect(reqs.some((r) => r.service === "LEVELONE_OPTIONS" && r.command === "SUBS")).toBe(true);
     expect(reqs.some((r) => r.service === "LEVELONE_OPTIONS" && r.command === "ADD")).toBe(true);

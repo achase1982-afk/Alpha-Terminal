@@ -7,5 +7,6 @@
  */
 
 export interface RefreshTokenRequest {
-  refreshToken: string;
+  /** Optional when the server already holds the canonical Schwab refresh token */
+  refreshToken?: string;
 }
