@@ -199,6 +199,8 @@ export function useMarketStream() {
   const startDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
   const wsRef = useRef<WebSocket | null>(null);
+  const wsConnectInFlightRef = useRef(false);
+  const wsConnectGenRef = useRef(0);
   const esRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sseFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -425,11 +427,25 @@ export function useMarketStream() {
   }, [startSseStream]);
 
   const connectWs = useCallback(async () => {
+    if (wsConnectInFlightRef.current) return;
     if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
     if (!mountedRef.current) return;
 
+    wsConnectInFlightRef.current = true;
+    const connectGen = ++wsConnectGenRef.current;
+
     const clerkToken = await getClerkToken();
+  if (
+      connectGen !== wsConnectGenRef.current ||
+      !mountedRef.current ||
+      (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN)
+    ) {
+      wsConnectInFlightRef.current = false;
+      return;
+    }
+
     if (!clerkToken && !DEV_BYPASS_AUTH) {
+      wsConnectInFlightRef.current = false;
       setStreamStatus("connecting");
       scheduleReconnect();
       return;
@@ -439,6 +455,11 @@ export function useMarketStream() {
     setStreamStatus("connecting");
 
     const socket = new WebSocket(url);
+    if (connectGen !== wsConnectGenRef.current || !mountedRef.current) {
+      socket.close();
+      wsConnectInFlightRef.current = false;
+      return;
+    }
     wsRef.current = socket;
 
     const openTimeout = setTimeout(() => {
@@ -472,7 +493,9 @@ export function useMarketStream() {
     };
 
     socket.onopen = () => {
+      if (wsRef.current !== socket) return;
       clearTimeout(openTimeout);
+      wsConnectInFlightRef.current = false;
       reconnectDelayRef.current = WS_RECONNECT_BASE;
       window.__alphaWs = socket;
       socket.send(
@@ -501,7 +524,12 @@ export function useMarketStream() {
 
     socket.onclose = () => {
       clearTimeout(openTimeout);
-      wsRef.current = null;
+      if (wsRef.current === socket) {
+        wsRef.current = null;
+      }
+      if (wsRef.current === null) {
+        wsConnectInFlightRef.current = false;
+      }
       if (!mountedRef.current) return;
       setStreamStatus("connecting");
       scheduleSseFallback();
@@ -510,6 +538,9 @@ export function useMarketStream() {
 
     socket.onerror = () => {
       clearTimeout(openTimeout);
+      if (wsRef.current === socket) {
+        wsConnectInFlightRef.current = false;
+      }
     };
     scheduleSseFallback();
   }, [clearOptionTicks, handleStreamEvent, scheduleSseFallback, setStreamStatus, stopRestPolling, stopSseStream]);

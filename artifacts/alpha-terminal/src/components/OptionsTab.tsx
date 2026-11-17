@@ -29,6 +29,7 @@ import {
   legsFromChainSelection,
 } from "@/components/OptionsChainOrderSheet";
 import { getChainOrderFixtureOverride } from "@/lib/dev-only/chainOrderFixtureBridge";
+import { optionChainMatchesActiveSymbol } from "@/lib/optionChainStaleGuard";
 
 const EPS = 0.0001;
 const COL_W = 74;
@@ -1290,11 +1291,6 @@ export function OptionsTab({
   }, [strikeCount]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const chainSymbolRef = useRef(symbol);
-  useEffect(() => {
-    chainSymbolRef.current = symbol;
-  }, [symbol]);
-
   const { data: rawData, isLoading, error, isFetching, dataUpdatedAt } = useGetOptionChain<OptionChainResponse>(
     { symbol, contractType: "ALL", strikeCount },
     { query: { enabled: !!accessToken && !!symbol && !fixtureOverride, staleTime: 30_000, gcTime: 5 * 60_000, retry: 2 } }
@@ -1309,7 +1305,7 @@ export function OptionsTab({
       return { ...fixtureOverride.chain, calls, puts, underlyingPrice: fixtureOverride.underlyingPrice };
     }
     if (!rawData) return rawData;
-    if (rawData.symbol && rawData.symbol.toUpperCase() !== chainSymbolRef.current.toUpperCase()) {
+    if (!optionChainMatchesActiveSymbol(rawData.symbol, symbol)) {
       return undefined;
     }
     let calls = (rawData.calls ?? []) as Contract[];
@@ -1317,7 +1313,7 @@ export function OptionsTab({
     if (contractType === "CALL") puts = [];
     else if (contractType === "PUT") calls = [];
     return { ...rawData, calls, puts };
-  }, [rawData, contractType, fixtureOverride]);
+  }, [rawData, contractType, fixtureOverride, symbol]);
 
   const isLoadingEffective = fixtureOverride ? false : isLoading;
 

@@ -2,6 +2,7 @@ import { aggregateSpreadNBBO } from "./optionQuotes.js";
 import { computeOrderEconomics, type EconomicsLeg } from "./orderEconomics.js";
 import {
   analyzeExpirationPayoff,
+  dollarRightTailSlope,
   payoffDollarsAtS,
   type ExpirationPayoffInput,
   type PayoffLeg,
@@ -49,6 +50,7 @@ export interface ChainTicketSummary {
   maxLoss: number | null;
   breakevens: number[];
   buyingPowerEffect: number | null;
+  buyingPowerEffectIsEstimate: boolean;
   netDelta: number;
   netGamma: number;
   netTheta: number;
@@ -132,6 +134,7 @@ export function computeChainTicketSummary(input: ChainTicketSummaryInput): Chain
       maxLoss: null,
       breakevens: [],
       buyingPowerEffect: null,
+      buyingPowerEffectIsEstimate: true,
       netDelta: netDelta * 100,
       netGamma: netGamma * 100,
       netTheta: netTheta * 100,
@@ -169,6 +172,7 @@ export function computeChainTicketSummary(input: ChainTicketSummaryInput): Chain
   const iv = averageLegIv(input.legs);
   let pop: number | null = null;
   if (
+    econ?.expirationPayoffModeled &&
     input.spotPrice != null &&
     input.spotPrice > 0 &&
     tYears != null &&
@@ -208,6 +212,7 @@ export function computeChainTicketSummary(input: ChainTicketSummaryInput): Chain
     maxLoss: econ?.maxRisk ?? null,
     breakevens: econ?.breakevens ?? [],
     buyingPowerEffect: econ?.buyingPowerEffect ?? null,
+    buyingPowerEffectIsEstimate: econ?.buyingPowerEffectIsEstimate ?? true,
     netDelta: netDelta * 100,
     netGamma: netGamma * 100,
     netTheta: netTheta * 100,
@@ -234,14 +239,7 @@ export function referenceBruteForcePayoff(input: ExpirationPayoffInput): {
     if (p < minP) minP = p;
     if (p > maxP) maxP = p;
   }
-  let slope = 0;
-  for (const leg of input.legs as PayoffLeg[]) {
-    if (leg.optionType === "CALL") {
-      const q = leg.quantity ?? 1;
-      slope += leg.instruction.startsWith("BUY") ? q : -q;
-    }
-  }
-  const dollarRight = slope * 100 * input.spreadUnits;
+  const dollarRight = dollarRightTailSlope(input.legs as PayoffLeg[], input.spreadUnits);
   const unboundedLoss = dollarRight < 0;
   const maxLoss = unboundedLoss ? null : Math.max(0, -minP);
   const maxProfit = dollarRight > 0 ? Number.POSITIVE_INFINITY : Math.max(0, maxP);

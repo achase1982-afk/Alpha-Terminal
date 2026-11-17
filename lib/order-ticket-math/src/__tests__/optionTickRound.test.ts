@@ -46,6 +46,10 @@ describe("optionTickRound symbol-aware", () => {
     expect(roundToTick(0.02, tick)).toBe(tick);
   });
 
+  it("rejects limit strings with trailing junk", () => {
+    expect(parseCanonicalLimit("2.55abc", { underlyingSymbol: "SPX", isOption: true })).toBeNull();
+  });
+
   it("classifies penny pilot vs index", () => {
     expect(classifyOptionTickMode("QQQ")).toBe("penny");
     expect(classifyOptionTickMode("SPX")).toBe("index");

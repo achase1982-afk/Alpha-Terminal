@@ -1602,7 +1602,10 @@ export function OrderTicket({
                   const maxRisk = econ.maxRisk;
                   const maxGain = econ.maxProfit;
                   const rr =
-                    maxRisk != null && maxRisk > 0 && Number.isFinite(maxGain)
+                    maxRisk != null &&
+                    maxRisk > 0 &&
+                    maxGain != null &&
+                    Number.isFinite(maxGain)
                       ? `${(maxGain / maxRisk).toFixed(2)}:1`
                       : "—";
                   const allCalls = strategyLegs.every(l => l.optionType === "CALL");
@@ -2625,7 +2628,8 @@ export function OrderTicket({
                     : null;
                 const bpEffect = econMulti
                   ? econMulti.buyingPowerEffect
-                  : (side === "BUY" ? -(grossCost + totalCommission) : grossCost - totalCommission);
+                  : -(grossCost + totalCommission);
+                const bpIsEstimate = econMulti?.buyingPowerEffectIsEstimate ?? true;
                 const breakevens: number[] = econMulti?.breakevens ?? [];
                 const maxProfit =
                   econMulti && Number.isFinite(econMulti.maxProfit) ? econMulti.maxProfit : null;
@@ -2676,9 +2680,11 @@ export function OrderTicket({
 
                     <div className="pt-1 mt-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
                       <div className="flex justify-between" style={{ fontSize: S.body }}>
-                        <span style={{ color: MUTED }}>Buying power effect</span>
-                        <span style={{ color: bpEffect >= 0 ? UP : DOWN }}>
-                          {bpEffect >= 0 ? "+" : "−"}{fmtCurrency(Math.abs(bpEffect))}
+                        <span style={{ color: MUTED }}>
+                          Buying power{bpIsEstimate ? " (est.)" : ""}
+                        </span>
+                        <span style={{ color: DOWN }}>
+                          −{fmtCurrency(Math.abs(bpEffect))}
                         </span>
                       </div>
                     </div>

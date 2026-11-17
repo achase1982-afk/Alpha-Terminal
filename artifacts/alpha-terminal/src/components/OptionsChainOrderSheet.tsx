@@ -11,6 +11,7 @@ import {
   schwabPriceFromTicket,
   inferNetCreditFromLegStructure,
   inferSchwabComplexOrderStrategyType,
+  midpointFromBidAsk,
   type LimitTickContext,
 } from "@workspace/order-ticket-math";
 import {
@@ -206,14 +207,10 @@ export function OptionsChainOrderSheet({
     [pricedLegs, symbol, submittedLimit, spreadPrices, quantity, isCredit, underlyingSpot],
   );
 
-  const buyingPowerDisplay = useMemo(() => {
-    if (summary?.grossNotional == null) return summary?.buyingPowerEffect ?? null;
-    const gross = Math.abs(summary.grossNotional);
-    const totalContracts = legs.reduce((s, l) => s + l.quantity, 0) * quantity;
-    const fees = estimateSchwabOptionFees(totalContracts);
-    const cash = computeOrderNetCash(gross, isCredit, totalContracts, fees);
-    return isCredit ? cash.net : -cash.net;
-  }, [summary?.grossNotional, summary?.buyingPowerEffect, legs, quantity, isCredit]);
+  const buyingPowerDisplay = useMemo(
+    () => summary?.buyingPowerEffect ?? null,
+    [summary?.buyingPowerEffect],
+  );
 
   const netDebitForName = summary?.grossNotional != null ? (isCredit ? -summary.grossNotional : summary.grossNotional) : 0;
   const strategyId = useMemo(() => detectStrategyType(legs, netDebitForName), [legs, netDebitForName]);
@@ -455,15 +452,16 @@ export function OptionsChainOrderSheet({
                   <span style={VALUE_STYLE}>POP {summary.pop.toFixed(0)}%</span>
                 )}
                 {buyingPowerDisplay != null && (
-                  <span style={VALUE_STYLE}>BP {fmtCurrency(buyingPowerDisplay)}</span>
+                  <span style={VALUE_STYLE}>
+                    BP est {fmtCurrency(Math.abs(buyingPowerDisplay))}
+                  </span>
                 )}
               </div>
 
               <div className="mt-2 space-y-1.5">
                 {pricedLegs.map((leg) => {
                   const isBuy = leg.direction.startsWith("BUY");
-                  const mid =
-                    leg.bid != null && leg.ask != null ? (leg.bid + leg.ask) / 2 : null;
+                  const mid = midpointFromBidAsk(leg.bid, leg.ask);
                   const typeLabel = leg.optionType === "CALL" ? "Call" : "Put";
                   return (
                     <div
