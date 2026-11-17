@@ -31,6 +31,6 @@ export async function deskTradierQuotes(symbols: string[]): Promise<{ quotes: Re
   const q = json.quotes?.quote;
   const list = q == null ? [] : Array.isArray(q) ? q : [q];
   const asOfMs = Date.now();
-  deskTouchFeed("tradier");
+  deskTouchFeed("tradier", asOfMs, "tradier");
   return { quotes: list as Record<string, unknown>[], asOfMs };
 }

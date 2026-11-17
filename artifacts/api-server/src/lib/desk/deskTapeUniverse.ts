@@ -2,7 +2,7 @@ import { deskEnvTruthyDefault } from "./deskEnv.js";
 import { deskFetchSchwabChain, type DeskChainNormalized } from "./deskSchwabChains.js";
 import { deskSessionDateEt } from "./deskEt.js";
 import { logger } from "../logger.js";
-import { getQuoteBySymbol } from "../schwabStreamer.js";
+import { deskResolveSpxSpot } from "./deskSpxSpot.js";
 import {
   deskStreamerAddEquity,
   deskStreamerAddOptions,
@@ -17,6 +17,7 @@ const TARGET_OPTIONS_BOOK = 500;
 const SPOT_REFRESH_PCT = 0.003;
 const SPOT_REFRESH_POINTS = 5;
 const REFRESH_POLL_MS = 45_000;
+const SPOT_RETRY_MS = 10_000;
 
 let lastSpot: number | null = null;
 let lastExpiry: string | null = null;
@@ -101,8 +102,9 @@ export async function deskTapeUniverseRefresh(force = false): Promise<void> {
     lastError = undefined;
     try {
       const expiry = deskSessionDateEt();
-      const q = getQuoteBySymbol("$SPX") ?? getQuoteBySymbol("SPX");
-      const spot = q?.last ?? q?.regularLast ?? lastSpot;
+      deskStreamerAddEquity([...DESK_EQUITIES]);
+
+      const spot = (await deskResolveSpxSpot()) ?? lastSpot;
       if (spot == null || !Number.isFinite(spot)) {
         lastError = "no_spx_spot";
         return;
@@ -110,9 +112,9 @@ export async function deskTapeUniverseRefresh(force = false): Promise<void> {
 
       const expiryChanged = lastExpiry != null && lastExpiry !== expiry;
       const spotMoved = spotMovedEnough(lastSpot, spot);
-      if (!force && !expiryChanged && !spotMoved && lastRefreshMs > 0) return;
-
-      deskStreamerAddEquity([...DESK_EQUITIES]);
+      const counts = getDeskStreamerAddCounts();
+      const needsOptions = counts.levelone_options === 0;
+      if (!force && !expiryChanged && !spotMoved && !needsOptions && lastRefreshMs > 0) return;
       const { levelone, book } = await buildUniverseKeys(expiry, spot);
       deskStreamerAddOptions(levelone);
       deskStreamerAddOptionsBook(book);
@@ -120,6 +122,7 @@ export async function deskTapeUniverseRefresh(force = false): Promise<void> {
       lastSpot = spot;
       lastExpiry = expiry;
       lastRefreshMs = Date.now();
+      lastError = undefined;
       logger.info(
         {
           spot,
@@ -148,6 +151,16 @@ export function deskTapeUniverseOnStreamerLogin(): void {
   void deskTapeUniverseRefresh(true);
 }
 
+function maybeScheduleSpotRetry(): void {
+  setTimeout(() => {
+    if (!universeEnabled) return;
+    const counts = getDeskStreamerAddCounts();
+    if (lastError === "no_spx_spot" || counts.levelone_options === 0) {
+      void deskTapeUniverseRefresh(true).finally(maybeScheduleSpotRetry);
+    }
+  }, SPOT_RETRY_MS);
+}
+
 export function startDeskTapeUniverse(): void {
   universeEnabled = deskTapeUniverseEnabled();
   if (!universeEnabled) {
@@ -155,6 +168,7 @@ export function startDeskTapeUniverse(): void {
     return;
   }
   void deskTapeUniverseRefresh(true);
+  maybeScheduleSpotRetry();
   const timer = setInterval(() => {
     void deskTapeUniverseRefresh(false);
   }, REFRESH_POLL_MS);
