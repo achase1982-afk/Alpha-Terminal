@@ -32,6 +32,7 @@ import {
 import { getDeskRawTapeHealth, streamDeskRawTapeNdjson } from "../lib/desk/deskSpxTapeRaw.js";
 import { getDeskTapeUniverseHealth } from "../lib/desk/deskTapeUniverse.js";
 import { getDeskEquityFieldsSeen } from "../lib/desk/deskStreamerTap.js";
+import { getStreamerSubscriptionHealth } from "../lib/streamerSubscriptionManager.js";
 import { deskAlpacaMarketBars, deskAlpacaMarketQuotes } from "../lib/desk/deskAlpacaData.js";
 import { deskResolveSource } from "../lib/desk/deskSources.js";
 import { deskSchwabRestAppFromDeskSource } from "../lib/desk/deskSchwabRestCredential.js";
@@ -57,6 +58,7 @@ router.get("/health", (_req, res) => {
       buffer_frames: tape.buffer_frames,
     },
     desk_tape_universe: getDeskTapeUniverseHealth(),
+    streamer_subscriptions: getStreamerSubscriptionHealth(now),
     desk_equity_fields_seen: getDeskEquityFieldsSeen(),
     schwab_oauth: buildDeskSchwabOAuthHealth(),
     session_date: deskSessionDateEt(new Date(now)),

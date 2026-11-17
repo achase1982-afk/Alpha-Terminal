@@ -38,7 +38,7 @@ export function deskSummarizeFeedsHealth(feeds: FeedRow[]): {
 } {
   const gated = feeds.filter(deskFeedExcludedFromHealthGate).map((f) => f.feed);
   const active = feeds.filter((f) => !deskFeedExcludedFromHealthGate(f));
-  const any_stale = active.some((f) => f.stale);
+  const any_stale = active.some((f) => f.stale && f.status !== "on_demand");
   const any_failure = active.some((f) => FAILURE_STATUSES.has(f.status) || f.stale);
   return { any_stale, any_failure, gated_feeds: [...new Set(gated)] };
 }

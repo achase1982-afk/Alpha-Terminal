@@ -35,7 +35,8 @@ async function pollAlpacaNews(): Promise<void> {
 }
 
 async function pollNews(): Promise<void> {
-  await deskFetchNews(["SPY", "QQQ"]);
+  const { DESK_DEFAULT_NEWS_SYMBOLS } = await import("./deskDefaultNewsSymbols.js");
+  await deskFetchNews([...DESK_DEFAULT_NEWS_SYMBOLS]);
 }
 
 async function pollVendorSlow(): Promise<void> {

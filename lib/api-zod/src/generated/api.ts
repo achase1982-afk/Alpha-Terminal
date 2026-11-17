@@ -86,6 +86,7 @@ export const GetQuoteResponse = zod.object({
   peRatio: zod.number().optional(),
   nextEarningsDate: zod.string().optional(),
   error: zod.string().optional(),
+  not_streaming: zod.boolean().optional(),
 });
 
 /**

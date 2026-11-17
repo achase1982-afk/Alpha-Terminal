@@ -1206,6 +1206,11 @@ function processAcctActivity(content: Record<string, unknown>[]) {
 
     logger.info({ seqNum, msgType, rawLength: msgData?.length ?? 0 },
       "Schwab ACCT_ACTIVITY event");
+    if (msgType && msgType !== "SUBSCRIBED") {
+      void import("./wsServer.js")
+        .then((m) => m.requestPortfolioRefreshFromAcctActivity())
+        .catch(() => undefined);
+    }
 
     if (msgData) {
       logger.info({ msgData }, "Schwab ACCT_ACTIVITY raw payload");
@@ -2213,6 +2218,23 @@ export function addOptionSymbols(symbols: string[]) {
     }
     notifyDeskAppSubscriptionsChanged();
   }
+}
+
+export function removeOptionSymbols(symbols: string[]) {
+  let changed = false;
+  for (const s of symbols) {
+    if (subscribedOptionSymbols.delete(s)) changed = true;
+  }
+  if (changed && connectionState === "connected") {
+    sendOptionSubscription([...subscribedOptionSymbols]);
+    notifyDeskAppSubscriptionsChanged();
+  }
+}
+
+/** Whether an equity/index symbol currently has a streaming L1 last. */
+export function schwabSymbolHasStreamingMark(apiSymbol: string): boolean {
+  const snap = getQuoteBySymbol(apiSymbol);
+  return snap != null && snap.last != null;
 }
 
 /**
