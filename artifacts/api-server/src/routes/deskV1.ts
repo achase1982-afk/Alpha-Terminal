@@ -9,6 +9,13 @@ import { deskFetchUwFlow } from "../lib/desk/deskUnusualWhales.js";
 import { deskTradierQuotes, getTradierToken } from "../lib/desk/deskTradier.js";
 import { deskFetchNews } from "../lib/desk/deskNews.js";
 import { deskFetchAlpacaNews } from "../lib/desk/deskAlpacaNews.js";
+import { deskAlpacaPaperQuotes } from "../lib/desk/deskAlpacaPaper.js";
+import { deskTastytradeQuotes } from "../lib/desk/deskTastytrade.js";
+import { deskFetchEodhdBars } from "../lib/desk/deskEodhd.js";
+import { deskAlpacaPaperBars } from "../lib/desk/deskAlpacaPaper.js";
+import { deskFetchAlphaVantageNews, deskFetchAlphaVantageOverview } from "../lib/desk/deskAlphaVantage.js";
+import { deskFetchMarketauxNews } from "../lib/desk/deskMarketaux.js";
+import { deskFetchStocknews } from "../lib/desk/deskStocknews.js";
 import { getDeskTapeSince, registerDeskSpxSse } from "../lib/desk/deskSpxTape.js";
 import { deskPersistSnapshot } from "../lib/desk/deskSnapshotStore.js";
 import { deskAsofEtIso, deskSessionDateEt } from "../lib/desk/deskEt.js";
@@ -44,7 +51,12 @@ router.get("/health", async (_req, res) => {
 });
 
 router.get("/quotes", async (req, res) => {
-  const resolved = deskResolveSource(req.query["source"] as string | undefined, ["schwab", "tradier"] as const, "schwab");
+  const resolved = deskResolveSource(req.query["source"] as string | undefined, [
+    "schwab",
+    "tradier",
+    "alpaca_paper",
+    "tastytrade",
+  ] as const);
   if ("error" in resolved) {
     res.status(400).json({ error: resolved.error, source: resolved.source, allowed: resolved.allowed });
     return;
@@ -53,6 +65,32 @@ router.get("/quotes", async (req, res) => {
   const raw = (req.query["symbols"] as string) ?? "SPY,QQQ,$SPX";
   const symbols = raw.split(",").map((s) => s.trim()).filter(Boolean);
   const session_date = deskSessionDateEt();
+
+  if (resolved.source === "alpaca_paper") {
+    const r = await deskAlpacaPaperQuotes(symbols);
+    if (!r.ok) {
+      const status = r.error === "not_configured" ? 503 : r.status && r.status >= 400 ? r.status : 502;
+      res.status(status).json({ error: r.error ?? "alpaca_paper_fetch_failed", source: "alpaca_paper" });
+      return;
+    }
+    const payload = { quotes: r.quotes, session_date };
+    void deskPersistSnapshot("quotes", payload);
+    res.json(deskEnvelope(payload, "alpaca_paper", r.asOfMs, "alpaca_paper"));
+    return;
+  }
+
+  if (resolved.source === "tastytrade") {
+    const r = await deskTastytradeQuotes(symbols);
+    if (!r.ok) {
+      const status = r.error === "not_configured" ? 503 : r.status && r.status >= 400 ? r.status : 502;
+      res.status(status).json({ error: r.error ?? "tastytrade_fetch_failed", source: "tastytrade" });
+      return;
+    }
+    const payload = { quotes: r.quotes, session_date };
+    void deskPersistSnapshot("quotes", payload);
+    res.json(deskEnvelope(payload, "tastytrade", r.asOfMs, "tastytrade"));
+    return;
+  }
 
   if (resolved.source === "tradier") {
     const t = await deskTradierQuotes(symbols);
@@ -136,7 +174,7 @@ router.get("/tape/spx", (req, res) => {
 });
 
 router.get("/chains", async (req, res) => {
-  const resolved = deskResolveSource(req.query["source"] as string | undefined, ["schwab"] as const, "schwab");
+  const resolved = deskResolveSource(req.query["source"] as string | undefined, ["schwab"] as const);
   if ("error" in resolved) {
     res.status(400).json({ error: resolved.error, source: resolved.source, allowed: resolved.allowed });
     return;
@@ -174,11 +212,7 @@ router.get("/chains", async (req, res) => {
 });
 
 router.get("/flow", async (req, res) => {
-  const resolved = deskResolveSource(
-    req.query["source"] as string | undefined,
-    ["unusual_whales"] as const,
-    "unusual_whales",
-  );
+  const resolved = deskResolveSource(req.query["source"] as string | undefined, ["unusual_whales"] as const);
   if ("error" in resolved) {
     res.status(400).json({ error: resolved.error, source: resolved.source, allowed: resolved.allowed });
     return;
@@ -208,26 +242,90 @@ router.get("/flow", async (req, res) => {
 });
 
 router.get("/bars", async (req, res) => {
+  const resolved = deskResolveSource(req.query["source"] as string | undefined, [
+    "schwab",
+    "eodhd",
+    "alpaca_paper",
+  ] as const);
+  if ("error" in resolved) {
+    res.status(400).json({ error: resolved.error, source: resolved.source, allowed: resolved.allowed });
+    return;
+  }
+
   const symbol = ((req.query["symbol"] as string) ?? "SPY").toUpperCase();
   const timeframe = (req.query["timeframe"] as string) ?? "1d";
   const limit = Math.min(parseInt(String(req.query["limit"] ?? "100"), 10) || 100, 500);
+  const session_date = deskSessionDateEt();
+
+  if (resolved.source === "eodhd") {
+    const r = await deskFetchEodhdBars(symbol, limit);
+    if (!r.ok) {
+      const status = r.error === "not_configured" ? 503 : r.status && r.status >= 400 ? r.status : 502;
+      res.status(status).json({ error: r.error ?? "eodhd_fetch_failed", source: "eodhd" });
+      return;
+    }
+    res.json(
+      deskEnvelope({ symbol, timeframe: "eod", bars: r.bars, session_date }, "eodhd", r.asOfMs, "eodhd"),
+    );
+    return;
+  }
+
+  if (resolved.source === "alpaca_paper") {
+    const r = await deskAlpacaPaperBars(symbol, timeframe, limit);
+    if (!r.ok) {
+      const status = r.error === "not_configured" ? 503 : r.status && r.status >= 400 ? r.status : 502;
+      res.status(status).json({ error: r.error ?? "alpaca_paper_bars_failed", source: "alpaca_paper" });
+      return;
+    }
+    res.json(
+      deskEnvelope(
+        { symbol, timeframe, bars: r.bars, session_date },
+        "alpaca_paper",
+        r.asOfMs,
+        "alpaca_paper",
+      ),
+    );
+    return;
+  }
+
   const { bars, asOfMs } = await deskFetchSchwabBars(symbol, timeframe, limit);
   res.json(
+    deskEnvelope({ symbol, timeframe, bars, session_date: deskSessionDateEt(new Date(asOfMs)) }, "schwab", asOfMs, "schwab_quotes_rest"),
+  );
+});
+
+router.get("/fundamentals", async (req, res) => {
+  const resolved = deskResolveSource(req.query["source"] as string | undefined, ["alphavantage"] as const);
+  if ("error" in resolved) {
+    res.status(400).json({ error: resolved.error, source: resolved.source, allowed: resolved.allowed });
+    return;
+  }
+  const symbol = ((req.query["symbol"] as string) ?? "SPY").toUpperCase();
+  const r = await deskFetchAlphaVantageOverview(symbol);
+  if (!r.ok) {
+    const status =
+      r.error === "not_configured" ? 503 : r.error === "alphavantage_daily_cap" ? 429 : r.status && r.status >= 400 ? r.status : 502;
+    res.status(status).json({ error: r.error ?? "fundamentals_fetch_failed", source: "alphavantage" });
+    return;
+  }
+  res.json(
     deskEnvelope(
-      { symbol, timeframe, bars, session_date: deskSessionDateEt(new Date(asOfMs)) },
-      "schwab",
-      asOfMs,
-      "schwab_quotes_rest",
+      { symbol, overview: r.data, session_date: deskSessionDateEt(new Date(r.asOfMs)) },
+      "alphavantage",
+      r.asOfMs,
+      "alphavantage",
     ),
   );
 });
 
 router.get("/news", async (req, res) => {
-  const resolved = deskResolveSource(
-    req.query["source"] as string | undefined,
-    ["finnhub", "alpaca_news"] as const,
+  const resolved = deskResolveSource(req.query["source"] as string | undefined, [
     "finnhub",
-  );
+    "alpaca_news",
+    "alphavantage",
+    "marketaux",
+    "stocknews",
+  ] as const);
   if ("error" in resolved) {
     res.status(400).json({ error: resolved.error, source: resolved.source, allowed: resolved.allowed });
     return;
@@ -236,6 +334,61 @@ router.get("/news", async (req, res) => {
   const raw = (req.query["symbols"] as string) ?? "";
   const symbols = raw.split(",").map((s) => s.trim()).filter(Boolean);
   const syms = symbols.length ? symbols : ["SPY"];
+
+  if (resolved.source === "alphavantage") {
+    const r = await deskFetchAlphaVantageNews(syms);
+    if (!r.ok) {
+      const status =
+        r.error === "not_configured" ? 503 : r.error === "alphavantage_daily_cap" ? 429 : r.status && r.status >= 400 ? r.status : 502;
+      res.status(status).json({ error: r.error ?? "alphavantage_news_failed", source: "alphavantage" });
+      return;
+    }
+    res.json(
+      deskEnvelope(
+        { articles: r.articles, session_date: deskSessionDateEt(new Date(r.asOfMs)) },
+        "alphavantage",
+        r.asOfMs,
+        "alphavantage",
+      ),
+    );
+    return;
+  }
+
+  if (resolved.source === "marketaux") {
+    const r = await deskFetchMarketauxNews(syms);
+    if (!r.ok) {
+      const status = r.error === "not_configured" ? 503 : r.status && r.status >= 400 ? r.status : 502;
+      res.status(status).json({ error: r.error ?? "marketaux_news_failed", source: "marketaux" });
+      return;
+    }
+    res.json(
+      deskEnvelope(
+        { articles: r.articles, session_date: deskSessionDateEt(new Date(r.asOfMs)) },
+        "marketaux",
+        r.asOfMs,
+        "marketaux",
+      ),
+    );
+    return;
+  }
+
+  if (resolved.source === "stocknews") {
+    const r = await deskFetchStocknews(syms);
+    if (!r.ok) {
+      const status = r.error === "not_configured" ? 503 : r.status && r.status >= 400 ? r.status : 502;
+      res.status(status).json({ error: r.error ?? "stocknews_failed", source: "stocknews" });
+      return;
+    }
+    res.json(
+      deskEnvelope(
+        { articles: r.articles, session_date: deskSessionDateEt(new Date(r.asOfMs)) },
+        "stocknews",
+        r.asOfMs,
+        "stocknews",
+      ),
+    );
+    return;
+  }
 
   if (resolved.source === "alpaca_news") {
     const r = await deskFetchAlpacaNews(syms);

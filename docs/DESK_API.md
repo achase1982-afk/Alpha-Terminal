@@ -28,7 +28,7 @@ Each item:
 
 `feed`, `source`, `last_update_ts` (UTC **ms** of last data), `age_ms`, `stale`, `stale_after_ms`, `status`, `session_date`, `asof_et`.
 
-**Status:** `OK`, `streaming`, `stale`, `stopped`, `evicted_yielded`, `AUTH_FAIL`, `session_closed`, `error`, `reconnecting`, `not_configured`.
+**Status:** `OK`, `streaming`, `stale`, `stopped`, `evicted_yielded`, `AUTH_FAIL`, `auth_error`, `not_authorized`, `configured`, `session_closed`, `error`, `reconnecting`, `not_configured`.
 
 Outside a feed’s ET session window → `session_closed` and `stale=false`.
 
@@ -41,7 +41,8 @@ Outside a feed’s ET session window → `session_closed` and `stale=false`.
 | `live_gamma` | 180000 (09:31:20–16:00:20 ET) |
 | `live_net_prem` | 180000 (09:31:20–15:45:20 ET) |
 | `uw_flow`, `tradier` | 180000 |
-| `alpaca`, `news` | 900000 (15 min) |
+| `alpaca`, `alpaca_paper`, `tastytrade`, `alphavantage`, `marketaux`, `stocknews`, `eodhd`, `news` | 900000 (15 min) |
+| `tradier_sandbox`, `schwab2_rest` | key-only / placeholder |
 
 `alpaca` is **news only** (not SIP/NBBO quotes).
 
@@ -50,14 +51,15 @@ Outside a feed’s ET session window → `session_closed` and `stale=false`.
 | Method | Path | Notes |
 |--------|------|--------|
 | GET | `/health` | Feed freshness matrix |
-| GET | `/quotes?symbols=&source=schwab\|tradier` | Honours `source`; no silent fallback between vendors |
+| GET | `/quotes?symbols=&source=` | **Required** `source`: `schwab`, `tradier`, `alpaca_paper`, `tastytrade` |
 | GET | `/tape/spx/stream` | SSE Schwab streamer frames `{rx_ns,c,dir?,m,session_date,rx_utc_ms}` |
 | GET | `/tape/spx/raw?session_date=&since_ns=` | Gzip-backed inbound frame NDJSON (`{c,rx_ns,m}`); `since_ns` is UTC epoch ns string |
 | GET | `/tape/spx?since=` | Normalized in-memory ticks |
-| GET | `/chains?symbol=&expiration=` | Full Schwab chain by default (`range=ALL`, no `strikeCount`). Optional `strikeCount`, `range` (`ITM`/`NTM`/`OTM`/`ALL`). Response includes `truncated`, `contract_count`, normalized `rho`, and raw contracts. |
-| GET | `/flow?symbol=&source=unusual_whales` | UW flow; `symbol=SPX` → `ticker_symbol=SPX,SPXW` + server filter |
-| GET | `/bars` | Schwab price history |
-| GET | `/news?symbols=&source=finnhub\|alpaca_news` | Honours `source`; Alpaca uses news API + `alpaca` feed freshness |
+| GET | `/chains?symbol=&expiration=&source=schwab` | Full Schwab chain (`range=ALL` default). **`source` required.** |
+| GET | `/flow?symbol=&source=unusual_whales` | UW flow; **`source` required** |
+| GET | `/bars?symbol=&source=` | **Required** `source`: `schwab`, `eodhd`, `alpaca_paper` |
+| GET | `/fundamentals?symbol=&source=alphavantage` | Alpha Vantage company overview (daily call budget ~25) |
+| GET | `/news?symbols=&source=` | **Required** `source`: `finnhub`, `alpaca_news`, `alphavantage`, `marketaux`, `stocknews` |
 
 ## Streamer
 
@@ -76,10 +78,18 @@ Reuses the **single** server Schwab streamer (no second login). Taps inbound/out
 When `DESK_TAPE_UNIVERSE_ENABLED` is true (default), desk **ADD**s (never SUBS) on the app’s single streamer connection:
 
 - `LEVELONE_EQUITIES` — `$SPX`, `SPY`, `$VIX` (fields 0–51)
-- `LEVELONE_OPTIONS` — SPXW 0DTE ~2000 ATM-centered symbols (fields 0–55)
-- `OPTIONS_BOOK` — ~500 ATM 0DTE (fields 0–3)
+- `LEVELONE_OPTIONS` — multi-expiry SPXW (default: all expiries within **7 calendar days**, cap **15000**)
+- `OPTIONS_BOOK` — ~500 ATM (fields 0–3)
 
-Universe refreshes on spot moves and 0DTE roll; symbol caps surface in `/health` → `desk_tape_universe`. Inbound capture counters: `/health` → `schwab_streamer.{frames,bytes,last_frame_ns}`.
+Desk **ADD** batches up to **500** symbols per request on the single streamer (never SUBS, never a second connection). Configure:
+
+| Variable | Default |
+|----------|---------|
+| `DESK_TAPE_OPTIONS_EXPIRIES` | `7d` (comma list or single `YYYY-MM-DD`) |
+| `DESK_TAPE_OPTIONS_MAX` | `15000` |
+| `DESK_TAPE_OPTIONS_SYMBOLS` / `DESK_TAPE_OPTIONS_SYMBOLS_URL` | optional explicit symbol list |
+
+Universe refreshes on spot moves and expiry window changes; `/health` → `desk_tape_universe` includes `options_by_expiry` and `streamer_add_rejections`.
 
 ## Environment
 
@@ -91,6 +101,13 @@ Universe refreshes on spot moves and 0DTE roll; symbol caps surface in `/health`
 | `UW_API_KEY_NEW` / `UW_API_KEY` | Unusual Whales |
 | `TRADIER_API_KEY` / `TRADIER_TOKEN` | Tradier fallback quotes |
 | `ALPACA_API_KEY_ID` + `ALPACA_API_SECRET_KEY` (or `APCA_*`) | Alpaca **news** path only |
+| `ALPACA_PAPER_API_KEY_ID` + `ALPACA_PAPER_API_SECRET_KEY` | Alpaca **paper** market data (quotes/bars); no trading endpoints |
+| `TASTYTRADE_CLIENT_SECRET` + `TASTYTRADE_REFRESH_TOKEN` | OAuth refresh (cached until expiry); REST quote probe; DXLink not opened on desk |
+| `SCHWAB_APP_KEY_2` + `SCHWAB_APP_SECRET_2` | REST placeholder — health `not_authorized` until dedicated OAuth exists |
+| `ALPHAVANTAGE_API_KEY` | News + fundamentals (~25 calls/day; boot probe + on-demand only) |
+| `MARKETAUX_API_KEY`, `STOCKNEWS_API_KEY` | News |
+| `EODHD_API_KEY` | EOD bars (`source=eodhd`) |
+| `TRADIER_SANDBOX_TOKEN` | Stored only; health `configured` / `not_configured` |
 | `FINNHUB_API_KEY` | Symbol news |
 
 Each also accepts a `DESK_` prefix. Schwab data uses the existing token store (unchanged).

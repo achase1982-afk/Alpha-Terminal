@@ -165,7 +165,7 @@ const deskAddedOptionSymbols = new Set<string>();
 const deskAddedOptionsBookSymbols = new Set<string>();
 const DESK_EQ_FIELDS = Array.from({ length: 52 }, (_, i) => i).join(",");
 const DESK_OPT_FIELDS = Array.from({ length: 56 }, (_, i) => i).join(",");
-const DESK_ADD_BATCH = 200;
+const DESK_ADD_BATCH = 500;
 
 /** Level 2 book — field IDs align with schwab-py `BookFields` (SYMBOL, BOOK_TIME, BIDS, ASKS). */
 const NYSE_NASDAQ_OPTIONS_BOOK_FIELDS = "0,1,2,3";
@@ -1545,6 +1545,16 @@ function handleMessage(raw: string) {
 
       if (service !== "ADMIN") {
         logger.info({ service, command, code, msg: msgText }, "Schwab streamer: subscription response");
+      }
+      if (
+        command === "ADD" &&
+        code !== 0 &&
+        code !== 12 &&
+        (service === "LEVELONE_OPTIONS" || service === "OPTIONS_BOOK" || service === "LEVELONE_EQUITIES")
+      ) {
+        void import("./desk/deskTapeUniverse.js").then((m) =>
+          m.deskRecordStreamerRejection(`${service}:code_${code}:${msgText ?? "unknown"}`),
+        );
       }
       if (service === "ACCT_ACTIVITY" && command === "SUBS") {
         if (code === 0) {
