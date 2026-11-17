@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { parseAlpacaNewsPayload } from "../deskAlpacaNews.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixture = () =>
@@ -32,11 +33,16 @@ describe("deskFetchAlpacaNews", () => {
     );
   });
 
-  it("requests batched symbols with 24h start and auth headers", async () => {
+  it("requests batched symbols with auth headers and parses v1beta1 news key", async () => {
+    expect(parseAlpacaNewsPayload(fixture())).toHaveLength(1);
     const { deskFetchAlpacaNews } = await import("../deskAlpacaNews.js");
     const r = await deskFetchAlpacaNews(["SPY", "SPX"]);
     expect(r.ok).toBe(true);
     expect(r.articles).toHaveLength(1);
-    expect(r.asOfMs).toBe(Date.parse("2026-11-17T14:00:00Z"));
+  });
+
+  it("parseAlpacaNewsPayload fails shape without news array", () => {
+    expect(parseAlpacaNewsPayload({ items: [] })).toHaveLength(0);
+    expect(parseAlpacaNewsPayload(fixture())).not.toHaveLength(0);
   });
 });

@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { fetchStrategistSympathyPeers } from "../strategistSectorPeersService.js";
 
-describe("fetchStrategistSympathyPeers", () => {
+const liveApi = process.env.RUN_LIVE_API_TESTS === "1" || process.env.RUN_LIVE_API_TESTS === "true";
+
+describe.skipIf(!liveApi)("fetchStrategistSympathyPeers (live API)", () => {
   it("returns FMP peer tickers for a liquid symbol when API key is set", async () => {
     if (!process.env.FMP_API_KEY?.trim()) {
       return;

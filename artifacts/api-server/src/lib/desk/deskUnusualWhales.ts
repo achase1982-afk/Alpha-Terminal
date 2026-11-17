@@ -1,5 +1,6 @@
 import { deskEnv } from "./deskEnv.js";
-import { deskTouchFeed, deskMarkFeedError, deskMarkFeedNotConfigured } from "./deskFeedFreshness.js";
+import { deskTouchFeed, deskMarkFeedNotConfigured } from "./deskFeedFreshness.js";
+import { deskApplyUwHttpFeedStatus } from "./deskUwStatus.js";
 import { deskFilterUwFlowAlerts, deskUwFlowTickerQuery } from "./deskUwFlow.js";
 import { logger } from "../logger.js";
 
@@ -91,7 +92,7 @@ export async function deskFetchUwFlow(opts?: {
       });
       if (!res.ok) {
         const msg = `uw_flow_http_${res.status}`;
-        deskMarkFeedError("uw_flow", msg);
+        deskApplyUwHttpFeedStatus("uw_flow", res.status);
         logger.warn({ status: res.status, symbol }, "Desk UW flow fetch failed");
         return {
           ok: false,
@@ -116,7 +117,7 @@ export async function deskFetchUwFlow(opts?: {
       return { ok: true, alerts: filtered, asOfMs: at, status: res.status, symbol };
     });
   } catch (err) {
-    deskMarkFeedError("uw_flow", "uw_flow_fetch_error");
+    deskApplyUwHttpFeedStatus("uw_flow", 0);
     logger.warn({ err, symbol }, "Desk UW flow error");
     return { ok: false, alerts: [], asOfMs: Date.now(), error: "uw_flow_fetch_error", symbol };
   }

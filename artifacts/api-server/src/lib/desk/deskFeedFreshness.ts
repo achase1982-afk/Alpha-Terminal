@@ -46,7 +46,8 @@ export type DeskFeedStatusCode =
   | "reconnecting"
   | "not_configured"
   | "rate_limited"
-  | "ok_no_new_articles";
+  | "ok_no_new_articles"
+  | "expired_or_unpaid";
 
 export type DeskFeedStatus = {
   feed: DeskFeedId;
@@ -67,6 +68,8 @@ export type DeskFeedStatus = {
 type FeedRecord = {
   source: string;
   lastDataMs: number | null;
+  /** Wall-clock ms of last HTTP 2xx poll (Finnhub news). */
+  lastPollOkMs?: number | null;
   error?: string;
   notConfigured?: boolean;
   forcedStatus?: DeskFeedStatusCode;
@@ -243,8 +246,44 @@ export function deskMarkFeedRateLimited(feed: DeskFeedId, error: string, source?
   records.set(feed, {
     source: source ?? prev?.source ?? FEED_SOURCES[feed],
     lastDataMs: prev?.lastDataMs ?? null,
+    lastPollOkMs: prev?.lastPollOkMs ?? null,
     error,
     forcedStatus: "rate_limited",
+  });
+}
+
+export function deskMarkFeedExpiredOrUnpaid(feed: DeskFeedId, error: string, source?: string): void {
+  const prev = records.get(feed);
+  records.set(feed, {
+    source: source ?? prev?.source ?? FEED_SOURCES[feed],
+    lastDataMs: prev?.lastDataMs ?? null,
+    lastPollOkMs: prev?.lastPollOkMs ?? null,
+    error,
+    forcedStatus: "expired_or_unpaid",
+  });
+}
+
+export function deskTouchFeedPollOk(feed: DeskFeedId, pollMs = Date.now(), source?: string): void {
+  const prev = records.get(feed);
+  records.set(feed, {
+    source: source ?? prev?.source ?? FEED_SOURCES[feed],
+    lastDataMs: prev?.lastDataMs ?? null,
+    lastPollOkMs: pollMs,
+    notConfigured: false,
+  });
+}
+
+export function deskGetFeedLastPollOkMs(feed: DeskFeedId): number | null {
+  return records.get(feed)?.lastPollOkMs ?? null;
+}
+
+export function deskClearFeedForcedStatus(feed: DeskFeedId): void {
+  const prev = records.get(feed);
+  if (!prev) return;
+  records.set(feed, {
+    ...prev,
+    forcedStatus: undefined,
+    error: undefined,
   });
 }
 
@@ -276,7 +315,10 @@ export function deskTouchFeed(feed: DeskFeedId, dataTsMs?: number, source?: stri
   records.set(feed, {
     source: source ?? prev?.source ?? FEED_SOURCES[feed],
     lastDataMs: ts,
+    lastPollOkMs: prev?.lastPollOkMs ?? null,
     notConfigured: false,
+    error: undefined,
+    forcedStatus: undefined,
   });
 }
 
@@ -310,6 +352,7 @@ function resolveStatus(
   if (rec.forcedStatus === "AUTH_FAIL") return "AUTH_FAIL";
   if (rec.forcedStatus === "auth_error") return "auth_error";
   if (rec.forcedStatus === "rate_limited") return "rate_limited";
+  if (rec.forcedStatus === "expired_or_unpaid") return "expired_or_unpaid";
   if (rec.forcedStatus === "ok_no_new_articles") return "ok_no_new_articles";
   if (rec.forcedStatus === "error") return "error";
   if (!feedInSession(feed, at)) return "session_closed";
@@ -371,6 +414,7 @@ export function buildDeskHealthFeeds(now = Date.now()): DeskFeedStatus[] {
       status !== "auth_error" &&
       status !== "not_authorized" &&
       status !== "rate_limited" &&
+      status !== "expired_or_unpaid" &&
       status !== "ok_no_new_articles" &&
       status !== "configured" &&
       status !== "AUTH_FAIL" &&
@@ -378,7 +422,9 @@ export function buildDeskHealthFeeds(now = Date.now()): DeskFeedStatus[] {
     if (status === "session_closed") stale = false;
     if (status === "not_configured") stale = false;
     if (status === "configured" || status === "not_authorized") stale = false;
-    if (status === "rate_limited" || status === "ok_no_new_articles") stale = false;
+    if (status === "rate_limited" || status === "expired_or_unpaid" || status === "ok_no_new_articles") {
+      stale = false;
+    }
     if (!inSession && FEED_SESSION[feed]) stale = false;
 
     const row: DeskFeedStatus = {

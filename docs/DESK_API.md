@@ -30,7 +30,7 @@ Each item:
 
 Top-level `feeds_summary` aggregates `any_stale` / `any_failure` **excluding** feeds with `excluded_from_health_gate` (StockNews is optional when `STOCKNEWS_API_KEY` is unset).
 
-**Status:** `OK`, `streaming`, `stale`, `stopped`, `evicted_yielded`, `AUTH_FAIL`, `auth_error`, `not_authorized`, `configured`, `session_closed`, `error`, `reconnecting`, `not_configured`, `rate_limited`, `ok_no_new_articles`.
+**Status:** `OK`, `streaming`, `stale`, `stopped`, `evicted_yielded`, `AUTH_FAIL`, `auth_error`, `not_authorized`, `configured`, `session_closed`, `error`, `reconnecting`, `not_configured`, `rate_limited`, `expired_or_unpaid`, `ok_no_new_articles`.
 
 `rate_limited` (e.g. Alpha Vantage daily cap) is **not** counted as stale. `ok_no_new_articles` means the poll succeeded but no newer articles arrived (Finnhub); `last_update_ts` remains the newest article publish time and `stale=false`.
 
@@ -58,9 +58,9 @@ Outside a feed’s ET session window → `session_closed` and `stale=false`.
 | GET | `/quotes?symbols=&source=` | **Required** `source`: `schwab2` (app 2 first, fallback app 1), `schwab` (app 1 first, fallback app 2); envelope labels reflect the app used. Also `tradier`, `alpaca_paper`, `tastytrade` |
 | GET | `/tape/spx/stream` | SSE Schwab streamer frames `{rx_ns,c,dir?,m,session_date,rx_utc_ms}` |
 | GET | `/tape/spx/raw?session_date=&since_ns=` | Filtered desk-only streamer NDJSON (`{c,rx_ns,m}`); `rx_ns` is a JSON integer; `since_ns` remains a nanosecond string for pagination |
-| GET | `/gamma/live_gamma_0dte?source=unusual_whales&expiry=&ticker=` | UW `/spot-exposures/expiry-strike` with `limit=500` pages; **server-side filter** to one `expiry` (default today ET). Optional `ticker` (default `SPX`). |
-| GET | `/gamma/live_gamma?source=unusual_whales&expiry=&ticker=` | UW **spot-exposures** product (`/spot-exposures`), filtered to `expiry` (default today ET). |
-| GET | `/net_prem/ticks?source=unusual_whales&ticker=&since=` | SPX per-minute net-prem ticks; `since` = epoch ms or ISO; optional `ticker` (default `SPX`). |
+| GET | `/gamma/live_gamma_0dte?source=unusual_whales&expiry=&ticker=` | Serves the **poller cache** (short TTL). UW `expirations[]=<expiry>` + `date` on `/spot-exposures/expiry-strike` (`limit=500`, zero-based `page`; 503 honors `Retry-After` once per page). `expiry` / `ticker` validated (`YYYY-MM-DD`, `^[A-Z.$]{1,10}$`). |
+| GET | `/gamma/live_gamma?source=unusual_whales&expiry=&ticker=` | Serves poller cache. UW `/spot-exposures?date=` — per-minute GEX rows (`time`, `price`, greek exposures); **no** expiry filter or paging. Query `expiry` is the UW **market date** (default today ET). |
+| GET | `/net_prem/ticks?source=unusual_whales&ticker=&since=` | Serves poller cache. UW `date=` only; `since` (epoch ms or ISO, validated) filters `tape_time` locally. Optional `ticker` (default `SPX`). |
 | GET | `/tape/spx?since=` | Normalized in-memory ticks |
 | GET | `/chains?symbol=&expiration=&source=` | Full Schwab chain (`source=schwab2` default, `source=schwab` uses app 1). **`source` required.** |
 | GET | `/flow?symbol=&source=unusual_whales` | UW flow; **`source` required** |

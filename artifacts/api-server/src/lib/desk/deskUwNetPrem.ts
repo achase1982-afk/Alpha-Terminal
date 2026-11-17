@@ -1,25 +1,21 @@
-import { deskUwExtractRows } from "./deskUwGamma.js";
+import { deskSessionDateEt } from "./deskEt.js";
+import { deskUwExtractRows, DESK_UW_SNAPSHOT_TTL_MS } from "./deskUwGamma.js";
 import { deskUwGet } from "./deskUwHttp.js";
-import {
-  deskMarkFeedError,
-  deskMarkFeedNotConfigured,
-  deskTouchFeed,
-} from "./deskFeedFreshness.js";
+import { deskTouchFeed } from "./deskFeedFreshness.js";
 import { getUwApiKey } from "./deskUnusualWhales.js";
 import { logger } from "../logger.js";
+import { deskApplyUwHttpFeedStatus, deskUwMarkNotConfigured } from "./deskUwStatus.js";
 
 const UW_SOURCE = "unusual_whales";
 
-export function deskParseSinceMs(raw: string | undefined): number | null {
-  if (raw == null || String(raw).trim() === "") return null;
-  const s = String(raw).trim();
-  const n = Number(s);
-  if (Number.isFinite(n)) {
-    if (n > 1e12) return Math.floor(n);
-    if (n > 1e9) return Math.floor(n * 1000);
+export function deskParseTapeTimeMs(raw: unknown): number | null {
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return raw < 1e12 ? Math.floor(raw * 1000) : Math.floor(raw);
   }
-  const parsed = Date.parse(s);
-  return Number.isFinite(parsed) ? parsed : null;
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const ms = Date.parse(normalized);
+  return Number.isFinite(ms) ? ms : null;
 }
 
 export function deskFilterTicksSince(rows: unknown[], sinceMs: number | null): unknown[] {
@@ -27,63 +23,70 @@ export function deskFilterTicksSince(rows: unknown[], sinceMs: number | null): u
   return rows.filter((row) => {
     if (!row || typeof row !== "object") return false;
     const r = row as Record<string, unknown>;
-    const t =
-      typeof r.timestamp === "number"
-        ? r.timestamp
-        : typeof r.tape_time === "number"
-          ? r.tape_time
-          : typeof r.time === "string"
-            ? Date.parse(r.time)
-            : NaN;
-    if (!Number.isFinite(t)) return true;
-    const ms = t < 1e12 ? t * 1000 : t;
+    const ms = deskParseTapeTimeMs(r.tape_time ?? r.timestamp ?? r.time);
+    if (ms == null) return true;
     return ms >= sinceMs;
   });
 }
 
-export type DeskUwNetPremResult = {
-  ok: boolean;
-  ticks: unknown[];
+type NetPremCache = {
+  rows: unknown[];
   asOfMs: number;
+  cachedAtMs: number;
   ticker: string;
-  status?: number;
-  error?: string;
+  date: string;
 };
 
-export async function deskFetchNetPremTicks(opts?: {
-  ticker?: string;
-  sinceMs?: number | null;
-}): Promise<DeskUwNetPremResult> {
-  const key = getUwApiKey();
-  if (!key) {
-    deskMarkFeedNotConfigured("live_net_prem", UW_SOURCE);
-    return { ok: false, ticks: [], asOfMs: Date.now(), ticker: "SPX", error: "not_configured" };
-  }
-  const ticker = (opts?.ticker ?? "SPX").toUpperCase();
-  let path = `/api/stock/${encodeURIComponent(ticker)}/net-prem-ticks`;
-  if (opts?.sinceMs != null) {
-    path += `?since=${encodeURIComponent(String(opts.sinceMs))}`;
-  }
+const netPremCache = new Map<string, NetPremCache>();
+
+function netPremKey(ticker: string, date: string): string {
+  return `${ticker.toUpperCase()}|${date}`;
+}
+
+export async function deskRefreshNetPremTicks(ticker = "SPX", marketDate?: string): Promise<NetPremCache | null> {
   try {
+    const key = getUwApiKey();
+    if (!key) {
+      deskUwMarkNotConfigured("live_net_prem");
+      return null;
+    }
+    const sym = ticker.toUpperCase();
+    const date = (marketDate ?? deskSessionDateEt()).slice(0, 10);
+    const path = `/api/stock/${encodeURIComponent(sym)}/net-prem-ticks?date=${encodeURIComponent(date)}`;
     const res = await deskUwGet(path);
     if (!res.ok) {
-      deskMarkFeedError("live_net_prem", `uw_http_${res.status}`, UW_SOURCE);
-      return {
-        ok: false,
-        ticks: [],
-        asOfMs: res.asOfMs,
-        ticker,
-        status: res.status,
-        error: `uw_http_${res.status}`,
-      };
+      deskApplyUwHttpFeedStatus("live_net_prem", res.status);
+      return null;
     }
     const rows = deskUwExtractRows(res.json);
-    const ticks = deskFilterTicksSince(rows, opts?.sinceMs ?? null);
+    const cached: NetPremCache = {
+      rows,
+      asOfMs: res.asOfMs,
+      cachedAtMs: Date.now(),
+      ticker: sym,
+      date,
+    };
+    netPremCache.set(netPremKey(sym, date), cached);
     deskTouchFeed("live_net_prem", res.asOfMs, UW_SOURCE);
-    return { ok: true, ticks, asOfMs: res.asOfMs, ticker };
+    return cached;
   } catch (err) {
-    deskMarkFeedError("live_net_prem", "uw_fetch_error", UW_SOURCE);
-    logger.debug({ err, ticker }, "Desk UW net-prem ticks error");
-    return { ok: false, ticks: [], asOfMs: Date.now(), ticker, error: "uw_fetch_error" };
+    deskApplyUwHttpFeedStatus("live_net_prem", 0);
+    logger.debug({ err, ticker }, "Desk UW net-prem refresh error");
+    return null;
   }
+}
+
+export function deskGetCachedNetPremTicks(
+  ticker: string,
+  marketDate: string,
+  sinceMs: number | null,
+): { ticks: unknown[]; asOfMs: number; ticker: string } | null {
+  const hit = netPremCache.get(netPremKey(ticker, marketDate.slice(0, 10)));
+  if (!hit || Date.now() - hit.cachedAtMs > DESK_UW_SNAPSHOT_TTL_MS) return null;
+  const ticks = deskFilterTicksSince(hit.rows, sinceMs);
+  return { ticks, asOfMs: hit.asOfMs, ticker: hit.ticker };
+}
+
+export function deskResetNetPremCacheForTests(): void {
+  netPremCache.clear();
 }

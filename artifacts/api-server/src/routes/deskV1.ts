@@ -21,11 +21,12 @@ import { deskPersistSnapshot } from "../lib/desk/deskSnapshotStore.js";
 import { deskAsofEtIso, deskSessionDateEt } from "../lib/desk/deskEt.js";
 import { refreshDeskUwLiveFeeds } from "../lib/desk/deskUwLiveFeeds.js";
 import {
-  deskFetchLiveGamma,
-  deskFetchLiveGamma0dte,
-  deskUwNormalizeExpiry,
+  deskGetCachedLiveGamma,
+  deskGetCachedLiveGamma0dte,
 } from "../lib/desk/deskUwGamma.js";
-import { deskFetchNetPremTicks, deskParseSinceMs } from "../lib/desk/deskUwNetPrem.js";
+import { deskGetCachedNetPremTicks } from "../lib/desk/deskUwNetPrem.js";
+import { deskParseSinceMs, deskValidateMarketDate, deskValidateUwTicker } from "../lib/desk/deskUwInput.js";
+import { deskUwRouteHttpFromStatus } from "../lib/desk/deskUwStatus.js";
 import { getDeskRawTapeHealth, streamDeskRawTapeNdjson } from "../lib/desk/deskSpxTapeRaw.js";
 import { getDeskTapeUniverseHealth } from "../lib/desk/deskTapeUniverse.js";
 import { getDeskEquityFieldsSeen } from "../lib/desk/deskStreamerTap.js";
@@ -490,21 +491,32 @@ const gammaHandler =
       res.status(400).json({ error: resolved.error, source: resolved.source, allowed: resolved.allowed });
       return;
     }
-    const expiry = deskUwNormalizeExpiry(req.query["expiry"] as string | undefined);
-    const ticker = (req.query["ticker"] as string | undefined)?.trim().toUpperCase() || "SPX";
+    const defaultDate = deskSessionDateEt();
+    const marketDate = deskValidateMarketDate(req.query["expiry"] as string | undefined, defaultDate);
+    if (!marketDate) {
+      res.status(400).json({ error: "invalid_expiry", source: "unusual_whales", feed });
+      return;
+    }
+    const ticker = deskValidateUwTicker(req.query["ticker"] as string | undefined);
+    if (!ticker) {
+      res.status(400).json({ error: "invalid_ticker", source: "unusual_whales", feed });
+      return;
+    }
     const snap =
       feed === "live_gamma_0dte"
-        ? await deskFetchLiveGamma0dte(expiry, ticker)
-        : await deskFetchLiveGamma(expiry, ticker);
+        ? deskGetCachedLiveGamma0dte(marketDate, ticker)
+        : deskGetCachedLiveGamma(marketDate, ticker);
     if (!snap) {
-      res.status(503).json({ error: "gamma_snapshot_unavailable", source: "unusual_whales", feed });
+      const route = deskUwRouteHttpFromStatus(undefined, "gamma_snapshot_unavailable");
+      res.status(route.httpStatus).json({ error: route.error, source: "unusual_whales", feed });
       return;
     }
     res.json(
       deskEnvelope(
         {
           feed,
-          expiry: snap.expiry,
+          date: snap.date,
+          ...(snap.expiry ? { expiry: snap.expiry } : {}),
           ticker: snap.ticker,
           row_count: snap.row_count,
           data: snap.data,
@@ -530,25 +542,34 @@ router.get("/net_prem/ticks", async (req, res) => {
     res.status(400).json({ error: resolved.error, source: resolved.source, allowed: resolved.allowed });
     return;
   }
-  const ticker = (req.query["ticker"] as string | undefined)?.trim().toUpperCase() || "SPX";
-  const sinceMs = deskParseSinceMs(req.query["since"] as string | undefined);
-  const r = await deskFetchNetPremTicks({ ticker, sinceMs });
-  if (!r.ok) {
-    const status = r.status === 0 || r.status === 503 ? 503 : r.status ?? 503;
-    res.status(status).json({ error: r.error ?? "net_prem_unavailable", source: "unusual_whales" });
+  const ticker = deskValidateUwTicker(req.query["ticker"] as string | undefined);
+  if (!ticker) {
+    res.status(400).json({ error: "invalid_ticker", source: "unusual_whales" });
+    return;
+  }
+  const sinceParsed = deskParseSinceMs(req.query["since"] as string | undefined);
+  if (!sinceParsed.ok) {
+    res.status(400).json({ error: sinceParsed.error, source: "unusual_whales" });
+    return;
+  }
+  const marketDate = deskSessionDateEt();
+  const cached = deskGetCachedNetPremTicks(ticker, marketDate, sinceParsed.ms);
+  if (!cached) {
+    res.status(503).json({ error: "net_prem_snapshot_unavailable", source: "unusual_whales" });
     return;
   }
   res.json(
     deskEnvelope(
       {
-        ticker: r.ticker,
-        ticks: r.ticks,
-        since_ms: sinceMs,
-        row_count: r.ticks.length,
-        session_date: deskSessionDateEt(new Date(r.asOfMs)),
+        ticker: cached.ticker,
+        ticks: cached.ticks,
+        since_ms: sinceParsed.ms,
+        date: marketDate,
+        row_count: cached.ticks.length,
+        session_date: deskSessionDateEt(new Date(cached.asOfMs)),
       },
       "unusual_whales",
-      r.asOfMs,
+      cached.asOfMs,
       "live_net_prem",
     ),
   );

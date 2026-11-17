@@ -15,8 +15,9 @@ import { refreshDeskUwLiveFeeds } from "./deskUwLiveFeeds.js";
 import { deskSessionDateEt } from "./deskEt.js";
 import { logger } from "../logger.js";
 
-/** Under schwab_chains stale_after_ms (180_000). */
-const POLL_MS = 90_000;
+import { DESK_NEWS_POLL_MS } from "./deskPollCadence.js";
+
+const POLL_MS = DESK_NEWS_POLL_MS;
 const CHAINS_POLL_MS = 120_000;
 const VENDOR_SLOW_MS = 15 * 60_000;
 
@@ -49,7 +50,20 @@ async function pollVendorSlow(): Promise<void> {
   if (getEodhdKey()) await deskProbeEodhd();
 }
 
-/** UW calls are serialized via deskUwHttp / flow semaphores (max 3 in flight globally). */
+async function pollUwFeedsSafe(): Promise<void> {
+  try {
+    await refreshDeskUwLiveFeeds(true);
+  } catch (err) {
+    logger.debug({ err }, "Desk UW live feed refresh error");
+  }
+  try {
+    await deskFetchUwFlow();
+  } catch (err) {
+    logger.debug({ err }, "Desk UW flow refresh error");
+  }
+}
+
+/** UW runs last so timeouts never skip Tradier / news pollers. */
 export async function runDeskBackgroundPollCycle(): Promise<void> {
   if (pollInFlight) {
     await pollInFlight;
@@ -58,12 +72,11 @@ export async function runDeskBackgroundPollCycle(): Promise<void> {
 
   pollInFlight = (async () => {
     try {
-      await refreshDeskUwLiveFeeds(true);
-      await deskFetchUwFlow();
       await pollDeskChains();
       await pollTradier();
       await pollAlpacaNews();
       await pollNews();
+      await pollUwFeedsSafe();
     } catch (err) {
       logger.debug({ err }, "Desk background poll cycle error");
     }

@@ -1,17 +1,15 @@
 import { deskSessionDateEt } from "./deskEt.js";
 import {
-  deskFetchLiveGamma,
-  deskFetchLiveGamma0dte,
   deskGetCachedLiveGamma,
   deskGetCachedLiveGamma0dte,
+  deskRefreshLiveGamma,
+  deskRefreshLiveGamma0dte,
   deskUwGammaAsFeedSnapshot,
 } from "./deskUwGamma.js";
-import { deskFetchNetPremTicks } from "./deskUwNetPrem.js";
-import {
-  deskMarkFeedNotConfigured,
-  type DeskFeedId,
-} from "./deskFeedFreshness.js";
+import { deskGetCachedNetPremTicks, deskRefreshNetPremTicks } from "./deskUwNetPrem.js";
+import { deskMarkFeedNotConfigured, type DeskFeedId } from "./deskFeedFreshness.js";
 import { getUwApiKey } from "./deskUnusualWhales.js";
+import { logger } from "../logger.js";
 
 const REFRESH_MS = 90_000;
 
@@ -33,16 +31,46 @@ export type DeskUwFeedSnapshot = {
 export function getDeskUwFeedSnapshot(
   feed: "live_gamma_0dte" | "live_gamma" | "live_net_prem",
 ): DeskUwFeedSnapshot | null {
-  const expiry = deskSessionDateEt();
+  const date = deskSessionDateEt();
   if (feed === "live_gamma_0dte") {
-    const c = deskGetCachedLiveGamma0dte(expiry);
+    const c = deskGetCachedLiveGamma0dte(date);
     return c ? deskUwGammaAsFeedSnapshot(c) : null;
   }
   if (feed === "live_gamma") {
-    const c = deskGetCachedLiveGamma(expiry);
+    const c = deskGetCachedLiveGamma(date);
     return c ? deskUwGammaAsFeedSnapshot(c) : null;
   }
-  return null;
+  const np = deskGetCachedNetPremTicks("SPX", date, null);
+  if (!np) return null;
+  return { data: { ticks: np.ticks, ticker: np.ticker }, asOfMs: np.asOfMs, row_count: np.ticks.length };
+}
+
+async function refreshGamma0dteSafe(expiry: string): Promise<void> {
+  try {
+    await deskRefreshLiveGamma0dte(expiry);
+  } catch (err) {
+    logger.debug({ err }, "Desk UW refresh live_gamma_0dte failed");
+  }
+}
+
+async function refreshLiveGammaSafe(date: string): Promise<void> {
+  try {
+    await deskRefreshLiveGamma(date);
+  } catch (err) {
+    logger.debug({ err }, "Desk UW refresh live_gamma failed");
+  }
+}
+
+async function refreshNetPremSafe(): Promise<void> {
+  try {
+    await deskRefreshNetPremTicks("SPX", dateOfRefresh());
+  } catch (err) {
+    logger.debug({ err }, "Desk UW refresh live_net_prem failed");
+  }
+}
+
+function dateOfRefresh(): string {
+  return deskSessionDateEt();
 }
 
 export async function refreshDeskUwLiveFeeds(force = false): Promise<void> {
@@ -53,10 +81,6 @@ export async function refreshDeskUwLiveFeeds(force = false): Promise<void> {
   }
 
   const now = Date.now();
-  if (!force && now - lastRefreshMs < REFRESH_MS && refreshInFlight) {
-    await refreshInFlight;
-    return;
-  }
   if (!force && now - lastRefreshMs < REFRESH_MS) return;
 
   if (refreshInFlight) {
@@ -64,26 +88,15 @@ export async function refreshDeskUwLiveFeeds(force = false): Promise<void> {
     return;
   }
 
-  const expiry = deskSessionDateEt();
+  const expiry = dateOfRefresh();
   refreshInFlight = (async () => {
-    await deskFetchLiveGamma0dte(expiry);
-    await deskFetchLiveGamma(expiry);
-    await deskFetchNetPremTicks({ ticker: "SPX" });
+    await refreshGamma0dteSafe(expiry);
+    await refreshLiveGammaSafe(expiry);
+    await refreshNetPremSafe();
     lastRefreshMs = Date.now();
   })().finally(() => {
     refreshInFlight = null;
   });
 
   await refreshInFlight;
-}
-
-export function startDeskUwLiveFeedRefresh(): void {
-  if (!getUwApiKey()) {
-    markUwGammaNotConfigured();
-    return;
-  }
-  void refreshDeskUwLiveFeeds(true);
-  setInterval(() => {
-    void refreshDeskUwLiveFeeds();
-  }, REFRESH_MS);
 }

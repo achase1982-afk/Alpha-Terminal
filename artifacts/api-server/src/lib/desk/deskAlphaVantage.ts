@@ -4,6 +4,7 @@ import {
   deskMarkFeedAuthError,
   deskMarkFeedNotConfigured,
   deskMarkFeedRateLimited,
+  deskClearFeedForcedStatus,
   deskTouchFeed,
 } from "./deskFeedFreshness.js";
 
@@ -22,6 +23,7 @@ function canCallAlphaVantage(): boolean {
   if (d !== callsSessionDay) {
     callsSessionDay = d;
     callsOnSessionDay = 0;
+    deskClearFeedForcedStatus("alphavantage");
   }
   return callsOnSessionDay < DAILY_CAP;
 }
@@ -41,7 +43,7 @@ export function getAlphaVantageKey(): string {
 
 function isRateLimitPayload(json: { Information?: string; Note?: string }): boolean {
   const msg = [json.Information, json.Note].filter(Boolean).join(" ");
-  return /rate|limit|premium|call frequency|spreading/i.test(msg);
+  return /\brate\s*limit|API call frequency|Thank you for using Alpha Vantage|spreading your/i.test(msg);
 }
 
 /** Boot /health must not burn API calls — probes are on-demand only via /news or /fundamentals. */
