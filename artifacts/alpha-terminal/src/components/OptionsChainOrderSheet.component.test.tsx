@@ -5,7 +5,8 @@ import { OptionsChainOrderSheet, type OptionsChainOrderSheetProps } from "./Opti
 import type { StrategyLeg } from "./StrategyBuilder";
 
 vi.mock("@/lib/store", () => ({
-  useTerminalStore: (sel: (s: { symbol: string }) => unknown) => sel({ symbol: "SPY" }),
+  useTerminalStore: (sel: (s: { symbol: string; streamPrices: Record<string, { last: number }> }) => unknown) =>
+    sel({ symbol: "SPY", streamPrices: { SPY: { last: 600 } } }),
 }));
 
 vi.mock("@/lib/schwab-account-store", () => ({

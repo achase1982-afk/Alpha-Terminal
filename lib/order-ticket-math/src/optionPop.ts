@@ -3,6 +3,11 @@
  * POP is expressed as 0–100 percent.
  */
 
+import {
+  payoffDollarsAtS,
+  type ExpirationPayoffInput,
+} from "./expirationPayoff.js";
+
 /** Minimum T (year fraction) so 0DTE does not collapse variance (~1 hour of a 6.5h session). */
 export const MIN_T_YEARS = 1 / (252 * 6.5);
 
@@ -26,25 +31,23 @@ export function normalCdf(x: number): number {
 }
 
 function lognormalTailProbAbove(spot: number, strike: number, iv: number, tYears: number): number {
-  const sigma = iv;
-  const denom = sigma * Math.sqrt(tYears);
+  const denom = iv * Math.sqrt(tYears);
   if (denom <= 0) return NaN;
-  const d = (Math.log(strike / spot) + 0.5 * sigma * sigma * tYears) / denom;
+  const d = (Math.log(strike / spot) + 0.5 * iv * iv * tYears) / denom;
   return 1 - normalCdf(d);
 }
 
 function lognormalTailProbBelow(spot: number, strike: number, iv: number, tYears: number): number {
-  const sigma = iv;
-  const denom = sigma * Math.sqrt(tYears);
+  const denom = iv * Math.sqrt(tYears);
   if (denom <= 0) return NaN;
-  const d = (Math.log(strike / spot) + 0.5 * sigma * sigma * tYears) / denom;
+  const d = (Math.log(strike / spot) + 0.5 * iv * iv * tYears) / denom;
   return normalCdf(d);
 }
 
 export function lognormalProbBetween(
   spot: number,
-  lowExclusive: number,
-  highExclusive: number,
+  low: number,
+  high: number,
   iv: number,
   tYears: number,
 ): number | null {
@@ -55,18 +58,80 @@ export function lognormalProbBetween(
     iv <= 0 ||
     !Number.isFinite(tYears) ||
     tYears <= 0 ||
-    !Number.isFinite(lowExclusive) ||
-    !Number.isFinite(highExclusive) ||
-    lowExclusive >= highExclusive
+    !Number.isFinite(low) ||
+    !Number.isFinite(high) ||
+    low >= high
   ) {
     return null;
   }
-  const sigma = iv;
-  const denom = sigma * Math.sqrt(tYears);
-  const d = (k: number) => (Math.log(k / spot) + 0.5 * sigma * sigma * tYears) / denom;
-  const p = normalCdf(d(highExclusive)) - normalCdf(d(lowExclusive));
+  const denom = iv * Math.sqrt(tYears);
+  const drift = 0.5 * iv * iv * tYears;
+  const d = (k: number) => (Math.log(k / spot) + drift) / denom;
+  const p = normalCdf(d(high)) - normalCdf(d(low));
   if (!Number.isFinite(p)) return null;
   return Math.max(0, Math.min(1, p)) * 100;
+}
+
+function probabilityMassInInterval(
+  lo: number,
+  hi: number,
+  spot: number,
+  iv: number,
+  tYears: number,
+): number {
+  const upperTail = spot * 2.5;
+  if (hi >= upperTail) {
+    const tail = lognormalTailProbAbove(spot, Math.max(lo, 1e-6), iv, tYears);
+    return Number.isFinite(tail) ? tail * 100 : 0;
+  }
+  if (lo <= 0) {
+    const p = lognormalTailProbBelow(spot, hi, iv, tYears);
+    return Number.isFinite(p) ? p * 100 : 0;
+  }
+  return lognormalProbBetween(spot, lo, hi, iv, tYears) ?? 0;
+}
+
+function payoffUpperBound(payoff: ExpirationPayoffInput, spot: number): number {
+  const strikes = payoff.legs.map((l) => l.strike).filter(Number.isFinite);
+  return Math.max(spot * 2.5, ...(strikes.length ? strikes : [spot])) + 50;
+}
+
+export interface ComputeOptionPopPayoffInput {
+  spot: number;
+  iv: number;
+  tYears: number;
+  breakevens: number[];
+  payoff: ExpirationPayoffInput;
+}
+
+/**
+ * POP = P(payoff at expiration &gt; 0) under lognormal spot, by summing
+ * probability mass over intervals between breakevens where payoff is positive.
+ */
+export function computeOptionPopFromPayoff(input: ComputeOptionPopPayoffInput): number | null {
+  const { spot, iv, tYears, breakevens, payoff } = input;
+  if (!Number.isFinite(spot) || spot <= 0 || iv <= 0 || tYears <= 0) return null;
+
+  const hi = payoffUpperBound(payoff, spot);
+  const bes = breakevens.filter(Number.isFinite).sort((a, b) => a - b);
+  const bounds = [0, ...bes, hi];
+  const unique: number[] = [];
+  for (const b of bounds) {
+    if (unique.length === 0 || b > unique[unique.length - 1] + 1e-9) unique.push(b);
+  }
+
+  let total = 0;
+  for (let i = 0; i < unique.length - 1; i++) {
+    const lo = unique[i];
+    const hi_ = unique[i + 1];
+    const mid = (lo + hi_) / 2;
+    if (mid <= 0) continue;
+    if (payoffDollarsAtS(payoff, mid) <= 0) continue;
+    total += probabilityMassInInterval(lo, hi_, spot, iv, tYears);
+  }
+
+  if (!Number.isFinite(total)) return null;
+  return Math.max(0, Math.min(100, total));
 }
 
 /** Parse YYYY-MM-DD (optional `:…` suffix) to US options-style close (16:00 America/New_York, rough UTC). */
@@ -77,7 +142,6 @@ export function expirationToMs(expiration: string): number | null {
   const y = Number(m[1]);
   const mo = Number(m[2]) - 1;
   const d = Number(m[3]);
-  // 16:00 ET ≈ 21:00 UTC (EST); close enough for POP horizon.
   return Date.UTC(y, mo, d, 21, 0, 0, 0);
 }
 
@@ -88,72 +152,6 @@ export function yearsToExpiration(expiration: string, asOfMs: number): number | 
   const yearMs = 365.25 * 24 * 60 * 60 * 1000;
   if (ms <= 0) return MIN_T_YEARS;
   return Math.max(MIN_T_YEARS, ms / yearMs);
-}
-
-export interface PopLegHint {
-  optionType: string;
-  instruction: string;
-}
-
-export interface ComputeOptionPopInput {
-  spot: number;
-  breakevens: number[];
-  isCredit: boolean;
-  iv: number;
-  tYears: number;
-  legs?: PopLegHint[];
-}
-
-/**
- * POP at expiration: probability payoff ≥ 0 (same sign convention as ticket breakevens).
- */
-export function computeOptionPop(input: ComputeOptionPopInput): number | null {
-  const { spot, breakevens, isCredit, iv, tYears, legs } = input;
-  const bes = breakevens.filter((b) => Number.isFinite(b)).sort((a, b) => a - b);
-  if (bes.length === 0 || !Number.isFinite(spot) || spot <= 0 || iv <= 0 || tYears <= 0) {
-    return null;
-  }
-
-  if (bes.length >= 2 && isCredit) {
-    const between = lognormalProbBetween(spot, bes[0], bes[1], iv, tYears);
-    return between;
-  }
-
-  if (bes.length === 1) {
-    const be = bes[0];
-    const onlyCalls =
-      legs &&
-      legs.length > 0 &&
-      legs.every((l) => l.optionType === "CALL" || l.optionType === "call");
-    const onlyPuts =
-      legs &&
-      legs.length > 0 &&
-      legs.every((l) => l.optionType === "PUT" || l.optionType === "put");
-    const netLong =
-      legs && legs.length > 0
-        ? legs.reduce((s, l) => s + (l.instruction.startsWith("BUY") ? 1 : -1), 0) > 0
-        : !isCredit;
-
-    if (onlyCalls) {
-      const p = netLong ? lognormalTailProbAbove(spot, be, iv, tYears) : lognormalTailProbBelow(spot, be, iv, tYears);
-      return Number.isFinite(p) ? p * 100 : null;
-    }
-    if (onlyPuts) {
-      const p = netLong ? lognormalTailProbBelow(spot, be, iv, tYears) : lognormalTailProbAbove(spot, be, iv, tYears);
-      return Number.isFinite(p) ? p * 100 : null;
-    }
-  }
-
-  if (bes.length >= 2) {
-    const between = lognormalProbBetween(spot, bes[0], bes[bes.length - 1], iv, tYears);
-    if (between != null && !isCredit) {
-      const outside = 100 - between;
-      return Math.max(0, Math.min(100, outside));
-    }
-    return between;
-  }
-
-  return null;
 }
 
 export function averageLegIv(
@@ -173,4 +171,25 @@ export function averageLegIv(
     return fallbackIv > 3 ? fallbackIv / 100 : fallbackIv;
   }
   return null;
+}
+
+/** @deprecated Prefer computeOptionPopFromPayoff — kept for type compatibility. */
+export interface ComputeOptionPopInput {
+  spot: number;
+  breakevens: number[];
+  isCredit: boolean;
+  iv: number;
+  tYears: number;
+  payoff?: ExpirationPayoffInput;
+}
+
+export function computeOptionPop(input: ComputeOptionPopInput): number | null {
+  if (!input.payoff) return null;
+  return computeOptionPopFromPayoff({
+    spot: input.spot,
+    iv: input.iv,
+    tYears: input.tYears,
+    breakevens: input.breakevens,
+    payoff: input.payoff,
+  });
 }

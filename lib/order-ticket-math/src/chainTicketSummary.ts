@@ -10,7 +10,7 @@ import { inferNetCreditFromLegStructure } from "./schwabOrderRisk.js";
 import { parseCanonicalLimit, type LimitTickContext } from "./optionTickRound.js";
 import {
   averageLegIv,
-  computeOptionPop,
+  computeOptionPopFromPayoff,
   yearsToExpiration,
 } from "./optionPop.js";
 
@@ -175,16 +175,25 @@ export function computeChainTicketSummary(input: ChainTicketSummaryInput): Chain
     iv != null &&
     (econ?.breakevens?.length ?? 0) > 0
   ) {
-    pop = computeOptionPop({
-      spot: input.spotPrice,
-      breakevens: econ?.breakevens ?? [],
-      isCredit: inferred,
-      iv,
-      tYears,
+    const payoff: ExpirationPayoffInput = {
       legs: input.legs.map((l) => ({
+        strike: l.strike,
         optionType: l.optionType,
         instruction: l.instruction,
+        expiration: l.expiration,
+        quantity: l.quantity,
       })),
+      netPerShare: limitPerShare,
+      spreadUnits: qty,
+      isCredit: inferred,
+      isOption: true,
+    };
+    pop = computeOptionPopFromPayoff({
+      spot: input.spotPrice,
+      breakevens: econ?.breakevens ?? [],
+      iv,
+      tYears,
+      payoff,
     });
   }
 

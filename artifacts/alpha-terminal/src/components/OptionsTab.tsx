@@ -1253,7 +1253,7 @@ export function OptionsTab({
   releaseOptionHold,
   stickyOffset = 0,
   onTradeSingle,
-  onOpenStrategyBuilder: _onOpenStrategyBuilder,
+  onOpenStrategyBuilder,
 }: OptionsTabProps) {
   const { accessToken } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken })));
   // Widget pin wins inside the dashboard; global symbol everywhere else.
@@ -1272,6 +1272,7 @@ export function OptionsTab({
   const [legQuantities, setLegQuantities] = useState<Map<string, number>>(new Map());
   const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const accounts = useSchwabAccountStore((s) => s.accounts);
+  const tradingAccountHash = useSchwabAccountStore((s) => s.tradingAccountHash());
   const MAX_OPTION_LEGS = 4;
   const fixtureOverride = import.meta.env.DEV ? getChainOrderFixtureOverride() : null;
 
@@ -1474,6 +1475,59 @@ export function OptionsTab({
     setSheetCollapsed(false);
   }, []);
 
+  const handleBuildStrategy = useCallback(() => {
+    if (!onOpenStrategyBuilder || groups.length === 0) return;
+    const allStrikes = new Set<number>();
+    const expLabels: { label: string; value: string }[] = [];
+    const cMap = new Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>();
+    const chainTs = dataUpdatedAt > 0 ? dataUpdatedAt : Date.now();
+    const streamTicks = useOptionsStreamStore.getState().ticks;
+    for (const g of groups) {
+      if (!expLabels.some((e) => e.value === g.expiration)) {
+        expLabels.push({ label: `${g.dateLabel} (${Math.round(g.dte)}d)`, value: g.expiration });
+      }
+      for (const row of g.rows) {
+        allStrikes.add(row.strike);
+        const mapContract = (c: Contract | null) => {
+          if (!c?.streamKey) return;
+          const tick = streamTicks[c.streamKey];
+          cMap.set(c.streamKey, {
+            bid: tick && tick.bid != null ? tick.bid : c.bid,
+            ask: tick && tick.ask != null ? tick.ask : c.ask,
+            delta: tick && tick.delta != null ? tick.delta : c.delta,
+            gamma: tick && tick.gamma != null ? tick.gamma : c.gamma,
+            theta: tick && tick.theta != null ? tick.theta : c.theta,
+            vega: tick && tick.vega != null ? tick.vega : c.vega,
+            iv: tick && tick.iv != null ? tick.iv : c.iv,
+            contractTs: chainTs,
+          });
+        };
+        mapContract(row.call);
+        mapContract(row.put);
+      }
+    }
+    const preSelected =
+      selectedLegs.size > 0
+        ? [...selectedLegs.values()].map((l) => {
+            const tick = l.contract.streamKey ? streamTicks[l.contract.streamKey] : undefined;
+            const merged: Contract = { ...l.contract };
+            if (tick) {
+              if (tick.bid != null) merged.bid = tick.bid;
+              if (tick.ask != null) merged.ask = tick.ask;
+              if (tick.delta != null) merged.delta = tick.delta;
+              if (tick.gamma != null) merged.gamma = tick.gamma;
+              if (tick.theta != null) merged.theta = tick.theta;
+              if (tick.vega != null) merged.vega = tick.vega;
+              if (tick.iv != null) merged.iv = tick.iv;
+            }
+            return { contract: merged, type: l.type, side: l.side };
+          })
+        : undefined;
+    onOpenStrategyBuilder([...allStrikes].sort((a, b) => a - b), expLabels, cMap, preSelected);
+    setSelectedLegs(new Map());
+    setLegQuantities(new Map());
+  }, [onOpenStrategyBuilder, groups, selectedLegs, dataUpdatedAt]);
+
   const streamTicksForLegs = useOptionsStreamStore((s) => s.ticks);
 
   const ticketLegs = useMemo(() => {
@@ -1499,30 +1553,50 @@ export function OptionsTab({
         quantity: qty,
       };
     });
-    return legsFromChainSelection(entries, symbol, accounts, buildSchwabOptionKey);
-  }, [selectedLegs, streamTicksForLegs, symbol, accounts, legQuantities]);
+    const legs = legsFromChainSelection(
+      entries,
+      symbol,
+      accounts,
+      buildSchwabOptionKey,
+      tradingAccountHash,
+    );
+    if (legs.length > MAX_OPTION_LEGS) {
+      if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+      setLegLimitShake(true);
+      shakeTimerRef.current = setTimeout(() => setLegLimitShake(false), 600);
+    }
+    return legs.slice(0, MAX_OPTION_LEGS);
+  }, [selectedLegs, streamTicksForLegs, symbol, accounts, legQuantities, tradingAccountHash]);
 
-  const handleExpandOrderSheet = useCallback(() => {
-    setSheetCollapsed(false);
-  }, []);
+  const handleLayersClick = useCallback(() => {
+    if (selectedLegs.size > 0) {
+      setSheetCollapsed(false);
+      return;
+    }
+    handleBuildStrategy();
+  }, [selectedLegs.size, handleBuildStrategy]);
+
+  const selectionKeyFromLegId = (legId: string) => legId.split("#")[0];
 
   const handleSheetLegQty = useCallback((legId: string, quantity: number) => {
+    const key = selectionKeyFromLegId(legId);
     setLegQuantities((prev) => {
       const next = new Map(prev);
-      next.set(legId, Math.max(1, quantity));
+      next.set(key, Math.max(1, quantity));
       return next;
     });
   }, []);
 
   const handleSheetRemoveLeg = useCallback((legId: string) => {
+    const key = selectionKeyFromLegId(legId);
     setSelectedLegs((prev) => {
       const next = new Map(prev);
-      next.delete(legId);
+      next.delete(key);
       return next;
     });
     setLegQuantities((prev) => {
       const next = new Map(prev);
-      next.delete(legId);
+      next.delete(key);
       return next;
     });
   }, []);
@@ -1668,7 +1742,7 @@ export function OptionsTab({
               columns={activeColumns}
               stickyTop={stickyOffset + TOOLBAR_H}
               onColumnsEditor={() => setColumnsEditorOpen(true)}
-              onBuildStrategy={selCount > 0 ? handleExpandOrderSheet : undefined}
+              onBuildStrategy={onOpenStrategyBuilder ? handleLayersClick : undefined}
             />
             {groups.map(group => {
               const isOpen = expandedExps.has(group.expiration);

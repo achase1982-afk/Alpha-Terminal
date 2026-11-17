@@ -10,8 +10,13 @@ import {
   roundOptionPriceToTick,
   schwabPriceFromTicket,
   inferNetCreditFromLegStructure,
+  inferSchwabComplexOrderStrategyType,
   type LimitTickContext,
 } from "@workspace/order-ticket-math";
+import {
+  resolveChainLegInstructions,
+  type SchwabAccountRow,
+} from "@/lib/chainOrderLegInstructions";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { useTerminalStore } from "@/lib/store";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
@@ -60,24 +65,6 @@ function fmt(n: number | null | undefined, decimals = 2): string {
 
 function fmtCurrency(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
-}
-
-function resolveCloseInstruction(
-  schwabSymbol: string,
-  side: "bid" | "ask",
-  accounts: ReturnType<typeof useSchwabAccountStore.getState>["accounts"],
-): StrategyLeg["direction"] {
-  const openBuy = side === "ask";
-  for (const acct of accounts) {
-    for (const pos of acct.positions) {
-      if (pos.symbol !== schwabSymbol && pos.symbol.trim() !== schwabSymbol.trim()) continue;
-      const long = pos.longQuantity ?? 0;
-      const short = pos.shortQuantity ?? 0;
-      if (short > 0 && openBuy) return "BUY_TO_CLOSE";
-      if (long > 0 && !openBuy) return "SELL_TO_CLOSE";
-    }
-  }
-  return openBuy ? "BUY_TO_OPEN" : "SELL_TO_OPEN";
 }
 
 export interface OptionsChainOrderSheetProps {
@@ -260,20 +247,16 @@ export function OptionsChainOrderSheet({
   const buildSchwabOrder = useCallback(
     (priceOverride?: number) => {
       const parsed = priceOverride ?? schwabPriceFromTicket(limitTickCtx, limitPrice);
-      const getSymParts = (sym: string) => ({ date: sym.substring(6, 12), cp: sym.charAt(12) });
-      let complexType = "CUSTOM";
-      if (legs.length === 1) complexType = "NONE";
-      else if (legs.length === 2) {
-        const p0 = getSymParts(legs[0].schwabSymbol);
-        const p1 = getSymParts(legs[1].schwabSymbol);
-        if (p0.date === p1.date && p0.cp === p1.cp) complexType = "VERTICAL";
-        else if (p0.date === p1.date) complexType = "STRANGLE";
-      } else if (legs.length === 4) {
-        const cps = legs.map((l) => getSymParts(l.schwabSymbol).cp);
-        if (cps.filter((c) => c === "C").length === 2 && cps.filter((c) => c === "P").length === 2) {
-          complexType = "IRON_CONDOR";
-        }
-      }
+      const complexType = inferSchwabComplexOrderStrategyType(
+        legs.map((leg) => ({
+          strike: leg.strike,
+          optionType: leg.optionType,
+          instruction: leg.direction,
+          quantity: leg.quantity,
+          expiration: leg.expiration,
+          schwabSymbol: leg.schwabSymbol,
+        })),
+      );
       return {
         orderType: isCredit ? "NET_CREDIT" : "NET_DEBIT",
         session: "NORMAL",
@@ -879,20 +862,27 @@ export function legsFromChainSelection(
     quantity?: number;
   }>,
   symbol: string,
-  accounts: ReturnType<typeof useSchwabAccountStore.getState>["accounts"],
+  accounts: SchwabAccountRow[],
   buildSchwabOptionKey: (sym: string, exp: string, strike: number, cp: "C" | "P") => string,
+  tradingAccountHash: string | null,
 ): StrategyLeg[] {
-  return entries.map((l) => {
+  const rows: StrategyLeg[] = [];
+  for (const l of entries) {
     const schwabSymbol =
       l.contract.schwabSymbol ||
       buildSchwabOptionKey(symbol, l.contract.expiration, l.contract.strike, l.type === "CALL" ? "C" : "P");
-    return {
-      id: l.key,
+    const qty = l.quantity ?? 1;
+    const { slices } = resolveChainLegInstructions(
+      schwabSymbol,
+      l.side,
+      qty,
+      accounts,
+      tradingAccountHash,
+    );
+    const base = {
       optionType: l.type,
-      direction: resolveCloseInstruction(schwabSymbol, l.side, accounts),
       strike: l.contract.strike,
       expiration: l.contract.expiration,
-      quantity: l.quantity ?? 1,
       bid: l.contract.bid,
       ask: l.contract.ask,
       delta: l.contract.delta,
@@ -902,5 +892,14 @@ export function legsFromChainSelection(
       iv: l.contract.iv,
       schwabSymbol,
     };
-  });
+    for (const [idx, slice] of slices.entries()) {
+      rows.push({
+        ...base,
+        id: slices.length > 1 ? `${l.key}#${idx}:${slice.instruction}` : l.key,
+        direction: slice.instruction,
+        quantity: slice.quantity,
+      });
+    }
+  }
+  return rows;
 }
