@@ -1,26 +1,33 @@
-import { fetchSymbolNews } from "../symbolNewsProvider.js";
-import { logger } from "../logger.js";
-import { deskMarkFeedError, deskTouchFeedArticleAge } from "./deskFeedFreshness.js";
+import {
+  deskMarkFeedError,
+  deskMarkFeedOkNoNewArticles,
+  deskTouchFeedArticleAge,
+  deskIsFeedStale,
+} from "./deskFeedFreshness.js";
 import { deskMaxArticlePublishedMs } from "./deskNewsArticleAge.js";
+import { deskLoadFinnhubDeskArticles } from "./deskFinnhubDeskNews.js";
 
+/** Desk poller + `/news?source=finnhub`: general market + desk symbols. */
 export async function deskFetchNews(symbols: string[]): Promise<{ articles: unknown[]; asOfMs: number }> {
-  const uniq = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
-  const all: unknown[] = [];
-  let hadSuccess = false;
-  for (const sym of uniq) {
-    try {
-      const rows = await fetchSymbolNews(sym, logger);
-      hadSuccess = true;
-      for (const a of rows) all.push(a);
-    } catch (err) {
-      deskMarkFeedError("news", "finnhub_fetch_error");
-      logger.warn({ err, sym }, "Desk news fetch failed");
-    }
+  const { articles: all, hadSuccess } = await deskLoadFinnhubDeskArticles(symbols);
+  if (!hadSuccess && all.length === 0) {
+    deskMarkFeedError("news", "finnhub_fetch_error");
+    return { articles: [], asOfMs: Date.now() };
   }
 
   const articleMaxMs = deskMaxArticlePublishedMs(all);
+  const pollMs = Date.now();
   if (hadSuccess) {
     deskTouchFeedArticleAge("news", articleMaxMs, "finnhub");
+    if (articleMaxMs != null && deskIsFeedStale("news", articleMaxMs, pollMs)) {
+      const ageSec = Math.round((pollMs - articleMaxMs) / 1000);
+      deskMarkFeedOkNoNewArticles(
+        "news",
+        `finnhub_no_new_articles_age_${ageSec}s`,
+        "finnhub",
+        articleMaxMs,
+      );
+    }
   }
-  return { articles: all, asOfMs: articleMaxMs ?? Date.now() };
+  return { articles: all, asOfMs: articleMaxMs ?? pollMs };
 }

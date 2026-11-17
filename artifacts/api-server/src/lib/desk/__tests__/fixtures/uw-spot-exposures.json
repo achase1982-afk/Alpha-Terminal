@@ -1,0 +1,6 @@
+{
+  "data": [
+    { "expiry": "2026-11-17", "spot_gamma": 100 },
+    { "expiry": "2026-11-18", "spot_gamma": 50 }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "data": [
+    { "strike": 6000, "expiry": "2026-11-17", "gamma": 1.1 },
+    { "strike": 6010, "expiry": "2026-11-18", "gamma": 0.2 },
+    { "strike": 6020, "expiry": "2026-11-17", "gamma": 1.3 }
+  ]
+}

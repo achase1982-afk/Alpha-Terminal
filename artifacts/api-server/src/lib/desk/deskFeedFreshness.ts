@@ -45,7 +45,8 @@ export type DeskFeedStatusCode =
   | "error"
   | "reconnecting"
   | "not_configured"
-  | "rate_limited";
+  | "rate_limited"
+  | "ok_no_new_articles";
 
 export type DeskFeedStatus = {
   feed: DeskFeedId;
@@ -222,6 +223,21 @@ export function deskMarkFeedConfiguredKeys(feed: DeskFeedId, source?: string): v
   });
 }
 
+export function deskMarkFeedOkNoNewArticles(
+  feed: DeskFeedId,
+  error: string,
+  source?: string,
+  lastDataMs?: number | null,
+): void {
+  const prev = records.get(feed);
+  records.set(feed, {
+    source: source ?? prev?.source ?? FEED_SOURCES[feed],
+    lastDataMs: lastDataMs ?? prev?.lastDataMs ?? null,
+    error,
+    forcedStatus: "ok_no_new_articles",
+  });
+}
+
 export function deskMarkFeedRateLimited(feed: DeskFeedId, error: string, source?: string): void {
   const prev = records.get(feed);
   records.set(feed, {
@@ -294,6 +310,7 @@ function resolveStatus(
   if (rec.forcedStatus === "AUTH_FAIL") return "AUTH_FAIL";
   if (rec.forcedStatus === "auth_error") return "auth_error";
   if (rec.forcedStatus === "rate_limited") return "rate_limited";
+  if (rec.forcedStatus === "ok_no_new_articles") return "ok_no_new_articles";
   if (rec.forcedStatus === "error") return "error";
   if (!feedInSession(feed, at)) return "session_closed";
 
@@ -353,12 +370,15 @@ export function buildDeskHealthFeeds(now = Date.now()): DeskFeedStatus[] {
       status !== "stopped" &&
       status !== "auth_error" &&
       status !== "not_authorized" &&
+      status !== "rate_limited" &&
+      status !== "ok_no_new_articles" &&
       status !== "configured" &&
       status !== "AUTH_FAIL" &&
       (status === "stale" || lastMs == null || deskIsFeedStale(feed, lastMs, now));
     if (status === "session_closed") stale = false;
     if (status === "not_configured") stale = false;
     if (status === "configured" || status === "not_authorized") stale = false;
+    if (status === "rate_limited" || status === "ok_no_new_articles") stale = false;
     if (!inSession && FEED_SESSION[feed]) stale = false;
 
     const row: DeskFeedStatus = {

@@ -19,7 +19,13 @@ import { deskFetchStocknews } from "../lib/desk/deskStocknews.js";
 import { getDeskTapeSince, registerDeskSpxSse } from "../lib/desk/deskSpxTape.js";
 import { deskPersistSnapshot } from "../lib/desk/deskSnapshotStore.js";
 import { deskAsofEtIso, deskSessionDateEt } from "../lib/desk/deskEt.js";
-import { getDeskUwFeedSnapshot, refreshDeskUwLiveFeeds } from "../lib/desk/deskUwLiveFeeds.js";
+import { refreshDeskUwLiveFeeds } from "../lib/desk/deskUwLiveFeeds.js";
+import {
+  deskFetchLiveGamma,
+  deskFetchLiveGamma0dte,
+  deskUwNormalizeExpiry,
+} from "../lib/desk/deskUwGamma.js";
+import { deskFetchNetPremTicks, deskParseSinceMs } from "../lib/desk/deskUwNetPrem.js";
 import { getDeskRawTapeHealth, streamDeskRawTapeNdjson } from "../lib/desk/deskSpxTapeRaw.js";
 import { getDeskTapeUniverseHealth } from "../lib/desk/deskTapeUniverse.js";
 import { getDeskEquityFieldsSeen } from "../lib/desk/deskStreamerTap.js";
@@ -484,8 +490,12 @@ const gammaHandler =
       res.status(400).json({ error: resolved.error, source: resolved.source, allowed: resolved.allowed });
       return;
     }
-    await refreshDeskUwLiveFeeds().catch(() => undefined);
-    const snap = getDeskUwFeedSnapshot(feed);
+    const expiry = deskUwNormalizeExpiry(req.query["expiry"] as string | undefined);
+    const ticker = (req.query["ticker"] as string | undefined)?.trim().toUpperCase() || "SPX";
+    const snap =
+      feed === "live_gamma_0dte"
+        ? await deskFetchLiveGamma0dte(expiry, ticker)
+        : await deskFetchLiveGamma(expiry, ticker);
     if (!snap) {
       res.status(503).json({ error: "gamma_snapshot_unavailable", source: "unusual_whales", feed });
       return;
@@ -494,6 +504,8 @@ const gammaHandler =
       deskEnvelope(
         {
           feed,
+          expiry: snap.expiry,
+          ticker: snap.ticker,
           row_count: snap.row_count,
           data: snap.data,
           session_date: deskSessionDateEt(new Date(snap.asOfMs)),
@@ -507,5 +519,39 @@ const gammaHandler =
 
 router.get("/gamma/live_gamma_0dte", gammaHandler("live_gamma_0dte"));
 router.get("/gamma/live_gamma", gammaHandler("live_gamma"));
+
+router.get("/net_prem/ticks", async (req, res) => {
+  const rawSource = req.query["source"] as string | undefined;
+  const resolved =
+    rawSource == null || String(rawSource).trim() === ""
+      ? { source: "unusual_whales" as const }
+      : deskResolveSource(rawSource, ["unusual_whales"] as const);
+  if ("error" in resolved) {
+    res.status(400).json({ error: resolved.error, source: resolved.source, allowed: resolved.allowed });
+    return;
+  }
+  const ticker = (req.query["ticker"] as string | undefined)?.trim().toUpperCase() || "SPX";
+  const sinceMs = deskParseSinceMs(req.query["since"] as string | undefined);
+  const r = await deskFetchNetPremTicks({ ticker, sinceMs });
+  if (!r.ok) {
+    const status = r.status === 0 || r.status === 503 ? 503 : r.status ?? 503;
+    res.status(status).json({ error: r.error ?? "net_prem_unavailable", source: "unusual_whales" });
+    return;
+  }
+  res.json(
+    deskEnvelope(
+      {
+        ticker: r.ticker,
+        ticks: r.ticks,
+        since_ms: sinceMs,
+        row_count: r.ticks.length,
+        session_date: deskSessionDateEt(new Date(r.asOfMs)),
+      },
+      "unusual_whales",
+      r.asOfMs,
+      "live_net_prem",
+    ),
+  );
+});
 
 export default router;
