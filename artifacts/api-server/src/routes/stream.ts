@@ -10,7 +10,6 @@ import {
   addFuturesOptionSymbols as addSchwabFuturesOptionSymbols,
   startStreamer,
 } from "../lib/schwabStreamer.js";
-import { getStreamerSubscriptionHealth } from "../lib/streamerSubscriptionManager.js";
 import { hasValidTokens } from "../lib/tokenStore.js";
 
 const router: IRouter = Router();
@@ -35,14 +34,6 @@ function subscribeSymbolsToSchwab(symbols: unknown) {
     addSchwabFuturesSymbols(futures);
   }
 }
-
-router.get("/health", (_req, res) => {
-  res.json({
-    streamer_status: getStreamerStatus(),
-    connected: isConnected(),
-    streamer_subscriptions: getStreamerSubscriptionHealth(),
-  });
-});
 
 router.post("/start", async (req, res) => {
   const { symbols } = req.body as { symbols?: unknown };

@@ -301,6 +301,21 @@ export function deskMarkFeedAuthError(feed: DeskFeedId, error: string, source?: 
   });
 }
 
+/** On-demand feeds: refresh payload timestamp without leaving on_demand status. */
+export function deskTouchFeedOnDemand(feed: DeskFeedId, dataTsMs?: number, source?: string): void {
+  const pollMs = Date.now();
+  const ts = deskCoercePollReceiptTs(dataTsMs, pollMs);
+  const prev = records.get(feed);
+  records.set(feed, {
+    source: source ?? prev?.source ?? FEED_SOURCES[feed],
+    lastDataMs: ts,
+    lastPollOkMs: prev?.lastPollOkMs ?? null,
+    notConfigured: false,
+    error: undefined,
+    forcedStatus: "on_demand",
+  });
+}
+
 /** Set feed freshness from newest article time only (null when no articles). */
 export function deskTouchFeedArticleAge(feed: DeskFeedId, articleMaxMs: number | null, source?: string): void {
   const prev = records.get(feed);

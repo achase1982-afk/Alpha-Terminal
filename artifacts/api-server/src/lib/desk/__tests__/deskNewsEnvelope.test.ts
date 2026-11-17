@@ -19,8 +19,23 @@ describe("Finnhub news envelope stale", () => {
     const row = buildDeskHealthFeeds().find((f) => f.feed === "news");
     expect(row?.status).toBe("ok_no_new_articles");
     expect(deskFeedEnvelopeStale("news")).toBe(false);
-    const env = deskEnvelope({ articles: [] }, "finnhub", articleMs, "news");
+    const env = deskEnvelope({ articles: [] }, "finnhub", pollMs, "news");
     expect(env.stale).toBe(false);
+    const stalePayload = deskEnvelope({ articles: [] }, "finnhub", articleMs, "news");
+    expect(stalePayload.stale).toBe(true);
+  });
+
+  it("stale when payload asOfMs exceeds feed threshold even if health row is fresh", () => {
+    deskResetFeedFreshnessForTests();
+    const now = Date.now();
+    const freshPoll = now;
+    const oldArticleMs = now - 4 * 60 * 60 * 1000;
+    deskTouchFeedPollOk("news", freshPoll, "finnhub");
+    deskTouchFeedArticleAge("news", oldArticleMs, "finnhub");
+    expect(deskFeedEnvelopeStale("news", now)).toBe(false);
+    const ancientAsOf = now - 16 * 60_000;
+    const env = deskEnvelope({ articles: [] }, "finnhub", ancientAsOf, "news");
+    expect(env.stale).toBe(true);
   });
 
   it("stale when poll stopped", () => {

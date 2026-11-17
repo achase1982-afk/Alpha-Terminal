@@ -18,7 +18,6 @@ import {
   deskComputeDeskOptionsBookBudget,
   deskGetSchwabStreamerLimits,
 } from "./deskStreamerBudget.js";
-import { streamerSubSetDeskCore } from "../streamerSubscriptionManager.js";
 import {
   getAppLevelOneOptionSymbols,
   getAppLevelOneOptionsCount,
@@ -200,8 +199,6 @@ export async function deskTapeUniverseRefresh(force = false): Promise<void> {
       const { levelone, book } = await buildUniverseKeys(expiries, spot);
       deskStreamerSetDeskOptions(levelone);
       if (book.length) deskStreamerSetDeskOptionsBook(book);
-      streamerSubSetDeskCore("LEVELONE_OPTIONS", levelone);
-      streamerSubSetDeskCore("OPTIONS_BOOK", book);
 
       lastSpot = spot;
       lastExpiryKey = expiryKey;

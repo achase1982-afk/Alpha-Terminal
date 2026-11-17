@@ -11,57 +11,12 @@ import { fetchMappedSchwabAccounts } from "./schwabPortfolioAccounts.js";
 
 const WS_PATH = "/api/ws/prices";
 const HEARTBEAT_MS = 25_000;
-const PORTFOLIO_POLL_MS = 60_000;
+const PORTFOLIO_POLL_MS = 1_000;
 const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
 const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
 
 const clients = new Set<WebSocket>();
-const portfolioClients = new Set<WebSocket>();
-const portfolioClosed = new WeakMap<WebSocket, () => boolean>();
-let portfolioSharedTimer: ReturnType<typeof setInterval> | null = null;
-let portfolioPollInFlight = false;
-
-type SharedPortfolioSnapshot = {
-  fetchedAtMs: number;
-  mapped: Awaited<ReturnType<typeof fetchMappedSchwabAccounts>>;
-  orders: unknown[];
-};
-
-let sharedPortfolioSnapshot: SharedPortfolioSnapshot | null = null;
-
-async function loadSharedPortfolioSnapshot(token: string, force = false): Promise<SharedPortfolioSnapshot | null> {
-  const now = Date.now();
-  if (!force && sharedPortfolioSnapshot && now - sharedPortfolioSnapshot.fetchedAtMs < PORTFOLIO_POLL_MS) {
-    return sharedPortfolioSnapshot;
-  }
-  try {
-    const mapped = await fetchMappedSchwabAccounts(token);
-    if (mapped.length > 0) {
-      try {
-        subscribeStreamerForPortfolioAccounts(mapped);
-      } catch (subErr) {
-        logger.debug({ err: subErr }, "Portfolio streamer subscription failed");
-      }
-    }
-    let orders: unknown[] = [];
-    const hash = await getAccountHash(token);
-    if (hash) {
-      const end = new Date();
-      const start = new Date();
-      start.setDate(start.getDate() - 30);
-      const raw = await schwabTraderGet(
-        `/accounts/${hash}/orders?fromEnteredTime=${start.toISOString()}&toEnteredTime=${end.toISOString()}`,
-        token,
-      );
-      orders = mapOrders(Array.isArray(raw) ? raw : []);
-    }
-    sharedPortfolioSnapshot = { fetchedAtMs: now, mapped, orders };
-    return sharedPortfolioSnapshot;
-  } catch (err) {
-    logger.debug({ err }, "Shared portfolio snapshot load failed");
-    return null;
-  }
-}
+const portfolioSubs = new Map<WebSocket, ReturnType<typeof setInterval>>();
 
 /** Per WS: first full [PL_CALC] after subscribe; then log only when computed P/L % changes. */
 const plCalcLogState = new WeakMap<
@@ -413,78 +368,74 @@ async function fetchAndPushPortfolio(ws: WebSocket, isClosed: () => boolean) {
     return;
   }
 
-  const snap = await loadSharedPortfolioSnapshot(token, false);
-  if (!snap || isClosed()) {
-    if (!snap && !isClosed()) {
-      safeSend(ws, JSON.stringify({ event: "portfolioStatus", data: { status: "error", message: "Failed to fetch account data" } }));
-    }
-    return;
-  }
-
-  logger.info(
-    { ts: Date.now(), accountCount: snap.mapped.length, shared: true },
-    `[PORTFOLIO_POLL] shared accounts snapshot (${snap.mapped.length} accounts)`,
-  );
-  safeSend(ws, JSON.stringify({ event: "portfolioStatus", data: { status: "ok" } }));
-  if (snap.mapped.length > 0) {
-    safeSend(ws, JSON.stringify({ event: "portfolioAccounts", data: snap.mapped }));
-    safeSend(ws, JSON.stringify({ event: "portfolioAccount", data: snap.mapped[0] }));
-  }
-  if (!isClosed()) {
-    safeSend(ws, JSON.stringify({ event: "portfolioOrders", data: snap.orders }));
-  }
-}
-
-export function requestPortfolioRefreshFromAcctActivity(): void {
-  const token = getTokens("trader")?.accessToken;
-  if (token) {
-    void loadSharedPortfolioSnapshot(token, true).then(() => runSharedPortfolioPoll());
-  } else {
-    void runSharedPortfolioPoll();
-  }
-}
-
-async function runSharedPortfolioPoll(): Promise<void> {
-  if (portfolioPollInFlight || portfolioClients.size === 0) return;
-  portfolioPollInFlight = true;
   try {
-    const targets = [...portfolioClients].filter((ws) => {
-      if (ws.readyState !== WebSocket.OPEN) return false;
-      const closed = portfolioClosed.get(ws);
-      return !closed || !closed();
-    });
-    await Promise.all(targets.map((ws) => fetchAndPushPortfolio(ws, () => false)));
-  } finally {
-    portfolioPollInFlight = false;
+    const mapped = await fetchMappedSchwabAccounts(token);
+    if (isClosed()) return;
+    logger.info(
+      { ts: Date.now(), accountCount: mapped.length },
+      `[PORTFOLIO_POLL] GET /accounts?fields=positions OK (${mapped.length} accounts)`,
+    );
+    // Explicit healthy signal: clients infer "ok" from account payloads, but
+    // an account list of zero would otherwise leave them stuck on a stale
+    // no_token/error status (and a "reconnect Schwab" banner) forever.
+    safeSend(ws, JSON.stringify({ event: "portfolioStatus", data: { status: "ok" } }));
+    if (mapped.length > 0) {
+      safeSend(ws, JSON.stringify({ event: "portfolioAccounts", data: mapped }));
+      safeSend(ws, JSON.stringify({ event: "portfolioAccount", data: mapped[0] }));
+      try {
+        subscribeStreamerForPortfolioAccounts(mapped);
+        logger.debug(
+          { accounts: mapped.length, positions: mapped.reduce((n, a) => n + (a.positions?.length ?? 0), 0) },
+          "Portfolio streamer subscriptions updated",
+        );
+      } catch (subErr) {
+        logger.debug({ err: subErr }, "Portfolio streamer subscription failed");
+      }
+    }
+  } catch (err) {
+    logger.debug({ err }, "Portfolio account poll failed");
+    if (!isClosed()) safeSend(ws, JSON.stringify({ event: "portfolioStatus", data: { status: "error", message: "Failed to fetch account data" } }));
   }
-}
 
-function ensurePortfolioSharedTimer(): void {
-  if (portfolioSharedTimer) return;
-  portfolioSharedTimer = setInterval(() => void runSharedPortfolioPoll(), PORTFOLIO_POLL_MS);
-  portfolioSharedTimer.unref?.();
+  if (isClosed()) return;
+
+  try {
+    const hash = await getAccountHash(token);
+    if (!hash || isClosed()) return;
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 30);
+    const orders = await schwabTraderGet(
+      `/accounts/${hash}/orders?fromEnteredTime=${start.toISOString()}&toEnteredTime=${end.toISOString()}`,
+      token
+    );
+    if (isClosed()) return;
+    const mapped = mapOrders(Array.isArray(orders) ? orders : []);
+    safeSend(ws, JSON.stringify({ event: "portfolioOrders", data: mapped }));
+  } catch (err) {
+    logger.debug({ err }, "Portfolio WS orders poll failed");
+  }
 }
 
 function startPortfolioPoll(ws: WebSocket, isClosed: () => boolean) {
-  if (portfolioClients.has(ws)) return;
-  portfolioClients.add(ws);
-  portfolioClosed.set(ws, isClosed);
+  if (portfolioSubs.has(ws)) return;
+
   plCalcLogState.set(ws, { firstFullDone: false, lastPlPctByKey: new Map() });
-  void runSharedPortfolioPoll();
-  ensurePortfolioSharedTimer();
-  logger.info({ subs: portfolioClients.size }, "Portfolio WS polling started (shared cadence)");
+  void fetchAndPushPortfolio(ws, isClosed);
+
+  const interval = setInterval(() => void fetchAndPushPortfolio(ws, isClosed), PORTFOLIO_POLL_MS);
+  portfolioSubs.set(ws, interval);
+  logger.info({ subs: portfolioSubs.size }, "Portfolio WS polling started");
 }
 
 function stopPortfolioPoll(ws: WebSocket) {
-  if (!portfolioClients.has(ws)) return;
-  portfolioClients.delete(ws);
-  portfolioClosed.delete(ws);
-  plCalcLogState.delete(ws);
-  if (portfolioClients.size === 0 && portfolioSharedTimer) {
-    clearInterval(portfolioSharedTimer);
-    portfolioSharedTimer = null;
+  const interval = portfolioSubs.get(ws);
+  if (interval) {
+    clearInterval(interval);
+    portfolioSubs.delete(ws);
+    plCalcLogState.delete(ws);
+    logger.info({ subs: portfolioSubs.size }, "Portfolio WS polling stopped");
   }
-  logger.info({ subs: portfolioClients.size }, "Portfolio WS polling stopped");
 }
 
 export function broadcastToClients(event: string, data: unknown) {

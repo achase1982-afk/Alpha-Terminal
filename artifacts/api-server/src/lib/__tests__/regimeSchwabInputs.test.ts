@@ -186,8 +186,8 @@ describe("Schwab index quotes", () => {
     expect(parseIndexQuoteEntry("$TICK", undefined)).toBeNull();
   });
 
-  it("polls registered symbols except L1-streamed vol indices", () => {
+  it("polls every registered symbol until one is parked", () => {
     registerSchwabIndexSymbols(["$VIX", "$vix", "  $TICK  "]);
-    expect(selectPollSymbols().sort()).toEqual(["$TICK"]);
+    expect(selectPollSymbols().sort()).toEqual(["$TICK", "$VIX"]);
   });
 });

@@ -5,7 +5,7 @@ import {
   deskMarkFeedNotConfigured,
   deskMarkFeedRateLimited,
   deskClearFeedForcedStatus,
-  deskTouchFeed,
+  deskTouchFeedOnDemand,
 } from "./deskFeedFreshness.js";
 
 const SOURCE = "alphavantage";
@@ -91,7 +91,7 @@ export async function deskFetchAlphaVantageNews(
   const articles = json.feed ?? [];
   const touch = Date.now();
   newsCache.set(tickers, { data: articles, asOfMs: touch, sessionDay });
-  deskTouchFeed("alphavantage", touch, SOURCE);
+  deskTouchFeedOnDemand("alphavantage", touch, SOURCE);
   return { ok: true, articles, asOfMs: touch };
 }
 
@@ -128,6 +128,6 @@ export async function deskFetchAlphaVantageOverview(
   }
   const touch = Date.now();
   overviewCache.set(sym, { data: json, asOfMs: touch, sessionDay });
-  deskTouchFeed("alphavantage", touch, SOURCE);
+  deskTouchFeedOnDemand("alphavantage", touch, SOURCE);
   return { ok: true, data: json, asOfMs: touch };
 }
