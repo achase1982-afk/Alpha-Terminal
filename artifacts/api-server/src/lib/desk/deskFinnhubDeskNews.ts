@@ -1,3 +1,4 @@
+import pLimit from "p-limit";
 import { deskEnv } from "./deskEnv.js";
 import { DESK_DEFAULT_NEWS_SYMBOLS } from "./deskDefaultNewsSymbols.js";
 import { logger } from "../logger.js";
@@ -12,6 +13,40 @@ const log = {
   info: (o: unknown, m?: string) => logger.info(o, m),
 };
 
+export const FINNHUB_DESK_CALL_TIMEOUT_MS = 5_000;
+export const FINNHUB_DESK_COMPANY_CONCURRENCY = 4;
+const FINNHUB_DESK_MAX_PER_MINUTE = 60;
+const FINNHUB_RATE_WINDOW_MS = 60_000;
+
+const recentFinnhubCallTimes: number[] = [];
+const companyFetchLimit = pLimit(FINNHUB_DESK_COMPANY_CONCURRENCY);
+
+function pruneFinnhubRateWindow(now: number): void {
+  while (recentFinnhubCallTimes.length > 0 && now - recentFinnhubCallTimes[0]! >= FINNHUB_RATE_WINDOW_MS) {
+    recentFinnhubCallTimes.shift();
+  }
+}
+
+async function waitForFinnhubRateSlot(): Promise<void> {
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const now = Date.now();
+    pruneFinnhubRateWindow(now);
+    if (recentFinnhubCallTimes.length < FINNHUB_DESK_MAX_PER_MINUTE) {
+      recentFinnhubCallTimes.push(now);
+      return;
+    }
+    const oldest = recentFinnhubCallTimes[0]!;
+    const waitMs = Math.max(FINNHUB_RATE_WINDOW_MS - (now - oldest) + 25, 50);
+    await new Promise((r) => setTimeout(r, Math.min(waitMs, 5_000)));
+  }
+}
+
+async function finnhubDeskHttpGet(url: string): Promise<Response> {
+  await waitForFinnhubRateSlot();
+  return fetch(url, { signal: AbortSignal.timeout(FINNHUB_DESK_CALL_TIMEOUT_MS) });
+}
+
 export type DeskFinnhubFetchResult = {
   ok: boolean;
   status: number;
@@ -25,7 +60,7 @@ export function getFinnhubDeskApiKey(): string {
 export async function fetchFinnhubMarketGeneralNews(apiKey: string): Promise<DeskFinnhubFetchResult> {
   const url = `https://finnhub.io/api/v1/news?category=general&token=${encodeURIComponent(apiKey)}`;
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(12_000) });
+    const res = await finnhubDeskHttpGet(url);
     if (!res.ok) {
       log.warn({ status: res.status }, "Finnhub general news HTTP failed");
       return { ok: false, status: res.status, articles: [] };
@@ -49,7 +84,7 @@ export async function deskFetchFinnhubCompanyNews(
   const fromDate = oneWeekAgo.toISOString().slice(0, 10);
   const url = `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(clean)}&from=${fromDate}&to=${toDate}&token=${encodeURIComponent(apiKey)}`;
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(12_000) });
+    const res = await finnhubDeskHttpGet(url);
     if (!res.ok) {
       log.warn({ status: res.status, symbol: clean }, "Finnhub company news HTTP failed");
       return { ok: false, status: res.status, articles: [] };
@@ -98,19 +133,25 @@ export async function deskLoadFinnhubDeskArticles(symbols: string[]): Promise<{
     for (const a of general.articles) all.push(a);
   } else {
     lastErrorStatus = general.status;
-    deskApplyFinnhubHttpStatus(general.status);
   }
 
-  for (const sym of deskSyms) {
-    const r = await deskFetchFinnhubCompanyNews(sym, key);
+  const companyResults = await Promise.all(
+    deskSyms.map((sym) =>
+      companyFetchLimit(() => deskFetchFinnhubCompanyNews(sym, key)),
+    ),
+  );
+  for (const r of companyResults) {
     if (r.ok) {
       hadHttp2xx = true;
       for (const a of r.articles) all.push(a);
     } else {
       lastErrorStatus = r.status;
-      if (!hadHttp2xx) deskApplyFinnhubHttpStatus(r.status);
     }
   }
 
   return { articles: all, hadHttp2xx, lastErrorStatus };
+}
+
+export function deskResetFinnhubRateLimitForTests(): void {
+  recentFinnhubCallTimes.length = 0;
 }

@@ -3,6 +3,7 @@ import {
   buildDeskHealthFeeds,
   deskResetFeedFreshnessForTests,
 } from "../deskFeedFreshness.js";
+import { deskResetFinnhubPollFailureStreakForTests } from "../deskNews.js";
 import { DESK_NEWS_POLL_MS } from "../deskPollCadence.js";
 
 const loadMock = vi.fn();
@@ -14,6 +15,7 @@ vi.mock("../deskFinnhubDeskNews.js", () => ({
 describe("deskFetchNews Finnhub health", () => {
   beforeEach(() => {
     deskResetFeedFreshnessForTests();
+    deskResetFinnhubPollFailureStreakForTests();
     loadMock.mockReset();
     process.env.FINNHUB_API_KEY = "test-key";
   });
@@ -66,6 +68,34 @@ describe("deskFetchNews Finnhub health", () => {
     const row = buildDeskHealthFeeds().find((f) => f.feed === "news");
     expect(row?.status).toBe("rate_limited");
     expect(row?.source).toBe("finnhub");
+  });
+
+  it("single failed cycle with transport errors does not mark feed error", async () => {
+    loadMock.mockResolvedValue({
+      articles: [],
+      hadHttp2xx: false,
+      lastErrorStatus: 0,
+    });
+    const { deskFetchNews } = await import("../deskNews.js");
+    await deskFetchNews(["SPY"]);
+    const row = buildDeskHealthFeeds().find((f) => f.feed === "news");
+    expect(row?.status).not.toBe("error");
+  });
+
+  it("two consecutive failed cycles mark feed error", async () => {
+    loadMock.mockResolvedValue({
+      articles: [],
+      hadHttp2xx: false,
+      lastErrorStatus: 0,
+    });
+    const { deskFetchNews } = await import("../deskNews.js");
+    await deskFetchNews(["SPY"]);
+    let row = buildDeskHealthFeeds().find((f) => f.feed === "news");
+    expect(row?.status).not.toBe("error");
+    await deskFetchNews(["SPY"]);
+    row = buildDeskHealthFeeds().find((f) => f.feed === "news");
+    expect(row?.status).toBe("error");
+    expect(row?.error).toBe("finnhub_fetch_error");
   });
 
   it("401 poll yields auth_error", async () => {
