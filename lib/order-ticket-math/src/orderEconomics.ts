@@ -7,6 +7,8 @@ export interface EconomicsLeg {
   optionType: OptionRight;
   instruction: string;
   expiration?: string;
+  /** Contracts per spread unit (e.g. 2 for the middle leg of a 1·2·1 butterfly). */
+  quantity?: number;
 }
 
 export interface OrderEconomicsInput {
@@ -58,6 +60,7 @@ function detectIronCondor(
   const shortCall = calls.find((l) => l.instruction.startsWith("SELL"));
   const longCall = calls.find((l) => l.instruction.startsWith("BUY"));
   if (!shortPut || !longPut || !shortCall || !longCall) return null;
+  if (shortPut.strike === shortCall.strike) return null;
   if (!(shortPut.strike > longPut.strike && longCall.strike > shortCall.strike && shortPut.strike < shortCall.strike)) {
     return null;
   }
@@ -67,6 +70,58 @@ function detectIronCondor(
     shortPut: shortPut.strike,
     shortCall: shortCall.strike,
   };
+}
+
+function detectIronButterfly(
+  legs: EconomicsLeg[],
+  isCredit: boolean | null | undefined,
+): { wing: number; body: number } | null {
+  if (legs.length !== 4 || isCredit !== true) return null;
+  const exps = new Set(legs.map((l) => l.expiration ?? ""));
+  if (exps.size !== 1) return null;
+  const puts = legs.filter((l) => l.optionType === "PUT");
+  const calls = legs.filter((l) => l.optionType === "CALL");
+  if (puts.length !== 2 || calls.length !== 2) return null;
+  const shortPut = puts.find((l) => l.instruction.startsWith("SELL"));
+  const longPut = puts.find((l) => l.instruction.startsWith("BUY"));
+  const shortCall = calls.find((l) => l.instruction.startsWith("SELL"));
+  const longCall = calls.find((l) => l.instruction.startsWith("BUY"));
+  if (!shortPut || !longPut || !shortCall || !longCall) return null;
+  if (shortPut.strike !== shortCall.strike) return null;
+  if (!(shortPut.strike > longPut.strike && longCall.strike > shortCall.strike)) return null;
+  const putWing = shortPut.strike - longPut.strike;
+  const callWing = longCall.strike - shortCall.strike;
+  return { wing: Math.max(putWing, callWing), body: shortPut.strike };
+}
+
+function detectThreeLegButterfly(
+  legs: EconomicsLeg[],
+): { wing: number; isCredit: boolean } | null {
+  if (legs.length !== 3) return null;
+  const exps = new Set(legs.map((l) => l.expiration ?? ""));
+  if (exps.size !== 1) return null;
+  const allCalls = legs.every((l) => l.optionType === "CALL");
+  const allPuts = legs.every((l) => l.optionType === "PUT");
+  if (!allCalls && !allPuts) return null;
+  const sorted = [...legs].sort((a, b) => a.strike - b.strike);
+  const [lo, mid, hi] = sorted;
+  const wingLo = mid.strike - lo.strike;
+  const wingHi = hi.strike - mid.strike;
+  if (wingLo <= 0 || wingHi <= 0 || Math.abs(wingLo - wingHi) > 1e-6) return null;
+  const q = (l: EconomicsLeg) => l.quantity ?? 1;
+  const loBuy = lo.instruction.startsWith("BUY");
+  const midSell = mid.instruction.startsWith("SELL");
+  const hiBuy = hi.instruction.startsWith("BUY");
+  if (loBuy && midSell && hiBuy && q(lo) === 1 && q(mid) === 2 && q(hi) === 1) {
+    return { wing: wingLo, isCredit: false };
+  }
+  const loSell = lo.instruction.startsWith("SELL");
+  const midBuy = mid.instruction.startsWith("BUY");
+  const hiSell = hi.instruction.startsWith("SELL");
+  if (loSell && midBuy && hiSell && q(lo) === 1 && q(mid) === 2 && q(hi) === 1) {
+    return { wing: wingLo, isCredit: true };
+  }
+  return null;
 }
 
 function computeBreakevens(
@@ -123,12 +178,26 @@ export function computeOrderEconomics(input: OrderEconomicsInput): OrderEconomic
   const legs = input.legs ?? [];
   const isCredit = !!input.isCredit;
   const ic = detectIronCondor(legs, isCredit);
+  const ibf = detectIronButterfly(legs, isCredit);
+  const fly3 = detectThreeLegButterfly(legs);
 
   if (legs.length >= 2) {
     if (ic) {
       const wing = Math.max(ic.putWing, ic.callWing);
       maxRisk = Math.max(0, (wing - net) * 100 * qty);
       maxProfit = Math.max(0, net * 100 * qty);
+    } else if (ibf) {
+      maxRisk = Math.max(0, (ibf.wing - net) * 100 * qty);
+      maxProfit = Math.max(0, net * 100 * qty);
+    } else if (fly3) {
+      const credit = fly3.isCredit;
+      if (credit) {
+        maxRisk = Math.max(0, (fly3.wing - net) * 100 * qty);
+        maxProfit = Math.max(0, net * 100 * qty);
+      } else {
+        maxRisk = Math.max(0, net * 100 * qty);
+        maxProfit = Math.max(0, (fly3.wing - net) * 100 * qty);
+      }
     } else {
       const strikes = legs.map((l) => l.strike).sort((a, b) => a - b);
       const width = strikes.length >= 2 ? strikes[strikes.length - 1] - strikes[0] : 0;

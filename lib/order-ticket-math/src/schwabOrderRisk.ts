@@ -57,15 +57,53 @@ function isOptionAsset(asset?: string): boolean {
   return a === "OPTION" || a === "COLLECTIVE_INVESTMENT";
 }
 
+function gcdPair(a: number, b: number): number {
+  let x = Math.abs(Math.floor(a) || 0);
+  let y = Math.abs(Math.floor(b) || 0);
+  while (y) {
+    const t = y;
+    y = x % y;
+    x = t;
+  }
+  return x || 1;
+}
+
+function spreadUnitQty(qtys: number[]): number {
+  if (qtys.length === 0) return 1;
+  return qtys.reduce((g, q) => gcdPair(g, q || 1), qtys[0] || 1);
+}
+
 /** Infer credit vs debit for verticals, iron condors, and butterflies (LIMIT with no NET type). */
 export function inferNetCreditFromLegStructure(legs: EconomicsLeg[]): boolean | null {
+  if (legs.length === 3) {
+    const allCalls = legs.every((l) => l.optionType === "CALL");
+    const allPuts = legs.every((l) => l.optionType === "PUT");
+    if (!allCalls && !allPuts) return null;
+    const sorted = [...legs].sort((a, b) => a.strike - b.strike);
+    const [lo, mid, hi] = sorted;
+    const q = (l: EconomicsLeg) => l.quantity ?? 1;
+    if (q(lo) === 1 && q(mid) === 2 && q(hi) === 1) {
+      if (lo.instruction.startsWith("BUY") && mid.instruction.startsWith("SELL") && hi.instruction.startsWith("BUY")) {
+        return false;
+      }
+      if (lo.instruction.startsWith("SELL") && mid.instruction.startsWith("BUY") && hi.instruction.startsWith("SELL")) {
+        return true;
+      }
+    }
+    return null;
+  }
   if (legs.length === 4) {
     const sells = legs.filter((l) => l.instruction.startsWith("SELL"));
     const buys = legs.filter((l) => l.instruction.startsWith("BUY"));
     if (sells.length !== 2 || buys.length !== 2) return null;
     const puts = legs.filter((l) => l.optionType === "PUT");
     const calls = legs.filter((l) => l.optionType === "CALL");
-    if (puts.length === 2 && calls.length === 2) return true;
+    if (puts.length === 2 && calls.length === 2) {
+      const shortPut = puts.find((l) => l.instruction.startsWith("SELL"));
+      const shortCall = calls.find((l) => l.instruction.startsWith("SELL"));
+      if (shortPut && shortCall && shortPut.strike === shortCall.strike) return true;
+      return true;
+    }
     if (puts.length === 4 || calls.length === 4) return true;
     return null;
   }
@@ -116,8 +154,10 @@ export function schwabOrderToEconomicsInput(order: SchwabOrderLike): OrderEconom
   const price = typeof order.price === "number" && order.price > 0 ? order.price : null;
   if (price == null) return null;
 
-  const qty = Math.max(1, ...legs.map((l) => l.quantity ?? 1));
-  const isOption = legs.some((l) => isOptionAsset(l.instrument?.assetType));
+  const optionLegs = legs.filter((l) => isOptionAsset(l.instrument?.assetType));
+  const legQtys = optionLegs.map((l) => l.quantity ?? 1);
+  const qty = spreadUnitQty(legQtys);
+  const isOption = optionLegs.length > 0;
 
   if (!isOption) {
     return {
@@ -131,16 +171,17 @@ export function schwabOrderToEconomicsInput(order: SchwabOrderLike): OrderEconom
   }
 
   const econLegs: EconomicsLeg[] = [];
-  for (const leg of legs) {
-    if (!isOptionAsset(leg.instrument?.assetType)) continue;
+  for (const leg of optionLegs) {
     const sym = leg.instrument?.symbol ?? "";
     const parsed = parseSchwabOptionSymbol(sym);
     if (!parsed) return null;
+    const legQty = leg.quantity ?? 1;
     econLegs.push({
       strike: parsed.strike,
       optionType: parsed.optionType,
       instruction: normalizeInstruction(leg.instruction ?? "BUY_TO_OPEN"),
       expiration: parsed.expiration,
+      quantity: legQty / qty,
     });
   }
 
@@ -155,7 +196,7 @@ export function schwabOrderToEconomicsInput(order: SchwabOrderLike): OrderEconom
     isCredit = false;
   }
 
-  const contractCount = legs.reduce((s, l) => s + (l.quantity ?? 1), 0) * qty;
+  const contractCount = legQtys.reduce((s, n) => s + n, 0);
 
   return {
     legs: econLegs,
