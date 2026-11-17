@@ -153,3 +153,4 @@ export function analyzeExpirationPayoff(input: ExpirationPayoffInput): Expiratio
 
   return { maxLoss, maxProfit, breakevens: uniq };
 }
+
