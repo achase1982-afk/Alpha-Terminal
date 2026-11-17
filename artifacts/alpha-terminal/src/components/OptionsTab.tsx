@@ -23,6 +23,11 @@ import { useShallow } from "zustand/react/shallow";
 import { buildChainHoldSignature } from "@/lib/streamHoldSig";
 import { useChainOptionHold } from "@/hooks/useChainOptionHold";
 import { resolveAtmStrike } from "@workspace/order-ticket-math";
+import { useSchwabAccountStore } from "@/lib/schwab-account-store";
+import {
+  OptionsChainOrderSheet,
+  legsFromChainSelection,
+} from "@/components/OptionsChainOrderSheet";
 
 const EPS = 0.0001;
 const COL_W = 74;
@@ -1247,7 +1252,7 @@ export function OptionsTab({
   releaseOptionHold,
   stickyOffset = 0,
   onTradeSingle,
-  onOpenStrategyBuilder,
+  onOpenStrategyBuilder: _onOpenStrategyBuilder,
 }: OptionsTabProps) {
   const { accessToken } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken })));
   // Widget pin wins inside the dashboard; global symbol everywhere else.
@@ -1262,7 +1267,10 @@ export function OptionsTab({
   const [showInlineGreeks, setShowInlineGreeks] = useState(false);
   const [longPressTarget, setLongPressTarget] = useState<LongPressTarget | null>(null);
   const [legLimitShake, setLegLimitShake] = useState(false);
+  const [sheetCollapsed, setSheetCollapsed] = useState(false);
+  const [legQuantities, setLegQuantities] = useState<Map<string, number>>(new Map());
   const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const accounts = useSchwabAccountStore((s) => s.accounts);
   const MAX_OPTION_LEGS = 4;
 
   const activeColumns = useMemo(
@@ -1376,7 +1384,16 @@ export function OptionsTab({
     underlyingPrice ?? data?.underlyingPrice ?? null,
   );
 
-  useEffect(() => { setExpandedExps(new Set()); setSelectedLegs(new Map()); }, [symbol]);
+  useEffect(() => {
+    setExpandedExps(new Set());
+    setSelectedLegs(new Map());
+    setLegQuantities(new Map());
+    setSheetCollapsed(false);
+  }, [symbol]);
+
+  useEffect(() => {
+    if (selectedLegs.size > 0) setSheetCollapsed(false);
+  }, [selectedLegs.size]);
 
   useEffect(() => {}, [groups.length]);
 
@@ -1420,58 +1437,62 @@ export function OptionsTab({
 
   const handleClearSelection = useCallback(() => {
     setSelectedLegs(new Map());
+    setLegQuantities(new Map());
+    setSheetCollapsed(false);
   }, []);
 
-  const handleBuildStrategy = useCallback(() => {
-    if (!onOpenStrategyBuilder || groups.length === 0) return;
-    const allStrikes = new Set<number>();
-    const expLabels: { label: string; value: string }[] = [];
-    const cMap = new Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>();
-    const chainTs = dataUpdatedAt > 0 ? dataUpdatedAt : Date.now();
-    const streamTicks = useOptionsStreamStore.getState().ticks;
-    for (const g of groups) {
-      if (!expLabels.some(e => e.value === g.expiration)) {
-        expLabels.push({ label: `${g.dateLabel} (${Math.round(g.dte)}d)`, value: g.expiration });
+  const streamTicksForLegs = useOptionsStreamStore((s) => s.ticks);
+
+  const ticketLegs = useMemo(() => {
+    if (selectedLegs.size === 0) return [];
+    const entries = [...selectedLegs.entries()].map(([key, l]) => {
+      const tick = l.contract.streamKey ? streamTicksForLegs[l.contract.streamKey] : undefined;
+      const merged: Contract = { ...l.contract };
+      if (tick) {
+        if (tick.bid != null) merged.bid = tick.bid;
+        if (tick.ask != null) merged.ask = tick.ask;
+        if (tick.delta != null) merged.delta = tick.delta;
+        if (tick.gamma != null) merged.gamma = tick.gamma;
+        if (tick.theta != null) merged.theta = tick.theta;
+        if (tick.vega != null) merged.vega = tick.vega;
+        if (tick.iv != null) merged.iv = tick.iv;
       }
-      for (const row of g.rows) {
-        allStrikes.add(row.strike);
-        const mapContract = (c: Contract | null) => {
-          if (!c?.streamKey) return;
-          const tick = streamTicks[c.streamKey];
-          cMap.set(c.streamKey, {
-            bid: (tick && tick.bid != null) ? tick.bid : c.bid,
-            ask: (tick && tick.ask != null) ? tick.ask : c.ask,
-            delta: (tick && tick.delta != null) ? tick.delta : c.delta,
-            gamma: (tick && tick.gamma != null) ? tick.gamma : c.gamma,
-            theta: (tick && tick.theta != null) ? tick.theta : c.theta,
-            vega: (tick && tick.vega != null) ? tick.vega : c.vega,
-            iv: (tick && tick.iv != null) ? tick.iv : c.iv,
-            contractTs: chainTs,
-          });
-        };
-        mapContract(row.call);
-        mapContract(row.put);
-      }
-    }
-    const preSelected = selectedLegs.size > 0
-      ? [...selectedLegs.values()].map(l => {
-          const tick = l.contract.streamKey ? streamTicks[l.contract.streamKey] : undefined;
-          const merged: Contract = { ...l.contract };
-          if (tick) {
-            if (tick.bid != null) merged.bid = tick.bid;
-            if (tick.ask != null) merged.ask = tick.ask;
-            if (tick.delta != null) merged.delta = tick.delta;
-            if (tick.gamma != null) merged.gamma = tick.gamma;
-            if (tick.theta != null) merged.theta = tick.theta;
-            if (tick.vega != null) merged.vega = tick.vega;
-            if (tick.iv != null) merged.iv = tick.iv;
-          }
-          return { contract: merged, type: l.type, side: l.side };
-        })
-      : undefined;
-    onOpenStrategyBuilder([...allStrikes].sort((a, b) => a - b), expLabels, cMap, preSelected);
-    setSelectedLegs(new Map());
-  }, [onOpenStrategyBuilder, groups, selectedLegs, dataUpdatedAt]);
+      const qty = legQuantities.get(key) ?? 1;
+      return {
+        key,
+        contract: merged,
+        type: l.type,
+        side: l.side,
+        quantity: qty,
+      };
+    });
+    return legsFromChainSelection(entries, symbol, accounts, buildSchwabOptionKey);
+  }, [selectedLegs, streamTicksForLegs, symbol, accounts, legQuantities]);
+
+  const handleExpandOrderSheet = useCallback(() => {
+    setSheetCollapsed(false);
+  }, []);
+
+  const handleSheetLegQty = useCallback((legId: string, quantity: number) => {
+    setLegQuantities((prev) => {
+      const next = new Map(prev);
+      next.set(legId, Math.max(1, quantity));
+      return next;
+    });
+  }, []);
+
+  const handleSheetRemoveLeg = useCallback((legId: string) => {
+    setSelectedLegs((prev) => {
+      const next = new Map(prev);
+      next.delete(legId);
+      return next;
+    });
+    setLegQuantities((prev) => {
+      const next = new Map(prev);
+      next.delete(legId);
+      return next;
+    });
+  }, []);
 
   const handleStrikeModeChange = useCallback((val: string) => {
     if (val === "custom") { setLocalCustomValue(String(strikeCount)); setIsCustomMode(true); return; }
@@ -1603,14 +1624,14 @@ export function OptionsTab({
         )}
 
         {hasData && (
-          <div>
+          <div style={{ paddingBottom: selCount > 0 ? (sheetCollapsed ? 120 : 340) : 0 }}>
             <OptionsChainHeader
               showCalls={showCalls}
               showPuts={showPuts}
               columns={activeColumns}
               stickyTop={stickyOffset + TOOLBAR_H}
               onColumnsEditor={() => setColumnsEditorOpen(true)}
-              onBuildStrategy={onOpenStrategyBuilder ? handleBuildStrategy : undefined}
+              onBuildStrategy={selCount > 0 ? handleExpandOrderSheet : undefined}
             />
             {groups.map(group => {
               const isOpen = expandedExps.has(group.expiration);
@@ -1644,41 +1665,25 @@ export function OptionsTab({
         )}
       </div>
 
-      {selCount > 0 && (
+      {legLimitShake && (
         <div
-          className={`fixed left-0 right-0 z-[100] flex items-center justify-between px-4 py-3${legLimitShake ? " animate-[shake_0.4s_ease-in-out]" : ""}`}
-          style={{
-            bottom: 80,
-            background: legLimitShake ? `linear-gradient(180deg, #1a0505 0%, #000000 100%)` : "linear-gradient(180deg, #0a0a0a 0%, #000000 100%)",
-            borderTop: `1px solid ${legLimitShake ? "#ff4b5c" : GOLD}30`,
-            boxShadow: `0 -4px 24px rgba(0,0,0,0.8), 0 -1px 0 ${GOLD}15`,
-            fontFamily: MONO,
-            transition: "background 0.3s, border-color 0.3s",
-          }}
+          className="fixed left-0 right-0 z-[105] px-4 py-2 text-center animate-[shake_0.4s_ease-in-out]"
+          style={{ bottom: 140, fontFamily: MONO, fontSize: 11, color: "#ff4b5c" }}
         >
-          <button
-            onClick={handleBuildStrategy}
-            className="font-mono text-sm font-bold tracking-wider px-6 py-2.5 rounded-lg transition-all active:scale-95"
-            style={{
-              background: GOLD,
-              color: "#000",
-              boxShadow: `0 2px 12px ${GOLD}40`,
-            }}
-          >
-            Next
-          </button>
-          {legLimitShake && (
-            <span className="text-[11px] font-mono" style={{ color: "#ff4b5c" }}>Max 4 legs</span>
-          )}
-          <span className="text-[11px] font-mono" style={{ color: selCount >= MAX_OPTION_LEGS ? GOLD : GRAY }}>{selCount}/{MAX_OPTION_LEGS}</span>
-          <button
-            onClick={handleClearSelection}
-            className="px-4 py-3 rounded-lg text-[13px] tracking-wider transition-colors"
-            style={{ color: GRAY, background: "transparent", border: `1px solid ${BORDER}`, fontWeight: FW_LIGHT }}
-          >
-            CLEAR
-          </button>
+          Max 4 legs
         </div>
+      )}
+
+      {selCount > 0 && (
+        <OptionsChainOrderSheet
+          legs={ticketLegs}
+          collapsed={sheetCollapsed}
+          onCollapsedChange={setSheetCollapsed}
+          onClearAll={handleClearSelection}
+          onLegQuantityChange={handleSheetLegQty}
+          onRemoveLeg={handleSheetRemoveLeg}
+          subscribeOptionSymbols={subscribeOptionSymbols}
+        />
       )}
 
       {longPressTarget && (

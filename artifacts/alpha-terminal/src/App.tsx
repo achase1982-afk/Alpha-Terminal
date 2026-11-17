@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, useEffect, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@clerk/clerk-react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -199,9 +199,17 @@ function BrowserTelemetryInstaller() {
   return null;
 }
 
+const ChainSheetScreenshotPage =
+  import.meta.env.VITE_CHAIN_SHEET_SHOTS === "1"
+    ? lazy(() => import("@/dev/ChainSheetScreenshotPage"))
+    : null;
+
 function Router() {
   return (
     <Switch>
+      {ChainSheetScreenshotPage ? (
+        <Route path="/dev/chain-sheet" component={ChainSheetScreenshotPage} />
+      ) : null}
       <Route path="/" component={TerminalPage} />
       <Route component={NotFound} />
     </Switch>
