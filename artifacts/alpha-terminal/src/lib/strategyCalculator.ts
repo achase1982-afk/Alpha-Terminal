@@ -1,3 +1,5 @@
+import { midpointFromBidAsk, parseTickRoundedLimit } from "@workspace/order-ticket-math";
+
 export interface OptionLeg {
   direction: 'STO' | 'BTO';
   quantity: number;
@@ -47,7 +49,8 @@ export function detectIronCondor(
     let shortsMid = 0;
     let longsMid = 0;
     for (const l of legs) {
-      const mid = ((l.bid ?? 0) + (l.ask ?? 0)) / 2;
+      const mid = midpointFromBidAsk(l.bid, l.ask);
+      if (mid == null) return null;
       if (l.instruction.startsWith('SELL')) shortsMid += mid;
       else if (l.instruction.startsWith('BUY')) longsMid += mid;
     }
@@ -84,7 +87,8 @@ export function computeStrategyEconomics(opts: {
   quantity: number;
   isCredit: boolean | null | undefined;
 }): StrategyEconomics {
-  const { legs, netPrice, quantity, isCredit } = opts;
+  const { legs, quantity, isCredit } = opts;
+  const netPrice = parseTickRoundedLimit(opts.netPrice) ?? 0;
   if (!legs || legs.length === 0) {
     return { maxRisk: 0, maxProfit: 0, breakevens: [], isIronCondor: false };
   }

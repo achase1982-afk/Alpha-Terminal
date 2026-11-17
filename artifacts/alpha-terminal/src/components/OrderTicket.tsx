@@ -8,6 +8,13 @@ import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { formatSchwabAccountType } from "@/lib/schwabAccountAggregate";
 import { startStrategistPolling } from "@/lib/strategistPoller";
 import { computeStrategyEconomics } from "@/lib/strategyCalculator";
+import {
+  aggregateSpreadNBBO,
+  computeOrderEconomics,
+  evaluateTicketPreTradeGate,
+  midpointFromBidAsk,
+  parseTickRoundedLimit,
+} from "@workspace/order-ticket-math";
 import { useGetOptionChain } from "@workspace/api-client-react";
 import {
   X, Minus, Plus, Loader2, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp,
@@ -167,6 +174,9 @@ function runPreTradeChecks(params: {
   }
 
   if (bid != null && ask != null && bid > 0) {
+    if (bid > ask) {
+      checks.push({ id: "liq", label: "Liquidity", level: "RED", detail: "Crossed bid/ask — quote unavailable" });
+    } else {
     const spreadPct = ((ask - bid) / bid) * 100;
     if (spreadPct > 15) {
       checks.push({ id: "liq", label: "Liquidity", level: "RED", detail: `Spread ${spreadPct.toFixed(1)}% > 15% — illiquid` });
@@ -174,6 +184,7 @@ function runPreTradeChecks(params: {
       checks.push({ id: "liq", label: "Liquidity", level: "YELLOW", detail: `Spread ${spreadPct.toFixed(1)}% — moderate` });
     } else {
       checks.push({ id: "liq", label: "Liquidity", level: "GREEN", detail: `Spread ${spreadPct.toFixed(1)}% — tight` });
+    }
     }
   } else {
     checks.push({ id: "liq", label: "Liquidity", level: "YELLOW", detail: "No bid/ask data" });
@@ -348,7 +359,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const { data: quote } = useQuote(symbol);
   const pulseData = useMarketPulseStore((s) => s.pulseData);
   const preTradeEnabled = useTerminalStore((s) => s.preTradeEnabled);
-  const _preTradeBlockOnRed = useTerminalStore((s) => s.preTradeBlockOnRed);
+  const preTradeBlockOnRed = useTerminalStore((s) => s.preTradeBlockOnRed);
   const preTradeMinRR = useTerminalStore((s) => s.preTradeMinRR);
   const preTradeMaxPositionPct = useTerminalStore((s) => s.preTradeMaxPositionPct);
   const preTradeMinDTE = useTerminalStore((s) => s.preTradeMinDTE);
@@ -404,29 +415,12 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
 
   const spreadPrices = useMemo(() => {
     if (!isMultiLeg || !strategyLegs || strategyLegs.length === 0) return null;
-    let spreadBid = 0;
-    let spreadAsk = 0;
-    for (const leg of strategyLegs) {
-      const isSell = leg.instruction.startsWith("SELL");
-      if (isSell) {
-        spreadBid += leg.bid ?? 0;
-        spreadAsk += leg.ask ?? 0;
-      } else {
-        spreadBid -= leg.ask ?? 0;
-        spreadAsk -= leg.bid ?? 0;
-      }
-    }
-    spreadBid = Math.abs(spreadBid);
-    spreadAsk = Math.abs(spreadAsk);
-    if (spreadBid > spreadAsk) {
-      const tmp = spreadBid;
-      spreadBid = spreadAsk;
-      spreadAsk = tmp;
-    }
-    const spreadMid = (spreadBid + spreadAsk) / 2;
-    if (spreadMid <= 0) return { spreadBid: 0.01, spreadMid: 0.01, spreadAsk: 0.01 };
-    return { spreadBid, spreadMid, spreadAsk };
-  }, [isMultiLeg, strategyLegs, strategyIsCredit]);
+    const agg = aggregateSpreadNBBO(strategyLegs);
+    if (!agg) return null;
+    const spreadMid = agg.mid ?? parseTickRoundedLimit(limitPrice, strategyNetPrice) ?? 0.01;
+    if (spreadMid <= 0) return { spreadBid: 0.01, spreadMid: 0.01, spreadAsk: 0.01, crossed: agg.crossed };
+    return { spreadBid: agg.bid, spreadMid, spreadAsk: agg.ask, crossed: agg.crossed };
+  }, [isMultiLeg, strategyLegs, strategyNetPrice, limitPrice]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -538,24 +532,42 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const needsStop = orderType === "STOP" || orderType === "STOP_LIMIT" || orderType === "TRAILING_STOP_LIMIT";
   const needsTrail = orderType === "TRAILING_STOP" || orderType === "TRAILING_STOP_LIMIT";
 
-  const estimatedCost = useMemo(() => {
-    if (isMultiLeg) {
-      const price = parseFloat(limitPrice) || strategyNetPrice;
-      if (!price) return null;
-      return price * quantity * 100;
-    }
-    const price =
-      orderType === "MARKET"
-        ? (side === "BUY" ? quote?.ask : quote?.bid) ?? quote?.last
-        : needsLimit
-          ? parseFloat(limitPrice) || null
-          : needsStop
-            ? parseFloat(stopPrice) || null
-            : quote?.last;
-    if (!price) return null;
-    const multiplier = isOption ? 100 : 1;
-    return price * quantity * multiplier;
-  }, [orderType, side, quote?.ask, quote?.bid, quote?.last, limitPrice, stopPrice, quantity, needsLimit, needsStop, isOption, isMultiLeg, strategyNetPrice]);
+  const ticketEconomics = useMemo(() => {
+    const econLegs = isMultiLeg && strategyLegs
+      ? strategyLegs.map((l) => ({
+          strike: l.strike,
+          optionType: l.optionType,
+          instruction: l.instruction,
+          expiration: l.expiration,
+        }))
+      : isOption
+        ? [{ strike: 0, optionType: "CALL", instruction: side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN" }]
+        : null;
+    const fallback =
+      isMultiLeg
+        ? strategyNetPrice
+        : orderType === "MARKET"
+          ? (side === "BUY" ? quote?.ask : quote?.bid) ?? quote?.last ?? null
+          : needsLimit
+            ? null
+            : quote?.last ?? null;
+    return computeOrderEconomics({
+      legs: econLegs,
+      limitPrice: needsLimit || isMultiLeg ? limitPrice : undefined,
+      fallbackNetPrice: fallback ?? undefined,
+      quantity,
+      isCredit: strategyIsCredit,
+      isOption,
+      contractCount: isMultiLeg && strategyLegs
+        ? strategyLegs.reduce((s, l) => s + l.quantity, 0) * quantity
+        : quantity,
+    });
+  }, [
+    isMultiLeg, strategyLegs, isOption, side, orderType, quote?.ask, quote?.bid, quote?.last,
+    limitPrice, needsLimit, strategyNetPrice, quantity, strategyIsCredit,
+  ]);
+
+  const estimatedCost = useMemo(() => ticketEconomics?.grossNotional ?? null, [ticketEconomics]);
 
   // Net debit when extra option legs are added to a stock ticket
   const mixedNetDebit = useMemo(() => {
@@ -575,18 +587,11 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const effectiveAsk = isMultiLeg && spreadPrices
     ? spreadPrices.spreadAsk
     : optionMarkEstimate != null ? optionMarkEstimate * 1.03 : quote?.ask ?? null;
-  const midPrice = effectiveBid != null && effectiveAsk != null ? (effectiveBid + effectiveAsk) / 2 : null;
+  const midPrice = midpointFromBidAsk(effectiveBid, effectiveAsk);
 
   const riskChecks = useMemo(() => {
     if (!preTradeEnabled) return [];
-    let spreadMaxRisk: number | null = null;
-    if (isMultiLeg && strategyLegs && strategyLegs.length >= 2) {
-      const strikes = strategyLegs.map(l => l.strike).sort((a, b) => a - b);
-      const strikeWidth = strikes[strikes.length - 1] - strikes[0];
-      const netCredit = parseFloat(limitPrice) || strategyNetPrice || 0;
-      spreadMaxRisk = (strikeWidth - netCredit) * 100;
-      if (spreadMaxRisk < 0) spreadMaxRisk = 0;
-    }
+    const spreadMaxRisk = ticketEconomics ? ticketEconomics.maxRisk / Math.max(1, quantity) : null;
     const allChecks = runPreTradeChecks({
       side, quantity,
       limitPrice: parseFloat(limitPrice) || null,
@@ -602,11 +607,20 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       return allChecks.filter(c => !["pulse", "rr", "size"].includes(c.id));
     }
     return allChecks;
-  }, [side, quantity, limitPrice, effectiveBid, effectiveAsk, quote?.last, pulseData, preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, accountSize, stratMinPoP, isOption, preTradeEnabled, isMultiLeg, strategyLegs, strategyNetPrice, spreadPrices, isCloseOrder]);
+  }, [side, quantity, limitPrice, effectiveBid, effectiveAsk, quote?.last, pulseData, preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, accountSize, stratMinPoP, isOption, preTradeEnabled, isMultiLeg, strategyLegs, strategyNetPrice, spreadPrices, isCloseOrder, ticketEconomics]);
 
   const overallRisk = useMemo(() => getOverallLevel(riskChecks), [riskChecks]);
 
+  const preTradeGate = useMemo(
+    () => evaluateTicketPreTradeGate({
+      blockOnRed: preTradeBlockOnRed,
+      checks: riskChecks.map((c) => ({ id: c.id, level: c.level })),
+    }),
+    [preTradeBlockOnRed, riskChecks],
+  );
+
   const isValid = useMemo(() => {
+    if (preTradeGate.shouldBlockSubmit) return false;
     if (quantity <= 0) return false;
     if (!accountHash) return false;
     if (isMultiLeg && orderType !== "MARKET") return !!limitPrice && parseFloat(limitPrice) > 0;
@@ -615,7 +629,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     if (needsStop && (!stopPrice || parseFloat(stopPrice) <= 0)) return false;
     if (needsTrail && (!trailOffset || parseFloat(trailOffset) <= 0)) return false;
     return true;
-  }, [quantity, needsLimit, limitPrice, needsStop, stopPrice, needsTrail, trailOffset, accountHash, isMultiLeg]);
+  }, [quantity, needsLimit, limitPrice, needsStop, stopPrice, needsTrail, trailOffset, accountHash, isMultiLeg, preTradeGate.shouldBlockSubmit]);
 
   const buildSchwabOrder = useCallback(() => {
     const isSeamless = extendedHours || duration === "SEAMLESS" || duration === "GOOD_TILL_CANCEL_EXT";
@@ -632,7 +646,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
         // Determine net direction from actual current leg prices (sell legs contribute positive, buy legs negative)
         const netDirection = strategyLegs.reduce((acc, leg) => {
           const isSell = leg.instruction.startsWith("SELL");
-          const mid = ((leg.bid ?? 0) + (leg.ask ?? 0)) / 2;
+          const mid = midpointFromBidAsk(leg.bid, leg.ask) ?? 0;
           return acc + (isSell ? mid : -mid);
         }, 0);
         // Schwab multi-leg orderType: NET_CREDIT when net is positive, NET_DEBIT when negative
@@ -685,7 +699,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     }
 
     // Single-leg: SEAMLESS session requires LIMIT — fall back to mid price if MARKET selected
-    const singleMid = quote?.bid != null && quote?.ask != null ? (quote.bid + quote.ask) / 2 : (quote?.ask ?? quote?.last ?? 0);
+    const singleMid = midpointFromBidAsk(quote?.bid, quote?.ask) ?? quote?.ask ?? quote?.last ?? 0;
     const resolvedOrderType = isSeamless && orderType === "MARKET" ? "LIMIT" : orderType;
     const resolvedLimitPrice = isSeamless && orderType === "MARKET" && !limitPrice
       ? singleMid.toFixed(2)
@@ -717,7 +731,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   }, [orderType, extendedHours, duration, side, quantity, symbol, optionSymbol, isOption, isMultiLeg, strategyLegs, strategyIsCredit, isCloseOrder, optionInstruction, needsLimit, limitPrice, needsStop, stopPrice, needsTrail, trailOffset, instruction, exchange, taxLotMethod, spreadPrices, quote]);
 
   const handleSubmit = useCallback(async () => {
-    if (!accountHash) return;
+    if (!accountHash || preTradeGate.shouldBlockSubmit) return;
     setStage("submitting");
     try {
       const order = buildSchwabOrder();
@@ -770,7 +784,18 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       const res = await fetchWithAuth("/api/portfolio/place-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountHash, order, journalContext }),
+        body: JSON.stringify({
+          accountHash,
+          order,
+          journalContext,
+          preTradeGate: preTradeEnabled
+            ? {
+                blockOnRed: preTradeBlockOnRed,
+                overall: overallRisk,
+                checks: riskChecks.map((c) => ({ id: c.id, level: c.level })),
+              }
+            : undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -784,7 +809,11 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       setErrorMsg(err.message || "Network error");
       setStage("error");
     }
-  }, [accountHash, buildSchwabOrder, symbol, side, pulseData, limitPrice, isMultiLeg, strategyIsCredit, strategyLegs, quantity, isOption]);
+  }, [
+    accountHash, buildSchwabOrder, symbol, side, pulseData, limitPrice, isMultiLeg, strategyIsCredit,
+    strategyLegs, quantity, isOption, preTradeGate.shouldBlockSubmit, preTradeEnabled, preTradeBlockOnRed,
+    overallRisk, riskChecks,
+  ]);
 
   // ── Send-to-Strategist (trade validation) ────────────────────────────────
   // Rolling-short eligibility: a multi-leg ticket with at least one short leg
@@ -999,8 +1028,10 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       setLimitPrice(spreadPrices.spreadMid.toFixed(2));
       return;
     }
-    if (quote?.bid != null && quote?.ask != null) {
-      setLimitPrice(((quote.bid + quote.ask) / 2).toFixed(2));
+    const mid = midpointFromBidAsk(quote?.bid, quote?.ask);
+    if (mid != null) {
+      const rounded = parseTickRoundedLimit(mid);
+      if (rounded != null) setLimitPrice(rounded.toFixed(2));
     }
   }, [quote?.bid, quote?.ask, isMultiLeg, spreadPrices]);
 
@@ -2349,7 +2380,8 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               <button onClick={() => setStage("form")} className="flex-1" style={{ fontSize: S.heading, height: 40, background: "transparent", color: TEXT, border: `1px solid ${BORDER}`, borderRadius: 999 }}>Back</button>
               <button
                 onClick={handleSubmit}
-                className="flex-[2] tracking-[0.04em] active:scale-[0.98] transition-transform"
+                disabled={preTradeGate.shouldBlockSubmit || !isValid}
+                className="flex-[2] tracking-[0.04em] active:scale-[0.98] transition-transform disabled:opacity-50"
                 style={{
                   fontSize: 16,
                   height: 42,

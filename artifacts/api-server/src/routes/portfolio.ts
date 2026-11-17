@@ -17,6 +17,10 @@ import {
 } from "../lib/portfolioPreferences.js";
 import { db } from "@workspace/db";
 import { tradeJournalTable } from "@workspace/db/schema";
+import {
+  serverShouldRejectOrder,
+  validateOrderPreTradeGatePayload,
+} from "@workspace/order-ticket-math";
 
 const router: IRouter = Router();
 
@@ -279,11 +283,24 @@ router.post("/place-order", async (req, res) => {
   const token = getTraderToken();
   if (!token) return res.status(401).json({ error: "no_trader_token" });
 
-  const { accountHash, order, journalContext } = req.body as {
+  const { accountHash, order, journalContext, preTradeGate } = req.body as {
     accountHash: string;
     order: SchwabPlaceOrderBody;
     journalContext?: TradeJournalContextPayload;
+    preTradeGate?: unknown;
   };
+
+  const gatePayload = preTradeGate != null ? validateOrderPreTradeGatePayload(preTradeGate) : null;
+  if (preTradeGate != null && !gatePayload) {
+    return res.status(400).json({ error: "invalid_pre_trade_gate" });
+  }
+  if (serverShouldRejectOrder(gatePayload ?? undefined)) {
+    return res.status(403).json({
+      error: "pre_trade_blocked",
+      message: "Order blocked by pre-trade risk gate",
+      blockingCheckIds: gatePayload?.checks.filter((c) => c.level === "RED").map((c) => c.id) ?? [],
+    });
+  }
 
   if (!accountHash || !order) {
     return res.status(400).json({ error: "Missing accountHash or order" });

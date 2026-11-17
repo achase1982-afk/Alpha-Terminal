@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { Reorder } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
+import { resolveAtmStrike } from "@workspace/order-ticket-math";
 
 const EPS = 0.0001;
 const COL_W = 74;
@@ -145,16 +146,9 @@ function getExpType(expStr: string): "Weekly" | "EOM" | "Quarterly" | null {
 
 function findATMIndex(strikes: number[], lastPrice: number): number {
   if (strikes.length === 0) return -1;
-  let best = 0;
-  let bestDiff = Math.abs(strikes[0] - lastPrice);
-  for (let i = 1; i < strikes.length; i++) {
-    const diff = Math.abs(strikes[i] - lastPrice);
-    if (diff < bestDiff || (diff === bestDiff && strikes[i] < strikes[best])) {
-      best = i;
-      bestDiff = diff;
-    }
-  }
-  return best;
+  const atm = resolveAtmStrike(strikes, lastPrice);
+  if (atm == null) return -1;
+  return strikes.findIndex((s) => s === atm);
 }
 
 function normalizeStrike(v: number): number {
@@ -1041,11 +1035,15 @@ function ExpirationSection({
   accentHex: string;
 }) {
   const stats = useStreamingExpirationStats(group.rows, underlyingPrice);
+  const panelId = `options-exp-panel-${group.expiration.replace(/[^a-zA-Z0-9]/g, "-")}`;
 
   return (
     <div>
       <button
+        type="button"
         onClick={onToggle}
+        aria-expanded={isOpen}
+        aria-controls={panelId}
         className="w-full flex items-center justify-between px-3 py-1 transition-colors sticky z-20"
         style={{
           top: stickyTop,
@@ -1089,6 +1087,7 @@ function ExpirationSection({
       </button>
 
       {isOpen && (
+        <div id={panelId}>
         <OptionsGrid
           rows={group.rows}
           underlyingPrice={underlyingPrice}
@@ -1102,6 +1101,7 @@ function ExpirationSection({
           maxOI={stats.maxOI}
           accentHex={accentHex}
         />
+        </div>
       )}
     </div>
   );
@@ -1262,6 +1262,11 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
   }, [strikeCount]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const chainSymbolRef = useRef(symbol);
+  useEffect(() => {
+    chainSymbolRef.current = symbol;
+  }, [symbol]);
+
   const { data: rawData, isLoading, error, isFetching } = useGetOptionChain<OptionChainResponse>(
     { symbol, contractType: "ALL", strikeCount },
     { query: { enabled: !!accessToken && !!symbol, staleTime: 30_000, gcTime: 5 * 60_000, retry: 2 } }
@@ -1269,6 +1274,9 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
 
   const data = useMemo(() => {
     if (!rawData) return rawData;
+    if (rawData.symbol && rawData.symbol.toUpperCase() !== chainSymbolRef.current.toUpperCase()) {
+      return undefined;
+    }
     let calls = (rawData.calls ?? []) as Contract[];
     let puts = (rawData.puts ?? []) as Contract[];
     if (contractType === "CALL") puts = [];
