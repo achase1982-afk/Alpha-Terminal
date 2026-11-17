@@ -1,12 +1,13 @@
 import { deskEnv } from "./deskEnv.js";
 import { deskTouchFeed, deskMarkFeedError, deskMarkFeedNotConfigured } from "./deskFeedFreshness.js";
+import { deskFilterUwFlowAlerts, deskUwFlowTickerQuery } from "./deskUwFlow.js";
 import { logger } from "../logger.js";
 
 const UW_BASE = "https://api.unusualwhales.com";
 const CACHE_TTL_MS = 60_000;
 
-let cacheBody: unknown[] | null = null;
-let cacheAt = 0;
+const cacheBody = new Map<string, unknown[]>();
+const cacheAt = new Map<string, number>();
 
 class Semaphore {
   private active = 0;
@@ -45,21 +46,41 @@ export function getUwApiKey(): string {
   return deskEnv("UW_API_KEY_NEW", "UW_API_KEY");
 }
 
-export async function deskFetchUwFlow(): Promise<{ alerts: unknown[]; asOfMs: number }> {
+export type DeskUwFlowResult = {
+  ok: boolean;
+  alerts: unknown[];
+  asOfMs: number;
+  status?: number;
+  error?: string;
+  symbol?: string;
+};
+
+export async function deskFetchUwFlow(opts?: {
+  symbol?: string;
+}): Promise<DeskUwFlowResult> {
   const key = getUwApiKey();
   if (!key) {
     deskMarkFeedNotConfigured("uw_flow");
-    return { alerts: [], asOfMs: Date.now() };
+    return { ok: false, alerts: [], asOfMs: Date.now(), error: "not_configured" };
   }
 
-  if (cacheBody && Date.now() - cacheAt < CACHE_TTL_MS) {
-    deskTouchFeed("uw_flow", cacheAt, "unusual_whales");
-    return { alerts: cacheBody, asOfMs: cacheAt };
+  const symbol = opts?.symbol?.trim();
+  const cacheKey = symbol ? symbol.toUpperCase() : "__all__";
+  const hit = cacheBody.get(cacheKey);
+  const hitAt = cacheAt.get(cacheKey) ?? 0;
+  if (hit && Date.now() - hitAt < CACHE_TTL_MS) {
+    const filtered = deskFilterUwFlowAlerts(hit, symbol);
+    deskTouchFeed("uw_flow", hitAt, "unusual_whales");
+    return { ok: true, alerts: filtered, asOfMs: hitAt, symbol };
   }
 
   try {
     return await withUwConcurrencySlot(async () => {
-      const url = `${UW_BASE}/api/option-trades/flow-alerts?limit=100`;
+      const params = new URLSearchParams({ limit: "100" });
+      const tickers = deskUwFlowTickerQuery(symbol);
+      if (tickers) params.set("ticker_symbol", tickers);
+
+      const url = `${UW_BASE}/api/option-trades/flow-alerts?${params}`;
       const res = await fetch(url, {
         headers: {
           Authorization: `Bearer ${key}`,
@@ -71,23 +92,32 @@ export async function deskFetchUwFlow(): Promise<{ alerts: unknown[]; asOfMs: nu
       if (!res.ok) {
         const msg = `uw_flow_http_${res.status}`;
         deskMarkFeedError("uw_flow", msg);
-        logger.warn({ status: res.status }, "Desk UW flow fetch failed");
-        return { alerts: cacheBody ?? [], asOfMs: cacheAt || Date.now() };
+        logger.warn({ status: res.status, symbol }, "Desk UW flow fetch failed");
+        return {
+          ok: false,
+          alerts: deskFilterUwFlowAlerts(hit ?? [], symbol),
+          asOfMs: hitAt || Date.now(),
+          status: res.status,
+          error: msg,
+          symbol,
+        };
       }
       const json = (await res.json()) as { data?: unknown[] } | unknown[];
-      const alerts = Array.isArray(json)
+      const raw = Array.isArray(json)
         ? json
         : Array.isArray((json as { data?: unknown[] }).data)
           ? (json as { data: unknown[] }).data
           : [];
-      cacheBody = alerts;
-      cacheAt = Date.now();
-      deskTouchFeed("uw_flow", cacheAt, "unusual_whales");
-      return { alerts, asOfMs: cacheAt };
+      const filtered = deskFilterUwFlowAlerts(raw, symbol);
+      cacheBody.set(cacheKey, raw);
+      const at = Date.now();
+      cacheAt.set(cacheKey, at);
+      deskTouchFeed("uw_flow", at, "unusual_whales");
+      return { ok: true, alerts: filtered, asOfMs: at, status: res.status, symbol };
     });
   } catch (err) {
     deskMarkFeedError("uw_flow", "uw_flow_fetch_error");
-    logger.warn({ err }, "Desk UW flow error");
-    return { alerts: cacheBody ?? [], asOfMs: cacheAt || Date.now() };
+    logger.warn({ err, symbol }, "Desk UW flow error");
+    return { ok: false, alerts: [], asOfMs: Date.now(), error: "uw_flow_fetch_error", symbol };
   }
 }

@@ -50,14 +50,14 @@ Outside a feed’s ET session window → `session_closed` and `stale=false`.
 | Method | Path | Notes |
 |--------|------|--------|
 | GET | `/health` | Feed freshness matrix |
-| GET | `/quotes?symbols=` | Schwab REST `/marketdata/v1/quotes`; UTC ms; index bid/ask null |
+| GET | `/quotes?symbols=&source=schwab\|tradier` | Honours `source`; no silent fallback between vendors |
 | GET | `/tape/spx/stream` | SSE Schwab streamer frames `{rx_ns,c,dir?,m,session_date,rx_utc_ms}` |
 | GET | `/tape/spx/raw?session_date=&since_ns=` | Gzip-backed inbound frame NDJSON (`{c,rx_ns,m}`); `since_ns` is UTC epoch ns string |
 | GET | `/tape/spx?since=` | Normalized in-memory ticks |
 | GET | `/chains?symbol=&expiration=` | Full Schwab chain by default (`range=ALL`, no `strikeCount`). Optional `strikeCount`, `range` (`ITM`/`NTM`/`OTM`/`ALL`). Response includes `truncated`, `contract_count`, normalized `rho`, and raw contracts. |
-| GET | `/flow` | Unusual Whales (max 3 concurrent UW HTTP) |
+| GET | `/flow?symbol=&source=unusual_whales` | UW flow; `symbol=SPX` → `ticker_symbol=SPX,SPXW` + server filter |
 | GET | `/bars` | Schwab price history |
-| GET | `/news` | Finnhub via `symbolNewsProvider` |
+| GET | `/news?symbols=&source=finnhub\|alpaca_news` | Honours `source`; Alpaca uses news API + `alpaca` feed freshness |
 
 ## Streamer
 

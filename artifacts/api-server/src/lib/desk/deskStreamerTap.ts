@@ -114,7 +114,12 @@ export function onSchwabConnectionOpened(): void {
 
 export function onSchwabInboundFrame(raw: string): void {
   const frame = wrapFrame(raw);
-  deskCaptureInboundFrame({ c: frame.c, rx_ns: frame.rx_ns, m: frame.m });
+  deskCaptureInboundFrame({
+    c: frame.c,
+    rx_ns: frame.rx_ns,
+    m: frame.m,
+    session_date: frame.session_date,
+  });
   broadcastFrame(frame);
   maybeTouchFeedsFromFrame(raw, frame.rx_utc_ms);
 }

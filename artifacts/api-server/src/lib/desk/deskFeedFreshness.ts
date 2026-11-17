@@ -5,6 +5,7 @@ import {
   isSpxDeskProductSessionActive,
 } from "./deskFeedSessions.js";
 import { deskReadStreamerConnected, deskReadStreamerStatus } from "./deskSchwabStreamerBridge.js";
+import { deskCoercePollReceiptTs } from "./deskFeedTimestamp.js";
 
 export type DeskFeedId =
   | "schwab_streamer"
@@ -25,6 +26,7 @@ export type DeskFeedStatusCode =
   | "stopped"
   | "evicted_yielded"
   | "AUTH_FAIL"
+  | "auth_error"
   | "session_closed"
   | "error"
   | "reconnecting"
@@ -166,9 +168,20 @@ export function deskMarkAuthFail(feed: DeskFeedId): void {
   });
 }
 
+export function deskMarkFeedAuthError(feed: DeskFeedId, error: string, source?: string): void {
+  const prev = records.get(feed);
+  records.set(feed, {
+    source: source ?? prev?.source ?? FEED_SOURCES[feed],
+    lastDataMs: prev?.lastDataMs ?? null,
+    error,
+    forcedStatus: "auth_error",
+  });
+}
+
 /** `dataTsMs` is the vendor timestamp of the payload when known; else wall clock. */
 export function deskTouchFeed(feed: DeskFeedId, dataTsMs?: number, source?: string): void {
-  const ts = dataTsMs ?? Date.now();
+  const pollMs = Date.now();
+  const ts = deskCoercePollReceiptTs(dataTsMs, pollMs);
   const prev = records.get(feed);
   records.set(feed, {
     source: source ?? prev?.source ?? FEED_SOURCES[feed],
@@ -203,6 +216,7 @@ function resolveStatus(
   const at = new Date(now);
   if (rec.notConfigured || rec.forcedStatus === "not_configured") return "not_configured";
   if (rec.forcedStatus === "AUTH_FAIL") return "AUTH_FAIL";
+  if (rec.forcedStatus === "auth_error") return "auth_error";
   if (rec.forcedStatus === "error") return "error";
   if (!feedInSession(feed, at)) return "session_closed";
 
@@ -244,6 +258,8 @@ export function buildDeskHealthFeeds(now = Date.now()): DeskFeedStatus[] {
       status !== "not_configured" &&
       status !== "session_closed" &&
       status !== "stopped" &&
+      status !== "auth_error" &&
+      status !== "AUTH_FAIL" &&
       (status === "stale" || lastMs == null || deskIsFeedStale(feed, lastMs, now));
     if (status === "session_closed") stale = false;
     if (status === "not_configured") stale = false;
