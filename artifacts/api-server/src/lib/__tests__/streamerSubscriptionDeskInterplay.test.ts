@@ -6,13 +6,17 @@ import {
   streamerSubHold,
   streamerSubApplyManagedOptionsSubscriptions,
 } from "../streamerSubscriptionManager.js";
+import { deskAppLevelOneOptionsCap, deskComputeDeskLevelOneOptionsBudget } from "../desk/deskStreamerBudget.js";
 import {
   __deskStreamerSetWireTap,
   __deskStreamerWireTestPrime,
   __deskStreamerWireTestUnprime,
+  __streamerWirePeakLevelOneOptionsForTests,
+  __streamerWirePeakResetForTests,
+  __streamerWireServerLevelOneOptionsCount,
   deskStreamerSetDeskOptions,
+  deskStreamerUnsubRemovedDeskOptions,
   getAppLevelOneOptionsCount,
-  getDeskStreamerAddCounts,
   replaceManagedLevelOneOptionSubscriptions,
 } from "../schwabStreamer.js";
 
@@ -36,7 +40,13 @@ describe("streamer subscription desk interplay", () => {
     __deskStreamerWireTestUnprime();
     __deskStreamerWireTestPrime();
     __deskStreamerSetWireTap((p) => outbound.push(p));
+    __streamerWirePeakResetForTests();
   });
+
+  function assertCap(): void {
+    expect(__streamerWireServerLevelOneOptionsCount()).toBeLessThanOrEqual(STREAMER_L1_OPTIONS_CAP);
+    expect(__streamerWirePeakLevelOneOptionsForTests()).toBeLessThanOrEqual(STREAMER_L1_OPTIONS_CAP);
+  }
 
   function subsCount(): number {
     return collectRequests(outbound).filter(
@@ -44,38 +54,51 @@ describe("streamer subscription desk interplay", () => {
     ).length;
   }
 
+  const gen = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `${prefix}-${i}`);
+
   it("app SUBS excludes desk core and settles without oscillation", async () => {
-    const desk = Array.from({ length: 150 }, (_, i) => `DESK-${i}`);
-    const app = Array.from({ length: 40 }, (_, i) => `APP-${i}`);
+    const desk = gen("DESK", 150);
+    const app = gen("APP", 40);
     streamerSubSetDeskCore("LEVELONE_OPTIONS", desk);
     streamerSubHold("chain:test", "user_visible", "LEVELONE_OPTIONS", app);
     await streamerSubApplyManagedOptionsSubscriptions();
     expect(getAppLevelOneOptionsCount()).toBe(40);
-    for (const k of desk) {
-      expect(getAppLevelOneOptionsCount()).toBeLessThan(STREAMER_L1_OPTIONS_CAP);
-    }
     await streamerSubApplyManagedOptionsSubscriptions();
     expect(subsCount()).toBeLessThanOrEqual(2);
+    assertCap();
   });
 
-  it("tape transition keeps server L1 options count at or under cap", async () => {
-    const cap = STREAMER_L1_OPTIONS_CAP;
-    const assertCap = () => {
-      const total = getAppLevelOneOptionsCount() + getDeskStreamerAddCounts().levelone_options;
-      expect(total).toBeLessThanOrEqual(cap);
-    };
-    const gen = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `${prefix}-${i}`);
-    streamerSubSetDeskCore("LEVELONE_OPTIONS", gen("DESK", 120));
-    assertCap();
-    streamerSubHold("app", "user_visible", "LEVELONE_OPTIONS", gen("APP", 200));
+  it("8000-key hold and repeated core refresh keeps desk budget and app cap", async () => {
+    const deskTarget = deskComputeDeskLevelOneOptionsBudget();
+    const desk = gen("DESK", deskTarget);
+    streamerSubSetDeskCore("LEVELONE_OPTIONS", desk);
+    streamerSubHold("chain:8000", "user_visible", "LEVELONE_OPTIONS", gen("H", 8_000));
+    for (let i = 0; i < 10; i++) {
+      streamerSubSetDeskCore("LEVELONE_OPTIONS", desk);
+      await streamerSubApplyManagedOptionsSubscriptions();
+      deskStreamerSetDeskOptions(desk);
+      expect(getAppLevelOneOptionsCount()).toBeLessThanOrEqual(deskAppLevelOneOptionsCap());
+      assertCap();
+    }
+  });
+
+  it("wire transitions stay within cap (shrink, grow, app 500 and 8000 holds)", async () => {
+    __streamerWirePeakResetForTests();
+    streamerSubSetDeskCore("LEVELONE_OPTIONS", gen("D", 200));
     await streamerSubApplyManagedOptionsSubscriptions();
     assertCap();
-    deskStreamerSetDeskOptions(gen("DESK", 150));
+    deskStreamerSetDeskOptions(gen("D", 150));
     assertCap();
-    streamerSubHold("app", "user_visible", "LEVELONE_OPTIONS", gen("APP2", 400));
+    deskStreamerSetDeskOptions(gen("D", 220));
+    assertCap();
+    streamerSubHold("app500", "user_visible", "LEVELONE_OPTIONS", gen("A", 500));
     await streamerSubApplyManagedOptionsSubscriptions();
     assertCap();
-    deskStreamerSetDeskOptions(gen("DESK", 90));
+    streamerSubHold("app8k", "user_visible", "LEVELONE_OPTIONS", gen("B", 8_000));
+    await streamerSubApplyManagedOptionsSubscriptions();
+    assertCap();
+    const removed = gen("D", 50);
+    deskStreamerUnsubRemovedDeskOptions(removed);
     assertCap();
   });
 

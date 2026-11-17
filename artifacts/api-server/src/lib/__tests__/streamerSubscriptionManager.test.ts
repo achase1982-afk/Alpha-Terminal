@@ -11,9 +11,14 @@ import {
   streamerSubBulkSeedHoldsForTests,
   streamerSubSetDeskCore,
 } from "../streamerSubscriptionManager.js";
+import {
+  deskAppLevelOneOptionsCap,
+  deskComputeDeskLevelOneOptionsBudget,
+} from "../desk/deskStreamerBudget.js";
 
 vi.mock("../schwabStreamer.js", () => ({
   replaceManagedLevelOneOptionSubscriptions: vi.fn(),
+  replaceManagedOptionsBookSubscriptions: vi.fn(),
   getAppLevelOneOptionsCount: () => 0,
   getAppOptionsBookCount: () => 0,
 }));
@@ -30,21 +35,33 @@ describe("streamerSubscriptionManager", () => {
     expect(plan.deskCoreCount).toBe(1);
   });
 
-  it("evicts background before user_visible when over cap", () => {
-    streamerSubSetDeskCore("LEVELONE_OPTIONS", ["DESK"]);
-    const bgKeys = Array.from({ length: STREAMER_L1_OPTIONS_CAP }, (_, i) => `BG-${i}`);
+  it("caps app holds at fixed slot reservation when desk core is full", () => {
+    const deskKeys = Array.from({ length: deskComputeDeskLevelOneOptionsBudget() }, (_, i) => `D-${i}`);
+    streamerSubSetDeskCore("LEVELONE_OPTIONS", deskKeys);
+    const bgKeys = Array.from({ length: 8_000 }, (_, i) => `BG-${i}`);
     streamerSubHold("bg", "background", "LEVELONE_OPTIONS", bgKeys);
     streamerSubHold("uv", "user_visible", "LEVELONE_OPTIONS", ["UV-MUST-KEEP"]);
     const plan = streamerSubPlanLevelOneOptions();
     expect(plan.subscribed).toContain("UV-MUST-KEEP");
     expect(plan.capped).toBe(true);
-    expect(plan.subscribed.length).toBeLessThanOrEqual(STREAMER_L1_OPTIONS_CAP - 1);
+    expect(plan.subscribed.length).toBeLessThanOrEqual(deskAppLevelOneOptionsCap());
+    expect(plan.deskCoreCount).toBe(deskKeys.length);
+  });
+
+  it("desk core size unchanged across repeated plans with huge hold", () => {
+    const deskKeys = Array.from({ length: deskComputeDeskLevelOneOptionsBudget() }, (_, i) => `D-${i}`);
+    streamerSubSetDeskCore("LEVELONE_OPTIONS", deskKeys);
+    streamerSubHold("chain:8000", "user_visible", "LEVELONE_OPTIONS", Array.from({ length: 8_000 }, (_, i) => `H-${i}`));
+    for (let i = 0; i < 10; i++) {
+      const plan = streamerSubPlanLevelOneOptions();
+      expect(plan.deskCoreCount).toBe(deskKeys.length);
+      expect(plan.subscribed.length).toBeLessThanOrEqual(deskAppLevelOneOptionsCap());
+    }
   });
 
   it("release does not drop keys still held elsewhere", async () => {
     streamerSubHold("a", "user_visible", "LEVELONE_OPTIONS", ["SHARED"]);
     streamerSubHold("b", "user_visible", "LEVELONE_OPTIONS", ["SHARED", "ONLY-B"]);
-    const { replaceManagedLevelOneOptionSubscriptions } = await import("../schwabStreamer.js");
     await streamerSubRelease("b");
     const plan = streamerSubPlanLevelOneOptions();
     expect(plan.subscribed).toContain("SHARED");
@@ -58,22 +75,25 @@ describe("streamerSubscriptionManager", () => {
     expect(h.levelone_options).not.toHaveProperty("recent_evictions");
   });
 
-  it("plans 3000 keys in under 20ms", () => {
-    streamerSubSetDeskCore("LEVELONE_OPTIONS", ["DESK-0"]);
+  it("plans 3000+ keys in under 20ms", () => {
+    const deskKeys = Array.from({ length: deskComputeDeskLevelOneOptionsBudget() }, (_, i) => `D-${i}`);
+    streamerSubSetDeskCore("LEVELONE_OPTIONS", deskKeys);
     const bulk: Array<{ holderId: string; tier: StreamerSubTier; keys: string[] }> = Array.from(
-      { length: 80 },
+      { length: 120 },
       (_, i) => ({
         holderId: `holder-${i}`,
         tier: i % 3 === 0 ? "user_visible" : "background",
-        keys: Array.from({ length: 20 }, (_, j) => `K-${i}-${j}`),
+        keys: Array.from({ length: 30 }, (_, j) => `K-${i}-${j}`),
       }),
     );
     streamerSubBulkSeedHoldsForTests(bulk);
     const t0 = performance.now();
     const plan = streamerSubPlanLevelOneOptions();
     const elapsed = performance.now() - t0;
-    expect(plan.subscribed.length).toBeLessThanOrEqual(STREAMER_L1_OPTIONS_CAP - 1);
-    expect(elapsed).toBeLessThan(15);
+    expect(plan.subscribed.length).toBeLessThanOrEqual(deskAppLevelOneOptionsCap());
+    expect(plan.deskCoreCount).toBe(deskKeys.length);
+    expect(deskKeys.length + bulk.length * 30).toBeGreaterThan(STREAMER_L1_OPTIONS_CAP);
+    expect(elapsed).toBeLessThan(20);
   });
 
   it("health read is pure and uses cached plan", () => {

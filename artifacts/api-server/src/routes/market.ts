@@ -12,7 +12,7 @@ import {
   schwabSymbolHasStreamingMark,
   type OptionTick,
 } from "../lib/schwabStreamer.js";
-import { streamerSubHold, streamerSubRelease } from "../lib/streamerSubscriptionManager.js";
+import { streamerSubHold, streamerSubRelease, streamerSubTouch } from "../lib/streamerSubscriptionManager.js";
 import { getIBCachedQuote, subscribeQuoteForSymbol, isIBConnected } from "../lib/ibStreamer.js";
 import { getNextEarningsDate } from "../lib/earningsService.js";
 import { emitTelemetry } from "../lib/telemetryStore.js";
@@ -911,6 +911,7 @@ async function fetchIndexChainStructure(
 
   const holderId = `chain:index:${displaySymbol}`;
   streamerSubHold(holderId, "user_visible", "LEVELONE_OPTIONS", schwabKeys);
+  streamerSubTouch(holderId);
   const { streamerSubApplyManagedOptionsSubscriptions } = await import(
     "../lib/streamerSubscriptionManager.js"
   );

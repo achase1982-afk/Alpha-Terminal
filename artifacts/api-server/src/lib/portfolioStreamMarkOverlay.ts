@@ -12,6 +12,8 @@ export type PortfolioPositionRow = {
   currentDayProfitLoss?: number;
   currentDayProfitLossPercentage?: number;
   longOpenProfitLoss?: number;
+  previousSessionLongQuantity?: number;
+  previousSessionShortQuantity?: number;
   closePrice?: number | null;
   streamMark?: number | null;
   streamMarkTs?: number | null;
@@ -58,8 +60,18 @@ function applyMarkToPosition(p: PortfolioPositionRow, mark: number, now: number)
 
   let dayPl = p.currentDayProfitLoss ?? 0;
   const close = p.closePrice;
-  if (close != null && Number.isFinite(close)) {
-    dayPl = (mark - close) * (longQty - shortQty) * mult;
+  const prevLong = p.previousSessionLongQuantity ?? 0;
+  const prevShort = p.previousSessionShortQuantity ?? 0;
+  const openedLongToday = longQty > 0 && prevLong === 0;
+  const openedShortToday = shortQty > 0 && prevShort === 0;
+  const dayBasis =
+    openedLongToday || openedShortToday
+      ? avg
+      : close != null && Number.isFinite(close)
+        ? close
+        : null;
+  if (dayBasis != null && Number.isFinite(dayBasis)) {
+    dayPl = (mark - dayBasis) * (longQty - shortQty) * mult;
   }
 
   p.streamMark = mark;
@@ -74,8 +86,8 @@ function applyMarkToPosition(p: PortfolioPositionRow, mark: number, now: number)
         ? avg * shortQty * mult
         : 0;
   p.currentDayProfitLossPercentage =
-    close != null && close > 0
-      ? ((mark - close) / close) * 100 * (longQty > 0 ? 1 : -1)
+    dayBasis != null && dayBasis > 0
+      ? ((mark - dayBasis) / dayBasis) * 100 * (longQty > 0 ? 1 : -1)
       : cost > 0.01
         ? (dayPl / cost) * 100
         : p.currentDayProfitLossPercentage ?? 0;

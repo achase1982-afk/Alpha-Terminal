@@ -96,6 +96,7 @@ export function mapSchwabSecuritiesAccount(acct: any, hashValue: string | null) 
       settledLongQuantity: p.settledLongQuantity ?? 0,
       settledShortQuantity: p.settledShortQuantity ?? 0,
       previousSessionLongQuantity: p.previousSessionLongQuantity ?? 0,
+      previousSessionShortQuantity: p.previousSessionShortQuantity ?? 0,
       closePrice: p.closePrice ?? null,
       currentDayCost: p.currentDayCost ?? null,
     };

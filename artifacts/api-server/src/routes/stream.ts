@@ -10,10 +10,24 @@ import {
   addFuturesOptionSymbols as addSchwabFuturesOptionSymbols,
   startStreamer,
 } from "../lib/schwabStreamer.js";
-import { getStreamerSubscriptionHealth } from "../lib/streamerSubscriptionManager.js";
+import {
+  getStreamerSubscriptionHealth,
+  streamerSubRelease,
+  streamerSubReleaseByPrefix,
+  streamerSubTouch,
+} from "../lib/streamerSubscriptionManager.js";
+import type { Request } from "express";
 import { hasValidTokens } from "../lib/tokenStore.js";
 
 const router: IRouter = Router();
+
+function streamClientId(req: Request): string {
+  const header = req.headers["x-client-session"];
+  if (typeof header === "string" && header.trim()) return header.trim().slice(0, 64);
+  const forwarded = req.headers["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.trim()) return forwarded.split(",")[0]!.trim();
+  return req.socket?.remoteAddress ?? "anon";
+}
 
 function subscribeSymbolsToSchwab(symbols: unknown) {
   if (!Array.isArray(symbols)) return;
@@ -57,15 +71,36 @@ router.post("/symbols", (req, res) => {
 });
 
 router.post("/option-symbols", (req, res) => {
-  const { symbols } = req.body as { symbols?: unknown };
-  if (Array.isArray(symbols)) {
-    const all = symbols.filter((s): s is string => typeof s === "string");
-    const futOpt = all.filter(s => s.startsWith("./"));
-    const eqOpt = all.filter(s => !s.startsWith("./"));
-    if (eqOpt.length > 0) addSchwabOptionSymbols(eqOpt, "stream:http-options");
+  const body = req.body as { symbols?: unknown; purpose?: unknown; holderId?: unknown };
+  const purpose = typeof body.purpose === "string" && body.purpose.trim() ? body.purpose.trim() : "watchlist";
+  const holderId =
+    typeof body.holderId === "string" && body.holderId.trim()
+      ? body.holderId.trim().slice(0, 120)
+      : `stream:${streamClientId(req)}:${purpose}`;
+  if (Array.isArray(body.symbols)) {
+    const all = body.symbols.filter((s): s is string => typeof s === "string");
+    const futOpt = all.filter((s) => s.startsWith("./"));
+    const eqOpt = all.filter((s) => !s.startsWith("./"));
+    if (eqOpt.length > 0) addSchwabOptionSymbols(eqOpt, holderId);
     if (futOpt.length > 0) addSchwabFuturesOptionSymbols(futOpt);
+    streamerSubTouch(holderId);
   }
-  res.json({ ok: true });
+  res.json({ ok: true, holderId });
+});
+
+router.post("/release-holds", async (req, res) => {
+  const body = req.body as { holderId?: unknown; holderPrefix?: unknown };
+  if (typeof body.holderId === "string" && body.holderId.trim()) {
+    await streamerSubRelease(body.holderId.trim());
+    res.json({ ok: true });
+    return;
+  }
+  const prefix =
+    typeof body.holderPrefix === "string" && body.holderPrefix.trim()
+      ? body.holderPrefix.trim()
+      : `stream:${streamClientId(req)}:`;
+  const released = await streamerSubReleaseByPrefix(prefix);
+  res.json({ ok: true, released });
 });
 
 router.get("/quotes", (req, res) => {

@@ -1,4 +1,10 @@
-import { deskGetSchwabStreamerLimits } from "./desk/deskStreamerBudget.js";
+import {
+  deskAppLevelOneOptionsCap,
+  deskAppOptionsBookCap,
+  deskComputeDeskLevelOneOptionsBudget,
+  deskComputeDeskOptionsBookBudget,
+  deskGetSchwabStreamerLimits,
+} from "./desk/deskStreamerBudget.js";
 
 export type StreamerSubTier = "desk_core" | "user_visible" | "background";
 export type StreamerSubService = "LEVELONE_OPTIONS" | "OPTIONS_BOOK";
@@ -47,6 +53,8 @@ function bumpPlan(): void {
   bookPlanCache = null;
 }
 
+let holdPrunerStarted = false;
+
 function pruneExpiredHolds(now = Date.now()): void {
   let removed = false;
   for (const [id, h] of holds) {
@@ -55,7 +63,18 @@ function pruneExpiredHolds(now = Date.now()): void {
       removed = true;
     }
   }
-  if (removed) bumpPlan();
+  if (removed) {
+    bumpPlan();
+    void streamerSubApplyManagedOptionsSubscriptions();
+    void streamerSubApplyManagedOptionsBookSubscriptions();
+  }
+}
+
+export function streamerSubStartHoldPruner(): void {
+  if (holdPrunerStarted) return;
+  holdPrunerStarted = true;
+  const t = setInterval(() => pruneExpiredHolds(), 60_000);
+  t.unref?.();
 }
 
 export function streamerSubSetDeskCore(service: StreamerSubService, keys: Iterable<string>): void {
@@ -71,7 +90,6 @@ export function streamerSubHold(
   service: StreamerSubService,
   keys: string[],
 ): void {
-  pruneExpiredHolds();
   const uniq = [...new Set(keys.map((k) => k.trim()).filter(Boolean))];
   holds.set(holderId, {
     holderId,
@@ -117,8 +135,25 @@ export async function streamerSubRelease(holderId: string): Promise<boolean> {
   if (!holds.has(holderId)) return false;
   holds.delete(holderId);
   bumpPlan();
-  await streamerSubApplyManagedSubscriptions();
+  await streamerSubApplyManagedOptionsSubscriptions();
+  await streamerSubApplyManagedOptionsBookSubscriptions();
   return true;
+}
+
+export async function streamerSubReleaseByPrefix(holderPrefix: string): Promise<number> {
+  let n = 0;
+  for (const id of [...holds.keys()]) {
+    if (id.startsWith(holderPrefix)) {
+      holds.delete(id);
+      n += 1;
+    }
+  }
+  if (n > 0) {
+    bumpPlan();
+    await streamerSubApplyManagedOptionsSubscriptions();
+    await streamerSubApplyManagedOptionsBookSubscriptions();
+  }
+  return n;
 }
 
 export function streamerSubRecordRejection(
@@ -163,32 +198,46 @@ function buildTierMaps(
 
 function buildL1Plan(): L1PlanCache {
   const desk = deskCoreOptionKeys;
-  const appCap = Math.max(0, STREAMER_L1_OPTIONS_CAP - desk.size);
+  const appCap = deskAppLevelOneOptionsCap();
   const ordered: string[] = [];
   const inPlan = new Set<string>();
 
-  const userHolds = [...holds.values()]
-    .filter((h) => h.service === "LEVELONE_OPTIONS" && h.tier === "user_visible")
-    .sort((a, b) => b.lastTouchMs - a.lastTouchMs);
+  const userHolds: StreamerSubHold[] = [];
+  const bgHolds: StreamerSubHold[] = [];
+  for (const h of holds.values()) {
+    if (h.service !== "LEVELONE_OPTIONS") continue;
+    if (h.tier === "user_visible") userHolds.push(h);
+    else if (h.tier === "background") bgHolds.push(h);
+  }
+  userHolds.sort((a, b) => b.lastTouchMs - a.lastTouchMs);
+  bgHolds.sort((a, b) => a.lastTouchMs - b.lastTouchMs);
+
   let userVisibleCount = 0;
+  let backgroundCount = 0;
+  let full = false;
+
   for (const h of userHolds) {
+    if (full) break;
     for (const k of h.keys) {
       if (desk.has(k) || inPlan.has(k)) continue;
-      if (ordered.length >= appCap) break;
+      if (ordered.length >= appCap) {
+        full = true;
+        break;
+      }
       inPlan.add(k);
       ordered.push(k);
       userVisibleCount += 1;
     }
   }
 
-  const bgHolds = [...holds.values()]
-    .filter((h) => h.service === "LEVELONE_OPTIONS" && h.tier === "background")
-    .sort((a, b) => a.lastTouchMs - b.lastTouchMs);
-  let backgroundCount = 0;
   for (const h of bgHolds) {
+    if (full) break;
     for (const k of h.keys) {
       if (desk.has(k) || inPlan.has(k)) continue;
-      if (ordered.length >= appCap) break;
+      if (ordered.length >= appCap) {
+        full = true;
+        break;
+      }
       inPlan.add(k);
       ordered.push(k);
       backgroundCount += 1;
@@ -213,9 +262,11 @@ function buildL1Plan(): L1PlanCache {
       }
     }
     const drop = new Set(lruDropOrder.slice(0, ordered.length - appCap));
-    const trimmed = ordered.filter((k) => !drop.has(k));
     ordered.length = 0;
-    ordered.push(...trimmed);
+    for (const k of inPlan) {
+      if (desk.has(k) || drop.has(k)) continue;
+      ordered.push(k);
+    }
     const tierMaps = buildTierMaps(userHolds, bgHolds, desk);
     userVisibleCount = 0;
     backgroundCount = 0;
@@ -223,13 +274,15 @@ function buildL1Plan(): L1PlanCache {
       if (tierMaps.userKeys.has(k)) userVisibleCount += 1;
       else if (tierMaps.bgKeys.has(k)) backgroundCount += 1;
     }
+    inPlan.clear();
+    for (const k of ordered) inPlan.add(k);
   }
 
   return {
     generation: planGeneration,
     appSubscribed: ordered,
     appSubscribedSet: new Set(ordered),
-    capped: desk.size + ordered.length >= STREAMER_L1_OPTIONS_CAP,
+    capped: ordered.length >= appCap,
     deskCoreCount: desk.size,
     userVisibleCount,
     backgroundCount,
@@ -244,7 +297,7 @@ function getL1PlanCache(): L1PlanCache {
 
 function buildBookPlan(): BookPlanCache {
   const desk = deskCoreBookKeys;
-  const appCap = Math.max(0, STREAMER_OPTIONS_BOOK_CAP - desk.size);
+  const appCap = deskAppOptionsBookCap();
   const ordered: string[] = [];
   const seen = new Set<string>();
   for (const h of holds.values()) {
@@ -292,11 +345,11 @@ export function streamerSubPlanOptionsBook(): { subscribed: string[]; budget: nu
 }
 
 export function streamerSubMaxDeskOptionKeys(): number {
-  return Math.max(0, STREAMER_L1_OPTIONS_CAP - getL1PlanCache().appSubscribed.length);
+  return deskComputeDeskLevelOneOptionsBudget();
 }
 
 export function streamerSubMaxDeskBookKeys(): number {
-  return Math.max(0, STREAMER_OPTIONS_BOOK_CAP - getBookPlanCache().appSubscribed.length);
+  return deskComputeDeskOptionsBookBudget();
 }
 
 export function streamerSubHoldCount(): number {

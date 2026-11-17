@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import {
+  deskAppLevelOneOptionsCap,
   deskComputeDeskLevelOneOptionsBudget,
   deskParseSchwabStreamerLimitMessage,
   deskResetStreamerLimitsForTests,
@@ -8,14 +9,16 @@ import {
 describe("deskStreamerBudget", () => {
   beforeEach(() => deskResetStreamerLimitsForTests());
 
-  it("computes desk budget with headroom", () => {
-    expect(deskComputeDeskLevelOneOptionsBudget(100)).toBe(3000 - 100 - 150);
+  it("computes fixed desk budget independent of app holds", () => {
+    expect(deskComputeDeskLevelOneOptionsBudget()).toBe(2822);
+    expect(deskAppLevelOneOptionsCap()).toBe(178);
   });
 
   it("parses LEVELONE_OPTIONS cap from rejection message", () => {
     deskParseSchwabStreamerLimitMessage(
       "maximum number of symbols allowed (LEVELONE_OPTIONS=3000, DISCARDED=500)",
     );
-    expect(deskComputeDeskLevelOneOptionsBudget(0)).toBe(3000 - 150);
+    expect(deskComputeDeskLevelOneOptionsBudget()).toBe(2822);
+    expect(deskAppLevelOneOptionsCap()).toBe(178);
   });
 });

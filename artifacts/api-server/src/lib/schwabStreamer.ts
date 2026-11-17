@@ -191,15 +191,6 @@ const DESK_EQ_FIELDS = Array.from({ length: 52 }, (_, i) => i).join(",");
 const DESK_OPT_FIELDS = Array.from({ length: 56 }, (_, i) => i).join(",");
 const DESK_ADD_BATCH = 500;
 
-let lastNotifiedAppOptionCount = -1;
-
-function notifyDeskAppSubscriptionsChanged(): void {
-  const n = subscribedOptionSymbols.size;
-  if (n === lastNotifiedAppOptionCount) return;
-  lastNotifiedAppOptionCount = n;
-  void import("./desk/deskTapeUniverse.js").then((m) => m.deskTapeUniverseOnAppSubscriptionsChanged());
-}
-
 export function getAppLevelOneOptionsCount(): number {
   return subscribedOptionSymbols.size;
 }
@@ -897,7 +888,7 @@ function sendOptionSubscription(symbols: string[], opts?: { replayDesk?: boolean
   if (req) {
     sendStreamerJson({ requests: [req] });
     logger.info({ count: symbols.length }, "Schwab streamer: LEVELONE_OPTIONS SUBS sent");
-    if (opts?.replayDesk !== false) {
+    if (opts?.replayDesk === true) {
       deskStreamerReplayDeskOptionAdds();
     }
   }
@@ -1061,6 +1052,7 @@ function sendDeskOptionUnsubs(symbols: string[]): void {
 function batchDeskAdd(send: (batch: string[]) => void, all: string[]): void {
   for (let i = 0; i < all.length; i += DESK_ADD_BATCH) {
     send(all.slice(i, i + DESK_ADD_BATCH));
+    noteWireLevelOneOptionsPeak();
   }
 }
 
@@ -1077,6 +1069,40 @@ export function deskStreamerAddEquity(symbols: string[]): number {
     batchDeskAdd(sendDeskEquityAdd, added);
   }
   return added.length;
+}
+
+/** Drop desk ADD keys before an app SUBS transition (ordering: desk UNSUBS first). */
+export function deskStreamerUnsubRemovedDeskOptions(symbols: string[]): void {
+  const removed = symbols.filter((s) => deskAddedOptionSymbols.has(s));
+  if (!removed.length) return;
+  for (const s of removed) deskAddedOptionSymbols.delete(s);
+  if (connectionState === "connected") {
+    batchDeskAdd(sendDeskOptionUnsubs, removed);
+    noteWireLevelOneOptionsPeak();
+  }
+}
+
+export function getDeskAddedLevelOneOptionSymbols(): string[] {
+  return [...deskAddedOptionSymbols];
+}
+
+export function __streamerWireServerLevelOneOptionsCount(): number {
+  return subscribedOptionSymbols.size + deskAddedOptionSymbols.size;
+}
+
+let wirePeakLevelOneOptions = 0;
+
+function noteWireLevelOneOptionsPeak(): void {
+  const n = __streamerWireServerLevelOneOptionsCount();
+  if (n > wirePeakLevelOneOptions) wirePeakLevelOneOptions = n;
+}
+
+export function __streamerWirePeakLevelOneOptionsForTests(): number {
+  return wirePeakLevelOneOptions;
+}
+
+export function __streamerWirePeakResetForTests(): void {
+  wirePeakLevelOneOptions = 0;
 }
 
 export function deskStreamerSetDeskOptions(symbols: string[]): number {
@@ -1101,6 +1127,7 @@ export function deskStreamerSetDeskOptions(symbols: string[]): number {
   if (sync.add.length > 0 && connectionState === "connected") {
     batchDeskAdd(sendDeskOptionAdd, sync.add);
   }
+  noteWireLevelOneOptionsPeak();
   return sync.add.length;
 }
 
@@ -2286,9 +2313,8 @@ export function replaceManagedLevelOneOptionSubscriptions(plan: string[]): void 
     } else {
       sendOptionSubscription([...next], { replayDesk: false });
     }
-    deskStreamerReplayDeskOptionAdds();
+    noteWireLevelOneOptionsPeak();
   }
-  notifyDeskAppSubscriptionsChanged();
 }
 
 export function replaceManagedOptionsBookSubscriptions(plan: string[]): void {
@@ -2303,7 +2329,6 @@ export function replaceManagedOptionsBookSubscriptions(plan: string[]): void {
     } else {
       sendOptionsBookSubscription([...next], { replayDesk: false });
     }
-    deskStreamerReplayDeskOptionsBookAdds();
   }
 }
 
@@ -2316,8 +2341,6 @@ export function removeOptionSymbols(symbols: string[]) {
   }
   if (changed && connectionState === "connected") {
     sendOptionSubscription([...subscribedOptionSymbols], { replayDesk: false });
-    deskStreamerReplayDeskOptionAdds();
-    notifyDeskAppSubscriptionsChanged();
   }
 }
 

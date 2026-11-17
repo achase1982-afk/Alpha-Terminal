@@ -12,6 +12,7 @@ import {
 } from "./deskSpxTapeRaw.js";
 import { deskSessionDateEt } from "./deskEt.js";
 import { startDeskTapeUniverse } from "./deskTapeUniverse.js";
+import { streamerSubStartHoldPruner } from "../streamerSubscriptionManager.js";
 import { initDeskSchwab2RestFeed } from "./deskSchwab2Rest.js";
 import { initDeskTradierSandboxFeed } from "./deskTradierSandbox.js";
 import { deskProbeAlpacaPaper } from "./deskAlpacaPaper.js";
@@ -78,6 +79,7 @@ export function initDeskMarketFeeds(): void {
   void deskDeleteRawTapeChunksForSession(deskSessionDateEt());
 
   startDeskRawTapeCapture();
+  streamerSubStartHoldPruner();
   startDeskTapeUniverse();
   startDeskBackgroundPollers();
   startDeskRetentionJobs();

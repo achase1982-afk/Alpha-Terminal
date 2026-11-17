@@ -13,8 +13,14 @@ const DEFAULT_LIMITS: SchwabStreamerServiceLimits = {
 
 let reportedLimits: SchwabStreamerServiceLimits = { ...DEFAULT_LIMITS };
 
+/** Schwab L1 options headroom kept below the hard cap for ADD transitions. */
 export const DESK_STREAMER_HEADROOM = 150;
 export const DESK_OPTIONS_BOOK_HEADROOM = 5;
+
+/** Target desk tape L1 options (trimmed universe size; not app-dependent). */
+export const DESK_LEVELONE_OPTIONS_TARGET = 2822;
+/** Desk OPTIONS_BOOK keys (within the 100 service cap). */
+export const DESK_OPTIONS_BOOK_TARGET = 95;
 
 export function deskResetStreamerLimitsForTests(): void {
   reportedLimits = { ...DEFAULT_LIMITS };
@@ -37,14 +43,33 @@ export function deskParseSchwabStreamerLimitMessage(msg: string): void {
   }
 }
 
-export function deskComputeDeskLevelOneOptionsBudget(appOptionCount: number): number {
+/** Max L1 option keys the desk universe builder may target (independent of app holds). */
+export function deskComputeDeskLevelOneOptionsBudget(): number {
   const cap = reportedLimits.levelone_options;
-  return Math.max(0, cap - appOptionCount - DESK_STREAMER_HEADROOM);
+  return Math.min(DESK_LEVELONE_OPTIONS_TARGET, Math.max(0, cap - DESK_STREAMER_HEADROOM));
 }
 
-export function deskComputeDeskOptionsBookBudget(appBookCount: number): number {
+/** Slots reserved on the wire for desk ADD — fixed; app SUBS may not consume this. */
+export function deskReservedLevelOneOptionsSlots(): number {
+  return deskComputeDeskLevelOneOptionsBudget();
+}
+
+/** App managed SUBS cap for LEVELONE_OPTIONS. */
+export function deskAppLevelOneOptionsCap(): number {
+  return Math.max(0, reportedLimits.levelone_options - deskReservedLevelOneOptionsSlots());
+}
+
+export function deskComputeDeskOptionsBookBudget(): number {
   const cap = reportedLimits.options_book;
-  return Math.max(0, cap - appBookCount - DESK_OPTIONS_BOOK_HEADROOM);
+  return Math.min(DESK_OPTIONS_BOOK_TARGET, Math.max(0, cap - DESK_OPTIONS_BOOK_HEADROOM));
+}
+
+export function deskReservedOptionsBookSlots(): number {
+  return deskComputeDeskOptionsBookBudget();
+}
+
+export function deskAppOptionsBookCap(): number {
+  return Math.max(0, reportedLimits.options_book - deskReservedOptionsBookSlots());
 }
 
 export function deskComputeDeskEquitiesBudget(appEquityCount: number): number {
