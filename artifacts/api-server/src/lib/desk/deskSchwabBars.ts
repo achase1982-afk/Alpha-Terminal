@@ -1,5 +1,5 @@
 import { deskFormatSchwabSymbol } from "./deskSchwabSymbol.js";
-import { deskTouchFeed, deskMarkFeedError, deskMarkAuthFail } from "./deskFeedFreshness.js";
+import { deskTouchFeed, deskMarkFeedError, deskMarkAuthFail, deskMarkFeedNotAuthorized } from "./deskFeedFreshness.js";
 import {
   type DeskSchwabRestApp,
   deskSchwabMarkApp2AuthFailure,
@@ -66,8 +66,11 @@ export async function deskFetchSchwabBars(
   );
   const feed = deskSchwabQuotesFeed(app);
   if (!token) {
-    if (app === "app1") deskMarkAuthFail("schwab_quotes_rest");
-    else deskMarkFeedError("schwab2_rest", "schwab2_oauth_required", "schwab_rest_2");
+    if (preferred === "app2") {
+      deskMarkFeedNotAuthorized("schwab2_rest", "schwab2_oauth_required", "schwab_rest_2");
+    } else if (app === "app1") {
+      deskMarkAuthFail("schwab_quotes_rest");
+    }
     return { bars: [], asOfMs: Date.now(), app, fellBack };
   }
 

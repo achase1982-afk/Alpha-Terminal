@@ -7,6 +7,7 @@ import {
   addOptionsBookSymbols,
   addSymbols,
   deskStreamerAddEquity,
+  deskStreamerAfterLoginAppSubsThenDeskReplay,
   deskStreamerSetDeskOptions,
   deskStreamerSetDeskOptionsBook,
 } from "../../schwabStreamer.js";
@@ -20,6 +21,10 @@ function collectRequests(outbound: unknown[]): WireReq[] {
     if (Array.isArray(body.requests)) reqs.push(...body.requests);
   }
   return reqs;
+}
+
+function countAdds(reqs: WireReq[], service: string): number {
+  return reqs.filter((r) => r.service === service && r.command === "ADD").length;
 }
 
 describe("schwabStreamer desk wire (mocked send)", () => {
@@ -49,14 +54,20 @@ describe("schwabStreamer desk wire (mocked send)", () => {
     expect(reqs.some((r) => r.command === "ADD" && r.parameters?.keys?.includes("DESK_B"))).toBe(true);
   });
 
-  it("deskStreamerSetDeskOptionsBook rolls universe with UNSUBS", () => {
-    addOptionsBookSymbols(["APP_B"]);
+  it("deskStreamerSetDeskOptionsBook rolls universe with UNSUBS of old keys", () => {
     outbound.length = 0;
-    deskStreamerSetDeskOptionsBook(["KEEP", "NEW_B"]);
-    deskStreamerSetDeskOptionsBook(["KEEP", "NEW_B"]);
+    deskStreamerSetDeskOptionsBook(["ROLL_A", "KEEP"]);
+    outbound.length = 0;
+    deskStreamerSetDeskOptionsBook(["KEEP", "ROLL_B"]);
     const reqs = collectRequests(outbound);
-    expect(reqs.filter((r) => r.service === "OPTIONS_BOOK" && r.command === "UNSUBS").length).toBeGreaterThanOrEqual(0);
-    expect(reqs.some((r) => r.service === "OPTIONS_BOOK" && r.command === "ADD")).toBe(true);
+    const unsubs = reqs
+      .filter((r) => r.service === "OPTIONS_BOOK" && r.command === "UNSUBS")
+      .flatMap((r) => (r.parameters?.keys ?? "").split(",").filter(Boolean));
+    expect(unsubs).toContain("ROLL_A");
+    expect(unsubs).not.toContain("KEEP");
+    expect(reqs.some((r) => r.service === "OPTIONS_BOOK" && r.command === "ADD" && r.parameters?.keys?.includes("ROLL_B"))).toBe(
+      true,
+    );
   });
 
   it("app equity SUBS then re-ADDs desk equities", () => {
@@ -68,6 +79,44 @@ describe("schwabStreamer desk wire (mocked send)", () => {
     expect(subs).toBeDefined();
     const adds = reqs.filter((r) => r.service === "LEVELONE_EQUITIES" && r.command === "ADD");
     expect(adds.some((r) => r.parameters?.keys?.includes("$SPX"))).toBe(true);
+  });
+
+  it("login replay: one ADD batch per service (options split across 500-key batches)", () => {
+    addSymbols(["QQQ"]);
+    const manyDeskOpts = Array.from({ length: 501 }, (_, i) => `DESK_OPT_${i}`);
+    deskStreamerSetDeskOptions(manyDeskOpts);
+    deskStreamerAddEquity(["$SPX"]);
+    deskStreamerSetDeskOptionsBook(["DESK_BOOK_1"]);
+    outbound.length = 0;
+    deskStreamerAfterLoginAppSubsThenDeskReplay();
+    const reqs = collectRequests(outbound);
+    expect(countAdds(reqs, "LEVELONE_EQUITIES")).toBe(1);
+    expect(countAdds(reqs, "LEVELONE_OPTIONS")).toBe(2);
+    expect(countAdds(reqs, "OPTIONS_BOOK")).toBe(1);
+  });
+
+  it("app options SUBS replays only desk options (no book/equity ADD)", () => {
+    deskStreamerAddEquity(["$SPX"]);
+    deskStreamerSetDeskOptions(["DESK_OPT"]);
+    deskStreamerSetDeskOptionsBook(["DESK_BOOK"]);
+    outbound.length = 0;
+    addOptionSymbols(["CLIENT_OPT"]);
+    const reqs = collectRequests(outbound);
+    expect(countAdds(reqs, "LEVELONE_OPTIONS")).toBeGreaterThanOrEqual(1);
+    expect(countAdds(reqs, "OPTIONS_BOOK")).toBe(0);
+    expect(countAdds(reqs, "LEVELONE_EQUITIES")).toBe(0);
+  });
+
+  it("app OPTIONS_BOOK SUBS replays only desk book (no options/equity ADD)", () => {
+    deskStreamerAddEquity(["$SPX"]);
+    deskStreamerSetDeskOptions(["DESK_OPT"]);
+    deskStreamerSetDeskOptionsBook(["DESK_BOOK"]);
+    outbound.length = 0;
+    addOptionsBookSymbols(["CLIENT_BOOK"]);
+    const reqs = collectRequests(outbound);
+    expect(countAdds(reqs, "OPTIONS_BOOK")).toBeGreaterThanOrEqual(1);
+    expect(countAdds(reqs, "LEVELONE_OPTIONS")).toBe(0);
+    expect(countAdds(reqs, "LEVELONE_EQUITIES")).toBe(0);
   });
 
   it("app LEVELONE_OPTIONS SUBS re-sends desk ADD batch", () => {

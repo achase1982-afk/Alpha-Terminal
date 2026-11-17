@@ -25,7 +25,6 @@ import {
   deskStreamerAddEquity,
   deskStreamerSetDeskOptions,
   deskStreamerSetDeskOptionsBook,
-  deskStreamerReplayDeskAdds,
   getDeskStreamerAddCounts,
 } from "../schwabStreamer.js";
 
@@ -239,7 +238,6 @@ export function deskTapeUniverseOnAppSubscriptionsChanged(): void {
 
 export function deskTapeUniverseOnStreamerLogin(): void {
   if (!deskTapeUniverseEnabled()) return;
-  deskStreamerReplayDeskAdds();
   void deskTapeUniverseRefresh(true);
 }
 

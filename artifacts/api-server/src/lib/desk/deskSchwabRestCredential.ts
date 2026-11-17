@@ -74,7 +74,6 @@ export async function deskSchwabRestResolve(
   if (secondaryToken) {
     if (preferred === "app2") {
       logger.info("Desk Schwab REST: app2 unavailable — using app1");
-      deskMarkFeedError("schwab2_rest", "schwab_rest_fallback_to_app1", "schwab_rest_2");
     } else {
       logger.info("Desk Schwab REST: app1 unavailable — using app2");
     }
@@ -129,7 +128,6 @@ export async function deskSchwabRestFetchWithResolution(
     const app1 = tryApp1AccessToken();
     if (app1) {
       logger.info({ status: res.status }, "Desk Schwab REST: app2 HTTP auth error — retry on app1");
-      deskMarkFeedError("schwab2_rest", "schwab_rest_fallback_to_app1", "schwab_rest_2");
       res = await rawFetch(
         "app1",
         url,
@@ -165,7 +163,6 @@ export async function deskSchwabRestFetch(
     const app1 = tryApp1AccessToken();
     if (app1) {
       logger.info({ status: res.status }, "Desk Schwab REST: app2 HTTP auth error — retry on app1");
-      deskMarkFeedError("schwab2_rest", "schwab_rest_fallback_to_app1", "schwab_rest_2");
       res = await rawFetch(
         "app1",
         url,
