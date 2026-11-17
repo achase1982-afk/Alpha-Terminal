@@ -1,9 +1,12 @@
-import { deskFeedStaleThresholdMs, deskIsFeedStale, type DeskFeedId } from "./deskFeedFreshness.js";
+import { deskAsofEtIso, deskSessionDateEt } from "./deskEt.js";
+import { deskIsFeedStale, type DeskFeedId } from "./deskFeedFreshness.js";
 
 export type DeskEnvelope<T> = T & {
   source: string;
-  as_of: string;
+  as_of: number;
   stale: boolean;
+  session_date: string;
+  asof_et: string;
 };
 
 export function deskEnvelope<T extends Record<string, unknown>>(
@@ -16,14 +19,9 @@ export function deskEnvelope<T extends Record<string, unknown>>(
   return {
     ...payload,
     source,
-    as_of: new Date(asOfMs).toISOString(),
+    as_of: asOfMs,
     stale,
+    session_date: deskSessionDateEt(new Date(asOfMs)),
+    asof_et: deskAsofEtIso(new Date(asOfMs)),
   };
 }
-
-export function deskStaleForFeed(feed: DeskFeedId, lastMs: number | null): boolean {
-  if (lastMs == null) return true;
-  return deskIsFeedStale(feed, lastMs);
-}
-
-export { deskFeedStaleThresholdMs };

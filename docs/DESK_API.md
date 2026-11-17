@@ -1,6 +1,6 @@
 # Desk read API (`/api/desk/v1`)
 
-Bearer-protected JSON (and one SSE) surface for an external trading desk. Clerk session auth does **not** apply to these routes.
+Bearer-protected JSON and SSE market data for an external trading desk. Mounted outside Clerk `apiRequireAuth`.
 
 ## Authentication
 
@@ -8,51 +8,76 @@ Bearer-protected JSON (and one SSE) surface for an external trading desk. Clerk 
 Authorization: Bearer <DESK_API_KEY>
 ```
 
-Server env: `DESK_API_KEY` (required). If unset, all routes return **503**.
+`DESK_API_KEY` must be set on the server; otherwise all routes return **503**.
 
-## Response envelope
+## Envelope
 
-Every JSON body includes:
+JSON responses include:
 
 | Field | Description |
 |-------|-------------|
-| `source` | Upstream provider id |
-| `as_of` | ISO-8601 timestamp |
-| `stale` | Freshness flag for the primary feed |
+| `source` | Provider id |
+| `as_of` | UTC epoch ms |
+| `stale` | Feed freshness flag |
+| `session_date` | ET trading date `YYYY-MM-DD` |
+| `asof_et` | ISO-8601 with America/New_York offset |
+
+## `/health` feed schema
+
+Each item:
+
+`feed`, `source`, `last_update_ts` (UTC **ms** of last data), `age_ms`, `stale`, `stale_after_ms`, `status`, `session_date`, `asof_et`.
+
+**Status:** `OK`, `streaming`, `stale`, `stopped`, `evicted_yielded`, `AUTH_FAIL`, `session_closed`, `error`, `reconnecting`, `not_configured`.
+
+Outside a feed’s ET session window → `session_closed` and `stale=false`.
+
+| Feed | stale_after_ms |
+|------|----------------|
+| `schwab_streamer` | 90000 |
+| `schwab_quotes_rest` | 15000 RTH / 300000 off-hours |
+| `schwab_chains` | 180000 |
+| `live_gamma_0dte` | 180000 (09:29:50–16:00:50 ET) |
+| `live_gamma` | 180000 (09:31:20–16:00:20 ET) |
+| `live_net_prem` | 180000 (09:31:20–15:45:20 ET) |
+| `uw_flow`, `tradier` | 180000 |
+| `alpaca`, `news` | 900000 (15 min) |
+
+`alpaca` is **news only** (not SIP/NBBO quotes).
 
 ## Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Per-feed freshness for `schwab_quotes`, `schwab_chains`, `spx_tape`, `uw_flow`, `tradier`, `alpaca`, `news` |
-| GET | `/quotes?symbols=SPY,QQQ,$SPX` | Schwab quotes (+ optional Tradier/Alpaca fallback blobs) |
-| GET | `/tape/spx/stream` | SSE ticks for SPX / SPY / ES |
-| GET | `/tape/spx?since=<iso>` | Ring buffer ticks since timestamp |
-| GET | `/chains?symbol=SPX&expiration=YYYY-MM-DD` | Schwab option chain for one expiry (30s cache) |
-| GET | `/flow` | Unusual Whales flow alerts (60s cache, max 3 concurrent UW HTTP calls) |
-| GET | `/bars?symbol=&timeframe=1m\|5m\|1d&limit=` | Schwab price history |
-| GET | `/news?symbols=` | Finnhub symbol news via `symbolNewsProvider` |
+| Method | Path | Notes |
+|--------|------|--------|
+| GET | `/health` | Feed freshness matrix |
+| GET | `/quotes?symbols=` | Schwab REST `/marketdata/v1/quotes`; UTC ms; index bid/ask null |
+| GET | `/tape/spx/stream` | SSE Schwab streamer frames `{rx_ns,c,dir?,m,session_date,rx_utc_ms}` |
+| GET | `/tape/spx?since=` | Normalized in-memory ticks |
+| GET | `/chains?symbol=&expiration=` | Raw Schwab contracts + normalized view |
+| GET | `/flow` | Unusual Whales (max 3 concurrent UW HTTP) |
+| GET | `/bars` | Schwab price history |
+| GET | `/news` | Finnhub via `symbolNewsProvider` |
 
-Base URL on Railway: `https://<api-server-host>/api/desk/v1`.
+## Streamer
 
-## Environment variables
+Reuses the **single** server Schwab streamer (no second login). Taps inbound/outbound frames for desk SSE. Notify **code 12** → `evicted_yielded` with backoff.
 
-| Variable | Purpose |
-|----------|---------|
-| `DESK_API_KEY` | Bearer secret for desk clients (**required**) |
-| `UW_API_KEY_NEW` | Unusual Whales (preferred) |
-| `UW_API_KEY` | Unusual Whales fallback |
-| `TRADIER_API_KEY` or `TRADIER_TOKEN` | Tradier quotes fallback |
-| `ALPACA_API_KEY_ID` + `ALPACA_API_SECRET_KEY` | Alpaca quotes fallback |
-| `APCA_API_KEY_ID` + `APCA_API_SECRET_KEY` | Alpaca alternate names |
-| `FINNHUB_API_KEY` | Symbol news (existing provider) |
+`DESK_STREAMER_ENABLED` (default `false`) is only for cutover when no app streamer exists; with the normal api-server streamer, health reflects live connection state.
 
-Each name also accepts a `DESK_` prefix (e.g. `DESK_TRADIER_API_KEY`). Schwab market data uses the existing server token store (no desk-specific Schwab env).
+## Postgres retention
 
-## Stale thresholds (defaults)
+- `desk_api_snapshots`: health/quotes/chains payloads, **30 days**
+- `desk_spx_tape`: normalized ticks, **current + prior ET session** only
 
-- Quotes / SPX tape: **15s** during RTH, **120s** otherwise
-- Chains / UW flow: **120s**
-- News: **15 min**
+## Environment
 
-Missing optional provider keys surface as `not_configured` on `/health`, not hard errors.
+| Variable | Role |
+|----------|------|
+| `DESK_API_KEY` | Bearer secret (**required**) |
+| `DESK_STREAMER_ENABLED` | Optional desk-only streamer flag (default off) |
+| `UW_API_KEY_NEW` / `UW_API_KEY` | Unusual Whales |
+| `TRADIER_API_KEY` / `TRADIER_TOKEN` | Tradier fallback quotes |
+| `ALPACA_API_KEY_ID` + `ALPACA_API_SECRET_KEY` (or `APCA_*`) | Alpaca **news** path only |
+| `FINNHUB_API_KEY` | Symbol news |
+
+Each also accepts a `DESK_` prefix. Schwab data uses the existing token store (unchanged).

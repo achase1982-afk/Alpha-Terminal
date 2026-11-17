@@ -43,7 +43,7 @@ export async function deskFetchSchwabBars(
 
   const token = getBestAccessToken();
   if (!token) {
-    deskMarkFeedError("schwab_quotes", "no_schwab_token");
+    deskMarkFeedError("schwab_quotes_rest", "no_schwab_token");
     return { bars: [], asOfMs: Date.now() };
   }
 
@@ -63,7 +63,7 @@ export async function deskFetchSchwabBars(
   });
 
   if (!res.ok) {
-    deskMarkFeedError("schwab_quotes", `pricehistory_${res.status}`);
+    deskMarkFeedError("schwab_quotes_rest", `pricehistory_${res.status}`);
     return { bars: [], asOfMs: Date.now() };
   }
 
@@ -80,6 +80,6 @@ export async function deskFetchSchwabBars(
   }));
 
   const asOfMs = bars.length ? Date.parse(bars[bars.length - 1]!.ts) : Date.now();
-  deskTouchFeed("schwab_quotes");
+  deskTouchFeed("schwab_quotes_rest", asOfMs);
   return { bars, asOfMs };
 }

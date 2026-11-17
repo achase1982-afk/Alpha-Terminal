@@ -1592,3 +1592,22 @@ export const deskSpxTapeTable = pgTable(
 );
 
 export type DeskSpxTapeRow = typeof deskSpxTapeTable.$inferSelect;
+
+/** Desk API response snapshots (30-day retention). */
+export const deskApiSnapshotsTable = pgTable(
+  "desk_api_snapshots",
+  {
+    id: serial("id").primaryKey(),
+    kind: text("kind").notNull(),
+    symbol: text("symbol"),
+    sessionDate: date("session_date").notNull(),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
+    payload: jsonb("payload").notNull(),
+  },
+  (t) => [
+    index("desk_api_snapshots_kind_captured_idx").on(t.kind, t.capturedAt),
+    index("desk_api_snapshots_session_date_idx").on(t.sessionDate),
+  ],
+);
+
+export type DeskApiSnapshotRow = typeof deskApiSnapshotsTable.$inferSelect;

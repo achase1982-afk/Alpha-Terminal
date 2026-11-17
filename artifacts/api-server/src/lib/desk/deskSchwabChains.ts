@@ -1,32 +1,38 @@
 import { getBestAccessToken } from "../tokenStore.js";
 import { deskFormatSchwabSymbol, deskIsIndex } from "./deskSchwabSymbol.js";
-import { deskTouchFeed, deskMarkFeedError } from "./deskFeedFreshness.js";
+import { deskTouchFeed, deskMarkFeedError, deskMarkAuthFail } from "./deskFeedFreshness.js";
+import { deskSessionDateEt } from "./deskEt.js";
 
 const SCHWAB_API_BASE = "https://api.schwabapi.com/marketdata/v1";
 const CACHE_TTL_MS = 30_000;
 
-type ParsedContract = {
-  strike: number;
+export type DeskChainNormalized = {
+  symbol: string;
   expiration: string;
-  occ_symbol?: string;
-  type: "call" | "put";
-  bid?: number;
-  ask?: number;
-  last?: number;
-  mark?: number;
-  volume?: number;
-  openInterest?: number;
-  iv?: number;
-  delta?: number;
-  gamma?: number;
-  theta?: number;
-  vega?: number;
-  dte?: number;
+  strike: number;
+  call_put: "call" | "put";
+  bid: number | null;
+  ask: number | null;
+  last: number | null;
+  mark: number | null;
+  volume: number | null;
+  open_interest: number | null;
+  vendor_iv: number | null;
+  delta: number | null;
+  gamma: number | null;
+  theta: number | null;
+  vega: number | null;
+  quote_ts: string | null;
+  trade_ts: string | null;
+  mid: number | null;
+  spread: number | null;
+  spread_pct: number | null;
 };
 
 type CacheEntry = {
-  underlyingPrice?: number;
-  contracts: ParsedContract[];
+  underlyingPrice: number | null;
+  raw: Record<string, unknown>[];
+  normalized: DeskChainNormalized[];
   fetchedAt: number;
 };
 
@@ -36,44 +42,67 @@ function cacheKey(symbol: string, expiration: string): string {
   return `${symbol.toUpperCase()}|${expiration}`;
 }
 
-function parseSide(
-  map: Record<string, unknown>,
-  type: "call" | "put",
-): ParsedContract[] {
-  const out: ParsedContract[] = [];
-  for (const expDate of Object.values(map)) {
-    const strikeMap = expDate as Record<string, unknown>;
-    for (const [, options] of Object.entries(strikeMap)) {
-      const optionArr = options as Array<Record<string, unknown>>;
-      for (const opt of optionArr) {
-        const rawStrike = opt["strikePrice"] as number;
-        const mark =
-          typeof opt["mark"] === "number"
-            ? (opt["mark"] as number)
-            : typeof opt["markPrice"] === "number"
-              ? (opt["markPrice"] as number)
-              : undefined;
-        out.push({
-          strike: Math.round(rawStrike * 100) / 100,
-          expiration: (opt["expirationDate"] as string) ?? "",
-          occ_symbol: (opt["symbol"] as string | undefined)?.trim(),
-          type,
-          bid: opt["bid"] as number | undefined,
-          ask: opt["ask"] as number | undefined,
-          last: opt["last"] as number | undefined,
-          mark,
-          volume: opt["totalVolume"] as number | undefined,
-          openInterest: opt["openInterest"] as number | undefined,
-          iv: (() => {
-            const v = opt["volatility"] as number | undefined;
-            return v != null && v > 0 ? v : undefined;
-          })(),
-          delta: opt["delta"] as number | undefined,
-          gamma: opt["gamma"] as number | undefined,
-          theta: opt["theta"] as number | undefined,
-          vega: opt["vega"] as number | undefined,
-          dte: opt["daysToExpiration"] as number | undefined,
-        });
+function isoUtcFromLong(v: unknown): string | null {
+  if (typeof v !== "number" || !Number.isFinite(v)) return null;
+  return new Date(v).toISOString();
+}
+
+function num(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+function normalizeContract(raw: Record<string, unknown>): DeskChainNormalized | null {
+  const occ = String(raw["symbol"] ?? "").trim();
+  const putCall = String(raw["putCall"] ?? "").toUpperCase();
+  const call_put: "call" | "put" = putCall === "P" || putCall === "PUT" ? "put" : "call";
+  const strike = num(raw["strikePrice"]);
+  const expiration = String(raw["expirationDate"] ?? "").slice(0, 10);
+  if (!occ || strike == null || !expiration) return null;
+
+  const bid = num(raw["bid"]);
+  const ask = num(raw["ask"]);
+  const mid = bid != null && ask != null ? (bid + ask) / 2 : num(raw["mark"]);
+  const spread = bid != null && ask != null ? ask - bid : null;
+  const spread_pct = spread != null && mid != null && mid > 0 ? spread / mid : null;
+
+  return {
+    symbol: occ,
+    expiration,
+    strike,
+    call_put,
+    bid,
+    ask,
+    last: num(raw["last"]),
+    mark: num(raw["mark"]),
+    volume: num(raw["totalVolume"]),
+    open_interest: num(raw["openInterest"]),
+    vendor_iv: num(raw["volatility"]),
+    delta: num(raw["delta"]),
+    gamma: num(raw["gamma"]),
+    theta: num(raw["theta"]),
+    vega: num(raw["vega"]),
+    quote_ts: isoUtcFromLong(raw["quoteTimeInLong"]),
+    trade_ts: isoUtcFromLong(raw["tradeTimeInLong"]),
+    mid,
+    spread,
+    spread_pct,
+  };
+}
+
+function collectRawContracts(json: Record<string, unknown>, expiration: string): Record<string, unknown>[] {
+  const expNorm = expiration.slice(0, 10);
+  const out: Record<string, unknown>[] = [];
+  for (const mapKey of ["callExpDateMap", "putExpDateMap"] as const) {
+    const map = json[mapKey] as Record<string, unknown> | undefined;
+    if (!map) continue;
+    for (const expDate of Object.values(map)) {
+      const strikeMap = expDate as Record<string, unknown>;
+      for (const [, options] of Object.entries(strikeMap)) {
+        const optionArr = options as Array<Record<string, unknown>>;
+        for (const opt of optionArr) {
+          const exp = String(opt["expirationDate"] ?? "").slice(0, 10);
+          if (exp === expNorm) out.push(opt);
+        }
       }
     }
   }
@@ -103,17 +132,20 @@ async function fetchChainsFromSchwab(
     headers: { Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(25_000),
   });
+  if (res.status === 401) {
+    deskMarkAuthFail("schwab_chains");
+    return null;
+  }
   if (!res.ok) return null;
 
   const json = (await res.json()) as Record<string, unknown>;
-  const calls = parseSide((json["callExpDateMap"] as Record<string, unknown>) ?? {}, "call");
-  const puts = parseSide((json["putExpDateMap"] as Record<string, unknown>) ?? {}, "put");
-  const expNorm = expiration.slice(0, 10);
-  const contracts = [...calls, ...puts].filter((c) => c.expiration.slice(0, 10) === expNorm);
+  const raw = collectRawContracts(json, expiration);
+  const normalized = raw.map(normalizeContract).filter((x): x is DeskChainNormalized => x != null);
 
   return {
-    underlyingPrice: json["underlyingPrice"] as number | undefined,
-    contracts,
+    underlyingPrice: num(json["underlyingPrice"]),
+    raw,
+    normalized,
     fetchedAt: Date.now(),
   };
 }
@@ -121,37 +153,48 @@ async function fetchChainsFromSchwab(
 export async function deskFetchSchwabChain(
   symbol: string,
   expiration: string,
-): Promise<{ underlying_price: number | null; contracts: ParsedContract[]; asOfMs: number }> {
+): Promise<{
+  underlyingPrice: number | null;
+  raw: Record<string, unknown>[];
+  normalized: DeskChainNormalized[];
+  asOfMs: number;
+  session_date: string;
+}> {
   const sym = symbol.toUpperCase().trim();
   const exp = expiration.slice(0, 10);
+  const session_date = deskSessionDateEt();
   const key = cacheKey(sym, exp);
   const hit = cache.get(key);
   if (hit && Date.now() - hit.fetchedAt < CACHE_TTL_MS) {
-    deskTouchFeed("schwab_chains");
+    deskTouchFeed("schwab_chains", hit.fetchedAt);
     return {
-      underlying_price: hit.underlyingPrice ?? null,
-      contracts: hit.contracts,
+      underlyingPrice: hit.underlyingPrice,
+      raw: hit.raw,
+      normalized: hit.normalized,
       asOfMs: hit.fetchedAt,
+      session_date,
     };
   }
 
   const token = getBestAccessToken();
   if (!token) {
-    deskMarkFeedError("schwab_chains", "no_schwab_token");
-    return { underlying_price: null, contracts: [], asOfMs: Date.now() };
+    deskMarkAuthFail("schwab_chains");
+    return { underlyingPrice: null, raw: [], normalized: [], asOfMs: Date.now(), session_date };
   }
 
   const entry = await fetchChainsFromSchwab(sym, exp, token);
   if (!entry) {
     deskMarkFeedError("schwab_chains", "schwab_chain_fetch_failed");
-    return { underlying_price: null, contracts: [], asOfMs: Date.now() };
+    return { underlyingPrice: null, raw: [], normalized: [], asOfMs: Date.now(), session_date };
   }
 
   cache.set(key, entry);
-  deskTouchFeed("schwab_chains");
+  deskTouchFeed("schwab_chains", entry.fetchedAt);
   return {
-    underlying_price: entry.underlyingPrice ?? null,
-    contracts: entry.contracts,
+    underlyingPrice: entry.underlyingPrice,
+    raw: entry.raw,
+    normalized: entry.normalized,
     asOfMs: entry.fetchedAt,
+    session_date,
   };
 }
