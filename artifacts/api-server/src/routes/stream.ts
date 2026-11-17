@@ -14,6 +14,7 @@ import {
   STREAM_HOLDER_ID_MAX_LEN,
   getStreamerSubscriptionHealth,
   streamerSubRelease,
+  streamerSubSetChainUnderlyingPrice,
   streamerSubTouch,
 } from "../lib/streamerSubscriptionManager.js";
 import { hasValidTokens } from "../lib/tokenStore.js";
@@ -107,6 +108,14 @@ router.post("/option-symbols", (req, res) => {
   if (typeof body.holderId === "string" && body.holderId.trim() && holderId !== expectedHolder) {
     res.status(400).json({ ok: false, error: "holderId must match clientId, purpose, and viewId" });
     return;
+  }
+  const underlyingPrice =
+    typeof body.underlyingPrice === "number" && Number.isFinite(body.underlyingPrice)
+      ? body.underlyingPrice
+      : null;
+  if (underlyingPrice != null && purpose === "chain" && viewId.startsWith("chain:")) {
+    const root = viewId.split(":")[1]?.replace(/^\$/, "").toUpperCase();
+    if (root) streamerSubSetChainUnderlyingPrice(root, underlyingPrice);
   }
   if (Array.isArray(body.symbols)) {
     const all = body.symbols.filter((s): s is string => typeof s === "string");

@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { Reorder } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
-import { hash8 } from "@/lib/streamClientId";
+import { buildChainHoldSignature } from "@/lib/streamHoldSig";
 
 const EPS = 0.0001;
 const COL_W = 74;
@@ -1226,7 +1226,13 @@ function buildSchwabOptionKey(underlying: string, expiration: string, strike: nu
 interface OptionsTabProps {
   subscribeOptionSymbols?: (
     symbols: string[],
-    opts?: { purpose?: string; viewId?: string; holderId?: string },
+    opts?: {
+      purpose?: string;
+      viewId?: string;
+      holderId?: string;
+      underlyingPrice?: number;
+      isAborted?: () => boolean;
+    },
   ) => Promise<string | void>;
   releaseOptionHold?: (holderId: string) => Promise<void>;
   stickyOffset?: number;
@@ -1244,6 +1250,7 @@ export function OptionsTab({
   onOpenStrategyBuilder,
 }: OptionsTabProps) {
   const chainHoldRef = useRef<string | null>(null);
+  const lastChainSigRef = useRef("");
   const { accessToken } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken })));
   // Widget pin wins inside the dashboard; global symbol everywhere else.
   const symbol = useActiveSymbol();
@@ -1328,6 +1335,28 @@ export function OptionsTab({
     data?.underlyingPrice ??
     null;
 
+  const chainHoldSig = useMemo(() => {
+    if (!data) return null;
+    const calls = (data.calls ?? []) as Contract[];
+    const puts = (data.puts ?? []) as Contract[];
+    const streamKeys: string[] = [];
+    const expirations: string[] = [];
+    for (const c of calls) {
+      expirations.push(c.expiration);
+      streamKeys.push(c.schwabSymbol || buildSchwabOptionKey(symbol, c.expiration, c.strike, "C"));
+    }
+    for (const p of puts) {
+      expirations.push(p.expiration);
+      streamKeys.push(p.schwabSymbol || buildSchwabOptionKey(symbol, p.expiration, p.strike, "P"));
+    }
+    if (streamKeys.length === 0) return null;
+    return buildChainHoldSignature(symbol, expirations, streamKeys);
+  }, [data, symbol]);
+
+  useEffect(() => {
+    lastChainSigRef.current = "";
+  }, [symbol]);
+
   const groups = useMemo(() => {
     if (!data) return [];
     const calls = (data.calls ?? []) as Contract[];
@@ -1338,32 +1367,27 @@ export function OptionsTab({
   }, [data, underlyingPrice, symbol]);
 
   useEffect(() => {
-    if (!subscribeOptionSymbols || groups.length === 0) return;
-    const keys: string[] = [];
-    for (const g of groups) {
-      for (const row of g.rows) {
-        if (row.call?.streamKey) keys.push(row.call.streamKey);
-        if (row.put?.streamKey) keys.push(row.put.streamKey);
-      }
-    }
-    if (keys.length === 0) return;
-    const exp = groups.map((g) => g.expiration).sort().join(",");
-    const viewId = `chain:${symbol}:${hash8(exp)}`;
-    let cancelled = false;
-    void (async () => {
-      const prev = chainHoldRef.current;
-      if (prev && releaseOptionHold) await releaseOptionHold(prev);
-      if (cancelled) return;
-      const next = await subscribeOptionSymbols(keys, { purpose: "chain", viewId });
-      if (!cancelled && next) chainHoldRef.current = next;
-    })();
+    if (!subscribeOptionSymbols || !chainHoldSig) return;
+    if (chainHoldSig.holdSig === lastChainSigRef.current) return;
+    lastChainSigRef.current = chainHoldSig.holdSig;
+    let aborted = false;
+    const inFlight = subscribeOptionSymbols(chainHoldSig.keys, {
+      purpose: "chain",
+      viewId: chainHoldSig.viewId,
+      underlyingPrice: underlyingPrice ?? data?.underlyingPrice ?? undefined,
+      isAborted: () => aborted,
+    }).then((next) => {
+      if (!aborted && next) chainHoldRef.current = next;
+      return next;
+    });
     return () => {
-      cancelled = true;
-      const prev = chainHoldRef.current;
+      aborted = true;
       chainHoldRef.current = null;
-      if (prev && releaseOptionHold) void releaseOptionHold(prev);
+      void inFlight.then((holderId) => {
+        if (holderId && releaseOptionHold) void releaseOptionHold(holderId);
+      });
     };
-  }, [groups, subscribeOptionSymbols, releaseOptionHold, symbol]);
+  }, [chainHoldSig, subscribeOptionSymbols, releaseOptionHold, underlyingPrice, data?.underlyingPrice]);
 
   useEffect(() => { setExpandedExps(new Set()); setSelectedLegs(new Map()); }, [symbol]);
 

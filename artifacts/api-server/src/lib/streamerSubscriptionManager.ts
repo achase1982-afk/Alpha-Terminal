@@ -7,6 +7,7 @@ import {
   deskGetSchwabStreamerLimits,
 } from "./desk/deskStreamerBudget.js";
 import {
+  parseOccOptionStrike,
   sortChainKeysNearTheMoneyInterleaved,
   sortOptionKeysNearTheMoney,
 } from "./streamerSubPlanSort.js";
@@ -31,6 +32,7 @@ export const STREAMER_L1_OPTIONS_CAP = 3_000;
 export const STREAMER_OPTIONS_BOOK_CAP = 100;
 export const STREAM_HOLDER_ID_MAX_LEN = 220;
 export const STREAMER_WIRE_DEBOUNCE_MS = 400;
+export const STREAMER_WIRE_DEBOUNCE_MAX_MS = 1_500;
 
 const DEFAULT_HOLD_TTL_MS = 30 * 60_000;
 
@@ -41,6 +43,7 @@ let deskCoreOptionKeys = new Set<string>();
 let deskCoreBookKeys = new Set<string>();
 let chainSortSpot: number | null = null;
 let underlyingSpotResolver: ((root: string) => number | null) | null = null;
+const chainUnderlyingPriceByRoot = new Map<string, number>();
 
 export function streamerSubSetUnderlyingSpotResolver(
   fn: ((root: string) => number | null) | null,
@@ -81,13 +84,37 @@ function chainRootFromHolder(holderId: string): string | null {
   return null;
 }
 
-function spotForChainHolder(holderId: string): number | null {
+export function streamerSubSetChainUnderlyingPrice(root: string, price: number | null): void {
+  const r = root.replace(/^\$/, "").toUpperCase();
+  if (price != null && Number.isFinite(price)) chainUnderlyingPriceByRoot.set(r, price);
+  else chainUnderlyingPriceByRoot.delete(r);
+}
+
+function medianStrikeFromKeys(keys: string[]): number | null {
+  const strikes = keys.map(parseOccOptionStrike).filter((s): s is number => s != null && Number.isFinite(s));
+  if (!strikes.length) return null;
+  strikes.sort((a, b) => a - b);
+  return strikes[Math.floor(strikes.length / 2)]!;
+}
+
+export function spotForChainHolder(holderId: string, keys: string[]): number | null {
   const root = chainRootFromHolder(holderId);
-  if (root && underlyingSpotResolver) {
-    const s = underlyingSpotResolver(root);
-    if (s != null && Number.isFinite(s)) return s;
+  if (root) {
+    const cached = chainUnderlyingPriceByRoot.get(root);
+    if (cached != null && Number.isFinite(cached)) return cached;
+    if (underlyingSpotResolver) {
+      const s = underlyingSpotResolver(root);
+      if (s != null && Number.isFinite(s)) return s;
+    }
+    const med = medianStrikeFromKeys(keys);
+    if (med != null) return med;
+    if (root === "SPX" && chainSortSpot != null && Number.isFinite(chainSortSpot)) {
+      return chainSortSpot;
+    }
+    return null;
   }
-  return chainSortSpot;
+  if (chainSortSpot != null && Number.isFinite(chainSortSpot)) return chainSortSpot;
+  return medianStrikeFromKeys(keys);
 }
 
 export function streamerSubSetChainSortSpot(spot: number | null): void {
@@ -255,15 +282,74 @@ export function streamerSubRecordRejection(
   if (rejections.length > 40) rejections.shift();
 }
 
-export function streamerSubParseRejectionKey(msgText: string | undefined): string {
-  if (!msgText?.trim()) return "unknown";
-  const occ = msgText.match(/\b[A-Z]{1,6}\s+\d{6}[CP]\d{8,}\b/);
-  if (occ) return occ[0]!.replace(/\s+/g, "");
+export function normalizeStreamerOccKey(key: string): string {
+  return key.replace(/\s+/g, "").toUpperCase();
+}
+
+export type StreamerRejectionParse =
+  | { kind: "symbol"; symbol: string }
+  | { kind: "cap"; service: StreamerSubService; discarded: number }
+  | { kind: "unknown" };
+
+export function streamerSubParseRejection(msgText: string | undefined): StreamerRejectionParse {
+  if (!msgText?.trim()) return { kind: "unknown" };
+  const l1Cap = msgText.match(/LEVELONE_OPTIONS=(\d+)[^]*DISCARDED=(\d+)/i);
+  if (l1Cap) {
+    return {
+      kind: "cap",
+      service: "LEVELONE_OPTIONS",
+      discarded: parseInt(l1Cap[2]!, 10) || 0,
+    };
+  }
+  const bookCap = msgText.match(/OPTIONS_BOOK=(\d+)[^]*DISCARDED=(\d+)/i);
+  if (bookCap) {
+    return {
+      kind: "cap",
+      service: "OPTIONS_BOOK",
+      discarded: parseInt(bookCap[2]!, 10) || 0,
+    };
+  }
+  const occ = msgText.match(/\b([A-Z]{1,6}\s+\d{6}[CP]\d{8,})\b/);
+  if (occ?.[1]) return { kind: "symbol", symbol: occ[1] };
   const keysMatch = msgText.match(/keys=([^,\s]+)/i);
-  if (keysMatch?.[1]) return keysMatch[1].split("|")[0] ?? keysMatch[1];
-  const parts = msgText.split(",");
-  if (parts.length > 1) return parts[1]!.trim().slice(0, 40) || parts[0]!.trim().slice(0, 40);
-  return msgText.trim().slice(0, 40);
+  if (keysMatch?.[1]) return { kind: "symbol", symbol: keysMatch[1].split("|")[0] ?? keysMatch[1] };
+  return { kind: "unknown" };
+}
+
+/** @deprecated use streamerSubParseRejection */
+export function streamerSubParseRejectionKey(msgText: string | undefined): string {
+  const p = streamerSubParseRejection(msgText);
+  if (p.kind === "symbol") return p.symbol;
+  return "unknown";
+}
+
+export function streamerSubResolveLiveKey(
+  raw: string,
+  liveKeys: Iterable<string>,
+): string | null {
+  const set = liveKeys instanceof Set ? liveKeys : new Set(liveKeys);
+  if (set.has(raw)) return raw;
+  const norm = normalizeStreamerOccKey(raw);
+  for (const k of set) {
+    if (normalizeStreamerOccKey(k) === norm) return k;
+  }
+  return null;
+}
+
+export function streamerSubLowestPriorityWireDropOrder(): string[] {
+  const order: string[] = [];
+  for (const k of deskCoreOptionKeys) order.push(k);
+  const bg: string[] = [];
+  for (const h of holds.values()) {
+    if (h.service !== "LEVELONE_OPTIONS") continue;
+    if (h.tier !== "background") continue;
+    bg.push(...h.keys);
+  }
+  bg.sort();
+  order.push(...bg);
+  const app = getL1PlanCache().appSubscribed;
+  order.push(...[...app].reverse());
+  return [...new Set(order)];
 }
 
 function buildTierMaps(
@@ -321,12 +407,13 @@ function buildL1Plan(): L1PlanCache {
     const isChain =
       h.holderId.startsWith("chain:") ||
       (h.holderId.startsWith("stream:") && streamPurposeFromHolderId(h.holderId) === "chain");
+    const spot = spotForChainHolder(h.holderId, h.keys);
     const keys = isChain
-      ? sortChainKeysNearTheMoneyInterleaved(h.keys, spotForChainHolder(h.holderId))
+      ? sortChainKeysNearTheMoneyInterleaved(h.keys, spot)
       : h.holderId.startsWith("ticket:") ||
           (h.holderId.startsWith("stream:") && streamPurposeFromHolderId(h.holderId) === "ticket")
         ? h.keys
-        : sortOptionKeysNearTheMoney(h.keys, spotForChainHolder(h.holderId));
+        : sortOptionKeysNearTheMoney(h.keys, spot);
     addKeys(keys, "user_visible");
   }
 
@@ -436,6 +523,7 @@ export function getStreamerSubscriptionHealth(_now = Date.now()) {
       live_total: streamerWireSimulatorLiveLevelOneOptionsCount(),
       planned: Math.min(STREAMER_L1_OPTIONS_CAP, plannedDesk + l1.appSubscribed.length),
       capped: l1.capped,
+      wire_degraded: rejections.some((r) => r.reason === "cap_discard"),
     },
     options_book: {
       cap: STREAMER_OPTIONS_BOOK_CAP,
@@ -448,34 +536,66 @@ export function getStreamerSubscriptionHealth(_now = Date.now()) {
 }
 
 let wireL1Debounce: ReturnType<typeof setTimeout> | null = null;
+let wireL1MaxWait: ReturnType<typeof setTimeout> | null = null;
 let wireBookDebounce: ReturnType<typeof setTimeout> | null = null;
+let wireBookMaxWait: ReturnType<typeof setTimeout> | null = null;
+
+function clearWireL1Timers(): void {
+  if (wireL1Debounce) clearTimeout(wireL1Debounce);
+  if (wireL1MaxWait) clearTimeout(wireL1MaxWait);
+  wireL1Debounce = null;
+  wireL1MaxWait = null;
+}
+
+function clearWireBookTimers(): void {
+  if (wireBookDebounce) clearTimeout(wireBookDebounce);
+  if (wireBookMaxWait) clearTimeout(wireBookMaxWait);
+  wireBookDebounce = null;
+  wireBookMaxWait = null;
+}
 
 export async function streamerSubFlushWireForTests(): Promise<void> {
-  if (wireL1Debounce) {
-    clearTimeout(wireL1Debounce);
-    wireL1Debounce = null;
-  }
-  if (wireBookDebounce) {
-    clearTimeout(wireBookDebounce);
-    wireBookDebounce = null;
-  }
+  clearWireL1Timers();
+  clearWireBookTimers();
   await streamerSubApplyManagedOptionsSubscriptionsNow();
   await streamerSubApplyManagedOptionsBookSubscriptionsNow();
 }
 
 export function streamerSubScheduleManagedOptionsWire(): void {
+  if (!wireL1MaxWait) {
+    wireL1MaxWait = setTimeout(() => {
+      wireL1MaxWait = null;
+      if (wireL1Debounce) clearTimeout(wireL1Debounce);
+      wireL1Debounce = null;
+      void streamerSubApplyManagedOptionsSubscriptionsNow();
+    }, STREAMER_WIRE_DEBOUNCE_MAX_MS);
+    wireL1MaxWait.unref?.();
+  }
   if (wireL1Debounce) clearTimeout(wireL1Debounce);
   wireL1Debounce = setTimeout(() => {
     wireL1Debounce = null;
+    if (wireL1MaxWait) clearTimeout(wireL1MaxWait);
+    wireL1MaxWait = null;
     void streamerSubApplyManagedOptionsSubscriptionsNow();
   }, STREAMER_WIRE_DEBOUNCE_MS);
   wireL1Debounce.unref?.();
 }
 
 export function streamerSubScheduleManagedOptionsBookWire(): void {
+  if (!wireBookMaxWait) {
+    wireBookMaxWait = setTimeout(() => {
+      wireBookMaxWait = null;
+      if (wireBookDebounce) clearTimeout(wireBookDebounce);
+      wireBookDebounce = null;
+      void streamerSubApplyManagedOptionsBookSubscriptionsNow();
+    }, STREAMER_WIRE_DEBOUNCE_MAX_MS);
+    wireBookMaxWait.unref?.();
+  }
   if (wireBookDebounce) clearTimeout(wireBookDebounce);
   wireBookDebounce = setTimeout(() => {
     wireBookDebounce = null;
+    if (wireBookMaxWait) clearTimeout(wireBookMaxWait);
+    wireBookMaxWait = null;
     void streamerSubApplyManagedOptionsBookSubscriptionsNow();
   }, STREAMER_WIRE_DEBOUNCE_MS);
   wireBookDebounce.unref?.();
@@ -510,10 +630,9 @@ export function streamerSubResetForTests(): void {
   deskCoreOptionKeys = new Set();
   deskCoreBookKeys = new Set();
   chainSortSpot = null;
-  if (wireL1Debounce) clearTimeout(wireL1Debounce);
-  if (wireBookDebounce) clearTimeout(wireBookDebounce);
-  wireL1Debounce = null;
-  wireBookDebounce = null;
+  clearWireL1Timers();
+  clearWireBookTimers();
+  chainUnderlyingPriceByRoot.clear();
   streamerSubResetWiredAppPlanSigForTests();
   bumpPlan();
 }

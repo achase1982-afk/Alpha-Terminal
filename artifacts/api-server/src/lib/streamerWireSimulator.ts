@@ -114,6 +114,33 @@ export function streamerWireSimulatorRemoveLevelOneOptions(keys: string[]): void
   }
 }
 
+export function streamerWireSimulatorAllLevelOneKeysOnWire(): Set<string> {
+  const live = new Set<string>();
+  for (const k of liveAppL1Options) live.add(k);
+  for (const k of liveDeskL1Options) live.add(k);
+  return live;
+}
+
+export function streamerWireSimulatorAllOptionsBookKeysOnWire(): Set<string> {
+  const live = new Set<string>();
+  for (const k of liveAppOptionsBook) live.add(k);
+  for (const k of liveDeskOptionsBook) live.add(k);
+  return live;
+}
+
+export function streamerWireSimulatorDropLevelOneByPriority(priorityOrder: string[], count: number): void {
+  if (count <= 0) return;
+  const toDrop: string[] = [];
+  const seen = new Set<string>();
+  for (let i = priorityOrder.length - 1; i >= 0 && toDrop.length < count; i--) {
+    const k = priorityOrder[i]!;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    toDrop.push(k);
+  }
+  streamerWireSimulatorRemoveLevelOneOptions(toDrop);
+}
+
 export function streamerWireSimulatorRemoveOptionsBook(keys: string[]): void {
   for (const k of keys) {
     liveAppOptionsBook.delete(k);

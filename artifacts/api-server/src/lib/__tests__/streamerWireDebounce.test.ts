@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  STREAMER_WIRE_DEBOUNCE_MAX_MS,
   STREAMER_WIRE_DEBOUNCE_MS,
   streamerSubFlushWireForTests,
   streamerSubHold,
@@ -54,5 +55,17 @@ describe("streamer wire debounce", () => {
     expect(subsCount(outbound)).toBeLessThanOrEqual(2);
     expect(STREAMER_WIRE_DEBOUNCE_MS).toBeGreaterThanOrEqual(300);
     expect(STREAMER_WIRE_DEBOUNCE_MS).toBeLessThanOrEqual(500);
+  });
+
+  it("fires at least one SUBS under continuous churn within maxWait", async () => {
+    outbound.length = 0;
+    for (let t = 0; t < 1_200; t += 50) {
+      streamerSubHold(`stream:churn:chain:v-${t}`, "user_visible", "LEVELONE_OPTIONS", [`K-${t}`]);
+      await vi.advanceTimersByTimeAsync(50);
+    }
+    await vi.advanceTimersByTimeAsync(STREAMER_WIRE_DEBOUNCE_MAX_MS);
+    await streamerSubFlushWireForTests();
+    expect(subsCount(outbound)).toBeGreaterThanOrEqual(1);
+    expect(subsCount(outbound)).toBeLessThanOrEqual(3);
   });
 });

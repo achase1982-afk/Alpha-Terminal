@@ -8,6 +8,7 @@ import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { formatSchwabAccountType } from "@/lib/schwabAccountAggregate";
 import { startStrategistPolling } from "@/lib/strategistPoller";
 import { hash8 } from "@/lib/streamClientId";
+import type { OptionHoldPostOpts } from "@/lib/optionHoldClient";
 import { computeStrategyEconomics } from "@/lib/strategyCalculator";
 import { useGetOptionChain } from "@workspace/api-client-react";
 import {
@@ -282,7 +283,7 @@ interface OrderTicketProps {
   onSendToStrategist?: (ticker?: string) => void;
   subscribeOptionSymbols?: (
     symbols: string[],
-    opts?: { purpose?: string; viewId?: string },
+    opts?: OptionHoldPostOpts,
   ) => Promise<string | undefined>;
   releaseOptionHold?: (holderId: string) => Promise<void>;
 }
@@ -429,27 +430,40 @@ export function OrderTicket({
       }
     }
     if (optionSymbol) keys.push(optionSymbol);
-    return [...new Set(keys.filter(Boolean))];
+    return [...new Set(keys.filter(Boolean))].sort();
   }, [isOpen, strategyLegs, optionSymbol]);
 
-  useEffect(() => {
-    if (!subscribeOptionSymbols || !isOpen || ticketStreamKeys.length === 0) return;
+  const ticketHoldMeta = useMemo(() => {
+    if (!isOpen || ticketStreamKeys.length === 0) return null;
     const viewId = `ticket:${symbol}:${hash8(ticketStreamKeys.join("\0"))}`;
-    let cancelled = false;
-    void (async () => {
-      const prev = ticketHoldRef.current;
-      if (prev && releaseOptionHold) await releaseOptionHold(prev);
-      if (cancelled) return;
-      const next = await subscribeOptionSymbols(ticketStreamKeys, { purpose: "ticket", viewId });
-      if (!cancelled && next) ticketHoldRef.current = next;
-    })();
+    const holdSig = `${viewId}\0${ticketStreamKeys.join("\n")}`;
+    return { viewId, holdSig };
+  }, [isOpen, symbol, ticketStreamKeys]);
+
+  const lastTicketSigRef = useRef("");
+
+  useEffect(() => {
+    if (!subscribeOptionSymbols || !isOpen || !ticketHoldMeta) return;
+    if (ticketHoldMeta.holdSig === lastTicketSigRef.current) return;
+    lastTicketSigRef.current = ticketHoldMeta.holdSig;
+    const viewId = ticketHoldMeta.viewId;
+    let aborted = false;
+    const inFlight = subscribeOptionSymbols(ticketStreamKeys, {
+      purpose: "ticket",
+      viewId,
+      isAborted: () => aborted,
+    }).then((next) => {
+      if (!aborted && next) ticketHoldRef.current = next;
+      return next;
+    });
     return () => {
-      cancelled = true;
-      const prev = ticketHoldRef.current;
+      aborted = true;
       ticketHoldRef.current = null;
-      if (prev && releaseOptionHold) void releaseOptionHold(prev);
+      void inFlight.then((holderId) => {
+        if (holderId && releaseOptionHold) void releaseOptionHold(holderId);
+      });
     };
-  }, [isOpen, subscribeOptionSymbols, releaseOptionHold, symbol, ticketStreamKeys]);
+  }, [isOpen, subscribeOptionSymbols, releaseOptionHold, symbol, ticketHoldMeta, ticketStreamKeys]);
 
   const ticketMode: TicketMode = isOption ? "options" : "stock";
   const ORDER_TYPES = isOption ? OPTION_ORDER_TYPES : STOCK_ORDER_TYPES;

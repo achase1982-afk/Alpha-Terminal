@@ -16,6 +16,12 @@ import { refreshSchwabViaServer, syncSchwabTokensFromServer } from "@/lib/schwab
 import type { LiveQuote, LiveNewsItem } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
 import { buildStreamHolderId, getStreamClientId } from "@/lib/streamClientId";
+import {
+  payloadsEqual,
+  resolveOptionStreamHolderId,
+  shouldTrackOptionHold,
+  type OptionHoldPostOpts,
+} from "@/lib/optionHoldClient";
 
 declare global {
   interface Window {
@@ -197,6 +203,7 @@ export function useMarketStream() {
   const optionHoldPayloadsRef = useRef(
     new Map<string, { symbols: string[]; purpose: string; viewId: string }>(),
   );
+  const holderOpTailRef = useRef(new Map<string, Promise<unknown>>());
 
   const watchlist = useTerminalStore((s) => s.watchlists[s.activeWatchlistId]?.symbols ?? []);
 
@@ -608,39 +615,78 @@ export function useMarketStream() {
     []
   );
 
+  const runHolderOp = useCallback(
+    async <T,>(holderId: string, fn: () => Promise<T>): Promise<T> => {
+      const prev = holderOpTailRef.current.get(holderId) ?? Promise.resolve();
+      const next = prev.then(fn, fn) as Promise<T>;
+      holderOpTailRef.current.set(holderId, next);
+      try {
+        return await next;
+      } finally {
+        if (holderOpTailRef.current.get(holderId) === next) {
+          holderOpTailRef.current.delete(holderId);
+        }
+      }
+    },
+    [],
+  );
+
   const subscribeOptionSymbols = useCallback(
     async (
       symbols: string[],
-      opts?: { purpose?: string; viewId?: string; holderId?: string },
+      opts?: OptionHoldPostOpts,
     ): Promise<string | undefined> => {
       if (!symbols.length) return undefined;
       const purpose = opts?.purpose ?? "watchlist";
       const viewId = opts?.viewId ?? "";
       const clientId = streamClientIdRef.current;
-      const holderId =
-        opts?.holderId ?? buildStreamHolderId(clientId, purpose, viewId);
-      try {
-        const res = await fetchWithAuth(`${API_BASE}/stream/option-symbols`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-stream-client-id": clientId,
-          },
-          body: JSON.stringify({ symbols, purpose, viewId, clientId, holderId }),
-        });
-        if (res.ok) {
+      const holderId = resolveOptionStreamHolderId(clientId, purpose, viewId, opts?.holderId);
+      return runHolderOp(holderId, async () => {
+        const prev = optionHoldPayloadsRef.current.get(holderId);
+        if (prev && payloadsEqual(prev.symbols, symbols)) return holderId;
+        try {
+          const res = await fetchWithAuth(`${API_BASE}/stream/option-symbols`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-stream-client-id": clientId,
+            },
+            body: JSON.stringify({
+              symbols,
+              purpose,
+              viewId,
+              clientId,
+              holderId,
+              ...(opts?.underlyingPrice != null && Number.isFinite(opts.underlyingPrice)
+                ? { underlyingPrice: opts.underlyingPrice }
+                : {}),
+            }),
+          });
+          if (!res.ok) return undefined;
+          if (!shouldTrackOptionHold(mountedRef.current, () => opts?.isAborted?.() ?? false)) {
+            await fetchWithAuth(`${API_BASE}/stream/release-holds`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-stream-client-id": clientId,
+              },
+              body: JSON.stringify({ clientId, holderId }),
+            });
+            return undefined;
+          }
           activeOptionHoldsRef.current.add(holderId);
           optionHoldPayloadsRef.current.set(holderId, {
             symbols: [...symbols],
             purpose,
             viewId,
           });
+          return holderId;
+        } catch {
+          return undefined;
         }
-        return holderId;
-      } catch {}
-      return undefined;
+      });
     },
-    [],
+    [runHolderOp],
   );
 
   const releaseOptionHold = useCallback(async (holderId: string) => {

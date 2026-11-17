@@ -19,8 +19,11 @@ import {
   streamerSubMaxDeskBookKeys,
   streamerSubGetChainSortSpot,
   streamerSubMaxDeskOptionKeys,
-  streamerSubParseRejectionKey,
+  streamerSubLowestPriorityWireDropOrder,
+  streamerSubParseRejection,
   streamerSubRecordRejection,
+  streamerSubResolveLiveKey,
+  streamerSubSetChainUnderlyingPrice,
   streamerSubInferHoldTier,
   streamerSubMergeHold,
   streamerSubNotifyAppPlanWired,
@@ -33,6 +36,9 @@ import {
   streamerWireSimulatorApplyPayload,
   streamerWireSimulatorDeskLevelOneKeysOnWire,
   streamerWireSimulatorLiveLevelOneOptionsCount,
+  streamerWireSimulatorAllLevelOneKeysOnWire,
+  streamerWireSimulatorAllOptionsBookKeysOnWire,
+  streamerWireSimulatorDropLevelOneByPriority,
   streamerWireSimulatorRemoveLevelOneOptions,
   streamerWireSimulatorRemoveOptionsBook,
   streamerWireSimulatorResetForTests,
@@ -1828,18 +1834,46 @@ function handleMessage(raw: string) {
         (service === "LEVELONE_OPTIONS" || service === "OPTIONS_BOOK" || service === "LEVELONE_EQUITIES")
       ) {
         if (service === "LEVELONE_OPTIONS" || service === "OPTIONS_BOOK") {
-          const rejectedKey = streamerSubParseRejectionKey(msgText);
-          streamerSubRecordRejection(
-            service as "LEVELONE_OPTIONS" | "OPTIONS_BOOK",
-            rejectedKey,
-            `code_${code}`,
-          );
-          if (rejectedKey && rejectedKey !== "unknown") {
-            if (service === "LEVELONE_OPTIONS") {
-              streamerWireSimulatorRemoveLevelOneOptions([rejectedKey]);
-            } else {
-              streamerWireSimulatorRemoveOptionsBook([rejectedKey]);
+          const parsed = streamerSubParseRejection(msgText);
+          if (parsed.kind === "cap" && parsed.discarded > 0) {
+            streamerSubRecordRejection(
+              parsed.service,
+              `cap_discard_${parsed.discarded}`,
+              "cap_discard",
+            );
+            if (parsed.service === "LEVELONE_OPTIONS") {
+              const live = streamerWireSimulatorAllLevelOneKeysOnWire();
+              streamerWireSimulatorDropLevelOneByPriority(
+                streamerSubLowestPriorityWireDropOrder(),
+                parsed.discarded,
+              );
+              if (live.size === streamerWireSimulatorAllLevelOneKeysOnWire().size) {
+                streamerWireSimulatorDropLevelOneByPriority([...live], parsed.discarded);
+              }
             }
+          } else if (parsed.kind === "symbol") {
+            streamerSubRecordRejection(
+              service as "LEVELONE_OPTIONS" | "OPTIONS_BOOK",
+              parsed.symbol,
+              `code_${code}`,
+            );
+            if (service === "LEVELONE_OPTIONS") {
+              const live = streamerWireSimulatorAllLevelOneKeysOnWire();
+              const resolved = streamerSubResolveLiveKey(parsed.symbol, live);
+              if (resolved) streamerWireSimulatorRemoveLevelOneOptions([resolved]);
+            } else {
+              const resolved = streamerSubResolveLiveKey(
+                parsed.symbol,
+                streamerWireSimulatorAllOptionsBookKeysOnWire(),
+              );
+              if (resolved) streamerWireSimulatorRemoveOptionsBook([resolved]);
+            }
+          } else {
+            streamerSubRecordRejection(
+              service as "LEVELONE_OPTIONS" | "OPTIONS_BOOK",
+              "unknown",
+              `code_${code}`,
+            );
           }
         }
         void import("./desk/deskTapeUniverse.js").then((m) =>
