@@ -55,6 +55,14 @@ export interface OptionTick {
 }
 
 const EQ_FIELDS = "0,1,2,3,4,5,8,10,11,12,15,28,29";
+
+function leveloneEquityFieldsUnion(): string {
+  const desk = Array.from({ length: 52 }, (_, i) => String(i));
+  const ids = new Set<string>([...EQ_FIELDS.split(","), ...desk]);
+  return [...ids].sort((a, b) => Number(a) - Number(b)).join(",");
+}
+
+const LEVELONE_EQUITIES_FIELDS = leveloneEquityFieldsUnion();
 const FUT_FIELDS = "0,1,2,3,4,5,8,12,13,14,19,24";
 let acctActivitySubscribed = false;
 
@@ -786,12 +794,15 @@ function sendEquitySubscription(symbols: string[]) {
 
   const req = buildRequest("LEVELONE_EQUITIES", "SUBS", {
     keys: symbols.join(","),
-    fields: EQ_FIELDS,
+    fields: LEVELONE_EQUITIES_FIELDS,
   });
 
   if (req) {
     sendStreamerJson({ requests: [req] });
-    logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: LEVELONE_EQUITIES SUBS sent");
+    logger.info(
+      { count: symbols.length, sample: symbols.slice(0, 5).join(","), fields: LEVELONE_EQUITIES_FIELDS },
+      "Schwab streamer: LEVELONE_EQUITIES SUBS sent",
+    );
   }
 }
 

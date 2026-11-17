@@ -5,7 +5,12 @@ import { deskProbeAlpacaNews } from "./deskAlpacaNews.js";
 import { deskMarkFeedNotConfigured, deskSetStreamerDisabled } from "./deskFeedFreshness.js";
 import { startDeskRetentionJobs } from "./deskRetention.js";
 import { startDeskBackgroundPollers } from "./deskBackgroundPollers.js";
-import { startDeskRawTapeCapture } from "./deskSpxTapeRaw.js";
+import {
+  deskClearRawTapeBuffer,
+  deskDeleteRawTapeChunksForSession,
+  startDeskRawTapeCapture,
+} from "./deskSpxTapeRaw.js";
+import { deskSessionDateEt } from "./deskEt.js";
 import { startDeskTapeUniverse } from "./deskTapeUniverse.js";
 import { initDeskSchwab2RestFeed } from "./deskSchwab2Rest.js";
 import { initDeskTradierSandboxFeed } from "./deskTradierSandbox.js";
@@ -67,6 +72,9 @@ export function initDeskMarketFeeds(): void {
 
   if (!getEodhdKey()) deskMarkFeedNotConfigured("eodhd", "eodhd");
   else void deskProbeEodhd();
+
+  deskClearRawTapeBuffer();
+  void deskDeleteRawTapeChunksForSession(deskSessionDateEt());
 
   startDeskRawTapeCapture();
   startDeskTapeUniverse();

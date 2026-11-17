@@ -2,11 +2,12 @@ import { createGunzip, gzipSync } from "node:zlib";
 import { Readable } from "node:stream";
 import { and, asc, eq, gte, db, deskSpxTapeRawTable } from "@workspace/db";
 import { deskSessionDateEt } from "./deskEt.js";
+import { deskStringifyTapeJson, rxNsFromLine } from "./deskJsonBigInt.js";
 import { logger } from "../logger.js";
 
 export type DeskRawTapeFrame = {
   c: number;
-  rx_ns: string;
+  rx_ns: number;
   m: unknown;
   session_date?: string;
 };
@@ -29,29 +30,21 @@ let flushInFlight: Promise<void> | null = null;
 
 let framesCaptured = 0;
 let bytesCaptured = 0;
-let lastFrameNs: string | null = null;
+let lastFrameNs: number | null = null;
 let lastFrameUtcMs: number | null = null;
 
 function frameLine(frame: DeskRawTapeFrame): string {
   const session_date = frame.session_date ?? deskSessionDateEt();
-  return JSON.stringify({ c: frame.c, rx_ns: frame.rx_ns, m: frame.m, session_date });
-}
-
-function rxNsBigInt(rx_ns: string): bigint | null {
-  try {
-    return BigInt(rx_ns);
-  } catch {
-    return null;
-  }
+  return deskStringifyTapeJson({ c: frame.c, rx_ns: frame.rx_ns, m: frame.m, session_date });
 }
 
 export function deskCaptureInboundFrame(frame: DeskRawTapeFrame): void {
   const line = frameLine(frame);
   const lineBytes = Buffer.byteLength(line, "utf8") + 1;
-  const ns = rxNsBigInt(frame.rx_ns);
+  const ns = BigInt(Math.trunc(frame.rx_ns));
 
-  if (chunkStartNs == null && ns != null) chunkStartNs = ns;
-  if (ns != null) chunkEndNs = ns;
+  if (chunkStartNs == null) chunkStartNs = ns;
+  chunkEndNs = ns;
 
   buffer.push(line);
   bufferBytes += lineBytes;
@@ -68,7 +61,7 @@ export function deskCaptureInboundFrame(frame: DeskRawTapeFrame): void {
 export function getDeskRawTapeHealth(): {
   frames: number;
   bytes: number;
-  last_frame_ns: string | null;
+  last_frame_ns: number | null;
   last_frame_utc_ms: number | null;
   buffer_frames: number;
 } {
@@ -164,10 +157,9 @@ export function deskEmitBufferedRawTapeSince(
   for (const line of buffer) {
     if (!line.trim()) continue;
     try {
-      const obj = JSON.parse(line) as { rx_ns?: string; session_date?: string };
+      const obj = JSON.parse(line) as { rx_ns?: number | string; session_date?: string };
       if (obj.session_date && obj.session_date !== sessionDate) continue;
-      const ns =
-        obj.rx_ns != null && String(obj.rx_ns).trim() !== "" ? BigInt(obj.rx_ns) : 0n;
+      const ns = rxNsFromLine(line) ?? 0n;
       if (frameMatchesSince(ns, sinceNs)) {
         write(`${line}\n`);
         emitted += 1;
@@ -224,8 +216,7 @@ function gunzipLines(
       for (const line of lines) {
         if (!line.trim()) continue;
         try {
-          const obj = JSON.parse(line) as { rx_ns?: string };
-          const ns = obj.rx_ns != null ? BigInt(obj.rx_ns) : 0n;
+          const ns = rxNsFromLine(line) ?? 0n;
           if (frameMatchesSince(ns, sinceNs)) {
             write(`${line}\n`);
             emitted += 1;
@@ -238,8 +229,7 @@ function gunzipLines(
     gunzip.on("end", () => {
       if (leftover.trim()) {
         try {
-          const obj = JSON.parse(leftover) as { rx_ns?: string };
-          const ns = obj.rx_ns != null ? BigInt(obj.rx_ns) : 0n;
+          const ns = rxNsFromLine(leftover) ?? 0n;
           if (frameMatchesSince(ns, sinceNs)) {
             write(`${leftover}\n`);
             emitted += 1;
@@ -252,4 +242,25 @@ function gunzipLines(
     });
     gunzip.on("error", reject);
   });
+}
+
+export function deskClearRawTapeBuffer(): void {
+  buffer = [];
+  bufferBytes = 0;
+  chunkStartNs = null;
+  chunkEndNs = null;
+}
+
+/** Remove stored chunks for a session (post-security-filter deploy). */
+export async function deskDeleteRawTapeChunksForSession(sessionDate: string): Promise<number> {
+  try {
+    const deleted = await db
+      .delete(deskSpxTapeRawTable)
+      .where(eq(deskSpxTapeRawTable.sessionDate, sessionDate))
+      .returning({ id: deskSpxTapeRawTable.id });
+    return deleted.length;
+  } catch (err) {
+    logger.warn({ err, sessionDate, hint: "migration 0052_desk_spx_tape_raw" }, "Desk raw tape purge failed");
+    return 0;
+  }
 }

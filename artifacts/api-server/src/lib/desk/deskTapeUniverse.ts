@@ -8,6 +8,7 @@ import {
   deskTapeOptionsMax,
   deskLoadExplicitOptionSymbols,
 } from "./deskTapeOptionsConfig.js";
+import { isDeskAllowedOptionKey } from "./deskTapeFrameFilter.js";
 import {
   deskStreamerAddEquity,
   deskStreamerAddOptions,
@@ -17,7 +18,7 @@ import {
 } from "../schwabStreamer.js";
 
 const DESK_EQUITIES = ["$SPX", "SPY", "$VIX"] as const;
-const TARGET_OPTIONS_BOOK = 500;
+const TARGET_OPTIONS_BOOK = 100;
 const SPOT_REFRESH_PCT = 0.003;
 const SPOT_REFRESH_POINTS = 5;
 const REFRESH_POLL_MS = 45_000;
@@ -92,31 +93,16 @@ function pickBySpot(contracts: DeskChainNormalized[], spot: number, limit: numbe
   return keys;
 }
 
-function pickLeveloneAroundSpot(
-  contracts: DeskChainNormalized[],
-  spot: number,
-  cap: number,
-): string[] {
-  const byStrike = new Map<number, DeskChainNormalized[]>();
+function uniqueOptionSymbols(contracts: DeskChainNormalized[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
   for (const c of contracts) {
-    const bucket = byStrike.get(c.strike) ?? [];
-    bucket.push(c);
-    byStrike.set(c.strike, bucket);
+    if (!c.symbol || !isDeskAllowedOptionKey(c.symbol)) continue;
+    if (seen.has(c.symbol)) continue;
+    seen.add(c.symbol);
+    out.push(c.symbol);
   }
-
-  const strikes = [...byStrike.keys()].sort(
-    (a, b) => Math.abs(a - spot) - Math.abs(b - spot) || a - b,
-  );
-
-  const keys: string[] = [];
-  for (const strike of strikes) {
-    for (const c of byStrike.get(strike) ?? []) {
-      if (c.symbol) keys.push(c.symbol);
-      if (keys.length >= cap) break;
-    }
-    if (keys.length >= cap) break;
-  }
-  return keys;
+  return out;
 }
 
 function spotMovedEnough(prev: number | null, next: number): boolean {
@@ -149,27 +135,24 @@ async function buildUniverseKeys(
 
   for (const expiry of expiries) {
     const chain = await deskFetchSchwabChain("SPX", expiry);
-    const count = chain.contract_count;
-    optionsByExpiry[expiry] = count;
-    for (const c of chain.normalized) {
+    const spxOnly = chain.normalized.filter(
+      (c) => c.symbol && isDeskAllowedOptionKey(c.symbol),
+    );
+    const expirySymbols = uniqueOptionSymbols(spxOnly);
+    optionsByExpiry[expiry] = expirySymbols.length;
+    for (const c of spxOnly) {
       allContracts.push(c);
-      if (allContracts.length >= maxKeys * 2) break;
     }
-    if (allContracts.length >= maxKeys * 2) break;
   }
 
-  const totalContracts = allContracts.length;
-  const levelone = pickLeveloneAroundSpot(allContracts, spot, maxKeys);
-  cappedLevelone = totalContracts > maxKeys || levelone.length >= maxKeys;
-  leveloneCapReason = cappedLevelone
-    ? totalContracts <= maxKeys
-      ? `desk_cap_${maxKeys}_option_keys`
-      : `multi_expiry_chain_${totalContracts}_contracts`
-    : null;
+  const deduped = uniqueOptionSymbols(allContracts);
+  const levelone = deduped.slice(0, maxKeys);
+  const totalContracts = deduped.length;
+  cappedLevelone = totalContracts > maxKeys;
+  leveloneCapReason = cappedLevelone ? `desk_cap_${maxKeys}_option_keys` : null;
 
-  const bookSource = allContracts.length ? allContracts : [];
-  const book = pickBySpot(bookSource, spot, TARGET_OPTIONS_BOOK);
-  cappedBook = bookSource.length > book.length;
+  const book = pickBySpot(allContracts, spot, TARGET_OPTIONS_BOOK);
+  cappedBook = allContracts.length > book.length;
 
   return { levelone, book };
 }

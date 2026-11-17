@@ -19,9 +19,11 @@ import { deskFetchStocknews } from "../lib/desk/deskStocknews.js";
 import { getDeskTapeSince, registerDeskSpxSse } from "../lib/desk/deskSpxTape.js";
 import { deskPersistSnapshot } from "../lib/desk/deskSnapshotStore.js";
 import { deskAsofEtIso, deskSessionDateEt } from "../lib/desk/deskEt.js";
-import { refreshDeskUwLiveFeeds } from "../lib/desk/deskUwLiveFeeds.js";
+import { getDeskUwFeedSnapshot, refreshDeskUwLiveFeeds } from "../lib/desk/deskUwLiveFeeds.js";
 import { getDeskRawTapeHealth, streamDeskRawTapeNdjson } from "../lib/desk/deskSpxTapeRaw.js";
 import { getDeskTapeUniverseHealth } from "../lib/desk/deskTapeUniverse.js";
+import { getDeskEquityFieldsSeen } from "../lib/desk/deskStreamerTap.js";
+import { deskAlpacaMarketBars, deskAlpacaMarketQuotes } from "../lib/desk/deskAlpacaData.js";
 import { deskResolveSource } from "../lib/desk/deskSources.js";
 
 const router: IRouter = Router();
@@ -43,6 +45,7 @@ router.get("/health", async (_req, res) => {
       buffer_frames: tape.buffer_frames,
     },
     desk_tape_universe: getDeskTapeUniverseHealth(),
+    desk_equity_fields_seen: getDeskEquityFieldsSeen(),
     session_date: deskSessionDateEt(new Date(now)),
     asof_et: deskAsofEtIso(new Date(now)),
   };
@@ -55,6 +58,7 @@ router.get("/quotes", async (req, res) => {
     "schwab",
     "tradier",
     "alpaca_paper",
+    "alpaca",
     "tastytrade",
   ] as const);
   if ("error" in resolved) {
@@ -65,6 +69,19 @@ router.get("/quotes", async (req, res) => {
   const raw = (req.query["symbols"] as string) ?? "SPY,QQQ,$SPX";
   const symbols = raw.split(",").map((s) => s.trim()).filter(Boolean);
   const session_date = deskSessionDateEt();
+
+  if (resolved.source === "alpaca") {
+    const r = await deskAlpacaMarketQuotes(symbols);
+    if (!r.ok) {
+      const status = r.error === "not_configured" ? 503 : r.status && r.status >= 400 ? r.status : 502;
+      res.status(status).json({ error: r.error ?? "alpaca_fetch_failed", source: r.source });
+      return;
+    }
+    const payload = { quotes: r.quotes, session_date };
+    void deskPersistSnapshot("quotes", payload);
+    res.json(deskEnvelope(payload, r.source, r.asOfMs, "alpaca_paper"));
+    return;
+  }
 
   if (resolved.source === "alpaca_paper") {
     const r = await deskAlpacaPaperQuotes(symbols);
@@ -246,6 +263,7 @@ router.get("/bars", async (req, res) => {
     "schwab",
     "eodhd",
     "alpaca_paper",
+    "alpaca",
   ] as const);
   if ("error" in resolved) {
     res.status(400).json({ error: resolved.error, source: resolved.source, allowed: resolved.allowed });
@@ -266,6 +284,24 @@ router.get("/bars", async (req, res) => {
     }
     res.json(
       deskEnvelope({ symbol, timeframe: "eod", bars: r.bars, session_date }, "eodhd", r.asOfMs, "eodhd"),
+    );
+    return;
+  }
+
+  if (resolved.source === "alpaca") {
+    const r = await deskAlpacaMarketBars(symbol, timeframe, limit);
+    if (!r.ok) {
+      const status = r.error === "not_configured" ? 503 : r.status && r.status >= 400 ? r.status : 502;
+      res.status(status).json({ error: r.error ?? "alpaca_bars_failed", source: r.source });
+      return;
+    }
+    res.json(
+      deskEnvelope(
+        { symbol, timeframe, bars: r.bars, session_date },
+        r.source,
+        r.asOfMs,
+        "alpaca_paper",
+      ),
     );
     return;
   }
@@ -322,6 +358,7 @@ router.get("/news", async (req, res) => {
   const resolved = deskResolveSource(req.query["source"] as string | undefined, [
     "finnhub",
     "alpaca_news",
+    "alpaca",
     "alphavantage",
     "marketaux",
     "stocknews",
@@ -390,7 +427,7 @@ router.get("/news", async (req, res) => {
     return;
   }
 
-  if (resolved.source === "alpaca_news") {
+  if (resolved.source === "alpaca_news" || resolved.source === "alpaca") {
     const r = await deskFetchAlpacaNews(syms);
     if (!r.ok) {
       const status = r.error === "not_configured" ? 503 : r.status && r.status >= 400 ? r.status : 502;
@@ -418,5 +455,37 @@ router.get("/news", async (req, res) => {
     ),
   );
 });
+
+const gammaHandler =
+  (feed: "live_gamma_0dte" | "live_gamma") =>
+  async (req: import("express").Request, res: import("express").Response) => {
+    const resolved = deskResolveSource(req.query["source"] as string | undefined, ["unusual_whales"] as const);
+    if ("error" in resolved) {
+      res.status(400).json({ error: resolved.error, source: resolved.source, allowed: resolved.allowed });
+      return;
+    }
+    await refreshDeskUwLiveFeeds().catch(() => undefined);
+    const snap = getDeskUwFeedSnapshot(feed);
+    if (!snap) {
+      res.status(503).json({ error: "gamma_snapshot_unavailable", source: "unusual_whales", feed });
+      return;
+    }
+    res.json(
+      deskEnvelope(
+        {
+          feed,
+          row_count: snap.row_count,
+          data: snap.data,
+          session_date: deskSessionDateEt(new Date(snap.asOfMs)),
+        },
+        "unusual_whales",
+        snap.asOfMs,
+        feed,
+      ),
+    );
+  };
+
+router.get("/gamma/live_gamma_0dte", gammaHandler("live_gamma_0dte"));
+router.get("/gamma/live_gamma", gammaHandler("live_gamma"));
 
 export default router;

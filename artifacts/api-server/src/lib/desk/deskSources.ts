@@ -1,17 +1,18 @@
-export type DeskQuotesSource = "schwab" | "tradier" | "alpaca_paper" | "tastytrade";
+export type DeskQuotesSource = "schwab" | "tradier" | "alpaca_paper" | "alpaca" | "tastytrade";
 export type DeskChainsSource = "schwab";
-export type DeskBarsSource = "schwab" | "eodhd" | "alpaca_paper";
+export type DeskBarsSource = "schwab" | "eodhd" | "alpaca_paper" | "alpaca";
 export type DeskNewsSource =
   | "finnhub"
   | "alpaca_news"
+  | "alpaca"
   | "alphavantage"
   | "marketaux"
   | "stocknews";
+export type DeskGammaSource = "unusual_whales";
 export type DeskFundamentalsSource = "alphavantage";
 export type DeskFlowSource = "unusual_whales";
 
 const ALIASES: Record<string, string> = {
-  alpaca: "alpaca_news",
   unusual_whales: "unusual_whales",
   uw: "unusual_whales",
   tasty: "tastytrade",
