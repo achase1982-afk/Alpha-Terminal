@@ -65,6 +65,23 @@ describe("computeOrderEconomics", () => {
     expect(econ!.totalCreditAfterFees).toBe(103.7);
   });
 
+  it("scores iron condor max loss from payoff", () => {
+    const econ = computeOrderEconomics({
+      ...spx,
+      legs: [
+        { strike: 5900, optionType: "PUT", instruction: "SELL_TO_OPEN" },
+        { strike: 5895, optionType: "PUT", instruction: "BUY_TO_OPEN" },
+        { strike: 5950, optionType: "CALL", instruction: "SELL_TO_OPEN" },
+        { strike: 5955, optionType: "CALL", instruction: "BUY_TO_OPEN" },
+      ],
+      limitPrice: 1,
+      quantity: 1,
+      isCredit: true,
+      contractCount: 4,
+    });
+    expect(econ?.maxRisk).toBe(400);
+  });
+
   it("charges no commission on stock tickets", () => {
     const econ = computeOrderEconomics({
       underlyingSymbol: "AAPL",

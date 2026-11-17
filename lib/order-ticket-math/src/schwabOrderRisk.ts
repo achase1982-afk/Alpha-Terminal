@@ -82,13 +82,12 @@ export function inferNetCreditFromLegStructure(legs: EconomicsLeg[]): boolean | 
     const sorted = [...legs].sort((a, b) => a.strike - b.strike);
     const [lo, mid, hi] = sorted;
     const q = (l: EconomicsLeg) => l.quantity ?? 1;
-    if (q(lo) === 1 && q(mid) === 2 && q(hi) === 1) {
-      if (lo.instruction.startsWith("BUY") && mid.instruction.startsWith("SELL") && hi.instruction.startsWith("BUY")) {
-        return false;
-      }
-      if (lo.instruction.startsWith("SELL") && mid.instruction.startsWith("BUY") && hi.instruction.startsWith("SELL")) {
-        return true;
-      }
+    if (q(lo) !== 1 || q(mid) !== 2 || q(hi) !== 1) return null;
+    if (lo.instruction.startsWith("BUY") && mid.instruction.startsWith("SELL") && hi.instruction.startsWith("BUY")) {
+      return false;
+    }
+    if (lo.instruction.startsWith("SELL") && mid.instruction.startsWith("BUY") && hi.instruction.startsWith("SELL")) {
+      return true;
     }
     return null;
   }
@@ -114,8 +113,13 @@ export function inferNetCreditFromLegStructure(legs: EconomicsLeg[]): boolean | 
   const sell = legs.find((l) => l.instruction.startsWith("SELL"));
   const buy = legs.find((l) => l.instruction.startsWith("BUY"));
   if (!sell || !buy) return null;
-  if (allCalls) return sell.strike < buy.strike;
-  if (allPuts) return sell.strike > buy.strike;
+  const lowStrike = Math.min(sell.strike, buy.strike);
+  const highStrike = Math.max(sell.strike, buy.strike);
+  const lowLeg = legs.find((l) => l.strike === lowStrike);
+  const highLeg = legs.find((l) => l.strike === highStrike);
+  if (!lowLeg || !highLeg) return null;
+  if (lowLeg.instruction.startsWith("SELL") && highLeg.instruction.startsWith("BUY")) return true;
+  if (lowLeg.instruction.startsWith("BUY") && highLeg.instruction.startsWith("SELL")) return false;
   return null;
 }
 
@@ -155,20 +159,24 @@ export function schwabOrderToEconomicsInput(order: SchwabOrderLike): OrderEconom
   if (price == null) return null;
 
   const optionLegs = legs.filter((l) => isOptionAsset(l.instrument?.assetType));
-  const legQtys = optionLegs.map((l) => l.quantity ?? 1);
-  const qty = spreadUnitQty(legQtys);
   const isOption = optionLegs.length > 0;
 
   if (!isOption) {
+    const equityQty = Math.max(1, ...legs.map((l) => Math.floor(l.quantity ?? 1)));
+    const ins = normalizeInstruction(legs[0]?.instruction ?? "BUY");
+    const isCredit = ins === "SELL" || ins === "SELL_SHORT";
     return {
       legs: [],
       limitPrice: price,
-      quantity: qty,
-      isCredit: false,
+      quantity: equityQty,
+      isCredit,
       isOption: false,
-      contractCount: qty,
+      contractCount: equityQty,
     };
   }
+
+  const legQtys = optionLegs.map((l) => l.quantity ?? 1);
+  const qty = spreadUnitQty(legQtys);
 
   const econLegs: EconomicsLeg[] = [];
   for (const leg of optionLegs) {
@@ -186,8 +194,18 @@ export function schwabOrderToEconomicsInput(order: SchwabOrderLike): OrderEconom
   }
 
   let isCredit = schwabOrderIsCredit(order);
-  if (isCredit == null && econLegs.length >= 2) {
+  if (isCredit == null && econLegs.length === 1) {
+    if (econLegs[0].instruction.startsWith("BUY")) {
+      isCredit = false;
+    } else {
+      return null;
+    }
+  } else if (isCredit == null && econLegs.length >= 2) {
     isCredit = inferNetCreditFromLegStructure(econLegs);
+  }
+  if (schwabOrderIsCredit(order) == null && econLegs.length === 2) {
+    const width = Math.abs(econLegs[0].strike - econLegs[1].strike);
+    if (width > 0) isCredit = price <= width / 2;
   }
   if (isCredit == null) {
     const sellCount = econLegs.filter((l) => l.instruction.startsWith("SELL")).length;

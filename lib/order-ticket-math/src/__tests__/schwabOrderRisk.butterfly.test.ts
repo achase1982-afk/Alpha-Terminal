@@ -48,6 +48,34 @@ describe("butterfly and iron fly LIMIT risk", () => {
     if (risk.kind === "known") expect(risk.maxRisk).toBe(200);
   });
 
+  it("call broken-wing butterfly debit 1.00 loses up to $600", () => {
+    const risk = schwabOrderMaxRisk({
+      orderType: "LIMIT",
+      price: 1,
+      orderLegCollection: [
+        { instruction: "BUY_TO_OPEN", quantity: 1, instrument: { assetType: "OPTION", symbol: sym("C", 500) } },
+        { instruction: "SELL_TO_OPEN", quantity: 2, instrument: { assetType: "OPTION", symbol: sym("C", 505) } },
+        { instruction: "BUY_TO_OPEN", quantity: 1, instrument: { assetType: "OPTION", symbol: sym("C", 515) } },
+      ],
+    });
+    expect(risk.kind).toBe("known");
+    if (risk.kind === "known") expect(risk.maxRisk).toBe(600);
+  });
+
+  it("put broken-wing butterfly credit 1.00 loses up to $900", () => {
+    const risk = schwabOrderMaxRisk({
+      orderType: "LIMIT",
+      price: 1,
+      orderLegCollection: [
+        { instruction: "SELL_TO_OPEN", quantity: 1, instrument: { assetType: "OPTION", symbol: sym("P", 485) } },
+        { instruction: "BUY_TO_OPEN", quantity: 2, instrument: { assetType: "OPTION", symbol: sym("P", 495) } },
+        { instruction: "SELL_TO_OPEN", quantity: 1, instrument: { assetType: "OPTION", symbol: sym("P", 500) } },
+      ],
+    });
+    expect(risk.kind).toBe("known");
+    if (risk.kind === "known") expect(risk.maxRisk).toBe(900);
+  });
+
   it("10-lot long call butterfly debit scales to $1,500", () => {
     const risk = schwabOrderMaxRisk({
       orderType: "LIMIT",

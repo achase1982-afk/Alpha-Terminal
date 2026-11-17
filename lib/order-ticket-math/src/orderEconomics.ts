@@ -72,56 +72,85 @@ function detectIronCondor(
   };
 }
 
-function detectIronButterfly(
-  legs: EconomicsLeg[],
-  isCredit: boolean | null | undefined,
-): { wing: number; body: number } | null {
-  if (legs.length !== 4 || isCredit !== true) return null;
-  const exps = new Set(legs.map((l) => l.expiration ?? ""));
-  if (exps.size !== 1) return null;
-  const puts = legs.filter((l) => l.optionType === "PUT");
-  const calls = legs.filter((l) => l.optionType === "CALL");
-  if (puts.length !== 2 || calls.length !== 2) return null;
-  const shortPut = puts.find((l) => l.instruction.startsWith("SELL"));
-  const longPut = puts.find((l) => l.instruction.startsWith("BUY"));
-  const shortCall = calls.find((l) => l.instruction.startsWith("SELL"));
-  const longCall = calls.find((l) => l.instruction.startsWith("BUY"));
-  if (!shortPut || !longPut || !shortCall || !longCall) return null;
-  if (shortPut.strike !== shortCall.strike) return null;
-  if (!(shortPut.strike > longPut.strike && longCall.strike > shortCall.strike)) return null;
-  const putWing = shortPut.strike - longPut.strike;
-  const callWing = longCall.strike - shortCall.strike;
-  return { wing: Math.max(putWing, callWing), body: shortPut.strike };
+function legIntrinsicPerShare(leg: EconomicsLeg, spot: number): number {
+  const q = leg.quantity ?? 1;
+  const k = leg.strike;
+  const sign = leg.instruction.startsWith("BUY") ? 1 : -1;
+  const raw =
+    leg.optionType === "CALL" ? Math.max(0, spot - k) : Math.max(0, k - spot);
+  return sign * raw * q;
 }
 
-function detectThreeLegButterfly(
+function portfolioValuePerShare(legs: EconomicsLeg[], spot: number): number {
+  return legs.reduce((s, l) => s + legIntrinsicPerShare(l, spot), 0);
+}
+
+function payoffSampleSpots(legs: EconomicsLeg[]): number[] {
+  const strikes = [...new Set(legs.map((l) => l.strike))].sort((a, b) => a - b);
+  const spots = new Set<number>([0, 1e9]);
+  if (strikes.length > 0) {
+    spots.add(strikes[0] - 1);
+    spots.add(strikes[strikes.length - 1] + 1);
+  }
+  for (const k of strikes) {
+    spots.add(k);
+    spots.add(k - 0.001);
+    spots.add(k + 0.001);
+  }
+  for (let i = 0; i < strikes.length - 1; i++) {
+    spots.add((strikes[i] + strikes[i + 1]) / 2);
+  }
+  return [...spots];
+}
+
+/**
+ * Max loss for a same-expiration option package with bounded payoff.
+ * P/L at spot S = (mark-to-expiry value + entry cash) × 100 × spread qty.
+ */
+function threeLegButterflyMaxLoss(
   legs: EconomicsLeg[],
-): { wing: number; isCredit: boolean } | null {
+  net: number,
+  spreadQty: number,
+  isCredit: boolean,
+): number | null {
   if (legs.length !== 3) return null;
-  const exps = new Set(legs.map((l) => l.expiration ?? ""));
-  if (exps.size !== 1) return null;
-  const allCalls = legs.every((l) => l.optionType === "CALL");
-  const allPuts = legs.every((l) => l.optionType === "PUT");
-  if (!allCalls && !allPuts) return null;
   const sorted = [...legs].sort((a, b) => a.strike - b.strike);
-  const [lo, mid, hi] = sorted;
-  const wingLo = mid.strike - lo.strike;
-  const wingHi = hi.strike - mid.strike;
-  if (wingLo <= 0 || wingHi <= 0 || Math.abs(wingLo - wingHi) > 1e-6) return null;
   const q = (l: EconomicsLeg) => l.quantity ?? 1;
-  const loBuy = lo.instruction.startsWith("BUY");
-  const midSell = mid.instruction.startsWith("SELL");
-  const hiBuy = hi.instruction.startsWith("BUY");
-  if (loBuy && midSell && hiBuy && q(lo) === 1 && q(mid) === 2 && q(hi) === 1) {
-    return { wing: wingLo, isCredit: false };
+  if (!(q(sorted[0]) === 1 && q(sorted[1]) === 2 && q(sorted[2]) === 1)) return null;
+  const wLo = sorted[1].strike - sorted[0].strike;
+  const wHi = sorted[2].strike - sorted[1].strike;
+  if (wLo <= 0 || wHi <= 0) return null;
+  const mult = 100 * spreadQty;
+  const symmetric = Math.abs(wLo - wHi) < 1e-6;
+  if (symmetric) {
+    return isCredit
+      ? Math.max(0, wLo - net) * mult
+      : Math.max(0, net) * mult;
   }
-  const loSell = lo.instruction.startsWith("SELL");
-  const midBuy = mid.instruction.startsWith("BUY");
-  const hiSell = hi.instruction.startsWith("SELL");
-  if (loSell && midBuy && hiSell && q(lo) === 1 && q(mid) === 2 && q(hi) === 1) {
-    return { wing: wingLo, isCredit: true };
+  return isCredit
+    ? Math.max(0, Math.max(wLo, wHi) - net) * mult
+    : Math.max(0, Math.abs(wHi - wLo) + net) * mult;
+}
+
+export function maxLossFromExpirationPayoff(
+  legs: EconomicsLeg[],
+  net: number,
+  spreadQty: number,
+  isCredit: boolean,
+): number | null {
+  if (legs.length === 0) return null;
+  const fly3 = threeLegButterflyMaxLoss(legs, net, spreadQty, isCredit);
+  if (fly3 != null) return fly3;
+  const mult = 100 * spreadQty;
+  let maxLoss = 0;
+  for (const spot of payoffSampleSpots(legs)) {
+    const V = portfolioValuePerShare(legs, spot);
+    const loss = isCredit
+      ? Math.max(0, Math.abs(V) - net) * mult
+      : Math.max(0, net - V) * mult;
+    if (loss > maxLoss) maxLoss = loss;
   }
-  return null;
+  return maxLoss;
 }
 
 function computeBreakevens(
@@ -178,36 +207,19 @@ export function computeOrderEconomics(input: OrderEconomicsInput): OrderEconomic
   const legs = input.legs ?? [];
   const isCredit = !!input.isCredit;
   const ic = detectIronCondor(legs, isCredit);
-  const ibf = detectIronButterfly(legs, isCredit);
-  const fly3 = detectThreeLegButterfly(legs);
 
   if (legs.length >= 2) {
-    if (ic) {
-      const wing = Math.max(ic.putWing, ic.callWing);
-      maxRisk = Math.max(0, (wing - net) * 100 * qty);
-      maxProfit = Math.max(0, net * 100 * qty);
-    } else if (ibf) {
-      maxRisk = Math.max(0, (ibf.wing - net) * 100 * qty);
-      maxProfit = Math.max(0, net * 100 * qty);
-    } else if (fly3) {
-      const credit = fly3.isCredit;
-      if (credit) {
-        maxRisk = Math.max(0, (fly3.wing - net) * 100 * qty);
-        maxProfit = Math.max(0, net * 100 * qty);
-      } else {
-        maxRisk = Math.max(0, net * 100 * qty);
-        maxProfit = Math.max(0, (fly3.wing - net) * 100 * qty);
-      }
-    } else {
-      const strikes = legs.map((l) => l.strike).sort((a, b) => a - b);
-      const width = strikes.length >= 2 ? strikes[strikes.length - 1] - strikes[0] : 0;
-      maxRisk = Math.max(0, isCredit ? (width - net) * 100 * qty : net * 100 * qty);
-      maxProfit = Math.max(0, isCredit ? net * 100 * qty : (width - net) * 100 * qty);
+    maxRisk = maxLossFromExpirationPayoff(legs, net, qty, isCredit) ?? grossNotional;
+    let maxProfitPerShare = 0;
+    for (const spot of payoffSampleSpots(legs)) {
+      const V = portfolioValuePerShare(legs, spot);
+      const profit = isCredit ? Math.max(0, net - V) : Math.max(0, V - net);
+      if (profit > maxProfitPerShare) maxProfitPerShare = profit;
     }
+    maxProfit = maxProfitPerShare * 100 * qty;
   } else if (legs.length === 1 || isOptionOrder) {
     maxRisk = grossNotional;
     maxProfit = isCredit ? grossNotional : Number.POSITIVE_INFINITY;
-    if (!isCredit) maxProfit = 0;
   }
 
   const commissionTotal = isOptionOrder ? contracts * commissionPer : 0;

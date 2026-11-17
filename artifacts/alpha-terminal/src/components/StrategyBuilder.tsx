@@ -4,6 +4,7 @@ import { useQuote, type QuoteData } from "@/hooks/useQuote";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import {
   aggregateSpreadNBBO,
+  computeOrderEconomics,
   displaySubmittedLimit,
   mergeLegStreamQuotes,
   pairedQuoteFromStreamTick,
@@ -667,9 +668,9 @@ export function StrategyBuilder({
     }));
   }, [buildSchwabSymbol, chainData]);
 
-  const metrics = useMemo(() => computeStrategyMetrics(pricedLegs), [pricedLegs]);
-  const isCredit = metrics.netDebit < 0;
-  const strategyId = useMemo(() => detectStrategyType(legs, metrics.netDebit), [legs, metrics.netDebit]);
+  const baseMetrics = useMemo(() => computeStrategyMetrics(pricedLegs), [pricedLegs]);
+  const isCredit = baseMetrics.netDebit < 0;
+  const strategyId = useMemo(() => detectStrategyType(legs, baseMetrics.netDebit), [legs, baseMetrics.netDebit]);
 
   const inlineWarnings = useMemo(() => {
     const warnings: { text: string; color: string; level: "red" | "yellow" | "orange" | "gray" }[] = [];
@@ -683,20 +684,6 @@ export function StrategyBuilder({
 
     return warnings;
   }, [legs]);
-
-  const riskChecks = useMemo(() => {
-    if (!preTradeEnabled || pricedLegs.length === 0) return [];
-    return runStrategyRiskChecks({
-      legs: pricedLegs, maxRisk: metrics.maxRisk, netDebit: metrics.netDebit,
-      riskReward: metrics.riskReward,
-      regime: pulseData?.structuralRegime?.label ?? null,
-      sessionBias: pulseData?.sessionBias?.label ?? null,
-      accountSize, preTradeMaxPositionPct, preTradeMinRR, totalDelta: metrics.totalDelta,
-    });
-  }, [preTradeEnabled, pricedLegs, metrics, pulseData, accountSize, preTradeMaxPositionPct, preTradeMinRR]);
-
-  const overallRisk = useMemo(() => getOverallLevel(riskChecks), [riskChecks]);
-  const blockedByRisk = false;
 
   const limitTickCtx = useMemo(
     () => ({ underlyingSymbol: symbol, isOption: true }),
@@ -747,6 +734,50 @@ export function StrategyBuilder({
     () => resolveSubmittedLimit(limitTickCtx, limitPrice),
     [limitTickCtx, limitPrice],
   );
+
+  const metrics = useMemo(() => {
+    const base = baseMetrics;
+    if (submittedLimit == null || submittedLimit <= 0 || pricedLegs.length === 0) return base;
+    const econLegs = pricedLegs.map((l) => ({
+      strike: l.strike,
+      optionType: l.optionType,
+      instruction: l.direction,
+      expiration: l.expiration.split(":")[0].trim(),
+      quantity: l.quantity,
+    }));
+    const contractCount = pricedLegs.reduce((s, l) => s + l.quantity, 0) * quantity;
+    const econ = computeOrderEconomics({
+      underlyingSymbol: symbol,
+      isOption: true,
+      legs: econLegs,
+      limitPrice: submittedLimit,
+      quantity,
+      isCredit,
+      contractCount,
+    });
+    if (!econ) return base;
+    return {
+      ...base,
+      maxRisk: econ.maxRisk,
+      maxReward: Number.isFinite(econ.maxProfit) ? econ.maxProfit : base.maxReward,
+      netDebit: isCredit ? -econ.grossNotional : econ.grossNotional,
+      isDebit: !isCredit,
+    };
+  }, [baseMetrics, submittedLimit, pricedLegs, quantity, symbol, isCredit]);
+
+  const riskChecks = useMemo(() => {
+    if (!preTradeEnabled || pricedLegs.length === 0) return [];
+    return runStrategyRiskChecks({
+      legs: pricedLegs, maxRisk: metrics.maxRisk, netDebit: metrics.netDebit,
+      riskReward: metrics.riskReward,
+      regime: pulseData?.structuralRegime?.label ?? null,
+      sessionBias: pulseData?.sessionBias?.label ?? null,
+      accountSize, preTradeMaxPositionPct, preTradeMinRR, totalDelta: metrics.totalDelta,
+    });
+  }, [preTradeEnabled, pricedLegs, metrics, pulseData, accountSize, preTradeMaxPositionPct, preTradeMinRR]);
+
+  const overallRisk = useMemo(() => getOverallLevel(riskChecks), [riskChecks]);
+  const blockedByRisk = false;
 
   const setMidPrice = useCallback(() => {
     if (spreadPrices?.spreadMid == null) return;
