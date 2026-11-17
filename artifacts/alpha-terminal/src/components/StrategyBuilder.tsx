@@ -657,7 +657,12 @@ export function StrategyBuilder({
   const spreadPrices = useMemo(() => {
     if (pricedLegs.length === 0) return null;
     const agg = aggregateSpreadNBBO(
-      pricedLegs.map((l) => ({ instruction: l.direction, bid: l.bid, ask: l.ask })),
+      pricedLegs.map((l) => ({
+        instruction: l.direction,
+        bid: l.bid,
+        ask: l.ask,
+        quantity: l.quantity,
+      })),
     );
     if (!agg) return null;
     const spreadBid = agg.bid;
@@ -860,11 +865,29 @@ export function StrategyBuilder({
     const upperTicker = symbol.toUpperCase();
     const jobId = `vj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
-    const strikes = legs.map(l => l.strike).sort((a, b) => a - b);
-    const width = strikes.length >= 2 ? strikes[strikes.length - 1] - strikes[0] : 0;
     const px = snapLimitForSubmit() ?? submittedLimit ?? 0;
-    const estMaxRisk = isCredit ? (width - px) * 100 * quantity : px * 100 * quantity;
-    const estMaxProfit = isCredit ? px * 100 * quantity : (width - px) * 100 * quantity;
+    const contractCount = legs.reduce((sum, l) => sum + l.quantity, 0) * quantity;
+    const dispatchEcon =
+      px > 0 && pricedLegs.length > 0
+        ? computeOrderEconomics({
+            underlyingSymbol: symbol,
+            isOption: true,
+            legs: pricedLegs.map((l) => ({
+              strike: l.strike,
+              optionType: l.optionType,
+              instruction: l.direction,
+              expiration: l.expiration.split(":")[0].trim(),
+              quantity: l.quantity,
+            })),
+            limitPrice: px,
+            quantity,
+            isCredit,
+            contractCount,
+          })
+        : null;
+    const estMaxRisk = dispatchEcon?.maxRisk ?? null;
+    const estMaxProfit =
+      dispatchEcon && Number.isFinite(dispatchEcon.maxProfit) ? dispatchEcon.maxProfit : null;
 
     const validationLegs = pricedLegs.map(l => ({
       instruction: l.direction,
@@ -944,7 +967,7 @@ export function StrategyBuilder({
   }, [
     strategistDispatchInFlight, symbol, pricedLegs, limitPrice, isCredit, quantity,
     timeInForce, quote, thesisText, isRollingShortEligible, rollingShort,
-    onSendToStrategist,
+    onSendToStrategist, snapLimitForSubmit, submittedLimit,
   ]);
 
   if (!isOpen) return null;

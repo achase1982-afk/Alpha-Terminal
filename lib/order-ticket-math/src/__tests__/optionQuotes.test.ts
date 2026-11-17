@@ -91,4 +91,44 @@ describe("optionQuotes", () => {
     expect(agg!.crossed).toBe(true);
     expect(agg!.mid).toBeNull();
   });
+
+  it("call fly 5900/5905x2/5910 weights quantity for mid 0.60", () => {
+    const agg = aggregateSpreadNBBO([
+      { instruction: "BUY_TO_OPEN", bid: 5.0, ask: 5.0, quantity: 1 },
+      { instruction: "SELL_TO_OPEN", bid: 2.7, ask: 2.7, quantity: 2 },
+      { instruction: "BUY_TO_OPEN", bid: 1.0, ask: 1.0, quantity: 1 },
+    ]);
+    expect(agg).not.toBeNull();
+    expect(agg!.mid).toBeCloseTo(0.6, 5);
+  });
+
+  it("call BWB 500/505x2/515 NBBO uses middle qty 2", () => {
+    const agg = aggregateSpreadNBBO([
+      { instruction: "BUY_TO_OPEN", bid: 8.0, ask: 8.1, quantity: 1 },
+      { instruction: "SELL_TO_OPEN", bid: 5.0, ask: 5.1, quantity: 2 },
+      { instruction: "BUY_TO_OPEN", bid: 2.2, ask: 2.3, quantity: 1 },
+    ]);
+    expect(agg).not.toBeNull();
+    const unweighted = aggregateSpreadNBBO([
+      { instruction: "BUY_TO_OPEN", bid: 8.0, ask: 8.1, quantity: 1 },
+      { instruction: "SELL_TO_OPEN", bid: 5.0, ask: 5.1, quantity: 1 },
+      { instruction: "BUY_TO_OPEN", bid: 2.2, ask: 2.3, quantity: 1 },
+    ]);
+    expect(unweighted!.mid).toBeCloseTo(5.25, 5);
+    expect(agg!.mid).toBeCloseTo(-0.2, 5);
+    expect(Math.abs(agg!.mid!)).toBeLessThan(Math.abs(unweighted!.mid!));
+  });
+
+  it("2-lot vertical GCD-normalizes leg quantities", () => {
+    const one = aggregateSpreadNBBO([
+      { instruction: "BUY_TO_OPEN", bid: 3.7, ask: 3.8, quantity: 1 },
+      { instruction: "SELL_TO_OPEN", bid: 1.2, ask: 1.25, quantity: 1 },
+    ]);
+    const two = aggregateSpreadNBBO([
+      { instruction: "BUY_TO_OPEN", bid: 3.7, ask: 3.8, quantity: 2 },
+      { instruction: "SELL_TO_OPEN", bid: 1.2, ask: 1.25, quantity: 2 },
+    ]);
+    expect(one!.mid).toBeCloseTo(two!.mid!, 8);
+    expect(one!.bid).toBeCloseTo(two!.bid!, 8);
+  });
 });
