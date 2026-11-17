@@ -71,13 +71,25 @@ router.get("/chains", async (req, res) => {
     res.status(400).json({ error: "expiration required (YYYY-MM-DD)" });
     return;
   }
-  const chain = await deskFetchSchwabChain(symbol, expiration);
+  const strikeCountRaw = req.query["strikeCount"] as string | undefined;
+  const strikeCount =
+    strikeCountRaw != null && strikeCountRaw !== ""
+      ? Math.min(parseInt(strikeCountRaw, 10) || 0, 500)
+      : undefined;
+  const range = req.query["range"] as string | undefined;
+  const chainOpts =
+    strikeCount != null || range
+      ? { strikeCount: strikeCount && strikeCount > 0 ? strikeCount : undefined, range }
+      : undefined;
+  const chain = await deskFetchSchwabChain(symbol, expiration, chainOpts);
   const payload = {
     symbol,
     expiration: expiration.slice(0, 10),
     underlyingPrice: chain.underlyingPrice,
     contracts_raw: chain.raw,
     contracts: chain.normalized,
+    truncated: chain.truncated,
+    contract_count: chain.contract_count,
     session_date: chain.session_date,
   };
   void deskPersistSnapshot("chains", payload, symbol);

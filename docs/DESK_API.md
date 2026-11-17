@@ -53,7 +53,7 @@ Outside a feed’s ET session window → `session_closed` and `stale=false`.
 | GET | `/quotes?symbols=` | Schwab REST `/marketdata/v1/quotes`; UTC ms; index bid/ask null |
 | GET | `/tape/spx/stream` | SSE Schwab streamer frames `{rx_ns,c,dir?,m,session_date,rx_utc_ms}` |
 | GET | `/tape/spx?since=` | Normalized in-memory ticks |
-| GET | `/chains?symbol=&expiration=` | Raw Schwab contracts + normalized view |
+| GET | `/chains?symbol=&expiration=` | Full Schwab chain by default (`range=ALL`, no `strikeCount`). Optional `strikeCount`, `range` (`ITM`/`NTM`/`OTM`/`ALL`). Response includes `truncated`, `contract_count`, normalized `rho`, and raw contracts. |
 | GET | `/flow` | Unusual Whales (max 3 concurrent UW HTTP) |
 | GET | `/bars` | Schwab price history |
 | GET | `/news` | Finnhub via `symbolNewsProvider` |

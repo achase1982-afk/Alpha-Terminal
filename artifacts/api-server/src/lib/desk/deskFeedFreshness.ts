@@ -211,10 +211,7 @@ function resolveStatus(
 
   const last = rec.lastDataMs;
   const stale = deskIsFeedStale(feed, last, now);
-  if (last == null) {
-    if (feed === "live_gamma_0dte" || feed === "live_gamma" || feed === "live_net_prem") return "stopped";
-    return "stale";
-  }
+  if (last == null) return "stale";
   if (stale) return "stale";
   return "OK";
 }
