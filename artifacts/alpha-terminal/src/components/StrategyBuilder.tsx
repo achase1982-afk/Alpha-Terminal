@@ -1,7 +1,9 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useQuote, type QuoteData } from "@/hooks/useQuote";
+import { useMarketStream } from "@/hooks/useMarketStream";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
+import { aggregateSpreadNBBO, mergeLegStreamQuotes, pairedQuoteFromStreamTick } from "@workspace/order-ticket-math";
 import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { startStrategistPolling } from "@/lib/strategistPoller";
@@ -498,6 +500,22 @@ export function StrategyBuilder({
   const [rollingShort, setRollingShort] = useState(false);
   const [strategistDispatchInFlight, setStrategistDispatchInFlight] = useState(false);
 
+  const optionTicks = useOptionsStreamStore((s) => s.ticks);
+  const { subscribeOptionSymbols } = useMarketStream();
+
+  const pricedLegs = useMemo(
+    () => legs.map((leg) => mergeLegStreamQuotes(leg, optionTicks[leg.schwabSymbol])),
+    [legs, optionTicks],
+  );
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const symbols = legs.map((l) => l.schwabSymbol).filter(Boolean);
+    if (symbols.length > 0) {
+      void subscribeOptionSymbols([...new Set(symbols)]);
+    }
+  }, [isOpen, legs, subscribeOptionSymbols]);
+
   useEffect(() => {
     if (isOpen) {
       setExpandedLeg(null);
@@ -512,22 +530,7 @@ export function StrategyBuilder({
       setErrorMsg("");
       setPriceError("");
       if (initialLegs && initialLegs.length > 0) {
-        const streamTicks = useOptionsStreamStore.getState().ticks;
-        const enrichedLegs = initialLegs.map(leg => {
-          const tick = leg.schwabSymbol ? streamTicks[leg.schwabSymbol] : undefined;
-          if (!tick) return leg;
-          return {
-            ...leg,
-            bid: (tick.bid != null) ? tick.bid : leg.bid,
-            ask: (tick.ask != null) ? tick.ask : leg.ask,
-            delta: (tick.delta != null) ? tick.delta : leg.delta,
-            gamma: (tick.gamma != null) ? tick.gamma : leg.gamma,
-            theta: (tick.theta != null) ? tick.theta : leg.theta,
-            vega: (tick.vega != null) ? tick.vega : leg.vega,
-            iv: (tick.iv != null) ? tick.iv : leg.iv,
-          };
-        });
-        setLegs(enrichedLegs);
+        setLegs(initialLegs);
         setMode("builder");
       } else {
         setLegs([]);
@@ -581,10 +584,11 @@ export function StrategyBuilder({
     const schwabSymbol = buildSchwabSymbol(leg.strike, leg.optionType, leg.expiration);
     const cd = chainData?.get(schwabSymbol);
     const tick = useOptionsStreamStore.getState().ticks[schwabSymbol];
+    const q = pairedQuoteFromStreamTick(tick);
     return {
       ...leg, id: nextLegId(), schwabSymbol,
-      bid: (tick && tick.bid != null) ? tick.bid : cd?.bid,
-      ask: (tick && tick.ask != null) ? tick.ask : cd?.ask,
+      bid: q.bid ?? undefined,
+      ask: q.ask ?? undefined,
       delta: (tick && tick.delta != null) ? tick.delta : cd?.delta,
       gamma: (tick && tick.gamma != null) ? tick.gamma : cd?.gamma,
       theta: (tick && tick.theta != null) ? tick.theta : cd?.theta,
@@ -626,9 +630,10 @@ export function StrategyBuilder({
         );
         const cd = chainData?.get(schwabSymbol);
         const tick = useOptionsStreamStore.getState().ticks[schwabSymbol];
+        const q = pairedQuoteFromStreamTick(tick);
         updated.schwabSymbol = schwabSymbol;
-        updated.bid = (tick && tick.bid != null) ? tick.bid : cd?.bid;
-        updated.ask = (tick && tick.ask != null) ? tick.ask : cd?.ask;
+        updated.bid = q.bid ?? undefined;
+        updated.ask = q.ask ?? undefined;
         updated.delta = (tick && tick.delta != null) ? tick.delta : cd?.delta;
         updated.gamma = (tick && tick.gamma != null) ? tick.gamma : cd?.gamma;
         updated.theta = (tick && tick.theta != null) ? tick.theta : cd?.theta;
@@ -639,7 +644,7 @@ export function StrategyBuilder({
     }));
   }, [buildSchwabSymbol, chainData]);
 
-  const metrics = useMemo(() => computeStrategyMetrics(legs), [legs]);
+  const metrics = useMemo(() => computeStrategyMetrics(pricedLegs), [pricedLegs]);
   const isCredit = metrics.netDebit < 0;
   const strategyId = useMemo(() => detectStrategyType(legs, metrics.netDebit), [legs, metrics.netDebit]);
 
@@ -657,41 +662,31 @@ export function StrategyBuilder({
   }, [legs]);
 
   const riskChecks = useMemo(() => {
-    if (!preTradeEnabled || legs.length === 0) return [];
+    if (!preTradeEnabled || pricedLegs.length === 0) return [];
     return runStrategyRiskChecks({
-      legs, maxRisk: metrics.maxRisk, netDebit: metrics.netDebit,
+      legs: pricedLegs, maxRisk: metrics.maxRisk, netDebit: metrics.netDebit,
       riskReward: metrics.riskReward,
       regime: pulseData?.structuralRegime?.label ?? null,
       sessionBias: pulseData?.sessionBias?.label ?? null,
       accountSize, preTradeMaxPositionPct, preTradeMinRR, totalDelta: metrics.totalDelta,
     });
-  }, [preTradeEnabled, legs, metrics, pulseData, accountSize, preTradeMaxPositionPct, preTradeMinRR]);
+  }, [preTradeEnabled, pricedLegs, metrics, pulseData, accountSize, preTradeMaxPositionPct, preTradeMinRR]);
 
   const overallRisk = useMemo(() => getOverallLevel(riskChecks), [riskChecks]);
   const blockedByRisk = false;
 
   const spreadPrices = useMemo(() => {
-    if (legs.length === 0) return null;
-    let spreadBid = 0, spreadAsk = 0;
-    for (const leg of legs) {
-      const isSell = leg.direction.startsWith("SELL");
-      const b = leg.bid ?? 0;
-      const a = leg.ask ?? 0;
-      if (isSell) { spreadBid += b; spreadAsk += a; }
-      else { spreadBid -= a; spreadAsk -= b; }
+    if (pricedLegs.length === 0) return null;
+    const agg = aggregateSpreadNBBO(
+      pricedLegs.map((l) => ({ instruction: l.direction, bid: l.bid, ask: l.ask })),
+    );
+    if (!agg) return null;
+    const spreadMid = agg.mid ?? (agg.bid + agg.ask) / 2;
+    if (spreadMid <= 0 || agg.crossed) {
+      return { spreadBid: agg.bid > 0 ? agg.bid : 0.01, spreadMid: spreadMid > 0 ? spreadMid : 0.01, spreadAsk: agg.ask > 0 ? agg.ask : 0.01 };
     }
-    if (isCredit) {
-      spreadBid = Math.abs(spreadBid); spreadAsk = Math.abs(spreadAsk);
-      if (spreadBid > spreadAsk) { const t = spreadBid; spreadBid = spreadAsk; spreadAsk = t; }
-    } else {
-      spreadBid = Math.abs(spreadBid);
-      spreadAsk = Math.abs(spreadAsk);
-      if (spreadBid > spreadAsk) { const t = spreadBid; spreadBid = spreadAsk; spreadAsk = t; }
-    }
-    const spreadMid = (spreadBid + spreadAsk) / 2;
-    if (spreadMid <= 0) return { spreadBid: 0.01, spreadMid: 0.01, spreadAsk: 0.01 };
-    return { spreadBid, spreadMid, spreadAsk };
-  }, [legs, isCredit]);
+    return { spreadBid: agg.bid, spreadMid, spreadAsk: agg.ask };
+  }, [pricedLegs]);
 
   useEffect(() => {
     if (spreadPrices && !limitPrice && !priceLocked) {
@@ -825,7 +820,7 @@ export function StrategyBuilder({
     const estMaxRisk = isCredit ? (width - px) * 100 * quantity : px * 100 * quantity;
     const estMaxProfit = isCredit ? px * 100 * quantity : (width - px) * 100 * quantity;
 
-    const validationLegs = legs.map(l => ({
+    const validationLegs = pricedLegs.map(l => ({
       instruction: l.direction,
       strike: l.strike,
       optionType: (l.optionType?.toUpperCase() === "CALL" ? "CALL" : "PUT") as "CALL" | "PUT",
@@ -901,7 +896,7 @@ export function StrategyBuilder({
     onSendToStrategist?.(upperTicker);
     setStrategistDispatchInFlight(false);
   }, [
-    strategistDispatchInFlight, symbol, legs, limitPrice, isCredit, quantity,
+    strategistDispatchInFlight, symbol, pricedLegs, limitPrice, isCredit, quantity,
     timeInForce, quote, thesisText, isRollingShortEligible, rollingShort,
     onSendToStrategist,
   ]);
@@ -1202,7 +1197,8 @@ export function StrategyBuilder({
                     )}
                   </div>
                   <div className="mt-1 flex flex-col gap-1">
-                    {legs.map((leg) => {
+                    {legs.map((leg, legIdx) => {
+                      const priced = pricedLegs[legIdx] ?? leg;
                       const isBuy = leg.direction.startsWith("BUY");
                       const dirColor = isBuy ? UP : DOWN;
                       const isOpen = leg.direction.includes("OPEN");
@@ -1215,7 +1211,7 @@ export function StrategyBuilder({
                         const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
                         return `${months[d.getMonth()]} ${d.getFullYear()}`;
                       })();
-                      const mid = (leg.bid != null && leg.ask != null) ? (leg.bid + leg.ask) / 2 : null;
+                      const mid = (priced.bid != null && priced.ask != null) ? (priced.bid + priced.ask) / 2 : null;
                       return (
                         <div key={leg.id}>
                           <div
@@ -1231,7 +1227,7 @@ export function StrategyBuilder({
                               <div className="text-[10px]" style={{ color: TEXT }}>{isBuy ? "Buy" : "Sell"} · {mid != null ? `Mark ${mid.toFixed(2)}` : "No data"}</div>
                             </div>
                             <div className="flex items-center gap-2 text-[10px]" style={{ color: TEXT }}>
-                              <span>B {fmt(leg.bid)} / A {fmt(leg.ask)}</span>
+                              <span>B {fmt(priced.bid)} / A {fmt(priced.ask)}</span>
                               <button onClick={(e) => { e.stopPropagation(); setExpandedLeg(expandedLeg === leg.id ? null : leg.id); }} className="text-[10px]" style={{ color: GOLD, background: "none", border: "none", cursor: "pointer" }}>Edit</button>
                               <button onClick={(e) => { e.stopPropagation(); removeLeg(leg.id); }} style={{ color: MUTED, background: "none", border: "none", cursor: "pointer" }} aria-label="Remove leg">
                                 <Trash2 className="w-2.5 h-2.5" />
@@ -1481,7 +1477,7 @@ export function StrategyBuilder({
                           const steps = 60;
                           const pnlAtPrice = (price: number) => {
                             let pnl = 0;
-                            for (const leg of legs) {
+                            for (const leg of pricedLegs) {
                               const isBuy = leg.direction.startsWith("BUY");
                               const mid = (leg.bid != null && leg.ask != null) ? (leg.bid + leg.ask) / 2 : 0;
                               const intrinsic = leg.optionType === "CALL"

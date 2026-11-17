@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
+import { useMarketStream } from "@/hooks/useMarketStream";
+import { useOptionTick, useOptionsStreamStore } from "@/lib/options-stream-store";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
@@ -19,6 +21,10 @@ import {
   resolveSubmittedLimit,
   schwabPriceFromTicket,
   stockMidLimit,
+  selectTicketExecutablePrices,
+  mergeLegStreamQuotes,
+  pairedQuoteFromStreamTick,
+  executableMid,
 } from "@workspace/order-ticket-math";
 import { useGetOptionChain } from "@workspace/api-client-react";
 import {
@@ -47,7 +53,31 @@ type MixedOptionLeg = {
   ask: number | null;
   delta: number | null;
   limitPrice: string;
+  schwabSymbol?: string | null;
 };
+
+function buildMixedLegSchwabSymbol(underlying: string, leg: MixedOptionLeg): string | null {
+  if (!leg.optionType || !leg.expiration || leg.strike == null) return null;
+  const clean = leg.expiration.split(":")[0].trim();
+  const parts = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  let yy: string;
+  let mm: string;
+  let dd: string;
+  if (parts) {
+    yy = parts[1].slice(2);
+    mm = parts[2];
+    dd = parts[3];
+  } else {
+    const d = new Date(clean + "T12:00:00");
+    if (Number.isNaN(d.getTime())) return null;
+    yy = String(d.getFullYear()).slice(2);
+    mm = String(d.getMonth() + 1).padStart(2, "0");
+    dd = String(d.getDate()).padStart(2, "0");
+  }
+  const strikePadded = String(Math.round(leg.strike * 1000)).padStart(8, "0");
+  const sym = underlying.toUpperCase().padEnd(6, " ");
+  return `${sym}${yy}${mm}${dd}${leg.optionType === "CALL" ? "C" : "P"}${strikePadded}`;
+}
 
 const STOCK_ORDER_TYPES: { value: OrderType; label: string; short: string }[] = [
   { value: "MARKET", label: "Market", short: "MKT" },
@@ -362,6 +392,31 @@ function AiCoPilotPanel({ side, symbol, limitPrice, bid, ask, quantity, isOption
 export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, optionInstruction, strategyLegs, strategyNetPrice, strategyIsCredit, isCloseOrder, onSwitchToStock, onSwitchToOptions, onSendToStrategist }: OrderTicketProps) {
   const symbol = useTerminalStore((s) => s.symbol);
   const { data: quote } = useQuote(symbol);
+  const { subscribeOptionSymbols } = useMarketStream();
+  const isMultiLeg = !!strategyLegs && strategyLegs.length >= 1;
+  const isSingleOption = !isMultiLeg && !!optionSymbol;
+  const isStockTicket = !isMultiLeg && !optionSymbol;
+  const optionTick = useOptionTick(isSingleOption ? optionSymbol : undefined);
+  const optionTicks = useOptionsStreamStore((s) => s.ticks);
+
+  const liveStrategyLegs = useMemo(() => {
+    if (!strategyLegs?.length) return strategyLegs;
+    return strategyLegs.map((leg) => mergeLegStreamQuotes(leg, optionTicks[leg.schwabSymbol]));
+  }, [strategyLegs, optionTicks]);
+
+  const execPriceQuote = useMemo(() => {
+    if (isMultiLeg) return null;
+    const mode = isSingleOption ? "single_option" : "stock";
+    return selectTicketExecutablePrices({
+      mode,
+      underlyingQuote: {
+        bid: quote?.bid ?? null,
+        ask: quote?.ask ?? null,
+        last: quote?.last ?? null,
+      },
+      optionTick: isSingleOption ? optionTick : undefined,
+    });
+  }, [isMultiLeg, isSingleOption, quote?.bid, quote?.ask, quote?.last, optionTick]);
   const pulseData = useMarketPulseStore((s) => s.pulseData);
   const preTradeEnabled = useTerminalStore((s) => s.preTradeEnabled);
   const preTradeBlockOnRed = useTerminalStore((s) => s.preTradeBlockOnRed);
@@ -410,7 +465,6 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const [qtyDisplay, setQtyDisplay] = useState("1");
   const qtyInputRef = useRef<HTMLInputElement>(null);
 
-  const isMultiLeg = !!strategyLegs && strategyLegs.length >= 1;
   const isOption = !!optionSymbol || isMultiLeg;
   const displaySymbol = isMultiLeg ? `${symbol} Strategy (${strategyLegs!.length} legs)` : optionSymbol ?? symbol;
 
@@ -423,9 +477,27 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     [symbol, isOption],
   );
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const symbols: string[] = [];
+    if (optionSymbol) symbols.push(optionSymbol);
+    if (liveStrategyLegs?.length) {
+      for (const leg of liveStrategyLegs) {
+        if (leg.schwabSymbol) symbols.push(leg.schwabSymbol);
+      }
+    }
+    for (const leg of extraOptionLegs) {
+      const sym = leg.schwabSymbol ?? buildMixedLegSchwabSymbol(symbol, leg);
+      if (sym) symbols.push(sym);
+    }
+    if (symbols.length > 0) {
+      void subscribeOptionSymbols([...new Set(symbols)]);
+    }
+  }, [isOpen, optionSymbol, liveStrategyLegs, extraOptionLegs, symbol, subscribeOptionSymbols]);
+
   const spreadPrices = useMemo(() => {
-    if (!isMultiLeg || !strategyLegs || strategyLegs.length === 0) return null;
-    const agg = aggregateSpreadNBBO(strategyLegs);
+    if (!isMultiLeg || !liveStrategyLegs || liveStrategyLegs.length === 0) return null;
+    const agg = aggregateSpreadNBBO(liveStrategyLegs);
     if (!agg) return null;
     const roundedMid =
       agg.mid != null
@@ -433,7 +505,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
         : parseCanonicalLimit(limitPrice, limitTickCtx, strategyNetPrice ?? null);
     const spreadMid = roundedMid ?? null;
     return { spreadBid: agg.bid, spreadMid, spreadAsk: agg.ask, crossed: agg.crossed || spreadMid == null };
-  }, [isMultiLeg, strategyLegs, strategyNetPrice, limitPrice, limitTickCtx]);
+  }, [isMultiLeg, liveStrategyLegs, strategyNetPrice, limitPrice, limitTickCtx]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -491,11 +563,19 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       setLimitPrice(strategyNetPrice.toFixed(2));
       return;
     }
-    if (quote?.ask != null) {
-      const mid = quote.bid != null && quote.ask != null ? ((quote.bid + quote.ask) / 2) : quote.ask;
-      setLimitPrice(mid.toFixed(2));
+    if (isSingleOption && execPriceQuote) {
+      const mid = executableMid(execPriceQuote);
+      if (mid != null) {
+        const rounded = parseCanonicalLimit(mid, limitTickCtx);
+        if (rounded != null) setLimitPrice(displaySubmittedLimit(limitTickCtx, rounded));
+      }
+      return;
     }
-  }, [isOpen, quote?.ask, quote?.bid, isMultiLeg, isCloseOrder, strategyNetPrice]);
+    if (isStockTicket && quote?.ask != null) {
+      const mid = quote.bid != null && quote.ask != null ? (quote.bid + quote.ask) / 2 : quote.ask;
+      setLimitPrice(String(mid));
+    }
+  }, [isOpen, quote?.ask, quote?.bid, isMultiLeg, isCloseOrder, strategyNetPrice, isSingleOption, isStockTicket, execPriceQuote, limitTickCtx, priceLocked, limitPrice]);
 
   // ── Options chain for mixed equity+option legs ───────────────────────────
   const { data: extraChainData, isLoading: extraChainLoading } = useGetOptionChain(
@@ -545,6 +625,12 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const needsStop = orderType === "STOP" || orderType === "STOP_LIMIT" || orderType === "TRAILING_STOP_LIMIT";
   const needsTrail = orderType === "TRAILING_STOP" || orderType === "TRAILING_STOP_LIMIT";
 
+  const ticketPxBid = !isMultiLeg ? execPriceQuote?.bid ?? null : null;
+  const ticketPxAsk = !isMultiLeg ? execPriceQuote?.ask ?? null : null;
+  const ticketPxLast = !isMultiLeg
+    ? (isSingleOption ? execPriceQuote?.last ?? null : quote?.last ?? null)
+    : null;
+
   const submittedLimit = useMemo(
     () =>
       resolveSubmittedLimit(
@@ -553,12 +639,12 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
         isMultiLeg
           ? strategyNetPrice
           : orderType === "MARKET"
-            ? (side === "BUY" ? quote?.ask : quote?.bid) ?? quote?.last ?? null
-            : quote?.last ?? null,
+            ? (side === "BUY" ? ticketPxAsk : ticketPxBid) ?? ticketPxLast ?? null
+            : ticketPxLast ?? null,
       ),
     [
       limitTickCtx, limitPrice, needsLimit, isMultiLeg, strategyNetPrice, orderType, side,
-      quote?.ask, quote?.bid, quote?.last,
+      ticketPxAsk, ticketPxBid, ticketPxLast,
     ],
   );
 
@@ -568,8 +654,8 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   );
 
   const ticketEconomics = useMemo(() => {
-    const econLegs = isMultiLeg && strategyLegs
-      ? strategyLegs.map((l) => ({
+    const econLegs = isMultiLeg && liveStrategyLegs
+      ? liveStrategyLegs.map((l) => ({
           strike: l.strike,
           optionType: l.optionType,
           instruction: l.instruction,
@@ -582,10 +668,10 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       isMultiLeg
         ? strategyNetPrice
         : orderType === "MARKET"
-          ? (side === "BUY" ? quote?.ask : quote?.bid) ?? quote?.last ?? null
+          ? (side === "BUY" ? ticketPxAsk : ticketPxBid) ?? ticketPxLast ?? null
           : needsLimit
             ? null
-            : quote?.last ?? null;
+            : ticketPxLast ?? null;
     return computeOrderEconomics({
       legs: econLegs,
       limitPrice: needsLimit || isMultiLeg ? limitPrice : undefined,
@@ -599,7 +685,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
         : quantity,
     });
   }, [
-    isMultiLeg, strategyLegs, isOption, side, orderType, quote?.ask, quote?.bid, quote?.last,
+    isMultiLeg, liveStrategyLegs, isOption, side, orderType, ticketPxAsk, ticketPxBid, ticketPxLast,
     limitPrice, needsLimit, strategyNetPrice, quantity, strategyIsCredit, symbol,
   ]);
 
@@ -610,19 +696,22 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     const stockCost = estimatedCost ?? 0;
     const optCost = extraOptionLegs.reduce((sum, leg) => {
       if (leg.strike === null) return sum;
-      const mid = leg.bid != null && leg.ask != null ? (leg.bid + leg.ask) / 2 : parseFloat(leg.limitPrice) || 0;
+      const sym = leg.schwabSymbol ?? buildMixedLegSchwabSymbol(symbol, leg);
+      const tick = sym ? optionTicks[sym] : undefined;
+      const q = pairedQuoteFromStreamTick(tick);
+      const mid = executableMid(q) ?? (parseFloat(leg.limitPrice) || 0);
       return sum + ((leg.side === "BUY" ? 1 : -1) * mid * leg.quantity * 100);
     }, 0);
     return stockCost + optCost;
-  }, [estimatedCost, extraOptionLegs]);
+  }, [estimatedCost, extraOptionLegs, optionTicks, symbol]);
 
   const optionMarkEstimate = isCloseOrder && isOption && !isMultiLeg && strategyNetPrice != null && strategyNetPrice > 0 ? strategyNetPrice : null;
   const effectiveBid = isMultiLeg && spreadPrices
     ? spreadPrices.spreadBid
-    : optionMarkEstimate != null ? optionMarkEstimate * 0.97 : quote?.bid ?? null;
+    : optionMarkEstimate != null ? optionMarkEstimate * 0.97 : ticketPxBid;
   const effectiveAsk = isMultiLeg && spreadPrices
     ? spreadPrices.spreadAsk
-    : optionMarkEstimate != null ? optionMarkEstimate * 1.03 : quote?.ask ?? null;
+    : optionMarkEstimate != null ? optionMarkEstimate * 1.03 : ticketPxAsk;
   const midPrice = midpointFromBidAsk(effectiveBid, effectiveAsk);
 
   const riskChecks = useMemo(() => {
@@ -633,7 +722,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       limitPrice: submittedLimit,
       bid: isMultiLeg && spreadPrices ? spreadPrices.spreadBid : (effectiveBid ?? null),
       ask: isMultiLeg && spreadPrices ? spreadPrices.spreadAsk : (effectiveAsk ?? null),
-      last: quote?.last ?? null,
+      last: ticketPxLast,
       regime: pulseData?.structuralRegime?.label ?? null,
       sessionBias: pulseData?.sessionBias?.label ?? null,
       preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, accountSize, stratMinPoP, isOption,
@@ -643,7 +732,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       return allChecks.filter(c => !["pulse", "rr", "size"].includes(c.id));
     }
     return allChecks;
-  }, [side, quantity, submittedLimit, effectiveBid, effectiveAsk, quote?.last, pulseData, preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, accountSize, stratMinPoP, isOption, preTradeEnabled, isMultiLeg, strategyLegs, strategyNetPrice, spreadPrices, isCloseOrder, ticketEconomics]);
+  }, [side, quantity, submittedLimit, effectiveBid, effectiveAsk, ticketPxLast, pulseData, preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, accountSize, stratMinPoP, isOption, preTradeEnabled, isMultiLeg, liveStrategyLegs, strategyNetPrice, spreadPrices, isCloseOrder, ticketEconomics]);
 
   const overallRisk = useMemo(() => getOverallLevel(riskChecks), [riskChecks]);
 
@@ -671,16 +760,16 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     const isSeamless = extendedHours || duration === "SEAMLESS" || duration === "GOOD_TILL_CANCEL_EXT";
     const session = isSeamless ? "SEAMLESS" : "NORMAL";
 
-    if (isMultiLeg && strategyLegs) {
+    if (isMultiLeg && liveStrategyLegs) {
       const parsed = schwabPriceFromTicket(limitTickCtx, limitPrice, strategyNetPrice ?? null);
-      const isTrueMultiLeg = strategyLegs.length >= 2;
+      const isTrueMultiLeg = liveStrategyLegs.length >= 2;
       if (isTrueMultiLeg) {
         // SEAMLESS session does not allow MARKET orders — force a limit price using spread mid if needed
         const seamlessFallbackPrice =
           isSeamless && parsed <= 0 && spreadPrices?.spreadMid != null ? spreadPrices.spreadMid : null;
         const resolvedPrice = parsed > 0 ? parsed : (seamlessFallbackPrice ?? 0);
         const useMarket = !isSeamless && (orderType === "MARKET" || resolvedPrice <= 0);
-        let netDirection = strategyLegs.reduce((acc, leg) => {
+        let netDirection = liveStrategyLegs.reduce((acc, leg) => {
           const isSell = leg.instruction.startsWith("SELL");
           const mid = midpointFromBidAsk(leg.bid, leg.ask);
           if (mid == null) return acc;
@@ -695,13 +784,13 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
         // OCC symbol format: TICKER(6) + YYMMDD(6) + C/P(1) + STRIKE(8) — C/P is always at index 12
         const getSymParts = (sym: string) => ({ date: sym.substring(6, 12), cp: sym.charAt(12) });
         let complexType = "CUSTOM";
-        if (strategyLegs.length === 2) {
-          const p0 = getSymParts(strategyLegs[0].schwabSymbol);
-          const p1 = getSymParts(strategyLegs[1].schwabSymbol);
+        if (liveStrategyLegs.length === 2) {
+          const p0 = getSymParts(liveStrategyLegs[0].schwabSymbol);
+          const p1 = getSymParts(liveStrategyLegs[1].schwabSymbol);
           if (p0.date === p1.date && p0.cp === p1.cp) complexType = "VERTICAL";
           else if (p0.date === p1.date && p0.cp !== p1.cp) complexType = "STRANGLE";
-        } else if (strategyLegs.length === 4) {
-          const cps = strategyLegs.map(l => getSymParts(l.schwabSymbol).cp);
+        } else if (liveStrategyLegs.length === 4) {
+          const cps = liveStrategyLegs.map(l => getSymParts(l.schwabSymbol).cp);
           if (cps.filter(c => c === "C").length === 2 && cps.filter(c => c === "P").length === 2) complexType = "IRON_CONDOR";
         }
         const o: Record<string, unknown> = {
@@ -710,7 +799,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
           duration,
           complexOrderStrategyType: complexType,
           orderStrategyType: "SINGLE",
-          orderLegCollection: strategyLegs.map(leg => ({
+          orderLegCollection: liveStrategyLegs.map(leg => ({
             instruction: leg.instruction,
             quantity: leg.quantity * quantity,
             instrument: { symbol: leg.schwabSymbol, assetType: "OPTION" },
@@ -719,7 +808,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
         if (!useMarket && resolvedPrice > 0) o.price = resolvedPrice;
         return o;
       }
-      const singleLeg = strategyLegs[0];
+      const singleLeg = liveStrategyLegs[0];
       const seamlessFallbackPriceSingle =
         isSeamless && parsed <= 0 && spreadPrices?.spreadMid != null ? spreadPrices.spreadMid : null;
       const resolvedSinglePrice = parsed > 0 ? parsed : (seamlessFallbackPriceSingle ?? 0);
@@ -740,7 +829,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     }
 
     // Single-leg: SEAMLESS session requires LIMIT — fall back to mid price if MARKET selected
-    const singleMid = midpointFromBidAsk(quote?.bid, quote?.ask) ?? quote?.ask ?? quote?.last ?? 0;
+    const singleMid = midpointFromBidAsk(ticketPxBid, ticketPxAsk) ?? ticketPxAsk ?? ticketPxLast ?? 0;
     const resolvedOrderType = isSeamless && orderType === "MARKET" ? "LIMIT" : orderType;
     const resolvedLimitPrice =
       isSeamless && orderType === "MARKET" && !limitPrice
@@ -772,7 +861,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     if (exchange !== "BEST") order.requestedDestination = exchange;
     if (taxLotMethod !== "DEFAULT") order.taxLotMethod = taxLotMethod;
     return order;
-  }, [orderType, extendedHours, duration, side, quantity, symbol, optionSymbol, isOption, isMultiLeg, strategyLegs, strategyIsCredit, isCloseOrder, optionInstruction, needsLimit, limitPrice, needsStop, stopPrice, needsTrail, trailOffset, instruction, exchange, taxLotMethod, spreadPrices, quote, limitTickCtx, submittedLimit, submittedLimitDisplay, strategyNetPrice]);
+  }, [orderType, extendedHours, duration, side, quantity, symbol, optionSymbol, isOption, isMultiLeg, liveStrategyLegs, strategyLegs, strategyIsCredit, isCloseOrder, optionInstruction, needsLimit, limitPrice, needsStop, stopPrice, needsTrail, trailOffset, instruction, exchange, taxLotMethod, spreadPrices, ticketPxBid, ticketPxAsk, ticketPxLast, limitTickCtx, submittedLimit, submittedLimitDisplay, strategyNetPrice]);
 
   const handleSubmit = useCallback(async () => {
     if (!accountHash || preTradeGate.shouldBlockSubmit) return;
@@ -891,8 +980,8 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     const configuredExtraLegs = extraOptionLegs.filter(l => l.strike !== null);
     const hasMixedLegs = !isMultiLeg && !isOption && configuredExtraLegs.length > 0;
 
-    const validationLegs = isMultiLeg && strategyLegs
-      ? strategyLegs.map(l => ({
+    const validationLegs = isMultiLeg && liveStrategyLegs
+      ? liveStrategyLegs.map(l => ({
           instruction: l.instruction,
           strike: l.strike,
           optionType: (l.optionType?.toUpperCase() === "CALL" ? "CALL" : "PUT") as "CALL" | "PUT",
@@ -902,24 +991,28 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
           ask: l.ask ?? null,
           delta: l.delta ?? null,
         }))
-      : (isOption && optionSymbol
+      : (isSingleOption && optionSymbol
           ? [{
               instruction: optionInstruction ?? (side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_CLOSE"),
               quantity,
-              bid: quote?.bid ?? null,
-              ask: quote?.ask ?? null,
+              bid: execPriceQuote?.bid ?? null,
+              ask: execPriceQuote?.ask ?? null,
             }]
           : hasMixedLegs
-            ? configuredExtraLegs.map(l => ({
-                instruction: l.side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN",
-                strike: l.strike!,
-                optionType: l.optionType!,
-                expiration: l.expiration!,
-                quantity: l.quantity,
-                bid: l.bid ?? null,
-                ask: l.ask ?? null,
-                delta: l.delta ?? null,
-              }))
+            ? configuredExtraLegs.map(l => {
+                const sym = l.schwabSymbol ?? buildMixedLegSchwabSymbol(symbol, l);
+                const q = pairedQuoteFromStreamTick(sym ? optionTicks[sym] : undefined);
+                return {
+                  instruction: l.side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN",
+                  strike: l.strike!,
+                  optionType: l.optionType!,
+                  expiration: l.expiration!,
+                  quantity: l.quantity,
+                  bid: q.bid ?? null,
+                  ask: q.ask ?? null,
+                  delta: l.delta ?? null,
+                };
+              })
             : undefined);
 
     // When the order ticket carries a stock backbone with option legs added
@@ -1048,10 +1141,11 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
     onSendToStrategist?.(upperTicker);
     setStrategistDispatchInFlight(false);
   }, [
-    strategistDispatchInFlight, symbol, isCloseOrder, isMultiLeg, strategyLegs, limitPrice,
-    strategyIsCredit, quantity, isOption, optionSymbol, optionInstruction, side, orderType,
-    duration, strategyNetPrice, quote, thesisText, isRollingShortEligible, rollingShort,
-    onSendToStrategist,
+    strategistDispatchInFlight, symbol, isCloseOrder, isMultiLeg, strategyLegs, liveStrategyLegs,
+    limitPrice, strategyIsCredit, quantity, isOption, isSingleOption, optionSymbol, optionInstruction,
+    side, orderType, duration, strategyNetPrice, quote, thesisText, isRollingShortEligible,
+    rollingShort, onSendToStrategist, extraOptionLegs, optionTicks, execPriceQuote, submittedLimit,
+    ticketEconomics,
   ]);
 
   const setMidPrice = useCallback(() => {
@@ -1059,14 +1153,16 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       setLimitPrice(displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid));
       return;
     }
-    if (isOption) {
-      const s = optionMidLimit(limitTickCtx, quote?.bid, quote?.ask);
+    if (isSingleOption) {
+      const s = optionMidLimit(limitTickCtx, ticketPxBid, ticketPxAsk);
       if (s) setLimitPrice(s);
       return;
     }
-    const s = stockMidLimit(quote?.bid, quote?.ask);
-    if (s) setLimitPrice(s);
-  }, [quote?.bid, quote?.ask, isMultiLeg, spreadPrices, limitTickCtx, isOption]);
+    if (isStockTicket) {
+      const s = stockMidLimit(ticketPxBid, ticketPxAsk);
+      if (s) setLimitPrice(s);
+    }
+  }, [ticketPxBid, ticketPxAsk, isMultiLeg, spreadPrices, limitTickCtx, isSingleOption, isStockTicket]);
 
   const setNatPrice = useCallback(() => {
     if (isMultiLeg && spreadPrices) {
@@ -1075,15 +1171,15 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       if (px != null) setLimitPrice(displaySubmittedLimit(limitTickCtx, px));
       return;
     }
-    const raw = side === "BUY" ? quote?.ask : quote?.bid;
+    const raw = side === "BUY" ? ticketPxAsk : ticketPxBid;
     if (raw == null) return;
-    if (isOption) {
+    if (isSingleOption) {
       const px = parseCanonicalLimit(raw, limitTickCtx);
       if (px != null) setLimitPrice(displaySubmittedLimit(limitTickCtx, px));
-    } else {
+    } else if (isStockTicket) {
       setLimitPrice(String(raw));
     }
-  }, [side, quote?.ask, quote?.bid, isMultiLeg, spreadPrices, strategyIsCredit, limitTickCtx, isOption]);
+  }, [side, ticketPxAsk, ticketPxBid, isMultiLeg, spreadPrices, strategyIsCredit, limitTickCtx, isSingleOption, isStockTicket]);
 
   const sliderValue = useMemo(() => {
     if (effectiveBid == null || effectiveAsk == null) return 50;
@@ -1109,6 +1205,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const sideColor = isBuy ? UP : DOWN;
   const changePct = quote?.changePct;
   const changeColor = (changePct ?? 0) >= 0 ? UP : DOWN;
+  const headerLastPx = isSingleOption ? ticketPxLast : quote?.last;
   const quoteAny = quote as Record<string, unknown> | null;
   const dayHigh = (quoteAny?.highPrice ?? quoteAny?.high) as number | undefined;
   const dayLow = (quoteAny?.lowPrice ?? quoteAny?.low) as number | undefined;
@@ -1248,7 +1345,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                     {displaySymbol !== symbol && <div style={{ fontSize: S.label, color: MUTED }}>{displaySymbol}</div>}
                   </div>
                   <div className="text-right">
-                    <div style={{ fontSize: 18, color: WHITE, fontWeight: 500 }}>{fmt(quote?.last)}</div>
+                    <div style={{ fontSize: 18, color: WHITE, fontWeight: 500 }}>{fmt(headerLastPx)}</div>
                     <div style={{ fontSize: S.badge, color: changeColor, fontWeight: 500 }}>
                       {changePct != null ? `${changePct >= 0 ? "+" : ""}${fmt(changePct)}%` : ""}
                     </div>
@@ -1746,7 +1843,10 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                       </button>
                     </div>
 
-                    {extraOptionLegs.map((leg, idx) => (
+                    {extraOptionLegs.map((leg, idx) => {
+                      const mixedSym = leg.schwabSymbol ?? buildMixedLegSchwabSymbol(symbol, leg);
+                      const mixedQ = mixedSym ? pairedQuoteFromStreamTick(optionTicks[mixedSym]) : null;
+                      return (
                       <div key={leg.id} className="mb-2 rounded-lg p-2" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${BORDER}` }}>
                         {/* Leg header */}
                         <div className="flex items-center justify-between mb-1.5">
@@ -1819,9 +1919,18 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                               {getStrikesForMixedLeg(leg).map(strike => (
                                 <button key={strike}
                                   onClick={() => {
-                                    const contract = getContractForMixedLeg({ ...leg, strike });
-                                    const mid = contract?.bid != null && contract?.ask != null ? (contract.bid + contract.ask) / 2 : null;
-                                    setExtraOptionLegs(prev => prev.map(l => l.id === leg.id ? { ...l, strike, bid: contract?.bid ?? null, ask: contract?.ask ?? null, delta: contract?.delta ?? null, limitPrice: mid != null ? mid.toFixed(2) : "" } : l));
+                                    const configured = { ...leg, strike };
+                                    const schwabSymbol = buildMixedLegSchwabSymbol(symbol, configured);
+                                    setExtraOptionLegs(prev => prev.map(l => l.id === leg.id ? {
+                                      ...l,
+                                      strike,
+                                      schwabSymbol,
+                                      bid: null,
+                                      ask: null,
+                                      delta: null,
+                                      limitPrice: "",
+                                    } : l));
+                                    if (schwabSymbol) void subscribeOptionSymbols([schwabSymbol]);
                                   }}
                                   className="text-left px-2 py-1 rounded"
                                   style={{ fontSize: S.tiny, background: FIELD, border: `1px solid ${BORDER}`, color: TEXT }}>
@@ -1842,7 +1951,9 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                             </div>
                             <div className="flex items-center justify-between gap-2">
                               <div style={{ fontSize: S.tiny, color: MUTED }}>
-                                {leg.bid != null && leg.ask != null && <span>Bid {fmt(leg.bid)} · Ask {fmt(leg.ask)}</span>}
+                                {mixedQ != null && mixedQ.bid != null && mixedQ.ask != null && (
+                                  <span>Bid {fmt(mixedQ.bid)} · Ask {fmt(mixedQ.ask)}</span>
+                                )}
                                 {leg.delta != null && <span className="ml-2">Δ {leg.delta.toFixed(2)}</span>}
                               </div>
                               <div className="inline-flex items-center" style={{ borderRadius: 999, border: `1px solid ${BORDER}`, overflow: "hidden" }}>
@@ -1861,7 +1972,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                           </div>
                         )}
                       </div>
-                    ))}
+                    );})}
 
                     {/* Net debit row */}
                     {extraOptionLegs.some(l => l.strike !== null) && (

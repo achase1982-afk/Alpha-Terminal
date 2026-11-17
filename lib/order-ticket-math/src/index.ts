@@ -4,3 +4,4 @@ export * from "./atmStrike.js";
 export * from "./orderEconomics.js";
 export * from "./ticketPreTradeGate.js";
 export * from "./ticketWire.js";
+export * from "./ticketQuotes.js";
