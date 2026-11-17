@@ -15,11 +15,15 @@ import {
 } from "./desk/deskStreamerTap.js";
 import { deskStreamerSyncDeskSymbols } from "./desk/deskStreamerDeskSync.js";
 import {
+  streamerSubApplyManagedOptionsBookSubscriptions,
   streamerSubApplyManagedOptionsSubscriptions,
   streamerSubHold,
   streamerSubMaxDeskBookKeys,
   streamerSubMaxDeskOptionKeys,
+  streamerSubParseRejectionKey,
   streamerSubRecordRejection,
+  streamerSubMergeHold,
+  streamerSubReplaceHold,
 } from "./streamerSubscriptionManager.js";
 import {
   SCHWAB_INDEX_STREAM_FRESH_MS,
@@ -187,7 +191,12 @@ const DESK_EQ_FIELDS = Array.from({ length: 52 }, (_, i) => i).join(",");
 const DESK_OPT_FIELDS = Array.from({ length: 56 }, (_, i) => i).join(",");
 const DESK_ADD_BATCH = 500;
 
+let lastNotifiedAppOptionCount = -1;
+
 function notifyDeskAppSubscriptionsChanged(): void {
+  const n = subscribedOptionSymbols.size;
+  if (n === lastNotifiedAppOptionCount) return;
+  lastNotifiedAppOptionCount = n;
   void import("./desk/deskTapeUniverse.js").then((m) => m.deskTapeUniverseOnAppSubscriptionsChanged());
 }
 
@@ -864,8 +873,21 @@ function sendFuturesSubscription(symbols: string[]) {
   }
 }
 
+function sendLevelOneOptionsUnsubs(symbols: string[]): void {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
+  const req = buildRequest("LEVELONE_OPTIONS", "UNSUBS", {
+    keys: symbols.join(","),
+  });
+  if (req) {
+    sendStreamerJson({ requests: [req] });
+    logger.info({ count: symbols.length }, "Schwab streamer: LEVELONE_OPTIONS UNSUBS (app)");
+  }
+}
+
 function sendOptionSubscription(symbols: string[], opts?: { replayDesk?: boolean }) {
   if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo) return;
+
+  if (!symbols.length) return;
 
   const req = buildRequest("LEVELONE_OPTIONS", "SUBS", {
     keys: symbols.join(","),
@@ -951,8 +973,18 @@ function sendNasdaqBookSubscription(symbols: string[]) {
   }
 }
 
-function sendOptionsBookSubscription(symbols: string[], opts?: { replayDesk?: boolean }) {
+function sendOptionsBookUnsubs(symbols: string[]): void {
   if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
+  const req = buildRequest("OPTIONS_BOOK", "UNSUBS", { keys: symbols.join(",") });
+  if (req) {
+    sendStreamerJson({ requests: [req] });
+    logger.info({ count: symbols.length }, "Schwab streamer: OPTIONS_BOOK UNSUBS (app)");
+  }
+}
+
+function sendOptionsBookSubscription(symbols: string[], opts?: { replayDesk?: boolean }) {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo) return;
+  if (!symbols.length) return;
 
   const req = buildRequest("OPTIONS_BOOK", "SUBS", {
     keys: symbols.join(","),
@@ -1725,7 +1757,7 @@ function handleMessage(raw: string) {
         if (service === "LEVELONE_OPTIONS" || service === "OPTIONS_BOOK") {
           streamerSubRecordRejection(
             service as "LEVELONE_OPTIONS" | "OPTIONS_BOOK",
-            msgText?.split(",")[0] ?? "unknown",
+            streamerSubParseRejectionKey(msgText),
             `code_${code}`,
           );
         }
@@ -2217,28 +2249,62 @@ export function addFuturesSymbols(displaySymbols: string[]) {
   }
 }
 
+const STRATEGIST_OPTIONS_HOLD = "strategist:underlyings";
+const STREAM_HTTP_OPTIONS_HOLD = "stream:http-options";
+const TUNING_WATCHLIST_HOLD = "tuning:watchlist-options";
+const OPTIONS_BOOK_APP_HOLD = "app:options-book";
+
 export function addOptionSymbols(symbols: string[], holderId?: string) {
   const cleaned = [...new Set(symbols.map((s) => s.trim()).filter(Boolean))];
   if (!cleaned.length) return;
-  const id =
-    holderId ??
-    `legacy:bg:${cleaned.slice(0, 2).join("|")}:${cleaned.length}:${cleaned[cleaned.length - 1]?.slice(0, 12) ?? ""}`;
-  streamerSubHold(id, "background", "LEVELONE_OPTIONS", cleaned);
+  const id = holderId ?? STRATEGIST_OPTIONS_HOLD;
+  if (id === STRATEGIST_OPTIONS_HOLD) {
+    streamerSubMergeHold(id, "background", "LEVELONE_OPTIONS", cleaned);
+  } else {
+    streamerSubReplaceHold(id, "background", "LEVELONE_OPTIONS", cleaned);
+  }
   void streamerSubApplyManagedOptionsSubscriptions();
 }
 
+function managedSetsEqual(next: Set<string>, prev: Set<string>): boolean {
+  if (next.size !== prev.size) return false;
+  for (const s of next) {
+    if (!prev.has(s)) return false;
+  }
+  return true;
+}
+
 export function replaceManagedLevelOneOptionSubscriptions(plan: string[]): void {
-  const next = [...new Set(plan.map((s) => s.trim()).filter(Boolean))];
-  const prev = [...subscribedOptionSymbols].sort().join("|");
-  const nxt = [...next].sort().join("|");
-  if (prev === nxt) return;
+  const next = new Set(plan.map((s) => s.trim()).filter(Boolean));
+  if (managedSetsEqual(next, subscribedOptionSymbols)) return;
+  const prev = [...subscribedOptionSymbols];
   subscribedOptionSymbols.clear();
   for (const s of next) subscribedOptionSymbols.add(s);
   if (connectionState === "connected") {
-    sendOptionSubscription([...subscribedOptionSymbols], { replayDesk: false });
+    if (next.size === 0) {
+      if (prev.length > 0) sendLevelOneOptionsUnsubs(prev);
+    } else {
+      sendOptionSubscription([...next], { replayDesk: false });
+    }
     deskStreamerReplayDeskOptionAdds();
   }
   notifyDeskAppSubscriptionsChanged();
+}
+
+export function replaceManagedOptionsBookSubscriptions(plan: string[]): void {
+  const next = new Set(plan.map((s) => s.trim()).filter(Boolean));
+  if (managedSetsEqual(next, subscribedOptionsBookSymbols)) return;
+  const prev = [...subscribedOptionsBookSymbols];
+  subscribedOptionsBookSymbols.clear();
+  for (const s of next) subscribedOptionsBookSymbols.add(s);
+  if (connectionState === "connected") {
+    if (next.size === 0) {
+      if (prev.length > 0) sendOptionsBookUnsubs(prev);
+    } else {
+      sendOptionsBookSubscription([...next], { replayDesk: false });
+    }
+    deskStreamerReplayDeskOptionsBookAdds();
+  }
 }
 
 export function removeOptionSymbols(symbols: string[]) {
@@ -2267,22 +2333,14 @@ export function schwabSymbolHasStreamingMark(apiSymbol: string): boolean {
  */
 export function setTuningWatchlistOptionUnderlyings(symbols: string[]): void {
   const next = [...new Set(symbols.map((s) => s.replace(/^\$/, "").toUpperCase()))];
-  for (const s of tuningWatchlistOptionRoots) {
-    if (!next.includes(s)) subscribedOptionSymbols.delete(s);
-  }
   tuningWatchlistOptionRoots.clear();
-  for (const s of next) {
-    tuningWatchlistOptionRoots.add(s);
-    subscribedOptionSymbols.add(s);
-  }
-  if (connectionState === "connected") {
-    sendOptionSubscription([...subscribedOptionSymbols]);
-    notifyDeskAppSubscriptionsChanged();
-    logger.info(
-      { count: next.length, sample: next.slice(0, 8).join(",") },
-      "Schwab streamer: tuning watchlist LEVELONE_OPTIONS refresh",
-    );
-  }
+  for (const s of next) tuningWatchlistOptionRoots.add(s);
+  streamerSubReplaceHold(TUNING_WATCHLIST_HOLD, "user_visible", "LEVELONE_OPTIONS", next);
+  void streamerSubApplyManagedOptionsSubscriptions();
+  logger.info(
+    { count: next.length, sample: next.slice(0, 8).join(",") },
+    "Schwab streamer: tuning watchlist LEVELONE_OPTIONS refresh",
+  );
 }
 
 export function addFuturesOptionSymbols(symbols: string[]) {
@@ -2357,20 +2415,11 @@ export function addNasdaqBookSymbols(symbols: string[]) {
 }
 
 /** On-demand OPTIONS_BOOK keys (OCC / Schwab option keys). Full replacement SUBS like other services. */
-export function addOptionsBookSymbols(symbols: string[]) {
-  const newSyms: string[] = [];
-  for (const s of symbols) {
-    const k = s.trim();
-    if (!k) continue;
-    if (!subscribedOptionsBookSymbols.has(k)) {
-      subscribedOptionsBookSymbols.add(k);
-      newSyms.push(k);
-    }
-  }
-  if (newSyms.length > 0 && connectionState === "connected") {
-    sendOptionsBookSubscription([...subscribedOptionsBookSymbols]);
-    notifyDeskAppSubscriptionsChanged();
-  }
+export function addOptionsBookSymbols(symbols: string[], holderId?: string) {
+  const cleaned = [...new Set(symbols.map((s) => s.trim()).filter(Boolean))];
+  if (!cleaned.length) return;
+  streamerSubReplaceHold(holderId ?? OPTIONS_BOOK_APP_HOLD, "user_visible", "OPTIONS_BOOK", cleaned);
+  void streamerSubApplyManagedOptionsBookSubscriptions();
 }
 
 export function onTokenRefreshed() {
@@ -2405,8 +2454,9 @@ registerDeskStreamerHealthReaders(getStreamerStatus, isConnected);
 setSchwabIndexStreamFreshCheck((sym, now = Date.now()) => {
   const snap = getQuoteBySymbol(sym);
   const ts = snap?.ts ?? null;
+  const schwabSourced = snap?.quoteSource === "SCHWAB" || snap?.quoteSource === undefined;
   return {
-    fresh: ts != null && now - ts <= SCHWAB_INDEX_STREAM_FRESH_MS,
+    fresh: schwabSourced && ts != null && now - ts <= SCHWAB_INDEX_STREAM_FRESH_MS,
     lastStreamMs: ts,
   };
 });

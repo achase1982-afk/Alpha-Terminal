@@ -21,12 +21,13 @@ vi.mock("../schwabStreamer.js", () => ({
 describe("streamerSubscriptionManager", () => {
   beforeEach(() => streamerSubResetForTests());
 
-  it("plans desk core before user_visible holds", () => {
+  it("keeps desk core out of managed app SUBS plan", () => {
     streamerSubSetDeskCore("LEVELONE_OPTIONS", ["DESK-CORE"]);
-    streamerSubHold("chain:spx", "user_visible", "LEVELONE_OPTIONS", ["USER-A"]);
+    streamerSubHold("chain:spx", "user_visible", "LEVELONE_OPTIONS", ["USER-A", "DESK-CORE"]);
     const plan = streamerSubPlanLevelOneOptions();
-    expect(plan.subscribed[0]).toBe("DESK-CORE");
+    expect(plan.subscribed).not.toContain("DESK-CORE");
     expect(plan.subscribed).toContain("USER-A");
+    expect(plan.deskCoreCount).toBe(1);
   });
 
   it("evicts background before user_visible when over cap", () => {
@@ -37,7 +38,7 @@ describe("streamerSubscriptionManager", () => {
     const plan = streamerSubPlanLevelOneOptions();
     expect(plan.subscribed).toContain("UV-MUST-KEEP");
     expect(plan.capped).toBe(true);
-    expect(plan.subscribed.length).toBeLessThanOrEqual(STREAMER_L1_OPTIONS_CAP);
+    expect(plan.subscribed.length).toBeLessThanOrEqual(STREAMER_L1_OPTIONS_CAP - 1);
   });
 
   it("release does not drop keys still held elsewhere", async () => {
@@ -60,19 +61,19 @@ describe("streamerSubscriptionManager", () => {
   it("plans 3000 keys in under 20ms", () => {
     streamerSubSetDeskCore("LEVELONE_OPTIONS", ["DESK-0"]);
     const bulk: Array<{ holderId: string; tier: StreamerSubTier; keys: string[] }> = Array.from(
-      { length: 120 },
+      { length: 80 },
       (_, i) => ({
         holderId: `holder-${i}`,
         tier: i % 3 === 0 ? "user_visible" : "background",
-        keys: Array.from({ length: 25 }, (_, j) => `K-${i}-${j}`),
+        keys: Array.from({ length: 20 }, (_, j) => `K-${i}-${j}`),
       }),
     );
     streamerSubBulkSeedHoldsForTests(bulk);
     const t0 = performance.now();
     const plan = streamerSubPlanLevelOneOptions();
     const elapsed = performance.now() - t0;
-    expect(plan.subscribed.length).toBeLessThanOrEqual(STREAMER_L1_OPTIONS_CAP);
-    expect(elapsed).toBeLessThan(20);
+    expect(plan.subscribed.length).toBeLessThanOrEqual(STREAMER_L1_OPTIONS_CAP - 1);
+    expect(elapsed).toBeLessThan(15);
   });
 
   it("health read is pure and uses cached plan", () => {

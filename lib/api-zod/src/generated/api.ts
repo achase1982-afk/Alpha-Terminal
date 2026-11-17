@@ -41,12 +41,7 @@ export const ExchangeCodeResponse = zod.object({
  * @summary Refresh access token
  */
 export const RefreshTokenBody = zod.object({
-  refreshToken: zod
-    .string()
-    .optional()
-    .describe(
-      "Optional when the server already holds the canonical Schwab refresh token",
-    ),
+  refreshToken: zod.string().optional(),
 });
 
 export const RefreshTokenResponse = zod.object({

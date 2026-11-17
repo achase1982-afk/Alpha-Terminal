@@ -1,10 +1,7 @@
 import { deskGetSchwabStreamerLimits } from "./desk/deskStreamerBudget.js";
 
 export type StreamerSubTier = "desk_core" | "user_visible" | "background";
-export type StreamerSubService =
-  | "LEVELONE_EQUITIES"
-  | "LEVELONE_OPTIONS"
-  | "OPTIONS_BOOK";
+export type StreamerSubService = "LEVELONE_OPTIONS" | "OPTIONS_BOOK";
 
 export type StreamerSubHold = {
   holderId: string;
@@ -17,6 +14,8 @@ export type StreamerSubHold = {
 export const STREAMER_L1_OPTIONS_CAP = 3_000;
 export const STREAMER_OPTIONS_BOOK_CAP = 100;
 
+const DEFAULT_HOLD_TTL_MS = 30 * 60_000;
+
 const holds = new Map<string, StreamerSubHold>();
 const rejections: Array<{ atMs: number; service: StreamerSubService; key: string; reason: string }> = [];
 
@@ -26,8 +25,8 @@ let deskCoreBookKeys = new Set<string>();
 let planGeneration = 0;
 type L1PlanCache = {
   generation: number;
-  subscribed: string[];
-  subscribedSet: Set<string>;
+  appSubscribed: string[];
+  appSubscribedSet: Set<string>;
   capped: boolean;
   deskCoreCount: number;
   userVisibleCount: number;
@@ -37,7 +36,8 @@ let l1PlanCache: L1PlanCache | null = null;
 
 type BookPlanCache = {
   generation: number;
-  subscribed: string[];
+  appSubscribed: string[];
+  appSubscribedSet: Set<string>;
 };
 let bookPlanCache: BookPlanCache | null = null;
 
@@ -45,6 +45,17 @@ function bumpPlan(): void {
   planGeneration += 1;
   l1PlanCache = null;
   bookPlanCache = null;
+}
+
+function pruneExpiredHolds(now = Date.now()): void {
+  let removed = false;
+  for (const [id, h] of holds) {
+    if (now - h.lastTouchMs > DEFAULT_HOLD_TTL_MS) {
+      holds.delete(id);
+      removed = true;
+    }
+  }
+  if (removed) bumpPlan();
 }
 
 export function streamerSubSetDeskCore(service: StreamerSubService, keys: Iterable<string>): void {
@@ -60,6 +71,7 @@ export function streamerSubHold(
   service: StreamerSubService,
   keys: string[],
 ): void {
+  pruneExpiredHolds();
   const uniq = [...new Set(keys.map((k) => k.trim()).filter(Boolean))];
   holds.set(holderId, {
     holderId,
@@ -71,11 +83,30 @@ export function streamerSubHold(
   bumpPlan();
 }
 
+export function streamerSubReplaceHold(
+  holderId: string,
+  tier: StreamerSubTier,
+  service: StreamerSubService,
+  keys: string[],
+): void {
+  streamerSubHold(holderId, tier, service, keys);
+}
+
+export function streamerSubMergeHold(
+  holderId: string,
+  tier: StreamerSubTier,
+  service: StreamerSubService,
+  keys: string[],
+): void {
+  const prev = holds.get(holderId);
+  const merged = new Set([...(prev?.keys ?? []), ...keys.map((k) => k.trim()).filter(Boolean)]);
+  streamerSubHold(holderId, tier, service, [...merged]);
+}
+
 export function streamerSubTouch(holderId: string): void {
   const h = holds.get(holderId);
   if (!h) return;
   h.lastTouchMs = Date.now();
-  bumpPlan();
 }
 
 export function streamerSubKeysForHolder(holderId: string): string[] {
@@ -86,22 +117,8 @@ export async function streamerSubRelease(holderId: string): Promise<boolean> {
   if (!holds.has(holderId)) return false;
   holds.delete(holderId);
   bumpPlan();
-  await streamerSubApplyManagedOptionsSubscriptions();
+  await streamerSubApplyManagedSubscriptions();
   return true;
-}
-
-export function streamerSubKeysExclusiveToHolder(holderId: string): string[] {
-  const h = holds.get(holderId);
-  if (!h) return [];
-  const others = new Set<string>();
-  for (const [id, hold] of holds) {
-    if (id === holderId || hold.service !== h.service) continue;
-    for (const k of hold.keys) others.add(k);
-  }
-  if (h.service === "LEVELONE_OPTIONS") {
-    return h.keys.filter((k) => !others.has(k) && !deskCoreOptionKeys.has(k));
-  }
-  return h.keys.filter((k) => !others.has(k) && !deskCoreBookKeys.has(k));
 }
 
 export function streamerSubRecordRejection(
@@ -113,28 +130,42 @@ export function streamerSubRecordRejection(
   if (rejections.length > 40) rejections.shift();
 }
 
-function tierForKey(
-  key: string,
+export function streamerSubParseRejectionKey(msgText: string | undefined): string {
+  if (!msgText?.trim()) return "unknown";
+  const occ = msgText.match(/\b[A-Z]{1,6}\s+\d{6}[CP]\d{8,}\b/);
+  if (occ) return occ[0]!.replace(/\s+/g, "");
+  const keysMatch = msgText.match(/keys=([^,\s]+)/i);
+  if (keysMatch?.[1]) return keysMatch[1].split("|")[0] ?? keysMatch[1];
+  const parts = msgText.split(",");
+  if (parts.length > 1) return parts[1]!.trim().slice(0, 40) || parts[0]!.trim().slice(0, 40);
+  return msgText.trim().slice(0, 40);
+}
+
+function buildTierMaps(
   userHolds: StreamerSubHold[],
   bgHolds: StreamerSubHold[],
-): StreamerSubTier | null {
+  desk: Set<string>,
+): { userKeys: Set<string>; bgKeys: Set<string> } {
+  const userKeys = new Set<string>();
+  const bgKeys = new Set<string>();
   for (const h of userHolds) {
-    if (h.keys.includes(key)) return "user_visible";
+    for (const k of h.keys) {
+      if (!desk.has(k)) userKeys.add(k);
+    }
   }
   for (const h of bgHolds) {
-    if (h.keys.includes(key)) return "background";
+    for (const k of h.keys) {
+      if (!desk.has(k) && !userKeys.has(k)) bgKeys.add(k);
+    }
   }
-  return null;
+  return { userKeys, bgKeys };
 }
 
 function buildL1Plan(): L1PlanCache {
   const desk = deskCoreOptionKeys;
+  const appCap = Math.max(0, STREAMER_L1_OPTIONS_CAP - desk.size);
   const ordered: string[] = [];
   const inPlan = new Set<string>();
-  for (const k of desk) {
-    inPlan.add(k);
-    ordered.push(k);
-  }
 
   const userHolds = [...holds.values()]
     .filter((h) => h.service === "LEVELONE_OPTIONS" && h.tier === "user_visible")
@@ -143,6 +174,7 @@ function buildL1Plan(): L1PlanCache {
   for (const h of userHolds) {
     for (const k of h.keys) {
       if (desk.has(k) || inPlan.has(k)) continue;
+      if (ordered.length >= appCap) break;
       inPlan.add(k);
       ordered.push(k);
       userVisibleCount += 1;
@@ -156,13 +188,14 @@ function buildL1Plan(): L1PlanCache {
   for (const h of bgHolds) {
     for (const k of h.keys) {
       if (desk.has(k) || inPlan.has(k)) continue;
+      if (ordered.length >= appCap) break;
       inPlan.add(k);
       ordered.push(k);
       backgroundCount += 1;
     }
   }
 
-  if (ordered.length > STREAMER_L1_OPTIONS_CAP) {
+  if (ordered.length > appCap) {
     const lruDropOrder: string[] = [];
     const seenDrop = new Set<string>();
     for (const h of bgHolds) {
@@ -179,25 +212,24 @@ function buildL1Plan(): L1PlanCache {
         lruDropOrder.push(k);
       }
     }
-    const drop = new Set(lruDropOrder.slice(0, ordered.length - STREAMER_L1_OPTIONS_CAP));
+    const drop = new Set(lruDropOrder.slice(0, ordered.length - appCap));
     const trimmed = ordered.filter((k) => !drop.has(k));
     ordered.length = 0;
     ordered.push(...trimmed);
-    for (const k of drop) inPlan.delete(k);
-    backgroundCount = 0;
+    const tierMaps = buildTierMaps(userHolds, bgHolds, desk);
     userVisibleCount = 0;
+    backgroundCount = 0;
     for (const k of ordered) {
-      if (desk.has(k)) continue;
-      if (tierForKey(k, userHolds, bgHolds) === "user_visible") userVisibleCount += 1;
-      else if (tierForKey(k, userHolds, bgHolds) === "background") backgroundCount += 1;
+      if (tierMaps.userKeys.has(k)) userVisibleCount += 1;
+      else if (tierMaps.bgKeys.has(k)) backgroundCount += 1;
     }
   }
 
   return {
     generation: planGeneration,
-    subscribed: ordered,
-    subscribedSet: new Set(ordered),
-    capped: ordered.length >= STREAMER_L1_OPTIONS_CAP,
+    appSubscribed: ordered,
+    appSubscribedSet: new Set(ordered),
+    capped: desk.size + ordered.length >= STREAMER_L1_OPTIONS_CAP,
     deskCoreCount: desk.size,
     userVisibleCount,
     backgroundCount,
@@ -211,19 +243,23 @@ function getL1PlanCache(): L1PlanCache {
 }
 
 function buildBookPlan(): BookPlanCache {
-  const ordered: string[] = [...deskCoreBookKeys];
-  const seen = new Set(ordered);
+  const desk = deskCoreBookKeys;
+  const appCap = Math.max(0, STREAMER_OPTIONS_BOOK_CAP - desk.size);
+  const ordered: string[] = [];
+  const seen = new Set<string>();
   for (const h of holds.values()) {
     if (h.service !== "OPTIONS_BOOK") continue;
     for (const k of h.keys) {
-      if (seen.has(k)) continue;
+      if (desk.has(k) || seen.has(k)) continue;
+      if (ordered.length >= appCap) break;
       seen.add(k);
       ordered.push(k);
     }
   }
   return {
     generation: planGeneration,
-    subscribed: ordered.slice(0, STREAMER_OPTIONS_BOOK_CAP),
+    appSubscribed: ordered,
+    appSubscribedSet: new Set(ordered),
   };
 }
 
@@ -235,13 +271,15 @@ function getBookPlanCache(): BookPlanCache {
 
 export function streamerSubPlanLevelOneOptions(): {
   subscribed: string[];
+  appSubscribed: string[];
   capped: boolean;
   budget: number;
   deskCoreCount: number;
 } {
   const c = getL1PlanCache();
   return {
-    subscribed: c.subscribed,
+    subscribed: c.appSubscribed,
+    appSubscribed: c.appSubscribed,
     capped: c.capped,
     budget: STREAMER_L1_OPTIONS_CAP,
     deskCoreCount: c.deskCoreCount,
@@ -250,28 +288,15 @@ export function streamerSubPlanLevelOneOptions(): {
 
 export function streamerSubPlanOptionsBook(): { subscribed: string[]; budget: number } {
   const c = getBookPlanCache();
-  return { subscribed: c.subscribed, budget: STREAMER_OPTIONS_BOOK_CAP };
+  return { subscribed: c.appSubscribed, budget: STREAMER_OPTIONS_BOOK_CAP };
 }
 
-/** Max desk-owned L1 option keys before user/background holds consume the cap. */
 export function streamerSubMaxDeskOptionKeys(): number {
-  const heldNonDesk = new Set<string>();
-  for (const h of holds.values()) {
-    if (h.service !== "LEVELONE_OPTIONS" || h.tier === "desk_core") continue;
-    for (const k of h.keys) {
-      if (!deskCoreOptionKeys.has(k)) heldNonDesk.add(k);
-    }
-  }
-  return Math.max(0, STREAMER_L1_OPTIONS_CAP - heldNonDesk.size);
+  return Math.max(0, STREAMER_L1_OPTIONS_CAP - getL1PlanCache().appSubscribed.length);
 }
 
 export function streamerSubMaxDeskBookKeys(): number {
-  const held = new Set<string>();
-  for (const h of holds.values()) {
-    if (h.service !== "OPTIONS_BOOK") continue;
-    for (const k of h.keys) if (!deskCoreBookKeys.has(k)) held.add(k);
-  }
-  return Math.max(0, STREAMER_OPTIONS_BOOK_CAP - held.size);
+  return Math.max(0, STREAMER_OPTIONS_BOOK_CAP - getBookPlanCache().appSubscribed.length);
 }
 
 export function streamerSubHoldCount(): number {
@@ -290,22 +315,33 @@ export function getStreamerSubscriptionHealth(_now = Date.now()) {
       user_visible: l1.userVisibleCount,
       background: l1.backgroundCount,
       managed_holds: holds.size,
-      planned: l1.subscribed.length,
+      planned_app: l1.appSubscribed.length,
+      planned: l1.deskCoreCount + l1.appSubscribed.length,
       capped: l1.capped,
     },
     options_book: {
       cap: STREAMER_OPTIONS_BOOK_CAP,
       desk_core: deskCoreBookKeys.size,
-      planned: book.subscribed.length,
+      planned_app: book.appSubscribed.length,
+      planned: deskCoreBookKeys.size + book.appSubscribed.length,
     },
     streamer_add_rejections: rejections.slice(-20),
   };
 }
 
 export async function streamerSubApplyManagedOptionsSubscriptions(): Promise<void> {
-  const plan = getL1PlanCache().subscribed;
+  const appPlan = getL1PlanCache().appSubscribed;
   const { replaceManagedLevelOneOptionSubscriptions } = await import("./schwabStreamer.js");
-  replaceManagedLevelOneOptionSubscriptions(plan);
+  replaceManagedLevelOneOptionSubscriptions(appPlan);
+}
+
+/** @deprecated use streamerSubApplyManagedOptionsSubscriptions */
+export const streamerSubApplyManagedSubscriptions = streamerSubApplyManagedOptionsSubscriptions;
+
+export async function streamerSubApplyManagedOptionsBookSubscriptions(): Promise<void> {
+  const appPlan = getBookPlanCache().appSubscribed;
+  const { replaceManagedOptionsBookSubscriptions } = await import("./schwabStreamer.js");
+  replaceManagedOptionsBookSubscriptions(appPlan);
 }
 
 export function streamerSubResetForTests(): void {
@@ -316,7 +352,6 @@ export function streamerSubResetForTests(): void {
   bumpPlan();
 }
 
-/** Test hook: seed many holds without apply. */
 export function streamerSubSeedHoldForTests(
   holderId: string,
   tier: StreamerSubTier,
@@ -332,7 +367,6 @@ export function streamerSubSeedHoldForTests(
   bumpPlan();
 }
 
-/** Perf tests: seed many holds with a single plan invalidation. */
 export function streamerSubBulkSeedHoldsForTests(
   rows: Array<{ holderId: string; tier: StreamerSubTier; keys: string[] }>,
 ): void {

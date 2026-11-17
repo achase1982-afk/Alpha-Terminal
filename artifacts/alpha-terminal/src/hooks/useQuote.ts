@@ -75,23 +75,14 @@ export function useQuote(symbol: string) {
   const fiftyTwoWeekLow  = (restMatchesSymbol ? restData.fiftyTwoWeekLow  : null) ?? null;
   const peRatio          = (restMatchesSymbol ? restData.peRatio          : null) ?? null;
 
-  const restLast =
-    restMatchesSymbol && typeof restData.last === "number" && Number.isFinite(restData.last)
-      ? restData.last
-      : null;
-
   const data: QuoteData = {
     symbol:           symUpper,
     description,
-    last:             streamQuote?.last         ?? restLast,
-    regularLast:      streamQuote?.regularLast  ?? restLast,
+    last:             streamQuote?.last         ?? null,
+    regularLast:      streamQuote?.regularLast  ?? null,
     extendedLast:     streamQuote?.extendedLast ?? null,
-    bid:
-      streamQuote?.bid ??
-      (restMatchesSymbol && typeof restData.bid === "number" ? restData.bid : null),
-    ask:
-      streamQuote?.ask ??
-      (restMatchesSymbol && typeof restData.ask === "number" ? restData.ask : null),
+    bid:              streamQuote?.bid          ?? null,
+    ask:              streamQuote?.ask          ?? null,
     bidSize:          streamQuote?.bidSize      ?? null,
     askSize:          streamQuote?.askSize      ?? null,
     change:           streamQuote?.change       ?? null,

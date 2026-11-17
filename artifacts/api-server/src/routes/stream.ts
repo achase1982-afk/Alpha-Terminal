@@ -62,7 +62,7 @@ router.post("/option-symbols", (req, res) => {
     const all = symbols.filter((s): s is string => typeof s === "string");
     const futOpt = all.filter(s => s.startsWith("./"));
     const eqOpt = all.filter(s => !s.startsWith("./"));
-    if (eqOpt.length > 0) addSchwabOptionSymbols(eqOpt);
+    if (eqOpt.length > 0) addSchwabOptionSymbols(eqOpt, "stream:http-options");
     if (futOpt.length > 0) addSchwabFuturesOptionSymbols(futOpt);
   }
   res.json({ ok: true });

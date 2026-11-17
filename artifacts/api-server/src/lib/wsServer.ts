@@ -15,7 +15,10 @@ import {
 import { getTokens } from "./tokenStore.js";
 import { registerPortfolioErrorBroadcast } from "./portfolioWsErrorHub.js";
 import { fetchMappedSchwabAccounts } from "./schwabPortfolioAccounts.js";
-import { overlayPortfolioMarksFromStream } from "./portfolioStreamMarkOverlay.js";
+import {
+  collectPortfolioStreamSymbols,
+  overlayPortfolioMarksFromStream,
+} from "./portfolioStreamMarkOverlay.js";
 import {
   streamerSubApplyManagedOptionsSubscriptions,
   streamerSubHold,
@@ -24,7 +27,8 @@ import {
 
 const WS_PATH = "/api/ws/prices";
 const HEARTBEAT_MS = 25_000;
-const PORTFOLIO_POLL_MS = 60_000;
+const PORTFOLIO_POLL_MS = 1_000;
+const PORTFOLIO_STREAM_MARK_THROTTLE_MS = 250;
 const ACCT_ACTIVITY_DEBOUNCE_MS = 2_000;
 const PORTFOLIO_POSITIONS_HOLD_ID = "portfolio:positions";
 const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
@@ -37,6 +41,9 @@ let portfolioSharedTimer: ReturnType<typeof setInterval> | null = null;
 let portfolioPollInFlight = false;
 let portfolioLoadPromise: Promise<SharedPortfolioSnapshot | null> | null = null;
 let acctActivityDebounce: ReturnType<typeof setTimeout> | null = null;
+let portfolioStreamSymbols = new Set<string>();
+let portfolioMarkThrottle: ReturnType<typeof setTimeout> | null = null;
+let portfolioMarkThrottlePending = false;
 
 type SharedPortfolioSnapshot = {
   fetchedAtMs: number;
@@ -50,6 +57,7 @@ async function loadSharedPortfolioSnapshot(token: string, force = false): Promis
   const now = Date.now();
   if (!force && sharedPortfolioSnapshot && now - sharedPortfolioSnapshot.fetchedAtMs < PORTFOLIO_POLL_MS) {
     overlayPortfolioMarksFromStream(sharedPortfolioSnapshot.mapped);
+    portfolioStreamSymbols = collectPortfolioStreamSymbols(sharedPortfolioSnapshot.mapped);
     return sharedPortfolioSnapshot;
   }
   if (portfolioLoadPromise) return portfolioLoadPromise;
@@ -65,6 +73,7 @@ async function loadSharedPortfolioSnapshot(token: string, force = false): Promis
         }
       }
       overlayPortfolioMarksFromStream(mapped);
+      portfolioStreamSymbols = collectPortfolioStreamSymbols(mapped);
       let orders: unknown[] = [];
       const hash = await getAccountHash(token);
       if (hash) {
@@ -425,6 +434,7 @@ function subscribeStreamerForPortfolioAccounts(
 function pushCachedPortfolioToClient(ws: WebSocket): void {
   if (!sharedPortfolioSnapshot || ws.readyState !== WebSocket.OPEN) return;
   overlayPortfolioMarksFromStream(sharedPortfolioSnapshot.mapped);
+  portfolioStreamSymbols = collectPortfolioStreamSymbols(sharedPortfolioSnapshot.mapped);
   safeSend(ws, JSON.stringify({ event: "portfolioStatus", data: { status: "ok" } }));
   if (sharedPortfolioSnapshot.mapped.length > 0) {
     safeSend(ws, JSON.stringify({ event: "portfolioAccounts", data: sharedPortfolioSnapshot.mapped }));
@@ -460,9 +470,9 @@ async function fetchAndPushPortfolio(ws: WebSocket, isClosed: () => boolean) {
     return;
   }
 
-  logger.info(
+  logger.debug(
     { ts: Date.now(), accountCount: snap.mapped.length, shared: true },
-    `[PORTFOLIO_POLL] shared accounts snapshot (${snap.mapped.length} accounts)`,
+    "portfolio poll pushed accounts snapshot",
   );
   safeSend(ws, JSON.stringify({ event: "portfolioStatus", data: { status: "ok" } }));
   if (snap.mapped.length > 0) {
@@ -487,10 +497,44 @@ export function requestPortfolioRefreshFromAcctActivity(): void {
   }, ACCT_ACTIVITY_DEBOUNCE_MS);
 }
 
-export function refreshPortfolioMarksFromStream(): void {
+function portfolioSymbolFromEvent(event: string, data: unknown): string | null {
+  if (data == null || typeof data !== "object") return null;
+  const row = data as Record<string, unknown>;
+  if (event === "optionQuote" && typeof row.key === "string") return row.key;
+  const sym = row.symbol ?? row.sym;
+  return typeof sym === "string" ? sym.toUpperCase() : null;
+}
+
+function schedulePortfolioMarkRefresh(): void {
+  if (!portfolioMarkThrottlePending) {
+    portfolioMarkThrottlePending = true;
+    portfolioMarkThrottle = setTimeout(() => {
+      portfolioMarkThrottle = null;
+      portfolioMarkThrottlePending = false;
+      if (!sharedPortfolioSnapshot || portfolioClients.size === 0) return;
+      const changed = overlayPortfolioMarksFromStream(sharedPortfolioSnapshot.mapped);
+      if (changed) void runSharedPortfolioPoll();
+    }, PORTFOLIO_STREAM_MARK_THROTTLE_MS);
+    portfolioMarkThrottle.unref?.();
+  }
+}
+
+export function refreshPortfolioMarksFromStream(event: string, data: unknown): void {
   if (!sharedPortfolioSnapshot || portfolioClients.size === 0) return;
-  overlayPortfolioMarksFromStream(sharedPortfolioSnapshot.mapped);
-  void runSharedPortfolioPoll();
+  const sym = portfolioSymbolFromEvent(event, data);
+  if (sym && portfolioStreamSymbols.size > 0) {
+    const hit =
+      portfolioStreamSymbols.has(sym) ||
+      portfolioStreamSymbols.has(sym.toUpperCase()) ||
+      portfolioStreamSymbols.has(normalizePortfolioSym(sym));
+    if (!hit) return;
+  }
+  schedulePortfolioMarkRefresh();
+}
+
+function normalizePortfolioSym(sym: string): string {
+  const u = sym.toUpperCase();
+  return u.startsWith("$") ? u : u;
 }
 
 async function runSharedPortfolioPoll(): Promise<void> {
@@ -531,7 +575,9 @@ function stopPortfolioPoll(ws: WebSocket) {
   portfolioClosed.delete(ws);
   plCalcLogState.delete(ws);
   if (portfolioClients.size === 0) {
-    streamerSubRelease(PORTFOLIO_POSITIONS_HOLD_ID);
+    void streamerSubRelease(PORTFOLIO_POSITIONS_HOLD_ID).catch((err) =>
+      logger.debug({ err }, "portfolio hold release failed"),
+    );
     if (portfolioSharedTimer) {
       clearInterval(portfolioSharedTimer);
       portfolioSharedTimer = null;
@@ -554,7 +600,7 @@ export function broadcastToClients(event: string, data: unknown) {
     }
   }
   if (event === "quote" || event === "optionQuote") {
-    refreshPortfolioMarksFromStream();
+    refreshPortfolioMarksFromStream(event, data);
   }
 }
 

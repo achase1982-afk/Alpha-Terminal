@@ -18,7 +18,13 @@ import {
   deskComputeDeskOptionsBookBudget,
   deskGetSchwabStreamerLimits,
 } from "./deskStreamerBudget.js";
-import { streamerSubSetDeskCore } from "../streamerSubscriptionManager.js";
+import {
+  streamerSubApplyManagedOptionsBookSubscriptions,
+  streamerSubApplyManagedOptionsSubscriptions,
+  streamerSubMaxDeskBookKeys,
+  streamerSubMaxDeskOptionKeys,
+  streamerSubSetDeskCore,
+} from "../streamerSubscriptionManager.js";
 import {
   getAppLevelOneOptionSymbols,
   getAppLevelOneOptionsCount,
@@ -198,14 +204,12 @@ export async function deskTapeUniverseRefresh(force = false): Promise<void> {
       const needsOptions = counts.levelone_options === 0;
       if (!force && !expiryChanged && !spotMoved && !needsOptions && lastRefreshMs > 0) return;
       const { levelone, book } = await buildUniverseKeys(expiries, spot);
-      deskStreamerSetDeskOptions(levelone);
-      if (book.length) deskStreamerSetDeskOptionsBook(book);
       streamerSubSetDeskCore("LEVELONE_OPTIONS", levelone);
       streamerSubSetDeskCore("OPTIONS_BOOK", book);
-      const { streamerSubApplyManagedOptionsSubscriptions } = await import(
-        "../streamerSubscriptionManager.js"
-      );
       await streamerSubApplyManagedOptionsSubscriptions();
+      await streamerSubApplyManagedOptionsBookSubscriptions();
+      deskStreamerSetDeskOptions(levelone);
+      if (book.length) deskStreamerSetDeskOptionsBook(book);
 
       lastSpot = spot;
       lastExpiryKey = expiryKey;
@@ -223,7 +227,8 @@ export async function deskTapeUniverseRefresh(force = false): Promise<void> {
           leveloneCapReason,
           optionsByExpiry,
           appOptions: getAppLevelOneOptionsCount(),
-          deskBudget: deskComputeDeskLevelOneOptionsBudget(getAppLevelOneOptionsCount()),
+          deskBudget: streamerSubMaxDeskOptionKeys(),
+          deskBookBudget: streamerSubMaxDeskBookKeys(),
         },
         "Desk tape universe refreshed",
       );

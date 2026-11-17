@@ -3,6 +3,7 @@ process.env.DATABASE_URL =
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  streamerSubApplyManagedOptionsBookSubscriptions,
   streamerSubApplyManagedOptionsSubscriptions,
   streamerSubResetForTests,
 } from "../../streamerSubscriptionManager.js";
@@ -117,12 +118,13 @@ describe("schwabStreamer desk wire (mocked send)", () => {
     expect(countAdds(reqs, "LEVELONE_EQUITIES")).toBe(0);
   });
 
-  it("app OPTIONS_BOOK SUBS replays only desk book (no options/equity ADD)", () => {
+  it("app OPTIONS_BOOK SUBS replays only desk book (no options/equity ADD)", async () => {
     deskStreamerAddEquity(["$SPX"]);
     deskStreamerSetDeskOptions(["DESK_OPT"]);
     deskStreamerSetDeskOptionsBook(["DESK_BOOK"]);
     outbound.length = 0;
     addOptionsBookSymbols(["CLIENT_BOOK"]);
+    await streamerSubApplyManagedOptionsBookSubscriptions();
     const reqs = collectRequests(outbound);
     expect(countAdds(reqs, "OPTIONS_BOOK")).toBeGreaterThanOrEqual(1);
     expect(countAdds(reqs, "LEVELONE_OPTIONS")).toBe(0);
