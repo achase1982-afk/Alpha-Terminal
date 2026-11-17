@@ -66,10 +66,10 @@ export async function deskFetchSchwabBars(
   );
   const feed = deskSchwabQuotesFeed(app);
   if (!token) {
-    if (preferred === "app2" || app === "app2") {
+    if (preferred === "app2") {
       deskMarkFeedNotAuthorized("schwab2_rest", "schwab2_oauth_required", "schwab_rest_2");
-    } else {
-      deskMarkFeedNotAuthorized("schwab_quotes_rest", "schwab_oauth_required");
+    } else if (app === "app1") {
+      deskMarkAuthFail("schwab_quotes_rest");
     }
     return { bars: [], asOfMs: Date.now(), app, fellBack };
   }

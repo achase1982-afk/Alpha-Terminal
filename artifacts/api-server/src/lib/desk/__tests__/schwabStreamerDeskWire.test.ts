@@ -4,6 +4,7 @@ import {
   __deskStreamerWireTestPrime,
   __deskStreamerWireTestUnprime,
   addOptionSymbols,
+  addOptionsBookSymbols,
   addSymbols,
   deskStreamerAddEquity,
   deskStreamerAfterLoginAppSubsThenDeskReplay,
@@ -80,18 +81,42 @@ describe("schwabStreamer desk wire (mocked send)", () => {
     expect(adds.some((r) => r.parameters?.keys?.includes("$SPX"))).toBe(true);
   });
 
-  it("login replay: exactly one desk ADD per service after app SUBS", () => {
+  it("login replay: one ADD batch per service (options split across 500-key batches)", () => {
     addSymbols(["QQQ"]);
-    addOptionSymbols(["APP_OPT"]);
+    const manyDeskOpts = Array.from({ length: 501 }, (_, i) => `DESK_OPT_${i}`);
+    deskStreamerSetDeskOptions(manyDeskOpts);
     deskStreamerAddEquity(["$SPX"]);
-    deskStreamerSetDeskOptions(["DESK_OPT_1"]);
     deskStreamerSetDeskOptionsBook(["DESK_BOOK_1"]);
     outbound.length = 0;
     deskStreamerAfterLoginAppSubsThenDeskReplay();
     const reqs = collectRequests(outbound);
     expect(countAdds(reqs, "LEVELONE_EQUITIES")).toBe(1);
-    expect(countAdds(reqs, "LEVELONE_OPTIONS")).toBe(1);
+    expect(countAdds(reqs, "LEVELONE_OPTIONS")).toBe(2);
     expect(countAdds(reqs, "OPTIONS_BOOK")).toBe(1);
+  });
+
+  it("app options SUBS replays only desk options (no book/equity ADD)", () => {
+    deskStreamerAddEquity(["$SPX"]);
+    deskStreamerSetDeskOptions(["DESK_OPT"]);
+    deskStreamerSetDeskOptionsBook(["DESK_BOOK"]);
+    outbound.length = 0;
+    addOptionSymbols(["CLIENT_OPT"]);
+    const reqs = collectRequests(outbound);
+    expect(countAdds(reqs, "LEVELONE_OPTIONS")).toBeGreaterThanOrEqual(1);
+    expect(countAdds(reqs, "OPTIONS_BOOK")).toBe(0);
+    expect(countAdds(reqs, "LEVELONE_EQUITIES")).toBe(0);
+  });
+
+  it("app OPTIONS_BOOK SUBS replays only desk book (no options/equity ADD)", () => {
+    deskStreamerAddEquity(["$SPX"]);
+    deskStreamerSetDeskOptions(["DESK_OPT"]);
+    deskStreamerSetDeskOptionsBook(["DESK_BOOK"]);
+    outbound.length = 0;
+    addOptionsBookSymbols(["CLIENT_BOOK"]);
+    const reqs = collectRequests(outbound);
+    expect(countAdds(reqs, "OPTIONS_BOOK")).toBeGreaterThanOrEqual(1);
+    expect(countAdds(reqs, "LEVELONE_OPTIONS")).toBe(0);
+    expect(countAdds(reqs, "LEVELONE_EQUITIES")).toBe(0);
   });
 
   it("app LEVELONE_OPTIONS SUBS re-sends desk ADD batch", () => {

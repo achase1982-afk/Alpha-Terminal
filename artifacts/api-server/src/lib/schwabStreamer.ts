@@ -869,7 +869,7 @@ function sendOptionSubscription(symbols: string[], opts?: { replayDesk?: boolean
     sendStreamerJson({ requests: [req] });
     logger.info({ count: symbols.length }, "Schwab streamer: LEVELONE_OPTIONS SUBS sent");
     if (opts?.replayDesk !== false) {
-      deskStreamerReplayDeskAdds();
+      deskStreamerReplayDeskOptionAdds();
     }
   }
 }
@@ -956,7 +956,7 @@ function sendOptionsBookSubscription(symbols: string[], opts?: { replayDesk?: bo
     sendStreamerJson({ requests: [req] });
     logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: OPTIONS_BOOK SUBS sent");
     if (opts?.replayDesk !== false) {
-      deskStreamerReplayDeskAdds();
+      deskStreamerReplayDeskOptionsBookAdds();
     }
   }
 }
@@ -1099,17 +1099,32 @@ export function deskStreamerAddOptionsBook(symbols: string[]): number {
   return deskStreamerSetDeskOptionsBook(symbols);
 }
 
-export function deskStreamerReplayDeskAdds(): void {
+export function deskStreamerReplayDeskEquityAdds(): void {
   if (connectionState !== "connected") return;
   if (deskAddedEquitySymbols.size > 0) {
     batchDeskAdd(sendDeskEquityAdd, [...deskAddedEquitySymbols]);
   }
+}
+
+export function deskStreamerReplayDeskOptionAdds(): void {
+  if (connectionState !== "connected") return;
   if (deskAddedOptionSymbols.size > 0) {
     batchDeskAdd(sendDeskOptionAdd, [...deskAddedOptionSymbols]);
   }
+}
+
+export function deskStreamerReplayDeskOptionsBookAdds(): void {
+  if (connectionState !== "connected") return;
   if (deskAddedOptionsBookSymbols.size > 0) {
     batchDeskAdd(sendDeskOptionsBookAdd, [...deskAddedOptionsBookSymbols]);
   }
+}
+
+export function deskStreamerReplayDeskAdds(): void {
+  if (connectionState !== "connected") return;
+  deskStreamerReplayDeskEquityAdds();
+  deskStreamerReplayDeskOptionAdds();
+  deskStreamerReplayDeskOptionsBookAdds();
 }
 
 /** After LOGIN: app full SUBS (no desk replay), then one desk ADD replay — only login path. */
