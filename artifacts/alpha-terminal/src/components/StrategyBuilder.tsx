@@ -240,7 +240,7 @@ export function computeStrategyMetrics(legs: StrategyLeg[]) {
 
   for (const leg of legs) {
     const isBuy = leg.direction.startsWith("BUY");
-    const mid = (leg.bid != null && leg.ask != null) ? (leg.bid + leg.ask) / 2 : null;
+    const mid = midpointFromBidAsk(leg.bid, leg.ask);
     if (mid == null) { hasPrices = false; continue; }
     const cost = mid * leg.quantity * 100;
     netDebit += isBuy ? cost : -cost;
@@ -259,10 +259,20 @@ export function computeStrategyMetrics(legs: StrategyLeg[]) {
   const pop = totalDelta !== 0 ? Math.abs(1 - Math.abs(totalDelta)) * 100 : null;
 
   return {
-    netDebit, isDebit, maxRisk, maxReward,
+    netDebit,
+    isDebit,
+    maxRisk,
+    maxReward,
     breakevens: breakevens.filter(b => !isNaN(b)),
-    totalDelta, totalGamma, totalTheta, totalVega,
-    riskReward, pop, hasPrices,
+    totalDelta,
+    totalGamma,
+    totalTheta,
+    totalVega,
+    riskReward,
+    pop,
+    hasPrices,
+    buyingPowerEffect: null as number | null,
+    expirationPayoffModeled: true,
   };
 }
 
@@ -730,10 +740,12 @@ export function StrategyBuilder({
       ...base,
       maxRisk: econ.maxRisk,
       maxReward,
-      breakevens: econ.breakevens,
+      breakevens: econ.expirationPayoffModeled ? econ.breakevens : [],
       riskReward: riskRewardVal,
       netDebit: isCredit ? -econ.grossNotional : econ.grossNotional,
       isDebit: !isCredit,
+      buyingPowerEffect: econ.buyingPowerEffect,
+      expirationPayoffModeled: econ.expirationPayoffModeled,
     };
   }, [baseMetrics, submittedLimit, pricedLegs, quantity, symbol, isCredit]);
 
@@ -1213,7 +1225,12 @@ export function StrategyBuilder({
 
                   <div className="mt-1 flex flex-wrap items-center justify-between gap-1 pt-1 text-[11px]" style={{ borderTop: `1px dashed ${DIVIDER}`, color: MUTED }}>
                     <span>BE {metrics.breakevens.length > 0 ? metrics.breakevens.map(b => `$${b.toFixed(2)}`).join(" / ") : "—"}</span>
-                    <span>BP {estimatedCost != null ? `−${fmtCurrency(Math.abs(estimatedCost))}` : "—"}</span>
+                    <span>
+                      BP est{" "}
+                      {metrics.buyingPowerEffect != null
+                        ? `−${fmtCurrency(Math.abs(metrics.buyingPowerEffect))}`
+                        : "—"}
+                    </span>
                   </div>
                 </div>
               )}
@@ -1283,13 +1300,12 @@ export function StrategyBuilder({
                         const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
                         return `${months[d.getMonth()]} ${d.getFullYear()}`;
                       })();
-                      const streamQ = pairedQuoteFromStreamTick(optionTicks[leg.schwabSymbol]);
+                      const paired = pairedQuoteFromStreamTick(optionTicks[leg.schwabSymbol]);
                       const mid =
-                        executableMid(streamQ)
-                        ?? midpointFromBidAsk(priced.bid, priced.ask)
-                        ?? midpointFromBidAsk(streamQ.bid, streamQ.ask);
-                      const bidLeg = streamQ.bid ?? priced.bid;
-                      const askLeg = streamQ.ask ?? priced.ask;
+                        executableMid(paired)
+                        ?? midpointFromBidAsk(priced.bid, priced.ask);
+                      const bidLeg = paired.bid ?? priced.bid;
+                      const askLeg = paired.ask ?? priced.ask;
                       return (
                         <div key={leg.id}>
                           <div
@@ -1563,7 +1579,7 @@ export function StrategyBuilder({
                             let pnl = 0;
                             for (const leg of pricedLegs) {
                               const isBuy = leg.direction.startsWith("BUY");
-                              const mid = (leg.bid != null && leg.ask != null) ? (leg.bid + leg.ask) / 2 : 0;
+                              const mid = midpointFromBidAsk(leg.bid, leg.ask) ?? 0;
                               const intrinsic = leg.optionType === "CALL"
                                 ? Math.max(0, price - leg.strike)
                                 : Math.max(0, leg.strike - price);
@@ -1815,9 +1831,8 @@ export function StrategyBuilder({
                     const maxProfit =
                       reviewEcon && Number.isFinite(reviewEcon.maxProfit) ? reviewEcon.maxProfit : null;
                     const maxLoss = reviewEcon?.maxRisk ?? null;
-                    const bpEffect = reviewEcon
-                      ? reviewEcon.buyingPowerEffect
-                      : -(grossCost + totalCommission);
+                    const bpEffect = reviewEcon?.buyingPowerEffect ?? -(grossCost + totalCommission);
+                    const bpIsEstimate = reviewEcon?.buyingPowerEffectIsEstimate ?? true;
                     return (
                       <>
                         <div className="pt-1 mt-0.5 space-y-0.5" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
@@ -1836,7 +1851,10 @@ export function StrategyBuilder({
                             </span>
                           </div>
                         </div>
-                        {(breakevens.length > 0 || maxProfit != null || maxLoss != null) && (
+                        {(breakevens.length > 0 ||
+                          maxProfit != null ||
+                          maxLoss != null ||
+                          reviewEcon?.expirationPayoffModeled === false) && (
                           <div className="pt-1 mt-0.5 space-y-0.5" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
                             {breakevens.length > 0 && (
                               <div className="flex justify-between text-[12px]">
@@ -1844,11 +1862,18 @@ export function StrategyBuilder({
                                 <span style={{ color: WHITE }}>{breakevens.map(b => `$${b.toFixed(2)}`).join(" / ")}</span>
                               </div>
                             )}
-                            {maxProfit != null && (
+                            {reviewEcon?.expirationPayoffModeled === false ? (
                               <div className="flex justify-between text-[12px]">
-                                <span style={{ color: MUTED }}>Max profit</span>
-                                <span style={{ color: UP }}>{fmtCurrency(maxProfit)}</span>
+                                <span style={{ color: MUTED }}>Max profit / BE</span>
+                                <span style={{ color: TEXT }}>Not modeled (multi-expiry)</span>
                               </div>
+                            ) : (
+                              maxProfit != null && (
+                                <div className="flex justify-between text-[12px]">
+                                  <span style={{ color: MUTED }}>Max profit</span>
+                                  <span style={{ color: UP }}>{fmtCurrency(maxProfit)}</span>
+                                </div>
+                              )
                             )}
                             {maxLoss != null && (
                               <div className="flex justify-between text-[12px]">
@@ -1860,9 +1885,11 @@ export function StrategyBuilder({
                         )}
                         <div className="pt-1 mt-0.5" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
                           <div className="flex justify-between text-[12px]">
-                            <span style={{ color: MUTED }}>Buying power effect</span>
-                            <span style={{ color: bpEffect >= 0 ? UP : DOWN }}>
-                              {bpEffect >= 0 ? "+" : "−"}{fmtCurrency(Math.abs(bpEffect))}
+                            <span style={{ color: MUTED }}>
+                              Buying power{bpIsEstimate ? " (est.)" : ""}
+                            </span>
+                            <span style={{ color: DOWN }}>
+                              −{fmtCurrency(Math.abs(bpEffect))}
                             </span>
                           </div>
                         </div>

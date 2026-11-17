@@ -22,6 +22,15 @@ import {
   shouldTrackOptionHold,
   type OptionHoldPostOpts,
 } from "@/lib/optionHoldClient";
+import {
+  attachWsSocket,
+  awaitWithTimeout,
+  beginWsConnectAttempt,
+  CLERK_TOKEN_CONNECT_TIMEOUT_MS,
+  handleWsSocketClosed,
+  releaseWsConnectInFlight,
+  shouldAbortAfterToken,
+} from "@/hooks/marketStreamWsConnect";
 
 declare global {
   interface Window {
@@ -199,6 +208,8 @@ export function useMarketStream() {
   const startDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
   const wsRef = useRef<WebSocket | null>(null);
+  const wsConnectInFlightRef = useRef(false);
+  const wsConnectGenRef = useRef(0);
   const esRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sseFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -425,21 +436,62 @@ export function useMarketStream() {
   }, [startSseStream]);
 
   const connectWs = useCallback(async () => {
-    if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
-    if (!mountedRef.current) return;
+    const session = {
+      get connectGen() {
+        return wsConnectGenRef.current;
+      },
+      set connectGen(v: number) {
+        wsConnectGenRef.current = v;
+      },
+      get inFlight() {
+        return wsConnectInFlightRef.current;
+      },
+      set inFlight(v: boolean) {
+        wsConnectInFlightRef.current = v;
+      },
+      get ws() {
+        return wsRef.current;
+      },
+      set ws(v: WebSocket | null) {
+        wsRef.current = v;
+      },
+      get mounted() {
+        return mountedRef.current;
+      },
+    };
 
-    const clerkToken = await getClerkToken();
-    if (!clerkToken && !DEV_BYPASS_AUTH) {
+    const connectGen = beginWsConnectAttempt(session);
+    if (connectGen == null) return;
+
+    let attached = false;
+    try {
+      const tokenResult = await awaitWithTimeout(
+        getClerkToken(),
+        CLERK_TOKEN_CONNECT_TIMEOUT_MS,
+      );
+      if (!tokenResult.ok) {
+        setStreamStatus("connecting");
+        scheduleReconnect();
+        return;
+      }
+      const clerkToken = tokenResult.value;
+      if (shouldAbortAfterToken(session, connectGen)) return;
+
+      if (!clerkToken && !DEV_BYPASS_AUTH) {
+        setStreamStatus("connecting");
+        scheduleReconnect();
+        return;
+      }
+
+      const url = buildWsUrl(clerkToken);
       setStreamStatus("connecting");
-      scheduleReconnect();
-      return;
-    }
 
-    const url = buildWsUrl(clerkToken);
-    setStreamStatus("connecting");
-
-    const socket = new WebSocket(url);
-    wsRef.current = socket;
+      const socket = new WebSocket(url);
+      if (!attachWsSocket(session, connectGen, socket)) {
+        socket.close();
+        return;
+      }
+      attached = true;
 
     const openTimeout = setTimeout(() => {
       if (socket.readyState !== WebSocket.OPEN) {
@@ -472,7 +524,9 @@ export function useMarketStream() {
     };
 
     socket.onopen = () => {
+      if (wsRef.current !== socket) return;
       clearTimeout(openTimeout);
+      releaseWsConnectInFlight(session, connectGen);
       reconnectDelayRef.current = WS_RECONNECT_BASE;
       window.__alphaWs = socket;
       socket.send(
@@ -501,7 +555,7 @@ export function useMarketStream() {
 
     socket.onclose = () => {
       clearTimeout(openTimeout);
-      wsRef.current = null;
+      handleWsSocketClosed(session, socket);
       if (!mountedRef.current) return;
       setStreamStatus("connecting");
       scheduleSseFallback();
@@ -510,8 +564,16 @@ export function useMarketStream() {
 
     socket.onerror = () => {
       clearTimeout(openTimeout);
+      if (wsRef.current === socket) {
+        releaseWsConnectInFlight(session, connectGen);
+      }
     };
     scheduleSseFallback();
+    } finally {
+      if (!attached) {
+        releaseWsConnectInFlight(session, connectGen);
+      }
+    }
   }, [clearOptionTicks, handleStreamEvent, scheduleSseFallback, setStreamStatus, stopRestPolling, stopSseStream]);
 
   const startRestPolling = useCallback(async () => {

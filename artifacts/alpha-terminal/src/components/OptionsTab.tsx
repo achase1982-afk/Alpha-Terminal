@@ -29,6 +29,8 @@ import {
   legsFromChainSelection,
 } from "@/components/OptionsChainOrderSheet";
 import { getChainOrderFixtureOverride } from "@/lib/dev-only/chainOrderFixtureBridge";
+import { optionChainMatchesActiveSymbol } from "@/lib/optionChainStaleGuard";
+import { mergeChainContractWithStream } from "@/lib/chainContractQuoteMerge";
 
 const EPS = 0.0001;
 const COL_W = 74;
@@ -1290,11 +1292,6 @@ export function OptionsTab({
   }, [strikeCount]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const chainSymbolRef = useRef(symbol);
-  useEffect(() => {
-    chainSymbolRef.current = symbol;
-  }, [symbol]);
-
   const { data: rawData, isLoading, error, isFetching, dataUpdatedAt } = useGetOptionChain<OptionChainResponse>(
     { symbol, contractType: "ALL", strikeCount },
     { query: { enabled: !!accessToken && !!symbol && !fixtureOverride, staleTime: 30_000, gcTime: 5 * 60_000, retry: 2 } }
@@ -1309,7 +1306,7 @@ export function OptionsTab({
       return { ...fixtureOverride.chain, calls, puts, underlyingPrice: fixtureOverride.underlyingPrice };
     }
     if (!rawData) return rawData;
-    if (rawData.symbol && rawData.symbol.toUpperCase() !== chainSymbolRef.current.toUpperCase()) {
+    if (!optionChainMatchesActiveSymbol(rawData.symbol, symbol)) {
       return undefined;
     }
     let calls = (rawData.calls ?? []) as Contract[];
@@ -1317,7 +1314,7 @@ export function OptionsTab({
     if (contractType === "CALL") puts = [];
     else if (contractType === "PUT") calls = [];
     return { ...rawData, calls, puts };
-  }, [rawData, contractType, fixtureOverride]);
+  }, [rawData, contractType, fixtureOverride, symbol]);
 
   const isLoadingEffective = fixtureOverride ? false : isLoading;
 
@@ -1491,16 +1488,7 @@ export function OptionsTab({
         const mapContract = (c: Contract | null) => {
           if (!c?.streamKey) return;
           const tick = streamTicks[c.streamKey];
-          cMap.set(c.streamKey, {
-            bid: tick && tick.bid != null ? tick.bid : c.bid,
-            ask: tick && tick.ask != null ? tick.ask : c.ask,
-            delta: tick && tick.delta != null ? tick.delta : c.delta,
-            gamma: tick && tick.gamma != null ? tick.gamma : c.gamma,
-            theta: tick && tick.theta != null ? tick.theta : c.theta,
-            vega: tick && tick.vega != null ? tick.vega : c.vega,
-            iv: tick && tick.iv != null ? tick.iv : c.iv,
-            contractTs: chainTs,
-          });
+          cMap.set(c.streamKey, mergeChainContractWithStream(c, tick, chainTs));
         };
         mapContract(row.call);
         mapContract(row.put);
@@ -1510,16 +1498,21 @@ export function OptionsTab({
       selectedLegs.size > 0
         ? [...selectedLegs.values()].map((l) => {
             const tick = l.contract.streamKey ? streamTicks[l.contract.streamKey] : undefined;
-            const merged: Contract = { ...l.contract };
-            if (tick) {
-              if (tick.bid != null) merged.bid = tick.bid;
-              if (tick.ask != null) merged.ask = tick.ask;
-              if (tick.delta != null) merged.delta = tick.delta;
-              if (tick.gamma != null) merged.gamma = tick.gamma;
-              if (tick.theta != null) merged.theta = tick.theta;
-              if (tick.vega != null) merged.vega = tick.vega;
-              if (tick.iv != null) merged.iv = tick.iv;
-            }
+            const q = mergeChainContractWithStream(
+              { ...l.contract, streamKey: l.contract.streamKey },
+              tick,
+              chainTs,
+            );
+            const merged: Contract = {
+              ...l.contract,
+              bid: q.bid,
+              ask: q.ask,
+              delta: q.delta,
+              gamma: q.gamma,
+              theta: q.theta,
+              vega: q.vega,
+              iv: q.iv,
+            };
             return { contract: merged, type: l.type, side: l.side };
           })
         : undefined;

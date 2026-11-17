@@ -142,8 +142,12 @@ export function parseCanonicalLimit(
   else if (typeof input === "string") {
     const trimmed = input.trim();
     if (trimmed) {
-      const n = parseFloat(trimmed);
-      if (Number.isFinite(n) && n > 0) raw = n;
+      if (!/^(\d+(\.\d*)?|\.\d+)$/.test(trimmed)) {
+        raw = null;
+      } else {
+        const n = parseFloat(trimmed);
+        if (Number.isFinite(n) && n > 0) raw = n;
+      }
     }
   }
   if (raw == null && fallback != null && Number.isFinite(fallback) && fallback > 0) raw = fallback;

@@ -44,20 +44,17 @@ export function payoffDollarsAtS(input: ExpirationPayoffInput, S: number): numbe
   return isCredit ? position + premium : position - premium;
 }
 
-/** Per-share slope for S above all strikes: signed call qty + stock shares. */
-function rightTailSlopePerShare(legs: PayoffLeg[]): number {
+/** Dollar P&L slope for S above all strikes: signed shares + signed call contracts × 100 × spread units. */
+export function dollarRightTailSlope(legs: PayoffLeg[], spreadUnits: number): number {
   let slope = 0;
   for (const leg of legs) {
-    if (isEquityLeg(leg)) slope += signedContracts(leg);
-    else if (leg.optionType === "CALL") slope += signedContracts(leg);
+    if (isEquityLeg(leg)) {
+      slope += signedContracts(leg);
+    } else if (leg.optionType === "CALL") {
+      slope += signedContracts(leg) * 100 * spreadUnits;
+    }
   }
   return slope;
-}
-
-function dollarTailSlope(unitSlope: number, spreadUnits: number, isOption: boolean, legs: PayoffLeg[]): number {
-  const hasEquityOnly = legs.length > 0 && legs.every(isEquityLeg);
-  if (hasEquityOnly || !isOption) return unitSlope;
-  return unitSlope * 100 * spreadUnits;
 }
 
 function sortedBreakpoints(legs: PayoffLeg[]): number[] {
@@ -76,11 +73,10 @@ function rootsOnSegment(s0: number, p0: number, s1: number, p1: number): number[
 }
 
 export function analyzeExpirationPayoff(input: ExpirationPayoffInput): ExpirationPayoffResult {
-  const { legs, spreadUnits, isOption } = input;
+  const { legs, spreadUnits } = input;
   const points = sortedBreakpoints(legs);
 
-  const unitRight = rightTailSlopePerShare(legs);
-  const dollarRight = dollarTailSlope(unitRight, spreadUnits, isOption, legs);
+  const dollarRight = dollarRightTailSlope(legs, spreadUnits);
   /** Upside beyond strikes: net short calls / stock → loss unbounded. Put shorts cap at S=0. */
   const unboundedLoss = dollarRight < 0;
 
