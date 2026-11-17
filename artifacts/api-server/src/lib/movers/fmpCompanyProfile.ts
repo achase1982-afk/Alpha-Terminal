@@ -1,5 +1,6 @@
 import pLimit from "p-limit";
 import { getFmpApiKeyOrThrow, FMP_HTTP_CONCURRENCY } from "../fmpClient.js";
+import { fetchFmp } from "../fmpPaidPlanGuard.js";
 
 const FMP_STABLE_BASE = "https://financialmodelingprep.com/stable";
 const profileLimit = pLimit(FMP_HTTP_CONCURRENCY);
@@ -45,7 +46,7 @@ export async function fetchFmpCompanyProfile(symbol: string): Promise<FmpCompany
   const url = `${FMP_STABLE_BASE}/profile?symbol=${encodeURIComponent(sym)}&apikey=${encodeURIComponent(apiKey)}`;
 
   const res = await profileLimit(() =>
-    fetch(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(20_000) }),
+    fetchFmp(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(20_000) }),
   );
 
   if (!res.ok) {

@@ -1,5 +1,6 @@
 import pLimit from "p-limit";
 import { getFmpApiKeyOrThrow, FMP_HTTP_CONCURRENCY } from "../fmpClient.js";
+import { fetchFmp } from "../fmpPaidPlanGuard.js";
 import type { Situation } from "@workspace/movers-types";
 
 const FMP_STABLE_BASE = "https://financialmodelingprep.com/stable";
@@ -38,7 +39,7 @@ function normaliseHeadline(
 
 async function fetchJsonArray(url: string): Promise<Record<string, unknown>[]> {
   const res = await httpLimit(() =>
-    fetch(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(15_000) }),
+    fetchFmp(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(15_000) }),
   );
   if (!res.ok) return [];
   const data = (await res.json()) as unknown;

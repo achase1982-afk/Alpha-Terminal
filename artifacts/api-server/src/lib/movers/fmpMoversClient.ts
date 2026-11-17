@@ -1,4 +1,5 @@
 import { getFmpApiKeyOrThrow } from "../fmpClient.js";
+import { fetchFmp } from "../fmpPaidPlanGuard.js";
 import { FMP_HTTP_CONCURRENCY } from "../fmpClient.js";
 import pLimit from "p-limit";
 
@@ -43,7 +44,7 @@ async function fetchMoverList(
   const apiKey = getFmpApiKeyOrThrow();
   const url = `${FMP_STABLE_BASE}/${path}?apikey=${encodeURIComponent(apiKey)}`;
   const res = await httpLimit(() =>
-    fetch(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(20_000) }),
+    fetchFmp(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(20_000) }),
   );
   if (!res.ok) {
     const text = await res.text().catch(() => "");

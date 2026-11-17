@@ -1,5 +1,6 @@
 import pLimit from "p-limit";
 import { logger } from "./logger.js";
+import { fetchFmp } from "./fmpPaidPlanGuard.js";
 
 const FMP_API_KEY = (process.env["FMP_API_KEY"] ?? "").trim();
 
@@ -25,7 +26,7 @@ function sleep(ms: number): Promise<void> {
 async function fetchWithRetry(url: string, opts: RequestInit, retries = 3): Promise<Response> {
   for (let i = 0; i <= retries; i++) {
     try {
-      const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(20_000) });
+      const res = await fetchFmp(url, { ...opts, signal: AbortSignal.timeout(20_000) });
       if (res.status === 429 && i < retries) {
         await sleep(15_000 * (i + 1));
         continue;
