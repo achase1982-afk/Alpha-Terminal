@@ -7,6 +7,7 @@ import { useTerminalStore } from "@/lib/store";
 import { useOptionsStreamStore } from "@/lib/options-stream-store";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { useOptionsSettingsStore } from "@/lib/options-store";
+import { saveAtSettingsPanelOpen } from "@/lib/active-trader/atSettingsPanelState";
 import {
   FIXTURE_CLASSIFIED_PCT,
   FIXTURE_HEADLINE,
@@ -38,7 +39,9 @@ export function registerAtFixtureFromLocation(): void {
   if (!import.meta.env.DEV) return;
 
   const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
-  const scene = (params.get("scene") ?? "default") as AtFixtureOverride["scene"];
+  const sceneParam = params.get("scene") ?? "default";
+  const scene = (sceneParam === "settings-expanded" ? "default" : sceneParam) as AtFixtureOverride["scene"];
+  const settingsPanelOpen = sceneParam === "settings-expanded" || params.get("panel") === "open";
   const initialSubView = scene === "chain" ? "chain" : "at";
 
   setAtFixtureOverride({
@@ -50,6 +53,7 @@ export function registerAtFixtureFromLocation(): void {
     underlyingPrice: FIXTURE_SPX_SPOT,
     tapStrike: scene === "strip" || scene === "confirm" ? 7545 : undefined,
     openReviewOnMount: scene === "confirm",
+    settingsPanelOpen,
     presentation: {
       regimeLabel: FIXTURE_REGIME.label,
       regimeDegraded: FIXTURE_REGIME.degraded,
@@ -127,6 +131,8 @@ export function registerAtFixtureFromLocation(): void {
     accountsFingerprint: "at-fixture",
     defaultTradingAccountHash: "at-fixture-hash",
   });
+
+  saveAtSettingsPanelOpen(settingsPanelOpen);
 
   resetFlowAndTicks();
 }

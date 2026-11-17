@@ -16,7 +16,8 @@ interface FilterStripProps {
   onToggle: (key: LaneFilterKey) => void;
   classifiedPct: number | null;
   windowLabel: string;
-  stickyTop: number;
+  stickyTop?: number;
+  embedded?: boolean;
 }
 
 function LegendBadge({ children, color }: { children: string; color: string }) {
@@ -37,11 +38,17 @@ export const FilterStrip = memo(function FilterStrip({
   classifiedPct,
   windowLabel,
   stickyTop,
+  embedded,
 }: FilterStripProps) {
   return (
     <div
-      className="sticky z-[37] px-3 py-2 space-y-2"
-      style={{ top: stickyTop, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
+      className={embedded ? "px-3 py-2 space-y-2" : "sticky z-[37] px-3 py-2 space-y-2"}
+      style={{
+        ...(embedded ? {} : { top: stickyTop }),
+        background: BG_EXP_BAR,
+        borderBottom: `1px solid ${BORDER}`,
+        fontFamily: MONO,
+      }}
     >
       <div className="flex gap-1.5 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
         {CHIPS.map((c) => {

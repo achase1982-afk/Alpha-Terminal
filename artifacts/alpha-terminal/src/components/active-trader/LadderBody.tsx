@@ -2,7 +2,7 @@ import { memo, useMemo } from "react";
 import type { OptionsContract } from "@/components/OptionsTab";
 import {
   ROW_H, STRIKE_W, BORDER_ROW, BORDER, UP, DOWN, DIM, WHITE, GRAY, MUTED,
-  BG, MONO, FW_LIGHT, FW_PREMIUM, GAMMA_SCENARIO,
+  BG, MONO, FW_LIGHT, FW_PREMIUM, GAMMA_SCENARIO, ITM_OCEAN,
 } from "@/components/options/optionsTheme";
 import { useOptionTick } from "@/lib/options-stream-store";
 import {
@@ -41,17 +41,21 @@ function classifiedVol(c: FlowLaneCounts): number {
 }
 
 function FlowBar({ value, max, color, align }: { value: number; max: number; color: string; align: "left" | "right" }) {
-  if (value <= 0 || max <= 0) return <div className="w-full h-[7px]" />;
-  const pct = Math.min(100, Math.max(12, (value / max) * 100));
+  if (value <= 0 || max <= 0) return <div className="w-full h-[6px]" />;
+  const pct = Math.min(100, Math.max(8, Math.round((value / max) * 100)));
   return (
-    <div className="w-full h-[7px] rounded-full overflow-hidden flex items-center" style={{ background: "rgba(255,255,255,0.04)" }}>
+    <div
+      className="w-full h-[6px] rounded-sm overflow-hidden flex items-center px-0.5"
+      style={{ background: "rgba(255,255,255,0.03)" }}
+    >
       <div
-        className="h-[7px] rounded-full"
+        className="h-[4px] rounded-sm"
         style={{
           width: `${pct}%`,
           marginLeft: align === "right" ? "auto" : 0,
           marginRight: align === "left" ? "auto" : 0,
-          background: `linear-gradient(${align === "right" ? "90deg" : "270deg"}, ${color}, ${color}55)`,
+          background: `linear-gradient(${align === "right" ? "90deg" : "270deg"}, ${color}cc, ${color}22)`,
+          boxShadow: `0 0 6px ${color}33`,
         }}
       />
     </div>
@@ -139,7 +143,15 @@ const LadderRowView = memo(function LadderRowView({
     if (q == null || q === 0) return null;
     const sign = q > 0 ? "+" : "\u2212";
     return (
-      <span style={{ fontSize: 9, color: q > 0 ? accentHex : DOWN }}>
+      <span
+        className="px-0.5 rounded"
+        style={{
+          fontSize: 9,
+          fontWeight: FW_PREMIUM,
+          color: q > 0 ? UP : DOWN,
+          background: q > 0 ? `${UP}18` : `${DOWN}18`,
+        }}
+      >
         {sign}{Math.abs(q)}
       </span>
     );
@@ -167,13 +179,23 @@ const LadderRowView = memo(function LadderRowView({
           height: ROW_H,
           borderBottom: `1px solid ${BORDER_ROW}`,
           fontFamily: MONO,
+          background: spotRow ? ITM_OCEAN : undefined,
+          boxShadow: spotRow ? `inset 0 0 0 1px ${accentHex}55` : undefined,
         }}
       >
         <FlowBar value={putFlowNet} max={maxFlow} color={DOWN} align="left" />
         <button
           type="button"
+          data-at-put-cell={row.strike}
           className="flex items-center justify-center gap-1 px-1 h-full"
-          style={{ fontSize: 12, color: WHITE, fontWeight: FW_LIGHT, background: "transparent" }}
+          style={{
+            fontSize: 12,
+            color: WHITE,
+            fontWeight: FW_LIGHT,
+            fontVariantNumeric: "tabular-nums",
+            letterSpacing: "0.01em",
+            background: "transparent",
+          }}
           onClick={() => row.put && onCellTap(row.put, "PUT")}
         >
           <span style={{ fontVariantNumeric: "tabular-nums" }}>
@@ -186,13 +208,15 @@ const LadderRowView = memo(function LadderRowView({
           className="flex flex-col items-center justify-center h-full px-0.5"
           style={{
             width: STRIKE_W,
-            background: spotRow ? DIM : accentHex,
-            color: spotRow ? WHITE : "black",
+            background: accentHex,
+            color: "#000",
             fontSize: 12,
-            fontWeight: FW_PREMIUM,
+            fontWeight: FW_LIGHT,
+            fontVariantNumeric: "tabular-nums",
+            lineHeight: 1,
           }}
         >
-          <span>{row.strike}</span>
+          <span>{row.strike % 1 === 0 ? row.strike : row.strike.toFixed(1)}</span>
           {spotRow && <span style={{ fontSize: 8, opacity: 0.7 }}>{symbolLabel}</span>}
           {isCallWall && !spotRow && <span style={{ fontSize: 7, color: "black", opacity: 0.55 }}>CALL WALL</span>}
           {isPutWall && !spotRow && <span style={{ fontSize: 7, color: "black", opacity: 0.55 }}>PUT WALL</span>}
@@ -201,7 +225,14 @@ const LadderRowView = memo(function LadderRowView({
           type="button"
           data-at-call-strike={row.strike}
           className="flex items-center justify-center gap-1 px-1 h-full"
-          style={{ fontSize: 12, color: WHITE, fontWeight: FW_LIGHT, background: "transparent" }}
+          style={{
+            fontSize: 12,
+            color: WHITE,
+            fontWeight: FW_LIGHT,
+            fontVariantNumeric: "tabular-nums",
+            letterSpacing: "0.01em",
+            background: "transparent",
+          }}
           onClick={() => row.call && onCellTap(row.call, "CALL")}
         >
           <span style={{ fontVariantNumeric: "tabular-nums" }}>

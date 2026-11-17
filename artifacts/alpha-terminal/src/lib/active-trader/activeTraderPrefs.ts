@@ -1,21 +1,32 @@
 export type AtTemplateKind = "Single" | "OCO" | "TRG w/ bracket";
 export type AtOrderType = "LIMIT" | "MKT";
 export type AtLimitAnchor = "Mid" | "Bid" | "Ask";
+export type BracketOffsetMode = "percent" | "points" | "dollars";
+
+export interface BracketLegPrefs {
+  enabled: boolean;
+  mode: BracketOffsetMode;
+  offset: number;
+}
 
 export interface ActiveTraderTemplatePrefs {
   template: AtTemplateKind;
   qty: number;
   orderType: AtOrderType;
   limitAnchor: AtLimitAnchor;
+  takeProfit: BracketLegPrefs;
+  stopLoss: BracketLegPrefs;
 }
 
-const STORAGE_KEY = "activeTraderPrefs:v2";
+const STORAGE_KEY = "activeTraderPrefs:v3";
 
 const DEFAULTS: ActiveTraderTemplatePrefs = {
-  template: "Single",
+  template: "TRG w/ bracket",
   qty: 1,
   orderType: "LIMIT",
   limitAnchor: "Mid",
+  takeProfit: { enabled: true, mode: "percent", offset: 10 },
+  stopLoss: { enabled: false, mode: "percent", offset: -10 },
 };
 
 export function loadActiveTraderPrefs(symbolClass: "index" | "equity"): ActiveTraderTemplatePrefs {

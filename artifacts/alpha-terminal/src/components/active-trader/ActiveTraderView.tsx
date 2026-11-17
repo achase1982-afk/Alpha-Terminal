@@ -1,7 +1,7 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { OptionsContract } from "@/components/OptionsTab";
 import {
-  TOOLBAR_H, SUB_HEADER_H, BG, BG_HEADER, BORDER, DIM, WHITE, MONO, FW_LIGHT, noScrollbar,
+  TOOLBAR_H, SUB_HEADER_H, BG, BG_EXP_BAR, BG_HEADER, BORDER, DIM, GRAY, WHITE, MONO, FW_LIGHT, noScrollbar,
 } from "@/components/options/optionsTheme";
 import { buildAtHoldSignature } from "@/lib/active-trader/atHoldSig";
 import {
@@ -17,9 +17,21 @@ import type { ChainHoldSubscribers } from "@/hooks/useChainOptionHold";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
-import { TemplateBar } from "./TemplateBar";
-import { RegimeStrip } from "./RegimeStrip";
-import { FilterStrip, type LaneFilterKey } from "./FilterStrip";
+import type { LaneFilterKey } from "./FilterStrip";
+import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
+import { useOptionTick } from "@/lib/options-stream-store";
+import { AtSettingsPanel } from "./AtSettingsPanel";
+import {
+  loadAtSettingsPanelOpen,
+  saveAtSettingsPanelOpen,
+} from "@/lib/active-trader/atSettingsPanelState";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { LadderBody, type LadderRowModel } from "./LadderBody";
 import { AtLadderSkeleton } from "./AtLadderSkeleton";
 
@@ -49,6 +61,8 @@ interface ActiveTraderViewProps {
     skipNetwork?: boolean;
   };
   initialTradeSelection?: { strike: number; type: "CALL" | "PUT" };
+  /** Dev/screenshot: force settings panel expanded on mount. */
+  settingsPanelInitiallyOpen?: boolean;
 }
 
 const LADDER_RADIUS = 20;
@@ -73,6 +87,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   onOpenReview,
   presentation,
   initialTradeSelection,
+  settingsPanelInitiallyOpen,
 }: ActiveTraderViewProps) {
   const primary = groups[0];
   const ladderDataReady = !!(primary && primary.rows.length > 0);
@@ -91,6 +106,20 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   const symbolClass = symbol.toUpperCase().includes("SPX") || symbol.startsWith("$") ? "index" : "equity";
   const [prefs, setPrefs] = useState<ActiveTraderTemplatePrefs>(() => loadActiveTraderPrefs(symbolClass));
+  const [settingsOpen, setSettingsOpen] = useState(
+    () => settingsPanelInitiallyOpen ?? loadAtSettingsPanelOpen(),
+  );
+  const chromeRef = useRef<HTMLDivElement>(null);
+  const [chromeHeight, setChromeHeight] = useState(TOOLBAR_H * 2);
+
+  useEffect(() => {
+    const node = chromeRef.current;
+    if (!node) return;
+    const ro = new ResizeObserver(() => setChromeHeight(node.offsetHeight));
+    ro.observe(node);
+    setChromeHeight(node.offsetHeight);
+    return () => ro.disconnect();
+  }, [settingsOpen]);
 
   useEffect(() => {
     if (presentation?.skipNetwork) {
@@ -249,6 +278,28 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     setTradeStripStrike(contract.strike);
   }, []);
 
+  const selectedTick = useOptionTick(selected?.contract.streamKey);
+  const templatePrimaryInstruction = useMemo((): SchwabInstruction => {
+    if (!selected) return "BUY_TO_OPEN";
+    return selected.type === "CALL"
+      ? "BUY_TO_OPEN"
+      : "BUY_TO_OPEN";
+  }, [selected]);
+
+  const atmRow = useMemo(() => {
+    if (!primary?.rows?.length || underlyingPrice == null) return null;
+    const idx = findAtmStrikeIndex(primary.rows.map((r) => r.strike), underlyingPrice);
+    return primary.rows[idx] ?? null;
+  }, [primary, underlyingPrice]);
+
+  const atmTick = useOptionTick(atmRow?.call?.streamKey);
+  const templateLimitMid = useMemo(() => {
+    const tick = selectedTick ?? atmTick;
+    if (!tick) return null;
+    if (tick.bid != null && tick.ask != null) return (tick.bid + tick.ask) / 2;
+    return tick.mark ?? tick.last ?? null;
+  }, [selectedTick, atmTick]);
+
   const instrumentLabel = useMemo(() => {
     if (selected) {
       const root = symbol.replace(/^\$/, "").slice(0, 4);
@@ -258,70 +309,80 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     return `${und} (underlying)`;
   }, [selected, symbol]);
 
-  const templateBarTop = stickyOffset + TOOLBAR_H;
-  const regimeTop = templateBarTop + 64;
-  const filterTop = regimeTop + 120;
-  const headerTop = filterTop + 72;
+  const toggleSettings = useCallback(() => {
+    setSettingsOpen((prev) => {
+      const next = !prev;
+      saveAtSettingsPanelOpen(next);
+      return next;
+    });
+  }, []);
+
+  const ladderHeaderTop = stickyOffset + chromeHeight;
+  const ladderMaxHeight = `max(180px, calc(100dvh - ${ladderHeaderTop + SUB_HEADER_H + 88}px))`;
 
   const expiryLabel = primary?.dateLabel ?? "\u2014";
   const dteLabel = primary ? (primary.dte === 0 ? "0DTE" : `${primary.dte}D`) : "0DTE";
 
   return (
     <div style={{ background: BG }}>
-      <div
-        className="flex items-center justify-between px-3 sticky z-40"
-        style={{ top: stickyOffset, height: TOOLBAR_H, background: BG, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
-      >
-        <span style={{ fontSize: 12, color: DIM }}>
-          {expiryLabel} · {dteLabel} ▾
-        </span>
-        <select
-          className="h-6 px-1.5 rounded border"
-          style={{ fontSize: 11, background: "transparent", borderColor: BORDER, color: DIM }}
-          value={windowSec}
-          onChange={(e) => setWindowSec(Number(e.target.value) as 30 | 60 | 300)}
+      <div ref={chromeRef}>
+        <div
+          className="flex items-center justify-between px-3 sticky z-40"
+          style={{ top: stickyOffset, height: TOOLBAR_H, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
         >
-          <option value={30}>30s</option>
-          <option value={60}>1m</option>
-          <option value={300}>5m</option>
-        </select>
+          <span className="tracking-wide" style={{ fontSize: 13, color: WHITE, fontWeight: 450 }}>
+            {expiryLabel}
+          </span>
+          <span style={{ fontSize: 12, color: GRAY, fontWeight: 400, marginLeft: 6 }}>{dteLabel}</span>
+          <Select
+            value={String(windowSec)}
+            onValueChange={(v) => setWindowSec(Number(v) as 30 | 60 | 300)}
+          >
+            <SelectTrigger
+              className="h-6 w-[52px] px-1.5 border rounded text-white ml-auto"
+              style={{ fontSize: 14, background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="30">30s</SelectItem>
+              <SelectItem value="60">1m</SelectItem>
+              <SelectItem value="300">5m</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="sticky z-[39]" style={{ top: stickyOffset + TOOLBAR_H }}>
+          <AtSettingsPanel
+            open={settingsOpen}
+            onToggle={toggleSettings}
+            accentHex={accentHex}
+            prefs={prefs}
+            onPrefsChange={onPrefsChange}
+            instrumentLabel={instrumentLabel}
+            onSell={() => selected && onOpenReview(selected.contract, "SELL", selected.type)}
+            onBuy={() => selected && onOpenReview(selected.contract, "BUY", selected.type)}
+            accountLabel={accountLabel}
+            isPaper={isPaper}
+            regimeLabel={presentation?.regimeLabel ?? regimeLabel}
+            regimeDegraded={presentation?.regimeDegraded ?? regimeDegraded}
+            zones={zones}
+            headline={displayHeadline}
+            sessionLabel={presentation?.sessionLabel}
+            laneFilters={laneFilters}
+            onToggleLane={toggleLane}
+            classifiedPct={classifiedPct}
+            windowLabel={`last ${windowSec}s`}
+            primaryInstruction={templatePrimaryInstruction}
+            limitMid={templateLimitMid}
+          />
+        </div>
       </div>
-
-      <TemplateBar
-        accentHex={accentHex}
-        instrumentLabel={instrumentLabel}
-        prefs={prefs}
-        onPrefsChange={onPrefsChange}
-        onSell={() => selected && onOpenReview(selected.contract, "SELL", selected.type)}
-        onBuy={() => selected && onOpenReview(selected.contract, "BUY", selected.type)}
-        stickyTop={templateBarTop}
-        accountLabel={accountLabel}
-        isPaper={isPaper}
-      />
-
-      <RegimeStrip
-        accentHex={accentHex}
-        regimeLabel={presentation?.regimeLabel ?? regimeLabel}
-        regimeDegraded={presentation?.regimeDegraded ?? regimeDegraded}
-        zones={zones}
-        headline={displayHeadline}
-        sessionLabel={presentation?.sessionLabel}
-        stickyTop={regimeTop}
-      />
-
-      <FilterStrip
-        accentHex={accentHex}
-        filters={laneFilters}
-        onToggle={toggleLane}
-        classifiedPct={classifiedPct}
-        windowLabel={`last ${windowSec}s`}
-        stickyTop={filterTop}
-      />
 
       <div
         className="sticky z-[36] grid px-1"
         style={{
-          top: headerTop,
+          top: ladderHeaderTop,
           height: SUB_HEADER_H,
           gridTemplateColumns: "1fr 1.1fr 44px 1.1fr 1fr",
           background: BG_HEADER,
@@ -334,14 +395,14 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           textTransform: "uppercase",
         }}
       >
-        <span className="text-center">Put flow</span>
-        <span className="text-center">Puts</span>
-        <span className="text-center" style={{ color: WHITE }}>Strike</span>
-        <span className="text-center">Calls</span>
-        <span className="text-center">Call flow</span>
+        <span className="text-center" style={{ letterSpacing: "0.08em" }}>Put flow</span>
+        <span data-ui-audit="at-puts-hdr" className="text-center" style={{ fontSize: 12, letterSpacing: "0.08em", fontWeight: 600, color: GRAY }}>Puts</span>
+        <span className="text-center" style={{ fontSize: 9, color: WHITE, fontWeight: 600, letterSpacing: "0.08em" }}>Strike</span>
+        <span className="text-center" style={{ fontSize: 12, letterSpacing: "0.08em", fontWeight: 600, color: GRAY }}>Calls</span>
+        <span className="text-center" style={{ letterSpacing: "0.08em" }}>Call flow</span>
       </div>
 
-      <div style={{ ...noScrollbar, maxHeight: "min(60vh, 520px)", overflowY: "auto" }}>
+      <div style={{ ...noScrollbar, maxHeight: ladderMaxHeight, overflowY: "auto" }}>
         {ladderDataReady ? (
         <LadderBody
           rows={ladderRows}

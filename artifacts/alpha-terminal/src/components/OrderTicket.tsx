@@ -11,6 +11,9 @@ import { hash8 } from "@/lib/streamClientId";
 import type { OptionHoldPostOpts } from "@/lib/optionHoldClient";
 import { useTicketOptionHold } from "@/hooks/useTicketOptionHold";
 import { useOptionTick } from "@/lib/options-stream-store";
+import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
+import { computeBracketPrices } from "@/lib/active-trader/atBracketMath";
+import { planAtOrderLegs, usesBracketExit, type SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
 import { computeStrategyEconomics } from "@/lib/strategyCalculator";
 import { useGetOptionChain } from "@workspace/api-client-react";
 import {
@@ -308,6 +311,8 @@ interface OrderTicketProps {
   initialStage?: ConfirmStage;
   /** Disables submit — Active Trader phase 1 (no place-order). */
   confirmDisabled?: boolean;
+  /** Active Trader template prefs for confirmation leg plan / bracket prices. */
+  atTemplatePrefs?: ActiveTraderTemplatePrefs;
 }
 
 function AiCoPilotPanel({ side, symbol, limitPrice, bid, ask, quantity, isOption }: {
@@ -389,6 +394,7 @@ export function OrderTicket({
   releaseOptionHold,
   initialStage,
   confirmDisabled,
+  atTemplatePrefs,
 }: OrderTicketProps) {
   const symbol = useTerminalStore((s) => s.symbol);
   const optionTick = useOptionTick(optionSymbol);
@@ -622,6 +628,67 @@ export function OrderTicket({
   const needsLimit = orderType === "LIMIT" || orderType === "STOP_LIMIT" || orderType === "TRAILING_STOP_LIMIT" || orderType === "LIMIT_ON_CLOSE" || orderType === "WALK_LIMIT";
   const needsStop = orderType === "STOP" || orderType === "STOP_LIMIT" || orderType === "TRAILING_STOP_LIMIT";
   const needsTrail = orderType === "TRAILING_STOP" || orderType === "TRAILING_STOP_LIMIT";
+
+  const atTemplatePlan = useMemo(() => {
+    if (!atTemplatePrefs || !isOption || isMultiLeg || !optionSymbol) {
+      return null;
+    }
+    const primary = (optionInstruction ?? (side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN")) as SchwabInstruction;
+    const mid =
+      optionTick?.bid != null && optionTick?.ask != null
+        ? (optionTick.bid + optionTick.ask) / 2
+        : optionTick?.mark ?? optionTick?.last ?? null;
+    const px = parseFloat(limitPrice) || mid || 0;
+    if (px <= 0) return null;
+    const bracket = usesBracketExit({
+      template: atTemplatePrefs.template,
+      assetType: "OPTION",
+      symbol: optionSymbol,
+      primaryInstruction: primary,
+      quantity: atTemplatePrefs.qty,
+      limitPrice: px,
+      takeProfit: atTemplatePrefs.takeProfit,
+      stopLoss: atTemplatePrefs.stopLoss,
+    });
+    if (!bracket && atTemplatePrefs.template === "Single") return null;
+    return planAtOrderLegs({
+      template: atTemplatePrefs.template,
+      assetType: "OPTION",
+      symbol: optionSymbol,
+      primaryInstruction: primary,
+      quantity: atTemplatePrefs.qty,
+      limitPrice: px,
+      takeProfit: atTemplatePrefs.takeProfit,
+      stopLoss: atTemplatePrefs.stopLoss,
+    });
+  }, [
+    atTemplatePrefs,
+    isOption,
+    isMultiLeg,
+    optionSymbol,
+    optionInstruction,
+    side,
+    limitPrice,
+    optionTick,
+  ]);
+
+  const atBracketSummary = useMemo(() => {
+    if (!atTemplatePrefs || !isOption || isMultiLeg) return null;
+    const primary = (optionInstruction ?? (side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN")) as SchwabInstruction;
+    const mid =
+      optionTick?.bid != null && optionTick?.ask != null
+        ? (optionTick.bid + optionTick.ask) / 2
+        : optionTick?.mark ?? optionTick?.last ?? null;
+    const px = parseFloat(limitPrice) || mid || 0;
+    if (px <= 0) return null;
+    return computeBracketPrices({
+      entryPrice: px,
+      quantity: atTemplatePrefs.qty,
+      primaryInstruction: primary,
+      tp: atTemplatePrefs.takeProfit,
+      sl: atTemplatePrefs.stopLoss,
+    });
+  }, [atTemplatePrefs, isOption, isMultiLeg, optionInstruction, side, limitPrice, optionTick]);
 
   const estimatedCost = useMemo(() => {
     if (isMultiLeg) {
@@ -2315,6 +2382,24 @@ export function OrderTicket({
                 </>
               ) : (
                 <>
+                  {atTemplatePlan && atTemplatePlan.legs.length > 1 && (
+                    <div className="space-y-1 pb-2 mb-1" style={{ borderBottom: `1px dashed ${DIVIDER}` }}>
+                      {atTemplatePlan.legs.map((leg) => (
+                        <div key={leg.role} className="flex justify-between" style={{ fontSize: S.body }}>
+                          <span style={{ color: MUTED }}>{leg.role}</span>
+                          <span style={{ color: TEXT }}>
+                            {leg.label}
+                            {leg.price != null
+                              ? ` · ${leg.orderType === "STOP" ? "Stop" : "LMT"} ${leg.price.toFixed(2)}`
+                              : ""}
+                          </span>
+                        </div>
+                      ))}
+                      {atTemplatePlan.validationError && (
+                        <p style={{ fontSize: S.label, color: DOWN, marginTop: 4 }}>{atTemplatePlan.validationError}</p>
+                      )}
+                    </div>
+                  )}
                   {[
                     {
                       label: "Action",
@@ -2326,6 +2411,18 @@ export function OrderTicket({
                     { label: "Symbol", value: displaySymbol },
                     { label: "Quantity", value: String(quantity) },
                     { label: "Order type", value: ORDER_TYPES.find((t) => t.value === orderType)?.label },
+                    ...(atTemplatePrefs &&
+                    (atTemplatePrefs.template !== "Single" ||
+                      atTemplatePrefs.takeProfit.enabled ||
+                      atTemplatePrefs.stopLoss.enabled)
+                      ? [{ label: "Template", value: atTemplatePrefs.template, color: sideColor }]
+                      : []),
+                    ...(atBracketSummary?.takeProfit != null
+                      ? [{ label: "Take profit", value: `$${atBracketSummary.takeProfit.toFixed(2)}`, color: UP }]
+                      : []),
+                    ...(atBracketSummary?.stopLoss != null
+                      ? [{ label: "Stop loss", value: `$${atBracketSummary.stopLoss.toFixed(2)}`, color: DOWN }]
+                      : []),
                   ].map((row, i) => (
                     <div key={i} className="flex justify-between" style={{ fontSize: S.body }}>
                       <span style={{ color: MUTED }}>{row.label}</span>

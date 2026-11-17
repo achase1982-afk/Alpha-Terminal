@@ -1,6 +1,6 @@
 import { memo } from "react";
 import {
-  BG_EXP_BAR, BORDER, DOWN, UP, GRAY, DIM, MONO, FW_NORMAL,
+  BG_EXP_BAR, BORDER, DOWN, UP, GRAY, DIM, MONO, FW_NORMAL, TOOLBAR_H,
 } from "@/components/options/optionsTheme";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -19,9 +19,11 @@ interface TemplateBarProps {
   onPrefsChange: (p: ActiveTraderTemplatePrefs) => void;
   onSell: () => void;
   onBuy: () => void;
-  stickyTop: number;
+  stickyTop?: number;
   accountLabel: string;
   isPaper: boolean;
+  /** Inside collapsible settings panel (no sticky). */
+  embedded?: boolean;
 }
 
 export const TemplateBar = memo(function TemplateBar({
@@ -34,21 +36,30 @@ export const TemplateBar = memo(function TemplateBar({
   stickyTop,
   accountLabel,
   isPaper,
+  embedded,
 }: TemplateBarProps) {
   const typeBtn = prefs.orderType === "LIMIT" ? "LMT" : "MKT";
   return (
     <div
-      className="sticky z-[39] px-3 py-1 space-y-1"
-      style={{ top: stickyTop, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
+      className={embedded ? "px-3 py-1" : "sticky z-[39] px-3 py-1"}
+      style={{
+        ...(embedded ? {} : { top: stickyTop }),
+        background: BG_EXP_BAR,
+        borderBottom: embedded ? undefined : `1px solid ${BORDER}`,
+        fontFamily: MONO,
+      }}
     >
-      <div className="flex items-center gap-2 flex-nowrap overflow-x-auto" style={{ height: 32 }}>
+      <div
+        className="flex items-center gap-2 flex-nowrap overflow-x-auto"
+        style={{ height: embedded ? TOOLBAR_H : 32 }}
+      >
         <Select
           value={prefs.template}
           onValueChange={(v) => onPrefsChange({ ...prefs, template: v as AtTemplateKind })}
         >
           <SelectTrigger
             className="h-6 w-[108px] px-1.5 border rounded text-white shrink-0"
-            style={{ fontSize: 12, background: "transparent", borderColor: BORDER, fontFamily: MONO }}
+            style={{ fontSize: 14, background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}
           >
             <SelectValue />
           </SelectTrigger>
@@ -82,7 +93,7 @@ export const TemplateBar = memo(function TemplateBar({
         >
           <SelectTrigger
             className="h-6 w-[112px] px-1.5 border rounded text-white shrink-0"
-            style={{ fontSize: 12, background: "transparent", borderColor: BORDER, fontFamily: MONO }}
+            style={{ fontSize: 14, background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}
           >
             <SelectValue />
           </SelectTrigger>
@@ -91,8 +102,31 @@ export const TemplateBar = memo(function TemplateBar({
             <SelectItem value="MKT">MKT</SelectItem>
           </SelectContent>
         </Select>
+        {!embedded && (
+          <>
+        <div className="flex gap-2 shrink-0 ml-auto">
+          <button
+            type="button"
+            onClick={onSell}
+            className="px-3 rounded-lg border active:scale-95 whitespace-nowrap"
+            style={{ height: 28, borderColor: BORDER, color: DOWN, fontSize: 12, fontWeight: FW_NORMAL, background: "transparent" }}
+          >
+            SELL {typeBtn}
+          </button>
+          <button
+            type="button"
+            onClick={onBuy}
+            className="px-3 rounded-lg border active:scale-95 whitespace-nowrap"
+            style={{ height: 28, borderColor: BORDER, color: UP, fontSize: 12, fontWeight: FW_NORMAL, background: "transparent" }}
+          >
+            BUY {typeBtn}
+          </button>
+        </div>
+          </>
+        )}
       </div>
-      <div className="flex items-center gap-2 justify-between flex-nowrap" style={{ height: 32 }}>
+      {embedded && (
+      <div className="flex items-center gap-2 justify-between flex-nowrap pb-1" style={{ minHeight: TOOLBAR_H }}>
         <span
           className="truncate shrink min-w-0 max-w-[38%] border rounded px-2 py-1 whitespace-nowrap"
           style={{ fontSize: 11, borderColor: BORDER, color: GRAY }}
@@ -134,6 +168,7 @@ export const TemplateBar = memo(function TemplateBar({
           {accountLabel}
         </span>
       </div>
+      )}
     </div>
   );
 });

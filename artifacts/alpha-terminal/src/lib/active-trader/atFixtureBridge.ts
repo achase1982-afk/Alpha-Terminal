@@ -23,6 +23,7 @@ export interface AtFixtureOverride {
   presentation: AtFixturePresentation;
   tapStrike?: number;
   openReviewOnMount?: boolean;
+  settingsPanelOpen?: boolean;
 }
 
 let fixtureOverride: AtFixtureOverride | null = null;

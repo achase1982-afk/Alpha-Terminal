@@ -454,6 +454,7 @@ const DataCell = memo(function DataCell({
     <div className="flex flex-col justify-center" style={{ height: ROW_H, minHeight: ROW_H, padding: isBid ? "0 2px 0 8px" : "0 2px" }}>
       <span
         className="leading-none"
+        data-ui-audit={isPrice ? "chain-bid-cell" : undefined}
         style={{
           fontSize: isPrice ? 14 : 12,
           fontWeight: FW_LIGHT,
@@ -813,7 +814,7 @@ function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPri
         borderBottom: `1px solid rgba(0,0,0,0.25)`,
       }}
     >
-      <span style={{ fontSize: 12, fontWeight: FW_LIGHT, color: "#000", fontVariantNumeric: "tabular-nums", fontFamily: MONO, lineHeight: 1 }}>
+      <span data-ui-audit="chain-strike-cell" style={{ fontSize: 12, fontWeight: FW_LIGHT, color: "#000", fontVariantNumeric: "tabular-nums", fontFamily: MONO, lineHeight: 1 }}>
         {strike % 1 === 0 ? strike : strike.toFixed(1)}
       </span>
       {moneynessLabel && (
@@ -1021,6 +1022,7 @@ function ExpirationSection({
   return (
     <div>
       <button
+        data-ui-audit="chain-exp-btn"
         onClick={onToggle}
         className="w-full flex items-center justify-between px-3 py-1 transition-colors sticky z-20"
         style={{
@@ -1116,7 +1118,7 @@ function OptionsChainHeader({
       >
         {showCalls && (
           <div style={{ flex: 1, textAlign: "center" }}>
-            <span style={{ fontSize: 12, letterSpacing: "0.08em", color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>CALLS</span>
+            <span data-ui-audit="chain-calls-hdr" style={{ fontSize: 12, letterSpacing: "0.08em", color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>CALLS</span>
           </div>
         )}
         <div style={{ width: STRIKE_W, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}>
@@ -1169,7 +1171,7 @@ function OptionsChainHeader({
           </div>
         )}
         <div style={{ width: STRIKE_W, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}`, background: "#111111" }}>
-          <span style={{ fontSize: 9, color: WHITE, fontFamily: MONO, fontWeight: FW_PREMIUM, letterSpacing: "0.08em" }}>STRIKE</span>
+          <span data-ui-audit="chain-strike-hdr" style={{ fontSize: 9, color: WHITE, fontFamily: MONO, fontWeight: FW_PREMIUM, letterSpacing: "0.08em" }}>STRIKE</span>
         </div>
         {showPuts && (
           <div style={{ flex: 1, overflow: "hidden", height: SUB_HEADER_H }}>
@@ -1540,6 +1542,7 @@ export function OptionsTab({
             })
           }
           presentation={fixtureOverride?.presentation}
+          settingsPanelInitiallyOpen={fixtureOverride?.settingsPanelOpen}
           initialTradeSelection={
             fixtureOverride?.tapStrike != null &&
             (fixtureOverride.scene === "strip" || fixtureOverride.scene === "confirm")
@@ -1555,7 +1558,7 @@ export function OptionsTab({
         style={{ top: stickyOffset, height: TOOLBAR_H, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
       >
         <div className="flex items-center gap-1.5">
-          <span style={{ fontSize: 14, color: DIM, fontWeight: FW_NORMAL, fontFamily: MONO }}>Strike</span>
+          <span data-ui-audit="chain-strike-label" style={{ fontSize: 14, color: DIM, fontWeight: FW_NORMAL, fontFamily: MONO }}>Strike</span>
           {isCustomMode ? (
             <div className="flex items-center gap-1">
               <Input

@@ -24,6 +24,7 @@ import type { StrategistValidationMeta } from "@/lib/store";
 import type { StrategistSendToOrderPayload } from "@/components/StrategistV2Card";
 import type { StrategyLeg } from "@/components/StrategyBuilder";
 import type { OptionsContract } from "@/components/OptionsTab";
+import { loadActiveTraderPrefs, type ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
 import { MarketSessionClock } from "@/components/MarketSessionClock";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
 import { BottomNav } from "@/components/BottomNav";
@@ -386,6 +387,7 @@ export default function TerminalPage() {
   const [orderIsClose, setOrderIsClose] = useState(false);
   const [orderInitialStage, setOrderInitialStage] = useState<"form" | "review">("form");
   const [orderConfirmDisabled, setOrderConfirmDisabled] = useState(false);
+  const [orderAtPrefs, setOrderAtPrefs] = useState<ActiveTraderTemplatePrefs | null>(null);
   const savedOptionsCtxRef = useRef<{
     legs?: OrderLeg[];
     netPrice?: number;
@@ -527,6 +529,9 @@ export default function TerminalPage() {
   }, []);
 
   const handleActiveTraderReview = useCallback((contract: OptionsContract, side: "BUY" | "SELL", type: "CALL" | "PUT") => {
+    const sym = useTerminalStore.getState().symbol;
+    const symClass = sym.toUpperCase().includes("SPX") || sym.startsWith("$") ? "index" : "equity";
+    setOrderAtPrefs(loadActiveTraderPrefs(symClass));
     const schwabSym = optionTradeStreamKey(contract);
     const instruction =
       side === "BUY"
@@ -1205,6 +1210,7 @@ export default function TerminalPage() {
         releaseOptionHold={releaseOptionHold}
         initialStage={orderInitialStage}
         confirmDisabled={orderConfirmDisabled}
+        atTemplatePrefs={orderAtPrefs ?? undefined}
         onSendToStrategist={(ticker) => {
           // Strategist tab pulls results for the active symbol — switch to
           // the validated ticket's ticker so the live debate + verdict card

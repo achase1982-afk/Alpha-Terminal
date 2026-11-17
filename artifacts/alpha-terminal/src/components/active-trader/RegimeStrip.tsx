@@ -13,8 +13,9 @@ interface RegimeStripProps {
   regimeDegraded: boolean;
   zones: ZoneModel;
   headline: string;
-  stickyTop: number;
+  stickyTop?: number;
   sessionLabel?: string;
+  embedded?: boolean;
 }
 
 export const RegimeStrip = memo(function RegimeStrip({
@@ -25,6 +26,7 @@ export const RegimeStrip = memo(function RegimeStrip({
   headline,
   stickyTop,
   sessionLabel,
+  embedded,
 }: RegimeStripProps) {
   const session = sessionLabel ?? (isUsEquitiesMarketHoursEt() ? "Cash session" : "Extended");
   const envLabel =
@@ -33,8 +35,13 @@ export const RegimeStrip = memo(function RegimeStrip({
 
   return (
     <div
-      className="sticky z-[38] px-3 py-2 space-y-2"
-      style={{ top: stickyTop, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
+      className={embedded ? "px-3 py-2 space-y-2" : "sticky z-[38] px-3 py-2 space-y-2"}
+      style={{
+        ...(embedded ? {} : { top: stickyTop }),
+        background: BG_EXP_BAR,
+        borderBottom: embedded ? undefined : `1px solid ${BORDER}`,
+        fontFamily: MONO,
+      }}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
