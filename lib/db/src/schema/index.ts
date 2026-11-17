@@ -1572,3 +1572,42 @@ export const autoTradePlaybookTable = pgTable("auto_trade_playbook", {
 });
 
 export type AutoTradePlaybookRow = typeof autoTradePlaybookTable.$inferSelect;
+
+/** SPX desk tape ticks (external trading desk API). */
+export const deskSpxTapeTable = pgTable(
+  "desk_spx_tape",
+  {
+    id: serial("id").primaryKey(),
+    symbol: text("symbol").notNull(),
+    ts: timestamp("ts", { withTimezone: true }).notNull(),
+    last: doublePrecision("last"),
+    bid: doublePrecision("bid"),
+    ask: doublePrecision("ask"),
+    insertedAt: timestamp("inserted_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("desk_spx_tape_symbol_ts_uidx").on(t.symbol, t.ts),
+    index("desk_spx_tape_ts_idx").on(t.ts),
+  ],
+);
+
+export type DeskSpxTapeRow = typeof deskSpxTapeTable.$inferSelect;
+
+/** Desk API response snapshots (30-day retention). */
+export const deskApiSnapshotsTable = pgTable(
+  "desk_api_snapshots",
+  {
+    id: serial("id").primaryKey(),
+    kind: text("kind").notNull(),
+    symbol: text("symbol"),
+    sessionDate: date("session_date").notNull(),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
+    payload: jsonb("payload").notNull(),
+  },
+  (t) => [
+    index("desk_api_snapshots_kind_captured_idx").on(t.kind, t.capturedAt),
+    index("desk_api_snapshots_session_date_idx").on(t.sessionDate),
+  ],
+);
+
+export type DeskApiSnapshotRow = typeof deskApiSnapshotsTable.$inferSelect;

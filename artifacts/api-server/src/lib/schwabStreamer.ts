@@ -7,6 +7,13 @@ import { sendPushToAll } from "./pushService.js";
 import { handleFillForExitStaging } from "./exitStaging.js";
 import { logFailure } from "./telemetry.js";
 import { emitTelemetry } from "./telemetryStore.js";
+import {
+  onSchwabConnectionOpened,
+  onSchwabEvictedYielded,
+  onSchwabInboundFrame,
+  onSchwabOutboundFrame,
+} from "./desk/deskStreamerTap.js";
+import { registerDeskStreamerHealthReaders } from "./desk/deskSchwabStreamerBridge.js";
 
 export interface LiveQuote {
   symbol:       string;
@@ -506,6 +513,13 @@ export function subscribeSchwabOptionsBookEvents(listener: BookListener): () => 
   return () => optionsBookListeners.delete(listener);
 }
 let requestCounter = 0;
+
+function sendStreamerJson(payload: unknown): void {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN) return;
+  const raw = JSON.stringify(payload);
+  onSchwabOutboundFrame(raw);
+  schwabWs.send(raw);
+}
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectDelay = 2000;
 const MAX_RECONNECT_DELAY = 60_000;
@@ -754,7 +768,7 @@ function sendLogin() {
   });
 
   if (loginReq) {
-    schwabWs.send(JSON.stringify({ requests: [loginReq] }));
+    sendStreamerJson({ requests: [loginReq] });
     logger.info("Schwab streamer: LOGIN sent");
   }
 }
@@ -768,7 +782,7 @@ function sendEquitySubscription(symbols: string[]) {
   });
 
   if (req) {
-    schwabWs.send(JSON.stringify({ requests: [req] }));
+    sendStreamerJson({ requests: [req] });
     logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: LEVELONE_EQUITIES SUBS sent");
   }
 }
@@ -782,7 +796,7 @@ function sendFuturesSubscription(symbols: string[]) {
   });
 
   if (req) {
-    schwabWs.send(JSON.stringify({ requests: [req] }));
+    sendStreamerJson({ requests: [req] });
     logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: LEVELONE_FUTURES SUBS sent");
   }
 }
@@ -796,7 +810,7 @@ function sendOptionSubscription(symbols: string[]) {
   });
 
   if (req) {
-    schwabWs.send(JSON.stringify({ requests: [req] }));
+    sendStreamerJson({ requests: [req] });
     logger.info({ count: symbols.length }, "Schwab streamer: LEVELONE_OPTIONS SUBS sent");
   }
 }
@@ -810,7 +824,7 @@ function sendFuturesOptionSubscription(symbols: string[]) {
   });
 
   if (req) {
-    schwabWs.send(JSON.stringify({ requests: [req] }));
+    sendStreamerJson({ requests: [req] });
     logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: LEVELONE_FUTURES_OPTIONS SUBS sent");
   }
 }
@@ -824,7 +838,7 @@ function sendTimesaleEquitySubscription(symbols: string[]) {
   });
 
   if (req) {
-    schwabWs.send(JSON.stringify({ requests: [req] }));
+    sendStreamerJson({ requests: [req] });
     logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: TIMESALE_EQUITY SUBS sent");
   }
 }
@@ -838,7 +852,7 @@ function sendChartEquitySubscription(symbols: string[]) {
   });
 
   if (req) {
-    schwabWs.send(JSON.stringify({ requests: [req] }));
+    sendStreamerJson({ requests: [req] });
     logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: CHART_EQUITY SUBS sent");
   }
 }
@@ -852,7 +866,7 @@ function sendNyseBookSubscription(symbols: string[]) {
   });
 
   if (req) {
-    schwabWs.send(JSON.stringify({ requests: [req] }));
+    sendStreamerJson({ requests: [req] });
     logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: NYSE_BOOK SUBS sent");
   }
 }
@@ -866,7 +880,7 @@ function sendNasdaqBookSubscription(symbols: string[]) {
   });
 
   if (req) {
-    schwabWs.send(JSON.stringify({ requests: [req] }));
+    sendStreamerJson({ requests: [req] });
     logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: NASDAQ_BOOK SUBS sent");
   }
 }
@@ -880,7 +894,7 @@ function sendOptionsBookSubscription(symbols: string[]) {
   });
 
   if (req) {
-    schwabWs.send(JSON.stringify({ requests: [req] }));
+    sendStreamerJson({ requests: [req] });
     logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: OPTIONS_BOOK SUBS sent");
   }
 }
@@ -895,7 +909,7 @@ function sendAcctActivitySubscription() {
   });
 
   if (req) {
-    schwabWs.send(JSON.stringify({ requests: [req] }));
+    sendStreamerJson({ requests: [req] });
     logger.info("Schwab streamer: ACCT_ACTIVITY SUBS sent (awaiting confirmation)");
     if (acctActivitySubTimeout) clearTimeout(acctActivitySubTimeout);
     acctActivitySubTimeout = setTimeout(() => {
@@ -1388,6 +1402,7 @@ function processOptionsBook(content: Record<string, unknown>[]) {
 }
 
 function handleMessage(raw: string) {
+  onSchwabInboundFrame(raw);
   let msg: Record<string, unknown>;
   try {
     msg = JSON.parse(raw);
@@ -1403,6 +1418,12 @@ function handleMessage(raw: string) {
       const content = r["content"] as Record<string, unknown>;
       const code = content?.["code"] as number;
       const msgText = content?.["msg"] as string;
+
+      if (code === 12) {
+        onSchwabEvictedYielded();
+        reconnectDelay = MAX_RECONNECT_DELAY;
+        logger.warn({ service, command, msg: msgText }, "Schwab streamer: connection evicted (code 12) — backing off");
+      }
 
       if (service !== "ADMIN") {
         logger.info({ service, command, code, msg: msgText }, "Schwab streamer: subscription response");
@@ -1546,6 +1567,11 @@ function handleMessage(raw: string) {
       if (n["heartbeat"]) {
         logger.debug({ heartbeat: n["heartbeat"] }, "Schwab streamer: heartbeat");
       }
+      const nCode = n["code"] as number | undefined;
+      if (nCode === 12) {
+        onSchwabEvictedYielded();
+        reconnectDelay = MAX_RECONNECT_DELAY;
+      }
     }
   }
 }
@@ -1662,6 +1688,7 @@ async function connectSchwabStreamer() {
   const connectedUrl = streamerInfo.streamerSocketUrl;
   ws.on("open", () => {
     if (!isCurrent()) return;
+    onSchwabConnectionOpened();
     logger.info("Schwab streamer: WebSocket connected");
     emitTelemetry("SCHWAB_STREAM", "INFO", "Schwab WebSocket connected", { url: connectedUrl });
     if (connectTimeoutTimer) { clearTimeout(connectTimeoutTimer); connectTimeoutTimer = null; }
@@ -2035,3 +2062,5 @@ export function onTokenRefreshed() {
     void connectSchwabStreamer();
   }
 }
+
+registerDeskStreamerHealthReaders(getStreamerStatus, isConnected);
