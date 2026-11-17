@@ -7,11 +7,7 @@ import {
   verifySchwab2State,
 } from "./deskSchwab2OAuth.js";
 import { storeSchwab2Tokens } from "./deskSchwab2TokenStore.js";
-import {
-  errorPage,
-  schwab2StandaloneSuccessPage,
-  traderSuccessPage,
-} from "./schwabOAuthPages.js";
+import { errorPage, traderSuccessPage } from "./schwabOAuthPages.js";
 
 const SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token";
 
@@ -75,9 +71,14 @@ export async function handleSchwab2OAuthCallback(
     await storeSchwab2Tokens(accessToken, rfTok, expiresIn, { newGrant: true });
     req.log.info("Schwab app 2 OAuth callback succeeded");
     if (schwab2StateAfterBrokerage(state)) {
-      res.send(traderSuccessPage({ marketDataAlsoConnected: true }));
+      res.send(traderSuccessPage());
     } else {
-      res.send(schwab2StandaloneSuccessPage());
+      res.send(
+        traderSuccessPage({
+          lead: "Schwab market data (app 2) is linked for desk quotes, chains, and bars.",
+          hint: "Tap the <strong style=\"color:#fff\">X</strong> in the top corner to return to Alpha Terminal.",
+        }),
+      );
     }
     return true;
   } catch (err) {

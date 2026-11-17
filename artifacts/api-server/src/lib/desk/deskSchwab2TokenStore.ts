@@ -1,5 +1,10 @@
 import { logger } from "../logger.js";
-import { deskMarkFeedAuthError, deskMarkFeedNotAuthorized, deskTouchFeed } from "./deskFeedFreshness.js";
+import {
+  deskMarkFeedAuthError,
+  deskMarkFeedError,
+  deskMarkFeedNotAuthorized,
+  deskTouchFeed,
+} from "./deskFeedFreshness.js";
 import { deskSchwab2AppKey, deskSchwab2AppSecret, deskSchwab2Configured } from "./deskSchwab2OAuth.js";
 
 const SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token";
@@ -189,7 +194,11 @@ async function doRefresh(retryCount: number): Promise<boolean> {
         await markSchwab2TokensDead(`refresh_http_${res.status}_invalid_grant`);
         return false;
       }
-      deskMarkFeedAuthError("schwab2_rest", `refresh_http_${res.status}`, "schwab_rest_2");
+      if (res.status >= 500) {
+        deskMarkFeedError("schwab2_rest", `refresh_upstream_${res.status}`, "schwab_rest_2");
+      } else {
+        deskMarkFeedAuthError("schwab2_rest", `refresh_http_${res.status}`, "schwab_rest_2");
+      }
       const retriable =
         generationBefore === (tokenSet?.generation ?? 0) &&
         (res.status === 400 || res.status === 401 || res.status >= 500);

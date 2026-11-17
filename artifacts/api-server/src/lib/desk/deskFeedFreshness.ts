@@ -242,6 +242,16 @@ export function deskMarkFeedAuthError(feed: DeskFeedId, error: string, source?: 
   });
 }
 
+/** Set feed freshness from newest article time only (null when no articles). */
+export function deskTouchFeedArticleAge(feed: DeskFeedId, articleMaxMs: number | null, source?: string): void {
+  const prev = records.get(feed);
+  records.set(feed, {
+    source: source ?? prev?.source ?? FEED_SOURCES[feed],
+    lastDataMs: articleMaxMs,
+    notConfigured: false,
+  });
+}
+
 /** `dataTsMs` is the vendor timestamp of the payload when known; else wall clock. */
 export function deskTouchFeed(feed: DeskFeedId, dataTsMs?: number, source?: string): void {
   const pollMs = Date.now();

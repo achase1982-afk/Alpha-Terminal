@@ -2,9 +2,12 @@ import { deskFormatSchwabSymbol, deskIsIndex } from "./deskSchwabSymbol.js";
 import { deskTouchFeed, deskMarkFeedError, deskMarkAuthFail } from "./deskFeedFreshness.js";
 import {
   type DeskSchwabRestApp,
+  type DeskSchwabRestFetchResult,
+  type DeskSchwabRestResolution,
   deskSchwabChainsFeed,
   deskSchwabMarkApp2AuthFailure,
-  deskSchwabRestFetch,
+  deskSchwabRestFetchWithResolution,
+  deskSchwabRestResolve,
 } from "./deskSchwabRestCredential.js";
 import { deskSessionDateEt } from "./deskEt.js";
 import { logger } from "../logger.js";
@@ -151,11 +154,20 @@ function chainParams(
   return params;
 }
 
-async function fetchChainUrl(
+async function fetchChainUrlResolved(
+  resolved: DeskSchwabRestResolution,
   url: string,
-  preferred: DeskSchwabRestApp,
 ): Promise<{ json: Record<string, unknown> | null; app: DeskSchwabRestApp }> {
-  const { res, app } = await deskSchwabRestFetch(preferred, url, { headers: { Accept: "application/json" } }, 45_000);
+  const fetched = await deskSchwabRestFetchWithResolution(
+    resolved,
+    url,
+    { headers: { Accept: "application/json" } },
+    45_000,
+  );
+  const { res, app, token } = fetched;
+  if (!token) {
+    return { json: null, app };
+  }
   if (res.status === 401) {
     if (app === "app1") deskMarkAuthFail("schwab_chains");
     else deskSchwabMarkApp2AuthFailure(res.status);
@@ -194,9 +206,12 @@ async function fetchChainsFromSchwab(
   if (useSplit) {
     const callParams = chainParams(chainSymbol, expiration, "CALL", opts);
     const putParams = chainParams(chainSymbol, expiration, "PUT", opts);
+    const resolution = await deskSchwabRestResolve(preferred);
+    usedApp = resolution.app;
+    if (!resolution.token) return null;
     const [callR, putR] = await Promise.all([
-      fetchChainUrl(`${SCHWAB_API_BASE}/chains?${callParams}`, preferred),
-      fetchChainUrl(`${SCHWAB_API_BASE}/chains?${putParams}`, preferred),
+      fetchChainUrlResolved(resolution, `${SCHWAB_API_BASE}/chains?${callParams}`),
+      fetchChainUrlResolved(resolution, `${SCHWAB_API_BASE}/chains?${putParams}`),
     ]);
     usedApp = putR.app;
     if (!callR.json && !putR.json) return null;
@@ -208,7 +223,9 @@ async function fetchChainsFromSchwab(
     json = callR.json ?? putR.json;
   } else {
     const params = chainParams(chainSymbol, expiration, "ALL", opts);
-    const one = await fetchChainUrl(`${SCHWAB_API_BASE}/chains?${params}`, preferred);
+    const resolution = await deskSchwabRestResolve(preferred);
+    usedApp = resolution.app;
+    const one = await fetchChainUrlResolved(resolution, `${SCHWAB_API_BASE}/chains?${params}`);
     usedApp = one.app;
     if (!one.json) return null;
     json = one.json;

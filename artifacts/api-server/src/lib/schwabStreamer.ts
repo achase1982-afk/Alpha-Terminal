@@ -555,7 +555,16 @@ export function subscribeSchwabOptionsBookEvents(listener: BookListener): () => 
 }
 let requestCounter = 0;
 
+type StreamerWireTap = (payload: unknown) => void;
+let streamerWireTap: StreamerWireTap | null = null;
+
+/** Vitest-only: capture outbound streamer JSON before WebSocket send. */
+export function __deskStreamerSetWireTap(tap: StreamerWireTap | null): void {
+  streamerWireTap = tap;
+}
+
 function sendStreamerJson(payload: unknown): void {
+  streamerWireTap?.(payload);
   if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN) return;
   const raw = JSON.stringify(payload);
   onSchwabOutboundFrame(raw);
@@ -814,7 +823,7 @@ function sendLogin() {
   }
 }
 
-function sendEquitySubscription(symbols: string[]) {
+function sendEquitySubscription(symbols: string[], opts?: { replayDeskEquities?: boolean }) {
   if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
 
   const req = buildRequest("LEVELONE_EQUITIES", "SUBS", {
@@ -828,6 +837,9 @@ function sendEquitySubscription(symbols: string[]) {
       { count: symbols.length, sample: symbols.slice(0, 5).join(","), fields: LEVELONE_EQUITIES_FIELDS },
       "Schwab streamer: LEVELONE_EQUITIES SUBS sent",
     );
+    if (opts?.replayDeskEquities !== false && deskAddedEquitySymbols.size > 0) {
+      batchDeskAdd(sendDeskEquityAdd, [...deskAddedEquitySymbols]);
+    }
   }
 }
 
@@ -845,7 +857,7 @@ function sendFuturesSubscription(symbols: string[]) {
   }
 }
 
-function sendOptionSubscription(symbols: string[]) {
+function sendOptionSubscription(symbols: string[], opts?: { replayDesk?: boolean }) {
   if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
 
   const req = buildRequest("LEVELONE_OPTIONS", "SUBS", {
@@ -856,7 +868,9 @@ function sendOptionSubscription(symbols: string[]) {
   if (req) {
     sendStreamerJson({ requests: [req] });
     logger.info({ count: symbols.length }, "Schwab streamer: LEVELONE_OPTIONS SUBS sent");
-    deskStreamerReplayDeskAdds();
+    if (opts?.replayDesk !== false) {
+      deskStreamerReplayDeskAdds();
+    }
   }
 }
 
@@ -930,7 +944,7 @@ function sendNasdaqBookSubscription(symbols: string[]) {
   }
 }
 
-function sendOptionsBookSubscription(symbols: string[]) {
+function sendOptionsBookSubscription(symbols: string[], opts?: { replayDesk?: boolean }) {
   if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
 
   const req = buildRequest("OPTIONS_BOOK", "SUBS", {
@@ -941,7 +955,9 @@ function sendOptionsBookSubscription(symbols: string[]) {
   if (req) {
     sendStreamerJson({ requests: [req] });
     logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: OPTIONS_BOOK SUBS sent");
-    deskStreamerReplayDeskAdds();
+    if (opts?.replayDesk !== false) {
+      deskStreamerReplayDeskAdds();
+    }
   }
 }
 
@@ -1675,13 +1691,13 @@ function handleMessage(raw: string) {
           reconnectDelay = 2000;
 
           if (subscribedSymbols.size > 0) {
-            sendEquitySubscription([...subscribedSymbols]);
+            sendEquitySubscription([...subscribedSymbols], { replayDeskEquities: false });
           }
           if (subscribedFuturesSymbols.size > 0) {
             sendFuturesSubscription([...subscribedFuturesSymbols]);
           }
           if (subscribedOptionSymbols.size > 0) {
-            sendOptionSubscription([...subscribedOptionSymbols]);
+            sendOptionSubscription([...subscribedOptionSymbols], { replayDesk: false });
           }
           if (subscribedFuturesOptionSymbols.size > 0) {
             sendFuturesOptionSubscription([...subscribedFuturesOptionSymbols]);
@@ -1699,7 +1715,7 @@ function handleMessage(raw: string) {
             sendNasdaqBookSubscription([...subscribedNasdaqBookSymbols]);
           }
           if (subscribedOptionsBookSymbols.size > 0) {
-            sendOptionsBookSubscription([...subscribedOptionsBookSymbols]);
+            sendOptionsBookSubscription([...subscribedOptionsBookSymbols], { replayDesk: false });
           }
           deskStreamerReplayDeskAdds();
           void import("./desk/deskTapeUniverse.js")
@@ -2295,6 +2311,26 @@ export function onTokenRefreshed() {
     logger.info({ equityCount: subscribedSymbols.size, futuresCount: subscribedFuturesSymbols.size }, "Schwab streamer: token refreshed — attempting connection");
     void connectSchwabStreamer();
   }
+}
+
+/** Vitest: prime streamer WS + LOGIN context so desk wire calls emit requests. */
+export function __deskStreamerWireTestPrime(): void {
+  streamerInfo = {
+    schwabClientCustomerId: "wire-test-customer",
+    schwabClientCorrelId: "wire-test-correl",
+    schwabClientChannel: "N9",
+    schwabClientFunctionId: "APIAPP",
+    streamerSocketUrl: "wss://streamer-wire-test.example/ws",
+  };
+  schwabWs = { readyState: WebSocket.OPEN, send: () => undefined } as unknown as WebSocket;
+  connectionState = "connected";
+}
+
+export function __deskStreamerWireTestUnprime(): void {
+  __deskStreamerSetWireTap(null);
+  stopStreamer();
+  streamerInfo = null;
+  schwabWs = null;
 }
 
 registerDeskStreamerHealthReaders(getStreamerStatus, isConnected);

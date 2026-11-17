@@ -32,7 +32,7 @@ async function tryApp2AccessToken(): Promise<string | null> {
   }
   const token = await getSchwab2ValidAccessToken();
   if (!token) {
-    deskMarkFeedAuthError("schwab2_rest", "schwab2_token_unavailable", "schwab_rest_2");
+    deskMarkFeedNotAuthorized("schwab2_rest", "schwab2_oauth_required", "schwab_rest_2");
     return null;
   }
   return token;
@@ -104,6 +104,44 @@ async function rawFetch(
 
 export type DeskSchwabRestFetchResult = DeskSchwabRestResolution & { res: Response };
 
+/** Fetch with an already-resolved credential (parallel chain legs share one resolve). */
+export async function deskSchwabRestFetchWithResolution(
+  resolved: DeskSchwabRestResolution,
+  url: string,
+  init: RequestInit,
+  timeoutMs = 15_000,
+): Promise<DeskSchwabRestFetchResult> {
+  const { preferred } = resolved;
+  const first = resolved;
+  if (!first.token) {
+    const res = new Response(null, { status: 503, statusText: "not_authorized" });
+    return { ...first, res };
+  }
+
+  let res = await rawFetch(
+    first.app,
+    url,
+    { ...init, headers: { ...init.headers, Authorization: `Bearer ${first.token}` } },
+    timeoutMs,
+  );
+  if (first.app === "app2" && (res.status === 401 || res.status === 403)) {
+    deskSchwabMarkApp2AuthFailure(res.status);
+    const app1 = tryApp1AccessToken();
+    if (app1) {
+      logger.info({ status: res.status }, "Desk Schwab REST: app2 HTTP auth error — retry on app1");
+      deskMarkFeedError("schwab2_rest", "schwab_rest_fallback_to_app1", "schwab_rest_2");
+      res = await rawFetch(
+        "app1",
+        url,
+        { ...init, headers: { ...init.headers, Authorization: `Bearer ${app1}` } },
+        timeoutMs,
+      );
+      return { app: "app1", token: app1, preferred, fellBack: true, res };
+    }
+  }
+  return { ...first, res };
+}
+
 /** Run a Schwab REST GET/POST; on app2 401/403 with token, retry once on app1. */
 export async function deskSchwabRestFetch(
   preferred: DeskSchwabRestApp,
@@ -113,7 +151,7 @@ export async function deskSchwabRestFetch(
 ): Promise<DeskSchwabRestFetchResult> {
   const first = await deskSchwabRestResolve(preferred);
   if (!first.token) {
-    const res = new Response(null, { status: 401, statusText: "No Schwab REST token" });
+    const res = new Response(null, { status: 503, statusText: "not_authorized" });
     return { ...first, res };
   }
 
