@@ -179,6 +179,124 @@ describe("OrderTicket component", () => {
     expect(gate.shouldBlockSubmit).toBe(true);
   });
 
+  it("debit vertical shows positive spread bid/mid/ask and enables Review at snapped mid", async () => {
+    const buyLeg = OPT;
+    const sellLeg = "AAPL  250117C00210000";
+    mockTicks = {
+      [buyLeg]: { bid: 3.7, ask: 3.8, last: 3.75, ts: 1, delta: 0.55 },
+      [sellLeg]: { bid: 1.2, ask: 1.25, last: 1.22, ts: 1, delta: 0.35 },
+    };
+    render(
+      <OrderTicket
+        isOpen
+        onClose={() => {}}
+        strategyLegs={[
+          {
+            schwabSymbol: buyLeg,
+            instruction: "BUY_TO_OPEN",
+            quantity: 1,
+            optionType: "CALL",
+            strike: 200,
+            expiration: "2025-01-17",
+          },
+          {
+            schwabSymbol: sellLeg,
+            instruction: "SELL_TO_OPEN",
+            quantity: 1,
+            optionType: "CALL",
+            strike: 210,
+            expiration: "2025-01-17",
+          },
+        ]}
+        strategyIsCredit={false}
+        subscribeOptionSymbols={vi.fn()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText(/Bid.*2\.45/i)).toBeTruthy());
+    expect(screen.getByText(/Ask.*2\.60/i)).toBeTruthy();
+    const midBtn = screen.getByRole("button", { name: /^Mid/i });
+    fireEvent.click(midBtn);
+    const limitInput = (await screen.findByPlaceholderText("0.00")) as HTMLInputElement;
+    await waitFor(() => expect(limitInput.value).toBe("2.53"));
+    const review = screen.getByRole("button", { name: "Review" });
+    expect((review as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("credit vertical shows positive spread NBBO", async () => {
+    const sellLeg = OPT;
+    const buyLeg = "AAPL  250117C00210000";
+    mockTicks = {
+      [sellLeg]: { bid: 3.7, ask: 3.8, last: 3.75, ts: 1, delta: 0.55 },
+      [buyLeg]: { bid: 1.2, ask: 1.25, last: 1.22, ts: 1, delta: 0.35 },
+    };
+    render(
+      <OrderTicket
+        isOpen
+        onClose={() => {}}
+        strategyLegs={[
+          {
+            schwabSymbol: sellLeg,
+            instruction: "SELL_TO_OPEN",
+            quantity: 1,
+            optionType: "CALL",
+            strike: 200,
+            expiration: "2025-01-17",
+          },
+          {
+            schwabSymbol: buyLeg,
+            instruction: "BUY_TO_OPEN",
+            quantity: 1,
+            optionType: "CALL",
+            strike: 210,
+            expiration: "2025-01-17",
+          },
+        ]}
+        strategyIsCredit
+        subscribeOptionSymbols={vi.fn()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText(/Bid.*2\.45/i)).toBeTruthy());
+    expect(screen.getByText(/Ask.*2\.60/i)).toBeTruthy();
+  });
+
+  it("even-money collar spread is not crossed and keeps signed mids", async () => {
+    const putLeg = "AAPL  250117P00200000";
+    const callLeg = "AAPL  250117C00210000";
+    mockTicks = {
+      [putLeg]: { bid: 1.0, ask: 1.05, last: 1.02, ts: 1, delta: -0.3 },
+      [callLeg]: { bid: 1.0, ask: 1.1, last: 1.05, ts: 1, delta: 0.3 },
+    };
+    render(
+      <OrderTicket
+        isOpen
+        onClose={() => {}}
+        strategyLegs={[
+          {
+            schwabSymbol: putLeg,
+            instruction: "BUY_TO_OPEN",
+            quantity: 1,
+            optionType: "PUT",
+            strike: 200,
+            expiration: "2025-01-17",
+          },
+          {
+            schwabSymbol: callLeg,
+            instruction: "SELL_TO_OPEN",
+            quantity: 1,
+            optionType: "CALL",
+            strike: 210,
+            expiration: "2025-01-17",
+          },
+        ]}
+        strategyIsCredit={false}
+        subscribeOptionSymbols={vi.fn()}
+      />,
+    );
+    const review = await screen.findByRole("button", { name: "Review" });
+    fireEvent.change(await screen.findByPlaceholderText("0.00"), { target: { value: "0.03" } });
+    await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
+  });
+
   it("FAIL liquidity when any leg of a multi-leg order is crossed", async () => {
     const shortLeg = OPT;
     const longLeg = "AAPL  250117C00210000";

@@ -526,7 +526,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       spreadBid,
       spreadMid,
       spreadAsk,
-      crossed: anyLegCrossed || agg.crossed || spreadMid == null,
+      crossed: anyLegCrossed || agg.crossed,
     };
   }, [isMultiLeg, liveStrategyLegs, strategyNetPrice, limitPrice, limitTickCtx]);
 

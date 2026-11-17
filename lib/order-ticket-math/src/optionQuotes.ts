@@ -82,9 +82,9 @@ export interface SpreadNBBO {
 }
 
 /**
- * Net spread bid/ask from leg quotes (SELL legs add bid/ask; BUY legs subtract opposite side).
- * Normalizes net-debit (negative raw) and net-credit (positive raw) into a non-crossed pair when valid.
- * Missing any leg quote makes spread mid unavailable.
+ * Net spread bid/ask from leg quotes in the order's natural direction with positive magnitudes
+ * for typical debit/credit structures; even-money nets may remain signed.
+ * `crossed` is true only when an individual leg book is crossed — never when spread mid ≤ 0.
  */
 export function aggregateSpreadNBBO(
   legs: Array<{ instruction: string; bid?: number | null; ask?: number | null }>,
@@ -92,6 +92,10 @@ export function aggregateSpreadNBBO(
   if (legs.length === 0) return null;
   let rawBid = 0;
   let rawAsk = 0;
+  let buyBidSum = 0;
+  let buyAskSum = 0;
+  let sellBidSum = 0;
+  let sellAskSum = 0;
   let haveAllLegs = true;
   let anyLegCrossed = false;
   for (const leg of legs) {
@@ -105,9 +109,13 @@ export function aggregateSpreadNBBO(
     const bid = leg.bid!;
     const ask = leg.ask!;
     if (isSell) {
+      sellBidSum += bid;
+      sellAskSum += ask;
       rawBid += bid;
       rawAsk += ask;
     } else {
+      buyBidSum += bid;
+      buyAskSum += ask;
       rawBid -= ask;
       rawAsk -= bid;
     }
@@ -117,8 +125,27 @@ export function aggregateSpreadNBBO(
     return null;
   }
 
-  const spreadBid = rawBid;
-  const spreadAsk = rawAsk;
+  const debitBid = buyBidSum - sellAskSum;
+  const debitAsk = buyAskSum - sellBidSum;
+  const creditBid = sellBidSum - buyAskSum;
+  const creditAsk = sellAskSum - buyBidSum;
+
+  const debitOk = debitBid > 0 && debitAsk > 0 && debitBid <= debitAsk;
+  const creditOk = creditBid > 0 && creditAsk > 0 && creditBid <= creditAsk;
+
+  let spreadBid: number;
+  let spreadAsk: number;
+  if (debitOk) {
+    spreadBid = debitBid;
+    spreadAsk = debitAsk;
+  } else if (creditOk) {
+    spreadBid = creditBid;
+    spreadAsk = creditAsk;
+  } else {
+    spreadBid = rawBid;
+    spreadAsk = rawAsk;
+  }
+
   const crossed = anyLegCrossed;
   const mid =
     !crossed && Number.isFinite(spreadBid) && Number.isFinite(spreadAsk) && spreadBid <= spreadAsk

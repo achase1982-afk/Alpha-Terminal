@@ -46,16 +46,28 @@ describe("optionQuotes", () => {
     expect(stale?.source).toBe("contract");
   });
 
-  it("keeps signed net prices and only flags per-leg crosses", () => {
+  it("debit vertical uses positive natural-direction NBBO", () => {
     const agg = aggregateSpreadNBBO([
       { instruction: "BUY_TO_OPEN", bid: 3.7, ask: 3.8 },
       { instruction: "SELL_TO_OPEN", bid: 1.2, ask: 1.25 },
     ]);
     expect(agg).not.toBeNull();
     expect(agg!.crossed).toBe(false);
-    expect(agg!.bid).toBeCloseTo(-2.6, 5);
-    expect(agg!.ask).toBeCloseTo(-2.45, 5);
-    expect(agg!.mid).toBeCloseTo(-2.525, 5);
+    expect(agg!.bid).toBeCloseTo(2.45, 5);
+    expect(agg!.ask).toBeCloseTo(2.6, 5);
+    expect(agg!.mid).toBeCloseTo(2.525, 5);
+  });
+
+  it("credit vertical uses positive natural-direction NBBO", () => {
+    const agg = aggregateSpreadNBBO([
+      { instruction: "SELL_TO_OPEN", bid: 3.7, ask: 3.8 },
+      { instruction: "BUY_TO_OPEN", bid: 1.2, ask: 1.25 },
+    ]);
+    expect(agg).not.toBeNull();
+    expect(agg!.crossed).toBe(false);
+    expect(agg!.bid).toBeCloseTo(2.45, 5);
+    expect(agg!.ask).toBeCloseTo(2.6, 5);
+    expect(agg!.mid).toBeCloseTo(2.525, 5);
   });
 
   it("collar / risk reversal nets are not treated as crossed", () => {

@@ -57,6 +57,20 @@ function isOptionAsset(asset?: string): boolean {
   return a === "OPTION" || a === "COLLECTIVE_INVESTMENT";
 }
 
+/** Infer credit vs debit for a 2-leg vertical from short/long strikes (same option type). */
+export function inferNetCreditFromLegStructure(legs: EconomicsLeg[]): boolean | null {
+  if (legs.length !== 2) return null;
+  const allCalls = legs.every((l) => l.optionType === "CALL");
+  const allPuts = legs.every((l) => l.optionType === "PUT");
+  if (!allCalls && !allPuts) return null;
+  const sell = legs.find((l) => l.instruction.startsWith("SELL"));
+  const buy = legs.find((l) => l.instruction.startsWith("BUY"));
+  if (!sell || !buy) return null;
+  if (allCalls) return sell.strike < buy.strike;
+  if (allPuts) return sell.strike > buy.strike;
+  return null;
+}
+
 /** Credit/debit from Schwab NET order type — not leg counts. */
 export function schwabOrderIsCredit(order: SchwabOrderLike): boolean | null {
   const t = (order.orderType ?? "").trim().toUpperCase();
@@ -120,11 +134,15 @@ export function schwabOrderToEconomicsInput(order: SchwabOrderLike): OrderEconom
     });
   }
 
-  const isCredit = schwabOrderIsCredit(order);
+  let isCredit = schwabOrderIsCredit(order);
   if (isCredit == null && econLegs.length >= 2) {
+    isCredit = inferNetCreditFromLegStructure(econLegs);
+  }
+  if (isCredit == null) {
     const sellCount = econLegs.filter((l) => l.instruction.startsWith("SELL")).length;
     const buyCount = econLegs.filter((l) => l.instruction.startsWith("BUY")).length;
     if (sellCount !== buyCount) return null;
+    isCredit = false;
   }
 
   const contractCount = legs.reduce((s, l) => s + (l.quantity ?? 1), 0) * qty;
@@ -133,7 +151,7 @@ export function schwabOrderToEconomicsInput(order: SchwabOrderLike): OrderEconom
     legs: econLegs,
     limitPrice: price,
     quantity: qty,
-    isCredit: isCredit ?? false,
+    isCredit,
     isOption: true,
     contractCount,
   };

@@ -6,19 +6,18 @@ export { isClosingSchwabOrder, type SchwabOrderLike } from "./schwabOrderRisk.js
 export interface ServerPreTradeSettings {
   preTradeEnabled: boolean;
   blockOnRed: boolean;
-  preTradeMaxPositionPct: number;
+  /** Server-side user max position % — when omitted, only the 10% catastrophe guard applies. */
+  preTradeMaxPositionPct?: number;
 }
 
 export const DEFAULT_SERVER_PRE_TRADE: ServerPreTradeSettings = {
   preTradeEnabled: true,
   blockOnRed: false,
-  preTradeMaxPositionPct: 3,
 };
 
 /**
  * Ticket enforces the user's max position % (default 3%). The server is a catastrophe guard only:
- * it uses max(user setting, 10%), so it never blocks an order the ticket would allow at normal
- * settings and never trusts a looser client value.
+ * when a server-side user cap exists, use max(user, 10%); otherwise enforce 10% alone.
  */
 export const SERVER_SIZE_CATASTROPHE_FLOOR_PCT = 10;
 
@@ -49,10 +48,11 @@ export function evaluateServerPlaceOrderGate(input: {
   } else if (input.accountEquity == null || input.accountEquity <= 0) {
     checks.push({ id: "size", level: "YELLOW" });
   } else {
-    const serverCapPct = Math.max(
-      settings.preTradeMaxPositionPct,
-      SERVER_SIZE_CATASTROPHE_FLOOR_PCT,
-    );
+    const userPct = settings.preTradeMaxPositionPct;
+    const serverCapPct =
+      userPct != null && Number.isFinite(userPct) && userPct > 0
+        ? Math.max(userPct, SERVER_SIZE_CATASTROPHE_FLOOR_PCT)
+        : SERVER_SIZE_CATASTROPHE_FLOOR_PCT;
     const maxAllowed = input.accountEquity * (serverCapPct / 100);
     checks.push({
       id: "size",

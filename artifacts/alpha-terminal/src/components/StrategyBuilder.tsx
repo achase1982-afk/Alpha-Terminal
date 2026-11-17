@@ -8,6 +8,8 @@ import {
   mergeLegStreamQuotes,
   pairedQuoteFromStreamTick,
   parseCanonicalLimit,
+  resolveSubmittedLimit,
+  schwabPriceFromTicket,
 } from "@workspace/order-ticket-math";
 import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
@@ -693,6 +695,11 @@ export function StrategyBuilder({
   const overallRisk = useMemo(() => getOverallLevel(riskChecks), [riskChecks]);
   const blockedByRisk = false;
 
+  const limitTickCtx = useMemo(
+    () => ({ underlyingSymbol: symbol, isOption: true }),
+    [symbol],
+  );
+
   const spreadPrices = useMemo(() => {
     if (pricedLegs.length === 0) return null;
     const agg = aggregateSpreadNBBO(
@@ -701,18 +708,17 @@ export function StrategyBuilder({
     if (!agg) return null;
     const spreadBid = agg.bid;
     const spreadAsk = agg.ask;
-    const spreadMid = agg.mid;
-    if (spreadMid == null || spreadMid <= 0 || agg.crossed) {
-      return { spreadBid, spreadMid: null as number | null, spreadAsk, crossed: true };
-    }
-    return { spreadBid, spreadMid, spreadAsk, crossed: false };
-  }, [pricedLegs]);
+  const roundedMid =
+    agg.mid != null ? parseCanonicalLimit(agg.mid, limitTickCtx) : null;
+    const spreadMid = roundedMid ?? null;
+    return { spreadBid, spreadMid, spreadAsk, crossed: agg.crossed };
+  }, [pricedLegs, limitTickCtx]);
 
   useEffect(() => {
-    if (spreadPrices?.spreadMid != null && spreadPrices.spreadMid > 0 && !limitPrice && !priceLocked) {
-      setLimitPrice(spreadPrices.spreadMid.toFixed(2));
+    if (spreadPrices?.spreadMid != null && !limitPrice && !priceLocked) {
+      setLimitPrice(displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid));
     }
-  }, [spreadPrices, limitPrice, priceLocked]);
+  }, [spreadPrices, limitPrice, priceLocked, limitTickCtx]);
 
   const effectiveBid = spreadPrices?.spreadBid ?? null;
   const effectiveAsk = spreadPrices?.spreadAsk ?? null;
@@ -727,9 +733,9 @@ export function StrategyBuilder({
     return Math.min(100, Math.max(0, ((lp - effectiveBid) / range) * 100));
   }, [effectiveBid, effectiveAsk, limitPrice]);
 
-  const limitTickCtx = useMemo(
-    () => ({ underlyingSymbol: symbol, isOption: true }),
-    [symbol],
+  const submittedLimit = useMemo(
+    () => resolveSubmittedLimit(limitTickCtx, limitPrice),
+    [limitTickCtx, limitPrice],
   );
 
   const setMidPrice = useCallback(() => {
@@ -745,15 +751,20 @@ export function StrategyBuilder({
   }, [spreadPrices, isCredit, limitTickCtx]);
 
   const estimatedCost = useMemo(() => {
-    const price = parseFloat(limitPrice);
-    if (!price || legs.length === 0) return null;
-    return price * quantity * 100;
-  }, [limitPrice, quantity, legs]);
+    if (submittedLimit == null || submittedLimit <= 0 || legs.length === 0) return null;
+    return submittedLimit * quantity * 100;
+  }, [submittedLimit, quantity, legs]);
 
-  const isValid = legs.length > 0 && !!limitPrice && parseFloat(limitPrice) > 0 && quantity > 0 && !!accountHash;
+  const isValid =
+    legs.length > 0 && submittedLimit != null && submittedLimit > 0 && quantity > 0 && !!accountHash;
+
+  const snapLimitOnBlur = useCallback(() => {
+    const snapped = resolveSubmittedLimit(limitTickCtx, limitPrice);
+    if (snapped != null) setLimitPrice(displaySubmittedLimit(limitTickCtx, snapped));
+  }, [limitTickCtx, limitPrice]);
 
   const buildSchwabOrder = useCallback(() => {
-    const parsed = parseFloat(limitPrice || "0");
+    const parsed = schwabPriceFromTicket(limitTickCtx, limitPrice);
     const getSymParts = (sym: string) => ({ date: sym.substring(6, 12), cp: sym.charAt(12) });
     let complexType = "CUSTOM";
     if (legs.length === 1) {
@@ -782,22 +793,20 @@ export function StrategyBuilder({
     };
     if (parsed > 0) o.price = parsed;
     return o;
-  }, [isCredit, extendedHours, legs, quantity, limitPrice]);
+  }, [isCredit, extendedHours, legs, quantity, limitPrice, limitTickCtx]);
 
   const validateAndReview = useCallback(() => {
-    const parsed = parseFloat(limitPrice || "0");
-    if (!parsed || parsed <= 0) {
+    if (submittedLimit == null || submittedLimit <= 0) {
       setPriceError("A limit price is required. Set a price using BID / MID / NAT or enter manually.");
       return;
     }
     setPriceError("");
     setStage("review");
-  }, [limitPrice]);
+  }, [submittedLimit]);
 
   const handleSubmit = useCallback(async () => {
     if (!accountHash) return;
-    const parsed = parseFloat(limitPrice || "0");
-    if (!parsed || parsed <= 0) {
+  if (submittedLimit == null || submittedLimit <= 0) {
       setPriceError("A limit price is required.");
       setStage("form");
       return;
@@ -1366,6 +1375,7 @@ export function StrategyBuilder({
                       <input
                         type="number" inputMode="decimal" step="0.01" value={limitPrice}
                         onChange={(e) => { if (!priceLocked) { setLimitPrice(e.target.value); setPriceError(""); } }}
+                        onBlur={() => { if (!priceLocked) snapLimitOnBlur(); }}
                         placeholder="0.00"
                         className="flex-1 text-[13px] bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none text-right"
                         style={{ color: priceLocked ? GOLD : WHITE, border: "none", fontFamily: SYS_FONT }}

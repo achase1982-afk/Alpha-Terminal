@@ -4,6 +4,7 @@ import {
   DEFAULT_SERVER_PRE_TRADE,
 } from "../serverPlaceOrderGate.js";
 import {
+  inferNetCreditFromLegStructure,
   schwabOrderHasUncoveredShortRisk,
   schwabOrderMaxRisk,
   schwabOrderToEconomicsInput,
@@ -18,6 +19,23 @@ const P5900 = "SPXW  261118P05900000";
 const P5895 = "SPXW  261118P05895000";
 const C5950S = "SPXW  261118C05950000";
 const C5955 = "SPXW  261118C05955000";
+
+describe("inferNetCreditFromLegStructure", () => {
+  it("marks bull call debit and bear call credit", () => {
+    expect(
+      inferNetCreditFromLegStructure([
+        { strike: 200, optionType: "CALL", instruction: "BUY_TO_OPEN" },
+        { strike: 210, optionType: "CALL", instruction: "SELL_TO_OPEN" },
+      ]),
+    ).toBe(false);
+    expect(
+      inferNetCreditFromLegStructure([
+        { strike: 200, optionType: "CALL", instruction: "SELL_TO_OPEN" },
+        { strike: 210, optionType: "CALL", instruction: "BUY_TO_OPEN" },
+      ]),
+    ).toBe(true);
+  });
+});
 
 describe("schwabOrderMaxRisk", () => {
   it("scores 1-lot 5-wide credit at 1.00 as $400 max loss", () => {
