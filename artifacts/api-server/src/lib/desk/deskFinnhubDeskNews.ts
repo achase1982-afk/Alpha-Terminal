@@ -1,4 +1,5 @@
 import { deskEnv } from "./deskEnv.js";
+import { DESK_DEFAULT_NEWS_SYMBOLS } from "./deskDefaultNewsSymbols.js";
 import { logger } from "../logger.js";
 import {
   deskMarkFeedAuthError,
@@ -86,7 +87,7 @@ export async function deskLoadFinnhubDeskArticles(symbols: string[]): Promise<{
   if (!key) return { articles: [], hadHttp2xx: false };
 
   const uniq = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
-  const deskSyms = uniq.length ? uniq : ["SPY", "QQQ"];
+  const deskSyms = uniq.length ? uniq : [...DESK_DEFAULT_NEWS_SYMBOLS];
   const all: unknown[] = [];
   let hadHttp2xx = false;
   let lastErrorStatus: number | undefined;

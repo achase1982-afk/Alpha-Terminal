@@ -23,11 +23,12 @@ import {
   deskGetCachedLiveGamma0dte,
   deskGetCachedNetPremTicks,
   deskGetCachedUwFlow,
-  deskParseSinceMs,
+  deskParseSinceFromQuery,
   deskValidateMarketDate,
   deskValidateUwTicker,
   deskUwRouteErrorForFeed,
   deskUwLastHttpStatus,
+  deskUwAddonEnabled,
 } from "../lib/desk/addons/unusualWhales/index.js";
 import { getDeskRawTapeHealth, streamDeskRawTapeNdjson } from "../lib/desk/deskSpxTapeRaw.js";
 import { getDeskTapeUniverseHealth } from "../lib/desk/deskTapeUniverse.js";
@@ -249,7 +250,23 @@ router.get("/chains", async (req, res) => {
 });
 
 router.get("/flow", async (req, res) => {
-  const resolved = deskResolveSource(req.query["source"] as string | undefined, ["unusual_whales"] as const);
+  const rawSource = req.query["source"] as string | undefined;
+  const resolved =
+    rawSource == null || String(rawSource).trim() === ""
+      ? deskUwAddonEnabled()
+        ? { source: "unusual_whales" as const }
+        : null
+      : deskResolveSource(rawSource, ["unusual_whales"] as const);
+  if (resolved === null) {
+    const body: Record<string, unknown> = {
+      error: deskUwRouteErrorForFeed("uw_flow", "not_configured"),
+      source: "unusual_whales",
+    };
+    const lastUwStatus = deskUwLastHttpStatus();
+    if (lastUwStatus != null) body.lastUwStatus = lastUwStatus;
+    res.status(503).json(body);
+    return;
+  }
   if ("error" in resolved) {
     res.status(400).json({ error: resolved.error, source: resolved.source, allowed: resolved.allowed });
     return;
@@ -555,7 +572,10 @@ router.get("/net_prem/ticks", async (req, res) => {
     res.status(400).json({ error: "invalid_ticker", source: "unusual_whales" });
     return;
   }
-  const sinceParsed = deskParseSinceMs(req.query["since"] as string | undefined);
+  const sinceParsed = deskParseSinceFromQuery({
+    since: req.query["since"],
+    since_ms: req.query["since_ms"],
+  });
   if (!sinceParsed.ok) {
     res.status(400).json({ error: sinceParsed.error, source: "unusual_whales" });
     return;

@@ -16,7 +16,18 @@ export function deskFeedIntentionallyUnconfigured(feed: string): boolean {
   return false;
 }
 
-export function deskFeedExcludedFromHealthGate(row: FeedRow): boolean {
+/** When any UW feed is in billing/auth failure, all UW rows are gated off aggregates. */
+export function deskUwAuthBackoffActive(feeds: FeedRow[]): boolean {
+  return feeds.some(
+    (f) => UW_FEEDS.has(f.feed) && (f.status === "auth_error" || f.status === "expired_or_unpaid"),
+  );
+}
+
+export function deskFeedExcludedFromHealthGate(
+  row: FeedRow,
+  opts?: { uwAuthBackoff?: boolean },
+): boolean {
+  if (opts?.uwAuthBackoff && UW_FEEDS.has(row.feed)) return true;
   if (row.feed === "stocknews" && row.status === "not_configured") return true;
   if (UW_FEEDS.has(row.feed) && UW_OPTIONAL_STATUSES.has(row.status)) return true;
   return false;
@@ -36,9 +47,12 @@ export function deskSummarizeFeedsHealth(feeds: FeedRow[]): {
   any_failure: boolean;
   gated_feeds: string[];
 } {
-  const gated = feeds.filter(deskFeedExcludedFromHealthGate).map((f) => f.feed);
-  const active = feeds.filter((f) => !deskFeedExcludedFromHealthGate(f));
-  const any_stale = active.some((f) => f.stale);
+  const uwBackoff = deskUwAuthBackoffActive(feeds);
+  const gated = feeds
+    .filter((f) => deskFeedExcludedFromHealthGate(f, { uwAuthBackoff: uwBackoff }))
+    .map((f) => f.feed);
+  const active = feeds.filter((f) => !deskFeedExcludedFromHealthGate(f, { uwAuthBackoff: uwBackoff }));
+  const any_stale = active.some((f) => f.stale && f.status !== "on_demand");
   const any_failure = active.some((f) => FAILURE_STATUSES.has(f.status) || f.stale);
   return { any_stale, any_failure, gated_feeds: [...new Set(gated)] };
 }

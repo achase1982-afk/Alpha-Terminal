@@ -2,7 +2,7 @@ import { getUwApiKey, startDeskUwPoller, deskUwAddonEnabled } from "./addons/unu
 import { getTradierToken } from "./deskTradier.js";
 import { getAlpacaKeys } from "./deskAlpaca.js";
 import { deskProbeAlpacaNews } from "./deskAlpacaNews.js";
-import { deskMarkFeedNotConfigured, deskSetStreamerDisabled } from "./deskFeedFreshness.js";
+import { deskMarkFeedNotConfigured, deskMarkFeedOnDemand, deskSetStreamerDisabled } from "./deskFeedFreshness.js";
 import { startDeskRetentionJobs } from "./deskRetention.js";
 import { startDeskBackgroundPollers } from "./deskBackgroundPollers.js";
 import {
@@ -63,6 +63,7 @@ export function initDeskMarketFeeds(): void {
   initDeskTradierSandboxFeed();
 
   if (!getAlphaVantageKey()) deskMarkFeedNotConfigured("alphavantage", "alphavantage");
+  else deskMarkFeedOnDemand("alphavantage", "alphavantage");
 
   if (!getMarketauxKey()) deskMarkFeedNotConfigured("marketaux", "marketaux");
   else void deskProbeMarketaux();

@@ -7,6 +7,7 @@ import {
   deskTouchFeedArticleAge,
 } from "./deskFeedFreshness.js";
 import { deskMaxArticlePublishedMs } from "./deskNewsArticleAge.js";
+import { DESK_DEFAULT_NEWS_SYMBOLS } from "./deskDefaultNewsSymbols.js";
 import { logger } from "../logger.js";
 
 const ALPACA_NEWS_URL = "https://data.alpaca.markets/v1beta1/news";
@@ -31,14 +32,14 @@ export function parseAlpacaNewsPayload(json: unknown): unknown[] {
   return [];
 }
 
-export function newsUrl(symbols: string[], limit: number, windowMs: number): string {
+export function newsUrl(symbols: string[] | null, limit: number, windowMs: number): string {
   const start = new Date(Date.now() - windowMs).toISOString();
   const params = new URLSearchParams({
-    symbols: symbols.join(","),
     limit: String(limit),
     sort: "desc",
     start,
   });
+  if (symbols?.length) params.set("symbols", symbols.join(","));
   return `${ALPACA_NEWS_URL}?${params.toString()}`;
 }
 
@@ -48,7 +49,7 @@ const MS_7D = 7 * MS_24H;
 async function fetchAlpacaNewsWindow(
   keyId: string,
   secret: string,
-  syms: string[],
+  syms: string[] | null,
   limit: number,
   windowMs: number,
 ): Promise<{ ok: boolean; articles: unknown[]; status: number }> {
@@ -77,7 +78,7 @@ export async function deskFetchAlpacaNews(
   }
 
   const uniq = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
-  const syms = uniq.length ? uniq : ["SPY"];
+  const syms = uniq.length ? uniq : [...DESK_DEFAULT_NEWS_SYMBOLS];
 
   let r: { ok: boolean; articles: unknown[]; status: number };
   try {
@@ -113,9 +114,10 @@ export async function deskProbeAlpacaNews(): Promise<void> {
   const { keyId, secret } = alpacaNewsCredentials();
   if (!keyId || !secret) return;
   try {
-    let r = await fetchAlpacaNewsWindow(keyId, secret, ["SPY"], 5, MS_24H);
+    const probeSyms = [...DESK_DEFAULT_NEWS_SYMBOLS];
+    let r = await fetchAlpacaNewsWindow(keyId, secret, probeSyms, 5, MS_24H);
     if (r.ok && r.articles.length === 0) {
-      r = await fetchAlpacaNewsWindow(keyId, secret, ["SPY"], 5, MS_7D);
+      r = await fetchAlpacaNewsWindow(keyId, secret, null, 5, MS_7D);
     }
     if (r.status === 401 || r.status === 403) {
       deskMarkFeedAuthError("alpaca", `alpaca_news_http_${r.status}`, ALPACA_SOURCE);

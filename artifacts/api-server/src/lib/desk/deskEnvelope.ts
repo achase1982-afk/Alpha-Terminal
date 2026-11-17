@@ -1,5 +1,9 @@
 import { deskAsofEtIso, deskSessionDateEt } from "./deskEt.js";
-import { deskIsFeedStale, type DeskFeedId } from "./deskFeedFreshness.js";
+import {
+  deskFeedEnvelopeStale,
+  deskIsFeedStale,
+  type DeskFeedId,
+} from "./deskFeedFreshness.js";
 
 export type DeskEnvelope<T> = T & {
   source: string;
@@ -15,7 +19,9 @@ export function deskEnvelope<T extends Record<string, unknown>>(
   asOfMs: number,
   feed?: DeskFeedId,
 ): DeskEnvelope<T> {
-  const stale = feed ? deskIsFeedStale(feed, asOfMs) : false;
+  const stale = feed
+    ? deskFeedEnvelopeStale(feed) || deskIsFeedStale(feed, asOfMs)
+    : false;
   return {
     ...payload,
     source,

@@ -9,6 +9,7 @@ import { deskCoercePollReceiptTs } from "./deskFeedTimestamp.js";
 import {
   deskFeedIntentionallyUnconfigured,
   deskFeedExcludedFromHealthGate,
+  deskUwAuthBackoffActive,
 } from "./deskFeedHealthGate.js";
 import { DESK_NEWS_POLL_MS } from "./deskPollCadence.js";
 
@@ -50,7 +51,8 @@ export type DeskFeedStatusCode =
   | "not_configured"
   | "rate_limited"
   | "ok_no_new_articles"
-  | "expired_or_unpaid";
+  | "expired_or_unpaid"
+  | "on_demand";
 
 export type DeskFeedStatus = {
   feed: DeskFeedId;
@@ -230,6 +232,16 @@ export function deskMarkFeedConfiguredKeys(feed: DeskFeedId, source?: string): v
   });
 }
 
+/** Feed is configured but only updated on explicit API use (not background poll). */
+export function deskMarkFeedOnDemand(feed: DeskFeedId, source?: string): void {
+  records.set(feed, {
+    source: source ?? FEED_SOURCES[feed],
+    lastDataMs: null,
+    notConfigured: false,
+    forcedStatus: "on_demand",
+  });
+}
+
 export function deskMarkFeedRateLimited(feed: DeskFeedId, error: string, source?: string): void {
   const prev = records.get(feed);
   records.set(feed, {
@@ -286,6 +298,21 @@ export function deskMarkFeedAuthError(feed: DeskFeedId, error: string, source?: 
     lastPollOkMs: prev?.lastPollOkMs ?? null,
     error,
     forcedStatus: "auth_error",
+  });
+}
+
+/** On-demand feeds: refresh payload timestamp without leaving on_demand status. */
+export function deskTouchFeedOnDemand(feed: DeskFeedId, dataTsMs?: number, source?: string): void {
+  const pollMs = Date.now();
+  const ts = deskCoercePollReceiptTs(dataTsMs, pollMs);
+  const prev = records.get(feed);
+  records.set(feed, {
+    source: source ?? prev?.source ?? FEED_SOURCES[feed],
+    lastDataMs: ts,
+    lastPollOkMs: prev?.lastPollOkMs ?? null,
+    notConfigured: false,
+    error: undefined,
+    forcedStatus: "on_demand",
   });
 }
 
@@ -361,6 +388,7 @@ function resolveStatus(
   if (rec.forcedStatus === "auth_error") return "auth_error";
   if (rec.forcedStatus === "rate_limited") return "rate_limited";
   if (rec.forcedStatus === "expired_or_unpaid") return "expired_or_unpaid";
+  if (rec.forcedStatus === "on_demand") return "on_demand";
   if (rec.forcedStatus === "error") return "error";
   if (!feedInSession(feed, at)) return "session_closed";
 
@@ -398,7 +426,7 @@ export function buildDeskHealthFeeds(now = Date.now()): DeskFeedStatus[] {
     "news",
   ];
 
-  return ids.map((feed) => {
+  const rows = ids.map((feed) => {
     let rec = records.get(feed) ?? { source: FEED_SOURCES[feed], lastDataMs: null };
     if (deskFeedIntentionallyUnconfigured(feed)) {
       rec = {
@@ -429,7 +457,12 @@ export function buildDeskHealthFeeds(now = Date.now()): DeskFeedStatus[] {
     if (status === "session_closed") stale = false;
     if (status === "not_configured") stale = false;
     if (status === "configured" || status === "not_authorized") stale = false;
-    if (status === "rate_limited" || status === "expired_or_unpaid" || status === "ok_no_new_articles") {
+    if (
+      status === "rate_limited" ||
+      status === "expired_or_unpaid" ||
+      status === "ok_no_new_articles" ||
+      status === "on_demand"
+    ) {
       stale = false;
     }
     if (!inSession && FEED_SESSION[feed]) stale = false;
@@ -446,12 +479,23 @@ export function buildDeskHealthFeeds(now = Date.now()): DeskFeedStatus[] {
       asof_et,
     };
     if (rec.error) row.error = rec.error;
-    if (deskFeedExcludedFromHealthGate(row)) {
+    return row;
+  });
+  const uwBackoff = deskUwAuthBackoffActive(rows);
+  for (const row of rows) {
+    if (deskFeedExcludedFromHealthGate(row, { uwAuthBackoff: uwBackoff })) {
       row.excluded_from_health_gate = true;
       row.stale = false;
     }
-    return row;
-  });
+  }
+  return rows;
+}
+
+/** Envelope `stale` matches `/health` feed rows (not raw article age alone). */
+export function deskFeedEnvelopeStale(feed: DeskFeedId, now = Date.now()): boolean {
+  const row = buildDeskHealthFeeds(now).find((f) => f.feed === feed);
+  if (!row) return true;
+  return row.stale;
 }
 
 export { deskSummarizeFeedsHealth } from "./deskFeedHealthGate.js";
