@@ -30,6 +30,7 @@ import {
 } from "@/components/options/optionsTheme";
 import { ActiveTraderView } from "@/components/active-trader/ActiveTraderView";
 import { OptionsSubViewToggle, type OptionsSubView } from "@/components/active-trader/OptionsSubViewToggle";
+import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 
 const EPS = 0.0001;
 
@@ -1225,7 +1226,10 @@ export function OptionsTab({
   onOpenStrategyBuilder,
   onActiveTraderReview,
 }: OptionsTabProps) {
-  const [optionsSubView, setOptionsSubView] = useState<OptionsSubView>("chain");
+  const fixtureOverride = import.meta.env.DEV ? getAtFixtureOverride() : null;
+  const [optionsSubView, setOptionsSubView] = useState<OptionsSubView>(
+    () => fixtureOverride?.initialSubView ?? "chain",
+  );
   const { accessToken } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken })));
   // Widget pin wins inside the dashboard; global symbol everywhere else.
   const symbol = useActiveSymbol();
@@ -1258,17 +1262,33 @@ export function OptionsTab({
 
   const { data: rawData, isLoading, error, isFetching } = useGetOptionChain<OptionChainResponse>(
     { symbol, contractType: "ALL", strikeCount },
-    { query: { enabled: !!accessToken && !!symbol, staleTime: 30_000, gcTime: 5 * 60_000, retry: 2 } }
+    {
+      query: {
+        enabled: !!accessToken && !!symbol && !fixtureOverride,
+        staleTime: 30_000,
+        gcTime: 5 * 60_000,
+        retry: 2,
+      },
+    },
   );
 
   const data = useMemo(() => {
+    if (fixtureOverride) {
+      let calls = (fixtureOverride.chain.calls ?? []) as Contract[];
+      let puts = (fixtureOverride.chain.puts ?? []) as Contract[];
+      if (contractType === "CALL") puts = [];
+      else if (contractType === "PUT") calls = [];
+      return { ...fixtureOverride.chain, calls, puts, underlyingPrice: fixtureOverride.underlyingPrice };
+    }
     if (!rawData) return rawData;
     let calls = (rawData.calls ?? []) as Contract[];
     let puts = (rawData.puts ?? []) as Contract[];
     if (contractType === "CALL") puts = [];
     else if (contractType === "PUT") calls = [];
     return { ...rawData, calls, puts };
-  }, [rawData, contractType]);
+  }, [rawData, contractType, fixtureOverride]);
+
+  const isLoadingEffective = fixtureOverride ? false : isLoading;
 
   const streamQuote = useTerminalStore((s) => {
     const u = symbol.toUpperCase();
@@ -1346,6 +1366,23 @@ export function OptionsTab({
   );
 
   useEffect(() => { setExpandedExps(new Set()); setSelectedLegs(new Map()); }, [symbol]);
+
+  useEffect(() => {
+    if (!fixtureOverride || groups.length === 0) return;
+    setExpandedExps(new Set([groups[0].expiration]));
+  }, [fixtureOverride, groups]);
+
+  const fixtureReviewRef = useRef(false);
+  useEffect(() => {
+    if (fixtureReviewRef.current) return;
+    if (!fixtureOverride || !onActiveTraderReview || !fixtureOverride.openReviewOnMount) return;
+    const strike = fixtureOverride.tapStrike ?? 7545;
+    const row = groups[0]?.rows.find((r) => r.strike === strike);
+    const contract = row?.call;
+    if (!contract) return;
+    fixtureReviewRef.current = true;
+    onActiveTraderReview(contract, "BUY", "CALL");
+  }, [fixtureOverride, groups, onActiveTraderReview]);
 
   useEffect(() => {}, [groups.length]);
 
@@ -1502,6 +1539,13 @@ export function OptionsTab({
               if (onTradeSingle) onTradeSingle(contract, side, type);
             })
           }
+          presentation={fixtureOverride?.presentation}
+          initialTradeSelection={
+            fixtureOverride?.tapStrike != null &&
+            (fixtureOverride.scene === "strip" || fixtureOverride.scene === "confirm")
+              ? { strike: fixtureOverride.tapStrike, type: "CALL" as const }
+              : undefined
+          }
         />
       )}
       {optionsSubView === "chain" && (
@@ -1559,7 +1603,7 @@ export function OptionsTab({
       </div>
 
       <div className="relative" style={{ background: BG, paddingBottom: selCount > 0 ? 52 : 0 }}>
-        {isLoading && !data && (
+        {isLoadingEffective && !data && (
           <div className="p-4 space-y-1">
             {Array.from({ length: strikeCount }).map((_, i) => (
               <Skeleton key={i} className="h-4 w-full rounded" style={{ background: "#0a0a0a" }} />

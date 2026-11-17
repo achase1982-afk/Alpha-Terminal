@@ -45,6 +45,7 @@ interface ActiveTraderViewProps {
     zones: ZoneModel;
     classifiedPct: number | null;
     headline: string;
+    sessionLabel?: string;
     skipNetwork?: boolean;
   };
   initialTradeSelection?: { strike: number; type: "CALL" | "PUT" };
@@ -222,7 +223,12 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   }, [positions]);
 
   const accounts = useSchwabAccountStore((s) => s.accounts);
-  const accountLabel = accounts.length > 0 ? `LIVE ••${String(accounts[0]?.accountNumber ?? "").slice(-4)}` : "Account";
+  const accountLabel =
+    accounts.length > 0
+      ? `LIVE ••${String(accounts[0]?.accountNumber ?? "").replace(/\D/g, "").slice(-3)}`
+      : presentation?.skipNetwork
+        ? "LIVE ••495"
+        : "Account";
   const isPaper = false;
 
   const toggleLane = useCallback((key: LaneFilterKey) => {
@@ -248,7 +254,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       const root = symbol.replace(/^\$/, "").slice(0, 4);
       return `${root} ${selected.contract.strike}${selected.type === "CALL" ? "C" : "P"}`;
     }
-    const und = symbol.toUpperCase().startsWith("SPX") ? "SPY" : symbol;
+    const und = symbol.replace(/^\$/, "").toUpperCase();
     return `${und} (underlying)`;
   }, [selected, symbol]);
 
@@ -299,6 +305,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         regimeDegraded={presentation?.regimeDegraded ?? regimeDegraded}
         zones={zones}
         headline={displayHeadline}
+        sessionLabel={presentation?.sessionLabel}
         stickyTop={regimeTop}
       />
 

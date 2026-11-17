@@ -46,6 +46,7 @@ import {
 } from "lucide-react";
 import { useIsTablet, useIsDesktop } from "@/hooks/useMediaQuery";
 import { useShallow } from "zustand/react/shallow";
+import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 
 // ---------------------------------------------------------------------------
 // Code splitting. The terminal shipped as a single ~2.6 MB chunk; the views
@@ -342,6 +343,8 @@ export default function TerminalPage() {
   const isCompact = headerMode === "collapsed";
   const isScrolled = isCompact ? true : headerMode === "expanded" ? false : isScrolledRaw;
   const [activeBottom, setActiveBottom] = useState<BottomTab>(() => {
+    const fx = import.meta.env.DEV ? getAtFixtureOverride() : null;
+    if (fx?.enabled) return "markets";
     // Desktop lands on the customizable dashboard; phone keeps Markets.
     const fallback: BottomTab =
       typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches
@@ -353,7 +356,17 @@ export default function TerminalPage() {
       return saved && valid.includes(saved) ? saved : fallback;
     } catch { return fallback; }
   });
-  const [contextTab, setContextTab] = useState<ContextTab>("news");
+
+  useEffect(() => {
+    const fx = import.meta.env.DEV ? getAtFixtureOverride() : null;
+    if (!fx?.enabled) return;
+    setActiveBottom("markets");
+    setContextTab("options");
+  }, []);
+  const [contextTab, setContextTab] = useState<ContextTab>(() => {
+    const fx = import.meta.env.DEV ? getAtFixtureOverride() : null;
+    return fx?.enabled ? "options" : "news";
+  });
   const [aiSubTab, setAiSubTab] = useState<AiSubTab>(() => {
     try {
       const savedRaw = sessionStorage.getItem("alpha_session_ai_tab");

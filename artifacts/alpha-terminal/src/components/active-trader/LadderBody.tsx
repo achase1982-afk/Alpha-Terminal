@@ -41,17 +41,17 @@ function classifiedVol(c: FlowLaneCounts): number {
 }
 
 function FlowBar({ value, max, color, align }: { value: number; max: number; color: string; align: "left" | "right" }) {
-  if (value <= 0 || max <= 0) return <div className="w-full" />;
-  const pct = Math.min(100, (value / max) * 100);
+  if (value <= 0 || max <= 0) return <div className="w-full h-[7px]" />;
+  const pct = Math.min(100, Math.max(12, (value / max) * 100));
   return (
-    <div className="w-full h-[4px] rounded-full overflow-hidden" style={{ background: "transparent" }}>
+    <div className="w-full h-[7px] rounded-full overflow-hidden flex items-center" style={{ background: "rgba(255,255,255,0.04)" }}>
       <div
-        className="h-full rounded-full"
+        className="h-[7px] rounded-full"
         style={{
           width: `${pct}%`,
           marginLeft: align === "right" ? "auto" : 0,
           marginRight: align === "left" ? "auto" : 0,
-          background: `linear-gradient(${align === "right" ? "90deg" : "270deg"}, ${color}80, ${color}30)`,
+          background: `linear-gradient(${align === "right" ? "90deg" : "270deg"}, ${color}, ${color}55)`,
         }}
       />
     </div>

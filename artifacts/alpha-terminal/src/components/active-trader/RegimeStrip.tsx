@@ -14,6 +14,7 @@ interface RegimeStripProps {
   zones: ZoneModel;
   headline: string;
   stickyTop: number;
+  sessionLabel?: string;
 }
 
 export const RegimeStrip = memo(function RegimeStrip({
@@ -23,8 +24,9 @@ export const RegimeStrip = memo(function RegimeStrip({
   zones,
   headline,
   stickyTop,
+  sessionLabel,
 }: RegimeStripProps) {
-  const session = isUsEquitiesMarketHoursEt() ? "Cash session" : "Extended";
+  const session = sessionLabel ?? (isUsEquitiesMarketHoursEt() ? "Cash session" : "Extended");
   const envLabel =
     zones.env === "damping" ? "Damping" : zones.env === "amplifying" ? "Amplifying" : zones.env === "near_flip" ? "Near flip" : "\u2014";
   const dotColor = regimeDegraded ? GRAY : UP;

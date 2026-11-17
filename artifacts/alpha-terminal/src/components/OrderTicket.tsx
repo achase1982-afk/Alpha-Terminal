@@ -10,6 +10,7 @@ import { startStrategistPolling } from "@/lib/strategistPoller";
 import { hash8 } from "@/lib/streamClientId";
 import type { OptionHoldPostOpts } from "@/lib/optionHoldClient";
 import { useTicketOptionHold } from "@/hooks/useTicketOptionHold";
+import { useOptionTick } from "@/lib/options-stream-store";
 import { computeStrategyEconomics } from "@/lib/strategyCalculator";
 import { useGetOptionChain } from "@workspace/api-client-react";
 import {
@@ -25,6 +26,22 @@ type ConfirmStage = "form" | "review" | "submitting" | "success" | "error";
 type RiskLevel = "GREEN" | "YELLOW" | "RED";
 type PositionEffect = "OPENING" | "CLOSING" | "AUTO";
 type TicketMode = "options" | "stock";
+
+function optionRootFromOcc(sym: string): string {
+  const root = sym.trim().slice(0, 6).trim();
+  return root || sym;
+}
+
+function humanOptionInstruction(instr: string | undefined): string {
+  if (!instr) return "—";
+  const map: Record<string, string> = {
+    BUY_TO_OPEN: "Buy to open",
+    SELL_TO_OPEN: "Sell to open",
+    BUY_TO_CLOSE: "Buy to close",
+    SELL_TO_CLOSE: "Sell to close",
+  };
+  return map[instr] ?? instr.replace(/_/g, " ").toLowerCase();
+}
 
 // An option leg added on top of an equity (stock) ticket.
 type MixedOptionLeg = {
@@ -374,6 +391,7 @@ export function OrderTicket({
   confirmDisabled,
 }: OrderTicketProps) {
   const symbol = useTerminalStore((s) => s.symbol);
+  const optionTick = useOptionTick(optionSymbol);
   const { data: quote } = useQuote(symbol);
   const pulseData = useMarketPulseStore((s) => s.pulseData);
   const preTradeEnabled = useTerminalStore((s) => s.preTradeEnabled);
@@ -426,6 +444,7 @@ export function OrderTicket({
   const isMultiLeg = !!strategyLegs && strategyLegs.length >= 1;
   const isOption = !!optionSymbol || isMultiLeg;
   const displaySymbol = isMultiLeg ? `${symbol} Strategy (${strategyLegs!.length} legs)` : optionSymbol ?? symbol;
+  const ticketHeaderSymbol = isOption && optionSymbol ? optionRootFromOcc(optionSymbol) : symbol;
 
   const ticketStreamKeys = useMemo(() => {
     if (!isOpen) return [] as string[];
@@ -540,11 +559,21 @@ export function OrderTicket({
       setLimitPrice(strategyNetPrice.toFixed(2));
       return;
     }
+    if (isOption && optionSymbol && optionTick) {
+      const mid =
+        optionTick.bid != null && optionTick.ask != null
+          ? (optionTick.bid + optionTick.ask) / 2
+          : optionTick.mark ?? optionTick.last;
+      if (mid != null && mid > 0) {
+        setLimitPrice(mid.toFixed(2));
+        return;
+      }
+    }
     if (quote?.ask != null) {
-      const mid = quote.bid != null && quote.ask != null ? ((quote.bid + quote.ask) / 2) : quote.ask;
+      const mid = quote.bid != null && quote.ask != null ? (quote.bid + quote.ask) / 2 : quote.ask;
       setLimitPrice(mid.toFixed(2));
     }
-  }, [isOpen, quote?.ask, quote?.bid, isMultiLeg, isCloseOrder, strategyNetPrice]);
+  }, [isOpen, quote?.ask, quote?.bid, isMultiLeg, isCloseOrder, strategyNetPrice, isOption, optionSymbol, optionTick, limitPrice, priceLocked]);
 
   // ── Options chain for mixed equity+option legs ───────────────────────────
   const { data: extraChainData, isLoading: extraChainLoading } = useGetOptionChain(
@@ -600,18 +629,31 @@ export function OrderTicket({
       if (!price) return null;
       return price * quantity * 100;
     }
+    const optionMid =
+      isOption && optionTick
+        ? optionTick.bid != null && optionTick.ask != null
+          ? (optionTick.bid + optionTick.ask) / 2
+          : optionTick.mark ?? optionTick.last
+        : null;
     const price =
       orderType === "MARKET"
-        ? (side === "BUY" ? quote?.ask : quote?.bid) ?? quote?.last
+        ? isOption
+          ? (side === "BUY" ? optionTick?.ask : optionTick?.bid) ?? optionMid
+          : (side === "BUY" ? quote?.ask : quote?.bid) ?? quote?.last
         : needsLimit
-          ? parseFloat(limitPrice) || null
+          ? parseFloat(limitPrice) || optionMid || null
           : needsStop
             ? parseFloat(stopPrice) || null
-            : quote?.last;
-    if (!price) return null;
+            : isOption
+              ? optionMid ?? optionTick?.last
+              : quote?.last;
+    if (price == null || price <= 0) return null;
     const multiplier = isOption ? 100 : 1;
     return price * quantity * multiplier;
-  }, [orderType, side, quote?.ask, quote?.bid, quote?.last, limitPrice, stopPrice, quantity, needsLimit, needsStop, isOption, isMultiLeg, strategyNetPrice]);
+  }, [
+    orderType, side, quote?.ask, quote?.bid, quote?.last, limitPrice, stopPrice, quantity,
+    needsLimit, needsStop, isOption, isMultiLeg, strategyNetPrice, optionTick,
+  ]);
 
   // Net debit when extra option legs are added to a stock ticket
   const mixedNetDebit = useMemo(() => {
@@ -1228,8 +1270,10 @@ export function OrderTicket({
               <div style={{ background: CARD_GRAD, borderRadius: R_CARD, border: `1px solid ${BORDER}`, padding: "8px 10px" }}>
                 <div className="flex justify-between items-center">
                   <div>
-                    <span className="tracking-[0.08em] font-semibold" style={{ fontSize: 18, color: GOLD }}>{symbol}</span>
-                    {displaySymbol !== symbol && <div style={{ fontSize: S.label, color: MUTED }}>{displaySymbol}</div>}
+                    <span className="tracking-[0.08em] font-semibold" style={{ fontSize: 18, color: GOLD }}>{ticketHeaderSymbol}</span>
+                    {isOption && optionSymbol && (
+                      <div style={{ fontSize: S.label, color: MUTED }}>{displaySymbol}</div>
+                    )}
                   </div>
                   <div className="text-right">
                     <div style={{ fontSize: 18, color: WHITE, fontWeight: 500 }}>{fmt(quote?.last)}</div>
@@ -2272,7 +2316,13 @@ export function OrderTicket({
               ) : (
                 <>
                   {[
-                    { label: "Action", value: isOption ? (optionInstruction ?? (side === "BUY" ? "BUY TO OPEN" : "SELL TO CLOSE")) : side, color: sideColor },
+                    {
+                      label: "Action",
+                      value: isOption
+                        ? humanOptionInstruction(optionInstruction ?? (side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_CLOSE"))
+                        : side,
+                      color: sideColor,
+                    },
                     { label: "Symbol", value: displaySymbol },
                     { label: "Quantity", value: String(quantity) },
                     { label: "Order type", value: ORDER_TYPES.find((t) => t.value === orderType)?.label },

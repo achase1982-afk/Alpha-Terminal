@@ -3,6 +3,13 @@ import {
   BG_EXP_BAR, BORDER, DOWN, UP, GRAY, DIM, MONO, FW_NORMAL,
 } from "@/components/options/optionsTheme";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { ActiveTraderTemplatePrefs, AtTemplateKind, AtOrderType } from "@/lib/active-trader/activeTraderPrefs";
 
 interface TemplateBarProps {
@@ -34,18 +41,24 @@ export const TemplateBar = memo(function TemplateBar({
       className="sticky z-[39] px-3 py-1 space-y-1"
       style={{ top: stickyTop, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
     >
-      <div className="flex flex-wrap items-center gap-2" style={{ height: 32 }}>
-        <select
-          className="h-6 px-1.5 rounded border text-white"
-          style={{ fontSize: 12, background: "transparent", borderColor: BORDER }}
+      <div className="flex items-center gap-2 flex-nowrap overflow-x-auto" style={{ height: 32 }}>
+        <Select
           value={prefs.template}
-          onChange={(e) => onPrefsChange({ ...prefs, template: e.target.value as AtTemplateKind })}
+          onValueChange={(v) => onPrefsChange({ ...prefs, template: v as AtTemplateKind })}
         >
-          <option value="Single">Single</option>
-          <option value="OCO">OCO</option>
-          <option value="TRG w/ bracket">TRG w/ bracket</option>
-        </select>
-        <div className="flex items-center gap-1">
+          <SelectTrigger
+            className="h-6 w-[108px] px-1.5 border rounded text-white shrink-0"
+            style={{ fontSize: 12, background: "transparent", borderColor: BORDER, fontFamily: MONO }}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Single">Single</SelectItem>
+            <SelectItem value="OCO">OCO</SelectItem>
+            <SelectItem value="TRG w/ bracket">TRG w/ bracket</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="flex items-center gap-1 shrink-0">
           {[1, 2, 5, 10].map((q) => (
             <button
               key={q}
@@ -63,25 +76,34 @@ export const TemplateBar = memo(function TemplateBar({
             </button>
           ))}
         </div>
-        <select
-          className="h-6 px-1.5 rounded border text-white"
-          style={{ fontSize: 12, background: "transparent", borderColor: BORDER }}
+        <Select
           value={prefs.orderType}
-          onChange={(e) => onPrefsChange({ ...prefs, orderType: e.target.value as AtOrderType })}
+          onValueChange={(v) => onPrefsChange({ ...prefs, orderType: v as AtOrderType })}
         >
-          <option value="LIMIT">LIMIT @ Mid</option>
-          <option value="MKT">MKT</option>
-        </select>
+          <SelectTrigger
+            className="h-6 w-[112px] px-1.5 border rounded text-white shrink-0"
+            style={{ fontSize: 12, background: "transparent", borderColor: BORDER, fontFamily: MONO }}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="LIMIT">LIMIT @ Mid</SelectItem>
+            <SelectItem value="MKT">MKT</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
-      <div className="flex flex-wrap items-center gap-2 justify-between" style={{ height: 32 }}>
-        <span className="truncate max-w-[40%] border rounded px-2 py-1" style={{ fontSize: 11, borderColor: BORDER, color: GRAY }}>
+      <div className="flex items-center gap-2 justify-between flex-nowrap" style={{ height: 32 }}>
+        <span
+          className="truncate shrink min-w-0 max-w-[38%] border rounded px-2 py-1 whitespace-nowrap"
+          style={{ fontSize: 11, borderColor: BORDER, color: GRAY }}
+        >
           {instrumentLabel}
         </span>
-        <div className="flex gap-2 flex-1 justify-end">
+        <div className="flex gap-2 shrink-0">
           <button
             type="button"
             onClick={onSell}
-            className="px-3 rounded-lg border active:scale-95"
+            className="px-3 rounded-lg border active:scale-95 whitespace-nowrap"
             style={{ height: 32, borderColor: BORDER, color: DOWN, fontSize: 12, fontWeight: FW_NORMAL, background: "transparent" }}
           >
             SELL {typeBtn}
@@ -89,18 +111,28 @@ export const TemplateBar = memo(function TemplateBar({
           <button
             type="button"
             onClick={onBuy}
-            className="px-3 rounded-lg border active:scale-95"
+            className="px-3 rounded-lg border active:scale-95 whitespace-nowrap"
             style={{ height: 32, borderColor: BORDER, color: UP, fontSize: 12, fontWeight: FW_NORMAL, background: "transparent" }}
           >
             BUY {typeBtn}
           </button>
         </div>
-        <label className="flex items-center gap-1" style={{ fontSize: 10, color: DIM }}>
+        <label className="flex items-center gap-1 shrink-0 whitespace-nowrap" style={{ fontSize: 10, color: DIM }}>
           <Checkbox disabled checked={false} />
           Auto send
-          <span style={{ fontSize: 9 }}>(soon)</span>
+          <span style={{ fontSize: 9, opacity: 0.65 }}>(soon)</span>
         </label>
-        <span style={{ fontSize: 10, color: isPaper ? GRAY : DOWN }}>{accountLabel}</span>
+        <span
+          className="shrink-0 px-2 py-0.5 rounded border whitespace-nowrap"
+          style={{
+            fontSize: 10,
+            color: isPaper ? GRAY : GRAY,
+            borderColor: BORDER,
+            letterSpacing: "0.04em",
+          }}
+        >
+          {accountLabel}
+        </span>
       </div>
     </div>
   );

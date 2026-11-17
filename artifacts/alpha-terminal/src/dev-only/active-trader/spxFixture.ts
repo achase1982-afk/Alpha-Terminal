@@ -8,7 +8,7 @@ import type { AtExpirationGroup } from "@/components/active-trader/ActiveTraderV
 import type { OptionTick } from "@/lib/options-stream-store";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
 import { buildSchwabOptionKey } from "@/lib/optionsSchwabKey";
-import { seedFlowCountsForKey } from "@/lib/active-trader/flowClassifier";
+import { seedFlowCountsForKey, type FlowLaneCounts } from "@/lib/active-trader/flowClassifier";
 
 export const FIXTURE_SPX_SPOT = 7540;
 export const FIXTURE_MARKER = "AT_FIXTURE_SPX_0DTE_DEV_ONLY";
@@ -109,18 +109,51 @@ export function buildSpxFixtureTicks(): OptionTick[] {
   return ticks;
 }
 
+function flowForStrike(strike: number, side: "call" | "put"): FlowLaneCounts & { prevVol: number } {
+  const spot = FIXTURE_SPX_SPOT;
+  const above = strike > spot;
+  const dist = Math.abs(strike - spot);
+  const wallBoost =
+    (side === "call" && strike === 7550) || (side === "put" && strike === 7530)
+      ? 2.8
+      : strike === 7545
+        ? 1.6
+        : 1;
+
+  if (side === "call") {
+    const buy = Math.round((above ? 420 + dist * 18 : 90 + dist * 4) * wallBoost);
+    const sell = Math.round((above ? 80 + dist * 2 : 240 + dist * 6) * (strike === 7550 ? 0.7 : 1));
+    const even = strike % 15 === 0 ? 120 : 22;
+    return { buy, sell, even, unknown: 18, prevVol: 4000 + buy + sell };
+  }
+  const sell = Math.round((!above ? 380 + dist * 22 : 70 + dist * 3) * wallBoost);
+  const buy = Math.round((!above ? 95 + dist * 3 : 210 + dist * 5) * (strike === 7530 ? 0.75 : 1));
+  const even = strike % 10 === 0 ? 95 : 16;
+  return { buy, sell, even, unknown: 14, prevVol: 3800 + buy + sell };
+}
+
 export function seedSpxFixtureFlow(): void {
   const groups = buildSpxFixtureGroups();
+  const ladderStrikes = new Set<number>();
+  for (let s = 7560; s >= 7520; s -= 5) ladderStrikes.add(s);
+
   for (const row of groups[0].rows) {
+    if (!ladderStrikes.has(row.strike)) continue;
     if (row.call?.streamKey) {
-      const buy = row.strike === 7545 ? 3310 : 880;
-      const sell = 220;
-      seedFlowCountsForKey(row.call.streamKey, { buy, sell, even: 40, unknown: 30 }, 3000);
+      const f = flowForStrike(row.strike, "call");
+      seedFlowCountsForKey(
+        row.call.streamKey,
+        { buy: f.buy, sell: f.sell, even: f.even, unknown: f.unknown },
+        f.prevVol,
+      );
     }
     if (row.put?.streamKey) {
-      const sell = row.strike === 7545 ? 2260 : 640;
-      const buy = 180;
-      seedFlowCountsForKey(row.put.streamKey, { buy, sell, even: 35, unknown: 25 }, 2800);
+      const f = flowForStrike(row.strike, "put");
+      seedFlowCountsForKey(
+        row.put.streamKey,
+        { buy: f.buy, sell: f.sell, even: f.even, unknown: f.unknown },
+        f.prevVol,
+      );
     }
   }
 }

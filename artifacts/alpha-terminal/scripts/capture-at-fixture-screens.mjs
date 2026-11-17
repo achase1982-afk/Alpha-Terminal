@@ -24,13 +24,13 @@ const page = await context.newPage();
 
 for (const scene of scenes) {
   await page.goto(scene.url, { waitUntil: "domcontentloaded", timeout: 60_000 });
-  const waitText = scene.name.includes("chain") ? "CALLS" : "PUT FLOW";
+  const waitText = scene.name.includes("chain") ? "Strike" : "PUT FLOW";
   await page.waitForFunction(
     (needle) => document.body?.innerText?.includes(needle),
     waitText,
     { timeout: 45_000 },
   ).catch(() => undefined);
-  await page.waitForTimeout(scene.name.includes("strip") ? 1200 : scene.name.includes("confirm") ? 1500 : 800);
+  await page.waitForTimeout(scene.name.includes("strip") ? 1500 : scene.name.includes("confirm") ? 2200 : 1200);
   await page.screenshot({ path: path.join(OUT, scene.name), fullPage: false });
 }
 
