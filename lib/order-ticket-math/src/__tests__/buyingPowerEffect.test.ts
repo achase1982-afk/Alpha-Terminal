@@ -5,6 +5,21 @@ import { cashSecuredPutCollateral, resolveBuyingPowerEffect } from "../buyingPow
 const spx = { underlyingSymbol: "SPX", isOption: true as const };
 
 describe("buyingPowerEffect", () => {
+  it("naked short at zero max risk does not claim zero BP", () => {
+    const r = resolveBuyingPowerEffect({
+      legs: [{ strike: 0, optionType: "PUT", instruction: "SELL_TO_OPEN", quantity: 1 }],
+      isCredit: true,
+      isOption: true,
+      maxRisk: 0,
+      grossNotional: 300,
+      commissionTotal: 0.67,
+      netPerShare: 3,
+      spreadUnits: 1,
+    });
+    expect(r.buyingPowerEffect).toBeNull();
+    expect(r.buyingPowerEffectKind).toBe("not_estimated");
+  });
+
   it("naked short call credit: BP not estimated", () => {
     const e = computeOrderEconomics({
       ...spx,

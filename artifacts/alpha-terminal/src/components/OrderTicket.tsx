@@ -18,6 +18,7 @@ import {
 import {
   aggregateSpreadNBBO,
   computeOrderEconomics,
+  parseSchwabOptionSymbol,
   displaySubmittedLimit,
   evaluateTicketPreTradeGate,
   formatLimitPriceDisplay,
@@ -763,17 +764,20 @@ export function OrderTicket({
           quantity: l.quantity,
         }))
       : isOption
-        ? [
-            {
-              strike: 0,
-              optionType: (optionSymbol?.includes("P") && optionSymbol.charAt(12) === "P" ? "PUT" : "CALL") as
-                | "CALL"
-                | "PUT",
-              instruction:
-                optionInstruction ??
-                (side === "BUY" ? "BUY_TO_OPEN" : isCloseOrder ? "SELL_TO_CLOSE" : "SELL_TO_OPEN"),
-            },
-          ]
+        ? (() => {
+            const parsed = optionSymbol ? parseSchwabOptionSymbol(optionSymbol) : null;
+            if (!parsed) return null;
+            return [
+              {
+                strike: parsed.strike,
+                optionType: parsed.optionType,
+                expiration: parsed.expiration,
+                instruction:
+                  optionInstruction ??
+                  (side === "BUY" ? "BUY_TO_OPEN" : isCloseOrder ? "SELL_TO_CLOSE" : "SELL_TO_OPEN"),
+              },
+            ];
+          })()
         : null;
     const fallback =
       isMultiLeg
@@ -2640,14 +2644,26 @@ export function OrderTicket({
                     ? estimateSchwabOptionFees(totalContracts)
                     : { commission: 0, regulatoryEst: 0, totalEst: 0 };
                 const netAfterFees = econ?.netCashFlow ?? (isCreditOrder ? grossCost - feeBundle.totalEst : -(grossCost + feeBundle.totalEst));
-                const breakevens = econ?.breakevens ?? [];
-                const maxLoss = econ?.maxRisk ?? null;
-                const maxProfit = econ?.maxProfit ?? null;
+                const breakevens = isCloseOrder ? [] : (econ?.breakevens ?? []);
+                const maxLoss = isCloseOrder ? null : (econ?.maxRisk ?? null);
+                const maxProfit = isCloseOrder ? null : (econ?.maxProfit ?? null);
                 const profitUnlimited =
-                  maxProfit == null && econ?.expirationPayoffModeled === true && (isMultiLeg || isOption);
+                  !isCloseOrder &&
+                  maxProfit == null &&
+                  econ?.expirationPayoffModeled === true &&
+                  (isMultiLeg || isOption);
+                const isNakedShortOpen =
+                  !isCloseOrder && !isMultiLeg && isOption && isCreditOrder;
+                const maxLossDisplay = (() => {
+                  if (isNakedShortOpen) return "Not estimated";
+                  if (maxLoss == null) return null;
+                  const inclFees =
+                    !isCreditOrder && isOption && !isMultiLeg ? maxLoss + feeBundle.totalEst : maxLoss;
+                  return fmtCurrency(inclFees);
+                })();
                 const bpEffect = econ?.buyingPowerEffect ?? null;
                 const bpKind = econ?.buyingPowerEffectKind ?? "estimated";
-                const showBp = bpEffect != null;
+                const showBp = bpEffect != null && bpEffect !== 0;
                 const totalCommission = feeBundle.commission;
                 return (
                   <>
@@ -2690,7 +2706,11 @@ export function OrderTicket({
                       </div>
                     </div>
 
-                    {(breakevens.length > 0 || maxProfit != null || profitUnlimited || maxLoss != null) && (
+                    {!isCloseOrder &&
+                      (breakevens.length > 0 ||
+                        maxProfit != null ||
+                        profitUnlimited ||
+                        maxLossDisplay != null) && (
                       <div className="pt-1 mt-1 space-y-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
                         {breakevens.length > 0 && (
                           <div className="flex justify-between" style={{ fontSize: S.body }}>
@@ -2708,10 +2728,10 @@ export function OrderTicket({
                             </span>
                           </div>
                         )}
-                        {maxLoss != null && (
+                        {maxLossDisplay != null && (
                           <div className="flex justify-between" style={{ fontSize: S.body }}>
                             <span style={{ color: MUTED }}>Max loss</span>
-                            <span style={{ color: DOWN }}>{fmtCurrency(maxLoss)}</span>
+                            <span style={{ color: DOWN }}>{maxLossDisplay}</span>
                           </div>
                         )}
                       </div>

@@ -69,22 +69,24 @@ export function resolveBuyingPowerEffect(input: {
   }
 
   if (input.isCredit) {
-    if (input.maxRisk != null) {
-      return {
-        buyingPowerEffect: -input.maxRisk,
-        buyingPowerEffectKind: "estimated",
-        buyingPowerEffectIsEstimate: true,
-      };
-    }
     if (isCashSecuredShortPut(input.legs, input.isCredit)) {
       const collateral = cashSecuredPutCollateral(
         input.legs[0],
         input.spreadUnits,
         input.netPerShare,
       );
+      if (collateral > 0) {
+        return {
+          buyingPowerEffect: -Number(collateral.toFixed(2)),
+          buyingPowerEffectKind: "cash_secured",
+          buyingPowerEffectIsEstimate: true,
+        };
+      }
+    }
+    if (input.maxRisk != null && input.maxRisk > 0) {
       return {
-        buyingPowerEffect: -Number(collateral.toFixed(2)),
-        buyingPowerEffectKind: "cash_secured",
+        buyingPowerEffect: -input.maxRisk,
+        buyingPowerEffectKind: "estimated",
         buyingPowerEffectIsEstimate: true,
       };
     }

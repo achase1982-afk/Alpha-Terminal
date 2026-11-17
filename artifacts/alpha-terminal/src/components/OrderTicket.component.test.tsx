@@ -16,8 +16,12 @@ const terminalState = {
   accountSize: 30_000,
 };
 
+const OPT = "AAPL  250117C00200000";
+const OPT_PUT = "AAPL  250117P00200000";
+
 let mockTicks: Record<string, { bid: number; ask: number; last: number; ts: number; delta: number }> = {
-  "AAPL  250117C00200000": { bid: 2.5, ask: 2.7, last: 2.6, ts: 1, delta: 0.4 },
+  [OPT]: { bid: 2.5, ask: 2.7, last: 2.6, ts: 1, delta: 0.4 },
+  [OPT_PUT]: { bid: 2.5, ask: 2.7, last: 2.6, ts: 1, delta: -0.4 },
 };
 
 vi.mock("@/lib/store", () => ({
@@ -78,8 +82,6 @@ vi.mock("@/lib/strategistPoller", () => ({
   startStrategistPolling: vi.fn(),
 }));
 
-const OPT = "AAPL  250117C00200000";
-
 describe("OrderTicket component", () => {
   afterEach(() => {
     cleanup();
@@ -89,6 +91,7 @@ describe("OrderTicket component", () => {
     vi.clearAllMocks();
     mockTicks = {
       [OPT]: { bid: 2.5, ask: 2.7, last: 2.6, ts: 1, delta: 0.4 },
+      [OPT_PUT]: { bid: 2.5, ask: 2.7, last: 2.6, ts: 1, delta: -0.4 },
     };
     schwabStoreState.orderTicketAccountHash = "hash-1";
   });
@@ -217,6 +220,9 @@ describe("OrderTicket component", () => {
     expect(screen.getByText(/\+\$299\.33/)).toBeTruthy();
     expect(screen.getByText("Not estimated")).toBeTruthy();
     expect(screen.queryByText(/Buying power \(est\.\)/i)).toBeNull();
+    expect(screen.queryByText(/^Breakeven$/i)).toBeNull();
+    expect(screen.queryByText(/Max profit/i)).toBeNull();
+    expect(screen.queryByText(/Max loss/i)).toBeNull();
   });
 
   it("sell stock to close shows gross credit and no BP", async () => {
@@ -235,6 +241,9 @@ describe("OrderTicket component", () => {
     expect(screen.getByText(/Gross credit/i)).toBeTruthy();
     expect(screen.getByText(/\+\$2,300/)).toBeTruthy();
     expect(screen.queryByText(/Buying power \(est\.\)/i)).toBeNull();
+    expect(screen.queryByText(/^Breakeven$/i)).toBeNull();
+    expect(screen.queryByText(/Max profit/i)).toBeNull();
+    expect(screen.queryByText(/Max loss/i)).toBeNull();
   });
 
   it("STO naked call shows credit proceeds but BP not estimated", async () => {
@@ -250,8 +259,30 @@ describe("OrderTicket component", () => {
     );
     await openReviewWithLimit("3.00");
     expect(screen.getByText(/Gross credit/i)).toBeTruthy();
-    expect(screen.getByText("Not estimated")).toBeTruthy();
-    expect(screen.queryByText(/−\$300/)).toBeNull();
+    expect(screen.getAllByText("Not estimated").length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(/−\$0\.00/)).toBeNull();
+    expect(screen.queryByText("Unlimited")).toBeNull();
+    const maxLossRow = screen.getByText(/Max loss/i).closest("div");
+    expect(within(maxLossRow as HTMLElement).getByText("Not estimated")).toBeTruthy();
+  });
+
+  it("STO naked put shows max loss not estimated and cash-secured collateral", async () => {
+    render(
+      <OrderTicket
+        isOpen
+        onClose={() => {}}
+        optionSymbol={OPT_PUT}
+        optionInstruction="SELL_TO_OPEN"
+        initialSide="SELL"
+        subscribeOptionSymbols={vi.fn()}
+      />,
+    );
+    await openReviewWithLimit("3.00");
+    expect(screen.getByText(/Max loss/i)).toBeTruthy();
+    const maxLossRow = screen.getByText(/Max loss/i).closest("div");
+    expect(within(maxLossRow as HTMLElement).getByText("Not estimated")).toBeTruthy();
+    expect(screen.getByText(/Cash-secured collateral/i)).toBeTruthy();
+    expect(screen.queryByText(/−\$0\.00/)).toBeNull();
   });
 
   it("BTO single leg shows gross debit and BP estimate", async () => {
@@ -270,6 +301,27 @@ describe("OrderTicket component", () => {
     expect(screen.getByText(/Buying power \(est\.\)/i)).toBeTruthy();
     const bpHits = screen.getAllByText(/−\$300\.67/);
     expect(bpHits.length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("$203.00")).toBeTruthy();
+    expect(screen.getByText("Unlimited")).toBeTruthy();
+    const maxLossRow = screen.getByText(/Max loss/i).closest("div");
+    expect(within(maxLossRow as HTMLElement).getByText("$300.67")).toBeTruthy();
+  });
+
+  it("BTO put shows breakeven below strike minus premium", async () => {
+    render(
+      <OrderTicket
+        isOpen
+        onClose={() => {}}
+        optionSymbol={OPT_PUT}
+        optionInstruction="BUY_TO_OPEN"
+        initialSide="BUY"
+        subscribeOptionSymbols={vi.fn()}
+      />,
+    );
+    await openReviewWithLimit("3.00");
+    expect(screen.getByText("$197.00")).toBeTruthy();
+    const maxLossRow = screen.getByText(/Max loss/i).closest("div");
+    expect(within(maxLossRow as HTMLElement).getByText("$300.67")).toBeTruthy();
   });
 
   it("FAIL disables Review and Send via gate helper", () => {
