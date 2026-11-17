@@ -1,6 +1,7 @@
 import { getUwApiKey } from "./deskUnusualWhales.js";
 import { getTradierToken } from "./deskTradier.js";
 import { getAlpacaKeys } from "./deskAlpaca.js";
+import { deskProbeAlpacaNews } from "./deskAlpacaNews.js";
 import { deskMarkFeedNotConfigured, deskSetStreamerDisabled } from "./deskFeedFreshness.js";
 import { startDeskRetentionJobs } from "./deskRetention.js";
 import { startDeskBackgroundPollers } from "./deskBackgroundPollers.js";
@@ -22,7 +23,11 @@ export function initDeskMarketFeeds(): void {
   }
   if (!getTradierToken()) deskMarkFeedNotConfigured("tradier");
   const { keyId, secret } = getAlpacaKeys();
-  if (!keyId || !secret) deskMarkFeedNotConfigured("alpaca");
+  if (!keyId || !secret) {
+    deskMarkFeedNotConfigured("alpaca", "alpaca_news");
+  } else {
+    void deskProbeAlpacaNews();
+  }
 
   startDeskRawTapeCapture();
   startDeskTapeUniverse();

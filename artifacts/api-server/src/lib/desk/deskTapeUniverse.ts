@@ -12,7 +12,8 @@ import {
 } from "../schwabStreamer.js";
 
 const DESK_EQUITIES = ["$SPX", "SPY", "$VIX"] as const;
-const TARGET_LEVELONE_OPTIONS = 2000;
+const STRIKES_PER_SIDE_TARGET = 1000;
+const MAX_LEVELONE_OPTION_KEYS = 2000;
 const TARGET_OPTIONS_BOOK = 500;
 const SPOT_REFRESH_PCT = 0.003;
 const SPOT_REFRESH_POINTS = 5;
@@ -25,6 +26,7 @@ let lastRefreshMs = 0;
 let refreshInFlight: Promise<void> | null = null;
 let cappedLevelone = false;
 let cappedBook = false;
+let leveloneCapReason: string | null = null;
 let lastError: string | undefined;
 let universeEnabled = false;
 
@@ -39,6 +41,7 @@ export function getDeskTapeUniverseHealth(): {
   options_book: number;
   capped_levelone: boolean;
   capped_book: boolean;
+  levelone_cap_reason: string | null;
   last_spot: number | null;
   last_expiry: string | null;
   last_refresh_ms: number | null;
@@ -52,6 +55,7 @@ export function getDeskTapeUniverseHealth(): {
     options_book: counts.options_book,
     capped_levelone: cappedLevelone,
     capped_book: cappedBook,
+    levelone_cap_reason: leveloneCapReason,
     last_spot: lastSpot,
     last_expiry: lastExpiry,
     last_refresh_ms: lastRefreshMs > 0 ? lastRefreshMs : null,
@@ -72,6 +76,50 @@ function pickBySpot(contracts: DeskChainNormalized[], spot: number, limit: numbe
   return keys;
 }
 
+function pickLeveloneAroundSpot(
+  contracts: DeskChainNormalized[],
+  spot: number,
+  chainContractCount: number,
+): { keys: string[]; capReason: string | null; capped: boolean } {
+  const byStrike = new Map<number, DeskChainNormalized[]>();
+  for (const c of contracts) {
+    const bucket = byStrike.get(c.strike) ?? [];
+    bucket.push(c);
+    byStrike.set(c.strike, bucket);
+  }
+
+  const strikes = [...byStrike.keys()].sort(
+    (a, b) => Math.abs(a - spot) - Math.abs(b - spot) || a - b,
+  );
+
+  const keys: string[] = [];
+  let strikeSlots = 0;
+  for (const strike of strikes) {
+    for (const c of byStrike.get(strike) ?? []) {
+      if (c.symbol) keys.push(c.symbol);
+      if (keys.length >= MAX_LEVELONE_OPTION_KEYS) break;
+    }
+    strikeSlots += 1;
+    if (keys.length >= MAX_LEVELONE_OPTION_KEYS) break;
+    if (strikeSlots >= STRIKES_PER_SIDE_TARGET) break;
+  }
+
+  let capReason: string | null = null;
+  let capped = false;
+  if (chainContractCount <= MAX_LEVELONE_OPTION_KEYS) {
+    capReason = `schwab_0dte_chain_${chainContractCount}_contracts`;
+    capped = keys.length < MAX_LEVELONE_OPTION_KEYS;
+  } else if (keys.length >= MAX_LEVELONE_OPTION_KEYS) {
+    capReason = "desk_cap_2000_option_keys";
+    capped = true;
+  } else if (strikeSlots >= STRIKES_PER_SIDE_TARGET) {
+    capReason = `desk_cap_${STRIKES_PER_SIDE_TARGET}_strikes_per_side`;
+    capped = true;
+  }
+
+  return { keys, capReason, capped };
+}
+
 function spotMovedEnough(prev: number | null, next: number): boolean {
   if (prev == null || !Number.isFinite(prev)) return true;
   if (Math.abs(next - prev) >= SPOT_REFRESH_POINTS) return true;
@@ -84,10 +132,13 @@ async function buildUniverseKeys(
   spot: number,
 ): Promise<{ levelone: string[]; book: string[] }> {
   const chain = await deskFetchSchwabChain("SPX", expiry);
-  const levelone = pickBySpot(chain.normalized, spot, TARGET_LEVELONE_OPTIONS);
+  const picked = pickLeveloneAroundSpot(chain.normalized, spot, chain.contract_count);
+  leveloneCapReason = picked.capReason;
+  cappedLevelone = picked.capped;
+  const levelone = picked.keys;
   const book = pickBySpot(chain.normalized, spot, TARGET_OPTIONS_BOOK);
-  cappedLevelone = chain.normalized.length > levelone.length || chain.contract_count > TARGET_LEVELONE_OPTIONS;
-  cappedBook = chain.normalized.length > book.length || chain.contract_count > TARGET_OPTIONS_BOOK;
+  cappedBook =
+    chain.normalized.length > book.length || chain.contract_count > TARGET_OPTIONS_BOOK;
   return { levelone, book };
 }
 
@@ -131,6 +182,7 @@ export async function deskTapeUniverseRefresh(force = false): Promise<void> {
           book: book.length,
           cappedLevelone,
           cappedBook,
+          leveloneCapReason,
         },
         "Desk tape universe refreshed",
       );

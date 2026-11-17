@@ -8,7 +8,13 @@ export type DeskRawTapeFrame = {
   c: number;
   rx_ns: string;
   m: unknown;
+  session_date?: string;
 };
+
+function frameMatchesSince(ns: bigint, sinceNs: bigint): boolean {
+  if (sinceNs === 0n) return true;
+  return ns > sinceNs;
+}
 
 const FLUSH_INTERVAL_MS = 60_000;
 const MAX_BUFFER_LINES = 25_000;
@@ -27,7 +33,8 @@ let lastFrameNs: string | null = null;
 let lastFrameUtcMs: number | null = null;
 
 function frameLine(frame: DeskRawTapeFrame): string {
-  return JSON.stringify(frame);
+  const session_date = frame.session_date ?? deskSessionDateEt();
+  return JSON.stringify({ c: frame.c, rx_ns: frame.rx_ns, m: frame.m, session_date });
 }
 
 function rxNsBigInt(rx_ns: string): bigint | null {
@@ -145,14 +152,23 @@ export function startDeskRawTapeCapture(): void {
   process.once("SIGINT", onTerm);
 }
 
-export function deskEmitBufferedRawTapeSince(sinceNs: bigint, write: (line: string) => void): number {
+export function deskEmitBufferedRawTapeSince(
+  sessionDate: string,
+  sinceNs: bigint,
+  write: (line: string) => void,
+): number {
+  const liveSession = deskSessionDateEt();
+  if (sessionDate !== liveSession) return 0;
+
   let emitted = 0;
   for (const line of buffer) {
     if (!line.trim()) continue;
     try {
-      const obj = JSON.parse(line) as { rx_ns?: string };
-      const ns = obj.rx_ns != null ? BigInt(obj.rx_ns) : 0n;
-      if (ns > sinceNs) {
+      const obj = JSON.parse(line) as { rx_ns?: string; session_date?: string };
+      if (obj.session_date && obj.session_date !== sessionDate) continue;
+      const ns =
+        obj.rx_ns != null && String(obj.rx_ns).trim() !== "" ? BigInt(obj.rx_ns) : 0n;
+      if (frameMatchesSince(ns, sinceNs)) {
         write(`${line}\n`);
         emitted += 1;
       }
@@ -168,7 +184,7 @@ export async function streamDeskRawTapeNdjson(
   sinceNs: bigint,
   write: (line: string) => void,
 ): Promise<number> {
-  let emitted = deskEmitBufferedRawTapeSince(sinceNs, write);
+  let emitted = deskEmitBufferedRawTapeSince(sessionDate, sinceNs, write);
 
   try {
     const rows = await db
@@ -210,7 +226,7 @@ function gunzipLines(
         try {
           const obj = JSON.parse(line) as { rx_ns?: string };
           const ns = obj.rx_ns != null ? BigInt(obj.rx_ns) : 0n;
-          if (ns > sinceNs) {
+          if (frameMatchesSince(ns, sinceNs)) {
             write(`${line}\n`);
             emitted += 1;
           }
@@ -224,7 +240,7 @@ function gunzipLines(
         try {
           const obj = JSON.parse(leftover) as { rx_ns?: string };
           const ns = obj.rx_ns != null ? BigInt(obj.rx_ns) : 0n;
-          if (ns > sinceNs) {
+          if (frameMatchesSince(ns, sinceNs)) {
             write(`${leftover}\n`);
             emitted += 1;
           }

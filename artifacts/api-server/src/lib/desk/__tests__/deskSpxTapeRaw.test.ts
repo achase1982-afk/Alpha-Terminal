@@ -6,12 +6,14 @@ import {
   deskEmitBufferedRawTapeSince,
   getDeskRawTapeHealth,
 } from "../deskSpxTapeRaw.js";
+import { deskSessionDateEt } from "../deskEt.js";
 
 describe("deskSpxTapeRaw", () => {
   it("includes in-memory buffer before DB chunks", () => {
-    deskCaptureInboundFrame({ c: 1, rx_ns: "5000", m: { x: 1 } });
+    const session = deskSessionDateEt();
+    deskCaptureInboundFrame({ c: 1, rx_ns: "5000", m: { x: 1 }, session_date: session });
     const out: string[] = [];
-    const n = deskEmitBufferedRawTapeSince(4000n, (line) => out.push(line));
+    const n = deskEmitBufferedRawTapeSince(session, 0n, (line) => out.push(line));
     expect(n).toBe(1);
     expect(out[0]).toContain('"rx_ns":"5000"');
   });
