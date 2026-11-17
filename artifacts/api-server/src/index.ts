@@ -1,10 +1,8 @@
 import "./loadEnv.js";
 import app from "./app";
 import { logger } from "./lib/logger";
-import { injectExternalQuote, startStreamer as startSchwabStreamer, onTokenRefreshed as schwabTokenRefreshed, addFuturesSymbols, addSymbols as addSchwabSymbols, isConnected as isSchwabConnected } from "./lib/schwabStreamer";
-import { initWsServer, broadcastToClients } from "./lib/wsServer";
-import { connectIB, registerQuoteCacheInjector, registerIBBroadcast, getWsBridgeUrl } from "./lib/ibStreamer";
-import { startIBWsProxy } from "./lib/ibWsProxy";
+import { startStreamer as startSchwabStreamer, onTokenRefreshed as schwabTokenRefreshed, addFuturesSymbols, addSymbols as addSchwabSymbols, isConnected as isSchwabConnected } from "./lib/schwabStreamer";
+import { initWsServer } from "./lib/wsServer";
 import { initTokenStore, setTokenRefreshCallback, hasValidTokens } from "./lib/tokenStore";
 import { initSyntheticDxy } from "./lib/syntheticDxy";
 import { startExitMonitor } from "./lib/exitStaging";
@@ -764,9 +762,6 @@ async function boot() {
     }
   });
 
-  registerQuoteCacheInjector(injectExternalQuote);
-  registerIBBroadcast(broadcastToClients);
-
   startPolygonPCRatioPoller();
 
   // Part 2 — start the persistent options watcher. Env-gated by
@@ -790,18 +785,6 @@ async function boot() {
     logger.warn({ err }, "flow persistence/rollup start failed");
   }
 
-  if (process.env.IBKR_GATEWAY_URL || process.env.IB_HOST) {
-    const wsUrl = getWsBridgeUrl();
-    if (wsUrl) {
-      logger.info({ wsUrl }, "IB Gateway configured via WebSocket bridge — starting local proxy");
-      startIBWsProxy(wsUrl)
-        .then(() => connectIB())
-        .catch((err) => logger.warn({ err }, "IB WS proxy/connect failed (will retry)"));
-    } else {
-      logger.info("IB Gateway configured — auto-connecting directly");
-      connectIB().catch((err) => logger.warn({ err }, "IB auto-connect failed (will retry)"));
-    }
-  }
 }
 
 boot().catch((err) => {

@@ -198,23 +198,11 @@ export function NewsTab() {
   const symbol = useActiveSymbol();
   const liveNews = useTerminalStore((s) => s.liveNews);
 
-  const { data: ibData } = useQuery<IBNewsResponse>({
-    queryKey: ["ib-news", symbol],
-    queryFn: async () => {
-      const res = await fetchWithAuth(`/api/ib/news/symbol?symbol=${encodeURIComponent(symbol)}&max=30`);
-      if (!res.ok) return { news: [] };
-      return res.json();
-    },
-    enabled: !!symbol,
-    staleTime: 60 * 1000,
-    refetchInterval: 5 * 60 * 1000,
-  });
-
   const { data: fhData, isLoading: fhLoading } = useQuery<NewsResponse>({
     queryKey: ["ticker-news", symbol],
     queryFn: async () => {
       const res = await fetchWithAuth(`/api/market/news?symbol=${encodeURIComponent(symbol)}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) return { articles: [] };
       return res.json();
     },
     enabled: !!symbol,
@@ -234,7 +222,7 @@ export function NewsTab() {
     refetchInterval: 5 * 60 * 1000,
   });
 
-  const ibHistNews = ibData?.news ?? [];
+  const ibHistNews: IBNewsItem[] = [];
   const fhArticles = fhData?.articles ?? [];
   const secFilings = secData?.filings ?? [];
 

@@ -1590,8 +1590,13 @@ router.get("/news", async (req, res) => {
     return res.status(400).json({ articles: [], error: "symbol is required" });
   }
 
-  const merged = await fetchMergedMarketNewsArticles(symbol, req.log);
-  return res.json({ articles: merged });
+  try {
+    const merged = await fetchMergedMarketNewsArticles(symbol, req.log);
+    return res.json({ articles: merged });
+  } catch (err) {
+    req.log.warn({ err, symbol }, "Symbol news failed");
+    return res.json({ articles: [] });
+  }
 });
 
 router.get("/news-finder", (req, res) => {

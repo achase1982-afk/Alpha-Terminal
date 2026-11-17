@@ -1,10 +1,8 @@
 import { logger } from "./logger.js";
 import {
-  fetchFinnhubNews,
-  fetchPolygonNews,
-  fetchVendorPrimaryNews,
   type NormalizedArticle,
 } from "./tickerNewsAggregated.js";
+import { fetchSymbolNews } from "./symbolNewsProvider.js";
 import { fetchEdgarFilings, type EdgarFiling } from "../routes/sec.js";
 
 const SUMMARY_MAX = 280;
@@ -169,7 +167,7 @@ export interface GetRecentNewsForTickerOptions {
 
 /**
  * Unified recent news for strategist data_package.catalyst.recentNews.
- * Calls the same upstream paths as the NEWS tab (SEC + Polygon + Benzinga + Finnhub), in-process — no HTTP self-calls.
+ * SEC filings plus the symbol-news provider (Alpaca, then Finnhub). In-process — no HTTP self-calls.
  */
 export async function getRecentNewsForTicker(
   ticker: string,
@@ -191,15 +189,9 @@ export async function getRecentNewsForTicker(
   });
 
   try {
-    const polygonKey = process.env["POLYGON_API_KEY"];
-    const vendorPrimaryKey = process.env["BENZ" + "INGA_API_KEY"];
-    const finnhubKey = process.env["FINNHUB_API_KEY"];
-
     const settled = await Promise.allSettled([
       fetchEdgarFilings(symbol, log, signal),
-      polygonKey ? fetchPolygonNews(symbol, polygonKey, log, signal) : Promise.resolve([] as NormalizedArticle[]),
-      vendorPrimaryKey ? fetchVendorPrimaryNews(symbol, vendorPrimaryKey, log, signal) : Promise.resolve([] as NormalizedArticle[]),
-      finnhubKey ? fetchFinnhubNews(symbol, finnhubKey, log, signal) : Promise.resolve([] as NormalizedArticle[]),
+      fetchSymbolNews(symbol, log, signal),
     ]);
 
     const secFilings: EdgarFiling[] = settled[0].status === "fulfilled" ? settled[0].value : [];
@@ -207,19 +199,9 @@ export async function getRecentNewsForTicker(
       log.warn({ err: settled[0].reason, symbol }, "strategistRecentNews: SEC filings rejected");
     }
 
-    const polygonArts: NormalizedArticle[] = settled[1].status === "fulfilled" ? settled[1].value : [];
+    const wireArts: NormalizedArticle[] = settled[1].status === "fulfilled" ? settled[1].value : [];
     if (settled[1].status === "rejected") {
-      log.warn({ err: settled[1].reason, symbol }, "strategistRecentNews: Polygon news rejected");
-    }
-
-    const vendorArts: NormalizedArticle[] = settled[2].status === "fulfilled" ? settled[2].value : [];
-    if (settled[2].status === "rejected") {
-      log.warn({ err: settled[2].reason, symbol }, "strategistRecentNews: vendor news rejected");
-    }
-
-    const finnArts: NormalizedArticle[] = settled[3].status === "fulfilled" ? settled[3].value : [];
-    if (settled[3].status === "rejected") {
-      log.warn({ err: settled[3].reason, symbol }, "strategistRecentNews: Finnhub news rejected");
+      log.warn({ err: settled[1].reason, symbol }, "strategistRecentNews: symbol news rejected");
     }
 
     if (settled.every((s) => s.status === "rejected")) {
@@ -228,11 +210,9 @@ export async function getRecentNewsForTicker(
     }
 
     const secItems = toSecItems(symbol, secFilings, cutoffMs, perSourceLimit);
-    const polygonItems = toPolygonItems(polygonArts, cutoffMs, perSourceLimit);
-    const benzingaItems = toBenzingaItems(vendorArts, cutoffMs, perSourceLimit);
-    const finnhubItems = toFinnhubItems(finnArts, cutoffMs, perSourceLimit);
+    const wireItems = toFinnhubItems(wireArts, cutoffMs, perSourceLimit);
 
-    const rest = [...polygonItems, ...benzingaItems, ...finnhubItems];
+    const rest = wireItems;
     const items = mergeSecFirst(secItems, rest, maxTotal);
 
     return {
