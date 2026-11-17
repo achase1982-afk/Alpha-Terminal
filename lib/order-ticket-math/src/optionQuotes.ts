@@ -81,15 +81,32 @@ export interface SpreadNBBO {
   crossed: boolean;
 }
 
+function gcdAll(nums: number[]): number {
+  if (nums.length === 0) return 1;
+  let g = Math.abs(Math.floor(nums[0]) || 1);
+  for (let i = 1; i < nums.length; i++) {
+    let y = Math.abs(Math.floor(nums[i]) || 1);
+    while (y) {
+      const t = y;
+      y = g % y;
+      g = t;
+    }
+  }
+  return g || 1;
+}
+
 /**
  * Net spread bid/ask from leg quotes in the order's natural direction with positive magnitudes
  * for typical debit/credit structures; even-money nets may remain signed.
+ * Each leg is weighted by `quantity / gcd(leg quantities)` (default quantity 1).
  * `crossed` is true only when an individual leg book is crossed — never when spread mid ≤ 0.
  */
 export function aggregateSpreadNBBO(
-  legs: Array<{ instruction: string; bid?: number | null; ask?: number | null }>,
+  legs: Array<{ instruction: string; bid?: number | null; ask?: number | null; quantity?: number }>,
 ): SpreadNBBO | null {
   if (legs.length === 0) return null;
+  const qtys = legs.map((l) => l.quantity ?? 1);
+  const unit = gcdAll(qtys);
   let rawBid = 0;
   let rawAsk = 0;
   let buyBidSum = 0;
@@ -98,16 +115,18 @@ export function aggregateSpreadNBBO(
   let sellAskSum = 0;
   let haveAllLegs = true;
   let anyLegCrossed = false;
-  for (const leg of legs) {
+  for (let i = 0; i < legs.length; i++) {
+    const leg = legs[i];
     const st = quoteSideState(leg.bid, leg.ask);
     if (st === "incomplete") {
       haveAllLegs = false;
       break;
     }
     if (st === "crossed") anyLegCrossed = true;
+    const w = (qtys[i] ?? 1) / unit;
     const isSell = leg.instruction.startsWith("SELL");
-    const bid = leg.bid!;
-    const ask = leg.ask!;
+    const bid = leg.bid! * w;
+    const ask = leg.ask! * w;
     if (isSell) {
       sellBidSum += bid;
       sellAskSum += ask;

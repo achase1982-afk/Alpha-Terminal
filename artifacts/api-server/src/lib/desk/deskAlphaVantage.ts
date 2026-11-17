@@ -4,7 +4,7 @@ import {
   deskMarkFeedAuthError,
   deskMarkFeedNotConfigured,
   deskMarkFeedRateLimited,
-  deskClearFeedForcedStatus,
+  deskMarkFeedOnDemand,
   deskTouchFeedOnDemand,
 } from "./deskFeedFreshness.js";
 
@@ -23,7 +23,7 @@ function canCallAlphaVantage(): boolean {
   if (d !== callsSessionDay) {
     callsSessionDay = d;
     callsOnSessionDay = 0;
-    deskClearFeedForcedStatus("alphavantage");
+    deskMarkFeedOnDemand("alphavantage", SOURCE);
   }
   return callsOnSessionDay < DAILY_CAP;
 }

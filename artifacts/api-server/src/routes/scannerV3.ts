@@ -181,6 +181,10 @@ router.get("/v3/universe", async (req, res) => {
     const quoteMap = schwab_access_token_present
       ? await fetchSchwabBatchQuotesForSymbolsBestToken(tickers)
       : new Map();
+    if (schwab_access_token_present) {
+      const { overlayScannerQuotesFromStream } = await import("../lib/scannerStreamQuoteOverlay.js");
+      overlayScannerQuotesFromStream(tickers, quoteMap);
+    }
 
     const schwabIvBySymbol = new Map<string, number | null>();
     for (const [sym, q] of quoteMap) {

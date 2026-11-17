@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { evaluateServerPlaceOrderGate } from "../serverPlaceOrderGate.js";
-import { schwabOrderMaxRisk, schwabOrderToEconomicsInput } from "../schwabOrderRisk.js";
-import { computeOrderEconomics } from "../orderEconomics.js";
+import { schwabOrderMaxRisk } from "../schwabOrderRisk.js";
 import { analyzeExpirationPayoff } from "../expirationPayoff.js";
 
 const sym = (cp: "C" | "P", strike: number) =>
@@ -10,6 +9,18 @@ const sym = (cp: "C" | "P", strike: number) =>
 function limitOrder(legs: Array<{ ins: string; qty: number; sym: string }>, price: number) {
   return {
     orderType: "LIMIT",
+    price,
+    orderLegCollection: legs.map((l) => ({
+      instruction: l.ins,
+      quantity: l.qty,
+      instrument: { assetType: "OPTION", symbol: l.sym },
+    })),
+  };
+}
+
+function netDebitOrder(legs: Array<{ ins: string; qty: number; sym: string }>, price: number) {
+  return {
+    orderType: "NET_DEBIT",
     price,
     orderLegCollection: legs.map((l) => ({
       instruction: l.ins,
@@ -30,7 +41,7 @@ describe("LIMIT credit/debit inference", () => {
     );
     const r = schwabOrderMaxRisk(o);
     expect(r.kind).toBe("known");
-    if (r.kind === "known") expect(r.maxRisk).toBe(400);
+    expect(r.kind === "known" ? r.maxRisk : 0).toBe(400);
   });
 
   it("ITM put credit at 4.00 maxLoss 100", () => {
@@ -42,7 +53,8 @@ describe("LIMIT credit/debit inference", () => {
       4,
     );
     const r = schwabOrderMaxRisk(o);
-    if (r.kind === "known") expect(r.maxRisk).toBe(100);
+    expect(r.kind).toBe("known");
+    expect(r.kind === "known" ? r.maxRisk : 0).toBe(100);
   });
 
   it("bear put debit at 2.00 maxLoss 200", () => {
@@ -54,7 +66,8 @@ describe("LIMIT credit/debit inference", () => {
       2,
     );
     const r = schwabOrderMaxRisk(o);
-    if (r.kind === "known") expect(r.maxRisk).toBe(200);
+    expect(r.kind).toBe("known");
+    expect(r.kind === "known" ? r.maxRisk : 0).toBe(200);
   });
 
   it("long IC debit at 4.00 maxLoss 400", () => {
@@ -62,13 +75,14 @@ describe("LIMIT credit/debit inference", () => {
       [
         { ins: "BUY_TO_OPEN", qty: 1, sym: sym("P", 5900) },
         { ins: "SELL_TO_OPEN", qty: 1, sym: sym("P", 5895) },
-        { ins: "SELL_TO_OPEN", qty: 1, sym: sym("C", 5950) },
         { ins: "BUY_TO_OPEN", qty: 1, sym: sym("C", 5955) },
+        { ins: "SELL_TO_OPEN", qty: 1, sym: sym("C", 5950) },
       ],
       4,
     );
     const r = schwabOrderMaxRisk(o);
-    if (r.kind === "known") expect(r.maxRisk).toBe(400);
+    expect(r.kind).toBe("known");
+    expect(r.kind === "known" ? r.maxRisk : 0).toBe(400);
   });
 
   it("long iron fly debit maxLoss 300", () => {
@@ -82,7 +96,8 @@ describe("LIMIT credit/debit inference", () => {
       3,
     );
     const r = schwabOrderMaxRisk(o);
-    if (r.kind === "known") expect(r.maxRisk).toBe(300);
+    expect(r.kind).toBe("known");
+    expect(r.kind === "known" ? r.maxRisk : 0).toBe(300);
   });
 
   it("long put condor debit maxLoss 100", () => {
@@ -96,7 +111,8 @@ describe("LIMIT credit/debit inference", () => {
       1,
     );
     const r = schwabOrderMaxRisk(o);
-    if (r.kind === "known") expect(r.maxRisk).toBe(100);
+    expect(r.kind).toBe("known");
+    expect(r.kind === "known" ? r.maxRisk : 0).toBe(100);
   });
 
   it("50-lot long IC maxLoss 20000 and RED on 30k", () => {
@@ -104,15 +120,78 @@ describe("LIMIT credit/debit inference", () => {
       [
         { ins: "BUY_TO_OPEN", qty: 50, sym: sym("P", 5900) },
         { ins: "SELL_TO_OPEN", qty: 50, sym: sym("P", 5895) },
-        { ins: "SELL_TO_OPEN", qty: 50, sym: sym("C", 5950) },
         { ins: "BUY_TO_OPEN", qty: 50, sym: sym("C", 5955) },
+        { ins: "SELL_TO_OPEN", qty: 50, sym: sym("C", 5950) },
       ],
       4,
     );
     const r = schwabOrderMaxRisk(o);
-    if (r.kind === "known") expect(r.maxRisk).toBe(20_000);
+    expect(r.kind).toBe("known");
+    expect(r.kind === "known" ? r.maxRisk : 0).toBe(20_000);
     const gate = evaluateServerPlaceOrderGate({ order: o, accountEquity: 30_000 });
     expect(gate.checks.find((c) => c.id === "size")?.level).toBe("RED");
+  });
+});
+
+describe("no debit premium cap understates", () => {
+  it("short IC as NET_DEBIT 0.50 maxLoss 550 not 50", () => {
+    const o = netDebitOrder(
+      [
+        { ins: "BUY_TO_OPEN", qty: 1, sym: sym("P", 5890) },
+        { ins: "SELL_TO_OPEN", qty: 1, sym: sym("P", 5895) },
+        { ins: "SELL_TO_OPEN", qty: 1, sym: sym("C", 5950) },
+        { ins: "BUY_TO_OPEN", qty: 1, sym: sym("C", 5955) },
+      ],
+      0.5,
+    );
+    const r = schwabOrderMaxRisk(o);
+    expect(r.kind).toBe("known");
+    expect(r.kind === "known" ? r.maxRisk : 0).toBe(550);
+  });
+
+  it("call condor +1/-2/-1/+2 at 1.00 debit maxLoss 1100", () => {
+    const o = limitOrder(
+      [
+        { ins: "BUY_TO_OPEN", qty: 1, sym: sym("C", 5900) },
+        { ins: "SELL_TO_OPEN", qty: 2, sym: sym("C", 5905) },
+        { ins: "SELL_TO_OPEN", qty: 1, sym: sym("C", 5910) },
+        { ins: "BUY_TO_OPEN", qty: 2, sym: sym("C", 5915) },
+      ],
+      1,
+    );
+    const r = schwabOrderMaxRisk(o);
+    expect(r.kind).toBe("known");
+    expect(r.kind === "known" ? r.maxRisk : 0).toBe(1100);
+  });
+
+  it("put condor +1/-2/+2/-1 at 1.00 debit maxLoss 600", () => {
+    const o = limitOrder(
+      [
+        { ins: "BUY_TO_OPEN", qty: 1, sym: sym("P", 5900) },
+        { ins: "SELL_TO_OPEN", qty: 2, sym: sym("P", 5905) },
+        { ins: "BUY_TO_OPEN", qty: 2, sym: sym("P", 5910) },
+        { ins: "SELL_TO_OPEN", qty: 1, sym: sym("P", 5915) },
+      ],
+      1,
+    );
+    const r = schwabOrderMaxRisk(o);
+    expect(r.kind).toBe("known");
+    expect(r.kind === "known" ? r.maxRisk : 0).toBe(600);
+  });
+
+  it("mixed bear put debit plus bear call credit LIMIT 1.00 maxLoss 600", () => {
+    const o = limitOrder(
+      [
+        { ins: "BUY_TO_OPEN", qty: 1, sym: sym("P", 5900) },
+        { ins: "SELL_TO_OPEN", qty: 1, sym: sym("P", 5895) },
+        { ins: "SELL_TO_OPEN", qty: 1, sym: sym("C", 5950) },
+        { ins: "BUY_TO_OPEN", qty: 1, sym: sym("C", 5955) },
+      ],
+      1,
+    );
+    const r = schwabOrderMaxRisk(o);
+    expect(r.kind).toBe("known");
+    expect(r.kind === "known" ? r.maxRisk : 0).toBe(600);
   });
 });
 

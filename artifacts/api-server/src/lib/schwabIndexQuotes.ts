@@ -87,10 +87,48 @@ export function parseIndexQuoteEntry(symbol: string, entry: unknown): IndexQuote
   };
 }
 
+/** Indices we mark on LEVELONE_EQUITIES stream; skip redundant REST poll. */
+export const SCHWAB_INDEX_L1_STREAM_SYMBOLS = new Set([
+  "$VIX",
+  "$VVIX",
+  "$VIX9D",
+  "$VIX3M",
+  "$VIX1D",
+  "$VXN",
+  "$RVX",
+]);
+
+export const SCHWAB_INDEX_STREAM_FRESH_MS = 30_000;
+
+export type SchwabIndexStreamFresh = { fresh: boolean; lastStreamMs: number | null };
+
+let streamFreshCheck: ((apiSymbol: string, now?: number) => SchwabIndexStreamFresh) | null = null;
+
+export function setSchwabIndexStreamFreshCheck(
+  fn: ((apiSymbol: string, now?: number) => SchwabIndexStreamFresh) | null,
+): void {
+  streamFreshCheck = fn;
+}
+
+export function getSchwabIndexQuotesStreamHealth(now = Date.now()) {
+  return [...SCHWAB_INDEX_L1_STREAM_SYMBOLS].map((symbol) => {
+    const chk = streamFreshCheck?.(symbol, now) ?? { fresh: false, lastStreamMs: null };
+    return {
+      symbol,
+      rest_fallback: !chk.fresh,
+      last_stream_ms: chk.lastStreamMs,
+    };
+  });
+}
+
 /** Symbols due for a request this cycle: everything registered except parked ones. */
 export function selectPollSymbols(now = Date.now()): string[] {
   const out: string[] = [];
   for (const s of registered) {
+    if (SCHWAB_INDEX_L1_STREAM_SYMBOLS.has(s)) {
+      const chk = streamFreshCheck?.(s, now);
+      if (chk?.fresh) continue;
+    }
     const parked = parkedAt.get(s);
     if (parked !== undefined && now - parked < RETRY_PARKED_MS) continue;
     out.push(s);

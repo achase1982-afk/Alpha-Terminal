@@ -165,16 +165,6 @@ export function initDeskStreamerSymbols(): void {
   /* desk universe uses ADD on the shared streamer — see startDeskTapeUniverse() */
 }
 
-export function deskSubscribeAtmZeroDteOptionKeys(keys: string[]): void {
-  if (!keys.length) return;
-  void import("../schwabStreamer.js").then(({ deskStreamerAddOptions, deskStreamerAddOptionsBook }) => {
-    deskStreamerAddOptions(keys.slice(0, TARGET_DESK_OPTION_BATCH));
-    deskStreamerAddOptionsBook(keys.slice(0, 100));
-  });
-}
-
-const TARGET_DESK_OPTION_BATCH = 200;
-
 export function getDeskStreamerConnectionNumber(): number {
   return connectionNumber;
 }

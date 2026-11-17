@@ -2,6 +2,7 @@ import { deskFetchSchwabChain } from "./deskSchwabChains.js";
 import { deskTradierQuotes, getTradierToken } from "./deskTradier.js";
 import { deskProbeAlpacaNews } from "./deskAlpacaNews.js";
 import { deskFetchNews } from "./deskNews.js";
+import { DESK_DEFAULT_NEWS_SYMBOLS } from "./deskDefaultNewsSymbols.js";
 import { deskProbeMarketaux } from "./deskMarketaux.js";
 import { deskProbeStocknews } from "./deskStocknews.js";
 import { deskProbeEodhd } from "./deskEodhd.js";
@@ -19,6 +20,13 @@ const CHAINS_POLL_MS = 120_000;
 const VENDOR_SLOW_MS = 15 * 60_000;
 
 let pollInFlight: Promise<void> | null = null;
+let alpacaNewsPollInFlight: Promise<void> | null = null;
+let finnhubNewsPollInFlight: Promise<void> | null = null;
+
+export function deskResetBackgroundNewsPollGuardsForTests(): void {
+  alpacaNewsPollInFlight = null;
+  finnhubNewsPollInFlight = null;
+}
 
 export async function pollDeskChains(): Promise<void> {
   const expiry = deskSessionDateEt();
@@ -35,7 +43,29 @@ async function pollAlpacaNews(): Promise<void> {
 }
 
 async function pollNews(): Promise<void> {
-  await deskFetchNews(["SPY", "QQQ"]);
+  await deskFetchNews([...DESK_DEFAULT_NEWS_SYMBOLS], { mode: "background" });
+}
+
+function scheduleAlpacaNewsPoll(): void {
+  if (alpacaNewsPollInFlight) return;
+  alpacaNewsPollInFlight = pollAlpacaNews()
+    .catch((err) => {
+      logger.warn({ err }, "Desk Alpaca news background poll failed");
+    })
+    .finally(() => {
+      alpacaNewsPollInFlight = null;
+    });
+}
+
+function scheduleFinnhubNewsPoll(): void {
+  if (finnhubNewsPollInFlight) return;
+  finnhubNewsPollInFlight = pollNews()
+    .catch((err) => {
+      logger.warn({ err }, "Desk Finnhub news background poll failed");
+    })
+    .finally(() => {
+      finnhubNewsPollInFlight = null;
+    });
 }
 
 async function pollVendorSlow(): Promise<void> {
@@ -57,8 +87,8 @@ export async function runDeskBackgroundPollCycle(): Promise<void> {
     try {
       await pollDeskChains();
       await pollTradier();
-      await pollAlpacaNews();
-      await pollNews();
+      scheduleAlpacaNewsPoll();
+      scheduleFinnhubNewsPoll();
     } catch (err) {
       logger.debug({ err }, "Desk background poll cycle error");
     }

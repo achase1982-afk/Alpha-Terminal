@@ -20,6 +20,8 @@ export interface QuoteResponse {
   fiftyTwoWeekHigh?: number;
   fiftyTwoWeekLow?: number;
   peRatio?: number;
+  /** True when price fields are from REST rather than the live Schwab streamer. */
+  not_streaming?: boolean;
   nextEarningsDate?: string;
   error?: string;
 }
