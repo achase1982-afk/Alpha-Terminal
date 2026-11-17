@@ -67,12 +67,12 @@ describe("evaluateServerPlaceOrderGate", () => {
           {
             instruction: "SELL_TO_OPEN",
             quantity: 10,
-            instrument: { assetType: "OPTION", symbol: "SPXW  261118C05950000" },
+            instrument: { assetType: "OPTION", symbol: "SPXW  261118C05900000" },
           },
           {
             instruction: "BUY_TO_OPEN",
             quantity: 10,
-            instrument: { assetType: "OPTION", symbol: "SPXW  261118C05900000" },
+            instrument: { assetType: "OPTION", symbol: "SPXW  261118C05950000" },
           },
         ],
       },

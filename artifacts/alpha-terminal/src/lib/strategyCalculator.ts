@@ -75,7 +75,7 @@ export function detectIronCondor(
 }
 
 export interface StrategyEconomics {
-  maxRisk: number;
+  maxRisk: number | null;
   maxProfit: number;
   breakevens: number[];
   isIronCondor: boolean;

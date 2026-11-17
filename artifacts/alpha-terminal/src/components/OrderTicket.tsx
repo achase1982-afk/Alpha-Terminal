@@ -788,7 +788,8 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
 
   const riskChecks = useMemo(() => {
     if (!preTradeEnabled) return [];
-    const spreadMaxRisk = ticketEconomics ? ticketEconomics.maxRisk / Math.max(1, quantity) : null;
+    const spreadMaxRisk =
+      ticketEconomics?.maxRisk != null ? ticketEconomics.maxRisk / Math.max(1, quantity) : null;
     const allChecks = runPreTradeChecks({
       side, quantity,
       limitPrice: submittedLimit,
@@ -1548,7 +1549,12 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                   const netAmt = netPrice * 100 * quantity;
                   const maxRisk = econ.maxRisk;
                   const maxGain = econ.maxProfit;
-                  const rr = maxRisk > 0 ? `${(maxGain / maxRisk).toFixed(2)}:1` : "—";
+                  const rr =
+                    maxRisk != null && maxRisk > 0 && Number.isFinite(maxGain)
+                      ? `${(maxGain / maxRisk).toFixed(2)}:1`
+                      : maxGain === Number.POSITIVE_INFINITY
+                        ? "Unlimited"
+                        : "—";
                   const allCalls = strategyLegs.every(l => l.optionType === "CALL");
                   const allPuts = strategyLegs.every(l => l.optionType === "PUT");
                   const stratName = econ.isIronCondor
@@ -1564,7 +1570,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                     ? Math.round((strategyIsCredit ? (1 - Math.abs(popLeg.delta)) : Math.abs(popLeg.delta)) * 100)
                     : null;
                   const bp = balances.buyingPower ?? tradingAccountEquity ?? 0;
-                  const bpChange = -econ.maxRisk;
+                  const bpChange = econ.maxRisk != null ? -econ.maxRisk : -econ.grossNotional;
                   return (
                     <div style={{ background: `linear-gradient(145deg, #14161a, #080a0f)`, borderRadius: 10, border: `1px solid ${BORDER}`, padding: "6px 10px" }}>
                       <div className="flex items-center justify-between">
@@ -1586,7 +1592,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                         </div>
                         <div>
                           <div style={{ color: MUTED }}>Max risk</div>
-                          <div className="text-[13px]" style={{ color: WHITE }}>{fmtCurrency(maxRisk > 0 ? maxRisk : 0)}</div>
+                          <div className="text-[13px]" style={{ color: WHITE }}>{maxRisk != null ? fmtCurrency(maxRisk) : "Unlimited"}</div>
                         </div>
                         <div>
                           <div style={{ color: MUTED }}>POP</div>
@@ -1765,7 +1771,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
 
                   <div className="mt-1 flex flex-wrap items-center justify-between gap-1 pt-1 text-[11px]" style={{ borderTop: `1px dashed ${DIVIDER}`, color: MUTED }}>
                     <span>Total {strategyIsCredit ? "credit" : "cost"} {estimatedCost != null ? fmtCurrency(Math.abs(estimatedCost)) : "—"}</span>
-                    <span>Max risk {ticketEconomics ? fmtCurrency(ticketEconomics.maxRisk) : "—"}</span>
+                    <span>Max risk {ticketEconomics?.maxRisk != null ? fmtCurrency(ticketEconomics.maxRisk) : ticketEconomics ? "Unlimited" : "—"}</span>
                     <span>Fees $0.65/ct</span>
                   </div>
                 </div>
@@ -2387,7 +2393,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
           {isMultiLeg && strategyLegs ? (
             <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-[12px]" style={{ color: TEXT }}>
               <span>{quantity} spread{quantity !== 1 ? "s" : ""} · {strategyIsCredit ? "Credit" : "Cost"} {estimatedCost != null ? fmtCurrency(Math.abs(estimatedCost)) : "—"}</span>
-              <span>Risk {ticketEconomics ? fmtCurrency(ticketEconomics.maxRisk) : "—"}</span>
+              <span>Risk {ticketEconomics?.maxRisk != null ? fmtCurrency(ticketEconomics.maxRisk) : ticketEconomics ? "Unlimited" : "—"}</span>
               <span>POP {(() => {
                 const popLeg = strategyIsCredit
                   ? strategyLegs.find(l => l.instruction.startsWith("SELL"))
@@ -2553,7 +2559,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
                   ? computeStrategyEconomics({ legs: strategyLegs, netPrice, quantity, isCredit: strategyIsCredit })
                   : null;
                 const bpEffect = econMulti
-                  ? -(econMulti.maxRisk + totalCommission)
+                  ? -((econMulti.maxRisk ?? grossCost) + totalCommission)
                   : (side === "BUY" ? -(grossCost + totalCommission) : grossCost - totalCommission);
                 const breakevens: number[] = econMulti ? econMulti.breakevens : [];
                 let maxProfit: number | null = null;

@@ -43,8 +43,8 @@ describe("schwabOrderMaxRisk", () => {
       orderType: "NET_CREDIT",
       price: 1,
       orderLegCollection: [
-        { instruction: "SELL_TO_OPEN", quantity: 1, instrument: { assetType: "OPTION", symbol: C5950 } },
-        { instruction: "BUY_TO_OPEN", quantity: 1, instrument: { assetType: "OPTION", symbol: C5945 } },
+        { instruction: "SELL_TO_OPEN", quantity: 1, instrument: { assetType: "OPTION", symbol: C5945 } },
+        { instruction: "BUY_TO_OPEN", quantity: 1, instrument: { assetType: "OPTION", symbol: C5950 } },
       ],
     });
     expect(r.kind).toBe("known");
@@ -56,8 +56,8 @@ describe("schwabOrderMaxRisk", () => {
       orderType: "NET_CREDIT",
       price: 1,
       orderLegCollection: [
-        { instruction: "SELL_TO_OPEN", quantity: 10, instrument: { assetType: "OPTION", symbol: C5950B } },
-        { instruction: "BUY_TO_OPEN", quantity: 10, instrument: { assetType: "OPTION", symbol: C5900 } },
+        { instruction: "SELL_TO_OPEN", quantity: 10, instrument: { assetType: "OPTION", symbol: C5900 } },
+        { instruction: "BUY_TO_OPEN", quantity: 10, instrument: { assetType: "OPTION", symbol: C5950B } },
       ],
     });
     expect(r.kind).toBe("known");
@@ -103,8 +103,8 @@ describe("schwabOrderMaxRisk", () => {
       orderType: "NET_CREDIT",
       price: 1,
       orderLegCollection: [
-        { instruction: "SELL_TO_OPEN", quantity: 1, instrument: { assetType: "OPTION", symbol: C5950 } },
-        { instruction: "BUY_TO_OPEN", quantity: 1, instrument: { assetType: "OPTION", symbol: C5945 } },
+        { instruction: "SELL_TO_OPEN", quantity: 1, instrument: { assetType: "OPTION", symbol: C5945 } },
+        { instruction: "BUY_TO_OPEN", quantity: 1, instrument: { assetType: "OPTION", symbol: C5950 } },
       ],
     };
     const risk = schwabOrderMaxRisk(order);

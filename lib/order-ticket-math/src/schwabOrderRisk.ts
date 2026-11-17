@@ -109,7 +109,11 @@ export function inferNetCreditFromLegStructure(legs: EconomicsLeg[]): boolean | 
   if (legs.length !== 2) return null;
   const allCalls = legs.every((l) => l.optionType === "CALL");
   const allPuts = legs.every((l) => l.optionType === "PUT");
-  if (!allCalls && !allPuts) return null;
+  if (!allCalls && !allPuts) {
+    const buyCount = legs.filter((l) => l.instruction.startsWith("BUY")).length;
+    if (buyCount === 2) return false;
+    return null;
+  }
   const sell = legs.find((l) => l.instruction.startsWith("SELL"));
   const buy = legs.find((l) => l.instruction.startsWith("BUY"));
   if (!sell || !buy) return null;
@@ -138,6 +142,18 @@ export function schwabOrderHasUncoveredShortRisk(order: SchwabOrderLike): boolea
   const legs = order.orderLegCollection ?? [];
   const optionLegs = legs.filter((l) => isOptionAsset(l.instrument?.assetType));
   if (optionLegs.length === 0) return false;
+
+  if (optionLegs.length === 2) {
+    const assets = optionLegs.map((l) => isOptionAsset(l.instrument?.assetType));
+    const types = new Set(
+      optionLegs.map((l) => parseSchwabOptionSymbol(l.instrument?.symbol ?? "")?.optionType),
+    );
+    if (assets.every(Boolean) && types.size === 2) {
+      const sells = optionLegs.filter((l) => normalizeInstruction(l.instruction ?? "").startsWith("SELL"));
+      const buys = optionLegs.filter((l) => normalizeInstruction(l.instruction ?? "").startsWith("BUY"));
+      if (sells.length === 1 && buys.length === 1) return true;
+    }
+  }
 
   const instructions = optionLegs.map((l) => normalizeInstruction(l.instruction ?? ""));
   const sellOpens = optionLegs.filter((_, i) => instructions[i] === "SELL_TO_OPEN");
@@ -203,16 +219,7 @@ export function schwabOrderToEconomicsInput(order: SchwabOrderLike): OrderEconom
   } else if (isCredit == null && econLegs.length >= 2) {
     isCredit = inferNetCreditFromLegStructure(econLegs);
   }
-  if (schwabOrderIsCredit(order) == null && econLegs.length === 2) {
-    const width = Math.abs(econLegs[0].strike - econLegs[1].strike);
-    if (width > 0) isCredit = price <= width / 2;
-  }
-  if (isCredit == null) {
-    const sellCount = econLegs.filter((l) => l.instruction.startsWith("SELL")).length;
-    const buyCount = econLegs.filter((l) => l.instruction.startsWith("BUY")).length;
-    if (sellCount !== buyCount) return null;
-    isCredit = false;
-  }
+  if (isCredit == null) return null;
 
   const contractCount = legQtys.reduce((s, n) => s + n, 0);
 
@@ -238,6 +245,6 @@ export function schwabOrderMaxRisk(order: SchwabOrderLike): OrderMaxRiskResult {
   const input = schwabOrderToEconomicsInput(order);
   if (!input) return { kind: "unknown" };
   const econ = computeOrderEconomics(input);
-  if (!econ) return { kind: "unknown" };
+  if (!econ || econ.maxRisk == null) return { kind: "unknown" };
   return { kind: "known", maxRisk: econ.maxRisk };
 }
