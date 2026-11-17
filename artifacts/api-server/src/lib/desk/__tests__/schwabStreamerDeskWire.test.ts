@@ -3,8 +3,7 @@ process.env.DATABASE_URL =
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  streamerSubApplyManagedOptionsBookSubscriptions,
-  streamerSubApplyManagedOptionsSubscriptions,
+  streamerSubFlushWireForTests,
   streamerSubResetForTests,
 } from "../../streamerSubscriptionManager.js";
 import {
@@ -59,7 +58,7 @@ describe("schwabStreamer desk wire (mocked send)", () => {
 
   it("deskStreamerSetDeskOptions emits ADD without app SUBS", async () => {
     addOptionSymbols(["APP_ROOT"]);
-    await streamerSubApplyManagedOptionsSubscriptions();
+    await streamerSubFlushWireForTests();
     outbound.length = 0;
     deskStreamerSetDeskOptions(["DESK_ONLY"]);
     const reqs = collectRequests(outbound);
@@ -71,7 +70,7 @@ describe("schwabStreamer desk wire (mocked send)", () => {
     deskStreamerSetDeskOptions(["DESK-A", "DESK-B"]);
     outbound.length = 0;
     addOptionSymbols(["CLIENT_OPT"]);
-    await streamerSubApplyManagedOptionsSubscriptions();
+    await streamerSubFlushWireForTests();
     const wireDesk = __streamerWireDeskKeysOnServer();
     expect(wireDesk.has("DESK-A")).toBe(true);
     expect(wireDesk.has("DESK-B")).toBe(true);
@@ -90,7 +89,7 @@ describe("schwabStreamer desk wire (mocked send)", () => {
     deskStreamerSetDeskOptions(["DESK_OPT"]);
     outbound.length = 0;
     addOptionSymbols(["CLIENT_OPT"]);
-    await streamerSubApplyManagedOptionsSubscriptions();
+    await streamerSubFlushWireForTests();
     expect(countSubs(collectRequests(outbound), "LEVELONE_OPTIONS")).toBeGreaterThanOrEqual(1);
     expect(__streamerWireDeskKeysOnServer().has("DESK_OPT")).toBe(true);
   });

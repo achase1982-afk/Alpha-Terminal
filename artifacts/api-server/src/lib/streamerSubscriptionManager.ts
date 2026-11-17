@@ -6,7 +6,10 @@ import {
   deskComputeDeskOptionsBookBudget,
   deskGetSchwabStreamerLimits,
 } from "./desk/deskStreamerBudget.js";
-import { sortOptionKeysNearTheMoney } from "./streamerSubPlanSort.js";
+import {
+  sortChainKeysNearTheMoneyInterleaved,
+  sortOptionKeysNearTheMoney,
+} from "./streamerSubPlanSort.js";
 import {
   streamerWireSimulatorLiveAppLevelOneCount,
   streamerWireSimulatorLiveDeskLevelOneCount,
@@ -26,6 +29,8 @@ export type StreamerSubHold = {
 
 export const STREAMER_L1_OPTIONS_CAP = 3_000;
 export const STREAMER_OPTIONS_BOOK_CAP = 100;
+export const STREAM_HOLDER_ID_MAX_LEN = 220;
+export const STREAMER_WIRE_DEBOUNCE_MS = 400;
 
 const DEFAULT_HOLD_TTL_MS = 30 * 60_000;
 
@@ -35,6 +40,55 @@ const rejections: Array<{ atMs: number; service: StreamerSubService; key: string
 let deskCoreOptionKeys = new Set<string>();
 let deskCoreBookKeys = new Set<string>();
 let chainSortSpot: number | null = null;
+let underlyingSpotResolver: ((root: string) => number | null) | null = null;
+
+export function streamerSubSetUnderlyingSpotResolver(
+  fn: ((root: string) => number | null) | null,
+): void {
+  underlyingSpotResolver = fn;
+}
+
+function streamPurposeFromHolderId(holderId: string): string | null {
+  if (!holderId.startsWith("stream:")) return null;
+  const parts = holderId.split(":");
+  return parts[2] ?? null;
+}
+
+export function streamerSubInferHoldTier(holderId: string): StreamerSubTier {
+  if (holderId.startsWith("ticket:")) return "user_visible";
+  if (holderId.startsWith("chain:")) return "user_visible";
+  if (holderId.startsWith("portfolio:positions:")) return "user_visible";
+  if (holderId.startsWith("stream:")) {
+    const purpose = streamPurposeFromHolderId(holderId);
+    if (purpose === "chain" || purpose === "ticket") return "user_visible";
+  }
+  return "background";
+}
+
+function chainRootFromHolder(holderId: string): string | null {
+  if (holderId.startsWith("chain:")) {
+    const root = holderId.split(":")[1];
+    return root ? root.toUpperCase() : null;
+  }
+  if (holderId.startsWith("stream:")) {
+    const purpose = streamPurposeFromHolderId(holderId);
+    if (purpose !== "chain") return null;
+    const viewId = holderId.split(":").slice(3).join(":");
+    const vp = viewId.split(":");
+    if (vp[0] === "chain" && vp[1]) return vp[1].toUpperCase();
+    if (vp[0]) return vp[0].replace(/^\$/, "").toUpperCase();
+  }
+  return null;
+}
+
+function spotForChainHolder(holderId: string): number | null {
+  const root = chainRootFromHolder(holderId);
+  if (root && underlyingSpotResolver) {
+    const s = underlyingSpotResolver(root);
+    if (s != null && Number.isFinite(s)) return s;
+  }
+  return chainSortSpot;
+}
 
 export function streamerSubSetChainSortSpot(spot: number | null): void {
   chainSortSpot = spot;
@@ -46,6 +100,11 @@ export function streamerSubGetChainSortSpot(): number | null {
 
 function holdPriority(holderId: string): number {
   if (holderId.startsWith("ticket:")) return 0;
+  if (holderId.startsWith("stream:")) {
+    const purpose = streamPurposeFromHolderId(holderId);
+    if (purpose === "ticket") return 0;
+    if (purpose === "chain") return 2;
+  }
   if (holderId.startsWith("portfolio:positions:")) return 1;
   if (holderId.startsWith("chain:")) return 2;
   return 3;
@@ -88,8 +147,8 @@ function pruneExpiredHolds(now = Date.now()): void {
   }
   if (removed) {
     bumpPlan();
-    void streamerSubApplyManagedOptionsSubscriptions();
-    void streamerSubApplyManagedOptionsBookSubscriptions();
+    streamerSubScheduleManagedOptionsWire();
+    streamerSubScheduleManagedOptionsBookWire();
   }
 }
 
@@ -166,8 +225,8 @@ export async function streamerSubRelease(holderId: string): Promise<boolean> {
   if (!holds.has(holderId)) return false;
   holds.delete(holderId);
   bumpPlan();
-  await streamerSubApplyManagedOptionsSubscriptions();
-  await streamerSubApplyManagedOptionsBookSubscriptions();
+  streamerSubScheduleManagedOptionsWire();
+  streamerSubScheduleManagedOptionsBookWire();
   return true;
 }
 
@@ -181,8 +240,8 @@ export async function streamerSubReleaseByPrefix(holderPrefix: string): Promise<
   }
   if (n > 0) {
     bumpPlan();
-    await streamerSubApplyManagedOptionsSubscriptions();
-    await streamerSubApplyManagedOptionsBookSubscriptions();
+    streamerSubScheduleManagedOptionsWire();
+    streamerSubScheduleManagedOptionsBookWire();
   }
   return n;
 }
@@ -259,10 +318,15 @@ function buildL1Plan(): L1PlanCache {
 
   for (const h of userHolds) {
     if (ordered.length >= appCap) break;
-    const keys =
-      h.holderId.startsWith("chain:")
-        ? sortOptionKeysNearTheMoney(h.keys, chainSortSpot)
-        : h.keys;
+    const isChain =
+      h.holderId.startsWith("chain:") ||
+      (h.holderId.startsWith("stream:") && streamPurposeFromHolderId(h.holderId) === "chain");
+    const keys = isChain
+      ? sortChainKeysNearTheMoneyInterleaved(h.keys, spotForChainHolder(h.holderId))
+      : h.holderId.startsWith("ticket:") ||
+          (h.holderId.startsWith("stream:") && streamPurposeFromHolderId(h.holderId) === "ticket")
+        ? h.keys
+        : sortOptionKeysNearTheMoney(h.keys, spotForChainHolder(h.holderId));
     addKeys(keys, "user_visible");
   }
 
@@ -353,11 +417,16 @@ export function getStreamerSubscriptionHealth(_now = Date.now()) {
   const limits = deskGetSchwabStreamerLimits();
   const l1 = getL1PlanCache();
   const book = getBookPlanCache();
+  const deskBudget = deskComputeDeskLevelOneOptionsBudget(l1.appSubscribed.length);
+  const plannedDesk = Math.min(l1.deskCoreCount, deskBudget);
+  const bookDeskBudget = deskComputeDeskOptionsBookBudget(book.appSubscribed.length);
+  const plannedBookDesk = Math.min(deskCoreBookKeys.size, bookDeskBudget);
   return {
     limits,
     levelone_options: {
       cap: STREAMER_L1_OPTIONS_CAP,
-      desk_core: l1.deskCoreCount,
+      desk_core: plannedDesk,
+      desk_core_full: l1.deskCoreCount,
       user_visible: l1.userVisibleCount,
       background: l1.backgroundCount,
       managed_holds: holds.size,
@@ -365,29 +434,71 @@ export function getStreamerSubscriptionHealth(_now = Date.now()) {
       live_app: streamerWireSimulatorLiveAppLevelOneCount(),
       live_desk: streamerWireSimulatorLiveDeskLevelOneCount(),
       live_total: streamerWireSimulatorLiveLevelOneOptionsCount(),
-      planned: l1.deskCoreCount + l1.appSubscribed.length,
+      planned: Math.min(STREAMER_L1_OPTIONS_CAP, plannedDesk + l1.appSubscribed.length),
       capped: l1.capped,
     },
     options_book: {
       cap: STREAMER_OPTIONS_BOOK_CAP,
-      desk_core: deskCoreBookKeys.size,
+      desk_core: plannedBookDesk,
       planned_app: book.appSubscribed.length,
-      planned: deskCoreBookKeys.size + book.appSubscribed.length,
+      planned: Math.min(STREAMER_OPTIONS_BOOK_CAP, plannedBookDesk + book.appSubscribed.length),
     },
     streamer_add_rejections: rejections.slice(-20),
   };
 }
 
+let wireL1Debounce: ReturnType<typeof setTimeout> | null = null;
+let wireBookDebounce: ReturnType<typeof setTimeout> | null = null;
+
+export async function streamerSubFlushWireForTests(): Promise<void> {
+  if (wireL1Debounce) {
+    clearTimeout(wireL1Debounce);
+    wireL1Debounce = null;
+  }
+  if (wireBookDebounce) {
+    clearTimeout(wireBookDebounce);
+    wireBookDebounce = null;
+  }
+  await streamerSubApplyManagedOptionsSubscriptionsNow();
+  await streamerSubApplyManagedOptionsBookSubscriptionsNow();
+}
+
+export function streamerSubScheduleManagedOptionsWire(): void {
+  if (wireL1Debounce) clearTimeout(wireL1Debounce);
+  wireL1Debounce = setTimeout(() => {
+    wireL1Debounce = null;
+    void streamerSubApplyManagedOptionsSubscriptionsNow();
+  }, STREAMER_WIRE_DEBOUNCE_MS);
+  wireL1Debounce.unref?.();
+}
+
+export function streamerSubScheduleManagedOptionsBookWire(): void {
+  if (wireBookDebounce) clearTimeout(wireBookDebounce);
+  wireBookDebounce = setTimeout(() => {
+    wireBookDebounce = null;
+    void streamerSubApplyManagedOptionsBookSubscriptionsNow();
+  }, STREAMER_WIRE_DEBOUNCE_MS);
+  wireBookDebounce.unref?.();
+}
+
 export async function streamerSubApplyManagedOptionsSubscriptions(): Promise<void> {
-  const appPlan = getL1PlanCache().appSubscribed;
-  const { replaceManagedLevelOneOptionSubscriptions } = await import("./schwabStreamer.js");
-  replaceManagedLevelOneOptionSubscriptions(appPlan);
+  streamerSubScheduleManagedOptionsWire();
 }
 
 /** @deprecated use streamerSubApplyManagedOptionsSubscriptions */
 export const streamerSubApplyManagedSubscriptions = streamerSubApplyManagedOptionsSubscriptions;
 
+export async function streamerSubApplyManagedOptionsSubscriptionsNow(): Promise<void> {
+  const appPlan = getL1PlanCache().appSubscribed;
+  const { replaceManagedLevelOneOptionSubscriptions } = await import("./schwabStreamer.js");
+  replaceManagedLevelOneOptionSubscriptions(appPlan);
+}
+
 export async function streamerSubApplyManagedOptionsBookSubscriptions(): Promise<void> {
+  streamerSubScheduleManagedOptionsBookWire();
+}
+
+export async function streamerSubApplyManagedOptionsBookSubscriptionsNow(): Promise<void> {
   const appPlan = getBookPlanCache().appSubscribed;
   const { replaceManagedOptionsBookSubscriptions } = await import("./schwabStreamer.js");
   replaceManagedOptionsBookSubscriptions(appPlan);
@@ -399,6 +510,10 @@ export function streamerSubResetForTests(): void {
   deskCoreOptionKeys = new Set();
   deskCoreBookKeys = new Set();
   chainSortSpot = null;
+  if (wireL1Debounce) clearTimeout(wireL1Debounce);
+  if (wireBookDebounce) clearTimeout(wireBookDebounce);
+  wireL1Debounce = null;
+  wireBookDebounce = null;
   streamerSubResetWiredAppPlanSigForTests();
   bumpPlan();
 }

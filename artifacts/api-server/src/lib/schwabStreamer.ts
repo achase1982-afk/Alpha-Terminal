@@ -15,22 +15,26 @@ import {
 } from "./desk/deskStreamerTap.js";
 import { deskStreamerSyncDeskSymbols } from "./desk/deskStreamerDeskSync.js";
 import {
-  streamerSubApplyManagedOptionsBookSubscriptions,
-  streamerSubApplyManagedOptionsSubscriptions,
   streamerSubHold,
   streamerSubMaxDeskBookKeys,
   streamerSubGetChainSortSpot,
   streamerSubMaxDeskOptionKeys,
   streamerSubParseRejectionKey,
   streamerSubRecordRejection,
+  streamerSubInferHoldTier,
   streamerSubMergeHold,
   streamerSubNotifyAppPlanWired,
   streamerSubReplaceHold,
+  streamerSubScheduleManagedOptionsBookWire,
+  streamerSubScheduleManagedOptionsWire,
+  streamerSubSetUnderlyingSpotResolver,
 } from "./streamerSubscriptionManager.js";
 import {
   streamerWireSimulatorApplyPayload,
   streamerWireSimulatorDeskLevelOneKeysOnWire,
   streamerWireSimulatorLiveLevelOneOptionsCount,
+  streamerWireSimulatorRemoveLevelOneOptions,
+  streamerWireSimulatorRemoveOptionsBook,
   streamerWireSimulatorResetForTests,
 } from "./streamerWireSimulator.js";
 import { trimKeysFurthestFromMoney } from "./streamerSubPlanSort.js";
@@ -1824,11 +1828,19 @@ function handleMessage(raw: string) {
         (service === "LEVELONE_OPTIONS" || service === "OPTIONS_BOOK" || service === "LEVELONE_EQUITIES")
       ) {
         if (service === "LEVELONE_OPTIONS" || service === "OPTIONS_BOOK") {
+          const rejectedKey = streamerSubParseRejectionKey(msgText);
           streamerSubRecordRejection(
             service as "LEVELONE_OPTIONS" | "OPTIONS_BOOK",
-            streamerSubParseRejectionKey(msgText),
+            rejectedKey,
             `code_${code}`,
           );
+          if (rejectedKey && rejectedKey !== "unknown") {
+            if (service === "LEVELONE_OPTIONS") {
+              streamerWireSimulatorRemoveLevelOneOptions([rejectedKey]);
+            } else {
+              streamerWireSimulatorRemoveOptionsBook([rejectedKey]);
+            }
+          }
         }
         void import("./desk/deskTapeUniverse.js").then((m) =>
           m.deskRecordStreamerRejection(`${service}:code_${code}:${msgText ?? "unknown"}`),
@@ -1857,6 +1869,7 @@ function handleMessage(raw: string) {
           fiveMinCriticalSent = false;
           broadcast("streamerStatus", { status: "connected" });
           reconnectDelay = 2000;
+          streamerWireSimulatorResetForTests();
 
           deskStreamerAfterLoginAppSubsThenDeskReplay();
           void import("./desk/deskTapeUniverse.js")
@@ -1868,6 +1881,7 @@ function handleMessage(raw: string) {
           consecutiveLoginFailures++;
           void logFailure("SCHWAB_STREAM", "ERROR", `Schwab WebSocket LOGIN failed (code ${code})`, { code, msg: msgText, consecutiveLoginFailures });
           connectionState = "disconnected";
+          streamerWireSimulatorResetForTests();
 
           if (!loginRetried && (code === 3 || (msgText && msgText.toLowerCase().includes("expired")))) {
             // Code-3 / "expired" path takes priority over the 1006 counter
@@ -2032,6 +2046,7 @@ async function connectSchwabStreamer() {
   if (!streamerInfo) {
     logger.warn("Schwab streamer: cannot connect — no streamer info");
     connectionState = "disconnected";
+  streamerWireSimulatorResetForTests();
     scheduleReconnect();
     return;
   }
@@ -2045,6 +2060,7 @@ async function connectSchwabStreamer() {
   } catch (err) {
     logger.error({ err }, "Schwab streamer: WebSocket constructor failed");
     connectionState = "disconnected";
+  streamerWireSimulatorResetForTests();
     scheduleReconnect();
     return;
   }
@@ -2194,6 +2210,7 @@ async function connectSchwabStreamer() {
     clearLifecycleTimers();
     schwabWs = null;
     connectionState = "disconnected";
+  streamerWireSimulatorResetForTests();
     acctActivitySubscribed = false;
     disconnectedAt = Date.now();
     fiveMinCriticalSent = false;
@@ -2266,6 +2283,7 @@ export function stopStreamer() {
     schwabWs = null;
   }
   connectionState = "disconnected";
+  streamerWireSimulatorResetForTests();
   subscribedSymbols.clear();
   subscribedFuturesSymbols.clear();
   subscribedOptionSymbols.clear();
@@ -2327,12 +2345,13 @@ export function addOptionSymbols(symbols: string[], holderId?: string) {
   const cleaned = [...new Set(symbols.map((s) => s.trim()).filter(Boolean))];
   if (!cleaned.length) return;
   const id = holderId ?? STRATEGIST_OPTIONS_HOLD;
+  const tier = streamerSubInferHoldTier(id);
   if (id === STRATEGIST_OPTIONS_HOLD) {
-    streamerSubMergeHold(id, "background", "LEVELONE_OPTIONS", cleaned);
+    streamerSubMergeHold(id, tier, "LEVELONE_OPTIONS", cleaned);
   } else {
-    streamerSubReplaceHold(id, "background", "LEVELONE_OPTIONS", cleaned);
+    streamerSubReplaceHold(id, tier, "LEVELONE_OPTIONS", cleaned);
   }
-  void streamerSubApplyManagedOptionsSubscriptions();
+  streamerSubScheduleManagedOptionsWire();
 }
 
 function managedSetsEqual(next: Set<string>, prev: Set<string>): boolean {
@@ -2406,7 +2425,7 @@ export function setTuningWatchlistOptionUnderlyings(symbols: string[]): void {
   tuningWatchlistOptionRoots.clear();
   for (const s of next) tuningWatchlistOptionRoots.add(s);
   streamerSubReplaceHold(TUNING_WATCHLIST_HOLD, "user_visible", "LEVELONE_OPTIONS", next);
-  void streamerSubApplyManagedOptionsSubscriptions();
+  streamerSubScheduleManagedOptionsWire();
   logger.info(
     { count: next.length, sample: next.slice(0, 8).join(",") },
     "Schwab streamer: tuning watchlist LEVELONE_OPTIONS refresh",
@@ -2489,7 +2508,7 @@ export function addOptionsBookSymbols(symbols: string[], holderId?: string) {
   const cleaned = [...new Set(symbols.map((s) => s.trim()).filter(Boolean))];
   if (!cleaned.length) return;
   streamerSubReplaceHold(holderId ?? OPTIONS_BOOK_APP_HOLD, "user_visible", "OPTIONS_BOOK", cleaned);
-  void streamerSubApplyManagedOptionsBookSubscriptions();
+  streamerSubScheduleManagedOptionsBookWire();
 }
 
 export function onTokenRefreshed() {
@@ -2520,6 +2539,13 @@ export function __deskStreamerWireTestUnprime(): void {
 }
 
 registerDeskStreamerHealthReaders(getStreamerStatus, isConnected);
+
+streamerSubSetUnderlyingSpotResolver((root) => {
+  const normalized = root.replace(/^\$/, "").toUpperCase();
+  const snap = getQuoteBySymbol(normalized) ?? getQuoteBySymbol(`$${normalized}`);
+  const last = snap?.last ?? snap?.regularLast ?? null;
+  return last != null && Number.isFinite(last) ? last : null;
+});
 
 setSchwabIndexStreamFreshCheck((sym, now = Date.now()) => {
   const snap = getQuoteBySymbol(sym);

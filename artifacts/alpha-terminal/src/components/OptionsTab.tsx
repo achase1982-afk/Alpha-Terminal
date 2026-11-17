@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { Reorder } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
+import { hash8 } from "@/lib/streamClientId";
 
 const EPS = 0.0001;
 const COL_W = 74;
@@ -1227,6 +1228,7 @@ interface OptionsTabProps {
     symbols: string[],
     opts?: { purpose?: string; viewId?: string; holderId?: string },
   ) => Promise<string | void>;
+  releaseOptionHold?: (holderId: string) => Promise<void>;
   stickyOffset?: number;
   onTradeSingle?: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
   onOpenStrategyBuilder?: (strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>, preSelectedLegs?: { contract: Contract; type: "CALL" | "PUT"; side?: "bid" | "ask" }[]) => void;
@@ -1234,7 +1236,14 @@ interface OptionsTabProps {
 
 export type { Contract as OptionsContract };
 
-export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSingle, onOpenStrategyBuilder }: OptionsTabProps) {
+export function OptionsTab({
+  subscribeOptionSymbols,
+  releaseOptionHold,
+  stickyOffset = 0,
+  onTradeSingle,
+  onOpenStrategyBuilder,
+}: OptionsTabProps) {
+  const chainHoldRef = useRef<string | null>(null);
   const { accessToken } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken })));
   // Widget pin wins inside the dashboard; global symbol everywhere else.
   const symbol = useActiveSymbol();
@@ -1337,14 +1346,24 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
         if (row.put?.streamKey) keys.push(row.put.streamKey);
       }
     }
-    if (keys.length > 0) {
-      const exp = groups.map((g) => g.expiration).sort().join(",");
-      void subscribeOptionSymbols(keys, {
-        purpose: "chain",
-        viewId: `${symbol}:${exp}`,
-      });
-    }
-  }, [groups, subscribeOptionSymbols, symbol]);
+    if (keys.length === 0) return;
+    const exp = groups.map((g) => g.expiration).sort().join(",");
+    const viewId = `chain:${symbol}:${hash8(exp)}`;
+    let cancelled = false;
+    void (async () => {
+      const prev = chainHoldRef.current;
+      if (prev && releaseOptionHold) await releaseOptionHold(prev);
+      if (cancelled) return;
+      const next = await subscribeOptionSymbols(keys, { purpose: "chain", viewId });
+      if (!cancelled && next) chainHoldRef.current = next;
+    })();
+    return () => {
+      cancelled = true;
+      const prev = chainHoldRef.current;
+      chainHoldRef.current = null;
+      if (prev && releaseOptionHold) void releaseOptionHold(prev);
+    };
+  }, [groups, subscribeOptionSymbols, releaseOptionHold, symbol]);
 
   useEffect(() => { setExpandedExps(new Set()); setSelectedLegs(new Map()); }, [symbol]);
 

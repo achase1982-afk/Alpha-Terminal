@@ -11,6 +11,7 @@ import {
   startStreamer,
 } from "../lib/schwabStreamer.js";
 import {
+  STREAM_HOLDER_ID_MAX_LEN,
   getStreamerSubscriptionHealth,
   streamerSubRelease,
   streamerSubTouch,
@@ -80,13 +81,31 @@ router.post("/option-symbols", (req, res) => {
     return;
   }
   const purpose = typeof body.purpose === "string" && body.purpose.trim() ? body.purpose.trim() : "watchlist";
-  const viewId = typeof body.viewId === "string" && body.viewId.trim() ? body.viewId.trim().slice(0, 80) : "";
-  const holderId =
+  const viewId = typeof body.viewId === "string" && body.viewId.trim() ? body.viewId.trim() : "";
+  const holderIdRaw =
     typeof body.holderId === "string" && body.holderId.trim()
-      ? body.holderId.trim().slice(0, 120)
-      : `stream:${clientId}:${purpose}${viewId ? `:${viewId}` : ""}`;
+      ? body.holderId.trim()
+      : viewId
+        ? `stream:${clientId}:${purpose}:${viewId}`
+        : `stream:${clientId}:${purpose}`;
+  if (holderIdRaw.length > STREAM_HOLDER_ID_MAX_LEN) {
+    res.status(400).json({ ok: false, error: "holderId too long" });
+    return;
+  }
+  const holderId = holderIdRaw;
   if (!holderId.startsWith(`stream:${clientId}:`)) {
     res.status(400).json({ ok: false, error: "holderId must belong to clientId" });
+    return;
+  }
+  if (viewId.length > STREAM_HOLDER_ID_MAX_LEN) {
+    res.status(400).json({ ok: false, error: "viewId too long" });
+    return;
+  }
+  const expectedHolder = viewId
+    ? `stream:${clientId}:${purpose}:${viewId}`
+    : `stream:${clientId}:${purpose}`;
+  if (typeof body.holderId === "string" && body.holderId.trim() && holderId !== expectedHolder) {
+    res.status(400).json({ ok: false, error: "holderId must match clientId, purpose, and viewId" });
     return;
   }
   if (Array.isArray(body.symbols)) {

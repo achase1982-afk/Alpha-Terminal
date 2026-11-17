@@ -105,3 +105,18 @@ export function streamerWireSimulatorResetForTests(): void {
   liveAppOptionsBook.clear();
   liveDeskOptionsBook.clear();
 }
+
+/** Schwab ADD/SUBS rejections drop keys from the broker-side list model. */
+export function streamerWireSimulatorRemoveLevelOneOptions(keys: string[]): void {
+  for (const k of keys) {
+    liveAppL1Options.delete(k);
+    liveDeskL1Options.delete(k);
+  }
+}
+
+export function streamerWireSimulatorRemoveOptionsBook(keys: string[]): void {
+  for (const k of keys) {
+    liveAppOptionsBook.delete(k);
+    liveDeskOptionsBook.delete(k);
+  }
+}

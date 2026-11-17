@@ -22,7 +22,7 @@ export interface DashboardWidgetHandlers {
   subscribeOptionSymbols?: (
     symbols: string[],
     opts?: { purpose?: string; viewId?: string; holderId?: string },
-  ) => Promise<void>;
+  ) => Promise<string | undefined>;
   onTradeSingle?: ComponentProps<typeof OptionsTab>["onTradeSingle"];
   onOpenStrategyBuilder?: ComponentProps<typeof OptionsTab>["onOpenStrategyBuilder"];
   /** Open the stock order ticket for the active symbol. */

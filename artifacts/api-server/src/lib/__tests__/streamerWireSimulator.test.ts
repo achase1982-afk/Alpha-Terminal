@@ -3,6 +3,7 @@ import {
   streamerWireSimulatorApplyPayload,
   streamerWireSimulatorDeskLevelOneKeysOnWire,
   streamerWireSimulatorLiveLevelOneOptionsCount,
+  streamerWireSimulatorRemoveLevelOneOptions,
   streamerWireSimulatorResetForTests,
 } from "../streamerWireSimulator.js";
 
@@ -24,5 +25,14 @@ describe("streamerWireSimulator", () => {
     });
     expect(streamerWireSimulatorLiveLevelOneOptionsCount()).toBe(4);
     expect(streamerWireSimulatorDeskLevelOneKeysOnWire().has("D1")).toBe(true);
+  });
+
+  it("removes rejected keys from live set", () => {
+    streamerWireSimulatorApplyPayload({
+      requests: [{ service: "LEVELONE_OPTIONS", command: "ADD", parameters: { keys: "ZAP" } }],
+    });
+    expect(streamerWireSimulatorLiveLevelOneOptionsCount()).toBe(1);
+    streamerWireSimulatorRemoveLevelOneOptions(["ZAP"]);
+    expect(streamerWireSimulatorLiveLevelOneOptionsCount()).toBe(0);
   });
 });

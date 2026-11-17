@@ -727,8 +727,6 @@ export function initWsServer(httpServer: HttpServer) {
       closed = true;
       clearInterval(hb);
       stopPortfolioPoll(ws);
-      const clientId = wsStreamerSessionByClient.get(ws);
-      if (clientId) void streamerSubReleaseByPrefix(`stream:${clientId}:`);
       wsStreamerSessionByClient.delete(ws);
       clients.delete(ws);
       logger.info({ total: clients.size }, "WS price client disconnected");

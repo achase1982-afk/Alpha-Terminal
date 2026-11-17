@@ -13,7 +13,11 @@ import {
   trimDeskOptionsToBudget,
   type DeskOptionPick,
 } from "./deskTapeStrikeWindows.js";
-import { deskGetSchwabStreamerLimits } from "./deskStreamerBudget.js";
+import {
+  deskComputeDeskLevelOneOptionsBudget,
+  deskGetSchwabStreamerLimits,
+  DESK_LEVELONE_OPTIONS_TARGET,
+} from "./deskStreamerBudget.js";
 import {
   streamerSubApplyManagedOptionsBookSubscriptions,
   streamerSubApplyManagedOptionsSubscriptions,
@@ -55,6 +59,17 @@ let lastError: string | undefined;
 let universeEnabled = false;
 const optionsByExpiry: Record<string, number> = {};
 const streamerRejections: string[] = [];
+let deskFullTargetLevelOneKeys: string[] = [];
+let deskFullTargetBookKeys: string[] = [];
+
+export function deskTapeUniverseSetFullTargetsForTests(levelone: string[], book: string[]): void {
+  deskFullTargetLevelOneKeys = [...levelone];
+  deskFullTargetBookKeys = [...book];
+}
+
+export function deskTapeUniverseFullTargetLevelOneCount(): number {
+  return deskFullTargetLevelOneKeys.length;
+}
 
 export function deskRecordStreamerRejection(text: string): void {
   streamerRejections.push(text);
@@ -135,9 +150,11 @@ async function buildUniverseKeys(
   const explicit = await deskLoadExplicitOptionSymbols().catch(() => [] as string[]);
 
   if (explicit.length > 0) {
+    const fullBudget = deskComputeDeskLevelOneOptionsBudget(0);
+    deskFullTargetLevelOneKeys = explicit.slice(0, Math.min(DESK_LEVELONE_OPTIONS_TARGET, fullBudget));
     const budget = streamerSubMaxDeskOptionKeys();
-    const levelone = explicit.slice(0, budget);
-    cappedLevelone = explicit.length > budget;
+    const levelone = trimKeysFurthestFromMoney(deskFullTargetLevelOneKeys, budget, spot);
+    cappedLevelone = deskFullTargetLevelOneKeys.length > budget;
     leveloneCapReason = cappedLevelone ? `schwab_levelone_options_budget_${budget}` : null;
     for (const exp of expiries) optionsByExpiry[exp] = 0;
     optionsByExpiry.explicit = levelone.length;
@@ -160,8 +177,16 @@ async function buildUniverseKeys(
     }
   }
 
+  const fullBudget = deskComputeDeskLevelOneOptionsBudget(0);
+  const trimmedFull = trimDeskOptionsToBudget(picks, Math.min(DESK_LEVELONE_OPTIONS_TARGET, fullBudget), spot);
+  deskFullTargetLevelOneKeys = [...trimmedFull.symbols];
   const budget = streamerSubMaxDeskOptionKeys();
-  const trimmed = trimDeskOptionsToBudget(picks, budget, spot);
+  const leveloneForWire = trimKeysFurthestFromMoney(deskFullTargetLevelOneKeys, budget, spot);
+  const trimmed = {
+    symbols: leveloneForWire,
+    perExpiry: trimmedFull.perExpiry,
+    capReason: trimmedFull.symbols.length > budget ? `schwab_levelone_options_budget_${budget}` : trimmedFull.capReason,
+  };
   Object.assign(optionsByExpiry, trimmed.perExpiry);
   cappedLevelone = trimmed.capReason != null;
   leveloneCapReason = trimmed.capReason;
@@ -177,6 +202,7 @@ async function buildUniverseKeys(
   const book = pickBySpot(allForBook, spot, bookLimit);
   cappedBook = allForBook.length > book.length;
 
+  deskFullTargetBookKeys = [...book];
   return { levelone: trimmed.symbols, book };
 }
 
@@ -250,15 +276,19 @@ export async function deskTapeUniverseRefresh(force = false): Promise<void> {
   await refreshInFlight;
 }
 
-/** Trim desk core to fit room left by the current app SUBS plan (debounced). */
+/** Re-derive desk from full target for current app budget (grow back when app shrinks). */
 export async function deskTapeUniverseAdjustToAppPlan(): Promise<void> {
   if (!deskTapeUniverseEnabled()) return;
   const budget = streamerSubMaxDeskOptionKeys();
-  const core = streamerSubDeskCoreOptionKeysList();
-  const trimmed = trimKeysFurthestFromMoney(core, budget, lastSpot);
+  const full =
+    deskFullTargetLevelOneKeys.length > 0
+      ? deskFullTargetLevelOneKeys
+      : streamerSubDeskCoreOptionKeysList();
+  const trimmed = trimKeysFurthestFromMoney(full, budget, lastSpot);
   streamerSubSetDeskCore("LEVELONE_OPTIONS", trimmed);
   const bookBudget = streamerSubMaxDeskBookKeys();
-  const bookTrim = streamerSubDeskCoreBookKeysList().slice(0, bookBudget);
+  const bookFull = deskFullTargetBookKeys.length ? deskFullTargetBookKeys : streamerSubDeskCoreBookKeysList();
+  const bookTrim = bookFull.slice(0, bookBudget);
   streamerSubSetDeskCore("OPTIONS_BOOK", bookTrim);
   const prevDesk = new Set(getDeskAddedLevelOneOptionSymbols());
   const nextDesk = new Set(trimmed);

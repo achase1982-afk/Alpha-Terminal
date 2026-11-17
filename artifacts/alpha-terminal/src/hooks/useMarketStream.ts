@@ -15,7 +15,7 @@ import { signalSchwabAuthLost } from "@/lib/authNoticeStore";
 import { refreshSchwabViaServer, syncSchwabTokensFromServer } from "@/lib/schwabTokenSync";
 import type { LiveQuote, LiveNewsItem } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
-import { getStreamClientId } from "@/lib/streamClientId";
+import { buildStreamHolderId, getStreamClientId } from "@/lib/streamClientId";
 
 declare global {
   interface Window {
@@ -194,6 +194,9 @@ export function useMarketStream() {
   const streamClientIdRef = useRef(getStreamClientId());
   const optionHoldTouchRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeOptionHoldsRef = useRef<Set<string>>(new Set());
+  const optionHoldPayloadsRef = useRef(
+    new Map<string, { symbols: string[]; purpose: string; viewId: string }>(),
+  );
 
   const watchlist = useTerminalStore((s) => s.watchlists[s.activeWatchlistId]?.symbols ?? []);
 
@@ -429,6 +432,30 @@ export function useMarketStream() {
       }
     }, 10_000);
 
+    const repostActiveOptionHolds = async () => {
+      const clientId = streamClientIdRef.current;
+      for (const [holderId, payload] of optionHoldPayloadsRef.current) {
+        if (!payload.symbols.length) continue;
+        try {
+          await fetchWithAuth(`${API_BASE}/stream/option-symbols`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-stream-client-id": clientId,
+            },
+            body: JSON.stringify({
+              symbols: payload.symbols,
+              purpose: payload.purpose,
+              viewId: payload.viewId,
+              clientId,
+              holderId,
+            }),
+          });
+          activeOptionHoldsRef.current.add(holderId);
+        } catch {}
+      }
+    };
+
     socket.onopen = () => {
       clearTimeout(openTimeout);
       reconnectDelayRef.current = WS_RECONNECT_BASE;
@@ -439,6 +466,7 @@ export function useMarketStream() {
           clientId: streamClientIdRef.current,
         }),
       );
+      void repostActiveOptionHolds();
       clearOptionTicks();
       stopSseStream();
       stopRestPolling();
@@ -584,13 +612,13 @@ export function useMarketStream() {
     async (
       symbols: string[],
       opts?: { purpose?: string; viewId?: string; holderId?: string },
-    ) => {
-      if (!symbols.length) return;
+    ): Promise<string | undefined> => {
+      if (!symbols.length) return undefined;
       const purpose = opts?.purpose ?? "watchlist";
       const viewId = opts?.viewId ?? "";
       const clientId = streamClientIdRef.current;
       const holderId =
-        opts?.holderId ?? `stream:${clientId}:${purpose}${viewId ? `:${viewId}` : ""}`;
+        opts?.holderId ?? buildStreamHolderId(clientId, purpose, viewId);
       try {
         const res = await fetchWithAuth(`${API_BASE}/stream/option-symbols`, {
           method: "POST",
@@ -600,8 +628,17 @@ export function useMarketStream() {
           },
           body: JSON.stringify({ symbols, purpose, viewId, clientId, holderId }),
         });
-        if (res.ok) activeOptionHoldsRef.current.add(holderId);
+        if (res.ok) {
+          activeOptionHoldsRef.current.add(holderId);
+          optionHoldPayloadsRef.current.set(holderId, {
+            symbols: [...symbols],
+            purpose,
+            viewId,
+          });
+        }
+        return holderId;
       } catch {}
+      return undefined;
     },
     [],
   );
@@ -621,6 +658,7 @@ export function useMarketStream() {
         }),
       });
       activeOptionHoldsRef.current.delete(holderId);
+      optionHoldPayloadsRef.current.delete(holderId);
     } catch {}
   }, []);
 

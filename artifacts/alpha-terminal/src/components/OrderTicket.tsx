@@ -7,6 +7,7 @@ import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { formatSchwabAccountType } from "@/lib/schwabAccountAggregate";
 import { startStrategistPolling } from "@/lib/strategistPoller";
+import { hash8 } from "@/lib/streamClientId";
 import { computeStrategyEconomics } from "@/lib/strategyCalculator";
 import { useGetOptionChain } from "@workspace/api-client-react";
 import {
@@ -279,6 +280,11 @@ interface OrderTicketProps {
   // this to navigate to the AI > Strategist sub-tab so the user can watch
   // the live trade-validation debate.
   onSendToStrategist?: (ticker?: string) => void;
+  subscribeOptionSymbols?: (
+    symbols: string[],
+    opts?: { purpose?: string; viewId?: string },
+  ) => Promise<string | undefined>;
+  releaseOptionHold?: (holderId: string) => Promise<void>;
 }
 
 function AiCoPilotPanel({ side, symbol, limitPrice, bid, ask, quantity, isOption }: {
@@ -343,7 +349,23 @@ function AiCoPilotPanel({ side, symbol, limitPrice, bid, ask, quantity, isOption
   );
 }
 
-export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, optionInstruction, strategyLegs, strategyNetPrice, strategyIsCredit, isCloseOrder, onSwitchToStock, onSwitchToOptions, onSendToStrategist }: OrderTicketProps) {
+export function OrderTicket({
+  isOpen,
+  onClose,
+  initialSide,
+  optionSymbol,
+  optionInstruction,
+  strategyLegs,
+  strategyNetPrice,
+  strategyIsCredit,
+  isCloseOrder,
+  onSwitchToStock,
+  onSwitchToOptions,
+  onSendToStrategist,
+  subscribeOptionSymbols,
+  releaseOptionHold,
+}: OrderTicketProps) {
+  const ticketHoldRef = useRef<string | null>(null);
   const symbol = useTerminalStore((s) => s.symbol);
   const { data: quote } = useQuote(symbol);
   const pulseData = useMarketPulseStore((s) => s.pulseData);
@@ -397,6 +419,37 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   const isMultiLeg = !!strategyLegs && strategyLegs.length >= 1;
   const isOption = !!optionSymbol || isMultiLeg;
   const displaySymbol = isMultiLeg ? `${symbol} Strategy (${strategyLegs!.length} legs)` : optionSymbol ?? symbol;
+
+  const ticketStreamKeys = useMemo(() => {
+    if (!isOpen) return [] as string[];
+    const keys: string[] = [];
+    if (strategyLegs?.length) {
+      for (const leg of strategyLegs) {
+        if (leg.schwabSymbol) keys.push(leg.schwabSymbol);
+      }
+    }
+    if (optionSymbol) keys.push(optionSymbol);
+    return [...new Set(keys.filter(Boolean))];
+  }, [isOpen, strategyLegs, optionSymbol]);
+
+  useEffect(() => {
+    if (!subscribeOptionSymbols || !isOpen || ticketStreamKeys.length === 0) return;
+    const viewId = `ticket:${symbol}:${hash8(ticketStreamKeys.join("\0"))}`;
+    let cancelled = false;
+    void (async () => {
+      const prev = ticketHoldRef.current;
+      if (prev && releaseOptionHold) await releaseOptionHold(prev);
+      if (cancelled) return;
+      const next = await subscribeOptionSymbols(ticketStreamKeys, { purpose: "ticket", viewId });
+      if (!cancelled && next) ticketHoldRef.current = next;
+    })();
+    return () => {
+      cancelled = true;
+      const prev = ticketHoldRef.current;
+      ticketHoldRef.current = null;
+      if (prev && releaseOptionHold) void releaseOptionHold(prev);
+    };
+  }, [isOpen, subscribeOptionSymbols, releaseOptionHold, symbol, ticketStreamKeys]);
 
   const ticketMode: TicketMode = isOption ? "options" : "stock";
   const ORDER_TYPES = isOption ? OPTION_ORDER_TYPES : STOCK_ORDER_TYPES;
