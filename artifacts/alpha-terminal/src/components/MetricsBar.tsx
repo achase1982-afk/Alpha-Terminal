@@ -346,12 +346,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: Metric
   const bidStr = quote?.bid != null ? `$${fmtPrice(quote.bid)}` : null;
   const askStr = quote?.ask != null ? `$${fmtPrice(quote.ask)}` : null;
   const hasBidAsk = bidStr != null && askStr != null;
-  const maxPriceLen = Math.max(bidStr?.length ?? 0, askStr?.length ?? 0);
-  const btnPriceCls = maxPriceLen > 9
-    ? "text-[10px] sm:text-xs"
-    : maxPriceLen > 7
-    ? "text-xs sm:text-sm"
-    : "text-sm sm:text-base";
+  const btnPriceCls = "text-sm tabular-nums";
   const bidSizeStr = quote?.bidSize != null ? String(Math.round(quote.bidSize)) : null;
   const askSizeStr = quote?.askSize != null ? String(Math.round(quote.askSize)) : null;
 
@@ -427,7 +422,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: Metric
         <div className={`flex flex-col justify-center items-start min-w-0 overflow-hidden ${opacityCls} ${transitionCls}`}>
           {showData ? (
             <>
-              <span className="tabular-nums leading-none whitespace-nowrap font-normal md:font-medium text-2xl sm:text-3xl md:text-4xl tracking-tight" style={{ color: tickColor }}>
+              <span className="tabular-nums leading-none whitespace-nowrap font-normal md:font-medium text-2xl sm:text-3xl md:text-4xl tracking-tight inline-block min-w-[8.5rem]" style={{ color: tickColor }}>
                 {lastStr}
               </span>
               <span
