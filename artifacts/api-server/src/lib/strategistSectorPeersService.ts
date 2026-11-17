@@ -1,5 +1,6 @@
 import { fetchFmpCompanyProfile } from "./movers/fmpCompanyProfile.js";
 import { getFmpApiKeyOrThrow, getFmpStockPeers } from "./fmpClient.js";
+import { fetchFmp } from "./fmpPaidPlanGuard.js";
 import { logger } from "./logger.js";
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -47,7 +48,7 @@ async function fetchSameIndustryFromScreener(
       apikey: apiKey,
     });
     const url = `https://financialmodelingprep.com/api/v3/stock-screener?${params.toString()}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+    const res = await fetchFmp(url, { signal: AbortSignal.timeout(15_000) });
     if (!res.ok) return [];
 
     const rows = (await res.json()) as Array<{ symbol?: string; industry?: string; marketCap?: number }>;

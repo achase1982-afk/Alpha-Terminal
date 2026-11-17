@@ -9,6 +9,7 @@ import { fetchPolygonChain } from "../polygonChain.js";
 import { getOrFetchChain } from "../../routes/market.js";
 import { getLatestMarketPulseForChat } from "../marketPulseCache.js";
 import { logger } from "../logger.js";
+import { fetchFmp } from "../fmpPaidPlanGuard.js";
 import { buildChatNewsToolPayload } from "../chatTerminalNews.js";
 import { runChatNativeWebSearch } from "./chatWebSearch.js";
 import { augmentPolygonColdTickerForChat } from "../chatPolygonColdActivity.js";
@@ -27,7 +28,7 @@ async function fetchFmpHeadlines(symbol: string): Promise<string[]> {
     const url =
       `https://financialmodelingprep.com/api/v3/stock_news?tickers=${encodeURIComponent(sym)}` +
       `&limit=${FMP_NEWS_LIMIT}&apikey=${encodeURIComponent(key)}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+    const res = await fetchFmp(url, { signal: AbortSignal.timeout(10_000) });
     if (!res.ok) return [];
     const raw = (await res.json()) as unknown;
     if (!Array.isArray(raw)) return [];
