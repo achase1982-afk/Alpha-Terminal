@@ -8,6 +8,7 @@ import {
   type PayoffLeg,
 } from "./expirationPayoff.js";
 import { inferNetCreditFromLegStructure } from "./schwabOrderRisk.js";
+import type { BuyingPowerEffectKind } from "./buyingPowerEffect.js";
 import { parseCanonicalLimit, type LimitTickContext } from "./optionTickRound.js";
 import {
   averageLegIv,
@@ -50,7 +51,9 @@ export interface ChainTicketSummary {
   maxLoss: number | null;
   breakevens: number[];
   buyingPowerEffect: number | null;
+  buyingPowerEffectKind: BuyingPowerEffectKind;
   buyingPowerEffectIsEstimate: boolean;
+  netCashFlow: number | null;
   netDelta: number;
   netGamma: number;
   netTheta: number;
@@ -134,7 +137,9 @@ export function computeChainTicketSummary(input: ChainTicketSummaryInput): Chain
       maxLoss: null,
       breakevens: [],
       buyingPowerEffect: null,
+      buyingPowerEffectKind: "not_estimated",
       buyingPowerEffectIsEstimate: true,
+      netCashFlow: null,
       netDelta: netDelta * 100,
       netGamma: netGamma * 100,
       netTheta: netTheta * 100,
@@ -212,7 +217,9 @@ export function computeChainTicketSummary(input: ChainTicketSummaryInput): Chain
     maxLoss: econ?.maxRisk ?? null,
     breakevens: econ?.breakevens ?? [],
     buyingPowerEffect: econ?.buyingPowerEffect ?? null,
+    buyingPowerEffectKind: econ?.buyingPowerEffectKind ?? "not_estimated",
     buyingPowerEffectIsEstimate: econ?.buyingPowerEffectIsEstimate ?? true,
+    netCashFlow: econ?.netCashFlow ?? null,
     netDelta: netDelta * 100,
     netGamma: netGamma * 100,
     netTheta: netTheta * 100,

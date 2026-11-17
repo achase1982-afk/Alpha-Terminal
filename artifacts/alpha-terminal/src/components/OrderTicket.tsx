@@ -772,13 +772,14 @@ export function OrderTicket({
       isCredit: strategyIsCredit,
       isOption,
       underlyingSymbol: symbol,
+      closesPosition: isCloseOrder === true,
       contractCount: isMultiLeg && strategyLegs
         ? strategyLegs.reduce((s, l) => s + l.quantity, 0) * quantity
         : quantity,
     });
   }, [
     isMultiLeg, liveStrategyLegs, isOption, side, orderType, ticketPxAsk, ticketPxBid, ticketPxLast,
-    limitPrice, needsLimit, strategyNetPrice, quantity, strategyIsCredit, symbol,
+    limitPrice, needsLimit, strategyNetPrice, quantity, strategyIsCredit, symbol, isCloseOrder,
   ]);
 
   const estimatedCost = useMemo(() => ticketEconomics?.grossNotional ?? null, [ticketEconomics]);
@@ -1623,7 +1624,7 @@ export function OrderTicket({
                     ? Math.round((strategyIsCredit ? (1 - Math.abs(popLeg.delta)) : Math.abs(popLeg.delta)) * 100)
                     : null;
                   const bp = balances.buyingPower ?? tradingAccountEquity ?? 0;
-                  const bpChange = econ.maxRisk != null ? -econ.maxRisk : -econ.grossNotional;
+                  const bpChange = econ.buyingPowerEffect ?? (econ.maxRisk != null ? -econ.maxRisk : null);
                   return (
                     <div style={{ background: `linear-gradient(145deg, #14161a, #080a0f)`, borderRadius: 10, border: `1px solid ${BORDER}`, padding: "6px 10px" }}>
                       <div className="flex items-center justify-between">
@@ -1659,7 +1660,10 @@ export function OrderTicket({
 
                       <div className="mt-1 flex flex-wrap items-center justify-between gap-1 pt-1 text-[12px]" style={{ borderTop: `1px dashed ${DIVIDER}`, color: TEXT }}>
                         <span>Breakeven {breakevens.length > 0 ? breakevens.map(b => `$${b.toFixed(2)}`).join(" / ") : "—"}</span>
-                        <span>Buying Power {bpChange >= 0 ? "" : "−"}{fmtCurrency(Math.abs(bpChange))}</span>
+                        <span>
+                          Buying Power{" "}
+                          {bpChange != null ? `−${fmtCurrency(Math.abs(bpChange))}` : "Not estimated"}
+                        </span>
                       </div>
                     </div>
                   );
@@ -2293,7 +2297,7 @@ export function OrderTicket({
                       const w = stks.length >= 2 ? stks[stks.length - 1] - stks[0] : 0;
                       const econ = ticketEconomics;
                       const mr = econ?.maxRisk ?? 0;
-                      const maxProfit = econ?.maxProfit ?? 0;
+                      const maxProfit = econ?.maxProfit ?? null;
                       const bePrice = econ?.breakevens[0] ?? (strategyIsCredit
                         ? (strategyLegs[0]?.optionType === "PUT" ? stks[stks.length - 1] - netP : stks[0] + netP)
                         : (strategyLegs[0]?.optionType === "CALL" ? stks[0] + netP : stks[stks.length - 1] - netP));
@@ -2598,47 +2602,46 @@ export function OrderTicket({
                 <span style={{ color: WHITE }}>{DURATIONS.find((d) => d.value === duration)?.label}{extendedHours ? " + Ext" : ""}</span>
               </div>
               {(() => {
+                const econ = ticketEconomics;
                 const totalContracts = isOption
-                  ? (isMultiLeg && strategyLegs
-                      ? strategyLegs.reduce((sum, l) => sum + l.quantity, 0) * quantity
-                      : quantity)
+                  ? isMultiLeg && strategyLegs
+                    ? strategyLegs.reduce((sum, l) => sum + l.quantity, 0) * quantity
+                    : quantity
                   : 0;
-                const commissionPerContract = 0.65;
-                const totalCommission = totalContracts * commissionPerContract;
-                const netPrice = submittedLimit ?? strategyNetPrice ?? 0;
-                const grossCost = estimatedCost != null ? Math.abs(estimatedCost) : 0;
-                const totalCost = grossCost + totalCommission;
-                const econMulti =
-                  isMultiLeg && strategyLegs && netPrice > 0
-                    ? computeOrderEconomics({
-                        underlyingSymbol: symbol,
-                        isOption: true,
-                        legs: strategyLegs.map((l) => ({
-                          strike: l.strike,
-                          optionType: l.optionType,
-                          instruction: l.instruction,
-                          expiration: l.expiration,
-                          quantity: l.quantity,
-                        })),
-                        limitPrice: netPrice,
-                        quantity,
-                        isCredit: strategyIsCredit ?? false,
-                        contractCount: totalContracts,
-                      })
-                    : null;
-                const bpEffect = econMulti
-                  ? econMulti.buyingPowerEffect
-                  : -(grossCost + totalCommission);
-                const bpIsEstimate = econMulti?.buyingPowerEffectIsEstimate ?? true;
-                const breakevens: number[] = econMulti?.breakevens ?? [];
-                const maxProfit =
-                  econMulti && Number.isFinite(econMulti.maxProfit) ? econMulti.maxProfit : null;
-                const maxLoss = econMulti?.maxRisk ?? null;
+                const grossCost =
+                  econ?.grossNotional != null
+                    ? Math.abs(econ.grossNotional)
+                    : estimatedCost != null
+                      ? Math.abs(estimatedCost)
+                      : 0;
+                const isCreditOrder =
+                  econ?.netCashFlow != null ? econ.netCashFlow > 0 : strategyIsCredit ?? side === "SELL";
+                const feeBundle =
+                  totalContracts > 0
+                    ? { commission: totalContracts * 0.65, regulatoryEst: totalContracts * 0.02 }
+                    : { commission: 0, regulatoryEst: 0 };
+                const netAfterFees =
+                  econ?.netCashFlow != null
+                    ? isCreditOrder
+                      ? grossCost - feeBundle.commission - feeBundle.regulatoryEst
+                      : econ.netCashFlow - feeBundle.regulatoryEst
+                    : isCreditOrder
+                      ? grossCost - feeBundle.commission - feeBundle.regulatoryEst
+                      : -(grossCost + feeBundle.commission + feeBundle.regulatoryEst);
+                const breakevens = econ?.breakevens ?? [];
+                const maxLoss = econ?.maxRisk ?? null;
+                const maxProfit = econ?.maxProfit ?? null;
+                const profitUnlimited =
+                  maxProfit == null && econ?.expirationPayoffModeled === true && (isMultiLeg || isOption);
+                const bpEffect = econ?.buyingPowerEffect ?? null;
+                const bpKind = econ?.buyingPowerEffectKind ?? "estimated";
+                const showBp = bpEffect != null;
+                const totalCommission = feeBundle.commission;
                 return (
                   <>
                     <div className="pt-1 mt-1 space-y-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
                       <div className="flex justify-between" style={{ fontSize: S.body }}>
-                        <span style={{ color: MUTED }}>Net {strategyIsCredit ? "credit" : "debit"}</span>
+                        <span style={{ color: MUTED }}>Gross {isCreditOrder ? "credit" : "debit"}</span>
                         <span style={{ color: WHITE }}>{fmtCurrency(grossCost)}</span>
                       </div>
                       {totalContracts > 0 && (
@@ -2647,26 +2650,48 @@ export function OrderTicket({
                           <span style={{ color: WHITE }}>{fmtCurrency(totalCommission)}</span>
                         </div>
                       )}
-                      <div className="flex justify-between pt-1" style={{ fontSize: S.body, borderTop: `1px dashed ${DIVIDER}` }}>
-                        <span style={{ color: TEXT, fontWeight: 500 }}>Total {strategyIsCredit ? "credit" : "cost"}</span>
-                        <span style={{ color: WHITE, fontWeight: 600, fontSize: S.price }}>
-                          {fmtCurrency(strategyIsCredit ? grossCost - totalCommission : totalCost)}
+                      {feeBundle.regulatoryEst > 0 && (
+                        <div className="flex justify-between" style={{ fontSize: S.body }}>
+                          <span style={{ color: MUTED }}>Est. regulatory fees</span>
+                          <span style={{ color: WHITE }}>{fmtCurrency(feeBundle.regulatoryEst)}</span>
+                        </div>
+                      )}
+                      <div
+                        className="flex justify-between pt-1"
+                        style={{ fontSize: S.body, borderTop: `1px dashed ${DIVIDER}` }}
+                      >
+                        <span style={{ color: TEXT, fontWeight: 500 }}>
+                          Net {isCreditOrder ? "credit" : "debit"} (after est. fees)
+                        </span>
+                        <span
+                          style={{
+                            color: netAfterFees >= 0 ? UP : DOWN,
+                            fontWeight: 600,
+                            fontSize: S.price,
+                          }}
+                        >
+                          {netAfterFees >= 0 ? "+" : "−"}
+                          {fmtCurrency(Math.abs(netAfterFees))}
                         </span>
                       </div>
                     </div>
 
-                    {(breakevens.length > 0 || maxProfit != null || maxLoss != null) && (
+                    {(breakevens.length > 0 || maxProfit != null || profitUnlimited || maxLoss != null) && (
                       <div className="pt-1 mt-1 space-y-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
                         {breakevens.length > 0 && (
                           <div className="flex justify-between" style={{ fontSize: S.body }}>
                             <span style={{ color: MUTED }}>Breakeven{breakevens.length > 1 ? "s" : ""}</span>
-                            <span style={{ color: WHITE }}>{breakevens.map(b => `$${b.toFixed(2)}`).join(" / ")}</span>
+                            <span style={{ color: WHITE }}>
+                              {breakevens.map((b) => `$${b.toFixed(2)}`).join(" / ")}
+                            </span>
                           </div>
                         )}
-                        {maxProfit != null && (
+                        {(maxProfit != null || profitUnlimited) && (
                           <div className="flex justify-between" style={{ fontSize: S.body }}>
                             <span style={{ color: MUTED }}>Max profit</span>
-                            <span style={{ color: UP }}>{fmtCurrency(maxProfit)}</span>
+                            <span style={{ color: UP }}>
+                              {maxProfit != null ? fmtCurrency(maxProfit) : "Unlimited"}
+                            </span>
                           </div>
                         )}
                         {maxLoss != null && (
@@ -2678,16 +2703,26 @@ export function OrderTicket({
                       </div>
                     )}
 
-                    <div className="pt-1 mt-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
-                      <div className="flex justify-between" style={{ fontSize: S.body }}>
-                        <span style={{ color: MUTED }}>
-                          Buying power{bpIsEstimate ? " (est.)" : ""}
-                        </span>
-                        <span style={{ color: DOWN }}>
-                          −{fmtCurrency(Math.abs(bpEffect))}
-                        </span>
+                    {showBp && (
+                      <div className="pt-1 mt-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
+                        <div className="flex justify-between" style={{ fontSize: S.body }}>
+                          <span style={{ color: MUTED }}>
+                            {bpKind === "cash_secured"
+                              ? "Cash-secured collateral (est.)"
+                              : "Buying power (est.)"}
+                          </span>
+                          <span style={{ color: DOWN }}>−{fmtCurrency(Math.abs(bpEffect!))}</span>
+                        </div>
                       </div>
-                    </div>
+                    )}
+                    {!showBp && bpKind === "not_estimated" && (
+                      <div className="pt-1 mt-1" style={{ borderTop: `1px dashed ${DIVIDER}` }}>
+                        <div className="flex justify-between" style={{ fontSize: S.body }}>
+                          <span style={{ color: MUTED }}>Buying power</span>
+                          <span style={{ color: TEXT }}>Not estimated</span>
+                        </div>
+                      </div>
+                    )}
                   </>
                 );
               })()}

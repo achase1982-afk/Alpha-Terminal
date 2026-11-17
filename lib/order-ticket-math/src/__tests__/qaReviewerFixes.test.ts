@@ -1,10 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { computeOrderEconomics } from "../orderEconomics.js";
-import { analyzeExpirationPayoff, dollarRightTailSlope, type PayoffLeg } from "../expirationPayoff.js";
+import {
+  analyzeExpirationPayoff,
+  payoffDollarsAtS,
+  type ExpirationPayoffInput,
+  type PayoffLeg,
+} from "../expirationPayoff.js";
 import { parseCanonicalLimit } from "../optionTickRound.js";
 import { resolvePairedBidAsk } from "../optionQuotes.js";
 
 const spx = { underlyingSymbol: "SPX", isOption: true as const };
+
+function bruteMaxProfit(input: ExpirationPayoffInput): number {
+  const strikes = input.legs
+    .filter((l) => l.optionType === "CALL" || l.optionType === "PUT")
+    .map((l) => l.strike);
+  const hi = strikes.length ? Math.max(...strikes, 0) + 50 : 80;
+  let maxP = -Infinity;
+  for (let s = 0; s <= hi; s += 0.25) {
+    maxP = Math.max(maxP, payoffDollarsAtS(input, s));
+  }
+  return maxP;
+}
 
 describe("QA reviewer fixes", () => {
   it("calendar (multi-expiry): withhold expiration payoff metrics", () => {
@@ -48,7 +65,6 @@ describe("QA reviewer fixes", () => {
       isCredit: true,
     });
     expect(e?.maxRisk).toBe(400);
-    expect(e?.buyingPowerEffect).toBeLessThan(0);
     expect(e?.buyingPowerEffect).toBe(-400);
     expect(e?.netCashFlow).toBeGreaterThan(0);
   });
@@ -65,7 +81,7 @@ describe("QA reviewer fixes", () => {
     expect(pair?.ask).toBe(1.2);
   });
 
-  it("covered call: flat dollar tail slope (long shares + short call)", () => {
+  it("covered call: engine max profit matches brute-force scan (no tail helper)", () => {
     const legs: PayoffLeg[] = [
       {
         strike: 0,
@@ -81,19 +97,45 @@ describe("QA reviewer fixes", () => {
         quantity: 1,
       },
     ];
-    expect(dollarRightTailSlope(legs, 1)).toBe(0);
-    const payoff = analyzeExpirationPayoff({
+    const input: ExpirationPayoffInput = {
       legs,
       netPerShare: 2,
       spreadUnits: 1,
       isCredit: true,
       isOption: true,
-    });
-    expect(payoff.maxProfit).not.toBe(Number.POSITIVE_INFINITY);
+    };
+    const engine = analyzeExpirationPayoff(input);
+    const brute = bruteMaxProfit(input);
+    expect(engine.maxProfit).toBeCloseTo(brute, 4);
+    expect(engine.maxProfit).not.toBe(Number.POSITIVE_INFINITY);
   });
 
-  it("limit parser rejects trailing junk on the full input string", () => {
+  it("collar: finite max profit and loss", () => {
+    const legs: PayoffLeg[] = [
+      { strike: 0, optionType: "EQUITY", instruction: "BUY", quantity: 100, assetType: "EQUITY" },
+      { strike: 140, optionType: "PUT", instruction: "BUY_TO_OPEN", quantity: 1 },
+      { strike: 160, optionType: "CALL", instruction: "SELL_TO_OPEN", quantity: 1 },
+    ];
+    const input: ExpirationPayoffInput = {
+      legs,
+      netPerShare: 0.5,
+      spreadUnits: 1,
+      isCredit: false,
+      isOption: true,
+    };
+    const engine = analyzeExpirationPayoff(input);
+    const brute = bruteMaxProfit(input);
+    expect(engine.maxProfit).toBeCloseTo(brute, 4);
+    expect(engine.maxLoss).not.toBeNull();
+  });
+
+  it("limit parser accepts and rejects expected forms", () => {
+    expect(parseCanonicalLimit(".55", spx)).toBeCloseTo(0.55, 5);
+    expect(parseCanonicalLimit("2.", spx)).toBeCloseTo(2, 5);
+    expect(parseCanonicalLimit("0.55", spx)).toBeCloseTo(0.55, 5);
     expect(parseCanonicalLimit("2.55abc", spx)).toBeNull();
-    expect(parseCanonicalLimit("2.55", spx)).toBeCloseTo(2.55, 5);
+    expect(parseCanonicalLimit("1e2", spx)).toBeNull();
+    expect(parseCanonicalLimit("-1", spx)).toBeNull();
+    expect(parseCanonicalLimit("1,000", spx)).toBeNull();
   });
 });

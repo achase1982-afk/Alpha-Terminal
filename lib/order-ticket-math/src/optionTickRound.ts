@@ -142,7 +142,7 @@ export function parseCanonicalLimit(
   else if (typeof input === "string") {
     const trimmed = input.trim();
     if (trimmed) {
-      if (!/^\d+(\.\d+)?$/.test(trimmed)) {
+      if (!/^(\d+(\.\d*)?|\.\d+)$/.test(trimmed)) {
         raw = null;
       } else {
         const n = parseFloat(trimmed);

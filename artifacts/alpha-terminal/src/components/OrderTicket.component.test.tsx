@@ -184,7 +184,7 @@ describe("OrderTicket component", () => {
     await waitFor(() => expect(limitInput.value).toBe("2.60"));
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
     await screen.findByText("Order Confirmation");
-    expect(screen.getByText("$2.60")).toBeTruthy();
+    expect(screen.getAllByText("$2.60").length).toBeGreaterThanOrEqual(1);
   });
 
   it("FAIL disables Review and Send via gate helper", () => {

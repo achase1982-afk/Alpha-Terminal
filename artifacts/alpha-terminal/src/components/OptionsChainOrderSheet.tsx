@@ -170,7 +170,7 @@ export function OptionsChainOrderSheet({
     let netMid = 0;
     let complete = true;
     for (const leg of pricedLegs) {
-      const mid = leg.bid != null && leg.ask != null ? (leg.bid + leg.ask) / 2 : null;
+      const mid = midpointFromBidAsk(leg.bid, leg.ask);
       if (mid == null) {
         complete = false;
         break;
@@ -211,6 +211,14 @@ export function OptionsChainOrderSheet({
     () => summary?.buyingPowerEffect ?? null,
     [summary?.buyingPowerEffect],
   );
+
+  const feeAdjustedNetCash = useMemo(() => {
+    if (summary?.grossNotional == null) return null;
+    const totalContracts = legs.reduce((s, l) => s + l.quantity, 0) * quantity;
+    const fees = estimateSchwabOptionFees(totalContracts);
+    const cash = computeOrderNetCash(Math.abs(summary.grossNotional), isCredit, totalContracts, fees);
+    return isCredit ? cash.net : -cash.net;
+  }, [summary?.grossNotional, legs, quantity, isCredit]);
 
   const netDebitForName = summary?.grossNotional != null ? (isCredit ? -summary.grossNotional : summary.grossNotional) : 0;
   const strategyId = useMemo(() => detectStrategyType(legs, netDebitForName), [legs, netDebitForName]);
@@ -629,6 +637,7 @@ export function OptionsChainOrderSheet({
           reviewLimitSnapped={reviewLimitSnapped}
           submittedLimit={submittedLimit}
           summary={summary}
+          feeAdjustedNetCash={feeAdjustedNetCash}
           onBack={() => setStage("form")}
           onSend={() => void handleSubmit()}
         />
@@ -678,6 +687,7 @@ function ConfirmPanel({
   reviewLimitSnapped,
   submittedLimit,
   summary,
+  feeAdjustedNetCash,
   onBack,
   onSend,
 }: {
@@ -692,6 +702,7 @@ function ConfirmPanel({
   reviewLimitSnapped: number | null;
   submittedLimit: number | null;
   summary: ReturnType<typeof computeChainTicketSummary> | null;
+  feeAdjustedNetCash: number | null;
   onBack: () => void;
   onSend: () => void;
 }) {
@@ -703,6 +714,7 @@ function ConfirmPanel({
       ? Math.abs(summary.grossNotional)
       : Math.abs(px) * quantity * 100;
   const cash = computeOrderNetCash(gross, isCredit, totalContracts, fees);
+  const netCashAfterFees = feeAdjustedNetCash ?? (isCredit ? cash.net : -cash.net);
   const reviewEcon = computeOrderEconomics({
     underlyingSymbol: symbol,
     isOption: true,
@@ -719,7 +731,8 @@ function ConfirmPanel({
     contractCount: totalContracts,
   });
   const maxLoss = reviewEcon?.maxRisk ?? summary?.maxLoss ?? null;
-  const bpEffect = isCredit ? cash.net : -cash.net;
+  const bpEffect = summary?.buyingPowerEffect ?? reviewEcon?.buyingPowerEffect ?? null;
+  const bpKind = summary?.buyingPowerEffectKind ?? reviewEcon?.buyingPowerEffectKind ?? "estimated";
 
   return (
     <div
@@ -757,8 +770,9 @@ function ConfirmPanel({
           />
           <ButtonRow label="Est. regulatory fees" value={fmtCurrency(fees.regulatoryEst)} />
           <ButtonRow
-            label={`Total est. ${isCredit ? "credit" : "debit"}`}
-            value={fmtCurrency(cash.net)}
+            label={isCredit ? "Net credit (after est. fees)" : "Net debit (after est. fees)"}
+            value={`${netCashAfterFees >= 0 ? "+" : "−"}${fmtCurrency(Math.abs(netCashAfterFees))}`}
+            valueColor={netCashAfterFees >= 0 ? UP : DOWN}
             emphasize
           />
           <ButtonRow label="Time in force" value={timeInForce} />
@@ -769,11 +783,20 @@ function ConfirmPanel({
           {maxLoss != null && (
             <ButtonRow label="Max loss" value={fmtCurrency(maxLoss)} valueColor={DOWN} />
           )}
-          <ButtonRow
-            label={isCredit ? "Buying power effect (est. credit)" : "Buying power effect (total est. debit)"}
-            value={`${bpEffect >= 0 ? "+" : "−"}${fmtCurrency(Math.abs(bpEffect))}`}
-            valueColor={bpEffect >= 0 ? UP : DOWN}
-          />
+          {bpEffect != null && (
+            <ButtonRow
+              label={
+                bpKind === "cash_secured"
+                  ? "Cash-secured collateral (est.)"
+                  : "Buying power (est.)"
+              }
+              value={`−${fmtCurrency(Math.abs(bpEffect))}`}
+              valueColor={DOWN}
+            />
+          )}
+          {bpEffect == null && bpKind === "not_estimated" && (
+            <ButtonRow label="Buying power" value="Not estimated" />
+          )}
         </div>
         <div
           className="px-2 py-1.5 flex items-center gap-1.5"

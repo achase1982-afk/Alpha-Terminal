@@ -1,3 +1,4 @@
+import { resolveBuyingPowerEffect, type BuyingPowerEffectKind } from "./buyingPowerEffect.js";
 import { analyzeExpirationPayoff, type PayoffLeg } from "./expirationPayoff.js";
 import { isSingleExpiryStrategy } from "./expiryGate.js";
 import { parseCanonicalLimit, type LimitTickContext } from "./optionTickRound.js";
@@ -23,6 +24,8 @@ export interface OrderEconomicsInput {
   underlyingSymbol?: string;
   commissionPerContract?: number;
   contractCount?: number;
+  /** Close / sell-to-close: cash proceeds only, no BP reserve estimate. */
+  closesPosition?: boolean;
 }
 
 export interface OrderEconomicsResult {
@@ -36,8 +39,9 @@ export interface OrderEconomicsResult {
   totalCreditAfterFees: number;
   /** Signed cash after fees: positive = credit received, negative = debit paid. */
   netCashFlow: number;
-  /** Collateral / BP reserved (always ≤ 0). Never credits buying power. */
-  buyingPowerEffect: number;
+  /** Collateral / BP reserved (≤ 0 when set). Never premium credit. */
+  buyingPowerEffect: number | null;
+  buyingPowerEffectKind: BuyingPowerEffectKind;
   /** True unless broker-reported BP is wired in. */
   buyingPowerEffectIsEstimate: boolean;
   breakevens: number[];
@@ -139,12 +143,17 @@ export function computeOrderEconomics(input: OrderEconomicsInput): OrderEconomic
     ? totalCreditAfterFees
     : -totalCostInclFees;
 
-  const riskForBp = maxRisk ?? grossNotional;
-  const buyingPowerEffect = isCredit
-    ? maxRisk != null
-      ? -maxRisk
-      : -(riskForBp + commissionTotal)
-    : -(riskForBp + commissionTotal);
+  const bp = resolveBuyingPowerEffect({
+    legs,
+    isCredit,
+    isOption: isOptionOrder,
+    maxRisk,
+    grossNotional,
+    commissionTotal,
+    netPerShare: net,
+    spreadUnits: qty,
+    closesPosition: input.closesPosition === true,
+  });
 
   return {
     netPricePerShare: net,
@@ -156,8 +165,10 @@ export function computeOrderEconomics(input: OrderEconomicsInput): OrderEconomic
     totalCostInclFees: Number(totalCostInclFees.toFixed(2)),
     totalCreditAfterFees: Number(totalCreditAfterFees.toFixed(2)),
     netCashFlow: Number(netCashFlow.toFixed(2)),
-    buyingPowerEffect: Number(buyingPowerEffect.toFixed(2)),
-    buyingPowerEffectIsEstimate: true,
+    buyingPowerEffect:
+      bp.buyingPowerEffect != null ? Number(bp.buyingPowerEffect.toFixed(2)) : null,
+    buyingPowerEffectKind: bp.buyingPowerEffectKind,
+    buyingPowerEffectIsEstimate: bp.buyingPowerEffectIsEstimate,
     breakevens: expirationPayoffModeled ? payoff.breakevens : [],
     isIronCondor: detectIronCondor(legs, isCredit),
     expirationPayoffModeled,

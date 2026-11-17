@@ -46,8 +46,19 @@ describe("optionTickRound symbol-aware", () => {
     expect(roundToTick(0.02, tick)).toBe(tick);
   });
 
-  it("rejects limit strings with trailing junk", () => {
-    expect(parseCanonicalLimit("2.55abc", { underlyingSymbol: "SPX", isOption: true })).toBeNull();
+  it("accepts partial decimal forms", () => {
+    const ctx = { underlyingSymbol: "SPX", isOption: true as const };
+    expect(parseCanonicalLimit(".55", ctx)).toBeCloseTo(0.55, 5);
+    expect(parseCanonicalLimit("2.", ctx)).toBeCloseTo(2, 5);
+    expect(parseCanonicalLimit("0.55", ctx)).toBeCloseTo(0.55, 5);
+  });
+
+  it("rejects junk, scientific, signed, and grouped forms", () => {
+    const ctx = { underlyingSymbol: "SPX", isOption: true as const };
+    expect(parseCanonicalLimit("2.55abc", ctx)).toBeNull();
+    expect(parseCanonicalLimit("1e2", ctx)).toBeNull();
+    expect(parseCanonicalLimit("-1", ctx)).toBeNull();
+    expect(parseCanonicalLimit("1,000", ctx)).toBeNull();
   });
 
   it("classifies penny pilot vs index", () => {
