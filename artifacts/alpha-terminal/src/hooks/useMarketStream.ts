@@ -15,6 +15,13 @@ import { signalSchwabAuthLost } from "@/lib/authNoticeStore";
 import { refreshSchwabViaServer, syncSchwabTokensFromServer } from "@/lib/schwabTokenSync";
 import type { LiveQuote, LiveNewsItem } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
+import { buildStreamHolderId, getStreamClientId } from "@/lib/streamClientId";
+import {
+  payloadsEqual,
+  resolveOptionStreamHolderId,
+  shouldTrackOptionHold,
+  type OptionHoldPostOpts,
+} from "@/lib/optionHoldClient";
 
 declare global {
   interface Window {
@@ -190,6 +197,14 @@ export function useMarketStream() {
   const sseFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectDelayRef = useRef(WS_RECONNECT_BASE);
   const restPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const streamClientIdRef = useRef(getStreamClientId());
+  const optionHoldTouchRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const activeOptionHoldsRef = useRef<Set<string>>(new Set());
+  const optionHoldPayloadsRef = useRef(
+    new Map<string, { symbols: string[]; purpose: string; viewId: string }>(),
+  );
+  const holderOpTailRef = useRef(new Map<string, Promise<unknown>>());
+  const holderPostGenerationRef = useRef(new Map<string, number>());
 
   const watchlist = useTerminalStore((s) => s.watchlists[s.activeWatchlistId]?.symbols ?? []);
 
@@ -425,10 +440,41 @@ export function useMarketStream() {
       }
     }, 10_000);
 
+    const repostActiveOptionHolds = async () => {
+      const clientId = streamClientIdRef.current;
+      for (const [holderId, payload] of optionHoldPayloadsRef.current) {
+        if (!payload.symbols.length) continue;
+        try {
+          await fetchWithAuth(`${API_BASE}/stream/option-symbols`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-stream-client-id": clientId,
+            },
+            body: JSON.stringify({
+              symbols: payload.symbols,
+              purpose: payload.purpose,
+              viewId: payload.viewId,
+              clientId,
+              holderId,
+            }),
+          });
+          activeOptionHoldsRef.current.add(holderId);
+        } catch {}
+      }
+    };
+
     socket.onopen = () => {
       clearTimeout(openTimeout);
       reconnectDelayRef.current = WS_RECONNECT_BASE;
       window.__alphaWs = socket;
+      socket.send(
+        JSON.stringify({
+          action: "registerStreamClient",
+          clientId: streamClientIdRef.current,
+        }),
+      );
+      void repostActiveOptionHolds();
       clearOptionTicks();
       stopSseStream();
       stopRestPolling();
@@ -511,6 +557,9 @@ export function useMarketStream() {
 
     return () => {
       mountedRef.current = false;
+      for (const holderId of activeOptionHoldsRef.current) {
+        void releaseOptionHold(holderId);
+      }
       if (quoteFlushTimerRef.current) {
         clearTimeout(quoteFlushTimerRef.current);
         quoteFlushTimerRef.current = null;
@@ -567,19 +616,135 @@ export function useMarketStream() {
     []
   );
 
-  const subscribeOptionSymbols = useCallback(
-    async (symbols: string[]) => {
-      if (!symbols.length) return;
+  const runHolderOp = useCallback(
+    async <T,>(holderId: string, fn: () => Promise<T>): Promise<T> => {
+      const prev = holderOpTailRef.current.get(holderId) ?? Promise.resolve();
+      const next = prev.then(fn, fn) as Promise<T>;
+      holderOpTailRef.current.set(holderId, next);
       try {
-        await fetchWithAuth(`${API_BASE}/stream/option-symbols`, {
+        return await next;
+      } finally {
+        if (holderOpTailRef.current.get(holderId) === next) {
+          holderOpTailRef.current.delete(holderId);
+        }
+      }
+    },
+    [],
+  );
+
+  const subscribeOptionSymbols = useCallback(
+    async (
+      symbols: string[],
+      opts?: OptionHoldPostOpts,
+    ): Promise<string | undefined> => {
+      if (!symbols.length) return undefined;
+      const purpose = opts?.purpose ?? "watchlist";
+      const viewId = opts?.viewId ?? "";
+      const clientId = streamClientIdRef.current;
+      const holderId = resolveOptionStreamHolderId(clientId, purpose, viewId, opts?.holderId);
+      const genAtQueue = holderPostGenerationRef.current.get(holderId) ?? 0;
+      const postGen = genAtQueue + 1;
+      holderPostGenerationRef.current.set(holderId, postGen);
+      return runHolderOp(holderId, async () => {
+        const prev = optionHoldPayloadsRef.current.get(holderId);
+        if (prev && payloadsEqual(prev.symbols, symbols)) return holderId;
+        try {
+          const res = await fetchWithAuth(`${API_BASE}/stream/option-symbols`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-stream-client-id": clientId,
+            },
+            body: JSON.stringify({
+              symbols,
+              purpose,
+              viewId,
+              clientId,
+              holderId,
+              ...(opts?.underlyingPrice != null && Number.isFinite(opts.underlyingPrice)
+                ? { underlyingPrice: opts.underlyingPrice }
+                : {}),
+            }),
+          });
+          if (!res.ok) return undefined;
+          if (!shouldTrackOptionHold(mountedRef.current, () => opts?.isAborted?.() ?? false)) {
+            await fetchWithAuth(`${API_BASE}/stream/release-holds`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-stream-client-id": clientId,
+              },
+              body: JSON.stringify({ clientId, holderId }),
+            });
+            return undefined;
+          }
+          activeOptionHoldsRef.current.add(holderId);
+          optionHoldPayloadsRef.current.set(holderId, {
+            symbols: [...symbols],
+            purpose,
+            viewId,
+          });
+          return holderId;
+        } catch {
+          return undefined;
+        }
+      });
+    },
+    [runHolderOp],
+  );
+
+  const releaseOptionHold = useCallback(
+    async (holderId: string) => {
+      if (!holderId) return;
+      const genWhenQueued = holderPostGenerationRef.current.get(holderId) ?? 0;
+      return runHolderOp(holderId, async () => {
+        if ((holderPostGenerationRef.current.get(holderId) ?? 0) > genWhenQueued) return;
+        try {
+          await fetchWithAuth(`${API_BASE}/stream/release-holds`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-stream-client-id": streamClientIdRef.current,
+            },
+            body: JSON.stringify({
+              clientId: streamClientIdRef.current,
+              holderId,
+            }),
+          });
+          activeOptionHoldsRef.current.delete(holderId);
+          optionHoldPayloadsRef.current.delete(holderId);
+        } catch {}
+      });
+    },
+    [runHolderOp],
+  );
+
+  const touchOptionHolds = useCallback(async () => {
+    const clientId = streamClientIdRef.current;
+    for (const holderId of activeOptionHoldsRef.current) {
+      try {
+        await fetchWithAuth(`${API_BASE}/stream/touch-hold`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ symbols }),
+          headers: {
+            "Content-Type": "application/json",
+            "x-stream-client-id": clientId,
+          },
+          body: JSON.stringify({ clientId, holderId }),
         });
       } catch {}
-    },
-    []
-  );
+    }
+  }, []);
+
+  useEffect(() => {
+    if (optionHoldTouchRef.current) clearInterval(optionHoldTouchRef.current);
+    optionHoldTouchRef.current = setInterval(() => {
+      void touchOptionHolds();
+    }, 60_000);
+    optionHoldTouchRef.current.unref?.();
+    return () => {
+      if (optionHoldTouchRef.current) clearInterval(optionHoldTouchRef.current);
+    };
+  }, [touchOptionHolds]);
 
   const sendWsMessage = useCallback((msg: Record<string, unknown>) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -587,5 +752,11 @@ export function useMarketStream() {
     }
   }, []);
 
-  return { subscribeOptionSymbols, subscribeEquitySymbols, sendWsMessage };
+  return {
+    subscribeOptionSymbols,
+    subscribeEquitySymbols,
+    sendWsMessage,
+    releaseOptionHold,
+    streamClientId: streamClientIdRef.current,
+  };
 }
