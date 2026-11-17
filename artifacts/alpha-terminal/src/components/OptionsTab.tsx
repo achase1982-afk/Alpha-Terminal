@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 import { Reorder } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
-import { ActiveTraderDrawer, type ActiveTraderHandoff } from "@/components/ActiveTraderDrawer";
 
 const EPS = 0.0001;
 const COL_W = 74;
@@ -1241,12 +1240,11 @@ interface OptionsTabProps {
   stickyOffset?: number;
   onTradeSingle?: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
   onOpenStrategyBuilder?: (strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>, preSelectedLegs?: { contract: Contract; type: "CALL" | "PUT"; side?: "bid" | "ask" }[]) => void;
-  onHandoffActiveTrader?: (handoff: ActiveTraderHandoff) => void;
 }
 
 export type { Contract as OptionsContract };
 
-export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSingle, onOpenStrategyBuilder, onHandoffActiveTrader }: OptionsTabProps) {
+export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSingle, onOpenStrategyBuilder }: OptionsTabProps) {
   const { accessToken } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken })));
   // Widget pin wins inside the dashboard; global symbol everywhere else.
   const symbol = useActiveSymbol();
@@ -1663,30 +1661,41 @@ export function OptionsTab({ subscribeOptionSymbols, stickyOffset = 0, onTradeSi
       </div>
 
       {selCount > 0 && (
-        <ActiveTraderDrawer
+        <div
           ref={drawerRef}
-          symbol={symbol}
-          limitMessage={legLimitShake ? "Max 4 legs" : null}
-          legs={[...selectedLegs.values()].map((leg) => ({
-            key: makeLegKey(leg.contract, leg.type),
-            right: leg.type,
-            side: leg.side,
-            strike: leg.contract.strike,
-            expiration: leg.contract.expiration,
-            bid: leg.contract.bid,
-            ask: leg.contract.ask,
-            schwabSymbol: leg.contract.schwabSymbol,
-          }))}
-          onClear={handleClearSelection}
-          onRemove={(key) => {
-            setSelectedLegs((prev) => {
-              const next = new Map(prev);
-              next.delete(key);
-              return next;
-            });
+          className={`fixed left-0 right-0 z-[100] flex items-center justify-between px-4 py-3${legLimitShake ? " animate-[shake_0.4s_ease-in-out]" : ""}`}
+          style={{
+            bottom: "var(--alpha-bottom-chrome, env(safe-area-inset-bottom, 0px))",
+            background: legLimitShake ? `linear-gradient(180deg, #1a0505 0%, #000000 100%)` : "linear-gradient(180deg, #0a0a0a 0%, #000000 100%)",
+            borderTop: `1px solid ${legLimitShake ? "#ff4b5c" : GOLD}30`,
+            boxShadow: `0 -4px 24px rgba(0,0,0,0.8), 0 -1px 0 ${GOLD}15`,
+            fontFamily: MONO,
+            transition: "background 0.3s, border-color 0.3s",
           }}
-          onHandoff={(handoff) => onHandoffActiveTrader?.(handoff)}
-        />
+        >
+          <button
+            onClick={handleBuildStrategy}
+            className="font-mono text-sm font-bold tracking-wider px-6 py-2.5 rounded-lg transition-all active:scale-95"
+            style={{
+              background: GOLD,
+              color: "#000",
+              boxShadow: `0 2px 12px ${GOLD}40`,
+            }}
+          >
+            Next
+          </button>
+          {legLimitShake && (
+            <span className="text-[11px] font-mono" style={{ color: "#ff4b5c" }}>Max 4 legs</span>
+          )}
+          <span className="text-[11px] font-mono" style={{ color: selCount >= MAX_OPTION_LEGS ? GOLD : GRAY }}>{selCount}/{MAX_OPTION_LEGS}</span>
+          <button
+            onClick={handleClearSelection}
+            className="px-4 py-3 rounded-lg text-[13px] tracking-wider transition-colors"
+            style={{ color: GRAY, background: "transparent", border: `1px solid ${BORDER}`, fontWeight: FW_LIGHT }}
+          >
+            CLEAR
+          </button>
+        </div>
       )}
 
       {longPressTarget && (
