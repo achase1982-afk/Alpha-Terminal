@@ -5,12 +5,13 @@ import {
   deskTouchFeed,
 } from "./deskFeedFreshness.js";
 import { deskSessionDateEt } from "./deskEt.js";
-import { deskUtcEpochNsJson } from "./deskUtcNs.js";
+import { deskTapeRxNsNumber, deskStringifyTapeJson } from "./deskJsonBigInt.js";
+import { filterDeskTapeStreamerMessage } from "./deskTapeFrameFilter.js";
 import { deskCaptureInboundFrame } from "./deskSpxTapeRaw.js";
 import { logger } from "../logger.js";
 
 export type DeskStreamerFrame = {
-  rx_ns: string;
+  rx_ns: number;
   c: number;
   dir?: "out";
   m: Record<string, unknown> | unknown[] | string | number | boolean | null;
@@ -26,16 +27,22 @@ const normalizedRing: Array<{ symbol: string; last: number | null; bid: number |
 const DESK_EQ_KEYS = new Set(["$SPX", "SPY", "$VIX"]);
 const RING_CAP = 50_000;
 
-function parseSchwabFrame(raw: string): DeskStreamerFrame["m"] {
+let deskEquityFieldsSeen = new Set<number>();
+
+export function getDeskEquityFieldsSeen(): number[] {
+  return [...deskEquityFieldsSeen].sort((a, b) => a - b);
+}
+
+function parseSchwabFrame(raw: string): Record<string, unknown> | null {
   try {
-    return JSON.parse(raw) as DeskStreamerFrame["m"];
+    return JSON.parse(raw) as Record<string, unknown>;
   } catch {
-    return { _desk_parse_error: true, _raw: raw };
+    return null;
   }
 }
 
 function broadcastFrame(frame: DeskStreamerFrame): void {
-  const line = `data: ${JSON.stringify(frame)}\n\n`;
+  const line = `data: ${deskStringifyTapeJson(frame)}\n\n`;
   for (const res of sseClients) {
     try {
       res.write(line);
@@ -45,14 +52,7 @@ function broadcastFrame(frame: DeskStreamerFrame): void {
   }
 }
 
-function maybeTouchFeedsFromFrame(raw: string, rxMs: number): void {
-  let msg: Record<string, unknown>;
-  try {
-    msg = JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    return;
-  }
-
+function maybeTouchFeedsFromFrame(msg: Record<string, unknown>, rxMs: number): void {
   deskTouchFeed("schwab_streamer", rxMs, "schwab");
 
   const data = msg["data"] as Array<{ service?: string; content?: Record<string, unknown>[] }> | undefined;
@@ -64,10 +64,13 @@ function maybeTouchFeedsFromFrame(raw: string, rxMs: number): void {
       for (const row of item.content) {
         const key = String(row["key"] ?? "");
         if (!DESK_EQ_KEYS.has(key)) continue;
+        for (const k of Object.keys(row)) {
+          if (/^\d+$/.test(k)) deskEquityFieldsSeen.add(Number(k));
+        }
         const last = num(row["3"]);
         const bid = num(row["1"]);
         const ask = num(row["2"]);
-        const tsMs = num(row["34"]) ?? rxMs;
+        const tsMs = num(row["34"]) ?? num(row["35"]) ?? rxMs;
         deskTouchFeed("schwab_quotes_rest", tsMs, "schwab");
         pushNormalized(key.replace(/^\$/, ""), last, bid, ask, tsMs);
       }
@@ -95,13 +98,13 @@ function pushNormalized(
   if (normalizedRing.length > RING_CAP) normalizedRing.splice(0, normalizedRing.length - RING_CAP);
 }
 
-function wrapFrame(raw: string, dir?: "out"): DeskStreamerFrame {
+function wrapFrame(m: DeskStreamerFrame["m"], dir?: "out"): DeskStreamerFrame {
   const rxMs = Date.now();
   return {
-    rx_ns: deskUtcEpochNsJson(),
+    rx_ns: deskTapeRxNsNumber(),
     c: connectionNumber,
     ...(dir ? { dir } : {}),
-    m: parseSchwabFrame(raw),
+    m,
     session_date: deskSessionDateEt(new Date(rxMs)),
     rx_utc_ms: rxMs,
   };
@@ -113,7 +116,11 @@ export function onSchwabConnectionOpened(): void {
 }
 
 export function onSchwabInboundFrame(raw: string): void {
-  const frame = wrapFrame(raw);
+  const parsed = parseSchwabFrame(raw);
+  if (!parsed) return;
+  const filtered = filterDeskTapeStreamerMessage(parsed);
+  if (!filtered) return;
+  const frame = wrapFrame(filtered);
   deskCaptureInboundFrame({
     c: frame.c,
     rx_ns: frame.rx_ns,
@@ -121,11 +128,15 @@ export function onSchwabInboundFrame(raw: string): void {
     session_date: frame.session_date,
   });
   broadcastFrame(frame);
-  maybeTouchFeedsFromFrame(raw, frame.rx_utc_ms);
+  maybeTouchFeedsFromFrame(filtered, frame.rx_utc_ms);
 }
 
 export function onSchwabOutboundFrame(raw: string): void {
-  broadcastFrame(wrapFrame(raw, "out"));
+  const parsed = parseSchwabFrame(raw);
+  if (!parsed) return;
+  const filtered = filterDeskTapeStreamerMessage(parsed);
+  if (!filtered) return;
+  broadcastFrame(wrapFrame(filtered, "out"));
 }
 
 export function onSchwabEvictedYielded(): void {

@@ -53,7 +53,9 @@ Outside a feed’s ET session window → `session_closed` and `stale=false`.
 | GET | `/health` | Feed freshness matrix |
 | GET | `/quotes?symbols=&source=` | **Required** `source`: `schwab`, `tradier`, `alpaca_paper`, `tastytrade` |
 | GET | `/tape/spx/stream` | SSE Schwab streamer frames `{rx_ns,c,dir?,m,session_date,rx_utc_ms}` |
-| GET | `/tape/spx/raw?session_date=&since_ns=` | Gzip-backed inbound frame NDJSON (`{c,rx_ns,m}`); `since_ns` is UTC epoch ns string |
+| GET | `/tape/spx/raw?session_date=&since_ns=` | Filtered desk-only streamer NDJSON (`{c,rx_ns,m}`); `rx_ns` is a JSON integer; `since_ns` remains a nanosecond string for pagination |
+| GET | `/gamma/live_gamma_0dte?source=unusual_whales` | Paginated UW expiry×strike gamma snapshot |
+| GET | `/gamma/live_gamma?source=unusual_whales` | Paginated UW strike gamma snapshot |
 | GET | `/tape/spx?since=` | Normalized in-memory ticks |
 | GET | `/chains?symbol=&expiration=&source=schwab` | Full Schwab chain (`range=ALL` default). **`source` required.** |
 | GET | `/flow?symbol=&source=unusual_whales` | UW flow; **`source` required** |
