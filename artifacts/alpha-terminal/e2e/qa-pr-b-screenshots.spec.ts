@@ -173,13 +173,13 @@ test.describe("QA PR B screenshots", () => {
     await expect(review).toBeVisible({ timeout: 60_000 });
     await mergeOptionTicks(page, [{ key: SPX_ATM_CALL_SYMBOL, bid: 3.8, ask: 3.2, last: 3.5 }]);
     const limitInput = page.getByPlaceholder("0.00").first();
+    await limitInput.fill("3.50");
+    await page.waitForTimeout(800);
     if (variant === "after") {
-      await limitInput.fill("3.50");
-      await page.waitForTimeout(800);
       await expect(page.getByText("Risk: FAIL · blocks order")).toBeVisible({ timeout: 20_000 });
       await expect(review).toBeDisabled();
-      await expect(limitInput).toHaveValue("3.50");
     }
+    await expect(limitInput).toHaveValue("3.50");
     await capturePair(page, "option-fail-review");
   });
 });

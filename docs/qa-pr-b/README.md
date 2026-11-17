@@ -7,7 +7,9 @@ pnpm --filter @workspace/alpha-terminal run test:e2e:qa-screenshots:before
 QA_SNAPSHOT_VARIANT=after pnpm --filter @workspace/alpha-terminal run test:e2e:qa-screenshots
 ```
 
-Pairs that were **byte-identical** between before and after were dropped (including chain — no visible delta vs main in this harness).
+Pairs that were **byte-identical** between before and after were dropped (chain removed).
+
+Harness **debit-vertical** and **review** use Strategy Builder (before script swaps `StrategyBuilder.tsx` and `lib/order-ticket-math` to `main`).
 
 | Pair prefix | Proves (after vs before) |
 |-------------|---------------------------|
