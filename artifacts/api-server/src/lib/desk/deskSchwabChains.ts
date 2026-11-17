@@ -1,6 +1,14 @@
-import { getBestAccessToken } from "../tokenStore.js";
 import { deskFormatSchwabSymbol, deskIsIndex } from "./deskSchwabSymbol.js";
 import { deskTouchFeed, deskMarkFeedError, deskMarkAuthFail } from "./deskFeedFreshness.js";
+import {
+  type DeskSchwabRestApp,
+  type DeskSchwabRestFetchResult,
+  type DeskSchwabRestResolution,
+  deskSchwabChainsFeed,
+  deskSchwabMarkApp2AuthFailure,
+  deskSchwabRestFetchWithResolution,
+  deskSchwabRestResolve,
+} from "./deskSchwabRestCredential.js";
 import { deskSessionDateEt } from "./deskEt.js";
 import { logger } from "../logger.js";
 
@@ -45,6 +53,7 @@ type CacheEntry = {
   fetchedAt: number;
   truncated: boolean;
   contract_count: number;
+  app: DeskSchwabRestApp;
 };
 
 const cache = new Map<string, CacheEntry>();
@@ -145,29 +154,38 @@ function chainParams(
   return params;
 }
 
-async function fetchChainUrl(
+async function fetchChainUrlResolved(
+  resolved: DeskSchwabRestResolution,
   url: string,
-  token: string,
-): Promise<Record<string, unknown> | null> {
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(45_000),
-  });
+): Promise<{ json: Record<string, unknown> | null; app: DeskSchwabRestApp }> {
+  const fetched = await deskSchwabRestFetchWithResolution(
+    resolved,
+    url,
+    { headers: { Accept: "application/json" } },
+    45_000,
+  );
+  const { res, app, token } = fetched;
+  if (!token) {
+    return { json: null, app };
+  }
   if (res.status === 401) {
-    deskMarkAuthFail("schwab_chains");
-    return null;
+    if (app === "app1") deskMarkAuthFail("schwab_chains");
+    else deskSchwabMarkApp2AuthFailure(res.status);
+    return { json: null, app };
   }
   if (!res.ok) {
-    logger.debug({ status: res.status }, "Desk Schwab chain HTTP failed");
-    return null;
+    const feed = deskSchwabChainsFeed(app);
+    deskMarkFeedError(feed, `chain_http_${res.status}`, app === "app2" ? "schwab_rest_2" : undefined);
+    logger.debug({ status: res.status, app }, "Desk Schwab chain HTTP failed");
+    return { json: null, app };
   }
-  return (await res.json()) as Record<string, unknown>;
+  return { json: (await res.json()) as Record<string, unknown>, app };
 }
 
 async function fetchChainsFromSchwab(
   displaySymbol: string,
   expiration: string,
-  token: string,
+  preferred: DeskSchwabRestApp,
   opts?: DeskChainQueryOpts,
 ): Promise<CacheEntry | null> {
   const chainSymbol = deskIsIndex(displaySymbol)
@@ -183,25 +201,34 @@ async function fetchChainsFromSchwab(
   let json: Record<string, unknown> | null = null;
   let raw: Record<string, unknown>[] = [];
   let underlyingPrice: number | null = null;
+  let usedApp: DeskSchwabRestApp = preferred;
 
   if (useSplit) {
     const callParams = chainParams(chainSymbol, expiration, "CALL", opts);
     const putParams = chainParams(chainSymbol, expiration, "PUT", opts);
-    const [callJson, putJson] = await Promise.all([
-      fetchChainUrl(`${SCHWAB_API_BASE}/chains?${callParams}`, token),
-      fetchChainUrl(`${SCHWAB_API_BASE}/chains?${putParams}`, token),
+    const resolution = await deskSchwabRestResolve(preferred);
+    usedApp = resolution.app;
+    if (!resolution.token) return null;
+    const [callR, putR] = await Promise.all([
+      fetchChainUrlResolved(resolution, `${SCHWAB_API_BASE}/chains?${callParams}`),
+      fetchChainUrlResolved(resolution, `${SCHWAB_API_BASE}/chains?${putParams}`),
     ]);
-    if (!callJson && !putJson) return null;
-    const callRaw = collectRawContracts(callJson ?? {}, expiration);
-    const putRaw = collectRawContracts(putJson ?? {}, expiration);
+    usedApp = putR.app;
+    if (!callR.json && !putR.json) return null;
+    const callRaw = collectRawContracts(callR.json ?? {}, expiration);
+    const putRaw = collectRawContracts(putR.json ?? {}, expiration);
     raw = [...callRaw, ...putRaw];
     underlyingPrice =
-      num(callJson?.["underlyingPrice"]) ?? num(putJson?.["underlyingPrice"]);
-    json = callJson ?? putJson;
+      num(callR.json?.["underlyingPrice"]) ?? num(putR.json?.["underlyingPrice"]);
+    json = callR.json ?? putR.json;
   } else {
     const params = chainParams(chainSymbol, expiration, "ALL", opts);
-    json = await fetchChainUrl(`${SCHWAB_API_BASE}/chains?${params}`, token);
-    if (!json) return null;
+    const resolution = await deskSchwabRestResolve(preferred);
+    usedApp = resolution.app;
+    const one = await fetchChainUrlResolved(resolution, `${SCHWAB_API_BASE}/chains?${params}`);
+    usedApp = one.app;
+    if (!one.json) return null;
+    json = one.json;
     raw = collectRawContracts(json, expiration);
     underlyingPrice = num(json["underlyingPrice"]);
   }
@@ -215,6 +242,7 @@ async function fetchChainsFromSchwab(
     fetchedAt: Date.now(),
     truncated: clientLimited,
     contract_count: raw.length,
+    app: usedApp,
   };
 }
 
@@ -222,6 +250,7 @@ export async function deskFetchSchwabChain(
   symbol: string,
   expiration: string,
   opts?: DeskChainQueryOpts,
+  preferred: DeskSchwabRestApp = "app2",
 ): Promise<{
   underlyingPrice: number | null;
   raw: Record<string, unknown>[];
@@ -230,6 +259,8 @@ export async function deskFetchSchwabChain(
   session_date: string;
   truncated: boolean;
   contract_count: number;
+  app: DeskSchwabRestApp;
+  fellBack: boolean;
 }> {
   const sym = symbol.toUpperCase().trim();
   const exp = expiration.slice(0, 10);
@@ -237,7 +268,8 @@ export async function deskFetchSchwabChain(
   const key = cacheKey(sym, exp, opts);
   const hit = cache.get(key);
   if (hit && Date.now() - hit.fetchedAt < CACHE_TTL_MS) {
-    deskTouchFeed("schwab_chains", hit.fetchedAt);
+    const feed = deskSchwabChainsFeed(hit.app);
+    deskTouchFeed(feed, hit.fetchedAt, hit.app === "app2" ? "schwab_rest_2" : undefined);
     return {
       underlyingPrice: hit.underlyingPrice,
       raw: hit.raw,
@@ -246,26 +278,16 @@ export async function deskFetchSchwabChain(
       session_date,
       truncated: hit.truncated,
       contract_count: hit.contract_count,
+      app: hit.app,
+      fellBack: hit.app !== preferred,
     };
   }
 
-  const token = getBestAccessToken();
-  if (!token) {
-    deskMarkAuthFail("schwab_chains");
-    return {
-      underlyingPrice: null,
-      raw: [],
-      normalized: [],
-      asOfMs: Date.now(),
-      session_date,
-      truncated: false,
-      contract_count: 0,
-    };
-  }
-
-  const entry = await fetchChainsFromSchwab(sym, exp, token, opts);
+  const entry = await fetchChainsFromSchwab(sym, exp, preferred, opts);
   if (!entry) {
-    deskMarkFeedError("schwab_chains", "schwab_chain_fetch_failed");
+    const guess = preferred;
+    const feed = deskSchwabChainsFeed(guess);
+    deskMarkFeedError(feed, "schwab_chain_fetch_failed", guess === "app2" ? "schwab_rest_2" : undefined);
     return {
       underlyingPrice: null,
       raw: [],
@@ -274,11 +296,16 @@ export async function deskFetchSchwabChain(
       session_date,
       truncated: false,
       contract_count: 0,
+      app: guess,
+      fellBack: false,
     };
   }
 
+  const app = entry.app;
+  const feed = deskSchwabChainsFeed(app);
+  const fellBack = app !== preferred;
   cache.set(key, entry);
-  deskTouchFeed("schwab_chains", entry.fetchedAt);
+  deskTouchFeed(feed, entry.fetchedAt, app === "app2" ? "schwab_rest_2" : undefined);
   return {
     underlyingPrice: entry.underlyingPrice,
     raw: entry.raw,
@@ -287,5 +314,7 @@ export async function deskFetchSchwabChain(
     session_date,
     truncated: entry.truncated,
     contract_count: entry.contract_count,
+    app,
+    fellBack,
   };
 }

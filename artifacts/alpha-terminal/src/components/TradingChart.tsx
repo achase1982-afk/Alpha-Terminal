@@ -245,9 +245,10 @@ export function TradingChart({ symbol, data, isLoading, error, timedOut, tokenEx
   useEffect(() => {
     if (!symbol) return;
     const symUpper = symbol.toUpperCase();
+    const altKey = symUpper.startsWith("$") ? symUpper.slice(1) : `$${symUpper}`;
     let prevLast: number | null = null;
     const unsub = useTerminalStore.subscribe((state) => {
-      const tick = state.streamPrices[symUpper];
+      const tick = state.streamPrices[symUpper] ?? state.streamPrices[altKey];
       if (!tick || !candleSeriesRef.current || lastCandleTimeRef.current === 0) return;
       const price = tick.extendedLast ?? tick.last;
       if (price === null || price === undefined || price === prevLast) return;

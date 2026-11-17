@@ -206,8 +206,9 @@ export function NewsTab() {
       return res.json();
     },
     enabled: !!symbol,
-    staleTime: 60 * 1000,
-    refetchInterval: 2 * 60 * 1000,
+    staleTime: 30 * 1000,
+    refetchInterval: 60 * 1000,
+    refetchIntervalInBackground: false,
   });
 
   const { data: secData } = useQuery<SecFilingsResponse>({

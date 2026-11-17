@@ -1,7 +1,13 @@
-import { getBestAccessToken } from "../tokenStore.js";
 import { deskFormatSchwabSymbol, deskIsIndex } from "./deskSchwabSymbol.js";
 import { deskTouchFeed, deskMarkFeedError, deskMarkAuthFail } from "./deskFeedFreshness.js";
 import { deskSessionDateEt } from "./deskEt.js";
+import {
+  type DeskSchwabRestApp,
+  deskSchwabMarkApp2AuthFailure,
+  deskSchwabQuotesFeed,
+  deskSchwabRestFetch,
+} from "./deskSchwabRestCredential.js";
+import { deskMarkFeedNotAuthorized } from "./deskFeedFreshness.js";
 
 const SCHWAB_API_BASE = "https://api.schwabapi.com/marketdata/v1";
 
@@ -34,16 +40,29 @@ function pickNum(sources: Array<Record<string, unknown> | undefined>, ...keys: s
   return null;
 }
 
-export async function deskFetchSchwabQuotes(symbols: string[]): Promise<{
+export async function deskFetchSchwabQuotes(
+  symbols: string[],
+  preferred: DeskSchwabRestApp = "app2",
+): Promise<{
   quotes: DeskQuoteRow[];
   asOfMs: number;
   session_date: string;
+  app: DeskSchwabRestApp;
+  fellBack: boolean;
 }> {
-  const token = getBestAccessToken();
   const session_date = deskSessionDateEt();
   const uniq = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
+  const apiSyms = uniq.map(deskFormatSchwabSymbol);
+  const url =
+    `${SCHWAB_API_BASE}/quotes?symbols=${encodeURIComponent(apiSyms.join(","))}` +
+    "&fields=quote,fundamental,reference";
+
+  const fetched = await deskSchwabRestFetch(preferred, url, { headers: { Accept: "application/json" } }, 15_000);
+  const { res, app, fellBack, token } = fetched;
+  const feed = deskSchwabQuotesFeed(app);
   if (!token) {
-    deskMarkAuthFail("schwab_quotes_rest");
+    if (app === "app1") deskMarkAuthFail("schwab_quotes_rest");
+    else deskMarkFeedNotAuthorized("schwab2_rest", "schwab2_oauth_required", "schwab_rest_2");
     return {
       quotes: uniq.map((symbol) => ({
         symbol,
@@ -60,27 +79,22 @@ export async function deskFetchSchwabQuotes(symbols: string[]): Promise<{
       })),
       asOfMs: Date.now(),
       session_date,
+      app,
+      fellBack,
     };
   }
 
-  const apiSyms = uniq.map(deskFormatSchwabSymbol);
-  const url =
-    `${SCHWAB_API_BASE}/quotes?symbols=${encodeURIComponent(apiSyms.join(","))}` +
-    "&fields=quote,fundamental,reference";
-
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(15_000),
-  });
-
   if (res.status === 401) {
-    deskMarkAuthFail("schwab_quotes_rest");
-    return { quotes: [], asOfMs: Date.now(), session_date };
+    if (app === "app1") deskMarkAuthFail("schwab_quotes_rest");
+    else deskSchwabMarkApp2AuthFailure(res.status);
+    return { quotes: [], asOfMs: Date.now(), session_date, app, fellBack };
   }
 
   if (!res.ok) {
-    deskMarkFeedError("schwab_quotes_rest", `http_${res.status}`);
-    return { quotes: [], asOfMs: Date.now(), session_date };
+    if (app === "app1") deskMarkFeedError(feed, `http_${res.status}`);
+    else if (res.status === 403) deskSchwabMarkApp2AuthFailure(res.status);
+    else deskMarkFeedError("schwab2_rest", `http_${res.status}`, "schwab_rest_2");
+    return { quotes: [], asOfMs: Date.now(), session_date, app, fellBack };
   }
 
   const json = (await res.json()) as Record<string, unknown>;
@@ -127,6 +141,9 @@ export async function deskFetchSchwabQuotes(symbols: string[]): Promise<{
     });
   }
 
-  if (quotes.some((q) => q.last != null)) deskTouchFeed("schwab_quotes_rest", latest);
-  return { quotes, asOfMs: latest || Date.now(), session_date };
+  if (quotes.some((q) => q.last != null)) {
+    if (app === "app2") deskTouchFeed("schwab2_rest", latest, "schwab_rest_2");
+    else deskTouchFeed("schwab_quotes_rest", latest);
+  }
+  return { quotes, asOfMs: latest || Date.now(), session_date, app, fellBack };
 }

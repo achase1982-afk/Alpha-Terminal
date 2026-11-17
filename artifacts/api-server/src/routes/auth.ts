@@ -17,8 +17,16 @@ import {
   forceRefresh,
 } from "../lib/tokenStore.js";
 import { stopStreamer } from "../lib/schwabStreamer.js";
+import schwab2AuthRouter from "./schwab2Auth.js";
+import { buildSchwab2AuthorizeUrl, deskSchwab2Configured } from "../lib/desk/deskSchwab2OAuth.js";
+import { getSchwab2TokenMeta } from "../lib/desk/deskSchwab2TokenStore.js";
+import { getSchwabBrokerageRedirectUri } from "../lib/desk/schwabOAuthRedirect.js";
+import { errorPage, traderSuccessPage } from "../lib/desk/schwabOAuthPages.js";
+
+export { errorPage, traderSuccessPage };
 
 const router: IRouter = Router();
+router.use(schwab2AuthRouter);
 
 const SCHWAB_AUTH_BASE = "https://api.schwabapi.com/v1/oauth/authorize";
 const SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token";
@@ -26,10 +34,7 @@ const SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token";
 const isProd = process.env.NODE_ENV === "production";
 
 function getTraderRedirectUri(): string {
-  const dev = process.env.SCHWAB_TRADER_REDIRECT_URI?.trim() ?? "";
-  const prod = process.env.SCHWAB_TRADER_REDIRECT_URI_PROD?.trim() ?? "";
-  if (isProd) return prod || dev;
-  return dev || prod;
+  return getSchwabBrokerageRedirectUri();
 }
 
 /** Schwab OAuth error bodies are usually `{ error, error_description }`. */
@@ -123,59 +128,6 @@ function readQueryString(req: Request, key: string): string | undefined {
 
 function basicAuth(appKey: string, appSecret: string): string {
   return "Basic " + Buffer.from(`${appKey}:${appSecret}`).toString("base64");
-}
-
-function traderSuccessPage() {
-  // IMPORTANT: do NOT redirect this page to "/". When the OAuth flow runs
-  // inside an iOS in-app browser overlay (opened from a PWA via
-  // `<a target="_blank">`), the overlay does NOT carry the PWA's auth
-  // cookies. Navigating to "/" here would load the bare app inside the
-  // overlay, which then fails the auth check and shows the Clerk sign-in
-  // screen \u2014 confusing the user even though the PWA underneath already
-  // has the token waiting.
-  //
-  // Instead: try `window.close()` silently a few times (works for true
-  // popups; no-ops for iOS overlay tabs), and otherwise just show a clean
-  // "tap the X to return" message. The PWA's visibilitychange handler will
-  // pick up the new trader token from /api/auth/trader-pending-session as
-  // soon as the user dismisses the overlay.
-  return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connected</title></head>
-    <body style="background:#0A0F16;color:#fff;font-family:-apple-system,system-ui,sans-serif;padding:60px 20px;text-align:center;margin:0">
-      <div style="font-size:14px;color:#FFB800;letter-spacing:0.18em;font-weight:700;margin-bottom:14px">ALPHA TERMINAL</div>
-      <div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:50%;background:rgba(0,200,140,0.15);margin-bottom:18px">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#00C88C" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-      </div>
-      <h2 style="color:#00C88C;font-size:18px;margin:0 0 10px">Connected to Schwab</h2>
-      <p style="color:#bbb;font-size:14px;line-height:1.55;margin:0 0 8px;max-width:320px;margin-left:auto;margin-right:auto">Your brokerage is linked.</p>
-      <p style="color:#888;font-size:13px;line-height:1.55;margin:0 0 28px;max-width:320px;margin-left:auto;margin-right:auto">Tap the <strong style="color:#fff">X</strong> in the top corner to return to Alpha Terminal. Your portfolio will load automatically.</p>
-      <button id="closeBtn" style="display:inline-block;background:#FFB800;color:#000;font-size:13px;font-weight:700;letter-spacing:0.05em;padding:10px 28px;border:none;border-radius:8px;cursor:pointer;font-family:-apple-system,system-ui,sans-serif">CLOSE THIS PAGE</button>
-      <script>
-        (function () {
-          function closeSelf() { try { window.close(); } catch (e) {} }
-          // Best-effort self close (works only for true script-opened popups;
-          // silently no-ops on iOS in-app browser overlays). Never navigate
-          // to "/" \u2014 see comment in traderSuccessPage().
-          closeSelf();
-          setTimeout(closeSelf, 250);
-          setTimeout(closeSelf, 1000);
-          var btn = document.getElementById('closeBtn');
-          if (btn) btn.addEventListener('click', closeSelf);
-        })();
-      </script>
-    </body></html>`;
-}
-
-function errorPage(title: string, msg: string) {
-  return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-    <body style="background:#0A0F16;color:#fff;font-family:-apple-system,system-ui,sans-serif;padding:60px 20px;text-align:center">
-      <h2 style="color:#FF1744;font-size:18px;margin-bottom:12px">${escapeHtml(title)}</h2>
-      <p style="color:#ccc;font-size:14px;line-height:1.5;margin-bottom:32px">${escapeHtml(msg)}</p>
-      <button
-        onclick="window.close(); setTimeout(function(){ history.back(); }, 300);"
-        style="display:inline-block;background:#FFB800;color:#000;font-size:14px;font-weight:700;letter-spacing:0.05em;padding:12px 32px;border:none;border-radius:8px;cursor:pointer;font-family:-apple-system,system-ui,sans-serif"
-      >Close &amp; Return</button>
-      <p style="margin-top:24px;font-size:12px;color:#555">If the button doesn&#39;t close this tab, you can close it manually and return to Alpha Terminal.</p>
-    </body></html>`;
 }
 
 router.get("/url", (_req, res) => {
@@ -549,6 +501,14 @@ router.get("/trader-callback", async (req, res) => {
     return res.status(400).send(errorPage("Missing Code", "No authorization code was received from Schwab."));
   }
 
+  const { isSchwab2OAuthState, handleSchwab2OAuthCallback } = await import(
+    "../lib/desk/schwab2OAuthCallback.js"
+  );
+  if (isSchwab2OAuthState(state)) {
+    const handled = await handleSchwab2OAuthCallback(req, res, code, state);
+    if (handled) return;
+  }
+
   if (!verifyState(state, "trader_")) {
     req.log.warn({ state: state?.slice(0, 8) }, "GET /trader-callback — invalid or missing state");
     return res.status(400).send(errorPage("Invalid Request", "OAuth state validation failed. Please try again."));
@@ -633,6 +593,16 @@ router.get("/trader-callback", async (req, res) => {
     pendingTokens.set("latest", { accessToken, refreshToken: trRfTok, ts: Date.now() });
 
     req.log.info("GET /trader-callback — Trader token exchange succeeded (stored as market + trader)");
+
+    const app2 = deskSchwab2Configured() ? buildSchwab2AuthorizeUrl("after_brokerage") : null;
+    if (app2?.url) {
+      req.log.info(
+        { redirectUri: app2.redirectUri },
+        "GET /trader-callback — chaining into Schwab app 2 authorize",
+      );
+      return res.redirect(app2.url);
+    }
+
     return res.send(traderSuccessPage());
   } catch (err) {
     req.log.error({ err }, "GET /trader-callback network error");
@@ -677,6 +647,7 @@ router.get("/server-tokens", (_req, res) => {
   const mkt = hasValidTokens("market") ? getTokens("market") : undefined;
   const trd = hasValidTokens("trader") ? getTokens("trader") : undefined;
   const anchor = trd ?? mkt;
+  const schwab2 = getSchwab2TokenMeta();
   res.json({
     market: mkt ? { accessToken: mkt.accessToken, refreshToken: mkt.refreshToken, expiresAt: mkt.expiresAt } : null,
     trader: trd ? { accessToken: trd.accessToken, refreshToken: trd.refreshToken, expiresAt: trd.expiresAt } : null,
@@ -684,6 +655,21 @@ router.get("/server-tokens", (_req, res) => {
     // grant; null until the first browser sign-in after this deploy).
     refresh_token_issued_at: anchor?.refreshIssuedAt ?? null,
     refresh_token_expires_at: anchor?.refreshExpiresAt ?? null,
+    schwab_oauth: {
+      app1: {
+        connected: Boolean(anchor?.refreshToken),
+        access_token_expires_at: anchor?.expiresAt ?? null,
+        refresh_token_issued_at: anchor?.refreshIssuedAt ?? null,
+        refresh_token_expires_at: anchor?.refreshExpiresAt ?? null,
+      },
+      app2: {
+        configured: deskSchwab2Configured(),
+        connected: schwab2.has_tokens,
+        access_token_expires_at: schwab2.access_token_expires_at,
+        refresh_token_issued_at: schwab2.refresh_token_issued_at,
+        refresh_token_expires_at: schwab2.refresh_token_expires_at,
+      },
+    },
   });
 });
 

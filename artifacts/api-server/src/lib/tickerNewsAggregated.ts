@@ -243,8 +243,11 @@ export async function fetchFinnhubNews(
       url: string;
     }>;
 
-    const articles = (Array.isArray(raw) ? raw : []).slice(0, 30).map(normalizeFinnhubArticle);
-    const wrapperCount = (Array.isArray(raw) ? raw : [])
+    const sorted = (Array.isArray(raw) ? raw : []).sort(
+      (a, b) => (b.datetime ?? 0) - (a.datetime ?? 0),
+    );
+    const articles = sorted.slice(0, 30).map(normalizeFinnhubArticle);
+    const wrapperCount = sorted
       .slice(0, 30)
       .filter((a) => isFinnhubWrapperUrl(a.url || "")).length;
     if (wrapperCount > 0) {

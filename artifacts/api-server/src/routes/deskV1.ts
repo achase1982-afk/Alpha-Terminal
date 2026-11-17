@@ -25,6 +25,8 @@ import { getDeskTapeUniverseHealth } from "../lib/desk/deskTapeUniverse.js";
 import { getDeskEquityFieldsSeen } from "../lib/desk/deskStreamerTap.js";
 import { deskAlpacaMarketBars, deskAlpacaMarketQuotes } from "../lib/desk/deskAlpacaData.js";
 import { deskResolveSource } from "../lib/desk/deskSources.js";
+import { deskSchwabRestAppFromDeskSource } from "../lib/desk/deskSchwabRestCredential.js";
+import { buildDeskSchwabOAuthHealth } from "../lib/desk/deskSchwabOAuthHealth.js";
 
 const router: IRouter = Router();
 
@@ -48,6 +50,7 @@ router.get("/health", async (_req, res) => {
     },
     desk_tape_universe: getDeskTapeUniverseHealth(),
     desk_equity_fields_seen: getDeskEquityFieldsSeen(),
+    schwab_oauth: buildDeskSchwabOAuthHealth(),
     session_date: deskSessionDateEt(new Date(now)),
     asof_et: deskAsofEtIso(new Date(now)),
   };
@@ -58,6 +61,7 @@ router.get("/health", async (_req, res) => {
 router.get("/quotes", async (req, res) => {
   const resolved = deskResolveSource(req.query["source"] as string | undefined, [
     "schwab",
+    "schwab2",
     "tradier",
     "alpaca_paper",
     "alpaca",
@@ -126,10 +130,13 @@ router.get("/quotes", async (req, res) => {
     return;
   }
 
-  const { quotes, asOfMs } = await deskFetchSchwabQuotes(symbols);
+  const schwabApp = deskSchwabRestAppFromDeskSource(resolved.source);
+  const { quotes, asOfMs, app } = await deskFetchSchwabQuotes(symbols, schwabApp);
   const payload = { quotes, session_date };
   void deskPersistSnapshot("quotes", payload);
-  res.json(deskEnvelope(payload, "schwab", asOfMs, "schwab_quotes_rest"));
+  const sourceLabel = app === "app2" ? "schwab2" : "schwab";
+  const feed = app === "app2" ? "schwab2_rest" : "schwab_quotes_rest";
+  res.json(deskEnvelope(payload, sourceLabel, asOfMs, feed));
 });
 
 router.get("/tape/spx/stream", (_req, res) => {
@@ -193,7 +200,7 @@ router.get("/tape/spx", (req, res) => {
 });
 
 router.get("/chains", async (req, res) => {
-  const resolved = deskResolveSource(req.query["source"] as string | undefined, ["schwab"] as const);
+  const resolved = deskResolveSource(req.query["source"] as string | undefined, ["schwab", "schwab2"] as const);
   if ("error" in resolved) {
     res.status(400).json({ error: resolved.error, source: resolved.source, allowed: resolved.allowed });
     return;
@@ -215,7 +222,8 @@ router.get("/chains", async (req, res) => {
     strikeCount != null || range
       ? { strikeCount: strikeCount && strikeCount > 0 ? strikeCount : undefined, range }
       : undefined;
-  const chain = await deskFetchSchwabChain(symbol, expiration, chainOpts);
+  const schwabApp = deskSchwabRestAppFromDeskSource(resolved.source);
+  const chain = await deskFetchSchwabChain(symbol, expiration, chainOpts, schwabApp);
   const payload = {
     symbol,
     expiration: expiration.slice(0, 10),
@@ -227,7 +235,9 @@ router.get("/chains", async (req, res) => {
     session_date: chain.session_date,
   };
   void deskPersistSnapshot("chains", payload, symbol);
-  res.json(deskEnvelope(payload, "schwab", chain.asOfMs, "schwab_chains"));
+  const sourceLabel = chain.app === "app2" ? "schwab2" : "schwab";
+  const feed = chain.app === "app2" ? "schwab2_rest" : "schwab_chains";
+  res.json(deskEnvelope(payload, sourceLabel, chain.asOfMs, feed));
 });
 
 router.get("/flow", async (req, res) => {
@@ -263,6 +273,7 @@ router.get("/flow", async (req, res) => {
 router.get("/bars", async (req, res) => {
   const resolved = deskResolveSource(req.query["source"] as string | undefined, [
     "schwab",
+    "schwab2",
     "eodhd",
     "alpaca_paper",
     "alpaca",
@@ -326,9 +337,12 @@ router.get("/bars", async (req, res) => {
     return;
   }
 
-  const { bars, asOfMs } = await deskFetchSchwabBars(symbol, timeframe, limit);
+  const schwabApp = deskSchwabRestAppFromDeskSource(resolved.source);
+  const { bars, asOfMs, app } = await deskFetchSchwabBars(symbol, timeframe, limit, schwabApp);
+  const sourceLabel = app === "app2" ? "schwab2" : "schwab";
+  const feed = app === "app2" ? "schwab2_rest" : "schwab_quotes_rest";
   res.json(
-    deskEnvelope({ symbol, timeframe, bars, session_date: deskSessionDateEt(new Date(asOfMs)) }, "schwab", asOfMs, "schwab_quotes_rest"),
+    deskEnvelope({ symbol, timeframe, bars, session_date: deskSessionDateEt(new Date(asOfMs)) }, sourceLabel, asOfMs, feed),
   );
 });
 
@@ -461,7 +475,11 @@ router.get("/news", async (req, res) => {
 const gammaHandler =
   (feed: "live_gamma_0dte" | "live_gamma") =>
   async (req: import("express").Request, res: import("express").Response) => {
-    const resolved = deskResolveSource(req.query["source"] as string | undefined, ["unusual_whales"] as const);
+    const rawSource = req.query["source"] as string | undefined;
+    const resolved =
+      rawSource == null || String(rawSource).trim() === ""
+        ? { source: "unusual_whales" as const }
+        : deskResolveSource(rawSource, ["unusual_whales"] as const);
     if ("error" in resolved) {
       res.status(400).json({ error: resolved.error, source: resolved.source, allowed: resolved.allowed });
       return;

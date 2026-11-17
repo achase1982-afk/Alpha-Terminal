@@ -7,7 +7,7 @@ import {
 } from "./deskFeedFreshness.js";
 import { logger } from "../logger.js";
 
-const OAUTH_URL = "https://api.tastytrade.com/oauth/token";
+const OAUTH_URL = "https://api.tastyworks.com/oauth/token";
 const API_BASE = "https://api.tastytrade.com";
 const SOURCE = "tastytrade_dxlink";
 
@@ -31,18 +31,15 @@ export async function deskTastytradeAccessToken(): Promise<string | null> {
   }
   if (tokenRefreshInFlight) return tokenRefreshInFlight;
 
-  const clientSecret = deskEnv("TASTYTRADE_CLIENT_SECRET");
-  const refreshToken = deskEnv("TASTYTRADE_REFRESH_TOKEN");
-  const clientId = deskEnv("TASTYTRADE_CLIENT_ID");
+  const clientSecret = deskEnv("TASTYTRADE_CLIENT_SECRET").trim();
+  const refreshToken = deskEnv("TASTYTRADE_REFRESH_TOKEN").trim();
 
   tokenRefreshInFlight = (async () => {
     try {
-      const form = new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token: refreshToken,
-        client_secret: clientSecret,
-      });
-      if (clientId) form.set("client_id", clientId);
+      const form = new URLSearchParams();
+      form.set("grant_type", "refresh_token");
+      form.set("refresh_token", refreshToken);
+      form.set("client_secret", clientSecret);
 
       const res = await fetch(OAUTH_URL, {
         method: "POST",
@@ -64,8 +61,31 @@ export async function deskTastytradeAccessToken(): Promise<string | null> {
         return null;
       }
       if (!res.ok) {
-        const detail = String(json.error ?? json.message ?? raw).slice(0, 200);
-        deskMarkFeedError("tastytrade", `tastytrade_oauth_${res.status}:${detail}`, SOURCE);
+        const detail = String(json.error ?? json.message ?? json.error_description ?? raw).slice(0, 200);
+        logger.warn(
+          {
+            status: res.status,
+            detail,
+            oauthUrl: OAUTH_URL,
+            envKeys: [
+              "TASTYTRADE_CLIENT_SECRET",
+              "DESK_TASTYTRADE_CLIENT_SECRET",
+              "TASTYTRADE_REFRESH_TOKEN",
+              "DESK_TASTYTRADE_REFRESH_TOKEN",
+            ],
+            bodyFields: ["grant_type", "refresh_token", "client_secret"],
+          },
+          "Desk Tastytrade OAuth refresh failed",
+        );
+        if (res.status === 400 && /invalid_grant|client secret|mismatch/i.test(detail)) {
+          deskMarkFeedAuthError(
+            "tastytrade",
+            "tastytrade_oauth_credential_mismatch_check_env",
+            SOURCE,
+          );
+        } else {
+          deskMarkFeedError("tastytrade", `tastytrade_oauth_${res.status}:${detail}`, SOURCE);
+        }
         return null;
       }
       const data = json.data as Record<string, unknown> | undefined;

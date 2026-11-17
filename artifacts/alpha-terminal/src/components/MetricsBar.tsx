@@ -328,9 +328,16 @@ export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: Metric
 
   // Full header: regular-session last (field 29) matches Schwab's RTH "Last".
   // Compact header: live last (field 3) so extended-hours prints show at a glance.
+  const symU = symbol.toUpperCase();
+  const isIndexSymbol =
+    symU.startsWith("$") ||
+    ["VIX", "SPX", "NDX", "RUT", "DJI", "DJIA", "COMP", "DXY", "TNX"].includes(symU);
+  const streamLive = quote?.last ?? quote?.regularLast ?? quote?.extendedLast ?? null;
   const displayLast = compact
-    ? quote?.last ?? quote?.regularLast ?? null
-    : quote?.regularLast ?? quote?.last ?? null;
+    ? streamLive
+    : isIndexSymbol
+      ? streamLive
+      : quote?.regularLast ?? quote?.last ?? null;
   const lastStr = displayLast != null ? `$${fmtPrice(displayLast)}` : "—";
 
   const changeStr = rawChange !== null

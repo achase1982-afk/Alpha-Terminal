@@ -32,6 +32,8 @@ describe("deskResolveSpxSpot", () => {
   it("falls back to Schwab REST", async () => {
     vi.mocked(getQuoteBySymbol).mockReturnValue(undefined);
     vi.mocked(deskFetchSchwabQuotes).mockResolvedValue({
+      app: "app2",
+      fellBack: false,
       quotes: [
         {
           symbol: "$SPX",
