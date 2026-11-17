@@ -67,6 +67,7 @@ export function mergeLegStreamQuotes<
     ...leg,
     bid: pair.crossed ? null : pair.bid,
     ask: pair.crossed ? null : pair.ask,
+    quoteCrossed: pair.crossed,
     delta: tick?.delta ?? leg.delta ?? null,
   };
 }

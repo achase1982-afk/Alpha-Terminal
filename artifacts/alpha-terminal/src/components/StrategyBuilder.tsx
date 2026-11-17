@@ -2,7 +2,13 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useQuote, type QuoteData } from "@/hooks/useQuote";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
-import { aggregateSpreadNBBO, mergeLegStreamQuotes, pairedQuoteFromStreamTick } from "@workspace/order-ticket-math";
+import {
+  aggregateSpreadNBBO,
+  displaySubmittedLimit,
+  mergeLegStreamQuotes,
+  pairedQuoteFromStreamTick,
+  parseCanonicalLimit,
+} from "@workspace/order-ticket-math";
 import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { startStrategistPolling } from "@/lib/strategistPoller";
@@ -721,18 +727,22 @@ export function StrategyBuilder({
     return Math.min(100, Math.max(0, ((lp - effectiveBid) / range) * 100));
   }, [effectiveBid, effectiveAsk, limitPrice]);
 
+  const limitTickCtx = useMemo(
+    () => ({ underlyingSymbol: symbol, isOption: true }),
+    [symbol],
+  );
+
   const setMidPrice = useCallback(() => {
-    if (spreadPrices?.spreadMid != null) setLimitPrice(spreadPrices.spreadMid.toFixed(2));
-  }, [spreadPrices]);
+    if (spreadPrices?.spreadMid == null) return;
+    setLimitPrice(displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid));
+  }, [spreadPrices, limitTickCtx]);
 
   const setNatPrice = useCallback(() => {
     if (!spreadPrices) return;
-    if (isCredit) {
-      if (spreadPrices.spreadBid > 0) setLimitPrice(spreadPrices.spreadBid.toFixed(2));
-    } else if (spreadPrices.spreadAsk > 0) {
-      setLimitPrice(spreadPrices.spreadAsk.toFixed(2));
-    }
-  }, [spreadPrices, isCredit]);
+    const raw = isCredit ? spreadPrices.spreadBid : spreadPrices.spreadAsk;
+    const px = parseCanonicalLimit(raw, limitTickCtx);
+    if (px != null) setLimitPrice(displaySubmittedLimit(limitTickCtx, px));
+  }, [spreadPrices, isCredit, limitTickCtx]);
 
   const estimatedCost = useMemo(() => {
     const price = parseFloat(limitPrice);

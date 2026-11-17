@@ -46,15 +46,37 @@ describe("optionQuotes", () => {
     expect(stale?.source).toBe("contract");
   });
 
-  it("flags crossed aggregated spreads without swapping", () => {
+  it("keeps signed net prices and only flags per-leg crosses", () => {
     const agg = aggregateSpreadNBBO([
       { instruction: "BUY_TO_OPEN", bid: 3.7, ask: 3.8 },
       { instruction: "SELL_TO_OPEN", bid: 1.2, ask: 1.25 },
     ]);
     expect(agg).not.toBeNull();
     expect(agg!.crossed).toBe(false);
-    expect(agg!.bid).toBeCloseTo(2.45, 5);
-    expect(agg!.ask).toBeCloseTo(2.6, 5);
-    expect(agg!.mid).toBeCloseTo(2.525, 5);
+    expect(agg!.bid).toBeCloseTo(-2.6, 5);
+    expect(agg!.ask).toBeCloseTo(-2.45, 5);
+    expect(agg!.mid).toBeCloseTo(-2.525, 5);
+  });
+
+  it("collar / risk reversal nets are not treated as crossed", () => {
+    const agg = aggregateSpreadNBBO([
+      { instruction: "BUY_TO_OPEN", bid: 1.0, ask: 1.05 },
+      { instruction: "SELL_TO_OPEN", bid: 1.0, ask: 1.1 },
+    ]);
+    expect(agg).not.toBeNull();
+    expect(agg!.crossed).toBe(false);
+    expect(agg!.bid).toBeCloseTo(-0.05, 5);
+    expect(agg!.ask).toBeCloseTo(0.1, 5);
+    expect(agg!.mid).toBeCloseTo(0.025, 5);
+  });
+
+  it("flags any leg-level cross without flipping net signs", () => {
+    const agg = aggregateSpreadNBBO([
+      { instruction: "BUY_TO_OPEN", bid: 1.0, ask: 1.05 },
+      { instruction: "SELL_TO_OPEN", bid: 1.2, ask: 1.0 },
+    ]);
+    expect(agg).not.toBeNull();
+    expect(agg!.crossed).toBe(true);
+    expect(agg!.mid).toBeNull();
   });
 });

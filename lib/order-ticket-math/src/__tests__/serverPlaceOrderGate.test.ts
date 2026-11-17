@@ -61,6 +61,7 @@ describe("evaluateServerPlaceOrderGate", () => {
   it("rejects 10-lot 50-wide credit spread at 1.00 vs 30k @ 3% threshold", () => {
     const r = evaluateServerPlaceOrderGate({
       order: {
+        orderType: "NET_CREDIT",
         price: 1,
         orderLegCollection: [
           {

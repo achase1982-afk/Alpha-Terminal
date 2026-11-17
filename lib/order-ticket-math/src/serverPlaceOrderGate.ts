@@ -16,6 +16,13 @@ export const DEFAULT_SERVER_PRE_TRADE: ServerPreTradeSettings = {
 };
 
 /**
+ * Ticket enforces the user's max position % (default 3%). The server is a catastrophe guard only:
+ * it uses max(user setting, 10%), so it never blocks an order the ticket would allow at normal
+ * settings and never trusts a looser client value.
+ */
+export const SERVER_SIZE_CATASTROPHE_FLOOR_PCT = 10;
+
+/**
  * Server-side gate from order + account equity. Never trusts client gate payload.
  * Closing orders are never rejected.
  */
@@ -42,7 +49,11 @@ export function evaluateServerPlaceOrderGate(input: {
   } else if (input.accountEquity == null || input.accountEquity <= 0) {
     checks.push({ id: "size", level: "YELLOW" });
   } else {
-    const maxAllowed = input.accountEquity * (settings.preTradeMaxPositionPct / 100);
+    const serverCapPct = Math.max(
+      settings.preTradeMaxPositionPct,
+      SERVER_SIZE_CATASTROPHE_FLOOR_PCT,
+    );
+    const maxAllowed = input.accountEquity * (serverCapPct / 100);
     checks.push({
       id: "size",
       level: risk.maxRisk > maxAllowed ? "RED" : "GREEN",

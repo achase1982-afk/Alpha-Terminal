@@ -178,4 +178,43 @@ describe("OrderTicket component", () => {
     expect(gate.shouldBlockReview).toBe(true);
     expect(gate.shouldBlockSubmit).toBe(true);
   });
+
+  it("FAIL liquidity when any leg of a multi-leg order is crossed", async () => {
+    const shortLeg = OPT;
+    const longLeg = "AAPL  250117C00210000";
+    mockTicks = {
+      [shortLeg]: { bid: 2.5, ask: 2.7, last: 2.6, ts: 1, delta: 0.4 },
+      [longLeg]: { bid: 1.5, ask: 1.2, last: 1.3, ts: 1, delta: 0.3 },
+    };
+    render(
+      <OrderTicket
+        isOpen
+        onClose={() => {}}
+        strategyLegs={[
+          {
+            schwabSymbol: shortLeg,
+            instruction: "SELL_TO_OPEN",
+            quantity: 1,
+            optionType: "CALL",
+            strike: 200,
+            expiration: "2025-01-17",
+          },
+          {
+            schwabSymbol: longLeg,
+            instruction: "BUY_TO_OPEN",
+            quantity: 1,
+            optionType: "CALL",
+            strike: 210,
+            expiration: "2025-01-17",
+          },
+        ]}
+        strategyIsCredit
+        subscribeOptionSymbols={vi.fn()}
+      />,
+    );
+    const limitInput = await screen.findByPlaceholderText("0.00");
+    fireEvent.change(limitInput, { target: { value: "1.00" } });
+    const review = await screen.findByRole("button", { name: "Review" });
+    await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(true));
+  });
 });

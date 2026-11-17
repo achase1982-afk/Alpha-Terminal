@@ -502,8 +502,19 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
 
   const spreadPrices = useMemo(() => {
     if (!isMultiLeg || !liveStrategyLegs || liveStrategyLegs.length === 0) return null;
+    const anyLegCrossed = liveStrategyLegs.some(
+      (l) => (l as { quoteCrossed?: boolean }).quoteCrossed === true,
+    );
     const agg = aggregateSpreadNBBO(liveStrategyLegs);
-    if (!agg) return null;
+    if (!agg) {
+      if (!anyLegCrossed) return null;
+      return {
+        spreadBid: null,
+        spreadMid: null,
+        spreadAsk: null,
+        crossed: true,
+      };
+    }
     const spreadBid = agg.bid;
     const spreadAsk = agg.ask;
     const roundedMid =
@@ -511,7 +522,12 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
         ? parseCanonicalLimit(agg.mid, limitTickCtx)
         : parseCanonicalLimit(limitPrice, limitTickCtx, strategyNetPrice ?? null);
     const spreadMid = roundedMid ?? null;
-    return { spreadBid, spreadMid, spreadAsk, crossed: agg.crossed || spreadMid == null };
+    return {
+      spreadBid,
+      spreadMid,
+      spreadAsk,
+      crossed: anyLegCrossed || agg.crossed || spreadMid == null,
+    };
   }, [isMultiLeg, liveStrategyLegs, strategyNetPrice, limitPrice, limitTickCtx]);
 
   useEffect(() => {
@@ -784,11 +800,21 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
       preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, accountSize: tradingAccountEquity ?? 0, stratMinPoP, isOption,
       spreadMaxRisk,
     });
-    if (isCloseOrder) {
-      return allChecks.filter(c => !["pulse", "rr", "size"].includes(c.id));
+    let checks = allChecks;
+    if (isMultiLeg && spreadPrices?.crossed) {
+      const detail = "Crossed bid/ask on one or more legs — quote unavailable";
+      const withoutLiq = checks.filter((c) => c.id !== "liq");
+      checks = [...withoutLiq, { id: "liq", label: "Liquidity", level: "RED" as const, detail }];
+    } else if (!isMultiLeg && execPriceQuote?.crossed) {
+      const detail = "Crossed bid/ask — quote unavailable";
+      const withoutLiq = checks.filter((c) => c.id !== "liq");
+      checks = [...withoutLiq, { id: "liq", label: "Liquidity", level: "RED" as const, detail }];
     }
-    return allChecks;
-  }, [side, quantity, submittedLimit, liquidityBidAsk, ticketPxLast, pulseData, preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, tradingAccountEquity, stratMinPoP, isOption, preTradeEnabled, isMultiLeg, liveStrategyLegs, strategyNetPrice, spreadPrices, isCloseOrder, ticketEconomics]);
+    if (isCloseOrder) {
+      return checks.filter(c => !["pulse", "rr", "size"].includes(c.id));
+    }
+    return checks;
+  }, [side, quantity, submittedLimit, liquidityBidAsk, ticketPxLast, pulseData, preTradeMinRR, preTradeMaxPositionPct, preTradeMinDTE, tradingAccountEquity, stratMinPoP, isOption, preTradeEnabled, isMultiLeg, liveStrategyLegs, strategyNetPrice, spreadPrices, isCloseOrder, ticketEconomics, execPriceQuote?.crossed]);
 
   const overallRisk = useMemo(() => getOverallLevel(riskChecks), [riskChecks]);
 
@@ -928,7 +954,8 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
   }, [orderType, extendedHours, duration, side, quantity, symbol, optionSymbol, isOption, isMultiLeg, liveStrategyLegs, strategyLegs, strategyIsCredit, isCloseOrder, optionInstruction, needsLimit, limitPrice, needsStop, stopPrice, needsTrail, trailOffset, instruction, exchange, taxLotMethod, spreadPrices, ticketPxBid, ticketPxAsk, ticketPxLast, limitTickCtx, submittedLimit, submittedLimitDisplay, strategyNetPrice]);
 
   const handleSubmit = useCallback(async () => {
-    if (!accountHash || (!isCloseOrder && preTradeGate.shouldBlockSubmit)) return;
+    if (!accountHash || !isValid) return;
+    if (!isCloseOrder && preTradeGate.shouldBlockSubmit) return;
     setStage("submitting");
     try {
       const order = buildSchwabOrder();
@@ -2610,7 +2637,7 @@ export function OrderTicket({ isOpen, onClose, initialSide, optionSymbol, option
               <button onClick={() => setStage("form")} className="flex-1" style={{ fontSize: S.heading, height: 40, background: "transparent", color: TEXT, border: `1px solid ${BORDER}`, borderRadius: 999 }}>Back</button>
               <button
                 onClick={handleSubmit}
-                disabled={!isCloseOrder && (preTradeGate.shouldBlockSubmit || !isValid)}
+                disabled={!isValid || (!isCloseOrder && preTradeGate.shouldBlockSubmit)}
                 className="flex-[2] tracking-[0.04em] active:scale-[0.98] transition-transform"
                 style={{
                   fontSize: 16,

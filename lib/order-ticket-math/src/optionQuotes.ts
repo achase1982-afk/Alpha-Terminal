@@ -93,11 +93,14 @@ export function aggregateSpreadNBBO(
   let rawBid = 0;
   let rawAsk = 0;
   let haveAllLegs = true;
+  let anyLegCrossed = false;
   for (const leg of legs) {
-    if (quoteSideState(leg.bid, leg.ask) !== "ok") {
+    const st = quoteSideState(leg.bid, leg.ask);
+    if (st === "incomplete") {
       haveAllLegs = false;
       break;
     }
+    if (st === "crossed") anyLegCrossed = true;
     const isSell = leg.instruction.startsWith("SELL");
     const bid = leg.bid!;
     const ask = leg.ask!;
@@ -114,20 +117,12 @@ export function aggregateSpreadNBBO(
     return null;
   }
 
-  let spreadBid: number;
-  let spreadAsk: number;
-  if (rawBid < 0 && rawAsk < 0) {
-    spreadBid = -rawAsk;
-    spreadAsk = -rawBid;
-  } else if (rawBid > 0 && rawAsk > 0) {
-    spreadBid = rawBid;
-    spreadAsk = rawAsk;
-  } else {
-    spreadBid = Math.abs(rawBid);
-    spreadAsk = Math.abs(rawAsk);
-  }
-
-  const crossed = spreadBid > spreadAsk;
-  const mid = crossed ? null : (spreadBid + spreadAsk) / 2;
+  const spreadBid = rawBid;
+  const spreadAsk = rawAsk;
+  const crossed = anyLegCrossed;
+  const mid =
+    !crossed && Number.isFinite(spreadBid) && Number.isFinite(spreadAsk) && spreadBid <= spreadAsk
+      ? (spreadBid + spreadAsk) / 2
+      : null;
   return { bid: spreadBid, ask: spreadAsk, mid, crossed };
 }

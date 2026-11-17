@@ -1,4 +1,8 @@
-import { computeOrderEconomics, type EconomicsLeg } from "./orderEconomics.js";
+import {
+  computeOrderEconomics,
+  type EconomicsLeg,
+  type OrderEconomicsInput,
+} from "./orderEconomics.js";
 
 export interface SchwabOrderLegLike {
   instruction?: string;
@@ -29,7 +33,9 @@ export function isClosingSchwabOrder(order: SchwabOrderLike): boolean {
   });
 }
 
-export function parseSchwabOptionSymbol(symbol: string): { strike: number; optionType: "CALL" | "PUT" } | null {
+export function parseSchwabOptionSymbol(
+  symbol: string,
+): { strike: number; optionType: "CALL" | "PUT"; expiration?: string } | null {
   const trimmed = symbol.trim();
   if (trimmed.length < 15) return null;
   const cpChar = trimmed.charAt(trimmed.length - 9);
@@ -38,58 +44,113 @@ export function parseSchwabOptionSymbol(symbol: string): { strike: number; optio
   if (!/^\d{8}$/.test(strikeRaw)) return null;
   const strike = parseInt(strikeRaw, 10) / 1000;
   if (!Number.isFinite(strike)) return null;
-  return { strike, optionType: cpChar === "C" ? "CALL" : "PUT" };
+  const yymmdd = trimmed.slice(-15, -9);
+  const expiration =
+    /^\d{6}$/.test(yymmdd)
+      ? `20${yymmdd.slice(0, 2)}-${yymmdd.slice(2, 4)}-${yymmdd.slice(4, 6)}`
+      : undefined;
+  return { strike, optionType: cpChar === "C" ? "CALL" : "PUT", expiration };
+}
+
+function isOptionAsset(asset?: string): boolean {
+  const a = (asset ?? "EQUITY").toUpperCase();
+  return a === "OPTION" || a === "COLLECTIVE_INVESTMENT";
+}
+
+/** Credit/debit from Schwab NET order type — not leg counts. */
+export function schwabOrderIsCredit(order: SchwabOrderLike): boolean | null {
+  const t = (order.orderType ?? "").trim().toUpperCase();
+  if (t === "NET_CREDIT") return true;
+  if (t === "NET_DEBIT" || t === "NET_ZERO") return false;
+  if (t.includes("CREDIT")) return true;
+  if (t.includes("DEBIT")) return false;
+  return null;
+}
+
+/** Naked shorts, strangles, straddles, ratio spreads — undefined max loss. */
+export function schwabOrderHasUncoveredShortRisk(order: SchwabOrderLike): boolean {
+  const legs = order.orderLegCollection ?? [];
+  const optionLegs = legs.filter((l) => isOptionAsset(l.instrument?.assetType));
+  if (optionLegs.length === 0) return false;
+
+  const instructions = optionLegs.map((l) => normalizeInstruction(l.instruction ?? ""));
+  const sellOpens = optionLegs.filter((_, i) => instructions[i] === "SELL_TO_OPEN");
+  const buyOpens = optionLegs.filter((_, i) => instructions[i] === "BUY_TO_OPEN");
+
+  if (sellOpens.length === 1 && buyOpens.length === 0) return true;
+  if (sellOpens.length >= 2 && buyOpens.length === 0) return true;
+
+  const sellQty = sellOpens.reduce((s, l) => s + (l.quantity ?? 1), 0);
+  const buyQty = buyOpens.reduce((s, l) => s + (l.quantity ?? 1), 0);
+  if (sellQty > buyQty) return true;
+
+  return false;
+}
+
+export function schwabOrderToEconomicsInput(order: SchwabOrderLike): OrderEconomicsInput | null {
+  const legs = order.orderLegCollection ?? [];
+  const price = typeof order.price === "number" && order.price > 0 ? order.price : null;
+  if (price == null) return null;
+
+  const qty = Math.max(1, ...legs.map((l) => l.quantity ?? 1));
+  const isOption = legs.some((l) => isOptionAsset(l.instrument?.assetType));
+
+  if (!isOption) {
+    return {
+      legs: [],
+      limitPrice: price,
+      quantity: qty,
+      isCredit: false,
+      isOption: false,
+      contractCount: qty,
+    };
+  }
+
+  const econLegs: EconomicsLeg[] = [];
+  for (const leg of legs) {
+    if (!isOptionAsset(leg.instrument?.assetType)) continue;
+    const sym = leg.instrument?.symbol ?? "";
+    const parsed = parseSchwabOptionSymbol(sym);
+    if (!parsed) return null;
+    econLegs.push({
+      strike: parsed.strike,
+      optionType: parsed.optionType,
+      instruction: normalizeInstruction(leg.instruction ?? "BUY_TO_OPEN"),
+      expiration: parsed.expiration,
+    });
+  }
+
+  const isCredit = schwabOrderIsCredit(order);
+  if (isCredit == null && econLegs.length >= 2) {
+    const sellCount = econLegs.filter((l) => l.instruction.startsWith("SELL")).length;
+    const buyCount = econLegs.filter((l) => l.instruction.startsWith("BUY")).length;
+    if (sellCount !== buyCount) return null;
+  }
+
+  const contractCount = legs.reduce((s, l) => s + (l.quantity ?? 1), 0) * qty;
+
+  return {
+    legs: econLegs,
+    limitPrice: price,
+    quantity: qty,
+    isCredit: isCredit ?? false,
+    isOption: true,
+    contractCount,
+  };
 }
 
 export type OrderMaxRiskResult =
   | { kind: "known"; maxRisk: number }
   | { kind: "unknown" };
 
-/** Max loss for server gate — mirrors ticket economics where possible. */
+/** Max loss for server gate — uses the same `computeOrderEconomics` as the ticket. */
 export function schwabOrderMaxRisk(order: SchwabOrderLike): OrderMaxRiskResult {
-  const legs = order.orderLegCollection ?? [];
-  const price = typeof order.price === "number" && order.price > 0 ? order.price : null;
-  const qty = Math.max(1, ...legs.map((l) => l.quantity ?? 1));
-
-  const assetTypes = legs.map((l) => (l.instrument?.assetType ?? "EQUITY").toUpperCase());
-  const isOption = assetTypes.some((a) => a === "OPTION" || a === "COLLECTIVE_INVESTMENT");
-
-  if (isOption) {
-    const instructions = legs.map((l) => normalizeInstruction(l.instruction ?? ""));
-    const isNakedShort = legs.length === 1 && instructions[0] === "SELL_TO_OPEN";
-    if (isNakedShort) return { kind: "unknown" };
-
-    const econLegs: EconomicsLeg[] = [];
-    for (const leg of legs) {
-      const sym = leg.instrument?.symbol ?? "";
-      const parsed = parseSchwabOptionSymbol(sym);
-      if (!parsed) return { kind: "unknown" };
-      econLegs.push({
-        strike: parsed.strike,
-        optionType: parsed.optionType,
-        instruction: normalizeInstruction(leg.instruction ?? "BUY_TO_OPEN"),
-      });
-    }
-
-    const sellOpens = instructions.filter((i) => i === "SELL_TO_OPEN").length;
-    const buyOpens = instructions.filter((i) => i === "BUY_TO_OPEN").length;
-    const isCredit = sellOpens > buyOpens;
-
-    if (price == null) return { kind: "unknown" };
-
-    const econ = computeOrderEconomics({
-      legs: econLegs,
-      limitPrice: price,
-      quantity: qty,
-      isCredit,
-      isOption: true,
-      contractCount: legs.reduce((s, l) => s + (l.quantity ?? 1), 0) * qty,
-    });
-    if (!econ) return { kind: "unknown" };
-    return { kind: "known", maxRisk: econ.maxRisk };
+  if (schwabOrderHasUncoveredShortRisk(order)) {
+    return { kind: "unknown" };
   }
-
-  if (price == null) return { kind: "unknown" };
-  const notional = price * qty;
-  return { kind: "known", maxRisk: notional };
+  const input = schwabOrderToEconomicsInput(order);
+  if (!input) return { kind: "unknown" };
+  const econ = computeOrderEconomics(input);
+  if (!econ) return { kind: "unknown" };
+  return { kind: "known", maxRisk: econ.maxRisk };
 }
