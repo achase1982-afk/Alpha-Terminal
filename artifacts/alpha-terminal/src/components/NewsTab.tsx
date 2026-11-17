@@ -208,7 +208,7 @@ export function NewsTab() {
     enabled: !!symbol,
     staleTime: 30 * 1000,
     refetchInterval: 60 * 1000,
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
   });
 
   const { data: secData } = useQuery<SecFilingsResponse>({

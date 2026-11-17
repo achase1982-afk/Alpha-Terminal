@@ -1,3 +1,4 @@
+import { getAuth } from "@clerk/express";
 import { Router, type IRouter } from "express";
 import {
   buildSchwab2AuthorizeUrl,
@@ -8,14 +9,12 @@ import {
 
 const router: IRouter = Router();
 
-function requireAdmin(req: { headers: Record<string, string | string[] | undefined> }): boolean {
-  const adminKey = process.env.ADMIN_API_KEY;
-  if (!adminKey) return false;
-  return req.headers["x-admin-key"] === adminKey;
-}
-
-/** Standalone market-data reconnect (app 2 only). */
-router.get("/schwab2-url", (_req, res) => {
+/** JSON URL for clients that fetch the authorize link (Clerk session required). */
+router.get("/schwab2-url", (req, res) => {
+  const auth = getAuth(req);
+  if (!auth?.userId && process.env.DEV_BYPASS_AUTH !== "true") {
+    return res.status(401).json({ error: "unauthorized" });
+  }
   const redirectUri = getSchwab2RedirectUri();
   if (!deskSchwab2Configured() || !redirectUri) {
     return res.json({
@@ -34,8 +33,15 @@ router.get("/schwab2-url", (_req, res) => {
   });
 });
 
-router.get("/schwab2/start", (req, res) => {
-  if (!requireAdmin(req)) return res.status(401).json({ error: "unauthorized" });
+/**
+ * Clerk-gated entry: open in browser while signed in to start app-2-only OAuth.
+ * Example: https://alpha-terminal-production-f297.up.railway.app/api/auth/schwab2/connect
+ */
+router.get("/schwab2/connect", (req, res) => {
+  const auth = getAuth(req);
+  if (!auth?.userId && process.env.DEV_BYPASS_AUTH !== "true") {
+    return res.status(401).json({ error: "unauthorized" });
+  }
   const built = buildSchwab2AuthorizeUrl();
   if (!built) {
     return res.status(503).json({
@@ -57,7 +63,7 @@ router.get("/schwab2/redirect-uri", (_req, res) => {
   });
 });
 
-/** Legacy alias — forwards are handled on trader-callback via state. */
+/** Legacy alias — forwards to trader-callback via state. */
 router.get("/schwab2-callback", (req, res) => {
   const q = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
   res.redirect(307, `/api/auth/trader-callback${q}`);

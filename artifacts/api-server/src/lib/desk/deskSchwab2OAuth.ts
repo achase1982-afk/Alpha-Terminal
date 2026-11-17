@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { getSchwabBrokerageRedirectUri, schwabBrokerageCallbackPath } from "./schwabOAuthRedirect.js";
 
 const SCHWAB_AUTH_BASE = "https://api.schwabapi.com/v1/oauth/authorize";
 
@@ -14,12 +15,9 @@ export function deskSchwab2Configured(): boolean {
   return Boolean(deskSchwab2AppKey() && deskSchwab2AppSecret());
 }
 
-import { getSchwabBrokerageRedirectUri, schwabBrokerageCallbackPath } from "./schwabOAuthRedirect.js";
-
 /** App 2 uses the same registered callback URL as app 1 (state distinguishes apps). */
 export function getSchwab2RedirectUri(): string {
-  const override = process.env.SCHWAB_REDIRECT_URI_2?.trim() || process.env.SCHWAB_REDIRECT_URI_2_PROD?.trim();
-  return override || getSchwabBrokerageRedirectUri();
+  return getSchwabBrokerageRedirectUri();
 }
 
 export function schwab2ExpectedCallbackPath(): string {

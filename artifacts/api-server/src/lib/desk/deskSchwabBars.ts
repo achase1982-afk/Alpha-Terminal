@@ -4,7 +4,8 @@ import {
   type DeskSchwabRestApp,
   deskSchwab2MarketFetch,
   deskSchwabMarkApp2AuthFailure,
-  deskSchwabRestAccessToken,
+  deskSchwabQuotesFeed,
+  deskSchwabRestResolve,
 } from "./deskSchwabRestCredential.js";
 
 const SCHWAB_API_BASE = "https://api.schwabapi.com/marketdata/v1";
@@ -40,17 +41,19 @@ export async function deskFetchSchwabBars(
   symbol: string,
   timeframe: string,
   limit: number,
-  app: DeskSchwabRestApp = "app2",
-): Promise<{ bars: DeskBar[]; asOfMs: number }> {
+  preferred: DeskSchwabRestApp = "app2",
+): Promise<{ bars: DeskBar[]; asOfMs: number; app: DeskSchwabRestApp; fellBack: boolean }> {
   const mapped = mapTimeframe(timeframe);
   if (!mapped) {
-    return { bars: [], asOfMs: Date.now() };
+    return { bars: [], asOfMs: Date.now(), app: preferred, fellBack: false };
   }
 
-  const token = await deskSchwabRestAccessToken(app);
+  const { token, app, fellBack } = await deskSchwabRestResolve(preferred);
+  const feed = deskSchwabQuotesFeed(app);
   if (!token) {
     if (app === "app1") deskMarkAuthFail("schwab_quotes_rest");
-    return { bars: [], asOfMs: Date.now() };
+    else deskMarkFeedError("schwab2_rest", "schwab2_oauth_required", "schwab_rest_2");
+    return { bars: [], asOfMs: Date.now(), app, fellBack };
   }
 
   const apiSymbol = deskFormatSchwabSymbol(symbol);
@@ -64,22 +67,23 @@ export async function deskFetchSchwabBars(
   });
 
   const url = `${SCHWAB_API_BASE}/pricehistory?${params.toString()}`;
-  const fetchFn = app === "app2" ? deskSchwab2MarketFetch : fetch;
-  const res = await fetchFn(url, {
-    headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(20_000),
-  });
+  const res =
+    app === "app2"
+      ? await deskSchwab2MarketFetch(url, { headers: { Authorization: `Bearer ${token}` } }, 20_000)
+      : await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(20_000),
+        });
 
   if (res.status === 401) {
     if (app === "app1") deskMarkAuthFail("schwab_quotes_rest");
     else deskSchwabMarkApp2AuthFailure(res.status);
-    return { bars: [], asOfMs: Date.now() };
+    return { bars: [], asOfMs: Date.now(), app, fellBack };
   }
 
   if (!res.ok) {
-    if (app === "app1") deskMarkFeedError("schwab_quotes_rest", `pricehistory_${res.status}`);
-    else deskMarkFeedError("schwab2_rest", `pricehistory_${res.status}`, "schwab_rest_2");
-    return { bars: [], asOfMs: Date.now() };
+    deskMarkFeedError(feed, `pricehistory_${res.status}`, app === "app2" ? "schwab_rest_2" : undefined);
+    return { bars: [], asOfMs: Date.now(), app, fellBack };
   }
 
   const json = (await res.json()) as { candles?: Array<Record<string, unknown>> };
@@ -95,7 +99,6 @@ export async function deskFetchSchwabBars(
   }));
 
   const asOfMs = bars.length ? Date.parse(bars[bars.length - 1]!.ts) : Date.now();
-  if (app === "app1") deskTouchFeed("schwab_quotes_rest", asOfMs);
-  else deskTouchFeed("schwab2_rest", asOfMs, "schwab_rest_2");
-  return { bars, asOfMs };
+  deskTouchFeed(feed, asOfMs, app === "app2" ? "schwab_rest_2" : undefined);
+  return { bars, asOfMs, app, fellBack };
 }

@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import type { SchwabReconnectFlow } from "@/lib/authNoticeStore";
 
 const NAVIGATION_TIMEOUT_MS = 90_000;
 const RETURN_RESET_DELAY_MS = 4_000;
@@ -27,7 +26,7 @@ const URL_REFRESH_INTERVAL_MS = 4 * 60 * 1000;
  * The OAuth URL contains a server-signed state with a TTL, so we refetch
  * whenever the PWA becomes visible again (cheap, idempotent).
  */
-export function useBrokerConnect(schwabReconnect: SchwabReconnectFlow = "brokerage") {
+export function useBrokerConnect() {
   const accessToken = useTerminalStore((s) => s.accessToken);
   const traderAccessToken = useTerminalStore((s) => s.traderAccessToken);
   const [oauthUrl, setOauthUrl] = useState<string | null>(null);
@@ -39,9 +38,7 @@ export function useBrokerConnect(schwabReconnect: SchwabReconnectFlow = "brokera
     if (fetchInFlightRef.current) return;
     fetchInFlightRef.current = true;
     try {
-      const path =
-        schwabReconnect === "market_data_app2" ? "/api/auth/schwab2-url" : "/api/auth/trader-url";
-      const res = await fetchWithAuth(path, { credentials: "include" });
+      const res = await fetchWithAuth("/api/auth/trader-url", { credentials: "include" });
       const data = await res.json();
       if (data?.url) setOauthUrl(data.url);
     } catch {
@@ -49,7 +46,7 @@ export function useBrokerConnect(schwabReconnect: SchwabReconnectFlow = "brokera
     } finally {
       fetchInFlightRef.current = false;
     }
-  }, [schwabReconnect]);
+  }, []);
 
   // Prefetch on mount.
   useEffect(() => {

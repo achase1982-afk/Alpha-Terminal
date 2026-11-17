@@ -21,6 +21,8 @@ type StoredTokenSet = {
 let tokenSet: StoredTokenSet | undefined;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 let refreshInFlight: Promise<boolean> | null = null;
+let refreshFailureCount = 0;
+let tokensDead = false;
 let dbReady = false;
 
 function basicAuth(key: string, secret: string): string {
@@ -142,8 +144,23 @@ function syncSchwab2HealthFromTokens(): void {
   }
 }
 
-async function doRefresh(retryCount = 0): Promise<boolean> {
-  if (!tokenSet?.refreshToken) return false;
+function responseLooksLikeDeadGrant(status: number, body: string): boolean {
+  if (status !== 400 && status !== 401) return false;
+  return /invalid_grant|expired|refresh token/i.test(body);
+}
+
+async function markSchwab2TokensDead(reason: string): Promise<void> {
+  tokensDead = true;
+  refreshFailureCount = 0;
+  tokenSet = undefined;
+  clearRefreshTimer();
+  await persistToDb();
+  deskMarkFeedAuthError("schwab2_rest", reason, "schwab_rest_2");
+  logger.warn({ reason }, "Schwab2TokenStore: tokens cleared (dead refresh grant)");
+}
+
+async function doRefresh(retryCount: number): Promise<boolean> {
+  if (tokensDead || !tokenSet?.refreshToken) return false;
 
   const appKey = deskSchwab2AppKey();
   const appSecret = deskSchwab2AppSecret();
@@ -168,8 +185,13 @@ async function doRefresh(retryCount = 0): Promise<boolean> {
 
     if (!res.ok) {
       logger.error({ status: res.status, body: text.slice(0, 300) }, "Schwab2TokenStore: refresh failed");
+      if (responseLooksLikeDeadGrant(res.status, text)) {
+        await markSchwab2TokensDead(`refresh_http_${res.status}_invalid_grant`);
+        return false;
+      }
       deskMarkFeedAuthError("schwab2_rest", `refresh_http_${res.status}`, "schwab_rest_2");
       if ((res.status === 400 || res.status === 401) && generationBefore === (tokenSet?.generation ?? 0)) {
+        refreshFailureCount = retryCount + 1;
         const delay = backoffDelayMs(retryCount);
         clearRefreshTimer();
         refreshTimer = setTimeout(() => {
@@ -197,11 +219,14 @@ async function doRefresh(retryCount = 0): Promise<boolean> {
       refreshExpiresAt: tokenSet.refreshExpiresAt,
     };
     await persistToDb();
+    refreshFailureCount = 0;
+    tokensDead = false;
     scheduleRefresh();
     syncSchwab2HealthFromTokens();
     return true;
   } catch (err) {
     logger.error({ err }, "Schwab2TokenStore: refresh network error");
+    refreshFailureCount = retryCount + 1;
     const delay = backoffDelayMs(retryCount);
     clearRefreshTimer();
     refreshTimer = setTimeout(() => {
@@ -213,8 +238,10 @@ async function doRefresh(retryCount = 0): Promise<boolean> {
 }
 
 export async function refreshSchwab2AccessToken(): Promise<boolean> {
+  if (tokensDead) return false;
   if (refreshInFlight) return refreshInFlight;
-  refreshInFlight = doRefresh();
+  const attempt = refreshFailureCount;
+  refreshInFlight = doRefresh(attempt);
   try {
     return await refreshInFlight;
   } finally {
@@ -244,6 +271,8 @@ export async function storeSchwab2Tokens(
   expiresIn = 1800,
   opts?: { newGrant?: boolean },
 ): Promise<void> {
+  tokensDead = false;
+  refreshFailureCount = 0;
   const now = Date.now();
   const prevGen = tokenSet?.generation ?? 0;
   tokenSet = {
@@ -260,8 +289,12 @@ export async function storeSchwab2Tokens(
   logger.info("Schwab2TokenStore: stored tokens (expires in %ds)", expiresIn);
 }
 
+export function isSchwab2TokenStoreDead(): boolean {
+  return tokensDead;
+}
+
 export function hasSchwab2Tokens(): boolean {
-  return Boolean(tokenSet?.accessToken && tokenSet.refreshToken);
+  return !tokensDead && Boolean(tokenSet?.accessToken && tokenSet.refreshToken);
 }
 
 export function getSchwab2AccessToken(): string | null {
@@ -279,6 +312,8 @@ export async function getSchwab2ValidAccessToken(): Promise<string | null> {
 
 export function resetSchwab2TokenStoreForTests(): void {
   tokenSet = undefined;
+  tokensDead = false;
+  refreshFailureCount = 0;
   clearRefreshTimer();
   refreshInFlight = null;
 }

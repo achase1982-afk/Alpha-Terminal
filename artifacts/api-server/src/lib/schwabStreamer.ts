@@ -17,6 +17,7 @@ import {
   deskComputeDeskLevelOneOptionsBudget,
   deskComputeDeskOptionsBookBudget,
 } from "./desk/deskStreamerBudget.js";
+import { deskStreamerDeskSymbolPlan } from "./desk/deskStreamerDeskSubs.js";
 import { registerDeskStreamerHealthReaders } from "./desk/deskSchwabStreamerBridge.js";
 
 export interface LiveQuote {
@@ -978,6 +979,28 @@ function sendDeskOptionsBookAdd(symbols: string[]): void {
   }
 }
 
+function sendDeskOptionsBookUnsubs(symbols: string[]): void {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
+  const req = buildRequest("OPTIONS_BOOK", "UNSUBS", {
+    keys: symbols.join(","),
+  });
+  if (req) {
+    sendStreamerJson({ requests: [req] });
+    logger.info({ count: symbols.length }, "Schwab streamer: desk OPTIONS_BOOK UNSUBS");
+  }
+}
+
+function sendDeskOptionUnsubs(symbols: string[]): void {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
+  const req = buildRequest("LEVELONE_OPTIONS", "UNSUBS", {
+    keys: symbols.join(","),
+  });
+  if (req) {
+    sendStreamerJson({ requests: [req] });
+    logger.info({ count: symbols.length }, "Schwab streamer: desk LEVELONE_OPTIONS UNSUBS");
+  }
+}
+
 function batchDeskAdd(send: (batch: string[]) => void, all: string[]): void {
   for (let i = 0; i < all.length; i += DESK_ADD_BATCH) {
     send(all.slice(i, i + DESK_ADD_BATCH));
@@ -1001,32 +1024,22 @@ export function deskStreamerAddEquity(symbols: string[]): number {
 
 export function deskStreamerSetDeskOptions(symbols: string[]): number {
   const budget = deskComputeDeskLevelOneOptionsBudget(subscribedOptionSymbols.size);
-  const allowed = new Set(
-    symbols
-      .map((s) => s.trim())
-      .filter((k) => k && !subscribedOptionSymbols.has(k)),
-  );
+  const plan = deskStreamerDeskSymbolPlan(deskAddedOptionSymbols, symbols, budget);
 
-  for (const s of [...deskAddedOptionSymbols]) {
-    if (!allowed.has(s)) deskAddedOptionSymbols.delete(s);
-  }
-
-  let ordered = [...allowed];
-  if (ordered.length > budget) {
-    ordered = ordered.slice(0, budget);
+  if (plan.remove.length > 0) {
+    for (const s of plan.remove) deskAddedOptionSymbols.delete(s);
+    if (connectionState === "connected") {
+      batchDeskAdd(sendDeskOptionUnsubs, plan.remove);
+    }
   }
 
-  const added: string[] = [];
-  for (const k of ordered) {
-    if (deskAddedOptionSymbols.has(k)) continue;
-    if (deskAddedOptionSymbols.size >= budget) break;
-    deskAddedOptionSymbols.add(k);
-    added.push(k);
+  deskAddedOptionSymbols.clear();
+  for (const k of plan.next) deskAddedOptionSymbols.add(k);
+
+  if (plan.add.length > 0 && connectionState === "connected") {
+    batchDeskAdd(sendDeskOptionAdd, plan.add);
   }
-  if (added.length > 0 && connectionState === "connected") {
-    batchDeskAdd(sendDeskOptionAdd, added);
-  }
-  return added.length;
+  return plan.add.length;
 }
 
 /** @deprecated use deskStreamerSetDeskOptions with pre-trimmed list */
@@ -1036,28 +1049,22 @@ export function deskStreamerAddOptions(symbols: string[]): number {
 
 export function deskStreamerSetDeskOptionsBook(symbols: string[]): number {
   const budget = deskComputeDeskOptionsBookBudget(subscribedOptionsBookSymbols.size);
-  const allowed = new Set(
-    symbols
-      .map((s) => s.trim())
-      .filter((k) => k && !subscribedOptionsBookSymbols.has(k)),
-  );
-  for (const s of [...deskAddedOptionsBookSymbols]) {
-    if (!allowed.has(s)) deskAddedOptionsBookSymbols.delete(s);
-  }
-  let ordered = [...allowed];
-  if (ordered.length > budget) ordered = ordered.slice(0, budget);
+  const plan = deskStreamerDeskSymbolPlan(deskAddedOptionsBookSymbols, symbols, budget);
 
-  const added: string[] = [];
-  for (const k of ordered) {
-    if (deskAddedOptionsBookSymbols.has(k)) continue;
-    if (deskAddedOptionsBookSymbols.size >= budget) break;
-    deskAddedOptionsBookSymbols.add(k);
-    added.push(k);
+  if (plan.remove.length > 0) {
+    for (const s of plan.remove) deskAddedOptionsBookSymbols.delete(s);
+    if (connectionState === "connected") {
+      batchDeskAdd(sendDeskOptionsBookUnsubs, plan.remove);
+    }
   }
-  if (added.length > 0 && connectionState === "connected") {
-    batchDeskAdd(sendDeskOptionsBookAdd, added);
+
+  deskAddedOptionsBookSymbols.clear();
+  for (const k of plan.next) deskAddedOptionsBookSymbols.add(k);
+
+  if (plan.add.length > 0 && connectionState === "connected") {
+    batchDeskAdd(sendDeskOptionsBookAdd, plan.add);
   }
-  return added.length;
+  return plan.add.length;
 }
 
 export function deskStreamerAddOptionsBook(symbols: string[]): number {

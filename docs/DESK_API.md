@@ -53,7 +53,7 @@ Outside a feed’s ET session window → `session_closed` and `stale=false`.
 | Method | Path | Notes |
 |--------|------|--------|
 | GET | `/health` | Feed freshness matrix + `schwab_oauth.app1` / `schwab_oauth.app2` token expiry metadata |
-| GET | `/quotes?symbols=&source=` | **Required** `source`: `schwab2` (default desk REST), `schwab` (brokerage app 1), `tradier`, `alpaca_paper`, `tastytrade` |
+| GET | `/quotes?symbols=&source=` | **Required** `source`: `schwab2` (prefer app 2 creds, fallback app 1), `schwab` (same credential resolution; labels reflect app used), `tradier`, `alpaca_paper`, `tastytrade` |
 | GET | `/tape/spx/stream` | SSE Schwab streamer frames `{rx_ns,c,dir?,m,session_date,rx_utc_ms}` |
 | GET | `/tape/spx/raw?session_date=&since_ns=` | Filtered desk-only streamer NDJSON (`{c,rx_ns,m}`); `rx_ns` is a JSON integer; `since_ns` remains a nanosecond string for pagination |
 | GET | `/gamma/live_gamma_0dte?source=unusual_whales` | Paginated UW expiry×strike gamma snapshot |
@@ -107,7 +107,7 @@ Universe refreshes on spot moves and expiry window changes. Desk `LEVELONE_OPTIO
 | `ALPACA_API_KEY_ID` + `ALPACA_API_SECRET_KEY` (or `APCA_*`) | Alpaca **news** path only |
 | `ALPACA_PAPER_API_KEY_ID` + `ALPACA_PAPER_API_SECRET_KEY` | Alpaca **paper** market data (quotes/bars); no trading endpoints |
 | `TASTYTRADE_CLIENT_SECRET` + `TASTYTRADE_REFRESH_TOKEN` | OAuth refresh (cached until expiry); REST quote probe; DXLink not opened on desk |
-| `SCHWAB_APP_KEY_2` + `SCHWAB_APP_SECRET_2` | Market-data-only OAuth app (no streamer, no trader/account). `SCHWAB_REDIRECT_URI_2` (+ `_PROD`) must be `https://<host>/api/auth/schwab2-callback` |
+| `SCHWAB_APP_KEY_2` + `SCHWAB_APP_SECRET_2` | Market-data-only OAuth app (no streamer, no trader/account). Authorize + token exchange use the same redirect as app 1: `https://alpha-terminal-production-f297.up.railway.app/api/auth/trader-callback` (override via `SCHWAB_TRADER_REDIRECT_URI_PROD`). Standalone reconnect: `GET /api/auth/schwab2/connect` (Clerk session → Schwab). Legacy alias: `/api/auth/schwab2-callback` → `trader-callback`. |
 | `ALPHAVANTAGE_API_KEY` | News + fundamentals (~25 calls/day; boot probe + on-demand only) |
 | `MARKETAUX_API_KEY`, `STOCKNEWS_API_KEY` | News |
 | `EODHD_API_KEY` | EOD bars (`source=eodhd`) |

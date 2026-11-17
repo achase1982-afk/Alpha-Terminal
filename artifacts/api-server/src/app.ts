@@ -25,6 +25,7 @@ const PUBLIC_API_PATHS = new Set<string>([
   "/auth/trader-url",
   "/auth/pending-session",
   "/auth/trader-pending-session",
+  "/auth/schwab2-callback",
   // Admin maintenance endpoints — protected by x-admin-key header instead of Clerk session
   "/admin/fmp/backfill",
   "/snapshot/admin/cleanup-iv-units",

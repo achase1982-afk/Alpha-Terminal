@@ -3,8 +3,9 @@ import { deskTouchFeed, deskMarkFeedError, deskMarkAuthFail } from "./deskFeedFr
 import {
   type DeskSchwabRestApp,
   deskSchwab2MarketFetch,
+  deskSchwabChainsFeed,
   deskSchwabMarkApp2AuthFailure,
-  deskSchwabRestAccessToken,
+  deskSchwabRestResolve,
 } from "./deskSchwabRestCredential.js";
 import { deskSessionDateEt } from "./deskEt.js";
 import { logger } from "../logger.js";
@@ -50,6 +51,7 @@ type CacheEntry = {
   fetchedAt: number;
   truncated: boolean;
   contract_count: number;
+  app: DeskSchwabRestApp;
 };
 
 const cache = new Map<string, CacheEntry>();
@@ -156,17 +158,26 @@ async function fetchChainUrl(
   app: DeskSchwabRestApp,
 ): Promise<Record<string, unknown> | null> {
   const fetchFn = app === "app2" ? deskSchwab2MarketFetch : fetch;
-  const res = await fetchFn(url, {
-    headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(45_000),
-  });
+  const res =
+    app === "app2"
+      ? await deskSchwab2MarketFetch(
+          url,
+          { headers: { Authorization: `Bearer ${token}` } },
+          45_000,
+        )
+      : await fetchFn(url, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(45_000),
+        });
   if (res.status === 401) {
     if (app === "app1") deskMarkAuthFail("schwab_chains");
     else deskSchwabMarkApp2AuthFailure(res.status);
     return null;
   }
   if (!res.ok) {
-    logger.debug({ status: res.status }, "Desk Schwab chain HTTP failed");
+    const feed = deskSchwabChainsFeed(app);
+    deskMarkFeedError(feed, `chain_http_${res.status}`, app === "app2" ? "schwab_rest_2" : undefined);
+    logger.debug({ status: res.status, app }, "Desk Schwab chain HTTP failed");
     return null;
   }
   return (await res.json()) as Record<string, unknown>;
@@ -224,6 +235,7 @@ async function fetchChainsFromSchwab(
     fetchedAt: Date.now(),
     truncated: clientLimited,
     contract_count: raw.length,
+    app,
   };
 }
 
@@ -231,7 +243,7 @@ export async function deskFetchSchwabChain(
   symbol: string,
   expiration: string,
   opts?: DeskChainQueryOpts,
-  app: DeskSchwabRestApp = "app2",
+  preferred: DeskSchwabRestApp = "app2",
 ): Promise<{
   underlyingPrice: number | null;
   raw: Record<string, unknown>[];
@@ -240,6 +252,8 @@ export async function deskFetchSchwabChain(
   session_date: string;
   truncated: boolean;
   contract_count: number;
+  app: DeskSchwabRestApp;
+  fellBack: boolean;
 }> {
   const sym = symbol.toUpperCase().trim();
   const exp = expiration.slice(0, 10);
@@ -247,8 +261,8 @@ export async function deskFetchSchwabChain(
   const key = cacheKey(sym, exp, opts);
   const hit = cache.get(key);
   if (hit && Date.now() - hit.fetchedAt < CACHE_TTL_MS) {
-    if (app === "app1") deskTouchFeed("schwab_chains", hit.fetchedAt);
-    else deskTouchFeed("schwab2_rest", hit.fetchedAt, "schwab_rest_2");
+    const feed = deskSchwabChainsFeed(hit.app);
+    deskTouchFeed(feed, hit.fetchedAt, hit.app === "app2" ? "schwab_rest_2" : undefined);
     return {
       underlyingPrice: hit.underlyingPrice,
       raw: hit.raw,
@@ -257,12 +271,16 @@ export async function deskFetchSchwabChain(
       session_date,
       truncated: hit.truncated,
       contract_count: hit.contract_count,
+      app: hit.app,
+      fellBack: hit.app !== preferred,
     };
   }
 
-  const token = await deskSchwabRestAccessToken(app);
+  const { token, app, fellBack } = await deskSchwabRestResolve(preferred);
+  const feed = deskSchwabChainsFeed(app);
   if (!token) {
     if (app === "app1") deskMarkAuthFail("schwab_chains");
+    else deskMarkFeedError("schwab2_rest", "schwab2_oauth_required", "schwab_rest_2");
     return {
       underlyingPrice: null,
       raw: [],
@@ -271,13 +289,14 @@ export async function deskFetchSchwabChain(
       session_date,
       truncated: false,
       contract_count: 0,
+      app,
+      fellBack,
     };
   }
 
   const entry = await fetchChainsFromSchwab(sym, exp, token, app, opts);
   if (!entry) {
-    if (app === "app1") deskMarkFeedError("schwab_chains", "schwab_chain_fetch_failed");
-    else deskMarkFeedError("schwab2_rest", "schwab_chain_fetch_failed", "schwab_rest_2");
+    deskMarkFeedError(feed, "schwab_chain_fetch_failed", app === "app2" ? "schwab_rest_2" : undefined);
     return {
       underlyingPrice: null,
       raw: [],
@@ -286,12 +305,13 @@ export async function deskFetchSchwabChain(
       session_date,
       truncated: false,
       contract_count: 0,
+      app,
+      fellBack,
     };
   }
 
   cache.set(key, entry);
-  if (app === "app1") deskTouchFeed("schwab_chains", entry.fetchedAt);
-  else deskTouchFeed("schwab2_rest", entry.fetchedAt, "schwab_rest_2");
+  deskTouchFeed(feed, entry.fetchedAt, app === "app2" ? "schwab_rest_2" : undefined);
   return {
     underlyingPrice: entry.underlyingPrice,
     raw: entry.raw,
@@ -300,5 +320,7 @@ export async function deskFetchSchwabChain(
     session_date,
     truncated: entry.truncated,
     contract_count: entry.contract_count,
+    app,
+    fellBack,
   };
 }
