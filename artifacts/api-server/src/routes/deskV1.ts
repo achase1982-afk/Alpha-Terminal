@@ -8,7 +8,7 @@ import {
 } from "../lib/desk/deskQuoteRowMeta.js";
 import { deskFetchSchwabQuotes } from "../lib/desk/deskSchwabQuotes.js";
 import { deskFetchSchwabChain } from "../lib/desk/deskSchwabChains.js";
-import { deskFetchSchwabBars } from "../lib/desk/deskSchwabBars.js";
+import { deskFetchSchwabBars, parseDeskBarIsoDate } from "../lib/desk/deskSchwabBars.js";
 import { deskTradierQuotes, getTradierToken } from "../lib/desk/deskTradier.js";
 import { deskFetchNews } from "../lib/desk/deskNews.js";
 import { deskFetchAlpacaNews } from "../lib/desk/deskAlpacaNews.js";
@@ -405,6 +405,22 @@ router.get("/bars", async (req, res) => {
   const symbol = ((req.query["symbol"] as string) ?? "SPY").toUpperCase();
   const timeframe = (req.query["timeframe"] as string) ?? "1d";
   const limit = Math.min(parseInt(String(req.query["limit"] ?? "100"), 10) || 100, 500);
+  const startRaw = req.query["start"] as string | undefined;
+  const endRaw = req.query["end"] as string | undefined;
+  let schwabRange: { startMs?: number; endMs?: number } | undefined;
+  if (startRaw || endRaw) {
+    const startMs = startRaw ? parseDeskBarIsoDate(startRaw, false) : undefined;
+    const endMs = endRaw ? parseDeskBarIsoDate(endRaw, true) : undefined;
+    if (startRaw && startMs == null) {
+      res.status(400).json({ error: "invalid_start", source: resolved.source, start: startRaw });
+      return;
+    }
+    if (endRaw && endMs == null) {
+      res.status(400).json({ error: "invalid_end", source: resolved.source, end: endRaw });
+      return;
+    }
+    schwabRange = { startMs: startMs ?? undefined, endMs: endMs ?? undefined };
+  }
   const session_date = deskSessionDateEt();
 
   if (resolved.source === "eodhd") {
@@ -457,7 +473,7 @@ router.get("/bars", async (req, res) => {
   }
 
   const schwabApp = deskSchwabRestAppFromDeskSource(resolved.source);
-  const { bars, asOfMs, app } = await deskFetchSchwabBars(symbol, timeframe, limit, schwabApp);
+  const { bars, asOfMs, app } = await deskFetchSchwabBars(symbol, timeframe, limit, schwabApp, schwabRange);
   const sourceLabel = app === "app2" ? "schwab2" : "schwab";
   const feed = app === "app2" ? "schwab2_rest" : "schwab_quotes_rest";
   res.json(
