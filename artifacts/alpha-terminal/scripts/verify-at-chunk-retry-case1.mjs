@@ -30,7 +30,7 @@ await page.addInitScript(() => {
   localStorage.setItem("alpha-terminal-storage", JSON.stringify({ state: { symbol: "$SPX" }, version: 35 }));
 });
 
-let portfolioFetches = 0;
+let portfolioAttempts = 0;
 page.on("request", (req) => {
   const url = req.url();
   if (/PortfolioView/i.test(url)) {
@@ -48,11 +48,9 @@ let blockPortfolio = true;
 await page.route("**/*", (route) => {
   const url = route.request().url();
   if (blockPortfolio && /PortfolioView/i.test(url)) {
-    portfolioFetches += 1;
-    if (portfolioFetches === 1) {
-      route.abort("failed");
-      return;
-    }
+    portfolioAttempts += 1;
+    route.abort("failed");
+    return;
   }
   route.continue();
 });
@@ -85,8 +83,8 @@ try {
   const retryBust = responses.some((r) => /atRetry=/.test(r.url));
   const cacheBustLog = after.log.some((e) => e.mode === "cache-bust" && e.attempt >= 1);
 
-  record("scoped error before retry", buildMeta.log.some((e) => !e.ok) || portfolioFetches >= 1, JSON.stringify(buildMeta.log));
-  record("second portfolio fetch", portfolioFetches >= 2 || responses.length >= 2, `fetches=${portfolioFetches} responses=${responses.length}`);
+  record("scoped error before retry", buildMeta.log.some((e) => !e.ok) || portfolioAttempts >= 1, JSON.stringify(buildMeta.log));
+  record("second portfolio fetch", blockPortfolio === false && responses.some((r) => r.status === 200), `attempts=${portfolioAttempts} responses=${responses.length}`);
   record("retry response ok", statuses.includes(200), JSON.stringify(statuses));
   record("cache-bust url on retry", retryBust || cacheBustLog, JSON.stringify({ retryBust, cacheBustLog, log: after.log }));
   record("portfolio recovered", !after.err, after.err ? "still error" : "ok");
