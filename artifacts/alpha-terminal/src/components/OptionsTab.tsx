@@ -63,7 +63,7 @@ import {
   isFuturesDisplaySymbol,
 } from "@/lib/futuresSchwabUi";
 import { optionChainMatchesActiveSymbol } from "@/lib/optionChainStaleGuard";
-import { mergeChainContractWithStream } from "@/lib/chainContractQuoteMerge";
+import { mergeChainContractWithStream, resolveChainDisplayQuote } from "@/lib/chainContractQuoteMerge";
 
 const EPS = 0.0001;
 
@@ -380,7 +380,7 @@ const OIBar = memo(function OIBar({ value, max }: { value: number; max: number }
 });
 
 const DataCell = memo(function DataCell({
-  col, contract, isSelected, onSelect, onLongPress, showInlineGreeks, maxOI, moneyness,
+  col, contract, isSelected, onSelect, onLongPress, showInlineGreeks, maxOI, moneyness, chainQuoteTs,
 }: {
   col: ColumnDef;
   contract: Contract | null;
@@ -390,6 +390,7 @@ const DataCell = memo(function DataCell({
   showInlineGreeks?: boolean;
   maxOI?: number;
   moneyness?: Moneyness;
+  chainQuoteTs: number;
 }) {
   const tick = useOptionTick(contract?.streamKey);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -398,9 +399,19 @@ const DataCell = memo(function DataCell({
   const startPos = useRef<{ x: number; y: number } | null>(null);
   const SWIPE_THRESHOLD = 10;
 
-  const topVal = getStreamVal(tick, col.topKey) ?? getContractVal(contract, col.topKey);
   const isBid = col.id === "bid";
   const isAsk = col.id === "ask";
+  const isPrice = isBid || isAsk;
+  const paired = isPrice
+    ? resolveChainDisplayQuote(contract, tick, chainQuoteTs)
+    : null;
+  const topVal =
+    isPrice && paired
+      ? col.id === "bid"
+        ? paired.bid
+        : paired.ask
+      : getStreamVal(tick, col.topKey) ?? getContractVal(contract, col.topKey);
+  const priceTapable = !isPrice || (paired?.tapable ?? false);
   const bottomVal = col.bottomKey
     ? (getStreamVal(tick, col.bottomKey) ?? getContractVal(contract, col.bottomKey))
     : undefined;
@@ -410,7 +421,6 @@ const DataCell = memo(function DataCell({
   const oiVal = isVol ? getContractVal(contract, "openInterest") : undefined;
   const isGreek = col.group === "Greeks";
   const isIV = col.id === "iv";
-  const isPrice = isBid || isAsk;
   const isShaded = moneyness === "itm" || moneyness === "otm";
 
   const deltaVal = isPrice && showInlineGreeks
@@ -456,7 +466,7 @@ const DataCell = memo(function DataCell({
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
     }
-    if (!didLongPress.current && !didSwipe.current && onSelect) onSelect();
+    if (!didLongPress.current && !didSwipe.current && onSelect && priceTapable) onSelect();
     startPos.current = null;
   }, [onSelect]);
 
@@ -864,6 +874,7 @@ function OptionsGrid({
   maxOI,
   accentHex,
   colW = COL_W,
+  chainQuoteTs,
 }: {
   rows: NormalizedRow[];
   underlyingPrice: number | null;
@@ -877,6 +888,7 @@ function OptionsGrid({
   maxOI: number;
   accentHex: string;
   colW?: number;
+  chainQuoteTs: number;
 }) {
   const sortedRows = useMemo(() => [...rows].sort((a, b) => a.strike - b.strike), [rows]);
 
@@ -946,6 +958,7 @@ function OptionsGrid({
                         <DataCell
                           col={col}
                           contract={row.call}
+                          chainQuoteTs={chainQuoteTs}
                           isSelected={isCallSelected && col.isPrice && callLeg?.side === col.id}
                           onSelect={col.isPrice && row.call ? () => onToggleLeg(row.call!, "CALL", col.id as "bid" | "ask") : undefined}
                           onLongPress={col.isPrice && row.call ? (e) => onLongPressCell({
@@ -999,6 +1012,7 @@ function OptionsGrid({
                         <DataCell
                           col={col}
                           contract={row.put}
+                          chainQuoteTs={chainQuoteTs}
                           isSelected={isPutSelected && col.isPrice && putLeg?.side === col.id}
                           onSelect={col.isPrice && row.put ? () => onToggleLeg(row.put!, "PUT", col.id as "bid" | "ask") : undefined}
                           onLongPress={col.isPrice && row.put ? (e) => onLongPressCell({
@@ -1026,7 +1040,7 @@ function OptionsGrid({
 function ExpirationSection({
   group, isOpen, onToggle, stickyTop, underlyingPrice,
   activeColumns, showCalls, showPuts, selectedLegs,
-  onToggleLeg, onLongPressCell, showInlineGreeks, accentHex, colW = COL_W,
+  onToggleLeg, onLongPressCell, showInlineGreeks, accentHex, colW = COL_W, chainQuoteTs,
 }: {
   group: ExpirationGroup;
   isOpen: boolean;
@@ -1042,6 +1056,7 @@ function ExpirationSection({
   showInlineGreeks: boolean;
   accentHex: string;
   colW?: number;
+  chainQuoteTs: number;
 }) {
   const stats = useStreamingExpirationStats(group.rows, underlyingPrice);
   const panelId = `options-exp-panel-${group.expiration.replace(/[^a-zA-Z0-9]/g, "-")}`;
@@ -1111,6 +1126,7 @@ function ExpirationSection({
           maxOI={stats.maxOI}
           accentHex={accentHex}
           colW={colW}
+          chainQuoteTs={chainQuoteTs}
         />
         </div>
       )}
@@ -1663,16 +1679,18 @@ export function OptionsTab({
     if (selectedLegs.size === 0) return [];
     const entries = [...selectedLegs.entries()].map(([key, l]) => {
       const tick = l.contract.streamKey ? streamTicksForLegs[l.contract.streamKey] : undefined;
-      const merged: Contract = { ...l.contract };
-      if (tick) {
-        if (tick.bid != null) merged.bid = tick.bid;
-        if (tick.ask != null) merged.ask = tick.ask;
-        if (tick.delta != null) merged.delta = tick.delta;
-        if (tick.gamma != null) merged.gamma = tick.gamma;
-        if (tick.theta != null) merged.theta = tick.theta;
-        if (tick.vega != null) merged.vega = tick.vega;
-        if (tick.iv != null) merged.iv = tick.iv;
-      }
+      const chainTs = dataUpdatedAt > 0 ? dataUpdatedAt : Date.now();
+      const q = mergeChainContractWithStream(l.contract, tick, chainTs);
+      const merged: Contract = {
+        ...l.contract,
+        bid: q.bid,
+        ask: q.ask,
+        delta: q.delta,
+        gamma: q.gamma,
+        theta: q.theta,
+        vega: q.vega,
+        iv: q.iv,
+      };
       const qty = legQuantities.get(key) ?? 1;
       return {
         key,
@@ -1693,7 +1711,7 @@ export function OptionsTab({
       return legs.slice(0, MAX_OPTION_LEGS);
     }
     return legs;
-  }, [selectedLegs, streamTicksForLegs, symbol, accounts, legQuantities, tradingAccountHash]);
+  }, [selectedLegs, streamTicksForLegs, symbol, accounts, legQuantities, tradingAccountHash, dataUpdatedAt]);
 
   const handleLayersClick = useCallback(() => {
     if (selectedLegs.size > 0) {
@@ -2034,6 +2052,7 @@ export function OptionsTab({
                   onLongPressCell={handleLongPressCell}
                   showInlineGreeks={showInlineGreeks}
                   accentHex={accentHex}
+                  chainQuoteTs={dataUpdatedAt > 0 ? dataUpdatedAt : Date.now()}
                 />
               );
             })}

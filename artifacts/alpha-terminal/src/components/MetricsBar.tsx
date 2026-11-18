@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useRef, useEffect, useState, useLayoutEffect, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { formatDisplaySymbol } from "@/lib/formatDisplaySymbol";
+import { formatDayRangeLabel } from "@/lib/formatDayRange";
 
 const UP_COLOR   = "#00d166";
 const DOWN_COLOR = "#f23645";
@@ -202,6 +203,7 @@ export function VolumeBar() {
   const vol = streamPrices[symbol]?.volume ?? quote?.volume ?? null;
   const dayHigh = streamPrices[symbol]?.high ?? quote?.high ?? null;
   const dayLow = streamPrices[symbol]?.low ?? quote?.low ?? null;
+  const dayRangeLabel = formatDayRangeLabel(dayHigh, dayLow, quote?.change ?? null);
   const wk52High = quote?.fiftyTwoWeekHigh ?? null;
   const wk52Low = quote?.fiftyTwoWeekLow ?? null;
 
@@ -216,10 +218,8 @@ export function VolumeBar() {
       </div>
       <div className="flex flex-col items-center gap-0.5">
         <span className="text-[9px] tracking-[0.12em] text-zinc-500 font-semibold leading-none">Day Range</span>
-        <span className="font-mono tabular-nums text-[13px] font-medium leading-none whitespace-nowrap">
-          <span style={{ color: DOWN_COLOR }}>${fmtPrice(dayLow)}</span>
-          <span className="text-zinc-600 mx-0.5">—</span>
-          <span style={{ color: UP_COLOR }}>${fmtPrice(dayHigh)}</span>
+        <span data-ui-audit="metrics-day-range" className="font-mono tabular-nums text-[13px] font-medium leading-none whitespace-nowrap text-zinc-300">
+          {dayRangeLabel}
         </span>
       </div>
       <div className="flex flex-col items-center gap-0.5">

@@ -931,7 +931,7 @@ export default function TerminalPage() {
   const { subscribeOptionSymbols, subscribeEquitySymbols, releaseOptionHold } = useMarketStream();
 
   const chartParams = chartParamsFromStore(chartPeriod, chartInterval);
-  const { data: historyData, isLoading: historyLoading } = useGetPriceHistory<PriceHistoryResponse>(
+  const { data: historyData, isLoading: historyLoading, isFetching: historyFetching } = useGetPriceHistory<PriceHistoryResponse>(
     {
       symbol,
       periodType: chartParams.periodType,
@@ -939,8 +939,14 @@ export default function TerminalPage() {
       frequencyType: chartParams.frequencyType,
       frequency: chartParams.frequency,
     },
-    { query: { enabled: !!accessToken && !!symbol } }
+    {
+      query: {
+        enabled: !!accessToken && !!symbol,
+        placeholderData: (prev) => prev,
+      },
+    },
   );
+  const chartLoading = historyLoading || historyFetching;
 
   useEffect(() => {
     if (historyData?.error === "unauthorized") {
@@ -1151,7 +1157,7 @@ export default function TerminalPage() {
                     <div className="tab-inner-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
                       <ChartControls />
                       <div className="h-[420px] sm:h-[500px] md:h-[580px] shrink-0">
-                        <TradingChart symbol={symbol} data={historyData?.candles || []} isLoading={historyLoading} error={historyData?.error} timedOut={historyTimedOut} tokenExpired={historyData?.error === "unauthorized"} intraday={isIntradayInterval(chartInterval)} timeframe={`${chartPeriod}/${chartInterval}`} />
+                        <TradingChart symbol={symbol} data={historyData?.candles || []} isLoading={chartLoading} error={historyData?.error} timedOut={historyTimedOut} tokenExpired={historyData?.error === "unauthorized"} intraday={isIntradayInterval(chartInterval)} timeframe={`${chartPeriod}/${chartInterval}`} />
                       </div>
                     </div>
                   )}
@@ -1189,7 +1195,7 @@ export default function TerminalPage() {
                     <ChartControls />
                   </div>
                   <div className="flex-1 min-h-0 relative" style={{ background: "#0c0c0c" }}>
-                    <TradingChart symbol={symbol} data={historyData?.candles || []} isLoading={historyLoading} error={historyData?.error} timedOut={historyTimedOut} tokenExpired={historyData?.error === "unauthorized"} intraday={isIntradayInterval(chartInterval)} timeframe={`${chartPeriod}/${chartInterval}`} />
+                    <TradingChart symbol={symbol} data={historyData?.candles || []} isLoading={chartLoading} error={historyData?.error} timedOut={historyTimedOut} tokenExpired={historyData?.error === "unauthorized"} intraday={isIntradayInterval(chartInterval)} timeframe={`${chartPeriod}/${chartInterval}`} />
                   </div>
                 </div>
 
@@ -1297,7 +1303,7 @@ export default function TerminalPage() {
                     <>
                       <ChartControls />
                       <div className="h-[580px]">
-                        <TradingChart symbol={symbol} data={historyData?.candles || []} isLoading={historyLoading} error={historyData?.error} timedOut={historyTimedOut} tokenExpired={historyData?.error === "unauthorized"} intraday={isIntradayInterval(chartInterval)} timeframe={`${chartPeriod}/${chartInterval}`} />
+                        <TradingChart symbol={symbol} data={historyData?.candles || []} isLoading={chartLoading} error={historyData?.error} timedOut={historyTimedOut} tokenExpired={historyData?.error === "unauthorized"} intraday={isIntradayInterval(chartInterval)} timeframe={`${chartPeriod}/${chartInterval}`} />
                       </div>
                     </>
                   )}

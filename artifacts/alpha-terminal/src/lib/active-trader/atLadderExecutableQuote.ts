@@ -1,6 +1,6 @@
 import type { OptionsContract } from "@/components/OptionsTab";
 import type { OptionTick } from "@/lib/options-stream-store";
-import { resolvePairedBidAsk } from "@workspace/order-ticket-math";
+import { chainDisplayQuoteState, resolvePairedBidAsk } from "@workspace/order-ticket-math";
 
 export function atLadderExecutableQuote(
   contract: OptionsContract | null | undefined,
@@ -17,6 +17,10 @@ export function atLadderExecutableQuote(
     contractTs: chainTs,
   });
   if (!pair || pair.crossed) return { bid: null, ask: null };
+  const rxMs = tick?.ts && tick.ts > 0 ? tick.ts : chainTs > 0 ? chainTs : null;
+  if (chainDisplayQuoteState(pair.bid, pair.ask, rxMs) !== "ok") {
+    return { bid: null, ask: null };
+  }
   const bid = pair.bid >= 0 ? pair.bid : null;
   const ask = pair.ask > 0 ? pair.ask : null;
   return { bid, ask };
