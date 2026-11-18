@@ -9,6 +9,12 @@ export interface ZoneModel {
   asOfLabel: string;
   /** e.g. `Closed · as of 4:15 PM` when session is closed. */
   glanceCaption?: string;
+  /** Prior 0DTE expiry: walls/flip show `— rolls at open`. */
+  wallsRollLabel?: string | null;
+  /** Coincident UW walls at ATM. */
+  gammaPinStrike?: number | null;
+  staleExpiry?: boolean;
+  dataExpiry?: string;
 }
 
 export interface ChainRowForZones {
