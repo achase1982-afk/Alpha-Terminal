@@ -173,21 +173,20 @@ function eventClockMs(
   if (tradeMs != null && tradeMs <= rxMs && rxMs - tradeMs <= DESK_LIVE_FLOW_TAPE_REORDER_MS) {
     clock = tradeMs;
   }
-  let bucket = bucketMs1s(clock);
-  if (st.lastEmitted1sBucketMs != null && bucket < st.lastEmitted1sBucketMs) {
-    if (st.open1s && st.open1s.bucket_ms >= st.lastEmitted1sBucketMs) {
-      bucket = st.open1s.bucket_ms;
-      clock = Math.max(clock, bucket);
-    } else {
-      clock = Math.max(rxMs, st.lastEmitted1sBucketMs + 1);
-      bucket = bucketMs1s(clock);
-    }
-  }
-  if (clock < st.lastPrintClockMs && st.open1s && bucketMs1s(clock) === st.open1s.bucket_ms) {
-    clock = Math.max(clock, st.lastPrintClockMs);
-  }
   st.lastPrintClockMs = Math.max(st.lastPrintClockMs, clock);
   return clock;
+}
+
+/** Never bucket backwards in time; fold late prints into the current open bucket. */
+function target1sBucketMs(st: SymbolState, printBucketMs: number, rxMs: number): number {
+  if (st.open1s && printBucketMs < st.open1s.bucket_ms) {
+    return st.open1s.bucket_ms;
+  }
+  if (st.lastEmitted1sBucketMs != null && printBucketMs <= st.lastEmitted1sBucketMs) {
+    if (st.open1s) return st.open1s.bucket_ms;
+    return bucketMs1s(Math.max(rxMs, st.lastEmitted1sBucketMs + 1000));
+  }
+  return printBucketMs;
 }
 
 function notionalDollars(
@@ -246,22 +245,18 @@ function addPrint(
   size: number,
   price: number,
   clockMs: number,
+  rxMs: number,
   src: TapeBucket1s["src"],
 ): void {
   ensureBucketTimer();
-  let bms = bucketMs1s(clockMs);
-  if (st.lastEmitted1sBucketMs != null && bms < st.lastEmitted1sBucketMs) {
-    if (st.open1s && st.open1s.bucket_ms >= st.lastEmitted1sBucketMs) {
-      bms = st.open1s.bucket_ms;
-    } else {
-      bms = bucketMs1s(Math.max(clockMs, st.lastEmitted1sBucketMs + 1));
-    }
-  } else if (st.open1s && bms === st.open1s.bucket_ms) {
-    bms = st.open1s.bucket_ms;
-  }
+  const bms = target1sBucketMs(st, bucketMs1s(clockMs), rxMs);
 
-  if (!st.open1s || st.open1s.bucket_ms !== bms) {
-    if (st.open1s) closeOpen1s(sym, st, clockMs);
+  if (!st.open1s) {
+    st.open1s = fresh1s(bms, src);
+  } else if (bms > st.open1s.bucket_ms) {
+    closeOpen1s(sym, st, rxMs);
+    st.open1s = fresh1s(bms, src);
+  } else if (st.open1s.bucket_ms !== bms) {
     st.open1s = fresh1s(bms, src);
   }
   const b = st.open1s;
@@ -457,12 +452,12 @@ export function deskLiveFlowTapeOnTimesaleEquity(
     const mid = q?.last ?? price;
     if (mid == null) return;
     st.timesaleSeen = true;
-    addPrint(st, sym, "mid", size, price, clockMs, "schwab_timesale");
+    addPrint(st, sym, "mid", size, price, clockMs, rxMs, "schwab_timesale");
     return;
   }
   const side = classifyFlowAgainstPriorQuote(price, bid, ask) ?? "mid";
   st.timesaleSeen = true;
-  addPrint(st, sym, side, size, price, clockMs, "schwab_timesale");
+  addPrint(st, sym, side, size, price, clockMs, rxMs, "schwab_timesale");
 }
 
 export function deskLiveFlowTapeOnTimesaleFutures(
@@ -485,12 +480,12 @@ export function deskLiveFlowTapeOnTimesaleFutures(
   const ask = q?.ask;
   if (bid == null || ask == null || ask < bid) {
     st.timesaleSeen = true;
-    addPrint(st, sym, "mid", size, price, clockMs, "schwab_timesale");
+    addPrint(st, sym, "mid", size, price, clockMs, rxMs, "schwab_timesale");
     return;
   }
   const side = classifyFlowAgainstPriorQuote(price, bid, ask) ?? "mid";
   st.timesaleSeen = true;
-  addPrint(st, sym, side, size, price, clockMs, "schwab_timesale");
+  addPrint(st, sym, side, size, price, clockMs, rxMs, "schwab_timesale");
 }
 
 function num(v: unknown): number | null {
@@ -532,7 +527,7 @@ function onL1Row(
         if (side) {
           st.l1Fallback = true;
           const clock = eventClockMs(quoteMs, rxMs, null, st);
-          if (clock != null) addPrint(st, sym, side, dVol, last, clock, "schwab_l1_est");
+          if (clock != null) addPrint(st, sym, side, dVol, last, clock, rxMs, "schwab_l1_est");
         }
       } else if (dVol < 0) {
         /* out-of-order volume: keep baseline */
@@ -597,7 +592,7 @@ export function deskLiveFlowTapeReplayPrints(
     if (clock == null) continue;
     const side = classifyFlowAgainstPriorQuote(p.price, p.bid, p.ask);
     if (!side) continue;
-    addPrint(st, symKey(sym), side, p.size, p.price, clock, "schwab_timesale");
+    addPrint(st, symKey(sym), side, p.size, p.price, clock, p.rxMs, "schwab_timesale");
   }
   deskLiveFlowTapeFlush(sym, prints.at(-1)?.rxMs ?? Date.now());
   return deskLiveFlowTestSliceFrames(before);

@@ -8,7 +8,9 @@ import {
 } from "../deskLiveFlowEngine.js";
 import { deskLiveFlowBucketsResetForTests } from "../deskLiveFlowBuckets.js";
 import {
+  deskLiveFlowTapeBucketTick,
   deskLiveFlowTapeFlush,
+  deskLiveFlowTapeOnTimesaleEquity,
   deskLiveFlowTapeReplayPrints,
   deskLiveFlowTapeOnEquityL1,
   deskLiveFlowTapeOnFuturesL1,
@@ -135,17 +137,52 @@ describe("deskLiveFlow review round 2", () => {
     expect(px.some((f) => f.last === 7353 && (f.src_ts_ms as number) < 10_090)).toBe(false);
   });
 
-  it("counts late prints into the open 1s bucket", () => {
+  it("probe: 500+800 then late 300 tradeMs 900@rx1300 counts 1600 total", () => {
     deskLiveFlowSubsAcquire("NVDA", "equity");
     const frames = deskLiveFlowTapeReplayPrints("NVDA", "equity", [
-      { price: 100, size: 1600, rxMs: 5_000, bid: 99.5, ask: 100, tradeMs: 5_000, seq: 1 },
-      { price: 100.5, size: 300, rxMs: 5_900, bid: 99.5, ask: 100, tradeMs: 5_100, seq: 2 },
+      { price: 10, size: 500, rxMs: 1_000, bid: 9.9, ask: 10, tradeMs: 500, seq: 1 },
+      { price: 10, size: 800, rxMs: 1_100, bid: 9.9, ask: 10, tradeMs: 1_000, seq: 2 },
+      { price: 10, size: 300, rxMs: 1_300, bid: 9.9, ask: 10, tradeMs: 900, seq: 3 },
+    ]);
+    const vol = frames
+      .filter((f) => f.type === "tape_1s")
+      .reduce(
+        (n, f) => n + Number(f.buy_vol ?? 0) + Number(f.sell_vol ?? 0) + Number(f.mid_vol ?? 0),
+        0,
+      );
+    expect(vol).toBe(1600);
+  });
+
+  it("probe: after bucket 1000 emitted, late 50 for that second folds into current open", () => {
+    deskLiveFlowSubsAcquire("NVDA", "equity");
+    deskLiveFlowTapeOnEquityL1("NVDA", { 1: 9.9, 2: 10, 3: 10 }, 1_000);
+    deskLiveFlowTapeReplayPrints("NVDA", "equity", [
+      { price: 10, size: 200, rxMs: 1_500, bid: 9.9, ask: 10, tradeMs: 1_000, seq: 1 },
+    ]);
+    deskLiveFlowTapeBucketTick(1_000 + 1_000 + 1_100);
+    vi.setSystemTime(2_500);
+    deskLiveFlowTapeOnTimesaleEquity("NVDA", 10, 50, 1_050, 2);
+    deskLiveFlowTapeFlush("NVDA", 2_500);
+    const vol = deskLiveFlowTestSliceFrames(0)
+      .filter((f) => f.type === "tape_1s")
+      .reduce(
+        (n, f) => n + Number(f.buy_vol ?? 0) + Number(f.sell_vol ?? 0) + Number(f.mid_vol ?? 0),
+        0,
+      );
+    expect(vol).toBe(250);
+  });
+
+  it("probe: late print folds into open bucket before first emit", () => {
+    deskLiveFlowSubsAcquire("NVDA", "equity");
+    const frames = deskLiveFlowTapeReplayPrints("NVDA", "equity", [
+      { price: 10, size: 100, rxMs: 2_000, bid: 9.9, ask: 10, tradeMs: 2_000, seq: 1 },
+      { price: 10, size: 50, rxMs: 2_050, bid: 9.9, ask: 10, tradeMs: 1_900, seq: 2 },
     ]);
     const tape = frames.find((f) => f.type === "tape_1s");
-    expect(tape).toBeDefined();
     const vol =
-      Number(tape!.buy_vol ?? 0) + Number(tape!.sell_vol ?? 0) + Number(tape!.mid_vol ?? 0);
-    expect(vol).toBe(1900);
+      Number(tape?.buy_vol ?? 0) + Number(tape?.sell_vol ?? 0) + Number(tape?.mid_vol ?? 0);
+    expect(vol).toBe(150);
+    expect(tape?.bucket_ms).toBe(2_000);
   });
 
   it("resets futures tape session state on reconnect", () => {

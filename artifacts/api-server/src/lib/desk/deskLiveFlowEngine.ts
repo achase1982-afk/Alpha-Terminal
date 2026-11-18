@@ -255,15 +255,41 @@ export function deskLiveFlowBucketTick(nowMs: number): void {
   }
 }
 
+function pxSrcTs(
+  item: Record<string, unknown>,
+  rxMs: number,
+  prev: { last: number | null; bid: number | null; ask: number | null },
+  next: { last: number | null; bid: number | null; ask: number | null },
+): number {
+  const quoteTs = num(item["34"]) ?? rxMs;
+  const tradeTs = num(item["35"]) ?? rxMs;
+  const lastChg = next.last !== prev.last;
+  const quoteChg = next.bid !== prev.bid || next.ask !== prev.ask;
+  if (lastChg && quoteChg) return Math.max(quoteTs, tradeTs);
+  if (lastChg) return tradeTs;
+  return quoteTs;
+}
+
+function emitPxFrame(
+  last: number | null,
+  bid: number | null,
+  ask: number | null,
+  srcTs: number,
+  rxMs: number,
+): void {
+  lastPx = { last, bid, ask };
+  lastEmittedPxSrcTs = Math.max(lastEmittedPxSrcTs, srcTs);
+  const payload = { type: "px", sym: "$SPX", last, bid, ask };
+  recordFrame(wrapDeskLiveFlowFrame(payload, srcTs, rxMs));
+}
+
 function flushPxTrailing(rxMs: number): void {
   if (!pxTrailing || !deskLiveFlowPxEnabled()) return;
   const { last, bid, ask, srcTs } = pxTrailing;
   pxTrailing = null;
   pxTrailingTimer = null;
   if (srcTs < lastEmittedPxSrcTs) return;
-  lastEmittedPxSrcTs = srcTs;
-  const payload = { type: "px", sym: "$SPX", last, bid, ask };
-  recordFrame(wrapDeskLiveFlowFrame(payload, srcTs, rxMs));
+  emitPxFrame(last, bid, ask, srcTs, rxMs);
 }
 
 export function deskLiveFlowEmitPx(symKey: string, item: Record<string, unknown>, rxMs: number): void {
@@ -272,9 +298,8 @@ export function deskLiveFlowEmitPx(symKey: string, item: Record<string, unknown>
   const last = num(item["3"]) ?? lastPx.last;
   const bid = num(item["1"]) ?? lastPx.bid;
   const ask = num(item["2"]) ?? lastPx.ask;
-  const srcTs = num(item["34"]) ?? num(item["35"]) ?? rxMs;
   if (lastPx.last === last && lastPx.bid === bid && lastPx.ask === ask) return;
-  lastPx = { last, bid, ask };
+  const srcTs = pxSrcTs(item, rxMs, lastPx, { last, bid, ask });
   if (rxMs - pxWindowStartMs >= 1000) {
     pxWindowStartMs = rxMs;
     pxEmitsInWindow = 0;
@@ -292,9 +317,7 @@ export function deskLiveFlowEmitPx(symKey: string, item: Record<string, unknown>
   }
   pxTrailing = null;
   pxEmitsInWindow += 1;
-  lastEmittedPxSrcTs = Math.max(lastEmittedPxSrcTs, srcTs);
-  const payload = { type: "px", sym: "$SPX", last, bid, ask };
-  recordFrame(wrapDeskLiveFlowFrame(payload, srcTs, rxMs));
+  emitPxFrame(last, bid, ask, srcTs, rxMs);
 }
 
 export function deskLiveFlowOnStreamerSessionReset(_reason: string): void {
