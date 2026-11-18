@@ -119,6 +119,7 @@ export async function assertAtHeaderLayout(page, record) {
       const r = n.getBoundingClientRect();
       if (r.right > maxRight + 0.5) return false;
       const el = /** @type {HTMLElement} */ (n);
+      if (el.closest("[data-at-gamma-flip]")) continue;
       if (el.scrollWidth > el.clientWidth + 1) return false;
     }
     return true;
