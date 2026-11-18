@@ -5,7 +5,11 @@ import type { DeskNetPremiumGlance } from "@/lib/active-trader/deskFlowNetPremiu
 import { formatStrikeLevel } from "@/lib/active-trader/atExpiryPill";
 import { fmtGlanceFlowAmount } from "@/lib/active-trader/deskFlowMoneyFormat";
 
-const TRACK_H = 14;
+const TRACK_H = 15;
+const FLOW_LABEL_PX = 11;
+const FLOW_VALUE_PX = 11;
+const WALL_LABEL_PX = 10;
+const WALL_VALUE_PX = 13;
 const SCALE_FLOOR = 50_000;
 const SCALE_DECAY = 0.94;
 
@@ -47,11 +51,14 @@ function GrossFlowTrack({
     <div data-at-gross-flow-row={side} className="flex items-center gap-0.5 min-w-0" style={{ height: TRACK_H }}>
       <span
         className="shrink-0"
-        style={{ width: 28, fontSize: 7, fontWeight: 600, color: AT_LABEL, letterSpacing: "0.04em" }}
+        style={{ width: 26, fontSize: FLOW_LABEL_PX, fontWeight: 600, color: AT_LABEL, letterSpacing: "0.03em" }}
       >
         {sideTag}
       </span>
-      <span className="num shrink-0 whitespace-nowrap" style={{ fontSize: 7, fontWeight: 600, color: DOWN_TEXT, minWidth: 50 }}>
+      <span
+        className="num shrink-0 whitespace-nowrap"
+        style={{ ...{ fontFeatureSettings: '"tnum" 1' }, fontSize: FLOW_VALUE_PX, fontWeight: 600, color: DOWN_TEXT, minWidth: 44 }}
+      >
         Sold {fmtSoldBought(soldUsd, dashAmounts)}
       </span>
       <div
@@ -87,13 +94,16 @@ function GrossFlowTrack({
         ) : null}
         <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: 1, background: "rgba(255,255,255,0.28)" }} />
       </div>
-      <span className="num shrink-0 whitespace-nowrap" style={{ fontSize: 7, fontWeight: 600, color: UP, minWidth: 56, textAlign: "right" }}>
+      <span
+        className="num shrink-0 whitespace-nowrap"
+        style={{ fontFeatureSettings: '"tnum" 1', fontSize: FLOW_VALUE_PX, fontWeight: 600, color: UP, minWidth: 52, textAlign: "right" }}
+      >
         Bought {fmtSoldBought(boughtUsd, dashAmounts)}
       </span>
-      <div aria-hidden style={{ width: 1, alignSelf: "stretch", background: `${GOLD}88`, marginLeft: 2, marginRight: 2 }} />
-      <div className="num shrink-0 flex flex-col items-end" data-at-flow-wall={side} style={{ width: 46, lineHeight: 1 }}>
-        <span style={{ fontSize: 7, fontWeight: 500, color: AT_LABEL }}>{wallLabel}</span>
-        <span style={{ fontSize: 8, fontWeight: 600, color: wallColor }}>
+      <div aria-hidden style={{ width: 1, alignSelf: "stretch", background: `${GOLD}88`, marginLeft: 1, marginRight: 1 }} />
+      <div className="num shrink-0 flex flex-col items-end" data-at-flow-wall={side} style={{ width: 52, lineHeight: 1.05 }}>
+        <span style={{ fontSize: WALL_LABEL_PX, fontWeight: 600, color: AT_LABEL }}>{wallLabel}</span>
+        <span style={{ fontSize: WALL_VALUE_PX, fontWeight: 700, color: wallColor }}>
           {wallValue != null ? formatStrikeLevel(wallValue) : "\u2014"}
         </span>
       </div>

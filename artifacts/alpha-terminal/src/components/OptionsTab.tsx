@@ -1334,17 +1334,18 @@ export function OptionsTab({
   const chainStrikeCount =
     optionsSubView === "at" ? Math.max(strikeCount, AT_LADDER_STRIKE_COUNT) : strikeCount;
 
-  const { data: rawData, isLoading, error, isFetching, dataUpdatedAt } = useGetOptionChain<OptionChainResponse>(
-    { symbol, contractType: "ALL", strikeCount: chainStrikeCount },
-    {
-      query: {
-        enabled: !!accessToken && !!symbol && !fixtureChain,
-        staleTime: 30_000,
-        gcTime: 5 * 60_000,
-        retry: isFuturesSymbol ? false : 2,
+  const { data: rawData, isLoading, error, isFetching, dataUpdatedAt, refetch: refetchOptionChain } =
+    useGetOptionChain<OptionChainResponse>(
+      { symbol, contractType: "ALL", strikeCount: chainStrikeCount },
+      {
+        query: {
+          enabled: !!accessToken && !!symbol && !fixtureChain,
+          staleTime: 30_000,
+          gcTime: 5 * 60_000,
+          retry: isFuturesSymbol ? false : 2,
+        },
       },
-    },
-  );
+    );
 
   const data = useMemo(() => {
     if (fixtureChain) {
@@ -1406,6 +1407,13 @@ export function OptionsTab({
     quote?.last ??
     data?.underlyingPrice ??
     null;
+
+  const chainAnchorPx = rawData?.underlyingPrice ?? null;
+  useEffect(() => {
+    if (fixtureChain || underlyingPrice == null || chainAnchorPx == null) return;
+    if (Math.abs(chainAnchorPx - underlyingPrice) < 25) return;
+    void refetchOptionChain();
+  }, [underlyingPrice, chainAnchorPx, fixtureChain, refetchOptionChain]);
 
   const chainHoldSig = useMemo(() => {
     if (!data) return null;

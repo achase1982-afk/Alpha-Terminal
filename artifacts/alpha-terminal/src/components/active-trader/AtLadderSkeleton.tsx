@@ -4,13 +4,19 @@ import {
   MONO, FW_LIGHT,
 } from "@/components/options/optionsTheme";
 import { AT_LADDER_GRID, AT_LADDER_ROW_H } from "@/lib/active-trader/atLadderLayout";
+import { atLadderSkeletonStrikes } from "@/lib/active-trader/atLadderSkeletonStrikes";
 
-const PLACEHOLDER_STRIKES = [7560, 7555, 7550, 7545, 7540, 7535, 7530, 7525, 7520, 7515, 7510];
-
-export const AtLadderSkeleton = memo(function AtLadderSkeleton({ accentHex }: { accentHex: string }) {
+export const AtLadderSkeleton = memo(function AtLadderSkeleton({
+  accentHex,
+  underlyingPrice,
+}: {
+  accentHex: string;
+  underlyingPrice: number | null;
+}) {
+  const strikes = atLadderSkeletonStrikes(underlyingPrice);
   return (
-    <div>
-      {PLACEHOLDER_STRIKES.map((strike) => (
+    <div data-at-ladder-skeleton aria-hidden>
+      {strikes.map((strike) => (
         <div
           key={strike}
           className="grid items-center w-full animate-pulse"

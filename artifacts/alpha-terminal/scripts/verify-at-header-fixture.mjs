@@ -5,8 +5,9 @@ import { webkit } from "playwright";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { assertAtHeaderLayout } from "./lib/at-header-layout-assert.mjs";
+import { AT_FIXTURE_BASE, ensureAtFixtureVite } from "./lib/at-fixture-vite.mjs";
 
-const BASE = process.env.AT_VERIFY_BASE ?? "http://127.0.0.1:5173";
+const BASE = process.env.AT_VERIFY_BASE ?? AT_FIXTURE_BASE;
 const OUT = process.env.AT_VERIFY_OUT ?? "/opt/cursor/artifacts/at-header-fixture";
 
 const checks = [];
@@ -14,16 +15,28 @@ function record(name, pass, detail) {
   checks.push({ name, pass, detail });
 }
 
+let viteChild = null;
+try {
+  viteChild = await ensureAtFixtureVite();
+} catch (err) {
+  record("fixture vite", false, err instanceof Error ? err.message : String(err));
+}
+
 await mkdir(OUT, { recursive: true });
 const browser = await webkit.launch();
 const page = await browser.newPage({ viewport: { width: 440, height: 956 } });
 
+const fixtureUrl = BASE.includes("/dev/active-trader")
+  ? `${BASE}?fixture=spx&scene=header-down`
+  : `${BASE}/dev/active-trader?fixture=spx&scene=header-down`;
+
 try {
-  await page.goto(`${BASE}/dev/active-trader?fixture=spx&scene=header-down`, {
-    waitUntil: "domcontentloaded",
-    timeout: 120_000,
-  });
-  await page.locator("[data-at-glance-top]").first().waitFor({ state: "visible", timeout: 90_000 });
+  await page.goto(fixtureUrl, { waitUntil: "domcontentloaded", timeout: 120_000 });
+  const glance = page.locator("[data-at-glance-top]").first();
+  await glance.waitFor({ state: "attached", timeout: 90_000 });
+  const visible = await glance.isVisible();
+  record("glance header attached", true, visible ? "visible" : "attached");
+  if (!visible) record("glance header visible", false, "not visible");
   await page.waitForTimeout(1500);
   await assertAtHeaderLayout(page, record);
 
@@ -53,6 +66,7 @@ try {
 
 await writeFile(path.join(OUT, "report.json"), JSON.stringify({ checks }, null, 2));
 await browser.close();
+if (viteChild) viteChild.kill();
 const failed = checks.filter((c) => !c.pass);
 console.log(JSON.stringify({ failed: failed.length, checks }, null, 2));
 process.exit(failed.length ? 1 : 0);

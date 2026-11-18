@@ -1,12 +1,19 @@
 import { webkit, devices } from "playwright";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
+import { AT_FIXTURE_BASE, ensureAtFixtureVite, waitForLiveLadder } from "./lib/at-fixture-vite.mjs";
 
 const LIVE = process.env.AT_VERIFY_LIVE ?? "https://alpha-terminal-production-f297.up.railway.app";
-const FIXTURE = process.env.AT_VERIFY_BASE ?? "http://127.0.0.1:3000";
+const FIXTURE = process.env.AT_VERIFY_BASE ?? AT_FIXTURE_BASE;
 const OUT = process.env.AT_VERIFY_OUT ?? "/opt/cursor/artifacts/at-header-states";
 
 await mkdir(OUT, { recursive: true });
+let viteChild = null;
+try {
+  viteChild = await ensureAtFixtureVite();
+} catch {
+  /* live-only capture */
+}
 
 const IPHONE = devices["iPhone 17 Pro Max"] ?? devices["iPhone 14 Pro Max"];
 const browser = await webkit.launch();
@@ -36,16 +43,17 @@ async function capture(url, name, fixture) {
     const viewSel = page.locator('[data-at-view-selector] select, select[aria-label="Options view"]');
     await viewSel.first().selectOption("at").catch(() => undefined);
     await page.waitForSelector("[data-at-glance-top]", { timeout: 90_000 });
+    await waitForLiveLadder(page);
   }
   await page.screenshot({ path: path.join(OUT, name), fullPage: true });
   await context.close();
 }
 
 await capture(LIVE, "at-header-live-closed-440x956.png", false);
-await capture(
-  `${FIXTURE}/dev/active-trader?fixture=spx&scene=header-down`,
-  "at-header-fixture-full-440x956.png",
-  true,
-);
+const fixtureUrl = FIXTURE.includes("/dev/active-trader")
+  ? `${FIXTURE}?fixture=spx&scene=header-down`
+  : `${FIXTURE}/dev/active-trader?fixture=spx&scene=header-down`;
+await capture(fixtureUrl, "at-header-fixture-full-440x956.png", true);
 await browser.close();
+if (viteChild) viteChild.kill();
 console.log(JSON.stringify({ out: OUT }, null, 2));
