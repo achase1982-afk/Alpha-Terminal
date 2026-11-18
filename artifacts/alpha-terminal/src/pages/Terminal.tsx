@@ -1,4 +1,4 @@
-import { lazy, useState, useEffect, useLayoutEffect, useRef, useCallback, useId, type ComponentProps } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useId, type ComponentProps } from "react";
 import { LazyRouteView } from "@/components/LazyRouteView";
 import { setLazyRecoveryTradeLatch } from "@/lib/lazyChunkRecovery";
 import { Sidebar, type SidebarHandle } from "@/components/Sidebar";
@@ -73,100 +73,124 @@ function LazyStripFallback() {
   return <div className="h-9 animate-pulse bg-card/40" aria-busy="true" />;
 }
 
-const OptionsTabLazy = lazy(() => import("@/components/OptionsTab").then((m) => ({ default: m.OptionsTab })));
-function OptionsTab(props: ComponentProps<typeof OptionsTabLazy>) {
+function OptionsTab(props: ComponentProps<typeof import("@/components/OptionsTab").OptionsTab>) {
   return (
-    <LazyRouteView viewName="Options" fallback={<LazyViewFallback />}>
-      {(key) => <OptionsTabLazy key={key} {...props} />}
-    </LazyRouteView>
+    <LazyRouteView
+      viewName="Options"
+      fallback={<LazyViewFallback />}
+      loader={() => import("@/components/OptionsTab").then((m) => ({ default: m.OptionsTab }))}
+      render={(C, key) => <C key={key} {...props} />}
+    />
   );
 }
-const AiIntelligenceTabLazy = lazy(() => import("@/components/AiIntelligenceTab").then((m) => ({ default: m.AiIntelligenceTab })));
-function AiIntelligenceTab(props: ComponentProps<typeof AiIntelligenceTabLazy>) {
+function AiIntelligenceTab(props: ComponentProps<typeof import("@/components/AiIntelligenceTab").AiIntelligenceTab>) {
   return (
-    <LazyRouteView viewName="AI" fallback={<LazyViewFallback />}>
-      {(key) => <AiIntelligenceTabLazy key={key} {...props} />}
-    </LazyRouteView>
+    <LazyRouteView
+      viewName="AI"
+      fallback={<LazyViewFallback />}
+      loader={() => import("@/components/AiIntelligenceTab").then((m) => ({ default: m.AiIntelligenceTab }))}
+      render={(C, key) => <C key={key} {...props} />}
+    />
   );
 }
-const NewsTabLazy = lazy(() => import("@/components/NewsTab").then((m) => ({ default: m.NewsTab })));
 function NewsTab() {
   return (
-    <LazyRouteView viewName="News" fallback={<LazyViewFallback />}>
-      {(key) => <NewsTabLazy key={key} />}
-    </LazyRouteView>
+    <LazyRouteView
+      viewName="News"
+      fallback={<LazyViewFallback />}
+      loader={() => import("@/components/NewsTab").then((m) => ({ default: m.NewsTab }))}
+      render={(C, key) => <C key={key} />}
+    />
   );
 }
-const PortfolioViewLazy = lazy(() => import("@/components/PortfolioView").then((m) => ({ default: m.PortfolioView })));
-function PortfolioView(props: ComponentProps<typeof PortfolioViewLazy>) {
+function PortfolioView(props: ComponentProps<typeof import("@/components/PortfolioView").PortfolioView>) {
   return (
-    <LazyRouteView viewName="Portfolio" fallback={<LazyViewFallback />}>
-      {(key) => <PortfolioViewLazy key={key} {...props} />}
-    </LazyRouteView>
+    <LazyRouteView
+      viewName="Portfolio"
+      fallback={<LazyViewFallback />}
+      loader={() => import("@/components/PortfolioView").then((m) => ({ default: m.PortfolioView }))}
+      render={(C, key) => <C key={key} {...props} />}
+    />
   );
 }
-const DashboardWorkspaceLazy = lazy(() => import("@/components/dashboard/DashboardWorkspace").then((m) => ({ default: m.DashboardWorkspace })));
-function DashboardWorkspace(props: ComponentProps<typeof DashboardWorkspaceLazy>) {
+function DashboardWorkspace(props: ComponentProps<typeof import("@/components/dashboard/DashboardWorkspace").DashboardWorkspace>) {
   return (
-    <LazyRouteView viewName="Dashboard" fallback={<LazyViewFallback />}>
-      {(key) => <DashboardWorkspaceLazy key={key} {...props} />}
-    </LazyRouteView>
+    <LazyRouteView
+      viewName="Dashboard"
+      fallback={<LazyViewFallback />}
+      loader={() => import("@/components/dashboard/DashboardWorkspace").then((m) => ({ default: m.DashboardWorkspace }))}
+      render={(C, key) => <C key={key} {...props} />}
+    />
   );
 }
-const CompanySwipablePagesLazy = lazy(() => import("@/components/CompanySwipablePages").then((m) => ({ default: m.CompanySwipablePages })));
-function CompanySwipablePages(props: ComponentProps<typeof CompanySwipablePagesLazy>) {
+function CompanySwipablePages(props: ComponentProps<typeof import("@/components/CompanySwipablePages").CompanySwipablePages>) {
   return (
-    <LazyRouteView viewName="Company" fallback={<LazyViewFallback />}>
-      {(key) => <CompanySwipablePagesLazy key={key} {...props} />}
-    </LazyRouteView>
+    <LazyRouteView
+      viewName="Company"
+      fallback={<LazyViewFallback />}
+      loader={() => import("@/components/CompanySwipablePages").then((m) => ({ default: m.CompanySwipablePages }))}
+      render={(C, key) => <C key={key} {...props} />}
+    />
   );
 }
-const MarketNewsChatPanelLazy = lazy(() => import("@/components/MarketNewsChatPanel").then((m) => ({ default: m.MarketNewsChatPanel })));
-function MarketNewsChatPanel(props: ComponentProps<typeof MarketNewsChatPanelLazy>) {
+function MarketNewsChatPanel(props: ComponentProps<typeof import("@/components/MarketNewsChatPanel").MarketNewsChatPanel>) {
   return (
-    <LazyRouteView viewName="Chat" fallback={<LazyViewFallback />}>
-      {(key) => <MarketNewsChatPanelLazy key={key} {...props} />}
-    </LazyRouteView>
+    <LazyRouteView
+      viewName="Chat"
+      fallback={<LazyViewFallback />}
+      loader={() => import("@/components/MarketNewsChatPanel").then((m) => ({ default: m.MarketNewsChatPanel }))}
+      render={(C, key) => <C key={key} {...props} />}
+    />
   );
 }
-const CompanySectionTabBarLazy = lazy(() => import("@/components/CompanyResearchHub").then((m) => ({ default: m.CompanySectionTabBar })));
-function CompanySectionTabBar(props: ComponentProps<typeof CompanySectionTabBarLazy>) {
+function CompanySectionTabBar(props: ComponentProps<typeof import("@/components/CompanyResearchHub").CompanySectionTabBar>) {
   return (
-    <LazyRouteView viewName="Company tabs" fallback={<LazyStripFallback />}>
-      {(key) => <CompanySectionTabBarLazy key={key} {...props} />}
-    </LazyRouteView>
+    <LazyRouteView
+      viewName="Company tabs"
+      fallback={<LazyStripFallback />}
+      loader={() => import("@/components/CompanyResearchHub").then((m) => ({ default: m.CompanySectionTabBar }))}
+      render={(C, key) => <C key={key} {...props} />}
+    />
   );
 }
-const StrategyBuilderLazy = lazy(() => import("@/components/StrategyBuilder").then((m) => ({ default: m.StrategyBuilder })));
-function StrategyBuilder(props: ComponentProps<typeof StrategyBuilderLazy>) {
+function StrategyBuilder(props: ComponentProps<typeof import("@/components/StrategyBuilder").StrategyBuilder>) {
   return (
-    <LazyRouteView viewName="Strategy builder" fallback={null}>
-      {(key) => <StrategyBuilderLazy key={key} {...props} />}
-    </LazyRouteView>
+    <LazyRouteView
+      viewName="Strategy builder"
+      fallback={null}
+      loader={() => import("@/components/StrategyBuilder").then((m) => ({ default: m.StrategyBuilder }))}
+      render={(C, key) => <C key={key} {...props} />}
+    />
   );
 }
-const OrderTicketLazy = lazy(() => import("@/components/OrderTicket").then((m) => ({ default: m.OrderTicket })));
-function OrderTicket(props: ComponentProps<typeof OrderTicketLazy>) {
+function OrderTicket(props: ComponentProps<typeof import("@/components/OrderTicket").OrderTicket>) {
   return (
-    <LazyRouteView viewName="Order ticket" fallback={null}>
-      {(key) => <OrderTicketLazy key={key} {...props} />}
-    </LazyRouteView>
+    <LazyRouteView
+      viewName="Order ticket"
+      fallback={null}
+      loader={() => import("@/components/OrderTicket").then((m) => ({ default: m.OrderTicket }))}
+      render={(C, key) => <C key={key} {...props} />}
+    />
   );
 }
-const InAppBrowserLazy = lazy(() => import("@/components/InAppBrowser").then((m) => ({ default: m.InAppBrowser })));
 function InAppBrowser() {
   return (
-    <LazyRouteView viewName="Browser" fallback={null}>
-      {(key) => <InAppBrowserLazy key={key} />}
-    </LazyRouteView>
+    <LazyRouteView
+      viewName="Browser"
+      fallback={null}
+      loader={() => import("@/components/InAppBrowser").then((m) => ({ default: m.InAppBrowser }))}
+      render={(C, key) => <C key={key} />}
+    />
   );
 }
-const SearchOverlayLazy = lazy(() => import("@/components/SearchOverlay").then((m) => ({ default: m.SearchOverlay })));
-function SearchOverlay(props: ComponentProps<typeof SearchOverlayLazy>) {
+function SearchOverlay(props: ComponentProps<typeof import("@/components/SearchOverlay").SearchOverlay>) {
   return (
-    <LazyRouteView viewName="Search" fallback={null}>
-      {(key) => <SearchOverlayLazy key={key} {...props} />}
-    </LazyRouteView>
+    <LazyRouteView
+      viewName="Search"
+      fallback={null}
+      loader={() => import("@/components/SearchOverlay").then((m) => ({ default: m.SearchOverlay }))}
+      render={(C, key) => <C key={key} {...props} />}
+    />
   );
 }
 
