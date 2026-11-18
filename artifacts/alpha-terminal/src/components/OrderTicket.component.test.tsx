@@ -552,6 +552,61 @@ describe("OrderTicket component", () => {
     vi.resetModules();
   });
 
+  it("mobile AT draft: side, qty, and TP stay consistent through Review", async () => {
+    const matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: query.includes("max-width"),
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    vi.stubGlobal("matchMedia", matchMedia);
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
+
+    const mobileDraftPrefs: ActiveTraderTemplatePrefs = {
+      ...atBracketPrefs,
+      template: "Single",
+      stopLoss: { ...atBracketPrefs.stopLoss, enabled: false },
+    };
+
+    render(
+      <OrderTicket
+        isOpen
+        onClose={() => {}}
+        initialSide="BUY"
+        atTemplatePrefs={mobileDraftPrefs}
+        optionSymbol={OPT}
+        subscribeOptionSymbols={vi.fn()}
+      />,
+    );
+
+    await screen.findByTestId("at-mobile-review");
+    const limitInput = document.querySelector("[data-at-mobile-peek] input") as HTMLInputElement;
+    fireEvent.change(limitInput, { target: { value: "2.60" } });
+    fireEvent.click(screen.getByRole("button", { name: "SELL" }));
+    fireEvent.click(screen.getByLabelText("Increase quantity"));
+    const tp = screen.getByRole("checkbox") as HTMLInputElement;
+    fireEvent.click(tp);
+    expect(tp.checked).toBe(false);
+
+    fireEvent.click(await screen.findByTestId("at-mobile-review"));
+    await screen.findByText("Order Confirmation");
+
+    const pinned = document.querySelector("[data-at-confirm-pinned]");
+    expect(pinned?.textContent ?? "").toMatch(/SELL/i);
+    expect(pinned?.textContent ?? "").toMatch(/2/);
+
+    expect(screen.queryByText(/Trigger order summary/i)).toBeNull();
+    expect(screen.queryByText(/Take profit/i)).toBeNull();
+
+    vi.unstubAllGlobals();
+  });
+
   it("double-tap Send calls place-order exactly once (Active Trader bracket)", async () => {
     vi.stubEnv("VITE_AT_ORDER_SEND", "1");
     vi.resetModules();
