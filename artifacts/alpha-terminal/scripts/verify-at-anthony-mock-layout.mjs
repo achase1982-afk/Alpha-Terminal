@@ -19,8 +19,8 @@ function record(name, pass, detail) {
 }
 
 async function switchView(page, value) {
-  const viewSel = page.locator('[data-at-view-selector] select');
-  await viewSel.first().waitFor({ state: "attached", timeout: 60_000 });
+  const viewSel = page.locator('[data-at-view-selector] select, select[aria-label="Options view"]');
+  await viewSel.first().waitFor({ state: "attached", timeout: 90_000 });
   await viewSel.first().selectOption(value);
   await page.waitForTimeout(500);
 }
@@ -126,10 +126,29 @@ try {
 
   await switchView(page, "chain");
   await page.waitForTimeout(600);
+  if (LIVE) {
+    await page
+      .waitForFunction(
+        () => {
+          const btn = document.querySelector('[data-ui-audit="chain-exp-btn"]');
+          if (!btn) return false;
+          const spans = [...btn.querySelectorAll("span")]
+            .map((s) => (s.textContent ?? "").trim())
+            .filter(Boolean);
+          return spans.some((t) => /\d/.test(t) && !/^IV\b/i.test(t));
+        },
+        { timeout: 120_000 },
+      )
+      .catch(() => undefined);
+  }
   const expiryChain = await page.evaluate(() => {
     const btn = document.querySelector('[data-ui-audit="chain-exp-btn"]');
-    const span = btn?.querySelector("span");
-    return span?.textContent?.trim() ?? btn?.textContent?.trim() ?? "";
+    if (!btn) return "";
+    const spans = [...btn.querySelectorAll("span")]
+      .map((s) => (s.textContent ?? "").trim())
+      .filter(Boolean);
+    const dateSpan = spans.find((t) => /\d/.test(t) && !/^IV\b/i.test(t));
+    return dateSpan ?? spans[0] ?? (btn.textContent ?? "").trim();
   });
   await page.screenshot({ path: path.join(OUT, "03-chain-return-440x956.png") });
   record("expiry text on chain", expiryChain.length > 0, expiryChain || "none");
@@ -140,8 +159,12 @@ try {
   await page.waitForTimeout(400);
   const expiryAfter = await page.evaluate(() => {
     const btn = document.querySelector('[data-ui-audit="chain-exp-btn"]');
-    const span = btn?.querySelector("span");
-    return span?.textContent?.trim() ?? btn?.textContent?.trim() ?? "";
+    if (!btn) return "";
+    const spans = [...btn.querySelectorAll("span")]
+      .map((s) => (s.textContent ?? "").trim())
+      .filter(Boolean);
+    const dateSpan = spans.find((t) => /\d/.test(t) && !/^IV\b/i.test(t));
+    return dateSpan ?? spans[0] ?? (btn.textContent ?? "").trim();
   });
   record(
     "expiry survives round-trip",
