@@ -45,6 +45,10 @@ import { computeOrderEconomics } from "@workspace/order-ticket-math";
 import { estimateSchwabOptionFees, computeOrderNetCash } from "@/lib/orders/schwabOrderFees";
 import { humanInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
 import { interpretBracketPlaceOrderResult } from "@/lib/active-trader/bracketPlaceOrderResult";
+import {
+  assertChainDraftLegCount,
+  CHAIN_LEG_LIMIT_MESSAGE,
+} from "@/lib/orders/chainDraftLegLimits";
 
 const SYS_FONT =
   'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif';
@@ -98,6 +102,16 @@ export interface OptionsChainOrderSheetProps {
   /** Compact peek height (~38vh) vs full sheet (~58vh). */
   sheetPeek?: boolean;
   onSheetPeekChange?: (peek: boolean) => void;
+  /** Distinct chain draft legs (pre-ticket builder guard). */
+  draftDistinctLegCount?: number;
+}
+
+function distinctChainLegsFromStrategy(legs: StrategyLeg[]): number {
+  const keys = new Set<string>();
+  for (const leg of legs) {
+    keys.add(leg.id.split("#")[0]);
+  }
+  return keys.size;
 }
 
 export function OptionsChainOrderSheet({
@@ -114,6 +128,7 @@ export function OptionsChainOrderSheet({
   sendPreviewOnly,
   sheetPeek = true,
   onSheetPeekChange,
+  draftDistinctLegCount,
 }: OptionsChainOrderSheetProps) {
   const symbol = useTerminalStore((s) => s.symbol);
   const underlyingSpot = useTerminalStore((s) => {
@@ -337,7 +352,19 @@ export function OptionsChainOrderSheet({
     [isCredit, timeInForce, legs, quantity, limitPrice, limitTickCtx],
   );
 
+  const guardDraftLegCount = useCallback(() => {
+    const distinct = draftDistinctLegCount ?? distinctChainLegsFromStrategy(legs);
+    try {
+      assertChainDraftLegCount(distinct);
+      return true;
+    } catch {
+      setPriceError(CHAIN_LEG_LIMIT_MESSAGE);
+      return false;
+    }
+  }, [draftDistinctLegCount, legs]);
+
   const validateAndReview = useCallback(() => {
+    if (!guardDraftLegCount()) return;
     const px = snapLimitForSubmit();
     if (px == null || px <= 0) {
       setPriceError("Set a valid limit price (Mid / Natural or enter manually).");
@@ -346,7 +373,7 @@ export function OptionsChainOrderSheet({
     setReviewLimitSnapped(px);
     setPriceError("");
     setStage("review");
-  }, [snapLimitForSubmit]);
+  }, [snapLimitForSubmit, guardDraftLegCount]);
 
   const openReviewRef = useRef(false);
   const placeOrderInFlightRef = useRef(false);
@@ -361,6 +388,7 @@ export function OptionsChainOrderSheet({
   }, [openReviewOnMount, legs.length, submittedLimit, spreadPrices?.spreadMid, validateAndReview]);
 
   const handleSubmit = useCallback(async () => {
+    if (!guardDraftLegCount()) return;
     if (sendPreviewOnly) return;
     if (placeOrderInFlightRef.current || stage === "submitting") return;
     if (!demoFixture && !accountHash) return;
