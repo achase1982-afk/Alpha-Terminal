@@ -2,6 +2,7 @@ import { webkit, devices } from "playwright";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { assertAtHeaderLayout } from "./lib/at-header-layout-assert.mjs";
+import { waitForLiveLadder } from "./lib/at-fixture-vite.mjs";
 
 const LIVE = process.env.AT_VERIFY_LIVE ?? "https://alpha-terminal-production-f297.up.railway.app";
 const OUT = process.env.AT_VERIFY_OUT ?? "/opt/cursor/artifacts/at-header-flow-live";
@@ -59,6 +60,11 @@ async function assertHeaderLayout() {
 try {
   await openAt();
   await assertHeaderLayout();
+  await waitForLiveLadder(page);
+  const strikes = await page.locator("[data-at-strike]").count();
+  record("live ladder rows", strikes > 5, String(strikes));
+  const dayText = await page.locator("[data-at-day-status]").innerText().catch(() => "");
+  record("no fake DAY FLAT 0", !/DAY FLAT 0\.00%/.test(dayText), dayText);
   await page.screenshot({ path: path.join(OUT, "at-header-flow-440x956.png"), fullPage: false });
   await page.screenshot({ path: path.join(OUT, "at-header-full-440x956.png"), fullPage: true });
 } catch (err) {

@@ -32,12 +32,14 @@ const NUM_FEAT: CSSProperties = {
 
 const SPOT_PAINT_MS = 250;
 
+const LABEL_PX = 11;
+const VALUE_PX = 13;
+
 const cellLine: CSSProperties = {
   whiteSpace: "nowrap",
   overflow: "hidden",
   textOverflow: "ellipsis",
-  lineHeight: 1.15,
-  fontSize: 8,
+  lineHeight: 1.12,
 };
 
 export type AtGlanceTopProps = {
@@ -77,8 +79,8 @@ function LevelsCell({
 }) {
   return (
     <div {...dataAttrs} title={title} style={cellLine}>
-      <span style={{ color: AT_LABEL }}>{label} </span>
-      <span className="num" style={{ ...NUM_FEAT, color: valueTone, fontWeight: 600 }}>
+      <span style={{ color: AT_LABEL, fontSize: LABEL_PX, fontWeight: 500 }}>{label} </span>
+      <span className="num" style={{ ...NUM_FEAT, color: valueTone, fontWeight: 700, fontSize: VALUE_PX }}>
         {value}
       </span>
     </div>
@@ -146,10 +148,10 @@ export const AtGlanceTop = memo(function AtGlanceTop({
     >
       <span data-at-glance-chrome-version="anthony-v2" className="sr-only" aria-hidden />
 
-      <div className="flex items-center gap-1 min-w-0" style={{ minHeight: 15, lineHeight: 1.1 }}>
+      <div className="flex items-center gap-1 min-w-0" style={{ minHeight: 16, lineHeight: 1.1 }}>
         <div className="flex items-baseline gap-1 min-w-0 flex-1 overflow-hidden">
-          <span style={{ fontSize: 11, fontWeight: 700, color: WHITE, letterSpacing: "0.03em" }}>{symLabel}</span>
-          <span className="num" data-ui-audit="at-glance-spot" style={{ ...NUM_FEAT, fontSize: 11, fontWeight: 700, color: WHITE }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: WHITE, letterSpacing: "0.03em" }}>{symLabel}</span>
+          <span className="num" data-ui-audit="at-glance-spot" style={{ ...NUM_FEAT, fontSize: 13, fontWeight: 700, color: WHITE }}>
             {spotLabel}
           </span>
           {tickCue.glyph ? (
@@ -161,7 +163,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
             data-at-day-status={dayStatus.kind}
             className="shrink-0"
             style={{
-              fontSize: 9,
+              fontSize: 11,
               fontWeight: 600,
               color: dayStatusColor(dayStatus),
               marginLeft: 3,
@@ -231,14 +233,17 @@ export const AtGlanceTop = memo(function AtGlanceTop({
       ) : null}
 
       <div data-at-glance-flow-band style={{ marginTop: 3, display: "flex", flexDirection: "column", gap: 2 }}>
-        <div className="flex items-center justify-between gap-1" style={{ minHeight: 11, fontSize: 8, lineHeight: 1.1 }}>
-          <span data-at-flow-now style={{ fontWeight: 600, color: AT_LABEL, letterSpacing: "0.04em", whiteSpace: "nowrap" }}>
+        <div className="flex items-center justify-between gap-1" style={{ minHeight: 13, lineHeight: 1.1 }}>
+          <span
+            data-at-flow-now
+            style={{ fontWeight: 600, color: AT_LABEL, fontSize: 10, letterSpacing: "0.04em", whiteSpace: "nowrap" }}
+          >
             FLOW NOW · {flowWindowSec}s
           </span>
           <span
             data-at-gamma-flip
             className="num"
-            style={{ ...NUM_FEAT, fontWeight: 600, color: GAMMA_SCENARIO, fontSize: 8, whiteSpace: "nowrap" }}
+            style={{ ...NUM_FEAT, fontWeight: 600, color: GAMMA_SCENARIO, fontSize: 10, whiteSpace: "nowrap" }}
           >
             Gamma flip {flipLabel}
           </span>

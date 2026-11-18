@@ -1052,7 +1052,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
                 Waiting for live chain and stream quotes…
               </p>
             )}
-            <AtLadderSkeleton accentHex={accentHex} />
+            <AtLadderSkeleton accentHex={accentHex} underlyingPrice={underlyingPrice} />
           </>
         )}
       </div>
