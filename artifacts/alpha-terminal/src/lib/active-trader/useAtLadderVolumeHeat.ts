@@ -85,11 +85,14 @@ export function useAtLadderVolumeHeat(input: {
     const engine = engineRef.current;
     const samples = ladderVolumeHeatFixtureSamples(heatScene);
     const base = Date.now();
+    let lastRx = base;
     for (const s of samples) {
       const rx = s.sampleMs ?? base + (s.offsetMs ?? 0);
+      lastRx = Math.max(lastRx, rx);
+      engine.setNowMs(lastRx);
       engine.ingestCumulative(s.contract, s.cumulativeVol, rx);
     }
-    engine.setNowMs(Date.now());
+    engine.setNowMs(Math.max(Date.now(), lastRx + 50));
     setTick((n) => n + 1);
     const id = window.setInterval(() => {
       engine.setNowMs(Date.now());

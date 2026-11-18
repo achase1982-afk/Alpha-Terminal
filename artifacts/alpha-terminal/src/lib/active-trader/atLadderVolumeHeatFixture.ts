@@ -70,9 +70,9 @@ export function ladderVolumeHeatFixtureSamples(scene: AtLadderVolumeHeatFixtureS
       ];
     case "heat-cache-hit":
       return [
-        { contract: FIXTURE_VOL_CALL_7545, cumulativeVol: 100, sampleMs: 1_000_000 },
-        { contract: FIXTURE_VOL_CALL_7545, cumulativeVol: 100, sampleMs: 1_000_000 },
-        { contract: FIXTURE_VOL_CALL_7545, cumulativeVol: 130, sampleMs: 1_000_500 },
+        { contract: FIXTURE_VOL_CALL_7545, cumulativeVol: 100, offsetMs: 0 },
+        { contract: FIXTURE_VOL_CALL_7545, cumulativeVol: 100, offsetMs: 0 },
+        { contract: FIXTURE_VOL_CALL_7545, cumulativeVol: 130, offsetMs: 500 },
       ];
     case "heat-zero-trade-time":
       return [{ contract: FIXTURE_VOL_CALL_7545, cumulativeVol: 100, sampleMs: 0 }];
