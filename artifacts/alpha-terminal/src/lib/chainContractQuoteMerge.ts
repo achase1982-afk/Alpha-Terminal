@@ -1,6 +1,7 @@
 import {
   chainDisplayQuoteState,
   mergeLegStreamQuotes,
+  resolvePairedBidAsk,
   sanitizeOptionGreek,
   type QuoteSideState,
 } from "@workspace/order-ticket-math";
@@ -89,7 +90,18 @@ export function resolveChainDisplayQuote(
     return { tapable: false, displayState: "incomplete" };
   }
   const merged = mergeChainContractWithStream(contract, tick, chainTs);
-  const state = chainDisplayQuoteState(merged.bid, merged.ask, merged.quoteRxMs ?? null, nowMs);
+  const paired = resolvePairedBidAsk({
+    streamBid: tick?.bid ?? undefined,
+    streamAsk: tick?.ask ?? undefined,
+    streamTs: tick?.ts,
+    contractBid: contract.bid ?? undefined,
+    contractAsk: contract.ask ?? undefined,
+    contractTs: chainTs,
+  });
+  const state: QuoteSideState | "stale" =
+    paired?.crossed === true
+      ? "crossed"
+      : chainDisplayQuoteState(merged.bid, merged.ask, merged.quoteRxMs ?? null, nowMs);
   const tapable = state === "ok";
   return {
     ...merged,

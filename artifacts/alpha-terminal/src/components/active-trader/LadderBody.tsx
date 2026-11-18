@@ -17,7 +17,7 @@ import type { LadderHeatCellView } from "@/lib/active-trader/atLadderVolumeHeatE
 import type { AtLadderMode, AtVerticalWidth } from "@/lib/active-trader/activeTraderPrefs";
 import { aggregateSpreadNBBO, verticalStrikes } from "@/lib/active-trader/aggregateSpreadNBBO";
 import { atLadderLegKey } from "@/lib/active-trader/atLadderLegKeys";
-import { atLadderExecutableQuote } from "@/lib/active-trader/atLadderExecutableQuote";
+import { atLadderDisplayQuote, atLadderExecutableQuote } from "@/lib/active-trader/atLadderExecutableQuote";
 
 export interface LadderRowModel {
   strike: number;
@@ -129,6 +129,7 @@ function quoteAriaLabel(input: {
 
 function QuoteCell({
   price,
+  unavailableReason,
   tint,
   strike,
   leg,
@@ -142,6 +143,7 @@ function QuoteCell({
   dividerLeft,
 }: {
   price: number | null;
+  unavailableReason?: string | null;
   tint: "bid" | "ask";
   strike: number;
   leg: OptionsContract | null;
@@ -161,6 +163,7 @@ function QuoteCell({
       aria-label={quoteAriaLabel({ strike, type, side, tint, price, expiryLabel })}
       data-at-quote={dataAttr}
       data-at-quote-side={side}
+      data-at-quote-unavailable={unavailableReason ?? undefined}
       className="relative w-full h-full flex flex-col items-end justify-center px-1 active:opacity-80"
       style={{
         fontSize: 14,
@@ -187,7 +190,15 @@ function QuoteCell({
           {side}
         </span>
       ) : null}
-      <span>{fmtPx(price)}</span>
+      <span
+        style={
+          unavailableReason
+            ? { fontSize: 9, fontWeight: 600, color: GRAY, letterSpacing: "0.02em", textTransform: "none" }
+            : undefined
+        }
+      >
+        {unavailableReason ?? fmtPx(price)}
+      </span>
     </button>
   );
 }
@@ -350,12 +361,16 @@ const LadderRowView = memo(function LadderRowView({
 
   const putKey = row.put ? atLadderLegKey(row.put, "PUT") : null;
   const callKey = row.call ? atLadderLegKey(row.call, "CALL") : null;
-  const putSingle = atLadderExecutableQuote(row.put, putTick, chainQuoteTs);
-  const callSingle = atLadderExecutableQuote(row.call, callTick, chainQuoteTs);
+  const putSingle = atLadderDisplayQuote(row.put, putTick, chainQuoteTs);
+  const callSingle = atLadderDisplayQuote(row.call, callTick, chainQuoteTs);
   const putBidPx = ladderMode === "vertical" ? putSpread.bid : putSingle.bid;
   const putAskPx = ladderMode === "vertical" ? putSpread.ask : putSingle.ask;
   const callBidPx = ladderMode === "vertical" ? callSpread.bid : callSingle.bid;
   const callAskPx = ladderMode === "vertical" ? callSpread.ask : callSingle.ask;
+  const putBidReason = putBidPx == null ? putSingle.reason : null;
+  const putAskReason = putAskPx == null ? putSingle.reason : null;
+  const callBidReason = callBidPx == null ? callSingle.reason : null;
+  const callAskReason = callAskPx == null ? callSingle.reason : null;
 
   const callHeat = mergeLegHeat(
     ladderMode,
@@ -392,6 +407,7 @@ const LadderRowView = memo(function LadderRowView({
           bid={
             <QuoteCell
               price={callBidPx}
+              unavailableReason={callBidReason}
               tint="bid"
               strike={row.strike}
               leg={row.call}
@@ -418,6 +434,7 @@ const LadderRowView = memo(function LadderRowView({
           ask={
             <QuoteCell
               price={callAskPx}
+              unavailableReason={callAskReason}
               tint="ask"
               strike={row.strike}
               leg={row.call}
@@ -489,6 +506,7 @@ const LadderRowView = memo(function LadderRowView({
           bid={
             <QuoteCell
               price={putBidPx}
+              unavailableReason={putBidReason}
               tint="bid"
               strike={row.strike}
               leg={row.put}
@@ -515,6 +533,7 @@ const LadderRowView = memo(function LadderRowView({
           ask={
             <QuoteCell
               price={putAskPx}
+              unavailableReason={putAskReason}
               tint="ask"
               strike={row.strike}
               leg={row.put}

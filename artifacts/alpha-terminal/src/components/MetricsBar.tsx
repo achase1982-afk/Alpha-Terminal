@@ -237,6 +237,10 @@ export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: Metric
   // Widget pin wins inside the dashboard; global symbol everywhere else.
   const symbol = useActiveSymbol();
   const { data: quote, isLoading, source } = useQuote(symbol);
+  const streamQ = streamPrices[symbol];
+  const dayHigh = streamQ?.high ?? quote?.high ?? null;
+  const dayLow = streamQ?.low ?? quote?.low ?? null;
+  const dayRangeLabel = formatDayRangeLabel(dayHigh, dayLow, quote?.change ?? null);
   const tickColor = useTickColor(symbol, quote?.last ?? null);
   const bidTickColor = useTickColor(`${symbol}__bid`, quote?.bid ?? null);
   const askTickColor = useTickColor(`${symbol}__ask`, quote?.ask ?? null);
@@ -519,10 +523,11 @@ export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: Metric
 
         <div className="hidden md:flex flex-col items-center shrink-0 gap-0.5">
           <span className="text-[10px] tracking-[0.1em] text-zinc-500 font-semibold">Day Range</span>
-          <span className={`font-mono tabular-nums text-[13px] font-medium ${opacityCls} ${transitionCls}`}>
-            <span style={{ color: DOWN_COLOR }}>${fmtPrice(quote?.low ?? null)}</span>
-            <span className="text-zinc-600 mx-1">—</span>
-            <span style={{ color: UP_COLOR }}>${fmtPrice(quote?.high ?? null)}</span>
+          <span
+            data-ui-audit="metrics-day-range"
+            className={`font-mono tabular-nums text-[13px] font-medium whitespace-nowrap ${opacityCls} ${transitionCls} text-zinc-300`}
+          >
+            {dayRangeLabel}
           </span>
         </div>
 

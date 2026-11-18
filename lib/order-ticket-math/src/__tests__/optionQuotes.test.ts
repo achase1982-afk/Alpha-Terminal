@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   aggregateSpreadNBBO,
   chainDisplayQuoteState,
+  chainQuoteReasonLabel,
   midpointFromBidAsk,
   quoteSideState,
   resolvePairedBidAsk,
@@ -23,6 +24,13 @@ describe("optionQuotes", () => {
     expect(chainDisplayQuoteState(1.1, 1.2, Date.now())).toBe("ok");
     expect(chainDisplayQuoteState(1.2, 1.1, Date.now())).toBe("crossed");
     expect(chainDisplayQuoteState(1.1, 1.2, Date.now() - 20_000)).toBe("stale");
+  });
+
+  it("maps display states to short UI reasons", () => {
+    expect(chainQuoteReasonLabel("crossed")).toBe("Crossed");
+    expect(chainQuoteReasonLabel("incomplete")).toBe("No quote");
+    expect(chainQuoteReasonLabel("stale")).toBe("Stale");
+    expect(chainQuoteReasonLabel("ok")).toBe("");
   });
 
   it("treats zero bid with positive ask as a usable two-sided quote", () => {

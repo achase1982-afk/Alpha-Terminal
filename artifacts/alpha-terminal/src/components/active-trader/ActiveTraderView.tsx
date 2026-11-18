@@ -13,6 +13,7 @@ import {
 } from "@/lib/active-trader/activeTraderPrefs";
 import { useFlowByKey } from "@/lib/active-trader/useFlowByKey";
 import { useAtLadderVolumeHeat } from "@/lib/active-trader/useAtLadderVolumeHeat";
+import { auditNearAtmLadderQuotes } from "@/lib/active-trader/atLadderQuoteHealth";
 import { findAtmStrikeIndex } from "@/lib/optionsSchwabKey";
 import { useChainOptionHold } from "@/hooks/useChainOptionHold";
 import type { ChainHoldSubscribers } from "@/hooks/useChainOptionHold";
@@ -335,6 +336,34 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     streamKeys,
     skipNetwork: presentation?.skipNetwork,
   });
+
+  const streamTicks = useOptionsStreamStore((s) => s.ticks);
+  const quoteAudit = useMemo(
+    () =>
+      auditNearAtmLadderQuotes({
+        rows: ladderRows,
+        underlyingPrice,
+        ticks: streamTicks,
+        chainQuoteTs,
+      }),
+    [ladderRows, underlyingPrice, streamTicks, chainQuoteTs],
+  );
+
+  useEffect(() => {
+    if (quoteAudit.nearAtm.length === 0) return;
+    console.info("[AT] near-ATM quote breakdown", quoteAudit.counts, quoteAudit.nearAtm.slice(0, 20));
+  }, [quoteAudit]);
+
+  const ladderHeatSourceDisplay = useMemo(() => {
+    if (
+      quoteAudit.nearAtmHasInvalid &&
+      (ladderHeatSource.kind === "poll" || ladderHeatSource.kind === "stream") &&
+      ladderHeatSource.label.length > 0
+    ) {
+      return { ...ladderHeatSource, label: "Quotes degraded", sourceFresh: false };
+    }
+    return ladderHeatSource;
+  }, [ladderHeatSource, quoteAudit.nearAtmHasInvalid]);
 
   const { zones, sessionClosed: glanceSessionClosed } = useAtLiveZones(
     symbol,
@@ -904,7 +933,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             open: settingsOpen,
             onToggle: toggleSettings,
           }}
-          ladderHeatSource={ladderHeatSource}
+          ladderHeatSource={ladderHeatSourceDisplay}
         />
         <AtSettingsExpanded
           open={settingsOpen}
@@ -976,16 +1005,19 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             <span>Strike</span>
             <span
               data-at-ladder-heat-caption
+              title="Contracts traded in the last 30 seconds"
               style={{
-                fontSize: 6,
+                fontSize: 7,
                 fontWeight: 500,
                 color: AT_LABEL,
                 letterSpacing: "0.02em",
                 textTransform: "none",
                 marginTop: 1,
+                whiteSpace: "nowrap",
+                lineHeight: 1.1,
               }}
             >
-              Contracts traded · last 30s
+              Contracts · 30s
             </span>
           </span>
           <span className="text-right pr-1">Bid</span>
