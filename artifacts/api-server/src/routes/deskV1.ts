@@ -41,6 +41,14 @@ import { deskAlpacaMarketBars, deskAlpacaMarketQuotes } from "../lib/desk/deskAl
 import { deskResolveSource } from "../lib/desk/deskSources.js";
 import { deskSchwabRestAppFromDeskSource } from "../lib/desk/deskSchwabRestCredential.js";
 import { buildDeskSchwabOAuthHealth } from "../lib/desk/deskSchwabOAuthHealth.js";
+import { registerDeskLiveFlowSse } from "../lib/desk/deskLiveFlowHub.js";
+import {
+  deskLiveFlowEnabled,
+  deskLiveFlowTimesaleDebugEnabled,
+} from "../lib/desk/deskLiveFlowConfig.js";
+import { deskLiveFlowTimesaleRecent } from "../lib/desk/deskLiveFlowTimesale.js";
+import { parseDeskFlowSymbol } from "../lib/desk/deskLiveFlowSymbol.js";
+import { deskLiveFlowCanSubscribe } from "../lib/desk/deskLiveFlowLimits.js";
 
 const router: IRouter = Router();
 
@@ -164,6 +172,48 @@ router.get("/quotes", async (req, res) => {
 
 router.get("/tape/spx/stream", (_req, res) => {
   registerDeskSpxSse(res as Response);
+});
+
+router.get("/stream/flow", (req, res) => {
+  if (!deskLiveFlowEnabled()) {
+    res.status(503).json({ error: "live_flow_disabled", source: "desk" });
+    return;
+  }
+  const rawSym = req.query["symbol"];
+  const symbols = Array.isArray(rawSym) ? rawSym : rawSym != null ? [rawSym] : ["SPX"];
+  if (symbols.length !== 1) {
+    res.status(400).json({ error: "single_symbol_required", source: "desk" });
+    return;
+  }
+  const raw = String(symbols[0]);
+  const parsed = parseDeskFlowSymbol(raw);
+  if (!parsed.ok) {
+    res.status(400).json({ error: parsed.error, source: "desk" });
+    return;
+  }
+  const gate = deskLiveFlowCanSubscribe(parsed.parsed.sym, parsed.parsed.kind);
+  if (!gate.ok) {
+    res.status(gate.status).json({
+      error: gate.error,
+      source: "desk",
+      ...(gate.supported ? { supported: gate.supported } : {}),
+    });
+    return;
+  }
+  registerDeskLiveFlowSse(res as Response, parsed.parsed.sym, parsed.parsed.kind);
+});
+
+router.get("/debug/timesale_raw", (req, res) => {
+  if (!deskLiveFlowTimesaleDebugEnabled()) {
+    res.status(404).json({ error: "timesale_debug_disabled" });
+    return;
+  }
+  const limitRaw = req.query["limit"];
+  const limit = limitRaw != null ? Number(limitRaw) : 50;
+  res.json({
+    enabled: true,
+    frames: deskLiveFlowTimesaleRecent(Number.isFinite(limit) ? limit : 50),
+  });
 });
 
 router.get("/tape/spx/raw", async (req, res) => {

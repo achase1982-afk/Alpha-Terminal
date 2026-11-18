@@ -56,6 +56,15 @@ Outside a feed’s ET session window → `session_closed` and `stale=false`.
 |--------|------|--------|
 | GET | `/health` | Feed freshness matrix + `schwab_oauth.app1` / `schwab_oauth.app2` token expiry metadata. **Does not** call UW live refresh (UW poller is background-only). UW feeds in `not_configured`, `rate_limited`, `auth_error`, or `expired_or_unpaid` are **excluded** from the `any_failure` gate. |
 | GET | `/quotes?symbols=&source=` | **Required** `source`: `schwab2` (app 2 first, fallback app 1), `schwab` (app 1 first, fallback app 2); envelope labels reflect the app used. Also `tradier`, `alpaca_paper`, `tastytrade` |
+| GET | `/stream/flow?symbol=` | SSE live flow; each frame has `type`, `seq`, `src_ts_ms`, `rx_ts_ms`. **SPX**: `px`, `uw_np_bar`, `flow_1s`, `flow_60s`. **Equities** (e.g. `NVDA`): `tape_1s`, `tape_60s`, `book` (TIMESALE_EQUITY prints vs L1 bid/ask; L1 volume fallback). **Futures** (`/ES`, `/NQ`): same tape events via `LEVELONE_FUTURES` + `TIMESALE_FUTURES` when entitled; `flow_notice` with `futures_not_entitled` on entitlement errors. On-demand streamer ADD/refcount per symbol (no second login). Optional WS fanout: app event `desk_flow`. |
+
+### Verifying equity extended-hours tape (preview)
+
+1. Set `DESK_LIVE_FLOW_ENABLED=1` and ensure Schwab streamer is connected (`/api/desk/v1/health` → `schwab_streamer`).
+2. `curl -N -H "Authorization: Bearer $DESK_API_KEY" 'https://<api-host>/api/desk/v1/stream/flow?symbol=NVDA'` during ETH/GTH.
+3. Expect `type=tape_1s` with `src: schwab_timesale` when TIMESALE_EQUITY is live; otherwise `schwab_l1_est` from L1 volume deltas.
+4. `type=book` updates (≤4/s) should track bid/ask and sizes from `LEVELONE_EQUITIES`.
+| GET | `/debug/timesale_raw?limit=` | **Off unless** `DESK_LIVE_FLOW_TIMESALE_DEBUG=1` — last N raw `TIMESALE_OPTIONS` frames. |
 | GET | `/tape/spx/stream` | SSE Schwab streamer frames `{rx_ns,c,dir?,m,session_date,rx_utc_ms}` |
 | GET | `/tape/spx/raw?session_date=&since_ns=` | Filtered desk-only streamer NDJSON (`{c,rx_ns,m}`); `rx_ns` is a JSON integer; `since_ns` remains a nanosecond string for pagination |
 | GET | `/gamma/live_gamma_0dte?source=unusual_whales&expiry=&ticker=` | **Cache-only** (desk UW poller). Poller fills **today's `SPX` 0DTE only**; other `ticker` or `expiry` → **503** (empty cache). Short TTL. UW `expirations[]=<expiry>` + `date` on `/spot-exposures/expiry-strike` (`limit=500`, zero-based `page`; 503 honors `Retry-After` once per page). |

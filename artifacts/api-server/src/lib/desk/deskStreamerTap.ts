@@ -9,6 +9,11 @@ import { deskTapeRxNsNumber, deskStringifyTapeJson } from "./deskJsonBigInt.js";
 import { filterDeskTapeStreamerMessage } from "./deskTapeFrameFilter.js";
 import { deskCaptureInboundFrame } from "./deskSpxTapeRaw.js";
 import { logger } from "../logger.js";
+import { deskLiveFlowEnabled } from "./deskLiveFlowConfig.js";
+import {
+  deskLiveFlowOnConnectionOpened,
+  deskLiveFlowOnInbound,
+} from "./deskLiveFlowEngine.js";
 
 export type DeskStreamerFrame = {
   rx_ns: number;
@@ -113,6 +118,12 @@ function wrapFrame(m: DeskStreamerFrame["m"], dir?: "out"): DeskStreamerFrame {
 export function onSchwabConnectionOpened(): void {
   connectionNumber += 1;
   deskClearStreamerEvicted();
+  deskLiveFlowOnConnectionOpened(connectionNumber);
+  void import("./deskLiveFlowTimesale.js").then((m) =>
+    m.deskLiveFlowTimesaleOnStreamerConnected(connectionNumber),
+  );
+  void import("./deskLiveFlowTape.js").then((m) => m.deskLiveFlowTapeOnSessionReset());
+  void import("./deskLiveFlowSubs.js").then((m) => m.deskLiveFlowSubsRewireHeld());
 }
 
 export function onSchwabInboundFrame(raw: string): void {
@@ -129,6 +140,9 @@ export function onSchwabInboundFrame(raw: string): void {
   });
   broadcastFrame(frame);
   maybeTouchFeedsFromFrame(filtered, frame.rx_utc_ms);
+  if (deskLiveFlowEnabled()) {
+    deskLiveFlowOnInbound(filtered, frame.rx_utc_ms, frame.c);
+  }
 }
 
 export function onSchwabOutboundFrame(raw: string): void {

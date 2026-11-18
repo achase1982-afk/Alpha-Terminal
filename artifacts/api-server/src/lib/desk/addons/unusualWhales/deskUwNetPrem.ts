@@ -70,6 +70,8 @@ export async function deskRefreshNetPremTicks(ticker = "SPX", marketDate?: strin
     netPremCache.set(netPremKey(sym, date), cached);
     deskUwClearLastHttpStatus();
     deskTouchFeed("live_net_prem", res.asOfMs, UW_SOURCE);
+    const { deskLiveFlowOnUwNetPremRows } = await import("../../deskLiveFlowEngine.js");
+    deskLiveFlowOnUwNetPremRows(rows, sym, res.asOfMs);
     return cached;
   } catch (err) {
     deskApplyUwHttpFeedStatus("live_net_prem", 0);
