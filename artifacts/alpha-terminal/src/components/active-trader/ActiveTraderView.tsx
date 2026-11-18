@@ -131,9 +131,15 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   settingsPanelInitiallyOpen,
   chainQuoteTs: chainQuoteTsProp,
 }: ActiveTraderViewProps) {
-  const primary =
-    groups.find((g) => g.expiration === activeExpiration) ?? groups[0];
+  const primary = useMemo(() => {
+    const tradable = groups.filter((g) => g.dte >= 0);
+    if (activeExpiration && tradable.some((g) => g.expiration === activeExpiration)) {
+      return groups.find((g) => g.expiration === activeExpiration) ?? null;
+    }
+    return tradable[0] ?? null;
+  }, [groups, activeExpiration]);
   const ladderDataReady = !!(primary && primary.rows.length > 0);
+  const noTradableExpirations = groups.length > 0 && !groups.some((g) => g.dte >= 0);
   /** Futures root without an options ladder (live); fixture/dev chains keep the AT ladder. */
   const futuresOnlyMode = isFuturesDisplaySymbol(symbol) && !ladderDataReady;
   const [windowSec, setWindowSec] = useState<30 | 60 | 300>(30);
@@ -152,6 +158,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const chainQuoteTs = chainQuoteTsProp ?? Date.now();
   const legShakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selected, setSelected] = useState<{ contract: OptionsContract; type: "CALL" | "PUT" } | null>(null);
+  const [lastLegQuoteSide, setLastLegQuoteSide] = useState<"bid" | "ask">("ask");
   const [regimeLabel, setRegimeLabel] = useState<string | null>(null);
   const [regimeDegraded, setRegimeDegraded] = useState(false);
 
@@ -225,6 +232,15 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     setTradeContext({ mode: "single", contract, type: initialTradeSelection.type });
     setTradeStripStrike(contract.strike);
   }, [initialTradeSelection, primary]);
+
+  useEffect(() => {
+    if (!noTradableExpirations && primary) return;
+    setSelectedLegs(new Map());
+    setLegQuantities(new Map());
+    setSelected(null);
+    setTradeContext(null);
+    setTradeStripStrike(null);
+  }, [noTradableExpirations, primary?.expiration]);
 
   const ladderRows: LadderRowModel[] = useMemo(() => {
     if (!primary?.rows?.length) return [];
@@ -338,11 +354,10 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   const selectedTick = useOptionTick(selected?.contract.streamKey);
   const templatePrimaryInstruction = useMemo((): SchwabInstruction => {
-    if (!selected) return "BUY_TO_OPEN";
-    return selected.type === "CALL"
-      ? "BUY_TO_OPEN"
-      : "BUY_TO_OPEN";
-  }, [selected]);
+    const firstLeg = selectedLegs.size > 0 ? [...selectedLegs.values()][0] : null;
+    if (firstLeg) return firstLeg.side === "bid" ? "SELL_TO_OPEN" : "BUY_TO_OPEN";
+    return lastLegQuoteSide === "bid" ? "SELL_TO_OPEN" : "BUY_TO_OPEN";
+  }, [selectedLegs, lastLegQuoteSide]);
 
   const atmRow = useMemo(() => {
     if (!primary?.rows?.length || underlyingPrice == null) return null;
@@ -400,6 +415,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   const handleTradeIntent = useCallback(
     async (contract: OptionsContract, side: "BUY" | "SELL", type: "CALL" | "PUT") => {
+      setLastLegQuoteSide(quoteSideFromTap(side));
       const tick = useOptionsStreamStore.getState().ticks[contract.streamKey ?? ""];
       const entry = resolveAtEntryPrice(tick, prefs, side);
       const primaryInstruction = atPrimaryInstruction(side);
@@ -495,10 +511,12 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   const handleQuoteTap = useCallback(
     (contract: OptionsContract, type: "CALL" | "PUT", side: "BUY" | "SELL") => {
+      const legSide = quoteSideFromTap(side);
+      setLastLegQuoteSide(legSide);
       setSelected({ contract, type });
       setTradeStripStrike(contract.strike);
       setTradeContext(null);
-      handleToggleLeg(contract, type, quoteSideFromTap(side));
+      handleToggleLeg(contract, type, legSide);
       requestAnimationFrame(() => {
         const sheetPx = chainSheetCollapsed ? 52 : chainSheetPeek ? atSheetPeekHeightPx() : 280;
         scrollAtLadderToStrikeAboveSheet(ladderScrollRef.current, contract.strike, sheetPx);
@@ -676,10 +694,12 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   }, []);
 
   const atAddLegFromLadder = useCallback(
-    (contract: OptionsContract, type: "CALL" | "PUT") => {
-      handleToggleLeg(contract, type, "ask");
+    (contract: OptionsContract, type: "CALL" | "PUT", side?: "bid" | "ask") => {
+      const legSide = side ?? lastLegQuoteSide;
+      setLastLegQuoteSide(legSide);
+      handleToggleLeg(contract, type, legSide);
     },
-    [handleToggleLeg],
+    [handleToggleLeg, lastLegQuoteSide],
   );
 
   const instrumentLabel = useMemo(() => {
@@ -876,7 +896,11 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           paddingBottom: sheetScrollPad,
         }}
       >
-        {ladderDataReady ? (
+        {noTradableExpirations ? (
+          <p className="px-3 py-4 text-center" style={{ fontSize: 11, color: DIM, fontFamily: MONO }}>
+            No current expirations
+          </p>
+        ) : ladderDataReady ? (
           <div style={{ display: "flex", flexDirection: "column" }}>
           <LadderBody
             rows={ladderRows}
@@ -963,7 +987,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
               underlyingSymbol={underlyingSymbol}
               isSpread={legCount > 1}
               isCredit={isCredit}
-              primaryInstruction={templatePrimaryInstruction}
+              primaryInstruction={settingsSummaryInstruction}
             />
           )}
         />
@@ -978,6 +1002,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           onSell={(c, t) => handleTradeIntent(c, "SELL", t)}
           onBuy={(c, t) => handleTradeIntent(c, "BUY", t)}
           onAddLeg={atAddLegFromLadder}
+          lastLegQuoteSide={lastLegQuoteSide}
         />
       ) : null}
     </div>

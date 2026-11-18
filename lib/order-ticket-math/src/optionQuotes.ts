@@ -109,18 +109,22 @@ export function resolvePairedBidAsk(source: PairedQuoteSource): PairedBidAsk | n
   if (streamOk) return pick(source.streamBid!, source.streamAsk!, "stream");
   if (contractOk) return pick(source.contractBid!, source.contractAsk!, "contract");
 
-  const bid = pickSidePrice("streamBid", source, "stream");
-  const ask = pickSidePrice("streamAsk", source, "stream");
-  if (bid == null && ask == null) return null;
-  const resolvedBid = bid ?? 0;
-  const resolvedAsk = ask ?? 0;
-  const fromStream = bid != null && quoteSideBid(source.streamBid) === bid;
-  return {
-    bid: resolvedBid,
-    ask: resolvedAsk,
-    source: fromStream ? "stream" : "contract",
-    crossed: bid != null && ask != null && resolvedBid > resolvedAsk,
-  };
+  if (
+    source.streamBid != null &&
+    source.streamAsk != null &&
+    quoteSideState(source.streamBid, source.streamAsk) === "crossed"
+  ) {
+    return { bid: source.streamBid, ask: source.streamAsk, source: "stream", crossed: true };
+  }
+  if (
+    source.contractBid != null &&
+    source.contractAsk != null &&
+    quoteSideState(source.contractBid, source.contractAsk) === "crossed"
+  ) {
+    return { bid: source.contractBid, ask: source.contractAsk, source: "contract", crossed: true };
+  }
+
+  return null;
 }
 
 export interface SpreadNBBO {

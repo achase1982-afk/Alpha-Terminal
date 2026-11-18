@@ -12,6 +12,10 @@ describe("optionsExpirationPick", () => {
     expect(nearestTradableExpiration(groups)?.expiration).toBe("2026-11-18");
   });
 
+  it("returns null when only expired expiries remain", () => {
+    expect(nearestTradableExpiration([{ expiration: "2026-11-17", dte: -1 }])).toBeNull();
+  });
+
   it("filters expired expiries from AT pill list", () => {
     expect(filterAtExpiryPillGroups(groups).map((g) => g.expiration)).toEqual([
       "2026-11-18",

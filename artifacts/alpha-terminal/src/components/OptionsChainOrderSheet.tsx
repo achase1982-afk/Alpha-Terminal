@@ -707,7 +707,7 @@ export function OptionsChainOrderSheet({
           >
             <button
               type="button"
-              disabled={!isValid || !!sendPreviewOnly}
+              disabled={!isValid}
               onClick={validateAndReview}
               className="w-full text-[13px] font-bold tracking-wider py-2.5 disabled:opacity-40"
               style={{ background: GOLD, color: "#000", borderRadius: 8 }}
