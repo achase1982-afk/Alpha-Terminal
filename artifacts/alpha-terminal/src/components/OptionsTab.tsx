@@ -34,6 +34,10 @@ import { OptionsSubViewToggle, type OptionsSubView } from "@/components/active-t
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { formatAtExpiryPill } from "@/lib/active-trader/atExpiryPill";
+import {
+  filterAtExpiryPillGroups,
+  nearestTradableExpiration,
+} from "@/lib/optionsExpirationPick";
 import { resolveAtmStrike } from "@workspace/order-ticket-math";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import {
@@ -718,7 +722,7 @@ function MetricsStrip({ groups, lastPrice, earningsInfo, isFetching, hasData }: 
   isFetching: boolean;
   hasData: boolean;
 }) {
-  const frontMonth = groups.length > 0 ? groups[0] : null;
+  const frontMonth = nearestTradableExpiration(groups) ?? (groups.length > 0 ? groups[0] : null);
   const frontStats = useStreamingExpirationStats(frontMonth?.rows ?? [], lastPrice);
 
   const ticks = useOptionsStreamStore((s) => s.ticks);
@@ -1408,8 +1412,9 @@ export function OptionsTab({
   useEffect(() => {
     if (!groups.length) return;
     setAtExpiration((prev) => {
-      if (prev && groups.some((g) => g.expiration === prev)) return prev;
-      return groups[0].expiration;
+      const tradable = filterAtExpiryPillGroups(groups);
+      if (prev && tradable.some((g) => g.expiration === prev)) return prev;
+      return (nearestTradableExpiration(groups) ?? groups[0])?.expiration ?? null;
     });
   }, [groups]);
 
@@ -1418,8 +1423,9 @@ export function OptionsTab({
       if (optionsSubView !== "at") clearAtExpiryChrome();
       return;
     }
+    const atPillGroups = filterAtExpiryPillGroups(groups);
     setAtExpiryChrome({
-      options: groups.map((g) => ({
+      options: atPillGroups.map((g) => ({
         expiration: g.expiration,
         pillLabel: formatAtExpiryPill(g.expiration, g.dte, symbol),
       })),
