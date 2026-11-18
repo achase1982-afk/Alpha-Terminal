@@ -125,26 +125,7 @@ export function useDeskFlowStream(symbol: string, enabled: boolean): DeskFlowAgg
       bump();
 
       const streamSym = deskFlowStreamSymbol(symbol);
-      const path = `${API_BASE}/desk/v1/stream/flow?symbol=${encodeURIComponent(streamSym)}`;
-      try {
-        const probe = await fetchWithAuth(path, { headers: { Accept: "text/event-stream" } });
-        if (!probe.ok) {
-          const body = (await probe.json().catch(() => ({}))) as { error?: string };
-          if (body.error === "futures_flow_unsupported") {
-            setAggregate(deskFlowAggregatorMarkUnsupported(aggRef.current));
-            return;
-          }
-          aggRef.current = deskFlowAggregatorMarkConnected(aggRef.current, false);
-          bump();
-          scheduleReconnect();
-          return;
-        }
-        await probe.body?.cancel();
-      } catch {
-        scheduleReconnect();
-        return;
-      }
-
+      const path = `${API_BASE}/market/at-flow-stream?symbol=${encodeURIComponent(streamSym)}`;
       if (cancelled) return;
 
       const url = await buildAuthenticatedEventSourceUrl(path);

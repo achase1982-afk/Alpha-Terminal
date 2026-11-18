@@ -257,7 +257,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   const flowByKey = useFlowByKey(streamKeys, windowSec * 1000);
 
-  const zones = useAtLiveZones(
+  const { zones, sessionClosed: glanceSessionClosed } = useAtLiveZones(
     symbol,
     primary?.rows,
     underlyingPrice,
@@ -762,6 +762,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           underlyingPrice={underlyingPrice}
           zones={zones}
           glanceCaption={zones.glanceCaption}
+          sessionClosed={glanceSessionClosed}
           keepawayPutLine={keepawayPutLine}
           keepawayCallLine={keepawayCallLine}
           keepawayStats={keepawayStats}

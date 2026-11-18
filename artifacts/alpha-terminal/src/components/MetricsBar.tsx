@@ -7,6 +7,7 @@ import { RefreshCw, SearchX, Plus, Minus } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRef, useEffect, useState, useLayoutEffect, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { formatDisplaySymbol } from "@/lib/formatDisplaySymbol";
 
 const UP_COLOR   = "#00d166";
 const DOWN_COLOR = "#f23645";
@@ -147,9 +148,9 @@ function TickerBlock({ symbol, description, showData, opacityCls, transitionCls,
               role="button"
               tabIndex={0}
             >
-              {symbol}
+              {formatDisplaySymbol(symbol)}
             </span>
-            {symbol && <WatchlistToggle symbol={symbol} />}
+            {symbol && <WatchlistToggle symbol={formatDisplaySymbol(symbol) || symbol} />}
           </span>
           <span
             ref={nameRef}
@@ -379,7 +380,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: Metric
           <>
             <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
               <button onClick={onOpenTearSheet} className="font-semibold text-white text-sm tracking-wide shrink-0 hover:text-primary transition-colors cursor-pointer">
-                {quote.symbol}
+                {formatDisplaySymbol(quote.symbol)}
               </button>
               <span data-ui-audit="metrics-last" className="tabular-nums shrink-0" style={{ fontSize: '0.95rem', fontWeight: 300, color: tickColor }}>
                 {lastStr}
@@ -423,7 +424,7 @@ export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: Metric
       <div className={`${GRID_CLS} ${GRID_COLS}`}>
 
         <TickerBlock
-          symbol={quote?.symbol}
+          symbol={quote?.symbol ? formatDisplaySymbol(quote.symbol) : undefined}
           description={quote?.description ?? undefined}
           showData={showData}
           opacityCls={opacityCls}
