@@ -6,6 +6,10 @@ export interface StreamOptionTick {
   last?: number | null;
   ts?: number;
   delta?: number | null;
+  gamma?: number | null;
+  theta?: number | null;
+  vega?: number | null;
+  iv?: number | null;
 }
 
 export interface ExecutableQuote {
@@ -50,6 +54,10 @@ export function mergeLegStreamQuotes<
     bid?: number | null;
     ask?: number | null;
     delta?: number | null;
+    gamma?: number | null;
+    theta?: number | null;
+    vega?: number | null;
+    iv?: number | null;
     contractTs?: number;
   },
 >(leg: T, tick: StreamOptionTick | null | undefined): T {
@@ -69,6 +77,10 @@ export function mergeLegStreamQuotes<
     ask: pair.crossed ? null : pair.ask,
     quoteCrossed: pair.crossed,
     delta: tick?.delta ?? leg.delta ?? null,
+    gamma: tick?.gamma ?? leg.gamma ?? null,
+    theta: tick?.theta ?? leg.theta ?? null,
+    vega: tick?.vega ?? leg.vega ?? null,
+    iv: tick?.iv ?? leg.iv ?? null,
   };
 }
 

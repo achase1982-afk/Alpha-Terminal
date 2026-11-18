@@ -22,6 +22,23 @@ export const FIXTURE_MARKER = "AT_FIXTURE_SPX_0DTE_DEV_ONLY";
 const EXPIRY = "2026-11-17";
 const ROOT = "SPX";
 
+/** Per-strike greeks aligned with chain-order dev fixture (non-flat Θ/V on spreads). */
+function fixtureGreeksForStrike(strike: number, isCall: boolean): { delta: number; gamma: number; theta: number; vega: number } {
+  const table: Record<number, { c: { theta: number; vega: number; gamma: number }; p: { theta: number; vega: number; gamma: number } }> = {
+    7525: { c: { theta: -0.44, vega: 0.12, gamma: 0.02 }, p: { theta: -0.28, vega: 0.09, gamma: 0.012 } },
+    7530: { c: { theta: -0.46, vega: 0.13, gamma: 0.022 }, p: { theta: -0.32, vega: 0.11, gamma: 0.016 } },
+    7535: { c: { theta: -0.48, vega: 0.14, gamma: 0.024 }, p: { theta: -0.34, vega: 0.12, gamma: 0.018 } },
+    7540: { c: { theta: -0.5, vega: 0.15, gamma: 0.026 }, p: { theta: -0.36, vega: 0.13, gamma: 0.02 } },
+    7545: { c: { theta: -0.48, vega: 0.14, gamma: 0.025 }, p: { theta: -0.35, vega: 0.13, gamma: 0.021 } },
+    7550: { c: { theta: -0.45, vega: 0.13, gamma: 0.022 }, p: { theta: -0.33, vega: 0.12, gamma: 0.019 } },
+    7555: { c: { theta: -0.4, vega: 0.11, gamma: 0.018 }, p: { theta: -0.31, vega: 0.11, gamma: 0.017 } },
+    7560: { c: { theta: -0.35, vega: 0.09, gamma: 0.014 }, p: { theta: -0.29, vega: 0.1, gamma: 0.015 } },
+  };
+  const row = table[strike];
+  const g = row ? (isCall ? row.c : row.p) : { theta: -0.08, vega: 0.12, gamma: 0.008 };
+  return { delta: bsDelta(strike, isCall), gamma: g.gamma, theta: g.theta, vega: g.vega };
+}
+
 function bsDelta(strike: number, isCall: boolean): number {
   const { spot: S, T, r, sigma } = FIXTURE_BS;
   if (T <= 1e-9) return isCall ? (S > strike ? 1 : 0) : S < strike ? -1 : 0;
@@ -122,6 +139,7 @@ export function buildSpxFixtureTicks(): OptionTick[] {
       );
       const q = spxQuoteFromTheoretical(mid);
       const vol = side === row.call ? 3200 + row.strike % 100 : 2260 + row.strike % 80;
+      const greeks = fixtureGreeksForStrike(row.strike, isCall);
       ticks.push({
         key: side.streamKey,
         bid: q.bid,
@@ -132,10 +150,10 @@ export function buildSpxFixtureTicks(): OptionTick[] {
         volume: vol,
         openInterest: side.openInterest ?? null,
         iv: FIXTURE_BS.sigma,
-        delta: side.delta ?? null,
-        gamma: side.gamma ?? null,
-        theta: -0.08,
-        vega: 0.12,
+        delta: side.delta ?? greeks.delta,
+        gamma: side.gamma ?? greeks.gamma,
+        theta: greeks.theta,
+        vega: greeks.vega,
         mark: q.mark,
         change: 0.1,
         lastSize: 12,
