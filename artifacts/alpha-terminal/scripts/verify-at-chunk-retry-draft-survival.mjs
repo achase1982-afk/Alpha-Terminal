@@ -20,7 +20,7 @@ function record(name, pass, detail) {
 }
 
 await mkdir(OUT, { recursive: true });
-const { browser, page, metrics } = await createChunkRetryPage(LIVE);
+const { browser, page, metrics, reloadNavigations } = await createChunkRetryPage(LIVE);
 
 let blockPortfolio = false;
 const portfolioStatuses = [];
@@ -47,7 +47,7 @@ try {
   await page.getByTestId("chain-draft-next").click({ timeout: 15_000 });
   await page.waitForSelector("[data-testid='options-chain-order-sheet']", { timeout: 20_000 });
   await page.getByTestId("chain-sheet-limit").fill("1.23");
-  await page.getByRole("button", { name: "Lock limit", exact: true }).click({ timeout: 10_000 });
+  await page.getByRole("button", { name: /Lock limit/i }).click({ timeout: 15_000 });
   await page.waitForTimeout(400);
 
   const before = await readDraftDom(page);
@@ -62,8 +62,7 @@ try {
   await page.locator("[data-lazy-view-reload]").click({ timeout: 10_000 }).catch(() => undefined);
   await page.waitForTimeout(400);
 
-  const reloadsMid = await page.evaluate(() => window.__AT_TEST_RELOAD_COUNT ?? 0);
-  record("decline reload (zero reloads)", reloadsMid === 0, String(reloadsMid));
+  record("decline reload (zero reloads)", reloadNavigations() === 0, String(reloadNavigations()));
 
   blockPortfolio = false;
   await page.locator("[data-bottom-nav]").getByText("MARKETS", { exact: true }).click({ timeout: 30_000 });
@@ -90,8 +89,7 @@ try {
     JSON.stringify({ before: before.limit, after: after.limit, locked: after.locked }),
   );
   record("zero broker mutations", metrics.brokerMutations === 0, String(metrics.brokerMutations));
-  const reloadsEnd = await page.evaluate(() => window.__AT_TEST_RELOAD_COUNT ?? 0);
-  record("zero full page reloads", reloadsEnd === 0, String(reloadsEnd));
+  record("zero full page reloads", reloadNavigations() === 0, String(reloadNavigations()));
   record("portfolio 404 during detour", portfolioStatuses.some((s) => s === 404), JSON.stringify(portfolioStatuses));
 
   await page.screenshot({ path: path.join(OUT, "draft-survival-after-return-440x956.png") });

@@ -14,18 +14,14 @@ export async function createChunkRetryPage(liveUrl) {
   const page = await context.newPage();
 
   const metrics = {
-    reloadCount: 0,
+    mainFrameNavigations: 0,
     brokerMutations: 0,
     chunkStatuses: [],
     buildIds: [],
   };
 
-  await page.addInitScript(() => {
-    const orig = Location.prototype.reload;
-    Location.prototype.reload = function atPatchedReload() {
-      window.__AT_TEST_RELOAD_COUNT = (window.__AT_TEST_RELOAD_COUNT ?? 0) + 1;
-    };
-    window.__AT_TEST_RELOAD_COUNT = 0;
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) metrics.mainFrameNavigations += 1;
   });
 
   page.on("request", (req) => {
@@ -57,8 +53,8 @@ export async function createChunkRetryPage(liveUrl) {
     context,
     page,
     metrics,
-    async readReloadCount() {
-      return page.evaluate(() => window.__AT_TEST_RELOAD_COUNT ?? 0);
+    reloadNavigations() {
+      return Math.max(0, metrics.mainFrameNavigations - 1);
     },
     async readBuildMeta() {
       return page.evaluate(() => ({
@@ -84,14 +80,29 @@ export async function openChain(page) {
 }
 
 export async function tapTwoPutAsks(page) {
-  let row = 0;
-  for (let i = 0; i < 2; i += 1) {
-    const asks = page.locator('[id^="options-exp-panel-"] button[aria-label^="Ask"]');
-    const idx = row * 2 + 1;
-    await asks.nth(idx).click({ timeout: 15_000, force: true });
-    row += 1;
-    await page.waitForTimeout(350);
+  await page.evaluate(() => {
+    const asks = [...document.querySelectorAll('[id^="options-exp-panel-"] button[aria-label^="Ask"]')];
+    for (const idx of [1, 3, 5]) {
+      const btn = asks[idx];
+      if (btn instanceof HTMLElement) {
+        btn.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      }
+    }
+  });
+  await page.waitForTimeout(900);
+  const legCount = await page.locator("[data-chain-draft-leg]").count();
+  if (legCount < 2) {
+    let row = 0;
+    for (let i = legCount; i < 2; i += 1) {
+      const asks = page.locator('[id^="options-exp-panel-"] button[aria-label^="Ask"]');
+      const idx = row * 2 + 1;
+      await asks.nth(idx).click({ timeout: 15_000, force: true });
+      row += 1;
+      await page.waitForTimeout(400);
+    }
   }
+  const final = await page.locator("[data-chain-draft-leg]").count();
+  if (final < 2) throw new Error(`expected >=2 legs, got ${final}`);
 }
 
 export async function readDraftDom(page) {

@@ -15,7 +15,7 @@ function record(name, pass, detail) {
 }
 
 await mkdir(OUT, { recursive: true });
-const { browser, page, metrics } = await createChunkRetryPage(LIVE);
+const { browser, page, metrics, reloadNavigations } = await createChunkRetryPage(LIVE);
 
 let documentPass = 0;
 let blockStaleChunk = true;
@@ -81,8 +81,7 @@ try {
   await reloadPromise;
   await page.waitForTimeout(1200);
 
-  const reloads = await page.evaluate(() => window.__AT_TEST_RELOAD_COUNT ?? 0);
-  record("single bounded reload", reloads === 1, `reloads=${reloads}`);
+  record("single bounded reload", reloadNavigations() === 1, `navReloads=${reloadNavigations()}`);
 
   const buildAfterRecovery = await page.evaluate(
     () => document.querySelector('meta[name="at-build-id"]')?.getAttribute("content") ?? "",
@@ -111,7 +110,7 @@ await writeFile(
       live: LIVE,
       buildIdsSeen,
       staleChunkUrl,
-      reloadCount: await page.evaluate(() => window.__AT_TEST_RELOAD_COUNT ?? 0).catch(() => -1),
+      reloadNavigations: reloadNavigations(),
       chunkStatuses: metrics.chunkStatuses,
       brokerMutations: metrics.brokerMutations,
     },
