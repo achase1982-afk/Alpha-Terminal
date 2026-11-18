@@ -47,8 +47,8 @@ const CHAIN_LEVELS_REFRESH_MS = 5_000;
  * fall back to chain OI/gamma when UW snapshot is unavailable.
  *
  * The chain fallback reads live gamma / open interest from the tick store on a
- * slow clock. It used to subscribe to every tick, which recomputed the whole
- * model (and handed the ladder a new `zones` object) on each option quote.
+ * slow clock rather than subscribing to it: a subscription would recompute the
+ * whole model, and hand the ladder a new `zones` object, on every option quote.
  */
 export function useAtLiveZones(
   symbol: string,

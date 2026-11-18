@@ -100,7 +100,7 @@ describe("chainQuoteSession", () => {
     }
     const elapsedMs = performance.now() - startedAt;
     expect(live).toBe(20_000);
-    // The previous implementation built ~900 Intl formatters per call (tens of ms each).
+    // One Intl.DateTimeFormat costs tens of microseconds to build; 20,000 cells must not pay that each.
     expect(elapsedMs).toBeLessThan(1_000);
   });
 });
