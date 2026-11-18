@@ -61,6 +61,8 @@ import { buildSchwabOptionKey } from "@/lib/optionsSchwabKey";
 import { TriggerOrderConfirmSummary } from "@/components/orders/TriggerOrderConfirmSummary";
 import { formatAtExitDuration } from "@/lib/active-trader/atSummaryFormat";
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
+import { AtDockedOrderTicket, type AtDockedOrderType } from "@/components/active-trader/AtDockedOrderTicket";
+import { computeBracketPrices } from "@/lib/active-trader/atBracketMath";
 
 const SYS_FONT =
   'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif';
@@ -121,6 +123,8 @@ export interface OptionsChainOrderSheetProps {
     prefs: ActiveTraderTemplatePrefs;
     primaryInstruction: SchwabInstruction;
   };
+  /** Opens AT settings / bracket builder (docked ticket advanced icon). */
+  onAdvancedOrders?: () => void;
 }
 
 function distinctChainLegsFromStrategy(legs: StrategyLeg[]): number {
@@ -197,6 +201,7 @@ export function OptionsChainOrderSheet({
   onSheetPeekChange,
   draftDistinctLegCount,
   atBracketDraft,
+  onAdvancedOrders,
 }: OptionsChainOrderSheetProps) {
   const symbol = useTerminalStore((s) => s.symbol);
   const underlyingSpot = useTerminalStore((s) => {
@@ -219,6 +224,8 @@ export function OptionsChainOrderSheet({
   const [reviewLimitSnapped, setReviewLimitSnapped] = useState<number | null>(null);
   const [atBracketConfirmSnapshot, setAtBracketConfirmSnapshot] =
     useState<ChainSheetAtBracketConfirm | null>(null);
+  const [limitLocked, setLimitLocked] = useState(false);
+  const [orderType, setOrderType] = useState<AtDockedOrderType>("LIMIT");
   const limitUserEditedRef = useRef(false);
   const legsHydrateKeyRef = useRef("");
 
@@ -242,6 +249,8 @@ export function OptionsChainOrderSheet({
       limitUserEditedRef.current = false;
       legsHydrateKeyRef.current = "";
       setAtBracketConfirmSnapshot(null);
+      setLimitLocked(false);
+      setOrderType("LIMIT");
     }
   }, [legs.length]);
 
@@ -356,10 +365,12 @@ export function OptionsChainOrderSheet({
     const keyChanged = legsHydrateKeyRef.current !== legsHydrateKey;
     if (keyChanged) {
       legsHydrateKeyRef.current = legsHydrateKey;
+      setLimitLocked(false);
       if (!limitUserEditedRef.current && !allLegsQuoted) {
         setLimitPrice("");
       }
     }
+    if (limitLocked) return;
     if (!allLegsQuoted || spreadPrices?.spreadMid == null) return;
     if (keyChanged) {
       if (!limitUserEditedRef.current) {
@@ -370,7 +381,7 @@ export function OptionsChainOrderSheet({
     if (!limitUserEditedRef.current && !limitPrice.trim()) {
       setLimitPrice(displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid));
     }
-  }, [legsHydrateKey, legs.length, spreadPrices?.spreadMid, limitTickCtx, stage, limitPrice, allLegsQuoted]);
+  }, [legsHydrateKey, legs.length, spreadPrices?.spreadMid, limitTickCtx, stage, limitPrice, allLegsQuoted, limitLocked]);
 
   const snapLimitForSubmit = useCallback((): number | null => {
     const snapped = resolveSubmittedLimit(limitTickCtx, limitPrice);
@@ -436,11 +447,20 @@ export function OptionsChainOrderSheet({
 
   const validateAndReview = useCallback(() => {
     if (!guardDraftLegCount()) return;
-    const px = snapLimitForSubmit();
-    if (px == null || px <= 0) {
+    onCollapsedChange(false);
+    const px =
+      orderType === "MARKET"
+        ? spreadPrices?.spreadMid ?? submittedLimit ?? null
+        : snapLimitForSubmit();
+    if (orderType === "LIMIT" && (px == null || px <= 0)) {
       setPriceError("Set a valid limit price (Mid / Natural or enter manually).");
       return;
     }
+    if (orderType === "MARKET" && px == null) {
+      setPriceError("Quotes unavailable for market preview.");
+      return;
+    }
+    if (px == null) return;
     setReviewLimitSnapped(px);
     setPriceError("");
     const draft = resolveAtBracketDraft(atBracketDraft, legs, symbol, sendPreviewOnly);
@@ -468,7 +488,19 @@ export function OptionsChainOrderSheet({
       setAtBracketConfirmSnapshot(null);
     }
     setStage("review");
-  }, [snapLimitForSubmit, guardDraftLegCount, atBracketDraft, legs, draftDistinctLegCount, symbol, sendPreviewOnly]);
+  }, [
+    snapLimitForSubmit,
+    guardDraftLegCount,
+    atBracketDraft,
+    legs,
+    draftDistinctLegCount,
+    symbol,
+    sendPreviewOnly,
+    onCollapsedChange,
+    orderType,
+    spreadPrices?.spreadMid,
+    submittedLimit,
+  ]);
 
   const openReviewRef = useRef(false);
   const placeOrderInFlightRef = useRef(false);
@@ -603,7 +635,95 @@ export function OptionsChainOrderSheet({
     draftDistinctLegCount,
   ]);
 
+  const dockedEconomics = useMemo(() => {
+    const entryPx = submittedLimit ?? spreadPrices?.spreadMid ?? null;
+    const bracketDraft = resolveAtBracketDraft(atBracketDraft, legs, symbol, sendPreviewOnly);
+    let targetExit: number | null = null;
+    if (entryPx != null && bracketDraft?.prefs.takeProfit?.enabled) {
+      const { takeProfit } = computeBracketPrices({
+        entryPrice: entryPx,
+        quantity,
+        primaryInstruction: bracketDraft.primaryInstruction,
+        tp: bracketDraft.prefs.takeProfit,
+        sl: bracketDraft.prefs.stopLoss,
+        underlyingSymbol: symbol.replace(/^\$/, ""),
+        assetType: "OPTION",
+      });
+      if (takeProfit != null) {
+        const contracts = legs.reduce((s, l) => s + l.quantity, 0) * quantity;
+        targetExit = Math.abs(takeProfit) * 100 * Math.max(1, contracts);
+      }
+    }
+    const maxLossLabel =
+      summary?.maxLoss != null ? fmtCurrency(summary.maxLoss) : "uncapped";
+    return {
+      entryGross: summary?.grossNotional != null ? Math.abs(summary.grossNotional) : null,
+      targetExit,
+      estNet: feeAdjustedNetCash,
+      estNetUnavailable: summary?.grossNotional == null,
+      maxLossLabel,
+    };
+  }, [
+    submittedLimit,
+    spreadPrices?.spreadMid,
+    atBracketDraft,
+    legs,
+    symbol,
+    sendPreviewOnly,
+    quantity,
+    summary,
+    feeAdjustedNetCash,
+  ]);
+
+  const handleLimitLockToggle = useCallback(() => {
+    if (!limitLocked) {
+      const snapped = snapLimitForSubmit();
+      if (snapped != null) {
+        limitUserEditedRef.current = true;
+        setLimitLocked(true);
+      }
+      return;
+    }
+    setLimitLocked(false);
+  }, [limitLocked, snapLimitForSubmit]);
+
   if (legs.length === 0) return null;
+
+  if (collapsed && sendPreviewOnly && stage === "form") {
+    return (
+      <AtDockedOrderTicket
+        legs={legs}
+        isCredit={isCredit}
+        spreadMid={spreadPrices?.spreadMid ?? null}
+        entryGross={dockedEconomics.entryGross}
+        targetExit={dockedEconomics.targetExit}
+        estNet={dockedEconomics.estNet}
+        estNetUnavailable={dockedEconomics.estNetUnavailable}
+        maxLossLabel={dockedEconomics.maxLossLabel}
+        limitPrice={limitPrice}
+        limitLocked={limitLocked}
+        orderType={orderType}
+        onOrderTypeChange={(t) => {
+          setOrderType(t);
+          if (t === "MARKET") setLimitLocked(false);
+        }}
+        onLimitChange={(raw) => {
+          limitUserEditedRef.current = true;
+          setLimitPrice(raw);
+          setLimitLocked(false);
+          setPriceError("");
+        }}
+        onLimitLockToggle={handleLimitLockToggle}
+        onNudgeLimit={nudgePrice}
+        onRemoveLeg={onRemoveLeg}
+        onReview={validateAndReview}
+        onExpandSheet={() => onCollapsedChange(false)}
+        onAdvancedOrders={() => onAdvancedOrders?.()}
+        reviewDisabled={!isValid}
+        sendPreviewOnly={sendPreviewOnly}
+      />
+    );
+  }
 
   const sheetHeight = collapsed ? 52 : sheetPeek ? AT_SHEET_PEEK_VH : AT_SHEET_FULL_VH;
 

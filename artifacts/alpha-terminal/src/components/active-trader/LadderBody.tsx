@@ -89,31 +89,32 @@ function FlowBarCell({
   const badge = flowBadgeFromCounts(flow);
   const color = side === "put" ? DOWN : UP;
   const align = side === "put" ? "left" : "right";
-  const pct = maxFlow > 0 ? Math.min(100, Math.max(vol > 0 ? 12 : 0, Math.round((vol / maxFlow) * 100))) : 0;
-  const volLabel = vol >= 1000 ? `${(vol / 1000).toFixed(1)}k` : vol >= 100 ? String(vol) : "";
-  const tip = `Flow ${vol} · B:${flow.buy} S:${flow.sell}${badge ? ` · ${badge}` : ""}`;
+  const pct = maxFlow > 0 && vol > 0 ? Math.min(1, vol / maxFlow) : 0;
+  const quiet = vol === 0;
+  const tip = quiet
+    ? "Quiet · no recent contracts"
+    : `Est. contracts ${vol} · B:${flow.buy} S:${flow.sell}${badge ? ` · ${badge}` : ""}`;
+  const gradient =
+    vol > 0
+      ? align === "right"
+        ? `linear-gradient(90deg, transparent 0%, ${color}${Math.round(pct * 70 + 20).toString(16).padStart(2, "0")} 100%)`
+        : `linear-gradient(270deg, transparent 0%, ${color}${Math.round(pct * 70 + 20).toString(16).padStart(2, "0")} 100%)`
+      : quiet
+        ? "rgba(255,255,255,0.02)"
+        : "transparent";
   return (
     <div
-      className="flex items-center h-full w-full min-w-0 gap-0.5 px-0.5"
+      className="relative h-full w-full min-w-0"
       title={tip}
-      style={{ flexDirection: align === "right" ? "row-reverse" : "row" }}
+      data-at-flow-cell={side}
+      style={{ background: quiet ? gradient : AT_LADDER_PANEL_BG }}
     >
-      <div className="flex-1 min-w-[14px] h-[6px] rounded-sm overflow-hidden" style={{ background: "rgba(255,255,255,0.04)" }}>
-        {vol > 0 && (
-          <div
-            className="h-full rounded-sm"
-            style={{
-              width: `${pct}%`,
-              marginLeft: align === "right" ? "auto" : 0,
-              background: `linear-gradient(${align === "right" ? "90deg" : "270deg"}, ${color}, ${color}44)`,
-            }}
-          />
-        )}
-      </div>
-      {volLabel ? (
-        <span className="shrink-0 tabular-nums whitespace-nowrap" style={{ fontSize: 7, color: GRAY, lineHeight: 1 }}>
-          {volLabel}
-        </span>
+      {!quiet ? (
+        <div
+          className="absolute inset-0 pointer-events-none motion-reduce:opacity-100"
+          style={{ background: gradient }}
+          aria-hidden
+        />
       ) : null}
     </div>
   );
@@ -158,28 +159,34 @@ function QuoteCell({
   sizeLabel?: string | null;
   legSelected?: boolean;
 }) {
-  const bg = tint === "bid" ? `${DOWN}30` : `${UP}30`;
+  const sideTint = side === "BUY" ? UP : DOWN;
   return (
     <button
       type="button"
       aria-label={quoteAriaLabel({ strike, type, side, tint, price, expiryLabel })}
       data-at-quote={dataAttr}
-      className="w-full h-full flex flex-col items-end justify-center px-1 active:opacity-80"
+      className="w-full h-full flex flex-col items-end justify-center px-1 active:opacity-80 relative"
       style={{
         fontSize: 14,
-        fontWeight: 600,
+        fontWeight: 500,
         fontVariantNumeric: "tabular-nums",
         color: WHITE,
-        background: bg,
-        border: legSelected ? `2px solid #f5f5f5` : `1px solid ${BORDER_ROW}`,
-        borderRight: legSelected ? `2px solid #f5f5f5` : tint === "bid" ? `1px solid ${DOWN}55` : `1px solid ${UP}55`,
-        boxShadow: legSelected ? "inset 0 0 0 1px rgba(255,255,255,0.35)" : undefined,
+        background: legSelected ? `${sideTint}12` : AT_LADDER_PANEL_BG,
+        border: legSelected ? `2px solid ${sideTint}` : `1px solid ${BORDER_ROW}`,
       }}
       onClick={() => {
         if (onClick) onClick();
         else if (leg) onQuoteTap(leg, type, side);
       }}
     >
+      {legSelected ? (
+        <span
+          className="absolute top-0 left-0.5 leading-none font-bold"
+          style={{ fontSize: 8, color: sideTint, letterSpacing: "0.04em" }}
+        >
+          {side}
+        </span>
+      ) : null}
       <span>{fmtPx(price)}</span>
       {sizeLabel ? (
         <span style={{ fontSize: 8, color: DIM, lineHeight: 1 }}>{sizeLabel}</span>
@@ -202,6 +209,7 @@ type LadderRowViewProps = {
   flowByKey: Record<string, FlowLaneCounts>;
   underlyingPrice: number | null;
   symbolLabel: string;
+  spotStrike: number | null;
   spotBetweenRows: boolean;
   spotFrac: number;
   flipBetweenRows: boolean;
@@ -232,6 +240,7 @@ const LadderRowView = memo(function LadderRowView({
   flowByKey,
   underlyingPrice,
   symbolLabel,
+  spotStrike,
   spotBetweenRows,
   spotFrac,
   flipBetweenRows,
@@ -279,8 +288,7 @@ const LadderRowView = memo(function LadderRowView({
   const putFlow = ladderMode === "vertical" ? putVF.counts : putLegFlow;
   const callFlow = ladderMode === "vertical" ? callVF.counts : callLegFlow;
 
-  const spotRow =
-    underlyingPrice != null && Math.abs(row.strike - underlyingPrice) < Math.max(underlyingPrice * 0.0005, 0.05);
+  const spotRow = spotStrike != null && row.strike === spotStrike;
   const isCallWall = zones.callWall != null && Math.abs(row.strike - zones.callWall) < 0.001;
   const isPutWall = zones.putWall != null && Math.abs(row.strike - zones.putWall) < 0.001;
 
@@ -314,24 +322,15 @@ const LadderRowView = memo(function LadderRowView({
   const rowStyle: React.CSSProperties = {
     gridTemplateColumns: AT_LADDER_GRID,
     height: rowHeight,
-    borderBottom: spotRow ? `1px solid ${accentHex}40` : `1px solid ${BORDER_ROW}`,
+    borderBottom: `1px solid ${BORDER_ROW}`,
     fontFamily: MONO,
     position: "relative",
-    background: spotRow
-      ? `linear-gradient(180deg, ${accentHex}18 0%, ${accentHex}08 100%)`
-      : keepawayForbidden
-        ? "rgba(255,255,255,0.045)"
-        : isSelected
-          ? "rgba(251,191,36,0.12)"
-          : AT_LADDER_PANEL_BG,
+    background: keepawayForbidden ? "rgba(255,255,255,0.045)" : AT_LADDER_PANEL_BG,
     boxShadow: isCallWall
       ? `inset 4px 0 0 ${UP}`
       : isPutWall
         ? `inset 4px 0 0 ${DOWN}`
-        : isSelected
-          ? `inset 0 0 0 1px ${accentHex}55`
-          : undefined,
-    borderTop: spotRow ? `1px solid ${accentHex}55` : undefined,
+        : undefined,
   };
 
   const putKey = row.put ? atLadderLegKey(row.put, "PUT") : null;
@@ -547,6 +546,19 @@ function FlipPill({ flip }: { flip: number }) {
 
 export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
   const rowHeight = props.rowHeight ?? AT_LADDER_ROW_H;
+  const spotStrike = useMemo(() => {
+    if (props.underlyingPrice == null || props.rows.length === 0) return null;
+    let best = props.rows[0]!.strike;
+    let bestDist = Math.abs(best - props.underlyingPrice);
+    for (const row of props.rows) {
+      const d = Math.abs(row.strike - props.underlyingPrice);
+      if (d < bestDist) {
+        bestDist = d;
+        best = row.strike;
+      }
+    }
+    return best;
+  }, [props.rows, props.underlyingPrice]);
   const maxFlow = useMemo(() => {
     let m = 1;
     for (const row of props.rows) {
@@ -588,6 +600,7 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
             isSelected={props.selectedStrike === row.strike}
             underlyingPrice={props.underlyingPrice}
             symbolLabel={props.symbolLabel}
+            spotStrike={spotStrike}
             spotBetweenRows={spotBetween}
             spotFrac={spotFrac}
             flipBetweenRows={flipBetween}

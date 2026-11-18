@@ -19,7 +19,7 @@ export function useFlowByKey(keys: string[], windowMs: number): Record<string, F
   return useMemo(() => {
     const out: Record<string, FlowLaneCounts> = {};
     for (const key of keys) {
-      out[key] = getFlowCountsForKey(key);
+      out[key] = getFlowCountsForKey(key, windowMs);
     }
     return out;
   }, [keys, ticks, windowMs]);

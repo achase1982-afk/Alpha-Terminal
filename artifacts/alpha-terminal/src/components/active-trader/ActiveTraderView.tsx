@@ -55,7 +55,8 @@ import { toast } from "@/hooks/use-toast";
 import { AtSettingsExpanded } from "./AtSettingsPanel";
 import { AtGlanceTop } from "./AtGlanceTop";
 import { mergeChainContractWithStream } from "@/lib/chainContractQuoteMerge";
-import { atSheetPeekHeightPx } from "@/lib/active-trader/atSheetLayout";
+import { atDockedTicketScrollPadPx, atSheetPeekHeightPx } from "@/lib/active-trader/atSheetLayout";
+import { resetFlowClassifierWindow } from "@/lib/active-trader/flowClassifier";
 import {
   loadAtSettingsPanelOpen,
   saveAtSettingsPanelOpen,
@@ -396,6 +397,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     }
     if (tradeEpochRef.current === epoch) return;
     tradeEpochRef.current = epoch;
+    resetFlowClassifierWindow();
     setSelectedLegs(new Map());
     setLegQuantities(new Map());
     setSelected(null);
@@ -800,8 +802,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     return { mode: "single", contract: last.contract, type: last.type };
   }, [tradeContext, selectedLegs]);
 
-  const showFloatingActionBar =
-    chainSheetCollapsed && ticketLegs.length > 0 && actionBarContext != null;
+  const showFloatingActionBar = false;
   const showDockedActionBar = ticketLegs.length === 0 && actionBarContext != null;
 
   const instrumentLabel = useMemo(() => {
@@ -825,7 +826,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const sheetScrollPad =
     selectedLegs.size > 0
       ? chainSheetCollapsed
-        ? 64
+        ? atDockedTicketScrollPadPx(ticketLegs.length)
         : chainSheetPeek
           ? atSheetPeekHeightPx()
           : 300
@@ -1099,6 +1100,10 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           subscribeOptionSymbols={holdSubs.subscribeOptionSymbols}
           demoFixture={blockLiveSend}
           sendPreviewOnly
+          onAdvancedOrders={() => {
+            saveAtSettingsPanelOpen(true);
+            setSettingsOpen(true);
+          }}
           atBracketDraft={{
             prefs,
             primaryInstruction: settingsSummaryInstruction,

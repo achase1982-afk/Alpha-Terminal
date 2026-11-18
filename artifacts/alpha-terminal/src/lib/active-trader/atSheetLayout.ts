@@ -9,3 +9,9 @@ export function atSheetPeekHeightPx(): number {
   if (typeof window === "undefined") return 380;
   return Math.round(window.innerHeight * 0.38) + 88;
 }
+
+/** Scroll padding when the docked build ticket is visible (above bottom nav). */
+export function atDockedTicketScrollPadPx(legCount: number): number {
+  if (legCount <= 0) return 0;
+  return legCount > 2 ? 188 : 156;
+}

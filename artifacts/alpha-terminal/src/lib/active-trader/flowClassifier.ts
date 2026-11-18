@@ -18,6 +18,7 @@ export interface TickClassifierState {
   windowSell: number;
   windowEven: number;
   windowUnknown: number;
+  lastIngestMs: number;
 }
 
 const stateByKey = new Map<string, TickClassifierState>();
@@ -44,7 +45,15 @@ export function classifyQuoteRule(
   return "even";
 }
 
+function resetWindowCounts(st: TickClassifierState): void {
+  st.windowBuy = 0;
+  st.windowSell = 0;
+  st.windowEven = 0;
+  st.windowUnknown = 0;
+}
+
 export function ingestOptionTickForFlow(key: string, tick: OptionTick, windowMs: number): FlowLaneCounts {
+  const now = Date.now();
   let st = stateByKey.get(key);
   if (!st) {
     st = {
@@ -55,10 +64,16 @@ export function ingestOptionTickForFlow(key: string, tick: OptionTick, windowMs:
       windowSell: 0,
       windowEven: 0,
       windowUnknown: 0,
+      lastIngestMs: now,
     };
     stateByKey.set(key, st);
     return { buy: 0, sell: 0, even: 0, unknown: 0 };
   }
+
+  if (windowMs > 0 && now - st.lastIngestMs > windowMs) {
+    resetWindowCounts(st);
+  }
+  st.lastIngestMs = now;
 
   const vol = tick.volume ?? st.prevVolume;
   const dV = vol - st.prevVolume;
@@ -75,7 +90,6 @@ export function ingestOptionTickForFlow(key: string, tick: OptionTick, windowMs:
   st.prevAsk = tick.ask ?? st.prevAsk;
   st.prevVolume = vol;
 
-  void windowMs;
   return {
     buy: st.windowBuy,
     sell: st.windowSell,
@@ -95,16 +109,17 @@ export function flowBadgeFromCounts(c: FlowLaneCounts): FlowBadge {
 
 export function resetFlowClassifierWindow(): void {
   for (const st of stateByKey.values()) {
-    st.windowBuy = 0;
-    st.windowSell = 0;
-    st.windowEven = 0;
-    st.windowUnknown = 0;
+    resetWindowCounts(st);
+    st.lastIngestMs = 0;
   }
 }
 
-export function getFlowCountsForKey(key: string): FlowLaneCounts {
+export function getFlowCountsForKey(key: string, windowMs?: number): FlowLaneCounts {
   const st = stateByKey.get(key);
   if (!st) return { buy: 0, sell: 0, even: 0, unknown: 0 };
+  if (windowMs != null && windowMs > 0 && st.lastIngestMs > 0 && Date.now() - st.lastIngestMs > windowMs) {
+    return { buy: 0, sell: 0, even: 0, unknown: 0 };
+  }
   return { buy: st.windowBuy, sell: st.windowSell, even: st.windowEven, unknown: st.windowUnknown };
 }
 
@@ -118,5 +133,6 @@ export function seedFlowCountsForKey(key: string, counts: FlowLaneCounts, prevVo
     windowSell: counts.sell,
     windowEven: counts.even,
     windowUnknown: counts.unknown,
+    lastIngestMs: Date.now(),
   });
 }
