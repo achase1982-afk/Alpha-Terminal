@@ -39,6 +39,8 @@ import {
   growAtLadderSide,
   mergeAtChainLegs,
   trimAtChainLegsToDepth,
+  atLadderPlaceholderOk,
+  type AtChainQueryParams,
 } from "@/lib/active-trader/atLadderWindow";
 import { OptionsSubViewToggle, type OptionsSubView } from "@/components/active-trader/OptionsSubViewToggle";
 import {
@@ -1328,6 +1330,9 @@ function buildSchwabOptionKey(underlying: string, expiration: string, strike: nu
   return `${sym}${yy}${mm}${dd}${type}${strikePadded}`;
 }
 
+/** Least time between re-centering fetches when the underlying has run away from the loaded strikes. */
+const CHAIN_REANCHOR_MIN_MS = 5_000;
+
 /** The chain order sheet re-prices from its legs' live quotes at most this often. */
 const CHAIN_TICKET_TICK_MS = 150;
 
@@ -1499,11 +1504,15 @@ export function OptionsTab({
         staleTime: 30_000,
         gcTime: 5 * 60_000,
         retry: isFuturesSymbol ? false : 2,
-        placeholderData: (previous: OptionChainResponse | undefined) => {
+        placeholderData: (
+          previous: OptionChainResponse | undefined,
+          previousQuery?: { queryKey: readonly unknown[] },
+        ) => {
           if (!previous) return undefined;
           if (optionsSubView === "at") {
-            const count = Math.max(previous.calls?.length ?? 0, previous.puts?.length ?? 0);
-            if (count < 20) return undefined;
+            // The ladder shows its own strike window or a loading state, never the Chain view's list.
+            const previousParams = previousQuery?.queryKey?.[1] as AtChainQueryParams | undefined;
+            if (!atDates || !atLadderPlaceholderOk(previousParams, { symbol, ...atDates })) return undefined;
           }
           return previous;
         },
@@ -1512,7 +1521,8 @@ export function OptionsTab({
 
   useEffect(() => {
     if (optionsSubView !== "at" || fixtureChain || !chainApiEnabled) return;
-    void refetchOptionChain();
+    // Join a request that is already in flight for this window instead of cancelling and re-sending it.
+    void refetchOptionChain({ cancelRefetch: false });
   }, [optionsSubView, fixtureChain, chainApiEnabled, refetchOptionChain]);
 
   const chainFetchedAt =
@@ -1606,10 +1616,16 @@ export function OptionsTab({
     null;
 
   const chainAnchorPx = rawData?.underlyingPrice ?? null;
+  const lastReanchorAtRef = useRef(0);
   useEffect(() => {
     if (fixtureChain || underlyingPrice == null || chainAnchorPx == null) return;
     if (Math.abs(chainAnchorPx - underlyingPrice) < 25) return;
-    void refetchOptionChain();
+    // This runs on every underlying tick while the chain is off-center. A plain
+    // refetch() cancels the request in flight; called per tick, none would finish.
+    const now = Date.now();
+    if (now - lastReanchorAtRef.current < CHAIN_REANCHOR_MIN_MS) return;
+    lastReanchorAtRef.current = now;
+    void refetchOptionChain({ cancelRefetch: false });
   }, [underlyingPrice, chainAnchorPx, fixtureChain, refetchOptionChain]);
 
   const chainHoldSig = useMemo(() => {

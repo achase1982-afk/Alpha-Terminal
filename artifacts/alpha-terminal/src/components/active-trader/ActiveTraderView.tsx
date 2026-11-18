@@ -64,7 +64,6 @@ import { toast } from "@/hooks/use-toast";
 import { AtSettingsExpanded } from "./AtSettingsPanel";
 import { AtGlanceTop } from "./AtGlanceTop";
 import { mergeChainContractWithStream } from "@/lib/chainContractQuoteMerge";
-import { atSheetPeekHeightPx } from "@/lib/active-trader/atSheetLayout";
 import {
   loadAtSettingsPanelOpen,
   saveAtSettingsPanelOpen,
@@ -72,11 +71,11 @@ import {
 import { LadderBody, type AtTradeContext, type LadderRowModel } from "./LadderBody";
 import { AtTradeActionBar } from "./AtTradeActionBar";
 import {
-  atLadderRowOffsetFromBand,
+  atLadderNudgeToClearSheet,
+  atLadderRowFullyVisible,
   atLadderScrollShiftForRows,
+  atLadderScrollTopForRow,
   atLadderVisibleRowRange,
-  scrollAtLadderToSpot,
-  scrollAtLadderToStrike,
   scrollAtLadderToStrikeAboveSheet,
 } from "@/lib/active-trader/atLadderScroll";
 import { AT_MOBILE_PEEK_MAX_PX } from "@/components/active-trader/AtMobileGlanceOrderSheet";
@@ -171,12 +170,13 @@ function selectedLegsFromChain(
   return next;
 }
 
-/** Spot row farther than this from its band shows the recenter pill. */
-const AT_RECENTER_TOLERANCE_PX = 56;
 /** Distance from the first / last loaded strike that asks for the next page. */
 const AT_EDGE_LOAD_PX = 96;
 /** The quote subscription follows the viewport once scrolling has paused this long. */
 const AT_VISIBLE_SETTLE_MS = 140;
+const AT_ORDER_SHEET_Z = 120;
+/** After a tap, how long the tapped strike is kept clear of a sheet that is still opening or growing. */
+const AT_NUDGE_WINDOW_MS = 1_200;
 
 /** Header quote-health pill and order-settings mid: a human reads them, so a few updates a second is plenty. */
 const AT_QUOTE_AUDIT_MS = 2_000;
@@ -323,7 +323,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   );
   const chromeRef = useRef<HTMLDivElement>(null);
   const ladderScrollRef = useRef<HTMLDivElement>(null);
-  const [ladderOffCenter, setLadderOffCenter] = useState(false);
+  const [spotOutOfView, setSpotOutOfView] = useState(false);
 
   useEffect(() => {
     if (presentation?.skipNetwork) {
@@ -351,14 +351,15 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     setTradeStripStrike(contract.strike);
   }, [initialTradeSelection, primary]);
 
+  // Nothing tradable left for this symbol. A ladder that is still loading its strikes keeps its legs.
   useEffect(() => {
-    if (!noTradableExpirations && primary) return;
+    if (!noTradableExpirations) return;
     atSelectionClear(selection);
     setLegQuantities(new Map());
     setSelected(null);
     setTradeContext(null);
     setTradeStripStrike(null);
-  }, [noTradableExpirations, primary?.expiration, selection]);
+  }, [noTradableExpirations, selection]);
 
   const ladderRows: LadderRowModel[] = useMemo(() => {
     if (!primary?.rows?.length) return [];
@@ -374,6 +375,67 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     return idx >= 0 ? ladderStrikes[idx]! : null;
   }, [ladderStrikes, underlyingPrice]);
 
+  const fixtureTight = !!presentation?.skipNetwork;
+  const ladderRowH = fixtureTight ? 36 : AT_LADDER_ROW_H;
+
+  /**
+   * The order sheet floats over the bottom of the ladder; it never takes
+   * height away from it. Its measured height becomes scroll room below the
+   * last strike, so every strike can still be pulled above the sheet.
+   */
+  const [sheetPad, setSheetPad] = useState(0);
+  const sheetObserverRef = useRef<ResizeObserver | null>(null);
+  const sheetRef = useCallback((node: HTMLDivElement | null) => {
+    sheetObserverRef.current?.disconnect();
+    sheetObserverRef.current = null;
+    if (!node) {
+      setSheetPad(0);
+      return;
+    }
+    const sync = () => setSheetPad(Math.ceil(node.getBoundingClientRect().height));
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(node);
+    sheetObserverRef.current = ro;
+  }, []);
+  useEffect(() => () => sheetObserverRef.current?.disconnect(), []);
+
+  const scrollInputRef = useRef({ ladderStrikes, ladderRowH, spotStrike, onReachEdge, sheetPad });
+  scrollInputRef.current = { ladderStrikes, ladderRowH, spotStrike, onReachEdge, sheetPad };
+
+  /** The part of the ladder that is not under the order sheet. */
+  const readViewport = useCallback((el: HTMLElement) => {
+    const cur = scrollInputRef.current;
+    return {
+      scrollTop: el.scrollTop,
+      viewportPx: Math.max(cur.ladderRowH, el.clientHeight - cur.sheetPad),
+      rowHeight: cur.ladderRowH,
+      rowCount: cur.ladderStrikes.length,
+    };
+  }, []);
+
+  /**
+   * A just-tapped strike that the sheet covers is pulled up just far enough to
+   * clear it. Runs right after the tap and again when the sheet opens or grows.
+   */
+  const nudgeRef = useRef<{ strike: number; until: number } | null>(null);
+  const nudgeTappedStrikeAboveSheet = useCallback(() => {
+    const pending = nudgeRef.current;
+    const el = ladderScrollRef.current;
+    if (!pending || !el) return;
+    if (performance.now() > pending.until) {
+      nudgeRef.current = null;
+      return;
+    }
+    const idx = scrollInputRef.current.ladderStrikes.indexOf(pending.strike);
+    if (idx < 0) return;
+    const px = atLadderNudgeToClearSheet(idx, readViewport(el));
+    if (px > 0) el.scrollBy({ top: px, behavior: "smooth" });
+  }, [readViewport]);
+  useLayoutEffect(() => {
+    nudgeTappedStrikeAboveSheet();
+  }, [sheetPad, nudgeTappedStrikeAboveSheet]);
+
   const [visibleStrikes, setVisibleStrikes] = useState<{ min: number; max: number } | null>(null);
   const streamKeys = useMemo(() => {
     const rows = ladderRows.map((row) => ({
@@ -388,17 +450,17 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         visibleMax: visibleStrikes.max,
       });
     }
-    const spot = underlyingPrice;
-    if (spot == null) {
+    // Not measured yet: the strikes around spot, which is where the ladder opens.
+    if (spotStrike == null) {
       return selectAtStreamKeys({ rows, visibleMin: -1e12, visibleMax: 1e12, overscan: 0 }).slice(0, 80);
     }
     return selectAtStreamKeys({
       rows,
-      visibleMin: spot,
-      visibleMax: spot,
+      visibleMin: spotStrike,
+      visibleMax: spotStrike,
       overscan: 20,
     });
-  }, [ladderRows, visibleStrikes, underlyingPrice]);
+  }, [ladderRows, visibleStrikes, spotStrike]);
 
   const holdSig = useMemo(() => {
     if (!primary || streamKeys.length === 0) return null;
@@ -724,8 +786,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const handleToggleLeg = useCallback(
     (contract: OptionsContract, type: "CALL" | "PUT", side: "bid" | "ask") => {
       const result = atSelectionToggleLeg(selection, contract, type, side);
-      startTransition(() => {
-        if (result === "removed") {
+      if (result === "removed") {
+        startTransition(() => {
           const key = atLadderLegKey(contract, type);
           setLegQuantities((q) => {
             if (!q.has(key)) return q;
@@ -733,10 +795,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             nq.delete(key);
             return nq;
           });
-        }
-        setChainSheetCollapsed(false);
-        setChainSheetPeek(false);
-      });
+        });
+      }
       return result;
     },
     [selection],
@@ -745,30 +805,29 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const handleQuoteTap = useCallback(
     (contract: OptionsContract, type: "CALL" | "PUT", side: "BUY" | "SELL") => {
       const legSide = quoteSideFromTap(side);
-      handleToggleLeg(contract, type, legSide);
+      const result = handleToggleLeg(contract, type, legSide);
       startTransition(() => {
         setLastLegQuoteSide(legSide);
         setSelected({ contract, type });
         setTradeStripStrike(contract.strike);
         setTradeContext(null);
       });
-      if (!chainSheetCollapsed) {
-        requestAnimationFrame(() => {
-          const sheetPx = chainSheetPeek ? atSheetPeekHeightPx() : 280;
-          scrollAtLadderToStrikeAboveSheet(ladderScrollRef.current, contract.strike, sheetPx);
-        });
+      if (result === "added" || result === "flipped") {
+        nudgeRef.current = { strike: contract.strike, until: performance.now() + AT_NUDGE_WINDOW_MS };
+        // Next frame: measuring the ladder here would force a layout before the outline can paint.
+        requestAnimationFrame(nudgeTappedStrikeAboveSheet);
+      } else {
+        nudgeRef.current = null;
       }
     },
-    [chainSheetCollapsed, chainSheetPeek, handleToggleLeg],
+    [handleToggleLeg, nudgeTappedStrikeAboveSheet],
   );
 
+  // A new ticket opens expanded; one the user collapsed stays collapsed while they pick more legs.
+  const hasLegs = selectedLegs.size > 0;
   useEffect(() => {
-    if (!tradeStripStrike || tradeContext) return;
-    if (chainSheetCollapsed && selectedLegs.size > 0) return;
-    requestAnimationFrame(() => {
-      scrollAtLadderToStrike(ladderScrollRef.current, tradeStripStrike, 0.32);
-    });
-  }, [tradeStripStrike, tradeContext, chainSheetCollapsed, selectedLegs.size]);
+    if (!hasLegs) setChainSheetCollapsed(false);
+  }, [hasLegs]);
 
   useEffect(() => {
     const onSheet = (ev: Event) => {
@@ -957,6 +1016,12 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     return `${und} · pick strike`;
   }, [selected, symbol]);
 
+  const atBracketDraft = useMemo(
+    () => ({ prefs, primaryInstruction: settingsSummaryInstruction }),
+    [prefs, settingsSummaryInstruction],
+  );
+  const openAdvancedOrders = useCallback(() => setSettingsOpen(true), []);
+
   const toggleSettings = useCallback(() => {
     setSettingsOpen((prev) => {
       const next = !prev;
@@ -965,31 +1030,12 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     });
   }, []);
 
-  const fixtureTight = !!presentation?.skipNetwork;
-  const sheetScrollPad = 0;
-  const ladderRowH = fixtureTight ? 36 : AT_LADDER_ROW_H;
-
   const expiryLabel = primary?.dateLabel ?? "\u2014";
   const underlyingSymbol = symbol.replace(/^\$/, "").toUpperCase();
-  const scrollLadderToSpot = useCallback(() => {
-    requestAnimationFrame(() => {
-      scrollAtLadderToSpot(ladderScrollRef.current, underlyingPrice);
-    });
-  }, [underlyingPrice]);
 
   useEffect(() => {
     setVisibleStrikes(null);
   }, [symbol, activeExpiration]);
-
-  const centeredKeyRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!ladderDataReady) return;
-    const band = ladderRows.length >= 15 ? "full" : "partial";
-    const key = `${symbol}|${activeExpiration ?? ""}|${band}`;
-    if (centeredKeyRef.current === key) return;
-    centeredKeyRef.current = key;
-    scrollLadderToSpot();
-  }, [symbol, activeExpiration, ladderDataReady, ladderRows.length, scrollLadderToSpot]);
 
   /** Keep the strikes on screen where they are when a page of strikes lands above them. */
   const prevStrikesRef = useRef<{ key: string; strikes: number[] }>({ key: "", strikes: [] });
@@ -1004,6 +1050,37 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     prevStrikesRef.current = { key, strikes: ladderStrikes };
   }, [ladderStrikes, ladderRowH, symbol, activeExpiration]);
 
+  /**
+   * Center on spot once, when this symbol and expiry's strikes first arrive,
+   * before that frame paints. After that the ladder only moves when the user
+   * scrolls it, taps Recenter, or a tapped strike would sit under the sheet.
+   */
+  const centeredKeyRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const el = ladderScrollRef.current;
+    if (!ladderDataReady) {
+      // Back to the loading state: the next strikes to arrive open centered again.
+      centeredKeyRef.current = null;
+      return;
+    }
+    if (!el || spotStrike == null) return;
+    const key = `${symbol}|${activeExpiration ?? ""}`;
+    if (centeredKeyRef.current === key) return;
+    const idx = ladderStrikes.indexOf(spotStrike);
+    if (idx < 0) return;
+    centeredKeyRef.current = key;
+    el.scrollTop = atLadderScrollTopForRow(idx, readViewport(el));
+  }, [symbol, activeExpiration, ladderDataReady, spotStrike, ladderStrikes, readViewport]);
+
+  const scrollLadderToSpot = useCallback(() => {
+    const el = ladderScrollRef.current;
+    const cur = scrollInputRef.current;
+    if (!el || cur.spotStrike == null) return;
+    const idx = cur.ladderStrikes.indexOf(cur.spotStrike);
+    if (idx < 0) return;
+    el.scrollTo({ top: atLadderScrollTopForRow(idx, readViewport(el)), behavior: "smooth" });
+  }, [readViewport]);
+
   const upArmedRef = useRef(true);
   const downArmedRef = useRef(true);
   useEffect(() => {
@@ -1013,21 +1090,20 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   /**
    * Scroll bookkeeping: which strikes are on screen (drives the quote
-   * subscription), whether the spot row drifted off its band (recenter pill),
-   * and whether an edge was reached (load the next strikes).
+   * subscription), whether the spot row is still in view (Recenter), and
+   * whether the user scrolled into an edge (load the next strikes).
    *
    * Rows are a fixed height, so this is arithmetic on `scrollTop`, once per
-   * frame. It used to walk every row and read its box on every scroll event.
+   * frame, with no per-row layout reads.
    */
-  const scrollInputRef = useRef({ ladderStrikes, ladderRowH, spotStrike, onReachEdge, ladderDataReady });
-  scrollInputRef.current = { ladderStrikes, ladderRowH, spotStrike, onReachEdge, ladderDataReady };
   const measureLadderRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     const el = ladderScrollRef.current;
-    if (!el) return;
+    if (!el || !ladderDataReady) return;
     let frame = 0;
     let visibleTimer: ReturnType<typeof setTimeout> | null = null;
     let pendingVisible: { min: number; max: number } | null = null;
+    let lastScrollTop = el.scrollTop;
 
     const commitVisible = () => {
       visibleTimer = null;
@@ -1037,39 +1113,37 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       setVisibleStrikes((prev) => (prev && prev.min === next.min && prev.max === next.max ? prev : next));
     };
 
-    const measure = (settleMs: number) => {
+    const measure = (fromScroll: boolean) => {
       const cur = scrollInputRef.current;
       const strikes = cur.ladderStrikes;
-      const viewport = {
-        scrollTop: el.scrollTop,
-        viewportPx: el.clientHeight,
-        rowHeight: cur.ladderRowH,
-        rowCount: strikes.length,
-      };
-      const spotIdx = cur.spotStrike != null ? strikes.indexOf(cur.spotStrike) : -1;
-      setLadderOffCenter(
-        spotIdx >= 0 && Math.abs(atLadderRowOffsetFromBand(spotIdx, viewport)) > AT_RECENTER_TOLERANCE_PX,
-      );
+      const viewport = readViewport(el);
+      const direction = viewport.scrollTop - lastScrollTop;
+      lastScrollTop = viewport.scrollTop;
 
-      const range = atLadderVisibleRowRange(viewport);
+      const spotIdx = cur.spotStrike != null ? strikes.indexOf(cur.spotStrike) : -1;
+      setSpotOutOfView(spotIdx >= 0 && !atLadderRowFullyVisible(spotIdx, viewport));
+
+      const range = atLadderVisibleRowRange({ ...viewport, viewportPx: el.clientHeight });
       if (!range) return;
       // Rows are descending: the first visible row is the highest strike.
       pendingVisible = { min: strikes[range.last]!, max: strikes[range.first]! };
       if (visibleTimer != null) clearTimeout(visibleTimer);
-      if (settleMs <= 0) commitVisible();
-      else visibleTimer = setTimeout(commitVisible, settleMs);
+      if (fromScroll) visibleTimer = setTimeout(commitVisible, AT_VISIBLE_SETTLE_MS);
+      else commitVisible();
 
-      if (!cur.onReachEdge || !cur.ladderDataReady || !centeredKeyRef.current) return;
+      // Only a scroll toward an edge loads more strikes: opening the ladder,
+      // centering it or nudging a strike must not.
+      if (!fromScroll || !cur.onReachEdge || !centeredKeyRef.current) return;
       const contentPx = strikes.length * cur.ladderRowH;
       if (contentPx <= viewport.viewportPx + 8) return;
       const nearTop = viewport.scrollTop < AT_EDGE_LOAD_PX;
       const nearBottom = contentPx - viewport.scrollTop - viewport.viewportPx < AT_EDGE_LOAD_PX;
       if (!nearTop) upArmedRef.current = true;
       if (!nearBottom) downArmedRef.current = true;
-      if (nearTop && upArmedRef.current) {
+      if (nearTop && direction < 0 && upArmedRef.current) {
         upArmedRef.current = false;
         cur.onReachEdge("up");
-      } else if (nearBottom && downArmedRef.current) {
+      } else if (nearBottom && direction > 0 && downArmedRef.current) {
         downArmedRef.current = false;
         cur.onReachEdge("down");
       }
@@ -1079,13 +1153,13 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        measure(AT_VISIBLE_SETTLE_MS);
+        measure(true);
       });
     };
-    measureLadderRef.current = () => measure(0);
-    measure(0);
+    measureLadderRef.current = () => measure(false);
+    measure(false);
     el.addEventListener("scroll", onScroll, { passive: true });
-    const ro = new ResizeObserver(() => measure(0));
+    const ro = new ResizeObserver(() => measure(false));
     ro.observe(el);
     return () => {
       measureLadderRef.current = null;
@@ -1094,12 +1168,12 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       if (frame) cancelAnimationFrame(frame);
       if (visibleTimer != null) clearTimeout(visibleTimer);
     };
-  }, [ladderDataReady]);
+  }, [ladderDataReady, readViewport]);
 
-  // The strike list or the spot strike changed without a scroll event.
+  // The strike list, the spot strike or the sheet changed without a scroll event.
   useEffect(() => {
     measureLadderRef.current?.();
-  }, [ladderStrikes, spotStrike, ladderRowH]);
+  }, [ladderStrikes, spotStrike, ladderRowH, sheetPad]);
 
   if (futuresOnlyMode) {
     return (
@@ -1249,113 +1323,119 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         ) : null}
       </div>
 
-      <div className="relative flex-1 min-h-0">
-      <div
-        ref={ladderScrollRef}
-        data-at-ladder-scroll
-        data-selected-strike={tradeStripStrike ?? undefined}
-        className="at-ladder-scroll h-full min-h-0"
-        style={{
-          ...noScrollbar,
-          overflowY: "auto",
-          overflowX: "hidden",
-          overscrollBehavior: "contain",
-          WebkitOverflowScrolling: "touch",
-          background: AT_LADDER_PANEL_BG,
-          paddingBottom: sheetScrollPad,
-        }}
-      >
-        {noTradableExpirations ? (
-          <p className="px-3 py-4 text-center" style={{ fontSize: 11, color: DIM, fontFamily: MONO }}>
-            No current expirations
-          </p>
-        ) : ladderDataReady ? (
-          <div style={{ display: "flex", flexDirection: "column" }}>
-          <LadderBody
-            rows={ladderRows}
-            accentHex={accentHex}
-            spotStrike={spotStrike}
-            flip={zones.flip}
-            callWall={zones.callWall}
-            putWall={zones.putWall}
-            pinStrike={zones.gammaPinStrike ?? null}
-            wallsRolling={!!zones.wallsRollLabel}
-            selectedStrike={tradeStripStrike}
-            ladderMode={ladderMode}
-            rowHeight={ladderRowH}
-            verticalWidth={prefs.verticalWidth}
-            rowByStrike={rowByStrike}
-            onVerticalTap={handleVerticalTap}
-            onQuoteTap={handleQuoteTap}
-            positionQtyByKey={positionQtyByKey}
-            heat={heatStore}
-            selection={selection}
-            keepawayPutLine={keepawayPutLine}
-            keepawayCallLine={keepawayCallLine}
-            chainQuoteTs={chainQuoteTs}
-            expiryLabel={expiryLabel}
-          />
-          </div>
-        ) : (
-          <>
-            {ladderWaitMessage ? (
-              <p className="px-3 py-2 text-center" style={{ fontSize: 11, color: DIM, fontFamily: MONO }}>
-                {ladderWaitMessage}
-              </p>
-            ) : null}
-            <AtLadderSkeleton accentHex={accentHex} underlyingPrice={underlyingPrice} />
-          </>
-        )}
-      </div>
-      {ladderOffCenter ? (
-        <button
-          type="button"
-          data-at-ladder-recenter
-          onClick={scrollLadderToSpot}
+      {/*
+        The ladder owns everything from the column header down to the bottom
+        nav. The order sheet is drawn over its lower part and never resizes it.
+      */}
+      <div className="relative flex-1 min-h-0" data-at-ladder-area>
+        <div
+          ref={ladderScrollRef}
+          data-at-ladder-scroll
+          data-selected-strike={tradeStripStrike ?? undefined}
+          className="at-ladder-scroll h-full min-h-0"
           style={{
-            position: "absolute",
-            right: 8,
-            bottom: 12 + sheetScrollPad,
-            zIndex: 40,
-            fontFamily: MONO,
-            fontSize: 10,
-            fontWeight: 600,
-            padding: "6px 10px",
-            borderRadius: 999,
-            border: `1px solid ${BORDER_ROW}`,
-            background: "rgba(12,12,12,0.92)",
-            color: WHITE,
+            ...noScrollbar,
+            overflowY: "auto",
+            overflowX: "hidden",
+            overscrollBehavior: "contain",
+            WebkitOverflowScrolling: "touch",
+            touchAction: "pan-y",
+            background: AT_LADDER_PANEL_BG,
           }}
         >
-          Recenter
-        </button>
-      ) : null}
+          {noTradableExpirations ? (
+            <p className="px-3 py-4 text-center" style={{ fontSize: 11, color: DIM, fontFamily: MONO }}>
+              No current expirations
+            </p>
+          ) : ladderDataReady ? (
+            <>
+              <LadderBody
+                rows={ladderRows}
+                accentHex={accentHex}
+                spotStrike={spotStrike}
+                flip={zones.flip}
+                callWall={zones.callWall}
+                putWall={zones.putWall}
+                pinStrike={zones.gammaPinStrike ?? null}
+                wallsRolling={!!zones.wallsRollLabel}
+                selectedStrike={tradeStripStrike}
+                ladderMode={ladderMode}
+                rowHeight={ladderRowH}
+                verticalWidth={prefs.verticalWidth}
+                rowByStrike={rowByStrike}
+                onVerticalTap={handleVerticalTap}
+                onQuoteTap={handleQuoteTap}
+                positionQtyByKey={positionQtyByKey}
+                heat={heatStore}
+                selection={selection}
+                keepawayPutLine={keepawayPutLine}
+                keepawayCallLine={keepawayCallLine}
+                chainQuoteTs={chainQuoteTs}
+                expiryLabel={expiryLabel}
+              />
+              {/* Scroll room the height of the sheet, so the last strikes can be pulled above it. */}
+              <div aria-hidden data-at-ladder-sheet-pad style={{ height: sheetPad }} />
+            </>
+          ) : (
+            <AtLadderSkeleton rowHeight={ladderRowH} message={ladderWaitMessage} />
+          )}
+        </div>
+        {spotOutOfView && ladderDataReady ? (
+          <button
+            type="button"
+            data-at-ladder-recenter
+            onClick={scrollLadderToSpot}
+            style={{
+              position: "absolute",
+              right: 8,
+              bottom: 12 + sheetPad,
+              zIndex: 40,
+              fontFamily: MONO,
+              fontSize: 10,
+              fontWeight: 600,
+              padding: "6px 10px",
+              borderRadius: 999,
+              border: `1px solid ${BORDER_ROW}`,
+              background: "rgba(12,12,12,0.92)",
+              color: WHITE,
+            }}
+          >
+            Recenter
+          </button>
+        ) : null}
+        {ticketLegs.length > 0 ? (
+          <div
+            ref={sheetRef}
+            data-at-order-sheet
+            data-at-order-sheet-state={chainSheetCollapsed ? "collapsed" : "open"}
+            className="absolute left-0 right-0 bottom-0"
+            // Above the ladder rows and Recenter, and above the header (z 50) for the
+            // full-screen review step, which is rendered inside this element.
+            style={{ zIndex: AT_ORDER_SHEET_Z }}
+          >
+            <OptionsChainOrderSheet
+              legs={ticketLegs}
+              collapsed={chainSheetCollapsed}
+              onCollapsedChange={setChainSheetCollapsed}
+              sheetPeek={chainSheetPeek}
+              onSheetPeekChange={setChainSheetPeek}
+              onClearAll={handleClearLegs}
+              onLegQuantityChange={handleSheetLegQty}
+              onRemoveLeg={handleSheetRemoveLeg}
+              subscribeOptionSymbols={holdSubs.subscribeOptionSymbols}
+              demoFixture={blockLiveSend}
+              atDocked
+              atBracketDraft={atBracketDraft}
+              onAdvancedOrders={openAdvancedOrders}
+            />
+          </div>
+        ) : null}
       </div>
 
       {selectedLegs.size > 0 ? (
         <span data-at-leg-count className="sr-only">
           {selectedLegs.size}
         </span>
-      ) : null}
-      {ticketLegs.length > 0 ? (
-        <OptionsChainOrderSheet
-          legs={ticketLegs}
-          collapsed={chainSheetCollapsed}
-          onCollapsedChange={setChainSheetCollapsed}
-          sheetPeek={chainSheetPeek}
-          onSheetPeekChange={setChainSheetPeek}
-          onClearAll={handleClearLegs}
-          onLegQuantityChange={handleSheetLegQty}
-          onRemoveLeg={handleSheetRemoveLeg}
-          subscribeOptionSymbols={holdSubs.subscribeOptionSymbols}
-          demoFixture={blockLiveSend}
-          atDocked
-          atBracketDraft={{
-            prefs,
-            primaryInstruction: settingsSummaryInstruction,
-          }}
-          onAdvancedOrders={() => setSettingsOpen(true)}
-        />
       ) : null}
       {showFloatingActionBar && actionBarContext ? (
         <div

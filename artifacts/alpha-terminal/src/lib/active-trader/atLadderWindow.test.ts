@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AT_STREAM_CONTRACT_CAP,
+  atLadderPlaceholderOk,
   atLadderRestQuery,
   growAtLadderSide,
   mergeAtChainLegs,
@@ -93,5 +94,35 @@ describe("selectAtStreamKeys", () => {
       contractCap: AT_STREAM_CONTRACT_CAP,
     });
     expect(keys.length).toBe(AT_STREAM_CONTRACT_CAP);
+  });
+});
+
+describe("atLadderPlaceholderOk", () => {
+  const next = { symbol: "$SPX", fromDate: "2026-11-18", toDate: "2026-11-18" };
+
+  it("never accepts the Chain view's response (no expiry window, no range)", () => {
+    expect(atLadderPlaceholderOk({ symbol: "$SPX" }, next)).toBe(false);
+    expect(atLadderPlaceholderOk(undefined, next)).toBe(false);
+  });
+
+  it("accepts the previous page of the same ladder window", () => {
+    expect(
+      atLadderPlaceholderOk({ symbol: "$SPX", fromDate: "2026-11-18", toDate: "2026-11-18", range: "NTM" }, next),
+    ).toBe(true);
+  });
+
+  it("accepts the first-load window that covers the picked expiry", () => {
+    expect(
+      atLadderPlaceholderOk({ symbol: "$SPX", fromDate: "2026-11-18", toDate: "2026-11-21", range: "NTM" }, next),
+    ).toBe(true);
+  });
+
+  it("rejects another symbol or another expiry", () => {
+    expect(
+      atLadderPlaceholderOk({ symbol: "AAPL", fromDate: "2026-11-18", toDate: "2026-11-18", range: "NTM" }, next),
+    ).toBe(false);
+    expect(
+      atLadderPlaceholderOk({ symbol: "$SPX", fromDate: "2026-11-19", toDate: "2026-11-19", range: "NTM" }, next),
+    ).toBe(false);
   });
 });

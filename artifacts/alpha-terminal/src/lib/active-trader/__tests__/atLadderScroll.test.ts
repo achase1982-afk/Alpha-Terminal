@@ -28,11 +28,13 @@ describe("ladder scroll math", () => {
     expect(atLadderVisibleRowRange({ scrollTop: 0, viewportPx: 648, rowHeight: ROW, rowCount: 0 })).toBeNull();
   });
 
-  it("centers the spot row on the band and clamps at the ends", () => {
+  it("puts the spot row on the band, flush to a row edge, and clamps at the ends", () => {
     const v = { viewportPx: 648, rowHeight: ROW, rowCount: 41 };
     const top = atLadderScrollTopForRow(20, v);
-    expect(top).toBe(Math.round(20 * ROW + ROW / 2 - 648 * 0.42));
-    expect(Math.abs(atLadderRowOffsetFromBand(20, { ...v, scrollTop: top }))).toBeLessThan(1);
+    expect(top % ROW).toBe(0);
+    // Within half a row of the band, and fully on screen.
+    expect(Math.abs(atLadderRowOffsetFromBand(20, { ...v, scrollTop: top }))).toBeLessThanOrEqual(ROW / 2);
+    expect(atLadderRowFullyVisible(20, { ...v, scrollTop: top })).toBe(true);
     expect(atLadderScrollTopForRow(0, v)).toBe(0);
     expect(atLadderScrollTopForRow(40, v)).toBe(41 * ROW - 648);
   });

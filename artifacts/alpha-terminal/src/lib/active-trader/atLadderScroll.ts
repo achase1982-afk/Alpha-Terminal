@@ -119,7 +119,11 @@ export function atLadderVisibleRowRange(v: AtLadderViewport): { first: number; l
   return { first, last: Math.max(first, last) };
 }
 
-/** `scrollTop` that puts row `index` centered on the band at `bandFraction` of the viewport. */
+/**
+ * `scrollTop` that puts row `index` on the band at `bandFraction` of the
+ * viewport, snapped to a whole row so the first row sits flush under the
+ * column header instead of being cut by it.
+ */
 export function atLadderScrollTopForRow(
   index: number,
   v: Pick<AtLadderViewport, "viewportPx" | "rowHeight" | "rowCount">,
@@ -127,7 +131,8 @@ export function atLadderScrollTopForRow(
 ): number {
   const rowCenter = index * v.rowHeight + v.rowHeight / 2;
   const max = Math.max(0, v.rowCount * v.rowHeight - v.viewportPx);
-  return Math.min(max, Math.max(0, Math.round(rowCenter - v.viewportPx * bandFraction)));
+  const snapped = Math.round((rowCenter - v.viewportPx * bandFraction) / v.rowHeight) * v.rowHeight;
+  return Math.min(max, Math.max(0, snapped));
 }
 
 /** Distance in px from the row's center to the band center; the recenter pill keys off this. */

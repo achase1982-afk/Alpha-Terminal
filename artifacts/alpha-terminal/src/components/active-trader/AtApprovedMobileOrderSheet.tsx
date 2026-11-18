@@ -1,5 +1,5 @@
-import { memo, type CSSProperties } from "react";
-import { ChevronDown, Lock, Unlock, Minus, Plus, SquareArrowOutUpRight, X } from "lucide-react";
+import { memo, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { ChevronDown, ChevronUp, Lock, Unlock, Minus, Plus, SquareArrowOutUpRight, X } from "lucide-react";
 import type { StrategyLeg } from "@/components/StrategyBuilder";
 import { AT_SHEET_PEEK_VH } from "@/lib/active-trader/atSheetLayout";
 import type { LimitTickContext } from "@workspace/order-ticket-math";
@@ -78,11 +78,75 @@ export type AtApprovedMobileOrderSheetProps = {
   primaryActionTestId?: string;
 };
 
+/** Vertical travel that counts as a swipe on the sheet handle; less than the tap slop is a tap. */
+const SHEET_SWIPE_PX = 24;
+const SHEET_TAP_SLOP_PX = 8;
+
+/**
+ * Grab handle for the Active Trader sheet: tap toggles, swipe down collapses
+ * it to a one-line bar, swipe up brings it back.
+ */
+function SheetHandle({
+  collapsed,
+  onCollapsedChange,
+  children,
+}: {
+  collapsed: boolean;
+  onCollapsedChange: (v: boolean) => void;
+  children?: ReactNode;
+}) {
+  const startRef = useRef<{ id: number; y: number } | null>(null);
+  const onPointerDown = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    startRef.current = { id: e.pointerId, y: e.clientY };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const onPointerUp = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    const start = startRef.current;
+    startRef.current = null;
+    if (!start || start.id !== e.pointerId) return;
+    const dy = e.clientY - start.y;
+    if (dy > SHEET_SWIPE_PX) onCollapsedChange(true);
+    else if (dy < -SHEET_SWIPE_PX) onCollapsedChange(false);
+    else if (Math.abs(dy) <= SHEET_TAP_SLOP_PX) onCollapsedChange(!collapsed);
+  };
+  return (
+    <button
+      type="button"
+      data-at-order-sheet-handle
+      aria-label={collapsed ? "Expand order ticket" : "Collapse order ticket"}
+      aria-expanded={!collapsed}
+      className="w-full flex flex-col items-stretch"
+      style={{
+        background: "transparent",
+        border: "none",
+        padding: 0,
+        touchAction: "none",
+        WebkitTapHighlightColor: "transparent",
+      }}
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
+      onPointerCancel={() => {
+        startRef.current = null;
+      }}
+      onClick={(e) => {
+        // Keyboard / assistive-tech activation; pointer taps are handled on lift.
+        if (e.detail === 0) onCollapsedChange(!collapsed);
+      }}
+    >
+      <span className="flex items-center justify-center" style={{ height: 14 }} aria-hidden>
+        <span style={{ width: 36, height: 4, borderRadius: 999, background: "rgba(255,255,255,0.22)" }} />
+      </span>
+      {children}
+    </button>
+  );
+}
+
 export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderSheet({
   legs,
   collapsed,
   sheetPeek,
   docked = false,
+  onCollapsedChange,
   onClearAll,
   onRemoveLeg,
   entryLabel,
@@ -113,19 +177,57 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
   const gridCols = legs.length >= 2 ? 2 : 1;
 
   if (docked) {
+    const sheetStyle: CSSProperties = {
+      background: AT_ORDER_PANEL_BG,
+      borderTop: `1px solid ${AT_ORDER_PANEL_BORDER}`,
+      borderRadius: "14px 14px 0 0",
+      boxShadow: "0 -10px 28px rgba(0,0,0,0.6)",
+      fontFamily: SYS_FONT,
+    };
+    if (collapsed) {
+      return (
+        <div
+          className="w-full flex flex-col"
+          style={sheetStyle}
+          data-testid="options-chain-order-sheet"
+          data-at-approved-ticket
+          data-at-docked-order-panel
+          data-at-order-sheet-collapsed
+        >
+          <SheetHandle collapsed onCollapsedChange={onCollapsedChange}>
+            <span
+              className="flex items-center justify-between gap-2"
+              style={{ padding: "0 12px 9px", minHeight: 28 }}
+              data-at-order-sheet-bar
+            >
+              <span className="flex items-baseline gap-2 min-w-0">
+                <span style={{ ...META_VALUE, fontWeight: 600 }}>
+                  {legs.length} leg{legs.length === 1 ? "" : "s"}
+                </span>
+                <span className="truncate" style={PEER_LABEL}>
+                  {entryLabel}
+                </span>
+                <span style={{ ...META_VALUE, color: entryColor }}>{fmtMoney(entryAmount)}</span>
+              </span>
+              <span className="flex items-center gap-1 shrink-0" style={PEER_LABEL}>
+                Ticket
+                <ChevronUp className="w-4 h-4" style={{ color: GRAY }} aria-hidden />
+              </span>
+            </span>
+          </SheetHandle>
+        </div>
+      );
+    }
     return (
       <div
-        className="w-full shrink-0 flex flex-col"
-        style={{
-          background: AT_ORDER_PANEL_BG,
-          borderTop: `1px solid ${AT_ORDER_PANEL_BORDER}`,
-          fontFamily: SYS_FONT,
-          padding: "8px 10px 8px",
-        }}
+        className="w-full flex flex-col"
+        style={sheetStyle}
         data-testid="options-chain-order-sheet"
         data-at-approved-ticket
         data-at-docked-order-panel
       >
+        <SheetHandle collapsed={false} onCollapsedChange={onCollapsedChange} />
+        <div className="flex flex-col" style={{ padding: "0 10px 8px" }}>
         <div className="flex items-start justify-between gap-2">
           <div className="grid grid-cols-3 gap-x-2 flex-1 min-w-0" data-at-ticket-summary>
             <MotionStat label={entryLabel} value={fmtMoney(entryAmount)} color={entryColor} />
@@ -311,6 +413,7 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
           >
             {sendLabel}
           </button>
+        </div>
         </div>
       </div>
     );
