@@ -144,9 +144,11 @@ export const AtGlanceTop = memo(function AtGlanceTop({
               {caption}
             </Pane>
           ) : null}
-          <Pane style={{ fontSize: 9, fontWeight: 500, letterSpacing: "0.06em", color: AT_LABEL, lineHeight: 1 }}>
-            {symbol.replace(/^\$/, "")}
-          </Pane>
+          {!isSpxSymbol(symbol) ? (
+            <Pane style={{ fontSize: 9, fontWeight: 500, letterSpacing: "0.06em", color: AT_LABEL, lineHeight: 1 }}>
+              {symbol.replace(/^\$/, "")}
+            </Pane>
+          ) : null}
           <Pane className="flex items-baseline justify-center gap-1 flex-wrap" style={{ lineHeight: 1 }}>
             <Pane
               className="num"
@@ -227,7 +229,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         </Pane>
       ) : null}
 
-      <Pane data-at-glance-flow-row style={{ marginTop: 1, minHeight: 30, maxHeight: 32, overflow: "hidden" }}>
+      <Pane data-at-glance-flow-row style={{ marginTop: 0, minHeight: 28, maxHeight: 30, overflow: "hidden" }}>
         <AtGlanceFlowTracks glance={netPremium} onOpenDetail={() => setFlowDetailOpen(true)} />
       </Pane>
 

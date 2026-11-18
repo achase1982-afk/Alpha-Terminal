@@ -118,7 +118,7 @@ export const AtGlanceFlowTracks = memo(function AtGlanceFlowTracks({ glance, onO
     >
       <div
         data-at-flow-now-label
-        style={{ fontSize: 8, fontWeight: 600, color: AT_LABEL, letterSpacing: "0.06em", marginBottom: 1, lineHeight: 1 }}
+        style={{ fontSize: 7, fontWeight: 600, color: AT_LABEL, letterSpacing: "0.05em", marginBottom: 0, lineHeight: 1 }}
       >
         FLOW NOW · {glance.windowLabel}
       </div>
