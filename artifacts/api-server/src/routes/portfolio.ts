@@ -25,6 +25,7 @@ import {
   orderReferencesBlockedFutures,
   validateOrderPreTradeGatePayload,
 } from "@workspace/order-ticket-math";
+import { refuseSchwabTradingJson } from "../lib/schwabTradingGate.js";
 
 const router: IRouter = Router();
 
@@ -289,6 +290,7 @@ router.get("/account-hash", async (req, res) => {
 });
 
 router.post("/place-order", async (req, res) => {
+  if (refuseSchwabTradingJson(res)) return;
   const token = getTraderToken();
   if (!token) return res.status(401).json({ error: "no_trader_token" });
 
@@ -434,6 +436,7 @@ router.post("/place-order", async (req, res) => {
 });
 
 router.delete("/cancel-order", async (req, res) => {
+  if (refuseSchwabTradingJson(res)) return;
   const token = getTraderToken();
   if (!token) return res.status(401).json({ error: "no_trader_token" });
 

@@ -1,7 +1,10 @@
 import type { Request, Response, NextFunction } from "express";
-import { isAuthDisabled } from "../lib/authMode.js";
+import {
+  ORDERS_DISABLED_ERROR,
+  isSchwabTradingDisabled,
+} from "../lib/schwabTradingGate.js";
 
-const ORDERS_DISABLED_BODY = { error: "orders_disabled_no_auth" } as const;
+const ORDERS_DISABLED_BODY = { error: ORDERS_DISABLED_ERROR } as const;
 
 type BlockRule = {
   method: string;
@@ -9,7 +12,7 @@ type BlockRule = {
   matchBody?: (body: unknown) => boolean;
 };
 
-/** Schwab/broker order mutations blocked while app auth is disabled (reviewer mode). */
+/** Schwab/broker order mutations blocked while reviewer auth-off mode is active. */
 const BLOCKED: BlockRule[] = [
   { method: "POST", path: "/portfolio/place-order" },
   { method: "DELETE", path: "/portfolio/cancel-order" },
@@ -25,12 +28,35 @@ const BLOCKED: BlockRule[] = [
   },
 ];
 
+const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/** Desk API is read/market-data today; fail closed on any future trade POSTs. */
+export function blockDeskBrokerOrdersWhenAuthDisabled(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  if (!isSchwabTradingDisabled()) {
+    next();
+    return;
+  }
+  if (!MUTATING.has(req.method)) {
+    next();
+    return;
+  }
+  if (req.path === "/health" && req.method === "POST") {
+    next();
+    return;
+  }
+  res.status(403).json(ORDERS_DISABLED_BODY);
+}
+
 export function blockBrokerOrdersWhenAuthDisabled(
   req: Request,
   res: Response,
   next: NextFunction,
 ): void {
-  if (!isAuthDisabled()) {
+  if (!isSchwabTradingDisabled()) {
     next();
     return;
   }

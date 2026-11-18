@@ -14,6 +14,7 @@ import { addSymbols, addChartEquitySymbols } from "../lib/schwabStreamer.js";
 import { startEngine, stopEngine, engineStatus } from "../engine/index.js";
 import { startLlmEngine, stopLlmEngine } from "../engine/llmEngine.js";
 import { writeConfigPatch, readRawConfig } from "../engine/config.js";
+import { refuseSchwabTradingJson } from "../lib/schwabTradingGate.js";
 
 const router: IRouter = Router();
 const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
@@ -60,6 +61,7 @@ router.put("/config", async (req, res) => {
 });
 
 router.post("/start", async (req, res) => {
+  if (refuseSchwabTradingJson(res)) return;
   try {
     const userId = portfolioPrefsUserId(req);
     const token = getTokens("trader")?.accessToken;
@@ -103,6 +105,7 @@ router.post("/start", async (req, res) => {
 
 /** Hard kill switch: stop the engine, disable, and cancel any working orders. */
 router.post("/stop", async (req, res) => {
+  if (refuseSchwabTradingJson(res)) return;
   const userId = portfolioPrefsUserId(req);
   // Stop whichever engine is running (both are no-ops if not active).
   stopEngine();
