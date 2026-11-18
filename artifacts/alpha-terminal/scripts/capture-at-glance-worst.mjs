@@ -66,6 +66,12 @@ for (const fx of FIXTURES) {
     await page.waitForSelector("[data-at-glance-flow='live']", { timeout: 30_000 });
     await page.locator(`[data-at-glance-flow-seg="${win}"]`).click();
     await page.waitForSelector(`[data-at-glance-flow-window="${win}"]`, { timeout: 5_000 });
+    const fonts = await page.evaluate(() => {
+      const body = document.querySelector("[data-at-glance-flow-body]");
+      const seg = document.querySelector("[data-at-glance-flow-seg] button");
+      const cs = (el) => (el ? getComputedStyle(el).fontSize : null);
+      return { bodyFontPx: cs(body), segFontPx: cs(seg) };
+    });
     const bodyText = await page.locator("[data-at-glance-flow-body]").innerText();
     if (!bodyText.includes("1.23B")) {
       throw new Error(`${fx}/${win}: missing 1.23B in body: ${bodyText.slice(0, 120)}`);
@@ -81,7 +87,7 @@ for (const fx of FIXTURES) {
     await page.waitForTimeout(300);
     const file = `glance-worst-${fx}-${win}-440x956@3x.png`;
     await page.screenshot({ path: path.join(OUT, file) });
-    report.push({ fixture: fx, window: win, file, stack, ...m, flowSnippet: bodyText.slice(0, 72) });
+    report.push({ fixture: fx, window: win, file, stack, fonts, ...m, flowSnippet: bodyText.slice(0, 72) });
     await ctx.close();
   }
 }

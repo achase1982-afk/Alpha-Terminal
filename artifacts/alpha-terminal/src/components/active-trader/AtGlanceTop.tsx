@@ -74,29 +74,50 @@ function MoneyRow({ agg }: { agg: ReturnType<typeof useDeskFlowStream> }) {
     <Pane
       data-at-glance-flow="live"
       data-at-glance-flow-window={flowWindow}
-      style={{ lineHeight: 1.15, overflow: "hidden", maxHeight: 40 }}
+      className="flex items-start gap-2"
+      style={{ lineHeight: 1.15, overflow: "hidden", maxHeight: 50 }}
     >
+      <button
+        type="button"
+        className="num flex-1 min-w-0 text-left"
+        data-at-glance-flow-body
+        onClick={cycleWindow}
+        style={{
+          ...NUM_FEAT,
+          fontSize: 11,
+          fontWeight: 400,
+          color: WHITE,
+          lineHeight: 1.22,
+          whiteSpace: "pre-line",
+          wordBreak: "break-word",
+        }}
+      >
+        {body}
+      </button>
       <Pane
-        className="num flex items-center justify-center gap-0.5 mb-0.5"
+        className="num flex shrink-0 items-center gap-0.5 pt-px"
         data-at-glance-flow-seg
-        style={{ ...NUM_FEAT, fontSize: 7.5 }}
+        style={{ ...NUM_FEAT, fontSize: 10 }}
       >
         {FLOW_WINDOWS.map((w, i) => (
           <Pane key={w} className="inline-flex items-center gap-0.5">
             {i > 0 ? (
-              <span style={{ color: DIM, fontSize: 7, userSelect: "none" }} aria-hidden>
+              <span style={{ color: DIM, fontSize: 9, userSelect: "none" }} aria-hidden>
                 ·
               </span>
             ) : null}
             <button
               type="button"
               data-at-glance-flow-seg={w}
-              onClick={() => setFlowWindow(w)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setFlowWindow(w);
+              }}
               style={{
-                fontSize: 7.5,
+                fontSize: 10,
                 fontWeight: flowWindow === w ? 600 : 400,
                 color: flowWindow === w ? WHITE : GRAY,
-                padding: "0 2px",
+                padding: "1px 3px",
                 background: flowWindow === w ? "rgba(255,255,255,0.08)" : "transparent",
                 borderRadius: 3,
               }}
@@ -106,23 +127,6 @@ function MoneyRow({ agg }: { agg: ReturnType<typeof useDeskFlowStream> }) {
           </Pane>
         ))}
       </Pane>
-      <button
-        type="button"
-        className="num w-full text-left"
-        data-at-glance-flow-body
-        onClick={cycleWindow}
-        style={{
-          ...NUM_FEAT,
-          fontSize: 8,
-          fontWeight: 500,
-          color: WHITE,
-          lineHeight: 1.2,
-          whiteSpace: "pre-line",
-          wordBreak: "break-word",
-        }}
-      >
-        {body}
-      </button>
     </Pane>
   );
 }
