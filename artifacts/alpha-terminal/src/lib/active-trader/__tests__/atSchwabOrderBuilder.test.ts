@@ -296,10 +296,16 @@ describe("buildAtSchwabOrderJson", () => {
     expect(entry.quantity).toBe(2);
     expect(entry.instrument.symbol).toBe(sym);
     expect(o.orderStrategyType).toBe("TRIGGER");
-    const oco = (o.childOrderStrategies as Record<string, unknown>[])[0];
-    expect(oco.orderStrategyType).toBe("OCO");
-    const singles = oco.childOrderStrategies as Record<string, unknown>[];
-    const tpLeg = (singles[0].orderLegCollection as { instruction: string; quantity: number; instrument: { symbol: string } }[])[0];
+    const child = (o.childOrderStrategies as Record<string, unknown>[])[0];
+  const exitLegs =
+      child.orderStrategyType === "OCO"
+        ? ((child.childOrderStrategies as Record<string, unknown>[])[0].orderLegCollection as {
+            instruction: string;
+            quantity: number;
+            instrument: { symbol: string };
+          }[])
+        : (child.orderLegCollection as { instruction: string; quantity: number; instrument: { symbol: string } }[]);
+    const tpLeg = exitLegs[0];
     expect(tpLeg.instruction).toBe("SELL_TO_CLOSE");
     expect(tpLeg.quantity).toBe(2);
     expect(tpLeg.instrument.symbol).toBe(sym);
