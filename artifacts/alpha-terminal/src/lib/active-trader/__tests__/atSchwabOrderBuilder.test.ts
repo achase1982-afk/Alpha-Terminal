@@ -296,4 +296,30 @@ describe("buildAtSchwabOrderJson", () => {
     expect(legA.instruction).toBe("BUY_TO_CLOSE");
     expect(legB.instruction).toBe("BUY_TO_CLOSE");
   });
+
+  it("blocks futures roots, dotted-slash symbols, and FUTURE asset type", () => {
+    expect(
+      buildAtSchwabOrderJson({
+        ...base,
+        symbol: "/ESZ26",
+        underlyingSymbol: "",
+      }),
+    ).toEqual({ error: "futures_orders_unsupported" });
+    expect(
+      buildAtSchwabOrderJson({
+        ...base,
+        assetType: "EQUITY",
+        symbol: "SPY",
+        underlyingSymbol: "./NQ",
+      }),
+    ).toEqual({ error: "futures_orders_unsupported" });
+    expect(
+      buildAtSchwabOrderJson({
+        ...base,
+        assetType: "FUTURE" as "OPTION",
+        symbol: "SPY",
+        underlyingSymbol: "SPY",
+      }),
+    ).toEqual({ error: "futures_orders_unsupported" });
+  });
 });

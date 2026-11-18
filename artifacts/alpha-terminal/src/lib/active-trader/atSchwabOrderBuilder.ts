@@ -1,3 +1,4 @@
+import { isBlockedFuturesAssetType, isBlockedFuturesTradeSymbol } from "@workspace/order-ticket-math";
 import type {
   AtExitDuration,
   AtOrderType,
@@ -296,8 +297,12 @@ function singleOptionPayload(
 
 /** Build Schwab order JSON for Active Trader templates. */
 export function buildAtSchwabOrderJson(input: AtOrderBuildInput): Record<string, unknown> {
-  const underlying = (input.underlyingSymbol ?? input.symbol).trim();
-  if (underlying.startsWith("/")) {
+  const underlying = (input.underlyingSymbol || input.symbol).trim();
+  if (
+    isBlockedFuturesTradeSymbol(underlying) ||
+    isBlockedFuturesTradeSymbol(input.symbol) ||
+    isBlockedFuturesAssetType(input.assetType)
+  ) {
     return { error: "futures_orders_unsupported" };
   }
   const { validationError } = planAtOrderLegs(input);

@@ -1,5 +1,7 @@
+import { isBlockedFuturesTradeSymbol } from "@workspace/order-ticket-math";
+
 export function isFuturesDisplaySymbol(symbol: string): boolean {
-  return symbol.trim().startsWith("/");
+  return isBlockedFuturesTradeSymbol(symbol);
 }
 
 export function futuresChainPlaceholderPrimary(): string {

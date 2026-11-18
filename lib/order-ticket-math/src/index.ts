@@ -13,3 +13,4 @@ export * from "./schwabOrderRisk.js";
 export * from "./chainTicketSummary.js";
 export * from "./optionPop.js";
 export * from "./schwabComplexStrategy.js";
+export * from "./futuresOrderGuard.js";

@@ -22,6 +22,7 @@ import {
   DEFAULT_SERVER_PRE_TRADE,
   evaluateServerPlaceOrderGate,
   isClosingSchwabOrder,
+  orderReferencesBlockedFutures,
   validateOrderPreTradeGatePayload,
 } from "@workspace/order-ticket-math";
 
@@ -43,23 +44,8 @@ interface SchwabPlaceOrderBody extends Record<string, unknown> {
   childOrderStrategies?: SchwabPlaceOrderBody[];
 }
 
-function collectOrderLegSymbols(order: SchwabPlaceOrderBody): string[] {
-  const symbols: string[] = [];
-  const walk = (node: SchwabPlaceOrderBody) => {
-    for (const leg of node.orderLegCollection ?? []) {
-      const sym = leg.instrument?.symbol;
-      if (typeof sym === "string" && sym.trim()) symbols.push(sym.trim());
-    }
-    for (const child of node.childOrderStrategies ?? []) {
-      if (child && typeof child === "object") walk(child);
-    }
-  };
-  walk(order);
-  return symbols;
-}
-
 function orderReferencesFuturesSymbol(order: SchwabPlaceOrderBody): boolean {
-  return collectOrderLegSymbols(order).some((sym) => sym.startsWith("/"));
+  return orderReferencesBlockedFutures(order);
 }
 
 /** Client-supplied journal metadata when logging a trade alongside an order. */
