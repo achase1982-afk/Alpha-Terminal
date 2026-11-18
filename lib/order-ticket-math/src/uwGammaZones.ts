@@ -112,9 +112,19 @@ export function computeZonesFromUwGamma0dte(
       ? (maxCallStrike + minPutStrike) / 2
       : maxCallStrike ?? minPutStrike);
 
+  const flipNearSpotHint = (rows: typeof active, hint: number | null): number | null => {
+    if (hint == null || !Number.isFinite(hint)) return null;
+    const band = rows.filter((r) => r.strike >= hint - 200 && r.strike <= hint + 25);
+    if (band.length < 2) return null;
+    return flipFromPerStrike(band) ?? flipFromCumulative(band, hint);
+  };
+
   let flip: number | null = null;
   if (active.length >= 2) {
-    flip = flipFromCumulative(active, spotHint) ?? flipFromPerStrike(active);
+    flip =
+      flipNearSpotHint(active, spotHint) ??
+      flipFromCumulative(active, spotHint) ??
+      flipFromPerStrike(active);
   }
 
   const hasGamma = active.length > 0 && Number.isFinite(netGex) && netGex !== 0;
