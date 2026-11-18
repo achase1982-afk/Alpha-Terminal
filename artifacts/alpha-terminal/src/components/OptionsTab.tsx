@@ -65,6 +65,12 @@ import {
 } from "@/lib/futuresSchwabUi";
 import { optionChainMatchesActiveSymbol } from "@/lib/optionChainStaleGuard";
 import { mergeChainContractWithStream, resolveChainDisplayQuote } from "@/lib/chainContractQuoteMerge";
+import { isAuthDisabled } from "@/lib/authMode";
+import {
+  hasSchwabBrokerageLinked,
+  isServerHeldBrokerageSession,
+  schwabAccessTokenForRequest,
+} from "@/lib/schwabBrokerageSession";
 
 const EPS = 0.0001;
 
@@ -1327,7 +1333,9 @@ export function OptionsTab({
     }
     return () => leaveActiveTrader();
   }, [optionsSubView, enterActiveTrader, leaveActiveTrader]);
-  const { accessToken } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken })));
+  const { accessToken, traderAccessToken } = useTerminalStore(
+    useShallow((s) => ({ accessToken: s.accessToken, traderAccessToken: s.traderAccessToken })),
+  );
   // Widget pin wins inside the dashboard; global symbol everywhere else.
   const symbol = useActiveSymbol();
   const isFuturesSymbol = isFuturesDisplaySymbol(symbol);
@@ -1395,18 +1403,38 @@ export function OptionsTab({
   const chainStrikeCount =
     optionsSubView === "at" ? Math.max(strikeCount, AT_LADDER_STRIKE_COUNT) : strikeCount;
 
+  const schwabLinked =
+    hasSchwabBrokerageLinked(accessToken, traderAccessToken) ||
+    isServerHeldBrokerageSession(accessToken, traderAccessToken);
+  /** Fetch whenever a symbol is set — API uses query token or server-stored Schwab session. */
+  const chainApiEnabled = !!symbol && !fixtureChain;
+
+  const optionChainParams = useMemo(
+    () => ({
+      symbol,
+      contractType: "ALL" as const,
+      strikeCount: chainStrikeCount,
+      ...(schwabAccessTokenForRequest(accessToken)
+        ? { accessToken: schwabAccessTokenForRequest(accessToken)! }
+        : {}),
+    }),
+    [symbol, chainStrikeCount, accessToken],
+  );
+
   const { data: rawData, isLoading, error, isFetching, dataUpdatedAt, refetch: refetchOptionChain } =
-    useGetOptionChain<OptionChainResponse>(
-      { symbol, contractType: "ALL", strikeCount: chainStrikeCount },
-      {
-        query: {
-          enabled: !!accessToken && !!symbol && !fixtureChain,
-          staleTime: 30_000,
-          gcTime: 5 * 60_000,
-          retry: isFuturesSymbol ? false : 2,
-        },
+    useGetOptionChain<OptionChainResponse>(optionChainParams, {
+      query: {
+        enabled: chainApiEnabled,
+        staleTime: 30_000,
+        gcTime: 5 * 60_000,
+        retry: isFuturesSymbol ? false : 2,
       },
-    );
+    });
+
+  useEffect(() => {
+    if (optionsSubView !== "at" || fixtureChain || !chainApiEnabled) return;
+    void refetchOptionChain();
+  }, [optionsSubView, fixtureChain, chainApiEnabled, refetchOptionChain]);
 
   const chainFetchedAt =
     rawData?.fetchedAt && rawData.fetchedAt > 0
@@ -1443,8 +1471,8 @@ export function OptionsTab({
   });
 
   const { data: quote } = useGetQuote(
-    { symbol },
-    { query: { enabled: !!accessToken } }
+    { symbol, ...(schwabAccessTokenForRequest(accessToken) ? { accessToken: schwabAccessTokenForRequest(accessToken)! } : {}) },
+    { query: { enabled: chainApiEnabled } },
   );
 
   const { data: earningsData } = useQuery({
@@ -1546,9 +1574,9 @@ export function OptionsTab({
   }, [optionsSubView, groups, atExpiration, symbol, setAtExpiryChrome, clearAtExpiryChrome]);
 
   useChainOptionHold(
-    optionsSubView === "chain" ? chainHoldSig?.holdSig : undefined,
-    optionsSubView === "chain" ? chainHoldSig?.keys ?? [] : [],
-    optionsSubView === "chain" ? chainHoldSig?.viewId : undefined,
+    chainHoldSig?.holdSig,
+    chainHoldSig?.keys ?? [],
+    chainHoldSig?.viewId,
     { subscribeOptionSymbols, releaseOptionHold },
     underlyingPrice ?? data?.underlyingPrice ?? null,
   );
@@ -1957,6 +1985,11 @@ export function OptionsTab({
           stickyOffset={stickyOffset + 36}
           accentHex={accentHex}
           chainQuoteTs={chainFetchedAt}
+          ladderPlug={{
+            chainLoading: isLoadingEffective || isFetching,
+            chainError: error ? "Option chain request failed" : rawData?.error ?? null,
+            brokerLinked: schwabLinked || isAuthDisabled(),
+          }}
           holdSubs={{ subscribeOptionSymbols, releaseOptionHold }}
           onAddLeg={(contract, type) => handleToggleLeg(contract, type, "ask")}
           onOpenReview={
