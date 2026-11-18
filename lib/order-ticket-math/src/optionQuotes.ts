@@ -109,6 +109,21 @@ export function resolvePairedBidAsk(source: PairedQuoteSource): PairedBidAsk | n
   if (streamOk) return pick(source.streamBid!, source.streamAsk!, "stream");
   if (contractOk) return pick(source.contractBid!, source.contractAsk!, "contract");
 
+  if (
+    source.streamBid != null &&
+    source.streamAsk != null &&
+    quoteSideState(source.streamBid, source.streamAsk) === "crossed"
+  ) {
+    return { bid: source.streamBid, ask: source.streamAsk, source: "stream", crossed: true };
+  }
+  if (
+    source.contractBid != null &&
+    source.contractAsk != null &&
+    quoteSideState(source.contractBid, source.contractAsk) === "crossed"
+  ) {
+    return { bid: source.contractBid, ask: source.contractAsk, source: "contract", crossed: true };
+  }
+
   return null;
 }
 
