@@ -67,7 +67,6 @@ router.post("/control", async (req, res) => {
         return res.json({ ok: true });
 
       case "kill":
-        if (refuseSchwabTradingJson(res)) return;
         stopEngine();
         return res.json({ ok: true, killed: true });
 

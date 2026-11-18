@@ -17,13 +17,12 @@ const BLOCKED: BlockRule[] = [
   { method: "POST", path: "/portfolio/place-order" },
   { method: "DELETE", path: "/portfolio/cancel-order" },
   { method: "POST", path: "/auto-trade/start" },
-  { method: "POST", path: "/auto-trade/stop" },
   {
     method: "POST",
     path: "/engine/control",
     matchBody: (body) => {
       const action = (body as { action?: string } | null)?.action;
-      return action === "start" || action === "kill";
+      return action === "start";
     },
   },
 ];

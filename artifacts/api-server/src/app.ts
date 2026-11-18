@@ -15,6 +15,10 @@ import {
   blockBrokerOrdersWhenAuthDisabled,
   blockDeskBrokerOrdersWhenAuthDisabled,
 } from "./middleware/ordersDisabledWhenAuthOff";
+import {
+  blockReviewerBackfillPost,
+  blockReviewerModeWrites,
+} from "./middleware/reviewerModeWritesGuard";
 
 const authDisabled = isAuthDisabled();
 
@@ -121,11 +125,11 @@ if (authDisabled) {
 app.use("/api", healthRouter);
 app.use("/api/desk/v1", blockDeskBrokerOrdersWhenAuthDisabled, deskV1Router);
 if (authDisabled) {
-  app.use("/api/admin/run-full-backfill", runFullBackfillRouter);
-  app.use("/api", blockBrokerOrdersWhenAuthDisabled, router);
+  app.use("/api/admin/run-full-backfill", blockReviewerBackfillPost, runFullBackfillRouter);
+  app.use("/api", blockReviewerModeWrites, blockBrokerOrdersWhenAuthDisabled, router);
 } else {
   app.use("/api/admin/run-full-backfill", apiRequireAuth, runFullBackfillRouter);
-  app.use("/api", blockBrokerOrdersWhenAuthDisabled, apiRequireAuth, router);
+  app.use("/api", blockReviewerModeWrites, blockBrokerOrdersWhenAuthDisabled, apiRequireAuth, router);
 }
 
 export default app;

@@ -5,6 +5,7 @@ import {
   GetOptionChainResponse,
 } from "@workspace/api-zod";
 import { getAccessToken, getBestAccessToken } from "../lib/tokenStore.js";
+import { schwabAccessTokenFromRequest } from "../lib/schwabRouteAccessToken.js";
 import {
   getQuoteBySymbol,
   addOptionSymbols,
@@ -212,7 +213,7 @@ async function fetchCompanyNameBackground(displaySymbol: string, apiSymbol: stri
 
 router.get("/quote", async (req, res) => {
   const symbol = req.query["symbol"] as string;
-  const accessToken = (req.query["accessToken"] as string) || getAccessToken("market");
+  const accessToken = schwabAccessTokenFromRequest(req);
   const marketContext = resolveMarketContextForRequest(req);
 
   if (!symbol || !accessToken) {
@@ -443,7 +444,7 @@ const VALID_FREQUENCIES: Record<string, number[]> = {
 
 router.get("/history", async (req, res) => {
   const symbol = req.query["symbol"] as string;
-  const accessToken = (req.query["accessToken"] as string) || getAccessToken("market");
+  const accessToken = schwabAccessTokenFromRequest(req);
   let periodType = (req.query["periodType"] as string) ?? "month";
   let period = parseInt((req.query["period"] as string) ?? "3", 10);
   let frequencyType = (req.query["frequencyType"] as string) ?? "daily";
@@ -987,7 +988,7 @@ function buildIndexChainFromStreaming(
 
 router.get("/options", async (req, res) => {
   const symbol = req.query["symbol"] as string;
-  const accessToken = (req.query["accessToken"] as string) || getAccessToken("market");
+  const accessToken = schwabAccessTokenFromRequest(req);
   const contractType = (req.query["contractType"] as string) ?? "ALL";
   const strikeCount = parseInt(req.query["strikeCount"] as string) || 10;
 
@@ -1174,7 +1175,7 @@ router.get("/options", async (req, res) => {
 
 router.get("/ticker-stats", async (req, res) => {
   const symbol = (req.query["symbol"] as string || "").toUpperCase().trim();
-  const accessToken = (req.query["accessToken"] as string) || getBestAccessToken();
+  const accessToken = schwabAccessTokenFromRequest(req, true);
   /** Skip Schwab options chain (slow, large payload) — used while the user is typing a draft ticker in the UI. */
   const lite =
     req.query["lite"] === "1" ||
@@ -1295,7 +1296,7 @@ router.get("/pc-ratio", async (_req, res) => {
 
 router.get("/fundamentals", async (req, res) => {
   const symbol = req.query["symbol"] as string;
-  const accessToken = (req.query["accessToken"] as string) || getAccessToken("market");
+  const accessToken = schwabAccessTokenFromRequest(req);
 
   if (!symbol || !accessToken) {
     return res.status(400).json({ symbol: "", error: "symbol and accessToken are required" });
