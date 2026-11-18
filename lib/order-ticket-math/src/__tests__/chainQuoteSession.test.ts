@@ -28,6 +28,20 @@ describe("chainQuoteSession", () => {
     expect(view.asOfLabel).toContain("as of");
   });
 
+  it("flags locked pairs without suppressing prices", () => {
+    const gth = equityOptionsGthOpenMs(Date.now());
+    const prior = gth - 18 * 3_600_000;
+    const view = resolveChainQuotePresentation({
+      bid: 0.54,
+      ask: 0.54,
+      quoteTimeMs: prior,
+      nowMs: gth - 30 * 60_000,
+    });
+    expect(view.locked).toBe(true);
+    expect(view.showBid).toBe(0.54);
+    expect(view.displayState).toBe("prior_session");
+  });
+
   it("formats as-of label in Eastern time", () => {
     const ts = Date.parse("2025-11-17T21:15:00.000Z");
     const label = formatQuoteAsOfEt(ts);

@@ -19,7 +19,8 @@ export function formatDayRangeLabel(
     !Number.isFinite(low) ||
     high <= 0 ||
     low <= 0 ||
-    high < low
+    high < low ||
+    high === low
   ) {
     return "\u2014";
   }

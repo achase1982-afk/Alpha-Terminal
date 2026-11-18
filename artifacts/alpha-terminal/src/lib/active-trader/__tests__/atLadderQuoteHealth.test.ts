@@ -54,9 +54,10 @@ describe("auditNearAtmLadderQuotes", () => {
     expect(resolveChainDisplayQuote(baseContract(350, prior), null, now, now).displayState).toBe("prior_session");
   });
 
-  it("accepts locked quotes", () => {
-    expect(
-      resolveChainDisplayQuote({ bid: 0.54, ask: 0.54, quoteTimeMs: prior }, null, Date.now(), now).displayState,
-    ).toBe("prior_session");
+  it("accepts locked quotes with locked flag", () => {
+    const view = resolveChainDisplayQuote({ bid: 0.54, ask: 0.54, quoteTimeMs: prior }, null, Date.now(), now);
+    expect(view.displayState).toBe("prior_session");
+    expect(view.locked).toBe(true);
+    expect(view.bid).toBe(0.54);
   });
 });

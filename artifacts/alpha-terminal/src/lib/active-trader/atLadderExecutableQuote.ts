@@ -11,6 +11,7 @@ export type AtLadderDisplayQuote = {
   tapable: boolean;
   dimmed: boolean;
   asOfLabel: string | null;
+  locked: boolean;
 };
 
 export function atLadderDisplayQuote(
@@ -20,7 +21,16 @@ export function atLadderDisplayQuote(
   nowMs = Date.now(),
 ): AtLadderDisplayQuote {
   if (!contract) {
-    return { bid: null, ask: null, displayState: "incomplete", reason: "No quote", tapable: false, dimmed: false, asOfLabel: null };
+    return {
+      bid: null,
+      ask: null,
+      displayState: "incomplete",
+      reason: "No quote",
+      tapable: false,
+      dimmed: false,
+      asOfLabel: null,
+      locked: false,
+    };
   }
   const view = resolveChainDisplayQuote(contract, tick, chainTs, nowMs);
   const state = view.displayState ?? "incomplete";
@@ -34,6 +44,7 @@ export function atLadderDisplayQuote(
     tapable: view.tapable,
     dimmed: view.dimmed ?? false,
     asOfLabel: view.asOfLabel ?? null,
+    locked: view.locked ?? false,
   };
 }
 

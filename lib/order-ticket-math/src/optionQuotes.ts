@@ -7,6 +7,11 @@ export interface TwoSidedQuote {
   ask: number | null | undefined;
 }
 
+/** Valid two-sided book with bid === ask > 0 (Schwab locked / non-crossed). */
+export function isLockedTwoSidedQuote(bid: number | null | undefined, ask: number | null | undefined): boolean {
+  return quoteSideState(bid, ask) === "ok" && bid != null && ask != null && bid === ask;
+}
+
 export function quoteSideState(bid: number | null | undefined, ask: number | null | undefined): QuoteSideState {
   if (bid == null || ask == null || !Number.isFinite(bid) || !Number.isFinite(ask)) return "incomplete";
   if (bid < 0 || ask <= 0) return "incomplete";
@@ -62,6 +67,7 @@ export function resolveChainQuotePresentation(input: {
   showAsk: number | undefined;
   asOfLabel: string | null;
   dimmed: boolean;
+  locked: boolean;
 } {
   const nowMs = input.nowMs ?? Date.now();
   const liveFreshMs = input.liveFreshMs ?? CHAIN_QUOTE_FRESH_MS;
@@ -74,10 +80,12 @@ export function resolveChainQuotePresentation(input: {
       showAsk: undefined,
       asOfLabel: null,
       dimmed: false,
+      locked: false,
     };
   }
   const bid = input.bid!;
   const ask = input.ask!;
+  const locked = isLockedTwoSidedQuote(bid, ask);
   const qt = input.quoteTimeMs;
   const carryover = isCarryoverOptionQuote(qt, nowMs);
   const sessionOpen = equityOptionsSessionOpen(nowMs);
@@ -92,6 +100,7 @@ export function resolveChainQuotePresentation(input: {
       showAsk: ask,
       asOfLabel: qt != null && qt > 0 ? formatQuoteAsOfEt(qt) : null,
       dimmed: true,
+      locked,
     };
   }
   return {
@@ -101,6 +110,7 @@ export function resolveChainQuotePresentation(input: {
     showAsk: ask,
     asOfLabel: null,
     dimmed: false,
+    locked,
   };
 }
 

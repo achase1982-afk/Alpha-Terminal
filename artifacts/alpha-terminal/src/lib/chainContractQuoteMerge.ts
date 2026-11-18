@@ -32,6 +32,7 @@ export type ChainQuoteFields = {
   displayState?: ChainQuoteUiState;
   asOfLabel?: string | null;
   dimmed?: boolean;
+  locked?: boolean;
 };
 
 export function mergeChainContractWithStream(
@@ -139,6 +140,7 @@ export function resolveChainDisplayQuote(
     displayState: presentation.displayState,
     asOfLabel: presentation.asOfLabel,
     dimmed: presentation.dimmed,
+    locked: presentation.locked,
     tapable: presentation.tapable,
     bid: presentation.showBid,
     ask: presentation.showAsk,
