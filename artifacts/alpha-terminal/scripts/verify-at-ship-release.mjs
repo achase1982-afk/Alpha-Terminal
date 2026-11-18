@@ -7,6 +7,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { installSafeAreaInsets } from "./lib/iphone17ProMax.js";
 import { AT_FIXTURE_BASE, ensureAtFixtureVite, waitForLiveLadder } from "./lib/at-fixture-vite.mjs";
+import { ladderHeatPixelDiff } from "./lib/at-ladder-heat-pixel-diff.mjs";
 
 const OUT = process.env.AT_VERIFY_OUT ?? "/opt/cursor/artifacts/at-ship-release";
 const LIVE = process.env.AT_VERIFY_LIVE ?? "https://alpha-terminal-production-f297.up.railway.app";
@@ -121,6 +122,38 @@ try {
   await fixtureMatrix(page);
   await page.screenshot({ path: path.join(OUT, "ship-fixture-condor-440x956.png") });
 
+  await page.goto(FIXTURE, { waitUntil: "domcontentloaded", timeout: 90_000 });
+  await waitForLiveLadder(page);
+  const caption = await page.locator("[data-at-ladder-heat-caption]").first().innerText().catch(() => "");
+  record(
+    "ladder heat caption",
+    caption === "Contracts traded · last 30s",
+    caption || "missing",
+  );
+  const shotPath = path.join(OUT, "ship-fixture-pixel-baseline-440x956.png");
+  await page.screenshot({ path: shotPath });
+  const captionRect = await page.evaluate(() => {
+    const el = document.querySelector("[data-at-ladder-heat-caption]");
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    return { x: r.x * dpr, y: r.y * dpr, w: r.width * dpr, h: r.height * dpr };
+  });
+  const pxDiff = await ladderHeatPixelDiff({
+    currentPngPath: shotPath,
+    outDir: OUT,
+    captionRect: captionRect ?? undefined,
+  });
+  if (pxDiff.skipped) {
+    record("ladder layout pixel diff (excl. caption)", true, pxDiff.reason);
+  } else {
+    record(
+      "ladder layout pixel diff (excl. caption)",
+      pxDiff.pass,
+      `${pxDiff.diffPixels} px (max ${pxDiff.maxAllowed})`,
+    );
+  }
+
   await fixtureHeatScene(page, "heat-quiet", () => {
     const live = [...document.querySelectorAll("[data-at-quote-heat-state='live']")];
     return live.length === 0;
@@ -161,19 +194,54 @@ try {
   await installSafeAreaInsets(livePage, 62, 34);
   await livePage.addInitScript(() => {
     localStorage.setItem("alpha-terminal-storage", JSON.stringify({ state: { symbol: "$SPX" }, version: 35 }));
+    window.__atSpxVolProof = [];
+    const Orig = WebSocket;
+    window.WebSocket = function (...args) {
+      const ws = new Orig(...args);
+      ws.addEventListener("message", (ev) => {
+        const raw = String(ev.data ?? "");
+        if (!/OPTION|option/i.test(raw)) return;
+        const matches = [...raw.matchAll(/"8"\s*:\s*(\d+)/g)];
+        const field8 = matches.length ? Number(matches[matches.length - 1][1]) : null;
+        if (field8 != null || raw.includes('"8"') || raw.includes(",8,")) {
+          window.__atSpxVolProof.push({ t: Date.now(), field8 });
+        }
+      });
+      return ws;
+    };
   });
   await livePage.goto(LIVE, { waitUntil: "domcontentloaded", timeout: 120_000 });
   await livePage.getByRole("button", { name: "OPTIONS", exact: true }).click({ timeout: 60_000 });
   await livePage.waitForTimeout(500);
   await livePage.locator('[data-at-view-selector] select').first().selectOption("at");
   await livePage.waitForSelector("[data-at-ladder-scroll]", { timeout: 90_000 });
+  await livePage.waitForTimeout(6_000);
   const spxHeat = await livePage.evaluate(() => {
-    const tag = document.querySelector("[data-at-ladder-heat-source]")?.textContent?.trim() ?? "";
-    const states = [...document.querySelectorAll("[data-at-quote-heat]")].slice(0, 8).map((el) =>
-      el.getAttribute("data-at-quote-heat-state"),
+    const el = document.querySelector("[data-at-ladder-heat-source]");
+    const tag = el?.textContent?.trim() ?? "";
+    const freshAttr = el?.getAttribute("data-at-ladder-heat-fresh") ?? "0";
+    const states = [...document.querySelectorAll("[data-at-quote-heat]")].slice(0, 12).map((node) =>
+      node.getAttribute("data-at-quote-heat-state"),
     );
+    const quiet = states.filter((s) => s === "quiet").length;
+    const stale = states.filter((s) => s === "stale").length;
     const unavailable = states.filter((s) => s === "unavailable").length;
-    return { tag, states, ok: tag.includes("stream") && unavailable < states.length };
+    const proof = Array.isArray(window.__atSpxVolProof) ? window.__atSpxVolProof : [];
+    const field8Ticks = proof.filter((p) => p.field8 != null && Number.isFinite(p.field8));
+    const liveOk = tag === "Live · stream" && freshAttr === "1";
+    const staleNoLive = stale === 0 || tag.length === 0;
+    const wsOk = field8Ticks.length >= 1;
+    return {
+      tag,
+      freshAttr,
+      states,
+      quiet,
+      stale,
+      unavailable,
+      field8Samples: field8Ticks.slice(-5),
+      field8Count: field8Ticks.length,
+      ok: liveOk && staleNoLive && wsOk && unavailable < states.length,
+    };
   });
   record("SPX live heat stream", spxHeat.ok, JSON.stringify(spxHeat));
   await livePage.screenshot({ path: path.join(OUT, "ship-live-spx-volume-heat-440x956.png") });

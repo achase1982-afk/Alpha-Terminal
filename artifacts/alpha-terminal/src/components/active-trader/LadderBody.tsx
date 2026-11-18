@@ -203,7 +203,6 @@ function QuoteHeatPair({
   bid: ReactNode;
   ask: ReactNode;
 }) {
-  const showUnavailable = view.availability === "unavailable";
   return (
     <div
       className="relative grid h-full min-w-0"
@@ -215,15 +214,6 @@ function QuoteHeatPair({
       data-at-quote-heat={side}
       data-at-quote-heat-state={view.availability}
     >
-      {showUnavailable ? (
-        <span
-          data-at-quote-heat-label
-          className="pointer-events-none absolute inset-0 flex items-center justify-center"
-          style={{ fontSize: 7, fontWeight: 600, color: GRAY, letterSpacing: "0.04em", textTransform: "uppercase" }}
-        >
-          Unavailable
-        </span>
-      ) : null}
       {bid}
       {ask}
     </div>

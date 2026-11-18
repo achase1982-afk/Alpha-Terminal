@@ -60,4 +60,14 @@ describe("AtLadderVolumeHeatEngine", () => {
     eng.setNowMs(2_000);
     expect(eng.snapshot([C])[C]!.availability).toBe("unavailable");
   });
+
+  it("gates live badge on source freshness timestamp", () => {
+    const eng = new AtLadderVolumeHeatEngine({ staleAfterMs: 5_000 });
+    eng.setSourceLive(true);
+    const t0 = 5_000_000;
+    eng.ingestCumulative(C, 10, t0);
+    eng.setNowMs(t0 + 1_000);
+    expect(eng.isSourceFresh(t0 + 1_000)).toBe(true);
+    expect(eng.isSourceFresh(t0 + 6_000)).toBe(false);
+  });
 });
