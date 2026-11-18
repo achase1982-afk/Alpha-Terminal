@@ -96,9 +96,22 @@ async function runFlow(height) {
     limit2 || "empty",
   );
 
-  const reviewBtn = page.getByRole("button", { name: /Review/i });
+  if (height <= 658) {
+    const expand = page.getByRole("button", { name: "Expand" });
+    if ((await expand.count()) > 0) {
+      await expand.click();
+      await page.waitForTimeout(400);
+    }
+  }
+
+  const reviewBtn = page.locator("[data-testid='chain-sheet-review']");
+  await reviewBtn.waitFor({ state: "visible", timeout: 10_000 });
   const reviewDisabled = await reviewBtn.isDisabled();
   record(`Review enabled with sending off (${height}px)`, !reviewDisabled, await reviewBtn.textContent());
+  if (reviewDisabled) {
+    record(`spread verify hard-fail (${height}px)`, false, "Review disabled");
+    return;
+  }
 
   const sellLeg = await page
     .locator(`[data-at-quote="call-bid-${spreadStrike}"]`)
