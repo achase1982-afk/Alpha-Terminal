@@ -32,6 +32,21 @@ import {
   streamerSubSetUnderlyingSpotResolver,
 } from "./streamerSubscriptionManager.js";
 import {
+  addFuturesDisplay,
+  clearFuturesDisplayRegistry,
+  futuresDisplayRegistrySnapshot,
+  getFuturesDisplaysForKey,
+  registerFuturesDisplay,
+} from "./futuresDisplayRegistry.js";
+import {
+  clearFuturesActiveSymbolCache,
+  futuresRootFromContract,
+  getFuturesActiveSymbolForRoot,
+  resolveMonthlyFrontMonth,
+  resolveQuarterlyFrontMonth,
+  setFuturesActiveSymbolForRoot,
+} from "./futuresFrontMonth.js";
+import {
   streamerWireSimulatorApplyPayload,
   streamerWireSimulatorDeskLevelOneKeysOnWire,
   streamerWireSimulatorLiveLevelOneOptionsCount,
@@ -136,48 +151,48 @@ function leveloneEquityFieldsUnion(): string {
 }
 
 const LEVELONE_EQUITIES_FIELDS = leveloneEquityFieldsUnion();
-const FUT_FIELDS = "0,1,2,3,4,5,8,12,13,14,19,24";
+const FUT_FIELDS = "0,1,2,3,4,5,8,12,13,14,19,24,34";
 let acctActivitySubscribed = false;
 
 const MONTH_CODES = "FGHJKMNQUVXZ";
 const QUARTERLY_ROOTS = new Set([
-  "ES","NQ","RTY","YM","MES","MNQ","M2K",
+  "ES","NQ","RTY","YM","MYM","MES","MNQ","M2K",
   "6E","6J","6B","6A","6C","EMD",
   "ZB","ZN","ZF","ZT","UB",
 ]);
 
-const EARLY_ROLL_ROOTS = new Set<string>(["BZ"]);
+export { addFuturesDisplay } from "./futuresDisplayRegistry.js";
 
 const FUTURES_ROOT_ALIAS: Record<string, string> = {
   "VIX": "VX",
 };
 
-export function schwabFuturesKey(displaySymbol: string): string {
-  const rawBare = displaySymbol.replace(/^\//, "");
-  const bare = FUTURES_ROOT_ALIAS[rawBare] ?? rawBare;
-  const now = new Date();
-  const y2 = now.getFullYear() % 100;
-  const month = now.getMonth();
-  const day = now.getDate();
+/** Schwab stream / REST full contract, e.g. `/ESZ26`. */
+export const SCHWAB_FUTURES_CONTRACT_RE = /^\/[A-Z0-9]{1,4}[FGHJKMNQUVXZ]\d{2}$/;
 
-  if (QUARTERLY_ROOTS.has(bare)) {
-    const quarters = [2, 5, 8, 11];
-    for (const q of quarters) {
-      if (month < q || (month === q && day <= 20)) {
-        return `/${bare}${MONTH_CODES[q]}${y2}`;
-      }
-    }
-    return `/${bare}${MONTH_CODES[2]}${y2 + 1}`;
-  }
-  const rollAhead = EARLY_ROLL_ROOTS.has(bare) ? 2 : 1;
-  let fm = month + rollAhead;
-  let fy = y2;
-  if (day > 20) { fm++; }
-  if (fm > 11) { fm -= 12; fy++; }
-  return `/${bare}${MONTH_CODES[fm]}${fy}`;
+export function isSchwabFuturesContractSymbol(displaySymbol: string): boolean {
+  return SCHWAB_FUTURES_CONTRACT_RE.test(displaySymbol.toUpperCase().trim());
 }
 
-const futuresKeyToDisplay = new Map<string, string>();
+export function schwabFuturesKey(displaySymbol: string): string {
+  const upper = displaySymbol.toUpperCase().trim();
+  if (isSchwabFuturesContractSymbol(upper)) {
+    return upper;
+  }
+  const rawBare = upper.replace(/^\//, "");
+  const bare = FUTURES_ROOT_ALIAS[rawBare] ?? rawBare;
+  const now = new Date();
+  const active =
+    getFuturesActiveSymbolForRoot(upper) ??
+    getFuturesActiveSymbolForRoot(`/${bare}`) ??
+    getFuturesActiveSymbolForRoot(`/${rawBare}`);
+  if (active) return active;
+
+  if (QUARTERLY_ROOTS.has(bare)) {
+    return resolveQuarterlyFrontMonth(bare, [2, 5, 8, 11], now);
+  }
+  return resolveMonthlyFrontMonth(bare, now);
+}
 
 const alertSeenSet = new Map<string, number>();
 const ALERT_DEDUP_TTL_MS = 60_000;
@@ -770,7 +785,29 @@ export function getSnapshot(): LiveQuote[] {
 }
 
 export function getQuoteBySymbol(symbol: string): LiveQuote | undefined {
-  return quoteCache.get(symbol);
+  const upper = symbol.toUpperCase().trim();
+  const direct = quoteCache.get(upper);
+  if (direct) return direct;
+  if (!upper.startsWith("/")) return undefined;
+  if (isSchwabFuturesContractSymbol(upper)) {
+    const mapped = getFuturesDisplaysForKey(upper);
+    for (const d of mapped) {
+      const q = quoteCache.get(d);
+      if (q) return q;
+    }
+    return quoteCache.get(upper);
+  }
+  const directRoot = quoteCache.get(upper);
+  if (directRoot) return directRoot;
+  const contract = schwabFuturesKey(upper);
+  if (contract !== upper) {
+    const viaContract = quoteCache.get(contract);
+    if (viaContract) return viaContract;
+  }
+  for (const d of getFuturesDisplaysForKey(contract)) {
+    if (d === upper) return quoteCache.get(d);
+  }
+  return undefined;
 }
 
 export function getOptionTick(key: string): OptionTick | undefined {
@@ -803,7 +840,10 @@ export function getSchwabCacheDiagnostics(): {
     if (q.last !== null) entriesWithLast++;
   }
   const fkMap: Record<string, string> = {};
-  for (const [k, v] of futuresKeyToDisplay.entries()) fkMap[k] = v;
+  const snap = futuresDisplayRegistrySnapshot();
+  for (const [k, displays] of Object.entries(snap)) {
+    fkMap[k] = displays.join(",");
+  }
   return {
     equityCacheKeys: equityCacheKeys.sort(),
     futuresCacheKeys: futuresCacheKeys.sort(),
@@ -1600,12 +1640,25 @@ function processFuturesTick(content: Record<string, unknown>[]) {
     const rawKey = item["key"] as string;
     if (!rawKey) continue;
 
-    const displaySymbol = futuresKeyToDisplay.get(rawKey) ?? rawKey;
-    if (!futuresKeyToDisplay.has(rawKey)) {
-      logger.info({ rawKey, displaySymbol, knownKeys: [...futuresKeyToDisplay.keys()].slice(0, 5) }, "Schwab futures: unmapped key received");
+    const streamKey = rawKey.toUpperCase();
+    const activeField = item["34"];
+    if (typeof activeField === "string" && activeField.trim().startsWith("/")) {
+      const active = activeField.toUpperCase().trim();
+      const root = futuresRootFromContract(active) ?? futuresRootFromContract(streamKey);
+      if (root) setFuturesActiveSymbolForRoot(root, active);
     }
 
-    const existing = quoteCache.get(displaySymbol);
+    const mappedDisplays = getFuturesDisplaysForKey(streamKey);
+    const displayTargets =
+      mappedDisplays.size > 0 ? [...mappedDisplays] : [streamKey];
+    if (mappedDisplays.size === 0) {
+      logger.info(
+        { rawKey: streamKey, knownKeys: Object.keys(futuresDisplayRegistrySnapshot()).slice(0, 5) },
+        "Schwab futures: unmapped key received",
+      );
+    }
+
+    const existing = quoteCache.get(displayTargets[0]!) ?? quoteCache.get(streamKey);
     const last = numOrNull(item["3"]) ?? existing?.last ?? null;
     const close = numOrNull(item["14"]) ?? existing?.close ?? null;
 
@@ -1616,8 +1669,8 @@ function processFuturesTick(content: Record<string, unknown>[]) {
       changePct = (change / close) * 100;
     }
 
-    const quote: LiveQuote = {
-      symbol: displaySymbol,
+    const baseQuote: LiveQuote = {
+      symbol: streamKey,
       last,
       regularLast: last,
       extendedLast: last,
@@ -1635,8 +1688,14 @@ function processFuturesTick(content: Record<string, unknown>[]) {
       quoteSource: "SCHWAB",
     };
 
-    quoteCache.set(displaySymbol, quote);
-    broadcast("quote", quote);
+    if (streamKey !== displayTargets[0]) {
+      quoteCache.set(streamKey, baseQuote);
+    }
+    for (const displaySymbol of displayTargets) {
+      const quote: LiveQuote = { ...baseQuote, symbol: displaySymbol };
+      quoteCache.set(displaySymbol, quote);
+      broadcast("quote", quote);
+    }
   }
 }
 
@@ -2372,6 +2431,8 @@ export function stopStreamer() {
   deskAddedEquitySymbols.clear();
   deskAddedOptionSymbols.clear();
   deskAddedOptionsBookSymbols.clear();
+  clearFuturesDisplayRegistry();
+  clearFuturesActiveSymbolCache();
   acctActivitySubscribed = false;
   consecutivePostLoginFlap1006 = 0;
 }
@@ -2395,8 +2456,12 @@ export function addFuturesSymbols(displaySymbols: string[]) {
   const newKeys: string[] = [];
   for (const ds of displaySymbols) {
     const isFuture = ds.startsWith("/");
-    const key = isFuture ? schwabFuturesKey(ds) : ds;
-    futuresKeyToDisplay.set(key, ds.toUpperCase());
+    const normalized = ds.toUpperCase();
+    const key = isFuture ? schwabFuturesKey(normalized) : normalized;
+    registerFuturesDisplay(key, normalized);
+    if (isFuture && isSchwabFuturesContractSymbol(normalized)) {
+      registerFuturesDisplay(normalized, normalized);
+    }
     if (!subscribedFuturesSymbols.has(key)) {
       subscribedFuturesSymbols.add(key);
       newKeys.push(key);
@@ -2611,6 +2676,19 @@ export function __deskStreamerWireTestUnprime(): void {
   stopStreamer();
   streamerInfo = null;
   schwabWs = null;
+}
+
+/** Vitest: reset futures quote registry + cache without tearing down the whole streamer. */
+export function __schwabFuturesStreamerTestReset(): void {
+  clearFuturesDisplayRegistry();
+  clearFuturesActiveSymbolCache();
+  for (const key of [...quoteCache.keys()]) {
+    if (key.startsWith("/")) quoteCache.delete(key);
+  }
+}
+
+export function __schwabFuturesProcessTickForTests(content: Record<string, unknown>[]): void {
+  processFuturesTick(content);
 }
 
 registerDeskStreamerHealthReaders(getStreamerStatus, isConnected);

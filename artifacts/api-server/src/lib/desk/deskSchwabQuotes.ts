@@ -124,7 +124,13 @@ export async function deskFetchSchwabQuotes(
           "regularMarketPercentChange",
           "markPercentChange",
         )
-      : pickNum(srcs, "netPercentChangeInDouble", "netPercentChange", "markPercentChange");
+      : pickNum(
+          srcs,
+          "netPercentChangeInDouble",
+          "netPercentChange",
+          "futurePercentChange",
+          "markPercentChange",
+        );
 
     quotes.push({
       symbol: display,

@@ -22,6 +22,7 @@ import {
   DEFAULT_SERVER_PRE_TRADE,
   evaluateServerPlaceOrderGate,
   isClosingSchwabOrder,
+  orderReferencesBlockedFutures,
   validateOrderPreTradeGatePayload,
 } from "@workspace/order-ticket-math";
 
@@ -40,6 +41,11 @@ interface SchwabOrderLeg {
 
 interface SchwabPlaceOrderBody extends Record<string, unknown> {
   orderLegCollection?: SchwabOrderLeg[];
+  childOrderStrategies?: SchwabPlaceOrderBody[];
+}
+
+function orderReferencesFuturesSymbol(order: SchwabPlaceOrderBody): boolean {
+  return orderReferencesBlockedFutures(order);
 }
 
 /** Client-supplied journal metadata when logging a trade alongside an order. */
@@ -300,6 +306,14 @@ router.post("/place-order", async (req, res) => {
 
   if (!accountHash || !order) {
     return res.status(400).json({ error: "Missing accountHash or order" });
+  }
+
+  if (orderReferencesFuturesSymbol(order)) {
+    return res.status(403).json({
+      error: "futures_orders_unsupported",
+      message:
+        "Futures can be quoted here, but the Schwab Trader API doesn't accept futures or futures-options orders.",
+    });
   }
 
   try {

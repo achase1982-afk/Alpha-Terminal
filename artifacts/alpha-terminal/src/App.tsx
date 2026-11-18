@@ -217,6 +217,10 @@ function DevAtFixtureRoute() {
 const ChainOrderFixtureDevPage = import.meta.env.DEV
   ? lazy(() => import("@/dev-only/ChainOrderFixtureDevPage"))
   : null;
+
+const FuturesEsFixtureDevPage = import.meta.env.DEV
+  ? lazy(() => import("@/dev-only/FuturesEsFixtureDevPage"))
+  : null;
 function Router() {
   return (
     <Switch>
@@ -225,6 +229,15 @@ function Router() {
           {() => (
             <Suspense fallback={null}>
               <ChainOrderFixtureDevPage />
+            </Suspense>
+          )}
+        </Route>
+      ) : null}
+      {FuturesEsFixtureDevPage ? (
+        <Route path="/dev/futures-es">
+          {() => (
+            <Suspense fallback={null}>
+              <FuturesEsFixtureDevPage />
             </Suspense>
           )}
         </Route>

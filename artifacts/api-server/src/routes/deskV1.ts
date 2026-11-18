@@ -235,6 +235,24 @@ router.get("/chains", async (req, res) => {
     res.status(400).json({ error: "expiration required (YYYY-MM-DD)", source: "schwab" });
     return;
   }
+  if (symbol.startsWith("/")) {
+    const session_date = deskSessionDateEt();
+    const payload = {
+      symbol,
+      expiration: expiration.slice(0, 10),
+      underlyingPrice: null,
+      contracts_raw: [] as Record<string, unknown>[],
+      contracts: [] as unknown[],
+      truncated: false,
+      contract_count: 0,
+      session_date,
+      error: "futures_chain_unsupported",
+      message:
+        "Futures option chains are not available via Schwab REST. Streamer-based chain build is pending.",
+    };
+    res.json(deskEnvelope(payload, "schwab", Date.now(), "schwab_chains"));
+    return;
+  }
   const strikeCountRaw = req.query["strikeCount"] as string | undefined;
   const strikeCount =
     strikeCountRaw != null && strikeCountRaw !== ""
