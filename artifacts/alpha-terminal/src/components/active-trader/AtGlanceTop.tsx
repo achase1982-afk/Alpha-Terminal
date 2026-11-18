@@ -172,6 +172,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
 
   const gexStr = mode === "futures" ? null : formatGexUsd(zones.netGexUsdPer1Pct);
   const gexDisplay = gexStr && gexStr !== "\u2014" ? gexStr.replace(/^GEX\s*/, "") : "\u2014";
+  const caption = glanceCaption ?? zones.glanceCaption;
   const showWalls = mode !== "futures" || zones.putWall != null || zones.callWall != null;
   const keepawayHint =
     keepawayPutLine != null || keepawayCallLine != null
@@ -242,12 +243,12 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           </Pane>
         ) : null}
         <Pane className="text-center px-0.5" style={showWalls ? undefined : { gridColumn: "1 / -1" }}>
-          {glanceCaption ? (
+          {caption ? (
             <Pane
               data-at-glance-session
               style={{ fontSize: 8, fontWeight: 500, letterSpacing: "0.04em", color: AT_SECONDARY, lineHeight: 1.1, marginBottom: 2 }}
             >
-              {glanceCaption}
+              {caption}
             </Pane>
           ) : null}
           <Pane style={{ fontSize: 9, fontWeight: 500, letterSpacing: "0.06em", color: AT_LABEL, lineHeight: 1 }}>
