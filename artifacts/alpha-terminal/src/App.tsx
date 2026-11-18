@@ -26,6 +26,7 @@ import {
   type ServerTokensPayload,
 } from "@/lib/schwabBrokerageSession";
 import { syncSchwabTokensFromServer } from "@/lib/schwabTokenSync";
+import { registerVitePreloadErrorHandler } from "@/lib/lazyChunkRecovery";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -223,6 +224,11 @@ function BrowserTelemetryInstaller() {
   return null;
 }
 
+function ChunkRecoveryInstaller() {
+  useEffect(() => registerVitePreloadErrorHandler(), []);
+  return null;
+}
+
 const DevAtFixturePage = import.meta.env.DEV
   ? lazy(() => import("./dev-only/ActiveTraderFixtureDevPage"))
   : null;
@@ -288,6 +294,7 @@ function App() {
             <PendingSessionLoader />
             <StrategistJobBackgroundSync />
             <BrowserTelemetryInstaller />
+            <ChunkRecoveryInstaller />
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
               <Router />
             </WouterRouter>

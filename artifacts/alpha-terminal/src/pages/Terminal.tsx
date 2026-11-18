@@ -1,4 +1,6 @@
-import { lazy, Suspense, useState, useEffect, useLayoutEffect, useRef, useCallback, useId, type ComponentProps } from "react";
+import { lazy, useState, useEffect, useLayoutEffect, useRef, useCallback, useId, type ComponentProps } from "react";
+import { LazyRouteView } from "@/components/LazyRouteView";
+import { setLazyRecoveryTradeLatch } from "@/lib/lazyChunkRecovery";
 import { Sidebar, type SidebarHandle } from "@/components/Sidebar";
 import { MetricsBar, VolumeBar } from "@/components/MetricsBar";
 import { AtSymbolHeader } from "@/components/active-trader/AtSymbolHeader";
@@ -74,97 +76,97 @@ function LazyStripFallback() {
 const OptionsTabLazy = lazy(() => import("@/components/OptionsTab").then((m) => ({ default: m.OptionsTab })));
 function OptionsTab(props: ComponentProps<typeof OptionsTabLazy>) {
   return (
-    <Suspense fallback={<LazyViewFallback />}>
-      <OptionsTabLazy {...props} />
-    </Suspense>
+    <LazyRouteView viewName="Options" fallback={<LazyViewFallback />}>
+      {(key) => <OptionsTabLazy key={key} {...props} />}
+    </LazyRouteView>
   );
 }
 const AiIntelligenceTabLazy = lazy(() => import("@/components/AiIntelligenceTab").then((m) => ({ default: m.AiIntelligenceTab })));
 function AiIntelligenceTab(props: ComponentProps<typeof AiIntelligenceTabLazy>) {
   return (
-    <Suspense fallback={<LazyViewFallback />}>
-      <AiIntelligenceTabLazy {...props} />
-    </Suspense>
+    <LazyRouteView viewName="AI" fallback={<LazyViewFallback />}>
+      {(key) => <AiIntelligenceTabLazy key={key} {...props} />}
+    </LazyRouteView>
   );
 }
 const NewsTabLazy = lazy(() => import("@/components/NewsTab").then((m) => ({ default: m.NewsTab })));
 function NewsTab() {
   return (
-    <Suspense fallback={<LazyViewFallback />}>
-      <NewsTabLazy />
-    </Suspense>
+    <LazyRouteView viewName="News" fallback={<LazyViewFallback />}>
+      {(key) => <NewsTabLazy key={key} />}
+    </LazyRouteView>
   );
 }
 const PortfolioViewLazy = lazy(() => import("@/components/PortfolioView").then((m) => ({ default: m.PortfolioView })));
 function PortfolioView(props: ComponentProps<typeof PortfolioViewLazy>) {
   return (
-    <Suspense fallback={<LazyViewFallback />}>
-      <PortfolioViewLazy {...props} />
-    </Suspense>
+    <LazyRouteView viewName="Portfolio" fallback={<LazyViewFallback />}>
+      {(key) => <PortfolioViewLazy key={key} {...props} />}
+    </LazyRouteView>
   );
 }
 const DashboardWorkspaceLazy = lazy(() => import("@/components/dashboard/DashboardWorkspace").then((m) => ({ default: m.DashboardWorkspace })));
 function DashboardWorkspace(props: ComponentProps<typeof DashboardWorkspaceLazy>) {
   return (
-    <Suspense fallback={<LazyViewFallback />}>
-      <DashboardWorkspaceLazy {...props} />
-    </Suspense>
+    <LazyRouteView viewName="Dashboard" fallback={<LazyViewFallback />}>
+      {(key) => <DashboardWorkspaceLazy key={key} {...props} />}
+    </LazyRouteView>
   );
 }
 const CompanySwipablePagesLazy = lazy(() => import("@/components/CompanySwipablePages").then((m) => ({ default: m.CompanySwipablePages })));
 function CompanySwipablePages(props: ComponentProps<typeof CompanySwipablePagesLazy>) {
   return (
-    <Suspense fallback={<LazyViewFallback />}>
-      <CompanySwipablePagesLazy {...props} />
-    </Suspense>
+    <LazyRouteView viewName="Company" fallback={<LazyViewFallback />}>
+      {(key) => <CompanySwipablePagesLazy key={key} {...props} />}
+    </LazyRouteView>
   );
 }
 const MarketNewsChatPanelLazy = lazy(() => import("@/components/MarketNewsChatPanel").then((m) => ({ default: m.MarketNewsChatPanel })));
 function MarketNewsChatPanel(props: ComponentProps<typeof MarketNewsChatPanelLazy>) {
   return (
-    <Suspense fallback={<LazyViewFallback />}>
-      <MarketNewsChatPanelLazy {...props} />
-    </Suspense>
+    <LazyRouteView viewName="Chat" fallback={<LazyViewFallback />}>
+      {(key) => <MarketNewsChatPanelLazy key={key} {...props} />}
+    </LazyRouteView>
   );
 }
 const CompanySectionTabBarLazy = lazy(() => import("@/components/CompanyResearchHub").then((m) => ({ default: m.CompanySectionTabBar })));
 function CompanySectionTabBar(props: ComponentProps<typeof CompanySectionTabBarLazy>) {
   return (
-    <Suspense fallback={<LazyStripFallback />}>
-      <CompanySectionTabBarLazy {...props} />
-    </Suspense>
+    <LazyRouteView viewName="Company tabs" fallback={<LazyStripFallback />}>
+      {(key) => <CompanySectionTabBarLazy key={key} {...props} />}
+    </LazyRouteView>
   );
 }
 const StrategyBuilderLazy = lazy(() => import("@/components/StrategyBuilder").then((m) => ({ default: m.StrategyBuilder })));
 function StrategyBuilder(props: ComponentProps<typeof StrategyBuilderLazy>) {
   return (
-    <Suspense fallback={null}>
-      <StrategyBuilderLazy {...props} />
-    </Suspense>
+    <LazyRouteView viewName="Strategy builder" fallback={null}>
+      {(key) => <StrategyBuilderLazy key={key} {...props} />}
+    </LazyRouteView>
   );
 }
 const OrderTicketLazy = lazy(() => import("@/components/OrderTicket").then((m) => ({ default: m.OrderTicket })));
 function OrderTicket(props: ComponentProps<typeof OrderTicketLazy>) {
   return (
-    <Suspense fallback={null}>
-      <OrderTicketLazy {...props} />
-    </Suspense>
+    <LazyRouteView viewName="Order ticket" fallback={null}>
+      {(key) => <OrderTicketLazy key={key} {...props} />}
+    </LazyRouteView>
   );
 }
 const InAppBrowserLazy = lazy(() => import("@/components/InAppBrowser").then((m) => ({ default: m.InAppBrowser })));
 function InAppBrowser() {
   return (
-    <Suspense fallback={null}>
-      <InAppBrowserLazy />
-    </Suspense>
+    <LazyRouteView viewName="Browser" fallback={null}>
+      {(key) => <InAppBrowserLazy key={key} />}
+    </LazyRouteView>
   );
 }
 const SearchOverlayLazy = lazy(() => import("@/components/SearchOverlay").then((m) => ({ default: m.SearchOverlay })));
 function SearchOverlay(props: ComponentProps<typeof SearchOverlayLazy>) {
   return (
-    <Suspense fallback={null}>
-      <SearchOverlayLazy {...props} />
-    </Suspense>
+    <LazyRouteView viewName="Search" fallback={null}>
+      {(key) => <SearchOverlayLazy key={key} {...props} />}
+    </LazyRouteView>
   );
 }
 
@@ -408,6 +410,11 @@ export default function TerminalPage() {
   } | null>(null);
 
   const [strategyOpen, setStrategyOpen] = useState(false);
+
+  useEffect(() => {
+    setLazyRecoveryTradeLatch(orderOpen || strategyOpen);
+    return () => setLazyRecoveryTradeLatch(false);
+  }, [orderOpen, strategyOpen]);
   const [strategyStrikes, setStrategyStrikes] = useState<number[]>([]);
   const [strategyExpirations, setStrategyExpirations] = useState<{ label: string; value: string }[]>([]);
   const [strategyChainData, setStrategyChainData] = useState<Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>>(new Map());
