@@ -52,17 +52,14 @@ export function resolveDayLowFromStreamQuote(
   return { kind: "current", value: low };
 }
 
-export function formatDayLowLevel(n: number): string {
-  const frac = Math.abs(n * 2) % 2 === 1;
-  return n.toLocaleString("en-US", {
-    minimumFractionDigits: frac ? 1 : 0,
-    maximumFractionDigits: frac ? 1 : 0,
-  });
+/** Feed precision for session low (no half-point snap). */
+export function formatSessionLowDisplay(n: number): string {
+  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export function dayLowLabelText(display: DayLowDisplay): string {
   if (display.kind === "unavailable" || display.value == null) return "Day low —";
-  const n = formatDayLowLevel(display.value);
+  const n = formatSessionLowDisplay(display.value);
   if (display.kind === "prior") return `Prev low ${n}`;
   return `Day low ${n}`;
 }

@@ -11,6 +11,28 @@ function record(name, pass, detail) {
   checks.push({ name, pass, detail });
 }
 
+function parseRgb(s) {
+  const m = s?.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if (!m) return null;
+  return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+
+function luminance([r, g, b]) {
+  const f = (x) => {
+    const c = x / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+}
+
+function contrastRatio(fg, bg) {
+  const l1 = luminance(fg);
+  const l2 = luminance(bg);
+  const lighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 await mkdir(OUT, { recursive: true });
 const browser = await webkit.launch();
 const context = await browser.newContext({
@@ -30,17 +52,17 @@ async function runHeight(height) {
   await page.setViewportSize({ width: 440, height });
   await page.goto(LIVE, { waitUntil: "domcontentloaded", timeout: 120_000 });
   await page.getByRole("button", { name: "OPTIONS", exact: true }).click({ timeout: 60_000 });
-  await page.waitForTimeout(800);
+  await page.waitForTimeout(900);
   const viewSel = page.locator('[data-at-view-selector] select, select[aria-label="Options view"]');
   await viewSel.first().selectOption("at").catch(() => undefined);
   await page.waitForSelector("[data-at-glance-top]", { timeout: 90_000 });
   await page.waitForSelector("[data-at-day-low-zone]", { timeout: 90_000 });
 
   const dayLowRow = await page.locator("[data-at-day-low]").innerText();
-  const lowZoneSlot = await page.locator("[data-at-low-zone-slot]").innerText();
-  const walls =
-    (await page.locator('[data-at-glance-top]').innerText()).includes("PUT") &&
-    (await page.locator('[data-at-glance-top]').innerText()).includes("CALL");
+  const lowZoneRef = await page.locator("[data-at-low-zone-ref]").innerText();
+  const glanceText = await page.locator("[data-at-glance-top]").innerText();
+  const walls = glanceText.includes("PUT") && glanceText.includes("CALL");
+  const flowRow = (await page.locator("[data-at-glance-flow-row]").count()) > 0;
 
   const noZeroLevel = !/\b0\.00\b/.test(dayLowRow) && !/Day low 0\b/.test(dayLowRow);
   record(`no overnight zero (${height}px)`, noZeroLevel, dayLowRow.trim());
@@ -48,9 +70,29 @@ async function runHeight(height) {
   const dayLowOk = /Day low|Prev low/.test(dayLowRow);
   record(`day low label (${height}px)`, dayLowOk, dayLowRow.trim());
 
-  record(`low zone pending (${height}px)`, /Low zone: pending/.test(lowZoneSlot), lowZoneSlot.trim());
+  const zoneOk =
+    /Low zone/.test(lowZoneRef) &&
+    (lowZoneRef.includes("pending") || /\d[\d,]*\.\d{2}.*–/.test(lowZoneRef));
+  record(`low zone band or pending (${height}px)`, zoneOk, lowZoneRef.trim());
 
   record(`walls present (${height}px)`, walls, walls ? "PUT/CALL" : "missing");
+  record(`flow tracks row (${height}px)`, flowRow, flowRow ? "ok" : "missing");
+
+  const contrast = await page.evaluate(() => {
+    const el = document.querySelector("[data-at-low-zone-ref]");
+    if (!el) return null;
+    return getComputedStyle(el).color;
+  });
+  const fg = parseRgb(contrast);
+  const ratio = fg ? contrastRatio(fg, [0, 0, 0]) : 0;
+  record(`zone WCAG on black (${height}px)`, ratio >= 4.5, ratio ? ratio.toFixed(2) : "n/a");
+
+  if (lowZoneRef.includes("–")) {
+    await page.getByRole("button", { name: "Low zone reference info" }).click();
+    const tip = await page.locator("[data-at-low-zone-tooltip]").innerText();
+    const tipOk = tip.includes("median 29.5") && tip.includes("not a forecast");
+    record(`tooltip (${height}px)`, tipOk, tip.slice(0, 72));
+  }
 
   await page.screenshot({ path: path.join(OUT, `live-at-day-low-${height}px.png`) });
 }
