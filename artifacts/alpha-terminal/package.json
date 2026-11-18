@@ -12,7 +12,8 @@
     "test": "vitest run",
     "check-at-hex": "sh -c '! rg \"#[0-9a-fA-F]{6}\" src/components/active-trader'",
     "verify-at-fixture-prod": "vite build --config vite.config.ts && sh -c '! rg -l \"AT_FIXTURE_SPX_0DTE_DEV_ONLY\" dist/'",
-    "verify-chain-order-fixture-prod": "vite build --config vite.config.ts && node scripts/verify-chain-order-fixture-prod.mjs"
+    "verify-chain-order-fixture-prod": "vite build --config vite.config.ts && node scripts/verify-chain-order-fixture-prod.mjs",
+    "verify-at-ladder-flood": "VITE_AUTH_DISABLED=1 CLERK_PUBLISHABLE_KEY=pk_test_auth_disabled_e2e vite build --config vite.config.ts --outDir tmp/at-flood/public --emptyOutDir && node scripts/verify-at-ladder-flood.mjs --dist tmp/at-flood/public --assert"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",
