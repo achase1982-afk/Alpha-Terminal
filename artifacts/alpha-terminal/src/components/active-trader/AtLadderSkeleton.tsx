@@ -28,7 +28,6 @@ export const AtLadderSkeleton = memo(function AtLadderSkeleton({
             opacity: 0.55,
           }}
         >
-          <ChatBarPlaceholder />
           <span className="text-right pr-1" style={{ fontSize: 12, color: MUTED }}>
             {"\u2014"}
           </span>
@@ -47,17 +46,8 @@ export const AtLadderSkeleton = memo(function AtLadderSkeleton({
           <span className="text-right pr-1" style={{ fontSize: 12, color: MUTED }}>
             {"\u2014"}
           </span>
-          <ChatBarPlaceholder />
         </div>
       ))}
     </div>
   );
 });
-
-function ChatBarPlaceholder() {
-  return (
-    <div className="px-2">
-      <div className="h-[4px] rounded-full" style={{ background: BORDER, width: "40%" }} />
-    </div>
-  );
-}
