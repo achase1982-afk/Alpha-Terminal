@@ -182,6 +182,18 @@ try {
     const stale = document.querySelectorAll("[data-at-quote-heat-state='stale']").length;
     return stale >= 1;
   });
+  await fixtureHeatScene(page, "heat-cache-hit", () => {
+    const c = document.querySelector("[data-at-quote-heat]");
+    return c != null && document.querySelectorAll("[data-at-quote-heat-state='live']").length === 1;
+  });
+  await fixtureHeatScene(page, "heat-zero-trade-time", () => {
+    return document.querySelectorAll("[data-at-quote-heat-state='live']").length === 0;
+  });
+  await fixtureHeatScene(page, "heat-quote-only-tick", () => {
+    const badge = document.querySelector("[data-at-ladder-heat-source]");
+    const label = badge?.textContent?.trim() ?? "";
+    return label === "";
+  });
 
   if (process.env.AT_VERIFY_INCLUDE_LIVE !== "1") {
     record("production ladder volume heat", true, "skipped pre-deploy (set AT_VERIFY_INCLUDE_LIVE=1)");
@@ -253,7 +265,8 @@ try {
   await livePage.locator('[data-at-view-selector] select').first().selectOption("at").catch(() => undefined);
   await livePage.waitForSelector("[data-at-ladder-scroll]", { timeout: 90_000 }).catch(() => undefined);
   const nvdaTag = await livePage.locator("[data-at-ladder-heat-source]").innerText().catch(() => "");
-  record("NVDA live heat poll tag", nvdaTag.includes("poll"), nvdaTag || "missing");
+  const nvdaBadgeOk = nvdaTag.includes("Snapshot") || nvdaTag.includes("poll");
+  record("NVDA live heat poll badge", nvdaBadgeOk, nvdaTag || "missing");
   await livePage.screenshot({ path: path.join(OUT, "ship-live-nvda-volume-heat-440x956.png") });
   }
 

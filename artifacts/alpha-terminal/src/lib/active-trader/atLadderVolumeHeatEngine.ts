@@ -49,7 +49,10 @@ export class AtLadderVolumeHeatEngine {
   private readonly scale = new AtLadderMonotonicHeatScale();
   private readonly byContract = new Map<string, ContractState>();
   private sourceLive = false;
+  /** Last accepted per-contract volume sample time (trade time ms), for badge gating. */
   private sourceLastRxMs: number | null = null;
+  private pollChainFetchedAtMs: number | null = null;
+  private pollChainTtlMs: number | null = null;
   private nowMs: number;
 
   constructor(opts?: AtLadderVolumeHeatEngineOptions) {
@@ -70,6 +73,16 @@ export class AtLadderVolumeHeatEngine {
     this.sourceLastRxMs = Math.max(this.sourceLastRxMs ?? 0, rxMs);
   }
 
+  setPollChainMeta(meta: { fetchedAt: number; ttlMs: number }): void {
+    this.pollChainFetchedAtMs = meta.fetchedAt;
+    this.pollChainTtlMs = meta.ttlMs;
+  }
+
+  getPollChainMeta(): { fetchedAt: number; ttlMs: number } | null {
+    if (this.pollChainFetchedAtMs == null || this.pollChainTtlMs == null) return null;
+    return { fetchedAt: this.pollChainFetchedAtMs, ttlMs: this.pollChainTtlMs };
+  }
+
   setNowMs(nowMs: number): void {
     this.nowMs = nowMs;
     for (const st of this.byContract.values()) this.pruneContract(st);
@@ -77,6 +90,7 @@ export class AtLadderVolumeHeatEngine {
 
   ingestCumulative(contract: string, cumulativeVol: number, rxMs: number): void {
     if (!Number.isFinite(cumulativeVol) || cumulativeVol < 0) return;
+    if (!Number.isFinite(rxMs) || rxMs <= 0) return;
     const sig = `${cumulativeVol}|${rxMs}`;
     let st = this.byContract.get(contract);
     if (!st) {
@@ -98,7 +112,6 @@ export class AtLadderVolumeHeatEngine {
       st.baselineSet = true;
       st.lastCumulative = cumulativeVol;
       st.lastRxMs = rxMs;
-      this.noteSourceRx(rxMs);
       return;
     }
 
@@ -108,16 +121,16 @@ export class AtLadderVolumeHeatEngine {
       st.lastRxMs = rxMs;
       st.incidents = [];
       st.gapStaleUntilMs = 0;
-      this.noteSourceRx(rxMs);
       return;
     }
 
     const delta = cumulativeVol - st.lastCumulative;
     st.lastCumulative = cumulativeVol;
     st.lastRxMs = rxMs;
-    this.noteSourceRx(rxMs);
 
     if (delta <= 0) return;
+
+    this.noteSourceRx(rxMs);
 
     if (delta >= this.reconnectJump) {
       st.gapStaleUntilMs = rxMs + this.staleAfterMs;
@@ -182,7 +195,7 @@ export class AtLadderVolumeHeatEngine {
 
   private resolveGlobalStale(): boolean {
     if (!this.sourceLive) return true;
-    if (this.sourceLastRxMs == null) return true;
+    if (this.sourceLastRxMs == null) return false;
     return this.nowMs - this.sourceLastRxMs > this.staleAfterMs;
   }
 

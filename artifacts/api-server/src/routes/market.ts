@@ -509,7 +509,7 @@ router.get("/history", async (req, res) => {
 
 interface ParsedContract {
   strike: number; expiration: string; schwabSymbol?: string; bid?: number; ask?: number; bidSize?: number; askSize?: number; last?: number;
-  volume?: number; openInterest?: number; iv?: number; delta?: number;
+  volume?: number; volumeSampledAt?: number; openInterest?: number; iv?: number; delta?: number;
   gamma?: number; theta?: number; vega?: number; dte?: number;
 }
 
@@ -529,6 +529,8 @@ const CHAIN_CACHE_TTL = 60_000;
 
 const optionsNtmCache = new Map<string, { calls: OptionContract[]; puts: OptionContract[]; underlyingPrice?: number; fetchedAt: number }>();
 const OPTIONS_NTM_TTL = 25_000;
+/** AT ladder heat poll — shorter TTL to keep snapshot cadence honest under ~1 Hz client poll. */
+const OPTIONS_NTM_TTL_LADDER = 10_000;
 const CHAIN_CACHE_MAX = 20;
 
 function evictStaleChains() {
@@ -558,6 +560,10 @@ function parseContracts(map: Record<string, unknown>): ParsedContract[] {
           askSize: opt["askSize"] as number | undefined,
           last: opt["last"] as number | undefined,
           volume: opt["totalVolume"] as number | undefined,
+          volumeSampledAt: (() => {
+            const tt = opt["tradeTimeInLong"];
+            return typeof tt === "number" && tt > 0 ? tt : undefined;
+          })(),
           openInterest: opt["openInterest"] as number | undefined,
           iv: (() => { const v = opt["volatility"] as number | undefined; return (v != null && v > 0) ? v : undefined; })(),
           delta: opt["delta"] as number | undefined,
@@ -969,6 +975,10 @@ function buildIndexChainFromStreaming(
       ask: tick?.ask ?? c.ask,
       last: tick?.last ?? c.last,
       volume: tick?.volume ?? c.volume,
+      volumeSampledAt:
+        tick?.lastVolumeTradeTimeMs != null && tick.lastVolumeTradeTimeMs > 0
+          ? tick.lastVolumeTradeTimeMs
+          : undefined,
       openInterest: tick?.openInterest ?? c.openInterest,
       iv: tick?.iv ?? c.iv,
       delta: tick?.delta ?? c.delta,
@@ -1000,7 +1010,15 @@ router.get("/options", async (req, res) => {
 
   const displaySymbol = symbol.toUpperCase().trim();
 
-  function sliceAndReturn(entry: { calls: OptionContract[]; puts: OptionContract[]; underlyingPrice?: number }, source: string) {
+  const ladderHeat =
+    req.query["ladderHeat"] === "1" ||
+    req.query["ladderHeat"] === "true";
+  const optionsTtlMs = ladderHeat ? OPTIONS_NTM_TTL_LADDER : OPTIONS_NTM_TTL;
+
+  function sliceAndReturn(
+    entry: { calls: OptionContract[]; puts: OptionContract[]; underlyingPrice?: number; fetchedAt: number },
+    source: string,
+  ) {
     let calls = entry.calls;
     let puts = entry.puts;
     const liveQuote = getQuoteBySymbol(displaySymbol);
@@ -1014,12 +1032,20 @@ router.get("/options", async (req, res) => {
     if (contractType === "CALL") puts = [];
     else if (contractType === "PUT") calls = [];
     req.log.info({ symbol: displaySymbol, strikeCount, calls: calls.length, puts: puts.length, source, centerPrice, chainPrice: entry.underlyingPrice }, "Options chain (centered)");
-    return GetOptionChainResponse.parse({ symbol: displaySymbol, underlyingPrice: livePrice ?? entry.underlyingPrice, calls, puts });
+    return GetOptionChainResponse.parse({
+      symbol: displaySymbol,
+      underlyingPrice: livePrice ?? entry.underlyingPrice,
+      calls,
+      puts,
+      fetchedAt: entry.fetchedAt,
+      cacheTtlMs: optionsTtlMs,
+      chainSource: source,
+    });
   }
 
   try {
     const ntmCached = optionsNtmCache.get(displaySymbol);
-    if (ntmCached && (Date.now() - ntmCached.fetchedAt) < OPTIONS_NTM_TTL) {
+    if (ntmCached && (Date.now() - ntmCached.fetchedAt) < optionsTtlMs) {
       return res.json(sliceAndReturn(ntmCached, "ntm-cache"));
     }
 

@@ -167,6 +167,7 @@ export const GetOptionChainResponse = zod.object({
       askSize: zod.number().optional(),
       last: zod.number().optional(),
       volume: zod.number().optional(),
+      volumeSampledAt: zod.number().optional(),
       openInterest: zod.number().optional(),
       iv: zod.number().optional(),
       delta: zod.number().optional(),
@@ -186,6 +187,7 @@ export const GetOptionChainResponse = zod.object({
       askSize: zod.number().optional(),
       last: zod.number().optional(),
       volume: zod.number().optional(),
+      volumeSampledAt: zod.number().optional(),
       openInterest: zod.number().optional(),
       iv: zod.number().optional(),
       delta: zod.number().optional(),
@@ -196,6 +198,9 @@ export const GetOptionChainResponse = zod.object({
     }),
   ),
   error: zod.string().optional(),
+  fetchedAt: zod.number().optional(),
+  cacheTtlMs: zod.number().optional(),
+  chainSource: zod.string().optional(),
 });
 
 /**

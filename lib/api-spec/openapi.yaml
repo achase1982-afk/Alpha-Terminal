@@ -505,6 +505,10 @@ components:
           type: number
         volume:
           type: number
+        volumeSampledAt:
+          type: integer
+          format: int64
+          description: Schwab tradeTimeInLong for totalVolume (never quoteTime).
         openInterest:
           type: number
         iv:
@@ -538,6 +542,15 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/OptionContract"
+        fetchedAt:
+          type: integer
+          format: int64
+          description: Wall-clock ms when this chain body was first fetched (preserved on cache hit).
+        cacheTtlMs:
+          type: integer
+          description: Server cache TTL for this response class (ms).
+        chainSource:
+          type: string
         error:
           type: string
       required:
