@@ -82,3 +82,37 @@ export function ladderVolumeHeatFixtureSamples(scene: AtLadderVolumeHeatFixtureS
       return [];
   }
 }
+
+/** Realistic 30s contract volume deltas across the SPX ladder for default dev fixture scenes. */
+export function defaultFixtureLadderVolumeSamples(): AtVolumeFixtureSample[] {
+  const samples: AtVolumeFixtureSample[] = [];
+  const spot = 7540;
+  for (let strike = 7440; strike <= 7640; strike += 5) {
+    const callKey = buildSchwabOptionKey("SPX", FIXTURE_EXPIRY, strike, "C");
+    const putKey = buildSchwabOptionKey("SPX", FIXTURE_EXPIRY, strike, "P");
+    const distSteps = Math.abs(strike - spot) / 5;
+    // Call volume concentrates near ATM and slightly OTM calls (7540–7555), tapering smoothly away.
+    const callDelta = Math.max(
+      2,
+      Math.round(
+        (strike >= spot - 5 && strike <= spot + 15 ? 88 : 34) * Math.exp(-distSteps * 0.28) +
+          (strike === 7545 ? 42 : strike === 7550 ? 28 : 0),
+      ),
+    );
+    // Put volume concentrates near ATM and slightly OTM puts (7525–7540), tapering smoothly away.
+    const putDelta = Math.max(
+      2,
+      Math.round(
+        (strike <= spot + 5 && strike >= spot - 15 ? 96 : 32) * Math.exp(-distSteps * 0.28) +
+          (strike === 7535 ? 48 : strike === 7530 ? 34 : 0),
+      ),
+    );
+    samples.push(
+      { contract: callKey, cumulativeVol: 2_000, offsetMs: -12_000 },
+      { contract: callKey, cumulativeVol: 2_000 + callDelta, offsetMs: -1_200 },
+      { contract: putKey, cumulativeVol: 2_400, offsetMs: -12_000 },
+      { contract: putKey, cumulativeVol: 2_400 + putDelta, offsetMs: -900 },
+    );
+  }
+  return samples;
+}

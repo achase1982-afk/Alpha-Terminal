@@ -71,4 +71,12 @@ describe("mergeOptionTickFromSchwab", () => {
     expect(merged.volume).toBe(120);
     expect(merged.volumeSample).toBeNull();
   });
+
+  it("field-8 increase on partial delta frame omitting field 39 emits sample at frame rx", () => {
+    const existing = baseExisting();
+    const merged = mergeOptionTickFromSchwab(existing, { "8": 125 }, "K1", 11_000);
+    expect(merged.volume).toBe(125);
+    expect(merged.volumeSample).toEqual({ cumulativeVol: 125, tradeTimeMs: 11_000 });
+    expect(merged.lastVolumeTradeTimeMs).toBe(11_000);
+  });
 });

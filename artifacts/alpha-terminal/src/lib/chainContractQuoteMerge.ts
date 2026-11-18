@@ -132,6 +132,7 @@ export function resolveChainDisplayQuote(
     ask: bookAsk,
     quoteTimeMs,
     nowMs,
+    liveFreshMs: 30 * 60_000,
   });
 
   const merged = mergeChainContractWithStream(contract, tick, chainFetchedAt);

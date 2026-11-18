@@ -21,11 +21,10 @@ export type AtLadderRestQuery = {
 export function atLadderRestQuery(above: number, below: number): AtLadderRestQuery {
   const a = Math.min(AT_STRIKE_SIDE_CAP, Math.max(AT_STRIKES_PER_PAGE, above));
   const b = Math.min(AT_STRIKE_SIDE_CAP, Math.max(AT_STRIKES_PER_PAGE, below));
-  // Equal wings are one at-the-money window. A longer wing is fetched in that
-  // direction only; the shorter wing stays in the merged book.
-  if (a === b) return { strikeCount: a + b, range: "NTM" };
-  if (a > b) return { strikeCount: a, range: "SAK" };
-  return { strikeCount: b, range: "SBK" };
+  // Schwab `/chains` centers `strikeCount` around ATM (`N/2` each side).
+  // Request `2 * max(above, below)` centered strikes so the scrolled side
+  // genuinely receives the next 20 strikes, then trim asymmetric wings client-side.
+  return { strikeCount: Math.max(a, b) * 2, range: "NTM" };
 }
 
 export function growAtLadderSide(
@@ -55,13 +54,38 @@ export function mergeAtChainLegs<T extends AtChainLeg>(
   const put = (leg: T) => {
     const ymd = (leg.expiration ?? "").slice(0, 10);
     if (expirationYmd && ymd !== expirationYmd) return;
-    const id = `${ymd}|${leg.strike}|${leg.schwabSymbol ?? leg.streamKey ?? ""}`;
+    const id = `${ymd}|${leg.strike}`;
     const existing = map.get(id);
     map.set(id, existing ? { ...existing, ...leg } : leg);
   };
   for (const leg of prev) put(leg);
   for (const leg of page) put(leg);
   return [...map.values()];
+}
+
+export function trimAtChainLegsToDepth<T extends AtChainLeg>(
+  legs: readonly T[],
+  spot: number | null | undefined,
+  above: number,
+  below: number,
+): T[] {
+  if (!legs.length || spot == null || !Number.isFinite(spot)) return [...legs];
+  const uniqueStrikes = [...new Set(legs.map((l) => l.strike))].sort((x, y) => x - y);
+  if (uniqueStrikes.length <= above + below) return [...legs];
+
+  let atmIdx = 0;
+  let minDist = Infinity;
+  for (let i = 0; i < uniqueStrikes.length; i++) {
+    const d = Math.abs(uniqueStrikes[i]! - spot);
+    if (d < minDist) {
+      minDist = d;
+      atmIdx = i;
+    }
+  }
+  const lo = Math.max(0, atmIdx - below);
+  const hi = Math.min(uniqueStrikes.length - 1, atmIdx + above);
+  const allowed = new Set(uniqueStrikes.slice(lo, hi + 1));
+  return legs.filter((l) => allowed.has(l.strike));
 }
 
 export type AtStreamRow = {

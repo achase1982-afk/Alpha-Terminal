@@ -113,6 +113,8 @@ export interface OptionsChainOrderSheetProps {
     | ((ctx: { limitPerShare: number | null; isCredit: boolean; legCount: number }) => React.ReactNode);
   /** Show preview send label instead of live Schwab send. */
   sendPreviewOnly?: boolean;
+  /** Render docked inline at bottom of Active Trader instead of a fixed overlay covering ladder rows. */
+  atDocked?: boolean;
   /** Compact peek height (~38vh) vs full sheet (~58vh). */
   sheetPeek?: boolean;
   onSheetPeekChange?: (peek: boolean) => void;
@@ -200,6 +202,7 @@ export function OptionsChainOrderSheet({
   openReviewOnMount,
   extrasAfterLimit,
   sendPreviewOnly,
+  atDocked,
   sheetPeek = true,
   onSheetPeekChange,
   draftDistinctLegCount,
@@ -622,19 +625,37 @@ export function OptionsChainOrderSheet({
 
   if (legs.length === 0) return null;
 
-  if (sendPreviewOnly) {
+  if (sendPreviewOnly || atDocked) {
     const entryMultiplier = quantity * 100;
-    const entryAbs =
+    const entryDollars =
+      summary?.grossNotional != null ? Math.abs(summary.grossNotional) : null;
+    const legacyEntryAbs =
       summary?.grossNotional != null ? Math.abs(summary.grossNotional) * entryMultiplier : null;
     const exitRaw = isCredit ? spreadPrices?.spreadBid : spreadPrices?.spreadAsk;
     const exitAbs = exitRaw != null ? Math.abs(exitRaw) * entryMultiplier : null;
+    const dockedEstNetProfit = (() => {
+      if (entryDollars == null || exitAbs == null) return feeAdjustedNetCash;
+      const totalContracts = legs.reduce((s, l) => s + l.quantity, 0) * quantity;
+      const oneWayFees = estimateSchwabOptionFees(totalContracts);
+      const roundTripFees = 2 * (oneWayFees.commission + oneWayFees.regulatoryEst);
+      const grossEdge = isCredit ? entryDollars - exitAbs : exitAbs - entryDollars;
+      return Number((grossEdge - roundTripFees).toFixed(2));
+    })();
     const maxLossLabel =
-      summary?.maxLoss != null ? fmtCurrency(summary.maxLoss) : summary?.maxLoss === null ? "uncapped" : "—";
+      summary?.maxLoss != null
+        ? `$${Math.round(summary.maxLoss).toLocaleString("en-US")}`
+        : summary?.maxLoss === null
+          ? "uncapped"
+          : "—";
     const mid = summary?.spreadMid != null ? fmt(summary.spreadMid) : null;
 
     if (stage === "review") {
       return (
-        <div data-testid="options-chain-order-sheet" data-at-approved-ticket>
+        <div
+          className={atDocked ? "fixed inset-0 z-[120]" : undefined}
+          data-testid="options-chain-order-sheet"
+          data-at-approved-ticket
+        >
           <ConfirmPanel
             strategyName={strategyId.name}
             strategyColor={strategyId.color}
@@ -661,26 +682,32 @@ export function OptionsChainOrderSheet({
             }}
             onSend={() => void handleSubmit()}
             sendDisabled={sendLocked || !!sendPreviewOnly}
-            sendLabel="Sending off (preview)"
+            sendLabel={sendPreviewOnly ? "Sending off (preview)" : "Send to Schwab"}
           />
         </div>
       );
     }
+
+    const dockedValid =
+      legs.length > 0 &&
+      (orderType === "MARKET" || (submittedLimit != null && submittedLimit > 0)) &&
+      quantity > 0;
 
     return (
       <AtApprovedMobileOrderSheet
         legs={legs}
         collapsed={collapsed}
         sheetPeek={sheetPeek}
+        docked={!!atDocked}
         onCollapsedChange={onCollapsedChange}
         onClearAll={handleClearAllClick}
         onRemoveLeg={onRemoveLeg}
         entryLabel={isCredit ? "Entry credit" : "Entry debit"}
-        entryAmount={entryAbs}
+        entryAmount={atDocked ? entryDollars : legacyEntryAbs}
         targetExitAmount={exitAbs}
-        estNetAmount={feeAdjustedNetCash}
+        estNetAmount={atDocked ? dockedEstNetProfit : feeAdjustedNetCash}
         estNetUnavailable={feeAdjustedNetCash == null && summary?.grossNotional != null}
-        maxLossLabel={maxLossLabel}
+        maxLossLabel={atDocked ? maxLossLabel : summary?.maxLoss != null ? fmtCurrency(summary.maxLoss) : summary?.maxLoss === null ? "uncapped" : "—"}
         midDisplay={mid}
         limitPrice={limitPrice}
         onLimitPriceChange={(v) => {
@@ -694,11 +721,17 @@ export function OptionsChainOrderSheet({
         orderType={orderType}
         onOrderTypeChange={setOrderType}
         limitTickCtx={limitTickCtx}
-        sendLabel={limitLocked ? "Review (sending off)" : "Lock limit to send"}
-        sendDisabled={!limitLocked || !isValid}
+        sendLabel={
+          atDocked
+            ? "Send to Schwab"
+            : limitLocked
+              ? "Review (sending off)"
+              : "Lock limit to send"
+        }
+        sendDisabled={atDocked ? !dockedValid : !limitLocked || !isValid}
         primaryActionTestId="chain-sheet-review"
         onSend={() => {
-          if (!limitLocked) return;
+          if (!atDocked && !limitLocked) return;
           validateAndReview();
         }}
         onAdvancedOrders={onAdvancedOrders}

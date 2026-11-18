@@ -1282,7 +1282,9 @@ export default function TerminalPage() {
           <main
             ref={mobileTabUsesInnerScroll ? undefined : scrollRef}
             onScroll={mobileTabUsesInnerScroll ? undefined : handleScroll}
-            className={`app-content flex min-h-0 flex-1 min-w-0 flex-col pb-4 ${
+            className={`app-content flex min-h-0 flex-1 min-w-0 flex-col ${
+              activeBottom === "markets" && contextTab === "options" && atSubViewActive ? "pb-0" : "pb-4"
+            } ${
               mobileTabUsesInnerScroll ||
               (activeBottom === "markets" && contextTab === "newsChat")
                 ? "overflow-hidden"

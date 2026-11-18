@@ -105,7 +105,7 @@ function strikeRow(strike: number, callOi: number, putOi: number): {
 
 export function buildSpxFixtureGroups(): AtExpirationGroup[] {
   const strikes: number[] = [];
-  for (let s = 7560; s >= 7440; s -= 5) strikes.push(s);
+  for (let s = 7640; s >= 7440; s -= 5) strikes.push(s);
   const rows = strikes.map((strike) => {
     const callOi = strike === 7550 ? 18000 : strike === 7545 ? 4200 : 800;
     const putOi = strike === 7530 ? 16000 : strike === 7535 ? 3800 : 750;
@@ -217,9 +217,9 @@ export function seedSpxFixtureFlow(): void {
 }
 
 export const FIXTURE_ZONE_MODEL: ZoneModel = {
-  callWall: 7365,
-  putWall: 7320,
-  flip: 7355,
+  callWall: 7550,
+  putWall: 7530,
+  flip: 7555,
   netGexUsdPer1Pct: 1.24e9,
   env: "damping",
   asOfLabel: "15:42",

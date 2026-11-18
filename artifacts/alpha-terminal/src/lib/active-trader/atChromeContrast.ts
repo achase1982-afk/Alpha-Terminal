@@ -5,3 +5,15 @@ export const AT_HEADER_BG = "#1b1d21";
 export const AT_LABEL = "#9A9A9A";
 export const AT_SECONDARY = "#B8B8B8";
 export const AT_INTERACTIVE = "#D4D4D4";
+
+/** Muted subview toggle track + knob (never bright white). */
+export const AT_TOGGLE_TRACK_TOP = "#15171b";
+export const AT_TOGGLE_TRACK_BOTTOM = "#0e1014";
+export const AT_TOGGLE_KNOB_TOP = "#696e79";
+export const AT_TOGGLE_KNOB_BOTTOM = "#4d515b";
+
+/** Docked mobile order panel tokens. */
+export const AT_ORDER_PANEL_BG = "#0c0e12";
+export const AT_ORDER_PANEL_BORDER = "#24272f";
+export const AT_ORDER_BTN_DISABLED = "#3f3f46";
+export const AT_ORDER_BTN_TEXT_DARK = "#0a0a0a";

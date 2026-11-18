@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { OptionsContract } from "@/components/OptionsTab";
 import {
   BG, BG_EXP_BAR, BG_HEADER, BORDER, BORDER_ROW, DIM, GRAY, WHITE, MONO, FW_LIGHT, UP, DOWN, noScrollbar,
@@ -74,9 +74,16 @@ import {
 import { AT_MOBILE_PEEK_MAX_PX } from "@/components/active-trader/AtMobileGlanceOrderSheet";
 import { useAtLiveZones } from "@/lib/active-trader/useAtLiveZones";
 import type { AtVerticalWidth } from "@/lib/active-trader/activeTraderPrefs";
-import { AT_LADDER_PANEL_BG } from "@/lib/active-trader/atLadderLayout";
+import {
+  AT_LADDER_COL_HDR_H,
+  AT_LADDER_GRID,
+  AT_LADDER_GROUP_HDR_H,
+  AT_LADDER_PANEL_BG,
+  AT_LADDER_ROW_H,
+  AT_LADDER_THIN_SEP,
+} from "@/lib/active-trader/atLadderLayout";
+import { AT_ORDER_PANEL_BG } from "@/lib/active-trader/atChromeContrast";
 import { AtLadderSkeleton } from "./AtLadderSkeleton";
-import { AT_LADDER_GRID, AT_LADDER_GROUP_HDR_H, AT_LADDER_ROW_H } from "@/lib/active-trader/atLadderLayout";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { useQuote } from "@/hooks/useQuote";
 import { useSpxKeepawayStats } from "@/hooks/useSpxKeepawayStats";
@@ -208,7 +215,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const [legQuantities, setLegQuantities] = useState(
     () => (buildLegQtyFromChain ? new Map(buildLegQtyFromChain) : new Map<string, number>()),
   );
-  const [chainSheetCollapsed, setChainSheetCollapsed] = useState(true);
+  const [chainSheetCollapsed, setChainSheetCollapsed] = useState(false);
   const [chainSheetPeek, setChainSheetPeek] = useState(false);
   const chainQuoteTs = chainQuoteTsProp ?? Date.now();
   const chainLegSyncSig = useMemo(
@@ -239,7 +246,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     if (buildLegQtyFromChain) {
       setLegQuantities(new Map(buildLegQtyFromChain));
     }
-    setChainSheetCollapsed(true);
+    setChainSheetCollapsed(false);
     setChainSheetPeek(false);
   }, [chainLegSyncSig, buildLegsFromChain, buildLegQtyFromChain]);
   const legShakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -374,12 +381,29 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     underlyingPrice,
   );
 
+  const seedContracts = useMemo(() => {
+    const out: { key: string; volume?: number | null; volumeSampledAt?: number | null }[] = [];
+    for (const row of ladderRows) {
+      for (const leg of [row.call, row.put]) {
+        if (!leg?.streamKey) continue;
+        const raw = leg as OptionsContract & { volumeSampledAt?: number };
+        out.push({
+          key: leg.streamKey,
+          volume: leg.volume ?? null,
+          volumeSampledAt: raw.volumeSampledAt ?? chainQuoteTs,
+        });
+      }
+    }
+    return out;
+  }, [ladderRows, chainQuoteTs]);
+
   const { flowByKey } = useFlowByKey(streamKeys, windowSec * 1000);
   const { heatByKey, source: ladderHeatSource } = useAtLadderVolumeHeat({
     symbol,
     streamKeys,
     skipNetwork: presentation?.skipNetwork,
     restWindow: ladderRestWindow,
+    seedContracts,
   });
 
   const streamTicks = useOptionsStreamStore((s) => s.ticks);
@@ -679,7 +703,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       }
       return next;
     });
-    setChainSheetCollapsed(true);
+    setChainSheetCollapsed(false);
     setChainSheetPeek(false);
   }, []);
 
@@ -894,8 +918,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     return { mode: "single", contract: last.contract, type: last.type };
   }, [tradeContext, selectedLegs]);
 
-  const showFloatingActionBar =
-    chainSheetCollapsed && ticketLegs.length > 0 && actionBarContext != null;
+  const showFloatingActionBar = false;
   const showDockedActionBar = ticketLegs.length === 0 && actionBarContext != null;
 
   const instrumentLabel = useMemo(() => {
@@ -916,14 +939,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   }, []);
 
   const fixtureTight = !!presentation?.skipNetwork;
-  const sheetScrollPad =
-    selectedLegs.size > 0
-      ? chainSheetCollapsed
-        ? 64
-        : chainSheetPeek
-          ? atSheetPeekHeightPx()
-          : 300
-      : 0;
+  const sheetScrollPad = 0;
   const ladderRowH = fixtureTight ? 36 : AT_LADDER_ROW_H;
 
   const expiryLabel = primary?.dateLabel ?? "\u2014";
@@ -942,15 +958,39 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const centeredKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!ladderDataReady) return;
-    const key = `${symbol}|${activeExpiration ?? ""}`;
+    const band = ladderRows.length >= 15 ? "full" : "partial";
+    const key = `${symbol}|${activeExpiration ?? ""}|${band}`;
     if (centeredKeyRef.current === key) return;
     centeredKeyRef.current = key;
     scrollLadderToSpot();
-  }, [symbol, activeExpiration, ladderDataReady, scrollLadderToSpot]);
+  }, [symbol, activeExpiration, ladderDataReady, ladderRows.length, scrollLadderToSpot]);
 
-  const edgeArmedRef = useRef(true);
+  const prevTopStrikeRef = useRef<number | null>(null);
+  const prevScrollHeightRef = useRef<number>(0);
+  useLayoutEffect(() => {
+    const el = ladderScrollRef.current;
+    const topStrike = ladderRows[0]?.strike ?? null;
+    if (
+      el &&
+      prevTopStrikeRef.current != null &&
+      topStrike != null &&
+      topStrike > prevTopStrikeRef.current &&
+      prevScrollHeightRef.current > 0
+    ) {
+      const addedPx = el.scrollHeight - prevScrollHeightRef.current;
+      if (addedPx > 0) {
+        el.scrollTop += addedPx;
+      }
+    }
+    prevTopStrikeRef.current = topStrike;
+    prevScrollHeightRef.current = el?.scrollHeight ?? 0;
+  }, [ladderRows]);
+
+  const upArmedRef = useRef(true);
+  const downArmedRef = useRef(true);
   useEffect(() => {
-    edgeArmedRef.current = true;
+    upArmedRef.current = true;
+    downArmedRef.current = true;
   }, [ladderRows.length]);
 
   useEffect(() => {
@@ -975,19 +1015,22 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       setVisibleStrikes((prev) => (prev && prev.min === min && prev.max === max ? prev : { min, max }));
     };
     const onScroll = () => {
+      prevScrollHeightRef.current = el.scrollHeight;
       syncOffCenter();
       measureVisible();
-      if (!onReachEdge || !ladderDataReady) return;
+      if (!onReachEdge || !ladderDataReady || !centeredKeyRef.current) return;
       if (el.scrollHeight <= el.clientHeight + 8) return;
-      const nearTop = el.scrollTop < 72;
-      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 72;
-      if (!nearTop && !nearBottom) {
-        edgeArmedRef.current = true;
-        return;
+      const nearTop = el.scrollTop < 96;
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+      if (!nearTop) upArmedRef.current = true;
+      if (!nearBottom) downArmedRef.current = true;
+      if (nearTop && upArmedRef.current) {
+        upArmedRef.current = false;
+        onReachEdge("up");
+      } else if (nearBottom && downArmedRef.current) {
+        downArmedRef.current = false;
+        onReachEdge("down");
       }
-      if (!edgeArmedRef.current) return;
-      edgeArmedRef.current = false;
-      onReachEdge(nearTop ? "up" : "down");
     };
     syncOffCenter();
     measureVisible();
@@ -1105,7 +1148,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         <div
           className="grid items-center px-0.5"
           style={{
-            height: ladderRowH,
+            height: AT_LADDER_COL_HDR_H,
             gridTemplateColumns: AT_LADDER_GRID,
             fontFamily: MONO,
             fontSize: 9,
@@ -1113,17 +1156,17 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             fontWeight: FW_LIGHT,
             letterSpacing: "0.06em",
             textTransform: "uppercase",
-            borderTop: `1px solid ${BORDER_ROW}`,
+            borderTop: `1px solid ${AT_LADDER_THIN_SEP}`,
             background: BG_HEADER,
           }}
         >
-          <span className="text-right pr-1">Bid</span>
-          <span className="text-right pr-1">Ask</span>
+          <span className="text-center">Bid</span>
+          <span className="text-center">Ask</span>
           <span className="text-center" style={{ color: WHITE, fontWeight: 600, fontSize: 10 }}>
             Strike
           </span>
-          <span className="text-right pr-1">Bid</span>
-          <span className="text-right pr-1">Ask</span>
+          <span className="text-center">Bid</span>
+          <span className="text-center">Ask</span>
         </div>
       </div>
 
@@ -1132,7 +1175,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         data-at-leg-tray-slot
         style={{
           minHeight: trayLegs.length > 0 && ticketLegs.length === 0 ? 44 : 0,
-          background: "#0a0a0a",
+          background: AT_ORDER_PANEL_BG,
           borderBottom: trayLegs.length > 0 && ticketLegs.length === 0 ? `1px solid ${BORDER_ROW}` : "none",
         }}
       >
@@ -1248,7 +1291,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           onRemoveLeg={handleSheetRemoveLeg}
           subscribeOptionSymbols={holdSubs.subscribeOptionSymbols}
           demoFixture={blockLiveSend}
-          sendPreviewOnly
+          atDocked
           atBracketDraft={{
             prefs,
             primaryInstruction: settingsSummaryInstruction,

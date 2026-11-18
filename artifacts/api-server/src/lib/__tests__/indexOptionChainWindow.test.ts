@@ -9,20 +9,21 @@ import {
 describe("resolveIndexChainWindow", () => {
   const now = new Date("2026-11-18T16:30:00Z");
 
-  it("converts a 40-strike ladder into 20 strikes per side", () => {
-    expect(schwabStrikeCountPerSide(40)).toBe(20);
-    expect(schwabStrikeCountPerSide(10)).toBe(5);
+  it("passes the full centered strike count to Schwab (40 = 20 above + 20 below)", () => {
+    expect(schwabStrikeCountPerSide(40)).toBe(40);
+    expect(schwabStrikeCountPerSide(10)).toBe(10);
   });
 
-  it("refuses to ask Schwab for more than 80 strikes per side", () => {
-    expect(schwabStrikeCountPerSide(500)).toBe(80);
+  it("caps single-expiry requests at 160 total strikes (80 per side) and multi-expiry at 80", () => {
+    expect(schwabStrikeCountPerSide(500, true)).toBe(160);
+    expect(schwabStrikeCountPerSide(500, false)).toBe(80);
   });
 
   it("defaults an unnamed index request to a near expiration span, not the whole book", () => {
     const w = resolveIndexChainWindow({ strikeCount: 10, now });
     expect(w.fromDate).toBe("2026-11-18");
     expect(w.toDate).toBe("2026-12-09");
-    expect(w.strikeCountPerSide).toBe(5);
+    expect(w.strikeCountPerSide).toBe(10);
     expect(w.range).toBe("NTM");
   });
 
@@ -30,12 +31,12 @@ describe("resolveIndexChainWindow", () => {
     const above = resolveIndexChainWindow({
       fromDate: "2026-11-20",
       toDate: "2026-11-20",
-      strikeCount: 40,
+      strikeCount: 80,
       range: "SAK",
       now,
     });
     expect(above.range).toBe("SAK");
-    expect(above.strikeCountPerSide).toBe(40);
+    expect(above.strikeCountPerSide).toBe(80);
     expect(readChainRange("sbk")).toBe("SBK");
     expect(readChainRange("ALL")).toBe("NTM");
   });
@@ -50,7 +51,7 @@ describe("resolveIndexChainWindow", () => {
     expect(w).toEqual({
       fromDate: "2026-11-20",
       toDate: "2026-11-20",
-      strikeCountPerSide: 20,
+      strikeCountPerSide: 40,
       range: "NTM",
     });
     expect(expirationInWindow("2026-11-20T21:00:00.000Z", w)).toBe(true);

@@ -891,6 +891,8 @@ interface IndexChainContract {
   ask?: number;
   last?: number;
   volume?: number;
+  volumeSampledAt?: number;
+  quoteTimeMs?: number;
   openInterest?: number;
   iv?: number;
   delta?: number;
@@ -908,7 +910,7 @@ interface IndexChainCache {
 }
 
 const indexChainStructureCache = new Map<string, IndexChainCache>();
-const INDEX_STRUCTURE_TTL = 5 * 60_000;
+const INDEX_STRUCTURE_TTL = 45_000;
 
 async function fetchIndexChainStructure(
   displaySymbol: string,
@@ -956,7 +958,9 @@ async function fetchIndexChainStructure(
       contracts.push({
         strike: c.strike, expiration: c.expiration, schwabSymbol: c.schwabSymbol,
         dte: c.dte ?? 0, type: "call",
-        bid: c.bid, ask: c.ask, last: c.last, volume: c.volume, openInterest: c.openInterest,
+        bid: c.bid, ask: c.ask, last: c.last, volume: c.volume,
+        volumeSampledAt: c.volumeSampledAt, quoteTimeMs: c.quoteTimeMs,
+        openInterest: c.openInterest,
         iv: c.iv, delta: c.delta, gamma: c.gamma, theta: c.theta, vega: c.vega,
       });
       schwabKeys.push(c.schwabSymbol);
@@ -967,7 +971,9 @@ async function fetchIndexChainStructure(
       contracts.push({
         strike: p.strike, expiration: p.expiration, schwabSymbol: p.schwabSymbol,
         dte: p.dte ?? 0, type: "put",
-        bid: p.bid, ask: p.ask, last: p.last, volume: p.volume, openInterest: p.openInterest,
+        bid: p.bid, ask: p.ask, last: p.last, volume: p.volume,
+        volumeSampledAt: p.volumeSampledAt, quoteTimeMs: p.quoteTimeMs,
+        openInterest: p.openInterest,
         iv: p.iv, delta: p.delta, gamma: p.gamma, theta: p.theta, vega: p.vega,
       });
       schwabKeys.push(p.schwabSymbol);
@@ -1022,7 +1028,13 @@ function buildIndexChainFromStreaming(
       volumeSampledAt:
         tick?.lastVolumeTradeTimeMs != null && tick.lastVolumeTradeTimeMs > 0
           ? tick.lastVolumeTradeTimeMs
-          : undefined,
+          : c.volumeSampledAt,
+      quoteTimeMs:
+        tick?.quoteTime != null && tick.quoteTime > 0
+          ? tick.quoteTime
+          : tick?.ts != null && tick.ts > 0
+            ? tick.ts
+            : c.quoteTimeMs,
       openInterest: tick?.openInterest ?? c.openInterest,
       iv: tick?.iv ?? c.iv,
       delta: tick?.delta ?? c.delta,
@@ -1069,7 +1081,7 @@ router.get("/options", async (req, res) => {
     const liveQuote = getQuoteBySymbol(displaySymbol);
     const livePrice = liveQuote?.last ?? liveQuote?.close ?? entry.underlyingPrice;
     const centerPrice = livePrice ?? entry.underlyingPrice;
-    if (requestedRange === "NTM" && centerPrice != null && strikeCount < 100) {
+    if (requestedRange === "NTM" && centerPrice != null && strikeCount <= 160) {
       const centered = centerStrikesAroundATM(calls, puts, centerPrice, strikeCount);
       calls = centered.calls;
       puts = centered.puts;

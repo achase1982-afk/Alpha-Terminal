@@ -85,27 +85,7 @@ export function useAtLiveZones(
 
   const zones = useMemo(() => {
     if (fixtureZones) return fixtureZones;
-    const uwZones = uwGlance?.zones;
-    const uwLive =
-      uwZones &&
-      !uwGlance?.unavailable &&
-      (uwZones.netGexUsdPer1Pct != null || uwZones.callWall != null || uwZones.putWall != null);
-    if (uwLive) {
-      return {
-        ...uwZones,
-        callWall: uwZones.callWall,
-        putWall: uwZones.putWall,
-        flip: uwZones.flip,
-        netGexUsdPer1Pct: uwZones.netGexUsdPer1Pct ?? null,
-        env: uwZones.env ?? null,
-        asOfLabel: uwZones.asOfLabel ?? "\u2014",
-        wallsRollLabel: uwZones.wallsRollLabel ?? null,
-        gammaPinStrike: uwZones.gammaPinStrike ?? null,
-        glanceCaption: uwGlance?.glanceCaption ?? uwZones.glanceCaption,
-      };
-    }
-    if (!chainRows?.length) return computeZoneModel([], underlyingPrice);
-    const rows: ChainRowForZones[] = chainRows.map((r) => {
+    const rows: ChainRowForZones[] = (chainRows ?? []).map((r) => {
       const cTick = r.call?.streamKey ? ticks[r.call.streamKey] : undefined;
       const pTick = r.put?.streamKey ? ticks[r.put.streamKey] : undefined;
       const callGamma =
@@ -122,11 +102,51 @@ export function useAtLiveZones(
         putGamma: putGamma ?? null,
       };
     });
-    const fallback = computeZoneModel(rows, underlyingPrice);
+    const chainFallback = rows.length ? computeZoneModel(rows, underlyingPrice) : null;
+    const chainCallWall = chainFallback
+      ? sanitizeGlanceWallStrike(chainFallback.callWall, underlyingPrice, "chain", rows)
+      : null;
+    const chainPutWall = chainFallback
+      ? sanitizeGlanceWallStrike(chainFallback.putWall, underlyingPrice, "chain", rows)
+      : null;
+
+    const uwZones = uwGlance?.zones;
+    const uwLive =
+      uwZones &&
+      !uwGlance?.unavailable &&
+      (uwZones.netGexUsdPer1Pct != null || uwZones.callWall != null || uwZones.putWall != null);
+    if (uwLive) {
+      let callWall = uwZones.callWall ?? chainCallWall ?? null;
+      let putWall = uwZones.putWall ?? chainPutWall ?? null;
+      if (
+        callWall != null &&
+        putWall != null &&
+        callWall === putWall &&
+        chainCallWall != null &&
+        chainPutWall != null &&
+        chainCallWall !== chainPutWall
+      ) {
+        callWall = chainCallWall;
+        putWall = chainPutWall;
+      }
+      return {
+        ...uwZones,
+        callWall,
+        putWall,
+        flip: uwZones.flip ?? chainFallback?.flip ?? null,
+        netGexUsdPer1Pct: uwZones.netGexUsdPer1Pct ?? chainFallback?.netGexUsdPer1Pct ?? null,
+        env: uwZones.env ?? chainFallback?.env ?? null,
+        asOfLabel: uwZones.asOfLabel ?? "\u2014",
+        wallsRollLabel: uwZones.wallsRollLabel ?? null,
+        gammaPinStrike: uwZones.gammaPinStrike ?? null,
+        glanceCaption: uwGlance?.glanceCaption ?? uwZones.glanceCaption,
+      };
+    }
+    if (!chainFallback) return computeZoneModel([], underlyingPrice);
     const sanitized = {
-      ...fallback,
-      callWall: sanitizeGlanceWallStrike(fallback.callWall, underlyingPrice, "chain", rows),
-      putWall: sanitizeGlanceWallStrike(fallback.putWall, underlyingPrice, "chain", rows),
+      ...chainFallback,
+      callWall: chainCallWall,
+      putWall: chainPutWall,
     };
     const caption = uwGlance?.glanceCaption ?? uwZones?.glanceCaption;
     if (caption || uwZones?.asOfLabel) {

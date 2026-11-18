@@ -1,4 +1,5 @@
 import { buildDeskHealthFeeds } from "../desk/deskFeedFreshness.js";
+import { getQuoteBySymbol } from "../schwabStreamer.js";
 import {
   deskGetCachedLiveGamma0dte,
   deskRefreshLiveGamma0dte,
@@ -120,7 +121,14 @@ export async function buildAtGammaGlancePayload(tickerRaw: string): Promise<AtGa
   const asOfMs = snap0.asOfMs;
   const expiryYmd = snap0.expiry ?? sessionDate;
   const asOfEt = sessionClosed ? closedSessionAsOfLabel(expiryYmd) : formatEtTimeShort(asOfMs);
+  const liveQuote =
+    (ticker === "SPX" ? getQuoteBySymbol("$SPX") : null) ?? getQuoteBySymbol(ticker);
+  const liveSpot =
+    liveQuote?.last != null && Number.isFinite(liveQuote.last) && liveQuote.last > 0
+      ? liveQuote.last
+      : null;
   const spotRef = (() => {
+    if (liveSpot != null) return liveSpot;
     const draft = computeZonesFromUwGamma0dte(rows, { asOfLabel: asOfEt });
     return draft.callWall ?? draft.putWall ?? null;
   })();

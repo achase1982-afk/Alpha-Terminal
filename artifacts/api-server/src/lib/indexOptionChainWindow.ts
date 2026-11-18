@@ -1,12 +1,15 @@
 import { addCalendarDaysNy, nyCalendarYmd } from "./usEquityMarketCalendar.js";
 
 /**
- * Schwab `strikeCount` is the number of strikes above AND below the at-the-money
- * price (per side). Our `/market/options` `strikeCount` is the total number of
- * strikes to keep centered on spot. SPX/NDX/RUT cannot be requested with
- * `range=ALL` — Schwab returns HTTP 502 "Body buffer overflow".
+ * Schwab `/marketdata/v1/chains` `strikeCount` is the total number of strikes
+ * returned around at-the-money (e.g. `strikeCount=40` returns 20 below + 20
+ * above ATM). SPX/NDX/RUT cannot be requested with `range=ALL` across all
+ * expirations — Schwab returns HTTP 502 "Body buffer overflow".
  */
 export const INDEX_CHAIN_MAX_PER_SIDE = 80;
+export const INDEX_CHAIN_MAX_STRIKES = INDEX_CHAIN_MAX_PER_SIDE * 2;
+/** Multi-expiry browse cap when no single expiration is pinned. */
+export const INDEX_CHAIN_MULTI_EXPIRY_MAX_STRIKES = 80;
 
 export type IndexChainRange = "NTM" | "SAK" | "SBK";
 /** Near book when the client does not name an expiration (chain browse, not the ladder). */
@@ -17,7 +20,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 export type IndexChainWindow = {
   fromDate: string;
   toDate: string;
-  /** Passed to Schwab as `strikeCount`. NTM: per side. SAK/SBK: that direction only. */
+  /** Passed to Schwab as `strikeCount` (total centered strikes around ATM). */
   strikeCountPerSide: number;
   range: IndexChainRange;
 };
@@ -28,12 +31,16 @@ export function readQueryDate(value: unknown): string | undefined {
   return ISO_DATE.test(ymd) ? ymd : undefined;
 }
 
-/** Total centered strikes → Schwab's per-side count, hard-capped. */
-export function schwabStrikeCountPerSide(totalStrikes: number | undefined): number {
+/** Total centered strikes passed to Schwab `/chains` `strikeCount`, hard-capped. */
+export function schwabStrikeCountPerSide(
+  totalStrikes: number | undefined,
+  singleExpiry = true,
+): number {
   const n = totalStrikes != null && Number.isFinite(totalStrikes) && totalStrikes > 0
     ? totalStrikes
     : 10;
-  return Math.min(INDEX_CHAIN_MAX_PER_SIDE, Math.max(1, Math.ceil(n / 2)));
+  const cap = singleExpiry ? INDEX_CHAIN_MAX_STRIKES : INDEX_CHAIN_MULTI_EXPIRY_MAX_STRIKES;
+  return Math.min(cap, Math.max(2, Math.round(n)));
 }
 
 export function readChainRange(value: unknown): IndexChainRange {
@@ -42,13 +49,18 @@ export function readChainRange(value: unknown): IndexChainRange {
   return "NTM";
 }
 
-/** SAK/SBK `strikeCount` is already the directional count. NTM is a total centered on spot. */
-export function schwabStrikeCountForRange(range: IndexChainRange, strikeCount: number | undefined): number {
+/** Schwab `/chains` centers `strikeCount` around ATM; single-expiry windows allow up to 80 per side (160 total). */
+export function schwabStrikeCountForRange(
+  range: IndexChainRange,
+  strikeCount: number | undefined,
+  singleExpiry = true,
+): number {
   if (range === "SAK" || range === "SBK") {
-    const n = strikeCount != null && Number.isFinite(strikeCount) && strikeCount > 0 ? strikeCount : 20;
-    return Math.min(INDEX_CHAIN_MAX_PER_SIDE, Math.max(1, Math.floor(n)));
+    const n = strikeCount != null && Number.isFinite(strikeCount) && strikeCount > 0 ? strikeCount : 40;
+    const cap = singleExpiry ? INDEX_CHAIN_MAX_STRIKES : INDEX_CHAIN_MULTI_EXPIRY_MAX_STRIKES;
+    return Math.min(cap, Math.max(2, Math.floor(n)));
   }
-  return schwabStrikeCountPerSide(strikeCount);
+  return schwabStrikeCountPerSide(strikeCount, singleExpiry);
 }
 
 export function resolveIndexChainWindow(input: {
@@ -79,11 +91,12 @@ export function resolveIndexChainWindow(input: {
     to = swap;
   }
   const range = readChainRange(input.range);
+  const singleExpiry = from === to;
   return {
     fromDate: from,
     toDate: to,
     range,
-    strikeCountPerSide: schwabStrikeCountForRange(range, input.strikeCount),
+    strikeCountPerSide: schwabStrikeCountForRange(range, input.strikeCount, singleExpiry),
   };
 }
 

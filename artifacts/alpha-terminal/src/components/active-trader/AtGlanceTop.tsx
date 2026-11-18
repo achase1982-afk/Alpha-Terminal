@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { memo, useMemo, type CSSProperties, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 import { BORDER, GAMMA_SCENARIO, WHITE } from "@/components/options/optionsTheme";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
@@ -20,7 +20,6 @@ import { useAtVixQuote } from "@/hooks/useAtVixQuote";
 import { useSpotTickCue } from "@/lib/active-trader/atSpotDirection";
 import { resolveAtHeaderSessionChange } from "@/lib/active-trader/atHeaderSessionChange";
 import { AtGlanceGrossFlow } from "./AtGlanceGrossFlow";
-import { AtGlanceFlowDetail } from "./AtGlanceFlowDetail";
 import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
 import { formatGlanceOrderSettingsLine } from "@/lib/active-trader/atSummaryFormat";
@@ -39,9 +38,12 @@ const LABEL_PX = 11;
 const VALUE_PX = 13;
 
 const cellLine: CSSProperties = {
+  display: "flex",
+  alignItems: "baseline",
+  justifyContent: "space-between",
+  gap: 6,
   whiteSpace: "nowrap",
   overflow: "hidden",
-  textOverflow: "ellipsis",
   lineHeight: 1.12,
 };
 
@@ -83,8 +85,10 @@ function LevelsCell({
 }) {
   return (
     <div {...dataAttrs} title={title} style={cellLine}>
-      <span style={{ color: AT_LABEL, fontSize: LABEL_PX, fontWeight: 500 }}>{label} </span>
-      <span className="num" style={{ ...NUM_FEAT, color: valueTone, fontWeight: 700, fontSize: VALUE_PX }}>
+      <span style={{ color: AT_LABEL, fontSize: LABEL_PX, fontWeight: 500 }}>
+        {label}
+      </span>
+      <span className="num shrink-0 text-right" style={{ ...NUM_FEAT, color: valueTone, fontWeight: 700, fontSize: VALUE_PX }}>
         {value}
       </span>
     </div>
@@ -122,7 +126,6 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   const symLabel = symbol.replace(/^\$/, "");
 
   const sessionLevels = useAtGlanceSessionLevels(symbol, { skipNetwork });
-  const [flowDetailOpen, setFlowDetailOpen] = useState(false);
 
   const flowWindowSec = Math.round(flowWindowMs / 1000);
   const flipLabel = resolveGammaFlipDisplay(zones);
@@ -149,7 +152,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
       style={{
         background: AT_HEADER_BG,
         borderBottom: `1px solid ${BORDER}`,
-        padding: "3px 8px 4px 6px",
+        padding: "3px 10px 4px 8px",
         overflow: "hidden",
       }}
     >
@@ -168,10 +171,10 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         </div>
       ) : null}
 
-      <div className="flex items-center gap-1 min-w-0" style={{ minHeight: 16, lineHeight: 1.1 }}>
+      <div className="flex items-center gap-1 min-w-0" style={{ minHeight: 20, lineHeight: 1.1 }}>
         <div className="flex items-baseline gap-1 min-w-0 flex-1 overflow-hidden">
-          <span style={{ fontSize: 13, fontWeight: 700, color: WHITE, letterSpacing: "0.03em" }}>{symLabel}</span>
-          <span className="num" data-ui-audit="at-glance-spot" style={{ ...NUM_FEAT, fontSize: 13, fontWeight: 700, color: WHITE }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: AT_SECONDARY, letterSpacing: "0.03em" }}>{symLabel}</span>
+          <span className="num" data-ui-audit="at-glance-spot" style={{ ...NUM_FEAT, fontSize: 18, fontWeight: 700, color: WHITE }}>
             {spotLabel}
           </span>
           {tickCue.glyph ? (
@@ -228,11 +231,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
               valueTone={zoneValTone}
             />
           </div>
-          <div
-            aria-hidden
-            data-at-day-levels-divider
-            style={{ flex: "0 0 1px", width: 1, background: BORDER, opacity: 0.55, margin: "0 5px" }}
-          />
+          <div style={{ flex: "0 0 1px", width: 1, background: BORDER, opacity: 0.65, margin: "0 8px" }} aria-hidden data-at-day-levels-divider />
           <div style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}>
             <LevelsCell
               label="Day high"
@@ -291,7 +290,6 @@ export const AtGlanceTop = memo(function AtGlanceTop({
             glance={netPremium}
             zones={zones}
             forceDashAmounts={flowDashShell}
-            onOpenDetail={() => setFlowDetailOpen(true)}
           />
         </div>
       </div>
@@ -322,14 +320,6 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           <ChevronRight className="w-3 h-3 shrink-0" style={{ color: AT_LABEL }} aria-hidden />
         </button>
       ) : null}
-
-      <AtGlanceFlowDetail
-        open={flowDetailOpen}
-        onClose={() => setFlowDetailOpen(false)}
-        netGlance={netPremium}
-        flowAgg={flow}
-        gexLabel={null}
-      />
     </header>
   );
 });

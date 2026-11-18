@@ -5,6 +5,7 @@ import {
   growAtLadderSide,
   mergeAtChainLegs,
   selectAtStreamKeys,
+  trimAtChainLegsToDepth,
 } from "./atLadderWindow";
 
 describe("atLadderRestQuery", () => {
@@ -12,14 +13,25 @@ describe("atLadderRestQuery", () => {
     expect(atLadderRestQuery(20, 20)).toEqual({ strikeCount: 40, range: "NTM" });
   });
 
-  it("pages the next strikes above without replacing the book below", () => {
+  it("widens centered strike count when paging strikes above spot", () => {
     expect(growAtLadderSide(20, 20, "up")).toEqual({ above: 40, below: 20 });
-    expect(atLadderRestQuery(40, 20)).toEqual({ strikeCount: 40, range: "SAK" });
+    expect(atLadderRestQuery(40, 20)).toEqual({ strikeCount: 80, range: "NTM" });
   });
 
-  it("pages the next strikes below", () => {
+  it("widens centered strike count when paging strikes below spot", () => {
     expect(growAtLadderSide(20, 20, "down")).toEqual({ above: 20, below: 40 });
-    expect(atLadderRestQuery(20, 40)).toEqual({ strikeCount: 40, range: "SBK" });
+    expect(atLadderRestQuery(20, 40)).toEqual({ strikeCount: 80, range: "NTM" });
+  });
+
+  it("trims asymmetric wings around spot so only the scrolled side grows", () => {
+    const legs = Array.from({ length: 81 }, (_, i) => ({
+      strike: 7140 + i * 5,
+      expiration: "2026-11-20",
+    }));
+    const trimmed = trimAtChainLegsToDepth(legs, 7340, 40, 20);
+    const strikes = trimmed.map((l) => l.strike);
+    expect(Math.min(...strikes)).toBe(7240);
+    expect(Math.max(...strikes)).toBe(7540);
   });
 
   it("reloads both wings once the two sides are even again", () => {
