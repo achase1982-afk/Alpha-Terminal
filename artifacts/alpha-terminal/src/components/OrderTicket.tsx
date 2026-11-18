@@ -34,6 +34,7 @@ import {
   formatAtMobilePinnedSummary,
 } from "@/lib/active-trader/atSummaryFormat";
 import { atOrderSendAllowed } from "@/lib/active-trader/atOrderSend";
+import { deriveTicketOptionInstruction } from "@/lib/orders/deriveTicketOptionInstruction";
 import { isAuthDisabled } from "@/lib/authMode";
 import {
   AtMobileGlanceOrderSheet,
@@ -563,6 +564,10 @@ export function OrderTicket({
   }, [atTemplatePrefs, quantity, mobileTpEnabled]);
 
   const isOption = !!optionSymbol || isMultiLeg;
+  const effectiveOptionInstruction = useMemo((): SchwabInstruction | null => {
+    if (!isSingleOption) return null;
+    return deriveTicketOptionInstruction({ side, isCloseOrder, posEffect });
+  }, [isSingleOption, side, isCloseOrder, posEffect]);
   const displaySymbol = isMultiLeg ? `${symbol} Strategy (${strategyLegs!.length} legs)` : optionSymbol ?? symbol;
   const ticketHeaderSymbol = isOption && optionSymbol ? optionRootFromOcc(optionSymbol) : symbol;
 
@@ -794,7 +799,7 @@ export function OrderTicket({
     if (!atDraftPrefs || !isOption || isMultiLeg || !optionSymbol) {
       return null;
     }
-    const primary = (optionInstruction ?? (side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN")) as SchwabInstruction;
+    const primary = effectiveOptionInstruction!;
     const mid =
       optionTick?.bid != null && optionTick?.ask != null
         ? (optionTick.bid + optionTick.ask) / 2
@@ -832,7 +837,7 @@ export function OrderTicket({
     isOption,
     isMultiLeg,
     optionSymbol,
-    optionInstruction,
+    effectiveOptionInstruction,
     side,
     limitPrice,
     optionTick,
@@ -840,7 +845,7 @@ export function OrderTicket({
 
   const atBracketSummary = useMemo(() => {
     if (!atDraftPrefs || !isOption || isMultiLeg || !optionSymbol) return null;
-    const primary = (optionInstruction ?? (side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN")) as SchwabInstruction;
+    const primary = effectiveOptionInstruction!;
     const mid =
       optionTick?.bid != null && optionTick?.ask != null
         ? (optionTick.bid + optionTick.ask) / 2
@@ -864,7 +869,7 @@ export function OrderTicket({
       stopLimitOffset: atDraftPrefs.stopLimitOffset,
     });
     return { takeProfit, stopLoss };
-  }, [atDraftPrefs, isOption, isMultiLeg, optionInstruction, side, limitPrice, optionTick, optionSymbol]);
+  }, [atDraftPrefs, isOption, isMultiLeg, effectiveOptionInstruction, side, limitPrice, optionTick, optionSymbol]);
 
   const atTriggerConfirm = useMemo(() => {
     if (!atTemplatePlan || atTemplatePlan.legs.length < 2 || !optionSymbol) return null;
@@ -928,9 +933,7 @@ export function OrderTicket({
                 strike: parsed.strike,
                 optionType: parsed.optionType,
                 expiration: parsed.expiration,
-                instruction:
-                  optionInstruction ??
-                  (side === "BUY" ? "BUY_TO_OPEN" : isCloseOrder ? "SELL_TO_CLOSE" : "SELL_TO_OPEN"),
+                instruction: effectiveOptionInstruction ?? "BUY_TO_OPEN",
               },
             ];
           })()
@@ -959,7 +962,7 @@ export function OrderTicket({
     });
   }, [
     isMultiLeg, liveStrategyLegs, isOption, side, orderType, ticketPxAsk, ticketPxBid, ticketPxLast,
-    limitPrice, needsLimit, strategyNetPrice, quantity, ticketIsCredit, symbol, isCloseOrder, optionInstruction,
+    limitPrice, needsLimit, strategyNetPrice, quantity, ticketIsCredit, symbol, isCloseOrder, effectiveOptionInstruction,
     optionSymbol, atDraftPrefs?.qty,
   ]);
 
@@ -1084,7 +1087,7 @@ export function OrderTicket({
     const session = isSeamless ? "SEAMLESS" : "NORMAL";
 
     if (atDraftPrefs && isOption && !isMultiLeg && optionSymbol) {
-      const primary = (optionInstruction ?? (side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN")) as SchwabInstruction;
+      const primary = effectiveOptionInstruction!;
       const px = submittedLimit ?? (parseFloat(limitPrice) || 0);
       if (px <= 0) {
         return buildAtSchwabOrderJson({
@@ -1205,7 +1208,7 @@ export function OrderTicket({
       duration,
       orderStrategyType: "SINGLE",
       orderLegCollection: [{
-        instruction: isOption ? (optionInstruction ?? (side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_CLOSE")) : side,
+        instruction: isOption ? (effectiveOptionInstruction ?? "BUY_TO_OPEN") : side,
         quantity,
         instrument: { symbol: optionSymbol ?? symbol, assetType: isOption ? "OPTION" : "EQUITY" },
       }],
@@ -1223,7 +1226,7 @@ export function OrderTicket({
     if (exchange !== "BEST") order.requestedDestination = exchange;
     if (taxLotMethod !== "DEFAULT") order.taxLotMethod = taxLotMethod;
     return order;
-  }, [orderType, extendedHours, duration, side, quantity, symbol, optionSymbol, isOption, isMultiLeg, liveStrategyLegs, strategyLegs, strategyIsCredit, isCloseOrder, optionInstruction, needsLimit, limitPrice, needsStop, stopPrice, needsTrail, trailOffset, instruction, exchange, taxLotMethod, spreadPrices, ticketPxBid, ticketPxAsk, ticketPxLast, limitTickCtx, submittedLimit, submittedLimitDisplay, strategyNetPrice, atDraftPrefs]);
+  }, [orderType, extendedHours, duration, side, quantity, symbol, optionSymbol, isOption, isMultiLeg, liveStrategyLegs, strategyLegs, strategyIsCredit, isCloseOrder, effectiveOptionInstruction, needsLimit, limitPrice, needsStop, stopPrice, needsTrail, trailOffset, instruction, exchange, taxLotMethod, spreadPrices, ticketPxBid, ticketPxAsk, ticketPxLast, limitTickCtx, submittedLimit, submittedLimitDisplay, strategyNetPrice, atDraftPrefs]);
 
   const handleSubmit = useCallback(async () => {
     if (submitInFlightRef.current || stage === "submitting") return;
@@ -1380,7 +1383,7 @@ export function OrderTicket({
         }))
       : (isSingleOption && optionSymbol
           ? [{
-              instruction: optionInstruction ?? (side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_CLOSE"),
+              instruction: effectiveOptionInstruction ?? "BUY_TO_OPEN",
               quantity,
               bid: execPriceQuote?.bid ?? null,
               ask: execPriceQuote?.ask ?? null,
@@ -1477,7 +1480,7 @@ export function OrderTicket({
       stockLeg,
       // Frontend-only echoes for faithful reopen.
       optionSymbol: !isMultiLeg && isOption ? optionSymbol : undefined,
-      optionInstruction: !isMultiLeg && isOption ? optionInstruction : undefined,
+      optionInstruction: !isMultiLeg && isOption ? effectiveOptionInstruction ?? undefined : undefined,
     };
 
     const validationMeta = {
@@ -1529,7 +1532,7 @@ export function OrderTicket({
     setStrategistDispatchInFlight(false);
   }, [
     strategistDispatchInFlight, symbol, isCloseOrder, isMultiLeg, strategyLegs, liveStrategyLegs,
-    limitPrice, strategyIsCredit, quantity, isOption, isSingleOption, optionSymbol, optionInstruction,
+    limitPrice, strategyIsCredit, quantity, isOption, isSingleOption, optionSymbol, effectiveOptionInstruction,
     side, orderType, duration, strategyNetPrice, quote, thesisText, isRollingShortEligible,
     rollingShort, onSendToStrategist, extraOptionLegs, optionTicks, execPriceQuote, submittedLimit,
     ticketEconomics,
@@ -3105,7 +3108,7 @@ export function OrderTicket({
                     {
                       label: "Action",
                       value: isOption
-                        ? humanOptionInstruction(optionInstruction ?? (side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_CLOSE"))
+                        ? humanOptionInstruction(effectiveOptionInstruction ?? "BUY_TO_OPEN")
                         : side,
                       color: sideColor,
                     },

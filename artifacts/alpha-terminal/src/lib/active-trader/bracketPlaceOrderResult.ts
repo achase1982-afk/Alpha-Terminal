@@ -6,13 +6,18 @@ export interface BracketPlaceOrderResult {
   userMessage: string | null;
 }
 
+/** Requires explicit broker bracket status fields — plain `{ orderId }` success is not a partial accept. */
 export function interpretBracketPlaceOrderResult(data: unknown): BracketPlaceOrderResult | null {
   if (!data || typeof data !== "object") return null;
   const o = data as Record<string, unknown>;
-  if (o.entryAccepted !== true && o.exitsRejected == null && o.exitsAccepted !== false) return null;
+  const hasExplicitBracketStatus =
+    o.entryAccepted === true ||
+    o.exitsAccepted === false ||
+    Array.isArray(o.exitsRejected);
+  if (!hasExplicitBracketStatus) return null;
 
   const orderId = typeof o.orderId === "string" ? o.orderId : null;
-  const entryAccepted = o.entryAccepted === true || !!orderId;
+  const entryAccepted = o.entryAccepted === true;
   const exitsAccepted = o.exitsAccepted !== false && !Array.isArray(o.exitsRejected);
   const rejectedExitLabels = Array.isArray(o.exitsRejected)
     ? o.exitsRejected.filter((x): x is string => typeof x === "string")
