@@ -89,7 +89,7 @@ async function runHeight(height) {
   if (lowZoneRef.includes("–")) {
     await page.getByRole("button", { name: "Low zone reference info" }).click();
     const tip = await page.locator("[data-at-low-zone-tooltip]").innerText();
-    const tipOk = tip.includes("median 29.5") && tip.includes("not a forecast");
+    const tipOk = tip.includes("0.4%") && tip.includes("not a forecast");
     record(`tooltip (${height}px)`, tipOk, tip.slice(0, 72));
   }
 

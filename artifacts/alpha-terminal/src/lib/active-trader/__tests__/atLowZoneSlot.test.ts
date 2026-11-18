@@ -6,9 +6,9 @@ describe("resolveLowZoneSlotDisplay", () => {
     const z = resolveLowZoneSlotDisplay(7288.12);
     expect(z.status).toBe("value");
     if (z.status === "value") {
-      expect(z.top).toBe(7323);
+      expect(z.top).toBe(7317.5);
     }
-    expect(computeLowZoneTopRef(7288.12)).toBe(7323);
+    expect(computeLowZoneTopRef(7288.12)).toBe(7317.5);
   });
 
   it("unavailable without session low", () => {

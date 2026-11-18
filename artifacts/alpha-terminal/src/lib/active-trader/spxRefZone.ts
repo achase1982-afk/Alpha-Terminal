@@ -1,28 +1,29 @@
 /**
  * SPX display-only session reference zones (Low zone top / High zone bottom).
- * K offset is a historical reference — not keep-away or order logic.
+ * k = 0.4% of price — historical reference band, not keep-away or order logic.
  */
 
-export const SPX_REF_ZONE_K_DEFAULT = 35;
+/** Fraction of spot: 0.004 = 0.4% (≈29 pts at 7,340). Display reference only. */
+export const SPX_REF_ZONE_K_DEFAULT = 0.004;
 
 export const SPX_REF_ZONE_TOOLTIP =
-  "K=35 is a fixed 2026 YTD reference from final daily lows/highs (2026 YTD $SPX daily candles — historical reference from final daily lows/highs, not a forecast). Display only — not a safe level.";
+  "k=0.4% of session low/high (SPX keep-away reference from ~16y daily stats). Anthony rule: sell shorts only when spot is outside both bands — shown here as a reference only, not order logic. Display only — not a safe level.";
 
 export function roundToHalfPoint(n: number): number {
   if (!Number.isFinite(n)) return NaN;
   return Math.round(n * 2) / 2;
 }
 
-/** Upper edge of low-side reference band: sessionLow + K. */
+/** Upper edge of low-side reference band: sessionLow × (1 + k). */
 export function computeLowZoneTop(sessionLow: number, k = SPX_REF_ZONE_K_DEFAULT): number | null {
   if (!Number.isFinite(sessionLow) || sessionLow <= 0) return null;
-  return roundToHalfPoint(sessionLow + k);
+  return roundToHalfPoint(sessionLow * (1 + k));
 }
 
-/** Lower edge of high-side reference band: sessionHigh − K. */
+/** Lower edge of high-side reference band: sessionHigh × (1 − k). */
 export function computeHighZoneBottom(sessionHigh: number, k = SPX_REF_ZONE_K_DEFAULT): number | null {
   if (!Number.isFinite(sessionHigh) || sessionHigh <= 0) return null;
-  return roundToHalfPoint(sessionHigh - k);
+  return roundToHalfPoint(sessionHigh * (1 - k));
 }
 
 /** Half-point labels for zone refs only. */
