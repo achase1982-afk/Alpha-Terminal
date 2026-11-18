@@ -10,8 +10,10 @@ import runFullBackfillRouter from "./routes/runFullBackfill";
 import { logger } from "./lib/logger";
 import { httpTimingMiddleware } from "./middleware/httpTiming";
 import { clerkAuthBridge } from "./middleware/clerkAuthBridge";
+import { isAuthDisabled } from "./lib/authMode";
+import { blockBrokerOrdersWhenAuthDisabled } from "./middleware/ordersDisabledWhenAuthOff";
 
-const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
+const authDisabled = isAuthDisabled();
 
 // OAuth callback endpoints must be publicly reachable — they're hit by the
 // browser as a top-level redirect from a third-party domain (schwab.com) and
@@ -106,8 +108,8 @@ app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-if (DEV_BYPASS) {
-  logger.warn("DEV_BYPASS_AUTH is ON — all Clerk auth checks are disabled");
+if (authDisabled) {
+  logger.warn("AUTH_DISABLED is ON — Clerk auth checks are disabled for /api app routes");
 } else {
   app.use(clerkAuthBridge);
   app.use(clerkMiddleware());
@@ -115,12 +117,12 @@ if (DEV_BYPASS) {
 
 app.use("/api", healthRouter);
 app.use("/api/desk/v1", deskV1Router);
-if (DEV_BYPASS) {
+if (authDisabled) {
   app.use("/api/admin/run-full-backfill", runFullBackfillRouter);
-  app.use("/api", router);
+  app.use("/api", blockBrokerOrdersWhenAuthDisabled, router);
 } else {
   app.use("/api/admin/run-full-backfill", apiRequireAuth, runFullBackfillRouter);
-  app.use("/api", apiRequireAuth, router);
+  app.use("/api", blockBrokerOrdersWhenAuthDisabled, apiRequireAuth, router);
 }
 
 export default app;

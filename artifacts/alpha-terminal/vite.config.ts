@@ -35,6 +35,12 @@ export default defineConfig({
     "import.meta.env.VITE_ADMIN_API_KEY": JSON.stringify(
       process.env.VITE_ADMIN_API_KEY ?? "",
     ),
+    "import.meta.env.VITE_AUTH_DISABLED": JSON.stringify(
+      process.env.VITE_AUTH_DISABLED ?? "",
+    ),
+    "import.meta.env.VITE_DEV_BYPASS_AUTH": JSON.stringify(
+      process.env.VITE_DEV_BYPASS_AUTH ?? "",
+    ),
     // react-draggable (via react-grid-layout) gates its debug logger on
     // process.env.DRAGGABLE_DEBUG; without this define the bare `process`
     // reference throws in the browser and aborts every grid resize/drag start.
@@ -119,5 +125,13 @@ export default defineConfig({
     port,
     host: "0.0.0.0",
     allowedHosts: true,
+    proxy: {
+      "/api": {
+        target: "http://localhost:8080",
+        changeOrigin: true,
+        secure: false,
+        ws: true,
+      },
+    },
   },
 });

@@ -9,14 +9,14 @@ import { getBestAccessToken } from "../lib/tokenStore.js";
 import { getAuth } from "@clerk/express";
 import { getUniverseSnapshot, buildCoreOptionsUniverse } from "../lib/universeBuilder.js";
 import { loadPresets, PRESET_ALIASES, STATIC_PRESET_UNIVERSES } from "../lib/scannerPresetLoad.js";
+import { isAuthDisabled } from "../lib/authMode.js";
 
 const router: IRouter = Router();
 
-const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
 const DEV_USER_ID = "dev_user";
 
 function getUserId(req: any): string {
-  if (DEV_BYPASS) return DEV_USER_ID;
+  if (isAuthDisabled()) return DEV_USER_ID;
   try {
     const auth = getAuth(req);
     return auth?.userId ?? DEV_USER_ID;

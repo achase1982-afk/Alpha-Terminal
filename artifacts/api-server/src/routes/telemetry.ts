@@ -21,10 +21,10 @@ import {
 import { db, telemetryEventsTable } from "@workspace/db";
 import { getAuth } from "@clerk/express";
 import { z } from "zod";
+import { isAuthDisabled } from "../lib/authMode.js";
 
 const router: IRouter = Router();
 
-const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
 const DEV_USER_ID = "dev_user_local";
 
 const ALLOWED_SERVICES = new Set(["server", "web"]);
@@ -122,7 +122,7 @@ function parseRuntimeLogParams(req: Request): {
 /** Ingests browser-side errors/events into telemetry_events (service alpha-terminal). Clerk session required. */
 router.post("/browser-events", async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = DEV_BYPASS ? DEV_USER_ID : getAuth(req).userId;
+    const userId = isAuthDisabled() ? DEV_USER_ID : getAuth(req).userId;
     if (!userId) {
       res.status(401).json({ error: "Unauthorized" });
       return;

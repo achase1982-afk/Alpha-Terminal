@@ -7,6 +7,7 @@ import { logger } from "../lib/logger.js";
 import { setTuningWatchlistOptionUnderlyings } from "../lib/schwabStreamer.js";
 import { resolveScannerUniverseSymbolsForUser } from "./scanner.js";
 import { SCANNER_SUB_SCORE_HIGH } from "../lib/scannerScoringV2.js";
+import { isAuthDisabled } from "../lib/authMode.js";
 
 function parseTuningWatchlistQuery(v: unknown): TuningWatchlist | null {
   if (typeof v !== "string") return null;
@@ -18,11 +19,10 @@ const STALE_AFTER_SECONDS = 5 * 60;
 const router: IRouter = Router();
 const log = logger.child({ route: "scannerV2" });
 
-const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
 const DEV_USER_ID = "dev_user";
 
 function requireUserId(req: Parameters<typeof getAuth>[0]): string | null {
-  if (DEV_BYPASS) return DEV_USER_ID;
+  if (isAuthDisabled()) return DEV_USER_ID;
   try {
     return getAuth(req).userId ?? null;
   } catch {

@@ -11,11 +11,12 @@ import { isGrokModel, XAI_CHAT_TOOLS_NOTE } from "./chatModel.js";
 import { DEFAULT_AI_MODEL_ID, parseAnthropicOpusCallOptionsBody } from "@workspace/ai-models";
 import { readClientTimeZone } from "./marketClientTimeZone.js";
 import { createChatTelemetryBatch, emitChatTelemetry } from "./chatTelemetry.js";
+import { isAuthDisabled } from "./authMode.js";
 
 const DEV_USER_ID = "dev-bypass-user";
 
 function getUserId(req: Request): string | null {
-  if (process.env.DEV_BYPASS_AUTH === "true") return DEV_USER_ID;
+  if (isAuthDisabled()) return DEV_USER_ID;
   return getAuth(req).userId ?? null;
 }
 

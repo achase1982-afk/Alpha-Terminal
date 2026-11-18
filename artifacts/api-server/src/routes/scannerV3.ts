@@ -23,16 +23,16 @@ import { computeScannerLayer7Scores } from "../lib/scannerLayer7Scores.js";
 import { matchScannerTradingPreset } from "../lib/scannerTradingPresets.js";
 import { getBestAccessToken } from "../lib/tokenStore.js";
 import { fetchUaiSymbolEvents, parseEventsCursor, parseEventsPageLimit } from "../lib/scannerV3SymbolEvents.js";
+import { isAuthDisabled } from "../lib/authMode.js";
 
 const router: IRouter = Router();
 
 const log = logger.child({ route: "scannerV3" });
 
-const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
 const DEV_USER_ID = "dev_user";
 
 function requireUserId(req: Parameters<typeof getAuth>[0]): string | null {
-  if (DEV_BYPASS) return DEV_USER_ID;
+  if (isAuthDisabled()) return DEV_USER_ID;
   try {
     return getAuth(req).userId ?? null;
   } catch {

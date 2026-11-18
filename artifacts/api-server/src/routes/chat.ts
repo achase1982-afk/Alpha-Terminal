@@ -2,13 +2,14 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { getAuth } from "@clerk/express";
 import { getChatThreadForUser, listChatMessages, listChatThreadsForUser } from "../lib/chatDb.js";
 import { handleChatMessageSse } from "../lib/chatRouteHandler.js";
+import { isAuthDisabled } from "../lib/authMode.js";
 
 const router: IRouter = Router();
 
 const DEV_USER_ID = "dev-bypass-user";
 
 function getUserId(req: Request): string | null {
-  if (process.env.DEV_BYPASS_AUTH === "true") return DEV_USER_ID;
+  if (isAuthDisabled()) return DEV_USER_ID;
   return getAuth(req).userId ?? null;
 }
 

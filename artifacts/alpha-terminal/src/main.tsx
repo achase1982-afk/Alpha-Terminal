@@ -5,9 +5,10 @@ import { dark } from "@clerk/themes";
 import { useEffect } from "react";
 import App from "./App";
 import "./index.css";
+import { isAuthDisabled } from "./lib/authMode";
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
-const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
+const authDisabled = isAuthDisabled();
 
 function CenteredScreen({ children }: { children: React.ReactNode }) {
   return (
@@ -47,7 +48,7 @@ function HydratingScreen() {
 }
 
 createRoot(document.getElementById("root")!).render(
-  devBypass ? (
+  authDisabled ? (
     <App />
   ) : (
     <ClerkProvider publishableKey={clerkPubKey} appearance={{ baseTheme: dark }}>

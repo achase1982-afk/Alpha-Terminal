@@ -34,6 +34,7 @@ import {
   formatAtMobilePinnedSummary,
 } from "@/lib/active-trader/atSummaryFormat";
 import { atOrderSendAllowed } from "@/lib/active-trader/atOrderSend";
+import { isAuthDisabled } from "@/lib/authMode";
 import {
   AtMobileGlanceOrderSheet,
   AT_MOBILE_PEEK_MAX_PX,
@@ -1214,7 +1215,7 @@ export function OrderTicket({
 
   const handleSubmit = useCallback(async () => {
     if (submitInFlightRef.current || stage === "submitting") return;
-    if (atTemplatePrefs && !atSendLive) return;
+    if (isAuthDisabled() || (atTemplatePrefs && !atSendLive)) return;
     if (futuresOrderBlocked) return;
     if (!accountHash || !isValid) return;
     if (!isCloseOrder && preTradeGate.shouldBlockSubmit) return;
@@ -1585,6 +1586,13 @@ export function OrderTicket({
   const atMobileSheetRef = useRef<HTMLDivElement>(null);
   const [mobileDimBottomPx, setMobileDimBottomPx] = useState(AT_MOBILE_PEEK_MAX_PX);
   const atSendLive = atOrderSendAllowed();
+  const orderLiveBlocked = isAuthDisabled() || (atTemplatePrefs && !atSendLive);
+  const sendToSchwabLabel =
+    orderLiveBlocked
+      ? isAuthDisabled()
+        ? "Sending off"
+        : "Sending off (preview)"
+      : "Send to Schwab";
   const atMobileGlance = atMobileSheet && !!atTemplatePrefs;
 
   const atMobileContractLabel = useMemo(
@@ -3311,10 +3319,10 @@ export function OrderTicket({
                   {atMobileSheet ? "Dismiss" : "Back"}
                 </button>
                 <button
-                  onClick={confirmDisabled || (atTemplatePrefs && !atSendLive) ? undefined : handleSubmit}
+                  onClick={confirmDisabled || orderLiveBlocked ? undefined : handleSubmit}
                   disabled={
                     !!confirmDisabled
-                    || (atTemplatePrefs && !atSendLive)
+                    || orderLiveBlocked
                     || submitInFlight
                     || !isValid
                     || (!isCloseOrder && preTradeGate.shouldBlockSubmit)
@@ -3331,7 +3339,7 @@ export function OrderTicket({
                     fontFamily: SYS_FONT,
                   }}
                 >
-                  {atTemplatePrefs && !atSendLive ? "Sending off (preview)" : "Send to Schwab"}
+                  {sendToSchwabLabel}
                 </button>
               </div>
             )}

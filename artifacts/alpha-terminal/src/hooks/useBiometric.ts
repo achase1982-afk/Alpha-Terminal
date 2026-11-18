@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { useUser } from "@clerk/clerk-react";
 import { readSecurityPrefs } from "@/lib/securityPrefs";
 
-const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
+import { isAuthDisabled } from "@/lib/authMode";
 
 /** Clerk `User` exposes passkey APIs that may not be on the public type yet. */
 interface ClerkUserWithPasskeys {
@@ -50,7 +50,7 @@ export function useWebAuthnSupported(): boolean {
 }
 
 function useClerkUser() {
-  if (devBypass) return { user: null, isLoaded: true };
+  if (isAuthDisabled()) return { user: null, isLoaded: true };
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const { user, isLoaded } = useUser();
   return { user: user ?? null, isLoaded };

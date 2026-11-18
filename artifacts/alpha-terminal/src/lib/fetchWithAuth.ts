@@ -1,4 +1,5 @@
 import { appendClientTimeZoneToUrl } from "./clientTimeZone.js";
+import { isAuthDisabled } from "./authMode.js";
 
 /** Mirrors Clerk `getToken` options we care about (long strategist polls + 401 recovery). */
 export type ClerkGetTokenOptions = { skipCache?: boolean };
@@ -58,7 +59,8 @@ export async function fetchWithAuth(
   const tokenOpts: ClerkGetTokenOptions | undefined = clerkSkipCache === true ? { skipCache: true } : undefined;
 
   try {
-    let token: string | null;
+    let token: string | null = null;
+    if (!isAuthDisabled()) {
     if (clerkTokenTimeoutMs != null && clerkTokenTimeoutMs > 0) {
       token = await Promise.race([
         resolveClerkToken(tokenOpts),
@@ -75,6 +77,7 @@ export async function fetchWithAuth(
     }
     if (token) {
       headers.set("Authorization", `Bearer ${token}`);
+    }
     }
   } catch {}
 
@@ -93,7 +96,8 @@ export async function fetchWithAuth(
     if (
       res.status === 401 &&
       !_authRetry &&
-      typeof window !== "undefined"
+      typeof window !== "undefined" &&
+      !isAuthDisabled()
     ) {
       try {
         const fresh = await resolveClerkToken({ skipCache: true });
@@ -155,6 +159,7 @@ export async function buildAuthenticatedEventSourceUrl(
   path: string,
   opts?: ClerkGetTokenOptions,
 ): Promise<string> {
+  if (isAuthDisabled()) return path;
   const token = await getClerkToken(opts);
   if (!token) return path;
   const sep = path.includes("?") ? "&" : "?";
