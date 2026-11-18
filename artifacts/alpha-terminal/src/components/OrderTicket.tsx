@@ -19,6 +19,7 @@ import { hash8 } from "@/lib/streamClientId";
 import type { OptionHoldPostOpts } from "@/lib/optionHoldClient";
 import { useTicketOptionHold } from "@/hooks/useTicketOptionHold";
 import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
+import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 import { atBracketPreviewPrices } from "@/lib/active-trader/atSchwabOrderBuilder";
 import {
   buildAtSchwabOrderJson,
@@ -462,7 +463,8 @@ export function OrderTicket({
 }: OrderTicketProps) {
   const symbol = useTerminalStore((s) => s.symbol);
   const { data: quote } = useQuote(symbol);
-  const futuresOrderBlocked = isFuturesDisplaySymbol(symbol);
+  const atFixtureDev = import.meta.env.DEV && getAtFixtureOverride()?.enabled && !!atTemplatePrefs;
+  const futuresOrderBlocked = isFuturesDisplaySymbol(symbol) && !atFixtureDev;
   const isMultiLeg = !!strategyLegs && strategyLegs.length >= 1;
   const isSingleOption = !isMultiLeg && !!optionSymbol;
   const isStockTicket = !isMultiLeg && !optionSymbol;
@@ -1573,6 +1575,10 @@ export function OrderTicket({
       setAtMobileSheet(false);
       return;
     }
+    if (typeof window.matchMedia !== "function") {
+      setAtMobileSheet(false);
+      return;
+    }
     const mq = window.matchMedia("(max-width: 767px)");
     const apply = () => setAtMobileSheet(mq.matches);
     apply();
@@ -1677,11 +1683,11 @@ export function OrderTicket({
                 style={{ fontSize: S.badge, borderRadius: 999, background: ticketMode === "stock" ? `${GOLD}22` : "transparent", color: ticketMode === "stock" ? GOLD : MUTED, fontWeight: ticketMode === "stock" ? 500 : 300 }}
               >Stock</button>
             </div>
-          ) : (
+          ) : isMultiLeg && strategyLegs ? (
             <span style={{ fontSize: S.label, color: MUTED }}>
-              {strategyLegs!.length}-leg {strategyIsCredit ? "credit" : "debit"}
+              {strategyLegs.length}-leg {strategyIsCredit ? "credit" : "debit"}
             </span>
-          )}
+          ) : null}
           <button
             onClick={onClose}
             aria-label="Close"

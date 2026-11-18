@@ -565,7 +565,11 @@ export default function TerminalPage() {
 
   const handleActiveTraderReview = useCallback((contract: OptionsContract, side: "BUY" | "SELL", type: "CALL" | "PUT") => {
     const sym = useTerminalStore.getState().symbol;
-    if (isFuturesDisplaySymbol(sym)) {
+    const atFixture = getAtFixtureOverride();
+    if (
+      isFuturesDisplaySymbol(sym) &&
+      !(import.meta.env.DEV && atFixture?.enabled)
+    ) {
       setFuturesTradeNoticeOpen(true);
       return;
     }
