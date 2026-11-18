@@ -2,7 +2,7 @@ import { memo, useMemo, useState, type CSSProperties, type ReactNode } from "rea
 import { ChevronRight } from "lucide-react";
 import { BORDER, GAMMA_SCENARIO, WHITE } from "@/components/options/optionsTheme";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
-import { formatStrikeLevel } from "@/lib/active-trader/atExpiryPill";
+import { resolveGammaFlipDisplay } from "@/lib/active-trader/atGlanceWallDisplay";
 import type { SpxKeepawayStats } from "@workspace/order-ticket-math";
 import { resolveAtGlanceMode } from "@/lib/active-trader/atGlanceMode";
 import { useThrottledNumber } from "@/lib/active-trader/useThrottledNumber";
@@ -118,7 +118,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   const [flowDetailOpen, setFlowDetailOpen] = useState(false);
 
   const flowWindowSec = Math.round(flowWindowMs / 1000);
-  const flipLabel = zones.flip != null ? formatStrikeLevel(Math.round(zones.flip)) : "\u2014";
+  const flipLabel = resolveGammaFlipDisplay(zones);
 
   const orderLine =
     orderSettings != null
@@ -252,8 +252,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         <div data-at-glance-flow-row style={{ minHeight: 30 }}>
           <AtGlanceGrossFlow
             glance={netPremium}
-            callWall={zones.callWall}
-            putWall={zones.putWall}
+            zones={zones}
             forceDashAmounts={flowDashShell}
             onOpenDetail={() => setFlowDetailOpen(true)}
           />

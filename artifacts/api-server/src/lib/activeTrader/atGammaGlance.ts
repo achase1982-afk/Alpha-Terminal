@@ -8,7 +8,11 @@ import { deskSessionDateEt } from "../desk/deskEt.js";
 import { priorNyTradingSessionYmd } from "../getMarketContext.js";
 import { NYSE_EARLY_CLOSE_2026 } from "../nyseCalendar2026.js";
 import { refreshDeskUwLiveFeeds } from "../desk/addons/unusualWhales/deskUwLiveFeeds.js";
-import { computeZonesFromUwGamma0dte } from "@workspace/order-ticket-math";
+import {
+  applyGlanceWallPolicy,
+  computeZonesFromUwGamma0dte,
+  type GlanceWallPresentation,
+} from "@workspace/order-ticket-math";
 
 export const AT_GAMMA_GLANCE_TICKERS = new Set(["SPX", "SPY", "QQQ", "NVDA"]);
 export const AT_GAMMA_GLANCE_CACHE_TTL_MS = 30_000;
@@ -17,7 +21,7 @@ type CacheEntry = { payload: AtGammaGlancePayload; expiresAt: number };
 const appCache = new Map<string, CacheEntry>();
 
 export type AtGammaGlancePayload = {
-  zones: ReturnType<typeof computeZonesFromUwGamma0dte> & { glanceCaption?: string };
+  zones: GlanceWallPresentation & { glanceCaption?: string };
   sessionClosed: boolean;
   glanceCaption?: string;
   source: "unusual_whales";
@@ -120,7 +124,12 @@ export async function buildAtGammaGlancePayload(tickerRaw: string): Promise<AtGa
     const draft = computeZonesFromUwGamma0dte(rows, { asOfLabel: asOfEt });
     return draft.callWall ?? draft.putWall ?? null;
   })();
-  const zones = computeZonesFromUwGamma0dte(rows, { spot: spotRef, asOfLabel: asOfEt });
+  const draft = computeZonesFromUwGamma0dte(rows, { spot: spotRef, asOfLabel: asOfEt });
+  const zones = applyGlanceWallPolicy(draft, {
+    expiryYmd,
+    sessionDateYmd: sessionDate,
+    spot: spotRef,
+  });
   const glanceCaption = sessionClosed ? `Closed \u00b7 as of ${asOfEt}` : undefined;
   const payload: AtGammaGlancePayload = {
     zones: { ...zones, glanceCaption },
