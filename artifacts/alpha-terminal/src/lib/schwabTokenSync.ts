@@ -1,16 +1,18 @@
 import { fetchWithAuth } from "./fetchWithAuth";
 import { useTerminalStore } from "./store";
 import { clearSchwabAuthNotice } from "./authNoticeStore";
+import {
+  serverBrokerageSentinelPair,
+  shouldApplyServerBrokerageSentinel,
+  type ServerTokensPayload,
+} from "./schwabBrokerageSession";
 
 type ServerTokenPayload = {
   accessToken: string;
   refreshToken: string;
 };
 
-type ServerTokensResponse = {
-  market?: ServerTokenPayload | null;
-  trader?: ServerTokenPayload | null;
-};
+type ServerTokensResponse = ServerTokensPayload;
 
 function applyServerTokens(tok: ServerTokenPayload) {
   const { setTokens, setTraderTokens } = useTerminalStore.getState();
@@ -30,9 +32,17 @@ export async function syncSchwabTokensFromServer(): Promise<boolean> {
     const res = await fetchWithAuth("/api/auth/server-tokens");
     if (!res.ok) return false;
     const data = (await res.json()) as ServerTokensResponse;
+    if (shouldApplyServerBrokerageSentinel(data)) {
+      const { access, refresh } = serverBrokerageSentinelPair();
+      const { setTokens, setTraderTokens } = useTerminalStore.getState();
+      setTokens(access, refresh);
+      setTraderTokens(access, refresh);
+      clearSchwabAuthNotice();
+      return true;
+    }
     const tok = data.trader ?? data.market;
-    if (!tok?.accessToken) return false;
-    applyServerTokens(tok);
+    if (!tok || !("accessToken" in tok) || !tok.accessToken) return false;
+    applyServerTokens(tok as ServerTokenPayload);
     return true;
   } catch {
     return false;

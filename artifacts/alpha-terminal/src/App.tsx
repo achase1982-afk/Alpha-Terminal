@@ -19,6 +19,13 @@ import StrategistJobBackgroundSync from "@/components/StrategistJobBackgroundSyn
 import { installBrowserTelemetryCapture } from "@/lib/browserTelemetry";
 import { useShallow } from "zustand/react/shallow";
 import { isAuthDisabled } from "@/lib/authMode";
+import {
+  hasSchwabBrokerageLinked,
+  serverBrokerageSentinelPair,
+  shouldApplyServerBrokerageSentinel,
+  type ServerTokensPayload,
+} from "@/lib/schwabBrokerageSession";
+import { syncSchwabTokensFromServer } from "@/lib/schwabTokenSync";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -43,6 +50,16 @@ function PendingSessionLoader() {
   const lastCheckRef = useRef(0);
 
   useEffect(() => {
+    const hydrateAfterPersist = () => {
+      const st = useTerminalStore.getState();
+      if (hasSchwabBrokerageLinked(st.accessToken, st.traderAccessToken)) return;
+      void syncSchwabTokensFromServer();
+    };
+    if (useTerminalStore.persist.hasHydrated()) hydrateAfterPersist();
+    return useTerminalStore.persist.onFinishHydration(hydrateAfterPersist);
+  }, []);
+
+  useEffect(() => {
     if (accessToken || traderAccessToken) return;
 
     let cancelled = false;
@@ -51,12 +68,20 @@ function PendingSessionLoader() {
       try {
         const res = await fetchWithAuth("/api/auth/server-tokens");
         if (!res.ok || cancelled) return;
-        const data = await res.json() as {
+        const data = (await res.json()) as ServerTokensPayload;
+        if (!cancelled && shouldApplyServerBrokerageSentinel(data)) {
+          const { access, refresh } = serverBrokerageSentinelPair();
+          setTokens(access, refresh);
+          setTraderTokens(access, refresh);
+          clearSchwabAuthNotice();
+          return;
+        }
+        const legacy = data as {
           market?: { accessToken: string; refreshToken: string } | null;
           trader?: { accessToken: string; refreshToken: string } | null;
         };
         // Use whichever token is available — both slots get the same token
-        const tok = data.trader ?? data.market;
+        const tok = legacy.trader ?? legacy.market;
         if (!cancelled && tok?.accessToken) {
           setTokens(tok.accessToken, tok.refreshToken || "");
           setTraderTokens(tok.accessToken, tok.refreshToken || "");

@@ -13,6 +13,7 @@ import {
 } from "@/lib/fetchWithAuth";
 import { signalSchwabAuthLost } from "@/lib/authNoticeStore";
 import { isAuthDisabled } from "@/lib/authMode";
+import { schwabAccessTokenForRequest } from "@/lib/schwabBrokerageSession";
 import { refreshSchwabViaServer, syncSchwabTokensFromServer } from "@/lib/schwabTokenSync";
 import type { LiveQuote, LiveNewsItem } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
@@ -243,12 +244,14 @@ export function useMarketStream() {
     if (startedRef.current) return;
     startedRef.current = true;
     try {
+      const marketTok = schwabAccessTokenForRequest(marketToken);
+      const traderTok = schwabAccessTokenForRequest(traderToken);
       const res = await fetchWithAuth(`${API_BASE}/stream/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          accessToken: marketToken,
-          traderAccessToken: traderToken,
+          ...(marketTok ? { accessToken: marketTok } : {}),
+          ...(traderTok ? { traderAccessToken: traderTok } : {}),
           symbols: allSymbols(),
         }),
       });

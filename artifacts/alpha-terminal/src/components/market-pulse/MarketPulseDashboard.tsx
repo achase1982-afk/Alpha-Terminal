@@ -13,6 +13,7 @@ import { ALL_PULSE_INDICATORS } from "@/types/marketPulse";
 import { runPulseStream, isPulseStreamActive } from "../../stores/pulseStreamRunner";
 import { useGetAuthUrl } from "@workspace/api-client-react";
 import { useShallow } from "zustand/react/shallow";
+import { schwabAccessTokenForRequest } from "@/lib/schwabBrokerageSession";
 
 const CLUSTER_ORDER: ClusterKey[] = ["rates", "credit", "volLevel", "volTerm", "breadth", "riskAppetite", "macro"];
 
@@ -355,7 +356,9 @@ export const MarketPulseDashboard = forwardRef<MarketPulseDashboardHandle, objec
     }
 
     runPulseStream({
-      accessToken: token,
+      ...(schwabAccessTokenForRequest(token)
+        ? { accessToken: schwabAccessTokenForRequest(token)! }
+        : {}),
       clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       symbols: activeSymbols,
       model: aiModelRef.current,
