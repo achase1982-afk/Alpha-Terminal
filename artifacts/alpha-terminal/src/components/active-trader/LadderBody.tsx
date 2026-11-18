@@ -132,6 +132,7 @@ function QuoteCell({
   unavailableReason,
   dimmed,
   asOfLabel,
+  locked,
   tapable = true,
   tint,
   strike,
@@ -149,6 +150,7 @@ function QuoteCell({
   unavailableReason?: string | null;
   dimmed?: boolean;
   asOfLabel?: string | null;
+  locked?: boolean;
   tapable?: boolean;
   tint: "bid" | "ask";
   strike: number;
@@ -170,6 +172,7 @@ function QuoteCell({
       data-at-quote={dataAttr}
       data-at-quote-side={side}
       data-at-quote-unavailable={unavailableReason ?? undefined}
+      data-at-quote-locked={locked ? "1" : undefined}
       className="relative w-full h-full flex flex-col items-end justify-center px-1 active:opacity-80"
       style={{
         fontSize: 14,
@@ -210,6 +213,11 @@ function QuoteCell({
       {asOfLabel ? (
         <span style={{ fontSize: 7, fontWeight: 500, color: GRAY, lineHeight: 1.1, marginTop: 1, maxWidth: "100%", textAlign: "right" }}>
           {asOfLabel}
+        </span>
+      ) : null}
+      {locked ? (
+        <span style={{ fontSize: 7, fontWeight: 600, color: GRAY, opacity: 0.85, letterSpacing: "0.04em", marginTop: asOfLabel ? 0 : 1 }}>
+          Locked
         </span>
       ) : null}
     </button>
@@ -425,6 +433,7 @@ const LadderRowView = memo(function LadderRowView({
               unavailableReason={callBidReason}
               dimmed={callSingle.dimmed}
               asOfLabel={callSingle.asOfLabel}
+              locked={callSingle.locked && callBidPx != null}
               tapable={callTapable}
               tint="bid"
               strike={row.strike}
@@ -529,6 +538,7 @@ const LadderRowView = memo(function LadderRowView({
               unavailableReason={putBidReason}
               dimmed={putSingle.dimmed}
               asOfLabel={putSingle.asOfLabel}
+              locked={putSingle.locked && putBidPx != null}
               tapable={putTapable}
               tint="bid"
               strike={row.strike}

@@ -422,6 +422,8 @@ const DataCell = memo(function DataCell({
       : null;
   const priceDimmed = isPrice && paired?.dimmed;
   const asOfLabel = isPrice && isBid ? paired?.asOfLabel : null;
+  const priceLocked = isPrice && paired?.locked;
+  const showLockedFlag = isPrice && isBid && priceLocked;
   const topStr =
     priceReason ??
     (isPrice && paired?.displayState === "prior_session"
@@ -513,12 +515,16 @@ const DataCell = memo(function DataCell({
           letterSpacing: "0.01em",
         }}
         data-chain-quote-as-of={asOfLabel ?? undefined}
+        data-chain-quote-locked={showLockedFlag ? "1" : undefined}
       >
         {isVol || isOI ? fmtCompact(topVal) : topStr}
         {isIV && topStr !== "\u2014" ? "%" : ""}
       </span>
       {asOfLabel ? (
         <span style={{ fontSize: 8, color: MUTED, lineHeight: 1.1 }}>{asOfLabel}</span>
+      ) : null}
+      {showLockedFlag ? (
+        <span style={{ fontSize: 7, fontWeight: 600, color: MUTED, opacity: 0.85, letterSpacing: "0.04em" }}>Locked</span>
       ) : null}
 
       {isVol && oiVal != null && (

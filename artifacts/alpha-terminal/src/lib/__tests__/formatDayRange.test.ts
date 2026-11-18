@@ -5,6 +5,7 @@ describe("formatDayRangeLabel", () => {
   it("renders em dash for null or zero placeholder", () => {
     expect(formatDayRangeLabel(0, 0, 0)).toBe("\u2014");
     expect(formatDayRangeLabel(null, null)).toBe("\u2014");
+    expect(formatDayRangeLabel(350.61, 350.61, 1.2)).toBe("\u2014");
   });
 
   it("renders valid range", () => {
