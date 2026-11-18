@@ -1,7 +1,7 @@
 /**
  * Fixture acceptance (c): down session % with rising tick cue + call buying gross labels.
  */
-import { webkit } from "playwright";
+import { chromium } from "playwright";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { assertAtHeaderLayout } from "./lib/at-header-layout-assert.mjs";
@@ -23,7 +23,8 @@ try {
 }
 
 await mkdir(OUT, { recursive: true });
-const browser = await webkit.launch();
+/** WebKit hangs on local Vite HMR here; Chromium matches Anthony fixture review. */
+const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 440, height: 956 } });
 
 const fixtureUrl = BASE.includes("/dev/active-trader")
@@ -32,6 +33,7 @@ const fixtureUrl = BASE.includes("/dev/active-trader")
 
 try {
   await page.goto(fixtureUrl, { waitUntil: "domcontentloaded", timeout: 120_000 });
+  await page.waitForTimeout(2000);
   const glance = page.locator("[data-at-glance-top]").first();
   await glance.waitFor({ state: "attached", timeout: 90_000 });
   const visible = await glance.isVisible();
