@@ -48,6 +48,7 @@ import {
 } from "../lib/desk/deskLiveFlowConfig.js";
 import { deskLiveFlowTimesaleRecent } from "../lib/desk/deskLiveFlowTimesale.js";
 import { parseDeskFlowSymbol } from "../lib/desk/deskLiveFlowSymbol.js";
+import { deskLiveFlowCanSubscribe } from "../lib/desk/deskLiveFlowLimits.js";
 
 const router: IRouter = Router();
 
@@ -178,10 +179,21 @@ router.get("/stream/flow", (req, res) => {
     res.status(503).json({ error: "live_flow_disabled", source: "desk" });
     return;
   }
-  const raw = (req.query["symbol"] as string | undefined) ?? "SPX";
+  const rawSym = req.query["symbol"];
+  const symbols = Array.isArray(rawSym) ? rawSym : rawSym != null ? [rawSym] : ["SPX"];
+  if (symbols.length !== 1) {
+    res.status(400).json({ error: "single_symbol_required", source: "desk" });
+    return;
+  }
+  const raw = String(symbols[0]);
   const parsed = parseDeskFlowSymbol(raw);
   if (!parsed.ok) {
     res.status(400).json({ error: parsed.error, source: "desk" });
+    return;
+  }
+  const gate = deskLiveFlowCanSubscribe(parsed.parsed.sym, parsed.parsed.kind);
+  if (!gate.ok) {
+    res.status(gate.status).json({ error: gate.error, source: "desk" });
     return;
   }
   registerDeskLiveFlowSse(res as Response, parsed.parsed.sym, parsed.parsed.kind);

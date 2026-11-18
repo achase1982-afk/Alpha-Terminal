@@ -43,8 +43,9 @@ export function deskLiveFlowSubsAcquire(sym: string, kind: DeskFlowAssetKind): v
         const eq = deskFlowNormalizeEquityKey(sym);
         h.addedL1 = deskFlowStreamerEnsureEquityL1(eq);
         h.addedTimesale = deskFlowStreamerEnsureTimesaleEquity(eq);
-      } else if (kind === "futures") {
-        const ds = sym.startsWith("/") ? sym.toUpperCase() : `/${sym.toUpperCase()}`;
+      } else       if (kind === "futures") {
+        const ds = sym.trim().toUpperCase().startsWith("/") ? sym.trim().toUpperCase() : null;
+        if (!ds) throw new Error("futures_requires_slash_prefix");
         pendingFuturesDisplay.push(ds);
         if (pendingFuturesDisplay.length > 8) pendingFuturesDisplay.shift();
         h.addedL1 = deskFlowStreamerEnsureFuturesL1(ds);
@@ -71,7 +72,7 @@ export function deskLiveFlowSubsRelease(sym: string, kind: DeskFlowAssetKind): v
       if (h.addedTimesale) deskFlowStreamerReleaseTimesaleEquity(eq);
       if (h.addedL1) deskFlowStreamerReleaseEquityL1(eq);
     } else if (kind === "futures") {
-      const ds = sym.startsWith("/") ? sym.toUpperCase() : `/${sym.toUpperCase()}`;
+      const ds = sym.trim().toUpperCase();
       if (h.addedTimesale) deskFlowStreamerReleaseTimesaleFutures(ds);
       if (h.addedL1) deskFlowStreamerReleaseFuturesL1(ds);
     }
@@ -99,4 +100,17 @@ export function deskLiveFlowSubsResetForTests(): void {
 
 export function deskLiveFlowSubsActiveCountForTests(): number {
   return held.size;
+}
+
+export function deskLiveFlowSubsDistinctNonSpxCount(): number {
+  let n = 0;
+  for (const h of held.values()) {
+    if (h.kind !== "spx" && h.refs > 0) n += 1;
+  }
+  return n;
+}
+
+export function deskLiveFlowSubsWouldBeNewSymbol(sym: string, kind: DeskFlowAssetKind): boolean {
+  const k = keyFor(sym, kind);
+  return (held.get(k)?.refs ?? 0) === 0;
 }

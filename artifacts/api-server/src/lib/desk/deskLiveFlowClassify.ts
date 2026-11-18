@@ -26,15 +26,30 @@ function num(v: unknown): number | null {
   return null;
 }
 
-/** At/above prior ask → buy; at/below prior bid → sell; else mid. */
+export function quoteClassifiable(bid: number, ask: number): boolean {
+  return bid > 0 && ask > 0 && ask >= bid;
+}
+
+/** At/above prior ask → buy; at/below prior bid → sell; else mid. Null when quote unusable. */
 export function classifyFlowAgainstPriorQuote(
   tradePrice: number,
   prevBid: number,
   prevAsk: number,
-): FlowAggressor {
+): FlowAggressor | null {
+  if (!quoteClassifiable(prevBid, prevAsk)) return null;
   if (tradePrice >= prevAsk) return "buy";
   if (tradePrice <= prevBid) return "sell";
   return "mid";
+}
+
+/** Keep volume baseline, drop stale quote (after reconnect / re-add). */
+export function rebaselineL1ContractState(prevVolume: number | null): ContractFlowState {
+  return {
+    prevBid: null,
+    prevAsk: null,
+    prevVolume,
+    prevLast: null,
+  };
 }
 
 export type L1oRowInput = {
@@ -66,7 +81,7 @@ export function applyL1oFlowTick(
   const next: ContractFlowState = {
     prevBid: bid,
     prevAsk: ask,
-    prevVolume: vol ?? prevVol,
+    prevVolume: prevVol,
     prevLast: last,
   };
 
@@ -79,18 +94,27 @@ export function applyL1oFlowTick(
   }
 
   const dVol = vol - prevVol;
-  if (dVol === 0) return { next, increments };
-  if (dVol < 0) {
+  if (dVol === 0) {
     next.prevVolume = vol;
     return { next, increments };
   }
+  if (dVol < 0) {
+    // Out-of-order lower volume — ignore without resetting baseline.
+    next.prevVolume = prevVol;
+    return { next, increments };
+  }
 
-  if (last == null || prevBid == null || prevAsk == null || prevAsk < prevBid) {
+  if (last == null || prevBid == null || prevAsk == null) {
     next.prevVolume = vol;
     return { next, increments };
   }
 
   const side = classifyFlowAgainstPriorQuote(last, prevBid, prevAsk);
+  if (side == null) {
+    next.prevVolume = vol;
+    return { next, increments };
+  }
+
   const dollars = dVol * last * 100;
   increments.push({
     side,

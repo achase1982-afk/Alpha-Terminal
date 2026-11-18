@@ -6,10 +6,10 @@ import {
 import { deskLiveFlowSubsAcquire, deskLiveFlowSubsResetForTests } from "../deskLiveFlowSubs.js";
 import { deskLiveFlowResetSeqForTests } from "../deskLiveFlowHub.js";
 
-vi.mock("../deskLiveFlowConfig.js", () => ({
-  deskLiveFlowEnabled: () => true,
-  DESK_LIVE_FLOW_PX_MAX_PER_SEC: 4,
-}));
+vi.mock("../deskLiveFlowConfig.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../deskLiveFlowConfig.js")>();
+  return { ...actual, deskLiveFlowEnabled: () => true };
+});
 
 vi.mock("../deskLiveFlowHub.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../deskLiveFlowHub.js")>();

@@ -40,6 +40,10 @@ import {
   getDeskAddedLevelOneOptionSymbols,
   getDeskStreamerAddCounts,
 } from "../schwabStreamer.js";
+import {
+  deskLiveFlowOnContractsDropped,
+  deskLiveFlowOnContractsRebaseline,
+} from "./deskLiveFlowEngine.js";
 
 const DESK_EQUITIES = ["$SPX", "SPY", "$VIX"] as const;
 const TARGET_OPTIONS_BOOK = 100;
@@ -236,7 +240,12 @@ export async function deskTapeUniverseRefresh(force = false): Promise<void> {
       const prevDesk = new Set(getDeskAddedLevelOneOptionSymbols());
       const nextDesk = new Set(levelone);
       const deskRemoved = [...prevDesk].filter((k) => !nextDesk.has(k));
-      if (deskRemoved.length > 0) deskStreamerUnsubRemovedDeskOptions(deskRemoved);
+      const deskAdded = [...nextDesk].filter((k) => !prevDesk.has(k));
+      if (deskRemoved.length > 0) {
+        deskStreamerUnsubRemovedDeskOptions(deskRemoved);
+        deskLiveFlowOnContractsDropped(deskRemoved);
+      }
+      if (deskAdded.length > 0) deskLiveFlowOnContractsRebaseline(deskAdded);
       streamerSubSetDeskCore("LEVELONE_OPTIONS", levelone);
       streamerSubSetDeskCore("OPTIONS_BOOK", book);
       await streamerSubApplyManagedOptionsSubscriptions();
@@ -293,7 +302,12 @@ export async function deskTapeUniverseAdjustToAppPlan(): Promise<void> {
   const prevDesk = new Set(getDeskAddedLevelOneOptionSymbols());
   const nextDesk = new Set(trimmed);
   const deskRemoved = [...prevDesk].filter((k) => !nextDesk.has(k));
-  if (deskRemoved.length > 0) deskStreamerUnsubRemovedDeskOptions(deskRemoved);
+  const deskAdded = [...nextDesk].filter((k) => !prevDesk.has(k));
+  if (deskRemoved.length > 0) {
+    deskStreamerUnsubRemovedDeskOptions(deskRemoved);
+    deskLiveFlowOnContractsDropped(deskRemoved);
+  }
+  if (deskAdded.length > 0) deskLiveFlowOnContractsRebaseline(deskAdded);
   await streamerSubApplyManagedOptionsSubscriptions();
   await streamerSubApplyManagedOptionsBookSubscriptions();
   deskStreamerSetDeskOptions(trimmed);

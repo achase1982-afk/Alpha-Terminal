@@ -6,6 +6,7 @@ import {
 } from "./deskLiveFlowConfig.js";
 import type { DeskFlowAssetKind } from "./deskLiveFlowSymbol.js";
 import { deskLiveFlowSubsAcquire, deskLiveFlowSubsRelease } from "./deskLiveFlowSubs.js";
+import { deskLiveFlowTapeDropSymbol } from "./deskLiveFlowTape.js";
 
 export type DeskLiveFlowFrame = {
   type: string;
@@ -32,6 +33,7 @@ type SseClient = {
   pending: string[];
   paused: boolean;
   dropped: number;
+  onDrain: (() => void) | null;
 };
 
 const sseClients = new Set<SseClient>();
@@ -61,11 +63,14 @@ function flushClient(c: SseClient): void {
     const line = c.pending[0]!;
     if (!c.res.write(line)) {
       c.paused = true;
+      if (c.onDrain) c.res.off("drain", c.onDrain);
       const onDrain = () => {
         c.paused = false;
-        c.res.off("drain", onDrain);
+        if (c.onDrain) c.res.off("drain", c.onDrain);
+        c.onDrain = null;
         flushClient(c);
       };
+      c.onDrain = onDrain;
       c.res.once("drain", onDrain);
       return;
     }
@@ -77,9 +82,23 @@ function dropIfSlow(c: SseClient): void {
   let bytes = 0;
   for (const line of c.pending) bytes += line.length;
   if (bytes > DESK_LIVE_FLOW_SLOW_CLIENT_HIGH_WATER) {
+    if (c.onDrain) {
+      c.res.off("drain", c.onDrain);
+      c.onDrain = null;
+    }
     c.pending = [];
     c.dropped += 1;
     c.paused = false;
+    try {
+      const resync = `event: resync\ndata: ${JSON.stringify({
+        sym: c.symbol,
+        reason: "slow_client_drop",
+        dropped_frames: c.dropped,
+      })}\n\n`;
+      c.res.write(resync);
+    } catch {
+      sseClients.delete(c);
+    }
   }
 }
 
@@ -117,16 +136,21 @@ export function registerDeskLiveFlowSse(res: Response, symbol: string, kind: Des
     "X-Desk-Flow-Asset": kind,
   });
   res.write(": connected\n\n");
-  const client: SseClient = { res, symbol: sym, pending: [], paused: false, dropped: 0 };
+  const client: SseClient = { res, symbol: sym, pending: [], paused: false, dropped: 0, onDrain: null };
   sseClients.add(client);
   ensureHeartbeat();
   res.on("close", () => {
     sseClients.delete(client);
     deskLiveFlowSubsRelease(sym, kind);
+    if (kind !== "spx") deskLiveFlowTapeDropSymbol(sym);
   });
 }
 
 export function deskLiveFlowSseClientCountForTests(): number {
+  return sseClients.size;
+}
+
+export function deskLiveFlowSseClientCount(): number {
   return sseClients.size;
 }
 

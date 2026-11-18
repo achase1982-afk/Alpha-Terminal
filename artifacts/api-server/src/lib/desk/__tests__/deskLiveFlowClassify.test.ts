@@ -16,6 +16,7 @@ describe("deskLiveFlowClassify", () => {
     expect(classifyFlowAgainstPriorQuote(2, 1, 2)).toBe("buy");
     expect(classifyFlowAgainstPriorQuote(1, 1, 2)).toBe("sell");
     expect(classifyFlowAgainstPriorQuote(1.5, 1, 2)).toBe("mid");
+    expect(classifyFlowAgainstPriorQuote(1, 0, 2)).toBeNull();
   });
 
   it("put buy burst from volume increment", () => {
@@ -82,7 +83,7 @@ describe("deskLiveFlowClassify", () => {
     expect(second.increments[0]!.side).toBe("buy");
   });
 
-  it("resets on negative volume (volume reset)", () => {
+  it("ignores out-of-order lower volume", () => {
     const { next, increments } = applyL1oFlowTick(state(100), {
       key: KEY,
       optionSide: "call",
@@ -93,7 +94,7 @@ describe("deskLiveFlowClassify", () => {
       rxMs: 4_000,
     });
     expect(increments).toHaveLength(0);
-    expect(next.prevVolume).toBe(50);
+    expect(next.prevVolume).toBe(100);
   });
 
   it("skips zero dVol", () => {

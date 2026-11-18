@@ -1,7 +1,5 @@
 import { schwabFuturesKey } from "../schwabStreamer.js";
 
-const FUTURES_ALIASES = new Set(["ES", "NQ", "MES", "MNQ", "RTY", "YM", "/ES", "/NQ", "/MES", "/MNQ", "/RTY", "/YM"]);
-
 export type DeskFlowAssetKind = "spx" | "equity" | "futures";
 
 export type DeskFlowSymbol = {
@@ -19,16 +17,15 @@ export function parseDeskFlowSymbol(raw: string): { ok: true; parsed: DeskFlowSy
     return { ok: true, parsed: { kind: "spx", sym: "SPX" } };
   }
 
-  if (u.startsWith("/") || FUTURES_ALIASES.has(u)) {
-    const display = u.startsWith("/") ? u : `/${u}`;
-    if (!/^\/[A-Z0-9]{1,6}$/.test(display)) {
+  if (u.startsWith("/")) {
+    if (!/^\/[A-Z][A-Z0-9]{0,5}$/.test(u)) {
       return { ok: false, error: "invalid_futures_symbol" };
     }
-    void schwabFuturesKey(display);
-    return { ok: true, parsed: { kind: "futures", sym: display } };
+    void schwabFuturesKey(u);
+    return { ok: true, parsed: { kind: "futures", sym: u } };
   }
 
-  if (!/^\$?[A-Z][A-Z0-9.\-]{0,11}$/.test(u)) {
+  if (!/^\$?[A-Z][A-Z0-9.$\-]{0,11}$/.test(u)) {
     return { ok: false, error: "invalid_equity_symbol" };
   }
   u = u.replace(/^\$/, "");

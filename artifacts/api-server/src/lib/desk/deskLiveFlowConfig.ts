@@ -23,7 +23,7 @@ export function deskLiveFlowL1oEnabled(): boolean {
 
 export function deskLiveFlowWsFanoutEnabled(): boolean {
   if (!deskLiveFlowEnabled()) return false;
-  return deskEnvTruthyDefault(true, "DESK_LIVE_FLOW_WS_FANOUT", "LIVE_FLOW_WS_FANOUT");
+  return deskEnvTruthyDefault(false, "DESK_LIVE_FLOW_WS_FANOUT", "LIVE_FLOW_WS_FANOUT");
 }
 
 /** Diagnostic: TIMESALE_OPTIONS on 5 near-ATM SPXW 0DTE (off by default). */
@@ -35,3 +35,6 @@ export function deskLiveFlowTimesaleDebugEnabled(): boolean {
 export const DESK_LIVE_FLOW_PX_MAX_PER_SEC = 4;
 export const DESK_LIVE_FLOW_SSE_HEARTBEAT_MS = 15_000;
 export const DESK_LIVE_FLOW_SLOW_CLIENT_HIGH_WATER = 256 * 1024;
+/** Max trade–receive skew before bucketing on receive time (ms). */
+export const DESK_LIVE_FLOW_TAPE_REORDER_MS = 750;
+export const DESK_LIVE_FLOW_QUOTE_HISTORY_CAP = 64;

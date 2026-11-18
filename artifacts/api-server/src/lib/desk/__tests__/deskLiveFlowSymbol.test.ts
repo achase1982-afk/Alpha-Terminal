@@ -13,12 +13,24 @@ describe("parseDeskFlowSymbol", () => {
       expect(r.parsed.sym).toBe("NVDA");
     }
   });
-  it("parses futures", () => {
-    const r = parseDeskFlowSymbol("ES");
+  it("parses slash-prefixed futures", () => {
+    const r = parseDeskFlowSymbol("/ES");
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.parsed.kind).toBe("futures");
       expect(r.parsed.sym).toBe("/ES");
     }
+  });
+
+  it("rejects bare root without slash", () => {
+    const r = parseDeskFlowSymbol("ES");
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.parsed.kind).toBe("equity");
+  });
+
+  it("parses $VIX index style tickers", () => {
+    const r = parseDeskFlowSymbol("$VIX");
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.parsed.sym).toBe("VIX");
   });
 });

@@ -13,6 +13,12 @@ import {
   onSchwabInboundFrame,
   onSchwabOutboundFrame,
 } from "./desk/deskStreamerTap.js";
+import {
+  deskLiveFlowTapeOnEquityL1,
+  deskLiveFlowTapeOnFuturesL1,
+  deskLiveFlowTapeOnTimesaleEquity,
+  deskLiveFlowTapeOnTimesaleFutures,
+} from "./desk/deskLiveFlowTape.js";
 import { deskStreamerSyncDeskSymbols } from "./desk/deskStreamerDeskSync.js";
 import {
   streamerSubHold,
@@ -260,11 +266,46 @@ const deskAddedEquitySymbols = new Set<string>();
 const deskAddedOptionSymbols = new Set<string>();
 const deskAddedOptionsBookSymbols = new Set<string>();
 const deskAddedTimesaleOptionSymbols = new Set<string>();
-/** Desk live-flow on-demand (ADD only; released when SSE clients disconnect). */
-const deskFlowTimesaleEquitySymbols = new Set<string>();
-const deskFlowTimesaleFuturesSymbols = new Set<string>();
-const deskFlowEquityL1Owned = new Set<string>();
-const deskFlowFuturesL1Owned = new Set<string>();
+/** Desk wire key ownership (tape universe vs live-flow SSE); refcounts per key. */
+type DeskWireOwner = "tape_universe" | "live_flow";
+const deskEquityL1Owners = new Map<string, Set<DeskWireOwner>>();
+const deskTimesaleEquityOwners = new Map<string, Set<DeskWireOwner>>();
+const deskFuturesL1WireOwners = new Map<string, Set<DeskWireOwner>>();
+const deskTimesaleFuturesWireOwners = new Map<string, Set<DeskWireOwner>>();
+
+function deskOwnerHold(map: Map<string, Set<DeskWireOwner>>, key: string, owner: DeskWireOwner): boolean {
+  let s = map.get(key);
+  if (!s) {
+    s = new Set();
+    map.set(key, s);
+  }
+  const first = s.size === 0;
+  s.add(owner);
+  return first;
+}
+
+function deskOwnerRelease(map: Map<string, Set<DeskWireOwner>>, key: string, owner: DeskWireOwner): boolean {
+  const s = map.get(key);
+  if (!s?.has(owner)) return false;
+  s.delete(owner);
+  if (s.size === 0) {
+    map.delete(key);
+    return true;
+  }
+  return false;
+}
+
+export function deskStreamerReplayDeskFlowAdds(): void {
+  if (connectionState !== "connected") return;
+  const eq = [...deskEquityL1Owners.keys()].filter((k) => !subscribedSymbols.has(k));
+  if (eq.length > 0) batchDeskAdd(sendDeskEquityAdd, eq);
+  const fut = [...deskFuturesL1WireOwners.keys()].filter((k) => !subscribedFuturesSymbols.has(k));
+  if (fut.length > 0) batchDeskAdd(sendDeskFuturesAdd, fut);
+  const tse = [...deskTimesaleEquityOwners.keys()].filter((k) => !subscribedTimesaleEquitySymbols.has(k));
+  if (tse.length > 0) sendDeskTimesaleEquityAdd(tse);
+  const tsf = [...deskTimesaleFuturesWireOwners.keys()];
+  if (tsf.length > 0) sendDeskTimesaleFuturesAdd(tsf);
+}
 
 type TimesaleFuturesListener = (ev: SchwabTimesaleEquityEvent & { displaySymbol: string }) => void;
 const timesaleFuturesListeners = new Set<TimesaleFuturesListener>();
@@ -954,6 +995,7 @@ function sendEquitySubscription(symbols: string[], opts?: { replayDeskEquities?:
     if (opts?.replayDeskEquities !== false && deskAddedEquitySymbols.size > 0) {
       batchDeskAdd(sendDeskEquityAdd, [...deskAddedEquitySymbols]);
     }
+    deskStreamerReplayDeskFlowAdds();
   }
 }
 
@@ -968,6 +1010,7 @@ function sendFuturesSubscription(symbols: string[]) {
   if (req) {
     sendStreamerJson({ requests: [req] });
     logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: LEVELONE_FUTURES SUBS sent");
+    deskStreamerReplayDeskFlowAdds();
   }
 }
 
@@ -1026,6 +1069,7 @@ function sendTimesaleEquitySubscription(symbols: string[]) {
   if (req) {
     sendStreamerJson({ requests: [req] });
     logger.info({ count: symbols.length, sample: symbols.slice(0, 5).join(",") }, "Schwab streamer: TIMESALE_EQUITY SUBS sent");
+    deskStreamerReplayDeskFlowAdds();
   }
 }
 
@@ -1193,16 +1237,22 @@ function sendDeskTimesaleFuturesUnsubs(wireKeys: string[]): void {
 /** Returns true when this module performed the ADD (caller should release). */
 export function deskFlowStreamerEnsureEquityL1(sym: string): boolean {
   const n = normalizeEquityKey(sym);
-  if (subscribedSymbols.has(n) || deskAddedEquitySymbols.has(n)) return false;
-  deskStreamerAddEquity([n]);
-  deskFlowEquityL1Owned.add(n);
-  return true;
+  const appHas = subscribedSymbols.has(n);
+  const first = deskOwnerHold(deskEquityL1Owners, n, "live_flow");
+  if (first && !appHas) {
+    if (!deskAddedEquitySymbols.has(n)) {
+      deskAddedEquitySymbols.add(n);
+      if (connectionState === "connected") batchDeskAdd(sendDeskEquityAdd, [n]);
+    }
+    return true;
+  }
+  return false;
 }
 
 export function deskFlowStreamerReleaseEquityL1(sym: string): void {
   const n = normalizeEquityKey(sym);
-  if (!deskFlowEquityL1Owned.has(n)) return;
-  deskFlowEquityL1Owned.delete(n);
+  const last = deskOwnerRelease(deskEquityL1Owners, n, "live_flow");
+  if (!last || deskEquityL1Owners.has(n)) return;
   deskAddedEquitySymbols.delete(n);
   if (!subscribedSymbols.has(n) && connectionState === "connected") {
     sendDeskEquityUnsubs([n]);
@@ -1211,56 +1261,64 @@ export function deskFlowStreamerReleaseEquityL1(sym: string): void {
 
 export function deskFlowStreamerEnsureTimesaleEquity(sym: string): boolean {
   const n = normalizeEquityKey(sym);
-  if (subscribedTimesaleEquitySymbols.has(n) || deskFlowTimesaleEquitySymbols.has(n)) return false;
-  deskFlowTimesaleEquitySymbols.add(n);
-  if (connectionState === "connected") sendDeskTimesaleEquityAdd([n]);
-  return true;
+  const appHas = subscribedTimesaleEquitySymbols.has(n);
+  const first = deskOwnerHold(deskTimesaleEquityOwners, n, "live_flow");
+  if (first && !appHas && connectionState === "connected") {
+    sendDeskTimesaleEquityAdd([n]);
+    return true;
+  }
+  return false;
 }
 
 export function deskFlowStreamerReleaseTimesaleEquity(sym: string): void {
   const n = normalizeEquityKey(sym);
-  if (!deskFlowTimesaleEquitySymbols.has(n)) return;
-  deskFlowTimesaleEquitySymbols.delete(n);
+  const last = deskOwnerRelease(deskTimesaleEquityOwners, n, "live_flow");
+  if (!last || deskTimesaleEquityOwners.has(n)) return;
   if (!subscribedTimesaleEquitySymbols.has(n) && connectionState === "connected") {
     sendDeskTimesaleEquityUnsubs([n]);
   }
 }
 
 export function deskFlowStreamerEnsureFuturesL1(displaySymbol: string): boolean {
-  const ds = displaySymbol.startsWith("/") ? displaySymbol.toUpperCase() : `/${displaySymbol.toUpperCase()}`;
+  const ds = displaySymbol.trim().toUpperCase();
   const key = schwabFuturesKey(ds);
   addFuturesDisplay(key, ds);
-  if (subscribedFuturesSymbols.has(key) || deskFlowFuturesL1Owned.has(key)) return false;
-  deskFlowFuturesL1Owned.add(key);
-  if (connectionState === "connected") sendDeskFuturesAdd([key]);
-  return true;
+  const appHas = subscribedFuturesSymbols.has(key);
+  const first = deskOwnerHold(deskFuturesL1WireOwners, key, "live_flow");
+  if (first && !appHas && connectionState === "connected") {
+    sendDeskFuturesAdd([key]);
+    return true;
+  }
+  return false;
 }
 
 export function deskFlowStreamerReleaseFuturesL1(displaySymbol: string): void {
-  const ds = displaySymbol.startsWith("/") ? displaySymbol.toUpperCase() : `/${displaySymbol.toUpperCase()}`;
+  const ds = displaySymbol.trim().toUpperCase();
   const key = schwabFuturesKey(ds);
-  if (!deskFlowFuturesL1Owned.has(key)) return;
-  deskFlowFuturesL1Owned.delete(key);
+  const last = deskOwnerRelease(deskFuturesL1WireOwners, key, "live_flow");
+  if (!last || deskFuturesL1WireOwners.has(key)) return;
   if (!subscribedFuturesSymbols.has(key) && connectionState === "connected") {
     sendDeskFuturesUnsubs([key]);
   }
 }
 
 export function deskFlowStreamerEnsureTimesaleFutures(displaySymbol: string): boolean {
-  const ds = displaySymbol.startsWith("/") ? displaySymbol.toUpperCase() : `/${displaySymbol.toUpperCase()}`;
+  const ds = displaySymbol.trim().toUpperCase();
   const key = schwabFuturesKey(ds);
   addFuturesDisplay(key, ds);
-  if (deskFlowTimesaleFuturesSymbols.has(key)) return false;
-  deskFlowTimesaleFuturesSymbols.add(key);
-  if (connectionState === "connected") sendDeskTimesaleFuturesAdd([key]);
-  return true;
+  const first = deskOwnerHold(deskTimesaleFuturesWireOwners, key, "live_flow");
+  if (first && connectionState === "connected") {
+    sendDeskTimesaleFuturesAdd([key]);
+    return true;
+  }
+  return false;
 }
 
 export function deskFlowStreamerReleaseTimesaleFutures(displaySymbol: string): void {
-  const ds = displaySymbol.startsWith("/") ? displaySymbol.toUpperCase() : `/${displaySymbol.toUpperCase()}`;
+  const ds = displaySymbol.trim().toUpperCase();
   const key = schwabFuturesKey(ds);
-  if (!deskFlowTimesaleFuturesSymbols.has(key)) return;
-  deskFlowTimesaleFuturesSymbols.delete(key);
+  const last = deskOwnerRelease(deskTimesaleFuturesWireOwners, key, "live_flow");
+  if (!last || deskTimesaleFuturesWireOwners.has(key)) return;
   if (connectionState === "connected") sendDeskTimesaleFuturesUnsubs([key]);
 }
 
@@ -1331,6 +1389,20 @@ export function deskStreamerAddTimesaleOptions(symbols: string[]): number {
   return added.length;
 }
 
+export function deskStreamerUnsubTimesaleOptions(symbols: string[]): void {
+  const removed: string[] = [];
+  for (const s of symbols) {
+    const k = s.trim();
+    if (!deskAddedTimesaleOptionSymbols.has(k)) continue;
+    deskAddedTimesaleOptionSymbols.delete(k);
+    removed.push(k);
+  }
+  if (removed.length > 0 && connectionState === "connected") {
+    const req = buildRequest("TIMESALE_OPTIONS", "UNSUBS", { keys: removed.join(",") });
+    if (req) sendStreamerJson({ requests: [req] });
+  }
+}
+
 function sendDeskOptionUnsubs(symbols: string[]): void {
   if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
   const req = buildRequest("LEVELONE_OPTIONS", "UNSUBS", {
@@ -1353,7 +1425,8 @@ export function deskStreamerAddEquity(symbols: string[]): number {
   const added: string[] = [];
   for (const s of symbols) {
     const normalized = normalizeEquityKey(s);
-    if (!deskAddedEquitySymbols.has(normalized)) {
+    const first = deskOwnerHold(deskEquityL1Owners, normalized, "tape_universe");
+    if (first && !deskAddedEquitySymbols.has(normalized)) {
       deskAddedEquitySymbols.add(normalized);
       added.push(normalized);
     }
@@ -1512,6 +1585,7 @@ export function deskStreamerReplayDeskAdds(): void {
   deskStreamerReplayDeskEquityAdds();
   deskStreamerReplayDeskOptionAdds();
   deskStreamerReplayDeskOptionsBookAdds();
+  deskStreamerReplayDeskFlowAdds();
 }
 
 /** After LOGIN: app full SUBS (no desk replay), then one desk ADD replay — only login path. */
@@ -1547,6 +1621,7 @@ export function deskStreamerAfterLoginAppSubsThenDeskReplay(): void {
   }
   deskStreamerReplayDeskAfterAppLevelOneSub();
   deskStreamerReplayDeskEquityAdds();
+  deskStreamerReplayDeskFlowAdds();
 }
 
 export function getDeskStreamerAddCounts(): {
@@ -1807,7 +1882,7 @@ function processEquityTick(content: Record<string, unknown>[]) {
 
     quoteCache.set(symbol, quote);
     broadcast("quote", quote);
-    void import("./desk/deskLiveFlowTape.js").then((m) => m.deskLiveFlowTapeOnEquityL1(symbol, item, now));
+    deskLiveFlowTapeOnEquityL1(symbol, item, now);
   }
 }
 
@@ -1891,9 +1966,7 @@ function processFuturesTick(content: Record<string, unknown>[]) {
       const quote: LiveQuote = { ...baseQuote, symbol: displaySymbol };
       quoteCache.set(displaySymbol, quote);
       broadcast("quote", quote);
-      void import("./desk/deskLiveFlowTape.js").then((m) =>
-        m.deskLiveFlowTapeOnFuturesL1(displaySymbol, item, now),
-      );
+      deskLiveFlowTapeOnFuturesL1(displaySymbol, item, now);
     }
   }
 }
@@ -1948,8 +2021,12 @@ function processTimesaleFutures(content: Record<string, unknown>[]) {
       };
       emitTimesaleFuturesListeners(ev);
       if (ev.lastPrice != null && ev.lastPrice > 0 && ev.lastSize != null && ev.lastSize > 0) {
-        void import("./desk/deskLiveFlowTape.js").then((m) =>
-          m.deskLiveFlowTapeOnTimesaleFutures(displaySymbol, ev.lastPrice!, ev.lastSize!, ev.tradeTimeMs),
+        deskLiveFlowTapeOnTimesaleFutures(
+          displaySymbol,
+          ev.lastPrice,
+          ev.lastSize,
+          ev.tradeTimeMs,
+          ev.sequence,
         );
       }
     }
@@ -1983,9 +2060,7 @@ function processTimesaleEquity(content: Record<string, unknown>[]) {
     const tsMs = ev.tradeTimeMs ?? Date.now();
     if (ev.lastPrice != null && ev.lastPrice > 0 && ev.lastSize != null && ev.lastSize > 0) {
       appendStrategistTimesale(symbol, { ts: tsMs, price: ev.lastPrice, size: ev.lastSize });
-      void import("./desk/deskLiveFlowTape.js").then((m) =>
-        m.deskLiveFlowTapeOnTimesaleEquity(symbol, ev.lastPrice!, ev.lastSize!, ev.tradeTimeMs),
-      );
+      deskLiveFlowTapeOnTimesaleEquity(symbol, ev.lastPrice, ev.lastSize, ev.tradeTimeMs, ev.sequence);
     }
     emitTimesaleEquityListeners(ev);
   }
@@ -2169,6 +2244,15 @@ function handleMessage(raw: string) {
 
       if (service !== "ADMIN") {
         logger.info({ service, command, code, msg: msgText }, "Schwab streamer: subscription response");
+      }
+      if (
+        service === "TIMESALE_OPTIONS" ||
+        service === "TIMESALE_EQUITY" ||
+        service === "TIMESALE_FUTURES"
+      ) {
+        void import("./desk/deskLiveFlowTimesale.js").then((m) =>
+          m.deskLiveFlowTimesalePushStreamerResponse(service, r),
+        );
       }
       if (command === "ADD" && code !== 0 && code !== 12 && msgText) {
         void import("./desk/deskStreamerBudget.js").then((m) => m.deskParseSchwabStreamerLimitMessage(msgText));
@@ -2690,6 +2774,10 @@ export function stopStreamer() {
   deskAddedOptionsBookSymbols.clear();
   clearFuturesDisplayRegistry();
   clearFuturesActiveSymbolCache();
+  deskEquityL1Owners.clear();
+  deskTimesaleEquityOwners.clear();
+  deskFuturesL1WireOwners.clear();
+  deskTimesaleFuturesWireOwners.clear();
   acctActivitySubscribed = false;
   consecutivePostLoginFlap1006 = 0;
 }
