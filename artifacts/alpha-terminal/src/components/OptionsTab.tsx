@@ -48,7 +48,7 @@ import {
   filterAtExpiryPillGroups,
   nearestTradableExpiration,
 } from "@/lib/optionsExpirationPick";
-import { resolveAtmStrike } from "@workspace/order-ticket-math";
+import { chainQuoteReasonLabel, resolveAtmStrike } from "@workspace/order-ticket-math";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import {
   OptionsChainOrderSheet,
@@ -415,7 +415,11 @@ const DataCell = memo(function DataCell({
   const bottomVal = col.bottomKey
     ? (getStreamVal(tick, col.bottomKey) ?? getContractVal(contract, col.bottomKey))
     : undefined;
-  const topStr = fmtNum(topVal, col.topDecimals);
+  const priceReason =
+    isPrice && paired?.displayState && paired.displayState !== "ok"
+      ? chainQuoteReasonLabel(paired.displayState)
+      : null;
+  const topStr = priceReason ?? fmtNum(topVal, col.topDecimals);
   const isOI = col.id === "oi";
   const isVol = col.id === "vol";
   const oiVal = isVol ? getContractVal(contract, "openInterest") : undefined;
@@ -490,6 +494,7 @@ const DataCell = memo(function DataCell({
       <span
         className="leading-none"
         data-ui-audit={isPrice ? "chain-bid-cell" : undefined}
+        data-chain-quote-reason={priceReason ?? undefined}
         style={{
           fontSize: isPrice ? 15 : 12,
           fontWeight: isPrice ? FW_PREMIUM : FW_LIGHT,

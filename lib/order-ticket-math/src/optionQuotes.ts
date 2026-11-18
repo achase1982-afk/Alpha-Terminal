@@ -15,6 +15,20 @@ export function quoteSideState(bid: number | null | undefined, ask: number | nul
 /** Chain / AT display: strict two-sided book with bid>0, ask>0, fresh rx timestamp. */
 export const CHAIN_QUOTE_FRESH_MS = 12_000;
 
+/** Short UI label when a chain / AT quote is suppressed (never shown for valid books). */
+export function chainQuoteReasonLabel(state: QuoteSideState | "stale" | "ok"): string {
+  switch (state) {
+    case "crossed":
+      return "Crossed";
+    case "incomplete":
+      return "No quote";
+    case "stale":
+      return "Stale";
+    default:
+      return "";
+  }
+}
+
 export function chainDisplayQuoteState(
   bid: number | null | undefined,
   ask: number | null | undefined,

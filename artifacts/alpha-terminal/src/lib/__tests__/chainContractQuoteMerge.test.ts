@@ -41,4 +41,13 @@ describe("mergeChainContractWithStream", () => {
     expect(fixed.bid).toBe(10);
     expect(fixed.ask).toBe(11.2);
   });
+
+  it("labels crossed REST book without showing invalid prices", () => {
+    const now = Date.now();
+    const fixed = resolveChainDisplayQuote({ streamKey: "OPT", bid: 2, ask: 1 }, null, now, now);
+    expect(fixed.displayState).toBe("crossed");
+    expect(fixed.tapable).toBe(false);
+    expect(fixed.bid).toBeUndefined();
+    expect(fixed.ask).toBeUndefined();
+  });
 });
