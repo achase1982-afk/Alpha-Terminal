@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const LIVE = "https://alpha-terminal-production-f297.up.railway.app";
-const OUT = "/opt/cursor/artifacts/live-at-verify";
+const OUT = process.env.AT_VERIFY_OUT ?? "/opt/cursor/artifacts/live-at-verify";
 const IPHONE = devices["iPhone 14 Pro Max"];
 
 function parsePx(text) {
