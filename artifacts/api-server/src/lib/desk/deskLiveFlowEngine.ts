@@ -67,7 +67,10 @@ type Bucket60s = {
 const contractState = new Map<string, ContractFlowState>();
 let open1s: Bucket1s | null = null;
 let open60s: Bucket60s | null = null;
-const emittedFlow60s = new Set<number>();
+let lastEmittedFlow60sMinuteMs: number | null = null;
+let lastIdleFlowHeartbeatBucketMs: number | null = null;
+
+const UW_BAR_MAP_CAP = 512;
 
 let lastPx: { last: number | null; bid: number | null; ask: number | null } = {
   last: null,
@@ -78,6 +81,7 @@ let pxWindowStartMs = 0;
 let pxEmitsInWindow = 0;
 let pxTrailing: { last: number | null; bid: number | null; ask: number | null; srcTs: number } | null = null;
 let pxTrailingTimer: ReturnType<typeof setTimeout> | null = null;
+let lastEmittedPxSrcTs = 0;
 
 const uwBarByKey = new Map<string, ReturnType<typeof deskLiveFlowMapUwNetPremRow>>();
 
@@ -209,11 +213,11 @@ function emitFlow1s(b: Bucket1s, rxMs: number, forceEmpty = false): void {
 }
 
 function emitFlow60s(b: Bucket60s, rxMs: number): void {
-  if (emittedFlow60s.has(b.minute_ms)) return;
+  if (lastEmittedFlow60sMinuteMs != null && b.minute_ms <= lastEmittedFlow60sMinuteMs) return;
   const has =
     b.call_buy || b.call_sell || b.call_mid || b.put_buy || b.put_sell || b.put_mid || b.n_increments > 0;
-  emittedFlow60s.add(b.minute_ms);
   if (!has) return;
+  lastEmittedFlow60sMinuteMs = b.minute_ms;
   const payload = {
     type: "flow_60s",
     sym: "SPX",
@@ -242,16 +246,22 @@ export function deskLiveFlowBucketTick(nowMs: number): void {
     emitFlow60s(open60s, nowMs);
     open60s = null;
   }
+  if (deskLiveFlowL1oEnabled() && !open1s) {
+    const b = bucketMs1s(nowMs);
+    if (lastIdleFlowHeartbeatBucketMs !== b) {
+      emitFlowHeartbeat(b, nowMs, true);
+      lastIdleFlowHeartbeatBucketMs = b;
+    }
+  }
 }
 
 function flushPxTrailing(rxMs: number): void {
   if (!pxTrailing || !deskLiveFlowPxEnabled()) return;
   const { last, bid, ask, srcTs } = pxTrailing;
   pxTrailing = null;
-  if (pxTrailingTimer) {
-    clearTimeout(pxTrailingTimer);
-    pxTrailingTimer = null;
-  }
+  pxTrailingTimer = null;
+  if (srcTs < lastEmittedPxSrcTs) return;
+  lastEmittedPxSrcTs = srcTs;
   const payload = { type: "px", sym: "$SPX", last, bid, ask };
   recordFrame(wrapDeskLiveFlowFrame(payload, srcTs, rxMs));
 }
@@ -271,13 +281,19 @@ export function deskLiveFlowEmitPx(symKey: string, item: Record<string, unknown>
   }
   if (pxEmitsInWindow >= DESK_LIVE_FLOW_PX_MAX_PER_SEC) {
     pxTrailing = { last, bid, ask, srcTs };
-    if (!pxTrailingTimer) {
-      pxTrailingTimer = setTimeout(() => flushPxTrailing(Date.now()), 250);
-      pxTrailingTimer.unref?.();
-    }
+    if (pxTrailingTimer) clearTimeout(pxTrailingTimer);
+    pxTrailingTimer = setTimeout(() => flushPxTrailing(Date.now()), 250);
+    pxTrailingTimer.unref?.();
     return;
   }
+  if (pxTrailingTimer) {
+    clearTimeout(pxTrailingTimer);
+    pxTrailingTimer = null;
+  }
+  pxTrailing = null;
+  if (srcTs < lastEmittedPxSrcTs) return;
   pxEmitsInWindow += 1;
+  lastEmittedPxSrcTs = srcTs;
   const payload = { type: "px", sym: "$SPX", last, bid, ask };
   recordFrame(wrapDeskLiveFlowFrame(payload, srcTs, rxMs));
 }
@@ -286,7 +302,9 @@ export function deskLiveFlowOnStreamerSessionReset(_reason: string): void {
   contractState.clear();
   open1s = null;
   open60s = null;
-  emittedFlow60s.clear();
+  lastEmittedFlow60sMinuteMs = null;
+  lastIdleFlowHeartbeatBucketMs = null;
+  lastEmittedPxSrcTs = 0;
   pxTrailing = null;
   if (pxTrailingTimer) clearTimeout(pxTrailingTimer);
   pxTrailingTimer = null;
@@ -381,11 +399,11 @@ export function deskLiveFlowOnUwNetPremRows(
     const prev = uwBarByKey.get(dedupeKey);
     if (prev && uwPayloadsEqual(prev, mapped)) continue;
     uwBarByKey.set(dedupeKey, mapped);
-    recordFrame(wrapDeskLiveFlowFrame(mapped, mapped.bar_start_ms, polledAtMs));
-    if (open60s && open60s.minute_ms === mapped.bar_start_ms) {
-      emitFlow60s(open60s, polledAtMs);
-      open60s = null;
+    while (uwBarByKey.size > UW_BAR_MAP_CAP) {
+      const first = uwBarByKey.keys().next().value;
+      if (first != null) uwBarByKey.delete(first);
     }
+    recordFrame(wrapDeskLiveFlowFrame(mapped, mapped.bar_start_ms, polledAtMs));
   }
 }
 
@@ -423,7 +441,9 @@ export function deskLiveFlowResetEngineForTests(): void {
   pxEmitsInWindow = 0;
   pxTrailing = null;
   uwBarByKey.clear();
-  emittedFlow60s.clear();
+  lastEmittedFlow60sMinuteMs = null;
+  lastIdleFlowHeartbeatBucketMs = null;
+  lastEmittedPxSrcTs = 0;
   bucketsHooked = false;
 }
 

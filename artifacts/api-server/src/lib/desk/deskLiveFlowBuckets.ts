@@ -11,8 +11,9 @@ export function minuteMs(ms: number): number {
   return Math.floor(ms / 60_000) * 60_000;
 }
 
+/** Close after the bucket window ends plus ~1.1s lag (same for 1s and 60s bars). */
 export function bucketDueToClose(bucketStartMs: number, nowMs: number, widthMs: number): boolean {
-  return nowMs >= bucketStartMs + widthMs + (DESK_LIVE_FLOW_BUCKET_CLOSE_MS - widthMs);
+  return nowMs >= bucketStartMs + widthMs + DESK_LIVE_FLOW_BUCKET_CLOSE_MS;
 }
 
 type CloseHandler = (nowMs: number) => void;

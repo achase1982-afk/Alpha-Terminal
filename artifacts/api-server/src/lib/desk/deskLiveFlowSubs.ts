@@ -69,12 +69,12 @@ export function deskLiveFlowSubsRelease(sym: string, kind: DeskFlowAssetKind): v
   try {
     if (kind === "equity") {
       const eq = deskFlowNormalizeEquityKey(sym);
-      if (h.addedTimesale) deskFlowStreamerReleaseTimesaleEquity(eq);
-      if (h.addedL1) deskFlowStreamerReleaseEquityL1(eq);
+      deskFlowStreamerReleaseTimesaleEquity(eq);
+      deskFlowStreamerReleaseEquityL1(eq);
     } else if (kind === "futures") {
       const ds = sym.trim().toUpperCase();
-      if (h.addedTimesale) deskFlowStreamerReleaseTimesaleFutures(ds);
-      if (h.addedL1) deskFlowStreamerReleaseFuturesL1(ds);
+      deskFlowStreamerReleaseTimesaleFutures(ds);
+      deskFlowStreamerReleaseFuturesL1(ds);
     }
   } catch (err) {
     logger.warn({ err, sym, kind }, "Desk live flow: streamer release failed");
@@ -113,4 +113,30 @@ export function deskLiveFlowSubsDistinctNonSpxCount(): number {
 export function deskLiveFlowSubsWouldBeNewSymbol(sym: string, kind: DeskFlowAssetKind): boolean {
   const k = keyFor(sym, kind);
   return (held.get(k)?.refs ?? 0) === 0;
+}
+
+export function deskLiveFlowSubsOnStreamerStop(): void {
+  for (const h of held.values()) {
+    h.addedL1 = false;
+    h.addedTimesale = false;
+  }
+}
+
+export function deskLiveFlowSubsRewireHeld(): void {
+  for (const [k, h] of held) {
+    if (h.refs <= 0 || h.kind === "spx") continue;
+    try {
+      if (h.kind === "equity") {
+        const eq = k.slice("equity:".length);
+        h.addedL1 = deskFlowStreamerEnsureEquityL1(eq);
+        h.addedTimesale = deskFlowStreamerEnsureTimesaleEquity(eq);
+      } else if (h.kind === "futures") {
+        const ds = k.slice("futures:".length);
+        h.addedL1 = deskFlowStreamerEnsureFuturesL1(ds);
+        h.addedTimesale = deskFlowStreamerEnsureTimesaleFutures(ds);
+      }
+    } catch (err) {
+      logger.warn({ err, k }, "Desk live flow: rewire after streamer connect failed");
+    }
+  }
 }

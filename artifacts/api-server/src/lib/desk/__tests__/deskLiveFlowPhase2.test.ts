@@ -108,8 +108,8 @@ describe("desk live flow phase 2 hardening", () => {
   });
 
   it("rejects garbage symbols", () => {
-    expect(deskLiveFlowRejectSymbol("ZZZZZZ", "equity")).toBe("invalid_symbol");
-    expect(deskLiveFlowRejectSymbol("/ZZZZZZ", "futures")).toBe("invalid_symbol");
+    expect(deskLiveFlowRejectSymbol("QWERTY", "equity")).toBe("invalid_symbol");
+    expect(deskLiveFlowRejectSymbol("/QQQQQ", "futures")).toBe("invalid_futures_symbol");
   });
 
   it("keeps desk equity when flow releases but universe still holds", () => {

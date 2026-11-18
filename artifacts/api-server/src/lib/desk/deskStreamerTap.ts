@@ -123,6 +123,7 @@ export function onSchwabConnectionOpened(): void {
     m.deskLiveFlowTimesaleOnStreamerConnected(connectionNumber),
   );
   void import("./deskLiveFlowTape.js").then((m) => m.deskLiveFlowTapeOnSessionReset());
+  void import("./deskLiveFlowSubs.js").then((m) => m.deskLiveFlowSubsRewireHeld());
 }
 
 export function onSchwabInboundFrame(raw: string): void {

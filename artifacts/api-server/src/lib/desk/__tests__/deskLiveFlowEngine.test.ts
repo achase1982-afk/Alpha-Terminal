@@ -84,7 +84,7 @@ describe("deskLiveFlowEngine replay", () => {
     );
     deskLiveFlowOnL1oRows([{ key: KEY, 2: 1, 3: 2, 4: 2, 8: 5 }], 5_100);
     const before = deskLiveFlowTestFrameCount();
-    deskLiveFlowBucketTick(6_200);
+    deskLiveFlowBucketTick(7_200);
     const after = deskLiveFlowTestSliceFrames(before);
     expect(after.some((f) => f.type === "flow_1s" || f.type === "flow_heartbeat")).toBe(true);
   });

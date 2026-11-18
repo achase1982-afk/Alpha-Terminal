@@ -173,8 +173,9 @@ function eventClockMs(
   if (tradeMs != null && tradeMs <= rxMs && rxMs - tradeMs <= DESK_LIVE_FLOW_TAPE_REORDER_MS) {
     clock = tradeMs;
   }
-  if (st.lastEmitted1sBucketMs != null && bucketMs1s(clock) < st.lastEmitted1sBucketMs) {
-    clock = Math.max(rxMs, st.lastPrintClockMs);
+  const bucket = bucketMs1s(clock);
+  if (st.lastEmitted1sBucketMs != null && bucket < st.lastEmitted1sBucketMs) {
+    clock = Math.max(rxMs, st.lastEmitted1sBucketMs);
   }
   if (clock < st.lastPrintClockMs) return null;
   st.lastPrintClockMs = clock;
@@ -240,8 +241,10 @@ function addPrint(
   src: TapeBucket1s["src"],
 ): void {
   ensureBucketTimer();
-  const bms = bucketMs1s(clockMs);
-  if (st.lastEmitted1sBucketMs != null && bms < st.lastEmitted1sBucketMs) return;
+  let bms = bucketMs1s(clockMs);
+  if (st.lastEmitted1sBucketMs != null && bms < st.lastEmitted1sBucketMs) {
+    bms = bucketMs1s(Math.max(clockMs, st.lastEmitted1sBucketMs + 1));
+  }
 
   if (!st.open1s || st.open1s.bucket_ms !== bms) {
     if (st.open1s) closeOpen1s(sym, st, clockMs);
@@ -268,7 +271,7 @@ function addPrint(
   }
 
   const mms = minuteMs(bms);
-  if (st.lastEmitted60sMinuteMs != null && mms < st.lastEmitted60sMinuteMs) return;
+  if (st.lastEmitted60sMinuteMs != null && mms <= st.lastEmitted60sMinuteMs) return;
   if (!st.open60s || st.open60s.minute_ms !== mms) {
     if (st.open60s) emitTape60s(sym, st, st.open60s, clockMs);
     st.open60s = fresh60s(bms, src);
@@ -336,7 +339,7 @@ function emitTape1s(sym: string, st: SymbolState, b: TapeBucket1s, rxMs: number,
 }
 
 function emitTape60s(sym: string, st: SymbolState, b: TapeBucket60s, rxMs: number): void {
-  if (st.lastEmitted60sMinuteMs != null && b.minute_ms < st.lastEmitted60sMinuteMs) return;
+  if (st.lastEmitted60sMinuteMs != null && b.minute_ms <= st.lastEmitted60sMinuteMs) return;
   if (!b.n_prints) return;
   st.lastEmitted60sMinuteMs = b.minute_ms;
   const vwap = b.vwap_den > 0 ? b.vwap_num / b.vwap_den : b.last;
@@ -506,24 +509,25 @@ function onL1Row(
     const q: QuoteSnap = { bid, ask, bidSize, askSize, last };
     maybeEmitBook(sym, st, q, rxMs);
     const prevVol = st.prevVolume;
-    pushQuoteHistory(st, q, quoteMs);
-    st.prevQuote = q;
+    const quoteForClassify = st.prevQuote;
 
     if (vol != null && prevVol != null && !st.timesaleSeen) {
       const dVol = vol - prevVol;
-      if (dVol > 0 && last != null) {
-        const hist = quoteAtOrBefore(st, quoteMs);
-        const side = hist
-          ? classifyFlowAgainstPriorQuote(last, hist.bid, hist.ask)
-          : classifyFlowAgainstPriorQuote(last, bid, ask);
+      if (dVol > 0 && last != null && quoteForClassify) {
+        const side = classifyFlowAgainstPriorQuote(last, quoteForClassify.bid, quoteForClassify.ask);
         if (side) {
           st.l1Fallback = true;
           const clock = eventClockMs(quoteMs, rxMs, null, st);
           if (clock != null) addPrint(st, sym, side, dVol, last, clock, "schwab_l1_est");
         }
+      } else if (dVol < 0) {
+        /* out-of-order volume: keep baseline */
       }
     }
-    if (vol != null) st.prevVolume = vol;
+
+    pushQuoteHistory(st, q, quoteMs);
+    st.prevQuote = q;
+    if (vol != null && (prevVol == null || vol >= prevVol)) st.prevVolume = vol;
   }
 }
 

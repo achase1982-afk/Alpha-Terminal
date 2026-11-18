@@ -8,6 +8,10 @@ const ROOT_MULTIPLIER: Record<string, number> = {
   "/YM": 5,
 };
 
+export const DESK_LIVE_FLOW_FUTURES_ROOTS = new Set(Object.keys(ROOT_MULTIPLIER));
+
+const FUTURES_CONTRACT_RE = /^\/[A-Z]{2,4}[FGHJKMNQUVXZ]\d{2}$/;
+
 export function deskLiveFlowFuturesRoot(displaySym: string): string {
   const u = displaySym.trim().toUpperCase();
   const withSlash = u.startsWith("/") ? u : `/${u}`;
@@ -17,7 +21,11 @@ export function deskLiveFlowFuturesRoot(displaySym: string): string {
 
 export function deskLiveFlowFuturesContractMultiplier(displaySym: string): number | null {
   const root = deskLiveFlowFuturesRoot(displaySym);
-  return ROOT_MULTIPLIER[root] ?? null;
+  if (ROOT_MULTIPLIER[root] != null) return ROOT_MULTIPLIER[root]!;
+  const m = displaySym.trim().toUpperCase().match(FUTURES_CONTRACT_RE);
+  if (!m) return null;
+  const contractRoot = deskLiveFlowFuturesRoot(m[0] ?? displaySym);
+  return ROOT_MULTIPLIER[contractRoot] ?? null;
 }
 
 export function deskLiveFlowFuturesNotionalDollars(

@@ -993,7 +993,8 @@ function sendEquitySubscription(symbols: string[], opts?: { replayDeskEquities?:
       "Schwab streamer: LEVELONE_EQUITIES SUBS sent",
     );
     if (opts?.replayDeskEquities !== false && deskAddedEquitySymbols.size > 0) {
-      batchDeskAdd(sendDeskEquityAdd, [...deskAddedEquitySymbols]);
+      const deskOnly = [...deskAddedEquitySymbols].filter((k) => !subscribedSymbols.has(k));
+      if (deskOnly.length > 0) batchDeskAdd(sendDeskEquityAdd, deskOnly);
     }
     deskStreamerReplayDeskFlowAdds();
   }
@@ -1538,9 +1539,8 @@ export function deskStreamerAddOptionsBook(symbols: string[]): number {
 
 export function deskStreamerReplayDeskEquityAdds(): void {
   if (connectionState !== "connected") return;
-  if (deskAddedEquitySymbols.size > 0) {
-    batchDeskAdd(sendDeskEquityAdd, [...deskAddedEquitySymbols]);
-  }
+  const deskOnly = [...deskAddedEquitySymbols].filter((k) => !subscribedSymbols.has(k));
+  if (deskOnly.length > 0) batchDeskAdd(sendDeskEquityAdd, deskOnly);
 }
 
 export function deskStreamerReplayDeskOptionAdds(): void {
@@ -2778,6 +2778,8 @@ export function stopStreamer() {
   deskTimesaleEquityOwners.clear();
   deskFuturesL1WireOwners.clear();
   deskTimesaleFuturesWireOwners.clear();
+  void import("./desk/deskLiveFlowSubs.js").then((m) => m.deskLiveFlowSubsOnStreamerStop());
+  void import("./desk/deskLiveFlowTimesale.js").then((m) => m.deskLiveFlowTimesaleStopDebug());
   acctActivitySubscribed = false;
   consecutivePostLoginFlap1006 = 0;
 }
